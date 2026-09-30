@@ -264,6 +264,65 @@ static int ClassifyRender(Atomic *a, bool saMode) {
 	return 0;
 }
 
+
+/* ------------------ synthetic regression cases ------------------ */
+static void SetName(Frame *f, const char *name) {
+	if (gNodeNameOffset < 0) return;
+	strncpy((char*)f + gNodeNameOffset, name, 23);
+	((char*)f)[gNodeNameOffset + 23] = '\0';
+}
+
+static Clump *MakeSynthetic(const char **names, int n) {
+	Clump *clump = Clump::create();
+	Frame *root = Frame::create();
+	clump->setFrame(root);
+	SetName(root, "testroot");
+	for (int i = 0; i < n; i++) {
+		Frame *f = Frame::create();
+		SetName(f, names[i]);
+		Geometry *g = Geometry::create(3, 1, 0);
+		Atomic *a = Atomic::create();
+		a->setGeometry(g, 0);
+		a->setFrame(f);
+		root->addChild(f);
+		clump->addAtomic(a);
+	}
+	return clump;
+}
+
+/* 1 = SA hierarchy mode detected (same rule as reVC's IsSAHierarchy) */
+static int SyntheticSACheck(Clump *clump) {
+	FORLIST(lnk, clump->atomics)
+		if (strstr(FName(Atomic::fromClump(lnk)->getFrame()), "_hi")) return 0;
+	return 1;
+}
+
+static void SyntheticCase(const char *title, const char **names, int n, int expectSA) {
+	Clump *c = MakeSynthetic(names, n);
+	int sa = SyntheticSACheck(c);
+	int drawnVanilla = 0, destroyed = 0, drawnSA = 0;
+	FORLIST(lnk, c->atomics) {
+		Atomic *a = Atomic::fromClump(lnk);
+		if (ClassifyRender(a, 0) == 1) drawnVanilla++;
+		if (ClassifyRender(a, 0) == 3) destroyed++;
+		if (ClassifyRender(a, sa) == 1) drawnSA++;
+	}
+	printf("   %-44s SA-mode=%d (expect %d)  drawn: vanilla %d/%d, SA %d/%d  %s\n",
+	       title, sa, expectSA, drawnVanilla, n, drawnSA, n,
+	       sa == expectSA ? "OK" : "MISMATCH");
+	c->destroy();
+}
+
+static void RunSyntheticTests(void) {
+	printf("\n-- detection regression (SA vs vanilla VC naming) --\n");
+	const char *vcStyle[] = { "windscreen_hi", "banshee_hi", "banshee_lo", "banshee_vlo" };
+	const char *saStyle[] = { "body", "wheel", "chassis_vlo", "bump_front" };
+	const char *vcStyle2[] = { "cab_hi", "chassis_hi", "chassis_lo" };
+	SyntheticCase("VC naming (_hi/_lo/_vlo present)", vcStyle, 4, 0);
+	SyntheticCase("SA naming (no _hi at all)", saStyle, 4, 1);
+	SyntheticCase("VC naming without _vlo", vcStyle2, 3, 0);
+}
+
 int main(int argc, char *argv[]) {
 	if (argc < 2) { fprintf(stderr, "usage: %s file.dff\n", argv[0]); return 1; }
 
@@ -276,6 +335,8 @@ int main(int argc, char *argv[]) {
 	Frame::registerPluginStream(ID_NODENAME, NodeNameRead, NodeNameWrite, NodeNameSize);
 	gFrameIdOffset = Frame::registerPlugin(4, MAKECHUNKID(VENDOR_ROCKSTAR, 0x00), FrameIdCtor, nil, nil);
 	registerMatFXPlugin();
+
+	RunSyntheticTests();
 
 	StreamFile sf;
 	sf.open(argv[1], "rb");

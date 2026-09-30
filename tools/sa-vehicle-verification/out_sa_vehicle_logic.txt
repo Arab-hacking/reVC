@@ -1,5 +1,10 @@
 librw platform 0
 
+
+-- detection regression (SA vs vanilla VC naming) --
+   VC naming (_hi/_lo/_vlo present)             SA-mode=0 (expect 0)  drawn: vanilla 2/4, SA 2/4  OK
+   SA naming (no _hi at all)                    SA-mode=1 (expect 1)  drawn: vanilla 0/4, SA 3/4  OK
+   VC naming without _vlo                       SA-mode=0 (expect 0)  drawn: vanilla 2/3, SA 2/3  OK
 clump: frames=61 atomics=29
 hierarchy: SA (no _hi parts at all) (SA-style=yes)
 

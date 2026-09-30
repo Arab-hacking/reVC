@@ -200,12 +200,23 @@ g++ -std=c++11 -Ivendor/librw -Ivendor/librw/src \
 Ожидаемый результат (он же — приложенный `out_sa_vehicle_logic.txt`):
 
 ```
+-- detection regression (SA vs vanilla VC naming) --
+   VC naming (_hi/_lo/_vlo present)      SA-mode=0 (expect 0)  drawn: vanilla 2/4, SA 2/4  OK
+   SA naming (no _hi at all)             SA-mode=1 (expect 1)  drawn: vanilla 0/4, SA 3/4  OK
+   VC naming without _vlo                SA-mode=0 (expect 0)  drawn: vanilla 2/3, SA 2/3  OK
+
+clump: frames=61 atomics=29
 hierarchy: SA (no _hi parts at all) (SA-style=yes)
-vanilla VC rules : 0 of 32 atomics drawn (hi detail), 31 not drawn at all
-with SA support  : 31 of 32 atomics drawn (hi detail) + 1 very-low-detail
+... (id костей, collapse, клонирование колёс) ...
+   vanilla VC rules : 0 of 32 atomics drawn (hi detail), 31 not drawn at all, 0 destroyed as _lo
+   with SA support  : 31 of 32 atomics drawn (hi detail) + 1 very-low-detail
 wheels with a mesh: before=1, after SA cloning=4 (cloned 3)
 RESULT: PASS
 ```
+
+Первые три строки — регресс-тест на **ложное срабатывание**: на синтетических моделях
+с ванильной нотацией (`_hi`/`_lo`/`_vlo`) SA-режим не включается и набор рисуемых мешей
+не меняется (2 из 4 в обоих случаях), а на SA-нотации — включается.
 
 Ниже — `satest.cpp` (проверка чтения самого файла): 61 кость, 29 атомиков, 29 геометрий,
 111 материалов, 15 текстур TXD, 17 материалов с основным цветом машины.
@@ -237,3 +248,65 @@ RESULT: PASS
 * Полная сборка проекта с патчем (`src/reVC`, 176 целей, без ошибок) и проверка, что
   символы SA-режима присутствуют в бинарнике
   (`CVehicleModelInfo::CloneSAWheelMeshes`, `gVehicleIsSAHierarchy`).
+
+---
+
+## 7. Типичные ошибки сборки (Windows / premake + msbuild)
+
+Сборка под Windows: `premake5 vs2019 --with-librw --no-full-paths` → `build/reVC.sln` →
+`msbuild -m build/reVC.sln /property:Configuration=Release /property:Platform=win-amd64-librw_d3d9-oal`
+(или `win-amd64-librw_gl3_glfw-oal` для OpenGL).
+
+### 7.1. `fatal error C1083: Cannot open include file: 'shaders/obj/…inc'`
+
+Файлы `src/extras/shaders/obj/*.inc` (25 штук) и `*.cso` (12 штук) **уже лежат в репозитории** —
+это скомпилированные шейдеры (для d3d9 — HLSL, для GL — GLSL). Ошибка означает, что исходники
+скопированы не полностью: папка `src/extras/shaders/obj` отсутствует.
+
+Восстановление: `git checkout -- src/extras/shaders/obj` либо переклонировать репозиторий
+(эти файлы под контролем версий, генерировать их вручную не нужно).
+
+Если файлов нет вообще (например, вы работаете с вычищенной копией), их можно собрать самим:
+* GL: `src/extras/shaders/make_glsl.sh` (вызывает `glslangValidator`), затем `makeinc_glsl.sh`;
+* D3D9: `src/extras/shaders/make_hlsl.cmd` (вызывает `fxc` из DirectX SDK), затем `makeinc_hlsl.sh`.
+
+### 7.2. `fatal error C1083: Cannot open include file: 'SAFormatConverter.h'`
+
+`premake5.lua` подключает исходники **маской по папкам** (`files { addSrcFiles("src/rw") }`),
+поэтому любой посторонний `.cpp`, положенный в `src/…`, автоматически попадает в проект и
+компилируется. В апстриме (`mrxenginner/reVC`, ветка `miami`) файла `src/rw/SAFormatConverter.cpp`
+**не существует** — если он у вас есть, значит в дерево добавлен сторонний файл, у которого
+потерян заголовок. Действия: удалить этот `.cpp` (данный патч никаких конвертеров не требует —
+SA-ассеты читаются штатным librw) либо дописать отсутствующий заголовок, после чего перегенерировать
+проект (`premake5 …` заново или `cmake` при сборке через CMake).
+
+### 7.3. Что-то ещё
+
+Сам патч SA-моделей **не добавляет и не удаляет файлов**: правки только внутри существующих
+`config.h`, `VehicleModelInfo.{h,cpp}`, `FileLoader.cpp`, `CdStream_posix.cpp`, поэтому
+перегенерация проекта (premake/CMake) для него не нужна — достаточно обычной сборки.
+
+---
+
+## 8. Что и как проверено (журнал)
+
+| Проверка | Результат |
+|---|---|
+| Разбор `admiral.dff` по формату librw (границы всех чанков) | 61 кость, 29 атомиков, 29 геометрий, 111 материалов; 0 расхождений, 22 088 вершин / 20 904 треугольника |
+| Разбор `admiral.txd` | 15 текстур, platform 9 (D3D9), все A8R8G8B8, конвертация штатная |
+| Логика `CVehicleModelInfo` на реальном ассете (`savtest`) | ванильно рисуется 0 из 29 мешей → с патчем 31 из 32; колёс 1 → 4; `RESULT: PASS` |
+| Регресс на ложное срабатывание SA-режима (`savtest`, синтетика) | ванильная нотация не задевается: `2/4` мешей как и раньше |
+| Полная сборка проекта (Linux, GCC 14, Release, GL3/GLFW/OpenAL/mpg123) | успешно, 176 целей, `src/reVC` + символы SA в бинарнике |
+| Генерация проекта premake (`premake5Linux vs2019 --with-librw --no-full-paths`) | `build/reVC.sln`, `reVC.vcxproj`, `librw.vcxproj` — без ошибок |
+| Include-и для конфигурации Windows D3D9 (`win-amd64-librw_d3d9-oal`) | 3571 директива `#include "…"`, **0 неразрешённых** (8 — платформенные ветки Android/PS2/Miles/EAX и системные заголовки) |
+| Полнота архива vs дерево апстрима (`miami`) | все файлы на месте (0 пропущенных), 4 сабмодуля, 25 шейдерных `.inc` + 11 `.cso`, 6 Windows-DLL |
+
+Проверить включения у себя: `python3 tools/sa-vehicle-verification/check_includes.py`
+(или с include-папками из готового MSBuild-проекта:
+`python3 tools/sa-vehicle-verification/check_includes.py --vcxproj build/reVC.vcxproj --config d3d9`).
+
+Содержимое `tools/sa-vehicle-verification/`:
+* `satest.cpp` — чтение DFF/TXD через librw (что именно лежит в файле);
+* `savtest.cpp` — имитация `SetFrameIds` + `PreprocessHierarchy` + подсчёт рисуемых мешей;
+* `out_sa_asset.txt`, `out_sa_vehicle_logic.txt` — сохранённые выводы обоих прогонов;
+* `check_includes.py` — проверка полноты исходников (все локальные `#include`).
