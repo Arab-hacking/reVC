@@ -1,0 +1,38 @@
+step: Engine::init
+step: Engine::open
+step: Engine::start
+step: plugins
+step: CVisibilityPlugins::Initialise
+step: CPools::Initialise
+step: CTxdStore::Initialise
+step: CTempColModels::Initialise
+step: CModelInfo::Initialise
+[DBG]: sizeof SimpleModelStore 341888
+[DBG]: sizeof TimeModelStore 40048
+[DBG]: sizeof WeaponModelStore 3560
+[DBG]: sizeof ClumpModelStore 328
+[DBG]: sizeof VehicleModelStore 154888
+[DBG]: sizeof PedModelStore 12488
+[DBG]: sizeof 2deffectsModelStore 77448
+step: AddVehicleModel
+step: fields
+step: open file
+pos before part1 = 0
+Start loading admiral
+pos before part2 = 686206
+Finish loading admiral
+[DBG]: SA collision model loaded from admiral.dff: 20 spheres, 0 boxes, 22 triangles
+pos after part2 = 1123126
+
+== what the game ends up with ==
+ide wheelScale 0.7000, wheel model id -1, handling id 0
+own wheel meshes (SA branch): YES   m_wheelScale 0.7803  physics radius 0.3901
+embedded collision: YES
+col model: spheres 20 boxes 0 triangles 22 lines 0  bbox z 0.0000 .. 1.4297
+
+wheel dummies (name / local z / meshes in subtree):
+  wheel_lf_dummy   z +0.1770  id 4  meshes 1
+  wheel_lb_dummy   z +0.1770  id 6  meshes 1
+  wheel_rb_dummy   z +0.1770  id 3  meshes 1
+  wheel_rf_dummy   z +0.1770  id 1  meshes 1
+total atomics in clump: 32

@@ -225,6 +225,48 @@ CFileLoader::LoadCollisionFile(const char *filename, uint8 colSlot)
 // because the volume does not match the mesh.
 #define SA_RW_COLLISIONMODEL_ID MAKECHUNKID(0x0253F2, 0xFA)
 
+// SA keeps the collision inside the clump, after the atomics. The two part
+// model reader does not stop there (the atomics are the last thing it reads),
+// so the position of the clump body is remembered in StartLoadClumpFile and
+// the chunks are walked from there once the model is complete. Loading a model
+// is a strictly sequential, non reentrant operation, so file statics are fine.
+static uint32 saClumpBodyPos;
+static uint32 saClumpBodySize;
+static bool saClumpBodyKnown;
+
+// Walks the chunk list from the current position up to  end looking for the
+// SA collision chunk. Extension chunks are entered (that is where SA puts it)
+// and the stream is left at the body of the chunk that was found, whose size
+// is returned; 0 means the model has no collision.
+static uint32
+FindSAColChunk(RwStream *stream, uint32 end, int depth)
+{
+	uint32 header[3];
+	uint32 type, size, body, bodyEnd, found;
+
+	if(depth < 0)
+		return 0;
+	while(STREAMPOS(stream) + 12 <= end){
+		if(RwStreamRead(stream, header, 12) != 12)
+			return 0;
+		type = header[0];
+		size = header[1];
+		body = STREAMPOS(stream);
+		bodyEnd = body + size;
+		if(size > end || bodyEnd > end)	// corrupt data, do not walk outside
+			return 0;
+		if(type == SA_RW_COLLISIONMODEL_ID)
+			return size;
+		if(type == rwID_EXTENSION){
+			found = FindSAColChunk(stream, bodyEnd, depth-1);
+			if(found)
+				return found;
+		}
+		stream->seek(bodyEnd, 0);
+	}
+	return 0;
+}
+
 // converts SA surface ids to something VC understands; SA has far more
 // materials than VC's table, and an id outside of it would be undefined.
 // Everything unknown becomes car panel, which is what the body of a VC vehicle
@@ -296,30 +338,30 @@ ConvertSAColModel(const SACol3 &sa, CColModel &model)
 }
 
 bool
-CFileLoader::LoadSAVehicleColModel(RwStream *stream, uint32 id)
+CFileLoader::LoadSAVehicleColModel(RwStream *stream, uint32 id, uint32 colSize)
 {
 	CBaseModelInfo *mi;
 	CColModel *col;
-	uint8 buf[4096];
-	uint32 extSize, colSize;
+	uint8 *buf;
+	SACol3 sa;
 
 	mi = CModelInfo::GetModelInfo(id);
 	if(mi == nil || mi->GetModelType() != MITYPE_VEHICLE)
 		return false;
-	// after the atomics of an SA vehicle DFF comes the clump extension holding
-	// the collision; if there is none, the stream is left where it was
-	if(!RwStreamFindChunk(stream, rwID_EXTENSION, &extSize, nil))
+	if(colSize < 0x78 || colSize > 0x10000)
 		return false;
-	if(!RwStreamFindChunk(stream, SA_RW_COLLISIONMODEL_ID, &colSize, nil))
+	buf = (uint8*)RwMalloc(colSize);
+	if(buf == nil)
 		return false;
-	if(colSize < 0x78 || colSize > sizeof(buf))
+	if(RwStreamRead(stream, buf, colSize) != colSize){
+		RwFree(buf);
 		return false;
-	if(RwStreamRead(stream, buf, colSize) != colSize)
+	}
+	if(!SACol3Parse(buf, colSize, sa)){
+		RwFree(buf);
 		return false;
-
-	SACol3 sa;
-	if(!SACol3Parse(buf, colSize, sa))
-		return false;
+	}
+	RwFree(buf);
 	col = new CColModel;
 	ConvertSAColModel(sa, *col);
 	((CVehicleModelInfo*)mi)->SetEmbeddedColModel(col);
@@ -643,7 +685,18 @@ CFileLoader::LoadClumpFile(RwStream *stream, uint32 id)
 bool
 CFileLoader::StartLoadClumpFile(RwStream *stream, uint32 id)
 {
-	if(RwStreamFindChunk(stream, rwID_CLUMP, nil, nil)){
+	uint32 size = 0;
+
+	if(RwStreamFindChunk(stream, rwID_CLUMP, &size, nil)){
+#ifdef SA_VEHICLE_MODELS
+		// remember where the clump is; the collision inside it is read in
+		// FinishLoadClumpFile, after the atomics are in
+		saClumpBodyPos = STREAMPOS(stream);
+		saClumpBodySize = size;
+		saClumpBodyKnown = true;
+#else
+		(void)size;
+#endif
 		printf("Start loading %s\n", CModelInfo::GetModelInfo(id)->GetModelName());
 		return RpClumpGtaStreamRead1(stream);
 	}else{
@@ -666,9 +719,21 @@ CFileLoader::FinishLoadClumpFile(RwStream *stream, uint32 id)
 		mi = (CClumpModelInfo*)CModelInfo::GetModelInfo(id);
 		mi->SetClump(clump);
 #ifdef SA_VEHICLE_MODELS
-		// the stream is positioned right after the atomics here, which is where
-		// SA models keep their collision model
-		LoadSAVehicleColModel(stream, id);
+		if(saClumpBodyKnown && mi->GetModelType() == MITYPE_VEHICLE){
+			// SA keeps the collision of a vehicle inside the model, in the clump
+			// extension behind the atomics. The reader above does not stop there
+			// (it ends past them), so the chunks of the clump are walked again to
+			// find the collision chunk; everything else in the clump is left as it
+			// was and the stream is put back where the caller expects it.
+			uint32 save, colSize;
+			save = STREAMPOS(stream);
+			stream->seek(saClumpBodyPos, 0);
+			colSize = FindSAColChunk(stream, saClumpBodyPos + saClumpBodySize, 4);
+			if(colSize)
+				LoadSAVehicleColModel(stream, id, colSize);
+			stream->seek(save, 0);
+		}
+		saClumpBodyKnown = false;
 #endif
 		return true;
 	}else{

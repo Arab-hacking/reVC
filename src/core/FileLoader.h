@@ -21,7 +21,7 @@ public:
 #ifdef SA_VEHICLE_MODELS
 	// reads the collision model that SA stores inside a vehicle DFF and installs
 	// it on the model info (returns false for models without one)
-	static bool LoadSAVehicleColModel(RwStream *stream, uint32 id);
+	static bool LoadSAVehicleColModel(RwStream *stream, uint32 id, uint32 colSize);
 #endif
 	static bool LoadAtomicFile(RwStream *stream, uint32 id);
 	static RpAtomic *SetRelatedModelInfoCB(RpAtomic *atomic, void *data);

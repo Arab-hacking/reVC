@@ -1,0 +1,18 @@
+init
+open
+start
+plugins
+[DBG]: sizeof SimpleModelStore 341888
+[DBG]: sizeof TimeModelStore 40048
+[DBG]: sizeof WeaponModelStore 3560
+[DBG]: sizeof ClumpModelStore 328
+[DBG]: sizeof VehicleModelStore 154888
+[DBG]: sizeof PedModelStore 12488
+[DBG]: sizeof 2deffectsModelStore 77448
+clump body starts at 12, size 1124014 (ends at 1124026)
+after part 1        = 686206
+after part 2        = 1123126   (clump read)
+clump extension body at 1123150
+collision chunk body at 1123162  <- part 2 does not stop on a chunk
+      boundary (it ends inside the last atomic), so a plain RwStreamFindChunk
+      from there cannot find it: the chunk walk from the clump start is needed

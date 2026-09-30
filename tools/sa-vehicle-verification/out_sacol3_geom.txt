@@ -1,0 +1,29 @@
+admiral.dff collision block: 20 spheres, 0 boxes, 26 verts, 22 faces
+header bounds  min (-1.0651 -2.8630 0.0000)  max (1.0651 2.5238 1.4297)
+
+spheres (model space, z is up):
+  [ 0] center ( +0.403  -2.487  +0.483)  r 0.372  bottom  +0.111
+  [ 1] center ( -0.623  +2.090  +0.395)  r 0.372  bottom  +0.023
+  [ 2] center ( +0.000  +2.152  +0.381)  r 0.372  bottom  +0.009
+  [ 3] center ( -0.000  -2.407  +0.569)  r 0.456  bottom  +0.112
+  [ 4] center ( -0.414  +0.023  +0.718)  r 0.644  bottom  +0.074
+  [ 5] center ( -0.397  -0.734  +0.762)  r 0.668  bottom  +0.095
+  [ 6] center ( -0.639  +1.524  +0.453)  r 0.426  bottom  +0.027
+  [ 7] center ( -0.611  +0.855  +0.489)  r 0.428  bottom  +0.062
+  [ 8] center ( +0.414  +0.023  +0.718)  r 0.644  bottom  +0.074
+  [ 9] center ( +0.397  -0.734  +0.762)  r 0.668  bottom  +0.095
+  [10] center ( +0.639  +1.524  +0.453)  r 0.426  bottom  +0.027
+  [11] center ( +0.623  +0.855  +0.489)  r 0.428  bottom  +0.062
+  [12] center ( +0.623  +2.090  +0.395)  r 0.372  bottom  +0.023
+  [13] center ( -0.414  -1.445  +0.695)  r 0.644  bottom  +0.051
+  [14] center ( +0.414  -1.445  +0.695)  r 0.644  bottom  +0.051
+  [15] center ( -0.521  -2.317  +0.569)  r 0.456  bottom  +0.112
+  [16] center ( +0.521  -2.317  +0.569)  r 0.456  bottom  +0.112
+  [17] center ( -0.401  -2.487  +0.483)  r 0.372  bottom  +0.111
+  [18] center ( +0.000  +0.969  +0.489)  r 0.428  bottom  +0.062
+  [19] center ( +0.000  +1.591  +0.453)  r 0.426  bottom  +0.027
+vertices used by the face list: lowest z  +0.000
+
+collision geometry lowest point :  +0.000
+tyre bottom of the model        :  -0.213  (= dummy z 0.177 - radius 0.390)
+delta (collision - tyres)       :  +0.213  (the tyres are the lowest part of the car, as in SA)

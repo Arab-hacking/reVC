@@ -1,3 +1,4 @@
+#include "SavehDiag.h"
 #include "common.h"
 #include "main.h"
 
@@ -899,6 +900,22 @@ CAutomobile::ProcessControl(void)
 					break;
 				}
 			}
+		}
+
+		if(this == FindPlayerVehicle() && (CTimer::GetFrameCounter() & 31) == 0){
+			CVehicleModelInfo *dmi = (CVehicleModelInfo*)CModelInfo::GetModelInfo(GetModelIndex());
+			CColModel *dcm = GetColModel();
+			float roadZ, wheelBottom, wheelGap;
+			roadZ = m_aSuspensionSpringRatio[0] < 1.0f ? m_aWheelColPoints[0].point.z : 0.0f;
+			wheelBottom = (GetMatrix() * CVector(0.0f, 0.0f, m_aWheelPosition[0])).z
+				- dmi->m_wheelScale*0.5f*dmi->GetWheelRenderScale();
+			wheelGap = wheelBottom - roadZ;
+			SAVEH_LOG("[SAVEH] player z %.4f vz %.4f h %.4f roadZ %.4f gap %.4f wheelGap %.4f | ratios %.3f %.3f %.3f %.3f wheels %d notOnGround %d | numLines %d tris %d special %d colOwn %d scale %.4f renderScale %.4f saMesh %d\n",
+				GetPosition().z, m_vecMoveSpeed.z, m_fHeightAboveRoad, roadZ, GetPosition().z - roadZ, wheelGap,
+				m_aSuspensionSpringRatio[0], m_aSuspensionSpringRatio[1], m_aSuspensionSpringRatio[2], m_aSuspensionSpringRatio[3],
+				m_nWheelsOnGround, CWorld::Players[CWorld::PlayerInFocus].m_nTimeNotFullyOnGround,
+				dcm->numLines, dcm->numTriangles, bUsingSpecialColModel, dcm == dmi->GetColModel(),
+				dmi->m_wheelScale, dmi->GetWheelRenderScale(), dmi->HasOwnWheelMeshes());
 		}
 
 		float traction;
@@ -5114,6 +5131,14 @@ CAutomobile::SetupSuspensionLines(void)
 			- colModel->lines[0].p0.z + mi->m_wheelScale*0.5f;
 	for(i = 0; i < 4; i++)
 		m_aWheelPosition[i] = mi->m_wheelScale*0.5f - m_fHeightAboveRoad;
+
+	SAVEH_LOG("[SAVEH] suspension model %d saMesh %d scale %.4f r %.4f dummyZ %.4f upper %.4f lower %.4f force %.4f sag %.4f | p0 %.4f p1 %.4f lineLen %.4f springLen %.4f h %.4f | col sph %d box %d tri %d lines %d bboxz %.4f..%.4f embedded %d\n",
+		GetModelIndex(), mi->HasOwnWheelMeshes(), mi->m_wheelScale, mi->m_wheelScale*0.5f, m_aWheelPosition[0],
+		pHandling->fSuspensionUpperLimit, pHandling->fSuspensionLowerLimit, pHandling->fSuspensionForceLevel, suspSag,
+		colModel->lines[0].p0.z, colModel->lines[0].p1.z, m_aSuspensionLineLength[0], m_aSuspensionSpringLength[0],
+		m_fHeightAboveRoad,
+		colModel->numSpheres, colModel->numBoxes, colModel->numTriangles, colModel->numLines,
+		colModel->boundingBox.min.z, colModel->boundingBox.max.z, mi->HasEmbeddedColModel());
 
 	// adjust col model to include suspension lines
 	if(colModel->boundingBox.min.z > colModel->lines[0].p1.z)
