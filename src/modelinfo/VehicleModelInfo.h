@@ -113,6 +113,12 @@ public:
 		int32 m_animFileIndex;
 		char *m_animFileName;
 	};
+#ifdef SA_VEHICLE_MODELS
+	// set when the collision of this model came from inside the DFF (SA style);
+	// such a model must not get its collision replaced by the VC .col entry of
+	// the vehicle whose model id it replaces
+	bool m_bHasEmbeddedColModel;
+#endif
 
 	static int8 ms_compsToUse[2];
 	static int8 ms_compsUsed[2];
@@ -129,10 +135,16 @@ public:
 	int GetAnimFileIndex(void) { return m_animFileIndex; }
 
 	static RwFrame *CollapseFramesCB(RwFrame *frame, void *data);
+	// instantiates the separate VC wheel model on a wheel dummy frame
+	// (used by VC models and by SA models that carry no wheel mesh at all)
+	void AddGenericWheelModel(RwFrame *frame);
 #ifdef SA_VEHICLE_MODELS
 	// GTA:SA models contain their wheel meshes; this clones the single "wheel"
 	// mesh of such models onto all four wheel dummies
 	void CloneSAWheelMeshes(RwFrame **wheelFrames, int32 numWheels);
+	// collision that came inside the DFF (SA style COL3 block)
+	bool HasEmbeddedColModel(void) { return m_bHasEmbeddedColModel; }
+	void SetEmbeddedColModel(CColModel *col);
 #endif
 	static RwObject *MoveObjectsCB(RwObject *object, void *data);
 	static RpAtomic *HideDamagedAtomicCB(RpAtomic *atomic, void *data);

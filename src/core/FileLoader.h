@@ -18,6 +18,11 @@ public:
 	static bool LoadClumpFile(RwStream *stream, uint32 id);
 	static bool StartLoadClumpFile(RwStream *stream, uint32 id);
 	static bool FinishLoadClumpFile(RwStream *stream, uint32 id);
+#ifdef SA_VEHICLE_MODELS
+	// reads the collision model that SA stores inside a vehicle DFF and installs
+	// it on the model info (returns false for models without one)
+	static bool LoadSAVehicleColModel(RwStream *stream, uint32 id);
+#endif
 	static bool LoadAtomicFile(RwStream *stream, uint32 id);
 	static RpAtomic *SetRelatedModelInfoCB(RpAtomic *atomic, void *data);
 	static RpClump *LoadAtomicFile2Return(const char *filename);

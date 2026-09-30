@@ -28,6 +28,8 @@
 #include "MemoryHeap.h"
 #include "Streaming.h"
 #include "ColStore.h"
+#include "SACol3.h"
+#include "VehicleModelInfo.h"
 #include "Occlusion.h"
 
 char CFileLoader::ms_line[256];
@@ -214,6 +216,119 @@ CFileLoader::LoadCollisionFile(const char *filename, uint8 colSlot)
 }
 
 
+#ifdef SA_VEHICLE_MODELS
+// GTA:SA keeps the collision of a vehicle inside its DFF: the clump extension
+// (rwID_EXTENSION) holds a Rockstar chunk ("CollisionModel") with a COL3
+// collision model. VC instead keeps vehicle collision in models/coll/*.col, so
+// without this an SA car would use the collision of the VC vehicle whose model
+// id it replaces - the car then floats above the ground or sinks into it,
+// because the volume does not match the mesh.
+#define SA_RW_COLLISIONMODEL_ID MAKECHUNKID(0x0253F2, 0xFA)
+
+// converts SA surface ids to something VC understands; SA has far more
+// materials than VC's table, and an id outside of it would be undefined.
+// Everything unknown becomes car panel, which is what the body of a VC vehicle
+// uses and what gives the correct friction/sound on a vehicle body.
+static uint8
+SASurfaceToVC(uint8 surface)
+{
+	if(surface > SURFACE_CONCRETE_BEACH)
+		return SURFACE_CAR_PANEL;
+	return surface;
+}
+
+static void
+ConvertSAColModel(const SACol3 &sa, CColModel &model)
+{
+	uint32 i;
+
+	model.boundingSphere.Set(sa.boundingRadius, *(const CVector*)sa.boundingCenter);
+	model.boundingBox.Set(*(const CVector*)sa.boundingMin, *(const CVector*)sa.boundingMax);
+
+	model.numSpheres = sa.numSpheres;
+	if(sa.numSpheres){
+		model.spheres = (CColSphere*)RwMalloc(sa.numSpheres*sizeof(CColSphere));
+		REGISTER_MEMPTR(&model.spheres);
+		for(i = 0; i < sa.numSpheres; i++){
+			const uint8 *p = sa.spheres + i*SACOL3_SPHERE_SIZE;
+			model.spheres[i].Set(*(const float*)(p+12), *(const CVector*)p,
+				SASurfaceToVC(p[16]), p[17]);
+		}
+	}else
+		model.spheres = nil;
+
+	model.numBoxes = sa.numBoxes;
+	if(sa.numBoxes){
+		model.boxes = (CColBox*)RwMalloc(sa.numBoxes*sizeof(CColBox));
+		REGISTER_MEMPTR(&model.boxes);
+		for(i = 0; i < sa.numBoxes; i++){
+			const uint8 *p = sa.boxes + i*SACOL3_BOX_SIZE;
+			model.boxes[i].Set(*(const CVector*)p, *(const CVector*)(p+12),
+				SASurfaceToVC(p[24]), p[25]);
+		}
+	}else
+		model.boxes = nil;
+
+	model.numLines = 0;
+	model.lines = nil;
+
+	if(sa.numVerts){
+		model.vertices = (CompressedVector*)RwMalloc(sa.numVerts*sizeof(CompressedVector));
+		REGISTER_MEMPTR(&model.vertices);
+		for(i = 0; i < sa.numVerts; i++){
+			const int16 *v = sa.verts + i*3;
+			model.vertices[i].Set(v[0]/128.0f, v[1]/128.0f, v[2]/128.0f);
+		}
+	}else
+		model.vertices = nil;
+
+	model.numTriangles = sa.numFaces;
+	if(sa.numFaces){
+		model.triangles = (CColTriangle*)RwMalloc(sa.numFaces*sizeof(CColTriangle));
+		REGISTER_MEMPTR(&model.triangles);
+		for(i = 0; i < sa.numFaces; i++){
+			const uint8 *p = sa.faces + i*SACOL3_FACE_SIZE;
+			model.triangles[i].Set(*(const uint16*)p, *(const uint16*)(p+2),
+				*(const uint16*)(p+4), SASurfaceToVC(p[6]));
+		}
+	}else
+		model.triangles = nil;
+}
+
+bool
+CFileLoader::LoadSAVehicleColModel(RwStream *stream, uint32 id)
+{
+	CBaseModelInfo *mi;
+	CColModel *col;
+	uint8 buf[4096];
+	uint32 extSize, colSize;
+
+	mi = CModelInfo::GetModelInfo(id);
+	if(mi == nil || mi->GetModelType() != MITYPE_VEHICLE)
+		return false;
+	// after the atomics of an SA vehicle DFF comes the clump extension holding
+	// the collision; if there is none, the stream is left where it was
+	if(!RwStreamFindChunk(stream, rwID_EXTENSION, &extSize, nil))
+		return false;
+	if(!RwStreamFindChunk(stream, SA_RW_COLLISIONMODEL_ID, &colSize, nil))
+		return false;
+	if(colSize < 0x78 || colSize > sizeof(buf))
+		return false;
+	if(RwStreamRead(stream, buf, colSize) != colSize)
+		return false;
+
+	SACol3 sa;
+	if(!SACol3Parse(buf, colSize, sa))
+		return false;
+	col = new CColModel;
+	ConvertSAColModel(sa, *col);
+	((CVehicleModelInfo*)mi)->SetEmbeddedColModel(col);
+	debug("SA collision model loaded from %s.dff: %d spheres, %d boxes, %d triangles\n",
+		mi->GetModelName(), col->numSpheres, col->numBoxes, col->numTriangles);
+	return true;
+}
+#endif
+
 bool
 CFileLoader::LoadCollisionFileFirstTime(uint8 *buffer, uint32 size, uint8 colSlot)
 {
@@ -236,6 +351,13 @@ CFileLoader::LoadCollisionFileFirstTime(uint8 *buffer, uint32 size, uint8 colSlo
 			debug("colmodel %s is huge, size %d\n", modelname, modelsize);
 
 		mi = CModelInfo::GetModelInfo(modelname, &modelIndex);
+#ifdef SA_VEHICLE_MODELS
+		if(mi && mi->GetModelType() == MITYPE_VEHICLE &&
+		   ((CVehicleModelInfo*)mi)->HasEmbeddedColModel()){
+			debug("colmodel %s: collision is inside the DFF, keeping it\n", modelname);
+			mi = nil;
+		}
+#endif
 		if(mi){
 			CColStore::IncludeModelIndex(colSlot, modelIndex);
 			CColModel *model = new CColModel;
@@ -270,6 +392,13 @@ CFileLoader::LoadCollisionFile(uint8 *buffer, uint32 size, uint8 colSlot)
 			debug("colmodel %s is huge, size %d\n", modelname, modelsize);
 
 		mi = CModelInfo::GetModelInfo(modelname, CColStore::GetSlot(colSlot)->minIndex, CColStore::GetSlot(colSlot)->maxIndex);
+#ifdef SA_VEHICLE_MODELS
+		if(mi && mi->GetModelType() == MITYPE_VEHICLE &&
+		   ((CVehicleModelInfo*)mi)->HasEmbeddedColModel()){
+			debug("colmodel %s: collision is inside the DFF, keeping it\n", modelname);
+			mi = nil;
+		}
+#endif
 		if(mi){
 			if(mi->GetColModel()){
 				LoadCollisionModel(work_buff, *mi->GetColModel(), modelname);
@@ -536,6 +665,11 @@ CFileLoader::FinishLoadClumpFile(RwStream *stream, uint32 id)
 		InitClump(clump);
 		mi = (CClumpModelInfo*)CModelInfo::GetModelInfo(id);
 		mi->SetClump(clump);
+#ifdef SA_VEHICLE_MODELS
+		// the stream is positioned right after the atomics here, which is where
+		// SA models keep their collision model
+		LoadSAVehicleColModel(stream, id);
+#endif
 		return true;
 	}else{
 		printf("FAILED\n");

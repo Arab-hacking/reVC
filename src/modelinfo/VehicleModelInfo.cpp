@@ -195,6 +195,9 @@ CVehicleModelInfo::CVehicleModelInfo(void)
 	}
 	m_numColours = 0;
 	m_animFileIndex = -1;
+#ifdef SA_VEHICLE_MODELS
+	m_bHasEmbeddedColModel = false;
+#endif
 }
 
 void
@@ -315,6 +318,41 @@ FrameHasObject(RwFrame *frame)
 	FrameTreeHasObjectCB(frame, &found);
 	return found;
 }
+
+void
+CVehicleModelInfo::AddGenericWheelModel(RwFrame *frame)
+{
+	RpAtomic *atomic;
+	RwV3d scale;
+
+	if(m_wheelId == -1){
+		RwFrameDestroy(frame);
+		return;
+	}
+	atomic = (RpAtomic*)CModelInfo::GetModelInfo(m_wheelId)->CreateInstance();
+	RwFrameDestroy(RpAtomicGetFrame(atomic));
+	RpAtomicSetFrame(atomic, frame);
+	RpClumpAddAtomic(m_clump, atomic);
+	CVisibilityPlugins::SetAtomicRenderCallback(atomic,
+		CVisibilityPlugins::RenderWheelAtomicCB);
+	scale.x = m_wheelScale;
+	scale.y = m_wheelScale;
+	scale.z = m_wheelScale;
+	RwFrameScale(frame, &scale, rwCOMBINEPRECONCAT);
+}
+
+#ifdef SA_VEHICLE_MODELS
+void
+CVehicleModelInfo::SetEmbeddedColModel(CColModel *col)
+{
+	// the collision that came with the DFF wins over what the .col files gave
+	// this model index before
+	if(m_colModel != col)
+		DeleteCollisionModel();
+	SetColModel(col, true);
+	m_bHasEmbeddedColModel = true;
+}
+#endif
 
 // SA models carry their wheel meshes inside the DFF: there is one "wheel" mesh,
 // attached to the first wheel dummy, which the SA game clones onto the remaining
@@ -828,38 +866,36 @@ CVehicleModelInfo::PreprocessHierarchy(void)
 
 		if(desc[i].flags & VEHICLE_FLAG_ADD_WHEEL){
 #ifdef SA_VEHICLE_MODELS
-			if(gVehicleIsSAHierarchy && FrameHasObject(assoc.frame)){
-				// SA models bring their own wheel meshes; they are already
-				// attached to the correct dummies, so don't replace them with
-				// the generic VC wheel model (or worse, destroy them).
+			if(gVehicleIsSAHierarchy){
+				// SA models bring their own wheel meshes. Just collect the dummies
+				// here; what to do with them is decided after the loop, because we
+				// have to know whether the model has a wheel mesh at all before
+				// falling back to the separate VC wheel model.
 				if(wheelFramesFound < (int32)(sizeof(wheelFrames)/sizeof(wheelFrames[0])))
 					wheelFrames[wheelFramesFound++] = assoc.frame;
 				continue;
 			}
 #endif
-			if(m_wheelId == -1)
-				RwFrameDestroy(assoc.frame);
-			else{
-				RwV3d scale;
-				atomic = (RpAtomic*)CModelInfo::GetModelInfo(m_wheelId)->CreateInstance();
-				RwFrameDestroy(RpAtomicGetFrame(atomic));
-				RpAtomicSetFrame(atomic, assoc.frame);
-				RpClumpAddAtomic(m_clump, atomic);
-				CVisibilityPlugins::SetAtomicRenderCallback(atomic,
-					CVisibilityPlugins::RenderWheelAtomicCB);
-				scale.x = m_wheelScale;
-				scale.y = m_wheelScale;
-				scale.z = m_wheelScale;
-				RwFrameScale(assoc.frame, &scale, rwCOMBINEPRECONCAT);
-			}
+			AddGenericWheelModel(assoc.frame);
 		}
 	}
 
 #ifdef SA_VEHICLE_MODELS
 	// SA vehicles store a single wheel mesh which has to be instantiated on all
-	// wheel dummy frames (in SA the game does that itself)
-	if(gVehicleIsSAHierarchy && wheelFramesFound > 0)
-		CloneSAWheelMeshes(wheelFrames, wheelFramesFound);
+	// wheel dummy frames (in SA the game does that itself). Note that the mesh
+	// often hangs on a child frame of its dummy (usually "wheel" under
+	// "wheel_rf_dummy"), not directly on the dummy.
+	if(wheelFramesFound > 0){
+		bool hasOwnWheels = false;
+		for(i = 0; i < wheelFramesFound; i++)
+			if(FrameHasObject(wheelFrames[i]))
+				hasOwnWheels = true;
+		if(hasOwnWheels)
+			CloneSAWheelMeshes(wheelFrames, wheelFramesFound);
+		else	// no wheel mesh in the model: use the VC wheel model as before
+			for(i = 0; i < wheelFramesFound; i++)
+				AddGenericWheelModel(wheelFrames[i]);
+	}
 #endif
 }
 

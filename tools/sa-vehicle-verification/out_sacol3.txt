@@ -1,0 +1,9 @@
+loaded /home/user/admiral_extracted/admiral.dff (1124026 bytes)
+CollisionModel chunk at 0x11234E, body 852 bytes
+bounds    min (-1.0651 -2.8630 0.0000) max (1.0651 2.5238 1.4297)
+bsphere   center (0.0000 -0.1696 0.7148) r 2.9832
+volumes   20 spheres, 0 boxes, 26 verts, 22 faces
+sphere surfaces > VC range (mapped to SURFACE_CAR_PANEL): 20
+first faces: (0,10,1) (10,0,11) (5,4,7) (4,6,7) (2,3,8)
+
+SACOL3 TEST: all checks passed
