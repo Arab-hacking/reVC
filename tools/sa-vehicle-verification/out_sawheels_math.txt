@@ -1,0 +1,37 @@
+
+BEFORE the fix - SA model with the wheelScale of the replaced VC car
+(wheels scaled and the physics using 0.5*wheelScale instead of the real radius)
+
+  model / wheels                  scale rendered_r     phys_r    rest_z0   tyre_gap
+  admiral.dff (SA, pre-fix)      0.5000     0.1951     0.2500     0.0730    +0.0549
+  admiral.dff (SA, pre-fix)      0.6000     0.2341     0.3000     0.1230    +0.0659
+  admiral.dff (SA, pre-fix)      0.7000     0.2731     0.3500     0.1730    +0.0769
+  admiral.dff (SA, pre-fix)      0.8000     0.3121     0.4000     0.2230    +0.0879
+  admiral.dff (SA, pre-fix)      0.9000     0.3511     0.4500     0.2730    +0.0989
+  admiral.dff (SA, pre-fix)      1.0000     0.3901     0.5000     0.3230    +0.1099
+
+  VC model + VC handling         0.7000     0.3500     0.3500     0.0000    +0.0000   <-- correct reference
+
+AFTER the fix - m_wheelScale = 2*r = 0.7802, wheel meshes rendered unscaled
+
+  handling data (upper/lower/F)    scale rendered_r     phys_r    rest_z0   tyre_gap
+  upper +0.15 lower -0.15 force 0.50:
+    VC model (same data)         0.7000     0.3500     0.3500     0.0000    +0.0000
+    admiral.dff (SA, fixed)      0.7802     0.3901     0.3901     0.2131    +0.0000
+  upper +0.10 lower -0.20 force 0.50:
+    VC model (same data)         0.7000     0.3500     0.3500     0.0500    +0.0000
+    admiral.dff (SA, fixed)      0.7802     0.3901     0.3901     0.2131    +0.0000
+  upper +0.30 lower -0.10 force 0.50:
+    VC model (same data)         0.7000     0.3500     0.3500    -0.1000    +0.0000
+    admiral.dff (SA, fixed)      0.7802     0.3901     0.3901     0.2131    +0.0000
+
+  tyre_gap = rendered tyre bottom above the road at rest
+             (0.0000 = tyres stand on the road)
+  rest_z0  = height of the model origin above the road at rest
+
+  VC rows: the wheels are always glued to the road (the render position is
+           derived from m_fHeightAboveRoad), the *body* moves with the data.
+  SA rows: rest height is tyreRadius - dummyZ = 0.2131, i.e. the model stands
+           on its own wheels, and the rendered radius equals the physics
+           radius for any handling data.
+

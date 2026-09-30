@@ -2803,6 +2803,18 @@ CBike::SetupSuspensionLines(void)
 	CVehicleModelInfo *mi = (CVehicleModelInfo*)CModelInfo::GetModelInfo(GetModelIndex());
 	CColModel *colModel = mi->GetColModel();
 	RwMatrix *mat = RwMatrixCreate();
+	// see CAutomobile::SetupSuspensionLines: the springs carry the weight at
+	// compression 1/(4*forceLevel), so the body rests springLength/(4*forceLevel)
+	// below the fully extended pose. For models that brought their own (SA style)
+	// wheel meshes the model defines where the tyre is, so the line ends at the
+	// model's tyre bottom minus that sag.
+	float suspUpperLimit = pHandling->fSuspensionUpperLimit;
+	float suspSag = 0.0f;
+	if(mi->HasOwnWheelMeshes()){
+		suspSag = (pHandling->fSuspensionUpperLimit - pHandling->fSuspensionLowerLimit)/
+			(4.0f*pHandling->fSuspensionForceLevel);
+		suspUpperLimit = (pHandling->fSuspensionUpperLimit - pHandling->fSuspensionLowerLimit) - suspSag;
+	}
 
 	bool initialized = colModel->lines[0].p0.z != FAKESUSPENSION;
 
@@ -2850,13 +2862,18 @@ CBike::SetupSuspensionLines(void)
 		}
 
 		// uppermost wheel position
-		posn.z += pHandling->fSuspensionUpperLimit;
+		posn.z += suspUpperLimit;
 		colModel->lines[i].p0 = posn;
 
-		// lowermost wheel position
-		posn.z += pHandling->fSuspensionLowerLimit - pHandling->fSuspensionUpperLimit;
-		// lowest point on tyre
-		posn.z -= mi->m_wheelScale*0.5f;
+		if(mi->HasOwnWheelMeshes()){
+			// model's tyre bottom minus the static sag
+			posn.z = colModel->lines[i].p0.z - suspUpperLimit - mi->m_wheelScale*0.5f - suspSag;
+		}else{
+			// lowermost wheel position
+			posn.z += pHandling->fSuspensionLowerLimit - suspUpperLimit;
+			// lowest point on tyre
+			posn.z -= mi->m_wheelScale*0.5f;
+		}
 		colModel->lines[i].p1 = posn;
 
 		// this is length of the spring at rest

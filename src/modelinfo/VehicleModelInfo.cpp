@@ -198,6 +198,7 @@ CVehicleModelInfo::CVehicleModelInfo(void)
 #ifdef SA_VEHICLE_MODELS
 	m_bHasEmbeddedColModel = false;
 #endif
+	m_bSAWheelMesh = false;
 }
 
 void
@@ -405,11 +406,66 @@ WheelDummyFrontRearPos(RwFrame *dummy)
 	return s[0] != '\0' ? s[1] : 0;
 }
 
+// Radius of a wheel mesh around its own origin. An SA wheel is modelled at its
+// real size and centred on the axle: x points along the axle, y and z are the
+// radial directions, so the largest |y|/|z| of the vertices is the tyre radius.
+float
+CVehicleModelInfo::GetWheelMeshRadius(RpAtomic *atomic)
+{
+	RpGeometry *geo;
+	RwV3d *verts;
+	int32 i, numVerts;
+	float radius, v;
+
+	geo = RpAtomicGetGeometry(atomic);
+	if(geo == nil || geo->morphTargets == nil || geo->numMorphTargets <= 0)
+		return 0.0f;
+	verts = geo->morphTargets[0].vertices;
+	numVerts = geo->numVertices;
+	if(verts == nil || numVerts <= 0)
+		return 0.0f;
+
+	radius = 0.0f;
+	for(i = 0; i < numVerts; i++){
+		v = Abs(verts[i].y);
+		if(v > radius) radius = v;
+		v = Abs(verts[i].z);
+		if(v > radius) radius = v;
+	}
+	return radius;
+}
+
 void
 CVehicleModelInfo::CloneSAWheelMeshes(RwFrame **wheelFrames, int32 numWheels)
 {
 	int32 i, j;
 	char pos;
+
+	// The wheel meshes were authored for SA, where the game takes the tyre radius
+	// directly from the mesh. VC instead assumes the wheel model was a unit wheel
+	// scaled by m_wheelScale, i.e. radius = 0.5*m_wheelScale. Keep both views
+	// consistent by deriving m_wheelScale from the mesh: with that every
+	// 0.5*m_wheelScale (suspension line, m_fHeightAboveRoad, m_aWheelPosition,
+	// wheel collision spheres, ProcessWheelRotation, ...) is the real radius and
+	// the tyres of the SA model end up exactly on the road. The mesh itself is
+	// then rendered unscaled (GetWheelRenderScale).
+	for(i = 0; i < numWheels; i++){
+		RwFrame *f = FindWheelMeshFrame(wheelFrames[i]);
+		RpAtomic *srcAtomic;
+		float radius;
+
+		if(f == nil)
+			continue;
+		srcAtomic = (RpAtomic*)GetFirstObject(f);
+		if(srcAtomic == nil)
+			continue;
+		radius = GetWheelMeshRadius(srcAtomic);
+		if(radius > 0.001f){
+			m_wheelScale = 2.0f*radius;
+			m_bSAWheelMesh = true;
+		}
+		break;
+	}
 
 	for(i = 0; i < numWheels; i++){
 		RwFrame *src, *f;

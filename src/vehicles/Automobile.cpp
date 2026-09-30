@@ -2563,6 +2563,11 @@ CAutomobile::PreRender(void)
 
 	CMatrix mat;
 	CVector pos;
+	// VC scales the separate wheel model of the car by m_wheelScale while
+	// rendering. SA models bring their own wheels at their final size, so for
+	// them the wheel meshes must not be scaled at all (m_wheelScale of such a
+	// model is the true wheel diameter, see CloneSAWheelMeshes).
+	float wheelRenderScale = mi->GetWheelRenderScale();
 
 	bool onlyFrontWheels = false;
 	if(IsRealHeli()){
@@ -2628,9 +2633,9 @@ CAutomobile::PreRender(void)
 		}
 	}
 	if(pHandling->Flags & HANDLING_FAT_REARW)
-		mat.Scale(1.15f*mi->m_wheelScale, mi->m_wheelScale, mi->m_wheelScale);
+		mat.Scale(1.15f*wheelRenderScale, wheelRenderScale, wheelRenderScale);
 	else
-		mat.Scale(mi->m_wheelScale);
+		mat.Scale(wheelRenderScale);
 	mat.Translate(pos);
 	mat.UpdateRW();
 
@@ -2669,9 +2674,9 @@ CAutomobile::PreRender(void)
 		}
 	}
 	if(pHandling->Flags & HANDLING_FAT_REARW)
-		mat.Scale(1.15f*mi->m_wheelScale, mi->m_wheelScale, mi->m_wheelScale);
+		mat.Scale(1.15f*wheelRenderScale, wheelRenderScale, wheelRenderScale);
 	else
-		mat.Scale(mi->m_wheelScale);
+		mat.Scale(wheelRenderScale);
 	mat.Translate(pos);
 	mat.UpdateRW();
 
@@ -2702,9 +2707,9 @@ CAutomobile::PreRender(void)
 			}
 		}
 		if(pHandling->Flags & HANDLING_FAT_REARW)
-			mat.Scale(1.15f*mi->m_wheelScale, mi->m_wheelScale, mi->m_wheelScale);
+			mat.Scale(1.15f*wheelRenderScale, wheelRenderScale, wheelRenderScale);
 		else
-			mat.Scale(mi->m_wheelScale);
+			mat.Scale(wheelRenderScale);
 		mat.Translate(pos);
 		mat.UpdateRW();
 	}
@@ -2736,9 +2741,9 @@ CAutomobile::PreRender(void)
 			}
 		}
 		if(pHandling->Flags & HANDLING_FAT_REARW)
-			mat.Scale(1.15f*mi->m_wheelScale, mi->m_wheelScale, mi->m_wheelScale);
+			mat.Scale(1.15f*wheelRenderScale, wheelRenderScale, wheelRenderScale);
 		else
-			mat.Scale(mi->m_wheelScale);
+			mat.Scale(wheelRenderScale);
 		mat.Translate(pos);
 		mat.UpdateRW();
 	}
@@ -2752,7 +2757,7 @@ CAutomobile::PreRender(void)
 			mat.SetRotate(m_aWheelRotation[CARWHEEL_FRONT_RIGHT], 0.0f, m_fSteerAngle+0.3f*Sin(m_aWheelRotation[CARWHEEL_FRONT_RIGHT]));
 		else
 			mat.SetRotate(m_aWheelRotation[CARWHEEL_FRONT_RIGHT], 0.0f, m_fSteerAngle);
-		mat.Scale(mi->m_wheelScale);
+		mat.Scale(wheelRenderScale);
 		mat.Translate(pos);
 		mat.UpdateRW();
 
@@ -2788,7 +2793,7 @@ CAutomobile::PreRender(void)
 		pos.z = m_aWheelPosition[CARWHEEL_FRONT_RIGHT];
 		// no damaged wheels or steering
 		mat.SetRotate(m_aWheelRotation[CARWHEEL_FRONT_RIGHT], 0.0f, 0.0f);
-		mat.Scale(mi->m_wheelScale);
+		mat.Scale(wheelRenderScale);
 		mat.Translate(pos);
 		mat.UpdateRW();
 
@@ -2798,7 +2803,7 @@ CAutomobile::PreRender(void)
 		pos.z = m_aWheelPosition[CARWHEEL_FRONT_LEFT];
 		// no damaged wheels or steering
 		mat.SetRotate(-m_aWheelRotation[CARWHEEL_FRONT_LEFT], 0.0f, PI);
-		mat.Scale(mi->m_wheelScale);
+		mat.Scale(wheelRenderScale);
 		mat.Translate(pos);
 		mat.UpdateRW();
 	}else if(IsRealHeli()){
@@ -2870,9 +2875,9 @@ CAutomobile::PreRender(void)
 			}
 		}
 		if(pHandling->Flags & HANDLING_NARROW_FRONTW)
-			mat.Scale(0.7f*mi->m_wheelScale, mi->m_wheelScale, mi->m_wheelScale);
+			mat.Scale(0.7f*wheelRenderScale, wheelRenderScale, wheelRenderScale);
 		else
-			mat.Scale(mi->m_wheelScale);
+			mat.Scale(wheelRenderScale);
 		mat.Translate(pos);
 		mat.UpdateRW();
 
@@ -2911,9 +2916,9 @@ CAutomobile::PreRender(void)
 			}
 		}
 		if(pHandling->Flags & HANDLING_NARROW_FRONTW)
-			mat.Scale(0.7f*mi->m_wheelScale, mi->m_wheelScale, mi->m_wheelScale);
+			mat.Scale(0.7f*wheelRenderScale, wheelRenderScale, wheelRenderScale);
 		else
-			mat.Scale(mi->m_wheelScale);
+			mat.Scale(wheelRenderScale);
 		mat.Translate(pos);
 		mat.UpdateRW();
 
@@ -5057,6 +5062,26 @@ CAutomobile::SetupSuspensionLines(void)
 	CVector posn;
 	CVehicleModelInfo *mi = (CVehicleModelInfo*)CModelInfo::GetModelInfo(GetModelIndex());
 	CColModel *colModel = mi->GetColModel();
+	// Top of the wheel travel the suspension line starts from, and the sag the
+	// springs have at rest. ApplySpringCollisionAlt presses the car down with
+	// GRAVITY*mass*springForceLevel*compression*bias*2 per wheel, i.e. the springs
+	// carry the weight at compression = 1/(4*forceLevel), so the body rests exactly
+	// springLength/(4*forceLevel) below the fully extended pose - which is also what
+	// the m_fHeightAboveRoad formula below assumes. A VC model brings a separate
+	// unit wheel and the handling data is authored around that (dummy height ==
+	// 0.5*m_wheelScale == tyre radius, lowerLimit == -sag), so the line can be built
+	// from the limits. An SA model brings its own wheels at their true size, so the
+	// model defines where the tyre is: end the line at the tyre bottom of the model
+	// minus the sag, exactly like a VC model whose dummy sits at "tyre bottom +
+	// radius". Then m_fHeightAboveRoad = tyreRadius - dummyZ, i.e. exactly the
+	// height at which the SA model stands on its own wheels.
+	float suspUpperLimit = pHandling->fSuspensionUpperLimit;
+	float suspSag = 0.0f;
+	if(mi->HasOwnWheelMeshes()){
+		suspSag = (pHandling->fSuspensionUpperLimit - pHandling->fSuspensionLowerLimit)/
+			(4.0f*pHandling->fSuspensionForceLevel);
+		suspUpperLimit = (pHandling->fSuspensionUpperLimit - pHandling->fSuspensionLowerLimit) - suspSag;
+	}
 
 	// Each suspension line starts at the uppermost wheel position
 	// and extends down to the lowermost point on the tyre
@@ -5065,13 +5090,18 @@ CAutomobile::SetupSuspensionLines(void)
 		m_aWheelPosition[i] = posn.z;
 
 		// uppermost wheel position
-		posn.z += pHandling->fSuspensionUpperLimit;
+		posn.z += suspUpperLimit;
 		colModel->lines[i].p0 = posn;
 
-		// lowermost wheel position
-		posn.z += pHandling->fSuspensionLowerLimit - pHandling->fSuspensionUpperLimit;
-		// lowest point on tyre
-		posn.z -= mi->m_wheelScale*0.5f;
+		if(mi->HasOwnWheelMeshes()){
+			// model's tyre bottom (dummy z - tyre radius) minus the static sag
+			posn.z = m_aWheelPosition[i] - mi->m_wheelScale*0.5f - suspSag;
+		}else{
+			// lowermost wheel position
+			posn.z += pHandling->fSuspensionLowerLimit - suspUpperLimit;
+			// lowest point on tyre
+			posn.z -= mi->m_wheelScale*0.5f;
+		}
 		colModel->lines[i].p1 = posn;
 
 		// this is length of the spring at rest
