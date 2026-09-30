@@ -1,0 +1,58 @@
+librw platform 0
+
+clump: frames=61 atomics=29
+hierarchy: SA (no _hi parts at all) (SA-style=yes)
+
+-- SetFrameIds (name -> hierarchy id) --
+   wheel_rf_dummy     -> id 1   (wheel_rf_dummy)
+   wheel_rb_dummy     -> id 3   (wheel_rb_dummy)
+   wheel_lf_dummy     -> id 4   (wheel_lf_dummy)
+   wheel_lb_dummy     -> id 6   (wheel_lb_dummy)
+   door_rf_dummy      -> id 11  (door_rf_dummy)
+   door_rr_dummy      -> id 12  (door_rr_dummy)
+   door_lf_dummy      -> id 15  (door_lf_dummy)
+   door_lr_dummy      -> id 16  (door_lr_dummy)
+   bump_front         -> id 7   (bump_front)
+   bump_rear          -> id 18  (bump_rear)
+   bonnet             -> id 8   (bonnet)
+   boot               -> id 17  (boot)
+   windscreen         -> id 19  (windscreen)
+   (only matched names are listed)
+
+-- PreprocessHierarchy --
+   position  ped_frontseat      found (frame destroyed after reading it)
+   position  ped_backseat       found (frame destroyed after reading it)
+   position  headlights         found (frame destroyed after reading it)
+   position  taillights         found (frame destroyed after reading it)
+   position  exhaust            found (frame destroyed after reading it)
+   wheel     wheel_rf_dummy     keeps its own DFF mesh (VC wheel model NOT used)
+   wheel     wheel_rb_dummy     empty -> its mesh is cloned from the wheel dummy below
+   wheel     wheel_lf_dummy     empty -> its mesh is cloned from the wheel dummy below
+   wheel     wheel_lb_dummy     empty -> its mesh is cloned from the wheel dummy below
+   collapse  bump_front_dummy   meshes before=1 after=1
+   collapse  bonnet_dummy       meshes before=1 after=1
+   collapse  door_rf_dummy      meshes before=2 after=2
+   collapse  door_rr_dummy      meshes before=2 after=2
+   collapse  door_lf_dummy      meshes before=2 after=2
+   collapse  door_lr_dummy      meshes before=2 after=2
+   collapse  boot_dummy         meshes before=3 after=3
+   collapse  bump_rear_dummy    meshes before=1 after=1
+   collapse  windscreen_dummy   meshes before=1 after=1
+   collapse  bump_front         meshes before=1 after=1
+   collapse  bump_rear          meshes before=1 after=1
+   collapse  bonnet             meshes before=1 after=1
+   collapse  boot               meshes before=3 after=3
+   collapse  windscreen         meshes before=1 after=1
+
+-- wheel meshes --
+   wheel_rf_dummy     mesh=yes
+   wheel_rb_dummy     mesh=no
+   wheel_lf_dummy     mesh=no
+   wheel_lb_dummy     mesh=no
+   wheels with a mesh: before=1, after SA cloning=4 (cloned 3)
+
+-- render callbacks (per atomic) --
+   vanilla VC rules : 0 of 32 atomics drawn (hi detail), 31 not drawn at all, 0 destroyed as _lo
+   with SA support  : 31 of 32 atomics drawn (hi detail) + 1 very-low-detail
+
+RESULT: PASS

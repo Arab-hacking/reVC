@@ -1,0 +1,256 @@
+librw version 0x36003, platform 0
+NodeName plugin offset = 200, frame id offset = 224
+  tex remapvehicles          raster ok platform=9 fmt=0x8500 16x16 depth=32 levels=5 type=4
+  tex carbottom_C            raster ok platform=9 fmt=0x8500 512x512 depth=32 levels=10 type=4
+  tex radiator               raster ok platform=9 fmt=0x8500 64x64 depth=32 levels=7 type=4
+  tex bmwcs_badge            raster ok platform=9 fmt=0x8500 128x128 depth=32 levels=8 type=4
+  tex vehiclelights128       raster ok platform=9 fmt=0x8500 128x128 depth=32 levels=8 type=4
+  tex bmwm5r_eng             raster ok platform=9 fmt=0x8500 64x64 depth=32 levels=7 type=4
+  tex undercarriage          raster ok platform=9 fmt=0x8500 256x256 depth=32 levels=9 type=4
+  tex bmw_m5f90_badge        raster ok platform=9 fmt=0x8500 256x256 depth=32 levels=9 type=4
+  tex remaptoner             raster ok platform=9 fmt=0x8500 256x256 depth=32 levels=9 type=4
+  tex bmwm5r_int             raster ok platform=9 fmt=0x8500 512x512 depth=32 levels=10 type=4
+  tex v_t_left               raster ok platform=9 fmt=0x8500 64x64 depth=32 levels=7 type=4
+  tex v_t_right              raster ok platform=9 fmt=0x8500 64x64 depth=32 levels=7 type=4
+  tex grille_01              raster ok platform=9 fmt=0x8500 128x128 depth=32 levels=8 type=4
+  tex plate_remap            raster ok platform=9 fmt=0x8500 256x64 depth=32 levels=9 type=4
+  tex wheels                 raster ok platform=9 fmt=0x8500 512x512 depth=32 levels=10 type=4
+TXD ok: 15 textures
+CLUMP ok: frames=61 atomics=29
+MATERIALS: total=111 (VC-primary-magic=17, VC-secondary-magic=1) textured=76 untextured=35 remap-tex=27 matfx=32
+NOTE: reVC m_materials1[] holds 24 entries, m_materials2[] 20
+  frame=body                   tris=2371   verts=2361   flags=0x000077 texCoordSets=0 morph=1 mats=7
+       mat color=(60,255,0,255) tex=remapvehicles
+       matfx effect=2
+       mat color=(25,25,25,255) tex=-
+       mat color=(255,255,255,255) tex=carbottom_C
+       mat color=(255,255,255,255) tex=radiator
+       mat color=(255,255,255,255) tex=bmwcs_badge
+       mat color=(255,60,0,255) tex=vehiclelights128
+       mat color=(255,255,255,255) tex=bmwm5r_eng
+  frame=wipers_stock           tris=574    verts=466    flags=0x0000F3 texCoordSets=0 morph=1 mats=5
+       mat color=(60,255,0,255) tex=remapvehicles
+       matfx effect=2
+       mat color=(13,13,13,255) tex=-
+       mat color=(0,0,0,255) tex=-
+       mat color=(204,204,204,255) tex=undercarriage
+       mat color=(204,204,204,255) tex=bmw_m5f90_badge
+  frame=winds                  tris=86     verts=54     flags=0x000077 texCoordSets=0 morph=1 mats=1
+       mat color=(255,255,255,177) tex=remaptoner
+       matfx effect=2
+  frame=br_steering            tris=1326   verts=1104   flags=0x000077 texCoordSets=0 morph=1 mats=1
+       mat color=(204,204,204,255) tex=bmwm5r_int
+  frame=skirts_stock           tris=132    verts=130    flags=0x000077 texCoordSets=0 morph=1 mats=2
+       mat color=(60,255,0,255) tex=remapvehicles
+       matfx effect=2
+       mat color=(0,0,0,255) tex=-
+  frame=roof_stock             tris=218    verts=221    flags=0x0000F3 texCoordSets=0 morph=1 mats=2
+       mat color=(60,255,0,255) tex=remapvehicles
+       matfx effect=2
+       mat color=(25,25,25,255) tex=-
+  frame=exhaust_stock          tris=440    verts=420    flags=0x000077 texCoordSets=0 morph=1 mats=2
+       mat color=(3,3,3,255) tex=-
+       mat color=(145,154,150,255) tex=-
+       matfx effect=2
+  frame=chassis_vlo            tris=482    verts=644    flags=0x000077 texCoordSets=0 morph=1 mats=6
+       mat color=(60,255,0,255) tex=remapvehicles
+       matfx effect=2
+       mat color=(3,3,3,255) tex=-
+       mat color=(255,60,0,255) tex=vehiclelights128
+       mat color=(0,255,200,255) tex=vehiclelights128
+       mat color=(185,255,0,255) tex=vehiclelights128
+       mat color=(255,175,0,255) tex=vehiclelights128
+  frame=lights_front           tris=908    verts=1260   flags=0x000077 texCoordSets=0 morph=1 mats=7
+       mat color=(25,25,25,255) tex=-
+       mat color=(255,175,0,255) tex=vehiclelights128
+       mat color=(145,154,150,255) tex=-
+       matfx effect=2
+       mat color=(255,255,255,255) tex=v_t_left
+       mat color=(255,245,238,255) tex=vehiclelights128
+       mat color=(0,255,200,255) tex=vehiclelights128
+       mat color=(255,255,255,255) tex=v_t_right
+  frame=lights_rear            tris=447    verts=589    flags=0x000077 texCoordSets=0 morph=1 mats=8
+       mat color=(0,0,0,255) tex=-
+       mat color=(185,255,0,255) tex=vehiclelights128
+       mat color=(0,255,200,255) tex=vehiclelights128
+       mat color=(255,175,0,255) tex=vehiclelights128
+       mat color=(255,245,238,255) tex=vehiclelights128
+       mat color=(255,255,255,255) tex=v_t_left
+       mat color=(255,255,255,255) tex=v_t_right
+       mat color=(255,60,0,255) tex=vehiclelights128
+  frame=bump_front_stock       tris=1784   verts=2097   flags=0x000077 texCoordSets=0 morph=1 mats=6
+       mat color=(60,255,0,255) tex=remapvehicles
+       matfx effect=2
+       mat color=(25,25,25,255) tex=-
+       mat color=(255,255,255,255) tex=carbottom_C
+       mat color=(255,255,255,255) tex=grille_01
+       mat color=(255,255,255,255) tex=bmwcs_badge
+       mat color=(255,255,255,255) tex=plate_remap
+  frame=wheel                  tris=1576   verts=2318   flags=0x0000F2 texCoordSets=0 morph=1 mats=4
+       mat color=(255,255,255,255) tex=wheels
+       mat color=(255,0,175,255) tex=-
+       matfx effect=2
+       mat color=(255,255,255,255) tex=bmwcs_badge
+       mat color=(25,25,25,255) tex=-
+  frame=bump_rear_stock        tris=956    verts=951    flags=0x000077 texCoordSets=0 morph=1 mats=4
+       mat color=(60,255,0,255) tex=remapvehicles
+       matfx effect=2
+       mat color=(25,25,25,255) tex=-
+       mat color=(255,255,255,255) tex=carbottom_C
+       mat color=(255,255,255,255) tex=vehiclelights128
+  frame=door_lf_stock          tris=1100   verts=1152   flags=0x000077 texCoordSets=0 morph=1 mats=5
+       mat color=(60,255,0,255) tex=remapvehicles
+       matfx effect=2
+       mat color=(25,25,25,255) tex=-
+       mat color=(255,255,255,255) tex=v_t_left
+       mat color=(145,154,150,255) tex=-
+       matfx effect=2
+       mat color=(204,204,204,255) tex=bmwm5r_int
+  frame=door_rf_stock          tris=1098   verts=1158   flags=0x000077 texCoordSets=0 morph=1 mats=5
+       mat color=(60,255,0,255) tex=remapvehicles
+       matfx effect=2
+       mat color=(25,25,25,255) tex=-
+       mat color=(255,255,255,255) tex=v_t_right
+       mat color=(145,154,150,255) tex=-
+       matfx effect=2
+       mat color=(204,204,204,255) tex=bmwm5r_int
+  frame=door_lf_gls            tris=12     verts=13     flags=0x000077 texCoordSets=0 morph=1 mats=6
+       mat color=(60,255,0,255) tex=remapvehicles
+       matfx effect=2
+       mat color=(25,25,25,255) tex=-
+       mat color=(0,0,0,255) tex=-
+       mat color=(255,255,255,255) tex=v_t_left
+       mat color=(145,154,150,255) tex=-
+       matfx effect=2
+       mat color=(255,255,255,177) tex=remaptoner
+       matfx effect=2
+  frame=door_rf_gls            tris=12     verts=13     flags=0x000077 texCoordSets=0 morph=1 mats=6
+       mat color=(60,255,0,255) tex=remapvehicles
+       matfx effect=2
+       mat color=(25,25,25,255) tex=-
+       mat color=(0,0,0,255) tex=-
+       mat color=(255,255,255,255) tex=v_t_left
+       mat color=(145,154,150,255) tex=-
+       matfx effect=2
+       mat color=(255,255,255,177) tex=remaptoner
+       matfx effect=2
+  frame=door_lr_stock          tris=767    verts=821    flags=0x000077 texCoordSets=0 morph=1 mats=4
+       mat color=(60,255,0,255) tex=remapvehicles
+       matfx effect=2
+       mat color=(25,25,25,255) tex=-
+       mat color=(255,255,255,177) tex=remaptoner
+       matfx effect=2
+       mat color=(204,204,204,255) tex=bmwm5r_int
+  frame=door_rr_stock          tris=767    verts=821    flags=0x000077 texCoordSets=0 morph=1 mats=4
+       mat color=(60,255,0,255) tex=remapvehicles
+       matfx effect=2
+       mat color=(25,25,25,255) tex=-
+       mat color=(255,255,255,177) tex=remaptoner
+       matfx effect=2
+       mat color=(204,204,204,255) tex=bmwm5r_int
+  frame=door_lr_gls            tris=17     verts=17     flags=0x000077 texCoordSets=0 morph=1 mats=3
+       mat color=(60,255,0,255) tex=remapvehicles
+       matfx effect=2
+       mat color=(25,25,25,255) tex=-
+       mat color=(255,255,255,177) tex=remaptoner
+       matfx effect=2
+  frame=door_rr_gls            tris=17     verts=17     flags=0x000077 texCoordSets=0 morph=1 mats=3
+       mat color=(60,255,0,255) tex=remapvehicles
+       matfx effect=2
+       mat color=(25,25,25,255) tex=-
+       mat color=(255,255,255,177) tex=remaptoner
+       matfx effect=2
+  frame=bonnet_stock           tris=422    verts=300    flags=0x000077 texCoordSets=0 morph=1 mats=3
+       mat color=(60,255,0,255) tex=remapvehicles
+       matfx effect=2
+       mat color=(255,255,255,255) tex=carbottom_C
+       mat color=(255,255,255,255) tex=bmwcs_badge
+  frame=boot_stock             tris=515    verts=535    flags=0x000077 texCoordSets=0 morph=1 mats=4
+       mat color=(60,255,0,255) tex=remapvehicles
+       matfx effect=2
+       mat color=(3,3,3,255) tex=-
+       mat color=(255,255,255,255) tex=bmwcs_badge
+       mat color=(255,255,255,255) tex=plate_remap
+  frame=windscreen_stock       tris=50     verts=36     flags=0x000077 texCoordSets=0 morph=1 mats=1
+       mat color=(255,255,255,177) tex=remaptoner
+       matfx effect=2
+  frame=lights_front           tris=144    verts=94     flags=0x000077 texCoordSets=0 morph=1 mats=1
+       mat color=(8,8,8,137) tex=-
+  frame=lights_rear            tris=160    verts=198    flags=0x000077 texCoordSets=0 morph=1 mats=1
+       mat color=(64,0,0,147) tex=-
+  frame=boot_stock             tris=218    verts=342    flags=0x0000F3 texCoordSets=0 morph=1 mats=6
+       mat color=(3,3,3,255) tex=-
+       mat color=(255,175,0,255) tex=vehiclelights128
+       mat color=(0,255,200,255) tex=vehiclelights128
+       mat color=(255,245,238,255) tex=vehiclelights128
+       mat color=(255,255,255,255) tex=v_t_left
+       mat color=(255,255,255,255) tex=v_t_right
+  frame=boot_stock             tris=90     verts=130    flags=0x0000F3 texCoordSets=0 morph=1 mats=2
+       mat color=(8,8,8,137) tex=-
+       mat color=(64,0,0,147) tex=-
+  frame=interior               tris=4215   verts=3826   flags=0x000076 texCoordSets=0 morph=1 mats=2
+       mat color=(204,204,204,255) tex=bmwm5r_int
+       mat color=(255,60,0,255) tex=vehiclelights128
+-- hierarchy --
+ frame id=0   glendale
+    frame id=0   exhaust
+    frame id=0   engine
+    frame id=0   exhaust_ex1
+    frame id=0   petrolcap
+    frame id=0   ped_arm
+    frame id=0   ped_backseat
+    frame id=0   ped_frontseat
+    frame id=0   turnlights_rear
+    frame id=0   taillights
+    frame id=0   turnlights_front
+    frame id=0   chassis_dummy
+       frame id=0   chassis_vlo
+       frame id=0   exhaust_stock
+       frame id=0   roof_stock
+       frame id=0   skirts_stock
+       frame id=0   winds
+       frame id=0   windscreen
+          frame id=0   windscreen_stock
+       frame id=0   bonnet
+          frame id=0   bonnet_stock
+       frame id=0   door_lr_dummy
+          frame id=0   door_lr_stock
+             frame id=0   door_lr_gls
+       frame id=0   door_rr_dummy
+          frame id=0   door_rr_gls
+          frame id=0   door_rr_stock
+       frame id=0   door_lf_dummy
+          frame id=0   door_lf_stock
+             frame id=0   door_lf_gls
+       frame id=0   door_rf_dummy
+          frame id=0   door_rf_stock
+             frame id=0   door_rf_gls
+       frame id=0   bump_rear
+          frame id=0   bump_rear_stock
+       frame id=0   bump_front
+          frame id=0   bump_front_stock
+       frame id=0   wipers_stock
+       frame id=0   boot
+          frame id=0   boot_stock
+             frame id=0   boot_stock
+             frame id=0   boot_stock
+       frame id=0   body
+          frame id=0   ug_nitro
+          frame id=0   lights_rear
+             frame id=0   lights_rear
+          frame id=0   lights_front
+             frame id=0   lights_front
+          frame id=0   migs_lights
+          frame id=0   interior
+    frame id=0   br_steering
+       frame id=0   br_steering
+          frame id=0   LHandPos
+          frame id=0   RHandPos
+    frame id=0   headlights
+    frame id=0   wheels
+       frame id=0   wheel_lf_dummy
+       frame id=0   wheel_lb_dummy
+       frame id=0   wheel_rb_dummy
+       frame id=0   wheel_rf_dummy
+          frame id=0   wheel
+RESULT: PASS (atomics=58, errors=0)
