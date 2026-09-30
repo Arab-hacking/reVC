@@ -1,0 +1,44 @@
+== admiral_extracted/admiral.dff: raw 1124026 bytes, sector-padded 1124352 bytes (cdSize=549 sectors) ==
+-- PASS 1 (StartLoad...) --
+   . DFF: clump chunk version=0x36003 structSize=12
+   . DFF: numAtomics=29 numLights=0 numCameras=0
+   . DFF: framelist version=0x36003
+   . DFF: frames=61
+   . GL1: numGeoms=29 -> reading first 14 in this pass (VC splits 50/50)
+   . DFF: OK, part-1 stream position = 686206
+-- P1 result: SUCCESS  (failures so far: 0) --
+-- PASS 2 (FinishLoad...) over a fresh read of the same entry --
+   . DFF: part2 enters at pos 0, saved pos 686206 -> skip 686206
+   . GL2: reading remaining geometries 14..28
+   . DFF: OK, atomics added = 29
+   . atomic 0: frame='body' tris=2371 verts=2361
+   . atomic 1: frame='wipers_stock' tris=574 verts=466
+   . atomic 2: frame='winds' tris=86 verts=54
+   . atomic 3: frame='br_steering' tris=1326 verts=1104
+   . atomic 4: frame='skirts_stock' tris=132 verts=130
+   . atomic 5: frame='roof_stock' tris=218 verts=221
+   . atomic 6: frame='exhaust_stock' tris=440 verts=420
+   . atomic 7: frame='chassis_vlo' tris=482 verts=644
+   . atomic 8: frame='lights_front' tris=908 verts=1260
+   . atomic 9: frame='lights_rear' tris=447 verts=589
+   . atomic 10: frame='bump_front_stock' tris=1784 verts=2097
+   . atomic 11: frame='wheel' tris=1576 verts=2318
+   . atomic 12: frame='bump_rear_stock' tris=956 verts=951
+   . atomic 13: frame='door_lf_stock' tris=1100 verts=1152
+   . atomic 14: frame='door_rf_stock' tris=1098 verts=1158
+   . atomic 15: frame='door_lf_gls' tris=12 verts=13
+   . atomic 16: frame='door_rf_gls' tris=12 verts=13
+   . atomic 17: frame='door_lr_stock' tris=767 verts=821
+   . atomic 18: frame='door_rr_stock' tris=767 verts=821
+   . atomic 19: frame='door_lr_gls' tris=17 verts=17
+   . atomic 20: frame='door_rr_gls' tris=17 verts=17
+   . atomic 21: frame='bonnet_stock' tris=422 verts=300
+   . atomic 22: frame='boot_stock' tris=515 verts=535
+   . atomic 23: frame='windscreen_stock' tris=50 verts=36
+   . atomic 24: frame='lights_front' tris=144 verts=94
+   . atomic 25: frame='lights_rear' tris=160 verts=198
+   . atomic 26: frame='boot_stock' tris=218 verts=342
+   . atomic 27: frame='boot_stock' tris=90 verts=130
+   . atomic 28: frame='interior' tris=4215 verts=3826
+-- P2 result: SUCCESS, atomics=29 --
+== total assert-equivalent failures: 0 ==

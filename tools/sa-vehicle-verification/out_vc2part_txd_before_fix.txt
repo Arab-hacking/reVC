@@ -1,0 +1,8 @@
+== admiral_extracted/admiral.txd: raw 5683532 bytes, sector-padded 5685248 bytes (cdSize=2776 sectors) ==
+-- PASS 1 (StartLoad...) --          [СТАРЫЙ код reVC, до фикса]
+   . TXD: numTextures=131087 -> reading first 65543 now
+   . TEX: no TEXTURENATIVE chunk
+   . TXD: texture read failed in part1
+-- P1 result: FAILURE  (failures so far: 0) --
+
+=> the game would call RemoveModel+ReRequestModel (retry) and re-request this model.

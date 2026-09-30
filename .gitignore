@@ -364,6 +364,3 @@ codewarrior/Release/
 codewarrior/Debug/
 
 src/extras/GitSHA1.cpp
-!src/extras/shaders/obj/
-!src/extras/shaders/obj/**
-!src/extras/shaders/obj/*.obj

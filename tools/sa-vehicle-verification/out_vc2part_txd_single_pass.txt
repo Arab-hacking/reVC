@@ -1,0 +1,45 @@
+# однопроходный путь (маленькие TXD, <=200 секторов): LoadTxd -> RwTexDictionaryGtaStreamRead
+== admiral_extracted/admiral.txd: raw 5683532 bytes, sector-padded 5685248 bytes (cdSize=2776 sectors) ==
+-- PASS 1 (StartLoad...) --
+-- SINGLE-PASS (LoadTxd, small txds) --
+   . TXD (single pass): numTextures=15 deviceId=2
+   . TXD: OK single-pass
+   . texture 0: 'remapvehicles' 16x16
+   . texture 1: 'carbottom_C' 512x512
+   . texture 2: 'radiator' 64x64
+   . texture 3: 'bmwcs_badge' 128x128
+   . texture 4: 'vehiclelights128' 128x128
+   . texture 5: 'bmwm5r_eng' 64x64
+   . texture 6: 'undercarriage' 256x256
+   . texture 7: 'bmw_m5f90_badge' 256x256
+   . texture 8: 'remaptoner' 256x256
+   . texture 9: 'bmwm5r_int' 512x512
+   . texture 10: 'v_t_left' 64x64
+   . texture 11: 'v_t_right' 64x64
+   . texture 12: 'grille_01' 128x128
+   . texture 13: 'plate_remap' 256x64
+   . texture 14: 'wheels' 512x512
+-- result: SUCCESS, textures=15, failures=0 --
+
+# контроль: тот же файл с deviceId=0 (VC-стиль, как ванильные TXD)
+== /tmp/vcstyle.txd: raw 5683532 bytes, sector-padded 5685248 bytes (cdSize=2776 sectors) ==
+-- PASS 1 (StartLoad...) --
+-- SINGLE-PASS (LoadTxd, small txds) --
+   . TXD (single pass): numTextures=15 deviceId=0
+   . TXD: OK single-pass
+   . texture 0: 'remapvehicles' 16x16
+   . texture 1: 'carbottom_C' 512x512
+   . texture 2: 'radiator' 64x64
+   . texture 3: 'bmwcs_badge' 128x128
+   . texture 4: 'vehiclelights128' 128x128
+   . texture 5: 'bmwm5r_eng' 64x64
+   . texture 6: 'undercarriage' 256x256
+   . texture 7: 'bmw_m5f90_badge' 256x256
+   . texture 8: 'remaptoner' 256x256
+   . texture 9: 'bmwm5r_int' 512x512
+   . texture 10: 'v_t_left' 64x64
+   . texture 11: 'v_t_right' 64x64
+   . texture 12: 'grille_01' 128x128
+   . texture 13: 'plate_remap' 256x64
+   . texture 14: 'wheels' 512x512
+-- result: SUCCESS, textures=15, failures=0 --

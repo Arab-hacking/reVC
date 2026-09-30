@@ -300,6 +300,11 @@ SA-ассеты читаются штатным librw) либо дописать
 | Генерация проекта premake (`premake5Linux vs2019 --with-librw --no-full-paths`) | `build/reVC.sln`, `reVC.vcxproj`, `librw.vcxproj` — без ошибок |
 | Include-и для конфигурации Windows D3D9 (`win-amd64-librw_d3d9-oal`) | 3571 директива `#include "…"`, **0 неразрешённых** (8 — платформенные ветки Android/PS2/Miles/EAX и системные заголовки) |
 | Полнота архива vs дерево апстрима (`miami`) | все файлы на месте (0 пропущенных), 4 сабмодуля, 25 шейдерных `.inc` + 11 `.cso`, 6 Windows-DLL |
+| Двухчастная загрузка SA-DFF (`vc2part`) | 14 + 15 геометрий, 29 атомиков, 0 срабатываний `assert` |
+| Двухчастная загрузка SA-TXD до фикса (`vc2part`) | `numTextures=131087` → срыв чтения (FAILURE) — причина зависания (см. §10) |
+| Двухчастная загрузка SA-TXD после фикса (`vc2part`) | 7 + 8 = 15 текстур, `deviceId=2`, 0 ошибок |
+| Регресс VC-формата TXD (`deviceId=0`) после фикса | 15/15 текстур, поведение не изменилось |
+| Полная пересборка после фикса (Linux, Release, GL3/GLFW) | успешно, 315 целей, `src/reVC` собран |
 
 Проверить включения у себя: `python3 tools/sa-vehicle-verification/check_includes.py`
 (или с include-папками из готового MSBuild-проекта:
@@ -308,5 +313,125 @@ SA-ассеты читаются штатным librw) либо дописать
 Содержимое `tools/sa-vehicle-verification/`:
 * `satest.cpp` — чтение DFF/TXD через librw (что именно лежит в файле);
 * `savtest.cpp` — имитация `SetFrameIds` + `PreprocessHierarchy` + подсчёт рисуемых мешей;
+* `vc2part.cpp` — прогон **двухчастных** ридеров reVC (`StartLoad…`/`FinishLoad…`) по реальному файлу;
 * `out_sa_asset.txt`, `out_sa_vehicle_logic.txt` — сохранённые выводы обоих прогонов;
+* `out_vc2part_txd_before_fix.txt`, `out_vc2part_txd_after_fix.txt`, `out_vc2part_dff.txt` — см. §10;
 * `check_includes.py` — проверка полноты исходников (все локальные `#include`).
+
+---
+
+## 9. Готовый архив `custom.img` + `custom.dir` (для проверки в игре)
+
+Собран упаковщиком `tools/imgtool.py` из тестовых `admiral.dff` (1 124 026 Б) и `admiral.txd`
+(5 683 532 Б). Формат — «IMG v1» (как в ванильной GTA III/VC):
+
+```
+.diraname: записи по 32 байта: uint32 offset(секторы 2048), uint32 size(секторы), char name[24]
+custom.img:     3 325 секторов = 6 809 600 байт
+    #0  ADMIRAL.DFF  offset=0    size=549   (549*2048 = 1 124 352 Б)
+    #1  ADMIRAL.TXD  offset=549  size=2776  (2776*2048 = 5 685 248 Б)
+```
+
+Совместимость с движком проверена по коду: `CDirectory::DirectoryInfo` = 32 байта,
+`direntry.offset |= (imgId<<24)` при разборе и `_GET_OFFSET(a) = a & 0xFFFFFF`,
+`_GET_INDEX(a) = a >> 24` при чтении (`src/core/CdStream.h`), LBA = `offset*2048`
+(`lseek(..., nSectorOffset*CDSTREAM_SECTOR_SIZE)`), размер читается как `size*2048`.
+
+### Как подключить
+
+В `data/gta_vc.dat` (данные оригинальной игры, файл грузится последним) добавить строку:
+
+```
+CDIMAGE MODELS\CUSTOM.IMG
+```
+
+Порядок обработки образов: `CGame::Initialise` сначала добавляет `MODELS\GTA3.IMG`
+(индекс 0), затем разбирает `DATA\DEFAULT.DAT`, потом `DATA\GTA_VC.DAT`. В
+`CStreaming::LoadCdDirectory` образы обходятся **от последнего к первому**, а повторная
+запись (`admiral.dff` уже есть в `gta3.img`) игнорируется с сообщением
+«appears more than once». Значит: образ, добавленный строкой `CDIMAGE` (индекс ≥ 1),
+**перекрывает** оригинальные файлы из `gta3.img`. Чтобы модель подхватилась, больше ничего
+менять не нужно — `admiral` уже есть в `default.ide`, а `.txd` слот создаётся автоматически.
+
+### Инструмент
+
+```
+python3 tools/imgtool.py pack   MODELS\CUSTOM.IMG файл1 файл2 ...   # собрать
+python3 tools/imgtool.py list   MODELS\CUSTOM.IMG                  # таблица записей
+python3 tools/imgtool.py unpack MODELS\CUSTOM.IMG папка            # распаковать
+python3 tools/imgtool.py verify MODELS\CUSTOM.IMG файл1 файл2 ...   # сверить с оригиналами
+```
+
+Проверка этого архива: `list` — 2 записи, ошибок нет; `verify` — sha1 обоих файлов
+совпадают с оригиналами; распакованные из `.img` файлы (путь «как в игре») дают тот же
+результат в `tools/sa-vehicle-verification/satest`, что и исходные, `errors=0`.
+
+---
+
+## 10. Исправление: зависание на экране «Vice Beach» (заголовок TXD)
+
+**Симптом.** После установки нашего SA-`admiral` через `custom.img` игра зависает (без
+падения) на экране с надписью «Vice Beach» — там, где должен начаться первый ролик с
+Томми на Admiral. Ванильные модели грузятся нормально.
+
+**Причина.** Модели транспорта и большие TXD в reVC читаются **в два приёма**
+(`StartLoadClumpFile`/`StartLoadTxd` → `FinishLoadClumpFile`/`FinishLoadTxd`), и заголовок
+TXD при этом читался «ванильным» способом — как один `int32`:
+
+```c
+// было, src/rw/TexRead.cpp (и в RwTexDictionaryGtaStreamRead, и в ...StreamRead1)
+if(RwStreamRead(stream, &numTextures, size) != size)   // size == 4
+    return nil;
+```
+
+На самом деле поле — это **два `int16`**: `{ int16 numTextures; int16 deviceId; }`.
+У ванильных VC-TXD `deviceId == 0`, поэтому `int32` случайно совпадал с числом текстур.
+У SA-TXD `deviceId == 2` (D3D9), и старшее слово попадало в счётчик:
+
+```
+admiral.txd, байты заголовка: 0f 00 02 00
+  int16 numTextures = 15, int16 deviceId = 2
+  старый код читал int32 -> 131087  (0x0002000F)
+```
+
+Дальше `RwTexDictionaryGtaStreamRead1` делил это пополам (65543) и пытался прочитать
+десятки тысяч текстур, пока чтение не срывалось → `StartLoadTxd` возвращал `false` → в
+`CStreaming::ConvertBufferToObject` срабатывал путь ошибки:
+
+```c
+RemoveModel(streamId);
+ReRequestModel(streamId);      // запрос добавляется снова
+```
+
+Так как модель машины **не грузится без TXD** (`ConvertBufferToObject` требует
+`GetSlot(txdSlot)->texDict != nil`), запрос на Admiral и его TXD повторялся каждый кадр:
+игра каждый кадр заново читала 5.7 МБ TXD и 1.1 МБ DFF с диска и стояла на месте — внешне
+это выглядит как зависание на экране ролика.
+
+**Проверка (до/после).** `tools/vc2part` — харнесс, который прогоняет *точно те же*
+двухчастные ридеры reVC по реальному файлу (вход выровнен по 2048-байтным секторам, как
+запись в IMG):
+
+```
+out_vc2part_txd_before_fix.txt   numTextures=131087 -> чтение 65543 -> FAILURE
+out_vc2part_txd_after_fix.txt    numTextures=15 deviceId=2 -> 7 + 8 = 15 текстур -> SUCCESS
+out_vc2part_txd_single_pass.txt  однопроходный путь (маленькие TXD): 15/15 текстур, 0 ошибок
+out_vc2part_dff.txt              DFF: part1 = 14 геометрий, part2 = остальные 15 + 29 атомиков -> SUCCESS
+```
+
+DFF-путь двухчастной загрузки SA-модель проходит без изменений (все 29 атомиков,
+ни одного срабатывания `assert`), ломается именно TXD.
+
+**Что изменено.** Только `src/rw/TexRead.cpp`:
+
+* добавлен `ReadTxdNumTextures()` — читает `int16 numTextures` + `int16 deviceId`
+  (и пропускает хвост чанка, если структура больше 4 байт);
+* используется и в однопроходном `RwTexDictionaryGtaStreamRead`, и в двухчастном
+  `RwTexDictionaryGtaStreamRead1` (вместо `assert(size == 4)` — `assert(size >= 4)`).
+
+Поведение для ванильных VC-TXD не меняется: при `deviceId == 0` результат совпадает со
+старым (проверено копией `admiral.txd` с `deviceId = 0` — 15/15 текстур, 0 ошибок).
+
+**Что сделать у себя.** Пересобрать проект (`premake5 vs2019` → Build) или взять
+обновлённый `reVC.zip`. Проверять так: игра должна доиграть ролик с Admiral; в консоли
+`reVC` пропадут повторяющиеся сообщения о загрузке `ADMIRAL.DFF`/`ADMIRAL.TXD`.
