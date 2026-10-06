@@ -9,6 +9,9 @@
 #include <map>
 #include <algorithm>
 #include <functional>
+#include <stdio.h>		// snprintf
+#include <stdlib.h>		// getenv
+#include <ctype.h>		// tolower
 
 #include "CustomZip.h"
 #include "CustomCol.h"
@@ -91,15 +94,25 @@ Extension(const std::string &path)
 	return dot == std::string::npos ? std::string() : ToLower(base.substr(dot+1));
 }
 
-#ifndef _WIN32
+// mtime is only ever compared with another archive's, so any unit works as
+// long as one platform stays consistent with itself
 static uint64
 FileTime(const char *path)
 {
+#ifdef _WIN32
+	WIN32_FILE_ATTRIBUTE_DATA fa;
+	if(!GetFileAttributesExA(path, GetFileExInfoStandard, &fa))
+		return 0;
+	ULARGE_INTEGER t;
+	t.LowPart = fa.ftLastWriteTime.dwLowDateTime;
+	t.HighPart = fa.ftLastWriteTime.dwHighDateTime;
+	return (uint64)t.QuadPart;
+#else
 	struct stat st;
 	if(stat(path, &st) != 0) return 0;
 	return (uint64)st.st_mtime;
-}
 #endif
+}
 
 // Enumerates one directory: files and subdirectories (full paths).
 static bool
@@ -229,11 +242,7 @@ ScanFolder(const std::string &folder, int depth, int &nZip, int &nMod, int &nBtx
 	for(size_t i = 0; i < files.size(); i++){
 		if(Extension(files[i]) != "zip")
 			continue;
-#ifdef _WIN32
-		uint64 mtime = 0;
-#else
 		uint64 mtime = FileTime(files[i].c_str());
-#endif
 		IndexArchive(files[i], mtime, nMod, nBtx, nCls);
 		nZip++;
 	}

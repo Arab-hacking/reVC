@@ -468,6 +468,9 @@ project "reVC"
 	files { addSrcFiles("src/vehicles") }
 	files { addSrcFiles("src/weapons") }
 	files { addSrcFiles("src/extras") }
+	files { addSrcFiles("src/extras/custom") }
+	files { addSrcFiles("src/extras/custom/br") }
+	files { addSrcFiles("src/extras/custom/br/third_party") }
 	if(not _OPTIONS["no-git-hash"]) then
 		files { "src/extras/GitSHA1.cpp" } -- this won't be in repo in first build
 	else
@@ -497,6 +500,8 @@ project "reVC"
 	includedirs { "src/vehicles" }
 	includedirs { "src/weapons" }
 	includedirs { "src/extras" }
+	includedirs { "src/extras/custom" }
+	includedirs { "src/extras/custom/br" }
 
 	filter "action:xcode4"
 		externalincludedirs { "src/audio/eax", "src/fakerw", Librw }

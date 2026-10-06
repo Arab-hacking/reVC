@@ -214,6 +214,9 @@ src/core/Streaming.cpp   приоритет в GetCdPosnAndSize, перехва�
                          LoadCustomFile
 src/core/FileLoader.cpp  приоритет для TEXDICTION / COLFILE / HIERFILE
 src/core/Game.cpp        Initialise / FinalShutdown (скан архива, статистика в лог)
+premake5.lua             src/extras/custom (+ br, third_party): файлы проекта и
+                         includedirs — иначе Windows-сборка (premake/MSBuild) не
+                         видит CustomModels.h и не компилирует сам модуль
 gamefiles/custom/README.txt  пустая папка-подсказка для сборок
 ```
 
