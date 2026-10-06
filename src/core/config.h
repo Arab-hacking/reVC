@@ -46,8 +46,8 @@ enum Config {
 	NUMCOLMODELS = 4400,
 	NUMCUTSCENEOBJECTS = 50,	// not a pool in VC
 
-	NUMANIMBLOCKS = 35,
-	NUMANIMATIONS = 450,
+	NUMANIMBLOCKS = 180,   // San Andreas sizes: SA dictionaries (ped.ifp and the
+	NUMANIMATIONS = 2500,  // cutscene/special ones) do not fit into VC's 35/450
 
 	NUMTEMPOBJECTS = 40,
 

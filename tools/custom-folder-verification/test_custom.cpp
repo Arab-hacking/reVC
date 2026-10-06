@@ -17,6 +17,7 @@
 #include "CustomCol.h"
 #include "brformats.h"
 #include "brtex.h"
+#include "brreserved.h"
 
 #define STB_DXT_IMPLEMENTATION
 #include "stb_dxt.h"
@@ -281,6 +282,63 @@ TestCollision(void)
 	check(customcol::ToGameFormat(junk, st).empty(), "junk is not turned into a collision file");
 }
 
+// The game reads a .mod natively now: one buffer, decrypt + repair in place,
+// no separate .dff. The wrapper brconv still uses has to produce the same
+// bytes, and the guards/animation headers the loader relies on are checked.
+static void
+TestNativeMod(const std::vector<uint8> &mod)
+{
+	if(!mod.empty()){
+		br::RwFixStats st1, st2;
+		std::string e1, e2;
+		std::vector<uint8> viaWrapper = br::convertModToDff(mod, st1, e1);
+		std::vector<uint8> inPlace = mod;
+		bool ok = br::understandModInplace(inPlace, st2, e2);
+		check(ok && !viaWrapper.empty(), "the .mod is understood in place");
+		check(ok && viaWrapper.size() == inPlace.size() &&
+		      memcmp(viaWrapper.data(), inPlace.data(), inPlace.size()) == 0,
+		      "in-place read and the wrapper give the same bytes");
+		check(st1.versionsChanged == st2.versionsChanged &&
+		      st1.texNamesFixed == st2.texNamesFixed &&
+		      st1.schemaFixes == st2.schemaFixes &&
+		      st1.binmeshDropped == st2.binmeshDropped,
+		      "in-place read reports the same repairs");
+	}else{
+		check(false, "the .mod is understood in place");
+	}
+
+	// the player.mod stub is never taken from an archive
+	check(brres::isReserved("player"), "player is a reserved name");
+	check(!brres::isReserved("glendale"), "glendale is not reserved");
+
+	// BR .ani: the header fields go back to where SA (and this game) read
+	// them - size at +4, block name at +8, numAnims at +32
+	std::vector<uint8> ani(0x28 + 64, 0);
+	const char magic[4] = { 'A', 'N', 'P', '3' };
+	memcpy(ani.data(), magic, 4);
+	// BR names the block with at least four printable characters (the header
+	// detector requires it); "ped" would be rejected, real files do not use it
+	memcpy(&ani[4], "walk", 4);                                 // block name start
+	uint32 numAnims = 1;
+	memcpy(&ani[28], &numAnims, 4);                              // carried with the name
+	uint32 brSize = 40;
+	memcpy(&ani[0x20], &brSize, 4);                              // size at +0x20
+	uint32 garbage = 0xDEADBEEF;
+	memcpy(&ani[0x24], &garbage, 4);
+	check(br::isBrAni(ani.data(), ani.size()), "a BR .ani is recognised");
+	check(br::convertAniToIfp(ani), "the .ani header is reordered");
+	check(memcmp(&ani[4], &brSize, 4) == 0, ".ani: size moved to +4");
+	check(memcmp(&ani[8], "walk", 4) == 0, ".ani: block name at +8");
+	uint32 got = 0;
+	memcpy(&got, &ani[32], 4);
+	check(got == 1, ".ani: numAnims at +32");
+	{
+		std::vector<uint8> zeros(64, 0);
+		check(memcmp(&ani[0x28], zeros.data(), 64) == 0, ".ani: body untouched");
+	}
+	check(!br::isBrAni(ani.data(), ani.size()), "the reordered .ani is not a BR header anymore");
+}
+
 int
 main(int argc, char **argv)
 {
@@ -386,6 +444,9 @@ main(int argc, char **argv)
 
 	// ---- collision --------------------------------------------------------
 	TestCollision();
+
+	// ---- native .mod reading, guards, .ani headers -----------------------
+	TestNativeMod(mod);
 
 	printf("\n%s (%d failure(s))\n", failures ? "FAILED" : "all tests passed", failures);
 	return failures != 0;

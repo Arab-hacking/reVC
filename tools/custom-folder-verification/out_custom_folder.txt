@@ -53,5 +53,17 @@ ok  : CLST: vertex (0, -2, 0.5)
 ok  : CLST: face
 ok  : CLST: bounding volumes
 ok  : junk is not turned into a collision file
+ok  : the .mod is understood in place
+ok  : in-place read and the wrapper give the same bytes
+ok  : in-place read reports the same repairs
+ok  : player is a reserved name
+ok  : glendale is not reserved
+ok  : a BR .ani is recognised
+ok  : the .ani header is reordered
+ok  : .ani: size moved to +4
+ok  : .ani: block name at +8
+ok  : .ani: numAnims at +32
+ok  : .ani: body untouched
+ok  : the reordered .ani is not a BR header anymore
 
 all tests passed (0 failure(s))

@@ -12,6 +12,10 @@
 #include "AnimManager.h"
 #include "Streaming.h"
 
+#ifdef CUSTOM_MODELS
+#include "CustomModels.h"
+#endif
+
 CAnimBlock CAnimManager::ms_aAnimBlocks[NUMANIMBLOCKS];
 CAnimBlendHierarchy CAnimManager::ms_aAnimations[NUMANIMATIONS];
 int32 CAnimManager::ms_numAnimBlocks;
@@ -1268,11 +1272,27 @@ CAnimManager::CreateAnimAssocGroups(void)
 void
 CAnimManager::LoadAnimFile(const char *filename)
 {
-	RwStream *stream;
-	stream = RwStreamOpen(rwSTREAMFILENAME, rwSTREAMREAD, filename);
+	RwStream *stream = nil;
+	bool fromCustom = false;
+#ifdef CUSTOM_MODELS
+	// the custom folder wins over the game's own animation file: the entry is
+	// read into memory and the very same buffer is parsed - no temp files
+	static std::vector<uint8> customBuf;
+	customBuf.clear();
+	if(CCustomModels::LoadAnimFileFromCustom(filename, customBuf)){
+		RwMemory mem;
+		mem.start = customBuf.data();
+		mem.length = (uint32)customBuf.size();
+		stream = RwStreamOpen(rwSTREAMMEMORY, rwSTREAMREAD, &mem);
+		fromCustom = stream != nil;
+	}
+#endif
+	if(stream == nil)
+		stream = RwStreamOpen(rwSTREAMFILENAME, rwSTREAMREAD, filename);
 	assert(stream);
 	LoadAnimFile(stream, true);
 	RwStreamClose(stream, nil);
+	(void)fromCustom;
 }
 
 void
@@ -1290,6 +1310,12 @@ CAnimManager::LoadAnimFile(RwStream *stream, bool compress, char (*uncompressedA
 
 	// block name
 	RwStreamRead(stream, &anpk, sizeof(IfpHeader));
+	// San Andreas and Black Russia packages: compact header without the
+	// ANPK chunk layers (see gta-reversed CAnimManager::LoadAnimFile)
+	if(memcmp(anpk.ident, "ANP3", 4) == 0 || memcmp(anpk.ident, "ANP2", 4) == 0){
+		LoadAnimFile_ANP23(stream, anpk.ident, compress);
+		return;
+	}
 	ROUNDSIZE(anpk.size);
 	RwStreamRead(stream, &info, sizeof(IfpHeader));
 	ROUNDSIZE(info.size);
@@ -1433,6 +1459,159 @@ CAnimManager::LoadAnimFile(RwStream *stream, bool compress, char (*uncompressedA
 		}
 
 		if(!compressHier){
+			hier->RemoveQuaternionFlips();
+			hier->CalcTotalTime();
+		}
+	}
+	if(animIndex > ms_numAnimations)
+		ms_numAnimations = animIndex;
+}
+
+// ANP2/ANP3: one blockName[24] + numAnims, then animations without the ANPK
+// chunk headers. Key frames are the same byte layouts this game stores
+// (KeyFrame 0x14, KeyFrameTrans 0x20, KeyFrameCompressed 0xA,
+// KeyFrameTransCompressed 0x10 - identical in San Andreas, verified against
+// gta-reversed AnimSequenceFrames.h), so frames are read where they belong:
+// floats through the same rotation handling as the ANPK reader, pre-compressed
+// frames (frameType 3/4) straight into the compressed arrays.
+void
+CAnimManager::LoadAnimFile_ANP23(RwStream *stream, const char *ident, bool compress)
+{
+	char buf[256];
+	float *fbuf = (float*)buf;
+	int j, k, l;
+	bool isANP3 = ident[3] == '3';
+
+	char blockName[24];
+	RwStreamRead(stream, blockName, sizeof(blockName));
+	blockName[23] = '\0';
+	uint32 numAnims;
+	RwStreamRead(stream, &numAnims, sizeof(numAnims));
+
+	CAnimBlock *animBlock = GetAnimationBlock(blockName);
+	if(animBlock){
+		if(animBlock->numAnims == 0){
+			animBlock->numAnims = numAnims;
+			animBlock->firstIndex = ms_numAnimations;
+		}
+	}else{
+		if(ms_numAnimBlocks >= NUMANIMBLOCKS ||
+	     ms_numAnimations + (int32)numAnims > NUMANIMATIONS){
+			debug("ANP%c: no room for block %s (%d anims)\n", ident[3], blockName, numAnims);
+			return;
+		}
+		animBlock = &ms_aAnimBlocks[ms_numAnimBlocks++];
+		strncpy(animBlock->name, blockName, MAX_ANIMBLOCK_NAME);
+		animBlock->numAnims = numAnims;
+		animBlock->firstIndex = ms_numAnimations;
+	}
+
+	debug("Loading ANIMS %s (ANP%c)\n", animBlock->name, ident[3]);
+	animBlock->isLoaded = true;
+
+	int animIndex = animBlock->firstIndex;
+	for(j = 0; j < (int)numAnims; j++){
+		if(animIndex >= NUMANIMATIONS){
+			debug("ANP%c: animation table full\n", ident[3]);
+			return;
+		}
+		CAnimBlendHierarchy *hier = &ms_aAnimations[animIndex++];
+
+		char aname[24];
+		RwStreamRead(stream, aname, sizeof(aname));
+		aname[23] = '\0';
+		hier->SetName(aname);
+
+		uint32 numSeq;
+		RwStreamRead(stream, &numSeq, sizeof(numSeq));
+
+		bool fileCompressed = false;
+		if(isANP3){
+			uint32 framesSize, flags;
+			RwStreamRead(stream, &framesSize, sizeof(framesSize));
+			RwStreamRead(stream, &flags, sizeof(flags));
+			fileCompressed = (flags & 1) != 0;
+			(void)framesSize;
+		}
+
+		bool compressHier = false;
+#ifdef ANIM_COMPRESSION
+		compressHier = compress;
+#endif
+		if(fileCompressed)
+			compressHier = false;	// frames arrive compressed already
+		hier->compressed = fileCompressed;
+		hier->keepCompressed = false;
+
+		if(numSeq > 0x1000){	// garbage header, do not allocate gigabytes
+			debug("ANP%c: %s has an impossible sequence count\n", ident[3], hier->name);
+			return;
+		}
+		hier->numSequences = numSeq;
+		hier->sequences = new CAnimBlendSequence[numSeq];
+		CAnimBlendSequence *seq = hier->sequences;
+		for(k = 0; k < (int)numSeq; k++, seq++){
+			char seqName[24];
+			RwStreamRead(stream, seqName, sizeof(seqName));
+			seqName[23] = '\0';
+			uint32 frameType, numFrames;
+			int32 boneTag;
+			RwStreamRead(stream, &frameType, sizeof(frameType));
+			RwStreamRead(stream, &numFrames, sizeof(numFrames));
+			RwStreamRead(stream, &boneTag, sizeof(boneTag));
+			seq->SetName(seqName);
+			seq->SetBoneTag(boneTag);
+			if(numFrames == 0)
+				continue;
+			if(frameType < 1 || frameType > 4){
+				debug("ANP%c: unknown frame type %d in %s\n", ident[3], frameType, hier->name);
+				return;	// the stream is positioned wrong from here on
+			}
+			bool hasTrans = frameType == 2 || frameType == 4;
+			if(frameType == 3 || frameType == 4){
+				// pre-compressed frames: the file layout is the struct layout
+				seq->SetNumFrames(numFrames, hasTrans, true);
+				uint8 *dst = (uint8*)seq->GetKeyFrameCompressed(0);
+				size_t stride = hasTrans ? 16 : 10;
+				RwStreamRead(stream, dst, (uint32)(stride * numFrames));
+				continue;
+			}
+			// float frames: handled exactly like the ANPK reader does
+			seq->SetNumFrames(numFrames, hasTrans, compressHier);
+			for(l = 0; l < (int)numFrames; l++){
+				if(hasTrans){
+					RwStreamRead(stream, buf, 0x20);
+					CQuaternion rot(fbuf[0], fbuf[1], fbuf[2], fbuf[3]);
+					rot.Invert();
+					CVector trans(fbuf[4], fbuf[5], fbuf[6]);
+					if(compressHier){
+						KeyFrameTransCompressed *kf = (KeyFrameTransCompressed*)seq->GetKeyFrameCompressed(l);
+						kf->SetRotation(rot);
+						kf->SetTranslation(trans);
+						kf->SetTime(fbuf[7]);
+					}else{
+						KeyFrameTrans *kf = (KeyFrameTrans*)seq->GetKeyFrame(l);
+						kf->rotation = rot;
+						kf->translation = trans;
+						kf->deltaTime = fbuf[7];
+					}
+				}else{
+					RwStreamRead(stream, buf, 0x14);
+					CQuaternion rot(fbuf[0], fbuf[1], fbuf[2], fbuf[3]);
+					rot.Invert();
+					if(compressHier){
+						KeyFrameCompressed *kf = (KeyFrameCompressed*)seq->GetKeyFrameCompressed(l);
+						kf->SetRotation(rot);
+						kf->SetTime(fbuf[4]);
+					}else{
+						KeyFrame *kf = (KeyFrame*)seq->GetKeyFrame(l);
+						kf->rotation = rot;
+						kf->deltaTime = fbuf[4];
+					}
+				}
+			}
+		}
+		if(!hier->compressed){
 			hier->RemoveQuaternionFlips();
 			hier->CalcTotalTime();
 		}

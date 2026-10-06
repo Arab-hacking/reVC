@@ -52,6 +52,10 @@ public:
 	// model's .cls (false when the custom folder has no collision for it)
 	static bool GetCollisionBlock(const char *modelname, std::vector<uint8> &out);
 
+	// serves an animation dictionary (.ifp, or BR .ani) from the archives;
+	// true when the custom folder has the file the game asked for
+	static bool LoadAnimFileFromCustom(const char *filename, std::vector<uint8> &out);
+
 	// diagnostics (written to custom_models.log when REVC_CUSTOM_LOG is set)
 	static void PrintStats(void);
 };

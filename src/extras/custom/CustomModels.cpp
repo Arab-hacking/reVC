@@ -22,6 +22,7 @@
 #define STB_DXT_IMPLEMENTATION	// the encoder needs one translation unit
 #include "brformats.h"
 #include "brtex.h"
+#include "brreserved.h"
 
 #include "FileLoader.h"
 #include "FileMgr.h"
@@ -59,6 +60,7 @@ static std::vector<CustomZip*> customArchives;
 static std::map<std::string, CustomSource> customMods;
 static std::map<std::string, CustomSource> customBtx;
 static std::map<std::string, CustomSource> customCls;
+static std::map<std::string, CustomSource> customAnims;
 static bool customInitialised = false;
 static bool customActive = false;
 
@@ -195,7 +197,7 @@ AddIndex(std::map<std::string, CustomSource> &index, const std::string &key,
 }
 
 static void
-IndexArchive(const std::string &path, uint64 mtime, int &nMod, int &nBtx, int &nCls)
+IndexArchive(const std::string &path, uint64 mtime, int &nMod, int &nBtx, int &nCls, int &nAnim)
 {
 	CustomZip *zip = new CustomZip;
 	if(!zip->Open(path.c_str())){
@@ -209,12 +211,18 @@ IndexArchive(const std::string &path, uint64 mtime, int &nMod, int &nBtx, int &n
 		std::string name = ent->name;
 		std::string ext = Extension(name);
 		// nothing else in an archive is of interest here
-		if(ext != "mod" && ext != "btx" && ext != "cls")
+		if(ext != "mod" && ext != "btx" && ext != "cls" && ext != "ifp" && ext != "ani")
 			continue;
 		std::string key = ToLower(Stem(name));
 		if(key.empty() || key.size() > 63)
 			continue;
 		if(ext == "mod"){
+			// the same guard the offline converter has: player.mod is an 8 KB
+			// stub that crashes the game the moment it is read
+			if(brres::isReserved(key)){
+				CUSTOM_LOG("  %s: reserved name, skipped\n", name.c_str());
+				continue;
+			}
 			AddIndex(customMods, key, archive, i, mtime);
 			nMod++;
 		}else if(ext == "btx"){
@@ -224,15 +232,19 @@ IndexArchive(const std::string &path, uint64 mtime, int &nMod, int &nBtx, int &n
 			if(key.size() > 31)
 				AddIndex(customBtx, key.substr(0, 31), archive, i, mtime);
 			nBtx++;
-		}else{
+		}else if(ext == "cls"){
 			AddIndex(customCls, key, archive, i, mtime);
 			nCls++;
+		}else{
+			// .ifp dictionaries and BR single-animation .ani files
+			AddIndex(customAnims, key, archive, i, mtime);
+			nAnim++;
 		}
 	}
 }
 
 static void
-ScanFolder(const std::string &folder, int depth, int &nZip, int &nMod, int &nBtx, int &nCls)
+ScanFolder(const std::string &folder, int depth, int &nZip, int &nMod, int &nBtx, int &nCls, int &nAnim)
 {
 	std::vector<std::string> files, dirs;
 	if(!ListDirectory(folder.c_str(), files, dirs))
@@ -243,12 +255,12 @@ ScanFolder(const std::string &folder, int depth, int &nZip, int &nMod, int &nBtx
 		if(Extension(files[i]) != "zip")
 			continue;
 		uint64 mtime = FileTime(files[i].c_str());
-		IndexArchive(files[i], mtime, nMod, nBtx, nCls);
+		IndexArchive(files[i], mtime, nMod, nBtx, nCls, nAnim);
 		nZip++;
 	}
 	if(depth < CUSTOM_MAX_DEPTH)
 		for(size_t i = 0; i < dirs.size(); i++)
-			ScanFolder(dirs[i], depth+1, nZip, nMod, nBtx, nCls);
+			ScanFolder(dirs[i], depth+1, nZip, nMod, nBtx, nCls, nAnim);
 }
 
 static void
@@ -263,16 +275,16 @@ EnsureInitialised(void)
 	if(env && env[0] != '\0')
 		folder = env;
 
-	int nZip = 0, nMod = 0, nBtx = 0, nCls = 0;
+	int nZip = 0, nMod = 0, nBtx = 0, nCls = 0, nAnim = 0;
 	if(FolderExists(folder))
-		ScanFolder(folder, 0, nZip, nMod, nBtx, nCls);
+		ScanFolder(folder, 0, nZip, nMod, nBtx, nCls, nAnim);
 
-	customActive = !customMods.empty() || !customBtx.empty() || !customCls.empty();
-	debug("custom: folder %s: %d archive(s), %d .mod (%d names), %d .btx (%d names), %d .cls\n",
-		folder, nZip, nMod, (int)customMods.size(), nBtx, (int)customBtx.size(), nCls);
+	customActive = !customMods.empty() || !customBtx.empty() || !customCls.empty() || !customAnims.empty();
+	debug("custom: folder %s: %d archive(s), %d .mod (%d names), %d .btx (%d names), %d .cls, %d .ifp/.ani (%d names)\n",
+		folder, nZip, nMod, (int)customMods.size(), nBtx, (int)customBtx.size(), nCls, nAnim, (int)customAnims.size());
 	CUSTOM_LOG("--- scan ---\n");
-	CUSTOM_LOG("folder %s: %d archive(s), %d .mod (%d names), %d .btx (%d names), %d .cls (%d names)\n",
-		folder, nZip, nMod, (int)customMods.size(), nBtx, (int)customBtx.size(), nCls, (int)customCls.size());
+	CUSTOM_LOG("folder %s: %d archive(s), %d .mod (%d names), %d .btx (%d names), %d .cls (%d names), %d .ifp/.ani (%d names)\n",
+		folder, nZip, nMod, (int)customMods.size(), nBtx, (int)customBtx.size(), nCls, (int)customCls.size(), nAnim, (int)customAnims.size());
 }
 
 // ---------------------------------------------------------------------------
@@ -303,18 +315,21 @@ ReadEntry(const std::map<std::string, CustomSource> &index, const std::string &k
 // model: .mod -> a RenderWare stream the engine can read
 // ---------------------------------------------------------------------------
 
+// The file itself is the stream. The archive entry is read once and then
+// understood in place - decryption and the BR->RW structure repair happen
+// inside that very buffer, no .dff is produced anywhere: what comes out of
+// here is handed to the RenderWare loaders as is.
 static bool
-ConvertMod(const std::vector<uint8> &file, std::vector<uint8> &dff, br::RwFixStats &stats, std::string &warn)
+UnderstandMod(std::vector<uint8> &file, br::RwFixStats &stats, std::string &warn)
 {
 	std::string err;
-	dff = br::convertModToDff(file, stats, err);
-	if(dff.empty()){
-		CUSTOM_LOG("  conversion failed: %s\n", err.c_str());
+	if(!br::understandModInplace(file, stats, err)){
+		CUSTOM_LOG("  read failed: %s\n", err.c_str());
 		return false;
 	}
 	if(!err.empty()){
 		warn = err;
-		CUSTOM_LOG("  conversion note: %s\n", err.c_str());
+		CUSTOM_LOG("  read note: %s\n", err.c_str());
 	}
 	return true;
 }
@@ -327,13 +342,12 @@ ModelTextureNames(const std::string &key, std::vector<std::string> &names, std::
 	std::vector<uint8> file;
 	if(!ReadEntry(customMods, key, file))
 		return false;
-	std::vector<uint8> dff;
 	br::RwFixStats stats;
 	std::string warn;
-	if(!ConvertMod(file, dff, stats, warn))
+	if(!UnderstandMod(file, stats, warn))
 		return false;
 	names.clear();
-	brtex::collectTextureNames(dff.data(), dff.size(), names);
+	brtex::collectTextureNames(file.data(), file.size(), names);
 	recipes = stats.recipes;
 	return true;
 }
@@ -367,10 +381,10 @@ CanUseModel(const std::string &key)
 		return plan.usable;
 	plan.computed = true;
 
-	std::vector<uint8> file, dff;
+	std::vector<uint8> file;
 	br::RwFixStats stats;
 	std::string warn;
-	plan.usable = ReadEntry(customMods, key, file) && ConvertMod(file, dff, stats, warn) && IsClumpStream(dff);
+	plan.usable = ReadEntry(customMods, key, file) && UnderstandMod(file, stats, warn) && IsClumpStream(file);
 	if(!plan.usable)
 		CUSTOM_LOG("model %s: not usable as a game model, the game's own file is used\n", key.c_str());
 	return plan.usable;
@@ -458,18 +472,18 @@ LoadModelIntoGame(const std::string &key, int32 modelId)
 		CUSTOM_LOG("model %s: cannot read the archive entry\n", key.c_str());
 		return false;
 	}
-	std::vector<uint8> dff;
+	unsigned rawSize = (unsigned)file.size();
 	br::RwFixStats stats;
 	std::string warn;
-	if(!ConvertMod(file, dff, stats, warn))
+	if(!UnderstandMod(file, stats, warn))
 		return false;
 
 	CBaseModelInfo *mi = CModelInfo::GetModelInfo(modelId);
 	if(mi == nil) return false;
 
 	RwMemory mem;
-	mem.start = dff.data();
-	mem.length = (uint32)dff.size();
+	mem.start = file.data();
+	mem.length = (uint32)file.size();
 	RwStream *stream = RwStreamOpen(rwSTREAMMEMORY, rwSTREAMREAD, &mem);
 	if(stream == nil){
 		CUSTOM_LOG("model %s: cannot open a memory stream\n", key.c_str());
@@ -491,8 +505,8 @@ LoadModelIntoGame(const std::string &key, int32 modelId)
 	}
 	RwStreamClose(stream, &mem);
 
-	CUSTOM_LOG("model %s (id %d): %s, %u bytes -> %u bytes%s%s\n", key.c_str(), modelId,
-		ok ? "loaded" : "FAILED", (unsigned)file.size(), (unsigned)dff.size(),
+	CUSTOM_LOG("model %s (id %d): %s, %u bytes of .mod -> %u bytes read in place%s%s\n", key.c_str(), modelId,
+		ok ? "loaded" : "FAILED", rawSize, (unsigned)file.size(),
 		stats.versionsChanged ? ", chunk versions fixed" : "",
 		warn.empty() ? "" : (", " + warn).c_str());
 	return ok;
@@ -704,6 +718,7 @@ CCustomModels::Shutdown(void)
 	customMods.clear();
 	customBtx.clear();
 	customCls.clear();
+	customAnims.clear();
 	customModPlans.clear();
 	customTxdPlans.clear();
 	customInitialised = false;
@@ -839,10 +854,13 @@ CCustomModels::LoadClumpFileFromCustom(const char *filename)
 	if(customMods.find(key) == customMods.end())
 		return false;
 
-	std::vector<uint8> file, dff;
+	std::vector<uint8> file;
 	br::RwFixStats stats;
 	std::string warn;
-	if(!ReadEntry(customMods, key, file) || !ConvertMod(file, dff, stats, warn))
+	if(!ReadEntry(customMods, key, file))
+		return false;
+	unsigned rawSize = (unsigned)file.size();
+	if(!UnderstandMod(file, stats, warn))
 		return false;
 
 	// A hierarchical model file is matched to its model by the name of the
@@ -854,8 +872,8 @@ CCustomModels::LoadClumpFileFromCustom(const char *filename)
 		return false;
 
 	RwMemory mem;
-	mem.start = dff.data();
-	mem.length = (uint32)dff.size();
+	mem.start = file.data();
+	mem.length = (uint32)file.size();
 	RwStream *stream = RwStreamOpen(rwSTREAMMEMORY, rwSTREAMREAD, &mem);
 	if(stream == nil)
 		return false;
@@ -878,8 +896,8 @@ CCustomModels::LoadClumpFileFromCustom(const char *filename)
 		CTxdStore::PopCurrentTxd();
 	RwStreamClose(stream, &mem);
 
-	CUSTOM_LOG("model file %s (id %d): %s, %u bytes -> %u bytes%s\n",
-		filename, id, ok ? "loaded" : "FAILED", (unsigned)file.size(), (unsigned)dff.size(),
+	CUSTOM_LOG("model file %s (id %d): %s, %u bytes of .mod -> %u bytes read in place%s\n",
+		filename, id, ok ? "loaded" : "FAILED", rawSize, (unsigned)file.size(),
 		warn.empty() ? "" : (", " + warn).c_str());
 	return ok;
 }
@@ -930,13 +948,48 @@ CCustomModels::GetCollisionBlock(const char *modelname, std::vector<uint8> &out)
 	return true;
 }
 
+// Animation dictionaries are requested by path ("ANIM\\PED.IFP"); the archives
+// hold them as <name>.ifp (SA/BR dictionaries, ANPK or ANP3) or as BR's
+// single-animation <name>.ani files. A .ani keeps BR's own header order -
+// brformats puts the fields back where SA (and this game) expects them - and
+// then flows through the same reader as any SA dictionary.
+bool
+CCustomModels::LoadAnimFileFromCustom(const char *filename, std::vector<uint8> &out)
+{
+	if(filename == nil)
+		return false;
+	EnsureInitialised();
+	if(!customActive)
+		return false;
+
+	std::string key = ToLower(Stem(filename));
+	if(key.empty() || customAnims.find(key) == customAnims.end())
+		return false;
+
+	std::string ext = Extension(filename);
+	if(!ReadEntry(customAnims, key, out))
+		return false;
+	if(ext == "ani" && br::isBrAni(out.data(), out.size()) && !br::convertAniToIfp(out)){
+		CUSTOM_LOG("animation %s: the .ani header could not be reordered\n", filename);
+		out.clear();
+		return false;
+	}
+	if(out.size() < 12){
+		out.clear();
+		return false;
+	}
+	CUSTOM_LOG("animation %s: served from the custom folder, %u bytes\n",
+		filename, (unsigned)out.size());
+	return true;
+}
+
 void
 CCustomModels::PrintStats(void)
 {
 	EnsureInitialised();
 	CUSTOM_LOG("--- stats ---\n");
-	CUSTOM_LOG("%d archive(s) open, %d model name(s), %d texture name(s), %d collision name(s)\n",
-		(int)customArchives.size(), (int)customMods.size(), (int)customBtx.size(), (int)customCls.size());
+	CUSTOM_LOG("%d archive(s) open, %d model name(s), %d texture name(s), %d collision name(s), %d animation name(s)\n",
+		(int)customArchives.size(), (int)customMods.size(), (int)customBtx.size(), (int)customCls.size(), (int)customAnims.size());
 }
 
 #endif // CUSTOM_MODELS

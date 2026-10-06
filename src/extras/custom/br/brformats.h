@@ -744,25 +744,27 @@ static inline bool normalizeDffInplace(uint8_t* buf, uint32_t& len, RwFixStats& 
     return true;
 }
 
-// Полная конвертация .mod -> .dff (SA). Возвращает пустой вектор при ошибке.
-static inline std::vector<uint8_t> convertModToDff(const std::vector<uint8_t>& mod, RwFixStats& st, std::string& err, bool saFormat = true) {
-    if (!isMod(mod.data(), mod.size())) { err = "not a .mod file (bad magic)"; return {}; }
+// Нативное чтение .mod: расшифровка и починка структуры прямо в буфере файла.
+// Отдельного .dff не создаётся: буфер после вызова и есть поток, который отдаётся
+// движку (RW-чанк за чанком, в RAM, без файлов на диске). false = файл не понятен.
+static inline bool understandModInplace(std::vector<uint8_t>& mod, RwFixStats& st, std::string& err, bool saFormat = true) {
+    err.clear();
+    if (!isMod(mod.data(), mod.size())) { err = "not a .mod file (bad magic)"; return false; }
     int variant = detectModKeyVariant(mod.data(), (uint32_t)mod.size());
-    if (variant == -1) { err = "decrypted data is not a RW stream with any known key (" + modDiag(mod.data(), (uint32_t)mod.size()) + ")"; return {}; }
-    std::vector<uint8_t> buf = mod;
+    if (variant == -1) { err = "decrypted data is not a RW stream with any known key (" + modDiag(mod.data(), (uint32_t)mod.size()) + ")"; return false; }
     std::string warn;
-    uint32_t len = decryptModInplace(buf.data(), (uint32_t)buf.size(), &warn, variant);
-    if (!len) { err = "not a .mod file (bad magic)"; return {}; }
+    uint32_t len = decryptModInplace(mod.data(), (uint32_t)mod.size(), &warn, variant);
+    if (!len) { err = "not a .mod file (bad magic)"; return false; }
     if (variant == -2) warn += (warn.empty() ? "" : "; ") + std::string("payload is not encrypted");
     else if (variant != 0) { char t[64]; snprintf(t, sizeof t, "%skey variant %d", warn.empty() ? "" : "; ", variant); warn += t; }
     if (!warn.empty()) err = "warning: " + warn;
-    buf.resize(len);
-    if (buf.size() < 12 || (rd32(&buf[0]) != rwCLUMP && rd32(&buf[0]) != rwUVANIMDICT)) { err = "decrypted data is not a CLUMP"; return {}; }
+    mod.resize(len);
+    if (mod.size() < 12 || (rd32(&mod[0]) != rwCLUMP && rd32(&mod[0]) != rwUVANIMDICT)) { err = "decrypted data is not a CLUMP"; return false; }
     if (saFormat) {
-        if (!normalizeDffToSA(buf, st)) {
-            // не смогли разобрать дерево — отдаём как есть, но чиним размер корневого чанка
-            uint32_t sz = (uint32_t)buf.size() - 12; wr32(&buf[4], sz);
-            std::string d = rwTreeDiag(buf.data(), buf.size());
+        if (!normalizeDffToSA(mod, st)) {
+            // не смогли разобрать дерево — оставляем как есть, но чиним размер корневого чанка
+            uint32_t sz = (uint32_t)mod.size() - 12; wr32(&mod[4], sz);
+            std::string d = rwTreeDiag(mod.data(), mod.size());
             err = (err.empty() ? "" : err + "; ") + "warning: RW tree parse failed (" + (d.empty() ? "unknown" : d) + "), written as-is";
         } else {
             if (st.rootSizeFixed) err = (err.empty() ? "" : err + "; ") + "root chunk size fixed";
@@ -771,8 +773,15 @@ static inline std::vector<uint8_t> convertModToDff(const std::vector<uint8_t>& m
             if (st.schemaFixes) { char t[96]; snprintf(t, sizeof t, "tree rebuilt by schema: %d chunk size(s) corrected", st.schemaFixes); err = (err.empty() ? "" : err + "; ") + t; }
         }
     } else {
-        uint32_t sz = (uint32_t)buf.size() - 12; wr32(&buf[4], sz);
+        uint32_t sz = (uint32_t)mod.size() - 12; wr32(&mod[4], sz);
     }
+    return true;
+}
+
+// Совместимая обёртка для brconv/стенда: та же нативная читка, но на копии.
+static inline std::vector<uint8_t> convertModToDff(const std::vector<uint8_t>& mod, RwFixStats& st, std::string& err, bool saFormat = true) {
+    std::vector<uint8_t> buf = mod;
+    if (!understandModInplace(buf, st, err, saFormat)) return {};
     return buf;
 }
 
