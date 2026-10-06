@@ -24,7 +24,11 @@
 #include "Zones.h"
 #include "ZoneCull.h"
 #include "CdStream.h"
+#include <vector>
 #include "FileLoader.h"
+#ifdef CUSTOM_MODELS
+#include "CustomModels.h"
+#endif
 #include "MemoryHeap.h"
 #include "Streaming.h"
 #include "ColStore.h"
@@ -157,6 +161,13 @@ CFileLoader::LoadTexDictionary(const char *filename)
 	RwTexDictionary *txd;
 	RwStream *stream;
 
+#ifdef CUSTOM_MODELS
+	// the custom folder wins over the game's own files
+	txd = CCustomModels::LoadTexDictionaryFromCustom(filename);
+	if(txd)
+		return txd;
+#endif
+
 	txd = nil;
 	stream = RwStreamOpen(rwSTREAMFILENAME, rwSTREAMREAD, filename);
 	debug("Loading texture dictionary file %s\n", filename);
@@ -186,6 +197,11 @@ CFileLoader::LoadCollisionFile(const char *filename, uint8 colSlot)
 
 	PUSH_MEMID(MEMID_COLLISION);
 
+#ifdef CUSTOM_MODELS
+	// holds the collision of one model when it comes from the custom folder
+	std::vector<uint8> customColBlock;
+#endif
+
 	debug("Loading collision file %s\n", filename);
 	fd = CFileMgr::OpenFile(filename, "rb");
 	assert(fd > 0);
@@ -195,14 +211,21 @@ CFileLoader::LoadCollisionFile(const char *filename, uint8 colSlot)
 		CFileMgr::Read(fd, (char*)work_buff, header.size);
 		memcpy(modelname, work_buff, 24);
 
+#ifdef CUSTOM_MODELS
+		// the custom folder wins over the game's own collision file
+		uint8 *colbody = work_buff;
+		if(CCustomModels::GetCollisionBlock(modelname, customColBlock))
+			colbody = customColBlock.data();
+#endif
+
 		mi = CModelInfo::GetModelInfo(modelname, nil);
 		if(mi){
 			if(mi->GetColModel() && mi->DoesOwnColModel()){
-				LoadCollisionModel(work_buff+24, *mi->GetColModel(), modelname);
+				LoadCollisionModel(colbody+24, *mi->GetColModel(), modelname);
 			}else{
 				CColModel *model = new CColModel;
 				model->level = colSlot;
-				LoadCollisionModel(work_buff+24, *model, modelname);
+				LoadCollisionModel(colbody+24, *model, modelname);
 				mi->SetColModel(model, true);
 			}
 		}else{
@@ -621,6 +644,12 @@ CFileLoader::LoadClumpFile(const char *filename)
 	char *nodename, name[24];
 	int n;
 	CClumpModelInfo *mi;
+
+#ifdef CUSTOM_MODELS
+	// the custom folder wins over the game's own files
+	if(CCustomModels::LoadClumpFileFromCustom(filename))
+		return;
+#endif
 
 	debug("Loading model file %s\n", filename);
 	stream = RwStreamOpen(rwSTREAMFILENAME, rwSTREAMREAD, filename);

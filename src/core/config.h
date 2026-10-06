@@ -315,6 +315,17 @@ enum Config {
 // invisible car with missing wheels.
 #define SA_VEHICLE_MODELS
 
+// Custom models, textures and collision from the community's own containers
+// (.mod / .btx / .cls) inside zip archives. The archives are read from the
+// folder below (relative to the game directory) and are converted in memory
+// when the game asks for a model, so no .dff/.txd/.col files have to be built
+// outside of the game. Files from this folder win over the game's own IMG
+// archives. See src/extras/custom/CustomModels.h.
+#define CUSTOM_MODELS
+#ifdef CUSTOM_MODELS
+	#define CUSTOM_MODELS_FOLDER "custom"
+#endif
+
 // GTA:SA vehicles (and mods converted from them) often keep the frame name of
 // the car they were converted from in the DFF, so a model file may contain a
 // clump whose root frame does not know the name of the model at all. Fall back

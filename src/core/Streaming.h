@@ -122,6 +122,12 @@ public:
 	static void LoadCdDirectory(void);
 	static void LoadCdDirectory(const char *dirname, int32 n);
 	static bool ConvertBufferToObject(int8 *buf, int32 streamId);
+#ifdef CUSTOM_MODELS
+	// loads a file that comes from the game's custom folder instead of the CD
+	// image; the bookkeeping matches a CD read, so the file ends up in exactly
+	// the same state (see the implementation)
+	static void LoadCustomFile(int32 streamId);
+#endif
 	static bool FinishLoadingLargeFile(int8 *buf, int32 streamId);
 	static bool HasModelLoaded(int32 id) { return ms_aInfoForModel[id].m_loadState == STREAMSTATE_LOADED; }
 	static bool HasTxdLoaded(int32 id) { return HasModelLoaded(id+STREAM_OFFSET_TXD); }

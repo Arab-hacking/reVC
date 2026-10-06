@@ -2,6 +2,9 @@
 #include "platform.h"
 
 #include "Game.h"
+#ifdef CUSTOM_MODELS
+#include "CustomModels.h"
+#endif
 #include "main.h"
 #include "RwHelper.h"
 #include "Accident.h"
@@ -359,6 +362,10 @@ bool CGame::InitialiseOnceAfterRW(void)
 void
 CGame::FinalShutdown(void)
 {	
+#ifdef CUSTOM_MODELS
+	CCustomModels::PrintStats();
+	CCustomModels::Shutdown();
+#endif
 	CTxdStore::Shutdown();
 	CPedStats::Shutdown();
 	CdStreamShutdown();
@@ -480,6 +487,11 @@ bool CGame::Initialise(const char* datFile)
 	CDraw::ms_fLODDistance = 500.0f;
 
 	LoadingScreen("Loading the Game", "Setup streaming", nil);
+#ifdef CUSTOM_MODELS
+	// reads the archives of the game's custom folder; from here on the folder
+	// wins over the game's own image files
+	CCustomModels::Initialise();
+#endif
 	CStreaming::LoadInitialVehicles();
 	CStreaming::LoadInitialPeds();
 	CStreaming::RequestBigBuildings(LEVEL_GENERIC);

@@ -1,0 +1,57 @@
+ok  : archive opens
+ok  : a .mod entry is found
+ok  : the .btx entries are found
+ok  : the .mod entry extracts
+ok  : the .mod has the container header
+      entry infernus/body.btx: 1306 bytes compressed -> 5544 bytes (deflate)
+ok  : the .btx entry extracts
+ok  : the .btx parses
+ok  : the .btx has mip levels
+      32x32, 5 mip(s), alpha 0
+      first pixel 200 120 40 255
+ok  : the texture is opaque
+ok  : the data has content
+ok  : the texture survives the power of two pass
+      32x32 -> 32x32
+      entry infernus/wheel.btx: 695 bytes compressed -> 2316 bytes (deflate)
+ok  : the .btx entry extracts
+ok  : the .btx parses
+ok  : the .btx has mip levels
+      33x17, 1 mip(s), alpha 0
+      first pixel 10 200 60 255
+ok  : the texture is opaque
+ok  : the data has content
+ok  : the texture survives the power of two pass
+      33x17 -> 32x16 (resized)
+ok  : the .mod converts to a renderware model
+      1124054 bytes -> 1124026 bytes, source version 0x36003, 0 chunk version fix(es)
+      16 texture name(s) referenced by the model: remapvehicles envmap carbottom_c radiator bmwcs_badge vehiclelights128 ...
+ok  : the model references textures
+ok  : the result is byte for byte the reference conversion
+      CLSF: 192 bytes of .cls -> 196 bytes of SAN ANDREAS collision
+      CLSF: -> 192 bytes of the game's format (1 block(s), 1 sphere(s), 1 box(es), 3 vertex(es), 1 face(s), 0 material(s) fixed)
+ok  : CLSF block reads back as the game's format
+ok  : CLSF: one sphere, one box, three vertices, one face
+ok  : CLSF: sphere radius
+ok  : CLSF: sphere center
+ok  : CLSF: sphere material
+ok  : CLSF: box
+ok  : CLSF: vertex (fixed point round trip)
+ok  : CLSF: negative vertex
+ok  : CLSF: face
+ok  : CLSF: bounding volumes
+      CLST: 188 bytes of .cls -> 188 bytes of SAN ANDREAS collision
+      CLST: -> 180 bytes of the game's format (1 block(s), 1 sphere(s), 1 box(es), 2 vertex(es), 1 face(s), 1 material(s) fixed)
+ok  : CLST block reads back as the game's format
+ok  : CLST: one sphere, one box, two vertices, one face
+ok  : CLST: sphere radius and center
+ok  : CLST: sphere material
+ok  : CLST: box
+ok  : CLST: a material the game does not know became the default one
+ok  : CLST: vertex (1, 0, 0)
+ok  : CLST: vertex (0, -2, 0.5)
+ok  : CLST: face
+ok  : CLST: bounding volumes
+ok  : junk is not turned into a collision file
+
+all tests passed (0 failure(s))

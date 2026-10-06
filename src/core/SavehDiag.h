@@ -14,10 +14,10 @@
 //
 // The log is opened in append mode and flushed after every line, so a crash or
 // a task kill does not lose the interesting part.
-#ifdef SA_VEHICLE_MODELS
-
 #include <stdio.h>
 #include <stdlib.h>
+
+#ifdef SA_VEHICLE_MODELS
 
 static inline FILE *SavehLogFile(void)
 {
@@ -44,6 +44,38 @@ static inline FILE *SavehLogFile(void)
 
 #else
 #define SAVEH_LOG(...) do {} while(0)
+#endif
+
+// Same idea for the custom model containers (.mod/.btx/.cls in the game's
+// custom folder): set REVC_CUSTOM_LOG to get "custom_models.log" with what was
+// found in the archives and what happened to every model and texture.
+#ifdef CUSTOM_MODELS
+
+static inline FILE *CustomLogFile(void)
+{
+	static FILE *f = nil;
+	static bool checked = false;
+
+	if(!checked){
+		const char *env = getenv("REVC_CUSTOM_LOG");
+		checked = true;
+		if(env && env[0] != '\0')
+			f = fopen("custom_models.log", "a");
+	}
+	return f;
+}
+
+#define CUSTOM_LOG(...)				\
+	do {					\
+		FILE *f_ = CustomLogFile();	\
+		if(f_) {			\
+			fprintf(f_, __VA_ARGS__);\
+			fflush(f_);		\
+		}				\
+	} while(0)
+
+#else
+#define CUSTOM_LOG(...) do {} while(0)
 #endif
 
 #endif

@@ -27,6 +27,9 @@
 #include "CutsceneMgr.h"
 #include "CdStream.h"
 #include "Streaming.h"
+#ifdef CUSTOM_MODELS
+#include "CustomModels.h"
+#endif
 #include "Replay.h"
 #include "main.h"
 #include "ColStore.h"
@@ -90,6 +93,29 @@ bool gbPrintStreamingBuffer; // TODO
 bool
 CStreamingInfo::GetCdPosnAndSize(uint32 &posn, uint32 &size)
 {
+#ifdef CUSTOM_MODELS
+	// This fixes the one case that ConvertBufferToObject cannot fix by itself:
+	// a file that the game's images do not contain at all.
+	// The streaming code expects every requested file to have a place in
+	// an image (GetNextFileOnCd throws away the requests it cannot place), so
+	// such a file is given the position and size of a single sector. Its data
+	// is never read - the file is built in memory - and because nothing chains
+	// to it, it always ends up alone in a channel: the made up position can
+	// never spoil the read of a real file. Files that are in an image keep
+	// their real position and size, so the adjacency the channel reader
+	// depends on ("load up to 4 adjacent files") is untouched.
+	if(m_size == 0){
+		intptr_t diff = (intptr_t)this - (intptr_t)CStreaming::ms_aInfoForModel;
+		if(diff >= 0 && diff % (intptr_t)sizeof(CStreamingInfo) == 0){
+			int32 id = (int32)(diff / (intptr_t)sizeof(CStreamingInfo));
+			if(id < NUMSTREAMINFO && CCustomModels::CanServe(id)){
+				posn = 0;
+				size = 1;
+				return true;
+			}
+		}
+	}
+#endif
 	if(m_size == 0)
 		return false;
 	posn = m_position;
@@ -516,6 +542,21 @@ CStreaming::ConvertBufferToObject(int8 *buf, int32 streamId)
 	bool success;
 
 	startTime = CTimer::GetCurrentTimeInCycles() / CTimer::GetCyclesPerMillisecond();
+
+#ifdef CUSTOM_MODELS
+	// The file comes from the game's custom folder, so the bytes that were
+	// read from the image are not used at all: the file is decompressed and
+	// converted in memory instead. Everything around the load is the same, so
+	// the model ends up in exactly the state a file from the image would.
+	if(CCustomModels::CanServe(streamId)){
+		LoadCustomFile(streamId);
+		endTime = CTimer::GetCurrentTimeInCycles() / CTimer::GetCyclesPerMillisecond();
+		timeDiff = endTime - startTime;
+		if(timeDiff > 5)
+			debug("%s (custom) took %d ms\n", GetObjectName(streamId), timeDiff);
+		return ms_aInfoForModel[streamId].m_loadState == STREAMSTATE_LOADED;
+	}
+#endif
 
 	cdsize = ms_aInfoForModel[streamId].GetCdSize();
 	mem.start = (uint8*)buf;
@@ -2118,7 +2159,7 @@ CStreaming::RequestModelStream(int32 ch)
 		ms_bLoadingBigModel = true;
 	}
 
-	// Load up to 4 adjacent files
+// Load up to 4 adjacent files
 	haveBigFile = 0;
 	havePed = 0;
 	totalSize = 0;
@@ -2183,6 +2224,138 @@ CStreaming::RequestModelStream(int32 ch)
 	ms_channel[ch].position = imgOffset+posn;
 	ms_channel[ch].numTries = 0;
 }
+
+#ifdef CUSTOM_MODELS
+// Loads one file from the game's custom folder. This is the place where such a
+// file turns into a game object, and it is written so that afterwards nothing
+// can tell the difference to a file that was read from the image: the texture
+// dictionary and the animations are referenced while the model is read, the
+// dictionary is the current one, the vehicle list is updated, the stream info
+// goes to "loaded" and the memory the file uses is accounted for.
+//
+// The caller (ConvertBufferToObject) has already taken the file out of the
+// requested list and dropped its reference, exactly like before any other load.
+void
+CStreaming::LoadCustomFile(int32 streamId)
+{
+	uint32 startTime, endTime, timeDiff;
+	CBaseModelInfo *mi;
+	int animId;
+	bool success;
+
+	startTime = CTimer::GetCurrentTimeInCycles() / CTimer::GetCyclesPerMillisecond();
+
+	if(streamId < STREAM_OFFSET_TXD){
+		// Model
+		mi = CModelInfo::GetModelInfo(streamId);
+		animId = mi->GetAnimFileIndex();
+
+		// Txd and anim have to be loaded
+		if(CTxdStore::GetSlot(mi->GetTxdSlot())->texDict == nil ||
+		   animId != -1 && !CAnimManager::GetAnimationBlock(animId)->isLoaded){
+			RemoveModel(streamId);
+			ReRequestModel(streamId);
+			return;
+		}
+
+		CTxdStore::AddRef(mi->GetTxdSlot());
+#if GTA_VERSION > GTAVC_PS2
+		if(animId != -1)
+			CAnimManager::AddAnimBlockRef(animId);
+#endif
+
+		PUSH_MEMID(MEMID_STREAM_MODELS);
+		CTxdStore::SetCurrentTxd(mi->GetTxdSlot());
+		success = CCustomModels::Load(streamId);
+		if(success && mi->GetModelType() == MITYPE_VEHICLE)
+			success = AddToLoadedVehiclesList(streamId);
+		POP_MEMID();
+		UpdateMemoryUsed();
+
+		// Txd and anims no longer needed
+		CTxdStore::RemoveRefWithoutDelete(mi->GetTxdSlot());
+#if GTA_VERSION > GTAVC_PS2
+		if(animId != -1)
+			CAnimManager::RemoveAnimBlockRefWithoutDelete(animId);
+#endif
+
+		if(!success){
+			debug("Failed to load %s from the custom folder\n", mi->GetModelName());
+			RemoveModel(streamId);
+			ReRequestModel(streamId);
+			return;
+		}
+	}else if(streamId >= STREAM_OFFSET_TXD && streamId < STREAM_OFFSET_COL){
+		// Txd
+		if((ms_aInfoForModel[streamId].m_flags & STREAMFLAGS_KEEP_IN_MEMORY) == 0 &&
+		   !IsTxdUsedByRequestedModels(streamId - STREAM_OFFSET_TXD)){
+			RemoveModel(streamId);
+			return;
+		}
+
+		PUSH_MEMID(MEMID_STREAM_TEXUTRES);
+		success = CCustomModels::Load(streamId);
+		POP_MEMID();
+		UpdateMemoryUsed();
+
+		if(!success){
+			debug("Failed to load %s.txd from the custom folder\n", CTxdStore::GetTxdName(streamId - STREAM_OFFSET_TXD));
+			RemoveModel(streamId);
+			ReRequestModel(streamId);
+			return;
+		}
+	}else if(streamId >= STREAM_OFFSET_COL && streamId < STREAM_OFFSET_ANIM){
+		PUSH_MEMID(MEMID_STREAM_COLLISION);
+		success = CCustomModels::Load(streamId);
+		POP_MEMID();
+
+		if(!success){
+			debug("Failed to load %s.col from the custom folder\n", CColStore::GetColName(streamId - STREAM_OFFSET_COL));
+			RemoveModel(streamId);
+			ReRequestModel(streamId);
+			return;
+		}
+	}else{
+		assert(0 && "invalid streamId");
+		return;
+	}
+
+	// Model
+	// Vehicles and Peds not in loaded list
+	if(streamId < STREAM_OFFSET_TXD){
+		if(mi->GetModelType() != MITYPE_VEHICLE && mi->GetModelType() != MITYPE_PED){
+			CSimpleModelInfo *smi = (CSimpleModelInfo*)mi;
+
+			// Set fading for some objects
+			if(mi->IsSimple() && !smi->m_isBigBuilding){
+				if(ms_aInfoForModel[streamId].m_flags & STREAMFLAGS_NOFADE)
+					smi->m_alpha = 255;
+				else
+					smi->m_alpha = 0;
+			}
+
+			if(CanRemoveModel(streamId))
+				ms_aInfoForModel[streamId].AddToList(&ms_startLoadedList);
+		}
+	}else if(streamId >= STREAM_OFFSET_TXD && streamId < STREAM_OFFSET_COL ||
+	         streamId >= STREAM_OFFSET_ANIM){
+		// Txd and anims
+		if(CanRemoveModel(streamId))
+			ms_aInfoForModel[streamId].AddToList(&ms_startLoadedList);
+	}
+
+	// Mark objects as loaded
+	ms_aInfoForModel[streamId].m_loadState = STREAMSTATE_LOADED;
+#ifndef USE_CUSTOM_ALLOCATOR
+	ms_memoryUsed += ms_aInfoForModel[streamId].GetCdSize() * CDSTREAM_SECTOR_SIZE;
+#endif
+
+	endTime = CTimer::GetCurrentTimeInCycles() / CTimer::GetCyclesPerMillisecond();
+	timeDiff = endTime - startTime;
+	if(timeDiff > 5)
+		debug("%s (custom) took %d ms\n", GetObjectName(streamId), timeDiff);
+}
+#endif
 
 // Load data previously read from disc
 bool
