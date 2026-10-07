@@ -17,6 +17,12 @@ uniform vec4  u_fogColor;
 #define u_fogRange (u_fogData.z)
 #define u_fogDisable (u_fogData.w)
 
+// --- Black Russia client material parity ---
+uniform vec4 u_eye;		// xyz: camera world position
+uniform vec4 u_sunDir;	// xyz: direction TO the sun
+uniform vec4 u_localInvGamma;	// x: gamma exponent
+
+
 #ifndef GL2
 out vec4 fragColor;
 #endif

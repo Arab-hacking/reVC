@@ -39,6 +39,12 @@ const char *header_vert_src =
 "#define u_fogRange (u_fogData.z)\n"
 "#define u_fogDisable (u_fogData.w)\n"
 
+"// --- Black Russia client material parity ---\n"
+"uniform vec4 u_eye;		// xyz: camera world position\n"
+"uniform vec4 u_sunDir;	// xyz: direction TO the sun\n"
+"uniform mat4 u_uvMatrix;\n"
+
+
 "#ifdef USE_UBOS\n"
 "layout(std140) uniform Scene\n"
 "{\n"
@@ -126,5 +132,16 @@ const char *header_vert_src =
 "float DoFog(float w)\n"
 "{\n"
 "	return clamp((w - u_fogEnd)*u_fogRange, u_fogDisable, 1.0);\n"
+"}\n"
+
+"// Distance fog measured from the eye (as in the Black Russia client);\n"
+"// same output polarity as DoFog: 1 = clear, 0 = fully fogged.\n"
+"float DoFogEye(vec3 worldPos)\n"
+"{\n"
+"	if(u_fogDisable > 0.5)\n"
+"		return 1.0;\n"
+"	float d = length(worldPos - u_eye.xyz);\n"
+"	float t = (d - u_fogStart) / max(u_fogEnd - u_fogStart, 0.0001);\n"
+"	return 1.0 - clamp(t, 0.0, 1.0);\n"
 "}\n"
 ;

@@ -8,6 +8,7 @@
 #include "Ped.h"
 #include "Vehicle.h"
 #include "Boat.h"
+#include "Timecycle.h"
 #include "Heli.h"
 #include "Bike.h"
 #include "Object.h"
@@ -955,6 +956,8 @@ CRenderer::SetupBigBuildingVisibility(CEntity *ent)
 void
 CRenderer::ConstructRenderList(void)
 {
+	// feed the Black Russia parity material shaders (sun direction, see librw)
+	rw::setSunDirection(CTimeCycle::GetSunDirection());
 	COcclusion::ProcessBeforeRendering();
 #ifdef NEW_RENDERER
 	if(!gbNewRenderer)

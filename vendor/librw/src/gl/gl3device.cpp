@@ -135,6 +135,10 @@ int32 u_lightColor;
 
 int32 u_matColor;
 int32 u_surfProps;
+int32 u_eye;
+int32 u_sunDir;
+int32 u_localInvGamma;
+int32 u_uvMatrix;
 
 Shader *defaultShader, *defaultShader_noAT;
 Shader *defaultShader_fullLight, *defaultShader_fullLight_noAT;
@@ -1077,6 +1081,26 @@ setViewMatrix(float32 *mat)
 	memcpy(&uniformScene.view, mat, 64);
 	setUniform(u_view, uniformScene.view);
 	sceneDirty = 1;
+
+	// BR parity: camera world position (inverse of the view matrix translation),
+	// sun direction and gamma are refreshed together with the view.
+	float32 eye[4];
+	eye[0] = -(mat[0]*mat[12] + mat[4]*mat[13] + mat[8]*mat[14]);
+	eye[1] = -(mat[1]*mat[12] + mat[5]*mat[13] + mat[9]*mat[14]);
+	eye[2] = -(mat[2]*mat[12] + mat[6]*mat[13] + mat[10]*mat[14]);
+	eye[3] = 0.0f;
+	setUniform(u_eye, eye);
+
+	V3d toSun = getSunDirection();
+	float32 sun[4] = { toSun.x, toSun.y, toSun.z, 0.0f };
+	setUniform(u_sunDir, sun);
+
+	float32 g = getLocalInvGamma();
+	float32 gam[4] = { g, g, g, 1.0f };
+	setUniform(u_localInvGamma, gam);
+
+	static const float32 idmat[16] = { 1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1 };
+	setUniform(u_uvMatrix, (float32*)idmat);
 }
 
 Shader *lastShaderUploaded;
@@ -1825,6 +1849,20 @@ initOpenGL(void)
 #endif
 	u_matColor = registerUniform("u_matColor", UNIFORM_VEC4);
 	u_surfProps = registerUniform("u_surfProps", UNIFORM_VEC4);
+	u_eye = registerUniform("u_eye", UNIFORM_VEC4);
+	u_sunDir = registerUniform("u_sunDir", UNIFORM_VEC4);
+	u_localInvGamma = registerUniform("u_localInvGamma", UNIFORM_VEC4);
+	u_uvMatrix = registerUniform("u_uvMatrix", UNIFORM_MAT4);
+
+	// defaults before the game sets anything
+	float zero4[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+	float up4[4] = { 0.0f, 0.0f, 1.0f, 0.0f };
+	float one4[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+	float idmat[16] = { 1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1 };
+	setUniform(u_eye, zero4);
+	setUniform(u_sunDir, up4);
+	setUniform(u_localInvGamma, one4);
+	setUniform(u_uvMatrix, idmat);
 
 	// for im2d
 	registerUniform("u_xform", UNIFORM_VEC4);
@@ -1877,8 +1915,8 @@ initOpenGL(void)
 #include "shaders/simple_fs_gl.inc"
 	const char *vs[] = { shaderDecl, header_vert_src, default_vert_src, nil };
 	const char *vs_fullLight[] = { shaderDecl, "#define DIRECTIONALS\n#define POINTLIGHTS\n#define SPOTLIGHTS\n", header_vert_src, default_vert_src, nil };
-	const char *fs[] = { shaderDecl, header_frag_src, simple_frag_src, nil };
-	const char *fs_noAT[] = { shaderDecl, "#define NO_ALPHATEST\n", header_frag_src, simple_frag_src, nil };
+	const char *fs[] = { shaderDecl, "#define BRMATERIAL\n", header_frag_src, simple_frag_src, nil };
+	const char *fs_noAT[] = { shaderDecl, "#define BRMATERIAL\n", "#define NO_ALPHATEST\n", header_frag_src, simple_frag_src, nil };
 
 	defaultShader = Shader::create(vs, fs);
 	assert(defaultShader);

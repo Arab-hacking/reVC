@@ -300,8 +300,8 @@ skinOpen(void *o, int32, int32)
 #include "shaders/skin_gl.inc"
 	const char *vs[] = { shaderDecl, header_vert_src, skin_vert_src, nil };
 	const char *vs_fullLight[] = { shaderDecl, "#define DIRECTIONALS\n#define POINTLIGHTS\n#define SPOTLIGHTS\n", header_vert_src, skin_vert_src, nil };
-	const char *fs[] = { shaderDecl, header_frag_src, simple_frag_src, nil };
-	const char *fs_noAT[] = { shaderDecl, "#define NO_ALPHATEST\n", header_frag_src, simple_frag_src, nil };
+	const char *fs[] = { shaderDecl, "#define BRMATERIAL\n", header_frag_src, simple_frag_src, nil };
+	const char *fs_noAT[] = { shaderDecl, "#define BRMATERIAL\n", "#define NO_ALPHATEST\n", header_frag_src, simple_frag_src, nil };
 
 	skinShader = Shader::create(vs, fs);
 	assert(skinShader);

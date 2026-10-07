@@ -38,6 +38,12 @@ uniform vec4  u_fogColor;
 #define u_fogRange (u_fogData.z)
 #define u_fogDisable (u_fogData.w)
 
+// --- Black Russia client material parity ---
+uniform vec4 u_eye;		// xyz: camera world position
+uniform vec4 u_sunDir;	// xyz: direction TO the sun
+uniform mat4 u_uvMatrix;
+
+
 #ifdef USE_UBOS
 layout(std140) uniform Scene
 {
@@ -125,4 +131,15 @@ vec3 DoDynamicLight(vec3 V, vec3 N)
 float DoFog(float w)
 {
 	return clamp((w - u_fogEnd)*u_fogRange, u_fogDisable, 1.0);
+}
+
+// Distance fog measured from the eye (as in the Black Russia client);
+// same output polarity as DoFog: 1 = clear, 0 = fully fogged.
+float DoFogEye(vec3 worldPos)
+{
+	if(u_fogDisable > 0.5)
+		return 1.0;
+	float d = length(worldPos - u_eye.xyz);
+	float t = (d - u_fogStart) / max(u_fogEnd - u_fogStart, 0.0001);
+	return 1.0 - clamp(t, 0.0, 1.0);
 }

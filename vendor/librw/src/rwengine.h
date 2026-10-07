@@ -207,6 +207,12 @@ struct Engine
 
 extern Engine *engine;
 
+	// Black Russia material parity: sun/gamma globals the gl3 shaders read
+	void setSunDirection(const V3d &toSun);
+	V3d getSunDirection(void);
+	void setLocalInvGamma(float invGamma);
+	float getLocalInvGamma(void);
+
 #define RWTOSTR_(X) #X
 #define RWTOSTR(X) RWTOSTR_(X)
 #define RWHERE "file: " __FILE__ " line: " RWTOSTR(__LINE__)
@@ -268,7 +274,6 @@ namespace null {
 	void im3DEnd(void);
 
 	int deviceSystem(DeviceReq req, void *arg0, int32 n);
-
 	extern Device renderdevice;
 }
 

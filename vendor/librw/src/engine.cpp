@@ -450,6 +450,34 @@ Engine::setMultiSamplingLevels(uint32 levels)
 }
 
 
+// sun/gamma state for the BR-parity material shaders
+static V3d g_sunDirection = { 0.0f, 0.0f, 1.0f };
+static float g_localInvGamma = 1.0f;
+
+void
+setSunDirection(const V3d &toSun)
+{
+	g_sunDirection = toSun;
+}
+
+V3d
+getSunDirection(void)
+{
+	return g_sunDirection;
+}
+
+void
+setLocalInvGamma(float invGamma)
+{
+	g_localInvGamma = invGamma;
+}
+
+float
+getLocalInvGamma(void)
+{
+	return g_localInvGamma;
+}
+
 namespace null {
 
 void beginUpdate(Camera*) { }
