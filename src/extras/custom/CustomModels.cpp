@@ -680,8 +680,16 @@ CanUseModel(const std::string &key)
 	br::RwFixStats stats;
 	std::string warn;
 	plan.usable = ReadModelEntry(key, file, isMod, stats, warn) && IsClumpStream(file);
+	if(plan.usable){
+		std::string usableWhy;
+		if(!br::validateClumpForGame(file.data(), (uint32)file.size(), usableWhy)){
+			plan.usable = false;
+			warn = usableWhy;
+		}
+	}
 	if(!plan.usable)
-		CUSTOM_LOG("model %s: not usable as a game model, the game's own file is used\n", key.c_str());
+		CUSTOM_LOG("model %s: not usable as a game model%s, the game's own file is used\n", key.c_str(),
+			warn.empty() ? "" : (" (" + warn + ")").c_str());
 	return plan.usable;
 }
 
@@ -783,6 +791,41 @@ GetTxdPlan(const std::string &key)
 	return plan;
 }
 
+// the game loaders run under a guard on Windows: a model that is broken in a
+// way we did not anticipate must not take the game down - the exception is
+// logged and the game's own file is used instead
+struct GuardedLoadCtx { CBaseModelInfo *mi; RwStream *stream; int32 modelId; bool ok; };
+static bool
+RunModelLoaders(void *p)
+{
+	GuardedLoadCtx *c = (GuardedLoadCtx*)p;
+	if(c->mi->IsSimple()){
+		c->ok = CFileLoader::LoadAtomicFile(c->stream, c->modelId);
+	}else if(c->mi->GetModelType() == MITYPE_VEHICLE){
+		// vehicles are read in two parts everywhere in the game; both parts are
+		// available here, so both run right away
+		c->mi->AddRef();
+		c->ok = CFileLoader::StartLoadClumpFile(c->stream, c->modelId) &&
+		        CFileLoader::FinishLoadClumpFile(c->stream, c->modelId);
+	}else{
+		c->ok = CFileLoader::LoadClumpFile(c->stream, c->modelId);
+	}
+	return c->ok;
+}
+
+#if defined(_WIN32) && defined(_MSC_VER)	// SEH is MSVC syntax; MinGW builds run unguarded
+static bool
+CallGuarded(bool (*fn)(void*), void *arg, DWORD *code)
+{
+	__try{
+		return fn(arg);
+	}__except(*code = GetExceptionCode(), EXCEPTION_EXECUTE_HANDLER){
+		return false;
+	}
+}
+#define CUSTOM_SEH_GUARD 1
+#endif
+
 static bool
 LoadModelIntoGame(const std::string &key, int32 modelId)
 {
@@ -799,6 +842,15 @@ LoadModelIntoGame(const std::string &key, int32 modelId)
 	CBaseModelInfo *mi = CModelInfo::GetModelInfo(modelId);
 	if(mi == nil) return false;
 
+	// an empty client stub or a truncated model is rejected before the game
+	// parses it - the game's own file is used instead
+	std::string usableWhy;
+	if(!br::validateClumpForGame(file.data(), (uint32)file.size(), usableWhy)){
+		CUSTOM_LOG("model %s: not usable as a game model (%s), the game's own file is used\n",
+			key.c_str(), usableWhy.c_str());
+		return false;
+	}
+
 	RwMemory mem;
 	mem.start = file.data();
 	mem.length = (uint32)file.size();
@@ -808,19 +860,27 @@ LoadModelIntoGame(const std::string &key, int32 modelId)
 		return false;
 	}
 
-	// the same three loaders the game uses, chosen the same way
+	// the same three loaders the game uses, chosen the same way - under a
+	// guard on Windows, so a broken model cannot take the game down
 	bool ok;
-	if(mi->IsSimple()){
-		ok = CFileLoader::LoadAtomicFile(stream, modelId);
-	}else if(mi->GetModelType() == MITYPE_VEHICLE){
-		// vehicles are read in two parts everywhere in the game; both parts are
-		// available here, so both run right away
-		mi->AddRef();
-		ok = CFileLoader::StartLoadClumpFile(stream, modelId) &&
-		     CFileLoader::FinishLoadClumpFile(stream, modelId);
-	}else{
-		ok = CFileLoader::LoadClumpFile(stream, modelId);
+#ifdef CUSTOM_SEH_GUARD
+	{
+		GuardedLoadCtx ctx; ctx.mi = mi; ctx.stream = stream; ctx.modelId = modelId; ctx.ok = false;
+		DWORD code = 0;
+		if(!CallGuarded(RunModelLoaders, &ctx, &code)){
+			RwStreamClose(stream, &mem);
+			CUSTOM_LOG("model %s: the load crashed (exception 0x%08lX), the game's own file is used\n",
+				key.c_str(), (unsigned long)code);
+			return false;
+		}
+		ok = ctx.ok;
 	}
+#else
+	{
+		GuardedLoadCtx ctx; ctx.mi = mi; ctx.stream = stream; ctx.modelId = modelId; ctx.ok = false;
+		ok = RunModelLoaders(&ctx);
+	}
+#endif
 	RwStreamClose(stream, &mem);
 
 	CUSTOM_LOG("model %s (id %d): %s, %u bytes of .%s -> %u bytes read in place%s%s\n", key.c_str(), modelId,
@@ -973,6 +1033,36 @@ BuildTexture(brtex::Texture &tex, const char *name)
 	return texture;
 }
 
+// building a texture runs under the same guard as the models: a .btx with
+// data we misread must not take the game down
+struct GuardedTexCtx { brtex::Texture *tex; const char *name; RwTexture *out; };
+static bool
+RunBuildTexture(void *p)
+{
+	GuardedTexCtx *c = (GuardedTexCtx*)p;
+	c->out = BuildTexture(*c->tex, c->name);
+	return c->out != nil;
+}
+
+static RwTexture *
+BuildTextureGuarded(brtex::Texture &tex, const char *name)
+{
+#ifdef CUSTOM_SEH_GUARD
+	GuardedTexCtx c; c.tex = &tex; c.name = name; c.out = nil;
+	DWORD code = 0;
+	if(!CallGuarded(RunBuildTexture, &c, &code)){
+		CUSTOM_LOG("  texture %s: the build crashed (exception 0x%08lX), skipped\n", name, (unsigned long)code);
+		return nil;
+	}
+	return c.out;
+#else
+	GuardedTexCtx c; c.tex = &tex; c.name = name; c.out = nil;
+	RunBuildTexture(&c);
+	return c.out;
+#endif
+}
+
+
 // builds the dictionary of one texture dictionary slot: every texture the
 // model references gets an RwTexture built from its .btx
 static bool
@@ -1009,14 +1099,14 @@ LoadTxdSlot(int32 slot, const std::string &key, TxdPlan &plan)
 				ok = LoadBtxTexture(name, tex);
 			if(!ok){ missing++; continue; }
 
-			RwTexture *texture = BuildTexture(tex, name.c_str());
+			RwTexture *texture = BuildTextureGuarded(tex, name.c_str());
 			if(texture == nil){ missing++; continue; }
 			RwTexDictionaryAddTexture(dict, texture);
 			made++;
 		}
 	}else{
 		brtex::Texture tex;
-		RwTexture *texture = LoadBtxTexture(key, tex) ? BuildTexture(tex, key.c_str()) : nil;
+		RwTexture *texture = LoadBtxTexture(key, tex) ? BuildTextureGuarded(tex, key.c_str()) : nil;
 		if(texture){
 			RwTexDictionaryAddTexture(dict, texture);
 			made++;
@@ -1235,7 +1325,7 @@ BuildDictionaryFor(const std::string &key)
 			bool ok = recipe ? brtex::bakeTerrain(*recipe, LoadBtxTexture, tex, 512, 0.0f)
 			                 : LoadBtxTexture(name, tex);
 			if(!ok){ missing++; continue; }
-			RwTexture *texture = BuildTexture(tex, name.c_str());
+			RwTexture *texture = BuildTextureGuarded(tex, name.c_str());
 			if(texture == nil){ missing++; continue; }
 			RwTexDictionaryAddTexture(dict, texture);
 			made++;
@@ -1268,6 +1358,14 @@ CCustomModels::LoadClumpFileFromCustom(const char *filename)
 		return false;
 	unsigned rawSize = (unsigned)file.size();
 
+	// the same structural check: stubs and truncated models are not served
+	std::string usableWhy;
+	if(!br::validateClumpForGame(file.data(), (uint32)file.size(), usableWhy)){
+		CUSTOM_LOG("model file %s: not usable as a game model (%s), the game's own file is used\n",
+			filename, usableWhy.c_str());
+		return false;
+	}
+
 	// A hierarchical model file is matched to its model by the name of the
 	// clump's frame; the file name is the name of the model here, because the
 	// archives are indexed by it.
@@ -1295,7 +1393,27 @@ CCustomModels::LoadClumpFileFromCustom(const char *filename)
 		setTxd = true;
 	}
 
-	bool ok = CFileLoader::LoadClumpFile(stream, id);
+	bool ok;
+#ifdef CUSTOM_SEH_GUARD
+	{
+		GuardedLoadCtx ctx; ctx.mi = mi; ctx.stream = stream; ctx.modelId = id; ctx.ok = false;
+		DWORD code = 0;
+		if(!CallGuarded(RunModelLoaders, &ctx, &code)){
+			if(setTxd)
+				CTxdStore::PopCurrentTxd();
+			RwStreamClose(stream, &mem);
+			CUSTOM_LOG("model file %s: the load crashed (exception 0x%08lX), the game's own file is used\n",
+				filename, (unsigned long)code);
+			return false;
+		}
+		ok = ctx.ok;
+	}
+#else
+	{
+		GuardedLoadCtx ctx; ctx.mi = mi; ctx.stream = stream; ctx.modelId = id; ctx.ok = false;
+		ok = RunModelLoaders(&ctx);
+	}
+#endif
 
 	if(setTxd)
 		CTxdStore::PopCurrentTxd();
@@ -1551,7 +1669,7 @@ CCustomModels::SkinTextureFromBtx(const char *skinname)
 		CUSTOM_LOG("skin %s: the .btx could not be read (%s)\n", skinname, err.c_str());
 		return nil;
 	}
-	RwTexture *texture = BuildTexture(tex, key.c_str());
+	RwTexture *texture = BuildTextureGuarded(tex, key.c_str());
 	if(texture)
 		CUSTOM_LOG("skin %s: built from the .btx in the custom folder\n", skinname);
 	return texture;

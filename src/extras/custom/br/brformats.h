@@ -248,6 +248,162 @@ static inline uint64_t geometryStructSize(const uint8_t* d, size_t n, bool withF
 }
 
 // ---------------------------------------------------------------------------
+// Проверка файла как игровой модели: корень — clump, есть хотя бы одна
+// непустая geometry, у geometry есть материалы, и объявленные данные
+// помещаются в файл. Расклады: новые (geometry внутри atomic) и старые BR
+// (geometries в clump-уровневом GEOMLIST, атомики ссылаются по индексу —
+// атомики без своей geometry там легитимны). Пустые заглушки клиента (clump
+// в ~200-1200 байт вообще без geometry — так клиент хранит неиспользуемые
+// оружие/транспорт, напр. rocketla/seaspar) и обрезанные модели отсеиваются
+// ДО передачи игре: иначе игра падает позже — уже в рендере/стриминге, без
+// внятного следа в журнале. Политика — только положительные находки: если
+// дерево не разобралось, модель НЕ бракуем (её читает игра, как раньше).
+// ---------------------------------------------------------------------------
+
+// один чанк: заголовок 12 байт — ровно тот формат, в который наш нормализатор
+// приводит файлы и который читает игра (проверено на сотнях моделей клиента)
+struct BrChunk { uint32_t id; const uint8_t* p; uint32_t len; };
+
+static inline bool brChunkAt(const uint8_t* p, const uint8_t* end, BrChunk& c, const uint8_t*& next) {
+    if (end - p < 12) return false;
+    c.id = rd32(p);
+    uint32_t size = rd32(p + 4);
+    if (size > (uint32_t)(end - p - 12)) return false;
+    c.p = p + 12; c.len = size;
+    next = p + 12 + size;
+    return true;
+}
+
+// ищет в детях чанка rwSTRUCT и возвращает его данные
+static inline bool brFindStruct(const uint8_t* p, const uint8_t* end, const uint8_t*& sd, uint32_t& slen) {
+    const uint8_t* q = p;
+    while (q < end) {
+        BrChunk k; const uint8_t* after;
+        if (!brChunkAt(q, end, k, after)) return false;
+        q = after;
+        if (k.id == rwSTRUCT) { sd = k.p; slen = k.len; return true; }
+    }
+    return false;
+}
+
+// проверка одной geometry (чанк rwGEOMETRY): непустая, с материалами, данные внутри файла
+static inline bool brCheckGeometry(const BrChunk& geom, std::string& why) {
+    char t[160];
+    const uint8_t* g = geom.p; const uint8_t* gend = geom.p + geom.len;
+    const uint8_t* sd = nil; uint32_t slen = 0, numMats = 1;
+    while (g < gend) {
+        BrChunk gk; const uint8_t* gkafter;
+        if (!brChunkAt(g, gend, gk, gkafter)) break;
+        g = gkafter;
+        if (gk.id == rwMATLIST) {
+            const uint8_t* msd; uint32_t mlen;
+            if (brFindStruct(gk.p, gk.p + gk.len, msd, mlen) && mlen >= 4)
+                numMats = rd32(msd);
+        }
+    }
+    if (!brFindStruct(geom.p, gend, sd, slen)) return true;    // без struct не судим
+    if (slen < 16) {
+        snprintf(t, sizeof t, "a geometry struct is too small (%u bytes)", slen);
+        why = t;
+        return false;
+    }
+    uint32_t flags = rd32(sd), numTris = rd32(sd + 4), numVerts = rd32(sd + 8), numMorph = rd32(sd + 12);
+    bool native = (flags & 0x01000000) != 0;
+    if (numVerts == 0 || numTris == 0) {
+        snprintf(t, sizeof t, "a geometry is empty (%u verts, %u tris) - an empty model stub", numVerts, numTris);
+        why = t;
+        return false;
+    }
+    if (numVerts > 0x10000) {
+        snprintf(t, sizeof t, "a geometry declares too many vertices (%u)", numVerts);
+        why = t;
+        return false;
+    }
+    if (numMorph > 16) {
+        snprintf(t, sizeof t, "a geometry declares too many morph targets (%u)", numMorph);
+        why = t;
+        return false;
+    }
+    if (!native) {
+        uint64_t e0 = geometryStructSize(sd, slen, false);
+        uint64_t e1 = e0 ? e0 : geometryStructSize(sd, slen, true);
+        bool fits = (e0 > 0 && e0 <= slen) || (e1 > 0 && e1 <= slen);
+        if (!fits) {
+            snprintf(t, sizeof t, "a geometry declares more data (%u verts, %u tris) than the file holds - the model is truncated", numVerts, numTris);
+            why = t;
+            return false;
+        }
+    }
+    if (numMats == 0) {
+        snprintf(t, sizeof t, "a geometry has no materials - an empty model stub");
+        why = t;
+        return false;
+    }
+    return true;
+}
+
+// ищет в детях чанка все geometry и проверяет каждую; возвращает число проверенных
+static inline int brCheckGeometriesIn(const uint8_t* p, const uint8_t* end, std::string& why) {
+    int n = 0;
+    const uint8_t* q = p;
+    while (q < end) {
+        BrChunk k; const uint8_t* after;
+        if (!brChunkAt(q, end, k, after)) break;
+        q = after;
+        if (k.id != rwGEOMETRY) continue;
+        n++;
+        if (!brCheckGeometry(k, why)) return -n;   // отрицательное — уже с ошибкой
+    }
+    return n;
+}
+
+static inline bool validateClumpForGame(const uint8_t* p, size_t n, std::string& why) {
+    why.clear();
+    char t[160];
+    if (n < 12) { why = "the file is too small to be a model"; return false; }
+    const uint8_t* end = p + n;
+    BrChunk root; const uint8_t* after;
+    if (!brChunkAt(p, end, root, after)) return true;      // не разобрались — не бракуем
+    if (root.id != rwCLUMP) return true;                   // не clump — пусть решает игра
+
+    int atomics = 0, atomicsWithGeom = 0, geomsChecked = 0;
+    const uint8_t* q = root.p; const uint8_t* qend = root.p + root.len;
+    while (q < qend) {
+        BrChunk k; const uint8_t* kafter;
+        if (!brChunkAt(q, qend, k, kafter)) return true;
+        q = kafter;
+        if (k.id == rwATOMIC) {
+            atomics++;
+            // geometry либо внутри атомика, либо (старый BR-расклад) в GEOMLIST уровня clump
+            int own = brCheckGeometriesIn(k.p, k.p + k.len, why);
+            if (own < 0) return false;                     // проверка geometry уже написала why
+            if (own > 0) { atomicsWithGeom += own; geomsChecked += own; }
+        } else if (k.id == rwGEOMLIST) {
+            int gn = brCheckGeometriesIn(k.p, k.p + k.len, why);
+            if (gn < 0) return false;
+            geomsChecked += gn;
+        }
+    }
+    if (atomics == 0) {
+        snprintf(t, sizeof t, "the clump holds no atomics - an empty model stub");
+        why = t;
+        return false;
+    }
+    if (geomsChecked == 0) {
+        snprintf(t, sizeof t, "the model holds no geometry - an empty model stub");
+        why = t;
+        return false;
+    }
+    // атомики без своей geometry законны только при общем GEOMLIST
+    if (atomicsWithGeom == 0 && geomsChecked == 0) {
+        snprintf(t, sizeof t, "the atomics hold no geometry - an empty model stub");
+        why = t;
+        return false;
+    }
+    return true;
+}
+
+// ---------------------------------------------------------------------------
 // RpMatFX (0x120) в material extension. Внутри блоба лежат ВЛОЖЕННЫЕ RW texture-чанки:
 //   стандартные типы 1..6 (bump/env/dual) — по раскладке RW;
 //   BR-тип 10 (PBR): u32 10, u32 ?, u32 nTex, nTex x { u32 keyLen, key, texture-chunk }, затем float/color/string/int списки.

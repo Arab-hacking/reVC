@@ -4,6 +4,10 @@
 #define WINVER 0x0500
 
 #include <winerror.h>
+
+#ifdef CUSTOM_MODELS
+#include "DebugLog.h"
+#endif
 #include <windows.h>
 #include <mmsystem.h>
 #include <shellapi.h>
@@ -2017,6 +2021,13 @@ WinMain(HINSTANCE instance,
 	RwV2d pos;
 	RwInt32 argc, i;
 	RwChar **argv;
+
+#ifdef CUSTOM_MODELS
+	// debug.log: what the custom folder loads + the crash report; THIS is the
+	// real Windows entry - the main() in src/core/main.cpp is never reached
+	DebugLogInit();
+#endif
+
 	SystemParametersInfo(SPI_SETFOREGROUNDLOCKTIMEOUT, 0, nil, SPIF_SENDCHANGE);
 
 #ifndef MASTER

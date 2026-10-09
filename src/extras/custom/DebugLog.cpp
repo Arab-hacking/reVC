@@ -47,10 +47,14 @@ DebugLogOpen(void)
 	return debugLogFd;
 }
 
+static bool debugLogInited = false;
+
 void
 DebugLogEnsure(void)
 {
-	DebugLogOpen();
+	// the full init (banner + crash handlers) - idempotent; called from the
+	// first log line, so the traps are on no matter which entry point ran
+	DebugLogInit();
 }
 
 const char *
@@ -63,7 +67,8 @@ void
 DebugLogPrintf(const char *fmt, ...)
 {
 	char buf[2048];
-	int fd = DebugLogOpen();
+	DebugLogEnsure();
+	int fd = debugLogFd;
 	if(fd < 0)
 		return;
 
@@ -167,6 +172,10 @@ DebugLogExitMarker(void)
 void
 DebugLogInit(void)
 {
+	if(debugLogInited)
+		return;
+	debugLogInited = true;
+
 	int fd = DebugLogOpen();
 	if(fd < 0)
 		return;
