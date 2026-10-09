@@ -5,9 +5,10 @@
 
 #include <winerror.h>
 
-#ifdef CUSTOM_MODELS
+// unconditional: this header is standalone, and CUSTOM_MODELS is only
+// defined later in this file (via common.h -> config.h) - a conditional
+// include here would silently miss (msbuild: 'DebugLogInit': identifier not found)
 #include "DebugLog.h"
-#endif
 #include <windows.h>
 #include <mmsystem.h>
 #include <shellapi.h>
