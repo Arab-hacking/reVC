@@ -64,6 +64,9 @@ public:
 	// player skins out of the custom folder: plain images (.bmp, or .png/.jpg
 	// in a skins folder) named after the skin, in the archives or loose
 	static bool HasSkin(const char *skinname);
+	// builds the player skin texture straight out of a .btx in a BR skins
+	// pack (nil when there is no .btx under this name)
+	static RwTexture *SkinTextureFromBtx(const char *skinname);
 	static bool GetSkinImage(const char *skinname, std::vector<uint8> &out, char *ext, int extCap);
 	static int GetNumSkins(void);
 	// "name.bmp" style - the frontend skin list strips the extension itself

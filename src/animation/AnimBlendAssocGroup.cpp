@@ -19,6 +19,10 @@
 #include "AnimBlendAssociation.h"
 #include "AnimBlendAssocGroup.h"
 
+#ifdef CUSTOM_MODELS
+#include "SavehDiag.h"
+#endif
+
 CAnimBlendAssocGroup::CAnimBlendAssocGroup(void)
 {
 	animBlock = nil;
@@ -179,7 +183,17 @@ CAnimBlendAssocGroup::CreateAssociations(const char *blockName, RpClump *clump, 
 
 	numAssociations = 0;
 	for(i = 0; i < numAssocs; i++){
-		assocList[i].Init(clump, CAnimManager::GetAnimation(animNames[i], animBlock));
+		CAnimBlendHierarchy *hier = CAnimManager::GetAnimation(animNames[i], animBlock);
+		if(hier == nil){
+#ifdef CUSTOM_MODELS
+			// a custom animation package can be missing single animations;
+			// skip them instead of dereferencing nil
+			CUSTOM_LOG("anim assoc: %s is not in the animation set - association skipped\n", animNames[i]);
+#else
+			continue;
+#endif
+		}
+		assocList[i].Init(clump, hier);
 		assocList[i].animId = firstAnimId + i;
 		assocList[i].groupId = groupId;
 	}

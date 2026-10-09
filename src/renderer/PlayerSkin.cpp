@@ -202,23 +202,24 @@ CPlayerSkin::GetSkinTexture(const char *texName)
 	}
 
 #ifdef CUSTOM_MODELS
-	// the custom folder: the skin can sit in one of the archives (or in the
-	// skins folder of it) as a plain image
-	std::vector<uint8> img;
-	char ext[8] = "";
-	if (CCustomModels::GetSkinImage(texName, img, ext, sizeof(ext))) {
-		if (strcmp(ext, "bmp") == 0)
-			tex = MakeSkinTextureFromBmp(texName, img);
-		else {
-			CUSTOM_LOG("skin %s: a .%s skin is not supported by the game - repack it as an uncompressed .bmp\n",
-				texName, ext);
-			tex = nil;
+	// the custom folder: a skin is either a plain image (.bmp) in the
+	// archives or the skins folder, or a .btx texture out of a BR skins pack
+	RwTexture *customTex = CCustomModels::SkinTextureFromBtx(texName);
+	if (customTex == nil) {
+		std::vector<uint8> img;
+		char ext[8] = "";
+		if (CCustomModels::GetSkinImage(texName, img, ext, sizeof(ext))) {
+			if (strcmp(ext, "bmp") == 0)
+				customTex = MakeSkinTextureFromBmp(texName, img);
+			else
+				CUSTOM_LOG("skin %s: a .%s skin is not supported by the game - use an uncompressed .bmp or a .btx\n",
+					texName, ext);
 		}
-		if (tex) {
-			RwTexDictionaryAddTexture(CTxdStore::GetSlot(m_txdSlot)->texDict, tex);
-			CUSTOM_LOG("skin %s: applied from the custom folder (%u bytes)\n", texName, (unsigned)img.size());
-			return tex;
-		}
+	}
+	if (customTex) {
+		RwTexDictionaryAddTexture(CTxdStore::GetSlot(m_txdSlot)->texDict, customTex);
+		CUSTOM_LOG("skin %s: applied from the custom folder\n", texName);
+		return customTex;
 	}
 	CUSTOM_LOG("skin %s: not found - not in the skin dictionary, not in skins\\%s.bmp, not in the custom folder\n",
 		texName, texName);

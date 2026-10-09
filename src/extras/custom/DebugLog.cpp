@@ -13,6 +13,7 @@
 #ifdef _WIN32
 #include <windows.h>
 #include <io.h>
+#include <signal.h>
 #else
 #include <unistd.h>
 #include <signal.h>
@@ -97,6 +98,23 @@ DebugLogCrashLine(const char *line)
 
 #ifdef _WIN32
 
+static void
+DebugLogSignalHandler(int sig)
+{
+	const char *what =
+		sig == SIGSEGV ? "SIGSEGV (invalid memory access)" :
+		sig == SIGABRT ? "SIGABRT (abort - failed assert or out of memory)" :
+		sig == SIGFPE  ? "SIGFPE (arithmetic error)" :
+		sig == SIGILL  ? "SIGILL (illegal instruction)" :
+		"fatal signal";
+	char line[128];
+	snprintf(line, sizeof(line), "CRASH: %s - see the lines above for what was loaded last", what);
+	DebugLogCrashLine(line);
+	DebugLogCrashLine("---- session ended abnormally ----");
+	signal(sig, SIG_DFL);
+	raise(sig);
+}
+
 static LONG WINAPI
 DebugLogUnhandledException(EXCEPTION_POINTERS *info)
 {
@@ -161,6 +179,12 @@ DebugLogInit(void)
 
 #ifdef _WIN32
 	SetUnhandledExceptionFilter(DebugLogUnhandledException);
+	// assert() and abort() go through the CRT, not through the unhandled
+	// exception filter - catch them with the signal handlers as well
+	signal(SIGABRT, DebugLogSignalHandler);
+	signal(SIGSEGV, DebugLogSignalHandler);
+	signal(SIGILL, DebugLogSignalHandler);
+	signal(SIGFPE, DebugLogSignalHandler);
 #else
 	signal(SIGSEGV, DebugLogSignalHandler);
 	signal(SIGABRT, DebugLogSignalHandler);

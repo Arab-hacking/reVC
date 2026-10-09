@@ -65,6 +65,11 @@ CAnimBlendAssociation::Init(RpClump *clump, CAnimBlendHierarchy *hier)
 	int i;
 	AnimBlendFrameData *frame;
 
+	// a custom animation set can be missing single animations; an empty
+	// association is better than dereferencing nil
+	if(hier == nil)
+		return;
+
 	CAnimBlendClumpData *clumpData = *RPANIMBLENDCLUMPDATA(clump);
 	numNodes = clumpData->numFrames;
 	AllocateAnimBlendNodeArray(numNodes);

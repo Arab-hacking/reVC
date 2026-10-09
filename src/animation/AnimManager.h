@@ -142,7 +142,7 @@ public:
 	static void LoadAnimFile(RwStream *stream, bool compress, char (*uncompressedAnims)[32] = nil);
 	// SA/BR animation packages with the compact header (ANP2/ANP3), as found
 	// in San Andreas ifp files and Black Russia .ani containers
-	static void LoadAnimFile_ANP23(RwStream *stream, const char *ident, bool compress);
+	static void LoadAnimFile_ANP23(RwStream *stream, const char *ident, bool compress, uint32 rootSize);
 	static void CreateAnimAssocGroups(void);
 	static void RemoveLastAnimFile(void);
 	static CAnimBlendAssocGroup* GetAnimAssocGroups(void) { return ms_aAnimAssocGroups; }

@@ -340,6 +340,12 @@ IndexArchive(const std::string &path, uint64 mtime, ScanStats &st)
 			if(key.size() > 31)
 				AddIndex(customBtx, key.substr(0, 31), src);
 			btxs++;
+			// a BR skins pack (its name says "skin") keeps the player skins
+			// as .btx textures - offer them in the skin list as well
+			if(ToLower(path).find("skin") != std::string::npos){
+				AddIndex(customImages, key, src);
+				imgs++;
+			}
 		}else if(ext == "txd"){
 			AddIndex(customTxdFiles, key, src);
 			txds++;
@@ -418,6 +424,10 @@ ScanFolder(const std::string &folder, int depth, ScanStats &st)
 			if(key.size() > 31)
 				AddIndex(customBtx, key.substr(0, 31), src);
 			st.btx++;
+			if(ToLower(path).find("skin") != std::string::npos){
+				AddIndex(customImages, key, src);
+				st.img++;
+			}
 		}else if(ext == "txd"){
 			AddIndex(customTxdFiles, key, src);
 			st.txd++;
@@ -1514,6 +1524,37 @@ CCustomModels::GetSkinImage(const char *skinname, std::vector<uint8> &out, char 
 	}
 	CUSTOM_LOG("skin %s: %u bytes taken from %s\n", skinname, (unsigned)out.size(), src->fname);
 	return true;
+}
+
+RwTexture *
+CCustomModels::SkinTextureFromBtx(const char *skinname)
+{
+	if(skinname == nil || skinname[0] == '\0')
+		return nil;
+	EnsureInitialised();
+
+	std::string key = ToLower(Stem(skinname));
+	const CustomSource *src = FindSource(customImages, key);
+	if(src == nil)
+		return nil;
+	std::string ext = Extension(src->fname);
+	if(ext != "btx")
+		return nil;			// plain images go through GetSkinImage
+
+	std::vector<uint8> file;
+	if(!ReadSource(*src, file))
+		return nil;
+	brtex::Texture tex;
+	tex.name = key;
+	std::string err;
+	if(!brtex::parseBtx(file.data(), file.size(), tex, &err)){
+		CUSTOM_LOG("skin %s: the .btx could not be read (%s)\n", skinname, err.c_str());
+		return nil;
+	}
+	RwTexture *texture = BuildTexture(tex, key.c_str());
+	if(texture)
+		CUSTOM_LOG("skin %s: built from the .btx in the custom folder\n", skinname);
+	return texture;
 }
 
 int

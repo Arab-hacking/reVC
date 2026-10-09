@@ -21,6 +21,7 @@ typedef int64_t int64;
 
 // stand-ins for RenderWare types the custom-folder headers mention
 typedef void RwTexDictionary;
+typedef void RwTexture;
 
 // minimal stand-in for the game's vector, used by the timecycle header
 struct CVector

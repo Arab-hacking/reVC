@@ -1155,4 +1155,83 @@ inline std::vector<uint8_t> buildDummyDff() {
     w.close();
     return w.b;
 }
+// ---------------------------------------------------------------------------
+// ANP2/ANP3 animation packages (San Andreas / Black Russia)
+//
+// The PC packages start [magic][size][blockName 24][numAnims]...; the SA
+// mobile ones (what the Black Russia common.zip carries) have no root size
+// and one extra framesAllocSize per block: [magic][blockName 24][numAnims]
+// [framesAllocSize].... This walks either variant and collects the animation
+// names, so the game can tell whether a custom package really carries the
+// animation set it needs - without building any game objects first.
+// ---------------------------------------------------------------------------
+
+inline uint32 SniffU32(const uint8 *p) { return (uint32)p[0] | ((uint32)p[1] << 8) | ((uint32)p[2] << 16) | ((uint32)p[3] << 24); }
+
+// outNames receives up to maxNames animation names. Returns false when the
+// buffer is not a well-formed ANP2/ANP3 package (ANPK and anything else
+// returns false as well - the caller decides what that means for it).
+inline bool
+SniffAnimNames(const uint8 *data, size_t size, char (*outNames)[24], int maxNames, int &numNames)
+{
+    numNames = 0;
+    if(data == nil || size < 40)
+        return false;
+    bool isANP3 = memcmp(data, "ANP3", 4) == 0;
+    if(!isANP3 && memcmp(data, "ANP2", 4) != 0)
+        return false;
+
+    // PC layout starts [magic][size]; the size-less (SA mobile) layout fails
+    // that sanity check because its "size" field is really the first four
+    // bytes of the block name
+    bool mobile = SniffU32(data + 4) > size;
+    uint32 pos = mobile ? 4 : 8;
+
+    size_t n = size;
+    while(pos + 32 <= n){
+        // block: name[24], numAnims, (mobile: framesAllocSize)
+        uint32 numAnims = SniffU32(data + pos + 24);
+        pos += 28;
+        if(mobile)
+            pos += 4;
+        if(numAnims > 10000)
+            return false;
+        for(uint32 a = 0; a < numAnims; a++){
+            if(pos + 32 > n)
+                return false;
+            uint32 numSeq = SniffU32(data + pos + 24);
+            uint32 animNameOff = pos;
+            pos += 28;
+            if(isANP3)
+                pos += 8;       // framesAllocSize + flags
+            if(numSeq == 0 || numSeq > 4096)
+                return false;
+            if(numNames < maxNames){
+                memcpy(outNames[numNames], data + animNameOff, 23);
+                outNames[numNames][23] = '\0';
+                numNames++;
+            }
+            for(uint32 sq = 0; sq < numSeq; sq++){
+                if(pos + 36 > n)
+                    return false;
+                uint32 frameType = SniffU32(data + pos + 24);
+                uint32 numFrames = SniffU32(data + pos + 28);
+                pos += 36;
+                uint32 fsz;
+                switch(frameType){
+                case 1: fsz = 0x14; break;
+                case 2: fsz = 0x20; break;
+                case 3: fsz = 0x0A; break;
+                case 4: fsz = 0x10; break;
+                default: return false;
+                }
+                if(fsz * (uint64)numFrames > n - pos)
+                    return false;
+                pos += fsz * numFrames;
+            }
+        }
+    }
+    return true;
+}
+
 } // namespace br

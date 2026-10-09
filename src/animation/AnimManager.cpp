@@ -14,6 +14,8 @@
 
 #ifdef CUSTOM_MODELS
 #include "CustomModels.h"
+#include "SavehDiag.h"
+#include "brformats.h"
 #endif
 
 CAnimBlock CAnimManager::ms_aAnimBlocks[NUMANIMBLOCKS];
@@ -1280,11 +1282,42 @@ CAnimManager::LoadAnimFile(const char *filename)
 	static std::vector<uint8> customBuf;
 	customBuf.clear();
 	if(CCustomModels::LoadAnimFileFromCustom(filename, customBuf)){
-		RwMemory mem;
-		mem.start = customBuf.data();
-		mem.length = (uint32)customBuf.size();
-		stream = RwStreamOpen(rwSTREAMMEMORY, rwSTREAMREAD, &mem);
-		fromCustom = stream != nil;
+		// The SA / Black Russia animation packages carry a different
+		// animation set than this game: their ped package has no walk_civi,
+		// idle_stance and friends (and none of the weapon/bike blocks), so
+		// loading it would leave every ped association group broken. Walk
+		// the package first and only take it when it can be read and really
+		// carries this game's names.
+		bool take = true;
+		if(customBuf.size() >= 40){
+			char (*names)[24] = (char (*)[24])malloc(sizeof(char[24]) * 4096);
+			if(names){
+				int nn = 0;
+				bool clean = br::SniffAnimNames(customBuf.data(), customBuf.size(), names, 4096, nn);
+				if(clean && strncmp(filename, "ANIM\\PED.IFP", 12) == 0){
+					bool walk = false, idle = false;
+					for(int q = 0; q < nn; q++){
+						if(strcmp(names[q], "walk_civi") == 0) walk = true;
+						if(strcmp(names[q], "idle_stance") == 0) idle = true;
+					}
+					take = walk && idle;
+					if(!take)
+						CUSTOM_LOG("animation %s: the package is the SA mobile set (%d anims, no walk_civi/idle_stance) - it does not fit this game, the game's own PED.IFP stays\n", filename, nn);
+				}else if(!clean){
+					take = false;
+					CUSTOM_LOG("animation %s: the package does not walk as ANP2/ANP3 - the game's own file stays\n", filename);
+				}
+				free(names);
+			}
+		}
+		if(take){
+			RwMemory mem;
+			mem.start = customBuf.data();
+			mem.length = (uint32)customBuf.size();
+			stream = RwStreamOpen(rwSTREAMMEMORY, rwSTREAMREAD, &mem);
+			fromCustom = stream != nil;
+		}else
+			customBuf.clear();
 	}
 #endif
 	if(stream == nil)
@@ -1313,7 +1346,7 @@ CAnimManager::LoadAnimFile(RwStream *stream, bool compress, char (*uncompressedA
 	// San Andreas and Black Russia packages: compact header without the
 	// ANPK chunk layers (see gta-reversed CAnimManager::LoadAnimFile)
 	if(memcmp(anpk.ident, "ANP3", 4) == 0 || memcmp(anpk.ident, "ANP2", 4) == 0){
-		LoadAnimFile_ANP23(stream, anpk.ident, compress);
+		LoadAnimFile_ANP23(stream, anpk.ident, compress, anpk.size);
 		return;
 	}
 	ROUNDSIZE(anpk.size);
@@ -1475,7 +1508,7 @@ CAnimManager::LoadAnimFile(RwStream *stream, bool compress, char (*uncompressedA
 // floats through the same rotation handling as the ANPK reader, pre-compressed
 // frames (frameType 3/4) straight into the compressed arrays.
 void
-CAnimManager::LoadAnimFile_ANP23(RwStream *stream, const char *ident, bool compress)
+CAnimManager::LoadAnimFile_ANP23(RwStream *stream, const char *ident, bool compress, uint32 rootSize)
 {
 	char buf[256];
 	float *fbuf = (float*)buf;
@@ -1487,6 +1520,27 @@ CAnimManager::LoadAnimFile_ANP23(RwStream *stream, const char *ident, bool compr
 	blockName[23] = '\0';
 	uint32 numAnims;
 	RwStreamRead(stream, &numAnims, sizeof(numAnims));
+
+	// The SA mobile / Black Russia packages have no root size field: the
+	// block name starts right behind the magic and every block carries an
+	// extra framesAllocSize. Read through the PC layout eyes that is off by
+	// four bytes - but the true fields are all in the bytes already read,
+	// so recover them from there (the stream then sits exactly behind the
+	// mobile block header, no seeking needed).
+	if(numAnims > (uint32)NUMANIMATIONS && isANP3){
+		uint32 mobileNumAnims;
+		memcpy(&mobileNumAnims, blockName + 20, sizeof(mobileNumAnims));
+		if(mobileNumAnims > 0 && mobileNumAnims <= (uint32)NUMANIMATIONS){
+			char realName[24];
+			memset(realName, 0, sizeof(realName));
+			memcpy(realName, &rootSize, 4);
+			memcpy(realName + 4, blockName, 20);
+			memcpy(blockName, realName, sizeof(blockName));
+			blockName[23] = '\0';
+			numAnims = mobileNumAnims;
+			debug("ANP3: size-less (SA mobile) package, block %s (%d anims)\n", blockName, numAnims);
+		}
+	}
 
 	CAnimBlock *animBlock = GetAnimationBlock(blockName);
 	if(animBlock){
@@ -1563,6 +1617,11 @@ CAnimManager::LoadAnimFile_ANP23(RwStream *stream, const char *ident, bool compr
 			seq->SetBoneTag(boneTag);
 			if(numFrames == 0)
 				continue;
+			if(numFrames > 0xFFFF){
+				debug("ANP%c: %s/%s has an impossible frame count (%d)\n",
+					ident[3], hier->name, seq->name, numFrames);
+				return;
+			}
 			if(frameType < 1 || frameType > 4){
 				debug("ANP%c: unknown frame type %d in %s\n", ident[3], frameType, hier->name);
 				return;	// the stream is positioned wrong from here on

@@ -23,3 +23,9 @@ g++ -O2 -g -w -std=c++11 -DCUSTOM_MODELS=1 \
     ../../src/extras/custom/CustomTimecycle.cpp \
     -o test_custom2
 echo "built ./test_custom2"
+g++ -O2 -g -w -std=c++11 -DCUSTOM_MODELS=1 \
+    -I shim -I ../../src/extras/custom -I ../../src/extras/custom/br \
+    test_sniff.cpp ../../src/extras/custom/CustomZip.cpp \
+    ../../src/extras/custom/br/third_party/astc_decomp.cpp \
+    -o test_sniff
+echo "built ./test_sniff"
