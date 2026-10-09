@@ -1,6 +1,10 @@
 #define WITHD3D
 #include "common.h"
 
+#ifdef RW_GL3
+#include "Timecycle.h"
+#endif
+
 #include "main.h"
 #include "Lights.h"
 #include "ModelInfo.h"
@@ -8,7 +12,6 @@
 #include "Ped.h"
 #include "Vehicle.h"
 #include "Boat.h"
-#include "Timecycle.h"
 #include "Heli.h"
 #include "Bike.h"
 #include "Object.h"
@@ -956,8 +959,11 @@ CRenderer::SetupBigBuildingVisibility(CEntity *ent)
 void
 CRenderer::ConstructRenderList(void)
 {
-	// feed the Black Russia parity material shaders (sun direction, see librw)
+#ifdef RW_GL3
+	// the material shaders light with the time cycle's sun (BR parity)
 	rw::setSunDirection(CTimeCycle::GetSunDirection());
+#endif
+
 	COcclusion::ProcessBeforeRendering();
 #ifdef NEW_RENDERER
 	if(!gbNewRenderer)

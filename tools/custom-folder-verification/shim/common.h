@@ -16,6 +16,22 @@ typedef int16_t int16;
 typedef int32_t int32;
 typedef int64_t int64;
 #define nil NULL
+
+#include <math.h>
+
+// stand-ins for RenderWare types the custom-folder headers mention
+typedef void RwTexDictionary;
+
+// minimal stand-in for the game's vector, used by the timecycle header
+struct CVector
+{
+	float x, y, z;
+	CVector(void) : x(0.0f), y(0.0f), z(0.0f) {}
+	CVector(float X, float Y, float Z) : x(X), y(Y), z(Z) {}
+	CVector &operator+=(const CVector &o) { x += o.x; y += o.y; z += o.z; return *this; }
+	CVector &operator-=(const CVector &o) { x -= o.x; y -= o.y; z -= o.z; return *this; }
+	float Magnitude(void) const { return sqrtf(x*x + y*y + z*z); }
+};
 #endif
 #define debug(...) do { } while(0)
 #define Const const

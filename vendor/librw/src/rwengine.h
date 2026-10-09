@@ -207,11 +207,13 @@ struct Engine
 
 extern Engine *engine;
 
-	// Black Russia material parity: sun/gamma globals the gl3 shaders read
-	void setSunDirection(const V3d &toSun);
-	V3d getSunDirection(void);
-	void setLocalInvGamma(float invGamma);
-	float getLocalInvGamma(void);
+// BR material parity: the sun direction the material shaders light with and
+// the gamma the client applies - refreshed by the game every frame, uploaded
+// with the view matrix (see gl3device.cpp u_sunDir/u_localInvGamma).
+void setSunDirection(V3d dir);
+V3d getSunDirection(void);
+void setLocalInvGamma(float32 g);
+float32 getLocalInvGamma(void);
 
 #define RWTOSTR_(X) #X
 #define RWTOSTR(X) RWTOSTR_(X)
@@ -274,6 +276,7 @@ namespace null {
 	void im3DEnd(void);
 
 	int deviceSystem(DeviceReq req, void *arg0, int32 n);
+
 	extern Device renderdevice;
 }
 

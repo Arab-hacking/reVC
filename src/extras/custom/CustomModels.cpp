@@ -54,6 +54,8 @@ struct CustomSource
 	int archive;
 	int entry;
 	uint64 mtime;
+	char loose[256];		// archive < 0: a plain file in the custom folder
+	char fname[128];		// the name the file has (with the extension)
 };
 
 static std::vector<CustomZip*> customArchives;
@@ -61,8 +63,42 @@ static std::map<std::string, CustomSource> customMods;
 static std::map<std::string, CustomSource> customBtx;
 static std::map<std::string, CustomSource> customCls;
 static std::map<std::string, CustomSource> customAnims;
+// standard-format custom files: the community packs keep ordinary .dff/.txd/
+// .col files (and plain images for the player skin) in the same archives
+static std::map<std::string, CustomSource> customDff;
+static std::map<std::string, CustomSource> customTxdFiles;
+static std::map<std::string, CustomSource> customColFiles;	// whole .col containers
+static std::map<std::string, CustomSource> customImages;	// .bmp/.png/.jpg
+
+// one collision model inside a .col container
+struct ColBlockRef
+{
+	int archive;
+	int entry;
+	uint32 offset;			// of the name (behind the fourcc + size)
+	uint32 size;			// of the name + body
+	bool vcBody;			// 'COLL' float body the game reads as it is
+	uint64 mtime;
+};
+static std::map<std::string, ColBlockRef> customColBlocks;
+static std::vector<std::string> customSkinNames;	// "name.bmp" style, for the frontend
+
+static std::string customFolderPath;	// remembered for data files and loose skins
 static bool customInitialised = false;
 static bool customActive = false;
+
+// .col fourccs, in byte order as they sit in the file
+#define COL_FCC_COLL	('C' | ('O'<<8) | ('L'<<16) | ((uint32)'L'<<24))
+#define COL_FCC_COL2	('C' | ('O'<<8) | ('L'<<16) | ((uint32)'2'<<24))
+#define COL_FCC_COL3	('C' | ('O'<<8) | ('L'<<16) | ((uint32)'3'<<24))
+
+static bool
+IsColFourCC(uint32 f)
+{
+	return f == COL_FCC_COLL || f == COL_FCC_COL2 || f == COL_FCC_COL3;
+}
+
+static bool ReadSource(const CustomSource &src, std::vector<uint8> &out);
 
 // ---------------------------------------------------------------------------
 // small helpers
@@ -180,42 +216,107 @@ FolderExists(const char *folder)
 // indexing the archives
 // ---------------------------------------------------------------------------
 
-static void
-AddIndex(std::map<std::string, CustomSource> &index, const std::string &key,
-         int archive, int entry, uint64 mtime)
+static CustomSource
+MakeSource(int archive, int entry, uint64 mtime, const char *path, const char *fname)
 {
-	std::map<std::string, CustomSource>::iterator it = index.find(key);
-	// the same name in several archives: the newer archive wins, exactly like
-	// the offline converter decides it
-	if(it == index.end() || it->second.mtime < mtime){
-		CustomSource src;
-		src.archive = archive;
-		src.entry = entry;
-		src.mtime = mtime;
-		index[key] = src;
+	CustomSource src;
+	src.archive = archive;
+	src.entry = entry;
+	src.mtime = mtime;
+	src.loose[0] = '\0';
+	src.fname[0] = '\0';
+	if(path){
+		strncpy(src.loose, path, sizeof(src.loose)-1);
+		src.loose[sizeof(src.loose)-1] = '\0';
 	}
+	if(fname){
+		strncpy(src.fname, fname, sizeof(src.fname)-1);
+		src.fname[sizeof(src.fname)-1] = '\0';
+	}
+	return src;
 }
 
 static void
-IndexArchive(const std::string &path, uint64 mtime, int &nMod, int &nBtx, int &nCls, int &nAnim)
+AddIndex(std::map<std::string, CustomSource> &index, const std::string &key,
+         const CustomSource &src)
+{
+	std::map<std::string, CustomSource>::iterator it = index.find(key);
+	// the same name in several places: the newer file wins, exactly like the
+	// offline converter decides it
+	if(it == index.end() || it->second.mtime < src.mtime)
+		index[key] = src;
+}
+
+// The names of the collision models inside one .col container are indexed at
+// scan time, so a model can find its collision whatever file it sits in. The
+// blocks keep their [fourcc][size][name][body] layout; whether the body is
+// the Vice City layout the game reads natively ('COLL', floats) or a San
+// Andreas one ('COL2'/'COL3', fixed point) is remembered for the read.
+static void
+IndexColContainer(const std::string &key, const std::vector<uint8> &file,
+                  const CustomSource &src, int &nBlocks)
+{
+	uint32 pos = 0;
+	while(pos + 8 <= file.size()){
+		const uint8 *p = file.data() + pos;
+		uint32 fourcc = (uint32)p[0] | ((uint32)p[1] << 8) | ((uint32)p[2] << 16) | ((uint32)p[3] << 24);
+		uint32 bsize = (uint32)p[4] | ((uint32)p[5] << 8) | ((uint32)p[6] << 16) | ((uint32)p[7] << 24);
+		if(!IsColFourCC(fourcc) || bsize > file.size() - pos - 8){
+			pos++;		// gap: skip a byte and look again
+			continue;
+		}
+		char name[25];
+		memcpy(name, p + 8, 24);
+		name[24] = '\0';
+		std::string bkey = ToLower(Stem(name));
+		if(!bkey.empty() && bkey.size() <= 63){
+			std::map<std::string, ColBlockRef>::iterator it = customColBlocks.find(bkey);
+			if(it == customColBlocks.end() || it->second.mtime < src.mtime){
+				ColBlockRef ref;
+				ref.archive = src.archive;
+				ref.entry = src.entry;
+				ref.offset = pos + 8;
+				ref.size = bsize;
+				ref.vcBody = fourcc == COL_FCC_COLL;
+				ref.mtime = src.mtime;
+				customColBlocks[bkey] = ref;
+				nBlocks++;
+			}
+		}
+		pos += 8 + bsize;
+	}
+}
+
+struct ScanStats
+{
+	int zip, mod, dff, btx, txd, cls, colfile, colblock, anim, img;
+};
+
+static void
+IndexArchive(const std::string &path, uint64 mtime, ScanStats &st)
 {
 	CustomZip *zip = new CustomZip;
 	if(!zip->Open(path.c_str())){
 		delete zip;
+		CUSTOM_LOG("archive %s: not a readable zip, skipped\n", path.c_str());
 		return;
 	}
 	int archive = (int)customArchives.size();
 	customArchives.push_back(zip);
+	int mods = 0, dffs = 0, btxs = 0, txds = 0, clss = 0, colfiles = 0, anims = 0, imgs = 0;
 	for(int i = 0; i < zip->GetNumEntries(); i++){
 		const CustomZipEntry *ent = zip->GetEntry(i);
 		std::string name = ent->name;
 		std::string ext = Extension(name);
-		// nothing else in an archive is of interest here
-		if(ext != "mod" && ext != "btx" && ext != "cls" && ext != "ifp" && ext != "ani")
+		// everything else in an archive is not of interest here
+		if(ext != "mod" && ext != "dff" && ext != "btx" && ext != "cls" && ext != "txd" &&
+		   ext != "col" && ext != "ifp" && ext != "ani" &&
+		   ext != "bmp" && ext != "png" && ext != "jpg" && ext != "jpeg")
 			continue;
 		std::string key = ToLower(Stem(name));
 		if(key.empty() || key.size() > 63)
 			continue;
+		CustomSource src = MakeSource(archive, i, mtime, nil, name.c_str());
 		if(ext == "mod"){
 			// the same guard the offline converter has: player.mod is an 8 KB
 			// stub that crashes the game the moment it is read
@@ -223,28 +324,62 @@ IndexArchive(const std::string &path, uint64 mtime, int &nMod, int &nBtx, int &n
 				CUSTOM_LOG("  %s: reserved name, skipped\n", name.c_str());
 				continue;
 			}
-			AddIndex(customMods, key, archive, i, mtime);
-			nMod++;
+			AddIndex(customMods, key, src);
+			mods++;
+		}else if(ext == "dff"){
+			if(brres::isReserved(key)){
+				CUSTOM_LOG("  %s: reserved name, skipped\n", name.c_str());
+				continue;
+			}
+			AddIndex(customDff, key, src);
+			dffs++;
 		}else if(ext == "btx"){
 			// the model can only reference 31 characters of a texture name, so
 			// a longer file name has to be found under the short name as well
-			AddIndex(customBtx, key, archive, i, mtime);
+			AddIndex(customBtx, key, src);
 			if(key.size() > 31)
-				AddIndex(customBtx, key.substr(0, 31), archive, i, mtime);
-			nBtx++;
+				AddIndex(customBtx, key.substr(0, 31), src);
+			btxs++;
+		}else if(ext == "txd"){
+			AddIndex(customTxdFiles, key, src);
+			txds++;
 		}else if(ext == "cls"){
-			AddIndex(customCls, key, archive, i, mtime);
-			nCls++;
-		}else{
+			AddIndex(customCls, key, src);
+			clss++;
+		}else if(ext == "col"){
+			std::vector<uint8> file;
+			if(ent->uncompressedSize > 0 && ent->uncompressedSize <= CUSTOM_MAX_ENTRY){
+				file.resize(ent->uncompressedSize);
+				if(zip->Extract(i, file.data(), (uint32)file.size())){
+					IndexColContainer(key, file, src, st.colblock);
+					AddIndex(customColFiles, key, src);
+					colfiles++;
+					continue;
+				}
+			}
+			CUSTOM_LOG("  %s: the .col container could not be read\n", name.c_str());
+		}else if(ext == "ifp" || ext == "ani"){
 			// .ifp dictionaries and BR single-animation .ani files
-			AddIndex(customAnims, key, archive, i, mtime);
-			nAnim++;
+			AddIndex(customAnims, key, src);
+			anims++;
+		}else{
+			// plain images: skins for the player (a bmp at any path, a png or
+			// jpg when it sits in a skin folder)
+			if(ext == "bmp" || ToLower(name).find("skin") != std::string::npos){
+				AddIndex(customImages, key, src);
+				imgs++;
+			}
 		}
 	}
+	st.zip++;
+	st.mod += mods; st.dff += dffs; st.btx += btxs; st.txd += txds;
+	st.cls += clss; st.colfile += colfiles; st.anim += anims; st.img += imgs;
+	CUSTOM_LOG("archive %s: %d entries, %d .mod, %d .dff, %d .btx, %d .txd, %d .cls, %d .col, %d .ifp/.ani, %d image(s)\n",
+		path.c_str(), zip->GetNumEntries(), mods, dffs, btxs, txds, clss, colfiles, anims, imgs);
 }
 
 static void
-ScanFolder(const std::string &folder, int depth, int &nZip, int &nMod, int &nBtx, int &nCls, int &nAnim)
+ScanFolder(const std::string &folder, int depth, ScanStats &st)
 {
 	std::vector<std::string> files, dirs;
 	if(!ListDirectory(folder.c_str(), files, dirs))
@@ -252,15 +387,64 @@ ScanFolder(const std::string &folder, int depth, int &nZip, int &nMod, int &nBtx
 
 	std::sort(files.begin(), files.end());
 	for(size_t i = 0; i < files.size(); i++){
-		if(Extension(files[i]) != "zip")
+		const std::string &path = files[i];
+		std::string ext = Extension(path);
+		uint64 mtime = FileTime(path.c_str());
+		if(ext == "zip"){
+			IndexArchive(path, mtime, st);
 			continue;
-		uint64 mtime = FileTime(files[i].c_str());
-		IndexArchive(files[i], mtime, nMod, nBtx, nCls, nAnim);
-		nZip++;
+		}
+		// loose files work as well: the same names the archives hold
+		if(ext != "mod" && ext != "dff" && ext != "btx" && ext != "cls" && ext != "txd" &&
+		   ext != "col" && ext != "ifp" && ext != "ani" &&
+		   ext != "bmp" && ext != "png" && ext != "jpg" && ext != "jpeg")
+			continue;
+		std::string key = ToLower(Stem(path));
+		if(key.empty() || key.size() > 63)
+			continue;
+		CustomSource src = MakeSource(-1, -1, mtime, path.c_str(), path.c_str());
+		if(ext == "mod"){
+			if(brres::isReserved(key))
+				continue;
+			AddIndex(customMods, key, src);
+			st.mod++;
+		}else if(ext == "dff"){
+			if(brres::isReserved(key))
+				continue;
+			AddIndex(customDff, key, src);
+			st.dff++;
+		}else if(ext == "btx"){
+			AddIndex(customBtx, key, src);
+			if(key.size() > 31)
+				AddIndex(customBtx, key.substr(0, 31), src);
+			st.btx++;
+		}else if(ext == "txd"){
+			AddIndex(customTxdFiles, key, src);
+			st.txd++;
+		}else if(ext == "cls"){
+			AddIndex(customCls, key, src);
+			st.cls++;
+		}else if(ext == "col"){
+			std::vector<uint8> file;
+			if(ReadSource(src, file)){
+				IndexColContainer(key, file, src, st.colblock);
+				AddIndex(customColFiles, key, src);
+				st.colfile++;
+			}
+		}else if(ext == "ifp" || ext == "ani"){
+			AddIndex(customAnims, key, src);
+			st.anim++;
+		}else{
+			// loose images only count as skins when they sit in a skins folder
+			if(ToLower(path).find("skin") != std::string::npos){
+				AddIndex(customImages, key, src);
+				st.img++;
+			}
+		}
 	}
 	if(depth < CUSTOM_MAX_DEPTH)
 		for(size_t i = 0; i < dirs.size(); i++)
-			ScanFolder(dirs[i], depth+1, nZip, nMod, nBtx, nCls, nAnim);
+			ScanFolder(dirs[i], depth+1, st);
 }
 
 static void
@@ -274,32 +458,68 @@ EnsureInitialised(void)
 	const char *env = getenv("REVC_CUSTOM_DIR");
 	if(env && env[0] != '\0')
 		folder = env;
+	customFolderPath = folder;
 
-	int nZip = 0, nMod = 0, nBtx = 0, nCls = 0, nAnim = 0;
-	if(FolderExists(folder))
-		ScanFolder(folder, 0, nZip, nMod, nBtx, nCls, nAnim);
+	ScanStats st;
+	memset(&st, 0, sizeof(st));
+	if(FolderExists(customFolderPath.c_str()))
+		ScanFolder(customFolderPath, 0, st);
 
-	customActive = !customMods.empty() || !customBtx.empty() || !customCls.empty() || !customAnims.empty();
-	debug("custom: folder %s: %d archive(s), %d .mod (%d names), %d .btx (%d names), %d .cls, %d .ifp/.ani (%d names)\n",
-		folder, nZip, nMod, (int)customMods.size(), nBtx, (int)customBtx.size(), nCls, nAnim, (int)customAnims.size());
-	CUSTOM_LOG("--- scan ---\n");
-	CUSTOM_LOG("folder %s: %d archive(s), %d .mod (%d names), %d .btx (%d names), %d .cls (%d names), %d .ifp/.ani (%d names)\n",
-		folder, nZip, nMod, (int)customMods.size(), nBtx, (int)customBtx.size(), nCls, (int)customCls.size(), nAnim, (int)customAnims.size());
+	customActive = !customMods.empty() || !customBtx.empty() || !customCls.empty() ||
+	               !customAnims.empty() || !customDff.empty() || !customTxdFiles.empty() ||
+	               !customColFiles.empty() || !customColBlocks.empty() || !customImages.empty();
+
+	CUSTOM_LOG("==== custom folder: %s\n", customFolderPath.c_str());
+	CUSTOM_LOG("scan: %d archive(s), %d .mod, %d .dff, %d .btx (%d names), %d .txd, %d .cls, %d .col (%d model(s) inside), %d .ifp/.ani (%d names), %d image(s)\n",
+		st.zip, st.mod, st.dff, st.btx, (int)customBtx.size(), st.txd, st.cls,
+		st.colfile, st.colblock, st.anim, (int)customAnims.size(), st.img);
+	if(!customActive)
+		CUSTOM_LOG("scan: nothing usable found - the game runs on its own files\n");
+
+	// the skins the frontend can offer: one entry per image name
+	std::map<std::string, CustomSource>::iterator im;
+	for(im = customImages.begin(); im != customImages.end(); ++im){
+		std::string fn = Stem(im->second.fname);
+		std::string full = fn + "." + Extension(im->second.fname);
+		size_t k;
+		for(k = 0; k < customSkinNames.size(); k++)
+			if(Stem(customSkinNames[k]) == fn)
+				break;
+		if(k == customSkinNames.size())
+			customSkinNames.push_back(full);
+	}
+	std::sort(customSkinNames.begin(), customSkinNames.end());
+	CUSTOM_LOG("scan: %d player skin(s) available from the custom folder\n", (int)customSkinNames.size());
 }
 
 // ---------------------------------------------------------------------------
 // reading entries
 // ---------------------------------------------------------------------------
 
+// Reads one source: an archive entry or a loose file.
 static bool
-ReadEntry(const std::map<std::string, CustomSource> &index, const std::string &key, std::vector<uint8> &out)
+ReadSource(const CustomSource &src, std::vector<uint8> &out)
 {
-	std::map<std::string, CustomSource>::const_iterator it = index.find(key);
-	if(it == index.end())
-		return false;
-	const CustomSource &src = it->second;
-	if(src.archive < 0 || src.archive >= (int)customArchives.size())
-		return false;
+	if(src.archive < 0 || src.archive >= (int)customArchives.size()){
+		if(src.loose[0] == '\0')
+			return false;
+		FILE *f = fopen(src.loose, "rb");
+		if(f == nil)
+			return false;
+		fseek(f, 0, SEEK_END);
+		long size = ftell(f);
+		fseek(f, 0, SEEK_SET);
+		if(size <= 0 || (uint64)size > CUSTOM_MAX_ENTRY){
+			fclose(f);
+			return false;
+		}
+		out.resize(size);
+		bool ok = fread(out.data(), 1, size, f) == (size_t)size;
+		fclose(f);
+		if(!ok)
+			out.clear();
+		return ok;
+	}
 	const CustomZipEntry *ent = customArchives[src.archive]->GetEntry(src.entry);
 	if(ent == nil || ent->uncompressedSize == 0 || ent->uncompressedSize > CUSTOM_MAX_ENTRY)
 		return false;
@@ -309,6 +529,52 @@ ReadEntry(const std::map<std::string, CustomSource> &index, const std::string &k
 		return false;
 	}
 	return true;
+}
+
+static const CustomSource *
+FindSource(const std::map<std::string, CustomSource> &index, const std::string &key)
+{
+	std::map<std::string, CustomSource>::const_iterator it = index.find(key);
+	return it == index.end() ? nil : &it->second;
+}
+
+static bool
+ReadEntry(const std::map<std::string, CustomSource> &index, const std::string &key, std::vector<uint8> &out)
+{
+	const CustomSource *src = FindSource(index, key);
+	if(src == nil)
+		return false;
+	return ReadSource(*src, out);
+}
+
+// a .col container from the archives or the folder: Vice City blocks ('COLL'
+// floats) are what the game reads and go through as they are, San Andreas
+// blocks ('COL2'/'COL3', fixed point) are rewritten by the converter
+static std::vector<uint8>
+ColContainerToGame(const std::vector<uint8> &file, const char *what, const std::string &key)
+{
+	bool allVc = true;
+	uint32 pos = 0;
+	while(pos + 8 <= file.size()){
+		const uint8 *p = file.data() + pos;
+		uint32 fourcc = (uint32)p[0] | ((uint32)p[1] << 8) | ((uint32)p[2] << 16) | ((uint32)p[3] << 24);
+		uint32 bsize = (uint32)p[4] | ((uint32)p[5] << 8) | ((uint32)p[6] << 16) | ((uint32)p[7] << 24);
+		if(!IsColFourCC(fourcc)){
+			pos++;
+			continue;
+		}
+		if(fourcc != COL_FCC_COLL)
+			allVc = false;
+		pos += 8 + bsize;
+	}
+	if(allVc)
+		return file;
+	customcol::Stats cstats;
+	std::vector<uint8> game = customcol::ToGameFormat(file, cstats);
+	if(game.empty())
+		CUSTOM_LOG("%s %s: nothing usable after the collision format conversion (%d bad)\n",
+			what, key.c_str(), cstats.bad);
+	return game;
 }
 
 // ---------------------------------------------------------------------------
@@ -336,15 +602,33 @@ UnderstandMod(std::vector<uint8> &file, br::RwFixStats &stats, std::string &warn
 
 // names of the textures the model references, in the order they appear, plus
 // the terrain recipes (models whose texture has to be baked from layers)
+// reads the model with this name - out of a BR .mod (understood in place
+// here) or as a plain .dff - and says which one it was
+static bool
+ReadModelEntry(const std::string &key, std::vector<uint8> &file, bool &isMod,
+               br::RwFixStats &stats, std::string &warn)
+{
+	const CustomSource *src = FindSource(customMods, key);
+	isMod = src != nil;
+	if(src == nil)
+		src = FindSource(customDff, key);
+	if(src == nil)
+		return false;
+	if(!ReadSource(*src, file))
+		return false;
+	if(isMod && !UnderstandMod(file, stats, warn))
+		return false;
+	return true;
+}
+
 static bool
 ModelTextureNames(const std::string &key, std::vector<std::string> &names, std::vector<br::TerrainRecipe> &recipes)
 {
 	std::vector<uint8> file;
-	if(!ReadEntry(customMods, key, file))
-		return false;
+	bool isMod;
 	br::RwFixStats stats;
 	std::string warn;
-	if(!UnderstandMod(file, stats, warn))
+	if(!ReadModelEntry(key, file, isMod, stats, warn))
 		return false;
 	names.clear();
 	brtex::collectTextureNames(file.data(), file.size(), names);
@@ -352,9 +636,9 @@ ModelTextureNames(const std::string &key, std::vector<std::string> &names, std::
 	return true;
 }
 
-// A .mod can hold anything that was a RenderWare file: the game only takes
-// clumps here (an "atomic" object is a clump with a single atomic as well), so
-// the payload is checked once and the answer is remembered.
+// A .mod/.dff can hold anything that was a RenderWare file: the game only
+// takes clumps here (an "atomic" object is a clump with a single atomic as
+// well), so the payload is checked once and the answer is remembered.
 struct ModPlan
 {
 	bool computed;
@@ -382,9 +666,10 @@ CanUseModel(const std::string &key)
 	plan.computed = true;
 
 	std::vector<uint8> file;
+	bool isMod;
 	br::RwFixStats stats;
 	std::string warn;
-	plan.usable = ReadEntry(customMods, key, file) && UnderstandMod(file, stats, warn) && IsClumpStream(file);
+	plan.usable = ReadModelEntry(key, file, isMod, stats, warn) && IsClumpStream(file);
 	if(!plan.usable)
 		CUSTOM_LOG("model %s: not usable as a game model, the game's own file is used\n", key.c_str());
 	return plan.usable;
@@ -399,6 +684,7 @@ struct TxdPlan
 	bool computed;
 	bool haveModel;
 	bool haveBtx;
+	bool haveTxdFile;
 	bool serve;
 	std::string modelKey;		// the model the textures come from
 	std::vector<std::string> names;
@@ -435,6 +721,23 @@ FindModelForTxd(const std::string &txdName, std::string &modelKey)
 			return true;
 		}
 	}
+	for(it = customDff.begin(); it != customDff.end(); ++it){
+		plan = customModPlans.find(it->first);
+		if(plan != customModPlans.end() && plan->second.computed && !plan->second.usable)
+			continue;
+		int32 id = -1;
+		CBaseModelInfo *mi = CModelInfo::GetModelInfo(it->first.c_str(), &id);
+		if(mi == nil || id < 0)
+			continue;
+		int32 slot = mi->GetTxdSlot();
+		if(slot < 0)
+			continue;
+		const char *name = CTxdStore::GetTxdName(slot);
+		if(name && name[0] && ToLower(name) == txdName){
+			modelKey = it->first;
+			return true;
+		}
+	}
 	return false;
 }
 
@@ -446,10 +749,12 @@ GetTxdPlan(const std::string &key)
 		return plan;
 	plan.computed = true;
 	plan.modelKey = key;
-	plan.haveModel = customMods.find(key) != customMods.end() && CanUseModel(key);
+	plan.haveModel = (customMods.find(key) != customMods.end() ||
+	                  customDff.find(key) != customDff.end()) && CanUseModel(key);
 	if(!plan.haveModel && FindModelForTxd(key, plan.modelKey))
 		plan.haveModel = true;
 	plan.haveBtx = customBtx.find(key) != customBtx.end();
+	plan.haveTxdFile = customTxdFiles.find(key) != customTxdFiles.end();
 	if(plan.haveModel){
 		// the name of a texture is the name of its .btx file; a model texture
 		// that is a terrain composite is named after its mask
@@ -461,6 +766,10 @@ GetTxdPlan(const std::string &key)
 			}
 	}else if(plan.haveBtx)
 		plan.serve = true;
+	// a whole .txd in the archives serves the dictionary as well, as the
+	// fallback for the textures that are not single .btx files
+	if(!plan.serve && plan.haveTxdFile)
+		plan.serve = true;
 	return plan;
 }
 
@@ -468,15 +777,14 @@ static bool
 LoadModelIntoGame(const std::string &key, int32 modelId)
 {
 	std::vector<uint8> file;
-	if(!ReadEntry(customMods, key, file)){
+	bool isMod;
+	br::RwFixStats stats;
+	std::string warn;
+	if(!ReadModelEntry(key, file, isMod, stats, warn)){
 		CUSTOM_LOG("model %s: cannot read the archive entry\n", key.c_str());
 		return false;
 	}
 	unsigned rawSize = (unsigned)file.size();
-	br::RwFixStats stats;
-	std::string warn;
-	if(!UnderstandMod(file, stats, warn))
-		return false;
 
 	CBaseModelInfo *mi = CModelInfo::GetModelInfo(modelId);
 	if(mi == nil) return false;
@@ -505,16 +813,71 @@ LoadModelIntoGame(const std::string &key, int32 modelId)
 	}
 	RwStreamClose(stream, &mem);
 
-	CUSTOM_LOG("model %s (id %d): %s, %u bytes of .mod -> %u bytes read in place%s%s\n", key.c_str(), modelId,
-		ok ? "loaded" : "FAILED", rawSize, (unsigned)file.size(),
+	CUSTOM_LOG("model %s (id %d): %s, %u bytes of .%s -> %u bytes read in place%s%s\n", key.c_str(), modelId,
+		ok ? "loaded" : "FAILED", rawSize, isMod ? "mod" : "dff", (unsigned)file.size(),
 		stats.versionsChanged ? ", chunk versions fixed" : "",
 		warn.empty() ? "" : (", " + warn).c_str());
 	return ok;
 }
 
 // ---------------------------------------------------------------------------
-// textures: .btx -> RwTexture
+// textures: .btx and plain .txd -> RwTexture
 // ---------------------------------------------------------------------------
+
+// adds the textures of a read dictionary, keeping whatever is already there
+static RwTexture *
+AddIfNewTextureCB(RwTexture *texture, void *pData)
+{
+	RwTexDictionary *dict = (RwTexDictionary*)pData;
+	if(RwTexDictionaryFindNamedTexture(dict, texture->name) == nil)
+		RwTexDictionaryAddTexture(dict, texture);
+	return texture;
+}
+
+// merges a whole .txd out of the archives into an existing dictionary
+static bool
+MergeTxdFile(const std::string &key, RwTexDictionary *dict)
+{
+	std::vector<uint8> file;
+	if(!ReadEntry(customTxdFiles, key, file)){
+		CUSTOM_LOG("textures %s: the .txd entry could not be read\n", key.c_str());
+		return false;
+	}
+	RwMemory mem;
+	mem.start = file.data();
+	mem.length = (uint32)file.size();
+	RwStream *stream = RwStreamOpen(rwSTREAMMEMORY, rwSTREAMREAD, &mem);
+	if(stream == nil)
+		return false;
+	bool ok = false;
+	if(RwStreamFindChunk(stream, rwID_TEXDICTIONARY, nil, nil)){
+		RwTexDictionary *read = RwTexDictionaryGtaStreamRead(stream);
+		if(read){
+			RwTexDictionaryForAllTextures(read, AddIfNewTextureCB, dict);
+			RwTexDictionaryDestroy(read);
+			ok = true;
+		}
+	}
+	RwStreamClose(stream, &mem);
+	return ok;
+}
+
+static bool
+LoadTxdFileIntoSlot(int32 slot, const std::string &key)
+{
+	RwTexDictionary *dict = CTxdStore::GetSlot(slot)->texDict;
+	if(dict == nil){
+		CTxdStore::Create(slot);
+		dict = CTxdStore::GetSlot(slot)->texDict;
+	}
+	if(dict == nil)
+		return false;
+	bool ok = MergeTxdFile(key, dict);
+	CUSTOM_LOG("textures %s (slot %d): whole .txd from the archives, %s\n", key.c_str(), slot, ok ? "merged" : "FAILED");
+	return ok;
+}
+
+
 
 static bool
 LoadBtxTexture(const std::string &name, brtex::Texture &tex)
@@ -649,6 +1012,16 @@ LoadTxdSlot(int32 slot, const std::string &key, TxdPlan &plan)
 			made++;
 		}else missing++;
 	}
+	// textures the single .btx files do not have can sit in a whole .txd in
+	// the archives (the community packs keep them that way)
+	if(missing > 0 && customTxdFiles.find(key) != customTxdFiles.end()){
+		int before = made;
+		if(MergeTxdFile(key, dict))
+			made = ((rw::TexDictionary*)dict)->count();
+		CUSTOM_LOG("textures %s (slot %d): filled from the whole .txd, %d -> %d textures\n",
+			key.c_str(), slot, before, made);
+		missing = 0;
+	}
 	CUSTOM_LOG("textures %s (slot %d): %d built, %d not found in the archives\n",
 		key.c_str(), slot, made, missing);
 	// An empty dictionary is better than a failed load: the file would be
@@ -667,35 +1040,45 @@ LoadColSlot(int32 slot)
 	if(name == nil || name[0] == '\0')
 		return false;
 	std::string key = ToLower(name);
-	if(customCls.find(key) == customCls.end())
+	bool haveCls = customCls.find(key) != customCls.end();
+	bool haveFile = customColFiles.find(key) != customColFiles.end();
+	if(!haveCls && !haveFile)
 		return false;
 
-	std::vector<uint8> file;
-	if(!ReadEntry(customCls, key, file))
-		return false;
+	std::vector<uint8> game;
+	if(haveCls){
+		std::vector<uint8> file;
+		if(!ReadEntry(customCls, key, file))
+			return false;
 
-	// the containers hold San Andreas collision, the game reads the old
-	// version of the format: convert, then hand it to the collision store
-	br::ClsStats stats;
-	std::vector<uint8> col = br::convertClsToCol(file, stats);
-	if(col.empty()){
-		CUSTOM_LOG("collision %s: no usable block (%d blocks, %d bad)\n",
-			key.c_str(), stats.blocks, stats.bad);
-		return false;
-	}
-	customcol::Stats cstats;
-	std::vector<uint8> game = customcol::ToGameFormat(col, cstats);
-	if(game.empty()){
-		CUSTOM_LOG("collision %s: nothing left after the format conversion (%d bad block(s))\n",
-			key.c_str(), cstats.bad);
-		return false;
+		// the containers hold San Andreas collision, the game reads the old
+		// version of the format: convert, then hand it to the collision store
+		br::ClsStats stats;
+		std::vector<uint8> col = br::convertClsToCol(file, stats);
+		if(col.empty()){
+			CUSTOM_LOG("collision %s: no usable block (%d blocks, %d bad)\n",
+				key.c_str(), stats.blocks, stats.bad);
+			return false;
+		}
+		customcol::Stats cstats;
+		game = customcol::ToGameFormat(col, cstats);
+		if(game.empty()){
+			CUSTOM_LOG("collision %s: nothing left after the format conversion (%d bad block(s))\n",
+				key.c_str(), cstats.bad);
+			return false;
+		}
+	}else{
+		std::vector<uint8> file;
+		if(!ReadEntry(customColFiles, key, file))
+			return false;
+		game = ColContainerToGame(file, "collision file", key);
+		if(game.empty())
+			return false;
 	}
 
 	bool ok = CColStore::LoadCol(slot, game.data(), (int32)game.size());
-	CUSTOM_LOG("collision %s (slot %d): %s, %d block(s), %d spheres, %d boxes, %d vertices, %d faces, %d material(s) fixed%s\n",
-		key.c_str(), slot, ok ? "loaded" : "FAILED", cstats.blocks, cstats.spheres, cstats.boxes,
-		cstats.vertices, cstats.faces, cstats.materials,
-		cstats.dropped ? ", some faces dropped" : "");
+	CUSTOM_LOG("collision %s (slot %d): %s, taken from the %s\n",
+		key.c_str(), slot, ok ? "loaded" : "FAILED", haveCls ? ".cls" : ".col file");
 	return ok;
 }
 
@@ -719,6 +1102,13 @@ CCustomModels::Shutdown(void)
 	customBtx.clear();
 	customCls.clear();
 	customAnims.clear();
+	customDff.clear();
+	customTxdFiles.clear();
+	customColFiles.clear();
+	customColBlocks.clear();
+	customImages.clear();
+	customSkinNames.clear();
+	customFolderPath.clear();
 	customModPlans.clear();
 	customTxdPlans.clear();
 	customInitialised = false;
@@ -756,7 +1146,9 @@ CCustomModels::CanServe(int32 streamId)
 		   mi->GetModelType() != MITYPE_VEHICLE && mi->GetModelType() != MITYPE_PED)
 			return false;
 		std::string key = ToLower(mi->GetModelName());
-		return customMods.find(key) != customMods.end() && CanUseModel(key);
+		if(customMods.find(key) == customMods.end() && customDff.find(key) == customDff.end())
+			return false;
+		return CanUseModel(key);
 	}
 
 	if(streamId >= STREAM_OFFSET_TXD && streamId < STREAM_OFFSET_COL){
@@ -773,7 +1165,9 @@ CCustomModels::CanServe(int32 streamId)
 		const char *name = CColStore::GetColName(streamId - STREAM_OFFSET_COL);
 		if(name == nil || name[0] == '\0')
 			return false;
-		return customCls.find(ToLower(name)) != customCls.end();
+		std::string key = ToLower(name);
+		return customCls.find(key) != customCls.end() ||
+		       customColFiles.find(key) != customColFiles.end();
 	}
 
 	return false;	// animations are never taken from the custom folder
@@ -837,6 +1231,8 @@ BuildDictionaryFor(const std::string &key)
 			made++;
 		}
 	}
+	if(customTxdFiles.find(key) != customTxdFiles.end() && MergeTxdFile(key, dict))
+		made = ((rw::TexDictionary*)dict)->count();
 	CUSTOM_LOG("textures %s: dictionary built from the custom folder, %d textures, %d missing\n",
 		key.c_str(), made, missing);
 	(void)missing;
@@ -851,17 +1247,16 @@ CCustomModels::LoadClumpFileFromCustom(const char *filename)
 		return false;
 
 	std::string key = ToLower(Stem(filename));
-	if(customMods.find(key) == customMods.end())
+	if(customMods.find(key) == customMods.end() && customDff.find(key) == customDff.end())
 		return false;
 
 	std::vector<uint8> file;
+	bool isMod;
 	br::RwFixStats stats;
 	std::string warn;
-	if(!ReadEntry(customMods, key, file))
+	if(!ReadModelEntry(key, file, isMod, stats, warn))
 		return false;
 	unsigned rawSize = (unsigned)file.size();
-	if(!UnderstandMod(file, stats, warn))
-		return false;
 
 	// A hierarchical model file is matched to its model by the name of the
 	// clump's frame; the file name is the name of the model here, because the
@@ -896,8 +1291,8 @@ CCustomModels::LoadClumpFileFromCustom(const char *filename)
 		CTxdStore::PopCurrentTxd();
 	RwStreamClose(stream, &mem);
 
-	CUSTOM_LOG("model file %s (id %d): %s, %u bytes of .mod -> %u bytes read in place%s\n",
-		filename, id, ok ? "loaded" : "FAILED", rawSize, (unsigned)file.size(),
+	CUSTOM_LOG("model file %s (id %d): %s, %u bytes of .%s -> %u bytes read in place%s\n",
+		filename, id, ok ? "loaded" : "FAILED", rawSize, isMod ? "mod" : "dff", (unsigned)file.size(),
 		warn.empty() ? "" : (", " + warn).c_str());
 	return ok;
 }
@@ -925,26 +1320,65 @@ CCustomModels::GetCollisionBlock(const char *modelname, std::vector<uint8> &out)
 		return false;
 
 	std::string key = ToLower(modelname);
-	if(customCls.find(key) == customCls.end())
+	customcol::Stats cstats;
+	memset(&cstats, 0, sizeof(cstats));
+
+	if(customCls.find(key) != customCls.end()){
+		std::vector<uint8> file;
+		if(!ReadEntry(customCls, key, file))
+			return false;
+		br::ClsStats stats;
+		std::vector<uint8> col = br::convertClsToCol(file, stats);
+		if(col.size() <= 32)
+			return false;
+		std::vector<uint8> game = customcol::ToGameFormat(col, cstats);
+		if(game.size() <= 8)
+			return false;
+		// what the game's own reader of such a file expects for one model is
+		// the block without its header: the name and everything behind it
+		out.assign(game.begin() + 8, game.end());
+		CUSTOM_LOG("collision %s: block taken from the .cls, %u bytes, %d sphere(s), %d box(es), %d face(s)\n",
+			modelname, (unsigned)out.size(), cstats.spheres, cstats.boxes, cstats.faces);
+		return true;
+	}
+
+	// or it sits as one model inside a .col container in the archives
+	std::map<std::string, ColBlockRef>::const_iterator cb = customColBlocks.find(key);
+	if(cb == customColBlocks.end())
+		return false;
+
+	// find the container the block lives in
+	const CustomSource *src = nil;
+	std::map<std::string, CustomSource>::const_iterator cf;
+	for(cf = customColFiles.begin(); cf != customColFiles.end(); ++cf){
+		if(cf->second.archive == cb->second.archive && cf->second.entry == cb->second.entry){
+			src = &cf->second;
+			break;
+		}
+	}
+	if(src == nil)
 		return false;
 
 	std::vector<uint8> file;
-	if(!ReadEntry(customCls, key, file))
+	if(!ReadSource(*src, file))
 		return false;
-	br::ClsStats stats;
-	std::vector<uint8> col = br::convertClsToCol(file, stats);
-	if(col.size() <= 32)
+	if(cb->second.offset + cb->second.size > file.size())
 		return false;
-	customcol::Stats cstats;
-	std::vector<uint8> game = customcol::ToGameFormat(col, cstats);
-	if(game.size() <= 8)
-		return false;
-
-	// what the game's own reader of such a file expects for one model is the
-	// block without its header: the name and everything behind it
-	out.assign(game.begin() + 8, game.end());
-	CUSTOM_LOG("collision %s: block taken from the custom folder, %u bytes, %d sphere(s), %d box(es), %d face(s)\n",
-		modelname, (unsigned)out.size(), cstats.spheres, cstats.boxes, cstats.faces);
+	const uint8 *p = file.data() + cb->second.offset - 8;	// fourcc + size
+	if(cb->second.vcBody){
+		// the body is already in the layout the game reads
+		out.assign(file.begin() + cb->second.offset, file.begin() + cb->second.offset + cb->second.size);
+	}else{
+		// San Andreas body: rewrite this one block
+		std::vector<uint8> block(p, p + 8 + cb->second.size);
+		std::vector<uint8> game = customcol::ToGameFormat(block, cstats);
+		if(game.size() <= 8){
+			CUSTOM_LOG("collision %s: the block could not be converted\n", modelname);
+			return false;
+		}
+		out.assign(game.begin() + 8, game.end());
+	}
+	CUSTOM_LOG("collision %s: block taken from a .col container, %u bytes\n", modelname, (unsigned)out.size());
 	return true;
 }
 
@@ -988,8 +1422,115 @@ CCustomModels::PrintStats(void)
 {
 	EnsureInitialised();
 	CUSTOM_LOG("--- stats ---\n");
-	CUSTOM_LOG("%d archive(s) open, %d model name(s), %d texture name(s), %d collision name(s), %d animation name(s)\n",
-		(int)customArchives.size(), (int)customMods.size(), (int)customBtx.size(), (int)customCls.size(), (int)customAnims.size());
+	CUSTOM_LOG("%d archive(s) open, %d model name(s) (+%d plain .dff), %d texture name(s) (+%d whole .txd), %d collision name(s) (+%d .col file(s), %d model(s) inside), %d animation name(s), %d image(s)\n",
+		(int)customArchives.size(), (int)customMods.size(), (int)customDff.size(),
+		(int)customBtx.size(), (int)customTxdFiles.size(),
+		(int)customCls.size(), (int)customColFiles.size(), (int)customColBlocks.size(),
+		(int)customAnims.size(), (int)customImages.size());
+}
+
+// ---------------------------------------------------------------------------
+// data files (the "data/timecyc.json" of a BR common archive) and skins
+// ---------------------------------------------------------------------------
+
+bool
+CCustomModels::ReadDataFile(const char *relpath, std::vector<uint8> &out)
+{
+	if(relpath == nil || relpath[0] == '\0')
+		return false;
+	EnsureInitialised();
+
+	std::string want = ToLower(relpath);
+	for(size_t i = 0; i < want.size(); i++)
+		if(want[i] == '\\')
+			want[i] = '/';
+
+	std::map<std::string, CustomSource>::iterator dummy = customMods.begin();
+	(void)dummy;
+	for(size_t a = 0; a < customArchives.size(); a++){
+		CustomZip *zip = customArchives[a];
+		for(int i = 0; i < zip->GetNumEntries(); i++){
+			const CustomZipEntry *ent = zip->GetEntry(i);
+			std::string name = ToLower(ent->name);
+			for(size_t k = 0; k < name.size(); k++)
+				if(name[k] == '\\')
+					name[k] = '/';
+			if(name != want && name.size() > want.size() &&
+			   name.compare(name.size() - want.size(), want.size(), want) != 0)
+				continue;
+			if(name != want)
+				continue;
+			if(ent->uncompressedSize == 0 || ent->uncompressedSize > CUSTOM_MAX_ENTRY)
+				return false;
+			out.resize(ent->uncompressedSize);
+			if(!zip->Extract(i, out.data(), (uint32)out.size())){
+				out.clear();
+				return false;
+			}
+			CUSTOM_LOG("data file %s: read from the archives (%u bytes)\n", relpath, (unsigned)out.size());
+			return true;
+		}
+	}
+
+	// or as a loose file in the custom folder
+	if(!customFolderPath.empty()){
+		CustomSource src = MakeSource(-1, -1, 0, (customFolderPath + "/" + relpath).c_str(), relpath);
+		if(ReadSource(src, out)){
+			CUSTOM_LOG("data file %s: read from the custom folder (%u bytes)\n", relpath, (unsigned)out.size());
+			return true;
+		}
+	}
+	return false;
+}
+
+bool
+CCustomModels::HasSkin(const char *skinname)
+{
+	EnsureInitialised();
+	if(!customActive || skinname == nil || skinname[0] == '\0')
+		return false;
+	return customImages.find(ToLower(Stem(skinname))) != customImages.end();
+}
+
+// the bytes of one player skin image (".bmp"/".png"/".jpg" named after the
+// skin), from the archives or the skins folder of the custom folder
+bool
+CCustomModels::GetSkinImage(const char *skinname, std::vector<uint8> &out, char *ext, int extCap)
+{
+	if(skinname == nil || skinname[0] == '\0')
+		return false;
+	EnsureInitialised();
+
+	std::string key = ToLower(Stem(skinname));
+	const CustomSource *src = FindSource(customImages, key);
+	if(src == nil)
+		return false;
+	if(!ReadSource(*src, out))
+		return false;
+	if(ext != nil && extCap > 0){
+		std::string e = Extension(src->fname);
+		strncpy(ext, e.c_str(), extCap-1);
+		ext[extCap-1] = '\0';
+	}
+	CUSTOM_LOG("skin %s: %u bytes taken from %s\n", skinname, (unsigned)out.size(), src->fname);
+	return true;
+}
+
+int
+CCustomModels::GetNumSkins(void)
+{
+	EnsureInitialised();
+	return (int)customSkinNames.size();
+}
+
+// "name.bmp" style - the frontend list strips the extension itself
+const char *
+CCustomModels::GetSkinFileName(int i)
+{
+	EnsureInitialised();
+	if(i < 0 || i >= (int)customSkinNames.size())
+		return nil;
+	return customSkinNames[i].c_str();
 }
 
 #endif // CUSTOM_MODELS

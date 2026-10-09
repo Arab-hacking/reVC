@@ -818,6 +818,9 @@ public:
 	void DrawQuitGameScreen();
 	void DrawFrontEnd();
 	void DrawBackground(bool transitionCall);
+#ifdef CUSTOM_MODELS
+	bool SkinListHas(const char *name);
+#endif
 	void DrawPlayerSetupScreen(bool);
 	int FadeIn(int alpha);
 	int GetStartOptionsCntrlConfigScreens();

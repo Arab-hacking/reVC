@@ -48,3 +48,17 @@ rw::setLocalInvGamma(g);     // по умолчанию 1.0 (без измене
 * Полная сборка Linux 318/318, mingw-TU (gl3device, gl3skin, engine, Renderer) — OK.
 * Мировые эффекты клиента (shadow-map с poisson, вода, снег, терраин-слои, небо,
   PBR-emission, пост-градация) остаются за портом на данных BR — в отчёте §4.
+
+---
+
+## Дополнение: освещение и небо клиента из `data/timecyc.json` (этап 2)
+
+Модель поверхности (солнце+спекуляр+тень+гамма+envmap fresnel) — см. таблицу выше; она
+работает в паре с **таймциклом клиента**: если в `custom` лежит `data/timecyc.json`
+(из common-архива BR), `CCustomTimecycle::Apply()` (src/extras/custom/CustomTimecycle.cpp)
+заполняет таблицы `CTimeCycle` его значениями после `CTimeCycle::Initialise()`. Небо
+(`SkyTop/SkyBottom`), солнце (`SunCore/SunCorona/SunSize`), туман и FarClip, ambient
+(включая «физический» AmbientPhysical → объектный ambient), вода — по клиенту.
+Проверено стендом `tools/custom-folder-verification/test_custom2` на настоящих данных
+клиента: слоты, интерполяция часов, отсутствие файлов = игра остаётся на своём цикле.
+`PostFX1/2` клиента в этой игре аналогов не имеет и пропускается.

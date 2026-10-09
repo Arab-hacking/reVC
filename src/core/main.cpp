@@ -10,6 +10,9 @@
 #endif
 
 #include "main.h"
+#ifdef CUSTOM_MODELS
+#include "DebugLog.h"
+#endif
 #include "CdStream.h"
 #include "General.h"
 #include "RwHelper.h"
@@ -2401,6 +2404,10 @@ main(int argc, char *argv[])
 {
 #ifdef __MWERKS__
 	mwInit(); // metrowerks initialisation
+#endif
+
+#ifdef CUSTOM_MODELS
+	DebugLogInit();	// debug.log: what the custom folder loads + the crash report
 #endif
 
 	SystemInit();

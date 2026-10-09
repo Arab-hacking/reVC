@@ -47,33 +47,15 @@ static inline FILE *SavehLogFile(void)
 #endif
 
 // Same idea for the custom model containers (.mod/.btx/.cls in the game's
-// custom folder): set REVC_CUSTOM_LOG to get "custom_models.log" with what was
-// found in the archives and what happened to every model and texture.
+// custom folder): everything - what was found in the archives, what served a
+// model or a skin and why something was rejected - is written to the always
+// enabled debug log ("debug.log" next to the game), together with the crash
+// report when the game goes down. See extras/custom/DebugLog.h.
 #ifdef CUSTOM_MODELS
 
-static inline FILE *CustomLogFile(void)
-{
-	static FILE *f = nil;
-	static bool checked = false;
+#include "DebugLog.h"
 
-	if(!checked){
-		const char *env = getenv("REVC_CUSTOM_LOG");
-		checked = true;
-		if(env && env[0] != '\0')
-			f = fopen("custom_models.log", "a");
-	}
-	return f;
-}
-
-#define CUSTOM_LOG(...)				\
-	do {					\
-		FILE *f_ = CustomLogFile();	\
-		if(f_) {			\
-			fprintf(f_, __VA_ARGS__);\
-			fflush(f_);		\
-		}				\
-	} while(0)
-
+#define CUSTOM_LOG(...)	DebugLogPrintf(__VA_ARGS__)
 #else
 #define CUSTOM_LOG(...) do {} while(0)
 #endif

@@ -56,7 +56,20 @@ public:
 	// true when the custom folder has the file the game asked for
 	static bool LoadAnimFileFromCustom(const char *filename, std::vector<uint8> &out);
 
-	// diagnostics (written to custom_models.log when REVC_CUSTOM_LOG is set)
+	// reads a data file out of the custom archives ("data/timecyc.json" and
+	// friends of a BR common.zip), or out of the custom folder itself; the
+	// archives win
+	static bool ReadDataFile(const char *relpath, std::vector<uint8> &out);
+
+	// player skins out of the custom folder: plain images (.bmp, or .png/.jpg
+	// in a skins folder) named after the skin, in the archives or loose
+	static bool HasSkin(const char *skinname);
+	static bool GetSkinImage(const char *skinname, std::vector<uint8> &out, char *ext, int extCap);
+	static int GetNumSkins(void);
+	// "name.bmp" style - the frontend skin list strips the extension itself
+	static const char *GetSkinFileName(int i);
+
+	// diagnostics (written to the always-on debug.log, see DebugLog.h)
 	static void PrintStats(void);
 };
 
