@@ -30,6 +30,7 @@
 #include "Streaming.h"
 #ifdef CUSTOM_MODELS
 #include "CustomModels.h"
+#include "SavehDiag.h"
 #endif
 #include "Replay.h"
 #include "main.h"
@@ -684,11 +685,24 @@ CStreaming::ConvertBufferToObject(int8 *buf, int32 streamId)
 		}
 #endif
 		CAnimManager::LoadAnimFile(stream, true, nil);
+#ifdef CUSTOM_MODELS
+		CUSTOM_LOG("stream animation %d: native block loaded; building groups\n", streamId - STREAM_OFFSET_ANIM);
+#endif
 		CAnimManager::CreateAnimAssocGroups();
+#ifdef CUSTOM_MODELS
+		CUSTOM_LOG("stream animation %d: groups returned\n", streamId - STREAM_OFFSET_ANIM);
+#endif
 		POP_MEMID();
+#ifdef CUSTOM_MODELS
+		CUSTOM_LOG("stream animation %d: memory scope popped\n", streamId - STREAM_OFFSET_ANIM);
+#endif
 	}
 
 	RwStreamClose(stream, &mem);
+#ifdef CUSTOM_MODELS
+	if(streamId >= STREAM_OFFSET_ANIM)
+		CUSTOM_LOG("stream animation %d: native stream closed\n", streamId - STREAM_OFFSET_ANIM);
+#endif
 
 	if(streamId < STREAM_OFFSET_TXD){
 		// Model
@@ -713,6 +727,10 @@ CStreaming::ConvertBufferToObject(int8 *buf, int32 streamId)
 		// Txd and anims
 		if(CanRemoveModel(streamId))
 			ms_aInfoForModel[streamId].AddToList(&ms_startLoadedList);
+#ifdef CUSTOM_MODELS
+		if(streamId >= STREAM_OFFSET_ANIM)
+			CUSTOM_LOG("stream animation %d: loaded-list update complete\n", streamId - STREAM_OFFSET_ANIM);
+#endif
 	}
 
 	// Mark objects as loaded
@@ -722,11 +740,19 @@ CStreaming::ConvertBufferToObject(int8 *buf, int32 streamId)
 		ms_memoryUsed += ms_aInfoForModel[streamId].GetCdSize() * CDSTREAM_SECTOR_SIZE;
 #endif
 	}
+#ifdef CUSTOM_MODELS
+	if(streamId >= STREAM_OFFSET_ANIM)
+		CUSTOM_LOG("stream animation %d: load state committed\n", streamId - STREAM_OFFSET_ANIM);
+#endif
 
 	endTime = CTimer::GetCurrentTimeInCycles() / CTimer::GetCyclesPerMillisecond();
 	timeDiff = endTime - startTime;
 	if(timeDiff > 5)
 		debug("%s took %d ms\n", GetObjectName(streamId), timeDiff);
+#ifdef CUSTOM_MODELS
+	if(streamId >= STREAM_OFFSET_ANIM)
+		CUSTOM_LOG("stream animation %d: load routine returning\n", streamId - STREAM_OFFSET_ANIM);
+#endif
 
 	return true;
 }
