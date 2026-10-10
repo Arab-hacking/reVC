@@ -1242,13 +1242,14 @@ CAnimManager::GetAnimAssocGroup(RpClump *clump, AssocGroupId groupId)
 	CAnimBlendAssocGroup *group;
 	if(groupId < 0 || groupId >= NUM_ANIM_ASSOC_GROUPS)
 		return nil;
-	if(clumpData && clumpData->usesSAAnimations && ms_aSAAnimAssocGroups){
-		group = &ms_aSAAnimAssocGroups[groupId];
-		bool ready = group->assocList != nil;
-		for(int i = 0; ready && i < group->numAssociations; i++)
-			ready = group->assocList[i].hierarchy != nil;
-		if(ready)
-			return group;
+	if(clumpData && clumpData->usesSAAnimations){
+		if(ms_aSAAnimAssocGroups){
+			group = &ms_aSAAnimAssocGroups[groupId];
+			if(group->assocList && group->numAssociations > 0 &&
+			   group->animBlock && group->animBlock->isLoaded)
+				return group;
+		}
+		return nil;
 	}
 	return ms_aAnimAssocGroups ? &ms_aAnimAssocGroups[groupId] : nil;
 }
@@ -1398,12 +1399,21 @@ CAnimManager::BlendAnimation(RpClump *clump, AssocGroupId groupId, AnimationId a
 static bool
 IsAnimAssocGroupReady(CAnimBlendAssocGroup *group)
 {
-	if(group == nil || group->assocList == nil || group->numAssociations <= 0)
+	return group && group->assocList && group->numAssociations > 0 &&
+		group->animBlock && group->animBlock->isLoaded;
+}
+
+static bool
+HasNewVCAssociationFallback(CAnimBlendAssocGroup *saGroup, CAnimBlendAssocGroup *vcGroup)
+{
+	if(saGroup == nil || saGroup->assocList == nil || vcGroup == nil || vcGroup->assocList == nil)
 		return false;
-	for(int i = 0; i < group->numAssociations; i++)
-		if(group->assocList[i].hierarchy == nil)
-			return false;
-	return true;
+	int numAssociations = saGroup->numAssociations < vcGroup->numAssociations ?
+		saGroup->numAssociations : vcGroup->numAssociations;
+	for(int i = 0; i < numAssociations; i++)
+		if(saGroup->assocList[i].hierarchy == nil && vcGroup->assocList[i].hierarchy)
+			return true;
+	return false;
 }
 
 static CPedModelInfo *
@@ -1508,9 +1518,12 @@ CAnimManager::CreateAnimAssocGroups(int preferredModelIndex)
 			CPedModelInfo *pedInfo = (CPedModelInfo*)baseInfo;
 			int groupId = (int)pedInfo->m_animGroup;
 			if(groupId >= 0 && groupId < NUM_ANIM_ASSOC_GROUPS){
-				CAnimBlendAssocGroup *group = pedInfo->UsesSAAnimations() && ms_aSAAnimAssocGroups ?
+				bool usesSA = pedInfo->UsesSAAnimations() && ms_aSAAnimAssocGroups;
+				CAnimBlendAssocGroup *group = usesSA ?
 					&ms_aSAAnimAssocGroups[groupId] : &ms_aAnimAssocGroups[groupId];
-				if(IsAnimAssocGroupReady(group))
+				// A partial SA group can still need another bank or a newly
+				// available VC fallback, so only short-circuit native VC peds.
+				if(!usesSA && IsAnimAssocGroupReady(group))
 					return;
 			}
 		}
@@ -1532,7 +1545,9 @@ CAnimManager::CreateAnimAssocGroups(int preferredModelIndex)
 			if(saBlock == nil || !saBlock->isLoaded)
 				saBlock = GetAnimationBlock("sa_ped");
 			if(saBlock && saBlock->isLoaded &&
-			   (!IsAnimAssocGroupReady(&ms_aSAAnimAssocGroups[i]) || ms_aSAAnimAssocGroups[i].animBlock != saBlock))
+			   (!IsAnimAssocGroupReady(&ms_aSAAnimAssocGroups[i]) ||
+			    ms_aSAAnimAssocGroups[i].animBlock != saBlock ||
+			    HasNewVCAssociationFallback(&ms_aSAAnimAssocGroups[i], &ms_aAnimAssocGroups[i])))
 				needSAClump = true;
 		}
 	}
@@ -1573,7 +1588,8 @@ CAnimManager::CreateAnimAssocGroups(int preferredModelIndex)
 			if(saBlock == nil || !saBlock->isLoaded)
 				saBlock = GetAnimationBlock("sa_ped");
 			if(saBlock && saBlock->isLoaded && def->numAnims <= ARRAY_SIZE(saNames) &&
-			   (!IsAnimAssocGroupReady(saGroup) || saGroup->animBlock != saBlock)){
+			   (!IsAnimAssocGroupReady(saGroup) || saGroup->animBlock != saBlock ||
+			    HasNewVCAssociationFallback(saGroup, vcGroup))){
 				for(j = 0; j < def->numAnims; j++)
 					saNames[j] = SelectSAAnimationName(i, def->animNames[j], saBlock);
 				saGroup->groupId = i;
