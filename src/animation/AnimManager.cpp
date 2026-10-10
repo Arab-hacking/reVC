@@ -23,6 +23,7 @@ CAnimBlendHierarchy CAnimManager::ms_aAnimations[NUMANIMATIONS];
 int32 CAnimManager::ms_numAnimBlocks;
 int32 CAnimManager::ms_numAnimations;
 CAnimBlendAssocGroup *CAnimManager::ms_aAnimAssocGroups;
+CAnimBlendAssocGroup *CAnimManager::ms_aSAAnimAssocGroups;
 CLinkList<CAnimBlendHierarchy*> CAnimManager::ms_animCache;
 
 AnimAssocDesc aStdAnimDescs[] = {
@@ -978,6 +979,8 @@ CAnimManager::Initialise(void)
 {
 	ms_numAnimations = 0;
 	ms_numAnimBlocks = 0;
+	ms_aAnimAssocGroups = nil;
+	ms_aSAAnimAssocGroups = nil;
 	ms_animCache.Init(25);
 }
 
@@ -995,6 +998,9 @@ CAnimManager::Shutdown(void)
 	ms_animCache.Shutdown();
 
 	delete[] ms_aAnimAssocGroups;
+	ms_aAnimAssocGroups = nil;
+	delete[] ms_aSAAnimAssocGroups;
+	ms_aSAAnimAssocGroups = nil;
 }
 
 void
@@ -1056,14 +1062,39 @@ CAnimManager::GetAnimationBlockIndex(const char *name)
 }
 
 int32
+CAnimManager::GetAnimationBlockForHierarchy(CAnimBlendHierarchy *hierarchy)
+{
+	if(hierarchy == nil)
+		return -1;
+	for(int32 i = 0; i < ms_numAnimBlocks; i++){
+		CAnimBlock *block = &ms_aAnimBlocks[i];
+		if(block->firstIndex < 0 || block->firstIndex > NUMANIMATIONS || block->numAnims <= 0 ||
+		   block->numAnims > NUMANIMATIONS - block->firstIndex)
+			continue;
+		if(hierarchy >= &ms_aAnimations[block->firstIndex] &&
+		   hierarchy < &ms_aAnimations[block->firstIndex + block->numAnims])
+			return i;
+	}
+	return -1;
+}
+
+int32
 CAnimManager::RegisterAnimBlock(const char *name)
 {
 	CAnimBlock *animBlock = GetAnimationBlock(name);
 	if(animBlock == nil){
+		if(ms_numAnimBlocks >= NUMANIMBLOCKS){
+			debug("ANIMS: no room to register block %s\n", name);
+			return -1;
+		}
 		animBlock = &ms_aAnimBlocks[ms_numAnimBlocks++];
-		strncpy(animBlock->name, name, MAX_ANIMBLOCK_NAME);
+		strncpy(animBlock->name, name, MAX_ANIMBLOCK_NAME - 1);
+		animBlock->name[MAX_ANIMBLOCK_NAME - 1] = '\0';
+		animBlock->isLoaded = false;
+		animBlock->refCount = 0;
+		animBlock->firstIndex = 0;
 		animBlock->numAnims = 0;
-		assert(animBlock->refCount == 0);
+		animBlock->unloadPending = false;
 	}
 	return animBlock - ms_aAnimBlocks;
 }
@@ -1071,27 +1102,50 @@ CAnimManager::RegisterAnimBlock(const char *name)
 int32
 CAnimManager::GetNumRefsToAnimBlock(int32 block)
 {
-	return ms_aAnimBlocks[block].refCount;
+	return block >= 0 && block < ms_numAnimBlocks ? ms_aAnimBlocks[block].refCount : 0;
 }
 
 void
 CAnimManager::AddAnimBlockRef(int32 block)
 {
-	ms_aAnimBlocks[block].refCount++;
+	if(block >= 0 && block < ms_numAnimBlocks)
+		ms_aAnimBlocks[block].refCount++;
+}
+
+static void
+RemovePendingAnimationBlock(int32 block)
+{
+	CAnimBlock *animBlock = CAnimManager::GetAnimationBlock(block);
+	if(strncasecmp(animBlock->name, "sa_", 3) == 0 || !CStreaming::HasAnimLoaded(block))
+		CAnimManager::RemoveAnimBlock(block);
+	else
+		CStreaming::RemoveAnim(block);
 }
 
 void
 CAnimManager::RemoveAnimBlockRefWithoutDelete(int32 block)
 {
-	ms_aAnimBlocks[block].refCount--;
+	CAnimBlock *animBlock;
+	if(block < 0 || block >= ms_numAnimBlocks || ms_aAnimBlocks[block].refCount <= 0)
+		return;
+	animBlock = &ms_aAnimBlocks[block];
+	animBlock->refCount--;
+	if(animBlock->refCount == 0 && animBlock->unloadPending)
+		RemovePendingAnimationBlock(block);
 }
 
 void
 CAnimManager::RemoveAnimBlockRef(int32 block)
 {
+	if(block < 0 || block >= ms_numAnimBlocks || ms_aAnimBlocks[block].refCount <= 0)
+		return;
 	ms_aAnimBlocks[block].refCount--;
-	if(ms_aAnimBlocks[block].refCount == 0)
-		CStreaming::RemoveAnim(block);
+	if(ms_aAnimBlocks[block].refCount == 0){
+		if(ms_aAnimBlocks[block].unloadPending)
+			RemovePendingAnimationBlock(block);
+		else
+			CStreaming::RemoveAnim(block);
+	}
 }
 
 void
@@ -1099,16 +1153,61 @@ CAnimManager::RemoveAnimBlock(int32 block)
 {
 	int i;
 	CAnimBlock *animblock;
+	int32 firstAnim, numAnims;
+	bool validAnimationRange;
 
 	animblock = &ms_aAnimBlocks[block];
+	firstAnim = animblock->firstIndex;
+	numAnims = animblock->numAnims;
+	validAnimationRange = firstAnim >= 0 && firstAnim <= NUMANIMATIONS &&
+		numAnims >= 0 && numAnims <= NUMANIMATIONS - firstAnim;
+	// Parallel SA banks are loaded alongside their VC block but are not a
+	// separate streaming request. Release them with the VC source block so
+	// custom dictionaries do not accumulate in the fixed animation table.
+	if(strncasecmp(animblock->name, "sa_", 3) != 0){
+		char saBlockName[MAX_ANIMBLOCK_NAME];
+		CAnimBlock *saBlock;
+		snprintf(saBlockName, sizeof(saBlockName), "sa_%s", animblock->name);
+		saBlock = GetAnimationBlock(saBlockName);
+		if(saBlock && saBlock != animblock && saBlock->isLoaded){
+			if(saBlock->refCount > 0)
+				saBlock->unloadPending = true;
+			else
+				RemoveAnimBlock(saBlock - ms_aAnimBlocks);
+		}
+	}
 	debug("Removing ANIMS %s\n", animblock->name);
-	for(i = 0; i < NUM_ANIM_ASSOC_GROUPS; i++)
-		if(ms_aAnimAssocGroups[i].animBlock == animblock)
-			ms_aAnimAssocGroups[i].DestroyAssociations();
-	for(i = 0; i < animblock->numAnims; i++)
-		ms_aAnimations[animblock->firstIndex + i].Shutdown();
+	for(i = 0; i < NUM_ANIM_ASSOC_GROUPS; i++){
+		CAnimBlendAssocGroup *groups[2] = {
+			ms_aAnimAssocGroups ? &ms_aAnimAssocGroups[i] : nil,
+			ms_aSAAnimAssocGroups ? &ms_aSAAnimAssocGroups[i] : nil
+		};
+		for(int g = 0; g < ARRAY_SIZE(groups); g++){
+			CAnimBlendAssocGroup *group = groups[g];
+			bool usesBlock = group && group->animBlock == animblock;
+			if(group && !usesBlock && group->assocList){
+				for(int j = 0; j < group->numAssociations; j++){
+					CAnimBlendHierarchy *hier = group->assocList[j].hierarchy;
+					if(validAnimationRange && hier && hier >= &ms_aAnimations[firstAnim] &&
+					   hier < &ms_aAnimations[firstAnim + numAnims]){
+						usesBlock = true;
+						break;
+					}
+				}
+			}
+			if(usesBlock)
+				group->DestroyAssociations();
+		}
+	}
+	if(validAnimationRange){
+		for(i = 0; i < numAnims; i++)
+			ms_aAnimations[firstAnim + i].Shutdown();
+	}else{
+		debug("ANIMS %s: invalid animation table range, skipping hierarchy cleanup\n", animblock->name);
+	}
 	animblock->isLoaded = false;
 	animblock->refCount = 0;
+	animblock->unloadPending = false;
 }
 
 CAnimBlendHierarchy*
@@ -1131,28 +1230,75 @@ CAnimManager::GetAnimGroupName(AssocGroupId groupId)
 	return ms_aAnimAssocDefinitions[groupId].name;
 }
 
+CAnimBlendAssocGroup*
+CAnimManager::GetAnimAssocGroup(RpClump *clump, AssocGroupId groupId)
+{
+	CAnimBlendClumpData *clumpData = clump ? *RPANIMBLENDCLUMPDATA(clump) : nil;
+	CAnimBlendAssocGroup *group;
+	if(groupId < 0 || groupId >= NUM_ANIM_ASSOC_GROUPS)
+		return nil;
+	if(clumpData && clumpData->usesSAAnimations && ms_aSAAnimAssocGroups){
+		group = &ms_aSAAnimAssocGroups[groupId];
+		bool ready = group->assocList != nil;
+		for(int i = 0; ready && i < group->numAssociations; i++)
+			ready = group->assocList[i].hierarchy != nil;
+		if(ready)
+			return group;
+	}
+	return ms_aAnimAssocGroups ? &ms_aAnimAssocGroups[groupId] : nil;
+}
+
 CAnimBlendAssociation*
 CAnimManager::CreateAnimAssociation(AssocGroupId groupId, AnimationId animId)
 {
+	if(ms_aAnimAssocGroups == nil || groupId < 0 || groupId >= NUM_ANIM_ASSOC_GROUPS)
+		return nil;
 	return ms_aAnimAssocGroups[groupId].CopyAnimation(animId);
+}
+
+CAnimBlendAssociation*
+CAnimManager::CreateAnimAssociation(RpClump *clump, AssocGroupId groupId, AnimationId animId)
+{
+	CAnimBlendAssocGroup *group = GetAnimAssocGroup(clump, groupId);
+	return group ? group->CopyAnimation(animId) : nil;
 }
 
 CAnimBlendAssociation*
 CAnimManager::GetAnimAssociation(AssocGroupId groupId, AnimationId animId)
 {
+	if(ms_aAnimAssocGroups == nil || groupId < 0 || groupId >= NUM_ANIM_ASSOC_GROUPS)
+		return nil;
 	return ms_aAnimAssocGroups[groupId].GetAnimation(animId);
 }
 
 CAnimBlendAssociation*
 CAnimManager::GetAnimAssociation(AssocGroupId groupId, const char *name)
 {
+	if(ms_aAnimAssocGroups == nil || groupId < 0 || groupId >= NUM_ANIM_ASSOC_GROUPS)
+		return nil;
 	return ms_aAnimAssocGroups[groupId].GetAnimation(name);
+}
+
+CAnimBlendAssociation*
+CAnimManager::GetAnimAssociation(RpClump *clump, AssocGroupId groupId, AnimationId animId)
+{
+	CAnimBlendAssocGroup *group = GetAnimAssocGroup(clump, groupId);
+	return group ? group->GetAnimation(animId) : nil;
+}
+
+CAnimBlendAssociation*
+CAnimManager::GetAnimAssociation(RpClump *clump, AssocGroupId groupId, const char *name)
+{
+	CAnimBlendAssocGroup *group = GetAnimAssocGroup(clump, groupId);
+	return group ? group->GetAnimation(name) : nil;
 }
 
 CAnimBlendAssociation*
 CAnimManager::AddAnimation(RpClump *clump, AssocGroupId groupId, AnimationId animId)
 {
-	CAnimBlendAssociation *anim = CreateAnimAssociation(groupId, animId);
+	CAnimBlendAssociation *anim = CreateAnimAssociation(clump, groupId, animId);
+	if(anim == nil || clump == nil)
+		return nil;
 	CAnimBlendClumpData *clumpData = *RPANIMBLENDCLUMPDATA(clump);
 	if(anim->IsMovement()){
 		CAnimBlendAssociation *syncanim = nil;
@@ -1177,7 +1323,9 @@ CAnimManager::AddAnimation(RpClump *clump, AssocGroupId groupId, AnimationId ani
 CAnimBlendAssociation*
 CAnimManager::AddAnimationAndSync(RpClump *clump, CAnimBlendAssociation *syncanim, AssocGroupId groupId, AnimationId animId)
 {
-	CAnimBlendAssociation *anim = CreateAnimAssociation(groupId, animId);
+	CAnimBlendAssociation *anim = CreateAnimAssociation(clump, groupId, animId);
+	if(anim == nil || clump == nil)
+		return nil;
 	CAnimBlendClumpData *clumpData = *RPANIMBLENDCLUMPDATA(clump);
 	if (anim->IsMovement() && syncanim){
 		anim->SyncAnimation(syncanim);
@@ -1193,8 +1341,14 @@ CAnimBlendAssociation*
 CAnimManager::BlendAnimation(RpClump *clump, AssocGroupId groupId, AnimationId animId, float delta)
 {
 	int removePrevAnim = 0;
+	if(clump == nil)
+		return nil;
 	CAnimBlendClumpData *clumpData = *RPANIMBLENDCLUMPDATA(clump);
-	CAnimBlendAssociation *anim = GetAnimAssociation(groupId, animId);
+	if(clumpData == nil)
+		return nil;
+	CAnimBlendAssociation *anim = GetAnimAssociation(clump, groupId, animId);
+	if(anim == nil)
+		return nil;
 	bool isMovement = anim->IsMovement();
 	bool isPartial = anim->IsPartial();
 	CAnimBlendLink *link;
@@ -1236,88 +1390,343 @@ CAnimManager::BlendAnimation(RpClump *clump, AssocGroupId groupId, AnimationId a
 	return found;
 }
 
+static bool
+IsAnimAssocGroupReady(CAnimBlendAssocGroup *group)
+{
+	if(group == nil || group->assocList == nil || group->numAssociations <= 0)
+		return false;
+	for(int i = 0; i < group->numAssociations; i++)
+		if(group->assocList[i].hierarchy == nil)
+			return false;
+	return true;
+}
+
+static CPedModelInfo *
+FindPedAnimationReference(int preferredModelIndex, bool wantSA)
+{
+	CBaseModelInfo *baseInfo;
+	CPedModelInfo *pedInfo;
+	int i;
+
+	// Keep the native VC groups anchored to the same cop skeleton the original
+	// game uses. For SA groups, prefer the model currently being set up, then
+	// search any other loaded SA ped for the reference hierarchy.
+	if(!wantSA){
+		baseInfo = CModelInfo::GetModelInfo(MI_COP);
+		if(baseInfo && baseInfo->GetModelType() == MITYPE_PED && baseInfo->GetRwObject()){
+			pedInfo = (CPedModelInfo*)baseInfo;
+			if(!pedInfo->UsesSAAnimations())
+				return pedInfo;
+		}
+	}
+	if(preferredModelIndex >= MI_PLAYER && preferredModelIndex <= MI_LAST_PED){
+		baseInfo = CModelInfo::GetModelInfo(preferredModelIndex);
+		if(baseInfo && baseInfo->GetModelType() == MITYPE_PED && baseInfo->GetRwObject()){
+			pedInfo = (CPedModelInfo*)baseInfo;
+			if(pedInfo->UsesSAAnimations() == wantSA)
+				return pedInfo;
+		}
+	}
+
+	for(i = MI_PLAYER; i <= MI_LAST_PED; i++){
+		baseInfo = CModelInfo::GetModelInfo(i);
+		if(baseInfo == nil || baseInfo->GetModelType() != MITYPE_PED || baseInfo->GetRwObject() == nil)
+			continue;
+		pedInfo = (CPedModelInfo*)baseInfo;
+		if(pedInfo->UsesSAAnimations() == wantSA)
+			return pedInfo;
+	}
+	return nil;
+}
+
+static const char *
+GetSAAnimationAlias(int groupId, const char *name)
+{
+	if(groupId == ASSOCGRP_FAT){
+		if(strcasecmp(name, "walk_fat") == 0) return "fatwalk";
+		if(strcasecmp(name, "run_civi") == 0) return "fatrun";
+		if(strcasecmp(name, "woman_runpanic") == 0) return "fatsprint";
+		if(strcasecmp(name, "idle_stance") == 0) return "fatidle";
+	}
+	if(groupId == ASSOCGRP_OLDFAT){
+		if(strcasecmp(name, "walk_fatold") == 0) return "fatwalk";
+		if(strcasecmp(name, "run_fatold") == 0) return "fatrun";
+		if(strcasecmp(name, "woman_runpanic") == 0) return "fatsprint";
+		if(strcasecmp(name, "idle_stance") == 0) return "fatidle";
+	}
+	if(groupId == ASSOCGRP_FATWOMAN){
+		if(strcasecmp(name, "walk_fat") == 0) return "fatwalk";
+		if(strcasecmp(name, "woman_runpanic") == 0) return "fatsprint";
+		if(strcasecmp(name, "woman_idlestance") == 0) return "fatidle";
+	}
+	if(groupId == ASSOCGRP_PANICCHUNKY){
+		if(strcasecmp(name, "run_fatold") == 0) return "fatrun";
+		if(strcasecmp(name, "woman_runpanic") == 0) return "fatsprint";
+	}
+	if(groupId == ASSOCGRP_PLAYER1ARMED && strcasecmp(name, "run_1armed") == 0)
+		return "run_armed";
+	if(groupId == ASSOCGRP_STD){
+		if(strcasecmp(name, "FIGHTsh_F") == 0) return "FightShF";
+		if(strcasecmp(name, "FIGHTsh_back") == 0) return "FightShB";
+	}
+	return nil;
+}
+
+static const char *
+SelectSAAnimationName(int groupId, const char *name, CAnimBlock *block)
+{
+	const char *alias = GetSAAnimationAlias(groupId, name);
+	if(alias && CAnimManager::GetAnimation(alias, block))
+		return alias;
+	if(CAnimManager::GetAnimation(name, block))
+		return name;
+	return name;
+}
+
 void
 CAnimManager::LoadAnimFiles(void)
 {
 	LoadAnimFile("ANIM\\PED.IFP");
 	ms_aAnimAssocGroups = new CAnimBlendAssocGroup[NUM_ANIM_ASSOC_GROUPS];
+	ms_aSAAnimAssocGroups = new CAnimBlendAssocGroup[NUM_ANIM_ASSOC_GROUPS];
 	CreateAnimAssocGroups();
 }
 
 void
-CAnimManager::CreateAnimAssocGroups(void)
+CAnimManager::CreateAnimAssocGroups(int preferredModelIndex)
 {
+	if(ms_aAnimAssocGroups == nil)
+		return;
+	if(preferredModelIndex >= 0 && preferredModelIndex < MODELINFOSIZE){
+		CBaseModelInfo *baseInfo = CModelInfo::GetModelInfo(preferredModelIndex);
+		if(baseInfo && baseInfo->GetModelType() == MITYPE_PED){
+			CPedModelInfo *pedInfo = (CPedModelInfo*)baseInfo;
+			int groupId = (int)pedInfo->m_animGroup;
+			if(groupId >= 0 && groupId < NUM_ANIM_ASSOC_GROUPS){
+				CAnimBlendAssocGroup *group = pedInfo->UsesSAAnimations() && ms_aSAAnimAssocGroups ?
+					&ms_aSAAnimAssocGroups[groupId] : &ms_aAnimAssocGroups[groupId];
+				if(IsAnimAssocGroupReady(group))
+					return;
+			}
+		}
+	}
+
 	int i, j;
+	bool needVCClump = false;
+	bool needSAClump = false;
+	for(i = 0; i < NUM_ANIM_ASSOC_GROUPS; i++){
+		const AnimAssocDefinition *def = &ms_aAnimAssocDefinitions[i];
+		CAnimBlock *vcBlock = GetAnimationBlock(def->blockName);
+		if(vcBlock && vcBlock->isLoaded && !IsAnimAssocGroupReady(&ms_aAnimAssocGroups[i]))
+			needVCClump = true;
+		if(ms_aSAAnimAssocGroups){
+			char saBlockName[MAX_ANIMBLOCK_NAME];
+			CAnimBlock *saBlock;
+			snprintf(saBlockName, sizeof(saBlockName), "sa_%s", def->blockName);
+			saBlock = GetAnimationBlock(saBlockName);
+			if(saBlock == nil || !saBlock->isLoaded)
+				saBlock = GetAnimationBlock("sa_ped");
+			if(saBlock && saBlock->isLoaded &&
+			   (!IsAnimAssocGroupReady(&ms_aSAAnimAssocGroups[i]) || ms_aSAAnimAssocGroups[i].animBlock != saBlock))
+				needSAClump = true;
+		}
+	}
+	CPedModelInfo *vcReference = needVCClump ? FindPedAnimationReference(preferredModelIndex, false) : nil;
+	CPedModelInfo *saReference = needSAClump ? FindPedAnimationReference(preferredModelIndex, true) : nil;
+	RpClump *vcClump = vcReference ? (RpClump*)vcReference->CreateInstance() : nil;
+	RpClump *saClump = saReference ? (RpClump*)saReference->CreateInstance() : nil;
+	if(vcClump)
+		RpAnimBlendClumpInit(vcClump);
+	if(saClump){
+		RpAnimBlendClumpInit(saClump);
+		(*RPANIMBLENDCLUMPDATA(saClump))->usesSAAnimations = true;
+	}
 
 	for(i = 0; i < NUM_ANIM_ASSOC_GROUPS; i++){
-		CAnimBlock *block = GetAnimationBlock(ms_aAnimAssocDefinitions[i].blockName);
-		if(block == nil || !block->isLoaded || ms_aAnimAssocGroups[i].assocList)
-			continue;
-
-		CBaseModelInfo *mi = CModelInfo::GetModelInfo(ms_aAnimAssocDefinitions[i].modelIndex);
-		RpClump *clump = (RpClump*)mi->CreateInstance();
-		RpAnimBlendClumpInit(clump);
-		CAnimBlendAssocGroup *group = &ms_aAnimAssocGroups[i];
 		const AnimAssocDefinition *def = &ms_aAnimAssocDefinitions[i];
-		group->groupId = i;
-		group->firstAnimId = def->animDescs[0].animId;
-		group->CreateAssociations(def->blockName, clump, def->animNames, def->numAnims);
-		for(j = 0; j < group->numAssociations; j++)
-			// GetAnimation(i) in III (but it's in LoadAnimFiles), GetAnimation(group->animDesc[j].animId) in VC
-			group->GetAnimation(def->animDescs[j].animId)->flags |= def->animDescs[j].flags;
-		if(IsClumpSkinned(clump))
-			RpClumpForAllAtomics(clump, AtomicRemoveAnimFromSkinCB, nil);
-		RpClumpDestroy(clump);
+		CAnimBlendAssocGroup *vcGroup = &ms_aAnimAssocGroups[i];
+		CAnimBlendAssocGroup *saGroup = ms_aSAAnimAssocGroups ? &ms_aSAAnimAssocGroups[i] : nil;
+		CAnimBlock *vcBlock = GetAnimationBlock(def->blockName);
+
+		if(vcClump && vcBlock && vcBlock->isLoaded && !IsAnimAssocGroupReady(vcGroup)){
+			vcGroup->groupId = i;
+			vcGroup->firstAnimId = def->animDescs[0].animId;
+			vcGroup->CreateAssociations(def->blockName, vcClump, def->animNames, def->numAnims);
+			for(j = 0; j < vcGroup->numAssociations; j++){
+				CAnimBlendAssociation *assoc = vcGroup->GetAnimation(def->animDescs[j].animId);
+				if(assoc && assoc->hierarchy)
+					assoc->flags |= def->animDescs[j].flags;
+			}
+		}
+
+		if(saGroup && saClump){
+			char saBlockName[MAX_ANIMBLOCK_NAME];
+			CAnimBlock *saBlock;
+			const char *saNames[256];
+			snprintf(saBlockName, sizeof(saBlockName), "sa_%s", def->blockName);
+			saBlock = GetAnimationBlock(saBlockName);
+			if(saBlock == nil || !saBlock->isLoaded)
+				saBlock = GetAnimationBlock("sa_ped");
+			if(saBlock && saBlock->isLoaded && def->numAnims <= ARRAY_SIZE(saNames) &&
+			   (!IsAnimAssocGroupReady(saGroup) || saGroup->animBlock != saBlock)){
+				for(j = 0; j < def->numAnims; j++)
+					saNames[j] = SelectSAAnimationName(i, def->animNames[j], saBlock);
+				saGroup->groupId = i;
+				saGroup->firstAnimId = def->animDescs[0].animId;
+				saGroup->CreateAssociations(saBlock->name, saClump, saNames, def->numAnims, vcGroup);
+				for(j = 0; j < saGroup->numAssociations; j++){
+					CAnimBlendAssociation *assoc = saGroup->GetAnimation(def->animDescs[j].animId);
+					if(assoc && assoc->hierarchy)
+						assoc->flags |= def->animDescs[j].flags;
+				}
+			}
+		}
+	}
+
+	if(vcClump){
+		if(IsClumpSkinned(vcClump))
+			RpClumpForAllAtomics(vcClump, AtomicRemoveAnimFromSkinCB, nil);
+		RpClumpDestroy(vcClump);
+	}
+	if(saClump){
+		if(IsClumpSkinned(saClump))
+			RpClumpForAllAtomics(saClump, AtomicRemoveAnimFromSkinCB, nil);
+		RpClumpDestroy(saClump);
 	}
 }
+
+static void
+MakeSAAnimBlockName(const char *filename, char *blockName, size_t blockNameSize)
+{
+	const char *base = filename;
+	const char *p;
+	const char *dot;
+	char stem[MAX_ANIMBLOCK_NAME];
+	size_t length, i;
+
+	for(p = filename; *p; p++)
+		if(*p == '/' || *p == '\\')
+			base = p + 1;
+	dot = strrchr(base, '.');
+	length = dot ? (size_t)(dot - base) : strlen(base);
+	if(length > sizeof(stem) - 4)
+		length = sizeof(stem) - 4;
+	for(i = 0; i < length; i++)
+		stem[i] = (char)tolower((unsigned char)base[i]);
+	stem[length] = '\0';
+	snprintf(blockName, blockNameSize, "sa_%s", stem);
+	if(blockNameSize > 0)
+		blockName[blockNameSize - 1] = '\0';
+}
+
+static bool
+IsCompactAnimFile(const uint8 *data, size_t size)
+{
+	return size >= 4 && (memcmp(data, "ANP2", 4) == 0 || memcmp(data, "ANP3", 4) == 0);
+}
+
+#ifdef CUSTOM_MODELS
+void
+CAnimManager::LoadSAAnimFileFromCustom(const char *filename)
+{
+	std::vector<uint8> customBuf;
+	char blockName[MAX_ANIMBLOCK_NAME];
+	char (*names)[24];
+	int numNames = 0;
+	CAnimBlock *loadedBlock;
+	RwMemory mem;
+	RwStream *stream;
+
+	if(!CCustomModels::LoadAnimFileFromCustom(filename, customBuf) ||
+	   !IsCompactAnimFile(customBuf.data(), customBuf.size()))
+		return;
+
+	MakeSAAnimBlockName(filename, blockName, sizeof(blockName));
+	loadedBlock = GetAnimationBlock(blockName);
+	if(loadedBlock && loadedBlock->isLoaded){
+		loadedBlock->unloadPending = false;
+		return;
+	}
+
+	names = (char (*)[24])malloc(sizeof(char[24]) * 4096);
+	if(names == nil)
+		return;
+	bool clean = br::SniffAnimNames(customBuf.data(), customBuf.size(), names, 4096, numNames);
+	free(names);
+	if(!clean){
+		CUSTOM_LOG("animation %s: the compact SA animation package is malformed; it was skipped\n", filename);
+		return;
+	}
+
+	mem.start = customBuf.data();
+	mem.length = (uint32)customBuf.size();
+	stream = RwStreamOpen(rwSTREAMMEMORY, rwSTREAMREAD, &mem);
+	if(stream == nil)
+		return;
+	LoadAnimFile(stream, true, nil, blockName);
+	RwStreamClose(stream, nil);
+	CUSTOM_LOG("animation %s: loaded as the separate %s bank; the VC dictionary is kept\n",
+		filename, blockName);
+}
+#endif
 
 void
 CAnimManager::LoadAnimFile(const char *filename)
 {
 	RwStream *stream = nil;
-	bool fromCustom = false;
 #ifdef CUSTOM_MODELS
-	// the custom folder wins over the game's own animation file: the entry is
-	// read into memory and the very same buffer is parsed - no temp files
-	static std::vector<uint8> customBuf;
-	customBuf.clear();
+	std::vector<uint8> customBuf;
 	if(CCustomModels::LoadAnimFileFromCustom(filename, customBuf)){
-		// The SA / Black Russia animation packages carry a different
-		// animation set than this game: their ped package has no walk_civi,
-		// idle_stance and friends (and none of the weapon/bike blocks), so
-		// loading it would leave every ped association group broken. Walk
-		// the package first and only take it when it can be read and really
-		// carries this game's names.
-		bool take = true;
-		if(customBuf.size() >= 40){
-			char (*names)[24] = (char (*)[24])malloc(sizeof(char[24]) * 4096);
-			if(names){
-				int nn = 0;
-				bool clean = br::SniffAnimNames(customBuf.data(), customBuf.size(), names, 4096, nn);
-				if(clean && strncmp(filename, "ANIM\\PED.IFP", 12) == 0){
-					bool walk = false, idle = false;
-					for(int q = 0; q < nn; q++){
-						if(strcmp(names[q], "walk_civi") == 0) walk = true;
-						if(strcmp(names[q], "idle_stance") == 0) idle = true;
-					}
-					take = walk && idle;
-					if(!take)
-						CUSTOM_LOG("animation %s: the package is the SA mobile set (%d anims, no walk_civi/idle_stance) - it does not fit this game, the game's own PED.IFP stays\n", filename, nn);
-				}else if(!clean){
-					take = false;
-					CUSTOM_LOG("animation %s: the package does not walk as ANP2/ANP3 - the game's own file stays\n", filename);
+		char (*names)[24] = (char (*)[24])malloc(sizeof(char[24]) * 4096);
+		int numNames = 0;
+		bool clean = names && br::SniffAnimNames(customBuf.data(), customBuf.size(), names, 4096, numNames);
+		bool compact = IsCompactAnimFile(customBuf.data(), customBuf.size());
+		if(clean && compact){
+			char blockName[MAX_ANIMBLOCK_NAME];
+			CAnimBlock *loadedBlock;
+			MakeSAAnimBlockName(filename, blockName, sizeof(blockName));
+			loadedBlock = GetAnimationBlock(blockName);
+			if(loadedBlock == nil || !loadedBlock->isLoaded){
+				RwMemory mem;
+				RwStream *customStream;
+				mem.start = customBuf.data();
+				mem.length = (uint32)customBuf.size();
+				customStream = RwStreamOpen(rwSTREAMMEMORY, rwSTREAMREAD, &mem);
+				if(customStream){
+					LoadAnimFile(customStream, true, nil, blockName);
+					RwStreamClose(customStream, nil);
+					CUSTOM_LOG("animation %s: loaded in a separate %s bank; the game's VC animations are kept\n",
+						filename, blockName);
 				}
-				free(names);
+			}else{
+				loadedBlock->unloadPending = false;
 			}
+			// A compact SA IFP is an additional bank. Always retain the native
+			// file in its original block for VC models and as a safe fallback.
+			stream = RwStreamOpen(rwSTREAMFILENAME, rwSTREAMREAD, filename);
+		}else if(clean){
+			bool take = true;
+			if(strcasecmp(filename, "ANIM\\PED.IFP") == 0){
+				bool walk = false, idle = false;
+				for(int i = 0; i < numNames; i++){
+					if(strcasecmp(names[i], "walk_civi") == 0) walk = true;
+					if(strcasecmp(names[i], "idle_stance") == 0) idle = true;
+				}
+				take = walk && idle;
+				if(!take)
+					CUSTOM_LOG("animation %s: custom VC PED.IFP lacks its required base clips; the game's file stays\n", filename);
+			}
+			if(take){
+				RwMemory mem;
+				mem.start = customBuf.data();
+				mem.length = (uint32)customBuf.size();
+				stream = RwStreamOpen(rwSTREAMMEMORY, rwSTREAMREAD, &mem);
+			}
+		}else{
+			CUSTOM_LOG("animation %s: the custom package is malformed; the game's file stays\n", filename);
 		}
-		if(take){
-			RwMemory mem;
-			mem.start = customBuf.data();
-			mem.length = (uint32)customBuf.size();
-			stream = RwStreamOpen(rwSTREAMMEMORY, rwSTREAMREAD, &mem);
-			fromCustom = stream != nil;
-		}else
-			customBuf.clear();
+		if(names)
+			free(names);
 	}
 #endif
 	if(stream == nil)
@@ -1325,11 +1734,10 @@ CAnimManager::LoadAnimFile(const char *filename)
 	assert(stream);
 	LoadAnimFile(stream, true);
 	RwStreamClose(stream, nil);
-	(void)fromCustom;
 }
 
 void
-CAnimManager::LoadAnimFile(RwStream *stream, bool compress, char (*uncompressedAnims)[32])
+CAnimManager::LoadAnimFile(RwStream *stream, bool compress, char (*uncompressedAnims)[32], const char *blockNameOverride)
 {
 	#define ROUNDSIZE(x) if((x) & 3) (x) += 4 - ((x)&3)
 	struct IfpHeader {
@@ -1346,7 +1754,7 @@ CAnimManager::LoadAnimFile(RwStream *stream, bool compress, char (*uncompressedA
 	// San Andreas and Black Russia packages: compact header without the
 	// ANPK chunk layers (see gta-reversed CAnimManager::LoadAnimFile)
 	if(memcmp(anpk.ident, "ANP3", 4) == 0 || memcmp(anpk.ident, "ANP2", 4) == 0){
-		LoadAnimFile_ANP23(stream, anpk.ident, compress, anpk.size);
+		LoadAnimFile_ANP23(stream, anpk.ident, compress, anpk.size, blockNameOverride);
 		return;
 	}
 	ROUNDSIZE(anpk.size);
@@ -1508,7 +1916,7 @@ CAnimManager::LoadAnimFile(RwStream *stream, bool compress, char (*uncompressedA
 // floats through the same rotation handling as the ANPK reader, pre-compressed
 // frames (frameType 3/4) straight into the compressed arrays.
 void
-CAnimManager::LoadAnimFile_ANP23(RwStream *stream, const char *ident, bool compress, uint32 rootSize)
+CAnimManager::LoadAnimFile_ANP23(RwStream *stream, const char *ident, bool compress, uint32 rootSize, const char *blockNameOverride)
 {
 	char buf[256];
 	float *fbuf = (float*)buf;
@@ -1542,26 +1950,54 @@ CAnimManager::LoadAnimFile_ANP23(RwStream *stream, const char *ident, bool compr
 		}
 	}
 
+	// A SA compact IFP must live beside (not replace) VC's block with the same
+	// name. The override is derived from the custom filename, e.g. ped -> sa_ped.
+	if(blockNameOverride){
+		strncpy(blockName, blockNameOverride, sizeof(blockName) - 1);
+		blockName[sizeof(blockName) - 1] = '\0';
+	}
+
+	if(numAnims == 0 || numAnims > (uint32)NUMANIMATIONS){
+		debug("ANP%c: invalid animation count for block %s (%u)\n", ident[3], blockName, numAnims);
+		return;
+	}
 	CAnimBlock *animBlock = GetAnimationBlock(blockName);
+	if(animBlock && (animBlock->numAnims < 0 ||
+	   (animBlock->numAnims > 0 &&
+	    (animBlock->firstIndex < 0 || animBlock->firstIndex > NUMANIMATIONS ||
+	     animBlock->numAnims > NUMANIMATIONS - animBlock->firstIndex ||
+	     animBlock->numAnims != (int32)numAnims)))){
+		debug("ANP%c: block %s has an invalid animation range or count (%d at %d, file has %u)\n",
+			ident[3], blockName, animBlock->numAnims, animBlock->firstIndex, numAnims);
+		return;
+	}
+	if((animBlock == nil || animBlock->numAnims == 0) &&
+	   ms_numAnimations + (int32)numAnims > NUMANIMATIONS){
+		debug("ANP%c: no room for block %s (%u anims)\n", ident[3], blockName, numAnims);
+		return;
+	}
 	if(animBlock){
 		if(animBlock->numAnims == 0){
 			animBlock->numAnims = numAnims;
 			animBlock->firstIndex = ms_numAnimations;
 		}
 	}else{
-		if(ms_numAnimBlocks >= NUMANIMBLOCKS ||
-	     ms_numAnimations + (int32)numAnims > NUMANIMATIONS){
-			debug("ANP%c: no room for block %s (%d anims)\n", ident[3], blockName, numAnims);
+		if(ms_numAnimBlocks >= NUMANIMBLOCKS){
+			debug("ANP%c: no room for block %s (%u anims)\n", ident[3], blockName, numAnims);
 			return;
 		}
 		animBlock = &ms_aAnimBlocks[ms_numAnimBlocks++];
-		strncpy(animBlock->name, blockName, MAX_ANIMBLOCK_NAME);
+		strncpy(animBlock->name, blockName, MAX_ANIMBLOCK_NAME - 1);
+		animBlock->name[MAX_ANIMBLOCK_NAME - 1] = '\0';
+		animBlock->isLoaded = false;
+		animBlock->refCount = 0;
+		animBlock->unloadPending = false;
 		animBlock->numAnims = numAnims;
 		animBlock->firstIndex = ms_numAnimations;
 	}
-
 	debug("Loading ANIMS %s (ANP%c)\n", animBlock->name, ident[3]);
 	animBlock->isLoaded = true;
+	animBlock->unloadPending = false;
 
 	int animIndex = animBlock->firstIndex;
 	for(j = 0; j < (int)numAnims; j++){
@@ -1594,7 +2030,8 @@ CAnimManager::LoadAnimFile_ANP23(RwStream *stream, const char *ident, bool compr
 #endif
 		if(fileCompressed)
 			compressHier = false;	// frames arrive compressed already
-		hier->compressed = fileCompressed;
+		bool hasCompressedFrames = false;
+		hier->compressed = false;
 		hier->keepCompressed = false;
 
 		if(numSeq > 0x1000){	// garbage header, do not allocate gigabytes
@@ -1633,10 +2070,18 @@ CAnimManager::LoadAnimFile_ANP23(RwStream *stream, const char *ident, bool compr
 				uint8 *dst = (uint8*)seq->GetKeyFrameCompressed(0);
 				size_t stride = hasTrans ? 16 : 10;
 				RwStreamRead(stream, dst, (uint32)(stride * numFrames));
+				hasCompressedFrames = true;
+#ifndef ANIM_COMPRESSION
+				// The game normally builds without animation-cache compression.
+				// Expand SA's frames now so normal update code works in every build.
+				seq->Uncompress();
+#endif
 				continue;
 			}
 			// float frames: handled exactly like the ANPK reader does
 			seq->SetNumFrames(numFrames, hasTrans, compressHier);
+			if(compressHier)
+				hasCompressedFrames = true;
 			for(l = 0; l < (int)numFrames; l++){
 				if(hasTrans){
 					RwStreamRead(stream, buf, 0x20);
@@ -1670,6 +2115,11 @@ CAnimManager::LoadAnimFile_ANP23(RwStream *stream, const char *ident, bool compr
 				}
 			}
 		}
+#ifdef ANIM_COMPRESSION
+		hier->compressed = hasCompressedFrames;
+#else
+		hier->compressed = false;
+#endif
 		if(!hier->compressed){
 			hier->RemoveQuaternionFlips();
 			hier->CalcTotalTime();

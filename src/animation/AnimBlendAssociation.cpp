@@ -9,8 +9,11 @@
 
 CAnimBlendAssociation::CAnimBlendAssociation(void)
 {
+	numNodes = 0;
 	groupId = -1;
 	nodes = nil;
+	hierarchy = nil;
+	animBlockRef = -1;
 	blendAmount = 1.0f;
 	blendDelta = 0.0f;
 	currentTime = 0.0f;
@@ -25,6 +28,7 @@ CAnimBlendAssociation::CAnimBlendAssociation(void)
 CAnimBlendAssociation::CAnimBlendAssociation(CAnimBlendAssociation &other)
 {
 	nodes = nil;
+	animBlockRef = -1;
 	blendAmount = 1.0f;
 	blendDelta = 0.0f;
 	currentTime = 0.0f;
@@ -39,6 +43,11 @@ CAnimBlendAssociation::~CAnimBlendAssociation(void)
 {
 	FreeAnimBlendNodeArray();
 	link.Remove();
+	if(animBlockRef >= 0){
+		int32 block = animBlockRef;
+		animBlockRef = -1;
+		CAnimManager::RemoveAnimBlockRefWithoutDelete(block);
+	}
 }
 
 
@@ -64,6 +73,7 @@ CAnimBlendAssociation::Init(RpClump *clump, CAnimBlendHierarchy *hier)
 {
 	int i;
 	AnimBlendFrameData *frame;
+	animBlockRef = -1;
 
 	// a custom animation set can be missing single animations; an empty
 	// association is better than dereferencing nil
@@ -97,6 +107,9 @@ CAnimBlendAssociation::Init(CAnimBlendAssociation &assoc)
 
 	hierarchy = assoc.hierarchy;
 	numNodes = assoc.numNodes;
+	animBlockRef = hierarchy ? CAnimManager::GetAnimationBlockForHierarchy(hierarchy) : -1;
+	if(animBlockRef >= 0)
+		CAnimManager::AddAnimBlockRef(animBlockRef);
 	flags = assoc.flags;
 	animId = assoc.animId;
 	groupId = assoc.groupId;

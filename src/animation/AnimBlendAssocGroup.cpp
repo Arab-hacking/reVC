@@ -50,17 +50,22 @@ CAnimBlendAssocGroup::DestroyAssociations(void)
 CAnimBlendAssociation*
 CAnimBlendAssocGroup::GetAnimation(uint32 id)
 {
-	return &assocList[id - firstAnimId];
+	int32 index = (int32)id - firstAnimId;
+	if(assocList == nil || index < 0 || index >= numAssociations || assocList[index].hierarchy == nil)
+		return nil;
+	return &assocList[index];
 }
 
 CAnimBlendAssociation*
 CAnimBlendAssocGroup::GetAnimation(const char *name)
 {
 	int i;
+	if(assocList == nil || name == nil)
+		return nil;
 	for(i = 0; i < numAssociations; i++)
-		if(!CGeneral::faststricmp(assocList[i].hierarchy->name, name))
+		if(assocList[i].hierarchy && !CGeneral::faststricmp(assocList[i].hierarchy->name, name))
 			return &assocList[i];
-	debug("\n\nCan't find the fucking animation %s\n\n\n", name);
+	debug("\n\nCan't find the animation %s\n\n\n", name);
 	return nil;
 }
 
@@ -153,6 +158,8 @@ CAnimBlendAssocGroup::CreateAssociations(const char *name)
 
 	for(i = 0; i < animBlock->numAnims; i++){
 		CAnimBlendHierarchy *anim = CAnimManager::GetAnimation(animBlock->firstIndex + i);
+		if(anim == nil)
+			continue;
 		CBaseModelInfo *model = GetModelFromName(anim->name);
 		if(model){
 			debug("Associated anim %s with model %s\n", anim->name, model->GetModelName());
@@ -174,24 +181,31 @@ CAnimBlendAssocGroup::CreateAssociations(const char *name)
 void
 CAnimBlendAssocGroup::CreateAssociations(const char *blockName, RpClump *clump, const char **animNames, int numAssocs)
 {
+	CreateAssociations(blockName, clump, animNames, numAssocs, nil);
+}
+
+void
+CAnimBlendAssocGroup::CreateAssociations(const char *blockName, RpClump *clump, const char **animNames, int numAssocs, CAnimBlendAssocGroup *fallback)
+{
 	int i;
 
 	DestroyAssociations();
-
 	animBlock = CAnimManager::GetAnimationBlock(blockName);
+	if(animBlock == nil || clump == nil || numAssocs <= 0)
+		return;
 	assocList = new CAnimBlendAssociation[numAssocs];
 
-	numAssociations = 0;
 	for(i = 0; i < numAssocs; i++){
 		CAnimBlendHierarchy *hier = CAnimManager::GetAnimation(animNames[i], animBlock);
+		if(hier == nil && fallback && fallback->assocList && i < fallback->numAssociations)
+			hier = fallback->assocList[i].hierarchy;
 		if(hier == nil){
 #ifdef CUSTOM_MODELS
-			// a custom animation package can be missing single animations;
-			// skip them instead of dereferencing nil
-			CUSTOM_LOG("anim assoc: %s is not in the animation set - association skipped\n", animNames[i]);
+			CUSTOM_LOG("anim assoc: %s has no SA or VC equivalent - association skipped\n", animNames[i]);
 #else
-			continue;
+			debug("anim assoc: %s has no SA or VC equivalent - association skipped\n", animNames[i]);
 #endif
+			continue;
 		}
 		assocList[i].Init(clump, hier);
 		assocList[i].animId = firstAnimId + i;

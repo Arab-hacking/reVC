@@ -22,6 +22,7 @@ public:
 	CAnimBlendAssociation *CopyAnimation(const char *name);
 	void CreateAssociations(const char *name);
 	void CreateAssociations(const char *blockName, RpClump *clump, const char **animNames, int numAssocs);
+	void CreateAssociations(const char *blockName, RpClump *clump, const char **animNames, int numAssocs, CAnimBlendAssocGroup *fallback);
 };
 
 #endif // __GTA_ANIMBLENDASSOCGROUP_H__

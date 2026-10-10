@@ -35,6 +35,9 @@ public:
 		CVector2D *velocity2d;
 		CVector *velocity3d;
 	};
+	// SA-compatible skinned peds use their own association bank. This is set
+	// per clump (not per global animation group) so VC peds remain unchanged.
+	bool usesSAAnimations;
 	// order of frames is determined by RW hierarchy
 	AnimBlendFrameData *frames;
 

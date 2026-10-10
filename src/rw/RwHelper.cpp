@@ -203,25 +203,50 @@ GetFirstTexture(RwTexDictionary *txd)
 	return tex;
 }
 
+static RpAtomic*
+GetFirstSkinnedAtomicCallback(RpAtomic *atomic, void *data)
+{
+	if(RpSkinGeometryGetSkin(RpAtomicGetGeometry(atomic))){
+		*(RpAtomic**)data = atomic;
+		return nil;
+	}
+	return atomic;
+}
+
+RpAtomic*
+GetFirstSkinnedAtomic(RpClump *clump)
+{
+	RpAtomic *atomic = nil;
+	if(clump)
+		RpClumpForAllAtomics(clump, GetFirstSkinnedAtomicCallback, &atomic);
+	return atomic;
+}
+
 bool
 IsClumpSkinned(RpClump *clump)
 {
-	RpAtomic *atomic = GetFirstAtomic(clump);
-	return atomic ? RpSkinGeometryGetSkin(RpAtomicGetGeometry(atomic)) : nil;
+	return GetFirstSkinnedAtomic(clump) != nil;
 }
 
 static RpAtomic*
 GetAnimHierarchyCallback(RpAtomic *atomic, void *data)
 {
-	*(RpHAnimHierarchy**)data = RpSkinAtomicGetHAnimHierarchy(atomic);
-	return nil;
+	if(RpSkinGeometryGetSkin(RpAtomicGetGeometry(atomic))){
+		RpHAnimHierarchy *hier = RpSkinAtomicGetHAnimHierarchy(atomic);
+		if(hier){
+			*(RpHAnimHierarchy**)data = hier;
+			return nil;
+		}
+	}
+	return atomic;
 }
 
 RpHAnimHierarchy*
 GetAnimHierarchyFromSkinClump(RpClump *clump)
 {
 	RpHAnimHierarchy *hier = nil;
-	RpClumpForAllAtomics(clump, GetAnimHierarchyCallback, &hier);
+	if(clump)
+		RpClumpForAllAtomics(clump, GetAnimHierarchyCallback, &hier);
 	return hier;
 }
 
@@ -260,7 +285,7 @@ SkinGetBonePositionsToTable(RpClump *clump, RwV3d *boneTable)
 	if(boneTable == nil)
 		return;
 
-	atomic = GetFirstAtomic(clump);		// mobile, also VC
+	atomic = GetFirstSkinnedAtomic(clump);
 	assert(atomic);
 	skin = RpSkinGeometryGetSkin(RpAtomicGetGeometry(atomic));
 	assert(skin);

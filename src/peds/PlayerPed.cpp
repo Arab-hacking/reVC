@@ -255,12 +255,15 @@ CPlayerPed::ReApplyMoveAnims(void)
 	for(int i = 0; i < ARRAY_SIZE(moveAnims); i++) {
 		CAnimBlendAssociation *curMoveAssoc = RpAnimBlendClumpGetAssociation(GetClump(), moveAnims[i]);
 		if (curMoveAssoc) {
-			if (CGeneral::faststrcmp(CAnimManager::GetAnimAssociation(m_animGroup, moveAnims[i])->hierarchy->name, curMoveAssoc->hierarchy->name)) {
+			CAnimBlendAssociation *requestedMoveAssoc = CAnimManager::GetAnimAssociation(GetClump(), m_animGroup, moveAnims[i]);
+			if (requestedMoveAssoc && CGeneral::faststrcmp(requestedMoveAssoc->hierarchy->name, curMoveAssoc->hierarchy->name)) {
 				CAnimBlendAssociation *newMoveAssoc = CAnimManager::AddAnimation(GetClump(), m_animGroup, moveAnims[i]);
-				newMoveAssoc->blendDelta = curMoveAssoc->blendDelta;
-				newMoveAssoc->blendAmount = curMoveAssoc->blendAmount;
-				curMoveAssoc->blendDelta = -1000.0f;
-				curMoveAssoc->flags |= ASSOC_DELETEFADEDOUT;
+				if(newMoveAssoc){
+					newMoveAssoc->blendDelta = curMoveAssoc->blendDelta;
+					newMoveAssoc->blendAmount = curMoveAssoc->blendAmount;
+					curMoveAssoc->blendDelta = -1000.0f;
+					curMoveAssoc->flags |= ASSOC_DELETEFADEDOUT;
+				}
 			}
 		}
 	}

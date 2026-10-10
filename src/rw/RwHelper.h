@@ -15,6 +15,7 @@ void SetCullMode(uint32 mode);
 RwFrame *GetFirstChild(RwFrame *frame);
 RwObject *GetFirstObject(RwFrame *frame);
 RpAtomic *GetFirstAtomic(RpClump *clump);
+RpAtomic *GetFirstSkinnedAtomic(RpClump *clump);
 RwTexture *GetFirstTexture(RwTexDictionary *txd);
 
 bool IsClumpSkinned(RpClump *clump);

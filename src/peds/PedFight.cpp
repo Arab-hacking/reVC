@@ -399,9 +399,9 @@ CPed::SetAttack(CEntity *victim)
 			if (bCrouchWhenShooting && bIsDucking && curWeapon->IsFlagSet(WEAPONFLAG_CROUCHFIRE)) {
 				CAnimBlendAssociation* curMoveAssoc = RpAnimBlendClumpGetAssociation(GetClump(), GetCrouchFireAnim(curWeapon));
 				if (curMoveAssoc) {
-					if (strcmp(CAnimManager::GetAnimAssociation(curWeapon->m_AnimToPlay, GetCrouchFireAnim(curWeapon))->hierarchy->name, curMoveAssoc->hierarchy->name) != 0) {
+					CAnimBlendAssociation *requestedMoveAssoc = CAnimManager::GetAnimAssociation(GetClump(), curWeapon->m_AnimToPlay, GetCrouchFireAnim(curWeapon));
+					if (requestedMoveAssoc && strcmp(requestedMoveAssoc->hierarchy->name, curMoveAssoc->hierarchy->name) != 0)
 						delete curMoveAssoc;
-					}
 				}
 				animAssoc = CAnimManager::BlendAnimation(GetClump(), curWeapon->m_AnimToPlay, GetCrouchFireAnim(curWeapon), 8.0f);
 			} else {
@@ -425,9 +425,9 @@ CPed::SetAttack(CEntity *victim)
 
 				CAnimBlendAssociation* curFireAssoc = RpAnimBlendClumpGetAssociation(GetClump(), fireAnim);
 				if (curFireAssoc) {
-					if (strcmp(CAnimManager::GetAnimAssociation(curWeapon->m_AnimToPlay, fireAnim)->hierarchy->name, curFireAssoc->hierarchy->name) != 0) {
+					CAnimBlendAssociation *requestedFireAssoc = CAnimManager::GetAnimAssociation(GetClump(), curWeapon->m_AnimToPlay, fireAnim);
+					if (requestedFireAssoc && strcmp(requestedFireAssoc->hierarchy->name, curFireAssoc->hierarchy->name) != 0)
 						delete curFireAssoc;
-					}
 				}
 				animAssoc = CAnimManager::BlendAnimation(GetClump(), curWeapon->m_AnimToPlay, fireAnim, animDelta);
 			}

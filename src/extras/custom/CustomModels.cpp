@@ -327,7 +327,9 @@ IndexArchive(const std::string &path, uint64 mtime, ScanStats &st)
 			AddIndex(customMods, key, src);
 			mods++;
 		}else if(ext == "dff"){
-			if(brres::isReserved(key)){
+			// player.mod is an unsafe 8 KB stub, but a validated player.dff is
+			// the normal way to install a SA skinned player model.
+			if(brres::isReserved(key) && key != "player"){
 				CUSTOM_LOG("  %s: reserved name, skipped\n", name.c_str());
 				continue;
 			}
@@ -415,7 +417,9 @@ ScanFolder(const std::string &folder, int depth, ScanStats &st)
 			AddIndex(customMods, key, src);
 			st.mod++;
 		}else if(ext == "dff"){
-			if(brres::isReserved(key))
+			// Allow a real player.dff; player.mod remains blocked above because
+			// the common archive's same-named entry is only a crashing stub.
+			if(brres::isReserved(key) && key != "player")
 				continue;
 			AddIndex(customDff, key, src);
 			st.dff++;
@@ -667,6 +671,24 @@ IsClumpStream(const std::vector<uint8> &dff)
 	return id == 0x10;	// rwID_CLUMP
 }
 
+// A ped model is always read through the clump loader. Unlike ordinary model
+// indexing, this path must never accept a different RW root (notably the tiny
+// player.mod placeholder found in some custom packs). Requiring both a clump
+// root and the geometry validator is consistent for archive and loose files.
+static bool
+ValidateModelForGame(const std::string &key, bool isMod, const std::vector<uint8> &file, std::string &why)
+{
+	if(key == "player" && isMod){
+		why = "player.mod is reserved and unsafe; use a validated player.dff";
+		return false;
+	}
+	if(!IsClumpStream(file)){
+		why = "the root RenderWare chunk is not a clump";
+		return false;
+	}
+	return br::validateClumpForGame(file.data(), (uint32)file.size(), why);
+}
+
 static bool
 CanUseModel(const std::string &key)
 {
@@ -679,14 +701,8 @@ CanUseModel(const std::string &key)
 	bool isMod;
 	br::RwFixStats stats;
 	std::string warn;
-	plan.usable = ReadModelEntry(key, file, isMod, stats, warn) && IsClumpStream(file);
-	if(plan.usable){
-		std::string usableWhy;
-		if(!br::validateClumpForGame(file.data(), (uint32)file.size(), usableWhy)){
-			plan.usable = false;
-			warn = usableWhy;
-		}
-	}
+	plan.usable = ReadModelEntry(key, file, isMod, stats, warn) &&
+		ValidateModelForGame(key, isMod, file, warn);
 	if(!plan.usable)
 		CUSTOM_LOG("model %s: not usable as a game model%s, the game's own file is used\n", key.c_str(),
 			warn.empty() ? "" : (" (" + warn + ")").c_str());
@@ -842,10 +858,10 @@ LoadModelIntoGame(const std::string &key, int32 modelId)
 	CBaseModelInfo *mi = CModelInfo::GetModelInfo(modelId);
 	if(mi == nil) return false;
 
-	// an empty client stub or a truncated model is rejected before the game
-	// parses it - the game's own file is used instead
+	// Reject empty stubs, truncated models, non-clump roots, and any attempt to
+	// feed the reserved player.mod entry to the clump loader.
 	std::string usableWhy;
-	if(!br::validateClumpForGame(file.data(), (uint32)file.size(), usableWhy)){
+	if(!ValidateModelForGame(key, isMod, file, usableWhy)){
 		CUSTOM_LOG("model %s: not usable as a game model (%s), the game's own file is used\n",
 			key.c_str(), usableWhy.c_str());
 		return false;
@@ -1358,9 +1374,11 @@ CCustomModels::LoadClumpFileFromCustom(const char *filename)
 		return false;
 	unsigned rawSize = (unsigned)file.size();
 
-	// the same structural check: stubs and truncated models are not served
+	// Use the same strict clump validation as the streaming path. In
+	// particular, player.dff is accepted only as a real clump with usable
+	// geometry; player.mod stays rejected regardless of its payload.
 	std::string usableWhy;
-	if(!br::validateClumpForGame(file.data(), (uint32)file.size(), usableWhy)){
+	if(!ValidateModelForGame(key, isMod, file, usableWhy)){
 		CUSTOM_LOG("model file %s: not usable as a game model (%s), the game's own file is used\n",
 			filename, usableWhy.c_str());
 		return false;
@@ -1528,9 +1546,12 @@ CCustomModels::LoadAnimFileFromCustom(const char *filename, std::vector<uint8> &
 	if(key.empty() || customAnims.find(key) == customAnims.end())
 		return false;
 
-	std::string ext = Extension(filename);
-	if(!ReadEntry(customAnims, key, out))
+	const CustomSource *src = FindSource(customAnims, key);
+	if(src == nil || !ReadSource(*src, out))
 		return false;
+	// The game always requests an .IFP path, even when the indexed custom
+	// source is a BR .ani entry; inspect the source name, not the request path.
+	std::string ext = Extension(src->fname);
 	if(ext == "ani" && br::isBrAni(out.data(), out.size()) && !br::convertAniToIfp(out)){
 		CUSTOM_LOG("animation %s: the .ani header could not be reordered\n", filename);
 		out.clear();

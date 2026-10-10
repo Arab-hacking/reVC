@@ -4,6 +4,7 @@
 #include "Pools.h"
 #include "Particle.h"
 #include "RpAnimBlend.h"
+#include "AnimBlendClumpData.h"
 #include "Bones.h"
 #include "Ped.h"
 #include "AnimBlendAssociation.h"
@@ -450,6 +451,10 @@ CPed::SetModelIndex(uint32 mi)
 	SetPedStats(modelInfo->m_pedStatType);
 	m_headingRate = m_pedStats->m_headingChangeRate;
 	m_animGroup = (AssocGroupId) modelInfo->m_animGroup;
+	(*RPANIMBLENDCLUMPDATA(GetClump()))->usesSAAnimations = modelInfo->UsesSAAnimations();
+	// Associations are built against a skeleton-specific reference clump. This
+	// call also retries groups that had no native/SA reference during startup.
+	CAnimManager::CreateAnimAssocGroups(GetModelIndex());
 	CAnimManager::AddAnimation(GetClump(), m_animGroup, ANIM_STD_IDLE);
 
 	if (!CanUseTorsoWhenLooking())

@@ -17,6 +17,7 @@
 #include "Entity.h"
 #include "FileMgr.h"
 #include "FileLoader.h"
+#include "AnimManager.h"
 #include "Zones.h"
 #include "Radar.h"
 #include "Camera.h"
@@ -672,6 +673,16 @@ CStreaming::ConvertBufferToObject(int8 *buf, int32 streamId)
 			return false;
 		}
 		PUSH_MEMID(MEMID_STREAM_ANIMATION);
+#ifdef CUSTOM_MODELS
+		CAnimBlock *animBlock = CAnimManager::GetAnimationBlock(streamId - STREAM_OFFSET_ANIM);
+		if(animBlock){
+			char customAnimFile[64];
+			snprintf(customAnimFile, sizeof(customAnimFile), "ANIM\\%s.IFP", animBlock->name);
+			// Compact SA/BR dictionaries load into a parallel sa_<block> bank;
+			// the IMG stream below still fills the original VC block.
+			CAnimManager::LoadSAAnimFileFromCustom(customAnimFile);
+		}
+#endif
 		CAnimManager::LoadAnimFile(stream, true, nil);
 		CAnimManager::CreateAnimAssocGroups();
 		POP_MEMID();
@@ -799,6 +810,9 @@ void
 CStreaming::RequestModel(int32 id, int32 flags)
 {
 	CSimpleModelInfo *mi;
+
+	if(id >= STREAM_OFFSET_ANIM && id < NUMSTREAMINFO)
+		CAnimManager::GetAnimationBlock(id - STREAM_OFFSET_ANIM)->unloadPending = false;
 
 	if(ms_aInfoForModel[id].m_loadState == STREAMSTATE_INQUEUE){
 		// updgrade to priority
@@ -1124,6 +1138,15 @@ void
 CStreaming::RemoveModel(int32 id)
 {
 	int i;
+
+	// An active animation association owns a block reference. Do not let an
+	// explicit removal or memory-pressure path invalidate its hierarchy.
+	if(id >= STREAM_OFFSET_ANIM && id < NUMSTREAMINFO &&
+	   CAnimManager::GetNumRefsToAnimBlock(id - STREAM_OFFSET_ANIM) > 0){
+		CAnimManager::GetAnimationBlock(id - STREAM_OFFSET_ANIM)->unloadPending = true;
+		debug("Keeping animation block %d loaded while associations reference it\n", id - STREAM_OFFSET_ANIM);
+		return;
+	}
 
 	if(ms_aInfoForModel[id].m_loadState == STREAMSTATE_NOTLOADED)
 		return;

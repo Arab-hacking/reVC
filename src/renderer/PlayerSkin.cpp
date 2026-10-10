@@ -5,6 +5,8 @@
 #include "TxdStore.h"
 #include "rtbmp.h"
 #include "ClumpModelInfo.h"
+#include "ModelInfo.h"
+#include "ModelIndices.h"
 #include "VisibilityPlugins.h"
 #include "World.h"
 #include "PlayerInfo.h"
@@ -232,7 +234,14 @@ CPlayerSkin::GetSkinTexture(const char *texName)
 void
 CPlayerSkin::BeginFrontendSkinEdit(void)
 {
-	LoadPlayerDff();
+	// Preview the actual player model currently installed in the model store.
+	// This keeps a custom SA DFF (and its own TXD) visible in the skin menu.
+	CBaseModelInfo *playerInfo = CModelInfo::GetModelInfo(MI_PLAYER);
+	gpPlayerClump = playerInfo && playerInfo->GetRwObject() ? (RpClump*)playerInfo->CreateInstance() : nil;
+	if(gpPlayerClump == nil)
+		LoadPlayerDff();
+	if(gpPlayerClump == nil)
+		return;
 	RpClumpForAllAtomics(gpPlayerClump, CClumpModelInfo::SetAtomicRendererCB, (void*)CVisibilityPlugins::RenderPlayerCB);
 	CWorld::Players[0].LoadPlayerSkin();
 	gOldFov = CDraw::GetFOV();

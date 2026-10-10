@@ -153,7 +153,7 @@ RpAnimBlendClumpInitSkinned(RpClump *clump)
 
 	RpAnimBlendAllocateData(clump);
 	clumpData = *RPANIMBLENDCLUMPDATA(clump);
-	atomic = GetFirstAtomic(clump);
+	atomic = GetFirstSkinnedAtomic(clump);
 	assert(atomic);
 	skin = RpSkinGeometryGetSkin(RpAtomicGetGeometry(atomic));
 	assert(skin);

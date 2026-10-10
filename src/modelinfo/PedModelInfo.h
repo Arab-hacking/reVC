@@ -38,13 +38,15 @@ public:
 	uint32 m_carsCanDrive;
 	CColModel *m_hitColModel;
 	int8 radio1, radio2;
+	bool m_bSAAnimationModel;
 
 	static RwObjectNameIdAssocation m_pPedIds[PED_NODE_MAX];
 
-	CPedModelInfo(void) : CClumpModelInfo(MITYPE_PED) { m_hitColModel = nil; }
+	CPedModelInfo(void) : CClumpModelInfo(MITYPE_PED) { m_hitColModel = nil; m_bSAAnimationModel = false; }
 	~CPedModelInfo(void) { delete m_hitColModel; }
 	void DeleteRwObject(void);
 	void SetClump(RpClump *);
+	bool UsesSAAnimations(void) const { return m_bSAAnimationModel; }
 
 	void CreateHitColModelSkinned(RpClump *clump);
 	CColModel *GetHitColModel(void) { return m_hitColModel; }
