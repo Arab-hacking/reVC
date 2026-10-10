@@ -1553,6 +1553,11 @@ CAnimManager::CreateAnimAssocGroups(int preferredModelIndex)
 	}
 	CPedModelInfo *vcReference = needVCClump ? FindPedAnimationReference(preferredModelIndex, false) : nil;
 	CPedModelInfo *saReference = needSAClump ? FindPedAnimationReference(preferredModelIndex, true) : nil;
+#ifdef CUSTOM_MODELS
+	CUSTOM_LOG("animation groups: references VC=%s SA=%s\n",
+		vcReference ? vcReference->GetModelName() : "none",
+		saReference ? saReference->GetModelName() : "none");
+#endif
 	RpClump *vcClump = vcReference ? (RpClump*)vcReference->CreateInstance() : nil;
 	RpClump *saClump = saReference ? (RpClump*)saReference->CreateInstance() : nil;
 	if(vcClump)
@@ -1594,12 +1599,22 @@ CAnimManager::CreateAnimAssocGroups(int preferredModelIndex)
 					saNames[j] = SelectSAAnimationName(i, def->animNames[j], saBlock);
 				saGroup->groupId = i;
 				saGroup->firstAnimId = def->animDescs[0].animId;
+#ifdef CUSTOM_MODELS
+				CUSTOM_LOG("animation groups: building SA %s from %s (%d slots)\n",
+					def->name, saBlock->name, def->numAnims);
+#endif
 				saGroup->CreateAssociations(saBlock->name, saClump, saNames, def->numAnims, vcGroup);
+#ifdef CUSTOM_MODELS
+				CUSTOM_LOG("animation groups: created SA %s; applying flags\n", def->name);
+#endif
 				for(j = 0; j < saGroup->numAssociations; j++){
 					CAnimBlendAssociation *assoc = saGroup->GetAnimation(def->animDescs[j].animId);
 					if(assoc && assoc->hierarchy)
 						assoc->flags |= def->animDescs[j].flags;
 				}
+#ifdef CUSTOM_MODELS
+				CUSTOM_LOG("animation groups: flags applied to SA %s\n", def->name);
+#endif
 			}
 		}
 	}
@@ -1610,10 +1625,19 @@ CAnimManager::CreateAnimAssocGroups(int preferredModelIndex)
 		RpClumpDestroy(vcClump);
 	}
 	if(saClump){
+#ifdef CUSTOM_MODELS
+		CUSTOM_LOG("animation groups: cleaning SA reference clump\n");
+#endif
 		if(IsClumpSkinned(saClump))
 			RpClumpForAllAtomics(saClump, AtomicRemoveAnimFromSkinCB, nil);
 		RpClumpDestroy(saClump);
+#ifdef CUSTOM_MODELS
+		CUSTOM_LOG("animation groups: SA reference clump destroyed\n");
+#endif
 	}
+#ifdef CUSTOM_MODELS
+	CUSTOM_LOG("animation groups: completed\n");
+#endif
 }
 
 static void
