@@ -1,4 +1,5 @@
 #include "common.h"
+#include <vector>
 
 #include "RwHelper.h"
 #include "General.h"
@@ -144,7 +145,7 @@ void
 RpAnimBlendClumpInitSkinned(RpClump *clump)
 {
 	int i;
-	RwV3d boneTab[64];
+	std::vector<RwV3d> boneTab;
 	CAnimBlendClumpData *clumpData;
 	RpAtomic *atomic;
 	RpSkin *skin;
@@ -158,11 +159,15 @@ RpAnimBlendClumpInitSkinned(RpClump *clump)
 	skin = RpSkinGeometryGetSkin(RpAtomicGetGeometry(atomic));
 	assert(skin);
 	numBones = RpSkinGetNumBones(skin);
-	clumpData->SetNumberOfBones(numBones);
+	if(numBones <= 0)
+		return;
 	hier = GetAnimHierarchyFromSkinClump(clump);
 	assert(hier);
-	memset(boneTab, 0, sizeof(boneTab));
-	SkinGetBonePositionsToTable(clump, boneTab);
+	if(hier == nil || hier->numNodes < numBones)
+		return;
+	clumpData->SetNumberOfBones(numBones);
+	boneTab.resize(numBones);
+	SkinGetBonePositionsToTable(clump, boneTab.data());
 
 	AnimBlendFrameData *frames = clumpData->frames;
 	for(i = 0; i < numBones; i++){

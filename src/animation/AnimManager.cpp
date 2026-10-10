@@ -1214,7 +1214,12 @@ CAnimBlendHierarchy*
 CAnimManager::GetAnimation(const char *name, CAnimBlock *animBlock)
 {
 	int i;
-	CAnimBlendHierarchy *hier = &ms_aAnimations[animBlock->firstIndex];
+	CAnimBlendHierarchy *hier;
+	if(name == nil || animBlock == nil || animBlock->firstIndex < 0 ||
+	   animBlock->firstIndex >= NUMANIMATIONS || animBlock->numAnims <= 0 ||
+	   animBlock->numAnims > NUMANIMATIONS - animBlock->firstIndex)
+		return nil;
+	hier = &ms_aAnimations[animBlock->firstIndex];
 
 	for(i = 0; i < animBlock->numAnims; i++){
 		if(strcasecmp(hier->name, name) == 0)

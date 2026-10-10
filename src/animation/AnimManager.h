@@ -133,7 +133,7 @@ public:
 	static void RemoveAnimBlockRef(int32 block);
 	static void RemoveAnimBlock(int32 block);
 	static CAnimBlendHierarchy *GetAnimation(const char *name, CAnimBlock *animBlock);
-	static CAnimBlendHierarchy *GetAnimation(int32 n) { return &ms_aAnimations[n]; }
+	static CAnimBlendHierarchy *GetAnimation(int32 n) { return n >= 0 && n < NUMANIMATIONS ? &ms_aAnimations[n] : nil; }
 	static const char *GetAnimGroupName(AssocGroupId groupId);
 	static CAnimBlendAssociation *CreateAnimAssociation(AssocGroupId groupId, AnimationId animId);
 	static CAnimBlendAssociation *CreateAnimAssociation(RpClump *clump, AssocGroupId groupId, AnimationId animId);

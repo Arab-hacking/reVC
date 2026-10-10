@@ -382,8 +382,9 @@ python3 makezip.py /tmp/test_custom.zip /путь/glendale.mod
 ссылки до завершения, а группы с fallback-иерархиями инвалидируются при выгрузке.
 
 `CPedModelInfo` распознаёт SA-совместимый скин по его skinned HAnim hierarchy и ключевым
-bone tags. Для такого clump `CPed` выбирает SA association bank; нативные VC clumps
-продолжают выбирать оригинальные VC associations. Поэтому замена только текстурой не
+bone tags. Таблица позиций костей выделяется по числу костей скелета (не ограничена старым
+VC-буфером на 64 элемента). Для такого clump `CPed` выбирает SA association bank; нативные VC
+clumps продолжают выбирать оригинальные VC associations. Поэтому замена только текстурой не
 включает SA-движения, а настоящий SA `player.dff` должен содержать skinned SA skeleton.
 Обычный пользовательский VC `.ifp` по-прежнему загружается в штатный блок.
 
