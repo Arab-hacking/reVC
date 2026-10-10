@@ -2449,8 +2449,15 @@ CStreaming::ProcessLoadingChannel(int32 ch)
 					RemoveTxd(CModelInfo::GetModelInfo(id)->GetTxdSlot());
 			}else{
 				MakeSpaceFor(cdsize * CDSTREAM_SECTOR_SIZE);
+#ifdef CUSTOM_MODELS
+				CUSTOM_LOG("stream channel %d: converting id=%d at slot %d\n", ch, id, i);
+#endif
 				ConvertBufferToObject(&ms_pStreamingBuffer[ch][ms_channel[ch].offsets[i]*CDSTREAM_SECTOR_SIZE],
 					id);
+#ifdef CUSTOM_MODELS
+				CUSTOM_LOG("stream channel %d: conversion returned for id=%d, state=%d\n",
+					ch, id, ms_aInfoForModel[id].m_loadState);
+#endif
 				if(ms_aInfoForModel[id].m_loadState == STREAMSTATE_STARTED){
 					// queue for second part
 					ms_channel[ch].state = CHANNELSTATE_STARTED;
@@ -2460,6 +2467,10 @@ CStreaming::ProcessLoadingChannel(int32 ch)
 						ms_channel[ch].streamIds[i] = -1;
 				}else
 					ms_channel[ch].streamIds[i] = -1;
+#ifdef CUSTOM_MODELS
+				CUSTOM_LOG("stream channel %d: slot %d bookkeeping complete for id=%d\n",
+					ch, i, id);
+#endif
 			}
 		}
 	}
@@ -2471,6 +2482,9 @@ CStreaming::ProcessLoadingChannel(int32 ch)
 			ms_channel[1].streamIds[i] = -1;
 		ms_channel[1].state = CHANNELSTATE_IDLE;
 	}
+#ifdef CUSTOM_MODELS
+	CUSTOM_LOG("stream channel %d: processing complete\n", ch);
+#endif
 
 	return true;
 }
