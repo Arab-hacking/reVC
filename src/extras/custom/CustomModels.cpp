@@ -86,6 +86,7 @@ static std::vector<std::string> customSkinNames;	// "name.bmp" style, for the fr
 static std::string customFolderPath;	// remembered for data files and loose skins
 static bool customInitialised = false;
 static bool customActive = false;
+static int32 nativeModelOverride = -1;
 
 // .col fourccs, in byte order as they sit in the file
 #define COL_FCC_COLL	('C' | ('O'<<8) | ('L'<<16) | ((uint32)'L'<<24))
@@ -1209,6 +1210,12 @@ CCustomModels::Initialise(void)
 }
 
 void
+CCustomModels::SetNativeModelOverride(int32 modelId, bool enabled)
+{
+	nativeModelOverride = enabled ? modelId : -1;
+}
+
+void
 CCustomModels::Shutdown(void)
 {
 	for(size_t i = 0; i < customArchives.size(); i++)
@@ -1229,6 +1236,7 @@ CCustomModels::Shutdown(void)
 	customTxdPlans.clear();
 	customInitialised = false;
 	customActive = false;
+	nativeModelOverride = -1;
 }
 
 bool
@@ -1245,6 +1253,8 @@ CCustomModels::IsActive(void)
 bool
 CCustomModels::CanServe(int32 streamId)
 {
+	if(streamId == nativeModelOverride)
+		return false;
 	if(!IsActive())
 		return false;
 

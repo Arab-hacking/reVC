@@ -847,8 +847,11 @@ CStreaming::RequestModel(int32 id, int32 flags)
 {
 	CSimpleModelInfo *mi;
 
-	if(id >= STREAM_OFFSET_ANIM && id < NUMSTREAMINFO)
-		CAnimManager::GetAnimationBlock(id - STREAM_OFFSET_ANIM)->unloadPending = false;
+	if(id >= STREAM_OFFSET_ANIM && id < NUMSTREAMINFO){
+		CAnimBlock *animBlock = CAnimManager::GetAnimationBlock(id - STREAM_OFFSET_ANIM);
+		if(animBlock)
+			animBlock->unloadPending = false;
+	}
 
 	if(ms_aInfoForModel[id].m_loadState == STREAMSTATE_INQUEUE){
 		// updgrade to priority
@@ -1697,6 +1700,96 @@ CStreaming::SetMissionDoesntRequireModel(int32 id)
 			ms_aInfoForModel[id].AddToList(&ms_startLoadedList);
 	}
 }
+
+#ifdef CUSTOM_MODELS
+static RpAtomic*
+RemoveVCPedReferenceAtomicCB(RpAtomic *atomic, void *data)
+{
+	RpClump *clump = (RpClump*)data;
+	RpClumpRemoveAtomic(clump, atomic);
+	RpAtomicDestroy(atomic);
+	return atomic;
+}
+
+static RpClump*
+CreateVCPedAnimationReference(CPedModelInfo *pedInfo)
+{
+	RpClump *clump = pedInfo ? (RpClump*)pedInfo->CreateInstance() : nil;
+	if(clump)
+		RpClumpForAllAtomics(clump, RemoveVCPedReferenceAtomicCB, clump);
+	return clump;
+}
+
+static void
+RemoveVCPedModelForReload(CPedModelInfo *copInfo, int32 txdSlot)
+{
+	CStreaming::RemoveModel(MI_COP);
+	// Some data-file clumps can exist before Streaming has marked their slots
+	// loaded. Remove those directly as well so the custom override can reload.
+	if(copInfo && copInfo->GetRwObject())
+		copInfo->DeleteRwObject();
+	if(txdSlot >= 0 && CStreaming::HasTxdLoaded(txdSlot) && CTxdStore::GetNumRefs(txdSlot) == 0)
+		CStreaming::RemoveModel(txdSlot + STREAM_OFFSET_TXD);
+}
+
+void
+CStreaming::LoadVCPedAnimationReference(void)
+{
+	CBaseModelInfo *baseInfo = CModelInfo::GetModelInfo(MI_COP);
+	CPedModelInfo *copInfo;
+	RpClump *reference;
+	int32 txdSlot;
+
+	if(baseInfo == nil || baseInfo->GetModelType() != MITYPE_PED)
+		return;
+	copInfo = (CPedModelInfo*)baseInfo;
+	txdSlot = copInfo->GetTxdSlot();
+	// The normal initial-ped batch already supplies a VC reference unless all
+	// three entries are being replaced. Avoid an extra native load otherwise.
+	if(!CCustomModels::CanServe(MI_COP) ||
+	   !CCustomModels::CanServe(MI_MALE01) ||
+	   !CCustomModels::CanServe(MI_TAXI_D))
+		return;
+
+	// The DAT loader may have populated cop before streaming starts. Capture a
+	// native skeleton if present, then remove the temporary model so the normal
+	// initial-ped request can load the user's override. If the resident clump is
+	// already SA, discard it first and explicitly load a native reference below.
+	if(copInfo->GetRwObject() && !copInfo->UsesSAAnimations()){
+		reference = CreateVCPedAnimationReference(copInfo);
+		if(reference){
+			CAnimManager::SetVCPedAnimationReference(reference);
+			RemoveVCPedModelForReload(copInfo, txdSlot);
+			CUSTOM_LOG("animation groups: saved the resident native VC cop clump as an animation reference\n");
+			return;
+		}
+		CUSTOM_LOG("animation groups: couldn't clone the resident native VC cop; keeping it loaded as the reference\n");
+		return;
+	}
+	if(copInfo->GetRwObject() || HasModelLoaded(MI_COP))
+		RemoveVCPedModelForReload(copInfo, txdSlot);
+
+	CCustomModels::SetNativeModelOverride(MI_COP, true);
+	RequestModel(MI_COP, STREAMFLAGS_PRIORITY | STREAMFLAGS_DONT_REMOVE);
+	LoadAllRequestedModels(false);
+	CCustomModels::SetNativeModelOverride(MI_COP, false);
+
+	if(HasModelLoaded(MI_COP) && copInfo->GetRwObject() && !copInfo->UsesSAAnimations()){
+		reference = CreateVCPedAnimationReference(copInfo);
+		if(reference){
+			CAnimManager::SetVCPedAnimationReference(reference);
+			// The reference contains only frames; unload the temporary model and
+			// TXD so the user's versions can be streamed by the initial-ped pass.
+			RemoveVCPedModelForReload(copInfo, txdSlot);
+			CUSTOM_LOG("animation groups: saved the native VC cop clump as an animation reference\n");
+			return;
+		}
+		CUSTOM_LOG("animation groups: couldn't clone the native VC cop; keeping it loaded as the reference\n");
+	}else{
+		CUSTOM_LOG("animation groups: couldn't load the native VC cop reference clump\n");
+	}
+}
+#endif
 
 void
 CStreaming::LoadInitialPeds(void)

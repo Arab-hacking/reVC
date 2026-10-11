@@ -181,29 +181,54 @@ CAnimBlendAssocGroup::CreateAssociations(const char *name)
 void
 CAnimBlendAssocGroup::CreateAssociations(const char *blockName, RpClump *clump, const char **animNames, int numAssocs)
 {
-	CreateAssociations(blockName, clump, animNames, numAssocs, nil);
-}
-
-void
-CAnimBlendAssocGroup::CreateAssociations(const char *blockName, RpClump *clump, const char **animNames, int numAssocs, CAnimBlendAssocGroup *fallback)
-{
 	int i;
 
 	DestroyAssociations();
 	animBlock = CAnimManager::GetAnimationBlock(blockName);
-	if(animBlock == nil || clump == nil || numAssocs <= 0)
+	if(animBlock == nil || clump == nil || animNames == nil || numAssocs <= 0)
 		return;
 	assocList = new CAnimBlendAssociation[numAssocs];
 
 	for(i = 0; i < numAssocs; i++){
 		CAnimBlendHierarchy *hier = CAnimManager::GetAnimation(animNames[i], animBlock);
-		if(hier == nil && fallback && fallback->assocList && i < fallback->numAssociations)
-			hier = fallback->assocList[i].hierarchy;
 		if(hier == nil){
 #ifdef CUSTOM_MODELS
-			CUSTOM_LOG("anim assoc: %s has no SA or VC equivalent - association skipped\n", animNames[i]);
+			CUSTOM_LOG("anim assoc: %s is missing from animation bank %s; association skipped\n",
+				animNames[i], blockName);
 #else
-			debug("anim assoc: %s has no SA or VC equivalent - association skipped\n", animNames[i]);
+			debug("anim assoc: %s is missing from animation bank %s; association skipped\n",
+				animNames[i], blockName);
+#endif
+			continue;
+		}
+		assocList[i].Init(clump, hier);
+		assocList[i].animId = firstAnimId + i;
+		assocList[i].groupId = groupId;
+	}
+	numAssociations = numAssocs;
+}
+
+void
+CAnimBlendAssocGroup::CreateAssociations(const char *blockName, RpClump *clump,
+	CAnimBlendHierarchy *const *hierarchies, int numAssocs)
+{
+	int i;
+
+	DestroyAssociations();
+	animBlock = CAnimManager::GetAnimationBlock(blockName);
+	if(animBlock == nil || clump == nil || hierarchies == nil || numAssocs <= 0)
+		return;
+	assocList = new CAnimBlendAssociation[numAssocs];
+
+	for(i = 0; i < numAssocs; i++){
+		CAnimBlendHierarchy *hier = hierarchies[i];
+		if(hier == nil){
+#ifdef CUSTOM_MODELS
+			CUSTOM_LOG("anim assoc: SA group %d has no SA hierarchy for animation id %d; association skipped\n",
+				groupId, firstAnimId + i);
+#else
+			debug("anim assoc: SA group %d has no SA hierarchy for animation id %d; association skipped\n",
+				groupId, firstAnimId + i);
 #endif
 			continue;
 		}

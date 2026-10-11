@@ -24,6 +24,7 @@ int32 CAnimManager::ms_numAnimBlocks;
 int32 CAnimManager::ms_numAnimations;
 CAnimBlendAssocGroup *CAnimManager::ms_aAnimAssocGroups;
 CAnimBlendAssocGroup *CAnimManager::ms_aSAAnimAssocGroups;
+RpClump *CAnimManager::ms_pVCPedAnimationReference;
 CLinkList<CAnimBlendHierarchy*> CAnimManager::ms_animCache;
 
 AnimAssocDesc aStdAnimDescs[] = {
@@ -975,12 +976,23 @@ const AnimAssocDefinition CAnimManager::ms_aAnimAssocDefinitions[NUM_ANIM_ASSOC_
 #undef awc
 
 void
+CAnimManager::SetVCPedAnimationReference(RpClump *clump)
+{
+	if(ms_pVCPedAnimationReference == clump)
+		return;
+	if(ms_pVCPedAnimationReference)
+		RpClumpDestroy(ms_pVCPedAnimationReference);
+	ms_pVCPedAnimationReference = clump;
+}
+
+void
 CAnimManager::Initialise(void)
 {
 	ms_numAnimations = 0;
 	ms_numAnimBlocks = 0;
 	ms_aAnimAssocGroups = nil;
 	ms_aSAAnimAssocGroups = nil;
+	SetVCPedAnimationReference(nil);
 	ms_animCache.Init(25);
 }
 
@@ -1001,6 +1013,7 @@ CAnimManager::Shutdown(void)
 	ms_aAnimAssocGroups = nil;
 	delete[] ms_aSAAnimAssocGroups;
 	ms_aSAAnimAssocGroups = nil;
+	SetVCPedAnimationReference(nil);
 }
 
 void
@@ -1403,19 +1416,6 @@ IsAnimAssocGroupReady(CAnimBlendAssocGroup *group)
 		group->animBlock && group->animBlock->isLoaded;
 }
 
-static bool
-HasNewVCAssociationFallback(CAnimBlendAssocGroup *saGroup, CAnimBlendAssocGroup *vcGroup)
-{
-	if(saGroup == nil || saGroup->assocList == nil || vcGroup == nil || vcGroup->assocList == nil)
-		return false;
-	int numAssociations = saGroup->numAssociations < vcGroup->numAssociations ?
-		saGroup->numAssociations : vcGroup->numAssociations;
-	for(int i = 0; i < numAssociations; i++)
-		if(saGroup->assocList[i].hierarchy == nil && vcGroup->assocList[i].hierarchy)
-			return true;
-	return false;
-}
-
 static CPedModelInfo *
 FindPedAnimationReference(int preferredModelIndex, bool wantSA)
 {
@@ -1455,53 +1455,389 @@ FindPedAnimationReference(int preferredModelIndex, bool wantSA)
 }
 
 static const char *
-GetSAAnimationAlias(int groupId, const char *name)
+GetSAAnimationAlias(int groupId, const char *name, const char **sourceBlock)
 {
+	if(sourceBlock)
+		*sourceBlock = nil;
+	if(name == nil)
+		return nil;
+
 	if(groupId == ASSOCGRP_FAT){
+		if(sourceBlock) *sourceBlock = "sa_fat";
 		if(strcasecmp(name, "walk_fat") == 0) return "fatwalk";
 		if(strcasecmp(name, "run_civi") == 0) return "fatrun";
-		if(strcasecmp(name, "woman_runpanic") == 0) return "fatsprint";
+		if(strcasecmp(name, "sprint_panic") == 0 || strcasecmp(name, "woman_runpanic") == 0) return "fatsprint";
 		if(strcasecmp(name, "idle_stance") == 0) return "fatidle";
+		if(strcasecmp(name, "walk_start") == 0) return "fatwalkstart";
 	}
 	if(groupId == ASSOCGRP_OLDFAT){
+		if(sourceBlock) *sourceBlock = "sa_fat";
 		if(strcasecmp(name, "walk_fatold") == 0) return "fatwalk";
 		if(strcasecmp(name, "run_fatold") == 0) return "fatrun";
 		if(strcasecmp(name, "woman_runpanic") == 0) return "fatsprint";
 		if(strcasecmp(name, "idle_stance") == 0) return "fatidle";
 	}
 	if(groupId == ASSOCGRP_FATWOMAN){
+		if(sourceBlock) *sourceBlock = "sa_fat";
 		if(strcasecmp(name, "walk_fat") == 0) return "fatwalk";
+		if(strcasecmp(name, "woman_run") == 0) return "fatrun";
 		if(strcasecmp(name, "woman_runpanic") == 0) return "fatsprint";
 		if(strcasecmp(name, "woman_idlestance") == 0) return "fatidle";
 	}
 	if(groupId == ASSOCGRP_PANICCHUNKY){
+		if(sourceBlock) *sourceBlock = "sa_fat";
 		if(strcasecmp(name, "run_fatold") == 0) return "fatrun";
 		if(strcasecmp(name, "woman_runpanic") == 0) return "fatsprint";
 	}
+	if(groupId == ASSOCGRP_OLD && strcasecmp(name, "walk_old") == 0)
+		return "walk_civi";
+	if((groupId == ASSOCGRP_GANG1 || groupId == ASSOCGRP_GANG2) &&
+	   (strcasecmp(name, "walk_gang1") == 0 || strcasecmp(name, "walk_gang2") == 0))
+		return "walk_civi";
+	if((groupId == ASSOCGRP_GANG1 || groupId == ASSOCGRP_GANG2) && strcasecmp(name, "run_gang1") == 0)
+		return "run_civi";
+	if((groupId == ASSOCGRP_JOGGER || groupId == ASSOCGRP_JOGWOMAN) &&
+	   (strcasecmp(name, "JOG_maleA") == 0 || strcasecmp(name, "JOG_maleB") == 0))
+		return "walk_civi";
+	if(groupId == ASSOCGRP_SHUFFLE && strcasecmp(name, "WALK_shuffle") == 0)
+		return "walk_civi";
+	if((groupId == ASSOCGRP_WOMAN || groupId == ASSOCGRP_WOMANSHOP ||
+	    groupId == ASSOCGRP_BUSYWOMAN || groupId == ASSOCGRP_SEXYWOMAN ||
+	    groupId == ASSOCGRP_OLDWOMAN || groupId == ASSOCGRP_JOGWOMAN) &&
+	   (strncasecmp(name, "woman_walk", 10) == 0 || strcasecmp(name, "JOG_maleB") == 0))
+		return "walk_civi";
+	if((groupId == ASSOCGRP_WOMAN || groupId == ASSOCGRP_WOMANSHOP ||
+	    groupId == ASSOCGRP_BUSYWOMAN || groupId == ASSOCGRP_SEXYWOMAN ||
+	    groupId == ASSOCGRP_OLDWOMAN || groupId == ASSOCGRP_JOGWOMAN) &&
+	   strcasecmp(name, "woman_run") == 0)
+		return "run_civi";
+	if((groupId == ASSOCGRP_WOMAN || groupId == ASSOCGRP_WOMANSHOP ||
+	    groupId == ASSOCGRP_BUSYWOMAN || groupId == ASSOCGRP_SEXYWOMAN ||
+	    groupId == ASSOCGRP_OLDWOMAN || groupId == ASSOCGRP_JOGWOMAN) &&
+	   strcasecmp(name, "woman_runpanic") == 0)
+		return "sprint_panic";
+	if(groupId == ASSOCGRP_FATWOMAN && strcasecmp(name, "woman_run") == 0)
+		return "fatrun";
+	if((groupId == ASSOCGRP_WOMAN || groupId == ASSOCGRP_WOMANSHOP ||
+	    groupId == ASSOCGRP_BUSYWOMAN || groupId == ASSOCGRP_SEXYWOMAN ||
+	    groupId == ASSOCGRP_OLDWOMAN || groupId == ASSOCGRP_JOGWOMAN) &&
+	   strcasecmp(name, "woman_idlestance") == 0)
+		return "idle_stance";
 	if(groupId == ASSOCGRP_PLAYER1ARMED && strcasecmp(name, "run_1armed") == 0)
 		return "run_armed";
+	if(groupId == ASSOCGRP_TEC){
+		if(sourceBlock) *sourceBlock = "sa_uzi";
+		if(strcasecmp(name, "TEC_fire") == 0) return "UZI_fire";
+		if(strcasecmp(name, "TEC_crouchfire") == 0) return "UZI_crouchfire";
+		if(strcasecmp(name, "TEC_reload") == 0) return "UZI_reload";
+		if(strcasecmp(name, "TEC_crouchreload") == 0) return "UZI_crouchreload";
+	}
+	if(groupId == ASSOCGRP_M60){
+		if(sourceBlock) *sourceBlock = "sa_rifle";
+		if(strcasecmp(name, "M60_fire") == 0) return "RIFLE_fire";
+		if(strcasecmp(name, "M60_reload") == 0) return "RIFLE_load";
+	}
+	if(groupId == ASSOCGRP_SNIPER){
+		if(sourceBlock) *sourceBlock = "sa_rifle";
+		if(strcasecmp(name, "WEAPON_sniper") == 0) return "RIFLE_fire";
+	}
+	if(groupId == ASSOCGRP_COLT){
+		if(sourceBlock) *sourceBlock = "sa_colt45";
+		if(strcasecmp(name, "colt45_cop") == 0) return "colt45_fire_2hands";
+	}
+	if(groupId == ASSOCGRP_SUNBATHE){
+		if(sourceBlock) *sourceBlock = "sa_sunbathe";
+		if(strcasecmp(name, "bather") == 0) return "Lay_Bac_in";
+		if(strcasecmp(name, "batherscape") == 0) return "batherup";
+	}
+	if(groupId == ASSOCGRP_LANCE && strcasecmp(name, "lance") == 0){
+		if(sourceBlock) *sourceBlock = "sa_ped";
+		return "idle_stance";
+	}
 	if(groupId == ASSOCGRP_STD){
 		if(strcasecmp(name, "FIGHTsh_F") == 0) return "FightShF";
 		if(strcasecmp(name, "FIGHTsh_back") == 0) return "FightShB";
+		if(strcasecmp(name, "KO_shot_arml") == 0 || strcasecmp(name, "KO_shot_armR") == 0 ||
+		   strcasecmp(name, "KO_shot_legl") == 0 || strcasecmp(name, "KO_shot_legR") == 0)
+			return "KO_shot_front";
+		if(strcasecmp(name, "HIT_bodyblow") == 0 || strcasecmp(name, "HIT_chest") == 0 ||
+		   strcasecmp(name, "HIT_head") == 0)
+			return "HIT_front";
+		if(strcasecmp(name, "FIGHTIDLE") == 0){
+			if(sourceBlock) *sourceBlock = "sa_melee_1";
+			return "FIGHTIDLE";
+		}
+		if(strcasecmp(name, "FIGHTbodyblow") == 0){
+			if(sourceBlock) *sourceBlock = "sa_melee_1";
+			return "FightA_1";
+		}
+		if(strcasecmp(name, "FIGHThead") == 0 || strcasecmp(name, "FIGHTpunch") == 0){
+			if(sourceBlock) *sourceBlock = "sa_melee_1";
+			return "FightA_2";
+		}
+		if(strcasecmp(name, "FIGHTkick") == 0){
+			if(sourceBlock) *sourceBlock = "sa_kick_std";
+			return "FIGHTkick";
+		}
+		if(strcasecmp(name, "FIGHTknee") == 0 || strcasecmp(name, "FIGHTrndhse") == 0 ||
+		   strcasecmp(name, "FIGHTbkickL") == 0 || strcasecmp(name, "FIGHTbkickR") == 0){
+			if(sourceBlock) *sourceBlock = "sa_melee_1";
+			return "FightA_3";
+		}
+		if(strcasecmp(name, "FIGHTLhook") == 0 || strcasecmp(name, "FIGHTppunch") == 0 ||
+		   strcasecmp(name, "FIGHTjab") == 0){
+			if(sourceBlock) *sourceBlock = "sa_melee_1";
+			return "FightA_1";
+		}
+		if(strcasecmp(name, "FIGHTlngkck") == 0){
+			if(sourceBlock) *sourceBlock = "sa_kick_std";
+			return "FIGHTkick_B";
+		}
+		if(strcasecmp(name, "FIGHTelbowL") == 0 || strcasecmp(name, "FIGHTelbowR") == 0){
+			if(sourceBlock) *sourceBlock = "sa_melee_1";
+			return "FightA_2";
+		}
+		if(strcasecmp(name, "punchR") == 0){
+			if(sourceBlock) *sourceBlock = "sa_melee_1";
+			return "FightA_1";
+		}
+		if(strcasecmp(name, "KICK_floor") == 0){
+			if(sourceBlock) *sourceBlock = "sa_kick_std";
+			return "FIGHTkick_B";
+		}
+		if(strcasecmp(name, "WEAPON_throwu") == 0){
+			if(sourceBlock) *sourceBlock = "sa_grenade";
+			return "WEAPON_throwu";
+		}
+		if(strcasecmp(name, "DUCK_down") == 0 || strcasecmp(name, "DUCK_low") == 0)
+			return "DUCK_cower";
+		if(strcasecmp(name, "RBLOCK_Cshoot") == 0)
+			return "WEAPON_crouch";
+		if(strncasecmp(name, "CAR_", 4) == 0 || strncasecmp(name, "car_", 4) == 0){
+			bool lowCar = strcasecmp(name, "CAR_pulloutL_LHS") == 0 ||
+				strcasecmp(name, "CAR_pulloutL_RHS") == 0 ||
+				strcasecmp(name, "CAR_getinL_LHS") == 0 ||
+				strcasecmp(name, "CAR_getinL_RHS") == 0 ||
+				strcasecmp(name, "CAR_closedoorL_LHS") == 0 ||
+				strcasecmp(name, "CAR_closedoorL_RHS") == 0 ||
+				strcasecmp(name, "CAR_Lshuffle_RHS") == 0 ||
+				strcasecmp(name, "CAR_getoutL_LHS") == 0 ||
+				strcasecmp(name, "CAR_getoutL_RHS") == 0 ||
+				strcasecmp(name, "CAR_LjackedLHS") == 0 ||
+				strcasecmp(name, "CAR_LjackedRHS") == 0 ||
+				strcasecmp(name, "CAR_rolldoorLO") == 0;
+			if(sourceBlock) *sourceBlock = lowCar ? "sa_lowcaramims" : "sa_stdcaramims";
+			if(strcasecmp(name, "CAR_jumpin_LHS") == 0) return "CAR_getin_LHS";
+			if(strcasecmp(name, "CAR_jumpin_RHS") == 0) return "CAR_getin_RHS";
+			if(strcasecmp(name, "CAR_Qjack") == 0 || strcasecmp(name, "CAR_Qjacked") == 0)
+				return "CAR_jackedRHS";
+		}
+	}
+	if(groupId == ASSOCGRP_VAN){
+		if(sourceBlock) *sourceBlock = "sa_vancaranims";
+		if(strcasecmp(name, "VAN_openL") == 0) return "VAN_open_back_LHS";
+		if(strcasecmp(name, "VAN_getinL") == 0) return "VAN_getin_back_LHS";
+		if(strcasecmp(name, "VAN_closeL") == 0) return "VAN_close_back_LHS";
+		if(strcasecmp(name, "VAN_getoutL") == 0) return "VAN_getout_back_LHS";
+		if(strcasecmp(name, "VAN_open") == 0) return "VAN_open_back_RHS";
+		if(strcasecmp(name, "VAN_getin") == 0) return "VAN_getin_back_RHS";
+		if(strcasecmp(name, "VAN_close") == 0) return "VAN_close_back_RHS";
+		if(strcasecmp(name, "VAN_getout") == 0) return "VAN_getout_back_RHS";
+	}
+	if(groupId == ASSOCGRP_COACH && sourceBlock)
+		*sourceBlock = "sa_coachcaranims";
+	if(groupId == ASSOCGRP_BIKE_STANDARD && sourceBlock)
+		*sourceBlock = "sa_sportbikeanims";
+	if(groupId == ASSOCGRP_BIKE_VESPA && sourceBlock)
+		*sourceBlock = "sa_vespabikeanims";
+	if(groupId == ASSOCGRP_BIKE_HARLEY && sourceBlock)
+		*sourceBlock = "sa_harleybikeanims";
+	if(groupId == ASSOCGRP_BIKE_DIRT && sourceBlock)
+		*sourceBlock = "sa_dirtbikeanims";
+	if(groupId == ASSOCGRP_UNARMED || groupId == ASSOCGRP_SCREWDRIVER){
+		if(strcasecmp(name, "punchR") == 0){
+			if(sourceBlock) *sourceBlock = "sa_melee_1";
+			return "FightA_1";
+		}
+		if(strcasecmp(name, "FIGHTbodyblow") == 0 || strcasecmp(name, "FIGHTppunch") == 0){
+			if(sourceBlock) *sourceBlock = "sa_melee_1";
+			return "FightA_1";
+		}
+		if(strcasecmp(name, "FIGHTIDLE") == 0){
+			if(sourceBlock) *sourceBlock = "sa_melee_1";
+			return "FIGHTIDLE";
+		}
+		if(strcasecmp(name, "KICK_floor") == 0){
+			if(sourceBlock) *sourceBlock = "sa_kick_std";
+			return "FIGHTkick_B";
+		}
+	}
+	if(groupId == ASSOCGRP_BASEBALLBAT || groupId == ASSOCGRP_GOLFCLUB){
+		if(sourceBlock)
+			*sourceBlock = groupId == ASSOCGRP_GOLFCLUB ? "sa_gclub_1" : "sa_bbbat_1";
+		if(strcasecmp(name, "WEAPON_bat_h") == 0 || strcasecmp(name, "WEAPON_golfclub") == 0)
+			return "Bat_1";
+		if(strcasecmp(name, "WEAPON_bat_v") == 0)
+			return "Bat_2";
+		if(strcasecmp(name, "BAT_PART") == 0)
+			return "BAT_PART";
+	}
+	if(groupId == ASSOCGRP_KNIFE){
+		if(sourceBlock) *sourceBlock = "sa_knife_1";
+		if(strcasecmp(name, "WEAPON_knife_1") == 0) return "knife_1";
+		if(strcasecmp(name, "WEAPON_knife_2") == 0) return "knife_2";
+		if(strcasecmp(name, "WEAPON_knife_3") == 0) return "knife_3";
+		if(strcasecmp(name, "WEAPON_knifeidle") == 0) return "WEAPON_knifeidle";
+	}
+	if(groupId == ASSOCGRP_CHAINSAW){
+		if(sourceBlock) *sourceBlock = "sa_csaw_1";
+		if(strcasecmp(name, "WEAPON_csaw") == 0) return "CSaw_1";
+		if(strcasecmp(name, "WEAPON_csawlo") == 0) return "CSaw_2";
+		if(strcasecmp(name, "csaw_part") == 0) return "CSaw_Part";
 	}
 	return nil;
 }
 
 static const char *
-SelectSAAnimationName(int groupId, const char *name, CAnimBlock *block)
+GetSAStyleFallbackName(int groupId, const char *name)
 {
-	const char *alias = GetSAAnimationAlias(groupId, name);
-	if(alias && CAnimManager::GetAnimation(alias, block))
-		return alias;
-	if(CAnimManager::GetAnimation(name, block))
-		return name;
-	return name;
+	if(name == nil)
+		return nil;
+	if(groupId == ASSOCGRP_SKATE){
+		if(strcasecmp(name, "skate_run") == 0) return "run_civi";
+		if(strcasecmp(name, "skate_sprint") == 0) return "sprint_panic";
+		if(strcasecmp(name, "skate_idle") == 0) return "idle_stance";
+	}
+#ifdef PC_PLAYER_CONTROLS
+	if(groupId == ASSOCGRP_PLAYERBACK || groupId == ASSOCGRP_PLAYERLEFT ||
+	   groupId == ASSOCGRP_PLAYERRIGHT){
+		if(strncasecmp(name, "walk_start", 10) == 0) return "walk_start";
+		if(strncasecmp(name, "walk_", 5) == 0) return "walk_player";
+		if(strncasecmp(name, "run_", 4) == 0) return "run_player";
+	}
+	if(groupId == ASSOCGRP_ROCKETBACK || groupId == ASSOCGRP_ROCKETLEFT ||
+	   groupId == ASSOCGRP_ROCKETRIGHT){
+		if(strncasecmp(name, "walkst_rocket", 13) == 0) return "walk_start_rocket";
+		if(strncasecmp(name, "walk_rocket", 11) == 0) return "walk_rocket";
+		if(strncasecmp(name, "run_rocket", 10) == 0) return "run_rocket";
+	}
+	if(groupId == ASSOCGRP_CHAINSAWBACK || groupId == ASSOCGRP_CHAINSAWLEFT ||
+	   groupId == ASSOCGRP_CHAINSAWRIGHT){
+		if(strncasecmp(name, "walkst_csaw", 11) == 0) return "walk_start_csaw";
+		if(strncasecmp(name, "walk_csaw", 9) == 0) return "walk_csaw";
+		if(strncasecmp(name, "run_csaw", 8) == 0) return "run_csaw";
+	}
+#endif
+	if(groupId != ASSOCGRP_SHUFFLE && groupId != ASSOCGRP_OLD &&
+	   groupId != ASSOCGRP_GANG1 && groupId != ASSOCGRP_GANG2 &&
+	   groupId != ASSOCGRP_FAT && groupId != ASSOCGRP_OLDFAT &&
+	   groupId != ASSOCGRP_JOGGER && groupId != ASSOCGRP_WOMAN &&
+	   groupId != ASSOCGRP_WOMANSHOP && groupId != ASSOCGRP_BUSYWOMAN &&
+	   groupId != ASSOCGRP_SEXYWOMAN && groupId != ASSOCGRP_FATWOMAN &&
+	   groupId != ASSOCGRP_OLDWOMAN && groupId != ASSOCGRP_JOGWOMAN &&
+	   groupId != ASSOCGRP_PANICCHUNKY)
+		return nil;
+	if(strncasecmp(name, "walk_start", 10) == 0)
+		return "walk_start";
+	if(strcasecmp(name, "woman_runpanic") == 0 || strncasecmp(name, "sprint", 6) == 0)
+		return "sprint_panic";
+	if(strncasecmp(name, "walk", 4) == 0 || strncasecmp(name, "JOG_", 4) == 0)
+		return "walk_civi";
+	if(strncasecmp(name, "run", 3) == 0 || strncasecmp(name, "woman_run", 9) == 0)
+		return "run_civi";
+	if(strncasecmp(name, "idle", 4) == 0 || strcasecmp(name, "woman_idlestance") == 0)
+		return "idle_stance";
+	return nil;
+}
+
+static CAnimBlendHierarchy *
+FindSAAnimationHierarchy(int groupId, const char *name, CAnimBlock *primaryBlock)
+{
+	const char *sourceBlockName = nil;
+	const char *alias = GetSAAnimationAlias(groupId, name, &sourceBlockName);
+	CAnimBlock *sourceBlock = sourceBlockName ? CAnimManager::GetAnimationBlock(sourceBlockName) : primaryBlock;
+	CAnimBlendHierarchy *hier;
+
+	if(alias && sourceBlock && sourceBlock->isLoaded){
+		hier = CAnimManager::GetAnimation(alias, sourceBlock);
+		if(hier)
+			return hier;
+	}
+	if(alias && primaryBlock && primaryBlock != sourceBlock && primaryBlock->isLoaded){
+		hier = CAnimManager::GetAnimation(alias, primaryBlock);
+		if(hier)
+			return hier;
+	}
+	if(primaryBlock && primaryBlock->isLoaded){
+		hier = CAnimManager::GetAnimation(name, primaryBlock);
+		if(hier)
+			return hier;
+	}
+	if(sourceBlock && sourceBlock != primaryBlock && sourceBlock->isLoaded){
+		hier = CAnimManager::GetAnimation(name, sourceBlock);
+		if(hier)
+			return hier;
+	}
+	const char *styleFallback = GetSAStyleFallbackName(groupId, name);
+	if(styleFallback && primaryBlock && primaryBlock->isLoaded){
+		hier = CAnimManager::GetAnimation(styleFallback, primaryBlock);
+		if(hier)
+			return hier;
+	}
+	return nil;
+}
+
+static bool
+HasNewSAAnimation(CAnimBlendAssocGroup *saGroup, int groupId, const AnimAssocDefinition *def, CAnimBlock *primaryBlock)
+{
+	if(saGroup == nil || saGroup->assocList == nil || def == nil)
+		return false;
+	int numAssociations = saGroup->numAssociations < def->numAnims ?
+		saGroup->numAssociations : def->numAnims;
+	for(int i = 0; i < numAssociations; i++)
+		if(saGroup->assocList[i].hierarchy == nil &&
+		   FindSAAnimationHierarchy(groupId, def->animNames[i], primaryBlock))
+			return true;
+	return false;
 }
 
 void
 CAnimManager::LoadAnimFiles(void)
 {
 	LoadAnimFile("ANIM\\PED.IFP");
+#ifdef CUSTOM_MODELS
+	// SA splits fighting, weapon, style, car and bike clips across IFP banks.
+	// Load optional banks used by VC's association slots so SA peds never need
+	// to borrow hierarchies from a VC skeleton.
+	static const char *saSupportAnimFiles[] = {
+		"ANIM\\MELEE_1.IFP",
+		"ANIM\\KICK_STD.IFP",
+		"ANIM\\BBBAT_1.IFP",
+		"ANIM\\GCLUB_1.IFP",
+		"ANIM\\KNIFE_1.IFP",
+		"ANIM\\CSAW_1.IFP",
+		"ANIM\\GRENADE.IFP",
+		"ANIM\\UZI.IFP",
+		"ANIM\\RIFLE.IFP",
+		"ANIM\\COLT45.IFP",
+		"ANIM\\SUNBATHE.IFP",
+		"ANIM\\FAT.IFP",
+		"ANIM\\STDCARAMIMS.IFP",
+		"ANIM\\LOWCARAMIMS.IFP",
+		"ANIM\\VANCARANIMS.IFP",
+		"ANIM\\COACHCARANIMS.IFP",
+		"ANIM\\SPORTBIKEANIMS.IFP",
+		"ANIM\\VESPABIKEANIMS.IFP",
+		"ANIM\\HARLEYBIKEANIMS.IFP",
+		"ANIM\\DIRTBIKEANIMS.IFP",
+		"ANIM\\BIKES.IFP",
+		"ANIM\\BIKEV.IFP",
+		"ANIM\\BIKEH.IFP",
+		"ANIM\\BIKED.IFP"
+	};
+	for(int i = 0; i < ARRAY_SIZE(saSupportAnimFiles); i++)
+		LoadSAAnimFileFromCustom(saSupportAnimFiles[i]);
+#endif
 	ms_aAnimAssocGroups = new CAnimBlendAssocGroup[NUM_ANIM_ASSOC_GROUPS];
 	ms_aSAAnimAssocGroups = new CAnimBlendAssocGroup[NUM_ANIM_ASSOC_GROUPS];
 	CreateAnimAssocGroups();
@@ -1521,8 +1857,7 @@ CAnimManager::CreateAnimAssocGroups(int preferredModelIndex)
 				bool usesSA = pedInfo->UsesSAAnimations() && ms_aSAAnimAssocGroups;
 				CAnimBlendAssocGroup *group = usesSA ?
 					&ms_aSAAnimAssocGroups[groupId] : &ms_aAnimAssocGroups[groupId];
-				// A partial SA group can still need another bank or a newly
-				// available VC fallback, so only short-circuit native VC peds.
+				// A partial SA group may gain aliases when another SA bank loads.
 				if(!usesSA && IsAnimAssocGroupReady(group))
 					return;
 			}
@@ -1547,19 +1882,24 @@ CAnimManager::CreateAnimAssocGroups(int preferredModelIndex)
 			if(saBlock && saBlock->isLoaded &&
 			   (!IsAnimAssocGroupReady(&ms_aSAAnimAssocGroups[i]) ||
 			    ms_aSAAnimAssocGroups[i].animBlock != saBlock ||
-			    HasNewVCAssociationFallback(&ms_aSAAnimAssocGroups[i], &ms_aAnimAssocGroups[i])))
+			    HasNewSAAnimation(&ms_aSAAnimAssocGroups[i], i, def, saBlock)))
 				needSAClump = true;
 		}
 	}
 	CPedModelInfo *vcReference = needVCClump ? FindPedAnimationReference(preferredModelIndex, false) : nil;
 	CPedModelInfo *saReference = needSAClump ? FindPedAnimationReference(preferredModelIndex, true) : nil;
-#ifdef CUSTOM_MODELS
-	CUSTOM_LOG("animation groups: references VC=%s SA=%s\n",
-		vcReference ? vcReference->GetModelName() : "none",
-		saReference ? saReference->GetModelName() : "none");
-#endif
 	RpClump *vcClump = vcReference ? (RpClump*)vcReference->CreateInstance() : nil;
 	RpClump *saClump = saReference ? (RpClump*)saReference->CreateInstance() : nil;
+	bool usingStoredVCReference = false;
+	if(vcClump == nil && needVCClump && ms_pVCPedAnimationReference){
+		vcClump = RpClumpClone(ms_pVCPedAnimationReference);
+		usingStoredVCReference = vcClump != nil;
+	}
+#ifdef CUSTOM_MODELS
+	CUSTOM_LOG("animation groups: references VC=%s SA=%s\n",
+		vcReference ? vcReference->GetModelName() : usingStoredVCReference ? "stored native cop" : "none",
+		saReference ? saReference->GetModelName() : "none");
+#endif
 	if(vcClump)
 		RpAnimBlendClumpInit(vcClump);
 	if(saClump){
@@ -1587,23 +1927,23 @@ CAnimManager::CreateAnimAssocGroups(int preferredModelIndex)
 		if(saGroup && saClump){
 			char saBlockName[MAX_ANIMBLOCK_NAME];
 			CAnimBlock *saBlock;
-			const char *saNames[256];
+			CAnimBlendHierarchy *saHierarchies[256];
 			snprintf(saBlockName, sizeof(saBlockName), "sa_%s", def->blockName);
 			saBlock = GetAnimationBlock(saBlockName);
 			if(saBlock == nil || !saBlock->isLoaded)
 				saBlock = GetAnimationBlock("sa_ped");
-			if(saBlock && saBlock->isLoaded && def->numAnims <= ARRAY_SIZE(saNames) &&
+			if(saBlock && saBlock->isLoaded && def->numAnims <= ARRAY_SIZE(saHierarchies) &&
 			   (!IsAnimAssocGroupReady(saGroup) || saGroup->animBlock != saBlock ||
-			    HasNewVCAssociationFallback(saGroup, vcGroup))){
+			    HasNewSAAnimation(saGroup, i, def, saBlock))){
 				for(j = 0; j < def->numAnims; j++)
-					saNames[j] = SelectSAAnimationName(i, def->animNames[j], saBlock);
+					saHierarchies[j] = FindSAAnimationHierarchy(i, def->animNames[j], saBlock);
 				saGroup->groupId = i;
 				saGroup->firstAnimId = def->animDescs[0].animId;
 #ifdef CUSTOM_MODELS
 				CUSTOM_LOG("animation groups: building SA %s from %s (%d slots)\n",
 					def->name, saBlock->name, def->numAnims);
 #endif
-				saGroup->CreateAssociations(saBlock->name, saClump, saNames, def->numAnims, vcGroup);
+				saGroup->CreateAssociations(saBlock->name, saClump, saHierarchies, def->numAnims);
 #ifdef CUSTOM_MODELS
 				CUSTOM_LOG("animation groups: created SA %s; applying flags\n", def->name);
 #endif
@@ -1746,8 +2086,8 @@ CAnimManager::LoadAnimFile(const char *filename)
 			}else{
 				loadedBlock->unloadPending = false;
 			}
-			// A compact SA IFP is an additional bank. Always retain the native
-			// file in its original block for VC models and as a safe fallback.
+			// A compact SA IFP is an additional bank. Keep the native file in
+			// its original block for VC clumps; SA clumps resolve only sa_ banks.
 			stream = RwStreamOpen(rwSTREAMFILENAME, rwSTREAMREAD, filename);
 		}else if(clean){
 			bool take = true;

@@ -4866,165 +4866,60 @@ void CPed::PedSetGetInCarPositionCB(CAnimBlendAssociation* assoc, void* arg)
 	pPed->SetPosition(position);
 }
 
+static CVector
+GetAnimationLastTranslation(AssocGroupId groupId, AnimationId animId)
+{
+	CAnimBlendAssociation *assoc = CAnimManager::GetAnimAssociation(groupId, animId);
+	CAnimBlendHierarchy *hier;
+	CAnimBlendSequence *seq;
+	if(assoc == nil || assoc->hierarchy == nil)
+		return CVector(0.0f, 0.0f, 0.0f);
+	hier = assoc->hierarchy;
+	if(hier->sequences == nil || hier->numSequences <= 0)
+		return CVector(0.0f, 0.0f, 0.0f);
+	CAnimManager::UncompressAnimation(hier);
+	seq = hier->sequences;
+	if(seq->numFrames <= 0 || !seq->HasTranslation())
+		return CVector(0.0f, 0.0f, 0.0f);
+	KeyFrameTrans *lastFrame = (KeyFrameTrans*)seq->GetKeyFrame(seq->numFrames - 1);
+	return lastFrame->translation;
+}
+
 void
 CPed::SetAnimOffsetForEnterOrExitVehicle(void)
 {
 	// FIX_BUGS: If there were no translations on enter anims, there were overflows all over this function.
 
-	int vanBlock = CAnimManager::GetAnimationBlockIndex("van");
-	int bikesBlock = CAnimManager::GetAnimationBlockIndex("bikes");
-	int bikevBlock = CAnimManager::GetAnimationBlockIndex("bikev");
-	int bikehBlock = CAnimManager::GetAnimationBlockIndex("bikeh");
-	int bikedBlock = CAnimManager::GetAnimationBlockIndex("biked");
-	CStreaming::RequestAnim(vanBlock, STREAMFLAGS_DEPENDENCY);
-	CStreaming::RequestAnim(bikesBlock, STREAMFLAGS_DEPENDENCY);
-	CStreaming::RequestAnim(bikevBlock, STREAMFLAGS_DEPENDENCY);
-	CStreaming::RequestAnim(bikehBlock, STREAMFLAGS_DEPENDENCY);
-	CStreaming::RequestAnim(bikedBlock, STREAMFLAGS_DEPENDENCY);
+	int animBlocks[] = {
+		CAnimManager::GetAnimationBlockIndex("van"),
+		CAnimManager::GetAnimationBlockIndex("bikes"),
+		CAnimManager::GetAnimationBlockIndex("bikev"),
+		CAnimManager::GetAnimationBlockIndex("bikeh"),
+		CAnimManager::GetAnimationBlockIndex("biked")
+	};
+	for(int i = 0; i < ARRAY_SIZE(animBlocks); i++)
+		if(animBlocks[i] >= 0)
+			CStreaming::RequestAnim(animBlocks[i], STREAMFLAGS_DEPENDENCY);
 	CStreaming::LoadAllRequestedModels(false);
-	CAnimManager::AddAnimBlockRef(vanBlock);
-	CAnimManager::AddAnimBlockRef(bikesBlock);
-	CAnimManager::AddAnimBlockRef(bikevBlock);
-	CAnimManager::AddAnimBlockRef(bikehBlock);
-	CAnimManager::AddAnimBlockRef(bikedBlock);
+	for(int i = 0; i < ARRAY_SIZE(animBlocks); i++)
+		if(animBlocks[i] >= 0)
+			CAnimManager::AddAnimBlockRef(animBlocks[i]);
 
-	CAnimBlendHierarchy *enterAssoc = CAnimManager::GetAnimAssociation(ASSOCGRP_STD, ANIM_STD_JACKEDCAR_LHS)->hierarchy;
-	CAnimBlendSequence *seq = enterAssoc->sequences;
-	CAnimManager::UncompressAnimation(enterAssoc);
-	if (seq->numFrames > 0) {
-		if (!seq->HasTranslation())
-			vecPedDraggedOutCarAnimOffset = CVector(0.0f, 0.0f, 0.0f);
-		else {
-			KeyFrameTrans *lastFrame = (KeyFrameTrans*)seq->GetKeyFrame(seq->numFrames - 1);
-			vecPedDraggedOutCarAnimOffset = lastFrame->translation;
-		}
-	}
+	vecPedDraggedOutCarAnimOffset = GetAnimationLastTranslation(ASSOCGRP_STD, ANIM_STD_JACKEDCAR_LHS);
+	vecPedCarDoorAnimOffset = GetAnimationLastTranslation(ASSOCGRP_STD, ANIM_STD_CAR_GET_IN_LHS);
+	vecPedCarDoorLoAnimOffset = GetAnimationLastTranslation(ASSOCGRP_STD, ANIM_STD_CAR_GET_IN_LO_LHS);
+	vecPedQuickDraggedOutCarAnimOffset = GetAnimationLastTranslation(ASSOCGRP_STD, ANIM_STD_QUICKJACKED);
+	vecPedVanRearDoorAnimOffset = GetAnimationLastTranslation(ASSOCGRP_VAN, ANIM_STD_VAN_GET_IN_REAR_LHS);
+	vecPedTrainDoorAnimOffset = GetAnimationLastTranslation(ASSOCGRP_STD, ANIM_STD_TRAIN_GETOUT);
+	vecPedStdBikeJumpRhsAnimOffset = GetAnimationLastTranslation(ASSOCGRP_BIKE_STANDARD, ANIM_BIKE_JUMPON_LHS);
+	vecPedVespaBikeJumpRhsAnimOffset = GetAnimationLastTranslation(ASSOCGRP_BIKE_VESPA, ANIM_BIKE_JUMPON_LHS);
+	vecPedHarleyBikeJumpRhsAnimOffset = GetAnimationLastTranslation(ASSOCGRP_BIKE_HARLEY, ANIM_BIKE_JUMPON_LHS);
+	vecPedDirtBikeJumpRhsAnimOffset = GetAnimationLastTranslation(ASSOCGRP_BIKE_DIRT, ANIM_BIKE_JUMPON_LHS);
+	vecPedBikeKickAnimOffset = GetAnimationLastTranslation(ASSOCGRP_BIKE_HARLEY, ANIM_BIKE_KICK);
 
-	enterAssoc = CAnimManager::GetAnimAssociation(ASSOCGRP_STD, ANIM_STD_CAR_GET_IN_LHS)->hierarchy;
-	seq = enterAssoc->sequences;
-	CAnimManager::UncompressAnimation(enterAssoc);
-	if (seq->numFrames > 0) {
-		if (!seq->HasTranslation())
-			vecPedCarDoorAnimOffset = CVector(0.0f, 0.0f, 0.0f);
-		else {
-			KeyFrameTrans *lastFrame = (KeyFrameTrans*)seq->GetKeyFrame(seq->numFrames - 1);
-			vecPedCarDoorAnimOffset = lastFrame->translation;
-		}
-	}
-
-	enterAssoc = CAnimManager::GetAnimAssociation(ASSOCGRP_STD, ANIM_STD_CAR_GET_IN_LO_LHS)->hierarchy;
-	seq = enterAssoc->sequences;
-	CAnimManager::UncompressAnimation(enterAssoc);
-	if (seq->numFrames > 0) {
-		if (!seq->HasTranslation())
-			vecPedCarDoorLoAnimOffset = CVector(0.0f, 0.0f, 0.0f);
-		else {
-			KeyFrameTrans *lastFrame = (KeyFrameTrans*)seq->GetKeyFrame(seq->numFrames - 1);
-			vecPedCarDoorLoAnimOffset = lastFrame->translation;
-		}
-	}
-
-	enterAssoc = CAnimManager::GetAnimAssociation(ASSOCGRP_STD, ANIM_STD_QUICKJACKED)->hierarchy;
-	seq = enterAssoc->sequences;
-	CAnimManager::UncompressAnimation(enterAssoc);
-	if (seq->numFrames > 0) {
-		if (!seq->HasTranslation())
-			vecPedQuickDraggedOutCarAnimOffset = CVector(0.0f, 0.0f, 0.0f);
-		else {
-			KeyFrameTrans *lastFrame = (KeyFrameTrans*)seq->GetKeyFrame(seq->numFrames - 1);
-			vecPedQuickDraggedOutCarAnimOffset = lastFrame->translation;
-		}
-	}
-
-	enterAssoc = CAnimManager::GetAnimAssociation(ASSOCGRP_VAN, ANIM_STD_VAN_GET_IN_REAR_LHS)->hierarchy;
-	seq = enterAssoc->sequences;
-	CAnimManager::UncompressAnimation(enterAssoc);
-	if (seq->numFrames > 0) {
-		if (!seq->HasTranslation())
-			vecPedVanRearDoorAnimOffset = CVector(0.0f, 0.0f, 0.0f);
-		else {
-			KeyFrameTrans *lastFrame = (KeyFrameTrans*)seq->GetKeyFrame(seq->numFrames - 1);
-			vecPedVanRearDoorAnimOffset = lastFrame->translation;
-		}
-	}
-
-	enterAssoc = CAnimManager::GetAnimAssociation(ASSOCGRP_STD, ANIM_STD_TRAIN_GETOUT)->hierarchy;
-	seq = enterAssoc->sequences;
-	CAnimManager::UncompressAnimation(enterAssoc);
-	if (seq->numFrames > 0) {
-		if (!seq->HasTranslation())
-			vecPedTrainDoorAnimOffset = CVector(0.0f, 0.0f, 0.0f);
-		else {
-			KeyFrameTrans *lastFrame = (KeyFrameTrans*)seq->GetKeyFrame(seq->numFrames - 1);
-			vecPedTrainDoorAnimOffset = lastFrame->translation;
-		}
-	}
-
-	enterAssoc = CAnimManager::GetAnimAssociation(ASSOCGRP_BIKE_STANDARD, ANIM_BIKE_JUMPON_LHS)->hierarchy;
-	seq = enterAssoc->sequences;
-	CAnimManager::UncompressAnimation(enterAssoc);
-	if (seq->numFrames > 0) {
-		if (!seq->HasTranslation())
-			vecPedStdBikeJumpRhsAnimOffset = CVector(0.0f, 0.0f, 0.0f);
-		else {
-			KeyFrameTrans* lastFrame = (KeyFrameTrans*)seq->GetKeyFrame(seq->numFrames - 1);
-			vecPedStdBikeJumpRhsAnimOffset = lastFrame->translation;
-		}
-	}
-
-	enterAssoc = CAnimManager::GetAnimAssociation(ASSOCGRP_BIKE_VESPA, ANIM_BIKE_JUMPON_LHS)->hierarchy;
-	seq = enterAssoc->sequences;
-	CAnimManager::UncompressAnimation(enterAssoc);
-	if (seq->numFrames > 0) {
-		if (!seq->HasTranslation())
-			vecPedVespaBikeJumpRhsAnimOffset = CVector(0.0f, 0.0f, 0.0f);
-		else {
-			KeyFrameTrans* lastFrame = (KeyFrameTrans*)seq->GetKeyFrame(seq->numFrames - 1);
-			vecPedVespaBikeJumpRhsAnimOffset = lastFrame->translation;
-		}
-	}
-
-	enterAssoc = CAnimManager::GetAnimAssociation(ASSOCGRP_BIKE_HARLEY, ANIM_BIKE_JUMPON_LHS)->hierarchy;
-	seq = enterAssoc->sequences;
-	CAnimManager::UncompressAnimation(enterAssoc);
-	if (seq->numFrames > 0) {
-		if (!seq->HasTranslation())
-			vecPedHarleyBikeJumpRhsAnimOffset = CVector(0.0f, 0.0f, 0.0f);
-		else {
-			KeyFrameTrans* lastFrame = (KeyFrameTrans*)seq->GetKeyFrame(seq->numFrames - 1);
-			vecPedHarleyBikeJumpRhsAnimOffset = lastFrame->translation;
-		}
-	}
-
-	enterAssoc = CAnimManager::GetAnimAssociation(ASSOCGRP_BIKE_DIRT, ANIM_BIKE_JUMPON_LHS)->hierarchy;
-	seq = enterAssoc->sequences;
-	CAnimManager::UncompressAnimation(enterAssoc);
-	if (seq->numFrames > 0) {
-		if (!seq->HasTranslation())
-			vecPedDirtBikeJumpRhsAnimOffset = CVector(0.0f, 0.0f, 0.0f);
-		else {
-			KeyFrameTrans* lastFrame = (KeyFrameTrans*)seq->GetKeyFrame(seq->numFrames - 1);
-			vecPedDirtBikeJumpRhsAnimOffset = lastFrame->translation;
-		}
-	}
-
-	enterAssoc = CAnimManager::GetAnimAssociation(ASSOCGRP_BIKE_HARLEY, ANIM_BIKE_KICK)->hierarchy;
-	seq = enterAssoc->sequences;
-	CAnimManager::UncompressAnimation(enterAssoc);
-	if (seq->numFrames > 0) {
-		if (!seq->HasTranslation())
-			vecPedBikeKickAnimOffset = CVector(0.0f, 0.0f, 0.0f);
-		else {
-			KeyFrameTrans* lastFrame = (KeyFrameTrans*)seq->GetKeyFrame(seq->numFrames - 1);
-			vecPedBikeKickAnimOffset = lastFrame->translation;
-		}
-	}
-
-	CAnimManager::RemoveAnimBlockRef(vanBlock);
-	CAnimManager::RemoveAnimBlockRef(bikesBlock);
-	CAnimManager::RemoveAnimBlockRef(bikevBlock);
-	CAnimManager::RemoveAnimBlockRef(bikehBlock);
-	CAnimManager::RemoveAnimBlockRef(bikedBlock);
+	for(int i = 0; i < ARRAY_SIZE(animBlocks); i++)
+		if(animBlocks[i] >= 0)
+			CAnimManager::RemoveAnimBlockRef(animBlocks[i]);
 }
 
 void

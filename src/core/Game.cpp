@@ -497,6 +497,7 @@ bool CGame::Initialise(const char* datFile)
 	// reads the archives of the game's custom folder; from here on the folder
 	// wins over the game's own image files
 	CCustomModels::Initialise();
+	CStreaming::LoadVCPedAnimationReference();
 #endif
 	CStreaming::LoadInitialVehicles();
 	CStreaming::LoadInitialPeds();

@@ -33,6 +33,10 @@ public:
 	// scans the custom folder (also done automatically on the first request)
 	static void Initialise(void);
 	static void Shutdown(void);
+	// Temporarily force a streamed model to come from the game's own IMG. Used
+	// to keep a native VC ped skeleton available when a custom SA ped replaces
+	// every initially loaded reference model.
+	static void SetNativeModelOverride(int32 modelId, bool enabled);
 	// true when the folder exists and there is at least one usable archive
 	static bool IsActive(void);
 
