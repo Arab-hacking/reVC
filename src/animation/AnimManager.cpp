@@ -1576,7 +1576,7 @@ GetSAAnimationAlias(int groupId, const char *name, const char **sourceBlock)
 			return "FightA_2";
 		}
 		if(strcasecmp(name, "FIGHTkick") == 0){
-			if(sourceBlock) *sourceBlock = "sa_kick_std";
+			if(sourceBlock) *sourceBlock = "sa_fight_e";
 			return "FIGHTkick";
 		}
 		if(strcasecmp(name, "FIGHTknee") == 0 || strcasecmp(name, "FIGHTrndhse") == 0 ||
@@ -1590,7 +1590,7 @@ GetSAAnimationAlias(int groupId, const char *name, const char **sourceBlock)
 			return "FightA_1";
 		}
 		if(strcasecmp(name, "FIGHTlngkck") == 0){
-			if(sourceBlock) *sourceBlock = "sa_kick_std";
+			if(sourceBlock) *sourceBlock = "sa_fight_e";
 			return "FIGHTkick_B";
 		}
 		if(strcasecmp(name, "FIGHTelbowL") == 0 || strcasecmp(name, "FIGHTelbowR") == 0){
@@ -1602,7 +1602,7 @@ GetSAAnimationAlias(int groupId, const char *name, const char **sourceBlock)
 			return "FightA_1";
 		}
 		if(strcasecmp(name, "KICK_floor") == 0){
-			if(sourceBlock) *sourceBlock = "sa_kick_std";
+			if(sourceBlock) *sourceBlock = "sa_fight_e";
 			return "FIGHTkick_B";
 		}
 		if(strcasecmp(name, "WEAPON_throwu") == 0){
@@ -1668,7 +1668,7 @@ GetSAAnimationAlias(int groupId, const char *name, const char **sourceBlock)
 			return "FIGHTIDLE";
 		}
 		if(strcasecmp(name, "KICK_floor") == 0){
-			if(sourceBlock) *sourceBlock = "sa_kick_std";
+			if(sourceBlock) *sourceBlock = "sa_fight_e";
 			return "FIGHTkick_B";
 		}
 	}
@@ -1811,7 +1811,7 @@ CAnimManager::LoadAnimFiles(void)
 	// to borrow hierarchies from a VC skeleton.
 	static const char *saSupportAnimFiles[] = {
 		"ANIM\\MELEE_1.IFP",
-		"ANIM\\KICK_STD.IFP",
+		"ANIM\\FIGHT_E.IFP",
 		"ANIM\\BBBAT_1.IFP",
 		"ANIM\\GCLUB_1.IFP",
 		"ANIM\\KNIFE_1.IFP",

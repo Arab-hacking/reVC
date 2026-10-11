@@ -1739,33 +1739,35 @@ CStreaming::LoadVCPedAnimationReference(void)
 	CPedModelInfo *copInfo;
 	RpClump *reference;
 	int32 txdSlot;
+	bool customCop;
 
 	if(baseInfo == nil || baseInfo->GetModelType() != MITYPE_PED)
 		return;
 	copInfo = (CPedModelInfo*)baseInfo;
 	txdSlot = copInfo->GetTxdSlot();
-	// The normal initial-ped batch already supplies a VC reference unless all
-	// three entries are being replaced. Avoid an extra native load otherwise.
-	if(!CCustomModels::CanServe(MI_COP) ||
-	   !CCustomModels::CanServe(MI_MALE01) ||
-	   !CCustomModels::CanServe(MI_TAXI_D))
-		return;
+	customCop = CCustomModels::CanServe(MI_COP);
+	CUSTOM_LOG("animation groups: setting up the native VC reference (custom cop=%d, resident=%d, resident SA=%d)\n",
+		customCop, copInfo->GetRwObject() != nil, copInfo->UsesSAAnimations());
 
-	// The DAT loader may have populated cop before streaming starts. Capture a
-	// native skeleton if present, then remove the temporary model so the normal
-	// initial-ped request can load the user's override. If the resident clump is
-	// already SA, discard it first and explicitly load a native reference below.
+	// Capture a resident native cop before any initial-ped custom model can
+	// replace it. Keep it resident when there is no custom replacement.
 	if(copInfo->GetRwObject() && !copInfo->UsesSAAnimations()){
 		reference = CreateVCPedAnimationReference(copInfo);
 		if(reference){
 			CAnimManager::SetVCPedAnimationReference(reference);
-			RemoveVCPedModelForReload(copInfo, txdSlot);
+			if(customCop)
+				RemoveVCPedModelForReload(copInfo, txdSlot);
 			CUSTOM_LOG("animation groups: saved the resident native VC cop clump as an animation reference\n");
 			return;
 		}
 		CUSTOM_LOG("animation groups: couldn't clone the resident native VC cop; keeping it loaded as the reference\n");
 		return;
 	}
+
+	// Build and save a native skeleton unconditionally. The first animation
+	// groups can be created before any stock VC ped is resident (even when only
+	// some of the initial peds are overridden), so waiting for a future native
+	// ped leaves VC associations without a skeleton reference.
 	if(copInfo->GetRwObject() || HasModelLoaded(MI_COP))
 		RemoveVCPedModelForReload(copInfo, txdSlot);
 
@@ -1778,9 +1780,8 @@ CStreaming::LoadVCPedAnimationReference(void)
 		reference = CreateVCPedAnimationReference(copInfo);
 		if(reference){
 			CAnimManager::SetVCPedAnimationReference(reference);
-			// The reference contains only frames; unload the temporary model and
-			// TXD so the user's versions can be streamed by the initial-ped pass.
-			RemoveVCPedModelForReload(copInfo, txdSlot);
+			if(customCop)
+				RemoveVCPedModelForReload(copInfo, txdSlot);
 			CUSTOM_LOG("animation groups: saved the native VC cop clump as an animation reference\n");
 			return;
 		}

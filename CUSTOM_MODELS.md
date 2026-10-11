@@ -382,7 +382,7 @@ clump. Если подходящего SA-клипа нет, позиция пр
 Нативные VC-модели продолжают использовать только исходные VC association groups.
 Активные ассоциации удерживают ссылки на нужные animation banks до завершения.
 Чтобы использовать соответствующие действия, поместите в `custom` оригинальные SA IFP
-(если они входят в ваш легальный набор ресурсов): `MELEE_1`, `KICK_STD`, `BBBAT_1`,
+(если они входят в ваш легальный набор ресурсов): `MELEE_1`, `FIGHT_E`, `BBBAT_1`,
 `GCLUB_1`, `KNIFE_1`, `CSAW_1`, `GRENADE`, `UZI`, `RIFLE`, `COLT45`, `SUNBATHE`, `FAT`,
 `STDCARAMIMS`, `LOWCARAMIMS`, `VANCARANIMS`, `COACHCARANIMS`, `SPORTBIKEANIMS`,
 `VESPABIKEANIMS`, `HARLEYBIKEANIMS`, `DIRTBIKEANIMS`, `BIKES`, `BIKEV`, `BIKEH` и
