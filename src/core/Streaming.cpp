@@ -30,8 +30,8 @@
 #include "Streaming.h"
 #ifdef CUSTOM_MODELS
 #include "CustomModels.h"
-#include "SavehDiag.h"
 #endif
+#include "SavehDiag.h"
 #include "Replay.h"
 #include "main.h"
 #include "ColStore.h"
@@ -2688,6 +2688,8 @@ CStreaming::LoadAllRequestedModels(bool priority)
 	uint32 posn, size;
 
 	int numRequests = 4*ms_numModelsRequested;
+	int traceAfterAnimation = 0;
+	bool sawAnimation = false;
 
 	if(bInsideLoadAll)
 		return;
@@ -2700,23 +2702,43 @@ CStreaming::LoadAllRequestedModels(bool priority)
 	imgOffset = GetCdImageOffset(CdStreamGetLastPosn());
 
 	while(ms_endRequestedList.m_prev != &ms_startRequestedList && numRequests > 0){
+		bool traceIteration = traceAfterAnimation > 0;
+		if(traceIteration)
+			CUSTOM_LOG("stream single: checking next request, remaining=%d\n", numRequests);
 		numRequests--;
 		streamId = GetNextFileOnCd(0, priority);
-		if(streamId == -1)
+		if(streamId == -1){
+			if(traceIteration)
+				CUSTOM_LOG("stream single: no next request\n");
 			break;
+		}
+		if(streamId >= STREAM_OFFSET_ANIM){
+			traceAfterAnimation = 3;
+			sawAnimation = true;
+			CUSTOM_LOG("stream single: selected animation id=%d\n", streamId);
+		}else if(traceIteration)
+			CUSTOM_LOG("stream single: selected id=%d after animation\n", streamId);
 
 		ms_aInfoForModel[streamId].RemoveFromList();
 		ms_channel[0].streamIds[0] = streamId;
 		DecrementRef(streamId);
+		if(streamId >= STREAM_OFFSET_ANIM || traceIteration)
+			CUSTOM_LOG("stream single: request dequeued id=%d\n", streamId);
 
 		if(ms_aInfoForModel[streamId].GetCdPosnAndSize(posn, size)){
 			do
 				status = CdStreamRead(0, ms_pStreamingBuffer[0], imgOffset+posn, size);
 			while(CdStreamSync(0) || status == STREAM_NONE);
 			ms_aInfoForModel[streamId].m_loadState = STREAMSTATE_READING;
+			if(streamId >= STREAM_OFFSET_ANIM || traceIteration)
+				CUSTOM_LOG("stream single: read complete id=%d sectors=%u\n", streamId, size);
 
 			MakeSpaceFor(size * CDSTREAM_SECTOR_SIZE);
+			if(streamId >= STREAM_OFFSET_ANIM || traceIteration)
+				CUSTOM_LOG("stream single: space ready id=%d\n", streamId);
 			ConvertBufferToObject(ms_pStreamingBuffer[0], streamId);
+			if(streamId >= STREAM_OFFSET_ANIM || traceIteration)
+				CUSTOM_LOG("stream single: conversion returned id=%d state=%d\n", streamId, ms_aInfoForModel[streamId].m_loadState);
 			if(ms_aInfoForModel[streamId].m_loadState == STREAMSTATE_STARTED)
 				FinishLoadingLargeFile(ms_pStreamingBuffer[0], streamId);
 
@@ -2729,7 +2751,13 @@ CStreaming::LoadAllRequestedModels(bool priority)
 			// empty
 			ms_aInfoForModel[streamId].m_loadState = STREAMSTATE_LOADED;
 		}
+		if(streamId >= STREAM_OFFSET_ANIM || traceIteration)
+			CUSTOM_LOG("stream single: iteration complete id=%d\n", streamId);
+		if(traceAfterAnimation > 0)
+			traceAfterAnimation--;
 	}
+	if(sawAnimation)
+		CUSTOM_LOG("stream single: request loop finished, remaining=%d\n", numRequests);
 
 	ms_bLoadingBigModel = false;
 	for(i = 0; i < 4; i++){
@@ -2738,6 +2766,8 @@ CStreaming::LoadAllRequestedModels(bool priority)
 	}
 	ms_channel[1].state = CHANNELSTATE_IDLE;
 	bInsideLoadAll = false;
+	if(sawAnimation)
+		CUSTOM_LOG("stream single: LoadAllRequestedModels returning\n");
 }
 #endif
 
