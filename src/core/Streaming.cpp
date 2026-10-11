@@ -43,6 +43,16 @@
 #include "Frontend.h"
 #include "VarConsole.h"
 
+#if defined(_MSC_VER)
+#include <intrin.h>
+#pragma intrinsic(_ReturnAddress)
+#define STREAMING_CALLER_ADDRESS() _ReturnAddress()
+#elif defined(__GNUC__) || defined(__clang__)
+#define STREAMING_CALLER_ADDRESS() __builtin_return_address(0)
+#else
+#define STREAMING_CALLER_ADDRESS() nil
+#endif
+
 bool CStreaming::ms_disableStreaming;
 bool CStreaming::ms_bLoadingBigModel;
 int32 CStreaming::ms_numModelsRequested;
@@ -2682,6 +2692,9 @@ CStreaming::LoadAllRequestedModels(bool priority)
 void
 CStreaming::LoadAllRequestedModels(bool priority)
 {
+#ifdef CUSTOM_MODELS
+	void *callerAddress = STREAMING_CALLER_ADDRESS();
+#endif
 	static bool bInsideLoadAll = false;
 	int imgOffset, streamId, status;
 	int i;
@@ -2715,9 +2728,9 @@ CStreaming::LoadAllRequestedModels(bool priority)
 		if(streamId >= STREAM_OFFSET_ANIM){
 			traceAfterAnimation = 3;
 			sawAnimation = true;
-			CUSTOM_LOG("stream single: selected animation id=%d\n", streamId);
+			CUSTOM_LOG("stream single: selected animation id=%d name=%s\n", streamId, GetObjectName(streamId));
 		}else if(traceIteration)
-			CUSTOM_LOG("stream single: selected id=%d after animation\n", streamId);
+			CUSTOM_LOG("stream single: selected id=%d name=%s after animation\n", streamId, GetObjectName(streamId));
 
 		ms_aInfoForModel[streamId].RemoveFromList();
 		ms_channel[0].streamIds[0] = streamId;
@@ -2767,9 +2780,10 @@ CStreaming::LoadAllRequestedModels(bool priority)
 	ms_channel[1].state = CHANNELSTATE_IDLE;
 	bInsideLoadAll = false;
 	if(sawAnimation)
-		CUSTOM_LOG("stream single: LoadAllRequestedModels returning\n");
+		CUSTOM_LOG("stream single: LoadAllRequestedModels returning; caller=%p\n", callerAddress);
 }
 #endif
+#undef STREAMING_CALLER_ADDRESS
 
 void
 CStreaming::FlushChannels(void)

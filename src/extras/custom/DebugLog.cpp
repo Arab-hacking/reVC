@@ -103,6 +103,56 @@ DebugLogCrashLine(const char *line)
 
 #ifdef _WIN32
 
+// A Windows access violation is a structured exception. The CRT SIGSEGV
+// handler below loses the original CONTEXT, so catch first-chance AVs here and
+// record the faulting instruction before the CRT translates them to signals.
+static LONG CALLBACK
+DebugLogVectoredException(EXCEPTION_POINTERS *info)
+{
+	EXCEPTION_RECORD *record;
+	CONTEXT *context;
+	uintptr_t instruction, imageBase;
+	void *stackPointer = nil;
+	void *framePointer = nil;
+	char line[256];
+
+	if(info == nil || info->ExceptionRecord == nil || info->ContextRecord == nil)
+		return EXCEPTION_CONTINUE_SEARCH;
+	record = info->ExceptionRecord;
+	if(record->ExceptionCode != EXCEPTION_ACCESS_VIOLATION &&
+	   record->ExceptionCode != EXCEPTION_IN_PAGE_ERROR &&
+	   record->ExceptionCode != EXCEPTION_STACK_OVERFLOW)
+		return EXCEPTION_CONTINUE_SEARCH;
+
+	context = info->ContextRecord;
+	instruction = (uintptr_t)record->ExceptionAddress;
+	imageBase = (uintptr_t)GetModuleHandleA(nil);
+#if defined(_M_X64) || defined(__x86_64__)
+	stackPointer = (void*)(uintptr_t)context->Rsp;
+	framePointer = (void*)(uintptr_t)context->Rbp;
+#elif defined(_M_IX86) || defined(__i386__)
+	stackPointer = (void*)(uintptr_t)context->Esp;
+	framePointer = (void*)(uintptr_t)context->Ebp;
+#endif
+
+	snprintf(line, sizeof(line),
+		"FIRST-CHANCE: exception 0x%08lX at %p; exe-base=%p exe-rva=0x%llX; SP=%p BP=%p",
+		(unsigned long)record->ExceptionCode, record->ExceptionAddress,
+		(void*)imageBase,
+		(unsigned long long)(instruction >= imageBase ? instruction - imageBase : instruction),
+		stackPointer, framePointer);
+	DebugLogCrashLine(line);
+	if(record->ExceptionCode == EXCEPTION_ACCESS_VIOLATION && record->NumberParameters >= 2){
+		const char *operation = record->ExceptionInformation[0] == 0 ? "read" :
+			record->ExceptionInformation[0] == 1 ? "write" :
+			record->ExceptionInformation[0] == 8 ? "execute" : "unknown";
+		snprintf(line, sizeof(line), "FIRST-CHANCE: access=%s target=%p",
+			operation, (void*)(uintptr_t)record->ExceptionInformation[1]);
+		DebugLogCrashLine(line);
+	}
+	return EXCEPTION_CONTINUE_SEARCH;
+}
+
 static void
 DebugLogSignalHandler(int sig)
 {
@@ -187,6 +237,7 @@ DebugLogInit(void)
 	DebugLogCrashLine(banner);
 
 #ifdef _WIN32
+	AddVectoredExceptionHandler(1, DebugLogVectoredException);
 	SetUnhandledExceptionFilter(DebugLogUnhandledException);
 	// assert() and abort() go through the CRT, not through the unhandled
 	// exception filter - catch them with the signal handlers as well
