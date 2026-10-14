@@ -43,25 +43,63 @@ struct BitReader
 	}
 };
 
-// canonical Huffman code, decoded bit by bit (files are small, simplicity wins)
+// DEFLATE symbols are decoded through a short lookup table first. Codes that
+// need more bits use the canonical, bit-by-bit fallback below. This keeps the
+// decoder dependency-free while avoiding a branch for every bit on the common
+// short-code path.
+enum { DEFLATE_FAST_BITS = 9, DEFLATE_FAST_SIZE = 1 << DEFLATE_FAST_BITS };
+
 struct Huffman
 {
 	uint16 counts[16];
 	uint16 symbols[288];
+	uint16 fast[DEFLATE_FAST_SIZE];
 
 	void Build(const uint8 *lengths, int n)
 	{
 		int i, l;
 		uint16 offs[16];
+		uint16 nextCode[16];
+		uint32 code;
+
+		memset(fast, 0, sizeof(fast));
 		for(i = 0; i < 16; i++) counts[i] = 0;
 		for(i = 0; i < n; i++) counts[lengths[i]]++;
 		counts[0] = 0;
 		offs[1] = 0;
 		for(l = 1; l < 15; l++) offs[l+1] = offs[l] + counts[l];
 		for(i = 0; i < n; i++) if(lengths[i]) symbols[offs[lengths[i]]++] = (uint16)i;
+
+		// Canonical Huffman codes are transmitted least-significant bit first
+		// in DEFLATE, so reverse each code before indexing the low bits in fast[].
+		code = 0;
+		for(l = 1; l <= 15; l++){
+			code = (code + counts[l-1]) << 1;
+			nextCode[l] = (uint16)code;
+		}
+		for(i = 0; i < n; i++){
+			uint32 reversed = 0;
+			uint32 canonical;
+			uint32 index;
+			int len = lengths[i];
+			if(len == 0)
+				continue;
+
+			canonical = nextCode[len]++;
+			for(l = 0; l < len; l++){
+				reversed = (reversed << 1) | (canonical & 1);
+				canonical >>= 1;
+			}
+			if(len > DEFLATE_FAST_BITS)
+				continue;
+
+			uint16 entry = (uint16)((i << 4) | len);
+			for(index = reversed; index < DEFLATE_FAST_SIZE; index += 1u << len)
+				fast[index] = entry;
+		}
 	}
 
-	int Decode(BitReader &br) const
+	int DecodeSlow(BitReader &br) const
 	{
 		int code = 0, first = 0, index = 0, len;
 		for(len = 1; len <= 15; len++){
@@ -73,6 +111,18 @@ struct Huffman
 			code <<= 1;
 		}
 		return -1;
+	}
+
+	int Decode(BitReader &br) const
+	{
+		if(br.Fill(DEFLATE_FAST_BITS)){
+			uint16 entry = fast[br.buf & (DEFLATE_FAST_SIZE - 1)];
+			if(entry != 0){
+				br.Get(entry & 15);
+				return entry >> 4;
+			}
+		}
+		return DecodeSlow(br);
 	}
 };
 
@@ -202,7 +252,24 @@ CustomInflate(const uint8 *src, uint32 srcSize, uint8 *dst, uint32 dstSize)
 					uint32 distance = distBase[dsym] + br.Get(distExtra[dsym]);
 					if(distance > out || length > dstSize - out) return -1;
 					uint32 from = out - distance;
-					while(length--) dst[out++] = dst[from++];
+					if(distance >= length){
+						// No overlap: let the platform's optimized memcpy move the match.
+						memcpy(dst + out, dst + from, length);
+						out += length;
+					}else{
+						// Overlapping DEFLATE matches repeat a short pattern. Copy the
+						// seed once, then grow it exponentially instead of copying one
+						// byte per loop iteration (distance is at least one by format).
+						uint32 copied = distance;
+						memcpy(dst + out, dst + from, copied);
+						out += copied;
+						while(copied < length){
+							uint32 chunk = copied < length - copied ? copied : length - copied;
+							memcpy(dst + out, dst + out - copied, chunk);
+							out += chunk;
+							copied += chunk;
+						}
+					}
 				}
 			}
 		}
@@ -257,6 +324,12 @@ GetU32(const uint8 *p)
 #define CUSTOMZIP_TELL(f)    ((int64)ftello(f))
 #endif
 
+static bool
+ReadFileAt(FILE *f, uint64 offset, void *dst, uint32 size)
+{
+	return size == 0 || (CUSTOMZIP_SEEK(f, offset) && fread(dst, 1, size, f) == size);
+}
+
 bool
 CustomZip::ReadAt(uint64 offset, void *dst, uint32 size) const
 {
@@ -270,7 +343,7 @@ CustomZip::ReadAt(uint64 offset, void *dst, uint32 size) const
 	f = fopen(m_path, "rb");
 	if(f == nil)
 		return false;
-	ok = CUSTOMZIP_SEEK(f, offset) && fread(dst, 1, size, f) == size;
+	ok = ReadFileAt(f, offset, dst, size);
 	fclose(f);
 	return ok;
 }
@@ -430,6 +503,7 @@ CustomZip::Extract(int index, uint8 *dst, uint32 dstSize) const
 	uint32 nameLen, extraLen;
 	uint64 dataOffset;
 	uint8 *comp = nil;
+	FILE *f;
 	bool ok = false;
 
 	if(ent == nil || !m_opened) return false;
@@ -439,27 +513,45 @@ CustomZip::Extract(int index, uint8 *dst, uint32 dstSize) const
 		if(ent->uncompressedSize != 0) return false;
 		return true;
 	}
-	if(!ReadAt(ent->offset, header, 30) || GetU32(header) != 0x04034b50) return false;
+	if(m_path[0] == '\0') return false;
+	f = fopen(m_path, "rb");
+	if(f == nil) return false;
+	if(!ReadFileAt(f, ent->offset, header, 30) || GetU32(header) != 0x04034b50){
+		fclose(f);
+		return false;
+	}
 	nameLen = GetU16(header + 26);
 	extraLen = GetU16(header + 28);
 	dataOffset = ent->offset + 30 + nameLen + extraLen;
-	if(dataOffset > m_fileSize || ent->compressedSize > m_fileSize - dataOffset) return false;
-
-	comp = new uint8[(uint32)ent->compressedSize];
-	if(!ReadAt(dataOffset, comp, (uint32)ent->compressedSize)){
-		delete[] comp;
+	if(dataOffset > m_fileSize || ent->compressedSize > m_fileSize - dataOffset){
+		fclose(f);
 		return false;
 	}
 
 	if(ent->method == 0){
-		if(ent->compressedSize == ent->uncompressedSize){
-			memcpy(dst, comp, (uint32)ent->uncompressedSize);
-			ok = true;
-		}
-	}else if(ent->method == 8){
-		int32 n = CustomInflate(comp, (uint32)ent->compressedSize, dst, dstSize);
-		ok = n >= 0 && (uint32)n == (uint32)ent->uncompressedSize;
+		// Stored entries are common for already-compressed textures and models.
+		// Read straight into the caller's buffer instead of allocating a second
+		// full-size copy just to memcpy it once more.
+		ok = ent->compressedSize == ent->uncompressedSize &&
+		     ReadFileAt(f, dataOffset, dst, (uint32)ent->uncompressedSize);
+		fclose(f);
+		return ok;
 	}
+	if(ent->method != 8){
+		fclose(f);
+		return false;
+	}
+
+	comp = new uint8[(uint32)ent->compressedSize];
+	if(!ReadFileAt(f, dataOffset, comp, (uint32)ent->compressedSize)){
+		fclose(f);
+		delete[] comp;
+		return false;
+	}
+	fclose(f);
+
+	int32 n = CustomInflate(comp, (uint32)ent->compressedSize, dst, dstSize);
+	ok = n >= 0 && (uint32)n == (uint32)ent->uncompressedSize;
 	delete[] comp;
 	return ok;
 }

@@ -202,6 +202,8 @@ CStreaming::Init2(void)
 
 	ms_channel[0].state = CHANNELSTATE_IDLE;
 	ms_channel[1].state = CHANNELSTATE_IDLE;
+	ms_channel[0].nextItem = 0;
+	ms_channel[1].nextItem = 0;
 	for(i = 0; i < 4; i++){
 		ms_channel[0].streamIds[i] = -1;
 		ms_channel[0].offsets[i] = -1;
@@ -2367,12 +2369,12 @@ CStreaming::RequestModelStream(int32 ch)
 	// clear remaining slots
 	for(; i < 4; i++)
 		ms_channel[ch].streamIds[i] = -1;
+	ms_channel[ch].nextItem = 0;
 	// Now read the data
 	assert(!(ms_bLoadingBigModel && ch == 1));	// this would clobber the buffer
 	if(CdStreamRead(ch, ms_pStreamingBuffer[ch], imgOffset+posn, totalSize) == STREAM_NONE)
 		debug("FUCKFUCKFUCK\n");
 	ms_channel[ch].state = CHANNELSTATE_READING;
-	ms_channel[ch].field24 = 0;
 	ms_channel[ch].size = totalSize;
 	ms_channel[ch].position = imgOffset+posn;
 	ms_channel[ch].numTries = 0;
@@ -2510,12 +2512,15 @@ CStreaming::LoadCustomFile(int32 streamId)
 }
 #endif
 
-// Load data previously read from disc
+// Load data previously read from disc. Runtime streaming converts one resource
+// per call so several adjacent files cannot all stall the same frame. Explicit
+// flushes pass processAll=true and keep the original synchronous behaviour.
 bool
-CStreaming::ProcessLoadingChannel(int32 ch)
+CStreaming::ProcessLoadingChannel(int32 ch, bool processAll)
 {
 	int status;
 	int i, id, cdsize;
+	bool found;
 
 	status = CdStreamGetStatus(ch);
 	if(status != STREAM_NONE){
@@ -2528,14 +2533,30 @@ CStreaming::ProcessLoadingChannel(int32 ch)
 		return false;
 	}
 
-	if(ms_channel[ch].state == CHANNELSTATE_STARTED){
-		ms_channel[ch].state = CHANNELSTATE_IDLE;
-		FinishLoadingLargeFile(&ms_pStreamingBuffer[ch][ms_channel[ch].offsets[0]*CDSTREAM_SECTOR_SIZE],
-			ms_channel[ch].streamIds[0]);
-		ms_channel[ch].streamIds[0] = -1;
-	}else{
-		ms_channel[ch].state = CHANNELSTATE_IDLE;
-		for(i = 0; i < 4; i++){
+	if(ms_channel[ch].state == CHANNELSTATE_READING){
+		ms_channel[ch].state = CHANNELSTATE_CONVERTING;
+		ms_channel[ch].nextItem = 0;
+	}
+
+	for(;;){
+		if(ms_channel[ch].state == CHANNELSTATE_STARTED){
+			// The first stage of a vehicle/large resource ran on an earlier
+			// update. Finish it before touching any later entry in this buffer.
+			id = ms_channel[ch].streamIds[0];
+			if(id != -1)
+				FinishLoadingLargeFile(&ms_pStreamingBuffer[ch][ms_channel[ch].offsets[0]*CDSTREAM_SECTOR_SIZE], id);
+			ms_channel[ch].streamIds[0] = -1;
+			ms_channel[ch].state = CHANNELSTATE_CONVERTING;
+			if(!processAll)
+				break;
+		}
+
+		if(ms_channel[ch].state != CHANNELSTATE_CONVERTING)
+			break;
+
+		found = false;
+		while(ms_channel[ch].nextItem < 4){
+			i = ms_channel[ch].nextItem++;
 			id = ms_channel[ch].streamIds[i];
 			if(id == -1)
 				continue;
@@ -2551,32 +2572,53 @@ CStreaming::ProcessLoadingChannel(int32 ch)
 					ReRequestModel(id);
 				else if(CTxdStore::GetNumRefs(CModelInfo::GetModelInfo(id)->GetTxdSlot()) == 0)
 					RemoveTxd(CModelInfo::GetModelInfo(id)->GetTxdSlot());
-			}else{
-				MakeSpaceFor(cdsize * CDSTREAM_SECTOR_SIZE);
-#ifdef CUSTOM_MODELS
-				CUSTOM_LOG("stream channel %d: converting id=%d at slot %d\n", ch, id, i);
-#endif
-				ConvertBufferToObject(&ms_pStreamingBuffer[ch][ms_channel[ch].offsets[i]*CDSTREAM_SECTOR_SIZE],
-					id);
-#ifdef CUSTOM_MODELS
-				CUSTOM_LOG("stream channel %d: conversion returned for id=%d, state=%d\n",
-					ch, id, ms_aInfoForModel[id].m_loadState);
-#endif
-				if(ms_aInfoForModel[id].m_loadState == STREAMSTATE_STARTED){
-					// queue for second part
-					ms_channel[ch].state = CHANNELSTATE_STARTED;
-					ms_channel[ch].offsets[0] = ms_channel[ch].offsets[i];
-					ms_channel[ch].streamIds[0] = id;
-					if(i != 0)
-						ms_channel[ch].streamIds[i] = -1;
-				}else
-					ms_channel[ch].streamIds[i] = -1;
-#ifdef CUSTOM_MODELS
-				CUSTOM_LOG("stream channel %d: slot %d bookkeeping complete for id=%d\n",
-					ch, i, id);
-#endif
+				ms_channel[ch].streamIds[i] = -1;
+				continue;
 			}
+
+			MakeSpaceFor(cdsize * CDSTREAM_SECTOR_SIZE);
+#ifdef CUSTOM_MODELS
+			CUSTOM_LOG("stream channel %d: converting id=%d at slot %d\n", ch, id, i);
+#endif
+			ConvertBufferToObject(&ms_pStreamingBuffer[ch][ms_channel[ch].offsets[i]*CDSTREAM_SECTOR_SIZE], id);
+#ifdef CUSTOM_MODELS
+			CUSTOM_LOG("stream channel %d: conversion returned for id=%d, state=%d\n",
+				ch, id, ms_aInfoForModel[id].m_loadState);
+#endif
+			if(ms_aInfoForModel[id].m_loadState == STREAMSTATE_STARTED){
+				// Queue the second stage and preserve the remaining entries. The
+				// current channel keeps its buffer until FinishLoadingLargeFile.
+				ms_channel[ch].state = CHANNELSTATE_STARTED;
+				ms_channel[ch].offsets[0] = ms_channel[ch].offsets[i];
+				ms_channel[ch].streamIds[0] = id;
+				if(i != 0)
+					ms_channel[ch].streamIds[i] = -1;
+			}else{
+				ms_channel[ch].streamIds[i] = -1;
+			}
+#ifdef CUSTOM_MODELS
+			CUSTOM_LOG("stream channel %d: slot %d bookkeeping complete for id=%d\n",
+				ch, i, id);
+#endif
+			found = true;
+			break;
 		}
+
+		if(!found){
+			if(ms_channel[ch].nextItem >= 4)
+				ms_channel[ch].state = CHANNELSTATE_IDLE;
+			break;
+		}
+
+		if(!processAll)
+			break;
+	}
+
+	if(ms_channel[ch].state == CHANNELSTATE_CONVERTING){
+		while(ms_channel[ch].nextItem < 4 && ms_channel[ch].streamIds[ms_channel[ch].nextItem] == -1)
+			ms_channel[ch].nextItem++;
+		if(ms_channel[ch].nextItem >= 4)
+			ms_channel[ch].state = CHANNELSTATE_IDLE;
 	}
 
 	if(ms_bLoadingBigModel && ms_channel[ch].state != CHANNELSTATE_STARTED){
@@ -2618,10 +2660,17 @@ CStreaming::RetryLoadFile(int32 ch)
 	case CHANNELSTATE_IDLE:
 		CdStreamRead(ch, ms_pStreamingBuffer[ch], ms_channel[ch].position, ms_channel[ch].size);
 		ms_channel[ch].state = CHANNELSTATE_READING;
-		ms_channel[ch].field24 = -600;
+		ms_channel[ch].nextItem = 0;
 		break;
 	case CHANNELSTATE_READING:
-		if(ProcessLoadingChannel(ch)){
+		if(ProcessLoadingChannel(ch, true)){
+			ms_channelError = -1;
+			CTimer::SetCodePause(false);
+		}
+		break;
+	case CHANNELSTATE_STARTED:
+	case CHANNELSTATE_CONVERTING:
+		if(ProcessLoadingChannel(ch, true)){
 			ms_channelError = -1;
 			CTimer::SetCodePause(false);
 		}
@@ -2640,7 +2689,8 @@ CStreaming::LoadRequestedModels(void)
 
 	// We have data, load
 	if(ms_channel[currentChannel].state == CHANNELSTATE_READING ||
-	   ms_channel[currentChannel].state == CHANNELSTATE_STARTED)
+	   ms_channel[currentChannel].state == CHANNELSTATE_STARTED ||
+	   ms_channel[currentChannel].state == CHANNELSTATE_CONVERTING)
 		ProcessLoadingChannel(currentChannel);
 
 	if(ms_channelError == -1){
@@ -2882,22 +2932,22 @@ CStreaming::LoadAllRequestedModels(bool priority)
 void
 CStreaming::FlushChannels(void)
 {
-	if(ms_channel[1].state == CHANNELSTATE_STARTED)
-		ProcessLoadingChannel(1);
+	if(ms_channel[1].state == CHANNELSTATE_STARTED || ms_channel[1].state == CHANNELSTATE_CONVERTING)
+		ProcessLoadingChannel(1, true);
 
 	if(ms_channel[0].state == CHANNELSTATE_READING){
 		CdStreamSync(0);
-		ProcessLoadingChannel(0);
+		ProcessLoadingChannel(0, true);
+	}else if(ms_channel[0].state == CHANNELSTATE_STARTED || ms_channel[0].state == CHANNELSTATE_CONVERTING){
+		ProcessLoadingChannel(0, true);
 	}
-	if(ms_channel[0].state == CHANNELSTATE_STARTED)
-		ProcessLoadingChannel(0);
 
 	if(ms_channel[1].state == CHANNELSTATE_READING){
 		CdStreamSync(1);
-		ProcessLoadingChannel(1);
+		ProcessLoadingChannel(1, true);
+	}else if(ms_channel[1].state == CHANNELSTATE_STARTED || ms_channel[1].state == CHANNELSTATE_CONVERTING){
+		ProcessLoadingChannel(1, true);
 	}
-	if(ms_channel[1].state == CHANNELSTATE_STARTED)
-		ProcessLoadingChannel(1);
 }
 
 void
