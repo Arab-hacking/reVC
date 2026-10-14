@@ -38,7 +38,6 @@ enum ChannelState
 	CHANNELSTATE_READING = 1,
 	CHANNELSTATE_STARTED = 2,
 	CHANNELSTATE_ERROR = 3,
-	CHANNELSTATE_CONVERTING = 4,
 };
 
 class CStreamingInfo
@@ -66,7 +65,7 @@ struct CStreamingChannel
 	int32 streamIds[4];
 	int32 offsets[4];
 	int32 state;
-	int32 nextItem;		// next buffered resource to convert after the read completes
+	int32 field24;
 	int32 position;
 	int32 size;
 	int32 numTries;
@@ -194,7 +193,7 @@ public:
 	static int32 GetCdImageOffset(int32 lastPosn);
 	static int32 GetNextFileOnCd(int32 position, bool priority);
 	static void RequestModelStream(int32 ch);
-	static bool ProcessLoadingChannel(int32 ch, bool processAll = false);
+	static bool ProcessLoadingChannel(int32 ch);
 	static void RetryLoadFile(int32 ch);
 	static void LoadRequestedModels(void);
 	static void LoadAllRequestedModels(bool priority);
