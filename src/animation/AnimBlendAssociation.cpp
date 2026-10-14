@@ -71,8 +71,6 @@ CAnimBlendAssociation::FreeAnimBlendNodeArray(void)
 void
 CAnimBlendAssociation::Init(RpClump *clump, CAnimBlendHierarchy *hier)
 {
-	int i;
-	AnimBlendFrameData *frame;
 	animBlockRef = -1;
 
 	// a custom animation set can be missing single animations; an empty
@@ -80,17 +78,28 @@ CAnimBlendAssociation::Init(RpClump *clump, CAnimBlendHierarchy *hier)
 	if(hier == nil)
 		return;
 
+	hierarchy = hier;
+	Rebind(clump);
+}
+
+// Template node indices belong to the reference clump, not the destination.
+// SA models may have extra bones or a different HAnim traversal order.
+void
+CAnimBlendAssociation::Rebind(RpClump *clump)
+{
+	FreeAnimBlendNodeArray();
+	int i;
+	AnimBlendFrameData *frame;
 	CAnimBlendClumpData *clumpData = *RPANIMBLENDCLUMPDATA(clump);
 	numNodes = clumpData->numFrames;
 	AllocateAnimBlendNodeArray(numNodes);
 	for(i = 0; i < numNodes; i++)
 		nodes[i].association = this;
-	hierarchy = hier;
 
 	// Init every node from a sequence and a Clump frame
 	// NB: This is where the order of nodes is defined
-	for(i = 0; i < hier->numSequences; i++){
-		CAnimBlendSequence *seq = &hier->sequences[i];
+	for(i = 0; i < hierarchy->numSequences; i++){
+		CAnimBlendSequence *seq = &hierarchy->sequences[i];
 		if(seq->boneTag == -1)
 			frame = RpAnimBlendClumpFindFrame(clump, seq->name);
 		else
@@ -148,7 +157,8 @@ CAnimBlendAssociation::SetCurrentTime(float time)
 {
 	int i;
 
-	for(currentTime = time; currentTime >= hierarchy->totalLength; currentTime -= hierarchy->totalLength)
+	for(currentTime = hierarchy->totalLength > 0.0f ? time : 0.0f;
+	    hierarchy->totalLength > 0.0f && currentTime >= hierarchy->totalLength; currentTime -= hierarchy->totalLength)
 		if (!IsRepeating()) {
 			currentTime = hierarchy->totalLength;
 			break;
@@ -173,7 +183,8 @@ CAnimBlendAssociation::SetCurrentTime(float time)
 void
 CAnimBlendAssociation::SyncAnimation(CAnimBlendAssociation *other)
 {
-	SetCurrentTime(other->currentTime/other->hierarchy->totalLength * hierarchy->totalLength);
+	SetCurrentTime(other->hierarchy->totalLength > 0.0f ?
+		other->currentTime/other->hierarchy->totalLength * hierarchy->totalLength : 0.0f);
 }
 
 void

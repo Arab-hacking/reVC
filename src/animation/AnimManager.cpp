@@ -1,4 +1,5 @@
 #include "common.h"
+#include "IfpReader.h"
 
 #include "General.h"
 #include "RwHelper.h"
@@ -1279,7 +1280,12 @@ CAnimBlendAssociation*
 CAnimManager::CreateAnimAssociation(RpClump *clump, AssocGroupId groupId, AnimationId animId)
 {
 	CAnimBlendAssocGroup *group = GetAnimAssocGroup(clump, groupId);
-	return group ? group->CopyAnimation(animId) : nil;
+	if(clump == nil || *RPANIMBLENDCLUMPDATA(clump) == nil)
+		return nil;
+	CAnimBlendAssociation *anim = group ? group->CopyAnimation(animId) : nil;
+	if(anim)
+		anim->Rebind(clump);
+	return anim;
 }
 
 CAnimBlendAssociation*
@@ -2005,9 +2011,10 @@ MakeSAAnimBlockName(const char *filename, char *blockName, size_t blockNameSize)
 }
 
 static bool
-IsCompactAnimFile(const uint8 *data, size_t size)
+IsSAAnimFile(const uint8 *data, size_t size)
 {
-	return size >= 4 && (memcmp(data, "ANP2", 4) == 0 || memcmp(data, "ANP3", 4) == 0);
+	ifp::Result result;
+	return ifp::Inspect(data, size, result) && result.sa;
 }
 
 #ifdef CUSTOM_MODELS
@@ -2022,11 +2029,13 @@ CAnimManager::LoadSAAnimFileFromCustom(const char *filename)
 	RwMemory mem;
 	RwStream *stream;
 
-	if(!CCustomModels::LoadAnimFileFromCustom(filename, customBuf) ||
-	   !IsCompactAnimFile(customBuf.data(), customBuf.size()))
-		return;
-
 	MakeSAAnimBlockName(filename, blockName, sizeof(blockName));
+	// Explicit sa_<bank>.ifp also handles partial ANPK clips that do not
+	// animate any SA-only bones and cannot be identified from their tags.
+	if(!CCustomModels::LoadAnimFileFromCustom(blockName, customBuf) &&
+	   (!CCustomModels::LoadAnimFileFromCustom(filename, customBuf) ||
+	    !IsSAAnimFile(customBuf.data(), customBuf.size())))
+		return;
 	loadedBlock = GetAnimationBlock(blockName);
 	if(loadedBlock && loadedBlock->isLoaded){
 		loadedBlock->unloadPending = false;
@@ -2039,7 +2048,7 @@ CAnimManager::LoadSAAnimFileFromCustom(const char *filename)
 	bool clean = br::SniffAnimNames(customBuf.data(), customBuf.size(), names, 4096, numNames);
 	free(names);
 	if(!clean){
-		CUSTOM_LOG("animation %s: the compact SA animation package is malformed; it was skipped\n", filename);
+		CUSTOM_LOG("animation %s: the SA animation package is malformed; it was skipped\n", filename);
 		return;
 	}
 
@@ -2060,13 +2069,14 @@ CAnimManager::LoadAnimFile(const char *filename)
 {
 	RwStream *stream = nil;
 #ifdef CUSTOM_MODELS
+	LoadSAAnimFileFromCustom(filename);
 	std::vector<uint8> customBuf;
 	if(CCustomModels::LoadAnimFileFromCustom(filename, customBuf)){
 		char (*names)[24] = (char (*)[24])malloc(sizeof(char[24]) * 4096);
 		int numNames = 0;
 		bool clean = names && br::SniffAnimNames(customBuf.data(), customBuf.size(), names, 4096, numNames);
-		bool compact = IsCompactAnimFile(customBuf.data(), customBuf.size());
-		if(clean && compact){
+		bool saFile = IsSAAnimFile(customBuf.data(), customBuf.size());
+		if(clean && saFile){
 			char blockName[MAX_ANIMBLOCK_NAME];
 			CAnimBlock *loadedBlock;
 			MakeSAAnimBlockName(filename, blockName, sizeof(blockName));
@@ -2086,7 +2096,7 @@ CAnimManager::LoadAnimFile(const char *filename)
 			}else{
 				loadedBlock->unloadPending = false;
 			}
-			// A compact SA IFP is an additional bank. Keep the native file in
+			// A SA IFP is an additional bank. Keep the native file in
 			// its original block for VC clumps; SA clumps resolve only sa_ banks.
 			stream = RwStreamOpen(rwSTREAMFILENAME, rwSTREAMREAD, filename);
 		}else if(clean){
@@ -2146,7 +2156,16 @@ CAnimManager::LoadAnimFile(RwStream *stream, bool compress, char (*uncompressedA
 	RwStreamRead(stream, &info, sizeof(IfpHeader));
 	ROUNDSIZE(info.size);
 	RwStreamRead(stream, buf, info.size);
-	CAnimBlock *animBlock = GetAnimationBlock(buf+4);
+	const char *blockName = blockNameOverride ? blockNameOverride : buf + 4;
+	const int count = *(int*)buf;
+	CAnimBlock *animBlock = GetAnimationBlock(blockName);
+	if(count <= 0 || count > NUMANIMATIONS ||
+	   (!animBlock && ms_numAnimBlocks >= NUMANIMBLOCKS) ||
+	   ((!animBlock || animBlock->numAnims == 0) && count > NUMANIMATIONS - ms_numAnimations) ||
+	   (animBlock && animBlock->numAnims != 0 &&
+	    (animBlock->numAnims != count || animBlock->firstIndex < 0 ||
+	     animBlock->firstIndex > NUMANIMATIONS - count)))
+		return;
 	if(animBlock){
 		if(animBlock->numAnims == 0){
 			animBlock->numAnims = *(int*)buf;
@@ -2154,7 +2173,8 @@ CAnimManager::LoadAnimFile(RwStream *stream, bool compress, char (*uncompressedA
 		}
 	}else{
 		animBlock = &ms_aAnimBlocks[ms_numAnimBlocks++];
-		strncpy(animBlock->name, buf+4, MAX_ANIMBLOCK_NAME);
+		strncpy(animBlock->name, blockName, MAX_ANIMBLOCK_NAME - 1);
+		animBlock->name[MAX_ANIMBLOCK_NAME - 1] = '\0';
 		animBlock->numAnims = *(int*)buf;
 		animBlock->firstIndex = ms_numAnimations;
 	}
@@ -2293,13 +2313,9 @@ CAnimManager::LoadAnimFile(RwStream *stream, bool compress, char (*uncompressedA
 		ms_numAnimations = animIndex;
 }
 
-// ANP2/ANP3: one blockName[24] + numAnims, then animations without the ANPK
-// chunk headers. Key frames are the same byte layouts this game stores
-// (KeyFrame 0x14, KeyFrameTrans 0x20, KeyFrameCompressed 0xA,
-// KeyFrameTransCompressed 0x10 - identical in San Andreas, verified against
-// gta-reversed AnimSequenceFrames.h), so frames are read where they belong:
-// floats through the same rotation handling as the ANPK reader, pre-compressed
-// frames (frameType 3/4) straight into the compressed arrays.
+// ANP2/ANP3 use runtime quaternion/time/translation layouts, not ANPK's
+// quaternion/translation/time layout. Decode every sequence before applying
+// the optional hierarchy-wide cache compression.
 void
 CAnimManager::LoadAnimFile_ANP23(RwStream *stream, const char *ident, bool compress, uint32 rootSize, const char *blockNameOverride)
 {
@@ -2314,26 +2330,8 @@ CAnimManager::LoadAnimFile_ANP23(RwStream *stream, const char *ident, bool compr
 	uint32 numAnims;
 	RwStreamRead(stream, &numAnims, sizeof(numAnims));
 
-	// The SA mobile / Black Russia packages have no root size field: the
-	// block name starts right behind the magic and every block carries an
-	// extra framesAllocSize. Read through the PC layout eyes that is off by
-	// four bytes - but the true fields are all in the bytes already read,
-	// so recover them from there (the stream then sits exactly behind the
-	// mobile block header, no seeking needed).
-	if(numAnims > (uint32)NUMANIMATIONS && isANP3){
-		uint32 mobileNumAnims;
-		memcpy(&mobileNumAnims, blockName + 20, sizeof(mobileNumAnims));
-		if(mobileNumAnims > 0 && mobileNumAnims <= (uint32)NUMANIMATIONS){
-			char realName[24];
-			memset(realName, 0, sizeof(realName));
-			memcpy(realName, &rootSize, 4);
-			memcpy(realName + 4, blockName, 20);
-			memcpy(blockName, realName, sizeof(blockName));
-			blockName[23] = '\0';
-			numAnims = mobileNumAnims;
-			debug("ANP3: size-less (SA mobile) package, block %s (%d anims)\n", blockName, numAnims);
-		}
-	}
+	// Custom normalizes mobile headers before opening this stream.
+	(void)rootSize;
 
 	// A SA compact IFP must live beside (not replace) VC's block with the same
 	// name. The override is derived from the custom filename, e.g. ped -> sa_ped.
@@ -2400,22 +2398,13 @@ CAnimManager::LoadAnimFile_ANP23(RwStream *stream, const char *ident, bool compr
 		uint32 numSeq;
 		RwStreamRead(stream, &numSeq, sizeof(numSeq));
 
-		bool fileCompressed = false;
 		if(isANP3){
 			uint32 framesSize, flags;
 			RwStreamRead(stream, &framesSize, sizeof(framesSize));
 			RwStreamRead(stream, &flags, sizeof(flags));
-			fileCompressed = (flags & 1) != 0;
-			(void)framesSize;
+			// Frame type is authoritative. Never mix compressed and float
+			// sequence storage under one hierarchy-wide compressed flag.
 		}
-
-		bool compressHier = false;
-#ifdef ANIM_COMPRESSION
-		compressHier = compress;
-#endif
-		if(fileCompressed)
-			compressHier = false;	// frames arrive compressed already
-		bool hasCompressedFrames = false;
 		hier->compressed = false;
 		hier->keepCompressed = false;
 
@@ -2455,60 +2444,29 @@ CAnimManager::LoadAnimFile_ANP23(RwStream *stream, const char *ident, bool compr
 				uint8 *dst = (uint8*)seq->GetKeyFrameCompressed(0);
 				size_t stride = hasTrans ? 16 : 10;
 				RwStreamRead(stream, dst, (uint32)(stride * numFrames));
-				hasCompressedFrames = true;
-#ifndef ANIM_COMPRESSION
-				// The game normally builds without animation-cache compression.
-				// Expand SA's frames now so normal update code works in every build.
 				seq->Uncompress();
-#endif
 				continue;
 			}
-			// float frames: handled exactly like the ANPK reader does
-			seq->SetNumFrames(numFrames, hasTrans, compressHier);
-			if(compressHier)
-				hasCompressedFrames = true;
+			// Unlike ANPK, compact frames are q[4], time, xyz[3].
+			// Their quaternion is already in runtime orientation.
+			seq->SetNumFrames(numFrames, hasTrans, false);
 			for(l = 0; l < (int)numFrames; l++){
-				if(hasTrans){
-					RwStreamRead(stream, buf, 0x20);
-					CQuaternion rot(fbuf[0], fbuf[1], fbuf[2], fbuf[3]);
-					rot.Invert();
-					CVector trans(fbuf[4], fbuf[5], fbuf[6]);
-					if(compressHier){
-						KeyFrameTransCompressed *kf = (KeyFrameTransCompressed*)seq->GetKeyFrameCompressed(l);
-						kf->SetRotation(rot);
-						kf->SetTranslation(trans);
-						kf->SetTime(fbuf[7]);
-					}else{
-						KeyFrameTrans *kf = (KeyFrameTrans*)seq->GetKeyFrame(l);
-						kf->rotation = rot;
-						kf->translation = trans;
-						kf->deltaTime = fbuf[7];
-					}
-				}else{
-					RwStreamRead(stream, buf, 0x14);
-					CQuaternion rot(fbuf[0], fbuf[1], fbuf[2], fbuf[3]);
-					rot.Invert();
-					if(compressHier){
-						KeyFrameCompressed *kf = (KeyFrameCompressed*)seq->GetKeyFrameCompressed(l);
-						kf->SetRotation(rot);
-						kf->SetTime(fbuf[4]);
-					}else{
-						KeyFrame *kf = (KeyFrame*)seq->GetKeyFrame(l);
-						kf->rotation = rot;
-						kf->deltaTime = fbuf[4];
-					}
-				}
+				RwStreamRead(stream, buf, hasTrans ? 32 : 20);
+				KeyFrame *kf = seq->GetKeyFrame(l);
+				kf->rotation = CQuaternion(fbuf[0], fbuf[1], fbuf[2], fbuf[3]);
+				kf->deltaTime = fbuf[4];
+				if(hasTrans)
+					((KeyFrameTrans*)kf)->translation = CVector(fbuf[5], fbuf[6], fbuf[7]);
 			}
 		}
+		hier->RemoveQuaternionFlips();
+		hier->CalcTotalTime();
 #ifdef ANIM_COMPRESSION
-		hier->compressed = hasCompressedFrames;
+		if(compress)
+			hier->RemoveUncompressedData();
 #else
-		hier->compressed = false;
+		(void)compress;
 #endif
-		if(!hier->compressed){
-			hier->RemoveQuaternionFlips();
-			hier->CalcTotalTime();
-		}
 	}
 	if(animIndex > ms_numAnimations)
 		ms_numAnimations = animIndex;

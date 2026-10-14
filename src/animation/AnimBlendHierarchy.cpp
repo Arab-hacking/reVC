@@ -25,7 +25,8 @@ CAnimBlendHierarchy::Shutdown(void)
 void
 CAnimBlendHierarchy::SetName(char *name)
 {
-	strncpy(this->name, name, 24);
+	strncpy(this->name, name, sizeof(this->name) - 1);
+	this->name[sizeof(this->name) - 1] = '\0';
 }
 
 void

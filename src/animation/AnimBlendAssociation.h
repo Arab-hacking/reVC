@@ -74,6 +74,7 @@ public:
 	void FreeAnimBlendNodeArray(void);
 	void Init(RpClump *clump, CAnimBlendHierarchy *hier);
 	void Init(CAnimBlendAssociation &assoc);
+	void Rebind(RpClump *clump);
 	void SetBlend(float amount, float delta);
 	void SetFinishCallback(void (*callback)(CAnimBlendAssociation*, void*), void *arg);
 	void SetDeleteCallback(void (*callback)(CAnimBlendAssociation*, void*), void *arg);

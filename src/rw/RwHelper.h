@@ -19,6 +19,7 @@ RpAtomic *GetFirstSkinnedAtomic(RpClump *clump);
 RwTexture *GetFirstTexture(RwTexDictionary *txd);
 
 bool IsClumpSkinned(RpClump *clump);
+bool IsSAAnimationClump(RpClump *clump);
 RpHAnimHierarchy *GetAnimHierarchyFromSkinClump(RpClump *clump);	// get from atomic
 RpHAnimHierarchy *GetAnimHierarchyFromClump(RpClump *clump);	// get from frame
 void SkinGetBonePositionsToTable(RpClump *clump, RwV3d *boneTable);

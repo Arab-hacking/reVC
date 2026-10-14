@@ -2,6 +2,8 @@
 #include "common.h"
 #include <vector>
 #include <rpskin.h>
+#include "Bones.h"
+#include "IfpReader.h"
 
 #include "Timecycle.h"
 #include "skeleton.h"
@@ -254,6 +256,8 @@ GetAnimHierarchyFromSkinClump(RpClump *clump)
 static RwFrame*
 GetAnimHierarchyFromClumpCB(RwFrame *frame, void *data)
 {
+	if(*(RpHAnimHierarchy**)data)
+		return nil;
 	RpHAnimHierarchy *hier = RpHAnimFrameGetHierarchy(frame);
 	if(hier){
 		*(RpHAnimHierarchy**)data = hier;
@@ -267,8 +271,37 @@ RpHAnimHierarchy*
 GetAnimHierarchyFromClump(RpClump *clump)
 {
 	RpHAnimHierarchy *hier = nil;
-	RwFrameForAllChildren(RpClumpGetFrame(clump), GetAnimHierarchyFromClumpCB, &hier);
+	if(clump)
+		GetAnimHierarchyFromClumpCB(RpClumpGetFrame(clump), &hier);
 	return hier;
+}
+
+bool
+IsSAAnimationClump(RpClump *clump)
+{
+	// Core tags, including fingers 25/35, are shared by VC and SA.
+	// Require SA extension tags as well; otherwise native VC peds lose their bank.
+	static const int requiredBones[] = {
+		BONE_root, BONE_pelvis, BONE_spine1, BONE_neck, BONE_head,
+		BONE_l_clavicle, BONE_l_upperarm, BONE_l_forearm, BONE_l_hand,
+		BONE_l_finger, BONE_r_clavicle, BONE_r_upperarm, BONE_r_forearm,
+		BONE_r_hand, BONE_r_finger, BONE_l_thigh, BONE_l_calf, BONE_l_foot,
+		BONE_r_thigh, BONE_r_calf, BONE_r_foot
+	};
+	RpHAnimHierarchy *hier;
+
+	if(clump == nil || !IsClumpSkinned(clump))
+		return false;
+	hier = GetAnimHierarchyFromSkinClump(clump);
+	if(hier == nil)
+		return false;
+	for(uint32 i = 0; i < ARRAY_SIZE(requiredBones); i++)
+		if(RpHAnimIDGetIndex(hier, requiredBones[i]) < 0)
+			return false;
+	for(int i = 0; i < hier->numNodes; i++)
+		if(ifp::SABone(HIERNODEID(hier, i)))
+			return true;
+	return false;
 }
 
 void

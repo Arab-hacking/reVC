@@ -198,19 +198,12 @@ ListDirectory(const char *dir, std::vector<std::string> &files, std::vector<std:
 #endif
 }
 
-// The game folder is not necessarily spelled the way the config says (and on
-// Linux the file system is case sensitive), so try a few spellings.
+// Check the exact path: a successful probe must be the directory we scan.
 static bool
 FolderExists(const char *folder)
 {
 	std::vector<std::string> files, dirs;
-	if(ListDirectory(folder, files, dirs)) return true;
-	std::string lower = ToLower(folder);
-	if(lower != folder && ListDirectory(lower.c_str(), files, dirs)) return true;
-	std::string upper = folder;
-	for(size_t i = 0; i < upper.size(); i++) upper[i] = (char)toupper((unsigned char)upper[i]);
-	if(upper != folder && ListDirectory(upper.c_str(), files, dirs)) return true;
-	return false;
+	return ListDirectory(folder, files, dirs);
 }
 
 // ---------------------------------------------------------------------------
@@ -474,6 +467,14 @@ EnsureInitialised(void)
 	if(env && env[0] != '\0')
 		folder = env;
 	customFolderPath = folder;
+	// Keep an explicit override authoritative, including a missing directory.
+	// On case-sensitive hosts users commonly install the folder as "Custom".
+	if(!(env && env[0]) && !FolderExists(folder) && strcmp(folder, "custom") == 0){
+		if(FolderExists("Custom"))
+			customFolderPath = "Custom";
+		else if(FolderExists("CUSTOM"))
+			customFolderPath = "CUSTOM";
+	}
 
 	ScanStats st;
 	memset(&st, 0, sizeof(st));
@@ -1562,14 +1563,22 @@ CCustomModels::LoadAnimFileFromCustom(const char *filename, std::vector<uint8> &
 	// The game always requests an .IFP path, even when the indexed custom
 	// source is a BR .ani entry; inspect the source name, not the request path.
 	std::string ext = Extension(src->fname);
-	if(ext == "ani" && br::isBrAni(out.data(), out.size()) && !br::convertAniToIfp(out)){
-		CUSTOM_LOG("animation %s: the .ani header could not be reordered\n", filename);
-		out.clear();
-		return false;
+	ifp::Result layout;
+	// Try the actual formats before the historical .ani header repair; mobile
+	// ANP3 can look like BR's reordered header, too.
+	if(!ifp::Inspect(out.data(), out.size(), layout)){
+		if(ext != "ani" || !br::convertAniToIfp(out) ||
+		   !ifp::Inspect(out.data(), out.size(), layout)){
+			CUSTOM_LOG("animation %s: invalid IFP; keeping the game's file\n", filename);
+			out.clear();
+			return false;
+		}
 	}
-	if(out.size() < 12){
-		out.clear();
-		return false;
+	if(layout.mobile){
+		// Both headers occupy 36 bytes. Replace the allocation hint with a
+		// PC size field so validation and the stream reader use ONE layout.
+		memmove(out.data() + 8, out.data() + 4, 28);
+		br::wr32(out.data() + 4, (uint32)out.size() - 8);
 	}
 	CUSTOM_LOG("animation %s: served from the custom folder, %u bytes\n",
 		filename, (unsigned)out.size());
