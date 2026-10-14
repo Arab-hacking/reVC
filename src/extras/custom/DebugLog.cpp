@@ -114,6 +114,35 @@ DebugLogIsInExecutable(uintptr_t address, uintptr_t imageBase)
 	return (uintptr_t)info.AllocationBase == imageBase;
 }
 
+// Capture the instruction bytes at the saved fault address. Without matching
+// symbols, these bytes identify which operand produced an invalid access.
+static void
+DebugLogWindowsInstruction(uintptr_t instruction, uintptr_t imageBase)
+{
+	unsigned char bytes[16];
+	SIZE_T bytesRead = 0;
+	char line[256];
+	int i, length;
+
+	if(instruction == 0 || !ReadProcessMemory(GetCurrentProcess(), (LPCVOID)instruction,
+	                                         bytes, sizeof(bytes), &bytesRead) || bytesRead == 0){
+		DebugLogCrashLine("INSTRUCTION: bytes unavailable at fault address");
+		return;
+	}
+	length = snprintf(line, sizeof(line),
+		"INSTRUCTION: at=%p exe-rva=0x%llX bytes:", (void*)instruction,
+		(unsigned long long)(instruction >= imageBase ? instruction-imageBase : instruction));
+	if(length < 0 || length >= (int)sizeof(line))
+		return;
+	for(i = 0; i < (int)bytesRead && length < (int)sizeof(line); i++){
+		int written = snprintf(line + length, sizeof(line) - length, " %02X", bytes[i]);
+		if(written < 0 || written >= (int)(sizeof(line) - length))
+			break;
+		length += written;
+	}
+	DebugLogCrashLine(line);
+}
+
 // The exception CONTEXT is the state at the faulting instruction, unlike a
 // backtrace taken inside the handler. Dump registers and words from that saved
 // stack so an unsymbolized Windows crash still has useful call-site clues.
@@ -216,6 +245,7 @@ DebugLogVectoredException(EXCEPTION_POINTERS *info)
 		(unsigned long long)(instruction >= imageBase ? instruction - imageBase : instruction),
 		stackPointer, framePointer);
 	DebugLogCrashLine(line);
+	DebugLogWindowsInstruction(instruction, imageBase);
 	if(record->ExceptionCode == EXCEPTION_ACCESS_VIOLATION && record->NumberParameters >= 2){
 		const char *operation = record->ExceptionInformation[0] == 0 ? "read" :
 			record->ExceptionInformation[0] == 1 ? "write" :
