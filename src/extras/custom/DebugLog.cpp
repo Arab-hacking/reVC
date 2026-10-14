@@ -103,6 +103,80 @@ DebugLogCrashLine(const char *line)
 
 #ifdef _WIN32
 
+// Check whether a value points into the main executable. This lets the crash
+// log distinguish likely return addresses from ordinary stack data.
+static bool
+DebugLogIsInExecutable(uintptr_t address, uintptr_t imageBase)
+{
+	MEMORY_BASIC_INFORMATION info;
+	if(address == 0 || VirtualQuery((LPCVOID)address, &info, sizeof(info)) == 0)
+		return false;
+	return (uintptr_t)info.AllocationBase == imageBase;
+}
+
+// The exception CONTEXT is the state at the faulting instruction, unlike a
+// backtrace taken inside the handler. Dump registers and words from that saved
+// stack so an unsymbolized Windows crash still has useful call-site clues.
+static void
+DebugLogWindowsContext(CONTEXT *context, uintptr_t imageBase)
+{
+	char line[512];
+	uintptr_t stackPointer;
+	int i;
+
+#if defined(_M_X64) || defined(__x86_64__)
+	stackPointer = (uintptr_t)context->Rsp;
+	snprintf(line, sizeof(line),
+		"REGS: RAX=%p RBX=%p RCX=%p RDX=%p RSI=%p RDI=%p",
+		(void*)(uintptr_t)context->Rax, (void*)(uintptr_t)context->Rbx,
+		(void*)(uintptr_t)context->Rcx, (void*)(uintptr_t)context->Rdx,
+		(void*)(uintptr_t)context->Rsi, (void*)(uintptr_t)context->Rdi);
+	DebugLogCrashLine(line);
+	snprintf(line, sizeof(line),
+		"REGS: R8=%p R9=%p R10=%p R11=%p R12=%p R13=%p R14=%p R15=%p EFLAGS=0x%08lX",
+		(void*)(uintptr_t)context->R8, (void*)(uintptr_t)context->R9,
+		(void*)(uintptr_t)context->R10, (void*)(uintptr_t)context->R11,
+		(void*)(uintptr_t)context->R12, (void*)(uintptr_t)context->R13,
+		(void*)(uintptr_t)context->R14, (void*)(uintptr_t)context->R15,
+		(unsigned long)context->EFlags);
+	DebugLogCrashLine(line);
+#elif defined(_M_IX86) || defined(__i386__)
+	stackPointer = (uintptr_t)context->Esp;
+	snprintf(line, sizeof(line),
+		"REGS: EAX=%p EBX=%p ECX=%p EDX=%p ESI=%p EDI=%p EFLAGS=0x%08lX",
+		(void*)(uintptr_t)context->Eax, (void*)(uintptr_t)context->Ebx,
+		(void*)(uintptr_t)context->Ecx, (void*)(uintptr_t)context->Edx,
+		(void*)(uintptr_t)context->Esi, (void*)(uintptr_t)context->Edi,
+		(unsigned long)context->EFlags);
+	DebugLogCrashLine(line);
+#else
+	stackPointer = 0;
+	DebugLogCrashLine("REGS: register dump not implemented for this Windows architecture");
+#endif
+
+	if(stackPointer == 0)
+		return;
+	DebugLogCrashLine("STACK: saved stack words from fault-time SP (executable addresses include RVA)");
+	for(i = 0; i < 24; i++){
+		uintptr_t address, value = 0;
+		SIZE_T bytesRead = 0;
+		if(stackPointer > (uintptr_t)-1 - (uintptr_t)i*sizeof(value))
+			break;
+		address = stackPointer + (uintptr_t)i*sizeof(value);
+		if(!ReadProcessMemory(GetCurrentProcess(), (LPCVOID)address, &value,
+		                      sizeof(value), &bytesRead) || bytesRead != sizeof(value))
+			break;
+		if(DebugLogIsInExecutable(value, imageBase))
+			snprintf(line, sizeof(line), "STACK[%02d] +0x%02X: %p exe-rva=0x%llX",
+				i, (unsigned)(i*sizeof(value)), (void*)value,
+				(unsigned long long)(value-imageBase));
+		else
+			snprintf(line, sizeof(line), "STACK[%02d] +0x%02X: %p",
+				i, (unsigned)(i*sizeof(value)), (void*)value);
+		DebugLogCrashLine(line);
+	}
+}
+
 // A Windows access violation is a structured exception. The CRT SIGSEGV
 // handler below loses the original CONTEXT, so catch first-chance AVs here and
 // record the faulting instruction before the CRT translates them to signals.
@@ -150,6 +224,10 @@ DebugLogVectoredException(EXCEPTION_POINTERS *info)
 			operation, (void*)(uintptr_t)record->ExceptionInformation[1]);
 		DebugLogCrashLine(line);
 	}
+	snprintf(line, sizeof(line), "FIRST-CHANCE: thread=%lu",
+		(unsigned long)GetCurrentThreadId());
+	DebugLogCrashLine(line);
+	DebugLogWindowsContext(context, imageBase);
 	return EXCEPTION_CONTINUE_SEARCH;
 }
 
