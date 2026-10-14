@@ -636,31 +636,105 @@ ReadModelEntry(const std::string &key, std::vector<uint8> &file, bool &isMod,
 	return true;
 }
 
-static bool
-ModelTextureNames(const std::string &key, std::vector<std::string> &names, std::vector<br::TerrainRecipe> &recipes)
-{
-	std::vector<uint8> file;
-	bool isMod;
-	br::RwFixStats stats;
-	std::string warn;
-	if(!ReadModelEntry(key, file, isMod, stats, warn))
-		return false;
-	names.clear();
-	brtex::collectTextureNames(file.data(), file.size(), names);
-	recipes = stats.recipes;
-	return true;
-}
-
 // A .mod/.dff can hold anything that was a RenderWare file: the game only
 // takes clumps here (an "atomic" object is a clump with a single atomic as
-// well), so the payload is checked once and the answer is remembered.
+// well), so the payload is checked once and the answer is remembered. The
+// validated bytes are kept in a small LRU budget: CanServe and the eventual
+// load otherwise decompress the same archive entry on the game thread twice.
 struct ModPlan
 {
 	bool computed;
 	bool usable;
+	bool isMod;
+	bool hasCachedData;
+	bool textureNamesComputed;
+	uint64 lastUse;
+	br::RwFixStats stats;
+	std::string warn;
+	std::vector<uint8> cachedData;
+	std::vector<std::string> textureNames;
+
+	ModPlan(void) : computed(false), usable(false), isMod(false), hasCachedData(false),
+		textureNamesComputed(false), lastUse(0) {}
 };
 
 static std::map<std::string, ModPlan> customModPlans;
+static size_t customPreparedModelBytes = 0;
+static uint64 customPreparedModelUse = 0;
+static uint64 customPreparedModelCacheHits = 0;
+static uint64 customPreparedModelCacheMisses = 0;
+static uint64 customPreparedModelCacheEvictions = 0;
+static const size_t CUSTOM_PREPARED_MODEL_CACHE_LIMIT = 16 * 1024 * 1024;
+
+static ModPlan *
+OldestCachedModel(const ModPlan *except)
+{
+	ModPlan *oldest = nil;
+	std::map<std::string, ModPlan>::iterator it;
+	for(it = customModPlans.begin(); it != customModPlans.end(); ++it){
+		ModPlan *candidate = &it->second;
+		if(candidate == except || !candidate->hasCachedData)
+			continue;
+		if(oldest == nil || candidate->lastUse < oldest->lastUse)
+			oldest = candidate;
+	}
+	return oldest;
+}
+
+static void
+CachePreparedModel(ModPlan &plan, std::vector<uint8> &file)
+{
+	if(file.empty() || file.size() > CUSTOM_PREPARED_MODEL_CACHE_LIMIT)
+		return;
+
+	// Replacing an existing entry is not expected today, but account for it so
+	// the byte budget remains correct if the preparation path is reused later.
+	if(plan.hasCachedData){
+		customPreparedModelBytes -= plan.cachedData.size();
+		std::vector<uint8>().swap(plan.cachedData);
+		plan.hasCachedData = false;
+	}
+
+	// Subtract only after checking the invariant to avoid size_t addition
+	// overflow if the cache limit changes or an earlier path is interrupted.
+	while(customPreparedModelBytes > CUSTOM_PREPARED_MODEL_CACHE_LIMIT ||
+	      file.size() > CUSTOM_PREPARED_MODEL_CACHE_LIMIT - customPreparedModelBytes){
+		ModPlan *victim = OldestCachedModel(&plan);
+		if(victim == nil)
+			return;
+		customPreparedModelBytes -= victim->cachedData.size();
+		std::vector<uint8>().swap(victim->cachedData);
+		victim->hasCachedData = false;
+		customPreparedModelCacheEvictions++;
+	}
+
+	plan.cachedData.swap(file);
+	plan.hasCachedData = true;
+	plan.lastUse = ++customPreparedModelUse;
+	customPreparedModelBytes += plan.cachedData.size();
+}
+
+static bool
+TakePreparedModel(const std::string &key, std::vector<uint8> &file, bool &isMod,
+                  br::RwFixStats &stats, std::string &warn)
+{
+	std::map<std::string, ModPlan>::iterator it = customModPlans.find(key);
+	if(it == customModPlans.end() || !it->second.hasCachedData){
+		customPreparedModelCacheMisses++;
+		return false;
+	}
+
+	customPreparedModelCacheHits++;
+	ModPlan &plan = it->second;
+	customPreparedModelBytes -= plan.cachedData.size();
+	file.swap(plan.cachedData);
+	plan.hasCachedData = false;
+	plan.lastUse = ++customPreparedModelUse;
+	isMod = plan.isMod;
+	stats = plan.stats;
+	warn = plan.warn;
+	return true;
+}
 
 // root chunk of the converted model has to be a clump
 static bool
@@ -698,16 +772,68 @@ CanUseModel(const std::string &key)
 		return plan.usable;
 	plan.computed = true;
 
-	std::vector<uint8> file;
-	bool isMod;
-	br::RwFixStats stats;
-	std::string warn;
-	plan.usable = ReadModelEntry(key, file, isMod, stats, warn) &&
-		ValidateModelForGame(key, isMod, file, warn);
+	if(plan.hasCachedData){
+		// ModelTextureNames may have prepared the bytes first. Validate that
+		// same payload instead of reopening/decompressing the archive entry.
+		plan.usable = ValidateModelForGame(key, plan.isMod, plan.cachedData, plan.warn);
+		if(!plan.usable){
+			customPreparedModelBytes -= plan.cachedData.size();
+			std::vector<uint8>().swap(plan.cachedData);
+			plan.hasCachedData = false;
+		}
+	}else{
+		std::vector<uint8> file;
+		bool isMod;
+		br::RwFixStats stats;
+		std::string warn;
+		plan.usable = ReadModelEntry(key, file, isMod, stats, warn) &&
+			ValidateModelForGame(key, isMod, file, warn);
+		if(plan.usable){
+			plan.isMod = isMod;
+			plan.stats = stats;
+			plan.warn = warn;
+			CachePreparedModel(plan, file);
+		}else{
+			plan.warn = warn;
+		}
+	}
 	if(!plan.usable)
 		CUSTOM_LOG("model %s: not usable as a game model%s, the game's own file is used\n", key.c_str(),
-			warn.empty() ? "" : (" (" + warn + ")").c_str());
+			plan.warn.empty() ? "" : (" (" + plan.warn + ")").c_str());
 	return plan.usable;
+}
+
+// Texture names are needed to decide whether the matching custom dictionary
+// can serve a model. Reuse prepared bytes when available and cache the read
+// otherwise, without changing the baseline decision about whether that model
+// supplies a dictionary.
+static bool
+ModelTextureNames(const std::string &key, std::vector<std::string> &names, std::vector<br::TerrainRecipe> &recipes)
+{
+	ModPlan &plan = customModPlans[key];
+	if(!plan.textureNamesComputed){
+		if(plan.hasCachedData){
+			brtex::collectTextureNames(plan.cachedData.data(), plan.cachedData.size(), plan.textureNames);
+			plan.lastUse = ++customPreparedModelUse;
+		}else{
+			std::vector<uint8> file;
+			bool isMod;
+			br::RwFixStats stats;
+			std::string warn;
+			if(!ReadModelEntry(key, file, isMod, stats, warn))
+				return false;
+			brtex::collectTextureNames(file.data(), file.size(), plan.textureNames);
+			plan.isMod = isMod;
+			plan.stats = stats;
+			plan.warn = warn;
+			CachePreparedModel(plan, file);
+		}
+		plan.textureNamesComputed = true;
+	}
+
+	names = plan.textureNames;
+	recipes = plan.stats.recipes;
+	return true;
 }
 
 // A model references its textures by name; whether the custom folder can serve
@@ -850,7 +976,8 @@ LoadModelIntoGame(const std::string &key, int32 modelId)
 	bool isMod;
 	br::RwFixStats stats;
 	std::string warn;
-	if(!ReadModelEntry(key, file, isMod, stats, warn)){
+	if(!TakePreparedModel(key, file, isMod, stats, warn) &&
+	   !ReadModelEntry(key, file, isMod, stats, warn)){
 		CUSTOM_LOG("model %s: cannot read the archive entry\n", key.c_str());
 		return false;
 	}
@@ -1233,6 +1360,11 @@ CCustomModels::Shutdown(void)
 	customSkinNames.clear();
 	customFolderPath.clear();
 	customModPlans.clear();
+	customPreparedModelBytes = 0;
+	customPreparedModelUse = 0;
+	customPreparedModelCacheHits = 0;
+	customPreparedModelCacheMisses = 0;
+	customPreparedModelCacheEvictions = 0;
 	customTxdPlans.clear();
 	customInitialised = false;
 	customActive = false;
@@ -1380,7 +1512,8 @@ CCustomModels::LoadClumpFileFromCustom(const char *filename)
 	bool isMod;
 	br::RwFixStats stats;
 	std::string warn;
-	if(!ReadModelEntry(key, file, isMod, stats, warn))
+	if(!TakePreparedModel(key, file, isMod, stats, warn) &&
+	   !ReadModelEntry(key, file, isMod, stats, warn))
 		return false;
 	unsigned rawSize = (unsigned)file.size();
 
@@ -1586,6 +1719,12 @@ CCustomModels::PrintStats(void)
 		(int)customBtx.size(), (int)customTxdFiles.size(),
 		(int)customCls.size(), (int)customColFiles.size(), (int)customColBlocks.size(),
 		(int)customAnims.size(), (int)customImages.size());
+	CUSTOM_LOG("prepared-model cache: %u/%u KiB retained; %llu hit(s), %llu miss(es), %llu eviction(s)\n",
+		(unsigned)(customPreparedModelBytes / 1024),
+		(unsigned)(CUSTOM_PREPARED_MODEL_CACHE_LIMIT / 1024),
+		(unsigned long long)customPreparedModelCacheHits,
+		(unsigned long long)customPreparedModelCacheMisses,
+		(unsigned long long)customPreparedModelCacheEvictions);
 }
 
 // ---------------------------------------------------------------------------
