@@ -2047,7 +2047,12 @@ CPlayerPed::PlayIdleAnimations(CPad *padUsed)
 				while (lastAnim == anim);
 
 				assoc = CAnimManager::BlendAnimation(GetClump(), idleAnims[anim].groupId, idleAnims[anim].animId, 8.0f);
-				assoc->flags |= ASSOC_IDLE;
+				// SA ped banks may omit the native playidles entirely.
+				if (assoc)
+					assoc->flags |= ASSOC_IDLE;
+				else
+					REVC_LOG_WARNING("Skipping missing player idle animation (group=%d, id=%d)",
+						idleAnims[anim].groupId, idleAnims[anim].animId);
 				lastAnim = anim;
 				lastTime = sinceLastInput;
 			}

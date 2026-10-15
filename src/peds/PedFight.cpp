@@ -4024,7 +4024,15 @@ CPed::DriveVehicle(void)
 			if (!backAssoc)
 				backAssoc = CAnimManager::AddAnimation(GetClump(), bike->m_bikeAnimType, ANIM_BIKE_LEANB);
 
-			if (bike->m_fPedLeanAmountUD < 0.0f) {
+			// SA bike banks may not provide both VC lean animations.
+			if (!fwdAssoc || !backAssoc) {
+				static bool warnedMissingBikePitch = false;
+				if (!warnedMissingBikePitch) {
+					REVC_LOG_WARNING("Bike pitch animation missing (model=%d, group=%d); skipping pitch",
+						bike->GetModelIndex(), bike->m_bikeAnimType);
+					warnedMissingBikePitch = true;
+				}
+			} else if (bike->m_fPedLeanAmountUD < 0.0f) {
 				backAssoc->blendAmount = fwdBackBlend;
 				backAssoc->SetCurrentTime(-(bike->m_fPedLeanAmountUD * backAssoc->hierarchy->totalLength));
 				backAssoc->flags &= ~ASSOC_RUNNING;
@@ -4041,7 +4049,14 @@ CPed::DriveVehicle(void)
 		if (!rightAssoc)
 			rightAssoc = CAnimManager::AddAnimation(GetClump(), bike->m_bikeAnimType, ANIM_BIKE_RIGHT);
 
-		if (bike->m_fPedLeanAmountLR < 0.0f) {
+		if (!leftAssoc || !rightAssoc) {
+			static bool warnedMissingBikeRoll = false;
+			if (!warnedMissingBikeRoll) {
+				REVC_LOG_WARNING("Bike roll animation missing (model=%d, group=%d); skipping roll",
+					bike->GetModelIndex(), bike->m_bikeAnimType);
+				warnedMissingBikeRoll = true;
+			}
+		} else if (bike->m_fPedLeanAmountLR < 0.0f) {
 			leftAssoc->blendAmount = leftRightBlend;
 			leftAssoc->SetCurrentTime(-(bike->m_fPedLeanAmountLR * leftAssoc->hierarchy->totalLength));
 			leftAssoc->flags &= ~ASSOC_RUNNING;
