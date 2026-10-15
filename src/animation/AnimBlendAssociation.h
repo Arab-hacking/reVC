@@ -66,6 +66,7 @@ public:
 
 	CAnimBlendAssociation(void);
 	CAnimBlendAssociation(CAnimBlendAssociation &other);
+	CAnimBlendAssociation(CAnimBlendAssociation &other, RpClump *clump);
 #ifndef FIX_BUGS
 	virtual
 #endif
@@ -73,7 +74,10 @@ public:
 	void AllocateAnimBlendNodeArray(int n);
 	void FreeAnimBlendNodeArray(void);
 	void Init(RpClump *clump, CAnimBlendHierarchy *hier);
-	void Init(CAnimBlendAssociation &assoc);
+	void Init(CAnimBlendAssociation &assoc, RpClump *clump = nil);
+	// Template nodes are ordered for their reference skeleton, not necessarily
+	// for the ped receiving this association.
+	void BindNodesToClump(RpClump *clump);
 	void SetBlend(float amount, float delta);
 	void SetFinishCallback(void (*callback)(CAnimBlendAssociation*, void*), void *arg);
 	void SetDeleteCallback(void (*callback)(CAnimBlendAssociation*, void*), void *arg);

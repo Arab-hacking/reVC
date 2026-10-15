@@ -39,6 +39,20 @@ CAnimBlendAssociation::CAnimBlendAssociation(CAnimBlendAssociation &other)
 	Init(other);
 }
 
+CAnimBlendAssociation::CAnimBlendAssociation(CAnimBlendAssociation &other, RpClump *clump)
+{
+	nodes = nil;
+	animBlockRef = -1;
+	blendAmount = 1.0f;
+	blendDelta = 0.0f;
+	currentTime = 0.0f;
+	speed = 1.0f;
+	timeStep = 0.0f;
+	callbackType = CB_NONE;
+	link.Init();
+	Init(other, clump);
+}
+
 CAnimBlendAssociation::~CAnimBlendAssociation(void)
 {
 	FreeAnimBlendNodeArray();
@@ -69,54 +83,66 @@ CAnimBlendAssociation::FreeAnimBlendNodeArray(void)
 }
 
 void
-CAnimBlendAssociation::Init(RpClump *clump, CAnimBlendHierarchy *hier)
+CAnimBlendAssociation::BindNodesToClump(RpClump *clump)
 {
-	int i;
-	AnimBlendFrameData *frame;
-	animBlockRef = -1;
-
-	// a custom animation set can be missing single animations; an empty
-	// association is better than dereferencing nil
-	if(hier == nil)
-		return;
-
 	CAnimBlendClumpData *clumpData = *RPANIMBLENDCLUMPDATA(clump);
+	assert(clumpData && clumpData->frames && clumpData->numFrames > 0);
+	assert(hierarchy);
+
+	// A template can have fewer bones than a custom ped. FrameUpdate advances
+	// a pointer once per frame, so copying the template's nodes here would read
+	// past the end of the allocation. Bone order can differ even when the frame
+	// counts match; map each sequence to this clump's frames instead.
+	FreeAnimBlendNodeArray();
+	nodes = nil;
 	numNodes = clumpData->numFrames;
 	AllocateAnimBlendNodeArray(numNodes);
-	for(i = 0; i < numNodes; i++)
+	for(int i = 0; i < numNodes; i++)
 		nodes[i].association = this;
-	hierarchy = hier;
 
-	// Init every node from a sequence and a Clump frame
-	// NB: This is where the order of nodes is defined
-	for(i = 0; i < hier->numSequences; i++){
-		CAnimBlendSequence *seq = &hier->sequences[i];
-		if(seq->boneTag == -1)
-			frame = RpAnimBlendClumpFindFrame(clump, seq->name);
-		else
-			frame = RpAnimBlendClumpFindBone(clump, seq->boneTag);
+	for(int i = 0; i < hierarchy->numSequences; i++){
+		CAnimBlendSequence *seq = &hierarchy->sequences[i];
+		AnimBlendFrameData *frame = seq->boneTag == -1 ?
+			RpAnimBlendClumpFindFrame(clump, seq->name) :
+			RpAnimBlendClumpFindBone(clump, seq->boneTag);
 		if(frame && seq->numFrames > 0)
 			nodes[frame - clumpData->frames].sequence = seq;
 	}
 }
 
 void
-CAnimBlendAssociation::Init(CAnimBlendAssociation &assoc)
+CAnimBlendAssociation::Init(RpClump *clump, CAnimBlendHierarchy *hier)
 {
-	int i;
+	animBlockRef = -1;
 
+	// A custom animation set can be missing individual animations.
+	if(hier == nil)
+		return;
+
+	hierarchy = hier;
+	BindNodesToClump(clump);
+}
+
+void
+CAnimBlendAssociation::Init(CAnimBlendAssociation &assoc, RpClump *clump)
+{
 	hierarchy = assoc.hierarchy;
-	numNodes = assoc.numNodes;
 	animBlockRef = hierarchy ? CAnimManager::GetAnimationBlockForHierarchy(hierarchy) : -1;
 	if(animBlockRef >= 0)
 		CAnimManager::AddAnimBlockRef(animBlockRef);
 	flags = assoc.flags;
 	animId = assoc.animId;
 	groupId = assoc.groupId;
-	AllocateAnimBlendNodeArray(numNodes);
-	for(i = 0; i < numNodes; i++){
-		nodes[i] = assoc.nodes[i];
-		nodes[i].association = this;
+	if(clump){
+		BindNodesToClump(clump);
+	}else{
+		// Cutscene/global associations retain the reference skeleton's order.
+		numNodes = assoc.numNodes;
+		AllocateAnimBlendNodeArray(numNodes);
+		for(int i = 0; i < numNodes; i++){
+			nodes[i] = assoc.nodes[i];
+			nodes[i].association = this;
+		}
 	}
 }
 

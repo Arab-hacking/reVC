@@ -63,38 +63,3 @@ jobs:
 #        sourcePath: ./bin/${{matrix.platform}}/${{matrix.buildtype}}
 #        username: gtamodding
 #        apiKey: ${{secrets.BINTRAY_API_KEY}}
-
-# Temporary diagnostic: the sandbox cannot reach the artifact storage host.
-# Symbolize the matching CI binaries on the Windows runner instead.
-  symbolize-previous-crash:
-    if: github.event_name == 'pull_request'
-    runs-on: windows-latest
-    permissions:
-      actions: read
-    strategy:
-      matrix:
-        artifact:
-          - reVC_Debug_win-amd64-librw_d3d9-oal
-          - reVC_Release_win-amd64-librw_d3d9-oal
-          - reVC_Debug_win-amd64-librw_gl3_glfw-oal
-          - reVC_Release_win-amd64-librw_gl3_glfw-oal
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: ${{ matrix.artifact }}
-          run-id: 38786066062
-          github-token: ${{ github.token }}
-          path: symbols
-      - name: Symbolize 0x1047B from previous CI binary
-        shell: pwsh
-        run: |
-          $tool = 'C:\Program Files\LLVM\bin\llvm-symbolizer.exe'
-          $exe = (Resolve-Path symbols/reVC.exe).Path
-          if (!(Test-Path $tool)) {
-            Write-Host "::warning title=${{ matrix.artifact }}::llvm-symbolizer not installed at $tool"
-            exit 0
-          }
-          foreach ($address in @('0x1047B', '0x14001047B')) {
-            $result = & $tool --obj="$exe" --demangle --inlining=false $address 2>&1
-            Write-Host "::warning title=${{ matrix.artifact }} ${address}::$($result -join ' | ')"
-          }

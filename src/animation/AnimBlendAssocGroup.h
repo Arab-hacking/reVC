@@ -20,6 +20,7 @@ public:
 	CAnimBlendAssociation *GetAnimation(uint32 id);
 	CAnimBlendAssociation *GetAnimation(const char *name);
 	CAnimBlendAssociation *CopyAnimation(uint32 id);
+	CAnimBlendAssociation *CopyAnimation(uint32 id, RpClump *clump);
 	CAnimBlendAssociation *CopyAnimation(const char *name);
 	void CreateAssociations(const char *name);
 	void CreateAssociations(const char *blockName, RpClump *clump, const char **animNames, int numAssocs);

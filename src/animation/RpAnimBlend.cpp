@@ -474,6 +474,15 @@ RpAnimBlendClumpUpdateAnimations(RpClump *clump, float timeDelta, bool doRender)
 		if(assoc->UpdateBlend(timeDelta)){
 			if(assoc->hierarchy->sequences){
 				CAnimManager::UncompressAnimation(assoc->hierarchy);
+				// Cutscene/global callers can still copy a template without a clump.
+				// Never walk fewer association nodes than this clump has frames.
+				if(assoc->numNodes != clumpData->numFrames){
+					debug("anim %s: rebinding %d reference nodes to %d clump frames\n",
+						assoc->hierarchy->name, assoc->numNodes, clumpData->numFrames);
+					assoc->BindNodesToClump(clump);
+					if(assoc->hierarchy->totalLength > 0.0f)
+						assoc->SetCurrentTime(assoc->currentTime);
+				}
 				if(i < 11)
 					updateData.nodes[i++] = assoc->GetNode(0);
 				if(assoc->flags & ASSOC_MOVEMENT){

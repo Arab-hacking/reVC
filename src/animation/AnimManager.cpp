@@ -1278,8 +1278,10 @@ CAnimManager::CreateAnimAssociation(AssocGroupId groupId, AnimationId animId)
 CAnimBlendAssociation*
 CAnimManager::CreateAnimAssociation(RpClump *clump, AssocGroupId groupId, AnimationId animId)
 {
+	if(clump == nil)
+		return nil;
 	CAnimBlendAssocGroup *group = GetAnimAssocGroup(clump, groupId);
-	return group ? group->CopyAnimation(animId) : nil;
+	return group ? group->CopyAnimation(animId, clump) : nil;
 }
 
 CAnimBlendAssociation*

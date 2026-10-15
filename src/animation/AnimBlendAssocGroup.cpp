@@ -16,6 +16,7 @@
 #include "ModelInfo.h"
 #include "AnimManager.h"
 #include "RpAnimBlend.h"
+#include "AnimBlendClumpData.h"
 #include "AnimBlendAssociation.h"
 #include "AnimBlendAssocGroup.h"
 
@@ -78,6 +79,22 @@ CAnimBlendAssocGroup::CopyAnimation(uint32 id)
 		return nil;
 	CAnimManager::UncompressAnimation(anim->hierarchy);
 	return new CAnimBlendAssociation(*anim);
+}
+
+CAnimBlendAssociation*
+CAnimBlendAssocGroup::CopyAnimation(uint32 id, RpClump *clump)
+{
+	CAnimBlendAssociation *anim = GetAnimation(id);
+	if(anim == nil || clump == nil || !RpAnimBlendClumpIsInitialized(clump))
+		return nil;
+#ifdef CUSTOM_MODELS
+	CAnimBlendClumpData *clumpData = *RPANIMBLENDCLUMPDATA(clump);
+	if(anim->numNodes != clumpData->numFrames)
+		CUSTOM_LOG("anim assoc: group %d anim %d: reference=%d frames, target=%d; binding to target skeleton\n",
+			groupId, id, anim->numNodes, clumpData->numFrames);
+#endif
+	CAnimManager::UncompressAnimation(anim->hierarchy);
+	return new CAnimBlendAssociation(*anim, clump);
 }
 
 CAnimBlendAssociation*
