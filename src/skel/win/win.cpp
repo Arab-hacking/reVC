@@ -253,20 +253,30 @@ psCameraShowRaster(RwCamera *camera)
 RwImage *
 psGrabScreen(RwCamera *pCamera)
 {
-#ifndef LIBRW
+	if (pCamera == nil)
+		return nil;
+
 	RwRaster *pRaster = RwCameraGetRaster(pCamera);
-	if (RwImage *pImage = RwImageCreate(pRaster->width, pRaster->height, 32)) {
-		RwImageAllocatePixels(pImage);
-		RwImageSetFromRaster(pImage, pRaster);
-		return pImage;
+	if (pRaster == nil)
+		return nil;
+
+#ifndef LIBRW
+	RwImage *pImage = RwImageCreate(pRaster->width, pRaster->height, 32);
+	if (pImage == nil)
+		return nil;
+	if (RwImageAllocatePixels(pImage) == nil ||
+	    RwImageSetFromRaster(pImage, pRaster) == nil) {
+		RwImageDestroy(pImage);
+		return nil;
 	}
+	return pImage;
 #else
-	rw::Image *image = RwCameraGetRaster(pCamera)->toImage();
+	rw::Image *image = pRaster->toImage();
+	if (image == nil)
+		return nil;
 	image->removeMask();
-	if(image)
-		return image;
+	return image;
 #endif
-	return nil;
 }
 
 /*

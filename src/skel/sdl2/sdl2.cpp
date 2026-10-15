@@ -82,22 +82,42 @@ void _psCreateFolder(const char *path)
 {
 #if defined(ANDROID)
 	const char* pathroot = StorageRootBuffer;
-	char dbPath[1024];
-	snprintf(dbPath, sizeof(dbPath), "%s%s", pathroot, path);
-	mkdir(dbPath, 0755);
-	debug("Creating Folder Path: %s", dbPath);
+    char dbPath[1024];
+    if (pathroot == nil || path == nil || path[0] == '\0')
+        return;
+    int pathLength = snprintf(dbPath, sizeof(dbPath), "%s%s", pathroot, path);
+    if (pathLength < 0 || pathLength >= (int)sizeof(dbPath)) {
+        debug("Folder path is too long: %s", path);
+        return;
+    }
+    if (mkdir(dbPath, 0755) != 0 && errno != EEXIST)
+        debug("Unable to create directory %s (errno %d)", dbPath, errno);
+    debug("Creating Folder Path: %s", dbPath);
 #else
+    if (path == nil || path[0] == '\0')
+        return;
+
     debug("Creating Folder Path: %s", path);
     struct stat info;
-    char fullpath[PATH_MAX];
-    realpath(path, fullpath);
-
-    if (lstat(fullpath, &info) != 0) {
-        if (errno == ENOENT || (errno != EACCES && !S_ISDIR(info.st_mode))) {
-		debug("Creating Folder FullPath: %s", fullpath);
-            mkdir(fullpath, 0755);
-        }
+    if (stat(path, &info) == 0) {
+        if (!S_ISDIR(info.st_mode))
+            debug("Path exists but is not a directory: %s", path);
+        return;
     }
+
+    // A missing directory has no canonical path yet. Use the original path
+    // rather than relying on realpath() output after it fails.
+    if (errno != ENOENT) {
+        debug("Unable to inspect directory %s (errno %d)", path, errno);
+        return;
+    }
+
+    if (mkdir(path, 0755) == 0)
+        return;
+    if (errno == EEXIST && stat(path, &info) == 0 && S_ISDIR(info.st_mode))
+        return;
+
+    debug("Unable to create directory %s (errno %d)", path, errno);
 #endif
 }
 
@@ -156,20 +176,30 @@ psCameraShowRaster(RwCamera *camera)
 RwImage *
 psGrabScreen(RwCamera *pCamera)
 {
-#ifndef LIBRW
+    if (pCamera == nil)
+        return nil;
+
     RwRaster *pRaster = RwCameraGetRaster(pCamera);
-	if (RwImage *pImage = RwImageCreate(pRaster->width, pRaster->height, 32)) {
-		RwImageAllocatePixels(pImage);
-		RwImageSetFromRaster(pImage, pRaster);
-		return pImage;
-	}
+    if (pRaster == nil)
+        return nil;
+
+#ifndef LIBRW
+    RwImage *pImage = RwImageCreate(pRaster->width, pRaster->height, 32);
+    if (pImage == nil)
+        return nil;
+    if (RwImageAllocatePixels(pImage) == nil ||
+        RwImageSetFromRaster(pImage, pRaster) == nil) {
+        RwImageDestroy(pImage);
+        return nil;
+    }
+    return pImage;
 #else
-    rw::Image *image = RwCameraGetRaster(pCamera)->toImage();
+    rw::Image *image = pRaster->toImage();
+    if (image == nil)
+        return nil;
     image->removeMask();
-    if(image)
-        return image;
+    return image;
 #endif
-    return nil;
 }
 
 /*
@@ -680,6 +710,8 @@ bool IsThisJoystickBlacklisted(int i)
 		return false;
 
 	const char* joyname = SDL_JoystickNameForIndex(i);
+	if (joyname == nil)
+		return true;
 
 	if (gSelectedJoystickName[0] != '\0'
 			&& strncmp(joyname, gSelectedJoystickName, strlen(gSelectedJoystickName)) == 0) {
@@ -1289,7 +1321,10 @@ cursorEnterCB(int entered) {
 void windowFocusCB(int focused) {
     WindowFocused = !!focused;
     if (!focused) {
-        // deltas accumulated while unfocused must not fire on refocus
+        // Relative mode is released by SDL on focus loss. Keep our state in
+        // sync so a quick focus loss/gain still reacquires it on the next loop.
+        SDL_SetRelativeMouseMode(SDL_FALSE);
+        mouseRelativeMode = false;
         mouseRelX = mouseRelY = 0;
     }
 }
@@ -1302,7 +1337,7 @@ windowIconifyCB(int iconified) {
 void inputEventHandler() {
     SDL_Event event;
 
-    while (SDL_PollEvent(&event)) {
+    while (!RsGlobal.quit && SDL_PollEvent(&event)) {
         switch (event.type) {
             case SDL_KEYDOWN:	/* fall-through */
             case SDL_KEYUP:
@@ -1311,8 +1346,10 @@ void inputEventHandler() {
 
             case SDL_MOUSEMOTION:
                 cursorCB(event.motion.x, event.motion.y);
-                mouseRelX += event.motion.xrel;
-                mouseRelY += event.motion.yrel;
+                if (mouseRelativeMode) {
+                    mouseRelX += event.motion.xrel;
+                    mouseRelY += event.motion.yrel;
+                }
                 break;
             case SDL_MOUSEWHEEL: scrollCB(event.wheel.x, event.wheel.y); break;
 
@@ -1322,12 +1359,21 @@ void inputEventHandler() {
                 joysChangeCB(event.jdevice.which, event.type);
                 break;
 
+            case SDL_QUIT:
+                if (!RsGlobal.quit)
+                    RsEventHandler(rsQUITAPP, nil);
+                break;
+
             case SDL_WINDOWEVENT:
                 switch (event.window.event) {
                     case SDL_WINDOWEVENT_ENTER: cursorEnterCB(true); break;
                     case SDL_WINDOWEVENT_LEAVE: cursorEnterCB(false); break;
                     case SDL_WINDOWEVENT_FOCUS_GAINED: windowFocusCB(true); break;
                     case SDL_WINDOWEVENT_FOCUS_LOST: windowFocusCB(false); break;
+                    case SDL_WINDOWEVENT_CLOSE:
+                        if (!RsGlobal.quit)
+                            RsEventHandler(rsQUITAPP, nil);
+                        break;
                     // TODO should it be minimized/maximized/restored instead of shown/hidden?
                     case SDL_WINDOWEVENT_SHOWN: windowIconifyCB(false); break;
                     case SDL_WINDOWEVENT_HIDDEN: windowIconifyCB(true); break;
@@ -1344,7 +1390,7 @@ void inputEventHandler() {
     // wander off to another monitor or stall at the window edge.
     // The frontend needs absolute positions, so keep it free there.
     bool wantRelative = gGameState == GS_PLAYING_GAME &&
-                        !FrontEndMenuManager.m_bMenuActive && !WindowIconified;
+                        !FrontEndMenuManager.m_bMenuActive && !WindowIconified && WindowFocused;
     if (wantRelative != mouseRelativeMode) {
         if (SDL_SetRelativeMouseMode(wantRelative ? SDL_TRUE : SDL_FALSE) == 0) {
             mouseRelativeMode = wantRelative;
@@ -2001,38 +2047,66 @@ void CapturePad(RwInt32 padID)
 void joysChangeCB(int jid, int event)
 {
     if (event == SDL_JOYDEVICEADDED && !IsThisJoystickBlacklisted(jid)) {
-        if (PSGLOBAL(joy1id) == -1) {
-            assert(gamepad1 == nullptr);
-            gamepad1 = SDL_GameControllerOpen(jid);
-            assert(gamepad1 != nullptr);
+        if (PSGLOBAL(joy1id) == -1 && gamepad1 == nullptr) {
+            SDL_GameController *controller = SDL_GameControllerOpen(jid);
+            if (controller == nullptr)
+                return; // The event may be stale, or the joystick may lack a mapping.
+
+            SDL_Joystick *joy = SDL_GameControllerGetJoystick(controller);
+            if (joy == nullptr) {
+                SDL_GameControllerClose(controller);
+                return;
+            }
+            SDL_JoystickID instanceId = SDL_JoystickInstanceID(joy);
+            if (instanceId < 0) {
+                SDL_GameControllerClose(controller);
+                return;
+            }
+
+            gamepad1 = controller;
 #ifdef DETECT_JOYSTICK_MENU
-            strncpy(gSelectedJoystickName, SDL_JoystickNameForIndex(jid), sizeof(gSelectedJoystickName));
+            const char *joystickName = SDL_JoystickNameForIndex(jid);
+            if (joystickName != nil) {
+                strncpy(gSelectedJoystickName, joystickName, sizeof(gSelectedJoystickName) - 1);
+                gSelectedJoystickName[sizeof(gSelectedJoystickName) - 1] = '\0';
+            }
 #endif
             // This is behind LOAD_INI_SETTINGS, because otherwise the Init call below will destroy/overwrite your bindings.
 #ifdef LOAD_INI_SETTINGS
-            SDL_Joystick* joy = SDL_GameControllerGetJoystick(gamepad1);
             int count = SDL_JoystickNumButtons(joy);
-            ControlsManager.InitDefaultControlConfigJoyPad(count);
-            PSGLOBAL(joy1id) = SDL_JoystickInstanceID(joy);	// needed to get right ID for remove event
-            // Do not close the controller handle, it is done in the device remove handler (below)
+            if (count >= 0)
+                ControlsManager.InitDefaultControlConfigJoyPad(count);
 #endif
-        } else if (PSGLOBAL(joy2id) == -1) {
-            assert(gamepad2 == nullptr);
-            gamepad2 = SDL_GameControllerOpen(jid);
-            assert(gamepad2 != nullptr);
-            SDL_Joystick* joy = SDL_GameControllerGetJoystick(gamepad2);
-            PSGLOBAL(joy2id) = SDL_JoystickInstanceID(joy);	// needed to get right ID for remove event
+            PSGLOBAL(joy1id) = instanceId; // needed to get right ID for remove event
+        } else if (PSGLOBAL(joy2id) == -1 && gamepad2 == nullptr) {
+            SDL_GameController *controller = SDL_GameControllerOpen(jid);
+            if (controller == nullptr)
+                return;
+
+            SDL_Joystick *joy = SDL_GameControllerGetJoystick(controller);
+            if (joy == nullptr) {
+                SDL_GameControllerClose(controller);
+                return;
+            }
+            SDL_JoystickID instanceId = SDL_JoystickInstanceID(joy);
+            if (instanceId < 0) {
+                SDL_GameControllerClose(controller);
+                return;
+            }
+
+            gamepad2 = controller;
+            PSGLOBAL(joy2id) = instanceId; // needed to get right ID for remove event
         }
 
     } else if (event == SDL_JOYDEVICEREMOVED) {
         if (PSGLOBAL(joy1id) == jid) {
-            assert(gamepad1 != nullptr);
-            SDL_GameControllerClose(gamepad1);
+            if (gamepad1 != nullptr)
+                SDL_GameControllerClose(gamepad1);
             PSGLOBAL(joy1id) = -1;
             gamepad1 = nullptr;
         } else if (PSGLOBAL(joy2id) == jid) {
-            assert(gamepad2 != nullptr);
-            SDL_GameControllerClose(gamepad2);
+            if (gamepad2 != nullptr)
+                SDL_GameControllerClose(gamepad2);
             PSGLOBAL(joy2id) = -1;
             gamepad2 = nullptr;
         }

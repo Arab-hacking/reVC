@@ -83,58 +83,101 @@ void GetLocalTime_CP(SYSTEMTIME *out) {
 // Compatible with Linux/POSIX and MinGW on Windows
 #ifndef _WIN32
 HANDLE FindFirstFile(const char* pathname, WIN32_FIND_DATA* firstfile) {
+	if (pathname == nil || firstfile == nil)
+		return NULL;
+
 	char pathCopy[MAX_PATH];
-	strcpy(pathCopy, pathname);
+	int pathLength = snprintf(pathCopy, sizeof(pathCopy), "%s", pathname);
+	if (pathLength < 0 || pathLength >= (int)sizeof(pathCopy))
+		return NULL;
 
-	char *folder = strtok(pathCopy, "*");
-	char *extension = strtok(NULL, "*");
+	char *folder = pathCopy;
+	char *extension = nil;
+	char *wildcard = strchr(pathCopy, '*');
+	if (wildcard) {
+		*wildcard = '\0';
+		extension = wildcard + 1;
+		if (strchr(extension, '*') != nil)
+			return NULL;
+		if (extension[0] == '\0')
+			extension = nil;
+	}
+	if (folder[0] == '\0')
+		folder = (char*)".";
 
-    // because I remember like strtok might not return NULL for last delimiter
-    if (extension && extension - folder == strlen(pathname))
-        extension = nil;
-	
 	// Case-sensitivity and backslashes...
     // Will be freed at the bottom
-    char *realFolder = casepath(folder);
+	char *realFolder = casepath(folder);
 	if (realFolder) {
-        folder = realFolder;
+		folder = realFolder;
 	}
 
-	strncpy(firstfile->folder, folder, sizeof(firstfile->folder));
+	if (strlen(folder) >= sizeof(firstfile->folder) ||
+	    (extension && strlen(extension) >= sizeof(firstfile->extension))) {
+		free(realFolder);
+		return NULL;
+	}
+	strcpy(firstfile->folder, folder);
 
 	if (extension)
-		strncpy(firstfile->extension, extension, sizeof(firstfile->extension));
+		strcpy(firstfile->extension, extension);
 	else
 		firstfile->extension[0] = '\0';
 
-    if (realFolder)
-        free(realFolder);
+	if (realFolder) {
+		free(realFolder);
+	}
 
-	HANDLE d;
-	if ((d = (HANDLE)opendir(firstfile->folder)) == NULL || !FindNextFile(d, firstfile))
+	HANDLE d = (HANDLE)opendir(firstfile->folder);
+	if (d == NULL)
 		return NULL;
+	if (!FindNextFile(d, firstfile)) {
+		closedir((DIR*)d);
+		return NULL;
+	}
 
 	return d;
 }
 
 bool FindNextFile(HANDLE d, WIN32_FIND_DATA* finddata) {
+	if (d == nil || finddata == nil)
+		return false;
+
 	dirent *file;
-	static struct stat fileStats;
-	static char path[PATH_MAX], relativepath[NAME_MAX + sizeof(finddata->folder) + 1];
-	int extensionLen = strlen(finddata->extension);
+	struct stat fileStats;
+	char path[PATH_MAX], relativepath[NAME_MAX + sizeof(finddata->folder) + 1];
+	size_t extensionLen = 0;
+	while (extensionLen < sizeof(finddata->extension) && finddata->extension[extensionLen] != '\0')
+		extensionLen++;
+	if (extensionLen == sizeof(finddata->extension))
+		return false;
+
 	while ((file = readdir((DIR*)d)) != NULL) {
+		size_t nameLength = strlen(file->d_name);
+		bool allowedType = file->d_type == DT_UNKNOWN ||
+		                   file->d_type == DT_REG ||
+		                   file->d_type == DT_LNK;
+		bool matchesExtension = extensionLen == 0 ||
+		                        (nameLength >= extensionLen &&
+		                         strncasecmp(file->d_name + nameLength - extensionLen,
+		                                     finddata->extension, extensionLen) == 0);
+		if (!allowedType || !matchesExtension)
+			continue;
 
-		// We only want "DT_REG"ular Files, but reportedly some FS and OSes gives DT_UNKNOWN as type.
-		if ((file->d_type == DT_UNKNOWN || file->d_type == DT_REG || file->d_type == DT_LNK) &&
-			(extensionLen == 0 || strncasecmp(&file->d_name[strlen(file->d_name) - extensionLen], finddata->extension, extensionLen) == 0)) {
+		int pathLength = snprintf(relativepath, sizeof(relativepath), "%s/%s",
+		                          finddata->folder, file->d_name);
+		if (pathLength < 0 || pathLength >= (int)sizeof(relativepath))
+			continue;
+		if (realpath(relativepath, path) == nil || stat(path, &fileStats) != 0)
+			continue;
+		if (!S_ISREG(fileStats.st_mode))
+			continue;
+		if (nameLength >= sizeof(finddata->cFileName))
+			continue;
 
-			sprintf(relativepath, "%s/%s", finddata->folder, file->d_name);
-			realpath(relativepath, path);
-			stat(path, &fileStats);
-			strncpy(finddata->cFileName, file->d_name, sizeof(finddata->cFileName));
-			finddata->ftLastWriteTime = fileStats.st_mtime;
-			return true;
-		}
+		memcpy(finddata->cFileName, file->d_name, nameLength + 1);
+		finddata->ftLastWriteTime = fileStats.st_mtime;
+		return true;
 	}
 	return false;
 }
@@ -243,6 +286,9 @@ int _caserename(const char *old_filename, const char *new_filename)
 // Returned string should freed manually (if exists)
 char* casepath(char const* path, bool checkPathFirst)
 {
+    if (path == nil)
+        return nil;
+
     if (checkPathFirst && access(path, F_OK) != -1) {
         // File path is correct
         return nil;
@@ -251,6 +297,8 @@ char* casepath(char const* path, bool checkPathFirst)
     size_t l = strlen(path);
     char* p = (char*)alloca(l + 1);
     char* out = (char*)malloc(l + 3); // for extra ./
+    if (!out)
+        return nil;
     strcpy(p, path);
 
     // my addon: linux doesn't handle filenames with spaces at the end nicely
@@ -275,7 +323,10 @@ char* casepath(char const* path, bool checkPathFirst)
     #endif
 #if defined(ANDROID) // TODO: Android is fuck!!!
     char cwd[MAX_PATH];
-    getcwd(cwd, sizeof(cwd));
+    if (getcwd(cwd, sizeof(cwd)) == nil) {
+        free(out);
+        return nil;
+    }
 
     char* pos = strstr(p, CFileMgr::GetRootDirName());
     if (pos != NULL) {
@@ -299,6 +350,11 @@ char* casepath(char const* path, bool checkPathFirst)
         rl = 1;
     }
 #endif
+
+    if (d == nil) {
+        free(out);
+        return nil;
+    }
 
     bool cantProceed = false; // just convert slashes in what's left in string, don't correct case of letters(because we can't)
     bool mayBeTrailingSlash = false;

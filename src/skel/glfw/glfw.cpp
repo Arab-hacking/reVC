@@ -120,15 +120,29 @@ void _psCreateFolder(const char *path)
 	else
 		CloseHandle(hfle);
 #else
-	struct stat info;
-	char fullpath[PATH_MAX];
-	realpath(path, fullpath);
+	if (path == nil || path[0] == '\0')
+		return;
 
-	if (lstat(fullpath, &info) != 0) {
-		if (errno == ENOENT || (errno != EACCES && !S_ISDIR(info.st_mode))) {
-			mkdir(fullpath, 0755);
-		}
+	struct stat info;
+	if (stat(path, &info) == 0) {
+		if (!S_ISDIR(info.st_mode))
+			debug("Path exists but is not a directory: %s", path);
+		return;
 	}
+
+	// A missing directory has no canonical path yet. Use the original path
+	// rather than relying on realpath() output after it fails.
+	if (errno != ENOENT) {
+		debug("Unable to inspect directory %s (errno %d)", path, errno);
+		return;
+	}
+
+	if (mkdir(path, 0755) == 0)
+		return;
+	if (errno == EEXIST && stat(path, &info) == 0 && S_ISDIR(info.st_mode))
+		return;
+
+	debug("Unable to create directory %s (errno %d)", path, errno);
 #endif
 }
 
@@ -218,20 +232,30 @@ psCameraShowRaster(RwCamera *camera)
 RwImage *
 psGrabScreen(RwCamera *pCamera)
 {
-#ifndef LIBRW
+	if (pCamera == nil)
+		return nil;
+
 	RwRaster *pRaster = RwCameraGetRaster(pCamera);
-	if (RwImage *pImage = RwImageCreate(pRaster->width, pRaster->height, 32)) {
-		RwImageAllocatePixels(pImage);
-		RwImageSetFromRaster(pImage, pRaster);
-		return pImage;
+	if (pRaster == nil)
+		return nil;
+
+#ifndef LIBRW
+	RwImage *pImage = RwImageCreate(pRaster->width, pRaster->height, 32);
+	if (pImage == nil)
+		return nil;
+	if (RwImageAllocatePixels(pImage) == nil ||
+	    RwImageSetFromRaster(pImage, pRaster) == nil) {
+		RwImageDestroy(pImage);
+		return nil;
 	}
+	return pImage;
 #else
-	rw::Image *image = RwCameraGetRaster(pCamera)->toImage();
+	rw::Image *image = pRaster->toImage();
+	if (image == nil)
+		return nil;
 	image->removeMask();
-	if(image)
-		return image;
+	return image;
 #endif
-	return nil;
 }
 
 /*
