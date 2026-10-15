@@ -161,7 +161,9 @@ void MessageScreen(char *msg)
 bool
 CGame::InitialiseOnceBeforeRW(void)
 {
+	REVC_LOG_INFO("Preparing game filesystem and streaming");
 	CFileMgr::Initialise();
+	REVC_LOG_INFO("Game directory: %s", CFileMgr::GetRootDirName());
 	CdStreamInit(MAX_CDCHANNELS);
 	debug("size of matrix %d\n", sizeof(CMatrix));
 	debug("size of placeable %d\n", sizeof(CPlaceable));
@@ -176,6 +178,7 @@ CGame::InitialiseOnceBeforeRW(void)
 	// if (numCustomFrontendOptions == 0 && numCustomFrontendScreens == 0)
 	CustomFrontendOptionsPopulate();
 #endif
+	REVC_LOG_INFO("Game pre-initialization complete");
 	return true;
 }
 
@@ -191,6 +194,7 @@ void ReplaceAtomicPipeCallback();
 bool
 CGame::InitialiseRenderWare(void)
 {
+	REVC_LOG_INFO("Creating RenderWare camera, world and textures");
 	CFileMgr::SetDir("");
 	ValidateVersion();
 #ifdef USE_TEXTURE_POOL
@@ -215,6 +219,7 @@ CGame::InitialiseRenderWare(void)
 	ASSERT(Scene.camera != nil);
 	if (!Scene.camera)
 	{
+		REVC_LOG_ERROR("Could not create RenderWare camera");
 		return (false);
 	}
 	
@@ -233,6 +238,7 @@ CGame::InitialiseRenderWare(void)
 	ASSERT(Scene.world != nil);
 	if (!Scene.world)
 	{
+		REVC_LOG_ERROR("Could not create RenderWare world");
 		CameraDestroy(Scene.camera);
 		Scene.camera = nil;
 		return (false);
@@ -278,11 +284,13 @@ CGame::InitialiseRenderWare(void)
 	ScreenDroplets::InitDraw();
 #endif
 
+	REVC_LOG_INFO("RenderWare world ready");
 	return (true);
 }
 
 void CGame::ShutdownRenderWare(void)
 {
+	REVC_LOG_INFO("Shutting down RenderWare world");
 #ifdef SCREEN_DROPLETS
 	ScreenDroplets::Shutdown();
 #endif
@@ -317,10 +325,12 @@ void CGame::ShutdownRenderWare(void)
 #ifdef USE_TEXTURE_POOL
 	_TexturePoolsShutdown();
 #endif
+	REVC_LOG_INFO("RenderWare world shut down");
 }
 
 bool CGame::InitialiseOnceAfterRW(void)
 {
+	REVC_LOG_INFO("Initializing text, timer and audio");
 	TheText.Load();
 	CTimer::Initialise();
 	CTempColModels::Initialise();
@@ -353,19 +363,23 @@ bool CGame::InitialiseOnceAfterRW(void)
 	DMAudio.SetEffectsFadeVol(127);
 	DMAudio.SetMusicFadeVol(127);
 #endif
+	REVC_LOG_INFO("Text, timer and audio initialized");
 	return true;
 }
 
 void
 CGame::FinalShutdown(void)
-{	
+{
+	REVC_LOG_INFO("Stopping texture, statistics and streaming systems");
 	CTxdStore::Shutdown();
 	CPedStats::Shutdown();
 	CdStreamShutdown();
+	REVC_LOG_INFO("Game systems stopped");
 }
 
 bool CGame::Initialise(const char* datFile)
 {
+	REVC_LOG_INFO("Initializing game from %s", datFile);
 	ResetLoadingScreenBar();
 	strcpy(aDatFile, datFile);
 
@@ -586,11 +600,13 @@ bool CGame::Initialise(const char* datFile)
 
 	DMAudio.SetStartingTrackPositions(TRUE);
 	DMAudio.ChangeMusicMode(MUSICMODE_GAME);
+	REVC_LOG_INFO("Game initialization complete (level=%d, area=%d)", currLevel, currArea);
 	return true;
 }
 
 bool CGame::ShutDown(void)
 {
+	REVC_LOG_INFO("Shutting down current game");
 #ifdef USE_TEXTURE_POOL
 	_TexturePoolsUnknown(false);
 #endif
@@ -647,6 +663,7 @@ bool CGame::ShutDown(void)
 #ifdef USE_TEXTURE_POOL
 	_TexturePoolsFinalShutdown();
 #endif
+	REVC_LOG_INFO("Current game shut down");
 	return true;
 }
 
@@ -814,6 +831,7 @@ void CGame::InitialiseWhenRestarting(void)
 		}
 		else
 		{
+			REVC_LOG_ERROR("Saved game could not be loaded (error=%d); restarting", PcSaveHelper.nErrorCode);
 			for ( int32 i = 0; i < 50; i++ )
 			{
 				HandleExit();

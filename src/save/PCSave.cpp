@@ -50,6 +50,7 @@ C_PcSave::SaveSlot(int32 slot)
 {
 	MakeValidSaveName(slot);
 	PcSaveHelper.nErrorCode = SAVESTATUS_SUCCESSFUL;
+	REVC_LOG_INFO("Saving slot %d to %s", slot + 1, ValidSaveName);
 	_psGetUserFilesFolder();
 	int file = CFileMgr::OpenFile(ValidSaveName, "wb");
 	if (file != 0) {
@@ -60,12 +61,18 @@ C_PcSave::SaveSlot(int32 slot)
 		if (GenericSave(file)) {
 			if (!!CFileMgr::CloseFile(file))
 				nErrorCode = SAVESTATUS_ERR_SAVE_CLOSE;
+			if(nErrorCode == SAVESTATUS_SUCCESSFUL)
+				REVC_LOG_INFO("Saved slot %d successfully", slot + 1);
+			else
+				REVC_LOG_ERROR("Failed to close save slot %d (error=%d)", slot + 1, nErrorCode);
 			return 0;
 		}
 
+		REVC_LOG_ERROR("Failed to save slot %d (error=%d)", slot + 1, nErrorCode);
 		return 2;
 	}
 	PcSaveHelper.nErrorCode = SAVESTATUS_ERR_SAVE_CREATE;
+	REVC_LOG_ERROR("Failed to create save slot %d: %s", slot + 1, ValidSaveName);
 	return false;
 }
 

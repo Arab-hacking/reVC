@@ -1,4 +1,5 @@
 #include "common.h"
+#include <stdlib.h>
 #include <time.h>
 #include "rpmatfx.h"
 #include "rphanim.h"
@@ -54,6 +55,7 @@
 #include "Timecycle.h"
 #include "TxdStore.h"
 #include "FileMgr.h"
+#include "DebugLog.h"
 #include "Text.h"
 #include "RpAnimBlend.h"
 #include "Frontend.h"
@@ -397,6 +399,7 @@ PluginAttach(void)
 	if( !RpWorldPluginAttach() )
 	{
 		printf("Couldn't attach world plugin\n");
+		REVC_LOG_ERROR("Couldn't attach world plugin");
 		
 		return FALSE;
 	}
@@ -404,18 +407,21 @@ PluginAttach(void)
 	if( !RpSkinPluginAttach() )
 	{
 		printf("Couldn't attach RpSkin plugin\n");
+		REVC_LOG_ERROR("Couldn't attach RpSkin plugin");
 		
 		return FALSE;
 	}
 #ifndef LIBRW
 	if (!RtAnimInitialize())
 	{
+		REVC_LOG_ERROR("Couldn't initialize RenderWare animation");
 		return FALSE;
 	}
 #endif
 	if( !RpHAnimPluginAttach() )
 	{
 		printf("Couldn't attach RpHAnim plugin\n");
+		REVC_LOG_ERROR("Couldn't attach RpHAnim plugin");
 		
 		return FALSE;
 	}
@@ -423,6 +429,7 @@ PluginAttach(void)
 	if( !NodeNamePluginAttach() )
 	{
 		printf("Couldn't attach node name plugin\n");
+		REVC_LOG_ERROR("Couldn't attach node name plugin");
 		
 		return FALSE;
 	}
@@ -430,6 +437,7 @@ PluginAttach(void)
 	if( !CVisibilityPlugins::PluginAttach() )
 	{
 		printf("Couldn't attach visibility plugins\n");
+		REVC_LOG_ERROR("Couldn't attach visibility plugins");
 		
 		return FALSE;
 	}
@@ -437,6 +445,7 @@ PluginAttach(void)
 	if( !RpAnimBlendPluginAttach() )
 	{
 		printf("Couldn't attach RpAnimBlend plugin\n");
+		REVC_LOG_ERROR("Couldn't attach RpAnimBlend plugin");
 		
 		return FALSE;
 	}
@@ -444,6 +453,7 @@ PluginAttach(void)
 	if( !RpMatFXPluginAttach() )
 	{
 		printf("Couldn't attach RpMatFX plugin\n");
+		REVC_LOG_ERROR("Couldn't attach RpMatFX plugin");
 		
 		return FALSE;
 	}
@@ -650,6 +660,10 @@ LoadingScreen(const char *str1, const char *str2, const char *splashscreen)
 {
 	CSprite2d *splash;
 
+	if(str1 != nil || str2 != nil)
+		REVC_LOG_INFO("Loading: %s%s%s", str1 == nil ? "" : str1,
+			str1 != nil && str2 != nil ? " - " : "", str2 == nil ? "" : str2);
+
 #ifdef DISABLE_LOADING_SCREEN
 	if (str1 && str2)
 		return;
@@ -736,6 +750,7 @@ LoadingIslandScreen(const char *levelName)
 {
 	CSprite2d *splash;
 
+	REVC_LOG_INFO("Loading island: %s", levelName == nil ? "unknown" : levelName);
 	splash = LoadSplash(nil);
 	if(!DoRWStuffStartOfFrame(0, 0, 0, 0, 0, 0, 255))
 		return;
@@ -1741,6 +1756,34 @@ InitialiseGame(void)
 	CGame::Initialise("DATA\\GTA_VC.DAT");
 }
 
+#ifndef __MWERKS__
+static void
+InitialiseDebugLog(void)
+{
+	// Desktop builds use the launch directory (normally the game directory).
+	// macOS app bundles may start in an unwritable directory; Android uses its
+	// selected storage root. The open file survives CFileMgr's chdir calls.
+#if defined __APPLE__
+	const char *directory = GetMacOSUserFilesFolder();
+#elif defined ANDROID
+	const char *directory = getenv("STORAGE_ROOT");
+#else
+	const char *directory = nil;
+#endif
+	char path[FILEMGR_PATH_SIZE];
+	if(directory != nil && directory[0] != '\0'){
+		int length = snprintf(path, sizeof(path), "%s/debug.log", directory);
+		if(length < 0 || length >= (int)sizeof(path)){
+			fprintf(stderr, "reVC: debug log path is too long\n");
+			return;
+		}
+	}else{
+		strcpy(path, "debug.log");
+	}
+	DebugLog::Init(path);
+}
+#endif
+
 RsEventStatus
 AppEventHandler(RsEvent event, void *param)
 {
@@ -1748,47 +1791,78 @@ AppEventHandler(RsEvent event, void *param)
 	{
 		case rsINITIALIZE:
 		{
-			CGame::InitialiseOnceBeforeRW();
-			return RsInitialize() ? rsEVENTPROCESSED : rsEVENTERROR;
+#ifndef __MWERKS__
+			InitialiseDebugLog();
+#endif
+			REVC_LOG_INFO("Starting reVC");
+#ifdef USE_OUR_VERSIONING
+			REVC_LOG_INFO("Git revision: %s", g_GIT_SHA1);
+#endif
+			if(!CGame::InitialiseOnceBeforeRW()){
+				REVC_LOG_ERROR("Game pre-initialization failed");
+				return rsEVENTERROR;
+			}
+			if(!RsInitialize()){
+				REVC_LOG_ERROR("Platform initialization failed");
+				return rsEVENTERROR;
+			}
+			REVC_LOG_INFO("Platform initialized");
+			return rsEVENTPROCESSED;
 		}
 
 		case rsCAMERASIZE:
 		{
-											
-			CameraSize(Scene.camera, (RwRect *)param,
-				SCREEN_VIEWWINDOW, DEFAULT_ASPECT_RATIO);
-			
+			RwRect *rect = (RwRect *)param;
+			if(rect != nil)
+				REVC_LOG_INFO("Camera resized to %dx%d", rect->w, rect->h);
+			CameraSize(Scene.camera, rect, SCREEN_VIEWWINDOW, DEFAULT_ASPECT_RATIO);
 			return rsEVENTPROCESSED;
 		}
 
 		case rsRWINITIALIZE:
 		{
-			return Initialise3D(param) ? rsEVENTPROCESSED : rsEVENTERROR;
+			REVC_LOG_INFO("Initializing RenderWare and 3D components");
+			if(!Initialise3D(param)){
+				REVC_LOG_ERROR("RenderWare/3D initialization failed");
+				return rsEVENTERROR;
+			}
+			REVC_LOG_INFO("RenderWare and 3D components ready");
+			return rsEVENTPROCESSED;
 		}
 
 		case rsRWTERMINATE:
 		{
+			REVC_LOG_INFO("Terminating 3D components");
 			Terminate3D();
-
+			REVC_LOG_INFO("3D components terminated");
 			return rsEVENTPROCESSED;
 		}
 
 		case rsTERMINATE:
 		{
+			REVC_LOG_INFO("Shutting down reVC");
 			CGame::FinalShutdown();
-
+			REVC_LOG_INFO("Shutdown complete");
+#ifndef __MWERKS__
+			DebugLog::Shutdown();
+#endif
 			return rsEVENTPROCESSED;
 		}
 
 		case rsPLUGINATTACH:
 		{
-			return PluginAttach() ? rsEVENTPROCESSED : rsEVENTERROR;
+			if(!PluginAttach()){
+				REVC_LOG_ERROR("RenderWare plugin attachment failed");
+				return rsEVENTERROR;
+			}
+			REVC_LOG_INFO("RenderWare plugins attached");
+			return rsEVENTPROCESSED;
 		}
 
 		case rsINPUTDEVICEATTACH:
 		{
 			AttachInputDevices();
-
+			REVC_LOG_INFO("Input devices attached");
 			return rsEVENTPROCESSED;
 		}
 
@@ -1808,9 +1882,15 @@ AppEventHandler(RsEvent event, void *param)
 
 		case rsACTIVATE:
 		{
+			REVC_LOG_INFO("Application %s", param ? "activated" : "deactivated");
 			param ? DMAudio.ReacquireDigitalHandle() : DMAudio.ReleaseDigitalHandle();
-
 			return rsEVENTPROCESSED;
+		}
+
+		case rsQUITAPP:
+		{
+			REVC_LOG_INFO("Quit requested");
+			return rsEVENTNOTPROCESSED;
 		}
 
 		default:

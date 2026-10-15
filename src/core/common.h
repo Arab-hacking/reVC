@@ -338,6 +338,7 @@ int myrand(void);
 void mysrand(unsigned int seed);
 
 void re3_debug(const char *format, ...);
+void re3_log(const char *level, const char *filename, unsigned int lineno, const char *func, const char *format, ...);
 void re3_trace(const char *filename, unsigned int lineno, const char *func, const char *format, ...);
 void re3_assert(const char *expr, const char *filename, unsigned int lineno, const char *func);
 void re3_usererror(const char *format, ...);
@@ -347,23 +348,31 @@ void re3_usererror(const char *format, ...);
 // Switch to enable development messages.
 #if 0
 #define DEV(f, ...)
+#elif defined __MWERKS__
+#define DEV(f, ...) re3_debug("[DEV]: " f, ## __VA_ARGS__)
 #else
-#define DEV(f, ...)   re3_debug("[DEV]: " f, ## __VA_ARGS__)
+#define DEV(f, ...) re3_log("DEV", __FILE__, __LINE__, __FUNCTION__, f, ## __VA_ARGS__)
 #endif
 
 #ifdef __MWERKS__
 void debug(char *f, ...);
 void Error(char *f, ...);
 __inline__ void TRACE(char *f, ...) { } // this is re3 only, and so the function needs to be inline - this way no call actually gets placed
+#define REVC_LOG_INFO(f, ...)
+#define REVC_LOG_WARNING(f, ...)
+#define REVC_LOG_ERROR(f, ...)
 // USERERROR only gets used in oal builds ... once
 #else
-#define debug(f, ...) re3_debug("[DBG]: " f, ## __VA_ARGS__)
-#define Error(f, ...) re3_debug("[ERROR]: " f, ## __VA_ARGS__)
-#ifndef MASTER
+#define debug(f, ...) re3_log("DEBUG", __FILE__, __LINE__, __FUNCTION__, f, ## __VA_ARGS__)
+#define Error(f, ...) re3_log("ERROR", __FILE__, __LINE__, __FUNCTION__, f, ## __VA_ARGS__)
+#define REVC_LOG_INFO(f, ...) re3_log("INFO", __FILE__, __LINE__, __FUNCTION__, f, ## __VA_ARGS__)
+#define REVC_LOG_WARNING(f, ...) re3_log("WARNING", __FILE__, __LINE__, __FUNCTION__, f, ## __VA_ARGS__)
+#define REVC_LOG_ERROR(f, ...) re3_log("ERROR", __FILE__, __LINE__, __FUNCTION__, f, ## __VA_ARGS__)
+// State transitions are useful for diagnosing release builds too.
 #define TRACE(f, ...) re3_trace(__FILE__, __LINE__, __FUNCTION__, f, ## __VA_ARGS__)
+#ifndef MASTER
 #define USERERROR(f, ...) re3_usererror(f, ## __VA_ARGS__)
 #else
-#define TRACE(f, ...)
 #define USERERROR(f, ...)
 #endif
 #endif

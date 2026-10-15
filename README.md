@@ -61,6 +61,14 @@ Some of them can be toggled at runtime, some cannot.
 * Can load DFFs and TXDs from other platforms, possibly with a performance penalty
 * ...
 
+## Debug log
+
+On startup reVC creates a fresh `debug.log` (the previous run is overwritten). On Windows and Linux it is written to the directory from which the game was launched (normally the GTA Vice City directory). On macOS it is in the user-files directory (normally `~/Library/Application Support/reVC/`); on Android it is in the selected `STORAGE_ROOT` directory. If no storage root is configured, it uses the launch directory. The file remains open when the game changes its working directory.
+
+Entries include a local timestamp, severity, source file/line/function (where available) and a message. The log includes existing debug messages and state transitions, startup/shutdown and loading phases, file-open results and save/configuration failures, also in `MASTER` builds. Assertion failures are recorded in builds that enable assertions. It is flushed after every entry so it can help diagnose a crash. A failure to open `debug.log` is reported to stderr (or the console) without stopping the game. The log can contain local file paths; review it before sharing it publicly.
+
+The standalone logger tests can be built without the game assets or librw: `mkdir -p build/debug-log-tests && g++ -std=c++11 -pthread -I src/core tests/DebugLogTests.cpp src/core/DebugLog.cpp -o build/debug-log-tests/debug_log_tests && (cd build/debug-log-tests && ./debug_log_tests)` (or run CMake/CTest from `tests/`).
+
 ## To-Do
 
 The following things would be nice to have/do:
