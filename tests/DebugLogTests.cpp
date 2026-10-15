@@ -111,10 +111,16 @@ main(void)
 		"failed open is reported instead of crashing");
 	Check(DebugLog::Init(path), "can retry after failed open");
 	DebugLog::WriteMessage("INFO", NULL, 0, NULL, "new session");
-	DebugLog::Shutdown();
+	Check(DebugLog::CrashFd() >= 0, "crash descriptor is available while log is open");
+	DebugLog::WriteCrashLine("CRASH: synthetic exception");
 	lines = ReadLines(path);
-	Check(lines.size() == 1 && lines[0].find("new session") != std::string::npos,
-		"new session truncates old log");
+	Check(lines.size() == 2 && lines[0].find("new session") != std::string::npos &&
+		lines[1] == "CRASH: synthetic exception", "crash line shares the flushed log file");
+	DebugLog::Shutdown();
+	Check(DebugLog::CrashFd() < 0, "crash descriptor is invalidated on shutdown");
+	DebugLog::WriteCrashLine("must not appear after shutdown");
+	lines = ReadLines(path);
+	Check(lines.size() == 2, "closed crash descriptor writes nothing");
 	remove(path);
 	return 0;
 }

@@ -11,6 +11,9 @@
 #endif
 
 #include "main.h"
+#ifdef CUSTOM_MODELS
+#include "../extras/custom/DebugLog.h"
+#endif
 #include "CdStream.h"
 #include "General.h"
 #include "RwHelper.h"
@@ -1794,6 +1797,9 @@ AppEventHandler(RsEvent event, void *param)
 #ifndef __MWERKS__
 			InitialiseDebugLog();
 #endif
+#ifdef CUSTOM_MODELS
+			DebugLogInit();	// crash handlers share the core debug.log sink
+#endif
 			REVC_LOG_INFO("Starting reVC");
 #ifdef USE_OUR_VERSIONING
 			REVC_LOG_INFO("Git revision: %s", g_GIT_SHA1);
@@ -2481,8 +2487,16 @@ main(int argc, char *argv[])
 {
 #ifdef __MWERKS__
 	mwInit(); // metrowerks initialisation
+#elif !defined(__APPLE__) && !defined(ANDROID)
+	// Other desktop entry points do not use WinMain. Open the sink before
+	// installing crash handlers, just as WinMain does on Windows.
+	DebugLog::Init("debug.log");
+#ifdef CUSTOM_MODELS
+	DebugLogInit();
 #endif
-
+#endif
+	// macOS and Android choose their writable log path during rsINITIALIZE;
+	// their crash handlers are registered there after the log is open.
 	SystemInit();
 
 	if(RsEventHandler(rsINITIALIZE, nil) == rsEVENTERROR)

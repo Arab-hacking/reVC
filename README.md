@@ -67,7 +67,9 @@ On startup reVC creates a fresh `debug.log` (the previous run is overwritten). O
 
 Entries include a local timestamp, severity, source file/line/function (where available) and a message. The log includes existing debug messages and state transitions, startup/shutdown and loading phases, file-open results and save/configuration failures, also in `MASTER` builds. Assertion failures are recorded in builds that enable assertions. It is flushed after every entry so it can help diagnose a crash. A failure to open `debug.log` is reported to stderr (or the console) without stopping the game. The log can contain local file paths; review it before sharing it publicly.
 
-The standalone logger tests can be built without the game assets or librw: `mkdir -p build/debug-log-tests && g++ -std=c++11 -pthread -I src/core tests/DebugLogTests.cpp src/core/DebugLog.cpp -o build/debug-log-tests/debug_log_tests && (cd build/debug-log-tests && ./debug_log_tests)` (or run CMake/CTest from `tests/`).
+The custom-folder loader also writes to **this same file**, including which IMG was mounted, which CD directory supplied a duplicate, and the archive/sector/header of a TXD that failed to load. Put a VC `ANPK` file such as `ped.ifp` in `custom/` (or in a zip there) to override the matching VC animation block; an SA `ANP2`/`ANP3` file is loaded into an additional `sa_ped` bank instead, retaining the VC file. Incompatible custom IFPs fall back to the original. This is the `custom/` folder, not `MODELS/CUSTOM.IMG`; see [CUSTOM_MODELS.md](CUSTOM_MODELS.md).
+
+The standalone logger tests can be built without the game assets or librw: `mkdir -p build/debug-log-tests && g++ -std=c++11 -pthread -I src/core tests/DebugLogTests.cpp src/core/DebugLog.cpp -o build/debug-log-tests/debug_log_tests && (cd build/debug-log-tests && ./debug_log_tests)`. The synthetic IFP tests use `mkdir -p build/custom-tests && g++ -std=c++11 tests/CustomIfpTests.cpp -o build/custom-tests/custom_ifp_tests && build/custom-tests/custom_ifp_tests` (or run CMake/CTest from `tests/`).
 
 ## To-Do
 

@@ -2,6 +2,9 @@
 #include "platform.h"
 
 #include "Game.h"
+#ifdef CUSTOM_MODELS
+#include "CustomModels.h"
+#endif
 #include "main.h"
 #include "RwHelper.h"
 #include "Accident.h"
@@ -70,6 +73,9 @@
 #include "SurfaceTable.h"
 #include "TempColModels.h"
 #include "Timecycle.h"
+#ifdef CUSTOM_MODELS
+#include "CustomTimecycle.h"
+#endif
 #include "TrafficLights.h"
 #include "Train.h"
 #include "TxdStore.h"
@@ -338,6 +344,9 @@ bool CGame::InitialiseOnceAfterRW(void)
 	CSurfaceTable::Initialise("DATA\\SURFACE.DAT");
 	CPedStats::Initialise();
 	CTimeCycle::Initialise();
+#ifdef CUSTOM_MODELS
+	CCustomTimecycle::Apply();	// the client's lighting/sky out of the custom folder
+#endif
 #ifdef GTA_PS2
 	LoadingScreen("Loading the Game", "Initialising audio", GetRandomSplashScreen());
 #endif
@@ -371,6 +380,10 @@ void
 CGame::FinalShutdown(void)
 {
 	REVC_LOG_INFO("Stopping texture, statistics and streaming systems");
+#ifdef CUSTOM_MODELS
+	CCustomModels::PrintStats();
+	CCustomModels::Shutdown();
+#endif
 	CTxdStore::Shutdown();
 	CPedStats::Shutdown();
 	CdStreamShutdown();
@@ -494,6 +507,12 @@ bool CGame::Initialise(const char* datFile)
 	CDraw::ms_fLODDistance = 500.0f;
 
 	LoadingScreen("Loading the Game", "Setup streaming", nil);
+#ifdef CUSTOM_MODELS
+	// reads the archives of the game's custom folder; from here on the folder
+	// wins over the game's own image files
+	CCustomModels::Initialise();
+	CStreaming::LoadVCPedAnimationReference();
+#endif
 	CStreaming::LoadInitialVehicles();
 	CStreaming::LoadInitialPeds();
 	CStreaming::RequestBigBuildings(LEVEL_GENERIC);
@@ -687,6 +706,9 @@ void CGame::ReInitGameObjectVariables(void)
 	CRadar::Initialise();
 	CCarCtrl::ReInit();
 	CTimeCycle::Initialise();
+#ifdef CUSTOM_MODELS
+	CCustomTimecycle::Apply();	// the client's lighting/sky out of the custom folder
+#endif
 	CDraw::SetFOV(120.0f);
 	CDraw::ms_fLODDistance = 500.0f;
 	CStreaming::RequestBigBuildings(LEVEL_GENERIC);

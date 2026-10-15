@@ -364,3 +364,6 @@ codewarrior/Release/
 codewarrior/Debug/
 
 src/extras/GitSHA1.cpp
+
+# Downloadable archive assembled from the user's source bundle, not a Git asset.
+/reVC-updated-debug-custom-ifp.zip

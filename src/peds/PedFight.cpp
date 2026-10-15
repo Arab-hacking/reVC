@@ -399,9 +399,9 @@ CPed::SetAttack(CEntity *victim)
 			if (bCrouchWhenShooting && bIsDucking && curWeapon->IsFlagSet(WEAPONFLAG_CROUCHFIRE)) {
 				CAnimBlendAssociation* curMoveAssoc = RpAnimBlendClumpGetAssociation(GetClump(), GetCrouchFireAnim(curWeapon));
 				if (curMoveAssoc) {
-					if (strcmp(CAnimManager::GetAnimAssociation(curWeapon->m_AnimToPlay, GetCrouchFireAnim(curWeapon))->hierarchy->name, curMoveAssoc->hierarchy->name) != 0) {
+					CAnimBlendAssociation *requestedMoveAssoc = CAnimManager::GetAnimAssociation(GetClump(), curWeapon->m_AnimToPlay, GetCrouchFireAnim(curWeapon));
+					if (requestedMoveAssoc && strcmp(requestedMoveAssoc->hierarchy->name, curMoveAssoc->hierarchy->name) != 0)
 						delete curMoveAssoc;
-					}
 				}
 				animAssoc = CAnimManager::BlendAnimation(GetClump(), curWeapon->m_AnimToPlay, GetCrouchFireAnim(curWeapon), 8.0f);
 			} else {
@@ -425,9 +425,9 @@ CPed::SetAttack(CEntity *victim)
 
 				CAnimBlendAssociation* curFireAssoc = RpAnimBlendClumpGetAssociation(GetClump(), fireAnim);
 				if (curFireAssoc) {
-					if (strcmp(CAnimManager::GetAnimAssociation(curWeapon->m_AnimToPlay, fireAnim)->hierarchy->name, curFireAssoc->hierarchy->name) != 0) {
+					CAnimBlendAssociation *requestedFireAssoc = CAnimManager::GetAnimAssociation(GetClump(), curWeapon->m_AnimToPlay, fireAnim);
+					if (requestedFireAssoc && strcmp(requestedFireAssoc->hierarchy->name, curFireAssoc->hierarchy->name) != 0)
 						delete curFireAssoc;
-					}
 				}
 				animAssoc = CAnimManager::BlendAnimation(GetClump(), curWeapon->m_AnimToPlay, fireAnim, animDelta);
 			}
@@ -2386,7 +2386,10 @@ CPed::LoadFightData(void)
 		if (strcmp(animName, "default") != 0) {
 			if (strcmp(animName, "null") != 0) {
 				animAssoc = CAnimManager::GetAnimAssociation(ASSOCGRP_STD, animName);
-				tFightMoves[moveId].animId = (AnimationId)animAssoc->animId;
+				if(animAssoc)
+					tFightMoves[moveId].animId = (AnimationId)animAssoc->animId;
+				else
+					debug("Fight data: missing standard animation %s; keeping the built-in move mapping\n", animName);
 			} else {
 				tFightMoves[moveId].animId = ANIM_STD_WALK;
 			}

@@ -17,6 +17,7 @@
 #include "Entity.h"
 #include "FileMgr.h"
 #include "FileLoader.h"
+#include "AnimManager.h"
 #include "Zones.h"
 #include "Radar.h"
 #include "Camera.h"
@@ -27,6 +28,10 @@
 #include "CutsceneMgr.h"
 #include "CdStream.h"
 #include "Streaming.h"
+#ifdef CUSTOM_MODELS
+#include "CustomModels.h"
+#endif
+#include "SavehDiag.h"
 #include "Replay.h"
 #include "main.h"
 #include "ColStore.h"
@@ -37,6 +42,16 @@
 #include "Font.h"
 #include "Frontend.h"
 #include "VarConsole.h"
+
+#if defined(_MSC_VER)
+#include <intrin.h>
+#pragma intrinsic(_ReturnAddress)
+#define STREAMING_CALLER_ADDRESS() _ReturnAddress()
+#elif defined(__GNUC__) || defined(__clang__)
+#define STREAMING_CALLER_ADDRESS() __builtin_return_address(0)
+#else
+#define STREAMING_CALLER_ADDRESS() nil
+#endif
 
 bool CStreaming::ms_disableStreaming;
 bool CStreaming::ms_bLoadingBigModel;
@@ -90,6 +105,29 @@ bool gbPrintStreamingBuffer; // TODO
 bool
 CStreamingInfo::GetCdPosnAndSize(uint32 &posn, uint32 &size)
 {
+#ifdef CUSTOM_MODELS
+	// This fixes the one case that ConvertBufferToObject cannot fix by itself:
+	// a file that the game's images do not contain at all.
+	// The streaming code expects every requested file to have a place in
+	// an image (GetNextFileOnCd throws away the requests it cannot place), so
+	// such a file is given the position and size of a single sector. Its data
+	// is never read - the file is built in memory - and because nothing chains
+	// to it, it always ends up alone in a channel: the made up position can
+	// never spoil the read of a real file. Files that are in an image keep
+	// their real position and size, so the adjacency the channel reader
+	// depends on ("load up to 4 adjacent files") is untouched.
+	if(m_size == 0){
+		intptr_t diff = (intptr_t)this - (intptr_t)CStreaming::ms_aInfoForModel;
+		if(diff >= 0 && diff % (intptr_t)sizeof(CStreamingInfo) == 0){
+			int32 id = (int32)(diff / (intptr_t)sizeof(CStreamingInfo));
+			if(id < NUMSTREAMINFO && CCustomModels::CanServe(id)){
+				posn = 0;
+				size = 1;
+				return true;
+			}
+		}
+	}
+#endif
 	if(m_size == 0)
 		return false;
 	posn = m_position;
@@ -410,11 +448,16 @@ CStreaming::LoadCdDirectory(const char *dirname, int n)
 
 	lastID = -1;
 	fd = CFileMgr::OpenFile(dirname, "rb");
-	assert(fd > 0);
+	if(fd <= 0){
+		REVC_LOG_ERROR("Cannot read CD directory %s for IMG %d", dirname, n);
+		return;
+	}
 
+	int entries = 0, registered = 0, duplicates = 0;
 	imgSelector = n<<24;
 	assert(sizeof(direntry) == 32);
 	while(CFileMgr::Read(fd, (char*)&direntry, sizeof(direntry))){
+		entries++;
 		bool bAddToStreaming = false;
 
 		if(direntry.size > (uint32)ms_streamingBufferSize)
@@ -464,11 +507,17 @@ CStreaming::LoadCdDirectory(const char *dirname, int n)
 
 		if(bAddToStreaming){
 			if(ms_aInfoForModel[modelId].GetCdSize()){
-				debug("%s.%s appears more than once in %s\n", direntry.name, dot+1, dirname);
+				int previous = _GET_INDEX(ms_aInfoForModel[modelId].m_position);
+				const char *image = previous < CdStreamGetNumImages() ?
+					CdStreamGetImageName(previous) : nil;
+				debug("%s.%s appears more than once in %s; keeping %s\n",
+					direntry.name, dot+1, dirname, image ? image : "unknown IMG");
+				duplicates++;
 				lastID = -1;
 			}else{
 				direntry.offset |= imgSelector;
 				ms_aInfoForModel[modelId].SetCdPosnAndSize(direntry.offset, direntry.size);
+				registered++;
 				if(lastID != -1)
 					ms_aInfoForModel[lastID].m_nextID = modelId;
 				lastID = modelId;
@@ -477,6 +526,8 @@ CStreaming::LoadCdDirectory(const char *dirname, int n)
 	}
 
 	CFileMgr::CloseFile(fd);
+	REVC_LOG_INFO("CD directory %s (IMG %d): %d entries, %d registered, %d duplicates",
+		dirname, n, entries, registered, duplicates);
 }
 
 static char*
@@ -516,6 +567,21 @@ CStreaming::ConvertBufferToObject(int8 *buf, int32 streamId)
 	bool success;
 
 	startTime = CTimer::GetCurrentTimeInCycles() / CTimer::GetCyclesPerMillisecond();
+
+#ifdef CUSTOM_MODELS
+	// The file comes from the game's custom folder, so the bytes that were
+	// read from the image are not used at all: the file is decompressed and
+	// converted in memory instead. Everything around the load is the same, so
+	// the model ends up in exactly the state a file from the image would.
+	if(CCustomModels::CanServe(streamId)){
+		LoadCustomFile(streamId);
+		endTime = CTimer::GetCurrentTimeInCycles() / CTimer::GetCyclesPerMillisecond();
+		timeDiff = endTime - startTime;
+		if(timeDiff > 5)
+			debug("%s (custom) took %d ms\n", GetObjectName(streamId), timeDiff);
+		return ms_aInfoForModel[streamId].m_loadState == STREAMSTATE_LOADED;
+	}
+#endif
 
 	cdsize = ms_aInfoForModel[streamId].GetCdSize();
 	mem.start = (uint8*)buf;
@@ -605,7 +671,15 @@ CStreaming::ConvertBufferToObject(int8 *buf, int32 streamId)
 		UpdateMemoryUsed();
 
 		if(!success){
-			debug("Failed to load %s.txd\n", CTxdStore::GetTxdName(streamId - STREAM_OFFSET_TXD));
+			uint32 pos = ms_aInfoForModel[streamId].m_position;
+			int imageIndex = _GET_INDEX(pos);
+			const char *image = imageIndex < CdStreamGetNumImages() ?
+				CdStreamGetImageName(imageIndex) : nil;
+			const uint8 *header = (const uint8*)buf;
+			REVC_LOG_ERROR("Failed to load %s.txd from %s (sector=%u, sectors=%d, header=%02X %02X %02X %02X)",
+				CTxdStore::GetTxdName(streamId - STREAM_OFFSET_TXD),
+				image ? image : "unknown IMG", _GET_OFFSET(pos), cdsize,
+				(unsigned)header[0], (unsigned)header[1], (unsigned)header[2], (unsigned)header[3]);
 			RemoveModel(streamId);
 			ReRequestModel(streamId);
 			RwStreamClose(stream, &mem);
@@ -631,12 +705,36 @@ CStreaming::ConvertBufferToObject(int8 *buf, int32 streamId)
 			return false;
 		}
 		PUSH_MEMID(MEMID_STREAM_ANIMATION);
-		CAnimManager::LoadAnimFile(stream, true, nil);
+#ifdef CUSTOM_MODELS
+		CAnimBlock *animBlock = CAnimManager::GetAnimationBlock(streamId - STREAM_OFFSET_ANIM);
+		bool replaced = false;
+		if(animBlock){
+			char customAnimFile[64];
+			snprintf(customAnimFile, sizeof(customAnimFile), "ANIM\\%s.IFP", animBlock->name);
+			replaced = CAnimManager::LoadAnimFileFromCustom(customAnimFile);
+		}
+		if(!replaced)
+#endif
+			CAnimManager::LoadAnimFile(stream, true, nil);
+#ifdef CUSTOM_MODELS
+		CUSTOM_LOG("stream animation %d: %s block loaded; building groups\n",
+			streamId - STREAM_OFFSET_ANIM, replaced ? "custom VC" : "native");
+#endif
 		CAnimManager::CreateAnimAssocGroups();
+#ifdef CUSTOM_MODELS
+		CUSTOM_LOG("stream animation %d: groups returned\n", streamId - STREAM_OFFSET_ANIM);
+#endif
 		POP_MEMID();
+#ifdef CUSTOM_MODELS
+		CUSTOM_LOG("stream animation %d: memory scope popped\n", streamId - STREAM_OFFSET_ANIM);
+#endif
 	}
 
 	RwStreamClose(stream, &mem);
+#ifdef CUSTOM_MODELS
+	if(streamId >= STREAM_OFFSET_ANIM)
+		CUSTOM_LOG("stream animation %d: native stream closed\n", streamId - STREAM_OFFSET_ANIM);
+#endif
 
 	if(streamId < STREAM_OFFSET_TXD){
 		// Model
@@ -661,6 +759,10 @@ CStreaming::ConvertBufferToObject(int8 *buf, int32 streamId)
 		// Txd and anims
 		if(CanRemoveModel(streamId))
 			ms_aInfoForModel[streamId].AddToList(&ms_startLoadedList);
+#ifdef CUSTOM_MODELS
+		if(streamId >= STREAM_OFFSET_ANIM)
+			CUSTOM_LOG("stream animation %d: loaded-list update complete\n", streamId - STREAM_OFFSET_ANIM);
+#endif
 	}
 
 	// Mark objects as loaded
@@ -670,11 +772,19 @@ CStreaming::ConvertBufferToObject(int8 *buf, int32 streamId)
 		ms_memoryUsed += ms_aInfoForModel[streamId].GetCdSize() * CDSTREAM_SECTOR_SIZE;
 #endif
 	}
+#ifdef CUSTOM_MODELS
+	if(streamId >= STREAM_OFFSET_ANIM)
+		CUSTOM_LOG("stream animation %d: load state committed\n", streamId - STREAM_OFFSET_ANIM);
+#endif
 
 	endTime = CTimer::GetCurrentTimeInCycles() / CTimer::GetCyclesPerMillisecond();
 	timeDiff = endTime - startTime;
 	if(timeDiff > 5)
 		debug("%s took %d ms\n", GetObjectName(streamId), timeDiff);
+#ifdef CUSTOM_MODELS
+	if(streamId >= STREAM_OFFSET_ANIM)
+		CUSTOM_LOG("stream animation %d: load routine returning\n", streamId - STREAM_OFFSET_ANIM);
+#endif
 
 	return true;
 }
@@ -758,6 +868,12 @@ void
 CStreaming::RequestModel(int32 id, int32 flags)
 {
 	CSimpleModelInfo *mi;
+
+	if(id >= STREAM_OFFSET_ANIM && id < NUMSTREAMINFO){
+		CAnimBlock *animBlock = CAnimManager::GetAnimationBlock(id - STREAM_OFFSET_ANIM);
+		if(animBlock)
+			animBlock->unloadPending = false;
+	}
 
 	if(ms_aInfoForModel[id].m_loadState == STREAMSTATE_INQUEUE){
 		// updgrade to priority
@@ -1083,6 +1199,15 @@ void
 CStreaming::RemoveModel(int32 id)
 {
 	int i;
+
+	// An active animation association owns a block reference. Do not let an
+	// explicit removal or memory-pressure path invalidate its hierarchy.
+	if(id >= STREAM_OFFSET_ANIM && id < NUMSTREAMINFO &&
+	   CAnimManager::GetNumRefsToAnimBlock(id - STREAM_OFFSET_ANIM) > 0){
+		CAnimManager::GetAnimationBlock(id - STREAM_OFFSET_ANIM)->unloadPending = true;
+		debug("Keeping animation block %d loaded while associations reference it\n", id - STREAM_OFFSET_ANIM);
+		return;
+	}
 
 	if(ms_aInfoForModel[id].m_loadState == STREAMSTATE_NOTLOADED)
 		return;
@@ -1597,6 +1722,97 @@ CStreaming::SetMissionDoesntRequireModel(int32 id)
 			ms_aInfoForModel[id].AddToList(&ms_startLoadedList);
 	}
 }
+
+#ifdef CUSTOM_MODELS
+static RpAtomic*
+RemoveVCPedReferenceAtomicCB(RpAtomic *atomic, void *data)
+{
+	RpClump *clump = (RpClump*)data;
+	RpClumpRemoveAtomic(clump, atomic);
+	RpAtomicDestroy(atomic);
+	return atomic;
+}
+
+static RpClump*
+CreateVCPedAnimationReference(CPedModelInfo *pedInfo)
+{
+	RpClump *clump = pedInfo ? (RpClump*)pedInfo->CreateInstance() : nil;
+	if(clump)
+		RpClumpForAllAtomics(clump, RemoveVCPedReferenceAtomicCB, clump);
+	return clump;
+}
+
+static void
+RemoveVCPedModelForReload(CPedModelInfo *copInfo, int32 txdSlot)
+{
+	CStreaming::RemoveModel(MI_COP);
+	// Some data-file clumps can exist before Streaming has marked their slots
+	// loaded. Remove those directly as well so the custom override can reload.
+	if(copInfo && copInfo->GetRwObject())
+		copInfo->DeleteRwObject();
+	if(txdSlot >= 0 && CStreaming::HasTxdLoaded(txdSlot) && CTxdStore::GetNumRefs(txdSlot) == 0)
+		CStreaming::RemoveModel(txdSlot + STREAM_OFFSET_TXD);
+}
+
+void
+CStreaming::LoadVCPedAnimationReference(void)
+{
+	CBaseModelInfo *baseInfo = CModelInfo::GetModelInfo(MI_COP);
+	CPedModelInfo *copInfo;
+	RpClump *reference;
+	int32 txdSlot;
+	bool customCop;
+
+	if(baseInfo == nil || baseInfo->GetModelType() != MITYPE_PED)
+		return;
+	copInfo = (CPedModelInfo*)baseInfo;
+	txdSlot = copInfo->GetTxdSlot();
+	customCop = CCustomModels::CanServe(MI_COP);
+	CUSTOM_LOG("animation groups: setting up the native VC reference (custom cop=%d, resident=%d, resident SA=%d)\n",
+		customCop, copInfo->GetRwObject() != nil, copInfo->UsesSAAnimations());
+
+	// Capture a resident native cop before any initial-ped custom model can
+	// replace it. Keep it resident when there is no custom replacement.
+	if(copInfo->GetRwObject() && !copInfo->UsesSAAnimations()){
+		reference = CreateVCPedAnimationReference(copInfo);
+		if(reference){
+			CAnimManager::SetVCPedAnimationReference(reference);
+			if(customCop)
+				RemoveVCPedModelForReload(copInfo, txdSlot);
+			CUSTOM_LOG("animation groups: saved the resident native VC cop clump as an animation reference\n");
+			return;
+		}
+		CUSTOM_LOG("animation groups: couldn't clone the resident native VC cop; keeping it loaded as the reference\n");
+		return;
+	}
+
+	// Build and save a native skeleton unconditionally. The first animation
+	// groups can be created before any stock VC ped is resident (even when only
+	// some of the initial peds are overridden), so waiting for a future native
+	// ped leaves VC associations without a skeleton reference.
+	if(copInfo->GetRwObject() || HasModelLoaded(MI_COP))
+		RemoveVCPedModelForReload(copInfo, txdSlot);
+
+	CCustomModels::SetNativeModelOverride(MI_COP, true);
+	RequestModel(MI_COP, STREAMFLAGS_PRIORITY | STREAMFLAGS_DONT_REMOVE);
+	LoadAllRequestedModels(false);
+	CCustomModels::SetNativeModelOverride(MI_COP, false);
+
+	if(HasModelLoaded(MI_COP) && copInfo->GetRwObject() && !copInfo->UsesSAAnimations()){
+		reference = CreateVCPedAnimationReference(copInfo);
+		if(reference){
+			CAnimManager::SetVCPedAnimationReference(reference);
+			if(customCop)
+				RemoveVCPedModelForReload(copInfo, txdSlot);
+			CUSTOM_LOG("animation groups: saved the native VC cop clump as an animation reference\n");
+			return;
+		}
+		CUSTOM_LOG("animation groups: couldn't clone the native VC cop; keeping it loaded as the reference\n");
+	}else{
+		CUSTOM_LOG("animation groups: couldn't load the native VC cop reference clump\n");
+	}
+}
+#endif
 
 void
 CStreaming::LoadInitialPeds(void)
@@ -2118,7 +2334,7 @@ CStreaming::RequestModelStream(int32 ch)
 		ms_bLoadingBigModel = true;
 	}
 
-	// Load up to 4 adjacent files
+// Load up to 4 adjacent files
 	haveBigFile = 0;
 	havePed = 0;
 	totalSize = 0;
@@ -2184,6 +2400,138 @@ CStreaming::RequestModelStream(int32 ch)
 	ms_channel[ch].numTries = 0;
 }
 
+#ifdef CUSTOM_MODELS
+// Loads one file from the game's custom folder. This is the place where such a
+// file turns into a game object, and it is written so that afterwards nothing
+// can tell the difference to a file that was read from the image: the texture
+// dictionary and the animations are referenced while the model is read, the
+// dictionary is the current one, the vehicle list is updated, the stream info
+// goes to "loaded" and the memory the file uses is accounted for.
+//
+// The caller (ConvertBufferToObject) has already taken the file out of the
+// requested list and dropped its reference, exactly like before any other load.
+void
+CStreaming::LoadCustomFile(int32 streamId)
+{
+	uint32 startTime, endTime, timeDiff;
+	CBaseModelInfo *mi;
+	int animId;
+	bool success;
+
+	startTime = CTimer::GetCurrentTimeInCycles() / CTimer::GetCyclesPerMillisecond();
+
+	if(streamId < STREAM_OFFSET_TXD){
+		// Model
+		mi = CModelInfo::GetModelInfo(streamId);
+		animId = mi->GetAnimFileIndex();
+
+		// Txd and anim have to be loaded
+		if(CTxdStore::GetSlot(mi->GetTxdSlot())->texDict == nil ||
+		   animId != -1 && !CAnimManager::GetAnimationBlock(animId)->isLoaded){
+			RemoveModel(streamId);
+			ReRequestModel(streamId);
+			return;
+		}
+
+		CTxdStore::AddRef(mi->GetTxdSlot());
+#if GTA_VERSION > GTAVC_PS2
+		if(animId != -1)
+			CAnimManager::AddAnimBlockRef(animId);
+#endif
+
+		PUSH_MEMID(MEMID_STREAM_MODELS);
+		CTxdStore::SetCurrentTxd(mi->GetTxdSlot());
+		success = CCustomModels::Load(streamId);
+		if(success && mi->GetModelType() == MITYPE_VEHICLE)
+			success = AddToLoadedVehiclesList(streamId);
+		POP_MEMID();
+		UpdateMemoryUsed();
+
+		// Txd and anims no longer needed
+		CTxdStore::RemoveRefWithoutDelete(mi->GetTxdSlot());
+#if GTA_VERSION > GTAVC_PS2
+		if(animId != -1)
+			CAnimManager::RemoveAnimBlockRefWithoutDelete(animId);
+#endif
+
+		if(!success){
+			debug("Failed to load %s from the custom folder\n", mi->GetModelName());
+			RemoveModel(streamId);
+			ReRequestModel(streamId);
+			return;
+		}
+	}else if(streamId >= STREAM_OFFSET_TXD && streamId < STREAM_OFFSET_COL){
+		// Txd
+		if((ms_aInfoForModel[streamId].m_flags & STREAMFLAGS_KEEP_IN_MEMORY) == 0 &&
+		   !IsTxdUsedByRequestedModels(streamId - STREAM_OFFSET_TXD)){
+			RemoveModel(streamId);
+			return;
+		}
+
+		PUSH_MEMID(MEMID_STREAM_TEXUTRES);
+		success = CCustomModels::Load(streamId);
+		POP_MEMID();
+		UpdateMemoryUsed();
+
+		if(!success){
+			debug("Failed to load %s.txd from the custom folder\n", CTxdStore::GetTxdName(streamId - STREAM_OFFSET_TXD));
+			RemoveModel(streamId);
+			ReRequestModel(streamId);
+			return;
+		}
+	}else if(streamId >= STREAM_OFFSET_COL && streamId < STREAM_OFFSET_ANIM){
+		PUSH_MEMID(MEMID_STREAM_COLLISION);
+		success = CCustomModels::Load(streamId);
+		POP_MEMID();
+
+		if(!success){
+			debug("Failed to load %s.col from the custom folder\n", CColStore::GetColName(streamId - STREAM_OFFSET_COL));
+			RemoveModel(streamId);
+			ReRequestModel(streamId);
+			return;
+		}
+	}else{
+		assert(0 && "invalid streamId");
+		return;
+	}
+
+	// Model
+	// Vehicles and Peds not in loaded list
+	if(streamId < STREAM_OFFSET_TXD){
+		if(mi->GetModelType() != MITYPE_VEHICLE && mi->GetModelType() != MITYPE_PED){
+			CSimpleModelInfo *smi = (CSimpleModelInfo*)mi;
+
+			// Set fading for some objects
+			if(mi->IsSimple() && !smi->m_isBigBuilding){
+				if(ms_aInfoForModel[streamId].m_flags & STREAMFLAGS_NOFADE)
+					smi->m_alpha = 255;
+				else
+					smi->m_alpha = 0;
+			}
+
+			if(CanRemoveModel(streamId))
+				ms_aInfoForModel[streamId].AddToList(&ms_startLoadedList);
+		}
+	}else if(streamId >= STREAM_OFFSET_TXD && streamId < STREAM_OFFSET_COL ||
+	         streamId >= STREAM_OFFSET_ANIM){
+		// Txd and anims
+		if(CanRemoveModel(streamId))
+			ms_aInfoForModel[streamId].AddToList(&ms_startLoadedList);
+	}
+
+	// Mark objects as loaded
+	ms_aInfoForModel[streamId].m_loadState = STREAMSTATE_LOADED;
+#ifndef USE_CUSTOM_ALLOCATOR
+	ms_memoryUsed += ms_aInfoForModel[streamId].GetCdSize() * CDSTREAM_SECTOR_SIZE;
+#endif
+
+	endTime = CTimer::GetCurrentTimeInCycles() / CTimer::GetCyclesPerMillisecond();
+	timeDiff = endTime - startTime;
+	if(timeDiff > 5)
+		debug("%s (custom) took %d ms\n", GetObjectName(streamId), timeDiff);
+}
+#endif
+
 // Load data previously read from disc
 bool
 CStreaming::ProcessLoadingChannel(int32 ch)
@@ -2227,8 +2575,15 @@ CStreaming::ProcessLoadingChannel(int32 ch)
 					RemoveTxd(CModelInfo::GetModelInfo(id)->GetTxdSlot());
 			}else{
 				MakeSpaceFor(cdsize * CDSTREAM_SECTOR_SIZE);
+#ifdef CUSTOM_MODELS
+				CUSTOM_LOG("stream channel %d: converting id=%d at slot %d\n", ch, id, i);
+#endif
 				ConvertBufferToObject(&ms_pStreamingBuffer[ch][ms_channel[ch].offsets[i]*CDSTREAM_SECTOR_SIZE],
 					id);
+#ifdef CUSTOM_MODELS
+				CUSTOM_LOG("stream channel %d: conversion returned for id=%d, state=%d\n",
+					ch, id, ms_aInfoForModel[id].m_loadState);
+#endif
 				if(ms_aInfoForModel[id].m_loadState == STREAMSTATE_STARTED){
 					// queue for second part
 					ms_channel[ch].state = CHANNELSTATE_STARTED;
@@ -2238,6 +2593,10 @@ CStreaming::ProcessLoadingChannel(int32 ch)
 						ms_channel[ch].streamIds[i] = -1;
 				}else
 					ms_channel[ch].streamIds[i] = -1;
+#ifdef CUSTOM_MODELS
+				CUSTOM_LOG("stream channel %d: slot %d bookkeeping complete for id=%d\n",
+					ch, i, id);
+#endif
 			}
 		}
 	}
@@ -2249,6 +2608,9 @@ CStreaming::ProcessLoadingChannel(int32 ch)
 			ms_channel[1].streamIds[i] = -1;
 		ms_channel[1].state = CHANNELSTATE_IDLE;
 	}
+#ifdef CUSTOM_MODELS
+	CUSTOM_LOG("stream channel %d: processing complete\n", ch);
+#endif
 
 	return true;
 }
@@ -2446,12 +2808,17 @@ CStreaming::LoadAllRequestedModels(bool priority)
 void
 CStreaming::LoadAllRequestedModels(bool priority)
 {
+#ifdef CUSTOM_MODELS
+	void *callerAddress = STREAMING_CALLER_ADDRESS();
+#endif
 	static bool bInsideLoadAll = false;
 	int imgOffset, streamId, status;
 	int i;
 	uint32 posn, size;
 
 	int numRequests = 4*ms_numModelsRequested;
+	int traceAfterAnimation = 0;
+	bool sawAnimation = false;
 
 	if(bInsideLoadAll)
 		return;
@@ -2464,23 +2831,43 @@ CStreaming::LoadAllRequestedModels(bool priority)
 	imgOffset = GetCdImageOffset(CdStreamGetLastPosn());
 
 	while(ms_endRequestedList.m_prev != &ms_startRequestedList && numRequests > 0){
+		bool traceIteration = traceAfterAnimation > 0;
+		if(traceIteration)
+			CUSTOM_LOG("stream single: checking next request, remaining=%d\n", numRequests);
 		numRequests--;
 		streamId = GetNextFileOnCd(0, priority);
-		if(streamId == -1)
+		if(streamId == -1){
+			if(traceIteration)
+				CUSTOM_LOG("stream single: no next request\n");
 			break;
+		}
+		if(streamId >= STREAM_OFFSET_ANIM){
+			traceAfterAnimation = 3;
+			sawAnimation = true;
+			CUSTOM_LOG("stream single: selected animation id=%d name=%s\n", streamId, GetObjectName(streamId));
+		}else if(traceIteration)
+			CUSTOM_LOG("stream single: selected id=%d name=%s after animation\n", streamId, GetObjectName(streamId));
 
 		ms_aInfoForModel[streamId].RemoveFromList();
 		ms_channel[0].streamIds[0] = streamId;
 		DecrementRef(streamId);
+		if(streamId >= STREAM_OFFSET_ANIM || traceIteration)
+			CUSTOM_LOG("stream single: request dequeued id=%d\n", streamId);
 
 		if(ms_aInfoForModel[streamId].GetCdPosnAndSize(posn, size)){
 			do
 				status = CdStreamRead(0, ms_pStreamingBuffer[0], imgOffset+posn, size);
 			while(CdStreamSync(0) || status == STREAM_NONE);
 			ms_aInfoForModel[streamId].m_loadState = STREAMSTATE_READING;
+			if(streamId >= STREAM_OFFSET_ANIM || traceIteration)
+				CUSTOM_LOG("stream single: read complete id=%d sectors=%u\n", streamId, size);
 
 			MakeSpaceFor(size * CDSTREAM_SECTOR_SIZE);
+			if(streamId >= STREAM_OFFSET_ANIM || traceIteration)
+				CUSTOM_LOG("stream single: space ready id=%d\n", streamId);
 			ConvertBufferToObject(ms_pStreamingBuffer[0], streamId);
+			if(streamId >= STREAM_OFFSET_ANIM || traceIteration)
+				CUSTOM_LOG("stream single: conversion returned id=%d state=%d\n", streamId, ms_aInfoForModel[streamId].m_loadState);
 			if(ms_aInfoForModel[streamId].m_loadState == STREAMSTATE_STARTED)
 				FinishLoadingLargeFile(ms_pStreamingBuffer[0], streamId);
 
@@ -2493,7 +2880,13 @@ CStreaming::LoadAllRequestedModels(bool priority)
 			// empty
 			ms_aInfoForModel[streamId].m_loadState = STREAMSTATE_LOADED;
 		}
+		if(streamId >= STREAM_OFFSET_ANIM || traceIteration)
+			CUSTOM_LOG("stream single: iteration complete id=%d\n", streamId);
+		if(traceAfterAnimation > 0)
+			traceAfterAnimation--;
 	}
+	if(sawAnimation)
+		CUSTOM_LOG("stream single: request loop finished, remaining=%d\n", numRequests);
 
 	ms_bLoadingBigModel = false;
 	for(i = 0; i < 4; i++){
@@ -2502,8 +2895,11 @@ CStreaming::LoadAllRequestedModels(bool priority)
 	}
 	ms_channel[1].state = CHANNELSTATE_IDLE;
 	bInsideLoadAll = false;
+	if(sawAnimation)
+		CUSTOM_LOG("stream single: LoadAllRequestedModels returning; caller=%p\n", callerAddress);
 }
 #endif
+#undef STREAMING_CALLER_ADDRESS
 
 void
 CStreaming::FlushChannels(void)

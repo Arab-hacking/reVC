@@ -52,6 +52,7 @@ public:
 	int32 callbackType;
 	void (*callback)(CAnimBlendAssociation*, void*);
 	void *callbackArg;
+	int32 animBlockRef;	// active associations pin the hierarchy block until destruction
 
 	bool IsRunning(void) { return !!(flags & ASSOC_RUNNING); }
 	bool IsRepeating(void) { return !!(flags & ASSOC_REPEAT); }

@@ -1,6 +1,10 @@
 #define WITHD3D
 #include "common.h"
 
+#ifdef RW_GL3
+#include "Timecycle.h"
+#endif
+
 #include "main.h"
 #include "Lights.h"
 #include "ModelInfo.h"
@@ -955,6 +959,11 @@ CRenderer::SetupBigBuildingVisibility(CEntity *ent)
 void
 CRenderer::ConstructRenderList(void)
 {
+#ifdef RW_GL3
+	// the material shaders light with the time cycle's sun (BR parity)
+	rw::setSunDirection(CTimeCycle::GetSunDirection());
+#endif
+
 	COcclusion::ProcessBeforeRendering();
 #ifdef NEW_RENDERER
 	if(!gbNewRenderer)

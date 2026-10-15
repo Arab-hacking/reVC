@@ -24,10 +24,16 @@
 #include "Zones.h"
 #include "ZoneCull.h"
 #include "CdStream.h"
+#include <vector>
 #include "FileLoader.h"
+#ifdef CUSTOM_MODELS
+#include "CustomModels.h"
+#endif
 #include "MemoryHeap.h"
 #include "Streaming.h"
 #include "ColStore.h"
+#include "SACol3.h"
+#include "VehicleModelInfo.h"
 #include "Occlusion.h"
 
 char CFileLoader::ms_line[256];
@@ -118,7 +124,8 @@ CFileLoader::LoadLevel(const char *filename)
 #endif
 #ifndef GTA_PS2
 		}else if(strncmp(line, "CDIMAGE", 7) == 0){
-			CdStreamAddImage(line + 8);
+			if(!CdStreamAddImage(line + 8))
+				REVC_LOG_ERROR("CDIMAGE could not be mounted: %s", line + 8);
 #endif
 		}
 	}
@@ -155,6 +162,13 @@ CFileLoader::LoadTexDictionary(const char *filename)
 	RwTexDictionary *txd;
 	RwStream *stream;
 
+#ifdef CUSTOM_MODELS
+	// the custom folder wins over the game's own files
+	txd = CCustomModels::LoadTexDictionaryFromCustom(filename);
+	if(txd)
+		return txd;
+#endif
+
 	txd = nil;
 	stream = RwStreamOpen(rwSTREAMFILENAME, rwSTREAMREAD, filename);
 	debug("Loading texture dictionary file %s\n", filename);
@@ -184,6 +198,11 @@ CFileLoader::LoadCollisionFile(const char *filename, uint8 colSlot)
 
 	PUSH_MEMID(MEMID_COLLISION);
 
+#ifdef CUSTOM_MODELS
+	// holds the collision of one model when it comes from the custom folder
+	std::vector<uint8> customColBlock;
+#endif
+
 	debug("Loading collision file %s\n", filename);
 	fd = CFileMgr::OpenFile(filename, "rb");
 	assert(fd > 0);
@@ -193,14 +212,21 @@ CFileLoader::LoadCollisionFile(const char *filename, uint8 colSlot)
 		CFileMgr::Read(fd, (char*)work_buff, header.size);
 		memcpy(modelname, work_buff, 24);
 
+#ifdef CUSTOM_MODELS
+		// the custom folder wins over the game's own collision file
+		uint8 *colbody = work_buff;
+		if(CCustomModels::GetCollisionBlock(modelname, customColBlock))
+			colbody = customColBlock.data();
+#endif
+
 		mi = CModelInfo::GetModelInfo(modelname, nil);
 		if(mi){
 			if(mi->GetColModel() && mi->DoesOwnColModel()){
-				LoadCollisionModel(work_buff+24, *mi->GetColModel(), modelname);
+				LoadCollisionModel(colbody+24, *mi->GetColModel(), modelname);
 			}else{
 				CColModel *model = new CColModel;
 				model->level = colSlot;
-				LoadCollisionModel(work_buff+24, *model, modelname);
+				LoadCollisionModel(colbody+24, *model, modelname);
 				mi->SetColModel(model, true);
 			}
 		}else{
@@ -213,6 +239,161 @@ CFileLoader::LoadCollisionFile(const char *filename, uint8 colSlot)
 	POP_MEMID();
 }
 
+
+#ifdef SA_VEHICLE_MODELS
+// GTA:SA keeps the collision of a vehicle inside its DFF: the clump extension
+// (rwID_EXTENSION) holds a Rockstar chunk ("CollisionModel") with a COL3
+// collision model. VC instead keeps vehicle collision in models/coll/*.col, so
+// without this an SA car would use the collision of the VC vehicle whose model
+// id it replaces - the car then floats above the ground or sinks into it,
+// because the volume does not match the mesh.
+#define SA_RW_COLLISIONMODEL_ID MAKECHUNKID(0x0253F2, 0xFA)
+
+// SA keeps the collision inside the clump, after the atomics. The two part
+// model reader does not stop there (the atomics are the last thing it reads),
+// so the position of the clump body is remembered in StartLoadClumpFile and
+// the chunks are walked from there once the model is complete. Loading a model
+// is a strictly sequential, non reentrant operation, so file statics are fine.
+static uint32 saClumpBodyPos;
+static uint32 saClumpBodySize;
+static bool saClumpBodyKnown;
+
+// Walks the chunk list from the current position up to  end looking for the
+// SA collision chunk. Extension chunks are entered (that is where SA puts it)
+// and the stream is left at the body of the chunk that was found, whose size
+// is returned; 0 means the model has no collision.
+static uint32
+FindSAColChunk(RwStream *stream, uint32 end, int depth)
+{
+	uint32 header[3];
+	uint32 type, size, body, bodyEnd, found;
+
+	if(depth < 0)
+		return 0;
+	while(STREAMPOS(stream) + 12 <= end){
+		if(RwStreamRead(stream, header, 12) != 12)
+			return 0;
+		type = header[0];
+		size = header[1];
+		body = STREAMPOS(stream);
+		bodyEnd = body + size;
+		if(size > end || bodyEnd > end)	// corrupt data, do not walk outside
+			return 0;
+		if(type == SA_RW_COLLISIONMODEL_ID)
+			return size;
+		if(type == rwID_EXTENSION){
+			found = FindSAColChunk(stream, bodyEnd, depth-1);
+			if(found)
+				return found;
+		}
+		stream->seek(bodyEnd, 0);
+	}
+	return 0;
+}
+
+// converts SA surface ids to something VC understands; SA has far more
+// materials than VC's table, and an id outside of it would be undefined.
+// Everything unknown becomes car panel, which is what the body of a VC vehicle
+// uses and what gives the correct friction/sound on a vehicle body.
+static uint8
+SASurfaceToVC(uint8 surface)
+{
+	if(surface > SURFACE_CONCRETE_BEACH)
+		return SURFACE_CAR_PANEL;
+	return surface;
+}
+
+static void
+ConvertSAColModel(const SACol3 &sa, CColModel &model)
+{
+	uint32 i;
+
+	model.boundingSphere.Set(sa.boundingRadius, *(const CVector*)sa.boundingCenter);
+	model.boundingBox.Set(*(const CVector*)sa.boundingMin, *(const CVector*)sa.boundingMax);
+
+	model.numSpheres = sa.numSpheres;
+	if(sa.numSpheres){
+		model.spheres = (CColSphere*)RwMalloc(sa.numSpheres*sizeof(CColSphere));
+		REGISTER_MEMPTR(&model.spheres);
+		for(i = 0; i < sa.numSpheres; i++){
+			const uint8 *p = sa.spheres + i*SACOL3_SPHERE_SIZE;
+			model.spheres[i].Set(*(const float*)(p+12), *(const CVector*)p,
+				SASurfaceToVC(p[16]), p[17]);
+		}
+	}else
+		model.spheres = nil;
+
+	model.numBoxes = sa.numBoxes;
+	if(sa.numBoxes){
+		model.boxes = (CColBox*)RwMalloc(sa.numBoxes*sizeof(CColBox));
+		REGISTER_MEMPTR(&model.boxes);
+		for(i = 0; i < sa.numBoxes; i++){
+			const uint8 *p = sa.boxes + i*SACOL3_BOX_SIZE;
+			model.boxes[i].Set(*(const CVector*)p, *(const CVector*)(p+12),
+				SASurfaceToVC(p[24]), p[25]);
+		}
+	}else
+		model.boxes = nil;
+
+	model.numLines = 0;
+	model.lines = nil;
+
+	if(sa.numVerts){
+		model.vertices = (CompressedVector*)RwMalloc(sa.numVerts*sizeof(CompressedVector));
+		REGISTER_MEMPTR(&model.vertices);
+		for(i = 0; i < sa.numVerts; i++){
+			const int16 *v = sa.verts + i*3;
+			model.vertices[i].Set(v[0]/128.0f, v[1]/128.0f, v[2]/128.0f);
+		}
+	}else
+		model.vertices = nil;
+
+	model.numTriangles = sa.numFaces;
+	if(sa.numFaces){
+		model.triangles = (CColTriangle*)RwMalloc(sa.numFaces*sizeof(CColTriangle));
+		REGISTER_MEMPTR(&model.triangles);
+		for(i = 0; i < sa.numFaces; i++){
+			const uint8 *p = sa.faces + i*SACOL3_FACE_SIZE;
+			model.triangles[i].Set(*(const uint16*)p, *(const uint16*)(p+2),
+				*(const uint16*)(p+4), SASurfaceToVC(p[6]));
+		}
+	}else
+		model.triangles = nil;
+}
+
+bool
+CFileLoader::LoadSAVehicleColModel(RwStream *stream, uint32 id, uint32 colSize)
+{
+	CBaseModelInfo *mi;
+	CColModel *col;
+	uint8 *buf;
+	SACol3 sa;
+
+	mi = CModelInfo::GetModelInfo(id);
+	if(mi == nil || mi->GetModelType() != MITYPE_VEHICLE)
+		return false;
+	if(colSize < 0x78 || colSize > 0x10000)
+		return false;
+	buf = (uint8*)RwMalloc(colSize);
+	if(buf == nil)
+		return false;
+	if(RwStreamRead(stream, buf, colSize) != colSize){
+		RwFree(buf);
+		return false;
+	}
+	if(!SACol3Parse(buf, colSize, sa)){
+		RwFree(buf);
+		return false;
+	}
+	RwFree(buf);
+	col = new CColModel;
+	ConvertSAColModel(sa, *col);
+	((CVehicleModelInfo*)mi)->SetEmbeddedColModel(col);
+	debug("SA collision model loaded from %s.dff: %d spheres, %d boxes, %d triangles\n",
+		mi->GetModelName(), col->numSpheres, col->numBoxes, col->numTriangles);
+	return true;
+}
+#endif
 
 bool
 CFileLoader::LoadCollisionFileFirstTime(uint8 *buffer, uint32 size, uint8 colSlot)
@@ -236,6 +417,13 @@ CFileLoader::LoadCollisionFileFirstTime(uint8 *buffer, uint32 size, uint8 colSlo
 			debug("colmodel %s is huge, size %d\n", modelname, modelsize);
 
 		mi = CModelInfo::GetModelInfo(modelname, &modelIndex);
+#ifdef SA_VEHICLE_MODELS
+		if(mi && mi->GetModelType() == MITYPE_VEHICLE &&
+		   ((CVehicleModelInfo*)mi)->HasEmbeddedColModel()){
+			debug("colmodel %s: collision is inside the DFF, keeping it\n", modelname);
+			mi = nil;
+		}
+#endif
 		if(mi){
 			CColStore::IncludeModelIndex(colSlot, modelIndex);
 			CColModel *model = new CColModel;
@@ -270,6 +458,13 @@ CFileLoader::LoadCollisionFile(uint8 *buffer, uint32 size, uint8 colSlot)
 			debug("colmodel %s is huge, size %d\n", modelname, modelsize);
 
 		mi = CModelInfo::GetModelInfo(modelname, CColStore::GetSlot(colSlot)->minIndex, CColStore::GetSlot(colSlot)->maxIndex);
+#ifdef SA_VEHICLE_MODELS
+		if(mi && mi->GetModelType() == MITYPE_VEHICLE &&
+		   ((CVehicleModelInfo*)mi)->HasEmbeddedColModel()){
+			debug("colmodel %s: collision is inside the DFF, keeping it\n", modelname);
+			mi = nil;
+		}
+#endif
 		if(mi){
 			if(mi->GetColModel()){
 				LoadCollisionModel(work_buff, *mi->GetColModel(), modelname);
@@ -451,6 +646,12 @@ CFileLoader::LoadClumpFile(const char *filename)
 	int n;
 	CClumpModelInfo *mi;
 
+#ifdef CUSTOM_MODELS
+	// the custom folder wins over the game's own files
+	if(CCustomModels::LoadClumpFileFromCustom(filename))
+		return;
+#endif
+
 	debug("Loading model file %s\n", filename);
 	stream = RwStreamOpen(rwSTREAMFILENAME, rwSTREAMREAD, filename);
 	while(RwStreamFindChunk(stream, rwID_CLUMP, nil, nil)){
@@ -459,6 +660,30 @@ CFileLoader::LoadClumpFile(const char *filename)
 			nodename = GetFrameNodeName(RpClumpGetFrame(clump));
 			GetNameAndLOD(nodename, name, &n);
 			mi = (CClumpModelInfo*)CModelInfo::GetModelInfo(name, nil);
+#ifdef SA_VEHICLE_MODEL_NAME_FALLBACK
+			if(mi == nil){
+				// SA models and mods converted from them often keep the node
+				// name of the car they were converted from, so the name in the
+				// DFF may have nothing to do with the model it is used as.
+				// The file name is the name the model was requested by.
+				char basename[32];
+				const char *base, *p;
+
+				base = filename;
+				for(p = filename; *p; p++)
+					if(*p == '\\' || *p == '/')
+						base = p+1;
+				strncpy(basename, base, 31);
+				basename[31] = '\0';
+				p = strrchr(basename, '.');
+				if(p)
+					basename[p - basename] = '\0';
+				GetNameAndLOD(basename, name, &n);
+				mi = (CClumpModelInfo*)CModelInfo::GetModelInfo(name, nil);
+				if(mi)
+					debug("Model file %s: node name doesn't match, using file name\n", filename);
+			}
+#endif
 			if(mi){
 				InitClump(clump);
 				assert(mi->IsClump());
@@ -490,7 +715,18 @@ CFileLoader::LoadClumpFile(RwStream *stream, uint32 id)
 bool
 CFileLoader::StartLoadClumpFile(RwStream *stream, uint32 id)
 {
-	if(RwStreamFindChunk(stream, rwID_CLUMP, nil, nil)){
+	uint32 size = 0;
+
+	if(RwStreamFindChunk(stream, rwID_CLUMP, &size, nil)){
+#ifdef SA_VEHICLE_MODELS
+		// remember where the clump is; the collision inside it is read in
+		// FinishLoadClumpFile, after the atomics are in
+		saClumpBodyPos = STREAMPOS(stream);
+		saClumpBodySize = size;
+		saClumpBodyKnown = true;
+#else
+		(void)size;
+#endif
 		printf("Start loading %s\n", CModelInfo::GetModelInfo(id)->GetModelName());
 		return RpClumpGtaStreamRead1(stream);
 	}else{
@@ -512,6 +748,23 @@ CFileLoader::FinishLoadClumpFile(RwStream *stream, uint32 id)
 		InitClump(clump);
 		mi = (CClumpModelInfo*)CModelInfo::GetModelInfo(id);
 		mi->SetClump(clump);
+#ifdef SA_VEHICLE_MODELS
+		if(saClumpBodyKnown && mi->GetModelType() == MITYPE_VEHICLE){
+			// SA keeps the collision of a vehicle inside the model, in the clump
+			// extension behind the atomics. The reader above does not stop there
+			// (it ends past them), so the chunks of the clump are walked again to
+			// find the collision chunk; everything else in the clump is left as it
+			// was and the stream is put back where the caller expects it.
+			uint32 save, colSize;
+			save = STREAMPOS(stream);
+			stream->seek(saClumpBodyPos, 0);
+			colSize = FindSAColChunk(stream, saClumpBodyPos + saClumpBodySize, 4);
+			if(colSize)
+				LoadSAVehicleColModel(stream, id, colSize);
+			stream->seek(save, 0);
+		}
+		saClumpBodyKnown = false;
+#endif
 		return true;
 	}else{
 		printf("FAILED\n");

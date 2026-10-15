@@ -7,11 +7,23 @@
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
+#ifdef _WIN32
+#include <io.h>
+#define log_fileno _fileno
+#define log_write _write
+#else
+#include <unistd.h>
+#define log_fileno fileno
+#define log_write write
+#endif
 
 namespace DebugLog
 {
 	static FILE *logFile;
 	static std::mutex logMutex;
+	// The crash callback cannot acquire the mutex or call stdio. Its descriptor
+	// points to the same already-flushed file as the normal logger.
+	static volatile int crashFd = -1;
 
 	bool
 	Init(const char *path)
@@ -26,6 +38,7 @@ namespace DebugLog
 			fprintf(stderr, "reVC: cannot open debug log '%s': %s\n", path, strerror(errno));
 			return false;
 		}
+		crashFd = log_fileno(logFile);
 		return true;
 	}
 
@@ -34,9 +47,29 @@ namespace DebugLog
 	{
 		std::lock_guard<std::mutex> lock(logMutex);
 		if(logFile != NULL){
+			crashFd = -1;
 			fclose(logFile);
 			logFile = NULL;
 		}
+	}
+
+	int
+	CrashFd()
+	{
+		return crashFd;
+	}
+
+	void
+	WriteCrashLine(const char *message)
+	{
+		int fd = crashFd;
+		if(fd < 0 || message == NULL)
+			return;
+		size_t length = 0;
+		while(message[length] && length < 4096)
+			length++;
+		log_write(fd, message, (unsigned int)length);
+		log_write(fd, "\n", 1);
 	}
 
 	void

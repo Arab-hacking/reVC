@@ -19,6 +19,10 @@
 #include "AnimBlendAssociation.h"
 #include "AnimBlendAssocGroup.h"
 
+#ifdef CUSTOM_MODELS
+#include "SavehDiag.h"
+#endif
+
 CAnimBlendAssocGroup::CAnimBlendAssocGroup(void)
 {
 	animBlock = nil;
@@ -46,17 +50,22 @@ CAnimBlendAssocGroup::DestroyAssociations(void)
 CAnimBlendAssociation*
 CAnimBlendAssocGroup::GetAnimation(uint32 id)
 {
-	return &assocList[id - firstAnimId];
+	int32 index = (int32)id - firstAnimId;
+	if(assocList == nil || index < 0 || index >= numAssociations || assocList[index].hierarchy == nil)
+		return nil;
+	return &assocList[index];
 }
 
 CAnimBlendAssociation*
 CAnimBlendAssocGroup::GetAnimation(const char *name)
 {
 	int i;
+	if(assocList == nil || name == nil)
+		return nil;
 	for(i = 0; i < numAssociations; i++)
-		if(!CGeneral::faststricmp(assocList[i].hierarchy->name, name))
+		if(assocList[i].hierarchy && !CGeneral::faststricmp(assocList[i].hierarchy->name, name))
 			return &assocList[i];
-	debug("\n\nCan't find the fucking animation %s\n\n\n", name);
+	debug("\n\nCan't find the animation %s\n\n\n", name);
 	return nil;
 }
 
@@ -149,6 +158,8 @@ CAnimBlendAssocGroup::CreateAssociations(const char *name)
 
 	for(i = 0; i < animBlock->numAnims; i++){
 		CAnimBlendHierarchy *anim = CAnimManager::GetAnimation(animBlock->firstIndex + i);
+		if(anim == nil)
+			continue;
 		CBaseModelInfo *model = GetModelFromName(anim->name);
 		if(model){
 			debug("Associated anim %s with model %s\n", anim->name, model->GetModelName());
@@ -173,13 +184,55 @@ CAnimBlendAssocGroup::CreateAssociations(const char *blockName, RpClump *clump, 
 	int i;
 
 	DestroyAssociations();
-
 	animBlock = CAnimManager::GetAnimationBlock(blockName);
+	if(animBlock == nil || clump == nil || animNames == nil || numAssocs <= 0)
+		return;
 	assocList = new CAnimBlendAssociation[numAssocs];
 
-	numAssociations = 0;
 	for(i = 0; i < numAssocs; i++){
-		assocList[i].Init(clump, CAnimManager::GetAnimation(animNames[i], animBlock));
+		CAnimBlendHierarchy *hier = CAnimManager::GetAnimation(animNames[i], animBlock);
+		if(hier == nil){
+#ifdef CUSTOM_MODELS
+			CUSTOM_LOG("anim assoc: %s is missing from animation bank %s; association skipped\n",
+				animNames[i], blockName);
+#else
+			debug("anim assoc: %s is missing from animation bank %s; association skipped\n",
+				animNames[i], blockName);
+#endif
+			continue;
+		}
+		assocList[i].Init(clump, hier);
+		assocList[i].animId = firstAnimId + i;
+		assocList[i].groupId = groupId;
+	}
+	numAssociations = numAssocs;
+}
+
+void
+CAnimBlendAssocGroup::CreateAssociations(const char *blockName, RpClump *clump,
+	CAnimBlendHierarchy *const *hierarchies, int numAssocs)
+{
+	int i;
+
+	DestroyAssociations();
+	animBlock = CAnimManager::GetAnimationBlock(blockName);
+	if(animBlock == nil || clump == nil || hierarchies == nil || numAssocs <= 0)
+		return;
+	assocList = new CAnimBlendAssociation[numAssocs];
+
+	for(i = 0; i < numAssocs; i++){
+		CAnimBlendHierarchy *hier = hierarchies[i];
+		if(hier == nil){
+#ifdef CUSTOM_MODELS
+			CUSTOM_LOG("anim assoc: SA group %d has no SA hierarchy for animation id %d; association skipped\n",
+				groupId, firstAnimId + i);
+#else
+			debug("anim assoc: SA group %d has no SA hierarchy for animation id %d; association skipped\n",
+				groupId, firstAnimId + i);
+#endif
+			continue;
+		}
+		assocList[i].Init(clump, hier);
 		assocList[i].animId = firstAnimId + i;
 		assocList[i].groupId = groupId;
 	}

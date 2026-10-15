@@ -1,2 +1,7 @@
 sdk/* linguist-vendored
 vendor/* linguist-vendored
+# Preserve the user's vendored librw and third-party snapshots byte-for-byte;
+# old generated shaders and imported code contain upstream trailing whitespace.
+vendor/librw/** whitespace=-trailing-space,-blank-at-eof,cr-at-eol
+src/extras/custom/br/third_party/** whitespace=-trailing-space,-blank-at-eof,cr-at-eol
+brso/world_shader_pieces.txt whitespace=-trailing-space,-blank-at-eof,cr-at-eol
