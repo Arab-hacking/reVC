@@ -311,32 +311,34 @@ TestNativeMod(const std::vector<uint8> &mod)
 	check(brres::isReserved("player"), "player is a reserved name");
 	check(!brres::isReserved("glendale"), "glendale is not reserved");
 
-	// BR .ani: the header fields go back to where SA (and this game) read
-	// them - size at +4, block name at +8, numAnims at +32
-	std::vector<uint8> ani(0x28 + 64, 0);
-	const char magic[4] = { 'A', 'N', 'P', '3' };
-	memcpy(ani.data(), magic, 4);
-	// BR names the block with at least four printable characters (the header
-	// detector requires it); "ped" would be rejected, real files do not use it
-	memcpy(&ani[4], "walk", 4);                                 // block name start
-	uint32 numAnims = 1;
-	memcpy(&ani[28], &numAnims, 4);                              // carried with the name
-	uint32 brSize = 40;
-	memcpy(&ani[0x20], &brSize, 4);                              // size at +0x20
-	uint32 garbage = 0xDEADBEEF;
-	memcpy(&ani[0x24], &garbage, 4);
-	check(br::isBrAni(ani.data(), ani.size()), "a BR .ani is recognised");
-	check(br::convertAniToIfp(ani), "the .ani header is reordered");
-	check(memcmp(&ani[4], &brSize, 4) == 0, ".ani: size moved to +4");
-	check(memcmp(&ani[8], "walk", 4) == 0, ".ani: block name at +8");
-	uint32 got = 0;
-	memcpy(&got, &ani[32], 4);
-	check(got == 1, ".ani: numAnims at +32");
-	{
-		std::vector<uint8> zeros(64, 0);
-		check(memcmp(&ani[0x28], zeros.data(), 64) == 0, ".ani: body untouched");
-	}
-	check(!br::isBrAni(ani.data(), ani.size()), "the reordered .ani is not a BR header anymore");
+	// Legacy shim only: one extra word at +36 shifts the first animation.
+	// Ordinary mobile BR .ani dictionaries must go straight to the reader.
+	std::vector<uint8> ani(40, 0);
+	memcpy(ani.data(), "ANP3", 4);
+	memcpy(ani.data() + 4, "walk", 4);
+	ani[28] = 1; // one animation
+	ani[32] = 40; // ignored exporter word
+	memcpy(ani.data() + 36, "JUNK", 4);
+	size_t animStart = ani.size();
+	ani.resize(ani.size() + 24, 0);
+	memcpy(ani.data() + animStart, "CAR_getin_LHS", 13);
+	put32(ani, 1); put32(ani, 16); put32(ani, 1); // sequence count, data size, exporter
+	size_t boneStart = ani.size();
+	ani.resize(ani.size() + 24, 0);
+	memcpy(ani.data() + boneStart, "Root", 4);
+	put32(ani, 4); put32(ani, 1); put32(ani, 0); // compressed root, one frame, bone ID
+	ani.resize(ani.size() + 16, 0);
+	std::vector<uint8> body(ani.begin() + 40, ani.end());
+	int numNames = 0;
+	check(br::isBrAni(ani.data(), ani.size()), "legacy .ani shim is recognised");
+	check(!br::SniffAnimNames(ani.data(), ani.size(), nil, 10, numNames),
+	      "legacy .ani does not pass as an ordinary mobile dictionary");
+	check(br::convertAniToIfp(ani), "legacy shim word is removed");
+	check(ani.size() == 36 + body.size() &&
+	      memcmp(ani.data() + 36, body.data(), body.size()) == 0,
+	      "legacy .ani body shifts intact to its expected +36 offset");
+	check(br::SniffAnimNames(ani.data(), ani.size(), nil, 10, numNames) && numNames == 1,
+	      "converted .ani can be read as a mobile IFP");
 }
 
 int

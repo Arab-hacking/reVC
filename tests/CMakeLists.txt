@@ -21,15 +21,43 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Cla
     add_executable(anim_association_nodes_tests
         AnimAssociationNodesTests.cpp
         ../src/animation/AnimBlendAssociation.cpp
-        ../src/animation/AnimBlendNode.cpp)
+        ../src/animation/AnimBlendNode.cpp
+        ../src/animation/Bones.cpp)
     target_compile_definitions(anim_association_nodes_tests PRIVATE
         LIBRW RW_GL3 LIBRW_SDL2 CMAKE_BUILD USE_OUR_VERSIONING AUDIO_OAL)
     target_include_directories(anim_association_nodes_tests PRIVATE
         ../vendor/librw ../vendor/librw/src/gl ../vendor/sdl2/include
         ../src/fakerw ../src/core ../src/math ../src/skel ../src/animation
-        ../src/modelinfo ../src/renderer ../src/rw)
+        ../src/modelinfo ../src/renderer ../src/rw ../src/collision ../src/peds)
     target_compile_options(anim_association_nodes_tests PRIVATE -ffunction-sections -fdata-sections)
     target_link_options(anim_association_nodes_tests PRIVATE -Wl,--gc-sections)
     set_target_properties(anim_association_nodes_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
     add_test(NAME anim_association_nodes_tests COMMAND anim_association_nodes_tests)
+
+    # Link the actual ANPK/ANP3 reader with a memory-stream shim. Section GC
+    # keeps the unrelated game/renderer entry points out of this fixture.
+    set(ANIM_FILE_READER_SOURCES
+        AnimFileReadTests.cpp
+        ../src/animation/AnimManager.cpp
+        ../src/animation/AnimBlendHierarchy.cpp
+        ../src/animation/AnimBlendSequence.cpp
+        ../src/math/Quaternion.cpp)
+    add_executable(anim_file_read_tests ${ANIM_FILE_READER_SOURCES})
+    add_executable(anim_file_read_compressed_tests ${ANIM_FILE_READER_SOURCES})
+    foreach(reader_test anim_file_read_tests anim_file_read_compressed_tests)
+    target_compile_definitions(${reader_test} PRIVATE
+        LIBRW RW_GL3 LIBRW_SDL2 CMAKE_BUILD USE_OUR_VERSIONING AUDIO_OAL)
+    target_include_directories(${reader_test} PRIVATE
+        ../vendor/librw ../vendor/librw/src/gl ../vendor/sdl2/include
+        ../src ../src/animation ../src/audio ../src/buildings ../src/collision
+        ../src/control ../src/core ../src/entities ../src/extras
+        ../src/extras/custom ../src/extras/custom/br ../src/fakerw ../src/math
+        ../src/modelinfo ../src/objects ../src/peds ../src/renderer ../src/rw
+        ../src/save ../src/skel ../src/text ../src/vehicles ../src/weapons)
+    target_compile_options(${reader_test} PRIVATE -ffunction-sections -fdata-sections)
+    target_link_options(${reader_test} PRIVATE -Wl,--gc-sections)
+    set_target_properties(${reader_test} PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+    add_test(NAME ${reader_test} COMMAND ${reader_test})
+    endforeach()
+    target_compile_definitions(anim_file_read_compressed_tests PRIVATE ANIM_COMPRESSION)
 endif()

@@ -4453,6 +4453,9 @@ CPed::PedSetInCarCB(CAnimBlendAssociation *animAssoc, void *arg)
 	}
 
 	veh->m_nGettingInFlags &= ~doorFlag;
+	if(ped->IsPlayer())
+		REVC_LOG_INFO("Vehicle entry: seated (vehicle model=%d, driver=%d, door=%d)",
+			veh->GetModelIndex(), veh->pDriver == ped, ped->m_vehDoor);
 
 	if (veh->bIsBus && !veh->m_nGettingInFlags)
 		((CAutomobile*)veh)->SetBusDoorTimer(1000, 1);
@@ -7475,6 +7478,10 @@ CPed::SeekCar(void)
 	if (dest.x == 0.0f && dest.y == 0.0f) {
 #ifdef FIX_BUGS
 		if ((!IsPlayer() && CharCreatedBy != MISSION_CHAR) || vehToSeek->VehicleCreatedBy != MISSION_VEHICLE || vehToSeek->pDriver || !vehToSeek->CanPedOpenLocks(this)) {
+			if(IsPlayer())
+				REVC_LOG_WARNING("Vehicle entry: no usable door (vehicle model=%d, objective=%d, driver=%d, locks=%d)",
+					vehToSeek->GetModelIndex(), m_objective, vehToSeek->pDriver != nil,
+					vehToSeek->CanPedOpenLocks(this));
 #else
 		if ((!IsPlayer() && CharCreatedBy != MISSION_CHAR) || vehToSeek->VehicleCreatedBy != MISSION_VEHICLE || vehToSeek->pDriver) {
 #endif

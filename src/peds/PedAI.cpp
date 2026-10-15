@@ -2294,6 +2294,26 @@ CPed::ReactToAttack(CEntity *attacker)
 	}
 }
 
+// A parallel SA dictionary can omit individual car clips. Never leave the
+// pedestrian in PED_ENTER_CAR with an unset callback or dereference a missing
+// association: restore the vehicle/door flags and name the failed stage.
+static bool
+ContinueVehicleEntryWithAnimation(CPed *ped, void (*finish)(CAnimBlendAssociation*, void*), const char *stage)
+{
+	CAnimBlendAssociation *anim = ped->m_pVehicleAnim;
+	if(anim == nil){
+		if(ped->IsPlayer())
+			REVC_LOG_WARNING("Vehicle entry: missing %s animation (ped model=%d, vehicle model=%d, door=%d)",
+				stage, ped->GetModelIndex(), ped->m_pMyVehicle ? ped->m_pMyVehicle->GetModelIndex() : -1, ped->m_vehDoor);
+		ped->QuitEnteringCar();
+		return false;
+	}
+	if(ped->IsPlayer())
+		REVC_LOG_INFO("Vehicle entry: %s animation %d (door=%d)", stage, anim->animId, ped->m_vehDoor);
+	anim->SetFinishCallback(finish, ped);
+	return true;
+}
+
 void
 CPed::PedAnimAlignCB(CAnimBlendAssociation *animAssoc, void *arg)
 {
@@ -2351,7 +2371,8 @@ CPed::PedAnimAlignCB(CAnimBlendAssociation *animAssoc, void *arg)
 		if (veh->GetStatus() == STATUS_ABANDONED) {
 			if (ped->m_vehDoor == CAR_WINDSCREEN) {
 				ped->m_pVehicleAnim = CAnimManager::BlendAnimation(ped->GetClump(), ((CBike*)veh)->m_bikeAnimType, ANIM_BIKE_KICK, 6.0f);
-				ped->m_pVehicleAnim->SetFinishCallback(PedAnimGetInCB, ped);
+				if(!ContinueVehicleEntryWithAnimation(ped, PedAnimGetInCB, "get in"))
+					return;
 				((CBike*)veh)->bIsBeingPickedUp = true;
 
 			} else if (veh->GetRight().z >= 0.5f || veh->GetRight().z <= -0.5f || veh->GetUp().z <= 0.0f) {
@@ -2367,12 +2388,14 @@ CPed::PedAnimAlignCB(CAnimBlendAssociation *animAssoc, void *arg)
 					else
 						ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), ASSOCGRP_STD, ANIM_STD_BIKE_PULLUP_RHS);
 				}
-				ped->m_pVehicleAnim->SetFinishCallback(PedAnimDoorOpenCB, ped);
+				if(!ContinueVehicleEntryWithAnimation(ped, PedAnimDoorOpenCB, "open door"))
+					return;
 
 			} else {
 				ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), ((CBike*)veh)->m_bikeAnimType,
 					enterDoor == DOOR_FRONT_LEFT || enterDoor == DOOR_REAR_LEFT ? ANIM_BIKE_JUMPON_LHS : ANIM_BIKE_JUMPON_RHS);
-				ped->m_pVehicleAnim->SetFinishCallback(PedAnimGetInCB, ped);
+				if(!ContinueVehicleEntryWithAnimation(ped, PedAnimGetInCB, "get in"))
+					return;
 				((CBike*)veh)->bIsBeingPickedUp = true;
 			}
 		} else if (ped->m_vehDoor == CAR_WINDSCREEN) {
@@ -2380,7 +2403,8 @@ CPed::PedAnimAlignCB(CAnimBlendAssociation *animAssoc, void *arg)
 				ped->QuitEnteringCar();
 			} else {
 				ped->m_pVehicleAnim = CAnimManager::BlendAnimation(ped->GetClump(), ((CBike*)veh)->m_bikeAnimType, ANIM_BIKE_KICK, 6.0f);
-				ped->m_pVehicleAnim->SetFinishCallback(PedAnimGetInCB, ped);
+				if(!ContinueVehicleEntryWithAnimation(ped, PedAnimGetInCB, "get in"))
+					return;
 				pedToDragOut = veh->pDriver;
 			}
 			((CBike*)veh)->bIsBeingPickedUp = true;
@@ -2396,14 +2420,16 @@ CPed::PedAnimAlignCB(CAnimBlendAssociation *animAssoc, void *arg)
 						ped->QuitEnteringCar();
 					} else {
 						ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), ASSOCGRP_STD, enterDoor == DOOR_FRONT_LEFT ? ANIM_STD_BIKE_ELBOW_LHS : ANIM_STD_BIKE_ELBOW_RHS);
-						ped->m_pVehicleAnim->SetFinishCallback(PedAnimPullPedOutCB, ped);
+						if(!ContinueVehicleEntryWithAnimation(ped, PedAnimPullPedOutCB, "pull occupant out"))
+							return;
 						pedToDragOut = veh->pDriver;
 					}
 					((CBike*)veh)->bIsBeingPickedUp = true;
 
 				} else {
 					ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), ((CBike*)veh)->m_bikeAnimType, enterDoor == DOOR_FRONT_LEFT ? ANIM_BIKE_JUMPON_LHS : ANIM_BIKE_JUMPON_RHS);
-					ped->m_pVehicleAnim->SetFinishCallback(PedAnimGetInCB, ped);
+					if(!ContinueVehicleEntryWithAnimation(ped, PedAnimGetInCB, "get in"))
+						return;
 					((CBike*)veh)->bIsBeingPickedUp = true;
 				}
 			} else {
@@ -2418,7 +2444,8 @@ CPed::PedAnimAlignCB(CAnimBlendAssociation *animAssoc, void *arg)
 					} else {
 						ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), ASSOCGRP_STD,
 							enterDoor == DOOR_REAR_LEFT ? ANIM_STD_BIKE_ELBOW_LHS : ANIM_STD_BIKE_ELBOW_RHS);
-						ped->m_pVehicleAnim->SetFinishCallback(PedAnimPullPedOutCB, ped);
+						if(!ContinueVehicleEntryWithAnimation(ped, PedAnimPullPedOutCB, "pull occupant out"))
+							return;
 						pedToDragOut = veh->pPassengers[0];
 					}
 					((CBike*)veh)->bIsBeingPickedUp = true;
@@ -2426,7 +2453,8 @@ CPed::PedAnimAlignCB(CAnimBlendAssociation *animAssoc, void *arg)
 				} else {
 					ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(),
 						((CBike*)veh)->m_bikeAnimType, enterDoor == DOOR_REAR_LEFT ? ANIM_BIKE_JUMPON_LHS : ANIM_BIKE_JUMPON_RHS);
-					ped->m_pVehicleAnim->SetFinishCallback(PedAnimGetInCB, ped);
+					if(!ContinueVehicleEntryWithAnimation(ped, PedAnimGetInCB, "get in"))
+						return;
 					((CBike*)veh)->bIsBeingPickedUp = true;
 				}
 			}
@@ -2474,7 +2502,8 @@ CPed::PedAnimAlignCB(CAnimBlendAssociation *animAssoc, void *arg)
 		} else {
 			ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), ASSOCGRP_STD, ANIM_STD_CAR_GET_IN_LHS);
 		}
-		ped->m_pVehicleAnim->SetFinishCallback(PedAnimGetInCB, ped);
+		if(!ContinueVehicleEntryWithAnimation(ped, PedAnimGetInCB, "get in"))
+			return;
 
 	} else if (veh->CanPedOpenLocks(ped)) {
 
@@ -2500,7 +2529,8 @@ CPed::PedAnimAlignCB(CAnimBlendAssociation *animAssoc, void *arg)
 					&& veh->pDriver->m_nPedState == PED_DRIVING) {
 
 					ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), ASSOCGRP_STD, ANIM_STD_QUICKJACK);
-					ped->m_pVehicleAnim->SetFinishCallback(PedAnimGetInCB, ped);
+					if(!ContinueVehicleEntryWithAnimation(ped, PedAnimGetInCB, "get in"))
+						return;
 
 					CPlayerPed *player = nil;
 					CCopPed *cop = nil;
@@ -2520,12 +2550,14 @@ CPed::PedAnimAlignCB(CAnimBlendAssociation *animAssoc, void *arg)
 			}
 			if (veh->IsOpenTopCar() && !veh->pDriver && ped->m_objective == OBJECTIVE_ENTER_CAR_AS_DRIVER) {
 				ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), ASSOCGRP_STD, ANIM_STD_CAR_JUMP_IN_LO_LHS);
-				ped->m_pVehicleAnim->SetFinishCallback(PedAnimGetInCB, ped);
+				if(!ContinueVehicleEntryWithAnimation(ped, PedAnimGetInCB, "get in"))
+					return;
 				return;
 			}
 			ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), ASSOCGRP_STD, ANIM_STD_CAR_OPEN_DOOR_LHS);
 		}
-		ped->m_pVehicleAnim->SetFinishCallback(PedAnimDoorOpenCB, ped);
+		if(!ContinueVehicleEntryWithAnimation(ped, PedAnimDoorOpenCB, "open door"))
+			return;
 
 	} else {
 		if (enterDoor != DOOR_FRONT_LEFT && enterDoor != DOOR_REAR_LEFT)
@@ -2534,7 +2566,8 @@ CPed::PedAnimAlignCB(CAnimBlendAssociation *animAssoc, void *arg)
 			ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), ASSOCGRP_STD, ANIM_STD_CARDOOR_LOCKED_LHS);
 
 		ped->bCancelEnteringCar = true;
-		ped->m_pVehicleAnim->SetFinishCallback(PedAnimDoorOpenCB, ped);
+		if(!ContinueVehicleEntryWithAnimation(ped, PedAnimDoorOpenCB, "open door"))
+			return;
 	}
 }
 
@@ -2661,7 +2694,8 @@ CPed::PedAnimDoorOpenCB(CAnimBlendAssociation* animAssoc, void* arg)
 				pedInSeat->SetObjective(OBJECTIVE_LEAVE_CAR, veh);
 		}
 		
-		ped->m_pVehicleAnim->SetFinishCallback(PedAnimGetInCB, ped);
+		if(!ContinueVehicleEntryWithAnimation(ped, PedAnimGetInCB, "get in"))
+			return;
 	} else {
 		CPed *pedToDragOut = nil;
 		switch (ped->m_vehDoor) {
@@ -2690,7 +2724,8 @@ CPed::PedAnimDoorOpenCB(CAnimBlendAssociation* animAssoc, void* arg)
 					else
 						ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), ASSOCGRP_STD, ANIM_STD_CAR_PULL_OUT_PED_RHS);
 
-					ped->m_pVehicleAnim->SetFinishCallback(PedAnimPullPedOutCB, ped);
+					if(!ContinueVehicleEntryWithAnimation(ped, PedAnimPullPedOutCB, "pull occupant out"))
+						return;
 				}
 			} else if (ped->m_nPedType == PEDTYPE_COP) {
 				ped->QuitEnteringCar();
@@ -2713,7 +2748,8 @@ CPed::PedAnimDoorOpenCB(CAnimBlendAssociation* animAssoc, void* arg)
 				else
 					ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), ASSOCGRP_STD, ANIM_STD_CAR_GET_IN_RHS);
 
-				ped->m_pVehicleAnim->SetFinishCallback(PedAnimGetInCB, ped);
+				if(!ContinueVehicleEntryWithAnimation(ped, PedAnimGetInCB, "get in"))
+					return;
 			}
 		} else if (pedToDragOut) {
 
@@ -2726,7 +2762,8 @@ CPed::PedAnimDoorOpenCB(CAnimBlendAssociation* animAssoc, void* arg)
 				else
 					ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), ASSOCGRP_STD, ANIM_STD_CAR_PULL_OUT_PED_LHS);
 					
-				ped->m_pVehicleAnim->SetFinishCallback(PedAnimPullPedOutCB, ped);
+				if(!ContinueVehicleEntryWithAnimation(ped, PedAnimPullPedOutCB, "pull occupant out"))
+					return;
 			}
 		} else {
 			if (isLow)
@@ -2734,7 +2771,8 @@ CPed::PedAnimDoorOpenCB(CAnimBlendAssociation* animAssoc, void* arg)
 			else
 				ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), ASSOCGRP_STD, ANIM_STD_CAR_GET_IN_LHS);
 
-			ped->m_pVehicleAnim->SetFinishCallback(PedAnimGetInCB, ped);
+			if(!ContinueVehicleEntryWithAnimation(ped, PedAnimGetInCB, "get in"))
+				return;
 		}
 
 		if (pedToDragOut) {
@@ -2833,7 +2871,8 @@ CPed::PedAnimPullPedOutCB(CAnimBlendAssociation* animAssoc, void* arg)
 				else
 					ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), ASSOCGRP_STD, ANIM_STD_CAR_GET_IN_RHS);
 			}
-			ped->m_pVehicleAnim->SetFinishCallback(PedAnimGetInCB, ped);
+			if(!ContinueVehicleEntryWithAnimation(ped, PedAnimGetInCB, "get in"))
+				return;
 		} else {
 			ped->QuitEnteringCar();
 		}
@@ -2987,7 +3026,8 @@ CPed::PedAnimGetInCB(CAnimBlendAssociation *animAssoc, void *arg)
 		} else {
 			ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), ASSOCGRP_STD, ANIM_STD_CAR_CLOSE_DOOR_LHS);
 		}
-		ped->m_pVehicleAnim->SetFinishCallback(PedAnimDoorCloseCB, ped);
+		if(!ContinueVehicleEntryWithAnimation(ped, PedAnimDoorCloseCB, "close door"))
+			return;
 	}
 }
 
@@ -2998,6 +3038,12 @@ CPed::PedShuffle(void)
 		CPed *driver = m_pMyVehicle->pDriver;
 		if (!driver || driver->m_objective == OBJECTIVE_LEAVE_CAR) {
 			m_pVehicleAnim = CAnimManager::AddAnimation(GetClump(), ASSOCGRP_STD, m_pMyVehicle->bLowVehicle ? ANIM_STD_CAR_SHUFFLE_LO_RHS : ANIM_STD_CAR_SHUFFLE_RHS);
+			if(!m_pVehicleAnim){
+				if(IsPlayer())
+					REVC_LOG_WARNING("Vehicle entry: missing passenger-to-driver shuffle animation (ped model=%d, vehicle model=%d)",
+						GetModelIndex(), m_pMyVehicle->GetModelIndex());
+				return; // keep the passenger seated rather than stranding them outside
+			}
 			m_objective = OBJECTIVE_ENTER_CAR_AS_DRIVER;
 			m_pMyVehicle->RemovePassenger(this);
 			bInVehicle = false;
@@ -3065,7 +3111,8 @@ CPed::PedAnimDoorCloseCB(CAnimBlendAssociation *animAssoc, void *arg)
 			else
 				ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), ASSOCGRP_STD, ANIM_STD_CAR_SHUFFLE_RHS);
 
-			ped->m_pVehicleAnim->SetFinishCallback(PedSetInCarCB, ped);
+			if(!ContinueVehicleEntryWithAnimation(ped, PedSetInCarCB, "seat"))
+				return;
 		}
 	} else if (ped->m_nPedState != PED_DRIVING) {
 		ped->QuitEnteringCar();
@@ -3935,9 +3982,19 @@ CPed::SetEnterCar(CVehicle *car, uint32 unused)
 		if (!IsPedInControl() || m_fHealth <= 0.0f
 			|| doorFlag & car->m_nGettingInFlags || doorFlag & car->m_nGettingOutFlags
 			|| car->bIsBeingCarJacked || m_pVehicleAnim
-			|| doorFlag && !car->IsDoorReady(door) && !car->IsDoorFullyOpen(door))
+			|| doorFlag && !car->IsDoorReady(door) && !car->IsDoorFullyOpen(door)){
+			if(IsPlayer()){
+				static uint32 lastRefusalLog;
+				uint32 now = CTimer::GetTimeInMilliseconds();
+				if(now - lastRefusalLog >= 1000){
+					REVC_LOG_INFO("Vehicle entry: door %d refused (state=%d, flags=%d/%d, jacked=%d, anim=%d)",
+						m_vehDoor, m_nPedState, car->m_nGettingInFlags, car->m_nGettingOutFlags,
+						car->bIsBeingCarJacked, m_pVehicleAnim != nil);
+					lastRefusalLog = now;
+				}
+			}
 			SetMoveState(PEDMOVE_STILL);
-		else
+		}else
 			SetEnterCar_AllClear(car, m_vehDoor, doorFlag);
 	}
 }
@@ -3990,7 +4047,8 @@ CPed::SetEnterCar_AllClear(CVehicle *car, uint32 doorNode, uint32 doorFlag)
 			m_pVehicleAnim = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, zDiff > 4.4f ? ANIM_STD_CAR_ALIGNHI_DOOR_RHS : ANIM_STD_CAR_ALIGN_DOOR_RHS, 4.0f);
 		else
 			m_pVehicleAnim = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, zDiff > 4.4f ? ANIM_STD_CAR_ALIGNHI_DOOR_LHS : ANIM_STD_CAR_ALIGN_DOOR_LHS, 4.0f);
-		m_pVehicleAnim->SetFinishCallback(PedAnimAlignCB, this);
+		if(!ContinueVehicleEntryWithAnimation(this, PedAnimAlignCB, "align"))
+			return;
 	}
 }
 
@@ -4869,12 +4927,10 @@ void CPed::PedSetGetInCarPositionCB(CAnimBlendAssociation* assoc, void* arg)
 static CVector
 GetAnimationLastTranslation(AssocGroupId groupId, AnimationId animId)
 {
-	CAnimBlendAssociation *assoc = CAnimManager::GetAnimAssociation(groupId, animId);
-	CAnimBlendHierarchy *hier;
+	CAnimBlendHierarchy *hier = CAnimManager::GetAnimHierarchyForOffset(groupId, animId);
 	CAnimBlendSequence *seq;
-	if(assoc == nil || assoc->hierarchy == nil)
+	if(hier == nil)
 		return CVector(0.0f, 0.0f, 0.0f);
-	hier = assoc->hierarchy;
 	if(hier->sequences == nil || hier->numSequences <= 0)
 		return CVector(0.0f, 0.0f, 0.0f);
 	CAnimManager::UncompressAnimation(hier);
@@ -4916,6 +4972,13 @@ CPed::SetAnimOffsetForEnterOrExitVehicle(void)
 	vecPedHarleyBikeJumpRhsAnimOffset = GetAnimationLastTranslation(ASSOCGRP_BIKE_HARLEY, ANIM_BIKE_JUMPON_LHS);
 	vecPedDirtBikeJumpRhsAnimOffset = GetAnimationLastTranslation(ASSOCGRP_BIKE_DIRT, ANIM_BIKE_JUMPON_LHS);
 	vecPedBikeKickAnimOffset = GetAnimationLastTranslation(ASSOCGRP_BIKE_HARLEY, ANIM_BIKE_KICK);
+
+	REVC_LOG_INFO("Car approach offsets: normal=(%.3f, %.3f, %.3f) low=(%.3f, %.3f, %.3f); VC group=%d",
+		vecPedCarDoorAnimOffset.x, vecPedCarDoorAnimOffset.y, vecPedCarDoorAnimOffset.z,
+		vecPedCarDoorLoAnimOffset.x, vecPedCarDoorLoAnimOffset.y, vecPedCarDoorLoAnimOffset.z,
+		CAnimManager::GetAnimAssociation(ASSOCGRP_STD, ANIM_STD_CAR_GET_IN_LHS) != nil);
+	if(vecPedCarDoorAnimOffset.MagnitudeSqr() < 0.01f)
+		REVC_LOG_WARNING("CAR_getin_LHS has no root translation: door reachability may fail");
 
 	for(int i = 0; i < ARRAY_SIZE(animBlocks); i++)
 		if(animBlocks[i] >= 0)

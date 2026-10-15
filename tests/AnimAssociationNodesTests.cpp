@@ -6,6 +6,7 @@
 #include "AnimBlendAssociation.h"
 #include "AnimBlendClumpData.h"
 #include "AnimManager.h"
+#include "Bones.h"
 #include "RpAnimBlend.h"
 
 #include <cstdio>
@@ -79,8 +80,14 @@ RpAnimBlendClumpFindBone(RpClump *clump, uint32 boneTag)
 }
 
 AnimBlendFrameData*
-RpAnimBlendClumpFindFrame(RpClump*, const char*)
+RpAnimBlendClumpFindFrame(RpClump *clump, const char *name)
 {
+	CAnimBlendClumpData *data = *RPANIMBLENDCLUMPDATA(clump);
+	for(int i = 0; i < data->numFrames; i++){
+		const char *boneName = ConvertBoneTag2BoneName(data->frames[i].nodeID);
+		if(MatchAnimBoneNames(boneName, name))
+			return &data->frames[i];
+	}
 	return nil;
 }
 
@@ -156,6 +163,31 @@ main(void)
 		Check(target.numNodes == 1 && target.nodes[0].sequence == &sequences[1],
 			"missing bone is skipped");
 	}
+	Check(MatchAnimBoneNames("Spine1", " Spine 1") &&
+		MatchAnimBoneNames("Bip01 L Clavicle", " L Clavicle") &&
+		MatchAnimBoneNames(ConvertBoneTag2BoneName(BONE_l_toe), " L Toe0") &&
+		MatchAnimBoneNames(ConvertBoneTag2BoneName(BONE_r_finger01), " R Finger01") &&
+		!MatchAnimBoneNames("Spine1", "Spine2") &&
+		!MatchAnimBoneNames("R Hand", "L Hand"),
+		"SA bone-name fallback ignores exporter spacing without swapping limbs");
+	FakeClump saPed(3, BONE_root, BONE_spine1, BONE_l_clavicle);
+	CAnimBlendHierarchy hiAlign;
+	CAnimBlendSequence alignSequences[3];
+	strcpy(alignSequences[0].name, " Root");
+	strcpy(alignSequences[1].name, " Spine 1");
+	strcpy(alignSequences[2].name, " L Clavicle");
+	for(int i = 0; i < 3; i++){
+		alignSequences[i].boneTag = -1;
+		alignSequences[i].numFrames = 1;
+	}
+	hiAlign.sequences = alignSequences;
+	hiAlign.numSequences = 3;
+	CAnimBlendAssociation align;
+	align.Init(saPed.Get(), &hiAlign);
+	Check(align.nodes[0].sequence == &alignSequences[0] &&
+		align.nodes[1].sequence == &alignSequences[1] &&
+		align.nodes[2].sequence == &alignSequences[2],
+		"CAR_alignHI with every bone ID -1 still animates an SA ped");
 	puts("Animation skeleton rebinding OK");
 	return 0;
 }

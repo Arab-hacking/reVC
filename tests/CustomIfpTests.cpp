@@ -100,6 +100,34 @@ SAIfp(void)
 	return file;
 }
 
+// A real BR .ani is a size-less ANP3 IFP. The ignored group value may be
+// fileSize-8, zero or one; none of these is a second animation count. The
+// exporter can also leave arbitrary bytes after the declared animations.
+static std::vector<uint8>
+MobileIfp(const char *magic, uint32 groupValue, uint32 frameType, bool junkTail)
+{
+	std::vector<uint8> file;
+	file.insert(file.end(), magic, magic + 4);
+	Name(file, "ped", 24);
+	Put32(file, 1);
+	Put32(file, groupValue);
+	Name(file, "CAR_getin_LHS", 24);
+	Put32(file, 1);
+	if(magic[3] == '3'){
+		Put32(file, frameType == 4 ? 16 : frameType == 3 ? 10 : frameType == 2 ? 32 : 20);
+		Put32(file, 1); // exporter/version word, NOT a compression flag
+	}
+	Name(file, " Root", 24);
+	Put32(file, frameType);
+	Put32(file, 1);
+	Put32(file, 0); // root bone ID
+	size_t frameSize = frameType == 4 ? 16 : frameType == 3 ? 10 : frameType == 2 ? 32 : 20;
+	file.resize(file.size() + frameSize, 0);
+	if(junkTail)
+		file.insert(file.end(), 68, 0x5a);
+	return file;
+}
+
 static size_t
 Find(const std::vector<uint8> &file, const char *tag)
 {
@@ -136,6 +164,50 @@ main(void)
 	Check(br::SniffAnimNames(sa.data(), sa.size(), names, 16, count, block) &&
 		count == 1 && std::string(names[0]) == "walk_civi" && block[0] == '\0',
 		"SA ANP3 still accepted as a parallel animation bank");
+	animfile::ANP23Header header;
+	Check(animfile::ParseANP23Header(sa.data() + 4, sa.size() - 4, sa.size(), header) &&
+		!header.mobile && header.numAnims == 1 && std::string(header.blockName) == "ped",
+		"PC ANP3 root size, block name and count read in the right order");
+
+	for(uint32 groupValue = 0; groupValue <= 1; ++groupValue){
+		std::vector<uint8> ani = MobileIfp("ANP3", groupValue, 4, true);
+		ani[36 + strlen("CAR_getin_LHS") + 1] = 0x81; // exporter junk after NUL
+		Check(animfile::ParseANP23Header(ani.data() + 4, ani.size() - 4, ani.size(), header) &&
+			header.mobile && header.numAnims == 1 && std::string(header.blockName) == "ped",
+			"size-less ANP3 count is not confused with groupVal 0 or 1");
+		Check(br::SniffAnimNames(ani.data(), ani.size(), names, 16, count) &&
+			count == 1 && std::string(names[0]) == "CAR_getin_LHS",
+			"mobile .ani compressed translation frames and stale exporter tail accepted");
+	}
+	std::vector<uint8> ani = MobileIfp("ANP3", 0, 3, false);
+	Set32(ani, 32, (uint32)ani.size() - 8);
+	Check(br::SniffAnimNames(ani.data(), ani.size(), names, 16, count) && count == 1,
+		"real .ani groupVal=fileSize-8 accepted");
+	Check(!br::isBrAni(ani.data(), ani.size()) ||
+		animfile::ParseANP23Header(ani.data() + 4, ani.size() - 4, ani.size(), header),
+		"a modern mobile .ani must not have its header reordered");
+	std::vector<uint8> mobileAnp2 = MobileIfp("ANP2", 0, 2, false);
+	Check(br::SniffAnimNames(mobileAnp2.data(), mobileAnp2.size(), names, 16, count) && count == 1,
+		"size-less ANP2 float translation frames accepted");
+	std::vector<uint8> mobileFloat = MobileIfp("ANP3", 1, 1, false);
+	Check(br::SniffAnimNames(mobileFloat.data(), mobileFloat.size(), names, 16, count) && count == 1,
+		"ANP3 float rotation frames accepted independently of exporter word");
+
+	std::vector<uint8> legacy = MobileIfp("ANP3", 0, 4, false);
+	memcpy(legacy.data() + 4, "walk", 4); // the old detector needs four printable bytes
+	legacy.insert(legacy.begin() + 36, 4, 0x5a); // legacy shim before the clip
+	Check(br::isBrAni(legacy.data(), legacy.size()) &&
+		!br::SniffAnimNames(legacy.data(), legacy.size(), nil, 16, count),
+		"legacy extra word is not mistaken for a valid mobile dictionary");
+	Check(br::convertAniToIfp(legacy) &&
+		br::SniffAnimNames(legacy.data(), legacy.size(), names, 16, count) &&
+		count == 1 && std::string(names[0]) == "CAR_getin_LHS",
+		"legacy extra word removed before handing animation data to the reader");
+	std::vector<uint8> modernWalk = MobileIfp("ANP3", 1, 4, false);
+	memcpy(modernWalk.data() + 4, "walk", 4);
+	Check(br::isBrAni(modernWalk.data(), modernWalk.size()) &&
+		br::SniffAnimNames(modernWalk.data(), modernWalk.size(), nil, 16, count),
+		"real mobile dictionary remains valid despite matching legacy prefix heuristic");
 
 	std::vector<uint8> corrupt = vc;
 	corrupt.pop_back();
@@ -157,5 +229,13 @@ main(void)
 	Set32(corrupt, Find(corrupt, "root") + 24, 9);
 	Check(!br::SniffAnimNames(corrupt.data(), corrupt.size(), names, 16, count),
 		"invalid SA frame type rejected");
+	corrupt = MobileIfp("ANP3", 1, 4, false);
+	Set32(corrupt, 28, 2);
+	Check(!br::SniffAnimNames(corrupt.data(), corrupt.size(), names, 16, count),
+		"missing second mobile clip is rejected, not filled from groupVal");
+	corrupt = MobileIfp("ANP3", 0, 4, false);
+	corrupt.pop_back();
+	Check(!br::SniffAnimNames(corrupt.data(), corrupt.size(), names, 16, count),
+		"truncated compressed translation frames rejected");
 	return 0;
 }

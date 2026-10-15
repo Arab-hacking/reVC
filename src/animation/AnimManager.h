@@ -138,6 +138,9 @@ public:
 	static void RemoveAnimBlock(int32 block);
 	static CAnimBlendHierarchy *GetAnimation(const char *name, CAnimBlock *animBlock);
 	static CAnimBlendHierarchy *GetAnimation(int32 n) { return n >= 0 && n < NUMANIMATIONS ? &ms_aAnimations[n] : nil; }
+	// Vehicle approach offsets need the clip's root translation, not a
+	// skeleton-bound association (which may not exist for SA-only installs).
+	static CAnimBlendHierarchy *GetAnimHierarchyForOffset(AssocGroupId groupId, AnimationId animId);
 	static const char *GetAnimGroupName(AssocGroupId groupId);
 	static CAnimBlendAssociation *CreateAnimAssociation(AssocGroupId groupId, AnimationId animId);
 	static CAnimBlendAssociation *CreateAnimAssociation(RpClump *clump, AssocGroupId groupId, AnimationId animId);
@@ -158,7 +161,8 @@ public:
 #endif
 	// SA/BR animation packages with the compact header (ANP2/ANP3), as found
 	// in San Andreas ifp files and Black Russia .ani containers
-	static void LoadAnimFile_ANP23(RwStream *stream, const char *ident, bool compress, uint32 rootSize, const char *blockNameOverride = nil);
+	static void LoadAnimFile_ANP23(RwStream *stream, const char *ident, bool compress,
+		const char *blockName, uint32 numAnims, const char *blockNameOverride = nil);
 	static void CreateAnimAssocGroups(int preferredModelIndex = -1);
 	static void RemoveLastAnimFile(void);
 	static CAnimBlendAssocGroup* GetAnimAssocGroups(void) { return ms_aAnimAssocGroups; }

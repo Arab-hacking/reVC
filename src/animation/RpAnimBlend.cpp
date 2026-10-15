@@ -400,7 +400,7 @@ void
 FrameFindByNameCBskin(AnimBlendFrameData *frame, void *arg)
 {
 	const char *name = ConvertBoneTag2BoneName(frame->nodeID);
-	if(name && CGeneral::faststricmp(name, (char*)arg) == 0)
+	if(name && MatchAnimBoneNames(name, (const char*)arg))
 		pFrameDataFound = frame;
 }
 

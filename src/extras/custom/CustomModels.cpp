@@ -1540,9 +1540,9 @@ CCustomModels::GetCollisionBlock(const char *modelname, std::vector<uint8> &out)
 
 // Animation dictionaries are requested by path ("ANIM\\PED.IFP"); the archives
 // hold them as <name>.ifp (SA/BR dictionaries, ANPK or ANP3) or as BR's
-// single-animation <name>.ani files. A .ani keeps BR's own header order -
-// brformats puts the fields back where SA (and this game) expects them - and
-// then flows through the same reader as any SA dictionary.
+// single-animation <name>.ani files. Modern BR .ani files are already
+// size-less SA ANP3 dictionaries; only a legacy shim with an extra header
+// word needs conversion before the common SA/VC animation reader sees it.
 bool
 CCustomModels::LoadAnimFileFromCustom(const char *filename, std::vector<uint8> &out)
 {
@@ -1565,10 +1565,18 @@ CCustomModels::LoadAnimFileFromCustom(const char *filename, std::vector<uint8> &
 	// The game always requests an .IFP path, even when the indexed custom
 	// source is a BR .ani entry; inspect the source name, not the request path.
 	std::string ext = Extension(src->fname);
-	if(ext == "ani" && br::isBrAni(out.data(), out.size()) && !br::convertAniToIfp(out)){
-		CUSTOM_LOG("animation %s: the .ani header could not be reordered\n", filename);
-		out.clear();
-		return false;
+	if(ext == "ani" && br::isBrAni(out.data(), out.size())){
+		int numNames = 0;
+		// Both the genuine mobile header and the old shim can have a plausible
+		// name/count at +4/+28. Only the full clip walk distinguishes the shim's
+		// extra word at +36 from the first animation name.
+		bool modern = br::SniffAnimNames(out.data(), out.size(), nil, 2500, numNames);
+		if(!modern && (!br::convertAniToIfp(out) ||
+		   !br::SniffAnimNames(out.data(), out.size(), nil, 2500, numNames))){
+			CUSTOM_LOG("animation %s: invalid .ani dictionary (including legacy layout)\n", filename);
+			out.clear();
+			return false;
+		}
 	}
 	if(out.size() < 12){
 		CUSTOM_LOG("animation %s: %s in %s is too small to be an IFP\n",

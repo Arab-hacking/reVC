@@ -10,6 +10,7 @@
 #include "AnimBlendAssociation.h"
 #include "AnimBlendAssocGroup.h"
 #include "AnimManager.h"
+#include "AnimFileHeader.h"
 #include "Streaming.h"
 
 #ifdef CUSTOM_MODELS
@@ -1292,6 +1293,39 @@ CAnimManager::GetAnimAssociation(AssocGroupId groupId, AnimationId animId)
 	return ms_aAnimAssocGroups[groupId].GetAnimation(animId);
 }
 
+CAnimBlendHierarchy*
+CAnimManager::GetAnimHierarchyForOffset(AssocGroupId groupId, AnimationId animId)
+{
+	if(groupId < 0 || groupId >= NUM_ANIM_ASSOC_GROUPS)
+		return nil;
+	const AnimAssocDefinition *def = &ms_aAnimAssocDefinitions[groupId];
+	if(def->numAnims <= 0)
+		return nil;
+	int index = animId - def->animDescs[0].animId;
+	if(index < 0 || index >= def->numAnims || def->animDescs[index].animId != animId)
+		return nil;
+
+	// The VC association may be absent because every resident ped has an SA
+	// skeleton. The native IFP is still loaded: read its hierarchy directly
+	// rather than silently returning a zero car-door offset.
+	CAnimBlendAssociation *assoc = GetAnimAssociation(groupId, animId);
+	if(assoc && assoc->hierarchy)
+		return assoc->hierarchy;
+	CAnimBlock *block = GetAnimationBlock(def->blockName);
+	if(block && block->isLoaded){
+		CAnimBlendHierarchy *hier = GetAnimation(def->animNames[index], block);
+		if(hier)
+			return hier;
+	}
+	// A complete SA-only installation may also lack the native IFP.
+	if(ms_aSAAnimAssocGroups){
+		assoc = ms_aSAAnimAssocGroups[groupId].GetAnimation(animId);
+		if(assoc)
+			return assoc->hierarchy;
+	}
+	return nil;
+}
+
 CAnimBlendAssociation*
 CAnimManager::GetAnimAssociation(AssocGroupId groupId, const char *name)
 {
@@ -2162,9 +2196,24 @@ CAnimManager::LoadAnimFile(RwStream *stream, bool compress, char (*uncompressedA
 	// block name
 	RwStreamRead(stream, &anpk, sizeof(IfpHeader));
 	// San Andreas and Black Russia packages: compact header without the
-	// ANPK chunk layers (see gta-reversed CAnimManager::LoadAnimFile)
+	// ANPK chunk layers. The first word is either the PC root length or the
+	// first four characters of the mobile block name, not a reliable size.
 	if(memcmp(anpk.ident, "ANP3", 4) == 0 || memcmp(anpk.ident, "ANP2", 4) == 0){
-		LoadAnimFile_ANP23(stream, anpk.ident, compress, anpk.size, blockNameOverride);
+		uint8 header[32];
+		memcpy(header, &anpk.size, 4);
+		if(RwStreamRead(stream, header + 4, 28) != 28){
+			REVC_LOG_WARNING("ANP%c: truncated animation block header", anpk.ident[3]);
+			return;
+		}
+		animfile::ANP23Header parsed;
+		// Custom files have already been checked against their actual length by
+		// SniffAnimNames. Other stream types need only the header's count/name;
+		// don't mistake an ignored mobile groupVal of 0 or 1 for that count.
+		if(!animfile::ParseANP23Header(header, sizeof(header), 0, parsed)){
+			REVC_LOG_WARNING("ANP%c: invalid animation block header", anpk.ident[3]);
+			return;
+		}
+		LoadAnimFile_ANP23(stream, anpk.ident, compress, parsed.blockName, parsed.numAnims, blockNameOverride);
 		return;
 	}
 	ROUNDSIZE(anpk.size);
@@ -2324,50 +2373,20 @@ CAnimManager::LoadAnimFile(RwStream *stream, bool compress, char (*uncompressedA
 // chunk headers. Key frames are the same byte layouts this game stores
 // (KeyFrame 0x14, KeyFrameTrans 0x20, KeyFrameCompressed 0xA,
 // KeyFrameTransCompressed 0x10 - identical in San Andreas, verified against
-// gta-reversed AnimSequenceFrames.h), so frames are read where they belong:
-// floats through the same rotation handling as the ANPK reader, pre-compressed
-// frames (frameType 3/4) straight into the compressed arrays.
+// gta-reversed AnimSequenceFrames.h). Unlike ANPK, ANP23's float quaternion
+// needs no inversion. Compressed frames (frameType 3/4) are read into the
+// compressed arrays and expanded when the build does not retain compression.
 void
-CAnimManager::LoadAnimFile_ANP23(RwStream *stream, const char *ident, bool compress, uint32 rootSize, const char *blockNameOverride)
+CAnimManager::LoadAnimFile_ANP23(RwStream *stream, const char *ident, bool compress,
+	const char *declaredName, uint32 numAnims, const char *blockNameOverride)
 {
 	char buf[256];
 	float *fbuf = (float*)buf;
 	int j, k, l;
 	bool isANP3 = ident[3] == '3';
-
 	char blockName[24];
-	RwStreamRead(stream, blockName, sizeof(blockName));
-	blockName[23] = '\0';
-	uint32 numAnims;
-	RwStreamRead(stream, &numAnims, sizeof(numAnims));
-
-	// The SA mobile / Black Russia packages have no root size field: the
-	// block name starts right behind the magic and every block carries an
-	// extra framesAllocSize. Read through the PC layout eyes that is off by
-	// four bytes - but the true fields are all in the bytes already read,
-	// so recover them from there (the stream then sits exactly behind the
-	// mobile block header, no seeking needed).
-	if(numAnims > (uint32)NUMANIMATIONS && isANP3){
-		uint32 mobileNumAnims;
-		memcpy(&mobileNumAnims, blockName + 20, sizeof(mobileNumAnims));
-		if(mobileNumAnims > 0 && mobileNumAnims <= (uint32)NUMANIMATIONS){
-			char realName[24];
-			memset(realName, 0, sizeof(realName));
-			memcpy(realName, &rootSize, 4);
-			memcpy(realName + 4, blockName, 20);
-			memcpy(blockName, realName, sizeof(blockName));
-			blockName[23] = '\0';
-			numAnims = mobileNumAnims;
-			debug("ANP3: size-less (SA mobile) package, block %s (%d anims)\n", blockName, numAnims);
-		}
-	}
-
-	// A SA compact IFP must live beside (not replace) VC's block with the same
-	// name. The override is derived from the custom filename, e.g. ped -> sa_ped.
-	if(blockNameOverride){
-		strncpy(blockName, blockNameOverride, sizeof(blockName) - 1);
-		blockName[sizeof(blockName) - 1] = '\0';
-	}
+	strncpy(blockName, blockNameOverride ? blockNameOverride : declaredName, sizeof(blockName) - 1);
+	blockName[sizeof(blockName) - 1] = '\0';
 
 	if(numAnims == 0 || numAnims > (uint32)NUMANIMATIONS){
 		debug("ANP%c: invalid animation count for block %s (%u)\n", ident[3], blockName, numAnims);
@@ -2427,21 +2446,20 @@ CAnimManager::LoadAnimFile_ANP23(RwStream *stream, const char *ident, bool compr
 		uint32 numSeq;
 		RwStreamRead(stream, &numSeq, sizeof(numSeq));
 
-		bool fileCompressed = false;
 		if(isANP3){
-			uint32 framesSize, flags;
+			// Size of frame data and an exporter/version word (often 1). Neither
+			// indicates whether frames are compressed: frameType on each bone does.
+			uint32 framesSize, exporterWord;
 			RwStreamRead(stream, &framesSize, sizeof(framesSize));
-			RwStreamRead(stream, &flags, sizeof(flags));
-			fileCompressed = (flags & 1) != 0;
+			RwStreamRead(stream, &exporterWord, sizeof(exporterWord));
 			(void)framesSize;
+			(void)exporterWord;
 		}
 
 		bool compressHier = false;
 #ifdef ANIM_COMPRESSION
 		compressHier = compress;
 #endif
-		if(fileCompressed)
-			compressHier = false;	// frames arrive compressed already
 		bool hasCompressedFrames = false;
 		hier->compressed = false;
 		hier->keepCompressed = false;
@@ -2490,7 +2508,8 @@ CAnimManager::LoadAnimFile_ANP23(RwStream *stream, const char *ident, bool compr
 #endif
 				continue;
 			}
-			// float frames: handled exactly like the ANPK reader does
+			// ANP2/ANP3 store the quaternion as used by the skeleton. Only
+			// ANPK inverts the x/y/z components on read.
 			seq->SetNumFrames(numFrames, hasTrans, compressHier);
 			if(compressHier)
 				hasCompressedFrames = true;
@@ -2498,7 +2517,6 @@ CAnimManager::LoadAnimFile_ANP23(RwStream *stream, const char *ident, bool compr
 				if(hasTrans){
 					RwStreamRead(stream, buf, 0x20);
 					CQuaternion rot(fbuf[0], fbuf[1], fbuf[2], fbuf[3]);
-					rot.Invert();
 					CVector trans(fbuf[4], fbuf[5], fbuf[6]);
 					if(compressHier){
 						KeyFrameTransCompressed *kf = (KeyFrameTransCompressed*)seq->GetKeyFrameCompressed(l);
@@ -2514,7 +2532,6 @@ CAnimManager::LoadAnimFile_ANP23(RwStream *stream, const char *ident, bool compr
 				}else{
 					RwStreamRead(stream, buf, 0x14);
 					CQuaternion rot(fbuf[0], fbuf[1], fbuf[2], fbuf[3]);
-					rot.Invert();
 					if(compressHier){
 						KeyFrameCompressed *kf = (KeyFrameCompressed*)seq->GetKeyFrameCompressed(l);
 						kf->SetRotation(rot);
@@ -2528,6 +2545,14 @@ CAnimManager::LoadAnimFile_ANP23(RwStream *stream, const char *ident, bool compr
 			}
 		}
 #ifdef ANIM_COMPRESSION
+		// If the caller requested uncompressed animations, expand every
+		// frameType 3/4 sequence as well. The ANP3 exporter word is not a
+		// compression flag, and a dictionary may mix float and i16 frames.
+		if(!compressHier && hasCompressedFrames){
+			for(int s = 0; s < hier->numSequences; s++)
+				hier->sequences[s].Uncompress();
+			hasCompressedFrames = false;
+		}
 		hier->compressed = hasCompressedFrames;
 #else
 		hier->compressed = false;

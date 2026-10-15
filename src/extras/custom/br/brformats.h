@@ -1,8 +1,10 @@
 // brformats.h — конвертация форматов Black Russia -> GTA SA (общий код для brmod.asi и brmod_convert.exe)
 //   .mod -> .dff  (TEA-дешифровка + нормализация RenderWare-потока в 3.6.0.3 / SA)
 //   .cls -> .col  (CLST -> COL3)
-//   .ani -> .ifp  (перестановка заголовка ANP3)
+//   .ani -> .ifp  (только для старого shim-варианта с лишним словом @+36;
+//                  обычные мобильные ANP3 уже являются IFP)
 #pragma once
+#include "../../../animation/AnimFileHeader.h"
 #include <cstdint>
 #include <cstring>
 #include <cstdio>
@@ -1227,31 +1229,31 @@ static inline void appendBoundsColBlock(std::vector<uint8_t>& out, const std::st
 }
 
 // ---------------------------------------------------------------------------
-// .ani -> .ifp
-//   SA IFP : "ANP3" | size(4) | name[0x18] | body...
-//   BR .ani: "ANP3" | name[0x1C] @0x04 | size(4) @0x20 | 4 байта мусора @0x24 | body...
-//   Преобразование трогает только первые 0x24 байт; хвост (с 0x28) остаётся на месте.
+// Legacy .ani shim conversion. Normal mobile ANP3 already has the layout
+// [magic][name 24][count][groupVal][clips starting at +36]. An older shim
+// inserted one extra word at +36, so its clips start at +40. Only convert
+// after SniffAnimNames has rejected the original and validate the result.
 // ---------------------------------------------------------------------------
 static inline bool isBrAni(const uint8_t* d, size_t n) {
-    // SA IFP : @0x04 лежит бинарный размер (< 16 МБ => d[7]==0, d[6] мал)
-    // BR .ani: @0x04 лежит ASCII-имя анимации. 4 печатных символа подряд в позиции размера
-    //          означали бы размер >= 0x20202020 (538 МБ) — невозможно. Это и есть признак.
-    if (n < 0x28 || (memcmp(d, "ANP3", 4) && memcmp(d, "ANPK", 4))) return false;
+    // A printable word at +4 is only a candidate for the legacy layout;
+    // mobile ANP3 names also start at +4. The caller checks the real header
+    // first, and only converts if it is invalid.
+    if (n < 0x28 || memcmp(d, "ANP3", 4) != 0) return false;
     for (int i = 4; i < 8; i++) if (d[i] < 0x20 || d[i] >= 0x7F) return false;
-    return rd32(d + 0x20) < 64u * 1024 * 1024;          // size на своём (BR) месте
+    return rd32(d + 0x20) < 64u * 1024 * 1024; // ignored groupVal or old shim size
 }
 
 static inline bool fixAniInplace(uint8_t* buf, uint32_t n) {
-    if (!isBrAni(buf, n)) return false;
-    uint8_t sz[4]; memcpy(sz, buf + 0x20, 4);
-    memmove(buf + 8, buf + 4, 0x1C);   // имя: 0x04..0x20 -> 0x08..0x24 (затирает мусор @0x24? нет: 0x08+0x1C = 0x24, ровно до мусора)
-    memcpy(buf + 4, sz, 4);            // размер на своё место
+    if (!isBrAni(buf, n) || n <= 40) return false;
+    memmove(buf + 36, buf + 40, n - 40); // remove the shim word before clip data
+    memset(buf + n - 4, 0, 4);
     return true;
 }
 
 static inline bool convertAniToIfp(std::vector<uint8_t>& d) {
-    if (!isBrAni(d.data(), d.size())) return false;
-    return fixAniInplace(d.data(), (uint32_t)d.size());
+    if (!fixAniInplace(d.data(), (uint32_t)d.size())) return false;
+    d.resize(d.size() - 4);
+    return true;
 }
 
 // Верхняя граница размера данных в буфере стриминга, вычисленная из самого содержимого
@@ -1446,6 +1448,8 @@ VCAnimHasPedCore(const char (*names)[24], int count)
 // Collect animation names from either VC's ANPK chunk tree or a compact
 // ANP2/ANP3 dictionary. blockName, if supplied, is the name stored in an
 // ANPK file; it is used to reject a replacement for the wrong streaming slot.
+// outNames may be nil when validating a compact dictionary without collecting
+// its names (the ANPK validator still requires a destination buffer).
 inline bool
 SniffAnimNames(const uint8 *data, size_t size, char (*outNames)[24], int maxNames,
                int &numNames, char *blockName = nil)
@@ -1455,64 +1459,55 @@ SniffAnimNames(const uint8 *data, size_t size, char (*outNames)[24], int maxName
     if(data == nil || size < 8)
         return false;
     if(memcmp(data, "ANPK", 4) == 0)
-        return SniffVCAnimNames(data, size, outNames, maxNames, numNames, blockName);
+        return outNames && SniffVCAnimNames(data, size, outNames, maxNames, numNames, blockName);
     if(size < 40)
         return false;
     bool isANP3 = memcmp(data, "ANP3", 4) == 0;
     if(!isANP3 && memcmp(data, "ANP2", 4) != 0)
         return false;
 
-    // PC layout starts [magic][size]; the size-less (SA mobile) layout fails
-    // that sanity check because its "size" field is really the first four
-    // bytes of the block name
-    bool mobile = SniffU32(data + 4) > size;
-    uint32 pos = mobile ? 4 : 8;
+    animfile::ANP23Header header;
+    if(!animfile::ParseANP23Header(data + 4, size - 4, size, header) ||
+       header.numAnims > (uint32)maxNames)
+        return false;
 
-    size_t n = size;
-    while(pos + 32 <= n){
-        // block: name[24], numAnims, (mobile: framesAllocSize)
-        uint32 numAnims = SniffU32(data + pos + 24);
-        pos += 28;
-        if(mobile)
-            pos += 4;
-        if(numAnims > 10000)
+    // Both headers end at +36. Walk exactly the declared number of clips:
+    // real .ani exporters leave padding and sometimes old frame data behind
+    // the last animation; those bytes are not additional animation blocks.
+    size_t pos = 36;
+    for(uint32 a = 0; a < header.numAnims; a++){
+        if(pos > size || size - pos < (isANP3 ? 36u : 28u))
             return false;
-        for(uint32 a = 0; a < numAnims; a++){
-            if(pos + 32 > n)
-                return false;
-            uint32 numSeq = SniffU32(data + pos + 24);
-            uint32 animNameOff = pos;
-            pos += 28;
-            if(isANP3)
-                pos += 8;       // framesAllocSize + flags
-            if(numSeq == 0 || numSeq > 4096)
-                return false;
-            if(numNames >= maxNames)
-                return false;
+        uint32 numSeq = SniffU32(data + pos + 24);
+        uint32 animNameOff = pos;
+        pos += isANP3 ? 36 : 28;   // ANP3 adds frame data size and an unused word
+        if(numSeq == 0 || numSeq > 4096 || numNames >= maxNames)
+            return false;
+        if(outNames){
             memcpy(outNames[numNames], data + animNameOff, 23);
             outNames[numNames][23] = '\0';
-            numNames++;
-            for(uint32 sq = 0; sq < numSeq; sq++){
-                if(pos + 36 > n)
-                    return false;
-                uint32 frameType = SniffU32(data + pos + 24);
-                uint32 numFrames = SniffU32(data + pos + 28);
-                pos += 36;
-                uint32 fsz;
-                switch(frameType){
-                case 1: fsz = 0x14; break;
-                case 2: fsz = 0x20; break;
-                case 3: fsz = 0x0A; break;
-                case 4: fsz = 0x10; break;
-                default: return false;
-                }
-                if(fsz * (uint64)numFrames > n - pos)
-                    return false;
-                pos += fsz * numFrames;
+        }
+        numNames++;
+        for(uint32 sq = 0; sq < numSeq; sq++){
+            if(pos > size || size - pos < 36)
+                return false;
+            uint32 frameType = SniffU32(data + pos + 24);
+            uint32 numFrames = SniffU32(data + pos + 28);
+            pos += 36;
+            uint32 fsz;
+            switch(frameType){
+            case 1: fsz = 0x14; break;
+            case 2: fsz = 0x20; break;
+            case 3: fsz = 0x0A; break;
+            case 4: fsz = 0x10; break;
+            default: return false;
             }
+            if(numFrames > 65535 || fsz * (uint64)numFrames > size - pos)
+                return false;
+            pos += fsz * (size_t)numFrames;
         }
     }
-    return numNames > 0;
+    return numNames == (int)header.numAnims;
 }
 
 } // namespace br
