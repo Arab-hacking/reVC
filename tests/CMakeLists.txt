@@ -37,10 +37,38 @@ target_include_directories(custom_world_format_tests PRIVATE
 set_target_properties(custom_world_format_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
 add_test(NAME custom_world_format_tests COMMAND custom_world_format_tests)
 
+add_executable(custom_img_collision_tests CustomImgCollisionTests.cpp)
+set_target_properties(custom_img_collision_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+add_test(NAME custom_img_collision_tests COMMAND custom_img_collision_tests)
+
 # The real animation code can be tested without game assets by supplying small
 # RenderWare/streaming stubs and synthetic skeletons. Dead-code elimination
 # keeps the remaining game-only dependencies out of this standalone test.
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    # Link the real ZIP/IMG scanner and both collision converters. The game
+    # dependencies not exercised by this fixture are discarded by section GC.
+    add_executable(custom_archive_integration_tests
+        CustomArchiveIntegrationTests.cpp
+        ../src/extras/custom/CustomModels.cpp
+        ../src/extras/custom/CustomZip.cpp
+        ../src/extras/custom/CustomCol.cpp
+        ../src/extras/custom/br/third_party/astc_decomp.cpp)
+    target_compile_definitions(custom_archive_integration_tests PRIVATE
+        LIBRW RW_GL3 LIBRW_SDL2 CMAKE_BUILD USE_OUR_VERSIONING AUDIO_OAL)
+    target_include_directories(custom_archive_integration_tests PRIVATE
+        ../vendor/librw ../vendor/librw/src/gl ../vendor/sdl2/include
+        ../src ../src/animation ../src/audio ../src/buildings ../src/collision
+        ../src/control ../src/core ../src/entities ../src/extras
+        ../src/extras/custom ../src/extras/custom/br ../src/fakerw ../src/math
+        ../src/modelinfo ../src/objects ../src/peds ../src/renderer ../src/rw
+        ../src/save ../src/skel ../src/text ../src/vehicles ../src/weapons)
+    target_compile_options(custom_archive_integration_tests PRIVATE
+        -ffunction-sections -fdata-sections -Wno-write-strings -Wno-multichar)
+    target_link_options(custom_archive_integration_tests PRIVATE -Wl,--gc-sections)
+    target_link_libraries(custom_archive_integration_tests PRIVATE Threads::Threads)
+    set_target_properties(custom_archive_integration_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+    add_test(NAME custom_archive_integration_tests COMMAND custom_archive_integration_tests)
+
     add_executable(anim_association_nodes_tests
         AnimAssociationNodesTests.cpp
         ../src/animation/AnimBlendAssociation.cpp

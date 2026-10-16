@@ -19,6 +19,9 @@
 #include "CustomZip.h"
 #include "CustomCol.h"
 #include "BrCollisionFormat.h"
+#include "CustomColFormat.h"
+#include "CustomImgFormat.h"
+#include "CdStream.h"
 #include "DecodedAssetCache.h"
 #include "ResidentObjectCache.h"
 #include "BackgroundAssetQueue.h"
@@ -43,9 +46,9 @@
 #include <windows.h>
 #else
 #include <dirent.h>
-#include <sys/stat.h>
 #include <unistd.h>
 #endif
+#include <sys/stat.h>
 
 // ---------------------------------------------------------------------------
 // where the files live
@@ -79,24 +82,20 @@ static std::map<std::string, CustomSource> customImages;	// .bmp/.png/.jpg
 static std::map<std::string, CustomSource> customIdeFiles;
 static std::map<std::string, CustomSource> customIplFiles;
 
-// One CED2 block inside one .cls (fileKey is the stem of that file). A .cls
-// can contain hundreds of named models; indexing only its filename misses
-// practically all collisions in br_collision.zip.
+// Keep a source for EVERY ZIP entry, not just the winner of a basename
+// lookup: separate archives often call their containers the same thing.
+static std::vector<CustomSource> customClsSources, customColSources;
+static std::vector<bool> customClsHasBrBlocks;
 struct BrBlockRef {
-	std::string fileKey;
-	size_t offset, size;
+	size_t source, offset, size;
+	uint64 mtime;
 };
 static std::map<std::string, BrBlockRef> customBrColBlocks;
-static std::set<std::string> customBrClsFiles;
+static std::map<std::string, BrBlockRef> customLegacyClsBlocks; // after CLS->VC conversion
 
-// one collision model inside a .col container
-struct ColBlockRef
-{
-	int archive;
-	int entry;
-	uint32 offset;			// of the name (behind the fourcc + size)
-	uint32 size;			// of the name + body
-	bool vcBody;			// 'COLL' float body the game reads as it is
+struct ColBlockRef {
+	size_t source, offset, size; // includes [fourcc, size, name, body]
+	bool vcBody;
 	uint64 mtime;
 };
 static std::map<std::string, ColBlockRef> customColBlocks;
@@ -106,17 +105,8 @@ static std::string customFolderPath;	// remembered for data files and loose skin
 static bool customInitialised = false;
 static bool customActive = false;
 static int32 nativeModelOverride = -1;
-
-// .col fourccs, in byte order as they sit in the file
-#define COL_FCC_COLL	('C' | ('O'<<8) | ('L'<<16) | ((uint32)'L'<<24))
-#define COL_FCC_COL2	('C' | ('O'<<8) | ('L'<<16) | ((uint32)'2'<<24))
-#define COL_FCC_COL3	('C' | ('O'<<8) | ('L'<<16) | ((uint32)'3'<<24))
-
-static bool
-IsColFourCC(uint32 f)
-{
-	return f == COL_FCC_COLL || f == COL_FCC_COL2 || f == COL_FCC_COL3;
-}
+static bool customImagesScanned = false;
+static std::set<int> customImageSlots; // IMG indices (the stream position's high byte)
 
 static bool ReadSource(const CustomSource &src, std::vector<uint8> &out);
 static void IndexBrCollisionBlocks(void);
@@ -298,37 +288,22 @@ AddWorldFile(std::map<std::string, CustomSource> &index, const std::string &path
 // the Vice City layout the game reads natively ('COLL', floats) or a San
 // Andreas one ('COL2'/'COL3', fixed point) is remembered for the read.
 static void
-IndexColContainer(const std::string &key, const std::vector<uint8> &file,
-                  const CustomSource &src, int &nBlocks)
+IndexColContainer(const std::vector<uint8> &file, const CustomSource &src, int &nBlocks)
 {
-	uint32 pos = 0;
-	while(pos + 8 <= file.size()){
-		const uint8 *p = file.data() + pos;
-		uint32 fourcc = (uint32)p[0] | ((uint32)p[1] << 8) | ((uint32)p[2] << 16) | ((uint32)p[3] << 24);
-		uint32 bsize = (uint32)p[4] | ((uint32)p[5] << 8) | ((uint32)p[6] << 16) | ((uint32)p[7] << 24);
-		if(!IsColFourCC(fourcc) || bsize > file.size() - pos - 8){
-			pos++;		// gap: skip a byte and look again
-			continue;
-		}
-		char name[25];
-		memcpy(name, p + 8, 24);
-		name[24] = '\0';
-		std::string bkey = ToLower(Stem(name));
-		if(!bkey.empty() && bkey.size() <= 63){
-			std::map<std::string, ColBlockRef>::iterator it = customColBlocks.find(bkey);
-			if(it == customColBlocks.end() || it->second.mtime < src.mtime){
-				ColBlockRef ref;
-				ref.archive = src.archive;
-				ref.entry = src.entry;
-				ref.offset = pos + 8;
-				ref.size = bsize;
-				ref.vcBody = fourcc == COL_FCC_COLL;
-				ref.mtime = src.mtime;
-				customColBlocks[bkey] = ref;
-				nBlocks++;
-			}
-		}
-		pos += 8 + bsize;
+	std::vector<customcolformat::Block> blocks;
+	size_t bad = customcolformat::Index(file.data(), file.size(), blocks);
+	if(bad) CUSTOM_LOG("collision container %s: %u malformed chunk(s)\n",
+		src.fname, (unsigned)bad);
+	if(blocks.empty()) return;
+	size_t source = customColSources.size();
+	customColSources.push_back(src);
+	for(size_t i = 0; i < blocks.size(); i++) {
+		std::string key = ToLower(blocks[i].name);
+		std::map<std::string, ColBlockRef>::iterator it = customColBlocks.find(key);
+		if(it != customColBlocks.end() && it->second.mtime >= src.mtime) continue;
+		ColBlockRef ref = { source, blocks[i].offset, blocks[i].size, blocks[i].vc, src.mtime };
+		customColBlocks[key] = ref;
+		nBlocks++;
 	}
 }
 
@@ -404,13 +379,15 @@ IndexArchive(const std::string &path, uint64 mtime, ScanStats &st)
 			txds++;
 		}else if(ext == "cls"){
 			AddIndex(customCls, key, src);
+			customClsSources.push_back(src);
+			customClsHasBrBlocks.push_back(false);
 			clss++;
 		}else if(ext == "col"){
 			std::vector<uint8> file;
 			if(ent->uncompressedSize > 0 && ent->uncompressedSize <= CUSTOM_MAX_ENTRY){
 				file.resize(ent->uncompressedSize);
 				if(zip->Extract(i, file.data(), (uint32)file.size())){
-					IndexColContainer(key, file, src, st.colblock);
+					IndexColContainer(file, src, st.colblock);
 					AddIndex(customColFiles, key, src);
 					colfiles++;
 					continue;
@@ -459,10 +436,11 @@ ScanFolder(const std::string &folder, int depth, ScanStats &st)
 			AddWorldFile(ext == "ide" ? customIdeFiles : customIplFiles, relative, src);
 			continue;
 		}
-		// loose files work as well: the same names the archives hold
-		if(ext != "mod" && ext != "dff" && ext != "btx" && ext != "cls" && ext != "txd" &&
-		   ext != "col" && ext != "ifp" && ext != "ani" &&
-		   ext != "bmp" && ext != "png" && ext != "jpg" && ext != "jpeg")
+		// Collision is sourced from ZIP archives, never from IMG or loose
+		// .col/.cls; loose models/textures/animations remain supported.
+		if(ext != "mod" && ext != "dff" && ext != "btx" && ext != "txd" &&
+		   ext != "ifp" && ext != "ani" && ext != "bmp" && ext != "png" &&
+		   ext != "jpg" && ext != "jpeg")
 			continue;
 		std::string key = ToLower(Stem(path));
 		if(key.empty() || key.size() > 63)
@@ -492,16 +470,6 @@ ScanFolder(const std::string &folder, int depth, ScanStats &st)
 		}else if(ext == "txd"){
 			AddIndex(customTxdFiles, key, src);
 			st.txd++;
-		}else if(ext == "cls"){
-			AddIndex(customCls, key, src);
-			st.cls++;
-		}else if(ext == "col"){
-			std::vector<uint8> file;
-			if(ReadSource(src, file)){
-				IndexColContainer(key, file, src, st.colblock);
-				AddIndex(customColFiles, key, src);
-				st.colfile++;
-			}
 		}else if(ext == "ifp" || ext == "ani"){
 			AddIndex(customAnims, key, src);
 			st.anim++;
@@ -605,32 +573,192 @@ ReadSource(const CustomSource &src, std::vector<uint8> &out)
 	return true;
 }
 
+// The IMG streamer uses a one-byte image index and expects an external VC
+// .dir. Discover pairs before Streaming::Init, after DAT CDIMAGE directives;
+// this also lets names from the custom IDEs be registered before indexing.
+struct ImagePair { std::string img, dir; };
+
+static void
+ScanImagePairs(const std::string &folder, int depth, std::vector<ImagePair> &pairs)
+{
+	std::vector<std::string> files, dirs;
+	if(!ListDirectory(folder.c_str(), files, dirs)) return;
+	std::map<std::string, std::string> byName;
+	for(size_t i = 0; i < files.size(); i++)
+		byName[ToLower(files[i])] = files[i];
+	for(size_t i = 0; i < files.size(); i++) {
+		if(Extension(files[i]) != "img") continue;
+		std::string sibling = ToLower(files[i].substr(0, files[i].find_last_of('.')) + ".dir");
+		std::map<std::string, std::string>::const_iterator found = byName.find(sibling);
+		ImagePair pair = { files[i], found == byName.end() ? std::string() : found->second };
+		pairs.push_back(pair);
+	}
+	if(depth >= CUSTOM_MAX_DEPTH) return;
+	std::sort(dirs.begin(), dirs.end());
+	for(size_t i = 0; i < dirs.size(); i++)
+		ScanImagePairs(dirs[i], depth+1, pairs);
+}
+
+static uint64
+ImageBytes(const char *path)
+{
+#ifdef _WIN32
+	WIN32_FILE_ATTRIBUTE_DATA fa;
+	if(!GetFileAttributesExA(path, GetFileExInfoStandard, &fa) ||
+	   (fa.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) return 0;
+	return ((uint64)fa.nFileSizeHigh << 32) | fa.nFileSizeLow;
+#else
+	struct stat st;
+	return stat(path, &st) == 0 && S_ISREG(st.st_mode) ? (uint64)st.st_size : 0;
+#endif
+}
+
+static std::string
+ImagePathKey(std::string path)
+{
+	path = ToLower(path);
+	for(size_t i = 0; i < path.size(); i++)
+		if(path[i] == '\\') path[i] = '/';
+	while(path.compare(0, 2, "./") == 0) path.erase(0, 2);
+	return path;
+}
+
+void
+CCustomModels::ResetImageMounts(void)
+{
+	customImagesScanned = false;
+	customImageSlots.clear();
+}
+
+bool
+CCustomModels::IsAutoMountedImage(int index)
+{
+	return customImageSlots.find(index) != customImageSlots.end();
+}
+
+void
+CCustomModels::MountImages(void)
+{
+	if(customImagesScanned) return;
+	customImagesScanned = true;
+	std::vector<std::string> files, dirs;
+	if(!ListDirectory(".", files, dirs)) return;
+	std::vector<ImagePair> pairs;
+	for(size_t i = 0; i < dirs.size(); i++)
+		if(ToLower(Stem(dirs[i])) == "img") ScanImagePairs(dirs[i], 0, pairs);
+	std::sort(pairs.begin(), pairs.end(), [](const ImagePair &a, const ImagePair &b) {
+		return ImagePathKey(a.img) < ImagePathKey(b.img);
+	});
+	unsigned mounted = 0, rejected = 0;
+	for(size_t i = 0; i < pairs.size(); i++) {
+		const ImagePair &pair = pairs[i];
+		if(pair.dir.empty() || pair.img.size() >= 64) {
+			CUSTOM_LOG("img %s: missing sibling .dir or path exceeds 63 characters\n", pair.img.c_str());
+			rejected++; continue;
+		}
+		uint64 imageBytes = ImageBytes(pair.img.c_str());
+		std::vector<uint8> directory;
+		CustomSource dirFile = MakeSource(-1, -1, 0, pair.dir.c_str(), pair.dir.c_str());
+		customimg::Stats stats;
+		std::string why;
+		FILE *img = fopen(pair.img.c_str(), "rb");
+		char magic[4] = {};
+		bool v2 = img && fread(magic, 1, 4, img) == 4 && !memcmp(magic, "VER2", 4);
+		if(img) fclose(img);
+		if(v2 || !ReadSource(dirFile, directory) ||
+		   !customimg::Validate(directory.empty() ? nil : directory.data(),
+		                       directory.size(), imageBytes, stats, why)) {
+			CUSTOM_LOG("img %s: skipped (%s)\n", pair.img.c_str(),
+				v2 ? "SA IMG v2; VC IMG v1 + external .dir required" :
+				why.empty() ? "cannot read .dir" : why.c_str());
+			rejected++; continue;
+		}
+		int slot = -1;
+		for(int n = 0; n < CdStreamGetNumImages(); n++)
+			if(ImagePathKey(CdStreamGetImageName(n)) == ImagePathKey(pair.img)) {
+				slot = n; break; // already mounted through CDIMAGE
+			}
+		if(slot < 0) {
+			if(CdStreamGetNumImages() >= MAX_CDIMAGES || !CdStreamAddImage(pair.img.c_str())) {
+				CUSTOM_LOG("img %s: could not mount (IMG slot limit or I/O error)\n", pair.img.c_str());
+				rejected++; continue;
+			}
+			slot = CdStreamGetNumImages()-1;
+		}
+		customImageSlots.insert(slot);
+		mounted++;
+		CUSTOM_LOG("img %s: IMG %d, %u DFF, %u TXD, %u other DIR entries ignored\n",
+			pair.img.c_str(), slot, (unsigned)stats.dff, (unsigned)stats.txd, (unsigned)stats.ignored);
+	}
+	CUSTOM_LOG("img/: %u archive(s) found, %u mounted, %u skipped\n",
+		(unsigned)pairs.size(), mounted, rejected);
+}
+
+static std::vector<uint8>
+LegacyClsToGame(const std::vector<uint8> &data)
+{
+	br::ClsStats stats;
+	std::vector<uint8> col = br::convertClsToCol(data, stats);
+	customcol::Stats cstats;
+	return customcol::ToGameFormat(col, cstats);
+}
+
 static void
 IndexBrCollisionBlocks(void)
 {
-	for(std::map<std::string, CustomSource>::const_iterator it = customCls.begin();
-	    it != customCls.end(); ++it){
+	for(size_t source = 0; source < customClsSources.size(); source++){
+		const CustomSource &src = customClsSources[source];
 		std::vector<uint8> data;
-		if(!ReadSource(it->second, data)){
-			CUSTOM_LOG("collision container %s: cannot read .cls\n", it->second.fname);
+		if(!ReadSource(src, data)){
+			CUSTOM_LOG("collision container %s: cannot read .cls\n", src.fname);
 			continue;
 		}
 		std::vector<brcollision::Block> blocks;
 		size_t bad = brcollision::Index(data.data(), data.size(), blocks);
-		if(!blocks.empty()) customBrClsFiles.insert(it->first);
+		customClsHasBrBlocks[source] = !blocks.empty();
 		for(size_t b = 0; b < blocks.size(); b++){
 			std::string key = ToLower(blocks[b].name);
 			std::map<std::string, BrBlockRef>::iterator found = customBrColBlocks.find(key);
-			if(found != customBrColBlocks.end() &&
-			   customCls[found->second.fileKey].mtime >= it->second.mtime)
+			if(found != customBrColBlocks.end() && found->second.mtime >= src.mtime)
 				continue;
-			BrBlockRef ref = { it->first, blocks[b].offset, blocks[b].size };
+			BrBlockRef ref = { source, blocks[b].offset, blocks[b].size, src.mtime };
 			customBrColBlocks[key] = ref;
+		}
+		if(blocks.empty()) {
+			// Non-CED2 .cls containers are rare, but they too may share a ZIP
+			// filename. Index the INTERNAL names of their converted blocks.
+			std::vector<uint8> game = LegacyClsToGame(data);
+			std::vector<customcolformat::Block> legacy;
+			customcolformat::Index(game.data(), game.size(), legacy);
+			for(size_t b = 0; b < legacy.size(); b++) {
+				const customcolformat::Block &block = legacy[b];
+				if(!customcolformat::ValidVC(game.data()+block.offset, block.size)) continue;
+				std::string key = ToLower(block.name);
+				std::map<std::string, BrBlockRef>::const_iterator found = customLegacyClsBlocks.find(key);
+				if(found != customLegacyClsBlocks.end() && found->second.mtime >= src.mtime) continue;
+				BrBlockRef ref = { source, block.offset, block.size, src.mtime };
+				customLegacyClsBlocks[key] = ref;
+			}
+			if(!legacy.empty()) CUSTOM_LOG("collision container %s: %u legacy .cls block(s)\n",
+				src.fname, (unsigned)legacy.size());
 		}
 		if(!blocks.empty() || bad)
 			CUSTOM_LOG("collision container %s: %u CED2 block(s), %u invalid chunk(s)\n",
-				it->second.fname, (unsigned)blocks.size(), (unsigned)bad);
+				src.fname, (unsigned)blocks.size(), (unsigned)bad);
 	}
+}
+
+static bool
+HasBrBlocks(const CustomSource &src)
+{
+	for(size_t i = 0; i < customClsSources.size(); i++){
+		const CustomSource &other = customClsSources[i];
+		bool same = src.archive >= 0 ?
+			src.archive == other.archive && src.entry == other.entry :
+			other.archive < 0 && strcmp(src.loose, other.loose) == 0;
+		if(same) return customClsHasBrBlocks[i];
+	}
+	return false;
 }
 
 static const CustomSource *
@@ -655,28 +783,29 @@ ReadEntry(const std::map<std::string, CustomSource> &index, const std::string &k
 static std::vector<uint8>
 ColContainerToGame(const std::vector<uint8> &file, const char *what, const std::string &key)
 {
-	bool allVc = true;
-	uint32 pos = 0;
-	while(pos + 8 <= file.size()){
-		const uint8 *p = file.data() + pos;
-		uint32 fourcc = (uint32)p[0] | ((uint32)p[1] << 8) | ((uint32)p[2] << 16) | ((uint32)p[3] << 24);
-		uint32 bsize = (uint32)p[4] | ((uint32)p[5] << 8) | ((uint32)p[6] << 16) | ((uint32)p[7] << 24);
-		if(!IsColFourCC(fourcc)){
-			pos++;
-			continue;
+	std::vector<customcolformat::Block> blocks;
+	size_t bad = customcolformat::Index(file.data(), file.size(), blocks);
+	std::vector<uint8> result;
+	for(size_t i = 0; i < blocks.size(); i++) {
+		const customcolformat::Block &b = blocks[i];
+		const uint8 *p = file.data()+b.offset;
+		if(b.vc) {
+			if(customcolformat::ValidVC(p, b.size))
+				result.insert(result.end(), p, p+b.size);
+			else bad++;
+		} else {
+			std::vector<uint8> raw(p, p+b.size);
+			customcol::Stats cstats;
+			std::vector<uint8> game = customcol::ToGameFormat(raw, cstats);
+			if(customcolformat::ValidVC(game.data(), game.size()))
+				result.insert(result.end(), game.begin(), game.end());
+			else bad++;
 		}
-		if(fourcc != COL_FCC_COLL)
-			allVc = false;
-		pos += 8 + bsize;
 	}
-	if(allVc)
-		return file;
-	customcol::Stats cstats;
-	std::vector<uint8> game = customcol::ToGameFormat(file, cstats);
-	if(game.empty())
-		CUSTOM_LOG("%s %s: nothing usable after the collision format conversion (%d bad)\n",
-			what, key.c_str(), cstats.bad);
-	return game;
+	if(bad || result.empty())
+		CUSTOM_LOG("%s %s: %u invalid collision block(s), %u usable bytes\n",
+			what, key.c_str(), (unsigned)bad, (unsigned)result.size());
+	return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -1660,7 +1789,7 @@ LoadColSlot(int32 slot)
 		return false;
 	std::string key = ToLower(name);
 	bool haveCls = customCls.find(key) != customCls.end() &&
-	               customBrClsFiles.find(key) == customBrClsFiles.end();
+	               !HasBrBlocks(customCls.find(key)->second);
 	bool haveFile = customColFiles.find(key) != customColFiles.end();
 	if(!haveCls && !haveFile)
 		return false;
@@ -1680,13 +1809,8 @@ LoadColSlot(int32 slot)
 				key.c_str(), stats.blocks, stats.bad);
 			return false;
 		}
-		customcol::Stats cstats;
-		game = customcol::ToGameFormat(col, cstats);
-		if(game.empty()){
-			CUSTOM_LOG("collision %s: nothing left after the format conversion (%d bad block(s))\n",
-				key.c_str(), cstats.bad);
-			return false;
-		}
+		game = ColContainerToGame(col, "collision .cls", key);
+		if(game.empty()) return false;
 	}else{
 		std::vector<uint8> file;
 		if(!ReadEntry(customColFiles, key, file))
@@ -1765,9 +1889,12 @@ CCustomModels::Shutdown(void)
 	customDff.clear();
 	customTxdFiles.clear();
 	customColFiles.clear();
+	customColSources.clear();
+	customClsSources.clear();
+	customClsHasBrBlocks.clear();
 	customColBlocks.clear();
 	customBrColBlocks.clear();
-	customBrClsFiles.clear();
+	customLegacyClsBlocks.clear();
 	customIdeFiles.clear();
 	customIplFiles.clear();
 	customImages.clear();
@@ -1778,6 +1905,7 @@ CCustomModels::Shutdown(void)
 	customTxdCandidates.clear();
 	customInitialised = false;
 	customActive = false;
+	ResetImageMounts();
 	nativeModelOverride = -1;
 }
 
@@ -1825,19 +1953,93 @@ CCustomModels::ForEachBrCollision(CollisionCallback callback, void *context)
 {
 	EnsureInitialised();
 	if(callback == nil) return;
-	for(std::map<std::string, CustomSource>::const_iterator it = customCls.begin();
-	    it != customCls.end(); ++it){
+	// Only the winning blocks are read, one ZIP entry at a time. This covers
+	// different archives that happen to use the same .cls filename.
+	std::map<size_t, std::vector<std::pair<std::string, BrBlockRef> > > groups;
+	for(std::map<std::string, BrBlockRef>::const_iterator it = customBrColBlocks.begin();
+	    it != customBrColBlocks.end(); ++it)
+		groups[it->second.source].push_back(*it);
+	for(std::map<size_t, std::vector<std::pair<std::string, BrBlockRef> > >::const_iterator group = groups.begin();
+	    group != groups.end(); ++group) {
 		std::vector<uint8> bytes;
-		if(!ReadSource(it->second, bytes)) continue;
-		std::vector<brcollision::Block> blocks;
-		brcollision::Index(bytes.data(), bytes.size(), blocks);
-		for(size_t b = 0; b < blocks.size(); b++){
-			std::string key = ToLower(blocks[b].name);
-			std::map<std::string, BrBlockRef>::const_iterator ref = customBrColBlocks.find(key);
-			if(ref != customBrColBlocks.end() && ref->second.fileKey == it->first &&
-			   ref->second.offset == blocks[b].offset && ref->second.size == blocks[b].size)
-				callback(blocks[b].name.c_str(), bytes.data()+blocks[b].offset,
-				         blocks[b].size, context);
+		if(!ReadSource(customClsSources[group->first], bytes)) continue;
+		for(size_t b = 0; b < group->second.size(); b++) {
+			const std::pair<std::string, BrBlockRef> &item = group->second[b];
+			if(item.second.offset <= bytes.size() &&
+			   item.second.size <= bytes.size()-item.second.offset)
+				callback(item.first.c_str(), bytes.data()+item.second.offset,
+				         item.second.size, context);
+		}
+	}
+}
+
+// A .col may hold hundreds of models; serve each indexed internal name,
+// including ones stored in different ZIPs with identical container names.
+// Converted blocks are scoped to one callback, never cached in the LRU.
+void
+CCustomModels::ForEachGameCollision(CollisionCallback callback, void *context, CollisionFilter filter)
+{
+	EnsureInitialised();
+	if(callback == nil) return;
+	// Legacy .cls files are also matched by internal model name. Group
+	// selected blocks by ZIP entry so a shared filename cannot hide another
+	// archive's models, and convert each chosen entry only once here.
+	std::map<size_t, std::vector<std::pair<std::string, BrBlockRef> > > clsGroups;
+	for(std::map<std::string, BrBlockRef>::const_iterator it = customLegacyClsBlocks.begin();
+	    it != customLegacyClsBlocks.end(); ++it)
+		if(!filter || filter(it->first.c_str(), context))
+			clsGroups[it->second.source].push_back(*it);
+	for(std::map<size_t, std::vector<std::pair<std::string, BrBlockRef> > >::const_iterator group = clsGroups.begin();
+	    group != clsGroups.end(); ++group) {
+		std::vector<uint8> file;
+		if(!ReadSource(customClsSources[group->first], file)) continue;
+		std::vector<uint8> game = LegacyClsToGame(file);
+		for(size_t b = 0; b < group->second.size(); b++) {
+			const std::pair<std::string, BrBlockRef> &item = group->second[b];
+			const BrBlockRef &ref = item.second;
+			if(ref.offset <= game.size() && ref.size <= game.size()-ref.offset &&
+			   customcolformat::ValidVC(game.data()+ref.offset, ref.size))
+				callback(item.first.c_str(), game.data()+ref.offset, ref.size, context);
+		}
+	}
+	std::map<size_t, std::vector<std::pair<std::string, ColBlockRef> > > groups;
+	for(std::map<std::string, ColBlockRef>::const_iterator it = customColBlocks.begin();
+	    it != customColBlocks.end(); ++it)
+		groups[it->second.source].push_back(*it);
+	for(std::map<size_t, std::vector<std::pair<std::string, ColBlockRef> > >::const_iterator group = groups.begin();
+	    group != groups.end(); ++group) {
+		if(filter) {
+			bool wanted = false;
+			for(size_t b = 0; b < group->second.size(); b++)
+				if(filter(group->second[b].first.c_str(), context)) { wanted = true; break; }
+			if(!wanted) continue;
+		}
+		std::vector<uint8> bytes;
+		if(!ReadSource(customColSources[group->first], bytes)) continue;
+		for(size_t b = 0; b < group->second.size(); b++) {
+			const std::pair<std::string, ColBlockRef> &item = group->second[b];
+			if(filter && !filter(item.first.c_str(), context)) continue;
+			const ColBlockRef &ref = item.second;
+			if(ref.offset > bytes.size() || ref.size > bytes.size()-ref.offset) {
+				CUSTOM_LOG("collision %s: block changed/shortened in %s\n",
+					item.first.c_str(), customColSources[group->first].fname);
+				continue;
+			}
+			const uint8 *block = bytes.data()+ref.offset;
+			if(ref.vcBody) {
+				if(customcolformat::ValidVC(block, ref.size))
+					callback(item.first.c_str(), block, ref.size, context);
+				else CUSTOM_LOG("collision %s: invalid VC COLL block in %s\n",
+					item.first.c_str(), customColSources[group->first].fname);
+			} else {
+				std::vector<uint8> raw(block, block+ref.size);
+				customcol::Stats stats;
+				std::vector<uint8> game = customcol::ToGameFormat(raw, stats);
+				if(customcolformat::ValidVC(game.data(), game.size()))
+					callback(item.first.c_str(), game.data(), game.size(), context);
+				else CUSTOM_LOG("collision %s: invalid SA COL2/COL3 block in %s (%d rejected)\n",
+					item.first.c_str(), customColSources[group->first].fname, stats.bad);
+			}
 		}
 	}
 }
@@ -2074,12 +2276,15 @@ CCustomModels::CancelStreamPrefetch(int32 streamId)
 bool
 CCustomModels::CanServe(int32 streamId)
 {
-	if(streamId == nativeModelOverride)
+	if(streamId == nativeModelOverride || streamId < 0 || streamId >= NUMSTREAMINFO)
+		return false;
+	// For assets present in img/*.img, use the IMG bytes directly: SA DFFs
+	// and VC TXDs should not be replaced by a same-named old .mod/.btx in a
+	// ZIP. Everything else still uses the existing custom decode path.
+	if(streamId < STREAM_OFFSET_COL && CStreaming::ms_aInfoForModel[streamId].m_size &&
+	   IsAutoMountedImage(_GET_INDEX(CStreaming::ms_aInfoForModel[streamId].m_position)))
 		return false;
 	if(!IsActive())
-		return false;
-
-	if(streamId < 0 || streamId >= NUMSTREAMINFO)
 		return false;
 
 	if(streamId < STREAM_OFFSET_TXD){
@@ -2131,7 +2336,7 @@ CCustomModels::CanServe(int32 streamId)
 			return false;
 		std::string key = ToLower(name);
 		return (customCls.find(key) != customCls.end() &&
-		        customBrClsFiles.find(key) == customBrClsFiles.end()) ||
+		        !HasBrBlocks(customCls.find(key)->second)) ||
 		       customColFiles.find(key) != customColFiles.end();
 	}
 
@@ -2296,93 +2501,67 @@ CCustomModels::LoadTexDictionaryFromCustom(const char *filename)
 	return BuildDictionaryFor(key);
 }
 
-// The collision of one model, in the layout a .col file has: the header the
-// game expects, the model name and the body. The body of the .cls is a COL3
-// model, which is what the game's collision reader wants.
+// The game's native collision reader takes [name, bounds, geometry] without a
+// size. Never hand it unvalidated bytes from an archive. A .col block wins
+// over a .cls block for the same model; both come only from custom/ sources.
 bool
 CCustomModels::GetCollisionBlock(const char *modelname, std::vector<uint8> &out)
 {
 	EnsureInitialised();
-	if(!customActive || modelname == nil)
-		return false;
-
+	if(!customActive || modelname == nil) return false;
 	std::string key = ToLower(modelname);
-	customcol::Stats cstats;
-	memset(&cstats, 0, sizeof(cstats));
+	customcol::Stats stats;
 
-	// BR collision archives contain many models per .cls; look inside by the
-	// CED2 block's model name, not by the filename of the container.
-	std::map<std::string, BrBlockRef>::const_iterator brref = customBrColBlocks.find(key);
-	if(brref != customBrColBlocks.end()){
-		std::map<std::string, CustomSource>::const_iterator source = customCls.find(brref->second.fileKey);
-		std::vector<uint8> bytes, game;
-		if(source == customCls.end() || !ReadSource(source->second, bytes) ||
-		   brref->second.offset > bytes.size() ||
-		   brref->second.size > bytes.size() - brref->second.offset ||
-		   !brcollision::Convert(bytes.data()+brref->second.offset, brref->second.size, game))
-			return false;
-		out.assign(game.begin()+8, game.end());
-		return true;
-	}
-
-	if(customCls.find(key) != customCls.end() &&
-	   customBrClsFiles.find(key) == customBrClsFiles.end()){
-		std::vector<uint8> file;
-		if(!ReadEntry(customCls, key, file))
-			return false;
-		br::ClsStats stats;
-		std::vector<uint8> col = br::convertClsToCol(file, stats);
-		if(col.size() <= 32)
-			return false;
-		std::vector<uint8> game = customcol::ToGameFormat(col, cstats);
-		if(game.size() <= 8)
-			return false;
-		// what the game's own reader of such a file expects for one model is
-		// the block without its header: the name and everything behind it
-		out.assign(game.begin() + 8, game.end());
-		CUSTOM_LOG("collision %s: block taken from the .cls, %u bytes, %d sphere(s), %d box(es), %d face(s)\n",
-			modelname, (unsigned)out.size(), cstats.spheres, cstats.boxes, cstats.faces);
-		return true;
-	}
-
-	// or it sits as one model inside a .col container in the archives
 	std::map<std::string, ColBlockRef>::const_iterator cb = customColBlocks.find(key);
-	if(cb == customColBlocks.end())
-		return false;
+	if(cb != customColBlocks.end()) {
+		const ColBlockRef &ref = cb->second;
+		std::vector<uint8> file;
+		if(ReadSource(customColSources[ref.source], file) && ref.offset <= file.size() &&
+		   ref.size <= file.size()-ref.offset) {
+			const uint8 *block = file.data()+ref.offset;
+			std::vector<uint8> game;
+			if(ref.vcBody) game.assign(block, block+ref.size);
+			else {
+				std::vector<uint8> raw(block, block+ref.size);
+				game = customcol::ToGameFormat(raw, stats);
+			}
+			if(customcolformat::ValidVC(game.data(), game.size())) {
+				out.assign(game.begin()+8, game.end());
+				CUSTOM_LOG("collision %s: .col from %s (%u bytes)\n",
+					modelname, customColSources[ref.source].fname, (unsigned)out.size());
+				return true;
+			}
+		}
+		CUSTOM_LOG("collision %s: invalid .col block, trying .cls\n", modelname);
+	}
 
-	// find the container the block lives in
-	const CustomSource *src = nil;
-	std::map<std::string, CustomSource>::const_iterator cf;
-	for(cf = customColFiles.begin(); cf != customColFiles.end(); ++cf){
-		if(cf->second.archive == cb->second.archive && cf->second.entry == cb->second.entry){
-			src = &cf->second;
-			break;
+	std::map<std::string, BrBlockRef>::const_iterator brref = customBrColBlocks.find(key);
+	if(brref != customBrColBlocks.end()) {
+		const BrBlockRef &ref = brref->second;
+		std::vector<uint8> bytes, game;
+		if(ReadSource(customClsSources[ref.source], bytes) && ref.offset <= bytes.size() &&
+		   ref.size <= bytes.size()-ref.offset &&
+		   brcollision::Convert(bytes.data()+ref.offset, ref.size, game) &&
+		   customcolformat::ValidVC(game.data(), game.size())) {
+			out.assign(game.begin()+8, game.end());
+			return true;
 		}
 	}
-	if(src == nil)
-		return false;
 
-	std::vector<uint8> file;
-	if(!ReadSource(*src, file))
-		return false;
-	if(cb->second.offset + cb->second.size > file.size())
-		return false;
-	const uint8 *p = file.data() + cb->second.offset - 8;	// fourcc + size
-	if(cb->second.vcBody){
-		// the body is already in the layout the game reads
-		out.assign(file.begin() + cb->second.offset, file.begin() + cb->second.offset + cb->second.size);
-	}else{
-		// San Andreas body: rewrite this one block
-		std::vector<uint8> block(p, p + 8 + cb->second.size);
-		std::vector<uint8> game = customcol::ToGameFormat(block, cstats);
-		if(game.size() <= 8){
-			CUSTOM_LOG("collision %s: the block could not be converted\n", modelname);
-			return false;
+	std::map<std::string, BrBlockRef>::const_iterator legacy = customLegacyClsBlocks.find(key);
+	if(legacy != customLegacyClsBlocks.end()) {
+		const BrBlockRef &ref = legacy->second;
+		std::vector<uint8> bytes;
+		if(ReadSource(customClsSources[ref.source], bytes)) {
+			std::vector<uint8> game = LegacyClsToGame(bytes);
+			if(ref.offset <= game.size() && ref.size <= game.size()-ref.offset &&
+			   customcolformat::ValidVC(game.data()+ref.offset, ref.size)) {
+				out.assign(game.begin()+ref.offset+8, game.begin()+ref.offset+ref.size);
+				return true;
+			}
 		}
-		out.assign(game.begin() + 8, game.end());
 	}
-	CUSTOM_LOG("collision %s: block taken from a .col container, %u bytes\n", modelname, (unsigned)out.size());
-	return true;
+	return false;
 }
 
 // Animation dictionaries are requested by path ("ANIM\\PED.IFP"); the archives

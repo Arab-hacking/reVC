@@ -34,6 +34,12 @@ public:
 	// scans the custom folder (also done automatically on the first request)
 	static void Initialise(void);
 	static void Shutdown(void);
+	// Mount every VC IMG v1 (.img + sibling .dir) under the game's img/
+	// directory before Streaming::Init indexes filenames. Models and TXDs in
+	// these images use the native streamer; .col/.ifp entries are ignored.
+	static void ResetImageMounts(void);
+	static void MountImages(void);
+	static bool IsAutoMountedImage(int index);
 	// Transfer a streamed custom TXD into a bounded GPU-resident LRU on
 	// eviction. Returns false when Streaming must destroy the TXD normally.
 	static bool RetainTxdOnUnload(int32 slot);
@@ -89,6 +95,12 @@ public:
 	typedef void (*CollisionCallback)(const char *model, const unsigned char *block,
 	                                  size_t size, void *context);
 	static void ForEachBrCollision(CollisionCallback callback, void *context);
+	// Per-model blocks from every .col in custom/*.zip, plus legacy single
+	// .cls files. Callback bytes are complete, validated VC COLL blocks;
+	// no decompressed container is retained after the callback returns.
+	typedef bool (*CollisionFilter)(const char *model, void *context);
+	static void ForEachGameCollision(CollisionCallback callback, void *context,
+	                                 CollisionFilter filter = nullptr);
 
 	// reads a data file out of the custom archives ("data/timecyc.json" and
 	// friends of a BR common.zip), or out of the custom folder itself; the

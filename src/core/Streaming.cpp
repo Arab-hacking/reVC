@@ -442,7 +442,8 @@ CStreaming::LoadCdDirectory(void)
 void
 CStreaming::LoadCdDirectory(const char *dirname, int n)
 {
-	int fd, lastID, imgSelector;
+	int fd, lastID;
+	uint32 imgSelector;
 	int modelId;
 	CDirectory::DirectoryInfo direntry;
 	char *dot;
@@ -455,14 +456,23 @@ CStreaming::LoadCdDirectory(const char *dirname, int n)
 	}
 
 	int entries = 0, registered = 0, duplicates = 0;
-	imgSelector = n<<24;
+	imgSelector = (uint32)n<<24;
+#ifdef CUSTOM_MODELS
+	int unknownModels = 0, ignoredTypes = 0, fullTxds = 0;
+	bool modelsOnly = CCustomModels::IsAutoMountedImage(n);
+#endif
 	assert(sizeof(direntry) == 32);
 	while(CFileMgr::Read(fd, (char*)&direntry, sizeof(direntry))){
 		entries++;
 		bool bAddToStreaming = false;
 
+#ifndef CUSTOM_MODELS
 		if(direntry.size > (uint32)ms_streamingBufferSize)
 			ms_streamingBufferSize = direntry.size;
+#else
+		if(!modelsOnly && direntry.size > (uint32)ms_streamingBufferSize)
+			ms_streamingBufferSize = direntry.size;
+#endif
 		direntry.name[23] = '\0';
 		dot = strchr(direntry.name, '.');
 		if(dot == nil || dot-direntry.name > 20){
@@ -470,6 +480,17 @@ CStreaming::LoadCdDirectory(const char *dirname, int n)
 			lastID = -1;
 			continue;
 		}
+#ifdef CUSTOM_MODELS
+		// Autodiscovered IMGs provide only models and VC TXDs. Collision
+		// belongs to ZIP files under custom/, never to these IMG archives.
+		if(modelsOnly && (dot-direntry.name > 19 || dot[4] != '\0' ||
+		   (strncasecmp(dot+1, "DFF", 3) != 0 &&
+		    strncasecmp(dot+1, "TXD", 3) != 0))){
+			ignoredTypes++;
+			lastID = -1;
+			continue;
+		}
+#endif
 
 		*dot = '\0';
 
@@ -477,16 +498,31 @@ CStreaming::LoadCdDirectory(const char *dirname, int n)
 			if(CModelInfo::GetModelInfo(direntry.name, &modelId)){
 				bAddToStreaming = true;
 			}else{
+#ifdef CUSTOM_MODELS
+				// These images can hold tens of thousands of world models.
+				// An unknown DFF has no IDE/stream id; do not overflow the
+				// small cutscene-only extra-objects directory with it.
+				if(!modelsOnly){
+#endif
 #ifdef FIX_BUGS
-				// remember which cdimage this came from
-				ms_pExtraObjectsDir->AddItem(direntry, n);
+					ms_pExtraObjectsDir->AddItem(direntry, n);
 #else
-				ms_pExtraObjectsDir->AddItem(direntry);
+					ms_pExtraObjectsDir->AddItem(direntry);
+#endif
+#ifdef CUSTOM_MODELS
+				}else unknownModels++;
 #endif
 				lastID = -1;
 			}
 		}else if(strncasecmp(dot+1, "TXD", 3) == 0){
 			modelId = CTxdStore::FindTxdSlot(direntry.name);
+#ifdef CUSTOM_MODELS
+			if(modelsOnly && modelId == -1 && !CTxdStore::HasFreeSlot()){
+				fullTxds++;
+				lastID = -1;
+				continue;
+			}
+#endif
 			if(modelId == -1)
 				modelId = CTxdStore::AddTxdSlot(direntry.name);
 			modelId += STREAM_OFFSET_TXD;
@@ -516,6 +552,10 @@ CStreaming::LoadCdDirectory(const char *dirname, int n)
 				duplicates++;
 				lastID = -1;
 			}else{
+#ifdef CUSTOM_MODELS
+				if(modelsOnly && direntry.size > (uint32)ms_streamingBufferSize)
+					ms_streamingBufferSize = direntry.size;
+#endif
 				direntry.offset |= imgSelector;
 				ms_aInfoForModel[modelId].SetCdPosnAndSize(direntry.offset, direntry.size);
 				registered++;
@@ -529,6 +569,11 @@ CStreaming::LoadCdDirectory(const char *dirname, int n)
 	CFileMgr::CloseFile(fd);
 	REVC_LOG_INFO("CD directory %s (IMG %d): %d entries, %d registered, %d duplicates",
 		dirname, n, entries, registered, duplicates);
+#ifdef CUSTOM_MODELS
+	if(modelsOnly && (unknownModels || ignoredTypes || fullTxds))
+		REVC_LOG_INFO("IMG %d: %d DFF without IDE, %d non-DFF/TXD entries ignored, %d TXDs over slot limit",
+			n, unknownModels, ignoredTypes, fullTxds);
+#endif
 }
 
 static char*

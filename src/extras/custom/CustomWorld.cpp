@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "BrCollisionFormat.h"
+#include "CustomColFormat.h"
 #include "CustomModels.h"
 #include "CustomWorldFormat.h"
 #include "SavehDiag.h"
@@ -62,10 +63,36 @@ void ReadIde(const char *path, const unsigned char *data, size_t size, void *use
 }
 
 struct ColContext {
-    unsigned installed, invalid, missing, full;
+    unsigned installed, replaced, invalid, missing, full;
     int freeModels;
-    ColContext() : installed(0), invalid(0), missing(0), full(0), freeModels(0) {}
+    ColContext() : installed(0), replaced(0), invalid(0), missing(0), full(0), freeModels(0) {}
 };
+
+// A complete, checked VC COLL block is passed here by both archive formats.
+// These models own their collisions independently of RW object streaming.
+void InstallCollision(const char *name, const uint8_t *game, size_t size, ColContext &ctx)
+{
+    std::map<std::string, int>::const_iterator it = nameSlots.find(customworld::Lower(name));
+    if(it == nameSlots.end()) { ctx.missing++; return; }
+    CBaseModelInfo *mi = CModelInfo::GetModelInfo(it->second);
+    if(!mi || !mi->IsBuilding()) return;
+    std::vector<customcolformat::Block> blocks;
+    if(customcolformat::Index(game, size, blocks) || blocks.size() != 1 ||
+       customworld::Lower(blocks[0].name) != customworld::Lower(name) ||
+       !customcolformat::ValidVC(game, size)) { ctx.invalid++; return; }
+    bool replacing = mi->DoesOwnColModel() && mi->GetColModel() != nil;
+    if(ctx.freeModels + (int)replacing <= 100) { ctx.full++; return; }
+    if(replacing) { ctx.freeModels++; ctx.replaced++; }
+    mi->DeleteCollisionModel();
+    CColModel *col = new CColModel;
+    col->level = 0; // not an IMG collision slot that the engine may evict
+    char modelName[24];
+    std::snprintf(modelName, sizeof(modelName), "%s", name);
+    CFileLoader::LoadCollisionModel((uint8_t *)game+32, *col, modelName);
+    mi->SetColModel(col, true);
+    ctx.freeModels--;
+    ctx.installed++;
+}
 
 void ReadCollision(const char *name, const unsigned char *block, size_t size, void *user)
 {
@@ -76,19 +103,18 @@ void ReadCollision(const char *name, const unsigned char *block, size_t size, vo
     if(!mi || !mi->IsBuilding()) return;
     std::vector<uint8_t> game;
     if(!brcollision::Convert(block, size, game)) { ctx.invalid++; return; }
-    // This is not a streamed .col slot: the model owns its collision and it
-    // survives RW model eviction. Never occupy (or increase) the TXD/model
-    // decode caches with collision data.
-    if(ctx.freeModels <= 100) { ctx.full++; return; }
-    mi->DeleteCollisionModel();
-    CColModel *col = new CColModel;
-    col->level = 0; // generic, not a native .col slot to be evicted
-    char modelName[24];
-    std::snprintf(modelName, sizeof(modelName), "%s", name);
-    CFileLoader::LoadCollisionModel(game.data()+32, *col, modelName);
-    mi->SetColModel(col, true);
-    ctx.freeModels--;
-    ctx.installed++;
+    InstallCollision(name, game.data(), game.size(), ctx);
+}
+
+void ReadGameCollision(const char *name, const unsigned char *block, size_t size, void *user)
+{
+    InstallCollision(name, block, size, *(ColContext *)user);
+}
+
+bool HasWorldCollisionTarget(const char *name, void *)
+{
+    std::map<std::string, int>::const_iterator it = nameSlots.find(customworld::Lower(name));
+    return it != nameSlots.end() && CModelInfo::GetModelInfo(it->second)->IsBuilding();
 }
 
 struct IplContext {
@@ -291,9 +317,10 @@ void CCustomWorld::LoadCollisions(void)
     collisionLoaded = true;
     ColContext ctx;
     ctx.freeModels = CPools::GetColModelPool()->GetNoOfFreeSpaces();
-    CCustomModels::ForEachBrCollision(ReadCollision, &ctx);
-    CUSTOM_LOG("BR collision: %u model(s) installed, %u invalid, %u outside IDE, %u over pool capacity\n",
-        ctx.installed, ctx.invalid, ctx.missing, ctx.full);
+    CCustomModels::ForEachBrCollision(ReadCollision, &ctx); // CED2 .cls containers
+    CCustomModels::ForEachGameCollision(ReadGameCollision, &ctx, HasWorldCollisionTarget); // .col and legacy .cls
+    CUSTOM_LOG("custom ZIP collision: %u installed, %u replacements, %u invalid, %u outside IDE, %u over pool capacity\n",
+        ctx.installed, ctx.replaced, ctx.invalid, ctx.missing, ctx.full);
 }
 
 void CCustomWorld::LoadIpl(void)

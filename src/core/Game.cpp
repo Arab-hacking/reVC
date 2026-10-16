@@ -490,6 +490,9 @@ bool CGame::Initialise(const char* datFile)
 	CPickups::Init();
 	CTheCarGenerators::Init();
 
+#ifdef CUSTOM_MODELS
+	CCustomModels::ResetImageMounts(); // a new game may reuse the process
+#endif
 	CdStreamAddImage("MODELS\\GTA3.IMG");
 
 	CFileLoader::LoadLevel("DATA\\DEFAULT.DAT");

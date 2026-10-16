@@ -103,8 +103,10 @@ CFileLoader::LoadLevel(const char *filename)
 		}else if(strncmp(line, "IPL", 3) == 0){
 			if(!objectsLoaded){
 #ifdef CUSTOM_MODELS
-				// All stock IDEs are now registered; BR IDs must be remapped
-				// before Streaming::Init indexes IMG names and before any IPL.
+				// Stock IDEs/CDIMAGE records have been read. Mount the user's
+				// img/*.img now, before the native directory index is built;
+				// the separate custom ZIP scan registers IDEs next.
+				CCustomModels::MountImages();
 				CCustomWorld::LoadIde();
 #endif
 				LoadingScreenLoadingFile("Collision");

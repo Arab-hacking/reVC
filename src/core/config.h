@@ -10,7 +10,9 @@ enum Config {
 	NUMPLAYERS = 1,
 
 	NUMCDIMAGES = 6, // gta3.img duplicates (not used on PC)
-	MAX_CDIMAGES = 8, // additional cdimages
+	// The stream position reserves one byte for the IMG index. Allow all
+	// representable slots (0..255), not just the original eight archives.
+	MAX_CDIMAGES = 256,
 	MAX_CDCHANNELS = 5,
 
 	// BR IDEs contain ~27k object definitions, with source IDs far above the
@@ -46,7 +48,7 @@ enum Config {
 	NUMOBJECTS = 460,
 	NUMDUMMIES = 2340,
 	NUMAUDIOSCRIPTOBJECTS = 192,
-	NUMCOLMODELS = 26000, // native + ~17.6k CED2 blocks in br_collision.zip
+	NUMCOLMODELS = 35000, // stock + up to ~27k ZIP CLS/COL world collisions (not a cache)
 	NUMCUTSCENEOBJECTS = 50,	// not a pool in VC
 
 	NUMANIMBLOCKS = 180,   // San Andreas sizes: SA dictionaries (ped.ifp and the
