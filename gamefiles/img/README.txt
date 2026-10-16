@@ -24,3 +24,7 @@ streaming/eviction and existing cache budgets are unchanged.
 
 The on-disk stream format limits the game to 256 simultaneous IMG slots
 (including stock IMG files); each IMG path must fit within 63 characters.
+The TXD name pool holds up to 32768 distinct names (including the stock game),
+not 32768 resident textures. Stock DIR names are reserved before these IMG
+entries are indexed; 32 slots are kept for later UI/script dictionaries.
+Excess new IMG TXD entries are skipped and counted in debug.log.

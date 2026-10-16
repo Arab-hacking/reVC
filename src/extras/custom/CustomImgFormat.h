@@ -33,6 +33,23 @@ inline bool Extension(const uint8_t *p, size_t n, const char *ext) {
     return true;
 }
 
+// Reserve native TXD names before processing auto-mounted images, without
+// changing the later reverse-DIR streaming precedence. No IMAGE data is read.
+// A stock DIR may contain other file types; only names the TXD pool can hold
+// (19 characters plus NUL) are eligible. Incomplete records are ignored.
+template <class Visit>
+inline void ForEachNativeTxd(const uint8_t *dir, size_t length, Visit visit) {
+    if(!dir) return;
+    for(size_t pos = 0; length-pos >= 32; pos += 32) {
+        const uint8_t *name = dir+pos+8;
+        const uint8_t *dot = (const uint8_t *)std::memchr(name, '.', 24);
+        if(!dot || dot == name || dot-name > 19 || dot[4] != 0 ||
+           std::memchr(name, 0, dot-name) || !Extension(dot+1, 3, "TXD"))
+            continue;
+        visit(std::string((const char *)name, dot-name));
+    }
+}
+
 inline bool Validate(const uint8_t *dir, size_t length, uint64_t imageBytes,
                      Stats &stats, std::string &error) {
     stats = Stats();

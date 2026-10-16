@@ -255,7 +255,7 @@ void CCustomWorld::LoadIde(void)
         while(next < MODELINFOSIZE && CModelInfo::GetModelInfo(next) != nil) next++;
         if(next == MODELINFOSIZE ||
            !(m.kind == customworld::Model::TIME_OBJECT ? CModelInfo::CanAddTimeModel() : CModelInfo::CanAddSimpleModel()) ||
-           (CTxdStore::FindTxdSlot(m.txd.c_str()) == -1 && !CTxdStore::HasFreeSlot())) {
+           (CTxdStore::FindTxdSlot(m.txd.c_str()) == -1 && !CTxdStore::HasFreeCustomSlot())) {
             full++;
             continue;
         }

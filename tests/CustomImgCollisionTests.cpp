@@ -43,6 +43,18 @@ static void TestImgDir() {
     std::memcpy(dir.data()+8, "01234567890123456789.DFF", 24); // no space for NUL
     assert(customimg::Validate(dir.data(), dir.size(), 4*2048, st, why));
     assert(st.dff == 0 && st.txd == 1 && st.ignored == 2);
+
+    std::vector<uint8_t> native(5*32+13, 0);
+    Entry(native, 0, "R3.TXD", 1, 1);
+    Entry(native, 1, "test.COL", 2, 1);
+    Entry(native, 2, "0123456789012345678.TXD", 3, 1); // 19-char TXD stem
+    std::memcpy(native.data()+3*32+8, "01234567890123456789.TXD", 24); // 20: no slot space
+    std::memcpy(native.data()+4*32+8, "a\0b.TXD", 7); // native strchr stops at NUL
+    std::vector<std::string> names;
+    customimg::ForEachNativeTxd(native.data(), native.size(),
+        [&names](const std::string &name) { names.push_back(name); });
+    assert(names.size() == 2 && names[0] == "R3" &&
+           names[1] == "0123456789012345678");
 }
 
 // A minimal but valid VC COLL with one triangle; the native reader accesses

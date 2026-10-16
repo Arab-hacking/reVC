@@ -19,6 +19,7 @@ public:
 	static void GameShutdown(void);
 	static int AddTxdSlot(const char *name);
 	static bool HasFreeSlot(void);
+	static bool HasFreeCustomSlot(void); // leave headroom for runtime/UI TXDs
 	static void RemoveTxdSlot(int slot);
 	static int FindTxdSlot(const char *name);
 	static char *GetTxdName(int slot);

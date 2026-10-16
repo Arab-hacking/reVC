@@ -19,7 +19,10 @@ enum Config {
 	// signed 16-bit model index stored on CEntity. They are remapped into free
 	// slots below 32768; these are slot/pool sizes, NOT decoded asset caches.
 	MODELINFOSIZE = 32768,
-	TXDSTORESIZE = 4096,
+	// Up to ~28k distinct TXDs in the BR IMG set. Slots are names and stream
+	// metadata, not resident texture/cache bytes. CBaseModelInfo::m_txdSlot is
+	// signed int16, so the last representable slot is 32767.
+	TXDSTORESIZE = 32768,
 	COLSTORESIZE = 31,
 	EXTRADIRSIZE = 256,
 	CUTSCENEDIRSIZE = 512,

@@ -6,6 +6,7 @@
 #include "CustomColFormat.h"
 #include "CustomImgFormat.h"
 #include "CdStream.h"
+#include "TxdStore.h"
 
 #include <cassert>
 #include <cstdio>
@@ -23,6 +24,8 @@ extern "C" int32 CdStreamGetNumImages(void) { return (int32)images.size(); }
 extern "C" char *CdStreamGetImageName(int cd) { return &images.at(cd)[0]; }
 void DebugLogPrintf(const char *, ...) {}
 void re3_log(const char *, const char *, unsigned int, const char *, const char *, ...) {}
+void re3_assert(const char *, const char *, unsigned int, const char *) { std::abort(); }
+FILE *_fcaseopen(const char *name, const char *mode) { return std::fopen(name, mode); }
 RwBool RwTexDictionaryDestroy(RwTexDictionary *) { return true; }
 
 static void W16(std::vector<uint8> &b, size_t at, uint16 n) {
@@ -149,8 +152,16 @@ int main() {
     Write("img/no_dir.img", img);
     img.assign(4*2048, 0); std::memcpy(img.data(), "VER2", 4);
     Write("img/v2.img", img); Write("img/v2.dir", directory);
+    assert(mkdir("models", 0700) == 0);
+    std::vector<uint8> nativeDir(2*32, 0);
+    std::memcpy(nativeDir.data()+8, "R3.TXD", 7); // shared with auto IMG
+    std::memcpy(nativeDir.data()+40, "baseonly.TXD", 13);
+    Write("models/gta3.DIR", nativeDir);
     images.push_back("models/gta3.img");
+    CTxdStore::Initialise();
     CCustomModels::ResetImageMounts(); CCustomModels::MountImages();
+    assert(CTxdStore::FindTxdSlot("r3") >= 0);
+    assert(CTxdStore::FindTxdSlot("BASEONLY") >= 0); // native slots reserved first
     assert(images.size() == 3 && CCustomModels::IsAutoMountedImage(1) &&
            CCustomModels::IsAutoMountedImage(2));
     assert(images[1].find("area/extra.img") != std::string::npos); // sorted
@@ -205,15 +216,17 @@ int main() {
     assert(radius == 2); // SA COL3 became a VC COLL payload
     assert(!CCustomModels::GetCollisionBlock("badOffset", selected));
     CCustomModels::Shutdown();
+    CTxdStore::Shutdown();
     assert(chdir("..") == 0);
     std::string root(dir);
-    for(const char *file : { "img/map.img", "img/map.dir", "img/area/extra.img",
+    for(const char *file : { "models/gta3.DIR", "img/map.img", "img/map.dir", "img/area/extra.img",
                              "img/area/extra.dir", "img/no_dir.img",
                              "img/v2.img", "img/v2.dir", "custom/common.zip",
                              "custom/coll_a.zip", "custom/coll_b.zip" })
         assert(std::remove((root+"/"+file).c_str()) == 0);
     assert(rmdir((root+"/img/area").c_str()) == 0);
     assert(rmdir((root+"/img").c_str()) == 0);
+    assert(rmdir((root+"/models").c_str()) == 0);
     assert(rmdir((root+"/custom").c_str()) == 0);
     assert(rmdir(root.c_str()) == 0);
     std::puts("real custom IMG/ZIP scanner: nested IDE/IPL and colliding CLS/COL names passed");

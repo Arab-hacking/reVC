@@ -41,6 +41,7 @@
 #include "TxdStore.h"
 #include "ColStore.h"
 #include "RwHelper.h"
+#include "crossplatform.h" // fcaseopen: native DIR spelling can differ on case-sensitive hosts
 
 #ifdef _WIN32
 #include <windows.h>
@@ -545,7 +546,7 @@ ReadSource(const CustomSource &src, std::vector<uint8> &out)
 	if(src.archive < 0 || src.archive >= (int)customArchives.size()){
 		if(src.loose[0] == '\0')
 			return false;
-		FILE *f = fopen(src.loose, "rb");
+		FILE *f = fcaseopen(src.loose, "rb");
 		if(f == nil)
 			return false;
 		fseek(f, 0, SEEK_END);
@@ -623,6 +624,40 @@ ImagePathKey(std::string path)
 	return path;
 }
 
+// Native IDEs have been read, but their DIRs are normally indexed AFTER the
+// new IMG files. Reserve native TXD names now, before custom IDEs and image
+// registration can exhaust the pool. Streaming still processes DIRs in its
+// original reverse order, so img/ keeps precedence for duplicate assets.
+static void
+ReserveNativeTxdSlots(void)
+{
+	if(customImageSlots.empty()) return;
+	unsigned reserved = 0, full = 0;
+	for(int n = CdStreamGetNumImages()-1; n >= 0; n--) {
+		if(customImageSlots.count(n)) continue;
+		const char *image = CdStreamGetImageName(n);
+		if(!image) continue;
+		std::string dirName(image);
+		size_t dot = dirName.find_last_of('.');
+		if(dot == std::string::npos || dot+4 > dirName.size()) continue;
+		// Match LoadCdDirectory's extension replacement, including any
+		// whitespace suffix in a stock CDIMAGE line.
+		dirName.replace(dot+1, 3, "DIR");
+		CustomSource dirFile = MakeSource(-1, -1, 0, dirName.c_str(), dirName.c_str());
+		std::vector<uint8> directory;
+		if(!ReadSource(dirFile, directory)) continue;
+		customimg::ForEachNativeTxd(directory.data(), directory.size(),
+			[&](const std::string &name) {
+				if(CTxdStore::FindTxdSlot(name.c_str()) != -1) return;
+				if(!CTxdStore::HasFreeSlot()) { full++; return; }
+				CTxdStore::AddTxdSlot(name.c_str());
+				reserved++;
+			});
+	}
+	CUSTOM_LOG("img/: reserved %u native TXD slots before custom images (%u without space)\n",
+		reserved, full);
+}
+
 void
 CCustomModels::ResetImageMounts(void)
 {
@@ -692,6 +727,7 @@ CCustomModels::MountImages(void)
 	}
 	CUSTOM_LOG("img/: %u archive(s) found, %u mounted, %u skipped\n",
 		(unsigned)pairs.size(), mounted, rejected);
+	ReserveNativeTxdSlots(); // before CCustomWorld::LoadIde and CStreaming::Init
 }
 
 static std::vector<uint8>

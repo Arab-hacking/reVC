@@ -515,9 +515,17 @@ CStreaming::LoadCdDirectory(const char *dirname, int n)
 				lastID = -1;
 			}
 		}else if(strncasecmp(dot+1, "TXD", 3) == 0){
+#ifdef CUSTOM_MODELS
+			// TxdDef::name[20] must hold the full stem, including NUL.
+			if(dot-direntry.name > 19) {
+				ignoredTypes++;
+				lastID = -1;
+				continue;
+			}
+#endif
 			modelId = CTxdStore::FindTxdSlot(direntry.name);
 #ifdef CUSTOM_MODELS
-			if(modelsOnly && modelId == -1 && !CTxdStore::HasFreeSlot()){
+			if(modelId == -1 && !(modelsOnly ? CTxdStore::HasFreeCustomSlot() : CTxdStore::HasFreeSlot())) {
 				fullTxds++;
 				lastID = -1;
 				continue;
@@ -573,6 +581,8 @@ CStreaming::LoadCdDirectory(const char *dirname, int n)
 	if(modelsOnly && (unknownModels || ignoredTypes || fullTxds))
 		REVC_LOG_INFO("IMG %d: %d DFF without IDE, %d non-DFF/TXD entries ignored, %d TXDs over slot limit",
 			n, unknownModels, ignoredTypes, fullTxds);
+	if(!modelsOnly && fullTxds)
+		REVC_LOG_ERROR("IMG %d: %d native TXDs could not be registered: TXD slots exhausted", n, fullTxds);
 #endif
 }
 

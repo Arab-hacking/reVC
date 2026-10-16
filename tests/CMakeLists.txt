@@ -45,6 +45,22 @@ add_test(NAME custom_img_collision_tests COMMAND custom_img_collision_tests)
 # RenderWare/streaming stubs and synthetic skeletons. Dead-code elimination
 # keeps the remaining game-only dependencies out of this standalone test.
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    add_executable(txd_store_capacity_tests
+        TxdStoreCapacityTests.cpp ../src/rw/TxdStore.cpp)
+    target_compile_definitions(txd_store_capacity_tests PRIVATE
+        LIBRW RW_GL3 LIBRW_SDL2 CMAKE_BUILD USE_OUR_VERSIONING AUDIO_OAL)
+    target_include_directories(txd_store_capacity_tests PRIVATE
+        ../vendor/librw ../vendor/librw/src/gl ../vendor/sdl2/include
+        ../src ../src/animation ../src/audio ../src/buildings ../src/collision
+        ../src/control ../src/core ../src/entities ../src/extras
+        ../src/extras/custom ../src/extras/custom/br ../src/fakerw ../src/math
+        ../src/modelinfo ../src/objects ../src/peds ../src/renderer ../src/rw
+        ../src/save ../src/skel ../src/text ../src/vehicles ../src/weapons)
+    target_compile_options(txd_store_capacity_tests PRIVATE -ffunction-sections -fdata-sections)
+    target_link_options(txd_store_capacity_tests PRIVATE -Wl,--gc-sections)
+    set_target_properties(txd_store_capacity_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+    add_test(NAME txd_store_capacity_tests COMMAND txd_store_capacity_tests)
+
     # Link the real ZIP/IMG scanner and both collision converters. The game
     # dependencies not exercised by this fixture are discarded by section GC.
     add_executable(custom_archive_integration_tests
@@ -52,6 +68,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Cla
         ../src/extras/custom/CustomModels.cpp
         ../src/extras/custom/CustomZip.cpp
         ../src/extras/custom/CustomCol.cpp
+        ../src/rw/TxdStore.cpp
         ../src/extras/custom/br/third_party/astc_decomp.cpp)
     target_compile_definitions(custom_archive_integration_tests PRIVATE
         LIBRW RW_GL3 LIBRW_SDL2 CMAKE_BUILD USE_OUR_VERSIONING AUDIO_OAL)
