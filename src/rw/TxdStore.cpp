@@ -5,6 +5,9 @@
 #include "Streaming.h"
 #include "RwHelper.h"
 #include "TxdStore.h"
+#ifdef CUSTOM_MODELS
+#include "CustomModels.h"
+#endif
 
 CPool<TxdDef,TxdDef> *CTxdStore::ms_pTxdPool;
 RwTexDictionary *CTxdStore::ms_pStoredTxd;
@@ -49,6 +52,9 @@ CTxdStore::AddTxdSlot(const char *name)
 void
 CTxdStore::RemoveTxdSlot(int slot)
 {
+#ifdef CUSTOM_MODELS
+	CCustomModels::ForgetTxdSlot(slot);
+#endif
 	TxdDef *def = GetSlot(slot);
 	if(def->texDict)
 		RwTexDictionaryDestroy(def->texDict);
@@ -178,6 +184,9 @@ CTxdStore::FinishLoadTxd(int slot, RwStream *stream)
 void
 CTxdStore::RemoveTxd(int slot)
 {
+#ifdef CUSTOM_MODELS
+	CCustomModels::ForgetTxdSlot(slot);
+#endif
 	TxdDef *def = GetSlot(slot);
 	if(def->texDict)
 		RwTexDictionaryDestroy(def->texDict);

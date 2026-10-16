@@ -33,6 +33,13 @@ public:
 	// scans the custom folder (also done automatically on the first request)
 	static void Initialise(void);
 	static void Shutdown(void);
+	// Transfer a streamed custom TXD into a bounded GPU-resident LRU on
+	// eviction. Returns false when Streaming must destroy the TXD normally.
+	static bool RetainTxdOnUnload(int32 slot);
+	// Called when a TXD is explicitly destroyed or its slot is recycled.
+	static void ForgetTxdSlot(int32 slot);
+	// Flush detached GPU objects BEFORE the RenderWare device shuts down.
+	static void ClearGraphicsCache(void);
 	// Temporarily force a streamed model to come from the game's own IMG. Used
 	// to keep a native VC ped skeleton available when a custom SA ped replaces
 	// every initially loaded reference model.

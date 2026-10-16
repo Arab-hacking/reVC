@@ -1213,9 +1213,14 @@ CStreaming::RemoveModel(int32 id)
 	if(ms_aInfoForModel[id].m_loadState == STREAMSTATE_LOADED){
 		if(id < STREAM_OFFSET_TXD)
 			CModelInfo::GetModelInfo(id)->DeleteRwObject();
-		else if(id >= STREAM_OFFSET_TXD && id < STREAM_OFFSET_COL)
-			CTxdStore::RemoveTxd(id - STREAM_OFFSET_TXD);
-		else if(id >= STREAM_OFFSET_COL && id < STREAM_OFFSET_ANIM)
+		else if(id >= STREAM_OFFSET_TXD && id < STREAM_OFFSET_COL){
+#ifdef CUSTOM_MODELS
+			// Custom TXDs are already GPU-ready. Keep a bounded number of
+			// evicted dictionaries instead of decoding and uploading them again.
+			if(!CCustomModels::RetainTxdOnUnload(id - STREAM_OFFSET_TXD))
+#endif
+				CTxdStore::RemoveTxd(id - STREAM_OFFSET_TXD);
+		}else if(id >= STREAM_OFFSET_COL && id < STREAM_OFFSET_ANIM)
 			CColStore::RemoveCol(id - STREAM_OFFSET_COL);
 		else if(id >= STREAM_OFFSET_ANIM){
 			assert(id < NUMSTREAMINFO);

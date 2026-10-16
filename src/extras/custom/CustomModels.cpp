@@ -9,12 +9,15 @@
 #include <map>
 #include <algorithm>
 #include <functional>
+#include <memory>
 #include <stdio.h>		// snprintf
 #include <stdlib.h>		// getenv
 #include <ctype.h>		// tolower
 
 #include "CustomZip.h"
 #include "CustomCol.h"
+#include "DecodedAssetCache.h"
+#include "ResidentObjectCache.h"
 #include "SavehDiag.h"
 
 // the container conversion, shared with brconv/brmod, so what the game does
@@ -615,39 +618,65 @@ UnderstandMod(std::vector<uint8> &file, br::RwFixStats &stats, std::string &warn
 	return true;
 }
 
-// names of the textures the model references, in the order they appear, plus
-// the terrain recipes (models whose texture has to be baked from layers)
-// reads the model with this name - out of a BR .mod (understood in place
-// here) or as a plain .dff - and says which one it was
-static bool
-ReadModelEntry(const std::string &key, std::vector<uint8> &file, bool &isMod,
-               br::RwFixStats &stats, std::string &warn)
+static bool ValidateModelForGame(const std::string &key, bool isMod,
+                                 const std::vector<uint8> &file, std::string &why);
+
+// Prepared model bytes are immutable once repaired/decrypted. CanServe's
+// validation, TXD texture discovery and the actual RenderWare load all share
+// them, including across streaming unload/reload. RenderWare still owns and
+// evicts its *object*; only the prepared input is cached here.
+struct PreparedModel
 {
+	std::vector<uint8> bytes;
+	br::RwFixStats stats;
+	std::string warn;
+	std::string rejectReason;
+	bool isMod;
+	bool usable;
+	unsigned rawSize;
+};
+
+static const size_t CUSTOM_MODEL_CACHE_BYTES = 64u * 1024u * 1024u;
+static const size_t CUSTOM_TEXTURE_CACHE_BYTES = 64u * 1024u * 1024u;
+static customcache::DecodedAssetCache<PreparedModel> customDecodedModels(CUSTOM_MODEL_CACHE_BYTES);
+
+static std::shared_ptr<const PreparedModel>
+ReadModelEntry(const std::string &key)
+{
+	std::shared_ptr<const PreparedModel> cached = customDecodedModels.Find(key);
+	if(cached)
+		return cached;
 	const CustomSource *src = FindSource(customMods, key);
-	isMod = src != nil;
+	bool isMod = src != nil;
 	if(src == nil)
 		src = FindSource(customDff, key);
 	if(src == nil)
-		return false;
-	if(!ReadSource(*src, file))
-		return false;
-	if(isMod && !UnderstandMod(file, stats, warn))
-		return false;
-	return true;
+		return std::shared_ptr<const PreparedModel>();
+	std::shared_ptr<PreparedModel> model = std::make_shared<PreparedModel>();
+	model->isMod = isMod;
+	if(!ReadSource(*src, model->bytes))
+		return std::shared_ptr<const PreparedModel>();
+	model->rawSize = (unsigned)model->bytes.size();
+	if(isMod && !UnderstandMod(model->bytes, model->stats, model->warn)){
+		CUSTOM_LOG("model %s: cannot prepare .mod (%s)\n", key.c_str(), model->warn.c_str());
+		return std::shared_ptr<const PreparedModel>();
+	}
+	model->usable = ValidateModelForGame(key, isMod, model->bytes, model->rejectReason);
+	customDecodedModels.Insert(key, model, model->bytes.capacity() + sizeof(PreparedModel));
+	return model;
 }
 
+// Names and terrain recipes are discovered once per TXD plan from the same
+// bytes that will later be given to RenderWare; no second XTEA pass.
 static bool
 ModelTextureNames(const std::string &key, std::vector<std::string> &names, std::vector<br::TerrainRecipe> &recipes)
 {
-	std::vector<uint8> file;
-	bool isMod;
-	br::RwFixStats stats;
-	std::string warn;
-	if(!ReadModelEntry(key, file, isMod, stats, warn))
+	std::shared_ptr<const PreparedModel> model = ReadModelEntry(key);
+	if(!model)
 		return false;
 	names.clear();
-	brtex::collectTextureNames(file.data(), file.size(), names);
-	recipes = stats.recipes;
+	brtex::collectTextureNames(model->bytes.data(), model->bytes.size(), names);
+	recipes = model->stats.recipes;
 	return true;
 }
 
@@ -698,15 +727,11 @@ CanUseModel(const std::string &key)
 		return plan.usable;
 	plan.computed = true;
 
-	std::vector<uint8> file;
-	bool isMod;
-	br::RwFixStats stats;
-	std::string warn;
-	plan.usable = ReadModelEntry(key, file, isMod, stats, warn) &&
-		ValidateModelForGame(key, isMod, file, warn);
+	std::shared_ptr<const PreparedModel> model = ReadModelEntry(key);
+	plan.usable = model && model->usable;
 	if(!plan.usable)
 		CUSTOM_LOG("model %s: not usable as a game model%s, the game's own file is used\n", key.c_str(),
-			warn.empty() ? "" : (" (" + warn + ")").c_str());
+			!model || model->rejectReason.empty() ? "" : (" (" + model->rejectReason + ")").c_str());
 	return plan.usable;
 }
 
@@ -846,31 +871,28 @@ CallGuarded(bool (*fn)(void*), void *arg, DWORD *code)
 static bool
 LoadModelIntoGame(const std::string &key, int32 modelId)
 {
-	std::vector<uint8> file;
-	bool isMod;
-	br::RwFixStats stats;
-	std::string warn;
-	if(!ReadModelEntry(key, file, isMod, stats, warn)){
+	std::shared_ptr<const PreparedModel> model = ReadModelEntry(key);
+	if(!model){
 		CUSTOM_LOG("model %s: cannot read the archive entry\n", key.c_str());
 		return false;
 	}
-	unsigned rawSize = (unsigned)file.size();
 
 	CBaseModelInfo *mi = CModelInfo::GetModelInfo(modelId);
 	if(mi == nil) return false;
 
-	// Reject empty stubs, truncated models, non-clump roots, and any attempt to
-	// feed the reserved player.mod entry to the clump loader.
-	std::string usableWhy;
-	if(!ValidateModelForGame(key, isMod, file, usableWhy)){
+	// Validation runs once on the immutable prepared bytes, not again on
+	// every reappearance of a model in the streaming pool.
+	if(!model->usable){
 		CUSTOM_LOG("model %s: not usable as a game model (%s), the game's own file is used\n",
-			key.c_str(), usableWhy.c_str());
+			key.c_str(), model->rejectReason.c_str());
 		return false;
 	}
 
 	RwMemory mem;
-	mem.start = file.data();
-	mem.length = (uint32)file.size();
+	// rwSTREAMREAD never writes the memory; keep the shared input alive until
+	// RwStreamClose even if LRU eviction happens while a different asset loads.
+	mem.start = const_cast<uint8*>(model->bytes.data());
+	mem.length = (uint32)model->bytes.size();
 	RwStream *stream = RwStreamOpen(rwSTREAMMEMORY, rwSTREAMREAD, &mem);
 	if(stream == nil){
 		CUSTOM_LOG("model %s: cannot open a memory stream\n", key.c_str());
@@ -900,10 +922,10 @@ LoadModelIntoGame(const std::string &key, int32 modelId)
 #endif
 	RwStreamClose(stream, &mem);
 
-	CUSTOM_LOG("model %s (id %d): %s, %u bytes of .%s -> %u bytes read in place%s%s\n", key.c_str(), modelId,
-		ok ? "loaded" : "FAILED", rawSize, isMod ? "mod" : "dff", (unsigned)file.size(),
-		stats.versionsChanged ? ", chunk versions fixed" : "",
-		warn.empty() ? "" : (", " + warn).c_str());
+	CUSTOM_LOG("model %s (id %d): %s, %u bytes of .%s -> %u prepared bytes%s%s\n", key.c_str(), modelId,
+		ok ? "loaded" : "FAILED", model->rawSize, model->isMod ? "mod" : "dff", (unsigned)model->bytes.size(),
+		model->stats.versionsChanged ? ", chunk versions fixed" : "",
+		model->warn.empty() ? "" : (", " + model->warn).c_str());
 	return ok;
 }
 
@@ -966,18 +988,81 @@ LoadTxdFileIntoSlot(int32 slot, const std::string &key)
 
 
 
-static bool
-LoadBtxTexture(const std::string &name, brtex::Texture &tex)
+static customcache::DecodedAssetCache<brtex::Texture> customDecodedTextures(CUSTOM_TEXTURE_CACHE_BYTES);
+
+static size_t
+DecodedTextureSize(const brtex::Texture &tex)
 {
+	size_t bytes = sizeof(tex);
+	for(size_t i = 0; i < tex.mips.size(); i++)
+		bytes += sizeof(brtex::Mip) + tex.mips[i].rgba.capacity();
+	return bytes;
+}
+
+// A long .btx name may also be indexed by its shortened RW name. Cache by
+// source identity, so either spelling (including a skin) shares one decode.
+static std::string
+BtxCacheKey(const CustomSource &src)
+{
+	char loc[48];
+	snprintf(loc, sizeof(loc), "%d:%d:", src.archive, src.entry);
+	return src.archive < 0 ? std::string("loose:") + src.loose : std::string("archive:") + loc;
+}
+
+static std::shared_ptr<const brtex::Texture>
+GetDecodedBtx(const CustomSource &src, const std::string &name)
+{
+	std::string key = BtxCacheKey(src);
+	std::shared_ptr<const brtex::Texture> cached = customDecodedTextures.Find(key);
+	if(cached)
+		return cached;
 	std::vector<uint8> file;
-	if(!ReadEntry(customBtx, name, file))
-		return false;
+	if(!ReadSource(src, file))
+		return std::shared_ptr<const brtex::Texture>();
+	std::shared_ptr<brtex::Texture> tex = std::make_shared<brtex::Texture>();
+	tex->name = name;
 	std::string err;
-	tex.name = name;
-	if(brtex::parseBtx(file.data(), file.size(), tex, &err))
-		return true;
-	CUSTOM_LOG("texture %s: %s\n", name.c_str(), err.c_str());
-	return false;
+	if(!brtex::parseBtx(file.data(), file.size(), *tex, &err)){
+		CUSTOM_LOG("texture %s: %s\n", name.c_str(), err.c_str());
+		return std::shared_ptr<const brtex::Texture>();
+	}
+	customDecodedTextures.Insert(key, tex, DecodedTextureSize(*tex));
+	return tex;
+}
+
+static std::shared_ptr<const brtex::Texture>
+GetDecodedBtx(const std::string &name)
+{
+	const CustomSource *src = FindSource(customBtx, ToLower(name));
+	return src ? GetDecodedBtx(*src, name) : std::shared_ptr<const brtex::Texture>();
+}
+
+// The terrain baker's callback currently takes an output Texture by value.
+// Individual layers are decoded once and copied only when a bake is needed.
+static bool
+LoadBtxTexture(const std::string &name, brtex::Texture &out)
+{
+	std::shared_ptr<const brtex::Texture> tex = GetDecodedBtx(name);
+	if(!tex)
+		return false;
+	out = *tex;
+	return true;
+}
+
+static std::shared_ptr<const brtex::Texture>
+GetPreparedTexture(const std::string &modelKey, const std::string &name, const br::TerrainRecipe *recipe)
+{
+	if(!recipe)
+		return GetDecodedBtx(name);
+	std::string key = "terrain:" + modelKey + ":" + ToLower(name);
+	std::shared_ptr<const brtex::Texture> cached = customDecodedTextures.Find(key);
+	if(cached)
+		return cached;
+	std::shared_ptr<brtex::Texture> tex = std::make_shared<brtex::Texture>();
+	if(!brtex::bakeTerrain(*recipe, LoadBtxTexture, *tex, 512, 0.0f))
+		return std::shared_ptr<const brtex::Texture>();
+	customDecodedTextures.Insert(key, tex, DecodedTextureSize(*tex));
+	return tex;
 }
 
 // Builds a game texture out of the decoded mip chain. The mip levels are
@@ -985,20 +1070,25 @@ LoadBtxTexture(const std::string &name, brtex::Texture &tex)
 // layout), which is why the pixels have to be written in the platform's own
 // byte order: Direct3D rasters are BGRA, OpenGL ones are RGBA.
 static RwTexture*
-BuildTexture(brtex::Texture &tex, const char *name)
+BuildTexture(const brtex::Texture &decoded, const char *name)
 {
-	// the game and its renderers are happiest with power of two textures, and
-	// it is what the offline converter does as well
-	if(!tex.mips.empty() && !(brtex::isPot(tex.mips[0].w) && brtex::isPot(tex.mips[0].h)))
-		brtex::makePot(tex);
-	if(tex.mips.empty())
+	// Never mutate a cached decode. Resample NPOT only for this GPU upload;
+	// the cache remains usable on either GL or Direct3D.
+	brtex::Texture pot;
+	const brtex::Texture *tex = &decoded;
+	if(!decoded.mips.empty() && !(brtex::isPot(decoded.mips[0].w) && brtex::isPot(decoded.mips[0].h))){
+		pot = decoded;
+		brtex::makePot(pot);
+		tex = &pot;
+	}
+	if(tex->mips.empty())
 		return nil;
 
-	uint32 w = tex.mips[0].w, h = tex.mips[0].h;
+	uint32 w = tex->mips[0].w, h = tex->mips[0].h;
 	if(w == 0 || h == 0)
 		return nil;
-	int levels = (int)tex.mips.size();
-	if(levels > 1 && (tex.mips[0].w < 4 || tex.mips[0].h < 4))
+	int levels = (int)tex->mips.size();
+	if(levels > 1 && (tex->mips[0].w < 4 || tex->mips[0].h < 4))
 		levels = 1;
 
 	RwRaster *ras = RwRasterCreate(w, h, 32, rwRASTERTYPETEXTURE | rwRASTERFORMAT8888 |
@@ -1009,7 +1099,7 @@ BuildTexture(brtex::Texture &tex, const char *name)
 	bool swapRB = rw::platform == rw::PLATFORM_D3D9 || rw::platform == rw::PLATFORM_D3D8 ||
 	              rw::platform == rw::PLATFORM_XBOX;
 	for(int l = 0; l < levels; l++){
-		brtex::Mip &mip = tex.mips[l];
+		const brtex::Mip &mip = tex->mips[l];
 		uint8 *dst = RwRasterLock(ras, (uint8)l, rwRASTERLOCKWRITE | rwRASTERLOCKNOFETCH);
 		if(dst == nil){
 			levels = l;
@@ -1052,7 +1142,7 @@ BuildTexture(brtex::Texture &tex, const char *name)
 
 // building a texture runs under the same guard as the models: a .btx with
 // data we misread must not take the game down
-struct GuardedTexCtx { brtex::Texture *tex; const char *name; RwTexture *out; };
+struct GuardedTexCtx { const brtex::Texture *tex; const char *name; RwTexture *out; };
 static bool
 RunBuildTexture(void *p)
 {
@@ -1062,7 +1152,7 @@ RunBuildTexture(void *p)
 }
 
 static RwTexture *
-BuildTextureGuarded(brtex::Texture &tex, const char *name)
+BuildTextureGuarded(const brtex::Texture &tex, const char *name)
 {
 #ifdef CUSTOM_SEH_GUARD
 	GuardedTexCtx c; c.tex = &tex; c.name = name; c.out = nil;
@@ -1080,11 +1170,110 @@ BuildTextureGuarded(brtex::Texture &tex, const char *name)
 }
 
 
+// The streaming system normally destroys a TXD when its last model is
+// evicted. Keep a *detached* dictionary (including GPU rasters) for a bounded
+// number of recent custom slots; never move one texture between two live TXDs.
+// A Take transfers the original dictionary back to CTxdStore, so neither the
+// cache nor the streaming system can destroy the same object twice.
+static void
+DestroyCachedTxd(RwTexDictionary *dict)
+{
+	RwTexDictionaryDestroy(dict);
+}
+static const size_t CUSTOM_GPU_TXD_CACHE_BYTES = 64u * 1024u * 1024u;
+static customcache::ResidentObjectCache<RwTexDictionary> customResidentTxds(CUSTOM_GPU_TXD_CACHE_BYTES, DestroyCachedTxd);
+static std::map<int32, RwTexDictionary*> customLoadedTxds;
+
+struct TxdSize { size_t bytes; bool measurable; };
+static RwTexture *
+CountTxdTexture(RwTexture *texture, void *arg)
+{
+	TxdSize *size = (TxdSize*)arg;
+	RwRaster *ras = RwTextureGetRaster(texture);
+	size->bytes += sizeof(RwTexture);
+	if(ras == nil)
+		return texture;
+	int w = RwRasterGetWidth(ras), h = RwRasterGetHeight(ras);
+	if(w <= 0 || h <= 0 || w > 8192 || h > 8192){
+		size->measurable = false;
+		return texture;
+	}
+	bool mips = (ras->format & rwRASTERFORMATMIPMAP) != 0;
+	for(;;){
+		size->bytes += (size_t)w * (size_t)h * 4; // conservative RGBA8 estimate
+		if(!mips || (w == 1 && h == 1))
+			break;
+		w = w > 1 ? w / 2 : 1;
+		h = h > 1 ? h / 2 : 1;
+	}
+	return texture;
+}
+
+bool
+CCustomModels::RetainTxdOnUnload(int32 slot)
+{
+#ifdef USE_CUSTOM_ALLOCATOR
+	// That allocator counts *actual* RW allocations as live streaming memory.
+	// Keeping an unloaded TXD there would make MakeSpaceFor free unrelated
+	// models without reclaiming the counted TXD. The CPU decode cache still
+	// avoids re-parsing .btx in this optional configuration.
+	return false;
+#else
+	std::map<int32, RwTexDictionary*>::iterator it = customLoadedTxds.find(slot);
+	TxdDef *def = CTxdStore::GetSlot(slot);
+	if(it == customLoadedTxds.end() || def == nil || def->texDict != it->second)
+		return false; // native or externally replaced dictionary
+	TxdSize estimate = { sizeof(RwTexDictionary), true };
+	RwTexDictionaryForAllTextures(def->texDict, CountTxdTexture, &estimate);
+	const std::string key = ToLower(def->name);
+	if(!estimate.measurable || !customResidentTxds.Store(slot, key, def->texDict, estimate.bytes)){
+		customLoadedTxds.erase(slot);
+		return false; // caller retains ownership and destroys it normally
+	}
+	if(RwTexDictionaryGetCurrent() == def->texDict)
+		RwTexDictionarySetCurrent(nil);
+	def->texDict = nil;
+	customLoadedTxds.erase(slot);
+	return true;
+#endif
+}
+
+void
+CCustomModels::ForgetTxdSlot(int32 slot)
+{
+	customLoadedTxds.erase(slot);
+	customResidentTxds.Erase(slot);
+}
+
+void
+CCustomModels::ClearGraphicsCache(void)
+{
+	customLoadedTxds.clear();
+	customResidentTxds.Clear(); // while RenderWare and the GPU context exist
+}
+
+static bool
+RestoreCachedTxd(int32 slot, const std::string &key)
+{
+	TxdDef *def = CTxdStore::GetSlot(slot);
+	if(def == nil || def->texDict != nil)
+		return false;
+	RwTexDictionary *dict = customResidentTxds.Take(slot, key);
+	if(dict == nil)
+		return false;
+	def->texDict = dict;
+	customLoadedTxds[slot] = dict;
+	CUSTOM_LOG("textures %s (slot %d): reused resident GPU dictionary\n", key.c_str(), slot);
+	return true;
+}
+
 // builds the dictionary of one texture dictionary slot: every texture the
 // model references gets an RwTexture built from its .btx
 static bool
 LoadTxdSlot(int32 slot, const std::string &key, TxdPlan &plan)
 {
+	if(RestoreCachedTxd(slot, key))
+		return true; // no ASTC decode, raster allocation or GPU upload
 	RwTexDictionary *dict = CTxdStore::GetSlot(slot)->texDict;
 	if(dict == nil){
 		CTxdStore::Create(slot);
@@ -1108,22 +1297,17 @@ LoadTxdSlot(int32 slot, const std::string &key, TxdPlan &plan)
 				if(plan.recipes[r].tex == name)
 					recipe = &plan.recipes[r];
 
-			brtex::Texture tex;
-			bool ok;
-			if(recipe)
-				ok = brtex::bakeTerrain(*recipe, LoadBtxTexture, tex, 512, 0.0f);
-			else
-				ok = LoadBtxTexture(name, tex);
-			if(!ok){ missing++; continue; }
+			std::shared_ptr<const brtex::Texture> tex = GetPreparedTexture(plan.modelKey, name, recipe);
+			if(!tex){ missing++; continue; }
 
-			RwTexture *texture = BuildTextureGuarded(tex, name.c_str());
+			RwTexture *texture = BuildTextureGuarded(*tex, name.c_str());
 			if(texture == nil){ missing++; continue; }
 			RwTexDictionaryAddTexture(dict, texture);
 			made++;
 		}
 	}else{
-		brtex::Texture tex;
-		RwTexture *texture = LoadBtxTexture(key, tex) ? BuildTextureGuarded(tex, key.c_str()) : nil;
+		std::shared_ptr<const brtex::Texture> tex = GetDecodedBtx(key);
+		RwTexture *texture = tex ? BuildTextureGuarded(*tex, key.c_str()) : nil;
 		if(texture){
 			RwTexDictionaryAddTexture(dict, texture);
 			made++;
@@ -1141,6 +1325,8 @@ LoadTxdSlot(int32 slot, const std::string &key, TxdPlan &plan)
 	}
 	CUSTOM_LOG("textures %s (slot %d): %d built, %d not found in the archives\n",
 		key.c_str(), slot, made, missing);
+	if(made > 0 && key == ToLower(CTxdStore::GetTxdName(slot)))
+		customLoadedTxds[slot] = dict;
 	// An empty dictionary is better than a failed load: the file would be
 	// requested again and again, and the model would never appear at all.
 	return true;
@@ -1218,6 +1404,9 @@ CCustomModels::SetNativeModelOverride(int32 modelId, bool enabled)
 void
 CCustomModels::Shutdown(void)
 {
+	ClearGraphicsCache();
+	customDecodedModels.Clear();
+	customDecodedTextures.Clear();
 	for(size_t i = 0; i < customArchives.size(); i++)
 		delete customArchives[i];
 	customArchives.clear();
@@ -1347,11 +1536,9 @@ BuildDictionaryFor(const std::string &key)
 			for(size_t r = 0; r < plan.recipes.size(); r++)
 				if(plan.recipes[r].tex == name)
 					recipe = &plan.recipes[r];
-			brtex::Texture tex;
-			bool ok = recipe ? brtex::bakeTerrain(*recipe, LoadBtxTexture, tex, 512, 0.0f)
-			                 : LoadBtxTexture(name, tex);
-			if(!ok){ missing++; continue; }
-			RwTexture *texture = BuildTextureGuarded(tex, name.c_str());
+			std::shared_ptr<const brtex::Texture> tex = GetPreparedTexture(plan.modelKey, name, recipe);
+			if(!tex){ missing++; continue; }
+			RwTexture *texture = BuildTextureGuarded(*tex, name.c_str());
 			if(texture == nil){ missing++; continue; }
 			RwTexDictionaryAddTexture(dict, texture);
 			made++;
@@ -1376,21 +1563,15 @@ CCustomModels::LoadClumpFileFromCustom(const char *filename)
 	if(customMods.find(key) == customMods.end() && customDff.find(key) == customDff.end())
 		return false;
 
-	std::vector<uint8> file;
-	bool isMod;
-	br::RwFixStats stats;
-	std::string warn;
-	if(!ReadModelEntry(key, file, isMod, stats, warn))
+	std::shared_ptr<const PreparedModel> model = ReadModelEntry(key);
+	if(!model)
 		return false;
-	unsigned rawSize = (unsigned)file.size();
 
-	// Use the same strict clump validation as the streaming path. In
-	// particular, player.dff is accepted only as a real clump with usable
-	// geometry; player.mod stays rejected regardless of its payload.
-	std::string usableWhy;
-	if(!ValidateModelForGame(key, isMod, file, usableWhy)){
+	// The streaming and HIERFILE paths share the same cached validation.
+	// In particular, player.mod remains forbidden.
+	if(!model->usable){
 		CUSTOM_LOG("model file %s: not usable as a game model (%s), the game's own file is used\n",
-			filename, usableWhy.c_str());
+			filename, model->rejectReason.c_str());
 		return false;
 	}
 
@@ -1403,8 +1584,8 @@ CCustomModels::LoadClumpFileFromCustom(const char *filename)
 		return false;
 
 	RwMemory mem;
-	mem.start = file.data();
-	mem.length = (uint32)file.size();
+	mem.start = const_cast<uint8*>(model->bytes.data());
+	mem.length = (uint32)model->bytes.size();
 	RwStream *stream = RwStreamOpen(rwSTREAMMEMORY, rwSTREAMREAD, &mem);
 	if(stream == nil)
 		return false;
@@ -1447,9 +1628,9 @@ CCustomModels::LoadClumpFileFromCustom(const char *filename)
 		CTxdStore::PopCurrentTxd();
 	RwStreamClose(stream, &mem);
 
-	CUSTOM_LOG("model file %s (id %d): %s, %u bytes of .%s -> %u bytes read in place%s\n",
-		filename, id, ok ? "loaded" : "FAILED", rawSize, isMod ? "mod" : "dff", (unsigned)file.size(),
-		warn.empty() ? "" : (", " + warn).c_str());
+	CUSTOM_LOG("model file %s (id %d): %s, %u bytes of .%s -> %u prepared bytes%s\n",
+		filename, id, ok ? "loaded" : "FAILED", model->rawSize, model->isMod ? "mod" : "dff", (unsigned)model->bytes.size(),
+		model->warn.empty() ? "" : (", " + model->warn).c_str());
 	return ok;
 }
 
@@ -1599,6 +1780,10 @@ CCustomModels::PrintStats(void)
 		(int)customBtx.size(), (int)customTxdFiles.size(),
 		(int)customCls.size(), (int)customColFiles.size(), (int)customColBlocks.size(),
 		(int)customAnims.size(), (int)customImages.size());
+	CUSTOM_LOG("asset caches: models %zu hit / %zu miss / %zu evicted (%zu KiB retained), decoded btx %zu / %zu / %zu (%zu KiB), resident TXDs %zu / %zu / %zu (%zu KiB)\n",
+		customDecodedModels.Hits(), customDecodedModels.Misses(), customDecodedModels.Evictions(), customDecodedModels.Bytes() / 1024,
+		customDecodedTextures.Hits(), customDecodedTextures.Misses(), customDecodedTextures.Evictions(), customDecodedTextures.Bytes() / 1024,
+		customResidentTxds.Hits(), customResidentTxds.Misses(), customResidentTxds.Evictions(), customResidentTxds.Bytes() / 1024);
 }
 
 // ---------------------------------------------------------------------------
@@ -1703,17 +1888,10 @@ CCustomModels::SkinTextureFromBtx(const char *skinname)
 	if(ext != "btx")
 		return nil;			// plain images go through GetSkinImage
 
-	std::vector<uint8> file;
-	if(!ReadSource(*src, file))
+	std::shared_ptr<const brtex::Texture> tex = GetDecodedBtx(*src, key);
+	if(!tex)
 		return nil;
-	brtex::Texture tex;
-	tex.name = key;
-	std::string err;
-	if(!brtex::parseBtx(file.data(), file.size(), tex, &err)){
-		CUSTOM_LOG("skin %s: the .btx could not be read (%s)\n", skinname, err.c_str());
-		return nil;
-	}
-	RwTexture *texture = BuildTextureGuarded(tex, key.c_str());
+	RwTexture *texture = BuildTextureGuarded(*tex, key.c_str());
 	if(texture)
 		CUSTOM_LOG("skin %s: built from the .btx in the custom folder\n", skinname);
 	return texture;

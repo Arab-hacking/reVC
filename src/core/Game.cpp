@@ -297,6 +297,10 @@ CGame::InitialiseRenderWare(void)
 void CGame::ShutdownRenderWare(void)
 {
 	REVC_LOG_INFO("Shutting down RenderWare world");
+#ifdef CUSTOM_MODELS
+	// A detached TXD still owns GPU rasters: release it before the device.
+	CCustomModels::ClearGraphicsCache();
+#endif
 #ifdef SCREEN_DROPLETS
 	ScreenDroplets::Shutdown();
 #endif
@@ -664,6 +668,9 @@ bool CGame::ShutDown(void)
 	CVehicleModelInfo::ShutdownEnvironmentMaps();
 	CRadar::Shutdown();
 	CStreaming::Shutdown();
+#ifdef CUSTOM_MODELS
+	CCustomModels::ClearGraphicsCache();
+#endif
 	CTxdStore::GameShutdown();
 	CCollision::Shutdown();
 	CWaterLevel::Shutdown();

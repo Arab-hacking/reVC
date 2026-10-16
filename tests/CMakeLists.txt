@@ -14,6 +14,12 @@ enable_testing()
 add_test(NAME debug_log_tests COMMAND debug_log_tests)
 add_test(NAME custom_ifp_tests COMMAND custom_ifp_tests)
 
+add_executable(custom_asset_cache_tests
+    CustomAssetCacheTests.cpp ../src/extras/custom/br/third_party/astc_decomp.cpp)
+target_include_directories(custom_asset_cache_tests PRIVATE ../src/extras/custom ../src/extras/custom/br)
+set_target_properties(custom_asset_cache_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+add_test(NAME custom_asset_cache_tests COMMAND custom_asset_cache_tests)
+
 # The real animation code can be tested without game assets by supplying small
 # RenderWare/streaming stubs and synthetic skeletons. Dead-code elimination
 # keeps the remaining game-only dependencies out of this standalone test.
