@@ -1836,16 +1836,29 @@ CheckStreamPreparation(int32 streamId, bool priority)
 void
 CCustomModels::PrefetchStream(int32 streamId, bool priority)
 {
+#ifdef USE_CUSTOM_ALLOCATOR
+	// Its global operator new uses CMemoryHeap, which is neither thread-safe
+	// nor sized for concurrent decompression. Preserve the old synchronous
+	// loading path with this experimental allocator enabled.
+	(void)streamId;
+	(void)priority;
+#else
 	// RequestModel can run before the custom folder is indexed during startup.
 	if(!customInitialised || !customActive)
 		return;
 	PumpBackgroundResults();
 	CheckStreamPreparation(streamId, priority);
+#endif
 }
 
 bool
 CCustomModels::IsStreamPrepared(int32 streamId, bool wait)
 {
+#ifdef USE_CUSTOM_ALLOCATOR
+	(void)streamId;
+	(void)wait;
+	return true; // CMemoryHeap cannot be used safely by a worker thread
+#else
 	EnsureInitialised();
 	if(customSyncFallbackStreams.find(streamId) != customSyncFallbackStreams.end())
 		return true;
@@ -1881,6 +1894,7 @@ CCustomModels::IsStreamPrepared(int32 streamId, bool wait)
 	customSyncFallbackStreams.insert(streamId);
 	customWorkerSyncFallbacks++;
 	return true; // explicit blocking load: preserve native streaming semantics
+#endif
 }
 
 void
@@ -1941,10 +1955,14 @@ CCustomModels::CanServe(int32 streamId)
 		std::string key = ToLower(mi->GetModelName());
 		if(customMods.find(key) == customMods.end() && customDff.find(key) == customDff.end())
 			return false;
+#ifdef USE_CUSTOM_ALLOCATOR
+		return CanUseModel(key); // no worker: retain the original validated lookup
+#else
 		std::map<std::string, ModPlan>::const_iterator plan = customModPlans.find(key);
 		// Tentative while the CPU worker validates it: GetNextFileOnCd does
 		// not hand it to RenderWare until that result has been consumed.
 		return plan == customModPlans.end() || !plan->second.computed || plan->second.usable;
+#endif
 	}
 
 	if(streamId >= STREAM_OFFSET_TXD && streamId < STREAM_OFFSET_COL){
@@ -1952,6 +1970,9 @@ CCustomModels::CanServe(int32 streamId)
 		if(name == nil || name[0] == '\0')
 			return false;
 		std::string key = ToLower(name);
+#ifdef USE_CUSTOM_ALLOCATOR
+		return GetTxdPlan(key).serve;
+#else
 		std::map<std::string, TxdPlan>::const_iterator plan = customTxdPlans.find(key);
 		if(plan != customTxdPlans.end() && plan->second.computed)
 			return plan->second.serve;
@@ -1961,6 +1982,7 @@ CCustomModels::CanServe(int32 streamId)
 		return customBtx.find(key) != customBtx.end() ||
 		       customTxdFiles.find(key) != customTxdFiles.end() ||
 		       !PotentialModelForTxd(key).empty();
+#endif
 	}
 
 	if(streamId >= STREAM_OFFSET_COL && streamId < STREAM_OFFSET_ANIM){
