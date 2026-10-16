@@ -1795,34 +1795,26 @@ LoadColSlot(int32 slot)
 		return false;
 
 	std::vector<uint8> game;
-	if(haveCls){
+	bool useCol = false;
+	if(haveFile) {
 		std::vector<uint8> file;
-		if(!ReadEntry(customCls, key, file))
-			return false;
-
-		// the containers hold San Andreas collision, the game reads the old
-		// version of the format: convert, then hand it to the collision store
+		if(ReadEntry(customColFiles, key, file))
+			game = ColContainerToGame(file, "collision file", key);
+		useCol = !game.empty();
+	}
+	if(!useCol && haveCls) {
+		std::vector<uint8> file;
+		if(!ReadEntry(customCls, key, file)) return false;
+		// Legacy non-CED2 .cls; CED2 blocks are installed directly by name.
 		br::ClsStats stats;
 		std::vector<uint8> col = br::convertClsToCol(file, stats);
-		if(col.empty()){
-			CUSTOM_LOG("collision %s: no usable block (%d blocks, %d bad)\n",
-				key.c_str(), stats.blocks, stats.bad);
-			return false;
-		}
 		game = ColContainerToGame(col, "collision .cls", key);
-		if(game.empty()) return false;
-	}else{
-		std::vector<uint8> file;
-		if(!ReadEntry(customColFiles, key, file))
-			return false;
-		game = ColContainerToGame(file, "collision file", key);
-		if(game.empty())
-			return false;
 	}
+	if(game.empty()) return false;
 
 	bool ok = CColStore::LoadCol(slot, game.data(), (int32)game.size());
 	CUSTOM_LOG("collision %s (slot %d): %s, taken from the %s\n",
-		key.c_str(), slot, ok ? "loaded" : "FAILED", haveCls ? ".cls" : ".col file");
+		key.c_str(), slot, ok ? "loaded" : "FAILED", useCol ? ".col file" : ".cls");
 	return ok;
 }
 
