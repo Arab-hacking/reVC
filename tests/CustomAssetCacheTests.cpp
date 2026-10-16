@@ -61,6 +61,8 @@ int main(void)
 		return std::shared_ptr<const std::vector<uint8_t> >(data);
 	};
 	auto a = prepare("glendale.mod");
+	Check(models.Contains("glendale.mod") && !models.Contains("absent.mod") &&
+	      models.Hits() == 0, "readiness lookup does not perturb cache statistics or LRU");
 	Check(prepare("glendale.mod") == a && decrypts == 1, ".mod decoded once on a cache hit");
 	std::vector<uint8_t> copy = *a;
 	prepare("other.mod");
@@ -97,6 +99,8 @@ int main(void)
 	customcache::ResidentObjectCache<FakeDict> gpu(24, DestroyDict);
 	Check(gpu.Store(10, "cars", new FakeDict(10), 12), "store first GPU dictionary");
 	Check(gpu.Store(11, "peds", new FakeDict(11), 12), "store second GPU dictionary");
+	Check(gpu.Contains(10, "cars") && !gpu.Contains(10, "peds") && gpu.Hits() == 0,
+	      "GPU readiness check does not transfer ownership");
 	FakeDict *restored = gpu.Take(10, "cars");
 	Check(restored && restored->id == 10 && gpu.Bytes() == 12 && destroyed == 0,
 	      "restoring a TXD transfers ownership without destroying GPU resources");

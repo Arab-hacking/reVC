@@ -64,6 +64,12 @@ public:
 		return true;
 	}
 
+	bool Contains(int slot, const std::string &name) const
+	{
+		typename std::map<int, Entry>::const_iterator it = entries.find(slot);
+		return it != entries.end() && it->second.name == name;
+	}
+
 	T *Take(int slot, const std::string &name)
 	{
 		typename std::map<int, Entry>::iterator it = entries.find(slot);

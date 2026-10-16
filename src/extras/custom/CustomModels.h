@@ -51,6 +51,13 @@ public:
 	// every read, so it has to stay cheap. Stream ids are models, texture
 	// dictionaries and collision slots.
 	static bool CanServe(int32 streamId);
+	// CPU-only archive reads and .mod/.btx decoding run ahead of ordinary
+	// streaming on one bounded worker. These are game-thread entry points;
+	// explicit blocking loads may wait, normal frames must never wait.
+	static void PrefetchStream(int32 streamId, bool priority = false);
+	static bool IsStreamPrepared(int32 streamId, bool wait);
+	static void CancelStreamPrefetch(int32 streamId);
+	static void PumpBackgroundResults(void);
 	// Reads, converts and installs the file of this stream id. Only call it
 	// when CanServe said yes for the same id.
 	static bool Load(int32 streamId);

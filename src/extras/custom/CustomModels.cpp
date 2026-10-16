@@ -7,9 +7,11 @@
 #include <string>
 #include <vector>
 #include <map>
+#include <set>
 #include <algorithm>
 #include <functional>
 #include <memory>
+#include <chrono>
 #include <stdio.h>		// snprintf
 #include <stdlib.h>		// getenv
 #include <ctype.h>		// tolower
@@ -18,6 +20,7 @@
 #include "CustomCol.h"
 #include "DecodedAssetCache.h"
 #include "ResidentObjectCache.h"
+#include "BackgroundAssetQueue.h"
 #include "SavehDiag.h"
 
 // the container conversion, shared with brconv/brmod, so what the game does
@@ -603,20 +606,6 @@ ColContainerToGame(const std::vector<uint8> &file, const char *what, const std::
 // understood in place - decryption and the BR->RW structure repair happen
 // inside that very buffer, no .dff is produced anywhere: what comes out of
 // here is handed to the RenderWare loaders as is.
-static bool
-UnderstandMod(std::vector<uint8> &file, br::RwFixStats &stats, std::string &warn)
-{
-	std::string err;
-	if(!br::understandModInplace(file, stats, err)){
-		CUSTOM_LOG("  read failed: %s\n", err.c_str());
-		return false;
-	}
-	if(!err.empty()){
-		warn = err;
-		CUSTOM_LOG("  read note: %s\n", err.c_str());
-	}
-	return true;
-}
 
 static bool ValidateModelForGame(const std::string &key, bool isMod,
                                  const std::vector<uint8> &file, std::string &why);
@@ -633,9 +622,37 @@ struct PreparedModel
 	std::string rejectReason;
 	bool isMod;
 	bool usable;
+	bool readOk;
 	unsigned rawSize;
+	std::vector<std::string> textureNames; // scanned off the game thread too
 };
 
+// Only pure CPU work is allowed here. In particular, no CModelInfo, TXD,
+// RenderWare or GPU calls: the same function can run on the streaming worker.
+static std::shared_ptr<PreparedModel>
+PrepareModelBytes(const std::string &key, const CustomSource &src, bool isMod)
+{
+	std::shared_ptr<PreparedModel> model = std::make_shared<PreparedModel>();
+	model->isMod = isMod;
+	model->usable = false;
+	model->readOk = false;
+	if(!ReadSource(src, model->bytes)){
+		model->rejectReason = "the archive entry could not be read";
+		return model;
+	}
+	model->rawSize = (unsigned)model->bytes.size();
+	if(isMod && !br::understandModInplace(model->bytes, model->stats, model->warn)){
+		model->rejectReason = model->warn;
+		return model;
+	}
+	model->readOk = true;
+	model->usable = ValidateModelForGame(key, isMod, model->bytes, model->rejectReason);
+	brtex::collectTextureNames(model->bytes.data(), model->bytes.size(), model->textureNames);
+	return model;
+}
+
+// Keep the existing per-cache ceilings. Any larger aggregate cache budget
+// should be chosen explicitly, separately from enabling background streaming.
 static const size_t CUSTOM_MODEL_CACHE_BYTES = 64u * 1024u * 1024u;
 static const size_t CUSTOM_TEXTURE_CACHE_BYTES = 64u * 1024u * 1024u;
 static customcache::DecodedAssetCache<PreparedModel> customDecodedModels(CUSTOM_MODEL_CACHE_BYTES);
@@ -652,16 +669,14 @@ ReadModelEntry(const std::string &key)
 		src = FindSource(customDff, key);
 	if(src == nil)
 		return std::shared_ptr<const PreparedModel>();
-	std::shared_ptr<PreparedModel> model = std::make_shared<PreparedModel>();
-	model->isMod = isMod;
-	if(!ReadSource(*src, model->bytes))
-		return std::shared_ptr<const PreparedModel>();
-	model->rawSize = (unsigned)model->bytes.size();
-	if(isMod && !UnderstandMod(model->bytes, model->stats, model->warn)){
-		CUSTOM_LOG("model %s: cannot prepare .mod (%s)\n", key.c_str(), model->warn.c_str());
+	std::shared_ptr<PreparedModel> model = PrepareModelBytes(key, *src, isMod);
+	if(!model->readOk){
+		CUSTOM_LOG("model %s: cannot prepare .%s (%s)\n", key.c_str(),
+			isMod ? "mod" : "dff", model->rejectReason.c_str());
 		return std::shared_ptr<const PreparedModel>();
 	}
-	model->usable = ValidateModelForGame(key, isMod, model->bytes, model->rejectReason);
+	if(!model->warn.empty())
+		CUSTOM_LOG("  read note: %s\n", model->warn.c_str());
 	customDecodedModels.Insert(key, model, model->bytes.capacity() + sizeof(PreparedModel));
 	return model;
 }
@@ -674,8 +689,7 @@ ModelTextureNames(const std::string &key, std::vector<std::string> &names, std::
 	std::shared_ptr<const PreparedModel> model = ReadModelEntry(key);
 	if(!model)
 		return false;
-	names.clear();
-	brtex::collectTextureNames(model->bytes.data(), model->bytes.size(), names);
+	names = model->textureNames;
 	recipes = model->stats.recipes;
 	return true;
 }
@@ -752,6 +766,7 @@ struct TxdPlan
 };
 
 static std::map<std::string, TxdPlan> customTxdPlans;
+static std::map<std::string, std::string> customTxdCandidates;
 
 // The dictionary a model uses does not always carry the model's name (a car is
 // called "hotdog" but its textures can live in "hotdog1"), so a name that is
@@ -801,6 +816,8 @@ FindModelForTxd(const std::string &txdName, std::string &modelKey)
 	return false;
 }
 
+static std::string PotentialModelForTxd(const std::string &key);
+
 static TxdPlan &
 GetTxdPlan(const std::string &key)
 {
@@ -811,8 +828,10 @@ GetTxdPlan(const std::string &key)
 	plan.modelKey = key;
 	plan.haveModel = (customMods.find(key) != customMods.end() ||
 	                  customDff.find(key) != customDff.end()) && CanUseModel(key);
-	if(!plan.haveModel && FindModelForTxd(key, plan.modelKey))
-		plan.haveModel = true;
+	if(!plan.haveModel){
+		plan.modelKey = PotentialModelForTxd(key);
+		plan.haveModel = !plan.modelKey.empty();
+	}
 	plan.haveBtx = customBtx.find(key) != customBtx.end();
 	plan.haveTxdFile = customTxdFiles.find(key) != customTxdFiles.end();
 	if(plan.haveModel){
@@ -989,6 +1008,19 @@ LoadTxdFileIntoSlot(int32 slot, const std::string &key)
 
 
 static customcache::DecodedAssetCache<brtex::Texture> customDecodedTextures(CUSTOM_TEXTURE_CACHE_BYTES);
+static std::set<std::string> customFailedCpuTextures;
+// A single texture larger than the LRU budget is still delivered once from
+// the worker to the next load. It is not allowed to accumulate indefinitely.
+static std::string customTransientTextureKey;
+static std::shared_ptr<const brtex::Texture> customTransientTexture;
+
+static bool
+HasPreparedTexture(const std::string &key)
+{
+	return customDecodedTextures.Contains(key) ||
+	       (customTransientTexture && customTransientTextureKey == key) ||
+	       customFailedCpuTextures.find(key) != customFailedCpuTextures.end();
+}
 
 static size_t
 DecodedTextureSize(const brtex::Texture &tex)
@@ -1009,6 +1041,21 @@ BtxCacheKey(const CustomSource &src)
 	return src.archive < 0 ? std::string("loose:") + src.loose : std::string("archive:") + loc;
 }
 
+static std::shared_ptr<brtex::Texture>
+DecodeBtxBytes(const CustomSource &src, const std::string &name, std::string &err)
+{
+	std::vector<uint8> file;
+	if(!ReadSource(src, file)){
+		err = "the archive entry could not be read";
+		return std::shared_ptr<brtex::Texture>();
+	}
+	std::shared_ptr<brtex::Texture> tex = std::make_shared<brtex::Texture>();
+	tex->name = name;
+	if(!brtex::parseBtx(file.data(), file.size(), *tex, &err))
+		return std::shared_ptr<brtex::Texture>();
+	return tex;
+}
+
 static std::shared_ptr<const brtex::Texture>
 GetDecodedBtx(const CustomSource &src, const std::string &name)
 {
@@ -1016,13 +1063,17 @@ GetDecodedBtx(const CustomSource &src, const std::string &name)
 	std::shared_ptr<const brtex::Texture> cached = customDecodedTextures.Find(key);
 	if(cached)
 		return cached;
-	std::vector<uint8> file;
-	if(!ReadSource(src, file))
+	if(customTransientTexture && customTransientTextureKey == key){
+		std::shared_ptr<const brtex::Texture> ready = customTransientTexture;
+		customTransientTexture.reset(); // caller pins it through the GPU build
+		customTransientTextureKey.clear();
+		return ready;
+	}
+	if(customFailedCpuTextures.find(key) != customFailedCpuTextures.end())
 		return std::shared_ptr<const brtex::Texture>();
-	std::shared_ptr<brtex::Texture> tex = std::make_shared<brtex::Texture>();
-	tex->name = name;
 	std::string err;
-	if(!brtex::parseBtx(file.data(), file.size(), *tex, &err)){
+	std::shared_ptr<brtex::Texture> tex = DecodeBtxBytes(src, name, err);
+	if(!tex){
 		CUSTOM_LOG("texture %s: %s\n", name.c_str(), err.c_str());
 		return std::shared_ptr<const brtex::Texture>();
 	}
@@ -1035,6 +1086,28 @@ GetDecodedBtx(const std::string &name)
 {
 	const CustomSource *src = FindSource(customBtx, ToLower(name));
 	return src ? GetDecodedBtx(*src, name) : std::shared_ptr<const brtex::Texture>();
+}
+
+// Decode and bake terrain without touching game state. The input map is a
+// snapshot of source descriptors, not live iterators into the archive index.
+static std::shared_ptr<brtex::Texture>
+BakeTerrainBytes(const br::TerrainRecipe &recipe,
+                 const std::map<std::string, CustomSource> &sources)
+{
+	std::shared_ptr<brtex::Texture> baked = std::make_shared<brtex::Texture>();
+	std::function<bool(const std::string&, brtex::Texture&)> read =
+		[&sources](const std::string &name, brtex::Texture &out){
+			std::map<std::string, CustomSource>::const_iterator src = sources.find(ToLower(name));
+			if(src == sources.end())
+				return false;
+			std::string error;
+			std::shared_ptr<brtex::Texture> layer = DecodeBtxBytes(src->second, name, error);
+			if(!layer)
+				return false;
+			out = *layer;
+			return true;
+		};
+	return brtex::bakeTerrain(recipe, read, *baked, 512, 0.0f) ? baked : std::shared_ptr<brtex::Texture>();
 }
 
 // The terrain baker's callback currently takes an output Texture by value.
@@ -1058,6 +1131,14 @@ GetPreparedTexture(const std::string &modelKey, const std::string &name, const b
 	std::shared_ptr<const brtex::Texture> cached = customDecodedTextures.Find(key);
 	if(cached)
 		return cached;
+	if(customTransientTexture && customTransientTextureKey == key){
+		std::shared_ptr<const brtex::Texture> ready = customTransientTexture;
+		customTransientTexture.reset();
+		customTransientTextureKey.clear();
+		return ready;
+	}
+	if(customFailedCpuTextures.find(key) != customFailedCpuTextures.end())
+		return std::shared_ptr<const brtex::Texture>();
 	std::shared_ptr<brtex::Texture> tex = std::make_shared<brtex::Texture>();
 	if(!brtex::bakeTerrain(*recipe, LoadBtxTexture, *tex, 512, 0.0f))
 		return std::shared_ptr<const brtex::Texture>();
@@ -1183,6 +1264,159 @@ DestroyCachedTxd(RwTexDictionary *dict)
 static const size_t CUSTOM_GPU_TXD_CACHE_BYTES = 64u * 1024u * 1024u;
 static customcache::ResidentObjectCache<RwTexDictionary> customResidentTxds(CUSTOM_GPU_TXD_CACHE_BYTES, DestroyCachedTxd);
 static std::map<int32, RwTexDictionary*> customLoadedTxds;
+
+// CPU preparation is separate from RenderWare. The only things passed to the
+// worker are immutable source descriptors, names and terrain recipes; the
+// archive index outlives the worker and CustomZip opens a separate FILE per
+// extraction. Results enter the existing LRU caches ONLY on the game thread.
+struct CpuWorkResult
+{
+	std::shared_ptr<PreparedModel> model;
+	std::shared_ptr<brtex::Texture> texture;
+	std::string error;
+	unsigned milliseconds;
+};
+static customcache::BackgroundAssetQueue<CpuWorkResult> customCpuWorker(16, 1);
+static std::map<int32, std::set<std::string> > customJobInterests;
+// If a prepared asset is evicted before the rest of a TXD fits in the LRU,
+// don't keep decoding it forever. Fall back to the ordinary load of that TXD.
+static std::map<int32, std::set<std::string> > customCompletedCpuJobs;
+static std::map<int32, std::chrono::steady_clock::time_point> customPreparationWaits;
+static std::set<int32> customSyncFallbackStreams;
+static size_t customWorkerModels = 0, customWorkerTextures = 0, customWorkerFailures = 0;
+static size_t customWorkerSyncFallbacks = 0;
+
+static std::string ModelJobKey(const std::string &key) { return "m:" + key; }
+static std::string TextureJobKey(const std::string &key) { return "b:" + key; }
+
+static void
+TrackCpuJob(int32 streamId, const std::string &job)
+{
+	if(streamId >= 0)
+		customJobInterests[streamId].insert(job);
+}
+
+static bool
+QueueModelPreparation(const std::string &key, int32 streamId, bool priority)
+{
+	if(customDecodedModels.Contains(key))
+		return true;
+	std::map<std::string, ModPlan>::const_iterator plan = customModPlans.find(key);
+	if(plan != customModPlans.end() && plan->second.computed && !plan->second.usable)
+		return true;
+	const CustomSource *src = FindSource(customMods, key);
+	bool isMod = src != nil;
+	if(!src) src = FindSource(customDff, key);
+	if(!src) return true;
+	const CustomSource copy = *src;
+	std::string jobKey = ModelJobKey(key);
+	bool queued = customCpuWorker.Schedule(jobKey, [copy, key, isMod]{
+		std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
+		std::shared_ptr<CpuWorkResult> result = std::make_shared<CpuWorkResult>();
+		result->model = PrepareModelBytes(key, copy, isMod);
+		result->milliseconds = (unsigned)std::chrono::duration_cast<std::chrono::milliseconds>(
+			std::chrono::steady_clock::now() - start).count();
+		return result;
+	}, priority);
+	if(queued) TrackCpuJob(streamId, jobKey);
+	return queued;
+}
+
+static bool
+QueueTexturePreparation(const std::string &cacheKey, const std::string &name,
+                        const CustomSource &source, int32 streamId, bool priority)
+{
+	if(HasPreparedTexture(cacheKey))
+		return true;
+	const CustomSource copy = source;
+	std::string jobKey = TextureJobKey(cacheKey);
+	bool queued = customCpuWorker.Schedule(jobKey, [copy, name]{
+		std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
+		std::shared_ptr<CpuWorkResult> result = std::make_shared<CpuWorkResult>();
+		result->texture = DecodeBtxBytes(copy, name, result->error);
+		result->milliseconds = (unsigned)std::chrono::duration_cast<std::chrono::milliseconds>(
+			std::chrono::steady_clock::now() - start).count();
+		return result;
+	}, priority);
+	if(queued) TrackCpuJob(streamId, jobKey);
+	return queued;
+}
+
+static bool
+QueueTerrainPreparation(const std::string &cacheKey, const br::TerrainRecipe &recipe,
+                        int32 streamId, bool priority)
+{
+	if(HasPreparedTexture(cacheKey))
+		return true;
+	std::map<std::string, CustomSource> inputs;
+	const std::string names[5] = { recipe.tex, recipe.layers[0], recipe.layers[1], recipe.layers[2], recipe.layers[3] };
+	for(int i = 0; i < 5; i++){
+		const CustomSource *source = FindSource(customBtx, ToLower(names[i]));
+		if(source && !names[i].empty()) inputs[ToLower(names[i])] = *source;
+	}
+	std::string jobKey = TextureJobKey(cacheKey);
+	bool queued = customCpuWorker.Schedule(jobKey, [recipe, inputs]{
+		std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
+		std::shared_ptr<CpuWorkResult> result = std::make_shared<CpuWorkResult>();
+		result->texture = BakeTerrainBytes(recipe, inputs);
+		if(!result->texture) result->error = "no usable terrain layers";
+		result->milliseconds = (unsigned)std::chrono::duration_cast<std::chrono::milliseconds>(
+			std::chrono::steady_clock::now() - start).count();
+		return result;
+	}, priority);
+	if(queued) TrackCpuJob(streamId, jobKey);
+	return queued;
+}
+
+void
+CCustomModels::PumpBackgroundResults(void)
+{
+	customcache::BackgroundAssetQueue<CpuWorkResult>::Completed completed;
+	while(customCpuWorker.Pop(completed)){
+		std::shared_ptr<CpuWorkResult> result = completed.value;
+		if(completed.key.compare(0, 2, "m:") == 0){
+			std::string key = completed.key.substr(2);
+			std::shared_ptr<PreparedModel> model = result ? result->model : std::shared_ptr<PreparedModel>();
+			ModPlan &plan = customModPlans[key];
+			plan.computed = true;
+			plan.usable = model && model->readOk && model->usable;
+			if(model && model->readOk){
+				customDecodedModels.Insert(key, model, model->bytes.capacity() + sizeof(PreparedModel));
+				customWorkerModels++;
+			}
+			if(!plan.usable){
+				customWorkerFailures++;
+				CUSTOM_LOG("background model %s: rejected (%s)\n", key.c_str(),
+					model ? model->rejectReason.c_str() : "worker error");
+			}else if(!model->warn.empty())
+				CUSTOM_LOG("background model %s: %s\n", key.c_str(), model->warn.c_str());
+		}else if(completed.key.compare(0, 2, "b:") == 0){
+			std::string key = completed.key.substr(2);
+			if(result && result->texture){
+				size_t bytes = DecodedTextureSize(*result->texture);
+				if(!customDecodedTextures.Insert(key, result->texture, bytes)){
+					customTransientTextureKey = key;
+					customTransientTexture = result->texture;
+				}
+				customWorkerTextures++;
+			}else{
+				customFailedCpuTextures.insert(key);
+				customWorkerFailures++;
+				CUSTOM_LOG("background texture %s: %s\n", key.c_str(),
+					result && !result->error.empty() ? result->error.c_str() : "worker error");
+			}
+		}
+		if(result && result->milliseconds > 5)
+			CUSTOM_LOG("background asset %s: %u ms CPU preparation (not on game thread)\n",
+				completed.key.c_str(), result->milliseconds);
+		for(std::map<int32, std::set<std::string> >::iterator it = customJobInterests.begin(); it != customJobInterests.end(); ){
+			if(it->second.erase(completed.key))
+				customCompletedCpuJobs[it->first].insert(completed.key);
+			if(it->second.empty()) it = customJobInterests.erase(it);
+			else ++it;
+		}
+	}
+}
 
 struct TxdSize { size_t bytes; bool measurable; };
 static RwTexture *
@@ -1394,6 +1628,27 @@ void
 CCustomModels::Initialise(void)
 {
 	EnsureInitialised();
+	// CGame calls this after loading the IDE model names. Build the reverse
+	// model->TXD index once here, not by scanning every custom model in the
+	// hot CanServe/GetNextFileOnCd path. Like FindModelForTxd, prefer .mod
+	// over .dff and the first name in lexical order within each kind.
+	customTxdCandidates.clear();
+	if(customMods.empty() && customDff.empty()) return;
+	for(int32 id = 0; id < MODELINFOSIZE; id++){
+		CBaseModelInfo *mi = CModelInfo::GetModelInfo(id);
+		if(!mi || mi->GetTxdSlot() < 0 || mi->GetTxdSlot() >= TXDSTORESIZE) continue;
+		std::string modelKey = ToLower(mi->GetModelName());
+		bool isMod = customMods.find(modelKey) != customMods.end();
+		if(!isMod && customDff.find(modelKey) == customDff.end()) continue;
+		const char *name = CTxdStore::GetTxdName(mi->GetTxdSlot());
+		if(!name || !name[0]) continue;
+		std::string txdKey = ToLower(name);
+		std::map<std::string, std::string>::iterator current = customTxdCandidates.find(txdKey);
+		if(current == customTxdCandidates.end() ||
+		   (isMod && customMods.find(current->second) == customMods.end()) ||
+		   (isMod == (customMods.find(current->second) != customMods.end()) && modelKey < current->second))
+			customTxdCandidates[txdKey] = modelKey;
+	}
 }
 
 void
@@ -1405,9 +1660,19 @@ CCustomModels::SetNativeModelOverride(int32 modelId, bool enabled)
 void
 CCustomModels::Shutdown(void)
 {
+	// The worker may still be reading a CustomZip entry. Join it BEFORE the
+	// archive index and decoded caches are destroyed or a new game is started.
+	customCpuWorker.Stop();
+	customJobInterests.clear();
+	customCompletedCpuJobs.clear();
+	customPreparationWaits.clear();
+	customSyncFallbackStreams.clear();
 	ClearGraphicsCache();
 	customDecodedModels.Clear();
 	customDecodedTextures.Clear();
+	customFailedCpuTextures.clear();
+	customTransientTexture.reset();
+	customTransientTextureKey.clear();
 	for(size_t i = 0; i < customArchives.size(); i++)
 		delete customArchives[i];
 	customArchives.clear();
@@ -1424,6 +1689,7 @@ CCustomModels::Shutdown(void)
 	customFolderPath.clear();
 	customModPlans.clear();
 	customTxdPlans.clear();
+	customTxdCandidates.clear();
 	customInitialised = false;
 	customActive = false;
 	nativeModelOverride = -1;
@@ -1434,6 +1700,217 @@ CCustomModels::IsActive(void)
 {
 	EnsureInitialised();
 	return customActive;
+}
+
+static std::string
+PotentialModelForTxd(const std::string &key)
+{
+	if(customMods.find(key) != customMods.end() || customDff.find(key) != customDff.end()){
+		std::map<std::string, ModPlan>::const_iterator it = customModPlans.find(key);
+		if(it == customModPlans.end() || !it->second.computed || it->second.usable)
+			return key;
+	}
+	std::map<std::string, std::string>::iterator cached = customTxdCandidates.find(key);
+	if(cached != customTxdCandidates.end()){
+		std::map<std::string, ModPlan>::const_iterator plan = customModPlans.find(cached->second);
+		if(cached->second.empty() || plan == customModPlans.end() || !plan->second.computed || plan->second.usable)
+			return cached->second;
+		customTxdCandidates.erase(cached); // candidate was later rejected
+	}
+	std::string modelKey;
+	FindModelForTxd(key, modelKey);
+	customTxdCandidates[key] = modelKey; // including misses: CanServe runs often
+	return modelKey;
+}
+
+static bool
+EvictedBeforeReady(int32 streamId, const std::string &job)
+{
+	std::map<int32, std::set<std::string> >::const_iterator it = customCompletedCpuJobs.find(streamId);
+	if(it == customCompletedCpuJobs.end() || it->second.find(job) == it->second.end())
+		return false;
+	customSyncFallbackStreams.insert(streamId);
+	customWorkerSyncFallbacks++;
+	CUSTOM_LOG("background asset %d: %s evicted before its TXD was ready; using synchronous load\n",
+		streamId, job.c_str());
+	return true;
+}
+
+// Called only on the game thread. A TXD's plan needs the model's texture names,
+// so first prepare the model, then queue precisely the .btx entries in that
+// dictionary. Until this is ready the request stays in the normal streaming
+// list, leaving the RW object and the camera-based eviction rules untouched.
+static bool
+CheckStreamPreparation(int32 streamId, bool priority)
+{
+	if(streamId == nativeModelOverride || !customActive || streamId < 0 || streamId >= NUMSTREAMINFO)
+		return true;
+	if(streamId < STREAM_OFFSET_TXD){
+		CBaseModelInfo *mi = CModelInfo::GetModelInfo(streamId);
+		if(!mi || (!mi->IsSimple() && mi->GetModelType() != MITYPE_CLUMP &&
+		           mi->GetModelType() != MITYPE_VEHICLE && mi->GetModelType() != MITYPE_PED))
+			return true;
+		std::string key = ToLower(mi->GetModelName());
+		if(customMods.find(key) == customMods.end() && customDff.find(key) == customDff.end())
+			return true;
+		std::map<std::string, ModPlan>::const_iterator plan = customModPlans.find(key);
+		if(plan != customModPlans.end() && plan->second.computed && !plan->second.usable)
+			return true; // the game's own file is used
+		if(customDecodedModels.Contains(key)){
+			if(plan == customModPlans.end() || !plan->second.computed)
+				CanUseModel(key); // cache hit, no parsing or I/O
+			return true;
+		}
+		if(EvictedBeforeReady(streamId, ModelJobKey(key))) return true;
+		QueueModelPreparation(key, streamId, priority);
+		return false;
+	}
+	if(streamId >= STREAM_OFFSET_TXD && streamId < STREAM_OFFSET_COL){
+		int32 slot = streamId - STREAM_OFFSET_TXD;
+		const char *slotName = CTxdStore::GetTxdName(slot);
+		if(!slotName || !slotName[0]) return true;
+		TxdDef *active = CTxdStore::GetSlot(slot);
+		if(active && active->texDict && ((rw::TexDictionary*)active->texDict)->count() != 0)
+			return true; // dictionary already resident, no extra CPU preparation
+		std::string key = ToLower(slotName);
+		if(customResidentTxds.Contains(slot, key))
+			return true; // evicted custom TXD already has its GPU rasters
+		std::map<std::string, TxdPlan>::const_iterator known = customTxdPlans.find(key);
+		if(known == customTxdPlans.end() || !known->second.computed){
+			std::string modelKey = PotentialModelForTxd(key);
+			if(modelKey.empty() && customBtx.find(key) == customBtx.end() &&
+			   customTxdFiles.find(key) == customTxdFiles.end())
+				return true; // game's native TXD, not our path
+			if(!modelKey.empty()){
+				std::map<std::string, ModPlan>::const_iterator plan = customModPlans.find(modelKey);
+				if(plan == customModPlans.end() || !plan->second.computed || plan->second.usable){
+					if(!customDecodedModels.Contains(modelKey)){
+						if(EvictedBeforeReady(streamId, ModelJobKey(modelKey))) return true;
+						QueueModelPreparation(modelKey, streamId, priority);
+						return false;
+					}
+				}
+			}
+		}
+		TxdPlan &plan = GetTxdPlan(key);
+		if(!plan.serve)
+			return true;
+		bool pending = false;
+		if(plan.haveModel){
+			for(size_t i = 0; i < plan.names.size(); i++){
+				const std::string &name = plan.names[i];
+				const br::TerrainRecipe *recipe = nil;
+				for(size_t r = 0; r < plan.recipes.size(); r++)
+					if(plan.recipes[r].tex == name) recipe = &plan.recipes[r];
+				if(recipe){
+					std::string texKey = "terrain:" + plan.modelKey + ":" + ToLower(name);
+					if(!HasPreparedTexture(texKey)){
+						if(EvictedBeforeReady(streamId, TextureJobKey(texKey))) return true;
+						QueueTerrainPreparation(texKey, *recipe, streamId, priority);
+						pending = true;
+					}
+				}else{
+					const CustomSource *src = FindSource(customBtx, ToLower(name));
+					if(src && !HasPreparedTexture(BtxCacheKey(*src))){
+						std::string texKey = BtxCacheKey(*src);
+						if(EvictedBeforeReady(streamId, TextureJobKey(texKey))) return true;
+						QueueTexturePreparation(texKey, name, *src, streamId, priority);
+						pending = true;
+					}
+				}
+			}
+		}else if(plan.haveBtx){
+			const CustomSource *src = FindSource(customBtx, key);
+			if(src && !HasPreparedTexture(BtxCacheKey(*src))){
+				std::string texKey = BtxCacheKey(*src);
+				if(EvictedBeforeReady(streamId, TextureJobKey(texKey))) return true;
+				QueueTexturePreparation(texKey, key, *src, streamId, priority);
+				pending = true;
+			}
+		}
+		return !pending;
+	}
+	return true;
+}
+
+void
+CCustomModels::PrefetchStream(int32 streamId, bool priority)
+{
+	// RequestModel can run before the custom folder is indexed during startup.
+	if(!customInitialised || !customActive)
+		return;
+	PumpBackgroundResults();
+	CheckStreamPreparation(streamId, priority);
+}
+
+bool
+CCustomModels::IsStreamPrepared(int32 streamId, bool wait)
+{
+	EnsureInitialised();
+	if(customSyncFallbackStreams.find(streamId) != customSyncFallbackStreams.end())
+		return true;
+	for(int attempts = 0; attempts < (wait ? 64 : 1); attempts++){
+		PumpBackgroundResults();
+		if(CheckStreamPreparation(streamId, wait)){
+			customPreparationWaits.erase(streamId);
+			customCompletedCpuJobs.erase(streamId);
+			return true;
+		}
+		if(!wait){
+			std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
+			std::map<int32, std::chrono::steady_clock::time_point>::iterator first = customPreparationWaits.find(streamId);
+			if(first == customPreparationWaits.end())
+				first = customPreparationWaits.insert(std::make_pair(streamId, now)).first;
+			std::chrono::steady_clock::duration elapsed = now - first->second;
+			if(elapsed < std::chrono::seconds(3) ||
+			   (customCpuWorker.PendingCount() != 0 && elapsed < std::chrono::seconds(30)))
+				return false;
+			// Never deadlock streaming if the source exceeds the cache budget,
+			// is broken, or the worker cannot start. Three seconds is a safety
+			// net, not a per-frame timeout: subsequent lookups don't reset it.
+			customPreparationWaits.erase(streamId);
+			customSyncFallbackStreams.insert(streamId);
+			customWorkerSyncFallbacks++;
+			CUSTOM_LOG("background asset %d: deferred too long, using synchronous load\n", streamId);
+			return true;
+		}
+		if(customCpuWorker.PendingCount() == 0)
+			break; // thread unavailable or queue cannot accept an asset
+		customCpuWorker.WaitForResult();
+	}
+	customSyncFallbackStreams.insert(streamId);
+	customWorkerSyncFallbacks++;
+	return true; // explicit blocking load: preserve native streaming semantics
+}
+
+void
+CCustomModels::CancelStreamPrefetch(int32 streamId)
+{
+	customPreparationWaits.erase(streamId);
+	std::string transientJob = TextureJobKey(customTransientTextureKey);
+	std::map<int32, std::set<std::string> >::const_iterator done = customCompletedCpuJobs.find(streamId);
+	bool usedTransient = customTransientTexture && done != customCompletedCpuJobs.end() &&
+	                     done->second.find(transientJob) != done->second.end();
+	customCompletedCpuJobs.erase(streamId);
+	if(usedTransient){
+		bool stillWanted = false;
+		for(std::map<int32, std::set<std::string> >::const_iterator other = customCompletedCpuJobs.begin();
+		    other != customCompletedCpuJobs.end(); ++other)
+			if(other->second.find(transientJob) != other->second.end()){ stillWanted = true; break; }
+		if(!stillWanted){ customTransientTexture.reset(); customTransientTextureKey.clear(); }
+	}
+	customSyncFallbackStreams.erase(streamId);
+	std::map<int32, std::set<std::string> >::iterator it = customJobInterests.find(streamId);
+	if(it == customJobInterests.end())
+		return;
+	std::set<std::string> jobs = it->second;
+	customJobInterests.erase(it);
+	for(std::set<std::string>::const_iterator job = jobs.begin(); job != jobs.end(); ++job){
+		bool shared = false;
+		for(std::map<int32, std::set<std::string> >::const_iterator other = customJobInterests.begin(); other != customJobInterests.end(); ++other)
+			if(other->second.find(*job) != other->second.end()) { shared = true; break; }
+		if(!shared) customCpuWorker.Cancel(*job);
+	}
 }
 
 // Is this stream id (a model, a texture dictionary or a collision slot) one of
@@ -1464,17 +1941,26 @@ CCustomModels::CanServe(int32 streamId)
 		std::string key = ToLower(mi->GetModelName());
 		if(customMods.find(key) == customMods.end() && customDff.find(key) == customDff.end())
 			return false;
-		return CanUseModel(key);
+		std::map<std::string, ModPlan>::const_iterator plan = customModPlans.find(key);
+		// Tentative while the CPU worker validates it: GetNextFileOnCd does
+		// not hand it to RenderWare until that result has been consumed.
+		return plan == customModPlans.end() || !plan->second.computed || plan->second.usable;
 	}
 
 	if(streamId >= STREAM_OFFSET_TXD && streamId < STREAM_OFFSET_COL){
 		const char *name = CTxdStore::GetTxdName(streamId - STREAM_OFFSET_TXD);
 		if(name == nil || name[0] == '\0')
 			return false;
-		// the dictionary is only ours when at least one of the textures it
-		// has to contain is in the archives; otherwise the game's own
-		// dictionary is the right one
-		return GetTxdPlan(ToLower(name)).serve;
+		std::string key = ToLower(name);
+		std::map<std::string, TxdPlan>::const_iterator plan = customTxdPlans.find(key);
+		if(plan != customTxdPlans.end() && plan->second.computed)
+			return plan->second.serve;
+		// A potential custom dictionary is provisional until the model's
+		// texture names have been examined off the game thread. No ZIP read,
+		// model conversion or ASTC decode may occur in this hot lookup.
+		return customBtx.find(key) != customBtx.end() ||
+		       customTxdFiles.find(key) != customTxdFiles.end() ||
+		       !PotentialModelForTxd(key).empty();
 	}
 
 	if(streamId >= STREAM_OFFSET_COL && streamId < STREAM_OFFSET_ANIM){
@@ -1785,6 +2271,10 @@ CCustomModels::PrintStats(void)
 		customDecodedModels.Hits(), customDecodedModels.Misses(), customDecodedModels.Evictions(), customDecodedModels.Bytes() / 1024,
 		customDecodedTextures.Hits(), customDecodedTextures.Misses(), customDecodedTextures.Evictions(), customDecodedTextures.Bytes() / 1024,
 		customResidentTxds.Hits(), customResidentTxds.Misses(), customResidentTxds.Evictions(), customResidentTxds.Bytes() / 1024);
+	CUSTOM_LOG("background CPU: %zu models, %zu textures, %zu failed, %zu synchronous fallbacks; %zu pending; cache ceilings %zu / %zu / %zu MiB (model / texture / GPU TXD)\n",
+		customWorkerModels, customWorkerTextures, customWorkerFailures, customWorkerSyncFallbacks,
+		customCpuWorker.PendingCount(), CUSTOM_MODEL_CACHE_BYTES / (1024u*1024u),
+		CUSTOM_TEXTURE_CACHE_BYTES / (1024u*1024u), CUSTOM_GPU_TXD_CACHE_BYTES / (1024u*1024u));
 }
 
 // ---------------------------------------------------------------------------

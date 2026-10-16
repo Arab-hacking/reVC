@@ -48,6 +48,8 @@ public:
 	DecodedAssetCache(const DecodedAssetCache&) = delete;
 	DecodedAssetCache& operator=(const DecodedAssetCache&) = delete;
 
+	bool Contains(const std::string &key) const { return entries.find(key) != entries.end(); }
+
 	std::shared_ptr<const T> Find(const std::string &key)
 	{
 		typename std::map<std::string, Entry>::iterator it = entries.find(key);

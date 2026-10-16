@@ -919,6 +919,10 @@ CStreaming::RequestModel(int32 id, int32 flags)
 		ms_aInfoForModel[id].m_loadState = STREAMSTATE_INQUEUE;
 		ms_aInfoForModel[id].m_flags = flags;
 	}
+#ifdef CUSTOM_MODELS
+	if(ms_aInfoForModel[id].m_loadState == STREAMSTATE_INQUEUE)
+		CCustomModels::PrefetchStream(id, ms_aInfoForModel[id].IsPriority());
+#endif
 }
 
 #define BIGBUILDINGFLAGS STREAMFLAGS_DONT_REMOVE
@@ -1210,6 +1214,9 @@ CStreaming::RemoveModel(int32 id)
 	if(ms_aInfoForModel[id].m_loadState == STREAMSTATE_NOTLOADED)
 		return;
 
+#ifdef CUSTOM_MODELS
+	CCustomModels::CancelStreamPrefetch(id);
+#endif
 	if(ms_aInfoForModel[id].m_loadState == STREAMSTATE_LOADED){
 		if(id < STREAM_OFFSET_TXD)
 			CModelInfo::GetModelInfo(id)->DeleteRwObject();
@@ -2254,6 +2261,13 @@ CStreaming::GetNextFileOnCd(int32 lastPosn, bool priority)
 		}else if(streamId >= STREAM_OFFSET_ANIM && CCutsceneMgr::IsCutsceneProcessing())
 			continue;
 
+#ifdef CUSTOM_MODELS
+		// Keep the request (and the usual TXD-before-model ordering) alive
+		// while the worker reads/decodes custom CPU assets. Do not block a
+		// frame on the archive, and do not pin objects behind the camera.
+		if(!CCustomModels::IsStreamPrepared(streamId, false))
+			continue;
+#endif
 		if(ms_aInfoForModel[streamId].GetCdPosnAndSize(posn, size)){
 			if(posn < posnFirst){
 				// find first requested file in image
@@ -2277,9 +2291,10 @@ CStreaming::GetNextFileOnCd(int32 lastPosn, bool priority)
 	if(streamIdNext == -1)
 		streamIdNext = streamIdFirst;
 
-	if(streamIdNext == -1 && ms_numPriorityRequests != 0){
-		// try non-priority files
-		ms_numPriorityRequests = 0;
+	if(streamIdNext == -1 && priority && ms_numPriorityRequests != 0){
+		// Try non-priority files while priority assets prepare. Do not zero
+		// the live request count: DecrementRef still needs it when those
+		// deferred priority requests eventually reach the CD channel.
 		streamIdNext = GetNextFileOnCd(lastPosn, false);
 	}
 
@@ -2341,14 +2356,42 @@ CStreaming::RequestModelStream(int32 ch)
 	haveBigFile = 0;
 	havePed = 0;
 	totalSize = 0;
+#ifdef CUSTOM_MODELS
+	bool haveCustomAsset = false;
+	// GetNextFileOnCd may return a normal file if priority CPU work is
+	// still outstanding; do not reject that very file in the batch loop.
+	bool allowNormal = !ms_aInfoForModel[streamId].IsPriority();
+#endif
 	for(i = 0; i < 4; i++){
 		// no more files we can read
 		if(streamId == -1 || ms_aInfoForModel[streamId].m_loadState != STREAMSTATE_INQUEUE)
 			break;
 
 		// also stop at non-priority files
+#ifdef CUSTOM_MODELS
+		// Adjacent CD entries bypass GetNextFileOnCd; they must not slip
+		// into the same channel before their custom CPU data is ready.
+		if(!CCustomModels::IsStreamPrepared(streamId, false))
+			break;
+		bool customAsset = CCustomModels::CanServe(streamId);
+		// RW/GPU uploads still happen on the game thread. Avoid batching
+		// multiple custom TXDs/models into a single channel conversion.
+		if(customAsset && haveCustomAsset)
+			break;
+#endif
+#ifdef CUSTOM_MODELS
+		// A just-completed validation can remove a provisional custom file
+		// with no native IMG entry. Let GetNextFileOnCd handle it next pass.
+		if(!ms_aInfoForModel[streamId].GetCdPosnAndSize(unused, size))
+			break;
+#else
 		ms_aInfoForModel[streamId].GetCdPosnAndSize(unused, size);
+#endif
+#ifdef CUSTOM_MODELS
+		if(ms_numPriorityRequests != 0 && !allowNormal && !ms_aInfoForModel[streamId].IsPriority())
+#else
 		if(ms_numPriorityRequests != 0 && !ms_aInfoForModel[streamId].IsPriority())
+#endif
 			break;
 
 		// Can't load certain combinations of files together
@@ -2364,6 +2407,9 @@ CStreaming::RequestModelStream(int32 ch)
 		}
 
 		// Now add the file
+#ifdef CUSTOM_MODELS
+		if(customAsset) haveCustomAsset = true;
+#endif
 		ms_channel[ch].streamIds[i] = streamId;
 		ms_channel[ch].offsets[i] = totalSize;
 		totalSize += size;
@@ -2392,6 +2438,12 @@ CStreaming::RequestModelStream(int32 ch)
 	// clear remaining slots
 	for(; i < 4; i++)
 		ms_channel[ch].streamIds[i] = -1;
+#ifdef CUSTOM_MODELS
+	if(totalSize == 0){
+		ms_bLoadingBigModel = false;
+		return; // nothing actually entered the channel
+	}
+#endif
 	// Now read the data
 	assert(!(ms_bLoadingBigModel && ch == 1));	// this would clobber the buffer
 	if(CdStreamRead(ch, ms_pStreamingBuffer[ch], imgOffset+posn, totalSize) == STREAM_NONE)
@@ -2522,8 +2574,10 @@ CStreaming::LoadCustomFile(int32 streamId)
 			ms_aInfoForModel[streamId].AddToList(&ms_startLoadedList);
 	}
 
-	// Mark objects as loaded
+	// Mark objects as loaded; no speculative jobs for this request need to
+	// keep a reference to the archive or their per-request readiness markers.
 	ms_aInfoForModel[streamId].m_loadState = STREAMSTATE_LOADED;
+	CCustomModels::CancelStreamPrefetch(streamId);
 #ifndef USE_CUSTOM_ALLOCATOR
 	ms_memoryUsed += ms_aInfoForModel[streamId].GetCdSize() * CDSTREAM_SECTOR_SIZE;
 #endif
@@ -2838,6 +2892,14 @@ CStreaming::LoadAllRequestedModels(bool priority)
 		if(traceIteration)
 			CUSTOM_LOG("stream single: checking next request, remaining=%d\n", numRequests);
 		numRequests--;
+#ifdef CUSTOM_MODELS
+		// Unlike normal per-frame streaming, this entry point deliberately
+		// waits for scripted/startup requests. Never let a still-queued CPU
+		// asset be mistaken for an empty file by GetNextFileOnCd.
+		for(CStreamingInfo *queued = ms_startRequestedList.m_next;
+		    queued != &ms_endRequestedList; queued = queued->m_next)
+			CCustomModels::IsStreamPrepared(queued - ms_aInfoForModel, true);
+#endif
 		streamId = GetNextFileOnCd(0, priority);
 		if(streamId == -1){
 			if(traceIteration)

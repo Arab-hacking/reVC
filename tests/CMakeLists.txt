@@ -20,6 +20,16 @@ target_include_directories(custom_asset_cache_tests PRIVATE ../src/extras/custom
 set_target_properties(custom_asset_cache_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
 add_test(NAME custom_asset_cache_tests COMMAND custom_asset_cache_tests)
 
+add_executable(background_asset_queue_tests
+    BackgroundAssetQueueTests.cpp ../src/extras/custom/CustomZip.cpp
+    ../src/extras/custom/br/third_party/astc_decomp.cpp)
+target_include_directories(background_asset_queue_tests PRIVATE
+    ../tools/custom-folder-verification/shim
+    ../src/extras/custom ../src/extras/custom/br)
+target_link_libraries(background_asset_queue_tests PRIVATE Threads::Threads)
+set_target_properties(background_asset_queue_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+add_test(NAME background_asset_queue_tests COMMAND background_asset_queue_tests)
+
 # The real animation code can be tested without game assets by supplying small
 # RenderWare/streaming stubs and synthetic skeletons. Dead-code elimination
 # keeps the remaining game-only dependencies out of this standalone test.
