@@ -38,6 +38,12 @@ CTxdStore::GameShutdown(void)
 	}
 }
 
+bool
+CTxdStore::HasFreeSlot(void)
+{
+	return ms_pTxdPool && ms_pTxdPool->GetNoOfUsedSpaces() < TXDSTORESIZE;
+}
+
 int
 CTxdStore::AddTxdSlot(const char *name)
 {

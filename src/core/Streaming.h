@@ -48,7 +48,7 @@ public:
 	uint8 m_loadState;
 	uint8 m_flags;
 
-	int16  m_nextID;
+	int32  m_nextID; // TXD/col/anim stream IDs now extend beyond 32767
 	uint32 m_position;
 	uint32 m_size;
 

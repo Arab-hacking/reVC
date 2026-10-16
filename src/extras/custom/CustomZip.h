@@ -18,7 +18,7 @@
 
 #include "common.h"
 
-#define CUSTOMZIP_MAX_NAME 128
+#define CUSTOMZIP_MAX_NAME 256 // nested data/maps/** paths in common.zip
 #define CUSTOMZIP_MAX_ENTRY (64*1024*1024)	// one entry may be this big
 
 // one entry of the central directory

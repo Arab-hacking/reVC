@@ -26,6 +26,7 @@
 // is why the lookup is done by name and not by file path.
 
 #include <vector>
+#include <stddef.h>
 
 class CCustomModels
 {
@@ -73,6 +74,21 @@ public:
 	// serves an animation dictionary (.ifp, or BR .ani) from the archives;
 	// true when the custom folder has the file the game asked for
 	static bool LoadAnimFileFromCustom(const char *filename, std::vector<uint8> &out);
+
+	// IDE/IPL files from common.zip (including entries in nested directories)
+	// and loose files recursively under custom/. A loose file with the same
+	// relative path replaces the archive entry. Bytes live only for the call.
+	typedef void (*WorldFileCallback)(const char *path, const unsigned char *data,
+	                                  size_t size, void *context);
+	static bool HasWorldFiles(void);
+	static bool HasModelFile(const char *name);
+	static void ForEachWorldFile(bool ide, WorldFileCallback callback, void *context);
+
+	// Per-model CED2 collision blocks inside the .cls containers of
+	// br_collision.zip. No decompressed archive is retained between callbacks.
+	typedef void (*CollisionCallback)(const char *model, const unsigned char *block,
+	                                  size_t size, void *context);
+	static void ForEachBrCollision(CollisionCallback callback, void *context);
 
 	// reads a data file out of the custom archives ("data/timecyc.json" and
 	// friends of a BR common.zip), or out of the custom folder itself; the

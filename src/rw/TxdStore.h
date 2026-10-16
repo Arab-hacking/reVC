@@ -18,6 +18,7 @@ public:
 	static void Shutdown(void);
 	static void GameShutdown(void);
 	static int AddTxdSlot(const char *name);
+	static bool HasFreeSlot(void);
 	static void RemoveTxdSlot(int slot);
 	static int FindTxdSlot(const char *name);
 	static char *GetTxdName(int slot);

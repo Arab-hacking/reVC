@@ -26,6 +26,8 @@ public:
 	static void Initialise(void);
 	static void ShutDown(void);
 
+	static bool CanAddSimpleModel(void) { return ms_simpleModelStore.allocPtr < SIMPLEMODELSIZE; }
+	static bool CanAddTimeModel(void) { return ms_timeModelStore.allocPtr < TIMEMODELSIZE; }
 	static CSimpleModelInfo *AddSimpleModel(int id);
 	static CTimeModelInfo *AddTimeModel(int id);
 	static CWeaponModelInfo *AddWeaponModel(int id);

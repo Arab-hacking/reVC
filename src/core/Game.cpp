@@ -4,6 +4,7 @@
 #include "Game.h"
 #ifdef CUSTOM_MODELS
 #include "CustomModels.h"
+#include "CustomWorld.h"
 #endif
 #include "main.h"
 #include "RwHelper.h"
@@ -385,6 +386,7 @@ CGame::FinalShutdown(void)
 {
 	REVC_LOG_INFO("Stopping texture, statistics and streaming systems");
 #ifdef CUSTOM_MODELS
+	CCustomWorld::Shutdown();
 	CCustomModels::PrintStats();
 	CCustomModels::Shutdown();
 #endif
@@ -399,6 +401,9 @@ bool CGame::Initialise(const char* datFile)
 	REVC_LOG_INFO("Initializing game from %s", datFile);
 	ResetLoadingScreenBar();
 	strcpy(aDatFile, datFile);
+#ifdef CUSTOM_MODELS
+	CCustomWorld::Shutdown(); // fresh BR ID mapping on a game restart
+#endif
 
 #ifdef GTA_PS2
 	// TODO: upload VU0 collision code here
@@ -489,6 +494,11 @@ bool CGame::Initialise(const char* datFile)
 
 	CFileLoader::LoadLevel("DATA\\DEFAULT.DAT");
 	CFileLoader::LoadLevel(datFile);
+#ifdef CUSTOM_MODELS
+	// After native IPLs: IDEs and model streaming are already initialized,
+	// and CED2 collisions are attached before the new entities are created.
+	CCustomWorld::LoadIpl();
+#endif
 
 	LoadingScreen("Loading the Game", "Add Particles", nil);
 	CWorld::AddParticles();

@@ -13,14 +13,17 @@ enum Config {
 	MAX_CDIMAGES = 8, // additional cdimages
 	MAX_CDCHANNELS = 5,
 
-	MODELINFOSIZE = 6500,	// 4900 on PS2
-	TXDSTORESIZE = 1385,
+	// BR IDEs contain ~27k object definitions, with source IDs far above the
+	// signed 16-bit model index stored on CEntity. They are remapped into free
+	// slots below 32768; these are slot/pool sizes, NOT decoded asset caches.
+	MODELINFOSIZE = 32768,
+	TXDSTORESIZE = 4096,
 	COLSTORESIZE = 31,
 	EXTRADIRSIZE = 256,
 	CUTSCENEDIRSIZE = 512,
 
-	SIMPLEMODELSIZE = 3885,
-	TIMEMODELSIZE = 385,
+	SIMPLEMODELSIZE = 32000,
+	TIMEMODELSIZE = 768,
 	CLUMPMODELSIZE = 5,
 	WEAPONMODELSIZE = 37,
 	PEDMODELSIZE = 130,
@@ -34,16 +37,16 @@ enum Config {
 	NUMOBJECTINFO = 210,
 
 	// Pool sizes
-	NUMPTRNODES = 50000,
+	NUMPTRNODES = 300000, // BR's ~40k IPL placements span multiple sectors
 	NUMENTRYINFOS = 3200,
 	NUMPEDS = 140,
 	NUMVEHICLES = 110,
-	NUMBUILDINGS = 7000,
+	NUMBUILDINGS = 50000,
 	NUMTREADABLES = 1,
 	NUMOBJECTS = 460,
 	NUMDUMMIES = 2340,
 	NUMAUDIOSCRIPTOBJECTS = 192,
-	NUMCOLMODELS = 4400,
+	NUMCOLMODELS = 26000, // native + ~17.6k CED2 blocks in br_collision.zip
 	NUMCUTSCENEOBJECTS = 50,	// not a pool in VC
 
 	NUMANIMBLOCKS = 180,   // San Andreas sizes: SA dictionaries (ped.ifp and the

@@ -18,6 +18,7 @@
 
 #include "CustomZip.h"
 #include "CustomCol.h"
+#include "BrCollisionFormat.h"
 #include "DecodedAssetCache.h"
 #include "ResidentObjectCache.h"
 #include "BackgroundAssetQueue.h"
@@ -53,7 +54,7 @@
 // zip archives that are a bit silly (a 2 GB archive with one entry) are not
 // worth the memory, so entries have to stay under this limit
 #define CUSTOM_MAX_ENTRY (64*1024*1024)
-#define CUSTOM_MAX_DEPTH 4			// folder nesting that is still scanned
+#define CUSTOM_MAX_DEPTH 8			// loose data/maps/... IDE/IPL folders
 
 struct CustomSource
 {
@@ -61,7 +62,7 @@ struct CustomSource
 	int entry;
 	uint64 mtime;
 	char loose[256];		// archive < 0: a plain file in the custom folder
-	char fname[128];		// the name the file has (with the extension)
+	char fname[256];		// the name the file has (with the extension)
 };
 
 static std::vector<CustomZip*> customArchives;
@@ -75,6 +76,18 @@ static std::map<std::string, CustomSource> customDff;
 static std::map<std::string, CustomSource> customTxdFiles;
 static std::map<std::string, CustomSource> customColFiles;	// whole .col containers
 static std::map<std::string, CustomSource> customImages;	// .bmp/.png/.jpg
+static std::map<std::string, CustomSource> customIdeFiles;
+static std::map<std::string, CustomSource> customIplFiles;
+
+// One CED2 block inside one .cls (fileKey is the stem of that file). A .cls
+// can contain hundreds of named models; indexing only its filename misses
+// practically all collisions in br_collision.zip.
+struct BrBlockRef {
+	std::string fileKey;
+	size_t offset, size;
+};
+static std::map<std::string, BrBlockRef> customBrColBlocks;
+static std::set<std::string> customBrClsFiles;
 
 // one collision model inside a .col container
 struct ColBlockRef
@@ -106,6 +119,7 @@ IsColFourCC(uint32 f)
 }
 
 static bool ReadSource(const CustomSource &src, std::vector<uint8> &out);
+static void IndexBrCollisionBlocks(void);
 
 // ---------------------------------------------------------------------------
 // small helpers
@@ -254,6 +268,30 @@ AddIndex(std::map<std::string, CustomSource> &index, const std::string &key,
 		index[key] = src;
 }
 
+static std::string
+WorldPath(const std::string &name)
+{
+	std::string path = ToLower(name);
+	for(size_t k = 0; k < path.size(); k++)
+		if(path[k] == '\\') path[k] = '/';
+	while(!path.empty() && path[0] == '/') path.erase(0, 1);
+	return path;
+}
+
+static void
+AddWorldFile(std::map<std::string, CustomSource> &index, const std::string &path,
+             const CustomSource &src)
+{
+	std::string key = WorldPath(path);
+	if(key.empty() || key.find("../") != std::string::npos || key.size() > 255)
+		return;
+	std::map<std::string, CustomSource>::iterator it = index.find(key);
+	// A loose file at the same relative path intentionally overrides common.zip.
+	if(it == index.end() || (src.archive < 0 && it->second.archive >= 0) ||
+	   (src.archive == it->second.archive && src.mtime > it->second.mtime))
+		index[key] = src;
+}
+
 // The names of the collision models inside one .col container are indexed at
 // scan time, so a model can find its collision whatever file it sits in. The
 // blocks keep their [fourcc][size][name][body] layout; whether the body is
@@ -310,11 +348,17 @@ IndexArchive(const std::string &path, uint64 mtime, ScanStats &st)
 	}
 	int archive = (int)customArchives.size();
 	customArchives.push_back(zip);
+	bool commonZip = ToLower(Stem(path)) == "common";
 	int mods = 0, dffs = 0, btxs = 0, txds = 0, clss = 0, colfiles = 0, anims = 0, imgs = 0;
 	for(int i = 0; i < zip->GetNumEntries(); i++){
 		const CustomZipEntry *ent = zip->GetEntry(i);
 		std::string name = ent->name;
 		std::string ext = Extension(name);
+		if(commonZip && (ext == "ide" || ext == "ipl")){
+			CustomSource src = MakeSource(archive, i, mtime, nil, name.c_str());
+			AddWorldFile(ext == "ide" ? customIdeFiles : customIplFiles, name, src);
+			continue;
+		}
 		// everything else in an archive is not of interest here
 		if(ext != "mod" && ext != "dff" && ext != "btx" && ext != "cls" && ext != "txd" &&
 		   ext != "col" && ext != "ifp" && ext != "ani" &&
@@ -409,6 +453,12 @@ ScanFolder(const std::string &folder, int depth, ScanStats &st)
 			IndexArchive(path, mtime, st);
 			continue;
 		}
+		if(ext == "ide" || ext == "ipl"){
+			std::string relative = path.substr(customFolderPath.size());
+			CustomSource src = MakeSource(-1, -1, mtime, path.c_str(), relative.c_str());
+			AddWorldFile(ext == "ide" ? customIdeFiles : customIplFiles, relative, src);
+			continue;
+		}
 		// loose files work as well: the same names the archives hold
 		if(ext != "mod" && ext != "dff" && ext != "btx" && ext != "cls" && ext != "txd" &&
 		   ext != "col" && ext != "ifp" && ext != "ani" &&
@@ -485,15 +535,18 @@ EnsureInitialised(void)
 	memset(&st, 0, sizeof(st));
 	if(FolderExists(customFolderPath.c_str()))
 		ScanFolder(customFolderPath, 0, st);
+	IndexBrCollisionBlocks();
 
 	customActive = !customMods.empty() || !customBtx.empty() || !customCls.empty() ||
 	               !customAnims.empty() || !customDff.empty() || !customTxdFiles.empty() ||
-	               !customColFiles.empty() || !customColBlocks.empty() || !customImages.empty();
+	               !customColFiles.empty() || !customColBlocks.empty() || !customImages.empty() ||
+	               !customIdeFiles.empty() || !customIplFiles.empty();
 
 	CUSTOM_LOG("==== custom folder: %s\n", customFolderPath.c_str());
-	CUSTOM_LOG("scan: %d archive(s), %d .mod, %d .dff, %d .btx (%d names), %d .txd, %d .cls, %d .col (%d model(s) inside), %d .ifp/.ani (%d names), %d image(s)\n",
+	CUSTOM_LOG("scan: %d archive(s), %d .mod, %d .dff, %d .btx (%d names), %d .txd, %d .cls (%u CED2 models), %d .col (%d model(s) inside), %d .ifp/.ani (%d names), %d image(s), %u IDE, %u IPL\n",
 		st.zip, st.mod, st.dff, st.btx, (int)customBtx.size(), st.txd, st.cls,
-		st.colfile, st.colblock, st.anim, (int)customAnims.size(), st.img);
+		(unsigned)customBrColBlocks.size(), st.colfile, st.colblock, st.anim,
+		(int)customAnims.size(), st.img, (unsigned)customIdeFiles.size(), (unsigned)customIplFiles.size());
 	if(!customActive)
 		CUSTOM_LOG("scan: nothing usable found - the game runs on its own files\n");
 
@@ -550,6 +603,34 @@ ReadSource(const CustomSource &src, std::vector<uint8> &out)
 		return false;
 	}
 	return true;
+}
+
+static void
+IndexBrCollisionBlocks(void)
+{
+	for(std::map<std::string, CustomSource>::const_iterator it = customCls.begin();
+	    it != customCls.end(); ++it){
+		std::vector<uint8> data;
+		if(!ReadSource(it->second, data)){
+			CUSTOM_LOG("collision container %s: cannot read .cls\n", it->second.fname);
+			continue;
+		}
+		std::vector<brcollision::Block> blocks;
+		size_t bad = brcollision::Index(data.data(), data.size(), blocks);
+		if(!blocks.empty()) customBrClsFiles.insert(it->first);
+		for(size_t b = 0; b < blocks.size(); b++){
+			std::string key = ToLower(blocks[b].name);
+			std::map<std::string, BrBlockRef>::iterator found = customBrColBlocks.find(key);
+			if(found != customBrColBlocks.end() &&
+			   customCls[found->second.fileKey].mtime >= it->second.mtime)
+				continue;
+			BrBlockRef ref = { it->first, blocks[b].offset, blocks[b].size };
+			customBrColBlocks[key] = ref;
+		}
+		if(!blocks.empty() || bad)
+			CUSTOM_LOG("collision container %s: %u CED2 block(s), %u invalid chunk(s)\n",
+				it->second.fname, (unsigned)blocks.size(), (unsigned)bad);
+	}
 }
 
 static const CustomSource *
@@ -1578,7 +1659,8 @@ LoadColSlot(int32 slot)
 	if(name == nil || name[0] == '\0')
 		return false;
 	std::string key = ToLower(name);
-	bool haveCls = customCls.find(key) != customCls.end();
+	bool haveCls = customCls.find(key) != customCls.end() &&
+	               customBrClsFiles.find(key) == customBrClsFiles.end();
 	bool haveFile = customColFiles.find(key) != customColFiles.end();
 	if(!haveCls && !haveFile)
 		return false;
@@ -1684,6 +1766,10 @@ CCustomModels::Shutdown(void)
 	customTxdFiles.clear();
 	customColFiles.clear();
 	customColBlocks.clear();
+	customBrColBlocks.clear();
+	customBrClsFiles.clear();
+	customIdeFiles.clear();
+	customIplFiles.clear();
 	customImages.clear();
 	customSkinNames.clear();
 	customFolderPath.clear();
@@ -1700,6 +1786,60 @@ CCustomModels::IsActive(void)
 {
 	EnsureInitialised();
 	return customActive;
+}
+
+bool
+CCustomModels::HasWorldFiles(void)
+{
+	EnsureInitialised();
+	return !customIdeFiles.empty() || !customIplFiles.empty();
+}
+
+bool
+CCustomModels::HasModelFile(const char *name)
+{
+	EnsureInitialised();
+	if(name == nil) return false;
+	std::string key = ToLower(name);
+	return customMods.find(key) != customMods.end() ||
+	       customDff.find(key) != customDff.end();
+}
+
+void
+CCustomModels::ForEachWorldFile(bool ide, WorldFileCallback callback, void *context)
+{
+	EnsureInitialised();
+	if(callback == nil) return;
+	const std::map<std::string, CustomSource> &files = ide ? customIdeFiles : customIplFiles;
+	for(std::map<std::string, CustomSource>::const_iterator it = files.begin(); it != files.end(); ++it){
+		std::vector<uint8> bytes;
+		if(ReadSource(it->second, bytes))
+			callback(it->first.c_str(), bytes.data(), bytes.size(), context);
+		else
+			CUSTOM_LOG("world %s: cannot read %s\n", ide ? "IDE" : "IPL", it->first.c_str());
+	}
+}
+
+void
+CCustomModels::ForEachBrCollision(CollisionCallback callback, void *context)
+{
+	EnsureInitialised();
+	if(callback == nil) return;
+	for(std::map<std::string, CustomSource>::const_iterator it = customCls.begin();
+	    it != customCls.end(); ++it){
+		std::vector<uint8> bytes;
+		if(!ReadSource(it->second, bytes)) continue;
+		std::vector<brcollision::Block> blocks;
+		brcollision::Index(bytes.data(), bytes.size(), blocks);
+		for(size_t b = 0; b < blocks.size(); b++){
+			std::string key = ToLower(blocks[b].name);
+			std::map<std::string, BrBlockRef>::const_iterator ref = customBrColBlocks.find(key);
+			if(ref != customBrColBlocks.end() && ref->second.fileKey == it->first &&
+			   ref->second.offset == blocks[b].offset && ref->second.size == blocks[b].size)
+				callback(blocks[b].name.c_str(), bytes.data()+blocks[b].offset,
+				         blocks[b].size, context);
+		}
+	}
 }
 
 static std::string
@@ -1990,7 +2130,8 @@ CCustomModels::CanServe(int32 streamId)
 		if(name == nil || name[0] == '\0')
 			return false;
 		std::string key = ToLower(name);
-		return customCls.find(key) != customCls.end() ||
+		return (customCls.find(key) != customCls.end() &&
+		        customBrClsFiles.find(key) == customBrClsFiles.end()) ||
 		       customColFiles.find(key) != customColFiles.end();
 	}
 
@@ -2169,7 +2310,23 @@ CCustomModels::GetCollisionBlock(const char *modelname, std::vector<uint8> &out)
 	customcol::Stats cstats;
 	memset(&cstats, 0, sizeof(cstats));
 
-	if(customCls.find(key) != customCls.end()){
+	// BR collision archives contain many models per .cls; look inside by the
+	// CED2 block's model name, not by the filename of the container.
+	std::map<std::string, BrBlockRef>::const_iterator brref = customBrColBlocks.find(key);
+	if(brref != customBrColBlocks.end()){
+		std::map<std::string, CustomSource>::const_iterator source = customCls.find(brref->second.fileKey);
+		std::vector<uint8> bytes, game;
+		if(source == customCls.end() || !ReadSource(source->second, bytes) ||
+		   brref->second.offset > bytes.size() ||
+		   brref->second.size > bytes.size() - brref->second.offset ||
+		   !brcollision::Convert(bytes.data()+brref->second.offset, brref->second.size, game))
+			return false;
+		out.assign(game.begin()+8, game.end());
+		return true;
+	}
+
+	if(customCls.find(key) != customCls.end() &&
+	   customBrClsFiles.find(key) == customBrClsFiles.end()){
 		std::vector<uint8> file;
 		if(!ReadEntry(customCls, key, file))
 			return false;

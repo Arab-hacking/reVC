@@ -30,6 +30,7 @@
 #include "Streaming.h"
 #ifdef CUSTOM_MODELS
 #include "CustomModels.h"
+#include "CustomWorld.h"
 #endif
 #include "SavehDiag.h"
 #include "Replay.h"
@@ -3315,6 +3316,27 @@ CStreaming::DeleteRwObjectsBehindCamera(size_t mem)
 
 	if(ms_memoryUsed < mem)
 		return;
+
+#ifdef CUSTOM_MODELS
+	// Linked BR LODs are VC big buildings, which live outside the ordinary
+	// sector lists and have bStreamingDontDelete set. They must not pin their
+	// RW clones (or their streamed models) behind the camera under pressure.
+	// Leave stock big buildings alone and keep on-screen custom LODs intact.
+	for(int level = 0; level < NUM_LEVELS; level++) {
+		for(CPtrNode *node = CWorld::GetBigBuildingList((eLevelName)level).first;
+		    node; node = node->next) {
+			CEntity *e = (CEntity *)node->item;
+			int id = e->GetModelIndex();
+			if(!CCustomWorld::OwnsModelSlot(id) || !e->bStreamBIGBuilding ||
+			   !e->m_rwObject || e->bImBeingRendered || e->GetIsOnScreen()) continue;
+			e->DeleteRwObject();
+			if(CModelInfo::GetModelInfo(id)->GetNumRefs() == 0 &&
+			   CanRemoveModel(id) && ms_aInfoForModel[id].m_loadState == STREAMSTATE_LOADED)
+				RemoveModel(id);
+			if(ms_memoryUsed < mem) return;
+		}
+	}
+#endif
 
 	ix = CWorld::GetSectorIndexX(TheCamera.GetPosition().x);
 	iy = CWorld::GetSectorIndexY(TheCamera.GetPosition().y);

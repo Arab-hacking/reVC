@@ -28,6 +28,7 @@
 #include "FileLoader.h"
 #ifdef CUSTOM_MODELS
 #include "CustomModels.h"
+#include "CustomWorld.h"
 #endif
 #include "MemoryHeap.h"
 #include "Streaming.h"
@@ -101,6 +102,11 @@ CFileLoader::LoadLevel(const char *filename)
 			LoadObjectTypes(line + 4);
 		}else if(strncmp(line, "IPL", 3) == 0){
 			if(!objectsLoaded){
+#ifdef CUSTOM_MODELS
+				// All stock IDEs are now registered; BR IDs must be remapped
+				// before Streaming::Init indexes IMG names and before any IPL.
+				CCustomWorld::LoadIde();
+#endif
 				LoadingScreenLoadingFile("Collision");
 				PUSH_MEMID(MEMID_WORLD);
 				CObjectData::Initialise("DATA\\OBJECT.DAT");
@@ -108,6 +114,9 @@ CFileLoader::LoadLevel(const char *filename)
 				POP_MEMID();
 				PUSH_MEMID(MEMID_COLLISION);
 				CColStore::LoadAllCollision();
+#ifdef CUSTOM_MODELS
+				CCustomWorld::LoadCollisions();
+#endif
 				POP_MEMID();
 				for(int i = 0; i < MODELINFOSIZE; i++)
 					if(CModelInfo::GetModelInfo(i))
