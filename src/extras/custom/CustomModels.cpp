@@ -1221,8 +1221,9 @@ CCustomModels::RetainTxdOnUnload(int32 slot)
 #else
 	std::map<int32, RwTexDictionary*>::iterator it = customLoadedTxds.find(slot);
 	TxdDef *def = CTxdStore::GetSlot(slot);
-	if(it == customLoadedTxds.end() || def == nil || def->texDict != it->second)
-		return false; // native or externally replaced dictionary
+	if(it == customLoadedTxds.end() || def == nil || def->texDict != it->second ||
+	   CTxdStore::GetNumRefs(slot) != 0)
+		return false; // native, externally replaced or still referenced
 	TxdSize estimate = { sizeof(RwTexDictionary), true };
 	RwTexDictionaryForAllTextures(def->texDict, CountTxdTexture, &estimate);
 	const std::string key = ToLower(def->name);
