@@ -138,9 +138,13 @@ public:
 	static void RemoveAnimBlock(int32 block);
 	static CAnimBlendHierarchy *GetAnimation(const char *name, CAnimBlock *animBlock);
 	static CAnimBlendHierarchy *GetAnimation(int32 n) { return n >= 0 && n < NUMANIMATIONS ? &ms_aAnimations[n] : nil; }
-	// Vehicle approach offsets need the clip's root translation, not a
-	// skeleton-bound association (which may not exist for SA-only installs).
+	// A hierarchy may only be used with a clump from the same animation bank.
+	// A null clump denotes an explicitly native-VC-only lookup.
+	static bool IsAnimationCompatibleWithClump(RpClump *clump, CAnimBlendHierarchy *hierarchy);
+	// Vehicle approach offsets must come from the ped's own bank. The native
+	// lookup also works without a VC reference clump.
 	static CAnimBlendHierarchy *GetAnimHierarchyForOffset(AssocGroupId groupId, AnimationId animId);
+	static CAnimBlendHierarchy *GetAnimHierarchyForOffset(RpClump *clump, AssocGroupId groupId, AnimationId animId);
 	static const char *GetAnimGroupName(AssocGroupId groupId);
 	static CAnimBlendAssociation *CreateAnimAssociation(AssocGroupId groupId, AnimationId animId);
 	static CAnimBlendAssociation *CreateAnimAssociation(RpClump *clump, AssocGroupId groupId, AnimationId animId);
@@ -155,9 +159,9 @@ public:
 	static void LoadAnimFile(const char *filename);
 	static void LoadAnimFile(RwStream *stream, bool compress, char (*uncompressedAnims)[32] = nil, const char *blockNameOverride = nil);
 #ifdef CUSTOM_MODELS
-	// true if a valid VC ANPK replaced this block. A compact SA/BR IFP
-	// is loaded alongside it and returns false so native VC data is retained.
-	static bool LoadAnimFileFromCustom(const char *filename, bool compactOnly = false);
+	// Only compact SA/BR ANP2/ANP3 files from custom enter the parallel sa_*
+	// bank. ANPK (including a custom VC replacement) never replaces native VC.
+	static void LoadSAAnimFileFromCustom(const char *filename);
 #endif
 	// SA/BR animation packages with the compact header (ANP2/ANP3), as found
 	// in San Andreas ifp files and Black Russia .ani containers

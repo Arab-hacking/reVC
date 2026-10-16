@@ -46,6 +46,7 @@ RwFreeAlign(void *ptr)
 }
 
 int32 CAnimManager::GetAnimationBlockForHierarchy(CAnimBlendHierarchy*) { return -1; }
+void CAnimManager::UncompressAnimation(CAnimBlendHierarchy*) { abort(); }
 void CAnimManager::AddAnimBlockRef(int32) { abort(); }
 void CAnimManager::RemoveAnimBlockRefWithoutDelete(int32) { abort(); }
 
@@ -188,6 +189,14 @@ main(void)
 		align.nodes[1].sequence == &alignSequences[1] &&
 		align.nodes[2].sequence == &alignSequences[2],
 		"CAR_alignHI with every bone ID -1 still animates an SA ped");
-	puts("Animation skeleton rebinding OK");
+	CAnimBlendHierarchy emptyHierarchy;
+	emptyHierarchy.totalLength = 0.0f;
+	CAnimBlendAssociation empty;
+	empty.hierarchy = &emptyHierarchy;
+	empty.flags = ASSOC_REPEAT;
+	empty.SetCurrentTime(1.0f);
+	empty.SyncAnimation(&empty);
+	Check(empty.currentTime == 0.0f, "zero-duration repeat and sync cannot loop or divide by zero");
+	puts("Animation skeleton rebinding and empty clip guards OK");
 	return 0;
 }

@@ -174,6 +174,12 @@ CAnimBlendAssociation::SetCurrentTime(float time)
 {
 	int i;
 
+	// A truncated custom clip can have no timed keyframes. Repeating clips
+	// must not loop forever subtracting a zero duration.
+	if(hierarchy == nil || hierarchy->totalLength <= 0.0f){
+		currentTime = 0.0f;
+		return;
+	}
 	for(currentTime = time; currentTime >= hierarchy->totalLength; currentTime -= hierarchy->totalLength)
 		if (!IsRepeating()) {
 			currentTime = hierarchy->totalLength;
@@ -199,6 +205,10 @@ CAnimBlendAssociation::SetCurrentTime(float time)
 void
 CAnimBlendAssociation::SyncAnimation(CAnimBlendAssociation *other)
 {
+	if(other == nil || other->hierarchy == nil || other->hierarchy->totalLength <= 0.0f){
+		SetCurrentTime(0.0f);
+		return;
+	}
 	SetCurrentTime(other->currentTime/other->hierarchy->totalLength * hierarchy->totalLength);
 }
 

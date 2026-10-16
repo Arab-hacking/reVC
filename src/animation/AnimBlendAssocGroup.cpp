@@ -87,11 +87,22 @@ CAnimBlendAssocGroup::CopyAnimation(uint32 id, RpClump *clump)
 	CAnimBlendAssociation *anim = GetAnimation(id);
 	if(anim == nil || clump == nil || !RpAnimBlendClumpIsInitialized(clump))
 		return nil;
+	if(!CAnimManager::IsAnimationCompatibleWithClump(clump, anim->hierarchy)){
+#ifdef CUSTOM_MODELS
+		CUSTOM_LOG("anim assoc: rejecting group %d anim %d: wrong animation bank for target skeleton\n",
+			groupId, id);
+#endif
+		return nil;
+	}
 #ifdef CUSTOM_MODELS
 	CAnimBlendClumpData *clumpData = *RPANIMBLENDCLUMPDATA(clump);
-	if(anim->numNodes != clumpData->numFrames)
-		CUSTOM_LOG("anim assoc: group %d anim %d: reference=%d frames, target=%d; binding to target skeleton\n",
+	if(anim->numNodes != clumpData->numFrames){
+		int blockIndex = CAnimManager::GetAnimationBlockForHierarchy(anim->hierarchy);
+		CUSTOM_LOG("anim assoc: %s bank (%s) group %d anim %d: reference=%d frames, target=%d; binding to target skeleton\n",
+			clumpData->usesSAAnimations ? "SA" : "VC",
+			blockIndex >= 0 ? CAnimManager::GetAnimationBlock(blockIndex)->name : "unknown",
 			groupId, id, anim->numNodes, clumpData->numFrames);
+	}
 #endif
 	CAnimManager::UncompressAnimation(anim->hierarchy);
 	return new CAnimBlendAssociation(*anim, clump);

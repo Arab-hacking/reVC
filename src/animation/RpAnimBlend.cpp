@@ -12,6 +12,9 @@
 #include "AnimManager.h"
 #include "RpAnimBlend.h"
 #include "PedModelInfo.h"
+#ifdef CUSTOM_MODELS
+#include "SavehDiag.h"
+#endif
 
 RwInt32 ClumpOffset;
 
@@ -373,8 +376,24 @@ RpAnimBlendClumpFillFrameArraySkin(RpClump *clump, AnimBlendFrameData **frames)
 	int i;
 	CAnimBlendClumpData *clumpData = *RPANIMBLENDCLUMPDATA(clump);
 	RpHAnimHierarchy *hier = GetAnimHierarchyFromSkinClump(clump);
-	for(i = PED_MID; i < PED_NODE_MAX; i++)
-		frames[i] = &clumpData->frames[RpHAnimIDGetIndex(hier, ConvertPedNode2BoneTag(i))];
+	int missingBones = 0;
+	for(i = PED_MID; i < PED_NODE_MAX; i++){
+		int index = RpHAnimIDGetIndex(hier, ConvertPedNode2BoneTag(i));
+		// SA/BR rigs can omit a VC bone. Do not make an out-of-bounds
+		// pointer; use the root for attachment/IK queries on missing nodes.
+		if(index < 0 || index >= clumpData->numFrames){
+			index = 0;
+			missingBones++;
+		}
+		frames[i] = &clumpData->frames[index];
+	}
+#ifdef CUSTOM_MODELS
+	if(missingBones){
+		static int warnings = 0;
+		if(warnings++ < 3)
+			REVC_LOG_WARNING("ped skeleton: %d missing bone tags; mapped to root (no cross-bank animation)", missingBones);
+	}
+#endif
 }
 
 void

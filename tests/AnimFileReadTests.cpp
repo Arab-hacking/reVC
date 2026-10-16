@@ -3,7 +3,11 @@
 #include "common.h"
 #include "AnimManager.h"
 #include "AnimBlendAssocGroup.h"
+#include "AnimBlendAssociation.h"
+#include "AnimBlendClumpData.h"
 #include "AnimBlendSequence.h"
+#include "RpAnimBlend.h"
+#include "CustomModels.h"
 
 #include <algorithm>
 #include <cstdarg>
@@ -30,6 +34,42 @@ void re3_log(const char*, const char*, unsigned int, const char*, const char*, .
 void *RwMalloc(size_t n) { return malloc(n); }
 void RwFree(void *p) { free(p); }
 RwUInt32 RwStreamRead(RwStream *s, void *buf, RwUInt32 len) { return s->read8(buf, len); }
+void DebugLogPrintf(const char*, ...) {}
+
+RwInt32 ClumpOffset = 0;
+CAnimBlendClumpData::CAnimBlendClumpData(void)
+  : numFrames(0), velocity2d(nil), usesSAAnimations(false), frames(nil)
+{
+	link.Init();
+}
+CAnimBlendClumpData::~CAnimBlendClumpData(void) {}
+bool RpAnimBlendClumpIsInitialized(RpClump *clump)
+{
+	CAnimBlendClumpData *data = *RPANIMBLENDCLUMPDATA(clump);
+	return data && data->numFrames > 0 && data->frames;
+}
+struct FakeClump
+{
+	CAnimBlendClumpData *plugin;
+	CAnimBlendClumpData data;
+	AnimBlendFrameData frame;
+	explicit FakeClump(bool sa) : plugin(&data) {
+		data.frames = &frame;
+		data.numFrames = 1;
+		data.usesSAAnimations = sa;
+	}
+	RpClump *Get(void) { return (RpClump*)&plugin; }
+};
+
+static std::vector<uint8> customFile;
+static int customStreamsOpened = 0;
+static int nativeStreamsOpened = 0;
+static std::vector<uint8> NativeANPK();
+bool CCustomModels::LoadAnimFileFromCustom(const char*, std::vector<uint8> &out)
+{
+	out = customFile;
+	return !out.empty();
+}
 
 // The native-reference groups deliberately do not exist in this test. This
 // reproduces VC=none even though the original VC ped dictionary was loaded.
@@ -38,7 +78,7 @@ CAnimBlendAssociation *CAnimBlendAssocGroup::GetAnimation(uint32) { return nil; 
 class TestStream : public RwStream
 {
 public:
-	const std::vector<uint8> &bytes;
+	std::vector<uint8> bytes;
 	size_t pos;
 	explicit TestStream(const std::vector<uint8> &data) : bytes(data), pos(0) {}
 	uint32 write8(const void*, uint32) override { abort(); }
@@ -57,6 +97,26 @@ public:
 	uint32 tell(void) override { return (uint32)pos; }
 	bool eof(void) override { return pos == bytes.size(); }
 };
+
+RwStream *RwStreamOpen(RwStreamType type, RwStreamAccessType access, const void *arg)
+{
+	Check(access == rwSTREAMREAD, "animation streams are read-only");
+	if(type == rwSTREAMFILENAME){
+		Check(strcmp((const char*)arg, "ANIM\\PED.IFP") == 0, "native VC IFP requested");
+		nativeStreamsOpened++;
+		return new TestStream(NativeANPK());
+	}
+	Check(type == rwSTREAMMEMORY, "custom SA IFP comes from a memory stream");
+	const RwMemory *mem = (const RwMemory*)arg;
+	customStreamsOpened++;
+	const uint8 *bytes = (const uint8*)mem->start;
+	return new TestStream(std::vector<uint8>(bytes, bytes + mem->length));
+}
+RwBool RwStreamClose(RwStream *stream, void*)
+{
+	delete stream;
+	return true;
+}
 
 static void U16(std::vector<uint8> &v, uint16 value)
 {
@@ -256,6 +316,34 @@ main(void)
 	Check(offsetClip == nativeClip &&
 		((KeyFrameTrans*)offsetClip->sequences[0].GetKeyFrame(1))->translation.x == 1.75f,
 		"car-door offset reads the native IFP even with no VC skeleton reference");
-	puts("ANPK and ANP3 real-reader and car-entry offset regression OK");
+
+	FakeClump vcPed(false), saPed(true);
+	Check(CAnimManager::IsAnimationCompatibleWithClump(vcPed.Get(), nativeClip) &&
+		!CAnimManager::IsAnimationCompatibleWithClump(vcPed.Get(), saClip) &&
+		CAnimManager::IsAnimationCompatibleWithClump(saPed.Get(), saClip) &&
+		!CAnimManager::IsAnimationCompatibleWithClump(saPed.Get(), nativeClip),
+		"VC and SA skeletons reject animations from the other bank");
+	Check(CAnimManager::GetAnimHierarchyForOffset(vcPed.Get(), ASSOCGRP_STD, ANIM_STD_CAR_GET_IN_LHS) == nativeClip &&
+		CAnimManager::GetAnimHierarchyForOffset(saPed.Get(), ASSOCGRP_STD, ANIM_STD_CAR_GET_IN_LHS) == saClip,
+		"VC and SA car-door offsets come only from the corresponding IFP");
+	sa->isLoaded = false;
+	Check(CAnimManager::GetAnimHierarchyForOffset(saPed.Get(), ASSOCGRP_STD, ANIM_STD_CAR_GET_IN_LHS) == nil &&
+		CAnimManager::GetAnimHierarchyForOffset(vcPed.Get(), ASSOCGRP_STD, ANIM_STD_CAR_GET_IN_LHS) == nativeClip,
+		"missing SA bank never borrows native VC animation");
+	sa->isLoaded = true;
+
+	customFile = NativeANPK();
+	CAnimManager::LoadAnimFile("ANIM\\PED.IFP");
+	Check(customStreamsOpened == 0 && nativeStreamsOpened == 1 &&
+		CAnimManager::GetAnimation("CAR_getin_LHS", vc) == nativeClip,
+		"custom ANPK never replaces the native VC bank: native game file is read");
+	customFile = MobileANI(1, true);
+	CAnimManager::LoadSAAnimFileFromCustom("ANIM\\BIKES.IFP");
+	CAnimBlock *saBikes = CAnimManager::GetAnimationBlock("sa_bikes");
+	Check(customStreamsOpened == 1 && saBikes && saBikes->isLoaded &&
+		CAnimManager::GetAnimation("CAR_getin_LHS", saBikes) &&
+		CAnimManager::GetAnimationBlock("bikes") == nil,
+		"custom ANP3 only enters the parallel SA bank");
+	puts("Native VC / custom SA bank isolation, real IFP reader and door offsets OK");
 	return 0;
 }

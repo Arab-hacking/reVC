@@ -707,18 +707,16 @@ CStreaming::ConvertBufferToObject(int8 *buf, int32 streamId)
 		PUSH_MEMID(MEMID_STREAM_ANIMATION);
 #ifdef CUSTOM_MODELS
 		CAnimBlock *animBlock = CAnimManager::GetAnimationBlock(streamId - STREAM_OFFSET_ANIM);
-		bool replaced = false;
 		if(animBlock){
 			char customAnimFile[64];
 			snprintf(customAnimFile, sizeof(customAnimFile), "ANIM\\%s.IFP", animBlock->name);
-			replaced = CAnimManager::LoadAnimFileFromCustom(customAnimFile);
+			CAnimManager::LoadSAAnimFileFromCustom(customAnimFile);
 		}
-		if(!replaced)
 #endif
-			CAnimManager::LoadAnimFile(stream, true, nil);
+		CAnimManager::LoadAnimFile(stream, true, nil);
 #ifdef CUSTOM_MODELS
-		CUSTOM_LOG("stream animation %d: %s block loaded; building groups\n",
-			streamId - STREAM_OFFSET_ANIM, replaced ? "custom VC" : "native");
+		CUSTOM_LOG("stream animation %d: native VC block loaded; building groups\n",
+			streamId - STREAM_OFFSET_ANIM);
 #endif
 		CAnimManager::CreateAnimAssocGroups();
 #ifdef CUSTOM_MODELS

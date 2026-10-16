@@ -150,7 +150,7 @@ main(void)
 		std::string(names[0]) == "walk_civi" && std::string(names[1]) == "idle_stance",
 		"VC block and clip names extracted");
 	Check(br::VCAnimNameEqual(block, "PED") && br::VCAnimHasPedCore(names, count),
-		"matching VC ped block with movement clips can replace the game file");
+		"VC parser recognizes the native ped block and its core movement clips");
 	std::vector<uint8> wrongBlock = VCIfp("cars", true);
 	Check(br::SniffAnimNames(wrongBlock.data(), wrongBlock.size(), names, 16, count, block) &&
 		!br::VCAnimNameEqual(block, "ped"), "wrong VC block name requires fallback");

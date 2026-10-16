@@ -5120,7 +5120,7 @@ CPed::Idle(void)
 
 			if (m_objective != OBJECTIVE_KILL_CHAR_ON_FOOT) {
 
-				CVector doorPos = GetPositionToOpenCarDoor(veh, m_vehDoor);
+				CVector doorPos = GetPositionToOpenCarDoor(veh, m_vehDoor, this);
 				CVector doorDist = GetPosition() - doorPos;
 
 				if (doorDist.MagnitudeSqr() < sq(0.5f)) {
@@ -7432,9 +7432,9 @@ CPed::SeekCar(void)
 	if (m_objective != OBJECTIVE_ENTER_CAR_AS_PASSENGER) {
 		if (!vehToSeek->IsBike() && m_vehDoor && m_objective != OBJECTIVE_ENTER_CAR_AS_DRIVER) {
 			if (IsRoomToBeCarJacked()) {
-				dest = GetPositionToOpenCarDoor(vehToSeek, m_vehDoor);
+				dest = GetPositionToOpenCarDoor(vehToSeek, m_vehDoor, this);
 			} else if (m_nPedType == PEDTYPE_COP) {
-				dest = GetPositionToOpenCarDoor(vehToSeek, CAR_DOOR_RF);
+				dest = GetPositionToOpenCarDoor(vehToSeek, CAR_DOOR_RF, this);
 			} else {
 				SetMoveState(PEDMOVE_STILL);
 			}
@@ -8929,7 +8929,7 @@ void
 CPed::Solicit(void)
 {
 	if (m_chatTimer >= CTimer::GetTimeInMilliseconds() && m_carInObjective) {
-		CVector doorPos = GetPositionToOpenCarDoor(m_carInObjective, m_vehDoor, 0.0f);
+		CVector doorPos = GetPositionToOpenCarDoor(m_carInObjective, m_vehDoor, 0.0f, this);
 		Say(SOUND_PED_SOLICIT);
 		if (FindPlayerVehicle() == m_carInObjective) {
 			FindPlayerPed()->Say(SOUND_PED_SOLICIT);
