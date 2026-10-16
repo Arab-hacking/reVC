@@ -459,6 +459,9 @@ clump. Если подходящего SA-клипа нет, позиция пр
 `STDCARAMIMS`, `LOWCARAMIMS`, `VANCARANIMS`, `COACHCARANIMS`, `SPORTBIKEANIMS`,
 `VESPABIKEANIMS`, `HARLEYBIKEANIMS`, `DIRTBIKEANIMS`, `BIKES`, `BIKEV`, `BIKEH` и
 `BIKED`. Они читаются как отдельные SA-банки; отсутствующие файлы просто не загружаются.
+Одного `ped.ifp` недостаточно для стрельбы SA-педа: при отсутствии подходящего
+оружейного IFP/ANI атака отменяется с предупреждением `Weapon animation unavailable`
+(в логе указаны модель, тип оружия, группа и ID клипа), а не использует VC-анимацию.
 
 `CPedModelInfo` распознаёт SA-совместимый скин по его skinned HAnim hierarchy и ключевым
 bone tags. Таблица позиций костей выделяется по числу костей скелета (не ограничена старым
