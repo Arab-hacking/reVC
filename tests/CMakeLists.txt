@@ -45,6 +45,20 @@ add_test(NAME custom_img_collision_tests COMMAND custom_img_collision_tests)
 # RenderWare/streaming stubs and synthetic skeletons. Dead-code elimination
 # keeps the remaining game-only dependencies out of this standalone test.
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    # Read an actual synthetic RW 3.6 DFF in a headless librw engine. This
+    # tests clump geometry/material ownership instead of mocking the API.
+    set(LIBRW_PLATFORM "NULL" CACHE STRING "Headless librw for tests" FORCE)
+    set(LIBRW_TOOLS OFF CACHE BOOL "No librw utilities in tests" FORCE)
+    set(LIBRW_INSTALL OFF CACHE BOOL "No librw install in tests" FORCE)
+    add_subdirectory(../vendor/librw ${CMAKE_CURRENT_BINARY_DIR}/librw-static)
+    add_executable(sa_static_dff_tests
+        SAStaticDffTests.cpp ../src/extras/custom/SAStaticModel.cpp)
+    target_compile_definitions(sa_static_dff_tests PRIVATE LIBRW)
+    target_include_directories(sa_static_dff_tests PRIVATE ../src/extras/custom)
+    target_link_libraries(sa_static_dff_tests PRIVATE librw::librw)
+    set_target_properties(sa_static_dff_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+    add_test(NAME sa_static_dff_tests COMMAND sa_static_dff_tests)
+
     add_executable(txd_store_capacity_tests
         TxdStoreCapacityTests.cpp ../src/rw/TxdStore.cpp)
     target_compile_definitions(txd_store_capacity_tests PRIVATE

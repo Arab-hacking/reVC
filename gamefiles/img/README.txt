@@ -12,7 +12,14 @@ mounts the archives before indexing models/textures; the names in the DIR
 must match IDE model names / TXD slot names. Each IMG is a Vice City / GTA3
 IMG v1 (raw 2048-byte sectors, separate 32-byte-record .dir), NOT a San
 Andreas IMG v2 with an embedded VER2 directory. The DFF entries themselves
-may be SA RenderWare models; the TXD entries should be VC-compatible TXDs.
+may be SA RenderWare static models; TXDs may contain PC-native D3D8 (VC)
+or D3D9 (SA) textures. The second IDE column selects the TXD name: it must match the .txd
+entry in the IMG, and its texture names must match the material names in
+that DFF. The TXD is loaded before the DFF. Multi-part static clumps are
+flattened into one VC atomic with their child-frame transforms, materials
+and UVs preserved. Stock VC multi-LOD objects still use their original path.
+Skinned/oversized/invalid static clumps are rejected and logged in debug.log.
+Real archives still need to be checked in the running game.
 
 Only DFF and TXD entries are used from these IMGs. Collision is read from
 .col and .cls files inside ZIP archives under ../custom/, and IDE/IPL from

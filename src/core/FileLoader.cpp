@@ -29,6 +29,9 @@
 #ifdef CUSTOM_MODELS
 #include "CustomModels.h"
 #include "CustomWorld.h"
+#ifdef LIBRW
+#include "SAStaticModel.h"
+#endif
 #endif
 #include "MemoryHeap.h"
 #include "Streaming.h"
@@ -785,16 +788,90 @@ CFileLoader::FinishLoadClumpFile(RwStream *stream, uint32 id)
 
 CSimpleModelInfo *gpRelatedModelInfo;
 
+#if defined(CUSTOM_MODELS) && defined(LIBRW)
+struct SAStaticTxdScope {
+	RwTexDictionary *previous;
+	bool changed;
+	SAStaticTxdScope() : previous(RwTexDictionaryGetCurrent()), changed(false) {}
+	void Set(RwTexDictionary *dict) { RwTexDictionarySetCurrent(dict); changed = true; }
+	~SAStaticTxdScope() { if(changed) RwTexDictionarySetCurrent(previous); }
+};
+
+struct SAStaticTextureStats {
+	int uvMaterials, resolved;
+};
+
+static RpAtomic *
+CountSAStaticTextures(RpAtomic *atomic, void *data)
+{
+	SAStaticTextureStats *stats = (SAStaticTextureStats*)data;
+	rw::Geometry *g = atomic->geometry;
+	if((atomic->object.object.flags & rw::Atomic::RENDER) &&
+	   g && g->numTriangles > 0 && g->numTexCoordSets > 0){
+		for(int i = 0; i < g->matList.numMaterials; i++){
+			stats->uvMaterials++;
+			if(g->matList.materials[i] && g->matList.materials[i]->texture)
+				stats->resolved++;
+		}
+	}
+	return atomic;
+}
+#endif
+
 bool
 CFileLoader::LoadAtomicFile(RwStream *stream, uint32 id)
 {
 	RpClump *clump;
 
+#if defined(CUSTOM_MODELS) && defined(LIBRW)
+	// Only custom IDE statics and simple objects replaced by img/*.img need
+	// the SA clump path. Native VC simple models still use their named _lN
+	// atomics and draw-distance slots unchanged.
+	bool saStatic = CCustomWorld::OwnsModelSlot(id);
+	SAStaticTxdScope txdScope;
+	CSimpleModelInfo *mi = (CSimpleModelInfo*)CModelInfo::GetModelInfo(id);
+	if(!saStatic && mi->IsBuilding() && mi->m_numAtomics == 1 &&
+	   mi->m_firstDamaged == 0 && CStreaming::ms_aInfoForModel[id].m_size)
+		saStatic = CCustomModels::IsAutoMountedImage(
+			_GET_INDEX(CStreaming::ms_aInfoForModel[id].m_position));
+	if(saStatic){
+		// The streamer normally does this already. Also enforce it when a
+		// custom-folder DFF is loaded through the same FileLoader directly:
+		// RpClumpStreamRead resolves material names at read time, not later.
+		TxdDef *txd = CTxdStore::GetSlot(mi->GetTxdSlot());
+		if(txd == nil || txd->texDict == nil){
+			REVC_LOG_ERROR("SA static %s: IDE TXD %d has not loaded",
+				mi->GetModelName(), mi->GetTxdSlot());
+			return false;
+		}
+		txdScope.Set(txd->texDict);
+	}
+#endif
 	if(RwStreamFindChunk(stream, rwID_CLUMP, nil, nil)){
 		clump = RpClumpStreamRead(stream);
 		if(clump == nil)
 			return false;
 		InitClump(clump);
+#if defined(CUSTOM_MODELS) && defined(LIBRW)
+		if(saStatic){
+			SAStaticTextureStats texStats = { 0, 0 };
+			RpClumpForAllAtomics(clump, CountSAStaticTextures, &texStats);
+			if(texStats.uvMaterials && !texStats.resolved)
+				REVC_LOG_WARNING("SA static %s: no material textures resolved from IDE TXD %s; check the names in DFF/TXD",
+					mi->GetModelName(), CTxdStore::GetTxdName(mi->GetTxdSlot()));
+			const char *error = nil;
+			RpAtomic *atomic = SAStaticModel::TakeAtomic(clump, &error);
+			if(atomic){
+				CVisibilityPlugins::SetAtomicRenderCallback(atomic, nil);
+				mi->SetAtomic(0, atomic); // one draw-distance slot, all clump parts
+				CVisibilityPlugins::SetAtomicModelInfo(atomic, mi);
+			}else
+				REVC_LOG_ERROR("SA static %s: cannot use DFF (%s)",
+					mi->GetModelName(), error ? error : "unknown reason");
+			RpClumpDestroy(clump);
+			return atomic != nil;
+		}
+#endif
 		gpRelatedModelInfo = (CSimpleModelInfo*)CModelInfo::GetModelInfo(id);
 		RpClumpForAllAtomics(clump, SetRelatedModelInfoCB, clump);
 		RpClumpDestroy(clump);

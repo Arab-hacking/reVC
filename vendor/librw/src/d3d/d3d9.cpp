@@ -211,17 +211,20 @@ readNativeData(Stream *stream, int32, void *object, int32, int32)
 	for(int i = 0; i < 2; i++){
 		stream->read8(p, 16);
 		s = &header->vertexStream[i];
-		s->vertexBuffer = (void*)(uintptr)*(uint32*)p; p += 4;
+		// The serialized pointer is a presence marker (often 0xbadeaffe),
+		// never a host pointer. In particular it must not trip the assert
+		// below or survive in the in-memory vertex stream.
+		uint32 hasVertexBuffer = *(uint32*)p; p += 4;
+		s->vertexBuffer = nil;
 		s->offset = 0; p += 4;
 		s->stride = *(uint32*)p; p += 4;
 		s->geometryFlags = *(uint16*)p; p += 2;
 		s->managed = *p++;
 		s->dynamicLock = *p++;
 
-		if(s->vertexBuffer == nil)
+		if(hasVertexBuffer == 0)
 			continue;
 		// TODO: use dynamic VB when doing morphing
-		assert(s->vertexBuffer == nil);
 		s->vertexBuffer = createVertexBuffer(s->stride*header->totalNumVertex, 0, false);
 		uint8 *verts = lockVertices(s->vertexBuffer, 0, 0, D3DLOCK_NOSYSLOCK);
 		stream->read8(verts, s->stride*header->totalNumVertex);
