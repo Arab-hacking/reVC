@@ -2087,6 +2087,11 @@ CheckStreamPreparation(int32 streamId, bool priority)
 {
 	if(streamId == nativeModelOverride || !customActive || streamId < 0 || streamId >= NUMSTREAMINFO)
 		return true;
+	// CanServe uses the same guard. Do not decompress a same-named ZIP
+	// .mod/.btx while the native img/ DFF/TXD is already waiting on disc.
+	if(streamId < STREAM_OFFSET_COL && CStreaming::ms_aInfoForModel[streamId].m_size &&
+	   CCustomModels::IsAutoMountedImage(_GET_INDEX(CStreaming::ms_aInfoForModel[streamId].m_position)))
+		return true;
 	if(streamId < STREAM_OFFSET_TXD){
 		CBaseModelInfo *mi = CModelInfo::GetModelInfo(streamId);
 		if(!mi || (!mi->IsSimple() && mi->GetModelType() != MITYPE_CLUMP &&
