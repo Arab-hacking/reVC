@@ -231,6 +231,10 @@ ParseBlock(const uint8 *p, size_t n, Block &b)
 	// format, the arrays carry no count of their own - the counts are in the
 	// header - so an offset points straight at the data.
 	uint32 limit = size + 4;		// everything the block holds, counted that way
+	// Even with a zero count, the pointers below must stay inside the block.
+	if((offS && offS > limit) || (offB && offB > limit) ||
+	   (offV && offV > limit) || (offF && offF > limit))
+		return false;
 	if(b.nS && (!offS || (size_t)offS + (size_t)b.nS*V2_SPHERE > limit))
 		return false;
 	if(b.nB && (!offB || (size_t)offB + (size_t)b.nB*V2_BOX > limit))

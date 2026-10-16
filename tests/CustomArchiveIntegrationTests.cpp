@@ -61,6 +61,15 @@ static std::vector<uint8> Col(const char *name) {
     assert(customcolformat::ValidVC(b.data(), b.size()));
     return b;
 }
+static std::vector<uint8> Col3(const char *name) {
+    std::vector<uint8> b(120, 0);
+    std::memcpy(b.data(), "COL3", 4); W32(b, 4, 112);
+    std::memcpy(b.data()+8, name, std::strlen(name));
+    WF(b, 32, -1); WF(b, 36, -1); WF(b, 40, -1);
+    WF(b, 44, 1); WF(b, 48, 1); WF(b, 52, 1);
+    WF(b, 56, 2); // bounds in SA COL3 box-then-sphere order
+    return b;
+}
 static std::vector<uint8> Cls(const char *name) {
     std::vector<uint8> b(120, 0);
     std::memcpy(b.data(), "CLST", 4); W32(b, 4, 112);
@@ -158,13 +167,16 @@ int main() {
     std::vector<uint8> override = Col("house1");
     WF(override, 32, 3); // .col wins over the house1 .cls (radius 2)
     twoBlocks.insert(twoBlocks.end(), override.begin(), override.end());
+    std::vector<uint8> badOffset = Col3("badOffset");
+    W32(badOffset, 84, 0xfffffff0); // offS without spheres must still be in bounds
     Zip("custom/coll_a.zip", {
         { "mesh/shared.cls", Cls("house1") }, { "mesh/shared.col", twoBlocks },
         { "mesh/legacy.cls", LegacyCls("house5") }
     });
     Zip("custom/coll_b.zip", {
         { "mesh/shared.cls", Cls("house2") }, { "mesh/shared.col", Col("house4") },
-        { "mesh/legacy.cls", LegacyCls("house6") }
+        { "mesh/legacy.cls", LegacyCls("house6") }, { "mesh/sa.col", Col3("house7") },
+        { "mesh/bad.col", badOffset }
     });
     std::map<std::string, std::string> ide, ipl, cls, col;
     CCustomModels::ForEachWorldFile(true, WorldFile, &ide);
@@ -174,9 +186,10 @@ int main() {
     assert(ide.size() == 1 && ide.count("data/maps/ide/test.ide"));
     assert(ipl.size() == 1 && ipl.count("data/maps/level_events/test.ipl"));
     assert(cls.size() == 2 && cls["house1"] == "house1" && cls["house2"] == "house2");
-    assert(col.size() == 5 && col["house1"] == "house1" &&
+    assert(col.size() == 6 && col["house1"] == "house1" &&
            col["house3"] == "house3" && col["house4"] == "house4" &&
-           col["house5"] == "house5" && col["house6"] == "house6");
+           col["house5"] == "house5" && col["house6"] == "house6" &&
+           col["house7"] == "house7");
     std::vector<uint8> selected;
     assert(CCustomModels::GetCollisionBlock("house1", selected));
     float radius = 0; std::memcpy(&radius, selected.data()+24, 4);
@@ -186,6 +199,11 @@ int main() {
     assert(radius == 2); // .cls from coll_b.zip
     assert(CCustomModels::GetCollisionBlock("house6", selected));
     assert(std::string((const char *)selected.data()) == "house6"); // legacy .cls
+    assert(CCustomModels::GetCollisionBlock("house7", selected));
+    assert(selected.size() == 84 && std::string((const char *)selected.data()) == "house7");
+    std::memcpy(&radius, selected.data()+24, 4);
+    assert(radius == 2); // SA COL3 became a VC COLL payload
+    assert(!CCustomModels::GetCollisionBlock("badOffset", selected));
     CCustomModels::Shutdown();
     assert(chdir("..") == 0);
     std::string root(dir);
