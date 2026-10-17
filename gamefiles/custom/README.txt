@@ -26,8 +26,11 @@ create custom/active_ipl.txt: one FULL path inside common.zip per line, e.g.
     maps/Level_Events/BRmap_Event_9May.ipl
 Paths are case-insensitive; # and // comments are allowed. Only listed IPLs
 are loaded. Without this file all IPLs are loaded, but identical placements
-are deduplicated. IDEs are always indexed so reused IDs can be resolved by
-model name. The building and sector-node pools grow on demand for large maps;
+are deduplicated. If common.zip contains the same file as BOTH maps/... and
+data/maps/..., byte-identical copies are read only once. Differing copies
+remain distinct; select the desired IPL path explicitly instead of assuming
+one version is correct. IDEs are always indexed so reused IDs can be resolved
+by model name. The building and sector-node pools grow on demand for large maps;
 this does not change texture/model cache limits or the world boundary.
 
 For example, custom/ped.ifp (or anim/ped.ifp in a zip inside custom/) is

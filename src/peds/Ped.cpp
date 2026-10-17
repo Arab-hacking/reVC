@@ -7720,29 +7720,21 @@ IsPedPointerValid(CPed* pPed)
 bool
 IsPedPointerValid_NotInWorld(CPed* pPed)
 {
-	if (!pPed)
-		return false;
-	int index = CPools::GetPedPool()->GetJustIndex_NoFreeAssert(pPed);
-#ifdef FIX_BUGS
-	if (index < 0 || index >= NUMPEDS)
-#else
-	if (index < 0 || index > NUMPEDS)
-#endif
-		return false;
-	return true;
+	// The slot can still contain old ped fields after delete. Range alone is
+	// not proof that a pointer from a nearby-ped/event list is still alive.
+	return pPed && CPools::GetPedPool()->IsAllocated(pPed);
 }
 
 bool
 CPed::IsPointerValid(void)
 {
-	int pedIndex = CPools::GetPedPool()->GetIndex(this) >> 8;
-	if (pedIndex < 0 || pedIndex >= NUMPEDS)
+	// This method is called to DISCARD stale pointers (e.g. m_nearPeds during
+	// ped destruction). GetIndex asserts for a freed/foreign slot before the
+	// old range check had a chance to reject it. Check allocation first without
+	// reading any ped fields or creating a handle.
+	if (!CPools::GetPedPool()->IsAllocated(this))
 		return false;
-
-	if (m_entryInfoList.first || FindPlayerPed() == this)
-		return true;
-
-	return false;
+	return m_entryInfoList.first || FindPlayerPed() == this;
 }
 
 void

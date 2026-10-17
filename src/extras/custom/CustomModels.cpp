@@ -274,6 +274,17 @@ WorldPath(const std::string &name)
 	return path;
 }
 
+// Some common.zip builds contain the same map under BOTH maps/... and
+// data/maps/... . The full original path is still used for active_ipl.txt;
+// only byte-identical aliases may be skipped at load time. Different content
+// could be a deliberate alternate map and must not be chosen automatically.
+static std::string
+WorldAliasPath(const std::string &path)
+{
+	if(path.compare(0, 10, "data/maps/") == 0) return path.substr(5);
+	return path.compare(0, 5, "maps/") == 0 ? path : std::string();
+}
+
 static void
 AddWorldFile(std::map<std::string, CustomSource> &index, const std::string &path,
              const CustomSource &src)
@@ -517,7 +528,7 @@ EnsureInitialised(void)
 	               !customIdeFiles.empty() || !customIplFiles.empty();
 
 	CUSTOM_LOG("==== custom folder: %s\n", customFolderPath.c_str());
-	CUSTOM_LOG("scan: %d archive(s), %d .mod, %d .dff, %d .btx (%d names), %d .txd, %d .cls (%u CED2 models), %d .col (%d model(s) inside), %d .ifp/.ani (%d names), %d image(s), %u IDE, %u IPL\n",
+	CUSTOM_LOG("scan: %d archive(s), %d .mod, %d .dff, %d .btx (%d names), %d .txd, %d .cls (%u CED2 models), %d .col (%d model(s) inside), %d .ifp/.ani (%d names), %d image(s), %u IDE path(s), %u IPL path(s) before alias checks\n",
 		st.zip, st.mod, st.dff, st.btx, (int)customBtx.size(), st.txd, st.cls,
 		(unsigned)customBrColBlocks.size(), st.colfile, st.colblock, st.anim,
 		(int)customAnims.size(), st.img, (unsigned)customIdeFiles.size(), (unsigned)customIplFiles.size());
@@ -2050,15 +2061,38 @@ CCustomModels::ForEachWorldFile(bool ide, WorldFileCallback callback, void *cont
 	if(callback == nil) return;
 	std::set<std::string> active;
 	bool selected = !ide && ReadActiveIpls(active);
-	const std::map<std::string, CustomSource> &files = ide ? customIdeFiles : customIplFiles;
-	for(std::map<std::string, CustomSource>::const_iterator it = files.begin(); it != files.end(); ++it){
+	typedef std::map<std::string, CustomSource> WorldFiles;
+	const WorldFiles &files = ide ? customIdeFiles : customIplFiles;
+	std::map<std::string, WorldFiles::const_iterator> firstAlias;
+	unsigned identical = 0;
+	for(WorldFiles::const_iterator it = files.begin(); it != files.end(); ++it){
 		if(selected && active.find(it->first) == active.end()) continue;
 		std::vector<uint8> bytes;
-		if(ReadSource(it->second, bytes))
-			callback(it->first.c_str(), bytes.data(), bytes.size(), context);
-		else
+		if(!ReadSource(it->second, bytes)) {
 			CUSTOM_LOG("world %s: cannot read %s\n", ide ? "IDE" : "IPL", it->first.c_str());
+			continue;
+		}
+		std::string alias = WorldAliasPath(it->first);
+		if(!alias.empty()) {
+			std::map<std::string, WorldFiles::const_iterator>::const_iterator first = firstAlias.find(alias);
+			if(first == firstAlias.end())
+				firstAlias.insert(std::make_pair(alias, it));
+			else {
+				std::vector<uint8> previous;
+				if(ReadSource(first->second->second, previous) && previous == bytes) {
+					identical++;
+					continue;
+				}
+				CUSTOM_LOG("world %s: %s and %s share a map path but differ; both loaded%s\n",
+					ide ? "IDE" : "IPL", first->second->first.c_str(), it->first.c_str(),
+					ide ? "" : " (select alternatives with active_ipl.txt)");
+			}
+		}
+		callback(it->first.c_str(), bytes.data(), bytes.size(), context);
 	}
+	if(identical)
+		CUSTOM_LOG("world %s: skipped %u byte-identical data/maps and maps aliases\n",
+			ide ? "IDE" : "IPL", identical);
 }
 
 void

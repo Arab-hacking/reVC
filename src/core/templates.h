@@ -52,6 +52,7 @@ class CPool
 
     U *m_entries;
     uint8 *m_flags;
+    const char *m_name; // pool labels passed by CPools::Initialise are static
     int32 m_size, m_initialSize, m_growBy, m_allocPtr, m_used, m_storedSize;
     ExtraBlock *m_extraHead, *m_extraTail;
 
@@ -117,10 +118,9 @@ class CPool
 
 public:
     explicit CPool(int32 size, const char *name, int32 growBy = 0) :
-        m_size(size), m_initialSize(size), m_growBy(growBy), m_allocPtr(-1),
+        m_name(name), m_size(size), m_initialSize(size), m_growBy(growBy), m_allocPtr(-1),
         m_used(0), m_storedSize(0), m_extraHead(nil), m_extraTail(nil)
     {
-        (void)name;
         assert(size > 0);
         m_entries = (U*)new uint8[sizeof(U)*(size_t)size];
         m_flags = new uint8[size];
@@ -197,6 +197,7 @@ public:
     }
     void Delete(T *entry) {
         int32 i = GetJustIndex(entry);
+        if(i < 0) return; // a bad pointer must not free an unrelated slot in Release
         SetIsFree(i, true);
         if(i < m_allocPtr) m_allocPtr = i;
     }
@@ -210,11 +211,24 @@ public:
     }
     int32 GetIndex(T *entry) {
         int32 i = GetJustIndex(entry);
-        return Flag(i) + (i << 8);
+        return i < 0 ? -1 : Flag(i) + (i << 8);
+    }
+    // Safe for stale/foreign pointers: no dereference of the entry and no
+    // pointer subtraction between allocations. Used by ped validity checks
+    // BEFORE reading fields or requesting a pool handle.
+    bool IsAllocated(T *entry) {
+        int32 i = GetJustIndex_NoFreeAssert(entry);
+        return i >= 0 && i < m_size && (U*)entry == Entry(i) && !GetIsFree(i);
     }
     int32 GetJustIndex(T *entry) {
         int32 i = GetJustIndex_NoFreeAssert(entry);
-        assert(i >= 0 && i < m_size && (U*)entry == Entry(i) && !GetIsFree(i));
+        if(i < 0 || i >= m_size || (U*)entry != Entry(i) || GetIsFree(i)) {
+            debug("CPool %s: invalid pointer %p, slot=%d, size=%d, free=%d, used=%d\n",
+                m_name, (void*)entry, i, m_size,
+                i >= 0 && i < m_size ? (int)GetIsFree(i) : -1, m_used);
+            assert(0 && "pool pointer is not an allocated slot");
+            return -1;
+        }
         return i;
     }
     int32 GetJustIndex_NoFreeAssert(T *entry) {

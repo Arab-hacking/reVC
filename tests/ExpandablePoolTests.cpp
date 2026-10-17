@@ -15,14 +15,30 @@ typedef uintptr_t uintptr;
 #include "../src/core/templates.h"
 
 struct Node { int value; Node *next; };
+struct BasePed { int state; };
+struct PlayerPed : BasePed { int extras[8]; };
 
 int main()
 {
+    // Ped slots are fixed-size, but their storage uses a larger derived type.
+    // A validity check must reject stale or unrelated pointers WITHOUT first
+    // calling GetIndex, which asserts on a freed slot.
+    CPool<BasePed, PlayerPed> peds(2, "Peds");
+    BasePed *ped = peds.New();
+    BasePed outsider = {0};
+    assert(peds.IsAllocated(ped));
+    assert(!peds.IsAllocated(&outsider) && !peds.IsAllocated(nullptr));
+    assert(!peds.IsAllocated((BasePed*)((char*)ped + 1)));
+    peds.Delete(ped);
+    assert(!peds.IsAllocated(ped) && peds.GetSlot(0) == nullptr);
+
     CPool<Node> fixed(1, "ordinary pool");
     assert(!fixed.EnsureFree(2));
     Node *ordinary = fixed.New();
     assert(ordinary && fixed.New() == nullptr);
+    assert(fixed.IsAllocated(ordinary));
     fixed.Delete(ordinary);
+    assert(!fixed.IsAllocated(ordinary));
     assert(fixed.GetNoOfFreeSpaces() == 1);
     fixed.SetIsFree(0, false);
     assert(fixed.GetNoOfUsedSpaces() == 1);
