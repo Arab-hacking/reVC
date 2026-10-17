@@ -1,9 +1,9 @@
-#ifndef REVC_SAMP_QUERY_H
-#define REVC_SAMP_QUERY_H
+#ifndef SAMP_CLIENT_QUERY_H
+#define SAMP_CLIENT_QUERY_H
 
-// The SA-MP 0.3.7 UDP *server-info query*. This is NOT a RakNet session:
-// it cannot join, send chat, spawn players, or authenticate a game client.
-// Keep its wire parser separate from the game so it can be fuzzed/tested.
+// Standalone SA-MP 0.3.7 UDP *server-info query*. NOT a RakNet session:
+// this cannot join, send chat, spawn players, or authenticate a game client.
+// This project has no dependency on reVC or RenderWare.
 #include <stddef.h>
 #include <stdint.h>
 #include <string>
@@ -26,7 +26,7 @@ enum Status { DISABLED, WAITING, SUCCEEDED, TIMED_OUT, FAILED };
 
 // Non-blocking, single-use IPv4 UDP probe. Only a matching source endpoint
 // AND the echoed 11-byte query header may update its result. Poll from the
-// main thread; no worker touches game entities or RenderWare.
+// caller's event loop; the network library never touches game entities.
 class Probe {
 public:
     Probe();
@@ -60,4 +60,4 @@ private:
 };
 
 } // namespace sampquery
-#endif
+#endif // SAMP_CLIENT_QUERY_H

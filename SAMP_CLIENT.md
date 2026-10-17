@@ -1,62 +1,76 @@
-# SA-MP 0.3.7 in reVC: implementation status
+# Отдельный клиент SA-MP 0.3.7: архитектура и статус
 
-Target: **ordinary SA-MP 0.3.7 servers**, not Black Russia. The separate
-[`michael-fa/samp`](https://github.com/michael-fa/samp) tree calls itself a leak,
-has no explicit licence, uses GTA SA x86 addresses/D3D9 hooks, and says its
-0.3.7 packet reception still crashes. **No code from it is included here.**
+Цель — **обычные серверы SA-MP 0.3.7**, не Black Russia. Сетевой клиент
+разрабатывается **отдельно от движка reVC**: самостоятельный проект
+[`tools/samp-client/`](tools/samp-client/) со своим CMake, исполняемыми
+тестами и, в будущем, транспортом/RPC/состоянием подключения. Его можно
+собрать без RenderWare, игровых файлов и компиляции reVC. Позднее игра
+получит только узкий адаптер: сетевые события → игровые педы/машины/объекты
+и ввод игрока → сетевые команды. Отдельный проект можно вынести в собственный
+репозиторий без переноса внутреннего кода reVC.
 
-## What works now: opt-in server discovery, NOT joining
+**Это отдельный компонент по исходникам и сборке, но не обязательно отдельный
+процесс во время игры.** Встраиваемая библиотека с небольшим адаптером
+предпочтительнее постоянного IPC между двумя процессами. Отдельная утилита
+нужна для самостоятельной отладки протокола.
 
-The game can send an SA-MP UDP **info query** (`SAMP` + IPv4 + little-endian
-port + `i`) to a configured server and print the reply in `debug.log`.
-It validates the source IP/port and echoed query header, bounds-checks all
-strings, discards malformed responses, retries once, and never blocks a frame
-waiting for a reply. No server is contacted without configuration.
+Исходники [`michael-fa/samp`](https://github.com/michael-fa/samp) сюда **не
+переносятся**: их README называет код утечкой без явной лицензии, а сама DLL
+жёстко привязана к адресам GTA SA x86. Сетевой протокол реализуется
+независимо; авторские права на чужую реализацию не предполагаются.
 
-Add the following to the game's `reVC.ini` (use a numeric IPv4 address):
+## Что есть сейчас
 
-```ini
-[SAMP]
-QueryIPv4=127.0.0.1
-QueryPort=7777
+В самостоятельном проекте есть только **UDP-опрос информации о сервере**
+(`SAMP` + IPv4 + порт little-endian + `i`). Его исходники перенесены **из reVC**:
+движок больше не открывает сокеты, не читает `[SAMP]` в `reVC.ini` и не
+содержит сетевых хуков. Запрос проверяет IP/порт источника, эхо-заголовок,
+длины строк и управляющие символы, делает одну повторную попытку и не
+блокирует вызывающий поток в `Poll()`.
+
+Собрать и запустить утилиту (адрес замените на свой тестовый сервер):
+
+```sh
+cmake -S tools/samp-client -B build/samp-client -DCMAKE_BUILD_TYPE=Release
+cmake --build build/samp-client --config Release
+ctest --test-dir build/samp-client -C Release --output-on-failure
+# Linux/macOS (одноконфигурационный генератор):
+build/samp-client/samp-probe 127.0.0.1 7777
+# Windows с генератором Visual Studio: build/samp-client/Release/samp-probe.exe 127.0.0.1 7777
 ```
 
-Replace the sample address with **your own test server's IP**. The default
-port is 7777. Remove `QueryIPv4` to disable the probe. A successful
-`SA-MP server info ...` log line proves only that UDP **query** works; it
-explicitly says `game session NOT connected`. A timed-out query can mean that
-queries are disabled by that server, not that gameplay login is impossible.
-The server-controlled text is sanitized before logging. No password, nickname,
-or login details are read or sent.
+На Windows исполняемый файл называется `samp-probe.exe`. Укажите числовой
+IPv4 и UDP-порт. Отсутствие ответа может означать, что сервер отключил
+query; это **не** доказательство невозможности игрового подключения.
+Тесты включают подставной сервер на loopback и не требуют игровых файлов.
+Песочница не может обращаться к произвольным публичным игровым серверам,
+поэтому реальный ответ нужно проверить на машине пользователя.
 
-The parser and local UDP responder run without game assets in
-`tests/SampQueryTests.cpp`; the game integration runs only on explicit opt-in.
-The sandbox cannot contact arbitrary public SA-MP servers, so a real-server
-query must be confirmed on the user's machine via a new `debug.log`.
+Успех утилиты означает лишь ответ на **info query**. Она **не** проходит
+RakNet-handshake, не отправляет чат, не входит в игру и не синхронизирует
+игроков. MVP мультиплеера ещё не готов.
 
-## What is still needed for a playable client
+## Следующие необходимые этапы
 
-1. **A legally usable RakNet/SA-MP 0.3.7 transport.** Offline cookie challenge,
-   SA-MP datagram cipher, reliable/ordered messaging, ACK/NAK and timeouts,
-   AuthKey and ClientJoin; test byte-for-byte against an authorized local
-   SA-MP 0.3.7 server. A raw UDP query is not a RakNet session. Do not drop in
-   an unmodified modern RakNet library or the leaked GTA SA DLL and claim it
-   will connect.
-2. **Network-to-game bridge.** Validate and decode join/spawn/chat/player
-   RPCs into bounded data structures. Create/destroy remote VC peds on the
-   *game thread* with stable network-ID-to-pool-handle mapping and verified
-   model/animation compatibility. Do not store stale `CPed *` across deletion.
-3. **State synchronization.** Local on-foot and vehicle updates, interpolation
-   of remote actors, occupants, damage/weapon/animation differences, interior
-   and world handling, server-driven objects and an in-game chat UI. VC and SA
-   do not have identical model IDs, physics, animation sets or script APIs.
+1. В отдельном проекте: проверенный на собственном тестовом SA-MP 0.3.7
+   сервере транспорт RakNet (cookie/шифрование, надёжность и порядок пакетов,
+   ACK/NAK, таймауты), AuthKey и ClientJoin. Код и зависимости только с
+   подходящими правами на использование; не считать query игровым входом.
+2. Там же: ограниченный по размеру и протестированный разбор InitGame,
+   спавна, чата, player sync и других RPC в структуры без игровых указателей.
+3. В reVC: минимальный адаптер на игровом потоке для создания/удаления
+   удалённых педов, проверки сетевых ID и занятости слотов пула, применения
+   координат и анимаций. Не хранить устаревшие `CPed *`; различия SA и VC
+   в моделях, анимациях, машинах и физике требуют явных таблиц соответствия.
+4. Затем синхронизация ввода своего игрока и транспорта, интерполяция
+   удалённых, интерфейс чата и проверка разных серверных сценариев.
 
-Compatibility with every public server cannot be inferred from the info query:
-some servers require client-specific features or anti-cheat. Each milestone
-needs protocol tests and a real test-server run before it can be called done.
+Совместимость со *всеми* публичными серверами нельзя выводить из UDP-опроса:
+некоторым требуются специфические функции или античит. Каждый этап должен
+пройти пакетные тесты и проверку на реальном тестовом сервере.
 
-Query layout was checked against the open-source
-[open.mp server query handler](https://github.com/openmultiplayer/open.mp/blob/master/Server/Components/LegacyNetwork/Query/query.cpp)
-and the [MIT-licensed protocol notes](https://github.com/xykal/sampdroid/blob/main/docs/protocol/raknet-samp.md).
-Only the *public wire format* is used; no third-party source is copied into
-this implementation.
+Формат query сверен с
+[обработчиком open.mp](https://github.com/openmultiplayer/open.mp/blob/master/Server/Components/LegacyNetwork/Query/query.cpp)
+и [MIT-licensed заметками о протоколе](https://github.com/xykal/sampdroid/blob/main/docs/protocol/raknet-samp.md).
+Из сторонних проектов использованы только факты о публичном формате пакета,
+не исходный код.

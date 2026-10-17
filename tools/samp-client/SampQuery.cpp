@@ -226,8 +226,8 @@ Status Probe::Poll(uint32_t nowMs)
 {
     if(status_ != WAITING) return status_;
 #ifndef REVC_SAMP_NO_SOCKET
-    // At most 16 datagrams per frame, so a hostile UDP sender cannot stall
-    // the render/game thread. Ignore unsolicited sources and malformed data.
+    // Bound work per poll so a hostile UDP sender cannot stall a caller's
+    // event loop. Ignore unsolicited sources and malformed data.
     for(int i = 0; i < 16; i++) {
         uint8_t bytes[2048];
         sockaddr_in from = {};

@@ -62,9 +62,9 @@ Some of them can be toggled at runtime, some cannot.
 * Can load DFFs and TXDs from other platforms, possibly with a performance penalty
 * ...
 
-## SA-MP 0.3.7 integration status
+## SA-MP 0.3.7 client project
 
-An optional [server-info UDP probe](SAMP_CLIENT.md) can query a configured SA-MP 0.3.7 server and log its name/player count. **It does not log into the server, send chat, or synchronize players.** The real multiplayer transport and game bridge are separate future milestones; the default game never contacts a server.
+The [standalone client groundwork](SAMP_CLIENT.md) lives in `tools/samp-client/`, separate from the reVC engine. Its `samp-probe` utility can query a server's public info, but **cannot log into the game, chat or synchronize players**. reVC itself does not contact SA-MP servers. Multiplayer transport and a minimal game adapter remain future work.
 
 ## Debug log
 

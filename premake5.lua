@@ -546,7 +546,6 @@ project "reVC"
 	filter "platforms:win*"
 		files { addSrcFiles("src/skel/win") }
 		includedirs { "src/skel/win" }
-		links { "ws2_32" } -- opt-in SA-MP UDP server-info query
 		buildoptions { "/Zc:sizedDealloc-" }
 		linkoptions "/SAFESEH:NO"
 		characterset ("MBCS")

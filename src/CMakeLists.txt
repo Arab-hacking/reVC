@@ -31,9 +31,6 @@ target_link_libraries(${EXECUTABLE} PRIVATE
     librw::librw
     Threads::Threads
 )
-if(WIN32)
-    target_link_libraries(${EXECUTABLE} PRIVATE ws2_32) # opt-in SA-MP UDP server-info query
-endif()
 
 if(ANDROID)
     target_link_libraries(${EXECUTABLE} PRIVATE
