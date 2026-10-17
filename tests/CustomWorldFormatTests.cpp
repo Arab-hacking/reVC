@@ -101,7 +101,7 @@ static void TestWorldText()
     assert(places[2].lod == -1);
     float axis[3], w;
     customworld::ViceAxis(places[1], axis, w);
-    assert(std::fabs(axis[2]+1.0f) < 0.001f && w < -0.7f);
+    assert(std::fabs(axis[2]-1.0f) < 0.001f && w < -0.7f);
     std::string longLine(512, 'A');
     longLine += "\ninst\n1 tree 0 0 0 0 0 0 0 1 -1\n";
     s = customworld::ParseIpl((const unsigned char *)longLine.data(), longLine.size(),

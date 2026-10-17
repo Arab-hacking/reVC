@@ -67,6 +67,14 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Cla
     set_target_properties(sa_static_dff_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
     add_test(NAME sa_static_dff_tests COMMAND sa_static_dff_tests)
 
+    # Compare the BR IDE/IPL reader and VC's librw axis/angle rotation against
+    # SA's conjugated quaternion matrix on real map lines (including w < 0).
+    add_executable(custom_world_rotation_tests CustomWorldRotationTests.cpp)
+    target_include_directories(custom_world_rotation_tests PRIVATE ../src/extras/custom)
+    target_link_libraries(custom_world_rotation_tests PRIVATE librw::librw)
+    set_target_properties(custom_world_rotation_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+    add_test(NAME custom_world_rotation_tests COMMAND custom_world_rotation_tests)
+
     add_executable(txd_store_capacity_tests
         TxdStoreCapacityTests.cpp ../src/rw/TxdStore.cpp)
     target_compile_definitions(txd_store_capacity_tests PRIVATE

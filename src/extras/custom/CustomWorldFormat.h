@@ -261,8 +261,10 @@ inline bool ParseInstance(const std::vector<std::string> &t, Instance &i)
            drawDistance < 100000.0f;
 }
 
-// CFileLoader::LoadObjectInstance rotates by -2*acos(w) around its VC axis.
-// A unit BR quaternion uses +2*acos(w) around xyz, so reverse the axis.
+// SA's IPL loader conjugates the quaternion for tilted objects and uses a
+// negative heading for upright ones. VC's LoadObjectInstance already rotates
+// by -2*acos(w): passing the ORIGINAL IPL axis gives that same orientation.
+// Negating xyz here would cancel VC's negative angle and turn the map backwards.
 inline void ViceAxis(const Instance &i, float axis[3], float &w)
 {
     w = i.quat[3];
@@ -270,7 +272,7 @@ inline void ViceAxis(const Instance &i, float axis[3], float &w)
     if(sinHalf < 1.0e-6f) {
         axis[0] = axis[1] = 0.0f; axis[2] = 1.0f;
     } else {
-        for(int k = 0; k < 3; k++) axis[k] = -i.quat[k] / sinHalf;
+        for(int k = 0; k < 3; k++) axis[k] = i.quat[k] / sinHalf;
     }
 }
 
