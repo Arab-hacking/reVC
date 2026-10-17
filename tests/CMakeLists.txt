@@ -41,6 +41,15 @@ target_include_directories(custom_world_format_tests PRIVATE
 set_target_properties(custom_world_format_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
 add_test(NAME custom_world_format_tests COMMAND custom_world_format_tests)
 
+# Opt-in SA-MP discovery groundwork; tests the wire parser and a loopback UDP
+# responder, not a RakNet login or in-game player synchronization.
+add_executable(samp_query_tests SampQueryTests.cpp ../src/extras/custom/SampQuery.cpp)
+set_target_properties(samp_query_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+if(WIN32)
+    target_link_libraries(samp_query_tests PRIVATE ws2_32)
+endif()
+add_test(NAME samp_query_tests COMMAND samp_query_tests)
+
 add_executable(expandable_pool_tests ExpandablePoolTests.cpp)
 set_target_properties(expandable_pool_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
 add_test(NAME expandable_pool_tests COMMAND expandable_pool_tests)

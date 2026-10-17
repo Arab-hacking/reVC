@@ -42,6 +42,7 @@
 #include "MemoryHeap.h"
 #include "FileMgr.h"
 #include "DebugLog.h"
+#include "SampQueryGame.h"
 #include "Camera.h"
 #include "MBlur.h"
 #include "ControllerConfig.h"
@@ -531,6 +532,15 @@ bool LoadINISettings()
 		return false;
 	}
 	REVC_LOG_INFO("Loaded settings from reVC.ini");
+
+	// Discovery only; this does not join the SA-MP game session. Never open a
+	// socket unless the player explicitly sets [SAMP] QueryIPv4 in reVC.ini.
+	char queryIPv4[64] = {};
+	uint32 queryPort = 7777;
+	if(ReadIniIfExists("SAMP", "QueryIPv4", queryIPv4, sizeof(queryIPv4))) {
+		ReadIniIfExists("SAMP", "QueryPort", &queryPort);
+		SampQueryGame::Configure(queryIPv4, queryPort);
+	}
 
 #ifdef IMPROVED_VIDEOMODE
 	ReadIniIfExists("VideoMode", "Width", &FrontEndMenuManager.m_nPrefsWidth);

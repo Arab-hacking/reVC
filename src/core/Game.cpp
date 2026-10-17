@@ -48,6 +48,7 @@
 #include "MemoryHeap.h"
 #include "Pad.h"
 #include "NoClip.h"
+#include "SampQueryGame.h"
 #include "Particle.h"
 #include "ParticleObject.h"
 #include "PedRoutes.h"
@@ -643,6 +644,7 @@ bool CGame::Initialise(const char* datFile)
 
 bool CGame::ShutDown(void)
 {
+	SampQueryGame::Shutdown();
 	CNoClip::Reset();
 	REVC_LOG_INFO("Shutting down current game");
 #ifdef USE_TEXTURE_POOL
@@ -909,6 +911,7 @@ void CGame::InitialiseWhenRestarting(void)
 void CGame::Process(void) 
 {
 	CPad::UpdatePads();
+	SampQueryGame::Process(CTimer::GetTimeInMilliseconds());
 #ifdef USE_CUSTOM_ALLOCATOR
 	ProcessTidyUpMemory();
 #endif

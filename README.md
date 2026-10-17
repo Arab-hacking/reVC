@@ -62,6 +62,10 @@ Some of them can be toggled at runtime, some cannot.
 * Can load DFFs and TXDs from other platforms, possibly with a performance penalty
 * ...
 
+## SA-MP 0.3.7 integration status
+
+An optional [server-info UDP probe](SAMP_CLIENT.md) can query a configured SA-MP 0.3.7 server and log its name/player count. **It does not log into the server, send chat, or synchronize players.** The real multiplayer transport and game bridge are separate future milestones; the default game never contacts a server.
+
 ## Debug log
 
 On startup reVC creates a fresh `debug.log` (the previous run is overwritten). On Windows and Linux it is written to the directory from which the game was launched (normally the GTA Vice City directory). On macOS it is in the user-files directory (normally `~/Library/Application Support/reVC/`); on Android it is in the selected `STORAGE_ROOT` directory. If no storage root is configured, it uses the launch directory. The file remains open when the game changes its working directory.
