@@ -10,8 +10,10 @@ Loose models/textures/animations also work. Filenames are case-insensitive:
     <block>.ifp / <block>.ani     animation dictionary
 
 For BR world geometry, place common.zip here with IDE/IPL files anywhere
-inside its directory tree (for example, data/maps/IDE/*.ide and
- data/maps/Level_Events/*.ipl). Loose *.ide and *.ipl files in custom/ or
+inside its directory tree (for example, maps/IDE/*.ide and
+maps/Level_Events/*.ipl). The supplied reVC.txt is actually a ZIP with
+maps/ at its root: rename it to common.zip without changing its contents.
+Loose *.ide and *.ipl files in custom/ or
 its subdirectories also work; a loose file overrides the matching relative
 path from common.zip. Put any number of ZIPs containing CED2 *.cls or VC/SA
 *.col containers here, including br_collision.zip. Collision is matched by
@@ -21,7 +23,7 @@ read from img/*.img. The stock VC map remains present. See CUSTOM_MODELS.md.
 
 If the map pack contains mutually exclusive IPLs (event/race/old foliage),
 create custom/active_ipl.txt: one FULL path inside common.zip per line, e.g.
-    data/maps/Level_Events/test.ipl
+    maps/Level_Events/BRmap_Event_9May.ipl
 Paths are case-insensitive; # and // comments are allowed. Only listed IPLs
 are loaded. Without this file all IPLs are loaded, but identical placements
 are deduplicated. IDEs are always indexed so reused IDs can be resolved by

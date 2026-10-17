@@ -446,10 +446,15 @@ python3 makezip.py /tmp/test_custom.zip /путь/glendale.mod
 ```
 <каталог игры>/img/objects.img       <каталог игры>/img/objects.dir
 <каталог игры>/img/area/extra.img    <каталог игры>/img/area/extra.dir
-<каталог игры>/custom/common.zip     data/maps/.../*.ide, data/maps/.../*.ipl
+<каталог игры>/custom/common.zip     maps/IDE/*.ide, maps/Level_*/*.ipl
 <каталог игры>/custom/pack1.zip      mesh/*.cls
 <каталог игры>/custom/pack2.zip      maps/*.col
 ```
+
+Полученный файл `reVC.txt` — ZIP с корнем `maps/`: чтобы игра увидела его IDE/IPL,
+переименуйте его в `common.zip` и положите в `<каталог игры>/custom/` **без**
+перепаковки или изменения вложенных путей. Другие `.zip` в этой папке могут
+содержать коллизии; `.txt` автоматически как архив не открывается.
 
 * При первом IPL после штатных IDE/CDIMAGE, **до** `CStreaming::Init`, автоматически
   находятся все IMG из `img/` (включая вложенные папки до 8 уровней). Требуется
