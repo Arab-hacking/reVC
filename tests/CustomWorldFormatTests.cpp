@@ -77,7 +77,13 @@ static void TestWorldText()
     assert(models[0].id == 42927 && models[0].name == "L1_r3_bld_tesltower" && models[0].distance == 70);
     assert(models[1].id == 42929 && models[1].flags == 8); // not octal
     assert(models[2].kind == customworld::Model::TIME_OBJECT && models[2].timeOn == 21 && models[2].timeOff == 6);
-    assert(models[3].kind == customworld::Model::ANIM_OBJECT && models[3].txd == "Rclub_SpotAnim");
+    assert(models[3].kind == customworld::Model::ANIM_OBJECT);
+    assert(models[3].txd == "AnimTest" && models[3].anim == "Rclub_SpotAnim");
+    const std::string badTxd =
+        "anim\n5, testing_model, AnArbitraryTxdLongerThanItsSlot, anim_block, 70, 0\nend\n";
+    s = customworld::ParseIde((const unsigned char *)badTxd.data(), badTxd.size(),
+        [](const customworld::Model &) { assert(false); });
+    assert(s.records == 0 && s.rejected == 1);
 
     const std::string ipl =
         "inst\n"
@@ -121,11 +127,16 @@ static void TestSubmittedWorldLines()
         "3115, svalka_beam03, atom889, 250, 68\n"
         "end\nanim\n"
         "10873, Rclub_Spot_osn, AnimTest, Rclub_SpotAnim, 300, 8\n"
+        "100165, SM_acc_PlayerBP, SM_acc_PlayerBPSM_acc_PlayerBP, acc_anim, 70, 0\n"
         "end\n";
     customworld::ModelIndex index;
     customworld::Stats s = customworld::ParseIde((const unsigned char *)ide.data(), ide.size(),
         [&index](const customworld::Model &m) { index.Add(m); });
-    assert(s.records == 9 && s.rejected == 0);
+    assert(s.records == 10 && s.rejected == 0);
+    assert(index.definitions.at("rclub_spot_osn").txd == "AnimTest");
+    assert(index.definitions.at("rclub_spot_osn").anim == "Rclub_SpotAnim");
+    assert(index.definitions.at("sm_acc_playerbp").txd == "SM_acc_PlayerBP");
+    assert(index.definitions.at("sm_acc_playerbp").anim == "acc_anim");
     assert(index.definitions.at("cj_firebin_(l0)").distance == 70.0f);
     assert(index.definitions.at("sm_nn_bt_bld_c").name == "SM_nn_bt_bld_c");
     assert(index.definitions.at("bar_gatebar01").distance == 84.0f);

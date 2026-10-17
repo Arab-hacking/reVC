@@ -181,12 +181,18 @@ inline bool ParseModel(const std::vector<std::string> &t, Model &m)
     m.anim.clear();
     m.timeOn = m.timeOff = -1;
     if(m.kind == Model::ANIM_OBJECT) {
-        // BR: id, model, animBlock, txd, drawdist, flags
-        // The anim block is not installed into VC's animation table here;
-        // one supplied export even duplicates its name to 30 characters.
-        // Only the model and TXD have fixed-size engine fields.
-        if(t.size() != 6 || !Name(t[2], 63) || !Name(t[3], 19)) return false;
-        m.anim = t[2]; m.txd = t[3];
+        // SA anim: id, model, TXD, animBlock, drawdist, flags. Confusing
+        // these two names assigned the animation dictionary as a TXD, leaving
+        // several placed objects with the wrong or missing textures.
+        if(t.size() != 6 || !Name(t[3], 63)) return false;
+        m.txd = ModelName(t[2]);
+        // One supplied IDE repeats its 15-byte model/TXD name twice in the
+        // TXD column. The engine slot name is limited to 19 bytes; repair
+        // this exact duplication, but never truncate an arbitrary name.
+        if(m.txd.size() > 19 && Lower(m.txd) == Lower(m.name + m.name))
+            m.txd = m.name;
+        if(!Name(m.txd, 19)) return false;
+        m.anim = t[3]; // VC has no compatible per-object SA animation here.
         if(!Float(t[4], m.distance) || !UInt(t[5], m.flags)) return false;
     } else {
         if(!Name(t[2], 19)) return false; // CTxdStore::TxdDef::name[20]
