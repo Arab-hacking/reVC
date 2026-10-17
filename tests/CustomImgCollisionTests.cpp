@@ -66,25 +66,32 @@ static void TestPairedImageTextures() {
     Entry(first, 3, "other.dff", 4, 1);
     Entry(first, 4, "empty.dff", 5, 0); // not a streamable model
     pairs.AddDirectory(1, first.data(), first.size());
-    assert(pairs.FindImage("tower") == 1 && pairs.FindImage("TOWER") == 1);
-    assert(pairs.FindImage("empty") == -1 && pairs.FindImage("split") == -1);
+    int dffImage = -1;
+    assert(pairs.FindTxdImage("tower", &dffImage) == 1 && dffImage == 1);
+    assert(pairs.FindTxdImage("TOWER") == 1); // case-insensitive names
+    assert(pairs.FindTxdImage("empty") == -1 && pairs.FindTxdImage("split") == -1);
 
     std::vector<uint8_t> second(3*32, 0);
     Entry(second, 0, "split.dff", 1, 1);
     Entry(second, 1, "other.txd", 2, 1);
     Entry(second, 2, "tower.DFF", 3, 1);
     pairs.AddDirectory(2, second.data(), second.size());
-    assert(pairs.FindImage("tower") == -1); // DFF winner in 2, TXD in 1
-    assert(pairs.FindImage("split") == -1 && pairs.FindImage("other") == -1);
+    assert(pairs.FindTxdImage("tower", &dffImage) == 1 && dffImage == 2);
+    assert(pairs.FindTxdImage("split", &dffImage) == 1 && dffImage == 2);
+    assert(pairs.FindTxdImage("other", &dffImage) == 2 && dffImage == 1);
     pairs.AddDirectory(0, first.data(), first.size()); // lower-priority duplicate
-    assert(pairs.FindImage("tower") == -1);
+    assert(pairs.FindTxdImage("tower", &dffImage) == 1 && dffImage == 2);
     std::vector<uint8_t> third(2*32, 0);
     Entry(third, 0, "tower.dff", 1, 1);
     Entry(third, 1, "TOWER.TXD", 2, 1);
     pairs.AddDirectory(3, third.data(), third.size());
-    assert(pairs.FindImage("tower") == 3);
+    assert(pairs.FindTxdImage("tower", &dffImage) == 3 && dffImage == 3);
+    std::vector<uint8_t> fourth(32, 0);
+    Entry(fourth, 0, "tower.txd", 1, 1);
+    pairs.AddDirectory(4, fourth.data(), fourth.size());
+    assert(pairs.FindTxdImage("tower", &dffImage) == 4 && dffImage == 3);
     pairs.Clear();
-    assert(pairs.FindImage("tower") == -1);
+    assert(pairs.FindTxdImage("tower") == -1);
 }
 
 // A minimal but valid VC COLL with one triangle; the native reader accesses

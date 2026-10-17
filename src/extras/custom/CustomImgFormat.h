@@ -73,9 +73,9 @@ inline void ForEachModelOrTxd(const uint8_t *dir, size_t length, Visit visit) {
 }
 
 // The native directory reader walks IMG indices from highest to lowest and
-// keeps the first occurrence of each filename. Follow the same precedence
-// independently for DFF and TXD: matching stems in *different* images are
-// not a reliable model/texture pair.
+// keeps the first occurrence of each filename. Follow that precedence
+// independently for DFF and TXD: matching stems may be in different IMGs,
+// but the TXD with the highest-priority registered name must win.
 class PairIndex {
     struct Sources {
         int dff, txd;
@@ -98,12 +98,16 @@ public:
             if(image > selected) selected = image;
         });
     }
-    int FindImage(const char *model) const {
+    // Return the winning TXD image and (optionally) the winning DFF image.
+    // Callers decide which images are eligible, e.g. only user-mounted IMGs.
+    int FindTxdImage(const char *model, int *dffImage = nullptr) const {
+        if(dffImage) *dffImage = -1;
         if(model == nullptr) return -1;
         std::map<std::string, Sources>::const_iterator it = sources.find(Key(model));
-        if(it == sources.end() || it->second.dff < 0 || it->second.dff != it->second.txd)
+        if(it == sources.end() || it->second.dff < 0 || it->second.txd < 0)
             return -1;
-        return it->second.dff;
+        if(dffImage) *dffImage = it->second.dff;
+        return it->second.txd;
     }
 };
 

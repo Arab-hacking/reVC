@@ -246,11 +246,10 @@ void CCustomWorld::LoadIde(void)
         it != ctx.definitions.end(); ++it) {
         const customworld::Model &m = it->second;
         std::string key = customworld::Lower(m.name);
-        // Some world packs ship model.dff + model.txd in the SAME IMG for
-        // every static, while the IDE's TXD column names another dictionary.
-        // Pick the paired name here, before creating a TXD slot or queuing
-        // either resource, rather than decoding the DFF against the IDE TXD.
-        // Unpaired models retain the original IDE association.
+        // Some world packs put model.dff and model.txd in different IMGs,
+        // while the IDE's TXD column names another dictionary. Pick the
+        // same-name TXD from any mounted user IMG before creating a TXD slot
+        // or queueing either resource. Otherwise keep the IDE association.
         bool hasPair = CCustomModels::PairedImageTxd(m.name.c_str()) >= 0;
         const char *txdName = hasPair ? m.name.c_str() : m.txd.c_str();
         std::map<std::string, int>::const_iterator existing = nameSlots.find(key);

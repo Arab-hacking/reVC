@@ -438,9 +438,9 @@ CStreaming::LoadCdDirectory(void)
 #ifdef CUSTOM_MODELS
 	// The IMG index is final now. Models installed from custom IDEs were
 	// paired before creating their TXD slots; also cover native VC building
-	// slots replaced by a DFF + same-name TXD from img/. Use only pairs that
-	// actually WON directory precedence in the same auto-mounted IMG. Leave
-	// ordinary VC multi-LOD and unpaired IDE assignments untouched.
+	// slots replaced by a DFF + same-name TXD from img/. The two winners
+	// can come from different auto-mounted IMGs; never pick a stock TXD just
+	// because its name collides. Leave unpaired IDE and VC multi-LOD alone.
 	int paired = 0, rebound = 0;
 	for(int model = 0; model < MODELINFOSIZE; model++){
 		CBaseModelInfo *mi = CModelInfo::GetModelInfo(model);
@@ -454,7 +454,8 @@ CStreaming::LoadCdDirectory(void)
 		int txd = CTxdStore::FindTxdSlot(mi->GetModelName());
 		if(txd < 0) continue;
 		CStreamingInfo &texture = ms_aInfoForModel[txd + STREAM_OFFSET_TXD];
-		if(!texture.GetCdSize() || _GET_INDEX(texture.m_position) != image)
+		if(!texture.GetCdSize() ||
+		   !CCustomModels::IsAutoMountedImage(_GET_INDEX(texture.m_position)))
 			continue;
 		paired++;
 		if(mi->GetTxdSlot() != txd){

@@ -677,8 +677,9 @@ CCustomModels::IsAutoMountedImage(int index)
 int
 CCustomModels::PairedImageTxd(const char *modelName)
 {
-	int image = imageModelTextures.FindImage(modelName);
-	return IsAutoMountedImage(image) ? image : -1;
+	int dffImage = -1;
+	int txdImage = imageModelTextures.FindTxdImage(modelName, &dffImage);
+	return IsAutoMountedImage(dffImage) && IsAutoMountedImage(txdImage) ? txdImage : -1;
 }
 
 void

@@ -13,14 +13,15 @@ must match IDE model names. Each IMG is a Vice City / GTA3 IMG v1 (raw
 2048-byte sectors, separate 32-byte-record .dir), NOT a San Andreas IMG v2
 with an embedded VER2 directory. The DFF entries themselves may be SA
 RenderWare static models; TXDs may contain PC-native D3D8 (VC) or D3D9 (SA)
-textures. For a model.dff + model.txd pair in the SAME auto-mounted IMG,
-the game picks model.txd even if the IDE's second column names a different
-TXD. No IDE edit or separate "slot" file is required. If no pair exists,
-the original IDE TXD name is used. Duplicate names follow IMG priority;
-matching names from different images do not count as a pair. Texture names
+textures. If model.dff is in one mounted img/ IMG and model.txd is in
+another, the game still finds and uses model.txd (also when they share an
+IMG), even if the IDE's second column names a different TXD. No IDE edit or
+separate "slot" file is required. If no same-name TXD exists in the mounted
+user IMGs, the original IDE TXD name is used. When several IMGs contain the
+same filename, the native IMG priority selects the winner. Texture names
 INSIDE the selected TXD must match DFF material names. The TXD is loaded
-before the DFF. Multi-part static clumps are
-flattened into one VC atomic with their child-frame transforms, materials
+before the DFF. Multi-part static clumps are flattened into one VC atomic
+with their child-frame transforms, materials
 and UVs preserved. Stock VC multi-LOD objects still use their original path.
 Skinned/oversized/invalid static clumps are rejected and logged in debug.log.
 Real archives still need to be checked in the running game.
