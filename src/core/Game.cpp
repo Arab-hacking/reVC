@@ -47,6 +47,7 @@
 #include "MemoryCard.h"
 #include "MemoryHeap.h"
 #include "Pad.h"
+#include "NoClip.h"
 #include "Particle.h"
 #include "ParticleObject.h"
 #include "PedRoutes.h"
@@ -642,6 +643,7 @@ bool CGame::Initialise(const char* datFile)
 
 bool CGame::ShutDown(void)
 {
+	CNoClip::Reset();
 	REVC_LOG_INFO("Shutting down current game");
 #ifdef USE_TEXTURE_POOL
 	_TexturePoolsUnknown(false);
@@ -708,6 +710,7 @@ bool CGame::ShutDown(void)
 
 void CGame::ReInitGameObjectVariables(void)
 {
+	CNoClip::Reset();
 	CGameLogic::InitAtStartOfGame();
 #ifdef PS2_MENU
 	if ( !TheMemoryCard.m_bWantToLoad )
@@ -798,6 +801,7 @@ void CGame::ReloadIPLs(void)
 
 void CGame::ShutDownForRestart(void)
 {
+	CNoClip::Reset();
 #ifdef USE_TEXTURE_POOL
 	_TexturePoolsUnknown(false);
 #endif
@@ -943,6 +947,7 @@ void CGame::Process(void)
 		CRecordDataForGame::SaveOrRetrieveDataForThisFrame();
 		CRecordDataForChase::SaveOrRetrieveDataForThisFrame();
 		CPad::DoCheats();
+		CNoClip::ProcessInput();
 		CClock::Update();
 		CWeather::Update();
 
@@ -1002,6 +1007,7 @@ void CGame::Process(void)
 		CSpecialFX::Update();
 		CRopes::Update();
 		CTimeCycle::Update();
+		CNoClip::Move();
 		if (CReplay::ShouldStandardCameraBeProcessed())
 			TheCamera.Process();
 		CCullZones::Update();

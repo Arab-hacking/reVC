@@ -3801,7 +3801,13 @@ CPed::SetCarJack_AllClear(CVehicle* car, uint32 doorNode, uint32 doorFlag)
 		else
 			m_pVehicleAnim = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, zDiff > 4.4f ? ANIM_STD_CAR_ALIGNHI_DOOR_RHS : ANIM_STD_CAR_ALIGN_DOOR_RHS, 4.0f);
 
-		m_pVehicleAnim->SetFinishCallback(PedAnimAlignCB, this);
+		if(m_pVehicleAnim)
+			m_pVehicleAnim->SetFinishCallback(PedAnimAlignCB, this);
+		else{
+			REVC_LOG_WARNING("Vehicle jack: missing align animation (ped=%d, vehicle=%d, door=%d)",
+				GetModelIndex(), car->GetModelIndex(), m_vehDoor);
+			QuitEnteringCar();
+		}
 	}
 }
 
@@ -3890,6 +3896,14 @@ CPed::BeingDraggedFromCar(void)
 		if (!dontRunAnim)
 			m_pVehicleAnim = CAnimManager::AddAnimation(GetClump(), assocGroup, enterAnim);
 
+		if(!m_pVehicleAnim){
+			REVC_LOG_WARNING("Vehicle drag: missing animation (ped=%d, vehicle=%d, door=%d)",
+				GetModelIndex(), m_pMyVehicle ? m_pMyVehicle->GetModelIndex() : -1, m_vehDoor);
+			// The callback below has an explicit no-animation path, including
+			// seat/door cleanup. A plain nil dereference stranded the occupant.
+			PedSetDraggedOutCarCB(nil, this);
+			return;
+		}
 		m_pVehicleAnim->SetFinishCallback(PedSetDraggedOutCarCB, this);
 
 		if (m_pMyVehicle && m_pMyVehicle->IsBike()) {
@@ -4459,6 +4473,7 @@ CPed::SetExitCar(CVehicle *veh, uint32 wantedDoorNode)
 		if (m_pVehicleAnim && m_pVehicleAnim->flags & ASSOC_PARTIAL)
 			m_pVehicleAnim->blendDelta = -1000.0f;
 		RemoveInCarAnims();
+		m_pVehicleAnim = nil; // never reuse a fading in-car association as an exit clip
 		SetMoveState(PEDMOVE_NONE);
 		CAnimManager::BlendAnimation(GetClump(), m_animGroup, ANIM_STD_IDLE, 100.0f);
 		veh->AutoPilot.m_nCruiseSpeed = 0;
@@ -4472,7 +4487,8 @@ CPed::SetExitCar(CVehicle *veh, uint32 wantedDoorNode)
 				} else if (m_vehDoor == CAR_DOOR_LF || m_vehDoor == CAR_DOOR_LR) {
 					m_pVehicleAnim = CAnimManager::AddAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_CRAWLOUT_LHS);
 				}
-				m_pVehicleAnim->SetFinishCallback(PedSetOutCarCB, this);
+				if(m_pVehicleAnim)
+					m_pVehicleAnim->SetFinishCallback(PedSetOutCarCB, this);
 
 			} else if (veh->IsBike()) {
 				CBike* bike = (CBike*)veh;
@@ -4510,12 +4526,14 @@ CPed::SetExitCar(CVehicle *veh, uint32 wantedDoorNode)
 
 				// Passenger get off
 				if (m_vehDoor == CAR_BUMP_REAR || m_vehDoor == CAR_BOOT) {
-					m_pVehicleAnim->SetFinishCallback(RestoreHeadingRateCB, this);
+					if(m_pVehicleAnim)
+						m_pVehicleAnim->SetFinishCallback(RestoreHeadingRateCB, this);
 					m_headingRate = 0.0f;
 
 				} else {
 					veh->m_nGettingOutFlags |= exitFlags;
-					m_pVehicleAnim->SetFinishCallback(PedAnimStepOutCarCB, this);
+					if(m_pVehicleAnim)
+						m_pVehicleAnim->SetFinishCallback(PedAnimStepOutCarCB, this);
 				}
 
 			} else {
@@ -4572,7 +4590,15 @@ CPed::SetExitCar(CVehicle *veh, uint32 wantedDoorNode)
 				if (!bBusJacked && !canJumpOut) {
 					veh->m_nGettingOutFlags |= GetCarDoorFlag(m_vehDoor);
 				}
-				m_pVehicleAnim->SetFinishCallback(canJumpOut ? RestoreHeadingRateCB : PedAnimStepOutCarCB, this);
+				if(m_pVehicleAnim)
+					m_pVehicleAnim->SetFinishCallback(canJumpOut ? RestoreHeadingRateCB : PedAnimStepOutCarCB, this);
+			}
+			if(!m_pVehicleAnim){
+				REVC_LOG_WARNING("Vehicle exit: missing animation (ped=%d, vehicle=%d, door=%d)",
+					GetModelIndex(), veh->GetModelIndex(), m_vehDoor);
+				if(veh->IsBike())
+					RestoreHeadingRate();
+				PedSetOutCarCB(nil, this); // already supports an absent association
 			}
 		}
 		bChangedSeat = false;
@@ -5308,6 +5334,14 @@ CPed::SetEnterTrain(CVehicle *train, uint32 unused)
 
 	SetPedState(PED_ENTER_TRAIN);
 	m_pVehicleAnim = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_TRAIN_GETIN, 4.0f);
+	if(!m_pVehicleAnim){
+		REVC_LOG_WARNING("Train entry: missing animation (ped=%d, train=%d)",
+			GetModelIndex(), train->GetModelIndex());
+		train->CleanUpOldReference((CEntity**)&m_pMyVehicle);
+		m_pMyVehicle = nil;
+		SetIdle();
+		return;
+	}
 	m_pVehicleAnim->SetFinishCallback(PedSetInTrainCB, this);
 	bUsesCollision = false;
 	LineUpPedWithTrain();
@@ -5382,6 +5416,12 @@ CPed::SetExitTrain(CVehicle* train)
 	*/
 	SetPedState(PED_EXIT_TRAIN);
 	m_pVehicleAnim = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_TRAIN_GETOUT, 4.0f);
+	if(!m_pVehicleAnim){
+		REVC_LOG_WARNING("Train exit: missing animation (ped=%d, train=%d)",
+			GetModelIndex(), train->GetModelIndex());
+		PedSetOutTrainCB(nil, this);
+		return;
+	}
 	m_pVehicleAnim->SetFinishCallback(PedSetOutTrainCB, this);
 	bUsesCollision = false;
 	LineUpPedWithTrain();
@@ -5409,6 +5449,8 @@ CPed::PedSetOutTrainCB(CAnimBlendAssociation *animAssoc, void *arg)
 	ped->SetPedState(PED_IDLE);
 	ped->RestorePreviousObjective();
 	ped->SetMoveState(PEDMOVE_STILL);
+	if(!veh)
+		return; // the train may have been removed while the exit clip was playing
 
 	CMatrix pedMat(ped->GetMatrix());
 	ped->m_fRotationCur = HALFPI + veh->GetForward().Heading();

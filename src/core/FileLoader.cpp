@@ -5,6 +5,7 @@
 #include "General.h"
 #include "Quaternion.h"
 #include "ModelInfo.h"
+#include "ModelLoadDispatch.h"
 #include "ModelIndices.h"
 #include "TempColModels.h"
 #include "VisibilityPlugins.h"
@@ -580,43 +581,44 @@ CFileLoader::LoadCollisionModel(uint8 *buf, CColModel &model, char *modelname)
 }
 
 static void
-GetNameAndLOD(char *nodename, char *name, int *n)
+GetNameAndLOD(const char *nodename, char *name, int *n)
 {
-	char *underscore = nil;
-	for(char *s = nodename; *s != '\0'; s++){
+	const char *underscore = nil;
+	for(const char *s = nodename; *s != '\0'; s++){
 		if(s[0] == '_' && (s[1] == 'l' || s[1] == 'L') && isdigit(s[2]))
 			underscore = s;
 	}
-	if(underscore){
-		strncpy(name, nodename, underscore - nodename);
-		name[underscore - nodename] = '\0';
-		*n = atoi(underscore + 2);
-	}else{
-		strncpy(name, nodename, 24);
-		*n = 0;
-	}
+	// Every caller supplies name[24]. Imported frame names may be longer.
+	size_t length = underscore ? (size_t)(underscore - nodename) : strlen(nodename);
+	length = Min(length, (size_t)23);
+	memcpy(name, nodename, length);
+	name[length] = '\0';
+	*n = underscore ? atoi(underscore + 2) : 0;
 }
 
 RpAtomic*
 CFileLoader::FindRelatedModelInfoCB(RpAtomic *atomic, void *data)
 {
-	CSimpleModelInfo *mi;
 	char *nodename, name[24];
 	int n;
 	RpClump *clump = (RpClump*)data;
 
 	nodename = GetFrameNodeName(RpAtomicGetFrame(atomic));
-	GetNameAndLOD(nodename, name, &n);
-	mi = (CSimpleModelInfo*)CModelInfo::GetModelInfo(name, nil);
-	if(mi){
-		assert(mi->IsSimple());
+	GetNameAndLOD(nodename ? nodename : "", name, &n);
+	CBaseModelInfo *info = CModelInfo::GetModelInfo(name, nil);
+	if(info && GetModelLoadKind(info->GetModelType()) == MODELLOAD_ATOMIC && n >= 0 && n < 3){
+		CSimpleModelInfo *mi = (CSimpleModelInfo*)info;
 		CVisibilityPlugins::SetAtomicRenderCallback(atomic, nil);
 		mi->SetAtomic(n, atomic);
 		RpClumpRemoveAtomic(clump, atomic);
 		RpAtomicSetFrame(atomic, RwFrameCreate());
 		CVisibilityPlugins::SetAtomicModelInfo(atomic, mi);
 	}else{
-		debug("Can't find Atomic %s\n", name);
+		if(info)
+			REVC_LOG_WARNING("Atomic %s: IDE model type %d or LOD %d is not a simple object; ignoring",
+				name, info->GetModelType(), n);
+		else
+			debug("Can't find Atomic %s\n", name);
 	}
 
 	return atomic;
@@ -631,6 +633,91 @@ InitClump(RpClump *clump)
 #else
 #define InitClump(clump)
 #endif
+
+struct LoadedClumpStructure {
+	int atomics;
+	bool invalidAtomic;
+	bool skinned;
+	int maxSkinBones;
+};
+
+static RpAtomic*
+InspectLoadedAtomic(RpAtomic *atomic, void *data)
+{
+	LoadedClumpStructure *structure = (LoadedClumpStructure*)data;
+	structure->atomics++;
+	RpGeometry *geometry = RpAtomicGetGeometry(atomic);
+	if(!geometry || !RpAtomicGetFrame(atomic)){
+		structure->invalidAtomic = true;
+		return atomic;
+	}
+	RpSkin *skin = RpSkinGeometryGetSkin(geometry);
+	if(skin){
+		structure->skinned = true;
+		structure->maxSkinBones = Max(structure->maxSkinBones, (int)RpSkinGetNumBones(skin));
+	}
+	return atomic;
+}
+
+// Validate before calling the model-specific SetClump: both ped animation
+// binding and vehicle hierarchy preprocessing assume a usable RW structure.
+// This runs for native as well as custom DFFs and leaves native VC frame peds
+// alone (an SA skin is NOT required for a VC ped).
+static bool
+InstallLoadedClump(RpClump *clump, CBaseModelInfo *info, const char *source)
+{
+	LoadedClumpStructure structure = { 0, false, false, 0 };
+	ModelLoadKind kind = info ? GetModelLoadKind(info->GetModelType()) : MODELLOAD_UNSUPPORTED;
+	bool hasRoot = clump && RpClumpGetFrame(clump);
+	if(clump)
+		RpClumpForAllAtomics(clump, InspectLoadedAtomic, &structure);
+	RpHAnimHierarchy *hier = hasRoot && structure.skinned ? GetAnimHierarchyFromClump(clump) : nil;
+	if(!IsModelClumpCompatible(kind, hasRoot, structure.atomics > 0,
+	                        structure.skinned, hier != nil) || structure.invalidAtomic ||
+	   (structure.skinned && (structure.maxSkinBones <= 0 ||
+	                          (hier && (hier->numNodes <= 0 || structure.maxSkinBones > hier->numNodes))))){
+		REVC_LOG_WARNING("DFF %s: model %s (type %d) has an incompatible clump (root=%d, atomics=%d, skin=%d, bones=%d, hierarchy=%d); refusing model",
+			source, info ? info->GetModelName() : "unknown", info ? info->GetModelType() : -1,
+			hasRoot, structure.atomics, structure.skinned, structure.maxSkinBones, hier ? hier->numNodes : 0);
+		if(clump)
+			RpClumpDestroy(clump);
+		return false;
+	}
+	((CClumpModelInfo*)info)->SetClump(clump);
+	return true;
+}
+
+struct LoadedClumpGeometry {
+	int atomics;
+	bool invalid;
+};
+
+static RpAtomic*
+InspectLoadedGeometry(RpAtomic *atomic, void *data)
+{
+	LoadedClumpGeometry *geometry = (LoadedClumpGeometry*)data;
+	geometry->atomics++;
+	if(!RpAtomicGetGeometry(atomic) || !RpAtomicGetFrame(atomic))
+		geometry->invalid = true;
+	return atomic;
+}
+
+static bool
+PrepareAndInstallClump(RpClump *clump, CBaseModelInfo *info, const char *source)
+{
+	LoadedClumpGeometry geometry = { 0, false };
+	if(clump)
+		RpClumpForAllAtomics(clump, InspectLoadedGeometry, &geometry);
+	if(!clump || !RpClumpGetFrame(clump) || !geometry.atomics || geometry.invalid){
+		REVC_LOG_WARNING("DFF %s: %s has no usable root/atomic geometry", source,
+			info ? info->GetModelName() : "unknown");
+		if(clump)
+			RpClumpDestroy(clump);
+		return false;
+	}
+	InitClump(clump);
+	return InstallLoadedClump(clump, info, source);
+}
 
 void
 CFileLoader::LoadModelFile(const char *filename)
@@ -658,7 +745,7 @@ CFileLoader::LoadClumpFile(const char *filename)
 	RpClump *clump;
 	char *nodename, name[24];
 	int n;
-	CClumpModelInfo *mi;
+	CBaseModelInfo *mi;
 
 #ifdef CUSTOM_MODELS
 	// the custom folder wins over the game's own files
@@ -671,11 +758,16 @@ CFileLoader::LoadClumpFile(const char *filename)
 	while(RwStreamFindChunk(stream, rwID_CLUMP, nil, nil)){
 		clump = RpClumpStreamRead(stream);
 		if(clump){
+			if(!RpClumpGetFrame(clump)){
+				REVC_LOG_WARNING("DFF %s: missing clump root frame", filename);
+				RpClumpDestroy(clump);
+				continue;
+			}
 			nodename = GetFrameNodeName(RpClumpGetFrame(clump));
-			GetNameAndLOD(nodename, name, &n);
-			mi = (CClumpModelInfo*)CModelInfo::GetModelInfo(name, nil);
+			GetNameAndLOD(nodename ? nodename : "", name, &n);
+			mi = CModelInfo::GetModelInfo(name, nil);
 #ifdef SA_VEHICLE_MODEL_NAME_FALLBACK
-			if(mi == nil){
+			if(mi == nil || !mi->IsClump()){
 				// SA models and mods converted from them often keep the node
 				// name of the car they were converted from, so the name in the
 				// DFF may have nothing to do with the model it is used as.
@@ -693,17 +785,21 @@ CFileLoader::LoadClumpFile(const char *filename)
 				if(p)
 					basename[p - basename] = '\0';
 				GetNameAndLOD(basename, name, &n);
-				mi = (CClumpModelInfo*)CModelInfo::GetModelInfo(name, nil);
-				if(mi)
-					debug("Model file %s: node name doesn't match, using file name\n", filename);
+			mi = CModelInfo::GetModelInfo(name, nil);
+			if(mi)
+				debug("Model file %s: node name doesn't match, using file name\n", filename);
 			}
 #endif
-			if(mi){
-				InitClump(clump);
-				assert(mi->IsClump());
-				mi->SetClump(clump);
-			}else
+			if(mi && (GetModelLoadKind(mi->GetModelType()) == MODELLOAD_CLUMP ||
+			          GetModelLoadKind(mi->GetModelType()) == MODELLOAD_PED ||
+			          GetModelLoadKind(mi->GetModelType()) == MODELLOAD_VEHICLE)){
+				PrepareAndInstallClump(clump, mi, filename);
+			}else{
+				if(mi)
+					REVC_LOG_WARNING("DFF %s: %s is IDE type %d, not a clump model",
+						filename, mi->GetModelName(), mi->GetModelType());
 				RpClumpDestroy(clump);
+			}
 		}
 	}
 	RwStreamClose(stream, nil);
@@ -712,23 +808,30 @@ CFileLoader::LoadClumpFile(const char *filename)
 bool
 CFileLoader::LoadClumpFile(RwStream *stream, uint32 id)
 {
-	RpClump *clump;
-	CClumpModelInfo *mi;
-
+	CBaseModelInfo *mi = CModelInfo::GetModelInfo(id);
+	if(!mi || (GetModelLoadKind(mi->GetModelType()) != MODELLOAD_PED &&
+	           GetModelLoadKind(mi->GetModelType()) != MODELLOAD_CLUMP)){
+		REVC_LOG_WARNING("DFF stream id %u: expected ped/clump model info, got type %d",
+			id, mi ? mi->GetModelType() : -1);
+		return false;
+	}
 	if(!RwStreamFindChunk(stream, rwID_CLUMP, nil, nil))
 		return false;
-	clump = RpClumpStreamRead(stream);
+	RpClump *clump = RpClumpStreamRead(stream);
 	if(clump == nil)
 		return false;
-	InitClump(clump);
-	mi = (CClumpModelInfo*)CModelInfo::GetModelInfo(id);
-	mi->SetClump(clump);
-	return true;
+	return PrepareAndInstallClump(clump, mi, "stream");
 }
 
 bool
 CFileLoader::StartLoadClumpFile(RwStream *stream, uint32 id)
 {
+	CBaseModelInfo *mi = CModelInfo::GetModelInfo(id);
+	if(!mi || GetModelLoadKind(mi->GetModelType()) != MODELLOAD_VEHICLE){
+		REVC_LOG_WARNING("DFF stream id %u: expected vehicle model info, got type %d",
+			id, mi ? mi->GetModelType() : -1);
+		return false;
+	}
 	uint32 size = 0;
 
 	if(RwStreamFindChunk(stream, rwID_CLUMP, &size, nil)){
@@ -752,16 +855,22 @@ CFileLoader::StartLoadClumpFile(RwStream *stream, uint32 id)
 bool
 CFileLoader::FinishLoadClumpFile(RwStream *stream, uint32 id)
 {
-	RpClump *clump;
-	CClumpModelInfo *mi;
-
-	printf("Finish loading %s\n", CModelInfo::GetModelInfo(id)->GetModelName());
-	clump = RpClumpGtaStreamRead2(stream);
+	CBaseModelInfo *mi = CModelInfo::GetModelInfo(id);
+	if(!mi || GetModelLoadKind(mi->GetModelType()) != MODELLOAD_VEHICLE){
+		REVC_LOG_WARNING("DFF stream id %u: vehicle load completed with wrong model info type %d",
+			id, mi ? mi->GetModelType() : -1);
+		return false;
+	}
+	printf("Finish loading %s\n", mi->GetModelName());
+	RpClump *clump = RpClumpGtaStreamRead2(stream);
 
 	if(clump){
-		InitClump(clump);
-		mi = (CClumpModelInfo*)CModelInfo::GetModelInfo(id);
-		mi->SetClump(clump);
+		if(!PrepareAndInstallClump(clump, mi, "vehicle stream")){
+#ifdef SA_VEHICLE_MODELS
+			saClumpBodyKnown = false;
+#endif
+			return false;
+		}
 #ifdef SA_VEHICLE_MODELS
 		if(saClumpBodyKnown && mi->GetModelType() == MITYPE_VEHICLE){
 			// SA keeps the collision of a vehicle inside the model, in the clump
@@ -821,6 +930,12 @@ CountSAStaticTextures(RpAtomic *atomic, void *data)
 bool
 CFileLoader::LoadAtomicFile(RwStream *stream, uint32 id)
 {
+	CBaseModelInfo *info = CModelInfo::GetModelInfo(id);
+	if(!info || GetModelLoadKind(info->GetModelType()) != MODELLOAD_ATOMIC){
+		REVC_LOG_WARNING("DFF stream id %u: expected simple model info, got type %d",
+			id, info ? info->GetModelType() : -1);
+		return false;
+	}
 	RpClump *clump;
 
 #if defined(CUSTOM_MODELS) && defined(LIBRW)
@@ -851,6 +966,13 @@ CFileLoader::LoadAtomicFile(RwStream *stream, uint32 id)
 		clump = RpClumpStreamRead(stream);
 		if(clump == nil)
 			return false;
+		LoadedClumpGeometry geometry = { 0, false };
+		RpClumpForAllAtomics(clump, InspectLoadedGeometry, &geometry);
+		if(!RpClumpGetFrame(clump) || !geometry.atomics || geometry.invalid){
+			REVC_LOG_WARNING("DFF stream id %u (%s): no usable static atomics", id, info->GetModelName());
+			RpClumpDestroy(clump);
+			return false;
+		}
 		InitClump(clump);
 #if defined(CUSTOM_MODELS) && defined(LIBRW)
 		if(saStatic){
@@ -872,11 +994,12 @@ CFileLoader::LoadAtomicFile(RwStream *stream, uint32 id)
 			return atomic != nil;
 		}
 #endif
-		gpRelatedModelInfo = (CSimpleModelInfo*)CModelInfo::GetModelInfo(id);
+		gpRelatedModelInfo = (CSimpleModelInfo*)info;
 		RpClumpForAllAtomics(clump, SetRelatedModelInfoCB, clump);
 		RpClumpDestroy(clump);
+		return gpRelatedModelInfo->GetRwObject() != nil;
 	}
-	return true;
+	return false;
 }
 
 RpAtomic*
@@ -887,7 +1010,12 @@ CFileLoader::SetRelatedModelInfoCB(RpAtomic *atomic, void *data)
 	RpClump *clump = (RpClump*)data;
 
 	nodename = GetFrameNodeName(RpAtomicGetFrame(atomic));
-	GetNameAndLOD(nodename, name, &n);
+	GetNameAndLOD(nodename ? nodename : "", name, &n);
+	if(n < 0 || n >= 3){
+		REVC_LOG_WARNING("DFF %s: invalid static atomic LOD index %d (%s)",
+			gpRelatedModelInfo->GetModelName(), n, name);
+		return atomic;
+	}
 	CVisibilityPlugins::SetAtomicRenderCallback(atomic, nil);
 	gpRelatedModelInfo->SetAtomic(n, atomic);
 	RpClumpRemoveAtomic(clump, atomic);

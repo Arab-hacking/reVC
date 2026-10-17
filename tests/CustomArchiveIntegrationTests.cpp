@@ -5,6 +5,7 @@
 #include "CustomModels.h"
 #include "CustomColFormat.h"
 #include "CustomImgFormat.h"
+#include "ModelLoadDispatch.h"
 #include "CdStream.h"
 #include "TxdStore.h"
 
@@ -135,6 +136,22 @@ static void Ced2(const char *name, const unsigned char *data, size_t size, void 
 }
 
 int main() {
+    // A DFF's filename does not determine which model-specific loader runs.
+    assert(GetModelLoadKind(MITYPE_SIMPLE) == MODELLOAD_ATOMIC);
+    assert(GetModelLoadKind(MITYPE_TIME) == MODELLOAD_ATOMIC);
+    assert(GetModelLoadKind(MITYPE_WEAPON) == MODELLOAD_ATOMIC);
+    assert(GetModelLoadKind(MITYPE_CLUMP) == MODELLOAD_CLUMP);
+    assert(GetModelLoadKind(MITYPE_VEHICLE) == MODELLOAD_VEHICLE);
+    assert(GetModelLoadKind(MITYPE_PED) == MODELLOAD_PED);
+    assert(GetModelLoadKind(MITYPE_MLO) == MODELLOAD_UNSUPPORTED);
+    assert(GetModelLoadKind(MITYPE_XTRACOMPS) == MODELLOAD_UNSUPPORTED);
+    assert(!IsModelClumpCompatible(MODELLOAD_PED, true, true, false, false)); // no skin: hit/animation code unsafe
+    assert(IsModelClumpCompatible(MODELLOAD_PED, true, true, true, true)); // VC or SA skin
+    assert(!IsModelClumpCompatible(MODELLOAD_PED, true, true, true, false));
+    assert(IsModelClumpCompatible(MODELLOAD_VEHICLE, true, true, false, false));
+    assert(!IsModelClumpCompatible(MODELLOAD_VEHICLE, false, true, false, false));
+    assert(!IsModelClumpCompatible(MODELLOAD_CLUMP, true, false, false, false));
+    assert(!IsModelClumpCompatible(MODELLOAD_ATOMIC, true, true, false, false));
     char temp[] = "revc-custom-layout-XXXXXX";
     char *dir = mkdtemp(temp);
     assert(dir && chdir(dir) == 0);

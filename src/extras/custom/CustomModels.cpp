@@ -37,6 +37,7 @@
 #include "FileLoader.h"
 #include "FileMgr.h"
 #include "ModelInfo.h"
+#include "ModelLoadDispatch.h"
 #include "Streaming.h"
 #include "TxdStore.h"
 #include "ColStore.h"
@@ -106,6 +107,9 @@ static std::string customFolderPath;	// remembered for data files and loose skin
 static bool customInitialised = false;
 static bool customActive = false;
 static int32 nativeModelOverride = -1;
+// Once RenderWare rejects an archive model, try the native stream on subsequent
+// requests instead of repeatedly feeding the same invalid clump to the loader.
+static std::set<std::string> rejectedArchiveModels;
 static bool customImagesScanned = false;
 static std::set<int> customImageSlots; // IMG indices (the stream position's high byte)
 static customimg::PairIndex imageModelTextures; // directory names only; no decoded resources
@@ -1118,16 +1122,25 @@ static bool
 RunModelLoaders(void *p)
 {
 	GuardedLoadCtx *c = (GuardedLoadCtx*)p;
-	if(c->mi->IsSimple()){
+	switch(GetModelLoadKind(c->mi->GetModelType())){
+	case MODELLOAD_ATOMIC:
 		c->ok = CFileLoader::LoadAtomicFile(c->stream, c->modelId);
-	}else if(c->mi->GetModelType() == MITYPE_VEHICLE){
-		// vehicles are read in two parts everywhere in the game; both parts are
-		// available here, so both run right away
-		c->mi->AddRef();
+		break;
+	case MODELLOAD_VEHICLE:
+		// Unlike streaming, both halves are read in this one call; no extra
+		// model reference needs to be held across frames.
 		c->ok = CFileLoader::StartLoadClumpFile(c->stream, c->modelId) &&
 		        CFileLoader::FinishLoadClumpFile(c->stream, c->modelId);
-	}else{
+		break;
+	case MODELLOAD_PED:
+	case MODELLOAD_CLUMP:
 		c->ok = CFileLoader::LoadClumpFile(c->stream, c->modelId);
+		break;
+	default:
+		CUSTOM_LOG("model %d: unsupported IDE model info type %d; refusing DFF\n",
+			c->modelId, c->mi->GetModelType());
+		c->ok = false;
+		break;
 	}
 	return c->ok;
 }
@@ -1941,6 +1954,7 @@ CCustomModels::Shutdown(void)
 	customSkinNames.clear();
 	customFolderPath.clear();
 	customModPlans.clear();
+	rejectedArchiveModels.clear();
 	customTxdPlans.clear();
 	customTxdCandidates.clear();
 	customInitialised = false;
@@ -2138,7 +2152,8 @@ CheckStreamPreparation(int32 streamId, bool priority)
 		           mi->GetModelType() != MITYPE_VEHICLE && mi->GetModelType() != MITYPE_PED))
 			return true;
 		std::string key = ToLower(mi->GetModelName());
-		if(customMods.find(key) == customMods.end() && customDff.find(key) == customDff.end())
+		if(rejectedArchiveModels.find(key) != rejectedArchiveModels.end() ||
+		   (customMods.find(key) == customMods.end() && customDff.find(key) == customDff.end()))
 			return true;
 		std::map<std::string, ModPlan>::const_iterator plan = customModPlans.find(key);
 		if(plan != customModPlans.end() && plan->second.computed && !plan->second.usable)
@@ -2343,7 +2358,8 @@ CCustomModels::CanServe(int32 streamId)
 		   mi->GetModelType() != MITYPE_VEHICLE && mi->GetModelType() != MITYPE_PED)
 			return false;
 		std::string key = ToLower(mi->GetModelName());
-		if(customMods.find(key) == customMods.end() && customDff.find(key) == customDff.end())
+		if(rejectedArchiveModels.find(key) != rejectedArchiveModels.end() ||
+		   (customMods.find(key) == customMods.end() && customDff.find(key) == customDff.end()))
 			return false;
 #ifdef USE_CUSTOM_ALLOCATOR
 		return CanUseModel(key); // no worker: retain the original validated lookup
@@ -2396,7 +2412,12 @@ CCustomModels::Load(int32 streamId)
 
 	if(streamId < STREAM_OFFSET_TXD){
 		CBaseModelInfo *mi = CModelInfo::GetModelInfo(streamId);
-		return LoadModelIntoGame(ToLower(mi->GetModelName()), streamId);
+		std::string key = ToLower(mi->GetModelName());
+		if(LoadModelIntoGame(key, streamId))
+			return true;
+		rejectedArchiveModels.insert(key);
+		CUSTOM_LOG("model %s: rejecting archive override for this session; trying native stream\n", key.c_str());
+		return false;
 	}
 
 	if(streamId >= STREAM_OFFSET_TXD && streamId < STREAM_OFFSET_COL){

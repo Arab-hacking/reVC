@@ -7,6 +7,7 @@
 #include "Clock.h"
 #include "Renderer.h"
 #include "ModelInfo.h"
+#include "ModelLoadDispatch.h"
 #include "TxdStore.h"
 #include "ModelIndices.h"
 #include "Pools.h"
@@ -704,21 +705,34 @@ CStreaming::ConvertBufferToObject(int8 *buf, int32 streamId)
 
 		PUSH_MEMID(MEMID_STREAM_MODELS);
 		CTxdStore::SetCurrentTxd(mi->GetTxdSlot());
-		if(mi->IsSimple()){
+		// The IDE determines the model info type. Never treat an arbitrary DFF
+		// as a ped or vehicle merely because of its filename/root-node name.
+		switch(GetModelLoadKind(mi->GetModelType())){
+		case MODELLOAD_ATOMIC:
 			success = CFileLoader::LoadAtomicFile(stream, streamId);
-			// TODO(MIAMI)? complain if file is not pre-instanced. we hardly are interested in that
-		} else if (mi->GetModelType() == MITYPE_VEHICLE) {
-			// load vehicles in two parts
-			CModelInfo::GetModelInfo(streamId)->AddRef();
+			break;
+		case MODELLOAD_VEHICLE:
+			// Vehicles must be read in two stages.
+			mi->AddRef();
 			success = CFileLoader::StartLoadClumpFile(stream, streamId);
 			if(success)
 				ms_aInfoForModel[streamId].m_loadState = STREAMSTATE_STARTED;
-		}else{
+			else
+				mi->RemoveRef();
+			break;
+		case MODELLOAD_PED:
+		case MODELLOAD_CLUMP:
 			success = CFileLoader::LoadClumpFile(stream, streamId);
 #ifdef USE_CUSTOM_ALLOCATOR
 			if(success)
 				RpClumpForAllAtomics((RpClump*)mi->GetRwObject(), RegisterAtomicMemPtrsCB, nil);
 #endif
+			break;
+		default:
+			REVC_LOG_WARNING("Streaming: unsupported model info type %d for %s (id %d)",
+				mi->GetModelType(), mi->GetModelName(), streamId);
+			success = false;
+			break;
 		}
 		POP_MEMID();
 		UpdateMemoryUsed();

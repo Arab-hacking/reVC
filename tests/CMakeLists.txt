@@ -14,6 +14,10 @@ enable_testing()
 add_test(NAME debug_log_tests COMMAND debug_log_tests)
 add_test(NAME custom_ifp_tests COMMAND custom_ifp_tests)
 
+add_executable(noclip_movement_tests NoClipMovementTests.cpp)
+set_target_properties(noclip_movement_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+add_test(NAME noclip_movement_tests COMMAND noclip_movement_tests)
+
 add_executable(custom_asset_cache_tests
     CustomAssetCacheTests.cpp ../src/extras/custom/br/third_party/astc_decomp.cpp)
 target_include_directories(custom_asset_cache_tests PRIVATE ../src/extras/custom ../src/extras/custom/br)

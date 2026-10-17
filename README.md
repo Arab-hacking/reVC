@@ -42,6 +42,7 @@ Some of them can be toggled at runtime, some cannot.
 * Settings stored in reVC.ini file instead of gta_vc.set
 * Debug menu to do and change various things (Ctrl-M to open)
 * Debug camera (Ctrl-B to toggle)
+* F10 noclip for the player or the vehicle they are driving: W/A/S/D to move relative to the camera, Space or E to rise, Ctrl or Q to descend, Shift to move faster. Press F10 again to restore collision and gravity; turn it off outside solid geometry. The game disables ordinary actions while flying but keeps mouse look.
 * Rotatable camera
 * XInput controller support (Windows)
 * No loading screens between islands ("map memory usage" in menu)
