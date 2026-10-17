@@ -40,6 +40,10 @@ public:
 	static void ResetImageMounts(void);
 	static void MountImages(void);
 	static bool IsAutoMountedImage(int index);
+	// Return the IMG index only when a model.dff AND model.txd with the same
+	// stem both win native DIR precedence from that one auto-mounted IMG.
+	// -1 means use the ordinary IDE TXD; no image data is decoded here.
+	static int PairedImageTxd(const char *modelName);
 	// Transfer a streamed custom TXD into a bounded GPU-resident LRU on
 	// eviction. Returns false when Streaming must destroy the TXD normally.
 	static bool RetainTxdOnUnload(int32 slot);

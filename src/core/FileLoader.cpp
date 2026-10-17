@@ -835,12 +835,12 @@ CFileLoader::LoadAtomicFile(RwStream *stream, uint32 id)
 		saStatic = CCustomModels::IsAutoMountedImage(
 			_GET_INDEX(CStreaming::ms_aInfoForModel[id].m_position));
 	if(saStatic){
-		// The streamer normally does this already. Also enforce it when a
-		// custom-folder DFF is loaded through the same FileLoader directly:
+		// The streamer normally does this already. The model's own TXD is
+		// selected for matched IMG pairs; otherwise the IDE assignment stays.
 		// RpClumpStreamRead resolves material names at read time, not later.
 		TxdDef *txd = CTxdStore::GetSlot(mi->GetTxdSlot());
 		if(txd == nil || txd->texDict == nil){
-			REVC_LOG_ERROR("SA static %s: IDE TXD %d has not loaded",
+			REVC_LOG_ERROR("SA static %s: selected TXD slot %d has not loaded",
 				mi->GetModelName(), mi->GetTxdSlot());
 			return false;
 		}
@@ -857,7 +857,7 @@ CFileLoader::LoadAtomicFile(RwStream *stream, uint32 id)
 			SAStaticTextureStats texStats = { 0, 0 };
 			RpClumpForAllAtomics(clump, CountSAStaticTextures, &texStats);
 			if(texStats.uvMaterials && !texStats.resolved)
-				REVC_LOG_WARNING("SA static %s: no material textures resolved from IDE TXD %s; check the names in DFF/TXD",
+				REVC_LOG_WARNING("SA static %s: no material textures resolved from TXD %s; check the names in DFF/TXD",
 					mi->GetModelName(), CTxdStore::GetTxdName(mi->GetTxdSlot()));
 			const char *error = nil;
 			RpAtomic *atomic = SAStaticModel::TakeAtomic(clump, &error);

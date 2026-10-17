@@ -108,6 +108,7 @@ static bool customActive = false;
 static int32 nativeModelOverride = -1;
 static bool customImagesScanned = false;
 static std::set<int> customImageSlots; // IMG indices (the stream position's high byte)
+static customimg::PairIndex imageModelTextures; // directory names only; no decoded resources
 
 static bool ReadSource(const CustomSource &src, std::vector<uint8> &out);
 static void IndexBrCollisionBlocks(void);
@@ -646,6 +647,7 @@ ReserveNativeTxdSlots(void)
 		CustomSource dirFile = MakeSource(-1, -1, 0, dirName.c_str(), dirName.c_str());
 		std::vector<uint8> directory;
 		if(!ReadSource(dirFile, directory)) continue;
+		imageModelTextures.AddDirectory(n, directory.data(), directory.size());
 		customimg::ForEachNativeTxd(directory.data(), directory.size(),
 			[&](const std::string &name) {
 				if(CTxdStore::FindTxdSlot(name.c_str()) != -1) return;
@@ -663,12 +665,20 @@ CCustomModels::ResetImageMounts(void)
 {
 	customImagesScanned = false;
 	customImageSlots.clear();
+	imageModelTextures.Clear();
 }
 
 bool
 CCustomModels::IsAutoMountedImage(int index)
 {
 	return customImageSlots.find(index) != customImageSlots.end();
+}
+
+int
+CCustomModels::PairedImageTxd(const char *modelName)
+{
+	int image = imageModelTextures.FindImage(modelName);
+	return IsAutoMountedImage(image) ? image : -1;
 }
 
 void
@@ -721,6 +731,7 @@ CCustomModels::MountImages(void)
 			slot = CdStreamGetNumImages()-1;
 		}
 		customImageSlots.insert(slot);
+		imageModelTextures.AddDirectory(slot, directory.data(), directory.size());
 		mounted++;
 		CUSTOM_LOG("img %s: IMG %d, %u DFF, %u TXD, %u other DIR entries ignored\n",
 			pair.img.c_str(), slot, (unsigned)stats.dff, (unsigned)stats.txd, (unsigned)stats.ignored);

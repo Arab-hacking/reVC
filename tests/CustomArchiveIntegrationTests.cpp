@@ -139,13 +139,15 @@ int main() {
     char *dir = mkdtemp(temp);
     assert(dir && chdir(dir) == 0);
     assert(mkdir("img", 0700) == 0 && mkdir("custom", 0700) == 0);
-    std::vector<uint8> img(4*2048, 0), directory(3*32, 0);
+    std::vector<uint8> img(5*2048, 0), directory(4*32, 0);
     W32(directory, 0, 1); W32(directory, 4, 2);
     std::memcpy(directory.data()+8, "house1.dff", 11);
     W32(directory, 32, 3); W32(directory, 36, 1);
     std::memcpy(directory.data()+40, "R3.txd", 7);
-    W32(directory, 64, 99); W32(directory, 68, 9000);
-    std::memcpy(directory.data()+72, "world.col", 10); // must be ignored
+    W32(directory, 64, 4); W32(directory, 68, 1);
+    std::memcpy(directory.data()+72, "HOUSE1.TXD", 11); // matches DFF, NOT the IDE's r3
+    W32(directory, 96, 99); W32(directory, 100, 9000);
+    std::memcpy(directory.data()+104, "world.col", 10); // must be ignored
     Write("img/map.img", img); Write("img/map.dir", directory);
     assert(mkdir("img/area", 0700) == 0);
     Write("img/area/extra.img", img); Write("img/area/extra.dir", directory);
@@ -153,9 +155,13 @@ int main() {
     img.assign(4*2048, 0); std::memcpy(img.data(), "VER2", 4);
     Write("img/v2.img", img); Write("img/v2.dir", directory);
     assert(mkdir("models", 0700) == 0);
-    std::vector<uint8> nativeDir(2*32, 0);
+    std::vector<uint8> nativeDir(3*32, 0);
+    W32(nativeDir, 0, 1); W32(nativeDir, 4, 1);
     std::memcpy(nativeDir.data()+8, "R3.TXD", 7); // shared with auto IMG
+    W32(nativeDir, 32, 2); W32(nativeDir, 36, 1);
     std::memcpy(nativeDir.data()+40, "baseonly.TXD", 13);
+    W32(nativeDir, 64, 3); W32(nativeDir, 68, 1);
+    std::memcpy(nativeDir.data()+72, "baseonly.DFF", 13);
     Write("models/gta3.DIR", nativeDir);
     images.push_back("models/gta3.img");
     CTxdStore::Initialise();
@@ -166,6 +172,9 @@ int main() {
            CCustomModels::IsAutoMountedImage(2));
     assert(images[1].find("area/extra.img") != std::string::npos); // sorted
     assert(!CCustomModels::IsAutoMountedImage(0));
+    assert(CCustomModels::PairedImageTxd("HoUsE1") == 2); // higher IMG wins
+    assert(CCustomModels::PairedImageTxd("R3") == -1); // no matching DFF
+    assert(CCustomModels::PairedImageTxd("baseonly") == -1); // paired, but stock IMG
     CCustomModels::MountImages(); assert(images.size() == 3); // idempotent
 
     Zip("custom/common.zip", {
@@ -195,6 +204,8 @@ int main() {
     CCustomModels::ForEachBrCollision(Ced2, &cls);
     CCustomModels::ForEachGameCollision(Collision, &col);
     assert(ide.size() == 1 && ide.count("data/maps/ide/test.ide"));
+    assert(ide["data/maps/ide/test.ide"].find("house1 r3") != std::string::npos);
+    assert(CCustomModels::PairedImageTxd("house1") == 2); // prefer house1.txd, not IDE r3
     assert(ipl.size() == 1 && ipl.count("data/maps/level_events/test.ipl"));
     assert(cls.size() == 2 && cls["house1"] == "house1" && cls["house2"] == "house2");
     assert(col.size() == 6 && col["house1"] == "house1" &&
@@ -216,6 +227,7 @@ int main() {
     assert(radius == 2); // SA COL3 became a VC COLL payload
     assert(!CCustomModels::GetCollisionBlock("badOffset", selected));
     CCustomModels::Shutdown();
+    assert(CCustomModels::PairedImageTxd("house1") == -1); // no stale IMG map after restart
     CTxdStore::Shutdown();
     assert(chdir("..") == 0);
     std::string root(dir);
@@ -229,5 +241,5 @@ int main() {
     assert(rmdir((root+"/models").c_str()) == 0);
     assert(rmdir((root+"/custom").c_str()) == 0);
     assert(rmdir(root.c_str()) == 0);
-    std::puts("real custom IMG/ZIP scanner: nested IDE/IPL and colliding CLS/COL names passed");
+    std::puts("real custom IMG/ZIP scanner: paired DFF/TXD, nested IDE/IPL and CLS/COL passed");
 }

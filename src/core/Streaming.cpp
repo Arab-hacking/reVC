@@ -435,6 +435,37 @@ CStreaming::LoadCdDirectory(void)
 		LoadCdDirectory(dirname, i);
 	}
 
+#ifdef CUSTOM_MODELS
+	// The IMG index is final now. Models installed from custom IDEs were
+	// paired before creating their TXD slots; also cover native VC building
+	// slots replaced by a DFF + same-name TXD from img/. Use only pairs that
+	// actually WON directory precedence in the same auto-mounted IMG. Leave
+	// ordinary VC multi-LOD and unpaired IDE assignments untouched.
+	int paired = 0, rebound = 0;
+	for(int model = 0; model < MODELINFOSIZE; model++){
+		CBaseModelInfo *mi = CModelInfo::GetModelInfo(model);
+		if(!mi || !mi->IsBuilding()) continue;
+		CSimpleModelInfo *simple = (CSimpleModelInfo*)mi;
+		if(simple->m_numAtomics != 1 || simple->m_firstDamaged != 0) continue;
+		CStreamingInfo &dff = ms_aInfoForModel[model];
+		if(!dff.GetCdSize()) continue;
+		int image = _GET_INDEX(dff.m_position);
+		if(!CCustomModels::IsAutoMountedImage(image)) continue;
+		int txd = CTxdStore::FindTxdSlot(mi->GetModelName());
+		if(txd < 0) continue;
+		CStreamingInfo &texture = ms_aInfoForModel[txd + STREAM_OFFSET_TXD];
+		if(!texture.GetCdSize() || _GET_INDEX(texture.m_position) != image)
+			continue;
+		paired++;
+		if(mi->GetTxdSlot() != txd){
+			if(mi->GetRwObject() || mi->GetNumRefs()) continue;
+			mi->SetTexDictionary(mi->GetModelName());
+			rebound++;
+		}
+	}
+	REVC_LOG_INFO("img/: %d static DFF/TXD same-name pairs confirmed, %d model TXD associations updated", paired, rebound);
+#endif
+
 	ms_lastImageRead = 0;
 	ms_imageSize /= CDSTREAM_SECTOR_SIZE;
 }

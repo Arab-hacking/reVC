@@ -57,6 +57,36 @@ static void TestImgDir() {
            names[1] == "0123456789012345678");
 }
 
+static void TestPairedImageTextures() {
+    customimg::PairIndex pairs;
+    std::vector<uint8_t> first(5*32, 0);
+    Entry(first, 0, "Tower.DFF", 1, 1);
+    Entry(first, 1, "TOWER.txd", 2, 1);
+    Entry(first, 2, "split.txd", 3, 1);
+    Entry(first, 3, "other.dff", 4, 1);
+    Entry(first, 4, "empty.dff", 5, 0); // not a streamable model
+    pairs.AddDirectory(1, first.data(), first.size());
+    assert(pairs.FindImage("tower") == 1 && pairs.FindImage("TOWER") == 1);
+    assert(pairs.FindImage("empty") == -1 && pairs.FindImage("split") == -1);
+
+    std::vector<uint8_t> second(3*32, 0);
+    Entry(second, 0, "split.dff", 1, 1);
+    Entry(second, 1, "other.txd", 2, 1);
+    Entry(second, 2, "tower.DFF", 3, 1);
+    pairs.AddDirectory(2, second.data(), second.size());
+    assert(pairs.FindImage("tower") == -1); // DFF winner in 2, TXD in 1
+    assert(pairs.FindImage("split") == -1 && pairs.FindImage("other") == -1);
+    pairs.AddDirectory(0, first.data(), first.size()); // lower-priority duplicate
+    assert(pairs.FindImage("tower") == -1);
+    std::vector<uint8_t> third(2*32, 0);
+    Entry(third, 0, "tower.dff", 1, 1);
+    Entry(third, 1, "TOWER.TXD", 2, 1);
+    pairs.AddDirectory(3, third.data(), third.size());
+    assert(pairs.FindImage("tower") == 3);
+    pairs.Clear();
+    assert(pairs.FindImage("tower") == -1);
+}
+
 // A minimal but valid VC COLL with one triangle; the native reader accesses
 // these counts, vertices, face indices and bounds without a length argument.
 static std::vector<uint8_t> Triangle(const char *name) {
@@ -111,6 +141,7 @@ static void TestCol() {
 
 int main() {
     TestImgDir();
+    TestPairedImageTextures();
     TestCol();
     std::puts("IMG v1 directory and ZIP collision format tests passed");
 }

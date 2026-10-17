@@ -241,11 +241,18 @@ void CCustomWorld::LoadIde(void)
     IdeContext ctx;
     CCustomModels::ForEachWorldFile(true, ReadIde, &ctx);
     int next = FIRST_BR_SLOT;
-    unsigned installed = 0, full = 0, merged = 0;
+    unsigned installed = 0, full = 0, merged = 0, paired = 0;
     for(std::map<int, customworld::Model>::const_iterator it = ctx.definitions.begin();
         it != ctx.definitions.end(); ++it) {
         const customworld::Model &m = it->second;
         std::string key = customworld::Lower(m.name);
+        // Some world packs ship model.dff + model.txd in the SAME IMG for
+        // every static, while the IDE's TXD column names another dictionary.
+        // Pick the paired name here, before creating a TXD slot or queuing
+        // either resource, rather than decoding the DFF against the IDE TXD.
+        // Unpaired models retain the original IDE association.
+        bool hasPair = CCustomModels::PairedImageTxd(m.name.c_str()) >= 0;
+        const char *txdName = hasPair ? m.name.c_str() : m.txd.c_str();
         std::map<std::string, int>::const_iterator existing = nameSlots.find(key);
         if(existing != nameSlots.end()) {
             modelSlots[m.id] = existing->second;
@@ -255,7 +262,7 @@ void CCustomWorld::LoadIde(void)
         while(next < MODELINFOSIZE && CModelInfo::GetModelInfo(next) != nil) next++;
         if(next == MODELINFOSIZE ||
            !(m.kind == customworld::Model::TIME_OBJECT ? CModelInfo::CanAddTimeModel() : CModelInfo::CanAddSimpleModel()) ||
-           (CTxdStore::FindTxdSlot(m.txd.c_str()) == -1 && !CTxdStore::HasFreeCustomSlot())) {
+           (CTxdStore::FindTxdSlot(txdName) == -1 && !CTxdStore::HasFreeCustomSlot())) {
             full++;
             continue;
         }
@@ -268,7 +275,8 @@ void CCustomWorld::LoadIde(void)
             mi = CModelInfo::AddSimpleModel(next);
         }
         mi->SetModelName(m.name.c_str());
-        mi->SetTexDictionary(m.txd.c_str());
+        mi->SetTexDictionary(txdName);
+        if(hasPair) paired++;
         mi->SetNumAtomics(1);
         float distances[3] = { m.distance, m.distance, m.distance };
         mi->SetLodDistances(distances);
@@ -306,8 +314,8 @@ void CCustomWorld::LoadIde(void)
            CModelInfo::GetModelInfo(related->second)->GetModelType() == MITYPE_TIME)
             ((CTimeModelInfo *)CModelInfo::GetModelInfo(slot->second))->SetOtherTimeModel(related->second);
     }
-    CUSTOM_LOG("BR IDE: %u file(s), %u record(s), %u invalid, %u long, %u ID conflict(s), %u installed, %u shared names, %u over capacity\n",
-        ctx.files, ctx.parsed, ctx.bad, ctx.overlong, ctx.conflicts, installed, merged, full);
+    CUSTOM_LOG("BR IDE: %u file(s), %u record(s), %u invalid, %u long, %u ID conflict(s), %u installed (%u paired model.dff/model.txd), %u shared names, %u over capacity\n",
+        ctx.files, ctx.parsed, ctx.bad, ctx.overlong, ctx.conflicts, installed, paired, merged, full);
     if(full) CUSTOM_LOG("BR IDE: more unique models/TXDs than free int16 slots; some records could not be installed\n");
 }
 
