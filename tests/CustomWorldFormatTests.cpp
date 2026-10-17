@@ -8,6 +8,7 @@
 #include <cstring>
 #include <string>
 #include <vector>
+#include <unordered_set>
 
 static void W16(std::vector<uint8_t> &b, size_t off, uint16_t n) {
     b[off] = (uint8_t)n; b[off+1] = (uint8_t)(n>>8);
@@ -101,6 +102,88 @@ static void TestWorldText()
         [&](const customworld::Instance &){});
     assert(s.overlong == 1 && s.records == 1);
     assert(!customworld::Name("this_filename_is_far_too_long_to_fit", 20));
+}
+
+static void TestSubmittedWorldLines()
+{
+    // Actual shapes and representative lines from the supplied 71 IDE / 82 IPL
+    // archive. In particular, ID 700 in another IDE must not erase this model.
+    const std::string ide =
+        "objs\n"
+        "700, bar_gatebar01, docentrance, 1, 84, 0\n"
+        "716, bar_barrier12, fences, 2, 73, 39, 4\n"
+        "817, lamppost2, dynsigns, 3, 78, 200, 60, 128\n"
+        "1362, CJ_FIREBIN_(L0), CJ_BINS, 70, 128\n"
+        "42495, L1_r3_rdBridgC, r3, 299, 0\n"
+        "17239, SM_nn_bt_bld_с, nn_bt, 299, 4194304\n"
+        "end\ntobj\n"
+        "985, htl_fan_rotate_nt, fanani, 1, 30, 32, 20, 6\n"
+        "3115, svalka_beam03, atom889, 250, 68\n"
+        "end\nanim\n"
+        "10873, Rclub_Spot_osn, AnimTest, Rclub_SpotAnim, 300, 8\n"
+        "end\n";
+    customworld::ModelIndex index;
+    customworld::Stats s = customworld::ParseIde((const unsigned char *)ide.data(), ide.size(),
+        [&index](const customworld::Model &m) { index.Add(m); });
+    assert(s.records == 9 && s.rejected == 0);
+    assert(index.definitions.at("cj_firebin_(l0)").distance == 70.0f);
+    assert(index.definitions.at("sm_nn_bt_bld_c").name == "SM_nn_bt_bld_c");
+    assert(index.definitions.at("bar_gatebar01").distance == 84.0f);
+    assert(index.definitions.at("bar_gatebar01").flags == 0);
+    assert(index.definitions.at("bar_barrier12").distance == 73.0f);
+    assert(index.definitions.at("bar_barrier12").flags == 4);
+    assert(index.definitions.at("lamppost2").distance == 200.0f);
+    assert(index.definitions.at("lamppost2").flags == 128);
+    assert(index.definitions.at("htl_fan_rotate_nt").kind == customworld::Model::TIME_OBJECT);
+    assert(index.definitions.at("htl_fan_rotate_nt").distance == 30.0f);
+    assert(index.definitions.at("htl_fan_rotate_nt").flags == 32);
+    assert(index.definitions.at("htl_fan_rotate_nt").timeOn == 20);
+    assert(index.definitions.at("svalka_beam03").kind == customworld::Model::OBJECT);
+    assert(index.definitions.at("svalka_beam03").distance == 250.0f);
+    customworld::Model reused = index.definitions.at("bar_gatebar01");
+    reused.name = "OTHER_GATE";
+    index.Add(reused);
+    assert(index.conflicts == 1 && index.definitions.count("bar_gatebar01") == 1);
+    assert(index.definitions.count("other_gate") == 1);
+    assert(index.lastNameForId.at(700) == "other_gate");
+    reused.id = 701; reused.name = "bar_gatebar01";
+    index.Add(reused);
+    assert(index.sharedNames == 1 && index.lastNameForId.at(701) == "bar_gatebar01");
+    assert(index.definitions.at("bar_gatebar01").id == 701);
+
+    const std::string ipl =
+        "inst\n"
+        // Marketplace line with a non-ASCII trailing // comment.
+        "3131, SM_mrktplace_ext_a, 0, 2566.25854, -2517.95679, 23.04858, 0.0, 0.0, 1.50996e-07, 1.0, -1 // Южный - 1\n"
+        // BRmap_Interiors: malformed decimal comma in the Z field.
+        "17620, K7, 1, 2503.62245, 2443.6332, 2499,8149, 0.0, 0.0, 1.0, 1.62921e-007, -1\n"
+        "100255  1_ql2_arrow  0  311.70410  221.73036  11.34064  0.00000  0.00000  -0.81620  0.57777  200.0\n"
+        "100301  1_ql2_startline  0  2441.72938  -2695.14984  24.32877  0.00000  0.00000  -0.70560  0.70861  299.0\n"
+        "42495, L1_r3_rdBridgС, 0, -2164.13525, 173.86201, 21.60893, 0.0, 0.0, -0.220659, 0.975351, -1\n"
+        // The truncated winter quaternion is NOT repairable from the text.
+        "13592, ny_snegk8, 0, 556.78, -1250.0, 39.3712, -0.0422235, 0.00 54, 0.104189, 0.99366, -1\n"
+        "end\n";
+    std::vector<customworld::Instance> places;
+    s = customworld::ParseIpl((const unsigned char *)ipl.data(), ipl.size(),
+        [&places](const customworld::Instance &inst) { places.push_back(inst); });
+    assert(s.records == 5 && s.rejected == 1 && s.overlong == 0);
+    assert(places[4].name == "L1_r3_rdBridgC");
+    assert(index.definitions.count(customworld::Lower(places[4].name)) == 1);
+    assert(places[0].name == "SM_mrktplace_ext_a" && places[0].lod == -1);
+    assert(places[1].name == "K7" && std::fabs(places[1].pos[2] - 2499.8149f) < 0.001f);
+    assert(places[2].lod == -1 && places[3].lod == -1);
+
+    std::unordered_set<customworld::PlacementKey, customworld::PlacementHash> seen;
+    assert(seen.insert(customworld::PlacementKey(50, places[0])).second);
+    customworld::Instance same = places[0];
+    same.id += 1000; // another IDE reuses its numeric ID
+    for(int k = 0; k < 4; k++) same.quat[k] = -same.quat[k];
+    assert(!seen.insert(customworld::PlacementKey(50, same)).second); // q == -q
+    same.pos[0] += 0.01f;
+    assert(seen.insert(customworld::PlacementKey(50, same)).second);
+    assert(seen.insert(customworld::PlacementKey(51, places[0])).second);
+    same = places[0]; same.interior = 1;
+    assert(seen.insert(customworld::PlacementKey(50, same)).second);
 }
 
 static void TestCollision()
@@ -221,6 +304,7 @@ static void TestZip()
 int main()
 {
     TestWorldText();
+    TestSubmittedWorldLines();
     TestCollision();
     TestZip();
     std::puts("BR world parser, CED2 collision and nested ZIP tests passed");

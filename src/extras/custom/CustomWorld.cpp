@@ -9,6 +9,8 @@
 #include <map>
 #include <string>
 #include <vector>
+#include <unordered_set>
+#include <functional>
 
 #include "BrCollisionFormat.h"
 #include "CustomColFormat.h"
@@ -37,10 +39,9 @@ std::map<std::string, int> nameSlots;
 std::vector<bool> brSlots; // allocated after the game's heap is initialized
 bool ideLoaded = false, collisionLoaded = false;
 
-struct IdeContext {
-    std::map<int, customworld::Model> definitions;
-    unsigned files, parsed, bad, overlong, conflicts;
-    IdeContext() : files(0), parsed(0), bad(0), overlong(0), conflicts(0) {}
+struct IdeContext : customworld::ModelIndex {
+    unsigned files, parsed, bad, overlong;
+    IdeContext() : files(0), parsed(0), bad(0), overlong(0) {}
 };
 
 void ReadIde(const char *path, const unsigned char *data, size_t size, void *user)
@@ -48,12 +49,7 @@ void ReadIde(const char *path, const unsigned char *data, size_t size, void *use
     IdeContext &ctx = *(IdeContext *)user;
     ctx.files++;
     customworld::Stats stats = customworld::ParseIde(data, size,
-        [&ctx](const customworld::Model &m) {
-            std::map<int, customworld::Model>::iterator prev = ctx.definitions.find(m.id);
-            if(prev != ctx.definitions.end() && prev->second.name != m.name)
-                ctx.conflicts++;
-            ctx.definitions[m.id] = m; // deterministic path order; last IDE wins
-        });
+        [&ctx](const customworld::Model &m) { ctx.Add(m); });
     ctx.parsed += (unsigned)stats.records;
     ctx.bad += (unsigned)stats.rejected;
     ctx.overlong += (unsigned)stats.overlong;
@@ -72,13 +68,14 @@ struct ColContext {
 // These models own their collisions independently of RW object streaming.
 void InstallCollision(const char *name, const uint8_t *game, size_t size, ColContext &ctx)
 {
-    std::map<std::string, int>::const_iterator it = nameSlots.find(customworld::Lower(name));
+    std::string key = customworld::Lower(customworld::ModelName(name));
+    std::map<std::string, int>::const_iterator it = nameSlots.find(key);
     if(it == nameSlots.end()) { ctx.missing++; return; }
     CBaseModelInfo *mi = CModelInfo::GetModelInfo(it->second);
     if(!mi || !mi->IsBuilding()) return;
     std::vector<customcolformat::Block> blocks;
     if(customcolformat::Index(game, size, blocks) || blocks.size() != 1 ||
-       customworld::Lower(blocks[0].name) != customworld::Lower(name) ||
+       customworld::Lower(customworld::ModelName(blocks[0].name)) != key ||
        !customcolformat::ValidVC(game, size)) { ctx.invalid++; return; }
     bool replacing = mi->DoesOwnColModel() && mi->GetColModel() != nil;
     if(ctx.freeModels + (int)replacing <= 100) { ctx.full++; return; }
@@ -97,7 +94,8 @@ void InstallCollision(const char *name, const uint8_t *game, size_t size, ColCon
 void ReadCollision(const char *name, const unsigned char *block, size_t size, void *user)
 {
     ColContext &ctx = *(ColContext *)user;
-    std::map<std::string, int>::const_iterator it = nameSlots.find(customworld::Lower(name));
+    std::map<std::string, int>::const_iterator it =
+        nameSlots.find(customworld::Lower(customworld::ModelName(name)));
     if(it == nameSlots.end()) { ctx.missing++; return; }
     CBaseModelInfo *mi = CModelInfo::GetModelInfo(it->second);
     if(!mi || !mi->IsBuilding()) return;
@@ -113,16 +111,16 @@ void ReadGameCollision(const char *name, const unsigned char *block, size_t size
 
 bool HasWorldCollisionTarget(const char *name, void *)
 {
-    std::map<std::string, int>::const_iterator it = nameSlots.find(customworld::Lower(name));
+    std::map<std::string, int>::const_iterator it =
+        nameSlots.find(customworld::Lower(customworld::ModelName(name)));
     return it != nameSlots.end() && CModelInfo::GetModelInfo(it->second)->IsBuilding();
 }
 
 struct IplContext {
-    unsigned files, parsed, bad, overlong, placed, linkedLod, noModel, noAsset, outside, capacity;
-    int buildingsFree, nodesFree;
-    IplContext() : files(0), parsed(0), bad(0), overlong(0), placed(0), linkedLod(0),
-                   noModel(0), noAsset(0), outside(0), capacity(0),
-                   buildingsFree(0), nodesFree(0) {}
+    unsigned files, parsed, bad, overlong, placed, duplicates, linkedLod, noModel, noAsset, outside, capacity;
+    std::unordered_set<customworld::PlacementKey, customworld::PlacementHash> seen;
+    IplContext() : files(0), parsed(0), bad(0), overlong(0), placed(0), duplicates(0), linkedLod(0),
+                   noModel(0), noAsset(0), outside(0), capacity(0) {}
 };
 
 int FindSlot(const customworld::Instance &inst)
@@ -178,6 +176,8 @@ void PlaceInstance(const customworld::Instance &inst, IplContext &ctx)
     if(!std::isfinite(radius) || inst.pos[0]-radius < WORLD_MIN_X ||
        inst.pos[0]+radius >= WORLD_MAX_X || inst.pos[1]-radius < WORLD_MIN_Y ||
        inst.pos[1]+radius >= WORLD_MAX_Y) { ctx.outside++; return; }
+    customworld::PlacementKey key(slot, inst);
+    if(ctx.seen.find(key) != ctx.seen.end()) { ctx.duplicates++; return; }
 
     float axis[3], w;
     customworld::ViceAxis(inst, axis, w);
@@ -188,21 +188,20 @@ void PlaceInstance(const customworld::Instance &inst, IplContext &ctx)
         axis[0], axis[1], axis[2], w);
     if(n < 0 || n >= (int)sizeof(vcLine)) { ctx.bad++; return; }
     // All BR models installed here have m_objectId == -1, i.e. CBuilding.
-    // A corrupt or unexpectedly large IPL must not assert in the pool or
-    // sector-list allocator. Leave room for the rest of the running game.
-    // CPool::GetNoOfFreeSpaces walks its entire pool. Cache the free counts
-    // across ~40k placements and subtract a safe upper bound on sector nodes
-    // (the rotated bbox is contained by this bounding sphere). Refresh once
-    // per IPL file to avoid rejecting objects unnecessarily.
+    // Grow stable pool blocks BEFORE entering CEntity::Add: it creates one
+    // pointer node per covered sector, and those nodes may already be linked
+    // from vanilla IPLs. A rotated bbox is contained by this sphere. Leave a
+    // small reserve for the rest of the game; physical allocation/handle
+    // failure is still reported instead of overflowing a fixed pool.
     int nx = std::min(NUMSECTORS_X, (int)std::ceil(2.0f*radius/SECTOR_SIZE_X)+2);
     int ny = std::min(NUMSECTORS_Y, (int)std::ceil(2.0f*radius/SECTOR_SIZE_Y)+2);
     int nodes = nx*ny;
-    if(ctx.buildingsFree <= 100 || ctx.nodesFree - nodes <= 10000) {
+    if(!CPools::GetBuildingPool()->EnsureFree(101) ||
+       !CPools::GetPtrNodePool()->EnsureFree(nodes + 10000)) {
         ctx.capacity++; return;
     }
     CFileLoader::LoadObjectInstance(vcLine);
-    ctx.buildingsFree--;
-    ctx.nodesFree -= nodes;
+    ctx.seen.insert(key);
     ctx.placed++;
 }
 
@@ -218,8 +217,6 @@ void ReadIpl(const char *path, const unsigned char *data, size_t size, void *use
     // file's LODs to the wrong model, but still place its good instances.
     if(!stats.rejected && !stats.overlong) LinkLods(instances, ctx);
     for(size_t n = 0; n < instances.size(); n++) PlaceInstance(instances[n], ctx);
-    ctx.buildingsFree = CPools::GetBuildingPool()->GetNoOfFreeSpaces();
-    ctx.nodesFree = CPools::GetPtrNodePool()->GetNoOfFreeSpaces();
     ctx.parsed += (unsigned)stats.records;
     ctx.bad += (unsigned)stats.rejected;
     ctx.overlong += (unsigned)stats.overlong;
@@ -241,10 +238,20 @@ void CCustomWorld::LoadIde(void)
     IdeContext ctx;
     CCustomModels::ForEachWorldFile(true, ReadIde, &ctx);
     int next = FIRST_BR_SLOT;
-    unsigned installed = 0, full = 0, merged = 0, paired = 0;
-    for(std::map<int, customworld::Model>::const_iterator it = ctx.definitions.begin();
-        it != ctx.definitions.end(); ++it) {
-        const customworld::Model &m = it->second;
+    unsigned installed = 0, full = 0, paired = 0;
+    std::vector<const customworld::Model *> ordered;
+    for(std::map<std::string, customworld::Model>::const_iterator it = ctx.definitions.begin();
+        it != ctx.definitions.end(); ++it)
+        ordered.push_back(&it->second);
+    // Preserve the former numeric-ID installation order where possible. Only
+    // the extra, previously discarded name in a conflicting ID consumes a new
+    // slot; the IPL still resolves by name when its ID was reused.
+    std::sort(ordered.begin(), ordered.end(), [](const customworld::Model *a,
+                                                  const customworld::Model *b) {
+        return a->id != b->id ? a->id < b->id : customworld::Lower(a->name) < customworld::Lower(b->name);
+    });
+    for(size_t n = 0; n < ordered.size(); n++) {
+        const customworld::Model &m = *ordered[n];
         std::string key = customworld::Lower(m.name);
         // Some world packs put model.dff and model.txd in different IMGs,
         // while the IDE's TXD column names another dictionary. Pick the
@@ -252,12 +259,6 @@ void CCustomWorld::LoadIde(void)
         // or queueing either resource. Otherwise keep the IDE association.
         bool hasPair = CCustomModels::PairedImageTxd(m.name.c_str()) >= 0;
         const char *txdName = hasPair ? m.name.c_str() : m.txd.c_str();
-        std::map<std::string, int>::const_iterator existing = nameSlots.find(key);
-        if(existing != nameSlots.end()) {
-            modelSlots[m.id] = existing->second;
-            merged++;
-            continue;
-        }
         while(next < MODELINFOSIZE && CModelInfo::GetModelInfo(next) != nil) next++;
         if(next == MODELINFOSIZE ||
            !(m.kind == customworld::Model::TIME_OBJECT ? CModelInfo::CanAddTimeModel() : CModelInfo::CanAddSimpleModel()) ||
@@ -289,20 +290,24 @@ void CCustomWorld::LoadIde(void)
         mi->m_noZwrite = !!(m.flags & 0x40);
         mi->m_noShadows = !!(m.flags & 0x80);
         mi->SetColModel(&CTempColModels::ms_colModelBBox);
-        modelSlots[m.id] = next;
         nameSlots[key] = next;
         brSlots[next] = true;
         next++;
         installed++;
     }
+    for(std::map<int, std::string>::const_iterator it = ctx.lastNameForId.begin();
+        it != ctx.lastNameForId.end(); ++it) {
+        std::map<std::string, int>::const_iterator slot = nameSlots.find(it->second);
+        if(slot != nameSlots.end()) modelSlots[it->first] = slot->second;
+    }
     // VC tobj pairs refer to their day/night sibling; source numeric IDs
     // have changed, so resolve the companion using our remapped name table.
-    for(std::map<int, customworld::Model>::const_iterator it = ctx.definitions.begin();
+    for(std::map<std::string, customworld::Model>::const_iterator it = ctx.definitions.begin();
         it != ctx.definitions.end(); ++it) {
         if(it->second.kind != customworld::Model::TIME_OBJECT) continue;
-        std::map<int, int>::const_iterator slot = modelSlots.find(it->first);
-        if(slot == modelSlots.end()) continue;
-        std::string other = customworld::Lower(it->second.name);
+        std::map<std::string, int>::const_iterator slot = nameSlots.find(it->first);
+        if(slot == nameSlots.end()) continue;
+        std::string other = it->first;
         size_t suffix = other.find("_nt");
         if(suffix != std::string::npos) other.replace(suffix, 3, "_dy");
         else if((suffix = other.find("_dy")) != std::string::npos) other.replace(suffix, 3, "_nt");
@@ -313,8 +318,8 @@ void CCustomWorld::LoadIde(void)
            CModelInfo::GetModelInfo(related->second)->GetModelType() == MITYPE_TIME)
             ((CTimeModelInfo *)CModelInfo::GetModelInfo(slot->second))->SetOtherTimeModel(related->second);
     }
-    CUSTOM_LOG("BR IDE: %u file(s), %u record(s), %u invalid, %u long, %u ID conflict(s), %u installed (%u paired model.dff/model.txd), %u shared names, %u over capacity\n",
-        ctx.files, ctx.parsed, ctx.bad, ctx.overlong, ctx.conflicts, installed, paired, merged, full);
+    CUSTOM_LOG("BR IDE: %u file(s), %u record(s), %u invalid, %u long, %u ID conflict(s) preserved by model name, %u installed (%u paired model.dff/model.txd), %u reused names, %u over capacity\n",
+        ctx.files, ctx.parsed, ctx.bad, ctx.overlong, ctx.conflicts, installed, paired, ctx.sharedNames, full);
     if(full) CUSTOM_LOG("BR IDE: more unique models/TXDs than free int16 slots; some records could not be installed\n");
 }
 
@@ -334,12 +339,11 @@ void CCustomWorld::LoadIpl(void)
 {
     if(modelSlots.empty()) return;
     IplContext ctx;
-    ctx.buildingsFree = CPools::GetBuildingPool()->GetNoOfFreeSpaces();
-    ctx.nodesFree = CPools::GetPtrNodePool()->GetNoOfFreeSpaces();
     CCustomModels::ForEachWorldFile(false, ReadIpl, &ctx);
-    CUSTOM_LOG("BR IPL: %u file(s), %u record(s), %u placed, %u LOD link(s), %u invalid, %u long, %u unknown models, %u missing assets, %u outside world, %u over pool capacity\n",
-        ctx.files, ctx.parsed, ctx.placed, ctx.linkedLod, ctx.bad, ctx.overlong,
-        ctx.noModel, ctx.noAsset, ctx.outside, ctx.capacity);
+    CUSTOM_LOG("BR IPL: %u file(s), %u record(s), %u placed, %u exact duplicates, %u LOD link(s), %u invalid, %u long, %u unknown models, %u missing assets, %u outside world, %u allocation/handle failures; pools %d buildings / %d sector nodes\n",
+        ctx.files, ctx.parsed, ctx.placed, ctx.duplicates, ctx.linkedLod, ctx.bad, ctx.overlong,
+        ctx.noModel, ctx.noAsset, ctx.outside, ctx.capacity,
+        CPools::GetBuildingPool()->GetSize(), CPools::GetPtrNodePool()->GetSize());
 }
 
 bool CCustomWorld::OwnsModelSlot(int slot)

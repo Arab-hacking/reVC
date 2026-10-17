@@ -199,7 +199,8 @@ int main() {
 
     Zip("custom/common.zip", {
         { "data/maps/IDE/test.ide", Bytes("objs\n1 house1 r3 100 0\nend\n") },
-        { "data/maps/Level_Events/test.ipl", Bytes("inst\n1 house1 0 0 0 0 0 0 0 1 -1\nend\n") }
+        { "data/maps/Level_Events/test.ipl", Bytes("inst\n1 house1 0 0 0 0 0 0 0 1 -1\nend\n") },
+        { "data/maps/Level_Events/alternate.ipl", Bytes("inst\n2 house1 0 1 0 0 0 0 0 1 -1\nend\n") }
     });
     // Identical .cls and .col basenames in different ZIPs; each carries a
     // different internal model name. Both must reach the world loader.
@@ -226,7 +227,22 @@ int main() {
     assert(ide.size() == 1 && ide.count("data/maps/ide/test.ide"));
     assert(ide["data/maps/ide/test.ide"].find("house1 r3") != std::string::npos);
     assert(CCustomModels::PairedImageTxd("house1") == 1); // prefer IMG 1 TXD, not IDE r3
+    assert(ipl.size() == 2 && ipl.count("data/maps/level_events/test.ipl") &&
+           ipl.count("data/maps/level_events/alternate.ipl"));
+    Write("custom/active_ipl.txt", Bytes("# Select one variant, using the full path inside common.zip\n"
+                                         " DATA\\Maps\\Level_Events\\test.IPL // selected\n"
+                                         "data/maps/level_events/unknown.ipl\n"));
+    ipl.clear();
+    CCustomModels::ForEachWorldFile(false, WorldFile, &ipl);
     assert(ipl.size() == 1 && ipl.count("data/maps/level_events/test.ipl"));
+    ide.clear();
+    CCustomModels::ForEachWorldFile(true, WorldFile, &ide); // IDEs are not filtered
+    assert(ide.size() == 1);
+    Write("custom/active_ipl.txt", Bytes("# empty selection intentionally disables BR IPLs\n"));
+    ipl.clear();
+    CCustomModels::ForEachWorldFile(false, WorldFile, &ipl);
+    assert(ipl.empty());
+    assert(std::remove("custom/active_ipl.txt") == 0);
     assert(cls.size() == 2 && cls["house1"] == "house1" && cls["house2"] == "house2");
     assert(col.size() == 6 && col["house1"] == "house1" &&
            col["house3"] == "house3" && col["house4"] == "house4" &&

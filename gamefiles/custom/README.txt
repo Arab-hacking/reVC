@@ -19,6 +19,15 @@ its INTERNAL model name, not by the .cls/.col filename; equal container
 filenames in different ZIPs do not hide each other's models. No collision is
 read from img/*.img. The stock VC map remains present. See CUSTOM_MODELS.md.
 
+If the map pack contains mutually exclusive IPLs (event/race/old foliage),
+create custom/active_ipl.txt: one FULL path inside common.zip per line, e.g.
+    data/maps/Level_Events/test.ipl
+Paths are case-insensitive; # and // comments are allowed. Only listed IPLs
+are loaded. Without this file all IPLs are loaded, but identical placements
+are deduplicated. IDEs are always indexed so reused IDs can be resolved by
+model name. The building and sector-node pools grow on demand for large maps;
+this does not change texture/model cache limits or the world boundary.
+
 For example, custom/ped.ifp (or anim/ped.ifp in a zip inside custom/) is
 considered when the game loads the PED animation block. An SA ANP2/ANP3 file is loaded as an additional sa_ped bank and leaves the
 original VC block intact. Custom ANPK files do not replace VC animation;

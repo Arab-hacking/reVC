@@ -42,11 +42,11 @@ enum Config {
 	NUMOBJECTINFO = 210,
 
 	// Pool sizes
-	NUMPTRNODES = 300000, // BR's ~40k IPL placements span multiple sectors
+	NUMPTRNODES = 300000, // initial size; BR IPL pool grows in stable blocks
 	NUMENTRYINFOS = 3200,
 	NUMPEDS = 140,
 	NUMVEHICLES = 110,
-	NUMBUILDINGS = 50000,
+	NUMBUILDINGS = 50000, // initial size; expands for custom IPLs
 	NUMTREADABLES = 1,
 	NUMOBJECTS = 460,
 	NUMDUMMIES = 2340,

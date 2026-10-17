@@ -1987,13 +1987,72 @@ CCustomModels::HasModelFile(const char *name)
 	       customDff.find(key) != customDff.end();
 }
 
+// Map packs contain alternative scenes (events, races, old/new vegetation).
+// Do not guess which variant the user wants: when present, this optional list
+// selects exactly which IPL paths are active. IDEs still all contribute their
+// named models so reused source IDs cannot silently replace each other.
+static bool
+ReadActiveIpls(std::set<std::string> &active)
+{
+	std::string filename = customFolderPath + "/active_ipl.txt";
+	FILE *f = fcaseopen(filename.c_str(), "rb");
+	if(f == nil) return false; // no manifest: preserve the legacy load-all mode
+	char line[512];
+	unsigned invalid = 0, missing = 0, lineNo = 0;
+	while(fgets(line, sizeof(line), f)){
+		lineNo++;
+		size_t n = strlen(line);
+		if(n && line[n-1] != '\n' && !feof(f)){
+			int c;
+			while((c = fgetc(f)) != '\n' && c != EOF) {}
+			invalid++;
+			CUSTOM_LOG("active_ipl.txt:%u: line too long\n", lineNo);
+			continue;
+		}
+		std::string text(line, n);
+		size_t comment = text.find('#');
+		size_t slash = text.find("//");
+		if(slash < comment) comment = slash;
+		if(comment != std::string::npos) text.resize(comment);
+		size_t begin = text.find_first_not_of(" \t\r\n");
+		if(begin == std::string::npos) continue;
+		text = text.substr(begin, text.find_last_not_of(" \t\r\n")-begin+1);
+		std::string key = WorldPath(text);
+		if(text[0] == '/' || key.empty() || key.size() > 255 ||
+		   key.find("../") != std::string::npos || key == ".." ||
+		   Extension(key) != "ipl"){
+			invalid++;
+			CUSTOM_LOG("active_ipl.txt:%u: invalid IPL path: %.120s\n", lineNo, text.c_str());
+			continue;
+		}
+		active.insert(key);
+		if(customIplFiles.find(key) == customIplFiles.end()) {
+			missing++;
+			CUSTOM_LOG("active_ipl.txt: IPL path not found: %s\n", key.c_str());
+		}
+	}
+	bool ok = !ferror(f);
+	fclose(f);
+	if(!ok){
+		CUSTOM_LOG("active_ipl.txt: read failed; loading all IPLs instead\n");
+		active.clear();
+		return false;
+	}
+	CUSTOM_LOG("active_ipl.txt: %u path(s) selected from %u indexed IPLs, %u missing, %u invalid line(s)\n",
+		(unsigned)active.size(), (unsigned)customIplFiles.size(), missing, invalid);
+	return true;
+}
+
 void
 CCustomModels::ForEachWorldFile(bool ide, WorldFileCallback callback, void *context)
 {
 	EnsureInitialised();
 	if(callback == nil) return;
+	std::set<std::string> active;
+	bool selected = !ide && ReadActiveIpls(active);
 	const std::map<std::string, CustomSource> &files = ide ? customIdeFiles : customIplFiles;
 	for(std::map<std::string, CustomSource>::const_iterator it = files.begin(); it != files.end(); ++it){
+		if(selected && active.find(it->first) == active.end()) continue;
 		std::vector<uint8> bytes;
 		if(ReadSource(it->second, bytes))
 			callback(it->first.c_str(), bytes.data(), bytes.size(), context);

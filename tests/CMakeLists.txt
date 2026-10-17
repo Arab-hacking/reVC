@@ -41,6 +41,10 @@ target_include_directories(custom_world_format_tests PRIVATE
 set_target_properties(custom_world_format_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
 add_test(NAME custom_world_format_tests COMMAND custom_world_format_tests)
 
+add_executable(expandable_pool_tests ExpandablePoolTests.cpp)
+set_target_properties(expandable_pool_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+add_test(NAME expandable_pool_tests COMMAND expandable_pool_tests)
+
 add_executable(custom_img_collision_tests CustomImgCollisionTests.cpp)
 set_target_properties(custom_img_collision_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
 add_test(NAME custom_img_collision_tests COMMAND custom_img_collision_tests)
