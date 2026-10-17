@@ -40,7 +40,13 @@ CPools::Initialise(void)
 {
 	PUSH_MEMID(MEMID_POOLS);
 	CHECKMEM("before pools");
+	// Keep the ordinary VC pool size until an IPL actually needs more. Growing
+	// in separate blocks preserves pointers already stored in world sectors.
+#ifdef CUSTOM_MODELS
+	ms_pPtrNodePool = new CCPtrNodePool(NUMPTRNODES, "PtrNode", 65536);
+#else
 	ms_pPtrNodePool = new CCPtrNodePool(NUMPTRNODES, "PtrNode");
+#endif
 	CHECKMEM("after CPtrNodePool");
 	ms_pEntryInfoNodePool = new CEntryInfoNodePool(NUMENTRYINFOS, "EntryInfoNode");
 	CHECKMEM("after CEntryInfoNodePool");
@@ -48,7 +54,11 @@ CPools::Initialise(void)
 	CHECKMEM("after CPedPool");
 	ms_pVehiclePool = new CVehiclePool(NUMVEHICLES, "Vehicles");
 	CHECKMEM("after CVehiclePool");
+#ifdef CUSTOM_MODELS
+	ms_pBuildingPool = new CBuildingPool(NUMBUILDINGS, "Buildings", 8192);
+#else
 	ms_pBuildingPool = new CBuildingPool(NUMBUILDINGS, "Buildings");
+#endif
 	CHECKMEM("after CBuildingPool");
 	ms_pTreadablePool = new CTreadablePool(NUMTREADABLES, "Treadables");
 	CHECKMEM("after CTreadablePool");

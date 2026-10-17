@@ -55,7 +55,7 @@ void
 CDirectory::AddItem(const DirectoryInfo &dirinfo, int32 imgId)
 {
 	DirectoryInfo di = dirinfo;
-	di.offset |= imgId<<24;
+	di.offset |= (uint32)imgId<<24;
 	AddItem(di);
 }
 

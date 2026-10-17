@@ -285,6 +285,7 @@ GenericSave(int file)
 bool
 GenericLoad()
 {
+	REVC_LOG_INFO("Loading saved game from %s", LoadFileName);
 	uint8 *buf;
 	int32 file;
 	uint32 size;
@@ -420,10 +421,12 @@ GenericLoad()
 	DMAudio.SetEffectsMasterVolume(FrontEndMenuManager.m_PrefsSfxVolume);
 	if (!CloseFile(file)) {
 		PcSaveHelper.nErrorCode = SAVESTATUS_ERR_LOAD_CLOSE;
+		REVC_LOG_ERROR("Failed to close saved game %s", LoadFileName);
 		return false;
 	}
 
 	DoGameSpecificStuffAfterSucessLoad();
+	REVC_LOG_INFO("Saved game loaded successfully from %s", LoadFileName);
 	debug("Game successfully loaded \n");
 	return true;
 }
@@ -434,11 +437,13 @@ ReadInSizeofSaveFileBuffer(int32 &file, uint32 &size)
 	file = CFileMgr::OpenFile(LoadFileName, "rb");
 	if (file == 0) {
 		PcSaveHelper.nErrorCode = SAVESTATUS_ERR_LOAD_OPEN;
+		REVC_LOG_ERROR("Could not open saved game %s", LoadFileName);
 		return false;
 	}
 	CFileMgr::Read(file, (char*)&size, sizeof(size));
 	if (CFileMgr::GetErrorReadWrite(file)) {
 		PcSaveHelper.nErrorCode = SAVESTATUS_ERR_LOAD_READ;
+		REVC_LOG_ERROR("Could not read saved game header from %s", LoadFileName);
 		if (!CloseFile(file))
 			PcSaveHelper.nErrorCode = SAVESTATUS_ERR_LOAD_CLOSE;
 		return false;
@@ -451,11 +456,13 @@ ReadDataFromFile(int32 file, uint8 *buf, uint32 size)
 {
 	if (file == 0) {
 		PcSaveHelper.nErrorCode = SAVESTATUS_ERR_LOAD_OPEN;
+		REVC_LOG_ERROR("Invalid file handle while loading %s", LoadFileName);
 		return false;
 	}
 	size_t read_size = CFileMgr::Read(file, (char*)buf, size);
 	if (CFileMgr::GetErrorReadWrite(file) || read_size != size) {
 		PcSaveHelper.nErrorCode = SAVESTATUS_ERR_LOAD_READ;
+		REVC_LOG_ERROR("Short read from %s (expected %u bytes, got %zu)", LoadFileName, size, read_size);
 		if (!CloseFile(file))
 			PcSaveHelper.nErrorCode = SAVESTATUS_ERR_LOAD_CLOSE;
 		return false;

@@ -1,0 +1,129 @@
+#ifndef __GTA_CUSTOMMODELS_H__
+#define __GTA_CUSTOMMODELS_H__
+
+// Runtime loader for the community's custom model containers.
+//
+// The containers (what the offline brconv tool and the brmod plugin convert)
+// are:
+//     X.mod   a RenderWare model (the same layout as a .dff) behind a TEA
+//             style cypher; the first bytes are a header, the payload has to be
+//             decrypted before RenderWare can read it,
+//     X.btx   one texture in a KTX11 container (ASTC compressed or plain
+//             RGBA/RGB/4444/565/5551, occasionally a PNG or a whole TXD),
+//     X.cls   collision volumes (CLST/CLSF/COL3 blocks, one per model).
+//
+// brconv builds .dff/.txd/.col files out of those offline. This module does
+// exactly the same work inside the game and hands the result to reVC's own
+// loaders (CFileLoader, CTxdStore, CColStore), so nothing is converted on disk
+// and no temporary files are written: the archive entry is decompressed into
+// memory, converted in place and given to the engine.
+//
+// The archives are zip files in the game's custom folder (CUSTOM_MODELS_FOLDER
+// in config.h); every archive is indexed by name the first time the game asks
+// for a file, and the folder wins over the game's own IMG archives. A custom
+// file replaces a file the game already knows - the name of the file has to be
+// the name the game asks for (the model/txd/collision name from the IDE), which
+// is why the lookup is done by name and not by file path.
+
+#include <vector>
+#include <stddef.h>
+
+class CCustomModels
+{
+public:
+	// scans the custom folder (also done automatically on the first request)
+	static void Initialise(void);
+	static void Shutdown(void);
+	// Mount every VC IMG v1 (.img + sibling .dir) under the game's img/
+	// directory before Streaming::Init indexes filenames. Models and TXDs in
+	// these images use the native streamer; .col/.ifp entries are ignored.
+	static void ResetImageMounts(void);
+	static void MountImages(void);
+	static bool IsAutoMountedImage(int index);
+	// Return the winning IMG index for model.txd when model.dff and its
+	// same-named TXD both come from auto-mounted IMGs; they may be in different
+	// archives. -1 means use the ordinary IDE TXD. Metadata only, no decoding.
+	static int PairedImageTxd(const char *modelName);
+	// Transfer a streamed custom TXD into a bounded GPU-resident LRU on
+	// eviction. Returns false when Streaming must destroy the TXD normally.
+	static bool RetainTxdOnUnload(int32 slot);
+	// Called when a TXD is explicitly destroyed or its slot is recycled.
+	static void ForgetTxdSlot(int32 slot);
+	// Flush detached GPU objects BEFORE the RenderWare device shuts down.
+	static void ClearGraphicsCache(void);
+	// Temporarily force a streamed model to come from the game's own IMG. Used
+	// to keep a native VC ped skeleton available when a custom SA ped replaces
+	// every initially loaded reference model.
+	static void SetNativeModelOverride(int32 modelId, bool enabled);
+	// true when the folder exists and there is at least one usable archive
+	static bool IsActive(void);
+
+	// Is this stream id served by the custom folder? The game asks this before
+	// every read, so it has to stay cheap. Stream ids are models, texture
+	// dictionaries and collision slots.
+	static bool CanServe(int32 streamId);
+	// CPU-only archive reads and .mod/.btx decoding run ahead of ordinary
+	// streaming on one bounded worker. These are game-thread entry points;
+	// explicit blocking loads may wait, normal frames must never wait.
+	static void PrefetchStream(int32 streamId, bool priority = false);
+	static bool IsStreamPrepared(int32 streamId, bool wait);
+	static void CancelStreamPrefetch(int32 streamId);
+	static void PumpBackgroundResults(void);
+	// Reads, converts and installs the file of this stream id. Only call it
+	// when CanServe said yes for the same id.
+	static bool Load(int32 streamId);
+
+	// Files that the game reads from disk by name (the .dff/.txd/.col of its
+	// data files) are looked up in the custom folder first as well.
+	static bool LoadClumpFileFromCustom(const char *filename);
+	static RwTexDictionary *LoadTexDictionaryFromCustom(const char *filename);
+	// the collision of one model, in the .col file block layout, taken from the
+	// model's .cls (false when the custom folder has no collision for it)
+	static bool GetCollisionBlock(const char *modelname, std::vector<uint8> &out);
+
+	// serves an animation dictionary (.ifp, or BR .ani) from the archives;
+	// true when the custom folder has the file the game asked for
+	static bool LoadAnimFileFromCustom(const char *filename, std::vector<uint8> &out);
+
+	// IDE/IPL files from common.zip (including entries in nested directories)
+	// and loose files recursively under custom/. A loose file with the same
+	// relative path replaces the archive entry. Bytes live only for the call.
+	typedef void (*WorldFileCallback)(const char *path, const unsigned char *data,
+	                                  size_t size, void *context);
+	static bool HasWorldFiles(void);
+	static bool HasModelFile(const char *name);
+	static void ForEachWorldFile(bool ide, WorldFileCallback callback, void *context);
+
+	// Per-model CED2 collision blocks inside the .cls containers of
+	// br_collision.zip. No decompressed archive is retained between callbacks.
+	typedef void (*CollisionCallback)(const char *model, const unsigned char *block,
+	                                  size_t size, void *context);
+	static void ForEachBrCollision(CollisionCallback callback, void *context);
+	// Per-model blocks from every .col in custom/*.zip, plus legacy single
+	// .cls files. Callback bytes are complete, validated VC COLL blocks;
+	// no decompressed container is retained after the callback returns.
+	typedef bool (*CollisionFilter)(const char *model, void *context);
+	static void ForEachGameCollision(CollisionCallback callback, void *context,
+	                                 CollisionFilter filter = nullptr);
+
+	// reads a data file out of the custom archives ("data/timecyc.json" and
+	// friends of a BR common.zip), or out of the custom folder itself; the
+	// archives win
+	static bool ReadDataFile(const char *relpath, std::vector<uint8> &out);
+
+	// player skins out of the custom folder: plain images (.bmp, or .png/.jpg
+	// in a skins folder) named after the skin, in the archives or loose
+	static bool HasSkin(const char *skinname);
+	// builds the player skin texture straight out of a .btx in a BR skins
+	// pack (nil when there is no .btx under this name)
+	static RwTexture *SkinTextureFromBtx(const char *skinname);
+	static bool GetSkinImage(const char *skinname, std::vector<uint8> &out, char *ext, int extCap);
+	static int GetNumSkins(void);
+	// "name.bmp" style - the frontend skin list strips the extension itself
+	static const char *GetSkinFileName(int i);
+
+	// diagnostics (written to the always-on debug.log, see DebugLog.h)
+	static void PrintStats(void);
+};
+
+#endif // __GTA_CUSTOMMODELS_H__

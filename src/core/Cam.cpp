@@ -13,6 +13,7 @@
 #include "RpAnimBlend.h"
 #include "ControllerConfig.h"
 #include "Pad.h"
+#include "NoClip.h"
 #include "Frontend.h"
 #include "General.h"
 #include "Timecycle.h"
@@ -1384,7 +1385,7 @@ CCam::Process_FollowPedWithMouse(const CVector &CameraTarget, float TargetOrient
 		float MouseX = CPad::GetPad(0)->GetMouseX();
 		float MouseY = CPad::GetPad(0)->GetMouseY();
 		float LookLeftRight, LookUpDown;
-		if((MouseX != 0.0f || MouseY != 0.0f) && !CPad::GetPad(0)->ArePlayerControlsDisabled()){
+		if((MouseX != 0.0f || MouseY != 0.0f) && !CPad::GetPad(0)->AreCameraControlsDisabled()){
 			UseMouse = true;
 			LookLeftRight = -2.5f*MouseX;
 			LookUpDown = 4.0f*MouseY;
@@ -1452,7 +1453,7 @@ CCam::Process_FollowPedWithMouse(const CVector &CameraTarget, float TargetOrient
 	// Clip Source and fix near clip
 	CWorld::pIgnoreEntity = CamTargetEntity;
 	entity = nil;
-	if(CWorld::ProcessLineOfSight(TargetCoors, Source, colPoint, entity, true, true, true, true, false, false, true)){
+	if(!CNoClip::IsActive() && CWorld::ProcessLineOfSight(TargetCoors, Source, colPoint, entity, true, true, true, true, false, false, true)){
 		float PedColDist = (TargetCoors - colPoint.point).Magnitude();
 		float ColCamDist = CamDist - PedColDist;
 		if(entity->IsPed() && ColCamDist > DEFAULT_NEAR + 0.1f){
@@ -1477,7 +1478,7 @@ CCam::Process_FollowPedWithMouse(const CVector &CameraTarget, float TargetOrient
 	float ViewPlaneWidth = ViewPlaneHeight * CDraw::CalculateAspectRatio() * fTweakFOV;
 	float Near = RwCameraGetNearClipPlane(Scene.camera);
 	float radius = ViewPlaneWidth*Near;
-	entity = CWorld::TestSphereAgainstWorld(Source + Front*Near, radius, nil, true, true, false, true, false, false);
+	entity = CNoClip::IsActive() ? nil : CWorld::TestSphereAgainstWorld(Source + Front*Near, radius, nil, true, true, false, true, false, false);
 	int i = 0;
 	while(entity){
 		CVector CamToCol = gaTempSphereColPoints[0].point - Source;
@@ -1501,7 +1502,7 @@ CCam::Process_FollowPedWithMouse(const CVector &CameraTarget, float TargetOrient
 		radius = ViewPlaneWidth*Near;
 #endif
 		// Keep testing
-		entity = CWorld::TestSphereAgainstWorld(Source + Front*Near, radius, nil, true, true, false, true, false, false);
+		entity = CNoClip::IsActive() ? nil : CWorld::TestSphereAgainstWorld(Source + Front*Near, radius, nil, true, true, false, true, false, false);
 
 		i++;
 		if(i > 5)
@@ -4765,7 +4766,7 @@ CCam::Process_FollowPed_Rotation(const CVector &CameraTarget, float TargetOrient
 	// Clip Source and fix near clip
 	CWorld::pIgnoreEntity = CamTargetEntity;
 	entity = nil;
-	if(CWorld::ProcessLineOfSight(TargetCoors, Source, colPoint, entity, true, true, true, true, false, false, true)){
+	if(!CNoClip::IsActive() && CWorld::ProcessLineOfSight(TargetCoors, Source, colPoint, entity, true, true, true, true, false, false, true)){
 		float PedColDist = (TargetCoors - colPoint.point).Magnitude();
 		float ColCamDist = CamDist - PedColDist;
 		if(entity->IsPed() && ColCamDist > DEFAULT_NEAR + 0.1f){
@@ -4790,7 +4791,7 @@ CCam::Process_FollowPed_Rotation(const CVector &CameraTarget, float TargetOrient
 	float ViewPlaneWidth = ViewPlaneHeight * CDraw::CalculateAspectRatio() * fTweakFOV;
 	float Near = RwCameraGetNearClipPlane(Scene.camera);
 	float radius = ViewPlaneWidth*Near;
-	entity = CWorld::TestSphereAgainstWorld(Source + Front*Near, radius, nil, true, true, false, true, false, false);
+	entity = CNoClip::IsActive() ? nil : CWorld::TestSphereAgainstWorld(Source + Front*Near, radius, nil, true, true, false, true, false, false);
 	int i = 0;
 	while(entity){
 		CVector CamToCol = gaTempSphereColPoints[0].point - Source;
@@ -4809,7 +4810,7 @@ CCam::Process_FollowPed_Rotation(const CVector &CameraTarget, float TargetOrient
 		// Keep testing
 		Near = RwCameraGetNearClipPlane(Scene.camera);
 		radius = ViewPlaneWidth*Near;
-		entity = CWorld::TestSphereAgainstWorld(Source + Front*Near, radius, nil, true, true, false, true, false, false);
+		entity = CNoClip::IsActive() ? nil : CWorld::TestSphereAgainstWorld(Source + Front*Near, radius, nil, true, true, false, true, false, false);
 
 		i++;
 		if(i > 5)
@@ -5148,7 +5149,7 @@ CCam::Process_FollowCar_SA(const CVector& CameraTarget, float TargetOrientation,
 
 #ifdef GTA_PC_CONTROLS
 	// FIX: Disable mouse movement in drive-by, it's buggy. Original SA bug.
-	if (/*bFreeMouseCam &&*/ CCamera::m_bUseMouse3rdPerson && !pad->ArePlayerControlsDisabled() && nextDirectionIsForward) {
+	if (/*bFreeMouseCam &&*/ CCamera::m_bUseMouse3rdPerson && !pad->AreCameraControlsDisabled() && nextDirectionIsForward) {
 		float mouseY = pad->GetMouseY() * 2.0f;
 		float mouseX = pad->GetMouseX() * -2.0f;
 
@@ -5299,7 +5300,7 @@ CCam::Process_FollowCar_SA(const CVector& CameraTarget, float TargetOrientation,
 	m_aTargetHistoryPosTwo.z = TargetCoors.z - nextFrontZ * newDistance;
 
 	// SA calls SetColVarsVehicle in here
-	if (nextDirectionIsForward) {
+	if (nextDirectionIsForward && !CNoClip::IsActive()) {
 
 		// LCS uses exactly the same collision code as FollowPedWithMouse, so we will do so.
 

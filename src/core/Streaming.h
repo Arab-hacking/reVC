@@ -48,7 +48,7 @@ public:
 	uint8 m_loadState;
 	uint8 m_flags;
 
-	int16  m_nextID;
+	int32  m_nextID; // TXD/col/anim stream IDs now extend beyond 32767
 	uint32 m_position;
 	uint32 m_size;
 
@@ -122,6 +122,12 @@ public:
 	static void LoadCdDirectory(void);
 	static void LoadCdDirectory(const char *dirname, int32 n);
 	static bool ConvertBufferToObject(int8 *buf, int32 streamId);
+#ifdef CUSTOM_MODELS
+	// loads a file that comes from the game's custom folder instead of the CD
+	// image; the bookkeeping matches a CD read, so the file ends up in exactly
+	// the same state (see the implementation)
+	static void LoadCustomFile(int32 streamId);
+#endif
 	static bool FinishLoadingLargeFile(int8 *buf, int32 streamId);
 	static bool HasModelLoaded(int32 id) { return ms_aInfoForModel[id].m_loadState == STREAMSTATE_LOADED; }
 	static bool HasTxdLoaded(int32 id) { return HasModelLoaded(id+STREAM_OFFSET_TXD); }
@@ -173,6 +179,9 @@ public:
 	static void SetModelIsDeletable(int32 id);
 	static void SetModelTxdIsDeletable(int32 id);
 	static void SetMissionDoesntRequireModel(int32 id);
+#ifdef CUSTOM_MODELS
+	static void LoadVCPedAnimationReference(void);
+#endif
 	static void LoadInitialPeds(void);
 	static void LoadInitialWeapons(void);
 	static void LoadInitialVehicles(void);

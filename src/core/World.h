@@ -6,20 +6,20 @@
 #include "PlayerInfo.h"
 #include "Collision.h"
 
-/* Sectors span from -2400 to 1600 in x and -2000 to 2000 y.
- * With 80x80 sectors, each is 50x50 units. */
-
+/* BR IPLs use SA-style positions, many of which lie outside VC's original
+ * -2400..1600/-2000..2000 grid. Keep 50-unit sectors and cover -4000..4000
+ * instead; native VC entities stay at their original world coordinates. */
 #define SECTOR_SIZE_X (50.0f)
 #define SECTOR_SIZE_Y (50.0f)
 
-#define NUMSECTORS_X (80)
-#define NUMSECTORS_Y (80)
+#define NUMSECTORS_X (160)
+#define NUMSECTORS_Y (160)
 
 #define WORLD_SIZE_X (NUMSECTORS_X * SECTOR_SIZE_X)
 #define WORLD_SIZE_Y (NUMSECTORS_Y * SECTOR_SIZE_Y)
 
-#define WORLD_MIN_X (-2400.0f)
-#define WORLD_MIN_Y (-2000.0f)
+#define WORLD_MIN_X (-4000.0f)
+#define WORLD_MIN_Y (-4000.0f)
 
 #define WORLD_MAX_X (WORLD_MIN_X + WORLD_SIZE_X)
 #define WORLD_MAX_Y (WORLD_MIN_Y + WORLD_SIZE_Y)

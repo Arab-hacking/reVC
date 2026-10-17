@@ -10,17 +10,25 @@ enum Config {
 	NUMPLAYERS = 1,
 
 	NUMCDIMAGES = 6, // gta3.img duplicates (not used on PC)
-	MAX_CDIMAGES = 8, // additional cdimages
+	// The stream position reserves one byte for the IMG index. Allow all
+	// representable slots (0..255), not just the original eight archives.
+	MAX_CDIMAGES = 256,
 	MAX_CDCHANNELS = 5,
 
-	MODELINFOSIZE = 6500,	// 4900 on PS2
-	TXDSTORESIZE = 1385,
+	// BR IDEs contain ~27k object definitions, with source IDs far above the
+	// signed 16-bit model index stored on CEntity. They are remapped into free
+	// slots below 32768; these are slot/pool sizes, NOT decoded asset caches.
+	MODELINFOSIZE = 32768,
+	// Up to ~28k distinct TXDs in the BR IMG set. Slots are names and stream
+	// metadata, not resident texture/cache bytes. CBaseModelInfo::m_txdSlot is
+	// signed int16, so the last representable slot is 32767.
+	TXDSTORESIZE = 32768,
 	COLSTORESIZE = 31,
 	EXTRADIRSIZE = 256,
 	CUTSCENEDIRSIZE = 512,
 
-	SIMPLEMODELSIZE = 3885,
-	TIMEMODELSIZE = 385,
+	SIMPLEMODELSIZE = 32000,
+	TIMEMODELSIZE = 768,
 	CLUMPMODELSIZE = 5,
 	WEAPONMODELSIZE = 37,
 	PEDMODELSIZE = 130,
@@ -34,20 +42,20 @@ enum Config {
 	NUMOBJECTINFO = 210,
 
 	// Pool sizes
-	NUMPTRNODES = 50000,
+	NUMPTRNODES = 300000, // initial size; BR IPL pool grows in stable blocks
 	NUMENTRYINFOS = 3200,
 	NUMPEDS = 140,
 	NUMVEHICLES = 110,
-	NUMBUILDINGS = 7000,
+	NUMBUILDINGS = 50000, // initial size; expands for custom IPLs
 	NUMTREADABLES = 1,
 	NUMOBJECTS = 460,
 	NUMDUMMIES = 2340,
 	NUMAUDIOSCRIPTOBJECTS = 192,
-	NUMCOLMODELS = 4400,
+	NUMCOLMODELS = 35000, // stock + up to ~27k ZIP CLS/COL world collisions (not a cache)
 	NUMCUTSCENEOBJECTS = 50,	// not a pool in VC
 
-	NUMANIMBLOCKS = 35,
-	NUMANIMATIONS = 450,
+	NUMANIMBLOCKS = 180,   // San Andreas sizes: SA dictionaries (ped.ifp and the
+	NUMANIMATIONS = 2500,  // cutscene/special ones) do not fit into VC's 35/450
 
 	NUMTEMPOBJECTS = 40,
 
@@ -293,6 +301,45 @@ enum Config {
 
 #define EXTENDED_OFFSCREEN_DESPAWN_RANGE // Use onscreen despawn range for offscreen peds and vehicles to avoid them despawning in the distance when you look
                                          // away
+
+// ---------------------------------------------------------------------------
+// GTA San Andreas vehicle model support
+//
+// GTA:SA stores vehicle models in RenderWare 3.6.0.3 DFF/TXD files which use
+// a different naming/LOD convention than Vice City:
+//   * meshes have no _hi / _lo / _vlo suffixes (VC renders only *_hi atomics),
+//   * the wheel meshes are part of the vehicle DFF (one "wheel" mesh, cloned
+//     onto all four wheel_*_dummy frames) instead of a separate wheel model,
+//   * dummies can be named without the _dummy suffix (bonnet, boot,
+//     bump_front, bump_rear, windscreen),
+//   * vehicle colour uses the same magic material colours as VC (60,255,0 /
+//     255,0,175) but SA models tend to carry the primary colour on many more
+//     materials than VC models do (70+ is normal for SA),
+//   * the meshes are named after the part they are (door_lf_stock,
+//     roof_stock, exhaus_stock, ug_nitro, lights_front, chassis_vlo, ...).
+//   * TXDs are D3D9 (platform 9) textures.
+//
+// With this define reVC loads such models correctly instead of showing an
+// invisible car with missing wheels.
+#define SA_VEHICLE_MODELS
+
+// Custom models, textures and collision from the community's own containers
+// (.mod / .btx / .cls) inside zip archives. The archives are read from the
+// folder below (relative to the game directory) and are converted in memory
+// when the game asks for a model, so no .dff/.txd/.col files have to be built
+// outside of the game. Files from this folder win over the game's own IMG
+// archives. See src/extras/custom/CustomModels.h.
+#define CUSTOM_MODELS
+#ifdef CUSTOM_MODELS
+	#define CUSTOM_MODELS_FOLDER "custom"
+#endif
+
+// GTA:SA vehicles (and mods converted from them) often keep the frame name of
+// the car they were converted from in the DFF, so a model file may contain a
+// clump whose root frame does not know the name of the model at all. Fall back
+// to the file name of the model in that case (only used when a .dff is loaded
+// by file name, e.g. from a HIERFILE).
+#define SA_VEHICLE_MODEL_NAME_FALLBACK
 
 #if defined(__LP64__) || defined(_WIN64) || defined(__aarch64__)
 #define FIX_BUGS_64 // Must have fixes to be able to run 64 bit build
