@@ -19,24 +19,14 @@ uintptr_t g_libREVC = NULL;
 bool AndWrapper::AppInitialized = false;
 bool AndWrapper::AppStarted = false;
 
-JAVA_WRAPPER Java_org_libsdl_app_SDLActivity_nativeSetupJNI(JNIEnv* env, jobject initGame)
+// SDL's own libSDL2.so implements SDLActivity.nativeSetupJNI. Exporting that
+// same Java symbol here could make the VM invoke our old, incompatible wrapper
+// instead of SDL's setup routine. The game path is passed as --dir by the
+// launcher; no extra JNI method (or external-storage permission) is required.
+extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *)
 {
-    if(!javaVM) {
-        env->GetJavaVM(&javaVM);
-    }
-
-    g_pJavaWrapper = new CJavaWrapper(env, initGame);
-}
-
-JAVA_WRAPPER Java_com_revc_game_core_REVC_setGamePath(JNIEnv *env, jobject obj, jstring value)
-{
-    const char* root = env->GetStringUTFChars(value, NULL);
-    setenv("STORAGE_ROOT", root, 1);
-
-    StorageRootBuffer = getenv("STORAGE_ROOT");
-    debug("Storage Root: %s", StorageRootBuffer);
-
-    env->ReleaseStringUTFChars(value, root);
+    javaVM = vm;
+    return JNI_VERSION_1_6;
 }
 
 bool AndWrapper::InitLibraries() {
