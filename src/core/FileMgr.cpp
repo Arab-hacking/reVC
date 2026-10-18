@@ -49,14 +49,10 @@ void mychdir(char const *path)
 #endif
 	char* r = casepath(path, false);
     if (r) {
-#if defined(ANDROID)
-		char path[MAX_PATH];
-		strcpy(path, CFileMgr::GetRootDirName());
-		strcat(path, r);
-        chdir(path);
-#else
+        // casepath already returns a complete absolute path when given one.
+        // Prefixing the Android root a second time prevented SetDir from
+        // entering the game directory (root/root/data).
         chdir(r);
-#endif
 		free(r);
     } else {
         errno = ENOENT;
@@ -369,11 +365,27 @@ void
 CFileMgr::Initialise(void)
 {
 #if defined(ANDROID)
-	if(getenv("STORAGE_ROOT") != NULL) {
-		strcpy(ms_rootDirName, getenv("STORAGE_ROOT"));
-		strcat(ms_rootDirName, "/");
-        debug("Android: Root Dir: %s\n", ms_rootDirName);
+	const char *root = getenv("STORAGE_ROOT");
+	if(root != nil && root[0] != '\0') {
+		int written = snprintf(ms_rootDirName, sizeof(ms_rootDirName), "%s%s",
+			root, root[strlen(root)-1] == '/' ? "" : "/");
+		if(written < 0 || written >= (int)sizeof(ms_rootDirName)) {
+			debug("Android: game directory path is too long\n");
+			ms_rootDirName[0] = '\0';
+		}
 	}
+	if(ms_rootDirName[0] == '\0') {
+		if(_getcwd(ms_rootDirName, sizeof(ms_rootDirName)) == nil)
+			return;
+		size_t length = strlen(ms_rootDirName);
+		if(length + 1 >= sizeof(ms_rootDirName))
+			return;
+		ms_rootDirName[length] = '/';
+		ms_rootDirName[length+1] = '\0';
+	}
+	strcpy(ms_dirName, ms_rootDirName);
+	mychdir(ms_rootDirName);
+	debug("Android: Root Dir: %s\n", ms_rootDirName);
 #elif defined(__APPLE__)
 	FindBundledGameFiles(bundledGameFilesDir, sizeof(bundledGameFilesDir));
 	if(ms_rootDirName[0] == '\0' && !FindGameRoot(ms_rootDirName, sizeof(ms_rootDirName)))

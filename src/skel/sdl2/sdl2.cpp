@@ -81,11 +81,15 @@ char gSelectedJoystickName[128] = "";
 void _psCreateFolder(const char *path)
 {
 #if defined(ANDROID)
-	const char* pathroot = StorageRootBuffer;
+	const char* pathroot = getenv("STORAGE_ROOT");
 	char dbPath[1024];
-	snprintf(dbPath, sizeof(dbPath), "%s%s", pathroot, path);
-	mkdir(dbPath, 0755);
-	debug("Creating Folder Path: %s", dbPath);
+	int length = pathroot && *pathroot
+		? snprintf(dbPath, sizeof(dbPath), "%s/%s", pathroot, path)
+		: snprintf(dbPath, sizeof(dbPath), "%s", path);
+	if(length >= 0 && length < (int)sizeof(dbPath)) {
+		mkdir(dbPath, 0755);
+		debug("Creating Folder Path: %s", dbPath);
+	}
 #else
     debug("Creating Folder Path: %s", path);
     struct stat info;
@@ -706,7 +710,9 @@ void _InputInitialiseJoys()
 #if defined ANDROID
         const char* pathRoot = getenv("STORAGE_ROOT");
         char SDL_GAMEPAD_DB_PATH[MAX_PATH];
-        snprintf(SDL_GAMEPAD_DB_PATH, sizeof(SDL_GAMEPAD_DB_PATH), "%s%s", pathRoot, "gamecontrollerdb.txt");
+        snprintf(SDL_GAMEPAD_DB_PATH, sizeof(SDL_GAMEPAD_DB_PATH), "%s%s%s",
+                 pathRoot ? pathRoot : "", pathRoot && *pathRoot ? "/" : "",
+                 "gamecontrollerdb.txt");
 #else
         char bundledPath[FILEMGR_PATH_SIZE];
         const char* SDL_GAMEPAD_DB_PATH = CFileMgr::ResolveBundledGameFile(
@@ -1347,6 +1353,9 @@ main(int argc, char *argv[])
             setenv("STORAGE_ROOT", gamePath, 1);
         }
     }
+#ifdef ANDROID
+    StorageRootBuffer = getenv("STORAGE_ROOT");
+#endif
 
     /*
      * Initialize the platform independent data.

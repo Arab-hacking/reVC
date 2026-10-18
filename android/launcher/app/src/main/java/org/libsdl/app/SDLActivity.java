@@ -268,9 +268,9 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
      * @return names of shared libraries to be loaded (e.g. "SDL2", "main").
      */
     protected String[] getLibraries() {
-        return new String[] {
-            "SDL2", "openal", "revc"
-        };
+        // OpenAL and mpg123 are loaded as dependencies of librevc.so, using
+        // their ELF SONAMEs (libOpenAL32.so / libOpenAL64.so on Android).
+        return new String[] { "SDL2", "revc" };
     }
 
     // Load the .so
@@ -287,7 +287,13 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
      * @return arguments for the native application.
      */
     protected String[] getArguments() {
-        return new String[0];
+        // The launcher installs reVC support data and asks the player for
+        // their own Vice City files in this app-owned, writable directory.
+        String gameDir = getIntent().getStringExtra("revc.gameDir");
+        if (gameDir == null && getExternalFilesDir(null) != null) {
+            gameDir = getExternalFilesDir(null).getAbsolutePath();
+        }
+        return gameDir == null ? new String[0] : new String[] { "--dir", gameDir };
     }
 
     public static void initialize() {

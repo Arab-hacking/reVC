@@ -27,7 +27,7 @@ void Logger::Log(const char *fmt, ...)
     static FILE* flLog = nullptr;
 
     if(flLog == nullptr && StorageRootBuffer != nullptr) {
-	    sprintf(buffer, "%slog.txt", StorageRootBuffer);
+	    snprintf(buffer, sizeof(buffer), "%s/log.txt", StorageRootBuffer);
 	    flLog = fopen(buffer, "ab");
     }
 
@@ -53,7 +53,7 @@ void Logger::CrashLog(const char* fmt, ...)
     static FILE* flLog = nullptr;
 
     if (flLog == nullptr && StorageRootBuffer != nullptr) {
-	    sprintf(buffer, "%scrash_log.txt", StorageRootBuffer);
+	    snprintf(buffer, sizeof(buffer), "%s/crash_log.txt", StorageRootBuffer);
 	    flLog = fopen(buffer, "ab");
     }
 

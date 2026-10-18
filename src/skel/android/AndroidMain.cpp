@@ -40,7 +40,7 @@ JAVA_WRAPPER Java_com_revc_game_core_REVC_setGamePath(JNIEnv *env, jobject obj, 
 }
 
 bool AndWrapper::InitLibraries() {
-	g_libREVC = Patch::FindLib("libreVC.so");
+	g_libREVC = Patch::FindLib("librevc.so");
 
 	if (!g_libREVC) {
 		Logger::Log("[ERROR]: Required libraries not found!");
