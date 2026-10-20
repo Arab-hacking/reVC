@@ -1622,30 +1622,15 @@ void
 CWorld::ShutDown(void)
 {
 	ForEachAllocatedSector([](CSector *pSector) {
-		for(CPtrNode *pNode = pSector->m_lists[ENTITYLIST_BUILDINGS].first; pNode; pNode = pNode->next) {
-			CEntity *pEntity = (CEntity *)pNode->item;
-			Remove(pEntity);
-			delete pEntity;
-		}
-		for(CPtrNode *pNode = pSector->m_lists[ENTITYLIST_VEHICLES].first; pNode; pNode = pNode->next) {
-			CEntity *pEntity = (CEntity *)pNode->item;
-			Remove(pEntity);
-			delete pEntity;
-		}
-		for(CPtrNode *pNode = pSector->m_lists[ENTITYLIST_PEDS].first; pNode; pNode = pNode->next) {
-			CEntity *pEntity = (CEntity *)pNode->item;
-			Remove(pEntity);
-			delete pEntity;
-		}
-		for(CPtrNode *pNode = pSector->m_lists[ENTITYLIST_OBJECTS].first; pNode; pNode = pNode->next) {
-			CEntity *pEntity = (CEntity *)pNode->item;
-			Remove(pEntity);
-			delete pEntity;
-		}
-		for(CPtrNode *pNode = pSector->m_lists[ENTITYLIST_DUMMIES].first; pNode; pNode = pNode->next) {
-			CEntity *pEntity = (CEntity *)pNode->item;
-			Remove(pEntity);
-			delete pEntity;
+		// Remove() frees sector nodes (and can remove the entity from other
+		// sectors). Always revisit the current head, never a freed node->next.
+		for(int kind : {ENTITYLIST_BUILDINGS, ENTITYLIST_VEHICLES, ENTITYLIST_PEDS,
+		                ENTITYLIST_OBJECTS, ENTITYLIST_DUMMIES}) {
+			while(CPtrNode *node = pSector->m_lists[kind].first) {
+				CEntity *entity = (CEntity *)node->item;
+				Remove(entity);
+				delete entity;
+			}
 		}
 #ifndef FIX_BUGS
 		pSector->m_lists[ENTITYLIST_BUILDINGS].Flush();
@@ -1717,23 +1702,24 @@ CWorld::ClearForRestart(void)
 	CObject::DeleteAllTempObjects();
 	CObject::DeleteAllMissionObjects();
 	CPopulation::ConvertAllObjectsToDummyObjects();
+	// A plane can also be in a vehicle sector. Visit the generic list first
+	// and only once, before removing sector vehicles.
+	for(CPtrNode *node = GetBigBuildingList(LEVEL_GENERIC).first; node;) {
+		CPtrNode *next = node->next;
+		CVehicle *vehicle = (CVehicle *)node->item;
+		if(vehicle && vehicle->IsVehicle() && vehicle->IsPlane()) {
+			Remove(vehicle);
+			delete vehicle;
+		}
+		node = next;
+	}
 	ForEachAllocatedSector([](CSector *pSector) {
-		for(CPtrNode *pNode = pSector->m_lists[ENTITYLIST_PEDS].first; pNode; pNode = pNode->next) {
-			CEntity *pEntity = (CEntity *)pNode->item;
-			Remove(pEntity);
-			delete pEntity;
-		}
-		for(CPtrNode *pNode = GetBigBuildingList(LEVEL_GENERIC).first; pNode; pNode = pNode->next) {
-			CVehicle *pVehicle = (CVehicle *)pNode->item;
-			if(pVehicle && pVehicle->IsVehicle() && pVehicle->IsPlane()) {
-				Remove(pVehicle);
-				delete pVehicle;
+		for(int kind : {ENTITYLIST_PEDS, ENTITYLIST_VEHICLES}) {
+			while(CPtrNode *node = pSector->m_lists[kind].first) {
+				CEntity *entity = (CEntity *)node->item;
+				Remove(entity);
+				delete entity;
 			}
-		}
-		for(CPtrNode *pNode = pSector->m_lists[ENTITYLIST_VEHICLES].first; pNode; pNode = pNode->next) {
-			CEntity *pEntity = (CEntity *)pNode->item;
-			Remove(pEntity);
-			delete pEntity;
 		}
 	});
 	CPools::CheckPoolsEmpty();
@@ -1860,20 +1846,12 @@ void
 CWorld::RemoveStaticObjects()
 {
 	ForEachAllocatedSector([](CSector *pSector) {
-		for(CPtrNode *pNode = pSector->m_lists[ENTITYLIST_BUILDINGS].first; pNode; pNode = pNode->next) {
-			CEntity *pEntity = (CEntity *)pNode->item;
-			Remove(pEntity);
-			delete pEntity;
-		}
-		for(CPtrNode *pNode = pSector->m_lists[ENTITYLIST_OBJECTS].first; pNode; pNode = pNode->next) {
-			CEntity *pEntity = (CEntity *)pNode->item;
-			Remove(pEntity);
-			delete pEntity;
-		}
-		for(CPtrNode *pNode = pSector->m_lists[ENTITYLIST_DUMMIES].first; pNode; pNode = pNode->next) {
-			CEntity *pEntity = (CEntity *)pNode->item;
-			Remove(pEntity);
-			delete pEntity;
+		for(int kind : {ENTITYLIST_BUILDINGS, ENTITYLIST_OBJECTS, ENTITYLIST_DUMMIES}) {
+			while(CPtrNode *node = pSector->m_lists[kind].first) {
+				CEntity *entity = (CEntity *)node->item;
+				Remove(entity);
+				delete entity;
+			}
 		}
 		pSector->m_lists[ENTITYLIST_BUILDINGS].Flush();
 		pSector->m_lists[ENTITYLIST_BUILDINGS_OVERLAP].Flush();
