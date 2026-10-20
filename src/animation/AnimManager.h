@@ -146,6 +146,8 @@ public:
 	static CAnimBlendHierarchy *GetAnimHierarchyForOffset(AssocGroupId groupId, AnimationId animId);
 	static CAnimBlendHierarchy *GetAnimHierarchyForOffset(RpClump *clump, AssocGroupId groupId, AnimationId animId);
 	static const char *GetAnimGroupName(AssocGroupId groupId);
+	// Expected clip name for a group slot, even when its IFP is absent.
+	static const char *GetAnimName(AssocGroupId groupId, AnimationId animId);
 	static CAnimBlendAssociation *CreateAnimAssociation(AssocGroupId groupId, AnimationId animId);
 	static CAnimBlendAssociation *CreateAnimAssociation(RpClump *clump, AssocGroupId groupId, AnimationId animId);
 	static CAnimBlendAssociation *GetAnimAssociation(AssocGroupId groupId, AnimationId animId);

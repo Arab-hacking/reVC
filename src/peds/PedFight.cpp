@@ -191,9 +191,17 @@ ReportUnavailableWeaponAnim(CPed *ped, AnimationId animId, AssocGroupId groupId 
 			return;
 		warned[bank][group][anim] = true;
 	}
+	const char *groupName = group >= 0 && group < NUM_ANIM_ASSOC_GROUPS ?
+		CAnimManager::GetAnimGroupName((AssocGroupId)group) : nil;
+	const char *clipName = groupName ? CAnimManager::GetAnimName((AssocGroupId)group, animId) : nil;
+	if(bank && groupName && clipName){
+		REVC_LOG_WARNING("Weapon animation unavailable: ped=%d, SA skeleton=1, weapon=%d, group=%d (%s), anim=%d (%s); check custom/%s.ifp or .ani (ANP2/ANP3) for this clip and compatible SA bones",
+			ped->GetModelIndex(), weapon, group, groupName, anim, clipName, groupName);
+		return;
+	}
 	REVC_LOG_WARNING("Weapon animation unavailable: ped=%d, SA skeleton=%d, weapon=%d, group=%d, anim=%d; %s",
 		ped->GetModelIndex(), bank, weapon, group, anim,
-		bank ? "add the matching SA IFP/ANI to custom" : "check the native VC animation bank");
+		bank ? "check the matching SA IFP/ANI in custom" : "check the native VC animation bank");
 }
 
 void

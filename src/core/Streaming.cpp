@@ -532,9 +532,10 @@ CStreaming::LoadCdDirectory(const char *dirname, int n)
 				bAddToStreaming = true;
 			}else{
 #ifdef CUSTOM_MODELS
-				// These images can hold tens of thousands of world models.
-				// An unknown DFF has no IDE/stream id; do not overflow the
-				// small cutscene-only extra-objects directory with it.
+				unknownModels++;
+				// Auto-mounted IMGs can hold tens of thousands of DFFs without
+				// IDEs, which are not script-loadable special models. Native
+				// images must retain theirs; CDirectory grows when needed.
 				if(!modelsOnly){
 #endif
 #ifdef FIX_BUGS
@@ -543,7 +544,7 @@ CStreaming::LoadCdDirectory(const char *dirname, int n)
 					ms_pExtraObjectsDir->AddItem(direntry);
 #endif
 #ifdef CUSTOM_MODELS
-				}else unknownModels++;
+				}
 #endif
 				lastID = -1;
 			}
@@ -614,6 +615,9 @@ CStreaming::LoadCdDirectory(const char *dirname, int n)
 	if(modelsOnly && (unknownModels || ignoredTypes || fullTxds))
 		REVC_LOG_INFO("IMG %d: %d DFF without IDE, %d non-DFF/TXD entries ignored, %d TXDs over slot limit",
 			n, unknownModels, ignoredTypes, fullTxds);
+	if(!modelsOnly && unknownModels)
+		REVC_LOG_INFO("IMG %d: %d DFF without IDE encountered; extra directory now holds %d unique models",
+			n, unknownModels, ms_pExtraObjectsDir->numEntries);
 	if(!modelsOnly && fullTxds)
 		REVC_LOG_ERROR("IMG %d: %d native TXDs could not be registered: TXD slots exhausted", n, fullTxds);
 #endif

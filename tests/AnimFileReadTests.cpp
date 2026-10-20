@@ -153,14 +153,14 @@ static void Chunk(std::vector<uint8> &v, const char *tag, const std::vector<uint
 }
 
 static std::vector<uint8>
-MobileANI(uint32 groupVal, bool compressed, bool mixed = false)
+MobileANI(uint32 groupVal, bool compressed, bool mixed = false, const char *clipName = "CAR_getin_LHS")
 {
 	std::vector<uint8> v;
 	v.insert(v.end(), "ANP3", "ANP3" + 4);
 	Name(v, "ped", 24);
 	U32(v, 1);                 // animation count
 	U32(v, groupVal);          // exporter-specific, ignored
-	Name(v, "CAR_getin_LHS", 24);
+	Name(v, clipName, 24);
 	U32(v, mixed ? 2 : 1);     // number of bone sequences
 	U32(v, (compressed ? 32 : 64) + (mixed ? 40 : 0)); // frame data bytes
 	U32(v, 1);                 // exporter word, NOT a compression flag
@@ -344,6 +344,34 @@ main(void)
 		CAnimManager::GetAnimation("CAR_getin_LHS", saBikes) &&
 		CAnimManager::GetAnimationBlock("bikes") == nil,
 		"custom ANP3 only enters the parallel SA bank");
-	puts("Native VC / custom SA bank isolation, real IFP reader and door offsets OK");
+
+	// VC's weapon group IDs should resolve real SA clip names from separately
+	// provided, compact IFP banks. ped.ifp alone cannot supply these clips.
+	struct WeaponClip {
+		const char *filename;
+		AssocGroupId group;
+		AnimationId anim;
+		const char *name;
+	} weaponClips[] = {
+		{ "ANIM\\PYTHON.IFP", ASSOCGRP_PYTHON, ANIM_WEAPON_FIRE, "python_fire" },
+		{ "ANIM\\BUDDY.IFP", ASSOCGRP_BUDDY, ANIM_WEAPON_FIRE, "buddy_fire" },
+		{ "ANIM\\UZI.IFP", ASSOCGRP_UZI, ANIM_WEAPON_FIRE, "UZI_fire" },
+		{ "ANIM\\CHAINSAW.IFP", ASSOCGRP_CHAINSAW, ANIM_MELEE_ATTACK_START, "CSAW_PART" }
+	};
+	for(const WeaponClip &test : weaponClips){
+		Check(CAnimManager::GetAnimName(test.group, test.anim) != nil,
+			"weapon animation name remains available when IFP is missing");
+		Check(CAnimManager::GetAnimHierarchyForOffset(saPed.Get(), test.group, test.anim) == nil,
+			"ped.ifp alone has no matching SA weapon clip");
+		customFile = MobileANI(1, true, false, test.name);
+		CAnimManager::LoadSAAnimFileFromCustom(test.filename);
+		CAnimBlendHierarchy *clip = CAnimManager::GetAnimHierarchyForOffset(saPed.Get(), test.group, test.anim);
+		Check(clip && !strcasecmp(clip->name, test.name) &&
+			!CAnimManager::IsAnimationCompatibleWithClump(vcPed.Get(), clip),
+			"separate SA weapon clip resolves for SA ped but not VC ped");
+	}
+	Check(CAnimManager::GetAnimName(ASSOCGRP_BUDDY, ANIM_WEAPON_RELOAD) == nil,
+		"unavailable weapon slots are not mistaken for valid clip names");
+	puts("Native VC / custom SA bank isolation, weapon clips, real IFP reader and door offsets OK");
 	return 0;
 }

@@ -119,6 +119,24 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Cla
     set_target_properties(txd_store_capacity_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
     add_test(NAME txd_store_capacity_tests COMMAND txd_store_capacity_tests)
 
+    # Exercise CDirectory::AddItem itself: the extra-objects directory must
+    # retain native DFFs beyond its old 256-entry reserve when VC IDEs are off.
+    add_executable(directory_growth_tests
+        DirectoryGrowthTests.cpp ../src/core/Directory.cpp)
+    target_compile_definitions(directory_growth_tests PRIVATE
+        LIBRW RW_GL3 LIBRW_SDL2 CMAKE_BUILD USE_OUR_VERSIONING AUDIO_OAL)
+    target_include_directories(directory_growth_tests PRIVATE
+        ../vendor/librw ../vendor/librw/src/gl ../vendor/sdl2/include
+        ../src ../src/animation ../src/audio ../src/buildings ../src/collision
+        ../src/control ../src/core ../src/entities ../src/extras
+        ../src/extras/custom ../src/extras/custom/br ../src/fakerw ../src/math
+        ../src/modelinfo ../src/objects ../src/peds ../src/renderer ../src/rw
+        ../src/save ../src/skel ../src/text ../src/vehicles ../src/weapons)
+    target_compile_options(directory_growth_tests PRIVATE -ffunction-sections -fdata-sections)
+    target_link_options(directory_growth_tests PRIVATE -Wl,--gc-sections)
+    set_target_properties(directory_growth_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+    add_test(NAME directory_growth_tests COMMAND directory_growth_tests)
+
     # Link the real ZIP/IMG scanner and both collision converters. The game
     # dependencies not exercised by this fixture are discarded by section GC.
     add_executable(custom_archive_integration_tests

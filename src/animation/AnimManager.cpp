@@ -1249,6 +1249,20 @@ CAnimManager::GetAnimGroupName(AssocGroupId groupId)
 	return ms_aAnimAssocDefinitions[groupId].name;
 }
 
+const char*
+CAnimManager::GetAnimName(AssocGroupId groupId, AnimationId animId)
+{
+	if(groupId < 0 || groupId >= NUM_ANIM_ASSOC_GROUPS)
+		return nil;
+	const AnimAssocDefinition *def = &ms_aAnimAssocDefinitions[groupId];
+	if(def->numAnims <= 0)
+		return nil;
+	int index = animId - def->animDescs[0].animId;
+	if(index < 0 || index >= def->numAnims || def->animDescs[index].animId != animId)
+		return nil;
+	return def->animNames[index];
+}
+
 static bool
 IsSAAnimationBlock(const CAnimBlock *block)
 {
@@ -1900,10 +1914,20 @@ CAnimManager::LoadAnimFiles(void)
 		"ANIM\\GCLUB_1.IFP",
 		"ANIM\\KNIFE_1.IFP",
 		"ANIM\\CSAW_1.IFP",
-		"ANIM\\GRENADE.IFP",
+		"ANIM\\CHAINSAW.IFP",
+		// VC's weapon groups (including python and buddy) have matching
+		// compact SA dictionaries. Merely loading ped.ifp cannot fill them.
+		"ANIM\\PYTHON.IFP",
+		"ANIM\\COLT45.IFP",
+		"ANIM\\SHOTGUN.IFP",
+		"ANIM\\BUDDY.IFP",
+		"ANIM\\TEC.IFP",
 		"ANIM\\UZI.IFP",
 		"ANIM\\RIFLE.IFP",
-		"ANIM\\COLT45.IFP",
+		"ANIM\\M60.IFP",
+		"ANIM\\SNIPER.IFP",
+		"ANIM\\GRENADE.IFP",
+		"ANIM\\FLAME.IFP",
 		"ANIM\\SUNBATHE.IFP",
 		"ANIM\\FAT.IFP",
 		"ANIM\\STDCARAMIMS.IFP",
