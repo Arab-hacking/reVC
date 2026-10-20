@@ -588,7 +588,9 @@ bool CGame::Initialise(const char* datFile)
 	CClock::Initialise(1000);
 	CHeli::InitHelis();
 	CCranes::InitCranes();
+	REVC_LOG_INFO("Game variables: helis and cranes ready; initializing moving things");
 	CMovingThings::Init();
+	REVC_LOG_INFO("Game variables: moving things ready");
 	CDarkel::Init();
 	CStats::Init();
 	CPacManPickups::Init();
