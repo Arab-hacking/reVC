@@ -1576,8 +1576,8 @@ CPed::ProcessObjective(void)
 								if (reloadAssoc &&
 									(!reloadAssoc->IsRunning() || reloadAssoc->GetProgress() > 0.8f)) {
 									CAnimBlendAssociation *punchAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_PARTIAL_PUNCH, 8.0f);
-									punchAssoc->flags |= ASSOC_DELETEFADEDOUT;
-									punchAssoc->flags |= ASSOC_FADEOUTWHENDONE;
+									if (punchAssoc)
+										punchAssoc->flags |= ASSOC_DELETEFADEDOUT | ASSOC_FADEOUTWHENDONE;
 									CVector2D offset(distWithTarget.x, distWithTarget.y);
 									int dir = m_pedInObjective->GetLocalDirection(offset);
 									m_pedInObjective->StartFightDefend(dir, HITLEVEL_HIGH, 5);
@@ -1605,8 +1605,8 @@ CPed::ProcessObjective(void)
 									SetCurrentWeapon(WEAPONTYPE_UNARMED);
 
 								CAnimBlendAssociation *newReloadAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_PARTIAL_FUCKU, 8.0f);
-								newReloadAssoc->flags |= ASSOC_DELETEFADEDOUT;
-								newReloadAssoc->flags |= ASSOC_FADEOUTWHENDONE;
+								if (newReloadAssoc)
+									newReloadAssoc->flags |= ASSOC_DELETEFADEDOUT | ASSOC_FADEOUTWHENDONE;
 							}
 						} else {
 							SetSeek(m_pedInObjective, 1.0f);
@@ -1951,10 +1951,10 @@ CPed::ProcessObjective(void)
 					float right = GetPosition().x + 10.0f;
 					float top = GetPosition().y - 10.0f;
 					float bottom = GetPosition().y + 10.0f;
-					int xstart = Max(0, CWorld::GetSectorIndexX(left));
-					int xend = Min(NUMSECTORS_X - 1, CWorld::GetSectorIndexX(right));
-					int ystart = Max(0, CWorld::GetSectorIndexY(top));
-					int yend = Min(NUMSECTORS_Y - 1, CWorld::GetSectorIndexY(bottom));
+					int xstart = CWorld::GetSectorIndexX(left);
+					int xend = CWorld::GetSectorIndexX(right);
+					int ystart = CWorld::GetSectorIndexY(top);
+					int yend = CWorld::GetSectorIndexY(bottom);
 					assert(xstart <= xend);
 					assert(ystart <= yend);
 
@@ -3350,7 +3350,7 @@ CPed::LineUpPedWithCar(PedLineUpPhase phase)
 {
 	bool vehIsUpsideDown = false;
 	bool stillGettingInOut = false;
-	int vehAnim;
+	int vehAnim = ANIM_STD_NUM;
 	float seatPosMult = 0.0f;
 	float currentZ;
 	float adjustedTimeStep;
@@ -3580,8 +3580,8 @@ CPed::LineUpPedWithCar(PedLineUpPhase phase)
 	}
 
 	if (autoZPos.z > neededPos.z) {
-		vehAnim = m_pVehicleAnim->animId;
-		if (veh->IsBike() && (m_pVehicleAnim && vehAnim != ANIM_BIKE_KICK)) {
+		if(m_pVehicleAnim) vehAnim = m_pVehicleAnim->animId;
+		if (veh->IsBike() && m_pVehicleAnim && vehAnim != ANIM_BIKE_KICK) {
 			float zBlend;
 			if (vehAnim != ANIM_BIKE_GETOFF_LHS && vehAnim != ANIM_BIKE_GETOFF_RHS) {
 				if (vehAnim != ANIM_BIKE_JUMPON_LHS && vehAnim != ANIM_BIKE_JUMPON_RHS) {
@@ -5937,13 +5937,15 @@ CPed::SetDuck(uint32 time, bool sth)
 	CAnimBlendAssociation *duckAssoc;
 	if (bCrouchWhenShooting) {
 		duckAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_DUCK_WEAPON, 4.0f);
+		if (!duckAssoc) return; // stay upright if this SA bank has no crouch clip
 		duckAssoc->flags &= ~ASSOC_FADEOUTWHENDONE;
 		bIsDucking = true;
 		m_duckTimer = CTimer::GetTimeInMilliseconds() + time;
 	} else {
-		CAnimBlendAssociation *duckAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_DUCK_DOWN);
+		duckAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_DUCK_DOWN);
 		if (!duckAssoc || duckAssoc->blendDelta < 0.0f) {
-			CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_DUCK_DOWN, 4.0f);
+			duckAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_DUCK_DOWN, 4.0f);
+			if (!duckAssoc) return;
 			bIsDucking = true;
 			m_duckTimer = CTimer::GetTimeInMilliseconds() + time;
 		}
@@ -6897,11 +6899,19 @@ CPed::KillCharOnFootMelee(CVector &ourPos, CVector &targetPos, CVector &distWith
 			}
 		}
 		if (goForward) {
-			m_curFightMove = FIGHTMOVE_SHUFFLE_F;
-			CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_FIGHT_SHUFFLE_B, 16.f)->SetFinishCallback(FinishFightMoveCB,this);
-			m_fightState = FIGHTSTATE_NO_MOVE;
-			m_fightButtonPressure = 0;
-			m_takeAStepAfterAttack = false;
+			CAnimBlendAssociation *shuffle = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_FIGHT_SHUFFLE_B, 16.f);
+			if (shuffle) {
+				m_curFightMove = FIGHTMOVE_SHUFFLE_F;
+				shuffle->SetFinishCallback(FinishFightMoveCB, this);
+				m_fightState = FIGHTSTATE_NO_MOVE;
+				m_fightButtonPressure = 0;
+				m_takeAStepAfterAttack = false;
+			} else {
+				// Missing SA shuffle: seek directly rather than waiting for a
+				// finish callback that will never fire.
+				m_curFightMove = FIGHTMOVE_IDLE;
+				SetSeek(m_vecSeekPos, maxDistToKeep);
+			}
 
 		} else if (bUsePedNodeSeek && !canReachVictim) {
 			CVector bestCoords(0.0f, 0.0f, 0.0f);

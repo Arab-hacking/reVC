@@ -685,7 +685,8 @@ CPlayerPed::RunningLand(CPad *padUsed)
 		landAssoc->blendDelta = -1000.0f;
 		landAssoc->flags |= ASSOC_DELETEFADEDOUT;
 
-		CAnimManager::AddAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_JUMP_LAND)->SetFinishCallback(FinishJumpCB, this);
+		if (CAnimBlendAssociation *jump = CAnimManager::AddAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_JUMP_LAND))
+			jump->SetFinishCallback(FinishJumpCB, this);
 
 		if (m_nPedState == PED_JUMP)
 			RestorePreviousState();
@@ -1812,7 +1813,10 @@ CPlayerPed::ProcessControl(void)
 						else
 							rollDoorAssoc = CAnimManager::AddAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_CAR_CLOSE_DOOR_ROLLING_LHS);
 
-						rollDoorAssoc->SetFinishCallback(PedAnimDoorCloseRollingCB, this);
+						if (rollDoorAssoc)
+							rollDoorAssoc->SetFinishCallback(PedAnimDoorCloseRollingCB, this);
+						else
+							PedAnimDoorCloseRollingCB(nil, this);
 					}
 				}
 			}

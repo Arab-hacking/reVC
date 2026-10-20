@@ -1111,16 +1111,12 @@ void
 CStreaming::InstanceLoadedModels(const CVector &pos)
 {
 	int minX = CWorld::GetSectorIndexX(pos.x - 80.0f);
-	if(minX <= 0) minX = 0;
 
 	int minY = CWorld::GetSectorIndexY(pos.y - 80.0f);
-	if(minY <= 0) minY = 0;
 
 	int maxX = CWorld::GetSectorIndexX(pos.x + 80.0f);
-	if(maxX >= NUMSECTORS_X) maxX = NUMSECTORS_X - 1;
 
 	int maxY = CWorld::GetSectorIndexY(pos.y + 80.0f);
-	if(maxY >= NUMSECTORS_Y) maxY = NUMSECTORS_Y - 1;
 
 	int x, y;
 	for(y = minY; y <= maxY; y++){
@@ -3153,13 +3149,9 @@ CStreaming::AddModelsToRequestList(const CVector &pos, int32 flags)
 	ymax = pos.y + STREAM_DIST;
 
 	ixmin = CWorld::GetSectorIndexX(xmin);
-	if(ixmin < 0) ixmin = 0;
 	ixmax = CWorld::GetSectorIndexX(xmax);
-	if(ixmax >= NUMSECTORS_X) ixmax = NUMSECTORS_X-1;
 	iymin = CWorld::GetSectorIndexY(ymin);
-	if(iymin < 0) iymin = 0;
 	iymax = CWorld::GetSectorIndexY(ymax);
-	if(iymax >= NUMSECTORS_Y) iymax = NUMSECTORS_Y-1;
 
 	CWorld::AdvanceCurrentScanCode();
 
@@ -3249,6 +3241,15 @@ CStreaming::DeleteFarAwayRwObjects(const CVector &pos)
 
 	posx = CWorld::GetSectorIndexX(pos.x);
 	posy = CWorld::GetSectorIndexY(pos.y);
+	// A teleport should evict old RW instances once, not step through every
+	// intervening sector. Models remain streamable on the next visible frame.
+	if((int64)posx - ms_oldSectorX > 30 || (int64)ms_oldSectorX - posx > 30 ||
+	   (int64)posy - ms_oldSectorY > 30 || (int64)ms_oldSectorY - posy > 30){
+		DeleteAllRwObjects();
+		ms_oldSectorX = posx;
+		ms_oldSectorY = posy;
+		return;
+	}
 
 	// Move oldSectorX/Y to new sector and delete RW objects in its "wake" for every step:
 	// O is the old sector, <- is the direction in which we move it,
@@ -3267,17 +3268,9 @@ CStreaming::DeleteFarAwayRwObjects(const CVector &pos)
 		if(posx < ms_oldSectorX){
 			for(r = 2; r <= 10; r++){
 				x = ms_oldSectorX + r;
-				if(x < 0)
-					continue;
-				if(x >= NUMSECTORS_X)
-					break;
 
 				for(i = -r; i <= r; i++){
 					y = ms_oldSectorY + i;
-					if(y < 0)
-						continue;
-					if(y >= NUMSECTORS_Y)
-						break;
 
 					sect = CWorld::GetSector(x, y);
 					DeleteRwObjectsInSectorList(sect->m_lists[ENTITYLIST_BUILDINGS]);
@@ -3290,17 +3283,9 @@ CStreaming::DeleteFarAwayRwObjects(const CVector &pos)
 		}else{
 			for(r = 2; r <= 10; r++){
 				x = ms_oldSectorX - r;
-				if(x < 0)
-					break;
-				if(x >= NUMSECTORS_X)
-					continue;
 
 				for(i = -r; i <= r; i++){
 					y = ms_oldSectorY + i;
-					if(y < 0)
-						continue;
-					if(y >= NUMSECTORS_Y)
-						break;
 
 					sect = CWorld::GetSector(x, y);
 					DeleteRwObjectsInSectorList(sect->m_lists[ENTITYLIST_BUILDINGS]);
@@ -3317,17 +3302,9 @@ CStreaming::DeleteFarAwayRwObjects(const CVector &pos)
 		if(posy < ms_oldSectorY){
 			for(r = 2; r <= 10; r++){
 				y = ms_oldSectorY + r;
-				if(y < 0)
-					continue;
-				if(y >= NUMSECTORS_Y)
-					break;
 
 				for(i = -r; i <= r; i++){
 					x = ms_oldSectorX + i;
-					if(x < 0)
-						continue;
-					if(x >= NUMSECTORS_X)
-						break;
 
 					sect = CWorld::GetSector(x, y);
 					DeleteRwObjectsInSectorList(sect->m_lists[ENTITYLIST_BUILDINGS]);
@@ -3340,17 +3317,9 @@ CStreaming::DeleteFarAwayRwObjects(const CVector &pos)
 		}else{
 			for(r = 2; r <= 10; r++){
 				y = ms_oldSectorY - r;
-				if(y < 0)
-					break;
-				if(y >= NUMSECTORS_Y)
-					continue;
 
 				for(i = -r; i <= r; i++){
 					x = ms_oldSectorX + i;
-					if(x < 0)
-						continue;
-					if(x >= NUMSECTORS_X)
-						break;
 
 					sect = CWorld::GetSector(x, y);
 					DeleteRwObjectsInSectorList(sect->m_lists[ENTITYLIST_BUILDINGS]);
@@ -3367,36 +3336,25 @@ CStreaming::DeleteFarAwayRwObjects(const CVector &pos)
 void
 CStreaming::DeleteAllRwObjects(void)
 {
-	int x, y;
-	CSector *sect;
-
-	for(x = 0; x < NUMSECTORS_X; x++)
-		for(y = 0; y < NUMSECTORS_Y; y++){
-			sect = CWorld::GetSector(x, y);
-			DeleteRwObjectsInSectorList(sect->m_lists[ENTITYLIST_BUILDINGS]);
-			DeleteRwObjectsInSectorList(sect->m_lists[ENTITYLIST_BUILDINGS_OVERLAP]);
-			DeleteRwObjectsInSectorList(sect->m_lists[ENTITYLIST_OBJECTS]);
-			DeleteRwObjectsInSectorList(sect->m_lists[ENTITYLIST_OBJECTS_OVERLAP]);
-			DeleteRwObjectsInSectorList(sect->m_lists[ENTITYLIST_DUMMIES]);
-			DeleteRwObjectsInSectorList(sect->m_lists[ENTITYLIST_DUMMIES_OVERLAP]);
-		}
+	CWorld::ForEachAllocatedSector([](CSector *sect) {
+		DeleteRwObjectsInSectorList(sect->m_lists[ENTITYLIST_BUILDINGS]);
+		DeleteRwObjectsInSectorList(sect->m_lists[ENTITYLIST_BUILDINGS_OVERLAP]);
+		DeleteRwObjectsInSectorList(sect->m_lists[ENTITYLIST_OBJECTS]);
+		DeleteRwObjectsInSectorList(sect->m_lists[ENTITYLIST_OBJECTS_OVERLAP]);
+		DeleteRwObjectsInSectorList(sect->m_lists[ENTITYLIST_DUMMIES]);
+		DeleteRwObjectsInSectorList(sect->m_lists[ENTITYLIST_DUMMIES_OVERLAP]);
+	});
 }
 
 void
 CStreaming::DeleteRwObjectsAfterDeath(const CVector &pos)
 {
-	int ix, iy;
-	int x, y;
-	CSector *sect;
-
-	ix = CWorld::GetSectorIndexX(pos.x);
-	iy = CWorld::GetSectorIndexY(pos.y);
-
-	for(x = 0; x < NUMSECTORS_X; x++)
-		for(y = 0; y < NUMSECTORS_Y; y++)
-			if(Abs(ix - x) > 3.0f &&
-			   Abs(iy - y) > 3.0f){
-				sect = CWorld::GetSector(x, y);
+	int ix = CWorld::GetSectorIndexX(pos.x);
+	int iy = CWorld::GetSectorIndexY(pos.y);
+	for(int x = 0; x < NUMSECTORS_X; x++)
+		for(int y = 0; y < NUMSECTORS_Y; y++)
+			if(Abs(ix - x) > 3.0f && Abs(iy - y) > 3.0f){
+				CSector *sect = CWorld::GetSector(x, y);
 				DeleteRwObjectsInSectorList(sect->m_lists[ENTITYLIST_BUILDINGS]);
 				DeleteRwObjectsInSectorList(sect->m_lists[ENTITYLIST_BUILDINGS_OVERLAP]);
 				DeleteRwObjectsInSectorList(sect->m_lists[ENTITYLIST_OBJECTS]);
@@ -3404,6 +3362,17 @@ CStreaming::DeleteRwObjectsAfterDeath(const CVector &pos)
 				DeleteRwObjectsInSectorList(sect->m_lists[ENTITYLIST_DUMMIES]);
 				DeleteRwObjectsInSectorList(sect->m_lists[ENTITYLIST_DUMMIES_OVERLAP]);
 			}
+	for(const auto &entry : CWorld::GetExtraSectors()){
+		int x = entry.first.first, y = entry.first.second;
+		if(Abs(ix - x) <= 3.0f || Abs(iy - y) <= 3.0f) continue;
+		CSector *sect = CWorld::GetSector(x, y);
+		DeleteRwObjectsInSectorList(sect->m_lists[ENTITYLIST_BUILDINGS]);
+		DeleteRwObjectsInSectorList(sect->m_lists[ENTITYLIST_BUILDINGS_OVERLAP]);
+		DeleteRwObjectsInSectorList(sect->m_lists[ENTITYLIST_OBJECTS]);
+		DeleteRwObjectsInSectorList(sect->m_lists[ENTITYLIST_OBJECTS_OVERLAP]);
+		DeleteRwObjectsInSectorList(sect->m_lists[ENTITYLIST_DUMMIES]);
+		DeleteRwObjectsInSectorList(sect->m_lists[ENTITYLIST_DUMMIES_OVERLAP]);
+	}
 }
 
 void
@@ -3445,20 +3414,20 @@ CStreaming::DeleteRwObjectsBehindCamera(size_t mem)
 	if(Abs(TheCamera.GetForward().x) > Abs(TheCamera.GetForward().y)){
 		// looking west/east
 
-		ymin = Max(iy - 10, 0);
-		ymax = Min(iy + 10, NUMSECTORS_Y - 1);
+		ymin = iy - 10;
+		ymax = iy + 10;
 		assert(ymin <= ymax);
 
 		// Delete a block of sectors that we know is behind the camera
 		if(TheCamera.GetForward().x > 0.0f){
 			// looking east
-			xmax = Max(ix - 2, 0);
-			xmin = Max(ix - 10, 0);
+			xmax = ix - 2;
+			xmin = ix - 10;
 			inc = 1;
 		}else{
 			// looking west
-			xmax = Min(ix + 2, NUMSECTORS_X - 1);
-			xmin = Min(ix + 10, NUMSECTORS_X - 1);
+			xmax = ix + 2;
+			xmin = ix + 10;
 			inc = -1;
 		}
 		for(y = ymin; y <= ymax; y++){
@@ -3479,13 +3448,13 @@ CStreaming::DeleteRwObjectsBehindCamera(size_t mem)
 		// Now a block that intersects with the camera's frustum
 		if(TheCamera.GetForward().x > 0.0f){
 			// looking east
-			xmax = Max(ix + 10, 0);
-			xmin = Max(ix - 2, 0);
+			xmax = ix + 10;
+			xmin = ix - 2;
 			inc = 1;
 		}else{
 			// looking west
-			xmax = Min(ix - 10, NUMSECTORS_X - 1);
-			xmin = Min(ix + 2, NUMSECTORS_X - 1);
+			xmax = ix - 10;
+			xmin = ix + 2;
 			inc = -1;
 		}
 		for(y = ymin; y <= ymax; y++){
@@ -3511,20 +3480,20 @@ CStreaming::DeleteRwObjectsBehindCamera(size_t mem)
 	}else{
 		// looking north/south
 
-		xmin = Max(ix - 10, 0);
-		xmax = Min(ix + 10, NUMSECTORS_X - 1);
+		xmin = ix - 10;
+		xmax = ix + 10;
 		assert(xmin <= xmax);
 
 		// Delete a block of sectors that we know is behind the camera
 		if(TheCamera.GetForward().y > 0.0f){
 			// looking north
-			ymax = Max(iy - 2, 0);
-			ymin = Max(iy - 10, 0);
+			ymax = iy - 2;
+			ymin = iy - 10;
 			inc = 1;
 		}else{
 			// looking south
-			ymax = Min(iy + 2, NUMSECTORS_Y - 1);
-			ymin = Min(iy + 10, NUMSECTORS_Y - 1);
+			ymax = iy + 2;
+			ymin = iy + 10;
 			inc = -1;
 		}
 		for(x = xmin; x <= xmax; x++){
@@ -3544,13 +3513,13 @@ CStreaming::DeleteRwObjectsBehindCamera(size_t mem)
 		// Now a block that intersects with the camera's frustum
 		if(TheCamera.GetForward().y > 0.0f){
 			// looking north
-			ymax = Max(iy + 10, 0);
-			ymin = Max(iy - 2, 0);
+			ymax = iy + 10;
+			ymin = iy - 2;
 			inc = 1;
 		}else{
 			// looking south
-			ymax = Min(iy - 10, NUMSECTORS_Y - 1);
-			ymin = Min(iy + 2, NUMSECTORS_Y - 1);
+			ymax = iy - 10;
+			ymin = iy + 2;
 			inc = -1;
 		}
 		for(x = xmin; x <= xmax; x++){

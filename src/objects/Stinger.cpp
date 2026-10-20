@@ -192,9 +192,13 @@ CStinger::Process()
 	case STINGERSTATE_NONE:
 		if (pOwner != nil
 			&& !pOwner->bInVehicle
-			&& pOwner->GetPedState() == PED_DEPLOY_STINGER
-			&& RpAnimBlendClumpGetAssociation(pOwner->GetClump(), ANIM_STD_THROW_UNDER)->currentTime > 0.39f)
+			&& pOwner->GetPedState() == PED_DEPLOY_STINGER)
 		{
+			CAnimBlendAssociation *throwAnim = RpAnimBlendClumpGetAssociation(pOwner->GetClump(), ANIM_STD_THROW_UNDER);
+			// A custom SA bank may lack the throw clip. Deploy without waiting
+			// for a nonexistent animation instead of dereferencing it.
+			if (throwAnim && throwAnim->currentTime <= 0.39f)
+				break;
 			m_nSpikeState = STINGERSTATE_DEPLOYING;
 			for (int i = 0; i < NUM_STINGER_SEGMENTS; i++)
 				CWorld::Add(pSpikes[i]);

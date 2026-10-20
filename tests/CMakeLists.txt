@@ -18,6 +18,22 @@ add_executable(noclip_movement_tests NoClipMovementTests.cpp)
 set_target_properties(noclip_movement_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
 add_test(NAME noclip_movement_tests COMMAND noclip_movement_tests)
 
+add_executable(native_map_options_tests NativeMapOptionsTests.cpp)
+set_target_properties(native_map_options_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+add_test(NAME native_map_options_tests COMMAND native_map_options_tests)
+
+add_executable(player_model_cycle_tests PlayerModelCycleTests.cpp)
+set_target_properties(player_model_cycle_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+add_test(NAME player_model_cycle_tests COMMAND player_model_cycle_tests)
+
+add_executable(world_sector_math_tests WorldSectorMathTests.cpp)
+set_target_properties(world_sector_math_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+add_test(NAME world_sector_math_tests COMMAND world_sector_math_tests)
+
+add_executable(save_block_bounds_tests SaveBlockBoundsTests.cpp)
+set_target_properties(save_block_bounds_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+add_test(NAME save_block_bounds_tests COMMAND save_block_bounds_tests)
+
 add_executable(custom_asset_cache_tests
     CustomAssetCacheTests.cpp ../src/extras/custom/br/third_party/astc_decomp.cpp)
 target_include_directories(custom_asset_cache_tests PRIVATE ../src/extras/custom ../src/extras/custom/br)

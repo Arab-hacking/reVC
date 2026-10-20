@@ -526,6 +526,7 @@ void SaveINIControllerSettings()
 
 bool LoadINISettings()
 {
+	CGame::bLoadViceCityMap = true;
 	if (!ini.read(cfg)){
 		REVC_LOG_WARNING("Could not read reVC.ini; using default settings");
 		return false;
@@ -565,6 +566,7 @@ bool LoadINISettings()
 	ReadIniIfExists("Graphics", "Trails", &CMBlur::BlurOn);
 #endif
 	ReadIniIfExists("General", "SkinFile", FrontEndMenuManager.m_PrefsSkinFile, 256);
+	ReadIniIfExists("World", "LoadViceCityMap", &CGame::bLoadViceCityMap);
 	ReadIniIfExists("Controller", "Method", &FrontEndMenuManager.m_ControlMethod);
 	ReadIniIfExists("General", "Language", &FrontEndMenuManager.m_PrefsLanguage);
 	ReadIniIfExists("Display", "ShowHud", &FrontEndMenuManager.m_PrefsShowHud);
@@ -674,6 +676,7 @@ void SaveINISettings()
 #endif
 	StoreIni("Graphics", "FrameLimiter", FrontEndMenuManager.m_PrefsFrameLimiter);
 	StoreIni("General", "SkinFile", FrontEndMenuManager.m_PrefsSkinFile, 256);
+	StoreIni("World", "LoadViceCityMap", (uint8)CGame::bLoadViceCityMap);
 	StoreIni("Controller", "Method", FrontEndMenuManager.m_ControlMethod);
 	StoreIni("General", "Language", FrontEndMenuManager.m_PrefsLanguage);
 	StoreIni("Display", "ShowHud", FrontEndMenuManager.m_PrefsShowHud);

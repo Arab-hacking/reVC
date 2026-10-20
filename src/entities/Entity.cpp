@@ -517,14 +517,11 @@ CEntity::Add(void)
 	ystart = CWorld::GetSectorIndexY(bounds.top);
 	yend   = CWorld::GetSectorIndexY(bounds.bottom);
 	ymid   = CWorld::GetSectorIndexY((bounds.top + bounds.bottom)/2.0f);
-	assert(xstart >= 0);
-	assert(xend < NUMSECTORS_X);
-	assert(ystart >= 0);
-	assert(yend < NUMSECTORS_Y);
+	assert(xstart <= xend && ystart <= yend);
 
 	for(y = ystart; y <= yend; y++)
 		for(x = xstart; x <= xend; x++){
-			s = CWorld::GetSector(x, y);
+			s = CWorld::EnsureSector(x, y);
 			if(x == xmid && y == ymid) switch(m_type){
 			case ENTITY_TYPE_BUILDING:
 				list = &s->m_lists[ENTITYLIST_BUILDINGS];
@@ -577,10 +574,7 @@ CEntity::Remove(void)
 	ystart = CWorld::GetSectorIndexY(bounds.top);
 	yend   = CWorld::GetSectorIndexY(bounds.bottom);
 	ymid   = CWorld::GetSectorIndexY((bounds.top + bounds.bottom)/2.0f);
-	assert(xstart >= 0);
-	assert(xend < NUMSECTORS_X);
-	assert(ystart >= 0);
-	assert(yend < NUMSECTORS_Y);
+	assert(xstart <= xend && ystart <= yend);
 
 	for(y = ystart; y <= yend; y++)
 		for(x = xstart; x <= xend; x++){

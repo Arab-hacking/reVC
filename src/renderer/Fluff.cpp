@@ -408,14 +408,12 @@ void CMovingThings::Init()
 		aMovingThings[i].m_farAway = 0;
 	}
 
-	for (int i = 0; i < NUMSECTORS_X; i++) {
-		for (int j = 0; j < NUMSECTORS_Y; j++) {
-			for (CPtrNode *pNode = CWorld::GetSector(i, j)->m_lists[ENTITYLIST_BUILDINGS].first; pNode; pNode = pNode->next) {
-				CEntity *pEntity = (CEntity *)pNode->item;
-				PossiblyAddThisEntity(pEntity);
-			}
+	CWorld::ForEachAllocatedSector([](CSector *sector) {
+		for(CPtrNode *pNode = sector->m_lists[ENTITYLIST_BUILDINGS].first; pNode; pNode = pNode->next){
+			CEntity *pEntity = (CEntity *)pNode->item;
+			PossiblyAddThisEntity(pEntity);
 		}
-	}
+	});
 
 	for (int32 i = 0; i < NUM_LEVELS; i++) {
 		for (CPtrNode *pNode = CWorld::GetBigBuildingList((eLevelName)i).first; pNode; pNode = pNode->next) {

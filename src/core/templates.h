@@ -5,33 +5,96 @@
 #include <climits>
 #include <cstring>
 
-template<typename T, int32 n>
+// Model-info stores can opt into stable extra blocks. A model-info pointer is
+// retained by the streaming index and by live entities: reallocating the
+// original array (or changing the addresses of older blocks) is not safe.
+// Other stores keep their original fixed-size behavior by default.
+template<typename T, int32 n, int32 growBy = 0, int32 maxEntries = n>
 class CStore
 {
-public:
-	int32 allocPtr;
-	T store[n];
+    struct ExtraBlock {
+        T *entries;
+        int32 start, size;
+        ExtraBlock *next;
+    };
+    ExtraBlock *m_first, *m_last;
 
-	T *Alloc(void){
-		if(allocPtr >= n){
-			printf("Size of this thing:%d needs increasing\n", n);
-			assert(0);
-		}
-		return &store[allocPtr++];
-	}
-	void Clear(void){
-		allocPtr = 0;
-	}
-	int32 GetIndex(T *item){
-		assert(item >= &store[0]);
-		assert(item < &store[n]);
-		return item - store;
-	}
-	T *GetItem(int32 index){
-		assert(index >= 0);
-		assert(index < n);
-		return &store[index];
-	}
+public:
+    int32 allocPtr;
+    T store[n];
+
+    CStore() : m_first(nil), m_last(nil), allocPtr(0) {}
+    ~CStore() { Clear(); }
+    CStore(const CStore&) = delete;
+    CStore& operator=(const CStore&) = delete;
+
+    bool CanAlloc(void) const { return allocPtr < maxEntries; }
+    T *Alloc(void){
+        if(!CanAlloc()){
+            printf("Model store reached its representable limit (%d)\n", maxEntries);
+            assert(0 && "model store full");
+            return nil;
+        }
+        if(allocPtr < n)
+            return &store[allocPtr++];
+        if(m_last == nil || allocPtr >= m_last->start + m_last->size){
+            const int32 count = growBy < maxEntries - allocPtr ? growBy : maxEntries - allocPtr;
+            if(count <= 0 || (size_t)count > SIZE_MAX/sizeof(T)) return nil;
+            ExtraBlock *block = new (std::nothrow) ExtraBlock;
+            if(block == nil) return nil;
+            block->entries = new (std::nothrow) T[count];
+            if(block->entries == nil){ delete block; return nil; }
+            block->start = allocPtr;
+            block->size = count;
+            block->next = nil;
+            if(m_last) m_last->next = block;
+            else m_first = block;
+            m_last = block;
+        }
+        return &m_last->entries[allocPtr++ - m_last->start];
+    }
+    void Clear(void){
+        for(ExtraBlock *block = m_first; block;){
+            ExtraBlock *next = block->next;
+            delete[] block->entries;
+            delete block;
+            block = next;
+        }
+        m_first = m_last = nil;
+        allocPtr = 0;
+    }
+    int32 GetIndex(T *item) const {
+        // Integer-range tests avoid undefined pointer arithmetic across
+        // separate model-info allocations.
+        uintptr p = (uintptr)item, b = (uintptr)&store[0];
+        size_t offset = (size_t)(p-b);
+        if(p >= b && offset < sizeof(store) && offset % sizeof(T) == 0){
+            int32 index = (int32)(offset/sizeof(T));
+            assert(index < allocPtr);
+            return index;
+        }
+        for(ExtraBlock *block = m_first; block; block = block->next){
+            b = (uintptr)block->entries;
+            offset = (size_t)(p-b);
+            if(p >= b && offset < sizeof(T)*(size_t)block->size && offset % sizeof(T) == 0){
+                int32 index = block->start + (int32)(offset/sizeof(T));
+                assert(index < allocPtr);
+                return index;
+            }
+        }
+        assert(0 && "model-info pointer does not belong to this store");
+        return -1;
+    }
+    T *GetItem(int32 index){
+        assert(index >= 0 && index < allocPtr);
+        if(index < 0 || index >= allocPtr) return nil;
+        if(index < n) return &store[index];
+        for(ExtraBlock *block = m_first; block; block = block->next)
+            if(index >= block->start && index - block->start < block->size)
+                return &block->entries[index - block->start];
+        assert(0 && "missing model-info block");
+        return nil;
+    }
 };
 
 #define POOLFLAG_ID     0x7f
@@ -183,7 +246,11 @@ public:
     }
     T *New(int32 handle) {
         int32 index = handle >> 8;
-        if(index < 0 || index >= m_size) return nil;
+        if(index < 0) return nil;
+        // Saves/replays may refer to a slot beyond the initial capacity.
+        // Grow through that slot without changing any existing addresses.
+        while(index >= m_size)
+            if(!Grow()) return nil;
         SetNotFreeAt(handle);
         return (T*)Entry(index);
     }

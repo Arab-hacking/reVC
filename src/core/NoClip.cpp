@@ -143,9 +143,9 @@ CNoClip::Move(void)
 	float seconds = NoClipClamp(CTimer::GetTimeStepInSeconds(), 0.0f, 0.1f);
 	float speed = (pad->GetLeftShift() || pad->GetRightShift()) ? 36.0f : 12.0f;
 	CVector pos = noclipEntity->GetPosition();
-	const float margin = 30.0f; // RemoveAndAdd needs its entire bounding rectangle in the sector grid
-	pos.x = NoClipClamp(pos.x + direction.x*speed*seconds, WORLD_MIN_X + margin, WORLD_MAX_X - margin);
-	pos.y = NoClipClamp(pos.y + direction.y*speed*seconds, WORLD_MIN_Y + margin, WORLD_MAX_Y - margin);
+	// RemoveAndAdd uses sparse sectors beyond the original island grid.
+	pos.x += direction.x*speed*seconds;
+	pos.y += direction.y*speed*seconds;
 	pos.z = NoClipClamp(pos.z + direction.z*speed*seconds, MAP_Z_LOW_LIMIT + 10.0f, 2000.0f);
 
 	// Teleport() on vehicles resets their orientation; reposition the physical

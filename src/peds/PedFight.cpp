@@ -22,6 +22,19 @@
 #include "Automobile.h"
 #include "WaterLevel.h"
 #include "World.h"
+
+// The parallel SA bank can be missing a particular reaction. Resolve on the
+// target clump so the fallback remains in its own skeleton's animation bank.
+static CAnimBlendAssociation *
+BlendDamageReaction(RpClump *clump, AnimationId anim, float blendSpeed = 8.0f)
+{
+	CAnimBlendAssociation *assoc = RpAnimBlendClumpGetAssociation(clump, anim);
+	if(!assoc || assoc->blendDelta < 0.0f)
+		assoc = CAnimManager::BlendAnimation(clump, ASSOCGRP_STD, anim, blendSpeed);
+	if(!assoc && anim != ANIM_STD_HIT_FRONT)
+		assoc = CAnimManager::BlendAnimation(clump, ASSOCGRP_STD, ANIM_STD_HIT_FRONT, blendSpeed);
+	return assoc;
+}
 #include "Bike.h"
 #include "Glass.h"
 #include "SpecialFX.h"
@@ -1196,6 +1209,7 @@ CPed::StartFightAttack(uint8 buttonPressure)
 	if (m_curFightMove > FIGHTMOVE_NULL && m_curFightMove != FIGHTMOVE_IDLE) {
 		animAssoc = CAnimManager::BlendAnimation(GetClump(), m_curFightMove < FIGHTMOVE_MELEE1 ? ASSOCGRP_STD : weaponInfo->m_AnimToPlay,
 			tFightMoves[m_curFightMove].animId, 8.0f);
+		if(!animAssoc){ EndFight(ENDFIGHT_FAST); return; }
 
 		if (weaponInfo->m_AnimToPlay == ASSOCGRP_KNIFE && m_curFightMove >= FIGHTMOVE_MELEE1) {
 			switch (GetWeapon()->m_eWeaponType) {
@@ -1295,13 +1309,12 @@ CPed::StartFightDefend(uint8 direction, uint8 hitLevel, uint8 unk)
 							shotAnim = ANIM_STD_HITBYGUN_FRONT;
 							break;
 					}
-					CAnimBlendAssociation *shotAssoc = RpAnimBlendClumpGetAssociation(GetClump(), shotAnim);
-					if (!shotAssoc || shotAssoc->blendDelta < 0.0f)
-						shotAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, shotAnim, 8.0f);
-
-					shotAssoc->SetCurrentTime(0.0f);
-					shotAssoc->SetRun();
-					shotAssoc->flags |= ASSOC_FADEOUTWHENDONE;
+					CAnimBlendAssociation *shotAssoc = BlendDamageReaction(GetClump(), shotAnim);
+					if(shotAssoc){
+						shotAssoc->SetCurrentTime(0.0f);
+						shotAssoc->SetRun();
+						shotAssoc->flags |= ASSOC_FADEOUTWHENDONE;
+					}
 				} else {
 					int time = CGeneral::GetRandomNumberInRange(1000, 3000);
 					SetWaitState(WAITSTATE_PLAYANIM_DUCK, &time);
@@ -1341,13 +1354,12 @@ CPed::StartFightDefend(uint8 direction, uint8 hitLevel, uint8 unk)
 				if (fall) {
 					SetFall(500, hitAnim, false);
 				} else {
-					CAnimBlendAssociation *hitAssoc = RpAnimBlendClumpGetAssociation(GetClump(), hitAnim);
-					if (!hitAssoc || hitAssoc->blendDelta < 0.0f)
-						hitAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, hitAnim, 8.0f);
-
-					hitAssoc->SetCurrentTime(0.0f);
-					hitAssoc->SetRun();
-					hitAssoc->flags |= ASSOC_FADEOUTWHENDONE;
+					CAnimBlendAssociation *hitAssoc = BlendDamageReaction(GetClump(), hitAnim);
+					if(hitAssoc){
+						hitAssoc->SetCurrentTime(0.0f);
+						hitAssoc->SetRun();
+						hitAssoc->flags |= ASSOC_FADEOUTWHENDONE;
+					}
 				}
 			}
 			Say(SOUND_PED_DEFEND);
@@ -1412,7 +1424,8 @@ CPed::StartFightDefend(uint8 direction, uint8 hitLevel, uint8 unk)
 				m_curFightMove = FIGHTMOVE_HITONFLOOR;
 
 			if (m_nPedState == PED_FIGHT) {
-				CAnimBlendAssociation *moveAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, tFightMoves[m_curFightMove].animId, 8.0f);
+				CAnimBlendAssociation *moveAssoc = BlendDamageReaction(GetClump(), tFightMoves[m_curFightMove].animId);
+				if(!moveAssoc){ EndFight(ENDFIGHT_FAST); return; }
 				moveAssoc->SetCurrentTime(0.0f);
 				moveAssoc->SetFinishCallback(FinishFightMoveCB, this);
 				if (IsPlayer())
@@ -1423,9 +1436,11 @@ CPed::StartFightDefend(uint8 direction, uint8 hitLevel, uint8 unk)
 
 			} else if (IsPlayer() && GetWeapon()->m_eWeaponType != WEAPONTYPE_UNARMED && GetWeapon()->m_eWeaponType != WEAPONTYPE_BRASSKNUCKLE &&
 					!CWeaponInfo::GetWeaponInfo(GetWeapon()->m_eWeaponType)->IsFlagSet(WEAPONFLAG_FIGHTMODE)) {
-				CAnimBlendAssociation *moveAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, tFightMoves[m_curFightMove].animId, 4.0f);
-				moveAssoc->SetCurrentTime(0.0f);
-				moveAssoc->speed = 1.2f;
+				CAnimBlendAssociation *moveAssoc = BlendDamageReaction(GetClump(), tFightMoves[m_curFightMove].animId, 4.0f);
+				if(moveAssoc){
+					moveAssoc->SetCurrentTime(0.0f);
+					moveAssoc->speed = 1.2f;
+				}
 
 			} else {
 				if (m_nPedState != PED_AIM_GUN && m_nPedState != PED_ATTACK)
@@ -1466,8 +1481,10 @@ CPed::StartFightDefend(uint8 direction, uint8 hitLevel, uint8 unk)
 				} else {
 					fightIdleAssoc = CAnimManager::AddAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_FIGHT_IDLE);
 				}
-				fightIdleAssoc->blendAmount = 1.0f;
-				CAnimBlendAssociation *moveAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, tFightMoves[m_curFightMove].animId, 8.0f);
+				if(fightIdleAssoc)
+					fightIdleAssoc->blendAmount = 1.0f;
+				CAnimBlendAssociation *moveAssoc = BlendDamageReaction(GetClump(), tFightMoves[m_curFightMove].animId);
+				if(!moveAssoc){ EndFight(ENDFIGHT_FAST); return; }
 				moveAssoc->SetFinishCallback(FinishFightMoveCB, this);
 				m_fightState = FIGHTSTATE_NO_MOVE;
 				m_takeAStepAfterAttack = false;
@@ -1604,6 +1621,7 @@ CPed::Fight(void)
 					m_lastFightMove = m_curFightMove;
 					// Notice that it increases fight move index, because we're in combo!
 					animAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, tFightMoves[++m_curFightMove].animId, 8.0f);
+					if(!animAssoc){ EndFight(ENDFIGHT_FAST); return; }
 					animAssoc->SetFinishCallback(FinishFightMoveCB, this);
 					animAssoc->SetCurrentTime(0.1f * animAssoc->hierarchy->totalLength);
 					animAssoc->speed = 0.8f;
@@ -1629,6 +1647,7 @@ CPed::Fight(void)
 
 			animAssoc = CAnimManager::BlendAnimation(GetClump(), m_curFightMove < FIGHTMOVE_MELEE1 ? ASSOCGRP_STD : weaponInfo->m_AnimToPlay,
 				tFightMoves[m_curFightMove].animId, 8.0f);
+			if(!animAssoc){ EndFight(ENDFIGHT_FAST); return; }
 
 			if (weaponInfo->m_AnimToPlay != ASSOCGRP_KNIFE || m_curFightMove < FIGHTMOVE_MELEE1) {
 				if (m_curFightMove == FIGHTMOVE_BACKKICK)
@@ -1681,11 +1700,12 @@ CPed::Fight(void)
 			animAssoc->SetCurrentTime(0.0f);
 			animAssoc->blendDelta = 4.0f;
 			animAssoc->SetRun();
-		} else {
-			animAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, tFightMoves[m_curFightMove].animId, 32.0f);
-		}
-		animAssoc->SetFinishCallback(FinishFightMoveCB, this);
-		m_fightState = FIGHTSTATE_NO_MOVE;
+			} else {
+				animAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, tFightMoves[m_curFightMove].animId, 32.0f);
+			}
+			if(!animAssoc){ EndFight(ENDFIGHT_FAST); return; }
+			animAssoc->SetFinishCallback(FinishFightMoveCB, this);
+			m_fightState = FIGHTSTATE_NO_MOVE;
 		m_fightButtonPressure = 0;
 		m_takeAStepAfterAttack = false;
 
@@ -2059,7 +2079,8 @@ CPed::EndFight(uint8 endType)
 			break;
 		case ENDFIGHT_FAST:
 			CAnimManager::BlendAnimation(GetClump(), m_animGroup, ANIM_STD_IDLE, 8.0f);
-			CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_FIGHT_2IDLE, 8.0f)->speed = 2.0f;
+			if(CAnimBlendAssociation *fade = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_FIGHT_2IDLE, 8.0f))
+				fade->speed = 2.0f;
 			break;
 		default:
 			break;
@@ -2288,7 +2309,8 @@ CPed::FightHitPed(CPed *victim, CVector &touchPoint, CVector &dir, int16 piece)
 	victim->StartFightDefend(direction, tFightMoves[m_curFightMove].hitLevel, unk2);
 	PlayHitSound(victim);
 	m_fightState = FIGHTSTATE_JUST_ATTACKED;
-	RpAnimBlendClumpGetAssociation(GetClump(), tFightMoves[m_curFightMove].animId)->speed = 0.6f;
+	if (CAnimBlendAssociation *attack = RpAnimBlendClumpGetAssociation(GetClump(), tFightMoves[m_curFightMove].animId))
+		attack->speed = 0.6f;
 
 	if (!victim->DyingOrDead()) {
 		if(fightingWithWeapon)
@@ -3602,7 +3624,8 @@ CPed::CollideWithPed(CPed *collideWith)
 								SetLookFlag(collideWith, false);
 								TurnBody();
 								animAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_PARTIAL_PUNCH, 8.0f);
-								animAssoc->flags |= ASSOC_FADEOUTWHENDONE;
+								if (animAssoc)
+									animAssoc->flags |= ASSOC_FADEOUTWHENDONE;
 								m_nPedStateTimer = CTimer::GetTimeInMilliseconds() + 2000;
 								if (!heIsMissionChar) {
 									CVector2D posDiff2D(posDiff);
@@ -3642,7 +3665,8 @@ CPed::CollideWithPed(CPed *collideWith)
 
 				if (collideWith->IsPedInControl() && CTimer::GetTimeInMilliseconds() > collideWith->m_nPedStateTimer) {
 					animAssoc = CAnimManager::BlendAnimation(collideWith->GetClump(), ASSOCGRP_STD, animToPlay, 8.0f);
-					animAssoc->flags |= ASSOC_FADEOUTWHENDONE;
+					if (animAssoc)
+						animAssoc->flags |= ASSOC_FADEOUTWHENDONE;
 					collideWith->m_nPedStateTimer = CTimer::GetTimeInMilliseconds() + 1000;
 					if (m_nPedState == PED_ATTACK)
 						DMAudio.PlayOneShot(m_audioEntityId, SOUND_49, 0.0f);

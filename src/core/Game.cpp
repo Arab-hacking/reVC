@@ -112,6 +112,7 @@ bool CGame::frenchGame;
 bool CGame::germanGame;
 bool CGame::noProstitutes;
 bool CGame::playingIntro;
+bool CGame::bLoadViceCityMap = true;
 char CGame::aDatFile[32];
 #ifdef MORE_LANGUAGES
 bool CGame::russianGame = false;
@@ -519,7 +520,7 @@ bool CGame::Initialise(const char* datFile)
 	TestModelIndices();
 
 	LoadingScreen("Loading the Game", "Setup water", nil);
-	CWaterLevel::Initialise("DATA\\WATER.DAT");
+	CWaterLevel::Initialise(bLoadViceCityMap ? "DATA\\WATER.DAT" : nil);
 	TheConsole.Init();
 	CDraw::SetFOV(120.0f);
 	CDraw::ms_fLODDistance = 500.0f;
@@ -947,6 +948,7 @@ void CGame::Process(void)
 		CRecordDataForGame::SaveOrRetrieveDataForThisFrame();
 		CRecordDataForChase::SaveOrRetrieveDataForThisFrame();
 		CPad::DoCheats();
+		CPad::ProcessPlayerModelKeys();
 		CNoClip::ProcessInput();
 		CClock::Update();
 		CWeather::Update();

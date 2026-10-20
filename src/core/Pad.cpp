@@ -26,6 +26,15 @@
 #include "World.h"
 #include "Vehicle.h"
 #include "Ped.h"
+#include "PlayerPed.h"
+#include "ModelInfo.h"
+#include "PedModelInfo.h"
+#include "AnimManager.h"
+#include "WeaponInfo.h"
+#include "PlayerModelCycle.h"
+#ifdef CUSTOM_MODELS
+#include "CustomModels.h"
+#endif
 #include "Population.h"
 #include "Record.h"
 #include "Replay.h"
@@ -390,6 +399,80 @@ void ChangePlayerModel(const char* name) {
 		CStreaming::LoadAllRequestedModels(0);
 		FindPlayerPed()->Dress();
 	}
+}
+
+void
+CPad::ProcessPlayerModelKeys(void)
+{
+#ifdef GTA_PC_CONTROLS
+	CPad *pad = GetPad(PAD1);
+	if(FrontEndMenuManager.m_bMenuActive || CCutsceneMgr::IsRunning() ||
+	   CReplay::IsPlayingBack() || pad->ArePlayerControlsDisabled())
+		return;
+	const bool minus = pad->GetCharJustDown('-') || pad->GetMinusJustDown();
+	// On GLFW/SDL/Win32 the main keyboard '+' is Shift+Equal. The keypad
+	// sends a separate rsPLUS event; don't treat a plain '=' as plus.
+	const bool plus = pad->GetPlusJustDown() || pad->GetCharJustDown('+') ||
+		(pad->GetCharJustDown('=') &&
+		 (pad->GetShift() || pad->GetLeftShift() || pad->GetRightShift()));
+	if(minus == plus) return;
+	CPlayerPed *ped = FindPlayerPed();
+	if(!ped || !ped->m_rwObject || ped->InVehicle() || !ped->IsPedInControl())
+		return;
+
+	const int oldId = ped->GetModelIndex();
+	const int direction = plus ? 1 : -1;
+	auto eligible = [](int id) {
+		CBaseModelInfo *base = CModelInfo::GetModelInfo(id);
+		if(!base || base->GetModelType() != MITYPE_PED) return false;
+		CPedModelInfo *info = (CPedModelInfo*)base;
+		if(info->m_animGroup >= NUM_ANIM_ASSOC_GROUPS) return false;
+		bool registered = CStreaming::HasModelLoaded(id) ||
+			CStreaming::ms_aInfoForModel[id].m_size != 0;
+#ifdef CUSTOM_MODELS
+		if(!registered) registered = CCustomModels::HasModelFile(info->GetModelName());
+#endif
+		return registered;
+	};
+	int modelId = oldId, firstTried = -1;
+	for(;;){
+		modelId = FindNextPlayerModel(modelId, direction, MODELINFOSIZE, eligible);
+		if(modelId < 0 || modelId == oldId || modelId == firstTried) return;
+		if(firstTried < 0) firstTried = modelId;
+
+		// A bad/missing asset must not destroy the player's current clump;
+		// try the next registered ped instead of blocking the whole cycle.
+		uint8 previousFlags = CStreaming::ms_aInfoForModel[modelId].m_flags;
+		CStreaming::RequestModel(modelId, STREAMFLAGS_DEPENDENCY | STREAMFLAGS_DONT_REMOVE);
+		CStreaming::LoadAllRequestedModels(false);
+		CPedModelInfo *info = (CPedModelInfo*)CModelInfo::GetModelInfo(modelId);
+		if(!CStreaming::HasModelLoaded(modelId) || !info->GetRwObject()){
+			REVC_LOG_WARNING("Player model %d (%s) did not load; trying next skin",
+				modelId, info->GetModelName());
+			if(!(previousFlags & STREAMFLAGS_DONT_REMOVE))
+				CStreaming::SetModelIsDeletable(modelId);
+			continue;
+		}
+
+		// Remove while the OLD hit bounds/model are still valid; then insert
+		// the new model into the proper sectors and restore weapon attachments.
+		ped->ClearAttack();
+		ped->ClearWeaponTarget();
+		CWorld::Remove(ped);
+		ped->RemoveWeaponModel(-1);
+		ped->DeleteRwObject();
+		ped->SetModelIndex(modelId); // chooses VC/SA association bank from the model
+		CWorld::Add(ped);
+		int weaponId = CWeaponInfo::GetWeaponInfo(ped->GetWeapon()->m_eWeaponType)->m_nModelId;
+		if(weaponId >= 0 && CStreaming::HasModelLoaded(weaponId))
+			ped->AddWeaponModel(weaponId);
+		if(!(previousFlags & STREAMFLAGS_DONT_REMOVE))
+			CStreaming::SetModelIsDeletable(modelId);
+		REVC_LOG_INFO("Player model changed: %d -> %d (%s, %s animations)",
+			oldId, modelId, info->GetModelName(), info->UsesSAAnimations() ? "SA" : "VC");
+		return;
+	}
+#endif
 }
 
 void MayhemCheat()

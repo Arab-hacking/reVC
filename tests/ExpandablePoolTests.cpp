@@ -20,10 +20,9 @@ struct PlayerPed : BasePed { int extras[8]; };
 
 int main()
 {
-    // Ped slots are fixed-size, but their storage uses a larger derived type.
-    // A validity check must reject stale or unrelated pointers WITHOUT first
-    // calling GetIndex, which asserts on a freed slot.
-    CPool<BasePed, PlayerPed> peds(2, "Peds");
+    // Derived slot storage must remain stable as the ped pool grows, and a
+    // validity check must reject stale/foreign pointers without dereferencing.
+    CPool<BasePed, PlayerPed> peds(2, "Peds", 2);
     BasePed *ped = peds.New();
     BasePed outsider = {0};
     assert(peds.IsAllocated(ped));
@@ -31,6 +30,13 @@ int main()
     assert(!peds.IsAllocated((BasePed*)((char*)ped + 1)));
     peds.Delete(ped);
     assert(!peds.IsAllocated(ped) && peds.GetSlot(0) == nullptr);
+    BasePed *savedPed = peds.New((5 << 8) | 13);
+    assert(savedPed && peds.GetSize() == 6 && peds.GetAt((5 << 8) | 13) == savedPed);
+    assert(peds.GetAt((5 << 8) | 12) == nullptr);
+    assert(peds.GetNoOfUsedSpaces() == 1);
+    BasePed *nextPed = peds.New();
+    assert(nextPed && peds.IsAllocated(nextPed));
+    assert(peds.IsAllocated(savedPed));
 
     CPool<Node> fixed(1, "ordinary pool");
     assert(!fixed.EnsureFree(2));
@@ -99,5 +105,21 @@ int main()
     assert(firstLarge && last && large.GetJustIndex(firstLarge) == 0);
     assert(large.GetJustIndex(last) == 129999);
     assert(large.GetAt(large.GetIndex(last)) == last);
-    std::puts("stable expandable pool tests passed");
+
+    // Model IDs refer to stable infos, not positions in a vector that may
+    // relocate on reallocation. Test both sides of the original store edge.
+    CStore<Node, 2, 3, 9> infos;
+    Node *model0 = infos.Alloc();
+    model0->value = 123;
+    Node *model1 = infos.Alloc();
+    Node *model2 = infos.Alloc();
+    assert(infos.GetItem(0) == model0 && infos.GetItem(1) == model1);
+    assert(infos.GetIndex(model2) == 2 && infos.GetItem(2) == model2);
+    for(int i = 3; i < 9; i++)
+        assert(infos.GetIndex(infos.Alloc()) == i);
+    assert(!infos.CanAlloc());
+    assert(model0->value == 123 && infos.GetItem(2) == model2);
+    infos.Clear();
+    assert(infos.CanAlloc() && infos.Alloc() == model0);
+    std::puts("stable expandable pool and model-store tests passed");
 }

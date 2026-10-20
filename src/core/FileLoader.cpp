@@ -15,6 +15,7 @@
 #include "PedType.h"
 #include "AnimManager.h"
 #include "Game.h"
+#include "NativeMapOptions.h"
 #include "RwHelper.h"
 #include "NodeName.h"
 #include "TxdStore.h"
@@ -102,6 +103,8 @@ CFileLoader::LoadLevel(const char *filename)
 			LoadingScreenLoadingFile(line + 9);
 			LoadClumpFile(line + 9);
 		}else if(strncmp(line, "IDE", 3) == 0){
+			if(!CGame::bLoadViceCityMap && IsNativeVCMapFile(line + 4))
+				continue;
 			LoadingScreenLoadingFile(line + 4);
 			LoadObjectTypes(line + 4);
 		}else if(strncmp(line, "IPL", 3) == 0){
@@ -129,6 +132,10 @@ CFileLoader::LoadLevel(const char *filename)
 						CModelInfo::GetModelInfo(i)->ConvertAnimFileIndex();
 				objectsLoaded = true;
 			}
+			// Keep the first-IPL initialization above even when the island is
+			// disabled: the custom IDEs, streaming and collisions need it.
+			if(!CGame::bLoadViceCityMap && IsNativeVCMapFile(line + 4))
+				continue;
 			PUSH_MEMID(MEMID_WORLD);
 			LoadingScreenLoadingFile(line + 4);
 			LoadScene(line + 4);

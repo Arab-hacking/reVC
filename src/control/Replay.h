@@ -293,6 +293,7 @@ private:
 	static uint8* pRadarBlips;
 	static uint8* pStoredCam;
 	static uint8* pWorld1;
+	static CWorld::ReplaySectorSnapshot ExtraSectorsSnapshot;
 	static CReference* pEmptyReferences;
 	static CStoredDetailedAnimationState* pPedAnims;
 	static uint8* pPickups;

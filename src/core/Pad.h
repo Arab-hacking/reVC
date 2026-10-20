@@ -226,6 +226,8 @@ public:
 	
 	static void DoCheats(void);
 	void DoCheats(int16 unk);
+	// PC: '-' / '+' (including numpad) cycle registered ped models.
+	static void ProcessPlayerModelKeys(void);
 	
 	static void StopPadsShaking(void);
 	void StopShaking(int16 pad);

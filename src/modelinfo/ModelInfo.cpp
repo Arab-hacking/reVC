@@ -7,13 +7,13 @@
 
 CBaseModelInfo *CModelInfo::ms_modelInfoPtrs[MODELINFOSIZE];
 
-CStore<CSimpleModelInfo, SIMPLEMODELSIZE> CModelInfo::ms_simpleModelStore;
-CStore<CTimeModelInfo, TIMEMODELSIZE> CModelInfo::ms_timeModelStore;
-CStore<CWeaponModelInfo, WEAPONMODELSIZE> CModelInfo::ms_weaponModelStore;
-CStore<CClumpModelInfo, CLUMPMODELSIZE> CModelInfo::ms_clumpModelStore;
-CStore<CPedModelInfo, PEDMODELSIZE> CModelInfo::ms_pedModelStore;
-CStore<CVehicleModelInfo, VEHICLEMODELSIZE> CModelInfo::ms_vehicleModelStore;
-CStore<C2dEffect, TWODFXSIZE> CModelInfo::ms_2dEffectStore;
+CModelInfoStore<CSimpleModelInfo, SIMPLEMODELSIZE> CModelInfo::ms_simpleModelStore;
+CModelInfoStore<CTimeModelInfo, TIMEMODELSIZE> CModelInfo::ms_timeModelStore;
+CModelInfoStore<CWeaponModelInfo, WEAPONMODELSIZE> CModelInfo::ms_weaponModelStore;
+CModelInfoStore<CClumpModelInfo, CLUMPMODELSIZE> CModelInfo::ms_clumpModelStore;
+CModelInfoStore<CPedModelInfo, PEDMODELSIZE> CModelInfo::ms_pedModelStore;
+CModelInfoStore<CVehicleModelInfo, VEHICLEMODELSIZE> CModelInfo::ms_vehicleModelStore;
+CModelInfoStore<C2dEffect, TWODFXSIZE> CModelInfo::ms_2dEffectStore;
 
 void
 CModelInfo::Initialise(void)
@@ -93,19 +93,19 @@ CModelInfo::ShutDown(void)
 {
 	int i;
 	for(i = 0; i < ms_simpleModelStore.allocPtr; i++)
-		ms_simpleModelStore.store[i].Shutdown();
+		ms_simpleModelStore.GetItem(i)->Shutdown();
 	for(i = 0; i < ms_timeModelStore.allocPtr; i++)
-		ms_timeModelStore.store[i].Shutdown();
+		ms_timeModelStore.GetItem(i)->Shutdown();
 	for(i = 0; i < ms_weaponModelStore.allocPtr; i++)
-		ms_weaponModelStore.store[i].Shutdown();
+		ms_weaponModelStore.GetItem(i)->Shutdown();
 	for(i = 0; i < ms_clumpModelStore.allocPtr; i++)
-		ms_clumpModelStore.store[i].Shutdown();
+		ms_clumpModelStore.GetItem(i)->Shutdown();
 	for(i = 0; i < ms_vehicleModelStore.allocPtr; i++)
-		ms_vehicleModelStore.store[i].Shutdown();
+		ms_vehicleModelStore.GetItem(i)->Shutdown();
 	for(i = 0; i < ms_pedModelStore.allocPtr; i++)
-		ms_pedModelStore.store[i].Shutdown();
+		ms_pedModelStore.GetItem(i)->Shutdown();
 	for(i = 0; i < ms_2dEffectStore.allocPtr; i++)
-		ms_2dEffectStore.store[i].Shutdown();
+		ms_2dEffectStore.GetItem(i)->Shutdown();
 
 	ms_2dEffectStore.Clear();
 	ms_simpleModelStore.Clear();

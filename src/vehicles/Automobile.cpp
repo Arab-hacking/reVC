@@ -4009,14 +4009,9 @@ CAutomobile::RcbanditCheckHitWheels(void)
 	int y, ymin, ymax;
 
 	xmin = CWorld::GetSectorIndexX(GetPosition().x - 2.0f);
-	if(xmin < 0) xmin = 0;
 	xmax = CWorld::GetSectorIndexX(GetPosition().x + 2.0f);
-	if(xmax > NUMSECTORS_X-1) xmax = NUMSECTORS_X-1;
 	ymin = CWorld::GetSectorIndexY(GetPosition().y - 2.0f);
-	if(ymin < 0) ymin = 0;
 	ymax = CWorld::GetSectorIndexY(GetPosition().y + 2.0f);
-	if(ymax > NUMSECTORS_Y-1) ymax = NUMSECTORS_X-1;
-
 	CWorld::AdvanceCurrentScanCode();
 
 	for(y = ymin; y <= ymax; y++)
@@ -5217,14 +5212,9 @@ void
 CPed::DeadPedMakesTyresBloody(void)
 {
 	int minX = CWorld::GetSectorIndexX(GetPosition().x - 2.0f);
-	if (minX < 0) minX = 0;
 	int minY = CWorld::GetSectorIndexY(GetPosition().y - 2.0f);
-	if (minY < 0) minY = 0;
 	int maxX = CWorld::GetSectorIndexX(GetPosition().x + 2.0f);
-	if (maxX > NUMSECTORS_X-1) maxX = NUMSECTORS_X-1;
 	int maxY = CWorld::GetSectorIndexY(GetPosition().y + 2.0f);
-	if (maxY > NUMSECTORS_Y-1) maxY = NUMSECTORS_Y-1;
-
 	CWorld::AdvanceCurrentScanCode();
 
 	for (int curY = minY; curY <= maxY; curY++) {

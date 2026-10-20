@@ -1102,10 +1102,10 @@ CShadows::RenderStoredShadows(void)
 					float fStartY = shadowPos.y - fHeight;
 					float fEndY   = shadowPos.y + fHeight;
 
-					int32 nStartX = Max(CWorld::GetSectorIndexX(fStartX), 0);
-					int32 nStartY = Max(CWorld::GetSectorIndexY(fStartY), 0);
-					int32 nEndX   = Min(CWorld::GetSectorIndexX(fEndX), NUMSECTORS_X-1);
-					int32 nEndY   = Min(CWorld::GetSectorIndexY(fEndY), NUMSECTORS_Y-1);
+					int32 nStartX = CWorld::GetSectorIndexX(fStartX);
+					int32 nStartY = CWorld::GetSectorIndexY(fStartY);
+					int32 nEndX   = CWorld::GetSectorIndexX(fEndX);
+					int32 nEndY   = CWorld::GetSectorIndexY(fEndY);
 
 					CWorld::AdvanceCurrentScanCode();
 
@@ -1332,10 +1332,10 @@ CShadows::GeneratePolysForStaticShadow(int16 nStaticShadowID)
 	float fStartY = shadowPos.y - fHeight;
 	float fEndY   = shadowPos.y + fHeight;
 
-	int32 nStartX = Max(CWorld::GetSectorIndexX(fStartX), 0);
-	int32 nStartY = Max(CWorld::GetSectorIndexY(fStartY), 0);
-	int32 nEndX   = Min(CWorld::GetSectorIndexX(fEndX), NUMSECTORS_X-1);
-	int32 nEndY   = Min(CWorld::GetSectorIndexY(fEndY), NUMSECTORS_Y-1);
+	int32 nStartX = CWorld::GetSectorIndexX(fStartX);
+	int32 nStartY = CWorld::GetSectorIndexY(fStartY);
+	int32 nEndX   = CWorld::GetSectorIndexX(fEndX);
+	int32 nEndY   = CWorld::GetSectorIndexY(fEndY);
 
 	CWorld::AdvanceCurrentScanCode();
 

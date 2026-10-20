@@ -5193,7 +5193,10 @@ CPed::SetFall(int extraTime, AnimationId animId, uint8 evenIfNotInControl)
 		else {
 			fallAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, animId, 8.0f);
 		}
-		if (animId == ANIM_STD_BIKE_FALLBACK)
+		if(!fallAssoc && (animId == ANIM_STD_BIKE_FALLBACK || animId == ANIM_STD_BIKE_FALLOFF))
+			fallAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD,
+				ANIM_STD_FALL_ONBACK, 8.0f); // same skeleton; no VC clips on SA peds
+		if (fallAssoc && animId == ANIM_STD_BIKE_FALLBACK && fallAssoc->animId == animId)
 			fallAssoc->SetCurrentTime(0.4f);
 	}
 
@@ -5382,8 +5385,17 @@ CPed::SetLanding(void)
 		DMAudio.PlayOneShot(m_audioEntityId, SOUND_FALL_LAND, 1.0f);
 	}
 
-	landAssoc->SetFinishCallback(PedLandCB, this);
+	if (!landAssoc)
+		landAssoc = CAnimManager::AddAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_FALL_LAND);
 	bIsInTheAir = false;
+	if (!landAssoc) {
+		// No landing callback can arrive without a compatible SA clip.
+		bIsLanding = false;
+		if (m_nPedState == PED_JUMP)
+			RestorePreviousState();
+		return;
+	}
+	landAssoc->SetFinishCallback(PedLandCB, this);
 	bIsLanding = true;
 }
 
@@ -5450,7 +5462,16 @@ CPed::SetGetUp(void)
 		else
 			animAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_GET_UP, 1000.0f);
 
-		animAssoc->SetFinishCallback(PedGetupCB, this);
+		if(!animAssoc)
+			animAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_GET_UP, 1000.0f);
+		if(animAssoc)
+			animAssoc->SetFinishCallback(PedGetupCB, this);
+		else { // Missing custom get-up clip: never strand a living ped in PED_GETUP.
+			bFallenDown = false;
+			RestorePreviousState(); // requires bGetUpAnimStarted to still be true
+			bGetUpAnimStarted = false;
+			SetMoveAnim();
+		}
 	} else {
 		m_fHealth = 0.0f;
 		SetDie(ANIM_STD_NUM, 4.0f, 0.0f);
@@ -6871,6 +6892,7 @@ CPed::SetEvasiveStep(CPhysical *reason, uint8 animType)
 		}
 		if (!RpAnimBlendClumpGetAssociation(GetClump(), stepAnim)) {
 			CAnimBlendAssociation *stepAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, stepAnim, 8.0f);
+			if (!stepAssoc) return;
 			stepAssoc->flags &= ~ASSOC_DELETEFADEDOUT;
 			stepAssoc->SetFinishCallback(PedEvadeCB, this);
 
@@ -6981,6 +7003,10 @@ CPed::SetEvasiveDive(CPhysical *reason, uint8 onlyRandomJump)
 			return;
 
 		animAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_HANDSUP, 8.0f);
+		if (!animAssoc) {
+			ClearLookFlag();
+			return;
+		}
 		animAssoc->flags &= ~ASSOC_DELETEFADEDOUT;
 		animAssoc->SetFinishCallback(PedEvadeCB, this);
 		SetStoredState();
@@ -6992,7 +7018,10 @@ CPed::SetEvasiveDive(CPhysical *reason, uint8 onlyRandomJump)
 		SetStoredState();
 		SetPedState(PED_DIVE_AWAY);
 		animAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_EVADE_DIVE, 8.0f);
-		animAssoc->SetFinishCallback(PedEvadeCB, this);
+		if (animAssoc)
+			animAssoc->SetFinishCallback(PedEvadeCB, this);
+		else
+			PedEvadeCB(nil, this);
 	}
 
 	if (reason->IsVehicle() && m_nPedType == PEDTYPE_COP) {
@@ -7078,13 +7107,25 @@ CPed::SetDie(AnimationId animId, float delta, float speed)
 		bIsPedDieAnimPlaying = false;
 	} else {
 		dieAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, animId, delta);
-		if (speed > 0.0f)
-			dieAssoc->speed = speed;
-
-		dieAssoc->flags &= ~ASSOC_FADEOUTWHENDONE;
-		if (dieAssoc->IsRunning()) {
-			dieAssoc->SetFinishCallback(FinishDieAnimCB, this);
-			bIsPedDieAnimPlaying = true;
+		if(!dieAssoc && animId != ANIM_STD_KO_FRONT)
+			dieAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_KO_FRONT, delta);
+		if(dieAssoc){
+			if (speed > 0.0f)
+				dieAssoc->speed = speed;
+			dieAssoc->flags &= ~ASSOC_FADEOUTWHENDONE;
+			if (dieAssoc->IsRunning()) {
+				dieAssoc->SetFinishCallback(FinishDieAnimCB, this);
+				bIsPedDieAnimPlaying = true;
+			}
+		} else {
+			bIsPedDieAnimPlaying = false;
+			static bool warned[2] = {false, false};
+			int bank = (*RPANIMBLENDCLUMPDATA(GetClump()))->usesSAAnimations ? 1 : 0;
+			if(!warned[bank]){
+				REVC_LOG_WARNING("Death animation missing in %s bank (model=%d, anim=%d)",
+					bank ? "SA" : "VC", GetModelIndex(), animId);
+				warned[bank] = true;
+			}
 		}
 	}
 
@@ -7209,11 +7250,12 @@ CPed::Chat(void)
 		}
 		if (!bIsTalking && !RpAnimBlendClumpGetFirstAssociation(GetClump(), ASSOC_IDLE)) {
 			CAnimBlendAssociation *chatAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_CHAT, 4.0f);
-			float chatTime = CGeneral::GetRandomNumberInRange(0.0f, 3.0f);
-			chatAssoc->SetCurrentTime(chatTime);
-
-			bIsTalking = true;
-			Say(SOUND_PED_CHAT);
+			if (chatAssoc) {
+				float chatTime = CGeneral::GetRandomNumberInRange(0.0f, 3.0f);
+				chatAssoc->SetCurrentTime(chatTime);
+				bIsTalking = true;
+				Say(SOUND_PED_CHAT);
+			}
 		}
 	}
 	if (m_chatTimer && CTimer::GetTimeInMilliseconds() > m_chatTimer) {
@@ -7330,6 +7372,10 @@ CPed::SetAnswerMobile(void)
 #endif
 		RemoveWeaponAnims(GetWeapon()->m_eWeaponType, -4.0f);
 		CAnimBlendAssociation *assoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_PHONE_IN, 4.0f);
+		if (!assoc) {
+			SetIdle(); // do not enter an unfinishable phone state
+			return;
+		}
 		assoc->SetFinishCallback(StartTalkingOnMobileCB, this);
 		m_lookTimer = INT32_MAX;
 		if (m_storedWeapon == WEAPONTYPE_UNIDENTIFIED)
@@ -7350,7 +7396,10 @@ CPed::ClearAnswerMobile(void)
 
 	if (RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_PHONE_TALK)) {
 		CAnimBlendAssociation *assoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_PHONE_OUT, 8.0f);
-		assoc->SetFinishCallback(FinishTalkingOnMobileCB, this);
+		if (assoc)
+			assoc->SetFinishCallback(FinishTalkingOnMobileCB, this);
+		else
+			FinishTalkingOnMobileCB(nil, this);
 	} else
 		FinishTalkingOnMobileCB(nil, this);
 
@@ -7913,22 +7962,10 @@ CPed::LookForInterestingNodes(void)
 	uint8 randVal = CGeneral::GetRandomNumber() % 256;
 
 	int minX = CWorld::GetSectorIndexX(GetPosition().x - CHECK_NEARBY_THINGS_MAX_DIST);
-	if (minX < 0) minX = 0;
 	int minY = CWorld::GetSectorIndexY(GetPosition().y - CHECK_NEARBY_THINGS_MAX_DIST);
-	if (minY < 0) minY = 0;
 	int maxX = CWorld::GetSectorIndexX(GetPosition().x + CHECK_NEARBY_THINGS_MAX_DIST);
-#ifdef FIX_BUGS
-	if (maxX >= NUMSECTORS_X) maxX = NUMSECTORS_X - 1;
-#else
-	if (maxX >= NUMSECTORS_X) maxX = NUMSECTORS_X;
-#endif
 
 	int maxY = CWorld::GetSectorIndexY(GetPosition().y + CHECK_NEARBY_THINGS_MAX_DIST);
-#ifdef FIX_BUGS
-	if (maxY >= NUMSECTORS_Y) maxY = NUMSECTORS_Y - 1;
-#else
-	if (maxY >= NUMSECTORS_Y) maxY = NUMSECTORS_Y;
-#endif
 
 	for (int curY = minY; curY <= maxY && !found; curY++) {
 		for (int curX = minX; curX <= maxX && !found; curX++) {
@@ -8515,8 +8552,12 @@ CPed::Wait(void)
 			if (CTimer::GetTimeInMilliseconds() > m_nWaitTimer) {
 				if (RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_HIT_WALL)) {
 					animAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_XPRESS_SCRATCH, 4.0f);
-					animAssoc->SetFinishCallback(FinishedWaitCB, this);
-					m_nWaitTimer = CTimer::GetTimeInMilliseconds() + 5000;
+					if (animAssoc) {
+						animAssoc->SetFinishCallback(FinishedWaitCB, this);
+						m_nWaitTimer = CTimer::GetTimeInMilliseconds() + 5000;
+					} else {
+						ClearWaitState();
+					}
 				} else {
 					ClearWaitState();
 				}
@@ -9216,6 +9257,10 @@ CPed::SetJump(void)
 		SetStoredState();
 		SetPedState(PED_JUMP);
 		CAnimBlendAssociation *jumpAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_JUMP_LAUNCH, 8.0f);
+		if (!jumpAssoc) {
+			RestorePreviousState(); // no launch clip => no finish callback
+			return;
+		}
 		jumpAssoc->SetFinishCallback(FinishLaunchCB, this);
 		m_fRotationDest = m_fRotationCur;
 	}
@@ -9246,6 +9291,10 @@ CPed::FinishLaunchCB(CAnimBlendAssociation *animAssoc, void *arg)
 	if (obstacle) {
 		animAssoc->flags |= ASSOC_DELETEFADEDOUT;
 		CAnimBlendAssociation *handsCoverAssoc = CAnimManager::BlendAnimation(ped->GetClump(), ASSOCGRP_STD, ANIM_STD_HIT_WALL, 8.0f);
+		if (!handsCoverAssoc) {
+			FinishHitHeadCB(nil, ped);
+			return;
+		}
 		handsCoverAssoc->flags &= ~ASSOC_FADEOUTWHENDONE;
 		handsCoverAssoc->SetFinishCallback(FinishHitHeadCB, ped);
 		ped->bIsLanding = true;

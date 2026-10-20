@@ -1,6 +1,9 @@
 #define WITHWINDOWS
 #include "common.h"
 #include "crossplatform.h"
+#include <cstdio>
+#include <cstdlib>
+#include <string>
 
 #include "FileMgr.h"
 #include "Font.h"
@@ -15,6 +18,31 @@
 const char* _psGetUserFilesFolder();
 
 C_PcSave PcSaveHelper;
+
+#ifndef ANDROID
+// Serialize into a pending file first. A pool that outgrows the legacy save
+// format must not truncate the user's previous working slot.
+static bool
+ReplacePendingSave(const char *pending, const char *slot)
+{
+#ifdef _WIN32
+	return MoveFileExA(pending, slot, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0;
+#else
+	return caserename(pending, slot) == 0;
+#endif
+}
+
+static void
+DiscardPendingSave(const char *pending)
+{
+#ifdef _WIN32
+	DeleteFileA(pending);
+#else
+	char *path = casepath(pending, false);
+	if(path){ std::remove(path); free(path); }
+#endif
+}
+#endif
 
 void
 C_PcSave::SetSaveDirectory(const char *path)
@@ -52,7 +80,12 @@ C_PcSave::SaveSlot(int32 slot)
 	PcSaveHelper.nErrorCode = SAVESTATUS_SUCCESSFUL;
 	REVC_LOG_INFO("Saving slot %d to %s", slot + 1, ValidSaveName);
 	_psGetUserFilesFolder();
+#ifndef ANDROID
+	std::string pendingName = std::string(ValidSaveName) + ".pending";
+	int file = CFileMgr::OpenFile(pendingName.c_str(), "wb");
+#else
 	int file = CFileMgr::OpenFile(ValidSaveName, "wb");
+#endif
 	if (file != 0) {
 #ifdef MISSION_REPLAY
 		if (!IsQuickSave)
@@ -61,13 +94,25 @@ C_PcSave::SaveSlot(int32 slot)
 		if (GenericSave(file)) {
 			if (!!CFileMgr::CloseFile(file))
 				nErrorCode = SAVESTATUS_ERR_SAVE_CLOSE;
-			if(nErrorCode == SAVESTATUS_SUCCESSFUL)
+#ifndef ANDROID
+			if(nErrorCode == SAVESTATUS_SUCCESSFUL &&
+			   !ReplacePendingSave(pendingName.c_str(), ValidSaveName))
+				nErrorCode = SAVESTATUS_ERR_SAVE_WRITE;
+			if(nErrorCode != SAVESTATUS_SUCCESSFUL)
+				DiscardPendingSave(pendingName.c_str());
+#endif
+			if(nErrorCode == SAVESTATUS_SUCCESSFUL){
 				REVC_LOG_INFO("Saved slot %d successfully", slot + 1);
-			else
-				REVC_LOG_ERROR("Failed to close save slot %d (error=%d)", slot + 1, nErrorCode);
-			return 0;
+				return 0;
+			}
+			REVC_LOG_ERROR("Failed to finish save slot %d (error=%d)", slot + 1, nErrorCode);
+			return 2;
 		}
 
+		CFileMgr::CloseFile(file);
+#ifndef ANDROID
+		DiscardPendingSave(pendingName.c_str());
+#endif
 		REVC_LOG_ERROR("Failed to save slot %d (error=%d)", slot + 1, nErrorCode);
 		return 2;
 	}

@@ -71,6 +71,7 @@ CDummyPed *CReplay::pBuf11;
 uint8 *CReplay::pRadarBlips;
 uint8 *CReplay::pStoredCam;
 uint8 *CReplay::pWorld1;
+CWorld::ReplaySectorSnapshot CReplay::ExtraSectorsSnapshot;
 CReference *CReplay::pEmptyReferences;
 CStoredDetailedAnimationState *CReplay::pPedAnims;
 uint8 *CReplay::pPickups;
@@ -231,6 +232,7 @@ void CReplay::Init(void)
 	pRadarBlips = nil;
 	pStoredCam = nil;
 	pWorld1 = nil;
+	ExtraSectorsSnapshot.clear();
 	pEmptyReferences = nil;
 	pPedAnims = nil;
 	pPickups = nil;
@@ -1360,6 +1362,7 @@ void CReplay::StoreStuffInMem(void)
 	CPools::GetDummyPool()->Store(pBuf10, pBuf11);
 	pWorld1 = new uint8[sizeof(CSector) * NUMSECTORS_X * NUMSECTORS_Y];
 	memcpy(pWorld1, CWorld::GetSector(0, 0), NUMSECTORS_X * NUMSECTORS_Y * sizeof(CSector));
+	CWorld::SaveExtraSectorsForReplay(ExtraSectorsSnapshot);
 	WorldPtrList = CWorld::GetMovingEntityList().first; // why
 	BigBuildingPtrList = CWorld::GetBigBuildingList(LEVEL_GENERIC).first;
 	pPickups = new uint8[sizeof(CPickup) * NUMPICKUPS];
@@ -1435,6 +1438,8 @@ void CReplay::RestoreStuffFromMem(void)
 	memcpy(CWorld::GetSector(0, 0), pWorld1, sizeof(CSector) * NUMSECTORS_X * NUMSECTORS_Y);
 	delete[] pWorld1;
 	pWorld1 = nil;
+	CWorld::RestoreExtraSectorsFromReplay(ExtraSectorsSnapshot);
+	ExtraSectorsSnapshot.clear();
 	CWorld::GetMovingEntityList().first = WorldPtrList;
 	CWorld::GetBigBuildingList(LEVEL_GENERIC).first = BigBuildingPtrList;
 	memcpy(CPickups::aPickUps, pPickups, sizeof(CPickup) * NUMPICKUPS);

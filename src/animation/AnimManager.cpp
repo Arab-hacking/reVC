@@ -1516,7 +1516,9 @@ FindPedAnimationReference(int preferredModelIndex, bool wantSA)
 				return pedInfo;
 		}
 	}
-	if(preferredModelIndex >= MI_PLAYER && preferredModelIndex <= MI_LAST_PED){
+	// Custom IDE ped models can be remapped well beyond the VC ped range.
+	// Prefer their actual skeleton instead of searching only vanilla IDs.
+	if(preferredModelIndex >= 0 && preferredModelIndex < MODELINFOSIZE){
 		baseInfo = CModelInfo::GetModelInfo(preferredModelIndex);
 		if(baseInfo && baseInfo->GetModelType() == MITYPE_PED && baseInfo->GetRwObject()){
 			pedInfo = (CPedModelInfo*)baseInfo;

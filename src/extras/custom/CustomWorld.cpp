@@ -170,12 +170,18 @@ void PlaceInstance(const customworld::Instance &inst, IplContext &ctx)
         float hi = k == 0 ? col->boundingBox.max.x : k == 1 ? col->boundingBox.max.y : col->boundingBox.max.z;
         limit[k] = std::max(std::fabs(lo), std::fabs(hi));
     }
-    // A circumscribed radius guarantees CEntity::Add/Remove's sector indices
-    // remain inside the grid even after quaternion rotation.
+    // Reject invalid geometry/coordinates, not positions outside the stock
+    // grid: CWorld allocates extra sectors on demand in either direction.
     float radius = std::sqrt(limit[0]*limit[0]+limit[1]*limit[1]+limit[2]*limit[2]) + 1.0f;
-    if(!std::isfinite(radius) || inst.pos[0]-radius < WORLD_MIN_X ||
-       inst.pos[0]+radius >= WORLD_MAX_X || inst.pos[1]-radius < WORLD_MIN_Y ||
-       inst.pos[1]+radius >= WORLD_MAX_Y) { ctx.outside++; return; }
+    if(!std::isfinite(radius) ||
+       !std::isfinite(inst.pos[0]-radius) || !std::isfinite(inst.pos[0]+radius) ||
+       !std::isfinite(inst.pos[1]-radius) || !std::isfinite(inst.pos[1]+radius) ||
+       WorldSectorIndex(inst.pos[0]-radius, WORLD_MIN_X, SECTOR_SIZE_X) == INT_MIN ||
+       WorldSectorIndex(inst.pos[0]+radius, WORLD_MIN_X, SECTOR_SIZE_X) == INT_MAX ||
+       WorldSectorIndex(inst.pos[1]-radius, WORLD_MIN_Y, SECTOR_SIZE_Y) == INT_MIN ||
+       WorldSectorIndex(inst.pos[1]+radius, WORLD_MIN_Y, SECTOR_SIZE_Y) == INT_MAX) {
+        ctx.outside++; return;
+    }
     customworld::PlacementKey key(slot, inst);
     if(ctx.seen.find(key) != ctx.seen.end()) { ctx.duplicates++; return; }
 
@@ -193,9 +199,11 @@ void PlaceInstance(const customworld::Instance &inst, IplContext &ctx)
     // from vanilla IPLs. A rotated bbox is contained by this sphere. Leave a
     // small reserve for the rest of the game; physical allocation/handle
     // failure is still reported instead of overflowing a fixed pool.
-    int nx = std::min(NUMSECTORS_X, (int)std::ceil(2.0f*radius/SECTOR_SIZE_X)+2);
-    int ny = std::min(NUMSECTORS_Y, (int)std::ceil(2.0f*radius/SECTOR_SIZE_Y)+2);
-    int nodes = nx*ny;
+    double nx = std::ceil(2.0 * radius / SECTOR_SIZE_X) + 2.0;
+    double ny = std::ceil(2.0 * radius / SECTOR_SIZE_Y) + 2.0;
+    // Bound allocation for a single corrupt/giant collision, not map location.
+    if(nx * ny > 8192.0) { ctx.capacity++; return; }
+    int nodes = (int)nx * (int)ny;
     if(!CPools::GetBuildingPool()->EnsureFree(101) ||
        !CPools::GetPtrNodePool()->EnsureFree(nodes + 10000)) {
         ctx.capacity++; return;
@@ -340,7 +348,7 @@ void CCustomWorld::LoadIpl(void)
     if(modelSlots.empty()) return;
     IplContext ctx;
     CCustomModels::ForEachWorldFile(false, ReadIpl, &ctx);
-    CUSTOM_LOG("BR IPL: %u file(s), %u record(s), %u placed, %u exact duplicates, %u LOD link(s), %u invalid, %u long, %u unknown models, %u missing assets, %u outside world, %u allocation/handle failures; pools %d buildings / %d sector nodes\n",
+    CUSTOM_LOG("BR IPL: %u file(s), %u record(s), %u placed, %u exact duplicates, %u LOD link(s), %u invalid, %u long, %u unknown models, %u invalid coordinates, %u allocation/handle failures; pools %d buildings / %d sector nodes\n",
         ctx.files, ctx.parsed, ctx.placed, ctx.duplicates, ctx.linkedLod, ctx.bad, ctx.overlong,
         ctx.noModel, ctx.noAsset, ctx.outside, ctx.capacity,
         CPools::GetBuildingPool()->GetSize(), CPools::GetPtrNodePool()->GetSize());
