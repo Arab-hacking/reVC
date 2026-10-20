@@ -11,8 +11,10 @@ WorldSectorIndex(float coord, float origin, float sectorSize)
 {
     double index = std::floor((double(coord) - origin) / sectorSize);
     if(!std::isfinite(index)) return 0;
-    if(index <= std::numeric_limits<int>::min()) return std::numeric_limits<int>::min();
-    if(index >= std::numeric_limits<int>::max()) return std::numeric_limits<int>::max();
+    // windows.h defines min/max as macros in the PC build. Parenthesizing
+    // the member names prevents macro expansion without changing the limits.
+    if(index <= (std::numeric_limits<int>::min)()) return (std::numeric_limits<int>::min)();
+    if(index >= (std::numeric_limits<int>::max)()) return (std::numeric_limits<int>::max)();
     return (int)index;
 }
 
