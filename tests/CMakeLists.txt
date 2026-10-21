@@ -138,6 +138,25 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Cla
     set_target_properties(escalator_init_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
     add_test(NAME escalator_init_tests COMMAND escalator_init_tests)
 
+    # Test the model preflight for the Release D3D9 pickup crash: without
+    # native DATA/MAPS IDEs, scripts can request -1 or an unregistered ID.
+    add_executable(pickup_missing_model_tests
+        PickupMissingModelTests.cpp ../src/control/Pickups.cpp
+        ../src/modelinfo/ModelIndices.cpp)
+    target_compile_definitions(pickup_missing_model_tests PRIVATE
+        LIBRW RW_GL3 LIBRW_SDL2 CMAKE_BUILD USE_OUR_VERSIONING AUDIO_OAL)
+    target_include_directories(pickup_missing_model_tests PRIVATE
+        ../vendor/librw ../vendor/librw/src/gl ../vendor/sdl2/include
+        ../src ../src/animation ../src/audio ../src/buildings ../src/collision
+        ../src/control ../src/core ../src/entities ../src/extras
+        ../src/extras/custom ../src/extras/custom/br ../src/fakerw ../src/math
+        ../src/modelinfo ../src/objects ../src/peds ../src/renderer ../src/rw
+        ../src/save ../src/skel ../src/text ../src/vehicles ../src/weapons)
+    target_compile_options(pickup_missing_model_tests PRIVATE -ffunction-sections -fdata-sections)
+    target_link_options(pickup_missing_model_tests PRIVATE -Wl,--gc-sections)
+    set_target_properties(pickup_missing_model_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+    add_test(NAME pickup_missing_model_tests COMMAND pickup_missing_model_tests)
+
     # Exercise CDirectory::AddItem itself: the extra-objects directory must
     # retain native DFFs beyond its old 256-entry reserve when VC IDEs are off.
     add_executable(directory_growth_tests
