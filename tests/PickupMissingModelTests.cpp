@@ -21,6 +21,10 @@ static CBaseModelInfo *testModel;
 void CModelInfo::Initialise(void) { ms_modelInfoPtrs[123] = testModel; }
 CBaseModelInfo::CBaseModelInfo(ModelInfoType type) : m_type(type), m_colModel(nil) {}
 void CBaseModelInfo::Shutdown(void) {}
+void CSimpleModelInfo::DeleteRwObject(void) {}
+RwObject *CSimpleModelInfo::CreateInstance(void) { return nil; }
+RwObject *CSimpleModelInfo::CreateInstance(RwMatrix *) { return nil; }
+void CSimpleModelInfo::SetAtomic(int, RpAtomic *) {}
 
 class TestModel : public CBaseModelInfo {
 public:
@@ -29,6 +33,18 @@ public:
     RwObject *CreateInstance(void) override { return nil; }
     RwObject *CreateInstance(RwMatrix *) override { return nil; }
     RwObject *GetRwObject(void) override { return nil; }
+};
+
+class TestSimpleModel : public CSimpleModelInfo {
+public:
+    TestSimpleModel() : CSimpleModelInfo(MITYPE_SIMPLE) {
+        m_isCodeGlass = 0;
+        m_isArtistGlass = 0;
+    }
+    void DeleteRwObject(void) override {}
+    RwObject *CreateInstance(void) override { return nil; }
+    RwObject *CreateInstance(RwMatrix *) override { return nil; }
+    void SetAtomic(int, RpAtomic *) override {}
 };
 
 int main()
@@ -41,17 +57,29 @@ int main()
     assert(GetPickupModelInfo(123) == nil); // in range but no IDE
     assert(GetPickupModelInfo(MODELINFOSIZE) == nil);
     assert(GetPickupModelInfo(0xFFFF) == nil);
+    // IsGlass was the exact dereference in the next save-load crash: it
+    // must not read m_type at +0x1D through a missing model-info pointer.
+    assert(!IsGlass(-1) && !IsGlass(123) && !IsGlass(MODELINFOSIZE - 1));
 
-    TestModel ped(MITYPE_PED), simple(MITYPE_SIMPLE), weapon(MITYPE_WEAPON);
+    TestModel ped(MITYPE_PED), weapon(MITYPE_WEAPON);
+    TestSimpleModel simple;
     testModel = &ped;
     CModelInfo::Initialise();
     assert(GetPickupModelInfo(123) == nil); // incompatible type
+    assert(!IsGlass(123));
     testModel = &simple;
     CModelInfo::Initialise();
     assert(GetPickupModelInfo(123) == &simple);
+    assert(!IsGlass(123));
+    simple.m_isCodeGlass = 1;
+    assert(IsGlass(123));
+    simple.m_isCodeGlass = 0;
+    simple.m_isArtistGlass = 1;
+    assert(IsGlass(123));
     testModel = &weapon;
     CModelInfo::Initialise();
     assert(GetPickupModelInfo(123) == &weapon);
+    assert(!IsGlass(123));
 
     CPickups::Init();
     const CVector pos(120.0f, 40.0f, 15.0f);

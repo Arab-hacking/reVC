@@ -34,6 +34,12 @@ add_executable(save_block_bounds_tests SaveBlockBoundsTests.cpp)
 set_target_properties(save_block_bounds_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
 add_test(NAME save_block_bounds_tests COMMAND save_block_bounds_tests)
 
+# Validate the actual VC save-pool wire framing before loading entities with
+# model IDs from an IDE configuration different from the current map.
+add_executable(saved_pool_validation_tests SavedPoolValidationTests.cpp)
+set_target_properties(saved_pool_validation_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+add_test(NAME saved_pool_validation_tests COMMAND saved_pool_validation_tests)
+
 add_executable(custom_asset_cache_tests
     CustomAssetCacheTests.cpp ../src/extras/custom/br/third_party/astc_decomp.cpp)
 target_include_directories(custom_asset_cache_tests PRIVATE ../src/extras/custom ../src/extras/custom/br)

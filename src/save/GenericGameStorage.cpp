@@ -5,6 +5,9 @@
 
 #include "DMAudio.h"
 #include "AudioScriptObject.h"
+#include "Automobile.h"
+#include "Bike.h"
+#include "Boat.h"
 #include "Camera.h"
 #include "CarGen.h"
 #include "Cranes.h"
@@ -17,6 +20,7 @@
 #include "Gangs.h"
 #include "Garages.h"
 #include "GenericGameStorage.h"
+#include "ModelInfo.h"
 #include "Pad.h"
 #include "Particle.h"
 #include "ParticleObject.h"
@@ -41,6 +45,7 @@
 #include "Timecycle.h"
 #include "Fluff.h"
 #include "SaveBlockBounds.h"
+#include "SavedPoolValidation.h"
 #include <vector>
 
 #define BLOCK_COUNT 22
@@ -172,7 +177,53 @@ WritePoolSaveBlock(int file, uint32 &totalSize, void (*save)(uint8 *, uint32 *),
 }
 
 static bool
-ReadPoolSaveBlock(int file, void (*load)(uint8 *, uint32), const char *name)
+IsLoadedSaveVehicleModel(int16 id, uint32 type)
+{
+	if (id < 0 || id >= MODELINFOSIZE)
+		return false;
+	CBaseModelInfo *base = CModelInfo::GetModelInfo(id);
+	if (base == nil || base->GetModelType() != MITYPE_VEHICLE)
+		return false;
+	const int vehicleType = ((CVehicleModelInfo*)base)->m_vehicleType;
+	// Automobiles also cover the heli/plane models in the stock save format.
+	if (type == VEHICLE_TYPE_CAR)
+		return vehicleType == VEHICLE_TYPE_CAR || vehicleType == VEHICLE_TYPE_HELI || vehicleType == VEHICLE_TYPE_PLANE;
+	return vehicleType == (int)type;
+}
+
+static bool
+IsLoadedSaveObjectModel(int16 id)
+{
+	if (id < 0 || id >= MODELINFOSIZE)
+		return false;
+	CBaseModelInfo *base = CModelInfo::GetModelInfo(id);
+	return base != nil && (base->IsSimple() || base->GetModelType() == MITYPE_CLUMP);
+}
+
+static SavedPoolCheck
+CheckSavedVehiclePool(const uint8 *buf, std::size_t size)
+{
+	return ValidateSavedVehiclePool(buf, size,
+		CAutomobile::nSaveStructSize, CBoat::nSaveStructSize, CBike::nSaveStructSize,
+		VEHICLE_TYPE_CAR, VEHICLE_TYPE_BOAT, VEHICLE_TYPE_BIKE,
+		IsLoadedSaveVehicleModel);
+}
+
+static SavedPoolCheck
+CheckSavedObjectPool(const uint8 *buf, std::size_t size)
+{
+	// This is the packed record width of CPools::SaveObjectPool; compatible
+	// saves write the last two entity-property words via SaveEntityFlags.
+	const std::size_t recordBytes = sizeof(int16) + sizeof(int32) +
+		2 * sizeof(CCompressedMatrix) + sizeof(float) + sizeof(int8) +
+		7 * sizeof(bool) + sizeof(int16) + 2 * sizeof(int8) +
+		sizeof(float) + 2 * sizeof(int8) + sizeof(uint32) + 2 * sizeof(uint32);
+	return ValidateSavedObjectPool(buf, size, recordBytes, IsLoadedSaveObjectModel);
+}
+
+static bool
+ReadPoolSaveBlock(int file, void (*load)(uint8 *, uint32), const char *name,
+                  SavedPoolCheck (*validate)(const uint8 *, std::size_t) = nil)
 {
 	uint32 outerSize = 0;
 	if(!ReadDataFromFile(file, (uint8*)&outerSize, sizeof(outerSize)))
@@ -192,6 +243,20 @@ ReadPoolSaveBlock(int file, void (*load)(uint8 *, uint32), const char *name)
 		PcSaveHelper.nErrorCode = SAVESTATUS_ERR_DATA_INVALID;
 		return false;
 	}
+	if(validate != nil){
+		SavedPoolCheck check = validate(block.data() + 4, innerSize);
+		if(!check.ok()){
+			if(check.error == SavedPoolError::UnavailableModel)
+				REVC_LOG_ERROR("Cannot load %s save: model %d in record %u (type %u) is unavailable/incompatible with current IDEs. Use a save made for this map.",
+					name, check.model, (uint32)check.entry, check.type);
+			else
+				REVC_LOG_ERROR("Cannot load %s save: invalid record layout/type at entry %u (type %u)",
+					name, (uint32)check.entry, check.type);
+			PcSaveHelper.nErrorCode = SAVESTATUS_ERR_DATA_INVALID;
+			return false;
+		}
+	}
+	REVC_LOG_INFO("Loading saved %s pool (%u bytes)", name, innerSize);
 	load(block.data() + 4, innerSize);
 	return true;
 }
@@ -458,10 +523,10 @@ GenericLoad()
 	ReadDataFromBlock("Loading Garages \n", CGarages::Load);
 	LoadSaveDataBlock();
 	ReadDataFromBlock("Loading GameLogic \n", CGameLogic::Load);
-	if(!ReadPoolSaveBlock(file, CPools::LoadVehiclePool, "Vehicles")) return false;
+	if(!ReadPoolSaveBlock(file, CPools::LoadVehiclePool, "Vehicles", CheckSavedVehiclePool)) return false;
 	CProjectileInfo::RemoveAllProjectiles();
 	CObject::DeleteAllTempObjects();
-	if(!ReadPoolSaveBlock(file, CPools::LoadObjectPool, "Objects")) return false;
+	if(!ReadPoolSaveBlock(file, CPools::LoadObjectPool, "Objects", CheckSavedObjectPool)) return false;
 	LoadSaveDataBlock();
 	ReadDataFromBlock("Loading Paths \n", ThePaths.Load);
 	LoadSaveDataBlock();
