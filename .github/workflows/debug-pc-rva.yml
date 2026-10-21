@@ -25,6 +25,26 @@ jobs:
           $exe = Get-ChildItem crash-build -Recurse -File -Filter reVC.exe | Select-Object -First 1 -ExpandProperty FullName
           $pdb = Get-ChildItem crash-build -Recurse -File -Filter reVC.pdb | Select-Object -First 1 -ExpandProperty FullName
           if (-not $exe -or -not $pdb) { throw 'Matching EXE/PDB not present in the Debug artifact' }
+          Write-Output "::notice title=Crash artifact files::EXE=$((Get-Item $exe).Length) bytes, PDB=$((Get-Item $pdb).Length) bytes"
+          $llvm = Get-Command llvm-symbolizer.exe -ErrorAction SilentlyContinue
+          if (-not $llvm) {
+            $llvm = Get-Item 'C:\Program Files\LLVM\bin\llvm-symbolizer.exe' -ErrorAction SilentlyContinue
+          }
+          if ($llvm) {
+            $llvmResult = (& $llvm --relative-address --functions=linkage --inlines --obj=$exe 0x7D9CC 2>&1 | Out-String).Trim().Replace("`r", ' ').Replace("`n", ' / ')
+            Write-Output "::warning title=LLVM crash 0x7D9CC::$llvmResult"
+          } else {
+            Write-Output '::warning title=LLVM unavailable::No llvm-symbolizer.exe on Windows runner'
+          }
+          try {
+            $dia = New-Object -ComObject 'Microsoft.DiaSource'
+            $dia.loadDataFromPdb($pdb)
+            $diaSession = $dia.openSession()
+            $diaSymbol = $diaSession.findSymbolByRVA(0x7D9CC, 5)
+            Write-Output "::warning title=DIA crash 0x7D9CC::$($diaSymbol.name)"
+          } catch {
+            Write-Output "::notice title=DIA lookup unavailable::$($_.Exception.Message)"
+          }
           $code = @'
           using System;
           using System.Runtime.InteropServices;
@@ -81,7 +101,7 @@ jobs:
               Write-Output "Source: ${file}:$($line.LineNumber), byte offset $lineDisp"
               Write-Output "::warning title=PC crash 0x7D9CC source::${file}:$($line.LineNumber), byte offset $lineDisp"
             } else {
-              Write-Output "No line information: $([Runtime.InteropServices.Marshal]::GetLastWin32Error())"
+              Write-Output "::notice title=DbgHelp line unavailable::Win32 error $([Runtime.InteropServices.Marshal]::GetLastWin32Error())"
             }
           } finally {
             [Runtime.InteropServices.Marshal]::FreeHGlobal($symbol)
