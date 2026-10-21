@@ -368,4 +368,47 @@ static inline void collectTextureNames(const uint8_t* p, size_t n, std::vector<s
     }
 }
 
+// Only these references are eligible for a lightmap from the isolated zip/
+// folder: a MatFX DUAL texture nested in a GEOMETRY that actually has UV2.
+// In particular, a diffuse texture with "_lm" in its name is not evidence
+// that the model can use a lightmap. This scanner runs on already prepared
+// DFF bytes (no extra .mod decode), and does not create any RW/GPU objects.
+static inline void collectUv2DualTextureNames(const uint8_t* p, size_t n,
+                                                std::vector<std::string>& out,
+                                                bool uv2 = false, int depth = 0) {
+    if (!p || depth > 32) return;
+    size_t off = 0;
+    while (off + 12 <= n) {
+        uint32_t id = rd32(p + off), sz = rd32(p + off + 4);
+        if (sz > n - off - 12) break;
+        const uint8_t* body = p + off + 12;
+        if (id == br::rwGEOMETRY) {
+            bool hasUv2 = false;
+            if (sz >= 16 && rd32(body) == br::rwSTRUCT &&
+                rd32(body + 4) >= 4 && rd32(body + 4) <= sz - 12) {
+                uint32_t flags = rd32(body + 12);
+                uint32_t sets = (flags >> 16) & 0xFF;
+                hasUv2 = sets >= 2 || (sets == 0 && (flags & 0x80) != 0);
+            }
+            if (hasUv2) collectUv2DualTextureNames(body, sz, out, true, depth + 1);
+        } else if (id == br::rwMATFX && uv2) {
+            std::vector<br::MatFxTex> textures;
+            uint32_t type = br::matfxTextures(body, sz, textures);
+            if (type == 4 || type == 6)
+                for (const auto& tex : textures)
+                    if (tex.key == "dual")
+                        collectTextureNames(body + tex.off, tex.len, out, depth + 1);
+        } else if (depth < 32) {
+            switch (id) {
+            case br::rwCLUMP: case br::rwGEOMLIST: case br::rwMATLIST:
+            case br::rwMATERIAL: case br::rwEXTENSION:
+                collectUv2DualTextureNames(body, sz, out, uv2, depth + 1);
+                break;
+            default: break;
+            }
+        }
+        off += 12 + sz;
+    }
+}
+
 } // namespace brtex

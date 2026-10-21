@@ -18,6 +18,7 @@
 #include <ctype.h>		// tolower
 
 #include "CustomZip.h"
+#include "GraphicsBtx.h"
 #include "CustomCol.h"
 #include "BrCollisionFormat.h"
 #include "CustomColFormat.h"
@@ -68,6 +69,7 @@ struct CustomSource
 	int entry;
 	uint64 mtime;
 	bool fromCommon;
+	bool fromGraphics;
 	char loose[256];		// archive < 0: an unpacked file
 	char fname[256];		// the name the file has (with the extension)
 };
@@ -75,6 +77,10 @@ struct CustomSource
 static std::vector<CustomZip*> customArchives;
 static std::map<std::string, CustomSource> customMods;
 static std::map<std::string, CustomSource> customBtx;
+// Separate from customBtx: zip/ must NEVER be a general TXD/model source.
+// Index .btx names only; extraction and decoding happen for selected graphics.
+static std::map<std::string, CustomSource> graphicsBtx;
+static unsigned graphicsArchives = 0, graphicsReflections = 0, graphicsLightmaps = 0;
 static std::map<std::string, CustomSource> customCls;
 static std::map<std::string, CustomSource> customAnims;
 // standard-format custom files: the community packs keep ordinary .dff/.txd/
@@ -241,13 +247,14 @@ FolderExists(const char *folder)
 
 static CustomSource
 MakeSource(int archive, int entry, uint64 mtime, const char *path, const char *fname,
-           bool fromCommon = false)
+           bool fromCommon = false, bool fromGraphics = false)
 {
 	CustomSource src;
 	src.archive = archive;
 	src.entry = entry;
 	src.mtime = mtime;
 	src.fromCommon = fromCommon;
+	src.fromGraphics = fromGraphics;
 	src.loose[0] = '\0';
 	src.fname[0] = '\0';
 	if(path){
@@ -513,6 +520,67 @@ ScanFolder(const std::string &folder, int depth, ScanStats &st)
 			ScanFolder(dirs[i], depth+1, st);
 }
 
+// zip/ is a GRAPHICS-ONLY source. Do not call IndexArchive here: that would
+// register .mod/.dff/.col/skins and let unrelated .btx replace base textures.
+// CustomZip retains only the ZIP central directory, never the image pixels.
+static void
+IndexGraphicsArchive(const std::string &path)
+{
+	if(path.size() >= 256) return; // CustomZip's stored path is 256 bytes
+	CustomZip *zip = new CustomZip;
+	if(!zip->Open(path.c_str())) {
+		delete zip;
+		CUSTOM_LOG("zip/ graphics: cannot open %s\n", path.c_str());
+		return;
+	}
+	const int archive = (int)customArchives.size();
+	customArchives.push_back(zip);
+	graphicsArchives++;
+	const uint64 mtime = FileTime(path.c_str());
+	unsigned btx = 0, reflections = 0, lightmaps = 0;
+	for(int i = 0; i < zip->GetNumEntries(); i++) {
+		const CustomZipEntry *ent = zip->GetEntry(i);
+		if(Extension(ent->name) != "btx" || ent->uncompressedSize < 68 ||
+		   ent->uncompressedSize > CUSTOM_MAX_ENTRY) continue;
+		std::string key = ToLower(Stem(ent->name));
+		if(key.empty() || key.size() > 63) continue;
+		CustomSource src = MakeSource(archive, i, mtime, nil, ent->name, false, true);
+		AddIndex(graphicsBtx, key, src);
+		if(key.size() > 31) AddIndex(graphicsBtx, key.substr(0, 31), src);
+		btx++;
+		if(graphicsbtx::IsVehicleReflection(key)) reflections++;
+		if(graphicsbtx::IsLightmap(key)) lightmaps++;
+	}
+	graphicsReflections += reflections;
+	graphicsLightmaps += lightmaps;
+	CUSTOM_LOG("zip/ graphics: %s: %u .btx indexed (%u vehicle-reflection, %u lightmap names); non-.btx ignored\n",
+		path.c_str(), btx, reflections, lightmaps);
+}
+
+static void
+ScanGraphicsFolder(const std::string &folder, int depth)
+{
+	std::vector<std::string> files, dirs;
+	if(!ListDirectory(folder.c_str(), files, dirs)) return;
+	std::sort(files.begin(), files.end());
+	std::sort(dirs.begin(), dirs.end());
+	for(size_t i = 0; i < files.size(); i++)
+		if(Extension(files[i]) == "zip") IndexGraphicsArchive(files[i]);
+	if(depth < CUSTOM_MAX_DEPTH)
+		for(size_t i = 0; i < dirs.size(); i++)
+			ScanGraphicsFolder(dirs[i], depth+1);
+}
+
+static void
+ScanGraphicsRoot(void)
+{
+	std::vector<std::string> files, dirs;
+	if(!ListDirectory(".", files, dirs)) return;
+	std::sort(dirs.begin(), dirs.end());
+	for(size_t i = 0; i < dirs.size(); i++)
+		if(ToLower(Stem(dirs[i])) == "zip") ScanGraphicsFolder(dirs[i], 0);
+}
+
 // common/ is ALREADY unpacked. Traverse only data/maps and anim/, never
 // audio/, data/features/, routes/ or any .bpc. Do not register .mod/.btx here:
 // those live in the user's existing custom ZIPs and img/ archives.
@@ -596,6 +664,7 @@ EnsureInitialised(void)
 	if(FolderExists(customFolderPath.c_str()))
 		ScanFolder(customFolderPath, 0, st);
 	ScanCommonRoot();
+	ScanGraphicsRoot();
 	IndexBrCollisionBlocks();
 
 	customActive = !customMods.empty() || !customBtx.empty() || !customCls.empty() ||
@@ -609,7 +678,21 @@ EnsureInitialised(void)
 		st.zip, st.mod, st.dff, st.btx, (int)customBtx.size(), st.txd, st.cls,
 		(unsigned)customBrColBlocks.size(), st.colfile, st.colblock, st.anim,
 		(int)customAnims.size(), st.img, (unsigned)customIdeFiles.size(), (unsigned)customIplFiles.size());
-	if(!customActive)
+	CUSTOM_LOG("zip/ graphics: %u archive(s), %u vehicle-reflection and %u lightmap entry name(s); no models, collisions, skins or diffuse textures from zip/\n",
+		graphicsArchives, graphicsReflections, graphicsLightmaps);
+	unsigned shown = 0;
+	for(std::map<std::string, CustomSource>::const_iterator it = graphicsBtx.begin();
+	    it != graphicsBtx.end() && shown < 16; ++it) {
+		if(it->first != ToLower(Stem(it->second.fname))) continue; // omit RW name aliases
+		const bool car = graphicsbtx::IsVehicleReflection(it->first);
+		const bool light = graphicsbtx::IsLightmap(it->first);
+		if(car || light) {
+			CUSTOM_LOG("zip/ graphics: candidate %s .btx %s\n",
+				car ? "vehicle reflection" : "lightmap", it->second.fname);
+			shown++;
+		}
+	}
+	if(!customActive && graphicsBtx.empty())
 		CUSTOM_LOG("scan: nothing usable found - the game runs on its own files\n");
 
 	// the skins the frontend can offer: one entry per image name
@@ -996,6 +1079,7 @@ struct PreparedModel
 	bool readOk;
 	unsigned rawSize;
 	std::vector<std::string> textureNames; // scanned off the game thread too
+	std::vector<std::string> uv2DualNames; // explicit lightmaps only, not diffuse
 };
 
 // Only pure CPU work is allowed here. In particular, no CModelInfo, TXD,
@@ -1019,6 +1103,7 @@ PrepareModelBytes(const std::string &key, const CustomSource &src, bool isMod)
 	model->readOk = true;
 	model->usable = ValidateModelForGame(key, isMod, model->bytes, model->rejectReason);
 	brtex::collectTextureNames(model->bytes.data(), model->bytes.size(), model->textureNames);
+	brtex::collectUv2DualTextureNames(model->bytes.data(), model->bytes.size(), model->uv2DualNames);
 	return model;
 }
 
@@ -1055,13 +1140,15 @@ ReadModelEntry(const std::string &key)
 // Names and terrain recipes are discovered once per TXD plan from the same
 // bytes that will later be given to RenderWare; no second XTEA pass.
 static bool
-ModelTextureNames(const std::string &key, std::vector<std::string> &names, std::vector<br::TerrainRecipe> &recipes)
+ModelTextureNames(const std::string &key, std::vector<std::string> &names,
+                  std::vector<br::TerrainRecipe> &recipes, std::vector<std::string> &uv2DualNames)
 {
 	std::shared_ptr<const PreparedModel> model = ReadModelEntry(key);
 	if(!model)
 		return false;
 	names = model->textureNames;
 	recipes = model->stats.recipes;
+	uv2DualNames = model->uv2DualNames;
 	return true;
 }
 
@@ -1133,11 +1220,20 @@ struct TxdPlan
 	bool serve;
 	std::string modelKey;		// the model the textures come from
 	std::vector<std::string> names;
+	std::vector<std::string> uv2DualNames; // only these may come from zip/
 	std::vector<br::TerrainRecipe> recipes;
 };
 
 static std::map<std::string, TxdPlan> customTxdPlans;
 static std::map<std::string, std::string> customTxdCandidates;
+
+static bool
+PlanReferencesGraphicsLightmap(const TxdPlan &plan, const std::string &name)
+{
+	return graphicsbtx::IsLightmap(name) &&
+	       std::find(plan.uv2DualNames.begin(), plan.uv2DualNames.end(),
+	                 graphicsbtx::Key(name)) != plan.uv2DualNames.end();
+}
 
 // The dictionary a model uses does not always carry the model's name (a car is
 // called "hotdog" but its textures can live in "hotdog1"), so a name that is
@@ -1208,9 +1304,12 @@ GetTxdPlan(const std::string &key)
 	if(plan.haveModel){
 		// the name of a texture is the name of its .btx file; a model texture
 		// that is a terrain composite is named after its mask
-		ModelTextureNames(plan.modelKey, plan.names, plan.recipes);
+		ModelTextureNames(plan.modelKey, plan.names, plan.recipes, plan.uv2DualNames);
 		for(size_t i = 0; i < plan.names.size(); i++)
 			if(customBtx.find(ToLower(plan.names[i])) != customBtx.end()){
+				// NEVER turn a native base TXD into an incomplete custom TXD
+				// solely because zip/ offers one lightmap. Native IMG diffuse
+				// textures must keep their normal streaming path.
 				plan.serve = true;
 				break;
 			}
@@ -1429,6 +1528,14 @@ DecodeBtxBytes(const CustomSource &src, const std::string &name, std::string &er
 		err = "the archive entry could not be read";
 		return std::shared_ptr<brtex::Texture>();
 	}
+	if(src.fromGraphics) {
+		uint32 w = 0, h = 0, mips = 0;
+		if(!brtex::peekBtx(file.data(), file.size(), w, h, mips) ||
+		   !graphicsbtx::FullSize(w, h)) {
+			err = "invalid .btx, 8x8 preview or oversized graphics texture";
+			return std::shared_ptr<brtex::Texture>();
+		}
+	}
 	std::shared_ptr<brtex::Texture> tex = std::make_shared<brtex::Texture>();
 	tex->name = name;
 	if(!brtex::parseBtx(file.data(), file.size(), *tex, &err))
@@ -1468,6 +1575,31 @@ GetDecodedBtx(const std::string &name)
 	return src ? GetDecodedBtx(*src, name) : std::shared_ptr<const brtex::Texture>();
 }
 
+// Reject the 8x8 .tmb previews and broken entries before creating GPU rasters.
+// Failure is remembered per source, avoiding repeated extraction on every
+// appearance of a model. This shares the EXISTING decoded texture LRU budget.
+static std::set<std::string> rejectedGraphicsBtx;
+static const CustomSource *
+GraphicsLightmapSource(const std::string &name)
+{
+	return graphicsbtx::IsLightmap(name) ? FindSource(graphicsBtx, graphicsbtx::Key(name)) : nil;
+}
+
+static std::shared_ptr<const brtex::Texture>
+GetGraphicsTexture(const CustomSource &src, const std::string &name)
+{
+	const std::string key = BtxCacheKey(src);
+	if(rejectedGraphicsBtx.count(key)) return std::shared_ptr<const brtex::Texture>();
+	std::shared_ptr<const brtex::Texture> tex = GetDecodedBtx(src, name);
+	if(!tex || tex->mips.empty() ||
+	   !graphicsbtx::FullSize(tex->mips[0].w, tex->mips[0].h)) {
+		CUSTOM_LOG("zip/ graphics: %s: invalid .btx or 8x8 preview; skipped\n", src.fname);
+		rejectedGraphicsBtx.insert(key);
+		return std::shared_ptr<const brtex::Texture>();
+	}
+	return tex;
+}
+
 // Decode and bake terrain without touching game state. The input map is a
 // snapshot of source descriptors, not live iterators into the archive index.
 static std::shared_ptr<brtex::Texture>
@@ -1503,10 +1635,17 @@ LoadBtxTexture(const std::string &name, brtex::Texture &out)
 }
 
 static std::shared_ptr<const brtex::Texture>
-GetPreparedTexture(const std::string &modelKey, const std::string &name, const br::TerrainRecipe *recipe)
+GetPreparedTexture(const std::string &modelKey, const std::string &name,
+                   const br::TerrainRecipe *recipe, bool explicitlyUv2Dual)
 {
-	if(!recipe)
+	if(!recipe) {
+		const CustomSource *src = explicitlyUv2Dual ? GraphicsLightmapSource(name) : nil;
+		if(src) {
+			std::shared_ptr<const brtex::Texture> tex = GetGraphicsTexture(*src, name);
+			if(tex) return tex; // zip/ lightmaps outrank custom/ of the same name
+		}
 		return GetDecodedBtx(name);
+	}
 	std::string key = "terrain:" + modelKey + ":" + ToLower(name);
 	std::shared_ptr<const brtex::Texture> cached = customDecodedTextures.Find(key);
 	if(cached)
@@ -1630,6 +1769,99 @@ BuildTextureGuarded(const brtex::Texture &tex, const char *name)
 #endif
 }
 
+// Distinguishes an actual zip/ UV2 lightmap from an unrelated native MatFX
+// DUAL detail map at render time without a per-mesh map lookup or plugin.
+static void
+MarkGraphicsLightmap(RwTexture *texture)
+{
+	if(texture) {
+		strncpy(texture->mask, graphicsbtx::LightmapMarker, 31);
+		texture->mask[31] = '\0';
+	}
+}
+
+RwTexture *
+CCustomModels::CarReflectionMaskFromZip(void)
+{
+	EnsureInitialised();
+	// An envmap .btx is NOT a BR dynamic paraboloid render target. Only the
+	// specifically named CAR mask can replace Neo's scene-RT overlay mask.
+	const char *names[] = { "carreflectionmask", "car_reflection_mask",
+	                         "car_refl_mask", "vehiclereflectionmask",
+	                         "vehicle_reflection_mask" };
+	for(size_t i = 0; i < sizeof(names)/sizeof(names[0]); i++) {
+		const CustomSource *src = FindSource(graphicsBtx, names[i]);
+		if(!src) continue;
+		std::shared_ptr<const brtex::Texture> pixels = GetGraphicsTexture(*src, names[i]);
+		RwTexture *texture = pixels ? BuildTextureGuarded(*pixels, names[i]) : nil;
+		if(texture) {
+			RwTextureSetAddressing(texture, rwTEXTUREADDRESSCLAMP);
+			CUSTOM_LOG("zip/ graphics: vehicle RT mask %s from %s\n", names[i], src->fname);
+			return texture; // owned by CustomPipes, NOT the game's TXD
+		}
+	}
+	return nil;
+}
+
+// Stable internal name for a selected lightmap within ONE model TXD. The TXD
+// owns a reference; MatFX owns another. Normal model unload/eviction releases
+// both, and two materials referencing the same .btx share one GPU raster.
+static std::string
+ZipLightmapName(const CustomSource &src)
+{
+	const std::string key = BtxCacheKey(src);
+	uint64 hash = 14695981039346656037ull;
+	for(size_t i = 0; i < key.size(); i++) {
+		hash ^= (unsigned char)key[i];
+		hash *= 1099511628211ull;
+	}
+	char name[32];
+	snprintf(name, sizeof(name), "zip_lightmap_%016llx", (unsigned long long)hash);
+	return name;
+}
+
+void
+CCustomModels::ApplyGraphicsLightmaps(RpAtomic *atomic, int32 txdSlot)
+{
+	if(graphicsLightmaps == 0 || !atomic || txdSlot < 0 || txdSlot >= TXDSTORESIZE) return;
+	rw::Geometry *geo = atomic->geometry;
+	if(!geo || geo->numTexCoordSets < 2) return;
+	TxdDef *def = CTxdStore::GetSlot(txdSlot);
+	rw::TexDictionary *dict = def ? (rw::TexDictionary*)def->texDict : nil;
+	if(!dict) return;
+	for(int i = 0; i < geo->matList.numMaterials; i++) {
+		rw::Material *mat = geo->matList.materials[i];
+		if(!mat || rw::MatFX::getEffects(mat) != rw::MatFX::DUAL) continue;
+		rw::MatFX *fx = rw::MatFX::get(mat);
+		rw::Texture *dual = fx ? fx->getDualTexture() : nil;
+		if(!dual || !dual->name[0]) continue; // dummy RW textures retain a useful name
+		const std::string name = dual->name;
+		if(!graphicsbtx::MaterialCanUseLightmap(geo->numTexCoordSets, true, name)) continue;
+		const CustomSource *src = GraphicsLightmapSource(name);
+		if(!src) continue;
+		// TXDs for custom .mod/.dff already get their referenced zip/ lightmap
+		// on creation; do not allocate a duplicate GPU raster for that case.
+		const char *txdName = CTxdStore::GetTxdName(txdSlot);
+		std::map<std::string, TxdPlan>::const_iterator plan =
+			customTxdPlans.find(txdName ? ToLower(txdName) : std::string());
+		if(dual->dict == dict && plan != customTxdPlans.end() && plan->second.haveModel &&
+		   std::find(plan->second.names.begin(), plan->second.names.end(), name) != plan->second.names.end())
+			continue;
+		const std::string alias = ZipLightmapName(*src);
+		rw::Texture *texture = dict->find(alias.c_str());
+		if(!texture) {
+			std::shared_ptr<const brtex::Texture> pixels = GetGraphicsTexture(*src, name);
+			if(!pixels) continue;
+			texture = BuildTextureGuarded(*pixels, alias.c_str());
+			if(!texture) continue;
+			MarkGraphicsLightmap(texture);
+			RwTextureSetAddressing(texture, rwTEXTUREADDRESSCLAMP);
+			dict->add(texture); // transfers the initial ref to the model TXD
+		}
+		fx->setDualTexture(texture); // adds the material's own reference
+		CUSTOM_LOG("zip/ graphics: UV2 DUAL lightmap %s <- %s\n", name.c_str(), src->fname);
+	}
+}
 
 // The streaming system normally destroys a TXD when its last model is
 // evicted. Keep a *detached* dictionary (including GPU rasters) for a bounded
@@ -1912,11 +2144,15 @@ LoadTxdSlot(int32 slot, const std::string &key, TxdPlan &plan)
 				if(plan.recipes[r].tex == name)
 					recipe = &plan.recipes[r];
 
-			std::shared_ptr<const brtex::Texture> tex = GetPreparedTexture(plan.modelKey, name, recipe);
+			std::shared_ptr<const brtex::Texture> tex = GetPreparedTexture(plan.modelKey, name, recipe, PlanReferencesGraphicsLightmap(plan, name));
 			if(!tex){ missing++; continue; }
 
 			RwTexture *texture = BuildTextureGuarded(*tex, name.c_str());
 			if(texture == nil){ missing++; continue; }
+			const CustomSource *graphic = !recipe && PlanReferencesGraphicsLightmap(plan, name) ?
+				GraphicsLightmapSource(name) : nil;
+			if(graphic && !rejectedGraphicsBtx.count(BtxCacheKey(*graphic)))
+				MarkGraphicsLightmap(texture);
 			RwTexDictionaryAddTexture(dict, texture);
 			made++;
 		}
@@ -2046,6 +2282,9 @@ CCustomModels::Shutdown(void)
 	customArchives.clear();
 	customMods.clear();
 	customBtx.clear();
+	graphicsBtx.clear();
+	graphicsArchives = graphicsReflections = graphicsLightmaps = 0;
+	rejectedGraphicsBtx.clear();
 	customCls.clear();
 	customAnims.clear();
 	customDff.clear();
@@ -2097,6 +2336,20 @@ CCustomModels::HasCommonWorld(void)
 {
 	EnsureInitialised();
 	return !commonConfig.ide.empty() && !commonConfig.ipl.empty();
+}
+
+bool
+CCustomModels::HasGraphicsReflections(void)
+{
+	EnsureInitialised();
+	return graphicsReflections != 0;
+}
+
+bool
+CCustomModels::HasGraphicsLightmaps(void)
+{
+	EnsureInitialised();
+	return graphicsLightmaps != 0;
 }
 
 bool
@@ -2462,7 +2715,9 @@ CheckStreamPreparation(int32 streamId, bool priority)
 						pending = true;
 					}
 				}else{
-					const CustomSource *src = FindSource(customBtx, ToLower(name));
+					const CustomSource *src = PlanReferencesGraphicsLightmap(plan, name) ?
+						GraphicsLightmapSource(name) : nil;
+					if(!src) src = FindSource(customBtx, ToLower(name));
 					if(src && !HasPreparedTexture(BtxCacheKey(*src))){
 						std::string texKey = BtxCacheKey(*src);
 						if(EvictedBeforeReady(streamId, TextureJobKey(texKey))) return true;
@@ -2707,10 +2962,14 @@ BuildDictionaryFor(const std::string &key)
 			for(size_t r = 0; r < plan.recipes.size(); r++)
 				if(plan.recipes[r].tex == name)
 					recipe = &plan.recipes[r];
-			std::shared_ptr<const brtex::Texture> tex = GetPreparedTexture(plan.modelKey, name, recipe);
+			std::shared_ptr<const brtex::Texture> tex = GetPreparedTexture(plan.modelKey, name, recipe, PlanReferencesGraphicsLightmap(plan, name));
 			if(!tex){ missing++; continue; }
 			RwTexture *texture = BuildTextureGuarded(*tex, name.c_str());
 			if(texture == nil){ missing++; continue; }
+			const CustomSource *graphic = !recipe && PlanReferencesGraphicsLightmap(plan, name) ?
+				GraphicsLightmapSource(name) : nil;
+			if(graphic && !rejectedGraphicsBtx.count(BtxCacheKey(*graphic)))
+				MarkGraphicsLightmap(texture);
 			RwTexDictionaryAddTexture(dict, texture);
 			made++;
 		}

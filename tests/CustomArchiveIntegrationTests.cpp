@@ -9,6 +9,7 @@
 #include "CdStream.h"
 #include "TxdStore.h"
 
+#include <algorithm>
 #include <cassert>
 #include <cstdio>
 #include <cstdlib>
@@ -46,6 +47,19 @@ static void A32(std::vector<uint8> &b, uint32 n) {
 }
 static std::vector<uint8> Bytes(const std::string &s) {
     return std::vector<uint8>(s.begin(), s.end());
+}
+static std::vector<uint8> RawBtx(uint32 w, uint32 h) {
+    std::vector<uint8> file(4 + 64 + 4 + (size_t)w*h*4, 0);
+    std::fill(file.begin() + 4 + 68, file.end(), 255);
+    const uint8 magic[12] = { 0xAB, 'K', 'T', 'X', ' ', '1', '1', 0xBB, '\r', '\n', 0x1A, '\n' };
+    std::memcpy(file.data() + 4, magic, 12);
+    W32(file, 4+12, 0x04030201); W32(file, 4+16, 0x1401);
+    W32(file, 4+20, 1); W32(file, 4+24, 0x1908);
+    W32(file, 4+28, 0x8058); W32(file, 4+32, 0x1908);
+    W32(file, 4+36, w); W32(file, 4+40, h);
+    W32(file, 4+52, 1); W32(file, 4+56, 1);
+    W32(file, 4+64, w*h*4);
+    return file;
 }
 static void Write(const char *path, const std::vector<uint8> &bytes) {
     FILE *f = std::fopen(path, "wb");
@@ -156,6 +170,16 @@ int main() {
     char *dir = mkdtemp(temp);
     assert(dir && chdir(dir) == 0);
     assert(mkdir("img", 0700) == 0 && mkdir("custom", 0700) == 0);
+    assert(mkdir("zip", 0700) == 0);
+    Zip("zip/visuals.ZIP", {
+        { "vehicles/CarReflectionMask.BTX", RawBtx(32, 32) },
+        { "lightmaps/window_LM.btx", RawBtx(32, 16) },
+        { "lightmaps/preview_lightmap.btx", RawBtx(8, 8) },
+        { "scenes/unrelated.btx", RawBtx(32, 32) }, // metadata only, NEVER a base TXD
+        { "models/forbidden.dff", Bytes("do not load") },
+        { "maps/forbidden.ide", Bytes("objs\n1 forbidden bad 100 0\nend\n") },
+        { "audio/forbidden.audo", Bytes("do not load") }
+    });
     std::vector<uint8> img(4*2048, 0), directory(3*32, 0);
     W32(directory, 0, 1); W32(directory, 4, 2);
     std::memcpy(directory.data()+8, "house1.dff", 11);
@@ -231,6 +255,10 @@ int main() {
         { "mesh/bad.col", badOffset }
     });
     std::map<std::string, std::string> ide, ipl, cls, col;
+    assert(CCustomModels::HasGraphicsReflections());
+    assert(CCustomModels::HasGraphicsLightmaps());
+    assert(!CCustomModels::HasModelFile("forbidden"));
+    assert(!CCustomModels::HasArchiveModelFile("forbidden"));
     assert(CCustomModels::HasModelFile("house1")); // mounted DFF before Streaming::Init
     assert(CCustomModels::HasModelFile("baseonly")); // usable stock DFF even without its IDE
     assert(CCustomModels::HasArchiveModelFile("SPECIAL1")); // archive-only special, no IMG DIR
@@ -359,7 +387,7 @@ int main() {
     for(const char *file : { "models/gta3.DIR", "img/map.img", "img/map.dir", "img/area/extra.img",
                              "img/area/extra.dir", "img/no_dir.img",
                              "img/v2.img", "img/v2.dir", "custom/common.zip",
-                             "custom/coll_a.zip", "custom/coll_b.zip",
+                             "custom/coll_a.zip", "custom/coll_b.zip", "zip/visuals.ZIP",
                              "common/data/config.dat", "common/data/vehicles.ide",
                              "common/data/maps/ide/test.ide",
                              "common/data/maps/level_events/test.ipl",
@@ -379,6 +407,7 @@ int main() {
     assert(rmdir((root+"/img").c_str()) == 0);
     assert(rmdir((root+"/models").c_str()) == 0);
     assert(rmdir((root+"/custom").c_str()) == 0);
+    assert(rmdir((root+"/zip").c_str()) == 0);
     assert(rmdir(root.c_str()) == 0);
     std::puts("real custom IMG/ZIP scanner: paired DFF/TXD, nested IDE/IPL and CLS/COL passed");
 }

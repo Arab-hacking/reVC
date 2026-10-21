@@ -46,6 +46,12 @@ target_include_directories(custom_asset_cache_tests PRIVATE ../src/extras/custom
 set_target_properties(custom_asset_cache_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
 add_test(NAME custom_asset_cache_tests COMMAND custom_asset_cache_tests)
 
+add_executable(graphics_btx_tests
+    GraphicsBtxTests.cpp ../src/extras/custom/br/third_party/astc_decomp.cpp)
+target_include_directories(graphics_btx_tests PRIVATE ../src/extras/custom ../src/extras/custom/br)
+set_target_properties(graphics_btx_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+add_test(NAME graphics_btx_tests COMMAND graphics_btx_tests)
+
 add_executable(background_asset_queue_tests
     BackgroundAssetQueueTests.cpp ../src/extras/custom/CustomZip.cpp
     ../src/extras/custom/br/third_party/astc_decomp.cpp)

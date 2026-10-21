@@ -100,6 +100,16 @@ public:
 	typedef void (*WorldFileCallback)(const char *path, const unsigned char *data,
 	                                  size_t size, void *context);
 	static bool HasWorldFiles(void);
+	// zip/*.zip is an isolated graphics-only index, not a generic source for
+	// streaming TXDs or other game files. These are metadata queries (no decode).
+	static bool HasGraphicsReflections(void);
+	static bool HasGraphicsLightmaps(void);
+	// Returns an owned GPU texture, or nil when zip/ has no full-sized car mask.
+	// The caller must destroy the returned reference before RW shuts down.
+	static RwTexture *CarReflectionMaskFromZip(void);
+	// Override only explicitly named DUAL lightmaps on UV2 world atomics;
+	// attach the selected texture to the model's TXD for normal eviction.
+	static void ApplyGraphicsLightmaps(RpAtomic *atomic, int32 txdSlot);
 	static bool HasModelFile(const char *name);
 	static void ForEachWorldFile(bool ide, WorldFileCallback callback, void *context);
 

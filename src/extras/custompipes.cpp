@@ -51,6 +51,16 @@ int32 EnvMapSize = 128;
 rw::Camera *EnvMapCam;
 rw::Texture *EnvMapTex;
 rw::Texture *EnvMaskTex;
+static bool zipCarMaskOwned;
+
+void
+SetCarReflectionMask(rw::Texture *mask)
+{
+	if(zipCarMaskOwned && EnvMaskTex) EnvMaskTex->destroy();
+	zipCarMaskOwned = mask != nil;
+	EnvMaskTex = mask ? mask : (neoTxd ? neoTxd->find("CarReflectionMask") : nil);
+}
+
 static rw::RWDEVICE::Im2DVertex EnvScreenQuad[4];
 static int16 QuadIndices[6] = { 0, 1, 2, 0, 2, 3 };
 
@@ -222,6 +232,7 @@ EnvMapInit(void)
 static void
 EnvMapShutdown(void)
 {
+	SetCarReflectionMask(nil); // zip/ mask owns its raster; neo.txd owns the fallback
 	if(EnvMapTex) {
 		EnvMapTex->raster = nil;
 		EnvMapTex->destroy();

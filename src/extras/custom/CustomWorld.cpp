@@ -48,7 +48,7 @@ std::map<std::string, int> nameSlots;
 std::vector<bool> brSlots; // allocated after the game's heap is initialized
 bool ideLoaded = false, collisionLoaded = false;
 #ifdef EXTENDED_PIPELINES
-bool commonGraphicsActive = false;
+bool graphicsActive = false;
 int32 previousVehiclePipe = CustomPipes::VEHICLEPIPE_MATFX;
 bool previousLightmap = false;
 #endif
@@ -406,26 +406,36 @@ void CCustomWorld::LoadIde(void)
     ideLoaded = true;
     modelSlots.clear();
     nameSlots.clear();
-    if(!CCustomModels::HasWorldFiles()) return;
 #ifdef EXTENDED_PIPELINES
-    if(CCustomModels::HasCommonWorld()) {
-        if(!commonGraphicsActive) {
+    const bool commonWorld = CCustomModels::HasCommonWorld();
+    const bool reflections = CCustomModels::HasGraphicsReflections();
+    const bool lightmaps = CCustomModels::HasGraphicsLightmaps();
+    if(commonWorld || reflections || lightmaps) {
+        if(!graphicsActive) {
             previousVehiclePipe = CustomPipes::VehiclePipeSwitch;
             previousLightmap = CustomPipes::LightmapEnable;
-            commonGraphicsActive = true;
+            graphicsActive = true;
         }
-        // The renderer already owns a scene envmap and UV2 lightmap pipeline.
-        // Enable those, and only those, for the selected common/ map. MatFX
-        // remains the fallback if the RT could not be allocated; no BPC,
-        // snow, gloss, rim, water refraction or post-FX is activated here.
-        if(CustomPipes::vehiclePipe && CustomPipes::EnvMapCam && CustomPipes::EnvMapTex)
+        // zip/ is an isolated graphics index; even without common/ IDE/IPL,
+        // select only the effects for which scene assets were discovered.
+        if((commonWorld || reflections) && CustomPipes::vehiclePipe &&
+           CustomPipes::EnvMapCam && CustomPipes::EnvMapTex) {
+            if(reflections) {
+                RwTexture *mask = CCustomModels::CarReflectionMaskFromZip();
+                if(mask) CustomPipes::SetCarReflectionMask((rw::Texture*)mask);
+                else CUSTOM_LOG("zip/ graphics: no full-sized car mask; other reflection .btx cannot replace a dynamic scene envmap\n");
+            }
             CustomPipes::VehiclePipeSwitch = CustomPipes::VEHICLEPIPE_NEO;
-        else CUSTOM_LOG("common/: no reflection RT; leaving vehicle MatFX pipeline\n");
-        if(CustomPipes::worldPipe) CustomPipes::LightmapEnable = true;
-        CUSTOM_LOG("common/: scene vehicle reflections and UV2/dual-texture lightmaps %s; native blob shadows use timecycle strengths\n",
-            CustomPipes::LightmapEnable ? "enabled where assets support them" : "unavailable");
+            CUSTOM_LOG("graphics: vehicle scene RT enabled (Neo projection; BR paraboloid pass not yet implemented)\n");
+        } else if(commonWorld || reflections)
+            CUSTOM_LOG("graphics: no reflection render target; leaving vehicle MatFX pipeline\n");
+        if((commonWorld || lightmaps) && CustomPipes::worldPipe)
+            CustomPipes::LightmapEnable = true;
+        CUSTOM_LOG("graphics: UV2/DUAL lightmaps %s; native blob shadows use timecycle strengths\n",
+            CustomPipes::LightmapEnable ? "enabled where materials support them" : "unavailable");
     }
 #endif
+    if(!CCustomModels::HasWorldFiles()) return;
     brSlots.assign(MODELINFOSIZE, false);
     IdeContext ctx;
     CCustomModels::ForEachWorldFile(true, ReadIde, &ctx);
@@ -615,12 +625,13 @@ bool CCustomWorld::OwnsModelSlot(int slot)
 void CCustomWorld::Shutdown(void)
 {
 #ifdef EXTENDED_PIPELINES
-    if(commonGraphicsActive) {
-        // Starting a VC-only game in the same process must not inherit the
-        // previous common/ scene's reflection or lightmap selection.
+    if(graphicsActive) {
+        // Starting another game in this process must not inherit zip/ or
+        // common/ graphics settings, nor retain an owned GPU reflection mask.
         CustomPipes::VehiclePipeSwitch = previousVehiclePipe;
         CustomPipes::LightmapEnable = previousLightmap;
-        commonGraphicsActive = false;
+        CustomPipes::SetCarReflectionMask(nil);
+        graphicsActive = false;
     }
 #endif
     modelSlots.clear();

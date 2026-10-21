@@ -12,6 +12,7 @@
 #include "Renderer.h"
 #include "World.h"
 #include "custompipes.h"
+#include "custom/GraphicsBtx.h"
 
 #ifdef EXTENDED_PIPELINES
 
@@ -27,6 +28,7 @@ static int32 u_rampEnd;
 static int32 u_rimData;
 
 static int32 u_lightMap;
+static int32 u_brLightmap;
 
 static int32 u_eye;
 static int32 u_reflProps;
@@ -216,6 +218,7 @@ worldRenderCB(rw::Atomic *atomic, rw::gl3::InstanceDataHeader *header)
 
 	while(n--){
 		m = inst->material;
+		bool brLightmap = false;
 
 		if(MatFX::getEffects(m) == MatFX::DUAL){
 			MatFX *matfx = MatFX::get(m);
@@ -223,6 +226,7 @@ worldRenderCB(rw::Atomic *atomic, rw::gl3::InstanceDataHeader *header)
 			if(dualtex == nil)
 				goto notex;
 			setTexture(1, dualtex);
+			brLightmap = graphicsbtx::IsMarkedLightmap(dualtex->mask);
 			lightfactor[0] = lightfactor[1] = lightfactor[2] = WorldLightmapBlend.Get()*LightmapMult;
 		}else{
 		notex:
@@ -231,6 +235,7 @@ worldRenderCB(rw::Atomic *atomic, rw::gl3::InstanceDataHeader *header)
 		}
 		lightfactor[3] = m->color.alpha/255.0f;
 		glUniform4fv(U(u_lightMap), 1, lightfactor);
+		glUniform1f(U(u_brLightmap), brLightmap ? 1.0f : 0.0f);
 
 		RGBA color = { 255, 255, 255, m->color.alpha };
 		setMaterial(color, m->surfaceProps);
@@ -574,6 +579,7 @@ CustomPipeRegisterGL(void)
 	u_rimData = rw::gl3::registerUniform("u_rimData");
 
 	u_lightMap = rw::gl3::registerUniform("u_lightMap");
+	u_brLightmap = rw::gl3::registerUniform("u_brLightmap");
 
 	u_eye = rw::gl3::registerUniform("u_eye");
 	u_reflProps = rw::gl3::registerUniform("u_reflProps");

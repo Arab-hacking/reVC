@@ -48,4 +48,9 @@ another folder. All startup, custom-file, streaming and crash diagnostics go int
 single debug.log next to the game (no REVC_CUSTOM_LOG setting needed). On
 macOS and Android the log follows the user-files / storage-root location.
 
+For vehicle reflection masks and UV2 lightmaps, place ZIP archives in the
+SEPARATE game-root zip/ folder instead. That folder never imports ordinary
+textures, models, maps, collisions or audio. See PC_GRAPHICS_ZIP.md for the
+required .btx names, the fallback, and the currently missing BR paraboloid pass.
+
 See CUSTOM_MODELS.md for the full format and compatibility details.
