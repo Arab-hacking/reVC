@@ -85,9 +85,11 @@ public:
 	// true when the custom folder has the file the game asked for
 	static bool LoadAnimFileFromCustom(const char *filename, std::vector<uint8> &out);
 
-	// IDE/IPL files from common.zip (including entries in nested directories)
-	// and loose files recursively under custom/. A loose file with the same
-	// relative path replaces the archive entry. Bytes live only for the call.
+	// IDE/IPL from custom/common.zip and loose custom/, plus the unpacked
+	// game-root common/ tree. common/data/config.dat chooses active paths and
+	// its same-named files take priority; custom/active_ipl.txt can override
+	// the IPL selection. Bytes live only for the callback.
+	static bool HasCommonWorld(void);
 	typedef void (*WorldFileCallback)(const char *path, const unsigned char *data,
 	                                  size_t size, void *context);
 	static bool HasWorldFiles(void);
@@ -106,10 +108,11 @@ public:
 	static void ForEachGameCollision(CollisionCallback callback, void *context,
 	                                 CollisionFilter filter = nullptr);
 
-	// reads a data file out of the custom archives ("data/timecyc.json" and
-	// friends of a BR common.zip), or out of the custom folder itself; the
-	// archives win
-	static bool ReadDataFile(const char *relpath, std::vector<uint8> &out);
+	// Only allowlisted data files are served from unpacked common/ first;
+	// legacy archive/custom sources keep their original fallback behavior.
+	// fromCommon (optional) reports whether the winning source is common/.
+	static bool ReadDataFile(const char *relpath, std::vector<uint8> &out,
+	                         bool *fromCommon = nullptr);
 
 	// player skins out of the custom folder: plain images (.bmp, or .png/.jpg
 	// in a skins folder) named after the skin, in the archives or loose

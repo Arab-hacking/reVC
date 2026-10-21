@@ -18,12 +18,18 @@
 namespace customworld {
 
 struct Model {
-    enum Kind { OBJECT, TIME_OBJECT, ANIM_OBJECT } kind;
+    enum Kind { OBJECT, TIME_OBJECT, ANIM_OBJECT, PED, VEHICLE, WEAPON } kind;
     int id;
     std::string name, txd, anim;
     float distance;
     unsigned flags;
     int timeOn, timeOff;
+    // Only the SA IDE fields that can be mapped safely to a VC model-info.
+    // The game's handling.cfg/physics.json are deliberately NOT parsed.
+    std::string subtype, handling, gameName, pedStats, animGroup, vehicleClass;
+    unsigned driveMask;
+    int radio1, radio2;
+    float wheelScale;
 };
 
 struct Instance {
@@ -147,6 +153,17 @@ inline bool UInt(const std::string &s, unsigned &out)
     return true;
 }
 
+inline bool Hex(const std::string &s, unsigned &out)
+{
+    if(s.empty() || s[0] == '-') return false;
+    char *end;
+    errno = 0;
+    unsigned long n = std::strtoul(s.c_str(), &end, 16);
+    if(errno || *end || n > UINT_MAX) return false;
+    out = (unsigned)n;
+    return true;
+}
+
 inline bool Float(const std::string &s, float &out)
 {
     if(s.empty()) return false;
@@ -232,6 +249,62 @@ inline bool ParseModel(const std::vector<std::string> &t, Model &m)
     return m.distance > 0.0f && m.distance < 100000.0f;
 }
 
+// SA/BR peds have three extra metadata fields after the radio channels.
+// Read only the common subset; voice IDs do not exist in the VC audio bank.
+inline bool ParsePed(const std::vector<std::string> &t, Model &m)
+{
+    if(t.size() < 11 || t.size() > 14 || !Int(t[0], m.id) || m.id < 0) return false;
+    m.name = ModelName(t[1]);
+    m.txd = ModelName(t[2]);
+    m.subtype = t[3];
+    m.pedStats = t[4];
+    m.animGroup = t[5];
+    m.anim = t[8];
+    if(!Name(m.name, 20) || !Name(m.txd, 19) || !Name(m.subtype, 24) ||
+       !Name(m.pedStats, 31) || !Name(m.animGroup, 31) || !Name(m.anim, 63) ||
+       !Hex(t[6], m.driveMask) || !UInt(t[7], m.flags) ||
+       !Int(t[9], m.radio1) || m.radio1 < -1 || m.radio1 > 255 ||
+       !Int(t[10], m.radio2) || m.radio2 < -1 || m.radio2 > 255)
+        return false;
+    return true;
+}
+
+inline bool ParseVehicle(const std::vector<std::string> &t, Model &m)
+{
+    // Most records have 15 fields; boats and planes also use an 11-field
+    // shape. Do not pass SA fields/flags to VC's unchecked sscanf loader.
+    if((t.size() != 11 && t.size() != 15) || !Int(t[0], m.id) || m.id < 0)
+        return false;
+    m.name = ModelName(t[1]);
+    m.txd = ModelName(t[2]);
+    m.subtype = Lower(t[3]);
+    m.handling = t[4];
+    m.gameName = t[5];
+    m.anim = t[6];
+    m.vehicleClass = Lower(t[7]);
+    unsigned frequency, level;
+    if(!Name(m.name, 20) || !Name(m.txd, 19) || !Name(m.subtype, 16) ||
+       !Name(m.handling, 16) || !Name(m.gameName, 31) ||
+       !Name(m.anim, 63) || !Name(m.vehicleClass, 31) ||
+       !UInt(t[8], frequency) || frequency > 255 ||
+       !UInt(t[9], level) || level > 127 || !Hex(t[10], m.flags))
+        return false;
+    m.wheelScale = 1.0f;
+    if(t.size() == 15 && (!Float(t[12], m.wheelScale) ||
+       m.wheelScale < 0.1f || m.wheelScale > 5.0f))
+        return false;
+    return true;
+}
+
+inline bool ParseWeapon(const std::vector<std::string> &t, Model &m)
+{
+    if(t.size() != 3 || !Int(t[0], m.id) || m.id < 0) return false;
+    m.name = ModelName(t[1]);
+    m.txd = m.name; // SA WEAP supplies no TXD; use same-named IMG pair if present
+    return Name(m.name, 20) && Name(m.txd, 19) &&
+           Float(t[2], m.distance) && m.distance > 0.0f && m.distance < 100000.0f;
+}
+
 inline bool ParseInstance(const std::vector<std::string> &t, Instance &i)
 {
     if((t.size() != 10 && t.size() != 11) ||
@@ -294,6 +367,7 @@ Stats Parse(const unsigned char *data, size_t size, bool ide,
         }
         std::string line((const char *)data + pos, n);
         pos = end + (end < size);
+        while(line.compare(0, 3, "\xef\xbb\xbf") == 0) line.erase(0, 3);
         size_t comment = line.find('#');
         size_t slash = line.find("//");
         if(slash < comment) comment = slash;
@@ -306,11 +380,18 @@ Stats Parse(const unsigned char *data, size_t size, bool ide,
             else section = keyword; // BR files do not all use 'end' between sections
             continue;
         }
-        if(ide && (section == "objs" || section == "tobj" || section == "anim")) {
+        if(ide && (section == "objs" || section == "tobj" || section == "anim" ||
+                   section == "cars" || section == "peds" || section == "weap")) {
             Model m;
             m.kind = section == "tobj" ? Model::TIME_OBJECT :
-                     section == "anim" ? Model::ANIM_OBJECT : Model::OBJECT;
-            if(ParseModel(t, m)) { onModel(m); stats.records++; }
+                     section == "anim" ? Model::ANIM_OBJECT :
+                     section == "cars" ? Model::VEHICLE :
+                     section == "peds" ? Model::PED :
+                     section == "weap" ? Model::WEAPON : Model::OBJECT;
+            bool valid = m.kind == Model::VEHICLE ? ParseVehicle(t, m) :
+                         m.kind == Model::PED ? ParsePed(t, m) :
+                         m.kind == Model::WEAPON ? ParseWeapon(t, m) : ParseModel(t, m);
+            if(valid) { onModel(m); stats.records++; }
             else stats.rejected++;
         } else if(!ide && section == "inst") {
             // Two BRmap_Interiors records contain "2499,8149" for their Z

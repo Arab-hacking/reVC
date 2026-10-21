@@ -21,6 +21,10 @@
 #include "ModelIndices.h"
 #include "ModelInfo.h"
 #include "custompipes.h"
+#ifdef CUSTOM_MODELS
+#include "CustomModels.h"
+#include "CommonCarcols.h"
+#endif
 
 int8 CVehicleModelInfo::ms_compsToUse[2] = { -2, -2 };
 int8 CVehicleModelInfo::ms_compsUsed[2];
@@ -1410,6 +1414,25 @@ CVehicleModelInfo::LoadVehicleColours(void)
 	}
 
 	CFileMgr::CloseFile(fd);
+#ifdef CUSTOM_MODELS
+	// Vehicle metadata is installed before this call. Only common/'s colour
+	// palette is compatible with the VC table; its SA 'car' entries, custom
+	// handling and the game's native car-colour assignments are left alone.
+	std::vector<uint8> bytes;
+	std::vector<commoncarcols::RGB> palette;
+	bool fromCommon = false;
+	if(CCustomModels::ReadDataFile("data/carcols.dat", bytes, &fromCommon) && fromCommon){
+		if(commoncarcols::Parse(bytes.data(), bytes.size(), palette)){
+			for(size_t i = 0; i < palette.size(); i++){
+				ms_vehicleColourTable[i].red = palette[i].r;
+				ms_vehicleColourTable[i].green = palette[i].g;
+				ms_vehicleColourTable[i].blue = palette[i].b;
+				ms_vehicleColourTable[i].alpha = 255;
+			}
+			CUSTOM_LOG("common/carcols.dat: %u palette colours applied; VC vehicle colour assignments preserved\n", (unsigned)palette.size());
+		}else CUSTOM_LOG("common/carcols.dat: invalid palette; keeping VC vehicle colours\n");
+	}
+#endif
 }
 
 void

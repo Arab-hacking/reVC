@@ -1,6 +1,7 @@
 #include "common.h"
 
 #include "CustomModels.h"
+#include "CommonCatalog.h"
 
 #ifdef CUSTOM_MODELS
 
@@ -66,7 +67,8 @@ struct CustomSource
 	int archive;
 	int entry;
 	uint64 mtime;
-	char loose[256];		// archive < 0: a plain file in the custom folder
+	bool fromCommon;
+	char loose[256];		// archive < 0: an unpacked file
 	char fname[256];		// the name the file has (with the extension)
 };
 
@@ -83,6 +85,10 @@ static std::map<std::string, CustomSource> customColFiles;	// whole .col contain
 static std::map<std::string, CustomSource> customImages;	// .bmp/.png/.jpg
 static std::map<std::string, CustomSource> customIdeFiles;
 static std::map<std::string, CustomSource> customIplFiles;
+static std::map<std::string, CustomSource> commonIdeFiles, commonIplFiles;
+static std::map<std::string, CustomSource> commonDataFiles;
+static commoncatalog::Catalog commonConfig;
+static std::string commonFolderPath;
 
 // Keep a source for EVERY ZIP entry, not just the winner of a basename
 // lookup: separate archives often call their containers the same thing.
@@ -234,12 +240,14 @@ FolderExists(const char *folder)
 // ---------------------------------------------------------------------------
 
 static CustomSource
-MakeSource(int archive, int entry, uint64 mtime, const char *path, const char *fname)
+MakeSource(int archive, int entry, uint64 mtime, const char *path, const char *fname,
+           bool fromCommon = false)
 {
 	CustomSource src;
 	src.archive = archive;
 	src.entry = entry;
 	src.mtime = mtime;
+	src.fromCommon = fromCommon;
 	src.loose[0] = '\0';
 	src.fname[0] = '\0';
 	if(path){
@@ -258,9 +266,11 @@ AddIndex(std::map<std::string, CustomSource> &index, const std::string &key,
          const CustomSource &src)
 {
 	std::map<std::string, CustomSource>::iterator it = index.find(key);
-	// the same name in several places: the newer file wins, exactly like the
-	// offline converter decides it
-	if(it == index.end() || it->second.mtime < src.mtime)
+	// For the unpacked common/ tree only, its ped.ani takes priority over a
+	// same-named custom dictionary. All other custom sources keep the previous
+	// newest-file-wins policy (IMG DFF/TXD precedence is handled separately).
+	if(it == index.end() || (src.fromCommon && !it->second.fromCommon) ||
+	   (src.fromCommon == it->second.fromCommon && it->second.mtime < src.mtime))
 		index[key] = src;
 }
 
@@ -503,6 +513,71 @@ ScanFolder(const std::string &folder, int depth, ScanStats &st)
 			ScanFolder(dirs[i], depth+1, st);
 }
 
+// common/ is ALREADY unpacked. Traverse only data/maps and anim/, never
+// audio/, data/features/, routes/ or any .bpc. Do not register .mod/.btx here:
+// those live in the user's existing custom ZIPs and img/ archives.
+static void
+ScanCommonFolder(const std::string &folder, int depth, unsigned &ide, unsigned &ipl)
+{
+	if(depth > CUSTOM_MAX_DEPTH) return;
+	std::vector<std::string> files, dirs;
+	if(!ListDirectory(folder.c_str(), files, dirs)) return;
+	std::sort(files.begin(), files.end());
+	std::sort(dirs.begin(), dirs.end());
+	for(size_t i = 0; i < files.size(); i++) {
+		const std::string &path = files[i];
+		if(path.size() >= sizeof(CustomSource::loose)) continue;
+		std::string relative = path.substr(commonFolderPath.size());
+		if(!relative.empty() && (relative[0] == '/' || relative[0] == '\\')) relative.erase(0, 1);
+		std::string key = commoncatalog::Path(relative);
+		if(key.empty() || key.size() >= sizeof(CustomSource::fname)) continue;
+		CustomSource src = MakeSource(-1, -1, FileTime(path.c_str()), path.c_str(), relative.c_str(), true);
+		if(key.compare(0, 5, "data/") == 0 && Extension(key) == "ide") {
+			AddWorldFile(commonIdeFiles, key, src);
+			ide++;
+		} else if(key.compare(0, 5, "data/") == 0 && Extension(key) == "ipl") {
+			AddWorldFile(commonIplFiles, key, src);
+			ipl++;
+		} else if(commoncatalog::CanReadData(key)) {
+			commonDataFiles[key] = src;
+		} else if(key == "anim/ped.ani") {
+			AddIndex(customAnims, "ped", src);
+		}
+	}
+	for(size_t i = 0; i < dirs.size(); i++) {
+		std::string relative = dirs[i].substr(commonFolderPath.size());
+		if(!relative.empty() && (relative[0] == '/' || relative[0] == '\\')) relative.erase(0, 1);
+		std::string key = commoncatalog::Path(relative);
+		if(key == "data" || key == "anim" || key == "data/maps" ||
+		   key.compare(0, 10, "data/maps/") == 0)
+			ScanCommonFolder(dirs[i], depth+1, ide, ipl);
+	}
+}
+
+static void
+ScanCommonRoot(void)
+{
+	std::vector<std::string> files, dirs;
+	if(!ListDirectory(".", files, dirs)) return;
+	std::sort(dirs.begin(), dirs.end());
+	for(size_t i = 0; i < dirs.size(); i++) {
+		if(ToLower(Stem(dirs[i])) != "common") continue;
+		commonFolderPath = dirs[i];
+		unsigned ide = 0, ipl = 0;
+		ScanCommonFolder(commonFolderPath, 0, ide, ipl);
+		std::map<std::string, CustomSource>::const_iterator config = commonDataFiles.find("data/config.dat");
+		std::vector<uint8> bytes;
+		if(config != commonDataFiles.end() && ReadSource(config->second, bytes))
+			commonConfig = commoncatalog::Parse(bytes.data(), bytes.size());
+		CUSTOM_LOG("common/: %u IDE and %u IPL on disk; config.dat selects %u IDE / %u IPL (%u invalid directive(s))\n",
+			ide, ipl, (unsigned)commonConfig.ide.size(), (unsigned)commonConfig.ipl.size(),
+			(unsigned)commonConfig.invalid);
+		if(commonConfig.ide.empty() || commonConfig.ipl.empty())
+			CUSTOM_LOG("common/: no usable config.dat; common IDE/IPL will NOT be loaded as unselected event maps\n");
+		break;
+	}
+}
+
 static void
 EnsureInitialised(void)
 {
@@ -520,12 +595,14 @@ EnsureInitialised(void)
 	memset(&st, 0, sizeof(st));
 	if(FolderExists(customFolderPath.c_str()))
 		ScanFolder(customFolderPath, 0, st);
+	ScanCommonRoot();
 	IndexBrCollisionBlocks();
 
 	customActive = !customMods.empty() || !customBtx.empty() || !customCls.empty() ||
 	               !customAnims.empty() || !customDff.empty() || !customTxdFiles.empty() ||
 	               !customColFiles.empty() || !customColBlocks.empty() || !customImages.empty() ||
-	               !customIdeFiles.empty() || !customIplFiles.empty();
+	               !customIdeFiles.empty() || !customIplFiles.empty() ||
+	               !commonConfig.ide.empty() || !commonConfig.ipl.empty();
 
 	CUSTOM_LOG("==== custom folder: %s\n", customFolderPath.c_str());
 	CUSTOM_LOG("scan: %d archive(s), %d .mod, %d .dff, %d .btx (%d names), %d .txd, %d .cls (%u CED2 models), %d .col (%d model(s) inside), %d .ifp/.ani (%d names), %d image(s), %u IDE path(s), %u IPL path(s) before alias checks\n",
@@ -645,9 +722,12 @@ ImagePathKey(std::string path)
 // registration can exhaust the pool. Streaming still processes DIRs in its
 // original reverse order, so img/ keeps precedence for duplicate assets.
 static void
-ReserveNativeTxdSlots(void)
+IndexNativeImageDirectories(void)
 {
-	if(customImageSlots.empty()) return;
+	// Index native DFF names even without user IMGs: a common/ IDE may reuse
+	// a stock DFF while the VC map IDE is disabled. Reserve stock TXD names
+	// only when additional IMGs actually need that headroom.
+	bool reserveTxds = !customImageSlots.empty();
 	unsigned reserved = 0, full = 0;
 	for(int n = CdStreamGetNumImages()-1; n >= 0; n--) {
 		if(customImageSlots.count(n)) continue;
@@ -663,16 +743,18 @@ ReserveNativeTxdSlots(void)
 		std::vector<uint8> directory;
 		if(!ReadSource(dirFile, directory)) continue;
 		imageModelTextures.AddDirectory(n, directory.data(), directory.size());
-		customimg::ForEachNativeTxd(directory.data(), directory.size(),
-			[&](const std::string &name) {
-				if(CTxdStore::FindTxdSlot(name.c_str()) != -1) return;
-				if(!CTxdStore::HasFreeSlot()) { full++; return; }
-				CTxdStore::AddTxdSlot(name.c_str());
-				reserved++;
-			});
+		if(reserveTxds)
+			customimg::ForEachNativeTxd(directory.data(), directory.size(),
+				[&](const std::string &name) {
+					if(CTxdStore::FindTxdSlot(name.c_str()) != -1) return;
+					if(!CTxdStore::HasFreeSlot()) { full++; return; }
+					CTxdStore::AddTxdSlot(name.c_str());
+					reserved++;
+				});
 	}
-	CUSTOM_LOG("img/: reserved %u native TXD slots before custom images (%u without space)\n",
-		reserved, full);
+	if(reserveTxds)
+		CUSTOM_LOG("img/: reserved %u native TXD slots before custom images (%u without space)\n",
+			reserved, full);
 }
 
 void
@@ -754,7 +836,7 @@ CCustomModels::MountImages(void)
 	}
 	CUSTOM_LOG("img/: %u archive(s) found, %u mounted, %u skipped\n",
 		(unsigned)pairs.size(), mounted, rejected);
-	ReserveNativeTxdSlots(); // before CCustomWorld::LoadIde and CStreaming::Init
+	IndexNativeImageDirectories(); // before CCustomWorld::LoadIde and CStreaming::Init
 }
 
 static std::vector<uint8>
@@ -1961,6 +2043,11 @@ CCustomModels::Shutdown(void)
 	customLegacyClsBlocks.clear();
 	customIdeFiles.clear();
 	customIplFiles.clear();
+	commonIdeFiles.clear();
+	commonIplFiles.clear();
+	commonDataFiles.clear();
+	commonConfig = commoncatalog::Catalog();
+	commonFolderPath.clear();
 	customImages.clear();
 	customSkinNames.clear();
 	customFolderPath.clear();
@@ -1985,7 +2072,15 @@ bool
 CCustomModels::HasWorldFiles(void)
 {
 	EnsureInitialised();
-	return !customIdeFiles.empty() || !customIplFiles.empty();
+	return !customIdeFiles.empty() || !customIplFiles.empty() ||
+	       !commonConfig.ide.empty() || !commonConfig.ipl.empty();
+}
+
+bool
+CCustomModels::HasCommonWorld(void)
+{
+	EnsureInitialised();
+	return !commonConfig.ide.empty() && !commonConfig.ipl.empty();
 }
 
 bool
@@ -1995,7 +2090,8 @@ CCustomModels::HasModelFile(const char *name)
 	if(name == nil) return false;
 	std::string key = ToLower(name);
 	return customMods.find(key) != customMods.end() ||
-	       customDff.find(key) != customDff.end();
+	       customDff.find(key) != customDff.end() ||
+	       imageModelTextures.FindDffImage(name) >= 0;
 }
 
 // Map packs contain alternative scenes (events, races, old/new vegetation).
@@ -2037,7 +2133,8 @@ ReadActiveIpls(std::set<std::string> &active)
 			continue;
 		}
 		active.insert(key);
-		if(customIplFiles.find(key) == customIplFiles.end()) {
+		if(customIplFiles.find(key) == customIplFiles.end() &&
+		   commonIplFiles.find(key) == commonIplFiles.end()) {
 			missing++;
 			CUSTOM_LOG("active_ipl.txt: IPL path not found: %s\n", key.c_str());
 		}
@@ -2049,8 +2146,8 @@ ReadActiveIpls(std::set<std::string> &active)
 		active.clear();
 		return false;
 	}
-	CUSTOM_LOG("active_ipl.txt: %u path(s) selected from %u indexed IPLs, %u missing, %u invalid line(s)\n",
-		(unsigned)active.size(), (unsigned)customIplFiles.size(), missing, invalid);
+	CUSTOM_LOG("active_ipl.txt: %u path(s) selected from %u custom and %u common IPLs, %u missing, %u invalid line(s)\n",
+		(unsigned)active.size(), (unsigned)customIplFiles.size(), (unsigned)commonIplFiles.size(), missing, invalid);
 	return true;
 }
 
@@ -2062,34 +2159,63 @@ CCustomModels::ForEachWorldFile(bool ide, WorldFileCallback callback, void *cont
 	std::set<std::string> active;
 	bool selected = !ide && ReadActiveIpls(active);
 	typedef std::map<std::string, CustomSource> WorldFiles;
-	const WorldFiles &files = ide ? customIdeFiles : customIplFiles;
-	std::map<std::string, WorldFiles::const_iterator> firstAlias;
+	const WorldFiles &custom = ide ? customIdeFiles : customIplFiles;
+	const WorldFiles &common = ide ? commonIdeFiles : commonIplFiles;
+	const std::vector<std::string> &order = ide ? commonConfig.ide : commonConfig.ipl;
+	const std::set<std::string> &configured = ide ? commonConfig.idePaths : commonConfig.iplPaths;
+	std::map<std::string, std::pair<std::string, CustomSource> > firstAlias;
 	unsigned identical = 0;
-	for(WorldFiles::const_iterator it = files.begin(); it != files.end(); ++it){
-		if(selected && active.find(it->first) == active.end()) continue;
+	auto emit = [&](const std::string &key, const CustomSource &src) {
 		std::vector<uint8> bytes;
-		if(!ReadSource(it->second, bytes)) {
-			CUSTOM_LOG("world %s: cannot read %s\n", ide ? "IDE" : "IPL", it->first.c_str());
-			continue;
+		if(!ReadSource(src, bytes)) {
+			CUSTOM_LOG("world %s: cannot read %s\n", ide ? "IDE" : "IPL", key.c_str());
+			return;
 		}
-		std::string alias = WorldAliasPath(it->first);
+		std::string alias = WorldAliasPath(key);
 		if(!alias.empty()) {
-			std::map<std::string, WorldFiles::const_iterator>::const_iterator first = firstAlias.find(alias);
+			std::map<std::string, std::pair<std::string, CustomSource> >::const_iterator first = firstAlias.find(alias);
 			if(first == firstAlias.end())
-				firstAlias.insert(std::make_pair(alias, it));
+				firstAlias[alias] = std::make_pair(key, src);
 			else {
 				std::vector<uint8> previous;
-				if(ReadSource(first->second->second, previous) && previous == bytes) {
+				if(ReadSource(first->second.second, previous) && previous == bytes) {
 					identical++;
-					continue;
+					return;
 				}
 				CUSTOM_LOG("world %s: %s and %s share a map path but differ; both loaded%s\n",
-					ide ? "IDE" : "IPL", first->second->first.c_str(), it->first.c_str(),
+					ide ? "IDE" : "IPL", first->second.first.c_str(), key.c_str(),
 					ide ? "" : " (select alternatives with active_ipl.txt)");
 			}
 		}
-		callback(it->first.c_str(), bytes.data(), bytes.size(), context);
+		callback(key.c_str(), bytes.data(), bytes.size(), context);
+	};
+
+	// Legacy custom files first; the config-selected common files run LAST so
+	// their definitions win by model name, regardless of archive timestamps.
+	for(WorldFiles::const_iterator it = custom.begin(); it != custom.end(); ++it) {
+		if(selected && !active.count(it->first)) continue;
+		std::string candidate = it->first.compare(0, 5, "maps/") == 0 ? "data/" + it->first : it->first;
+		WorldFiles::const_iterator priority = common.find(candidate);
+		if(priority != common.end() && (ide ? configured.count(candidate) != 0 :
+		   selected ? active.count(candidate) != 0 : configured.count(candidate) != 0)) {
+			std::vector<uint8> bytes;
+			if(ReadSource(priority->second, bytes)) continue; // common path wins; bad file falls back
+		}
+		emit(it->first, it->second);
 	}
+	for(size_t i = 0; i < order.size(); i++) {
+		if(selected && !active.count(order[i])) continue;
+		WorldFiles::const_iterator it = common.find(order[i]);
+		if(it != common.end()) emit(it->first, it->second);
+		else CUSTOM_LOG("common config.dat: %s not found: %s\n", ide ? "IDE" : "IPL", order[i].c_str());
+	}
+	// Explicit opt-in for alternative/event IPLs that config.dat comments out.
+	if(selected && !ide)
+		for(std::set<std::string>::const_iterator it = active.begin(); it != active.end(); ++it)
+			if(!configured.count(*it)) {
+				WorldFiles::const_iterator extra = common.find(*it);
+				if(extra != common.end()) emit(extra->first, extra->second);
+			}
 	if(identical)
 		CUSTOM_LOG("world %s: skipped %u byte-identical data/maps and maps aliases\n",
 			ide ? "IDE" : "IPL", identical);
@@ -2799,19 +2925,25 @@ CCustomModels::PrintStats(void)
 // ---------------------------------------------------------------------------
 
 bool
-CCustomModels::ReadDataFile(const char *relpath, std::vector<uint8> &out)
+CCustomModels::ReadDataFile(const char *relpath, std::vector<uint8> &out,
+                             bool *fromCommon)
 {
+	if(fromCommon) *fromCommon = false;
 	if(relpath == nil || relpath[0] == '\0')
 		return false;
 	EnsureInitialised();
 
-	std::string want = ToLower(relpath);
-	for(size_t i = 0; i < want.size(); i++)
-		if(want[i] == '\\')
-			want[i] = '/';
+	std::string want = commoncatalog::Path(relpath);
+	if(want.empty()) return false;
+	if(commoncatalog::CanReadData(want)) {
+		std::map<std::string, CustomSource>::const_iterator found = commonDataFiles.find(want);
+		if(found != commonDataFiles.end() && ReadSource(found->second, out)) {
+			if(fromCommon) *fromCommon = true;
+			CUSTOM_LOG("data file %s: read from unpacked common/ (%u bytes)\n", relpath, (unsigned)out.size());
+			return true;
+		}
+	}
 
-	std::map<std::string, CustomSource>::iterator dummy = customMods.begin();
-	(void)dummy;
 	for(size_t a = 0; a < customArchives.size(); a++){
 		CustomZip *zip = customArchives[a];
 		for(int i = 0; i < zip->GetNumEntries(); i++){

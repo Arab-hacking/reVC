@@ -30,9 +30,12 @@ enum Config {
 	SIMPLEMODELSIZE = 32000,
 	TIMEMODELSIZE = 768,
 	CLUMPMODELSIZE = 5,
-	WEAPONMODELSIZE = 37,
-	PEDMODELSIZE = 130,
-	VEHICLEMODELSIZE = 110,
+	// The selected common/ IDE contains 59 weapon, about 769 ped and 575
+	// vehicle definitions in addition to VC's native entries. These are metadata
+	// capacities (no decoded assets and no change to streaming/GPU caches).
+	WEAPONMODELSIZE = 128,
+	PEDMODELSIZE = 1024,
+	VEHICLEMODELSIZE = 768,
 	TWODFXSIZE = 1210,
 #if defined ANDROID
 	MAXVEHICLESLOADED = 70,

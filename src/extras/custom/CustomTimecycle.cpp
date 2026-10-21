@@ -356,7 +356,7 @@ ExpandField(T arr[NUMHOURS][NUMWEATHERS], int w, const SlotGrid &grid, int f,
 
 // the values live in the game's tables now: hour rows 0..23, weather columns
 static void
-ExpandGrids(const SlotGrid grids[BR_WEATHERS_USED], int weathers)
+ExpandGrids(const SlotGrid grids[BR_WEATHERS_USED], int weathers, bool lightingOnly)
 {
 	for(int w = 0; w < weathers; w++){
 		const SlotGrid &g = grids[w];
@@ -386,64 +386,70 @@ ExpandGrids(const SlotGrid grids[BR_WEATHERS_USED], int weathers)
 			ExpandField(CTimeCycle::m_nDirectionalGreen, w, g, CycleSlot::F_DIR_G, 1.0f, 0, 255);
 			ExpandField(CTimeCycle::m_nDirectionalBlue, w, g, CycleSlot::F_DIR_B, 1.0f, 0, 255);
 		}
-		if(has[CycleSlot::F_SKYTOP_R]){
-			ExpandField(CTimeCycle::m_nSkyTopRed, w, g, CycleSlot::F_SKYTOP_R, 1.0f, 0, 255);
-			ExpandField(CTimeCycle::m_nSkyTopGreen, w, g, CycleSlot::F_SKYTOP_G, 1.0f, 0, 255);
-			ExpandField(CTimeCycle::m_nSkyTopBlue, w, g, CycleSlot::F_SKYTOP_B, 1.0f, 0, 255);
+		if(!lightingOnly){ // sky, fog, water and other effects remain native for common/
+			if(has[CycleSlot::F_SKYTOP_R]){
+				ExpandField(CTimeCycle::m_nSkyTopRed, w, g, CycleSlot::F_SKYTOP_R, 1.0f, 0, 255);
+				ExpandField(CTimeCycle::m_nSkyTopGreen, w, g, CycleSlot::F_SKYTOP_G, 1.0f, 0, 255);
+				ExpandField(CTimeCycle::m_nSkyTopBlue, w, g, CycleSlot::F_SKYTOP_B, 1.0f, 0, 255);
+			}
+			if(has[CycleSlot::F_SKYBOT_R]){
+				ExpandField(CTimeCycle::m_nSkyBottomRed, w, g, CycleSlot::F_SKYBOT_R, 1.0f, 0, 255);
+				ExpandField(CTimeCycle::m_nSkyBottomGreen, w, g, CycleSlot::F_SKYBOT_G, 1.0f, 0, 255);
+				ExpandField(CTimeCycle::m_nSkyBottomBlue, w, g, CycleSlot::F_SKYBOT_B, 1.0f, 0, 255);
+			}
+			if(has[CycleSlot::F_SUNCORE_R]){
+				ExpandField(CTimeCycle::m_nSunCoreRed, w, g, CycleSlot::F_SUNCORE_R, 1.0f, 0, 255);
+				ExpandField(CTimeCycle::m_nSunCoreGreen, w, g, CycleSlot::F_SUNCORE_G, 1.0f, 0, 255);
+				ExpandField(CTimeCycle::m_nSunCoreBlue, w, g, CycleSlot::F_SUNCORE_B, 1.0f, 0, 255);
+			}
+			if(has[CycleSlot::F_SUNCOR_R]){
+				ExpandField(CTimeCycle::m_nSunCoronaRed, w, g, CycleSlot::F_SUNCOR_R, 1.0f, 0, 255);
+				ExpandField(CTimeCycle::m_nSunCoronaGreen, w, g, CycleSlot::F_SUNCOR_G, 1.0f, 0, 255);
+				ExpandField(CTimeCycle::m_nSunCoronaBlue, w, g, CycleSlot::F_SUNCOR_B, 1.0f, 0, 255);
+			}
+			if(has[CycleSlot::F_SUNSIZE])
+				ExpandField(CTimeCycle::m_fSunSize, w, g, CycleSlot::F_SUNSIZE, 10.0f, -128, 127);
+			if(has[CycleSlot::F_SPRITESIZE])
+				ExpandField(CTimeCycle::m_fSpriteSize, w, g, CycleSlot::F_SPRITESIZE, 10.0f, -128, 127);
+			if(has[CycleSlot::F_SPRITEBRGHT])
+				ExpandField(CTimeCycle::m_fSpriteBrightness, w, g, CycleSlot::F_SPRITEBRGHT, 10.0f, -128, 127);
 		}
-		if(has[CycleSlot::F_SKYBOT_R]){
-			ExpandField(CTimeCycle::m_nSkyBottomRed, w, g, CycleSlot::F_SKYBOT_R, 1.0f, 0, 255);
-			ExpandField(CTimeCycle::m_nSkyBottomGreen, w, g, CycleSlot::F_SKYBOT_G, 1.0f, 0, 255);
-			ExpandField(CTimeCycle::m_nSkyBottomBlue, w, g, CycleSlot::F_SKYBOT_B, 1.0f, 0, 255);
-		}
-		if(has[CycleSlot::F_SUNCORE_R]){
-			ExpandField(CTimeCycle::m_nSunCoreRed, w, g, CycleSlot::F_SUNCORE_R, 1.0f, 0, 255);
-			ExpandField(CTimeCycle::m_nSunCoreGreen, w, g, CycleSlot::F_SUNCORE_G, 1.0f, 0, 255);
-			ExpandField(CTimeCycle::m_nSunCoreBlue, w, g, CycleSlot::F_SUNCORE_B, 1.0f, 0, 255);
-		}
-		if(has[CycleSlot::F_SUNCOR_R]){
-			ExpandField(CTimeCycle::m_nSunCoronaRed, w, g, CycleSlot::F_SUNCOR_R, 1.0f, 0, 255);
-			ExpandField(CTimeCycle::m_nSunCoronaGreen, w, g, CycleSlot::F_SUNCOR_G, 1.0f, 0, 255);
-			ExpandField(CTimeCycle::m_nSunCoronaBlue, w, g, CycleSlot::F_SUNCOR_B, 1.0f, 0, 255);
-		}
-		if(has[CycleSlot::F_SUNSIZE])
-			ExpandField(CTimeCycle::m_fSunSize, w, g, CycleSlot::F_SUNSIZE, 10.0f, -128, 127);
-		if(has[CycleSlot::F_SPRITESIZE])
-			ExpandField(CTimeCycle::m_fSpriteSize, w, g, CycleSlot::F_SPRITESIZE, 10.0f, -128, 127);
-		if(has[CycleSlot::F_SPRITEBRGHT])
-			ExpandField(CTimeCycle::m_fSpriteBrightness, w, g, CycleSlot::F_SPRITEBRGHT, 10.0f, -128, 127);
 		if(has[CycleSlot::F_SHAD])
 			ExpandField(CTimeCycle::m_nShadowStrength, w, g, CycleSlot::F_SHAD, 1.0f, 0, 255);
 		if(has[CycleSlot::F_LIGHTSHAD])
 			ExpandField(CTimeCycle::m_nLightShadowStrength, w, g, CycleSlot::F_LIGHTSHAD, 1.0f, 0, 255);
 		if(has[CycleSlot::F_POLESHAD])
 			ExpandField(CTimeCycle::m_nPoleShadowStrength, w, g, CycleSlot::F_POLESHAD, 1.0f, 0, 255);
-		if(has[CycleSlot::F_FARCLIP])
-			ExpandField(CTimeCycle::m_fFarClip, w, g, CycleSlot::F_FARCLIP, 1.0f, 0, 32767);
-		if(has[CycleSlot::F_FOGSTART])
-			ExpandField(CTimeCycle::m_fFogStart, w, g, CycleSlot::F_FOGSTART, 1.0f, -32768, 32767);
+		if(!lightingOnly){
+			if(has[CycleSlot::F_FARCLIP])
+				ExpandField(CTimeCycle::m_fFarClip, w, g, CycleSlot::F_FARCLIP, 1.0f, 0, 32767);
+			if(has[CycleSlot::F_FOGSTART])
+				ExpandField(CTimeCycle::m_fFogStart, w, g, CycleSlot::F_FOGSTART, 1.0f, -32768, 32767);
+		}
 		if(has[CycleSlot::F_LIGHTGND])
 			ExpandField(CTimeCycle::m_fLightsOnGroundBrightness, w, g, CycleSlot::F_LIGHTGND, 10.0f, 0, 255);
-		if(has[CycleSlot::F_CLOUD_R]){
-			// the client has one cloud colour where this game has low clouds
-			// and fluffy tops; both take it
-			ExpandField(CTimeCycle::m_nLowCloudsRed, w, g, CycleSlot::F_CLOUD_R, 1.0f, 0, 255);
-			ExpandField(CTimeCycle::m_nLowCloudsGreen, w, g, CycleSlot::F_CLOUD_G, 1.0f, 0, 255);
-			ExpandField(CTimeCycle::m_nLowCloudsBlue, w, g, CycleSlot::F_CLOUD_B, 1.0f, 0, 255);
-			ExpandField(CTimeCycle::m_nFluffyCloudsTopRed, w, g, CycleSlot::F_CLOUD_R, 1.0f, 0, 255);
-			ExpandField(CTimeCycle::m_nFluffyCloudsTopGreen, w, g, CycleSlot::F_CLOUD_G, 1.0f, 0, 255);
-			ExpandField(CTimeCycle::m_nFluffyCloudsTopBlue, w, g, CycleSlot::F_CLOUD_B, 1.0f, 0, 255);
-		}
-		if(has[CycleSlot::F_FLUFFBOT_R]){
-			ExpandField(CTimeCycle::m_nFluffyCloudsBottomRed, w, g, CycleSlot::F_FLUFFBOT_R, 1.0f, 0, 255);
-			ExpandField(CTimeCycle::m_nFluffyCloudsBottomGreen, w, g, CycleSlot::F_FLUFFBOT_G, 1.0f, 0, 255);
-			ExpandField(CTimeCycle::m_nFluffyCloudsBottomBlue, w, g, CycleSlot::F_FLUFFBOT_B, 1.0f, 0, 255);
-		}
-		if(has[CycleSlot::F_WATER_R]){
-			ExpandField(CTimeCycle::m_fWaterRed, w, g, CycleSlot::F_WATER_R, 1.0f, 0, 255);
-			ExpandField(CTimeCycle::m_fWaterGreen, w, g, CycleSlot::F_WATER_G, 1.0f, 0, 255);
-			ExpandField(CTimeCycle::m_fWaterBlue, w, g, CycleSlot::F_WATER_B, 1.0f, 0, 255);
-			ExpandField(CTimeCycle::m_fWaterAlpha, w, g, CycleSlot::F_WATER_A, 1.0f, 0, 255);
+		if(!lightingOnly){
+			if(has[CycleSlot::F_CLOUD_R]){
+				// the client has one cloud colour where this game has low clouds
+				// and fluffy tops; both take it
+				ExpandField(CTimeCycle::m_nLowCloudsRed, w, g, CycleSlot::F_CLOUD_R, 1.0f, 0, 255);
+				ExpandField(CTimeCycle::m_nLowCloudsGreen, w, g, CycleSlot::F_CLOUD_G, 1.0f, 0, 255);
+				ExpandField(CTimeCycle::m_nLowCloudsBlue, w, g, CycleSlot::F_CLOUD_B, 1.0f, 0, 255);
+				ExpandField(CTimeCycle::m_nFluffyCloudsTopRed, w, g, CycleSlot::F_CLOUD_R, 1.0f, 0, 255);
+				ExpandField(CTimeCycle::m_nFluffyCloudsTopGreen, w, g, CycleSlot::F_CLOUD_G, 1.0f, 0, 255);
+				ExpandField(CTimeCycle::m_nFluffyCloudsTopBlue, w, g, CycleSlot::F_CLOUD_B, 1.0f, 0, 255);
+			}
+			if(has[CycleSlot::F_FLUFFBOT_R]){
+				ExpandField(CTimeCycle::m_nFluffyCloudsBottomRed, w, g, CycleSlot::F_FLUFFBOT_R, 1.0f, 0, 255);
+				ExpandField(CTimeCycle::m_nFluffyCloudsBottomGreen, w, g, CycleSlot::F_FLUFFBOT_G, 1.0f, 0, 255);
+				ExpandField(CTimeCycle::m_nFluffyCloudsBottomBlue, w, g, CycleSlot::F_FLUFFBOT_B, 1.0f, 0, 255);
+			}
+			if(has[CycleSlot::F_WATER_R]){
+				ExpandField(CTimeCycle::m_fWaterRed, w, g, CycleSlot::F_WATER_R, 1.0f, 0, 255);
+				ExpandField(CTimeCycle::m_fWaterGreen, w, g, CycleSlot::F_WATER_G, 1.0f, 0, 255);
+				ExpandField(CTimeCycle::m_fWaterBlue, w, g, CycleSlot::F_WATER_B, 1.0f, 0, 255);
+				ExpandField(CTimeCycle::m_fWaterAlpha, w, g, CycleSlot::F_WATER_A, 1.0f, 0, 255);
+			}
 		}
 	}
 }
@@ -471,7 +477,8 @@ void
 CCustomTimecycle::Apply(void)
 {
 	std::vector<uint8> data;
-	if(!CCustomModels::ReadDataFile("data/timecyc.json", data)){
+	bool fromCommon = false;
+	if(!CCustomModels::ReadDataFile("data/timecyc.json", data, &fromCommon)){
 		CUSTOM_LOG("timecycle: no data/timecyc.json in the custom folder - the game's own TIMECYC.DAT stays\n");
 		return;
 	}
@@ -481,9 +488,10 @@ CCustomTimecycle::Apply(void)
 	if(!ParseTimecycle(data, grids, weathers))
 		return;
 
-	// the client's server-driven presets are logged, not applied
+	// The requested unpacked common/ import is lighting/shadows only; do not
+	// even inspect unrelated sky/weather/preset sources in that mode.
 	int presets = 0;
-	for(int i = 1; i <= 16; i++){
+	if(!fromCommon) for(int i = 1; i <= 16; i++){
 		char rel[64];
 		snprintf(rel, sizeof(rel), "data/timecyclePresets/timecyclePreset%d.json", i);
 		std::vector<uint8> pdata;
@@ -499,11 +507,15 @@ CCustomTimecycle::Apply(void)
 		presets++;
 	}
 
-	ExpandGrids(grids, weathers);
-	CUSTOM_LOG("timecycle: timecyc.json applied - %d weather(s), %d server preset file(s) logged; sky, sun, fog, far clip, ambient and water follow the client now\n",
-		weathers, presets);
-	CUSTOM_LOG("timecycle: note - the client's PostFX1/PostFX2 layers have no counterpart in this game and are skipped\n");
-	LogWeatherJson();
+	ExpandGrids(grids, weathers, fromCommon);
+	if(fromCommon)
+		CUSTOM_LOG("common/timecyc.json: %d weather(s); ambient/directional light and legacy shadow strengths applied; sky, water, fog and PostFX unchanged\n", weathers);
+	else {
+		CUSTOM_LOG("timecycle: timecyc.json applied - %d weather(s), %d server preset file(s) logged; sky, sun, fog, far clip, ambient and water follow the client now\n",
+			weathers, presets);
+		CUSTOM_LOG("timecycle: note - the client's PostFX1/PostFX2 layers have no counterpart in this game and are skipped\n");
+		LogWeatherJson();
+	}
 }
 
 #else // CUSTOM_MODELS

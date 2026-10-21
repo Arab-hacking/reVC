@@ -80,7 +80,7 @@ vehicleRenderCB(rw::Atomic *atomic, rw::gl3::InstanceDataHeader *header)
 	using namespace rw::gl3;
 
 	// TODO: make this less of a kludge
-	if(VehiclePipeSwitch == VEHICLEPIPE_MATFX){
+	if(VehiclePipeSwitch == VEHICLEPIPE_MATFX || EnvMapTex == nil){
 		matFXGlobals.pipelines[rw::platform]->render(atomic);
 		return;
 	}
@@ -193,7 +193,9 @@ worldRenderCB(rw::Atomic *atomic, rw::gl3::InstanceDataHeader *header)
 	using namespace rw;
 	using namespace rw::gl3;
 
-	if(!LightmapEnable){
+	// A DUAL material alone is not a baked lightmap. The source geometry must
+	// also contain the second UV set sampled by this pipeline.
+	if(!LightmapEnable || atomic->geometry->numTexCoordSets < 2){
 		gl3::defaultRenderCB(atomic, header);
 		return;
 	}

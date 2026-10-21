@@ -153,6 +153,7 @@ CModelInfo::AddClumpModel(int id)
 	modelinfo = CModelInfo::ms_clumpModelStore.Alloc();
 	CModelInfo::ms_modelInfoPtrs[id] = modelinfo;
 	modelinfo->m_clump = nil;
+	modelinfo->m_animFileIndex = -1;
 	return modelinfo;
 }
 
@@ -163,6 +164,9 @@ CModelInfo::AddPedModel(int id)
 	modelinfo = CModelInfo::ms_pedModelStore.Alloc();
 	CModelInfo::ms_modelInfoPtrs[id] = modelinfo;
 	modelinfo->m_clump = nil;
+	// The base store is reused across new games without re-running its C++
+	// constructors. Never reinterpret an old animation block index as a char*.
+	modelinfo->m_animFileIndex = -1;
 	return modelinfo;
 }
 
@@ -173,8 +177,20 @@ CModelInfo::AddVehicleModel(int id)
 	modelinfo = CModelInfo::ms_vehicleModelStore.Alloc();
 	CModelInfo::ms_modelInfoPtrs[id] = modelinfo;
 	modelinfo->m_clump = nil;
+	modelinfo->CClumpModelInfo::m_animFileIndex = -1;
+	modelinfo->m_animFileIndex = -1; // separate CVehicleModelInfo anim union
+	modelinfo->m_numColours = 0;
+	modelinfo->m_lastColorVariation = 0;
+	modelinfo->m_bSAWheelMesh = false;
+#ifdef SA_VEHICLE_MODELS
+	modelinfo->m_bHasEmbeddedColModel = false;
+#endif
+	for(int i = 0; i < NUM_VEHICLE_POSITIONS; i++)
+		modelinfo->m_positions[i] = CVector(0.0f, 0.0f, 0.0f);
 	modelinfo->m_vehicleType = -1;
 	modelinfo->m_wheelId = -1;
+	modelinfo->m_numComps = 0;
+	modelinfo->m_numDoors = 0;
 	modelinfo->m_materials1[0] = nil;
 	modelinfo->m_materials2[0] = nil;
 	modelinfo->m_bikeSteerAngle = 999.99f;

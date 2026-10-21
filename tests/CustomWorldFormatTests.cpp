@@ -1,4 +1,6 @@
 #include "../src/extras/custom/CustomWorldFormat.h"
+#include "../src/extras/custom/CommonCatalog.h"
+#include "../src/extras/custom/CommonCarcols.h"
 #include "../src/extras/custom/BrCollisionFormat.h"
 #include "../src/extras/custom/CustomZip.h"
 
@@ -197,6 +199,76 @@ static void TestSubmittedWorldLines()
     assert(seen.insert(customworld::PlacementKey(50, same)).second);
 }
 
+static void TestCommonCatalogAndTypes()
+{
+    const std::string manifest =
+        "\xef\xbb\xbfIDE DATA\\MAPS\\IDE\\Main.IDE\n"
+        "# IPL DATA\\MAPS\\EVENT\\winter.ipl\n"
+        "CDIMAGE mesh\\br_map_00.bpc\n"
+        "IDE data/maps/ide/main.ide\n" // duplicate, not loaded twice
+        "IPL DATA\\MAPS\\Main.IPL\n"
+        "IPL data/maps/main.ipl\n"
+        "IDE data/../audio/audo.ide\n"
+        "IPL /data/maps/absolute.ipl\n"
+        "IDE data/features/trick.bpc\n"
+        "HANDLING data/handling.cfg\n";
+    commoncatalog::Catalog cfg = commoncatalog::Parse(
+        (const unsigned char*)manifest.data(), manifest.size());
+    assert(cfg.ide.size() == 1 && cfg.ide[0] == "data/maps/ide/main.ide");
+    assert(cfg.ipl.size() == 1 && cfg.ipl[0] == "data/maps/main.ipl");
+    assert(cfg.invalid == 3);
+    assert(commoncatalog::Path("data\\maps\\Main.IPL") == "data/maps/main.ipl");
+    assert(commoncatalog::Path("../audio/audo.ide").empty());
+    assert(!commoncatalog::CanReadData("audio/audo.dat"));
+    assert(!commoncatalog::CanReadData("data/features/reflections.json"));
+    assert(!commoncatalog::CanReadData("data/handling.cfg"));
+    assert(commoncatalog::CanReadData("data/carcols.dat"));
+
+    const std::string ide =
+        "peds\n"
+        "3, ANDRE, ANDRE, CIVMALE, STAT_SENSIBLE_GUY, man, 0, 0, man, 1,4, PED_TYPE_GEN, VOICE_GEN, VOICE_GEN\n"
+        "4, badped, badped, CIVMALE, STAT_STD_MISSION, man, 0, 0, man, 9999,4\n" // malformed field
+        "end\ncars\n"
+        "400, landstal, landstal, car, LANDSTAL, LANDSTK, null, normal, 7, 0, 0, -1, 0.75, 0.75, 0\n"
+        "435, artict1, artict1, trailer, ARTICT1, ARTICT1, null, big, 5, 1, 0, -1, 1.0, 1.0, -1\n"
+        "end\nweap\n"
+        "321, gun_dildo1, 50\n"
+        "322, invalid_weapon_name_is_too_long, 50\n"
+        "end\n";
+    std::vector<customworld::Model> entries;
+    customworld::Stats s = customworld::ParseIde((const unsigned char *)ide.data(), ide.size(),
+        [&](const customworld::Model &m) { entries.push_back(m); });
+    assert(s.records == 4 && s.rejected == 2 && s.overlong == 0);
+    assert(entries[0].kind == customworld::Model::PED && entries[0].name == "ANDRE");
+    assert(entries[0].pedStats == "STAT_SENSIBLE_GUY" && entries[0].animGroup == "man");
+    assert(entries[0].radio1 == 1 && entries[0].radio2 == 4);
+    // The supplied peds.ide also uses radio IDs 10/11. We do not feed
+    // these SA audio IDs into VC, but they must not discard the ped skin.
+    const std::string morePeds =
+        "peds\n24, WBDYG1, WBDYG1, CIVMALE, STAT_TOUGH_GUY, man, 170F, 1, man, 10, 11, PED_TYPE_GEN\n"
+        "11950, MK_wfesteraddams_man, MK_wfesteraddams_man, CRIMINAL, STAT_CRIMINAL, man, 110F, 0, man, 4, 4\nend\n";
+    std::vector<customworld::Model> extendedPeds;
+    customworld::Stats pedStats = customworld::ParseIde(
+        (const uint8_t*)morePeds.data(), morePeds.size(),
+        [&](const customworld::Model &m) { extendedPeds.push_back(m); });
+    assert(pedStats.records == 1 && pedStats.rejected == 1);
+    assert(extendedPeds[0].radio1 == 10 && extendedPeds[0].radio2 == 11);
+    assert(entries[1].kind == customworld::Model::VEHICLE && entries[1].subtype == "car");
+    assert(entries[1].handling == "LANDSTAL" && entries[1].gameName == "LANDSTK");
+    assert(entries[2].kind == customworld::Model::VEHICLE && entries[2].subtype == "trailer");
+    assert(entries[3].kind == customworld::Model::WEAPON && entries[3].name == "gun_dildo1");
+    assert(entries[3].distance == 50.0f);
+
+    const std::string colors = "col\n0,0,0 # black\n 245, 245, 245\nend\ncar\nvehicle 1 2\nend\n";
+    std::vector<commoncarcols::RGB> palette;
+    assert(commoncarcols::Parse((const uint8_t*)colors.data(), colors.size(), palette));
+    assert(palette.size() == 2 && palette[0].r == 0 && palette[1].b == 245);
+    const std::string badColors = "col\n255,0,0\n256,0,0\nend\n";
+    assert(!commoncarcols::Parse((const uint8_t*)badColors.data(), badColors.size(), palette));
+    const std::string noColors = "car\nvehicle, 1, 2\nend\n";
+    assert(!commoncarcols::Parse((const uint8_t*)noColors.data(), noColors.size(), palette));
+}
+
 static void TestCollision()
 {
     std::vector<uint8_t> one = MakeBlock();
@@ -316,6 +388,7 @@ int main()
 {
     TestWorldText();
     TestSubmittedWorldLines();
+    TestCommonCatalogAndTypes();
     TestCollision();
     TestZip();
     std::puts("BR world parser, CED2 collision and nested ZIP tests passed");

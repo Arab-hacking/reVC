@@ -224,6 +224,8 @@ int main() {
         { "mesh/bad.col", badOffset }
     });
     std::map<std::string, std::string> ide, ipl, cls, col;
+    assert(CCustomModels::HasModelFile("house1")); // mounted DFF before Streaming::Init
+    assert(CCustomModels::HasModelFile("baseonly")); // usable stock DFF even without its IDE
     CCustomModels::ForEachWorldFile(true, WorldFile, &ide);
     CCustomModels::ForEachWorldFile(false, WorldFile, &ipl);
     CCustomModels::ForEachBrCollision(Ced2, &cls);
@@ -273,16 +275,91 @@ int main() {
     std::memcpy(&radius, selected.data()+24, 4);
     assert(radius == 2); // SA COL3 became a VC COLL payload
     assert(!CCustomModels::GetCollisionBlock("badOffset", selected));
+
+    // Re-scan after installing a synthetic ALREADY unpacked common/ tree.
+    // Keep its event IPL present but commented out in config.dat: selecting
+    // every .ipl on disk would enable mutually exclusive scenes.
+    CCustomModels::Shutdown();
+    assert(mkdir("common", 0700) == 0);
+    assert(mkdir("common/data", 0700) == 0);
+    assert(mkdir("common/data/maps", 0700) == 0);
+    assert(mkdir("common/data/maps/ide", 0700) == 0);
+    assert(mkdir("common/data/maps/level_events", 0700) == 0);
+    assert(mkdir("common/data/features", 0700) == 0);
+    assert(mkdir("common/audio", 0700) == 0);
+    Write("common/data/config.dat", Bytes(
+        "CDIMAGE mesh\\\\br_map_00.bpc\n"
+        "IDE data\\\\maps\\\\ide\\\\test.ide\n"
+        "IDE DATA\\\\VEHICLES.IDE\n"
+        "IPL DATA\\\\MAPS\\\\Level_Events\\\\test.IPL\n"
+        "IPL data/maps/level_events/new.ipl\n"
+        "# IPL data/maps/level_events/event.ipl\n"));
+    Write("common/data/maps/ide/test.ide", Bytes("objs\n1 house1 r3 199 0\nend\n"));
+    Write("common/data/vehicles.ide", Bytes("cars\n400 landstal landstal car LANDSTAL LANDSTK null normal 7 0 0 -1 0.75 0.75 0\nend\n"));
+    Write("common/data/maps/level_events/test.ipl", Bytes("inst\n1 house1 0 9 0 0 0 0 0 1 -1\nend\n"));
+    Write("common/data/maps/level_events/new.ipl", Bytes("inst\n1 house1 0 3 0 0 0 0 0 1 -1\nend\n"));
+    Write("common/data/maps/level_events/event.ipl", Bytes("inst\n1 house1 0 8 0 0 0 0 0 1 -1\nend\n"));
+    Write("common/data/timecyc.json", Bytes("{\"ambient\":1}"));
+    Write("common/data/carcols.dat", Bytes("col\n1,2,3\nend\n"));
+    Write("common/data/features/ignored.ide", Bytes("objs\n2 evil evil 100 0\nend\n"));
+    Write("common/audio/ignored.ipl", Bytes("inst\n2 evil 0 0 0 0 0 0 0 1 -1\nend\n"));
+    ide.clear(); ipl.clear();
+    assert(CCustomModels::HasCommonWorld());
+    CCustomModels::ForEachWorldFile(true, WorldFile, &ide);
+    CCustomModels::ForEachWorldFile(false, WorldFile, &ipl);
+    assert(ide.size() == 2 && ide.count("data/maps/ide/test.ide") && ide.count("data/vehicles.ide"));
+    assert(ide["data/maps/ide/test.ide"].find("199") != std::string::npos); // common wins path
+    assert(!ide.count("maps/ide/test.ide") && !ide.count("data/features/ignored.ide"));
+    assert(ipl.size() == 4 && ipl.count("data/maps/level_events/test.ipl") &&
+           ipl.count("data/maps/level_events/new.ipl") &&
+           !ipl.count("data/maps/level_events/event.ipl"));
+    assert(ipl["data/maps/level_events/test.ipl"].find(" 9 0 0") != std::string::npos);
+    bool fromCommon = false;
+    assert(CCustomModels::ReadDataFile("data/timecyc.json", selected, &fromCommon) && fromCommon);
+    assert(std::string(selected.begin(), selected.end()) == "{\"ambient\":1}");
+    assert(CCustomModels::ReadDataFile("data/carcols.dat", selected, &fromCommon) && fromCommon);
+    assert(!CCustomModels::ReadDataFile("data/features/ignored.ide", selected));
+    assert(!CCustomModels::ReadDataFile("audio/ignored.ipl", selected));
+    Write("custom/active_ipl.txt", Bytes("data/maps/level_events/event.ipl\n"));
+    ipl.clear();
+    CCustomModels::ForEachWorldFile(false, WorldFile, &ipl);
+    assert(ipl.size() == 1 && ipl.count("data/maps/level_events/event.ipl"));
+    assert(std::remove("custom/active_ipl.txt") == 0);
     CCustomModels::Shutdown();
     assert(CCustomModels::PairedImageTxd("house1") == -1); // no stale IMG map after restart
     CTxdStore::Shutdown();
+    // A common IDE may use a native DFF even with the VC map disabled and
+    // no user IMG installed. Indexing native DIR must not depend on img/.
+    assert(std::rename("img", "img_off") == 0);
+    images.clear(); images.push_back("models/gta3.img");
+    CTxdStore::Initialise();
+    CCustomModels::MountImages();
+    assert(images.size() == 1);
+    assert(CCustomModels::HasModelFile("baseonly"));
+    assert(!CCustomModels::HasModelFile("house1"));
+    CCustomModels::Shutdown(); CTxdStore::Shutdown();
+    assert(std::rename("img_off", "img") == 0);
     assert(chdir("..") == 0);
     std::string root(dir);
     for(const char *file : { "models/gta3.DIR", "img/map.img", "img/map.dir", "img/area/extra.img",
                              "img/area/extra.dir", "img/no_dir.img",
                              "img/v2.img", "img/v2.dir", "custom/common.zip",
-                             "custom/coll_a.zip", "custom/coll_b.zip" })
+                             "custom/coll_a.zip", "custom/coll_b.zip",
+                             "common/data/config.dat", "common/data/vehicles.ide",
+                             "common/data/maps/ide/test.ide",
+                             "common/data/maps/level_events/test.ipl",
+                             "common/data/maps/level_events/new.ipl",
+                             "common/data/maps/level_events/event.ipl",
+                             "common/data/timecyc.json", "common/data/carcols.dat",
+                             "common/data/features/ignored.ide", "common/audio/ignored.ipl" })
         assert(std::remove((root+"/"+file).c_str()) == 0);
+    assert(rmdir((root+"/common/data/maps/ide").c_str()) == 0);
+    assert(rmdir((root+"/common/data/maps/level_events").c_str()) == 0);
+    assert(rmdir((root+"/common/data/maps").c_str()) == 0);
+    assert(rmdir((root+"/common/data/features").c_str()) == 0);
+    assert(rmdir((root+"/common/data").c_str()) == 0);
+    assert(rmdir((root+"/common/audio").c_str()) == 0);
+    assert(rmdir((root+"/common").c_str()) == 0);
     assert(rmdir((root+"/img/area").c_str()) == 0);
     assert(rmdir((root+"/img").c_str()) == 0);
     assert(rmdir((root+"/models").c_str()) == 0);

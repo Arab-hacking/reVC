@@ -83,7 +83,7 @@ vehicleRenderCB(rw::Atomic *atomic, rw::d3d9::InstanceDataHeader *header)
 	using namespace rw::d3d9;
 
 	// TODO: make this less of a kludge
-	if(VehiclePipeSwitch == VEHICLEPIPE_MATFX){
+	if(VehiclePipeSwitch == VEHICLEPIPE_MATFX || EnvMapTex == nil){
 		matFXGlobals.pipelines[rw::platform]->render(atomic);
 		return;
 	}
@@ -196,7 +196,9 @@ worldRenderCB(rw::Atomic *atomic, rw::d3d9::InstanceDataHeader *header)
 	using namespace rw::d3d;
 	using namespace rw::d3d9;
 
-	if(!LightmapEnable){
+	// Only UV2 geometry can sample an actual lightmap. Keep the native
+	// renderer for one-UV objects even when common/ lighting is enabled.
+	if(!LightmapEnable || atomic->geometry->numTexCoordSets < 2){
 		defaultRenderCB_Shader(atomic, header);
 		return;
 	}

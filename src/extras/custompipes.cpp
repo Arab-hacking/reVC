@@ -72,14 +72,16 @@ CreateEnvMapCam(rw::World *world)
 					cam->setFarPlane(250.0f);
 					rw::V2d vw = { 2.0f, 2.0f };
 					cam->setViewWindow(&vw);
-					world->addCamera(cam);
 					EnvMapTex = rw::Texture::create(fbuf);
-					EnvMapTex->setFilter(rw::Texture::LINEAR);
-
-					frame->matrix.right.x = -1.0f;
-					frame->matrix.up.y = -1.0f;
-					frame->matrix.update();
-					return cam;
+					if(EnvMapTex) {
+						world->addCamera(cam);
+						EnvMapTex->setFilter(rw::Texture::LINEAR);
+						frame->matrix.right.x = -1.0f;
+						frame->matrix.up.y = -1.0f;
+						frame->matrix.update();
+						return cam;
+					}
+					cam->destroy();
 				}
 				frame->destroy();
 			}
@@ -123,7 +125,7 @@ RenderEnvMapScene(void)
 void
 EnvMapRender(void)
 {
-	if(VehiclePipeSwitch != VEHICLEPIPE_NEO)
+	if(VehiclePipeSwitch != VEHICLEPIPE_NEO || EnvMapCam == nil || EnvMapTex == nil)
 		return;
 
 	RwCameraEndUpdate(Scene.camera);
@@ -170,6 +172,10 @@ EnvMapInit(void)
 		EnvMaskTex = neoTxd->find("CarReflectionMask");
 
 	EnvMapCam = CreateEnvMapCam(Scene.world);
+	if(EnvMapCam == nil || EnvMapTex == nil) {
+		VehiclePipeSwitch = VEHICLEPIPE_MATFX;
+		return; // unsupported/failed RT, do not dereference an absent camera
+	}
 
 	int width = EnvMapCam->frameBuffer->width;
 	int height = EnvMapCam->frameBuffer->height;
@@ -216,9 +222,11 @@ EnvMapInit(void)
 static void
 EnvMapShutdown(void)
 {
-	EnvMapTex->raster = nil;
-	EnvMapTex->destroy();
-	EnvMapTex = nil;
+	if(EnvMapTex) {
+		EnvMapTex->raster = nil;
+		EnvMapTex->destroy();
+		EnvMapTex = nil;
+	}
 	DestroyCam(EnvMapCam);
 	EnvMapCam = nil;
 }

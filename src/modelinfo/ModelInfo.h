@@ -38,6 +38,9 @@ public:
 
 	static bool CanAddSimpleModel(void) { return ms_simpleModelStore.CanAlloc(); }
 	static bool CanAddTimeModel(void) { return ms_timeModelStore.CanAlloc(); }
+	static bool CanAddWeaponModel(void) { return ms_weaponModelStore.CanAlloc(); }
+	static bool CanAddPedModel(void) { return ms_pedModelStore.CanAlloc(); }
+	static bool CanAddVehicleModel(void) { return ms_vehicleModelStore.CanAlloc(); }
 	static CSimpleModelInfo *AddSimpleModel(int id);
 	static CTimeModelInfo *AddTimeModel(int id);
 	static CWeaponModelInfo *AddWeaponModel(int id);
