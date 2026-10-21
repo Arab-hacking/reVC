@@ -310,14 +310,10 @@ bool DoesLineSegmentIntersect(float l1x1, float l1y1, float l1x2, float l1y2, fl
 void
 CTrafficLights::ScanForLightsOnMap(void)
 {
-	int x, y;
 	int i, j, k, l;
-	CPtrNode *node;
-
-	for(x = 0; x < NUMSECTORS_X; x++)
-	for(y = 0; y < NUMSECTORS_Y; y++){
-		CPtrList &list = CWorld::GetSector(x, y)->m_lists[ENTITYLIST_DUMMIES];
-		for(node = list.first; node; node = node->next){
+	CWorld::ForEachAllocatedSector([&](CSector *sector) {
+		CPtrList &list = sector->m_lists[ENTITYLIST_DUMMIES];
+		for(CPtrNode *node = list.first; node; node = node->next){
 			CEntity *light = (CEntity*)node->item;
 			if (!IsTrafficLight(light->GetModelIndex()))
 				continue;
@@ -367,7 +363,7 @@ CTrafficLights::ScanForLightsOnMap(void)
 				}
 			}
 		}
-	}
+	});
 }
 
 bool

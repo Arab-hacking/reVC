@@ -1,0 +1,11 @@
+<resources>
+    <string name="app_name">reVC</string>
+    <string name="game_instructions">Для игры нужны файлы вашей копии GTA Vice City для ПК. Скопируйте полную папку игры на устройство, затем выберите её здесь. APK содержит только движок reVC и его дополнительные файлы; игровые файлы в APK не входят.</string>
+    <string name="preparing_game">Подготовка файлов reVC…</string>
+    <string name="game_files_missing">Выберите папку GTA Vice City с подпапками data, models и audio. Не найдены data/gta_vc.dat и models/gta3.img.</string>
+    <string name="import_game">Выбрать и импортировать папку игры</string>
+    <string name="play_game">Запустить игру</string>
+    <string name="import_progress">Импортировано файлов: %1$d</string>
+    <string name="import_failed">Не удалось подготовить файлы: %1$s</string>
+    <string name="game_ready">Игровые файлы найдены в %1$s. Можно запускать.</string>
+</resources>

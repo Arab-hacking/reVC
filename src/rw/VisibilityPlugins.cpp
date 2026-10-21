@@ -652,7 +652,12 @@ CVisibilityPlugins::RenderVehicleTailRotorAlphaCB(RpAtomic *atomic)
 RpAtomic*
 CVisibilityPlugins::RenderPlayerCB(RpAtomic *atomic)
 {
-	if(CWorld::Players[0].m_pSkinTexture)
+	CClumpModelInfo *modelInfo = GetClumpModelInfo(RpAtomicGetClump(atomic));
+	bool hasSASkin = modelInfo && modelInfo->GetModelType() == MITYPE_PED &&
+		((CPedModelInfo*)modelInfo)->UsesSAAnimations();
+	// The VC skin system replaces every material with one texture. Keep it for
+	// native player skins, but let a SA DFF render its own multi-material TXD.
+	if(CWorld::Players[0].m_pSkinTexture && !hasSASkin)
 		RpGeometryForAllMaterials(RpAtomicGetGeometry(atomic), SetTextureCB, CWorld::Players[0].m_pSkinTexture);
 	RENDERCALLBACK(atomic);
 	return atomic;

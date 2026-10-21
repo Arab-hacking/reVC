@@ -1,6 +1,10 @@
 #define WITHD3D
 #include "common.h"
 
+#ifdef RW_GL3
+#include "Timecycle.h"
+#endif
+
 #include "main.h"
 #include "Lights.h"
 #include "ModelInfo.h"
@@ -955,6 +959,11 @@ CRenderer::SetupBigBuildingVisibility(CEntity *ent)
 void
 CRenderer::ConstructRenderList(void)
 {
+#ifdef RW_GL3
+	// the material shaders light with the time cycle's sun (BR parity)
+	rw::setSunDirection(CTimeCycle::GetSunDirection());
+#endif
+
 	COcclusion::ProcessBeforeRendering();
 #ifdef NEW_RENDERER
 	if(!gbNewRenderer)
@@ -1077,13 +1086,9 @@ CRenderer::ScanWorld(void)
 		LimitFrustumVector(vectors[CORNER_FAR_BOTLEFT], vectors[CORNER_CAM], -100.0f);
 		rect.ContainPoint(vectors[CORNER_FAR_BOTLEFT]);
 		x1 = CWorld::GetSectorIndexX(rect.left);
-		if(x1 < 0) x1 = 0;
 		x2 = CWorld::GetSectorIndexX(rect.right);
-		if(x2 >= NUMSECTORS_X-1) x2 = NUMSECTORS_X-1;
 		y1 = CWorld::GetSectorIndexY(rect.top);
-		if(y1 < 0) y1 = 0;
 		y2 = CWorld::GetSectorIndexY(rect.bottom);
-		if(y2 >= NUMSECTORS_Y-1) y2 = NUMSECTORS_Y-1;
 		for(; x1 <= x2; x1++)
 			for(int y = y1; y <= y2; y++)
 				ScanSectorList(CWorld::GetSector(x1, y)->m_lists);
@@ -1207,13 +1212,9 @@ CRenderer::RequestObjectsInFrustum(void)
 		LimitFrustumVector(vectors[CORNER_FAR_BOTLEFT], vectors[CORNER_CAM], -100.0f);
 		rect.ContainPoint(vectors[CORNER_FAR_BOTLEFT]);
 		x1 = CWorld::GetSectorIndexX(rect.left);
-		if(x1 < 0) x1 = 0;
 		x2 = CWorld::GetSectorIndexX(rect.right);
-		if(x2 >= NUMSECTORS_X-1) x2 = NUMSECTORS_X-1;
 		y1 = CWorld::GetSectorIndexY(rect.top);
-		if(y1 < 0) y1 = 0;
 		y2 = CWorld::GetSectorIndexY(rect.bottom);
-		if(y2 >= NUMSECTORS_Y-1) y2 = NUMSECTORS_Y-1;
 		for(; x1 <= x2; x1++)
 			for(int y = y1; y <= y2; y++)
 				ScanSectorList_RequestModels(CWorld::GetSector(x1, y)->m_lists);
@@ -1282,11 +1283,8 @@ CalcNewDelta(RwV2d *a, RwV2d *b)
 	return (b->x - a->x) / (b->y - a->y);
 }
 
-#ifdef FIX_BUGS
+// Negative outlying sectors must round down, not toward the native grid.
 #define TOINT(x) ((int)Floor(x))
-#else
-#define TOINT(x) ((int)(x))
-#endif
 
 void
 CRenderer::ScanSectorPoly(RwV2d *poly, int32 numVertices, void (*scanfunc)(CPtrList *))
@@ -1349,12 +1347,10 @@ CRenderer::ScanSectorPoly(RwV2d *poly, int32 numVertices, void (*scanfunc)(CPtrL
 			xend = TOINT(xA);
 	}
 
-	while(y <= yend && y < NUMSECTORS_Y){
-		// scan one x-line
-		if(y >= 0 && xstart < NUMSECTORS_X)
-			for(x = xstart; x <= xend && x != NUMSECTORS_X; x++)
-				if(x >= 0)
-					scanfunc(CWorld::GetSector(x, y)->m_lists);
+	while(y <= yend){
+		// Additional map sectors have the same size as the native grid.
+		for(x = xstart; x <= xend; x++)
+			scanfunc(CWorld::GetSector(x, y)->m_lists);
 
 		// advance one scan line
 		y++;
@@ -1635,12 +1631,10 @@ CRenderer::ScanSectorList_RequestModels(CPtrList *lists)
 void
 CRenderer::SortBIGBuildings(void)
 {
-	int x, y;
-	for(y = 0; y < NUMSECTORS_Y; y++)
-		for(x = 0; x < NUMSECTORS_X; x++){
-			SortBIGBuildingsForSectorList(&CWorld::GetSector(x, y)->m_lists[ENTITYLIST_BUILDINGS]);
-			SortBIGBuildingsForSectorList(&CWorld::GetSector(x, y)->m_lists[ENTITYLIST_BUILDINGS_OVERLAP]);
-		}
+	CWorld::ForEachAllocatedSector([](CSector *sector) {
+		SortBIGBuildingsForSectorList(&sector->m_lists[ENTITYLIST_BUILDINGS]);
+		SortBIGBuildingsForSectorList(&sector->m_lists[ENTITYLIST_BUILDINGS_OVERLAP]);
+	});
 }
 
 void

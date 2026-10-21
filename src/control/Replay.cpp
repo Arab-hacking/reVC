@@ -71,6 +71,7 @@ CDummyPed *CReplay::pBuf11;
 uint8 *CReplay::pRadarBlips;
 uint8 *CReplay::pStoredCam;
 uint8 *CReplay::pWorld1;
+CWorld::ReplaySectorSnapshot CReplay::ExtraSectorsSnapshot;
 CReference *CReplay::pEmptyReferences;
 CStoredDetailedAnimationState *CReplay::pPedAnims;
 uint8 *CReplay::pPickups;
@@ -231,6 +232,7 @@ void CReplay::Init(void)
 	pRadarBlips = nil;
 	pStoredCam = nil;
 	pWorld1 = nil;
+	ExtraSectorsSnapshot.clear();
 	pEmptyReferences = nil;
 	pPedAnims = nil;
 	pPickups = nil;
@@ -602,22 +604,24 @@ void CReplay::ProcessPedUpdate(CPed *ped, float interpolation, CAddressInReplayB
 	buffer->m_nOffset += sizeof(tPedUpdatePacket);
 }
 
-bool HasAnimGroupLoaded(uint8 group)
+bool HasAnimGroupLoaded(RpClump *clump, uint8 group, AnimationId id)
 {
-	CAnimBlendAssocGroup* pGroup = &CAnimManager::GetAnimAssocGroups()[group];
-	return pGroup->animBlock && pGroup->animBlock->isLoaded;
+	// A VC group being streamed does not mean the SA group has that clip.
+	return CAnimManager::GetAnimAssociation(clump, (AssocGroupId)group, id) != nil;
 }
 
 void CReplay::RetrievePedAnimation(CPed *ped, CStoredAnimationState *state)
 {
-	CAnimBlendAssociation* anim1;
+	RpClump *clump = ped->GetClump();
+	CAnimBlendAssociation* anim1 = nil;
 	if (state->animId <= ANIM_STD_IDLE)
-		anim1 = CAnimManager::BlendAnimation(
-			(RpClump*)ped->m_rwObject, ped->m_animGroup, (AnimationId)state->animId, 100.0f);
-	else if (HasAnimGroupLoaded(state->groupId))
-		anim1 = CAnimManager::BlendAnimation((RpClump*)ped->m_rwObject, (AssocGroupId)state->groupId, (AnimationId)state->animId, 100.0f);
-	else
-		anim1 = CAnimManager::BlendAnimation((RpClump*)ped->m_rwObject, ASSOCGRP_STD, ANIM_STD_WALK, 100.0f);
+		anim1 = CAnimManager::BlendAnimation(clump, ped->m_animGroup, (AnimationId)state->animId, 100.0f);
+	else if (HasAnimGroupLoaded(clump, state->groupId, (AnimationId)state->animId))
+		anim1 = CAnimManager::BlendAnimation(clump, (AssocGroupId)state->groupId, (AnimationId)state->animId, 100.0f);
+	if(anim1 == nil)
+		anim1 = CAnimManager::BlendAnimation(clump, ASSOCGRP_STD, ANIM_STD_IDLE, 100.0f);
+	if(anim1 == nil)
+		return; // neither bank can supply a safe replay animation
 
 	anim1->SetCurrentTime(state->time * 4.0f / 255.0f);
 	anim1->speed = state->speed * 3.0f / 255.0f;
@@ -628,25 +632,30 @@ void CReplay::RetrievePedAnimation(CPed *ped, CStoredAnimationState *state)
 		float speed = state->secSpeed * 3.0f / 255.0f;
 		float blend = state->blendAmount * 2.0f / 255.0f;
 		CAnimBlendAssociation* anim2 = CAnimManager::BlendAnimation(
-			(RpClump*)ped->m_rwObject,
+			clump,
 			(state->secAnimId > ANIM_STD_IDLE) ? (AssocGroupId)state->secGroupId : ped->m_animGroup,
 			(AnimationId)state->secAnimId, 100.0f);
-		anim2->SetCurrentTime(time);
-		anim2->speed = speed;
-		anim2->SetBlend(blend, 1.0f);
-		anim2->callbackType = CAnimBlendAssociation::CB_NONE;
+		if(anim2){
+			anim2->SetCurrentTime(time);
+			anim2->speed = speed;
+			anim2->SetBlend(blend, 1.0f);
+			anim2->callbackType = CAnimBlendAssociation::CB_NONE;
+		}
 	}
 	RpAnimBlendClumpRemoveAssociations((RpClump*)ped->m_rwObject, 0x10);
 	if (state->partAnimId){
 		float time = state->partAnimTime * 4.0f / 255.0f;
 		float speed = state->partAnimSpeed * 3.0f / 255.0f;
 		float blend = state->partBlendAmount * 2.0f / 255.0f;
-		if (blend > 0.0f && state->partAnimId != ANIM_STD_IDLE && HasAnimGroupLoaded(state->partGroupId)){
+		if (blend > 0.0f && state->partAnimId != ANIM_STD_IDLE &&
+		    HasAnimGroupLoaded(clump, state->partGroupId, (AnimationId)state->partAnimId)){
 			CAnimBlendAssociation* anim3 = CAnimManager::BlendAnimation(
-				(RpClump*)ped->m_rwObject, (AssocGroupId)state->partGroupId, (AnimationId)state->partAnimId, 1000.0f);
-			anim3->SetCurrentTime(time);
-			anim3->speed = speed;
-			anim3->SetBlend(blend, 0.0f);
+				clump, (AssocGroupId)state->partGroupId, (AnimationId)state->partAnimId, 1000.0f);
+			if(anim3){
+				anim3->SetCurrentTime(time);
+				anim3->speed = speed;
+				anim3->SetBlend(blend, 0.0f);
+			}
 		}
 	}
 }
@@ -664,6 +673,8 @@ void CReplay::RetrieveDetailedPedAnimation(CPed *ped, CStoredDetailedAnimationSt
 		CAnimBlendAssociation* anim = CAnimManager::AddAnimation(ped->GetClump(),
 			state->aAnimId[i] > ANIM_STD_IDLE ? (AssocGroupId)state->aGroupId[i] : ped->m_animGroup,
 			(AnimationId)state->aAnimId[i]);
+		if(anim == nil)
+			continue; // missing in this skeleton's bank
 		anim->SetCurrentTime(state->aCurTime[i] * 4.0f / 255.0f);
 		anim->speed = state->aSpeed[i] * 3.0f / 255.0f;
 		anim->SetBlend(state->aBlendAmount[i] * 2.0f / 255.0f, state->aBlendDelta[i] * 16.0f / 127.0f);
@@ -682,6 +693,8 @@ void CReplay::RetrieveDetailedPedAnimation(CPed *ped, CStoredDetailedAnimationSt
 		CAnimBlendAssociation* anim = CAnimManager::AddAnimation(ped->GetClump(),
 			state->aAnimId2[i] > ANIM_STD_IDLE ? (AssocGroupId)state->aGroupId2[i] : ped->m_animGroup,
 			(AnimationId)state->aAnimId2[i]);
+		if(anim == nil)
+			continue;
 		anim->SetCurrentTime(state->aCurTime2[i] * 4.0f / 255.0f);
 		anim->speed = state->aSpeed2[i] * 3.0f / 255.0f;
 		anim->SetBlend(state->aBlendAmount2[i] * 2.0f / 255.0f, state->aBlendDelta2[i] * 16.0f / 127.0f);
@@ -1349,6 +1362,7 @@ void CReplay::StoreStuffInMem(void)
 	CPools::GetDummyPool()->Store(pBuf10, pBuf11);
 	pWorld1 = new uint8[sizeof(CSector) * NUMSECTORS_X * NUMSECTORS_Y];
 	memcpy(pWorld1, CWorld::GetSector(0, 0), NUMSECTORS_X * NUMSECTORS_Y * sizeof(CSector));
+	CWorld::SaveExtraSectorsForReplay(ExtraSectorsSnapshot);
 	WorldPtrList = CWorld::GetMovingEntityList().first; // why
 	BigBuildingPtrList = CWorld::GetBigBuildingList(LEVEL_GENERIC).first;
 	pPickups = new uint8[sizeof(CPickup) * NUMPICKUPS];
@@ -1424,6 +1438,8 @@ void CReplay::RestoreStuffFromMem(void)
 	memcpy(CWorld::GetSector(0, 0), pWorld1, sizeof(CSector) * NUMSECTORS_X * NUMSECTORS_Y);
 	delete[] pWorld1;
 	pWorld1 = nil;
+	CWorld::RestoreExtraSectorsFromReplay(ExtraSectorsSnapshot);
+	ExtraSectorsSnapshot.clear();
 	CWorld::GetMovingEntityList().first = WorldPtrList;
 	CWorld::GetBigBuildingList(LEVEL_GENERIC).first = BigBuildingPtrList;
 	memcpy(CPickups::aPickUps, pPickups, sizeof(CPickup) * NUMPICKUPS);

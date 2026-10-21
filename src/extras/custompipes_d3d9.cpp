@@ -13,6 +13,11 @@
 #include "Renderer.h"
 #include "World.h"
 #include "custompipes.h"
+#include "custom/GraphicsBtx.h"
+#ifdef _WIN32
+#include <windows.h>
+#include <d3dcompiler.h> // D3DCompile is resolved dynamically (no new DLL dependency)
+#endif
 
 #ifdef EXTENDED_PIPELINES
 
@@ -83,7 +88,7 @@ vehicleRenderCB(rw::Atomic *atomic, rw::d3d9::InstanceDataHeader *header)
 	using namespace rw::d3d9;
 
 	// TODO: make this less of a kludge
-	if(VehiclePipeSwitch == VEHICLEPIPE_MATFX){
+	if(VehiclePipeSwitch == VEHICLEPIPE_MATFX || EnvMapTex == nil){
 		matFXGlobals.pipelines[rw::platform]->render(atomic);
 		return;
 	}
@@ -188,6 +193,52 @@ DestroyVehiclePipe(void)
 
 static void *neoWorld_VS;
 static void *neoWorldVC_PS;
+static void *brWorldVC_PS;
+
+// Legacy NEO DXBC remains the fallback. A source-only .hlsl edit does NOT
+// change that embedded bytecode, so compile the small BR lightmap shader once
+// with the OS's D3DCompiler when available, without a hard DLL dependency.
+static void *
+CreateBRLightmapShader(void)
+{
+#ifdef _WIN32
+#include "shaders/obj/brWorldVC_PS_hlsl.inc"
+	typedef HRESULT (WINAPI *CompileProc)(LPCVOID, SIZE_T, LPCSTR,
+		const D3D_SHADER_MACRO*, ID3DInclude*, LPCSTR, LPCSTR, UINT, UINT,
+		ID3DBlob**, ID3DBlob**);
+	char systemDir[MAX_PATH];
+	const UINT length = GetSystemDirectoryA(systemDir, MAX_PATH);
+	if(length == 0 || length >= MAX_PATH - 32) return nil;
+	const char *versions[] = { "D3DCompiler_47.dll", "D3DCompiler_43.dll" };
+	HMODULE dll = nil;
+	for(size_t i = 0; i < sizeof(versions)/sizeof(versions[0]); i++) {
+		char filename[MAX_PATH];
+		snprintf(filename, sizeof(filename), "%s\\%s", systemDir, versions[i]);
+		dll = LoadLibraryA(filename); // system directory only; no DLL search in game folder
+		if(dll) break;
+	}
+	if(!dll) {
+		debug("zip/ BR lightmaps: D3DCompiler not installed; using embedded NEO shader\n");
+		return nil;
+	}
+	CompileProc compile = (CompileProc)GetProcAddress(dll, "D3DCompile");
+	ID3DBlob *bytecode = nil, *errors = nil;
+	void *shader = nil;
+	if(compile && SUCCEEDED(compile(brWorldVC_PS_hlsl_src, strlen(brWorldVC_PS_hlsl_src),
+		"brWorldVC_PS.hlsl", nil, nil, "main", "ps_2_0", 0, 0, &bytecode, &errors)) && bytecode)
+		shader = rw::d3d::createPixelShader(bytecode->GetBufferPointer());
+	if(!shader) {
+		debug("zip/ BR lightmaps: D3D9 pixel shader compile/create failed%s%.256s; using embedded NEO shader\n",
+			errors ? ": " : "", errors ? (const char*)errors->GetBufferPointer() : "");
+	}
+	if(errors) errors->Release();
+	if(bytecode) bytecode->Release();
+	FreeLibrary(dll);
+	return shader;
+#else
+	return nil;
+#endif
+}
 
 static void
 worldRenderCB(rw::Atomic *atomic, rw::d3d9::InstanceDataHeader *header)
@@ -196,7 +247,9 @@ worldRenderCB(rw::Atomic *atomic, rw::d3d9::InstanceDataHeader *header)
 	using namespace rw::d3d;
 	using namespace rw::d3d9;
 
-	if(!LightmapEnable){
+	// Only UV2 geometry can sample an actual lightmap. Keep the native
+	// renderer for one-UV objects even when common/ lighting is enabled.
+	if(!LightmapEnable || atomic->geometry->numTexCoordSets < 2){
 		defaultRenderCB_Shader(atomic, header);
 		return;
 	}
@@ -215,6 +268,7 @@ worldRenderCB(rw::Atomic *atomic, rw::d3d9::InstanceDataHeader *header)
 	InstanceData *inst = header->inst;
 	for(rw::uint32 i = 0; i < header->numMeshes; i++){
 		Material *m = inst->material;
+		bool brLightmap = false;
 
 		if(MatFX::getEffects(m) == MatFX::DUAL){
 			setVertexShader(neoWorld_VS);
@@ -224,6 +278,7 @@ worldRenderCB(rw::Atomic *atomic, rw::d3d9::InstanceDataHeader *header)
 			if(dualtex == nil)
 				goto notex;
 			d3d::setTexture(1, dualtex);
+			brLightmap = graphicsbtx::IsMarkedLightmap(dualtex->mask);
 			lightfactor[0] = lightfactor[1] = lightfactor[2] = WorldLightmapBlend.Get()*LightmapMult;
 		}else{
 		notex:
@@ -245,7 +300,7 @@ worldRenderCB(rw::Atomic *atomic, rw::d3d9::InstanceDataHeader *header)
 			d3d::setTexture(0, m->texture);
 		else
 			d3d::setTexture(0, gpWhiteTexture);
-		setPixelShader(neoWorldVC_PS);
+		setPixelShader(brLightmap && brWorldVC_PS ? brWorldVC_PS : neoWorldVC_PS);
 
 		drawInst(header, inst);
 		inst++;
@@ -268,7 +323,7 @@ CreateWorldPipe(void)
 #include "shaders/obj/neoWorldVC_PS.inc"
 	neoWorldVC_PS = rw::d3d::createPixelShader(neoWorldVC_PS_cso);
 	assert(neoWorldVC_PS);
-
+	brWorldVC_PS = CreateBRLightmapShader();
 
 	rw::d3d9::ObjPipeline *pipe = rw::d3d9::ObjPipeline::create();
 	pipe->instanceCB = rw::d3d9::defaultInstanceCB;
@@ -284,7 +339,8 @@ DestroyWorldPipe(void)
 	neoWorld_VS = nil;
 	rw::d3d::destroyPixelShader(neoWorldVC_PS);
 	neoWorldVC_PS = nil;
-
+	if(brWorldVC_PS) rw::d3d::destroyPixelShader(brWorldVC_PS);
+	brWorldVC_PS = nil;
 
 	((rw::d3d9::ObjPipeline*)worldPipe)->destroy();
 	worldPipe = nil;

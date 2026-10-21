@@ -302,10 +302,25 @@ void _rwD3D8TexDictionaryEnableRasterFormatConversion(bool enable) { }
 RwBool rwNativeTextureHackRead(RwStream *stream, RwTexture **tex, RwInt32 size)
 {
 	*tex = Texture::streamReadNative(stream);
+	if(*tex == nil)
+		return false;
 #ifdef LIBRW
-	(*tex)->raster = rw::Raster::convertTexToCurrentPlatform((*tex)->raster);
+	if((*tex)->raster == nil){
+		(*tex)->destroy();
+		*tex = nil;
+		return false;
+	}
+	// VC/D3D8 TXDs in img/*.img must be converted to the active renderer
+	// before SA DFF materials resolve their names against the dictionary.
+	rw::Raster *raster = rw::Raster::convertTexToCurrentPlatform((*tex)->raster);
+	if(raster == nil){
+		(*tex)->destroy();
+		*tex = nil;
+		return false;
+	}
+	(*tex)->raster = raster;
 #endif
-	return *tex != nil;
+	return true;
 }
 
 

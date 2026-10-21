@@ -4,6 +4,7 @@
 #include "RenderBuffer.h"
 #include "Entity.h"
 #include "Fluff.h"
+#include "Game.h"
 #include "Camera.h"
 #include "Sprite.h"
 #include "Coronas.h"
@@ -408,14 +409,12 @@ void CMovingThings::Init()
 		aMovingThings[i].m_farAway = 0;
 	}
 
-	for (int i = 0; i < NUMSECTORS_X; i++) {
-		for (int j = 0; j < NUMSECTORS_Y; j++) {
-			for (CPtrNode *pNode = CWorld::GetSector(i, j)->m_lists[ENTITYLIST_BUILDINGS].first; pNode; pNode = pNode->next) {
-				CEntity *pEntity = (CEntity *)pNode->item;
-				PossiblyAddThisEntity(pEntity);
-			}
+	CWorld::ForEachAllocatedSector([](CSector *sector) {
+		for(CPtrNode *pNode = sector->m_lists[ENTITYLIST_BUILDINGS].first; pNode; pNode = pNode->next){
+			CEntity *pEntity = (CEntity *)pNode->item;
+			PossiblyAddThisEntity(pEntity);
 		}
-	}
+	});
 
 	for (int32 i = 0; i < NUM_LEVELS; i++) {
 		for (CPtrNode *pNode = CWorld::GetBigBuildingList((eLevelName)i).first; pNode; pNode = pNode->next) {
@@ -1045,7 +1044,24 @@ CEscalators::AddOne(CVector pos0, CVector pos1, CVector pos2, CVector pos3, bool
 void
 CEscalators::Init(void) {
 	Shutdown();
-	NumEscalators = 0;
+
+	// These locations and their moving steps belong to the native VC island.
+	// With DATA/MAPS IDEs disabled, Esc_step has no model info; the unchecked
+	// GetColModel in AddThisOne would read through a null model pointer.
+	if (!CGame::bLoadViceCityMap) {
+		REVC_LOG_INFO("Skipping native VC escalators (LoadViceCityMap=0, Esc_step id=%d)", MI_ESCALATORSTEP);
+		return;
+	}
+	if (MI_ESCALATORSTEP < 0 || MI_ESCALATORSTEP >= MODELINFOSIZE) {
+		REVC_LOG_WARNING("Skipping native VC escalators: Esc_step model index missing (%d)", MI_ESCALATORSTEP);
+		return;
+	}
+	CBaseModelInfo *stepInfo = CModelInfo::GetModelInfo(MI_ESCALATORSTEP);
+	if (!stepInfo || (stepInfo->GetModelType() != MITYPE_SIMPLE && stepInfo->GetModelType() != MITYPE_TIME)
+	    || !stepInfo->GetColModel()) {
+		REVC_LOG_WARNING("Skipping native VC escalators: Esc_step static model/collision missing (id %d)", MI_ESCALATORSTEP);
+		return;
+	}
 
 	AddOne(CVector(-9.82999f, -938.04498f, 9.4219f), CVector(-8.573f, -938.04498f, 9.4219f),
 		CVector(-0.747f, -938.045f, 15.065f), CVector(0.88f, -938.045f, 15.065f), TRUE);
@@ -1123,7 +1139,8 @@ CEscalators::Update(void) {
 	if (CReplay::IsPlayingBack())
 		return;
 
-	for (int i = 0; i < NUM_ESCALATORS; i++) {
+	// An unloaded VC map has no escalators: never update unregistered slots.
+	for (int i = 0; i < NumEscalators; i++) {
 		aEscalators[i].Update();
 	}
 }

@@ -667,10 +667,12 @@ int8 CRunningScript::ProcessCommands500To599(int32 command)
 	case COMMAND_LOAD_SPECIAL_CHARACTER:
 	{
 		CollectParameters(&m_nIp, 1);
-		char name[16];
-		strncpy(name, (char*)&CTheScripts::ScriptSpace[m_nIp], KEY_LENGTH_IN_SCRIPT);
+		// SCM keys occupy exactly eight bytes. An eight-character name has
+		// no trailing NUL in ScriptSpace; the streaming name lookup needs one.
+		char name[KEY_LENGTH_IN_SCRIPT + 1] = {};
+		memcpy(name, &CTheScripts::ScriptSpace[m_nIp], KEY_LENGTH_IN_SCRIPT);
 		for (int i = 0; i < KEY_LENGTH_IN_SCRIPT; i++)
-			name[i] = tolower(name[i]);
+			name[i] = (char)tolower((unsigned char)name[i]);
 		CStreaming::RequestSpecialChar(ScriptParams[0] - 1, name, STREAMFLAGS_DEPENDENCY | STREAMFLAGS_SCRIPTOWNED);
 		m_nIp += KEY_LENGTH_IN_SCRIPT;
 		return 0;
@@ -2095,10 +2097,10 @@ int8 CRunningScript::ProcessCommands700To799(int32 command)
 	case COMMAND_LOAD_SPECIAL_MODEL:
 	{
 		CollectParameters(&m_nIp, 1);
-		char name[KEY_LENGTH_IN_SCRIPT];
-		strncpy(name, (const char*)&CTheScripts::ScriptSpace[m_nIp], KEY_LENGTH_IN_SCRIPT);
+		char name[KEY_LENGTH_IN_SCRIPT + 1] = {};
+		memcpy(name, &CTheScripts::ScriptSpace[m_nIp], KEY_LENGTH_IN_SCRIPT);
 		for (int i = 0; i < KEY_LENGTH_IN_SCRIPT; i++)
-			name[i] = tolower(name[i]);
+			name[i] = (char)tolower((unsigned char)name[i]);
 		CStreaming::RequestSpecialModel(ScriptParams[0], name, STREAMFLAGS_DEPENDENCY | STREAMFLAGS_SCRIPTOWNED);
 		m_nIp += KEY_LENGTH_IN_SCRIPT;
 		return 0;

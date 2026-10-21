@@ -11,9 +11,24 @@ env:
   GLFW_FILE: "glfw-3.3.2.bin.WIN64.zip"
   GLFW_URL: "https://github.com/glfw/glfw/releases/download/3.3.2/glfw-3.3.2.bin.WIN64.zip"
 jobs:
+  samp-client:
+    name: Standalone SA-MP probe (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    steps:
+    - uses: actions/checkout@v4
+    - name: Build and test standalone project
+      shell: bash
+      run: |
+        cmake -S tools/samp-client -B build/samp-client -DCMAKE_BUILD_TYPE=Release
+        cmake --build build/samp-client --config Release
+        ctest --test-dir build/samp-client -C Release --output-on-failure
   build:
     runs-on: windows-latest
     strategy:
+      fail-fast: false
       matrix:
         platform: [win-amd64-librw_d3d9-oal, win-amd64-librw_gl3_glfw-oal]
         buildtype: [Debug, Release]
@@ -36,8 +51,21 @@ jobs:
       run: |
         ./premake5 vs2019 --with-librw --no-full-paths --glfwdir64=${{env.GLFW_BASE}}
     - name: Build
+      shell: pwsh
       run: |
-        msbuild -m build/reVC.sln /property:Configuration=${{matrix.buildtype}} /property:Platform=${{matrix.platform}}
+        & msbuild -m build/reVC.sln /property:Configuration=${{matrix.buildtype}} /property:Platform=${{matrix.platform}} /fl "/flp:logfile=msbuild.log;verbosity=normal"
+        $buildExit = $LASTEXITCODE
+        if ($buildExit -ne 0) {
+          # Annotations remain accessible when Actions' hosted log archive is
+          # unavailable; include the actual compiler errors, not just exit 1.
+          $errors = Select-String -Path msbuild.log -Pattern '(: error [A-Z]+[0-9]+:|error MSB[0-9]+:)' | Select-Object -First 20
+          if ($errors) {
+            $errors | ForEach-Object { Write-Host "::error::$($_.Line)" }
+          } else {
+            Get-Content msbuild.log -Tail 20 | ForEach-Object { Write-Host "::error::$_" }
+          }
+          exit $buildExit
+        }
     # - name: Pack artifacts
       # run: |
         # 7z a reVC_${{matrix.buildtype}}_${{matrix.platform}}.zip ./bin/${{matrix.platform}}/${{matrix.buildtype}}/*

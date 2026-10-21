@@ -20,7 +20,7 @@ We cannot build for PS2 or Xbox yet. If you're interested in doing so, get in to
   - [Windows OpenGL 64bit](https://nightly.link/mrxenginner/reVC/workflows/reVC_msvc_amd64/miami/reVC_Release_win-amd64-librw_gl3_glfw-oal.zip)
   - [Linux 64bit](https://nightly.link/mrxenginner/reVC/workflows/build-cmake-conan/miami/ubuntu-18.04-gl3.zip)
   - [MacOS 64bit x86-64](https://nightly.link/mrxenginner/reVC/workflows/build-cmake-conan/miami/macos-latest-gl3.zip)
-  - [Android armeabi-v7a and arm64-v8a](https://nightly.link/mrxenginner/reVC/workflows/build-android/miami/revc-release.zip)
+  - [Android armeabi-v7a and arm64-v8a](https://github.com/Arab-hacking/reVC/actions/workflows/build-android.yml) (download `revc-release` from a successful run; [import instructions](ANDROID_BUILD.md))
   
 - Extract the downloaded zip over your GTA VC directory and run reVC. The zip includes the binary, updated and additional gamefiles and in case of OpenAL the required dlls.
 
@@ -42,6 +42,7 @@ Some of them can be toggled at runtime, some cannot.
 * Settings stored in reVC.ini file instead of gta_vc.set
 * Debug menu to do and change various things (Ctrl-M to open)
 * Debug camera (Ctrl-B to toggle)
+* F10 noclip for the player or the vehicle they are driving: W/A/S/D to move relative to the camera, Space or E to rise, Ctrl or Q to descend, Shift to move faster. Press F10 again to restore collision and gravity; turn it off outside solid geometry. The game disables ordinary actions while flying but keeps mouse look.
 * Rotatable camera
 * XInput controller support (Windows)
 * No loading screens between islands ("map memory usage" in menu)
@@ -60,6 +61,24 @@ Some of them can be toggled at runtime, some cannot.
   * ...
 * Can load DFFs and TXDs from other platforms, possibly with a performance penalty
 * ...
+
+## SA-MP 0.3.7 client project
+
+The [standalone client groundwork](SAMP_CLIENT.md) lives in `tools/samp-client/`, separate from the reVC engine. Its `samp-probe` utility can query a server's public info, but **cannot log into the game, chat or synchronize players**. reVC itself does not contact SA-MP servers. Multiplayer transport and a minimal game adapter remain future work.
+
+## Debug log
+
+On startup reVC creates a fresh `debug.log` (the previous run is overwritten). On Windows and Linux it is written to the directory from which the game was launched (normally the GTA Vice City directory). On macOS it is in the user-files directory (normally `~/Library/Application Support/reVC/`); on Android it is in the selected `STORAGE_ROOT` directory. If no storage root is configured, it uses the launch directory. The file remains open when the game changes its working directory.
+
+Entries include a local timestamp, severity, source file/line/function (where available) and a message. The log includes existing debug messages and state transitions, startup/shutdown and loading phases, file-open results and save/configuration failures, also in `MASTER` builds. Assertion failures are recorded in builds that enable assertions. It is flushed after every entry so it can help diagnose a crash. A failure to open `debug.log` is reported to stderr (or the console) without stopping the game. The log can contain local file paths; review it before sharing it publicly.
+
+The custom-folder loader also writes to **this same file**, including which IMG was mounted, which CD directory supplied a duplicate, and the archive/sector/header of a TXD that failed to load. VC skeletons always use the game's native VC animation blocks. SA/BR `ANP2`/`ANP3` files such as `ped.ifp` or `ped.ani` in `custom/` (or a ZIP there) load into a separate `sa_ped` bank, used only by SA skeletons; a custom `ANPK` cannot replace VC animations. Missing SA clips do not fall back to VC clips. This is the `custom/` folder, not `MODELS/CUSTOM.IMG`; see [CUSTOM_MODELS.md](CUSTOM_MODELS.md).
+
+PC map toggle (`[World] LoadViceCityMap=0`), expanded pools, `-`/`+` ped-model switching, save-format limits and required SA animation banks are documented in [PC_WORLD_MODDING.md](PC_WORLD_MODDING.md).
+
+On demand, one bounded background worker reads/repairs custom `.mod` and decodes `.btx` before regular streaming uses them; RenderWare creation and GPU upload stay on the game thread. Model, decoded-texture and reusable GPU TXD caches still have separate 64 MiB ceilings; they are **not** preallocated or a limit on total game memory. Hit/miss/eviction and background-preparation counts appear in `debug.log` at shutdown. Existing LOD selection and deletion of RW objects behind the camera remain in effect. A first GPU upload or a cache miss can still cause a pause; see [CUSTOM_MODELS.md](CUSTOM_MODELS.md) for the limitations.
+
+The standalone logger tests can be built without the game assets or librw: `mkdir -p build/debug-log-tests && g++ -std=c++11 -pthread -I src/core tests/DebugLogTests.cpp src/core/DebugLog.cpp -o build/debug-log-tests/debug_log_tests && (cd build/debug-log-tests && ./debug_log_tests)`. The synthetic IFP tests use `mkdir -p build/custom-tests && g++ -std=c++11 tests/CustomIfpTests.cpp -o build/custom-tests/custom_ifp_tests && build/custom-tests/custom_ifp_tests` (or run CMake/CTest from `tests/`).
 
 ## To-Do
 
@@ -90,7 +109,7 @@ Clone the repository with `git clone --recursive -b miami https://github.com/mrx
 
 <details><summary>Android</summary>
 
-For Android using Android Studio, proceed: [Building on Android](https://github.com/mrxenginner/reVC/wiki/Building-on-Android)
+The Android APK builds the native reVC game for ARMv7 and ARM64; it does **not** include copyrighted Vice City assets. See the [APK build, installation and game-file import guide](ANDROID_BUILD.md). A passing CI build checks the APK contents but does not prove gameplay on a device.
 
 </details>
 

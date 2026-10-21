@@ -5,6 +5,9 @@
 
 #include "DMAudio.h"
 #include "AudioScriptObject.h"
+#include "Automobile.h"
+#include "Bike.h"
+#include "Boat.h"
 #include "Camera.h"
 #include "CarGen.h"
 #include "Cranes.h"
@@ -17,6 +20,7 @@
 #include "Gangs.h"
 #include "Garages.h"
 #include "GenericGameStorage.h"
+#include "ModelInfo.h"
 #include "Pad.h"
 #include "Particle.h"
 #include "ParticleObject.h"
@@ -40,6 +44,9 @@
 #include "Zones.h"
 #include "Timecycle.h"
 #include "Fluff.h"
+#include "SaveBlockBounds.h"
+#include "SavedPoolValidation.h"
+#include <vector>
 
 #define BLOCK_COUNT 22
 #define SIZE_OF_SIMPLEVARS 0xE4
@@ -96,6 +103,11 @@ PopulateRadioStationPositionList()
 do {\
 	if (!ReadDataFromFile(file, (uint8 *) &size, 4))\
 		return false;\
+	if(size > sizeof(work_buff) - 3) {\
+		PcSaveHelper.nErrorCode = SAVESTATUS_ERR_DATA_INVALID;\
+		REVC_LOG_ERROR("Save block exceeds work buffer: %u bytes", size);\
+		return false;\
+	}\
 	size = align4bytes(size);\
 	if (!ReadDataFromFile(file, work_buff, size))\
 		return false;\
@@ -120,10 +132,134 @@ do {\
 	save_func(buf, &size);\
 	debug(msg"== %i \n", size);\
 	CopySizeAndPreparePointer(presize, buf, postsize, reserved, size);\
+	if (!FitsLegacySave(totalSize, align4bytes(size), SIZE_OF_ONE_GAME_IN_BYTES)) {\
+		REVC_LOG_ERROR("Save exceeds legacy file size at " msg " (%u bytes)", size);\
+		PcSaveHelper.nErrorCode = SAVESTATUS_ERR_SAVE_WRITE;\
+		return false;\
+	}\
 	if (!PcSaveHelper.PcClassSaveRoutine(file, work_buff, buf - work_buff))\
 		return false;\
 	totalSize += buf - work_buff;\
 } while (0)
+
+// Only the three entity pools can grow arbitrarily with custom content. Size
+// them before writing: the global work_buff is 55 KB, while a valid legacy PC
+// save can still have a larger individual pool block. Reject overflow of the
+// whole save instead of scribbling past work_buff or wrapping padding maths.
+static bool
+WritePoolSaveBlock(int file, uint32 &totalSize, void (*save)(uint8 *, uint32 *), const char *name)
+{
+	uint32 expected = 0;
+	save(nil, &expected);
+	// The pool sits behind an INNER size word as well as the outer block
+	// length; both words must be included in the on-disk preflight.
+	if(expected > SIZE_OF_ONE_GAME_IN_BYTES ||
+	   !FitsLegacySave(totalSize, expected + 4, SIZE_OF_ONE_GAME_IN_BYTES)){
+		REVC_LOG_ERROR("Cannot save %s: %u bytes exceed the legacy save format", name, expected);
+		PcSaveHelper.nErrorCode = SAVESTATUS_ERR_SAVE_WRITE;
+		return false;
+	}
+	uint32 padded = align4bytes(expected);
+	std::vector<uint8> block(4 + padded, 0);
+	memcpy(block.data(), &expected, sizeof(expected));
+	uint32 actual = 0;
+	save(block.data() + 4, &actual);
+	if(actual != expected){
+		REVC_LOG_ERROR("Cannot save %s: pool changed during serialization (%u -> %u)", name, expected, actual);
+		PcSaveHelper.nErrorCode = SAVESTATUS_ERR_SAVE_WRITE;
+		return false;
+	}
+	debug("%s== %u \n", name, actual);
+	if(!PcSaveHelper.PcClassSaveRoutine(file, block.data(), (uint32)block.size()))
+		return false;
+	totalSize += (uint32)block.size();
+	return true;
+}
+
+static bool
+IsLoadedSaveVehicleModel(int16 id, uint32 type)
+{
+	if (id < 0 || id >= MODELINFOSIZE)
+		return false;
+	CBaseModelInfo *base = CModelInfo::GetModelInfo(id);
+	if (base == nil || base->GetModelType() != MITYPE_VEHICLE)
+		return false;
+	const int vehicleType = ((CVehicleModelInfo*)base)->m_vehicleType;
+	// Automobiles also cover the heli/plane models in the stock save format.
+	if (type == VEHICLE_TYPE_CAR)
+		return vehicleType == VEHICLE_TYPE_CAR || vehicleType == VEHICLE_TYPE_HELI || vehicleType == VEHICLE_TYPE_PLANE;
+	return vehicleType == (int)type;
+}
+
+static bool
+IsLoadedSaveObjectModel(int16 id)
+{
+	if (id < 0 || id >= MODELINFOSIZE)
+		return false;
+	CBaseModelInfo *base = CModelInfo::GetModelInfo(id);
+	return base != nil && (base->IsSimple() || base->GetModelType() == MITYPE_CLUMP);
+}
+
+static SavedPoolCheck
+CheckSavedVehiclePool(const uint8 *buf, std::size_t size)
+{
+	return ValidateSavedVehiclePool(buf, size,
+		CAutomobile::nSaveStructSize, CBoat::nSaveStructSize, CBike::nSaveStructSize,
+		VEHICLE_TYPE_CAR, VEHICLE_TYPE_BOAT, VEHICLE_TYPE_BIKE,
+		IsLoadedSaveVehicleModel);
+}
+
+static SavedPoolCheck
+CheckSavedObjectPool(const uint8 *buf, std::size_t size)
+{
+	// This is the packed record width of CPools::SaveObjectPool; compatible
+	// saves write the last two entity-property words via SaveEntityFlags.
+	const std::size_t recordBytes = sizeof(int16) + sizeof(int32) +
+		2 * sizeof(CCompressedMatrix) + sizeof(float) + sizeof(int8) +
+		7 * sizeof(bool) + sizeof(int16) + 2 * sizeof(int8) +
+		sizeof(float) + 2 * sizeof(int8) + sizeof(uint32) + 2 * sizeof(uint32);
+	return ValidateSavedObjectPool(buf, size, recordBytes, IsLoadedSaveObjectModel);
+}
+
+static bool
+ReadPoolSaveBlock(int file, void (*load)(uint8 *, uint32), const char *name,
+                  SavedPoolCheck (*validate)(const uint8 *, std::size_t) = nil)
+{
+	uint32 outerSize = 0;
+	if(!ReadDataFromFile(file, (uint8*)&outerSize, sizeof(outerSize)))
+		return false;
+	if(outerSize < 4 || outerSize > SIZE_OF_ONE_GAME_IN_BYTES){
+		REVC_LOG_ERROR("Invalid %s save block length: %u", name, outerSize);
+		PcSaveHelper.nErrorCode = SAVESTATUS_ERR_DATA_INVALID;
+		return false;
+	}
+	std::vector<uint8> block(align4bytes(outerSize));
+	if(!ReadDataFromFile(file, block.data(), (uint32)block.size()))
+		return false;
+	uint32 innerSize = 0;
+	memcpy(&innerSize, block.data(), sizeof(innerSize));
+	if(innerSize > outerSize - 4 || align4bytes(innerSize) > outerSize - 4){
+		REVC_LOG_ERROR("Invalid nested %s save block length: %u / %u", name, innerSize, outerSize);
+		PcSaveHelper.nErrorCode = SAVESTATUS_ERR_DATA_INVALID;
+		return false;
+	}
+	if(validate != nil){
+		SavedPoolCheck check = validate(block.data() + 4, innerSize);
+		if(!check.ok()){
+			if(check.error == SavedPoolError::UnavailableModel)
+				REVC_LOG_ERROR("Cannot load %s save: model %d in record %u (type %u) is unavailable/incompatible with current IDEs. Use a save made for this map.",
+					name, check.model, (uint32)check.entry, check.type);
+			else
+				REVC_LOG_ERROR("Cannot load %s save: invalid record layout/type at entry %u (type %u)",
+					name, (uint32)check.entry, check.type);
+			PcSaveHelper.nErrorCode = SAVESTATUS_ERR_DATA_INVALID;
+			return false;
+		}
+	}
+	REVC_LOG_INFO("Loading saved %s pool (%u bytes)", name, innerSize);
+	load(block.data() + 4, innerSize);
+	return true;
+}
 
 bool
 GenericSave(int file)
@@ -228,11 +364,15 @@ GenericSave(int file)
 	totalSize = buf - work_buff;
 
 	// Save the rest
-	WriteSaveDataBlock(CPools::SavePedPool, "PedPoolSize");
+	if(!WritePoolSaveBlock(file, totalSize, CPools::SavePedPool, "PedPoolSize")) return false;
 	WriteSaveDataBlock(CGarages::Save, "GaragesSize");
 	WriteSaveDataBlock(CGameLogic::Save, "GameLogicSize");
-	WriteSaveDataBlock(CPools::SaveVehiclePool, "VehPoolSize");
-	WriteSaveDataBlock(CPools::SaveObjectPool, "ObjectPoolSize");
+	if(!WritePoolSaveBlock(file, totalSize, CPools::SaveVehiclePool, "VehPoolSize")) return false;
+	// Size the object pool only after removing transient objects: otherwise
+	// its count could change between the sizing pass and serialization.
+	CProjectileInfo::RemoveAllProjectiles();
+	CObject::DeleteAllTempObjects();
+	if(!WritePoolSaveBlock(file, totalSize, CPools::SaveObjectPool, "ObjectPoolSize")) return false;
 	WriteSaveDataBlock(ThePaths.Save, "ThePathsSize");
 	WriteSaveDataBlock(CCranes::Save, "CranesSize");
 	WriteSaveDataBlock(CPickups::Save, "PickUpsSize");
@@ -250,6 +390,11 @@ GenericSave(int file)
 	WriteSaveDataBlock(CSetPieces::Save, "SetPiecesSize");
 	WriteSaveDataBlock(CStreaming::MemoryCardSave, "StreamingSize");
 	WriteSaveDataBlock(CPedType::Save, "PedTypeSize");
+	if(SIZE_OF_ONE_GAME_IN_BYTES - totalSize - 4 <= 4){
+		REVC_LOG_ERROR("No room for a valid padding block in the legacy save format");
+		PcSaveHelper.nErrorCode = SAVESTATUS_ERR_SAVE_WRITE;
+		return false;
+	}
 
 	// sure just write garbage data repeatedly ...
 #ifndef THIS_IS_STUPID
@@ -285,6 +430,7 @@ GenericSave(int file)
 bool
 GenericLoad()
 {
+	REVC_LOG_INFO("Loading saved game from %s", LoadFileName);
 	uint8 *buf;
 	int32 file;
 	uint32 size;
@@ -301,8 +447,12 @@ GenericLoad()
 	CPad::ResetCheats();
 	if (!ReadInSizeofSaveFileBuffer(file, size))
 		return false;
+	if(size < SIZE_OF_SIMPLEVARS || size > sizeof(work_buff) - 3){
+		PcSaveHelper.nErrorCode = SAVESTATUS_ERR_DATA_INVALID;
+		return false;
+	}
 	size = align4bytes(size);
-	ReadDataFromFile(file, work_buff, size);
+	if(!ReadDataFromFile(file, work_buff, size)) return false;
 	buf = (work_buff + 0x40);
 	ReadDataFromBufferPointer(buf, saveSize);
 #ifdef MISSION_REPLAY // a hack to keep compatibility but get new data from save
@@ -368,18 +518,15 @@ GenericLoad()
 	ReadDataFromBlock("Loading Scripts \n", CTheScripts::LoadAllScripts);
 
 	// Load the rest
-	LoadSaveDataBlock();
-	ReadDataFromBlock("Loading PedPool \n", CPools::LoadPedPool);
+	if(!ReadPoolSaveBlock(file, CPools::LoadPedPool, "PedPool")) return false;
 	LoadSaveDataBlock();
 	ReadDataFromBlock("Loading Garages \n", CGarages::Load);
 	LoadSaveDataBlock();
 	ReadDataFromBlock("Loading GameLogic \n", CGameLogic::Load);
-	LoadSaveDataBlock();
-	ReadDataFromBlock("Loading Vehicles \n", CPools::LoadVehiclePool);
-	LoadSaveDataBlock();
+	if(!ReadPoolSaveBlock(file, CPools::LoadVehiclePool, "Vehicles", CheckSavedVehiclePool)) return false;
 	CProjectileInfo::RemoveAllProjectiles();
 	CObject::DeleteAllTempObjects();
-	ReadDataFromBlock("Loading Objects \n", CPools::LoadObjectPool);
+	if(!ReadPoolSaveBlock(file, CPools::LoadObjectPool, "Objects", CheckSavedObjectPool)) return false;
 	LoadSaveDataBlock();
 	ReadDataFromBlock("Loading Paths \n", ThePaths.Load);
 	LoadSaveDataBlock();
@@ -420,10 +567,12 @@ GenericLoad()
 	DMAudio.SetEffectsMasterVolume(FrontEndMenuManager.m_PrefsSfxVolume);
 	if (!CloseFile(file)) {
 		PcSaveHelper.nErrorCode = SAVESTATUS_ERR_LOAD_CLOSE;
+		REVC_LOG_ERROR("Failed to close saved game %s", LoadFileName);
 		return false;
 	}
 
 	DoGameSpecificStuffAfterSucessLoad();
+	REVC_LOG_INFO("Saved game loaded successfully from %s", LoadFileName);
 	debug("Game successfully loaded \n");
 	return true;
 }
@@ -434,11 +583,13 @@ ReadInSizeofSaveFileBuffer(int32 &file, uint32 &size)
 	file = CFileMgr::OpenFile(LoadFileName, "rb");
 	if (file == 0) {
 		PcSaveHelper.nErrorCode = SAVESTATUS_ERR_LOAD_OPEN;
+		REVC_LOG_ERROR("Could not open saved game %s", LoadFileName);
 		return false;
 	}
 	CFileMgr::Read(file, (char*)&size, sizeof(size));
 	if (CFileMgr::GetErrorReadWrite(file)) {
 		PcSaveHelper.nErrorCode = SAVESTATUS_ERR_LOAD_READ;
+		REVC_LOG_ERROR("Could not read saved game header from %s", LoadFileName);
 		if (!CloseFile(file))
 			PcSaveHelper.nErrorCode = SAVESTATUS_ERR_LOAD_CLOSE;
 		return false;
@@ -451,11 +602,13 @@ ReadDataFromFile(int32 file, uint8 *buf, uint32 size)
 {
 	if (file == 0) {
 		PcSaveHelper.nErrorCode = SAVESTATUS_ERR_LOAD_OPEN;
+		REVC_LOG_ERROR("Invalid file handle while loading %s", LoadFileName);
 		return false;
 	}
 	size_t read_size = CFileMgr::Read(file, (char*)buf, size);
 	if (CFileMgr::GetErrorReadWrite(file) || read_size != size) {
 		PcSaveHelper.nErrorCode = SAVESTATUS_ERR_LOAD_READ;
+		REVC_LOG_ERROR("Short read from %s (expected %u bytes, got %zu)", LoadFileName, size, read_size);
 		if (!CloseFile(file))
 			PcSaveHelper.nErrorCode = SAVESTATUS_ERR_LOAD_CLOSE;
 		return false;
@@ -566,25 +719,34 @@ CheckDataNotCorrupt(int32 slot, char *name)
 			CloseFile(file);
 			return false;
 		}
-		if (blocksize > align4bytes(sizeof(work_buff)))
-			blocksize = sizeof(work_buff) - sizeof(uint32);
-		if (!ReadDataFromFile(file, work_buff, align4bytes(blocksize))) {
+		if(blocksize < 0 || (uint64)bytes_processed +
+		   (((uint64)(uint32)blocksize + 3u) & ~uint64(3u)) >
+		   SIZE_OF_ONE_GAME_IN_BYTES - sizeof(CheckSum) + 3u ||
+		   (blocknum == 0 && blocksize < 4 + (int32)sizeof(level))){
 			CloseFile(file);
 			return false;
 		}
-
 		CheckSum += ((uint8*)&blocksize)[0];
 		CheckSum += ((uint8*)&blocksize)[1];
 		CheckSum += ((uint8*)&blocksize)[2];
 		CheckSum += ((uint8*)&blocksize)[3];
-		uint8 *_work_buf = work_buff;
-		for (int i = 0; i < align4bytes(blocksize); i++) {
-			CheckSum += *_work_buf++;
-			bytes_processed++;
+		uint32 remaining = align4bytes(blocksize);
+		bool firstChunk = blocknum == 0;
+		while(remaining){
+			uint32 chunk = Min(remaining, (uint32)sizeof(work_buff));
+			if(!ReadDataFromFile(file, work_buff, chunk)){
+				CloseFile(file);
+				return false;
+			}
+			if(firstChunk){
+				memcpy(&level, work_buff + 4, sizeof(level));
+				firstChunk = false;
+			}
+			for(uint32 i = 0; i < chunk; i++)
+				CheckSum += work_buff[i];
+			remaining -= chunk;
+			bytes_processed += chunk;
 		}
-
-		if (blocknum == 0)
-			memcpy(&level, work_buff+4, sizeof(level));
 		blocknum++;
 	}
 	int32 _checkSum;
