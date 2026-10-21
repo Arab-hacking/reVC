@@ -1230,9 +1230,14 @@ CStreaming::RequestSpecialModel(int32 modelId, const char *modelName, int32 flag
 	uint32 pos, size;
 	int i, n;
 
-	mi = CModelInfo::GetModelInfo(modelId);
+	mi = modelId >= 0 && modelId < MODELINFOSIZE ? CModelInfo::GetModelInfo(modelId) : nil;
+	if(mi == nil || modelName == nil || modelName[0] == '\0'){
+		CUSTOM_LOG("special model: invalid model id=%d or empty name; request ignored\n", modelId);
+		return;
+	}
 	if(strncasecmp("CSPlay", modelName, 6) == 0){
-		char *curname = CModelInfo::GetModelInfo(MI_PLAYER)->GetModelName();
+		CBaseModelInfo *player = CModelInfo::GetModelInfo(MI_PLAYER);
+		const char *curname = player ? player->GetModelName() : "";
 		for(int i = 0; CSnames[i][0]; i++){
 			if(strcasecmp(curname, IGnames[i]) == 0){
 				modelName = CSnames[i];
@@ -1240,11 +1245,49 @@ CStreaming::RequestSpecialModel(int32 modelId, const char *modelName, int32 flag
 			}
 		}
 	}
+	// Reject nonterminated/corrupt names before comparing them or copying
+	// into CBaseModelInfo::m_name. SCM keys are fixed-width, not C strings.
+	size_t nameLen = 0;
+	while(nameLen < MAX_MODEL_NAME && modelName[nameLen]) nameLen++;
+	if(nameLen == MAX_MODEL_NAME){
+		CUSTOM_LOG("special model id=%d: name exceeds %d bytes; request ignored\n",
+			modelId, MAX_MODEL_NAME-1);
+		return;
+	}
 	if(!CGeneral::faststrcmp(mi->GetModelName(), modelName)){
 		// Already have the correct name, just request it
 		RequestModel(modelId, flags);
 		return;
 	}
+
+	// Ordinary IDE DFFs are not kept in ms_pExtraObjectsDir; user IMGs also
+	// omit their orphan DFFs from that directory. Both are valid script
+	// special models, so consult the pre-indexed DIR metadata before changing
+	// the slot name, unloading its old model or deleting referencing peds.
+	bool found = false, archiveOnly = false;
+#ifdef CUSTOM_MODELS
+	found = CCustomModels::FindModelDffInImage(modelName, pos, size);
+#endif
+	if(!found) found = ms_pExtraObjectsDir->FindItem(modelName, pos, size);
+#ifdef CUSTOM_MODELS
+	if(!found) archiveOnly = CCustomModels::HasArchiveModelFile(modelName);
+#endif
+	if(found && (size == 0 || _GET_INDEX(pos) >= CdStreamGetNumImages())){
+		CUSTOM_LOG("special model id=%d name=%s: invalid IMG record index=%u, sectors=%u; keeping old model\n",
+			modelId, modelName, (unsigned)_GET_INDEX(pos), (unsigned)size);
+		return;
+	}
+	if(!found && !archiveOnly){
+		CUSTOM_LOG("special model id=%d name=%s (old=%s): no DFF in mounted IMG or custom/; keeping old model\n",
+			modelId, modelName, mi->GetModelName());
+		return;
+	}
+	if(!found) pos = size = 0; // custom/ archive: GetCdPosnAndSize supplies the synthetic sector
+	CUSTOM_LOG("special model id=%d name=%s (old=%s): source=%s%s%s\n",
+		modelId, modelName, mi->GetModelName(),
+		archiveOnly ? "custom/ archive" : "mounted IMG ",
+		archiveOnly ? "" : CdStreamGetImageName(_GET_INDEX(pos)),
+		found ? "" : " (synthetic stream position)");
 
 	if(mi->GetNumRefs() > 0){
 		n = CPools::GetPedPool()->GetSize()-1;
@@ -1280,8 +1323,6 @@ CStreaming::RequestSpecialModel(int32 modelId, const char *modelName, int32 flag
 	}else
 		RemoveModel(modelId);
 
-	bool found = ms_pExtraObjectsDir->FindItem(modelName, pos, size);
-	assert(found);
 	mi->ClearTexDictionary();
 	if(CTxdStore::FindTxdSlot(modelName) == -1)
 		mi->SetTexDictionary("generic");

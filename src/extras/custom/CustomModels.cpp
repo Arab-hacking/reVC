@@ -779,6 +779,22 @@ CCustomModels::PairedImageTxd(const char *modelName)
 	return IsAutoMountedImage(dffImage) && IsAutoMountedImage(txdImage) ? txdImage : -1;
 }
 
+bool
+CCustomModels::FindModelDffInImage(const char *modelName, uint32 &position, uint32 &sectors)
+{
+	return imageModelTextures.FindDffRecord(modelName, position, sectors);
+}
+
+bool
+CCustomModels::HasArchiveModelFile(const char *modelName)
+{
+	EnsureInitialised();
+	if(modelName == nil) return false;
+	std::string key = ToLower(modelName);
+	return customMods.find(key) != customMods.end() ||
+	       customDff.find(key) != customDff.end();
+}
+
 void
 CCustomModels::MountImages(void)
 {
@@ -2190,10 +2206,22 @@ CCustomModels::ForEachWorldFile(bool ide, WorldFileCallback callback, void *cont
 		callback(key.c_str(), bytes.data(), bytes.size(), context);
 	};
 
-	// Legacy custom files first; the config-selected common files run LAST so
-	// their definitions win by model name, regardless of archive timestamps.
+	// A user may leave the old custom/common.zip alongside its unpacked
+	// common/ replacement. Loading BOTH archives' full maps ignores the new
+	// config.dat selection, reinstates commented-out event IPLs and doubles
+	// much of the world. Keep other loose custom IDE/IPL; archive-only IPLs
+	// remain available via an explicit active_ipl.txt selection.
+	bool unpackedCommon = !commonConfig.ide.empty() && !commonConfig.ipl.empty();
+	unsigned skippedLegacy = 0;
 	for(WorldFiles::const_iterator it = custom.begin(); it != custom.end(); ++it) {
 		if(selected && !active.count(it->first)) continue;
+		const CustomSource &src = it->second;
+		if(unpackedCommon && !selected && src.archive >= 0 &&
+		   src.archive < (int)customArchives.size() &&
+		   ToLower(Stem(customArchives[src.archive]->GetPath())) == "common") {
+			skippedLegacy++;
+			continue;
+		}
 		std::string candidate = it->first.compare(0, 5, "maps/") == 0 ? "data/" + it->first : it->first;
 		WorldFiles::const_iterator priority = common.find(candidate);
 		if(priority != common.end() && (ide ? configured.count(candidate) != 0 :
@@ -2203,6 +2231,9 @@ CCustomModels::ForEachWorldFile(bool ide, WorldFileCallback callback, void *cont
 		}
 		emit(it->first, it->second);
 	}
+	if(skippedLegacy)
+		CUSTOM_LOG("common/: unpacked manifest supersedes %u IDE/IPL path(s) from legacy custom/common.zip%s\n",
+			skippedLegacy, ide ? "" : " (archive-only IPLs require active_ipl.txt)");
 	for(size_t i = 0; i < order.size(); i++) {
 		if(selected && !active.count(order[i])) continue;
 		WorldFiles::const_iterator it = common.find(order[i]);

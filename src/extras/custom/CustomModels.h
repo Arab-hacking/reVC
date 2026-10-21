@@ -44,6 +44,13 @@ public:
 	// same-named TXD both come from auto-mounted IMGs; they may be in different
 	// archives. -1 means use the ordinary IDE TXD. Metadata only, no decoding.
 	static int PairedImageTxd(const char *modelName);
+	// Script special models may request DFFs without an IDE, or DFFs already
+	// bound to another IDE slot. Locate the highest-priority mounted IMG record
+	// by name without reading any model bytes; result is sector position/size.
+	static bool FindModelDffInImage(const char *modelName, uint32 &position, uint32 &sectors);
+	// A loose/ZIP model can be streamed through the synthetic CD position when
+	// no IMG record exists (the ordinary loader still validates the bytes).
+	static bool HasArchiveModelFile(const char *modelName);
 	// Transfer a streamed custom TXD into a bounded GPU-resident LRU on
 	// eviction. Returns false when Streaming must destroy the TXD normally.
 	static bool RetainTxdOnUnload(int32 slot);

@@ -67,8 +67,12 @@ inline void ForEachModelOrTxd(const uint8_t *dir, size_t length, Visit visit) {
             continue;
         bool dff = Extension(dot+1, 3, "DFF");
         bool txd = Extension(dot+1, 3, "TXD");
-        if(dff || txd)
-            visit(std::string((const char *)name, dot-name), txd);
+        // IMG offsets occupy only the low 24 bits of a streaming position.
+        // The mounted user DIR is validated, but stock DIRs also use this
+        // helper and must not provide an out-of-range fallback position.
+        uint32_t offset = U32(record), sectors = U32(record+4);
+        if((dff || txd) && offset < (1u<<24) && sectors <= 32768)
+            visit(std::string((const char *)name, dot-name), txd, offset, sectors);
     }
 }
 
@@ -79,7 +83,8 @@ inline void ForEachModelOrTxd(const uint8_t *dir, size_t length, Visit visit) {
 class PairIndex {
     struct Sources {
         int dff, txd;
-        Sources() : dff(-1), txd(-1) {}
+        uint32_t dffPosition, dffSectors;
+        Sources() : dff(-1), txd(-1), dffPosition(0), dffSectors(0) {}
     };
     std::map<std::string, Sources> sources;
     static std::string Key(const char *name) {
@@ -91,12 +96,28 @@ class PairIndex {
 public:
     void Clear() { sources.clear(); }
     void AddDirectory(int image, const uint8_t *dir, size_t length) {
-        if(image < 0) return;
-        ForEachModelOrTxd(dir, length, [this, image](const std::string &name, bool txd) {
+        if(image < 0 || image >= 256) return;
+        ForEachModelOrTxd(dir, length, [this, image](const std::string &name, bool txd,
+                                                      uint32_t sector, uint32_t sectors) {
             Sources &s = sources[Key(name.c_str())];
-            int &selected = txd ? s.txd : s.dff;
-            if(image > selected) selected = image;
+            if(txd) {
+                if(image > s.txd) s.txd = image;
+            } else if(image > s.dff) {
+                // Within one IMG keep its first DFF, just like native DIR
+                // streaming. A higher image number wins between IMGs.
+                s.dff = image;
+                s.dffPosition = (uint32_t(image)<<24) | sector;
+                s.dffSectors = sectors;
+            }
         });
+    }
+    bool FindDffRecord(const char *model, uint32_t &position, uint32_t &sectors) const {
+        if(model == nullptr) return false;
+        std::map<std::string, Sources>::const_iterator it = sources.find(Key(model));
+        if(it == sources.end() || it->second.dff < 0) return false;
+        position = it->second.dffPosition;
+        sectors = it->second.dffSectors;
+        return true;
     }
     int FindDffImage(const char *model) const {
         if(model == nullptr) return -1;

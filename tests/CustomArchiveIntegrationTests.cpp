@@ -195,6 +195,12 @@ int main() {
     assert(CCustomModels::PairedImageTxd("HoUsE1") == 1); // DFF in IMG 2, TXD in IMG 1
     assert(CCustomModels::PairedImageTxd("R3") == -1); // no matching DFF
     assert(CCustomModels::PairedImageTxd("baseonly") == -1); // paired, but stock IMG
+    uint32 specialPos = 0, specialSize = 0;
+    assert(CCustomModels::FindModelDffInImage("HoUsE1", specialPos, specialSize));
+    assert(specialPos == (2u<<24 | 1u) && specialSize == 2); // no IDE required to find a script DFF
+    assert(CCustomModels::FindModelDffInImage("baseonly", specialPos, specialSize));
+    assert(specialPos == 3 && specialSize == 1); // stock IMG also searchable when bound to an IDE
+    assert(!CCustomModels::FindModelDffInImage("missing", specialPos, specialSize));
     CCustomModels::MountImages(); assert(images.size() == 3); // idempotent
 
     Zip("custom/common.zip", {
@@ -204,7 +210,8 @@ int main() {
         { "maps/Level_Events/test.ipl", Bytes("inst\n1 house1 0 0 0 0 0 0 0 1 -1\nend\n") },
         { "data/maps/Level_Events/alternate.ipl", Bytes("inst\n2 house1 0 1 0 0 0 0 0 1 -1\nend\n") },
         // A different version under the alias must remain selectable/visible.
-        { "maps/Level_Events/alternate.ipl", Bytes("inst\n2 house1 0 2 0 0 0 0 0 1 -1\nend\n") }
+        { "maps/Level_Events/alternate.ipl", Bytes("inst\n2 house1 0 2 0 0 0 0 0 1 -1\nend\n") },
+        { "models/SPECIAL1.dff", Bytes("not a valid DFF - only metadata is indexed") }
     });
     // Identical .cls and .col basenames in different ZIPs; each carries a
     // different internal model name. Both must reach the world loader.
@@ -226,6 +233,8 @@ int main() {
     std::map<std::string, std::string> ide, ipl, cls, col;
     assert(CCustomModels::HasModelFile("house1")); // mounted DFF before Streaming::Init
     assert(CCustomModels::HasModelFile("baseonly")); // usable stock DFF even without its IDE
+    assert(CCustomModels::HasArchiveModelFile("SPECIAL1")); // archive-only special, no IMG DIR
+    assert(!CCustomModels::HasArchiveModelFile("baseonly"));
     CCustomModels::ForEachWorldFile(true, WorldFile, &ide);
     CCustomModels::ForEachWorldFile(false, WorldFile, &ipl);
     CCustomModels::ForEachBrCollision(Ced2, &cls);
@@ -310,9 +319,10 @@ int main() {
     assert(ide.size() == 2 && ide.count("data/maps/ide/test.ide") && ide.count("data/vehicles.ide"));
     assert(ide["data/maps/ide/test.ide"].find("199") != std::string::npos); // common wins path
     assert(!ide.count("maps/ide/test.ide") && !ide.count("data/features/ignored.ide"));
-    assert(ipl.size() == 4 && ipl.count("data/maps/level_events/test.ipl") &&
+    assert(ipl.size() == 2 && ipl.count("data/maps/level_events/test.ipl") &&
            ipl.count("data/maps/level_events/new.ipl") &&
-           !ipl.count("data/maps/level_events/event.ipl"));
+           !ipl.count("data/maps/level_events/event.ipl") &&
+           !ipl.count("maps/level_events/alternate.ipl")); // obsolete common.zip map hidden
     assert(ipl["data/maps/level_events/test.ipl"].find(" 9 0 0") != std::string::npos);
     bool fromCommon = false;
     assert(CCustomModels::ReadDataFile("data/timecyc.json", selected, &fromCommon) && fromCommon);
@@ -324,9 +334,14 @@ int main() {
     ipl.clear();
     CCustomModels::ForEachWorldFile(false, WorldFile, &ipl);
     assert(ipl.size() == 1 && ipl.count("data/maps/level_events/event.ipl"));
+    Write("custom/active_ipl.txt", Bytes("maps/level_events/alternate.ipl\n"));
+    ipl.clear();
+    CCustomModels::ForEachWorldFile(false, WorldFile, &ipl);
+    assert(ipl.size() == 1 && ipl.count("maps/level_events/alternate.ipl"));
     assert(std::remove("custom/active_ipl.txt") == 0);
     CCustomModels::Shutdown();
     assert(CCustomModels::PairedImageTxd("house1") == -1); // no stale IMG map after restart
+    assert(!CCustomModels::FindModelDffInImage("house1", specialPos, specialSize));
     CTxdStore::Shutdown();
     // A common IDE may use a native DFF even with the VC map disabled and
     // no user IMG installed. Indexing native DIR must not depend on img/.
