@@ -80,6 +80,13 @@ int main()
     assert(!graphicsbtx::MaterialCanUseLightmap(2, true, "window_albedo"));
     assert(graphicsbtx::IsMarkedLightmap(graphicsbtx::LightmapMarker));
     assert(!graphicsbtx::IsMarkedLightmap("generic_dual"));
+    // A native IMG TXD with the right named DUAL map is NOT a zip/ map yet.
+    assert(graphicsbtx::NeedsLightmapReplacement(2, true, "roof_lightmap", ""));
+    assert(graphicsbtx::NeedsLightmapReplacement(2, true, "roof_lightmap", "generic_dual"));
+    assert(!graphicsbtx::NeedsLightmapReplacement(2, true, "roof_lightmap",
+                                                  graphicsbtx::LightmapMarker));
+    assert(!graphicsbtx::NeedsLightmapReplacement(1, true, "roof_lightmap", ""));
+    assert(!graphicsbtx::NeedsLightmapReplacement(2, false, "roof_lightmap", ""));
     assert(!graphicsbtx::FullSize(8, 8) && !graphicsbtx::FullSize(16, 8));
     assert(graphicsbtx::FullSize(16, 16) && graphicsbtx::FullSize(2048, 512));
     assert(graphicsbtx::FullSize(4096, 4096) && !graphicsbtx::FullSize(8192, 8192));

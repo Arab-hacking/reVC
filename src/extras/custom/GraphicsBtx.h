@@ -72,6 +72,15 @@ inline bool MaterialCanUseLightmap(unsigned numUVs, bool dual, const std::string
 	return numUVs >= 2 && dual && IsLightmap(name);
 }
 
+// Only the marker on the *actual bound texture* proves that it was already
+// sourced from zip/. A model's TXD plan may exist while the loaded dictionary
+// is still native to an IMG and must be augmented, not skipped.
+inline bool NeedsLightmapReplacement(unsigned numUVs, bool dual, const std::string &name,
+                                     const char *boundMask)
+{
+	return MaterialCanUseLightmap(numUVs, dual, name) && !IsMarkedLightmap(boundMask);
+}
+
 // .tmb ZIPs described in the BR report contain 8x8 preview BTX entries. Do
 // not make them look like high-resolution lightmaps or reflection masks.
 inline bool FullSize(uint32_t w, uint32_t h)

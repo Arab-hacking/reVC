@@ -1836,17 +1836,13 @@ CCustomModels::ApplyGraphicsLightmaps(RpAtomic *atomic, int32 txdSlot)
 		rw::Texture *dual = fx ? fx->getDualTexture() : nil;
 		if(!dual || !dual->name[0]) continue; // dummy RW textures retain a useful name
 		const std::string name = dual->name;
-		if(!graphicsbtx::MaterialCanUseLightmap(geo->numTexCoordSets, true, name)) continue;
+		// A custom model can keep its native IMG TXD. Do not use a model TXD
+		// plan to skip the zip/ map: only the bound texture's marker proves it
+		// was already installed while building a custom TXD.
+		if(!graphicsbtx::NeedsLightmapReplacement(geo->numTexCoordSets, true,
+		                                       name, dual->mask)) continue;
 		const CustomSource *src = GraphicsLightmapSource(name);
 		if(!src) continue;
-		// TXDs for custom .mod/.dff already get their referenced zip/ lightmap
-		// on creation; do not allocate a duplicate GPU raster for that case.
-		const char *txdName = CTxdStore::GetTxdName(txdSlot);
-		std::map<std::string, TxdPlan>::const_iterator plan =
-			customTxdPlans.find(txdName ? ToLower(txdName) : std::string());
-		if(dual->dict == dict && plan != customTxdPlans.end() && plan->second.haveModel &&
-		   std::find(plan->second.names.begin(), plan->second.names.end(), name) != plan->second.names.end())
-			continue;
 		const std::string alias = ZipLightmapName(*src);
 		rw::Texture *texture = dict->find(alias.c_str());
 		if(!texture) {
