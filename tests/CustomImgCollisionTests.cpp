@@ -1,4 +1,5 @@
 #include "../src/extras/custom/CustomImgFormat.h"
+#include "../src/extras/custom/ModelNameIndex.h"
 #include "../src/extras/custom/CustomColFormat.h"
 
 #include <cassert>
@@ -94,6 +95,32 @@ static void TestPairedImageTextures() {
     assert(pairs.FindTxdImage("tower") == -1);
 }
 
+static void TestModelNameIndex() {
+    customimg::ModelNameIndex names(21); // CBaseModelInfo::MAX_MODEL_NAME
+    names.Reserve(32768);
+    names.Add("Landstal", 130);
+    names.Add("LANDSTAL", 15000); // native/lowest ID wins as in GetModelInfo
+    names.Add("", 9);
+    names.Add(nullptr, 10);
+    names.Add("invalid", -3);
+    assert(names.Find("landSTAL") == 130);
+    assert(names.Find("unused") == -1 && names.Find("") == -1);
+    assert(names.Find("invalid") == -1);
+    char unterminated[21];
+    std::memset(unterminated, 'X', sizeof(unterminated));
+    names.Add(unterminated, 42); // do not read beyond CBaseModelInfo::m_name
+    assert(names.Find("xxxxxxxxxxxxxxxxxxxxx") == -1);
+    assert(!customimg::ModelNameIndex::IsASCII("b\xD0\xA1r"));
+    // Exercise the approximate cardinality of the selected real common/ IDE.
+    char model[24];
+    for(int i = 0; i < 27760; i++) {
+        std::snprintf(model, sizeof(model), "common_%05d", i);
+        names.Add(model, 4900+i);
+    }
+    assert(names.Find("COMMON_00000") == 4900);
+    assert(names.Find("common_27759") == 32659);
+}
+
 // A minimal but valid VC COLL with one triangle; the native reader accesses
 // these counts, vertices, face indices and bounds without a length argument.
 static std::vector<uint8_t> Triangle(const char *name) {
@@ -149,6 +176,7 @@ static void TestCol() {
 int main() {
     TestImgDir();
     TestPairedImageTextures();
+    TestModelNameIndex();
     TestCol();
     std::puts("IMG v1 directory and ZIP collision format tests passed");
 }

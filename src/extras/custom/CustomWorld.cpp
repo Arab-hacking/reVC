@@ -132,11 +132,12 @@ bool HasWorldCollisionTarget(const char *name, void *)
 struct IplContext {
     unsigned files, parsed, bad, overlong, placed, duplicates, linkedLod, noModel, noAsset, outside, capacity;
     std::unordered_set<customworld::PlacementKey, customworld::PlacementHash> seen;
+    std::map<std::string, unsigned> unknownNames, missingDffNames;
     IplContext() : files(0), parsed(0), bad(0), overlong(0), placed(0), duplicates(0), linkedLod(0),
                    noModel(0), noAsset(0), outside(0), capacity(0) {}
 };
 
-int FindSlot(const customworld::Instance &inst)
+int FindSlot(const customworld::Instance &inst, bool allowNative = false)
 {
     std::string key = customworld::Lower(inst.name);
     std::map<int, int>::const_iterator id = modelSlots.find(inst.id);
@@ -146,7 +147,16 @@ int FindSlot(const customworld::Instance &inst)
     // A missing IDE id may still be identified by its name; never pass an
     // untranslated BR numeric ID into the native VC model-info array.
     std::map<std::string, int>::const_iterator named = nameSlots.find(key);
-    return named == nameSlots.end() ? -1 : named->second;
+    if(named != nameSlots.end()) return named->second;
+    if(!allowNative) return -1; // don't rewire stock LOD metadata
+    int nativeId = -1;
+    CBaseModelInfo *native = CModelInfo::GetModelInfo(inst.name.c_str(), &nativeId);
+    // An IPL can legitimately name a VC building absent from the selected
+    // common/ IDE. Reuse it only if its model and building handler already
+    // exist; the DFF/stream check in PlaceInstance still applies. Never use
+    // a custom BR slot that was not registered by the selected IDE.
+    return native && nativeId >= 0 && nativeId < FIRST_BR_SLOT && native->IsBuilding() ?
+        nativeId : -1;
 }
 
 void LinkLods(const std::vector<customworld::Instance> &instances, IplContext &ctx)
@@ -171,13 +181,25 @@ void LinkLods(const std::vector<customworld::Instance> &instances, IplContext &c
 
 void PlaceInstance(const customworld::Instance &inst, IplContext &ctx)
 {
-    int slot = FindSlot(inst);
-    if(slot < 0) { ctx.noModel++; return; }
+    int slot = FindSlot(inst, true);
+    if(slot < 0) {
+        ctx.noModel++;
+        ctx.unknownNames[customworld::Lower(inst.name)]++;
+        return;
+    }
 
     CBaseModelInfo *mi = CModelInfo::GetModelInfo(slot);
-    if(!mi || !mi->IsBuilding() || mi->GetColModel() == nil) { ctx.noModel++; return; }
+    if(!mi || !mi->IsBuilding() || mi->GetColModel() == nil) {
+        ctx.noModel++;
+        ctx.unknownNames[customworld::Lower(inst.name)]++;
+        return;
+    }
     if(!CCustomModels::HasModelFile(mi->GetModelName()) &&
-       !CStreaming::ms_aInfoForModel[slot].m_size) { ctx.noAsset++; return; }
+       !CStreaming::ms_aInfoForModel[slot].m_size) {
+        ctx.noAsset++;
+        ctx.missingDffNames[customworld::Lower(inst.name)]++;
+        return;
+    }
     CColModel *col = mi->GetColModel();
     float limit[3];
     for(int k = 0; k < 3; k++) {
@@ -347,6 +369,24 @@ bool CanAddModel(ModelInfoType type)
     case MITYPE_WEAPON: return CModelInfo::CanAddWeaponModel();
     default: return CModelInfo::CanAddSimpleModel();
     }
+}
+
+void LogUnresolved(const char *reason, const std::map<std::string, unsigned> &counts)
+{
+    if(counts.empty()) return;
+    std::vector<std::pair<unsigned, std::string> > names;
+    for(const auto &entry : counts) names.emplace_back(entry.second, entry.first);
+    std::sort(names.begin(), names.end(), [](const std::pair<unsigned, std::string> &a,
+                                              const std::pair<unsigned, std::string> &b) {
+        return a.first != b.first ? a.first > b.first : a.second < b.second;
+    });
+    const size_t shown = std::min(names.size(), size_t(16));
+    for(size_t i = 0; i < shown; i++)
+        CUSTOM_LOG("BR IPL: %s %s: %u placement(s)\n",
+            reason, names[i].second.c_str(), names[i].first);
+    if(names.size() > shown)
+        CUSTOM_LOG("BR IPL: %s: %u more unique name(s), showing the 16 most frequent\n",
+            reason, (unsigned)(names.size() - shown));
 }
 
 } // namespace
@@ -554,6 +594,8 @@ void CCustomWorld::LoadIpl(void)
         ctx.files, ctx.parsed, ctx.placed, ctx.duplicates, ctx.linkedLod, ctx.bad, ctx.overlong,
         ctx.noModel, ctx.noAsset, ctx.outside, ctx.capacity,
         CPools::GetBuildingPool()->GetSize(), CPools::GetPtrNodePool()->GetSize());
+    LogUnresolved("unresolved model", ctx.unknownNames);
+    LogUnresolved("missing DFF", ctx.missingDffNames);
 }
 
 bool CCustomWorld::OwnsModelSlot(int slot)

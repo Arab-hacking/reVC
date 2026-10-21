@@ -32,6 +32,7 @@
 #ifdef CUSTOM_MODELS
 #include "CustomModels.h"
 #include "CustomWorld.h"
+#include "ModelNameIndex.h"
 #endif
 #include "SavehDiag.h"
 #include "Replay.h"
@@ -493,6 +494,16 @@ CStreaming::LoadCdDirectory(const char *dirname, int n)
 #ifdef CUSTOM_MODELS
 	int unknownModels = 0, ignoredTypes = 0, fullTxds = 0;
 	bool modelsOnly = CCustomModels::IsAutoMountedImage(n);
+	// The full common/ IDE can register ~28k models. Repeatedly scanning the
+	// model-info array for each IMG DFF would be quadratic at boot. This
+	// temporary metadata index is rebuilt per directory and freed afterward;
+	// it does not retain models or change any resident-asset cache budget.
+	customimg::ModelNameIndex modelNames(MAX_MODEL_NAME);
+	modelNames.Reserve(MODELINFOSIZE);
+	for(int id = 0; id < MODELINFOSIZE; id++) {
+		CBaseModelInfo *mi = CModelInfo::GetModelInfo(id);
+		if(mi) modelNames.Add(mi->GetModelName(), id);
+	}
 #endif
 	assert(sizeof(direntry) == 32);
 	while(CFileMgr::Read(fd, (char*)&direntry, sizeof(direntry))){
@@ -528,7 +539,16 @@ CStreaming::LoadCdDirectory(const char *dirname, int n)
 		*dot = '\0';
 
 		if(strncasecmp(dot+1, "DFF", 3) == 0){
+#ifdef CUSTOM_MODELS
+			modelId = modelNames.Find(direntry.name);
+			// Preserve the game's case-insensitive behavior for rare non-ASCII
+			// stock names, which the ASCII-only fast index cannot represent.
+			if(modelId == -1 && !customimg::ModelNameIndex::IsASCII(direntry.name))
+				CModelInfo::GetModelInfo(direntry.name, &modelId);
+			if(modelId >= 0){
+#else
 			if(CModelInfo::GetModelInfo(direntry.name, &modelId)){
+#endif
 				bAddToStreaming = true;
 			}else{
 #ifdef CUSTOM_MODELS
