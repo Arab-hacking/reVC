@@ -72,12 +72,14 @@ jobs:
             $nameLen = [Runtime.InteropServices.Marshal]::ReadInt32($symbol, 76)
             $name = [Runtime.InteropServices.Marshal]::PtrToStringAnsi([IntPtr]::Add($symbol, 84), [Math]::Min($nameLen, 1023))
             Write-Output "CRASH RVA 0x7D9CC: $name +0x$('{0:X}' -f $displacement)"
+            Write-Output "::warning title=PC crash 0x7D9CC symbol::$name +0x$('{0:X}' -f $displacement)"
             $line = [CrashSymbols+IMAGEHLP_LINE64]::new()
             $line.SizeOfStruct = [Runtime.InteropServices.Marshal]::SizeOf([type][CrashSymbols+IMAGEHLP_LINE64])
             [uint32]$lineDisp = 0
             if ([CrashSymbols]::SymGetLineFromAddr64($process, $address, [ref]$lineDisp, [ref]$line)) {
               $file = [Runtime.InteropServices.Marshal]::PtrToStringAnsi($line.FileName)
               Write-Output "Source: ${file}:$($line.LineNumber), byte offset $lineDisp"
+              Write-Output "::warning title=PC crash 0x7D9CC source::${file}:$($line.LineNumber), byte offset $lineDisp"
             } else {
               Write-Output "No line information: $([Runtime.InteropServices.Marshal]::GetLastWin32Error())"
             }
