@@ -12,12 +12,12 @@ jobs:
   symbolize:
     runs-on: windows-latest
     steps:
-      - name: Download matching reVC.exe and reVC.pdb from PR merge 7b2eabd
+      - name: Download matching Release reVC.exe and reVC.pdb from PR merge 7b2eabd
         uses: actions/download-artifact@v4
         with:
           run-id: 39483936477
           github-token: ${{ github.token }}
-          name: reVC_Debug_win-amd64-librw_d3d9-oal
+          name: reVC_Release_win-amd64-librw_d3d9-oal
           path: crash-build
       - name: Symbolize exe RVA 0x7D9CC using matching PDB
         shell: pwsh
