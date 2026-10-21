@@ -18,6 +18,7 @@
 #include "CustomColFormat.h"
 #include "CustomModels.h"
 #include "CustomWorldFormat.h"
+#include "ModelNameIndex.h"
 #include "SavehDiag.h"
 #include "ModelInfo.h"
 #include "TimeModelInfo.h"
@@ -133,11 +134,23 @@ struct IplContext {
     unsigned files, parsed, bad, overlong, placed, duplicates, linkedLod, noModel, noAsset, outside, capacity;
     std::unordered_set<customworld::PlacementKey, customworld::PlacementHash> seen;
     std::map<std::string, unsigned> unknownNames, missingDffNames;
+    customimg::ModelNameIndex nativeBuildings;
     IplContext() : files(0), parsed(0), bad(0), overlong(0), placed(0), duplicates(0), linkedLod(0),
-                   noModel(0), noAsset(0), outside(0), capacity(0) {}
+                   noModel(0), noAsset(0), outside(0), capacity(0), nativeBuildings(MAX_MODEL_NAME) {
+        // A partial IMG pack can leave most of the 100k IPL placements without
+        // a new IDE slot. Searching 32k model-info entries for each miss would
+        // be quadratic. Resolve by *name* among already registered VC buildings;
+        // unlike source IPL IDs, these slots can safely reach CFileLoader.
+        nativeBuildings.Reserve(FIRST_BR_SLOT);
+        for(int id = 0; id < FIRST_BR_SLOT; id++) {
+            CBaseModelInfo *mi = CModelInfo::GetModelInfo(id);
+            if(mi && mi->IsBuilding()) nativeBuildings.Add(mi->GetModelName(), id);
+        }
+    }
 };
 
-int FindSlot(const customworld::Instance &inst, bool allowNative = false)
+int FindSlot(const customworld::Instance &inst,
+             const customimg::ModelNameIndex *nativeBuildings = nullptr)
 {
     std::string key = customworld::Lower(inst.name);
     std::map<int, int>::const_iterator id = modelSlots.find(inst.id);
@@ -148,15 +161,11 @@ int FindSlot(const customworld::Instance &inst, bool allowNative = false)
     // untranslated BR numeric ID into the native VC model-info array.
     std::map<std::string, int>::const_iterator named = nameSlots.find(key);
     if(named != nameSlots.end()) return named->second;
-    if(!allowNative) return -1; // don't rewire stock LOD metadata
-    int nativeId = -1;
-    CBaseModelInfo *native = CModelInfo::GetModelInfo(inst.name.c_str(), &nativeId);
     // An IPL can legitimately name a VC building absent from the selected
-    // common/ IDE. Reuse it only if its model and building handler already
-    // exist; the DFF/stream check in PlaceInstance still applies. Never use
-    // a custom BR slot that was not registered by the selected IDE.
-    return native && nativeId >= 0 && nativeId < FIRST_BR_SLOT && native->IsBuilding() ?
-        nativeId : -1;
+    // common/ IDE. Do not rewire its LOD metadata; placements alone may use
+    // the pre-indexed stock building slot. PlaceInstance still checks DFF and
+    // collision. Never use an unregistered custom BR slot or its source ID.
+    return nativeBuildings ? nativeBuildings->Find(inst.name.c_str()) : -1;
 }
 
 void LinkLods(const std::vector<customworld::Instance> &instances, IplContext &ctx)
@@ -181,7 +190,7 @@ void LinkLods(const std::vector<customworld::Instance> &instances, IplContext &c
 
 void PlaceInstance(const customworld::Instance &inst, IplContext &ctx)
 {
-    int slot = FindSlot(inst, true);
+    int slot = FindSlot(inst, &ctx.nativeBuildings);
     if(slot < 0) {
         ctx.noModel++;
         ctx.unknownNames[customworld::Lower(inst.name)]++;
