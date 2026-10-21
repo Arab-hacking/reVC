@@ -1,0 +1,108 @@
+# Temporary diagnostic for a crash in the *exact* PR merge binary that produced
+# the user's debug.log. Remove after resolving the RVA.
+name: Inspect attached PC crash RVA
+on:
+  push:
+    branches: [arena/324a77bb-revc]
+    paths: [.github/workflows/debug-pc-rva.yml]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  symbolize:
+    runs-on: windows-latest
+    steps:
+      - name: Download matching Release reVC.exe and reVC.pdb from PR merge 16a4efe
+        uses: actions/download-artifact@v4
+        with:
+          run-id: 39619341403
+          github-token: ${{ github.token }}
+          name: reVC_Release_win-amd64-librw_d3d9-oal
+          path: crash-build
+      - name: Symbolize exe RVA 0x15053F using matching PDB
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem crash-build -Recurse -File -Filter reVC.exe | Select-Object -First 1 -ExpandProperty FullName
+          $pdb = Get-ChildItem crash-build -Recurse -File -Filter reVC.pdb | Select-Object -First 1 -ExpandProperty FullName
+          if (-not $exe -or -not $pdb) { throw 'Matching EXE/PDB not present in the Release artifact' }
+          Write-Output "::notice title=Crash artifact files::EXE=$((Get-Item $exe).Length) bytes, PDB=$((Get-Item $pdb).Length) bytes"
+          $llvm = Get-Command llvm-symbolizer.exe -ErrorAction SilentlyContinue
+          if (-not $llvm) {
+            $llvm = Get-Item 'C:\Program Files\LLVM\bin\llvm-symbolizer.exe' -ErrorAction SilentlyContinue
+          }
+          if ($llvm) {
+            $llvmResult = (& $llvm --relative-address --functions=linkage --inlines --obj=$exe 0x15053F 2>&1 | Out-String).Trim().Replace("`r", ' ').Replace("`n", ' / ')
+            Write-Output "::warning title=LLVM crash 0x15053F::$llvmResult"
+          } else {
+            Write-Output '::warning title=LLVM unavailable::No llvm-symbolizer.exe on Windows runner'
+          }
+          try {
+            $dia = New-Object -ComObject 'Microsoft.DiaSource'
+            $dia.loadDataFromPdb($pdb)
+            $diaSession = $dia.openSession()
+            $diaSymbol = $diaSession.findSymbolByRVA(0x15053F, 5)
+            Write-Output "::warning title=DIA crash 0x15053F::$($diaSymbol.name)"
+          } catch {
+            Write-Output "::notice title=DIA lookup unavailable::$($_.Exception.Message)"
+          }
+          $code = @'
+          using System;
+          using System.Runtime.InteropServices;
+          public static class CrashSymbols {
+              [DllImport("kernel32.dll")]
+              public static extern IntPtr GetCurrentProcess();
+              [DllImport("dbghelp.dll", EntryPoint="SymSetOptions")]
+              public static extern uint SymSetOptions(uint options);
+              [DllImport("dbghelp.dll", EntryPoint="SymInitializeW", CharSet=CharSet.Unicode, SetLastError=true)]
+              public static extern bool SymInitialize(IntPtr process, string searchPath, bool invade);
+              [DllImport("dbghelp.dll", EntryPoint="SymLoadModuleExW", CharSet=CharSet.Unicode, SetLastError=true)]
+              public static extern ulong SymLoadModuleEx(IntPtr process, IntPtr file, string image, string module, ulong preferredBase, uint size, IntPtr data, uint flags);
+              [DllImport("dbghelp.dll", EntryPoint="SymFromAddr", SetLastError=true)]
+              public static extern bool SymFromAddr(IntPtr process, ulong address, out ulong displacement, IntPtr symbol);
+              [StructLayout(LayoutKind.Sequential)]
+              public struct IMAGEHLP_LINE64 {
+                  public uint SizeOfStruct;
+                  public IntPtr Key;
+                  public uint LineNumber;
+                  public IntPtr FileName;
+                  public ulong Address;
+              }
+              [DllImport("dbghelp.dll", EntryPoint="SymGetLineFromAddr64", SetLastError=true)]
+              public static extern bool SymGetLineFromAddr64(IntPtr process, ulong address, out uint displacement, ref IMAGEHLP_LINE64 line);
+          }
+          '@
+          Add-Type -TypeDefinition $code
+          $process = [CrashSymbols]::GetCurrentProcess()
+          [void][CrashSymbols]::SymSetOptions(0x12) # undecorate C++ names + load PDB lines
+          if (-not [CrashSymbols]::SymInitialize($process, [IO.Path]::GetDirectoryName($pdb), $false)) {
+            throw "SymInitialize: $([Runtime.InteropServices.Marshal]::GetLastWin32Error())"
+          }
+          $base = [CrashSymbols]::SymLoadModuleEx($process, [IntPtr]::Zero, $exe, $null, 0, 0, [IntPtr]::Zero, 0)
+          if ($base -eq 0) { throw "SymLoadModuleEx: $([Runtime.InteropServices.Marshal]::GetLastWin32Error())" }
+          $address = $base + [uint64]0x15053F
+          $symbol = [Runtime.InteropServices.Marshal]::AllocHGlobal(88 + 1024)
+          try {
+            # SYMBOL_INFO with a 1024-byte trailing name buffer (x64 ABI).
+            [Runtime.InteropServices.Marshal]::WriteInt32($symbol, 0, 88)
+            [Runtime.InteropServices.Marshal]::WriteInt32($symbol, 80, 1024)
+            [uint64]$displacement = 0
+            if (-not [CrashSymbols]::SymFromAddr($process, $address, [ref]$displacement, $symbol)) {
+              throw "SymFromAddr: $([Runtime.InteropServices.Marshal]::GetLastWin32Error())"
+            }
+            $nameLen = [Runtime.InteropServices.Marshal]::ReadInt32($symbol, 76)
+            $name = [Runtime.InteropServices.Marshal]::PtrToStringAnsi([IntPtr]::Add($symbol, 84), [Math]::Min($nameLen, 1023))
+            Write-Output "CRASH RVA 0x15053F: $name +0x$('{0:X}' -f $displacement)"
+            Write-Output "::warning title=PC crash 0x15053F symbol::$name +0x$('{0:X}' -f $displacement)"
+            $line = [CrashSymbols+IMAGEHLP_LINE64]::new()
+            $line.SizeOfStruct = [Runtime.InteropServices.Marshal]::SizeOf([type][CrashSymbols+IMAGEHLP_LINE64])
+            [uint32]$lineDisp = 0
+            if ([CrashSymbols]::SymGetLineFromAddr64($process, $address, [ref]$lineDisp, [ref]$line)) {
+              $file = [Runtime.InteropServices.Marshal]::PtrToStringAnsi($line.FileName)
+              Write-Output "Source: ${file}:$($line.LineNumber), byte offset $lineDisp"
+              Write-Output "::warning title=PC crash 0x15053F source::${file}:$($line.LineNumber), byte offset $lineDisp"
+            } else {
+              Write-Output "::notice title=DbgHelp line unavailable::Win32 error $([Runtime.InteropServices.Marshal]::GetLastWin32Error())"
+            }
+          } finally {
+            [Runtime.InteropServices.Marshal]::FreeHGlobal($symbol)
+          }
