@@ -23,6 +23,7 @@
 #include "TempColModels.h"
 #include "WaterLevel.h"
 #include "World.h"
+#include "WorldRecovery.h"
 
 #define OBJECT_REPOSITION_OFFSET_Z 2.0f
 
@@ -1522,20 +1523,25 @@ CWorld::RemoveFallenPeds(void)
 	int poolSize = CPools::GetPedPool()->GetSize();
 	for(int poolIndex = poolSize - 1; poolIndex >= 0; poolIndex--) {
 		CPed *ped = CPools::GetPedPool()->GetSlot(poolIndex);
-		if(ped) {
-			if(ped->GetPosition().z < MAP_Z_LOW_LIMIT) {
-				if(ped->CharCreatedBy != RANDOM_CHAR || ped->IsPlayer()) {
-					int closestNode = ThePaths.FindNodeClosestToCoors(ped->GetPosition(), PATH_PED,
-					                                                  999999.9f, false, false);
-					CVector newPos = ThePaths.m_pathNodes[closestNode].GetPosition();
-					newPos.z += 2.0f;
-					ped->Teleport(newPos);
-					ped->m_vecMoveSpeed = CVector(0.0f, 0.0f, 0.0f);
-				} else {
-					CPopulation::RemovePed(ped);
-				}
-			}
+		if(!ped || ped->GetPosition().z >= MAP_Z_LOW_LIMIT)
+			continue;
+		// A player (or a passenger) must not be teleported away from custom
+		// terrain/their vehicle just because its height is below VC's sea bed.
+		if(ped->IsPlayer() || ped->InVehicle())
+			continue;
+		if(ped->CharCreatedBy == RANDOM_CHAR){
+			CPopulation::RemovePed(ped);
+			continue;
 		}
+		int closestNode = WorldFindNearbyRecoveryNode(ped->GetPosition().x, ped->GetPosition().y,
+			ThePaths.m_pathNodes, ThePaths.m_numCarPathNodes, ThePaths.m_numPathNodes,
+			NUM_PATHNODES, 200.0f);
+		if(closestNode < 0)
+			continue; // no local ped path: leave this mission ped to its owner
+		CVector newPos = ThePaths.m_pathNodes[closestNode].GetPosition();
+		newPos.z += 2.0f;
+		ped->Teleport(newPos);
+		ped->m_vecMoveSpeed = CVector(0.0f, 0.0f, 0.0f);
 	}
 }
 
@@ -1545,22 +1551,26 @@ CWorld::RemoveFallenCars(void)
 	int poolSize = CPools::GetVehiclePool()->GetSize();
 	for(int poolIndex = poolSize - 1; poolIndex >= 0; poolIndex--) {
 		CVehicle *veh = CPools::GetVehiclePool()->GetSlot(poolIndex);
-		if(veh) {
-			if(veh->GetPosition().z < MAP_Z_LOW_LIMIT) {
-				if(veh->VehicleCreatedBy == MISSION_VEHICLE && !veh->bRenderScorched || veh == FindPlayerVehicle() ||
-				   (veh->pDriver && veh->pDriver->IsPlayer())) {
-					int closestNode = ThePaths.FindNodeClosestToCoors(veh->GetPosition(), PATH_CAR,
-					                                                  999999.9f, false, false);
-					CVector newPos = ThePaths.m_pathNodes[closestNode].GetPosition();
-					newPos.z += 3.0f;
-					veh->Teleport(newPos);
-					veh->m_vecMoveSpeed = CVector(0.0f, 0.0f, 0.0f);
-				} else if(veh->VehicleCreatedBy == RANDOM_VEHICLE ||
-				          veh->VehicleCreatedBy == PARKED_VEHICLE) {
-					Remove(veh);
-					delete veh;
-				}
-			}
+		if(!veh || veh->GetPosition().z >= MAP_Z_LOW_LIMIT)
+			continue;
+		// No Z/XY map-edge rescue for a driven vehicle: the server or the
+		// player decides when to respawn it, including on terrain below -100.
+		if(veh == FindPlayerVehicle() || (veh->pDriver && veh->pDriver->IsPlayer()))
+			continue;
+		if(veh->VehicleCreatedBy == MISSION_VEHICLE && !veh->bRenderScorched){
+			int closestNode = WorldFindNearbyRecoveryNode(veh->GetPosition().x, veh->GetPosition().y,
+				ThePaths.m_pathNodes, 0, ThePaths.m_numCarPathNodes,
+				NUM_PATHNODES, 200.0f);
+			if(closestNode < 0)
+				continue; // do not teleport to node zero or across the old map
+			CVector newPos = ThePaths.m_pathNodes[closestNode].GetPosition();
+			newPos.z += 3.0f;
+			veh->Teleport(newPos);
+			veh->m_vecMoveSpeed = CVector(0.0f, 0.0f, 0.0f);
+		} else if(veh->VehicleCreatedBy == RANDOM_VEHICLE ||
+		          veh->VehicleCreatedBy == PARKED_VEHICLE) {
+			Remove(veh);
+			delete veh;
 		}
 	}
 }

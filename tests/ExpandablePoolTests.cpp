@@ -17,6 +17,7 @@ typedef uintptr_t uintptr;
 struct Node { int value; Node *next; };
 struct BasePed { int state; };
 struct PlayerPed : BasePed { int extras[8]; };
+struct SortedItem { int id; float sort; };
 
 int main()
 {
@@ -28,6 +29,27 @@ int main()
     assert(peds.IsAllocated(ped));
     assert(!peds.IsAllocated(&outsider) && !peds.IsAllocated(nullptr));
     assert(!peds.IsAllocated((BasePed*)((char*)ped + 1)));
+    // Ped/car/object slots all cross their original VC capacities; handles
+    // and previously allocated pointers remain usable after multiple blocks.
+    CPool<BasePed, PlayerPed> manyPeds(140, "Peds", 64);
+    CPool<Node> manyVehicles(110, "Vehicles", 64);
+    CPool<Node> manyObjects(460, "Objects", 256);
+    BasePed *firstOnlinePed = manyPeds.New();
+    Node *firstOnlineCar = manyVehicles.New();
+    Node *firstOnlineObject = manyObjects.New();
+    int32 pedHandle = manyPeds.GetIndex(firstOnlinePed);
+    int32 carHandle = manyVehicles.GetIndex(firstOnlineCar);
+    int32 objectHandle = manyObjects.GetIndex(firstOnlineObject);
+    for(int i = 1; i < 600; ++i){
+        BasePed *newPed = manyPeds.New();
+        Node *newVehicle = manyVehicles.New();
+        Node *newObject = manyObjects.New();
+        assert(newPed && newVehicle && newObject);
+        if(!newPed || !newVehicle || !newObject) return 1;
+    }
+    assert(manyPeds.GetAt(pedHandle) == firstOnlinePed && manyPeds.GetSize() >= 600);
+    assert(manyVehicles.GetAt(carHandle) == firstOnlineCar && manyVehicles.GetSize() >= 600);
+    assert(manyObjects.GetAt(objectHandle) == firstOnlineObject && manyObjects.GetSize() >= 600);
     peds.Delete(ped);
     assert(!peds.IsAllocated(ped) && peds.GetSlot(0) == nullptr);
     BasePed *savedPed = peds.New((5 << 8) | 13);
@@ -121,5 +143,32 @@ int main()
     assert(model0->value == 123 && infos.GetItem(2) == model2);
     infos.Clear();
     assert(infos.CanAlloc() && infos.Alloc() == model0);
-    std::puts("stable expandable pool and model-store tests passed");
+
+    // Render work lists grow without moving links already held by the sorted
+    // list; cache users of CLinkList keep the default fixed-size behavior.
+    CLinkList<SortedItem> alpha;
+    alpha.Init(2, 64);
+    SortedItem top = {700, 700.0f};
+    CLink<SortedItem> *firstLink = alpha.InsertSorted(top);
+    for(int i = 699; i >= 0; --i){
+        SortedItem item = {i, float(i)};
+        CLink<SortedItem> *link = alpha.InsertSorted(item);
+        assert(link);
+        if(!link) return 1;
+    }
+    assert(alpha.Count() == 701 && firstLink->item.id == 700);
+    assert(alpha.tail.prev == firstLink && alpha.head.next->item.id == 0);
+    alpha.Remove(firstLink);
+    assert(alpha.Count() == 700);
+    alpha.Clear();
+    assert(alpha.Count() == 0);
+    assert(alpha.Insert(top) && alpha.Count() == 1);
+    alpha.Shutdown();
+
+    CLinkList<SortedItem> fixedCache;
+    fixedCache.Init(1);
+    assert(fixedCache.Insert(top) && !fixedCache.Insert(top));
+    fixedCache.Clear();
+    fixedCache.Shutdown();
+    std::puts("stable expandable pool, render-link and model-store tests passed");
 }

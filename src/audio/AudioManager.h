@@ -6,6 +6,9 @@
 #include "PolRadio.h"
 #include "VehicleModelInfo.h"
 #include "Vehicle.h"
+#ifdef AUDIO_OAL
+#include <vector>
+#endif
 
 class tSound
 {
@@ -240,8 +243,15 @@ public:
 	uint8 m_aRequestedOrderList[NUM_SOUND_QUEUES][NUM_CHANNELS_GENERIC];
 	uint8 m_nRequestedCount[NUM_SOUND_QUEUES];
 	tSound m_asActiveSamples[NUM_CHANNELS_GENERIC];
+#ifdef AUDIO_OAL
+	// Stable integer IDs, no fixed 250-entity ceiling for large ped/car pools.
+	// The legacy MSS layout below stays unchanged for its binary size check.
+	std::vector<tAudioEntity> m_asAudioEntities;
+	std::vector<uint32> m_aAudioEntityOrderList;
+#else
 	tAudioEntity m_asAudioEntities[NUM_AUDIOENTITIES];
 	uint32 m_aAudioEntityOrderList[NUM_AUDIOENTITIES];
+#endif
 	uint32 m_nAudioEntitiesCount;
 #ifdef AUDIO_REFLECTIONS
 	CVector m_avecReflectionsPos[MAX_REFLECTIONS];
@@ -294,6 +304,14 @@ public:
 
 	cAudioManager();
 	~cAudioManager();
+
+	uint32 GetAudioEntityCapacity() const {
+#ifdef AUDIO_OAL
+		return (uint32)m_asAudioEntities.size();
+#else
+		return NUM_AUDIOENTITIES;
+#endif
+	}
 
 	void Initialise();
 	void Terminate();

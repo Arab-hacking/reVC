@@ -30,6 +30,18 @@ add_executable(world_sector_math_tests WorldSectorMathTests.cpp)
 set_target_properties(world_sector_math_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
 add_test(NAME world_sector_math_tests COMMAND world_sector_math_tests)
 
+add_executable(world_recovery_tests WorldRecoveryTests.cpp)
+set_target_properties(world_recovery_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+add_test(NAME world_recovery_tests COMMAND world_recovery_tests)
+
+add_executable(frame_render_list_tests FrameRenderListTests.cpp)
+set_target_properties(frame_render_list_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+add_test(NAME frame_render_list_tests COMMAND frame_render_list_tests)
+
+add_executable(audio_entity_slots_tests AudioEntitySlotsTests.cpp)
+set_target_properties(audio_entity_slots_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+add_test(NAME audio_entity_slots_tests COMMAND audio_entity_slots_tests)
+
 add_executable(save_block_bounds_tests SaveBlockBoundsTests.cpp)
 set_target_properties(save_block_bounds_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
 add_test(NAME save_block_bounds_tests COMMAND save_block_bounds_tests)

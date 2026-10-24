@@ -48,45 +48,24 @@ CPools::Initialise(void)
 {
 	PUSH_MEMID(MEMID_POOLS);
 	CHECKMEM("before pools");
-	// Keep the ordinary VC pool size until an IPL actually needs more. Growing
-	// in separate blocks preserves pointers already stored in world sectors.
-#ifdef CUSTOM_MODELS
+	// Keep VC's initial footprint; every gameplay pool grows in stable blocks
+	// as needed, even in builds without the custom model/asset loader. Pointers
+	// held by world sectors, scripts and live entities must not be relocated.
 	ms_pPtrNodePool = new CCPtrNodePool(NUMPTRNODES, "PtrNode", 65536);
-#else
-	ms_pPtrNodePool = new CCPtrNodePool(NUMPTRNODES, "PtrNode");
-#endif
 	CHECKMEM("after CPtrNodePool");
-#ifdef CUSTOM_MODELS
 	ms_pEntryInfoNodePool = new CEntryInfoNodePool(NUMENTRYINFOS, "EntryInfoNode", 2048);
 	ms_pPedPool = new CPedPool(NUMPEDS, "Peds", 64);
 	ms_pVehiclePool = new CVehiclePool(NUMVEHICLES, "Vehicles", 64);
-#else
-	ms_pEntryInfoNodePool = new CEntryInfoNodePool(NUMENTRYINFOS, "EntryInfoNode");
-	ms_pPedPool = new CPedPool(NUMPEDS, "Peds");
-	ms_pVehiclePool = new CVehiclePool(NUMVEHICLES, "Vehicles");
-#endif
 	CHECKMEM("after CEntryInfoNodePool");
 	CHECKMEM("after CPedPool");
 	CHECKMEM("after CVehiclePool");
-#ifdef CUSTOM_MODELS
 	ms_pBuildingPool = new CBuildingPool(NUMBUILDINGS, "Buildings", 8192);
-#else
-	ms_pBuildingPool = new CBuildingPool(NUMBUILDINGS, "Buildings");
-#endif
 	CHECKMEM("after CBuildingPool");
-#ifdef CUSTOM_MODELS
 	ms_pTreadablePool = new CTreadablePool(NUMTREADABLES, "Treadables", 64);
 	ms_pObjectPool = new CObjectPool(NUMOBJECTS, "Objects", 256);
 	ms_pDummyPool = new CDummyPool(NUMDUMMIES, "Dummys", 512);
 	ms_pAudioScriptObjectPool = new CAudioScriptObjectPool(NUMAUDIOSCRIPTOBJECTS, "AudioScriptObj", 128);
 	ms_pColModelPool = new CColModelPool(NUMCOLMODELS, "ColModel", 4096);
-#else
-	ms_pTreadablePool = new CTreadablePool(NUMTREADABLES, "Treadables");
-	ms_pObjectPool = new CObjectPool(NUMOBJECTS, "Objects");
-	ms_pDummyPool = new CDummyPool(NUMDUMMIES, "Dummys");
-	ms_pAudioScriptObjectPool = new CAudioScriptObjectPool(NUMAUDIOSCRIPTOBJECTS, "AudioScriptObj");
-	ms_pColModelPool = new CColModelPool(NUMCOLMODELS, "ColModel");
-#endif
 	CHECKMEM("after CTreadablePool");
 	CHECKMEM("after CObjectPool");
 	CHECKMEM("after CDummyPool");

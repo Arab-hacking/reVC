@@ -2975,10 +2975,9 @@ CWaterLevel::IsLocationOutOfWorldBounds_WS(CVector const &vecPosn, int nOffset)
 bool
 CWaterLevel::GetGroundLevel_WS(CVector const &vecPosn, float *pfOutLevel, ColData *pData, float fDistance)
 {
-	if ( IsLocationOutOfWorldBounds_WS(vecPosn, 0) )
-		return false;
-	else
-		return GetGroundLevel(vecPosn, pfOutLevel, pData, fDistance);
+	// The 80x80 water/sea-life grid is not a collision-world boundary. A
+	// custom island beyond VC must still be allowed to provide ground here.
+	return GetGroundLevel(vecPosn, pfOutLevel, pData, fDistance);
 }
 
 bool

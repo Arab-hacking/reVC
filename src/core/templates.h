@@ -375,13 +375,39 @@ public:
 template<typename T>
 class CLinkList
 {
+	struct ExtraBlock {
+		CLink<T> *links;
+		ExtraBlock *next;
+	};
+	ExtraBlock *m_extraBlocks;
+	int m_growBy, m_capacity;
+
+	bool Grow(void){
+		// Opt-in only: collision/animation caches retain their fixed budgets.
+		if(m_growBy <= 0 || m_capacity > INT_MAX - m_growBy)
+			return false;
+		ExtraBlock *block = new (std::nothrow) ExtraBlock;
+		if(!block) return false;
+		block->links = new (std::nothrow) CLink<T>[m_growBy];
+		if(!block->links){ delete block; return false; }
+		block->next = m_extraBlocks;
+		m_extraBlocks = block;
+		for(int i = 0; i < m_growBy; i++)
+			freeHead.Insert(&block->links[i]);
+		m_capacity += m_growBy;
+		return true;
+	}
+
 public:
 	CLink<T> head, tail;
 	CLink<T> freeHead, freeTail;
 	CLink<T> *links;
 
-	void Init(int n){
+	void Init(int n, int growBy = 0){
 		links = new CLink<T>[n];
+		m_extraBlocks = nil;
+		m_growBy = growBy;
+		m_capacity = n;
 		head.next = &tail;
 		tail.prev = &head;
 		freeHead.next = &freeTail;
@@ -391,16 +417,23 @@ public:
 	}
 	void Shutdown(void){
 		delete[] links;
+		for(ExtraBlock *block = m_extraBlocks; block;){
+			ExtraBlock *next = block->next;
+			delete[] block->links;
+			delete block;
+			block = next;
+		}
 		links = nil;
+		m_extraBlocks = nil;
+		m_growBy = m_capacity = 0;
 	}
 	void Clear(void){
 		while(head.next != &tail)
 			Remove(head.next);
 	}
 	CLink<T> *Insert(T const &item){
+		if(freeHead.next == &freeTail && !Grow()) return nil;
 		CLink<T> *node = freeHead.next;
-		if(node == &freeTail)
-			return nil;
 		node->item = item;
 		node->Remove();		// remove from free list
 		head.Insert(node);
@@ -411,9 +444,8 @@ public:
 		for(sort = head.next; sort != &tail; sort = sort->next)
 			if(sort->item.sort >= item.sort)
 				break;
+		if(freeHead.next == &freeTail && !Grow()) return nil;
 		CLink<T> *node = freeHead.next;
-		if(node == &freeTail)
-			return nil;
 		node->item = item;
 		node->Remove();		// remove from free list
 		sort->prev->Insert(node);

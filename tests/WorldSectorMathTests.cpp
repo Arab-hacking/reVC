@@ -25,6 +25,14 @@ int main()
     assert(WorldSectorIndex(3999.9f, origin, size) == 159);
     assert(WorldSectorIndex(4000.0f, origin, size) == 160);
     assert(WorldSectorIndex(8450.0f, origin, size) == 249);
-    assert(WorldSectorIndex(1.0e30f, origin, size) == INT_MAX);
-    assert(WorldSectorIndex(-1.0e30f, origin, size) == INT_MIN);
+    // Sectors on either side of both old map edges, including remote maps.
+    assert(WorldSectorIndex(-100000.0f, origin, size) == -1920);
+    assert(WorldSectorIndex(100000.0f, origin, size) == 2080);
+    assert(WorldSectorIndex(500000.0f, origin, size) == 10080);
+    // Radar tiles also use safe floor indexing, but only stock tile IDs 0..7
+    // have native textures; distant tiles are never clamped to an edge TXD.
+    assert(WorldSectorIndex(-2500.0f, -2000.0f, 500.0f) == -1);
+    assert(WorldSectorIndex(2500.0f, -2000.0f, 500.0f) == 9);
+    assert(WorldSectorIndex(1.0e30f, origin, size) == INT_MAX - 1024);
+    assert(WorldSectorIndex(-1.0e30f, origin, size) == INT_MIN + 1024);
 }

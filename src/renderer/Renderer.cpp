@@ -27,6 +27,7 @@
 #include "PointLights.h"
 #include "Occlusion.h"
 #include "Renderer.h"
+#include "FrameRenderList.h"
 #include "custompipes.h"
 #include "Frontend.h"
 
@@ -57,14 +58,14 @@ struct EntityInfo
 CLinkList<EntityInfo> gSortedVehiclesAndPeds;
 
 int32 CRenderer::ms_nNoOfVisibleEntities;
-CEntity *CRenderer::ms_aVisibleEntityPtrs[NUMVISIBLEENTITIES];
-CEntity *CRenderer::ms_aInVisibleEntityPtrs[NUMINVISIBLEENTITIES];
+std::vector<CEntity *> CRenderer::ms_aVisibleEntityPtrs;
+std::vector<CEntity *> CRenderer::ms_aInVisibleEntityPtrs;
 int32 CRenderer::ms_nNoOfInVisibleEntities;
 #ifdef NEW_RENDERER
 int32 CRenderer::ms_nNoOfVisibleVehicles;
-CEntity *CRenderer::ms_aVisibleVehiclePtrs[NUMVISIBLEENTITIES];
+std::vector<CEntity *> CRenderer::ms_aVisibleVehiclePtrs;
 int32 CRenderer::ms_nNoOfVisibleBuildings;
-CEntity *CRenderer::ms_aVisibleBuildingPtrs[NUMVISIBLEENTITIES];
+std::vector<CEntity *> CRenderer::ms_aVisibleBuildingPtrs;
 #endif
 
 CVUVECTOR CRenderer::ms_vecCameraPosition;
@@ -80,7 +81,14 @@ BlockedRange* CRenderer::pEmptyBlockedRanges;
 void
 CRenderer::Init(void)
 {
-	gSortedVehiclesAndPeds.Init(40);
+	// More than 40 visible vehicles/peds can coexist in a modded world.
+	gSortedVehiclesAndPeds.Init(40, 64);
+	ms_aVisibleEntityPtrs.reserve(NUMVISIBLEENTITIES);
+	ms_aInVisibleEntityPtrs.reserve(NUMINVISIBLEENTITIES);
+#ifdef NEW_RENDERER
+	ms_aVisibleVehiclePtrs.reserve(NUMVISIBLEENTITIES);
+	ms_aVisibleBuildingPtrs.reserve(NUMVISIBLEENTITIES);
+#endif
 	SortBIGBuildings();
 }
 
@@ -88,6 +96,12 @@ void
 CRenderer::Shutdown(void)
 {
 	gSortedVehiclesAndPeds.Shutdown();
+	ClearFrameRenderItems(ms_aVisibleEntityPtrs, ms_nNoOfVisibleEntities);
+	ClearFrameRenderItems(ms_aInVisibleEntityPtrs, ms_nNoOfInVisibleEntities);
+#ifdef NEW_RENDERER
+	ClearFrameRenderItems(ms_aVisibleVehiclePtrs, ms_nNoOfVisibleVehicles);
+	ClearFrameRenderItems(ms_aVisibleBuildingPtrs, ms_nNoOfVisibleBuildings);
+#endif
 }
 
 void
@@ -595,10 +609,10 @@ CRenderer::RenderTransparentWater(void)
 void
 CRenderer::ClearForFrame(void)
 {
-	ms_nNoOfVisibleEntities = 0;
-	ms_nNoOfVisibleVehicles = 0;
-	ms_nNoOfVisibleBuildings = 0;
-	ms_nNoOfInVisibleEntities = 0;
+	ClearFrameRenderItems(ms_aVisibleEntityPtrs, ms_nNoOfVisibleEntities);
+	ClearFrameRenderItems(ms_aVisibleVehiclePtrs, ms_nNoOfVisibleVehicles);
+	ClearFrameRenderItems(ms_aVisibleBuildingPtrs, ms_nNoOfVisibleBuildings);
+	ClearFrameRenderItems(ms_aInVisibleEntityPtrs, ms_nNoOfInVisibleEntities);
 	gSortedVehiclesAndPeds.Clear();
 
 	WorldRender::numBlendInsts[PASS_NOZ] = 0;
@@ -969,8 +983,8 @@ CRenderer::ConstructRenderList(void)
 	if(!gbNewRenderer)
 #endif
 {
-	ms_nNoOfVisibleEntities = 0;
-	ms_nNoOfInVisibleEntities = 0;
+	ClearFrameRenderItems(ms_aVisibleEntityPtrs, ms_nNoOfVisibleEntities);
+	ClearFrameRenderItems(ms_aInVisibleEntityPtrs, ms_nNoOfInVisibleEntities);
 }
 	ms_vecCameraPosition = TheCamera.GetPosition();
 
@@ -1284,7 +1298,8 @@ CalcNewDelta(RwV2d *a, RwV2d *b)
 }
 
 // Negative outlying sectors must round down, not toward the native grid.
-#define TOINT(x) ((int)Floor(x))
+// Do not cast an out-of-range float to int when a camera is far from VC.
+#define TOINT(x) WorldSectorIndex((x), 0.0f, 1.0f)
 
 void
 CRenderer::ScanSectorPoly(RwV2d *poly, int32 numVertices, void (*scanfunc)(CPtrList *))
@@ -1300,8 +1315,8 @@ CRenderer::ScanSectorPoly(RwV2d *poly, int32 numVertices, void (*scanfunc)(CPtrL
 	miny = poly[0].y;
 	maxy = poly[0].y;
 	a2 = 0;
-	xstart = 9999;
-	xend = -9999;
+	xstart = INT_MAX;
+	xend = INT_MIN;
 
 	for(i = 1; i < numVertices; i++){
 		if(poly[i].y > maxy)
@@ -1319,7 +1334,7 @@ CRenderer::ScanSectorPoly(RwV2d *poly, int32 numVertices, void (*scanfunc)(CPtrL
 	for(i = 0; i < numVertices; i++){
 		b1 = b2--;
 		if(b2 < 0) b2 = numVertices-1;
-		if(poly[b1].x < xstart)
+		if(TOINT(poly[b1].x) < xstart)
 			xstart = TOINT(poly[b1].x);
 		if(TOINT(poly[b1].y) != TOINT(poly[b2].y))
 			break;
@@ -1440,12 +1455,12 @@ CRenderer::InsertEntityIntoList(CEntity *ent)
 #ifdef NEW_RENDERER
 	// TODO: there are more flags being checked here
 	if(gbNewRenderer && (ent->IsVehicle() || ent->IsPed()))
-		ms_aVisibleVehiclePtrs[ms_nNoOfVisibleVehicles++] = ent;
+		AppendFrameRenderItem(ms_aVisibleVehiclePtrs, ms_nNoOfVisibleVehicles, ent);
 	else if(gbNewRenderer && ent->IsBuilding())
-		ms_aVisibleBuildingPtrs[ms_nNoOfVisibleBuildings++] = ent;
+		AppendFrameRenderItem(ms_aVisibleBuildingPtrs, ms_nNoOfVisibleBuildings, ent);
 	else
 #endif
-		ms_aVisibleEntityPtrs[ms_nNoOfVisibleEntities++] = ent;
+		AppendFrameRenderItem(ms_aVisibleEntityPtrs, ms_nNoOfVisibleEntities, ent);
 }
 
 void
@@ -1506,10 +1521,8 @@ CRenderer::ScanSectorList(CPtrList *lists)
 				ent->bOffscreen = true;
 				dx = ms_vecCameraPosition.x - ent->GetPosition().x;
 				dy = ms_vecCameraPosition.y - ent->GetPosition().y;
-				if(dx > -30.0f && dx < 30.0f &&
-				   dy > -30.0f && dy < 30.0f &&
-				   ms_nNoOfInVisibleEntities < NUMINVISIBLEENTITIES - 1)
-					ms_aInVisibleEntityPtrs[ms_nNoOfInVisibleEntities++] = ent;
+				if(dx > -30.0f && dx < 30.0f && dy > -30.0f && dy < 30.0f)
+					AppendFrameRenderItem(ms_aInVisibleEntityPtrs, ms_nNoOfInVisibleEntities, ent);
 				break;
 			case VIS_STREAMME:
 				if(!CStreaming::ms_disableStreaming)
@@ -1551,10 +1564,8 @@ CRenderer::ScanSectorList_Priority(CPtrList *lists)
 				ent->bOffscreen = true;
 				dx = ms_vecCameraPosition.x - ent->GetPosition().x;
 				dy = ms_vecCameraPosition.y - ent->GetPosition().y;
-				if(dx > -30.0f && dx < 30.0f &&
-				   dy > -30.0f && dy < 30.0f &&
-				   ms_nNoOfInVisibleEntities < NUMINVISIBLEENTITIES - 1)
-					ms_aInVisibleEntityPtrs[ms_nNoOfInVisibleEntities++] = ent;
+				if(dx > -30.0f && dx < 30.0f && dy > -30.0f && dy < 30.0f)
+					AppendFrameRenderItem(ms_aInVisibleEntityPtrs, ms_nNoOfInVisibleEntities, ent);
 				break;
 			case VIS_STREAMME:
 				if(!CStreaming::ms_disableStreaming){
@@ -1594,10 +1605,8 @@ CRenderer::ScanSectorList_Subway(CPtrList *lists)
 				ent->bOffscreen = true;
 				dx = ms_vecCameraPosition.x - ent->GetPosition().x;
 				dy = ms_vecCameraPosition.y - ent->GetPosition().y;
-				if(dx > -30.0f && dx < 30.0f &&
-				   dy > -30.0f && dy < 30.0f &&
-				   ms_nNoOfInVisibleEntities < NUMINVISIBLEENTITIES - 1)
-					ms_aInVisibleEntityPtrs[ms_nNoOfInVisibleEntities++] = ent;
+				if(dx > -30.0f && dx < 30.0f && dy > -30.0f && dy < 30.0f)
+					AppendFrameRenderItem(ms_aInVisibleEntityPtrs, ms_nNoOfInVisibleEntities, ent);
 				break;
 			}
 		}

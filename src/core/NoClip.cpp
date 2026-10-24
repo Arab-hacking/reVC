@@ -146,7 +146,7 @@ CNoClip::Move(void)
 	// RemoveAndAdd uses sparse sectors beyond the original island grid.
 	pos.x += direction.x*speed*seconds;
 	pos.y += direction.y*speed*seconds;
-	pos.z = NoClipClamp(pos.z + direction.z*speed*seconds, MAP_Z_LOW_LIMIT + 10.0f, 2000.0f);
+	pos.z += direction.z*speed*seconds; // F10 must not impose a second height boundary
 
 	// Teleport() on vehicles resets their orientation; reposition the physical
 	// entity directly and update sector membership without pinning any RW object.
