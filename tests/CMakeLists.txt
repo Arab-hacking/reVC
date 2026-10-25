@@ -34,6 +34,10 @@ add_executable(world_recovery_tests WorldRecoveryTests.cpp)
 set_target_properties(world_recovery_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
 add_test(NAME world_recovery_tests COMMAND world_recovery_tests)
 
+add_executable(bullet_travel_tests BulletTravelTests.cpp)
+set_target_properties(bullet_travel_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+add_test(NAME bullet_travel_tests COMMAND bullet_travel_tests)
+
 add_executable(frame_render_list_tests FrameRenderListTests.cpp)
 set_target_properties(frame_render_list_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
 add_test(NAME frame_render_list_tests COMMAND frame_render_list_tests)

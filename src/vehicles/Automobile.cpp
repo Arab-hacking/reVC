@@ -1669,41 +1669,6 @@ CAutomobile::ProcessControl(void)
 		CCarCtrl::ScanForPedDanger(this);
 
 
-	// Turn around at the edge of the world
-	// TODO: make the numbers defines
-
-	float heading;
-	if(GetPosition().x > 1950.0f-400.0f){
-		if(m_vecMoveSpeed.x > 0.0f)
-			m_vecMoveSpeed.x *= -1.0f;
-		heading = GetForward().Heading();
-		if(heading > 0.0f)	// going west
-			SetHeading(-heading);
-	}else if(GetPosition().x < -1950.0f-400.0f){
-		if(m_vecMoveSpeed.x < 0.0f)
-			m_vecMoveSpeed.x *= -1.0f;
-		heading = GetForward().Heading();
-		if(heading < 0.0f)	// going east
-			SetHeading(-heading);
-	}
-	if(GetPosition().y > 1950.0f){
-		if(m_vecMoveSpeed.y > 0.0f)
-			m_vecMoveSpeed.y *= -1.0f;
-		heading = GetForward().Heading();
-		if(heading < HALFPI && heading > 0.0f)
-			SetHeading(PI-heading);
-		else if(heading > -HALFPI && heading < 0.0f)
-			SetHeading(-PI-heading);
-	}else if(GetPosition().y < -1950.0f){
-		if(m_vecMoveSpeed.y < 0.0f)
-			m_vecMoveSpeed.y *= -1.0f;
-		heading = GetForward().Heading();
-		if(heading > HALFPI)
-			SetHeading(PI-heading);
-		else if(heading < -HALFPI)
-			SetHeading(-PI-heading);
-	}
-
 	if(bInfiniteMass){
 		m_vecMoveSpeed = CVector(0.0f, 0.0f, 0.0f);
 		m_vecTurnSpeed = CVector(0.0f, 0.0f, 0.0f);
