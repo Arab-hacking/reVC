@@ -25,25 +25,80 @@ static void TestImgDir() {
     std::vector<uint8_t> dir(3*32, 0);
     Entry(dir, 0, "XmasBox1.DFF", 1, 2);
     Entry(dir, 1, "R3.TXD", 3, 1);
-    Entry(dir, 2, "collision.COL", 4, 65000); // ignored even when not in IMG
+    Entry(dir, 2, "collision.COL", 4, 1); // checked and handled outside native streaming
     customimg::Stats st;
     std::string why;
-    assert(customimg::Validate(dir.data(), dir.size(), 4*2048, st, why));
-    assert(st.dff == 1 && st.txd == 1 && st.ignored == 1 && st.largestSectors == 2);
-    assert(!customimg::Validate(dir.data(), dir.size()-1, 4*2048, st, why));
+    assert(customimg::Validate(dir.data(), dir.size(), 5*2048, st, why));
+    assert(st.dff == 1 && st.txd == 1 && st.col == 1 && st.cls == 0 &&
+           st.ignored == 0 && st.largestSectors == 2);
+    std::vector<std::string> colEntries;
+    customimg::ForEachCollisionEntry(dir.data(), dir.size(), 5*2048,
+        [&colEntries](const std::string &name, bool cls, uint32_t sector, uint32_t sectors) {
+            assert(!cls && sector == 4 && sectors == 1);
+            colEntries.push_back(name);
+        });
+    assert(colEntries.size() == 1 && colEntries[0] == "collision");
+    W32(dir, 2*32, 0x1000000); // broken COL cannot block good DFF/TXD
+    assert(customimg::Validate(dir.data(), dir.size(), 5*2048, st, why));
+    assert(st.col == 0 && st.badCollision == 1);
+    colEntries.clear();
+    customimg::ForEachCollisionEntry(dir.data(), dir.size(), 5*2048,
+        [&colEntries](const std::string &name, bool, uint32_t, uint32_t) {
+            colEntries.push_back(name);
+        });
+    assert(colEntries.empty());
+    W32(dir, 2*32, 4);
+    assert(!customimg::Validate(dir.data(), dir.size()-1, 5*2048, st, why));
     W32(dir, 0, 0x1000000); // IMG index byte must not leak into sector offset
-    assert(!customimg::Validate(dir.data(), dir.size(), 4*2048, st, why));
+    assert(!customimg::Validate(dir.data(), dir.size(), 5*2048, st, why));
     W32(dir, 0, 1); W32(dir, 4, 32769); // no unbounded streaming buffer
-    assert(!customimg::Validate(dir.data(), dir.size(), 4*2048, st, why));
-    W32(dir, 4, 2); W32(dir, 0, 3); // exceeds IMG length
-    assert(!customimg::Validate(dir.data(), dir.size(), 4*2048, st, why));
+    assert(!customimg::Validate(dir.data(), dir.size(), 5*2048, st, why));
+    W32(dir, 4, 2); W32(dir, 0, 4); // exceeds IMG length
+    assert(!customimg::Validate(dir.data(), dir.size(), 5*2048, st, why));
     W32(dir, 0, 1);
-    assert(customimg::Validate(dir.data(), dir.size(), 4*2048, st, why));
+    assert(customimg::Validate(dir.data(), dir.size(), 5*2048, st, why));
     assert(((uint32_t)255 << 24 | customimg::U32(dir.data())) >> 24 == 255);
     std::memset(dir.data()+8, 0, 24);
     std::memcpy(dir.data()+8, "01234567890123456789.DFF", 24); // no space for NUL
-    assert(customimg::Validate(dir.data(), dir.size(), 4*2048, st, why));
-    assert(st.dff == 0 && st.txd == 1 && st.ignored == 2);
+    assert(customimg::Validate(dir.data(), dir.size(), 5*2048, st, why));
+    assert(st.dff == 0 && st.txd == 1 && st.col == 1 && st.ignored == 1);
+
+    // An IMG containing ONLY collision files must mount, including CLS.
+    std::vector<uint8_t> onlyCol(2*32, 0);
+    Entry(onlyCol, 0, "bridge.COL", 1, 1);
+    Entry(onlyCol, 1, "world.CLS", 2, 1);
+    assert(customimg::Validate(onlyCol.data(), onlyCol.size(), 3*2048, st, why));
+    assert(st.dff == 0 && st.txd == 0 && st.col == 1 && st.cls == 1);
+    int visited = 0;
+    customimg::ForEachCollisionEntry(onlyCol.data(), onlyCol.size(), 3*2048,
+        [&visited](const std::string &name, bool cls, uint32_t, uint32_t) {
+            assert((name == "bridge" && !cls) || (name == "world" && cls));
+            visited++;
+        });
+    assert(visited == 2);
+    W32(onlyCol, 0, 0x1000000); // one invalid COL does not hide a valid CLS
+    assert(customimg::Validate(onlyCol.data(), onlyCol.size(), 3*2048, st, why));
+    assert(st.col == 0 && st.cls == 1 && st.badCollision == 1);
+    W32(onlyCol, 0, 1); W32(onlyCol, 4, 0);
+    assert(customimg::Validate(onlyCol.data(), onlyCol.size(), 3*2048, st, why));
+    assert(st.badCollision == 1);
+    W32(onlyCol, 4, 32769);
+    assert(customimg::Validate(onlyCol.data(), onlyCol.size(), 3*2048, st, why));
+    W32(onlyCol, 4, 1);
+    W32(onlyCol, 1*32, 0x1000000); // neither COL nor CLS remains usable
+    W32(onlyCol, 0, 0x1000000);
+    assert(!customimg::Validate(onlyCol.data(), onlyCol.size(), 3*2048, st, why));
+    W32(onlyCol, 0, 1); W32(onlyCol, 1*32, 2);
+    // Validate sector arithmetic beyond 2 GiB without allocating an IMG.
+    W32(onlyCol, 0, 0x110000);
+    uint64_t bigImg = (uint64_t)(0x110000+1)*2048;
+    assert(customimg::Validate(onlyCol.data(), onlyCol.size(), bigImg, st, why));
+    visited = 0;
+    customimg::ForEachCollisionEntry(onlyCol.data(), onlyCol.size(), bigImg,
+        [&visited](const std::string &, bool, uint32_t sector, uint32_t) {
+            if(sector == 0x110000) visited++;
+        });
+    assert(visited == 1);
 
     std::vector<uint8_t> native(5*32+13, 0);
     Entry(native, 0, "R3.TXD", 1, 1);
@@ -158,7 +213,7 @@ static void TestCol() {
     assert(customcolformat::Index(file.data(), file.size(), blocks) == 0);
     assert(blocks.size() == 2 && blocks[0].name == "house1" && blocks[1].name == "house2");
     assert(customcolformat::ValidVC(file.data()+blocks[1].offset, blocks[1].size));
-    // Two ZIP entries with the SAME filename may contain distinct models.
+    // Two IMG entries with the SAME filename may contain distinct models.
     std::vector<customcolformat::Block> others;
     assert(customcolformat::Index(b.data(), b.size(), others) == 0);
     std::map<std::string, std::pair<int, size_t> > index;
@@ -189,5 +244,5 @@ int main() {
     TestPairedImageTextures();
     TestModelNameIndex();
     TestCol();
-    std::puts("IMG v1 directory and ZIP collision format tests passed");
+    std::puts("IMG v1 directory and collision format tests passed");
 }

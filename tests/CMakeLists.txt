@@ -203,7 +203,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Cla
     set_target_properties(directory_growth_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
     add_test(NAME directory_growth_tests COMMAND directory_growth_tests)
 
-    # Link the real IMG/loose scanner and collision converters; do not link
+    # Link the real IMG/DIR collision scanner and converters; do not link
     # the ZIP reader into the runtime integration test.
     add_executable(custom_archive_integration_tests
         CustomArchiveIntegrationTests.cpp

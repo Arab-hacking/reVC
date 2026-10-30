@@ -14,9 +14,10 @@
 namespace customimg {
 
 struct Stats {
-    size_t dff, txd, ignored;
+    size_t dff, txd, col, cls, ignored, badCollision;
     uint32_t largestSectors;
-    Stats() : dff(0), txd(0), ignored(0), largestSectors(0) {}
+    Stats() : dff(0), txd(0), col(0), cls(0), ignored(0),
+              badCollision(0), largestSectors(0) {}
 };
 
 inline uint32_t U32(const uint8_t *p) {
@@ -137,6 +138,9 @@ public:
     }
 };
 
+// Collision-only IMG v1 pairs are valid too. COL/CLS records are checked with
+// the same bounds as models; their payloads are converted separately into VC
+// COLL and must never be passed to the stock COL slot streamer as SA bytes.
 inline bool Validate(const uint8_t *dir, size_t length, uint64_t imageBytes,
                      Stats &stats, std::string &error) {
     stats = Stats();
@@ -148,28 +152,61 @@ inline bool Validate(const uint8_t *dir, size_t length, uint64_t imageBytes,
     for(size_t pos = 0; pos < length; pos += 32) {
         const uint8_t *record = dir + pos;
         // The native reader terminates name[23] and accepts names of up to
-        // 20 bytes before the dot. Don't register entries it cannot name.
-        const uint8_t *dot = (const uint8_t *)std::memchr(record+8, '.', 24);
-        if(!dot || dot-record-8 > 19 || dot[4] != 0) {
+        // 19 bytes before the dot. Don't register entries it cannot name.
+        const uint8_t *name = record+8;
+        const uint8_t *dot = (const uint8_t *)std::memchr(name, '.', 24);
+        if(!dot || dot == name || dot-name > 19 || dot[4] != 0 ||
+           std::memchr(name, 0, dot-name)) {
             stats.ignored++; continue;
         }
-        if(!Extension(dot+1, 3, "DFF") && !Extension(dot+1, 3, "TXD")) {
-            stats.ignored++; continue; // collision and animation are not in these IMGs
+        bool dff = Extension(dot+1, 3, "DFF"), txd = Extension(dot+1, 3, "TXD");
+        bool col = Extension(dot+1, 3, "COL"), cls = Extension(dot+1, 3, "CLS");
+        if(!dff && !txd && !col && !cls) {
+            stats.ignored++; continue; // IFP/MOD/BTX are not IMG resources
         }
         uint32_t offset = U32(record), sectors = U32(record+4);
         if(offset >= (1u<<24) || !sectors || sectors > 32768 ||
            (uint64_t)offset*2048 + (uint64_t)sectors*2048 > imageBytes) {
+            // A malformed collision entry must not hide usable DFF/TXD or
+            // other COL/CLS entries in the same IMG. Reject the whole image
+            // only for malformed native-streamed DFF/TXD records.
+            if(col || cls) { stats.badCollision++; continue; }
             error = "DIR sector offset/length outside IMG or streaming limit";
             return false;
         }
         if(sectors > stats.largestSectors) stats.largestSectors = sectors;
-        if(Extension(dot+1, 3, "DFF")) stats.dff++;
-        else stats.txd++;
+        if(dff) stats.dff++;
+        else if(txd) stats.txd++;
+        else if(col) stats.col++;
+        else stats.cls++;
     }
-    if(!stats.dff && !stats.txd) {
-        error = "no DFF/TXD records in VC .dir"; return false;
+    if(!stats.dff && !stats.txd && !stats.col && !stats.cls) {
+        error = "no DFF/TXD/COL/CLS records in VC .dir"; return false;
     }
     return true;
+}
+
+// Enumerate sector slices, not filenames on the host filesystem. This helper
+// rechecks the DIR record even after Validate so it is safe with untrusted or
+// subsequently changed metadata. IMG order determines collision precedence.
+template <class Visit>
+inline void ForEachCollisionEntry(const uint8_t *dir, size_t length,
+                                  uint64_t imageBytes, Visit visit) {
+    if(!dir || length % 32) return;
+    for(size_t pos = 0; length-pos >= 32; pos += 32) {
+        const uint8_t *record = dir+pos;
+        const uint8_t *name = record+8;
+        const uint8_t *dot = (const uint8_t *)std::memchr(name, '.', 24);
+        if(!dot || dot == name || dot-name > 19 || dot[4] != 0 ||
+           std::memchr(name, 0, dot-name)) continue;
+        bool col = Extension(dot+1, 3, "COL"), cls = Extension(dot+1, 3, "CLS");
+        if(!col && !cls) continue;
+        uint32_t sector = U32(record), sectors = U32(record+4);
+        uint64_t start = (uint64_t)sector*2048, bytes = (uint64_t)sectors*2048;
+        if(sector >= (1u<<24) || !sectors || sectors > 32768 ||
+           start > imageBytes || bytes > imageBytes-start) continue;
+        visit(std::string((const char *)name, dot-name), cls, sector, sectors);
+    }
 }
 
 } // namespace customimg

@@ -3,8 +3,7 @@
 
 // Runtime loader for explicitly placed custom resources:
 //   custom/anim/*.ifp                  animation banks
-//   custom/img/*.{img,dir}             VC IMG v1 models and texture dictionaries
-//   custom/collision/*.{col,cls}       collision containers
+//   custom/img/*.{img,dir}             VC IMG v1 with DFF/TXD/COL/CLS entries
 //   custom/data/maps/*.{ide,ipl}       world definitions and placements
 // Legacy ZIPs, game-root img/ and game-root common/ are not custom sources.
 // The native VC game archives remain available to the normal streamer.
@@ -19,8 +18,9 @@ public:
 	static void Initialise(void);
 	static void Shutdown(void);
 	// Mount every VC IMG v1 (.img + sibling .dir) under custom/img/
-	// before Streaming::Init indexes filenames. Models and TXDs in
-	// these images use the native streamer; .col/.ifp entries are ignored.
+	// before Streaming::Init indexes filenames. DFF/TXD use the native
+	// streamer; COL/CLS are validated and converted to VC COLL separately.
+	// IFP entries inside IMG are ignored.
 	static void ResetImageMounts(void);
 	static void MountImages(void);
 	static bool IsAutoMountedImage(int index);
@@ -60,7 +60,7 @@ public:
 	// when CanServe said yes for the same id.
 	static bool Load(int32 streamId);
 
-	// Per-model collision block from custom/collision/ (false when absent).
+	// Per-model collision block from user IMG COL/CLS (false when absent).
 	static bool GetCollisionBlock(const char *modelname, std::vector<uint8> &out);
 
 	// Serve an .ifp from custom/anim/; VC banks still use native assets.
@@ -74,11 +74,11 @@ public:
 	static bool HasModelFile(const char *name);
 	static void ForEachWorldFile(bool ide, WorldFileCallback callback, void *context);
 
-	// Per-model CED2 collision blocks inside loose .cls containers.
+	// Per-model CED2 collision blocks from .cls entries in user IMGs.
 	typedef void (*CollisionCallback)(const char *model, const unsigned char *block,
 	                                  size_t size, void *context);
 	static void ForEachBrCollision(CollisionCallback callback, void *context);
-	// Per-model blocks from custom/collision/ .col and .cls files.
+	// Per-model blocks from user IMG .col and legacy .cls entries.
 	// Callback bytes are complete, validated VC COLL blocks.
 	typedef bool (*CollisionFilter)(const char *model, void *context);
 	static void ForEachGameCollision(CollisionCallback callback, void *context,

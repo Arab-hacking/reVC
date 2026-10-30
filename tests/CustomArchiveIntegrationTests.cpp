@@ -1,5 +1,5 @@
-// Exercise the REAL custom folder scanner, IMG mounting and loose collision
-// enumeration. Valid ZIPs and legacy paths are NEGATIVE fixtures. Standalone test:
+// Exercise the REAL custom folder scanner, IMG mounting and collision record
+// conversion. Valid ZIPs and loose collision/legacy paths are NEGATIVE fixtures. Standalone test:
 // unused game/RenderWare sections are garbage-collected at link time.
 #include "common.h"
 #include "CustomModels.h"
@@ -30,6 +30,14 @@ extern "C" char *CdStreamGetImageName(int cd) { return &images.at(cd)[0]; }
 char *CColStore::GetColName(int32 slot) {
     static char world[] = "world";
     return slot == 0 ? world : nullptr;
+}
+bool CColStore::LoadCol(int32 slot, uint8 *bytes, int32 size) {
+    assert(slot == 0 && bytes && size > 0);
+    std::vector<customcolformat::Block> blocks;
+    assert(customcolformat::Index(bytes, size, blocks) == 0 && !blocks.empty());
+    for(const auto &block : blocks)
+        assert(block.vc && customcolformat::ValidVC(bytes+block.offset, block.size));
+    return true;
 }
 void DebugLogPrintf(const char *, ...) {}
 void re3_log(const char *, const char *, unsigned int, const char *, const char *, ...) {}
@@ -72,6 +80,24 @@ static void Write(const char *path, const std::vector<uint8> &bytes) {
     FILE *f = std::fopen(path, "wb");
     assert(f && std::fwrite(bytes.data(), 1, bytes.size(), f) == bytes.size());
     std::fclose(f);
+}
+
+struct ImgFile { const char *name; std::vector<uint8> contents; };
+static void ImagePair(const std::string &base, const std::vector<ImgFile> &files) {
+    std::vector<uint8> img(2048, 0), dir(files.size()*32, 0);
+    for(size_t i = 0; i < files.size(); i++) {
+        assert(std::strlen(files[i].name) <= 23 && !files[i].contents.empty());
+        assert(files[i].contents.size() <= 32768u*2048u);
+        size_t sector = img.size()/2048;
+        size_t sectors = (files[i].contents.size()+2047)/2048;
+        W32(dir, i*32, (uint32)sector);
+        W32(dir, i*32+4, (uint32)sectors);
+        std::memcpy(dir.data()+i*32+8, files[i].name, std::strlen(files[i].name));
+        img.insert(img.end(), files[i].contents.begin(), files[i].contents.end());
+        img.resize((sector+sectors)*2048, 0);
+    }
+    Write((base+".img").c_str(), img);
+    Write((base+".dir").c_str(), dir);
 }
 
 // 92-byte VC COLL bounding box with no geometry. Its name is INTERNAL to a
@@ -203,13 +229,19 @@ int main() {
     MkDir("models"); MkDir("img"); MkDir("common"); MkDir("common/data");
     MkDir("common/data/maps"); MkDir("zip");
 
-    std::vector<uint8> img(4*2048, 0), dirBytes(3*32, 0);
+    std::vector<uint8> img(5*2048, 0), dirBytes(5*32, 0);
     W32(dirBytes, 0, 1); W32(dirBytes, 4, 2);
     std::memcpy(dirBytes.data()+8, "house1.dff", 11);
     W32(dirBytes, 32, 3); W32(dirBytes, 36, 1);
     std::memcpy(dirBytes.data()+40, "R3.txd", 7); // named IDE TXD
-    W32(dirBytes, 64, 99); W32(dirBytes, 68, 9000);
-    std::memcpy(dirBytes.data()+72, "world.col", 10); // never index collision inside IMG
+    W32(dirBytes, 64, 4); W32(dirBytes, 68, 1);
+    std::memcpy(dirBytes.data()+72, "house5.col", 11); // COL in a mixed model/texture IMG
+    std::vector<uint8> mixedCol = Col("house5");
+    std::copy(mixedCol.begin(), mixedCol.end(), img.begin()+4*2048);
+    W32(dirBytes, 96, 99); W32(dirBytes, 100, 9000);
+    std::memcpy(dirBytes.data()+104, "unused.ifp", 11); // not an IMG resource
+    W32(dirBytes, 128, 0x1000000); W32(dirBytes, 132, 1);
+    std::memcpy(dirBytes.data()+136, "broken.col", 11); // skip, keep DFF/TXD
     Write("custom/img/map.img", img); Write("custom/img/map.dir", dirBytes);
     std::vector<uint8> extraDir(32, 0);
     W32(extraDir, 0, 1); W32(extraDir, 4, 1);
@@ -248,17 +280,29 @@ int main() {
 
     std::vector<uint8> twoBlocks = Col("house3");
     std::vector<uint8> override = Col("house1");
-    WF(override, 32, 3); // .col wins over the same model's .cls
+    WF(override, 32, 3); // IMG .col wins over the same model's .cls
     twoBlocks.insert(twoBlocks.end(), override.begin(), override.end());
-    Write("custom/collision/part.cls", Cls("house1"));
-    Write("custom/collision/nested/part.cls", Cls("house2"));
-    Write("custom/collision/world.col", twoBlocks);
-    Write("custom/collision/nested/world.col", Col("house4"));
-    Write("custom/collision/legacy.cls", LegacyCls("house6"));
-    Write("custom/collision/nested/sa.col", Col3("house7"));
     std::vector<uint8> badOffset = Col3("badOffset");
     W32(badOffset, 84, 0xfffffff0);
-    Write("custom/collision/nested/bad.col", badOffset);
+    ImagePair("custom/img/br_collision", {
+        { "world.col", twoBlocks },             // COLL with two internal names
+        { "part.cls", Cls("house1") },         // CED2, same basename twice
+        { "PART.CLS", Cls("house2") },
+        { "other.col", Col("house4") },        // name differs from DIR filename
+        { "legacy.cls", LegacyCls("house6") },
+        { "sa.COL", Col3("house7") },         // SA fixed-point -> VC COLL
+        { "bad.col", badOffset },             // corrupt geometry is rejected
+        { "ignored.ifp", ifp }                 // IFP in IMG is not indexed
+    });
+    // The old loose collision folder must be completely inert, including
+    // names that could otherwise override an IMG entry.
+    Write("custom/collision/world.col", Col("looseonly"));
+    Write("custom/collision/part.cls", Cls("loosecls"));
+    Write("custom/collision/nested/sa.col", Col("ignorednested"));
+    std::vector<uint8> badDir(32, 0);
+    W32(badDir, 0, 0x1000000); W32(badDir, 4, 1);
+    std::memcpy(badDir.data()+8, "invalid.col", 11);
+    Write("custom/img/bad.img", img); Write("custom/img/bad.dir", badDir);
 
     // All of these legacy or unrelated paths must be inert, even if the ZIPs
     // are valid and contain filenames that used to be indexed as custom data.
@@ -288,11 +332,13 @@ int main() {
 
     CTxdStore::Initialise();
     CCustomModels::ResetImageMounts(); CCustomModels::MountImages();
-    assert(images.size() == 3); // native + two good custom/img pairs, NOT root img/
+    assert(images.size() == 4); // stock + two model IMG pairs + collision-only IMG
     assert(images[1].find("custom/img/area/extra.img") != std::string::npos);
-    assert(images[2].find("custom/img/map.img") != std::string::npos);
+    assert(images[2].find("custom/img/br_collision.img") != std::string::npos);
+    assert(images[3].find("custom/img/map.img") != std::string::npos);
     assert(CCustomModels::IsActive());
-    assert(CCustomModels::IsAutoMountedImage(1) && CCustomModels::IsAutoMountedImage(2));
+    assert(CCustomModels::IsAutoMountedImage(1) && CCustomModels::IsAutoMountedImage(2) &&
+           CCustomModels::IsAutoMountedImage(3));
     assert(!CCustomModels::IsAutoMountedImage(0));
     assert(CTxdStore::FindTxdSlot("r3") >= 0);
     assert(CTxdStore::FindTxdSlot("BASEONLY") >= 0);
@@ -301,17 +347,18 @@ int main() {
     assert(CCustomModels::PairedImageTxd("rootonly") == -1);
     uint32 specialPos = 0, specialSize = 0;
     assert(CCustomModels::FindModelDffInImage("HoUsE1", specialPos, specialSize));
-    assert(specialPos == (2u<<24 | 1u) && specialSize == 2);
+    assert(specialPos == (3u<<24 | 1u) && specialSize == 2);
     assert(CCustomModels::FindModelDffInImage("baseonly", specialPos, specialSize));
     assert(specialPos == 3 && specialSize == 1); // stock VC is still allowed
     assert(!CCustomModels::FindModelDffInImage("rootonly", specialPos, specialSize));
     assert(!CCustomModels::FindModelDffInImage("SPECIAL1", specialPos, specialSize));
-    CCustomModels::MountImages(); assert(images.size() == 3); // idempotent
+    CCustomModels::MountImages(); assert(images.size() == 4); // idempotent
     assert(CCustomModels::HasModelFile("house1"));
     assert(CCustomModels::HasModelFile("baseonly"));
     assert(!CCustomModels::CanServe(0)); // DFF/TXD use the native IMG streamer
     assert(!CCustomModels::CanServe(STREAM_OFFSET_TXD));
-    assert(CCustomModels::CanServe(STREAM_OFFSET_COL)); // loose world.col still serves COLFILE
+    assert(CCustomModels::CanServe(STREAM_OFFSET_COL)); // IMG world.col still serves COLFILE
+    assert(CCustomModels::Load(STREAM_OFFSET_COL)); // converted VC COLL reaches CColStore
     assert(!CCustomModels::CanServe(STREAM_OFFSET_COL + 1));
     assert(!CCustomModels::HasModelFile("rootonly"));
     assert(!CCustomModels::HasModelFile("SPECIAL1"));
@@ -329,8 +376,9 @@ int main() {
     assert(ipl.size() == 2 && ipl.count("data/maps/level_events/test.ipl") &&
            ipl.count("data/maps/level_events/alternate.ipl"));
     assert(cls.size() == 2 && cls["house1"] == "house1" && cls["house2"] == "house2");
-    assert(col.size() == 5 && col["house1"] == "house1" && col["house3"] == "house3" &&
-           col["house4"] == "house4" && col["house6"] == "house6" && col["house7"] == "house7");
+    assert(col.size() == 6 && col["house1"] == "house1" && col["house3"] == "house3" &&
+           col["house4"] == "house4" && col["house5"] == "house5" &&
+           col["house6"] == "house6" && col["house7"] == "house7");
     std::vector<uint8> selected;
     assert(CCustomModels::GetCollisionBlock("house1", selected));
     float radius = 0; std::memcpy(&radius, selected.data()+24, 4);
@@ -338,10 +386,15 @@ int main() {
     assert(CCustomModels::GetCollisionBlock("house2", selected));
     std::memcpy(&radius, selected.data()+24, 4);
     assert(radius == 2);
+    assert(CCustomModels::GetCollisionBlock("house5", selected)); // mixed DFF/TXD/COL IMG
+    assert(std::string((const char *)selected.data()) == "house5");
     assert(CCustomModels::GetCollisionBlock("house7", selected));
     assert(selected.size() == 84 && std::string((const char *)selected.data()) == "house7");
     assert(!CCustomModels::GetCollisionBlock("zipcollision", selected));
     assert(!CCustomModels::GetCollisionBlock("oldcollision", selected));
+    assert(!CCustomModels::GetCollisionBlock("looseonly", selected));
+    assert(!CCustomModels::GetCollisionBlock("loosecls", selected));
+    assert(!CCustomModels::GetCollisionBlock("ignorednested", selected));
     assert(!CCustomModels::GetCollisionBlock("badOffset", selected));
     assert(CCustomModels::LoadAnimFileFromCustom("USERBANK.IFP", selected) && selected == ifp);
     assert(!CCustomModels::LoadAnimFileFromCustom("zipbank.ifp", selected));
@@ -377,8 +430,8 @@ int main() {
     CCustomModels::Shutdown(); CTxdStore::Shutdown();
     assert(CCustomModels::PairedImageTxd("house1") == -1);
     assert(!CCustomModels::FindModelDffInImage("house1", specialPos, specialSize));
-    // ZIP-only directory: no world, animation, collision, graphics, models,
-    // or native-IMG replacements are ever selected from those ZIP entries.
+    // With only ZIP and loose collision inputs, no world, animation,
+    // collision, graphics, models or native-IMG replacements are selected.
     assert(std::rename("custom", "custom_off") == 0);
     MkDir("custom");
     Zip("custom/only.zip", {
@@ -387,18 +440,22 @@ int main() {
         { "data/maps/zip.ide", Bytes("objs\n1 ziphouse bad 100 0\nend\n") },
         { "data/timecyc.json", Bytes("ZIP lighting") }
     });
+    MkDir("custom/collision");
+    Write("custom/collision/world.col", Col("looseonly")); // alone must not activate custom
     images.clear(); images.push_back("models/gta3.img");
     CTxdStore::Initialise(); CCustomModels::MountImages();
     assert(images.size() == 1 && !CCustomModels::IsActive());
     assert(!CCustomModels::HasWorldFiles());
     assert(!CCustomModels::LoadAnimFileFromCustom("zipbank.ifp", selected));
     assert(!CCustomModels::GetCollisionBlock("zipcollision", selected));
+    assert(!CCustomModels::GetCollisionBlock("looseonly", selected));
+    assert(!CCustomModels::CanServe(STREAM_OFFSET_COL));
     assert(!CCustomModels::ReadDataFile("data/timecyc.json", selected));
     assert(!CCustomModels::HasModelFile("rootonly"));
     assert(CCustomModels::HasModelFile("baseonly")); // stock VC unaffected
     CCustomModels::Shutdown(); CTxdStore::Shutdown();
 
-    // IMG-only directory: no IDE/IFP/COL needed for valid user models.
+    // IMG-only directory: no IDE/IFP needed for valid user models.
     MkDir("custom/img");
     std::vector<uint8> onlyDir(2*32, 0);
     W32(onlyDir, 0, 1); W32(onlyDir, 4, 1);
@@ -413,7 +470,28 @@ int main() {
     assert(!CCustomModels::HasWorldFiles() && !CCustomModels::HasModelFile("rootonly"));
     CCustomModels::Shutdown(); CTxdStore::Shutdown();
 
+    // A collision-only IMG works even when no IDE, animation, DFF or TXD is
+    // present. Resetting mounts must discard its offsets before a game restart.
+    assert(std::rename("custom", "custom_models_off") == 0);
+    MkDir("custom"); MkDir("custom/img");
+    ImagePair("custom/img/br_collision", { { "world.col", Col("onlyIMG") } });
+    images.clear(); images.push_back("models/gta3.img");
+    CTxdStore::Initialise(); CCustomModels::MountImages();
+    assert(images.size() == 2 && CCustomModels::IsActive());
+    assert(!CCustomModels::HasWorldFiles() && !CCustomModels::HasModelFile("onlyIMG"));
+    assert(CCustomModels::CanServe(STREAM_OFFSET_COL) && CCustomModels::Load(STREAM_OFFSET_COL));
+    assert(CCustomModels::GetCollisionBlock("onlyIMG", selected));
+    col.clear(); CCustomModels::ForEachGameCollision(Collision, &col);
+    assert(col.size() == 1 && col["onlyimg"] == "onlyIMG");
+    CCustomModels::ResetImageMounts();
+    assert(!CCustomModels::IsActive() && !CCustomModels::CanServe(STREAM_OFFSET_COL));
+    assert(!CCustomModels::GetCollisionBlock("onlyIMG", selected));
+    images.clear(); images.push_back("models/gta3.img");
+    CCustomModels::MountImages();
+    assert(CCustomModels::IsActive() && CCustomModels::GetCollisionBlock("onlyIMG", selected));
+    CCustomModels::Shutdown(); CTxdStore::Shutdown();
+
     assert(chdir("..") == 0);
     RemoveTree(root);
-    std::puts("custom layout: only custom/img, anim, collision and data/maps served; all ZIP, root img and common paths rejected");
+    std::puts("custom layout: only custom/img (including COL/CLS), anim and data/maps served; all loose collision, ZIP and legacy paths rejected");
 }

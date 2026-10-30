@@ -9,9 +9,11 @@ Move each compatible IMG/DIR pair to ../custom/img/ instead, for example:
 
 Pairs may be in subdirectories (up to eight levels). Each is a VC/GTA3 IMG
 v1: raw 2048-byte sectors with a separate 32-byte-record .dir. San Andreas
-IMG v2 with an embedded VER2 directory is not mounted. The DIR names must
-match IDE model names. Only DFF and TXD entries are used from user IMGs;
-COL and IFP entries belong in custom/collision/ and custom/anim/.
+IMG v2 with an embedded VER2 directory is not mounted. DFF names in DIR
+must match IDE model names; DFF/TXD use native IMG streaming. COL/CLS
+entries are indexed by their INTERNAL model names, converted to VC COLL,
+and may be in a collision-only IMG (br_collision.img with br_collision.dir).
+IFPs belong in custom/anim/. Loose custom/collision/ is not read.
 
 An exact-name model.txd is searched across ALL mounted custom/img/ files,
 even if the DFF is in another IMG and IDE specifies another TXD. If no
@@ -23,5 +25,5 @@ The IMG stream format has 256 simultaneous slots (including stock archives)
 and each IMG path must fit in 63 bytes. Invalid/missing DIR pairs, IMG v2,
 slot overflows and unsupported entries are logged in debug.log. Models still
 stream/evict normally; cache ceilings are not increased. Place compatible
-IDE/IPL under ../custom/data/maps/ and collisions under ../custom/collision/.
+IDE/IPL under ../custom/data/maps/ and collisions in ../custom/img/ IMG/DIR.
 See ../../CUSTOM_MODELS.md and ../../PC_WORLD_MODDING.md.

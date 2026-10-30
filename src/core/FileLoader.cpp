@@ -111,8 +111,8 @@ CFileLoader::LoadLevel(const char *filename)
 			if(!objectsLoaded){
 #ifdef CUSTOM_MODELS
 				// Stock IDEs/CDIMAGE records have been read. Mount the user's
-				// custom/img/*.img now, before the native directory index;
-				// loose custom/data/maps/ IDEs are registered next.
+				// custom/img/*.img now (including collision-only IMGs), before
+				// native directory indexing; loose map IDEs are registered next.
 				CCustomModels::MountImages();
 				CCustomWorld::LoadIde();
 #endif

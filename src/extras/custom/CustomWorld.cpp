@@ -70,7 +70,7 @@ struct ColContext {
     ColContext() : installed(0), replaced(0), invalid(0), missing(0), full(0), freeModels(0) {}
 };
 
-// A complete, checked VC COLL block is passed here by both archive formats.
+// A complete, checked VC COLL block comes from a COL/CLS entry in custom/img/.
 // These models own their collisions independently of RW object streaming.
 void InstallCollision(const char *name, const uint8_t *game, size_t size, ColContext &ctx)
 {
@@ -561,9 +561,9 @@ void CCustomWorld::LoadCollisions(void)
     collisionLoaded = true;
     ColContext ctx;
     ctx.freeModels = CPools::GetColModelPool()->GetNoOfFreeSpaces();
-    CCustomModels::ForEachBrCollision(ReadCollision, &ctx); // CED2 .cls containers
+    CCustomModels::ForEachBrCollision(ReadCollision, &ctx); // CED2 .cls entries in user IMGs
     CCustomModels::ForEachGameCollision(ReadGameCollision, &ctx, HasWorldCollisionTarget); // .col and legacy .cls
-    CUSTOM_LOG("custom ZIP collision: %u installed, %u replacements, %u invalid, %u outside IDE, %u over pool capacity\n",
+    CUSTOM_LOG("custom IMG collision: %u installed, %u replacements, %u invalid, %u outside IDE, %u over pool capacity\n",
         ctx.installed, ctx.replaced, ctx.invalid, ctx.missing, ctx.full);
 }
 

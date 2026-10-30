@@ -525,8 +525,9 @@ CStreaming::LoadCdDirectory(const char *dirname, int n)
 			continue;
 		}
 #ifdef CUSTOM_MODELS
-		// Autodiscovered IMGs provide only models and VC TXDs. Collision
-		// belongs to custom/collision/, never to these user IMG archives.
+		// The native streamer receives only DFF/TXD from user IMGs. COL/CLS
+		// entries were indexed separately and converted to VC COLL by the
+		// custom collision loader; never stream raw SA collision bytes here.
 		if(modelsOnly && (dot-direntry.name > 19 || dot[4] != '\0' ||
 		   (strncasecmp(dot+1, "DFF", 3) != 0 &&
 		    strncasecmp(dot+1, "TXD", 3) != 0))){
@@ -633,7 +634,7 @@ CStreaming::LoadCdDirectory(const char *dirname, int n)
 		dirname, n, entries, registered, duplicates);
 #ifdef CUSTOM_MODELS
 	if(modelsOnly && (unknownModels || ignoredTypes || fullTxds))
-		REVC_LOG_INFO("IMG %d: %d DFF without IDE, %d non-DFF/TXD entries ignored, %d TXDs over slot limit",
+		REVC_LOG_INFO("IMG %d: %d DFF without IDE, %d non-DFF/TXD entries bypassed by native streaming, %d TXDs over slot limit",
 			n, unknownModels, ignoredTypes, fullTxds);
 	if(!modelsOnly && unknownModels)
 		REVC_LOG_INFO("IMG %d: %d DFF without IDE encountered; extra directory now holds %d unique models",

@@ -50,23 +50,27 @@
 #include <unistd.h>
 #endif
 #include <sys/stat.h>
+#include <sys/types.h>
 
 // ---------------------------------------------------------------------------
 // where the files live
 // ---------------------------------------------------------------------------
 
-// Bound a single loose collision/animation/map input before reading it.
+// Bound a single IMG collision record or loose animation/map input before reading it.
 #define CUSTOM_MAX_ENTRY (64*1024*1024)
 #define CUSTOM_MAX_DEPTH 8			// subdirectories under each asset folder
 
 struct CustomSource
 {
 	uint64 mtime;
-	char loose[256];
-	char fname[256];
+	char loose[256];	// path to a loose file or its containing IMG
+	char fname[256];	// diagnostic name, including the IMG entry if applicable
+	uint64 imgOffset;	// byte offset of a validated IMG/DIR sector slice
+	uint32 imgBytes;
+	bool inImg;
 };
 
-// No ZIP archives are mounted: models and TXDs come only from custom/img/.
+// No ZIP archives are mounted: models, TXDs and collisions use custom/img/.
 // The legacy converters below have no external .mod/.btx/.dff/.txd inputs.
 static std::map<std::string, CustomSource> customMods;
 static std::map<std::string, CustomSource> customBtx;
@@ -79,7 +83,7 @@ static std::map<std::string, CustomSource> customColFiles;	// whole .col contain
 static std::map<std::string, CustomSource> customImages;	// .bmp/.png/.jpg
 static std::map<std::string, CustomSource> customIdeFiles;
 static std::map<std::string, CustomSource> customIplFiles;
-// Keep a source for each loose collision container, even with repeated filenames.
+// Keep a source for every IMG collision entry, even with repeated filenames.
 static std::vector<CustomSource> customClsSources, customColSources;
 static std::vector<bool> customClsHasBrBlocks;
 struct BrBlockRef {
@@ -215,6 +219,9 @@ MakeSource(uint64 mtime, const char *path, const char *fname)
 {
 	CustomSource src;
 	src.mtime = mtime;
+	src.imgOffset = 0;
+	src.imgBytes = 0;
+	src.inImg = false;
 	src.loose[0] = '\0';
 	src.fname[0] = '\0';
 	if(path){
@@ -259,19 +266,19 @@ AddWorldFile(std::map<std::string, CustomSource> &index, const std::string &path
 		index[key] = src;
 }
 
-// The names of the collision models inside one .col container are indexed at
-// scan time, so a model can find its collision whatever file it sits in. The
+// The names inside one IMG .col entry are indexed at mount time, so a
+// model can find its collision regardless of the entry name. The
 // blocks keep their [fourcc][size][name][body] layout; whether the body is
 // the Vice City layout the game reads natively ('COLL', floats) or a San
 // Andreas one ('COL2'/'COL3', fixed point) is remembered for the read.
-static void
+static bool
 IndexColContainer(const std::vector<uint8> &file, const CustomSource &src, int &nBlocks)
 {
 	std::vector<customcolformat::Block> blocks;
 	size_t bad = customcolformat::Index(file.data(), file.size(), blocks);
 	if(bad) CUSTOM_LOG("collision container %s: %u malformed chunk(s)\n",
 		src.fname, (unsigned)bad);
-	if(blocks.empty()) return;
+	if(blocks.empty()) return false;
 	size_t source = customColSources.size();
 	customColSources.push_back(src);
 	for(size_t i = 0; i < blocks.size(); i++) {
@@ -282,11 +289,12 @@ IndexColContainer(const std::vector<uint8> &file, const CustomSource &src, int &
 		customColBlocks[key] = ref;
 		nBlocks++;
 	}
+	return true;
 }
 
 struct ScanStats
 {
-	int cls, colfile, colblock, anim, ide, ipl;
+	int anim, ide, ipl;
 };
 
 static std::string
@@ -300,8 +308,9 @@ Subfolder(const std::string &root, const char *name)
 	return std::string();
 }
 
-// Only visit the four explicit asset folders. Archives and loose legacy files
-// in custom/, the game-root img/, common/ and zip/ are never inspected here.
+// Loose sources are restricted to custom/anim/ and custom/data/maps/.
+// All user models, textures and collisions live in validated custom/img/ pairs;
+// custom/collision/, ZIPs, game-root img/ and common/ are never scanned.
 static void
 ScanAssetFolder(const std::string &folder, const char *kind, int depth, ScanStats &st)
 {
@@ -324,20 +333,6 @@ ScanAssetFolder(const std::string &folder, const char *kind, int depth, ScanStat
 				AddWorldFile(ext == "ide" ? customIdeFiles : customIplFiles, relative, src);
 				if(ext == "ide") st.ide++; else st.ipl++;
 			}
-		} else if(strcmp(kind, "collision") == 0) {
-			if(ext == "cls") {
-				AddIndex(customCls, key, src);
-				customClsSources.push_back(src);
-				customClsHasBrBlocks.push_back(false);
-				st.cls++;
-			} else if(ext == "col") {
-				std::vector<uint8> bytes;
-				if(ReadSource(src, bytes)) {
-					IndexColContainer(bytes, src, st.colblock);
-					AddIndex(customColFiles, key, src);
-					st.colfile++;
-				} else CUSTOM_LOG("collision %s: cannot read .col\n", path.c_str());
-			}
 		}
 	}
 	if(depth >= CUSTOM_MAX_DEPTH) return;
@@ -357,28 +352,25 @@ EnsureInitialised(void)
 	customFolderPath = folder;
 	ScanStats st = {};
 	const std::string anim = Subfolder(customFolderPath, "anim");
-	const std::string collision = Subfolder(customFolderPath, "collision");
 	const std::string data = Subfolder(customFolderPath, "data");
 	const std::string maps = data.empty() ? std::string() : Subfolder(data, "maps");
 	if(!anim.empty()) ScanAssetFolder(anim, "anim", 0, st);
-	if(!collision.empty()) ScanAssetFolder(collision, "collision", 0, st);
 	if(!maps.empty()) ScanAssetFolder(maps, "data/maps", 0, st);
-	IndexBrCollisionBlocks();
-	customActive = !customAnims.empty() || !customCls.empty() ||
-	               !customColFiles.empty() || !customIdeFiles.empty() || !customIplFiles.empty();
-	CUSTOM_LOG("==== custom folder: %s (loose folders only; ZIP, game-root img/ and common/ disabled)\n", customFolderPath.c_str());
-	CUSTOM_LOG("scan: %d .ifp (%u names), %d .cls (%u CED2 models), %d .col (%d models), %d IDE, %d IPL\n",
-		st.anim, (unsigned)customAnims.size(), st.cls, (unsigned)customBrColBlocks.size(),
-		st.colfile, st.colblock, st.ide, st.ipl);
+	customActive = !customAnims.empty() || !customIdeFiles.empty() || !customIplFiles.empty();
+	CUSTOM_LOG("==== custom folder: %s (IMG/DIR resources; loose anim/maps only; ZIP, collision/, game-root img/ and common/ disabled)\n", customFolderPath.c_str());
+	CUSTOM_LOG("scan: %d .ifp (%u names), %d IDE, %d IPL; IMG collisions indexed at mount\n",
+		st.anim, (unsigned)customAnims.size(), st.ide, st.ipl);
 	if(!customActive)
-		CUSTOM_LOG("scan: no loose animation/map/collision files; checking custom/img/ for models\n");
+		CUSTOM_LOG("scan: no loose animation/map files; checking custom/img/ for models, textures and collisions\n");
 }
 
 // ---------------------------------------------------------------------------
 // reading entries
 // ---------------------------------------------------------------------------
 
-// Read only an explicitly indexed loose file. No ZIP reader is called at runtime.
+// Read only indexed loose files or bounded slices of validated IMG/DIR pairs.
+// No ZIP reader is called. A collision IMG can be larger than 2 GiB, so seek
+// by a checked 64-bit byte offset rather than loading the image or using fseek.
 static bool
 ReadSource(const CustomSource &src, std::vector<uint8> &out)
 {
@@ -386,6 +378,32 @@ ReadSource(const CustomSource &src, std::vector<uint8> &out)
 	if(src.loose[0] == '\0') return false;
 	FILE *f = fcaseopen(src.loose, "rb");
 	if(f == nil) return false;
+	if(src.inImg) {
+		if(src.imgBytes == 0 || src.imgBytes > CUSTOM_MAX_ENTRY) {
+			fclose(f); return false;
+		}
+#ifdef _WIN32
+		if(_fseeki64(f, 0, SEEK_END) != 0) { fclose(f); return false; }
+		__int64 end = _ftelli64(f);
+		bool seekOk = end >= 0 && src.imgOffset <= (uint64)end &&
+			 src.imgBytes <= (uint64)end-src.imgOffset &&
+			 _fseeki64(f, (__int64)src.imgOffset, SEEK_SET) == 0;
+#else
+		if(fseeko(f, 0, SEEK_END) != 0) { fclose(f); return false; }
+		off_t end = ftello(f);
+		// An off_t narrower than the IMG offset must not wrap on 32-bit hosts.
+		off_t start = (off_t)src.imgOffset;
+		bool seekOk = end >= 0 && (uint64)start == src.imgOffset &&
+			 src.imgOffset <= (uint64)end && src.imgBytes <= (uint64)end-src.imgOffset &&
+			 fseeko(f, start, SEEK_SET) == 0;
+#endif
+		if(!seekOk) { fclose(f); return false; }
+		out.resize(src.imgBytes);
+		bool ok = fread(out.data(), 1, src.imgBytes, f) == src.imgBytes;
+		fclose(f);
+		if(!ok) out.clear();
+		return ok;
+	}
 	if(fseek(f, 0, SEEK_END) != 0) { fclose(f); return false; }
 	long size = ftell(f);
 	if(size <= 0 || (uint64)size > CUSTOM_MAX_ENTRY || fseek(f, 0, SEEK_SET) != 0) {
@@ -493,6 +511,17 @@ CCustomModels::ResetImageMounts(void)
 	customImagesScanned = false;
 	customImageSlots.clear();
 	imageModelTextures.Clear();
+	// A second game in this process may mount a different IMG set. Do not
+	// retain per-model collision offsets into an old archive after shutdown.
+	customCls.clear();
+	customColFiles.clear();
+	customClsSources.clear();
+	customColSources.clear();
+	customClsHasBrBlocks.clear();
+	customColBlocks.clear();
+	customBrColBlocks.clear();
+	customLegacyClsBlocks.clear();
+	customActive = !customAnims.empty() || !customIdeFiles.empty() || !customIplFiles.empty();
 }
 
 bool
@@ -513,6 +542,46 @@ bool
 CCustomModels::FindModelDffInImage(const char *modelName, uint32 &position, uint32 &sectors)
 {
 	return imageModelTextures.FindDffRecord(modelName, position, sectors);
+}
+
+struct ImageCollisionStats {
+	unsigned blocks, unreadable;
+	ImageCollisionStats() : blocks(0), unreadable(0) {}
+};
+
+// COL/CLS entries in a validated user DIR are bounded sector slices. Index
+// internal model names while the IMG is mounted, then reread only selected
+// records when world or streamed COLFILE collisions are actually installed.
+static ImageCollisionStats
+IndexImageCollisions(const ImagePair &pair, int slot, uint64 imageBytes,
+                     const std::vector<uint8> &directory)
+{
+	ImageCollisionStats stats;
+	customimg::ForEachCollisionEntry(directory.data(), directory.size(), imageBytes,
+		[&](const std::string &name, bool cls, uint32 sector, uint32 sectors) {
+			CustomSource src = MakeSource((uint64)slot+1, pair.img.c_str(), name.c_str());
+			src.inImg = true;
+			src.imgOffset = (uint64)sector*2048u;
+			src.imgBytes = sectors*2048u;
+			snprintf(src.fname, sizeof(src.fname), "%s:%s", pair.img.c_str(), name.c_str());
+			std::string key = ToLower(Stem(name));
+			if(cls) {
+				AddIndex(customCls, key, src);
+				customClsSources.push_back(src);
+				customClsHasBrBlocks.push_back(false);
+			} else {
+				std::vector<uint8> file;
+				int indexed = 0;
+				if(!ReadSource(src, file) || !IndexColContainer(file, src, indexed)) {
+					CUSTOM_LOG("collision IMG entry %s: cannot index .col\n", src.fname);
+					stats.unreadable++;
+					return;
+				}
+				AddIndex(customColFiles, key, src);
+				stats.blocks += indexed;
+			}
+		});
+	return stats;
 }
 
 void
@@ -565,13 +634,17 @@ CCustomModels::MountImages(void)
 		}
 		customImageSlots.insert(slot);
 		imageModelTextures.AddDirectory(slot, directory.data(), directory.size());
+		ImageCollisionStats collision = IndexImageCollisions(pair, slot, imageBytes, directory);
 		mounted++;
 		customActive = true;
-		CUSTOM_LOG("custom/img %s: IMG %d, %u DFF, %u TXD, %u other DIR entries ignored\n",
-			pair.img.c_str(), slot, (unsigned)stats.dff, (unsigned)stats.txd, (unsigned)stats.ignored);
+		CUSTOM_LOG("custom/img %s: IMG %d, %u DFF, %u TXD, %u COL, %u CLS, %u other DIR entries ignored; %u invalid collision record(s), %u collision model(s) indexed, %u unreadable COL\n",
+			pair.img.c_str(), slot, (unsigned)stats.dff, (unsigned)stats.txd,
+			(unsigned)stats.col, (unsigned)stats.cls, (unsigned)stats.ignored,
+			(unsigned)stats.badCollision, collision.blocks, collision.unreadable);
 	}
 	CUSTOM_LOG("custom/img/: %u IMG(s) found, %u mounted, %u skipped\n",
 		(unsigned)pairs.size(), mounted, rejected);
+	IndexBrCollisionBlocks(); // CED2/legacy CLS now have their IMG sources
 	IndexNativeImageDirectories(); // before CCustomWorld::LoadIde and CStreaming::Init
 }
 
@@ -606,7 +679,7 @@ IndexBrCollisionBlocks(void)
 			customBrColBlocks[key] = ref;
 		}
 		if(blocks.empty()) {
-			// Non-CED2 .cls containers may share a filename across loose folders.
+			// Non-CED2 .cls entries may share a filename across user IMGs.
 			// Index the INTERNAL names of their converted blocks.
 			std::vector<uint8> game = LegacyClsToGame(data);
 			std::vector<customcolformat::Block> legacy;
@@ -634,7 +707,10 @@ HasBrBlocks(const CustomSource &src)
 {
 	for(size_t i = 0; i < customClsSources.size(); i++){
 		const CustomSource &other = customClsSources[i];
-		bool same = strcmp(src.loose, other.loose) == 0;
+		bool same = strcmp(src.loose, other.loose) == 0 &&
+		            src.inImg == other.inImg &&
+		            (!src.inImg || (src.imgOffset == other.imgOffset &&
+		                            src.imgBytes == other.imgBytes));
 		if(same) return customClsHasBrBlocks[i];
 	}
 	return false;
@@ -656,8 +732,8 @@ ReadEntry(const std::map<std::string, CustomSource> &index, const std::string &k
 	return ReadSource(*src, out);
 }
 
-// A loose .col container: Vice City blocks ('COLL'
-// floats) are what the game reads and go through as they are, San Andreas
+// An IMG .col entry: Vice City blocks ('COLL', floats) are what the game
+// reads and go through as they are, while San Andreas
 // blocks ('COL2'/'COL3', fixed point) are rewritten by the converter
 static std::vector<uint8>
 ColContainerToGame(const std::vector<uint8> &file, const char *what, const std::string &key)
@@ -1891,7 +1967,7 @@ CCustomModels::ForEachBrCollision(CollisionCallback callback, void *context)
 {
 	EnsureInitialised();
 	if(callback == nil) return;
-	// Read each loose .cls source once, even if it has multiple model blocks.
+	// Read each indexed IMG .cls entry once, even with multiple model blocks.
 	std::map<size_t, std::vector<std::pair<std::string, BrBlockRef> > > groups;
 	for(std::map<std::string, BrBlockRef>::const_iterator it = customBrColBlocks.begin();
 	    it != customBrColBlocks.end(); ++it)
@@ -1911,15 +1987,15 @@ CCustomModels::ForEachBrCollision(CollisionCallback callback, void *context)
 }
 
 // A .col may hold hundreds of models; serve each indexed internal name,
-// including ones stored in different .col containers with identical names.
+// including entries with identical filenames in different IMG archives.
 // Converted blocks are scoped to one callback, never cached in the LRU.
 void
 CCustomModels::ForEachGameCollision(CollisionCallback callback, void *context, CollisionFilter filter)
 {
 	EnsureInitialised();
 	if(callback == nil) return;
-	// Legacy .cls files are also matched by internal model name. Group
-	// selected blocks by loose file and convert each chosen file only once.
+	// Legacy .cls entries are also matched by internal model name. Group
+	// selected blocks by IMG record and convert each chosen entry only once.
 	std::map<size_t, std::vector<std::pair<std::string, BrBlockRef> > > clsGroups;
 	for(std::map<std::string, BrBlockRef>::const_iterator it = customLegacyClsBlocks.begin();
 	    it != customLegacyClsBlocks.end(); ++it)
@@ -2211,8 +2287,8 @@ CCustomModels::CancelStreamPrefetch(int32 streamId)
 	}
 }
 
-// IMG models and TXDs always use the native streamer. Only a loose collision
-// container referenced by a COLFILE directive needs a synthetic CD position;
+// IMG models and TXDs always use the native streamer. Only a converted IMG
+// COL/CLS container referenced by a COLFILE directive needs a synthetic CD position;
 // per-model world collisions are installed separately by CCustomWorld.
 bool
 CCustomModels::CanServe(int32 streamId)
@@ -2275,7 +2351,7 @@ BuildDictionaryFor(const std::string &key)
 }
 
 // The native collision reader takes [name, bounds, geometry] without a size.
-// Validate loose blocks first. A .col block wins over a .cls of the same model.
+// Validate IMG blocks first. A .col block wins over a .cls of the same model.
 bool
 CCustomModels::GetCollisionBlock(const char *modelname, std::vector<uint8> &out)
 {
@@ -2374,7 +2450,7 @@ CCustomModels::PrintStats(void)
 {
 	EnsureInitialised();
 	CUSTOM_LOG("--- stats ---\n");
-	CUSTOM_LOG("custom/img: %zu mounted; loose resources: %zu .cls (%zu CED2 blocks), %zu .col (%zu model blocks), %zu .ifp, %zu IDE, %zu IPL\n",
+	CUSTOM_LOG("custom/img: %zu mounted; IMG collisions: %zu .cls (%zu CED2 blocks), %zu .col (%zu model blocks); loose: %zu .ifp, %zu IDE, %zu IPL\n",
 		customImageSlots.size(), customClsSources.size(), customBrColBlocks.size(),
 		customColSources.size(), customColBlocks.size(), customAnims.size(),
 		customIdeFiles.size(), customIplFiles.size());

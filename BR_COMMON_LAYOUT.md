@@ -8,7 +8,7 @@
 | Активные `IDE`/`IPL` в `common/data/config.dat` | Конфиг больше не читается. Если некоторые IPL — взаимоисключающие варианты, перечислите **все необходимые IPL**, включая базовые, в `custom/data/maps/active_ipl.txt` (пути `data/maps/...`). |
 | Модели/текстуры из старых ZIP/IMG v2/BR-контейнеров | Подготовьте совместимые DFF/TXD, упакуйте в VC IMG v1 с внешним DIR и положите пару в `custom/img/`. Поиск одноимённого TXD идёт среди всех таких IMG. |
 | `common/anim/ped.ani` и другие `.ani` | Подготовьте совместимые ANP2/ANP3 `.ifp` и положите их в `custom/anim/`. VC-скелеты всегда используют штатный VC-банк. |
-| Старые `.col`/`.cls` в ZIP | Извлеките поддерживаемые контейнеры в `custom/collision/`. Сопоставление блоков идёт по внутреннему имени модели. |
+| `.col`/`.cls` в ZIP или `br_collision.img` | Скопируйте пару `br_collision.img` + `br_collision.dir` (VC IMG v1) в `custom/img/`. Отдельные COL/CLS из ZIP тоже нужно упаковать в совместимую IMG/DIR-пару. Папка `custom/collision/` не читается; блоки сопоставляются по внутреннему имени модели. |
 | `common/data/timecyc.json` | Не читается. Если требуется только ambient/directional свет и сила штатных теней, допускается loose `custom/data/timecyc.json`. |
 | `*.bpc`, `audio/AUDO`, `data/features/`, физика/handling, цветовые таблицы `common/data/carcols.dat` | Не импортируются. |
 | `.btx` отражений и световых карт в `zip/*.zip` | Отключены; нет резервного графического ZIP-пути. |
