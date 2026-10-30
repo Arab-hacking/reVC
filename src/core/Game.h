@@ -47,6 +47,9 @@ public:
 #endif
 	static bool noProstitutes;
 	static bool playingIntro;
+	// reVC.ini [World] LoadViceCityMap (default 1). Native DATA/MAPS IDE/IPL
+	// and DATA/WATER.DAT/WATERPRO.DAT only; custom assets remain available.
+	static bool bLoadViceCityMap;
 	static char aDatFile[32];
 
 #ifndef MASTER

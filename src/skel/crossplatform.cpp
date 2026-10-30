@@ -273,20 +273,8 @@ char* casepath(char const* path, bool checkPathFirst)
     }
     else
     #endif
-#if defined(ANDROID) // TODO: Android is fuck!!!
-    char cwd[MAX_PATH];
-    getcwd(cwd, sizeof(cwd));
-
-    char* pos = strstr(p, CFileMgr::GetRootDirName());
-    if (pos != NULL) {
-        pos += strlen(CFileMgr::GetRootDirName());
-        p = pos;
-    }
-    d = opendir(cwd);
-    out[0] = '.';
-    out[1] = 0;
-    rl = 1;
-#else
+    // Android uses normal POSIX paths too. Resolving an absolute game root
+    // relative to the current directory broke directory changes and lookups.
     if (p[0] == '/' || p[0] == '\\')
     {
         d = opendir("/");
@@ -298,7 +286,6 @@ char* casepath(char const* path, bool checkPathFirst)
         out[1] = 0;
         rl = 1;
     }
-#endif
 
     bool cantProceed = false; // just convert slashes in what's left in string, don't correct case of letters(because we can't)
     bool mayBeTrailingSlash = false;

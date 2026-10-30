@@ -51,6 +51,16 @@ int32 EnvMapSize = 128;
 rw::Camera *EnvMapCam;
 rw::Texture *EnvMapTex;
 rw::Texture *EnvMaskTex;
+static bool zipCarMaskOwned;
+
+void
+SetCarReflectionMask(rw::Texture *mask)
+{
+	if(zipCarMaskOwned && EnvMaskTex) EnvMaskTex->destroy();
+	zipCarMaskOwned = mask != nil;
+	EnvMaskTex = mask ? mask : (neoTxd ? neoTxd->find("CarReflectionMask") : nil);
+}
+
 static rw::RWDEVICE::Im2DVertex EnvScreenQuad[4];
 static int16 QuadIndices[6] = { 0, 1, 2, 0, 2, 3 };
 
@@ -72,14 +82,16 @@ CreateEnvMapCam(rw::World *world)
 					cam->setFarPlane(250.0f);
 					rw::V2d vw = { 2.0f, 2.0f };
 					cam->setViewWindow(&vw);
-					world->addCamera(cam);
 					EnvMapTex = rw::Texture::create(fbuf);
-					EnvMapTex->setFilter(rw::Texture::LINEAR);
-
-					frame->matrix.right.x = -1.0f;
-					frame->matrix.up.y = -1.0f;
-					frame->matrix.update();
-					return cam;
+					if(EnvMapTex) {
+						world->addCamera(cam);
+						EnvMapTex->setFilter(rw::Texture::LINEAR);
+						frame->matrix.right.x = -1.0f;
+						frame->matrix.up.y = -1.0f;
+						frame->matrix.update();
+						return cam;
+					}
+					cam->destroy();
 				}
 				frame->destroy();
 			}
@@ -123,7 +135,7 @@ RenderEnvMapScene(void)
 void
 EnvMapRender(void)
 {
-	if(VehiclePipeSwitch != VEHICLEPIPE_NEO)
+	if(VehiclePipeSwitch != VEHICLEPIPE_NEO || EnvMapCam == nil || EnvMapTex == nil)
 		return;
 
 	RwCameraEndUpdate(Scene.camera);
@@ -170,6 +182,10 @@ EnvMapInit(void)
 		EnvMaskTex = neoTxd->find("CarReflectionMask");
 
 	EnvMapCam = CreateEnvMapCam(Scene.world);
+	if(EnvMapCam == nil || EnvMapTex == nil) {
+		VehiclePipeSwitch = VEHICLEPIPE_MATFX;
+		return; // unsupported/failed RT, do not dereference an absent camera
+	}
 
 	int width = EnvMapCam->frameBuffer->width;
 	int height = EnvMapCam->frameBuffer->height;
@@ -216,9 +232,12 @@ EnvMapInit(void)
 static void
 EnvMapShutdown(void)
 {
-	EnvMapTex->raster = nil;
-	EnvMapTex->destroy();
-	EnvMapTex = nil;
+	SetCarReflectionMask(nil); // release any optional mask; neo.txd owns its fallback
+	if(EnvMapTex) {
+		EnvMapTex->raster = nil;
+		EnvMapTex->destroy();
+		EnvMapTex = nil;
+	}
 	DestroyCam(EnvMapCam);
 	EnvMapCam = nil;
 }

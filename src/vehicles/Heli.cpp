@@ -778,11 +778,8 @@ CHeli::GenerateHeli(bool catalina)
 		float angle = (float)(CGeneral::GetRandomNumber() & 0xFF)/0x100 * 6.28f;
 		heliPos.x += 250.0f*Sin(angle);
 		heliPos.y += 250.0f*Cos(angle);
-		if(heliPos.x < -2000.0f-400.0f || heliPos.x > 2000.0f-400.0f || heliPos.y < -2000.0f || heliPos.y > 2000.0f){
-			heliPos = FindPlayerCoors();
-			heliPos.x -= 250.0f*Sin(angle);
-			heliPos.y -= 250.0f*Cos(angle);
-		}
+		// The helicopter follows the player even on a custom map. The old
+		// +/-2000 VC-water-box test inverted its spawn offset at the edge.
 		heliPos.z += 50.0f;
 	}
 	heli->GetMatrix().SetTranslate(heliPos);

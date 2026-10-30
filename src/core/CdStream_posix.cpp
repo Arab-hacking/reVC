@@ -20,6 +20,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <errno.h>
 #include <sys/resource.h>
 #include <stdarg.h>
 #include <limits.h>
@@ -611,32 +612,38 @@ bool
 CdStreamAddImage(char const *path)
 {
 	ASSERT(path != nil);
-	ASSERT(gNumImages < MAX_CDIMAGES);
+	if(gNumImages >= MAX_CDIMAGES || strlen(path) >= sizeof(gCdImageNames[0])){
+		REVC_LOG_ERROR("Cannot mount IMG %s: too many images or path too long", path);
+		return false;
+	}
 
 	gImgFiles[gNumImages] = open(path, _gdwCdStreamFlags);
 
 	// Fix case sensitivity and backslashes.
-	if (gImgFiles[gNumImages] == -1) {
-		char* real = casepath(path, false);
-		if (real)
-		{
+	if(gImgFiles[gNumImages] == -1){
+		char *real = casepath(path, false);
+		if(real){
 			gImgFiles[gNumImages] = open(real, _gdwCdStreamFlags);
 			free(real);
 		}
 	}
 
-	if ( gImgFiles[gNumImages] == -1 ) {
-		assert(false);
+	if(gImgFiles[gNumImages] == -1){
+		int error = errno;
+		REVC_LOG_ERROR("Cannot mount IMG %s (errno=%d): %s", path, error, strerror(error));
 		return false;
 	}
 
+	struct stat st;
+	if(fstat(gImgFiles[gNumImages], &st) == 0)
+		REVC_LOG_INFO("Mounted IMG %d: %s (%llu bytes)", gNumImages, path,
+			(unsigned long long)st.st_size);
+	else
+		REVC_LOG_WARNING("Mounted IMG %d: %s (size unavailable)", gNumImages, path);
 	gImgNames[gNumImages] = strdup(path);
 	gImgFiles[gNumImages]++; // because -1: error 0: not used
-
 	strcpy(gCdImageNames[gNumImages], path);
-
 	gNumImages++;
-
 	return true;
 }
 

@@ -10,6 +10,7 @@
 #include "PlayerPed.h"
 #include "Wanted.h"
 #include "Pad.h"
+#include "NoClip.h"
 #include "ControllerConfig.h"
 #include "General.h"
 #include "ZoneCull.h"
@@ -507,7 +508,7 @@ CCamera::Process(void)
 		if(!m_bLookingAtVector && m_bLookingAtPlayer && !CCullZones::CamStairsForPlayer() && !m_bPlayerIsInGarage){
 			CEntity *entity = nil;
 			CColPoint colPoint;
-			if(CWorld::ProcessLineOfSight(pTargetEntity->GetPosition(), CamSource, colPoint, entity, true, false, false, true, false, true, true)){
+			if(!CNoClip::IsActive() && CWorld::ProcessLineOfSight(pTargetEntity->GetPosition(), CamSource, colPoint, entity, true, false, false, true, false, true, true)){
 				CamSource = colPoint.point;
 				RwCameraSetNearClipPlane(Scene.camera, 0.05f);
 			}
@@ -1945,6 +1946,14 @@ float fAvoidProbTimerDamp = 0.9f;
 void
 CCamera::AvoidTheGeometry(const CVector &Source, const CVector &TargetPos, CVector &NewSource, float FOV)
 {
+	if(CNoClip::IsActive()){
+		// Follow the flying entity through buildings instead of pulling the
+		// camera back to the near side of a wall.
+		m_vecClearGeometryVec = CVector(0.0f, 0.0f, 0.0f);
+		m_fAvoidTheGeometryProbsTimer = 0.0f;
+		m_nAvoidTheGeometryProbsDirn = 0;
+		return;
+	}
 	float Beta = 0.0f;
 	float Alpha = 0.0f;
 

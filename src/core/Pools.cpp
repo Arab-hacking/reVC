@@ -35,30 +35,41 @@ CColModelPool *CPools::ms_pColModelPool;
 #define CHECKMEM(msg)
 #endif
 
+// A size-only pool pass must never wrap a uint32 and trick the legacy-save
+// preflight into allocating a buffer smaller than the serialized records.
+static uint32
+PoolSaveSize(uint64 bytes)
+{
+	return bytes > UINT32_MAX ? UINT32_MAX : (uint32)bytes;
+}
+
 void
 CPools::Initialise(void)
 {
 	PUSH_MEMID(MEMID_POOLS);
 	CHECKMEM("before pools");
-	ms_pPtrNodePool = new CCPtrNodePool(NUMPTRNODES, "PtrNode");
+	// Keep VC's initial footprint; every gameplay pool grows in stable blocks
+	// as needed, even in builds without the custom model/asset loader. Pointers
+	// held by world sectors, scripts and live entities must not be relocated.
+	ms_pPtrNodePool = new CCPtrNodePool(NUMPTRNODES, "PtrNode", 65536);
 	CHECKMEM("after CPtrNodePool");
-	ms_pEntryInfoNodePool = new CEntryInfoNodePool(NUMENTRYINFOS, "EntryInfoNode");
+	ms_pEntryInfoNodePool = new CEntryInfoNodePool(NUMENTRYINFOS, "EntryInfoNode", 2048);
+	ms_pPedPool = new CPedPool(NUMPEDS, "Peds", 64);
+	ms_pVehiclePool = new CVehiclePool(NUMVEHICLES, "Vehicles", 64);
 	CHECKMEM("after CEntryInfoNodePool");
-	ms_pPedPool = new CPedPool(NUMPEDS, "Peds");
 	CHECKMEM("after CPedPool");
-	ms_pVehiclePool = new CVehiclePool(NUMVEHICLES, "Vehicles");
 	CHECKMEM("after CVehiclePool");
-	ms_pBuildingPool = new CBuildingPool(NUMBUILDINGS, "Buildings");
+	ms_pBuildingPool = new CBuildingPool(NUMBUILDINGS, "Buildings", 8192);
 	CHECKMEM("after CBuildingPool");
-	ms_pTreadablePool = new CTreadablePool(NUMTREADABLES, "Treadables");
+	ms_pTreadablePool = new CTreadablePool(NUMTREADABLES, "Treadables", 64);
+	ms_pObjectPool = new CObjectPool(NUMOBJECTS, "Objects", 256);
+	ms_pDummyPool = new CDummyPool(NUMDUMMIES, "Dummys", 512);
+	ms_pAudioScriptObjectPool = new CAudioScriptObjectPool(NUMAUDIOSCRIPTOBJECTS, "AudioScriptObj", 128);
+	ms_pColModelPool = new CColModelPool(NUMCOLMODELS, "ColModel", 4096);
 	CHECKMEM("after CTreadablePool");
-	ms_pObjectPool = new CObjectPool(NUMOBJECTS, "Objects");
 	CHECKMEM("after CObjectPool");
-	ms_pDummyPool = new CDummyPool(NUMDUMMIES, "Dummys");
 	CHECKMEM("after CDummyPool");
-	ms_pAudioScriptObjectPool = new CAudioScriptObjectPool(NUMAUDIOSCRIPTOBJECTS, "AudioScriptObj");
 	CHECKMEM("after cAudioScriptObjectPool");
-	ms_pColModelPool = new CColModelPool(NUMCOLMODELS, "ColModel");
 	CHECKMEM("after pools");
 	POP_MEMID();
 }
@@ -282,9 +293,10 @@ INITSAVEBUF
 #endif
 		}
 	}
-	*size = nNumCars * (sizeof(uint32) + sizeof(int16) + sizeof(int32) + CAutomobile::nSaveStructSize) + sizeof(int) +
-		nNumBoats * (sizeof(uint32) + sizeof(int16) + sizeof(int32) + CBoat::nSaveStructSize) + sizeof(int) +
-		nNumBikes * (sizeof(uint32) + sizeof(int16) + sizeof(int32) + CBike::nSaveStructSize) + sizeof(int);
+	*size = PoolSaveSize(uint64(nNumCars) * (sizeof(uint32) + sizeof(int16) + sizeof(int32) + CAutomobile::nSaveStructSize) + sizeof(int) +
+		uint64(nNumBoats) * (sizeof(uint32) + sizeof(int16) + sizeof(int32) + CBoat::nSaveStructSize) + sizeof(int) +
+		uint64(nNumBikes) * (sizeof(uint32) + sizeof(int16) + sizeof(int32) + CBike::nSaveStructSize) + sizeof(int));
+	if(buf == nil) return; // size-only pass before allocating the PC save block
 	WriteSaveBuf(buf, nNumCars);
 	WriteSaveBuf(buf, nNumBoats);
 	WriteSaveBuf(buf, nNumBikes);
@@ -359,8 +371,6 @@ VALIDATESAVEBUF(*size)
 void CPools::SaveObjectPool(uint8* buf, uint32* size)
 {
 INITSAVEBUF
-	CProjectileInfo::RemoveAllProjectiles();
-	CObject::DeleteAllTempObjects();
 	int nObjects = 0;
 	int nPoolSize = GetObjectPool()->GetSize();
 	for (int i = 0; i < nPoolSize; i++) {
@@ -370,10 +380,13 @@ INITSAVEBUF
 		if (pObject->ObjectCreatedBy == MISSION_OBJECT)
 			++nObjects;
 	}
-	*size = nObjects * (sizeof(int16) + sizeof(int) + sizeof(CCompressedMatrix) +
+	*size = PoolSaveSize(uint64(nObjects) * (sizeof(int16) + sizeof(int) + sizeof(CCompressedMatrix) +
 		sizeof(float) + sizeof(CCompressedMatrix) + sizeof(int8) + 7 * sizeof(bool) + sizeof(int16) +
 		+ sizeof(int8) * 2 + sizeof(float) + sizeof(int8) + sizeof(int8) +
-		sizeof(uint32) + 2 * sizeof(uint32)) + sizeof(int);
+		sizeof(uint32) + 2 * sizeof(uint32)) + sizeof(int));
+	if(buf == nil) return;
+	CProjectileInfo::RemoveAllProjectiles();
+	CObject::DeleteAllTempObjects();
 	CopyToBuf(buf, nObjects);
 	for (int i = 0; i < nPoolSize; i++) {
 		CObject* pObject = GetObjectPool()->GetSlot(i);
@@ -517,8 +530,9 @@ INITSAVEBUF
 #endif
 			nNumPeds++;
 	}
-	*size = sizeof(int) + nNumPeds * (sizeof(uint32) + sizeof(int16) + sizeof(int) + CPlayerPed::nSaveStructSize +
-		sizeof(CWanted::MaximumWantedLevel) + sizeof(CWanted::nMaximumWantedLevel) + MAX_MODEL_NAME);
+	*size = PoolSaveSize(sizeof(int) + uint64(nNumPeds) * (sizeof(uint32) + sizeof(int16) + sizeof(int) + CPlayerPed::nSaveStructSize +
+		sizeof(CWanted::MaximumWantedLevel) + sizeof(CWanted::nMaximumWantedLevel) + MAX_MODEL_NAME));
+	if(buf == nil) return;
 	CopyToBuf(buf, nNumPeds);
 	for (int i = 0; i < nPoolSize; i++) {
 		CPed* pPed = GetPedPool()->GetSlot(i);

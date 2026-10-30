@@ -116,7 +116,17 @@ void
 CWaterLevel::Initialise(Const char *pWaterDat)
 {
 	ms_nNoOfWaterLevels = 0;
-	
+	// A nil path means the native water is disabled. Both WATER.DAT and the
+	// precomputed WATERPRO.DAT must be bypassed; empty lookup tables alone
+	// would otherwise contain zeros (valid water level indices).
+	for(int32 x = 0; x < MAX_LARGE_SECTORS; x++)
+		for(int32 y = 0; y < MAX_LARGE_SECTORS; y++)
+			aWaterBlockList[x][y] = NO_WATER;
+	for(int32 x = 0; x < MAX_SMALL_SECTORS; x++)
+		for(int32 y = 0; y < MAX_SMALL_SECTORS; y++)
+			aWaterFineBlockList[x][y] = NO_WATER;
+
+	if(pWaterDat != nil){
 #ifdef MASTER
 	int32 hFile = -1;
 
@@ -211,9 +221,9 @@ CWaterLevel::Initialise(Const char *pWaterDat)
 						{
 							CVector worldPos = CVector(worldX + i * (SMALL_SECTOR_SIZE / 8), worldY + j * (SMALL_SECTOR_SIZE / 8), ms_aWaterZs[aWaterFineBlockList[x][y]]);
 
-							if ((worldPos.x > WORLD_MIN_X && worldPos.x < WORLD_MAX_X) && (worldPos.y > WORLD_MIN_Y && worldPos.y < WORLD_MAX_Y) &&
-								(!WaterLevelAccordingToRectangles(worldPos.x, worldPos.y) || TestVisibilityForFineWaterBlocks(worldPos)))
-								continue;
+							if (!WaterLevelAccordingToRectangles(worldPos.x, worldPos.y) ||
+						    TestVisibilityForFineWaterBlocks(worldPos))
+							continue;
 
 							// at least one point in the tile wasn't blocked, so don't remove water
 							i = 1000;
@@ -274,7 +284,8 @@ CWaterLevel::Initialise(Const char *pWaterDat)
 		CColStore::RemoveAllCollision();
 	}
 #endif
-	
+	} // Native VC water source (WATER.DAT or WATERPRO.DAT)
+
 	CTxdStore::PushCurrentTxd();
 
 	int32 slot = CTxdStore::FindTxdSlot("particle");
@@ -609,20 +620,15 @@ CWaterLevel::TestVisibilityForFineWaterBlocks(const CVector &worldPos)
 		lineEnd.y += tab[i].y;
 		lineEnd.z += 100.0f;
 
-		if ((lineEnd.x > WORLD_MIN_X && lineEnd.x < WORLD_MAX_X) && (lineEnd.y > WORLD_MIN_Y && lineEnd.y < WORLD_MAX_Y))
+		if (!CWorld::ProcessLineOfSight(lineStart, lineEnd, col, entity, true, false, false, false, true, false))
 		{
-			if (!CWorld::ProcessLineOfSight(lineStart, lineEnd, col, entity, true, false, false, false, true, false))
-			{
-				lineStart.x += 0.4f;
-				lineStart.y += 0.4f;
-				lineEnd.x += 0.4f;
-				lineEnd.y += 0.4f;
+			lineStart.x += 0.4f;
+			lineStart.y += 0.4f;
+			lineEnd.x += 0.4f;
+			lineEnd.y += 0.4f;
 
-				if (!CWorld::ProcessLineOfSight(lineStart, lineEnd, col, entity, true, false, false, false, true, false))
-				{
-					return false;
-				}
-			}
+			if (!CWorld::ProcessLineOfSight(lineStart, lineEnd, col, entity, true, false, false, false, true, false))
+				return false;
 		}
 	}
 
@@ -710,10 +716,10 @@ CWaterLevel::GetWaterLevel(float fX, float fY, float fZ, float *pfOutLevel, bool
 	int32 x = WATER_TO_SMALL_SECTOR_X(fX + WATER_X_OFFSET);
 	int32 y = WATER_TO_SMALL_SECTOR_Y(fY);
 		
-#ifdef FIX_BUGS
-	if ( x < 0 || x >= MAX_SMALL_SECTORS ) return false;
-	if ( y < 0 || y >= MAX_SMALL_SECTORS ) return false;
-#endif
+	// Flying past the old VC water grid must not index it out of bounds,
+	// regardless of whether FIX_BUGS is enabled in this build.
+	if ( ms_nNoOfWaterLevels <= 0 || x < 0 || x >= MAX_SMALL_SECTORS ||
+	     y < 0 || y >= MAX_SMALL_SECTORS ) return false;
 
 	int8 nBlock = aWaterFineBlockList[x][y];
 
@@ -752,11 +758,9 @@ CWaterLevel::GetWaterLevelNoWaves(float fX, float fY, float fZ, float *pfOutLeve
 	int32 x = WATER_TO_SMALL_SECTOR_X(fX + WATER_X_OFFSET);
 	int32 y = WATER_TO_SMALL_SECTOR_Y(fY);
 		
-#ifdef FIX_BUGS
-	if ( x < 0 || x >= MAX_SMALL_SECTORS ) return false;
-	if ( y < 0 || y >= MAX_SMALL_SECTORS ) return false;
-#endif
-	
+	if ( ms_nNoOfWaterLevels <= 0 || x < 0 || x >= MAX_SMALL_SECTORS ||
+	     y < 0 || y >= MAX_SMALL_SECTORS ) return false;
+
 	int8 nBlock = aWaterFineBlockList[x][y];
 		
 	if ( nBlock == NO_WATER )
@@ -896,6 +900,7 @@ SectorRadius(float fSize)
 void
 CWaterLevel::RenderWater()
 {
+	if(ms_nNoOfWaterLevels <= 0) return;
 //"Custom" Don't Render Water Toggle
 #ifndef MASTER
 	if (gbDontRenderWater)
@@ -1191,6 +1196,7 @@ CWaterLevel::RenderWater()
 void
 CWaterLevel::RenderTransparentWater(void)
 {
+	if(ms_nNoOfWaterLevels <= 0) return;
 	bool bUseCamEndX  = false;
 	bool bUseCamStartY = false;
 	
@@ -2969,10 +2975,9 @@ CWaterLevel::IsLocationOutOfWorldBounds_WS(CVector const &vecPosn, int nOffset)
 bool
 CWaterLevel::GetGroundLevel_WS(CVector const &vecPosn, float *pfOutLevel, ColData *pData, float fDistance)
 {
-	if ( IsLocationOutOfWorldBounds_WS(vecPosn, 0) )
-		return false;
-	else
-		return GetGroundLevel(vecPosn, pfOutLevel, pData, fDistance);
+	// The 80x80 water/sea-life grid is not a collision-world boundary. A
+	// custom island beyond VC must still be allowed to provide ground here.
+	return GetGroundLevel(vecPosn, pfOutLevel, pData, fDistance);
 }
 
 bool

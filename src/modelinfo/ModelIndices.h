@@ -481,8 +481,16 @@ void TestModelIndices(void);
 inline bool
 IsGlass(int16 id)
 {
-	CSimpleModelInfo *mi = (CSimpleModelInfo*)CModelInfo::GetModelInfo(id);
-	return mi->IsBuilding() && (mi->m_isCodeGlass || mi->m_isArtistGlass);
+	// A saved entity may refer to an IDE model that was present when it was
+	// saved but is absent when LoadViceCityMap=0. Do not index [-1] or read
+	// m_type at +0x1D through a null model-info pointer.
+	if (id < 0 || id >= MODELINFOSIZE)
+		return false;
+	CBaseModelInfo *modelInfo = CModelInfo::GetModelInfo(id);
+	if (modelInfo == nil || !modelInfo->IsBuilding())
+		return false;
+	CSimpleModelInfo *mi = (CSimpleModelInfo*)modelInfo;
+	return mi->m_isCodeGlass || mi->m_isArtistGlass;
 }
 
 inline bool

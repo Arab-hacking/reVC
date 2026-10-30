@@ -145,27 +145,22 @@ CVector CRadar::TargetMarkerPos;
 float CRadar::cachedCos;
 float CRadar::cachedSin;
 
-void ClipRadarTileCoords(int32 &x, int32 &y)
+bool IsNativeRadarTile(int32 x, int32 y)
 {
-	if (x < 0)
-		x = 0;
-	if (x > RADAR_NUM_TILES-1)
-		x = RADAR_NUM_TILES-1;
-	if (y < 0)
-		y = 0;
-	if (y > RADAR_NUM_TILES-1)
-		y = RADAR_NUM_TILES-1;
+	return x >= 0 && x < RADAR_NUM_TILES && y >= 0 && y < RADAR_NUM_TILES;
 }
 
 void RequestMapSection(int32 x, int32 y)
 {
-	ClipRadarTileCoords(x, y);
+	// Radar art has only 8x8 VC tiles. Outside that area there is no tile
+	// to stream; repeating an edge tile makes the map look artificially walled.
+	if (!IsNativeRadarTile(x, y)) return;
 	CStreaming::RequestTxd(gRadarTxdIds[x + RADAR_NUM_TILES * y], STREAMFLAGS_DONT_REMOVE | STREAMFLAGS_DEPENDENCY);
 }
 
 void RemoveMapSection(int32 x, int32 y)
 {
-	if (x >= 0 && x <= RADAR_NUM_TILES - 1 && y >= 0 && y <= RADAR_NUM_TILES - 1)
+	if (IsNativeRadarTile(x, y))
 		CStreaming::RemoveTxd(gRadarTxdIds[x + RADAR_NUM_TILES * y]);
 }
 
@@ -698,8 +693,8 @@ void CRadar::DrawRadarMap()
 	DrawRadarMask();
 
 	// top left ist (0, 0)
-	int x = Floor((vec2DRadarOrigin.x - RADAR_MIN_X) / RADAR_TILE_SIZE);
-	int y = Ceil((RADAR_NUM_TILES - 1) - (vec2DRadarOrigin.y - RADAR_MIN_Y) / RADAR_TILE_SIZE);
+	int x = WorldSectorIndex(vec2DRadarOrigin.x, RADAR_MIN_X, RADAR_TILE_SIZE);
+	int y = RADAR_NUM_TILES - 1 - WorldSectorIndex(vec2DRadarOrigin.y, RADAR_MIN_Y, RADAR_TILE_SIZE);
 	StreamRadarSections(x, y);
 
 	RwRenderStateSet(rwRENDERSTATEFOGENABLE, (void*)FALSE);
@@ -787,8 +782,8 @@ void CRadar::DrawRadarSection(int32 x, int32 y)
 	int numVertices;
 	RwTexture *texture = nil;
 
+	if (!IsNativeRadarTile(x, y)) return; // no map art beyond native tiles
 	GetTextureCorners(x, y, worldPoly);
-	ClipRadarTileCoords(x, y);
 
 	if (!CTheScripts::bPlayerIsInTheStatium &&
 		(!(txd = CTxdStore::GetSlot(gRadarTxdIds[x + RADAR_NUM_TILES * y])->texDict) || !(texture = GetFirstTexture(txd))))
@@ -1336,14 +1331,16 @@ void CRadar::Shutdown()
 void CRadar::StreamRadarSections(const CVector &posn)
 {
 	if (!CStreaming::ms_disableStreaming)
-		StreamRadarSections(Floor((RADAR_MAX_X + posn.x) / RADAR_TILE_SIZE), Ceil((RADAR_NUM_TILES - 1) - (RADAR_MAX_Y + posn.y) / RADAR_TILE_SIZE));
+		StreamRadarSections(WorldSectorIndex(posn.x, RADAR_MIN_X, RADAR_TILE_SIZE),
+			RADAR_NUM_TILES - 1 - WorldSectorIndex(posn.y, RADAR_MIN_Y, RADAR_TILE_SIZE));
 }
 
 void CRadar::StreamRadarSections(int32 x, int32 y)
 {
 	for (int i = 0; i < RADAR_NUM_TILES; ++i) {
 		for (int j = 0; j < RADAR_NUM_TILES; ++j) {
-			if ((i >= x - 1 && i <= x + 1) && (j >= y - 1 && j <= y + 1))
+			if ((int64(i) >= int64(x) - 1 && int64(i) <= int64(x) + 1) &&
+			    (int64(j) >= int64(y) - 1 && int64(j) <= int64(y) + 1))
 				RequestMapSection(i, j);
 			else
 				RemoveMapSection(i, j);

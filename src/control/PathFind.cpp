@@ -61,10 +61,10 @@ CPedPath::CalcPedRoute(int8 pathType, CVector position, CVector destination, CVe
 	}
 	CWorld::AdvanceCurrentScanCode();
 	if (pathType != ROUTE_NO_BLOCKADE) {
-		const int32 nStartX = Max(CWorld::GetSectorIndexX(vecSectorStartPos.x), 0);
-		const int32 nStartY = Max(CWorld::GetSectorIndexY(vecSectorStartPos.y), 0);
-		const int32 nEndX = Min(CWorld::GetSectorIndexX(vecSectorEndPos.x), NUMSECTORS_X - 1);
-		const int32 nEndY = Min(CWorld::GetSectorIndexY(vecSectorEndPos.y), NUMSECTORS_Y - 1);
+		const int32 nStartX = CWorld::GetSectorIndexX(vecSectorStartPos.x);
+		const int32 nStartY = CWorld::GetSectorIndexY(vecSectorStartPos.y);
+		const int32 nEndX = CWorld::GetSectorIndexX(vecSectorEndPos.x);
+		const int32 nEndY = CWorld::GetSectorIndexY(vecSectorEndPos.y);
 		for (int32 y = nStartY; y <= nEndY; y++) {
 			for (int32 x = nStartX; x <= nEndX; x++) {
 				CSector *pSector = CWorld::GetSector(x, y);

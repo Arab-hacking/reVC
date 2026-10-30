@@ -26,6 +26,7 @@ jobs:
     runs-on: ubuntu-latest
 
     strategy:
+      fail-fast: false
       matrix:
         variant: [debug, release]
 
@@ -76,7 +77,29 @@ jobs:
         run: echo "ASSEMBLE_TASK=assemble${{ matrix.variant == 'debug' && 'Debug' || 'Release' }}" >> $GITHUB_ENV
 
       - name: Build ${{ matrix.variant }} APK
-        run: ./gradlew $ASSEMBLE_TASK --no-daemon --stacktrace --parallel --build-cache
+        shell: bash
+        run: |
+          set +e
+          ./gradlew "$ASSEMBLE_TASK" --no-daemon --stacktrace --parallel --build-cache > gradle-build.log 2>&1
+          result=$?
+          if (( result != 0 )); then
+            # Expose diagnostics as check annotations: API clients and PR
+            # reviewers can read them even when the raw Actions log is unavailable.
+            python3 - <<'PY'
+          from pathlib import Path
+          lines = Path('gradle-build.log').read_text(errors='replace').splitlines()
+          keywords = ('error:', 'CMake Error', 'What went wrong:', 'ninja:',
+                      'FAILED', 'Caused by:', 'Could not', 'Exception', 'failed to')
+          matches = [line for line in lines if any(key in line for key in keywords)]
+          for line in matches[:12] + matches[-12:] + lines[-8:]:
+              safe = line[:700].replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+              print('::error::' + safe)
+          PY
+          fi
+          exit "$result"
+
+      - name: Verify game library and assets in APK
+        run: python3 ../../tools/android/check_apk.py app/build/outputs/apk/${{ matrix.variant }}/app-${{ matrix.variant }}.apk
 
       - name: Upload ${{ matrix.variant }} APK
         uses: actions/upload-artifact@v4

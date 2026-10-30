@@ -81,6 +81,9 @@ extern int32 EnvMapSize;
 extern rw::Camera *EnvMapCam;
 extern rw::Texture *EnvMapTex;
 extern rw::Texture *EnvMaskTex;
+// Takes ownership of an optional car mask, or restores neo.txd
+// when nil. Does not change the dynamically rendered scene reflection RT.
+void SetCarReflectionMask(rw::Texture *mask);
 void EnvMapRender(void);
 
 enum {
