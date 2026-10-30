@@ -4,8 +4,9 @@
 // Runtime loader for explicitly placed custom resources:
 //   custom/anim/*.ifp                  animation banks
 //   custom/img/*.{img,dir}             VC IMG v1 with DFF/TXD/COL/CLS entries
-//   custom/data/maps/*.{ide,ipl}       world definitions and placements
-// Legacy ZIPs, game-root img/ and game-root common/ are not custom sources.
+//   custom/data/maps/*.{ide,ipl}       loose world definitions/placements
+//   custom/common.zip                  map IDE/IPL, config.dat, timecyc.json only
+// Other ZIPs, game-root img/ and game-root common/ are not custom sources.
 // The native VC game archives remain available to the normal streamer.
 
 #include <vector>
@@ -84,8 +85,8 @@ public:
 	static void ForEachGameCollision(CollisionCallback callback, void *context,
 	                                 CollisionFilter filter = nullptr);
 
-	// Optional loose custom/data/timecyc.json for lighting/shadows only.
-	// fromCommon is always false; the game-root common/ tree is not read.
+	// Optional custom/data/timecyc.json, loose first then custom/common.zip.
+	// fromCommon means it came from that ZIP, never the game-root common/ tree.
 	static bool ReadDataFile(const char *relpath, std::vector<uint8> &out,
 	                         bool *fromCommon = nullptr);
 

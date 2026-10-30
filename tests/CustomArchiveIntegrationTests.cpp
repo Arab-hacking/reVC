@@ -1,6 +1,6 @@
-// Exercise the REAL custom folder scanner, IMG mounting and collision record
-// conversion. Valid ZIPs and loose collision/legacy paths are NEGATIVE fixtures. Standalone test:
-// unused game/RenderWare sections are garbage-collected at link time.
+// Exercise the REAL custom folder scanner, common.zip reader, IMG mounting
+// and collision conversion. Other ZIPs and loose legacy paths are NEGATIVE
+// fixtures. Unused game/RenderWare sections are garbage-collected at link time.
 #include "common.h"
 #include "CustomModels.h"
 #include "CustomColFormat.h"
@@ -137,26 +137,37 @@ static std::vector<uint8> LegacyCls(const char *name) {
     return b;
 }
 
-struct File { std::string path; std::vector<uint8> contents; };
+struct File { std::string path; std::vector<uint8> contents; bool deflate; };
+// A raw DEFLATE stored block exercises ZIP method 8 without a zlib dependency.
+static std::vector<uint8> DeflateStored(const std::vector<uint8> &input) {
+    assert(input.size() <= 65535);
+    uint16 n = (uint16)input.size();
+    std::vector<uint8> out = { 1, (uint8)n, (uint8)(n>>8),
+                               (uint8)~n, (uint8)(~n>>8) };
+    out.insert(out.end(), input.begin(), input.end());
+    return out;
+}
 static void Zip(const char *path, const std::vector<File> &files) {
     std::vector<uint8> z;
-    std::vector<uint32> offsets;
+    std::vector<uint32> offsets, sizes;
     for(size_t i = 0; i < files.size(); i++) {
         offsets.push_back((uint32)z.size());
         const File &f = files[i];
-        A32(z, 0x04034b50); A16(z, 20); A16(z, 0); A16(z, 0);
-        A32(z, 0); A32(z, 0); A32(z, (uint32)f.contents.size());
+        std::vector<uint8> payload = f.deflate ? DeflateStored(f.contents) : f.contents;
+        sizes.push_back((uint32)payload.size());
+        A32(z, 0x04034b50); A16(z, 20); A16(z, 0); A16(z, f.deflate ? 8 : 0);
+        A32(z, 0); A32(z, 0); A32(z, sizes.back());
         A32(z, (uint32)f.contents.size()); A16(z, (uint16)f.path.size()); A16(z, 0);
         z.insert(z.end(), f.path.begin(), f.path.end());
-        z.insert(z.end(), f.contents.begin(), f.contents.end());
+        z.insert(z.end(), payload.begin(), payload.end());
     }
     uint32 cd = (uint32)z.size();
     for(size_t i = 0; i < files.size(); i++) {
         const File &f = files[i];
-        A32(z, 0x02014b50); A16(z, 20); A16(z, 20); A16(z, 0); A16(z, 0);
-        A32(z, 0); A32(z, 0); A32(z, (uint32)f.contents.size());
-        A32(z, (uint32)f.contents.size()); A16(z, (uint16)f.path.size());
-        A16(z, 0); A16(z, 0); A16(z, 0); A16(z, 0);
+        A32(z, 0x02014b50); A16(z, 20); A16(z, 20); A16(z, 0); A16(z, f.deflate ? 8 : 0);
+        A32(z, 0); A32(z, 0);
+        A32(z, sizes[i]); A32(z, (uint32)f.contents.size());
+        A16(z, (uint16)f.path.size()); A16(z, 0); A16(z, 0); A16(z, 0); A16(z, 0);
         A32(z, 0); A32(z, offsets[i]);
         z.insert(z.end(), f.path.begin(), f.path.end());
     }
@@ -321,6 +332,7 @@ int main() {
         { "models/forbidden.dff", Bytes("ZIP model") }
     });
     Zip("custom/img/unused.zip", { { "models/zipimg.dff", Bytes("ZIP model") } });
+    Zip("custom/img/common.zip", { { "data/maps/ide/nested.ide", Bytes("wrong ZIP directory") } });
     Write("custom/old.ifp", ifp);
     Write("custom/old.col", Col("oldcollision"));
     Write("custom/maps/old.ide", Bytes("objs\n1 oldhouse bad 100 0\nend\n"));
@@ -430,7 +442,107 @@ int main() {
     CCustomModels::Shutdown(); CTxdStore::Shutdown();
     assert(CCustomModels::PairedImageTxd("house1") == -1);
     assert(!CCustomModels::FindModelDffInImage("house1", specialPos, specialSize));
-    // With only ZIP and loose collision inputs, no world, animation,
+
+    // The single ZIP exception supplies map text and lighting, but no other
+    // resource types. Canonical and maps/ alias paths must not double-load.
+    Zip("custom/common.zip", {
+        { "data/maps/ide/test.ide", Bytes("objs\n1 zip_duplicate bad 100 0\nend\n"), true },
+        { "maps/ide/test.ide", Bytes("objs\n1 alias_duplicate bad 100 0\nend\n") },
+        { "data/maps/ide/archive.ide", Bytes("objs\n9 archive_model r3 100 0\nend\n"), true },
+        { "MAPS\\IDE\\alias.IDE", Bytes("objs\n8 alias_model r3 100 0\nend\n") },
+        { "data/maps/level_events/test.ipl", Bytes("inst\n9 zip_duplicate 0 9 0 0 0 0 0 1 -1\nend\n"), true },
+        { "maps/level_events/test.ipl", Bytes("inst\n9 alias_duplicate 0 9 0 0 0 0 0 1 -1\nend\n") },
+        { "data/maps/level_events/zip_scene.ipl", Bytes("inst\n9 archive_model 0 3 0 0 0 0 0 1 -1\nend\n"), true },
+        { "data/maps/level_events/disabled.ipl", Bytes("inst\n8 alias_model 0 8 0 0 0 0 0 1 -1\nend\n") },
+        { "data/config.dat", Bytes("IDE data/maps/ide/archive.ide\n"
+                                   "IPL data/maps/level_events/test.ipl\n"
+                                   "IPL data/maps/level_events/zip_scene.ipl\n"
+                                   "#IPL data/maps/level_events/disabled.ipl\n"), true },
+        { "data/timecyc.json", Bytes("{\"ambient\":2}"), true },
+        { "data/carcols.dat", Bytes("ignored") },
+        { "data/features/ignored.ide", Bytes("ignored") },
+        { "anim/zipbank.ifp", ifp },
+        { "collision/zip.col", Col("zipcollision") },
+        { "collision/zip.cls", Cls("zipced2") },
+        { "models/zippaint.dff", Bytes("ZIP model") },
+        { "models/zipmod.mod", Bytes("ZIP model") },
+        { "textures/zippaint.btx", RawBtx(32, 32) },
+        { "textures/zippaint.txd", Bytes("ZIP texture") },
+        { "data/maps/ignored.bpc", Bytes("ZIP binary placements") },
+        { "data/maps/../outside.ide", Bytes("traversal") },
+        { "/data/maps/ide/absolute.ide", Bytes("absolute") },
+        { "data/maps/ide/" + std::string(260, 'x') + ".ide", Bytes("too long") }
+    });
+    images.clear(); images.push_back("models/gta3.img");
+    CTxdStore::Initialise(); CCustomModels::MountImages();
+    assert(images.size() == 4 && CCustomModels::IsActive());
+    ide.clear(); ipl.clear();
+    CCustomModels::ForEachWorldFile(true, WorldFile, &ide);
+    CCustomModels::ForEachWorldFile(false, WorldFile, &ipl);
+    assert(ide.size() == 3 && ide.count("data/maps/ide/test.ide") &&
+           ide.count("data/maps/ide/archive.ide") && ide.count("data/maps/ide/alias.ide"));
+    assert(ide.at("data/maps/ide/test.ide").find("house1 r3 100") != std::string::npos);
+    assert(ipl.size() == 2 && ipl.count("data/maps/level_events/test.ipl") &&
+           ipl.count("data/maps/level_events/zip_scene.ipl"));
+    assert(ipl.at("data/maps/level_events/test.ipl").find("house1") != std::string::npos);
+    assert(!CCustomModels::HasModelFile("zippaint") && !CCustomModels::HasModelFile("zipmod"));
+    assert(!CCustomModels::GetCollisionBlock("zipcollision", selected));
+    assert(!CCustomModels::GetCollisionBlock("zipced2", selected));
+    assert(!CCustomModels::LoadAnimFileFromCustom("zipbank.ifp", selected));
+    assert(!CCustomModels::ReadDataFile("data/carcols.dat", selected));
+    assert(!CCustomModels::ReadDataFile("data/config.dat", selected));
+    assert(!CCustomModels::ReadDataFile("data/features/ignored.ide", selected));
+    assert(CCustomModels::ReadDataFile("data/timecyc.json", selected, &fromCommon));
+    assert(fromCommon && std::string(selected.begin(), selected.end()) == "{\"ambient\":2}");
+    Write("custom/data/timecyc.json", Bytes("{\"ambient\":3}"));
+    assert(CCustomModels::ReadDataFile("data/timecyc.json", selected, &fromCommon));
+    assert(!fromCommon && std::string(selected.begin(), selected.end()) == "{\"ambient\":3}");
+    assert(std::remove("custom/data/timecyc.json") == 0);
+
+    Write("custom/data/maps/active_ipl.txt", Bytes(
+        "data/maps/level_events/alternate.ipl\n"
+        "data/maps/level_events/disabled.ipl\n"));
+    ipl.clear(); CCustomModels::ForEachWorldFile(false, WorldFile, &ipl);
+    assert(ipl.size() == 2 && ipl.count("data/maps/level_events/alternate.ipl") &&
+           ipl.count("data/maps/level_events/disabled.ipl"));
+    Write("custom/data/maps/active_ipl.txt", Bytes("# disable all custom IPLs\n"));
+    ipl.clear(); CCustomModels::ForEachWorldFile(false, WorldFile, &ipl);
+    assert(ipl.empty());
+    assert(std::remove("custom/data/maps/active_ipl.txt") == 0);
+
+    // If an indexed loose file vanishes, the duplicate in the ZIP is a safe
+    // fallback; without any loose maps, ZIP-only installs still read config.dat.
+    assert(std::remove("custom/data/maps/ide/test.ide") == 0);
+    ide.clear(); CCustomModels::ForEachWorldFile(true, WorldFile, &ide);
+    assert(ide.size() == 3 && ide.at("data/maps/ide/test.ide").find("zip_duplicate") != std::string::npos);
+    CCustomModels::Shutdown(); CTxdStore::Shutdown();
+    assert(std::rename("custom/data/maps", "custom/data/maps_off") == 0);
+    images.clear(); images.push_back("models/gta3.img");
+    CTxdStore::Initialise(); CCustomModels::MountImages();
+    ide.clear(); ipl.clear();
+    CCustomModels::ForEachWorldFile(true, WorldFile, &ide);
+    CCustomModels::ForEachWorldFile(false, WorldFile, &ipl);
+    assert(CCustomModels::HasWorldFiles() && ide.size() == 3 && ipl.size() == 2);
+    assert(ide.at("data/maps/ide/test.ide").find("zip_duplicate") != std::string::npos);
+    assert(ipl.at("data/maps/level_events/test.ipl").find("zip_duplicate") != std::string::npos);
+    assert(CCustomModels::ReadDataFile("data/timecyc.json", selected, &fromCommon) && fromCommon);
+    CCustomModels::Shutdown(); CTxdStore::Shutdown();
+
+    // Without a config.dat selection, all ZIP IPLs remain eligible.
+    Zip("custom/common.zip", {
+        { "data/maps/ide/alone.ide", Bytes("objs\n1 alone r3 100 0\nend\n") },
+        { "data/maps/a.ipl", Bytes("inst\n1 alone 0 0 0 0 0 0 0 1 -1\nend\n") },
+        { "data/maps/b.ipl", Bytes("inst\n1 alone 0 1 0 0 0 0 0 1 -1\nend\n"), true }
+    });
+    assert(CCustomModels::HasWorldFiles()); // reinitialise after archive replacement
+    ide.clear(); ipl.clear();
+    CCustomModels::ForEachWorldFile(true, WorldFile, &ide);
+    CCustomModels::ForEachWorldFile(false, WorldFile, &ipl);
+    assert(ide.size() == 1 && ipl.size() == 2);
+    assert(!CCustomModels::ReadDataFile("data/timecyc.json", selected)); // no stale ZIP entries
+    CCustomModels::Shutdown(); CTxdStore::Shutdown();
+
+    // With only unrelated ZIP and loose collision inputs, no world, animation,
     // collision, graphics, models or native-IMG replacements are selected.
     assert(std::rename("custom", "custom_off") == 0);
     MkDir("custom");
@@ -493,5 +605,5 @@ int main() {
 
     assert(chdir("..") == 0);
     RemoveTree(root);
-    std::puts("custom layout: only custom/img (including COL/CLS), anim and data/maps served; all loose collision, ZIP and legacy paths rejected");
+    std::puts("custom layout: IMG/DIR + loose maps/anim + selective common.zip served; other ZIP and legacy paths rejected");
 }

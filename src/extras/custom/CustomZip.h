@@ -1,13 +1,11 @@
 #ifndef __GTA_CUSTOMZIP_H__
 #define __GTA_CUSTOMZIP_H__
 
-// Read-only ZIP archive reader that keeps everything in memory.
-//
-// The custom model feature reads .mod/.btx/.cls files straight out of the zip
-// archives the player drops into the game folder, so the archives have to be
-// readable at runtime without any external tooling. The archives can be big
-// (map packs are several GB), so only the central directory is read at start
-// up; file data is decompressed on demand, one entry at a time.
+// Read-only ZIP archive reader. The game uses it ONLY for whitelisted map
+// text and data/timecyc.json inside custom/common.zip; it never enables
+// .mod/.btx/.cls or any other user ZIP. Archives may be several GB, so only
+// the central directory is read at startup; file data is decompressed on
+// demand, one entry at a time.
 //
 // Supported: stored and deflated entries, ZIP64 sizes/offsets for big archives.
 // Everything else (encryption, other compression methods) is rejected.

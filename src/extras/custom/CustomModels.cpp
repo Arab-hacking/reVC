@@ -17,6 +17,8 @@
 #include <ctype.h>		// tolower
 
 #include "CustomCol.h"
+#include "CustomZip.h"
+#include "CommonCatalog.h"
 #include "BrCollisionFormat.h"
 #include "CustomColFormat.h"
 #include "CustomImgFormat.h"
@@ -56,21 +58,23 @@
 // where the files live
 // ---------------------------------------------------------------------------
 
-// Bound a single IMG collision record or loose animation/map input before reading it.
+// Bound a single IMG collision record, loose map/animation or common.zip entry before reading it.
 #define CUSTOM_MAX_ENTRY (64*1024*1024)
 #define CUSTOM_MAX_DEPTH 8			// subdirectories under each asset folder
 
 struct CustomSource
 {
 	uint64 mtime;
-	char loose[256];	// path to a loose file or its containing IMG
-	char fname[256];	// diagnostic name, including the IMG entry if applicable
+	char loose[256];	// path to a loose file, its containing IMG, or common.zip
+	char fname[256];	// diagnostic name, including the archive entry if applicable
 	uint64 imgOffset;	// byte offset of a validated IMG/DIR sector slice
 	uint32 imgBytes;
+	int zipEntry;	// only entries from custom/common.zip; -1 for loose files and IMG
 	bool inImg;
 };
 
-// No ZIP archives are mounted: models, TXDs and collisions use custom/img/.
+// Only common.zip supplies map text and optional lighting; models, TXDs and
+// collisions still use custom/img/ and animation banks still use custom/anim/.
 // The legacy converters below have no external .mod/.btx/.dff/.txd inputs.
 static std::map<std::string, CustomSource> customMods;
 static std::map<std::string, CustomSource> customBtx;
@@ -83,6 +87,12 @@ static std::map<std::string, CustomSource> customColFiles;	// whole .col contain
 static std::map<std::string, CustomSource> customImages;	// .bmp/.png/.jpg
 static std::map<std::string, CustomSource> customIdeFiles;
 static std::map<std::string, CustomSource> customIplFiles;
+// Keep the ZIP alternatives for loose-file read failures, without indexing any
+// of its models/animations/collisions as game resources.
+static std::unique_ptr<CustomZip> customCommonZip;
+static std::map<std::string, CustomSource> commonZipIdeFiles, commonZipIplFiles;
+static std::map<std::string, CustomSource> commonZipDataFiles;
+static commoncatalog::Catalog commonZipConfig;
 // Keep a source for every IMG collision entry, even with repeated filenames.
 static std::vector<CustomSource> customClsSources, customColSources;
 static std::vector<bool> customClsHasBrBlocks;
@@ -221,6 +231,7 @@ MakeSource(uint64 mtime, const char *path, const char *fname)
 	src.mtime = mtime;
 	src.imgOffset = 0;
 	src.imgBytes = 0;
+	src.zipEntry = -1;
 	src.inImg = false;
 	src.loose[0] = '\0';
 	src.fname[0] = '\0';
@@ -310,7 +321,7 @@ Subfolder(const std::string &root, const char *name)
 
 // Loose sources are restricted to custom/anim/ and custom/data/maps/.
 // All user models, textures and collisions live in validated custom/img/ pairs;
-// custom/collision/, ZIPs, game-root img/ and common/ are never scanned.
+// this function never scans custom/collision/, ZIPs, game-root img/ or common/.
 static void
 ScanAssetFolder(const std::string &folder, const char *kind, int depth, ScanStats &st)
 {
@@ -341,6 +352,77 @@ ScanAssetFolder(const std::string &folder, const char *kind, int depth, ScanStat
 		ScanAssetFolder(dirs[i], kind, depth+1, st);
 }
 
+// The one ZIP exception: only custom/common.zip at the custom root. Index
+// canonical data/maps/ entries first, then accept the old maps/ alias only
+// where no canonical entry exists. No DFF/TXD/COL/CLS/IFP/BTX is indexed here.
+static void
+ScanCommonZip(void)
+{
+	std::vector<std::string> files, dirs;
+	if(!ListDirectory(customFolderPath.c_str(), files, dirs)) return;
+	std::sort(files.begin(), files.end());
+	for(size_t i = 0; i < files.size(); i++) {
+		const std::string &path = files[i];
+		if(ToLower(Stem(path)) != "common" || Extension(path) != "zip") continue;
+		if(path.size() >= sizeof(CustomSource::loose)) {
+			CUSTOM_LOG("common.zip: path too long: %s\n", path.c_str());
+			continue;
+		}
+		std::unique_ptr<CustomZip> zip(new CustomZip);
+		if(!zip->Open(path.c_str())) {
+			CUSTOM_LOG("common.zip: cannot index %s\n", path.c_str());
+			continue;
+		}
+		customCommonZip.swap(zip);
+		const uint64 mtime = FileTime(path.c_str());
+		for(int pass = 0; pass < 2; pass++) {
+			for(int n = 0; n < customCommonZip->GetNumEntries(); n++) {
+				const CustomZipEntry *ent = customCommonZip->GetEntry(n);
+				if(ent == nil || ent->name[0] == '\0' ||
+				   strlen(ent->name) >= CUSTOMZIP_MAX_NAME-1 ||
+				   ent->uncompressedSize == 0 || ent->uncompressedSize > CUSTOM_MAX_ENTRY ||
+				   ent->compressedSize > CUSTOM_MAX_ENTRY + 1024*1024 ||
+				   (ent->method != 0 && ent->method != 8)) continue;
+				std::string key = commoncatalog::Path(ent->name);
+				if(key.empty()) continue; // absolute paths, traversal and non-ASCII are rejected
+				CustomSource src = MakeSource(mtime, path.c_str(), ent->name);
+				src.zipEntry = n;
+				if(pass == 0 && (key == "data/config.dat" || key == "data/timecyc.json")) {
+					commonZipDataFiles.insert(std::make_pair(key, src));
+					continue;
+				}
+				if(pass == 0 ? key.compare(0, 10, "data/maps/") != 0 :
+				               key.compare(0, 5, "maps/") != 0) continue;
+				if(pass == 1) key = "data/" + key;
+				if(key.size() >= sizeof(CustomSource::fname)) continue;
+				const std::string ext = Extension(key);
+				if(ext == "ide") commonZipIdeFiles.insert(std::make_pair(key, src));
+				else if(ext == "ipl") commonZipIplFiles.insert(std::make_pair(key, src));
+			}
+		}
+		std::map<std::string, CustomSource>::const_iterator config = commonZipDataFiles.find("data/config.dat");
+		if(config != commonZipDataFiles.end()) {
+			std::vector<uint8> bytes;
+			if(ReadSource(config->second, bytes))
+				commonZipConfig = commoncatalog::Parse(bytes.data(), bytes.size());
+			else
+				CUSTOM_LOG("common.zip: cannot read data/config.dat; all IPLs are eligible\n");
+		}
+		unsigned shadowed = 0;
+		for(std::map<std::string, CustomSource>::const_iterator it = commonZipIdeFiles.begin();
+		    it != commonZipIdeFiles.end(); ++it)
+			if(!customIdeFiles.insert(*it).second) shadowed++;
+		for(std::map<std::string, CustomSource>::const_iterator it = commonZipIplFiles.begin();
+		    it != commonZipIplFiles.end(); ++it)
+			if(!customIplFiles.insert(*it).second) shadowed++;
+		CUSTOM_LOG("common.zip %s: %d entries, %u IDE / %u IPL path(s), %u loose file(s) preferred; config.dat lists %u IPL (%u invalid directive(s))\n",
+			path.c_str(), customCommonZip->GetNumEntries(),
+			(unsigned)commonZipIdeFiles.size(), (unsigned)commonZipIplFiles.size(), shadowed,
+			(unsigned)commonZipConfig.ipl.size(), (unsigned)commonZipConfig.invalid);
+		return; // never scan other ZIPs or folders
+	}
+}
+
 static void
 EnsureInitialised(void)
 {
@@ -356,25 +438,39 @@ EnsureInitialised(void)
 	const std::string maps = data.empty() ? std::string() : Subfolder(data, "maps");
 	if(!anim.empty()) ScanAssetFolder(anim, "anim", 0, st);
 	if(!maps.empty()) ScanAssetFolder(maps, "data/maps", 0, st);
+	ScanCommonZip();
 	customActive = !customAnims.empty() || !customIdeFiles.empty() || !customIplFiles.empty();
-	CUSTOM_LOG("==== custom folder: %s (IMG/DIR resources; loose anim/maps only; ZIP, collision/, game-root img/ and common/ disabled)\n", customFolderPath.c_str());
-	CUSTOM_LOG("scan: %d .ifp (%u names), %d IDE, %d IPL; IMG collisions indexed at mount\n",
-		st.anim, (unsigned)customAnims.size(), st.ide, st.ipl);
+	CUSTOM_LOG("==== custom folder: %s (IMG/DIR; loose anim/maps; common.zip maps/data only; other ZIPs, collision/, game-root img/ and common/ disabled)\n", customFolderPath.c_str());
+	CUSTOM_LOG("scan: %d loose .ifp (%u names), %d loose IDE / %d loose IPL; %u total IDE / %u total IPL path(s); IMG collisions indexed at mount\n",
+		st.anim, (unsigned)customAnims.size(), st.ide, st.ipl,
+		(unsigned)customIdeFiles.size(), (unsigned)customIplFiles.size());
 	if(!customActive)
-		CUSTOM_LOG("scan: no loose animation/map files; checking custom/img/ for models, textures and collisions\n");
+		CUSTOM_LOG("scan: no user animation/map files; checking custom/img/ for models, textures and collisions\n");
 }
 
 // ---------------------------------------------------------------------------
 // reading entries
 // ---------------------------------------------------------------------------
 
-// Read only indexed loose files or bounded slices of validated IMG/DIR pairs.
-// No ZIP reader is called. A collision IMG can be larger than 2 GiB, so seek
-// by a checked 64-bit byte offset rather than loading the image or using fseek.
+// Read only indexed loose files, bounded slices of validated IMG/DIR pairs,
+// or whitelisted entries in custom/common.zip. A collision IMG can be larger
+// than 2 GiB, so seek by a checked 64-bit offset rather than loading the image.
 static bool
 ReadSource(const CustomSource &src, std::vector<uint8> &out)
 {
 	out.clear();
+	if(src.zipEntry >= 0) {
+		if(!customCommonZip) return false;
+		const CustomZipEntry *ent = customCommonZip->GetEntry(src.zipEntry);
+		if(ent == nil || ent->uncompressedSize == 0 || ent->uncompressedSize > CUSTOM_MAX_ENTRY)
+			return false;
+		out.resize((size_t)ent->uncompressedSize);
+		if(!customCommonZip->Extract(src.zipEntry, out.data(), (uint32)out.size())) {
+			out.clear();
+			return false;
+		}
+		return true;
+	}
 	if(src.loose[0] == '\0') return false;
 	FILE *f = fcaseopen(src.loose, "rb");
 	if(f == nil) return false;
@@ -1850,6 +1946,11 @@ CCustomModels::Shutdown(void)
 	customLegacyClsBlocks.clear();
 	customIdeFiles.clear();
 	customIplFiles.clear();
+	commonZipIdeFiles.clear();
+	commonZipIplFiles.clear();
+	commonZipDataFiles.clear();
+	commonZipConfig = commoncatalog::Catalog();
+	customCommonZip.reset();
 	customImages.clear();
 	customSkinNames.clear();
 	customFolderPath.clear();
@@ -1884,18 +1985,33 @@ CCustomModels::HasModelFile(const char *name)
 	return name && imageModelTextures.FindDffImage(name) >= 0;
 }
 
-// Map packs contain alternative scenes (events, races, old/new vegetation).
-// Do not guess which variant the user wants: when present, this optional list
-// selects exactly which IPL paths are active. IDEs still all contribute their
-// named models so reused source IDs cannot silently replace each other.
+// Map packs contain alternative scenes. An explicit loose manifest selects
+// IPLs first; otherwise common.zip's config.dat selects IPL paths from BOTH
+// loose maps and the archive. IDE definitions remain available for models
+// shared between scenes. With neither selection, retain load-all behaviour.
 static bool
 ReadActiveIpls(std::set<std::string> &active)
 {
-	std::string maps = Subfolder(Subfolder(customFolderPath, "data"), "maps");
-	if(maps.empty()) return false;
-	std::string filename = maps + "/active_ipl.txt";
-	FILE *f = fcaseopen(filename.c_str(), "rb");
-	if(f == nil) return false; // no manifest: load all custom/data/maps IPLs
+	const std::string data = Subfolder(customFolderPath, "data");
+	const std::string maps = data.empty() ? std::string() : Subfolder(data, "maps");
+	const std::string filename = maps.empty() ? std::string() : maps + "/active_ipl.txt";
+	FILE *f = filename.empty() ? nil : fcaseopen(filename.c_str(), "rb");
+	if(f == nil) {
+		if(commonZipConfig.ipl.empty()) return false;
+		unsigned missing = 0;
+		for(size_t i = 0; i < commonZipConfig.ipl.size(); i++) {
+			const std::string &key = commonZipConfig.ipl[i];
+			if(customIplFiles.find(key) != customIplFiles.end()) active.insert(key);
+			else missing++;
+		}
+		if(active.empty()) {
+			CUSTOM_LOG("common.zip config.dat: no IPL paths match; loading all custom IPLs\n");
+			return false;
+		}
+		CUSTOM_LOG("common.zip config.dat: selected %u IPL path(s), %u missing; override with custom/data/maps/active_ipl.txt\n",
+			(unsigned)active.size(), missing);
+		return true;
+	}
 	char line[512];
 	unsigned invalid = 0, missing = 0, lineNo = 0;
 	while(fgets(line, sizeof(line), f)){
@@ -1950,13 +2066,20 @@ CCustomModels::ForEachWorldFile(bool ide, WorldFileCallback callback, void *cont
 	std::set<std::string> active;
 	const bool selected = !ide && ReadActiveIpls(active);
 	const std::map<std::string, CustomSource> &world = ide ? customIdeFiles : customIplFiles;
+	const std::map<std::string, CustomSource> &zip = ide ? commonZipIdeFiles : commonZipIplFiles;
 	for(std::map<std::string, CustomSource>::const_iterator it = world.begin();
 	    it != world.end(); ++it) {
 		if(selected && !active.count(it->first)) continue;
 		std::vector<uint8> bytes;
 		if(!ReadSource(it->second, bytes)) {
-			CUSTOM_LOG("world %s: cannot read %s\n", ide ? "IDE" : "IPL", it->first.c_str());
-			continue;
+			std::map<std::string, CustomSource>::const_iterator backup = zip.find(it->first);
+			if(it->second.zipEntry >= 0 || backup == zip.end() ||
+			   !ReadSource(backup->second, bytes)) {
+				CUSTOM_LOG("world %s: cannot read %s\n", ide ? "IDE" : "IPL", it->first.c_str());
+				continue;
+			}
+			CUSTOM_LOG("world %s: loose %s unreadable; falling back to common.zip\n",
+				ide ? "IDE" : "IPL", it->first.c_str());
 		}
 		callback(it->first.c_str(), bytes.data(), bytes.size(), context);
 	}
@@ -2450,7 +2573,7 @@ CCustomModels::PrintStats(void)
 {
 	EnsureInitialised();
 	CUSTOM_LOG("--- stats ---\n");
-	CUSTOM_LOG("custom/img: %zu mounted; IMG collisions: %zu .cls (%zu CED2 blocks), %zu .col (%zu model blocks); loose: %zu .ifp, %zu IDE, %zu IPL\n",
+	CUSTOM_LOG("custom/img: %zu mounted; IMG collisions: %zu .cls (%zu CED2 blocks), %zu .col (%zu model blocks); user files: %zu loose .ifp, %zu IDE, %zu IPL (loose + common.zip)\n",
 		customImageSlots.size(), customClsSources.size(), customBrColBlocks.size(),
 		customColSources.size(), customColBlocks.size(), customAnims.size(),
 		customIdeFiles.size(), customIplFiles.size());
@@ -2465,7 +2588,7 @@ CCustomModels::PrintStats(void)
 }
 
 // ---------------------------------------------------------------------------
-// optional loose lighting table and skins
+// optional lighting table (loose file before common.zip) and skins
 // ---------------------------------------------------------------------------
 
 bool
@@ -2475,15 +2598,24 @@ CCustomModels::ReadDataFile(const char *relpath, std::vector<uint8> &out,
 	if(fromCommon) *fromCommon = false;
 	out.clear();
 	if(relpath == nil || strcmp(relpath, "data/timecyc.json") != 0)
-		return false; // no arbitrary paths, ZIPs, or game-root common/ data
+		return false; // no arbitrary data, other ZIPs, or game-root common/ files
 	EnsureInitialised();
 	const std::string data = Subfolder(customFolderPath, "data");
-	if(data.empty()) return false;
-	const std::string path = data + "/timecyc.json";
-	if(path.size() >= sizeof(CustomSource::loose)) return false;
-	CustomSource src = MakeSource(FileTime(path.c_str()), path.c_str(), relpath);
-	if(!ReadSource(src, out)) return false;
-	CUSTOM_LOG("data file %s: read from %s (%u bytes)\n", relpath, path.c_str(), (unsigned)out.size());
+	if(!data.empty()) {
+		const std::string path = data + "/timecyc.json";
+		if(path.size() < sizeof(CustomSource::loose)) {
+			CustomSource src = MakeSource(FileTime(path.c_str()), path.c_str(), relpath);
+			if(ReadSource(src, out)) {
+				CUSTOM_LOG("data file %s: read from %s (%u bytes)\n",
+					relpath, path.c_str(), (unsigned)out.size());
+				return true;
+			}
+		}
+	}
+	const CustomSource *src = FindSource(commonZipDataFiles, relpath);
+	if(src == nil || !ReadSource(*src, out)) return false;
+	if(fromCommon) *fromCommon = true;
+	CUSTOM_LOG("data file %s: read from common.zip (%u bytes)\n", relpath, (unsigned)out.size());
 	return true;
 }
 

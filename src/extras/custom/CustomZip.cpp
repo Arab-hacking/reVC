@@ -67,7 +67,8 @@ struct Huffman
 		for(len = 1; len <= 15; len++){
 			code |= (int)br.Get(1);
 			int count = counts[len];
-			if(code - first < count) return symbols[index + (code - first)];
+			if(code >= first && code - first < count && index + code - first < 288)
+				return symbols[index + (code - first)];
 			index += count;
 			first = (first + count) << 1;
 			code <<= 1;
@@ -265,7 +266,7 @@ CustomZip::ReadAt(uint64 offset, void *dst, uint32 size) const
 
 	if(size == 0)
 		return true;
-	if(m_path[0] == '\0')
+	if(m_path[0] == '\0' || offset > m_fileSize || size > m_fileSize - offset)
 		return false;
 	f = fopen(m_path, "rb");
 	if(f == nil)
@@ -282,7 +283,12 @@ FileSize(const char *path, uint64 &size)
 	FILE *f = fopen(path, "rb");
 	if(f == nil)
 		return false;
-	if(fseek(f, 0, SEEK_END) != 0){
+#if defined(_WIN32)
+	bool endOk = _fseeki64(f, 0, SEEK_END) == 0;
+#else
+	bool endOk = fseeko(f, 0, SEEK_END) == 0;
+#endif
+	if(!endOk){
 		fclose(f);
 		return false;
 	}
@@ -311,8 +317,8 @@ CustomZip::Open(const char *path)
 	bool found = false;
 
 	Close();
-	strncpy(m_path, path, sizeof(m_path)-1);
-	m_path[sizeof(m_path)-1] = '\0';
+	if(path == nil || strlen(path) >= sizeof(m_path)) return false;
+	strcpy(m_path, path);
 
 	if(!FileSize(m_path, m_fileSize)){
 		debug("custom: cannot open archive %s\n", m_path);
@@ -384,6 +390,13 @@ CustomZip::Open(const char *path)
 		uint32 commentLen = GetU16(cd + p + 32);
 		uint64 localOff = GetU32(cd + p + 42);
 		if(p + 46 + nameLen + extraLen + commentLen > (uint32)cdSize) break;
+		// Never index a truncated name (or one with a hidden NUL suffix): the
+		// caller must validate exactly the path that Extract will read.
+		if(nameLen == 0 || nameLen >= CUSTOMZIP_MAX_NAME ||
+		   memchr(cd + p + 46, '\0', nameLen) != nil) {
+			p += 46 + nameLen + extraLen + commentLen;
+			continue;
+		}
 
 		// ZIP64 extended information (used when the 32 bit fields overflow)
 		if(compSize == 0xFFFFFFFF || uncompSize == 0xFFFFFFFF || localOff == 0xFFFFFFFF){
@@ -405,9 +418,8 @@ CustomZip::Open(const char *path)
 		}
 
 		CustomZipEntry &ent = m_entries[m_numEntries];
-		uint32 copy = nameLen < CUSTOMZIP_MAX_NAME-1 ? nameLen : CUSTOMZIP_MAX_NAME-1;
-		memcpy(ent.name, cd + p + 46, copy);
-		ent.name[copy] = '\0';
+		memcpy(ent.name, cd + p + 46, nameLen);
+		ent.name[nameLen] = '\0';
 		ent.method = method;
 		ent.compressedSize = compSize;
 		ent.uncompressedSize = uncompSize;
@@ -442,8 +454,10 @@ CustomZip::Extract(int index, uint8 *dst, uint32 dstSize) const
 	if(!ReadAt(ent->offset, header, 30) || GetU32(header) != 0x04034b50) return false;
 	nameLen = GetU16(header + 26);
 	extraLen = GetU16(header + 28);
+	if(ent->offset > m_fileSize || 30u + nameLen + extraLen > m_fileSize - ent->offset)
+		return false;
 	dataOffset = ent->offset + 30 + nameLen + extraLen;
-	if(dataOffset > m_fileSize || ent->compressedSize > m_fileSize - dataOffset) return false;
+	if(ent->compressedSize > m_fileSize - dataOffset) return false;
 
 	comp = new uint8[(uint32)ent->compressedSize];
 	if(!ReadAt(dataOffset, comp, (uint32)ent->compressedSize)){

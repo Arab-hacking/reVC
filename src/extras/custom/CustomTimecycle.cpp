@@ -431,21 +431,23 @@ ExpandGrids(const SlotGrid grids[BR_WEATHERS_USED], int weathers, bool lightingO
 	}
 }
 
-// A loose custom/data/timecyc.json can adjust lighting and native shadow
-// strengths. ZIPs, game-root common/, weather presets, sky/fog and PostFX are
-// not imported into this layout.
+// The loose timecyc.json wins; custom/common.zip is the only archive fallback.
+// Game-root common/, other ZIPs, weather presets, sky/fog and PostFX are not
+// imported into this layout.
 void
 CCustomTimecycle::Apply(void)
 {
 	std::vector<uint8> data;
-	if(!CCustomModels::ReadDataFile("data/timecyc.json", data))
+	bool fromCommon = false;
+	if(!CCustomModels::ReadDataFile("data/timecyc.json", data, &fromCommon))
 		return; // keep the game's native TIMECYC.DAT
 
 	SlotGrid grids[BR_WEATHERS_USED];
 	int weathers = 0;
 	if(!ParseTimecycle(data, grids, weathers)) return;
 	ExpandGrids(grids, weathers, true);
-	CUSTOM_LOG("custom/data/timecyc.json: %d weather(s); ambient/directional light and native shadow strengths applied; sky, water, fog and PostFX unchanged\n", weathers);
+	CUSTOM_LOG("%s: %d weather(s); ambient/directional light and native shadow strengths applied; sky, water, fog and PostFX unchanged\n",
+		fromCommon ? "custom/common.zip:data/timecyc.json" : "custom/data/timecyc.json", weathers);
 }
 
 #else // CUSTOM_MODELS

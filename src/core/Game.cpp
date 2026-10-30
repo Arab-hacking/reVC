@@ -352,7 +352,7 @@ bool CGame::InitialiseOnceAfterRW(void)
 	CPedStats::Initialise();
 	CTimeCycle::Initialise();
 #ifdef CUSTOM_MODELS
-	CCustomTimecycle::Apply();	// optional loose custom/data/timecyc.json: lighting and shadows only
+	CCustomTimecycle::Apply();	// optional custom/data/timecyc.json or common.zip: lighting/shadows only
 #endif
 #ifdef GTA_PS2
 	LoadingScreen("Loading the Game", "Initialising audio", GetRandomSplashScreen());
@@ -733,7 +733,7 @@ void CGame::ReInitGameObjectVariables(void)
 	CCarCtrl::ReInit();
 	CTimeCycle::Initialise();
 #ifdef CUSTOM_MODELS
-	CCustomTimecycle::Apply();	// optional loose custom/data/timecyc.json: lighting and shadows only
+	CCustomTimecycle::Apply();	// optional custom/data/timecyc.json or common.zip: lighting/shadows only
 #endif
 	CDraw::SetFOV(120.0f);
 	CDraw::ms_fLODDistance = 500.0f;
