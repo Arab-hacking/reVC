@@ -2,7 +2,7 @@ uniform sampler2D tex0;
 uniform sampler2D tex1;
 
 uniform vec4 u_lightMap;
-uniform float u_brLightmap; // only marked zip/ UV2 lightmaps use BR's alpha mix
+uniform float u_brLightmap; // only previously marked UV2 textures use this alternate alpha mix
 
 FSIN vec4 v_color;
 FSIN vec2 v_tex0;

@@ -1,56 +1,35 @@
-Custom models and animations
-============================
+Custom resources: explicit layout
+=================================
 
-Place ZIP archives here (subdirectories up to eight levels are scanned).
-Loose models/textures/animations also work. Filenames are case-insensitive:
+Place files under these paths (subdirectories under each asset folder are
+searched up to eight levels deep):
 
-    <model>.mod / <model>.dff       model (BR / RenderWare)
-    <texture>.btx / <slot>.txd     texture / texture dictionary
-    *.cls / *.col                 collision containers INSIDE ZIPs only
-    <block>.ifp / <block>.ani     animation dictionary
+    custom/anim/*.ifp               SA ANP2/ANP3 animation banks
+    custom/img/*.img + *.dir         VC IMG v1 model DFF / texture TXD pairs
+    custom/collision/*.col / *.cls   collisions, matched by INTERNAL model name
+    custom/data/maps/**/*.ide        world model definitions
+    custom/data/maps/**/*.ipl        world placements
 
-For BR world geometry, place common.zip here with IDE/IPL files anywhere
-inside its directory tree (for example, maps/IDE/*.ide and
-maps/Level_Events/*.ipl). The supplied reVC.txt is actually a ZIP with
-maps/ at its root: rename it to common.zip without changing its contents.
-Loose *.ide and *.ipl files in custom/ or
-its subdirectories also work; a loose file overrides the matching relative
-path from common.zip. Put any number of ZIPs containing CED2 *.cls or VC/SA
-*.col containers here, including br_collision.zip. Collision is matched by
-its INTERNAL model name, not by the .cls/.col filename; equal container
-filenames in different ZIPs do not hide each other's models. No collision is
-read from img/*.img. The stock VC map remains present. See CUSTOM_MODELS.md.
+An optional custom/data/maps/active_ipl.txt selects IPLs by FULL path relative
+to custom/ (e.g. data/maps/level/scene.ipl), one per line. Include every IPL
+you need; an empty list disables all custom placements. IDEs are not filtered.
+By default all IPLs in custom/data/maps/ are read. The old
+custom/active_ipl.txt and common/data/config.dat have no effect.
 
-If the map pack contains mutually exclusive IPLs (event/race/old foliage),
-create custom/active_ipl.txt: one FULL path inside common.zip per line, e.g.
-    maps/Level_Events/BRmap_Event_9May.ipl
-Paths are case-insensitive; # and // comments are allowed. Only listed IPLs
-are loaded. Without this file all IPLs are loaded, but identical placements
-are deduplicated. If common.zip contains the same file as BOTH maps/... and
-data/maps/..., byte-identical copies are read only once. Differing copies
-remain distinct; select the desired IPL path explicitly instead of assuming
-one version is correct. IDEs are always indexed so reused IDs can be resolved
-by model name. The building and sector-node pools grow on demand for large maps;
-this does not change texture/model cache limits or the world boundary.
+DFF/TXD files must be inside mounted IMG v1 + external DIR pairs in
+custom/img/, not loose in this folder. The paired model.txd may be in a
+different user IMG from model.dff; it is still found by name. The normal VC
+streamer keeps its own assets and unloads distant models. VC skeletons use
+stock VC animation banks; user IFPs serve only compatible SA skeletons.
 
-For example, custom/ped.ifp (or anim/ped.ifp in a zip inside custom/) is
-considered when the game loads the PED animation block. An SA ANP2/ANP3 file is loaded as an additional sa_ped bank and leaves the
-original VC block intact. Custom ANPK files do not replace VC animation;
-invalid custom dictionaries fall back to the game's IFP.
-Models in img/*.img (VC IMG v1 + .dir) take priority over old .mod/.btx in
-ZIPs. See ../img/README.txt for IMG placement and format requirements.
-The custom/ folder is not MODELS/CUSTOM.IMG; that is an unrelated IMG archive.
+No ZIP is read for ANY user resource (including animation, collision, map,
+model, texture, reflection-mask or lightmap BTX). Do not use custom/*.zip,
+zip/*.zip, game-root img/, game-root common/, custom/ped.ifp, loose MOD/BTX,
+or .ani as fallback locations. BR .bpc, AUDO, features and vehicle physics
+are not imported. Unpacking a ZIP is not enough if its contents are not in
+the compatible file formats and locations above. Optional
+custom/data/timecyc.json adjusts only light and native shadow strengths.
 
-The scan happens once at startup; when the same filename occurs more than once,
-the source from the newest archive wins within each format; a valid .col
-block overrides a same-named .cls collision. REVC_CUSTOM_DIR=<path> selects
-another folder. All startup, custom-file, streaming and crash diagnostics go into the
-single debug.log next to the game (no REVC_CUSTOM_LOG setting needed). On
-macOS and Android the log follows the user-files / storage-root location.
-
-For vehicle reflection masks and UV2 lightmaps, place ZIP archives in the
-SEPARATE game-root zip/ folder instead. That folder never imports ordinary
-textures, models, maps, collisions or audio. See PC_GRAPHICS_ZIP.md for the
-required .btx names, the fallback, and the currently missing BR paraboloid pass.
-
-See CUSTOM_MODELS.md for the full format and compatibility details.
+REVC_CUSTOM_DIR=<path> can replace the custom/ ROOT, subject to the IMG path
+length limit of 63 bytes. A fresh debug.log records scanning, IMG validation,
+collisions, maps and animations. See ../../CUSTOM_MODELS.md for details.

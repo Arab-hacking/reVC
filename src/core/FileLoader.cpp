@@ -111,8 +111,8 @@ CFileLoader::LoadLevel(const char *filename)
 			if(!objectsLoaded){
 #ifdef CUSTOM_MODELS
 				// Stock IDEs/CDIMAGE records have been read. Mount the user's
-				// img/*.img now, before the native directory index is built;
-				// the separate custom ZIP scan registers IDEs next.
+				// custom/img/*.img now, before the native directory index;
+				// loose custom/data/maps/ IDEs are registered next.
 				CCustomModels::MountImages();
 				CCustomWorld::LoadIde();
 #endif
@@ -183,13 +183,6 @@ CFileLoader::LoadTexDictionary(const char *filename)
 {
 	RwTexDictionary *txd;
 	RwStream *stream;
-
-#ifdef CUSTOM_MODELS
-	// the custom folder wins over the game's own files
-	txd = CCustomModels::LoadTexDictionaryFromCustom(filename);
-	if(txd)
-		return txd;
-#endif
 
 	txd = nil;
 	stream = RwStreamOpen(rwSTREAMFILENAME, rwSTREAMREAD, filename);
@@ -754,12 +747,6 @@ CFileLoader::LoadClumpFile(const char *filename)
 	int n;
 	CBaseModelInfo *mi;
 
-#ifdef CUSTOM_MODELS
-	// the custom folder wins over the game's own files
-	if(CCustomModels::LoadClumpFileFromCustom(filename))
-		return;
-#endif
-
 	debug("Loading model file %s\n", filename);
 	stream = RwStreamOpen(rwSTREAMFILENAME, rwSTREAMREAD, filename);
 	while(RwStreamFindChunk(stream, rwID_CLUMP, nil, nil)){
@@ -946,7 +933,7 @@ CFileLoader::LoadAtomicFile(RwStream *stream, uint32 id)
 	RpClump *clump;
 
 #if defined(CUSTOM_MODELS) && defined(LIBRW)
-	// Only custom IDE statics and simple objects replaced by img/*.img need
+	// Only custom IDE statics and simple objects replaced by custom/img/*.img need
 	// the SA clump path. Native VC simple models still use their named _lN
 	// atomics and draw-distance slots unchanged.
 	bool saStatic = CCustomWorld::OwnsModelSlot(id);

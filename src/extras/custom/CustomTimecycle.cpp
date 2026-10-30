@@ -296,29 +296,6 @@ ParseTimecycle(const std::vector<uint8> &data, SlotGrid grids[BR_WEATHERS_USED],
 	return true;
 }
 
-// "timecyclePresetN.json": the client's server-driven weather presets (whole
-// alternative sky/lighting states a script can switch to, not pieces of the
-// day cycle). In this game nothing switches them on, so they are logged and
-// left out - the day cycle comes from timecyc.json alone.
-static void
-LogPreset(const JValue &root, const char *name)
-{
-	const JValue *jw = root.Find("Weather");
-	const JValue *jp = root.Find("TimePeriod");
-	int weather = jw ? jw->NumInt(-1) : -1;
-	int period = jp ? jp->NumInt(-1) : -1;
-	if(weather < 0 || weather >= BR_WEATHERS_USED || period < 0){
-		CUSTOM_LOG("timecycle: %s - weather %d / period %d not applicable\n", name, weather, period);
-		return;
-	}
-	(void)period;
-	const JValue *top = root.Find("SkyTopRGB");
-	const JValue *bot = root.Find("SkyBottomRGB");
-	CUSTOM_LOG("timecycle: %s - weather %d, preset %d (server-driven, not part of the day cycle, not applied)\n",
-		name, weather, period);
-	(void)top; (void)bot;
-}
-
 // one field of one weather, interpolated over the day on the client's slot
 // hours; where the client carries nothing, the game's own value stays
 template<typename T>
@@ -386,7 +363,7 @@ ExpandGrids(const SlotGrid grids[BR_WEATHERS_USED], int weathers, bool lightingO
 			ExpandField(CTimeCycle::m_nDirectionalGreen, w, g, CycleSlot::F_DIR_G, 1.0f, 0, 255);
 			ExpandField(CTimeCycle::m_nDirectionalBlue, w, g, CycleSlot::F_DIR_B, 1.0f, 0, 255);
 		}
-		if(!lightingOnly){ // sky, fog, water and other effects remain native for common/
+		if(!lightingOnly){ // sky, fog, water and other effects stay native
 			if(has[CycleSlot::F_SKYTOP_R]){
 				ExpandField(CTimeCycle::m_nSkyTopRed, w, g, CycleSlot::F_SKYTOP_R, 1.0f, 0, 255);
 				ExpandField(CTimeCycle::m_nSkyTopGreen, w, g, CycleSlot::F_SKYTOP_G, 1.0f, 0, 255);
@@ -454,68 +431,21 @@ ExpandGrids(const SlotGrid grids[BR_WEATHERS_USED], int weathers, bool lightingO
 	}
 }
 
-// "weather.json" - the snow and friends of the client; logged, not used yet
-static void
-LogWeatherJson(void)
-{
-	std::vector<uint8> data;
-	if(!CCustomModels::ReadDataFile("data/weather.json", data))
-		return;
-	JValue root;
-	std::string err;
-	if(!JsonParse(data, root, err) || root.type != JValue::OBJ)
-		return;
-	const JValue *snow = root.Find("snow");
-	if(snow){
-		const JValue *en = snow->Find("enabled");
-		CUSTOM_LOG("weather: the client's snow is %s (this game has no snow layer)\n",
-			en && en->type == JValue::BOOL && en->b ? "enabled" : "disabled");
-	}
-}
-
+// A loose custom/data/timecyc.json can adjust lighting and native shadow
+// strengths. ZIPs, game-root common/, weather presets, sky/fog and PostFX are
+// not imported into this layout.
 void
 CCustomTimecycle::Apply(void)
 {
 	std::vector<uint8> data;
-	bool fromCommon = false;
-	if(!CCustomModels::ReadDataFile("data/timecyc.json", data, &fromCommon)){
-		CUSTOM_LOG("timecycle: no data/timecyc.json in the custom folder - the game's own TIMECYC.DAT stays\n");
-		return;
-	}
+	if(!CCustomModels::ReadDataFile("data/timecyc.json", data))
+		return; // keep the game's native TIMECYC.DAT
 
 	SlotGrid grids[BR_WEATHERS_USED];
 	int weathers = 0;
-	if(!ParseTimecycle(data, grids, weathers))
-		return;
-
-	// The requested unpacked common/ import is lighting/shadows only; do not
-	// even inspect unrelated sky/weather/preset sources in that mode.
-	int presets = 0;
-	if(!fromCommon) for(int i = 1; i <= 16; i++){
-		char rel[64];
-		snprintf(rel, sizeof(rel), "data/timecyclePresets/timecyclePreset%d.json", i);
-		std::vector<uint8> pdata;
-		if(!CCustomModels::ReadDataFile(rel, pdata))
-			continue;
-		JValue root;
-		std::string err;
-		if(!JsonParse(pdata, root, err) || root.type != JValue::OBJ){
-			CUSTOM_LOG("timecycle: %s could not be parsed (%s)\n", rel, err.c_str());
-			continue;
-		}
-		LogPreset(root, rel);
-		presets++;
-	}
-
-	ExpandGrids(grids, weathers, fromCommon);
-	if(fromCommon)
-		CUSTOM_LOG("common/timecyc.json: %d weather(s); ambient/directional light and legacy shadow strengths applied; sky, water, fog and PostFX unchanged\n", weathers);
-	else {
-		CUSTOM_LOG("timecycle: timecyc.json applied - %d weather(s), %d server preset file(s) logged; sky, sun, fog, far clip, ambient and water follow the client now\n",
-			weathers, presets);
-		CUSTOM_LOG("timecycle: note - the client's PostFX1/PostFX2 layers have no counterpart in this game and are skipped\n");
-		LogWeatherJson();
-	}
+	if(!ParseTimecycle(data, grids, weathers)) return;
+	ExpandGrids(grids, weathers, true);
+	CUSTOM_LOG("custom/data/timecyc.json: %d weather(s); ambient/directional light and native shadow strengths applied; sky, water, fog and PostFX unchanged\n", weathers);
 }
 
 #else // CUSTOM_MODELS

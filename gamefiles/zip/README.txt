@@ -1,16 +1,12 @@
-Vehicle reflection masks and UV2 lightmaps (graphics only)
-=========================================================
+User ZIP import disabled
+========================
 
-Place your ZIP archives here. Only selected .btx entries are used for these
-effects; models, general textures, audio, collision, and map files in this
-folder are ignored. The ZIPs are indexed at startup and individual selected
-BTX entries are decoded on demand. Do not use .tmb 8x8 preview textures in
-place of full-sized assets, and do not put .bpc files here.
+No ZIP file in this folder (or in custom/) is scanned or read for user
+resources. This also includes reflection-mask and UV2/lightmap .btx files:
+there is no graphics-only ZIP exception or automatic mask/lightmap injection.
+The game's native Vice City files and built-in graphics still work.
 
-A CarReflectionMask.btx can replace the Neo render target's mask. A model's
-UV2 + MatFX DUAL material can use a referenced *_lightmap.btx or *_lm.btx.
-The environment reflection itself is rendered from the game scene, not read
-from an image file. The current camera projection is Neo, not the separate
-Black Russia paraboloid pass: visual parity has not been verified.
-
-See PC_GRAPHICS_ZIP.md at the repository root and debug.log next to the game.
+Put compatible DFF/TXD in VC IMG v1 + DIR pairs under ../custom/img/;
+IFP under ../custom/anim/, COL/CLS under ../custom/collision/, and IDE/IPL
+under ../custom/data/maps/. Optional loose ../custom/data/timecyc.json
+adjusts light and native shadow strengths. See ../../CUSTOM_MODELS.md.

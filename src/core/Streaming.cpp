@@ -440,7 +440,7 @@ CStreaming::LoadCdDirectory(void)
 #ifdef CUSTOM_MODELS
 	// The IMG index is final now. Models installed from custom IDEs were
 	// paired before creating their TXD slots; also cover native VC building
-	// slots replaced by a DFF + same-name TXD from img/. The two winners
+	// slots replaced by a DFF + same-name TXD from custom/img/. The winners
 	// can come from different auto-mounted IMGs; never pick a stock TXD just
 	// because its name collides. Leave unpaired IDE and VC multi-LOD alone.
 	int paired = 0, rebound = 0;
@@ -466,7 +466,7 @@ CStreaming::LoadCdDirectory(void)
 			rebound++;
 		}
 	}
-	REVC_LOG_INFO("img/: %d static DFF/TXD same-name pairs confirmed, %d model TXD associations updated", paired, rebound);
+	REVC_LOG_INFO("custom/img/: %d static DFF/TXD same-name pairs confirmed, %d model TXD associations updated", paired, rebound);
 #endif
 
 	ms_lastImageRead = 0;
@@ -494,7 +494,7 @@ CStreaming::LoadCdDirectory(const char *dirname, int n)
 #ifdef CUSTOM_MODELS
 	int unknownModels = 0, ignoredTypes = 0, fullTxds = 0;
 	bool modelsOnly = CCustomModels::IsAutoMountedImage(n);
-	// The full common/ IDE can register ~28k models. Repeatedly scanning the
+	// A large custom/data/maps/ IDE can register ~28k models. Scanning the
 	// model-info array for each IMG DFF would be quadratic at boot. This
 	// temporary metadata index is rebuilt per directory and freed afterward;
 	// it does not retain models or change any resident-asset cache budget.
@@ -526,7 +526,7 @@ CStreaming::LoadCdDirectory(const char *dirname, int n)
 		}
 #ifdef CUSTOM_MODELS
 		// Autodiscovered IMGs provide only models and VC TXDs. Collision
-		// belongs to ZIP files under custom/, never to these IMG archives.
+		// belongs to custom/collision/, never to these user IMG archives.
 		if(modelsOnly && (dot-direntry.name > 19 || dot[4] != '\0' ||
 		   (strncasecmp(dot+1, "DFF", 3) != 0 &&
 		    strncasecmp(dot+1, "TXD", 3) != 0))){
@@ -1264,30 +1264,23 @@ CStreaming::RequestSpecialModel(int32 modelId, const char *modelName, int32 flag
 	// omit their orphan DFFs from that directory. Both are valid script
 	// special models, so consult the pre-indexed DIR metadata before changing
 	// the slot name, unloading its old model or deleting referencing peds.
-	bool found = false, archiveOnly = false;
+	bool found = false;
 #ifdef CUSTOM_MODELS
 	found = CCustomModels::FindModelDffInImage(modelName, pos, size);
 #endif
 	if(!found) found = ms_pExtraObjectsDir->FindItem(modelName, pos, size);
-#ifdef CUSTOM_MODELS
-	if(!found) archiveOnly = CCustomModels::HasArchiveModelFile(modelName);
-#endif
 	if(found && (size == 0 || _GET_INDEX(pos) >= CdStreamGetNumImages())){
 		CUSTOM_LOG("special model id=%d name=%s: invalid IMG record index=%u, sectors=%u; keeping old model\n",
 			modelId, modelName, (unsigned)_GET_INDEX(pos), (unsigned)size);
 		return;
 	}
-	if(!found && !archiveOnly){
-		CUSTOM_LOG("special model id=%d name=%s (old=%s): no DFF in mounted IMG or custom/; keeping old model\n",
+	if(!found){
+		CUSTOM_LOG("special model id=%d name=%s (old=%s): no DFF in mounted IMG; keeping old model\n",
 			modelId, modelName, mi->GetModelName());
 		return;
 	}
-	if(!found) pos = size = 0; // custom/ archive: GetCdPosnAndSize supplies the synthetic sector
-	CUSTOM_LOG("special model id=%d name=%s (old=%s): source=%s%s%s\n",
-		modelId, modelName, mi->GetModelName(),
-		archiveOnly ? "custom/ archive" : "mounted IMG ",
-		archiveOnly ? "" : CdStreamGetImageName(_GET_INDEX(pos)),
-		found ? "" : " (synthetic stream position)");
+	CUSTOM_LOG("special model id=%d name=%s (old=%s): source=mounted IMG %s\n",
+		modelId, modelName, mi->GetModelName(), CdStreamGetImageName(_GET_INDEX(pos)));
 
 	if(mi->GetNumRefs() > 0){
 		n = CPools::GetPedPool()->GetSize()-1;

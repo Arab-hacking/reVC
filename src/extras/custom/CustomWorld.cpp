@@ -25,9 +25,6 @@
 #include "PedType.h"
 #include "AnimManager.h"
 #include "HandlingMgr.h"
-#ifdef EXTENDED_PIPELINES
-#include "custompipes.h"
-#endif
 #include "FileLoader.h"
 #include "TxdStore.h"
 #include "TempColModels.h"
@@ -47,11 +44,6 @@ std::map<int, int> modelSlots;
 std::map<std::string, int> nameSlots;
 std::vector<bool> brSlots; // allocated after the game's heap is initialized
 bool ideLoaded = false, collisionLoaded = false;
-#ifdef EXTENDED_PIPELINES
-bool graphicsActive = false;
-int32 previousVehiclePipe = CustomPipes::VEHICLEPIPE_MATFX;
-bool previousLightmap = false;
-#endif
 
 struct IdeContext : customworld::ModelIndex {
     unsigned files, parsed, bad, overlong;
@@ -162,7 +154,7 @@ int FindSlot(const customworld::Instance &inst,
     std::map<std::string, int>::const_iterator named = nameSlots.find(key);
     if(named != nameSlots.end()) return named->second;
     // An IPL can legitimately name a VC building absent from the selected
-    // common/ IDE. Do not rewire its LOD metadata; placements alone may use
+    // custom IDE. Do not rewire its LOD metadata; placements alone may use
     // the pre-indexed stock building slot. PlaceInstance still checks DFF and
     // collision. Never use an unregistered custom BR slot or its source ID.
     return nativeBuildings ? nativeBuildings->Find(inst.name.c_str()) : -1;
@@ -406,35 +398,6 @@ void CCustomWorld::LoadIde(void)
     ideLoaded = true;
     modelSlots.clear();
     nameSlots.clear();
-#ifdef EXTENDED_PIPELINES
-    const bool commonWorld = CCustomModels::HasCommonWorld();
-    const bool reflections = CCustomModels::HasGraphicsReflections();
-    const bool lightmaps = CCustomModels::HasGraphicsLightmaps();
-    if(commonWorld || reflections || lightmaps) {
-        if(!graphicsActive) {
-            previousVehiclePipe = CustomPipes::VehiclePipeSwitch;
-            previousLightmap = CustomPipes::LightmapEnable;
-            graphicsActive = true;
-        }
-        // zip/ is an isolated graphics index; even without common/ IDE/IPL,
-        // select only the effects for which scene assets were discovered.
-        if((commonWorld || reflections) && CustomPipes::vehiclePipe &&
-           CustomPipes::EnvMapCam && CustomPipes::EnvMapTex) {
-            if(reflections) {
-                RwTexture *mask = CCustomModels::CarReflectionMaskFromZip();
-                if(mask) CustomPipes::SetCarReflectionMask((rw::Texture*)mask);
-                else CUSTOM_LOG("zip/ graphics: no full-sized car mask; other reflection .btx cannot replace a dynamic scene envmap\n");
-            }
-            CustomPipes::VehiclePipeSwitch = CustomPipes::VEHICLEPIPE_NEO;
-            CUSTOM_LOG("graphics: vehicle scene RT enabled (Neo projection; BR paraboloid pass not yet implemented)\n");
-        } else if(commonWorld || reflections)
-            CUSTOM_LOG("graphics: no reflection render target; leaving vehicle MatFX pipeline\n");
-        if((commonWorld || lightmaps) && CustomPipes::worldPipe)
-            CustomPipes::LightmapEnable = true;
-        CUSTOM_LOG("graphics: UV2/DUAL lightmaps %s; native blob shadows use timecycle strengths\n",
-            CustomPipes::LightmapEnable ? "enabled where materials support them" : "unavailable");
-    }
-#endif
     if(!CCustomModels::HasWorldFiles()) return;
     brSlots.assign(MODELINFOSIZE, false);
     IdeContext ctx;
@@ -624,16 +587,6 @@ bool CCustomWorld::OwnsModelSlot(int slot)
 
 void CCustomWorld::Shutdown(void)
 {
-#ifdef EXTENDED_PIPELINES
-    if(graphicsActive) {
-        // Starting another game in this process must not inherit zip/ or
-        // common/ graphics settings, nor retain an owned GPU reflection mask.
-        CustomPipes::VehiclePipeSwitch = previousVehiclePipe;
-        CustomPipes::LightmapEnable = previousLightmap;
-        CustomPipes::SetCarReflectionMask(nil);
-        graphicsActive = false;
-    }
-#endif
     modelSlots.clear();
     nameSlots.clear();
     std::fill(brSlots.begin(), brSlots.end(), false);

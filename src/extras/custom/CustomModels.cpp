@@ -1,7 +1,6 @@
 #include "common.h"
 
 #include "CustomModels.h"
-#include "CommonCatalog.h"
 
 #ifdef CUSTOM_MODELS
 
@@ -17,8 +16,6 @@
 #include <stdlib.h>		// getenv
 #include <ctype.h>		// tolower
 
-#include "CustomZip.h"
-#include "GraphicsBtx.h"
 #include "CustomCol.h"
 #include "BrCollisionFormat.h"
 #include "CustomColFormat.h"
@@ -58,46 +55,31 @@
 // where the files live
 // ---------------------------------------------------------------------------
 
-// zip archives that are a bit silly (a 2 GB archive with one entry) are not
-// worth the memory, so entries have to stay under this limit
+// Bound a single loose collision/animation/map input before reading it.
 #define CUSTOM_MAX_ENTRY (64*1024*1024)
-#define CUSTOM_MAX_DEPTH 8			// loose data/maps/... IDE/IPL folders
+#define CUSTOM_MAX_DEPTH 8			// subdirectories under each asset folder
 
 struct CustomSource
 {
-	int archive;
-	int entry;
 	uint64 mtime;
-	bool fromCommon;
-	bool fromGraphics;
-	char loose[256];		// archive < 0: an unpacked file
-	char fname[256];		// the name the file has (with the extension)
+	char loose[256];
+	char fname[256];
 };
 
-static std::vector<CustomZip*> customArchives;
+// No ZIP archives are mounted: models and TXDs come only from custom/img/.
+// The legacy converters below have no external .mod/.btx/.dff/.txd inputs.
 static std::map<std::string, CustomSource> customMods;
 static std::map<std::string, CustomSource> customBtx;
-// Separate from customBtx: zip/ must NEVER be a general TXD/model source.
-// Index .btx names only; extraction and decoding happen for selected graphics.
-static std::map<std::string, CustomSource> graphicsBtx;
-static unsigned graphicsArchives = 0, graphicsReflections = 0, graphicsLightmaps = 0;
 static std::map<std::string, CustomSource> customCls;
 static std::map<std::string, CustomSource> customAnims;
-// standard-format custom files: the community packs keep ordinary .dff/.txd/
-// .col files (and plain images for the player skin) in the same archives
+// Legacy model/texture maps have no entries in the IMG-only layout.
 static std::map<std::string, CustomSource> customDff;
 static std::map<std::string, CustomSource> customTxdFiles;
 static std::map<std::string, CustomSource> customColFiles;	// whole .col containers
 static std::map<std::string, CustomSource> customImages;	// .bmp/.png/.jpg
 static std::map<std::string, CustomSource> customIdeFiles;
 static std::map<std::string, CustomSource> customIplFiles;
-static std::map<std::string, CustomSource> commonIdeFiles, commonIplFiles;
-static std::map<std::string, CustomSource> commonDataFiles;
-static commoncatalog::Catalog commonConfig;
-static std::string commonFolderPath;
-
-// Keep a source for EVERY ZIP entry, not just the winner of a basename
-// lookup: separate archives often call their containers the same thing.
+// Keep a source for each loose collision container, even with repeated filenames.
 static std::vector<CustomSource> customClsSources, customColSources;
 static std::vector<bool> customClsHasBrBlocks;
 struct BrBlockRef {
@@ -115,12 +97,11 @@ struct ColBlockRef {
 static std::map<std::string, ColBlockRef> customColBlocks;
 static std::vector<std::string> customSkinNames;	// "name.bmp" style, for the frontend
 
-static std::string customFolderPath;	// remembered for data files and loose skins
+static std::string customFolderPath;	// custom root (or REVC_CUSTOM_DIR)
 static bool customInitialised = false;
 static bool customActive = false;
 static int32 nativeModelOverride = -1;
-// Once RenderWare rejects an archive model, try the native stream on subsequent
-// requests instead of repeatedly feeding the same invalid clump to the loader.
+// Guard native streams against repeatedly rejected legacy custom overrides.
 static std::set<std::string> rejectedArchiveModels;
 static bool customImagesScanned = false;
 static std::set<int> customImageSlots; // IMG indices (the stream position's high byte)
@@ -161,8 +142,7 @@ Extension(const std::string &path)
 	return dot == std::string::npos ? std::string() : ToLower(base.substr(dot+1));
 }
 
-// mtime is only ever compared with another archive's, so any unit works as
-// long as one platform stays consistent with itself
+// File timestamps only compare loose files within this installation.
 static uint64
 FileTime(const char *path)
 {
@@ -226,35 +206,15 @@ ListDirectory(const char *dir, std::vector<std::string> &files, std::vector<std:
 #endif
 }
 
-// The game folder is not necessarily spelled the way the config says (and on
-// Linux the file system is case sensitive), so try a few spellings.
-static bool
-FolderExists(const char *folder)
-{
-	std::vector<std::string> files, dirs;
-	if(ListDirectory(folder, files, dirs)) return true;
-	std::string lower = ToLower(folder);
-	if(lower != folder && ListDirectory(lower.c_str(), files, dirs)) return true;
-	std::string upper = folder;
-	for(size_t i = 0; i < upper.size(); i++) upper[i] = (char)toupper((unsigned char)upper[i]);
-	if(upper != folder && ListDirectory(upper.c_str(), files, dirs)) return true;
-	return false;
-}
-
 // ---------------------------------------------------------------------------
-// indexing the archives
+// indexing explicit custom folders
 // ---------------------------------------------------------------------------
 
 static CustomSource
-MakeSource(int archive, int entry, uint64 mtime, const char *path, const char *fname,
-           bool fromCommon = false, bool fromGraphics = false)
+MakeSource(uint64 mtime, const char *path, const char *fname)
 {
 	CustomSource src;
-	src.archive = archive;
-	src.entry = entry;
 	src.mtime = mtime;
-	src.fromCommon = fromCommon;
-	src.fromGraphics = fromGraphics;
 	src.loose[0] = '\0';
 	src.fname[0] = '\0';
 	if(path){
@@ -273,11 +233,7 @@ AddIndex(std::map<std::string, CustomSource> &index, const std::string &key,
          const CustomSource &src)
 {
 	std::map<std::string, CustomSource>::iterator it = index.find(key);
-	// For the unpacked common/ tree only, its ped.ani takes priority over a
-	// same-named custom dictionary. All other custom sources keep the previous
-	// newest-file-wins policy (IMG DFF/TXD precedence is handled separately).
-	if(it == index.end() || (src.fromCommon && !it->second.fromCommon) ||
-	   (src.fromCommon == it->second.fromCommon && it->second.mtime < src.mtime))
+	if(it == index.end() || it->second.mtime < src.mtime)
 		index[key] = src;
 }
 
@@ -291,17 +247,6 @@ WorldPath(const std::string &name)
 	return path;
 }
 
-// Some common.zip builds contain the same map under BOTH maps/... and
-// data/maps/... . The full original path is still used for active_ipl.txt;
-// only byte-identical aliases may be skipped at load time. Different content
-// could be a deliberate alternate map and must not be chosen automatically.
-static std::string
-WorldAliasPath(const std::string &path)
-{
-	if(path.compare(0, 10, "data/maps/") == 0) return path.substr(5);
-	return path.compare(0, 5, "maps/") == 0 ? path : std::string();
-}
-
 static void
 AddWorldFile(std::map<std::string, CustomSource> &index, const std::string &path,
              const CustomSource &src)
@@ -310,9 +255,7 @@ AddWorldFile(std::map<std::string, CustomSource> &index, const std::string &path
 	if(key.empty() || key.find("../") != std::string::npos || key.size() > 255)
 		return;
 	std::map<std::string, CustomSource>::iterator it = index.find(key);
-	// A loose file at the same relative path intentionally overrides common.zip.
-	if(it == index.end() || (src.archive < 0 && it->second.archive >= 0) ||
-	   (src.archive == it->second.archive && src.mtime > it->second.mtime))
+	if(it == index.end() || src.mtime > it->second.mtime)
 		index[key] = src;
 }
 
@@ -343,411 +286,117 @@ IndexColContainer(const std::vector<uint8> &file, const CustomSource &src, int &
 
 struct ScanStats
 {
-	int zip, mod, dff, btx, txd, cls, colfile, colblock, anim, img;
+	int cls, colfile, colblock, anim, ide, ipl;
 };
 
-static void
-IndexArchive(const std::string &path, uint64 mtime, ScanStats &st)
-{
-	CustomZip *zip = new CustomZip;
-	if(!zip->Open(path.c_str())){
-		delete zip;
-		CUSTOM_LOG("archive %s: not a readable zip, skipped\n", path.c_str());
-		return;
-	}
-	int archive = (int)customArchives.size();
-	customArchives.push_back(zip);
-	bool commonZip = ToLower(Stem(path)) == "common";
-	int mods = 0, dffs = 0, btxs = 0, txds = 0, clss = 0, colfiles = 0, anims = 0, imgs = 0;
-	for(int i = 0; i < zip->GetNumEntries(); i++){
-		const CustomZipEntry *ent = zip->GetEntry(i);
-		std::string name = ent->name;
-		std::string ext = Extension(name);
-		if(commonZip && (ext == "ide" || ext == "ipl")){
-			CustomSource src = MakeSource(archive, i, mtime, nil, name.c_str());
-			AddWorldFile(ext == "ide" ? customIdeFiles : customIplFiles, name, src);
-			continue;
-		}
-		// everything else in an archive is not of interest here
-		if(ext != "mod" && ext != "dff" && ext != "btx" && ext != "cls" && ext != "txd" &&
-		   ext != "col" && ext != "ifp" && ext != "ani" &&
-		   ext != "bmp" && ext != "png" && ext != "jpg" && ext != "jpeg")
-			continue;
-		std::string key = ToLower(Stem(name));
-		if(key.empty() || key.size() > 63)
-			continue;
-		CustomSource src = MakeSource(archive, i, mtime, nil, name.c_str());
-		if(ext == "mod"){
-			// the same guard the offline converter has: player.mod is an 8 KB
-			// stub that crashes the game the moment it is read
-			if(brres::isReserved(key)){
-				CUSTOM_LOG("  %s: reserved name, skipped\n", name.c_str());
-				continue;
-			}
-			AddIndex(customMods, key, src);
-			mods++;
-		}else if(ext == "dff"){
-			// player.mod is an unsafe 8 KB stub, but a validated player.dff is
-			// the normal way to install a SA skinned player model.
-			if(brres::isReserved(key) && key != "player"){
-				CUSTOM_LOG("  %s: reserved name, skipped\n", name.c_str());
-				continue;
-			}
-			AddIndex(customDff, key, src);
-			dffs++;
-		}else if(ext == "btx"){
-			// the model can only reference 31 characters of a texture name, so
-			// a longer file name has to be found under the short name as well
-			AddIndex(customBtx, key, src);
-			if(key.size() > 31)
-				AddIndex(customBtx, key.substr(0, 31), src);
-			btxs++;
-			// a BR skins pack (its name says "skin") keeps the player skins
-			// as .btx textures - offer them in the skin list as well
-			if(ToLower(path).find("skin") != std::string::npos){
-				AddIndex(customImages, key, src);
-				imgs++;
-			}
-		}else if(ext == "txd"){
-			AddIndex(customTxdFiles, key, src);
-			txds++;
-		}else if(ext == "cls"){
-			AddIndex(customCls, key, src);
-			customClsSources.push_back(src);
-			customClsHasBrBlocks.push_back(false);
-			clss++;
-		}else if(ext == "col"){
-			std::vector<uint8> file;
-			if(ent->uncompressedSize > 0 && ent->uncompressedSize <= CUSTOM_MAX_ENTRY){
-				file.resize(ent->uncompressedSize);
-				if(zip->Extract(i, file.data(), (uint32)file.size())){
-					IndexColContainer(file, src, st.colblock);
-					AddIndex(customColFiles, key, src);
-					colfiles++;
-					continue;
-				}
-			}
-			CUSTOM_LOG("  %s: the .col container could not be read\n", name.c_str());
-		}else if(ext == "ifp" || ext == "ani"){
-			// .ifp dictionaries and BR single-animation .ani files
-			AddIndex(customAnims, key, src);
-			anims++;
-		}else{
-			// plain images: skins for the player (a bmp at any path, a png or
-			// jpg when it sits in a skin folder)
-			if(ext == "bmp" || ToLower(name).find("skin") != std::string::npos){
-				AddIndex(customImages, key, src);
-				imgs++;
-			}
-		}
-	}
-	st.zip++;
-	st.mod += mods; st.dff += dffs; st.btx += btxs; st.txd += txds;
-	st.cls += clss; st.colfile += colfiles; st.anim += anims; st.img += imgs;
-	CUSTOM_LOG("archive %s: %d entries, %d .mod, %d .dff, %d .btx, %d .txd, %d .cls, %d .col, %d .ifp/.ani, %d image(s)\n",
-		path.c_str(), zip->GetNumEntries(), mods, dffs, btxs, txds, clss, colfiles, anims, imgs);
-}
-
-static void
-ScanFolder(const std::string &folder, int depth, ScanStats &st)
+static std::string
+Subfolder(const std::string &root, const char *name)
 {
 	std::vector<std::string> files, dirs;
-	if(!ListDirectory(folder.c_str(), files, dirs))
-		return;
-
-	std::sort(files.begin(), files.end());
-	for(size_t i = 0; i < files.size(); i++){
-		const std::string &path = files[i];
-		std::string ext = Extension(path);
-		uint64 mtime = FileTime(path.c_str());
-		if(ext == "zip"){
-			IndexArchive(path, mtime, st);
-			continue;
-		}
-		if(ext == "ide" || ext == "ipl"){
-			std::string relative = path.substr(customFolderPath.size());
-			CustomSource src = MakeSource(-1, -1, mtime, path.c_str(), relative.c_str());
-			AddWorldFile(ext == "ide" ? customIdeFiles : customIplFiles, relative, src);
-			continue;
-		}
-		// Collision is sourced from ZIP archives, never from IMG or loose
-		// .col/.cls; loose models/textures/animations remain supported.
-		if(ext != "mod" && ext != "dff" && ext != "btx" && ext != "txd" &&
-		   ext != "ifp" && ext != "ani" && ext != "bmp" && ext != "png" &&
-		   ext != "jpg" && ext != "jpeg")
-			continue;
-		std::string key = ToLower(Stem(path));
-		if(key.empty() || key.size() > 63)
-			continue;
-		CustomSource src = MakeSource(-1, -1, mtime, path.c_str(), path.c_str());
-		if(ext == "mod"){
-			if(brres::isReserved(key))
-				continue;
-			AddIndex(customMods, key, src);
-			st.mod++;
-		}else if(ext == "dff"){
-			// Allow a real player.dff; player.mod remains blocked above because
-			// the common archive's same-named entry is only a crashing stub.
-			if(brres::isReserved(key) && key != "player")
-				continue;
-			AddIndex(customDff, key, src);
-			st.dff++;
-		}else if(ext == "btx"){
-			AddIndex(customBtx, key, src);
-			if(key.size() > 31)
-				AddIndex(customBtx, key.substr(0, 31), src);
-			st.btx++;
-			if(ToLower(path).find("skin") != std::string::npos){
-				AddIndex(customImages, key, src);
-				st.img++;
-			}
-		}else if(ext == "txd"){
-			AddIndex(customTxdFiles, key, src);
-			st.txd++;
-		}else if(ext == "ifp" || ext == "ani"){
-			AddIndex(customAnims, key, src);
-			st.anim++;
-		}else{
-			// loose images only count as skins when they sit in a skins folder
-			if(ToLower(path).find("skin") != std::string::npos){
-				AddIndex(customImages, key, src);
-				st.img++;
-			}
-		}
-	}
-	if(depth < CUSTOM_MAX_DEPTH)
-		for(size_t i = 0; i < dirs.size(); i++)
-			ScanFolder(dirs[i], depth+1, st);
-}
-
-// zip/ is a GRAPHICS-ONLY source. Do not call IndexArchive here: that would
-// register .mod/.dff/.col/skins and let unrelated .btx replace base textures.
-// CustomZip retains only the ZIP central directory, never the image pixels.
-static void
-IndexGraphicsArchive(const std::string &path)
-{
-	if(path.size() >= 256) return; // CustomZip's stored path is 256 bytes
-	CustomZip *zip = new CustomZip;
-	if(!zip->Open(path.c_str())) {
-		delete zip;
-		CUSTOM_LOG("zip/ graphics: cannot open %s\n", path.c_str());
-		return;
-	}
-	const int archive = (int)customArchives.size();
-	customArchives.push_back(zip);
-	graphicsArchives++;
-	const uint64 mtime = FileTime(path.c_str());
-	unsigned btx = 0, reflections = 0, lightmaps = 0;
-	for(int i = 0; i < zip->GetNumEntries(); i++) {
-		const CustomZipEntry *ent = zip->GetEntry(i);
-		if(Extension(ent->name) != "btx" || ent->uncompressedSize < 68 ||
-		   ent->uncompressedSize > CUSTOM_MAX_ENTRY) continue;
-		std::string key = ToLower(Stem(ent->name));
-		if(key.empty() || key.size() > 63) continue;
-		CustomSource src = MakeSource(archive, i, mtime, nil, ent->name, false, true);
-		AddIndex(graphicsBtx, key, src);
-		if(key.size() > 31) AddIndex(graphicsBtx, key.substr(0, 31), src);
-		btx++;
-		if(graphicsbtx::IsVehicleReflection(key)) reflections++;
-		if(graphicsbtx::IsLightmap(key)) lightmaps++;
-	}
-	graphicsReflections += reflections;
-	graphicsLightmaps += lightmaps;
-	CUSTOM_LOG("zip/ graphics: %s: %u .btx indexed (%u vehicle-reflection, %u lightmap names); non-.btx ignored\n",
-		path.c_str(), btx, reflections, lightmaps);
-}
-
-static void
-ScanGraphicsFolder(const std::string &folder, int depth)
-{
-	std::vector<std::string> files, dirs;
-	if(!ListDirectory(folder.c_str(), files, dirs)) return;
-	std::sort(files.begin(), files.end());
-	std::sort(dirs.begin(), dirs.end());
-	for(size_t i = 0; i < files.size(); i++)
-		if(Extension(files[i]) == "zip") IndexGraphicsArchive(files[i]);
-	if(depth < CUSTOM_MAX_DEPTH)
-		for(size_t i = 0; i < dirs.size(); i++)
-			ScanGraphicsFolder(dirs[i], depth+1);
-}
-
-static void
-ScanGraphicsRoot(void)
-{
-	std::vector<std::string> files, dirs;
-	if(!ListDirectory(".", files, dirs)) return;
+	if(!ListDirectory(root.c_str(), files, dirs)) return std::string();
 	std::sort(dirs.begin(), dirs.end());
 	for(size_t i = 0; i < dirs.size(); i++)
-		if(ToLower(Stem(dirs[i])) == "zip") ScanGraphicsFolder(dirs[i], 0);
+		if(ToLower(Stem(dirs[i])) == name) return dirs[i];
+	return std::string();
 }
 
-// common/ is ALREADY unpacked. Traverse only data/maps and anim/, never
-// audio/, data/features/, routes/ or any .bpc. Do not register .mod/.btx here:
-// those live in the user's existing custom ZIPs and img/ archives.
+// Only visit the four explicit asset folders. Archives and loose legacy files
+// in custom/, the game-root img/, common/ and zip/ are never inspected here.
 static void
-ScanCommonFolder(const std::string &folder, int depth, unsigned &ide, unsigned &ipl)
+ScanAssetFolder(const std::string &folder, const char *kind, int depth, ScanStats &st)
 {
-	if(depth > CUSTOM_MAX_DEPTH) return;
 	std::vector<std::string> files, dirs;
 	if(!ListDirectory(folder.c_str(), files, dirs)) return;
 	std::sort(files.begin(), files.end());
-	std::sort(dirs.begin(), dirs.end());
 	for(size_t i = 0; i < files.size(); i++) {
 		const std::string &path = files[i];
 		if(path.size() >= sizeof(CustomSource::loose)) continue;
-		std::string relative = path.substr(commonFolderPath.size());
+		const std::string ext = Extension(path);
+		const std::string key = ToLower(Stem(path));
+		if(key.empty() || key.size() > 63) continue;
+		std::string relative = path.substr(customFolderPath.size());
 		if(!relative.empty() && (relative[0] == '/' || relative[0] == '\\')) relative.erase(0, 1);
-		std::string key = commoncatalog::Path(relative);
-		if(key.empty() || key.size() >= sizeof(CustomSource::fname)) continue;
-		CustomSource src = MakeSource(-1, -1, FileTime(path.c_str()), path.c_str(), relative.c_str(), true);
-		if(key.compare(0, 5, "data/") == 0 && Extension(key) == "ide") {
-			AddWorldFile(commonIdeFiles, key, src);
-			ide++;
-		} else if(key.compare(0, 5, "data/") == 0 && Extension(key) == "ipl") {
-			AddWorldFile(commonIplFiles, key, src);
-			ipl++;
-		} else if(commoncatalog::CanReadData(key)) {
-			commonDataFiles[key] = src;
-		} else if(key == "anim/ped.ani") {
-			AddIndex(customAnims, "ped", src);
+		CustomSource src = MakeSource(FileTime(path.c_str()), path.c_str(), relative.c_str());
+		if(strcmp(kind, "anim") == 0) {
+			if(ext == "ifp") { AddIndex(customAnims, key, src); st.anim++; }
+		} else if(strcmp(kind, "data/maps") == 0) {
+			if(ext == "ide" || ext == "ipl") {
+				AddWorldFile(ext == "ide" ? customIdeFiles : customIplFiles, relative, src);
+				if(ext == "ide") st.ide++; else st.ipl++;
+			}
+		} else if(strcmp(kind, "collision") == 0) {
+			if(ext == "cls") {
+				AddIndex(customCls, key, src);
+				customClsSources.push_back(src);
+				customClsHasBrBlocks.push_back(false);
+				st.cls++;
+			} else if(ext == "col") {
+				std::vector<uint8> bytes;
+				if(ReadSource(src, bytes)) {
+					IndexColContainer(bytes, src, st.colblock);
+					AddIndex(customColFiles, key, src);
+					st.colfile++;
+				} else CUSTOM_LOG("collision %s: cannot read .col\n", path.c_str());
+			}
 		}
 	}
-	for(size_t i = 0; i < dirs.size(); i++) {
-		std::string relative = dirs[i].substr(commonFolderPath.size());
-		if(!relative.empty() && (relative[0] == '/' || relative[0] == '\\')) relative.erase(0, 1);
-		std::string key = commoncatalog::Path(relative);
-		if(key == "data" || key == "anim" || key == "data/maps" ||
-		   key.compare(0, 10, "data/maps/") == 0)
-			ScanCommonFolder(dirs[i], depth+1, ide, ipl);
-	}
-}
-
-static void
-ScanCommonRoot(void)
-{
-	std::vector<std::string> files, dirs;
-	if(!ListDirectory(".", files, dirs)) return;
+	if(depth >= CUSTOM_MAX_DEPTH) return;
 	std::sort(dirs.begin(), dirs.end());
-	for(size_t i = 0; i < dirs.size(); i++) {
-		if(ToLower(Stem(dirs[i])) != "common") continue;
-		commonFolderPath = dirs[i];
-		unsigned ide = 0, ipl = 0;
-		ScanCommonFolder(commonFolderPath, 0, ide, ipl);
-		std::map<std::string, CustomSource>::const_iterator config = commonDataFiles.find("data/config.dat");
-		std::vector<uint8> bytes;
-		if(config != commonDataFiles.end() && ReadSource(config->second, bytes))
-			commonConfig = commoncatalog::Parse(bytes.data(), bytes.size());
-		CUSTOM_LOG("common/: %u IDE and %u IPL on disk; config.dat selects %u IDE / %u IPL (%u invalid directive(s))\n",
-			ide, ipl, (unsigned)commonConfig.ide.size(), (unsigned)commonConfig.ipl.size(),
-			(unsigned)commonConfig.invalid);
-		if(commonConfig.ide.empty() || commonConfig.ipl.empty())
-			CUSTOM_LOG("common/: no usable config.dat; common IDE/IPL will NOT be loaded as unselected event maps\n");
-		break;
-	}
+	for(size_t i = 0; i < dirs.size(); i++)
+		ScanAssetFolder(dirs[i], kind, depth+1, st);
 }
 
 static void
 EnsureInitialised(void)
 {
-	if(customInitialised)
-		return;
+	if(customInitialised) return;
 	customInitialised = true;
-
 	const char *folder = CUSTOM_MODELS_FOLDER;
 	const char *env = getenv("REVC_CUSTOM_DIR");
-	if(env && env[0] != '\0')
-		folder = env;
+	if(env && env[0]) folder = env;
 	customFolderPath = folder;
-
-	ScanStats st;
-	memset(&st, 0, sizeof(st));
-	if(FolderExists(customFolderPath.c_str()))
-		ScanFolder(customFolderPath, 0, st);
-	ScanCommonRoot();
-	ScanGraphicsRoot();
+	ScanStats st = {};
+	const std::string anim = Subfolder(customFolderPath, "anim");
+	const std::string collision = Subfolder(customFolderPath, "collision");
+	const std::string data = Subfolder(customFolderPath, "data");
+	const std::string maps = data.empty() ? std::string() : Subfolder(data, "maps");
+	if(!anim.empty()) ScanAssetFolder(anim, "anim", 0, st);
+	if(!collision.empty()) ScanAssetFolder(collision, "collision", 0, st);
+	if(!maps.empty()) ScanAssetFolder(maps, "data/maps", 0, st);
 	IndexBrCollisionBlocks();
-
-	customActive = !customMods.empty() || !customBtx.empty() || !customCls.empty() ||
-	               !customAnims.empty() || !customDff.empty() || !customTxdFiles.empty() ||
-	               !customColFiles.empty() || !customColBlocks.empty() || !customImages.empty() ||
-	               !customIdeFiles.empty() || !customIplFiles.empty() ||
-	               !commonConfig.ide.empty() || !commonConfig.ipl.empty();
-
-	CUSTOM_LOG("==== custom folder: %s\n", customFolderPath.c_str());
-	CUSTOM_LOG("scan: %d archive(s), %d .mod, %d .dff, %d .btx (%d names), %d .txd, %d .cls (%u CED2 models), %d .col (%d model(s) inside), %d .ifp/.ani (%d names), %d image(s), %u IDE path(s), %u IPL path(s) before alias checks\n",
-		st.zip, st.mod, st.dff, st.btx, (int)customBtx.size(), st.txd, st.cls,
-		(unsigned)customBrColBlocks.size(), st.colfile, st.colblock, st.anim,
-		(int)customAnims.size(), st.img, (unsigned)customIdeFiles.size(), (unsigned)customIplFiles.size());
-	CUSTOM_LOG("zip/ graphics: %u archive(s), %u vehicle-reflection and %u lightmap entry name(s); no models, collisions, skins or diffuse textures from zip/\n",
-		graphicsArchives, graphicsReflections, graphicsLightmaps);
-	unsigned shown = 0;
-	for(std::map<std::string, CustomSource>::const_iterator it = graphicsBtx.begin();
-	    it != graphicsBtx.end() && shown < 16; ++it) {
-		if(it->first != ToLower(Stem(it->second.fname))) continue; // omit RW name aliases
-		const bool car = graphicsbtx::IsVehicleReflection(it->first);
-		const bool light = graphicsbtx::IsLightmap(it->first);
-		if(car || light) {
-			CUSTOM_LOG("zip/ graphics: candidate %s .btx %s\n",
-				car ? "vehicle reflection" : "lightmap", it->second.fname);
-			shown++;
-		}
-	}
-	if(!customActive && graphicsBtx.empty())
-		CUSTOM_LOG("scan: nothing usable found - the game runs on its own files\n");
-
-	// the skins the frontend can offer: one entry per image name
-	std::map<std::string, CustomSource>::iterator im;
-	for(im = customImages.begin(); im != customImages.end(); ++im){
-		std::string fn = Stem(im->second.fname);
-		std::string full = fn + "." + Extension(im->second.fname);
-		size_t k;
-		for(k = 0; k < customSkinNames.size(); k++)
-			if(Stem(customSkinNames[k]) == fn)
-				break;
-		if(k == customSkinNames.size())
-			customSkinNames.push_back(full);
-	}
-	std::sort(customSkinNames.begin(), customSkinNames.end());
-	CUSTOM_LOG("scan: %d player skin(s) available from the custom folder\n", (int)customSkinNames.size());
+	customActive = !customAnims.empty() || !customCls.empty() ||
+	               !customColFiles.empty() || !customIdeFiles.empty() || !customIplFiles.empty();
+	CUSTOM_LOG("==== custom folder: %s (loose folders only; ZIP, game-root img/ and common/ disabled)\n", customFolderPath.c_str());
+	CUSTOM_LOG("scan: %d .ifp (%u names), %d .cls (%u CED2 models), %d .col (%d models), %d IDE, %d IPL\n",
+		st.anim, (unsigned)customAnims.size(), st.cls, (unsigned)customBrColBlocks.size(),
+		st.colfile, st.colblock, st.ide, st.ipl);
+	if(!customActive)
+		CUSTOM_LOG("scan: no loose animation/map/collision files; checking custom/img/ for models\n");
 }
 
 // ---------------------------------------------------------------------------
 // reading entries
 // ---------------------------------------------------------------------------
 
-// Reads one source: an archive entry or a loose file.
+// Read only an explicitly indexed loose file. No ZIP reader is called at runtime.
 static bool
 ReadSource(const CustomSource &src, std::vector<uint8> &out)
 {
-	if(src.archive < 0 || src.archive >= (int)customArchives.size()){
-		if(src.loose[0] == '\0')
-			return false;
-		FILE *f = fcaseopen(src.loose, "rb");
-		if(f == nil)
-			return false;
-		fseek(f, 0, SEEK_END);
-		long size = ftell(f);
-		fseek(f, 0, SEEK_SET);
-		if(size <= 0 || (uint64)size > CUSTOM_MAX_ENTRY){
-			fclose(f);
-			return false;
-		}
-		out.resize(size);
-		bool ok = fread(out.data(), 1, size, f) == (size_t)size;
+	out.clear();
+	if(src.loose[0] == '\0') return false;
+	FILE *f = fcaseopen(src.loose, "rb");
+	if(f == nil) return false;
+	if(fseek(f, 0, SEEK_END) != 0) { fclose(f); return false; }
+	long size = ftell(f);
+	if(size <= 0 || (uint64)size > CUSTOM_MAX_ENTRY || fseek(f, 0, SEEK_SET) != 0) {
 		fclose(f);
-		if(!ok)
-			out.clear();
-		return ok;
-	}
-	const CustomZipEntry *ent = customArchives[src.archive]->GetEntry(src.entry);
-	if(ent == nil || ent->uncompressedSize == 0 || ent->uncompressedSize > CUSTOM_MAX_ENTRY)
-		return false;
-	out.resize(ent->uncompressedSize);
-	if(!customArchives[src.archive]->Extract(src.entry, out.data(), (uint32)out.size())){
-		out.clear();
 		return false;
 	}
-	return true;
+	out.resize((size_t)size);
+	bool ok = fread(out.data(), 1, (size_t)size, f) == (size_t)size;
+	fclose(f);
+	if(!ok) out.clear();
+	return ok;
 }
 
 // The IMG streamer uses a one-byte image index and expects an external VC
@@ -800,15 +449,13 @@ ImagePathKey(std::string path)
 	return path;
 }
 
-// Native IDEs have been read, but their DIRs are normally indexed AFTER the
-// new IMG files. Reserve native TXD names now, before custom IDEs and image
-// registration can exhaust the pool. Streaming still processes DIRs in its
-// original reverse order, so img/ keeps precedence for duplicate assets.
+// Native IDEs have been read, but their DIRs are indexed AFTER custom/img/.
+// Reserve native TXD names; the streamer's reverse IMG order prefers custom/img/.
 static void
 IndexNativeImageDirectories(void)
 {
-	// Index native DFF names even without user IMGs: a common/ IDE may reuse
-	// a stock DFF while the VC map IDE is disabled. Reserve stock TXD names
+	// Stock DFF metadata remains available to scripts when the VC map IDE is
+	// disabled. Reserve stock TXD names
 	// only when additional IMGs actually need that headroom.
 	bool reserveTxds = !customImageSlots.empty();
 	unsigned reserved = 0, full = 0;
@@ -822,7 +469,7 @@ IndexNativeImageDirectories(void)
 		// Match LoadCdDirectory's extension replacement, including any
 		// whitespace suffix in a stock CDIMAGE line.
 		dirName.replace(dot+1, 3, "DIR");
-		CustomSource dirFile = MakeSource(-1, -1, 0, dirName.c_str(), dirName.c_str());
+		CustomSource dirFile = MakeSource(0, dirName.c_str(), dirName.c_str());
 		std::vector<uint8> directory;
 		if(!ReadSource(dirFile, directory)) continue;
 		imageModelTextures.AddDirectory(n, directory.data(), directory.size());
@@ -836,7 +483,7 @@ IndexNativeImageDirectories(void)
 				});
 	}
 	if(reserveTxds)
-		CUSTOM_LOG("img/: reserved %u native TXD slots before custom images (%u without space)\n",
+		CUSTOM_LOG("custom/img: reserved %u native TXD slots before custom images (%u without space)\n",
 			reserved, full);
 }
 
@@ -868,26 +515,15 @@ CCustomModels::FindModelDffInImage(const char *modelName, uint32 &position, uint
 	return imageModelTextures.FindDffRecord(modelName, position, sectors);
 }
 
-bool
-CCustomModels::HasArchiveModelFile(const char *modelName)
-{
-	EnsureInitialised();
-	if(modelName == nil) return false;
-	std::string key = ToLower(modelName);
-	return customMods.find(key) != customMods.end() ||
-	       customDff.find(key) != customDff.end();
-}
-
 void
 CCustomModels::MountImages(void)
 {
 	if(customImagesScanned) return;
 	customImagesScanned = true;
-	std::vector<std::string> files, dirs;
-	if(!ListDirectory(".", files, dirs)) return;
+	EnsureInitialised();
 	std::vector<ImagePair> pairs;
-	for(size_t i = 0; i < dirs.size(); i++)
-		if(ToLower(Stem(dirs[i])) == "img") ScanImagePairs(dirs[i], 0, pairs);
+	const std::string images = Subfolder(customFolderPath, "img");
+	if(!images.empty()) ScanImagePairs(images, 0, pairs);
 	std::sort(pairs.begin(), pairs.end(), [](const ImagePair &a, const ImagePair &b) {
 		return ImagePathKey(a.img) < ImagePathKey(b.img);
 	});
@@ -895,12 +531,12 @@ CCustomModels::MountImages(void)
 	for(size_t i = 0; i < pairs.size(); i++) {
 		const ImagePair &pair = pairs[i];
 		if(pair.dir.empty() || pair.img.size() >= 64) {
-			CUSTOM_LOG("img %s: missing sibling .dir or path exceeds 63 characters\n", pair.img.c_str());
+			CUSTOM_LOG("custom/img %s: missing sibling .dir or path exceeds 63 characters\n", pair.img.c_str());
 			rejected++; continue;
 		}
 		uint64 imageBytes = ImageBytes(pair.img.c_str());
 		std::vector<uint8> directory;
-		CustomSource dirFile = MakeSource(-1, -1, 0, pair.dir.c_str(), pair.dir.c_str());
+		CustomSource dirFile = MakeSource(0, pair.dir.c_str(), pair.dir.c_str());
 		customimg::Stats stats;
 		std::string why;
 		FILE *img = fopen(pair.img.c_str(), "rb");
@@ -910,7 +546,7 @@ CCustomModels::MountImages(void)
 		if(v2 || !ReadSource(dirFile, directory) ||
 		   !customimg::Validate(directory.empty() ? nil : directory.data(),
 		                       directory.size(), imageBytes, stats, why)) {
-			CUSTOM_LOG("img %s: skipped (%s)\n", pair.img.c_str(),
+			CUSTOM_LOG("custom/img %s: skipped (%s)\n", pair.img.c_str(),
 				v2 ? "SA IMG v2; VC IMG v1 + external .dir required" :
 				why.empty() ? "cannot read .dir" : why.c_str());
 			rejected++; continue;
@@ -922,7 +558,7 @@ CCustomModels::MountImages(void)
 			}
 		if(slot < 0) {
 			if(CdStreamGetNumImages() >= MAX_CDIMAGES || !CdStreamAddImage(pair.img.c_str())) {
-				CUSTOM_LOG("img %s: could not mount (IMG slot limit or I/O error)\n", pair.img.c_str());
+				CUSTOM_LOG("custom/img %s: could not mount (IMG slot limit or I/O error)\n", pair.img.c_str());
 				rejected++; continue;
 			}
 			slot = CdStreamGetNumImages()-1;
@@ -930,10 +566,11 @@ CCustomModels::MountImages(void)
 		customImageSlots.insert(slot);
 		imageModelTextures.AddDirectory(slot, directory.data(), directory.size());
 		mounted++;
-		CUSTOM_LOG("img %s: IMG %d, %u DFF, %u TXD, %u other DIR entries ignored\n",
+		customActive = true;
+		CUSTOM_LOG("custom/img %s: IMG %d, %u DFF, %u TXD, %u other DIR entries ignored\n",
 			pair.img.c_str(), slot, (unsigned)stats.dff, (unsigned)stats.txd, (unsigned)stats.ignored);
 	}
-	CUSTOM_LOG("img/: %u archive(s) found, %u mounted, %u skipped\n",
+	CUSTOM_LOG("custom/img/: %u IMG(s) found, %u mounted, %u skipped\n",
 		(unsigned)pairs.size(), mounted, rejected);
 	IndexNativeImageDirectories(); // before CCustomWorld::LoadIde and CStreaming::Init
 }
@@ -969,8 +606,8 @@ IndexBrCollisionBlocks(void)
 			customBrColBlocks[key] = ref;
 		}
 		if(blocks.empty()) {
-			// Non-CED2 .cls containers are rare, but they too may share a ZIP
-			// filename. Index the INTERNAL names of their converted blocks.
+			// Non-CED2 .cls containers may share a filename across loose folders.
+			// Index the INTERNAL names of their converted blocks.
 			std::vector<uint8> game = LegacyClsToGame(data);
 			std::vector<customcolformat::Block> legacy;
 			customcolformat::Index(game.data(), game.size(), legacy);
@@ -997,9 +634,7 @@ HasBrBlocks(const CustomSource &src)
 {
 	for(size_t i = 0; i < customClsSources.size(); i++){
 		const CustomSource &other = customClsSources[i];
-		bool same = src.archive >= 0 ?
-			src.archive == other.archive && src.entry == other.entry :
-			other.archive < 0 && strcmp(src.loose, other.loose) == 0;
+		bool same = strcmp(src.loose, other.loose) == 0;
 		if(same) return customClsHasBrBlocks[i];
 	}
 	return false;
@@ -1021,7 +656,7 @@ ReadEntry(const std::map<std::string, CustomSource> &index, const std::string &k
 	return ReadSource(*src, out);
 }
 
-// a .col container from the archives or the folder: Vice City blocks ('COLL'
+// A loose .col container: Vice City blocks ('COLL'
 // floats) are what the game reads and go through as they are, San Andreas
 // blocks ('COL2'/'COL3', fixed point) are rewritten by the converter
 static std::vector<uint8>
@@ -1056,10 +691,7 @@ ColContainerToGame(const std::vector<uint8> &file, const char *what, const std::
 // model: .mod -> a RenderWare stream the engine can read
 // ---------------------------------------------------------------------------
 
-// The file itself is the stream. The archive entry is read once and then
-// understood in place - decryption and the BR->RW structure repair happen
-// inside that very buffer, no .dff is produced anywhere: what comes out of
-// here is handed to the RenderWare loaders as is.
+// Offline converter code is retained, but no .mod/.dff source is indexed here.
 
 static bool ValidateModelForGame(const std::string &key, bool isMod,
                                  const std::vector<uint8> &file, std::string &why);
@@ -1092,7 +724,7 @@ PrepareModelBytes(const std::string &key, const CustomSource &src, bool isMod)
 	model->usable = false;
 	model->readOk = false;
 	if(!ReadSource(src, model->bytes)){
-		model->rejectReason = "the archive entry could not be read";
+		model->rejectReason = "the loose file could not be read";
 		return model;
 	}
 	model->rawSize = (unsigned)model->bytes.size();
@@ -1220,24 +852,16 @@ struct TxdPlan
 	bool serve;
 	std::string modelKey;		// the model the textures come from
 	std::vector<std::string> names;
-	std::vector<std::string> uv2DualNames; // only these may come from zip/
+	std::vector<std::string> uv2DualNames; // used for texture discovery
 	std::vector<br::TerrainRecipe> recipes;
 };
 
 static std::map<std::string, TxdPlan> customTxdPlans;
 static std::map<std::string, std::string> customTxdCandidates;
 
-static bool
-PlanReferencesGraphicsLightmap(const TxdPlan &plan, const std::string &name)
-{
-	return graphicsbtx::IsLightmap(name) &&
-	       std::find(plan.uv2DualNames.begin(), plan.uv2DualNames.end(),
-	                 graphicsbtx::Key(name)) != plan.uv2DualNames.end();
-}
-
 // The dictionary a model uses does not always carry the model's name (a car is
 // called "hotdog" but its textures can live in "hotdog1"), so a name that is
-// not in the archives is matched against the dictionaries of the custom models.
+// not in the loose index was matched against a converted model (now unused).
 static bool
 FindModelForTxd(const std::string &txdName, std::string &modelKey)
 {
@@ -1307,9 +931,8 @@ GetTxdPlan(const std::string &key)
 		ModelTextureNames(plan.modelKey, plan.names, plan.recipes, plan.uv2DualNames);
 		for(size_t i = 0; i < plan.names.size(); i++)
 			if(customBtx.find(ToLower(plan.names[i])) != customBtx.end()){
-				// NEVER turn a native base TXD into an incomplete custom TXD
-				// solely because zip/ offers one lightmap. Native IMG diffuse
-				// textures must keep their normal streaming path.
+				// Never turn a native IMG TXD into an incomplete custom TXD.
+				// Native IMG diffuse textures keep their normal streaming path.
 				plan.serve = true;
 				break;
 			}
@@ -1515,9 +1138,7 @@ DecodedTextureSize(const brtex::Texture &tex)
 static std::string
 BtxCacheKey(const CustomSource &src)
 {
-	char loc[48];
-	snprintf(loc, sizeof(loc), "%d:%d:", src.archive, src.entry);
-	return src.archive < 0 ? std::string("loose:") + src.loose : std::string("archive:") + loc;
+	return std::string("loose:") + src.loose;
 }
 
 static std::shared_ptr<brtex::Texture>
@@ -1525,16 +1146,8 @@ DecodeBtxBytes(const CustomSource &src, const std::string &name, std::string &er
 {
 	std::vector<uint8> file;
 	if(!ReadSource(src, file)){
-		err = "the archive entry could not be read";
+		err = "the loose file could not be read";
 		return std::shared_ptr<brtex::Texture>();
-	}
-	if(src.fromGraphics) {
-		uint32 w = 0, h = 0, mips = 0;
-		if(!brtex::peekBtx(file.data(), file.size(), w, h, mips) ||
-		   !graphicsbtx::FullSize(w, h)) {
-			err = "invalid .btx, 8x8 preview or oversized graphics texture";
-			return std::shared_ptr<brtex::Texture>();
-		}
 	}
 	std::shared_ptr<brtex::Texture> tex = std::make_shared<brtex::Texture>();
 	tex->name = name;
@@ -1575,31 +1188,6 @@ GetDecodedBtx(const std::string &name)
 	return src ? GetDecodedBtx(*src, name) : std::shared_ptr<const brtex::Texture>();
 }
 
-// Reject the 8x8 .tmb previews and broken entries before creating GPU rasters.
-// Failure is remembered per source, avoiding repeated extraction on every
-// appearance of a model. This shares the EXISTING decoded texture LRU budget.
-static std::set<std::string> rejectedGraphicsBtx;
-static const CustomSource *
-GraphicsLightmapSource(const std::string &name)
-{
-	return graphicsbtx::IsLightmap(name) ? FindSource(graphicsBtx, graphicsbtx::Key(name)) : nil;
-}
-
-static std::shared_ptr<const brtex::Texture>
-GetGraphicsTexture(const CustomSource &src, const std::string &name)
-{
-	const std::string key = BtxCacheKey(src);
-	if(rejectedGraphicsBtx.count(key)) return std::shared_ptr<const brtex::Texture>();
-	std::shared_ptr<const brtex::Texture> tex = GetDecodedBtx(src, name);
-	if(!tex || tex->mips.empty() ||
-	   !graphicsbtx::FullSize(tex->mips[0].w, tex->mips[0].h)) {
-		CUSTOM_LOG("zip/ graphics: %s: invalid .btx or 8x8 preview; skipped\n", src.fname);
-		rejectedGraphicsBtx.insert(key);
-		return std::shared_ptr<const brtex::Texture>();
-	}
-	return tex;
-}
-
 // Decode and bake terrain without touching game state. The input map is a
 // snapshot of source descriptors, not live iterators into the archive index.
 static std::shared_ptr<brtex::Texture>
@@ -1636,16 +1224,9 @@ LoadBtxTexture(const std::string &name, brtex::Texture &out)
 
 static std::shared_ptr<const brtex::Texture>
 GetPreparedTexture(const std::string &modelKey, const std::string &name,
-                   const br::TerrainRecipe *recipe, bool explicitlyUv2Dual)
+                   const br::TerrainRecipe *recipe)
 {
-	if(!recipe) {
-		const CustomSource *src = explicitlyUv2Dual ? GraphicsLightmapSource(name) : nil;
-		if(src) {
-			std::shared_ptr<const brtex::Texture> tex = GetGraphicsTexture(*src, name);
-			if(tex) return tex; // zip/ lightmaps outrank custom/ of the same name
-		}
-		return GetDecodedBtx(name);
-	}
+	if(!recipe) return GetDecodedBtx(name);
 	std::string key = "terrain:" + modelKey + ":" + ToLower(name);
 	std::shared_ptr<const brtex::Texture> cached = customDecodedTextures.Find(key);
 	if(cached)
@@ -1769,96 +1350,6 @@ BuildTextureGuarded(const brtex::Texture &tex, const char *name)
 #endif
 }
 
-// Distinguishes an actual zip/ UV2 lightmap from an unrelated native MatFX
-// DUAL detail map at render time without a per-mesh map lookup or plugin.
-static void
-MarkGraphicsLightmap(RwTexture *texture)
-{
-	if(texture) {
-		strncpy(texture->mask, graphicsbtx::LightmapMarker, 31);
-		texture->mask[31] = '\0';
-	}
-}
-
-RwTexture *
-CCustomModels::CarReflectionMaskFromZip(void)
-{
-	EnsureInitialised();
-	// An envmap .btx is NOT a BR dynamic paraboloid render target. Only the
-	// specifically named CAR mask can replace Neo's scene-RT overlay mask.
-	const char *names[] = { "carreflectionmask", "car_reflection_mask",
-	                         "car_refl_mask", "vehiclereflectionmask",
-	                         "vehicle_reflection_mask" };
-	for(size_t i = 0; i < sizeof(names)/sizeof(names[0]); i++) {
-		const CustomSource *src = FindSource(graphicsBtx, names[i]);
-		if(!src) continue;
-		std::shared_ptr<const brtex::Texture> pixels = GetGraphicsTexture(*src, names[i]);
-		RwTexture *texture = pixels ? BuildTextureGuarded(*pixels, names[i]) : nil;
-		if(texture) {
-			RwTextureSetAddressing(texture, rwTEXTUREADDRESSCLAMP);
-			CUSTOM_LOG("zip/ graphics: vehicle RT mask %s from %s\n", names[i], src->fname);
-			return texture; // owned by CustomPipes, NOT the game's TXD
-		}
-	}
-	return nil;
-}
-
-// Stable internal name for a selected lightmap within ONE model TXD. The TXD
-// owns a reference; MatFX owns another. Normal model unload/eviction releases
-// both, and two materials referencing the same .btx share one GPU raster.
-static std::string
-ZipLightmapName(const CustomSource &src)
-{
-	const std::string key = BtxCacheKey(src);
-	uint64 hash = 14695981039346656037ull;
-	for(size_t i = 0; i < key.size(); i++) {
-		hash ^= (unsigned char)key[i];
-		hash *= 1099511628211ull;
-	}
-	char name[32];
-	snprintf(name, sizeof(name), "zip_lightmap_%016llx", (unsigned long long)hash);
-	return name;
-}
-
-void
-CCustomModels::ApplyGraphicsLightmaps(RpAtomic *atomic, int32 txdSlot)
-{
-	if(graphicsLightmaps == 0 || !atomic || txdSlot < 0 || txdSlot >= TXDSTORESIZE) return;
-	rw::Geometry *geo = atomic->geometry;
-	if(!geo || geo->numTexCoordSets < 2) return;
-	TxdDef *def = CTxdStore::GetSlot(txdSlot);
-	rw::TexDictionary *dict = def ? (rw::TexDictionary*)def->texDict : nil;
-	if(!dict) return;
-	for(int i = 0; i < geo->matList.numMaterials; i++) {
-		rw::Material *mat = geo->matList.materials[i];
-		if(!mat || rw::MatFX::getEffects(mat) != rw::MatFX::DUAL) continue;
-		rw::MatFX *fx = rw::MatFX::get(mat);
-		rw::Texture *dual = fx ? fx->getDualTexture() : nil;
-		if(!dual || !dual->name[0]) continue; // dummy RW textures retain a useful name
-		const std::string name = dual->name;
-		// A custom model can keep its native IMG TXD. Do not use a model TXD
-		// plan to skip the zip/ map: only the bound texture's marker proves it
-		// was already installed while building a custom TXD.
-		if(!graphicsbtx::NeedsLightmapReplacement(geo->numTexCoordSets, true,
-		                                       name, dual->mask)) continue;
-		const CustomSource *src = GraphicsLightmapSource(name);
-		if(!src) continue;
-		const std::string alias = ZipLightmapName(*src);
-		rw::Texture *texture = dict->find(alias.c_str());
-		if(!texture) {
-			std::shared_ptr<const brtex::Texture> pixels = GetGraphicsTexture(*src, name);
-			if(!pixels) continue;
-			texture = BuildTextureGuarded(*pixels, alias.c_str());
-			if(!texture) continue;
-			MarkGraphicsLightmap(texture);
-			RwTextureSetAddressing(texture, rwTEXTUREADDRESSCLAMP);
-			dict->add(texture); // transfers the initial ref to the model TXD
-		}
-		fx->setDualTexture(texture); // adds the material's own reference
-		CUSTOM_LOG("zip/ graphics: UV2 DUAL lightmap %s <- %s\n", name.c_str(), src->fname);
-	}
-}
-
 // The streaming system normally destroys a TXD when its last model is
 // evicted. Keep a *detached* dictionary (including GPU rasters) for a bounded
 // number of recent custom slots; never move one texture between two live TXDs.
@@ -1874,9 +1365,8 @@ static customcache::ResidentObjectCache<RwTexDictionary> customResidentTxds(CUST
 static std::map<int32, RwTexDictionary*> customLoadedTxds;
 
 // CPU preparation is separate from RenderWare. The only things passed to the
-// worker are immutable source descriptors, names and terrain recipes; the
-// archive index outlives the worker and CustomZip opens a separate FILE per
-// extraction. Results enter the existing LRU caches ONLY on the game thread.
+// worker are immutable loose-source descriptors, names and terrain recipes.
+// Results enter the existing LRU caches ONLY on the game thread.
 struct CpuWorkResult
 {
 	std::shared_ptr<PreparedModel> model;
@@ -2140,15 +1630,11 @@ LoadTxdSlot(int32 slot, const std::string &key, TxdPlan &plan)
 				if(plan.recipes[r].tex == name)
 					recipe = &plan.recipes[r];
 
-			std::shared_ptr<const brtex::Texture> tex = GetPreparedTexture(plan.modelKey, name, recipe, PlanReferencesGraphicsLightmap(plan, name));
+			std::shared_ptr<const brtex::Texture> tex = GetPreparedTexture(plan.modelKey, name, recipe);
 			if(!tex){ missing++; continue; }
 
 			RwTexture *texture = BuildTextureGuarded(*tex, name.c_str());
 			if(texture == nil){ missing++; continue; }
-			const CustomSource *graphic = !recipe && PlanReferencesGraphicsLightmap(plan, name) ?
-				GraphicsLightmapSource(name) : nil;
-			if(graphic && !rejectedGraphicsBtx.count(BtxCacheKey(*graphic)))
-				MarkGraphicsLightmap(texture);
 			RwTexDictionaryAddTexture(dict, texture);
 			made++;
 		}
@@ -2161,7 +1647,7 @@ LoadTxdSlot(int32 slot, const std::string &key, TxdPlan &plan)
 		}else missing++;
 	}
 	// textures the single .btx files do not have can sit in a whole .txd in
-	// the archives (the community packs keep them that way)
+	// an optional whole .txd (not indexed in this layout)
 	if(missing > 0 && customTxdFiles.find(key) != customTxdFiles.end()){
 		int before = made;
 		if(MergeTxdFile(key, dict))
@@ -2260,8 +1746,8 @@ CCustomModels::SetNativeModelOverride(int32 modelId, bool enabled)
 void
 CCustomModels::Shutdown(void)
 {
-	// The worker may still be reading a CustomZip entry. Join it BEFORE the
-	// archive index and decoded caches are destroyed or a new game is started.
+	// The worker may still be reading a loose file. Join it BEFORE the
+	// source indices and decoded caches are destroyed or a new game is started.
 	customCpuWorker.Stop();
 	customJobInterests.clear();
 	customCompletedCpuJobs.clear();
@@ -2273,14 +1759,8 @@ CCustomModels::Shutdown(void)
 	customFailedCpuTextures.clear();
 	customTransientTexture.reset();
 	customTransientTextureKey.clear();
-	for(size_t i = 0; i < customArchives.size(); i++)
-		delete customArchives[i];
-	customArchives.clear();
 	customMods.clear();
 	customBtx.clear();
-	graphicsBtx.clear();
-	graphicsArchives = graphicsReflections = graphicsLightmaps = 0;
-	rejectedGraphicsBtx.clear();
 	customCls.clear();
 	customAnims.clear();
 	customDff.clear();
@@ -2294,11 +1774,6 @@ CCustomModels::Shutdown(void)
 	customLegacyClsBlocks.clear();
 	customIdeFiles.clear();
 	customIplFiles.clear();
-	commonIdeFiles.clear();
-	commonIplFiles.clear();
-	commonDataFiles.clear();
-	commonConfig = commoncatalog::Catalog();
-	commonFolderPath.clear();
 	customImages.clear();
 	customSkinNames.clear();
 	customFolderPath.clear();
@@ -2323,40 +1798,14 @@ bool
 CCustomModels::HasWorldFiles(void)
 {
 	EnsureInitialised();
-	return !customIdeFiles.empty() || !customIplFiles.empty() ||
-	       !commonConfig.ide.empty() || !commonConfig.ipl.empty();
-}
-
-bool
-CCustomModels::HasCommonWorld(void)
-{
-	EnsureInitialised();
-	return !commonConfig.ide.empty() && !commonConfig.ipl.empty();
-}
-
-bool
-CCustomModels::HasGraphicsReflections(void)
-{
-	EnsureInitialised();
-	return graphicsReflections != 0;
-}
-
-bool
-CCustomModels::HasGraphicsLightmaps(void)
-{
-	EnsureInitialised();
-	return graphicsLightmaps != 0;
+	return !customIdeFiles.empty() || !customIplFiles.empty();
 }
 
 bool
 CCustomModels::HasModelFile(const char *name)
 {
 	EnsureInitialised();
-	if(name == nil) return false;
-	std::string key = ToLower(name);
-	return customMods.find(key) != customMods.end() ||
-	       customDff.find(key) != customDff.end() ||
-	       imageModelTextures.FindDffImage(name) >= 0;
+	return name && imageModelTextures.FindDffImage(name) >= 0;
 }
 
 // Map packs contain alternative scenes (events, races, old/new vegetation).
@@ -2366,9 +1815,11 @@ CCustomModels::HasModelFile(const char *name)
 static bool
 ReadActiveIpls(std::set<std::string> &active)
 {
-	std::string filename = customFolderPath + "/active_ipl.txt";
+	std::string maps = Subfolder(Subfolder(customFolderPath, "data"), "maps");
+	if(maps.empty()) return false;
+	std::string filename = maps + "/active_ipl.txt";
 	FILE *f = fcaseopen(filename.c_str(), "rb");
-	if(f == nil) return false; // no manifest: preserve the legacy load-all mode
+	if(f == nil) return false; // no manifest: load all custom/data/maps IPLs
 	char line[512];
 	unsigned invalid = 0, missing = 0, lineNo = 0;
 	while(fgets(line, sizeof(line), f)){
@@ -2390,16 +1841,15 @@ ReadActiveIpls(std::set<std::string> &active)
 		if(begin == std::string::npos) continue;
 		text = text.substr(begin, text.find_last_not_of(" \t\r\n")-begin+1);
 		std::string key = WorldPath(text);
-		if(text[0] == '/' || key.empty() || key.size() > 255 ||
-		   key.find("../") != std::string::npos || key == ".." ||
+		if(text[0] == '/' || key.compare(0, 10, "data/maps/") != 0 ||
+		   key.size() > 255 || key.find("../") != std::string::npos ||
 		   Extension(key) != "ipl"){
 			invalid++;
 			CUSTOM_LOG("active_ipl.txt:%u: invalid IPL path: %.120s\n", lineNo, text.c_str());
 			continue;
 		}
 		active.insert(key);
-		if(customIplFiles.find(key) == customIplFiles.end() &&
-		   commonIplFiles.find(key) == commonIplFiles.end()) {
+		if(customIplFiles.find(key) == customIplFiles.end()) {
 			missing++;
 			CUSTOM_LOG("active_ipl.txt: IPL path not found: %s\n", key.c_str());
 		}
@@ -2411,8 +1861,8 @@ ReadActiveIpls(std::set<std::string> &active)
 		active.clear();
 		return false;
 	}
-	CUSTOM_LOG("active_ipl.txt: %u path(s) selected from %u custom and %u common IPLs, %u missing, %u invalid line(s)\n",
-		(unsigned)active.size(), (unsigned)customIplFiles.size(), (unsigned)commonIplFiles.size(), missing, invalid);
+	CUSTOM_LOG("custom/data/maps/active_ipl.txt: %u path(s) selected from %u IPLs, %u missing, %u invalid line(s)\n",
+		(unsigned)active.size(), (unsigned)customIplFiles.size(), missing, invalid);
 	return true;
 }
 
@@ -2422,83 +1872,18 @@ CCustomModels::ForEachWorldFile(bool ide, WorldFileCallback callback, void *cont
 	EnsureInitialised();
 	if(callback == nil) return;
 	std::set<std::string> active;
-	bool selected = !ide && ReadActiveIpls(active);
-	typedef std::map<std::string, CustomSource> WorldFiles;
-	const WorldFiles &custom = ide ? customIdeFiles : customIplFiles;
-	const WorldFiles &common = ide ? commonIdeFiles : commonIplFiles;
-	const std::vector<std::string> &order = ide ? commonConfig.ide : commonConfig.ipl;
-	const std::set<std::string> &configured = ide ? commonConfig.idePaths : commonConfig.iplPaths;
-	std::map<std::string, std::pair<std::string, CustomSource> > firstAlias;
-	unsigned identical = 0;
-	auto emit = [&](const std::string &key, const CustomSource &src) {
-		std::vector<uint8> bytes;
-		if(!ReadSource(src, bytes)) {
-			CUSTOM_LOG("world %s: cannot read %s\n", ide ? "IDE" : "IPL", key.c_str());
-			return;
-		}
-		std::string alias = WorldAliasPath(key);
-		if(!alias.empty()) {
-			std::map<std::string, std::pair<std::string, CustomSource> >::const_iterator first = firstAlias.find(alias);
-			if(first == firstAlias.end())
-				firstAlias[alias] = std::make_pair(key, src);
-			else {
-				std::vector<uint8> previous;
-				if(ReadSource(first->second.second, previous) && previous == bytes) {
-					identical++;
-					return;
-				}
-				CUSTOM_LOG("world %s: %s and %s share a map path but differ; both loaded%s\n",
-					ide ? "IDE" : "IPL", first->second.first.c_str(), key.c_str(),
-					ide ? "" : " (select alternatives with active_ipl.txt)");
-			}
-		}
-		callback(key.c_str(), bytes.data(), bytes.size(), context);
-	};
-
-	// A user may leave the old custom/common.zip alongside its unpacked
-	// common/ replacement. Loading BOTH archives' full maps ignores the new
-	// config.dat selection, reinstates commented-out event IPLs and doubles
-	// much of the world. Keep other loose custom IDE/IPL; archive-only IPLs
-	// remain available via an explicit active_ipl.txt selection.
-	bool unpackedCommon = !commonConfig.ide.empty() && !commonConfig.ipl.empty();
-	unsigned skippedLegacy = 0;
-	for(WorldFiles::const_iterator it = custom.begin(); it != custom.end(); ++it) {
+	const bool selected = !ide && ReadActiveIpls(active);
+	const std::map<std::string, CustomSource> &world = ide ? customIdeFiles : customIplFiles;
+	for(std::map<std::string, CustomSource>::const_iterator it = world.begin();
+	    it != world.end(); ++it) {
 		if(selected && !active.count(it->first)) continue;
-		const CustomSource &src = it->second;
-		if(unpackedCommon && !selected && src.archive >= 0 &&
-		   src.archive < (int)customArchives.size() &&
-		   ToLower(Stem(customArchives[src.archive]->GetPath())) == "common") {
-			skippedLegacy++;
+		std::vector<uint8> bytes;
+		if(!ReadSource(it->second, bytes)) {
+			CUSTOM_LOG("world %s: cannot read %s\n", ide ? "IDE" : "IPL", it->first.c_str());
 			continue;
 		}
-		std::string candidate = it->first.compare(0, 5, "maps/") == 0 ? "data/" + it->first : it->first;
-		WorldFiles::const_iterator priority = common.find(candidate);
-		if(priority != common.end() && (ide ? configured.count(candidate) != 0 :
-		   selected ? active.count(candidate) != 0 : configured.count(candidate) != 0)) {
-			std::vector<uint8> bytes;
-			if(ReadSource(priority->second, bytes)) continue; // common path wins; bad file falls back
-		}
-		emit(it->first, it->second);
+		callback(it->first.c_str(), bytes.data(), bytes.size(), context);
 	}
-	if(skippedLegacy)
-		CUSTOM_LOG("common/: unpacked manifest supersedes %u IDE/IPL path(s) from legacy custom/common.zip%s\n",
-			skippedLegacy, ide ? "" : " (archive-only IPLs require active_ipl.txt)");
-	for(size_t i = 0; i < order.size(); i++) {
-		if(selected && !active.count(order[i])) continue;
-		WorldFiles::const_iterator it = common.find(order[i]);
-		if(it != common.end()) emit(it->first, it->second);
-		else CUSTOM_LOG("common config.dat: %s not found: %s\n", ide ? "IDE" : "IPL", order[i].c_str());
-	}
-	// Explicit opt-in for alternative/event IPLs that config.dat comments out.
-	if(selected && !ide)
-		for(std::set<std::string>::const_iterator it = active.begin(); it != active.end(); ++it)
-			if(!configured.count(*it)) {
-				WorldFiles::const_iterator extra = common.find(*it);
-				if(extra != common.end()) emit(extra->first, extra->second);
-			}
-	if(identical)
-		CUSTOM_LOG("world %s: skipped %u byte-identical data/maps and maps aliases\n",
-			ide ? "IDE" : "IPL", identical);
 }
 
 void
@@ -2506,8 +1891,7 @@ CCustomModels::ForEachBrCollision(CollisionCallback callback, void *context)
 {
 	EnsureInitialised();
 	if(callback == nil) return;
-	// Only the winning blocks are read, one ZIP entry at a time. This covers
-	// different archives that happen to use the same .cls filename.
+	// Read each loose .cls source once, even if it has multiple model blocks.
 	std::map<size_t, std::vector<std::pair<std::string, BrBlockRef> > > groups;
 	for(std::map<std::string, BrBlockRef>::const_iterator it = customBrColBlocks.begin();
 	    it != customBrColBlocks.end(); ++it)
@@ -2527,7 +1911,7 @@ CCustomModels::ForEachBrCollision(CollisionCallback callback, void *context)
 }
 
 // A .col may hold hundreds of models; serve each indexed internal name,
-// including ones stored in different ZIPs with identical container names.
+// including ones stored in different .col containers with identical names.
 // Converted blocks are scoped to one callback, never cached in the LRU.
 void
 CCustomModels::ForEachGameCollision(CollisionCallback callback, void *context, CollisionFilter filter)
@@ -2535,8 +1919,7 @@ CCustomModels::ForEachGameCollision(CollisionCallback callback, void *context, C
 	EnsureInitialised();
 	if(callback == nil) return;
 	// Legacy .cls files are also matched by internal model name. Group
-	// selected blocks by ZIP entry so a shared filename cannot hide another
-	// archive's models, and convert each chosen entry only once here.
+	// selected blocks by loose file and convert each chosen file only once.
 	std::map<size_t, std::vector<std::pair<std::string, BrBlockRef> > > clsGroups;
 	for(std::map<std::string, BrBlockRef>::const_iterator it = customLegacyClsBlocks.begin();
 	    it != customLegacyClsBlocks.end(); ++it)
@@ -2640,8 +2023,8 @@ CheckStreamPreparation(int32 streamId, bool priority)
 {
 	if(streamId == nativeModelOverride || !customActive || streamId < 0 || streamId >= NUMSTREAMINFO)
 		return true;
-	// CanServe uses the same guard. Do not decompress a same-named ZIP
-	// .mod/.btx while the native img/ DFF/TXD is already waiting on disc.
+	// Native custom/img/ DFFs and TXDs always go through the stock streamer.
+	// The legacy converter cannot override their scheduled IMG reads.
 	if(streamId < STREAM_OFFSET_COL && CStreaming::ms_aInfoForModel[streamId].m_size &&
 	   CCustomModels::IsAutoMountedImage(_GET_INDEX(CStreaming::ms_aInfoForModel[streamId].m_position)))
 		return true;
@@ -2711,9 +2094,7 @@ CheckStreamPreparation(int32 streamId, bool priority)
 						pending = true;
 					}
 				}else{
-					const CustomSource *src = PlanReferencesGraphicsLightmap(plan, name) ?
-						GraphicsLightmapSource(name) : nil;
-					if(!src) src = FindSource(customBtx, ToLower(name));
+					const CustomSource *src = FindSource(customBtx, ToLower(name));
 					if(src && !HasPreparedTexture(BtxCacheKey(*src))){
 						std::string texKey = BtxCacheKey(*src);
 						if(EvictedBeforeReady(streamId, TextureJobKey(texKey))) return true;
@@ -2830,107 +2211,26 @@ CCustomModels::CancelStreamPrefetch(int32 streamId)
 	}
 }
 
-// Is this stream id (a model, a texture dictionary or a collision slot) one of
-// ours? A model is ours when the archives have a .mod with its name, a texture
-// dictionary when it belongs to such a model or when there is a .btx with its
-// name, a collision slot when there is a .cls with its name.
+// IMG models and TXDs always use the native streamer. Only a loose collision
+// container referenced by a COLFILE directive needs a synthetic CD position;
+// per-model world collisions are installed separately by CCustomWorld.
 bool
 CCustomModels::CanServe(int32 streamId)
 {
-	if(streamId == nativeModelOverride || streamId < 0 || streamId >= NUMSTREAMINFO)
+	if(streamId < STREAM_OFFSET_COL || streamId >= STREAM_OFFSET_ANIM || !IsActive())
 		return false;
-	// For assets present in img/*.img, use the IMG bytes directly: SA DFFs
-	// and VC TXDs should not be replaced by a same-named old .mod/.btx in a
-	// ZIP. Everything else still uses the existing custom decode path.
-	if(streamId < STREAM_OFFSET_COL && CStreaming::ms_aInfoForModel[streamId].m_size &&
-	   IsAutoMountedImage(_GET_INDEX(CStreaming::ms_aInfoForModel[streamId].m_position)))
-		return false;
-	if(!IsActive())
-		return false;
-
-	if(streamId < STREAM_OFFSET_TXD){
-		CBaseModelInfo *mi = CModelInfo::GetModelInfo(streamId);
-		if(mi == nil)
-			return false;
-		// only models the game reads from a clump can take one: simple
-		// objects, time objects, weapons, clumps, vehicles and peds are all
-		// stored as clumps (a simple object's file holds one atomic)
-		if(!mi->IsSimple() && mi->GetModelType() != MITYPE_CLUMP &&
-		   mi->GetModelType() != MITYPE_VEHICLE && mi->GetModelType() != MITYPE_PED)
-			return false;
-		std::string key = ToLower(mi->GetModelName());
-		if(rejectedArchiveModels.find(key) != rejectedArchiveModels.end() ||
-		   (customMods.find(key) == customMods.end() && customDff.find(key) == customDff.end()))
-			return false;
-#ifdef USE_CUSTOM_ALLOCATOR
-		return CanUseModel(key); // no worker: retain the original validated lookup
-#else
-		std::map<std::string, ModPlan>::const_iterator plan = customModPlans.find(key);
-		// Tentative while the CPU worker validates it: GetNextFileOnCd does
-		// not hand it to RenderWare until that result has been consumed.
-		return plan == customModPlans.end() || !plan->second.computed || plan->second.usable;
-#endif
-	}
-
-	if(streamId >= STREAM_OFFSET_TXD && streamId < STREAM_OFFSET_COL){
-		const char *name = CTxdStore::GetTxdName(streamId - STREAM_OFFSET_TXD);
-		if(name == nil || name[0] == '\0')
-			return false;
-		std::string key = ToLower(name);
-#ifdef USE_CUSTOM_ALLOCATOR
-		return GetTxdPlan(key).serve;
-#else
-		std::map<std::string, TxdPlan>::const_iterator plan = customTxdPlans.find(key);
-		if(plan != customTxdPlans.end() && plan->second.computed)
-			return plan->second.serve;
-		// A potential custom dictionary is provisional until the model's
-		// texture names have been examined off the game thread. No ZIP read,
-		// model conversion or ASTC decode may occur in this hot lookup.
-		return customBtx.find(key) != customBtx.end() ||
-		       customTxdFiles.find(key) != customTxdFiles.end() ||
-		       !PotentialModelForTxd(key).empty();
-#endif
-	}
-
-	if(streamId >= STREAM_OFFSET_COL && streamId < STREAM_OFFSET_ANIM){
-		const char *name = CColStore::GetColName(streamId - STREAM_OFFSET_COL);
-		if(name == nil || name[0] == '\0')
-			return false;
-		std::string key = ToLower(name);
-		return (customCls.find(key) != customCls.end() &&
-		        !HasBrBlocks(customCls.find(key)->second)) ||
-		       customColFiles.find(key) != customColFiles.end();
-	}
-
-	return false;	// animations are never taken from the custom folder
+	const char *name = CColStore::GetColName(streamId - STREAM_OFFSET_COL);
+	if(name == nil || name[0] == '\0') return false;
+	const std::string key = ToLower(name);
+	std::map<std::string, CustomSource>::const_iterator cls = customCls.find(key);
+	return (cls != customCls.end() && !HasBrBlocks(cls->second)) ||
+	       customColFiles.find(key) != customColFiles.end();
 }
 
 bool
 CCustomModels::Load(int32 streamId)
 {
-	if(!CanServe(streamId))
-		return false;
-
-	if(streamId < STREAM_OFFSET_TXD){
-		CBaseModelInfo *mi = CModelInfo::GetModelInfo(streamId);
-		std::string key = ToLower(mi->GetModelName());
-		if(LoadModelIntoGame(key, streamId))
-			return true;
-		rejectedArchiveModels.insert(key);
-		CUSTOM_LOG("model %s: rejecting archive override for this session; trying native stream\n", key.c_str());
-		return false;
-	}
-
-	if(streamId >= STREAM_OFFSET_TXD && streamId < STREAM_OFFSET_COL){
-		int32 slot = streamId - STREAM_OFFSET_TXD;
-		std::string key = ToLower(CTxdStore::GetTxdName(slot));
-		return LoadTxdSlot(slot, key, GetTxdPlan(key));
-	}
-
-	if(streamId >= STREAM_OFFSET_COL && streamId < STREAM_OFFSET_ANIM)
-		return LoadColSlot(streamId - STREAM_OFFSET_COL);
-
-	return false;
+	return CanServe(streamId) && LoadColSlot(streamId - STREAM_OFFSET_COL);
 }
 
 // ---------------------------------------------------------------------------
@@ -2958,14 +2258,10 @@ BuildDictionaryFor(const std::string &key)
 			for(size_t r = 0; r < plan.recipes.size(); r++)
 				if(plan.recipes[r].tex == name)
 					recipe = &plan.recipes[r];
-			std::shared_ptr<const brtex::Texture> tex = GetPreparedTexture(plan.modelKey, name, recipe, PlanReferencesGraphicsLightmap(plan, name));
+			std::shared_ptr<const brtex::Texture> tex = GetPreparedTexture(plan.modelKey, name, recipe);
 			if(!tex){ missing++; continue; }
 			RwTexture *texture = BuildTextureGuarded(*tex, name.c_str());
 			if(texture == nil){ missing++; continue; }
-			const CustomSource *graphic = !recipe && PlanReferencesGraphicsLightmap(plan, name) ?
-				GraphicsLightmapSource(name) : nil;
-			if(graphic && !rejectedGraphicsBtx.count(BtxCacheKey(*graphic)))
-				MarkGraphicsLightmap(texture);
 			RwTexDictionaryAddTexture(dict, texture);
 			made++;
 		}
@@ -2978,103 +2274,8 @@ BuildDictionaryFor(const std::string &key)
 	return dict;
 }
 
-bool
-CCustomModels::LoadClumpFileFromCustom(const char *filename)
-{
-	EnsureInitialised();
-	if(!customActive)
-		return false;
-
-	std::string key = ToLower(Stem(filename));
-	if(customMods.find(key) == customMods.end() && customDff.find(key) == customDff.end())
-		return false;
-
-	std::shared_ptr<const PreparedModel> model = ReadModelEntry(key);
-	if(!model)
-		return false;
-
-	// The streaming and HIERFILE paths share the same cached validation.
-	// In particular, player.mod remains forbidden.
-	if(!model->usable){
-		CUSTOM_LOG("model file %s: not usable as a game model (%s), the game's own file is used\n",
-			filename, model->rejectReason.c_str());
-		return false;
-	}
-
-	// A hierarchical model file is matched to its model by the name of the
-	// clump's frame; the file name is the name of the model here, because the
-	// archives are indexed by it.
-	int32 id = -1;
-	CBaseModelInfo *mi = CModelInfo::GetModelInfo(key.c_str(), &id);
-	if(mi == nil || id < 0 || !mi->IsClump())
-		return false;
-
-	RwMemory mem;
-	mem.start = const_cast<uint8*>(model->bytes.data());
-	mem.length = (uint32)model->bytes.size();
-	RwStream *stream = RwStreamOpen(rwSTREAMMEMORY, rwSTREAMREAD, &mem);
-	if(stream == nil)
-		return false;
-
-	// the model's own dictionary is the current one while it is read, so its
-	// textures are found by name
-	bool setTxd = false;
-	int32 txdSlot = mi->GetTxdSlot();
-	if(txdSlot >= 0 && GetTxdPlan(key).serve){
-		CTxdStore::PushCurrentTxd();
-		if(CTxdStore::GetSlot(txdSlot)->texDict == nil)
-			LoadTxdSlot(txdSlot, key, GetTxdPlan(key));
-		CTxdStore::SetCurrentTxd(txdSlot);
-		setTxd = true;
-	}
-
-	bool ok;
-#ifdef CUSTOM_SEH_GUARD
-	{
-		GuardedLoadCtx ctx; ctx.mi = mi; ctx.stream = stream; ctx.modelId = id; ctx.ok = false;
-		DWORD code = 0;
-		if(!CallGuarded(RunModelLoaders, &ctx, &code)){
-			if(setTxd)
-				CTxdStore::PopCurrentTxd();
-			RwStreamClose(stream, &mem);
-			CUSTOM_LOG("model file %s: the load crashed (exception 0x%08lX), the game's own file is used\n",
-				filename, (unsigned long)code);
-			return false;
-		}
-		ok = ctx.ok;
-	}
-#else
-	{
-		GuardedLoadCtx ctx; ctx.mi = mi; ctx.stream = stream; ctx.modelId = id; ctx.ok = false;
-		ok = RunModelLoaders(&ctx);
-	}
-#endif
-
-	if(setTxd)
-		CTxdStore::PopCurrentTxd();
-	RwStreamClose(stream, &mem);
-
-	CUSTOM_LOG("model file %s (id %d): %s, %u bytes of .%s -> %u prepared bytes%s\n",
-		filename, id, ok ? "loaded" : "FAILED", model->rawSize, model->isMod ? "mod" : "dff", (unsigned)model->bytes.size(),
-		model->warn.empty() ? "" : (", " + model->warn).c_str());
-	return ok;
-}
-
-RwTexDictionary *
-CCustomModels::LoadTexDictionaryFromCustom(const char *filename)
-{
-	EnsureInitialised();
-	if(!customActive)
-		return nil;
-	std::string key = ToLower(Stem(filename));
-	if(!GetTxdPlan(key).serve)
-		return nil;
-	return BuildDictionaryFor(key);
-}
-
-// The game's native collision reader takes [name, bounds, geometry] without a
-// size. Never hand it unvalidated bytes from an archive. A .col block wins
-// over a .cls block for the same model; both come only from custom/ sources.
+// The native collision reader takes [name, bounds, geometry] without a size.
+// Validate loose blocks first. A .col block wins over a .cls of the same model.
 bool
 CCustomModels::GetCollisionBlock(const char *modelname, std::vector<uint8> &out)
 {
@@ -3135,11 +2336,9 @@ CCustomModels::GetCollisionBlock(const char *modelname, std::vector<uint8> &out)
 	return false;
 }
 
-// Animation dictionaries are requested by path ("ANIM\\PED.IFP"); the archives
-// hold them as <name>.ifp (SA/BR dictionaries, ANPK or ANP3) or as BR's
-// single-animation <name>.ani files. Modern BR .ani files are already
-// size-less SA ANP3 dictionaries; only a legacy shim with an extra header
-// word needs conversion before the common SA/VC animation reader sees it.
+// Animation dictionaries are requested by path ("ANIM\\PED.IFP"). Only
+// loose <name>.ifp files inside custom/anim/ are indexed; the animation
+// manager validates the format and reserves native ANPK for VC skeletons.
 bool
 CCustomModels::LoadAnimFileFromCustom(const char *filename, std::vector<uint8> &out)
 {
@@ -3158,23 +2357,7 @@ CCustomModels::LoadAnimFileFromCustom(const char *filename, std::vector<uint8> &
 		CUSTOM_LOG("animation %s: custom file could not be read, using game file\n", filename);
 		return false;
 	}
-	const char *source = src->archive < 0 ? src->loose : customArchives[src->archive]->GetPath();
-	// The game always requests an .IFP path, even when the indexed custom
-	// source is a BR .ani entry; inspect the source name, not the request path.
-	std::string ext = Extension(src->fname);
-	if(ext == "ani" && br::isBrAni(out.data(), out.size())){
-		int numNames = 0;
-		// Both the genuine mobile header and the old shim can have a plausible
-		// name/count at +4/+28. Only the full clip walk distinguishes the shim's
-		// extra word at +36 from the first animation name.
-		bool modern = br::SniffAnimNames(out.data(), out.size(), nil, 2500, numNames);
-		if(!modern && (!br::convertAniToIfp(out) ||
-		   !br::SniffAnimNames(out.data(), out.size(), nil, 2500, numNames))){
-			CUSTOM_LOG("animation %s: invalid .ani dictionary (including legacy layout)\n", filename);
-			out.clear();
-			return false;
-		}
-	}
+	const char *source = src->loose;
 	if(out.size() < 12){
 		CUSTOM_LOG("animation %s: %s in %s is too small to be an IFP\n",
 			filename, src->fname, source);
@@ -3191,11 +2374,10 @@ CCustomModels::PrintStats(void)
 {
 	EnsureInitialised();
 	CUSTOM_LOG("--- stats ---\n");
-	CUSTOM_LOG("%d archive(s) open, %d model name(s) (+%d plain .dff), %d texture name(s) (+%d whole .txd), %d collision name(s) (+%d .col file(s), %d model(s) inside), %d animation name(s), %d image(s)\n",
-		(int)customArchives.size(), (int)customMods.size(), (int)customDff.size(),
-		(int)customBtx.size(), (int)customTxdFiles.size(),
-		(int)customCls.size(), (int)customColFiles.size(), (int)customColBlocks.size(),
-		(int)customAnims.size(), (int)customImages.size());
+	CUSTOM_LOG("custom/img: %zu mounted; loose resources: %zu .cls (%zu CED2 blocks), %zu .col (%zu model blocks), %zu .ifp, %zu IDE, %zu IPL\n",
+		customImageSlots.size(), customClsSources.size(), customBrColBlocks.size(),
+		customColSources.size(), customColBlocks.size(), customAnims.size(),
+		customIdeFiles.size(), customIplFiles.size());
 	CUSTOM_LOG("asset caches: models %zu hit / %zu miss / %zu evicted (%zu KiB retained), decoded btx %zu / %zu / %zu (%zu KiB), resident TXDs %zu / %zu / %zu (%zu KiB)\n",
 		customDecodedModels.Hits(), customDecodedModels.Misses(), customDecodedModels.Evictions(), customDecodedModels.Bytes() / 1024,
 		customDecodedTextures.Hits(), customDecodedTextures.Misses(), customDecodedTextures.Evictions(), customDecodedTextures.Bytes() / 1024,
@@ -3207,7 +2389,7 @@ CCustomModels::PrintStats(void)
 }
 
 // ---------------------------------------------------------------------------
-// data files (the "data/timecyc.json" of a BR common archive) and skins
+// optional loose lighting table and skins
 // ---------------------------------------------------------------------------
 
 bool
@@ -3215,55 +2397,18 @@ CCustomModels::ReadDataFile(const char *relpath, std::vector<uint8> &out,
                              bool *fromCommon)
 {
 	if(fromCommon) *fromCommon = false;
-	if(relpath == nil || relpath[0] == '\0')
-		return false;
+	out.clear();
+	if(relpath == nil || strcmp(relpath, "data/timecyc.json") != 0)
+		return false; // no arbitrary paths, ZIPs, or game-root common/ data
 	EnsureInitialised();
-
-	std::string want = commoncatalog::Path(relpath);
-	if(want.empty()) return false;
-	if(commoncatalog::CanReadData(want)) {
-		std::map<std::string, CustomSource>::const_iterator found = commonDataFiles.find(want);
-		if(found != commonDataFiles.end() && ReadSource(found->second, out)) {
-			if(fromCommon) *fromCommon = true;
-			CUSTOM_LOG("data file %s: read from unpacked common/ (%u bytes)\n", relpath, (unsigned)out.size());
-			return true;
-		}
-	}
-
-	for(size_t a = 0; a < customArchives.size(); a++){
-		CustomZip *zip = customArchives[a];
-		for(int i = 0; i < zip->GetNumEntries(); i++){
-			const CustomZipEntry *ent = zip->GetEntry(i);
-			std::string name = ToLower(ent->name);
-			for(size_t k = 0; k < name.size(); k++)
-				if(name[k] == '\\')
-					name[k] = '/';
-			if(name != want && name.size() > want.size() &&
-			   name.compare(name.size() - want.size(), want.size(), want) != 0)
-				continue;
-			if(name != want)
-				continue;
-			if(ent->uncompressedSize == 0 || ent->uncompressedSize > CUSTOM_MAX_ENTRY)
-				return false;
-			out.resize(ent->uncompressedSize);
-			if(!zip->Extract(i, out.data(), (uint32)out.size())){
-				out.clear();
-				return false;
-			}
-			CUSTOM_LOG("data file %s: read from the archives (%u bytes)\n", relpath, (unsigned)out.size());
-			return true;
-		}
-	}
-
-	// or as a loose file in the custom folder
-	if(!customFolderPath.empty()){
-		CustomSource src = MakeSource(-1, -1, 0, (customFolderPath + "/" + relpath).c_str(), relpath);
-		if(ReadSource(src, out)){
-			CUSTOM_LOG("data file %s: read from the custom folder (%u bytes)\n", relpath, (unsigned)out.size());
-			return true;
-		}
-	}
-	return false;
+	const std::string data = Subfolder(customFolderPath, "data");
+	if(data.empty()) return false;
+	const std::string path = data + "/timecyc.json";
+	if(path.size() >= sizeof(CustomSource::loose)) return false;
+	CustomSource src = MakeSource(FileTime(path.c_str()), path.c_str(), relpath);
+	if(!ReadSource(src, out)) return false;
+	CUSTOM_LOG("data file %s: read from %s (%u bytes)\n", relpath, path.c_str(), (unsigned)out.size());
+	return true;
 }
 
 bool
@@ -3275,8 +2420,7 @@ CCustomModels::HasSkin(const char *skinname)
 	return customImages.find(ToLower(Stem(skinname))) != customImages.end();
 }
 
-// the bytes of one player skin image (".bmp"/".png"/".jpg" named after the
-// skin), from the archives or the skins folder of the custom folder
+// The bytes of one player skin image from the separate custom/skins/ folder.
 bool
 CCustomModels::GetSkinImage(const char *skinname, std::vector<uint8> &out, char *ext, int extCap)
 {

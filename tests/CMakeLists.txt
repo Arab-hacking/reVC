@@ -203,12 +203,11 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Cla
     set_target_properties(directory_growth_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
     add_test(NAME directory_growth_tests COMMAND directory_growth_tests)
 
-    # Link the real ZIP/IMG scanner and both collision converters. The game
-    # dependencies not exercised by this fixture are discarded by section GC.
+    # Link the real IMG/loose scanner and collision converters; do not link
+    # the ZIP reader into the runtime integration test.
     add_executable(custom_archive_integration_tests
         CustomArchiveIntegrationTests.cpp
         ../src/extras/custom/CustomModels.cpp
-        ../src/extras/custom/CustomZip.cpp
         ../src/extras/custom/CustomCol.cpp
         ../src/rw/TxdStore.cpp
         ../src/extras/custom/br/third_party/astc_decomp.cpp)

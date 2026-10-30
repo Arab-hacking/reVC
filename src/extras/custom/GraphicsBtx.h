@@ -1,10 +1,9 @@
 #ifndef REVC_GRAPHICS_BTX_H
 #define REVC_GRAPHICS_BTX_H
 
-// Only metadata from zip/*.zip is indexed. A texture from that folder may be
-// DECODED only for an explicitly selected vehicle reflection mask or for a
-// lightmap referenced by a material with UV2; it must never become a model,
-// skin, collision, diffuse texture, or a standalone replacement TXD.
+// Legacy name/size helpers retained for offline format tests. The game no
+// longer indexes user ZIP files or imports .btx reflection masks/lightmaps.
+// The renderer still recognizes its old marker on already bound textures.
 #include <string>
 #include <cctype>
 #include <cstring>
@@ -72,9 +71,7 @@ inline bool MaterialCanUseLightmap(unsigned numUVs, bool dual, const std::string
 	return numUVs >= 2 && dual && IsLightmap(name);
 }
 
-// Only the marker on the *actual bound texture* proves that it was already
-// sourced from zip/. A model's TXD plan may exist while the loaded dictionary
-// is still native to an IMG and must be augmented, not skipped.
+// Legacy marker on a bound texture (no ZIP source is installed at runtime).
 inline bool NeedsLightmapReplacement(unsigned numUVs, bool dual, const std::string &name,
                                      const char *boundMask)
 {

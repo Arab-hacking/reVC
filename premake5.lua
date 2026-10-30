@@ -469,6 +469,7 @@ project "reVC"
 	files { addSrcFiles("src/weapons") }
 	files { addSrcFiles("src/extras") }
 	files { addSrcFiles("src/extras/custom") }
+	removefiles { "src/extras/custom/CustomZip.cpp" } -- offline format tests only
 	files { addSrcFiles("src/extras/custom/br") }
 	files { addSrcFiles("src/extras/custom/br/third_party") }
 	if(not _OPTIONS["no-git-hash"]) then

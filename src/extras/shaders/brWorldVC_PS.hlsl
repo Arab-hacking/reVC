@@ -1,4 +1,5 @@
-// UV2 lightmaps selected from zip/, not generic MatFX DUAL/detail textures.
+// Optional UV2 lightmap shader, not generic MatFX DUAL/detail textures.
+// User ZIP lightmap loading is disabled; this shader alone imports nothing.
 // BR scene formula: albedo is blended with 3x lightmap RGB by lightmap alpha.
 sampler2D Diffuse : register(s0);
 sampler2D Light : register(s1);

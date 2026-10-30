@@ -218,7 +218,7 @@ CreateBRLightmapShader(void)
 		if(dll) break;
 	}
 	if(!dll) {
-		debug("zip/ BR lightmaps: D3DCompiler not installed; using embedded NEO shader\n");
+		debug("UV2 lightmaps: D3DCompiler not installed; using embedded NEO shader\n");
 		return nil;
 	}
 	CompileProc compile = (CompileProc)GetProcAddress(dll, "D3DCompile");
@@ -228,7 +228,7 @@ CreateBRLightmapShader(void)
 		"brWorldVC_PS.hlsl", nil, nil, "main", "ps_2_0", 0, 0, &bytecode, &errors)) && bytecode)
 		shader = rw::d3d::createPixelShader(bytecode->GetBufferPointer());
 	if(!shader) {
-		debug("zip/ BR lightmaps: D3D9 pixel shader compile/create failed%s%.256s; using embedded NEO shader\n",
+		debug("UV2 lightmaps: D3D9 pixel shader compile/create failed%s%.256s; using embedded NEO shader\n",
 			errors ? ": " : "", errors ? (const char*)errors->GetBufferPointer() : "");
 	}
 	if(errors) errors->Release();
@@ -248,7 +248,7 @@ worldRenderCB(rw::Atomic *atomic, rw::d3d9::InstanceDataHeader *header)
 	using namespace rw::d3d9;
 
 	// Only UV2 geometry can sample an actual lightmap. Keep the native
-	// renderer for one-UV objects even when common/ lighting is enabled.
+	// renderer for one-UV objects even with optional lightmaps enabled.
 	if(!LightmapEnable || atomic->geometry->numTexCoordSets < 2){
 		defaultRenderCB_Shader(atomic, header);
 		return;

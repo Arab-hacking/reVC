@@ -93,15 +93,8 @@ CSimpleModelInfo::SetAtomic(int n, RpAtomic *atomic)
 #ifdef EXTENDED_PIPELINES
 	if(m_wetRoadReflection)
 		CustomPipes::AttachGlossPipe(atomic);
-	else {
-#ifdef CUSTOM_MODELS
-		// Only an explicitly named DUAL lightmap on UV2 geometry may use zip/.
-		// The selected GPU texture lives in this model's TXD and follows its
-		// ordinary streaming eviction; no change to the resident cache limit.
-		CCustomModels::ApplyGraphicsLightmaps(atomic, GetTxdSlot());
-#endif
+	else
 		CustomPipes::AttachWorldPipe(atomic);
-	}
 #endif
 }
 

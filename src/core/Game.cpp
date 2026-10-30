@@ -352,7 +352,7 @@ bool CGame::InitialiseOnceAfterRW(void)
 	CPedStats::Initialise();
 	CTimeCycle::Initialise();
 #ifdef CUSTOM_MODELS
-	CCustomTimecycle::Apply();	// the client's lighting/sky out of the custom folder
+	CCustomTimecycle::Apply();	// optional loose custom/data/timecyc.json: lighting and shadows only
 #endif
 #ifdef GTA_PS2
 	LoadingScreen("Loading the Game", "Initialising audio", GetRandomSplashScreen());
@@ -527,8 +527,8 @@ bool CGame::Initialise(const char* datFile)
 
 	LoadingScreen("Loading the Game", "Setup streaming", nil);
 #ifdef CUSTOM_MODELS
-	// reads the archives of the game's custom folder; from here on the folder
-	// wins over the game's own image files
+	// Index loose custom/anim, custom/collision and custom/data/maps.
+	// Model/TXD streaming from custom/img is mounted earlier in LoadLevel.
 	CCustomModels::Initialise();
 	CStreaming::LoadVCPedAnimationReference();
 #endif
@@ -733,7 +733,7 @@ void CGame::ReInitGameObjectVariables(void)
 	CCarCtrl::ReInit();
 	CTimeCycle::Initialise();
 #ifdef CUSTOM_MODELS
-	CCustomTimecycle::Apply();	// the client's lighting/sky out of the custom folder
+	CCustomTimecycle::Apply();	// optional loose custom/data/timecyc.json: lighting and shadows only
 #endif
 	CDraw::SetFOV(120.0f);
 	CDraw::ms_fLODDistance = 500.0f;

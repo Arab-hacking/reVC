@@ -232,7 +232,7 @@ EnvMapInit(void)
 static void
 EnvMapShutdown(void)
 {
-	SetCarReflectionMask(nil); // zip/ mask owns its raster; neo.txd owns the fallback
+	SetCarReflectionMask(nil); // release any optional mask; neo.txd owns its fallback
 	if(EnvMapTex) {
 		EnvMapTex->raster = nil;
 		EnvMapTex->destroy();
