@@ -78,6 +78,10 @@ target_link_libraries(background_asset_queue_tests PRIVATE Threads::Threads)
 set_target_properties(background_asset_queue_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
 add_test(NAME background_asset_queue_tests COMMAND background_asset_queue_tests)
 
+add_executable(custom_water_tests CustomWaterTests.cpp)
+set_target_properties(custom_water_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+add_test(NAME custom_water_tests COMMAND custom_water_tests)
+
 add_executable(custom_world_format_tests
     CustomWorldFormatTests.cpp ../src/extras/custom/CustomZip.cpp)
 target_include_directories(custom_world_format_tests PRIVATE

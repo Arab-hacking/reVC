@@ -73,9 +73,9 @@ struct CustomSource
 	bool inImg;
 };
 
-// Only common.zip supplies map/actor IDE text and optional lighting; model
-// geometry, TXDs and collisions still use custom/img/ and animation banks
-// still use custom/anim/.
+// Only common.zip supplies whitelisted map/actor/weapon IDE text, water,
+// car colours and optional lighting; model geometry, TXDs and collisions
+// still use custom/img/ and animation banks still use custom/anim/.
 // The legacy converters below have no external .mod/.btx/.dff/.txd inputs.
 static std::map<std::string, CustomSource> customMods;
 static std::map<std::string, CustomSource> customBtx;
@@ -357,9 +357,9 @@ ScanAssetFolder(const std::string &folder, const char *kind, int depth, ScanStat
 }
 
 // The one ZIP exception: only custom/common.zip at the custom root. Index
-// canonical data/maps/ entries and the two actor IDEs at data/peds.ide and
-// data/vehicles.ide first, then accept the old maps/ alias only where no
-// canonical entry exists. No other root IDE, DFF/TXD/COL/CLS/IFP/BTX is indexed.
+// canonical data/maps/ entries and the three named root IDEs first, then
+// accept the old maps/ alias only where no canonical entry exists.
+// No other root IDE, DFF/TXD/COL/CLS/IFP/BTX is indexed.
 static void
 ScanCommonZip(void)
 {
@@ -390,17 +390,25 @@ ScanCommonZip(void)
 				   (ent->method != 0 && ent->method != 8)) continue;
 				std::string key = commoncatalog::Path(ent->name);
 				if(key.empty()) continue; // absolute paths, traversal and non-ASCII are rejected
+				// Reject oversized SA tables BEFORE inflating them. The formats are
+				// intentionally narrower than the general 64 MiB map/IMG ceiling.
+				if((key == "data/water.dat" && ent->uncompressedSize > 1024*1024) ||
+				   (key == "data/carcols.dat" && ent->uncompressedSize > 64*1024)) {
+					CUSTOM_LOG("common.zip: %s exceeds data table size limit\n", key.c_str());
+					continue;
+				}
 				CustomSource src = MakeSource(mtime, path.c_str(), ent->name);
 				src.zipEntry = n;
-				if(pass == 0 && (key == "data/config.dat" || key == "data/timecyc.json")) {
+				if(pass == 0 && (key == "data/config.dat" || key == "data/timecyc.json" ||
+			                 key == "data/water.dat" || key == "data/carcols.dat")) {
 					commonZipDataFiles.insert(std::make_pair(key, src));
 					continue;
 				}
-				// The BR actor definitions live outside data/maps/. Allow only
-				// these two exact IDE paths, not misc/weapons/feature files or a
-				// blanket import of root data/. The ordinary IDE type checks and
-				// IMG DFF requirement still apply when they are registered.
-				if(pass == 0 && (key == "data/peds.ide" || key == "data/vehicles.ide")) {
+				// These three definitions live outside data/maps/. Allow only
+				// the named IDEs, not misc/feature files or a blanket import of
+				// root data/. Normal type checks and IMG DFF requirements apply.
+				if(pass == 0 && (key == "data/peds.ide" || key == "data/vehicles.ide" ||
+				                 key == "data/weapons.ide")) {
 					commonZipIdeFiles.insert(std::make_pair(key, src));
 					continue;
 				}
@@ -464,8 +472,9 @@ EnsureInitialised(void)
 	if(!anim.empty()) ScanAssetFolder(anim, "anim", 0, st);
 	if(!maps.empty()) ScanAssetFolder(maps, "data/maps", 0, st);
 	ScanCommonZip();
-	customActive = !customAnims.empty() || !customIdeFiles.empty() || !customIplFiles.empty();
-	CUSTOM_LOG("==== custom folder: %s (IMG/DIR; loose anim/maps; common.zip maps + peds/vehicles IDE + config/timecyc only; other ZIPs, collision/, game-root img/ and common/ disabled)\n", customFolderPath.c_str());
+	customActive = !customAnims.empty() || !customIdeFiles.empty() ||
+	               !customIplFiles.empty() || !commonZipDataFiles.empty();
+	CUSTOM_LOG("==== custom folder: %s (IMG/DIR; loose anim/maps; common.zip maps + peds/vehicles/weapons IDE + config/timecyc/water/carcols only; other ZIPs, collision/, game-root img/ and common/ disabled)\n", customFolderPath.c_str());
 	CUSTOM_LOG("scan: %d loose .ifp (%u names), %d loose IDE / %d loose IPL; %u total IDE / %u total IPL path(s); IMG collisions indexed at mount\n",
 		st.anim, (unsigned)customAnims.size(), st.ide, st.ipl,
 		(unsigned)customIdeFiles.size(), (unsigned)customIplFiles.size());
@@ -642,7 +651,8 @@ CCustomModels::ResetImageMounts(void)
 	customColBlocks.clear();
 	customBrColBlocks.clear();
 	customLegacyClsBlocks.clear();
-	customActive = !customAnims.empty() || !customIdeFiles.empty() || !customIplFiles.empty();
+	customActive = !customAnims.empty() || !customIdeFiles.empty() ||
+	               !customIplFiles.empty() || !commonZipDataFiles.empty();
 }
 
 bool
@@ -2111,6 +2121,9 @@ CCustomModels::ForEachWorldFile(bool ide, WorldFileCallback callback, void *cont
 		if(ide && (it->first == "data/peds.ide" || it->first == "data/vehicles.ide"))
 			CUSTOM_LOG("common.zip actor IDE %s: read %u bytes\n",
 				it->first.c_str(), (unsigned)bytes.size());
+		else if(ide && it->first == "data/weapons.ide")
+			CUSTOM_LOG("common.zip weapon IDE %s: read %u bytes\n",
+				it->first.c_str(), (unsigned)bytes.size());
 		callback(it->first.c_str(), bytes.data(), bytes.size(), context);
 	}
 }
@@ -2618,7 +2631,7 @@ CCustomModels::PrintStats(void)
 }
 
 // ---------------------------------------------------------------------------
-// optional lighting table (common.zip before loose file) and skins
+// selected data tables (ZIP; timecyc has a loose fallback) and skins
 // ---------------------------------------------------------------------------
 
 bool
@@ -2627,7 +2640,9 @@ CCustomModels::ReadDataFile(const char *relpath, std::vector<uint8> &out,
 {
 	if(fromCommon) *fromCommon = false;
 	out.clear();
-	if(relpath == nil || strcmp(relpath, "data/timecyc.json") != 0)
+	if(relpath == nil || (strcmp(relpath, "data/timecyc.json") != 0 &&
+	                       strcmp(relpath, "data/water.dat") != 0 &&
+	                       strcmp(relpath, "data/carcols.dat") != 0))
 		return false; // no arbitrary data, other ZIPs, or game-root common/ files
 	EnsureInitialised();
 	const CustomSource *zip = FindSource(commonZipDataFiles, relpath);
@@ -2635,6 +2650,14 @@ CCustomModels::ReadDataFile(const char *relpath, std::vector<uint8> &out,
 		if(fromCommon) *fromCommon = true;
 		CUSTOM_LOG("data file %s: read from common.zip (%u bytes)\n", relpath, (unsigned)out.size());
 		return true;
+	}
+	out.clear();
+	// The new SA tables only come from this ZIP; do not load stale loose
+	// custom/data/ or game-root common/ tables by accident.
+	if(strcmp(relpath, "data/timecyc.json") != 0) {
+		if(zip != nil)
+			CUSTOM_LOG("data file %s: common.zip entry unreadable; no loose fallback\n", relpath);
+		return false;
 	}
 	const std::string data = Subfolder(customFolderPath, "data");
 	if(!data.empty()) {

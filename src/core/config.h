@@ -30,9 +30,9 @@ enum Config {
 	SIMPLEMODELSIZE = 32000,
 	TIMEMODELSIZE = 768,
 	CLUMPMODELSIZE = 5,
-	// The selected common/ IDE contains 59 weapon, about 769 ped and 575
-	// vehicle definitions in addition to VC's native entries. These are metadata
-	// capacities (no decoded assets and no change to streaming/GPU caches).
+	// Initial metadata capacities, not fixed limits: the selected map/root IDEs
+	// include roughly 120 weapon, 780 ped and 587 vehicle definitions; stores
+	// grow in stable blocks (no decoded assets or streaming/GPU cache changes).
 	WEAPONMODELSIZE = 128,
 	PEDMODELSIZE = 1024,
 	VEHICLEMODELSIZE = 768,

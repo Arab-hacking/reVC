@@ -1,7 +1,7 @@
 #ifndef REVC_COMMON_CARCOLS_H
 #define REVC_COMMON_CARCOLS_H
 
-// The unpacked common/data/carcols.dat contains an SA-style 'col' palette,
+// The custom/common.zip data/carcols.dat contains an SA-style 'col' palette,
 // but no VC-compatible 'car' definitions. Only validated RGB triples are
 // copied into the existing 256-entry VC colour table; handling and spawning
 // data are never read from here.
@@ -20,7 +20,7 @@ inline bool Parse(const uint8_t *bytes, size_t length, std::vector<RGB> &out)
 {
     out.clear();
     if(!bytes || length == 0 || length > 64 * 1024) return false;
-    bool inColors = false, found = false;
+    bool inColors = false, found = false, ended = false;
     for(size_t pos = 0; pos < length;) {
         size_t end = pos;
         while(end < length && bytes[end] != '\n') end++;
@@ -34,7 +34,7 @@ inline bool Parse(const uint8_t *bytes, size_t length, std::vector<RGB> &out)
         line.erase(0, first);
         line.erase(line.find_last_not_of(" \t\r")+1);
         if(line == "col") { inColors = true; found = true; continue; }
-        if(line == "end") { if(inColors) break; continue; }
+        if(line == "end") { if(inColors) { ended = true; break; } continue; }
         if(!inColors) continue;
         if(out.size() >= 256) return false;
         const char *p = line.c_str();
@@ -52,7 +52,7 @@ inline bool Parse(const uint8_t *bytes, size_t length, std::vector<RGB> &out)
         }
         out.push_back(rgb);
     }
-    if(!found || out.empty()) { out.clear(); return false; }
+    if(!found || !ended || out.empty()) { out.clear(); return false; }
     return true;
 }
 

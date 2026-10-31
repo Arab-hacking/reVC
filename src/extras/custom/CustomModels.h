@@ -5,8 +5,10 @@
 //   custom/anim/*.ifp                  animation banks
 //   custom/img/*.{img,dir}             VC IMG v1 with DFF/TXD/COL/CLS entries
 //   custom/data/maps/*.{ide,ipl}       loose world definitions/placements
-//   custom/common.zip                  map IDE/IPL, data/peds.ide,
-//                                      data/vehicles.ide, config.dat, timecyc.json
+//   custom/common.zip                  map IDE/IPL; data/peds.ide,
+//                                      data/vehicles.ide, data/weapons.ide;
+//                                      config.dat, timecyc.json, water.dat,
+//                                      carcols.dat (all under data/)
 // Other ZIPs, game-root img/ and game-root common/ are not custom sources.
 // The native VC game archives remain available to the normal streamer.
 
@@ -69,8 +71,9 @@ public:
 	static bool LoadAnimFileFromCustom(const char *filename, std::vector<uint8> &out);
 
 	// Loose world files are only scanned under custom/data/maps/. The one
-	// permitted ZIP also supplies data/peds.ide and data/vehicles.ide. The
-	// optional active_ipl.txt selects IPLs; IDEs are always loaded.
+	// permitted ZIP also supplies data/peds.ide, data/vehicles.ide and
+	// data/weapons.ide. The optional active_ipl.txt selects IPLs; IDEs are
+	// always loaded.
 	typedef void (*WorldFileCallback)(const char *path, const unsigned char *data,
 	                                  size_t size, void *context);
 	static bool HasWorldFiles(void);
@@ -87,9 +90,11 @@ public:
 	static void ForEachGameCollision(CollisionCallback callback, void *context,
 	                                 CollisionFilter filter = nullptr);
 
-	// Optional data/timecyc.json: custom/common.zip wins over the loose
-	// custom/data/timecyc.json; the loose file is used if ZIP is unreadable.
-	// fromCommon means it came from that ZIP, never the game-root common/ tree.
+	// Only data/timecyc.json, data/water.dat and data/carcols.dat can be
+	// served here. Timecyc uses loose custom/data/timecyc.json if the ZIP
+	// entry is absent/unreadable; water and colours are ZIP-only and fall
+	// back to the game's native data when absent/unusable.
+	// fromCommon means it came from that ZIP, never game-root common/.
 	static bool ReadDataFile(const char *relpath, std::vector<uint8> &out,
 	                         bool *fromCommon = nullptr);
 

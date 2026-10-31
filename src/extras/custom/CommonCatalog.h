@@ -1,10 +1,10 @@
 #ifndef REVC_COMMON_CATALOG_H
 #define REVC_COMMON_CATALOG_H
 
-// The unpacked common/data/config.dat is a manifest, not a reVC level DAT.
-// In particular its CDIMAGE records point at .bpc containers which are NOT
-// mounted or decoded by this reader. Keeping this parser independent of the
-// game lets us reject unsafe paths and test active/commented IPL selection.
+// data/config.dat inside custom/common.zip is a manifest, not a reVC level
+// DAT. Its CDIMAGE records point at .bpc containers which are NOT mounted or
+// decoded. Keeping this parser independent of the game lets us reject unsafe
+// paths and test active/commented IPL selection.
 #include <cctype>
 #include <set>
 #include <string>
@@ -89,7 +89,7 @@ inline Catalog Parse(const unsigned char *bytes, size_t size)
 inline bool CanReadData(const std::string &path)
 {
     return path == "data/config.dat" || path == "data/timecyc.json" ||
-           path == "data/carcols.dat";
+           path == "data/water.dat" || path == "data/carcols.dat";
 }
 
 } // namespace commoncatalog

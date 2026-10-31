@@ -223,6 +223,8 @@ static void TestCommonCatalogAndTypes()
     assert(!commoncatalog::CanReadData("data/features/reflections.json"));
     assert(!commoncatalog::CanReadData("data/handling.cfg"));
     assert(commoncatalog::CanReadData("data/carcols.dat"));
+    assert(commoncatalog::CanReadData("data/water.dat"));
+    assert(!commoncatalog::CanReadData("data/weapons.ide"));
 
     const std::string ide =
         "peds\n"

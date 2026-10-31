@@ -21,6 +21,10 @@
 #include "ModelIndices.h"
 #include "ModelInfo.h"
 #include "custompipes.h"
+#ifdef CUSTOM_MODELS
+#include "CustomModels.h"
+#include "CommonCarcols.h"
+#endif
 
 int8 CVehicleModelInfo::ms_compsToUse[2] = { -2, -2 };
 int8 CVehicleModelInfo::ms_compsUsed[2];
@@ -1411,6 +1415,27 @@ CVehicleModelInfo::LoadVehicleColours(void)
 
 	CFileMgr::CloseFile(fd);
 
+#ifdef CUSTOM_MODELS
+	// The SA table in common.zip only supplies RGB palette entries (no VC
+	// `car` section). Apply it after the native VC file so its vehicle colour
+	// combinations remain intact. A malformed archive must not change any
+	// palette entry or prevent loading the game's stock colours.
+	std::vector<uint8> bytes;
+	if(CCustomModels::ReadDataFile("data/carcols.dat", bytes)) {
+		std::vector<commoncarcols::RGB> palette;
+		if(commoncarcols::Parse(bytes.data(), bytes.size(), palette)) {
+			for(size_t n = 0; n < palette.size(); n++) {
+				ms_vehicleColourTable[n].red = palette[n].r;
+				ms_vehicleColourTable[n].green = palette[n].g;
+				ms_vehicleColourTable[n].blue = palette[n].b;
+				ms_vehicleColourTable[n].alpha = 0xFF;
+			}
+			CUSTOM_LOG("common.zip data/carcols.dat: applied %u RGB colours; native VC car combinations retained\n",
+				(unsigned)palette.size());
+		} else
+			CUSTOM_LOG("common.zip data/carcols.dat: invalid palette; native VC colours retained\n");
+	}
+#endif
 }
 
 void

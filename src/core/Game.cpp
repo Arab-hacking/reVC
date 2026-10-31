@@ -527,8 +527,8 @@ bool CGame::Initialise(const char* datFile)
 
 	LoadingScreen("Loading the Game", "Setup streaming", nil);
 #ifdef CUSTOM_MODELS
-	// Index loose custom/anim, custom/collision and custom/data/maps.
-	// Model/TXD streaming from custom/img is mounted earlier in LoadLevel.
+	// Index loose custom/anim and custom/data/maps plus selected common.zip
+	// paths. Model/TXD streaming from custom/img mounted earlier in LoadLevel.
 	CCustomModels::Initialise();
 	CStreaming::LoadVCPedAnimationReference();
 #endif

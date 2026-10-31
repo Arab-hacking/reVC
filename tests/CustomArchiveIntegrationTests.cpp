@@ -6,6 +6,8 @@
 #include "CustomColFormat.h"
 #include "CustomImgFormat.h"
 #include "CustomWorldFormat.h"
+#include "CommonWater.h"
+#include "CommonCarcols.h"
 #include "ModelLoadDispatch.h"
 #include "CdStream.h"
 #include "ColStore.h"
@@ -288,9 +290,13 @@ int main() {
     Write("custom/data/maps/ide/test.ide", Bytes("objs\n1 house1 r3 100 0\nend\n"));
     Write("custom/data/maps/level_events/test.ipl", Bytes("inst\n1 house1 0 0 0 0 0 0 0 1 -1\nend\n"));
     Write("custom/data/maps/level_events/alternate.ipl", Bytes("inst\n2 house1 0 2 0 0 0 0 0 1 -1\nend\n"));
-    // Root actor IDEs come from the permitted ZIP, not the loose data tree.
+    // Root IDEs and new SA data tables only come from the permitted ZIP,
+    // never the loose data tree (timecyc.json is the sole loose exception).
     Write("custom/data/peds.ide", Bytes("peds\n3 loose_ped bad\nend\n"));
     Write("custom/data/vehicles.ide", Bytes("cars\n400 loose_car bad\nend\n"));
+    Write("custom/data/weapons.ide", Bytes("weap\n321 loose_weapon 50\nend\n"));
+    Write("custom/data/carcols.dat", Bytes("col\n1,2,3\nend\n"));
+    Write("custom/data/water.dat", Bytes("processed\nloose water\n"));
     Write("custom/data/timecyc.json", Bytes("{\"ambient\":1}"));
     std::vector<uint8> ifp = Bytes("ANPK12345678"); // only the indexing/reader is under test
     Write("custom/anim/userbank.ifp", ifp);
@@ -332,6 +338,9 @@ int main() {
         { "data/maps/level_events/ziponly.ipl", Bytes("inst\n1 ziphouse 0 0 0 0 0 0 0 1 -1\nend\n") },
         { "data/peds.ide", Bytes("peds\n3 ziponlyped bad\nend\n") },
         { "data/vehicles.ide", Bytes("cars\n400 ziponlycar bad\nend\n") },
+        { "data/weapons.ide", Bytes("weap\n321 ziponlyweapon 50\nend\n") },
+        { "data/water.dat", Bytes("processed\nold ZIP water\n") },
+        { "data/carcols.dat", Bytes("col\n255,0,0\nend\n") },
         { "models/SPECIAL1.dff", Bytes("ZIP model") },
         { "textures/ziptexture.btx", RawBtx(32, 32) },
         { "data/timecyc.json", Bytes("ZIP lighting") }
@@ -350,6 +359,9 @@ int main() {
     Write("common/data/config.dat", Bytes("IDE data/maps/test.ide\nIPL data/maps/test.ipl\n"));
     Write("common/data/peds.ide", Bytes("peds\n3 rootped bad\nend\n"));
     Write("common/data/vehicles.ide", Bytes("cars\n400 rootcar bad\nend\n"));
+    Write("common/data/weapons.ide", Bytes("weap\n321 rootweapon 50\nend\n"));
+    Write("common/data/water.dat", Bytes("processed\nroot water\n"));
+    Write("common/data/carcols.dat", Bytes("col\n254,254,254\nend\n"));
     Write("common/data/maps/test.ide", Bytes("objs\n1 commonhouse bad 100 0\nend\n"));
     Write("common/data/maps/test.ipl", Bytes("inst\n1 commonhouse 0 0 0 0 0 0 0 1 -1\nend\n"));
     Write("common/data/timecyc.json", Bytes("{\"ambient\":999}"));
@@ -429,6 +441,7 @@ int main() {
     assert(CCustomModels::ReadDataFile("data/timecyc.json", selected, &fromCommon));
     assert(!fromCommon && std::string(selected.begin(), selected.end()) == "{\"ambient\":1}");
     assert(!CCustomModels::ReadDataFile("data/carcols.dat", selected));
+    assert(!CCustomModels::ReadDataFile("data/water.dat", selected));
     assert(!CCustomModels::ReadDataFile("data/features/ignored.ide", selected));
     assert(!CCustomModels::ReadDataFile("audio/ignored.ipl", selected));
     assert(!CCustomModels::ReadDataFile("../common/data/timecyc.json", selected));
@@ -465,7 +478,7 @@ int main() {
         { "DATA\\PEDS.IDE", Bytes("peds\n24, WBDYG1, WBDYG1, CIVMALE, STAT_TOUGH_GUY, man, 170F, 1, man, 10, 11, PED_TYPE_GEN, VOICE_GEN, VOICE_GEN\nend\n"), true },
         { "data/vehicles.ide", Bytes("cars\n400, landstal, landstal, car, LANDSTAL, LANDSTK, null, normal, 7, 0, 0, -1, 0.75, 0.75, 0\nend\n"), true },
         { "data/misc.ide", Bytes("objs\n2 misc r3 100 0\nend\n") },
-        { "data/weapons.ide", Bytes("weap\n321, unwanted, 50\nend\n") },
+        { "DATA\\WEAPONS.IDE", Bytes("weap\n321, zip_weapon, 50\nend\n"), true },
         { "data/vehicle.ide", Bytes("cars\n400 singular bad\nend\n") },
         { "data/maps/level_events/test.ipl", Bytes("inst\n9 zip_duplicate 0 9 0 0 0 0 0 1 -1\nend\n"), true },
         { "maps/level_events/test.ipl", Bytes("inst\n9 alias_duplicate 0 9 0 0 0 0 0 1 -1\nend\n") },
@@ -478,7 +491,10 @@ int main() {
                                    "IPL data/maps/level_events/zip_scene.ipl\n"
                                    "#IPL data/maps/level_events/disabled.ipl\n"), true },
         { "data/timecyc.json", Bytes("{\"ambient\":2}"), true },
-        { "data/carcols.dat", Bytes("ignored") },
+        { "DATA/WATER.DAT", Bytes("processed\n"
+            "-2800 2000 1 0 0 0 0  -2800 2100 1 0 0 0 0  "
+            "-3000 2000 1 0 0 0 0  -3000 2100 1 0 0 0 0  1\n"), true },
+        { "DATA\\CARCOLS.DAT", Bytes("col\n0,0,0 # black\n245,245,245 # white\nend\n"), true },
         { "data/features/ignored.ide", Bytes("ignored") },
         { "anim/zipbank.ifp", ifp },
         { "collision/zip.col", Col("zipcollision") },
@@ -504,11 +520,12 @@ int main() {
     ide.clear(); ipl.clear();
     CCustomModels::ForEachWorldFile(true, WorldFile, &ide);
     CCustomModels::ForEachWorldFile(false, WorldFile, &ipl);
-    assert(ide.size() == 5 && ide.count("data/maps/ide/test.ide") &&
+    assert(ide.size() == 6 && ide.count("data/maps/ide/test.ide") &&
            ide.count("data/maps/ide/archive.ide") && ide.count("data/maps/ide/alias.ide") &&
-           ide.count("data/peds.ide") && ide.count("data/vehicles.ide"));
-    assert(!ide.count("data/misc.ide") && !ide.count("data/weapons.ide") &&
-           !ide.count("data/vehicle.ide") && !ide.count("data/features/ignored.ide"));
+           ide.count("data/peds.ide") && ide.count("data/vehicles.ide") &&
+           ide.count("data/weapons.ide"));
+    assert(!ide.count("data/misc.ide") && !ide.count("data/vehicle.ide") &&
+           !ide.count("data/features/ignored.ide"));
     std::vector<customworld::Model> actorModels;
     const std::string &pedIde = ide.at("data/peds.ide");
     customworld::Stats pedStats = customworld::ParseIde(
@@ -524,6 +541,14 @@ int main() {
            actorModels[0].name == "WBDYG1" && actorModels[0].driveMask == 0x170F &&
            actorModels[1].kind == customworld::Model::VEHICLE &&
            actorModels[1].name == "landstal" && actorModels[1].subtype == "car");
+    std::vector<customworld::Model> weaponModels;
+    const std::string &weaponIde = ide.at("data/weapons.ide");
+    customworld::Stats weaponStats = customworld::ParseIde(
+        (const unsigned char*)weaponIde.data(), weaponIde.size(),
+        [&weaponModels](const customworld::Model &m) { weaponModels.push_back(m); });
+    assert(weaponStats.records == 1 && weaponStats.rejected == 0 &&
+           weaponModels.size() == 1 && weaponModels[0].kind == customworld::Model::WEAPON &&
+           weaponModels[0].name == "zip_weapon");
     assert(ide.at("data/maps/ide/test.ide").find("zip_duplicate") != std::string::npos);
     assert(ide.at("data/maps/ide/test.ide").find("alias_duplicate") == std::string::npos);
     assert(ipl.size() == 2 && ipl.count("data/maps/level_events/test.ipl") &&
@@ -534,7 +559,17 @@ int main() {
     assert(!CCustomModels::GetCollisionBlock("zipcollision", selected));
     assert(!CCustomModels::GetCollisionBlock("zipced2", selected));
     assert(!CCustomModels::LoadAnimFileFromCustom("zipbank.ifp", selected));
-    assert(!CCustomModels::ReadDataFile("data/carcols.dat", selected));
+    assert(CCustomModels::ReadDataFile("data/carcols.dat", selected, &fromCommon) && fromCommon);
+    std::vector<commoncarcols::RGB> palette;
+    assert(commoncarcols::Parse(selected.data(), selected.size(), palette) &&
+           palette.size() == 2 && palette[1].r == 245);
+    assert(CCustomModels::ReadDataFile("data/water.dat", selected, &fromCommon) && fromCommon);
+    std::vector<commonwater::Quad> quads;
+    commonwater::Stats waterStats;
+    assert(commonwater::Parse(selected.data(), selected.size(), quads, waterStats) &&
+           waterStats.accepted == 1 && waterStats.invalid == 0);
+    float waterHeight = 0;
+    assert(commonwater::Sample(quads, -2900, 2050, waterHeight) && waterHeight == 1.0f);
     assert(!CCustomModels::ReadDataFile("data/config.dat", selected));
     assert(!CCustomModels::ReadDataFile("data/features/ignored.ide", selected));
     assert(CCustomModels::ReadDataFile("data/timecyc.json", selected, &fromCommon));
@@ -559,8 +594,8 @@ int main() {
     // without any loose maps, ZIP-only installs still read config.dat.
     assert(std::remove("custom/data/maps/ide/test.ide") == 0);
     ide.clear(); CCustomModels::ForEachWorldFile(true, WorldFile, &ide);
-    assert(ide.size() == 5 && ide.at("data/maps/ide/test.ide").find("zip_duplicate") != std::string::npos);
-    assert(ide.count("data/peds.ide") && ide.count("data/vehicles.ide"));
+    assert(ide.size() == 6 && ide.at("data/maps/ide/test.ide").find("zip_duplicate") != std::string::npos);
+    assert(ide.count("data/peds.ide") && ide.count("data/vehicles.ide") && ide.count("data/weapons.ide"));
     CCustomModels::Shutdown(); CTxdStore::Shutdown();
     assert(std::rename("custom/data/maps", "custom/data/maps_off") == 0);
     images.clear(); images.push_back("models/gta3.img");
@@ -568,11 +603,13 @@ int main() {
     ide.clear(); ipl.clear();
     CCustomModels::ForEachWorldFile(true, WorldFile, &ide);
     CCustomModels::ForEachWorldFile(false, WorldFile, &ipl);
-    assert(CCustomModels::HasWorldFiles() && ide.size() == 5 && ipl.size() == 2);
-    assert(ide.count("data/peds.ide") && ide.count("data/vehicles.ide"));
+    assert(CCustomModels::HasWorldFiles() && ide.size() == 6 && ipl.size() == 2);
+    assert(ide.count("data/peds.ide") && ide.count("data/vehicles.ide") && ide.count("data/weapons.ide"));
     assert(ide.at("data/maps/ide/test.ide").find("zip_duplicate") != std::string::npos);
     assert(ipl.at("data/maps/level_events/test.ipl").find("zip_duplicate") != std::string::npos);
     assert(CCustomModels::ReadDataFile("data/timecyc.json", selected, &fromCommon) && fromCommon);
+    assert(CCustomModels::ReadDataFile("data/water.dat", selected, &fromCommon) && fromCommon);
+    assert(CCustomModels::ReadDataFile("data/carcols.dat", selected, &fromCommon) && fromCommon);
     CCustomModels::Shutdown(); CTxdStore::Shutdown();
 
     // Without a config.dat selection, all ZIP IPLs remain eligible.
@@ -587,20 +624,23 @@ int main() {
     CCustomModels::ForEachWorldFile(false, WorldFile, &ipl);
     assert(ide.size() == 1 && ipl.size() == 2);
     assert(!CCustomModels::ReadDataFile("data/timecyc.json", selected)); // no stale ZIP entries
+    assert(!CCustomModels::ReadDataFile("data/water.dat", selected));
+    assert(!CCustomModels::ReadDataFile("data/carcols.dat", selected));
     CCustomModels::Shutdown(); CTxdStore::Shutdown();
 
-    // Actor IDEs in common.zip work even without loose map files or IPLs.
+    // Root ped/vehicle/weapon IDEs work even without loose map files or IPLs.
     Zip("custom/common.zip", {
         { "data/peds.ide", Bytes("peds\n3, ANDRE, ANDRE, CIVMALE, STAT_SENSIBLE_GUY, man, 0, 0, man, 1, 4, PED_TYPE_GEN, VOICE_GEN, VOICE_GEN\nend\n"), true },
         { "data/vehicles.ide", Bytes("cars\n400, landstal, landstal, car, LANDSTAL, LANDSTK, null, normal, 7, 0, 0, -1, 0.75, 0.75, 0\nend\n"), true },
+        { "data/weapons.ide", Bytes("weap\n321, weapon_only, 50\nend\n"), true },
         { "data/misc.ide", Bytes("objs\n1 unwanted bad 100 0\nend\n") }
     });
     assert(CCustomModels::HasWorldFiles());
     ide.clear(); ipl.clear();
     CCustomModels::ForEachWorldFile(true, WorldFile, &ide);
     CCustomModels::ForEachWorldFile(false, WorldFile, &ipl);
-    assert(ide.size() == 2 && ide.count("data/peds.ide") && ide.count("data/vehicles.ide") &&
-           ipl.empty());
+    assert(ide.size() == 3 && ide.count("data/peds.ide") && ide.count("data/vehicles.ide") &&
+           ide.count("data/weapons.ide") && ipl.empty());
     CCustomModels::Shutdown(); CTxdStore::Shutdown();
 
     // A corrupt entry with a valid central directory must not mask the loose
@@ -612,6 +652,9 @@ int main() {
         { "data/maps/ide/test.ide", Bytes("objs\n1 corrupt_zip r3 100 0\nend\n"), true, true },
         { "data/maps/ide/zip_broken.ide", Bytes("objs\n2 corrupt_only r3 100 0\nend\n"), true, true },
         { "data/peds.ide", Bytes("peds\n3 corrupt_actor bad\nend\n"), true, true },
+        { "data/weapons.ide", Bytes("weap\n321 corrupt_weapon 50\nend\n"), true, true },
+        { "data/water.dat", Bytes("processed\ncorrupt water\n"), true, true },
+        { "data/carcols.dat", Bytes("col\n50,60,70\nend\n"), true, true },
         { "data/maps/level_events/test.ipl", Bytes("inst\n1 corrupt_zip 0 9 0 0 0 0 0 1 -1\nend\n"), true, true },
         { "data/timecyc.json", Bytes("{\"ambient\":5}"), true, true },
         { "data/config.dat", Bytes("IPL data/maps/level_events/test.ipl\n") }
@@ -621,11 +664,13 @@ int main() {
     ide.clear(); ipl.clear();
     CCustomModels::ForEachWorldFile(true, WorldFile, &ide);
     CCustomModels::ForEachWorldFile(false, WorldFile, &ipl);
-    assert(ide.size() == 1 && !ide.count("data/peds.ide") &&
+    assert(ide.size() == 1 && !ide.count("data/peds.ide") && !ide.count("data/weapons.ide") &&
            ide.at("data/maps/ide/test.ide").find("loose_fallback") != std::string::npos);
     assert(ipl.size() == 1 && ipl.at("data/maps/level_events/test.ipl").find("house1") != std::string::npos);
     assert(CCustomModels::ReadDataFile("data/timecyc.json", selected, &fromCommon));
     assert(!fromCommon && std::string(selected.begin(), selected.end()) == "{\"ambient\":4}");
+    assert(!CCustomModels::ReadDataFile("data/water.dat", selected, &fromCommon) && !fromCommon);
+    assert(!CCustomModels::ReadDataFile("data/carcols.dat", selected, &fromCommon) && !fromCommon);
     CCustomModels::Shutdown(); CTxdStore::Shutdown();
 
     // With only unrelated ZIP and loose collision inputs, no world, animation,
@@ -636,6 +681,9 @@ int main() {
         { "anim/zipbank.ifp", ifp },
         { "collision/zip.col", Col("zipcollision") },
         { "data/maps/zip.ide", Bytes("objs\n1 ziphouse bad 100 0\nend\n") },
+        { "data/weapons.ide", Bytes("weap\n321 zipweapon 50\nend\n") },
+        { "data/water.dat", Bytes("processed\nother ZIP water\n") },
+        { "data/carcols.dat", Bytes("col\n1,2,3\nend\n") },
         { "data/timecyc.json", Bytes("ZIP lighting") }
     });
     MkDir("custom/collision");
@@ -649,9 +697,36 @@ int main() {
     assert(!CCustomModels::GetCollisionBlock("looseonly", selected));
     assert(!CCustomModels::CanServe(STREAM_OFFSET_COL));
     assert(!CCustomModels::ReadDataFile("data/timecyc.json", selected));
+    assert(!CCustomModels::ReadDataFile("data/water.dat", selected));
+    assert(!CCustomModels::ReadDataFile("data/carcols.dat", selected));
     assert(!CCustomModels::HasModelFile("rootonly"));
     assert(CCustomModels::HasModelFile("baseonly")); // stock VC unaffected
     CCustomModels::Shutdown(); CTxdStore::Shutdown();
+
+    // A ZIP with only the two data tables still activates their reader but
+    // must not invent world files or begin reading unrelated ZIP entries.
+    Zip("custom/common.zip", {
+        { "data/water.dat", Bytes("processed\n"
+            "20 0 2 0 0 0 0  20 10 2 0 0 0 0  "
+            "0 0 2 0 0 0 0  0 10 2 0 0 0 0  1\n") },
+        { "data/carcols.dat", Bytes("col\n2,3,4\nend\n") },
+        { "data/features/physics.json", Bytes("ignored") }
+    });
+    assert(CCustomModels::IsActive() && !CCustomModels::HasWorldFiles());
+    assert(CCustomModels::ReadDataFile("data/water.dat", selected, &fromCommon) && fromCommon);
+    assert(CCustomModels::ReadDataFile("data/carcols.dat", selected, &fromCommon) && fromCommon);
+    assert(!CCustomModels::ReadDataFile("data/features/physics.json", selected));
+    CCustomModels::Shutdown();
+    // Overlarge tables must not be inflated into the game: the entry cap for
+    // water/palette is lower than the generic 64 MiB map-file cap.
+    Zip("custom/common.zip", {
+        { "data/water.dat", Bytes(std::string(1024*1024+1, 'w')) },
+        { "data/carcols.dat", Bytes(std::string(64*1024+1, 'c')) }
+    });
+    assert(!CCustomModels::ReadDataFile("data/water.dat", selected));
+    assert(!CCustomModels::ReadDataFile("data/carcols.dat", selected));
+    CCustomModels::Shutdown();
+    assert(std::remove("custom/common.zip") == 0);
 
     // IMG-only directory: no IDE/IFP needed for valid user models.
     MkDir("custom/img");
