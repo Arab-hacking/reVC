@@ -140,6 +140,22 @@ static std::vector<uint8> WriteDff(Clump *clump) {
     return bytes;
 }
 
+// A real BR DFF can have zero legacy triangles but a fully populated BinMesh
+// extension. Synthesize that on disk without including user-owned game assets.
+static std::vector<uint8> WriteMeshOnlyDff(Clump *clump) {
+    struct Saved { Geometry *geo; int triangles; };
+    std::vector<Saved> saved;
+    FORLIST(lnk, clump->atomics) {
+        Geometry *g = Atomic::fromClump(lnk)->geometry;
+        assert(g->numTriangles > 0 && g->meshHeader && g->meshHeader->totalIndices >= 3);
+        saved.push_back({ g, g->numTriangles });
+        g->numTriangles = 0;
+    }
+    std::vector<uint8> bytes = WriteDff(clump);
+    for(const Saved &item : saved) item.geo->numTriangles = item.triangles;
+    return bytes;
+}
+
 static Clump *ReadDff(const std::vector<uint8> &bytes) {
     StreamMemory stream;
     stream.open((uint8*)bytes.data(), (uint32)bytes.size());
@@ -237,6 +253,91 @@ int main() {
     assert(single->geometry->matList.materials[0]->texture == sand);
     DestroyAtomic(single);
     assert(sand->refCount == 1);
+
+    // Zero legacy triangles does not mean an empty DFF. D3D9 and GL3 render
+    // this single identity-frame model directly from its BinMesh indices
+    // (the mesh header must survive detaching the atomic from its clump).
+    source = MakeClump(sand, roof, false, false);
+    std::vector<uint8> meshOnlyDff = WriteMeshOnlyDff(source);
+    source->destroy();
+    read = ReadDff(meshOnlyDff);
+    original = Atomic::fromClump(read->atomics.link.next);
+    assert(original->geometry->numTriangles == 0);
+    assert(original->geometry->meshHeader &&
+           original->geometry->meshHeader->totalIndices == 3);
+    single = SAStaticModel::TakeAtomic(read, &error);
+    assert(single == original && error == nil && read->countAtomics() == 0);
+    read->destroy();
+    assert(single->geometry->numTriangles == 0 &&
+           single->geometry->meshHeader->getMeshes()[0].numIndices == 3 &&
+           single->geometry->matList.materials[0]->texture == sand);
+    DestroyAtomic(single);
+    assert(sand->refCount == 1);
+
+    // For translated/multiple atomics, reconstruct portable triangles from
+    // each BinMesh split before baking their frame transforms into one mesh.
+    source = MakeClump(sand, roof, true, true);
+    meshOnlyDff = WriteMeshOnlyDff(source);
+    source->destroy();
+    read = ReadDff(meshOnlyDff);
+    FORLIST(lnk, read->atomics)
+        assert(Atomic::fromClump(lnk)->geometry->numTriangles == 0);
+    merged = SAStaticModel::TakeAtomic(read, &error);
+    assert(merged && error == nil && read->countAtomics() == 2);
+    read->destroy();
+    assert(merged->geometry->numTriangles == 2 && merged->geometry->numVertices == 6);
+    assert(merged->geometry->matList.materials[0]->texture == sand &&
+           merged->geometry->matList.materials[1]->texture == roof);
+    assert(merged->geometry->triangles[0].v[0] == 0 &&
+           merged->geometry->triangles[1].v[0] == 3 &&
+           merged->geometry->triangles[1].v[1] == 5 &&
+           merged->geometry->triangles[1].v[2] == 4);
+    assert(Near(merged->geometry->morphTargets[0].vertices[3].x, 10));
+    DestroyAtomic(merged);
+    assert(sand->refCount == 1 && roof->refCount == 1);
+
+    // A truncated/invalid mesh must not pass the fast path into the renderer.
+    read = ReadDff(meshOnlyDff);
+    Atomic::fromClump(read->atomics.link.next)->geometry->meshHeader->getMeshes()[0].indices[0] = 65535;
+    assert(SAStaticModel::TakeAtomic(read, &error) == nil);
+    assert(error && std::strstr(error, "BinMesh index") && read->countAtomics() == 2);
+    read->destroy();
+
+    // Triangle-strip BinMesh splits also need parity-correct winding and
+    // degenerate connectors removed when the frame is baked.
+    source = MakeClump(sand, roof, false, true);
+    Geometry *stripGeo = Atomic::fromClump(source->atomics.link.next)->geometry;
+    MeshHeader *stripHeader = stripGeo->allocateMeshes(1, 6, 0);
+    stripHeader->flags = MeshHeader::TRISTRIP;
+    Mesh *strip = stripHeader->getMeshes();
+    strip->numIndices = 6;
+    const uint16 stripIndices[] = { 0, 1, 2, 2, 0, 1 };
+    std::memcpy(strip->indices, stripIndices, sizeof(stripIndices));
+    std::vector<uint8> stripDff = WriteMeshOnlyDff(source);
+    source->destroy();
+    read = ReadDff(stripDff);
+    assert(Atomic::fromClump(read->atomics.link.next)->geometry->meshHeader->flags == MeshHeader::TRISTRIP);
+    merged = SAStaticModel::TakeAtomic(read, &error);
+    assert(merged && error == nil && merged->geometry->numTriangles == 2);
+    read->destroy();
+    assert(merged->geometry->triangles[0].v[0] == 0 &&
+           merged->geometry->triangles[0].v[1] == 1 &&
+           merged->geometry->triangles[0].v[2] == 2);
+    assert(merged->geometry->triangles[1].v[0] == 2 &&
+           merged->geometry->triangles[1].v[1] == 1 &&
+           merged->geometry->triangles[1].v[2] == 0);
+    DestroyAtomic(merged);
+
+    // A zero-triangle DFF with no mesh indices is still genuinely empty.
+    source = MakeClump(sand, roof, false, false);
+    Geometry *empty = Atomic::fromClump(source->atomics.link.next)->geometry;
+    empty->meshHeader->getMeshes()[0].numIndices = 0;
+    empty->meshHeader->totalIndices = 0;
+    empty->numTriangles = 0;
+    assert(SAStaticModel::TakeAtomic(source, &error) == nil);
+    assert(error && std::strcmp(error, "clump has no visible geometry") == 0);
+    source->destroy();
+    assert(sand->refCount == 1 && roof->refCount == 1);
 
     // One child translated within the DFF cannot use the fast path: the VC
     // instance frame is the IPL transform, so the local transform is baked.

@@ -33,12 +33,83 @@ bool Identity(const rw::Matrix &m)
 struct Part {
     rw::Atomic *atomic;
     rw::Matrix matrix;
+    int triangles;
+    bool meshOnly;
 };
 
 rw::Atomic *Fail(const char **error, const char *message)
 {
     if(error) *error = message;
     return nil;
+}
+
+bool BadMesh(const char **error, const char *message)
+{
+    if(error) *error = message;
+    return false;
+}
+
+bool Degenerate(const rw::uint16 *indices)
+{
+    return indices[0] == indices[1] || indices[0] == indices[2] ||
+           indices[1] == indices[2];
+}
+
+// Some valid DFFs (including BR terrain) contain no legacy triangle array:
+// their *renderable* triangles live only in the BinMesh extension. librw reads
+// that extension into meshHeader; both GL3 and D3D9 draw from its indices.
+// Validate before taking the zero-copy path, and count triangles so a moved
+// frame or multi-atomic clump can be baked without touching the source data.
+bool CountBinMeshTriangles(const rw::Geometry *g, int *triangles, const char **error)
+{
+    *triangles = 0;
+    rw::MeshHeader *header = g->meshHeader;
+    if(header == nil) return true; // genuinely empty render dummy
+    if(header->flags != 0 && header->flags != rw::MeshHeader::TRISTRIP)
+        return BadMesh(error, "unsupported BinMesh primitive type");
+    if((g->flags & rw::Geometry::NATIVE) && header->totalIndices)
+        return BadMesh(error, "native mesh-only geometry cannot be inspected");
+
+    rw::uint32 remaining = header->totalIndices;
+    const rw::Mesh *meshes = header->getMeshes();
+    for(int i = 0; i < header->numMeshes; i++){
+        const rw::Mesh &mesh = meshes[i];
+        if(mesh.numIndices > remaining)
+            return BadMesh(error, "BinMesh indices exceed header count");
+        remaining -= mesh.numIndices;
+        // A zero-index split cannot be instanced by the GL3 renderer.
+        if(mesh.numIndices == 0 && header->totalIndices)
+            return BadMesh(error, "BinMesh contains an empty split");
+        if(mesh.numIndices == 0) continue;
+        if(mesh.indices == nil || g->matList.materials == nil)
+            return BadMesh(error, "BinMesh has no indices or materials");
+        bool materialFound = false;
+        for(int j = 0; j < g->matList.numMaterials; j++)
+            if(g->matList.materials[j] == mesh.material && mesh.material != nil)
+                materialFound = true;
+        if(!materialFound)
+            return BadMesh(error, "BinMesh references a missing material");
+        for(rw::uint32 j = 0; j < mesh.numIndices; j++)
+            if(mesh.indices[j] >= g->numVertices)
+                return BadMesh(error, "BinMesh index exceeds vertex count");
+        if(header->flags == rw::MeshHeader::TRISTRIP){
+            for(rw::uint32 j = 0; j+2 < mesh.numIndices; j++)
+                if(!Degenerate(mesh.indices+j)){
+                    if(*triangles == 200000)
+                        return BadMesh(error, "BinMesh exceeds 200k triangles");
+                    (*triangles)++;
+                }
+        }else{
+            if(mesh.numIndices % 3)
+                return BadMesh(error, "BinMesh triangle list has incomplete indices");
+            if(mesh.numIndices / 3 > (rw::uint32)(200000 - *triangles))
+                return BadMesh(error, "BinMesh exceeds 200k triangles");
+            *triangles += mesh.numIndices / 3;
+        }
+    }
+    if(remaining)
+        return BadMesh(error, "BinMesh header count does not match its splits");
+    return true;
 }
 
 } // namespace
@@ -56,15 +127,18 @@ rw::Atomic *TakeAtomic(rw::Clump *clump, const char **error)
         if(g == nil || a->getFrame() == nil || g->numMorphTargets < 1 ||
            g->morphTargets == nil || g->numVertices < 0 || g->numTriangles < 0)
             return Fail(error, "renderable atomic has no geometry or frame");
-        if(g->numTriangles == 0) continue; // empty render dummy
+        int triangles = g->numTriangles;
+        bool meshOnly = triangles == 0;
+        if(meshOnly && !CountBinMeshTriangles(g, &triangles, error)) return nil;
+        if(triangles == 0) continue; // neither legacy triangles nor BinMesh faces
         if(g->numVertices == 0 || (!(g->flags & rw::Geometry::NATIVE) &&
-           (g->morphTargets[0].vertices == nil || g->triangles == nil)))
+           (g->morphTargets[0].vertices == nil || (!meshOnly && g->triangles == nil))))
             return Fail(error, "renderable atomic has no triangles/vertices");
         if(rw::skinGlobals.geoOffset > 0 && rw::Skin::get(g))
             return Fail(error, "skinned geometry is not a static object");
         rw::Matrix matrix = *a->getFrame()->getLTM();
         if(!Finite(matrix)) return Fail(error, "non-finite frame transform");
-        parts.push_back({ a, matrix });
+        parts.push_back({ a, matrix, triangles, meshOnly });
     }
     if(parts.empty()) return Fail(error, "clump has no visible geometry");
 
@@ -104,16 +178,16 @@ rw::Atomic *TakeAtomic(rw::Clump *clump, const char **error)
             a->uninstance();
         }
         if(g->flags & rw::Geometry::NATIVE || g->numMorphTargets != 1 ||
-           g->numVertices <= 0 || g->numTriangles <= 0 ||
+           g->numVertices <= 0 || parts[p].triangles <= 0 ||
            g->numTexCoordSets < 0 || g->numTexCoordSets > 8 ||
            g->morphTargets == nil || g->morphTargets[0].vertices == nil ||
-           g->triangles == nil || g->matList.numMaterials <= 0 ||
-           g->matList.materials == nil)
+           (!parts[p].meshOnly && (g->numTriangles <= 0 || g->triangles == nil)) ||
+           g->matList.numMaterials <= 0 || g->matList.materials == nil)
             return Fail(error, "static geometry has no portable triangles/vertices/materials");
         // Triangle indices and mesh indices are 16-bit; avoid wrapping and
         // bound worst-case allocations from malformed or huge DFFs.
         if(g->numVertices > 65535 - totalVertices ||
-           g->numTriangles > 200000 - totalTriangles)
+           parts[p].triangles > 200000 - totalTriangles)
             return Fail(error, "flattened geometry exceeds 16-bit vertices or 200k triangles");
         for(int t = 0; t < g->numTriangles; t++){
             const rw::Triangle &tri = g->triangles[t];
@@ -128,7 +202,7 @@ rw::Atomic *TakeAtomic(rw::Clump *clump, const char **error)
         if((g->flags & rw::Geometry::PRELIT) && g->colors == nil)
             return Fail(error, "missing prelight colors");
         totalVertices += g->numVertices;
-        totalTriangles += g->numTriangles;
+        totalTriangles += parts[p].triangles;
         if(uvSets < g->numTexCoordSets) uvSets = g->numTexCoordSets;
         flags |= g->flags & (rw::Geometry::PRELIT | rw::Geometry::NORMALS |
                              rw::Geometry::LIGHT | rw::Geometry::MODULATE);
@@ -190,27 +264,66 @@ rw::Atomic *TakeAtomic(rw::Clump *clump, const char **error)
                 std::memset(merged->texCoords[uv]+vbase, 0,
                             g->numVertices*sizeof(rw::TexCoords));
         }
-        for(int t = 0; t < g->numTriangles; t++){
-            const rw::Triangle &src = g->triangles[t];
-            rw::Material *mat = g->matList.materials[src.matId];
+        const int startTriangle = tbase;
+        auto appendTriangle = [&](rw::uint16 i0, rw::uint16 i1, rw::uint16 i2,
+                                  rw::Material *mat) -> bool {
             std::unordered_map<rw::Material*, int>::iterator found = materials.find(mat);
             int id;
             if(found == materials.end()){
                 if(merged->matList.numMaterials >= 65535 ||
-                   (id = merged->matList.appendMaterial(mat)) < 0){
-                    merged->destroy();
-                    return Fail(error, "too many materials in static geometry");
-                }
+                   (id = merged->matList.appendMaterial(mat)) < 0)
+                    return false;
                 materials[mat] = id; // appendMaterial keeps its own reference
             }else id = found->second;
-            rw::Triangle &dst = merged->triangles[tbase+t];
-            dst.v[0] = (rw::uint16)(src.v[0] + vbase);
-            dst.v[1] = (rw::uint16)(src.v[det < 0 ? 2 : 1] + vbase);
-            dst.v[2] = (rw::uint16)(src.v[det < 0 ? 1 : 2] + vbase);
+            if(tbase >= totalTriangles) return false;
+            rw::Triangle &dst = merged->triangles[tbase++];
+            dst.v[0] = (rw::uint16)(i0 + vbase);
+            dst.v[1] = (rw::uint16)((det < 0 ? i2 : i1) + vbase);
+            dst.v[2] = (rw::uint16)((det < 0 ? i1 : i2) + vbase);
             dst.matId = (rw::uint16)id;
+            return true;
+        };
+        if(parts[p].meshOnly){
+            // A BinMesh-only DFF has no g->triangles array. Use its validated
+            // splits when a frame transform requires flattening the clump.
+            rw::MeshHeader *header = g->meshHeader;
+            const rw::Mesh *meshes = header->getMeshes();
+            for(int i = 0; i < header->numMeshes; i++){
+                const rw::Mesh &mesh = meshes[i];
+                if(header->flags == rw::MeshHeader::TRISTRIP){
+                    for(rw::uint32 j = 0; j+2 < mesh.numIndices; j++){
+                        const rw::uint16 *indices = mesh.indices+j;
+                        if(!Degenerate(indices) &&
+                           !appendTriangle(indices[0], indices[1+(j&1)],
+                                           indices[2-(j&1)], mesh.material)){
+                            merged->destroy();
+                            return Fail(error, "cannot flatten BinMesh triangles");
+                        }
+                    }
+                }else{
+                    for(rw::uint32 j = 0; j+2 < mesh.numIndices; j += 3)
+                        if(!appendTriangle(mesh.indices[j], mesh.indices[j+1],
+                                           mesh.indices[j+2], mesh.material)){
+                            merged->destroy();
+                            return Fail(error, "cannot flatten BinMesh triangles");
+                        }
+                }
+            }
+        }else{
+            for(int t = 0; t < g->numTriangles; t++){
+                const rw::Triangle &src = g->triangles[t];
+                if(!appendTriangle(src.v[0], src.v[1], src.v[2],
+                                   g->matList.materials[src.matId])){
+                    merged->destroy();
+                    return Fail(error, "cannot flatten static triangles");
+                }
+            }
+        }
+        if(tbase - startTriangle != parts[p].triangles){
+            merged->destroy();
+            return Fail(error, "BinMesh triangle count changed while flattening");
         }
         vbase += g->numVertices;
-        tbase += g->numTriangles;
     }
     // Calculate bounds from the *baked* vertices. librw's generic helper
     // initializes extrema to +/-1e6, which can give wrong bounds for an
