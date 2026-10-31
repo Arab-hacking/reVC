@@ -21,6 +21,7 @@
 #include <vector>
 #include <dirent.h>
 #include <sys/stat.h>
+#include <utime.h>
 #include <unistd.h>
 
 static std::vector<std::string> images;
@@ -137,7 +138,7 @@ static std::vector<uint8> LegacyCls(const char *name) {
     return b;
 }
 
-struct File { std::string path; std::vector<uint8> contents; bool deflate; };
+struct File { std::string path; std::vector<uint8> contents; bool deflate; bool broken; };
 // A raw DEFLATE stored block exercises ZIP method 8 without a zlib dependency.
 static std::vector<uint8> DeflateStored(const std::vector<uint8> &input) {
     assert(input.size() <= 65535);
@@ -154,6 +155,9 @@ static void Zip(const char *path, const std::vector<File> &files) {
         offsets.push_back((uint32)z.size());
         const File &f = files[i];
         std::vector<uint8> payload = f.deflate ? DeflateStored(f.contents) : f.contents;
+        // The central directory remains valid, but extraction must reject
+        // this entry (reserved DEFLATE block type) and use a loose fallback.
+        if(f.broken) { assert(f.deflate && !payload.empty()); payload[0] = 0x07; }
         sizes.push_back((uint32)payload.size());
         A32(z, 0x04034b50); A16(z, 20); A16(z, 0); A16(z, f.deflate ? 8 : 0);
         A32(z, 0); A32(z, 0); A32(z, sizes.back());
@@ -473,6 +477,12 @@ int main() {
         { "/data/maps/ide/absolute.ide", Bytes("absolute") },
         { "data/maps/ide/" + std::string(260, 'x') + ".ide", Bytes("too long") }
     });
+    // The ZIP wins even if the loose map has a newer filesystem timestamp.
+    struct stat zipStat;
+    assert(stat("custom/common.zip", &zipStat) == 0);
+    struct utimbuf newer = { zipStat.st_mtime + 3600, zipStat.st_mtime + 3600 };
+    assert(utime("custom/data/maps/ide/test.ide", &newer) == 0);
+    assert(utime("custom/data/maps/level_events/test.ipl", &newer) == 0);
     images.clear(); images.push_back("models/gta3.img");
     CTxdStore::Initialise(); CCustomModels::MountImages();
     assert(images.size() == 4 && CCustomModels::IsActive());
@@ -481,10 +491,12 @@ int main() {
     CCustomModels::ForEachWorldFile(false, WorldFile, &ipl);
     assert(ide.size() == 3 && ide.count("data/maps/ide/test.ide") &&
            ide.count("data/maps/ide/archive.ide") && ide.count("data/maps/ide/alias.ide"));
-    assert(ide.at("data/maps/ide/test.ide").find("house1 r3 100") != std::string::npos);
+    assert(ide.at("data/maps/ide/test.ide").find("zip_duplicate") != std::string::npos);
+    assert(ide.at("data/maps/ide/test.ide").find("alias_duplicate") == std::string::npos);
     assert(ipl.size() == 2 && ipl.count("data/maps/level_events/test.ipl") &&
            ipl.count("data/maps/level_events/zip_scene.ipl"));
-    assert(ipl.at("data/maps/level_events/test.ipl").find("house1") != std::string::npos);
+    assert(ipl.at("data/maps/level_events/test.ipl").find("zip_duplicate") != std::string::npos);
+    assert(ipl.at("data/maps/level_events/test.ipl").find("alias_duplicate") == std::string::npos);
     assert(!CCustomModels::HasModelFile("zippaint") && !CCustomModels::HasModelFile("zipmod"));
     assert(!CCustomModels::GetCollisionBlock("zipcollision", selected));
     assert(!CCustomModels::GetCollisionBlock("zipced2", selected));
@@ -496,7 +508,7 @@ int main() {
     assert(fromCommon && std::string(selected.begin(), selected.end()) == "{\"ambient\":2}");
     Write("custom/data/timecyc.json", Bytes("{\"ambient\":3}"));
     assert(CCustomModels::ReadDataFile("data/timecyc.json", selected, &fromCommon));
-    assert(!fromCommon && std::string(selected.begin(), selected.end()) == "{\"ambient\":3}");
+    assert(fromCommon && std::string(selected.begin(), selected.end()) == "{\"ambient\":2}");
     assert(std::remove("custom/data/timecyc.json") == 0);
 
     Write("custom/data/maps/active_ipl.txt", Bytes(
@@ -510,8 +522,8 @@ int main() {
     assert(ipl.empty());
     assert(std::remove("custom/data/maps/active_ipl.txt") == 0);
 
-    // If an indexed loose file vanishes, the duplicate in the ZIP is a safe
-    // fallback; without any loose maps, ZIP-only installs still read config.dat.
+    // An archive entry is still served if the shadowed loose file vanishes;
+    // without any loose maps, ZIP-only installs still read config.dat.
     assert(std::remove("custom/data/maps/ide/test.ide") == 0);
     ide.clear(); CCustomModels::ForEachWorldFile(true, WorldFile, &ide);
     assert(ide.size() == 3 && ide.at("data/maps/ide/test.ide").find("zip_duplicate") != std::string::npos);
@@ -540,6 +552,29 @@ int main() {
     CCustomModels::ForEachWorldFile(false, WorldFile, &ipl);
     assert(ide.size() == 1 && ipl.size() == 2);
     assert(!CCustomModels::ReadDataFile("data/timecyc.json", selected)); // no stale ZIP entries
+    CCustomModels::Shutdown(); CTxdStore::Shutdown();
+
+    // A corrupt entry with a valid central directory must not mask the loose
+    // IDE/IPL/lighting at the same path. ZIP-only corrupt maps are skipped.
+    assert(std::rename("custom/data/maps_off", "custom/data/maps") == 0);
+    Write("custom/data/maps/ide/test.ide", Bytes("objs\n1 loose_fallback r3 100 0\nend\n"));
+    Write("custom/data/timecyc.json", Bytes("{\"ambient\":4}"));
+    Zip("custom/common.zip", {
+        { "data/maps/ide/test.ide", Bytes("objs\n1 corrupt_zip r3 100 0\nend\n"), true, true },
+        { "data/maps/ide/zip_broken.ide", Bytes("objs\n2 corrupt_only r3 100 0\nend\n"), true, true },
+        { "data/maps/level_events/test.ipl", Bytes("inst\n1 corrupt_zip 0 9 0 0 0 0 0 1 -1\nend\n"), true, true },
+        { "data/timecyc.json", Bytes("{\"ambient\":5}"), true, true },
+        { "data/config.dat", Bytes("IPL data/maps/level_events/test.ipl\n") }
+    });
+    images.clear(); images.push_back("models/gta3.img");
+    CTxdStore::Initialise(); CCustomModels::MountImages();
+    ide.clear(); ipl.clear();
+    CCustomModels::ForEachWorldFile(true, WorldFile, &ide);
+    CCustomModels::ForEachWorldFile(false, WorldFile, &ipl);
+    assert(ide.size() == 1 && ide.at("data/maps/ide/test.ide").find("loose_fallback") != std::string::npos);
+    assert(ipl.size() == 1 && ipl.at("data/maps/level_events/test.ipl").find("house1") != std::string::npos);
+    assert(CCustomModels::ReadDataFile("data/timecyc.json", selected, &fromCommon));
+    assert(!fromCommon && std::string(selected.begin(), selected.end()) == "{\"ambient\":4}");
     CCustomModels::Shutdown(); CTxdStore::Shutdown();
 
     // With only unrelated ZIP and loose collision inputs, no world, animation,

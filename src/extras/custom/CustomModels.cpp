@@ -87,8 +87,11 @@ static std::map<std::string, CustomSource> customColFiles;	// whole .col contain
 static std::map<std::string, CustomSource> customImages;	// .bmp/.png/.jpg
 static std::map<std::string, CustomSource> customIdeFiles;
 static std::map<std::string, CustomSource> customIplFiles;
-// Keep the ZIP alternatives for loose-file read failures, without indexing any
-// of its models/animations/collisions as game resources.
+// When common.zip replaces a loose map at the same path, retain the loose
+// source only as a fallback for an unreadable archive entry.
+static std::map<std::string, CustomSource> looseIdeFallbacks, looseIplFallbacks;
+// Only the whitelisted map/data entries are indexed from common.zip; never
+// index its models, animations or collisions as game resources.
 static std::unique_ptr<CustomZip> customCommonZip;
 static std::map<std::string, CustomSource> commonZipIdeFiles, commonZipIplFiles;
 static std::map<std::string, CustomSource> commonZipDataFiles;
@@ -408,16 +411,28 @@ ScanCommonZip(void)
 			else
 				CUSTOM_LOG("common.zip: cannot read data/config.dat; all IPLs are eligible\n");
 		}
-		unsigned shadowed = 0;
+		unsigned overridden = 0;
 		for(std::map<std::string, CustomSource>::const_iterator it = commonZipIdeFiles.begin();
-		    it != commonZipIdeFiles.end(); ++it)
-			if(!customIdeFiles.insert(*it).second) shadowed++;
+		    it != commonZipIdeFiles.end(); ++it) {
+			std::map<std::string, CustomSource>::iterator loose = customIdeFiles.find(it->first);
+			if(loose != customIdeFiles.end()) {
+				looseIdeFallbacks.insert(*loose);
+				overridden++;
+			}
+			customIdeFiles[it->first] = it->second;
+		}
 		for(std::map<std::string, CustomSource>::const_iterator it = commonZipIplFiles.begin();
-		    it != commonZipIplFiles.end(); ++it)
-			if(!customIplFiles.insert(*it).second) shadowed++;
-		CUSTOM_LOG("common.zip %s: %d entries, %u IDE / %u IPL path(s), %u loose file(s) preferred; config.dat lists %u IPL (%u invalid directive(s))\n",
+		    it != commonZipIplFiles.end(); ++it) {
+			std::map<std::string, CustomSource>::iterator loose = customIplFiles.find(it->first);
+			if(loose != customIplFiles.end()) {
+				looseIplFallbacks.insert(*loose);
+				overridden++;
+			}
+			customIplFiles[it->first] = it->second;
+		}
+		CUSTOM_LOG("common.zip %s: %d entries, %u IDE / %u IPL path(s), ZIP preferred over %u loose file(s); config.dat lists %u IPL (%u invalid directive(s))\n",
 			path.c_str(), customCommonZip->GetNumEntries(),
-			(unsigned)commonZipIdeFiles.size(), (unsigned)commonZipIplFiles.size(), shadowed,
+			(unsigned)commonZipIdeFiles.size(), (unsigned)commonZipIplFiles.size(), overridden,
 			(unsigned)commonZipConfig.ipl.size(), (unsigned)commonZipConfig.invalid);
 		return; // never scan other ZIPs or folders
 	}
@@ -1946,6 +1961,8 @@ CCustomModels::Shutdown(void)
 	customLegacyClsBlocks.clear();
 	customIdeFiles.clear();
 	customIplFiles.clear();
+	looseIdeFallbacks.clear();
+	looseIplFallbacks.clear();
 	commonZipIdeFiles.clear();
 	commonZipIplFiles.clear();
 	commonZipDataFiles.clear();
@@ -2066,19 +2083,19 @@ CCustomModels::ForEachWorldFile(bool ide, WorldFileCallback callback, void *cont
 	std::set<std::string> active;
 	const bool selected = !ide && ReadActiveIpls(active);
 	const std::map<std::string, CustomSource> &world = ide ? customIdeFiles : customIplFiles;
-	const std::map<std::string, CustomSource> &zip = ide ? commonZipIdeFiles : commonZipIplFiles;
+	const std::map<std::string, CustomSource> &loose = ide ? looseIdeFallbacks : looseIplFallbacks;
 	for(std::map<std::string, CustomSource>::const_iterator it = world.begin();
 	    it != world.end(); ++it) {
 		if(selected && !active.count(it->first)) continue;
 		std::vector<uint8> bytes;
 		if(!ReadSource(it->second, bytes)) {
-			std::map<std::string, CustomSource>::const_iterator backup = zip.find(it->first);
-			if(it->second.zipEntry >= 0 || backup == zip.end() ||
+			std::map<std::string, CustomSource>::const_iterator backup = loose.find(it->first);
+			if(it->second.zipEntry < 0 || backup == loose.end() ||
 			   !ReadSource(backup->second, bytes)) {
 				CUSTOM_LOG("world %s: cannot read %s\n", ide ? "IDE" : "IPL", it->first.c_str());
 				continue;
 			}
-			CUSTOM_LOG("world %s: loose %s unreadable; falling back to common.zip\n",
+			CUSTOM_LOG("world %s: common.zip %s unreadable; falling back to loose file\n",
 				ide ? "IDE" : "IPL", it->first.c_str());
 		}
 		callback(it->first.c_str(), bytes.data(), bytes.size(), context);
@@ -2588,7 +2605,7 @@ CCustomModels::PrintStats(void)
 }
 
 // ---------------------------------------------------------------------------
-// optional lighting table (loose file before common.zip) and skins
+// optional lighting table (common.zip before loose file) and skins
 // ---------------------------------------------------------------------------
 
 bool
@@ -2600,23 +2617,27 @@ CCustomModels::ReadDataFile(const char *relpath, std::vector<uint8> &out,
 	if(relpath == nil || strcmp(relpath, "data/timecyc.json") != 0)
 		return false; // no arbitrary data, other ZIPs, or game-root common/ files
 	EnsureInitialised();
+	const CustomSource *zip = FindSource(commonZipDataFiles, relpath);
+	if(zip != nil && ReadSource(*zip, out)) {
+		if(fromCommon) *fromCommon = true;
+		CUSTOM_LOG("data file %s: read from common.zip (%u bytes)\n", relpath, (unsigned)out.size());
+		return true;
+	}
 	const std::string data = Subfolder(customFolderPath, "data");
 	if(!data.empty()) {
 		const std::string path = data + "/timecyc.json";
 		if(path.size() < sizeof(CustomSource::loose)) {
 			CustomSource src = MakeSource(FileTime(path.c_str()), path.c_str(), relpath);
 			if(ReadSource(src, out)) {
+				if(zip != nil)
+					CUSTOM_LOG("data file %s: common.zip unreadable; falling back to loose file\n", relpath);
 				CUSTOM_LOG("data file %s: read from %s (%u bytes)\n",
 					relpath, path.c_str(), (unsigned)out.size());
 				return true;
 			}
 		}
 	}
-	const CustomSource *src = FindSource(commonZipDataFiles, relpath);
-	if(src == nil || !ReadSource(*src, out)) return false;
-	if(fromCommon) *fromCommon = true;
-	CUSTOM_LOG("data file %s: read from common.zip (%u bytes)\n", relpath, (unsigned)out.size());
-	return true;
+	return false;
 }
 
 bool

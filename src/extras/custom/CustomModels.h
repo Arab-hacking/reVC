@@ -85,7 +85,8 @@ public:
 	static void ForEachGameCollision(CollisionCallback callback, void *context,
 	                                 CollisionFilter filter = nullptr);
 
-	// Optional custom/data/timecyc.json, loose first then custom/common.zip.
+	// Optional data/timecyc.json: custom/common.zip wins over the loose
+	// custom/data/timecyc.json; the loose file is used if ZIP is unreadable.
 	// fromCommon means it came from that ZIP, never the game-root common/ tree.
 	static bool ReadDataFile(const char *relpath, std::vector<uint8> &out,
 	                         bool *fromCommon = nullptr);

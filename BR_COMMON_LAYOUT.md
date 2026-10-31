@@ -4,12 +4,12 @@
 
 | Прежний ресурс | Новое место / действие |
 |---|---|
-| `common/data/maps/**/*.ide`, `**/*.ipl` | Перенесите файлы в `custom/data/maps/` с той же структурой **или** сохраните архив как `custom/common.zip` с путями `data/maps/...` (старые `maps/...` тоже распознаются). Распакованный файл того же пути выигрывает; дубликат не загружается повторно. |
+| `common/data/maps/**/*.ide`, `**/*.ipl` | Перенесите файлы в `custom/data/maps/` с той же структурой **или** сохраните архив как `custom/common.zip` с путями `data/maps/...` (старые `maps/...` тоже распознаются). Запись ZIP того же пути выигрывает; распакованный файл служит резервом, если архивную запись не удалось прочитать. Дубликат не загружается повторно. |
 | Активные `IDE`/`IPL` в `common/data/config.dat` | Корневой файл игнорируется. Если конфиг находится **внутри `custom/common.zip`** как `data/config.dat`, его директивы `IPL` задают набор IPL при отсутствии `custom/data/maps/active_ipl.txt`. IDE не фильтруются. Без применимого конфига читаются все IPL. Явный список (включая базовые пути) перекрывает конфиг. |
 | Модели/текстуры из старых ZIP/IMG v2/BR-контейнеров | Подготовьте совместимые DFF/TXD, упакуйте в VC IMG v1 с внешним DIR и положите пару в `custom/img/`. Поиск одноимённого TXD идёт среди всех таких IMG. |
 | `common/anim/ped.ani` и другие `.ani` | Подготовьте совместимые ANP2/ANP3 `.ifp` и положите их в `custom/anim/`. VC-скелеты всегда используют штатный VC-банк. |
 | `.col`/`.cls` в ZIP или `br_collision.img` | Скопируйте пару `br_collision.img` + `br_collision.dir` (VC IMG v1) в `custom/img/`. Отдельные COL/CLS из ZIP тоже нужно упаковать в совместимую IMG/DIR-пару. Папка `custom/collision/` не читается; блоки сопоставляются по внутреннему имени модели. |
-| `common/data/timecyc.json` | Корневой файл не читается. Допустимы loose `custom/data/timecyc.json` (приоритет) и `data/timecyc.json` внутри `custom/common.zip`; только ambient/directional свет и сила штатных теней. |
+| `common/data/timecyc.json` | Корневой файл не читается. Допустимы `data/timecyc.json` внутри `custom/common.zip` (приоритет) и loose `custom/data/timecyc.json` (резерв); только ambient/directional свет и сила штатных теней. |
 | `*.bpc`, `audio/AUDO`, `data/features/`, физика/handling, цветовые таблицы `common/data/carcols.dat` | Не импортируются. |
 | `.btx` отражений и световых карт в `zip/*.zip` | Отключены; нет резервного графического ZIP-пути. |
 

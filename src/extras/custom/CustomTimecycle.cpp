@@ -431,7 +431,7 @@ ExpandGrids(const SlotGrid grids[BR_WEATHERS_USED], int weathers, bool lightingO
 	}
 }
 
-// The loose timecyc.json wins; custom/common.zip is the only archive fallback.
+// The custom/common.zip timecyc.json wins; the loose file is a read fallback.
 // Game-root common/, other ZIPs, weather presets, sky/fog and PostFX are not
 // imported into this layout.
 void
