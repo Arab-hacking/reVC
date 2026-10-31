@@ -73,8 +73,9 @@ struct CustomSource
 	bool inImg;
 };
 
-// Only common.zip supplies map text and optional lighting; models, TXDs and
-// collisions still use custom/img/ and animation banks still use custom/anim/.
+// Only common.zip supplies map/actor IDE text and optional lighting; model
+// geometry, TXDs and collisions still use custom/img/ and animation banks
+// still use custom/anim/.
 // The legacy converters below have no external .mod/.btx/.dff/.txd inputs.
 static std::map<std::string, CustomSource> customMods;
 static std::map<std::string, CustomSource> customBtx;
@@ -356,8 +357,9 @@ ScanAssetFolder(const std::string &folder, const char *kind, int depth, ScanStat
 }
 
 // The one ZIP exception: only custom/common.zip at the custom root. Index
-// canonical data/maps/ entries first, then accept the old maps/ alias only
-// where no canonical entry exists. No DFF/TXD/COL/CLS/IFP/BTX is indexed here.
+// canonical data/maps/ entries and the two actor IDEs at data/peds.ide and
+// data/vehicles.ide first, then accept the old maps/ alias only where no
+// canonical entry exists. No other root IDE, DFF/TXD/COL/CLS/IFP/BTX is indexed.
 static void
 ScanCommonZip(void)
 {
@@ -392,6 +394,14 @@ ScanCommonZip(void)
 				src.zipEntry = n;
 				if(pass == 0 && (key == "data/config.dat" || key == "data/timecyc.json")) {
 					commonZipDataFiles.insert(std::make_pair(key, src));
+					continue;
+				}
+				// The BR actor definitions live outside data/maps/. Allow only
+				// these two exact IDE paths, not misc/weapons/feature files or a
+				// blanket import of root data/. The ordinary IDE type checks and
+				// IMG DFF requirement still apply when they are registered.
+				if(pass == 0 && (key == "data/peds.ide" || key == "data/vehicles.ide")) {
+					commonZipIdeFiles.insert(std::make_pair(key, src));
 					continue;
 				}
 				if(pass == 0 ? key.compare(0, 10, "data/maps/") != 0 :
@@ -455,7 +465,7 @@ EnsureInitialised(void)
 	if(!maps.empty()) ScanAssetFolder(maps, "data/maps", 0, st);
 	ScanCommonZip();
 	customActive = !customAnims.empty() || !customIdeFiles.empty() || !customIplFiles.empty();
-	CUSTOM_LOG("==== custom folder: %s (IMG/DIR; loose anim/maps; common.zip maps/data only; other ZIPs, collision/, game-root img/ and common/ disabled)\n", customFolderPath.c_str());
+	CUSTOM_LOG("==== custom folder: %s (IMG/DIR; loose anim/maps; common.zip maps + peds/vehicles IDE + config/timecyc only; other ZIPs, collision/, game-root img/ and common/ disabled)\n", customFolderPath.c_str());
 	CUSTOM_LOG("scan: %d loose .ifp (%u names), %d loose IDE / %d loose IPL; %u total IDE / %u total IPL path(s); IMG collisions indexed at mount\n",
 		st.anim, (unsigned)customAnims.size(), st.ide, st.ipl,
 		(unsigned)customIdeFiles.size(), (unsigned)customIplFiles.size());
@@ -2098,6 +2108,9 @@ CCustomModels::ForEachWorldFile(bool ide, WorldFileCallback callback, void *cont
 			CUSTOM_LOG("world %s: common.zip %s unreadable; falling back to loose file\n",
 				ide ? "IDE" : "IPL", it->first.c_str());
 		}
+		if(ide && (it->first == "data/peds.ide" || it->first == "data/vehicles.ide"))
+			CUSTOM_LOG("common.zip actor IDE %s: read %u bytes\n",
+				it->first.c_str(), (unsigned)bytes.size());
 		callback(it->first.c_str(), bytes.data(), bytes.size(), context);
 	}
 }

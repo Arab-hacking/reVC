@@ -2,8 +2,9 @@
 #define __GTA_CUSTOMZIP_H__
 
 // Read-only ZIP archive reader. The game uses it ONLY for whitelisted map
-// text and data/timecyc.json inside custom/common.zip; it never enables
-// .mod/.btx/.cls or any other user ZIP. Archives may be several GB, so only
+// text, data/peds.ide, data/vehicles.ide, config.dat and timecyc.json inside
+// custom/common.zip; it never enables models, textures, collision or other
+// user ZIPs. Archives may be several GB, so only
 // the central directory is read at startup; file data is decompressed on
 // demand, one entry at a time.
 //

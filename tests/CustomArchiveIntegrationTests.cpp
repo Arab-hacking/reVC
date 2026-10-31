@@ -5,6 +5,7 @@
 #include "CustomModels.h"
 #include "CustomColFormat.h"
 #include "CustomImgFormat.h"
+#include "CustomWorldFormat.h"
 #include "ModelLoadDispatch.h"
 #include "CdStream.h"
 #include "ColStore.h"
@@ -287,6 +288,9 @@ int main() {
     Write("custom/data/maps/ide/test.ide", Bytes("objs\n1 house1 r3 100 0\nend\n"));
     Write("custom/data/maps/level_events/test.ipl", Bytes("inst\n1 house1 0 0 0 0 0 0 0 1 -1\nend\n"));
     Write("custom/data/maps/level_events/alternate.ipl", Bytes("inst\n2 house1 0 2 0 0 0 0 0 1 -1\nend\n"));
+    // Root actor IDEs come from the permitted ZIP, not the loose data tree.
+    Write("custom/data/peds.ide", Bytes("peds\n3 loose_ped bad\nend\n"));
+    Write("custom/data/vehicles.ide", Bytes("cars\n400 loose_car bad\nend\n"));
     Write("custom/data/timecyc.json", Bytes("{\"ambient\":1}"));
     std::vector<uint8> ifp = Bytes("ANPK12345678"); // only the indexing/reader is under test
     Write("custom/anim/userbank.ifp", ifp);
@@ -326,6 +330,8 @@ int main() {
         { "collision/zip.col", Col("zipcollision") },
         { "data/maps/ide/ziponly.ide", Bytes("objs\n1 ziphouse bad 100 0\nend\n") },
         { "data/maps/level_events/ziponly.ipl", Bytes("inst\n1 ziphouse 0 0 0 0 0 0 0 1 -1\nend\n") },
+        { "data/peds.ide", Bytes("peds\n3 ziponlyped bad\nend\n") },
+        { "data/vehicles.ide", Bytes("cars\n400 ziponlycar bad\nend\n") },
         { "models/SPECIAL1.dff", Bytes("ZIP model") },
         { "textures/ziptexture.btx", RawBtx(32, 32) },
         { "data/timecyc.json", Bytes("ZIP lighting") }
@@ -342,6 +348,8 @@ int main() {
     Write("custom/maps/old.ide", Bytes("objs\n1 oldhouse bad 100 0\nend\n"));
     Write("custom/data/old.ipl", Bytes("inst\n1 oldhouse 0 0 0 0 0 0 0 1 -1\nend\n"));
     Write("common/data/config.dat", Bytes("IDE data/maps/test.ide\nIPL data/maps/test.ipl\n"));
+    Write("common/data/peds.ide", Bytes("peds\n3 rootped bad\nend\n"));
+    Write("common/data/vehicles.ide", Bytes("cars\n400 rootcar bad\nend\n"));
     Write("common/data/maps/test.ide", Bytes("objs\n1 commonhouse bad 100 0\nend\n"));
     Write("common/data/maps/test.ipl", Bytes("inst\n1 commonhouse 0 0 0 0 0 0 0 1 -1\nend\n"));
     Write("common/data/timecyc.json", Bytes("{\"ambient\":999}"));
@@ -454,11 +462,18 @@ int main() {
         { "maps/ide/test.ide", Bytes("objs\n1 alias_duplicate bad 100 0\nend\n") },
         { "data/maps/ide/archive.ide", Bytes("objs\n9 archive_model r3 100 0\nend\n"), true },
         { "MAPS\\IDE\\alias.IDE", Bytes("objs\n8 alias_model r3 100 0\nend\n") },
+        { "DATA\\PEDS.IDE", Bytes("peds\n24, WBDYG1, WBDYG1, CIVMALE, STAT_TOUGH_GUY, man, 170F, 1, man, 10, 11, PED_TYPE_GEN, VOICE_GEN, VOICE_GEN\nend\n"), true },
+        { "data/vehicles.ide", Bytes("cars\n400, landstal, landstal, car, LANDSTAL, LANDSTK, null, normal, 7, 0, 0, -1, 0.75, 0.75, 0\nend\n"), true },
+        { "data/misc.ide", Bytes("objs\n2 misc r3 100 0\nend\n") },
+        { "data/weapons.ide", Bytes("weap\n321, unwanted, 50\nend\n") },
+        { "data/vehicle.ide", Bytes("cars\n400 singular bad\nend\n") },
         { "data/maps/level_events/test.ipl", Bytes("inst\n9 zip_duplicate 0 9 0 0 0 0 0 1 -1\nend\n"), true },
         { "maps/level_events/test.ipl", Bytes("inst\n9 alias_duplicate 0 9 0 0 0 0 0 1 -1\nend\n") },
         { "data/maps/level_events/zip_scene.ipl", Bytes("inst\n9 archive_model 0 3 0 0 0 0 0 1 -1\nend\n"), true },
         { "data/maps/level_events/disabled.ipl", Bytes("inst\n8 alias_model 0 8 0 0 0 0 0 1 -1\nend\n") },
-        { "data/config.dat", Bytes("IDE data/maps/ide/archive.ide\n"
+        { "data/config.dat", Bytes("IDE DATA\\PEDS.IDE\n"
+                                   "IDE DATA\\VEHICLES.IDE\n"
+                                   "IDE data/maps/ide/archive.ide\n"
                                    "IPL data/maps/level_events/test.ipl\n"
                                    "IPL data/maps/level_events/zip_scene.ipl\n"
                                    "#IPL data/maps/level_events/disabled.ipl\n"), true },
@@ -489,8 +504,26 @@ int main() {
     ide.clear(); ipl.clear();
     CCustomModels::ForEachWorldFile(true, WorldFile, &ide);
     CCustomModels::ForEachWorldFile(false, WorldFile, &ipl);
-    assert(ide.size() == 3 && ide.count("data/maps/ide/test.ide") &&
-           ide.count("data/maps/ide/archive.ide") && ide.count("data/maps/ide/alias.ide"));
+    assert(ide.size() == 5 && ide.count("data/maps/ide/test.ide") &&
+           ide.count("data/maps/ide/archive.ide") && ide.count("data/maps/ide/alias.ide") &&
+           ide.count("data/peds.ide") && ide.count("data/vehicles.ide"));
+    assert(!ide.count("data/misc.ide") && !ide.count("data/weapons.ide") &&
+           !ide.count("data/vehicle.ide") && !ide.count("data/features/ignored.ide"));
+    std::vector<customworld::Model> actorModels;
+    const std::string &pedIde = ide.at("data/peds.ide");
+    customworld::Stats pedStats = customworld::ParseIde(
+        (const unsigned char*)pedIde.data(), pedIde.size(),
+        [&actorModels](const customworld::Model &m) { actorModels.push_back(m); });
+    const std::string &vehicleIde = ide.at("data/vehicles.ide");
+    customworld::Stats vehicleStats = customworld::ParseIde(
+        (const unsigned char*)vehicleIde.data(), vehicleIde.size(),
+        [&actorModels](const customworld::Model &m) { actorModels.push_back(m); });
+    assert(pedStats.records == 1 && vehicleStats.records == 1 &&
+           pedStats.rejected == 0 && vehicleStats.rejected == 0);
+    assert(actorModels.size() == 2 && actorModels[0].kind == customworld::Model::PED &&
+           actorModels[0].name == "WBDYG1" && actorModels[0].driveMask == 0x170F &&
+           actorModels[1].kind == customworld::Model::VEHICLE &&
+           actorModels[1].name == "landstal" && actorModels[1].subtype == "car");
     assert(ide.at("data/maps/ide/test.ide").find("zip_duplicate") != std::string::npos);
     assert(ide.at("data/maps/ide/test.ide").find("alias_duplicate") == std::string::npos);
     assert(ipl.size() == 2 && ipl.count("data/maps/level_events/test.ipl") &&
@@ -526,7 +559,8 @@ int main() {
     // without any loose maps, ZIP-only installs still read config.dat.
     assert(std::remove("custom/data/maps/ide/test.ide") == 0);
     ide.clear(); CCustomModels::ForEachWorldFile(true, WorldFile, &ide);
-    assert(ide.size() == 3 && ide.at("data/maps/ide/test.ide").find("zip_duplicate") != std::string::npos);
+    assert(ide.size() == 5 && ide.at("data/maps/ide/test.ide").find("zip_duplicate") != std::string::npos);
+    assert(ide.count("data/peds.ide") && ide.count("data/vehicles.ide"));
     CCustomModels::Shutdown(); CTxdStore::Shutdown();
     assert(std::rename("custom/data/maps", "custom/data/maps_off") == 0);
     images.clear(); images.push_back("models/gta3.img");
@@ -534,7 +568,8 @@ int main() {
     ide.clear(); ipl.clear();
     CCustomModels::ForEachWorldFile(true, WorldFile, &ide);
     CCustomModels::ForEachWorldFile(false, WorldFile, &ipl);
-    assert(CCustomModels::HasWorldFiles() && ide.size() == 3 && ipl.size() == 2);
+    assert(CCustomModels::HasWorldFiles() && ide.size() == 5 && ipl.size() == 2);
+    assert(ide.count("data/peds.ide") && ide.count("data/vehicles.ide"));
     assert(ide.at("data/maps/ide/test.ide").find("zip_duplicate") != std::string::npos);
     assert(ipl.at("data/maps/level_events/test.ipl").find("zip_duplicate") != std::string::npos);
     assert(CCustomModels::ReadDataFile("data/timecyc.json", selected, &fromCommon) && fromCommon);
@@ -554,6 +589,20 @@ int main() {
     assert(!CCustomModels::ReadDataFile("data/timecyc.json", selected)); // no stale ZIP entries
     CCustomModels::Shutdown(); CTxdStore::Shutdown();
 
+    // Actor IDEs in common.zip work even without loose map files or IPLs.
+    Zip("custom/common.zip", {
+        { "data/peds.ide", Bytes("peds\n3, ANDRE, ANDRE, CIVMALE, STAT_SENSIBLE_GUY, man, 0, 0, man, 1, 4, PED_TYPE_GEN, VOICE_GEN, VOICE_GEN\nend\n"), true },
+        { "data/vehicles.ide", Bytes("cars\n400, landstal, landstal, car, LANDSTAL, LANDSTK, null, normal, 7, 0, 0, -1, 0.75, 0.75, 0\nend\n"), true },
+        { "data/misc.ide", Bytes("objs\n1 unwanted bad 100 0\nend\n") }
+    });
+    assert(CCustomModels::HasWorldFiles());
+    ide.clear(); ipl.clear();
+    CCustomModels::ForEachWorldFile(true, WorldFile, &ide);
+    CCustomModels::ForEachWorldFile(false, WorldFile, &ipl);
+    assert(ide.size() == 2 && ide.count("data/peds.ide") && ide.count("data/vehicles.ide") &&
+           ipl.empty());
+    CCustomModels::Shutdown(); CTxdStore::Shutdown();
+
     // A corrupt entry with a valid central directory must not mask the loose
     // IDE/IPL/lighting at the same path. ZIP-only corrupt maps are skipped.
     assert(std::rename("custom/data/maps_off", "custom/data/maps") == 0);
@@ -562,6 +611,7 @@ int main() {
     Zip("custom/common.zip", {
         { "data/maps/ide/test.ide", Bytes("objs\n1 corrupt_zip r3 100 0\nend\n"), true, true },
         { "data/maps/ide/zip_broken.ide", Bytes("objs\n2 corrupt_only r3 100 0\nend\n"), true, true },
+        { "data/peds.ide", Bytes("peds\n3 corrupt_actor bad\nend\n"), true, true },
         { "data/maps/level_events/test.ipl", Bytes("inst\n1 corrupt_zip 0 9 0 0 0 0 0 1 -1\nend\n"), true, true },
         { "data/timecyc.json", Bytes("{\"ambient\":5}"), true, true },
         { "data/config.dat", Bytes("IPL data/maps/level_events/test.ipl\n") }
@@ -571,7 +621,8 @@ int main() {
     ide.clear(); ipl.clear();
     CCustomModels::ForEachWorldFile(true, WorldFile, &ide);
     CCustomModels::ForEachWorldFile(false, WorldFile, &ipl);
-    assert(ide.size() == 1 && ide.at("data/maps/ide/test.ide").find("loose_fallback") != std::string::npos);
+    assert(ide.size() == 1 && !ide.count("data/peds.ide") &&
+           ide.at("data/maps/ide/test.ide").find("loose_fallback") != std::string::npos);
     assert(ipl.size() == 1 && ipl.at("data/maps/level_events/test.ipl").find("house1") != std::string::npos);
     assert(CCustomModels::ReadDataFile("data/timecyc.json", selected, &fromCommon));
     assert(!fromCommon && std::string(selected.begin(), selected.end()) == "{\"ambient\":4}");

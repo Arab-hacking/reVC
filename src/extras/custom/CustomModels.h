@@ -5,7 +5,8 @@
 //   custom/anim/*.ifp                  animation banks
 //   custom/img/*.{img,dir}             VC IMG v1 with DFF/TXD/COL/CLS entries
 //   custom/data/maps/*.{ide,ipl}       loose world definitions/placements
-//   custom/common.zip                  map IDE/IPL, config.dat, timecyc.json only
+//   custom/common.zip                  map IDE/IPL, data/peds.ide,
+//                                      data/vehicles.ide, config.dat, timecyc.json
 // Other ZIPs, game-root img/ and game-root common/ are not custom sources.
 // The native VC game archives remain available to the normal streamer.
 
@@ -67,8 +68,9 @@ public:
 	// Serve an .ifp from custom/anim/; VC banks still use native assets.
 	static bool LoadAnimFileFromCustom(const char *filename, std::vector<uint8> &out);
 
-	// World files are only scanned under custom/data/maps/. The optional
-	// custom/data/maps/active_ipl.txt selects IPLs; IDEs are always loaded.
+	// Loose world files are only scanned under custom/data/maps/. The one
+	// permitted ZIP also supplies data/peds.ide and data/vehicles.ide. The
+	// optional active_ipl.txt selects IPLs; IDEs are always loaded.
 	typedef void (*WorldFileCallback)(const char *path, const unsigned char *data,
 	                                  size_t size, void *context);
 	static bool HasWorldFiles(void);
