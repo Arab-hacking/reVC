@@ -478,6 +478,22 @@ getLocalInvGamma(void)
 	return localInvGamma;
 }
 
+#ifdef RW_OPENGL
+static RGBAf sunMaterialParams = { 1.0f, 1.0f, 1.0f, 1.0f };
+
+void
+setSunMaterialParams(RGBAf params)
+{
+	sunMaterialParams = params;
+}
+
+RGBAf
+getSunMaterialParams(void)
+{
+	return sunMaterialParams;
+}
+#endif
+
 namespace null {
 
 void beginUpdate(Camera*) { }

@@ -7,7 +7,6 @@ VSOUT vec2 v_tex0;
 VSOUT float v_fog;
 VSOUT vec3 v_worldPos;
 VSOUT vec3 v_worldNormal;
-VSOUT float v_diffuse;
 
 void
 main(void)
@@ -32,7 +31,6 @@ main(void)
 	v_color *= u_matColor;
 
 	v_worldPos = Vertex.xyz;
-	v_worldNormal = normalize(Normal);
-	v_diffuse = max(dot(normalize(Normal), u_sunDir.xyz), 0.0);
+	v_worldNormal = Normal;
 	v_fog = DoFogEye(Vertex.xyz);
 }

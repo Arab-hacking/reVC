@@ -137,6 +137,7 @@ int32 u_matColor;
 int32 u_surfProps;
 int32 u_eye;
 int32 u_sunDir;
+int32 u_sunMaterial;
 int32 u_localInvGamma;
 int32 u_uvMatrix;
 
@@ -1094,6 +1095,8 @@ setViewMatrix(float32 *mat)
 	V3d toSun = getSunDirection();
 	float32 sun[4] = { toSun.x, toSun.y, toSun.z, 0.0f };
 	setUniform(u_sunDir, sun);
+	RGBAf sunMaterial = getSunMaterialParams();
+	setUniform(u_sunMaterial, &sunMaterial);
 
 	float32 g = getLocalInvGamma();
 	float32 gam[4] = { g, g, g, 1.0f };
@@ -1851,6 +1854,7 @@ initOpenGL(void)
 	u_surfProps = registerUniform("u_surfProps", UNIFORM_VEC4);
 	u_eye = registerUniform("u_eye", UNIFORM_VEC4);
 	u_sunDir = registerUniform("u_sunDir", UNIFORM_VEC4);
+	u_sunMaterial = registerUniform("u_sunMaterial", UNIFORM_VEC4);
 	u_localInvGamma = registerUniform("u_localInvGamma", UNIFORM_VEC4);
 	u_uvMatrix = registerUniform("u_uvMatrix", UNIFORM_MAT4);
 
@@ -1861,6 +1865,7 @@ initOpenGL(void)
 	float idmat[16] = { 1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1 };
 	setUniform(u_eye, zero4);
 	setUniform(u_sunDir, up4);
+	setUniform(u_sunMaterial, one4);
 	setUniform(u_localInvGamma, one4);
 	setUniform(u_uvMatrix, idmat);
 

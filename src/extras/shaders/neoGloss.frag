@@ -16,8 +16,8 @@ main(void)
 	vec3 n = 2.0*v_normal-1.0;            // unpack
 	vec3 v = 2.0*v_light-1.0;             //
 
-	float s = dot(n, v);
-	color = s*s*s*s*s*s*s*s*color*v_fog*glossMult;
+	float s = max(dot(normalize(n), normalize(v)), 0.0);
+	color *= pow(s, 8.0) * v_fog * glossMult;
 
 	DoAlphaTest(color.a);
 

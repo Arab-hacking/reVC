@@ -3,7 +3,7 @@ const char *neoWorldVC_frag_src =
 "uniform sampler2D tex1;\n"
 
 "uniform vec4 u_lightMap;\n"
-"uniform float u_brLightmap; // only marked zip/ UV2 lightmaps use BR's alpha mix\n"
+"uniform float u_brLightmap; // only previously marked UV2 textures use this alternate alpha mix\n"
 
 "FSIN vec4 v_color;\n"
 "FSIN vec2 v_tex0;\n"

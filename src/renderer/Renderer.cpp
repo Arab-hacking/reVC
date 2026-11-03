@@ -974,8 +974,14 @@ void
 CRenderer::ConstructRenderList(void)
 {
 #ifdef RW_GL3
-	// the material shaders light with the time cycle's sun (BR parity)
+	// The GL3 material shaders use the timecycle sun and weather-dependent
+	// directional colour. Keep its back-face shading in sync with the game's
+	// shadow strength; neither setting changes the D3D9 lighting path.
 	rw::setSunDirection(CTimeCycle::GetSunDirection());
+	rw::setSunMaterialParams(rw::makeRGBAf(
+		CTimeCycle::GetDirectionalRed(), CTimeCycle::GetDirectionalGreen(),
+		CTimeCycle::GetDirectionalBlue(),
+		Min(1.0f, Max(0.0f, CTimeCycle::GetShadowStrength()/255.0f))));
 #endif
 
 	COcclusion::ProcessBeforeRendering();

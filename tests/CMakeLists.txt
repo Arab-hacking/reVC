@@ -11,6 +11,13 @@ add_executable(custom_ifp_tests CustomIfpTests.cpp)
 set_target_properties(custom_ifp_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
 
 enable_testing()
+find_package(Python3 COMPONENTS Interpreter QUIET)
+if(Python3_Interpreter_FOUND)
+    # Check GLSL sources against the compiled .inc strings. When a GLSL
+    # validator is installed the test also links the real GL3 shader variants.
+    add_test(NAME gl3_shader_tests
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/GL3ShaderTests.py)
+endif()
 add_test(NAME debug_log_tests COMMAND debug_log_tests)
 add_test(NAME custom_ifp_tests COMMAND custom_ifp_tests)
 

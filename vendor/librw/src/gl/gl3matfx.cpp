@@ -170,7 +170,12 @@ matfxRenderCB(Atomic *atomic, InstanceDataHeader *header)
 			matfxDefaultRender(header, inst, vsBits, flags);
 		else switch(matfx->type){
 		case MatFX::ENVMAP:
-			matfxEnvRender(header, inst, vsBits, flags, &matfx->fx[0].env);
+			// A missing normal makes both reflect() and the environment lookup
+			// undefined. Render the diffuse material instead (as on D3D9).
+			if(flags & Geometry::NORMALS)
+				matfxEnvRender(header, inst, vsBits, flags, &matfx->fx[0].env);
+			else
+				matfxDefaultRender(header, inst, vsBits, flags);
 			break;
 		default:
 			matfxDefaultRender(header, inst, vsBits, flags);

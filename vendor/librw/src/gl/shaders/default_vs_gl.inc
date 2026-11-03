@@ -6,7 +6,6 @@ const char *default_vert_src =
 "VSOUT float v_fog;\n"
 "VSOUT vec3 v_worldPos;\n"
 "VSOUT vec3 v_worldNormal;\n"
-"VSOUT float v_diffuse;\n"
 
 "void\n"
 "main(void)\n"
@@ -24,8 +23,7 @@ const char *default_vert_src =
 "	v_color *= u_matColor;\n"
 
 "	v_worldPos = Vertex.xyz;\n"
-"	v_worldNormal = normalize(Normal);\n"
-"	v_diffuse = max(dot(normalize(Normal), u_sunDir.xyz), 0.0);\n"
+"	v_worldNormal = Normal;\n"
 "	v_fog = DoFogEye(Vertex.xyz);\n"
 "}\n"
 ;

@@ -214,6 +214,12 @@ void setSunDirection(V3d dir);
 V3d getSunDirection(void);
 void setLocalInvGamma(float32 g);
 float32 getLocalInvGamma(void);
+#ifdef RW_OPENGL
+// Extra GL3 material lighting: directional timecycle RGB and shadow strength
+// (alpha, 0..1). This does not change RenderWare's ordinary vertex lights.
+void setSunMaterialParams(RGBAf params);
+RGBAf getSunMaterialParams(void);
+#endif
 
 #define RWTOSTR_(X) #X
 #define RWTOSTR(X) RWTOSTR_(X)

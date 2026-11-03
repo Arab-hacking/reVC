@@ -30,7 +30,6 @@ static int32 u_rimData;
 static int32 u_lightMap;
 static int32 u_brLightmap;
 
-static int32 u_eye;
 static int32 u_reflProps;
 static int32 u_specDir;
 static int32 u_specColor;
@@ -100,9 +99,8 @@ vehicleRenderCB(rw::Atomic *atomic, rw::gl3::InstanceDataHeader *header)
 
 	neoVehicleShader->use();
 
-	V3d eyePos = rw::engine->currentCamera->getFrame()->getLTM()->pos;
-	glUniform3fv(U(u_eye), 1, (float*)&eyePos);
-
+	// The shared u_eye vec4 comes from gl3::setViewMatrix. Do not upload a
+	// conflicting vec3 uniform here (header.vert declares u_eye as vec4).
 	uploadSpecLights();
 
 	float reflProps[4];
@@ -317,8 +315,7 @@ glossRenderCB(rw::Atomic *atomic, rw::gl3::InstanceDataHeader *header)
 
 	neoGlossShader->use();
 
-	V3d eyePos = rw::engine->currentCamera->getFrame()->getLTM()->pos;
-	glUniform3fv(U(u_eye), 1, (float*)&eyePos);
+	// gl3::setViewMatrix supplies the shared u_eye to this shader as well.
 	float reflProps[4];
 	reflProps[0] = GlossMult;
 	reflProps[1] = 0.0f;
@@ -581,7 +578,8 @@ CustomPipeRegisterGL(void)
 	u_lightMap = rw::gl3::registerUniform("u_lightMap");
 	u_brLightmap = rw::gl3::registerUniform("u_brLightmap");
 
-	u_eye = rw::gl3::registerUniform("u_eye");
+	// u_eye is owned by librw (vec4). Registering it here as an unmanaged
+	// uniform would conflict with gl3::initOpenGL's typed registration.
 	u_reflProps = rw::gl3::registerUniform("u_reflProps");
 	u_specDir = rw::gl3::registerUniform("u_specDir");
 	u_specColor = rw::gl3::registerUniform("u_specColor");
