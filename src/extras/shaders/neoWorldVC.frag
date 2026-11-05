@@ -8,6 +8,7 @@ FSIN vec4 v_color;
 FSIN vec2 v_tex0;
 FSIN vec2 v_tex1;
 FSIN float v_fog;
+FSIN vec3 v_worldPos;
 
 void
 main(void)
@@ -25,7 +26,7 @@ main(void)
 	color.rgb = mix(nativeLight, brLight, u_brLightmap);
 	color.a = v_color.a*t0.a*u_lightMap.a;
 
-	color.rgb = mix(u_fogColor.rgb, color.rgb, v_fog);
+	color.rgb = mix(u_fogColor.rgb, color.rgb, AtmosphereVisibility(v_worldPos, v_fog));
 	DoAlphaTest(color.a);
 
 	FRAGCOLOR(color);

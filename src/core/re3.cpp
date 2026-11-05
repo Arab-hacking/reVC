@@ -15,6 +15,9 @@
 #include "Camera.h"
 #include "Weather.h"
 #include "Timecycle.h"
+#ifdef RW_GL3
+#include "GL3Atmosphere.h"
+#endif
 #include "Clock.h"
 #include "World.h"
 #include "Vehicle.h"
@@ -567,6 +570,9 @@ bool LoadINISettings()
 #endif
 	ReadIniIfExists("General", "SkinFile", FrontEndMenuManager.m_PrefsSkinFile, 256);
 	ReadIniIfExists("World", "LoadViceCityMap", &CGame::bLoadViceCityMap);
+#ifdef RW_GL3
+	ReadIniIfExists("Rendering", "GL3Atmosphere", &GL3Atmosphere::Enabled);
+#endif
 	ReadIniIfExists("Controller", "Method", &FrontEndMenuManager.m_ControlMethod);
 	ReadIniIfExists("General", "Language", &FrontEndMenuManager.m_PrefsLanguage);
 	ReadIniIfExists("Display", "ShowHud", &FrontEndMenuManager.m_PrefsShowHud);
@@ -677,6 +683,9 @@ void SaveINISettings()
 	StoreIni("Graphics", "FrameLimiter", FrontEndMenuManager.m_PrefsFrameLimiter);
 	StoreIni("General", "SkinFile", FrontEndMenuManager.m_PrefsSkinFile, 256);
 	StoreIni("World", "LoadViceCityMap", (uint8)CGame::bLoadViceCityMap);
+#ifdef RW_GL3
+	StoreIni("Rendering", "GL3Atmosphere", (uint8)GL3Atmosphere::Enabled);
+#endif
 	StoreIni("Controller", "Method", FrontEndMenuManager.m_ControlMethod);
 	StoreIni("General", "Language", FrontEndMenuManager.m_PrefsLanguage);
 	StoreIni("Display", "ShowHud", FrontEndMenuManager.m_PrefsShowHud);

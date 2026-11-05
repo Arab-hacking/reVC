@@ -3,12 +3,16 @@
 #include <string.h>
 #include <stdlib.h>
 #include <math.h>
+#include <cmath>
 
 #include "CustomTimecycle.h"
 #include "CustomModels.h"
 #include "DebugLog.h"
 #include "SavehDiag.h"
 #include "Timecycle.h"
+#ifdef RW_GL3
+#include "GL3Atmosphere.h"
+#endif
 
 #ifdef CUSTOM_MODELS
 
@@ -203,6 +207,9 @@ struct CycleSlot
 		const JValue *a = obj->Find(key);
 		if(a == nil || a->type != JValue::ARR || a->arr.size() < 3)
 			return;
+		for(int c = 0; c < 3; c++)
+			if(a->arr[c].type != JValue::NUM || !std::isfinite(a->arr[c].num))
+				return;
 		has[f0+0] = has[f0+1] = has[f0+2] = true;
 		v[f0+0] = a->arr[0].NumFloat(0);
 		v[f0+1] = a->arr[1].NumFloat(0);
@@ -212,6 +219,9 @@ struct CycleSlot
 		const JValue *a = obj->Find(key);
 		if(a == nil || a->type != JValue::ARR || a->arr.size() < 4)
 			return;
+		for(int i = 0; i < 4; i++)
+			if(a->arr[i].type != JValue::NUM || !std::isfinite(a->arr[i].num))
+				return;
 		for(int i = 0; i < 4; i++){
 			has[f0+i] = true;
 			v[f0+i] = a->arr[i].NumFloat(0);
@@ -219,7 +229,7 @@ struct CycleSlot
 	}
 	void ReadNum(const JValue *obj, const char *key, int f) {
 		const JValue *a = obj->Find(key);
-		if(a == nil || a->type != JValue::NUM)
+		if(a == nil || a->type != JValue::NUM || !std::isfinite(a->num))
 			return;
 		has[f] = true;
 		v[f] = (float)a->num;
@@ -296,35 +306,44 @@ ParseTimecycle(const std::vector<uint8> &data, SlotGrid grids[BR_WEATHERS_USED],
 	return true;
 }
 
-// one field of one weather, interpolated over the day on the client's slot
-// hours; where the client carries nothing, the game's own value stays
+// One field of one weather, interpolated over the client's day-time slots.
+// Missing entries borrow the adjacent slot. Invalid values never reach casts
+// or camera/fog state (JSON can contain non-finite numbers via strtod).
+static bool
+SampleField(const SlotGrid &grid, int h, int f, float &val)
+{
+	int s0, s1;
+	float t;
+	if(h >= CycleHours[7]){
+		s0 = 7; s1 = 0;
+		t = (h - CycleHours[7]) / (float)(24 - CycleHours[7]);
+	}else{
+		int i = 0;
+		while(i < 6 && !(h >= CycleHours[i] && h < CycleHours[i+1]))
+			i++;
+		s0 = i; s1 = i+1;
+		t = (h - CycleHours[i]) / (float)(CycleHours[i+1] - CycleHours[i]);
+	}
+	bool has0 = grid.present[s0] && grid.slots[s0].has[f];
+	bool has1 = grid.present[s1] && grid.slots[s1].has[f];
+	if(!has0 && !has1)
+		return false;
+	float a = has0 ? grid.slots[s0].v[f] : grid.slots[s1].v[f];
+	float b = has1 ? grid.slots[s1].v[f] : grid.slots[s0].v[f];
+	val = a + (b - a) * t;
+	return std::isfinite(val);
+}
+
 template<typename T>
 static void
 ExpandField(T arr[NUMHOURS][NUMWEATHERS], int w, const SlotGrid &grid, int f,
             float scale, float lo, float hi)
 {
 	for(int h = 0; h < NUMHOURS; h++){
-		int s0, s1;
-		float t;
-		if(h >= CycleHours[7]){
-			// the day wraps: hour 22..23 blends into hour 0 of the next one
-			s0 = 7; s1 = 0;
-			t = (h - CycleHours[7]) / (float)(24 - CycleHours[7]);
-		}else{
-			int i = 0;
-			while(i < 6 && !(h >= CycleHours[i] && h < CycleHours[i+1]))
-				i++;
-			s0 = i;
-			s1 = i+1;
-			t = (h - CycleHours[i]) / (float)(CycleHours[i+1] - CycleHours[i]);
-		}
-		bool has0 = grid.present[s0] && grid.slots[s0].has[f];
-		bool has1 = grid.present[s1] && grid.slots[s1].has[f];
-		if(!has0 && !has1)
+		float val;
+		if(!SampleField(grid, h, f, val))
 			continue;
-		float a = has0 ? grid.slots[s0].v[f] : grid.slots[s1].v[f];
-		float b = has1 ? grid.slots[s1].v[f] : grid.slots[s0].v[f];
-		float val = (a + (b - a) * t) * scale;
+		val *= scale;
 		if(val < lo) val = lo;
 		if(val > hi) val = hi;
 		arr[h][w] = (T)(int)lroundf(val);
@@ -333,7 +352,7 @@ ExpandField(T arr[NUMHOURS][NUMWEATHERS], int w, const SlotGrid &grid, int f,
 
 // the values live in the game's tables now: hour rows 0..23, weather columns
 static void
-ExpandGrids(const SlotGrid grids[BR_WEATHERS_USED], int weathers, bool lightingOnly)
+ExpandGrids(const SlotGrid grids[BR_WEATHERS_USED], int weathers, bool atmosphere)
 {
 	for(int w = 0; w < weathers; w++){
 		const SlotGrid &g = grids[w];
@@ -363,7 +382,7 @@ ExpandGrids(const SlotGrid grids[BR_WEATHERS_USED], int weathers, bool lightingO
 			ExpandField(CTimeCycle::m_nDirectionalGreen, w, g, CycleSlot::F_DIR_G, 1.0f, 0, 255);
 			ExpandField(CTimeCycle::m_nDirectionalBlue, w, g, CycleSlot::F_DIR_B, 1.0f, 0, 255);
 		}
-		if(!lightingOnly){ // sky, fog, water and other effects stay native
+		if(atmosphere){ // only GL3; native sky and clouds otherwise
 			if(has[CycleSlot::F_SKYTOP_R]){
 				ExpandField(CTimeCycle::m_nSkyTopRed, w, g, CycleSlot::F_SKYTOP_R, 1.0f, 0, 255);
 				ExpandField(CTimeCycle::m_nSkyTopGreen, w, g, CycleSlot::F_SKYTOP_G, 1.0f, 0, 255);
@@ -384,12 +403,6 @@ ExpandGrids(const SlotGrid grids[BR_WEATHERS_USED], int weathers, bool lightingO
 				ExpandField(CTimeCycle::m_nSunCoronaGreen, w, g, CycleSlot::F_SUNCOR_G, 1.0f, 0, 255);
 				ExpandField(CTimeCycle::m_nSunCoronaBlue, w, g, CycleSlot::F_SUNCOR_B, 1.0f, 0, 255);
 			}
-			if(has[CycleSlot::F_SUNSIZE])
-				ExpandField(CTimeCycle::m_fSunSize, w, g, CycleSlot::F_SUNSIZE, 10.0f, -128, 127);
-			if(has[CycleSlot::F_SPRITESIZE])
-				ExpandField(CTimeCycle::m_fSpriteSize, w, g, CycleSlot::F_SPRITESIZE, 10.0f, -128, 127);
-			if(has[CycleSlot::F_SPRITEBRGHT])
-				ExpandField(CTimeCycle::m_fSpriteBrightness, w, g, CycleSlot::F_SPRITEBRGHT, 10.0f, -128, 127);
 		}
 		if(has[CycleSlot::F_SHAD])
 			ExpandField(CTimeCycle::m_nShadowStrength, w, g, CycleSlot::F_SHAD, 1.0f, 0, 255);
@@ -397,15 +410,25 @@ ExpandGrids(const SlotGrid grids[BR_WEATHERS_USED], int weathers, bool lightingO
 			ExpandField(CTimeCycle::m_nLightShadowStrength, w, g, CycleSlot::F_LIGHTSHAD, 1.0f, 0, 255);
 		if(has[CycleSlot::F_POLESHAD])
 			ExpandField(CTimeCycle::m_nPoleShadowStrength, w, g, CycleSlot::F_POLESHAD, 1.0f, 0, 255);
-		if(!lightingOnly){
-			if(has[CycleSlot::F_FARCLIP])
-				ExpandField(CTimeCycle::m_fFarClip, w, g, CycleSlot::F_FARCLIP, 1.0f, 0, 32767);
-			if(has[CycleSlot::F_FOGSTART])
-				ExpandField(CTimeCycle::m_fFogStart, w, g, CycleSlot::F_FOGSTART, 1.0f, -32768, 32767);
+#ifdef RW_GL3
+		if(atmosphere && has[CycleSlot::F_FOGSTART] && has[CycleSlot::F_FARCLIP]){
+			// Import the source fog *ratio*, not its far clip. Replacing VC's
+			// far distance would clip the user's map and its streaming objects.
+			for(int h = 0; h < NUMHOURS; h++){
+				float start, far;
+				if(!SampleField(g, h, CycleSlot::F_FOGSTART, start) ||
+				   !SampleField(g, h, CycleSlot::F_FARCLIP, far))
+					continue;
+				float nativeStart = CTimeCycle::m_fFogStart[h][w];
+				float nativeFar = CTimeCycle::m_fFarClip[h][w];
+				CTimeCycle::m_fFogStart[h][w] = (int16)lroundf(
+					GL3Atmosphere::MapFogStart(start, far, nativeStart, nativeFar));
+			}
 		}
+#endif
 		if(has[CycleSlot::F_LIGHTGND])
 			ExpandField(CTimeCycle::m_fLightsOnGroundBrightness, w, g, CycleSlot::F_LIGHTGND, 10.0f, 0, 255);
-		if(!lightingOnly){
+		if(atmosphere){
 			if(has[CycleSlot::F_CLOUD_R]){
 				// the client has one cloud colour where this game has low clouds
 				// and fluffy tops; both take it
@@ -421,19 +444,13 @@ ExpandGrids(const SlotGrid grids[BR_WEATHERS_USED], int weathers, bool lightingO
 				ExpandField(CTimeCycle::m_nFluffyCloudsBottomGreen, w, g, CycleSlot::F_FLUFFBOT_G, 1.0f, 0, 255);
 				ExpandField(CTimeCycle::m_nFluffyCloudsBottomBlue, w, g, CycleSlot::F_FLUFFBOT_B, 1.0f, 0, 255);
 			}
-			if(has[CycleSlot::F_WATER_R]){
-				ExpandField(CTimeCycle::m_fWaterRed, w, g, CycleSlot::F_WATER_R, 1.0f, 0, 255);
-				ExpandField(CTimeCycle::m_fWaterGreen, w, g, CycleSlot::F_WATER_G, 1.0f, 0, 255);
-				ExpandField(CTimeCycle::m_fWaterBlue, w, g, CycleSlot::F_WATER_B, 1.0f, 0, 255);
-				ExpandField(CTimeCycle::m_fWaterAlpha, w, g, CycleSlot::F_WATER_A, 1.0f, 0, 255);
-			}
 		}
 	}
 }
 
 // The custom/common.zip timecyc.json wins; the loose file is a read fallback.
-// Game-root common/, other ZIPs, weather presets, sky/fog and PostFX are not
-// imported into this layout.
+// Game-root common/, other ZIPs, weather presets, water and PostFX are never
+// imported. Sky/cloud/sun colours and scaled fog start are GL3-only.
 void
 CCustomTimecycle::Apply(void)
 {
@@ -445,9 +462,14 @@ CCustomTimecycle::Apply(void)
 	SlotGrid grids[BR_WEATHERS_USED];
 	int weathers = 0;
 	if(!ParseTimecycle(data, grids, weathers)) return;
-	ExpandGrids(grids, weathers, true);
-	CUSTOM_LOG("%s: %d weather(s); ambient/directional light and native shadow strengths applied; sky, water, fog and PostFX unchanged\n",
-		fromCommon ? "custom/common.zip:data/timecyc.json" : "custom/data/timecyc.json", weathers);
+	bool atmosphere = false;
+#ifdef RW_GL3
+	atmosphere = GL3Atmosphere::Enabled;
+#endif
+	ExpandGrids(grids, weathers, atmosphere);
+	CUSTOM_LOG("%s: %d weather(s); ambient/directional light and shadow strengths applied; %s; water and PostFX unchanged\n",
+		fromCommon ? "custom/common.zip:data/timecyc.json" : "custom/data/timecyc.json", weathers,
+		atmosphere ? "GL3 sky, sun and cloud colours, scaled fog start" : "native sky and fog");
 }
 
 #else // CUSTOM_MODELS

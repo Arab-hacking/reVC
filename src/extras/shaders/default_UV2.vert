@@ -4,6 +4,7 @@ VSOUT vec4 v_color;
 VSOUT vec2 v_tex0;
 VSOUT vec2 v_tex1;
 VSOUT float v_fog;
+VSOUT vec3 v_worldPos;
 
 void
 main(void)
@@ -21,5 +22,6 @@ main(void)
 	v_color = clamp(v_color, 0.0, 1.0);
 	v_color *= u_matColor;
 
+	v_worldPos = Vertex.xyz;
 	v_fog = DoFog(gl_Position.w);
 }

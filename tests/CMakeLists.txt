@@ -18,6 +18,9 @@ if(Python3_Interpreter_FOUND)
     add_test(NAME gl3_shader_tests
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/GL3ShaderTests.py)
 endif()
+add_executable(gl3_atmosphere_tests GL3AtmosphereTests.cpp)
+set_target_properties(gl3_atmosphere_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+add_test(NAME gl3_atmosphere_tests COMMAND gl3_atmosphere_tests)
 add_test(NAME debug_log_tests COMMAND debug_log_tests)
 add_test(NAME custom_ifp_tests COMMAND custom_ifp_tests)
 

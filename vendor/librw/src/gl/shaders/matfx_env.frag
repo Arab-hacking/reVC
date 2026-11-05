@@ -37,8 +37,9 @@ main(void)
 	pass1.rgb += SunMaterialLighting(v_worldPos, N, selfShade);
 	pass1.rgb *= 1.0 - selfShade;
 
-	pass1.rgb = mix(u_fogColor.rgb, pass1.rgb, v_fog);
-	pass2 = mix(vec3(0.0, 0.0, 0.0), pass2, v_fog);
+	float visibility = AtmosphereVisibility(v_worldPos, v_fog);
+	pass1.rgb = mix(u_fogColor.rgb, pass1.rgb, visibility);
+	pass2 *= visibility;
 
 	float fba = max(pass1.a, disableFBA);
 	vec4 color;

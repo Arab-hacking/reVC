@@ -219,6 +219,9 @@ float32 getLocalInvGamma(void);
 // (alpha, 0..1). This does not change RenderWare's ordinary vertex lights.
 void setSunMaterialParams(RGBAf params);
 RGBAf getSunMaterialParams(void);
+// x: enabled, y: cloud coverage, z: fogginess. Uploaded with each GL3 view.
+void setAtmosphereParams(RGBAf params);
+RGBAf getAtmosphereParams(void);
 #endif
 
 #define RWTOSTR_(X) #X

@@ -138,6 +138,7 @@ int32 u_surfProps;
 int32 u_eye;
 int32 u_sunDir;
 int32 u_sunMaterial;
+int32 u_atmosphere;
 int32 u_localInvGamma;
 int32 u_uvMatrix;
 
@@ -1097,6 +1098,8 @@ setViewMatrix(float32 *mat)
 	setUniform(u_sunDir, sun);
 	RGBAf sunMaterial = getSunMaterialParams();
 	setUniform(u_sunMaterial, &sunMaterial);
+	RGBAf atmosphere = getAtmosphereParams();
+	setUniform(u_atmosphere, &atmosphere);
 
 	float32 g = getLocalInvGamma();
 	float32 gam[4] = { g, g, g, 1.0f };
@@ -1855,6 +1858,7 @@ initOpenGL(void)
 	u_eye = registerUniform("u_eye", UNIFORM_VEC4);
 	u_sunDir = registerUniform("u_sunDir", UNIFORM_VEC4);
 	u_sunMaterial = registerUniform("u_sunMaterial", UNIFORM_VEC4);
+	u_atmosphere = registerUniform("u_atmosphere", UNIFORM_VEC4);
 	u_localInvGamma = registerUniform("u_localInvGamma", UNIFORM_VEC4);
 	u_uvMatrix = registerUniform("u_uvMatrix", UNIFORM_MAT4);
 
@@ -1866,6 +1870,7 @@ initOpenGL(void)
 	setUniform(u_eye, zero4);
 	setUniform(u_sunDir, up4);
 	setUniform(u_sunMaterial, one4);
+	setUniform(u_atmosphere, zero4);
 	setUniform(u_localInvGamma, one4);
 	setUniform(u_uvMatrix, idmat);
 

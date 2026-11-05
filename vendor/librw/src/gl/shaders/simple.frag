@@ -16,10 +16,10 @@ main(void)
 	float selfShade;
 	color.rgb += SunMaterialLighting(v_worldPos, v_worldNormal, selfShade);
 	color.rgb *= 1.0 - selfShade;
-#endif
-	color.rgb = mix(u_fogColor.rgb, color.rgb, v_fog);
-#ifdef BRMATERIAL
+	color.rgb = mix(u_fogColor.rgb, color.rgb, AtmosphereVisibility(v_worldPos, v_fog));
 	color.rgb = pow(color.rgb, vec3(u_localInvGamma.x));
+#else
+	color.rgb = mix(u_fogColor.rgb, color.rgb, v_fog);
 #endif
 	DoAlphaTest(color.a);
 	FRAGCOLOR(color);

@@ -72,8 +72,9 @@ const char *matfx_env_frag_src =
 "	pass1.rgb += SunMaterialLighting(v_worldPos, N, selfShade);\n"
 "	pass1.rgb *= 1.0 - selfShade;\n"
 
-"	pass1.rgb = mix(u_fogColor.rgb, pass1.rgb, v_fog);\n"
-"	pass2 = mix(vec3(0.0, 0.0, 0.0), pass2, v_fog);\n"
+"	float visibility = AtmosphereVisibility(v_worldPos, v_fog);\n"
+"	pass1.rgb = mix(u_fogColor.rgb, pass1.rgb, visibility);\n"
+"	pass2 *= visibility;\n"
 
 "	float fba = max(pass1.a, disableFBA);\n"
 "	vec4 color;\n"

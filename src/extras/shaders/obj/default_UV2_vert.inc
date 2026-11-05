@@ -5,6 +5,7 @@ const char *default_UV2_vert_src =
 "VSOUT vec2 v_tex0;\n"
 "VSOUT vec2 v_tex1;\n"
 "VSOUT float v_fog;\n"
+"VSOUT vec3 v_worldPos;\n"
 
 "void\n"
 "main(void)\n"
@@ -22,6 +23,7 @@ const char *default_UV2_vert_src =
 "	v_color = clamp(v_color, 0.0, 1.0);\n"
 "	v_color *= u_matColor;\n"
 
+"	v_worldPos = Vertex.xyz;\n"
 "	v_fog = DoFog(gl_Position.w);\n"
 "}\n"
 ;

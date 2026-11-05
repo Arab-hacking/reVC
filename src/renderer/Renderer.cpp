@@ -3,6 +3,10 @@
 
 #ifdef RW_GL3
 #include "Timecycle.h"
+#include "Weather.h"
+#include "GL3Atmosphere.h"
+
+bool GL3Atmosphere::Enabled = true;
 #endif
 
 #include "main.h"
@@ -982,6 +986,14 @@ CRenderer::ConstructRenderList(void)
 		CTimeCycle::GetDirectionalRed(), CTimeCycle::GetDirectionalGreen(),
 		CTimeCycle::GetDirectionalBlue(),
 		Min(1.0f, Max(0.0f, CTimeCycle::GetShadowStrength()/255.0f))));
+	// The atmospheric curve follows the same interpolated weather as the
+	// timecycle. Zero is the original GL3 fog/light behaviour (also used when
+	// the new rendering setting is disabled).
+	rw::setAtmosphereParams(rw::makeRGBAf(
+		GL3Atmosphere::Enabled ? 1.0f : 0.0f,
+		GL3Atmosphere::Enabled ? GL3Atmosphere::Clamp01(CWeather::CloudCoverage) : 0.0f,
+		GL3Atmosphere::Enabled ? GL3Atmosphere::Clamp01(CWeather::Foggyness) : 0.0f,
+		0.0f));
 #endif
 
 	COcclusion::ProcessBeforeRendering();

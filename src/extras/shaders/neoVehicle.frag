@@ -25,9 +25,10 @@ main(void)
 	float schlick = grazing*grazing*grazing*grazing*grazing;
 	float reflection = clamp(mix(schlick, 1.0, u_reflProps.x)*u_reflProps.z, 0.0, 1.0);
 	pass1.rgb = mix(pass1.rgb, envmap, reflection);
-	pass1.rgb = mix(u_fogColor.rgb, pass1.rgb, v_fog);
+	float visibility = AtmosphereVisibility(v_worldPos, v_fog);
+	pass1.rgb = mix(u_fogColor.rgb, pass1.rgb, visibility);
 
-	vec3 pass2 = v_specular * v_fog;
+	vec3 pass2 = v_specular * visibility;
 
 	vec4 color;
 	color.rgb = pass1.rgb*pass1.a + pass2;

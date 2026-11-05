@@ -9,6 +9,7 @@ const char *neoWorldVC_frag_src =
 "FSIN vec2 v_tex0;\n"
 "FSIN vec2 v_tex1;\n"
 "FSIN float v_fog;\n"
+"FSIN vec3 v_worldPos;\n"
 
 "void\n"
 "main(void)\n"
@@ -26,7 +27,7 @@ const char *neoWorldVC_frag_src =
 "	color.rgb = mix(nativeLight, brLight, u_brLightmap);\n"
 "	color.a = v_color.a*t0.a*u_lightMap.a;\n"
 
-"	color.rgb = mix(u_fogColor.rgb, color.rgb, v_fog);\n"
+"	color.rgb = mix(u_fogColor.rgb, color.rgb, AtmosphereVisibility(v_worldPos, v_fog));\n"
 "	DoAlphaTest(color.a);\n"
 
 "	FRAGCOLOR(color);\n"

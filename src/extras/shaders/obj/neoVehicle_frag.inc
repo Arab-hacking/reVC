@@ -26,9 +26,10 @@ const char *neoVehicle_frag_src =
 "	float schlick = grazing*grazing*grazing*grazing*grazing;\n"
 "	float reflection = clamp(mix(schlick, 1.0, u_reflProps.x)*u_reflProps.z, 0.0, 1.0);\n"
 "	pass1.rgb = mix(pass1.rgb, envmap, reflection);\n"
-"	pass1.rgb = mix(u_fogColor.rgb, pass1.rgb, v_fog);\n"
+"	float visibility = AtmosphereVisibility(v_worldPos, v_fog);\n"
+"	pass1.rgb = mix(u_fogColor.rgb, pass1.rgb, visibility);\n"
 
-"	vec3 pass2 = v_specular * v_fog;\n"
+"	vec3 pass2 = v_specular * visibility;\n"
 
 "	vec4 color;\n"
 "	color.rgb = pass1.rgb*pass1.a + pass2;\n"

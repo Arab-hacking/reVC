@@ -492,6 +492,20 @@ getSunMaterialParams(void)
 {
 	return sunMaterialParams;
 }
+
+static RGBAf atmosphereParams = { 0.0f, 0.0f, 0.0f, 0.0f };
+
+void
+setAtmosphereParams(RGBAf params)
+{
+	atmosphereParams = params;
+}
+
+RGBAf
+getAtmosphereParams(void)
+{
+	return atmosphereParams;
+}
 #endif
 
 namespace null {
