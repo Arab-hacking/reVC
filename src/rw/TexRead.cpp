@@ -26,6 +26,9 @@
 #include "Text.h"
 #include "RwHelper.h"
 #include "Frontend.h"
+#ifdef CUSTOM_MODELS
+#include "CustomModels.h"
+#endif
 #endif //GTA_PC
 
 float texLoadTime;
@@ -321,8 +324,9 @@ bool
 CanVideoCardDoDXT(void)
 {
 #ifdef LIBRW
-	// TODO
-#ifdef RW_OPENGL
+#ifdef RW_GL3
+	return rw::gl3::gl3Caps.dxtSupported != 0;
+#elif defined(RW_OPENGL)
 	return false;
 #else
 	return true;
@@ -441,6 +445,12 @@ CreateTxdImageForVideoCard()
 		ConvertingTexturesScreen(i, TXDSTORESIZE, "CVT_MSG");
 
 		if (CTxdStore::GetSlot(i) != nil && CStreaming::IsObjectInCdImage(i + STREAM_OFFSET_TXD)) {
+#ifdef CUSTOM_MODELS
+			// Never repack user custom/img/ archives into models/txd.img.
+			int imgIdx = _GET_INDEX(CStreaming::ms_aInfoForModel[i + STREAM_OFFSET_TXD].m_position);
+			if (CCustomModels::IsAutoMountedImage(imgIdx))
+				continue;
+#endif
 #ifdef FIX_BUGS
 			if(strcmp(CTxdStore::GetTxdName(i), "generic") == 0)
 				continue;
@@ -451,11 +461,11 @@ CreateTxdImageForVideoCard()
 			CStreaming::FlushChannels();
 
 			char filename[64];
-			sprintf(filename, "%s.txd", CTxdStore::GetTxdName(i));
+			snprintf(filename, sizeof(filename), "%s.txd", CTxdStore::GetTxdName(i));
 
 			if (CTxdStore::GetSlot(i)->texDict) {
 
-				int32 pos = STREAMTELL(img);
+				uint64 pos = (uint64)STREAMTELL(img);
 
 				if (RwTexDictionaryStreamWrite(CTxdStore::GetSlot(i)->texDict, img) == nil) {
 					DealWithTxdWriteError(i, TXDSTORESIZE, "CVT_ERR");
@@ -469,8 +479,9 @@ CreateTxdImageForVideoCard()
 					return false;
 				}
 
-				int32 size = STREAMTELL(img) - pos;
-				int32 num = size % CDSTREAM_SECTOR_SIZE;
+				uint64 endPos = (uint64)STREAMTELL(img);
+				uint32 size = (uint32)(endPos - pos);
+				uint32 num = size % CDSTREAM_SECTOR_SIZE;
 
 				size /= CDSTREAM_SECTOR_SIZE;
 				if (num != 0) {
@@ -479,7 +490,7 @@ CreateTxdImageForVideoCard()
 					RwStreamWrite(img, buf, num);
 				}
 
-				dirInfo.offset = pos / CDSTREAM_SECTOR_SIZE;
+				dirInfo.offset = (uint32)(pos / CDSTREAM_SECTOR_SIZE);
 				dirInfo.size = size;
 				strncpy(dirInfo.name, filename, sizeof(dirInfo.name));
 				pDir->AddItem(dirInfo);

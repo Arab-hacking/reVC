@@ -217,6 +217,9 @@ createTexture(int32 width, int32 height, int32 numlevels, uint32 usage, uint32 f
 		d3d9Globals.numTextures++;
 	return tex;
 #else
+	(void)usage;
+	if(numlevels <= 0)
+		numlevels = Raster::calculateNumLevels(width, height);
 	int32 w = width;
 	int32 h = height;
 	int32 size = 0;
@@ -835,10 +838,87 @@ fprintf(stderr, "%d %x\n", image->depth, format); fflush(stdout);
 	return 1;
 }
 
+static void
+conv_RGB888_from_RGB565(uint8 *out, uint8 *in)
+{
+	uint16 c = (uint16)in[0] | ((uint16)in[1] << 8);
+	uint32 r = (c >> 11) & 0x1F;
+	uint32 g = (c >> 5) & 0x3F;
+	uint32 b = c & 0x1F;
+	out[0] = (uint8)((r * 255 + 15) / 31);
+	out[1] = (uint8)((g * 255 + 31) / 63);
+	out[2] = (uint8)((b * 255 + 15) / 31);
+}
+
+static void
+conv_RGBA8888_from_ARGB4444(uint8 *out, uint8 *in)
+{
+	uint16 c = (uint16)in[0] | ((uint16)in[1] << 8);
+	out[0] = (uint8)(((c >> 8) & 0xF) * 17);
+	out[1] = (uint8)(((c >> 4) & 0xF) * 17);
+	out[2] = (uint8)((c & 0xF) * 17);
+	out[3] = (uint8)(((c >> 12) & 0xF) * 17);
+}
+
+static void
+conv_RGB888_from_XRGB4444(uint8 *out, uint8 *in)
+{
+	uint16 c = (uint16)in[0] | ((uint16)in[1] << 8);
+	out[0] = (uint8)(((c >> 8) & 0xF) * 17);
+	out[1] = (uint8)(((c >> 4) & 0xF) * 17);
+	out[2] = (uint8)((c & 0xF) * 17);
+}
+
+static void
+conv_RGB888_from_L8(uint8 *out, uint8 *in)
+{
+	out[0] = in[0];
+	out[1] = in[0];
+	out[2] = in[0];
+}
+
+static void
+conv_RGBA8888_from_A8(uint8 *out, uint8 *in)
+{
+	out[0] = 255;
+	out[1] = 255;
+	out[2] = 255;
+	out[3] = in[0];
+}
+
+static void
+conv_RGBA8888_from_A8L8(uint8 *out, uint8 *in)
+{
+	out[0] = in[0];
+	out[1] = in[0];
+	out[2] = in[0];
+	out[3] = in[1];
+}
+
+static void
+conv_RGBA8888_from_A4L4(uint8 *out, uint8 *in)
+{
+	uint8 l = (uint8)((in[0] & 0xF) * 17);
+	uint8 a = (uint8)(((in[0] >> 4) & 0xF) * 17);
+	out[0] = l;
+	out[1] = l;
+	out[2] = l;
+	out[3] = a;
+}
+
+static void
+conv_RGB888_from_RGBX8888(uint8 *out, uint8 *in)
+{
+	out[0] = in[0];
+	out[1] = in[1];
+	out[2] = in[2];
+}
+
 Image*
 rasterToImage(Raster *raster)
 {
-	int32 depth;
+	int32 depth = 0;
+	int32 inBpp = 0;
 	Image *image;
 
 	bool unlock = false;
@@ -848,76 +928,146 @@ rasterToImage(Raster *raster)
 	}
 
 	D3dRaster *natras = GETD3DRASTEREXT(raster);
-	if(natras->customFormat){
-		int w = raster->width;
-		int h = raster->height;
-		// pixels are in the upper right corner
-		if(w < 4) w = 4;
-		if(h < 4) h = 4;
-		image = Image::create(w, h, 32);
-		image->allocate();
-		uint8 *pix = raster->pixels;
+	if(natras->customFormat ||
+	   natras->format == D3DFMT_DXT1 || natras->format == D3DFMT_DXT2 ||
+	   natras->format == D3DFMT_DXT3 || natras->format == D3DFMT_DXT4 ||
+	   natras->format == D3DFMT_DXT5){
+		int dxtType = 0;
 		switch(natras->format){
-		case D3DFMT_DXT1:
-			image->setPixelsDXT(1, pix);
-			if((raster->format & 0xF00) == Raster::C565)
+		case D3DFMT_DXT1: dxtType = 1; break;
+		case D3DFMT_DXT2:
+		case D3DFMT_DXT3: dxtType = 3; break;
+		case D3DFMT_DXT4:
+		case D3DFMT_DXT5: dxtType = 5; break;
+		}
+		if(dxtType != 0){
+			int origW = raster->width;
+			int origH = raster->height;
+			int w = (origW + 3) & ~3;
+			int h = (origH + 3) & ~3;
+			if(w < 4) w = 4;
+			if(h < 4) h = 4;
+			image = Image::create(w, h, 32);
+			image->allocate();
+			uint8 *pix = raster->pixels;
+			image->setPixelsDXT(dxtType, pix);
+			if(dxtType == 1 && !natras->hasAlpha && (raster->format & 0xF00) == Raster::C565)
 				image->removeMask();
-			break;
-		case D3DFMT_DXT3:
-			image->setPixelsDXT(3, pix);
-			break;
-		case D3DFMT_DXT5:
-			image->setPixelsDXT(5, pix);
-			break;
-		default:
-			image->destroy();
+			// If padded from NPOT, repack rows tightly to origW x origH.
+			if(w != origW || h != origH){
+				Image *cropped = Image::create(origW, origH, 32);
+				cropped->allocate();
+				for(int y = 0; y < origH; y++)
+					memcpy(cropped->pixels + y * cropped->stride,
+					       image->pixels + y * image->stride, origW * 4);
+				image->destroy();
+				image = cropped;
+			}
 			if(unlock)
 				raster->unlock(0);
-			return nil;
+			return image;
 		}
-		// fix it up again
-		image->width = raster->width;
-		image->height = raster->height;
-
-		if(unlock)
-			raster->unlock(0);
-		return image;
 	}
 
 	void (*conv)(uint8 *out, uint8 *in) = nil;
-	switch(raster->format & 0xF00){
-	case Raster::C1555:
-		depth = 16;
-		conv = conv_ARGB1555_from_ARGB1555;
-		break;
-	case Raster::C8888:
-		depth = 32;
-		conv = conv_RGBA8888_from_BGRA8888;
-		break;
-	case Raster::C888:
-		depth = 24;
-		conv = conv_RGB888_from_BGR888;
-		break;
-	case Raster::C555:
-		depth = 16;
-		conv = conv_ARGB1555_from_RGB555;
-		break;
-
-	default:
-	case Raster::C565:
-	case Raster::C4444:
-	case Raster::LUM8:
-		RWERROR((ERR_INVRASTER));
-		return nil;
+	if(natras->customFormat){
+		switch(natras->format){
+		case D3DFMT_A8R8G8B8:
+			depth = 32; inBpp = 4; conv = conv_RGBA8888_from_BGRA8888; break;
+		case D3DFMT_X8R8G8B8:
+			depth = 24; inBpp = 4; conv = conv_RGB888_from_BGR888; break;
+		case D3DFMT_R8G8B8:
+			depth = 24; inBpp = 3; conv = conv_RGB888_from_BGR888; break;
+		case D3DFMT_A8B8G8R8:
+			depth = 32; inBpp = 4; conv = conv_RGBA8888_from_RGBA8888; break;
+		case D3DFMT_X8B8G8R8:
+			depth = 24; inBpp = 4; conv = conv_RGB888_from_RGBX8888; break;
+		case D3DFMT_R5G6B5:
+			depth = 24; inBpp = 2; conv = conv_RGB888_from_RGB565; break;
+		case D3DFMT_A1R5G5B5:
+			depth = 16; inBpp = 2; conv = conv_ARGB1555_from_ARGB1555; break;
+		case D3DFMT_X1R5G5B5:
+			depth = 16; inBpp = 2; conv = conv_ARGB1555_from_RGB555; break;
+		case D3DFMT_A4R4G4B4:
+			depth = 32; inBpp = 2; conv = conv_RGBA8888_from_ARGB4444; break;
+		case D3DFMT_X4R4G4B4:
+			depth = 24; inBpp = 2; conv = conv_RGB888_from_XRGB4444; break;
+		case D3DFMT_L8:
+			depth = 24; inBpp = 1; conv = conv_RGB888_from_L8; break;
+		case D3DFMT_A8:
+			depth = 32; inBpp = 1; conv = conv_RGBA8888_from_A8; break;
+		case D3DFMT_A8L8:
+			depth = 32; inBpp = 2; conv = conv_RGBA8888_from_A8L8; break;
+		case D3DFMT_A4L4:
+			depth = 32; inBpp = 1; conv = conv_RGBA8888_from_A4L4; break;
+		default:
+			break;
+		}
 	}
+
+	if(conv == nil){
+		switch(raster->format & 0xF00){
+		case Raster::C1555:
+			depth = 16;
+			inBpp = 2;
+			conv = conv_ARGB1555_from_ARGB1555;
+			break;
+		case Raster::C8888:
+			depth = 32;
+			inBpp = 4;
+			conv = conv_RGBA8888_from_BGRA8888;
+			break;
+		case Raster::C888:
+			depth = 24;
+			inBpp = natras->format == D3DFMT_R8G8B8 ? 3 : 4;
+			conv = conv_RGB888_from_BGR888;
+			break;
+		case Raster::C555:
+			depth = 16;
+			inBpp = 2;
+			conv = conv_ARGB1555_from_RGB555;
+			break;
+		case Raster::C565:
+			depth = 24;
+			inBpp = 2;
+			conv = conv_RGB888_from_RGB565;
+			break;
+		case Raster::C4444:
+			depth = 32;
+			inBpp = 2;
+			conv = conv_RGBA8888_from_ARGB4444;
+			break;
+		case Raster::LUM8:
+			depth = 24;
+			inBpp = 1;
+			conv = conv_RGB888_from_L8;
+			break;
+		default:
+			if(unlock)
+				raster->unlock(0);
+			RWERROR((ERR_INVRASTER));
+			return nil;
+		}
+	}
+
 	int32 pallength = 0;
 	if((raster->format & Raster::PAL4) == Raster::PAL4){
 		depth = 4;
+		inBpp = 1;
+		conv = conv_8_from_8;
 		pallength = 16;
 	}else if((raster->format & Raster::PAL8) == Raster::PAL8){
 		depth = 8;
+		inBpp = 1;
+		conv = conv_8_from_8;
 		pallength = 256;
 	}
+
+	if(natras->bpp > 0 && !natras->customFormat && pallength == 0)
+		inBpp = natras->bpp;
+	if(inBpp <= 0)
+		inBpp = 4;
+	int32 inStride = raster->stride > 0 ? raster->stride : raster->width * inBpp;
 
 	uint8 *in, *out;
 	image = Image::create(raster->width, raster->height, depth);
@@ -945,10 +1095,10 @@ rasterToImage(Raster *raster)
 		for(x = 0; x < image->width; x++){
 			conv(imgrow, rasrow);
 			imgrow += image->bpp;
-			rasrow += natras->bpp;
+			rasrow += inBpp;
 		}
 		imgpixels += image->stride;
-		pixels += raster->stride;
+		pixels += inStride;
 	}
 	image->compressPalette();
 

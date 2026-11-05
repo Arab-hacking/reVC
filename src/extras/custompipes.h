@@ -13,6 +13,11 @@ struct CustomMatExt
 {
 	rw::Texture *glossTex;
 	bool haveGloss;
+	bool hasSaEnv;
+	float saShininess;
+	bool hasSaSpec;
+	float saSpecularity;
+	char saSpecTex[24];
 };
 extern rw::int32 CustomMatOffset;
 inline CustomMatExt *GetCustomMatExt(rw::Material *mat) {

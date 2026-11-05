@@ -14,6 +14,9 @@
 
 CPool<TxdDef,TxdDef> *CTxdStore::ms_pTxdPool;
 RwTexDictionary *CTxdStore::ms_pStoredTxd;
+int CTxdStore::ms_currentTxdSlot = -1;
+int CTxdStore::ms_storedTxdSlot = -1;
+int CTxdStore::ms_vehicleTxdSlot = -1;
 static_assert(TXDSTORESIZE <= 32768, "CBaseModelInfo stores TXD slot in signed int16");
 
 namespace {
@@ -40,6 +43,9 @@ CTxdStore::Initialise(void)
 		ms_pTxdPool = new CPool<TxdDef,TxdDef>(TXDSTORESIZE, "TexDictionary");
 		txdSlotsByName.clear();
 		txdSlotsUsed = 0;
+		ms_currentTxdSlot = -1;
+		ms_storedTxdSlot = -1;
+		ms_vehicleTxdSlot = -1;
 	}
 }
 
@@ -50,6 +56,9 @@ CTxdStore::Shutdown(void)
 	ms_pTxdPool = nil;
 	txdSlotsByName.clear();
 	txdSlotsUsed = 0;
+	ms_currentTxdSlot = -1;
+	ms_storedTxdSlot = -1;
+	ms_vehicleTxdSlot = -1;
 }
 
 void
@@ -84,10 +93,14 @@ CTxdStore::AddTxdSlot(const char *name)
 	assert(def);
 	def->texDict = nil;
 	def->refCount = 0;
+	def->parentIndex = -1;
 	strncpy(def->name, name, sizeof(def->name)-1);
 	def->name[sizeof(def->name)-1] = '\0';
 	int slot = ms_pTxdPool->GetJustIndex(def);
-	txdSlotsByName[TxdKey(def->name)].insert(slot);
+	std::string key = TxdKey(def->name);
+	txdSlotsByName[key].insert(slot);
+	if(ms_vehicleTxdSlot < 0 && key == "vehicle")
+		ms_vehicleTxdSlot = slot;
 	txdSlotsUsed++;
 	return slot;
 }
@@ -98,6 +111,18 @@ CTxdStore::RemoveTxdSlot(int slot)
 #ifdef CUSTOM_MODELS
 	CCustomModels::ForgetTxdSlot(slot);
 #endif
+	if(ms_currentTxdSlot == slot)
+		ms_currentTxdSlot = -1;
+	if(ms_storedTxdSlot == slot)
+		ms_storedTxdSlot = -1;
+	if(ms_vehicleTxdSlot == slot)
+		ms_vehicleTxdSlot = -1;
+	// Detach any children referencing this slot so no dangling parentIndex remains.
+	for(int i = 0; i < TXDSTORESIZE; i++){
+		TxdDef *child = GetSlot(i);
+		if(child && child->parentIndex == slot)
+			child->parentIndex = -1;
+	}
 	TxdDef *def = GetSlot(slot);
 	std::unordered_map<std::string, std::set<int> >::iterator it =
 		txdSlotsByName.find(TxdKey(def->name));
@@ -127,21 +152,83 @@ CTxdStore::GetTxdName(int slot)
 }
 
 void
+CTxdStore::SetTxdParent(int slot, int parentSlot)
+{
+	if(slot < 0 || slot >= TXDSTORESIZE)
+		return;
+	TxdDef *def = GetSlot(slot);
+	if(def == nil || def->refCount > 0)
+		return;
+	if(parentSlot < 0 || parentSlot >= TXDSTORESIZE || parentSlot == slot || GetSlot(parentSlot) == nil){
+		def->parentIndex = -1;
+		return;
+	}
+	// Reject cycles (e.g. A -> B -> A) in malformed txdp tables.
+	for(int cur = parentSlot, depth = 0; cur >= 0 && depth < 16; depth++){
+		if(cur == slot)
+			return;
+		TxdDef *p = GetSlot(cur);
+		cur = p ? p->parentIndex : -1;
+	}
+	def->parentIndex = (int16)parentSlot;
+}
+
+int
+CTxdStore::GetParentTxdSlot(int slot)
+{
+	if(slot < 0 || slot >= TXDSTORESIZE || ms_pTxdPool == nil)
+		return -1;
+	TxdDef *def = GetSlot(slot);
+	return def ? (int)def->parentIndex : -1;
+}
+
+RwTexture*
+CTxdStore::FindTextureInHierarchy(int slot, const char *name)
+{
+	if(name == nil || name[0] == '\0' || ms_pTxdPool == nil)
+		return nil;
+	for(int cur = slot, depth = 0; cur >= 0 && cur < TXDSTORESIZE && depth < 8; depth++){
+		TxdDef *def = GetSlot(cur);
+		if(def == nil)
+			break;
+		if(def->texDict){
+			RwTexture *tex = RwTexDictionaryFindNamedTexture(def->texDict, name);
+			if(tex)
+				return tex;
+		}
+		cur = def->parentIndex;
+	}
+	if(ms_vehicleTxdSlot >= 0 && ms_vehicleTxdSlot < TXDSTORESIZE){
+		TxdDef *vehDef = GetSlot(ms_vehicleTxdSlot);
+		if(vehDef && vehDef->texDict){
+			RwTexture *tex = RwTexDictionaryFindNamedTexture(vehDef->texDict, name);
+			if(tex)
+				return tex;
+		}
+	}
+	return nil;
+}
+
+void
 CTxdStore::PushCurrentTxd(void)
 {
 	ms_pStoredTxd = RwTexDictionaryGetCurrent();
+	ms_storedTxdSlot = ms_currentTxdSlot;
 }
 
 void
 CTxdStore::PopCurrentTxd(void)
 {
 	RwTexDictionarySetCurrent(ms_pStoredTxd);
+	ms_currentTxdSlot = ms_storedTxdSlot;
 	ms_pStoredTxd = nil;
+	ms_storedTxdSlot = -1;
 }
 
 void
 CTxdStore::SetCurrentTxd(int slot)
 {
+	ms_currentTxdSlot = slot;
 	RwTexDictionarySetCurrent(GetSlot(slot)->texDict);
 }
 
@@ -160,20 +247,43 @@ CTxdStore::GetNumRefs(int slot)
 void
 CTxdStore::AddRef(int slot)
 {
-	GetSlot(slot)->refCount++;
+	for(int cur = slot, depth = 0; cur >= 0 && cur < TXDSTORESIZE && depth < 8; depth++){
+		TxdDef *def = GetSlot(cur);
+		if(def == nil)
+			break;
+		def->refCount++;
+		cur = def->parentIndex;
+	}
 }
 
 void
 CTxdStore::RemoveRef(int slot)
 {
-	if(--GetSlot(slot)->refCount <= 0)
-		CStreaming::RemoveTxd(slot);
+	for(int cur = slot, depth = 0; cur >= 0 && cur < TXDSTORESIZE && depth < 8; depth++){
+		TxdDef *def = GetSlot(cur);
+		if(def == nil)
+			break;
+		int next = def->parentIndex;
+		if(--def->refCount <= 0){
+			def->refCount = 0;
+			if(def->texDict != nil || CStreaming::HasTxdLoaded(cur))
+				CStreaming::RemoveTxd(cur);
+		}
+		cur = next;
+	}
 }
 
 void
 CTxdStore::RemoveRefWithoutDelete(int slot)
 {
-	GetSlot(slot)->refCount--;
+	for(int cur = slot, depth = 0; cur >= 0 && cur < TXDSTORESIZE && depth < 8; depth++){
+		TxdDef *def = GetSlot(cur);
+		if(def == nil)
+			break;
+		if(--def->refCount < 0)
+			def->refCount = 0;
+		cur = def->parentIndex;
+	}
 }
 
 bool

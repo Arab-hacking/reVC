@@ -78,6 +78,7 @@
 #include "Ropes.h"
 #include "postfx.h"
 #include "custompipes.h"
+#include "CustomSky.h"
 #include "screendroplets.h"
 #include "VarConsole.h"
 #ifdef USE_OUR_VERSIONING
@@ -1299,8 +1300,10 @@ void
 RenderScene_new(void)
 {
 	PUSH_RENDERGROUP("RenderScene_new");
-	CClouds::Render();
-	DoRWRenderHorizon();
+	if(!CCustomSky::Render(TheCamera.GetPosition(), false)){
+		CClouds::Render();
+		DoRWRenderHorizon();
+	}
 
 	MattRenderScene();
 	DefinedState();
@@ -1382,8 +1385,10 @@ RenderScene(void)
 	}
 #endif
 	PUSH_RENDERGROUP("RenderScene");
-	CClouds::Render();
-	DoRWRenderHorizon();
+	if(!CCustomSky::Render(TheCamera.GetPosition(), false)){
+		CClouds::Render();
+		DoRWRenderHorizon();
+	}
 	CRenderer::RenderRoads();
 	CCoronas::RenderReflections();
 	CRenderer::RenderEverythingBarRoads();

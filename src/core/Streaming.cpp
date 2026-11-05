@@ -446,9 +446,14 @@ CStreaming::LoadCdDirectory(void)
 	int paired = 0, rebound = 0;
 	for(int model = 0; model < MODELINFOSIZE; model++){
 		CBaseModelInfo *mi = CModelInfo::GetModelInfo(model);
-		if(!mi || !mi->IsBuilding()) continue;
-		CSimpleModelInfo *simple = (CSimpleModelInfo*)mi;
-		if(simple->m_numAtomics != 1 || simple->m_firstDamaged != 0) continue;
+		if(!mi) continue;
+		if(mi->IsBuilding()){
+			CSimpleModelInfo *simple = (CSimpleModelInfo*)mi;
+			// Leave native VC multi-LOD damaged buildings alone unless custom-owned
+			if(!CCustomWorld::OwnsModelSlot(model) &&
+			   (simple->m_numAtomics != 1 || simple->m_firstDamaged != 0))
+				continue;
+		}
 		CStreamingInfo &dff = ms_aInfoForModel[model];
 		if(!dff.GetCdSize()) continue;
 		int image = _GET_INDEX(dff.m_position);
@@ -460,13 +465,18 @@ CStreaming::LoadCdDirectory(void)
 		   !CCustomModels::IsAutoMountedImage(_GET_INDEX(texture.m_position)))
 			continue;
 		paired++;
-		if(mi->GetTxdSlot() != txd){
+		int oldTxd = mi->GetTxdSlot();
+		if(oldTxd != txd){
 			if(mi->GetRwObject() || mi->GetNumRefs()) continue;
 			mi->SetTexDictionary(mi->GetModelName());
+			if(oldTxd >= 0 && CTxdStore::GetParentTxdSlot(txd) < 0 &&
+			   (ms_aInfoForModel[oldTxd + STREAM_OFFSET_TXD].GetCdSize() > 0 ||
+			    CTxdStore::GetSlot(oldTxd)->texDict != nil))
+				CTxdStore::SetTxdParent(txd, oldTxd);
 			rebound++;
 		}
 	}
-	REVC_LOG_INFO("custom/img/: %d static DFF/TXD same-name pairs confirmed, %d model TXD associations updated", paired, rebound);
+	REVC_LOG_INFO("custom/img/: %d DFF/TXD same-name pairs confirmed, %d model TXD associations updated", paired, rebound);
 #endif
 
 	ms_lastImageRead = 0;
@@ -706,14 +716,29 @@ CStreaming::ConvertBufferToObject(int8 *buf, int32 streamId)
 		// Model
 		mi = CModelInfo::GetModelInfo(streamId);
 
-		// Txd and anim have to be loaded
+		// Txd (including any streamable txdp parent chain) and anim have to be loaded
 		int animId = mi->GetAnimFileIndex();
+		bool txdReady =
 #ifdef FIX_BUGS
-		if(!HasTxdLoaded(mi->GetTxdSlot()) ||
+			HasTxdLoaded(mi->GetTxdSlot());
 #else
-		// texDict will exist even if only first part has loaded
-		if(CTxdStore::GetSlot(mi->GetTxdSlot())->texDict == nil ||
+			CTxdStore::GetSlot(mi->GetTxdSlot())->texDict != nil;
 #endif
+		if(txdReady){
+			for(int p = CTxdStore::GetParentTxdSlot(mi->GetTxdSlot()), depth = 0;
+			    p >= 0 && depth < 8; p = CTxdStore::GetParentTxdSlot(p), depth++){
+				bool streamable = ms_aInfoForModel[p + STREAM_OFFSET_TXD].GetCdSize() > 0
+#ifdef CUSTOM_MODELS
+					|| CCustomModels::CanServe(p + STREAM_OFFSET_TXD)
+#endif
+					;
+				if(streamable && CTxdStore::GetSlot(p)->texDict == nil && !HasTxdLoaded(p)){
+					RequestTxd(p, ms_aInfoForModel[streamId].m_flags & STREAMFLAGS_PRIORITY);
+					txdReady = false;
+				}
+			}
+		}
+		if(!txdReady ||
 		   animId != -1 && !CAnimManager::GetAnimationBlock(animId)->isLoaded){
 			RemoveModel(streamId);
 			ReRequestModel(streamId);
@@ -1033,6 +1058,16 @@ CStreaming::RequestModel(int32 id, int32 flags)
 			if(id < STREAM_OFFSET_TXD){
 				mi = (CSimpleModelInfo*)CModelInfo::GetModelInfo(id);
 				RequestTxd(mi->GetTxdSlot(), flags);
+				for(int p = CTxdStore::GetParentTxdSlot(mi->GetTxdSlot()), depth = 0;
+				    p >= 0 && depth < 8; p = CTxdStore::GetParentTxdSlot(p), depth++){
+					bool streamable = ms_aInfoForModel[p + STREAM_OFFSET_TXD].GetCdSize() > 0
+#ifdef CUSTOM_MODELS
+						|| CCustomModels::CanServe(p + STREAM_OFFSET_TXD)
+#endif
+						;
+					if(streamable)
+						RequestTxd(p, flags & STREAMFLAGS_PRIORITY);
+				}
 				int anim = mi->GetAnimFileIndex();
 				if(anim != -1)
 					RequestAnim(anim, STREAMFLAGS_DEPENDENCY);
@@ -1729,6 +1764,22 @@ CStreaming::RemoveLoadedZoneModel(void)
 	return false;
 }
 
+static bool
+DoesModelUseTxdInHierarchy(int32 modelStreamId, int32 txdId)
+{
+	if(modelStreamId < 0 || modelStreamId >= STREAM_OFFSET_TXD)
+		return false;
+	CBaseModelInfo *mi = CModelInfo::GetModelInfo(modelStreamId);
+	if(mi == nil)
+		return false;
+	for(int cur = mi->GetTxdSlot(), depth = 0; cur >= 0 && depth < 8;
+	    cur = CTxdStore::GetParentTxdSlot(cur), depth++){
+		if(cur == txdId)
+			return true;
+	}
+	return false;
+}
+
 bool
 CStreaming::IsTxdUsedByRequestedModels(int32 txdId)
 {
@@ -1738,19 +1789,16 @@ CStreaming::IsTxdUsedByRequestedModels(int32 txdId)
 
 	for(si = ms_startRequestedList.m_next; si != &ms_endRequestedList; si = si->m_next){
 		streamId = si - ms_aInfoForModel;
-		if(streamId < STREAM_OFFSET_TXD &&
-		   CModelInfo::GetModelInfo(streamId)->GetTxdSlot() == txdId)
+		if(DoesModelUseTxdInHierarchy(streamId, txdId))
 			return true;
 	}
 
 	for(i = 0; i < 4; i++){
 		streamId = ms_channel[0].streamIds[i];
-		if(streamId != -1 && streamId < STREAM_OFFSET_TXD &&
-		   CModelInfo::GetModelInfo(streamId)->GetTxdSlot() == txdId)
+		if(DoesModelUseTxdInHierarchy(streamId, txdId))
 			return true;
 		streamId = ms_channel[1].streamIds[i];
-		if(streamId != -1 && streamId < STREAM_OFFSET_TXD &&
-		   CModelInfo::GetModelInfo(streamId)->GetTxdSlot() == txdId)
+		if(DoesModelUseTxdInHierarchy(streamId, txdId))
 			return true;
 	}
 
@@ -2637,8 +2685,20 @@ CStreaming::LoadCustomFile(int32 streamId)
 		mi = CModelInfo::GetModelInfo(streamId);
 		animId = mi->GetAnimFileIndex();
 
-		// Txd and anim have to be loaded
-		if(CTxdStore::GetSlot(mi->GetTxdSlot())->texDict == nil ||
+		// Txd (including any streamable txdp parent chain) and anim have to be loaded
+		bool txdReady = CTxdStore::GetSlot(mi->GetTxdSlot())->texDict != nil;
+		if(txdReady){
+			for(int p = CTxdStore::GetParentTxdSlot(mi->GetTxdSlot()), depth = 0;
+			    p >= 0 && depth < 8; p = CTxdStore::GetParentTxdSlot(p), depth++){
+				bool streamable = ms_aInfoForModel[p + STREAM_OFFSET_TXD].GetCdSize() > 0 ||
+				                  CCustomModels::CanServe(p + STREAM_OFFSET_TXD);
+				if(streamable && CTxdStore::GetSlot(p)->texDict == nil){
+					RequestTxd(p, ms_aInfoForModel[streamId].m_flags & STREAMFLAGS_PRIORITY);
+					txdReady = false;
+				}
+			}
+		}
+		if(!txdReady ||
 		   animId != -1 && !CAnimManager::GetAnimationBlock(animId)->isLoaded){
 			RemoveModel(streamId);
 			ReRequestModel(streamId);

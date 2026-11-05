@@ -32,6 +32,8 @@ public:
 	// same-named TXD both come from auto-mounted IMGs; they may be in different
 	// archives. -1 means use the ordinary IDE TXD. Metadata only, no decoding.
 	static int PairedImageTxd(const char *modelName);
+	static bool HasImageTxd(const char *txdName);
+	static void EnsureVehicleTxdLoaded(void);
 	// Script special models may request DFFs without an IDE, or DFFs already
 	// bound to another IDE slot. Locate the highest-priority mounted IMG record
 	// by name without reading any model bytes; result is sector position/size.

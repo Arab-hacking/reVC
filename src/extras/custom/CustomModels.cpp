@@ -400,7 +400,8 @@ ScanCommonZip(void)
 				CustomSource src = MakeSource(mtime, path.c_str(), ent->name);
 				src.zipEntry = n;
 				if(pass == 0 && (key == "data/config.dat" || key == "data/timecyc.json" ||
-			                 key == "data/water.dat" || key == "data/carcols.dat")) {
+			                 key == "data/water.dat" || key == "data/carcols.dat" ||
+			                 key == "models/generic/vehicle.txd" || key == "models/vehicle.txd")) {
 					commonZipDataFiles.insert(std::make_pair(key, src));
 					continue;
 				}
@@ -667,6 +668,12 @@ CCustomModels::PairedImageTxd(const char *modelName)
 	int dffImage = -1;
 	int txdImage = imageModelTextures.FindTxdImage(modelName, &dffImage);
 	return IsAutoMountedImage(dffImage) && IsAutoMountedImage(txdImage) ? txdImage : -1;
+}
+
+bool
+CCustomModels::HasImageTxd(const char *txdName)
+{
+	return IsAutoMountedImage(imageModelTextures.FindAnyTxdImage(txdName));
 }
 
 bool
@@ -1486,6 +1493,10 @@ BuildTexture(const brtex::Texture &decoded, const char *name)
 
 	bool swapRB = rw::platform == rw::PLATFORM_D3D9 || rw::platform == rw::PLATFORM_D3D8 ||
 	              rw::platform == rw::PLATFORM_XBOX;
+	bool flipY = false;
+#ifdef LIBRW
+	flipY = (rw::platform == rw::PLATFORM_GL3);
+#endif
 	for(int l = 0; l < levels; l++){
 		const brtex::Mip &mip = tex->mips[l];
 		uint8 *dst = RwRasterLock(ras, (uint8)l, rwRASTERLOCKWRITE | rwRASTERLOCKNOFETCH);
@@ -1496,8 +1507,9 @@ BuildTexture(const brtex::Texture &decoded, const char *name)
 		uint32 stride = ras->stride;
 		if(stride < mip.w*4) stride = mip.w*4;
 		for(uint32 y = 0; y < mip.h; y++){
+			uint32 srcY = flipY ? (mip.h - 1 - y) : y;
 			uint8 *d = dst + (size_t)y*stride;
-			const uint8 *s = mip.rgba.data() + (size_t)y*mip.w*4;
+			const uint8 *s = mip.rgba.data() + (size_t)srcY*mip.w*4;
 			if(swapRB)
 				for(uint32 x = 0; x < mip.w; x++){
 					d[x*4+0] = s[x*4+2];
@@ -1514,6 +1526,12 @@ BuildTexture(const brtex::Texture &decoded, const char *name)
 		RwRasterDestroy(ras);
 		return nil;
 	}
+#ifdef RW_GL3
+	if(rw::platform == rw::PLATFORM_GL3){
+		GETGL3RASTEREXT(ras)->hasAlpha = tex->hasAlpha;
+		rw::gl3::setMipLevels(ras, levels);
+	}
+#endif
 
 	RwTexture *texture = RwTextureCreate(ras);
 	if(texture == nil){
@@ -2609,6 +2627,159 @@ CCustomModels::LoadAnimFileFromCustom(const char *filename, std::vector<uint8> &
 	CUSTOM_LOG("animation %s: read %s from %s (%u bytes)\n",
 		filename, src->fname, source, (unsigned)out.size());
 	return true;
+}
+
+static RwTexture*
+CreateProceduralVehicleFallbackTex(const char *name, bool specDot)
+{
+	const uint32 sz = specDot ? 64 : 128;
+	brtex::Texture proc;
+	proc.hasAlpha = false;
+	brtex::Mip m;
+	m.w = sz;
+	m.h = sz;
+	m.rgba.resize((size_t)sz * sz * 4);
+	for(uint32 y = 0; y < sz; y++){
+		float fy = (float)y / (float)(sz - 1);
+		for(uint32 x = 0; x < sz; x++){
+			float fx = (float)x / (float)(sz - 1);
+			uint8 r, g, b;
+			if(specDot){
+				float dx = fx * 2.0f - 1.0f;
+				float dy = fy * 2.0f - 1.0f;
+				float d2 = dx * dx + dy * dy;
+				float v = d2 < 1.0f ? (1.0f - d2) : 0.0f;
+				v = v * v * v;
+				r = g = b = (uint8)(v * 255.0f + 0.5f);
+			}else{
+				// Clean sky-to-horizon-to-road spherical reflection fallback
+				float horizon = 1.0f - fabsf(fy - 0.52f) * 2.4f;
+				if(horizon < 0.0f) horizon = 0.0f;
+				if(fy < 0.52f){
+					float t = fy / 0.52f;
+					r = (uint8)(110.0f + 125.0f * t);
+					g = (uint8)(158.0f + 82.0f * t);
+					b = (uint8)(220.0f + 32.0f * t);
+				}else{
+					float t = (fy - 0.52f) / 0.48f;
+					r = (uint8)(205.0f * (1.0f - t) + 46.0f * t);
+					g = (uint8)(212.0f * (1.0f - t) + 50.0f * t);
+					b = (uint8)(224.0f * (1.0f - t) + 58.0f * t);
+				}
+				float sun = expf(-((fx - 0.5f) * (fx - 0.5f) * 18.0f + (fy - 0.28f) * (fy - 0.28f) * 24.0f));
+				int rr = (int)r + (int)(horizon * 22.0f + sun * 55.0f);
+				int gg = (int)g + (int)(horizon * 22.0f + sun * 52.0f);
+				int bb = (int)b + (int)(horizon * 20.0f + sun * 44.0f);
+				r = (uint8)(rr > 255 ? 255 : rr);
+				g = (uint8)(gg > 255 ? 255 : gg);
+				b = (uint8)(bb > 255 ? 255 : bb);
+			}
+			size_t idx = ((size_t)y * sz + x) * 4;
+			m.rgba[idx + 0] = r;
+			m.rgba[idx + 1] = g;
+			m.rgba[idx + 2] = b;
+			m.rgba[idx + 3] = 255;
+		}
+	}
+	proc.mips.push_back(m);
+	return BuildTexture(proc, name);
+}
+
+void
+CCustomModels::EnsureVehicleTxdLoaded(void)
+{
+	EnsureInitialised();
+	int slot = CTxdStore::FindTxdSlot("vehicle");
+	if(slot == -1){
+		if(!CTxdStore::HasFreeSlot())
+			return;
+		slot = CTxdStore::AddTxdSlot("vehicle");
+	}
+	CTxdStore::SetVehicleTxdSlot(slot);
+	TxdDef *def = CTxdStore::GetSlot(slot);
+	if(def == nil)
+		return;
+
+	bool loadedFromSource = (def->texDict != nil);
+	if(!loadedFromSource){
+		static const char *zipKeys[] = {
+			"models/generic/vehicle.txd",
+			"models/vehicle.txd"
+		};
+		for(size_t i = 0; i < sizeof(zipKeys)/sizeof(zipKeys[0]) && !loadedFromSource; i++){
+			const CustomSource *zip = FindSource(commonZipDataFiles, zipKeys[i]);
+			std::vector<uint8> bytes;
+			if(zip != nil && ReadSource(*zip, bytes) && bytes.size() > 12){
+				RwMemory mem;
+				mem.start = bytes.data();
+				mem.length = (RwUInt32)bytes.size();
+				RwStream *stream = RwStreamOpen(rwSTREAMMEMORY, rwSTREAMREAD, &mem);
+				if(stream){
+					loadedFromSource = CTxdStore::LoadTxd(slot, stream);
+					RwStreamClose(stream, &mem);
+					if(loadedFromSource)
+						CUSTOM_LOG("vehicle.txd: loaded from common.zip (%s, %u bytes)\n",
+							zipKeys[i], (unsigned)bytes.size());
+				}
+			}
+		}
+	}
+	if(!loadedFromSource && !customFolderPath.empty()){
+		const std::string candidates[3] = {
+			customFolderPath + "/models/generic/vehicle.txd",
+			customFolderPath + "/models/vehicle.txd",
+			customFolderPath + "/vehicle.txd"
+		};
+		for(int i = 0; i < 3 && !loadedFromSource; i++){
+			RwStream *stream = RwStreamOpen(rwSTREAMFILENAME, rwSTREAMREAD, candidates[i].c_str());
+			if(stream){
+				loadedFromSource = CTxdStore::LoadTxd(slot, stream);
+				RwStreamClose(stream, nil);
+				if(loadedFromSource)
+					CUSTOM_LOG("vehicle.txd: loaded from %s\n", candidates[i].c_str());
+			}
+		}
+	}
+	if(!loadedFromSource && CStreaming::IsObjectInCdImage(slot + STREAM_OFFSET_TXD)){
+		CStreaming::RequestTxd(slot, STREAMFLAGS_KEEP_IN_MEMORY | STREAMFLAGS_DONT_REMOVE);
+		CStreaming::LoadAllRequestedModels(false);
+		loadedFromSource = (def->texDict != nil);
+		if(loadedFromSource)
+			CUSTOM_LOG("vehicle.txd: streamed from mounted IMG (slot %d)\n", slot);
+	}
+	if(!loadedFromSource){
+		RwStream *stream = RwStreamOpen(rwSTREAMFILENAME, rwSTREAMREAD, "models/generic/vehicle.txd");
+		if(stream){
+			loadedFromSource = CTxdStore::LoadTxd(slot, stream);
+			RwStreamClose(stream, nil);
+			if(loadedFromSource)
+				CUSTOM_LOG("vehicle.txd: loaded from models/generic/vehicle.txd\n");
+		}
+	}
+	if(def->texDict == nil)
+		CTxdStore::Create(slot);
+	if(def->refCount == 0)
+		CTxdStore::AddRef(slot);
+
+	if(def->texDict){
+		static const char *envNames[] = {
+			"vehicleenvmap128",
+			"xvehicleenv128",
+			"vehicleenvmap64"
+		};
+		for(size_t i = 0; i < sizeof(envNames)/sizeof(envNames[0]); i++){
+			if(RwTexDictionaryFindNamedTexture(def->texDict, envNames[i]) == nil){
+				RwTexture *fallback = CreateProceduralVehicleFallbackTex(envNames[i], false);
+				if(fallback)
+					RwTexDictionaryAddTexture(def->texDict, fallback);
+			}
+		}
+		if(RwTexDictionaryFindNamedTexture(def->texDict, "vehiclespecdot64") == nil){
+			RwTexture *specFallback = CreateProceduralVehicleFallbackTex("vehiclespecdot64", true);
+			if(specFallback)
+				RwTexDictionaryAddTexture(def->texDict, specFallback);
+		}
+	}
 }
 
 void

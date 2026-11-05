@@ -483,7 +483,7 @@ RwBool RwRenderStateGet(RwRenderState state, void *value)
 	case rwRENDERSTATEDESTBLEND: *uival = GetRenderState(DESTBLEND); return true;
 	case rwRENDERSTATEVERTEXALPHAENABLE: *uival = GetRenderState(VERTEXALPHA); return true;
 	case rwRENDERSTATEBORDERCOLOR: *uival = 0; return true;
-	case rwRENDERSTATEFOGENABLE: *uival = GetRenderState(FOGENABLE); return true;
+	case rwRENDERSTATEFOGENABLE: *uival = FALSE; return true;
 	case rwRENDERSTATEFOGCOLOR:
 		// have to swap R and B here
 		fog = GetRenderState(FOGCOLOR);
@@ -530,7 +530,7 @@ RwBool RwRenderStateSet(RwRenderState state, void *value)
 	case rwRENDERSTATEDESTBLEND: SetRenderState(DESTBLEND, uival); return true;
 	case rwRENDERSTATEVERTEXALPHAENABLE: SetRenderState(VERTEXALPHA, uival); return true;
 	case rwRENDERSTATEBORDERCOLOR: return true;
-	case rwRENDERSTATEFOGENABLE: SetRenderState(FOGENABLE, uival); return true;
+	case rwRENDERSTATEFOGENABLE: SetRenderState(FOGENABLE, FALSE); return true;
 	case rwRENDERSTATEFOGCOLOR:
 		// have to swap R and B here
 		fog = (uival>>16)&0xFF;
@@ -855,6 +855,17 @@ RpMaterial *RpMatFXMaterialSetupEnvMap( RpMaterial *material, RwTexture *texture
 	mfx->setEnvFrame(frame);
 	mfx->setEnvCoefficient(coef);
 	return material;
+}
+RpMaterial *RpMatFXMaterialSetEnvMapTexture( RpMaterial *material, RwTexture *texture )
+{
+	MatFX *mfx = MatFX::get(material);
+	mfx->setEnvTexture(texture);
+	return material;
+}
+RwTexture *RpMatFXMaterialGetEnvMapTexture( const RpMaterial *material )
+{
+	MatFX *mfx = MatFX::get(material);
+	return mfx ? mfx->getEnvTexture() : nil;
 }
 RpMaterial *RpMatFXMaterialSetEnvMapFrame( RpMaterial *material, RwFrame *frame )
 {

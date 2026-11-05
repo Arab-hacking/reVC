@@ -146,6 +146,9 @@ float FogSizes[8] = { 1.3f, 2.0f, 1.7f, 2.0f, 1.4f, 2.1f, 1.5f, 2.3f };
 void
 CPointLights::RenderFogEffect(void)
 {
+	// Volumetric fog sprites disabled per global fog-off requirement.
+	return;
+
 	int i;
 	float fogginess;
 	CColPoint point;

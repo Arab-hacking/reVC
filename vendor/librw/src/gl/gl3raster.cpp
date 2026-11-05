@@ -29,30 +29,26 @@ getLevelSize(Raster *raster, int32 level)
 
 	int w = raster->originalWidth;
 	int h = raster->originalHeight;
-	int s = raster->originalStride;
-	int minDim = 1;
+	for(i = 0; i < level; i++){
+		if(w > 1)
+			w /= 2;
+		if(h > 1)
+			h /= 2;
+	}
 
 #ifdef RW_OPENGL
 	switch(natras->internalFormat){
 	case GL_COMPRESSED_RGBA_S3TC_DXT1_EXT:
 	case GL_COMPRESSED_RGB_S3TC_DXT1_EXT:
+		return (uint32)((w + 3) / 4) * (uint32)((h + 3) / 4) * 8;
 	case GL_COMPRESSED_RGBA_S3TC_DXT3_EXT:
 	case GL_COMPRESSED_RGBA_S3TC_DXT5_EXT:
-		minDim = 4;
-		break;
+		return (uint32)((w + 3) / 4) * (uint32)((h + 3) / 4) * 16;
 	}
 #endif
 
-	for(i = 0; i < level; i++){
-		if(w > minDim){
-			w /= 2;
-			s /= 2;
-		}
-		if(h > minDim)
-			h /= 2;
-	}
-
-	return s*h;
+	int bpp = natras->bpp > 0 ? natras->bpp : 4;
+	return (uint32)w * (uint32)h * (uint32)bpp;
 }
 
 #ifdef RW_OPENGL
@@ -91,6 +87,38 @@ rasterCreateTexture(Raster *raster)
 		natras->bpp = 2;
 		raster->depth = 16;
 		break;
+	case Raster::C4444:
+		natras->internalFormat = GL_RGBA4;
+		natras->format = GL_RGBA;
+		natras->type = GL_UNSIGNED_SHORT_4_4_4_4;
+		natras->hasAlpha = 1;
+		natras->bpp = 2;
+		raster->depth = 16;
+		break;
+	case Raster::C565:
+		natras->internalFormat = GL_RGB;
+		natras->format = GL_RGB;
+		natras->type = GL_UNSIGNED_SHORT_5_6_5;
+		natras->hasAlpha = 0;
+		natras->bpp = 2;
+		raster->depth = 16;
+		break;
+	case Raster::C555:
+		natras->internalFormat = GL_RGB5_A1;
+		natras->format = GL_RGBA;
+		natras->type = GL_UNSIGNED_SHORT_5_5_5_1;
+		natras->hasAlpha = 0;
+		natras->bpp = 2;
+		raster->depth = 16;
+		break;
+	case Raster::LUM8:
+		natras->internalFormat = GL_RGB8;
+		natras->format = GL_RGB;
+		natras->type = GL_UNSIGNED_BYTE;
+		natras->hasAlpha = 0;
+		natras->bpp = 3;
+		raster->depth = 24;
+		break;
 	default:
 		RWERROR((ERR_INVRASTER));
 		return nil;
@@ -106,6 +134,7 @@ rasterCreateTexture(Raster *raster)
 
 	raster->stride = raster->width*natras->bpp;
 
+	int maxLevel = 0;
 	if(raster->format & Raster::MIPMAP){
 		int w = raster->width;
 		int h = raster->height;
@@ -115,6 +144,7 @@ rasterCreateTexture(Raster *raster)
 			if(w > 1) w /= 2;
 			if(h > 1) h /= 2;
 		}
+		maxLevel = natras->numLevels - 1;
 	}
 	natras->autogenMipmap = (raster->format & (Raster::MIPMAP|Raster::AUTOMIPMAP)) == (Raster::MIPMAP|Raster::AUTOMIPMAP);
 	if(natras->autogenMipmap)
@@ -125,8 +155,7 @@ rasterCreateTexture(Raster *raster)
 	glTexImage2D(GL_TEXTURE_2D, 0, natras->internalFormat,
 	             raster->width, raster->height,
 	             0, natras->format, natras->type, nil);
-	// TODO: allocate other levels...probably
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, natras->numLevels-1);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, maxLevel);
 	natras->filterMode = 0;
 	natras->addressU = 0;
 	natras->addressV = 0;
@@ -286,21 +315,17 @@ allocateDXT(Raster *raster, int32 dxt, int32 numLevels, bool32 hasAlpha)
 			natras->internalFormat = GL_COMPRESSED_RGB_S3TC_DXT1_EXT;
 			natras->format = GL_RGB;
 		}
-		// bogus, but stride*height should be the size of the image
-		// 4x4 in 8 bytes
-		raster->stride = raster->width/2;
+		raster->stride = ((raster->width + 3) / 4) * 8;
 		break;
 	case 3:
 		natras->internalFormat = GL_COMPRESSED_RGBA_S3TC_DXT3_EXT;
 		natras->format = GL_RGBA;
-		// 4x4 in 16 bytes
-		raster->stride = raster->width;
+		raster->stride = ((raster->width + 3) / 4) * 16;
 		break;
 	case 5:
 		natras->internalFormat = GL_COMPRESSED_RGBA_S3TC_DXT5_EXT;
 		natras->format = GL_RGBA;
-		// 4x4 in 16 bytes
-		raster->stride = raster->width;
+		raster->stride = ((raster->width + 3) / 4) * 16;
 		break;
 	default:
 		assert(0 && "invalid DXT format");
@@ -311,18 +336,11 @@ allocateDXT(Raster *raster, int32 dxt, int32 numLevels, bool32 hasAlpha)
 	raster->depth = 16;
 
 	natras->isCompressed = 1;
-	if(raster->format & Raster::MIPMAP)
-		natras->numLevels = numLevels;
-	natras->autogenMipmap = (raster->format & (Raster::MIPMAP|Raster::AUTOMIPMAP)) == (Raster::MIPMAP|Raster::AUTOMIPMAP);
-	if(natras->autogenMipmap)
-		natras->numLevels = 1;
+	natras->numLevels = numLevels > 0 ? numLevels : 1;
+	natras->autogenMipmap = 0;
 
 	glGenTextures(1, &natras->texid);
 	uint32 prev = bindTexture(natras->texid);
-	glTexImage2D(GL_TEXTURE_2D, 0, natras->internalFormat,
-	             raster->width, raster->height,
-	             0, natras->format, natras->type, nil);
-	// TODO: allocate other levels...probably
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, natras->numLevels-1);
 	natras->filterMode = 0;
 	natras->addressU = 0;
@@ -356,6 +374,27 @@ allocateDXT(Raster *raster, int32 dxt, int32 numLevels, bool32 hasAlpha)
 	}
 
 	raster->flags &= ~Raster::DONTALLOCATE;
+#endif
+}
+
+void
+setMipLevels(Raster *raster, int32 numLevels)
+{
+	if(raster == nil)
+		return;
+#ifdef RW_OPENGL
+	Gl3Raster *natras = GETGL3RASTEREXT(raster);
+	if(numLevels < 1)
+		numLevels = 1;
+	natras->numLevels = numLevels;
+	natras->autogenMipmap = 0;
+	if(natras->texid){
+		uint32 prev = bindTexture(natras->texid);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, natras->numLevels - 1);
+		bindTexture(prev);
+	}
+#else
+	(void)numLevels;
 #endif
 }
 
@@ -450,12 +489,17 @@ rasterLock(Raster *raster, int32 level, int32 lockMode)
 	case Raster::TEXTURE:
 	case Raster::CAMERATEXTURE:
 		for(i = 0; i < level; i++){
-			if(raster->width > 1){
+			if(raster->width > 1)
 				raster->width /= 2;
-				raster->stride /= 2;
-			}
 			if(raster->height > 1)
 				raster->height /= 2;
+		}
+		if(natras->isCompressed){
+			int blockBytes = (natras->internalFormat == GL_COMPRESSED_RGBA_S3TC_DXT1_EXT ||
+			                  natras->internalFormat == GL_COMPRESSED_RGB_S3TC_DXT1_EXT) ? 8 : 16;
+			raster->stride = ((raster->width + 3) / 4) * blockBytes;
+		}else{
+			raster->stride = raster->width * (natras->bpp > 0 ? natras->bpp : 4);
 		}
 
 		allocSz = getLevelSize(raster, level);
@@ -948,12 +992,24 @@ readNativeTexture(Stream *stream)
 
 	uint32 size;
 	uint8 *data;
+	int32 uploaded = 0;
 	for(int32 i = 0; i < numLevels; i++){
 		size = stream->readU32();
+		uint32 expected = getLevelSize(raster, i);
 		data = raster->lock(i, Raster::LOCKWRITE|Raster::LOCKNOFETCH);
-		stream->read8(data, size);
-		raster->unlock(i);
+		if(data){
+			uint32 toRead = size < expected ? size : expected;
+			stream->read8(data, toRead);
+			if(size > toRead)
+				stream->seek(size - toRead);
+			raster->unlock(i);
+			uploaded = i + 1;
+		}else{
+			stream->seek(size);
+		}
 	}
+	if(uploaded > 0 && !natras->autogenMipmap)
+		setMipLevels(raster, uploaded);
 	return tex;
 }
 

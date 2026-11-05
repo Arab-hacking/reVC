@@ -96,6 +96,26 @@ class GL3ShaderTests(unittest.TestCase):
                                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
                             self.assertEqual(result.returncode, 0, result.stdout)
 
+    @unittest.skipUnless(VALIDATOR, "install glslangValidator to link GL3 shaders")
+    def test_custom_skydome_shader_links(self):
+        sky_cpp = (ROOT / "src/extras/custom/CustomSky.cpp").read_text()
+        def extract_cstr(var):
+            blk = sky_cpp.split("static const char *" + var + " =\n", 1)[1].split(";\n", 1)[0]
+            return "".join(ast.literal_eval(t) for t in re.findall(r'"(?:[^"\\]|\\.)*"', blk))
+        vs_body = extract_cstr("s_skyDomeVertSrc")
+        fs_body = extract_cstr("s_skyDomeFragSrc")
+        for version in ("330", "120", "310es", "100es"):
+            decl = shader_decl(version)
+            with tempfile.TemporaryDirectory(prefix="revc-gl3-skydome-") as folder:
+                vs_path = Path(folder) / "skydome.vert"
+                fs_path = Path(folder) / "skydome.frag"
+                with self.subTest(version=version):
+                    vs_path.write_text(decl + embedded_source(VENDOR / "header.vert") + vs_body)
+                    fs_path.write_text(decl + embedded_source(VENDOR / "header.frag") + fs_body)
+                    result = subprocess.run([VALIDATOR, "-l", str(vs_path), str(fs_path)],
+                                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                    self.assertEqual(result.returncode, 0, result.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()

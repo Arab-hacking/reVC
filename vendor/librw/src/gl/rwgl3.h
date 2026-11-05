@@ -285,6 +285,7 @@ extern Gl3Caps gl3Caps;
 extern bool32 needToReadBackTextures;
 
 void allocateDXT(Raster *raster, int32 dxt, int32 numLevels, bool32 hasAlpha);
+void setMipLevels(Raster *raster, int32 numLevels);
 
 Texture *readNativeTexture(Stream *stream);
 void writeNativeTexture(Texture *tex, Stream *stream);
@@ -292,7 +293,7 @@ uint32 getSizeNativeTexture(Texture *tex);
 
 extern int32 nativeRasterOffset;
 void registerNativeRaster(void);
-#define GETGL3RASTEREXT(raster) PLUGINOFFSET(Gl3Raster, raster, rw::gl3::nativeRasterOffset)
+#define GETGL3RASTEREXT(raster) PLUGINOFFSET(rw::gl3::Gl3Raster, raster, rw::gl3::nativeRasterOffset)
 
 }
 }

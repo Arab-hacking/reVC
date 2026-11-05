@@ -559,6 +559,11 @@ readNativeTexture(Stream *stream)
 	int32 type = stream->readU8();
 	int32 compression = stream->readU8();
 
+	if(numLevels < 1)
+		numLevels = 1;
+	if(numLevels > 1)
+		format |= Raster::MIPMAP;
+
 	int32 pallength = 0;
 	if(format & Raster::PAL4 || format & Raster::PAL8){
 		pallength = format & Raster::PAL4 ? 32 : 256;
@@ -572,16 +577,38 @@ readNativeTexture(Stream *stream)
 	D3dRaster *ras;
 	if(compression){
 		raster = Raster::create(width, height, depth, format | type | Raster::DONTALLOCATE, PLATFORM_D3D8);
+		if(raster == nil){
+			tex->destroy();
+			return nil;
+		}
 		ras = GETD3DRASTEREXT(raster);
 		allocateDXT(raster, compression, numLevels, hasAlpha);
 		ras->customFormat = 1;
+	}else if(pallength == 0){
+		raster = Raster::create(width, height, depth, format | type | Raster::DONTALLOCATE, PLATFORM_D3D8);
+		if(raster == nil){
+			tex->destroy();
+			return nil;
+		}
+		ras = GETD3DRASTEREXT(raster);
+		if(ras->format == D3DFMT_X8R8G8B8 && depth == 24)
+			ras->format = D3DFMT_R8G8B8;
+		ras->texture = createTexture(raster->width, raster->height, numLevels, 0, ras->format);
+		if(ras->texture == nil){
+			raster->destroy();
+			tex->destroy();
+			return nil;
+		}
+		raster->flags &= ~Raster::DONTALLOCATE;
 	}else{
 		raster = Raster::create(width, height, depth, format | type, PLATFORM_D3D8);
+		if(raster == nil){
+			tex->destroy();
+			return nil;
+		}
 		ras = GETD3DRASTEREXT(raster);
 	}
 	tex->raster = raster;
-
-	// TODO: check if format supported and convert if necessary
 
 	if(pallength != 0)
 		stream->read8(ras->palette, 4*pallength);
@@ -591,8 +618,12 @@ readNativeTexture(Stream *stream)
 	for(int32 i = 0; i < numLevels; i++){
 		size = stream->readU32();
 		if(i < raster->getNumLevels()){
+			uint32 expected = (uint32)getLevelSize(raster, i);
 			data = raster->lock(i, Raster::LOCKWRITE|Raster::LOCKNOFETCH);
-			stream->read8(data, size);
+			uint32 toRead = (expected > 0 && size > expected) ? expected : size;
+			stream->read8(data, toRead);
+			if(size > toRead)
+				stream->seek(size - toRead);
 			raster->unlock(i);
 		}else
 			stream->seek(size);

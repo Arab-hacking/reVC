@@ -435,16 +435,39 @@ d3d_to_gl3(rw::Raster *ras)
 	if(d3dras->customFormat){
 		switch(d3dras->format){
 		case d3d::D3DFMT_DXT1: dxt = 1; break;
+		case d3d::D3DFMT_DXT2:
 		case d3d::D3DFMT_DXT3: dxt = 3; break;
+		case d3d::D3DFMT_DXT4:
 		case d3d::D3DFMT_DXT5: dxt = 5; break;
 		}
 	}
 	if(dxt == 0)
 		return nil;
 
-	Raster *newras = Raster::create(ras->width, ras->height, ras->depth,
-		                        ras->format | Raster::TEXTURE | Raster::DONTALLOCATE);
 	int numLevels = ras->getNumLevels();
+	if(numLevels < 1)
+		numLevels = 1;
+
+	// OpenGL EXT_texture_compression_s3tc requires every uploaded level to have
+	// dimensions that are multiples of 4 (or equal to 1 or 2). Non-4-aligned NPOT
+	// DXT textures fall back to CPU RGBA8 decompression in convertTexToCurrentPlatform.
+	int mw = ras->width;
+	int mh = ras->height;
+	for(int i = 0; i < numLevels; i++){
+		if((mw > 2 && (mw & 3) != 0) || (mh > 2 && (mh & 3) != 0))
+			return nil;
+		if(mw > 1) mw /= 2;
+		if(mh > 1) mh /= 2;
+	}
+
+	uint32 fmt = ras->format | Raster::TEXTURE | Raster::DONTALLOCATE;
+	if(numLevels > 1)
+		fmt |= Raster::MIPMAP;
+	fmt &= ~Raster::AUTOMIPMAP;
+
+	Raster *newras = Raster::create(ras->width, ras->height, ras->depth, fmt);
+	if(newras == nil)
+		return nil;
 	gl3::allocateDXT(newras, dxt, numLevels, d3dras->hasAlpha);
 	for(int i = 0; i < numLevels; i++){
 		uint8 *srcpx = ras->lock(i, Raster::LOCKREAD);
@@ -532,24 +555,52 @@ Raster::convertTexToCurrentPlatform(rw::Raster *ras)
 	// fall back to going through Image directly
 	int32 width, height, depth, format;
 	Image *img = ras->toImage();
-	// TODO: maybe don't *always* do this?
+	if(img == nil){
+		// Last-resort 1x1 white fallback so a corrupt raster cannot crash the game
+		img = Image::create(4, 4, 32);
+		img->allocate();
+		memset(img->pixels, 0xFF, (size_t)img->stride * img->height);
+	}
 	img->unpalettize();
+	int numLevels = ras->getNumLevels();
 	Raster::imageFindRasterFormat(img, Raster::TEXTURE, &width, &height, &depth, &format);
-	format |= ras->format & (Raster::MIPMAP | Raster::AUTOMIPMAP);
+	if(numLevels > 1)
+		format |= Raster::MIPMAP;
+	else
+		format |= ras->format & (Raster::MIPMAP | Raster::AUTOMIPMAP);
 	Raster *newras = Raster::create(width, height, depth, format);
+	if(newras == nil){
+		img->destroy();
+		ras->destroy();
+		return nil;
+	}
 	newras->setFromImage(img);
 	img->destroy();
-	int numLevels = ras->getNumLevels();
+	int uploadedLevels = 1;
 	for(int i = 1; i < numLevels; i++){
 		ras->lock(i, Raster::LOCKREAD);
 		img = ras->toImage();
-		// TODO: maybe don't *always* do this?
+		if(img == nil){
+			ras->unlock(i);
+			break;
+		}
 		img->unpalettize();
-		newras->lock(i, Raster::LOCKWRITE|Raster::LOCKNOFETCH);
-		newras->setFromImage(img);
-		newras->unlock(i);
+		uint8 *dst = newras->lock(i, Raster::LOCKWRITE|Raster::LOCKNOFETCH);
+		if(dst && img->width == newras->width && img->height == newras->height){
+			newras->setFromImage(img);
+			uploadedLevels = i + 1;
+		}
+		if(dst)
+			newras->unlock(i);
+		img->destroy();
 		ras->unlock(i);
+		if(!dst || uploadedLevels != i + 1)
+			break;
 	}
+#ifdef RW_GL3
+	if(rw::platform == PLATFORM_GL3 && !(format & Raster::AUTOMIPMAP))
+		gl3::setMipLevels(newras, uploadedLevels);
+#endif
 	ras->destroy();
 	ras = newras;
 	return ras;

@@ -741,34 +741,50 @@ readNativeTexture(Stream *stream)
 */
 	int32 flags = stream->readU8();
 
+	if(numLevels < 1)
+		numLevels = 1;
+	if(numLevels > 1)
+		format |= Raster::MIPMAP;
+
+	bool isDxtFourCC = (d3dformat == D3DFMT_DXT1 || d3dformat == D3DFMT_DXT2 ||
+	                    d3dformat == D3DFMT_DXT3 || d3dformat == D3DFMT_DXT4 ||
+	                    d3dformat == D3DFMT_DXT5);
+	bool isPaletted = (format & (Raster::PAL4 | Raster::PAL8)) != 0;
+	bool useCustomFormat = ((flags & 8) != 0 || isDxtFourCC || (!isPaletted && d3dformat != 0));
+
 	Raster *raster;
 	D3dRaster *ext;
 
-	if(flags & 8){
-		// is compressed
-		assert((flags & 2) == 0 && "Can't have cube maps yet");
+	if(useCustomFormat && !isPaletted){
 		raster = Raster::create(width, height, depth, format | type | Raster::DONTALLOCATE, PLATFORM_D3D9);
-		assert(raster);
+		if(raster == nil){
+			tex->destroy();
+			return nil;
+		}
 		ext = GETD3DRASTEREXT(raster);
-		ext->format = d3dformat;
-		ext->hasAlpha = flags & 1;
+		if(d3dformat != 0)
+			ext->format = d3dformat;
+		ext->hasAlpha = (flags & 1) != 0;
 		ext->texture = createTexture(raster->width, raster->height,
-		                             raster->format & Raster::MIPMAP ? numLevels : 1,
+		                             numLevels,
 		                             0,
 		                             ext->format);
-		assert(ext->texture);
+		if(ext->texture == nil){
+			raster->destroy();
+			tex->destroy();
+			return nil;
+		}
 		raster->flags &= ~Raster::DONTALLOCATE;
 		ext->customFormat = 1;
-	}else if(flags & 2){
-		assert(0 && "Can't have cube maps yet");
 	}else{
 		raster = Raster::create(width, height, depth, format | type, PLATFORM_D3D9);
-		assert(raster);
+		if(raster == nil){
+			tex->destroy();
+			return nil;
+		}
 		ext = GETD3DRASTEREXT(raster);
 	}
 	tex->raster = raster;
-
-	// TODO: check if format supported and convert if necessary
 
 	if(raster->format & Raster::PAL4)
 		stream->read8(ext->palette, 4*32);
@@ -780,11 +796,32 @@ readNativeTexture(Stream *stream)
 	for(int32 i = 0; i < numLevels; i++){
 		size = stream->readU32();
 		if(i < raster->getNumLevels()){
+			uint32 expected = (uint32)getLevelSize(raster, i);
+			// Handle 24-bit RGB stream packed into X8R8G8B8 or vice versa safely:
+			if(!isDxtFourCC && ext->format == D3DFMT_X8R8G8B8 && size == expected * 3 / 4){
+				destroyTexture(ext->texture);
+				ext->format = D3DFMT_R8G8B8;
+				ext->customFormat = 1;
+				ext->texture = createTexture(raster->width, raster->height, numLevels, 0, ext->format);
+				expected = (uint32)getLevelSize(raster, i);
+			}
 			data = raster->lock(i, Raster::LOCKWRITE|Raster::LOCKNOFETCH);
-			stream->read8(data, size);
+			uint32 toRead = (expected > 0 && size > expected) ? expected : size;
+			stream->read8(data, toRead);
+			if(size > toRead)
+				stream->seek(size - toRead);
 			raster->unlock(i);
 		}else
 			stream->seek(size);
+	}
+	// If the TXD stored a 6-face cubemap (flags & 2), skip faces 1..5 cleanly.
+	if(flags & 2){
+		for(int32 face = 1; face < 6; face++){
+			for(int32 i = 0; i < numLevels; i++){
+				size = stream->readU32();
+				stream->seek(size);
+			}
+		}
 	}
 	return tex;
 }

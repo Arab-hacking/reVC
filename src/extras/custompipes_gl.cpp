@@ -121,7 +121,7 @@ vehicleRenderCB(rw::Atomic *atomic, rw::gl3::InstanceDataHeader *header)
 		rw::SetRenderState(VERTEXALPHA, inst->vertexAlpha || m->color.alpha != 0xFF);
 
 		reflProps[2] = m->surfaceProps.specular * VehicleShininess;
-		reflProps[3] = m->surfaceProps.specular == 0.0f ? 0.0f : VehicleSpecularity;
+		reflProps[3] = m->surfaceProps.specular * VehicleSpecularity;
 		glUniform4fv(U(u_reflProps), 1, reflProps);
 
 		drawInst(header, inst);

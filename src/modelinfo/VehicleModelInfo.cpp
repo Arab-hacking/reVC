@@ -21,6 +21,7 @@
 #include "ModelIndices.h"
 #include "ModelInfo.h"
 #include "custompipes.h"
+#include "VehicleMaterialClassify.h"
 #ifdef CUSTOM_MODELS
 #include "CustomModels.h"
 #include "CommonCarcols.h"
@@ -32,6 +33,7 @@ RwRGBA CVehicleModelInfo::ms_vehicleColourTable[256];
 RwTexture *CVehicleModelInfo::ms_colourTextureTable[256];
 
 RwTexture *gpWhiteTexture;
+static RwTexture *gpFallbackEnvTexture;
 RwFrame *pMatFxIdentityFrame;
 
 // true while the currently processed vehicle model uses the GTA:San Andreas
@@ -1159,22 +1161,25 @@ struct editableMatCBData
 RpMaterial*
 CVehicleModelInfo::GetEditableMaterialListCB(RpMaterial *material, void *data)
 {
-	RwRGBA white = { 255, 255, 255, 255 };
 	const RwRGBA *col;
 	editableMatCBData *cbdata;
+	int slot = 0;
 
 	cbdata = (editableMatCBData*)data;
 	col = RpMaterialGetColor(material);
-	if(col->red == 0x3C && col->green == 0xFF && col->blue == 0){
-		// one slot is reserved for the terminating nil
-		if(cbdata->numMats1 < NUM_FIRST_MATERIALS-1){
-			cbdata->vehicle->m_materials1[cbdata->numMats1++] = material;
-			RpMaterialSetColor(material, &white);
-		}
-	}else if(col->red == 0xFF && col->green == 0 && col->blue == 0xAF){
-		if(cbdata->numMats2 < NUM_SECOND_MATERIALS-1){
-			cbdata->vehicle->m_materials2[cbdata->numMats2++] = material;
-			RpMaterialSetColor(material, &white);
+	if(customveh::IsEditableCarColorMarker(col->red, col->green, col->blue, slot)){
+		RwRGBA white = { 255, 255, 255, col->alpha };
+		if(slot == 1){
+			// one slot is reserved for the terminating nil
+			if(cbdata->numMats1 < NUM_FIRST_MATERIALS-1){
+				cbdata->vehicle->m_materials1[cbdata->numMats1++] = material;
+				RpMaterialSetColor(material, &white);
+			}
+		}else if(slot == 2){
+			if(cbdata->numMats2 < NUM_SECOND_MATERIALS-1){
+				cbdata->vehicle->m_materials2[cbdata->numMats2++] = material;
+				RpMaterialSetColor(material, &white);
+			}
 		}
 	}
 	return material;
@@ -1460,6 +1465,97 @@ CVehicleModelInfo::GetMatFXEffectMaterialCB(RpMaterial *material, void *data)
 	return nil;
 }
 
+struct VehicleReflSetupCtx
+{
+	CVehicleModelInfo *vehicle;
+	const char *frameName;
+};
+
+static bool
+IsRegisteredEditableMaterial(CVehicleModelInfo *veh, RpMaterial *mat)
+{
+	if(!veh || !mat)
+		return false;
+	for(RpMaterial **p = veh->m_materials1; *p; ++p)
+		if(*p == mat)
+			return true;
+	for(RpMaterial **p = veh->m_materials2; *p; ++p)
+		if(*p == mat)
+			return true;
+	return false;
+}
+
+static RpMaterial*
+ConfigureVehicleMaterialReflectionCB(RpMaterial *material, void *data)
+{
+	VehicleReflSetupCtx *ctx = (VehicleReflSetupCtx*)data;
+	const RwRGBA *col = RpMaterialGetColor(material);
+	RwTexture *baseTex = RpMaterialGetTexture(material);
+
+	customveh::VehicleMatInput in;
+	memset(&in, 0, sizeof(in));
+	in.isEditablePaint = ctx && IsRegisteredEditableMaterial(ctx->vehicle, material);
+	in.r = col ? col->red : 255;
+	in.g = col ? col->green : 255;
+	in.b = col ? col->blue : 255;
+	in.a = col ? col->alpha : 255;
+	in.frameName = ctx ? ctx->frameName : nil;
+	in.texName = baseTex ? RwTextureGetName(baseTex) : nil;
+#ifdef LIBRW
+	in.rawStructSpecular = ((rw::Material*)material)->surfaceProps.specular;
+#else
+	in.rawStructSpecular = RpMaterialGetSurfaceProperties(material)->specular;
+#endif
+	if(RpMatFXMaterialGetEffects(material) == rpMATFXEFFECTENVMAP){
+		in.hasMatFxEnv = true;
+		in.rawMatFxCoef = RpMatFXMaterialGetEnvMapCoefficient(material);
+	}
+#ifdef EXTENDED_PIPELINES
+	if(CustomPipes::CustomMatOffset > 0){
+		CustomPipes::CustomMatExt *ext = CustomPipes::GetCustomMatExt((rw::Material*)material);
+		if(ext){
+			in.hasSaEnv = ext->hasSaEnv;
+			in.saShininess = ext->saShininess;
+			in.hasSaSpec = ext->hasSaSpec;
+			in.saSpecularity = ext->saSpecularity;
+		}
+	}
+#endif
+
+	const float spec = customveh::ComputeVehicleMaterialSpecular(in);
+#ifdef LIBRW
+	((rw::Material*)material)->surfaceProps.specular = spec;
+#else
+	RwSurfaceProperties surf = *RpMaterialGetSurfaceProperties(material);
+	surf.specular = spec;
+	RpMaterialSetSurfaceProperties(material, &surf);
+#endif
+
+	if(spec > 0.0f && in.isEditablePaint && baseTex == nil && gpWhiteTexture)
+		RpMaterialSetTexture(material, gpWhiteTexture);
+
+	// Ensure MatFX fallback pipeline also has a valid envmap setup on SA/BR cars
+	if(spec > 0.0f && gpFallbackEnvTexture &&
+	   RpMatFXMaterialGetEffects(material) == rpMATFXEFFECTNULL){
+		RpMatFXMaterialSetEffects(material, rpMATFXEFFECTENVMAP);
+		RpMatFXMaterialSetupEnvMap(material, gpFallbackEnvTexture, pMatFxIdentityFrame, FALSE, spec);
+	}
+	return material;
+}
+
+static RpAtomic*
+ConfigureAtomicReflectionCB(RpAtomic *atomic, void *data)
+{
+	if(!atomic || !RpAtomicGetGeometry(atomic))
+		return atomic;
+	VehicleReflSetupCtx ctx;
+	ctx.vehicle = (CVehicleModelInfo*)data;
+	RwFrame *f = RpAtomicGetFrame(atomic);
+	ctx.frameName = f ? GetFrameNodeName(f) : nil;
+	RpGeometryForAllMaterials(RpAtomicGetGeometry(atomic), ConfigureVehicleMaterialReflectionCB, &ctx);
+	return atomic;
+}
+
 RpMaterial*
 CVehicleModelInfo::SetDefaultEnvironmentMapCB(RpMaterial *material, void *data)
 {
@@ -1467,6 +1563,8 @@ CVehicleModelInfo::SetDefaultEnvironmentMapCB(RpMaterial *material, void *data)
 		RpMatFXMaterialSetEnvMapFrame(material, pMatFxIdentityFrame);
 		if(RpMaterialGetTexture(material) == nil)
 			RpMaterialSetTexture(material, gpWhiteTexture);
+		if(RpMatFXMaterialGetEnvMapTexture(material) == nil && gpFallbackEnvTexture)
+			RpMatFXMaterialSetEnvMapTexture(material, gpFallbackEnvTexture);
 		RpMatFXMaterialSetEffects(material, rpMATFXEFFECTENVMAP);
 #ifndef PS2_MATFX
 		float coef = RpMatFXMaterialGetEnvMapCoefficient(material);
@@ -1507,15 +1605,28 @@ CVehicleModelInfo::SetEnvironmentMap(void)
 		RwFrameGetLTM(pMatFxIdentityFrame);
 	}
 
+	// Populate Neo specular/shininess from SA/BR/MatFX/paint/glass metadata
+	// BEFORE SetDefaultEnvironmentMapCB scales MatFX coef by 0.25f.
+	RpClumpForAllAtomics(m_clump, ConfigureAtomicReflectionCB, this);
+	for(i = 0; i < m_numComps; i++)
+		ConfigureAtomicReflectionCB(m_comps[i], this);
+
 	RpClumpForAllAtomics(m_clump, SetEnvironmentMapCB, nil);
+	for(i = 0; i < m_numComps; i++)
+		SetEnvironmentMapCB(m_comps[i], nil);
 	if(m_wheelId != -1){
 		wheelmi = (CSimpleModelInfo*)CModelInfo::GetModelInfo(m_wheelId);
-		for(i = 0; i < wheelmi->m_numAtomics; i++)
+		for(i = 0; i < wheelmi->m_numAtomics; i++){
+			ConfigureAtomicReflectionCB(wheelmi->m_atomics[i], nil);
 			SetEnvironmentMapCB(wheelmi->m_atomics[i], nil);
+		}
 	}
 
 #ifdef EXTENDED_PIPELINES
 	CustomPipes::AttachVehiclePipe(m_clump);
+	for(i = 0; i < m_numComps; i++)
+		if(m_comps[i])
+			CustomPipes::AttachVehiclePipe((rw::Atomic*)m_comps[i]);
 #endif
 }
 
@@ -1532,6 +1643,39 @@ CVehicleModelInfo::LoadEnvironmentMaps(void)
 		RwTextureGetName(gpWhiteTexture)[0] = '@';
 		RwTextureSetFilterMode(gpWhiteTexture, rwFILTERLINEAR);
 	}
+	if(gpFallbackEnvTexture == nil){
+		RwImage *img = RwImageCreate(16, 16, 32);
+		RwUInt8 *pixels = (RwUInt8*)RwMalloc(16 * 16 * 4);
+		for(int y = 0; y < 16; y++){
+			float t = (float)y / 15.0f;
+			// Smooth sky-to-horizon reflection fallback for MatFX
+			RwUInt8 r = (RwUInt8)(155.0f + 75.0f * t);
+			RwUInt8 g = (RwUInt8)(190.0f + 45.0f * t);
+			RwUInt8 b = (RwUInt8)(235.0f + 15.0f * t);
+			for(int x = 0; x < 16; x++){
+				int idx = (y * 16 + x) * 4;
+				pixels[idx + 0] = r;
+				pixels[idx + 1] = g;
+				pixels[idx + 2] = b;
+				pixels[idx + 3] = 255;
+			}
+		}
+		RwImageSetPixels(img, pixels);
+		RwImageSetStride(img, 16 * 4);
+		RwImageSetPalette(img, nil);
+		RwInt32 w, h, d, fmt;
+		RwImageFindRasterFormat(img, rwRASTERTYPETEXTURE, &w, &h, &d, &fmt);
+		RwRaster *ras = RwRasterCreate(w, h, d, fmt);
+		RwRasterSetFromImage(ras, img);
+		RwImageDestroy(img);
+		RwFree(pixels);
+		gpFallbackEnvTexture = RwTextureCreate(ras);
+		if(gpFallbackEnvTexture){
+			RwTextureGetName(gpFallbackEnvTexture)[0] = '@';
+			RwTextureSetFilterMode(gpFallbackEnvTexture, rwFILTERLINEAR);
+			RwTextureSetAddressing(gpFallbackEnvTexture, rwTEXTUREADDRESSCLAMP);
+		}
+	}
 	CTxdStore::PopCurrentTxd();
 }
 
@@ -1540,6 +1684,10 @@ CVehicleModelInfo::ShutdownEnvironmentMaps(void)
 {
 	RwTextureDestroy(gpWhiteTexture);
 	gpWhiteTexture = nil;
+	if(gpFallbackEnvTexture){
+		RwTextureDestroy(gpFallbackEnvTexture);
+		gpFallbackEnvTexture = nil;
+	}
 	RwFrameDestroy(pMatFxIdentityFrame);
 	pMatFxIdentityFrame = nil;
 }

@@ -55,7 +55,10 @@ void ReadIde(const char *path, const unsigned char *data, size_t size, void *use
     IdeContext &ctx = *(IdeContext *)user;
     ctx.files++;
     customworld::Stats stats = customworld::ParseIde(data, size,
-        [&ctx](const customworld::Model &m) { ctx.Add(m); });
+        [&ctx](const customworld::Model &m) { ctx.Add(m); },
+        [&ctx](const std::string &child, const std::string &parent) {
+            ctx.AddTxdParent(child, parent);
+        });
     ctx.parsed += (unsigned)stats.records;
     ctx.bad += (unsigned)stats.rejected;
     ctx.overlong += (unsigned)stats.overlong;
@@ -490,6 +493,17 @@ void CCustomWorld::LoadIde(void)
             vehicle->m_vehicleClass = -1;
             vehicle->m_level = 0;
             vehicle->m_frequency = 0;
+            // SA/BR carcols.dat has no VC 'car' assignments; give custom cars
+            // a varied default colour palette instead of spawning pure black.
+            static const uint8 defaultColours[NUM_VEHICLE_COLOURS][2] = {
+                { 1, 1 }, { 3, 1 }, { 79, 1 }, { 6, 0 },
+                { 8, 8 }, { 0, 0 }, { 86, 1 }, { 2, 1 }
+            };
+            vehicle->m_numColours = NUM_VEHICLE_COLOURS;
+            for(int c = 0; c < NUM_VEHICLE_COLOURS; c++) {
+                vehicle->m_colours1[c] = defaultColours[c][0];
+                vehicle->m_colours2[c] = defaultColours[c][1];
+            }
             std::snprintf(vehicle->m_gameName, sizeof(vehicle->m_gameName), "%.9s", m.gameName.c_str());
             vehicle->SetColModel(&CTempColModels::ms_colModelBBox);
             mi = vehicle;
@@ -504,7 +518,18 @@ void CCustomWorld::LoadIde(void)
         if(!mi) { full++; continue; }
         mi->SetModelName(m.name.c_str());
         mi->SetTexDictionary(txdName);
-        if(hasPair) paired++;
+        if(hasPair) {
+            paired++;
+            if(customworld::Lower(m.name) != customworld::Lower(m.txd) &&
+               (CTxdStore::FindTxdSlot(m.txd.c_str()) >= 0 ||
+                CCustomModels::HasImageTxd(m.txd.c_str()))) {
+                int parentSlot = CTxdStore::FindTxdSlot(m.txd.c_str());
+                if(parentSlot == -1 && CTxdStore::HasFreeCustomSlot())
+                    parentSlot = CTxdStore::AddTxdSlot(m.txd.c_str());
+                if(parentSlot >= 0 && CTxdStore::GetParentTxdSlot(mi->GetTxdSlot()) < 0)
+                    CTxdStore::SetTxdParent(mi->GetTxdSlot(), parentSlot);
+            }
+        }
         if(type == MITYPE_SIMPLE || type == MITYPE_TIME) {
             CSimpleModelInfo *object = (CSimpleModelInfo *)mi;
             object->SetNumAtomics(1);
@@ -549,9 +574,23 @@ void CCustomWorld::LoadIde(void)
            CModelInfo::GetModelInfo(related->second)->GetModelType() == MITYPE_TIME)
             ((CTimeModelInfo *)CModelInfo::GetModelInfo(slot->second))->SetOtherTimeModel(related->second);
     }
-    CUSTOM_LOG("BR IDE: %u file(s), %u record(s), %u invalid, %u long, %u source ID conflicts, %u installed, %u native reused, %u incompatible, %u unsupported vehicle types, %u without DFF, %u over capacity, %u VC handling fallbacks, %u paired IMG TXDs\n",
+    unsigned txdParentsLinked = 0;
+    for(std::map<std::string, std::string>::const_iterator it = ctx.txdParents.begin();
+        it != ctx.txdParents.end(); ++it) {
+        int childSlot = CTxdStore::FindTxdSlot(it->first.c_str());
+        if(childSlot < 0) continue;
+        int parentSlot = CTxdStore::FindTxdSlot(it->second.c_str());
+        if(parentSlot < 0 && CCustomModels::HasImageTxd(it->second.c_str()) &&
+           CTxdStore::HasFreeCustomSlot())
+            parentSlot = CTxdStore::AddTxdSlot(it->second.c_str());
+        if(parentSlot >= 0 && childSlot != parentSlot) {
+            CTxdStore::SetTxdParent(childSlot, parentSlot);
+            txdParentsLinked++;
+        }
+    }
+    CUSTOM_LOG("BR IDE: %u file(s), %u record(s), %u invalid, %u long, %u source ID conflicts, %u installed, %u native reused, %u incompatible, %u unsupported vehicle types, %u without DFF, %u over capacity, %u VC handling fallbacks, %u paired IMG TXDs, %u txdp links\n",
         ctx.files, ctx.parsed, ctx.bad, ctx.overlong, ctx.conflicts, installed,
-        reusedNative, incompatible, unsupported, noAsset, full, fallbackHandling, paired);
+        reusedNative, incompatible, unsupported, noAsset, full, fallbackHandling, paired, txdParentsLinked);
     if(full) CUSTOM_LOG("BR IDE: free model, TXD or int16 ID slots exhausted; some records were skipped\n");
 }
 

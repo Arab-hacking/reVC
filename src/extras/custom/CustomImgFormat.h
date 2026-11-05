@@ -125,6 +125,11 @@ public:
         std::map<std::string, Sources>::const_iterator it = sources.find(Key(model));
         return it == sources.end() ? -1 : it->second.dff;
     }
+    int FindAnyTxdImage(const char *txd) const {
+        if(txd == nullptr) return -1;
+        std::map<std::string, Sources>::const_iterator it = sources.find(Key(txd));
+        return it == sources.end() ? -1 : it->second.txd;
+    }
     // Return the winning TXD image and (optionally) the winning DFF image.
     // Callers decide which images are eligible, e.g. only user-mounted IMGs.
     int FindTxdImage(const char *model, int *dffImage = nullptr) const {

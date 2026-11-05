@@ -32,6 +32,10 @@
 #include "AnimManager.h"
 #include "WeaponInfo.h"
 #include "PlayerModelCycle.h"
+#include "Clock.h"
+#include "Timecycle.h"
+#include "CustomSky.h"
+#include "CustomSkyMath.h"
 #ifdef CUSTOM_MODELS
 #include "CustomModels.h"
 #endif
@@ -471,6 +475,44 @@ CPad::ProcessPlayerModelKeys(void)
 		REVC_LOG_INFO("Player model changed: %d -> %d (%s, %s animations)",
 			oldId, modelId, info->GetModelName(), info->UsesSAAnimations() ? "SA" : "VC");
 		return;
+	}
+#endif
+}
+
+void
+CPad::ProcessTimeOfDayKeys(void)
+{
+#ifdef GTA_PC_CONTROLS
+	CPad *pad = GetPad(PAD1);
+	if(FrontEndMenuManager.m_bMenuActive || CCutsceneMgr::IsRunning() ||
+	   CReplay::IsPlayingBack())
+		return;
+
+	const bool shiftHeld = pad->GetShift() || pad->GetLeftShift() || pad->GetRightShift();
+	if(pad->GetTimesJustDown() && shiftHeld){
+		CCustomSky::Mode m = CCustomSky::CycleMode();
+		REVC_LOG_INFO("Sky mode switched via Shift+Num*: %s", CCustomSky::GetModeName(m));
+		return;
+	}
+
+	int newHour = -1;
+	int newMinute = CClock::GetMinutes();
+	if(pad->GetDivideJustDown()){
+		newHour = customsky::StepClockHour(CClock::GetHours(), -1);
+	}else if(pad->GetTimesJustDown()){
+		newHour = customsky::StepClockHour(CClock::GetHours(), 1);
+	}else if(pad->GetPad7JustDown()){
+		newHour = customsky::StepPresetHour(CClock::GetHours(), -1);
+		newMinute = 0;
+	}else if(pad->GetPad3JustDown()){
+		newHour = customsky::StepPresetHour(CClock::GetHours(), 1);
+		newMinute = 0;
+	}
+
+	if(newHour >= 0){
+		CClock::SetGameClock((uint8)newHour, (uint8)newMinute);
+		CTimeCycle::Update();
+		REVC_LOG_INFO("Time of day changed via Numpad: %02d:%02d", newHour, newMinute);
 	}
 #endif
 }

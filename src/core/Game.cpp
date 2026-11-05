@@ -78,6 +78,7 @@
 #ifdef CUSTOM_MODELS
 #include "CustomTimecycle.h"
 #endif
+#include "CustomSky.h"
 #include "TrafficLights.h"
 #include "Train.h"
 #include "TxdStore.h"
@@ -387,6 +388,7 @@ void
 CGame::FinalShutdown(void)
 {
 	REVC_LOG_INFO("Stopping texture, statistics and streaming systems");
+	CCustomSky::Shutdown();
 #ifdef CUSTOM_MODELS
 	CCustomWorld::Shutdown();
 	CCustomModels::PrintStats();
@@ -403,6 +405,7 @@ bool CGame::Initialise(const char* datFile)
 	REVC_LOG_INFO("Initializing game from %s", datFile);
 	ResetLoadingScreenBar();
 	strcpy(aDatFile, datFile);
+	CCustomSky::Shutdown();
 #ifdef CUSTOM_MODELS
 	CCustomWorld::Shutdown(); // fresh BR ID mapping on a game restart
 #endif
@@ -951,6 +954,7 @@ void CGame::Process(void)
 		CRecordDataForChase::SaveOrRetrieveDataForThisFrame();
 		CPad::DoCheats();
 		CPad::ProcessPlayerModelKeys();
+		CPad::ProcessTimeOfDayKeys();
 		CNoClip::ProcessInput();
 		CClock::Update();
 		CWeather::Update();

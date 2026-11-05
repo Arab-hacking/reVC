@@ -556,7 +556,7 @@ setAddressU(uint32 stage, int32 addressing)
 		Raster *raster = rwStateCache.texstage[stage].raster;
 		if(raster){
 			Gl3Raster *natras = PLUGINOFFSET(Gl3Raster, raster, nativeRasterOffset);
-			if(natras->addressU == addressing){
+			if(natras->addressU != addressing){
 				setActiveTexture(stage);
 				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, addressConvMap[addressing]);
 				natras->addressU = addressing;
@@ -573,7 +573,7 @@ setAddressV(uint32 stage, int32 addressing)
 		Raster *raster = rwStateCache.texstage[stage].raster;
 		if(raster){
 			Gl3Raster *natras = PLUGINOFFSET(Gl3Raster, rwStateCache.texstage[stage].raster, nativeRasterOffset);
-			if(natras->addressV == addressing){
+			if(natras->addressV != addressing){
 				setActiveTexture(stage);
 				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, addressConvMap[addressing]);
 				natras->addressV = addressing;

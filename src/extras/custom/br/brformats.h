@@ -486,6 +486,21 @@ static inline std::string matfxTexName(const uint8_t* blob, const MatFxTex& t) {
     for (auto& k : nodes[0].kids) if (k.id == rwSTRING && !k.container) return std::string((const char*)k.data.data(), strnlen((const char*)k.data.data(), k.data.size()));
     return "";
 }
+// float-параметр из хвоста блоба типа 10 (секция 0: {u32 len, key, float})
+static inline bool matfx10Float(const uint8_t* d, size_t n, const char* key, float& out) {
+    std::vector<MatFxTex> texs; if (matfxTextures(d, n, texs) != 10) return false;
+    size_t off = texs.empty() ? 12 : texs.back().off + texs.back().len;
+    if (off + 4 > n) return false; off += 4;
+    if (off + 4 > n) return false; uint32_t cnt = rd32(d + off); off += 4; if (cnt > 256) return false;
+    size_t klen = strlen(key);
+    for (uint32_t i = 0; i < cnt; i++) {
+        if (off + 4 > n) return false; uint32_t kl = rd32(d + off); off += 4; if (kl > 64 || off + kl + 4 > n) return false;
+        if (kl == klen && memcmp(d + off, key, kl) == 0) { memcpy(&out, d + off + kl, 4); return true; }
+        off += kl + 4;
+    }
+    return false;
+}
+
 // vec4-параметр из хвоста блоба типа 10 (после текстур: u32 0, float-список, vec3-список, vec4-список — {u32 len, key, значения})
 static inline bool matfx10Vec4(const uint8_t* d, size_t n, const char* key, float out[4]) {
     std::vector<MatFxTex> texs; if (matfxTextures(d, n, texs) != 10) return false;
@@ -610,10 +625,33 @@ static inline void fixTree(RwNode& node, uint32_t parentId, RwFixStats& st) {
                             }
                         }
                     }
+                    float pbrRefl = -1.f;
+                    if (type == 10) {
+                        const auto& blob = node.kids[extIdx].kids[fxIdx].data;
+                        float rv = 0.f;
+                        if (matfx10Float(blob.data(), blob.size(), "reflection", rv) ||
+                            matfx10Float(blob.data(), blob.size(), "reflectivity", rv) ||
+                            matfx10Float(blob.data(), blob.size(), "envMapIntensity", rv)) {
+                            if (std::isfinite(rv) && rv > 0.f) pbrRefl = std::min(rv, 1.f);
+                        } else {
+                            float met = 0.f, rough = 0.5f;
+                            bool hasM = matfx10Float(blob.data(), blob.size(), "metallic", met);
+                            matfx10Float(blob.data(), blob.size(), "roughness", rough);
+                            if (hasM && std::isfinite(met) && met > 0.1f) {
+                                float smooth = 1.f - std::max(0.f, std::min(1.f, std::isfinite(rough) ? rough : 0.5f));
+                                pbrRefl = std::max(0.15f, std::min(1.f, met * 0.65f + smooth * 0.35f));
+                            }
+                        }
+                    }
                     // v6.4.3: чанк matfx удаляем целиком. Раньше писали 4 байта «тип 0», но ридер RW (rpmatfx) после типа
                     // ВСЕГДА читает ещё 2 x u32 подэффектов -> перечитывал 8 байт из следующего чанка (Refl), поток
                     // сбивался, RpClumpStreamRead возвращал NULL и модель вечно перезапрашивалась (lf_kor_*_LOD2 и др.).
                     node.kids[extIdx].kids.erase(node.kids[extIdx].kids.begin() + fxIdx); st.matfxFixed++;
+                    if (structIdx != SIZE_MAX && node.kids[structIdx].data.size() >= 28 && pbrRefl > 0.f) {
+                        auto& sd = node.kids[structIdx].data;
+                        float curSpec = 0.f; memcpy(&curSpec, &sd[20], 4);
+                        if (!(curSpec > 0.f) || curSpec > 1.f) memcpy(&sd[20], &pbrRefl, 4);
+                    }
                     if (got) {
                         if (structIdx != SIZE_MAX && node.kids[structIdx].data.size() >= 16) wr32(&node.kids[structIdx].data[12], 1);   // isTextured
                         // у PBR/terrain-материалов BR цвет 0x00000000 и ambient/specular/diffuse = 0 (шейдер BR их не использует);

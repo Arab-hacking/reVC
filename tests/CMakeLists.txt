@@ -149,6 +149,23 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Cla
     set_target_properties(txd_store_capacity_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
     add_test(NAME txd_store_capacity_tests COMMAND txd_store_capacity_tests)
 
+    add_executable(sky_vehicle_txd_tests
+        SkyVehicleTxdTests.cpp ../src/rw/TxdStore.cpp)
+    target_compile_definitions(sky_vehicle_txd_tests PRIVATE
+        LIBRW RW_GL3 LIBRW_SDL2 CMAKE_BUILD USE_OUR_VERSIONING AUDIO_OAL)
+    target_include_directories(sky_vehicle_txd_tests PRIVATE
+        ../vendor/librw ../vendor/librw/src/gl ../vendor/sdl2/include
+        ../src ../src/animation ../src/audio ../src/buildings ../src/collision
+        ../src/control ../src/core ../src/entities ../src/extras
+        ../src/extras/custom ../src/extras/custom/br ../src/fakerw ../src/math
+        ../src/modelinfo ../src/objects ../src/peds ../src/renderer ../src/rw
+        ../src/save ../src/skel ../src/text ../src/vehicles ../src/weapons)
+    target_compile_options(sky_vehicle_txd_tests PRIVATE -ffunction-sections -fdata-sections)
+    target_link_options(sky_vehicle_txd_tests PRIVATE -Wl,--gc-sections)
+    target_link_libraries(sky_vehicle_txd_tests PRIVATE librw::librw)
+    set_target_properties(sky_vehicle_txd_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+    add_test(NAME sky_vehicle_txd_tests COMMAND sky_vehicle_txd_tests)
+
     # Exercise the real VC escalator initializer when its DATA/MAPS step model
     # is missing (and when the native map is enabled with a valid model).
     add_executable(escalator_init_tests

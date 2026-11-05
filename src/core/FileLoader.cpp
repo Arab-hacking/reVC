@@ -41,6 +41,7 @@
 #include "SACol3.h"
 #include "VehicleModelInfo.h"
 #include "Occlusion.h"
+#include "CustomSky.h"
 
 char CFileLoader::ms_line[256];
 
@@ -116,10 +117,15 @@ CFileLoader::LoadLevel(const char *filename)
 				CCustomModels::MountImages();
 				CCustomWorld::LoadIde();
 #endif
+				CCustomSky::RegisterModels();
 				LoadingScreenLoadingFile("Collision");
 				PUSH_MEMID(MEMID_WORLD);
 				CObjectData::Initialise("DATA\\OBJECT.DAT");
 				CStreaming::Init();
+#ifdef CUSTOM_MODELS
+				CCustomModels::EnsureVehicleTxdLoaded();
+#endif
+				CCustomSky::InitAfterStreaming();
 				POP_MEMID();
 				PUSH_MEMID(MEMID_COLLISION);
 				CColStore::LoadAllCollision();
@@ -1064,7 +1070,8 @@ CFileLoader::LoadObjectTypes(const char *filename)
 		CARS,
 		PEDS,
 		PATH,
-		TWODFX
+		TWODFX,
+		TXDP
 	};
 	char *line;
 	int fd;
@@ -1094,6 +1101,7 @@ CFileLoader::LoadObjectTypes(const char *filename)
 			else if(isLine4(line, 'p','e','d','s')) section = PEDS;
 			else if(isLine4(line, 'p','a','t','h')) section = PATH;
 			else if(isLine4(line, '2','d','f','x')) section = TWODFX;
+			else if(isLine4(line, 't','x','d','p')) section = TXDP;
 		}else if(isLine3(line, 'e','n','d')){
 			section = NONE;
 		}else switch(section){
@@ -1138,6 +1146,19 @@ CFileLoader::LoadObjectTypes(const char *filename)
 		case TWODFX:
 			Load2dEffect(line);
 			break;
+		case TXDP:
+		{
+			char childName[32], parentName[32];
+			if(sscanf(line, "%31[^, \t]%*[, \t]%31[^, \t\r\n]", childName, parentName) == 2){
+				int childSlot = CTxdStore::FindTxdSlot(childName);
+				int parentSlot = CTxdStore::FindTxdSlot(parentName);
+				if(parentSlot == -1 && CTxdStore::HasFreeSlot())
+					parentSlot = CTxdStore::AddTxdSlot(parentName);
+				if(childSlot >= 0 && parentSlot >= 0 && childSlot != parentSlot)
+					CTxdStore::SetTxdParent(childSlot, parentSlot);
+			}
+			break;
+		}
 		}
 	}
 	CFileMgr::CloseFile(fd);

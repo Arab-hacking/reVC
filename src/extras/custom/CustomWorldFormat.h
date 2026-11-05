@@ -88,6 +88,7 @@ inline std::string Lower(const std::string &s)
 struct ModelIndex {
     std::map<std::string, Model> definitions;
     std::map<int, std::string> lastNameForId;
+    std::map<std::string, std::string> txdParents; // lower(child) -> parent
     size_t conflicts, sharedNames;
     ModelIndex() : conflicts(0), sharedNames(0) {}
     void Add(const Model &m) {
@@ -98,6 +99,11 @@ struct ModelIndex {
         std::map<std::string, Model>::iterator same = definitions.find(key);
         if(same != definitions.end() && same->second.id != m.id) sharedNames++;
         definitions[key] = m;
+    }
+    void AddTxdParent(const std::string &child, const std::string &parent) {
+        std::string c = Lower(child), p = Lower(parent);
+        if(!c.empty() && !p.empty() && c != p)
+            txdParents[c] = parent;
     }
 };
 
@@ -212,8 +218,10 @@ inline bool ParseModel(const std::vector<std::string> &t, Model &m)
         m.anim = t[3]; // VC has no compatible per-object SA animation here.
         if(!Float(t[4], m.distance) || !UInt(t[5], m.flags)) return false;
     } else {
-        if(!Name(t[2], 19)) return false; // CTxdStore::TxdDef::name[20]
-        m.txd = t[2];
+        m.txd = ModelName(t[2]);
+        if(m.txd.size() > 19 && Lower(m.txd) == Lower(m.name + m.name))
+            m.txd = m.name;
+        if(!Name(m.txd, 19)) return false;
         size_t end = t.size();
         if(m.kind == Model::TIME_OBJECT) {
             if(end == 5) {
@@ -351,9 +359,9 @@ inline void ViceAxis(const Instance &i, float axis[3], float &w)
 
 // Parse a complete file without relying on a trailing NUL, commas, or native
 // line endings. A too-long line is rejected as a whole (not parsed in pieces).
-template<class ModelFn, class InstanceFn>
-Stats Parse(const unsigned char *data, size_t size, bool ide,
-            ModelFn onModel, InstanceFn onInstance)
+template<class ModelFn, class InstanceFn, class TxdParentFn>
+Stats ParseWithTxdParents(const unsigned char *data, size_t size, bool ide,
+                          ModelFn onModel, InstanceFn onInstance, TxdParentFn onTxdParent)
 {
     Stats stats;
     if(!data || size > 64u*1024u*1024u) { stats.rejected++; return stats; }
@@ -393,6 +401,18 @@ Stats Parse(const unsigned char *data, size_t size, bool ide,
                          m.kind == Model::WEAPON ? ParseWeapon(t, m) : ParseModel(t, m);
             if(valid) { onModel(m); stats.records++; }
             else stats.rejected++;
+        } else if(ide && section == "txdp") {
+            if(t.size() == 2) {
+                std::string child = ModelName(t[0]), parent = ModelName(t[1]);
+                if(Name(child, 31) && Name(parent, 31) && Lower(child) != Lower(parent)) {
+                    onTxdParent(child, parent);
+                    stats.records++;
+                } else {
+                    stats.rejected++;
+                }
+            } else {
+                stats.rejected++;
+            }
         } else if(!ide && section == "inst") {
             // Two BRmap_Interiors records contain "2499,8149" for their Z
             // coordinate. Repair ONLY this unambiguous 12-field shape; a
@@ -413,9 +433,21 @@ Stats Parse(const unsigned char *data, size_t size, bool ide,
     return stats;
 }
 
+template<class ModelFn, class InstanceFn>
+Stats Parse(const unsigned char *data, size_t size, bool ide,
+            ModelFn onModel, InstanceFn onInstance)
+{
+    return ParseWithTxdParents(data, size, ide, onModel, onInstance,
+                               [](const std::string &, const std::string &) {});
+}
+
 template<class Fn>
 Stats ParseIde(const unsigned char *data, size_t size, Fn fn) {
     return Parse(data, size, true, fn, [](const Instance &) {});
+}
+template<class Fn, class TxdParentFn>
+Stats ParseIde(const unsigned char *data, size_t size, Fn fn, TxdParentFn txdpFn) {
+    return ParseWithTxdParents(data, size, true, fn, [](const Instance &) {}, txdpFn);
 }
 template<class Fn>
 Stats ParseIpl(const unsigned char *data, size_t size, Fn fn) {
