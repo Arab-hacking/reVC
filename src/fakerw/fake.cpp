@@ -631,7 +631,7 @@ RpMaterial *RpMaterialSetTexture(RpMaterial *material, RwTexture *texture) { mat
 RwTexture *RpMaterialGetTexture(const RpMaterial *material) { return material->texture; }
 RpMaterial *RpMaterialSetColor(RpMaterial *material, const RwRGBA *color) { material->color = *color; return material; }
 const RwRGBA *RpMaterialGetColor(const RpMaterial *material) { return &material->color; }
-RpMaterial *RpMaterialSetSurfaceProperties(RpMaterial *material, const RwSurfaceProperties *surfaceProperties);
+RpMaterial *RpMaterialSetSurfaceProperties(RpMaterial *material, const RwSurfaceProperties *surfaceProperties) { material->surfaceProps = *surfaceProperties; return material; }
 const RwSurfaceProperties *RpMaterialGetSurfaceProperties(const RpMaterial *material) { return &material->surfaceProps; }
 //RwInt32 RpMaterialRegisterPlugin(RwInt32 size, RwUInt32 pluginID, RwPluginObjectConstructor constructCB, RwPluginObjectDestructor destructCB, RwPluginObjectCopy copyCB);
 //RwInt32 RpMaterialRegisterPluginStream(RwUInt32 pluginID, RwPluginDataChunkReadCallBack readCB, RwPluginDataChunkWriteCallBack writeCB, RwPluginDataChunkGetSizeCallBack getSizeCB);
@@ -715,7 +715,7 @@ RpGeometry  *RpGeometryTriangleSetMaterial(RpGeometry *geometry, RpTriangle *tri
 }
 const RpGeometry  *RpGeometryTriangleGetVertexIndices(const RpGeometry *geometry, const RpTriangle *triangle, RwUInt16 *vert1, RwUInt16 *vert2, RwUInt16 *vert3);
 RpMaterial   *RpGeometryTriangleGetMaterial(const RpGeometry *geometry, const RpTriangle *triangle);
-RwInt32 RpGeometryGetNumMaterials(const RpGeometry *geometry);
+RwInt32 RpGeometryGetNumMaterials(const RpGeometry *geometry) { return geometry->matList.numMaterials; }
 RpGeometry  *RpGeometryForAllMaterials(RpGeometry *geometry, RpMaterialCallBack fpCallBack, void *pData) {
 	int i;
 	for(i = 0; i < geometry->matList.numMaterials; i++)
