@@ -12,6 +12,7 @@
 
 #include "rwgl3.h"
 #include "rwgl3shader.h"
+#include "rwgl3plg.h"
 
 namespace rw {
 namespace gl3 {
@@ -143,6 +144,13 @@ render(rw::ObjPipeline *rwpipe, Atomic *atomic)
 	pipe->instance(atomic);
 	assert(geo->instData != nil);
 	assert(geo->instData->platform == PLATFORM_GL3);
+#ifdef RW_GL3
+	if(isShadowPass()){
+		shadowRenderAtomic(atomic, (InstanceDataHeader*)geo->instData,
+		                   pipe->instanceCB == skinInstanceCB);
+		return;
+	}
+#endif
 	if(pipe->renderCB)
 		pipe->renderCB(atomic, (InstanceDataHeader*)geo->instData);
 }

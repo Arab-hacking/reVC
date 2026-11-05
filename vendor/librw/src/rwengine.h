@@ -222,6 +222,9 @@ RGBAf getSunMaterialParams(void);
 // x: enabled, y: cloud coverage, z: fogginess. Uploaded with each GL3 view.
 void setAtmosphereParams(RGBAf params);
 RGBAf getAtmosphereParams(void);
+// rgb: normalized sky-hemisphere tint, a: ground/sky bounce weight.
+void setSkyAmbientParams(RGBAf params);
+RGBAf getSkyAmbientParams(void);
 #endif
 
 #define RWTOSTR_(X) #X

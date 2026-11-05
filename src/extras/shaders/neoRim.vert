@@ -8,6 +8,8 @@ VSIN(ATTRIB_POS)	vec3 in_pos;
 VSOUT vec4 v_color;
 VSOUT vec2 v_tex0;
 VSOUT float v_fog;
+VSOUT vec3 v_worldPos;
+VSOUT vec3 v_worldNormal;
 
 void
 main(void)
@@ -30,5 +32,7 @@ main(void)
 	v_color = clamp(v_color, 0.0, 1.0);
 	v_color *= u_matColor;
 
-	v_fog = DoFog(gl_Position.w);
+	v_worldPos = Vertex.xyz;
+	v_worldNormal = Normal;
+	v_fog = DoFogEye(Vertex.xyz);
 }

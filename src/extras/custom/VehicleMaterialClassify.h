@@ -186,7 +186,7 @@ inline float ComputeVehicleMaterialSpecular(const VehicleMatInput &in)
 	const float explicitSpec = Max2(Max2(sStruct, sMatFx), Max2(sSaEnv, sSaSpec));
 
 	if(in.isEditablePaint)
-		return Clamp01(Max2(explicitSpec, 0.78f), 0.78f, 0.95f);
+		return Clamp01(Max2(explicitSpec, 0.78f), 0.78f, 0.84f);
 
 	if(IsVehicleLightMarker(in.r, in.g, in.b)){
 		if(in.a > 0 && in.a < 245)
@@ -199,22 +199,22 @@ inline float ComputeVehicleMaterialSpecular(const VehicleMatInput &in)
 
 	if(ContainsTokenCI(in.frameName, "wheel")){
 		if(ContainsTokenCI(in.texName, "chrome") || ContainsTokenCI(in.texName, "hrom"))
-			return 0.85f;
+			return 0.92f;
 		if(explicitSpec > 0.01f)
-			return Clamp01(explicitSpec, 0.15f, 0.85f);
+			return Clamp01(explicitSpec, 0.15f, 0.82f);
 		return 0.0f;
 	}
 
 	if(IsGlassMaterial(in.frameName, in.texName, in.a, in.isEditablePaint))
-		return Clamp01(Max2(explicitSpec, 0.82f), 0.78f, 0.95f);
+		return Clamp01(Max2(explicitSpec, 0.82f), 0.78f, 0.92f);
 
 	if(ContainsTokenCI(in.texName, "chrome") ||
 	   ContainsTokenCI(in.texName, "mirror") ||
 	   ContainsTokenCI(in.texName, "hrom"))
-		return Clamp01(Max2(explicitSpec, 0.88f), 0.85f, 0.96f);
+		return Clamp01(Max2(explicitSpec, 0.92f), 0.90f, 0.96f);
 
 	if(IsLikelyBodyShellPaint(in.frameName, in.texName, in.a))
-		return Clamp01(Max2(explicitSpec, 0.74f), 0.72f, 0.92f);
+		return Clamp01(Max2(explicitSpec, 0.76f), 0.74f, 0.84f);
 
 	return Clamp01(explicitSpec, 0.0f, 0.95f);
 }

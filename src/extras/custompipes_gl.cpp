@@ -114,7 +114,7 @@ vehicleRenderCB(rw::Atomic *atomic, rw::gl3::InstanceDataHeader *header)
 	while(n--){
 		m = inst->material;
 
-		setMaterial(flags, m->color, m->surfaceProps);
+		setMaterial(flags, m->color, m->surfaceProps, m->texture ? 1.0f : 0.0f);
 
 		setTexture(0, m->texture);
 
@@ -155,7 +155,7 @@ CreateVehiclePipe(void)
 	{
 #include "shaders/obj/neoVehicle_frag.inc"
 #include "shaders/obj/neoVehicle_vert.inc"
-	const char *vs[] = { shaderDecl, "#define DIRECTIONALS\n", header_vert_src, neoVehicle_vert_src, nil };
+	const char *vs[] = { shaderDecl, "#define DIRECTIONALS\n#define POINTLIGHTS\n#define SPOTLIGHTS\n", header_vert_src, neoVehicle_vert_src, nil };
 	const char *fs[] = { shaderDecl, header_frag_src, neoVehicle_frag_src, nil };
 	neoVehicleShader = Shader::create(vs, fs);
 	assert(neoVehicleShader);
@@ -263,7 +263,7 @@ CreateWorldPipe(void)
 	{
 #include "shaders/obj/neoWorldVC_frag.inc"
 #include "shaders/obj/default_UV2_vert.inc"
-	const char *vs[] = { shaderDecl, header_vert_src, default_UV2_vert_src, nil };
+	const char *vs[] = { shaderDecl, "#define DIRECTIONALS\n#define POINTLIGHTS\n#define SPOTLIGHTS\n", header_vert_src, default_UV2_vert_src, nil };
 	const char *fs[] = { shaderDecl, header_frag_src, neoWorldVC_frag_src, nil };
 	neoWorldShader = Shader::create(vs, fs);
 	assert(neoWorldShader);
@@ -520,7 +520,7 @@ CreateRimLightPipes(void)
 	{
 #include "shaders/obj/simple_frag.inc"
 #include "shaders/obj/neoRimSkin_vert.inc"
-	const char *vs[] = { shaderDecl, "#define DIRECTIONALS\n", header_vert_src, neoRimSkin_vert_src, nil };
+	const char *vs[] = { shaderDecl, "#define DIRECTIONALS\n#define POINTLIGHTS\n#define SPOTLIGHTS\n", header_vert_src, neoRimSkin_vert_src, nil };
 	const char *fs[] = { shaderDecl, header_frag_src, simple_frag_src, nil };
 	neoRimSkinShader = Shader::create(vs, fs);
 	assert(neoRimSkinShader);
@@ -529,7 +529,7 @@ CreateRimLightPipes(void)
 	{
 #include "shaders/obj/simple_frag.inc"
 #include "shaders/obj/neoRim_vert.inc"
-	const char *vs[] = { shaderDecl, "#define DIRECTIONALS\n", header_vert_src, neoRim_vert_src, nil };
+	const char *vs[] = { shaderDecl, "#define DIRECTIONALS\n#define POINTLIGHTS\n#define SPOTLIGHTS\n", header_vert_src, neoRim_vert_src, nil };
 	const char *fs[] = { shaderDecl, header_frag_src, simple_frag_src, nil };
 	neoRimShader = Shader::create(vs, fs);
 	assert(neoRimShader);

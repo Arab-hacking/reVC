@@ -627,7 +627,9 @@ CCustomSky::Render(const CVector &camPos, bool forEnvMap)
 
 #if defined(LIBRW) && defined(RW_GL3)
 	rw::RGBAf prevSunMat = rw::getSunMaterialParams();
+	rw::RGBAf prevAtmos = rw::getAtmosphereParams();
 	rw::setSunMaterialParams(rw::makeRGBAf(0.0f, 0.0f, 0.0f, 0.0f));
+	rw::setAtmosphereParams(rw::makeRGBAf(0.0f, 0.0f, 0.0f, 0.0f));
 #endif
 	SetFullAmbient();
 	DeActivateDirectional();
@@ -703,6 +705,7 @@ CCustomSky::Render(const CVector &camPos, bool forEnvMap)
 	ActivateDirectional();
 #if defined(LIBRW) && defined(RW_GL3)
 	rw::setSunMaterialParams(prevSunMat);
+	rw::setAtmosphereParams(prevAtmos);
 #endif
 	RwRenderStateSet(rwRENDERSTATEZTESTENABLE, (void*)(uintptr)prevZTest);
 	RwRenderStateSet(rwRENDERSTATEZWRITEENABLE, (void*)(uintptr)prevZWrite);

@@ -14,6 +14,7 @@
 
 #include "rwgl3.h"
 #include "rwgl3shader.h"
+#include "rwgl3plg.h"
 #include "rwgl3impl.h"
 
 #define PLUGIN_ID 0
@@ -139,11 +140,28 @@ int32 u_eye;
 int32 u_sunDir;
 int32 u_sunMaterial;
 int32 u_atmosphere;
+int32 u_skyAmbient;
 int32 u_localInvGamma;
 int32 u_uvMatrix;
+int32 u_shadowMatrix;
+int32 u_shadowParams;
 
 Shader *defaultShader, *defaultShader_noAT;
 Shader *defaultShader_fullLight, *defaultShader_fullLight_noAT;
+static Shader *shadowStaticShader, *shadowStaticShader_noAT;
+static Shader *shadowSkinShader, *shadowSkinShader_noAT;
+static GLuint s_shadowFbo;
+static GLuint s_shadowDepthTex;
+static bool32 s_inShadowPass;
+static bool32 s_shadowEnabled;
+static bool32 s_shadowInitTried;
+static bool32 s_shadowReady;
+static float32 s_pendingShadowMatrix[16];
+static float32 s_pendingShadowParams[4];
+static uint32 s_savedShadowZWrite;
+static uint32 s_savedShadowZTest;
+static uint32 s_savedShadowCull;
+static bool32 s_savedShadowVertexAlpha;
 
 static bool32 stateDirty = 1;
 static bool32 sceneDirty = 1;
@@ -1100,6 +1118,8 @@ setViewMatrix(float32 *mat)
 	setUniform(u_sunMaterial, &sunMaterial);
 	RGBAf atmosphere = getAtmosphereParams();
 	setUniform(u_atmosphere, &atmosphere);
+	RGBAf skyAmbient = getSkyAmbientParams();
+	setUniform(u_skyAmbient, &skyAmbient);
 
 	float32 g = getLocalInvGamma();
 	float32 gam[4] = { g, g, g, 1.0f };
@@ -1107,6 +1127,13 @@ setViewMatrix(float32 *mat)
 
 	static const float32 idmat[16] = { 1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1 };
 	setUniform(u_uvMatrix, (float32*)idmat);
+
+	if(s_shadowEnabled && s_shadowDepthTex != 0 && !s_inShadowPass && boundTexture[3] != s_shadowDepthTex){
+		int32 prevStage = activeTexture < 0 ? 0 : activeTexture;
+		setActiveTexture(3);
+		bindTexture(s_shadowDepthTex);
+		setActiveTexture(prevStage);
+	}
 }
 
 Shader *lastShaderUploaded;
@@ -1859,20 +1886,27 @@ initOpenGL(void)
 	u_sunDir = registerUniform("u_sunDir", UNIFORM_VEC4);
 	u_sunMaterial = registerUniform("u_sunMaterial", UNIFORM_VEC4);
 	u_atmosphere = registerUniform("u_atmosphere", UNIFORM_VEC4);
+	u_skyAmbient = registerUniform("u_skyAmbient", UNIFORM_VEC4);
 	u_localInvGamma = registerUniform("u_localInvGamma", UNIFORM_VEC4);
 	u_uvMatrix = registerUniform("u_uvMatrix", UNIFORM_MAT4);
+	u_shadowMatrix = registerUniform("u_shadowMatrix", UNIFORM_MAT4);
+	u_shadowParams = registerUniform("u_shadowParams", UNIFORM_VEC4);
 
 	// defaults before the game sets anything
 	float zero4[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
 	float up4[4] = { 0.0f, 0.0f, 1.0f, 0.0f };
 	float one4[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+	float sky4[4] = { 0.56f, 0.68f, 0.88f, 1.0f };
 	float idmat[16] = { 1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1 };
 	setUniform(u_eye, zero4);
 	setUniform(u_sunDir, up4);
 	setUniform(u_sunMaterial, one4);
 	setUniform(u_atmosphere, zero4);
+	setUniform(u_skyAmbient, sky4);
 	setUniform(u_localInvGamma, one4);
 	setUniform(u_uvMatrix, idmat);
+	setUniform(u_shadowMatrix, idmat);
+	setUniform(u_shadowParams, zero4);
 
 	// for im2d
 	registerUniform("u_xform", UNIFORM_VEC4);
@@ -1938,10 +1972,238 @@ initOpenGL(void)
 	defaultShader_fullLight_noAT = Shader::create(vs_fullLight, fs_noAT);
 	assert(defaultShader_fullLight_noAT);
 
+	if(gl3Caps.glversion >= 30){
+#include "shaders/skin_gl.inc"
+		const char *vs_skin[] = { shaderDecl, header_vert_src, skin_vert_src, nil };
+		const char *fs_shadow[] = { shaderDecl, "#define SHADOW_DEPTH_PASS\n", header_frag_src, simple_frag_src, nil };
+		const char *fs_shadow_noAT[] = { shaderDecl, "#define SHADOW_DEPTH_PASS\n", "#define NO_ALPHATEST\n", header_frag_src, simple_frag_src, nil };
+		shadowStaticShader = Shader::create(vs, fs_shadow);
+		shadowStaticShader_noAT = Shader::create(vs, fs_shadow_noAT);
+		shadowSkinShader = Shader::create(vs_skin, fs_shadow);
+		shadowSkinShader_noAT = Shader::create(vs_skin, fs_shadow_noAT);
+	}
+
 	openIm2D();
 	openIm3D();
 
 	return 1;
+}
+
+static void
+mulMat4ColMajor(float32 *out, const float32 *a, const float32 *b)
+{
+	for(int col = 0; col < 4; col++){
+		for(int row = 0; row < 4; row++){
+			out[col*4 + row] =
+				a[0*4 + row] * b[col*4 + 0] +
+				a[1*4 + row] * b[col*4 + 1] +
+				a[2*4 + row] * b[col*4 + 2] +
+				a[3*4 + row] * b[col*4 + 3];
+		}
+	}
+}
+
+static bool32
+ensureShadowFbo(void)
+{
+	if(s_shadowInitTried)
+		return s_shadowReady;
+	s_shadowInitTried = 1;
+	s_shadowReady = 0;
+
+	if(gl3Caps.glversion < 30 ||
+	   shadowStaticShader == nil || shadowStaticShader_noAT == nil ||
+	   shadowSkinShader == nil || shadowSkinShader_noAT == nil)
+		return 0;
+
+	int32 prevStage = activeTexture < 0 ? 0 : activeTexture;
+	uint32 prevFbo = currentFramebuffer;
+
+	setActiveTexture(3);
+	glGenTextures(1, &s_shadowDepthTex);
+	glBindTexture(GL_TEXTURE_2D, s_shadowDepthTex);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24,
+	             SHADOW_MAP_SIZE, SHADOW_MAP_SIZE,
+	             0, GL_DEPTH_COMPONENT, GL_UNSIGNED_INT, nil);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	glBindTexture(GL_TEXTURE_2D, boundTexture[3]);
+	setActiveTexture(prevStage);
+
+	glGenFramebuffers(1, &s_shadowFbo);
+	bindFramebuffer(s_shadowFbo);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
+	                       GL_TEXTURE_2D, s_shadowDepthTex, 0);
+	if(!gl3Caps.gles){
+		glDrawBuffer(GL_NONE);
+		glReadBuffer(GL_NONE);
+	}else{
+		GLenum none = GL_NONE;
+		glDrawBuffers(1, &none);
+		glReadBuffer(GL_NONE);
+	}
+	GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+	bindFramebuffer(prevFbo);
+
+	if(status != GL_FRAMEBUFFER_COMPLETE){
+		glDeleteFramebuffers(1, &s_shadowFbo);
+		glDeleteTextures(1, &s_shadowDepthTex);
+		s_shadowFbo = 0;
+		s_shadowDepthTex = 0;
+		return 0;
+	}
+
+	s_shadowReady = 1;
+	return 1;
+}
+
+void
+disableShadowMap(void)
+{
+	s_inShadowPass = 0;
+	s_shadowEnabled = 0;
+	float32 zero4[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+	setUniform(u_shadowParams, zero4);
+	int32 prevStage = activeTexture < 0 ? 0 : activeTexture;
+	setActiveTexture(3);
+	bindTexture(whitetex);
+	setActiveTexture(prevStage);
+}
+
+bool32
+isShadowPass(void)
+{
+	return s_inShadowPass;
+}
+
+bool32
+beginShadowPass(const float32 *lightView, const float32 *lightProj,
+                float32 strength, float32 normalBias, float32 fadeRadius)
+{
+	if(strength <= 0.001f || !ensureShadowFbo()){
+		disableShadowMap();
+		return 0;
+	}
+
+	// Unbind depth texture from sampler 3 while writing into s_shadowFbo.
+	int32 prevStage = activeTexture < 0 ? 0 : activeTexture;
+	setActiveTexture(3);
+	bindTexture(whitetex);
+	setActiveTexture(prevStage);
+
+	float32 zero4[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+	setUniform(u_shadowParams, zero4);
+
+	mulMat4ColMajor(s_pendingShadowMatrix, lightProj, lightView);
+	s_pendingShadowParams[0] = strength;
+	s_pendingShadowParams[1] = 1.0f / (float32)SHADOW_MAP_SIZE;
+	s_pendingShadowParams[2] = normalBias;
+	s_pendingShadowParams[3] = fadeRadius;
+
+	s_savedShadowZWrite = rwStateCache.zwrite;
+	s_savedShadowZTest = rwStateCache.ztest;
+	s_savedShadowCull = rwStateCache.cullmode;
+	s_savedShadowVertexAlpha = rwStateCache.vertexAlpha;
+
+	bindFramebuffer(s_shadowFbo);
+	glViewport(0, 0, SHADOW_MAP_SIZE, SHADOW_MAP_SIZE);
+	glGlobals.presentWidth = -1;
+	glGlobals.presentHeight = -1;
+
+	glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+	setRenderState(ZTESTENABLE, (void*)1);
+	setRenderState(ZWRITEENABLE, (void*)1);
+	setRenderState(CULLMODE, (void*)CULLNONE);
+	setRenderState(VERTEXALPHA, (void*)0);
+	setAlphaBlend(false);
+	flushGlRenderState();
+
+	glEnable(GL_POLYGON_OFFSET_FILL);
+	glPolygonOffset(1.8f, 3.5f);
+	glDepthMask(GL_TRUE);
+	glClear(GL_DEPTH_BUFFER_BIT);
+
+	setViewMatrix((float32*)lightView);
+	setProjectionMatrix((float32*)lightProj);
+
+	s_inShadowPass = 1;
+	return 1;
+}
+
+void
+endShadowPass(void)
+{
+	if(!s_inShadowPass)
+		return;
+	s_inShadowPass = 0;
+
+	glDisable(GL_POLYGON_OFFSET_FILL);
+	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+
+	setTexture(0, nil);
+	setRenderState(ZTESTENABLE, (void*)(uintptr)s_savedShadowZTest);
+	setRenderState(ZWRITEENABLE, (void*)(uintptr)s_savedShadowZWrite);
+	setRenderState(CULLMODE, (void*)(uintptr)s_savedShadowCull);
+	setRenderState(VERTEXALPHA, (void*)(uintptr)s_savedShadowVertexAlpha);
+	flushGlRenderState();
+
+	bindFramebuffer(0);
+
+	int32 prevStage = activeTexture < 0 ? 0 : activeTexture;
+	setActiveTexture(3);
+	bindTexture(s_shadowDepthTex);
+	setActiveTexture(prevStage);
+
+	s_shadowEnabled = 1;
+	setUniform(u_shadowMatrix, s_pendingShadowMatrix);
+	setUniform(u_shadowParams, s_pendingShadowParams);
+}
+
+void
+shadowRenderAtomic(Atomic *atomic, InstanceDataHeader *header, bool32 skinned)
+{
+	if(!s_inShadowPass || atomic == nil || atomic->geometry == nil || header == nil)
+		return;
+
+	uint32 flags = atomic->geometry->flags;
+	setWorldMatrix(atomic->getFrame()->getLTM());
+	setupVertexInput(header);
+
+	if(skinned)
+		uploadSkinMatrices(atomic);
+
+	InstanceData *inst = header->inst;
+	int32 n = header->numMeshes;
+	while(n--){
+		Material *m = inst->material;
+		// Let sunlight pass through semi-transparent glass windows/covers.
+		if(m == nil || m->color.alpha < 160){
+			inst++;
+			continue;
+		}
+		setMaterial(flags, m->color, m->surfaceProps);
+		setTexture(0, m->texture);
+		setAlphaBlend(false);
+
+		if(skinned){
+			if(getAlphaTest())
+				shadowSkinShader->use();
+			else
+				shadowSkinShader_noAT->use();
+		}else{
+			if(getAlphaTest())
+				shadowStaticShader->use();
+			else
+				shadowStaticShader_noAT->use();
+		}
+
+		drawInst_simple(header, inst);
+		inst++;
+	}
+
+	teardownVertexInput(header);
 }
 
 static int
@@ -1949,6 +2211,17 @@ termOpenGL(void)
 {
 	closeIm3D();
 	closeIm2D();
+
+	if(shadowStaticShader){ shadowStaticShader->destroy(); shadowStaticShader = nil; }
+	if(shadowStaticShader_noAT){ shadowStaticShader_noAT->destroy(); shadowStaticShader_noAT = nil; }
+	if(shadowSkinShader){ shadowSkinShader->destroy(); shadowSkinShader = nil; }
+	if(shadowSkinShader_noAT){ shadowSkinShader_noAT->destroy(); shadowSkinShader_noAT = nil; }
+	if(s_shadowFbo){ glDeleteFramebuffers(1, &s_shadowFbo); s_shadowFbo = 0; }
+	if(s_shadowDepthTex){ glDeleteTextures(1, &s_shadowDepthTex); s_shadowDepthTex = 0; }
+	s_shadowInitTried = 0;
+	s_shadowReady = 0;
+	s_shadowEnabled = 0;
+	s_inShadowPass = 0;
 
 	defaultShader->destroy();
 	defaultShader = nil;

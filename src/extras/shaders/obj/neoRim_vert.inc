@@ -9,6 +9,8 @@ const char *neoRim_vert_src =
 "VSOUT vec4 v_color;\n"
 "VSOUT vec2 v_tex0;\n"
 "VSOUT float v_fog;\n"
+"VSOUT vec3 v_worldPos;\n"
+"VSOUT vec3 v_worldNormal;\n"
 
 "void\n"
 "main(void)\n"
@@ -31,6 +33,8 @@ const char *neoRim_vert_src =
 "	v_color = clamp(v_color, 0.0, 1.0);\n"
 "	v_color *= u_matColor;\n"
 
-"	v_fog = DoFog(gl_Position.w);\n"
+"	v_worldPos = Vertex.xyz;\n"
+"	v_worldNormal = Normal;\n"
+"	v_fog = DoFogEye(Vertex.xyz);\n"
 "}\n"
 ;

@@ -5,6 +5,7 @@ VSOUT vec2 v_tex0;
 VSOUT vec2 v_tex1;
 VSOUT float v_fog;
 VSOUT vec3 v_worldPos;
+VSOUT vec3 v_worldNormal;
 
 void
 main(void)
@@ -23,5 +24,6 @@ main(void)
 	v_color *= u_matColor;
 
 	v_worldPos = Vertex.xyz;
-	v_fog = DoFog(gl_Position.w);
+	v_worldNormal = Normal;
+	v_fog = DoFogEye(Vertex.xyz);
 }

@@ -213,6 +213,14 @@ uint32 bindTexture(uint32 texid);
 
 void flushCache(void);
 
+enum { SHADOW_MAP_SIZE = 2048 };
+bool32 beginShadowPass(const float32 *lightView, const float32 *lightProj,
+                       float32 strength, float32 normalBias, float32 fadeRadius);
+void endShadowPass(void);
+void disableShadowMap(void);
+bool32 isShadowPass(void);
+void shadowRenderAtomic(Atomic *atomic, InstanceDataHeader *header, bool32 skinned);
+
 #endif
 
 class ObjPipeline : public rw::ObjPipeline

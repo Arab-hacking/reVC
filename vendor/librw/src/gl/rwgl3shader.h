@@ -5,7 +5,7 @@ namespace gl3 {
 
 // TODO: make this dynamic
 enum {
-	MAX_UNIFORMS = 40,
+	MAX_UNIFORMS = 96,
 	MAX_BLOCKS = 20
 };
 

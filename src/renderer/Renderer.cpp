@@ -986,6 +986,11 @@ CRenderer::ConstructRenderList(void)
 		CTimeCycle::GetDirectionalRed(), CTimeCycle::GetDirectionalGreen(),
 		CTimeCycle::GetDirectionalBlue(),
 		Min(1.0f, Max(0.0f, CTimeCycle::GetShadowStrength()/255.0f))));
+	rw::setSkyAmbientParams(rw::makeRGBAf(
+		(0.55f * CTimeCycle::GetSkyTopRed()   + 0.45f * CTimeCycle::GetSkyBottomRed())   / 255.0f,
+		(0.55f * CTimeCycle::GetSkyTopGreen() + 0.45f * CTimeCycle::GetSkyBottomGreen()) / 255.0f,
+		(0.55f * CTimeCycle::GetSkyTopBlue()  + 0.45f * CTimeCycle::GetSkyBottomBlue())  / 255.0f,
+		1.0f));
 	// The atmospheric curve follows the same interpolated weather as the
 	// timecycle. Zero is the original GL3 fog/light behaviour (also used when
 	// the new rendering setting is disabled).

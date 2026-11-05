@@ -6,6 +6,7 @@
 #include <cmath>
 
 #include "CustomTimecycle.h"
+#include "CustomTimecycleShadow.h"
 #include "CustomModels.h"
 #include "DebugLog.h"
 #include "SavehDiag.h"
@@ -404,12 +405,30 @@ ExpandGrids(const SlotGrid grids[BR_WEATHERS_USED], int weathers, bool atmospher
 				ExpandField(CTimeCycle::m_nSunCoronaBlue, w, g, CycleSlot::F_SUNCOR_B, 1.0f, 0, 255);
 			}
 		}
-		if(has[CycleSlot::F_SHAD])
-			ExpandField(CTimeCycle::m_nShadowStrength, w, g, CycleSlot::F_SHAD, 1.0f, 0, 255);
-		if(has[CycleSlot::F_LIGHTSHAD])
-			ExpandField(CTimeCycle::m_nLightShadowStrength, w, g, CycleSlot::F_LIGHTSHAD, 1.0f, 0, 255);
-		if(has[CycleSlot::F_POLESHAD])
-			ExpandField(CTimeCycle::m_nPoleShadowStrength, w, g, CycleSlot::F_POLESHAD, 1.0f, 0, 255);
+		auto expandShadowField = [&](uint8 table[NUMHOURS][NUMWEATHERS], int fieldIdx, bool enforceDayFloor){
+			bool hasArr[8];
+			float valArr[8];
+			for(int sI = 0; sI < 8; sI++){
+				hasArr[sI] = g.slots[sI].has[fieldIdx];
+				valArr[sI] = g.slots[sI].v[fieldIdx];
+			}
+			float scale = 1.0f;
+			if(CustomTimecycleShadow::DetermineShadowFieldScale(g.present, hasArr, valArr, scale)){
+				ExpandField(table, w, g, fieldIdx, scale, 0, 255);
+			}
+			if(enforceDayFloor){
+				for(int h = 0; h < NUMHOURS; h++){
+					float dirPeak = Max(Max((float)CTimeCycle::m_nDirectionalRed[h][w],
+					                        (float)CTimeCycle::m_nDirectionalGreen[h][w]),
+					                        (float)CTimeCycle::m_nDirectionalBlue[h][w]);
+					table[h][w] = (uint8)CustomTimecycleShadow::EnsureDaytimeShadowFloor(
+						table[h][w], h, w, dirPeak);
+				}
+			}
+		};
+		expandShadowField(CTimeCycle::m_nShadowStrength, CycleSlot::F_SHAD, true);
+		expandShadowField(CTimeCycle::m_nLightShadowStrength, CycleSlot::F_LIGHTSHAD, false);
+		expandShadowField(CTimeCycle::m_nPoleShadowStrength, CycleSlot::F_POLESHAD, false);
 #ifdef RW_GL3
 		if(atmosphere && has[CycleSlot::F_FOGSTART] && has[CycleSlot::F_FARCLIP]){
 			// Import the source fog *ratio*, not its far clip. Replacing VC's

@@ -11,6 +11,7 @@
 #include "RwHelper.h"
 #include "Camera.h"
 #include "MBlur.h"
+#include "GL3Atmosphere.h"
 #include "postfx.h"
 
 RwRaster *CPostFX::pFrontBuffer;
@@ -30,6 +31,7 @@ void *contrast_PS;
 #endif
 #ifdef RW_OPENGL
 int32 u_blurcolor;
+int32 u_blurTexel;
 int32 u_contrastAdd;
 int32 u_contrastMult;
 rw::gl3::Shader *colourFilterVC;
@@ -41,6 +43,7 @@ CPostFX::InitOnce(void)
 {
 #ifdef RW_OPENGL
 	u_blurcolor = rw::gl3::registerUniform("u_blurcolor");
+	u_blurTexel = rw::gl3::registerUniform("u_blurTexel");
 	u_contrastAdd = rw::gl3::registerUniform("u_contrastAdd");
 	u_contrastMult = rw::gl3::registerUniform("u_contrastMult");
 #endif
@@ -300,9 +303,21 @@ CPostFX::RenderOverlayShader(RwCamera *cam, int32 r, int32 g, int32 b, int32 a)
 		rw::d3d::im2dOverridePS = colourfilterVC_PS;
 #endif
 #ifdef RW_OPENGL
+		float blurTexel[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+		if(GL3Atmosphere::Enabled && pBackBuffer && cam && RwCameraGetRaster(cam)){
+			const float texW = (float)Max(1, RwRasterGetWidth(pBackBuffer));
+			const float texH = (float)Max(1, RwRasterGetHeight(pBackBuffer));
+			const float camW = (float)Max(1, RwRasterGetWidth(RwCameraGetRaster(cam)));
+			const float camH = (float)Max(1, RwRasterGetHeight(RwCameraGetRaster(cam)));
+			blurTexel[0] = 1.0f / texW;
+			blurTexel[1] = 1.0f / texH;
+			blurTexel[2] = Min(1.0f, camW / texW);
+			blurTexel[3] = Min(1.0f, camH / texH);
+		}
 		rw::gl3::im2dOverrideShader = colourFilterVC;
 		colourFilterVC->use();
 		glUniform4fv(colourFilterVC->uniformLocations[u_blurcolor], 1, blurcolors);
+		glUniform4fv(colourFilterVC->uniformLocations[u_blurTexel], 1, blurTexel);
 #endif
 	}
 	RwIm2DRenderIndexedPrimitive(rwPRIMTYPETRILIST, Vertex, 4, Index, 6);

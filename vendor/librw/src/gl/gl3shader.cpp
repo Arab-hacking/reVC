@@ -22,7 +22,7 @@ namespace gl3 {
 UniformRegistry uniformRegistry;
 static char nameBuffer[(MAX_UNIFORMS + MAX_BLOCKS)*32];	// static because memory system isn't up yet when we register
 static uint32 nameBufPtr;
-static float uniformData[512*4];	// seems enough
+static float uniformData[1024*4];	// enough for 64 bones + lights + shadow/sky matrices
 static uint32 dataPtr;
 
 static int uniformTypesize[] = {

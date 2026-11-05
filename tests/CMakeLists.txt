@@ -21,6 +21,10 @@ endif()
 add_executable(gl3_atmosphere_tests GL3AtmosphereTests.cpp)
 set_target_properties(gl3_atmosphere_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
 add_test(NAME gl3_atmosphere_tests COMMAND gl3_atmosphere_tests)
+
+add_executable(sun_shadow_lighting_tests SunShadowLightingTests.cpp)
+set_target_properties(sun_shadow_lighting_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+add_test(NAME sun_shadow_lighting_tests COMMAND sun_shadow_lighting_tests)
 add_test(NAME debug_log_tests COMMAND debug_log_tests)
 add_test(NAME custom_ifp_tests COMMAND custom_ifp_tests)
 

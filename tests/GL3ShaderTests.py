@@ -59,11 +59,17 @@ PROGRAMS = [
     ("skin_full", VENDOR / "skin.vert", VENDOR / "simple.frag", FULL_LIGHTS, "#define BRMATERIAL\n"),
     ("matfx", VENDOR / "matfx_env.vert", VENDOR / "matfx_env.frag", "", ""),
     ("matfx_full", VENDOR / "matfx_env.vert", VENDOR / "matfx_env.frag", FULL_LIGHTS, ""),
-    ("neo_vehicle", EXTRAS / "neoVehicle.vert", EXTRAS / "neoVehicle.frag", "#define DIRECTIONALS\n", ""),
+    ("shadow_static", VENDOR / "default.vert", VENDOR / "simple.frag", "", "#define SHADOW_DEPTH_PASS\n"),
+    ("shadow_skin", VENDOR / "skin.vert", VENDOR / "simple.frag", "", "#define SHADOW_DEPTH_PASS\n"),
+    ("im2d", VENDOR / "im2d.vert", VENDOR / "simple.frag", "", ""),
+    ("im3d", VENDOR / "im3d.vert", VENDOR / "simple.frag", "", ""),
+    ("neo_vehicle", EXTRAS / "neoVehicle.vert", EXTRAS / "neoVehicle.frag", FULL_LIGHTS, ""),
     ("neo_gloss", EXTRAS / "neoGloss.vert", EXTRAS / "neoGloss.frag", "", ""),
-    ("neo_world", EXTRAS / "default_UV2.vert", EXTRAS / "neoWorldVC.frag", "", ""),
-    ("neo_rim", EXTRAS / "neoRim.vert", EXTRAS / "simple.frag", "#define DIRECTIONALS\n", ""),
-    ("neo_rim_skin", EXTRAS / "neoRimSkin.vert", EXTRAS / "simple.frag", "#define DIRECTIONALS\n", ""),
+    ("neo_world", EXTRAS / "default_UV2.vert", EXTRAS / "neoWorldVC.frag", FULL_LIGHTS, ""),
+    ("neo_rim", EXTRAS / "neoRim.vert", EXTRAS / "simple.frag", FULL_LIGHTS, ""),
+    ("neo_rim_skin", EXTRAS / "neoRimSkin.vert", EXTRAS / "simple.frag", FULL_LIGHTS, ""),
+    ("postfx_colourfilter", EXTRAS / "im2d.vert", EXTRAS / "colourfilterVC.frag", "", ""),
+    ("postfx_contrast", EXTRAS / "im2d.vert", EXTRAS / "contrast.frag", "", ""),
 ]
 
 
@@ -86,7 +92,7 @@ class GL3ShaderTests(unittest.TestCase):
                 vs_path = Path(folder) / "program.vert"
                 fs_path = Path(folder) / "program.frag"
                 for name, vs, fs, vs_defines, fs_defines in PROGRAMS:
-                    alpha_variants = (False, True) if name.startswith(("default", "skin", "matfx")) else (False,)
+                    alpha_variants = (False, True) if name.startswith(("default", "skin", "matfx", "shadow_")) else (False,)
                     for no_alpha_test in alpha_variants:
                         with self.subTest(version=version, program=name, no_alpha_test=no_alpha_test):
                             vs_path.write_text(decl + vs_defines + embedded_source(VENDOR / "header.vert") + embedded_source(vs))

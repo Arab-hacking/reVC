@@ -19,37 +19,28 @@ main(void)
 {
 	vec4 pass1 = v_color;
 	pass1 *= texture(tex0, vec2(v_tex0.x, 1.0-v_tex0.y));
+	DoAlphaTest(pass1.a);
 
-	// Reflect the view direction in world space, then transform it using the
-	// actual MatFX environment frame (including envMapFlipU). Unlike the old
-	// normalize(refl.xy) projection this is defined for head-on reflections.
-	vec3 N = normalize(v_worldNormal);
+	float hasVertNormal;
+	vec3 N = ResolveWorldNormal(v_worldPos, v_worldNormal, hasVertNormal);
 	vec3 V = normalize(u_eye.xyz - v_worldPos);
 	vec3 refl = reflect(-V, N);
 	vec2 envUV = (u_texMatrix * vec4(refl, 1.0)).xy;
-	vec3 envmap = pow(texture(tex1, envUV).rgb, vec3(0.8));
+	vec3 envmap = pow(max(texture(tex1, envUV).rgb, vec3(0.0)), vec3(0.9));
 	float fres = 1.0 - clamp(dot(V, N), 0.0, 1.0);
-	fres = clamp(pow(fres, 3.5), 0.15, 0.7);
-	// Respect MatFX's material tint / optional lighting and alpha blending.
-	vec3 pass2 = envmap * v_envColor.rgb * fres * shininess;
+	fres = clamp(pow(fres, 3.5), 0.08, 0.70);
 
-	float selfShade;
-	pass1.rgb += SunMaterialLighting(v_worldPos, N, selfShade);
-	pass1.rgb *= 1.0 - selfShade;
+	float shadowVis = u_atmosphere.x > 0.5 ? SampleSunShadow(v_worldPos, N) : 1.0;
+	vec3 pass2 = envmap * v_envColor.rgb * fres * shininess * mix(0.55, 1.0, shadowVis);
 
 	float visibility = AtmosphereVisibility(v_worldPos, v_fog);
-	pass1.rgb = mix(u_fogColor.rgb, pass1.rgb, visibility);
+	pass1.rgb = ShadeWorldSurface(pass1.rgb, v_worldPos, v_worldNormal, visibility);
 	pass2 *= visibility;
 
 	float fba = max(pass1.a, disableFBA);
 	vec4 color;
-	color.rgb = pass1.rgb*pass1.a + pass2*fba;
+	color.rgb = clamp(pass1.rgb*pass1.a + pass2*fba, 0.0, 1.0);
 	color.a = pass1.a;
-
-	// Apply gamma after fog and compositing; do not shade the fog colour.
-	color.rgb = pow(max(color.rgb, vec3(0.0)), vec3(u_localInvGamma.x));
-
-	DoAlphaTest(color.a);
 
 	FRAGCOLOR(color);
 }

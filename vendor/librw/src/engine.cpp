@@ -506,6 +506,20 @@ getAtmosphereParams(void)
 {
 	return atmosphereParams;
 }
+
+static RGBAf skyAmbientParams = { 0.56f, 0.68f, 0.88f, 1.0f };
+
+void
+setSkyAmbientParams(RGBAf params)
+{
+	skyAmbientParams = params;
+}
+
+RGBAf
+getSkyAmbientParams(void)
+{
+	return skyAmbientParams;
+}
 #endif
 
 namespace null {

@@ -1,0 +1,214 @@
+#include "common.h"
+
+#include "SunShadowMap.h"
+#include "SunShadowMath.h"
+#include "GL3Atmosphere.h"
+#include "main.h"
+#include "Game.h"
+#include "Clock.h"
+#include "Weather.h"
+#include "Timecycle.h"
+#include "Camera.h"
+#include "World.h"
+#include "Renderer.h"
+#include "ModelInfo.h"
+#include "VisibilityPlugins.h"
+#include "Entity.h"
+#include "Vehicle.h"
+#include "Ped.h"
+
+static bool s_sunShadowActive = false;
+
+bool
+CSunShadowMap::IsActive(void)
+{
+	return s_sunShadowActive;
+}
+
+#if defined(LIBRW) && defined(RW_GL3)
+
+static bool
+ShouldRenderShadowEntity(CEntity *ent, const SunShadowMath::ShadowSetup &setup)
+{
+	if(ent == nil || !ent->bIsVisible || ent->bIsBIGBuilding)
+		return false;
+
+	if(ent->m_area != CGame::currArea && ent->m_area != AREA_EVERYWHERE)
+		return false;
+
+	CBaseModelInfo *mi = CModelInfo::GetModelInfo(ent->GetModelIndex());
+	if(mi == nil)
+		return false;
+
+	if(mi->GetModelType() == MITYPE_TIME){
+		CTimeModelInfo *ti = (CTimeModelInfo*)mi;
+		if(!CClock::GetIsTimeInRange(ti->GetTimeOn(), ti->GetTimeOff()))
+			return false;
+	}
+
+	CVector boundCenter = ent->GetBoundCentre();
+	float boundRadius = Max(ent->GetBoundRadius(), 1.5f);
+	if(!SunShadowMath::DoesSphereOverlapShadowVolume(
+		setup,
+		SunShadowMath::MakeVec3(boundCenter.x, boundCenter.y, boundCenter.z),
+		boundRadius))
+		return false;
+
+	if(ent->m_rwObject == nil){
+		if((ent->IsBuilding() || ent->IsObject() || ent->IsDummy()) && mi->GetRwObject() != nil)
+			ent->CreateRwObject();
+		if(ent->m_rwObject == nil)
+			return false;
+	}
+
+	return true;
+}
+
+static void
+RenderShadowEntity(CEntity *ent)
+{
+	if(ent->IsVehicle()){
+		CVehicle *veh = (CVehicle*)ent;
+		CVisibilityPlugins::SetupVehicleVariables((RpClump*)veh->m_rwObject);
+		CVisibilityPlugins::InitAlphaAtomicList();
+
+		if(veh->pDriver && veh->pDriver->m_nPedState == PED_DRIVING && veh->pDriver->m_rwObject){
+			veh->pDriver->UpdateRpHAnim();
+			veh->pDriver->Render();
+		}
+		for(int i = 0; i < 8; i++){
+			if(veh->pPassengers[i] && veh->pPassengers[i]->m_nPedState == PED_DRIVING && veh->pPassengers[i]->m_rwObject){
+				veh->pPassengers[i]->UpdateRpHAnim();
+				veh->pPassengers[i]->Render();
+			}
+		}
+
+		veh->Render();
+		veh->bImBeingRendered = true;
+		CVisibilityPlugins::RenderAlphaAtomics();
+		CVisibilityPlugins::RenderBoatAlphaAtomics();
+		veh->bImBeingRendered = false;
+		return;
+	}
+
+	if(ent->IsPed()){
+		CPed *ped = (CPed*)ent;
+		if(ped->bInVehicle && ped->m_nPedState == PED_DRIVING)
+			return; // rendered with vehicle above
+		ped->UpdateRpHAnim();
+	}
+
+	ent->Render();
+}
+
+static void
+RenderShadowSectorList(CPtrList &list, const SunShadowMath::ShadowSetup &setup)
+{
+	for(CPtrNode *node = list.first; node != nil; node = node->next){
+		CEntity *ent = (CEntity*)node->item;
+		if(ent == nil || ent->m_scanCode == CWorld::GetCurrentScanCode())
+			continue;
+		ent->m_scanCode = CWorld::GetCurrentScanCode();
+
+		if(!ShouldRenderShadowEntity(ent, setup))
+			continue;
+
+		RenderShadowEntity(ent);
+	}
+}
+
+void
+CSunShadowMap::Render(void)
+{
+	s_sunShadowActive = false;
+
+	if(!GL3Atmosphere::Enabled || Scene.camera == nil || !CGame::CanSeeOutSideFromCurrArea()){
+		rw::gl3::disableShadowMap();
+		return;
+	}
+
+	float rawShad = CTimeCycle::GetShadowStrength() / 255.0f;
+	float cloudFactor = 1.0f - 0.55f * GL3Atmosphere::Clamp01(CWeather::CloudCoverage)
+	                         - 0.45f * GL3Atmosphere::Clamp01(CWeather::Rain);
+	if(cloudFactor < 0.18f)
+		cloudFactor = 0.18f;
+
+	CVector sunDir = CTimeCycle::GetSunDirection();
+	CVector camPos = TheCamera.GetPosition();
+	CVector camFwd = TheCamera.GetForward();
+
+	SunShadowMath::ShadowSetup setup = SunShadowMath::ComputeSunShadowSetup(
+		SunShadowMath::MakeVec3(sunDir.x, sunDir.y, sunDir.z),
+		SunShadowMath::MakeVec3(camPos.x, camPos.y, camPos.z),
+		SunShadowMath::MakeVec3(camFwd.x, camFwd.y, camFwd.z),
+		88.0f,
+		240.0f,
+		rw::gl3::SHADOW_MAP_SIZE);
+
+	float strength = Max(rawShad, 0.72f) * setup.fadeStrength * cloudFactor;
+	if(!setup.active || strength <= 0.02f){
+		rw::gl3::disableShadowMap();
+		return;
+	}
+
+	if(!rw::gl3::beginShadowPass(
+		setup.lightView,
+		setup.lightProj,
+		Min(1.0f, strength),
+		0.065f,
+		setup.halfExtentXY)){
+		return;
+	}
+
+	CVisibilityPlugins::SetRenderWareCamera(Scene.camera);
+	float prevCullComps = CVisibilityPlugins::ms_cullCompsDist;
+	CVisibilityPlugins::ms_cullCompsDist = 1000000.0f;
+
+	// Expand XY sector scan upstream toward the sun so tall buildings/trees cast shadows into view
+	const float casterMargin = 92.0f;
+	const float minWorldX = setup.focusWorld.x - (setup.halfExtentXY + casterMargin);
+	const float maxWorldX = setup.focusWorld.x + (setup.halfExtentXY + casterMargin);
+	const float minWorldY = setup.focusWorld.y - (setup.halfExtentXY + casterMargin);
+	const float maxWorldY = setup.focusWorld.y + (setup.halfExtentXY + casterMargin);
+
+	const int startSX = CWorld::GetSectorIndexX(minWorldX);
+	const int endSX   = CWorld::GetSectorIndexX(maxWorldX);
+	const int startSY = CWorld::GetSectorIndexY(minWorldY);
+	const int endSY   = CWorld::GetSectorIndexY(maxWorldY);
+
+	CWorld::AdvanceCurrentScanCode();
+
+	for(int sy = startSY; sy <= endSY; sy++){
+		for(int sx = startSX; sx <= endSX; sx++){
+			CSector *sec = CWorld::GetSector(sx, sy);
+			if(sec == nil)
+				continue;
+			RenderShadowSectorList(sec->m_lists[ENTITYLIST_BUILDINGS], setup);
+			RenderShadowSectorList(sec->m_lists[ENTITYLIST_BUILDINGS_OVERLAP], setup);
+			RenderShadowSectorList(sec->m_lists[ENTITYLIST_OBJECTS], setup);
+			RenderShadowSectorList(sec->m_lists[ENTITYLIST_OBJECTS_OVERLAP], setup);
+			RenderShadowSectorList(sec->m_lists[ENTITYLIST_DUMMIES], setup);
+			RenderShadowSectorList(sec->m_lists[ENTITYLIST_DUMMIES_OVERLAP], setup);
+			RenderShadowSectorList(sec->m_lists[ENTITYLIST_VEHICLES], setup);
+			RenderShadowSectorList(sec->m_lists[ENTITYLIST_VEHICLES_OVERLAP], setup);
+			RenderShadowSectorList(sec->m_lists[ENTITYLIST_PEDS], setup);
+			RenderShadowSectorList(sec->m_lists[ENTITYLIST_PEDS_OVERLAP], setup);
+		}
+	}
+
+	CVisibilityPlugins::InitAlphaAtomicList();
+	CVisibilityPlugins::ms_cullCompsDist = prevCullComps;
+
+	rw::gl3::endShadowPass();
+	s_sunShadowActive = true;
+}
+
+#else
+
+void
+CSunShadowMap::Render(void)
+{
+	s_sunShadowActive = false;
+}
+
+#endif

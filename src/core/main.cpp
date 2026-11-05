@@ -79,6 +79,7 @@
 #include "postfx.h"
 #include "custompipes.h"
 #include "CustomSky.h"
+#include "SunShadowMap.h"
 #include "screendroplets.h"
 #include "VarConsole.h"
 #ifdef USE_OUR_VERSIONING
@@ -1624,6 +1625,7 @@ Idle(void *arg)
 
 		tbStartTimer(0, "PreRender");
 		CRenderer::PreRender();
+		CSunShadowMap::Render();
 		tbEndTimer("PreRender");
 
 #ifdef FIX_BUGS
@@ -2026,6 +2028,7 @@ void TheGame(void)
 			if ((!FrontEndMenuManager.m_bMenuActive || FrontEndMenuManager.m_bRenderGameInMenu == true) && TheCamera.GetScreenFadeStatus() != FADE_2 )
 			{
 				CRenderer::PreRender();
+				CSunShadowMap::Render();
 				// TODO(MIAMI): something ps2all specific
 
 #ifdef FIX_BUGS

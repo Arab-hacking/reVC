@@ -1,14 +1,67 @@
 const char *colourfilterVC_frag_src =
 "uniform sampler2D tex0;\n"
 "uniform vec4 u_blurcolor;\n"
+"uniform vec4 u_blurTexel;\n"
 
 "FSIN vec4 v_color;\n"
 "FSIN vec2 v_tex0;\n"
 "FSIN float v_fog;\n"
 
+"vec3\n"
+"ExtractHighlight(vec3 c)\n"
+"{\n"
+"	float peak = max(c.r, max(c.g, c.b));\n"
+"	float soft = clamp(peak - 0.78, 0.0, 0.40);\n"
+"	float w = max(peak - 0.85, 0.0) + (soft * soft) * 0.85;\n"
+"	return c * (w / max(peak, 1.0e-4));\n"
+"}\n"
+
+"vec3\n"
+"SampleBackbufferClamped(vec2 uv)\n"
+"{\n"
+"	vec2 minUV = vec2(0.5) * u_blurTexel.xy;\n"
+"	vec2 maxUV = max(u_blurTexel.zw - minUV, minUV);\n"
+"	vec2 c = clamp(uv, minUV, maxUV);\n"
+"	return texture(tex0, vec2(c.x, 1.0 - c.y)).rgb;\n"
+"}\n"
+
 "void\n"
 "main(void)\n"
 "{\n"
+"	if(u_blurTexel.x > 0.0){\n"
+"		vec3 scene = SampleBackbufferClamped(v_tex0);\n"
+
+"		// Subtle time-of-day warmth without VC's 5-pass highlight blowout on white cars\n"
+"		float gradeWeight = clamp(u_blurcolor.a * 0.35, 0.0, 0.22);\n"
+"		vec3 graded = clamp(scene * (1.0 + u_blurcolor.rgb * 0.42), 0.0, 1.0);\n"
+"		scene = mix(scene, graded, gradeWeight);\n"
+
+"		// 8-tap golden highlight bloom around sun glints and sky highlights\n"
+"		vec2 t1 = u_blurTexel.xy * 2.4;\n"
+"		vec2 t2 = u_blurTexel.xy * 5.2;\n"
+"		vec3 bloom = vec3(0.0);\n"
+"		bloom += ExtractHighlight(SampleBackbufferClamped(v_tex0 + vec2( t1.x,  0.0)));\n"
+"		bloom += ExtractHighlight(SampleBackbufferClamped(v_tex0 + vec2(-t1.x,  0.0)));\n"
+"		bloom += ExtractHighlight(SampleBackbufferClamped(v_tex0 + vec2( 0.0,  t1.y)));\n"
+"		bloom += ExtractHighlight(SampleBackbufferClamped(v_tex0 + vec2( 0.0, -t1.y)));\n"
+"		bloom += ExtractHighlight(SampleBackbufferClamped(v_tex0 + vec2( t2.x,  t2.y))) * 0.75;\n"
+"		bloom += ExtractHighlight(SampleBackbufferClamped(v_tex0 + vec2(-t2.x,  t2.y))) * 0.75;\n"
+"		bloom += ExtractHighlight(SampleBackbufferClamped(v_tex0 + vec2( t2.x, -t2.y))) * 0.75;\n"
+"		bloom += ExtractHighlight(SampleBackbufferClamped(v_tex0 + vec2(-t2.x, -t2.y))) * 0.75;\n"
+"		bloom *= (1.0 / 7.0);\n"
+
+"		vec3 bloomTint = mix(vec3(1.04, 1.00, 0.94), 1.0 + u_blurcolor.rgb * 0.5, 0.35);\n"
+"		vec3 composed = scene + bloom * bloomTint * 0.28;\n"
+
+"		// Subtle natural corner vignette centered on the active viewport\n"
+"		vec2 screenUV = clamp(v_tex0 / max(u_blurTexel.zw, vec2(1.0e-4)), 0.0, 1.0) - vec2(0.5);\n"
+"		float vig = 1.0 - smoothstep(0.32, 0.86, dot(screenUV, screenUV) * 1.55) * 0.075;\n"
+"		composed = clamp(composed * vig, 0.0, 1.0);\n"
+
+"		FRAGCOLOR(vec4(composed, 1.0));\n"
+"		return;\n"
+"	}\n"
+
 "	float a = u_blurcolor.a;\n"
 "	vec4 doublec = clamp(u_blurcolor*2.0, 0.0, 1.0);\n"
 "	vec4 dst = texture(tex0, vec2(v_tex0.x, 1.0-v_tex0.y));\n"
@@ -25,5 +78,4 @@ const char *colourfilterVC_frag_src =
 
 "	FRAGCOLOR(color);\n"
 "}\n"
-
 ;
