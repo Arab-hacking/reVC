@@ -514,7 +514,11 @@ CShadows::StoreShadowForVehicle(CVehicle *pCar, VEH_SHD_TYPE type)
 				break;
 				
 			default:
+#ifdef RW_GL3
 				fDrawDistance = GL3Atmosphere::Enabled ? 48.0f : 18.0f;
+#else
+				fDrawDistance = 18.0f;
+#endif
 				break;
 		}
 
