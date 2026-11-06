@@ -454,10 +454,17 @@ Engine::setMultiSamplingLevels(uint32 levels)
 static V3d sunDirection = { 0.0f, 1.0f, 0.0f };
 static float32 localInvGamma = 1.0f;
 
+#ifdef RW_GL3
+namespace gl3 { void syncEnvironmentUniforms(void); }
+#endif
+
 void
 setSunDirection(V3d dir)
 {
 	sunDirection = dir;
+#ifdef RW_GL3
+	gl3::syncEnvironmentUniforms();
+#endif
 }
 
 V3d
@@ -470,6 +477,9 @@ void
 setLocalInvGamma(float32 g)
 {
 	localInvGamma = g;
+#ifdef RW_GL3
+	gl3::syncEnvironmentUniforms();
+#endif
 }
 
 float32
@@ -485,6 +495,9 @@ void
 setSunMaterialParams(RGBAf params)
 {
 	sunMaterialParams = params;
+#ifdef RW_GL3
+	gl3::syncEnvironmentUniforms();
+#endif
 }
 
 RGBAf
@@ -499,6 +512,9 @@ void
 setAtmosphereParams(RGBAf params)
 {
 	atmosphereParams = params;
+#ifdef RW_GL3
+	gl3::syncEnvironmentUniforms();
+#endif
 }
 
 RGBAf
@@ -513,6 +529,9 @@ void
 setSkyAmbientParams(RGBAf params)
 {
 	skyAmbientParams = params;
+#ifdef RW_GL3
+	gl3::syncEnvironmentUniforms();
+#endif
 }
 
 RGBAf

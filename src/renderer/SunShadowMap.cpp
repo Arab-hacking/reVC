@@ -16,6 +16,7 @@
 #include "Entity.h"
 #include "Vehicle.h"
 #include "Ped.h"
+#include "PlayerPed.h"
 
 static bool s_sunShadowActive = false;
 
@@ -28,9 +29,9 @@ CSunShadowMap::IsActive(void)
 #if defined(LIBRW) && defined(RW_GL3)
 
 static bool
-ShouldRenderShadowEntity(CEntity *ent, const SunShadowMath::ShadowSetup &setup)
+ShouldRenderShadowEntity(CEntity *ent, const SunShadowMath::ShadowSetup &setup, float skyFloaterMinZ)
 {
-	if(ent == nil || !ent->bIsVisible || ent->bIsBIGBuilding)
+	if(ent == nil || !ent->bIsVisible || ent->bIsBIGBuilding || ent->bIsSubway || ent->bUnderwater)
 		return false;
 
 	if(ent->m_area != CGame::currArea && ent->m_area != AREA_EVERYWHERE)
@@ -40,6 +41,12 @@ ShouldRenderShadowEntity(CEntity *ent, const SunShadowMath::ShadowSetup &setup)
 	if(mi == nil)
 		return false;
 
+	if(mi->IsSimple()){
+		CSimpleModelInfo *smi = (CSimpleModelInfo*)mi;
+		if(smi->m_noShadows || smi->m_additive || smi->m_isSubway)
+			return false;
+	}
+
 	if(mi->GetModelType() == MITYPE_TIME){
 		CTimeModelInfo *ti = (CTimeModelInfo*)mi;
 		if(!CClock::GetIsTimeInRange(ti->GetTimeOn(), ti->GetTimeOff()))
@@ -48,6 +55,12 @@ ShouldRenderShadowEntity(CEntity *ent, const SunShadowMath::ShadowSetup &setup)
 
 	CVector boundCenter = ent->GetBoundCentre();
 	float boundRadius = Max(ent->GetBoundRadius(), 1.5f);
+
+	// Skip ungrounded interior shells / floating map blocks suspended high in empty sky
+	// (custom SA/BR IPLs often place interiors at Z = +80..+1500 with interior=0).
+	if((ent->IsBuilding() || ent->IsDummy()) && (boundCenter.z - boundRadius) > skyFloaterMinZ)
+		return false;
+
 	if(!SunShadowMath::DoesSphereOverlapShadowVolume(
 		setup,
 		SunShadowMath::MakeVec3(boundCenter.x, boundCenter.y, boundCenter.z),
@@ -102,7 +115,7 @@ RenderShadowEntity(CEntity *ent)
 }
 
 static void
-RenderShadowSectorList(CPtrList &list, const SunShadowMath::ShadowSetup &setup)
+RenderShadowSectorList(CPtrList &list, const SunShadowMath::ShadowSetup &setup, float skyFloaterMinZ)
 {
 	for(CPtrNode *node = list.first; node != nil; node = node->next){
 		CEntity *ent = (CEntity*)node->item;
@@ -110,7 +123,7 @@ RenderShadowSectorList(CPtrList &list, const SunShadowMath::ShadowSetup &setup)
 			continue;
 		ent->m_scanCode = CWorld::GetCurrentScanCode();
 
-		if(!ShouldRenderShadowEntity(ent, setup))
+		if(!ShouldRenderShadowEntity(ent, setup, skyFloaterMinZ))
 			continue;
 
 		RenderShadowEntity(ent);
@@ -141,8 +154,8 @@ CSunShadowMap::Render(void)
 		SunShadowMath::MakeVec3(sunDir.x, sunDir.y, sunDir.z),
 		SunShadowMath::MakeVec3(camPos.x, camPos.y, camPos.z),
 		SunShadowMath::MakeVec3(camFwd.x, camFwd.y, camFwd.z),
-		88.0f,
-		240.0f,
+		112.0f,
+		200.0f,
 		rw::gl3::SHADOW_MAP_SIZE);
 
 	float strength = Max(rawShad, 0.72f) * setup.fadeStrength * cloudFactor;
@@ -155,7 +168,7 @@ CSunShadowMap::Render(void)
 		setup.lightView,
 		setup.lightProj,
 		Min(1.0f, strength),
-		0.065f,
+		0.075f,
 		setup.halfExtentXY)){
 		return;
 	}
@@ -164,8 +177,12 @@ CSunShadowMap::Render(void)
 	float prevCullComps = CVisibilityPlugins::ms_cullCompsDist;
 	CVisibilityPlugins::ms_cullCompsDist = 1000000.0f;
 
+	CPed *playerPed = FindPlayerPed();
+	float refZ = playerPed ? Max(camPos.z, playerPed->GetPosition().z) : camPos.z;
+	const float skyFloaterMinZ = refZ + 55.0f;
+
 	// Expand XY sector scan upstream toward the sun so tall buildings/trees cast shadows into view
-	const float casterMargin = 92.0f;
+	const float casterMargin = 96.0f;
 	const float minWorldX = setup.focusWorld.x - (setup.halfExtentXY + casterMargin);
 	const float maxWorldX = setup.focusWorld.x + (setup.halfExtentXY + casterMargin);
 	const float minWorldY = setup.focusWorld.y - (setup.halfExtentXY + casterMargin);
@@ -183,16 +200,16 @@ CSunShadowMap::Render(void)
 			CSector *sec = CWorld::GetSector(sx, sy);
 			if(sec == nil)
 				continue;
-			RenderShadowSectorList(sec->m_lists[ENTITYLIST_BUILDINGS], setup);
-			RenderShadowSectorList(sec->m_lists[ENTITYLIST_BUILDINGS_OVERLAP], setup);
-			RenderShadowSectorList(sec->m_lists[ENTITYLIST_OBJECTS], setup);
-			RenderShadowSectorList(sec->m_lists[ENTITYLIST_OBJECTS_OVERLAP], setup);
-			RenderShadowSectorList(sec->m_lists[ENTITYLIST_DUMMIES], setup);
-			RenderShadowSectorList(sec->m_lists[ENTITYLIST_DUMMIES_OVERLAP], setup);
-			RenderShadowSectorList(sec->m_lists[ENTITYLIST_VEHICLES], setup);
-			RenderShadowSectorList(sec->m_lists[ENTITYLIST_VEHICLES_OVERLAP], setup);
-			RenderShadowSectorList(sec->m_lists[ENTITYLIST_PEDS], setup);
-			RenderShadowSectorList(sec->m_lists[ENTITYLIST_PEDS_OVERLAP], setup);
+			RenderShadowSectorList(sec->m_lists[ENTITYLIST_BUILDINGS], setup, skyFloaterMinZ);
+			RenderShadowSectorList(sec->m_lists[ENTITYLIST_BUILDINGS_OVERLAP], setup, skyFloaterMinZ);
+			RenderShadowSectorList(sec->m_lists[ENTITYLIST_OBJECTS], setup, skyFloaterMinZ);
+			RenderShadowSectorList(sec->m_lists[ENTITYLIST_OBJECTS_OVERLAP], setup, skyFloaterMinZ);
+			RenderShadowSectorList(sec->m_lists[ENTITYLIST_DUMMIES], setup, skyFloaterMinZ);
+			RenderShadowSectorList(sec->m_lists[ENTITYLIST_DUMMIES_OVERLAP], setup, skyFloaterMinZ);
+			RenderShadowSectorList(sec->m_lists[ENTITYLIST_VEHICLES], setup, skyFloaterMinZ);
+			RenderShadowSectorList(sec->m_lists[ENTITYLIST_VEHICLES_OVERLAP], setup, skyFloaterMinZ);
+			RenderShadowSectorList(sec->m_lists[ENTITYLIST_PEDS], setup, skyFloaterMinZ);
+			RenderShadowSectorList(sec->m_lists[ENTITYLIST_PEDS_OVERLAP], setup, skyFloaterMinZ);
 		}
 	}
 

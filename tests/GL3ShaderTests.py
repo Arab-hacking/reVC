@@ -122,6 +122,16 @@ class GL3ShaderTests(unittest.TestCase):
                                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
                     self.assertEqual(result.returncode, 0, result.stdout)
 
+    def test_view_matrix_eye_and_env_uniform_sync(self):
+        gl3_cpp = (ROOT / "vendor/librw/src/gl/gl3device.cpp").read_text()
+        # Column-major view inverse translation: E = -R^T * t (columns 0,1,2 dotted with col 3)
+        self.assertIn("eye[0] = -(mat[0]*mat[12] + mat[1]*mat[13] + mat[2]*mat[14]);", gl3_cpp)
+        self.assertIn("eye[1] = -(mat[4]*mat[12] + mat[5]*mat[13] + mat[6]*mat[14]);", gl3_cpp)
+        self.assertIn("eye[2] = -(mat[8]*mat[12] + mat[9]*mat[13] + mat[10]*mat[14]);", gl3_cpp)
+        self.assertIn("syncEnvironmentUniforms()", gl3_cpp)
+        engine_cpp = (ROOT / "vendor/librw/src/engine.cpp").read_text()
+        self.assertGreaterEqual(engine_cpp.count("gl3::syncEnvironmentUniforms();"), 4)
+
 
 if __name__ == "__main__":
     unittest.main()

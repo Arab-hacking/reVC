@@ -71,12 +71,22 @@ inline void MultiplyColMajor4x4(float out[16], const float a[16], const float b[
 	std::memcpy(out, res, sizeof(res));
 }
 
+// Recover camera world position E = -R^T * t from a column-major rigid/orthonormal
+// view matrix (matches vendor/librw/src/gl/gl3device.cpp setViewMatrix).
+inline void ExtractEyeFromColMajorView(const float mat[16], float eye[4])
+{
+	eye[0] = -(mat[0] * mat[12] + mat[1] * mat[13] + mat[2]  * mat[14]);
+	eye[1] = -(mat[4] * mat[12] + mat[5] * mat[13] + mat[6]  * mat[14]);
+	eye[2] = -(mat[8] * mat[12] + mat[9] * mat[13] + mat[10] * mat[14]);
+	eye[3] = 0.0f;
+}
+
 inline ShadowSetup ComputeSunShadowSetup(
 	const Vec3 &sunToSky,
 	const Vec3 &camPos,
 	const Vec3 &camForward,
-	float halfExtentXY = 88.0f,
-	float halfDepthZ = 240.0f,
+	float halfExtentXY = 112.0f,
+	float halfDepthZ = 200.0f,
 	int mapSize = 2048)
 {
 	ShadowSetup out;
@@ -127,15 +137,20 @@ inline ShadowSetup ComputeSunShadowSetup(
 	R = MakeVec3(R.x / rLen, R.y / rLen, R.z / rLen);
 	Vec3 U = Cross3(R, F);
 
-	// Shift focus forward along horizontal camera view so ~70% of the shadow box lies ahead
-	float fwdH = std::sqrt(camForward.x * camForward.x + camForward.y * camForward.y);
-	float fwdX = (fwdH > 1.0e-4f) ? (camForward.x / fwdH) : 0.0f;
-	float fwdY = (fwdH > 1.0e-4f) ? (camForward.y / fwdH) : 0.0f;
-	float leadDist = halfExtentXY * 0.40f;
+	// Shift focus along the 3D camera ray (lowering Z when pitching down, keeping
+	// street-level Z when pitching up) so elevated/rotated views keep the ground
+	// centered inside the orthographic shadow box in every compass direction.
+	float fwdLen = std::sqrt(Dot3(camForward, camForward));
+	Vec3 cf = (fwdLen > 1.0e-4f)
+		? MakeVec3(camForward.x / fwdLen, camForward.y / fwdLen, camForward.z / fwdLen)
+		: MakeVec3(0.0f, 0.0f, 0.0f);
+	float pitchDown = (cf.z < 0.0f) ? -cf.z : 0.0f;
+	float leadDist = (fwdLen > 1.0e-4f) ? (halfExtentXY * (0.42f + 0.28f * pitchDown)) : 0.0f;
+	float focusOffsetZ = (cf.z < 0.0f) ? (cf.z * leadDist) : 0.0f;
 	Vec3 focus = MakeVec3(
-		camPos.x + fwdX * leadDist,
-		camPos.y + fwdY * leadDist,
-		camPos.z);
+		camPos.x + cf.x * leadDist,
+		camPos.y + cf.y * leadDist,
+		camPos.z + focusOffsetZ);
 
 	float cx = Dot3(focus, R);
 	float cy = Dot3(focus, U);

@@ -134,17 +134,17 @@ int32 u_lightDirection;
 int32 u_lightColor;
 #endif
 
-int32 u_matColor;
-int32 u_surfProps;
-int32 u_eye;
-int32 u_sunDir;
-int32 u_sunMaterial;
-int32 u_atmosphere;
-int32 u_skyAmbient;
-int32 u_localInvGamma;
-int32 u_uvMatrix;
-int32 u_shadowMatrix;
-int32 u_shadowParams;
+int32 u_matColor = -1;
+int32 u_surfProps = -1;
+int32 u_eye = -1;
+int32 u_sunDir = -1;
+int32 u_sunMaterial = -1;
+int32 u_atmosphere = -1;
+int32 u_skyAmbient = -1;
+int32 u_localInvGamma = -1;
+int32 u_uvMatrix = -1;
+int32 u_shadowMatrix = -1;
+int32 u_shadowParams = -1;
 
 Shader *defaultShader, *defaultShader_noAT;
 Shader *defaultShader_fullLight, *defaultShader_fullLight_noAT;
@@ -1096,34 +1096,50 @@ setProjectionMatrix(float32 *mat)
 }
 
 void
+syncEnvironmentUniforms(void)
+{
+	if(u_sunDir >= 0){
+		V3d toSun = getSunDirection();
+		float32 sun[4] = { toSun.x, toSun.y, toSun.z, 0.0f };
+		setUniform(u_sunDir, sun);
+	}
+	if(u_sunMaterial >= 0){
+		RGBAf sunMaterial = getSunMaterialParams();
+		setUniform(u_sunMaterial, &sunMaterial);
+	}
+	if(u_atmosphere >= 0){
+		RGBAf atmosphere = getAtmosphereParams();
+		setUniform(u_atmosphere, &atmosphere);
+	}
+	if(u_skyAmbient >= 0){
+		RGBAf skyAmbient = getSkyAmbientParams();
+		setUniform(u_skyAmbient, &skyAmbient);
+	}
+	if(u_localInvGamma >= 0){
+		float32 g = getLocalInvGamma();
+		float32 gam[4] = { g, g, g, 1.0f };
+		setUniform(u_localInvGamma, gam);
+	}
+}
+
+void
 setViewMatrix(float32 *mat)
 {
 	memcpy(&uniformScene.view, mat, 64);
 	setUniform(u_view, uniformScene.view);
 	sceneDirty = 1;
 
-	// BR parity: camera world position (inverse of the view matrix translation),
-	// sun direction and gamma are refreshed together with the view.
+	// BR parity: camera world position (inverse of the column-major view
+	// matrix translation: E = -R^T * t), sun direction and gamma are refreshed
+	// together with the view.
 	float32 eye[4];
-	eye[0] = -(mat[0]*mat[12] + mat[4]*mat[13] + mat[8]*mat[14]);
-	eye[1] = -(mat[1]*mat[12] + mat[5]*mat[13] + mat[9]*mat[14]);
-	eye[2] = -(mat[2]*mat[12] + mat[6]*mat[13] + mat[10]*mat[14]);
+	eye[0] = -(mat[0]*mat[12] + mat[1]*mat[13] + mat[2]*mat[14]);
+	eye[1] = -(mat[4]*mat[12] + mat[5]*mat[13] + mat[6]*mat[14]);
+	eye[2] = -(mat[8]*mat[12] + mat[9]*mat[13] + mat[10]*mat[14]);
 	eye[3] = 0.0f;
 	setUniform(u_eye, eye);
 
-	V3d toSun = getSunDirection();
-	float32 sun[4] = { toSun.x, toSun.y, toSun.z, 0.0f };
-	setUniform(u_sunDir, sun);
-	RGBAf sunMaterial = getSunMaterialParams();
-	setUniform(u_sunMaterial, &sunMaterial);
-	RGBAf atmosphere = getAtmosphereParams();
-	setUniform(u_atmosphere, &atmosphere);
-	RGBAf skyAmbient = getSkyAmbientParams();
-	setUniform(u_skyAmbient, &skyAmbient);
-
-	float32 g = getLocalInvGamma();
-	float32 gam[4] = { g, g, g, 1.0f };
-	setUniform(u_localInvGamma, gam);
+	syncEnvironmentUniforms();
 
 	static const float32 idmat[16] = { 1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1 };
 	setUniform(u_uvMatrix, (float32*)idmat);

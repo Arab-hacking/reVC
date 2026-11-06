@@ -132,6 +132,138 @@ static void TestSunShadowBasisAndDepthOrdering(void)
 	CHECK(!DoesSphereOverlapShadowVolume(day, farAway, 5.0f));
 }
 
+static void BuildRwGl3ViewMatrix(
+	const SunShadowMath::Vec3 &camPos,
+	float yawDeg, float pitchDeg, float rollDeg,
+	float viewOut[16])
+{
+	using namespace SunShadowMath;
+	const float deg2rad = 3.14159265358979323846f / 180.0f;
+	float yaw   = yawDeg   * deg2rad;
+	float pitch = pitchDeg * deg2rad;
+	float roll  = rollDeg  * deg2rad;
+
+	// Orthonormal camera frame (right, up, at)
+	Vec3 at = MakeVec3(
+		std::sin(yaw) * std::cos(pitch),
+		std::cos(yaw) * std::cos(pitch),
+		std::sin(pitch));
+	Vec3 r0 = MakeVec3(std::cos(yaw), -std::sin(yaw), 0.0f);
+	Vec3 u0 = Cross3(at, r0);
+	float uLen = std::sqrt(Dot3(u0, u0));
+	u0 = MakeVec3(u0.x / uLen, u0.y / uLen, u0.z / uLen);
+
+	float cr = std::cos(roll), sr = std::sin(roll);
+	Vec3 right = MakeVec3(r0.x * cr + u0.x * sr, r0.y * cr + u0.y * sr, r0.z * cr + u0.z * sr);
+	Vec3 up    = MakeVec3(-r0.x * sr + u0.x * cr, -r0.y * sr + u0.y * cr, -r0.z * sr + u0.z * cr);
+
+	// Matches vendor/librw/src/gl/gl3device.cpp beginUpdate(Camera*)
+	Vec3 invRight = MakeVec3(right.x, up.x, at.x);
+	Vec3 invUp    = MakeVec3(right.y, up.y, at.y);
+	Vec3 invAt    = MakeVec3(right.z, up.z, at.z);
+	Vec3 invPos   = MakeVec3(-Dot3(camPos, right), -Dot3(camPos, up), -Dot3(camPos, at));
+
+	std::memset(viewOut, 0, sizeof(float) * 16);
+	viewOut[0]  = -invRight.x; viewOut[1]  = invRight.y; viewOut[2]  = invRight.z;
+	viewOut[4]  = -invUp.x;    viewOut[5]  = invUp.y;    viewOut[6]  = invUp.z;
+	viewOut[8]  = -invAt.x;    viewOut[9]  = invAt.y;    viewOut[10] = invAt.z;
+	viewOut[12] = -invPos.x;   viewOut[13] = invPos.y;   viewOut[14] = invPos.z;
+	viewOut[15] = 1.0f;
+}
+
+static void TestViewMatrixEyeExtractionAcrossCameraRotations(void)
+{
+	using namespace SunShadowMath;
+
+	// Regression test for camera rotation bug at off-origin map coordinates
+	// (e.g. Vice Point (400, 800, 55) and distant custom BR sectors (-2150, 1840, 22)):
+	// u_eye must remain locked to camPos for every yaw/pitch/roll so ground normals
+	// resolved via dot(N, u_eye - worldPos) never invert underground on rotation.
+	const Vec3 camPositions[3] = {
+		MakeVec3(400.0f, 800.0f, 55.0f),
+		MakeVec3(-2150.0f, 1840.0f, 22.0f),
+		MakeVec3(1420.0f, -1930.0f, 8.5f),
+	};
+
+	for(int p = 0; p < 3; p++){
+		const Vec3 &camPos = camPositions[p];
+		for(int yawI = 0; yawI < 360; yawI += 15){
+			for(int pitchI = -70; pitchI <= 50; pitchI += 20){
+				for(int rollI = -20; rollI <= 20; rollI += 20){
+					float view[16];
+					BuildRwGl3ViewMatrix(camPos, (float)yawI, (float)pitchI, (float)rollI, view);
+
+					// Verify view * vec4(camPos, 1) == (0, 0, 0, 1)
+					float vx = view[0]*camPos.x + view[4]*camPos.y + view[8]*camPos.z  + view[12];
+					float vy = view[1]*camPos.x + view[5]*camPos.y + view[9]*camPos.z  + view[13];
+					float vz = view[2]*camPos.x + view[6]*camPos.y + view[10]*camPos.z + view[14];
+					CHECK(std::fabs(vx) < 5.0e-3f);
+					CHECK(std::fabs(vy) < 5.0e-3f);
+					CHECK(std::fabs(vz) < 5.0e-3f);
+
+					float eye[4] = { 0, 0, 0, 0 };
+					ExtractEyeFromColMajorView(view, eye);
+					CHECK(std::fabs(eye[0] - camPos.x) < 5.0e-3f);
+					CHECK(std::fabs(eye[1] - camPos.y) < 5.0e-3f);
+					CHECK(std::fabs(eye[2] - camPos.z) < 5.0e-3f);
+
+					// Ground directly ahead/below camera must keep upward +Z normal
+					Vec3 groundPt = MakeVec3(camPos.x + 30.0f, camPos.y + 30.0f, 0.0f);
+					Vec3 upNormal = MakeVec3(0.0f, 0.0f, 1.0f);
+					Vec3 toEye = MakeVec3(eye[0] - groundPt.x, eye[1] - groundPt.y, eye[2] - groundPt.z);
+					CHECK(Dot3(upNormal, toEye) > 0.0f);
+				}
+			}
+		}
+	}
+
+	// Also verify lightView eye extraction returns the ortho shadow focus point
+	ShadowSetup shadow = ComputeSunShadowSetup(
+		MakeVec3(-0.09f, 0.64f, 0.76f),
+		MakeVec3(400.0f, 800.0f, 55.0f),
+		MakeVec3(0.42f, 0.78f, -0.46f),
+		112.0f, 200.0f, 2048);
+	float lightEye[4] = { 0, 0, 0, 0 };
+	ExtractEyeFromColMajorView(shadow.lightView, lightEye);
+	// Snap difference is at most 1 texel (~0.11m) in light XY
+	CHECK(std::fabs(lightEye[0] - shadow.focusWorld.x) < 0.25f);
+	CHECK(std::fabs(lightEye[1] - shadow.focusWorld.y) < 0.25f);
+	CHECK(std::fabs(lightEye[2] - shadow.focusWorld.z) < 0.25f);
+}
+
+static void TestElevatedPitchedCameraShadowCoverageAcrossRotations(void)
+{
+	using namespace SunShadowMath;
+
+	// Midday sun (~12:33): elevated camera at z=55m pitched down (~28 deg)
+	// rotating across all 8 compass directions must keep ground 60..135m ahead
+	// well inside the shadow map's [0.05..0.95] UV window.
+	const Vec3 middaySun = MakeVec3(-0.092f, 0.641f, 0.762f);
+	const Vec3 camPos = MakeVec3(400.0f, 800.0f, 55.0f);
+	const float deg2rad = 3.14159265358979323846f / 180.0f;
+
+	for(int yawDeg = 0; yawDeg < 360; yawDeg += 45){
+		float yaw = (float)yawDeg * deg2rad;
+		float horiz = 0.888f;
+		Vec3 camFwd = MakeVec3(std::sin(yaw) * horiz, std::cos(yaw) * horiz, -0.46f);
+
+		ShadowSetup setup = ComputeSunShadowSetup(middaySun, camPos, camFwd, 112.0f, 200.0f, 2048);
+		CHECK(setup.active);
+		CHECK(setup.focusWorld.z < camPos.z - 15.0f);
+
+		for(int dist = 40; dist <= 135; dist += 30){
+			Vec3 groundAhead = MakeVec3(
+				camPos.x + std::sin(yaw) * (float)dist,
+				camPos.y + std::cos(yaw) * (float)dist,
+				0.0f);
+			Vec3 uv = ProjectPointToShadowUVDepth(setup.shadowMatrix, groundAhead);
+			CHECK(uv.x > 0.05f && uv.x < 0.95f);
+			CHECK(uv.y > 0.05f && uv.y < 0.95f);
+			CHECK(uv.z > 0.05f && uv.z < 0.95f);
+		}
+	}
+}
+
 static void TestCollisionShadowTriangleWinding(void)
 {
 	// GTA VC CColTrianglePlane::Set computes normal = CrossProduct(vc - va, vb - va).
@@ -188,8 +320,10 @@ static void TestTimecycleShadowImportNormalization(void)
 int main()
 {
 	TestSunShadowBasisAndDepthOrdering();
+	TestViewMatrixEyeExtractionAcrossCameraRotations();
+	TestElevatedPitchedCameraShadowCoverageAcrossRotations();
 	TestCollisionShadowTriangleWinding();
 	TestTimecycleShadowImportNormalization();
-	std::puts("Sun shadow math, collision triangle winding, and timecycle shadow tests passed");
+	std::puts("Sun shadow math, camera rotation eye invariance, collision triangle winding, and timecycle shadow tests passed");
 	return 0;
 }

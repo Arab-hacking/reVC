@@ -171,6 +171,7 @@ SkyDomeProcRenderCB(rw::Atomic *atomic, rw::gl3::InstanceDataHeader *header)
 		drawInst(header, inst);
 		inst++;
 	}
+	setTexture(1, nil);
 	teardownVertexInput(header);
 }
 

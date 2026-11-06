@@ -186,6 +186,7 @@ extern Shader *im2dOverrideShader;
 // per Scene
 void setProjectionMatrix(float32*);
 void setViewMatrix(float32*);
+void syncEnvironmentUniforms(void);
 
 // per Object
 void setWorldMatrix(Matrix*);
