@@ -552,6 +552,16 @@ static GLint addressConvMap[] = {
 	GL_CLAMP_TO_EDGE, GL_CLAMP_TO_BORDER
 };
 
+static GLint
+resolveWrapMode(uint32 addressing)
+{
+	if(addressing < 1 || addressing > 4)
+		return GL_REPEAT;
+	if(addressing == 4 && gl3Caps.gles && gl3Caps.glversion < 32)
+		return GL_CLAMP_TO_EDGE;
+	return addressConvMap[addressing];
+}
+
 static void
 setFilterMode(uint32 stage, int32 filter, int32 maxAniso = 1)
 {
@@ -573,7 +583,8 @@ setFilterMode(uint32 stage, int32 filter, int32 maxAniso = 1)
 			}
 			if(natras->maxAnisotropy != maxAniso){
 				setActiveTexture(stage);
-				glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, (float)maxAniso);
+				if(GLAD_GL_EXT_texture_filter_anisotropic)
+					glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, (float)maxAniso);
 				natras->maxAnisotropy = maxAniso;
 			}
 		}
@@ -590,7 +601,7 @@ setAddressU(uint32 stage, int32 addressing)
 			Gl3Raster *natras = PLUGINOFFSET(Gl3Raster, raster, nativeRasterOffset);
 			if(natras->addressU != addressing){
 				setActiveTexture(stage);
-				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, addressConvMap[addressing]);
+				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, resolveWrapMode((uint32)addressing));
 				natras->addressU = addressing;
 			}
 		}
@@ -607,7 +618,7 @@ setAddressV(uint32 stage, int32 addressing)
 			Gl3Raster *natras = PLUGINOFFSET(Gl3Raster, rwStateCache.texstage[stage].raster, nativeRasterOffset);
 			if(natras->addressV != addressing){
 				setActiveTexture(stage);
-				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, addressConvMap[addressing]);
+				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, resolveWrapMode((uint32)addressing));
 				natras->addressV = addressing;
 			}
 		}
@@ -673,11 +684,11 @@ setRasterStage(uint32 stage, Raster *raster)
 				natras->filterMode = filter;
 			}
 			if(natras->addressU != addrU){
-				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, addressConvMap[addrU]);
+				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, resolveWrapMode(addrU));
 				natras->addressU = addrU;
 			}
 			if(natras->addressV != addrV){
-				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, addressConvMap[addrV]);
+				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, resolveWrapMode(addrV));
 				natras->addressV = addrV;
 			}
 			alpha = natras->hasAlpha;
@@ -1491,6 +1502,7 @@ clearCamera(Camera *cam, RGBA *col, uint32 mode)
 	glDepthMask(GL_TRUE);
 	glClear(mask);
 	glDepthMask(rwStateCache.zwrite);
+	oldGlState.depthMask = curGlState.depthMask = rwStateCache.zwrite;
 
 	if(setScissor)
 		glDisable(GL_SCISSOR_TEST);
@@ -1522,6 +1534,8 @@ rasterRenderFast(Raster *raster, int32 x, int32 y)
 {
 	Raster *src = raster;
 	Raster *dst = Raster::getCurrentContext();
+	if(src == nil || dst == nil)
+		return 0;
 	Gl3Raster *natdst = PLUGINOFFSET(Gl3Raster, dst, nativeRasterOffset);
 	Gl3Raster *natsrc = PLUGINOFFSET(Gl3Raster, src, nativeRasterOffset);
 
@@ -1531,12 +1545,34 @@ rasterRenderFast(Raster *raster, int32 x, int32 y)
 	case Raster::CAMERATEXTURE:
 		switch(src->type){
 		case Raster::CAMERA:
+		{
+			if(src->width <= 0 || src->height <= 0 ||
+			   dst->width < src->width || dst->height < src->height)
+				return 0;
+			int32 dstY = (dst->height - src->height) - y;
+			// On OpenGL ES, glCopyTexSubImage2D fails with GL_INVALID_OPERATION whenever
+			// the default EGL surface channel layout (e.g. RGB8/RGB565/RGB10_A2) differs
+			// from the destination CAMERATEXTURE internalFormat (GL_RGBA8), leaving
+			// PostFX pBackBuffer black (0,0,0). glBlitFramebuffer converts any format.
+			if(gl3Caps.gles && natdst->fbo && gl3Caps.glversion >= 30 && glad_glBlitFramebuffer){
+				while(glGetError() != GL_NO_ERROR) {}
+				glBindFramebuffer(GL_READ_FRAMEBUFFER, natsrc->fbo);
+				glBindFramebuffer(GL_DRAW_FRAMEBUFFER, natdst->fbo);
+				glBlitFramebuffer(0, 0, src->width, src->height,
+					x, dstY, x + src->width, dstY + src->height,
+					GL_COLOR_BUFFER_BIT, GL_NEAREST);
+				GLenum blitErr = glGetError();
+				glBindFramebuffer(GL_FRAMEBUFFER, currentFramebuffer);
+				if(blitErr == GL_NO_ERROR)
+					return 1;
+			}
 			setActiveTexture(0);
 			glBindTexture(GL_TEXTURE_2D, natdst->texid);
-			glCopyTexSubImage2D(GL_TEXTURE_2D, 0, x, (dst->height-src->height)-y,
+			glCopyTexSubImage2D(GL_TEXTURE_2D, 0, x, dstY,
 				0, 0, src->width, src->height);
 			glBindTexture(GL_TEXTURE_2D, boundTexture[0]);
 			return 1;
+		}
 		}
 		break;
 	}
@@ -1650,41 +1686,59 @@ startSDL2(void)
 
 #ifdef ANDROID
 	SDL_SetHint(SDL_HINT_ACCELEROMETER_AS_JOYSTICK, "0");
-	SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
+	static const struct { int r, g, b, a, d, s; } eglConfigs[] = {
+		{ 8, 8, 8, 8, 24, 8 },
+		{ 8, 8, 8, 0, 24, 8 },
+		{ 8, 8, 8, 0, 24, 0 },
+		{ 5, 6, 5, 0, 16, 0 },
+	};
+	const int numEglConfigs = (int)(sizeof(eglConfigs)/sizeof(eglConfigs[0]));
+#else
+	const int numEglConfigs = 1;
 #endif
 	if(glGlobals.numSamples > 1)
 		SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, glGlobals.numSamples);
 
-	int i;
-	for(i = 0; profiles[i].gl; i++){
-		SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, profiles[i].gl);
-		SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, profiles[i].major);
-		SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, profiles[i].minor);
-
-		uint32 winFlags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_OPENGL;
+	for(int cfgIdx = 0; cfgIdx < numEglConfigs && ctx == nil; cfgIdx++){
 #ifdef ANDROID
-		winFlags |= SDL_WINDOW_FULLSCREEN;
+		SDL_GL_SetAttribute(SDL_GL_RED_SIZE, eglConfigs[cfgIdx].r);
+		SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE, eglConfigs[cfgIdx].g);
+		SDL_GL_SetAttribute(SDL_GL_BLUE_SIZE, eglConfigs[cfgIdx].b);
+		SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE, eglConfigs[cfgIdx].a);
+		SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, eglConfigs[cfgIdx].d);
+		SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, eglConfigs[cfgIdx].s);
 #endif
-		if(mode->flags & VIDEOMODEEXCLUSIVE) {
-			win = SDL_CreateWindow(glGlobals.winTitle, SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, mode->mode.w, mode->mode.h, winFlags | SDL_WINDOW_FULLSCREEN);
-			if (win)
-				SDL_SetWindowDisplayMode(win, &mode->mode);
-		} else {
-			win = SDL_CreateWindow(glGlobals.winTitle, SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, glGlobals.winWidth, glGlobals.winHeight, winFlags);
-			if (win)
-				SDL_SetWindowDisplayMode(win, NULL);
-		}
-		if(!win)
-			continue;
+		int i;
+		for(i = 0; profiles[i].gl; i++){
+			SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, profiles[i].gl);
+			SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, profiles[i].major);
+			SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, profiles[i].minor);
 
-		ctx = SDL_GL_CreateContext(win);
-		if(ctx){
-			gl3Caps.gles = profiles[i].gl == SDL_GL_CONTEXT_PROFILE_ES;
-			gl3Caps.glversion = profiles[i].major*10 + profiles[i].minor;
-			break;
+			uint32 winFlags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_OPENGL;
+#ifdef ANDROID
+			winFlags |= SDL_WINDOW_FULLSCREEN;
+#endif
+			if(mode->flags & VIDEOMODEEXCLUSIVE) {
+				win = SDL_CreateWindow(glGlobals.winTitle, SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, mode->mode.w, mode->mode.h, winFlags | SDL_WINDOW_FULLSCREEN);
+				if (win)
+					SDL_SetWindowDisplayMode(win, &mode->mode);
+			} else {
+				win = SDL_CreateWindow(glGlobals.winTitle, SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, glGlobals.winWidth, glGlobals.winHeight, winFlags);
+				if (win)
+					SDL_SetWindowDisplayMode(win, NULL);
+			}
+			if(!win)
+				continue;
+
+			ctx = SDL_GL_CreateContext(win);
+			if(ctx){
+				gl3Caps.gles = profiles[i].gl == SDL_GL_CONTEXT_PROFILE_ES;
+				gl3Caps.glversion = profiles[i].major*10 + profiles[i].minor;
+				break;
+			}
+			SDL_DestroyWindow(win);
+			win = nil;
 		}
-		SDL_DestroyWindow(win);
-		win = nil;
 	}
 	if(win == nil || ctx == nil){
 		RWERROR((ERR_GENERAL, SDL_GetError()));
@@ -2110,6 +2164,7 @@ ensureShadowFbo(void)
 	             0, GL_DEPTH_COMPONENT, GL_UNSIGNED_INT, nil);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 	glBindTexture(GL_TEXTURE_2D, boundTexture[3]);

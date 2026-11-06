@@ -1674,9 +1674,11 @@ Idle(void *arg)
 		        TheCamera.SetMotionBlurAlpha(150);
 
 #ifdef SCREEN_DROPLETS
-		CPostFX::GetBackBuffer(Scene.camera);
 		ScreenDroplets::Process();
-		ScreenDroplets::Render();
+		if(ScreenDroplets::ms_enabled && ScreenDroplets::ms_numDrops > 0){
+			CPostFX::GetBackBuffer(Scene.camera);
+			ScreenDroplets::Render();
+		}
 #endif
 
 		tbStartTimer(0, "RenderMotionBlur");

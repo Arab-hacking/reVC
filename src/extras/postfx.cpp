@@ -393,9 +393,26 @@ CPostFX::NeedFrontBuffer(int32 type)
 	return false;
 }
 
+static void
+EnsurePostFXBuffers(RwCamera *cam)
+{
+	if(cam == nil || RwCameraGetRaster(cam) == nil)
+		return;
+	uint32 width  = Pow(2.0f, int32(log2(RwRasterGetWidth (RwCameraGetRaster(cam))))+1);
+	uint32 height = Pow(2.0f, int32(log2(RwRasterGetHeight(RwCameraGetRaster(cam))))+1);
+	if(CPostFX::pFrontBuffer == nil || CPostFX::pBackBuffer == nil ||
+	   (uint32)RwRasterGetWidth(CPostFX::pBackBuffer) != width ||
+	   (uint32)RwRasterGetHeight(CPostFX::pBackBuffer) != height){
+		CPostFX::Open(cam);
+	}
+}
+
 void
 CPostFX::GetBackBuffer(RwCamera *cam)
 {
+	EnsurePostFXBuffers(cam);
+	if(pBackBuffer == nil)
+		return;
 	RwRasterPushContext(pBackBuffer);
 	RwRasterRenderFast(RwCameraGetRaster(cam), 0, 0);
 	RwRasterPopContext();
@@ -406,8 +423,7 @@ CPostFX::Render(RwCamera *cam, uint32 red, uint32 green, uint32 blue, uint32 blu
 {
 	PUSH_RENDERGROUP("CPostFX::Render");
 
-	if(pFrontBuffer == nil)
-		Open(cam);
+	EnsurePostFXBuffers(cam);
 	assert(pFrontBuffer);
 	assert(pBackBuffer);
 

@@ -2,6 +2,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
+#ifdef ANDROID
+#include <android/log.h>
+#endif
 
 #include "../rwbase.h"
 #include "../rwerror.h"
@@ -196,9 +199,16 @@ compileshader(GLenum type, const char **src, GLuint *shader)
 		fprintf(stderr, "Error in %s shader\n",
 		  type == GL_VERTEX_SHADER ? "vertex" : "fragment");
 		glGetShaderiv(shdr, GL_INFO_LOG_LENGTH, &len);
-		log = (char*)rwMalloc(len, MEMDUR_FUNCTION);
-		glGetShaderInfoLog(shdr, len, nil, log);
+		log = (char*)rwMalloc(len > 0 ? len : 1, MEMDUR_FUNCTION);
+		if(len > 0)
+			glGetShaderInfoLog(shdr, len, nil, log);
+		else
+			log[0] = '\0';
 		fprintf(stderr, "%s\n", log);
+#ifdef ANDROID
+		__android_log_print(ANDROID_LOG_ERROR, "reVC", "Error in %s shader: %s",
+		                    type == GL_VERTEX_SHADER ? "vertex" : "fragment", log);
+#endif
 		rwFree(log);
 		return 1;
 	}
@@ -233,9 +243,15 @@ linkprogram(GLint vs, GLint fs, GLuint *program)
 	if(!success){
 		fprintf(stderr, "Error in program\n");
 		glGetProgramiv(prog, GL_INFO_LOG_LENGTH, &len);
-		log = (char*)rwMalloc(len, MEMDUR_FUNCTION);
-		glGetProgramInfoLog(prog, len, nil, log);
+		log = (char*)rwMalloc(len > 0 ? len : 1, MEMDUR_FUNCTION);
+		if(len > 0)
+			glGetProgramInfoLog(prog, len, nil, log);
+		else
+			log[0] = '\0';
 		fprintf(stderr, "%s\n", log);
+#ifdef ANDROID
+		__android_log_print(ANDROID_LOG_ERROR, "reVC", "Error in shader program: %s", log);
+#endif
 		rwFree(log);
 		return 1;
 	}

@@ -202,16 +202,24 @@ rasterCreateCameraTexture(Raster *raster)
 	}
 
 	if(gl3Caps.gles){
-		// Android/GLES default EGL surfaces are RGBA8: matching RGBA here guarantees
-		// FBO color-renderability and allows glCopyTexSubImage2D in PostFX.
-		natras->internalFormat = gl3Caps.glversion >= 30 ? GL_RGBA8 : GL_RGBA;
-		natras->format = GL_RGBA;
-		natras->type = GL_UNSIGNED_BYTE;
-		natras->bpp = 4;
+		if(gl3Caps.glversion >= 30){
+			natras->internalFormat = GL_RGBA8;
+			natras->format = GL_RGBA;
+			natras->type = GL_UNSIGNED_BYTE;
+			natras->bpp = 4;
+		}else{
+			GLint alphaBits = 0;
+			glGetIntegerv(GL_ALPHA_BITS, &alphaBits);
+			natras->internalFormat = alphaBits > 0 ? GL_RGBA : GL_RGB;
+			natras->format = natras->internalFormat;
+			natras->type = GL_UNSIGNED_BYTE;
+			natras->bpp = alphaBits > 0 ? 4 : 3;
+		}
 	}
 
 	raster->stride = raster->width*natras->bpp;
 
+	natras->numLevels = 1;
 	natras->autogenMipmap = (raster->format & (Raster::MIPMAP|Raster::AUTOMIPMAP)) == (Raster::MIPMAP|Raster::AUTOMIPMAP);
 
 	glGenTextures(1, &natras->texid);
@@ -219,9 +227,15 @@ rasterCreateCameraTexture(Raster *raster)
 	glTexImage2D(GL_TEXTURE_2D, 0, natras->internalFormat,
 	             raster->width, raster->height,
 	             0, natras->format, natras->type, nil);
-	natras->filterMode = 0;
-	natras->addressU = 0;
-	natras->addressV = 0;
+	if(!gl3Caps.gles || gl3Caps.glversion >= 30)
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	natras->filterMode = Texture::LINEAR;
+	natras->addressU = Texture::CLAMP;
+	natras->addressV = Texture::CLAMP;
 	natras->maxAnisotropy = 1;
 
 	bindTexture(prev);
@@ -230,6 +244,19 @@ rasterCreateCameraTexture(Raster *raster)
 	glGenFramebuffers(1, &natras->fbo);
 	bindFramebuffer(natras->fbo);
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, natras->texid, 0);
+	if(gl3Caps.gles && natras->internalFormat == GL_RGB &&
+	   glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE){
+		natras->internalFormat = GL_RGBA;
+		natras->format = GL_RGBA;
+		natras->bpp = 4;
+		raster->stride = raster->width * 4;
+		prev = bindTexture(natras->texid);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA,
+		             raster->width, raster->height,
+		             0, GL_RGBA, GL_UNSIGNED_BYTE, nil);
+		bindTexture(prev);
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, natras->texid, 0);
+	}
 	bindFramebuffer(0);
 	natras->fboMate = nil;
 
