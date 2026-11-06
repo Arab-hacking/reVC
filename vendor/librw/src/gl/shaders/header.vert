@@ -168,14 +168,17 @@ vec3 DoPointSpotLight(vec3 V, vec3 N)
 }
 
 // Building.vs + GL3Shader.vs (Shaders For BLAYZ RUSSIA PC):
-// - When u_surfProps.w > 0.5 (Geometry::PRELIT), blend baked night prelit + 0.25 lift (Building.vs).
-// - When u_surfProps.w <= 0.5 (non-prelit static prop/road), keep full 1.0 base colour (GL3Shader.vs).
+// - Preserves subtle daytime vertex AO/tint from geo->colors without legacy darkening;
+// - Applies the 0.25 night ambient lift from Building.vs when Geometry::PRELIT is present;
+// - Keeps full 1.0 base colour on non-prelit geometries (GL3Shader.vs).
 vec4 BR_EvalBuildingVertexColor(vec4 inColor, vec4 matColor, vec3 worldPos, vec3 worldNormal)
 {
 	float hasPrelit = step(0.5, u_surfProps.w);
 	float dayNight = clamp(u_atmosphere.w, 0.0, 1.0);
-	vec3 prelitNight = mix(vec3(1.0), inColor.rgb, dayNight) + vec3(0.25) * dayNight;
-	vec3 col = mix(vec3(1.0), prelitNight, hasPrelit);
+	vec3 dayVert = mix(vec3(1.0), clamp(inColor.rgb * 1.12 + vec3(0.14), 0.0, 1.0), 0.60);
+	vec3 nightVert = inColor.rgb * 0.75 + vec3(0.25);
+	vec3 prelitCol = mix(dayVert, nightVert, dayNight);
+	vec3 col = mix(vec3(1.0), prelitCol, hasPrelit);
 	col += DoPointSpotLight(worldPos, worldNormal) * surfDiffuse;
 	float outAlpha = mix(1.0, inColor.a, hasPrelit) * matColor.a;
 	return vec4(col * matColor.rgb, outAlpha);

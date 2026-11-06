@@ -29,6 +29,7 @@ uniform vec4 u_shadowParams;	// x: strength, y: 1/mapSize, z: normalBias, w: fad
 uniform sampler2D tex3;		// directional sun shadow depth map
 
 #define BR_PI 3.14159265
+#define BR_INV_PI 0.318309886
 #define BR_INV_MIN_IOR 50.0
 #define BR_DEFAULT_REFLECTANCE 0.5
 #define BR_REFLECTANCE_MAX_AMP 0.16
@@ -163,6 +164,7 @@ float SampleSunShadow(vec3 worldPos, vec3 N)
 
 // --- pbr/ModelsBRDF.glsl & pbr/RoughMip.glsl & pbr/LightMaterialGBufFS.glsl ---
 
+// ModelsBRDF.glsl: PI division is included in sunDirectColor / sunAmbientColor (BR_INV_PI).
 vec3 BR_DiffuseBurleyFixed(vec3 diffuseColor, float linearRoughness, float NoV, float NoL, float VoH)
 {
 	float energyFactor = (0.45 * linearRoughness - 0.475) * linearRoughness + 1.0;
@@ -258,17 +260,26 @@ vec3 BR_DecodeSpecularColor(float reflectance, float metalness, vec3 albedo)
 	return mix(vec3(R0Dielectric), albedo * br_saturate(reflectance * 50.0), metalness);
 }
 
+// Scene sun direct & sky SH colours with 1/PI pre-baked as required by ModelsBRDF.glsl
 void BR_GetSceneLightColors(vec3 L, out vec3 sunDirectColor, out vec3 sunAmbientColor, out float dayFactor)
 {
-	dayFactor = smoothstep(-0.04, 0.18, L.z);
+	dayFactor = smoothstep(-0.04, 0.20, L.z);
+	float highSun = smoothstep(0.02, 0.55, L.z);
 	float cloud = clamp(u_atmosphere.y, 0.0, 1.0);
 	float clearSun = dayFactor * (1.0 - 0.50 * cloud);
-	vec3 tcSun = max(u_sunMaterial.rgb, vec3(0.55, 0.50, 0.44) * dayFactor);
-	sunDirectColor = mix(tcSun, vec3(1.02, 0.96, 0.86), 0.48) * (2.35 * clearSun);
 
-	vec3 tcSky = max(u_skyAmbient.rgb, vec3(0.10, 0.13, 0.20));
-	vec3 dayAmb = mix(vec3(0.82, 0.94, 1.14), tcSky * 1.55, 0.48);
-	vec3 nightAmb = mix(vec3(0.13, 0.16, 0.24), tcSky * 0.75, 0.45);
+	// Golden warm sunrise/sunset transitioning to crisp neutral-warm noon sun, divided by PI
+	vec3 goldenSun = vec3(2.55, 1.88, 1.26) * BR_INV_PI;
+	vec3 noonSun   = vec3(2.62, 2.48, 2.26) * BR_INV_PI;
+	vec3 physSun   = mix(goldenSun, noonSun, highSun);
+	vec3 tcSunLin  = mix(vec3(1.0), clamp(u_sunMaterial.rgb, vec3(0.35), vec3(1.15)), 0.25);
+	sunDirectColor = physSun * tcSunLin * clearSun;
+
+	// Hemispherical Sky SH irradiance divided by PI
+	vec3 duskAmb  = vec3(0.62, 0.68, 0.88) * BR_INV_PI;
+	vec3 noonAmb  = vec3(0.86, 0.98, 1.20) * BR_INV_PI;
+	vec3 nightAmb = vec3(0.14, 0.18, 0.29) * BR_INV_PI;
+	vec3 dayAmb   = mix(duskAmb, noonAmb, highSun);
 	sunAmbientColor = mix(nightAmb, dayAmb, dayFactor) * (1.0 - 0.18 * cloud);
 }
 
@@ -276,16 +287,16 @@ vec3 BR_EvalAnalyticalSkyEnv(vec3 roughR, vec3 L, vec3 sunDirectColor, vec3 sunA
 {
 	vec3 r = roughR * inversesqrt(max(dot(roughR, roughR), 1.0e-6));
 	float h = clamp(r.z * 0.5 + 0.5, 0.0, 1.0);
-	vec3 groundCol = sunAmbientColor * vec3(0.30, 0.29, 0.28);
-	vec3 horizonCol = sunAmbientColor * vec3(0.88, 0.90, 0.95);
-	vec3 zenithCol = sunAmbientColor * vec3(0.55, 0.68, 0.92);
+	vec3 groundCol = sunAmbientColor * vec3(0.45, 0.44, 0.42);
+	vec3 horizonCol = sunAmbientColor * vec3(1.65, 1.72, 1.85);
+	vec3 zenithCol = sunAmbientColor * vec3(0.95, 1.20, 1.68);
 	vec3 env = mix(groundCol, mix(horizonCol, zenithCol, smoothstep(0.48, 0.95, h)), smoothstep(0.35, 0.58, h));
-	float sunGlow = pow(max(dot(r, L), 0.0), 24.0) * smoothstep(-0.05, 0.20, r.z);
-	env += sunDirectColor * (0.12 * sunGlow);
+	float sunGlow = pow(max(dot(r, L), 0.0), 28.0) * smoothstep(-0.05, 0.20, r.z);
+	env += sunDirectColor * (0.22 * sunGlow);
 	return env;
 }
 
-// Unified LightMaterialGBufFS shading (used by Building.fs, GL3Shader.fs, Skin.fs, Vehicle.fs, MatFX)
+// Unified LightMaterialGBufFS shading (exact match to pbr/LightMaterialGBufFS.glsl + ParaboloidEnvMap.glsl)
 vec3 BR_ShadeMaterialHDR(
 	vec3 albedoLin,
 	vec3 worldPos,
@@ -319,7 +330,6 @@ vec3 BR_ShadeMaterialHDR(
 	float NoV = abs(NdotV) + 1.0e-5;
 	float linearRoughness = clamp(1.0 - smoothness, 0.04, 1.0);
 	float ggxAlpha = max(1.0e-4, linearRoughness * linearRoughness);
-	vec3 reflectionVec = 2.0 * NdotV * N - view;
 
 	float extractedAlbedoAO = BR_DecodeAlbedoAO(albedoLin);
 	vec3 diffuseColor = albedoLin * (1.0 - metalness);
@@ -345,13 +355,12 @@ vec3 BR_ShadeMaterialHDR(
 		skyAmbient += ao * BR_GetSkySHDiffuse(-N, sunAmbientColor) * transCol;
 	}
 
-	vec3 roughR = BR_GetRoughReflectionVec(reflectionVec, N, ggxAlpha);
+	// ParaboloidEnvMap.glsl: INTERVAL_PARABOLOIDENVMAP is 0 for Building/Skin/Terrain/GL3Shader,
+	// and active only when useCustomEnv > 0 (Vehicle.fs & MatFX reflective surfaces).
 	vec3 enviBRDF = BR_GetEnvBRDFApprox(specularColor, linearRoughness, NoV);
-	vec3 analyticEnv = BR_EvalAnalyticalSkyEnv(roughR, L, sunDirectColor, sunAmbientColor);
-	vec3 envSample = mix(analyticEnv, customEnvLin, useCustomEnv);
-	envSample *= mix(0.62, 1.0, shadowTerm);
+	vec3 envReflection = customEnvLin * useCustomEnv * mix(0.60, 1.0, shadowTerm) * enviBRDF;
 
-	result += skyAmbient + ao * envSample * enviBRDF;
+	result += skyAmbient + ao * envReflection;
 
 	vec3 emissionColor = emissionStrength * albedoLin;
 	result = result * (1.0 - emissionPart) + emissionColor;
@@ -382,7 +391,7 @@ vec3 SunMaterialLighting(vec3 worldPos, vec3 worldNormal, out float selfShade)
 	return 0.2 * u_sunMaterial.rgb * day * (diffuse + mix(0.4, 0.12, cloud)*specular);
 }
 
-// Compatibility wrapper for world/prop/ped shaders using linear BR PBR + ACES.
+// Building.fs (smoothness=0.20) & Skin.fs / GL3Shader.fs (smoothness=0.40)
 vec3 ShadeWorldSurfaceEx(
 	vec3 texSrgb, vec3 vertColor, vec3 worldPos, vec3 worldNormal, float visibility, float isSkinDynamic)
 {
@@ -399,18 +408,19 @@ vec3 ShadeWorldSurfaceEx(
 	vec3 albedoLin = BR_SRGBtoLINEAR(vec4(texSrgb, 1.0)).rgb * max(vertColor, vec3(0.0));
 
 	float isFoliage = (isSkinDynamic < 0.5 && u_alphaRef.x > 0.01) ? 1.0 : 0.0;
-	float smoothness = isSkinDynamic > 0.5 ? 0.40 : mix(0.20, 0.38, hasVertNormal * (1.0 - isFoliage));
-	float dayNight = clamp(u_atmosphere.w, 0.0, 1.0);
-	float bakedNightPeak = max(vertColor.r, max(vertColor.g, vertColor.b));
-	float nightEmit = (isSkinDynamic < 0.5 && isFoliage < 0.5)
-		? (dayNight * smoothstep(1.02, 1.25, bakedNightPeak) * 1.35)
-		: 0.0;
+	if(isFoliage > 0.5 && hasVertNormal < 0.5){
+		// Smooth hemispherical crown normal so crossed billboard tree cards have no X-seam
+		N = normalize(mix(N, vec3(0.0, 0.0, 1.0), 0.70));
+	}
+
+	// Building.fs / Terrain.fs: smoothness = 0.20; Skin.fs / GL3Shader.fs: smoothness = 0.40
+	float smoothness = isSkinDynamic > 0.5 ? 0.40 : 0.20;
 
 	vec3 hdr = BR_ShadeMaterialHDR(
 		albedoLin, worldPos, N,
 		smoothness, 0.0, BR_DEFAULT_REFLECTANCE, 1.0,
-		isFoliage, isFoliage * 0.38,
-		nightEmit, 0.0,
+		isFoliage, isFoliage * 0.42,
+		0.0, 0.0,
 		vec3(0.0), 0.0);
 
 	float whitePoint = max(u_skyAmbient.a, 2.5);

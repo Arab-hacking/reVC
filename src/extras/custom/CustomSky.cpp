@@ -50,6 +50,7 @@ struct SkyModelEntry {
 	RpAtomic *atomic;
 	RwFrame *frame;
 	float normScale;
+	bool openBottom;
 	bool prepared;
 	bool loadAttempted;
 };
@@ -82,11 +83,12 @@ static const char *s_skyDomeVertSrc =
 "{\n"
 "	vec4 V = u_world * vec4(in_pos, 1.0);\n"
 "	gl_Position = u_proj * u_view * V;\n"
-"	v_localDir = normalize(vec3(in_pos.x, in_pos.z, in_pos.y));\n"
+"	vec3 rel = V.xyz - u_world[3].xyz;\n"
+"	v_localDir = vec3(rel.x, rel.z, rel.y);\n"
 "	v_uv = (u_uvMatrix * vec4(in_tex0, 0.0, 1.0)).xy;\n"
 "}\n";
 
-// SkyboxDynamicClouds.fs + SkyboxStaticClouds.fs + Noise.glsl (Shaders For BLAYZ RUSSIA PC)
+// SkyboxDynamicClouds.fs + SkyboxStaticClouds.fs + Noise.glsl + UpdateExposure.fs (Shaders For BLAYZ RUSSIA PC)
 static const char *s_skyDomeFragSrc =
 "uniform sampler2D tex0;\n"
 "uniform sampler2D tex1;\n"
@@ -139,19 +141,39 @@ static const char *s_skyDomeFragSrc =
 "	float e16 = exp(-py * 16.0) + 0.1;\n"
 "	vec3 dayExt = exp(-exp(-((py + fsun.y * 4.0) * e16 / 80.0) / Br) * e16 * Kr / Br)\n"
 "	            * exp(-py * exp(-py * 8.0) * 4.0) * exp(-py * 2.0) * 4.0;\n"
-"	vec3 nightExt = vec3(max(1.0 - exp(min(fsun.y, 0.0)), 0.0)) * 0.2;\n"
+"	float nightVal = max(1.0 - exp(min(fsun.y, 0.0)), 0.0) * 0.12;\n"
+"	vec3 nightExt = vec3(nightVal * 0.65, nightVal * 0.80, nightVal * 1.15);\n"
 "	vec3 extinction = mix(dayExt, nightExt, clamp(-fsun.y * 0.2 + 0.5, 0.0, 1.0));\n"
-"	vec3 hdr = max(rayleigh * mie * extinction, vec3(0.0));\n"
-"	float time = u_cloudParams.x;\n"
-"	float horizonFade = smoothstep(0.015, 0.14, pos.y);\n"
-"	vec3 cloudCoord = pos / max(pos.y, 0.04);\n"
-"	float cirrus = smoothstep(1.0 - u_cloudParams.y, 1.0, br_sky_fbm(cloudCoord * 2.0 + vec3(time * 0.05))) * 0.30;\n"
-"	hdr = mix(hdr, extinction * 4.0, cirrus * py * horizonFade);\n"
-"	for(int i = 0; i < 3; i++){\n"
-"		float cum = smoothstep(1.0 - u_cloudParams.z, 1.0, br_sky_fbm((0.7 + float(i) * 0.01) * cloudCoord + vec3(time * 0.30)));\n"
-"		hdr = mix(hdr, extinction * cum * 2.0, min(cum, 1.0) * py * horizonFade);\n"
+"	// Solar-elevation auto-exposure matching UpdateExposure.fs + Tonemapping.fs\n"
+"	float dayExp = mix(1.0, 0.28, smoothstep(0.12, 0.78, fsun.y));\n"
+"	vec3 hdr = max(rayleigh * mie * extinction, vec3(0.0)) * dayExp;\n"
+"	// Subtle solar disc + corona above horizon\n"
+"	float sunAbove = smoothstep(-0.03, 0.08, fsun.y) * step(0.0, pos.y);\n"
+"	float sunDisc = smoothstep(0.9991, 0.99985, mu) * sunAbove;\n"
+"	hdr += extinction * dayExp * (2.6 * sunDisc);\n"
+"	// Subtle night stars\n"
+"	float nightStarMask = smoothstep(-0.08, -0.32, fsun.y) * smoothstep(0.05, 0.35, pos.y);\n"
+"	if(nightStarMask > 0.001){\n"
+"		float starField = smoothstep(0.9965, 0.9994, br_sky_noise(pos * 190.0));\n"
+"		hdr += vec3(0.55, 0.65, 0.85) * (starField * nightStarMask * 0.55);\n"
 "	}\n"
-"	if(u_skyHorizon.w > 0.5 && v_uv.y >= 0.218 && v_uv.y <= 0.480){\n"
+"	float time = u_cloudParams.x;\n"
+"	float horizonFade = smoothstep(0.02, 0.16, pos.y);\n"
+"	if(horizonFade > 0.001){\n"
+"		vec3 cloudCoord = pos / max(pos.y, 0.05);\n"
+"		float sunUp = smoothstep(-0.08, 0.35, fsun.y);\n"
+"		vec3 cloudTop = extinction * dayExp * 1.45 + vec3(0.55 * sunUp);\n"
+"		vec3 cloudBase = hdr * 0.58 + vec3(0.09 * sunUp);\n"
+"		float cirrus = smoothstep(1.0 - u_cloudParams.y, 1.0, br_sky_fbm(cloudCoord * 2.0 + vec3(time * 0.05))) * 0.32;\n"
+"		hdr = mix(hdr, cloudTop, cirrus * py * horizonFade);\n"
+"		for(int i = 0; i < 3; i++){\n"
+"			float cum = smoothstep(1.0 - u_cloudParams.z, 1.0, br_sky_fbm((0.7 + float(i) * 0.01) * cloudCoord + vec3(time * 0.30)));\n"
+"			float cLit = smoothstep(0.15, 0.78, cum);\n"
+"			vec3 cCol = mix(cloudBase, cloudTop, cLit);\n"
+"			hdr = mix(hdr, cCol, min(cum, 1.0) * 0.78 * py * horizonFade);\n"
+"		}\n"
+"	}\n"
+"	if(pos.y > 0.0 && u_skyHorizon.w > 0.5 && v_uv.y >= 0.218 && v_uv.y <= 0.480){\n"
 "		vec2 uv = vec2(v_uv.x + 0.876, (v_uv.y - 0.218) * (1.0 / (0.480 - 0.218)));\n"
 "		vec2 sampleUV = vec2(uv.x, 1.0 - uv.y);\n"
 "		vec3 nrmRaw = texture(tex1, sampleUV).rgb * 2.0 - 1.0;\n"
@@ -159,11 +181,14 @@ static const char *s_skyDomeFragSrc =
 "		float cloudMask = texture(tex0, sampleUV).g;\n"
 "		vec3 sunToGround = vec3(-fsun.x, -fsun.y, -fsun.z);\n"
 "		float cloudLit = max(dot(sunToGround, cloudsNrm), 0.0);\n"
-"		vec3 baseCloud = BR_SRGBtoLINEAR(vec4(u_skyHorizon.rgb, 1.0)).rgb;\n"
-"		vec3 topCloud = BR_SRGBtoLINEAR(vec4(u_sunColor.rgb, 1.0)).rgb * 1.4;\n"
+"		vec3 baseCloud = BR_SRGBtoLINEAR(vec4(u_skyHorizon.rgb, 1.0)).rgb * 0.65;\n"
+"		vec3 topCloud = BR_SRGBtoLINEAR(vec4(u_sunColor.rgb, 1.0)).rgb * 0.95;\n"
 "		vec3 staticCol = mix(baseCloud, topCloud, cloudLit);\n"
 "		hdr = mix(staticCol, hdr, clamp(mix(1.0, cloudMask, u_cloudParams.w), 0.0, 1.0));\n"
 "	}\n"
+"	// Smooth atmospheric horizon-to-ground fade when pos.y < 0 (mirrored lower hemisphere)\n"
+"	if(pos.y < 0.0)\n"
+"		hdr *= mix(1.0, 0.52, smoothstep(0.0, -0.35, pos.y));\n"
 "	hdr += vec3((br_sky_noise(pos * 256.0) - 0.5) * 0.008);\n"
 "	float wp = u_skyTop.w > 0.5 ? u_skyTop.w : 4.0;\n"
 "	vec3 ldr = BR_TonemapAces(max(hdr, vec3(0.0)), wp, 2.2);\n"
@@ -257,6 +282,7 @@ ResetEntry(SkyModelEntry &e)
 	e.atomic = nil;
 	e.frame = nil;
 	e.normScale = 1.0f;
+	e.openBottom = false;
 	e.prepared = false;
 	e.loadAttempted = false;
 }
@@ -436,6 +462,18 @@ PrepareSkyEntry(SkyModelEntry &e, bool isSkyDome)
 			                            bs.center.y * bs.center.y +
 			                            bs.center.z * bs.center.z);
 			e.normScale = customsky::ComputeNormalizedSkyScale(centerLen, bs.radius, 50.0f);
+
+			RwV3d *verts = RpMorphTargetGetVertices(mt);
+			int32 nVerts = RpGeometryGetNumVertices(geom);
+			if(verts && nVerts > 0 && bs.radius > 1.0e-3f){
+				float minZ = verts[0].z;
+				float maxZ = verts[0].z;
+				for(int32 vi = 1; vi < nVerts; vi++){
+					if(verts[vi].z < minZ) minZ = verts[vi].z;
+					if(verts[vi].z > maxZ) maxZ = verts[vi].z;
+				}
+				e.openBottom = (maxZ > 0.25f * bs.radius) && (minZ > -0.25f * bs.radius);
+			}
 		}
 	}
 
@@ -529,6 +567,17 @@ RenderSkyEntry(SkyModelEntry &e, const CVector &camPos, uint8 r, uint8 g, uint8 
 #endif
 
 	RpAtomicRender(e.atomic);
+
+	// Mirror open-bottom sky hemispheres below Z=0 so the horizon has no clear-color seam
+	if(e.openBottom){
+		m->at.z = -e.normScale;
+		RwMatrixUpdate(m);
+		RwFrameUpdateObjects(e.frame);
+		RpAtomicRender(e.atomic);
+		m->at.z = e.normScale;
+		RwMatrixUpdate(m);
+		RwFrameUpdateObjects(e.frame);
+	}
 
 #ifdef LIBRW
 	rw::SetRenderState(rw::ALPHATESTFUNC, prevAlphaFunc);

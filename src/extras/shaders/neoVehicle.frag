@@ -26,19 +26,20 @@ DoDirLightSpec(vec3 N, vec3 V, vec3 L, float power)
 	return pow(clamp(dot(N, H), 0.0, 1.0), power);
 }
 
-// ParaboloidEnvMap.glsl adapted to EnvMapCam (+Z zenith at center (0.5, 0.5))
+// ParaboloidEnvMap.glsl adapted to EnvMapCam (+Z zenith at center (0.5, 0.5)).
+// EnvMapTex is an LDR tonemapped raster, so undo ACES 1.8x exposure_bias (0.68)
+// before re-tonemapping in BR_ShadeMaterialHDR.
 vec3
 SampleVehicleParaboloidEnv(vec3 roughR, float linearRoughness, vec3 L, vec3 sunDirectColor, vec3 sunAmbientColor)
 {
 	vec3 r = roughR * inversesqrt(max(dot(roughR, roughR), 1.0e-6));
 	vec3 rp = normalize(vec3(r.xy, abs(r.z) + 1.0e-5));
 	vec2 envUV = (rp.xy / (1.0 + rp.z)) * 0.485 + 0.5;
-	vec3 texEnvLin = BR_SRGBtoLINEAR(texture(tex1, vec2(envUV.x, 1.0 - envUV.y))).rgb;
+	vec3 texEnvLin = BR_SRGBtoLINEAR(texture(tex1, vec2(envUV.x, 1.0 - envUV.y))).rgb * 0.68;
 
-	// Ground hemisphere fade + roughness blur towards Sky SH diffuse
-	float hemiMask = mix(0.38, 1.0, smoothstep(-0.35, 0.12, r.z));
+	float hemiMask = smoothstep(-0.28, 0.14, r.z);
 	vec3 analyticSky = BR_EvalAnalyticalSkyEnv(r, L, sunDirectColor, sunAmbientColor);
-	vec3 crispEnv = mix(analyticSky, texEnvLin * 1.35, hemiMask * 0.78);
+	vec3 crispEnv = mix(analyticSky * 0.75, texEnvLin, hemiMask * 0.88);
 	vec3 roughSky = BR_GetSkySHDiffuse(r, sunAmbientColor);
 	return mix(crispEnv, roughSky, smoothstep(0.15, 0.85, linearRoughness));
 }
@@ -77,12 +78,11 @@ main(void)
 		return;
 	}
 
-	// --- Vehicle.fs + LightMaterialGBufFS.glsl (Shaders For BLAYZ RUSSIA PC) ---
+	// --- Exact Vehicle.fs (Shaders For BLAYZ RUSSIA PC) ---
 	float hasTex = step(0.5, u_surfProps.w);
 	float texLum = br_luminance(texSample.rgb);
 	float isOpaque = step(0.95, alpha);
 
-	// Classify body clearcoat vs matte rubber tires vs chrome trim vs glass
 	float rawEnv = clamp(u_surfProps.y / 0.72, 0.0, 1.0);
 	float rubberKill = mix(1.0, smoothstep(0.04, 0.18, texLum), hasTex * isOpaque);
 	float envMapCoef = rawEnv * rubberKill;
@@ -90,12 +90,15 @@ main(void)
 	float isChrome = smoothstep(0.86, 0.96, u_surfProps.y) * mix(1.0, smoothstep(0.18, 0.52, texLum), hasTex);
 	float isGlass = 1.0 - smoothstep(0.72, 0.96, alpha);
 
-	float smoothness = mix(0.30, 0.95, envMapCoef);
-	smoothness = max(smoothness, mix(0.30, 0.95, max(isChrome, isGlass)));
-	float metalness = mix(0.0, 0.88, isChrome * isOpaque);
-	float reflectance = mix(0.50, 0.80, max(envMapCoef, isGlass));
+	// Vehicle.fs lines 57-60:
+	// smoothness = mix(0.3, 0.95, u_envMapCoef);
+	// metallness = mix(0.0, 0.1, u_envMapCoef);
+	// reflectance = mix(DEFAULT_REFLECTANCE, 0.8, u_envMapCoef);
+	float smoothness = mix(0.30, 0.95, max(envMapCoef, max(isChrome, isGlass)));
+	float metalness = mix(mix(0.0, 0.10, envMapCoef), 0.88, isChrome) * isOpaque;
+	float reflectance = mix(BR_DEFAULT_REFLECTANCE, 0.80, max(envMapCoef, isGlass));
 
-	// Convert 8-bit sRGB (carcols.dat * texture) to linear space + local point/spot lights
+	// Vehicle.fs lines 43-49: SRGBtoLINEAR(tex0) * matColor
 	vec3 baseSrgb = v_color.rgb * texSample.rgb;
 	vec3 albedoLin = BR_SRGBtoLINEAR(vec4(baseSrgb, 1.0)).rgb * (vec3(1.0) + v_pointSpot);
 
@@ -110,7 +113,6 @@ main(void)
 	float ggxAlpha = max(1.0e-4, linRough * linRough);
 	vec3 roughR = BR_GetRoughReflectionVec(reflect(-V, N), N, ggxAlpha);
 	vec3 customEnvLin = SampleVehicleParaboloidEnv(roughR, linRough, L, sunDirectColor, sunAmbientColor);
-	float useEnv = clamp(max(envMapCoef, max(isChrome, isGlass)) * 1.25, 0.0, 1.0);
 
 	float whitePoint = max(u_skyAmbient.a, 2.5);
 	vec4 color;
@@ -120,7 +122,7 @@ main(void)
 			albedoLin, v_worldPos, N,
 			smoothness, metalness, reflectance, 1.0,
 			0.0, 0.0, 0.0, 0.0,
-			customEnvLin, useEnv);
+			customEnvLin, 1.0);
 		color.rgb = mix(u_fogColor.rgb, BR_TonemapAces(hdr, whitePoint, 2.2), visibility);
 		color.a = 1.0;
 	}else{

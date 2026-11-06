@@ -1,11 +1,11 @@
+uniform mat4 u_boneMatrices[64];
+
 uniform vec3 u_viewVec;
 uniform vec4 u_rampStart;
 uniform vec4 u_rampEnd;
 uniform vec3 u_rimData;
 
 VSIN(ATTRIB_POS)	vec3 in_pos;
-
-uniform vec4 u_boneMatrices[64*3];
 
 VSOUT vec4 v_color;
 VSOUT vec2 v_tex0;
@@ -26,18 +26,8 @@ main(void)
 	vec3 SkinVertex = vec3(0.0, 0.0, 0.0);
 	vec3 SkinNormal = vec3(0.0, 0.0, 0.0);
 	for(int i = 0; i < 4; i++){
-		float w = in_weights[i];
-		if(w > 0.0){
-			int bone = int(in_indices[i]) * 3;
-			mat4 m = mat4(
-				u_boneMatrices[bone + 0],
-				u_boneMatrices[bone + 1],
-				u_boneMatrices[bone + 2],
-				vec4(0.0, 0.0, 0.0, 1.0)
-			);
-			SkinVertex += (vec4(in_pos, 1.0) * m).xyz * w;
-			SkinNormal += (vec4(in_normal, 0.0) * m).xyz * w;
-		}
+		SkinVertex += (u_boneMatrices[int(in_indices[i])] * vec4(in_pos, 1.0)).xyz * in_weights[i];
+		SkinNormal += (mat3(u_boneMatrices[int(in_indices[i])]) * in_normal) * in_weights[i];
 	}
 
 	vec4 Vertex = u_world * vec4(SkinVertex, 1.0);

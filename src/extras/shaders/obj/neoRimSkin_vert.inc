@@ -1,12 +1,12 @@
 const char *neoRimSkin_vert_src =
+"uniform mat4 u_boneMatrices[64];\n"
+
 "uniform vec3 u_viewVec;\n"
 "uniform vec4 u_rampStart;\n"
 "uniform vec4 u_rampEnd;\n"
 "uniform vec3 u_rimData;\n"
 
 "VSIN(ATTRIB_POS)	vec3 in_pos;\n"
-
-"uniform vec4 u_boneMatrices[64*3];\n"
 
 "VSOUT vec4 v_color;\n"
 "VSOUT vec2 v_tex0;\n"
@@ -27,18 +27,8 @@ const char *neoRimSkin_vert_src =
 "	vec3 SkinVertex = vec3(0.0, 0.0, 0.0);\n"
 "	vec3 SkinNormal = vec3(0.0, 0.0, 0.0);\n"
 "	for(int i = 0; i < 4; i++){\n"
-"		float w = in_weights[i];\n"
-"		if(w > 0.0){\n"
-"			int bone = int(in_indices[i]) * 3;\n"
-"			mat4 m = mat4(\n"
-"				u_boneMatrices[bone + 0],\n"
-"				u_boneMatrices[bone + 1],\n"
-"				u_boneMatrices[bone + 2],\n"
-"				vec4(0.0, 0.0, 0.0, 1.0)\n"
-"			);\n"
-"			SkinVertex += (vec4(in_pos, 1.0) * m).xyz * w;\n"
-"			SkinNormal += (vec4(in_normal, 0.0) * m).xyz * w;\n"
-"		}\n"
+"		SkinVertex += (u_boneMatrices[int(in_indices[i])] * vec4(in_pos, 1.0)).xyz * in_weights[i];\n"
+"		SkinNormal += (mat3(u_boneMatrices[int(in_indices[i])]) * in_normal) * in_weights[i];\n"
 "	}\n"
 
 "	vec4 Vertex = u_world * vec4(SkinVertex, 1.0);\n"

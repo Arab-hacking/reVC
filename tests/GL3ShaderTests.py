@@ -135,20 +135,31 @@ class GL3ShaderTests(unittest.TestCase):
     def test_blayz_pbr_sky_and_postfx_contracts(self):
         h_vs = embedded_source(VENDOR / "header.vert")
         h_fs = embedded_source(VENDOR / "header.frag")
+        skin_vs = embedded_source(VENDOR / "skin.vert")
+        rim_skin_vs = embedded_source(EXTRAS / "neoRimSkin.vert")
         veh_fs = embedded_source(EXTRAS / "neoVehicle.frag")
+        world_fs = embedded_source(EXTRAS / "neoWorldVC.frag")
         post_fs = embedded_source(EXTRAS / "colourfilterVC.frag")
         sky_cpp = (ROOT / "src/extras/custom/CustomSky.cpp").read_text()
         skin_cpp = (ROOT / "vendor/librw/src/gl/gl3skin.cpp").read_text()
+
+        # Both skin pipelines register u_boneMatrices as UNIFORM_MAT4[64]
+        self.assertIn('registerUniform("u_boneMatrices", UNIFORM_MAT4, 64)', skin_cpp)
+        self.assertIn("uniform mat4 u_boneMatrices[64];", skin_vs)
+        self.assertIn("uniform mat4 u_boneMatrices[64];", rim_skin_vs)
+        self.assertNotIn("u_boneMatrices[64*3]", rim_skin_vs)
 
         for sym in ("BR_EvalBuildingVertexColor", "BR_EvalDynamicVertexColor", "DoPointSpotLight"):
             self.assertIn(sym, h_vs)
         for sym in ("BR_SRGBtoLINEAR", "BR_TonemapAces", "BR_StandardBRDF",
                     "BR_GetEnvBRDFApprox", "BR_GetSkySHDiffuse", "BR_ShadeMaterialHDR",
-                    "SampleSunShadow"):
+                    "SampleSunShadow", "BR_INV_PI"):
             self.assertIn(sym, h_fs)
         self.assertIn("SampleVehicleParaboloidEnv", veh_fs)
+        self.assertIn("u_brLightmap > 0.5", world_fs)
         self.assertIn("SampleBackbufferFXAA", post_fs)
         self.assertIn("br_sky_fbm", sky_cpp)
+        self.assertIn("openBottom", sky_cpp)
         self.assertIn("#define BRSKIN", skin_cpp)
 
 
