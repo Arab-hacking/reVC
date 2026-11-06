@@ -43,6 +43,13 @@ const int FIRST_BR_SLOT = 4900;
 std::map<int, int> modelSlots;
 std::map<std::string, int> nameSlots;
 std::vector<bool> brSlots; // allocated after the game's heap is initialized
+struct AutoLodChain {
+    int lod1Slot;
+    int lod2Slot;
+};
+std::map<int, AutoLodChain> lodChainByNearSlot;
+std::unordered_set<int> lodTargetSlots;
+std::unordered_set<int> selfFarProxySlots;
 bool ideLoaded = false, collisionLoaded = false;
 
 struct IdeContext : customworld::ModelIndex {
@@ -252,6 +259,46 @@ void PlaceInstance(const customworld::Instance &inst, IplContext &ctx)
     CFileLoader::LoadObjectInstance(vcLine);
     ctx.seen.insert(key);
     ctx.placed++;
+
+    // Auto-spawn paired distant LOD BigBuilding(s) from data/lods.info (lod.ide)
+    std::map<int, AutoLodChain>::const_iterator lodIt = lodChainByNearSlot.find(slot);
+    if(lodIt != lodChainByNearSlot.end()) {
+        int lodSlots[2] = { lodIt->second.lod1Slot, lodIt->second.lod2Slot };
+        for(int li = 0; li < 2; li++) {
+            int lodSlot = lodSlots[li];
+            if(lodSlot < 0) continue;
+            CBaseModelInfo *lodInfo = CModelInfo::GetModelInfo(lodSlot);
+            if(!lodInfo || !lodInfo->IsBuilding()) continue;
+            if(!CCustomModels::HasModelFile(lodInfo->GetModelName()) &&
+               !CStreaming::ms_aInfoForModel[lodSlot].m_size)
+                continue;
+            char lodVcLine[512];
+            int ln = std::snprintf(lodVcLine, sizeof(lodVcLine),
+                "%d %s %d %.9g %.9g %.9g 1 1 1 %.9g %.9g %.9g %.9g",
+                lodSlot, lodInfo->GetModelName(), inst.interior,
+                inst.pos[0], inst.pos[1], inst.pos[2],
+                axis[0], axis[1], axis[2], w);
+            if(ln < 0 || ln >= (int)sizeof(lodVcLine)) continue;
+            if(!CPools::GetBuildingPool()->EnsureFree(101) ||
+               !CPools::GetPtrNodePool()->EnsureFree(10010))
+                break;
+            CFileLoader::LoadObjectInstance(lodVcLine);
+            ctx.linkedLod++;
+        }
+    } else if(selfFarProxySlots.find(slot) != selfFarProxySlots.end()) {
+        // Long-range landmarks (drawDist > 305m) without a separate lod.ide mesh:
+        // keep the sector CBuilding for collision + <300m draw, and add a far-range
+        // BigBuilding proxy on the same slot for 300m..drawDist visibility.
+        CSimpleModelInfo *smi = (CSimpleModelInfo *)mi;
+        if(!smi->m_isBigBuilding &&
+           CPools::GetBuildingPool()->EnsureFree(101) &&
+           CPools::GetPtrNodePool()->EnsureFree(10010)) {
+            smi->m_isBigBuilding = true;
+            CFileLoader::LoadObjectInstance(vcLine);
+            smi->m_isBigBuilding = false;
+            ctx.linkedLod++;
+        }
+    }
 }
 
 void ReadIpl(const char *path, const unsigned char *data, size_t size, void *user)
@@ -540,7 +587,8 @@ void CCustomWorld::LoadIde(void)
             object->m_noFade = !!(m.flags & 2);
             object->m_drawLast = !!(m.flags & 4);
             object->m_additive = !!(m.flags & 8);
-            object->m_ignoreLight = !!(m.flags & 0x20);
+            object->m_ignoreLight = !!(m.flags & 0x20) ||
+                (type == MITYPE_TIME && m.timeOn >= 18 && m.timeOff <= 8);
             object->m_noZwrite = !!(m.flags & 0x40);
             object->m_noShadows = !!(m.flags & 0x80);
             object->SetColModel(&CTempColModels::ms_colModelBBox);
@@ -588,9 +636,138 @@ void CCustomWorld::LoadIde(void)
             txdParentsLinked++;
         }
     }
-    CUSTOM_LOG("BR IDE: %u file(s), %u record(s), %u invalid, %u long, %u source ID conflicts, %u installed, %u native reused, %u incompatible, %u unsupported vehicle types, %u without DFF, %u over capacity, %u VC handling fallbacks, %u paired IMG TXDs, %u txdp links\n",
+
+    lodChainByNearSlot.clear();
+    lodTargetSlots.clear();
+    selfFarProxySlots.clear();
+    auto bindLodChain = [&](int nearSlot, int lod1Slot, int lod2Slot) -> bool {
+        if(nearSlot < FIRST_BR_SLOT || lod1Slot < FIRST_BR_SLOT || nearSlot == lod1Slot)
+            return false;
+        if(lodChainByNearSlot.find(nearSlot) != lodChainByNearSlot.end())
+            return false;
+        CBaseModelInfo *nearInfo = CModelInfo::GetModelInfo(nearSlot);
+        CBaseModelInfo *lod1Info = CModelInfo::GetModelInfo(lod1Slot);
+        if(!nearInfo || !lod1Info || !nearInfo->IsBuilding() || !lod1Info->IsBuilding())
+            return false;
+        CSimpleModelInfo *nearMi = (CSimpleModelInfo *)nearInfo;
+        CSimpleModelInfo *lod1Mi = (CSimpleModelInfo *)lod1Info;
+        lod1Mi->m_isBigBuilding = true;
+        lod1Mi->m_drawLast = false;
+        lod1Mi->SetRelatedModel(nearMi);
+        lod1Mi->m_lodDistances[2] = std::min(nearMi->m_lodDistances[0], 300.0f);
+        if(lod1Mi->m_lodDistances[0] < lod1Mi->m_lodDistances[2] + 50.0f)
+            lod1Mi->m_lodDistances[0] = lod1Mi->m_lodDistances[2] + 300.0f;
+        lodTargetSlots.insert(lod1Slot);
+
+        int validLod2 = -1;
+        if(lod2Slot >= FIRST_BR_SLOT && lod2Slot != nearSlot && lod2Slot != lod1Slot) {
+            CBaseModelInfo *lod2Info = CModelInfo::GetModelInfo(lod2Slot);
+            if(lod2Info && lod2Info->IsBuilding()) {
+                CSimpleModelInfo *lod2Mi = (CSimpleModelInfo *)lod2Info;
+                lod2Mi->m_isBigBuilding = true;
+                lod2Mi->m_drawLast = false;
+                lod2Mi->SetRelatedModel(lod1Mi);
+                lod2Mi->m_lodDistances[2] = lod1Mi->m_lodDistances[0];
+                if(lod2Mi->m_lodDistances[0] < lod2Mi->m_lodDistances[2] + 50.0f)
+                    lod2Mi->m_lodDistances[0] = lod2Mi->m_lodDistances[2] + 400.0f;
+                lodTargetSlots.insert(lod2Slot);
+                validLod2 = lod2Slot;
+            }
+        }
+        AutoLodChain chain = { lod1Slot, validLod2 };
+        lodChainByNearSlot[nearSlot] = chain;
+        return true;
+    };
+
+    // 1. Authoritative <nearId>,<lod1Id>[,<lod2Id>] table from custom/common.zip:data/lods.info
+    std::vector<uint8> lodInfoData;
+    if(CCustomModels::ReadDataFile("data/lods.info", lodInfoData) && !lodInfoData.empty()) {
+        size_t pos = 0;
+        while(pos < lodInfoData.size()) {
+            size_t end = pos;
+            while(end < lodInfoData.size() && lodInfoData[end] != '\n' && lodInfoData[end] != '\r')
+                end++;
+            std::string line((const char *)&lodInfoData[pos], end - pos);
+            pos = end;
+            while(pos < lodInfoData.size() && (lodInfoData[pos] == '\r' || lodInfoData[pos] == '\n'))
+                pos++;
+            size_t hashPos = line.find('#');
+            if(hashPos != std::string::npos)
+                line.erase(hashPos);
+            int parsedIds[3] = { -1, -1, -1 };
+            int idCount = 0;
+            size_t cur = 0;
+            while(cur < line.size() && idCount < 3) {
+                while(cur < line.size() && (std::isspace((unsigned char)line[cur]) || line[cur] == ','))
+                    cur++;
+                if(cur >= line.size()) break;
+                char *numEnd = nil;
+                long val = std::strtol(line.c_str() + cur, &numEnd, 10);
+                if(numEnd == line.c_str() + cur) break;
+                if(val > 0 && val < INT_MAX)
+                    parsedIds[idCount++] = (int)val;
+                cur = (size_t)(numEnd - line.c_str());
+            }
+            if(idCount >= 2) {
+                std::map<int, int>::const_iterator it0 = modelSlots.find(parsedIds[0]);
+                std::map<int, int>::const_iterator it1 = modelSlots.find(parsedIds[1]);
+                int s2 = -1;
+                if(idCount >= 3) {
+                    std::map<int, int>::const_iterator it2 = modelSlots.find(parsedIds[2]);
+                    if(it2 != modelSlots.end()) s2 = it2->second;
+                }
+                if(it0 != modelSlots.end() && it1 != modelSlots.end())
+                    bindLodChain(it0->second, it1->second, s2);
+            }
+        }
+    }
+
+    // 2. Fallback name-convention pairing for custom LOD models absent from lods.info
+    for(std::map<std::string, int>::const_iterator it = nameSlots.begin(); it != nameSlots.end(); ++it) {
+        int candSlot = it->second;
+        if(lodTargetSlots.find(candSlot) != lodTargetSlots.end()) continue;
+        CBaseModelInfo *candInfo = CModelInfo::GetModelInfo(candSlot);
+        if(!candInfo || !candInfo->IsBuilding()) continue;
+        CSimpleModelInfo *candMi = (CSimpleModelInfo *)candInfo;
+        if(candMi->m_lodDistances[0] <= 300.0f) continue;
+
+        const std::string &nm = it->first;
+        std::string base;
+        if(nm.size() > 3 && (nm.compare(0, 3, "l2_") == 0 || nm.compare(0, 3, "l3_") == 0))
+            base = nm.substr(3);
+        else if(nm.size() > 4 && nm.compare(0, 4, "lod_") == 0)
+            base = nm.substr(4);
+        else if(nm.size() > 5 && (nm.compare(nm.size() - 5, 5, "_lod2") == 0 || nm.compare(nm.size() - 5, 5, "_lod1") == 0))
+            base = nm.substr(0, nm.size() - 5);
+        else if(nm.size() > 4 && nm.compare(nm.size() - 4, 4, "_lod") == 0)
+            base = nm.substr(0, nm.size() - 4);
+        if(base.empty()) continue;
+
+        std::map<std::string, int>::const_iterator baseIt = nameSlots.find(base);
+        if(baseIt == nameSlots.end())
+            baseIt = nameSlots.find("1_" + base);
+        if(baseIt != nameSlots.end())
+            bindLodChain(baseIt->second, candSlot, -1);
+    }
+
+    // 3. Long-range landmarks (drawDist > 305m) with no separate LOD mesh
+    for(int s = FIRST_BR_SLOT; s < next; s++) {
+        if(!OwnsModelSlot(s) || lodTargetSlots.find(s) != lodTargetSlots.end() ||
+           lodChainByNearSlot.find(s) != lodChainByNearSlot.end())
+            continue;
+        CBaseModelInfo *info = CModelInfo::GetModelInfo(s);
+        if(!info || !info->IsBuilding()) continue;
+        CSimpleModelInfo *smi = (CSimpleModelInfo *)info;
+        if(!smi->m_isBigBuilding && smi->m_lodDistances[0] > 305.0f) {
+            smi->m_lodDistances[2] = 300.0f;
+            selfFarProxySlots.insert(s);
+        }
+    }
+
+    CUSTOM_LOG("BR IDE: %u file(s), %u record(s), %u invalid, %u long, %u source ID conflicts, %u installed, %u native reused, %u incompatible, %u unsupported vehicle types, %u without DFF, %u over capacity, %u VC handling fallbacks, %u paired IMG TXDs, %u txdp links, %u LOD chains, %u long-range landmarks\n",
         ctx.files, ctx.parsed, ctx.bad, ctx.overlong, ctx.conflicts, installed,
-        reusedNative, incompatible, unsupported, noAsset, full, fallbackHandling, paired, txdParentsLinked);
+        reusedNative, incompatible, unsupported, noAsset, full, fallbackHandling, paired, txdParentsLinked,
+        (unsigned)lodChainByNearSlot.size(), (unsigned)selfFarProxySlots.size());
     if(full) CUSTOM_LOG("BR IDE: free model, TXD or int16 ID slots exhausted; some records were skipped\n");
 }
 
@@ -602,6 +779,21 @@ void CCustomWorld::LoadCollisions(void)
     ctx.freeModels = CPools::GetColModelPool()->GetNoOfFreeSpaces();
     CCustomModels::ForEachBrCollision(ReadCollision, &ctx); // CED2 .cls entries in user IMGs
     CCustomModels::ForEachGameCollision(ReadGameCollision, &ctx, HasWorldCollisionTarget); // .col and legacy .cls
+    // Share near-model bounding volumes with paired LOD models (owns = false)
+    // so GetIsOnScreenComplex frustum checks never clip large LOD shells at screen edges.
+    for(std::map<int, AutoLodChain>::const_iterator it = lodChainByNearSlot.begin();
+        it != lodChainByNearSlot.end(); ++it) {
+        CBaseModelInfo *nearInfo = CModelInfo::GetModelInfo(it->first);
+        if(!nearInfo || !nearInfo->GetColModel()) continue;
+        CColModel *nearCol = nearInfo->GetColModel();
+        int lodSlots[2] = { it->second.lod1Slot, it->second.lod2Slot };
+        for(int li = 0; li < 2; li++) {
+            if(lodSlots[li] < 0) continue;
+            CBaseModelInfo *lodInfo = CModelInfo::GetModelInfo(lodSlots[li]);
+            if(lodInfo && !lodInfo->DoesOwnColModel())
+                lodInfo->SetColModel(nearCol, false);
+        }
+    }
     CUSTOM_LOG("custom IMG collision: %u installed, %u replacements, %u invalid, %u outside IDE, %u over pool capacity\n",
         ctx.installed, ctx.replaced, ctx.invalid, ctx.missing, ctx.full);
 }
@@ -628,6 +820,9 @@ void CCustomWorld::Shutdown(void)
 {
     modelSlots.clear();
     nameSlots.clear();
+    lodChainByNearSlot.clear();
+    lodTargetSlots.clear();
+    selfFarProxySlots.clear();
     std::fill(brSlots.begin(), brSlots.end(), false);
     ideLoaded = false;
     collisionLoaded = false;

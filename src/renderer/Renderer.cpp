@@ -34,6 +34,9 @@ bool GL3Atmosphere::Enabled = true;
 #include "FrameRenderList.h"
 #include "custompipes.h"
 #include "Frontend.h"
+#ifdef CUSTOM_MODELS
+#include "CustomWorld.h"
+#endif
 
 bool gbShowPedRoadGroups;
 bool gbShowCarRoadGroups;
@@ -145,6 +148,90 @@ CRenderer::PreRender(void)
 
 	CHeli::SpecialHeliPreRender();
 	CShadows::RenderExtraPlayerShadows();
+
+#if defined(LIBRW) && defined(RW_OPENGL)
+	{
+		float posRad[8 * 4];
+		float col[8 * 4];
+		float dir[8 * 4];
+		memset(posRad, 0, sizeof(posRad));
+		memset(col, 0, sizeof(col));
+		memset(dir, 0, sizeof(dir));
+
+		int chosenIdx[8] = { -1, -1, -1, -1, -1, -1, -1, -1 };
+		float chosenScore[8] = { 1.0e30f, 1.0e30f, 1.0e30f, 1.0e30f, 1.0e30f, 1.0e30f, 1.0e30f, 1.0e30f };
+		int chosenCount = 0;
+
+		const CVector camPos = TheCamera.GetPosition();
+		const CVector camFwd = TheCamera.GetForward();
+		const CVector focusPos = camPos + camFwd * 14.0f;
+
+		for(int li = 0; li < CPointLights::NumLights; li++){
+			const CRegisteredPointLight &pl = CPointLights::aLights[li];
+			if(pl.type != CPointLights::LIGHT_POINT && pl.type != CPointLights::LIGHT_DIRECTIONAL)
+				continue;
+			if(pl.radius <= 0.25f || (pl.red + pl.green + pl.blue) <= 0.01f)
+				continue;
+			const CVector fromCam = pl.coors - camPos;
+			if(DotProduct(fromCam, camFwd) < -pl.radius * 1.15f)
+				continue;
+			if(fromCam.MagnitudeSqr() > sq(185.0f + pl.radius))
+				continue;
+
+			const float d2 = (pl.coors - focusPos).MagnitudeSqr();
+			float score = d2 / Max(pl.radius * pl.radius, 4.0f);
+			if(pl.type == CPointLights::LIGHT_DIRECTIONAL)
+				score *= 0.45f; // Prioritize active vehicle headlight cones
+
+			int insertAt = -1;
+			if(chosenCount < 8){
+				insertAt = chosenCount++;
+			}else if(score < chosenScore[7]){
+				insertAt = 7;
+			}
+			if(insertAt >= 0){
+				chosenIdx[insertAt] = li;
+				chosenScore[insertAt] = score;
+				while(insertAt > 0 && chosenScore[insertAt] < chosenScore[insertAt - 1]){
+					int tmpI = chosenIdx[insertAt - 1];
+					float tmpS = chosenScore[insertAt - 1];
+					chosenIdx[insertAt - 1] = chosenIdx[insertAt];
+					chosenScore[insertAt - 1] = chosenScore[insertAt];
+					chosenIdx[insertAt] = tmpI;
+					chosenScore[insertAt] = tmpS;
+					insertAt--;
+				}
+			}
+		}
+
+		for(int k = 0; k < chosenCount; k++){
+			const CRegisteredPointLight &pl = CPointLights::aLights[chosenIdx[k]];
+			posRad[k * 4 + 0] = pl.coors.x;
+			posRad[k * 4 + 1] = pl.coors.y;
+			posRad[k * 4 + 2] = pl.coors.z;
+			posRad[k * 4 + 3] = pl.radius;
+
+			col[k * 4 + 0] = Max(pl.red, 0.0f);
+			col[k * 4 + 1] = Max(pl.green, 0.0f);
+			col[k * 4 + 2] = Max(pl.blue, 0.0f);
+			col[k * 4 + 3] = 1.0f;
+
+			if(pl.type == CPointLights::LIGHT_DIRECTIONAL){
+				CVector d = pl.dir;
+				if(d.MagnitudeSqr() > 1.0e-5f)
+					d.Normalise();
+				else
+					d = CVector(0.0f, 1.0f, 0.0f);
+				dir[k * 4 + 0] = d.x;
+				dir[k * 4 + 1] = d.y;
+				dir[k * 4 + 2] = d.z;
+				dir[k * 4 + 3] = 1.0f;
+			}
+		}
+
+		rw::setScenePointLights(chosenCount, posRad, col, dir);
+	}
+#endif
 }
 
 void
@@ -887,17 +974,41 @@ CRenderer::SetupBigBuildingVisibility(CEntity *ent)
 	}else if(mi->GetModelType() == MITYPE_VEHICLE)
 		return ent->IsVisible() ? VIS_VISIBLE : VIS_INVISIBLE;
 
-	float dist = (ms_vecCameraPosition-ent->GetPosition()).Magnitude();
+	float distSq = (ms_vecCameraPosition-ent->GetPosition()).MagnitudeSqr();
+#ifdef CUSTOM_MODELS
+	if(ent->m_rwObject == nil && CCustomWorld::OwnsModelSlot(ent->m_modelIndex)){
+		float maxReach = mi->GetLodDistance(0) + FADE_DISTANCE + STREAM_DISTANCE;
+		if(distSq >= maxReach * maxReach)
+			return VIS_INVISIBLE;
+	}
+#endif
+	float dist = Sqrt(distSq);
 	CSimpleModelInfo *nonLOD = mi->GetRelatedModel();
+
+#ifdef CUSTOM_MODELS
+	// Self far-proxy BigBuilding for un-paired landmarks with drawDist > 300m:
+	// below LOD_DISTANCE the regular sector CBuilding draws (and holds collision).
+	if(!mi->m_isBigBuilding && dist < mi->GetNearDistance()){
+		if(ent->m_rwObject)
+			ent->DeleteRwObject();
+		return VIS_INVISIBLE;
+	}
+#endif
 
 	// Find out whether to draw below near distance.
 	// This is only the case if there is a non-LOD which is either not
 	// loaded or not completely faded in yet.
-	if(dist < mi->GetNearDistance() && dist < LOD_DISTANCE){
+	if(dist < mi->GetNearDistance() && (dist < LOD_DISTANCE || (nonLOD && nonLOD->m_isBigBuilding))){
 		// No non-LOD or non-LOD is completely visible.
 		if(nonLOD == nil ||
-		   nonLOD->GetRwObject() && nonLOD->m_alpha == 255)
+		   nonLOD->GetRwObject() && nonLOD->m_alpha == 255){
+#ifdef CUSTOM_MODELS
+			if(ent->m_rwObject && CCustomWorld::OwnsModelSlot(ent->m_modelIndex) &&
+			   dist < mi->GetNearDistance() - FADE_DISTANCE)
+				ent->DeleteRwObject();
+#endif
 			return VIS_INVISIBLE;
+		}
 
 		// But if it is a time object, we'd rather draw the wrong
 		// non-LOD than the right LOD.

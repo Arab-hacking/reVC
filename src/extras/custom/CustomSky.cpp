@@ -149,8 +149,8 @@ static const char *s_skyDomeFragSrc =
 "	vec3 hdr = max(rayleigh * mie * extinction, vec3(0.0)) * dayExp;\n"
 "	// Subtle solar disc + corona above horizon\n"
 "	float sunAbove = smoothstep(-0.03, 0.08, fsun.y) * step(0.0, pos.y);\n"
-"	float sunDisc = smoothstep(0.9991, 0.99985, mu) * sunAbove;\n"
-"	hdr += extinction * dayExp * (2.6 * sunDisc);\n"
+"	float sunDisc = smoothstep(0.9992, 0.99988, mu) * sunAbove;\n"
+"	hdr += extinction * dayExp * (0.85 * sunDisc);\n"
 "	// Subtle night stars\n"
 "	float nightStarMask = smoothstep(-0.08, -0.32, fsun.y) * smoothstep(0.05, 0.35, pos.y);\n"
 "	if(nightStarMask > 0.001){\n"
@@ -186,9 +186,9 @@ static const char *s_skyDomeFragSrc =
 "		vec3 staticCol = mix(baseCloud, topCloud, cloudLit);\n"
 "		hdr = mix(staticCol, hdr, clamp(mix(1.0, cloudMask, u_cloudParams.w), 0.0, 1.0));\n"
 "	}\n"
-"	// Smooth atmospheric horizon-to-ground fade when pos.y < 0 (mirrored lower hemisphere)\n"
+"	// Smooth atmospheric horizon-to-ground continuation when pos.y < 0 (mirrored lower hemisphere)\n"
 "	if(pos.y < 0.0)\n"
-"		hdr *= mix(1.0, 0.52, smoothstep(0.0, -0.35, pos.y));\n"
+"		hdr *= mix(1.0, 0.88, smoothstep(0.0, -0.40, pos.y));\n"
 "	hdr += vec3((br_sky_noise(pos * 256.0) - 0.5) * 0.008);\n"
 "	float wp = u_skyTop.w > 0.5 ? u_skyTop.w : 4.0;\n"
 "	vec3 ldr = BR_TonemapAces(max(hdr, vec3(0.0)), wp, 2.2);\n"
@@ -222,8 +222,8 @@ SkyDomeProcRenderCB(rw::Atomic *atomic, rw::gl3::InstanceDataHeader *header)
 	float cumulusCov = Clamp(0.42f + 0.22f * weatherCloud, 0.32f, 0.70f);
 	float hasNormalBand = (s_skyDomeMaskTex != nil && s_skyDomeNormalTex != nil && s_skyDomeMaskTex != s_skyDomeNormalTex) ? 1.0f : 0.0f;
 
-	// SkyboxDynamicClouds.fs scattering: Br=0.0025, Bm=0.0003, g=0.92, whitePoint=4.0
-	float uScat[4] = { 0.0025f, 0.0003f, 0.92f, 4.0f };
+	// SkyboxDynamicClouds.fs scattering with tamed Mie forward peak (g=0.74) so sunset sky does not white-out
+	float uScat[4] = { 0.0025f, 0.00024f, 0.74f, 4.0f };
 	float uBot[4] = { botR, botG, botB, hasNormalBand };
 	float uSunCol[4] = { sunR, sunG, sunB, 1.0f };
 	// Swizzle GTA Z-up sun vector into SkyboxDynamicClouds Y-up convention: (x, z, y)
@@ -403,6 +403,70 @@ IsSlotStreamable(int32 slot)
 	return false;
 }
 
+static int32
+EnsureAuxTxdLoaded(const char *txdName)
+{
+	int32 slot = CTxdStore::FindTxdSlot(txdName);
+#ifdef CUSTOM_MODELS
+	if(slot == -1 && CCustomModels::HasImageTxd(txdName) && CTxdStore::HasFreeCustomSlot())
+		slot = CTxdStore::AddTxdSlot(txdName);
+#endif
+	if(slot < 0)
+		return -1;
+	TxdDef *def = CTxdStore::GetSlot(slot);
+	if(def && def->texDict == nil){
+		bool canLoad = CStreaming::IsObjectInCdImage(slot + STREAM_OFFSET_TXD);
+#ifdef CUSTOM_MODELS
+		if(!canLoad && CCustomModels::CanServe(slot + STREAM_OFFSET_TXD))
+			canLoad = true;
+#endif
+		if(canLoad){
+			CStreaming::RequestTxd(slot, STREAMFLAGS_DEPENDENCY | STREAMFLAGS_KEEP_IN_MEMORY | STREAMFLAGS_DONT_REMOVE);
+			CStreaming::LoadAllRequestedModels(false);
+		}
+	}
+	return (def && def->texDict != nil) ? slot : -1;
+}
+
+static RwTexture*
+FindFallbackSkyTextureInSlot(int32 txdSlot, const char *modelName)
+{
+	if(txdSlot < 0)
+		return nil;
+	TxdDef *def = CTxdStore::GetSlot(txdSlot);
+	if(def == nil || def->texDict == nil)
+		return nil;
+#ifdef LIBRW
+	const bool wantNight = strstr(modelName, "Night") || strstr(modelName, "night");
+	const bool wantRasv  = strstr(modelName, "Rasv")  || strstr(modelName, "rasv");
+	const bool wantZak   = strstr(modelName, "Zak")   || strstr(modelName, "zak");
+	const bool wantDay   = strstr(modelName, "Day")   || strstr(modelName, "day");
+	rw::Texture *exact = def->texDict->find(modelName);
+	if(exact)
+		return exact;
+	rw::Texture *first = nil;
+	FORLIST(lnk, def->texDict->textures){
+		rw::Texture *t = rw::Texture::fromDict(lnk);
+		if(t == nil || t->raster == nil)
+			continue;
+		if(first == nil)
+			first = t;
+		if(wantNight && (strstr(t->name, "Night") || strstr(t->name, "night") || strstr(t->name, "brsky") || strstr(t->name, "BRSky")))
+			return t;
+		if(wantRasv && (strstr(t->name, "Rasv") || strstr(t->name, "rasv") || strstr(t->name, "dawn") || strstr(t->name, "morn")))
+			return t;
+		if(wantZak && (strstr(t->name, "Zak") || strstr(t->name, "zak") || strstr(t->name, "dusk") || strstr(t->name, "even")))
+			return t;
+		if(wantDay && (strstr(t->name, "Day") || strstr(t->name, "day")))
+			return t;
+	}
+	return first;
+#else
+	(void)modelName;
+	return nil;
+#endif
+}
+
 static bool
 PrepareSkyEntry(SkyModelEntry &e, bool isSkyDome)
 {
@@ -417,6 +481,22 @@ PrepareSkyEntry(SkyModelEntry &e, bool isSkyDome)
 	CBaseModelInfo *mi = CModelInfo::GetModelInfo(e.slot);
 	if(mi == nil)
 		return false;
+
+	// Link brsky / rip / SkyDome auxiliary TXDs before streaming the DFF so RenderWare resolves brsky textures cleanly.
+	const int32 brskySlot = EnsureAuxTxdLoaded("brsky");
+	const int32 ripSlot   = EnsureAuxTxdLoaded("rip");
+	const int32 domeSlot  = EnsureAuxTxdLoaded("SkyDome");
+	const int32 modelTxd  = mi->GetTxdSlot();
+	if(modelTxd >= 0 && CTxdStore::GetParentTxdSlot(modelTxd) == -1){
+		if(brskySlot >= 0 && brskySlot != modelTxd)
+			CTxdStore::SetTxdParent(modelTxd, brskySlot);
+		else if(ripSlot >= 0 && ripSlot != modelTxd)
+			CTxdStore::SetTxdParent(modelTxd, ripSlot);
+	}
+	if(brskySlot >= 0 && ripSlot >= 0 && brskySlot != ripSlot &&
+	   CTxdStore::GetParentTxdSlot(brskySlot) == -1 && CTxdStore::GetParentTxdSlot(ripSlot) != brskySlot){
+		CTxdStore::SetTxdParent(brskySlot, ripSlot);
+	}
 
 	if(mi->GetRwObject() == nil){
 		CStreaming::RequestModel(e.slot, STREAMFLAGS_DEPENDENCY | STREAMFLAGS_KEEP_IN_MEMORY | STREAMFLAGS_DONT_REMOVE);
@@ -446,13 +526,31 @@ PrepareSkyEntry(SkyModelEntry &e, bool isSkyDome)
 	e.atomic->pipeline = nil;
 #endif
 
+	bool hasAnyTexture = false;
 	RpGeometry *geom = RpAtomicGetGeometry(e.atomic);
 	if(geom){
 		uint32 flags = RpGeometryGetFlags(geom);
-		// Remove baked dark vertex colors if any so time-of-day sky textures render pure
-		flags &= ~rpGEOMETRYPRELIT;
+		// Render sky models pure & unlit (no baked vertex colors, no night ambient attenuation)
+		flags &= ~(rpGEOMETRYPRELIT | rpGEOMETRYLIGHT);
 		flags |= rpGEOMETRYMODULATEMATERIALCOLOR;
 		RpGeometrySetFlags(geom, flags);
+
+		const int32 auxSlots[4] = { modelTxd, brskySlot, ripSlot, domeSlot };
+		const int32 nMat = RpGeometryGetNumMaterials(geom);
+		for(int32 miIdx = 0; miIdx < nMat; miIdx++){
+			RpMaterial *mat = RpGeometryGetMaterial(geom, miIdx);
+			if(mat == nil)
+				continue;
+			if(mat->texture == nil){
+				for(int s = 0; s < 4 && mat->texture == nil; s++){
+					RwTexture *fallback = FindFallbackSkyTextureInSlot(auxSlots[s], mi->GetModelName());
+					if(fallback)
+						RpMaterialSetTexture(mat, fallback);
+				}
+			}
+			if(mat->texture != nil)
+				hasAnyTexture = true;
+		}
 		RpGeometryForAllMaterials(geom, NormalizeSkyMaterialCB, (void*)(uintptr)255);
 
 		RpMorphTarget *mt = RpGeometryGetMorphTarget(geom, 0);
@@ -500,22 +598,26 @@ PrepareSkyEntry(SkyModelEntry &e, bool isSkyDome)
 				else if(strstr(t->name, "mask") || strstr(t->name, "cloud") || strstr(t->name, "Cloud"))
 					maskCand = t;
 			}
-			if(count >= 2){
-				s_skyDomeMaskTex = maskCand ? maskCand : first;
-				s_skyDomeNormalTex = normCand ? normCand : (s_skyDomeMaskTex == first ? second : first);
-			}else if(count == 1){
-				s_skyDomeMaskTex = first;
+			if(maskCand != nil && normCand != nil){
+				s_skyDomeMaskTex = maskCand;
+				s_skyDomeNormalTex = normCand;
+				EnsureSkyDomeProcShader();
+				if(s_skyDomeProcPipe != nil){
+					e.atomic->pipeline = s_skyDomeProcPipe;
+					s_skyDomeUseProcedural = true;
+				}
 			}
-		}
-		EnsureSkyDomeProcShader();
-		if(s_skyDomeProcPipe != nil){
-			e.atomic->pipeline = s_skyDomeProcPipe;
-			s_skyDomeUseProcedural = true;
 		}
 	}
 #else
 	(void)isSkyDome;
 #endif
+
+	if(!hasAnyTexture && !isSkyDome){
+		DestroyEntryFrame(e);
+		e.loadAttempted = true;
+		return false;
+	}
 
 	e.prepared = true;
 	return true;
@@ -689,21 +791,12 @@ CCustomSky::Mode
 CCustomSky::CycleMode(void)
 {
 	if(s_hasSkyBox && s_hasSkyDome){
-#ifdef RW_GL3
-		if(s_mode == MODE_AUTO || s_mode == MODE_SKYDOME)
-			s_mode = MODE_SKYBOX;
-		else if(s_mode == MODE_SKYBOX)
-			s_mode = MODE_OFF;
-		else
-			s_mode = MODE_SKYDOME;
-#else
 		if(s_mode == MODE_AUTO || s_mode == MODE_SKYBOX)
 			s_mode = MODE_SKYDOME;
 		else if(s_mode == MODE_SKYDOME)
 			s_mode = MODE_OFF;
 		else
 			s_mode = MODE_SKYBOX;
-#endif
 	}else if(s_hasSkyBox){
 		s_mode = (s_mode == MODE_OFF) ? MODE_SKYBOX : MODE_OFF;
 	}else if(s_hasSkyDome){
@@ -719,13 +812,8 @@ CCustomSky::Render(const CVector &camPos, bool forEnvMap)
 	if(!IsActive() || !CGame::CanSeeOutSideFromCurrArea())
 		return false;
 
-#ifdef RW_GL3
-	bool wantSkyDome = (s_mode == MODE_SKYDOME) || (s_mode == MODE_AUTO && s_hasSkyDome);
-	bool wantSkyBox = (s_mode == MODE_SKYBOX) || (s_mode == MODE_AUTO && !s_hasSkyDome && s_hasSkyBox);
-#else
 	bool wantSkyBox = (s_mode == MODE_SKYBOX) || (s_mode == MODE_AUTO && s_hasSkyBox);
 	bool wantSkyDome = (s_mode == MODE_SKYDOME) || (s_mode == MODE_AUTO && !s_hasSkyBox && s_hasSkyDome);
-#endif
 
 	RwBool prevZTest = TRUE, prevZWrite = TRUE, prevVertAlpha = FALSE;
 	int32 prevCull = rwCULLMODECULLBACK;

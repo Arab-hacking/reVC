@@ -17,6 +17,9 @@
 #include "Vehicle.h"
 #include "Clouds.h"
 #include "CustomSky.h"
+#ifdef CUSTOM_MODELS
+#include "SAStaticModel.h"
+#endif
 #include "custompipes.h"
 
 #ifndef LIBRW
@@ -601,6 +604,9 @@ CustomPipeRegister(void)
 		CustomMatCtor, nil, CustomMatCopy);
 	rw::Material::registerPluginStream(0x0253F2FC, SaCarEnvMatRead, nil, nil);
 	rw::Material::registerPluginStream(0x0253F2F6, SaCarSpecMatRead, nil, nil);
+#ifdef CUSTOM_MODELS
+	SAStaticModel::RegisterPlugins();
+#endif
 }
 
 

@@ -18,6 +18,7 @@ uniform vec4  u_fogColor;
 #define u_fogDisable (u_fogData.w)
 
 // --- Shaders For BLAYZ RUSSIA PC: PBR + Sun Shadow + Sky SH + ACES ---
+uniform vec4 u_surfProps;	// x: amb, y: spec, z: diff, w: +1 prelit, +2 unlit
 uniform vec4 u_eye;		// xyz: camera world position
 uniform vec4 u_sunDir;		// xyz: direction TO the sun
 uniform vec4 u_sunMaterial;	// rgb: directional timecycle colour, a: shadow strength
@@ -26,6 +27,9 @@ uniform vec4 u_skyAmbient;	// rgb: sky ambient colour, a: ACES whitePoint
 uniform vec4 u_localInvGamma;	// x: gamma exponent
 uniform mat4 u_shadowMatrix;	// directional sun lightProj * lightView
 uniform vec4 u_shadowParams;	// x: strength, y: 1/mapSize, z: normalBias, w: fadeRadius
+uniform vec4 u_sceneLightPosRad[8]; // xyz: world pos, w: radius
+uniform vec4 u_sceneLightColor[8];  // rgb: linear intensity
+uniform vec4 u_sceneLightDir[8];    // xyz: cone dir, w: >0.5 for directional spotlight
 uniform sampler2D tex3;		// directional sun shadow depth map
 
 #define BR_PI 3.14159265
@@ -275,10 +279,10 @@ void BR_GetSceneLightColors(vec3 L, out vec3 sunDirectColor, out vec3 sunAmbient
 	vec3 tcSunLin  = mix(vec3(1.0), clamp(u_sunMaterial.rgb, vec3(0.35), vec3(1.15)), 0.25);
 	sunDirectColor = physSun * tcSunLin * clearSun;
 
-	// Hemispherical Sky SH irradiance divided by PI
+	// Hemispherical Sky SH irradiance divided by PI (readable cool moonlight at night)
 	vec3 duskAmb  = vec3(0.62, 0.68, 0.88) * BR_INV_PI;
 	vec3 noonAmb  = vec3(0.86, 0.98, 1.20) * BR_INV_PI;
-	vec3 nightAmb = vec3(0.14, 0.18, 0.29) * BR_INV_PI;
+	vec3 nightAmb = vec3(0.46, 0.55, 0.78) * BR_INV_PI;
 	vec3 dayAmb   = mix(duskAmb, noonAmb, highSun);
 	sunAmbientColor = mix(nightAmb, dayAmb, dayFactor) * (1.0 - 0.18 * cloud);
 }
@@ -345,6 +349,45 @@ vec3 BR_ShadeMaterialHDR(
 			specularColor, extractedAlbedoAO, L, view, N) * shadowTerm * sunDirectColor;
 	}
 
+	// Subtle cool moonlight directional key at night so facades & vehicles retain 3D depth
+	float nightFactor = 1.0 - dayFactor;
+	if(nightFactor > 0.01){
+		vec3 moonL = vec3(-0.30, -0.26, 0.918);
+		float NoMoon = max(dot(N, moonL), 0.0);
+		if(NoMoon > 0.0){
+			vec3 moonColor = vec3(0.28, 0.34, 0.50) * BR_INV_PI * nightFactor;
+			result += (diffuseColor * NoMoon + specularColor * (0.08 * pow(max(dot(N, normalize(moonL + view)), 0.0), 24.0))) * moonColor;
+		}
+	}
+
+	// Dynamic per-pixel streetlamps, traffic lights & vehicle headlights from CPointLights::aLights
+	for(int li = 0; li < 8; li++){
+		float rad = u_sceneLightPosRad[li].w;
+		if(rad <= 0.01)
+			break;
+		vec3 toLight = u_sceneLightPosRad[li].xyz - worldPos;
+		float d2 = dot(toLight, toLight);
+		float r2 = rad * rad;
+		if(d2 >= r2)
+			continue;
+		float invD = inversesqrt(max(d2, 1.0e-4));
+		vec3 Lp = toLight * invD;
+		float x2 = d2 / r2;
+		float atten = br_pow2(max(1.0 - x2, 0.0)) / (1.0 + 3.2 * x2);
+		if(u_sceneLightDir[li].w > 0.5){
+			float cosCone = dot(-Lp, u_sceneLightDir[li].xyz);
+			atten *= smoothstep(0.30, 0.78, cosCone);
+		}
+		if(atten <= 0.0005)
+			continue;
+		float wrapDiff = max(dot(N, Lp) * 0.78 + 0.22, 0.0);
+		vec3 Hp = Lp + view;
+		Hp *= inversesqrt(max(dot(Hp, Hp), 1.0e-6));
+		float specLobe = pow(max(dot(N, Hp), 0.0), mix(12.0, 88.0, smoothness)) * mix(0.06, 0.42, smoothness);
+		vec3 lCol = u_sceneLightColor[li].rgb * (2.65 * BR_INV_PI);
+		result += (diffuseColor * wrapDiff + specularColor * specLobe) * lCol * atten;
+	}
+
 	vec3 skyAmbient = BR_GetSkySHDiffuse(N, sunAmbientColor) * diffuseColor * ao;
 	if(isFoliage > 0.5){
 		vec3 transCol = diffuseColor * translucency * vec3(1.0, 0.8, 0.5);
@@ -395,6 +438,15 @@ vec3 SunMaterialLighting(vec3 worldPos, vec3 worldNormal, out float selfShade)
 vec3 ShadeWorldSurfaceEx(
 	vec3 texSrgb, vec3 vertColor, vec3 worldPos, vec3 worldNormal, float visibility, float isSkinDynamic)
 {
+	if(u_surfProps.w >= 1.5){
+		vec3 unlit = clamp(texSrgb * vertColor, 0.0, 1.0);
+		if(u_atmosphere.x < 0.5)
+			return pow(unlit, vec3(u_localInvGamma.x));
+		vec3 emissiveHdr = BR_SRGBtoLINEAR(vec4(unlit, 1.0)).rgb * 1.45;
+		float wpUnlit = max(u_skyAmbient.a, 2.5);
+		return mix(u_fogColor.rgb, BR_TonemapAces(emissiveHdr, wpUnlit, 2.2), visibility);
+	}
+
 	if(u_atmosphere.x < 0.5){
 		float selfShade;
 		vec3 legacy = (texSrgb * vertColor) + SunMaterialLighting(worldPos, worldNormal, selfShade);

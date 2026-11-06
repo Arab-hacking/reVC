@@ -1,7 +1,6 @@
 uniform sampler2D tex0;
 uniform sampler2D tex1;
 uniform vec4 u_ambLight;
-uniform vec4 u_surfProps;
 uniform vec4 u_reflProps;
 uniform vec4 u_specDir[5];
 uniform vec4 u_specColor[5];
@@ -79,7 +78,9 @@ main(void)
 	}
 
 	// --- Exact Vehicle.fs (Shaders For BLAYZ RUSSIA PC) ---
-	float hasTex = step(0.5, u_surfProps.w);
+	float isUnlit = step(1.5, u_surfProps.w);
+	float hasTex = step(0.5, u_surfProps.w - 2.0 * isUnlit);
+	float isLitLamp = max(isUnlit, step(1.25, u_surfProps.x));
 	float texLum = br_luminance(texSample.rgb);
 	float isOpaque = step(0.95, alpha);
 
@@ -121,7 +122,7 @@ main(void)
 		vec3 hdr = BR_ShadeMaterialHDR(
 			albedoLin, v_worldPos, N,
 			smoothness, metalness, reflectance, 1.0,
-			0.0, 0.0, 0.0, 0.0,
+			0.0, 0.0, 1.65 * isLitLamp, 0.82 * isLitLamp,
 			customEnvLin, 1.0);
 		color.rgb = mix(u_fogColor.rgb, BR_TonemapAces(hdr, whitePoint, 2.2), visibility);
 		color.a = 1.0;
@@ -130,12 +131,12 @@ main(void)
 		vec3 baseHdr = BR_ShadeMaterialHDR(
 			albedoLin, v_worldPos, N,
 			0.22, 0.0, 0.25, 1.0,
-			0.0, 0.0, 0.0, 0.0,
+			0.0, 0.0, 1.65 * isLitLamp, 0.82 * isLitLamp,
 			vec3(0.0), 0.0);
 		vec3 fullHdr = BR_ShadeMaterialHDR(
 			albedoLin, v_worldPos, N,
 			smoothness, 0.0, reflectance, 1.0,
-			0.0, 0.0, 0.0, 0.0,
+			0.0, 0.0, 1.65 * isLitLamp, 0.82 * isLitLamp,
 			customEnvLin, 1.0);
 		vec3 specHdr = max(fullHdr - baseHdr, vec3(0.0));
 		vec3 baseLdr = BR_TonemapAces(baseHdr, whitePoint, 2.2);

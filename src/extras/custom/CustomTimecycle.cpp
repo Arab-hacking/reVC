@@ -383,6 +383,51 @@ ExpandGrids(const SlotGrid grids[BR_WEATHERS_USED], int weathers, bool atmospher
 			ExpandField(CTimeCycle::m_nDirectionalGreen, w, g, CycleSlot::F_DIR_G, 1.0f, 0, 255);
 			ExpandField(CTimeCycle::m_nDirectionalBlue, w, g, CycleSlot::F_DIR_B, 1.0f, 0, 255);
 		}
+		// Reconcile SA/BR night timecyc anomalies (AmbientRGB ~0, AmbientPhysicalRGB ~249, DirectionalRGB 255 at midnight)
+		// so night buildings are clearly readable under moonlight while dynamic objects/vehicles match the night scene.
+		for(int h = 0; h < NUMHOURS; h++){
+			float nightWeight = 0.0f;
+			if(h <= 4 || h >= 22)
+				nightWeight = 1.0f;
+			else if(h == 5 || h == 21)
+				nightWeight = 0.75f;
+			else if(h == 6 || h == 20)
+				nightWeight = 0.35f;
+			if(nightWeight <= 0.0f)
+				continue;
+
+			const float minAmbR = 44.0f * nightWeight;
+			const float minAmbG = 50.0f * nightWeight;
+			const float minAmbB = 68.0f * nightWeight;
+			if(CTimeCycle::m_nAmbientRed[h][w] < (uint8)minAmbR)
+				CTimeCycle::m_nAmbientRed[h][w] = CTimeCycle::m_nAmbientRed_Bl[h][w] = (uint8)minAmbR;
+			if(CTimeCycle::m_nAmbientGreen[h][w] < (uint8)minAmbG)
+				CTimeCycle::m_nAmbientGreen[h][w] = CTimeCycle::m_nAmbientGreen_Bl[h][w] = (uint8)minAmbG;
+			if(CTimeCycle::m_nAmbientBlue[h][w] < (uint8)minAmbB)
+				CTimeCycle::m_nAmbientBlue[h][w] = CTimeCycle::m_nAmbientBlue_Bl[h][w] = (uint8)minAmbB;
+
+			// Clamp daytime-bright AmbientPhysicalRGB (157..249 at 0h..5h/22h) down to cool night bounce light
+			const float targetObjR = 58.0f + 55.0f * (1.0f - nightWeight);
+			const float targetObjG = 64.0f + 58.0f * (1.0f - nightWeight);
+			const float targetObjB = 82.0f + 62.0f * (1.0f - nightWeight);
+			if(CTimeCycle::m_nAmbientRed_Obj[h][w] > (uint8)targetObjR)
+				CTimeCycle::m_nAmbientRed_Obj[h][w] = CTimeCycle::m_nAmbientRed_Obj_Bl[h][w] = (uint8)targetObjR;
+			if(CTimeCycle::m_nAmbientGreen_Obj[h][w] > (uint8)targetObjG)
+				CTimeCycle::m_nAmbientGreen_Obj[h][w] = CTimeCycle::m_nAmbientGreen_Obj_Bl[h][w] = (uint8)targetObjG;
+			if(CTimeCycle::m_nAmbientBlue_Obj[h][w] > (uint8)targetObjB)
+				CTimeCycle::m_nAmbientBlue_Obj[h][w] = CTimeCycle::m_nAmbientBlue_Obj_Bl[h][w] = (uint8)targetObjB;
+
+			// Tone down [255,255,255] midnight DirectionalRGB to cool moonlight
+			const float maxDirR = 46.0f + 160.0f * (1.0f - nightWeight);
+			const float maxDirG = 54.0f + 160.0f * (1.0f - nightWeight);
+			const float maxDirB = 78.0f + 160.0f * (1.0f - nightWeight);
+			if(CTimeCycle::m_nDirectionalRed[h][w] > (uint8)maxDirR)
+				CTimeCycle::m_nDirectionalRed[h][w] = (uint8)maxDirR;
+			if(CTimeCycle::m_nDirectionalGreen[h][w] > (uint8)maxDirG)
+				CTimeCycle::m_nDirectionalGreen[h][w] = (uint8)maxDirG;
+			if(CTimeCycle::m_nDirectionalBlue[h][w] > (uint8)maxDirB)
+				CTimeCycle::m_nDirectionalBlue[h][w] = (uint8)maxDirB;
+		}
 		if(atmosphere){ // only GL3; native sky and clouds otherwise
 			if(has[CycleSlot::F_SKYTOP_R]){
 				ExpandField(CTimeCycle::m_nSkyTopRed, w, g, CycleSlot::F_SKYTOP_R, 1.0f, 0, 255);

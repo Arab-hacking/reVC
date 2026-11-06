@@ -225,6 +225,10 @@ RGBAf getAtmosphereParams(void);
 // rgb: normalized sky-hemisphere tint, a: ground/sky bounce weight.
 void setSkyAmbientParams(RGBAf params);
 RGBAf getSkyAmbientParams(void);
+// Up to 8 scene point/spot lights (each array holds 8 * 4 floats):
+// posRad: xyz = world pos, w = radius; color: rgb = linear intensity; dir: xyz = cone dir, w = isSpot.
+void setScenePointLights(int32 count, const float32 *posRad4, const float32 *color4, const float32 *dir4);
+void getScenePointLights(float32 *outPosRad32, float32 *outColor32, float32 *outDir32);
 #endif
 
 #define RWTOSTR_(X) #X

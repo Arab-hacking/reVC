@@ -198,10 +198,11 @@ void setMaterial(const RGBA &color, const SurfaceProperties &surfaceprops, float
 inline void setMaterial(uint32 flags, const RGBA &color, const SurfaceProperties &surfaceprops, float extraSurfProp = 0.0f)
 {
 	static RGBA white = { 255, 255, 255, 255 };
+	float packedExtra = extraSurfProp + ((flags & Geometry::LIGHT) ? 0.0f : 2.0f);
 	if(flags & Geometry::MODULATE)
-		setMaterial(color, surfaceprops, extraSurfProp);
+		setMaterial(color, surfaceprops, packedExtra);
 	else
-		setMaterial(white, surfaceprops, extraSurfProp);
+		setMaterial(white, surfaceprops, packedExtra);
 }
 
 void setAlphaBlend(bool32 enable);

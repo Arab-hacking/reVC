@@ -1,13 +1,136 @@
 #ifdef LIBRW
 #include "SAStaticModel.h"
 #include <rw.h>
+#include <cctype>
 #include <cmath>
 #include <cstring>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
 namespace SAStaticModel {
 namespace {
+
+enum {
+    ID_SA_2DFX = 0x0253F2F8,
+    SA_2DFX_EFFECT_LIGHT = 0
+};
+
+struct Geo2dfxHolder {
+    std::vector<LightEffect> lights;
+};
+
+static rw::int32 s_geo2dfxOffset = -1;
+
+static void *CreateGeo2dfx(void *object, rw::int32 offset, rw::int32)
+{
+    *PLUGINOFFSET(Geo2dfxHolder*, object, offset) = nil;
+    return object;
+}
+
+static void *DestroyGeo2dfx(void *object, rw::int32 offset, rw::int32)
+{
+    Geo2dfxHolder **slot = PLUGINOFFSET(Geo2dfxHolder*, object, offset);
+    delete *slot;
+    *slot = nil;
+    return object;
+}
+
+static void *CopyGeo2dfx(void *dst, void *src, rw::int32 offset, rw::int32)
+{
+    Geo2dfxHolder *srcHolder = *PLUGINOFFSET(Geo2dfxHolder*, src, offset);
+    *PLUGINOFFSET(Geo2dfxHolder*, dst, offset) = srcHolder ? new Geo2dfxHolder(*srcHolder) : nil;
+    return dst;
+}
+
+static float ReadF32LE(const rw::uint8 *p)
+{
+    float v = 0.0f;
+    std::memcpy(&v, p, 4);
+    return v;
+}
+
+static rw::uint32 ReadU32LE(const rw::uint8 *p)
+{
+    return (rw::uint32)p[0] |
+           ((rw::uint32)p[1] << 8) |
+           ((rw::uint32)p[2] << 16) |
+           ((rw::uint32)p[3] << 24);
+}
+
+static rw::Stream *ReadGeo2dfxStream(rw::Stream *stream, rw::int32 length, void *object, rw::int32 offset, rw::int32)
+{
+    if(length <= 0)
+        return stream;
+    if(length < 4 || length > 256 * 1024){
+        stream->seek(length);
+        return stream;
+    }
+
+    std::vector<rw::uint8> buf((size_t)length);
+    if(stream->read8(buf.data(), (rw::uint32)length) != (rw::uint32)length)
+        return nil;
+
+    rw::uint32 count = ReadU32LE(buf.data());
+    if(count == 0 || count > 128)
+        return stream;
+
+    size_t cursor = 4;
+    std::vector<LightEffect> parsed;
+    for(rw::uint32 i = 0; i < count; i++){
+        if(cursor + 20 > buf.size())
+            break;
+        float px = ReadF32LE(buf.data() + cursor + 0);
+        float py = ReadF32LE(buf.data() + cursor + 4);
+        float pz = ReadF32LE(buf.data() + cursor + 8);
+        rw::uint32 effectType = ReadU32LE(buf.data() + cursor + 12);
+        rw::uint32 entrySize = ReadU32LE(buf.data() + cursor + 16);
+        cursor += 20;
+        if(entrySize > buf.size() - cursor)
+            break;
+
+        if(effectType == SA_2DFX_EFFECT_LIGHT && (entrySize == 76 || entrySize == 80) &&
+           std::isfinite(px) && std::isfinite(py) && std::isfinite(pz)){
+            const rw::uint8 *d = buf.data() + cursor;
+            LightEffect fx;
+            std::memset(&fx, 0, sizeof(fx));
+            fx.pos[0] = px;
+            fx.pos[1] = py;
+            fx.pos[2] = pz;
+            fx.r = d[0];
+            fx.g = d[1];
+            fx.b = d[2];
+            fx.a = d[3];
+            fx.coronaDist = ReadF32LE(d + 4);
+            fx.pointlightRange = ReadF32LE(d + 8);
+            fx.coronaSize = ReadF32LE(d + 12);
+            fx.shadowSize = ReadF32LE(d + 16);
+            fx.flashType = d[20];
+            fx.reflection = d[21];
+            fx.flareType = d[22];
+            fx.shadowIntensity = d[23];
+            fx.flags1 = d[24];
+            std::memcpy(fx.coronaName, d + 25, 24);
+            fx.coronaName[23] = '\0';
+            std::memcpy(fx.shadowName, d + 49, 24);
+            fx.shadowName[23] = '\0';
+            fx.flags2 = d[74];
+
+            if(std::isfinite(fx.coronaDist) && std::isfinite(fx.pointlightRange) &&
+               std::isfinite(fx.coronaSize) && std::isfinite(fx.shadowSize))
+                parsed.push_back(fx);
+        }
+        cursor += entrySize;
+    }
+
+    if(!parsed.empty()){
+        Geo2dfxHolder **slot = PLUGINOFFSET(Geo2dfxHolder*, object, offset);
+        delete *slot;
+        *slot = new Geo2dfxHolder();
+        (*slot)->lights.swap(parsed);
+    }
+    return stream;
+}
 
 bool Finite(const rw::V3d &v)
 {
@@ -112,7 +235,220 @@ bool CountBinMeshTriangles(const rw::Geometry *g, int *triangles, const char **e
     return true;
 }
 
+static bool ContainsTokenCI(const std::string &lower, const char *needle)
+{
+    return lower.find(needle) != std::string::npos;
+}
+
+static LightEffect MakeStreetLampLight(float x, float y, float z)
+{
+    LightEffect fx;
+    std::memset(&fx, 0, sizeof(fx));
+    fx.pos[0] = x;
+    fx.pos[1] = y;
+    fx.pos[2] = z;
+    fx.r = 255;
+    fx.g = 216;
+    fx.b = 158;
+    fx.a = 200;
+    fx.coronaDist = 180.0f;
+    fx.pointlightRange = 18.0f;
+    fx.coronaSize = 0.95f;
+    fx.shadowSize = 7.5f;
+    fx.flashType = 0;
+    fx.reflection = 1;
+    fx.flareType = 0;
+    fx.shadowIntensity = 52;
+    fx.flags1 = 0x40; // bAtNight
+    fx.flags2 = 0;
+    std::strncpy(fx.coronaName, "coronastar", sizeof(fx.coronaName) - 1);
+    std::strncpy(fx.shadowName, "shad_exp", sizeof(fx.shadowName) - 1);
+    return fx;
+}
+
 } // namespace
+
+void RegisterPlugins(void)
+{
+    if(s_geo2dfxOffset > 0)
+        return;
+    s_geo2dfxOffset = rw::Geometry::registerPlugin(
+        sizeof(Geo2dfxHolder*), ID_SA_2DFX,
+        CreateGeo2dfx, DestroyGeo2dfx, CopyGeo2dfx);
+    if(s_geo2dfxOffset > 0)
+        rw::Geometry::registerPluginStream(ID_SA_2DFX, ReadGeo2dfxStream, nil, nil);
+}
+
+void ExtractClumpLights(rw::Clump *clump, std::vector<LightEffect> &out)
+{
+    out.clear();
+    if(clump == nil || s_geo2dfxOffset <= 0)
+        return;
+
+    FORLIST(lnk, clump->atomics){
+        rw::Atomic *a = rw::Atomic::fromClump(lnk);
+        if(a == nil || a->geometry == nil)
+            continue;
+        Geo2dfxHolder *holder = *PLUGINOFFSET(Geo2dfxHolder*, a->geometry, s_geo2dfxOffset);
+        if(holder == nil || holder->lights.empty())
+            continue;
+
+        bool hasLtm = false;
+        rw::Matrix ltm;
+        if(a->getFrame() != nil){
+            ltm = *a->getFrame()->getLTM();
+            hasLtm = Finite(ltm) && !Identity(ltm);
+        }
+
+        for(size_t i = 0; i < holder->lights.size(); i++){
+            LightEffect fx = holder->lights[i];
+            if(hasLtm){
+                rw::V3d pt = { fx.pos[0], fx.pos[1], fx.pos[2] };
+                rw::V3d::transformPoints(&pt, &pt, 1, &ltm);
+                if(!Finite(pt))
+                    continue;
+                fx.pos[0] = pt.x;
+                fx.pos[1] = pt.y;
+                fx.pos[2] = pt.z;
+            }
+            out.push_back(fx);
+            if(out.size() >= 64)
+                return;
+        }
+    }
+}
+
+bool IsOutdoorStreetLampName(const char *modelName)
+{
+    if(modelName == nil || modelName[0] == '\0')
+        return false;
+    std::string lower;
+    for(const char *p = modelName; *p; ++p)
+        lower.push_back((char)std::tolower((unsigned char)*p));
+
+    // Never attach lights to LOD shells, power transmission towers, signs, or broken debris.
+    if(lower.rfind("l2_", 0) == 0 || lower.rfind("l3_", 0) == 0 ||
+       lower.rfind("lod", 0) == 0 || ContainsTokenCI(lower, "_lod") ||
+       ContainsTokenCI(lower, "lep") || ContainsTokenCI(lower, "podstation") ||
+       ContainsTokenCI(lower, "sign") || ContainsTokenCI(lower, "cone") ||
+       ContainsTokenCI(lower, "wreck") || ContainsTokenCI(lower, "traffic"))
+        return false;
+
+    static const char *const kTokens[] = {
+        "lamplight", "lamppost", "lampost", "streetlamp", "street_light",
+        "strlamp", "voenlamp", "fonar", "stolb_light", "stolb1",
+        "lit_stolb", "bysstolb", "astolb8007", "astolb8008", "dr_stolb01",
+        "turmstolb", "grl_lamp", "rub_lamp", "bys_lamp", "event_lamp",
+        "fish_lamp", "lb_lamp", "lamphub", "light1_a889", "chinalamp"
+    };
+    for(size_t i = 0; i < sizeof(kTokens)/sizeof(kTokens[0]); i++)
+        if(ContainsTokenCI(lower, kTokens[i]))
+            return true;
+    return false;
+}
+
+void EstimateStreetLampLights(rw::Atomic *bakedAtomic, std::vector<LightEffect> &out)
+{
+    out.clear();
+    if(bakedAtomic == nil || bakedAtomic->geometry == nil)
+        return;
+    const rw::Geometry *g = bakedAtomic->geometry;
+    if((g->flags & rw::Geometry::NATIVE) || g->numMorphTargets < 1 ||
+       g->morphTargets == nil || g->morphTargets[0].vertices == nil || g->numVertices < 8)
+        return;
+
+    const rw::V3d *verts = g->morphTargets[0].vertices;
+    const int n = g->numVertices;
+    rw::V3d lo = verts[0], hi = verts[0];
+    for(int i = 1; i < n; i++){
+        if(verts[i].x < lo.x) lo.x = verts[i].x;
+        if(verts[i].y < lo.y) lo.y = verts[i].y;
+        if(verts[i].z < lo.z) lo.z = verts[i].z;
+        if(verts[i].x > hi.x) hi.x = verts[i].x;
+        if(verts[i].y > hi.y) hi.y = verts[i].y;
+        if(verts[i].z > hi.z) hi.z = verts[i].z;
+    }
+
+    const float height = hi.z - lo.z;
+    const float spanX = hi.x - lo.x;
+    const float spanY = hi.y - lo.y;
+    if(!std::isfinite(height) || height < 2.6f || height > 28.0f ||
+       spanX > 16.0f || spanY > 16.0f)
+        return;
+
+    const float baseTopZ = lo.z + 0.22f * height;
+    double sumBaseX = 0.0, sumBaseY = 0.0;
+    int baseCount = 0;
+    for(int i = 0; i < n; i++){
+        if(verts[i].z <= baseTopZ){
+            sumBaseX += verts[i].x;
+            sumBaseY += verts[i].y;
+            baseCount++;
+        }
+    }
+    const float trunkX = baseCount > 0 ? (float)(sumBaseX / baseCount) : 0.5f * (lo.x + hi.x);
+    const float trunkY = baseCount > 0 ? (float)(sumBaseY / baseCount) : 0.5f * (lo.y + hi.y);
+
+    const float headMinZ = hi.z - 0.24f * height;
+    float bestReachSq = -1.0f;
+    rw::V3d bestV = { trunkX, trunkY, hi.z };
+    double sumTopX = 0.0, sumTopY = 0.0;
+    int topCount = 0;
+    for(int i = 0; i < n; i++){
+        if(verts[i].z < headMinZ)
+            continue;
+        sumTopX += verts[i].x;
+        sumTopY += verts[i].y;
+        topCount++;
+        const float dx = verts[i].x - trunkX;
+        const float dy = verts[i].y - trunkY;
+        const float d2 = dx * dx + dy * dy;
+        if(d2 > bestReachSq){
+            bestReachSq = d2;
+            bestV = verts[i];
+        }
+    }
+
+    const float bestReach = bestReachSq > 0.0f ? std::sqrt(bestReachSq) : 0.0f;
+    if(bestReach > 0.35f){
+        const float arm1X = bestV.x - trunkX;
+        const float arm1Y = bestV.y - trunkY;
+        out.push_back(MakeStreetLampLight(
+            trunkX + 0.88f * arm1X,
+            trunkY + 0.88f * arm1Y,
+            bestV.z - 0.12f));
+
+        // Check for an opposite second luminaire arm (highway median T-poles).
+        if(bestReach > 0.55f){
+            float oppReachSq = -1.0f;
+            rw::V3d oppV = bestV;
+            for(int i = 0; i < n; i++){
+                if(verts[i].z < headMinZ)
+                    continue;
+                const float dx = verts[i].x - trunkX;
+                const float dy = verts[i].y - trunkY;
+                const float d2 = dx * dx + dy * dy;
+                if(d2 < (0.65f * bestReach) * (0.65f * bestReach))
+                    continue;
+                const float dot = dx * arm1X + dy * arm1Y;
+                if(dot < -0.5f * bestReach * std::sqrt(d2) && d2 > oppReachSq){
+                    oppReachSq = d2;
+                    oppV = verts[i];
+                }
+            }
+            if(oppReachSq > 0.0f){
+                out.push_back(MakeStreetLampLight(
+                    trunkX + 0.88f * (oppV.x - trunkX),
+                    trunkY + 0.88f * (oppV.y - trunkY),
+                    oppV.z - 0.12f));
+            }
+        }
+    }else{
+        const float topX = topCount > 0 ? (float)(sumTopX / topCount) : trunkX;
+        const float topY = topCount > 0 ? (float)(sumTopY / topCount) : trunkY;
+        out.push_back(MakeStreetLampLight(topX, topY, hi.z - 0.18f));
+    }
+}
 
 rw::Atomic *TakeAtomic(rw::Clump *clump, const char **error)
 {

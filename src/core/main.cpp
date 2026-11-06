@@ -80,6 +80,9 @@
 #include "custompipes.h"
 #include "CustomSky.h"
 #include "SunShadowMap.h"
+#if defined(CUSTOM_MODELS) && defined(LIBRW)
+#include "SAStaticModel.h"
+#endif
 #include "screendroplets.h"
 #include "VarConsole.h"
 #ifdef USE_OUR_VERSIONING
@@ -467,6 +470,9 @@ PluginAttach(void)
 #endif
 #ifdef EXTENDED_PIPELINES
 	CustomPipes::CustomPipeRegister();
+#endif
+#if defined(CUSTOM_MODELS) && defined(LIBRW)
+	SAStaticModel::RegisterPlugins();
 #endif
 
 	return TRUE;

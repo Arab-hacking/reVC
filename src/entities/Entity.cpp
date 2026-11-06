@@ -27,6 +27,9 @@
 #include "Dummy.h"
 #include "WindModifiers.h"
 #include "SaveBuf.h"
+#ifdef CUSTOM_MODELS
+#include "CustomWorld.h"
+#endif
 
 int gBuildings;
 #if defined ANDROID
@@ -631,6 +634,13 @@ CEntity::SetupBigBuilding(void)
 	bIsBIGBuilding = true;
 	bStreamingDontDelete = true;
 	bUsesCollision = false;
+#ifdef CUSTOM_MODELS
+	if(CCustomWorld::OwnsModelSlot(m_modelIndex)){
+		bStreamBIGBuilding = true;
+		m_level = LEVEL_GENERIC;
+		return;
+	}
+#endif
 	m_level = CTheZones::GetLevelFromPosition(&GetPosition());
 	if(mi->m_lodDistances[0] <= 2000.0f)
 		bStreamBIGBuilding = true;

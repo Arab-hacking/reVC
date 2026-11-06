@@ -539,6 +539,35 @@ getSkyAmbientParams(void)
 {
 	return skyAmbientParams;
 }
+
+static float32 sceneLightPosRad[8 * 4];
+static float32 sceneLightColor[8 * 4];
+static float32 sceneLightDir[8 * 4];
+
+void
+setScenePointLights(int32 count, const float32 *posRad4, const float32 *color4, const float32 *dir4)
+{
+	memset(sceneLightPosRad, 0, sizeof(sceneLightPosRad));
+	memset(sceneLightColor, 0, sizeof(sceneLightColor));
+	memset(sceneLightDir, 0, sizeof(sceneLightDir));
+	int32 n = count < 0 ? 0 : (count > 8 ? 8 : count);
+	if(n > 0 && posRad4 && color4 && dir4){
+		memcpy(sceneLightPosRad, posRad4, (size_t)n * 4 * sizeof(float32));
+		memcpy(sceneLightColor, color4, (size_t)n * 4 * sizeof(float32));
+		memcpy(sceneLightDir, dir4, (size_t)n * 4 * sizeof(float32));
+	}
+#ifdef RW_GL3
+	gl3::syncEnvironmentUniforms();
+#endif
+}
+
+void
+getScenePointLights(float32 *outPosRad32, float32 *outColor32, float32 *outDir32)
+{
+	if(outPosRad32) memcpy(outPosRad32, sceneLightPosRad, sizeof(sceneLightPosRad));
+	if(outColor32)  memcpy(outColor32, sceneLightColor, sizeof(sceneLightColor));
+	if(outDir32)    memcpy(outDir32, sceneLightDir, sizeof(sceneLightDir));
+}
 #endif
 
 namespace null {

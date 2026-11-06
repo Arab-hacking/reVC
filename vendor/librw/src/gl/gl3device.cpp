@@ -145,6 +145,9 @@ int32 u_localInvGamma = -1;
 int32 u_uvMatrix = -1;
 int32 u_shadowMatrix = -1;
 int32 u_shadowParams = -1;
+int32 u_sceneLightPosRad = -1;
+int32 u_sceneLightColor = -1;
+int32 u_sceneLightDir = -1;
 
 Shader *defaultShader, *defaultShader_noAT;
 Shader *defaultShader_fullLight, *defaultShader_fullLight_noAT;
@@ -1120,6 +1123,15 @@ syncEnvironmentUniforms(void)
 		float32 gam[4] = { g, g, g, 1.0f };
 		setUniform(u_localInvGamma, gam);
 	}
+	if(u_sceneLightPosRad >= 0 && u_sceneLightColor >= 0 && u_sceneLightDir >= 0){
+		float32 posRad[MAX_LIGHTS * 4];
+		float32 col[MAX_LIGHTS * 4];
+		float32 dir[MAX_LIGHTS * 4];
+		getScenePointLights(posRad, col, dir);
+		setUniform(u_sceneLightPosRad, posRad);
+		setUniform(u_sceneLightColor, col);
+		setUniform(u_sceneLightDir, dir);
+	}
 }
 
 void
@@ -1907,9 +1919,14 @@ initOpenGL(void)
 	u_uvMatrix = registerUniform("u_uvMatrix", UNIFORM_MAT4);
 	u_shadowMatrix = registerUniform("u_shadowMatrix", UNIFORM_MAT4);
 	u_shadowParams = registerUniform("u_shadowParams", UNIFORM_VEC4);
+	u_sceneLightPosRad = registerUniform("u_sceneLightPosRad", UNIFORM_VEC4, MAX_LIGHTS);
+	u_sceneLightColor = registerUniform("u_sceneLightColor", UNIFORM_VEC4, MAX_LIGHTS);
+	u_sceneLightDir = registerUniform("u_sceneLightDir", UNIFORM_VEC4, MAX_LIGHTS);
 
 	// defaults before the game sets anything
 	float zero4[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+	float zeroLights[MAX_LIGHTS * 4];
+	memset(zeroLights, 0, sizeof(zeroLights));
 	float up4[4] = { 0.0f, 0.0f, 1.0f, 0.0f };
 	float one4[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
 	float sky4[4] = { 0.56f, 0.68f, 0.88f, 4.0f };
@@ -1923,6 +1940,9 @@ initOpenGL(void)
 	setUniform(u_uvMatrix, idmat);
 	setUniform(u_shadowMatrix, idmat);
 	setUniform(u_shadowParams, zero4);
+	setUniform(u_sceneLightPosRad, zeroLights);
+	setUniform(u_sceneLightColor, zeroLights);
+	setUniform(u_sceneLightDir, zeroLights);
 
 	// for im2d
 	registerUniform("u_xform", UNIFORM_VEC4);

@@ -42,6 +42,8 @@
 #include "VehicleModelInfo.h"
 #include "Occlusion.h"
 #include "CustomSky.h"
+#include "Coronas.h"
+#include "Shadows.h"
 
 char CFileLoader::ms_line[256];
 
@@ -708,6 +710,102 @@ InspectLoadedGeometry(RpAtomic *atomic, void *data)
 	return atomic;
 }
 
+#if defined(CUSTOM_MODELS) && defined(LIBRW)
+static void
+InstallCustomModel2dfxLights(CBaseModelInfo *info, const std::vector<SAStaticModel::LightEffect> &lights)
+{
+	if(info == nil || info->GetNum2dEffects() != 0 || lights.empty())
+		return;
+	const bool isStreetLamp = SAStaticModel::IsOutdoorStreetLampName(info->GetModelName());
+	const size_t count = lights.size() > 32 ? 32 : lights.size();
+	const int firstIdx = CModelInfo::Get2dEffectStore().allocPtr;
+	if(firstIdx < 0 || firstIdx + (int)count > 32760)
+		return;
+
+	const int particleSlot = CTxdStore::FindTxdSlot("particle");
+	if(particleSlot != -1){
+		CTxdStore::PushCurrentTxd();
+		CTxdStore::SetCurrentTxd(particleSlot);
+	}
+
+	for(size_t i = 0; i < count; i++){
+		const SAStaticModel::LightEffect &fx = lights[i];
+		C2dEffect *effect = CModelInfo::Get2dEffectStore().Alloc();
+		if(effect == nil)
+			break;
+		info->Add2dEffect(effect);
+		effect->pos = CVector(fx.pos[0], fx.pos[1], fx.pos[2]);
+		effect->col = CRGBA(fx.r, fx.g, fx.b, fx.a ? fx.a : 200);
+		effect->type = EFFECT_LIGHT;
+
+		const bool withoutCorona = (fx.flags1 & 0x08) != 0;
+		const bool atDay = (fx.flags1 & 0x20) != 0;
+		const bool atNight = (fx.flags1 & 0x40) != 0;
+		const bool nightOnly = !atDay || (atNight && !atDay);
+
+		effect->light.dist = fx.coronaDist > 0.0f ? fx.coronaDist : 160.0f;
+		effect->light.range = fx.pointlightRange;
+		if(isStreetLamp && effect->light.range < 10.0f)
+			effect->light.range = 16.0f;
+		effect->light.size = withoutCorona ? 0.0f : (fx.coronaSize > 0.0f ? fx.coronaSize : 0.85f);
+		effect->light.shadowSize = fx.shadowSize;
+		effect->light.shadowIntensity = fx.shadowIntensity;
+
+		switch(fx.flashType){
+		case 1:
+		case 2:
+			effect->light.lightType = nightOnly ? LIGHT_FLICKER_NIGHT : LIGHT_FLICKER;
+			break;
+		case 3:
+		case 4:
+			effect->light.lightType = nightOnly ? LIGHT_RANDOM_FLICKER_NIGHT : LIGHT_RANDOM_FLICKER;
+			break;
+		case 5:
+		case 6:
+			effect->light.lightType = nightOnly ? LIGHT_FLASH1_NIGHT : LIGHT_FLASH1;
+			break;
+		case 7:
+		case 8:
+			effect->light.lightType = nightOnly ? LIGHT_FLASH2_NIGHT : LIGHT_FLASH2;
+			break;
+		case 9:
+			effect->light.lightType = nightOnly ? LIGHT_FLASH3_NIGHT : LIGHT_FLASH3;
+			break;
+		default:
+			effect->light.lightType = nightOnly ? LIGHT_ON_NIGHT : LIGHT_ON;
+			break;
+		}
+
+		effect->light.roadReflection = fx.reflection ? 1 : 0;
+		effect->light.flareType = fx.flareType <= 2 ? fx.flareType : 0;
+
+		uint8 vcFlags = 0;
+		if(fx.flags1 & 0x01)
+			vcFlags |= LIGHTFLAG_LOSCHECK;
+		if(fx.flags1 & 0x10)
+			vcFlags |= LIGHTFLAG_LONG_DIST;
+		effect->light.flags = vcFlags;
+
+		effect->light.corona = (!withoutCorona && fx.coronaName[0]) ? RwTextureRead(fx.coronaName, nil) : nil;
+		if(!withoutCorona && effect->light.corona == nil && gpCoronaTexture[0]){
+			effect->light.corona = gpCoronaTexture[0];
+			RwTextureAddRef(effect->light.corona);
+		}
+
+		effect->light.shadow = (fx.shadowSize > 0.0f && fx.shadowName[0]) ? RwTextureRead(fx.shadowName, nil) : nil;
+		if(fx.shadowSize > 0.0f && effect->light.shadow == nil && gpShadowExplosionTex){
+			effect->light.shadow = gpShadowExplosionTex;
+			RwTextureAddRef(effect->light.shadow);
+		}
+		if(effect->light.shadow == nil)
+			effect->light.shadowSize = 0.0f;
+	}
+
+	if(particleSlot != -1)
+		CTxdStore::PopCurrentTxd();
+}
+#endif
+
 static bool
 PrepareAndInstallClump(RpClump *clump, CBaseModelInfo *info, const char *source)
 {
@@ -722,6 +820,24 @@ PrepareAndInstallClump(RpClump *clump, CBaseModelInfo *info, const char *source)
 		return false;
 	}
 	InitClump(clump);
+#if defined(CUSTOM_MODELS) && defined(LIBRW)
+	if(info && info->GetNum2dEffects() == 0 &&
+	   GetModelLoadKind(info->GetModelType()) == MODELLOAD_CLUMP){
+		std::vector<SAStaticModel::LightEffect> clumpLights;
+		SAStaticModel::ExtractClumpLights(clump, clumpLights);
+		if(clumpLights.empty() && SAStaticModel::IsOutdoorStreetLampName(info->GetModelName())){
+			FORLIST(lnk, clump->atomics){
+				RpAtomic *a = rw::Atomic::fromClump(lnk);
+				if(a && (a->object.object.flags & rw::Atomic::RENDER)){
+					SAStaticModel::EstimateStreetLampLights(a, clumpLights);
+					if(!clumpLights.empty())
+						break;
+				}
+			}
+		}
+		InstallCustomModel2dfxLights(info, clumpLights);
+	}
+#endif
 	return InstallLoadedClump(clump, info, source);
 }
 
@@ -981,12 +1097,20 @@ CFileLoader::LoadAtomicFile(RwStream *stream, uint32 id)
 			if(texStats.uvMaterials && !texStats.resolved)
 				REVC_LOG_WARNING("SA static %s: no material textures resolved from TXD %s; check the names in DFF/TXD",
 					mi->GetModelName(), CTxdStore::GetTxdName(mi->GetTxdSlot()));
+			std::vector<SAStaticModel::LightEffect> dffLights;
+			if(mi->GetNum2dEffects() == 0)
+				SAStaticModel::ExtractClumpLights(clump, dffLights);
 			const char *error = nil;
 			RpAtomic *atomic = SAStaticModel::TakeAtomic(clump, &error);
 			if(atomic){
 				CVisibilityPlugins::SetAtomicRenderCallback(atomic, nil);
 				mi->SetAtomic(0, atomic); // one draw-distance slot, all clump parts
 				CVisibilityPlugins::SetAtomicModelInfo(atomic, mi);
+				if(mi->GetNum2dEffects() == 0){
+					if(dffLights.empty() && SAStaticModel::IsOutdoorStreetLampName(mi->GetModelName()))
+						SAStaticModel::EstimateStreetLampLights(atomic, dffLights);
+					InstallCustomModel2dfxLights(mi, dffLights);
+				}
 			}else
 				REVC_LOG_ERROR("SA static %s: cannot use DFF (%s)",
 					mi->GetModelName(), error ? error : "unknown reason");

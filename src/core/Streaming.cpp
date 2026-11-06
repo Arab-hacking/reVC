@@ -1131,6 +1131,11 @@ CStreaming::RequestBigBuildings(eLevelName level, const CVector &pos)
 #endif
 		)
 			if(b->bStreamBIGBuilding){
+#ifdef CUSTOM_MODELS
+				if(CCustomWorld::OwnsModelSlot(b->GetModelIndex()) &&
+				   (b->GetPosition() - pos).MagnitudeSqr() > sq(420.0f))
+					continue;
+#endif
 				if(CRenderer::ShouldModelBeStreamed(b, pos))
 					RequestModel(b->GetModelIndex(), 0);
 			}else

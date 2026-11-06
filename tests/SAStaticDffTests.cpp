@@ -178,6 +178,7 @@ int main() {
     registerNativeDataPlugin(); // same attachments as RpWorldPluginAttach in the game
     registerAtomicRightsPlugin();
     registerMaterialRightsPlugin();
+    SAStaticModel::RegisterPlugins();
     assert(Engine::open(nil));
     assert(Engine::start());
     version = 0x36003; // SA RW 3.6.0.3, not the VC 3.4 writer
@@ -450,6 +451,142 @@ int main() {
     read->destroy();
     DestroyAtomic(single);
     assert(sand->refCount == 1);
+
+    // Streetlamp name filter and geometric luminaire arm estimator
+    assert(SAStaticModel::IsOutdoorStreetLampName("lf_voenlamp1"));
+    assert(SAStaticModel::IsOutdoorStreetLampName("stolb1"));
+    assert(SAStaticModel::IsOutdoorStreetLampName("aturfonar894"));
+    assert(!SAStaticModel::IsOutdoorStreetLampName("l2_stolb1"));
+    assert(!SAStaticModel::IsOutdoorStreetLampName("KOR_dom2_LOD2"));
+    assert(!SAStaticModel::IsOutdoorStreetLampName("lep_tower_01"));
+    {
+        Geometry *poleGeo = Geometry::create(8, 2, Geometry::POSITIONS | Geometry::TRISTRIP);
+        V3d *pv = poleGeo->morphTargets[0].vertices;
+        pv[0] = { -0.10f, -0.10f, 0.0f };
+        pv[1] = {  0.10f, -0.10f, 0.0f };
+        pv[2] = { -0.10f,  0.10f, 0.0f };
+        pv[3] = {  0.10f,  0.10f, 0.0f };
+        pv[4] = {  0.00f,  0.00f, 7.6f };
+        pv[5] = {  0.05f,  0.00f, 7.8f };
+        pv[6] = {  1.80f,  0.00f, 8.0f };
+        pv[7] = {  2.00f,  0.00f, 8.0f };
+        poleGeo->triangles[0].v[0] = 0; poleGeo->triangles[0].v[1] = 1; poleGeo->triangles[0].v[2] = 2; poleGeo->triangles[0].matId = 0;
+        poleGeo->triangles[1].v[0] = 4; poleGeo->triangles[1].v[1] = 6; poleGeo->triangles[1].v[2] = 7; poleGeo->triangles[1].matId = 0;
+        Material *pm = Material::create();
+        poleGeo->matList.appendMaterial(pm);
+        pm->destroy();
+        poleGeo->calculateBoundingSphere();
+        poleGeo->unlock();
+        Atomic *poleAtom = Atomic::create();
+        Frame *poleFrm = Frame::create();
+        poleAtom->setGeometry(poleGeo, 0);
+        poleGeo->destroy();
+        poleAtom->setFrame(poleFrm);
+
+        std::vector<SAStaticModel::LightEffect> estLights;
+        SAStaticModel::EstimateStreetLampLights(poleAtom, estLights);
+        assert(estLights.size() == 1);
+        assert(estLights[0].pos[0] > 1.5f && estLights[0].pos[2] > 7.7f);
+        assert((estLights[0].flags1 & 0x40) != 0);
+        assert(estLights[0].pointlightRange >= 15.0f);
+        DestroyAtomic(poleAtom);
+    }
+
+    // Binary SA 2dfx (0x0253F2F8) stream plugin + child frame LTM transform
+    {
+        Clump *fxSrc = MakeClump(sand, roof, true, true); // root (10,0,0) + child one (2,3,0) -> (12,3,0)
+        std::vector<uint8> rawDff = WriteDff(fxSrc);
+        fxSrc->destroy();
+
+        // Build a 100-byte 2dfx payload: count=1 + 20-byte header + 76-byte EFFECT_LIGHT
+        std::vector<uint8> chunk2dfx(12 + 4 + 20 + 76, 0);
+        auto putU32 = [&](size_t off, uint32 v) {
+            chunk2dfx[off + 0] = (uint8)(v & 0xFF);
+            chunk2dfx[off + 1] = (uint8)((v >> 8) & 0xFF);
+            chunk2dfx[off + 2] = (uint8)((v >> 16) & 0xFF);
+            chunk2dfx[off + 3] = (uint8)((v >> 24) & 0xFF);
+        };
+        auto putF32 = [&](size_t off, float f) {
+            std::memcpy(&chunk2dfx[off], &f, 4);
+        };
+        putU32(0, 0x0253F2F8u);
+        putU32(4, 4 + 20 + 76);
+        putU32(8, 0x1803FFFFu); // RW 3.6.0.3 library ID
+        putU32(12, 1);          // 1 effect
+        putF32(16, 1.0f);       // local X
+        putF32(20, 2.0f);       // local Y
+        putF32(24, 6.5f);       // local Z
+        putU32(28, 0);          // EFFECT_LIGHT
+        putU32(32, 76);         // 76-byte SA light payload
+        size_t d = 36;
+        chunk2dfx[d + 0] = 255; chunk2dfx[d + 1] = 210; chunk2dfx[d + 2] = 150; chunk2dfx[d + 3] = 200;
+        putF32(d + 4, 150.0f);  // coronaDist
+        putF32(d + 8, 22.0f);   // pointlightRange
+        putF32(d + 12, 1.1f);   // coronaSize
+        putF32(d + 16, 8.0f);   // shadowSize
+        chunk2dfx[d + 21] = 1;  // reflection
+        chunk2dfx[d + 23] = 60; // shadowIntensity
+        chunk2dfx[d + 24] = 0x41; // bAtNight | bCheckObstacles
+        std::memcpy(&chunk2dfx[d + 25], "coronastar", 10);
+        std::memcpy(&chunk2dfx[d + 49], "shad_exp", 8);
+
+        // Splice chunk2dfx into the first Geometry's ID_EXTENSION (and update parent chunk lengths)
+        auto rdU32 = [&](size_t off) -> uint32 {
+            return (uint32)rawDff[off] | ((uint32)rawDff[off+1]<<8) |
+                   ((uint32)rawDff[off+2]<<16) | ((uint32)rawDff[off+3]<<24);
+        };
+        auto wrU32 = [&](size_t off, uint32 v) {
+            rawDff[off + 0] = (uint8)(v & 0xFF);
+            rawDff[off + 1] = (uint8)((v >> 8) & 0xFF);
+            rawDff[off + 2] = (uint8)((v >> 16) & 0xFF);
+            rawDff[off + 3] = (uint8)((v >> 24) & 0xFF);
+        };
+        assert(rdU32(0) == ID_CLUMP);
+        size_t cur = 12;
+        size_t geoListPos = 0, firstGeoPos = 0, geoExtPos = 0;
+        while(cur + 12 <= rawDff.size()) {
+            uint32 cid = rdU32(cur);
+            uint32 clen = rdU32(cur + 4);
+            if(cid == ID_GEOMETRYLIST) {
+                geoListPos = cur;
+                size_t gcur = cur + 12 + 12 + 4; // skip GeometryList struct (4-byte count)
+                assert(rdU32(gcur) == ID_GEOMETRY);
+                firstGeoPos = gcur;
+                uint32 glen = rdU32(gcur + 4);
+                size_t icur = gcur + 12;
+                while(icur + 12 <= gcur + 12 + glen) {
+                    uint32 icid = rdU32(icur);
+                    uint32 iclen = rdU32(icur + 4);
+                    if(icid == ID_EXTENSION) { geoExtPos = icur; break; }
+                    icur += 12 + iclen;
+                }
+                break;
+            }
+            cur += 12 + clen;
+        }
+        assert(geoListPos && firstGeoPos && geoExtPos);
+        uint32 addBytes = (uint32)chunk2dfx.size();
+        wrU32(4, rdU32(4) + addBytes);
+        wrU32(geoListPos + 4, rdU32(geoListPos + 4) + addBytes);
+        wrU32(firstGeoPos + 4, rdU32(firstGeoPos + 4) + addBytes);
+        wrU32(geoExtPos + 4, rdU32(geoExtPos + 4) + addBytes);
+        size_t insertPos = geoExtPos + 12 + (rdU32(geoExtPos + 4) - addBytes);
+        rawDff.insert(rawDff.begin() + (ptrdiff_t)insertPos, chunk2dfx.begin(), chunk2dfx.end());
+
+        Clump *fxClump = ReadDff(rawDff);
+        std::vector<SAStaticModel::LightEffect> parsedLights;
+        SAStaticModel::ExtractClumpLights(fxClump, parsedLights);
+        assert(parsedLights.size() == 1);
+        // MakeClump(true, true) translates the first atomic's LTM by (12, 3, 0)
+        assert(std::fabs(parsedLights[0].pos[0] - 13.0f) < 1.0e-3f);
+        assert(std::fabs(parsedLights[0].pos[1] - 5.0f) < 1.0e-3f);
+        assert(std::fabs(parsedLights[0].pos[2] - 6.5f) < 1.0e-3f);
+        assert(parsedLights[0].r == 255 && parsedLights[0].g == 210 && parsedLights[0].b == 150);
+        assert(std::fabs(parsedLights[0].pointlightRange - 22.0f) < 1.0e-3f);
+        assert(parsedLights[0].flags1 == 0x41);
+        assert(std::strcmp(parsedLights[0].coronaName, "coronastar") == 0);
+        fxClump->destroy();
+    }
 
     TexDictionary::setCurrent(nil);
     ideTxd->destroy();
