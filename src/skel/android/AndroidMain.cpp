@@ -27,6 +27,7 @@ bool AndWrapper::AppStarted = false;
 extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *)
 {
     javaVM = vm;
+    g_libREVC = Patch::FindLib("librevc.so");
     return JNI_VERSION_1_6;
 }
 

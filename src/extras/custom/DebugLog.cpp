@@ -147,6 +147,14 @@ DebugLogUnhandledException(EXCEPTION_POINTERS *info)
 static void
 DebugLogSignalHandler(int sig)
 {
+	static volatile sig_atomic_t s_inCrashHandler = 0;
+	if (s_inCrashHandler) {
+		signal(sig, SIG_DFL);
+		raise(sig);
+		return;
+	}
+	s_inCrashHandler = 1;
+
 	const char *what =
 		sig == SIGSEGV ? "SIGSEGV (invalid memory access)" :
 		sig == SIGABRT ? "SIGABRT (abort - failed assert or out of memory)" :
@@ -166,42 +174,33 @@ DebugLogSignalHandler(int sig)
 			backtrace_symbols_fd(bt, n, DebugLog::CrashFd());
 	}
 #elif defined(__ANDROID__)
+	extern uintptr_t g_libREVC;
 	struct AndroidBtState {
-		void **current;
-		void **end;
+		int depth;
 	};
 	struct AndroidBtHelper {
 		static _Unwind_Reason_Code cb(struct _Unwind_Context *ctx, void *arg) {
 			AndroidBtState *st = (AndroidBtState *)arg;
+			if (st->depth >= 16)
+				return _URC_END_OF_STACK;
 			uintptr_t pc = _Unwind_GetIP(ctx);
 			if (pc) {
-				if (st->current == st->end)
-					return _URC_END_OF_STACK;
-				*st->current++ = (void *)pc;
+				char frameLine[160];
+				if (g_libREVC != 0 && pc >= g_libREVC && pc < g_libREVC + 0x08000000ULL) {
+					snprintf(frameLine, sizeof(frameLine), "  #%02d librevc.so+0x%llx (%p)",
+						st->depth, (unsigned long long)(pc - g_libREVC), (void *)pc);
+				} else {
+					snprintf(frameLine, sizeof(frameLine), "  #%02d pc %p", st->depth, (void *)pc);
+				}
+				DebugLogCrashLine(frameLine);
+				st->depth++;
 			}
 			return _URC_NO_REASON;
 		}
 	};
-	void *bt[32];
-	AndroidBtState st = { bt, bt + 32 };
+	DebugLogCrashLine("backtrace:");
+	AndroidBtState st = { 0 };
 	_Unwind_Backtrace(AndroidBtHelper::cb, &st);
-	int count = (int)(st.current - bt);
-	if (count > 0) {
-		DebugLogCrashLine("backtrace:");
-		for (int i = 0; i < count; i++) {
-			Dl_info info;
-			char frameLine[256];
-			if (dladdr(bt[i], &info) && info.dli_fname) {
-				uintptr_t rel = (uintptr_t)bt[i] - (uintptr_t)info.dli_fbase;
-				snprintf(frameLine, sizeof(frameLine), "  #%02d pc 0x%llx %s (%s)",
-					i, (unsigned long long)rel, info.dli_fname,
-					info.dli_sname ? info.dli_sname : "?");
-			} else {
-				snprintf(frameLine, sizeof(frameLine), "  #%02d pc %p", i, bt[i]);
-			}
-			DebugLogCrashLine(frameLine);
-		}
-	}
 #endif
 	DebugLogCrashLine("---- session ended abnormally ----");
 	// let the default handling produce a core dump / normal termination
