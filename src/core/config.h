@@ -548,8 +548,8 @@ static_assert(false, "SUPPORT_XBOX_SCRIPT and SUPPORT_MOBILE_SCRIPT are mutually
 	#define IGNORE_MOUSE_KEYBOARD // ignore mouse & keyboard input
 #endif
 
-#ifdef __SWITCH__
-	#define USE_UNNAMED_SEM // named semaphores are unsupported on the switch
+#if defined(__SWITCH__) || defined(ANDROID)
+	#define USE_UNNAMED_SEM // named semaphores are unsupported on the switch and Android
 #endif
 
 #endif // VANILLA_DEFINES

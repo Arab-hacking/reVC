@@ -16,6 +16,9 @@
 #include <signal.h>
 #ifdef __GLIBC__
 #include <execinfo.h>
+#elif defined(__ANDROID__)
+#include <unwind.h>
+#include <dlfcn.h>
 #endif
 #endif
 
@@ -161,6 +164,43 @@ DebugLogSignalHandler(int sig)
 		DebugLogCrashLine("backtrace:");
 		if(DebugLog::CrashFd() >= 0)
 			backtrace_symbols_fd(bt, n, DebugLog::CrashFd());
+	}
+#elif defined(__ANDROID__)
+	struct AndroidBtState {
+		void **current;
+		void **end;
+	};
+	struct AndroidBtHelper {
+		static _Unwind_Reason_Code cb(struct _Unwind_Context *ctx, void *arg) {
+			AndroidBtState *st = (AndroidBtState *)arg;
+			uintptr_t pc = _Unwind_GetIP(ctx);
+			if (pc) {
+				if (st->current == st->end)
+					return _URC_END_OF_STACK;
+				*st->current++ = (void *)pc;
+			}
+			return _URC_NO_REASON;
+		}
+	};
+	void *bt[32];
+	AndroidBtState st = { bt, bt + 32 };
+	_Unwind_Backtrace(AndroidBtHelper::cb, &st);
+	int count = (int)(st.current - bt);
+	if (count > 0) {
+		DebugLogCrashLine("backtrace:");
+		for (int i = 0; i < count; i++) {
+			Dl_info info;
+			char frameLine[256];
+			if (dladdr(bt[i], &info) && info.dli_fname) {
+				uintptr_t rel = (uintptr_t)bt[i] - (uintptr_t)info.dli_fbase;
+				snprintf(frameLine, sizeof(frameLine), "  #%02d pc 0x%llx %s (%s)",
+					i, (unsigned long long)rel, info.dli_fname,
+					info.dli_sname ? info.dli_sname : "?");
+			} else {
+				snprintf(frameLine, sizeof(frameLine), "  #%02d pc %p", i, bt[i]);
+			}
+			DebugLogCrashLine(frameLine);
+		}
 	}
 #endif
 	DebugLogCrashLine("---- session ended abnormally ----");

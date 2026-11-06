@@ -9,7 +9,9 @@
 #define PSEP_S "/"
 #ifdef __unix__
 #include <sys/types.h>
+#include <sys/stat.h>
 #include <dirent.h>
+#include <unistd.h>
 #endif
 
 #include "rwbase.h"
@@ -653,35 +655,62 @@ void
 correctPathCase(char *filename)
 {
 #ifdef __unix__
+	if(filename == nil || filename[0] == '\0' || access(filename, F_OK) == 0)
+		return;
+
 	DIR *direct;
 	struct dirent *dirent;
-
-	char *dir, *arg;
+	char *dir, *arg, *saveptr = nil;
 	char copy[1024], sofar[1024] = ".";
-	strncpy(copy, filename, 1024);
+	size_t sofarLen = 1;
+	strncpy(copy, filename, sizeof(copy) - 1);
+	copy[sizeof(copy) - 1] = '\0';
 	arg = copy;
 	// hack for absolute paths
 	if(filename[0] == '/'){
 		sofar[0] = '/';
 		sofar[1] = '/';
 		sofar[2] = '\0';
+		sofarLen = 2;
 		arg++;
 	}
-	while((dir = strtok(arg, PSEP_S))){
+	while((dir = strtok_r(arg, PSEP_S, &saveptr)) != nil){
 		arg = nil;
-		if(direct = opendir(sofar), dir == nil)
-			return;
-		while(dirent = readdir(direct), dirent != nil)
+		direct = opendir(sofar);
+		if(direct == nil){
+			// Traverse-only ancestor on Android (0711): step forward if exact dir exists
+			size_t dirLen = strlen(dir);
+			if(sofarLen + 1 + dirLen >= sizeof(sofar))
+				return;
+			sofar[sofarLen++] = PSEP_C;
+			memcpy(sofar + sofarLen, dir, dirLen + 1);
+			sofarLen += dirLen;
+			struct stat st;
+			if(stat(sofar + 2, &st) != 0)
+				return;
+			continue;
+		}
+		dirent = nil;
+		while((dirent = readdir(direct)) != nil){
 			if(strncmp_ci(dirent->d_name, dir, 1024) == 0){
-				strncat(sofar, PSEP_S, 1024);
-				strncat(sofar, dirent->d_name, 1024);
+				size_t matchLen = strlen(dirent->d_name);
+				if(sofarLen + 1 + matchLen >= sizeof(sofar)){
+					closedir(direct);
+					return;
+				}
+				sofar[sofarLen++] = PSEP_C;
+				memcpy(sofar + sofarLen, dirent->d_name, matchLen + 1);
+				sofarLen += matchLen;
 				break;
 			}
+		}
 		closedir(direct);
 		if(dirent == nil)
 			return;
 	}
 	strcpy(filename, sofar+2);
+#else
+	(void)filename;
 #endif
 }
 

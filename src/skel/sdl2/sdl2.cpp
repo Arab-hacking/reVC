@@ -93,13 +93,10 @@ void _psCreateFolder(const char *path)
 #else
     debug("Creating Folder Path: %s", path);
     struct stat info;
-    char fullpath[PATH_MAX];
-    realpath(path, fullpath);
-
-    if (lstat(fullpath, &info) != 0) {
+    if (stat(path, &info) != 0) {
         if (errno == ENOENT || (errno != EACCES && !S_ISDIR(info.st_mode))) {
-		debug("Creating Folder FullPath: %s", fullpath);
-            mkdir(fullpath, 0755);
+            debug("Creating Folder: %s", path);
+            mkdir(path, 0755);
         }
     }
 #endif
@@ -345,10 +342,19 @@ psInitialize(void)
 
 #ifndef __APPLE__
     struct sysinfo systemInfo;
-    sysinfo(&systemInfo);
-    _dwMemAvailPhys = systemInfo.freeram;
-    debug("Physical memory size %u\n", systemInfo.totalram);
-    debug("Available physical memory %u\n", systemInfo.freeram);
+    if (sysinfo(&systemInfo) == 0) {
+        uint64_t unit = systemInfo.mem_unit ? (uint64_t)systemInfo.mem_unit : 1ULL;
+        uint64_t avail = (uint64_t)systemInfo.freeram * unit;
+        if (avail < 128ULL * 1024ULL * 1024ULL)
+            avail = 256ULL * 1024ULL * 1024ULL;
+        if (avail > 1024ULL * 1024ULL * 1024ULL)
+            avail = 1024ULL * 1024ULL * 1024ULL;
+        _dwMemAvailPhys = (size_t)avail;
+        debug("Physical memory size %llu\n", (unsigned long long)((uint64_t)systemInfo.totalram * unit));
+        debug("Available physical memory %llu\n", (unsigned long long)avail);
+    } else {
+        _dwMemAvailPhys = 256 * 1024 * 1024;
+    }
 #else
     uint64_t size = 0;
 	uint64_t page_size = 0;
@@ -634,6 +640,9 @@ psSelectDevice()
     RwEngineGetVideoModeInfo(&vm, GcurSelVM);
 
 #ifdef IMPROVED_VIDEOMODE
+#ifdef ANDROID
+    FrontEndMenuManager.m_nPrefsWindowed = 0;
+#endif
     if (FrontEndMenuManager.m_nPrefsWindowed)
         GcurSelVM = bestWndMode;
 
