@@ -236,7 +236,7 @@ worldRenderCB(rw::Atomic *atomic, rw::gl3::InstanceDataHeader *header)
 		glUniform1f(U(u_brLightmap), brLightmap ? 1.0f : 0.0f);
 
 		RGBA color = { 255, 255, 255, m->color.alpha };
-		setMaterial(color, m->surfaceProps);
+		setMaterial(color, m->surfaceProps, (atomic->geometry->flags & rw::Geometry::PRELIT) ? 1.0f : 0.0f);
 
 		setTexture(0, m->texture);
 

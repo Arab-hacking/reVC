@@ -9,10 +9,13 @@ FSIN vec3 v_worldNormal;
 void
 main(void)
 {
-	vec4 color = v_color*texture(tex0, vec2(v_tex0.x, 1.0-v_tex0.y));
+	vec4 texCol = texture(tex0, vec2(v_tex0.x, 1.0-v_tex0.y));
+	vec4 color;
+	color.a = texCol.a * v_color.a;
 	DoAlphaTest(color.a);
+
 	float visibility = AtmosphereVisibility(v_worldPos, v_fog);
-	color.rgb = ShadeWorldSurface(color.rgb, v_worldPos, v_worldNormal, visibility);
+	color.rgb = ShadeWorldSurfaceEx(texCol.rgb, v_color.rgb, v_worldPos, v_worldNormal, visibility, 1.0);
 
 	FRAGCOLOR(color);
 }

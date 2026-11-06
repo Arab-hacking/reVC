@@ -55,8 +55,8 @@ FULL_LIGHTS = "#define DIRECTIONALS\n#define POINTLIGHTS\n#define SPOTLIGHTS\n"
 PROGRAMS = [
     ("default", VENDOR / "default.vert", VENDOR / "simple.frag", "", "#define BRMATERIAL\n"),
     ("default_full", VENDOR / "default.vert", VENDOR / "simple.frag", FULL_LIGHTS, "#define BRMATERIAL\n"),
-    ("skin", VENDOR / "skin.vert", VENDOR / "simple.frag", "", "#define BRMATERIAL\n"),
-    ("skin_full", VENDOR / "skin.vert", VENDOR / "simple.frag", FULL_LIGHTS, "#define BRMATERIAL\n"),
+    ("skin", VENDOR / "skin.vert", VENDOR / "simple.frag", "", "#define BRMATERIAL\n#define BRSKIN\n"),
+    ("skin_full", VENDOR / "skin.vert", VENDOR / "simple.frag", FULL_LIGHTS, "#define BRMATERIAL\n#define BRSKIN\n"),
     ("matfx", VENDOR / "matfx_env.vert", VENDOR / "matfx_env.frag", "", ""),
     ("matfx_full", VENDOR / "matfx_env.vert", VENDOR / "matfx_env.frag", FULL_LIGHTS, ""),
     ("shadow_static", VENDOR / "default.vert", VENDOR / "simple.frag", "", "#define SHADOW_DEPTH_PASS\n"),
@@ -131,6 +131,25 @@ class GL3ShaderTests(unittest.TestCase):
         self.assertIn("syncEnvironmentUniforms()", gl3_cpp)
         engine_cpp = (ROOT / "vendor/librw/src/engine.cpp").read_text()
         self.assertGreaterEqual(engine_cpp.count("gl3::syncEnvironmentUniforms();"), 4)
+
+    def test_blayz_pbr_sky_and_postfx_contracts(self):
+        h_vs = embedded_source(VENDOR / "header.vert")
+        h_fs = embedded_source(VENDOR / "header.frag")
+        veh_fs = embedded_source(EXTRAS / "neoVehicle.frag")
+        post_fs = embedded_source(EXTRAS / "colourfilterVC.frag")
+        sky_cpp = (ROOT / "src/extras/custom/CustomSky.cpp").read_text()
+        skin_cpp = (ROOT / "vendor/librw/src/gl/gl3skin.cpp").read_text()
+
+        for sym in ("BR_EvalBuildingVertexColor", "BR_EvalDynamicVertexColor", "DoPointSpotLight"):
+            self.assertIn(sym, h_vs)
+        for sym in ("BR_SRGBtoLINEAR", "BR_TonemapAces", "BR_StandardBRDF",
+                    "BR_GetEnvBRDFApprox", "BR_GetSkySHDiffuse", "BR_ShadeMaterialHDR",
+                    "SampleSunShadow"):
+            self.assertIn(sym, h_fs)
+        self.assertIn("SampleVehicleParaboloidEnv", veh_fs)
+        self.assertIn("SampleBackbufferFXAA", post_fs)
+        self.assertIn("br_sky_fbm", sky_cpp)
+        self.assertIn("#define BRSKIN", skin_cpp)
 
 
 if __name__ == "__main__":

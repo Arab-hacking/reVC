@@ -25,11 +25,15 @@ const char *skin_vert_src =
 
 "	v_tex0 = (u_uvMatrix * vec4(in_tex0, 0.0, 1.0)).xy;\n"
 
-"	v_color = in_color;\n"
-"	v_color.rgb += u_ambLight.rgb*surfAmbient;\n"
-"	v_color.rgb += DoDynamicLight(Vertex.xyz, Normal)*surfDiffuse;\n"
-"	v_color = clamp(v_color, 0.0, 1.0);\n"
-"	v_color *= u_matColor;\n"
+"	if(u_atmosphere.x > 0.5){\n"
+"		v_color = BR_EvalDynamicVertexColor(in_color, u_matColor, Vertex.xyz, Normal);\n"
+"	}else{\n"
+"		v_color = in_color;\n"
+"		v_color.rgb += u_ambLight.rgb*surfAmbient;\n"
+"		v_color.rgb += DoDynamicLight(Vertex.xyz, Normal)*surfDiffuse;\n"
+"		v_color = clamp(v_color, 0.0, 1.0);\n"
+"		v_color *= u_matColor;\n"
+"	}\n"
 
 "	v_worldPos = Vertex.xyz;\n"
 "	v_worldNormal = Normal;\n"

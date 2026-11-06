@@ -18,11 +18,16 @@ main(void)
 #endif
 	FRAGCOLOR(vec4(1.0));
 #else
-	vec4 color = v_color*texture(tex0, vec2(v_tex0.x, 1.0-v_tex0.y));
+	vec4 texCol = texture(tex0, vec2(v_tex0.x, 1.0-v_tex0.y));
+	vec4 color = vec4(texCol.rgb * v_color.rgb, texCol.a * v_color.a);
 	DoAlphaTest(color.a);
 #ifdef BRMATERIAL
 	float visibility = AtmosphereVisibility(v_worldPos, v_fog);
-	color.rgb = ShadeWorldSurface(color.rgb, v_worldPos, v_worldNormal, visibility);
+#ifdef BRSKIN
+	color.rgb = ShadeWorldSurfaceEx(texCol.rgb, v_color.rgb, v_worldPos, v_worldNormal, visibility, 1.0);
+#else
+	color.rgb = ShadeWorldSurfaceEx(texCol.rgb, v_color.rgb, v_worldPos, v_worldNormal, visibility, 0.0);
+#endif
 #else
 	color.rgb = mix(u_fogColor.rgb, color.rgb, v_fog);
 #endif

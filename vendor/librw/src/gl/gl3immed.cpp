@@ -260,7 +260,7 @@ im3DTransform(void *vertices, int32 numVertices, Matrix *world, uint32 flags)
 	}
 	setWorldMatrix(world);
 	if(flags & im3d::LIGHTING){
-		setMaterial(im3dMaterialColor, im3dSurfaceProps);
+		setMaterial(im3dMaterialColor, im3dSurfaceProps, 1.0f);
 		int32 vsBits = lightingCB();
 		defaultShader_fullLight->use();
 	}else

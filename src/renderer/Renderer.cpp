@@ -978,10 +978,13 @@ void
 CRenderer::ConstructRenderList(void)
 {
 #ifdef RW_GL3
-	// The GL3 material shaders use the timecycle sun and weather-dependent
-	// directional colour. Keep its back-face shading in sync with the game's
-	// shadow strength; neither setting changes the D3D9 lighting path.
-	rw::setSunDirection(CTimeCycle::GetSunDirection());
+	// The GL3 material shaders use the timecycle sun, weather-dependent
+	// directional/sky colours, and day-night balance (BLAYZ RUSSIA PC PBR).
+	// Neither setting changes the D3D9 lighting path.
+	CVector sunDir = CTimeCycle::GetSunDirection();
+	float dayFactor = GL3Atmosphere::Clamp01((sunDir.z + 0.04f) / 0.22f);
+	float dayNightBalance = 1.0f - dayFactor;
+	rw::setSunDirection(sunDir);
 	rw::setSunMaterialParams(rw::makeRGBAf(
 		CTimeCycle::GetDirectionalRed(), CTimeCycle::GetDirectionalGreen(),
 		CTimeCycle::GetDirectionalBlue(),
@@ -990,7 +993,7 @@ CRenderer::ConstructRenderList(void)
 		(0.55f * CTimeCycle::GetSkyTopRed()   + 0.45f * CTimeCycle::GetSkyBottomRed())   / 255.0f,
 		(0.55f * CTimeCycle::GetSkyTopGreen() + 0.45f * CTimeCycle::GetSkyBottomGreen()) / 255.0f,
 		(0.55f * CTimeCycle::GetSkyTopBlue()  + 0.45f * CTimeCycle::GetSkyBottomBlue())  / 255.0f,
-		1.0f));
+		4.0f));
 	// The atmospheric curve follows the same interpolated weather as the
 	// timecycle. Zero is the original GL3 fog/light behaviour (also used when
 	// the new rendering setting is disabled).
@@ -998,7 +1001,7 @@ CRenderer::ConstructRenderList(void)
 		GL3Atmosphere::Enabled ? 1.0f : 0.0f,
 		GL3Atmosphere::Enabled ? GL3Atmosphere::Clamp01(CWeather::CloudCoverage) : 0.0f,
 		GL3Atmosphere::Enabled ? GL3Atmosphere::Clamp01(CWeather::Foggyness) : 0.0f,
-		0.0f));
+		GL3Atmosphere::Enabled ? dayNightBalance : 0.0f));
 #endif
 
 	COcclusion::ProcessBeforeRendering();

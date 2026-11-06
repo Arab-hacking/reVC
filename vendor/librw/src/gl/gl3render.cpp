@@ -161,7 +161,7 @@ defaultRenderCB(Atomic *atomic, InstanceDataHeader *header)
 	while(n--){
 		m = inst->material;
 
-		setMaterial(flags, m->color, m->surfaceProps);
+		setMaterial(flags, m->color, m->surfaceProps, (flags & Geometry::PRELIT) ? 1.0f : 0.0f);
 
 		setTexture(0, m->texture);
 

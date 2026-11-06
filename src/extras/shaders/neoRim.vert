@@ -11,6 +11,13 @@ VSOUT float v_fog;
 VSOUT vec3 v_worldPos;
 VSOUT vec3 v_worldNormal;
 
+vec3 DoRimLight(vec3 Normal)
+{
+	float f = u_rimData.x - u_rimData.y*dot(Normal, u_viewVec);
+	float rim = clamp(clamp(f, 0.0, 1.0)*u_rimData.z, 0.0, 1.0);
+	return mix(u_rampStart.rgb, u_rampEnd.rgb, rim);
+}
+
 void
 main(void)
 {
@@ -18,21 +25,20 @@ main(void)
 	gl_Position = u_proj * u_view * Vertex;
 	vec3 Normal = mat3(u_world) * in_normal;
 
-	v_tex0 = in_tex0;
+	v_tex0 = (u_uvMatrix * vec4(in_tex0, 0.0, 1.0)).xy;
 
-	v_color = in_color;
-	v_color.rgb += u_ambLight.rgb*surfAmbient;
-	v_color.rgb += DoDynamicLight(Vertex.xyz, Normal)*surfDiffuse;
-
-	// rim light
-	float f = u_rimData.x - u_rimData.y*dot(Normal, u_viewVec);
-	vec4 rimlight = clamp(mix(u_rampEnd, u_rampStart, f)*u_rimData.z, 0.0, 1.0);
-	v_color.rgb += rimlight.rgb;
-
-	v_color = clamp(v_color, 0.0, 1.0);
-	v_color *= u_matColor;
+	if(u_atmosphere.x > 0.5){
+		v_color = BR_EvalDynamicVertexColor(in_color, u_matColor, Vertex.xyz, Normal);
+	}else{
+		v_color = in_color;
+		v_color.rgb += u_ambLight.rgb*surfAmbient;
+		v_color.rgb += DoDynamicLight(Vertex.xyz, Normal)*surfDiffuse;
+		v_color.rgb += DoRimLight(Normal);
+		v_color = clamp(v_color, 0.0, 1.0);
+		v_color *= u_matColor;
+	}
 
 	v_worldPos = Vertex.xyz;
 	v_worldNormal = Normal;
-	v_fog = DoFogEye(Vertex.xyz);
+	v_fog = DoFog(gl_Position.w);
 }

@@ -15,17 +15,21 @@ const char *default_UV2_vert_src =
 "	gl_Position = u_proj * u_view * Vertex;\n"
 "	vec3 Normal = mat3(u_world) * in_normal;\n"
 
-"	v_tex0 = in_tex0;\n"
+"	v_tex0 = (u_uvMatrix * vec4(in_tex0, 0.0, 1.0)).xy;\n"
 "	v_tex1 = in_tex1;\n"
 
-"	v_color = in_color;\n"
-"	v_color.rgb += u_ambLight.rgb*surfAmbient;\n"
-"	v_color.rgb += DoDynamicLight(Vertex.xyz, Normal)*surfDiffuse;\n"
-"	v_color = clamp(v_color, 0.0, 1.0);\n"
-"	v_color *= u_matColor;\n"
+"	if(u_atmosphere.x > 0.5){\n"
+"		v_color = BR_EvalBuildingVertexColor(in_color, u_matColor, Vertex.xyz, Normal);\n"
+"	}else{\n"
+"		v_color = in_color;\n"
+"		v_color.rgb += u_ambLight.rgb*surfAmbient;\n"
+"		v_color.rgb += DoDynamicLight(Vertex.xyz, Normal)*surfDiffuse;\n"
+"		v_color = clamp(v_color, 0.0, 1.0);\n"
+"		v_color *= u_matColor;\n"
+"	}\n"
 
 "	v_worldPos = Vertex.xyz;\n"
 "	v_worldNormal = Normal;\n"
-"	v_fog = DoFogEye(Vertex.xyz);\n"
+"	v_fog = DoFog(gl_Position.w);\n"
 "}\n"
 ;

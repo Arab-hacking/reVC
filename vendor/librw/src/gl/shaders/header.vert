@@ -41,6 +41,7 @@ uniform vec4  u_fogColor;
 // --- Black Russia client material parity ---
 uniform vec4 u_eye;		// xyz: camera world position
 uniform vec4 u_sunDir;	// xyz: direction TO the sun
+uniform vec4 u_atmosphere;	// x: enabled, y: clouds, z: fog, w: dayNightBalance
 uniform mat4 u_uvMatrix;
 
 
@@ -126,6 +127,66 @@ vec3 DoDynamicLight(vec3 V, vec3 N)
 			;
 	}
 	return color;
+}
+
+vec3 DoPointSpotLight(vec3 V, vec3 N)
+{
+	vec3 color = vec3(0.0, 0.0, 0.0);
+	float nLen2 = dot(N, N);
+	vec3 nrm = nLen2 > 1.0e-8 ? N * inversesqrt(nLen2) : vec3(0.0, 0.0, 1.0);
+	for(int i = 0; i < MAX_LIGHTS; i++){
+		if(u_lightParams[i].x == 0.0)
+			break;
+#ifdef POINTLIGHTS
+		if(u_lightParams[i].x == 2.0){
+			vec3 dir = V - u_lightPosition[i].xyz;
+			float dist = length(dir);
+			float atten = max(0.0, (1.0 - dist / max(u_lightParams[i].y, 0.001)));
+			float l = dist > 1.0e-5 ? max(0.0, dot(nrm, -dir / dist)) : 1.0;
+			color += l * u_lightColor[i].rgb * atten;
+		}else
+#endif
+#ifdef SPOTLIGHTS
+		if(u_lightParams[i].x == 3.0){
+			vec3 dir = V - u_lightPosition[i].xyz;
+			float dist = length(dir);
+			float atten = max(0.0, (1.0 - dist / max(u_lightParams[i].y, 0.001)));
+			vec3 ndir = dist > 1.0e-5 ? (dir / dist) : vec3(0.0, 0.0, -1.0);
+			float l = max(0.0, dot(nrm, -ndir));
+			float pcos = dot(ndir, u_lightDirection[i].xyz);
+			float ccos = -u_lightParams[i].z;
+			float falloff = (pcos - ccos) / max(1.0 - ccos, 0.001);
+			if(falloff < 0.0)
+				l = 0.0;
+			l *= max(falloff, u_lightParams[i].w);
+			color += l * u_lightColor[i].rgb * atten;
+		}else
+#endif
+			;
+	}
+	return color;
+}
+
+// Building.vs + GL3Shader.vs (Shaders For BLAYZ RUSSIA PC):
+// - When u_surfProps.w > 0.5 (Geometry::PRELIT), blend baked night prelit + 0.25 lift (Building.vs).
+// - When u_surfProps.w <= 0.5 (non-prelit static prop/road), keep full 1.0 base colour (GL3Shader.vs).
+vec4 BR_EvalBuildingVertexColor(vec4 inColor, vec4 matColor, vec3 worldPos, vec3 worldNormal)
+{
+	float hasPrelit = step(0.5, u_surfProps.w);
+	float dayNight = clamp(u_atmosphere.w, 0.0, 1.0);
+	vec3 prelitNight = mix(vec3(1.0), inColor.rgb, dayNight) + vec3(0.25) * dayNight;
+	vec3 col = mix(vec3(1.0), prelitNight, hasPrelit);
+	col += DoPointSpotLight(worldPos, worldNormal) * surfDiffuse;
+	float outAlpha = mix(1.0, inColor.a, hasPrelit) * matColor.a;
+	return vec4(col * matColor.rgb, outAlpha);
+}
+
+// Skin.vs / GL3Shader.vs (Shaders For BLAYZ RUSSIA PC): pass material colour +
+// local point/spot lights without baking legacy vertex ambient.
+vec4 BR_EvalDynamicVertexColor(vec4 inColor, vec4 matColor, vec3 worldPos, vec3 worldNormal)
+{
+	vec3 col = vec3(1.0) + DoPointSpotLight(worldPos, worldNormal) * surfDiffuse;
+	return vec4(col * matColor.rgb, inColor.a * matColor.a);
 }
 
 float DoFog(float w)

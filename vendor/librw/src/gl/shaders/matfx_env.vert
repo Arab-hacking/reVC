@@ -19,12 +19,17 @@ main(void)
 
 	v_tex0 = (u_uvMatrix * vec4(in_tex0, 0.0, 1.0)).xy;
 
-	v_color = in_color;
-	v_color.rgb += u_ambLight.rgb*surfAmbient;
-	v_color.rgb += DoDynamicLight(Vertex.xyz, Normal)*surfDiffuse;
-	v_color = clamp(v_color, 0.0, 1.0);
-	v_envColor = max(v_color, u_colorClamp) * u_envColor;
-	v_color *= u_matColor;
+	if(u_atmosphere.x > 0.5){
+		v_color = BR_EvalBuildingVertexColor(in_color, u_matColor, Vertex.xyz, Normal);
+		v_envColor = u_envColor;
+	}else{
+		v_color = in_color;
+		v_color.rgb += u_ambLight.rgb*surfAmbient;
+		v_color.rgb += DoDynamicLight(Vertex.xyz, Normal)*surfDiffuse;
+		v_color = clamp(v_color, 0.0, 1.0);
+		v_envColor = max(v_color, u_colorClamp) * u_envColor;
+		v_color *= u_matColor;
+	}
 
 	v_worldPos = Vertex.xyz;
 	v_worldNormal = Normal;

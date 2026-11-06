@@ -82,12 +82,11 @@ static const char *s_skyDomeVertSrc =
 "{\n"
 "	vec4 V = u_world * vec4(in_pos, 1.0);\n"
 "	gl_Position = u_proj * u_view * V;\n"
-"	v_localDir = in_pos;\n"
-"	v_uv = in_tex0;\n"
+"	v_localDir = normalize(vec3(in_pos.x, in_pos.z, in_pos.y));\n"
+"	v_uv = (u_uvMatrix * vec4(in_tex0, 0.0, 1.0)).xy;\n"
 "}\n";
 
-// Reconstructed BR procedural SkyDome + normal-lit cloud dome shader
-// (brso/world_shader_pieces.txt:547-715).
+// SkyboxDynamicClouds.fs + SkyboxStaticClouds.fs + Noise.glsl (Shaders For BLAYZ RUSSIA PC)
 static const char *s_skyDomeFragSrc =
 "uniform sampler2D tex0;\n"
 "uniform sampler2D tex1;\n"
@@ -98,26 +97,77 @@ static const char *s_skyDomeFragSrc =
 "uniform vec4 u_cloudParams;\n"
 "FSIN vec3 v_localDir;\n"
 "FSIN vec2 v_uv;\n"
+"float br_sky_hash(float n) { return fract(sin(n) * 43758.5453); }\n"
+"float br_sky_noise(vec3 x)\n"
+"{\n"
+"	vec3 f = fract(x);\n"
+"	float n = dot(floor(x), vec3(1.0, 157.0, 113.0));\n"
+"	return mix(mix(mix(br_sky_hash(n + 0.0), br_sky_hash(n + 1.0), f.x),\n"
+"	               mix(br_sky_hash(n + 157.0), br_sky_hash(n + 158.0), f.x), f.y),\n"
+"	           mix(mix(br_sky_hash(n + 113.0), br_sky_hash(n + 114.0), f.x),\n"
+"	               mix(br_sky_hash(n + 270.0), br_sky_hash(n + 271.0), f.x), f.y), f.z);\n"
+"}\n"
+"float br_sky_fbm(vec3 p)\n"
+"{\n"
+"	mat3 m = mat3(0.0, 1.60, 1.20, -1.60, 0.72, -0.96, -1.20, -0.96, 1.28);\n"
+"	float f = 0.0;\n"
+"	f += br_sky_noise(p) * 0.5;\n"
+"	p = m * p * 1.1;\n"
+"	f += br_sky_noise(p) * 0.25;\n"
+"	p = m * p * 1.2;\n"
+"	f += br_sky_noise(p) * (1.0 / 6.0);\n"
+"	p = m * p * 1.3;\n"
+"	f += br_sky_noise(p) * (1.0 / 12.0);\n"
+"	p = m * p * 1.4;\n"
+"	f += br_sky_noise(p) * (1.0 / 24.0);\n"
+"	return f;\n"
+"}\n"
 "void main(void)\n"
 "{\n"
-"	vec3 dir = v_localDir * inversesqrt(max(dot(v_localDir, v_localDir), 1.0e-8));\n"
-"	float h = clamp(dir.z * 1.35 + 0.12, 0.0, 1.0);\n"
-"	vec3 sky = mix(u_skyHorizon.rgb, u_skyTop.rgb, pow(h, 0.65));\n"
-"	vec3 sunD = u_skySunDir.xyz * inversesqrt(max(dot(u_skySunDir.xyz, u_skySunDir.xyz), 1.0e-8));\n"
-"	float cosTheta = max(dot(dir, sunD), 0.0);\n"
-"	float sunHalo = pow(cosTheta, 8.0) * 0.35 + pow(cosTheta, 96.0) * 0.85;\n"
-"	sky += u_sunColor.rgb * sunHalo * u_skySunDir.w;\n"
-"	vec2 uvScroll = vec2(v_uv.x + u_cloudParams.x, 1.0 - (v_uv.y + u_cloudParams.y));\n"
-"	vec4 maskSample = texture(tex0, uvScroll);\n"
-"	vec3 nrmRaw = texture(tex1, uvScroll).xyz * 2.0 - 1.0;\n"
-"	vec3 nrmSample = nrmRaw * inversesqrt(max(dot(nrmRaw, nrmRaw), 1.0e-8));\n"
-"	vec3 cloudL = vec3(sunD.xy, max(sunD.z, 0.25));\n"
-"	cloudL *= inversesqrt(max(dot(cloudL, cloudL), 1.0e-8));\n"
-"	float cloudDensity = clamp(maskSample.r * u_cloudParams.z, 0.0, 1.0) * smoothstep(-0.05, 0.22, dir.z);\n"
-"	float cloudLit = clamp(dot(nrmSample, cloudL) * 0.5 + 0.5, 0.25, 1.0);\n"
-"	vec3 cloudCol = mix(u_skyHorizon.rgb * 0.88, vec3(1.0, 0.99, 0.97) * max(u_cloudParams.w, 0.18), cloudLit);\n"
-"	vec3 finalCol = mix(sky, cloudCol, cloudDensity * 0.82);\n"
-"	FRAGCOLOR(vec4(clamp(finalCol, 0.0, 1.0), 1.0));\n"
+"	float Br = u_skyTop.x;\n"
+"	float Bm = u_skyTop.y;\n"
+"	float g = u_skyTop.z;\n"
+"	vec3 nitrogen = vec3(0.650, 0.570, 0.475);\n"
+"	vec3 Kr = Br / pow(nitrogen, vec3(4.0));\n"
+"	vec3 Km = Bm / pow(nitrogen, vec3(0.84));\n"
+"	vec3 pos = v_localDir * inversesqrt(max(dot(v_localDir, v_localDir), 1.0e-6));\n"
+"	vec3 fsun = u_skySunDir.xyz * inversesqrt(max(dot(u_skySunDir.xyz, u_skySunDir.xyz), 1.0e-6));\n"
+"	float py = max(pos.y, 0.0);\n"
+"	float mu = dot(pos, fsun);\n"
+"	float rayleigh = 3.0 / (8.0 * 3.14159265) * (1.0 + mu * mu);\n"
+"	vec3 mie = (Kr + Km * (1.0 - g * g) / (2.0 + g * g) / pow(max(1.0 + g * g - 2.0 * g * mu, 1.0e-4), 1.5)) / (Br + Bm);\n"
+"	float e16 = exp(-py * 16.0) + 0.1;\n"
+"	vec3 dayExt = exp(-exp(-((py + fsun.y * 4.0) * e16 / 80.0) / Br) * e16 * Kr / Br)\n"
+"	            * exp(-py * exp(-py * 8.0) * 4.0) * exp(-py * 2.0) * 4.0;\n"
+"	vec3 nightExt = vec3(max(1.0 - exp(min(fsun.y, 0.0)), 0.0)) * 0.2;\n"
+"	vec3 extinction = mix(dayExt, nightExt, clamp(-fsun.y * 0.2 + 0.5, 0.0, 1.0));\n"
+"	vec3 hdr = max(rayleigh * mie * extinction, vec3(0.0));\n"
+"	float time = u_cloudParams.x;\n"
+"	float horizonFade = smoothstep(0.015, 0.14, pos.y);\n"
+"	vec3 cloudCoord = pos / max(pos.y, 0.04);\n"
+"	float cirrus = smoothstep(1.0 - u_cloudParams.y, 1.0, br_sky_fbm(cloudCoord * 2.0 + vec3(time * 0.05))) * 0.30;\n"
+"	hdr = mix(hdr, extinction * 4.0, cirrus * py * horizonFade);\n"
+"	for(int i = 0; i < 3; i++){\n"
+"		float cum = smoothstep(1.0 - u_cloudParams.z, 1.0, br_sky_fbm((0.7 + float(i) * 0.01) * cloudCoord + vec3(time * 0.30)));\n"
+"		hdr = mix(hdr, extinction * cum * 2.0, min(cum, 1.0) * py * horizonFade);\n"
+"	}\n"
+"	if(u_skyHorizon.w > 0.5 && v_uv.y >= 0.218 && v_uv.y <= 0.480){\n"
+"		vec2 uv = vec2(v_uv.x + 0.876, (v_uv.y - 0.218) * (1.0 / (0.480 - 0.218)));\n"
+"		vec2 sampleUV = vec2(uv.x, 1.0 - uv.y);\n"
+"		vec3 nrmRaw = texture(tex1, sampleUV).rgb * 2.0 - 1.0;\n"
+"		vec3 cloudsNrm = nrmRaw * inversesqrt(max(dot(nrmRaw, nrmRaw), 1.0e-6));\n"
+"		float cloudMask = texture(tex0, sampleUV).g;\n"
+"		vec3 sunToGround = vec3(-fsun.x, -fsun.y, -fsun.z);\n"
+"		float cloudLit = max(dot(sunToGround, cloudsNrm), 0.0);\n"
+"		vec3 baseCloud = BR_SRGBtoLINEAR(vec4(u_skyHorizon.rgb, 1.0)).rgb;\n"
+"		vec3 topCloud = BR_SRGBtoLINEAR(vec4(u_sunColor.rgb, 1.0)).rgb * 1.4;\n"
+"		vec3 staticCol = mix(baseCloud, topCloud, cloudLit);\n"
+"		hdr = mix(staticCol, hdr, clamp(mix(1.0, cloudMask, u_cloudParams.w), 0.0, 1.0));\n"
+"	}\n"
+"	hdr += vec3((br_sky_noise(pos * 256.0) - 0.5) * 0.008);\n"
+"	float wp = u_skyTop.w > 0.5 ? u_skyTop.w : 4.0;\n"
+"	vec3 ldr = BR_TonemapAces(max(hdr, vec3(0.0)), wp, 2.2);\n"
+"	FRAGCOLOR(vec4(clamp(ldr, 0.0, 1.0), 1.0));\n"
 "}\n";
 
 static void
@@ -132,9 +182,6 @@ SkyDomeProcRenderCB(rw::Atomic *atomic, rw::gl3::InstanceDataHeader *header)
 
 	s_skyDomeProcShader->use();
 
-	float topR = CTimeCycle::GetSkyTopRed() / 255.0f;
-	float topG = CTimeCycle::GetSkyTopGreen() / 255.0f;
-	float topB = CTimeCycle::GetSkyTopBlue() / 255.0f;
 	float botR = CTimeCycle::GetSkyBottomRed() / 255.0f;
 	float botG = CTimeCycle::GetSkyBottomGreen() / 255.0f;
 	float botB = CTimeCycle::GetSkyBottomBlue() / 255.0f;
@@ -145,16 +192,20 @@ SkyDomeProcRenderCB(rw::Atomic *atomic, rw::gl3::InstanceDataHeader *header)
 	CVector sunV = CTimeCycle::m_VectorToSun[CTimeCycle::m_CurrentStoredValue];
 	float sunVis = sunV.z > -0.15f ? Clamp((sunV.z + 0.15f) / 0.45f, 0.0f, 1.0f) : 0.0f;
 	float tSec = (float)(CTimer::GetTimeInMilliseconds() % 1000000u) * 0.001f;
-	float skyLuma = Max(topR, Max(topG, topB));
-	float cloudCov = Clamp(0.45f + 0.55f * CWeather::CloudCoverage, 0.25f, 1.0f);
+	float weatherCloud = Clamp(CWeather::CloudCoverage, 0.0f, 1.0f);
+	float cirrusCov = Clamp(0.46f + 0.20f * weatherCloud, 0.35f, 0.72f);
+	float cumulusCov = Clamp(0.42f + 0.22f * weatherCloud, 0.32f, 0.70f);
+	float hasNormalBand = (s_skyDomeMaskTex != nil && s_skyDomeNormalTex != nil && s_skyDomeMaskTex != s_skyDomeNormalTex) ? 1.0f : 0.0f;
 
-	float uTop[4] = { topR, topG, topB, 1.0f };
-	float uBot[4] = { botR, botG, botB, 1.0f };
+	// SkyboxDynamicClouds.fs scattering: Br=0.0025, Bm=0.0003, g=0.92, whitePoint=4.0
+	float uScat[4] = { 0.0025f, 0.0003f, 0.92f, 4.0f };
+	float uBot[4] = { botR, botG, botB, hasNormalBand };
 	float uSunCol[4] = { sunR, sunG, sunB, 1.0f };
-	float uSunDir[4] = { sunV.x, sunV.y, sunV.z, sunVis };
-	float uCloud[4] = { tSec * 0.0045f, tSec * 0.0018f, cloudCov, skyLuma };
+	// Swizzle GTA Z-up sun vector into SkyboxDynamicClouds Y-up convention: (x, z, y)
+	float uSunDir[4] = { sunV.x, sunV.z, sunV.y, sunVis };
+	float uCloud[4] = { tSec * 0.035f, cirrusCov, cumulusCov, 0.35f };
 
-	glUniform4fv(s_skyDomeProcShader->uniformLocations[s_uSkyTop], 1, uTop);
+	glUniform4fv(s_skyDomeProcShader->uniformLocations[s_uSkyTop], 1, uScat);
 	glUniform4fv(s_skyDomeProcShader->uniformLocations[s_uSkyHorizon], 1, uBot);
 	glUniform4fv(s_skyDomeProcShader->uniformLocations[s_uSunColor], 1, uSunCol);
 	glUniform4fv(s_skyDomeProcShader->uniformLocations[s_uSunDir], 1, uSunDir);
@@ -412,14 +463,16 @@ PrepareSkyEntry(SkyModelEntry &e, bool isSkyDome)
 					maskCand = t;
 			}
 			if(count >= 2){
-				EnsureSkyDomeProcShader();
-				if(s_skyDomeProcPipe != nil){
-					s_skyDomeMaskTex = maskCand ? maskCand : first;
-					s_skyDomeNormalTex = normCand ? normCand : (s_skyDomeMaskTex == first ? second : first);
-					e.atomic->pipeline = s_skyDomeProcPipe;
-					s_skyDomeUseProcedural = true;
-				}
+				s_skyDomeMaskTex = maskCand ? maskCand : first;
+				s_skyDomeNormalTex = normCand ? normCand : (s_skyDomeMaskTex == first ? second : first);
+			}else if(count == 1){
+				s_skyDomeMaskTex = first;
 			}
+		}
+		EnsureSkyDomeProcShader();
+		if(s_skyDomeProcPipe != nil){
+			e.atomic->pipeline = s_skyDomeProcPipe;
+			s_skyDomeUseProcedural = true;
 		}
 	}
 #else
@@ -587,12 +640,21 @@ CCustomSky::Mode
 CCustomSky::CycleMode(void)
 {
 	if(s_hasSkyBox && s_hasSkyDome){
+#ifdef RW_GL3
+		if(s_mode == MODE_AUTO || s_mode == MODE_SKYDOME)
+			s_mode = MODE_SKYBOX;
+		else if(s_mode == MODE_SKYBOX)
+			s_mode = MODE_OFF;
+		else
+			s_mode = MODE_SKYDOME;
+#else
 		if(s_mode == MODE_AUTO || s_mode == MODE_SKYBOX)
 			s_mode = MODE_SKYDOME;
 		else if(s_mode == MODE_SKYDOME)
 			s_mode = MODE_OFF;
 		else
 			s_mode = MODE_SKYBOX;
+#endif
 	}else if(s_hasSkyBox){
 		s_mode = (s_mode == MODE_OFF) ? MODE_SKYBOX : MODE_OFF;
 	}else if(s_hasSkyDome){
@@ -608,8 +670,13 @@ CCustomSky::Render(const CVector &camPos, bool forEnvMap)
 	if(!IsActive() || !CGame::CanSeeOutSideFromCurrArea())
 		return false;
 
+#ifdef RW_GL3
+	bool wantSkyDome = (s_mode == MODE_SKYDOME) || (s_mode == MODE_AUTO && s_hasSkyDome);
+	bool wantSkyBox = (s_mode == MODE_SKYBOX) || (s_mode == MODE_AUTO && !s_hasSkyDome && s_hasSkyBox);
+#else
 	bool wantSkyBox = (s_mode == MODE_SKYBOX) || (s_mode == MODE_AUTO && s_hasSkyBox);
 	bool wantSkyDome = (s_mode == MODE_SKYDOME) || (s_mode == MODE_AUTO && !s_hasSkyBox && s_hasSkyDome);
+#endif
 
 	RwBool prevZTest = TRUE, prevZWrite = TRUE, prevVertAlpha = FALSE;
 	int32 prevCull = rwCULLMODECULLBACK;
@@ -698,6 +765,18 @@ CCustomSky::Render(const CVector &camPos, bool forEnvMap)
 				tb = (uint8)(bb * 255.0f + 0.5f);
 			}
 			RenderSkyEntry(s_skyDome, camPos, tr, tg, tb, 255, false);
+			rendered = true;
+		}else if(s_mode == MODE_AUTO && s_hasSkyBox){
+			wantSkyBox = true;
+		}
+	}
+
+	if(!rendered && wantSkyBox){
+		customsky::BlendState bs = customsky::EvaluateSkyBlend(
+			CClock::GetHours(), CClock::GetMinutes(), (float)CClock::GetSeconds());
+		SkyModelEntry *baseEntry = &s_skyBoxBase[bs.base];
+		if(PrepareSkyEntry(*baseEntry, false) && baseEntry->atomic != nil){
+			RenderSkyEntry(*baseEntry, camPos, 255, 255, 255, 255, false);
 			rendered = true;
 		}
 	}

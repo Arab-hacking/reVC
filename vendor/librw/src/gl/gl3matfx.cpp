@@ -37,7 +37,7 @@ matfxDefaultRender(InstanceDataHeader *header, InstanceData *inst, int32 vsBits,
 	Material *m;
 	m = inst->material;
 
-	setMaterial(flags, m->color, m->surfaceProps);
+	setMaterial(flags, m->color, m->surfaceProps, (flags & Geometry::PRELIT) ? 1.0f : 0.0f);
 
 	setTexture(0, m->texture);
 
@@ -107,7 +107,7 @@ matfxEnvRender(InstanceDataHeader *header, InstanceData *inst, int32 vsBits, uin
 	setTexture(1, env->tex);
 	uploadEnvMatrix(env->frame);
 
-	setMaterial(flags, m->color, m->surfaceProps);
+	setMaterial(flags, m->color, m->surfaceProps, (flags & Geometry::PRELIT) ? 1.0f : 0.0f);
 
 	float fxparams[4];
 	fxparams[0] = env->coefficient;

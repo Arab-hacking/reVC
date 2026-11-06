@@ -17,30 +17,73 @@ FSIN vec3 v_worldNormal;
 void
 main(void)
 {
-	vec4 pass1 = v_color;
-	pass1 *= texture(tex0, vec2(v_tex0.x, 1.0-v_tex0.y));
-	DoAlphaTest(pass1.a);
+	vec4 texCol = texture(tex0, vec2(v_tex0.x, 1.0-v_tex0.y));
+	float outAlpha = clamp(texCol.a * v_color.a, 0.0, 1.0);
+	DoAlphaTest(outAlpha);
+
+	float visibility = AtmosphereVisibility(v_worldPos, v_fog);
+	float fba = max(outAlpha, disableFBA);
+
+	if(u_atmosphere.x < 0.5){
+		vec4 pass1 = v_color * texCol;
+		float hasVN0;
+		vec3 N0 = ResolveWorldNormal(v_worldPos, v_worldNormal, hasVN0);
+		vec3 V0 = normalize(u_eye.xyz - v_worldPos);
+		vec3 refl0 = reflect(-V0, N0);
+		vec2 envUV0 = (u_texMatrix * vec4(refl0, 1.0)).xy;
+		vec3 envmap0 = pow(max(texture(tex1, envUV0).rgb, vec3(0.0)), vec3(0.8));
+		float fres0 = clamp(pow(1.0 - clamp(abs(dot(V0, N0)), 0.0, 1.0), 3.5), 0.15, 0.70);
+		vec3 pass2 = envmap0 * v_envColor.rgb * fres0 * shininess * visibility;
+		pass1.rgb = ShadeWorldSurfaceEx(texCol.rgb, v_color.rgb, v_worldPos, v_worldNormal, visibility, 0.0);
+		vec4 legacyCol;
+		legacyCol.rgb = clamp(pass1.rgb * outAlpha + pass2 * fba, 0.0, 1.0);
+		legacyCol.a = outAlpha;
+		FRAGCOLOR(legacyCol);
+		return;
+	}
 
 	float hasVertNormal;
 	vec3 N = ResolveWorldNormal(v_worldPos, v_worldNormal, hasVertNormal);
-	vec3 V = normalize(u_eye.xyz - v_worldPos);
-	vec3 refl = reflect(-V, N);
-	vec2 envUV = (u_texMatrix * vec4(refl, 1.0)).xy;
-	vec3 envmap = pow(max(texture(tex1, envUV).rgb, vec3(0.0)), vec3(0.9));
-	float fres = 1.0 - clamp(dot(V, N), 0.0, 1.0);
-	fres = clamp(pow(fres, 3.5), 0.08, 0.70);
+	vec3 toEye = u_eye.xyz - v_worldPos;
+	vec3 V = toEye * inversesqrt(max(dot(toEye, toEye), 1.0e-6));
+	float envCoef = clamp(shininess, 0.0, 1.0);
+	float smoothness = mix(0.25, 0.92, envCoef);
+	float linRough = 1.0 - smoothness;
+	float ggxAlpha = max(1.0e-4, linRough * linRough);
 
-	float shadowVis = u_atmosphere.x > 0.5 ? SampleSunShadow(v_worldPos, N) : 1.0;
-	vec3 pass2 = envmap * v_envColor.rgb * fres * shininess * mix(0.55, 1.0, shadowVis);
+	vec3 roughR = BR_GetRoughReflectionVec(reflect(-V, N), N, ggxAlpha);
+	vec2 envUV = (u_texMatrix * vec4(roughR, 1.0)).xy;
+	vec3 envLin = BR_SRGBtoLINEAR(texture(tex1, envUV)).rgb * v_envColor.rgb;
+	vec3 albedoLin = BR_SRGBtoLINEAR(texCol).rgb * max(v_color.rgb, vec3(0.0));
+	float whitePoint = max(u_skyAmbient.a, 2.5);
 
-	float visibility = AtmosphereVisibility(v_worldPos, v_fog);
-	pass1.rgb = ShadeWorldSurface(pass1.rgb, v_worldPos, v_worldNormal, visibility);
-	pass2 *= visibility;
-
-	float fba = max(pass1.a, disableFBA);
 	vec4 color;
-	color.rgb = clamp(pass1.rgb*pass1.a + pass2*fba, 0.0, 1.0);
-	color.a = pass1.a;
+	if(outAlpha >= 0.98){
+		vec3 hdr = BR_ShadeMaterialHDR(
+			albedoLin, v_worldPos, N,
+			smoothness, mix(0.0, 0.08, envCoef), mix(BR_DEFAULT_REFLECTANCE, 0.78, envCoef), 1.0,
+			0.0, 0.0, 0.0, 0.0,
+			envLin, step(0.02, envCoef));
+		color.rgb = mix(u_fogColor.rgb, BR_TonemapAces(hdr, whitePoint, 2.2), visibility);
+		color.a = outAlpha;
+	}else{
+		vec3 baseHdr = BR_ShadeMaterialHDR(
+			albedoLin, v_worldPos, N,
+			0.20, 0.0, 0.25, 1.0,
+			0.0, 0.0, 0.0, 0.0,
+			vec3(0.0), 0.0);
+		vec3 fullHdr = BR_ShadeMaterialHDR(
+			albedoLin, v_worldPos, N,
+			max(smoothness, 0.90), 0.0, 0.80, 1.0,
+			0.0, 0.0, 0.0, 0.0,
+			envLin, step(0.02, envCoef));
+		vec3 specHdr = max(fullHdr - baseHdr, vec3(0.0));
+		vec3 baseLdr = BR_TonemapAces(baseHdr, whitePoint, 2.2);
+		vec3 specLdr = BR_TonemapAces(specHdr, whitePoint, 2.2);
+		// gl3matfx uses SRCBLEND=ONE, DESTBLEND=INVSRCALPHA
+		color.rgb = clamp(mix(u_fogColor.rgb, baseLdr, visibility) * outAlpha + specLdr * fba * visibility, 0.0, 1.0);
+		color.a = clamp(outAlpha + br_luminance(specLdr) * 0.35 * (1.0 - outAlpha), 0.0, 1.0);
+	}
 
 	FRAGCOLOR(color);
 }

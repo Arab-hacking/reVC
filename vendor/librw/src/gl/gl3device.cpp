@@ -1912,7 +1912,7 @@ initOpenGL(void)
 	float zero4[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
 	float up4[4] = { 0.0f, 0.0f, 1.0f, 0.0f };
 	float one4[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
-	float sky4[4] = { 0.56f, 0.68f, 0.88f, 1.0f };
+	float sky4[4] = { 0.56f, 0.68f, 0.88f, 4.0f };
 	float idmat[16] = { 1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1 };
 	setUniform(u_eye, zero4);
 	setUniform(u_sunDir, up4);

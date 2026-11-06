@@ -10,10 +10,13 @@ const char *simple_frag_src =
 "void\n"
 "main(void)\n"
 "{\n"
-"	vec4 color = v_color*texture(tex0, vec2(v_tex0.x, 1.0-v_tex0.y));\n"
+"	vec4 texCol = texture(tex0, vec2(v_tex0.x, 1.0-v_tex0.y));\n"
+"	vec4 color;\n"
+"	color.a = texCol.a * v_color.a;\n"
 "	DoAlphaTest(color.a);\n"
+
 "	float visibility = AtmosphereVisibility(v_worldPos, v_fog);\n"
-"	color.rgb = ShadeWorldSurface(color.rgb, v_worldPos, v_worldNormal, visibility);\n"
+"	color.rgb = ShadeWorldSurfaceEx(texCol.rgb, v_color.rgb, v_worldPos, v_worldNormal, visibility, 1.0);\n"
 
 "	FRAGCOLOR(color);\n"
 "}\n"
