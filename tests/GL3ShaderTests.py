@@ -85,8 +85,8 @@ class GL3ShaderTests(unittest.TestCase):
 
     @unittest.skipUnless(VALIDATOR, "install glslangValidator to link GL3 shaders")
     def test_runtime_shader_programs_link(self):
-        # These are the four shader declarations selected by librw/gl3device.cpp.
-        for version in ("330", "120", "310es", "100es"):
+        # These are the shader declarations selected by librw/gl3device.cpp (including ES 3.0).
+        for version in ("330", "120", "310es", "300es", "100es"):
             decl = shader_decl(version)
             with tempfile.TemporaryDirectory(prefix="revc-gl3-shaders-") as folder:
                 vs_path = Path(folder) / "program.vert"
@@ -110,7 +110,7 @@ class GL3ShaderTests(unittest.TestCase):
             return "".join(ast.literal_eval(t) for t in re.findall(r'"(?:[^"\\]|\\.)*"', blk))
         vs_body = extract_cstr("s_skyDomeVertSrc")
         fs_body = extract_cstr("s_skyDomeFragSrc")
-        for version in ("330", "120", "310es", "100es"):
+        for version in ("330", "120", "310es", "300es", "100es"):
             decl = shader_decl(version)
             with tempfile.TemporaryDirectory(prefix="revc-gl3-skydome-") as folder:
                 vs_path = Path(folder) / "skydome.vert"

@@ -22,10 +22,13 @@ extern uintptr_t g_libREVC;
 	Logger::CrashLog("ip: 0x%x, sp: 0x%x, lr: 0x%x, pc: 0x%x", (context)->uc_mcontext.arm_ip, (context)->uc_mcontext.arm_sp, (context)->uc_mcontext.arm_lr, (context)->uc_mcontext.arm_pc); \
     Logger::CrashLog("1: libreVC.so + 0x%X", context->uc_mcontext.arm_pc - g_libREVC); \
     Logger::CrashLog("2: libreVC.so + 0x%X", context->uc_mcontext.arm_lr - g_libREVC);
-#else
+#elif defined(__aarch64__)
 #define PRINT_CRASH_STATES(context) \
     Logger::CrashLog("1: libreVC.so + 0x%llx", context->uc_mcontext.pc - g_libREVC); \
     Logger::CrashLog("2: libreVC.so + 0x%llx", context->uc_mcontext.regs[30] - g_libREVC);
+#else
+#define PRINT_CRASH_STATES(context) \
+    (void)(context);
 #endif
 
 class CStackTrace

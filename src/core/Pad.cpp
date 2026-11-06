@@ -999,10 +999,6 @@ CMouseControllerState CMousePointerStateHelper::GetMouseSetUp()
 #if !defined(LIBRW_SDL2)
     double xpos = 1.0f, ypos;
 	glfwGetCursorPos(PSGLOBAL(window), &xpos, &ypos);
-#else
-    int xpos = 1, ypos;
-    SDL_GetMouseState(&xpos, &ypos);
-#endif
 	if (xpos != 0.f) {
 		state.MMB = true;
 		state.RMB = true;
@@ -1010,10 +1006,23 @@ CMouseControllerState CMousePointerStateHelper::GetMouseSetUp()
 		state.WHEELDN = true;
 		state.WHEELUP = true;
 	}
+#else
+	state.MMB = true;
+	state.RMB = true;
+	state.LMB = true;
+	state.WHEELDN = true;
+	state.WHEELUP = true;
+#endif
 #endif
 
 	return state;
 }
+
+#ifdef LIBRW_SDL2
+bool _InputMouseIsRelative(void);
+void _InputConsumeMouseRelative(int *dx, int *dy);
+int  _InputConsumeLatchedMouseButtons(void);
+#endif
 
 void CPad::UpdateMouse()
 {
@@ -1061,14 +1070,18 @@ void CPad::UpdateMouse()
 	if ( IsForegroundApp() && PSGLOBAL(cursorIsInWindow) )
 	{
 #ifdef LIBRW_SDL2
-        int xpos = 1, ypos;
-        int mouseState = SDL_GetMouseState(&xpos, &ypos);
+        int xpos = 1, ypos = 0;
+        int mouseState = SDL_GetMouseState(&xpos, &ypos) | _InputConsumeLatchedMouseButtons();
+#ifndef ANDROID
+        if (!_InputMouseIsRelative() && xpos == 0 && mouseState == 0)
+            return;
+#endif
 #else
         double xpos = 1.0f, ypos;
 		glfwGetCursorPos(PSGLOBAL(window), &xpos, &ypos);
-#endif
 		if (xpos == 0.f)
 			return;
+#endif
 
 		int32 signX = 1;
 		int32 signy = 1;
@@ -1083,8 +1096,18 @@ void CPad::UpdateMouse()
 
 		PCTempMouseControllerState.Clear();
 
-		PCTempMouseControllerState.x = (float)(signX * (xpos - PSGLOBAL(lastMousePos.x)));
-		PCTempMouseControllerState.y = (float)(signy * (ypos - PSGLOBAL(lastMousePos.y)));
+#ifdef LIBRW_SDL2
+		if (_InputMouseIsRelative()) {
+			int dx = 0, dy = 0;
+			_InputConsumeMouseRelative(&dx, &dy);
+			PCTempMouseControllerState.x = (float)(signX * dx);
+			PCTempMouseControllerState.y = (float)(signy * dy);
+		} else
+#endif
+		{
+			PCTempMouseControllerState.x = (float)(signX * (xpos - PSGLOBAL(lastMousePos.x)));
+			PCTempMouseControllerState.y = (float)(signy * (ypos - PSGLOBAL(lastMousePos.y)));
+		}
 #ifdef LIBRW_SDL2
         PCTempMouseControllerState.LMB = !!(mouseState & SDL_BUTTON(1));
         PCTempMouseControllerState.RMB = !!(mouseState & SDL_BUTTON(3));

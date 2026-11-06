@@ -125,8 +125,8 @@ rasterCreateTexture(Raster *raster)
 	}
 
 	if(gl3Caps.gles){
-		// glReadPixels only supports GL_RGBA
-		natras->internalFormat = GL_RGBA8;
+		// glReadPixels only supports GL_RGBA; ES 2.0 requires unsized GL_RGBA internalFormat
+		natras->internalFormat = gl3Caps.glversion >= 30 ? GL_RGBA8 : GL_RGBA;
 		natras->format = GL_RGBA;
 		natras->type = GL_UNSIGNED_BYTE;
 		natras->bpp = 4;
@@ -155,7 +155,8 @@ rasterCreateTexture(Raster *raster)
 	glTexImage2D(GL_TEXTURE_2D, 0, natras->internalFormat,
 	             raster->width, raster->height,
 	             0, natras->format, natras->type, nil);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, maxLevel);
+	if(!gl3Caps.gles || gl3Caps.glversion >= 30)
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, maxLevel);
 	natras->filterMode = 0;
 	natras->addressU = 0;
 	natras->addressV = 0;
@@ -200,13 +201,13 @@ rasterCreateCameraTexture(Raster *raster)
 		break;
 	}
 
-	// i don't remember why this was once here...
 	if(gl3Caps.gles){
-		// glReadPixels only supports GL_RGBA
-//		natras->internalFormat = GL_RGBA8;
-//		natras->format = GL_RGBA;
-//		natras->type = GL_UNSIGNED_BYTE;
-//		natras->bpp = 4;
+		// Android/GLES default EGL surfaces are RGBA8: matching RGBA here guarantees
+		// FBO color-renderability and allows glCopyTexSubImage2D in PostFX.
+		natras->internalFormat = gl3Caps.glversion >= 30 ? GL_RGBA8 : GL_RGBA;
+		natras->format = GL_RGBA;
+		natras->type = GL_UNSIGNED_BYTE;
+		natras->bpp = 4;
 	}
 
 	raster->stride = raster->width*natras->bpp;
@@ -341,7 +342,8 @@ allocateDXT(Raster *raster, int32 dxt, int32 numLevels, bool32 hasAlpha)
 
 	glGenTextures(1, &natras->texid);
 	uint32 prev = bindTexture(natras->texid);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, natras->numLevels-1);
+	if(!gl3Caps.gles || gl3Caps.glversion >= 30)
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, natras->numLevels-1);
 	natras->filterMode = 0;
 	natras->addressU = 0;
 	natras->addressV = 0;
@@ -390,7 +392,8 @@ setMipLevels(Raster *raster, int32 numLevels)
 	natras->autogenMipmap = 0;
 	if(natras->texid){
 		uint32 prev = bindTexture(natras->texid);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, natras->numLevels - 1);
+		if(!gl3Caps.gles || gl3Caps.glversion >= 30)
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, natras->numLevels - 1);
 		bindTexture(prev);
 	}
 #else

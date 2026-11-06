@@ -214,7 +214,13 @@ ListDirectory(const char *dir, std::vector<std::string> &files, std::vector<std:
 			continue;
 		char path[512];
 		snprintf(path, sizeof(path), "%s/%s", dir, e->d_name);
-		if(e->d_type == DT_DIR)
+		bool isDir = (e->d_type == DT_DIR);
+		if(e->d_type == DT_UNKNOWN || e->d_type == DT_LNK){
+			struct stat st;
+			if(stat(path, &st) == 0 && S_ISDIR(st.st_mode))
+				isDir = true;
+		}
+		if(isDir)
 			dirs.push_back(path);
 		else
 			files.push_back(path);

@@ -92,6 +92,15 @@ const char *shaderDecl100es =
 "#define FRAGCOLOR(c) (gl_FragColor = c)\n"
 "precision highp float;\n"
 "precision highp int;\n";
+const char *shaderDecl300es =
+"#version 300 es\n"
+"#define VSIN(index) layout(location = index) in\n"
+"#define VSOUT out\n"
+"#define FSIN in\n"
+"#define FRAGCOLOR(c) (fragColor = c)\n"
+"precision highp float;\n"
+"precision highp int;\n"
+"precision highp sampler2D;\n";
 const char *shaderDecl310es =
 "#version 310 es\n"
 "#define VSIN(index) layout(location = index) in\n"
@@ -99,7 +108,8 @@ const char *shaderDecl310es =
 "#define FSIN in\n"
 "#define FRAGCOLOR(c) (fragColor = c)\n"
 "precision highp float;\n"
-"precision highp int;\n";
+"precision highp int;\n"
+"precision highp sampler2D;\n";
 
 const char *shaderDecl;
 
@@ -165,6 +175,7 @@ static uint32 s_savedShadowZWrite;
 static uint32 s_savedShadowZTest;
 static uint32 s_savedShadowCull;
 static bool32 s_savedShadowVertexAlpha;
+static uint32 s_savedShadowFbo;
 
 static bool32 stateDirty = 1;
 static bool32 sceneDirty = 1;
@@ -1617,9 +1628,13 @@ static struct {
 	int gl;
 	int major, minor;
 } profiles[] = {
+#ifndef ANDROID
 	{ SDL_GL_CONTEXT_PROFILE_CORE, 3, 3 },
 	{ SDL_GL_CONTEXT_PROFILE_CORE, 2, 1 },
+#endif
+	{ SDL_GL_CONTEXT_PROFILE_ES, 3, 2 },
 	{ SDL_GL_CONTEXT_PROFILE_ES, 3, 1 },
+	{ SDL_GL_CONTEXT_PROFILE_ES, 3, 0 },
 	{ SDL_GL_CONTEXT_PROFILE_ES, 2, 0 },
 	{ 0, 0, 0 },
 };
@@ -1627,13 +1642,18 @@ static struct {
 static int
 startSDL2(void)
 {
-	SDL_Window *win;
-	SDL_GLContext ctx;
+	SDL_Window *win = nil;
+	SDL_GLContext ctx = nil;
 	DisplayMode *mode;
 
 	mode = &glGlobals.modes[glGlobals.currentMode];
 
-	SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, glGlobals.numSamples);
+#ifdef ANDROID
+	SDL_SetHint(SDL_HINT_ACCELEROMETER_AS_JOYSTICK, "0");
+	SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
+#endif
+	if(glGlobals.numSamples > 1)
+		SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, glGlobals.numSamples);
 
 	int i;
 	for(i = 0; profiles[i].gl; i++){
@@ -1641,26 +1661,35 @@ startSDL2(void)
 		SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, profiles[i].major);
 		SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, profiles[i].minor);
 
+		uint32 winFlags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_OPENGL;
+#ifdef ANDROID
+		winFlags |= SDL_WINDOW_FULLSCREEN;
+#endif
 		if(mode->flags & VIDEOMODEEXCLUSIVE) {
-			win = SDL_CreateWindow(glGlobals.winTitle, SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, mode->mode.w, mode->mode.h, SDL_WINDOW_RESIZABLE | SDL_WINDOW_OPENGL | SDL_WINDOW_FULLSCREEN);
+			win = SDL_CreateWindow(glGlobals.winTitle, SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, mode->mode.w, mode->mode.h, winFlags | SDL_WINDOW_FULLSCREEN);
 			if (win)
 				SDL_SetWindowDisplayMode(win, &mode->mode);
 		} else {
-			win = SDL_CreateWindow(glGlobals.winTitle, SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, glGlobals.winWidth, glGlobals.winHeight, SDL_WINDOW_RESIZABLE | SDL_WINDOW_OPENGL);
+			win = SDL_CreateWindow(glGlobals.winTitle, SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, glGlobals.winWidth, glGlobals.winHeight, winFlags);
 			if (win)
 				SDL_SetWindowDisplayMode(win, NULL);
 		}
-		if(win){
+		if(!win)
+			continue;
+
+		ctx = SDL_GL_CreateContext(win);
+		if(ctx){
 			gl3Caps.gles = profiles[i].gl == SDL_GL_CONTEXT_PROFILE_ES;
 			gl3Caps.glversion = profiles[i].major*10 + profiles[i].minor;
 			break;
 		}
+		SDL_DestroyWindow(win);
+		win = nil;
 	}
-	if(win == nil){
+	if(win == nil || ctx == nil){
 		RWERROR((ERR_GENERAL, SDL_GetError()));
 		return 0;
 	}
-	ctx = SDL_GL_CreateContext(win);
 
 	if (!((gl3Caps.gles ? gladLoadGLES2Loader : gladLoadGLLoader) ((GLADloadproc) SDL_GL_GetProcAddress, gl3Caps.glversion)) ) {
 		RWERROR((ERR_GENERAL, "gladLoadGLLoader failed"));
@@ -1669,7 +1698,22 @@ startSDL2(void)
 		return 0;
 	}
 
-	printf("OpenGL version: %s\n", glGetString(GL_VERSION));
+	const char *verStr = (const char*)glGetString(GL_VERSION);
+	printf("OpenGL version: %s\n", verStr ? verStr : "(null)");
+	if(gl3Caps.gles && verStr){
+		const char *esTag = strstr(verStr, "OpenGL ES");
+		if(esTag){
+			int maj = 0, min = 0;
+			const char *p = esTag + 9;
+			while(*p && (*p < '0' || *p > '9'))
+				p++;
+			if(sscanf(p, "%d.%d", &maj, &min) == 2 && maj >= 2){
+				int actualVer = maj * 10 + min;
+				if(actualVer < gl3Caps.glversion)
+					gl3Caps.glversion = actualVer;
+			}
+		}
+	}
 
 	glGlobals.window = win;
 	glGlobals.glcontext = ctx;
@@ -1875,12 +1919,15 @@ initOpenGL(void)
 */
 	gl3Caps.dxtSupported = !!GLAD_GL_EXT_texture_compression_s3tc;
 	gl3Caps.astcSupported = !!GLAD_GL_KHR_texture_compression_astc_ldr;
-
-	glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, &gl3Caps.maxAnisotropy);
+	gl3Caps.maxAnisotropy = 1.0f;
+	if(GLAD_GL_EXT_texture_filter_anisotropic)
+		glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, &gl3Caps.maxAnisotropy);
 
 	if(gl3Caps.gles){
-		if(gl3Caps.glversion >= 30)
+		if(gl3Caps.glversion >= 31)
 			shaderDecl = shaderDecl310es;
+		else if(gl3Caps.glversion >= 30)
+			shaderDecl = shaderDecl300es;
 		else
 			shaderDecl = shaderDecl100es;
 	}else{
@@ -1961,7 +2008,7 @@ initOpenGL(void)
 
 	resetRenderState();
 
-	glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, &maxAnisotropy);
+	maxAnisotropy = gl3Caps.maxAnisotropy;
 
 	if(gl3Caps.glversion >= 30){
 		glGenVertexArrays(1, &vao);
@@ -2142,6 +2189,7 @@ beginShadowPass(const float32 *lightView, const float32 *lightProj,
 	s_savedShadowZTest = rwStateCache.ztest;
 	s_savedShadowCull = rwStateCache.cullmode;
 	s_savedShadowVertexAlpha = rwStateCache.vertexAlpha;
+	s_savedShadowFbo = currentFramebuffer;
 
 	bindFramebuffer(s_shadowFbo);
 	glViewport(0, 0, SHADOW_MAP_SIZE, SHADOW_MAP_SIZE);
@@ -2185,7 +2233,7 @@ endShadowPass(void)
 	setRenderState(VERTEXALPHA, (void*)(uintptr)s_savedShadowVertexAlpha);
 	flushGlRenderState();
 
-	bindFramebuffer(0);
+	bindFramebuffer(s_savedShadowFbo);
 
 	int32 prevStage = activeTexture < 0 ? 0 : activeTexture;
 	setActiveTexture(3);

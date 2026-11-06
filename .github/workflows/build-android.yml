@@ -6,11 +6,15 @@ on:
     paths:
       - 'android/launcher/**'
       - 'src/**'
+      - 'vendor/librw/**'
+      - 'CMakeLists.txt'
   pull_request:
     branches: [ "miami" ]
     paths:
       - 'android/launcher/**'
       - 'src/**'
+      - 'vendor/librw/**'
+      - 'CMakeLists.txt'
   release:
     types: published 
 
