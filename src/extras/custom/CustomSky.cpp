@@ -139,38 +139,43 @@ static const char *s_skyDomeFragSrc =
 "	float rayleigh = 3.0 / (8.0 * 3.14159265) * (1.0 + mu * mu);\n"
 "	vec3 mie = (Kr + Km * (1.0 - g * g) / (2.0 + g * g) / pow(max(1.0 + g * g - 2.0 * g * mu, 1.0e-4), 1.5)) / (Br + Bm);\n"
 "	float e16 = exp(-py * 16.0) + 0.1;\n"
-"	vec3 dayExt = exp(-exp(-((py + fsun.y * 4.0) * e16 / 80.0) / Br) * e16 * Kr / Br)\n"
+"	float fsunDay = max(fsun.y, -0.01);\n"
+"	float innerExp = exp(clamp(-((py + fsunDay * 4.0) * e16 / 80.0) / Br, -40.0, 40.0));\n"
+"	vec3 dayExt = exp(-min(innerExp * e16 * Kr / Br, vec3(60.0)))\n"
 "	            * exp(-py * exp(-py * 8.0) * 4.0) * exp(-py * 2.0) * 4.0;\n"
-"	float nightVal = max(1.0 - exp(min(fsun.y, 0.0)), 0.0) * 0.12;\n"
-"	vec3 nightExt = vec3(nightVal * 0.65, nightVal * 0.80, nightVal * 1.15);\n"
-"	vec3 extinction = mix(dayExt, nightExt, clamp(-fsun.y * 0.2 + 0.5, 0.0, 1.0));\n"
-"	// Solar-elevation auto-exposure matching UpdateExposure.fs + Tonemapping.fs\n"
 "	float dayExp = mix(1.0, 0.28, smoothstep(0.12, 0.78, fsun.y));\n"
-"	vec3 hdr = max(rayleigh * mie * extinction, vec3(0.0)) * dayExp;\n"
+"	vec3 dayHdr = max(rayleigh * mie * dayExt, vec3(0.0)) * dayExp;\n"
+"	float nightMix = smoothstep(0.10, -0.22, fsun.y);\n"
+"	vec3 nightHoriz = vec3(0.052, 0.076, 0.145);\n"
+"	vec3 nightZenith = vec3(0.018, 0.030, 0.068);\n"
+"	vec3 nightHdr = mix(nightHoriz, nightZenith, smoothstep(0.0, 0.70, py));\n"
+"	vec3 hdr = mix(dayHdr, nightHdr, nightMix);\n"
 "	// Subtle solar disc + corona above horizon\n"
 "	float sunAbove = smoothstep(-0.03, 0.08, fsun.y) * step(0.0, pos.y);\n"
 "	float sunDisc = smoothstep(0.9992, 0.99988, mu) * sunAbove;\n"
-"	hdr += extinction * dayExp * (0.85 * sunDisc);\n"
+"	hdr += dayExt * dayExp * (0.85 * sunDisc);\n"
 "	// Subtle night stars\n"
-"	float nightStarMask = smoothstep(-0.08, -0.32, fsun.y) * smoothstep(0.05, 0.35, pos.y);\n"
+"	float nightStarMask = smoothstep(-0.06, -0.28, fsun.y) * smoothstep(0.05, 0.35, pos.y);\n"
 "	if(nightStarMask > 0.001){\n"
-"		float starField = smoothstep(0.9965, 0.9994, br_sky_noise(pos * 190.0));\n"
-"		hdr += vec3(0.55, 0.65, 0.85) * (starField * nightStarMask * 0.55);\n"
+"		float starField = smoothstep(0.9962, 0.9993, br_sky_noise(pos * 190.0));\n"
+"		hdr += vec3(0.60, 0.72, 0.95) * (starField * nightStarMask * 0.65);\n"
 "	}\n"
 "	float time = u_cloudParams.x;\n"
 "	float horizonFade = smoothstep(0.02, 0.16, pos.y);\n"
 "	if(horizonFade > 0.001){\n"
 "		vec3 cloudCoord = pos / max(pos.y, 0.05);\n"
 "		float sunUp = smoothstep(-0.08, 0.35, fsun.y);\n"
-"		vec3 cloudTop = extinction * dayExp * 1.45 + vec3(0.55 * sunUp);\n"
-"		vec3 cloudBase = hdr * 0.58 + vec3(0.09 * sunUp);\n"
+"		vec3 dayCloudTop = dayExt * dayExp * 1.45 + vec3(0.55 * sunUp);\n"
+"		vec3 nightCloudTop = vec3(0.065, 0.090, 0.165);\n"
+"		vec3 cloudTop = mix(dayCloudTop, nightCloudTop, nightMix);\n"
+"		vec3 cloudBase = mix(hdr * 0.58 + vec3(0.09 * sunUp), nightHdr * 0.72, nightMix);\n"
 "		float cirrus = smoothstep(1.0 - u_cloudParams.y, 1.0, br_sky_fbm(cloudCoord * 2.0 + vec3(time * 0.05))) * 0.32;\n"
 "		hdr = mix(hdr, cloudTop, cirrus * py * horizonFade);\n"
 "		for(int i = 0; i < 3; i++){\n"
 "			float cum = smoothstep(1.0 - u_cloudParams.z, 1.0, br_sky_fbm((0.7 + float(i) * 0.01) * cloudCoord + vec3(time * 0.30)));\n"
 "			float cLit = smoothstep(0.15, 0.78, cum);\n"
 "			vec3 cCol = mix(cloudBase, cloudTop, cLit);\n"
-"			hdr = mix(hdr, cCol, min(cum, 1.0) * 0.78 * py * horizonFade);\n"
+"			hdr = mix(hdr, cCol, min(cum, 1.0) * 0.75 * py * horizonFade);\n"
 "		}\n"
 "	}\n"
 "	if(pos.y > 0.0 && u_skyHorizon.w > 0.5 && v_uv.y >= 0.218 && v_uv.y <= 0.480){\n"
@@ -428,8 +433,42 @@ EnsureAuxTxdLoaded(const char *txdName)
 	return (def && def->texDict != nil) ? slot : -1;
 }
 
+static bool
+HasValidRaster(RwTexture *t)
+{
+#ifdef LIBRW
+	return t != nil && t->raster != nil && t->raster->width > 0 && t->raster->height > 0;
+#else
+	return t != nil && RwTextureGetRaster(t) != nil;
+#endif
+}
+
+static bool
+ContainsCI(const char *hay, const char *needle)
+{
+	if(hay == nil || needle == nil || needle[0] == '\0')
+		return false;
+	for(const char *p = hay; *p != '\0'; p++){
+		const char *a = p;
+		const char *b = needle;
+		while(*a != '\0' && *b != '\0'){
+			unsigned char ca = (unsigned char)*a;
+			unsigned char cb = (unsigned char)*b;
+			if(ca >= 'A' && ca <= 'Z') ca = (unsigned char)(ca - 'A' + 'a');
+			if(cb >= 'A' && cb <= 'Z') cb = (unsigned char)(cb - 'A' + 'a');
+			if(ca != cb)
+				break;
+			a++;
+			b++;
+		}
+		if(*b == '\0')
+			return true;
+	}
+	return false;
+}
+
 static RwTexture*
-FindFallbackSkyTextureInSlot(int32 txdSlot, const char *modelName)
+FindFallbackSkyTextureInSlot(int32 txdSlot, const char *modelName, const char *matTexName, bool dedicatedSkyTxd)
 {
 	if(txdSlot < 0)
 		return nil;
@@ -437,32 +476,45 @@ FindFallbackSkyTextureInSlot(int32 txdSlot, const char *modelName)
 	if(def == nil || def->texDict == nil)
 		return nil;
 #ifdef LIBRW
-	const bool wantNight = strstr(modelName, "Night") || strstr(modelName, "night");
-	const bool wantRasv  = strstr(modelName, "Rasv")  || strstr(modelName, "rasv");
-	const bool wantZak   = strstr(modelName, "Zak")   || strstr(modelName, "zak");
-	const bool wantDay   = strstr(modelName, "Day")   || strstr(modelName, "day");
-	rw::Texture *exact = def->texDict->find(modelName);
-	if(exact)
-		return exact;
+	const bool wantNight = ContainsCI(modelName, "night");
+	const bool wantRasv  = ContainsCI(modelName, "rasv");
+	const bool wantZak   = ContainsCI(modelName, "zak");
+	const bool wantDay   = ContainsCI(modelName, "day");
+
+	if(matTexName != nil && matTexName[0] != '\0'){
+		rw::Texture *byMat = def->texDict->find(matTexName);
+		if(HasValidRaster(byMat))
+			return byMat;
+	}
+	if(modelName != nil && modelName[0] != '\0'){
+		rw::Texture *exact = def->texDict->find(modelName);
+		if(HasValidRaster(exact))
+			return exact;
+	}
 	rw::Texture *first = nil;
 	FORLIST(lnk, def->texDict->textures){
 		rw::Texture *t = rw::Texture::fromDict(lnk);
-		if(t == nil || t->raster == nil)
+		if(!HasValidRaster(t))
 			continue;
 		if(first == nil)
 			first = t;
-		if(wantNight && (strstr(t->name, "Night") || strstr(t->name, "night") || strstr(t->name, "brsky") || strstr(t->name, "BRSky")))
+		const bool isSkyNamed = ContainsCI(t->name, "sky") || dedicatedSkyTxd;
+		if(!isSkyNamed)
+			continue;
+		if(wantNight && (ContainsCI(t->name, "night") || ContainsCI(t->name, "brsky")))
 			return t;
-		if(wantRasv && (strstr(t->name, "Rasv") || strstr(t->name, "rasv") || strstr(t->name, "dawn") || strstr(t->name, "morn")))
+		if(wantRasv && (ContainsCI(t->name, "rasv") || ContainsCI(t->name, "dawn") || ContainsCI(t->name, "morn")))
 			return t;
-		if(wantZak && (strstr(t->name, "Zak") || strstr(t->name, "zak") || strstr(t->name, "dusk") || strstr(t->name, "even")))
+		if(wantZak && (ContainsCI(t->name, "zak") || ContainsCI(t->name, "dusk") || ContainsCI(t->name, "even")))
 			return t;
-		if(wantDay && (strstr(t->name, "Day") || strstr(t->name, "day")))
+		if(wantDay && ContainsCI(t->name, "day"))
 			return t;
 	}
-	return first;
+	return dedicatedSkyTxd ? first : nil;
 #else
 	(void)modelName;
+	(void)matTexName;
+	(void)dedicatedSkyTxd;
 	return nil;
 #endif
 }
@@ -482,20 +534,23 @@ PrepareSkyEntry(SkyModelEntry &e, bool isSkyDome)
 	if(mi == nil)
 		return false;
 
-	// Link brsky / rip / SkyDome auxiliary TXDs before streaming the DFF so RenderWare resolves brsky textures cleanly.
 	const int32 brskySlot = EnsureAuxTxdLoaded("brsky");
 	const int32 ripSlot   = EnsureAuxTxdLoaded("rip");
 	const int32 domeSlot  = EnsureAuxTxdLoaded("SkyDome");
 	const int32 modelTxd  = mi->GetTxdSlot();
-	if(modelTxd >= 0 && CTxdStore::GetParentTxdSlot(modelTxd) == -1){
-		if(brskySlot >= 0 && brskySlot != modelTxd)
-			CTxdStore::SetTxdParent(modelTxd, brskySlot);
-		else if(ripSlot >= 0 && ripSlot != modelTxd)
-			CTxdStore::SetTxdParent(modelTxd, ripSlot);
-	}
-	if(brskySlot >= 0 && ripSlot >= 0 && brskySlot != ripSlot &&
-	   CTxdStore::GetParentTxdSlot(brskySlot) == -1 && CTxdStore::GetParentTxdSlot(ripSlot) != brskySlot){
-		CTxdStore::SetTxdParent(brskySlot, ripSlot);
+	if(!isSkyDome){
+		if(ripSlot >= 0 && brskySlot >= 0 && ripSlot != brskySlot &&
+		   CTxdStore::GetParentTxdSlot(ripSlot) == -1 && CTxdStore::GetParentTxdSlot(brskySlot) != ripSlot)
+			CTxdStore::SetTxdParent(ripSlot, brskySlot);
+		if(modelTxd >= 0 && CTxdStore::GetParentTxdSlot(modelTxd) == -1){
+			if(ripSlot >= 0 && ripSlot != modelTxd)
+				CTxdStore::SetTxdParent(modelTxd, ripSlot);
+			else if(brskySlot >= 0 && brskySlot != modelTxd)
+				CTxdStore::SetTxdParent(modelTxd, brskySlot);
+		}
+	}else if(modelTxd >= 0 && domeSlot >= 0 && modelTxd != domeSlot &&
+	         CTxdStore::GetParentTxdSlot(modelTxd) == -1){
+		CTxdStore::SetTxdParent(modelTxd, domeSlot);
 	}
 
 	if(mi->GetRwObject() == nil){
@@ -530,25 +585,45 @@ PrepareSkyEntry(SkyModelEntry &e, bool isSkyDome)
 	RpGeometry *geom = RpAtomicGetGeometry(e.atomic);
 	if(geom){
 		uint32 flags = RpGeometryGetFlags(geom);
-		// Render sky models pure & unlit (no baked vertex colors, no night ambient attenuation)
-		flags &= ~(rpGEOMETRYPRELIT | rpGEOMETRYLIGHT);
-		flags |= rpGEOMETRYMODULATEMATERIALCOLOR;
+		// Keep rpGEOMETRYLIGHT enabled so SetFullAmbient() + DeActivateDirectional()
+		// supplies pure white (1,1,1) ambient in both GL3 and D3D9 without dark prelight.
+		flags &= ~rpGEOMETRYPRELIT;
+		flags |= rpGEOMETRYLIGHT | rpGEOMETRYMODULATEMATERIALCOLOR;
 		RpGeometrySetFlags(geom, flags);
 
-		const int32 auxSlots[4] = { modelTxd, brskySlot, ripSlot, domeSlot };
 		const int32 nMat = RpGeometryGetNumMaterials(geom);
 		for(int32 miIdx = 0; miIdx < nMat; miIdx++){
 			RpMaterial *mat = RpGeometryGetMaterial(geom, miIdx);
 			if(mat == nil)
 				continue;
-			if(mat->texture == nil){
-				for(int s = 0; s < 4 && mat->texture == nil; s++){
-					RwTexture *fallback = FindFallbackSkyTextureInSlot(auxSlots[s], mi->GetModelName());
-					if(fallback)
-						RpMaterialSetTexture(mat, fallback);
+			if(!HasValidRaster(mat->texture)){
+				const char *wantedTex = nil;
+#ifdef LIBRW
+				if(mat->texture != nil && mat->texture->name[0] != '\0')
+					wantedTex = mat->texture->name;
+#endif
+				if(isSkyDome){
+					const int32 domeAux[2] = { modelTxd, domeSlot };
+					for(int s = 0; s < 2 && !HasValidRaster(mat->texture); s++){
+						RwTexture *fb = FindFallbackSkyTextureInSlot(domeAux[s], mi->GetModelName(), wantedTex, true);
+						if(fb)
+							RpMaterialSetTexture(mat, fb);
+					}
+				}else{
+					const int32 boxAux[3] = { modelTxd, brskySlot, ripSlot };
+					const bool boxDedicated[3] = {
+						(modelTxd >= 0 && modelTxd != ripSlot),
+						true,
+						false
+					};
+					for(int s = 0; s < 3 && !HasValidRaster(mat->texture); s++){
+						RwTexture *fb = FindFallbackSkyTextureInSlot(boxAux[s], mi->GetModelName(), wantedTex, boxDedicated[s]);
+						if(fb)
+							RpMaterialSetTexture(mat, fb);
+					}
 				}
 			}
-			if(mat->texture != nil)
+			if(HasValidRaster(mat->texture))
 				hasAnyTexture = true;
 		}
 		RpGeometryForAllMaterials(geom, NormalizeSkyMaterialCB, (void*)(uintptr)255);
@@ -583,30 +658,28 @@ PrepareSkyEntry(SkyModelEntry &e, bool isSkyDome)
 		int txdSlot = mi->GetTxdSlot();
 		if(txdSlot >= 0 && CTxdStore::GetSlot(txdSlot) && CTxdStore::GetSlot(txdSlot)->texDict){
 			rw::TexDictionary *dict = CTxdStore::GetSlot(txdSlot)->texDict;
-			int count = 0;
-			rw::Texture *first = nil;
-			rw::Texture *second = nil;
 			rw::Texture *maskCand = nil;
 			rw::Texture *normCand = nil;
 			FORLIST(lnk, dict->textures){
 				rw::Texture *t = rw::Texture::fromDict(lnk);
-				count++;
-				if(first == nil) first = t;
-				else if(second == nil) second = t;
-				if(strstr(t->name, "nrm") || strstr(t->name, "norm") || strstr(t->name, "NRM") || strstr(t->name, "Normal"))
+				if(!HasValidRaster(t))
+					continue;
+				if(ContainsCI(t->name, "nrm") || ContainsCI(t->name, "norm"))
 					normCand = t;
-				else if(strstr(t->name, "mask") || strstr(t->name, "cloud") || strstr(t->name, "Cloud"))
+				else if(ContainsCI(t->name, "mask") || ContainsCI(t->name, "cloud"))
 					maskCand = t;
 			}
-			if(maskCand != nil && normCand != nil){
+			if(maskCand != nil && normCand != nil && maskCand != normCand){
 				s_skyDomeMaskTex = maskCand;
 				s_skyDomeNormalTex = normCand;
-				EnsureSkyDomeProcShader();
-				if(s_skyDomeProcPipe != nil){
-					e.atomic->pipeline = s_skyDomeProcPipe;
-					s_skyDomeUseProcedural = true;
-				}
 			}
+		}
+		// Always bind SkyboxDynamicClouds procedural pipeline on BR_SkyDome (#NewSkyDome)
+		// so dynamic sky & clouds render cleanly day and night even without static textures.
+		EnsureSkyDomeProcShader();
+		if(s_skyDomeProcPipe != nil){
+			e.atomic->pipeline = s_skyDomeProcPipe;
+			s_skyDomeUseProcedural = true;
 		}
 	}
 #else

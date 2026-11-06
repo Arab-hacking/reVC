@@ -710,23 +710,34 @@ int main() {
             "20 0 2 0 0 0 0  20 10 2 0 0 0 0  "
             "0 0 2 0 0 0 0  0 10 2 0 0 0 0  1\n") },
         { "data/carcols.dat", Bytes("col\n2,3,4\nend\n") },
+        { "data/lods.info", Bytes("43316,43326\n35621,35622,35623\n") },
         { "data/features/physics.json", Bytes("ignored") }
     });
     assert(CCustomModels::IsActive() && !CCustomModels::HasWorldFiles());
     assert(CCustomModels::ReadDataFile("data/water.dat", selected, &fromCommon) && fromCommon);
     assert(CCustomModels::ReadDataFile("data/carcols.dat", selected, &fromCommon) && fromCommon);
+    assert(CCustomModels::ReadDataFile("data/lods.info", selected, &fromCommon) && fromCommon);
     assert(!CCustomModels::ReadDataFile("data/features/physics.json", selected));
     CCustomModels::Shutdown();
     // Overlarge tables must not be inflated into the game: the entry cap for
-    // water/palette is lower than the generic 64 MiB map-file cap.
+    // water/palette/lods is lower than the generic 64 MiB map-file cap.
     Zip("custom/common.zip", {
         { "data/water.dat", Bytes(std::string(1024*1024+1, 'w')) },
+        { "data/lods.info", Bytes(std::string(1024*1024+1, 'l')) },
         { "data/carcols.dat", Bytes(std::string(64*1024+1, 'c')) }
     });
     assert(!CCustomModels::ReadDataFile("data/water.dat", selected));
+    assert(!CCustomModels::ReadDataFile("data/lods.info", selected));
     assert(!CCustomModels::ReadDataFile("data/carcols.dat", selected));
     CCustomModels::Shutdown();
     assert(std::remove("custom/common.zip") == 0);
+
+    // Loose custom/data/lods.info fallback works when common.zip is absent.
+    MkDir("custom/data");
+    Write("custom/data/lods.info", Bytes("18849,18850\n"));
+    assert(CCustomModels::ReadDataFile("data/lods.info", selected, &fromCommon) && !fromCommon);
+    assert(std::remove("custom/data/lods.info") == 0);
+    CCustomModels::Shutdown();
 
     // IMG-only directory: no IDE/IFP needed for valid user models.
     MkDir("custom/img");

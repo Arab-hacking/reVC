@@ -190,8 +190,13 @@ vec4 BR_EvalBuildingVertexColor(vec4 inColor, vec4 matColor, vec3 worldPos, vec3
 // local point/spot lights without baking legacy vertex ambient.
 vec4 BR_EvalDynamicVertexColor(vec4 inColor, vec4 matColor, vec3 worldPos, vec3 worldNormal)
 {
-	vec3 col = vec3(1.0) + DoPointSpotLight(worldPos, worldNormal) * surfDiffuse;
-	return vec4(col * matColor.rgb, inColor.a * matColor.a);
+	float isUnlit = step(1.5, u_surfProps.w);
+	float hasPrelit = step(0.5, u_surfProps.w - 2.0 * isUnlit);
+	vec3 litCol = vec3(1.0) + DoPointSpotLight(worldPos, worldNormal) * surfDiffuse;
+	vec3 unlitCol = mix(vec3(1.0), inColor.rgb, hasPrelit);
+	vec3 col = mix(litCol, unlitCol, isUnlit);
+	float outAlpha = mix(1.0, inColor.a, hasPrelit) * matColor.a;
+	return vec4(col * matColor.rgb, outAlpha);
 }
 
 float DoFog(float w)

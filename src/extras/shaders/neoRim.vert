@@ -27,7 +27,7 @@ main(void)
 
 	v_tex0 = (u_uvMatrix * vec4(in_tex0, 0.0, 1.0)).xy;
 
-	if(u_atmosphere.x > 0.5){
+	if(u_atmosphere.x > 0.5 || u_surfProps.w >= 1.5){
 		v_color = BR_EvalDynamicVertexColor(in_color, u_matColor, Vertex.xyz, Normal);
 	}else{
 		v_color = in_color;

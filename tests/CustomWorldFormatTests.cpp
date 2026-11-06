@@ -386,6 +386,42 @@ static void TestZip()
     std::remove(filename);
 }
 
+static void TestLodIdeAndLodsInfo()
+{
+    const char *lodIde =
+        "#BlackRussia\n"
+        "objs\n"
+        "18850, LODbui_bat_98, bat_lod1, 1500, 0\n"
+        "35622, 2_r3_bsv_Rtnd, r3_bsv_build, 80, 0\n"
+        "35863, lf_kor_h1_bld_LOD2, r3, 600, 0\n"
+        "43326, L2_E_CityShop_10, BR_E_CityShop_2, 1500, 0\n"
+        "end\n";
+    customworld::ModelIndex idx;
+    customworld::Stats st = customworld::ParseIde(
+        (const unsigned char *)lodIde, std::strlen(lodIde),
+        [&idx](const customworld::Model &m) { idx.Add(m); });
+    assert(st.records == 4 && st.rejected == 0);
+    assert(idx.definitions.count("l2_e_cityshop_10") == 1);
+    assert(idx.definitions["l2_e_cityshop_10"].distance == 1500.0f);
+    assert(idx.definitions["2_r3_bsv_rtnd"].distance == 80.0f);
+
+    std::vector<std::string> cands;
+    customworld::CollectLodBaseCandidates("lodbui_bat_98", cands);
+    assert(!cands.empty() && cands[0] == "bui_bat_98");
+
+    customworld::CollectLodBaseCandidates("l2_e_cityshop_10", cands);
+    assert(cands.size() >= 2 && cands[0] == "e_cityshop_10" && cands[1] == "l1_e_cityshop_10");
+
+    customworld::CollectLodBaseCandidates("2_r3_bsv_rtnd", cands);
+    assert(cands.size() >= 2 && cands[0] == "1_r3_bsv_rtnd" && cands[1] == "r3_bsv_rtnd");
+
+    customworld::CollectLodBaseCandidates("lod_ars_bush2", cands);
+    assert(cands.size() >= 2 && cands[0] == "ars_bush2" && cands[1] == "sm_ars_bush2");
+
+    customworld::CollectLodBaseCandidates("lf_kor_h1_bld_lod2", cands);
+    assert(!cands.empty() && cands[0] == "lf_kor_h1_bld");
+}
+
 int main()
 {
     TestWorldText();
@@ -393,5 +429,6 @@ int main()
     TestCommonCatalogAndTypes();
     TestCollision();
     TestZip();
+    TestLodIdeAndLodsInfo();
     std::puts("BR world parser, CED2 collision and nested ZIP tests passed");
 }

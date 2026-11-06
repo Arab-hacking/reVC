@@ -454,5 +454,36 @@ Stats ParseIpl(const unsigned char *data, size_t size, Fn fn) {
     return Parse(data, size, false, [](const Model &) {}, fn);
 }
 
+// Collect candidate base (near) model names for a lowercase LOD model name from lod.ide.
+inline void CollectLodBaseCandidates(const std::string &nm, std::vector<std::string> &baseCands)
+{
+    baseCands.clear();
+    if(nm.size() > 5 && nm.compare(0, 5, "lod1_") == 0)
+        baseCands.push_back(nm.substr(5));
+    if(nm.size() > 4 && nm.compare(0, 4, "lod1") == 0)
+        baseCands.push_back(nm.substr(4));
+    if(nm.size() > 4 && nm.compare(0, 4, "lod_") == 0) {
+        baseCands.push_back(nm.substr(4));
+        baseCands.push_back("sm_" + nm.substr(4));
+    }
+    if(nm.size() > 3 && nm.compare(0, 3, "lod") == 0 && nm[3] != '_')
+        baseCands.push_back(nm.substr(3));
+    if(nm.size() > 3 && nm.compare(0, 3, "l2_") == 0) {
+        baseCands.push_back(nm.substr(3));
+        baseCands.push_back("l1_" + nm.substr(3));
+        baseCands.push_back("1_" + nm.substr(3));
+    }
+    if(nm.size() > 2 && nm.compare(0, 2, "2_") == 0) {
+        baseCands.push_back("1_" + nm.substr(2));
+        baseCands.push_back(nm.substr(2));
+    }
+    if(nm.size() > 5 && nm.compare(nm.size() - 5, 5, "_lod2") == 0)
+        baseCands.push_back(nm.substr(0, nm.size() - 5));
+    if(nm.size() > 5 && nm.compare(nm.size() - 5, 5, "_lod1") == 0)
+        baseCands.push_back(nm.substr(0, nm.size() - 5));
+    if(nm.size() > 4 && nm.compare(nm.size() - 4, 4, "_lod") == 0)
+        baseCands.push_back(nm.substr(0, nm.size() - 4));
+}
+
 } // namespace customworld
 #endif

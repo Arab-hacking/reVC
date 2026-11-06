@@ -20,7 +20,7 @@ const char *matfx_env_vert_src =
 
 "	v_tex0 = (u_uvMatrix * vec4(in_tex0, 0.0, 1.0)).xy;\n"
 
-"	if(u_atmosphere.x > 0.5){\n"
+"	if(u_atmosphere.x > 0.5 || u_surfProps.w >= 1.5){\n"
 "		v_color = BR_EvalBuildingVertexColor(in_color, u_matColor, Vertex.xyz, Normal);\n"
 "		v_envColor = u_envColor;\n"
 "	}else{\n"

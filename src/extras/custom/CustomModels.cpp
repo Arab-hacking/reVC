@@ -393,6 +393,7 @@ ScanCommonZip(void)
 				// Reject oversized SA tables BEFORE inflating them. The formats are
 				// intentionally narrower than the general 64 MiB map/IMG ceiling.
 				if((key == "data/water.dat" && ent->uncompressedSize > 1024*1024) ||
+				   (key == "data/lods.info" && ent->uncompressedSize > 1024*1024) ||
 				   (key == "data/carcols.dat" && ent->uncompressedSize > 64*1024)) {
 					CUSTOM_LOG("common.zip: %s exceeds data table size limit\n", key.c_str());
 					continue;
@@ -401,6 +402,7 @@ ScanCommonZip(void)
 				src.zipEntry = n;
 				if(pass == 0 && (key == "data/config.dat" || key == "data/timecyc.json" ||
 			                 key == "data/water.dat" || key == "data/carcols.dat" ||
+			                 key == "data/lods.info" ||
 			                 key == "models/generic/vehicle.txd" || key == "models/vehicle.txd")) {
 					commonZipDataFiles.insert(std::make_pair(key, src));
 					continue;
@@ -2813,7 +2815,8 @@ CCustomModels::ReadDataFile(const char *relpath, std::vector<uint8> &out,
 	out.clear();
 	if(relpath == nil || (strcmp(relpath, "data/timecyc.json") != 0 &&
 	                       strcmp(relpath, "data/water.dat") != 0 &&
-	                       strcmp(relpath, "data/carcols.dat") != 0))
+	                       strcmp(relpath, "data/carcols.dat") != 0 &&
+	                       strcmp(relpath, "data/lods.info") != 0))
 		return false; // no arbitrary data, other ZIPs, or game-root common/ files
 	EnsureInitialised();
 	const CustomSource *zip = FindSource(commonZipDataFiles, relpath);
@@ -2823,16 +2826,16 @@ CCustomModels::ReadDataFile(const char *relpath, std::vector<uint8> &out,
 		return true;
 	}
 	out.clear();
-	// The new SA tables only come from this ZIP; do not load stale loose
-	// custom/data/ or game-root common/ tables by accident.
-	if(strcmp(relpath, "data/timecyc.json") != 0) {
+	// Loose fallback in custom/data/ is permitted only for timecyc.json and lods.info.
+	if(strcmp(relpath, "data/timecyc.json") != 0 && strcmp(relpath, "data/lods.info") != 0) {
 		if(zip != nil)
 			CUSTOM_LOG("data file %s: common.zip entry unreadable; no loose fallback\n", relpath);
 		return false;
 	}
 	const std::string data = Subfolder(customFolderPath, "data");
 	if(!data.empty()) {
-		const std::string path = data + "/timecyc.json";
+		const char *leaf = strcmp(relpath, "data/lods.info") == 0 ? "/lods.info" : "/timecyc.json";
+		const std::string path = data + leaf;
 		if(path.size() < sizeof(CustomSource::loose)) {
 			CustomSource src = MakeSource(FileTime(path.c_str()), path.c_str(), relpath);
 			if(ReadSource(src, out)) {

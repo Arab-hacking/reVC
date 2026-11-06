@@ -159,8 +159,14 @@ class GL3ShaderTests(unittest.TestCase):
         self.assertIn("u_brLightmap > 0.5", world_fs)
         self.assertIn("SampleBackbufferFXAA", post_fs)
         self.assertIn("br_sky_fbm", sky_cpp)
+        self.assertIn("nightMix", sky_cpp)
+        self.assertIn("HasValidRaster", sky_cpp)
+        self.assertIn("flags |= rpGEOMETRYLIGHT | rpGEOMETRYMODULATEMATERIALCOLOR;", sky_cpp)
         self.assertIn("openBottom", sky_cpp)
         self.assertIn("#define BRSKIN", skin_cpp)
+        for vs_file in (VENDOR / "default.vert", VENDOR / "skin.vert", VENDOR / "matfx_env.vert",
+                        EXTRAS / "default_UV2.vert", EXTRAS / "neoRim.vert", EXTRAS / "neoRimSkin.vert"):
+            self.assertIn("u_surfProps.w >= 1.5", embedded_source(vs_file))
 
 
 if __name__ == "__main__":

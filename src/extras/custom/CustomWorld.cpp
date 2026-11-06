@@ -54,6 +54,7 @@ bool ideLoaded = false, collisionLoaded = false;
 
 struct IdeContext : customworld::ModelIndex {
     unsigned files, parsed, bad, overlong;
+    std::unordered_set<std::string> lodIdeNames;
     IdeContext() : files(0), parsed(0), bad(0), overlong(0) {}
 };
 
@@ -61,8 +62,19 @@ void ReadIde(const char *path, const unsigned char *data, size_t size, void *use
 {
     IdeContext &ctx = *(IdeContext *)user;
     ctx.files++;
+    bool isLodFile = false;
+    if(path) {
+        std::string lp = customworld::Lower(path);
+        if(lp.size() >= 7 && lp.compare(lp.size() - 7, 7, "lod.ide") == 0 &&
+           (lp.size() == 7 || lp[lp.size() - 8] == '/' || lp[lp.size() - 8] == '\\'))
+            isLodFile = true;
+    }
     customworld::Stats stats = customworld::ParseIde(data, size,
-        [&ctx](const customworld::Model &m) { ctx.Add(m); },
+        [&ctx, isLodFile](const customworld::Model &m) {
+            ctx.Add(m);
+            if(isLodFile)
+                ctx.lodIdeNames.insert(customworld::Lower(m.name));
+        },
         [&ctx](const std::string &child, const std::string &parent) {
             ctx.AddTxdParent(child, parent);
         });
@@ -722,32 +734,45 @@ void CCustomWorld::LoadIde(void)
         }
     }
 
-    // 2. Fallback name-convention pairing for custom LOD models absent from lods.info
+    // 2. Complete lod.ide / naming-convention pairing (covers loose custom/data/maps/IDE/lod.ide
+    //    setups without lods.info as well as any lod.ide entries absent from lods.info).
     for(std::map<std::string, int>::const_iterator it = nameSlots.begin(); it != nameSlots.end(); ++it) {
         int candSlot = it->second;
         if(lodTargetSlots.find(candSlot) != lodTargetSlots.end()) continue;
         CBaseModelInfo *candInfo = CModelInfo::GetModelInfo(candSlot);
         if(!candInfo || !candInfo->IsBuilding()) continue;
         CSimpleModelInfo *candMi = (CSimpleModelInfo *)candInfo;
-        if(candMi->m_lodDistances[0] <= 300.0f) continue;
 
         const std::string &nm = it->first;
-        std::string base;
-        if(nm.size() > 3 && (nm.compare(0, 3, "l2_") == 0 || nm.compare(0, 3, "l3_") == 0))
-            base = nm.substr(3);
-        else if(nm.size() > 4 && nm.compare(0, 4, "lod_") == 0)
-            base = nm.substr(4);
-        else if(nm.size() > 5 && (nm.compare(nm.size() - 5, 5, "_lod2") == 0 || nm.compare(nm.size() - 5, 5, "_lod1") == 0))
-            base = nm.substr(0, nm.size() - 5);
-        else if(nm.size() > 4 && nm.compare(nm.size() - 4, 4, "_lod") == 0)
-            base = nm.substr(0, nm.size() - 4);
-        if(base.empty()) continue;
+        const bool fromLodIde = ctx.lodIdeNames.find(nm) != ctx.lodIdeNames.end();
+        if(!fromLodIde && candMi->m_lodDistances[0] <= 300.0f) continue;
 
-        std::map<std::string, int>::const_iterator baseIt = nameSlots.find(base);
-        if(baseIt == nameSlots.end())
-            baseIt = nameSlots.find("1_" + base);
-        if(baseIt != nameSlots.end())
-            bindLodChain(baseIt->second, candSlot, -1);
+        std::vector<std::string> baseCands;
+        customworld::CollectLodBaseCandidates(nm, baseCands);
+
+        for(size_t ci = 0; ci < baseCands.size(); ci++) {
+            std::map<std::string, int>::const_iterator baseIt = nameSlots.find(baseCands[ci]);
+            if(baseIt == nameSlots.end() || baseIt->second == candSlot) continue;
+            if(lodTargetSlots.find(baseIt->second) != lodTargetSlots.end()) continue;
+            CBaseModelInfo *baseInfo = CModelInfo::GetModelInfo(baseIt->second);
+            if(!baseInfo || !baseInfo->IsBuilding()) continue;
+            CSimpleModelInfo *baseMi = (CSimpleModelInfo *)baseInfo;
+            if(candMi->m_lodDistances[0] <= baseMi->m_lodDistances[0]) continue;
+
+            // Check optional 3rd-tier LOD (3_<stem> or l3_<stem>)
+            int tier3Slot = -1;
+            std::string stem;
+            if(nm.size() > 2 && nm.compare(0, 2, "2_") == 0) stem = nm.substr(2);
+            else if(nm.size() > 3 && nm.compare(0, 3, "l2_") == 0) stem = nm.substr(3);
+            if(!stem.empty()) {
+                std::map<std::string, int>::const_iterator t3 = nameSlots.find("3_" + stem);
+                if(t3 == nameSlots.end()) t3 = nameSlots.find("l3_" + stem);
+                if(t3 != nameSlots.end() && lodTargetSlots.find(t3->second) == lodTargetSlots.end())
+                    tier3Slot = t3->second;
+            }
+            if(bindLodChain(baseIt->second, candSlot, tier3Slot))
+                break;
+        }
     }
 
     // 3. Long-range landmarks (drawDist > 305m) with no separate LOD mesh
@@ -757,6 +782,9 @@ void CCustomWorld::LoadIde(void)
             continue;
         CBaseModelInfo *info = CModelInfo::GetModelInfo(s);
         if(!info || !info->IsBuilding()) continue;
+        std::string lowName = customworld::Lower(info->GetModelName());
+        if(lowName.compare(0, 7, "br_sky_") == 0 || lowName == "br_skydome")
+            continue;
         CSimpleModelInfo *smi = (CSimpleModelInfo *)info;
         if(!smi->m_isBigBuilding && smi->m_lodDistances[0] > 305.0f) {
             smi->m_lodDistances[2] = 300.0f;
