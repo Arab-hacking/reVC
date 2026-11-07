@@ -34,7 +34,12 @@ namespace CrashHandler {
         tm* timeInfo = localtime(&currentTime);
 
         Logger::CrashLog("Crash time: %d:%d:%d %d:%d:%d", timeInfo->tm_mday, timeInfo->tm_mon, timeInfo->tm_year, timeInfo->tm_hour, timeInfo->tm_min, timeInfo->tm_sec);
-        Logger::CrashLog("Build times: %s %s. ABI: %s", __TIME__, __DATE__, (ANDROID_x32 ? "armeabi-v7a" : "arm64-v8a"));
+#if defined(__arm__)
+        const char *abi = "armeabi-v7a";
+#else
+        const char *abi = "arm64-v8a";
+#endif
+        Logger::CrashLog("Build times: %s %s. ABI: %s", __TIME__, __DATE__, abi);
         Logger::CrashLog("Last processed auto and entity: %d %d", g_usLastProcessedModelIndexAutomobile, g_iLastProcessedModelIndexAutoEnt);
         Logger::CrashLog("Last rendered object: %d", g_iLastRenderedObject);
     }

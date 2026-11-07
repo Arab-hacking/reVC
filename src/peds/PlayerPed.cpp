@@ -255,12 +255,15 @@ CPlayerPed::ReApplyMoveAnims(void)
 	for(int i = 0; i < ARRAY_SIZE(moveAnims); i++) {
 		CAnimBlendAssociation *curMoveAssoc = RpAnimBlendClumpGetAssociation(GetClump(), moveAnims[i]);
 		if (curMoveAssoc) {
-			if (CGeneral::faststrcmp(CAnimManager::GetAnimAssociation(m_animGroup, moveAnims[i])->hierarchy->name, curMoveAssoc->hierarchy->name)) {
+			CAnimBlendAssociation *requestedMoveAssoc = CAnimManager::GetAnimAssociation(GetClump(), m_animGroup, moveAnims[i]);
+			if (requestedMoveAssoc && CGeneral::faststrcmp(requestedMoveAssoc->hierarchy->name, curMoveAssoc->hierarchy->name)) {
 				CAnimBlendAssociation *newMoveAssoc = CAnimManager::AddAnimation(GetClump(), m_animGroup, moveAnims[i]);
-				newMoveAssoc->blendDelta = curMoveAssoc->blendDelta;
-				newMoveAssoc->blendAmount = curMoveAssoc->blendAmount;
-				curMoveAssoc->blendDelta = -1000.0f;
-				curMoveAssoc->flags |= ASSOC_DELETEFADEDOUT;
+				if(newMoveAssoc){
+					newMoveAssoc->blendDelta = curMoveAssoc->blendDelta;
+					newMoveAssoc->blendAmount = curMoveAssoc->blendAmount;
+					curMoveAssoc->blendDelta = -1000.0f;
+					curMoveAssoc->flags |= ASSOC_DELETEFADEDOUT;
+				}
 			}
 		}
 	}
@@ -315,6 +318,30 @@ CPlayerPed::SetInitialState(void)
 void
 CPlayerPed::SetRealMoveAnim(void)
 {
+	// A custom style can omit movement clips. Fall back to the *same*
+	// skeleton's standard group, never to the other skeleton's dictionary.
+	AssocGroupId moveGroup = m_animGroup;
+	if(!CAnimManager::GetAnimAssociation(GetClump(), moveGroup, ANIM_STD_WALK) ||
+	   !CAnimManager::GetAnimAssociation(GetClump(), moveGroup, ANIM_STD_RUN) ||
+	   !CAnimManager::GetAnimAssociation(GetClump(), moveGroup, ANIM_STD_IDLE))
+		moveGroup = ASSOCGRP_STD;
+	if(!CAnimManager::GetAnimAssociation(GetClump(), moveGroup, ANIM_STD_WALK) ||
+	   !CAnimManager::GetAnimAssociation(GetClump(), moveGroup, ANIM_STD_RUN) ||
+	   !CAnimManager::GetAnimAssociation(GetClump(), moveGroup, ANIM_STD_IDLE)){
+		static int lastMissingModel = -1;
+		static int lastMissingGroup = -1;
+		if(lastMissingModel != GetModelIndex() || lastMissingGroup != moveGroup){
+			REVC_LOG_WARNING("Player movement: missing core animations in this skeleton's bank (model=%d, group=%d)",
+				GetModelIndex(), moveGroup);
+			lastMissingModel = GetModelIndex();
+			lastMissingGroup = moveGroup;
+		}
+		return;
+	}
+	if(m_nMoveState == PEDMOVE_SPRINT &&
+	   !CAnimManager::GetAnimAssociation(GetClump(), moveGroup, ANIM_STD_RUNFAST))
+		m_nMoveState = PEDMOVE_RUN;
+
 	CAnimBlendAssociation *curWalkAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_WALK);
 	CAnimBlendAssociation *curRunAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_RUN);
 	CAnimBlendAssociation *curSprintAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_RUNFAST);
@@ -359,8 +386,12 @@ CPlayerPed::SetRealMoveAnim(void)
 					curIdleAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_IDLE_TIRED, 8.0f);
 
 				} else {
-					curIdleAssoc = CAnimManager::BlendAnimation(GetClump(), m_animGroup, ANIM_STD_IDLE, 8.0f);
+					curIdleAssoc = CAnimManager::BlendAnimation(GetClump(), moveGroup, ANIM_STD_IDLE, 8.0f);
 				}
+				if(!curIdleAssoc)
+					curIdleAssoc = CAnimManager::BlendAnimation(GetClump(), moveGroup, ANIM_STD_IDLE, 8.0f);
+				if(!curIdleAssoc)
+					return;
 				m_nWaitTimer = CTimer::GetTimeInMilliseconds() + CGeneral::GetRandomNumberInRange(2500, 4000);
 			}
 			curIdleAssoc->blendAmount = 0.0f;
@@ -373,14 +404,18 @@ CPlayerPed::SetRealMoveAnim(void)
 					curIdleAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_IDLE_TIRED, 4.0f);
 					
 				} else {
-					curIdleAssoc = CAnimManager::BlendAnimation(GetClump(), m_animGroup, ANIM_STD_IDLE, 4.0f);
+					curIdleAssoc = CAnimManager::BlendAnimation(GetClump(), moveGroup, ANIM_STD_IDLE, 4.0f);
 				}
+				if(!curIdleAssoc)
+					curIdleAssoc = CAnimManager::BlendAnimation(GetClump(), moveGroup, ANIM_STD_IDLE, 4.0f);
+				if(!curIdleAssoc)
+					return;
 
 				m_nWaitTimer = CTimer::GetTimeInMilliseconds() + CGeneral::GetRandomNumberInRange(2500, 4000);
 			}
 
 			if ((m_fCurrentStamina > 0.0f || bIsAimingGun) && curIdleAssoc->animId == ANIM_STD_IDLE_TIRED) {
-				CAnimManager::BlendAnimation(GetClump(), m_animGroup, ANIM_STD_IDLE, 4.0f);
+				CAnimManager::BlendAnimation(GetClump(), moveGroup, ANIM_STD_IDLE, 4.0f);
 
 			} else if (m_nPedState != PED_FIGHT) {
 				if (m_fCurrentStamina < 0.0f && !bIsAimingGun && curIdleAssoc->animId != ANIM_STD_IDLE_TIRED
@@ -388,7 +423,7 @@ CPlayerPed::SetRealMoveAnim(void)
 					CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_IDLE_TIRED, 4.0f);
 
 				} else if (curIdleAssoc->animId != ANIM_STD_IDLE) {
-					CAnimManager::BlendAnimation(GetClump(), m_animGroup, ANIM_STD_IDLE, 4.0f);
+					CAnimManager::BlendAnimation(GetClump(), moveGroup, ANIM_STD_IDLE, 4.0f);
 				}
 			}
 			m_nMoveState = PEDMOVE_STILL;
@@ -399,7 +434,7 @@ CPlayerPed::SetRealMoveAnim(void)
 					curWalkStartAssoc->blendAmount = 1.0f;
 					curWalkStartAssoc->blendDelta = 0.0f;
 				} else {
-					curWalkStartAssoc = CAnimManager::AddAnimation(GetClump(), m_animGroup, ANIM_STD_STARTWALK);
+					curWalkStartAssoc = CAnimManager::AddAnimation(GetClump(), moveGroup, ANIM_STD_STARTWALK);
 				}
 				if (curWalkAssoc)
 					curWalkAssoc->SetCurrentTime(0.0f);
@@ -426,11 +461,15 @@ CPlayerPed::SetRealMoveAnim(void)
 				RestoreHeadingRate();
 			}
 			if (!curWalkAssoc) {
-				curWalkAssoc = CAnimManager::AddAnimation(GetClump(), m_animGroup, ANIM_STD_WALK);
+				curWalkAssoc = CAnimManager::AddAnimation(GetClump(), moveGroup, ANIM_STD_WALK);
+				if(!curWalkAssoc)
+					return;
 				curWalkAssoc->blendAmount = 0.0f;
 			}
 			if (!curRunAssoc) {
-				curRunAssoc = CAnimManager::AddAnimation(GetClump(), m_animGroup, ANIM_STD_RUN);
+				curRunAssoc = CAnimManager::AddAnimation(GetClump(), moveGroup, ANIM_STD_RUN);
+				if(!curRunAssoc)
+					return;
 				curRunAssoc->blendAmount = 0.0f;
 			}
 			if (curWalkStartAssoc && !(curWalkStartAssoc->IsRunning())) {
@@ -461,9 +500,11 @@ CPlayerPed::SetRealMoveAnim(void)
 						else
 							runStopAnim = ANIM_STD_RUNSTOP2;
 						CAnimBlendAssociation* newRunStopAssoc = CAnimManager::AddAnimation(GetClump(), ASSOCGRP_STD, runStopAnim);
-						newRunStopAssoc->blendAmount = 1.0f;
-						newRunStopAssoc->SetDeleteCallback(RestoreHeadingRateCB, this);
-						m_headingRate = 0.0f;
+						if(newRunStopAssoc){
+							newRunStopAssoc->blendAmount = 1.0f;
+							newRunStopAssoc->SetDeleteCallback(RestoreHeadingRateCB, this);
+							m_headingRate = 0.0f;
+						}
 						curSprintAssoc->flags |= ASSOC_DELETEFADEDOUT;
 						curSprintAssoc->blendDelta = -1000.0f;
 						curWalkAssoc->flags &= ~ASSOC_RUNNING;
@@ -502,7 +543,7 @@ CPlayerPed::SetRealMoveAnim(void)
 					// Transition between run-sprint
 					curWalkAssoc->blendAmount = 0.0f;
 					curRunAssoc->blendAmount = 1.0f;
-					curSprintAssoc = CAnimManager::BlendAnimation(GetClump(), m_animGroup, ANIM_STD_RUNFAST, 2.0f);
+					curSprintAssoc = CAnimManager::BlendAnimation(GetClump(), moveGroup, ANIM_STD_RUNFAST, 2.0f);
 				}
 				UseSprintEnergy();
 			} else {
@@ -644,7 +685,8 @@ CPlayerPed::RunningLand(CPad *padUsed)
 		landAssoc->blendDelta = -1000.0f;
 		landAssoc->flags |= ASSOC_DELETEFADEDOUT;
 
-		CAnimManager::AddAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_JUMP_LAND)->SetFinishCallback(FinishJumpCB, this);
+		if (CAnimBlendAssociation *jump = CAnimManager::AddAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_JUMP_LAND))
+			jump->SetFinishCallback(FinishJumpCB, this);
 
 		if (m_nPedState == PED_JUMP)
 			RestorePreviousState();
@@ -1771,7 +1813,10 @@ CPlayerPed::ProcessControl(void)
 						else
 							rollDoorAssoc = CAnimManager::AddAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_CAR_CLOSE_DOOR_ROLLING_LHS);
 
-						rollDoorAssoc->SetFinishCallback(PedAnimDoorCloseRollingCB, this);
+						if (rollDoorAssoc)
+							rollDoorAssoc->SetFinishCallback(PedAnimDoorCloseRollingCB, this);
+						else
+							PedAnimDoorCloseRollingCB(nil, this);
 					}
 				}
 			}
@@ -2044,7 +2089,12 @@ CPlayerPed::PlayIdleAnimations(CPad *padUsed)
 				while (lastAnim == anim);
 
 				assoc = CAnimManager::BlendAnimation(GetClump(), idleAnims[anim].groupId, idleAnims[anim].animId, 8.0f);
-				assoc->flags |= ASSOC_IDLE;
+				// SA ped banks may omit the native playidles entirely.
+				if (assoc)
+					assoc->flags |= ASSOC_IDLE;
+				else
+					REVC_LOG_WARNING("Skipping missing player idle animation (group=%d, id=%d)",
+						idleAnims[anim].groupId, idleAnims[anim].animId);
 				lastAnim = anim;
 				lastTime = sinceLastInput;
 			}

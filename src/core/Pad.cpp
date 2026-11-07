@@ -26,6 +26,19 @@
 #include "World.h"
 #include "Vehicle.h"
 #include "Ped.h"
+#include "PlayerPed.h"
+#include "ModelInfo.h"
+#include "PedModelInfo.h"
+#include "AnimManager.h"
+#include "WeaponInfo.h"
+#include "PlayerModelCycle.h"
+#include "Clock.h"
+#include "Timecycle.h"
+#include "CustomSky.h"
+#include "CustomSkyMath.h"
+#ifdef CUSTOM_MODELS
+#include "CustomModels.h"
+#endif
 #include "Population.h"
 #include "Record.h"
 #include "Replay.h"
@@ -390,6 +403,118 @@ void ChangePlayerModel(const char* name) {
 		CStreaming::LoadAllRequestedModels(0);
 		FindPlayerPed()->Dress();
 	}
+}
+
+void
+CPad::ProcessPlayerModelKeys(void)
+{
+#ifdef GTA_PC_CONTROLS
+	CPad *pad = GetPad(PAD1);
+	if(FrontEndMenuManager.m_bMenuActive || CCutsceneMgr::IsRunning() ||
+	   CReplay::IsPlayingBack() || pad->ArePlayerControlsDisabled())
+		return;
+	const bool minus = pad->GetCharJustDown('-') || pad->GetMinusJustDown();
+	// On GLFW/SDL/Win32 the main keyboard '+' is Shift+Equal. The keypad
+	// sends a separate rsPLUS event; don't treat a plain '=' as plus.
+	const bool plus = pad->GetPlusJustDown() || pad->GetCharJustDown('+') ||
+		(pad->GetCharJustDown('=') &&
+		 (pad->GetShift() || pad->GetLeftShift() || pad->GetRightShift()));
+	if(minus == plus) return;
+	CPlayerPed *ped = FindPlayerPed();
+	if(!ped || !ped->m_rwObject || ped->InVehicle() || !ped->IsPedInControl())
+		return;
+
+	const int oldId = ped->GetModelIndex();
+	const int direction = plus ? 1 : -1;
+	auto eligible = [](int id) {
+		CBaseModelInfo *base = CModelInfo::GetModelInfo(id);
+		if(!base || base->GetModelType() != MITYPE_PED) return false;
+		CPedModelInfo *info = (CPedModelInfo*)base;
+		if(info->m_animGroup >= NUM_ANIM_ASSOC_GROUPS) return false;
+		bool registered = CStreaming::HasModelLoaded(id) ||
+			CStreaming::ms_aInfoForModel[id].m_size != 0;
+#ifdef CUSTOM_MODELS
+		if(!registered) registered = CCustomModels::HasModelFile(info->GetModelName());
+#endif
+		return registered;
+	};
+	int modelId = oldId, firstTried = -1;
+	for(;;){
+		modelId = FindNextPlayerModel(modelId, direction, MODELINFOSIZE, eligible);
+		if(modelId < 0 || modelId == oldId || modelId == firstTried) return;
+		if(firstTried < 0) firstTried = modelId;
+
+		// A bad/missing asset must not destroy the player's current clump;
+		// try the next registered ped instead of blocking the whole cycle.
+		uint8 previousFlags = CStreaming::ms_aInfoForModel[modelId].m_flags;
+		CStreaming::RequestModel(modelId, STREAMFLAGS_DEPENDENCY | STREAMFLAGS_DONT_REMOVE);
+		CStreaming::LoadAllRequestedModels(false);
+		CPedModelInfo *info = (CPedModelInfo*)CModelInfo::GetModelInfo(modelId);
+		if(!CStreaming::HasModelLoaded(modelId) || !info->GetRwObject()){
+			REVC_LOG_WARNING("Player model %d (%s) did not load; trying next skin",
+				modelId, info->GetModelName());
+			if(!(previousFlags & STREAMFLAGS_DONT_REMOVE))
+				CStreaming::SetModelIsDeletable(modelId);
+			continue;
+		}
+
+		// Remove while the OLD hit bounds/model are still valid; then insert
+		// the new model into the proper sectors and restore weapon attachments.
+		ped->ClearAttack();
+		ped->ClearWeaponTarget();
+		CWorld::Remove(ped);
+		ped->RemoveWeaponModel(-1);
+		ped->DeleteRwObject();
+		ped->SetModelIndex(modelId); // chooses VC/SA association bank from the model
+		CWorld::Add(ped);
+		int weaponId = CWeaponInfo::GetWeaponInfo(ped->GetWeapon()->m_eWeaponType)->m_nModelId;
+		if(weaponId >= 0 && CStreaming::HasModelLoaded(weaponId))
+			ped->AddWeaponModel(weaponId);
+		if(!(previousFlags & STREAMFLAGS_DONT_REMOVE))
+			CStreaming::SetModelIsDeletable(modelId);
+		REVC_LOG_INFO("Player model changed: %d -> %d (%s, %s animations)",
+			oldId, modelId, info->GetModelName(), info->UsesSAAnimations() ? "SA" : "VC");
+		return;
+	}
+#endif
+}
+
+void
+CPad::ProcessTimeOfDayKeys(void)
+{
+#ifdef GTA_PC_CONTROLS
+	CPad *pad = GetPad(PAD1);
+	if(FrontEndMenuManager.m_bMenuActive || CCutsceneMgr::IsRunning() ||
+	   CReplay::IsPlayingBack())
+		return;
+
+	const bool shiftHeld = pad->GetShift() || pad->GetLeftShift() || pad->GetRightShift();
+	if(pad->GetTimesJustDown() && shiftHeld){
+		CCustomSky::Mode m = CCustomSky::CycleMode();
+		REVC_LOG_INFO("Sky mode switched via Shift+Num*: %s", CCustomSky::GetModeName(m));
+		return;
+	}
+
+	int newHour = -1;
+	int newMinute = CClock::GetMinutes();
+	if(pad->GetDivideJustDown()){
+		newHour = customsky::StepClockHour(CClock::GetHours(), -1);
+	}else if(pad->GetTimesJustDown()){
+		newHour = customsky::StepClockHour(CClock::GetHours(), 1);
+	}else if(pad->GetPad7JustDown()){
+		newHour = customsky::StepPresetHour(CClock::GetHours(), -1);
+		newMinute = 0;
+	}else if(pad->GetPad3JustDown()){
+		newHour = customsky::StepPresetHour(CClock::GetHours(), 1);
+		newMinute = 0;
+	}
+
+	if(newHour >= 0){
+		CClock::SetGameClock((uint8)newHour, (uint8)newMinute);
+		CTimeCycle::Update();
+		REVC_LOG_INFO("Time of day changed via Numpad: %02d:%02d", newHour, newMinute);
+	}
+#endif
 }
 
 void MayhemCheat()
@@ -874,10 +999,6 @@ CMouseControllerState CMousePointerStateHelper::GetMouseSetUp()
 #if !defined(LIBRW_SDL2)
     double xpos = 1.0f, ypos;
 	glfwGetCursorPos(PSGLOBAL(window), &xpos, &ypos);
-#else
-    int xpos = 1, ypos;
-    SDL_GetMouseState(&xpos, &ypos);
-#endif
 	if (xpos != 0.f) {
 		state.MMB = true;
 		state.RMB = true;
@@ -885,6 +1006,13 @@ CMouseControllerState CMousePointerStateHelper::GetMouseSetUp()
 		state.WHEELDN = true;
 		state.WHEELUP = true;
 	}
+#else
+	state.MMB = true;
+	state.RMB = true;
+	state.LMB = true;
+	state.WHEELDN = true;
+	state.WHEELUP = true;
+#endif
 #endif
 
 	return state;
@@ -893,6 +1021,7 @@ CMouseControllerState CMousePointerStateHelper::GetMouseSetUp()
 #ifdef LIBRW_SDL2
 bool _InputMouseIsRelative(void);
 void _InputConsumeMouseRelative(int *dx, int *dy);
+int  _InputConsumeLatchedMouseButtons(void);
 #endif
 
 void CPad::UpdateMouse()
@@ -941,19 +1070,18 @@ void CPad::UpdateMouse()
 	if ( IsForegroundApp() && PSGLOBAL(cursorIsInWindow) )
 	{
 #ifdef LIBRW_SDL2
-        int xpos = 1, ypos;
-        int mouseState = SDL_GetMouseState(&xpos, &ypos);
+        int xpos = 1, ypos = 0;
+        int mouseState = SDL_GetMouseState(&xpos, &ypos) | _InputConsumeLatchedMouseButtons();
+#ifndef ANDROID
+        if (!_InputMouseIsRelative() && xpos == 0 && mouseState == 0)
+            return;
+#endif
 #else
         double xpos = 1.0f, ypos;
 		glfwGetCursorPos(PSGLOBAL(window), &xpos, &ypos);
+		if (xpos == 0.f)
+			return;
 #endif
-		#ifdef LIBRW_SDL2
-		        if (!_InputMouseIsRelative() && xpos == 0)
-		            return;
-		#else
-		        if (xpos == 0.f)
-		            return;
-		#endif
 
 		int32 signX = 1;
 		int32 signy = 1;
@@ -968,20 +1096,18 @@ void CPad::UpdateMouse()
 
 		PCTempMouseControllerState.Clear();
 
-		#ifdef LIBRW_SDL2
-		        if (_InputMouseIsRelative()) {
-		            // true relative deltas from the motion events; polled positions are
-		            // confined and stall at window/monitor edges
-		            int dx, dy;
-		            _InputConsumeMouseRelative(&dx, &dy);
-		            PCTempMouseControllerState.x = (float)(signX * dx);
-		            PCTempMouseControllerState.y = (float)(signy * dy);
-		        } else
-		#endif
-		        {
-		            PCTempMouseControllerState.x = (float)(signX * (xpos - PSGLOBAL(lastMousePos.x)));
-		            PCTempMouseControllerState.y = (float)(signy * (ypos - PSGLOBAL(lastMousePos.y)));
-		        }
+#ifdef LIBRW_SDL2
+		if (_InputMouseIsRelative()) {
+			int dx = 0, dy = 0;
+			_InputConsumeMouseRelative(&dx, &dy);
+			PCTempMouseControllerState.x = (float)(signX * dx);
+			PCTempMouseControllerState.y = (float)(signy * dy);
+		} else
+#endif
+		{
+			PCTempMouseControllerState.x = (float)(signX * (xpos - PSGLOBAL(lastMousePos.x)));
+			PCTempMouseControllerState.y = (float)(signy * (ypos - PSGLOBAL(lastMousePos.y)));
+		}
 #ifdef LIBRW_SDL2
         PCTempMouseControllerState.LMB = !!(mouseState & SDL_BUTTON(1));
         PCTempMouseControllerState.RMB = !!(mouseState & SDL_BUTTON(3));

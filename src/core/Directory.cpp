@@ -4,8 +4,8 @@
 #include "FileMgr.h"
 #include "Directory.h"
 
-CDirectory::CDirectory(int32 maxEntries)
- : numEntries(0), maxEntries(maxEntries)
+CDirectory::CDirectory(int32 capacity)
+ : entries(nil), maxEntries(capacity > 0 ? capacity : 1), numEntries(0)
 {
 	entries = new DirectoryInfo[maxEntries];
 }
@@ -41,21 +41,39 @@ CDirectory::WriteDirFile(const char *filename)
 void
 CDirectory::AddItem(const DirectoryInfo &dirinfo)
 {
-	assert(numEntries < maxEntries);
 #ifdef FIX_BUGS
-	// don't add if already exists
+	// Keep the first copy (and its IMG offset) when multiple images contain
+	// the same model. A duplicate must not consume a directory slot.
 	uint32 offset, size;
 	if(FindItem(dirinfo.name, offset, size))
 		return;
 #endif
-	entries[numEntries++] = dirinfo;
+	// The source may itself be one of entries; copy before any reallocation.
+	DirectoryInfo toAdd = dirinfo;
+	// Native DFFs without a loaded IDE still belong in the extra-objects
+	// directory: scripts can request them later as special models. Disabling
+	// the VC map leaves more such entries than the original 256-slot reserve.
+	if(numEntries == maxEntries){
+		if(maxEntries == INT32_MAX){
+			REVC_LOG_ERROR("CD directory cannot hold more than %d entries", maxEntries);
+			return;
+		}
+		int32 newCapacity = maxEntries <= INT32_MAX / 2 ? maxEntries * 2 : INT32_MAX;
+		DirectoryInfo *grown = new DirectoryInfo[newCapacity];
+		memcpy(grown, entries, (size_t)numEntries * sizeof(*entries));
+		delete[] entries;
+		entries = grown;
+		REVC_LOG_INFO("CD directory capacity increased from %d to %d entries", maxEntries, newCapacity);
+		maxEntries = newCapacity;
+	}
+	entries[numEntries++] = toAdd;
 }
 
 void
 CDirectory::AddItem(const DirectoryInfo &dirinfo, int32 imgId)
 {
 	DirectoryInfo di = dirinfo;
-	di.offset |= imgId<<24;
+	di.offset |= (uint32)imgId<<24;
 	AddItem(di);
 }
 

@@ -6,6 +6,9 @@
 #include "ModelInfo.h"
 #include "AnimManager.h"
 #include "custompipes.h"
+#ifdef CUSTOM_MODELS
+#include "CustomModels.h"
+#endif
 
 void
 CSimpleModelInfo::DeleteRwObject(void)

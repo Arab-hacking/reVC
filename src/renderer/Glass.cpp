@@ -869,10 +869,10 @@ CGlass::HasGlassBeenShatteredAtCoors(float x, float y, float z)
 	CEntity *entity = nil;
 	float dist = 20.0f;
 	  
-	int32 nStartX = Max(CWorld::GetSectorIndexX(x - 30.0f), 0);
-	int32 nStartY = Max(CWorld::GetSectorIndexY(y - 30.0f), 0);
-	int32 nEndX   = Min(CWorld::GetSectorIndexX(x + 30.0f), NUMSECTORS_X-1);
-	int32 nEndY   = Min(CWorld::GetSectorIndexY(y + 30.0f), NUMSECTORS_Y-1);
+	int32 nStartX = CWorld::GetSectorIndexX(x - 30.0f);
+	int32 nStartY = CWorld::GetSectorIndexY(y - 30.0f);
+	int32 nEndX   = CWorld::GetSectorIndexX(x + 30.0f);
+	int32 nEndY   = CWorld::GetSectorIndexY(y + 30.0f);
 
 	CWorld::AdvanceCurrentScanCode();
 	

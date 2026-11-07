@@ -2124,10 +2124,15 @@ int8 CRunningScript::ProcessCommands900To999(int32 command)
 	case COMMAND_ADD_BLIP_FOR_PICKUP:
 	{
 		CollectParameters(&m_nIp, 1);
-		CObject* pObject = CPickups::aPickUps[CPickups::GetActualPickupIndex(ScriptParams[0])].m_pObject;
+		int pickupIndex = CPickups::GetActualPickupIndex(ScriptParams[0]);
+		CObject* pObject = pickupIndex >= 0 ? CPickups::aPickUps[pickupIndex].m_pObject : nil;
 		CRadar::GetActualBlipArrayIndex(CollectNextParameterWithoutIncreasingPC(m_nIp));
-		int handle = CRadar::SetEntityBlip(BLIP_OBJECT, CPools::GetObjectPool()->GetIndex(pObject), 6, BLIP_DISPLAY_BOTH);
-		CRadar::ChangeBlipScale(handle, 3);
+		int handle = -1;
+		if (pObject != nil) {
+			handle = CRadar::SetEntityBlip(BLIP_OBJECT, CPools::GetObjectPool()->GetIndex(pObject), 6, BLIP_DISPLAY_BOTH);
+			if (handle != -1)
+				CRadar::ChangeBlipScale(handle, 3);
+		}
 		ScriptParams[0] = handle;
 		StoreParameters(&m_nIp, 1);
 		return 0;

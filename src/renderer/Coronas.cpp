@@ -665,16 +665,17 @@ CCoronas::DoSunAndMoon(void)
 	sunCoors += TheCamera.GetPosition();
 
 	if(CTimeCycle::GetSunDirection().z > -0.2f){
-		float size = ((CGeneral::GetRandomNumber()&0xFF) * 0.005f + 10.0f) * CTimeCycle::GetSunSize();
+		float effectiveSunSize = Min(CTimeCycle::GetSunSize(), 3.2f) * 0.34f;
+		float size = ((CGeneral::GetRandomNumber()&0xFF) * 0.005f + 10.0f) * effectiveSunSize;
 		RegisterCorona(SUN_CORE,
 			CTimeCycle::GetSunCoreRed(), CTimeCycle::GetSunCoreGreen(), CTimeCycle::GetSunCoreBlue(),
-			255, sunCoors, size,
+			175, sunCoors, size,
 			999999.88f, TYPE_STAR, FLARE_NONE, REFLECTION_OFF, LOSCHECK_OFF, STREAK_OFF, 0.0f);
 
 		if(CTimeCycle::GetSunDirection().z > 0.0f && !CGame::IsInInterior())
 			RegisterCorona(SUN_CORONA,
 				CTimeCycle::GetSunCoronaRed(), CTimeCycle::GetSunCoronaGreen(), CTimeCycle::GetSunCoronaBlue(),
-				255, sunCoors, 25.0f * CTimeCycle::GetSunSize(),
+				105, sunCoors, 22.0f * effectiveSunSize,
 				999999.88f, TYPE_STAR, FLARE_SUN, REFLECTION_OFF, LOSCHECK_ON, STREAK_OFF, 0.0f);
 	}
 
@@ -851,20 +852,22 @@ CEntity::ProcessLightsForEntity(void)
 			}
 
 			// Corona
-			if(lightOn)
-				CCoronas::RegisterCorona((uintptr)this + i,
-					effect->col.r, effect->col.g, effect->col.b, 255,
-					pos, effect->light.size, effect->light.dist,
-					effect->light.corona, effect->light.flareType, effect->light.roadReflection,
-					effect->light.flags&LIGHTFLAG_LOSCHECK, CCoronas::STREAK_OFF, 0.0f,
-					!!(effect->light.flags&LIGHTFLAG_LONG_DIST));
-			else if(lightFlickering)
-				CCoronas::RegisterCorona((uintptr)this + i,
-					0, 0, 0, 255,
-					pos, effect->light.size, effect->light.dist,
-					effect->light.corona, effect->light.flareType, effect->light.roadReflection,
-					effect->light.flags&LIGHTFLAG_LOSCHECK, CCoronas::STREAK_OFF, 0.0f,
-					!!(effect->light.flags&LIGHTFLAG_LONG_DIST));
+			if(effect->light.corona && effect->light.size > 0.0f){
+				if(lightOn)
+					CCoronas::RegisterCorona((uintptr)this + i,
+						effect->col.r, effect->col.g, effect->col.b, 255,
+						pos, effect->light.size, effect->light.dist,
+						effect->light.corona, effect->light.flareType, effect->light.roadReflection,
+						effect->light.flags&LIGHTFLAG_LOSCHECK, CCoronas::STREAK_OFF, 0.0f,
+						!!(effect->light.flags&LIGHTFLAG_LONG_DIST));
+				else if(lightFlickering)
+					CCoronas::RegisterCorona((uintptr)this + i,
+						0, 0, 0, 255,
+						pos, effect->light.size, effect->light.dist,
+						effect->light.corona, effect->light.flareType, effect->light.roadReflection,
+						effect->light.flags&LIGHTFLAG_LOSCHECK, CCoronas::STREAK_OFF, 0.0f,
+						!!(effect->light.flags&LIGHTFLAG_LONG_DIST));
+			}
 
 			// Pointlight
 			bool alreadyProcessedFog;
@@ -906,7 +909,7 @@ CEntity::ProcessLightsForEntity(void)
 			}
 
 			// Light shadow
-			if(effect->light.shadowSize != 0.0f){
+			if(effect->light.shadow && effect->light.shadowSize != 0.0f){
 				if(lightOn){
 					CShadows::StoreStaticShadow((uintptr)this + i, SHADOWTYPE_ADDITIVE,
 						effect->light.shadow, &pos,

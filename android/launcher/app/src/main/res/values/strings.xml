@@ -1,3 +1,11 @@
 <resources>
     <string name="app_name">reVC</string>
+    <string name="game_instructions">To play, use the files from your own PC copy of GTA Vice City. Copy the entire game directory to your device, then select it here. This APK contains the reVC engine and support files, not the copyrighted game data.</string>
+    <string name="preparing_game">Preparing reVC files…</string>
+    <string name="game_files_missing">Select a Vice City folder with data, models and audio subfolders. data/gta_vc.dat and models/gta3.img were not found.</string>
+    <string name="import_game">Select and import game folder</string>
+    <string name="play_game">Play</string>
+    <string name="import_progress">Files imported: %1$d</string>
+    <string name="import_failed">Could not prepare game files: %1$s</string>
+    <string name="game_ready">Game files found in %1$s. Ready to launch.</string>
 </resources>

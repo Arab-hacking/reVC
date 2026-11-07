@@ -12,6 +12,7 @@
 #include "Renderer.h"
 #include "World.h"
 #include "custompipes.h"
+#include "custom/GraphicsBtx.h"
 
 #ifdef EXTENDED_PIPELINES
 
@@ -27,8 +28,8 @@ static int32 u_rampEnd;
 static int32 u_rimData;
 
 static int32 u_lightMap;
+static int32 u_brLightmap;
 
-static int32 u_eye;
 static int32 u_reflProps;
 static int32 u_specDir;
 static int32 u_specColor;
@@ -80,7 +81,7 @@ vehicleRenderCB(rw::Atomic *atomic, rw::gl3::InstanceDataHeader *header)
 	using namespace rw::gl3;
 
 	// TODO: make this less of a kludge
-	if(VehiclePipeSwitch == VEHICLEPIPE_MATFX){
+	if(VehiclePipeSwitch == VEHICLEPIPE_MATFX || EnvMapTex == nil){
 		matFXGlobals.pipelines[rw::platform]->render(atomic);
 		return;
 	}
@@ -98,9 +99,8 @@ vehicleRenderCB(rw::Atomic *atomic, rw::gl3::InstanceDataHeader *header)
 
 	neoVehicleShader->use();
 
-	V3d eyePos = rw::engine->currentCamera->getFrame()->getLTM()->pos;
-	glUniform3fv(U(u_eye), 1, (float*)&eyePos);
-
+	// The shared u_eye vec4 comes from gl3::setViewMatrix. Do not upload a
+	// conflicting vec3 uniform here (header.vert declares u_eye as vec4).
 	uploadSpecLights();
 
 	float reflProps[4];
@@ -114,14 +114,14 @@ vehicleRenderCB(rw::Atomic *atomic, rw::gl3::InstanceDataHeader *header)
 	while(n--){
 		m = inst->material;
 
-		setMaterial(flags, m->color, m->surfaceProps);
+		setMaterial(flags, m->color, m->surfaceProps, m->texture ? 1.0f : 0.0f);
 
 		setTexture(0, m->texture);
 
 		rw::SetRenderState(VERTEXALPHA, inst->vertexAlpha || m->color.alpha != 0xFF);
 
 		reflProps[2] = m->surfaceProps.specular * VehicleShininess;
-		reflProps[3] = m->surfaceProps.specular == 0.0f ? 0.0f : VehicleSpecularity;
+		reflProps[3] = m->surfaceProps.specular * VehicleSpecularity;
 		glUniform4fv(U(u_reflProps), 1, reflProps);
 
 		drawInst(header, inst);
@@ -155,7 +155,7 @@ CreateVehiclePipe(void)
 	{
 #include "shaders/obj/neoVehicle_frag.inc"
 #include "shaders/obj/neoVehicle_vert.inc"
-	const char *vs[] = { shaderDecl, "#define DIRECTIONALS\n", header_vert_src, neoVehicle_vert_src, nil };
+	const char *vs[] = { shaderDecl, "#define DIRECTIONALS\n#define POINTLIGHTS\n#define SPOTLIGHTS\n", header_vert_src, neoVehicle_vert_src, nil };
 	const char *fs[] = { shaderDecl, header_frag_src, neoVehicle_frag_src, nil };
 	neoVehicleShader = Shader::create(vs, fs);
 	assert(neoVehicleShader);
@@ -193,7 +193,9 @@ worldRenderCB(rw::Atomic *atomic, rw::gl3::InstanceDataHeader *header)
 	using namespace rw;
 	using namespace rw::gl3;
 
-	if(!LightmapEnable){
+	// A DUAL material alone is not a baked lightmap. The source geometry must
+	// also contain the second UV set sampled by this pipeline.
+	if(!LightmapEnable || atomic->geometry->numTexCoordSets < 2){
 		gl3::defaultRenderCB(atomic, header);
 		return;
 	}
@@ -214,6 +216,7 @@ worldRenderCB(rw::Atomic *atomic, rw::gl3::InstanceDataHeader *header)
 
 	while(n--){
 		m = inst->material;
+		bool brLightmap = false;
 
 		if(MatFX::getEffects(m) == MatFX::DUAL){
 			MatFX *matfx = MatFX::get(m);
@@ -221,6 +224,7 @@ worldRenderCB(rw::Atomic *atomic, rw::gl3::InstanceDataHeader *header)
 			if(dualtex == nil)
 				goto notex;
 			setTexture(1, dualtex);
+			brLightmap = graphicsbtx::IsMarkedLightmap(dualtex->mask);
 			lightfactor[0] = lightfactor[1] = lightfactor[2] = WorldLightmapBlend.Get()*LightmapMult;
 		}else{
 		notex:
@@ -229,9 +233,10 @@ worldRenderCB(rw::Atomic *atomic, rw::gl3::InstanceDataHeader *header)
 		}
 		lightfactor[3] = m->color.alpha/255.0f;
 		glUniform4fv(U(u_lightMap), 1, lightfactor);
+		glUniform1f(U(u_brLightmap), brLightmap ? 1.0f : 0.0f);
 
 		RGBA color = { 255, 255, 255, m->color.alpha };
-		setMaterial(color, m->surfaceProps);
+		setMaterial(color, m->surfaceProps, (atomic->geometry->flags & rw::Geometry::PRELIT) ? 1.0f : 0.0f);
 
 		setTexture(0, m->texture);
 
@@ -258,7 +263,7 @@ CreateWorldPipe(void)
 	{
 #include "shaders/obj/neoWorldVC_frag.inc"
 #include "shaders/obj/default_UV2_vert.inc"
-	const char *vs[] = { shaderDecl, header_vert_src, default_UV2_vert_src, nil };
+	const char *vs[] = { shaderDecl, "#define DIRECTIONALS\n#define POINTLIGHTS\n#define SPOTLIGHTS\n", header_vert_src, default_UV2_vert_src, nil };
 	const char *fs[] = { shaderDecl, header_frag_src, neoWorldVC_frag_src, nil };
 	neoWorldShader = Shader::create(vs, fs);
 	assert(neoWorldShader);
@@ -310,8 +315,7 @@ glossRenderCB(rw::Atomic *atomic, rw::gl3::InstanceDataHeader *header)
 
 	neoGlossShader->use();
 
-	V3d eyePos = rw::engine->currentCamera->getFrame()->getLTM()->pos;
-	glUniform3fv(U(u_eye), 1, (float*)&eyePos);
+	// gl3::setViewMatrix supplies the shared u_eye to this shader as well.
 	float reflProps[4];
 	reflProps[0] = GlossMult;
 	reflProps[1] = 0.0f;
@@ -516,7 +520,7 @@ CreateRimLightPipes(void)
 	{
 #include "shaders/obj/simple_frag.inc"
 #include "shaders/obj/neoRimSkin_vert.inc"
-	const char *vs[] = { shaderDecl, "#define DIRECTIONALS\n", header_vert_src, neoRimSkin_vert_src, nil };
+	const char *vs[] = { shaderDecl, "#define DIRECTIONALS\n#define POINTLIGHTS\n#define SPOTLIGHTS\n", header_vert_src, neoRimSkin_vert_src, nil };
 	const char *fs[] = { shaderDecl, header_frag_src, simple_frag_src, nil };
 	neoRimSkinShader = Shader::create(vs, fs);
 	assert(neoRimSkinShader);
@@ -525,7 +529,7 @@ CreateRimLightPipes(void)
 	{
 #include "shaders/obj/simple_frag.inc"
 #include "shaders/obj/neoRim_vert.inc"
-	const char *vs[] = { shaderDecl, "#define DIRECTIONALS\n", header_vert_src, neoRim_vert_src, nil };
+	const char *vs[] = { shaderDecl, "#define DIRECTIONALS\n#define POINTLIGHTS\n#define SPOTLIGHTS\n", header_vert_src, neoRim_vert_src, nil };
 	const char *fs[] = { shaderDecl, header_frag_src, simple_frag_src, nil };
 	neoRimShader = Shader::create(vs, fs);
 	assert(neoRimShader);
@@ -572,8 +576,10 @@ CustomPipeRegisterGL(void)
 	u_rimData = rw::gl3::registerUniform("u_rimData");
 
 	u_lightMap = rw::gl3::registerUniform("u_lightMap");
+	u_brLightmap = rw::gl3::registerUniform("u_brLightmap");
 
-	u_eye = rw::gl3::registerUniform("u_eye");
+	// u_eye is owned by librw (vec4). Registering it here as an unmanaged
+	// uniform would conflict with gl3::initOpenGL's typed registration.
 	u_reflProps = rw::gl3::registerUniform("u_reflProps");
 	u_specDir = rw::gl3::registerUniform("u_specDir");
 	u_specColor = rw::gl3::registerUniform("u_specColor");

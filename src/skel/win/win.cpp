@@ -4,6 +4,12 @@
 #define WINVER 0x0500
 
 #include <winerror.h>
+
+// CUSTOM_MODELS is defined later in this file (via common.h -> config.h).
+// Include the archive crash diagnostics explicitly, not the core sink's
+// same-named header from the include search path.
+#include "../../extras/custom/DebugLog.h"
+#include "../../core/DebugLog.h"
 #include <windows.h>
 #include <mmsystem.h>
 #include <shellapi.h>
@@ -2017,6 +2023,16 @@ WinMain(HINSTANCE instance,
 	RwV2d pos;
 	RwInt32 argc, i;
 	RwChar **argv;
+
+#ifndef __MWERKS__
+	// WinMain is the real Windows entry point. Open the core log before any
+	// initialisation so the archive's exception handlers use the same file.
+	DebugLog::Init("debug.log");
+#endif
+#ifdef CUSTOM_MODELS
+	DebugLogInit();
+#endif
+
 	SystemParametersInfo(SPI_SETFOREGROUNDLOCKTIMEOUT, 0, nil, SPIF_SENDCHANGE);
 
 #ifndef MASTER

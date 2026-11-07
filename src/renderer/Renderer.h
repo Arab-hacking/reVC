@@ -11,6 +11,8 @@ class CEntity;
 #define FADE_DISTANCE 20.0f
 #define STREAM_DISTANCE 30.0f
 
+#include <vector>
+
 extern bool gbShowPedRoadGroups;
 extern bool gbShowCarRoadGroups;
 extern bool gbShowCollisionPolys;
@@ -36,15 +38,15 @@ struct BlockedRange
 class CRenderer
 {
 	static int32 ms_nNoOfVisibleEntities;
-	static CEntity *ms_aVisibleEntityPtrs[NUMVISIBLEENTITIES];
+	static std::vector<CEntity *> ms_aVisibleEntityPtrs;
 	static int32 ms_nNoOfInVisibleEntities;
-	static CEntity *ms_aInVisibleEntityPtrs[NUMINVISIBLEENTITIES];
+	static std::vector<CEntity *> ms_aInVisibleEntityPtrs;
 #ifdef NEW_RENDERER
 	static int32 ms_nNoOfVisibleVehicles;
-	static CEntity *ms_aVisibleVehiclePtrs[NUMVISIBLEENTITIES];
+	static std::vector<CEntity *> ms_aVisibleVehiclePtrs;
 	// for cWorldStream emulation
 	static int32 ms_nNoOfVisibleBuildings;
-	static CEntity *ms_aVisibleBuildingPtrs[NUMVISIBLEENTITIES];
+	static std::vector<CEntity *> ms_aVisibleBuildingPtrs;
 #endif
 
 	static CVUVECTOR ms_vecCameraPosition;

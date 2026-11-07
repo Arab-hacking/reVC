@@ -43,17 +43,21 @@ ConvertBoneTag2BoneName(int tag)
 	case BONE_r_forearm:	return "R Forearm";
 	case BONE_r_hand:	return "R Hand";
 	case BONE_r_finger:	return "R Fingers";
+	case BONE_r_finger01:	return "R Finger01";
 	case BONE_l_clavicle:	return "Bip01 L Clavicle";
 	case BONE_l_upperarm:	return "L UpperArm";
 	case BONE_l_forearm:	return "L Forearm";
 	case BONE_l_hand:	return "L Hand";
 	case BONE_l_finger:	return "L Fingers";
+	case BONE_l_finger01:	return "L Finger01";
 	case BONE_l_thigh:	return "L Thigh";
 	case BONE_l_calf:	return "L Calf";
 	case BONE_l_foot:	return "L Foot";
+	case BONE_l_toe:	return "L Toe0";
 	case BONE_r_thigh:	return "R Thigh";
 	case BONE_r_calf:	return "R Calf";
 	case BONE_r_foot:	return "R Foot";
+	case BONE_r_toe:	return "R Toe0";
 	}
 	return nil;
 }

@@ -248,13 +248,8 @@ void CWeather::Update(void)
 	if (NewWeatherType != WEATHER_SUNNY && OldWeatherType != WEATHER_EXTRA_SUNNY)
 		CloudCoverage += InterpolationValue;
 	
-	// Fog
-	if (OldWeatherType == WEATHER_FOGGY)
-		Foggyness = 1.0f - InterpolationValue;
-	else
-		Foggyness = 0.0f;
-	if (NewWeatherType == WEATHER_FOGGY)
-		Foggyness += InterpolationValue;
+	// Fog disabled globally
+	Foggyness = 0.0f;
 
 	// Extra Sunnyness
 	if (OldWeatherType == WEATHER_EXTRA_SUNNY)

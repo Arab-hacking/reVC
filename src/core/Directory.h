@@ -9,6 +9,8 @@ public:
 		uint32 size;
 		char name[24];
 	};
+	// Capacity grows as items are added. Do not retain pointers into entries
+	// across AddItem calls; special-model lookups use copied offsets instead.
 	DirectoryInfo *entries;
 	int32 maxEntries;
 	int32 numEntries;

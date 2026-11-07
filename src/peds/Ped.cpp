@@ -4,6 +4,7 @@
 #include "Pools.h"
 #include "Particle.h"
 #include "RpAnimBlend.h"
+#include "AnimBlendClumpData.h"
 #include "Bones.h"
 #include "Ped.h"
 #include "AnimBlendAssociation.h"
@@ -450,6 +451,10 @@ CPed::SetModelIndex(uint32 mi)
 	SetPedStats(modelInfo->m_pedStatType);
 	m_headingRate = m_pedStats->m_headingChangeRate;
 	m_animGroup = (AssocGroupId) modelInfo->m_animGroup;
+	(*RPANIMBLENDCLUMPDATA(GetClump()))->usesSAAnimations = modelInfo->UsesSAAnimations();
+	// Associations are built against a skeleton-specific reference clump. This
+	// call also retries groups that had no native/SA reference during startup.
+	CAnimManager::CreateAnimAssocGroups(GetModelIndex());
 	CAnimManager::AddAnimation(GetClump(), m_animGroup, ANIM_STD_IDLE);
 
 	if (!CanUseTorsoWhenLooking())
@@ -4214,13 +4219,23 @@ CPed::PedSetDraggedOutCarCB(CAnimBlendAssociation *dragAssoc, void *arg)
 		AudioManager.PlayerJustLeftCar();
 
 	if (ped->m_objective == OBJECTIVE_LEAVE_CAR_AND_DIE) {
-		dragAssoc->SetDeleteCallback(PedSetDraggedOutCarPositionCB, ped);
 		ped->m_fHealth = 0.0f;
+		if(dragAssoc)
+			dragAssoc->SetDeleteCallback(PedSetDraggedOutCarPositionCB, ped);
+		else
+			PedSetDraggedOutCarPositionCB(nil, ped);
 		ped->SetDie(ANIM_STD_HIT_FLOOR, 1000.0f, 0.5f);
 		return;
 	}
 
-	if (quickJackedAssoc) {
+	if (!dragAssoc) {
+		// A missing animation has no delete event. Complete the positioning
+		// immediately, after detaching the occupant from their seat.
+		if (quickJackedAssoc)
+			PedSetQuickDraggedOutCarPositionCB(nil, ped);
+		else
+			PedSetDraggedOutCarPositionCB(nil, ped);
+	} else if (quickJackedAssoc) {
 		dragAssoc->SetDeleteCallback(PedSetQuickDraggedOutCarPositionCB, ped);
 	} else {
 		dragAssoc->SetDeleteCallback(PedSetDraggedOutCarPositionCB, ped);
@@ -4448,6 +4463,9 @@ CPed::PedSetInCarCB(CAnimBlendAssociation *animAssoc, void *arg)
 	}
 
 	veh->m_nGettingInFlags &= ~doorFlag;
+	if(ped->IsPlayer())
+		REVC_LOG_INFO("Vehicle entry: seated (vehicle model=%d, driver=%d, door=%d)",
+			veh->GetModelIndex(), veh->pDriver == ped, ped->m_vehDoor);
 
 	if (veh->bIsBus && !veh->m_nGettingInFlags)
 		((CAutomobile*)veh)->SetBusDoorTimer(1000, 1);
@@ -5112,7 +5130,7 @@ CPed::Idle(void)
 
 			if (m_objective != OBJECTIVE_KILL_CHAR_ON_FOOT) {
 
-				CVector doorPos = GetPositionToOpenCarDoor(veh, m_vehDoor);
+				CVector doorPos = GetPositionToOpenCarDoor(veh, m_vehDoor, this);
 				CVector doorDist = GetPosition() - doorPos;
 
 				if (doorDist.MagnitudeSqr() < sq(0.5f)) {
@@ -5175,7 +5193,10 @@ CPed::SetFall(int extraTime, AnimationId animId, uint8 evenIfNotInControl)
 		else {
 			fallAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, animId, 8.0f);
 		}
-		if (animId == ANIM_STD_BIKE_FALLBACK)
+		if(!fallAssoc && (animId == ANIM_STD_BIKE_FALLBACK || animId == ANIM_STD_BIKE_FALLOFF))
+			fallAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD,
+				ANIM_STD_FALL_ONBACK, 8.0f); // same skeleton; no VC clips on SA peds
+		if (fallAssoc && animId == ANIM_STD_BIKE_FALLBACK && fallAssoc->animId == animId)
 			fallAssoc->SetCurrentTime(0.4f);
 	}
 
@@ -5364,8 +5385,17 @@ CPed::SetLanding(void)
 		DMAudio.PlayOneShot(m_audioEntityId, SOUND_FALL_LAND, 1.0f);
 	}
 
-	landAssoc->SetFinishCallback(PedLandCB, this);
+	if (!landAssoc)
+		landAssoc = CAnimManager::AddAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_FALL_LAND);
 	bIsInTheAir = false;
+	if (!landAssoc) {
+		// No landing callback can arrive without a compatible SA clip.
+		bIsLanding = false;
+		if (m_nPedState == PED_JUMP)
+			RestorePreviousState();
+		return;
+	}
+	landAssoc->SetFinishCallback(PedLandCB, this);
 	bIsLanding = true;
 }
 
@@ -5432,7 +5462,16 @@ CPed::SetGetUp(void)
 		else
 			animAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_GET_UP, 1000.0f);
 
-		animAssoc->SetFinishCallback(PedGetupCB, this);
+		if(!animAssoc)
+			animAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_GET_UP, 1000.0f);
+		if(animAssoc)
+			animAssoc->SetFinishCallback(PedGetupCB, this);
+		else { // Missing custom get-up clip: never strand a living ped in PED_GETUP.
+			bFallenDown = false;
+			RestorePreviousState(); // requires bGetUpAnimStarted to still be true
+			bGetUpAnimStarted = false;
+			SetMoveAnim();
+		}
 	} else {
 		m_fHealth = 0.0f;
 		SetDie(ANIM_STD_NUM, 4.0f, 0.0f);
@@ -6853,6 +6892,7 @@ CPed::SetEvasiveStep(CPhysical *reason, uint8 animType)
 		}
 		if (!RpAnimBlendClumpGetAssociation(GetClump(), stepAnim)) {
 			CAnimBlendAssociation *stepAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, stepAnim, 8.0f);
+			if (!stepAssoc) return;
 			stepAssoc->flags &= ~ASSOC_DELETEFADEDOUT;
 			stepAssoc->SetFinishCallback(PedEvadeCB, this);
 
@@ -6963,6 +7003,10 @@ CPed::SetEvasiveDive(CPhysical *reason, uint8 onlyRandomJump)
 			return;
 
 		animAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_HANDSUP, 8.0f);
+		if (!animAssoc) {
+			ClearLookFlag();
+			return;
+		}
 		animAssoc->flags &= ~ASSOC_DELETEFADEDOUT;
 		animAssoc->SetFinishCallback(PedEvadeCB, this);
 		SetStoredState();
@@ -6974,7 +7018,10 @@ CPed::SetEvasiveDive(CPhysical *reason, uint8 onlyRandomJump)
 		SetStoredState();
 		SetPedState(PED_DIVE_AWAY);
 		animAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_EVADE_DIVE, 8.0f);
-		animAssoc->SetFinishCallback(PedEvadeCB, this);
+		if (animAssoc)
+			animAssoc->SetFinishCallback(PedEvadeCB, this);
+		else
+			PedEvadeCB(nil, this);
 	}
 
 	if (reason->IsVehicle() && m_nPedType == PEDTYPE_COP) {
@@ -7060,13 +7107,25 @@ CPed::SetDie(AnimationId animId, float delta, float speed)
 		bIsPedDieAnimPlaying = false;
 	} else {
 		dieAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, animId, delta);
-		if (speed > 0.0f)
-			dieAssoc->speed = speed;
-
-		dieAssoc->flags &= ~ASSOC_FADEOUTWHENDONE;
-		if (dieAssoc->IsRunning()) {
-			dieAssoc->SetFinishCallback(FinishDieAnimCB, this);
-			bIsPedDieAnimPlaying = true;
+		if(!dieAssoc && animId != ANIM_STD_KO_FRONT)
+			dieAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_KO_FRONT, delta);
+		if(dieAssoc){
+			if (speed > 0.0f)
+				dieAssoc->speed = speed;
+			dieAssoc->flags &= ~ASSOC_FADEOUTWHENDONE;
+			if (dieAssoc->IsRunning()) {
+				dieAssoc->SetFinishCallback(FinishDieAnimCB, this);
+				bIsPedDieAnimPlaying = true;
+			}
+		} else {
+			bIsPedDieAnimPlaying = false;
+			static bool warned[2] = {false, false};
+			int bank = (*RPANIMBLENDCLUMPDATA(GetClump()))->usesSAAnimations ? 1 : 0;
+			if(!warned[bank]){
+				REVC_LOG_WARNING("Death animation missing in %s bank (model=%d, anim=%d)",
+					bank ? "SA" : "VC", GetModelIndex(), animId);
+				warned[bank] = true;
+			}
 		}
 	}
 
@@ -7191,11 +7250,12 @@ CPed::Chat(void)
 		}
 		if (!bIsTalking && !RpAnimBlendClumpGetFirstAssociation(GetClump(), ASSOC_IDLE)) {
 			CAnimBlendAssociation *chatAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_CHAT, 4.0f);
-			float chatTime = CGeneral::GetRandomNumberInRange(0.0f, 3.0f);
-			chatAssoc->SetCurrentTime(chatTime);
-
-			bIsTalking = true;
-			Say(SOUND_PED_CHAT);
+			if (chatAssoc) {
+				float chatTime = CGeneral::GetRandomNumberInRange(0.0f, 3.0f);
+				chatAssoc->SetCurrentTime(chatTime);
+				bIsTalking = true;
+				Say(SOUND_PED_CHAT);
+			}
 		}
 	}
 	if (m_chatTimer && CTimer::GetTimeInMilliseconds() > m_chatTimer) {
@@ -7312,6 +7372,10 @@ CPed::SetAnswerMobile(void)
 #endif
 		RemoveWeaponAnims(GetWeapon()->m_eWeaponType, -4.0f);
 		CAnimBlendAssociation *assoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_PHONE_IN, 4.0f);
+		if (!assoc) {
+			SetIdle(); // do not enter an unfinishable phone state
+			return;
+		}
 		assoc->SetFinishCallback(StartTalkingOnMobileCB, this);
 		m_lookTimer = INT32_MAX;
 		if (m_storedWeapon == WEAPONTYPE_UNIDENTIFIED)
@@ -7332,7 +7396,10 @@ CPed::ClearAnswerMobile(void)
 
 	if (RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_PHONE_TALK)) {
 		CAnimBlendAssociation *assoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_PHONE_OUT, 8.0f);
-		assoc->SetFinishCallback(FinishTalkingOnMobileCB, this);
+		if (assoc)
+			assoc->SetFinishCallback(FinishTalkingOnMobileCB, this);
+		else
+			FinishTalkingOnMobileCB(nil, this);
 	} else
 		FinishTalkingOnMobileCB(nil, this);
 
@@ -7424,9 +7491,9 @@ CPed::SeekCar(void)
 	if (m_objective != OBJECTIVE_ENTER_CAR_AS_PASSENGER) {
 		if (!vehToSeek->IsBike() && m_vehDoor && m_objective != OBJECTIVE_ENTER_CAR_AS_DRIVER) {
 			if (IsRoomToBeCarJacked()) {
-				dest = GetPositionToOpenCarDoor(vehToSeek, m_vehDoor);
+				dest = GetPositionToOpenCarDoor(vehToSeek, m_vehDoor, this);
 			} else if (m_nPedType == PEDTYPE_COP) {
-				dest = GetPositionToOpenCarDoor(vehToSeek, CAR_DOOR_RF);
+				dest = GetPositionToOpenCarDoor(vehToSeek, CAR_DOOR_RF, this);
 			} else {
 				SetMoveState(PEDMOVE_STILL);
 			}
@@ -7470,6 +7537,10 @@ CPed::SeekCar(void)
 	if (dest.x == 0.0f && dest.y == 0.0f) {
 #ifdef FIX_BUGS
 		if ((!IsPlayer() && CharCreatedBy != MISSION_CHAR) || vehToSeek->VehicleCreatedBy != MISSION_VEHICLE || vehToSeek->pDriver || !vehToSeek->CanPedOpenLocks(this)) {
+			if(IsPlayer())
+				REVC_LOG_WARNING("Vehicle entry: no usable door (vehicle model=%d, objective=%d, driver=%d, locks=%d)",
+					vehToSeek->GetModelIndex(), m_objective, vehToSeek->pDriver != nil,
+					vehToSeek->CanPedOpenLocks(this));
 #else
 		if ((!IsPlayer() && CharCreatedBy != MISSION_CHAR) || vehToSeek->VehicleCreatedBy != MISSION_VEHICLE || vehToSeek->pDriver) {
 #endif
@@ -7698,29 +7769,21 @@ IsPedPointerValid(CPed* pPed)
 bool
 IsPedPointerValid_NotInWorld(CPed* pPed)
 {
-	if (!pPed)
-		return false;
-	int index = CPools::GetPedPool()->GetJustIndex_NoFreeAssert(pPed);
-#ifdef FIX_BUGS
-	if (index < 0 || index >= NUMPEDS)
-#else
-	if (index < 0 || index > NUMPEDS)
-#endif
-		return false;
-	return true;
+	// The slot can still contain old ped fields after delete. Range alone is
+	// not proof that a pointer from a nearby-ped/event list is still alive.
+	return pPed && CPools::GetPedPool()->IsAllocated(pPed);
 }
 
 bool
 CPed::IsPointerValid(void)
 {
-	int pedIndex = CPools::GetPedPool()->GetIndex(this) >> 8;
-	if (pedIndex < 0 || pedIndex >= NUMPEDS)
+	// This method is called to DISCARD stale pointers (e.g. m_nearPeds during
+	// ped destruction). GetIndex asserts for a freed/foreign slot before the
+	// old range check had a chance to reject it. Check allocation first without
+	// reading any ped fields or creating a handle.
+	if (!CPools::GetPedPool()->IsAllocated(this))
 		return false;
-
-	if (m_entryInfoList.first || FindPlayerPed() == this)
-		return true;
-
-	return false;
+	return m_entryInfoList.first || FindPlayerPed() == this;
 }
 
 void
@@ -7899,22 +7962,10 @@ CPed::LookForInterestingNodes(void)
 	uint8 randVal = CGeneral::GetRandomNumber() % 256;
 
 	int minX = CWorld::GetSectorIndexX(GetPosition().x - CHECK_NEARBY_THINGS_MAX_DIST);
-	if (minX < 0) minX = 0;
 	int minY = CWorld::GetSectorIndexY(GetPosition().y - CHECK_NEARBY_THINGS_MAX_DIST);
-	if (minY < 0) minY = 0;
 	int maxX = CWorld::GetSectorIndexX(GetPosition().x + CHECK_NEARBY_THINGS_MAX_DIST);
-#ifdef FIX_BUGS
-	if (maxX >= NUMSECTORS_X) maxX = NUMSECTORS_X - 1;
-#else
-	if (maxX >= NUMSECTORS_X) maxX = NUMSECTORS_X;
-#endif
 
 	int maxY = CWorld::GetSectorIndexY(GetPosition().y + CHECK_NEARBY_THINGS_MAX_DIST);
-#ifdef FIX_BUGS
-	if (maxY >= NUMSECTORS_Y) maxY = NUMSECTORS_Y - 1;
-#else
-	if (maxY >= NUMSECTORS_Y) maxY = NUMSECTORS_Y;
-#endif
 
 	for (int curY = minY; curY <= maxY && !found; curY++) {
 		for (int curX = minX; curX <= maxX && !found; curX++) {
@@ -8030,28 +8081,48 @@ PlayRandomAnimationsFromAnimBlock(CPed* ped, AssocGroupId animGroup, uint32 firs
 	if (!ped->IsPedInControl())
 		return;
 
-	const char *groupName = CAnimManager::GetAnimGroupName(animGroup);
-	CAnimBlock *animBlock = CAnimManager::GetAnimationBlock(groupName);
+	if(amount == 0)
+		return;
 	CAnimBlendAssociation *assoc;
 	for (assoc = RpAnimBlendClumpGetFirstAssociation(ped->GetClump()); assoc; assoc = RpAnimBlendGetNextAssociation(assoc)) {
-		int first = animBlock->firstIndex;
-		int index = assoc->hierarchy - CAnimManager::GetAnimation(0);
-		if (index >= first && index < first + animBlock->numAnims) {
+		if(assoc->groupId == animGroup && assoc->animId >= first &&
+		   assoc->animId < first + amount &&
+		   CAnimManager::IsAnimationCompatibleWithClump(ped->GetClump(), assoc->hierarchy))
 			break;
-		}
 	}
 
 	if (CTimer::GetTimeInMilliseconds() > ped->m_nWaitTimer && assoc)
 		assoc->flags &= ~ASSOC_REPEAT;
 
 	if (!assoc || assoc->blendDelta < 0.0f) {
-		int selectedAnimOffset;
-		do
-			selectedAnimOffset = CGeneral::GetRandomNumberInRange(0, amount);
-		while (assoc && first + selectedAnimOffset == assoc->animId);
-
-		assoc = CAnimManager::BlendAnimation(ped->GetClump(), animGroup, (AnimationId)(first + selectedAnimOffset), 3.0f);
-
+		// Look up clips through the ped's own association bank. The VC block
+		// need not be loaded for an SA skeleton, and an SA IFP may omit clips.
+		uint32 randomStart = CGeneral::GetRandomNumberInRange(0, amount);
+		int selectedId = -1, fallbackId = -1;
+		for(uint32 i = 0; i < amount; ++i){
+			int id = first + (randomStart + i) % amount;
+			if(!CAnimManager::GetAnimAssociation(ped->GetClump(), animGroup, (AnimationId)id))
+				continue;
+			if(assoc && assoc->animId == id)
+				fallbackId = id;
+			else{
+				selectedId = id;
+				break;
+			}
+		}
+		if(selectedId < 0)
+			selectedId = fallbackId;
+		CAnimBlendAssociation *next = selectedId < 0 ? nil :
+			CAnimManager::BlendAnimation(ped->GetClump(), animGroup, (AnimationId)selectedId, 3.0f);
+		if(!next){
+			REVC_LOG_WARNING("Ped wait: no usable animation (ped=%d, group=%d, id=%d)",
+				ped->GetModelIndex(), animGroup, selectedId);
+			ped->m_nWaitState = WAITSTATE_FALSE;
+			ped->m_nWaitTimer = 0;
+			ped->RestoreHeadingRate();
+			return;
+		}
+		assoc = next;
 		assoc->SetFinishCallback(CPed::FinishedWaitCB, ped);
 		if (assoc->flags & ASSOC_REPEAT)
 			ped->m_nWaitTimer = CTimer::GetTimeInMilliseconds() + CGeneral::GetRandomNumberInRange(3000, 8000);
@@ -8112,18 +8183,10 @@ CPed::ClearWaitState(void)
 			}
 			break;
 		case WAITSTATE_RIOT:
-		{
-			CAnimBlock* riotAnimBlock = CAnimManager::GetAnimationBlock("riot");
-
-			for (assoc = RpAnimBlendClumpGetFirstAssociation(GetClump()); assoc; assoc = RpAnimBlendGetNextAssociation(assoc)) {
-				int first = riotAnimBlock->firstIndex;
-				int index = assoc->hierarchy - CAnimManager::GetAnimation(0);
-				if (index >= first && index < first + riotAnimBlock->numAnims) {
+			for (assoc = RpAnimBlendClumpGetFirstAssociation(GetClump()); assoc; assoc = RpAnimBlendGetNextAssociation(assoc))
+				if(assoc->groupId == ASSOCGRP_RIOT && CAnimManager::IsAnimationCompatibleWithClump(GetClump(), assoc->hierarchy))
 					assoc->blendDelta = -1000.0f;
-				}
-			}
 			break;
-		}
 		case WAITSTATE_FAST_FALL:
 			if (RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_HIGHIMPACT_FRONT))
 				SetGetUp();
@@ -8135,18 +8198,10 @@ CPed::ClearWaitState(void)
 				assoc->blendDelta = -8.0f;
 			break;
 		case WAITSTATE_STRIPPER:
-		{
-			CAnimBlock* stripAnimBlock = CAnimManager::GetAnimationBlock("strip");
-
-			for (assoc = RpAnimBlendClumpGetFirstAssociation(GetClump()); assoc; assoc = RpAnimBlendGetNextAssociation(assoc)) {
-				int first = stripAnimBlock->firstIndex;
-				int index = assoc->hierarchy - CAnimManager::GetAnimation(0);
-				if (index >= first && index < first + stripAnimBlock->numAnims) {
+			for (assoc = RpAnimBlendClumpGetFirstAssociation(GetClump()); assoc; assoc = RpAnimBlendGetNextAssociation(assoc))
+				if(assoc->groupId == ASSOCGRP_STRIP && CAnimManager::IsAnimationCompatibleWithClump(GetClump(), assoc->hierarchy))
 					assoc->blendDelta = -1000.0f;
-				}
-			}
 			break;
-		}
 		case WAITSTATE_LANCESITTING:
 			assoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_SUNBATHE_IDLE);
 			if (assoc)
@@ -8168,6 +8223,7 @@ CPed::SetWaitState(eWaitState state, void *time)
 {
 	AnimationId waitAnim = ANIM_STD_NUM;
 	CAnimBlendAssociation *animAssoc;
+	bool missingAnim = false;
 
 	if (!IsPedInControl())
 		return;
@@ -8207,6 +8263,7 @@ CPed::SetWaitState(eWaitState state, void *time)
 			m_headingRate = 0.0f;
 			m_nWaitTimer = CTimer::GetTimeInMilliseconds() + 3500;
 			animAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_IDLE_HBHB, 4.0f);
+			if(!animAssoc){ missingAnim = true; break; }
 #ifdef FIX_BUGS
 			animAssoc->SetFinishCallback(RestoreHeadingRateCB, this);
 #endif
@@ -8215,6 +8272,7 @@ CPed::SetWaitState(eWaitState state, void *time)
 			m_headingRate = 2.0f;
 			m_nWaitTimer = CTimer::GetTimeInMilliseconds() + 5000;
 			animAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_HIT_WALL, 16.0f);
+			if(!animAssoc){ missingAnim = true; break; }
 			animAssoc->flags |= ASSOC_DELETEFADEDOUT;
 			animAssoc->flags |= ASSOC_FADEOUTWHENDONE;
 			animAssoc->SetDeleteCallback(FinishedWaitCB, this);
@@ -8229,12 +8287,14 @@ CPed::SetWaitState(eWaitState state, void *time)
 			m_headingRate = 0.0f;
 			m_nWaitTimer = CTimer::GetTimeInMilliseconds() + 5000;
 			animAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_TURN180, 4.0f);
+			if(!animAssoc){ missingAnim = true; break; }
 			animAssoc->SetFinishCallback(FinishedWaitCB, this);
 			break;
 		case WAITSTATE_SURPRISE:
 			m_headingRate = 0.0f;
 			m_nWaitTimer = CTimer::GetTimeInMilliseconds() + 2000;
 			animAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_HIT_WALL, 4.0f);
+			if(!animAssoc){ missingAnim = true; break; }
 			animAssoc->SetFinishCallback(FinishedWaitCB, this);
 			break;
 		case WAITSTATE_STUCK:
@@ -8243,6 +8303,7 @@ CPed::SetWaitState(eWaitState state, void *time)
 			m_headingRate = 0.0f;
 			m_nWaitTimer = CTimer::GetTimeInMilliseconds() + 5000;
 			animAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_IDLE_TIRED, 4.0f);
+			if(!animAssoc){ missingAnim = true; break; }
 #ifdef FIX_BUGS
 			animAssoc->SetFinishCallback(RestoreHeadingRateCB, this);
 #endif
@@ -8260,6 +8321,7 @@ CPed::SetWaitState(eWaitState state, void *time)
 			m_headingRate = 0.0f;
 			m_nWaitTimer = CTimer::GetTimeInMilliseconds() + 5000;
 			animAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_IDLE_HBHB, 4.0f);
+			if(!animAssoc){ missingAnim = true; break; }
 #ifdef FIX_BUGS
 			animAssoc->SetFinishCallback(RestoreHeadingRateCB, this);
 #endif
@@ -8280,6 +8342,7 @@ CPed::SetWaitState(eWaitState state, void *time)
 				m_nWaitTimer = CTimer::GetTimeInMilliseconds() + 3000;
 
 			animAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, waitAnim, 4.0f);
+			if(!animAssoc){ missingAnim = true; break; }
 			animAssoc->SetDeleteCallback(FinishedWaitCB, this);
 			break;
 		case WAITSTATE_PLAYANIM_DUCK:
@@ -8296,6 +8359,7 @@ CPed::SetWaitState(eWaitState state, void *time)
 				m_nWaitTimer = CTimer::GetTimeInMilliseconds() + 3000;
 
 			animAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, waitAnim, 4.0f);
+			if(!animAssoc){ missingAnim = true; break; }
 			animAssoc->flags &= ~ASSOC_FADEOUTWHENDONE;
 			animAssoc->flags |= ASSOC_DELETEFADEDOUT;
 			animAssoc->SetDeleteCallback(FinishedWaitCB, this);
@@ -8306,22 +8370,26 @@ CPed::SetWaitState(eWaitState state, void *time)
 			m_headingRate = 0.0f;
 			m_nWaitTimer = CTimer::GetTimeInMilliseconds() + 2500;
 			animAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_IDLE_TIRED, 4.0f);
+			if(!animAssoc){ missingAnim = true; break; }
 #ifdef FIX_BUGS
 			animAssoc->SetFinishCallback(RestoreHeadingRateCB, this);
 #endif
 			break;
 		case WAITSTATE_SIT_DOWN:
 			animAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_SEAT_DOWN, 4.0f);
+			if(!animAssoc){ missingAnim = true; break; }
 			animAssoc->SetFinishCallback(FinishedWaitCB, this);
 			m_nWaitTimer = CTimer::GetTimeInMilliseconds() + 100000;
 			break;
 		case WAITSTATE_SIT_UP:
 			animAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_SEAT_UP, 4.0f);
+			if(!animAssoc){ missingAnim = true; break; }
 			animAssoc->SetFinishCallback(FinishedWaitCB, this);
 			m_nWaitTimer = CTimer::GetTimeInMilliseconds() + 100000;
 			break;
 		case WAITSTATE_SIT_IDLE:
 			animAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_SEAT_IDLE, 128.f);
+			if(!animAssoc){ missingAnim = true; break; }
 			animAssoc->SetFinishCallback(FinishedWaitCB, this);
 			if (time)
 				m_nWaitTimer = CTimer::GetTimeInMilliseconds() + *(int*)time;
@@ -8330,6 +8398,7 @@ CPed::SetWaitState(eWaitState state, void *time)
 			break;
 		case WAITSTATE_USE_ATM:
 			animAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_ATM, 4.0f);
+			if(!animAssoc){ missingAnim = true; break; }
 			animAssoc->SetFinishCallback(FinishedWaitCB, this);
 			if (time)
 				m_nWaitTimer = CTimer::GetTimeInMilliseconds() + *(int*)time;
@@ -8339,6 +8408,7 @@ CPed::SetWaitState(eWaitState state, void *time)
 		case WAITSTATE_SUN_BATHE_IDLE:
 			m_headingRate = 0.0f;
 			animAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_SUNBATHE, ANIM_SUNBATHE_IDLE, 4.0f);
+			if(!animAssoc){ missingAnim = true; break; }
 			animAssoc->SetDeleteCallback(DeleteSunbatheIdleAnimCB, this);
 			m_nWaitTimer = CTimer::GetTimeInMilliseconds() + CGeneral::GetRandomNumberInRange(50000, 100000);
 			break;
@@ -8359,6 +8429,7 @@ CPed::SetWaitState(eWaitState state, void *time)
 					m_nWaitTimer = CTimer::GetTimeInMilliseconds() + 5000;
 					CAnimBlendAssociation* newAnim = CAnimManager::BlendAnimation(GetClump(),
 						currentWeapon->m_AnimToPlay, GetFireAnimGround(currentWeapon, false), 8.0f);
+					if(!newAnim){ missingAnim = true; break; }
 					newAnim->SetDeleteCallback(FinishedWaitCB, this);
 				}
 			}
@@ -8369,6 +8440,7 @@ CPed::SetWaitState(eWaitState state, void *time)
 			break;
 		case WAITSTATE_PLAYANIM_HANDSUP_SIMPLE:
 			animAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_HANDSUP, 4.0f);
+			if(!animAssoc){ missingAnim = true; break; }
 			animAssoc->flags &= ~ASSOC_FADEOUTWHENDONE;
 			animAssoc->flags |= ASSOC_DELETEFADEDOUT;
 			animAssoc->SetDeleteCallback(FinishedWaitCB, this);
@@ -8378,6 +8450,14 @@ CPed::SetWaitState(eWaitState state, void *time)
 			ClearWaitState();
 			RestoreHeadingRate();
 			return;
+	}
+	if(missingAnim){
+		REVC_LOG_WARNING("Ped wait: animation missing (ped=%d, state=%d); cancelling wait",
+			GetModelIndex(), state);
+		m_nWaitTimer = 0;
+		m_nWaitState = WAITSTATE_FALSE;
+		RestoreHeadingRate();
+		return;
 	}
 	m_nWaitState = state;
 }
@@ -8472,8 +8552,12 @@ CPed::Wait(void)
 			if (CTimer::GetTimeInMilliseconds() > m_nWaitTimer) {
 				if (RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_HIT_WALL)) {
 					animAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_XPRESS_SCRATCH, 4.0f);
-					animAssoc->SetFinishCallback(FinishedWaitCB, this);
-					m_nWaitTimer = CTimer::GetTimeInMilliseconds() + 5000;
+					if (animAssoc) {
+						animAssoc->SetFinishCallback(FinishedWaitCB, this);
+						m_nWaitTimer = CTimer::GetTimeInMilliseconds() + 5000;
+					} else {
+						ClearWaitState();
+					}
 				} else {
 					ClearWaitState();
 				}
@@ -8917,7 +9001,7 @@ void
 CPed::Solicit(void)
 {
 	if (m_chatTimer >= CTimer::GetTimeInMilliseconds() && m_carInObjective) {
-		CVector doorPos = GetPositionToOpenCarDoor(m_carInObjective, m_vehDoor, 0.0f);
+		CVector doorPos = GetPositionToOpenCarDoor(m_carInObjective, m_vehDoor, 0.0f, this);
 		Say(SOUND_PED_SOLICIT);
 		if (FindPlayerVehicle() == m_carInObjective) {
 			FindPlayerPed()->Say(SOUND_PED_SOLICIT);
@@ -9173,6 +9257,10 @@ CPed::SetJump(void)
 		SetStoredState();
 		SetPedState(PED_JUMP);
 		CAnimBlendAssociation *jumpAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_JUMP_LAUNCH, 8.0f);
+		if (!jumpAssoc) {
+			RestorePreviousState(); // no launch clip => no finish callback
+			return;
+		}
 		jumpAssoc->SetFinishCallback(FinishLaunchCB, this);
 		m_fRotationDest = m_fRotationCur;
 	}
@@ -9203,6 +9291,10 @@ CPed::FinishLaunchCB(CAnimBlendAssociation *animAssoc, void *arg)
 	if (obstacle) {
 		animAssoc->flags |= ASSOC_DELETEFADEDOUT;
 		CAnimBlendAssociation *handsCoverAssoc = CAnimManager::BlendAnimation(ped->GetClump(), ASSOCGRP_STD, ANIM_STD_HIT_WALL, 8.0f);
+		if (!handsCoverAssoc) {
+			FinishHitHeadCB(nil, ped);
+			return;
+		}
 		handsCoverAssoc->flags &= ~ASSOC_FADEOUTWHENDONE;
 		handsCoverAssoc->SetFinishCallback(FinishHitHeadCB, ped);
 		ped->bIsLanding = true;

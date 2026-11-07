@@ -1,6 +1,8 @@
 #include "common.h"
 
 #include "Automobile.h"
+#include "AnimBlendClumpData.h"
+#include "RpAnimBlend.h"
 #include "Bridge.h"
 #include "Camera.h"
 #include "CarCtrl.h"
@@ -362,14 +364,9 @@ CPlayerInfo::Process(void)
 					float maxY = 10.0f + m_pPed->GetPosition().y;
 
 					int minXSector = CWorld::GetSectorIndexX(minX);
-					if (minXSector < 0) minXSector = 0;
 					int minYSector = CWorld::GetSectorIndexY(minY);
-					if (minYSector < 0) minYSector = 0;
 					int maxXSector = CWorld::GetSectorIndexX(maxX);
-					if (maxXSector > NUMSECTORS_X - 1) maxXSector = NUMSECTORS_X - 1;
 					int maxYSector = CWorld::GetSectorIndexY(maxY);
-					if (maxYSector > NUMSECTORS_Y - 1) maxYSector = NUMSECTORS_Y - 1;
-
 					CWorld::AdvanceCurrentScanCode();
 
 					for (int curY = minYSector; curY <= maxYSector; curY++) {
@@ -383,7 +380,16 @@ CPlayerInfo::Process(void)
 					}
 				}
 				// carBelow is now closest vehicle
+				if(!carBelow && !weAreOnBoat)
+					REVC_LOG_INFO("Vehicle entry: key pressed, no vehicle in range (ped model=%d, state=%d)",
+						m_pPed->GetModelIndex(), m_pPed->m_nPedState);
 				if (carBelow && !weAreOnBoat) {
+					bool usesSA = m_pPed->m_rwObject &&
+						RpAnimBlendClumpIsInitialized(m_pPed->GetClump()) &&
+						(*RPANIMBLENDCLUMPDATA(m_pPed->GetClump()))->usesSAAnimations;
+					REVC_LOG_INFO("Vehicle entry: key pressed, ped model=%d, SA skeleton=%d, vehicle model=%d, distance=%.2f",
+						m_pPed->GetModelIndex(), usesSA, carBelow->GetModelIndex(),
+						(carBelow->GetPosition() - m_pPed->GetPosition()).Magnitude2D());
 					if (carBelow->GetStatus() == STATUS_TRAIN_NOT_MOVING) {
 						m_pPed->SetObjective(OBJECTIVE_ENTER_CAR_AS_PASSENGER, carBelow);
 					} else if (carBelow->IsBoat()) {

@@ -302,10 +302,25 @@ void _rwD3D8TexDictionaryEnableRasterFormatConversion(bool enable) { }
 RwBool rwNativeTextureHackRead(RwStream *stream, RwTexture **tex, RwInt32 size)
 {
 	*tex = Texture::streamReadNative(stream);
+	if(*tex == nil)
+		return false;
 #ifdef LIBRW
-	(*tex)->raster = rw::Raster::convertTexToCurrentPlatform((*tex)->raster);
+	if((*tex)->raster == nil){
+		(*tex)->destroy();
+		*tex = nil;
+		return false;
+	}
+	// VC/D3D8 TXDs in img/*.img must be converted to the active renderer
+	// before SA DFF materials resolve their names against the dictionary.
+	rw::Raster *raster = rw::Raster::convertTexToCurrentPlatform((*tex)->raster);
+	if(raster == nil){
+		(*tex)->destroy();
+		*tex = nil;
+		return false;
+	}
+	(*tex)->raster = raster;
 #endif
-	return *tex != nil;
+	return true;
 }
 
 
@@ -468,7 +483,7 @@ RwBool RwRenderStateGet(RwRenderState state, void *value)
 	case rwRENDERSTATEDESTBLEND: *uival = GetRenderState(DESTBLEND); return true;
 	case rwRENDERSTATEVERTEXALPHAENABLE: *uival = GetRenderState(VERTEXALPHA); return true;
 	case rwRENDERSTATEBORDERCOLOR: *uival = 0; return true;
-	case rwRENDERSTATEFOGENABLE: *uival = GetRenderState(FOGENABLE); return true;
+	case rwRENDERSTATEFOGENABLE: *uival = FALSE; return true;
 	case rwRENDERSTATEFOGCOLOR:
 		// have to swap R and B here
 		fog = GetRenderState(FOGCOLOR);
@@ -515,7 +530,7 @@ RwBool RwRenderStateSet(RwRenderState state, void *value)
 	case rwRENDERSTATEDESTBLEND: SetRenderState(DESTBLEND, uival); return true;
 	case rwRENDERSTATEVERTEXALPHAENABLE: SetRenderState(VERTEXALPHA, uival); return true;
 	case rwRENDERSTATEBORDERCOLOR: return true;
-	case rwRENDERSTATEFOGENABLE: SetRenderState(FOGENABLE, uival); return true;
+	case rwRENDERSTATEFOGENABLE: SetRenderState(FOGENABLE, FALSE); return true;
 	case rwRENDERSTATEFOGCOLOR:
 		// have to swap R and B here
 		fog = (uival>>16)&0xFF;
@@ -616,7 +631,7 @@ RpMaterial *RpMaterialSetTexture(RpMaterial *material, RwTexture *texture) { mat
 RwTexture *RpMaterialGetTexture(const RpMaterial *material) { return material->texture; }
 RpMaterial *RpMaterialSetColor(RpMaterial *material, const RwRGBA *color) { material->color = *color; return material; }
 const RwRGBA *RpMaterialGetColor(const RpMaterial *material) { return &material->color; }
-RpMaterial *RpMaterialSetSurfaceProperties(RpMaterial *material, const RwSurfaceProperties *surfaceProperties);
+RpMaterial *RpMaterialSetSurfaceProperties(RpMaterial *material, const RwSurfaceProperties *surfaceProperties) { material->surfaceProps = *surfaceProperties; return material; }
 const RwSurfaceProperties *RpMaterialGetSurfaceProperties(const RpMaterial *material) { return &material->surfaceProps; }
 //RwInt32 RpMaterialRegisterPlugin(RwInt32 size, RwUInt32 pluginID, RwPluginObjectConstructor constructCB, RwPluginObjectDestructor destructCB, RwPluginObjectCopy copyCB);
 //RwInt32 RpMaterialRegisterPluginStream(RwUInt32 pluginID, RwPluginDataChunkReadCallBack readCB, RwPluginDataChunkWriteCallBack writeCB, RwPluginDataChunkGetSizeCallBack getSizeCB);
@@ -700,7 +715,7 @@ RpGeometry  *RpGeometryTriangleSetMaterial(RpGeometry *geometry, RpTriangle *tri
 }
 const RpGeometry  *RpGeometryTriangleGetVertexIndices(const RpGeometry *geometry, const RpTriangle *triangle, RwUInt16 *vert1, RwUInt16 *vert2, RwUInt16 *vert3);
 RpMaterial   *RpGeometryTriangleGetMaterial(const RpGeometry *geometry, const RpTriangle *triangle);
-RwInt32 RpGeometryGetNumMaterials(const RpGeometry *geometry);
+RwInt32 RpGeometryGetNumMaterials(const RpGeometry *geometry) { return geometry->matList.numMaterials; }
 RpGeometry  *RpGeometryForAllMaterials(RpGeometry *geometry, RpMaterialCallBack fpCallBack, void *pData) {
 	int i;
 	for(i = 0; i < geometry->matList.numMaterials; i++)
@@ -840,6 +855,17 @@ RpMaterial *RpMatFXMaterialSetupEnvMap( RpMaterial *material, RwTexture *texture
 	mfx->setEnvFrame(frame);
 	mfx->setEnvCoefficient(coef);
 	return material;
+}
+RpMaterial *RpMatFXMaterialSetEnvMapTexture( RpMaterial *material, RwTexture *texture )
+{
+	MatFX *mfx = MatFX::get(material);
+	mfx->setEnvTexture(texture);
+	return material;
+}
+RwTexture *RpMatFXMaterialGetEnvMapTexture( const RpMaterial *material )
+{
+	MatFX *mfx = MatFX::get(material);
+	return mfx ? mfx->getEnvTexture() : nil;
 }
 RpMaterial *RpMatFXMaterialSetEnvMapFrame( RpMaterial *material, RwFrame *frame )
 {

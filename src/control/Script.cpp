@@ -759,12 +759,18 @@ void CTheScripts::Init()
 	if(CPad::GetPad(0)->GetChar('D')) ScriptToLoad = 2;
 
 	int mainf = OpenScript();
+	if(mainf == 0 && ScriptToLoad != 0){
+		ScriptToLoad = 0;
+		mainf = OpenScript();
+	}
 #else
 	CFileMgr::SetDir("data");
 	int mainf = CFileMgr::OpenFile("main.scm", "rb");
 #endif
-	CFileMgr::Read(mainf, (char*)ScriptSpace, SIZE_MAIN_SCRIPT);
-	CFileMgr::CloseFile(mainf);
+	if(mainf != 0){
+		CFileMgr::Read(mainf, (char*)ScriptSpace, SIZE_MAIN_SCRIPT);
+		CFileMgr::CloseFile(mainf);
+	}
 	CFileMgr::SetDir("");
 	StoreVehicleIndex = -1;
 	StoreVehicleWasRandom = true;
