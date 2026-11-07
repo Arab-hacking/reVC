@@ -411,6 +411,15 @@ void CHud::Draw()
 			return;
 		}
 
+#ifdef ANDROID
+		#undef SCREEN_SCALE_X
+		#undef SCREEN_SCALE_Y
+		#undef SCREEN_SCALE_FROM_RIGHT
+		#define SCREEN_SCALE_X(a) CMobileTouchControls::ScaleHudPx(a)
+		#define SCREEN_SCALE_Y(a) CMobileTouchControls::ScaleHudPx(a)
+		#define SCREEN_SCALE_FROM_RIGHT(a) (SCREEN_WIDTH - CMobileTouchControls::GetSafeRightInsetPx() - CMobileTouchControls::ScaleHudPx(a))
+#endif
+
 		/*
 			DrawMoneyCounter
 		*/
@@ -1067,6 +1076,15 @@ void CHud::Draw()
 			}
 		}
 
+#ifdef ANDROID
+		#undef SCREEN_SCALE_X
+		#undef SCREEN_SCALE_Y
+		#undef SCREEN_SCALE_FROM_RIGHT
+		#define SCREEN_SCALE_X(a) SCREEN_SCALE_Y(a)
+		#define SCREEN_SCALE_Y(a) ((a) * (SCREEN_HEIGHT / DEFAULT_SCREEN_HEIGHT))
+		#define SCREEN_SCALE_FROM_RIGHT(a) (SCREEN_WIDTH - SCREEN_SCALE_X(a))
+#endif
+
 		/*
 			DrawRadar
 		*/
@@ -1078,13 +1096,20 @@ void CHud::Draw()
 			RwRenderStateSet(rwRENDERSTATETEXTUREFILTER, (void*)rwFILTERLINEAR);
 			RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)TRUE);
 			if (FrontEndMenuManager.m_PrefsRadarMode != 1) {
+#ifdef ANDROID
+				float mobRadarL = 0.0f, mobRadarT = 0.0f, mobRadarW = 0.0f, mobRadarH = 0.0f;
+				CMobileTouchControls::GetMobileRadarRect(&mobRadarL, &mobRadarT, &mobRadarW, &mobRadarH);
+				CRect rect(mobRadarL, mobRadarT, mobRadarL + mobRadarW, mobRadarT + mobRadarH);
+				const float discGrow = mobRadarW * (6.0f / RADAR_WIDTH);
+				rect.Grow(discGrow, discGrow, discGrow, discGrow);
+				rect.Translate(0.0f, CMobileTouchControls::Dp(1.5f));
+				Sprites[HUD_RADARDISC].Draw(rect, CRGBA(0, 0, 0, 255));
+				rect.Translate(0.0f, -CMobileTouchControls::Dp(1.5f));
+				Sprites[HUD_RADARDISC].Draw(rect, RADARDISC_COLOR);
+#else
 				CRect rect(0.0f, 0.0f, SCREEN_SCALE_X(RADAR_WIDTH), SCREEN_SCALE_Y(RADAR_HEIGHT));
 
-#ifdef ANDROID
-				rect.Translate(SCREEN_SCALE_X_FIX(RADAR_LEFT), SCREEN_SCALE_Y(24.0f));
-#else
 				rect.Translate(SCREEN_SCALE_X_FIX(RADAR_LEFT), SCREEN_SCALE_FROM_BOTTOM(RADAR_BOTTOM + RADAR_HEIGHT));
-#endif
 
 #ifdef FIX_BUGS
 				rect.Grow(SCREEN_SCALE_X(6.0f), SCREEN_SCALE_X(6.0f), SCREEN_SCALE_Y(6.0f), SCREEN_SCALE_Y(6.0f));
@@ -1095,6 +1120,7 @@ void CHud::Draw()
 				Sprites[HUD_RADARDISC].Draw(rect, CRGBA(0, 0, 0, 255));
 				rect.Translate(SCREEN_SCALE_X_FIX(0.0f), SCREEN_SCALE_Y_FIX(-2.0f));
 				Sprites[HUD_RADARDISC].Draw(rect, RADARDISC_COLOR);
+#endif
 			}
 			CRadar::DrawBlips();
 			RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)FALSE);

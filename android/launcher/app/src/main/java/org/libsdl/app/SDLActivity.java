@@ -30,6 +30,7 @@ import android.util.DisplayMetrics;
 import android.util.Log;
 import android.util.SparseArray;
 import android.view.Display;
+import android.view.DisplayCutout;
 import android.view.Gravity;
 import android.view.InputDevice;
 import android.view.KeyEvent;
@@ -38,6 +39,7 @@ import android.view.Surface;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
+import android.view.WindowInsets;
 import android.view.WindowManager;
 import android.view.inputmethod.BaseInputConnection;
 import android.view.inputmethod.EditorInfo;
@@ -416,6 +418,23 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
         setContentView(mLayout);
 
         setWindowStyle(false);
+
+        if (Build.VERSION.SDK_INT >= 28) {
+            WindowManager.LayoutParams lp = getWindow().getAttributes();
+            lp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+            getWindow().setAttributes(lp);
+        }
+
+        updateMobileDisplayMetrics(null);
+        if (Build.VERSION.SDK_INT >= 20) {
+            getWindow().getDecorView().setOnApplyWindowInsetsListener(new View.OnApplyWindowInsetsListener() {
+                @Override
+                public WindowInsets onApplyWindowInsets(View v, WindowInsets insets) {
+                    updateMobileDisplayMetrics(insets);
+                    return v.onApplyWindowInsets(insets);
+                }
+            });
+        }
 
         getWindow().getDecorView().setOnSystemUiVisibilityChangeListener(this);
 
@@ -935,6 +954,35 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
     public static native void nativeAddTouch(int touchId, String name);
     public static native void nativePermissionResult(int requestCode, boolean result);
     public static native void onNativeLocaleChanged();
+    public static native void nativeSetMobileDisplayMetrics(float density, float xdpi, float ydpi,
+                                                            int safeLeft, int safeTop, int safeRight, int safeBottom);
+
+    private void updateMobileDisplayMetrics(WindowInsets insets) {
+        if (SDLActivity.mBrokenLibraries) {
+            return;
+        }
+        try {
+            DisplayMetrics dm = getResources().getDisplayMetrics();
+            int safeL = 0, safeT = 0, safeR = 0, safeB = 0;
+            if (Build.VERSION.SDK_INT >= 28) {
+                WindowInsets wi = insets;
+                if (wi == null && getWindow() != null && getWindow().getDecorView() != null) {
+                    wi = getWindow().getDecorView().getRootWindowInsets();
+                }
+                if (wi != null) {
+                    DisplayCutout cutout = wi.getDisplayCutout();
+                    if (cutout != null) {
+                        safeL = cutout.getSafeInsetLeft();
+                        safeT = cutout.getSafeInsetTop();
+                        safeR = cutout.getSafeInsetRight();
+                        safeB = cutout.getSafeInsetBottom();
+                    }
+                }
+            }
+            nativeSetMobileDisplayMetrics(dm.density, dm.xdpi, dm.ydpi, safeL, safeT, safeR, safeB);
+        } catch (Throwable ignored) {
+        }
+    }
 
     /**
      * This method is called by SDL using JNI.

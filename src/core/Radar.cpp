@@ -1377,14 +1377,17 @@ void CRadar::TransformRadarPointToScreenSpace(CVector2D &out, const CVector2D &i
 		out.x = (FrontEndMenuManager.m_fMapCenterX - FrontEndMenuManager.m_fMapSize) + (MENU_MAP_LENGTH / 2 + MENU_MAP_LEFT_OFFSET + in.x) * FrontEndMenuManager.m_fMapSize * MENU_MAP_WIDTH_SCALE * 2.0f / MENU_MAP_LENGTH;
 		out.y = (FrontEndMenuManager.m_fMapCenterY - FrontEndMenuManager.m_fMapSize) + (MENU_MAP_LENGTH / 2 - MENU_MAP_TOP_OFFSET - in.y) * FrontEndMenuManager.m_fMapSize * MENU_MAP_HEIGHT_SCALE * 2.0f / MENU_MAP_LENGTH;
 	} else {
+#ifdef ANDROID
+		float mobRadarL = 0.0f, mobRadarT = 0.0f, mobRadarW = 0.0f, mobRadarH = 0.0f;
+		CMobileTouchControls::GetMobileRadarRect(&mobRadarL, &mobRadarT, &mobRadarW, &mobRadarH);
+		out.x = (in.x + 1.0f) * 0.5f * mobRadarW + mobRadarL;
+		out.y = (1.0f - in.y) * 0.5f * mobRadarH + mobRadarT;
+#else
 #ifdef FIX_BUGS
 		out.x = (in.x + 1.0f) * 0.5f * SCREEN_SCALE_X(RADAR_WIDTH) + SCREEN_SCALE_X(RADAR_LEFT);
 #else
 		out.x = (in.x + 1.0f) * 0.5f * SCREEN_SCALE_X(RADAR_WIDTH) + RADAR_LEFT;
 #endif
-#ifdef ANDROID
-		out.y = (1.0f - in.y) * 0.5f * SCREEN_SCALE_Y(RADAR_HEIGHT) + SCREEN_SCALE_Y(24.0f);
-#else
 		out.y = (1.0f - in.y) * 0.5f * SCREEN_SCALE_Y(RADAR_HEIGHT) + SCREEN_SCALE_FROM_BOTTOM(RADAR_BOTTOM + RADAR_HEIGHT);
 #endif
 	}

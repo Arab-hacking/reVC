@@ -7,6 +7,7 @@
 #include "Camera.h"
 #include "Clock.h"
 #include "CutsceneMgr.h"
+#include "DMAudio.h"
 #include "DebugLog.h"
 #include "Frontend.h"
 #include "General.h"
@@ -19,6 +20,7 @@
 #include "PlayerPed.h"
 #include "Pools.h"
 #include "Radar.h"
+#include "Renderer.h"
 #include "Replay.h"
 #include "RwHelper.h"
 #include "Sprite2d.h"
@@ -29,6 +31,10 @@
 #include "WeaponType.h"
 #include "World.h"
 #include "main.h"
+
+#ifdef ANDROID
+#include <jni.h>
+#endif
 
 #include <cmath>
 #include <cstring>
@@ -133,7 +139,8 @@ enum FallbackGlyph {
 	GLYPH_HORN,
 	GLYPH_STEER_MODE,
 	GLYPH_DOTS,
-	GLYPH_FLY
+	GLYPH_FLY,
+	GLYPH_LEGEND
 };
 
 struct VirtualButton {
@@ -156,9 +163,48 @@ struct ActivePointer {
 	bool isLook;
 	MobileBtnId btn;
 	bool swipedWeapon;
+	bool swipedRadio;
+};
+
+enum MenuOverlayBtn {
+	MOBTN_NONE = -1,
+	MOBTN_BACK = 0,
+	MOBTN_MAP_ZOOM_IN,
+	MOBTN_MAP_ZOOM_OUT,
+	MOBTN_MAP_LEGEND,
+	MOBTN_COUNT
+};
+
+struct MenuPointer {
+	bool active;
+	int64 fingerId;
+	int32 screenAtDown;
+	uint32 downTimeMs;
+	float x, y;
+	float prevX, prevY;
+	float startX, startY;
+	float maxTravel;
+	bool draggingScroll;
+	bool draggingSlider;
+	bool swipedHorizontal;
+	bool pinched;
+	bool longPressedMap;
+	int32 downRow;
+	MenuOverlayBtn overlayBtn;
+	float scrollResidualPx;
 };
 
 static const int MAX_TOUCH_POINTERS = 10;
+
+// Device Display & DP state
+static float s_deviceDensity = 0.0f;
+static float s_deviceXdpi = 0.0f;
+static float s_deviceYdpi = 0.0f;
+static float s_fallbackDpi = 0.0f;
+static int32 s_safeLeft = 0;
+static int32 s_safeTop = 0;
+static int32 s_safeRight = 0;
+static int32 s_safeBottom = 0;
 
 static int32 s_mobileTxdSlot = -1;
 static bool s_hasCustomTxd = false;
@@ -188,7 +234,7 @@ static bool s_scopeLatched = false;
 static int32 s_scopeLatchedWeapon = -1;
 static bool s_devDrawerOpen = false;
 
-// One-shot pulse latches consumed in UpdatePad / ApplyKeyState
+// Gameplay one-shot pulses
 static bool s_pulsePause = false;
 static bool s_pulseCam = false;
 static bool s_pulseWeaponNext = false;
@@ -199,6 +245,33 @@ static bool s_pulseCrouch = false;
 static bool s_pulseSubmission = false;
 static bool s_pulseSkipCutscene = false;
 static bool s_pulseFlyToggle = false;
+
+// Menu touch & gesture state
+static MenuPointer s_menuPointers[MAX_TOUCH_POINTERS];
+static VirtualButton s_menuOverlayBtns[MOBTN_COUNT];
+static bool s_menuPendingSelect = false;
+static bool s_menuPendingBack = false;
+static int8 s_menuPendingChange = 0;
+static bool s_menuDirtySettings = false;
+static float s_statsScrollDeltaPx = 0.0f;
+static float s_statsVelocityPxPerSec = 0.0f;
+static uint32 s_lastMapTapMs = 0;
+static float s_lastMapTapX = 0.0f;
+static float s_lastMapTapY = 0.0f;
+
+static MobileTouchMath::MobileScreenMetrics
+GetMetrics(void)
+{
+	const float dpi = (s_deviceXdpi > 40.0f) ? s_deviceXdpi : s_fallbackDpi;
+	return MobileTouchMath::ComputeScreenMetrics(
+		(int)SCREEN_WIDTH, (int)SCREEN_HEIGHT,
+		s_deviceDensity, dpi,
+		s_safeLeft, s_safeTop, s_safeRight, s_safeBottom);
+}
+
+// ---------------------------------------------------------------------------
+// Texture Lookup & Optional custom/hud/hud.txd Loader
+// ---------------------------------------------------------------------------
 
 struct TexLookupCtx {
 	const char *target;
@@ -323,7 +396,6 @@ ResolveMobileTextures(void)
 	s_tex[MTEX_CELLPHONE]    = FindMobileTex(dict, "hud_Cellphone", "hud_phone");
 	s_tex[MTEX_SUBMISSION]   = FindMobileTex(dict, "hud_tut_activate", "hud_target", "hud_tommy");
 
-	// High-resolution mobile weapon icons for the top-right HUD slot
 	s_weaponIcons[WEAPONTYPE_UNARMED]           = FindMobileTex(dict, "hud_fist");
 	s_weaponIcons[WEAPONTYPE_BRASSKNUCKLE]      = FindMobileTex(dict, "hud_Brass-Knuckles", "hud_brassk");
 	s_weaponIcons[WEAPONTYPE_SCREWDRIVER]       = FindMobileTex(dict, "hud_screwdriver");
@@ -400,6 +472,10 @@ TryLoadMobileHudTxd(void)
 	s_hasCustomTxd = false;
 	return false;
 }
+
+// ---------------------------------------------------------------------------
+// Context Helpers (Vehicles, Pickups, Scopes)
+// ---------------------------------------------------------------------------
 
 static bool
 IsHelicopterVehicle(CVehicle *veh)
@@ -548,10 +624,13 @@ IsGameplayTouchHudActive(void)
 	return CHud::m_Wants_To_Draw_Hud;
 }
 
+// ---------------------------------------------------------------------------
+// DP-Responsive Gameplay Layout
+// ---------------------------------------------------------------------------
+
 static void
-SetCircleBtn(MobileBtnId id, float cx, float cy, float radius, MobileTexId tex, FallbackGlyph glyph)
+SetCircleBtn(VirtualButton &b, float cx, float cy, float radius, MobileTexId tex, FallbackGlyph glyph)
 {
-	VirtualButton &b = s_buttons[id];
 	b.visible = true;
 	b.invisibleHitZone = false;
 	b.circular = true;
@@ -565,9 +644,8 @@ SetCircleBtn(MobileBtnId id, float cx, float cy, float radius, MobileTexId tex, 
 }
 
 static void
-SetRectBtn(MobileBtnId id, float cx, float cy, float halfW, float halfH, MobileTexId tex, FallbackGlyph glyph, bool invisible = false, bool preserveAspect = false)
+SetRectBtn(VirtualButton &b, float cx, float cy, float halfW, float halfH, MobileTexId tex, FallbackGlyph glyph, bool invisible = false, bool preserveAspect = false)
 {
-	VirtualButton &b = s_buttons[id];
 	b.visible = true;
 	b.invisibleHitZone = invisible;
 	b.circular = false;
@@ -581,7 +659,7 @@ SetRectBtn(MobileBtnId id, float cx, float cy, float halfW, float halfH, MobileT
 }
 
 static void
-UpdateLayout(void)
+UpdateGameplayLayout(void)
 {
 	for (int i = 0; i < MBTN_COUNT; i++) {
 		s_buttons[i].visible = false;
@@ -596,57 +674,55 @@ UpdateLayout(void)
 	if (!player)
 		return;
 
-	const float W = (float)SCREEN_WIDTH;
-	const float H = (float)SCREEN_HEIGHT;
-	if (W <= 1.0f || H <= 1.0f)
-		return;
+	const MobileTouchMath::MobileScreenMetrics m = GetMetrics();
+	const float W = m.screenW;
+	const float H = m.screenH;
 
-	const float u = Min(W, H);
-	const float safeX = Max(u * 0.048f, W * 0.032f);
-	const float safeY = u * 0.038f;
-
-	// 1. Top-Left Radar tap zone (opens Pause / Map menu) or standalone Pause icon if radar hidden
+	// 1. Top-Left Radar tap zone (Pause / Map) or standalone 46dp Pause button if radar hidden
 	const bool radarVisible = FrontEndMenuManager.m_PrefsRadarMode != 2 && !CHud::m_HideRadar;
 	if (radarVisible) {
-		const float rx1 = SCREEN_SCALE_X(RADAR_LEFT) - SCREEN_SCALE_X(6.0f);
-		const float ry1 = SCREEN_SCALE_Y(24.0f) - SCREEN_SCALE_Y(6.0f);
-		const float rx2 = SCREEN_SCALE_X(RADAR_LEFT + RADAR_WIDTH) + SCREEN_SCALE_X(6.0f);
-		const float ry2 = SCREEN_SCALE_Y(24.0f + RADAR_HEIGHT) + SCREEN_SCALE_Y(6.0f);
-		SetRectBtn(MBTN_PAUSE, 0.5f * (rx1 + rx2), 0.5f * (ry1 + ry2),
+		const float pad = m.Dp(6.0f);
+		const float rx1 = m.radarLeftPx - pad;
+		const float ry1 = m.radarTopPx - pad;
+		const float rx2 = m.radarLeftPx + m.radarSizePx + pad;
+		const float ry2 = m.radarTopPx + m.radarSizePx + pad;
+		SetRectBtn(s_buttons[MBTN_PAUSE], 0.5f * (rx1 + rx2), 0.5f * (ry1 + ry2),
 			0.5f * (rx2 - rx1), 0.5f * (ry2 - ry1), MTEX_PAUSE, GLYPH_PAUSE, true);
 	} else {
-		const float rPause = u * 0.048f;
-		SetCircleBtn(MBTN_PAUSE, safeX + rPause, safeY + rPause, rPause, MTEX_PAUSE, GLYPH_PAUSE);
+		const float rPause = m.Dp(23.0f);
+		SetCircleBtn(s_buttons[MBTN_PAUSE], m.marginLeftPx + rPause, m.marginTopPx + rPause, rPause, MTEX_PAUSE, GLYPH_PAUSE);
 	}
 
-	// 2. Top-Right HUD weapon icon tap/swipe zone + Camera mode toggle
-	const float wx1 = SCREEN_SCALE_FROM_RIGHT(104.0f);
-	const float wy1 = SCREEN_SCALE_Y(22.0f);
-	const float wx2 = SCREEN_SCALE_FROM_RIGHT(30.0f);
-	const float wy2 = SCREEN_SCALE_Y(96.0f);
+	// 2. Top-Right HUD weapon icon tap/swipe zone + DP-sized Camera toggle
+	const float hudRightBase = W - m.safeRightPx;
+	const float wx1 = hudRightBase - m.hudUnitPx * 104.0f;
+	const float wx2 = hudRightBase - m.hudUnitPx * 28.0f;
+	const float wy1 = m.safeTopPx + m.hudUnitPx * 20.0f;
+	const float wy2 = m.safeTopPx + m.hudUnitPx * 98.0f;
+
 	CVehicle *veh = FindPlayerVehicle();
 	if (!veh && FrontEndMenuManager.m_PrefsShowHud) {
-		SetRectBtn(MBTN_WEAPON_SLOT, 0.5f * (wx1 + wx2), 0.5f * (wy1 + wy2),
+		SetRectBtn(s_buttons[MBTN_WEAPON_SLOT], 0.5f * (wx1 + wx2), 0.5f * (wy1 + wy2),
 			0.5f * (wx2 - wx1), 0.5f * (wy2 - wy1), MTEX_SWAPGUN, GLYPH_NONE, true);
 	}
 
-	const float rTopIcon = u * 0.046f;
-	const float topIconY = SCREEN_SCALE_Y(24.0f) + rTopIcon;
-	const float camIconX = Min(SCREEN_SCALE_FROM_RIGHT(206.0f), W - safeX - u * 0.30f);
-	SetCircleBtn(MBTN_CAM, camIconX, topIconY, rTopIcon, MTEX_CAM_TOGGLE, GLYPH_CAMERA);
+	const float rTopIcon = m.Dp(22.0f); // 44dp visual, >52dp touch hitbox
+	const float topIconY = m.marginTopPx + rTopIcon;
+	const float camIconX = Min(hudRightBase - m.hudUnitPx * 212.0f, W - m.marginRightPx - m.Dp(165.0f));
+	SetCircleBtn(s_buttons[MBTN_CAM], camIconX, topIconY, rTopIcon, MTEX_CAM_TOGGLE, GLYPH_CAMERA);
 
-	// Collapsible utility dot (FLY / TIME+ / TIME-) kept subtle at top-center-left
-	const float rDev = u * 0.036f;
-	const float devX = Max(SCREEN_SCALE_X(RADAR_LEFT + RADAR_WIDTH + 22.0f) + rDev, W * 0.28f);
-	SetCircleBtn(MBTN_DEV_TOGGLE, devX, topIconY, rDev, MTEX_COUNT, GLYPH_DOTS);
+	// Subtle collapsible utility button (FLY / TIME+ / TIME-)
+	const float rDev = m.Dp(18.0f);
+	const float devX = Max(m.radarLeftPx + m.radarSizePx + m.Dp(24.0f) + rDev, W * 0.27f);
+	SetCircleBtn(s_buttons[MBTN_DEV_TOGGLE], devX, topIconY, rDev, MTEX_COUNT, GLYPH_DOTS);
 	if (s_devDrawerOpen) {
-		const float step = rDev * 2.35f;
-		SetCircleBtn(MBTN_DEV_FLY, devX + step, topIconY, rDev, MTEX_COUNT, GLYPH_FLY);
-		SetCircleBtn(MBTN_DEV_TIME_PLUS, devX + step * 2.0f, topIconY, rDev, MTEX_ZOOM_IN, GLYPH_PLUS);
-		SetCircleBtn(MBTN_DEV_TIME_MINUS, devX + step * 3.0f, topIconY, rDev, MTEX_ZOOM_OUT, GLYPH_MINUS);
+		const float step = m.Dp(44.0f);
+		SetCircleBtn(s_buttons[MBTN_DEV_FLY], devX + step, topIconY, rDev, MTEX_COUNT, GLYPH_FLY);
+		SetCircleBtn(s_buttons[MBTN_DEV_TIME_PLUS], devX + step * 2.0f, topIconY, rDev, MTEX_ZOOM_IN, GLYPH_PLUS);
+		SetCircleBtn(s_buttons[MBTN_DEV_TIME_MINUS], devX + step * 3.0f, topIconY, rDev, MTEX_ZOOM_OUT, GLYPH_MINUS);
 	}
 
-	// 3. IN VEHICLE LAYOUT
+	// 3. IN VEHICLE LAYOUT (DP-sized pedals, steering, and context actions)
 	if (veh) {
 		if (s_scopeLatched) {
 			s_scopeLatched = false;
@@ -659,72 +735,76 @@ UpdateLayout(void)
 		const bool isTank = (veh->GetModelIndex() == MI_RHINO);
 		const bool useStick = isHeli || isPlane || s_vehicleStickMode;
 
-		// Steering mode toggle (Arrows <-> Analog Stick) in top bar + Radio tap zone at top center
-		SetCircleBtn(MBTN_DRIVE_MODE, camIconX - rTopIcon * 2.35f, topIconY, rTopIcon, MTEX_DRIVE_TOGGLE, GLYPH_STEER_MODE);
-		SetRectBtn(MBTN_RADIO_SLOT, W * 0.50f, SCREEN_SCALE_Y(32.0f), u * 0.14f, u * 0.045f, MTEX_COUNT, GLYPH_NONE, true);
+		SetCircleBtn(s_buttons[MBTN_DRIVE_MODE], camIconX - m.Dp(54.0f), topIconY, rTopIcon, MTEX_DRIVE_TOGGLE, GLYPH_STEER_MODE);
+		SetRectBtn(s_buttons[MBTN_RADIO_SLOT], W * 0.50f, m.marginTopPx + m.Dp(22.0f),
+			m.Dp(68.0f), m.Dp(24.0f), MTEX_COUNT, GLYPH_NONE, true);
 
 		if (SupportsVehicleSubmission(veh)) {
-			SetCircleBtn(MBTN_SUBMISSION, camIconX - rTopIcon * 4.70f, topIconY, rTopIcon, MTEX_SUBMISSION, GLYPH_TARGET);
+			SetCircleBtn(s_buttons[MBTN_SUBMISSION], camIconX - m.Dp(108.0f), topIconY, rTopIcon, MTEX_SUBMISSION, GLYPH_TARGET);
 		}
 
-		// Left side: Analog Stick or Left/Right Steering Arrows
 		if (useStick) {
 			s_stickVisible = true;
-			s_stickRadius = u * 0.128f;
-			s_stickBaseX = safeX + s_stickRadius * 1.08f;
-			s_stickBaseY = H - safeY - s_stickRadius * 1.12f;
+			s_stickRadius = m.Dp(56.0f); // 112dp ergonomic thumbstick
+			s_stickBaseX = m.marginLeftPx + s_stickRadius + m.Dp(6.0f);
+			s_stickBaseY = H - m.marginBottomPx - s_stickRadius - m.Dp(4.0f);
 		} else {
-			const float rSteer = u * 0.072f;
-			const float steerY = H - safeY - rSteer * 1.18f;
-			const float leftX = safeX + rSteer * 1.05f;
-			const float rightX = leftX + rSteer * 2.38f;
-			SetCircleBtn(MBTN_STEER_LEFT, leftX, steerY, rSteer,
+			const float rSteer = m.Dp(34.0f); // 68dp steering buttons
+			const float steerY = H - m.marginBottomPx - rSteer - m.Dp(8.0f);
+			const float leftX = m.marginLeftPx + rSteer + m.Dp(4.0f);
+			const float rightX = leftX + rSteer * 2.0f + m.Dp(16.0f);
+			SetCircleBtn(s_buttons[MBTN_STEER_LEFT], leftX, steerY, rSteer,
 				isTank ? MTEX_TANK_LEFT : MTEX_LEFT, GLYPH_ARROW_LEFT);
-			SetCircleBtn(MBTN_STEER_RIGHT, rightX, steerY, rSteer,
+			SetCircleBtn(s_buttons[MBTN_STEER_RIGHT], rightX, steerY, rSteer,
 				isTank ? MTEX_TANK_RIGHT : MTEX_RIGHT, GLYPH_ARROW_RIGHT);
 		}
 
-		// Right side: Gas pedal, Brake pedal, Handbrake, Exit Vehicle, Horn, Vehicle Gun
-		const float pedalHalfW = u * 0.056f;
-		const float gasHalfH = u * 0.105f;
-		const float brakeHalfH = u * 0.072f;
-		const float gasX = W - safeX - pedalHalfW * 1.05f;
-		const float gasY = H - safeY - gasHalfH * 1.02f;
-		const float brakeX = gasX - pedalHalfW * 2.35f;
-		const float brakeY = H - safeY - brakeHalfH * 1.08f;
+		const float gasHalfW = m.Dp(27.0f);   // 54dp x 98dp gas pedal
+		const float gasHalfH = m.Dp(49.0f);
+		const float brakeHalfW = m.Dp(25.0f); // 50dp x 68dp brake pedal
+		const float brakeHalfH = m.Dp(34.0f);
 
-		SetRectBtn(MBTN_ACCEL, gasX, gasY, pedalHalfW, gasHalfH, MTEX_ACCELERATE, GLYPH_PEDAL_GAS, false, true);
-		SetRectBtn(MBTN_BRAKE, brakeX, brakeY, pedalHalfW, brakeHalfH, MTEX_BRAKE, GLYPH_PEDAL_BRAKE, false, true);
+		const float gasX = W - m.marginRightPx - gasHalfW - m.Dp(2.0f);
+		const float gasY = H - m.marginBottomPx - gasHalfH;
+		const float brakeX = gasX - gasHalfW - brakeHalfW - m.Dp(16.0f);
+		const float brakeY = H - m.marginBottomPx - brakeHalfH - m.Dp(2.0f);
 
-		const float rSub = u * 0.058f;
-		SetCircleBtn(MBTN_HANDBRAKE, brakeX - rSub * 2.15f, H - safeY - rSub * 1.15f, rSub, MTEX_HANDBRAKE, GLYPH_HANDBRAKE);
+		SetRectBtn(s_buttons[MBTN_ACCEL], gasX, gasY, gasHalfW, gasHalfH, MTEX_ACCELERATE, GLYPH_PEDAL_GAS, false, true);
+		SetRectBtn(s_buttons[MBTN_BRAKE], brakeX, brakeY, brakeHalfW, brakeHalfH, MTEX_BRAKE, GLYPH_PEDAL_BRAKE, false, true);
+
+		const float rSub = m.Dp(27.0f); // 54dp secondary vehicle buttons
+		SetCircleBtn(s_buttons[MBTN_HANDBRAKE], brakeX - brakeHalfW - rSub - m.Dp(14.0f),
+			H - m.marginBottomPx - rSub - m.Dp(4.0f), rSub, MTEX_HANDBRAKE, GLYPH_HANDBRAKE);
 
 		MobileTexId exitTex = MTEX_EXIT_CAR;
 		if (isBike) exitTex = MTEX_EXIT_BIKE;
 		else if (isHeli) exitTex = MTEX_EXIT_HELI;
 		else if (isPlane) exitTex = MTEX_EXIT_PLANE;
-		SetCircleBtn(MBTN_ENTER_EXIT, gasX - rSub * 0.20f, gasY - gasHalfH - rSub * 1.25f, rSub * 0.92f, exitTex, GLYPH_EXIT);
+		SetCircleBtn(s_buttons[MBTN_ENTER_EXIT], gasX - m.Dp(4.0f),
+			gasY - gasHalfH - m.Dp(32.0f), m.Dp(25.0f), exitTex, GLYPH_EXIT);
 
-		SetCircleBtn(MBTN_HORN, brakeX, brakeY - brakeHalfH - rSub * 1.25f, rSub * 0.90f, MTEX_HORN, GLYPH_HORN);
+		SetCircleBtn(s_buttons[MBTN_HORN], brakeX,
+			brakeY - brakeHalfH - m.Dp(32.0f), m.Dp(24.0f), MTEX_HORN, GLYPH_HORN);
 
 		MobileTexId armedTex = MTEX_SHOOT;
 		if (IsArmedVehicle(veh, &armedTex)) {
-			SetCircleBtn(MBTN_CAR_GUN, brakeX - rSub * 2.15f, brakeY - brakeHalfH - rSub * 1.10f, rSub * 0.98f, armedTex, GLYPH_CROSSHAIR);
+			SetCircleBtn(s_buttons[MBTN_CAR_GUN], brakeX - brakeHalfW - rSub - m.Dp(14.0f),
+				brakeY - brakeHalfH - m.Dp(28.0f), m.Dp(27.0f), armedTex, GLYPH_CROSSHAIR);
 		}
 		if (isHeli || isPlane) {
-			const float rYaw = u * 0.046f;
-			const float yawY = H - safeY - u * 0.34f;
-			SetCircleBtn(MBTN_YAW_LEFT, safeX + rYaw * 1.1f, yawY, rYaw, MTEX_LEFT, GLYPH_ARROW_LEFT);
-			SetCircleBtn(MBTN_YAW_RIGHT, safeX + rYaw * 3.5f, yawY, rYaw, MTEX_RIGHT, GLYPH_ARROW_RIGHT);
+			const float rYaw = m.Dp(22.0f);
+			const float yawY = s_stickBaseY - s_stickRadius - rYaw - m.Dp(14.0f);
+			SetCircleBtn(s_buttons[MBTN_YAW_LEFT], m.marginLeftPx + rYaw + m.Dp(4.0f), yawY, rYaw, MTEX_LEFT, GLYPH_ARROW_LEFT);
+			SetCircleBtn(s_buttons[MBTN_YAW_RIGHT], m.marginLeftPx + rYaw * 3.0f + m.Dp(16.0f), yawY, rYaw, MTEX_RIGHT, GLYPH_ARROW_RIGHT);
 		}
 		return;
 	}
 
-	// 4. ON FOOT / SCOPE LAYOUT
+	// 4. ON FOOT / SCOPE LAYOUT (DP-sized joystick + ergonomic right-thumb arc)
 	s_stickVisible = true;
-	s_stickRadius = u * 0.128f;
-	s_stickBaseX = safeX + s_stickRadius * 1.08f;
-	s_stickBaseY = H - safeY - s_stickRadius * 1.12f;
+	s_stickRadius = m.Dp(56.0f); // 112dp diameter
+	s_stickBaseX = m.marginLeftPx + s_stickRadius + m.Dp(6.0f);
+	s_stickBaseY = H - m.marginBottomPx - s_stickRadius - m.Dp(4.0f);
 
 	const eWeaponType wt = player->GetWeapon()->m_eWeaponType;
 	CWeaponInfo *wi = CWeaponInfo::GetWeaponInfo(wt);
@@ -749,33 +829,31 @@ UpdateLayout(void)
 		attackGlyph = GLYPH_CAMERA;
 	}
 
-	const float rAttack = u * 0.086f;
-	const float rSub = u * 0.060f;
-	const float attackX = W - safeX - u * 0.132f;
-	const float attackY = H - safeY - u * 0.162f;
+	const float rAttack = m.Dp(39.0f); // 78dp primary fire/melee button
+	const float rSub = m.Dp(28.0f);    // 56dp secondary arc buttons (>= 48dp Material standard)
+	const float attackX = W - m.marginRightPx - rAttack - m.Dp(14.0f);
+	const float attackY = H - m.marginBottomPx - rAttack - m.Dp(20.0f);
 
-	SetCircleBtn(MBTN_ATTACK, attackX, attackY, rAttack, attackTex, attackGlyph);
+	SetCircleBtn(s_buttons[MBTN_ATTACK], attackX, attackY, rAttack, attackTex, attackGlyph);
 
-	const bool inScope = IsInFirstPersonScopeCam();
-	if (inScope) {
-		SetCircleBtn(MBTN_TARGET, attackX + u * 0.015f, attackY - u * 0.176f, rSub, MTEX_LOCKON, GLYPH_TARGET);
+	if (IsInFirstPersonScopeCam()) {
+		SetCircleBtn(s_buttons[MBTN_TARGET], attackX + m.Dp(6.0f), attackY - rAttack - rSub - m.Dp(14.0f), rSub, MTEX_LOCKON, GLYPH_TARGET);
 		const int32 camMode = TheCamera.Cams[TheCamera.ActiveCam].Mode;
 		if (camMode == CCam::MODE_SNIPER || camMode == CCam::MODE_SNIPER_RUNABOUT || camMode == CCam::MODE_CAMERA) {
-			SetCircleBtn(MBTN_ZOOM_IN, attackX - u * 0.165f, attackY - u * 0.105f, rSub * 0.94f, MTEX_ZOOM_IN, GLYPH_PLUS);
-			SetCircleBtn(MBTN_ZOOM_OUT, attackX - u * 0.165f, attackY + u * 0.045f, rSub * 0.94f, MTEX_ZOOM_OUT, GLYPH_MINUS);
+			SetCircleBtn(s_buttons[MBTN_ZOOM_IN], attackX - rAttack - rSub - m.Dp(16.0f), attackY - m.Dp(34.0f), m.Dp(26.0f), MTEX_ZOOM_IN, GLYPH_PLUS);
+			SetCircleBtn(s_buttons[MBTN_ZOOM_OUT], attackX - rAttack - rSub - m.Dp(16.0f), attackY + m.Dp(28.0f), m.Dp(26.0f), MTEX_ZOOM_OUT, GLYPH_MINUS);
 		}
 		return;
 	}
 
-	// GTA VC Mobile right-thumb arc: Sprint (bottom-left of Attack), Jump (upper-left), Lock-on (top)
-	SetCircleBtn(MBTN_SPRINT, attackX - u * 0.168f, H - safeY - rSub * 1.18f, rSub, MTEX_RUN, GLYPH_SPRINT);
-	SetCircleBtn(MBTN_JUMP, attackX - u * 0.148f, attackY - u * 0.132f, rSub, MTEX_JUMP, GLYPH_JUMP);
+	const float arcR = rAttack + rSub + m.Dp(14.0f); // 81dp center-to-center -> 14dp clean gap
+	SetCircleBtn(s_buttons[MBTN_SPRINT], attackX - arcR * 0.96f, H - m.marginBottomPx - rSub - m.Dp(4.0f), rSub, MTEX_RUN, GLYPH_SPRINT);
+	SetCircleBtn(s_buttons[MBTN_JUMP],   attackX - arcR * 0.80f, attackY - arcR * 0.62f, rSub, MTEX_JUMP, GLYPH_JUMP);
 
 	if (wi && (wi->m_nWeaponSlot >= 2 || wi->IsFlagSet(WEAPONFLAG_CANAIM) || IsFirstPersonScopeWeapon(wt))) {
-		SetCircleBtn(MBTN_TARGET, attackX + u * 0.018f, attackY - u * 0.175f, rSub * 0.96f, MTEX_LOCKON, GLYPH_TARGET);
+		SetCircleBtn(s_buttons[MBTN_TARGET], attackX + m.Dp(6.0f), attackY - arcR, m.Dp(27.0f), MTEX_LOCKON, GLYPH_TARGET);
 	}
 
-	// Context-sensitive Enter Vehicle button when a vehicle is nearby (or while entering)
 	CVehicle *nearVeh = FindNearbyEnterableVehicle(player, 13.0f);
 	const bool enteringCar = (player->m_nPedState == PED_ENTER_CAR || player->m_nPedState == PED_CARJACK);
 	if (nearVeh || enteringCar) {
@@ -786,36 +864,34 @@ UpdateLayout(void)
 			else if (IsHelicopterVehicle(nearVeh)) enterTex = MTEX_CHOPPER;
 			else if (IsPlaneVehicle(nearVeh)) enterTex = MTEX_PLANE;
 		}
-		SetCircleBtn(MBTN_ENTER_EXIT, attackX - u * 0.285f, attackY - u * 0.030f, rSub * 1.04f, enterTex, GLYPH_CAR);
+		SetCircleBtn(s_buttons[MBTN_ENTER_EXIT], attackX - arcR * 1.62f, attackY - m.Dp(12.0f), m.Dp(29.0f), enterTex, GLYPH_CAR);
 	}
 
-	// Context-sensitive Pickup / Buy Property / Swap Weapon / Phone button
 	MobileTexId interactTex = MTEX_BUY;
 	if (CheckNearbyInteractPickup(player, &interactTex)) {
-		SetCircleBtn(MBTN_INTERACT, attackX - u * 0.275f, attackY - u * 0.175f, rSub * 0.96f, interactTex, GLYPH_PLUS);
+		SetCircleBtn(s_buttons[MBTN_INTERACT], attackX - arcR * 1.52f, attackY - m.Dp(78.0f), m.Dp(27.0f), interactTex, GLYPH_PLUS);
 	}
 }
 
 static bool
-HitTestButton(const VirtualButton &b, float x, float y)
+HitTestButton(const VirtualButton &b, float x, float y, float minTouchRadiusPx)
 {
 	if (!b.visible)
 		return false;
 	const float dx = x - b.cx;
 	const float dy = y - b.cy;
 	if (b.circular) {
-		const float hitR = b.halfW * 1.18f;
+		const float hitR = Max(b.halfW * 1.18f, minTouchRadiusPx);
 		return (dx * dx + dy * dy) <= (hitR * hitR);
 	}
-	const float padX = b.halfW * 0.14f;
-	const float padY = b.halfH * 0.14f;
-	return Abs(dx) <= (b.halfW + padX) && Abs(dy) <= (b.halfH + padY);
+	const float padX = Max(b.halfW * 1.14f, minTouchRadiusPx);
+	const float padY = Max(b.halfH * 1.14f, minTouchRadiusPx);
+	return Abs(dx) <= padX && Abs(dy) <= padY;
 }
 
 static MobileBtnId
-FindHitButton(float x, float y)
+FindHitGameplayButton(float x, float y, float minTouchRadiusPx)
 {
-	// Prioritize explicit visible buttons before invisible HUD zones
 	for (int pass = 0; pass < 2; pass++) {
 		for (int i = MBTN_COUNT - 1; i >= 0; i--) {
 			const VirtualButton &b = s_buttons[i];
@@ -823,7 +899,7 @@ FindHitButton(float x, float y)
 				continue;
 			if ((pass == 0 && b.invisibleHitZone) || (pass == 1 && !b.invisibleHitZone))
 				continue;
-			if (HitTestButton(b, x, y))
+			if (HitTestButton(b, x, y, minTouchRadiusPx))
 				return (MobileBtnId)i;
 		}
 	}
@@ -831,7 +907,7 @@ FindHitButton(float x, float y)
 }
 
 static bool
-IsButtonHeld(MobileBtnId id)
+IsGameplayButtonHeld(MobileBtnId id)
 {
 	for (int i = 0; i < MAX_TOUCH_POINTERS; i++) {
 		if (s_pointers[i].active && s_pointers[i].btn == id)
@@ -841,7 +917,7 @@ IsButtonHeld(MobileBtnId id)
 }
 
 static ActivePointer*
-FindPointer(int64 fingerId)
+FindGameplayPointer(int64 fingerId)
 {
 	for (int i = 0; i < MAX_TOUCH_POINTERS; i++) {
 		if (s_pointers[i].active && s_pointers[i].fingerId == fingerId)
@@ -851,9 +927,9 @@ FindPointer(int64 fingerId)
 }
 
 static ActivePointer*
-AllocPointer(int64 fingerId)
+AllocGameplayPointer(int64 fingerId)
 {
-	ActivePointer *existing = FindPointer(fingerId);
+	ActivePointer *existing = FindGameplayPointer(fingerId);
 	if (existing)
 		return existing;
 	for (int i = 0; i < MAX_TOUCH_POINTERS; i++) {
@@ -883,13 +959,13 @@ UpdateStickFromTouch(float x, float y)
 {
 	float offX = 0.0f, offY = 0.0f;
 	MobileTouchMath::EvalStick(x - s_stickAnchorX, y - s_stickAnchorY,
-		s_stickRadius, 0.14f, &offX, &offY, &s_stickAxisX, &s_stickAxisY);
+		s_stickRadius, 0.13f, &offX, &offY, &s_stickAxisX, &s_stickAxisY);
 	s_stickKnobX = s_stickBaseX + offX;
 	s_stickKnobY = s_stickBaseY + offY;
 }
 
 static void
-HandleButtonDownPulse(MobileBtnId btn)
+HandleGameplayButtonDownPulse(MobileBtnId btn)
 {
 	switch (btn) {
 	case MBTN_PAUSE:
@@ -897,9 +973,6 @@ HandleButtonDownPulse(MobileBtnId btn)
 		break;
 	case MBTN_CAM:
 		s_pulseCam = true;
-		break;
-	case MBTN_RADIO_SLOT:
-		s_pulseRadio = true;
 		break;
 	case MBTN_DRIVE_MODE:
 		s_vehicleStickMode = !s_vehicleStickMode;
@@ -936,6 +1009,684 @@ HandleButtonDownPulse(MobileBtnId btn)
 	default:
 		break;
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Smartphone Menu Touch, Swipe, Slider Scrub, Stats Scroll & Map Pinch Engine
+// ---------------------------------------------------------------------------
+
+static float
+MenuX(float x)
+{
+	return SCREEN_SCALE_X(x);
+}
+
+static float
+MenuY(float y)
+{
+	return SCREEN_SCALE_Y(y);
+}
+
+static float
+MenuXLeft(float x)
+{
+	return SCALE_AND_CENTER_X(x);
+}
+
+static float
+MenuXRight(float x)
+{
+	return SCALE_AND_CENTER_X(DEFAULT_SCREEN_WIDTH - x);
+}
+
+static bool
+MenuHasNativeList(int32 screen)
+{
+	return screen == MENUPAGE_SKIN_SELECT || screen == MENUPAGE_KEYBOARD_CONTROLS;
+}
+
+static int32
+GetMenuMaxVisibleRows(void)
+{
+#ifdef ANDROID
+	return 9;
+#else
+	return 12;
+#endif
+}
+
+static float
+GetScreenLineHeight(int32 screen)
+{
+#ifdef CUSTOM_FRONTEND_OPTIONS
+	if (aScreens[screen].layout && aScreens[screen].layout->lineHeight > 0)
+		return (float)aScreens[screen].layout->lineHeight;
+#endif
+	return (float)MENU_DEFAULT_LINE_HEIGHT;
+}
+
+static bool
+IsSliderMenuAction(int32 action)
+{
+	return action == MENUACTION_BRIGHTNESS || action == MENUACTION_DRAWDIST ||
+	       action == MENUACTION_MUSICVOLUME || action == MENUACTION_SFXVOLUME ||
+	       action == MENUACTION_MOUSESENS || action == MENUACTION_MP3VOLUMEBOOST
+#ifdef CUSTOM_FRONTEND_OPTIONS
+	       || action == MENUACTION_CFO_SLIDER
+#endif
+	       ;
+}
+
+static bool
+IsCycleChoiceAction(int32 action)
+{
+	return action == MENUACTION_WIDESCREEN || action == MENUACTION_SPEAKERCONF ||
+	       action == MENUACTION_AUDIOHW || action == MENUACTION_SCREENRES ||
+	       action == MENUACTION_CTRLMETHOD || action == MENUACTION_RADIO
+#ifdef GAMEPAD_MENU
+	       || action == MENUACTION_CTRLCONFIG
+#endif
+	       ;
+}
+
+static bool
+ShouldShowMenuBackOverlay(int32 screen)
+{
+	return screen != MENUPAGE_START_MENU &&
+	       screen != MENUPAGE_SAVING_IN_PROGRESS &&
+	       screen != MENUPAGE_DELETING_IN_PROGRESS &&
+	       screen != MENUPAGE_OUTRO &&
+	       screen != MENUPAGE_LOAD_SLOT_CONFIRM &&
+	       screen != MENUPAGE_DELETE_SLOT_CONFIRM &&
+	       screen != MENUPAGE_SAVE_OVERWRITE_CONFIRM &&
+	       screen != MENUPAGE_NEW_GAME_RELOAD &&
+	       screen != MENUPAGE_EXIT &&
+	       screen != MENUPAGE_SAVE_CHEAT_WARNING;
+}
+
+static void
+UpdateMenuOverlayLayout(void)
+{
+	for (int i = 0; i < MOBTN_COUNT; i++) {
+		s_menuOverlayBtns[i].visible = false;
+		s_menuOverlayBtns[i].invisibleHitZone = false;
+	}
+	if (!FrontEndMenuManager.m_bMenuActive || FrontEndMenuManager.m_firstStartCounter < 255)
+		return;
+
+	const MobileTouchMath::MobileScreenMetrics m = GetMetrics();
+	const int32 screen = FrontEndMenuManager.m_nCurrScreen;
+	const float rBtn = m.Dp(24.0f); // 48dp touch circle
+	const float bottomY = m.screenH - m.marginBottomPx - rBtn;
+
+	if (ShouldShowMenuBackOverlay(screen)) {
+		const MobileTexId backTex = (screen == MENUPAGE_PAUSE_MENU) ? MTEX_PAUSE : MTEX_LEFT;
+		const FallbackGlyph backGlyph = (screen == MENUPAGE_PAUSE_MENU) ? GLYPH_PAUSE : GLYPH_ARROW_LEFT;
+		SetCircleBtn(s_menuOverlayBtns[MOBTN_BACK], m.marginLeftPx + rBtn, bottomY, rBtn, backTex, backGlyph);
+	}
+
+	if (screen == MENUPAGE_MAP) {
+		const float rightX = m.screenW - m.marginRightPx - rBtn;
+		const float step = rBtn * 2.0f + m.Dp(12.0f);
+		SetCircleBtn(s_menuOverlayBtns[MOBTN_MAP_ZOOM_IN],  rightX, bottomY - step, rBtn, MTEX_ZOOM_IN, GLYPH_PLUS);
+		SetCircleBtn(s_menuOverlayBtns[MOBTN_MAP_ZOOM_OUT], rightX, bottomY,        rBtn, MTEX_ZOOM_OUT, GLYPH_MINUS);
+		SetCircleBtn(s_menuOverlayBtns[MOBTN_MAP_LEGEND],   rightX - step, bottomY, rBtn, MTEX_COUNT, GLYPH_LEGEND);
+	}
+}
+
+static MenuOverlayBtn
+HitTestMenuOverlay(float x, float y, float minTouchR)
+{
+	UpdateMenuOverlayLayout();
+	for (int i = 0; i < MOBTN_COUNT; i++) {
+		if (HitTestButton(s_menuOverlayBtns[i], x, y, minTouchR))
+			return (MenuOverlayBtn)i;
+	}
+	return MOBTN_NONE;
+}
+
+static int32
+HitTestStandardMenuRow(float x, float y)
+{
+	const int32 screen = FrontEndMenuManager.m_nCurrScreen;
+	if (screen < 0 || screen >= MENUPAGES || MenuHasNativeList(screen) ||
+	    screen == MENUPAGE_MAP || screen == MENUPAGE_STATS)
+		return -1;
+
+	if (x < MenuXLeft(20.0f) || x > MenuXRight(16.0f))
+		return -1;
+
+	const int32 maxVis = GetMenuMaxVisibleRows();
+	const bool scrollable = (FrontEndMenuManager.m_nTotalListRow > maxVis && !MenuHasNativeList(screen));
+	const int32 firstOpt = scrollable ? FrontEndMenuManager.m_nFirstVisibleRowOnList : 0;
+	const float scrollOff = (float)(aScreens[screen].m_aEntries[firstOpt].m_Y - aScreens[screen].m_aEntries[0].m_Y);
+	const float lineH = GetScreenLineHeight(screen);
+
+	int32 bestRow = -1;
+	float bestDist = 1e9f;
+
+	for (int32 r = firstOpt; r < firstOpt + maxVis && r < NUM_MENUROWS; r++) {
+		const int32 action = aScreens[screen].m_aEntries[r].m_Action;
+		if (action == MENUACTION_NOTHING || action == MENUACTION_LABEL)
+			continue;
+		if (aScreens[screen].m_aEntries[r].m_EntryName[0] == '\0')
+			continue;
+
+		const float rowY = (float)aScreens[screen].m_aEntries[r].m_Y - scrollOff;
+		const float yTop = MenuY(rowY - 4.0f);
+		const float yBot = MenuY(rowY + lineH + 2.0f);
+		if (y >= yTop && y <= yBot) {
+			const float d = Abs(y - 0.5f * (yTop + yBot));
+			if (d < bestDist) {
+				bestDist = d;
+				bestRow = r;
+			}
+		}
+	}
+	return bestRow;
+}
+
+static void
+ApplyDirectSliderValue(int32 screen, int32 row, float touchX, float deltaX, bool directJump)
+{
+	if (row < 0 || row >= NUM_MENUROWS)
+		return;
+	const int32 action = aScreens[screen].m_aEntries[row].m_Action;
+	if (!IsSliderMenuAction(action))
+		return;
+
+	const float sliderLeft = MenuXLeft(MENUSLIDER_X);
+	const float sliderW = Max(MenuX(MENUSLIDER_UNK), 24.0f);
+
+	auto getNorm = [&]() -> float {
+		switch (action) {
+		case MENUACTION_BRIGHTNESS:     return FrontEndMenuManager.m_PrefsBrightness / 384.0f;
+		case MENUACTION_DRAWDIST:       return (FrontEndMenuManager.m_PrefsLOD - 0.925f) / 0.875f;
+		case MENUACTION_MUSICVOLUME:    return FrontEndMenuManager.m_PrefsMusicVolume / 64.0f;
+		case MENUACTION_SFXVOLUME:      return FrontEndMenuManager.m_PrefsSfxVolume / 64.0f;
+		case MENUACTION_MP3VOLUMEBOOST: return FrontEndMenuManager.m_PrefsMP3BoostVolume / 64.0f;
+		case MENUACTION_MOUSESENS:      return TheCamera.m_fMouseAccelHorzntl * 200.0f;
+#ifdef CUSTOM_FRONTEND_OPTIONS
+		case MENUACTION_CFO_SLIDER: {
+			CMenuScreenCustom::CMenuEntry &opt = aScreens[screen].m_aEntries[row];
+			const float span = opt.m_CFOSlider->max - opt.m_CFOSlider->min;
+			return (span > 1e-5f) ? ((*(float*)opt.m_CFOSlider->value - opt.m_CFOSlider->min) / span) : 0.0f;
+		}
+#endif
+		default: return 0.5f;
+		}
+	};
+
+	float t = getNorm();
+	if (directJump && touchX >= sliderLeft - MenuX(18.0f)) {
+		t = Clamp((touchX - sliderLeft) / sliderW, 0.0f, 1.0f);
+	} else {
+		t = Clamp(t + deltaX / Max(sliderW * 1.35f, 40.0f), 0.0f, 1.0f);
+	}
+
+	switch (action) {
+	case MENUACTION_BRIGHTNESS:
+		FrontEndMenuManager.m_PrefsBrightness = (int32)Clamp(t * 384.0f + 0.5f, 0.0f, 384.0f);
+		break;
+	case MENUACTION_DRAWDIST:
+		FrontEndMenuManager.m_PrefsLOD = 0.925f + t * 0.875f;
+		CRenderer::ms_lodDistScale = FrontEndMenuManager.m_PrefsLOD;
+		break;
+	case MENUACTION_MUSICVOLUME:
+		if (FrontEndMenuManager.m_nPrefsAudio3DProviderIndex != NO_AUDIO_PROVIDER) {
+			FrontEndMenuManager.m_PrefsMusicVolume = (int8)Clamp(t * 64.0f + 0.5f, 0.0f, 64.0f);
+			DMAudio.SetMusicMasterVolume(FrontEndMenuManager.m_PrefsMusicVolume);
+		}
+		break;
+	case MENUACTION_SFXVOLUME:
+		if (FrontEndMenuManager.m_nPrefsAudio3DProviderIndex != NO_AUDIO_PROVIDER) {
+			FrontEndMenuManager.m_PrefsSfxVolume = (int8)Clamp(t * 64.0f + 0.5f, 0.0f, 64.0f);
+			DMAudio.SetEffectsMasterVolume(FrontEndMenuManager.m_PrefsSfxVolume);
+		}
+		break;
+	case MENUACTION_MP3VOLUMEBOOST:
+		if (FrontEndMenuManager.m_nPrefsAudio3DProviderIndex != NO_AUDIO_PROVIDER && DMAudio.IsMP3RadioChannelAvailable()) {
+			FrontEndMenuManager.m_PrefsMP3BoostVolume = (int8)Clamp(t * 64.0f + 0.5f, 0.0f, 64.0f);
+			DMAudio.SetMP3BoostVolume(FrontEndMenuManager.m_PrefsMP3BoostVolume);
+		}
+		break;
+	case MENUACTION_MOUSESENS:
+		TheCamera.m_fMouseAccelHorzntl = Clamp(t * (1.0f / 200.0f), 1.0f / 3200.0f, 1.0f / 200.0f);
+#ifdef FIX_BUGS
+		TheCamera.m_fMouseAccelVertical = TheCamera.m_fMouseAccelHorzntl + 0.0005f;
+#endif
+		break;
+#ifdef CUSTOM_FRONTEND_OPTIONS
+	case MENUACTION_CFO_SLIDER: {
+		CMenuScreenCustom::CMenuEntry &opt = aScreens[screen].m_aEntries[row];
+		const float oldVal = *(float*)opt.m_CFOSlider->value;
+		const float newVal = Clamp(opt.m_CFOSlider->min + t * (opt.m_CFOSlider->max - opt.m_CFOSlider->min),
+			opt.m_CFOSlider->min, opt.m_CFOSlider->max);
+		*(float*)opt.m_CFOSlider->value = newVal;
+		if (newVal != oldVal && opt.m_CFOSlider->changeFunc)
+			opt.m_CFOSlider->changeFunc(oldVal, newVal);
+		break;
+	}
+#endif
+	default:
+		break;
+	}
+	s_menuDirtySettings = true;
+}
+
+static void
+ClampMapCenter(void)
+{
+	const float minX = MenuX(162.0f);
+	const float minY = MenuY(162.0f);
+	const float spanX = Max(0.0f, FrontEndMenuManager.m_fMapSize - minX);
+	const float spanY = Max(0.0f, FrontEndMenuManager.m_fMapSize - minY);
+	FrontEndMenuManager.m_fMapCenterX = Clamp(FrontEndMenuManager.m_fMapCenterX,
+		SCREEN_WIDTH * 0.5f - spanX, SCREEN_WIDTH * 0.5f + spanX);
+	FrontEndMenuManager.m_fMapCenterY = Clamp(FrontEndMenuManager.m_fMapCenterY,
+		SCREEN_HEIGHT * 0.5f - spanY, SCREEN_HEIGHT * 0.5f + spanY);
+}
+
+static void
+ZoomPauseMap(float factor, float anchorX, float anchorY)
+{
+	const float minSize = MenuY(162.0f);
+	const float maxSize = MenuY(1150.0f);
+	const float oldSize = Max(FrontEndMenuManager.m_fMapSize, minSize);
+	const float newSize = Clamp(oldSize * factor, minSize, maxSize);
+	const float ratio = newSize / oldSize;
+
+	FrontEndMenuManager.m_fMapSize = newSize;
+	FrontEndMenuManager.m_fMapCenterX = anchorX - (anchorX - FrontEndMenuManager.m_fMapCenterX) * ratio;
+	FrontEndMenuManager.m_fMapCenterY = anchorY - (anchorY - FrontEndMenuManager.m_fMapCenterY) * ratio;
+	ClampMapCenter();
+}
+
+static void
+ToggleWaypointAtScreenPos(float sx, float sy)
+{
+	const float mapSize = FrontEndMenuManager.m_fMapSize;
+	if (mapSize <= 1.0f)
+		return;
+	if (sx < FrontEndMenuManager.m_fMapCenterX - mapSize || sx > FrontEndMenuManager.m_fMapCenterX + mapSize ||
+	    sy < FrontEndMenuManager.m_fMapCenterY - mapSize || sy > FrontEndMenuManager.m_fMapCenterY + mapSize)
+		return;
+
+	const float diffX = FrontEndMenuManager.m_fMapCenterX - mapSize;
+	const float diffY = FrontEndMenuManager.m_fMapCenterY - mapSize;
+	const float mapSpan = MENU_MAP_LENGTH * MENU_MAP_LENGTH_UNIT; // 4000.0f VC map units
+	const float worldX = ((sx - diffX) / (mapSize * 2.0f)) * (mapSpan / MENU_MAP_WIDTH_SCALE)
+	                     - (mapSpan * 0.5f + MENU_MAP_LEFT_OFFSET * MENU_MAP_LENGTH_UNIT);
+	const float worldY = (mapSpan * 0.5f - MENU_MAP_TOP_OFFSET * MENU_MAP_LENGTH_UNIT)
+	                     - ((sy - diffY) / (mapSize * 2.0f)) * (mapSpan / MENU_MAP_HEIGHT_SCALE);
+	CRadar::ToggleTargetMarker(worldX, worldY);
+	DMAudio.PlayFrontEndSound(SOUND_FRONTEND_ENTER_OR_ADJUST, 0);
+}
+
+static MenuPointer*
+FindMenuPointer(int64 fingerId)
+{
+	for (int i = 0; i < MAX_TOUCH_POINTERS; i++) {
+		if (s_menuPointers[i].active && s_menuPointers[i].fingerId == fingerId)
+			return &s_menuPointers[i];
+	}
+	return nil;
+}
+
+static MenuPointer*
+AllocMenuPointer(int64 fingerId)
+{
+	MenuPointer *existing = FindMenuPointer(fingerId);
+	if (existing)
+		return existing;
+	for (int i = 0; i < MAX_TOUCH_POINTERS; i++) {
+		if (!s_menuPointers[i].active) {
+			memset(&s_menuPointers[i], 0, sizeof(MenuPointer));
+			s_menuPointers[i].active = true;
+			s_menuPointers[i].fingerId = fingerId;
+			s_menuPointers[i].downRow = -1;
+			s_menuPointers[i].overlayBtn = MOBTN_NONE;
+			return &s_menuPointers[i];
+		}
+	}
+	return nil;
+}
+
+static int
+CountActiveMenuPointers(MenuPointer **outA, MenuPointer **outB)
+{
+	int count = 0;
+	for (int i = 0; i < MAX_TOUCH_POINTERS; i++) {
+		if (s_menuPointers[i].active) {
+			if (count == 0 && outA) *outA = &s_menuPointers[i];
+			else if (count == 1 && outB) *outB = &s_menuPointers[i];
+			count++;
+		}
+	}
+	return count;
+}
+
+static bool
+IsMenuOverlayHeld(MenuOverlayBtn btn)
+{
+	for (int i = 0; i < MAX_TOUCH_POINTERS; i++) {
+		if (s_menuPointers[i].active && s_menuPointers[i].overlayBtn == btn)
+			return true;
+	}
+	return false;
+}
+
+static void
+OnMenuFingerDown(int64 fingerId, float x, float y)
+{
+	const MobileTouchMath::MobileScreenMetrics m = GetMetrics();
+	MenuPointer *p = AllocMenuPointer(fingerId);
+	if (!p)
+		return;
+
+	p->screenAtDown = FrontEndMenuManager.m_nCurrScreen;
+	p->downTimeMs = CTimer::GetTimeInMillisecondsPauseMode();
+	p->x = p->prevX = p->startX = x;
+	p->y = p->prevY = p->startY = y;
+	p->maxTravel = 0.0f;
+	s_statsVelocityPxPerSec = 0.0f;
+
+	if (FrontEndMenuManager.m_firstStartCounter < 255) {
+		FrontEndMenuManager.m_firstStartCounter = 255;
+		FrontEndMenuManager.m_nMenuFadeAlpha = 255;
+		return;
+	}
+
+	MenuOverlayBtn ov = HitTestMenuOverlay(x, y, m.Dp(26.0f));
+	if (ov != MOBTN_NONE) {
+		p->overlayBtn = ov;
+		return;
+	}
+
+	const int32 screen = FrontEndMenuManager.m_nCurrScreen;
+	const int32 row = HitTestStandardMenuRow(x, y);
+	p->downRow = row;
+
+	if (row >= 0) {
+		if (FrontEndMenuManager.m_nCurrOption != row) {
+			FrontEndMenuManager.m_nCurrOption = row;
+			if (FrontEndMenuManager.m_nTotalListRow > GetMenuMaxVisibleRows() && !MenuHasNativeList(screen))
+				FrontEndMenuManager.m_nSelectedListRow = row;
+			FrontEndMenuManager.m_nOptionHighlightTransitionBlend = 0;
+			DMAudio.PlayFrontEndSound(SOUND_FRONTEND_HIGHLIGHT_OPTION, 0);
+		}
+		const int32 action = aScreens[screen].m_aEntries[row].m_Action;
+		if (IsSliderMenuAction(action) && x >= MenuXLeft(MENUSLIDER_X - 18.0f)) {
+			p->draggingSlider = true;
+			ApplyDirectSliderValue(screen, row, x, 0.0f, true);
+		}
+	}
+}
+
+static void
+OnMenuFingerMotion(int64 fingerId, float x, float y)
+{
+	MenuPointer *p = FindMenuPointer(fingerId);
+	if (!p)
+		return;
+	if (p->screenAtDown != FrontEndMenuManager.m_nCurrScreen)
+		return;
+
+	const MobileTouchMath::MobileScreenMetrics m = GetMetrics();
+	const float dx = x - p->prevX;
+	const float dy = y - p->prevY;
+	const float totalDX = x - p->startX;
+	const float totalDY = y - p->startY;
+	const float travel = Sqrt(totalDX * totalDX + totalDY * totalDY);
+	if (travel > p->maxTravel)
+		p->maxTravel = travel;
+
+	const int32 screen = FrontEndMenuManager.m_nCurrScreen;
+
+	// 1. Pause Map: 2-finger pinch-zoom + 1-finger 1:1 pan
+	if (screen == MENUPAGE_MAP && p->overlayBtn == MOBTN_NONE) {
+		MenuPointer *pa = nil, *pb = nil;
+		const int nPtr = CountActiveMenuPointers(&pa, &pb);
+		if (nPtr >= 2 && pa && pb) {
+			pa->pinched = true;
+			pb->pinched = true;
+			const float oldAx = (pa == p) ? p->prevX : pa->x;
+			const float oldAy = (pa == p) ? p->prevY : pa->y;
+			const float oldBx = (pb == p) ? p->prevX : pb->x;
+			const float oldBy = (pb == p) ? p->prevY : pb->y;
+			const float newAx = (pa == p) ? x : pa->x;
+			const float newAy = (pa == p) ? y : pa->y;
+			const float newBx = (pb == p) ? x : pb->x;
+			const float newBy = (pb == p) ? y : pb->y;
+
+			MobileTouchMath::EvalMapPinch(
+				oldAx, oldAy, oldBx, oldBy,
+				newAx, newAy, newBx, newBy,
+				m.Dp(18.0f), MenuY(162.0f), MenuY(1150.0f),
+				&FrontEndMenuManager.m_fMapSize,
+				&FrontEndMenuManager.m_fMapCenterX,
+				&FrontEndMenuManager.m_fMapCenterY);
+			ClampMapCenter();
+		} else if (!p->pinched) {
+			FrontEndMenuManager.m_fMapCenterX += dx;
+			FrontEndMenuManager.m_fMapCenterY += dy;
+			ClampMapCenter();
+		}
+		p->prevX = p->x = x;
+		p->prevY = p->y = y;
+		return;
+	}
+
+	p->prevX = p->x = x;
+	p->prevY = p->y = y;
+
+	if (p->overlayBtn != MOBTN_NONE)
+		return;
+
+	// 2. Left-edge swipe-to-go-back on sub-screens
+	if (ShouldShowMenuBackOverlay(screen) && screen != MENUPAGE_PAUSE_MENU &&
+	    p->startX <= m.safeLeftPx + m.Dp(26.0f) &&
+	    totalDX >= m.Dp(52.0f) && Abs(totalDX) > Abs(totalDY) * 2.0f && !p->swipedHorizontal) {
+		p->swipedHorizontal = true;
+		s_menuPendingBack = true;
+		return;
+	}
+
+	// 3. Stats screen: smooth 1:1 vertical drag scrolling + velocity tracking
+	if (screen == MENUPAGE_STATS) {
+		if (Abs(totalDY) >= m.Dp(6.0f)) {
+			p->draggingScroll = true;
+			s_statsScrollDeltaPx -= dy;
+			const float dt = Max(CTimer::GetTimeStepInSeconds(), 1.0f / 120.0f);
+			s_statsVelocityPxPerSec = -dy / dt;
+		}
+		return;
+	}
+
+	// 4. Direct continuous slider scrubbing
+	if (p->downRow >= 0 && IsSliderMenuAction(aScreens[screen].m_aEntries[p->downRow].m_Action)) {
+		if (p->draggingSlider || (Abs(totalDX) >= m.Dp(9.0f) && Abs(totalDX) > Abs(totalDY) * 1.15f)) {
+			p->draggingSlider = true;
+			const bool onSliderBar = (x >= MenuXLeft(MENUSLIDER_X - 18.0f));
+			ApplyDirectSliderValue(screen, p->downRow, x, dx, onSliderBar);
+			return;
+		}
+	}
+
+	// 5. Sound Settings radio icon carousel horizontal swipe
+	if (screen == MENUPAGE_SOUND_SETTINGS &&
+	    p->startY >= MenuY(MENURADIO_SELECTOR_START_Y - 16.0f) &&
+	    p->startY <= MenuY(MENURADIO_SELECTOR_START_Y + MENURADIO_SELECTOR_HEIGHT + 12.0f)) {
+		if (!p->swipedHorizontal && Abs(totalDX) >= m.Dp(26.0f) && Abs(totalDX) > Abs(totalDY)) {
+			p->swipedHorizontal = true;
+			FrontEndMenuManager.ChangeRadioStation(totalDX < 0.0f ? 1 : -1);
+			return;
+		}
+	}
+
+	// 6. Vertical swipe scrolling on scrollable pages & native lists (Skin Select / Controls)
+	const int32 maxVis = MenuHasNativeList(screen) ? 15 : GetMenuMaxVisibleRows();
+	if (FrontEndMenuManager.m_nTotalListRow > maxVis || (screen == MENUPAGE_SKIN_SELECT && FrontEndMenuManager.m_nSkinsTotal > maxVis)) {
+		const int32 totalRows = (screen == MENUPAGE_SKIN_SELECT) ? FrontEndMenuManager.m_nSkinsTotal : FrontEndMenuManager.m_nTotalListRow;
+		if (totalRows > maxVis && (p->draggingScroll || (Abs(totalDY) >= m.Dp(12.0f) && Abs(totalDY) > Abs(totalDX)))) {
+			p->draggingScroll = true;
+			p->scrollResidualPx -= dy; // finger UP -> scroll list DOWN
+			const float stepPx = m.Dp(24.0f);
+			while (p->scrollResidualPx >= stepPx) {
+				p->scrollResidualPx -= stepPx;
+				if (FrontEndMenuManager.m_nFirstVisibleRowOnList < totalRows - maxVis) {
+					FrontEndMenuManager.m_nFirstVisibleRowOnList++;
+					FrontEndMenuManager.m_nSelectedListRow = Clamp(
+						FrontEndMenuManager.m_nSelectedListRow + 1, 0, totalRows - 1);
+					FrontEndMenuManager.m_nCurrOption = FrontEndMenuManager.m_nSelectedListRow;
+					FrontEndMenuManager.m_nScrollbarTopMargin =
+						(263.0f / (float)Max(totalRows, 1)) * FrontEndMenuManager.m_nFirstVisibleRowOnList;
+				}
+			}
+			while (p->scrollResidualPx <= -stepPx) {
+				p->scrollResidualPx += stepPx;
+				if (FrontEndMenuManager.m_nFirstVisibleRowOnList > 0) {
+					FrontEndMenuManager.m_nFirstVisibleRowOnList--;
+					FrontEndMenuManager.m_nSelectedListRow = Clamp(
+						FrontEndMenuManager.m_nSelectedListRow - 1, 0, totalRows - 1);
+					FrontEndMenuManager.m_nCurrOption = FrontEndMenuManager.m_nSelectedListRow;
+					FrontEndMenuManager.m_nScrollbarTopMargin =
+						(263.0f / (float)Max(totalRows, 1)) * FrontEndMenuManager.m_nFirstVisibleRowOnList;
+				}
+			}
+			return;
+		}
+	}
+
+	// 7. Horizontal swipe on multi-choice / toggle row
+	if (p->downRow >= 0 && !p->swipedHorizontal && !p->draggingScroll &&
+	    Abs(totalDX) >= m.Dp(26.0f) && Abs(totalDX) > Abs(totalDY) * 1.4f) {
+		p->swipedHorizontal = true;
+		s_menuPendingChange = (totalDX > 0.0f) ? 1 : -1;
+	}
+}
+
+static void
+OnMenuFingerUp(int64 fingerId, float x, float y)
+{
+	MenuPointer *p = FindMenuPointer(fingerId);
+	if (!p)
+		return;
+
+	const MobileTouchMath::MobileScreenMetrics m = GetMetrics();
+	const bool sameScreen = (p->screenAtDown == FrontEndMenuManager.m_nCurrScreen);
+	const bool isCleanTap = (p->maxTravel <= m.Dp(12.0f) &&
+	                         !p->draggingScroll && !p->draggingSlider &&
+	                         !p->swipedHorizontal && !p->pinched && !p->longPressedMap);
+
+	if (s_menuDirtySettings) {
+		const int32 curAct = aScreens[FrontEndMenuManager.m_nCurrScreen].m_aEntries[FrontEndMenuManager.m_nCurrOption].m_Action;
+		if (curAct == MENUACTION_SFXVOLUME)
+			DMAudio.PlayFrontEndSound(SOUND_FRONTEND_AUDIO_TEST, 0);
+		else
+			DMAudio.PlayFrontEndSound(SOUND_FRONTEND_ENTER_OR_ADJUST, 0);
+		FrontEndMenuManager.SaveSettings();
+		s_menuDirtySettings = false;
+	}
+
+	if (sameScreen && p->overlayBtn != MOBTN_NONE) {
+		if (HitTestMenuOverlay(x, y, m.Dp(30.0f)) == p->overlayBtn) {
+			switch (p->overlayBtn) {
+			case MOBTN_BACK:
+				if (FrontEndMenuManager.m_nCurrScreen == MENUPAGE_PAUSE_MENU) {
+					DMAudio.PlayFrontEndSound(SOUND_FRONTEND_BACK, 0);
+					FrontEndMenuManager.RequestFrontEndShutDown();
+				} else {
+					s_menuPendingBack = true;
+				}
+				break;
+			case MOBTN_MAP_ZOOM_IN:
+				ZoomPauseMap(1.32f, SCREEN_WIDTH * 0.5f, SCREEN_HEIGHT * 0.5f);
+				break;
+			case MOBTN_MAP_ZOOM_OUT:
+				ZoomPauseMap(1.0f / 1.32f, SCREEN_WIDTH * 0.5f, SCREEN_HEIGHT * 0.5f);
+				break;
+			case MOBTN_MAP_LEGEND:
+				FrontEndMenuManager.m_PrefsShowLegends = !FrontEndMenuManager.m_PrefsShowLegends;
+				DMAudio.PlayFrontEndSound(SOUND_FRONTEND_ENTER_OR_ADJUST, 0);
+				break;
+			default:
+				break;
+			}
+		}
+		p->active = false;
+		return;
+	}
+
+	if (sameScreen && isCleanTap) {
+		const int32 screen = FrontEndMenuManager.m_nCurrScreen;
+
+		if (screen == MENUPAGE_MAP) {
+			// Tap bottom-left Back label OR double-tap map to place/clear Waypoint
+			if (x >= MenuXLeft(40.0f) && x <= MenuXLeft(155.0f) &&
+			    y >= MenuY(362.0f) && y <= MenuY(418.0f)) {
+				s_menuPendingBack = true;
+			} else {
+				const uint32 nowMs = CTimer::GetTimeInMillisecondsPauseMode();
+				const float ddx = x - s_lastMapTapX;
+				const float ddy = y - s_lastMapTapY;
+				if (nowMs - s_lastMapTapMs <= 340 && (ddx * ddx + ddy * ddy) <= m.Dp(24.0f) * m.Dp(24.0f)) {
+					ToggleWaypointAtScreenPos(x, y);
+					s_lastMapTapMs = 0;
+				} else {
+					s_lastMapTapMs = nowMs;
+					s_lastMapTapX = x;
+					s_lastMapTapY = y;
+				}
+			}
+		} else if (screen == MENUPAGE_SOUND_SETTINGS &&
+		           y >= MenuY(MENURADIO_SELECTOR_START_Y - 14.0f) &&
+		           y <= MenuY(MENURADIO_SELECTOR_START_Y + MENURADIO_SELECTOR_HEIGHT - 4.0f)) {
+			if (x < MenuXLeft(320.0f))
+				FrontEndMenuManager.ChangeRadioStation(-1);
+			else
+				FrontEndMenuManager.ChangeRadioStation(1);
+		} else if (screen == MENUPAGE_SKIN_SELECT) {
+			if (x > MenuXLeft(PLAYERSETUP_LIST_LEFT) && x < MenuXRight(PLAYERSETUP_LIST_RIGHT) &&
+			    y > MenuY(PLAYERSETUP_LIST_BODY_TOP) && y < SCREEN_SCALE_FROM_BOTTOM(PLAYERSETUP_LIST_BOTTOM)) {
+				const int32 relRow = (int32)((y - MenuY(PLAYERSETUP_LIST_BODY_TOP)) / Max(MenuY(PLAYERSETUP_ROW_HEIGHT), 1.0f));
+				const int32 targetRow = FrontEndMenuManager.m_nFirstVisibleRowOnList + relRow;
+				if (targetRow >= 0 && targetRow < FrontEndMenuManager.m_nSkinsTotal) {
+					if (FrontEndMenuManager.m_nSelectedListRow == targetRow) {
+						strcpy(FrontEndMenuManager.m_PrefsSkinFile, FrontEndMenuManager.m_aSkinName);
+						CWorld::Players[0].SetPlayerSkin(FrontEndMenuManager.m_PrefsSkinFile);
+						FrontEndMenuManager.SaveSettings();
+						DMAudio.PlayFrontEndSound(SOUND_FRONTEND_ENTER_OR_ADJUST, 0);
+					} else {
+						FrontEndMenuManager.m_nSelectedListRow = targetRow;
+						DMAudio.PlayFrontEndSound(SOUND_FRONTEND_HIGHLIGHT_OPTION, 0);
+					}
+				}
+			} else if (y >= SCREEN_SCALE_FROM_BOTTOM(PLAYERSETUP_LIST_BOTTOM + 6.0f)) {
+				if (x > MenuXRight(160.0f)) {
+					s_menuPendingBack = true;
+				} else if (FrontEndMenuManager.m_nSkinsTotal > 0) {
+					strcpy(FrontEndMenuManager.m_PrefsSkinFile, FrontEndMenuManager.m_aSkinName);
+					CWorld::Players[0].SetPlayerSkin(FrontEndMenuManager.m_PrefsSkinFile);
+					FrontEndMenuManager.SaveSettings();
+					DMAudio.PlayFrontEndSound(SOUND_FRONTEND_ENTER_OR_ADJUST, 0);
+				}
+			}
+		} else {
+			const int32 upRow = HitTestStandardMenuRow(x, y);
+			if (upRow >= 0 && upRow == p->downRow) {
+				FrontEndMenuManager.m_nCurrOption = upRow;
+				const int32 action = aScreens[screen].m_aEntries[upRow].m_Action;
+				if (IsCycleChoiceAction(action)) {
+					s_menuPendingChange = 1;
+				} else if (!IsSliderMenuAction(action)) {
+					s_menuPendingSelect = true;
+				}
+			}
+		}
+	}
+
+	p->active = false;
 }
 
 // ---------------------------------------------------------------------------
@@ -1068,12 +1819,12 @@ DrawFallbackGlyph(FallbackGlyph glyph, float cx, float cy, float r, const CRGBA 
 		DrawThickSegment(cx + r * 0.04f, cy + r * 0.28f, cx + r * 0.34f, cy, t * 1.2f, col);
 		break;
 	case GLYPH_ARROW_LEFT:
-		DrawThickSegment(cx + r * 0.22f, cy - r * 0.38f, cx - r * 0.24f, cy, t * 1.4f, col);
-		DrawThickSegment(cx - r * 0.24f, cy, cx + r * 0.22f, cy + r * 0.38f, t * 1.4f, col);
+		DrawThickSegment(cx + r * 0.20f, cy - r * 0.36f, cx - r * 0.24f, cy, t * 1.4f, col);
+		DrawThickSegment(cx - r * 0.24f, cy, cx + r * 0.20f, cy + r * 0.36f, t * 1.4f, col);
 		break;
 	case GLYPH_ARROW_RIGHT:
-		DrawThickSegment(cx - r * 0.22f, cy - r * 0.38f, cx + r * 0.24f, cy, t * 1.4f, col);
-		DrawThickSegment(cx + r * 0.24f, cy, cx - r * 0.22f, cy + r * 0.38f, t * 1.4f, col);
+		DrawThickSegment(cx - r * 0.20f, cy - r * 0.36f, cx + r * 0.24f, cy, t * 1.4f, col);
+		DrawThickSegment(cx + r * 0.24f, cy, cx - r * 0.20f, cy + r * 0.36f, t * 1.4f, col);
 		break;
 	case GLYPH_PEDAL_GAS:
 		DrawThickSegment(cx, cy - r * 0.55f, cx, cy + r * 0.55f, r * 0.52f, col);
@@ -1104,6 +1855,11 @@ DrawFallbackGlyph(FallbackGlyph glyph, float cx, float cy, float r, const CRGBA 
 	case GLYPH_FLY:
 		DrawThickSegment(cx - r * 0.42f, cy + r * 0.08f, cx + r * 0.42f, cy - r * 0.08f, t * 1.2f, col);
 		DrawThickSegment(cx - r * 0.05f, cy - r * 0.38f, cx + r * 0.12f, cy + r * 0.38f, t * 1.2f, col);
+		break;
+	case GLYPH_LEGEND:
+		DrawThickSegment(cx - r * 0.34f, cy - r * 0.26f, cx + r * 0.34f, cy - r * 0.26f, t * 1.2f, col);
+		DrawThickSegment(cx - r * 0.34f, cy,             cx + r * 0.34f, cy,             t * 1.2f, col);
+		DrawThickSegment(cx - r * 0.34f, cy + r * 0.26f, cx + r * 0.34f, cy + r * 0.26f, t * 1.2f, col);
 		break;
 	default:
 		break;
@@ -1139,11 +1895,111 @@ DrawTextureQuad(RwTexture *tex, float cx, float cy, float halfW, float halfH, co
 	RwIm2DRenderPrimitive(rwPRIMTYPETRIFAN, quad, 4);
 }
 
+static void
+DrawVirtualButton(const VirtualButton &b, bool active, uint8 idleAlpha = 195)
+{
+	const float scale = active ? 0.92f : 1.0f;
+	const uint8 alpha = active ? 255 : idleAlpha;
+	RwTexture *tex = (b.texId >= 0 && b.texId < MTEX_COUNT) ? s_tex[b.texId] : nil;
+
+	if (tex) {
+		const CRGBA tint = active ? CRGBA(255, 215, 245, alpha) : CRGBA(255, 255, 255, alpha);
+		DrawTextureQuad(tex, b.cx, b.cy, b.halfW * scale, b.halfH * scale, tint, b.preserveAspect);
+	} else {
+		const float rad = Min(b.halfW, b.halfH) * scale;
+		const CRGBA bg = active ? CRGBA(255, 150, 225, 150) : CRGBA(14, 18, 26, (uint8)(alpha * 0.50f));
+		const CRGBA ring = active ? CRGBA(255, 235, 250, 240) : CRGBA(235, 240, 250, (uint8)(alpha * 0.82f));
+		DrawFilledCircle(b.cx, b.cy, rad, bg, ring, Max(2.0f, rad * 0.065f));
+		DrawFallbackGlyph(b.glyph, b.cx, b.cy, rad, CRGBA(250, 252, 255, alpha));
+	}
+}
+
 } // namespace
 
 // ---------------------------------------------------------------------------
-// Public API
+// Public API + Android JNI Entry Point
 // ---------------------------------------------------------------------------
+
+#ifdef ANDROID
+extern "C" JNIEXPORT void JNICALL
+Java_org_libsdl_app_SDLActivity_nativeSetMobileDisplayMetrics(
+	JNIEnv *env, jclass clazz,
+	jfloat density, jfloat xdpi, jfloat ydpi,
+	jint safeLeft, jint safeTop, jint safeRight, jint safeBottom)
+{
+	(void)env;
+	(void)clazz;
+	CMobileTouchControls::SetDeviceDisplayMetrics(
+		(float)density, (float)xdpi, (float)ydpi,
+		(int32)safeLeft, (int32)safeTop, (int32)safeRight, (int32)safeBottom);
+}
+#endif
+
+void
+CMobileTouchControls::SetDeviceDisplayMetrics(float density, float xdpi, float ydpi,
+                                              int32 safeLeft, int32 safeTop, int32 safeRight, int32 safeBottom)
+{
+	s_deviceDensity = density;
+	s_deviceXdpi = xdpi;
+	s_deviceYdpi = ydpi;
+	s_safeLeft = safeLeft;
+	s_safeTop = safeTop;
+	s_safeRight = safeRight;
+	s_safeBottom = safeBottom;
+}
+
+void
+CMobileTouchControls::SetFallbackDpi(float dpi)
+{
+	if (dpi > 40.0f)
+		s_fallbackDpi = dpi;
+}
+
+float
+CMobileTouchControls::Dp(float dp)
+{
+	return GetMetrics().Dp(dp);
+}
+
+float
+CMobileTouchControls::ScaleHudPx(float ps2Units)
+{
+	return GetMetrics().hudUnitPx * ps2Units;
+}
+
+float
+CMobileTouchControls::GetSafeLeftInsetPx(void)
+{
+	return GetMetrics().safeLeftPx;
+}
+
+float
+CMobileTouchControls::GetSafeRightInsetPx(void)
+{
+	return GetMetrics().safeRightPx;
+}
+
+float
+CMobileTouchControls::GetSafeTopInsetPx(void)
+{
+	return GetMetrics().safeTopPx;
+}
+
+float
+CMobileTouchControls::GetSafeBottomInsetPx(void)
+{
+	return GetMetrics().safeBottomPx;
+}
+
+void
+CMobileTouchControls::GetMobileRadarRect(float *outLeft, float *outTop, float *outWidth, float *outHeight)
+{
+	const MobileTouchMath::MobileScreenMetrics m = GetMetrics();
+	if (outLeft)   *outLeft   = m.radarLeftPx;
+	if (outTop)    *outTop    = m.radarTopPx;
+	if (outWidth)  *outWidth  = m.radarSizePx;
+	if (outHeight) *outHeight = m.radarSizePx;
+}
 
 void
 CMobileTouchControls::Initialise(void)
@@ -1297,17 +2153,32 @@ void
 CMobileTouchControls::ResetTouches(void)
 {
 	memset(s_pointers, 0, sizeof(s_pointers));
+	memset(s_menuPointers, 0, sizeof(s_menuPointers));
 	s_stickAxisX = 0;
 	s_stickAxisY = 0;
 	s_accumLookDX = 0.0f;
 	s_accumLookDY = 0.0f;
+	s_menuPendingSelect = false;
+	s_menuPendingBack = false;
+	s_menuPendingChange = 0;
+	s_statsVelocityPxPerSec = 0.0f;
 }
 
 void
 CMobileTouchControls::OnFingerDown(int64 fingerId, float normX, float normY)
 {
 #ifdef ANDROID
-	if (gGameState != GS_PLAYING_GAME || FrontEndMenuManager.m_bMenuActive)
+	const MobileTouchMath::MobileScreenMetrics m = GetMetrics();
+	const float x = normX * m.screenW;
+	const float y = normY * m.screenH;
+
+	if (FrontEndMenuManager.m_bMenuActive) {
+		memset(s_pointers, 0, sizeof(s_pointers));
+		OnMenuFingerDown(fingerId, x, y);
+		return;
+	}
+
+	if (gGameState != GS_PLAYING_GAME)
 		return;
 
 	if (CCutsceneMgr::IsRunning() || TheCamera.m_WideScreenOn) {
@@ -1315,36 +2186,31 @@ CMobileTouchControls::OnFingerDown(int64 fingerId, float normX, float normY)
 		return;
 	}
 
-	UpdateLayout();
+	UpdateGameplayLayout();
 
-	const float W = (float)SCREEN_WIDTH;
-	const float H = (float)SCREEN_HEIGHT;
-	const float x = normX * W;
-	const float y = normY * H;
-
-	ActivePointer *p = AllocPointer(fingerId);
+	ActivePointer *p = AllocGameplayPointer(fingerId);
 	if (!p)
 		return;
 	p->x = p->startX = x;
 	p->y = p->startY = y;
 
-	// 1. Explicit virtual buttons first
-	MobileBtnId hitBtn = FindHitButton(x, y);
+	// 1. Explicit virtual buttons (minimum 24dp radius = 48dp touch target)
+	MobileBtnId hitBtn = FindHitGameplayButton(x, y, m.Dp(24.0f));
 	if (hitBtn != MBTN_NONE) {
 		p->btn = hitBtn;
-		HandleButtonDownPulse(hitBtn);
+		HandleGameplayButtonDownPulse(hitBtn);
 		return;
 	}
 
-	// 2. Virtual Analog Stick (with forgiving bottom-left grab region)
+	// 2. Virtual Analog Stick (dynamic floating anchor in lower-left thumb zone)
 	if (s_stickVisible && !IsStickOwned()) {
 		const float dx = x - s_stickBaseX;
 		const float dy = y - s_stickBaseY;
 		const float grabR = s_stickRadius * 1.55f;
-		const bool inThumbZone = (x < W * 0.34f && y > H * 0.45f);
+		const bool inThumbZone = (x < m.screenW * 0.36f && y > m.screenH * 0.42f);
 		if ((dx * dx + dy * dy) <= (grabR * grabR) || inThumbZone) {
 			p->isStick = true;
-			const float maxAnchorOffset = s_stickRadius * 0.45f;
+			const float maxAnchorOffset = s_stickRadius * 0.55f;
 			const float dist = Sqrt(dx * dx + dy * dy);
 			if (dist > maxAnchorOffset && dist > 1e-4f) {
 				s_stickAnchorX = s_stickBaseX + (dx / dist) * maxAnchorOffset;
@@ -1363,7 +2229,7 @@ CMobileTouchControls::OnFingerDown(int64 fingerId, float normX, float normY)
 		}
 	}
 
-	// 3. Any remaining screen area acts as smooth 360-degree camera free-look
+	// 3. Free-look camera anywhere else on screen
 	p->isLook = true;
 #else
 	(void)fingerId; (void)normX; (void)normY;
@@ -1374,38 +2240,64 @@ void
 CMobileTouchControls::OnFingerMotion(int64 fingerId, float normX, float normY, float normDX, float normDY)
 {
 #ifdef ANDROID
-	ActivePointer *p = FindPointer(fingerId);
-	if (!p)
-		return;
+	const MobileTouchMath::MobileScreenMetrics m = GetMetrics();
+	const float x = normX * m.screenW;
+	const float y = normY * m.screenH;
 
-	const float W = (float)SCREEN_WIDTH;
-	const float H = (float)SCREEN_HEIGHT;
-	p->x = normX * W;
-	p->y = normY * H;
-
-	if (p->isStick) {
-		UpdateStickFromTouch(p->x, p->y);
+	if (FrontEndMenuManager.m_bMenuActive) {
+		OnMenuFingerMotion(fingerId, x, y);
 		return;
 	}
 
-	// Free-look OR aim-while-holding Attack/Target button (GTA VC Mobile thumb-aim!)
+	ActivePointer *p = FindGameplayPointer(fingerId);
+	if (!p)
+		return;
+
+	p->x = x;
+	p->y = y;
+
+	if (p->isStick) {
+		UpdateStickFromTouch(x, y);
+		return;
+	}
+
+	// Seamless thumb-slide between Left and Right steering buttons without lifting
+	if (p->btn == MBTN_STEER_LEFT || p->btn == MBTN_STEER_RIGHT) {
+		if (HitTestButton(s_buttons[MBTN_STEER_LEFT], x, y, m.Dp(26.0f)))
+			p->btn = MBTN_STEER_LEFT;
+		else if (HitTestButton(s_buttons[MBTN_STEER_RIGHT], x, y, m.Dp(26.0f)))
+			p->btn = MBTN_STEER_RIGHT;
+		return;
+	}
+
+	// DP-calibrated camera free-look & aim-while-holding Attack/Target
 	if (p->isLook || p->btn == MBTN_ATTACK || p->btn == MBTN_TARGET) {
-		const float sensScale = (p->btn == MBTN_ATTACK) ? 0.55f : 0.72f;
-		s_accumLookDX += normDX * W * sensScale;
-		s_accumLookDY += normDY * H * sensScale;
+		const float deltaDpX = (normDX * m.screenW) / Max(m.pxPerDp, 0.5f);
+		const float deltaDpY = (normDY * m.screenH) / Max(m.pxPerDp, 0.5f);
+		const float aimFactor = (p->btn == MBTN_ATTACK) ? 1.55f : 2.10f;
+		s_accumLookDX += deltaDpX * aimFactor;
+		s_accumLookDY += deltaDpY * aimFactor;
 		return;
 	}
 
 	// Horizontal swipe on top-right weapon slot cycles previous / next weapon
 	if (p->btn == MBTN_WEAPON_SLOT && !p->swipedWeapon) {
-		const float swipeThresh = Min(W, H) * 0.040f;
 		const float deltaX = p->x - p->startX;
-		if (Abs(deltaX) >= swipeThresh) {
+		if (Abs(deltaX) >= m.Dp(20.0f)) {
 			p->swipedWeapon = true;
 			if (deltaX > 0.0f)
 				s_pulseWeaponNext = true;
 			else
 				s_pulseWeaponPrev = true;
+		}
+		return;
+	}
+
+	// Horizontal swipe on top-center vehicle radio zone retunes station
+	if (p->btn == MBTN_RADIO_SLOT && !p->swipedRadio) {
+		if (Abs(p->x - p->startX) >= m.Dp(20.0f)) {
+			p->swipedRadio = true;
+			s_pulseRadio = true;
 		}
 	}
 #else
@@ -1417,8 +2309,16 @@ void
 CMobileTouchControls::OnFingerUp(int64 fingerId, float normX, float normY)
 {
 #ifdef ANDROID
-	(void)normX; (void)normY;
-	ActivePointer *p = FindPointer(fingerId);
+	const MobileTouchMath::MobileScreenMetrics m = GetMetrics();
+	const float x = normX * m.screenW;
+	const float y = normY * m.screenH;
+
+	if (FrontEndMenuManager.m_bMenuActive) {
+		OnMenuFingerUp(fingerId, x, y);
+		return;
+	}
+
+	ActivePointer *p = FindGameplayPointer(fingerId);
 	if (!p)
 		return;
 
@@ -1429,6 +2329,8 @@ CMobileTouchControls::OnFingerUp(int64 fingerId, float normX, float normY)
 		s_stickKnobY = s_stickBaseY;
 	} else if (p->btn == MBTN_WEAPON_SLOT && !p->swipedWeapon) {
 		s_pulseWeaponNext = true;
+	} else if (p->btn == MBTN_RADIO_SLOT && !p->swipedRadio) {
+		s_pulseRadio = true;
 	}
 
 	p->active = false;
@@ -1469,11 +2371,16 @@ CMobileTouchControls::UpdatePad(CPad *pad)
 		return;
 
 	if (FrontEndMenuManager.m_bMenuActive || gGameState != GS_PLAYING_GAME) {
-		ResetTouches();
+		memset(s_pointers, 0, sizeof(s_pointers));
+		s_stickAxisX = 0;
+		s_stickAxisY = 0;
+		s_accumLookDX = 0.0f;
+		s_accumLookDY = 0.0f;
 		return;
 	}
 
-	UpdateLayout();
+	memset(s_menuPointers, 0, sizeof(s_menuPointers));
+	UpdateGameplayLayout();
 
 	CControllerState &st = pad->PCTempKeyState;
 
@@ -1483,48 +2390,45 @@ CMobileTouchControls::UpdatePad(CPad *pad)
 		return;
 	}
 
-	// Analog joystick (-128..+127) or left/right steering arrows
 	if (s_stickVisible && IsStickOwned()) {
 		st.LeftStickX = s_stickAxisX;
 		st.LeftStickY = s_stickAxisY;
 	} else {
-		const bool leftHeld = IsButtonHeld(MBTN_STEER_LEFT);
-		const bool rightHeld = IsButtonHeld(MBTN_STEER_RIGHT);
+		const bool leftHeld = IsGameplayButtonHeld(MBTN_STEER_LEFT);
+		const bool rightHeld = IsGameplayButtonHeld(MBTN_STEER_RIGHT);
 		if (leftHeld && !rightHeld)
 			st.LeftStickX = -128;
 		else if (rightHeld && !leftHeld)
 			st.LeftStickX = 127;
 	}
 
-	// Continuous held gameplay buttons
 	const bool inVeh = (FindPlayerVehicle() != nil);
 	const bool inScope = !inVeh && IsInFirstPersonScopeCam();
 
 	if (inVeh) {
-		if (IsButtonHeld(MBTN_ACCEL))      st.Cross = 255;
-		if (IsButtonHeld(MBTN_BRAKE))      st.Square = 255;
-		if (IsButtonHeld(MBTN_HANDBRAKE))  st.RightShoulder1 = 255;
-		if (IsButtonHeld(MBTN_ENTER_EXIT)) st.Triangle = 255;
-		if (IsButtonHeld(MBTN_HORN))       st.LeftShock = 255;
-		if (IsButtonHeld(MBTN_CAR_GUN))    st.Circle = 255;
-		if (IsButtonHeld(MBTN_YAW_LEFT))   st.LeftShoulder2 = 255;
-		if (IsButtonHeld(MBTN_YAW_RIGHT))  st.RightShoulder2 = 255;
+		if (IsGameplayButtonHeld(MBTN_ACCEL))      st.Cross = 255;
+		if (IsGameplayButtonHeld(MBTN_BRAKE))      st.Square = 255;
+		if (IsGameplayButtonHeld(MBTN_HANDBRAKE))  st.RightShoulder1 = 255;
+		if (IsGameplayButtonHeld(MBTN_ENTER_EXIT)) st.Triangle = 255;
+		if (IsGameplayButtonHeld(MBTN_HORN))       st.LeftShock = 255;
+		if (IsGameplayButtonHeld(MBTN_CAR_GUN))    st.Circle = 255;
+		if (IsGameplayButtonHeld(MBTN_YAW_LEFT))   st.LeftShoulder2 = 255;
+		if (IsGameplayButtonHeld(MBTN_YAW_RIGHT))  st.RightShoulder2 = 255;
 	} else if (inScope) {
-		if (IsButtonHeld(MBTN_ATTACK))     st.Circle = 255;
-		if (IsButtonHeld(MBTN_ZOOM_IN))    st.Square = 255;
-		if (IsButtonHeld(MBTN_ZOOM_OUT))   st.Cross = 255;
-		if (s_scopeLatched || IsButtonHeld(MBTN_TARGET))
+		if (IsGameplayButtonHeld(MBTN_ATTACK))     st.Circle = 255;
+		if (IsGameplayButtonHeld(MBTN_ZOOM_IN))    st.Square = 255;
+		if (IsGameplayButtonHeld(MBTN_ZOOM_OUT))   st.Cross = 255;
+		if (s_scopeLatched || IsGameplayButtonHeld(MBTN_TARGET))
 			st.RightShoulder1 = 255;
 	} else {
-		if (IsButtonHeld(MBTN_ATTACK))     st.Circle = 255;
-		if (IsButtonHeld(MBTN_SPRINT))     st.Cross = 255;
-		if (IsButtonHeld(MBTN_JUMP))       st.Square = 255;
-		if (IsButtonHeld(MBTN_ENTER_EXIT)) st.Triangle = 255;
-		if (s_scopeLatched || IsButtonHeld(MBTN_TARGET))
+		if (IsGameplayButtonHeld(MBTN_ATTACK))     st.Circle = 255;
+		if (IsGameplayButtonHeld(MBTN_SPRINT))     st.Cross = 255;
+		if (IsGameplayButtonHeld(MBTN_JUMP))       st.Square = 255;
+		if (IsGameplayButtonHeld(MBTN_ENTER_EXIT)) st.Triangle = 255;
+		if (s_scopeLatched || IsGameplayButtonHeld(MBTN_TARGET))
 			st.RightShoulder1 = 255;
 	}
 
-	// One-shot pulse actions
 	if (s_pulsePause)      { st.Start = 255;          s_pulsePause = false; }
 	if (s_pulseCam)        { st.Select = 255;         s_pulseCam = false; }
 	if (s_pulseWeaponNext) { st.RightShoulder2 = 255; s_pulseWeaponNext = false; }
@@ -1539,13 +2443,75 @@ CMobileTouchControls::UpdatePad(CPad *pad)
 }
 
 void
-CMobileTouchControls::Draw(void)
+CMobileTouchControls::ProcessMenuTouch(bool &goDown, bool &goUp, bool &optionSelected, bool &goBack, int8 &changeAmount)
 {
 #ifdef ANDROID
-	if (!IsGameplayTouchHudActive())
+	(void)goDown;
+	(void)goUp;
+	FrontEndMenuManager.m_bShowMouse = false;
+
+	// Stationary long-press on Pause Map toggles Waypoint without lifting finger
+	if (FrontEndMenuManager.m_nCurrScreen == MENUPAGE_MAP) {
+		MenuPointer *pa = nil, *pb = nil;
+		const int nPtr = CountActiveMenuPointers(&pa, &pb);
+		if (nPtr == 1 && pa && pa->overlayBtn == MOBTN_NONE && !pa->pinched && !pa->longPressedMap) {
+			const MobileTouchMath::MobileScreenMetrics m = GetMetrics();
+			const uint32 heldMs = CTimer::GetTimeInMillisecondsPauseMode() - pa->downTimeMs;
+			if (heldMs >= 430 && pa->maxTravel <= m.Dp(10.0f)) {
+				pa->longPressedMap = true;
+				ToggleWaypointAtScreenPos(pa->x, pa->y);
+			}
+		}
+	}
+
+	if (s_menuPendingBack) {
+		goBack = true;
+		s_menuPendingBack = false;
+		s_menuPendingSelect = false;
+		s_menuPendingChange = 0;
+		return;
+	}
+	if (s_menuPendingSelect) {
+		optionSelected = true;
+		s_menuPendingSelect = false;
+	}
+	if (s_menuPendingChange != 0) {
+		changeAmount = s_menuPendingChange;
+		s_menuPendingChange = 0;
+	}
+#else
+	(void)goDown; (void)goUp; (void)optionSelected; (void)goBack; (void)changeAmount;
+#endif
+}
+
+float
+CMobileTouchControls::ConsumeStatsScrollDelta(void)
+{
+#ifdef ANDROID
+	MenuPointer *pa = nil, *pb = nil;
+	if (CountActiveMenuPointers(&pa, &pb) == 0 && Abs(s_statsVelocityPxPerSec) > 8.0f) {
+		const float dt = Clamp(CTimer::GetTimeStepInSeconds(), 0.0f, 0.05f);
+		s_statsScrollDeltaPx += s_statsVelocityPxPerSec * dt;
+		s_statsVelocityPxPerSec *= std::exp(-5.0f * dt);
+		if (Abs(s_statsVelocityPxPerSec) < 8.0f)
+			s_statsVelocityPxPerSec = 0.0f;
+	}
+	const float d = s_statsScrollDeltaPx;
+	s_statsScrollDeltaPx = 0.0f;
+	return d;
+#else
+	return 0.0f;
+#endif
+}
+
+void
+CMobileTouchControls::DrawMenuOverlay(void)
+{
+#ifdef ANDROID
+	if (!FrontEndMenuManager.m_bMenuActive || FrontEndMenuManager.m_firstStartCounter < 255)
 		return;
 
-	UpdateLayout();
+	UpdateMenuOverlayLayout();
 
 	RwRenderStateSet(rwRENDERSTATEZTESTENABLE, (void*)FALSE);
 	RwRenderStateSet(rwRENDERSTATEZWRITEENABLE, (void*)FALSE);
@@ -1555,7 +2521,37 @@ CMobileTouchControls::Draw(void)
 	RwRenderStateSet(rwRENDERSTATETEXTUREFILTER, (void*)rwFILTERLINEAR);
 	RwRenderStateSet(rwRENDERSTATETEXTUREADDRESS, (void*)rwTEXTUREADDRESSCLAMP);
 
-	// 1. Virtual Analog Stick (hud_circle + hud_analognub / hud_Nipple)
+	for (int i = 0; i < MOBTN_COUNT; i++) {
+		const VirtualButton &b = s_menuOverlayBtns[i];
+		if (!b.visible)
+			continue;
+		bool active = IsMenuOverlayHeld((MenuOverlayBtn)i);
+		if (i == MOBTN_MAP_LEGEND && FrontEndMenuManager.m_PrefsShowLegends)
+			active = true;
+		DrawVirtualButton(b, active, 185);
+	}
+
+	RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)FALSE);
+#endif
+}
+
+void
+CMobileTouchControls::Draw(void)
+{
+#ifdef ANDROID
+	if (!IsGameplayTouchHudActive())
+		return;
+
+	UpdateGameplayLayout();
+
+	RwRenderStateSet(rwRENDERSTATEZTESTENABLE, (void*)FALSE);
+	RwRenderStateSet(rwRENDERSTATEZWRITEENABLE, (void*)FALSE);
+	RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)TRUE);
+	RwRenderStateSet(rwRENDERSTATESRCBLEND, (void*)rwBLENDSRCALPHA);
+	RwRenderStateSet(rwRENDERSTATEDESTBLEND, (void*)rwBLENDINVSRCALPHA);
+	RwRenderStateSet(rwRENDERSTATETEXTUREFILTER, (void*)rwFILTERLINEAR);
+	RwRenderStateSet(rwRENDERSTATETEXTUREADDRESS, (void*)rwTEXTUREADDRESSCLAMP);
+
 	if (s_stickVisible) {
 		const bool stickActive = IsStickOwned();
 		const float knobX = stickActive ? s_stickKnobX : s_stickBaseX;
@@ -1582,32 +2578,19 @@ CMobileTouchControls::Draw(void)
 		}
 	}
 
-	// 2. Context-Sensitive Action Buttons
 	for (int i = 0; i < MBTN_COUNT; i++) {
 		const VirtualButton &b = s_buttons[i];
 		if (!b.visible || b.invisibleHitZone)
 			continue;
 
-		bool active = IsButtonHeld((MobileBtnId)i);
+		bool active = IsGameplayButtonHeld((MobileBtnId)i);
 		if (i == MBTN_TARGET && s_scopeLatched)
 			active = true;
 		if (i == MBTN_DEV_FLY && CNoClip::IsActive())
 			active = true;
 
-		const float scale = active ? 0.92f : 1.0f;
-		const uint8 alpha = (i == MBTN_DEV_TOGGLE && !s_devDrawerOpen) ? 105 : (active ? 255 : 195);
-		RwTexture *tex = (b.texId >= 0 && b.texId < MTEX_COUNT) ? s_tex[b.texId] : nil;
-
-		if (tex) {
-			const CRGBA tint = active ? CRGBA(255, 215, 245, alpha) : CRGBA(255, 255, 255, alpha);
-			DrawTextureQuad(tex, b.cx, b.cy, b.halfW * scale, b.halfH * scale, tint, b.preserveAspect);
-		} else {
-			const float rad = Min(b.halfW, b.halfH) * scale;
-			const CRGBA bg = active ? CRGBA(255, 150, 225, 145) : CRGBA(14, 18, 26, (uint8)(alpha * 0.45f));
-			const CRGBA ring = active ? CRGBA(255, 235, 250, 235) : CRGBA(235, 240, 250, (uint8)(alpha * 0.80f));
-			DrawFilledCircle(b.cx, b.cy, rad, bg, ring, Max(2.0f, rad * 0.065f));
-			DrawFallbackGlyph(b.glyph, b.cx, b.cy, rad, CRGBA(250, 252, 255, alpha));
-		}
+		const uint8 idleAlpha = (i == MBTN_DEV_TOGGLE && !s_devDrawerOpen) ? 105 : 195;
+		DrawVirtualButton(b, active, idleAlpha);
 	}
 
 	RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)FALSE);

@@ -364,7 +364,8 @@ JNI_WRAPPER int InitializeGame() {
     char* argv[1] = { nullptr };
 
     SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
-   // SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "0");
+    SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "0");
+    SDL_SetHint(SDL_HINT_MOUSE_TOUCH_EVENTS, "0");
 
     CrashHandler::SetupSignalHandlers();
 

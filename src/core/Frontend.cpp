@@ -35,6 +35,7 @@
 #include "FileLoader.h"
 #include "User.h"
 #include "sampman.h"
+#include "MobileTouchControls.h"
 
 // Similar story to Hud.cpp:
 // Game has colors inlined in code.
@@ -56,14 +57,22 @@ const CRGBA SCROLLBAR_COLOR = LABEL_COLOR;
 #define MAP_MIN_SIZE 162.f
 #define MAP_SIZE_TO_ALLOW_X_MOVE 297.f
 
+#ifdef ANDROID
+#define MAX_VISIBLE_LIST_ROW 15
+#else
 #define MAX_VISIBLE_LIST_ROW 30
+#endif
 #define SCROLLBAR_MAX_HEIGHT 263.0f // not in end result
 #define SCROLLABLE_PAGES
 
 #define hasNativeList(screen) (screen == MENUPAGE_SKIN_SELECT || screen == MENUPAGE_KEYBOARD_CONTROLS)
 
 #ifdef SCROLLABLE_PAGES
+#ifdef ANDROID
+#define MAX_VISIBLE_OPTION 9
+#else
 #define MAX_VISIBLE_OPTION 12
+#endif
 #define MAX_VISIBLE_OPTION_ON_SCREEN (hasNativeList(m_nCurrScreen) ? MAX_VISIBLE_LIST_ROW : MAX_VISIBLE_OPTION)
 #define SCREEN_HAS_AUTO_SCROLLBAR (m_nTotalListRow > MAX_VISIBLE_OPTION && !hasNativeList(m_nCurrScreen))
 
@@ -575,7 +584,7 @@ CMenuManager::Initialise(void)
 	m_nCurrOption = 0;
 	m_nOptionHighlightTransitionBlend = 0;
 	CentreMousePointer();
-#ifdef GTA_HANDHELD
+#if defined(GTA_HANDHELD) || defined(ANDROID)
 	m_bShowMouse = false;
 #else
 	m_bShowMouse = true;
@@ -626,10 +635,14 @@ CMenuManager::Initialise(void)
 void
 CMenuManager::CentreMousePointer()
 {
+#ifdef ANDROID
+	FrontEndMenuManager.m_bShowMouse = false;
+#else
 	if (SCREEN_WIDTH * 0.5f != 0.0f && 0.0f != SCREEN_HEIGHT * 0.5f) {
 		RwV2d pos = { SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 };
 		RsMouseSetPos(&pos);
 	}
+#endif
 }
 
 void
@@ -793,6 +806,11 @@ CMenuManager::DisplayHelperText(char *text)
 
 	// We're using SCREEN_STRETCH_FROM_RIGHT, because we also stretch black borders
 	if (text) {
+#ifdef ANDROID
+		if (strcmp(text, "FEH_MPH") == 0 || strcmp(text, "FEDS_SM") == 0 ||
+		    strcmp(text, "FET_EIG") == 0 || strcmp(text, "FET_CIG") == 0)
+			return;
+#endif
 		CFont::SetColor(CRGBA(255, 255, 255, 255));
 		CFont::PrintString(SCREEN_STRETCH_FROM_RIGHT(HELPER_TEXT_RIGHT_MARGIN), SCREEN_SCALE_FROM_BOTTOM(HELPER_TEXT_BOTTOM_MARGIN), TheText.Get(text));
 		return;
@@ -829,6 +847,17 @@ CMenuManager::DisplayHelperText(char *text)
 			CFont::PrintString(SCREEN_STRETCH_FROM_RIGHT(HELPER_TEXT_RIGHT_MARGIN), SCREEN_SCALE_FROM_BOTTOM(HELPER_TEXT_BOTTOM_MARGIN), TheText.Get("FET_RSC"));
 			break;
 		default:
+#ifdef ANDROID
+			if ((aScreens[m_nCurrScreen].m_aEntries[m_nCurrOption].m_Action == MENUACTION_MUSICVOLUME ||
+			     aScreens[m_nCurrScreen].m_aEntries[m_nCurrOption].m_Action == MENUACTION_SFXVOLUME ||
+			     aScreens[m_nCurrScreen].m_aEntries[m_nCurrOption].m_Action == MENUACTION_MP3VOLUMEBOOST ||
+			     aScreens[m_nCurrScreen].m_aEntries[m_nCurrOption].m_Action == MENUACTION_AUDIOHW ||
+			     aScreens[m_nCurrScreen].m_aEntries[m_nCurrOption].m_Action == MENUACTION_SPEAKERCONF) &&
+			    m_nPrefsAudio3DProviderIndex == NO_AUDIO_PROVIDER) {
+				CFont::PrintString(SCREEN_STRETCH_FROM_RIGHT(HELPER_TEXT_RIGHT_MARGIN), SCREEN_SCALE_FROM_BOTTOM(HELPER_TEXT_BOTTOM_MARGIN), TheText.Get("FEH_NA"));
+			}
+			return;
+#endif
 			if (aScreens[m_nCurrScreen].m_aEntries[m_nCurrOption].m_Action == MENUACTION_NO)
 				return;
 
@@ -2517,6 +2546,9 @@ CMenuManager::DrawBackground(bool transitionCall)
 		}
 	}
 
+#ifdef ANDROID
+	CMobileTouchControls::DrawMenuOverlay();
+#else
 	if (m_bShowMouse) {
 		CRect mouse(0.0f, 0.0f, MENU_X(35.0f), MENU_Y(35.0f));
 		CRect shad(MENU_X(10.0f), MENU_Y(3.0f), MENU_X(45.0f), MENU_Y(38.0f));
@@ -2526,6 +2558,7 @@ CMenuManager::DrawBackground(bool transitionCall)
 		m_aFrontEndSprites[MENUSPRITE_MOUSE].Draw(shad, CRGBA(100, 100, 100, 50));
 		m_aFrontEndSprites[MENUSPRITE_MOUSE].Draw(mouse, CRGBA(255, 255, 255, 255));
 	}
+#endif
 }
 
 void
@@ -3385,16 +3418,31 @@ CMenuManager::PrintStats()
 		statsPirateCheck = 45;
 #endif
 
+#ifdef ANDROID
+	if (m_PrefsLanguage == LANGUAGE_AMERICAN)
+		CFont::SetScale(MENU_X(0.49f), MENU_Y(0.86f));
+	else
+		CFont::SetScale(MENU_X(0.43f), MENU_Y(0.86f));
+
+	const float mobileStatsDelta = CMobileTouchControls::ConsumeStatsScrollDelta();
+	if (mobileStatsDelta != 0.0f) {
+		scrollY += mobileStatsDelta;
+	}
+#else
 	if (m_PrefsLanguage == LANGUAGE_AMERICAN)
 		CFont::SetScale(MENU_X(0.43f), MENU_Y(0.75f));
 	else
 		CFont::SetScale(MENU_X(0.37f), MENU_Y(0.75f));
+#endif
 
 	static uint32 lastCheck = 0;
 
 	if (CTimer::GetTimeInMillisecondsPauseMode() - lastCheck > 40) {
-
+#ifdef ANDROID
+		if (mobileStatsDelta == 0.0f && m_StatsScrollSpeed > 0.f) {
+#else
 		if (m_StatsScrollSpeed > 0.f) {
+#endif
 			if (m_StatsScrollDirection == 0)
 				scrollY -= MENU_Y(100.f) / m_StatsScrollSpeed;
 			else
@@ -3571,10 +3619,11 @@ CMenuManager::AdditionalOptionInput(bool &goBack)
 					if (mapCrosshair.y > m_fMapCenterY - m_fMapSize && mapCrosshair.y < m_fMapCenterY + m_fMapSize &&
 						mapCrosshair.x > m_fMapCenterX - m_fMapSize && mapCrosshair.x < m_fMapCenterX + m_fMapSize) {
 
-						// Don't ask me the meanings, I don't know. Found them by trying
+						// Match CRadar::TransformRadarPointToScreenSpace (MENU_MAP_LENGTH * MENU_MAP_LENGTH_UNIT = 4000.0f)
+						const float mapSpan = MENU_MAP_LENGTH * MENU_MAP_LENGTH_UNIT;
 						float diffX = m_fMapCenterX - m_fMapSize, diffY = m_fMapCenterY - m_fMapSize;
-						float x = ((mapCrosshair.x - diffX) / (m_fMapSize * 2)) * (WORLD_SIZE_X / MENU_MAP_WIDTH_SCALE) - (WORLD_SIZE_X / 2 + MENU_MAP_LEFT_OFFSET * MENU_MAP_LENGTH_UNIT);
-						float y = (WORLD_SIZE_Y / 2 - MENU_MAP_TOP_OFFSET * MENU_MAP_LENGTH_UNIT) - ((mapCrosshair.y - diffY) / (m_fMapSize * 2)) * (WORLD_SIZE_Y / MENU_MAP_HEIGHT_SCALE);
+						float x = ((mapCrosshair.x - diffX) / (m_fMapSize * 2)) * (mapSpan / MENU_MAP_WIDTH_SCALE) - (mapSpan / 2 + MENU_MAP_LEFT_OFFSET * MENU_MAP_LENGTH_UNIT);
+						float y = (mapSpan / 2 - MENU_MAP_TOP_OFFSET * MENU_MAP_LENGTH_UNIT) - ((mapCrosshair.y - diffY) / (m_fMapSize * 2)) * (mapSpan / MENU_MAP_HEIGHT_SCALE);
 						CRadar::ToggleTargetMarker(x, y);
 						DMAudio.PlayFrontEndSound(SOUND_FRONTEND_ENTER_OR_ADJUST, 0);
 					}
@@ -4276,6 +4325,14 @@ CMenuManager::UserInput(void)
 
 	if (!m_AllowNavigation && m_firstStartCounter == 255)
 		m_AllowNavigation = true;
+#ifdef ANDROID
+	m_bShowMouse = false;
+	m_nHoverOption = HOVEROPTION_NOT_HOVERING;
+	m_nMousePosX = m_nMouseOldPosX = -1000;
+	m_nMousePosY = m_nMouseOldPosY = -1000;
+	static int oldOption = -99;
+	oldOption = m_nCurrOption;
+#else
 	if (!m_bShowMouse && m_nCurrScreen != MENUPAGE_MAP && (m_nMouseOldPosX != m_nMousePosX || m_nMouseOldPosY != m_nMousePosY)) {
 		m_bShowMouse = true;
 	}
@@ -4335,14 +4392,14 @@ CMenuManager::UserInput(void)
 	}
 
 	m_nMouseOldPosX = m_nMousePosX;
-	m_nMouseOldPosY = m_nMousePosY;
-	m_nMousePosX = m_nMouseTempPosX;
 	m_nMousePosY = m_nMouseTempPosY;
+	m_nMousePosX = m_nMouseTempPosX;
 
 	if (m_nMousePosX < 0) m_nMousePosX = 0;
 	if (m_nMousePosX > SCREEN_WIDTH) m_nMousePosX = SCREEN_WIDTH;
 	if (m_nMousePosY < 0) m_nMousePosY = 0;
 	if (m_nMousePosY > SCREEN_HEIGHT) m_nMousePosY = SCREEN_HEIGHT;
+#endif
 
 	changeValueBy = 0;
 	if (hasNativeList(m_nCurrScreen)) {
@@ -4525,6 +4582,11 @@ CMenuManager::UserInput(void)
 			changeValueBy = -1;
 		}
 	}
+#ifdef ANDROID
+	if (m_AllowNavigation) {
+		CMobileTouchControls::ProcessMenuTouch(goDown, goUp, optionSelected, goBack, changeValueBy);
+	}
+#endif
 	if (changeValueBy != 0) {
 		if ((m_nCurrScreen == MENUPAGE_SOUND_SETTINGS || m_nCurrScreen == MENUPAGE_DISPLAY_SETTINGS || m_nCurrScreen == MENUPAGE_CONTROLLER_PC || m_nCurrScreen == MENUPAGE_MOUSE_CONTROLS)
 			&& aScreens[m_nCurrScreen].m_aEntries[m_nCurrOption].m_Action != MENUACTION_NOTHING
@@ -5906,7 +5968,7 @@ CMenuManager::PrintMap(void)
 		}
 	}
 
-#ifdef MAP_ENHANCEMENTS
+#if defined(MAP_ENHANCEMENTS) && !defined(ANDROID)
 	if (m_nMenuFadeAlpha != 255 && !m_bShowMouse) {
 		mapCrosshair.x = SCREEN_WIDTH / 2;
 		mapCrosshair.y = SCREEN_HEIGHT / 2;

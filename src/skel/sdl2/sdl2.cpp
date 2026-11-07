@@ -197,9 +197,13 @@ psTimer(void)
 void
 psMouseSetPos(RwV2d *pos)
 {
+#ifdef ANDROID
+    (void)pos;
+#else
     SDL_WarpMouseInWindow(PSGLOBAL(window), pos->x, pos->y);
     PSGLOBAL(lastMousePos.x) = (RwInt32)pos->x;
     PSGLOBAL(lastMousePos.y) = (RwInt32)pos->y;
+#endif
 }
 
 /*
@@ -1355,33 +1359,43 @@ void inputEventHandler() {
         switch (event.type) {
             case SDL_KEYDOWN:	/* fall-through */
             case SDL_KEYUP:
+#ifdef ANDROID
+                if (event.key.keysym.sym == SDLK_AC_BACK) {
+                    keypressCB(SDLK_ESCAPE, event.type, 0);
+                    break;
+                }
+#endif
                 keypressCB(event.key.keysym.sym, event.type, 0);
                 break;
 
             case SDL_MOUSEMOTION:
 #ifdef ANDROID
-                if (event.motion.which == SDL_TOUCH_MOUSEID && _InputMouseIsRelative())
-                    break;
-#endif
+                break;
+#else
                 PSGLOBAL(cursorIsInWindow) = true;
                 cursorCB(event.motion.x, event.motion.y);
                 mouseRelX += event.motion.xrel;
                 mouseRelY += event.motion.yrel;
                 break;
+#endif
 
             case SDL_MOUSEBUTTONDOWN:
 #ifdef ANDROID
-                if (event.button.which == SDL_TOUCH_MOUSEID && _InputMouseIsRelative())
-                    break;
-#endif
+                break;
+#else
                 PSGLOBAL(cursorIsInWindow) = true;
                 cursorCB(event.button.x, event.button.y);
                 latchedMouseButtons |= SDL_BUTTON(event.button.button);
                 if (latchedMouseFrames < 2)
                     latchedMouseFrames = 2;
                 break;
+#endif
 
-            case SDL_MOUSEWHEEL: scrollCB(event.wheel.x, event.wheel.y); break;
+            case SDL_MOUSEWHEEL:
+#ifndef ANDROID
+                scrollCB(event.wheel.x, event.wheel.y);
+#endif
+                break;
 
 #ifdef ANDROID
             case SDL_FINGERDOWN:
@@ -1482,6 +1496,8 @@ main(int argc, char *argv[])
     }
 #ifdef ANDROID
     StorageRootBuffer = getenv("STORAGE_ROOT");
+    SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "0");
+    SDL_SetHint(SDL_HINT_MOUSE_TOUCH_EVENTS, "0");
 #endif
 
     /*
@@ -1521,6 +1537,14 @@ main(int argc, char *argv[])
     }
 
     psPostRWinit();
+#ifdef ANDROID
+    SDL_ShowCursor(SDL_DISABLE);
+    {
+        float ddpi = 0.0f, hdpi = 0.0f, vdpi = 0.0f;
+        if (SDL_GetDisplayDPI(0, &ddpi, &hdpi, &vdpi) == 0 && ddpi > 40.0f)
+            CMobileTouchControls::SetFallbackDpi(ddpi);
+    }
+#endif
 
     ControlsManager.InitDefaultControlConfigMouse(MousePointerStateHelper.GetMouseSetUp());
 
