@@ -398,10 +398,6 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
 
         mLayout = new RelativeLayout(this);
         mLayout.addView(mSurface);
-        mLayout.addView(new com.revc.game.TouchControlsView(this),
-                new RelativeLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.MATCH_PARENT));
 
         // Get our current screen orientation and pass it down.
         mCurrentOrientation = SDLActivity.getCurrentOrientation();

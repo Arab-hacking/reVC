@@ -31,6 +31,7 @@ long _dwOperatingSystemVersion;
 #include "AnimViewer.h"
 #include "Font.h"
 #include "MemoryMgr.h"
+#include "MobileTouchControls.h"
 
 #if defined ANDROID
 #include "JavaWrapper.h"
@@ -807,10 +808,6 @@ static bool mouseRelativeMode = false;
 static int mouseRelX = 0, mouseRelY = 0;
 static int latchedMouseButtons = 0;
 static int latchedMouseFrames = 0;
-#ifdef ANDROID
-static SDL_FingerID lookFingerId = -1;
-static int touchLookDX = 0, touchLookDY = 0;
-#endif
 
 bool _InputMouseIsRelative(void)
 {
@@ -824,9 +821,7 @@ bool _InputMouseIsRelative(void)
 void _InputConsumeMouseRelative(int *dx, int *dy)
 {
 #ifdef ANDROID
-    *dx = touchLookDX;
-    *dy = touchLookDY;
-    touchLookDX = touchLookDY = 0;
+    CMobileTouchControls::ConsumeLookDelta(dx, dy);
 #else
     *dx = mouseRelX;
     *dy = mouseRelY;
@@ -1343,8 +1338,7 @@ windowFocusCB(int focused) {
     if (!focused) {
         mouseRelX = mouseRelY = 0;
 #ifdef ANDROID
-        lookFingerId = -1;
-        touchLookDX = touchLookDY = 0;
+        CMobileTouchControls::ResetTouches();
 #endif
     }
 }
@@ -1365,6 +1359,10 @@ void inputEventHandler() {
                 break;
 
             case SDL_MOUSEMOTION:
+#ifdef ANDROID
+                if (event.motion.which == SDL_TOUCH_MOUSEID && _InputMouseIsRelative())
+                    break;
+#endif
                 PSGLOBAL(cursorIsInWindow) = true;
                 cursorCB(event.motion.x, event.motion.y);
                 mouseRelX += event.motion.xrel;
@@ -1372,6 +1370,10 @@ void inputEventHandler() {
                 break;
 
             case SDL_MOUSEBUTTONDOWN:
+#ifdef ANDROID
+                if (event.button.which == SDL_TOUCH_MOUSEID && _InputMouseIsRelative())
+                    break;
+#endif
                 PSGLOBAL(cursorIsInWindow) = true;
                 cursorCB(event.button.x, event.button.y);
                 latchedMouseButtons |= SDL_BUTTON(event.button.button);
@@ -1384,22 +1386,14 @@ void inputEventHandler() {
 #ifdef ANDROID
             case SDL_FINGERDOWN:
                 PSGLOBAL(cursorIsInWindow) = true;
-                if (!FrontEndMenuManager.m_bMenuActive && lookFingerId == -1 && event.tfinger.x >= 0.40f) {
-                    lookFingerId = event.tfinger.fingerId;
-                }
+                CMobileTouchControls::OnFingerDown((int64)event.tfinger.fingerId, event.tfinger.x, event.tfinger.y);
                 break;
             case SDL_FINGERMOTION:
-                if (!FrontEndMenuManager.m_bMenuActive && event.tfinger.fingerId == lookFingerId) {
-                    int winw = RsGlobal.maximumWidth > 0 ? RsGlobal.maximumWidth : 1280;
-                    int winh = RsGlobal.maximumHeight > 0 ? RsGlobal.maximumHeight : 720;
-                    touchLookDX += (int)(event.tfinger.dx * (float)winw * 0.65f);
-                    touchLookDY += (int)(event.tfinger.dy * (float)winh * 0.65f);
-                }
+                CMobileTouchControls::OnFingerMotion((int64)event.tfinger.fingerId,
+                    event.tfinger.x, event.tfinger.y, event.tfinger.dx, event.tfinger.dy);
                 break;
             case SDL_FINGERUP:
-                if (event.tfinger.fingerId == lookFingerId) {
-                    lookFingerId = -1;
-                }
+                CMobileTouchControls::OnFingerUp((int64)event.tfinger.fingerId, event.tfinger.x, event.tfinger.y);
                 break;
 #endif
 

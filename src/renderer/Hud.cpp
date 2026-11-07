@@ -25,6 +25,7 @@
 #include "main.h"
 #include "General.h"
 #include "VarConsole.h"
+#include "MobileTouchControls.h"
 
 #if defined(FIX_BUGS)
 	#define SCREEN_SCALE_X_FIX(a) SCREEN_SCALE_X(a)
@@ -261,6 +262,9 @@ void CHud::Draw()
 
 		if (DrawCrossHair || DrawCrossHairPC) {
 			RwRenderStateSet(rwRENDERSTATETEXTUREFILTER, (void *)rwFILTERLINEAR);
+			RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void *)TRUE);
+			RwRenderStateSet(rwRENDERSTATESRCBLEND, (void *)rwBLENDSRCALPHA);
+			RwRenderStateSet(rwRENDERSTATEDESTBLEND, (void *)rwBLENDINVSRCALPHA);
 
 			SpriteBrightness = Min(SpriteBrightness+1, 30);
 
@@ -395,14 +399,17 @@ void CHud::Draw()
 			}
 			RwRenderStateSet(rwRENDERSTATESRCBLEND, (void *)rwBLENDSRCALPHA);
 			RwRenderStateSet(rwRENDERSTATEDESTBLEND, (void *)rwBLENDINVSRCALPHA);
+			RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void *)FALSE);
 			RwRenderStateSet(rwRENDERSTATEZWRITEENABLE, (void*)TRUE);
 		}
 		else {
 			SpriteBrightness = 0;
 		}
 
-		if (CrossHairHidesHud)
+		if (CrossHairHidesHud) {
+			CMobileTouchControls::Draw();
 			return;
+		}
 
 		/*
 			DrawMoneyCounter
@@ -481,6 +488,7 @@ void CHud::Draw()
 			*/
 
 			if (FrontEndMenuManager.m_PrefsShowHud) {
+				RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)TRUE);
 				if (weaponInfo->m_nModelId <= 0) {
 					RwRenderStateSet(rwRENDERSTATETEXTUREFILTER, (void*)rwFILTERLINEAR);
 					if (FrontEndMenuManager.m_PrefsShowHud)
@@ -493,34 +501,37 @@ void CHud::Draw()
 							1.0f, 1.0f);
 				} else {
 					CBaseModelInfo *weaponModel = CModelInfo::GetModelInfo(weaponInfo->m_nModelId);
-					RwTexDictionary *weaponTxd = CTxdStore::GetSlot(weaponModel->GetTxdSlot())->texDict;
-					if (weaponTxd) {
-						RwTexture *weaponIcon = RwTexDictionaryFindNamedTexture(weaponTxd, weaponModel->GetModelName());
-						if (weaponIcon) {
-							RwRenderStateSet(rwRENDERSTATETEXTUREFILTER, (void*)rwFILTERLINEAR);
+					RwTexture *weaponIcon = CMobileTouchControls::GetWeaponIcon(WeaponType, weaponModel ? weaponModel->GetModelName() : nil);
+					if (!weaponIcon && weaponModel) {
+						RwTexDictionary *weaponTxd = CTxdStore::GetSlot(weaponModel->GetTxdSlot())->texDict;
+						if (weaponTxd)
+							weaponIcon = RwTexDictionaryFindNamedTexture(weaponTxd, weaponModel->GetModelName());
+					}
+					if (weaponIcon) {
+						RwRenderStateSet(rwRENDERSTATETEXTUREFILTER, (void*)rwFILTERLINEAR);
 #ifndef FIX_BUGS
-							const float xSize = SCREEN_SCALE_X(64.0f / 2.0f);
-							const float ySize = SCREEN_SCALE_Y(64.0f / 2.0f);
-							RwRenderStateSet(rwRENDERSTATEZTESTENABLE, (void*)FALSE);
-							RwRenderStateSet(rwRENDERSTATETEXTURERASTER, RwTextureGetRaster(weaponIcon));
-							CSprite::RenderOneXLUSprite(SCREEN_SCALE_FROM_RIGHT(99.0f) + xSize, SCREEN_SCALE_Y(25.0f) + ySize, 1.0f, xSize, ySize,
-								255, 255, 255, 255, 1.0f, 255);
-							RwRenderStateSet(rwRENDERSTATEZTESTENABLE, (void*)TRUE);
+						const float xSize = SCREEN_SCALE_X(64.0f / 2.0f);
+						const float ySize = SCREEN_SCALE_Y(64.0f / 2.0f);
+						RwRenderStateSet(rwRENDERSTATEZTESTENABLE, (void*)FALSE);
+						RwRenderStateSet(rwRENDERSTATETEXTURERASTER, RwTextureGetRaster(weaponIcon));
+						CSprite::RenderOneXLUSprite(SCREEN_SCALE_FROM_RIGHT(99.0f) + xSize, SCREEN_SCALE_Y(25.0f) + ySize, 1.0f, xSize, ySize,
+							255, 255, 255, 255, 1.0f, 255);
+						RwRenderStateSet(rwRENDERSTATEZTESTENABLE, (void*)TRUE);
 #else
-							static CSprite2d sprite;
-							sprite.m_pTexture = weaponIcon;
-							sprite.Draw(
-								CRect(SCREEN_SCALE_FROM_RIGHT(99.0f), SCREEN_SCALE_Y(27.0f), SCREEN_SCALE_FROM_RIGHT(35.0f), SCREEN_SCALE_Y(91.0f)),
-								CRGBA(255, 255, 255, alpha),
-								0.015f, 0.015f,
-								1.0f, 0.0f,
-								0.015f, 1.0f,
-								1.0f, 1.0f);
-							sprite.m_pTexture = nil;
+						static CSprite2d sprite;
+						sprite.m_pTexture = weaponIcon;
+						sprite.Draw(
+							CRect(SCREEN_SCALE_FROM_RIGHT(99.0f), SCREEN_SCALE_Y(27.0f), SCREEN_SCALE_FROM_RIGHT(35.0f), SCREEN_SCALE_Y(91.0f)),
+							CRGBA(255, 255, 255, alpha),
+							0.015f, 0.015f,
+							1.0f, 0.0f,
+							0.015f, 1.0f,
+							1.0f, 1.0f);
+						sprite.m_pTexture = nil;
 #endif
-						}
 					}
 				}
+				RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)FALSE);
 
 				CFont::SetBackgroundOff();
 				CFont::SetScale(SCREEN_SCALE_X(0.5f), SCREEN_SCALE_Y(0.8f));
@@ -1064,10 +1075,16 @@ void CHud::Draw()
 
 			RwRenderStateSet(rwRENDERSTATETEXTUREFILTER, (void*)rwFILTERNEAREST);
 			CRadar::DrawMap();
+			RwRenderStateSet(rwRENDERSTATETEXTUREFILTER, (void*)rwFILTERLINEAR);
+			RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)TRUE);
 			if (FrontEndMenuManager.m_PrefsRadarMode != 1) {
 				CRect rect(0.0f, 0.0f, SCREEN_SCALE_X(RADAR_WIDTH), SCREEN_SCALE_Y(RADAR_HEIGHT));
-				
+
+#ifdef ANDROID
+				rect.Translate(SCREEN_SCALE_X_FIX(RADAR_LEFT), SCREEN_SCALE_Y(24.0f));
+#else
 				rect.Translate(SCREEN_SCALE_X_FIX(RADAR_LEFT), SCREEN_SCALE_FROM_BOTTOM(RADAR_BOTTOM + RADAR_HEIGHT));
+#endif
 
 #ifdef FIX_BUGS
 				rect.Grow(SCREEN_SCALE_X(6.0f), SCREEN_SCALE_X(6.0f), SCREEN_SCALE_Y(6.0f), SCREEN_SCALE_Y(6.0f));
@@ -1080,6 +1097,7 @@ void CHud::Draw()
 				Sprites[HUD_RADARDISC].Draw(rect, RADARDISC_COLOR);
 			}
 			CRadar::DrawBlips();
+			RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)FALSE);
 		}
 	}
 
@@ -1209,11 +1227,17 @@ void CHud::Draw()
 				CFont::SetDropColor(CRGBA(0, 0, 0, 255));
 				CFont::SetScale(SCREEN_SCALE_X(0.58f), SCREEN_SCALE_Y(1.22f));
 
+#ifdef ANDROID
+				float rectWidth = SCREEN_WIDTH - SCREEN_SCALE_X(280.0f);
+				CFont::SetCentreSize(rectWidth);
+				CFont::PrintString(SCREEN_WIDTH * 0.5f, SCREEN_SCALE_FROM_BOTTOM(64.0f), m_Message);
+#else
 				float radarBulge = SCREEN_SCALE_X(140.0f) + SCREEN_SCALE_X(8.0f);
 				float rectWidth = SCREEN_WIDTH - SCREEN_SCALE_X(20.0f) - SCREEN_SCALE_X(8.0f) - radarBulge;
 				CFont::SetCentreSize(rectWidth);
 
 				CFont::PrintString(rectWidth / 2.0f + radarBulge, SCREEN_SCALE_FROM_BOTTOM(105.f + 2.0f), m_Message);
+#endif
 			}
 			CFont::SetDropShadowPosition(0);
 		}
@@ -1313,19 +1337,24 @@ void CHud::Draw()
 					CFont::DrawFonts();
 					CFont::SetColor(CRGBA(175, 175, 175, 255));
 					CFont::SetJustifyOff();
+#ifdef ANDROID
+					const float helpLeftX = (FrontEndMenuManager.m_PrefsRadarMode != 2 && !m_HideRadar) ? 136.0f : 34.0f;
+#else
+					const float helpLeftX = 34.0f;
+#endif
 #ifdef MORE_LANGUAGES
 					if (CFont::IsJapanese())
-						CFont::SetWrapx(SCREEN_SCALE_X(229.0f + 34.0f - 4.0f));
+						CFont::SetWrapx(SCREEN_SCALE_X(229.0f + helpLeftX - 4.0f));
 					else
 #endif
-						CFont::SetWrapx(SCREEN_SCALE_X(200.0f + 34.0f - 4.0f));
+						CFont::SetWrapx(SCREEN_SCALE_X(200.0f + helpLeftX - 4.0f));
 					CFont::SetFontStyle(FONT_LOCALE(FONT_STANDARD));
 					CFont::SetBackgroundOn();
 					CFont::SetBackGroundOnlyTextOff();
 					CFont::SetDropShadowPosition(0);
 					CFont::SetBackgroundColor(CRGBA(0, 0, 0, fAlpha * 0.9f));
 					CFont::SetColor(CRGBA(175, 175, 175, 255));
-					CFont::PrintString(SCREEN_SCALE_X(34.0f), SCREEN_SCALE_Y(28.0f + (150.0f - PagerXOffset) * 0.6f), m_HelpMessageToPrint);
+					CFont::PrintString(SCREEN_SCALE_X(helpLeftX), SCREEN_SCALE_Y(28.0f + (150.0f - PagerXOffset) * 0.6f), m_HelpMessageToPrint);
 					CFont::SetAlphaFade(255.0f);
 					CFont::SetWrapx(SCREEN_WIDTH);
 				}
@@ -1429,6 +1458,8 @@ void CHud::Draw()
 			BigMessageInUse[2] = 0.0f;
 		}
 	}
+
+	CMobileTouchControls::Draw();
 }
 
 void CHud::DrawAfterFade()
@@ -1699,6 +1730,9 @@ void CHud::ReloadTXD()
 	for (int i = 0; i < NUM_HUD_SPRITES; i++) {
 		Sprites[i].SetTexture(WeaponFilenames[i].name, WeaponFilenames[i].mask);
 	}
+	CMobileTouchControls::ReloadTXD();
+	CMobileTouchControls::UpgradeHudSprites(Sprites, NUM_HUD_SPRITES);
+	CMobileTouchControls::UpgradeRadarSprites();
 }
 #endif
 
@@ -1783,6 +1817,9 @@ void CHud::Initialise()
 	VarConsole.Add("Draw HUD", &m_Wants_To_Draw_Hud, false);
 #endif
 	CTxdStore::PopCurrentTxd();
+
+	CMobileTouchControls::Initialise();
+	CMobileTouchControls::UpgradeHudSprites(Sprites, NUM_HUD_SPRITES);
 }
 
 void CHud::ReInitialise() {
@@ -1974,6 +2011,8 @@ void CHud::Shutdown()
 
 	int HudTXD = CTxdStore::FindTxdSlot("hud");
 	CTxdStore::RemoveTxdSlot(HudTXD);
+
+	CMobileTouchControls::Shutdown();
 }
 
 float CHud::DrawFadeState(DRAW_FADE_STATE fadingElement, int forceFadingIn)

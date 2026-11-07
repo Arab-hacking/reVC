@@ -1499,7 +1499,11 @@ CPlayerPed::ProcessPlayerWeapon(CPad *padUsed)
 			TheCamera.SetNewPlayerWeaponMode(CCam::MODE_SYPHON, 0, 0);
 			TheCamera.UpdateAimingCoors(m_pPointGunAt->GetPosition());
 
+#ifdef ANDROID
+		} else if (!CCamera::m_bUseMouse3rdPerson || CCamera::bFreeCam) {
+#else
 		} else if (!CCamera::m_bUseMouse3rdPerson) {
+#endif
 			if (padUsed->TargetJustDown() || TheCamera.m_bJustJumpedOutOf1stPersonBecauseOfTarget)
 				FindWeaponLockOnTarget();
 		}

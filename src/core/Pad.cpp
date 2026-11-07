@@ -28,6 +28,7 @@
 #include "Ped.h"
 #include "PlayerPed.h"
 #include "ModelInfo.h"
+#include "MobileTouchControls.h"
 #include "PedModelInfo.h"
 #include "AnimManager.h"
 #include "WeaponInfo.h"
@@ -1071,8 +1072,12 @@ void CPad::UpdateMouse()
 	{
 #ifdef LIBRW_SDL2
         int xpos = 1, ypos = 0;
+#ifdef ANDROID
+        int mouseState = _InputMouseIsRelative()
+            ? 0
+            : (SDL_GetMouseState(&xpos, &ypos) | _InputConsumeLatchedMouseButtons());
+#else
         int mouseState = SDL_GetMouseState(&xpos, &ypos) | _InputConsumeLatchedMouseButtons();
-#ifndef ANDROID
         if (!_InputMouseIsRelative() && xpos == 0 && mouseState == 0)
             return;
 #endif
@@ -1847,6 +1852,10 @@ void CPad::UpdatePads(void)
 	CapturePad(0);
 #endif
 
+#ifdef ANDROID
+	CMobileTouchControls::ApplyKeyState();
+#endif
+
 	// Improve keyboard input latency part 1
 #ifdef FIX_BUGS
 	OldKeyState = NewKeyState;
@@ -1861,6 +1870,10 @@ void CPad::UpdatePads(void)
 		ControlsManager.ClearSimButtonPressCheckers();
 		ControlsManager.AffectPadFromKeyBoard();
 		ControlsManager.AffectPadFromMouse();
+#ifdef ANDROID
+		CVehicle::m_bDisableMouseSteering = true;
+		CMobileTouchControls::UpdatePad(GetPad(0));
+#endif
 
 #ifdef DETECT_PAD_INPUT_SWITCH
 	}

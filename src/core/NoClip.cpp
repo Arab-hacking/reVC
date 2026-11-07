@@ -135,13 +135,19 @@ CNoClip::Move(void)
 	               (pad->GetChar('A') || pad->GetChar('a'));
 	float vertical = (pad->GetChar(' ') || pad->GetChar('E') || pad->GetChar('e')) -
 	                 (pad->GetLeftCtrl() || pad->GetRightCtrl() || pad->GetChar('Q') || pad->GetChar('q'));
+	if(forward == 0.0f && pad->NewState.LeftStickY != 0)
+		forward = -(float)pad->NewState.LeftStickY / 128.0f;
+	if(strafe == 0.0f && pad->NewState.LeftStickX != 0)
+		strafe = (float)pad->NewState.LeftStickX / 128.0f;
+	if(vertical == 0.0f)
+		vertical = (float)(pad->NewState.Square != 0) - (float)(pad->NewState.Circle != 0);
 	if(forward == 0.0f && strafe == 0.0f && vertical == 0.0f)
 		return;
 
 	const CVector &view = TheCamera.Cams[TheCamera.ActiveCam].Front;
 	NoClipVector direction = NoClipMoveDirection(view.x, view.y, view.z, forward, strafe, vertical);
 	float seconds = NoClipClamp(CTimer::GetTimeStepInSeconds(), 0.0f, 0.1f);
-	float speed = (pad->GetLeftShift() || pad->GetRightShift()) ? 36.0f : 12.0f;
+	float speed = (pad->GetLeftShift() || pad->GetRightShift() || pad->NewState.Cross != 0) ? 36.0f : 12.0f;
 	CVector pos = noclipEntity->GetPosition();
 	// RemoveAndAdd uses sparse sectors beyond the original island grid.
 	pos.x += direction.x*speed*seconds;
