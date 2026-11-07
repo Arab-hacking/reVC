@@ -895,8 +895,9 @@ void CGame::InitialiseWhenRestarting(void)
 			CTimer::Stop();
 			CTimer::Initialise();
 			FrontEndMenuManager.m_bWantToLoad = false;
-			ReInitGameObjectVariables();
 			currLevel = LEVEL_GENERIC;
+			TheCamera.Init();
+			ReInitGameObjectVariables();
 			CCollision::SortOutCollisionAfterLoad();
 		}
 #ifdef XBOX_MESSAGE_SCREEN

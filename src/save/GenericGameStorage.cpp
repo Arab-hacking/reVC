@@ -106,6 +106,7 @@ do {\
 	if(size > sizeof(work_buff) - 3) {\
 		PcSaveHelper.nErrorCode = SAVESTATUS_ERR_DATA_INVALID;\
 		REVC_LOG_ERROR("Save block exceeds work buffer: %u bytes", size);\
+		CloseFile(file);\
 		return false;\
 	}\
 	size = align4bytes(size);\
@@ -447,8 +448,9 @@ GenericLoad()
 	CPad::ResetCheats();
 	if (!ReadInSizeofSaveFileBuffer(file, size))
 		return false;
-	if(size < SIZE_OF_SIMPLEVARS || size > sizeof(work_buff) - 3){
+	if(size < SIZE_OF_SIMPLEVARS + sizeof(uint32) || size > sizeof(work_buff) - 3){
 		PcSaveHelper.nErrorCode = SAVESTATUS_ERR_DATA_INVALID;
+		CloseFile(file);
 		return false;
 	}
 	size = align4bytes(size);
@@ -515,18 +517,37 @@ GenericLoad()
 	if (FrontEndMenuManager.m_nCurrSaveSlot == PAUSE_SAVE_SLOT && qs == 3)
 		WaitForMissionActivate = CTimer::GetTimeInMilliseconds() + 2000;
 #endif
-	ReadDataFromBlock("Loading Scripts \n", CTheScripts::LoadAllScripts);
+	debug("Loading Scripts \n");
+	{
+		const uint32 simpleAndScriptsBytes = size;
+		uint32 scriptsSize = 0;
+		ReadDataFromBufferPointer(buf, scriptsSize);
+		const size_t usedBytes = (size_t)(buf - work_buff);
+		if (usedBytes > simpleAndScriptsBytes || scriptsSize > simpleAndScriptsBytes - usedBytes) {
+			PcSaveHelper.nErrorCode = SAVESTATUS_ERR_DATA_INVALID;
+			REVC_LOG_ERROR("Invalid Scripts save block length: %u (available %zu)",
+				scriptsSize, (size_t)(simpleAndScriptsBytes - usedBytes));
+			CloseFile(file);
+			return false;
+		}
+		if (!CTheScripts::LoadAllScripts(buf, scriptsSize)) {
+			PcSaveHelper.nErrorCode = SAVESTATUS_ERR_DATA_INVALID;
+			CloseFile(file);
+			return false;
+		}
+		buf += align4bytes(scriptsSize);
+	}
 
 	// Load the rest
-	if(!ReadPoolSaveBlock(file, CPools::LoadPedPool, "PedPool")) return false;
+	if(!ReadPoolSaveBlock(file, CPools::LoadPedPool, "PedPool")) { CloseFile(file); return false; }
 	LoadSaveDataBlock();
 	ReadDataFromBlock("Loading Garages \n", CGarages::Load);
 	LoadSaveDataBlock();
 	ReadDataFromBlock("Loading GameLogic \n", CGameLogic::Load);
-	if(!ReadPoolSaveBlock(file, CPools::LoadVehiclePool, "Vehicles", CheckSavedVehiclePool)) return false;
+	if(!ReadPoolSaveBlock(file, CPools::LoadVehiclePool, "Vehicles", CheckSavedVehiclePool)) { CloseFile(file); return false; }
 	CProjectileInfo::RemoveAllProjectiles();
 	CObject::DeleteAllTempObjects();
-	if(!ReadPoolSaveBlock(file, CPools::LoadObjectPool, "Objects", CheckSavedObjectPool)) return false;
+	if(!ReadPoolSaveBlock(file, CPools::LoadObjectPool, "Objects", CheckSavedObjectPool)) { CloseFile(file); return false; }
 	LoadSaveDataBlock();
 	ReadDataFromBlock("Loading Paths \n", ThePaths.Load);
 	LoadSaveDataBlock();

@@ -250,6 +250,40 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Cla
     set_target_properties(custom_archive_integration_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
     add_test(NAME custom_archive_integration_tests COMMAND custom_archive_integration_tests)
 
+    add_executable(script_save_validation_tests
+        ScriptSaveValidationTests.cpp
+        ../src/control/Script5.cpp)
+    target_compile_definitions(script_save_validation_tests PRIVATE
+        LIBRW RW_GL3 LIBRW_SDL2 CMAKE_BUILD USE_OUR_VERSIONING AUDIO_OAL)
+    target_include_directories(script_save_validation_tests PRIVATE
+        ../vendor/librw ../vendor/librw/src/gl ../vendor/sdl2/include
+        ../src ../src/animation ../src/audio ../src/buildings ../src/collision
+        ../src/control ../src/core ../src/entities ../src/extras
+        ../src/extras/custom ../src/extras/custom/br ../src/fakerw ../src/math
+        ../src/modelinfo ../src/objects ../src/peds ../src/renderer ../src/rw
+        ../src/save ../src/skel ../src/text ../src/vehicles ../src/weapons)
+    target_compile_options(script_save_validation_tests PRIVATE -ffunction-sections -fdata-sections -Wno-write-strings -Wno-multichar)
+    target_link_options(script_save_validation_tests PRIVATE -Wl,--gc-sections)
+    set_target_properties(script_save_validation_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+    add_test(NAME script_save_validation_tests COMMAND script_save_validation_tests)
+
+    add_executable(ped_skeleton_classification_tests
+        PedSkeletonClassificationTests.cpp
+        ../src/modelinfo/PedModelInfo.cpp)
+    target_compile_definitions(ped_skeleton_classification_tests PRIVATE
+        LIBRW RW_GL3 LIBRW_SDL2 CMAKE_BUILD USE_OUR_VERSIONING AUDIO_OAL)
+    target_include_directories(ped_skeleton_classification_tests PRIVATE
+        ../vendor/librw ../vendor/librw/src/gl ../vendor/sdl2/include
+        ../src ../src/animation ../src/audio ../src/buildings ../src/collision
+        ../src/control ../src/core ../src/entities ../src/extras
+        ../src/extras/custom ../src/extras/custom/br ../src/fakerw ../src/math
+        ../src/modelinfo ../src/objects ../src/peds ../src/renderer ../src/rw
+        ../src/save ../src/skel ../src/text ../src/vehicles ../src/weapons)
+    target_compile_options(ped_skeleton_classification_tests PRIVATE -ffunction-sections -fdata-sections -Wno-write-strings)
+    target_link_options(ped_skeleton_classification_tests PRIVATE -Wl,--gc-sections)
+    set_target_properties(ped_skeleton_classification_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+    add_test(NAME ped_skeleton_classification_tests COMMAND ped_skeleton_classification_tests)
+
     add_executable(anim_association_nodes_tests
         AnimAssociationNodesTests.cpp
         ../src/animation/AnimBlendAssociation.cpp

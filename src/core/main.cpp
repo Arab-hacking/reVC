@@ -657,6 +657,8 @@ GetLevelSplashScreen(int level)
 		"splash3",
 	};
 
+	if(level < 0 || level >= (int)ARRAY_SIZE(splashScreens))
+		return nil;
 	return splashScreens[level];
 }
 

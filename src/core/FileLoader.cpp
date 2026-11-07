@@ -672,7 +672,7 @@ InspectLoadedAtomic(RpAtomic *atomic, void *data)
 // This runs for native as well as custom DFFs and leaves native VC frame peds
 // alone (an SA skin is NOT required for a VC ped).
 static bool
-InstallLoadedClump(RpClump *clump, CBaseModelInfo *info, const char *source)
+InstallLoadedClump(RpClump *clump, CBaseModelInfo *info, const char *source, uint32 clumpVersion = 0)
 {
 	LoadedClumpStructure structure = { 0, false, false, 0 };
 	ModelLoadKind kind = info ? GetModelLoadKind(info->GetModelType()) : MODELLOAD_UNSUPPORTED;
@@ -691,6 +691,8 @@ InstallLoadedClump(RpClump *clump, CBaseModelInfo *info, const char *source)
 			RpClumpDestroy(clump);
 		return false;
 	}
+	if(info->GetModelType() == MITYPE_PED)
+		((CPedModelInfo*)info)->SetClumpStreamVersion(clumpVersion);
 	((CClumpModelInfo*)info)->SetClump(clump);
 	return true;
 }
@@ -807,7 +809,7 @@ InstallCustomModel2dfxLights(CBaseModelInfo *info, const std::vector<SAStaticMod
 #endif
 
 static bool
-PrepareAndInstallClump(RpClump *clump, CBaseModelInfo *info, const char *source)
+PrepareAndInstallClump(RpClump *clump, CBaseModelInfo *info, const char *source, uint32 clumpVersion = 0)
 {
 	LoadedClumpGeometry geometry = { 0, false };
 	if(clump)
@@ -838,7 +840,7 @@ PrepareAndInstallClump(RpClump *clump, CBaseModelInfo *info, const char *source)
 		InstallCustomModel2dfxLights(info, clumpLights);
 	}
 #endif
-	return InstallLoadedClump(clump, info, source);
+	return InstallLoadedClump(clump, info, source, clumpVersion);
 }
 
 void
@@ -869,9 +871,11 @@ CFileLoader::LoadClumpFile(const char *filename)
 	int n;
 	CBaseModelInfo *mi;
 
+	uint32 clumpVersion = 0;
+
 	debug("Loading model file %s\n", filename);
 	stream = RwStreamOpen(rwSTREAMFILENAME, rwSTREAMREAD, filename);
-	while(RwStreamFindChunk(stream, rwID_CLUMP, nil, nil)){
+	while(RwStreamFindChunk(stream, rwID_CLUMP, nil, &clumpVersion)){
 		clump = RpClumpStreamRead(stream);
 		if(clump){
 			if(!RpClumpGetFrame(clump)){
@@ -909,7 +913,7 @@ CFileLoader::LoadClumpFile(const char *filename)
 			if(mi && (GetModelLoadKind(mi->GetModelType()) == MODELLOAD_CLUMP ||
 			          GetModelLoadKind(mi->GetModelType()) == MODELLOAD_PED ||
 			          GetModelLoadKind(mi->GetModelType()) == MODELLOAD_VEHICLE)){
-				PrepareAndInstallClump(clump, mi, filename);
+				PrepareAndInstallClump(clump, mi, filename, clumpVersion);
 			}else{
 				if(mi)
 					REVC_LOG_WARNING("DFF %s: %s is IDE type %d, not a clump model",
@@ -931,12 +935,13 @@ CFileLoader::LoadClumpFile(RwStream *stream, uint32 id)
 			id, mi ? mi->GetModelType() : -1);
 		return false;
 	}
-	if(!RwStreamFindChunk(stream, rwID_CLUMP, nil, nil))
+	uint32 clumpVersion = 0;
+	if(!RwStreamFindChunk(stream, rwID_CLUMP, nil, &clumpVersion))
 		return false;
 	RpClump *clump = RpClumpStreamRead(stream);
 	if(clump == nil)
 		return false;
-	return PrepareAndInstallClump(clump, mi, "stream");
+	return PrepareAndInstallClump(clump, mi, "stream", clumpVersion);
 }
 
 bool

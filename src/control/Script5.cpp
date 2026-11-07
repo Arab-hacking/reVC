@@ -17,7 +17,7 @@
 #include "SpecialFX.h"
 #include "World.h"
 #include "main.h"
-#include "SaveBuf.h"
+#include "FileMgr.h"
 
 void CRunningScript::UpdateCompareFlag(bool flag)
 {
@@ -2183,9 +2183,136 @@ INITSAVEBUF
 VALIDATESAVEBUF(*size)
 }
 
-void CTheScripts::LoadAllScripts(uint8* buf, uint32 size)
+bool CTheScripts::LoadAllScripts(uint8* buf, uint32 size)
 {
+	const uint32 minFixedBytes = SAVE_HEADER_SIZE + 3 * sizeof(uint32) + SCRIPT_DATA_SIZE;
+	if (buf == nil || size < minFixedBytes) {
+		REVC_LOG_ERROR("Cannot load saved scripts: block too small (%u bytes)", size);
+		return false;
+	}
+	if (buf[0] != 'S' || buf[1] != 'C' || buf[2] != 'R' || buf[3] != '\0') {
+		REVC_LOG_ERROR("Cannot load saved scripts: invalid SCR header");
+		return false;
+	}
+	uint32 headerPayloadSize = 0;
+	memcpy(&headerPayloadSize, buf + 4, sizeof(headerPayloadSize));
+	if (headerPayloadSize != size - SAVE_HEADER_SIZE) {
+		REVC_LOG_ERROR("Cannot load saved scripts: header size mismatch (%u != %u)",
+			headerPayloadSize, size - (uint32)SAVE_HEADER_SIZE);
+		return false;
+	}
+
+	uint32 savedVarSpace = 0;
+	memcpy(&savedVarSpace, buf + SAVE_HEADER_SIZE, sizeof(savedVarSpace));
+	if (savedVarSpace > SIZE_SCRIPT_SPACE || savedVarSpace > size - minFixedBytes) {
+		REVC_LOG_ERROR("Cannot load saved scripts: invalid variable space %u (block size %u)",
+			savedVarSpace, size);
+		return false;
+	}
+
+	const size_t metaOff = SAVE_HEADER_SIZE + sizeof(uint32) + savedVarSpace;
+	uint32 savedScriptDataSize = 0;
+	memcpy(&savedScriptDataSize, buf + metaOff, sizeof(savedScriptDataSize));
+	if (savedScriptDataSize != SCRIPT_DATA_SIZE) {
+		REVC_LOG_ERROR("Cannot load saved scripts: script data size mismatch (%u != %u)",
+			savedScriptDataSize, (uint32)SCRIPT_DATA_SIZE);
+		return false;
+	}
+
+	const size_t swapsOff = metaOff + sizeof(uint32) + sizeof(OnAMissionFlag) + sizeof(LastMissionPassedTime);
+	for (uint32 i = 0; i < MAX_NUM_BUILDING_SWAPS; i++) {
+		uint32 swapType = 0;
+		memcpy(&swapType, buf + swapsOff + i * 4 * sizeof(uint32), sizeof(swapType));
+		if (swapType > 2) {
+			REVC_LOG_ERROR("Cannot load saved scripts: invalid building swap type %u at index %u", swapType, i);
+			return false;
+		}
+	}
+	const size_t invisOff = swapsOff + MAX_NUM_BUILDING_SWAPS * 4 * sizeof(uint32);
+	for (uint32 i = 0; i < MAX_NUM_INVISIBILITY_SETTINGS; i++) {
+		uint32 invisType = 0;
+		memcpy(&invisType, buf + invisOff + i * 2 * sizeof(uint32), sizeof(invisType));
+		if (invisType > 4) {
+			REVC_LOG_ERROR("Cannot load saved scripts: invalid invisibility entity type %u at index %u", invisType, i);
+			return false;
+		}
+	}
+
+	const size_t tailOff = metaOff + sizeof(uint32) + SCRIPT_DATA_SIZE - 4 * sizeof(uint32);
+	bool savedUsingMultiScript = buf[tailOff] != 0;
+	uint32 savedMainScriptSize = 0;
+	uint32 savedLargestMissionScriptSize = 0;
+	uint16 savedNumMissionScripts = 0;
+	uint16 savedNumExclMissionScripts = 0;
+	uint32 savedRunningScripts = 0;
+	memcpy(&savedMainScriptSize, buf + tailOff + 4, sizeof(savedMainScriptSize));
+	memcpy(&savedLargestMissionScriptSize, buf + tailOff + 8, sizeof(savedLargestMissionScriptSize));
+	memcpy(&savedNumMissionScripts, buf + tailOff + 12, sizeof(savedNumMissionScripts));
+	memcpy(&savedNumExclMissionScripts, buf + tailOff + 14, sizeof(savedNumExclMissionScripts));
+	memcpy(&savedRunningScripts, buf + tailOff + 16, sizeof(savedRunningScripts));
+
+	const uint64 expectedSize = (uint64)minFixedBytes + savedVarSpace +
+		(uint64)savedRunningScripts * CRunningScript::nSaveStructSize;
+	if (savedRunningScripts > MAX_NUM_SCRIPTS || expectedSize != size) {
+		REVC_LOG_ERROR("Cannot load saved scripts: invalid running script count %u (expected %llu bytes, got %u)",
+			savedRunningScripts, (unsigned long long)expectedSize, size);
+		return false;
+	}
+
+#ifdef USE_DEBUG_SCRIPT_LOADER
+	const int origScriptToLoad = ScriptToLoad;
+#endif
 	Init();
+
+	auto matchesCurrentScript = [&]() -> bool {
+		return (uint32)GetSizeOfVariableSpace() == savedVarSpace &&
+		       bUsingAMultiScriptFile == savedUsingMultiScript &&
+		       MainScriptSize == savedMainScriptSize &&
+		       LargestMissionScriptSize == savedLargestMissionScriptSize &&
+		       NumberOfMissionScripts == savedNumMissionScripts &&
+		       NumberOfExclusiveMissionScripts == savedNumExclMissionScripts;
+	};
+
+	if (!matchesCurrentScript()) {
+		const uint32 mainVarSpace = (uint32)GetSizeOfVariableSpace();
+		const uint32 mainSize = MainScriptSize;
+		const uint32 mainLargest = LargestMissionScriptSize;
+		const uint16 mainMissions = NumberOfMissionScripts;
+		const uint16 mainExcl = NumberOfExclusiveMissionScripts;
+
+#ifdef USE_DEBUG_SCRIPT_LOADER
+		bool matchedAlt = false;
+		for (int altScript = 1; altScript <= 2; altScript++) {
+			ScriptToLoad = altScript;
+			int probe = OpenScript();
+			CFileMgr::SetDir("");
+			if (probe != 0) {
+				CFileMgr::CloseFile(probe);
+				Init();
+				if (matchesCurrentScript()) {
+					REVC_LOG_INFO("Matched saved game scripts with alternate SCM slot %d", altScript);
+					matchedAlt = true;
+					break;
+				}
+			}
+		}
+		if (!matchedAlt) {
+			ScriptToLoad = origScriptToLoad;
+			Init();
+		}
+#endif
+		if (!matchesCurrentScript()) {
+			REVC_LOG_ERROR(
+				"Incompatible save game scripts: save expects main.scm (varSpace=%u, mainSize=%u, largestMission=%u, missions=%u/%u), "
+				"but installed data/main.scm has (varSpace=%u, mainSize=%u, largestMission=%u, missions=%u/%u). "
+				"Rejecting incompatible save instead of crashing.",
+				savedVarSpace, savedMainScriptSize, savedLargestMissionScriptSize,
+				savedNumMissionScripts, savedNumExclMissionScripts,
+				mainVarSpace, mainSize, mainLargest, mainMissions, mainExcl);
+			return false;
+		}
+	}
+
 INITSAVEBUF
 	CheckSaveHeader(buf, 'S', 'C', 'R', '\0', size - SAVE_HEADER_SIZE);
 	uint32 varSpace, type, handle;
@@ -2195,7 +2322,6 @@ INITSAVEBUF
 	for (uint32 i = 0; i < varSpace; i++)
 		ReadSaveBuf(&ScriptSpace[i], buf);
 	ReadSaveBuf(&tmp, buf);
-	script_assert(tmp == SCRIPT_DATA_SIZE);
 	ReadSaveBuf(&OnAMissionFlag, buf);
 	ReadSaveBuf(&LastMissionPassedTime, buf);
 	for (uint32 i = 0; i < MAX_NUM_BUILDING_SWAPS; i++) {
@@ -2206,18 +2332,29 @@ INITSAVEBUF
 			BuildingSwapArray[i].m_pBuilding = nil;
 			break;
 		case 1:
-			BuildingSwapArray[i].m_pBuilding = CPools::GetTreadablePool()->GetSlot(handle - 1);
+			BuildingSwapArray[i].m_pBuilding = CPools::GetTreadablePool()->GetSlot((int32)handle - 1);
 			break;
 		case 2:
-			BuildingSwapArray[i].m_pBuilding = CPools::GetBuildingPool()->GetSlot(handle - 1);
+			BuildingSwapArray[i].m_pBuilding = CPools::GetBuildingPool()->GetSlot((int32)handle - 1);
 			break;
 		default:
-			script_assert(false);
+			BuildingSwapArray[i].m_pBuilding = nil;
+			break;
 		}
 		ReadSaveBuf(&BuildingSwapArray[i].m_nNewModel, buf);
 		ReadSaveBuf(&BuildingSwapArray[i].m_nOldModel, buf);
-		if (BuildingSwapArray[i].m_pBuilding)
-			BuildingSwapArray[i].m_pBuilding->ReplaceWithNewModel(BuildingSwapArray[i].m_nNewModel);
+		if (BuildingSwapArray[i].m_pBuilding) {
+			int32 newModel = BuildingSwapArray[i].m_nNewModel;
+			int32 curModel = BuildingSwapArray[i].m_pBuilding->GetModelIndex();
+			if (newModel >= 0 && newModel < MODELINFOSIZE &&
+			    curModel >= 0 && curModel < MODELINFOSIZE &&
+			    CModelInfo::GetModelInfo(newModel) != nil &&
+			    CModelInfo::GetModelInfo(curModel) != nil) {
+				BuildingSwapArray[i].m_pBuilding->ReplaceWithNewModel(newModel);
+			} else {
+				BuildingSwapArray[i].m_pBuilding = nil;
+			}
+		}
 	}
 	for (uint32 i = 0; i < MAX_NUM_INVISIBILITY_SETTINGS; i++) {
 		ReadSaveBuf(&type, buf);
@@ -2227,42 +2364,49 @@ INITSAVEBUF
 			InvisibilitySettingArray[i] = nil;
 			break;
 		case 1:
-			InvisibilitySettingArray[i] = CPools::GetTreadablePool()->GetSlot(handle - 1);
+			InvisibilitySettingArray[i] = CPools::GetTreadablePool()->GetSlot((int32)handle - 1);
 			break;
 		case 2:
-			InvisibilitySettingArray[i] = CPools::GetBuildingPool()->GetSlot(handle - 1);
+			InvisibilitySettingArray[i] = CPools::GetBuildingPool()->GetSlot((int32)handle - 1);
 			break;
 		case 3:
-			InvisibilitySettingArray[i] = CPools::GetObjectPool()->GetSlot(handle - 1);
+			InvisibilitySettingArray[i] = CPools::GetObjectPool()->GetSlot((int32)handle - 1);
 			break;
 		case 4:
-			InvisibilitySettingArray[i] = CPools::GetDummyPool()->GetSlot(handle - 1);
+			InvisibilitySettingArray[i] = CPools::GetDummyPool()->GetSlot((int32)handle - 1);
 			break;
 		default:
-			script_assert(false);
+			InvisibilitySettingArray[i] = nil;
+			break;
 		}
 		if (InvisibilitySettingArray[i])
 			InvisibilitySettingArray[i]->bIsVisible = false;
 	}
 	bool tmpBool;
 	ReadSaveBuf(&tmpBool, buf);
-	script_assert(tmpBool == bUsingAMultiScriptFile);
 	ReadSaveBuf(&bPlayerHasMetDebbieHarry, buf);
 	SkipSaveBuf(buf, 2);
 	ReadSaveBuf(&tmp, buf);
-	script_assert(tmp == MainScriptSize);
 	ReadSaveBuf(&tmp, buf);
-	script_assert(tmp == LargestMissionScriptSize);
 	uint16 tmp16;
 	ReadSaveBuf(&tmp16, buf);
-	script_assert(tmp16 == NumberOfMissionScripts);
 	ReadSaveBuf(&tmp16, buf);
-	script_assert(tmp16 == NumberOfExclusiveMissionScripts);
 	uint32 runningScripts;
 	ReadSaveBuf(&runningScripts, buf);
-	for (uint32 i = 0; i < runningScripts; i++)
-		StartNewScript(0)->Load(buf);
+	for (uint32 i = 0; i < runningScripts; i++) {
+		CRunningScript* pScript = StartNewScript(0);
+		pScript->Load(buf);
+		if (pScript->m_nStackPointer > MAX_STACK_DEPTH || (uint32)pScript->m_nIp >= SIZE_SCRIPT_SPACE) {
+			REVC_LOG_ERROR("Cannot load saved scripts: corrupt running script %u (ip=%d, sp=%u)",
+				i, pScript->m_nIp, (unsigned)pScript->m_nStackPointer);
+			UndoBuildingSwaps();
+			UndoEntityInvisibilitySettings();
+			Init();
+			return false;
+		}
+	}
 VALIDATESAVEBUF(size)
+	return true;
 }
 
 #undef SCRIPT_DATA_SIZE
