@@ -326,6 +326,8 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
         Log.v(TAG, "Model: " + Build.MODEL);
         Log.v(TAG, "onCreate()");
         super.onCreate(savedInstanceState);
+        setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
+        applyHighestRefreshRate();
 
         try {
             Thread.currentThread().setName("SDLActivity");
@@ -557,6 +559,7 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
 
         mHasFocus = hasFocus;
         if (hasFocus) {
+           applyHighestRefreshRate();
            mNextNativeState = NativeState.RESUMED;
            SDLActivity.getMotionListener().reclaimRelativeMouseModeIfNeeded();
 
@@ -1013,68 +1016,86 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
     }
 
     /**
+     * Unlocks the display's maximum hardware refresh rate (90/120/144/165+ Hz)
+     * for both WindowManager.LayoutParams and SurfaceFlinger frame rate hints.
+     */
+    public void applyHighestRefreshRate() {
+        try {
+            Window window = getWindow();
+            if (window == null) {
+                return;
+            }
+            Display display = (Build.VERSION.SDK_INT >= 30)
+                    ? getDisplay()
+                    : getWindowManager().getDefaultDisplay();
+            if (display == null) {
+                return;
+            }
+
+            Display.Mode activeMode = display.getMode();
+            Display.Mode[] modes = display.getSupportedModes();
+            Display.Mode bestMode = activeMode;
+            float bestHz = (activeMode != null) ? activeMode.getRefreshRate() : display.getRefreshRate();
+
+            if (modes != null && modes.length > 0) {
+                // Prefer highest refresh rate at native physical resolution first
+                for (Display.Mode m : modes) {
+                    if (activeMode != null &&
+                        m.getPhysicalWidth() == activeMode.getPhysicalWidth() &&
+                        m.getPhysicalHeight() == activeMode.getPhysicalHeight() &&
+                        m.getRefreshRate() > bestHz) {
+                        bestMode = m;
+                        bestHz = m.getRefreshRate();
+                    }
+                }
+                // Fallback: if a higher-Hz mode exists across any supported resolution, consider it
+                for (Display.Mode m : modes) {
+                    if (m.getRefreshRate() > bestHz) {
+                        bestMode = m;
+                        bestHz = m.getRefreshRate();
+                    }
+                }
+            }
+
+            WindowManager.LayoutParams lp = window.getAttributes();
+            boolean changed = false;
+            if (bestMode != null && lp.preferredDisplayModeId != bestMode.getModeId()) {
+                lp.preferredDisplayModeId = bestMode.getModeId();
+                changed = true;
+            }
+            if (bestHz > 0.0f && Math.abs(lp.preferredRefreshRate - bestHz) > 0.1f) {
+                lp.preferredRefreshRate = bestHz;
+                changed = true;
+            }
+            if (changed) {
+                window.setAttributes(lp);
+            }
+
+            if (Build.VERSION.SDK_INT >= 30 && mSurface != null) {
+                Surface surface = mSurface.getNativeSurface();
+                if (surface != null && surface.isValid() && bestHz > 0.0f) {
+                    surface.setFrameRate(bestHz, Surface.FRAME_RATE_COMPATIBILITY_DEFAULT);
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /**
      * This can be overridden
      */
     public void setOrientationBis(int w, int h, boolean resizable, String hint)
     {
-        int orientation_landscape = -1;
-        int orientation_portrait = -1;
-
-        /* If set, hint "explicitly controls which UI orientations are allowed". */
-        if (hint.contains("LandscapeRight") && hint.contains("LandscapeLeft")) {
-            orientation_landscape = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE;
-        } else if (hint.contains("LandscapeLeft")) {
-            orientation_landscape = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE;
-        } else if (hint.contains("LandscapeRight")) {
-            orientation_landscape = ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE;
-        }
-
-        /* exact match to 'Portrait' to distinguish with PortraitUpsideDown */
-        boolean contains_Portrait = hint.contains("Portrait ") || hint.endsWith("Portrait");
-
-        if (contains_Portrait && hint.contains("PortraitUpsideDown")) {
-            orientation_portrait = ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT;
-        } else if (contains_Portrait) {
-            orientation_portrait = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT;
-        } else if (hint.contains("PortraitUpsideDown")) {
-            orientation_portrait = ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT;
-        }
-
-        boolean is_landscape_allowed = (orientation_landscape != -1);
-        boolean is_portrait_allowed = (orientation_portrait != -1);
-        int req; /* Requested orientation */
-
-        /* No valid hint, nothing is explicitly allowed */
-        if (!is_portrait_allowed && !is_landscape_allowed) {
-            if (resizable) {
-                /* All orientations are allowed, respecting user orientation lock setting */
-                req = ActivityInfo.SCREEN_ORIENTATION_FULL_USER;
-            } else {
-                /* Fixed window and nothing specified. Get orientation from w/h of created window */
-                req = (w > h ? ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE : ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT);
-            }
-        } else {
-            /* At least one orientation is allowed */
-            if (resizable) {
-                if (is_portrait_allowed && is_landscape_allowed) {
-                    /* hint allows both landscape and portrait, promote to full user */
-                    req = ActivityInfo.SCREEN_ORIENTATION_FULL_USER;
-                } else {
-                    /* Use the only one allowed "orientation" */
-                    req = (is_landscape_allowed ? orientation_landscape : orientation_portrait);
-                }
-            } else {
-                /* Fixed window and both orientations are allowed. Choose one. */
-                if (is_portrait_allowed && is_landscape_allowed) {
-                    req = (w > h ? orientation_landscape : orientation_portrait);
-                } else {
-                    /* Use the only one allowed "orientation" */
-                    req = (is_landscape_allowed ? orientation_landscape : orientation_portrait);
-                }
+        // Portrait mode is strictly disabled: always enforce sensor landscape.
+        int req = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE;
+        if (hint != null) {
+            if (hint.contains("LandscapeLeft") && !hint.contains("LandscapeRight")) {
+                req = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE;
+            } else if (hint.contains("LandscapeRight") && !hint.contains("LandscapeLeft")) {
+                req = ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE;
             }
         }
-
-        Log.v(TAG, "setOrientation() requestedOrientation=" + req + " width=" + w +" height="+ h +" resizable=" + resizable + " hint=" + hint);
+        Log.v(TAG, "setOrientation() forced landscape=" + req + " width=" + w + " height=" + h + " hint=" + hint);
         mSingleton.setRequestedOrientation(req);
     }
 

@@ -62,13 +62,14 @@
         android:anyDensity="true"
         android:largeScreens="true"
         android:normalScreens="true"
-        android:resizeable="true"
+        android:resizeable="false"
         android:smallScreens="true" />
 
     <application
         android:gwpAsanMode="always"
         android:isGame="true"
         android:appCategory="game"
+        android:resizeableActivity="false"
         android:allowAudioPlaybackCapture="true"
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
@@ -82,8 +83,15 @@
         android:theme="@style/Theme.ReVC"
         tools:targetApi="31">
 
+        <property
+            android:name="android.window.PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY"
+            android:value="true" />
+
         <activity
             android:name=".MainActivity"
+            android:screenOrientation="sensorLandscape"
+            android:resizeableActivity="false"
+            android:configChanges="layoutDirection|locale|orientation|uiMode|screenLayout|screenSize|smallestScreenSize|keyboard|keyboardHidden|navigation"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -99,6 +107,7 @@
             android:hardwareAccelerated="true"
             android:largeHeap="true"
             android:screenOrientation="sensorLandscape"
+            android:resizeableActivity="false"
             android:configChanges="layoutDirection|locale|orientation|uiMode|screenLayout|screenSize|smallestScreenSize|keyboard|keyboardHidden|navigation"
             android:preferMinimalPostProcessing="true"
             android:exported="false" />
@@ -115,7 +124,7 @@
 
         <meta-data
             android:name="android.max_aspect"
-            android:value="2.1" />
+            android:value="2.6" />
     </application>
 
 </manifest>

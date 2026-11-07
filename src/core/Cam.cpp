@@ -30,6 +30,9 @@
 #include "DMAudio.h"
 #include "Bike.h"
 #include "Pickups.h"
+#ifdef ANDROID
+#include "MobileTouchControls.h"
+#endif
 
 bool PrintDebugCode = false;
 int16 DebugCamMode;
@@ -38,7 +41,11 @@ extern float fRangePlayerRadius;
 extern float fCloseNearClipLimit;
 
 #ifdef FREE_CAM
+#ifdef ANDROID
+bool CCamera::bFreeCam = true;
+#else
 bool CCamera::bFreeCam = false;
+#endif
 int nPreviousMode = -1;
 #endif
 
@@ -227,7 +234,11 @@ CCam::Process(void)
 		break;
 	case MODE_CAM_ON_A_STRING:
 #ifdef FREE_CAM
+#ifdef ANDROID
+		if(!CVehicle::bCheat5)
+#else
 		if(CCamera::bFreeCam && !CVehicle::bCheat5)
+#endif
 			Process_FollowCar_SA(CameraTarget, TargetOrientation, SpeedVar, TargetSpeedVar);
 		else
 #endif
@@ -238,11 +249,17 @@ CCam::Process(void)
 //	case MODE_CHRIS:
 	case MODE_BEHINDBOAT:
 #ifdef FREE_CAM
+#ifdef ANDROID
+		Process_FollowCar_SA(CameraTarget, TargetOrientation, SpeedVar, TargetSpeedVar);
+#else
 		if (CCamera::bFreeCam)
 			Process_FollowCar_SA(CameraTarget, TargetOrientation, SpeedVar, TargetSpeedVar);
 		else
-#endif
 			Process_BehindBoat(CameraTarget, TargetOrientation, SpeedVar, TargetSpeedVar);
+#endif
+#else
+		Process_BehindBoat(CameraTarget, TargetOrientation, SpeedVar, TargetSpeedVar);
+#endif
 		break;
 	case MODE_PLAYER_FALLEN_WATER:
 		Process_Player_Fallen_Water(CameraTarget, TargetOrientation, SpeedVar, TargetSpeedVar);
@@ -5144,7 +5161,14 @@ CCam::Process_FollowCar_SA(const CVector& CameraTarget, float TargetOrientation,
 			yMovement = 0.0;
 			xMovement = 0.0;
 			targetAlpha = Alpha;
+#ifdef ANDROID
+			if (CMobileTouchControls::IsLookPointerActive())
+				stepsLeftToChangeBetaByMouse = 1.0f * 50.0f;
+			else
+				stepsLeftToChangeBetaByMouse = Max(0.0f, stepsLeftToChangeBetaByMouse - CTimer::GetTimeStep());
+#else
 			stepsLeftToChangeBetaByMouse = Max(0.0f, stepsLeftToChangeBetaByMouse - CTimer::GetTimeStep());
+#endif
 			mouseChangesBeta = true;
 		}
 	}

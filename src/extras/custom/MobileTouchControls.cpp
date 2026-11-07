@@ -245,6 +245,7 @@ static bool s_pulseCrouch = false;
 static bool s_pulseSubmission = false;
 static bool s_pulseSkipCutscene = false;
 static bool s_pulseFlyToggle = false;
+static MobileTouchMath::SprintJumpDoubleTap s_sprintJumpTap;
 
 // Menu touch & gesture state
 static MenuPointer s_menuPointers[MAX_TOUCH_POINTERS];
@@ -677,6 +678,13 @@ UpdateGameplayLayout(void)
 	const MobileTouchMath::MobileScreenMetrics m = GetMetrics();
 	const float W = m.screenW;
 	const float H = m.screenH;
+	bool stickCurrentlyOwned = false;
+	for (int i = 0; i < MAX_TOUCH_POINTERS; i++) {
+		if (s_pointers[i].active && s_pointers[i].isStick) {
+			stickCurrentlyOwned = true;
+			break;
+		}
+	}
 
 	// 1. Top-Left Radar tap zone (Pause / Map) or standalone 46dp Pause button if radar hidden
 	const bool radarVisible = FrontEndMenuManager.m_PrefsRadarMode != 2 && !CHud::m_HideRadar;
@@ -743,11 +751,18 @@ UpdateGameplayLayout(void)
 			SetCircleBtn(s_buttons[MBTN_SUBMISSION], camIconX - m.Dp(108.0f), topIconY, rTopIcon, MTEX_SUBMISSION, GLYPH_TARGET);
 		}
 
+		const float defStickX = m.marginLeftPx + m.Dp(56.0f) + m.Dp(6.0f);
+		const float defStickY = H - m.marginBottomPx - m.Dp(56.0f) - m.Dp(4.0f);
 		if (useStick) {
 			s_stickVisible = true;
-			s_stickRadius = m.Dp(56.0f); // 112dp ergonomic thumbstick
-			s_stickBaseX = m.marginLeftPx + s_stickRadius + m.Dp(6.0f);
-			s_stickBaseY = H - m.marginBottomPx - s_stickRadius - m.Dp(4.0f);
+			s_stickRadius = m.Dp(56.0f); // 112dp dynamic thumbstick
+			if (stickCurrentlyOwned) {
+				s_stickBaseX = s_stickAnchorX;
+				s_stickBaseY = s_stickAnchorY;
+			} else {
+				s_stickBaseX = defStickX;
+				s_stickBaseY = defStickY;
+			}
 		} else {
 			const float rSteer = m.Dp(34.0f); // 68dp steering buttons
 			const float steerY = H - m.marginBottomPx - rSteer - m.Dp(8.0f);
@@ -793,18 +808,23 @@ UpdateGameplayLayout(void)
 		}
 		if (isHeli || isPlane) {
 			const float rYaw = m.Dp(22.0f);
-			const float yawY = s_stickBaseY - s_stickRadius - rYaw - m.Dp(14.0f);
+			const float yawY = defStickY - m.Dp(56.0f) - rYaw - m.Dp(14.0f);
 			SetCircleBtn(s_buttons[MBTN_YAW_LEFT], m.marginLeftPx + rYaw + m.Dp(4.0f), yawY, rYaw, MTEX_LEFT, GLYPH_ARROW_LEFT);
 			SetCircleBtn(s_buttons[MBTN_YAW_RIGHT], m.marginLeftPx + rYaw * 3.0f + m.Dp(16.0f), yawY, rYaw, MTEX_RIGHT, GLYPH_ARROW_RIGHT);
 		}
 		return;
 	}
 
-	// 4. ON FOOT / SCOPE LAYOUT (DP-sized joystick + ergonomic right-thumb arc)
+	// 4. ON FOOT / SCOPE LAYOUT (Dynamic transparent joystick + Run hold / double-tap Jump)
 	s_stickVisible = true;
 	s_stickRadius = m.Dp(56.0f); // 112dp diameter
-	s_stickBaseX = m.marginLeftPx + s_stickRadius + m.Dp(6.0f);
-	s_stickBaseY = H - m.marginBottomPx - s_stickRadius - m.Dp(4.0f);
+	if (stickCurrentlyOwned) {
+		s_stickBaseX = s_stickAnchorX;
+		s_stickBaseY = s_stickAnchorY;
+	} else {
+		s_stickBaseX = m.marginLeftPx + s_stickRadius + m.Dp(6.0f);
+		s_stickBaseY = H - m.marginBottomPx - s_stickRadius - m.Dp(4.0f);
+	}
 
 	const eWeaponType wt = player->GetWeapon()->m_eWeaponType;
 	CWeaponInfo *wi = CWeaponInfo::GetWeaponInfo(wt);
@@ -846,9 +866,11 @@ UpdateGameplayLayout(void)
 		return;
 	}
 
-	const float arcR = rAttack + rSub + m.Dp(14.0f); // 81dp center-to-center -> 14dp clean gap
-	SetCircleBtn(s_buttons[MBTN_SPRINT], attackX - arcR * 0.96f, H - m.marginBottomPx - rSub - m.Dp(4.0f), rSub, MTEX_RUN, GLYPH_SPRINT);
-	SetCircleBtn(s_buttons[MBTN_JUMP],   attackX - arcR * 0.80f, attackY - arcR * 0.62f, rSub, MTEX_JUMP, GLYPH_JUMP);
+	const float rRun = m.Dp(32.0f); // 64dp combined Sprint (hold) + Jump (double-tap) button
+	const float arcR = rAttack + rSub + m.Dp(14.0f);
+	const float runArcR = rAttack + rRun + m.Dp(16.0f);
+	const float runY = Min(attackY + m.Dp(14.0f), H - m.marginBottomPx - rRun - m.Dp(4.0f));
+	SetCircleBtn(s_buttons[MBTN_SPRINT], attackX - runArcR * 0.94f, runY, rRun, MTEX_RUN, GLYPH_SPRINT);
 
 	if (wi && (wi->m_nWeaponSlot >= 2 || wi->IsFlagSet(WEAPONFLAG_CANAIM) || IsFirstPersonScopeWeapon(wt))) {
 		SetCircleBtn(s_buttons[MBTN_TARGET], attackX + m.Dp(6.0f), attackY - arcR, m.Dp(27.0f), MTEX_LOCKON, GLYPH_TARGET);
@@ -1006,6 +1028,9 @@ HandleGameplayButtonDownPulse(MobileBtnId btn)
 	case MBTN_DEV_TIME_MINUS:
 		CClock::SetGameClock((CClock::GetHours() + 23) % 24, CClock::GetMinutes());
 		break;
+	case MBTN_SPRINT:
+		s_sprintJumpTap.OnPress(CTimer::GetTimeInMilliseconds());
+		break;
 	default:
 		break;
 	}
@@ -1030,13 +1055,13 @@ MenuY(float y)
 static float
 MenuXLeft(float x)
 {
-	return SCALE_AND_CENTER_X(x);
+	return CMobileTouchControls::MenuVirtualToScreenX(x);
 }
 
 static float
 MenuXRight(float x)
 {
-	return SCALE_AND_CENTER_X(DEFAULT_SCREEN_WIDTH - x);
+	return CMobileTouchControls::MenuVirtualToScreenX(DEFAULT_SCREEN_WIDTH - x);
 }
 
 static bool
@@ -1196,7 +1221,7 @@ ApplyDirectSliderValue(int32 screen, int32 row, float touchX, float deltaX, bool
 		return;
 
 	const float sliderLeft = MenuXLeft(MENUSLIDER_X);
-	const float sliderW = Max(MenuX(MENUSLIDER_UNK), 24.0f);
+	const float sliderW = Max(MenuXLeft(MENUSLIDER_X + MENUSLIDER_UNK) - sliderLeft, 24.0f);
 
 	auto getNorm = [&]() -> float {
 		switch (action) {
@@ -2001,6 +2026,32 @@ CMobileTouchControls::GetMobileRadarRect(float *outLeft, float *outTop, float *o
 	if (outHeight) *outHeight = m.radarSizePx;
 }
 
+float
+CMobileTouchControls::MenuVirtualToScreenX(float vx)
+{
+	const MobileTouchMath::MobileScreenMetrics m = GetMetrics();
+	return MobileTouchMath::MenuVirtualToScreenX(vx, m.screenW, m.screenH, m.safeLeftPx, m.safeRightPx);
+}
+
+float
+CMobileTouchControls::GetMenuSpanWidthPx(void)
+{
+	const MobileTouchMath::MobileScreenMetrics m = GetMetrics();
+	float left = 0.0f, right = m.screenW;
+	MobileTouchMath::ComputeMenuHorizontalSpan(m.screenW, m.screenH, m.safeLeftPx, m.safeRightPx, &left, &right);
+	return Max(1.0f, right - left);
+}
+
+bool
+CMobileTouchControls::IsLookPointerActive(void)
+{
+	for (int i = 0; i < MAX_TOUCH_POINTERS; i++) {
+		if (s_pointers[i].active && (s_pointers[i].isLook || s_pointers[i].btn == MBTN_ATTACK || s_pointers[i].btn == MBTN_TARGET))
+			return true;
+	}
+	return false;
+}
+
 void
 CMobileTouchControls::Initialise(void)
 {
@@ -2162,6 +2213,7 @@ CMobileTouchControls::ResetTouches(void)
 	s_menuPendingBack = false;
 	s_menuPendingChange = 0;
 	s_statsVelocityPxPerSec = 0.0f;
+	s_sprintJumpTap.Reset();
 }
 
 void
@@ -2202,23 +2254,13 @@ CMobileTouchControls::OnFingerDown(int64 fingerId, float normX, float normY)
 		return;
 	}
 
-	// 2. Virtual Analog Stick (dynamic floating anchor in lower-left thumb zone)
+	// 2. Dynamic Transparent Stick: invisible when idle, spawns at touch point in left movement zone
 	if (s_stickVisible && !IsStickOwned()) {
-		const float dx = x - s_stickBaseX;
-		const float dy = y - s_stickBaseY;
-		const float grabR = s_stickRadius * 1.55f;
-		const bool inThumbZone = (x < m.screenW * 0.36f && y > m.screenH * 0.42f);
-		if ((dx * dx + dy * dy) <= (grabR * grabR) || inThumbZone) {
+		if (MobileTouchMath::IsInDynamicStickZone(x, y, m)) {
 			p->isStick = true;
-			const float maxAnchorOffset = s_stickRadius * 0.55f;
-			const float dist = Sqrt(dx * dx + dy * dy);
-			if (dist > maxAnchorOffset && dist > 1e-4f) {
-				s_stickAnchorX = s_stickBaseX + (dx / dist) * maxAnchorOffset;
-				s_stickAnchorY = s_stickBaseY + (dy / dist) * maxAnchorOffset;
-			} else {
-				s_stickAnchorX = x;
-				s_stickAnchorY = y;
-			}
+			MobileTouchMath::ComputeDynamicStickOrigin(x, y, m, s_stickRadius, &s_stickAnchorX, &s_stickAnchorY);
+			s_stickBaseX = s_stickAnchorX;
+			s_stickBaseY = s_stickAnchorY;
 			UpdateStickFromTouch(x, y);
 
 			const uint32 nowMs = CTimer::GetTimeInMilliseconds();
@@ -2376,6 +2418,7 @@ CMobileTouchControls::UpdatePad(CPad *pad)
 		s_stickAxisY = 0;
 		s_accumLookDX = 0.0f;
 		s_accumLookDY = 0.0f;
+		s_sprintJumpTap.Reset();
 		return;
 	}
 
@@ -2421,9 +2464,23 @@ CMobileTouchControls::UpdatePad(CPad *pad)
 		if (s_scopeLatched || IsGameplayButtonHeld(MBTN_TARGET))
 			st.RightShoulder1 = 255;
 	} else {
+		const bool sprintHeld = IsGameplayButtonHeld(MBTN_SPRINT);
+		const bool jumpPulse = s_sprintJumpTap.ConsumeJumpFrame();
 		if (IsGameplayButtonHeld(MBTN_ATTACK))     st.Circle = 255;
-		if (IsGameplayButtonHeld(MBTN_SPRINT))     st.Cross = 255;
-		if (IsGameplayButtonHeld(MBTN_JUMP))       st.Square = 255;
+		if (sprintHeld) {
+			st.Cross = 255;
+			// Ensure holding Sprint upgrades partial walk stick deflection to full run
+			if (st.LeftStickX != 0 || st.LeftStickY != 0) {
+				const float fx = (float)st.LeftStickX;
+				const float fy = (float)st.LeftStickY;
+				const float mag = Sqrt(fx * fx + fy * fy);
+				if (mag > 1.0f && mag < 127.0f) {
+					st.LeftStickX = (int16)Clamp((fx / mag) * 127.0f, -128.0f, 127.0f);
+					st.LeftStickY = (int16)Clamp((fy / mag) * 127.0f, -128.0f, 127.0f);
+				}
+			}
+		}
+		if (jumpPulse)                             st.Square = 255;
 		if (IsGameplayButtonHeld(MBTN_ENTER_EXIT)) st.Triangle = 255;
 		if (s_scopeLatched || IsGameplayButtonHeld(MBTN_TARGET))
 			st.RightShoulder1 = 255;
@@ -2552,12 +2609,12 @@ CMobileTouchControls::Draw(void)
 	RwRenderStateSet(rwRENDERSTATETEXTUREFILTER, (void*)rwFILTERLINEAR);
 	RwRenderStateSet(rwRENDERSTATETEXTUREADDRESS, (void*)rwTEXTUREADDRESSCLAMP);
 
-	if (s_stickVisible) {
-		const bool stickActive = IsStickOwned();
-		const float knobX = stickActive ? s_stickKnobX : s_stickBaseX;
-		const float knobY = stickActive ? s_stickKnobY : s_stickBaseY;
-		const uint8 baseAlpha = stickActive ? 225 : 165;
-		const uint8 nubAlpha = stickActive ? 250 : 200;
+	// Dynamic stick: 100% transparent when idle; appears only while actively pressed & held
+	if (s_stickVisible && IsStickOwned()) {
+		const float knobX = s_stickKnobX;
+		const float knobY = s_stickKnobY;
+		const uint8 baseAlpha = 225;
+		const uint8 nubAlpha = 250;
 
 		if (s_tex[MTEX_CIRCLE]) {
 			DrawTextureQuad(s_tex[MTEX_CIRCLE], s_stickBaseX, s_stickBaseY,
@@ -2573,7 +2630,7 @@ CMobileTouchControls::Draw(void)
 				nubR, nubR, CRGBA(255, 255, 255, nubAlpha), false);
 		} else {
 			DrawFilledCircle(knobX, knobY, nubR,
-				stickActive ? CRGBA(255, 175, 230, 185) : CRGBA(235, 240, 250, 130),
+				CRGBA(255, 175, 230, 185),
 				CRGBA(255, 255, 255, 210), Max(2.0f, nubR * 0.08f));
 		}
 	}

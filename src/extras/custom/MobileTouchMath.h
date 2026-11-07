@@ -215,4 +215,84 @@ EvalMapPinch(float prevAx, float prevAy, float prevBx, float prevBy,
 	*inOutCenterY = currMidY - (prevMidY - *inOutCenterY) * ratio;
 }
 
+inline void
+ComputeMenuHorizontalSpan(float screenW, float screenH,
+                          float safeLeftPx, float safeRightPx,
+                          float *outLeftPx, float *outRightPx)
+{
+	const float w = (screenW > 1.0f) ? screenW : 1280.0f;
+	const float h = (screenH > 1.0f) ? screenH : 720.0f;
+	const float minPad = (h / 448.0f) * 14.0f;
+	const float left = MaxF(ClampF(safeLeftPx, 0.0f, w * 0.16f), minPad);
+	const float right = w - MaxF(ClampF(safeRightPx, 0.0f, w * 0.16f), minPad);
+	if (outLeftPx) *outLeftPx = left;
+	if (outRightPx) *outRightPx = MaxF(left + 1.0f, right);
+}
+
+inline float
+MenuVirtualToScreenX(float vx, float screenW, float screenH,
+                     float safeLeftPx, float safeRightPx)
+{
+	float left = 0.0f, right = screenW;
+	ComputeMenuHorizontalSpan(screenW, screenH, safeLeftPx, safeRightPx, &left, &right);
+	return left + (vx / 640.0f) * (right - left);
+}
+
+inline void
+ComputeDynamicStickOrigin(float touchX, float touchY,
+                          const MobileScreenMetrics &m, float stickRadius,
+                          float *outBaseX, float *outBaseY)
+{
+	const float r = MaxF(stickRadius, 1.0f);
+	const float minX = m.marginLeftPx + r;
+	const float maxX = MaxF(minX, m.screenW * 0.42f);
+	const float minY = MaxF(m.radarTopPx + m.radarSizePx + m.Dp(12.0f) + r, m.screenH * 0.34f);
+	const float maxY = MaxF(minY, m.screenH - m.marginBottomPx - r);
+	if (outBaseX) *outBaseX = ClampF(touchX, minX, maxX);
+	if (outBaseY) *outBaseY = ClampF(touchY, minY, maxY);
+}
+
+inline bool
+IsInDynamicStickZone(float touchX, float touchY, const MobileScreenMetrics &m)
+{
+	const float topGuard = MaxF(m.radarTopPx + m.radarSizePx + m.Dp(8.0f), m.screenH * 0.30f);
+	return touchX >= 0.0f && touchX <= m.screenW * 0.44f &&
+	       touchY >= topGuard && touchY <= m.screenH;
+}
+
+struct SprintJumpDoubleTap {
+	uint32_t lastDownMs = 0;
+	bool hasPrevDown = false;
+	int jumpPulseFrames = 0;
+
+	bool OnPress(uint32_t nowMs, uint32_t doubleTapWindowMs = 320)
+	{
+		if (hasPrevDown && (nowMs - lastDownMs) <= doubleTapWindowMs) {
+			hasPrevDown = false;
+			lastDownMs = 0;
+			jumpPulseFrames = 2;
+			return true;
+		}
+		hasPrevDown = true;
+		lastDownMs = nowMs;
+		return false;
+	}
+
+	void Reset()
+	{
+		lastDownMs = 0;
+		hasPrevDown = false;
+		jumpPulseFrames = 0;
+	}
+
+	bool ConsumeJumpFrame()
+	{
+		if (jumpPulseFrames > 0) {
+			jumpPulseFrames--;
+			return true;
+		}
+		return false;
+	}
+};
+
 } // namespace MobileTouchMath

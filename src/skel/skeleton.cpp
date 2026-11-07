@@ -410,7 +410,11 @@ RsInitialize(void)
 	RsGlobal.width = DEFAULT_SCREEN_WIDTH;
 	RsGlobal.height = DEFAULT_SCREEN_HEIGHT;
 	
+#ifdef ANDROID
+	RsGlobal.maxFPS = 240;
+#else
 	RsGlobal.maxFPS = 30;
+#endif
 	 
 	RsGlobal.quit = FALSE;
 

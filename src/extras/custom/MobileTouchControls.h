@@ -23,6 +23,9 @@ public:
 	static float GetSafeTopInsetPx(void);
 	static float GetSafeBottomInsetPx(void);
 	static void GetMobileRadarRect(float *outLeft, float *outTop, float *outWidth, float *outHeight);
+	static float MenuVirtualToScreenX(float vx);
+	static float GetMenuSpanWidthPx(void);
+	static bool IsLookPointerActive(void);
 
 	static void UpgradeHudSprites(CSprite2d *hudSprites, int32 numSprites);
 	static void UpgradeRadarSprites(void);

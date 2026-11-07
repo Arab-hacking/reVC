@@ -644,6 +644,18 @@ bool LoadINISettings()
 	CCarCtrl::MaxNumberOfCarsInUse = DEFAULT_MAX_NUMBER_OF_CARS * CIniFile::CarNumberMultiplier;
 #endif
 
+#ifdef ANDROID
+	FrontEndMenuManager.m_PrefsFrameLimiter = 0;
+	FrontEndMenuManager.m_PrefsVsync = 0;
+	FrontEndMenuManager.m_PrefsVsyncDisp = 0;
+	FrontEndMenuManager.m_ControlMethod = CONTROL_STANDARD;
+	CCamera::m_bUseMouse3rdPerson = true;
+	CVehicle::m_bDisableMouseSteering = true;
+#ifdef FREE_CAM
+	CCamera::bFreeCam = true;
+#endif
+#endif
+
 	return true;
 }
 

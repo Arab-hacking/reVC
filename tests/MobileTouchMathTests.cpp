@@ -81,5 +81,48 @@ int main()
 	assert(std::fabs(uBefore - uAfter) < 1e-4f);
 	assert(std::fabs(vBefore - vAfter) < 1e-4f);
 
+	// 5. Widescreen Smartphone Menu Coordinate Adaptation (20:9 + camera cutout insets)
+	float mLeft = 0.0f, mRight = 0.0f;
+	ComputeMenuHorizontalSpan(2400.0f, 1080.0f, 88.0f, 44.0f, &mLeft, &mRight);
+	assert(mLeft >= 88.0f - 0.01f);
+	assert(mRight <= 2400.0f - 44.0f + 0.01f);
+	// Uses full widescreen width (> 2200px on 2400px phone instead of cramped 1440px 4:3 box)
+	assert((mRight - mLeft) > 2200.0f);
+	const float rowLeft  = MenuVirtualToScreenX(40.0f,  2400.0f, 1080.0f, 88.0f, 44.0f);
+	const float rowMid   = MenuVirtualToScreenX(320.0f, 2400.0f, 1080.0f, 88.0f, 44.0f);
+	const float rowRight = MenuVirtualToScreenX(600.0f, 2400.0f, 1080.0f, 88.0f, 44.0f);
+	assert(rowLeft > mLeft && rowLeft < 300.0f);
+	assert(rowRight > 2100.0f && rowRight < mRight);
+	assert(std::fabs(rowMid - 0.5f * (mLeft + mRight)) < 0.01f);
+
+	// 6. Run Button: Hold = Sprint (no jump), Double-Tap = Jump pulse
+	SprintJumpDoubleTap runBtn;
+	assert(!runBtn.OnPress(1000));          // 1st press (tap or hold): sprint only, no jump
+	assert(!runBtn.ConsumeJumpFrame());
+	assert(!runBtn.OnPress(1500));          // Slow 2nd press (500ms > 320ms): no jump
+	assert(!runBtn.ConsumeJumpFrame());
+	assert(runBtn.OnPress(1720));           // Quick double-tap (220ms <= 320ms): JUMP!
+	assert(runBtn.ConsumeJumpFrame());      // Frame 1 jump pulse
+	assert(runBtn.ConsumeJumpFrame());      // Frame 2 jump pulse
+	assert(!runBtn.ConsumeJumpFrame());     // Pulse finished
+	assert(!runBtn.OnPress(1900));          // Immediate 3rd tap starts fresh pair (no accidental triple jump)
+	assert(runBtn.OnPress(2100));           // 4th tap completes second double-tap -> JUMP again!
+
+	// 7. Dynamic Transparent Stick: left-zone activation & safe boundary clamping
+	const float stickR = fhd.Dp(56.0f);
+	// Radar area in top-left is excluded from dynamic stick zone
+	assert(!IsInDynamicStickZone(fhd.radarLeftPx + 20.0f, fhd.radarTopPx + 20.0f, fhd));
+	// Right half of screen is camera look zone, NOT stick zone
+	assert(!IsInDynamicStickZone(1600.0f, 750.0f, fhd));
+	// Lower-left movement zone activates dynamic stick right at finger position
+	assert(IsInDynamicStickZone(420.0f, 760.0f, fhd));
+	float dynX = 0.0f, dynY = 0.0f;
+	ComputeDynamicStickOrigin(420.0f, 760.0f, fhd, stickR, &dynX, &dynY);
+	assert(std::fabs(dynX - 420.0f) < 0.01f && std::fabs(dynY - 760.0f) < 0.01f);
+	// Touch right against the left cutout edge clamps stick base so ring stays fully visible
+	ComputeDynamicStickOrigin(15.0f, 1070.0f, fhd, stickR, &dynX, &dynY);
+	assert(dynX >= fhd.marginLeftPx + stickR - 0.01f);
+	assert(dynY <= fhd.screenH - fhd.marginBottomPx - stickR + 0.01f);
+
 	return 0;
 }

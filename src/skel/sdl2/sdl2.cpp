@@ -140,14 +140,22 @@ psCameraBeginUpdate(RwCamera *camera)
 void
 psCameraShowRaster(RwCamera *camera)
 {
-#ifdef LEGACY_MENU_OPTIONS
-    if (FrontEndMenuManager.m_PrefsVsync || FrontEndMenuManager.m_bMenuActive)
-#else
-        if (FrontEndMenuManager.m_PrefsFrameLimiter || FrontEndMenuManager.m_bMenuActive)
-#endif
+#ifdef ANDROID
+    if (FrontEndMenuManager.m_PrefsVsync)
         RwCameraShowRaster(camera, PSGLOBAL(window), rwRASTERFLIPWAITVSYNC);
     else
         RwCameraShowRaster(camera, PSGLOBAL(window), rwRASTERFLIPDONTWAIT);
+#elif defined(LEGACY_MENU_OPTIONS)
+    if (FrontEndMenuManager.m_PrefsVsync || FrontEndMenuManager.m_bMenuActive)
+        RwCameraShowRaster(camera, PSGLOBAL(window), rwRASTERFLIPWAITVSYNC);
+    else
+        RwCameraShowRaster(camera, PSGLOBAL(window), rwRASTERFLIPDONTWAIT);
+#else
+    if (FrontEndMenuManager.m_PrefsFrameLimiter || FrontEndMenuManager.m_bMenuActive)
+        RwCameraShowRaster(camera, PSGLOBAL(window), rwRASTERFLIPWAITVSYNC);
+    else
+        RwCameraShowRaster(camera, PSGLOBAL(window), rwRASTERFLIPDONTWAIT);
+#endif
 
     return;
 }
@@ -1498,6 +1506,7 @@ main(int argc, char *argv[])
     StorageRootBuffer = getenv("STORAGE_ROOT");
     SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "0");
     SDL_SetHint(SDL_HINT_MOUSE_TOUCH_EVENTS, "0");
+    SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
 #endif
 
     /*
@@ -1864,12 +1873,19 @@ main(int argc, char *argv[])
 
                     case GS_PLAYING_GAME:
                     {
+#ifdef ANDROID
+                        if ( RwInitialised )
+                        {
+                            RsEventHandler(rsIDLE, (void *)TRUE);
+                        }
+#else
                         float ms = (float)CTimer::GetCurrentTimeInCycles() / (float)CTimer::GetCyclesPerMillisecond();
                         if ( RwInitialised )
                         {
                             if (!FrontEndMenuManager.m_PrefsFrameLimiter || (1000.0f / (float)RsGlobal.maxFPS) < ms)
                                 RsEventHandler(rsIDLE, (void *)TRUE);
                         }
+#endif
                         break;
                     }
                 }
