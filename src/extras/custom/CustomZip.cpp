@@ -19,10 +19,11 @@
 #include <zlib.h>
 #endif
 
+#ifndef CUSTOMZIP_HAVE_ZLIB
 // DEFLATE (RFC 1951) decompressor. Small and self contained: the archives are
 // read from the game process, so no external dependency is wanted here.
 
-namespace deflate {
+namespace customzip_deflate {
 
 struct BitReader
 {
@@ -167,7 +168,8 @@ Codes(BitReader &br, Huffman &lit, Huffman &dist)
 	return true;
 }
 
-} // namespace deflate
+} // namespace customzip_deflate
+#endif // !CUSTOMZIP_HAVE_ZLIB
 
 int32
 CustomInflate(const uint8 *src, uint32 srcSize, uint8 *dst, uint32 dstSize)
@@ -190,7 +192,7 @@ CustomInflate(const uint8 *src, uint32 srcSize, uint8 *dst, uint32 dstSize)
 		return -1;
 	return (int32)produced;
 #else
-	using namespace deflate;
+	using namespace customzip_deflate;
 
 	BitReader br;
 	Huffman fixedLit, fixedDist, lit, dist;
