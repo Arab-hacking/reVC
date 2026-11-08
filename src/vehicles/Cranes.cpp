@@ -108,17 +108,17 @@ void CCranes::ActivateCrane(float fInfX, float fSupX, float fInfY, float fSupY, 
 		Y = fDropOffY;
 	}
 	int index = 0;
-	for (int i = 0; i < NumCranes; i++) {
+	for (int i = 0; i < NumCranes && i < NUM_CRANES; i++) {
+		if (!aCranes[i].m_pCraneEntity)
+			continue;
 		float distance = (CVector2D(X, Y) - aCranes[i].m_pCraneEntity->GetPosition()).Magnitude();
 		if (distance < fMinDistance && distance < MAX_DISTANCE_TO_FIND_CRANE) {
 			fMinDistance = distance;
 			index = i;
 		}
 	}
-#ifdef FIX_BUGS // classic
-	if (fMinDistance == MAX_DISTANCE)
+	if (fMinDistance == MAX_DISTANCE || !aCranes[index].m_pCraneEntity)
 		return;
-#endif
 	CCrane* pCrane = &aCranes[index];
 	pCrane->m_fPickupX1 = fInfX;
 	pCrane->m_fPickupX2 = fSupX;
@@ -154,17 +154,17 @@ void CCranes::DeActivateCrane(float X, float Y)
 {
 	float fMinDistance = MAX_DISTANCE;
 	int index = 0;
-	for (int i = 0; i < NumCranes; i++) {
+	for (int i = 0; i < NumCranes && i < NUM_CRANES; i++) {
+		if (!aCranes[i].m_pCraneEntity)
+			continue;
 		float distance = (CVector2D(X, Y) - aCranes[i].m_pCraneEntity->GetPosition()).Magnitude();
 		if (distance < fMinDistance && distance < MAX_DISTANCE_TO_FIND_CRANE) {
 			fMinDistance = distance;
 			index = i;
 		}
 	}
-#ifdef FIX_BUGS // classic
-	if (fMinDistance == MAX_DISTANCE)
+	if (fMinDistance == MAX_DISTANCE || !aCranes[index].m_pCraneEntity)
 		return;
-#endif
 	aCranes[index].m_nCraneStatus = CCrane::DEACTIVATED;
 	aCranes[index].m_nCraneState = CCrane::IDLE;
 }
@@ -173,7 +173,9 @@ bool CCranes::IsThisCarPickedUp(float X, float Y, CVehicle* pVehicle)
 {
 	int index = 0;
 	bool result = false;
-	for (int i = 0; i < NumCranes; i++) {
+	for (int i = 0; i < NumCranes && i < NUM_CRANES; i++) {
+		if (!aCranes[i].m_pCraneEntity)
+			continue;
 		float distance = (CVector2D(X, Y) - aCranes[i].m_pCraneEntity->GetPosition()).Magnitude();
 		if (distance < MAX_DISTANCE_TO_FIND_CRANE && aCranes[i].m_pVehiclePickedUp == pVehicle) {
 			if (aCranes[i].m_nCraneState == CCrane::LIFTING_TARGET || aCranes[i].m_nCraneState == CCrane::ROTATING_TARGET)
@@ -185,7 +187,9 @@ bool CCranes::IsThisCarPickedUp(float X, float Y, CVehicle* pVehicle)
 
 void CCranes::UpdateCranes(void)
 {
-	for (int i = 0; i < NumCranes; i++) {
+	for (int i = 0; i < NumCranes && i < NUM_CRANES; i++) {
+		if (!aCranes[i].m_pCraneEntity)
+			continue;
 		if (aCranes[i].m_bIsTop || aCranes[i].m_bIsCrusher ||
 			(TheCamera.GetPosition().x + CRANE_UPDATE_RADIUS > aCranes[i].m_pCraneEntity->GetPosition().x &&
 				TheCamera.GetPosition().x - CRANE_UPDATE_RADIUS < aCranes[i].m_pCraneEntity->GetPosition().x &&
@@ -197,7 +201,7 @@ void CCranes::UpdateCranes(void)
 
 void CCrane::Update(void)
 {
-	if (CReplay::IsPlayingBack())
+	if (CReplay::IsPlayingBack() || !m_pCraneEntity)
 		return;
 	if (((m_nCraneStatus == ACTIVATED || m_nCraneStatus == DEACTIVATED) &&
 		Abs(TheCamera.GetGameCamPosition().x - m_pCraneEntity->GetPosition().x) < CRANE_MOVEMENT_PROCESSING_RADIUS &&
@@ -676,6 +680,7 @@ void CCranes::Load(uint8* buf, uint32 size)
 	INITSAVEBUF
 
 	ReadSaveBuf(&NumCranes, buf);
+	NumCranes = Clamp(NumCranes, 0, NUM_CRANES);
 	ReadSaveBuf(&CarsCollectedMilitaryCrane, buf);
 	for (int i = 0; i < NUM_CRANES; i++) {
 #ifdef COMPATIBLE_SAVES
@@ -725,6 +730,18 @@ void CCranes::Load(uint8* buf, uint32 size)
 		if (pCrane->m_pVehiclePickedUp != nil)
 			pCrane->m_pVehiclePickedUp = CPools::GetVehiclePool()->GetSlot((uintptr)pCrane->m_pVehiclePickedUp - 1);
 #endif
+	}
+	for (int i = 0; i < NUM_CRANES; i++) {
+		CEntity *ent = aCranes[i].m_pCraneEntity;
+		if (ent &&
+		    MODELID_CRANE_1 != ent->GetModelIndex() &&
+		    MODELID_CRANE_2 != ent->GetModelIndex() &&
+		    MODELID_CRANE_3 != ent->GetModelIndex() &&
+		    MODELID_CRANE_4 != ent->GetModelIndex() &&
+		    MODELID_CRANE_5 != ent->GetModelIndex() &&
+		    MODELID_CRANE_6 != ent->GetModelIndex()) {
+			aCranes[i].m_pCraneEntity = nil;
+		}
 	}
 
 	VALIDATESAVEBUF(size);

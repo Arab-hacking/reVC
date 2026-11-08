@@ -2345,9 +2345,11 @@ INITSAVEBUF
 		ReadSaveBuf(&BuildingSwapArray[i].m_nOldModel, buf);
 		if (BuildingSwapArray[i].m_pBuilding) {
 			int32 newModel = BuildingSwapArray[i].m_nNewModel;
+			int32 oldModel = BuildingSwapArray[i].m_nOldModel;
 			int32 curModel = BuildingSwapArray[i].m_pBuilding->GetModelIndex();
 			if (newModel >= 0 && newModel < MODELINFOSIZE &&
 			    curModel >= 0 && curModel < MODELINFOSIZE &&
+			    (curModel == oldModel || curModel == newModel) &&
 			    CModelInfo::GetModelInfo(newModel) != nil &&
 			    CModelInfo::GetModelInfo(curModel) != nil) {
 				BuildingSwapArray[i].m_pBuilding->ReplaceWithNewModel(newModel);

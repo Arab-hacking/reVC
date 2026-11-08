@@ -7300,6 +7300,12 @@ CPed::ClearChat(void)
 bool
 CPed::FacePhone(void)
 {
+	if (m_phoneId < 0 || m_phoneId >= NUMPHONES) {
+		SetIdle();
+		ClearLookFlag();
+		m_phoneId = -1;
+		return true;
+	}
 	// FIX: This function was broken since it's left unused early in development.
 #ifdef FIX_BUGS
 	float phoneDir = CGeneral::GetRadianAngleBetweenPoints(
@@ -7352,7 +7358,8 @@ CPed::MakePhonecall(void)
 		return false;
 
 	SetIdle();
-	gPhoneInfo.m_aPhones[m_phoneId].m_nState = PHONE_STATE_FREE;
+	if (m_phoneId >= 0 && m_phoneId < NUMPHONES)
+		gPhoneInfo.m_aPhones[m_phoneId].m_nState = PHONE_STATE_FREE;
 	m_phoneId = -1;
 	return true;
 }

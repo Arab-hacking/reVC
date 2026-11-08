@@ -1673,26 +1673,30 @@ int8 CRunningScript::ProcessCommands1100To1199(int32 command)
 		CollectParameters(&m_nIp, 2);
 		CObject *pObj = CPools::GetObjectPool()->GetAt(ScriptParams[0]);
 		assert(pObj);
-		CScriptPaths::aArray[ScriptParams[1]].SetObjectToControl(pObj);
+		if (pObj && ScriptParams[1] >= 0 && ScriptParams[1] < 3)
+			CScriptPaths::aArray[ScriptParams[1]].SetObjectToControl(pObj);
 		return 0;
 	}
 	case COMMAND_SET_OBJECT_PATH_SPEED:
 	{
 		CollectParameters(&m_nIp, 2);
-		CScriptPaths::aArray[ScriptParams[0]].m_fSpeed = *(float*)&ScriptParams[1];
+		if (ScriptParams[0] >= 0 && ScriptParams[0] < 3)
+			CScriptPaths::aArray[ScriptParams[0]].m_fSpeed = *(float*)&ScriptParams[1];
 		return 0;
 	}
 	case COMMAND_SET_OBJECT_PATH_POSITION:
 	{
 		CollectParameters(&m_nIp, 2);
-		CScriptPaths::aArray[ScriptParams[0]].m_fPosition = *(float*)&ScriptParams[1];
+		if (ScriptParams[0] >= 0 && ScriptParams[0] < 3)
+			CScriptPaths::aArray[ScriptParams[0]].m_fPosition = *(float*)&ScriptParams[1];
 		return 0;
 	}
 	//case COMMAND_GET_OBJECT_DISTANCE_ALONG_PATH:
 	case COMMAND_CLEAR_OBJECT_PATH:
 	{
 		CollectParameters(&m_nIp, 1);
-		CScriptPaths::aArray[ScriptParams[0]].Clear();
+		if (ScriptParams[0] >= 0 && ScriptParams[0] < 3)
+			CScriptPaths::aArray[ScriptParams[0]].Clear();
 		return 0;
 	}
 	case COMMAND_HELI_GOTO_COORDS:

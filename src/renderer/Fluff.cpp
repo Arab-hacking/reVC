@@ -1262,9 +1262,13 @@ void CScriptPath::InitialiseOne(int32 numNodes, float length) {
 }
 
 void CScriptPath::SetObjectToControl(CObject *pObj) {
+	if (!pObj)
+		return;
 	int32 i = 0;
 	while (i < 6 && m_pObjects[i])
 		i++;
+	if (i >= 6)
+		return;
 	m_pObjects[i] = pObj;
 	pObj->RegisterReference((CEntity**)&m_pObjects[i]);
 	pObj->m_phy_flagA08 = false;
