@@ -2282,7 +2282,9 @@ bool CTheScripts::LoadAllScripts(uint8* buf, uint32 size)
 
 #ifdef USE_DEBUG_SCRIPT_LOADER
 		bool matchedAlt = false;
-		for (int altScript = 1; altScript <= 2; altScript++) {
+		for (int altScript = 0; altScript <= 2; altScript++) {
+			if (altScript == origScriptToLoad)
+				continue;
 			ScriptToLoad = altScript;
 			int probe = OpenScript();
 			CFileMgr::SetDir("");

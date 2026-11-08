@@ -583,6 +583,9 @@ bool CGame::Initialise(const char* datFile)
 
 	LoadingScreen("Loading the Game", "Load scripts", nil);
 	PUSH_MEMID(MEMID_SCRIPT);
+#if defined(ANDROID) && defined(USE_DEBUG_SCRIPT_LOADER)
+	CTheScripts::ScriptToLoad = 1;
+#endif
 	CTheScripts::Init();
 	CGangs::Initialise();
 	POP_MEMID();
@@ -762,6 +765,10 @@ void CGame::ReInitGameObjectVariables(void)
 	gPhoneInfo.Initialise();
 
 	PUSH_MEMID(MEMID_SCRIPT);
+#if defined(ANDROID) && defined(USE_DEBUG_SCRIPT_LOADER)
+	if ( !FrontEndMenuManager.m_bWantToLoad )
+		CTheScripts::ScriptToLoad = 1;
+#endif
 	CTheScripts::Init();
 	CGangs::Initialise();
 	POP_MEMID();

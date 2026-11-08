@@ -32,7 +32,9 @@
 #include "ColModel.h"
 #include "Pools.h"
 #include "Streaming.h"
+#include "WaterLevel.h"
 #include "World.h"
+#include "Game.h"
 
 namespace {
 
@@ -847,6 +849,160 @@ void CCustomWorld::LoadIpl(void)
 bool CCustomWorld::OwnsModelSlot(int slot)
 {
     return slot >= 0 && slot < (int)brSlots.size() && brSlots[slot];
+}
+
+namespace {
+
+struct CustomMapLandmark {
+    float x;
+    float y;
+    float heading;
+    const char *label;
+};
+
+static const CustomMapLandmark kCustomMapLandmarks[] = {
+    {  822.0f,   773.0f, 110.0f, "Arzamas Station"   },
+    { 1795.0f,  2505.0f, 180.0f, "Batyrevo Station"  },
+    { 2700.0f, -2435.0f,  90.0f, "Yuzhny Station"    },
+    {-2335.0f,  -195.0f,   0.0f, "Lytkarino Hospital"}
+};
+
+static bool SampleDryGroundZ(float x, float y, float &outGroundZ)
+{
+    bool found = false;
+    // Probe below rooftop height first so street-level plazas are preferred over tall roofs.
+    float groundZ = CWorld::FindGroundZFor3DCoord(x, y, 45.0f, &found);
+    if(!found)
+        groundZ = CWorld::FindGroundZFor3DCoord(x, y, 1000.0f, &found);
+    if(!found || !std::isfinite(groundZ) || groundZ <= MAP_Z_LOW_LIMIT)
+        return false;
+
+    float waterZ = 0.0f;
+    if(CWaterLevel::GetWaterLevelNoWaves(x, y, groundZ, &waterZ) && waterZ >= groundZ - 0.5f)
+        return false;
+
+    outGroundZ = groundZ;
+    return true;
+}
+
+static bool FindDynamicDryBuildingGround(const CVector &target, CVector &outPos)
+{
+    CBuildingPool *pool = CPools::GetBuildingPool();
+    if(!pool)
+        return false;
+
+    float bestDistSq = 1e30f;
+    bool haveBest = false;
+    CVector bestPos(0.0f, 0.0f, 20.0f);
+
+    const int n = pool->GetSize();
+    for(int i = 0; i < n; i++) {
+        CBuilding *b = pool->GetSlot(i);
+        if(!b || b->m_area != AREA_MAIN_MAP || b->bIsBIGBuilding)
+            continue;
+        CBaseModelInfo *mi = CModelInfo::GetModelInfo(b->GetModelIndex());
+        if(!mi || !mi->GetColModel() || mi->GetColModel()->numTriangles <= 0)
+            continue;
+        const CVector bp = b->GetPosition();
+        const float dx = bp.x - target.x;
+        const float dy = bp.y - target.y;
+        const float d2 = dx * dx + dy * dy;
+        if(d2 >= bestDistSq)
+            continue;
+
+        float gz = 0.0f;
+        if(SampleDryGroundZ(bp.x, bp.y, gz)) {
+            bestDistSq = d2;
+            bestPos = CVector(bp.x, bp.y, gz);
+            haveBest = true;
+        }
+    }
+
+    if(haveBest)
+        outPos = bestPos;
+    return haveBest;
+}
+
+} // namespace
+
+bool CCustomWorld::ResolveSpawnPosition(CVector &pos, float *outHeading)
+{
+    float groundZ = 0.0f;
+    if(SampleDryGroundZ(pos.x, pos.y, groundZ)) {
+        if(pos.z <= MAP_Z_LOW_LIMIT)
+            pos.z = groundZ;
+        return false;
+    }
+
+    const CVector orig = pos;
+    const size_t count = sizeof(kCustomMapLandmarks) / sizeof(kCustomMapLandmarks[0]);
+    for(size_t i = 0; i < count; i++) {
+        if(SampleDryGroundZ(kCustomMapLandmarks[i].x, kCustomMapLandmarks[i].y, groundZ)) {
+            pos = CVector(kCustomMapLandmarks[i].x, kCustomMapLandmarks[i].y, groundZ);
+            if(outHeading)
+                *outHeading = kCustomMapLandmarks[i].heading;
+            CUSTOM_LOG("CustomWorld: redirected spawn (%.1f, %.1f) -> %s (%.1f, %.1f, %.2f)\n",
+                orig.x, orig.y, kCustomMapLandmarks[i].label, pos.x, pos.y, pos.z);
+            return true;
+        }
+    }
+
+    CVector dynPos;
+    if(FindDynamicDryBuildingGround(CVector(0.0f, 0.0f, 0.0f), dynPos)) {
+        pos = dynPos;
+        if(outHeading)
+            *outHeading = 0.0f;
+        CUSTOM_LOG("CustomWorld: redirected spawn (%.1f, %.1f) -> dynamic ground (%.1f, %.1f, %.2f)\n",
+            orig.x, orig.y, pos.x, pos.y, pos.z);
+        return true;
+    }
+
+    return false;
+}
+
+bool CCustomWorld::ResolveRestartPosition(const CVector &refPos, CVector &inOutRestartPos, float *inOutHeading)
+{
+    float bestDistSq = 1e30f;
+    int bestIdx = -1;
+    float bestZ = 0.0f;
+
+    const size_t count = sizeof(kCustomMapLandmarks) / sizeof(kCustomMapLandmarks[0]);
+    for(size_t i = 0; i < count; i++) {
+        float gz = 0.0f;
+        if(!SampleDryGroundZ(kCustomMapLandmarks[i].x, kCustomMapLandmarks[i].y, gz))
+            continue;
+        const float dx = kCustomMapLandmarks[i].x - refPos.x;
+        const float dy = kCustomMapLandmarks[i].y - refPos.y;
+        const float d2 = dx * dx + dy * dy;
+        if(d2 < bestDistSq) {
+            bestDistSq = d2;
+            bestIdx = (int)i;
+            bestZ = gz;
+        }
+    }
+
+    if(bestIdx >= 0) {
+        inOutRestartPos = CVector(kCustomMapLandmarks[bestIdx].x, kCustomMapLandmarks[bestIdx].y, bestZ);
+        if(inOutHeading)
+            *inOutHeading = kCustomMapLandmarks[bestIdx].heading;
+        return true;
+    }
+
+    float curZ = 0.0f;
+    if(SampleDryGroundZ(inOutRestartPos.x, inOutRestartPos.y, curZ)) {
+        inOutRestartPos.z = curZ;
+        return false;
+    }
+
+    CVector dynPos;
+    if(FindDynamicDryBuildingGround(refPos, dynPos)) {
+        inOutRestartPos = dynPos;
+        if(inOutHeading)
+            *inOutHeading = 0.0f;
+        return true;
+    }
+
+    return false;
 }
 
 void CCustomWorld::Shutdown(void)

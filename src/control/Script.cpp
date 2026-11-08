@@ -43,6 +43,10 @@
 #include "Fluff.h"
 #include "GameLogic.h"
 #include "MBlur.h"
+#ifdef CUSTOM_MODELS
+#include "CustomModels.h"
+#include "CustomWorld.h"
+#endif
 #include "PedRoutes.h"
 #include "RoadBlocks.h"
 #include "SpecialFX.h"
@@ -725,7 +729,11 @@ void CRunningScript::Init()
 }
 
 #ifdef USE_DEBUG_SCRIPT_LOADER
+#ifdef ANDROID
+int CTheScripts::ScriptToLoad = 1;
+#else
 int CTheScripts::ScriptToLoad = 0;
+#endif
 
 int CTheScripts::OpenScript()
 {
@@ -1632,12 +1640,26 @@ int8 CRunningScript::ProcessCommands0To99(int32 command)
 		CWorld::Players[index].m_pPed->CharCreatedBy = MISSION_CHAR;
 		CPlayerPed::DeactivatePlayerPed(index);
 		CVector pos = *(CVector*)&ScriptParams[1];
+#if defined(ANDROID) && defined(CUSTOM_MODELS)
+		float customHeading = 0.0f;
+		bool redirectedSpawn = false;
+		if (CCustomModels::ReplacesNativeWorldMap())
+			redirectedSpawn = CCustomWorld::ResolveSpawnPosition(pos, &customHeading);
+#endif
 		if (pos.z <= MAP_Z_LOW_LIMIT)
 			pos.z = CWorld::FindGroundZForCoord(pos.x, pos.y);
 		pos.z += CWorld::Players[index].m_pPed->GetDistanceFromCentreOfMassToBaseOfModel();
 		CWorld::Players[index].m_pPed->SetPosition(pos);
 		CTheScripts::ClearSpaceForMissionEntity(pos, CWorld::Players[index].m_pPed);
 		CPlayerPed::ReactivatePlayerPed(index);
+#if defined(ANDROID) && defined(CUSTOM_MODELS)
+		if (redirectedSpawn) {
+			CWorld::Players[index].m_pPed->m_fRotationCur = DEGTORAD(customHeading);
+			CWorld::Players[index].m_pPed->m_fRotationDest = DEGTORAD(customHeading);
+			CWorld::Players[index].m_pPed->SetHeading(DEGTORAD(customHeading));
+			TheCamera.RestoreWithJumpCut();
+		}
+#endif
 		ScriptParams[0] = index;
 		StoreParameters(&m_nIp, 1);
 		return 0;

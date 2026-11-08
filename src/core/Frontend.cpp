@@ -5613,7 +5613,7 @@ CMenuManager::ProcessFileActions()
 			}
 #endif
 			if (CheckSlotDataValid(m_nCurrSaveSlot)) {
-#ifdef USE_DEBUG_SCRIPT_LOADER
+#if defined(USE_DEBUG_SCRIPT_LOADER) && !defined(ANDROID)
 				CTheScripts::ScriptToLoad = 0;
 #endif
 

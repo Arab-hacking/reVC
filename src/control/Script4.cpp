@@ -40,6 +40,10 @@
 #include "Zones.h"
 #include "Bike.h"
 #include "Wanted.h"
+#ifdef CUSTOM_MODELS
+#include "CustomModels.h"
+#include "CustomWorld.h"
+#endif
 
 #ifdef FIX_BUGS
 static bool IsSlideObjectUsedWrongByScript(const CVector& posTarget, const CVector& slideBy)
@@ -2001,6 +2005,12 @@ int8 CRunningScript::ProcessCommands900To999(int32 command)
 	{
 		CollectParameters(&m_nIp, 3);
 		CVector pos = *(CVector*)&ScriptParams[0];
+#if defined(ANDROID) && defined(CUSTOM_MODELS)
+		if (CCustomModels::ReplacesNativeWorldMap() && FindPlayerPed() == nil) {
+			if (CCustomWorld::ResolveSpawnPosition(pos, nil))
+				pos.z += 1.0f;
+		}
+#endif
 #ifdef FIX_BUGS
 		CTimer::Suspend();
 #else

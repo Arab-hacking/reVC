@@ -4,7 +4,10 @@
 #include "SaveBuf.h"
 #include "Zones.h"
 #include "PathFind.h"
-#include "SaveBuf.h"
+#ifdef CUSTOM_MODELS
+#include "CustomModels.h"
+#include "CustomWorld.h"
+#endif
 
 uint8 CRestart::OverrideHospitalLevel;
 uint8 CRestart::OverridePoliceStationLevel;
@@ -110,13 +113,21 @@ CRestart::FindClosestHospitalRestartPoint(const CVector &pos, CVector *outPos, f
 
 	// if we still didn't find anything, find closest path node
 	if (closestPoint == NUM_RESTART_POINTS) {
-		*outPos = ThePaths.m_pathNodes[ThePaths.FindNodeClosestToCoors(pos, PATH_PED, 999999.9f)].GetPosition();
+		int32 node = ThePaths.FindNodeClosestToCoors(pos, PATH_PED, 999999.9f);
+		if (node >= 0 && node < ThePaths.m_numPathNodes)
+			*outPos = ThePaths.m_pathNodes[node].GetPosition();
+		else
+			*outPos = pos;
 		*outHeading = 0.0f;
 		printf("Couldn't find a hospital restart zone near the player %f %f %f->%f %f %f\n", pos.x, pos.y, pos.z, outPos->x, outPos->y, outPos->z);
 	} else {
 		*outPos = HospitalRestartPoints[closestPoint];
 		*outHeading = HospitalRestartHeadings[closestPoint];
 	}
+#if defined(ANDROID) && defined(CUSTOM_MODELS)
+	if (CCustomModels::ReplacesNativeWorldMap())
+		CCustomWorld::ResolveRestartPosition(pos, *outPos, outHeading);
+#endif
 }
 
 void
@@ -158,12 +169,20 @@ CRestart::FindClosestPoliceRestartPoint(const CVector &pos, CVector *outPos, flo
 	// if we still didn't find anything, find closest path node
 	if (closestPoint == NUM_RESTART_POINTS) {
 		printf("Couldn't find a police restart zone near the player\n");
-		*outPos = ThePaths.m_pathNodes[ThePaths.FindNodeClosestToCoors(pos, PATH_PED, 999999.9f)].GetPosition();
+		int32 node = ThePaths.FindNodeClosestToCoors(pos, PATH_PED, 999999.9f);
+		if (node >= 0 && node < ThePaths.m_numPathNodes)
+			*outPos = ThePaths.m_pathNodes[node].GetPosition();
+		else
+			*outPos = pos;
 		*outHeading = 0.0f;
 	} else {
 		*outPos = PoliceRestartPoints[closestPoint];
 		*outHeading = PoliceRestartHeadings[closestPoint];
 	}
+#if defined(ANDROID) && defined(CUSTOM_MODELS)
+	if (CCustomModels::ReplacesNativeWorldMap())
+		CCustomWorld::ResolveRestartPosition(pos, *outPos, outHeading);
+#endif
 }
 
 void
