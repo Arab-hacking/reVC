@@ -430,11 +430,15 @@ ApplyPlayerSkinModel(int32 modelId)
 
 	const uint8 previousFlags = CStreaming::ms_aInfoForModel[modelId].m_flags;
 	{
+#ifdef ANDROID
 		CCustomModels::ScopedBlockingLoad blockingScope;
 		CCustomModels::ScopedImmediateTextures immTexScope;
+#endif
 		CStreaming::RequestModel(modelId, STREAMFLAGS_DEPENDENCY | STREAMFLAGS_DONT_REMOVE);
 		CStreaming::LoadAllRequestedModels(false);
+#ifdef ANDROID
 		CCustomModels::UpgradeModelTexturesImmediate(modelId);
+#endif
 	}
 	if (!CStreaming::HasModelLoaded(modelId) || !info->GetRwObject()) {
 		if (!(previousFlags & STREAMFLAGS_DONT_REMOVE))
@@ -499,11 +503,15 @@ SpawnVehicleByModel(int32 modelId)
 
 	const uint8 previousFlags = CStreaming::ms_aInfoForModel[modelId].m_flags;
 	{
+#ifdef ANDROID
 		CCustomModels::ScopedBlockingLoad blockingScope;
 		CCustomModels::ScopedImmediateTextures immTexScope;
+#endif
 		CStreaming::RequestModel(modelId, STREAMFLAGS_DEPENDENCY | STREAMFLAGS_DONT_REMOVE);
 		CStreaming::LoadAllRequestedModels(false);
+#ifdef ANDROID
 		CCustomModels::UpgradeModelTexturesImmediate(modelId);
+#endif
 	}
 	if (!CStreaming::HasModelLoaded(modelId) || !vmi->GetRwObject()) {
 		if (!(previousFlags & STREAMFLAGS_DONT_REMOVE))
