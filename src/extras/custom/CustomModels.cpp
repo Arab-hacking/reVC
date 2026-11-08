@@ -88,6 +88,7 @@ static std::vector<CustomSource> customBpcColEntries;
 static bpcpipeline::BpcFreezeMonitor s_bpcFreezeMonitor(2500ull, 12000ull);
 static uint32 s_bpcLastPumpFrame = 0xFFFFFFFFu;
 static int32 s_bpcBlockingLoadDepth = 0;
+static int32 s_bpcImmediateTexDepth = 0;
 #endif
 
 // Only common.zip supplies whitelisted map/actor/weapon IDE text, water,
@@ -2731,6 +2732,48 @@ ResolveBpcTexDbOnly(const char *name)
 	const std::string texDbKey = fullSrc ? BtxCacheKey(*fullSrc) : BtxCacheKey(*tmbSrc);
 	std::map<std::string, BpcTexDbLiveEntry>::iterator liveIt = s_bpcTexDbMap.find(texDbKey);
 	if(liveIt != s_bpcTexDbMap.end() && liveIt->second.tex != nil){
+		if(s_bpcImmediateTexDepth > 0 && liveIt->second.isPreview && fullSrc != nil){
+			std::shared_ptr<const PreparedRawBtx> full = GetOrLoadPreparedRawBtx(*fullSrc, name);
+			if(full){
+				bool upgraded = false;
+				if(full->useDirectGl && UploadPreparedRawBtxToGlRaster(liveIt->second.tex->raster, *full)){
+					RwTextureSetFilterMode(liveIt->second.tex, full->gpu.mips.size() > 1 ? rwFILTERLINEARMIPLINEAR : rwFILTERLINEAR);
+					upgraded = true;
+				}else if(full->cpuFallback){
+					RwTexture *cpuTex = BuildTextureGuarded(*full->cpuFallback, name);
+					if(cpuTex && cpuTex->raster){
+						RwRaster *oldRas = liveIt->second.tex->raster;
+						liveIt->second.tex->raster = cpuTex->raster;
+						cpuTex->raster = nil;
+						RwTextureSetFilterMode(liveIt->second.tex, full->cpuFallback->mips.size() > 1 ? rwFILTERLINEARMIPLINEAR : rwFILTERLINEAR);
+						RwTextureDestroy(cpuTex);
+						if(oldRas)
+							RwRasterDestroy(oldRas);
+						upgraded = true;
+					}else if(cpuTex){
+						RwTextureDestroy(cpuTex);
+					}
+				}
+				if(upgraded){
+					customTexDbUpgrades++;
+					if(s_bpcTexDbBytes >= liveIt->second.gpuBytes)
+						s_bpcTexDbBytes -= liveIt->second.gpuBytes;
+					else
+						s_bpcTexDbBytes = 0;
+					liveIt->second.gpuBytes = EstimateSingleBpcTextureBytes(liveIt->second.tex);
+					liveIt->second.isPreview = false;
+					s_bpcTexDbBytes += liveIt->second.gpuBytes;
+					for(size_t qi = 0; qi < s_pendingBtxUpgrades.size(); ){
+						if(s_pendingBtxUpgrades[qi].tex == liveIt->second.tex){
+							RwTextureDestroy(s_pendingBtxUpgrades[qi].tex);
+							s_pendingBtxUpgrades.erase(s_pendingBtxUpgrades.begin() + (ptrdiff_t)qi);
+						}else{
+							qi++;
+						}
+					}
+				}
+			}
+		}
 		s_bpcTexDbLru.splice(s_bpcTexDbLru.end(), s_bpcTexDbLru, liveIt->second.lruIt);
 		customTexDbSharedHits++;
 		return liveIt->second.tex;
@@ -2739,7 +2782,7 @@ ResolveBpcTexDbOnly(const char *name)
 	RwTexture *built = nil;
 	bool isPreview = false;
 	if(fullSrc != nil){
-		if(HasPreparedRawBtx(texDbKey) || tmbSrc == nil){
+		if(s_bpcImmediateTexDepth > 0 || HasPreparedRawBtx(texDbKey) || tmbSrc == nil){
 			std::shared_ptr<const PreparedRawBtx> raw = GetOrLoadPreparedRawBtx(*fullSrc, name);
 			if(raw)
 				built = BuildDirectGlTextureFromRawBtx(*raw, name);
@@ -3476,6 +3519,7 @@ CCustomModels::Shutdown(void)
 	customTexDbEvictions = 0;
 	s_bpcLastPumpFrame = 0xFFFFFFFFu;
 	s_bpcBlockingLoadDepth = 0;
+	s_bpcImmediateTexDepth = 0;
 #endif
 	customMods.clear();
 	customBtx.clear();
@@ -4107,6 +4151,84 @@ CCustomModels::EndBlockingLoad(void)
 	if(s_bpcBlockingLoadDepth == 0)
 		s_bpcFreezeMonitor.BeginFrame();
 }
+
+void
+CCustomModels::BeginImmediateTextures(void)
+{
+	s_bpcImmediateTexDepth++;
+}
+
+void
+CCustomModels::EndImmediateTextures(void)
+{
+	if(s_bpcImmediateTexDepth > 0)
+		s_bpcImmediateTexDepth--;
+	if(s_bpcImmediateTexDepth == 0)
+		s_bpcFreezeMonitor.BeginFrame();
+}
+
+#ifdef LIBRW
+static RpMaterial *
+UpgradeMaterialTextureCB(RpMaterial *mat, void *)
+{
+	if(mat && mat->texture && mat->texture->name[0] != '\0')
+		ResolveBpcTexDbOnly(mat->texture->name);
+	return mat;
+}
+
+static RpAtomic *
+UpgradeAtomicTexturesCB(RpAtomic *atomic, void *)
+{
+	if(atomic && atomic->geometry)
+		RpGeometryForAllMaterials(atomic->geometry, UpgradeMaterialTextureCB, nil);
+	return atomic;
+}
+#endif
+
+void
+CCustomModels::UpgradeModelTexturesImmediate(int32 modelId)
+{
+#ifdef LIBRW
+	CBaseModelInfo *info = CModelInfo::GetModelInfo(modelId);
+	if(info == nil)
+		return;
+	ScopedImmediateTextures immScope;
+	RwObject *rwObj = info->GetRwObject();
+	if(rwObj){
+		if(RwObjectGetType(rwObj) == rpCLUMP)
+			RpClumpForAllAtomics((RpClump*)rwObj, UpgradeAtomicTexturesCB, nil);
+		else if(RwObjectGetType(rwObj) == rpATOMIC)
+			UpgradeAtomicTexturesCB((RpAtomic*)rwObj, nil);
+	}
+	int32 txdSlot = info->GetTxdSlot();
+	if(txdSlot >= 0){
+		TxdDef *def = CTxdStore::GetSlot(txdSlot);
+		if(def && def->texDict){
+			FORLIST(lnk, def->texDict->textures){
+				RwTexture *tex = rw::Texture::fromDict(lnk);
+				if(tex == nil || tex->name[0] == '\0')
+					continue;
+				ResolveBpcTexDbOnly(tex->name);
+				// Also upgrade standalone non-TexDB single-texture preview slots if queued.
+				for(size_t qi = 0; qi < s_pendingBtxUpgrades.size(); ){
+					if(s_pendingBtxUpgrades[qi].tex == tex){
+						PendingBtxUpgrade u = s_pendingBtxUpgrades[qi];
+						std::shared_ptr<const PreparedRawBtx> full = GetOrLoadPreparedRawBtx(u.fullSrc, u.name);
+						if(full && full->useDirectGl && UploadPreparedRawBtxToGlRaster(tex->raster, *full))
+							RwTextureSetFilterMode(tex, full->gpu.mips.size() > 1 ? rwFILTERLINEARMIPLINEAR : rwFILTERLINEAR);
+						RwTextureDestroy(u.tex);
+						s_pendingBtxUpgrades.erase(s_pendingBtxUpgrades.begin() + (ptrdiff_t)qi);
+					}else{
+						qi++;
+					}
+				}
+			}
+		}
+	}
+#else
+	(void)modelId;
+#endif
+}
 #endif
 
 bool
@@ -4239,7 +4361,7 @@ LoadAndroidBpcTxdSlot(int32 slot, const std::string &key)
 		const CustomSource *tmbSrc = FindSource(customTmbBtx, key);
 		if(src){
 			std::string ckey = BtxCacheKey(*src);
-			if(HasPreparedRawBtx(ckey) || tmbSrc == nil){
+			if(s_bpcImmediateTexDepth > 0 || HasPreparedRawBtx(ckey) || tmbSrc == nil){
 				std::shared_ptr<const PreparedRawBtx> raw = GetOrLoadPreparedRawBtx(*src, key);
 				if(raw){
 					RwTexture *tex = BuildDirectGlTextureFromRawBtx(*raw, key.c_str());

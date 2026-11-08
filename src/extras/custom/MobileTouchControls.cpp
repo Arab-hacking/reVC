@@ -429,8 +429,13 @@ ApplyPlayerSkinModel(int32 modelId)
 	CPedModelInfo *info = (CPedModelInfo*)base;
 
 	const uint8 previousFlags = CStreaming::ms_aInfoForModel[modelId].m_flags;
-	CStreaming::RequestModel(modelId, STREAMFLAGS_DEPENDENCY | STREAMFLAGS_DONT_REMOVE);
-	CStreaming::LoadAllRequestedModels(false);
+	{
+		CCustomModels::ScopedBlockingLoad blockingScope;
+		CCustomModels::ScopedImmediateTextures immTexScope;
+		CStreaming::RequestModel(modelId, STREAMFLAGS_DEPENDENCY | STREAMFLAGS_DONT_REMOVE);
+		CStreaming::LoadAllRequestedModels(false);
+		CCustomModels::UpgradeModelTexturesImmediate(modelId);
+	}
 	if (!CStreaming::HasModelLoaded(modelId) || !info->GetRwObject()) {
 		if (!(previousFlags & STREAMFLAGS_DONT_REMOVE))
 			CStreaming::SetModelIsDeletable(modelId);
@@ -493,8 +498,13 @@ SpawnVehicleByModel(int32 modelId)
 	CVehicleModelInfo *vmi = (CVehicleModelInfo*)base;
 
 	const uint8 previousFlags = CStreaming::ms_aInfoForModel[modelId].m_flags;
-	CStreaming::RequestModel(modelId, STREAMFLAGS_DEPENDENCY | STREAMFLAGS_DONT_REMOVE);
-	CStreaming::LoadAllRequestedModels(false);
+	{
+		CCustomModels::ScopedBlockingLoad blockingScope;
+		CCustomModels::ScopedImmediateTextures immTexScope;
+		CStreaming::RequestModel(modelId, STREAMFLAGS_DEPENDENCY | STREAMFLAGS_DONT_REMOVE);
+		CStreaming::LoadAllRequestedModels(false);
+		CCustomModels::UpgradeModelTexturesImmediate(modelId);
+	}
 	if (!CStreaming::HasModelLoaded(modelId) || !vmi->GetRwObject()) {
 		if (!(previousFlags & STREAMFLAGS_DONT_REMOVE))
 			CStreaming::SetModelIsDeletable(modelId);

@@ -3,6 +3,7 @@
 // including direct .btx KTX1/ASTC -> rw::gl3::uploadKtxDirect GPU upload without .txd.
 #include "common.h"
 #include "CustomModels.h"
+#include "CustomCol.h"
 #include "CustomColFormat.h"
 #include "CustomZip.h"
 #include "BpcPipeline.h"
@@ -1097,6 +1098,53 @@ int main(void)
 				"reloaded GPU terrain layer has live raster");
 	}
 	RwTextureDestroy(reloadedMaskTex);
+
+	// 5) ScopedImmediateTextures test (skin/vehicle switcher instant .btx upload):
+	//    After ClearGraphicsCache(), loading model 100 inside ScopedImmediateTextures must
+	//    upload the full-resolution .btx directly on frame 0 without queueing a .tmb preview!
+	CCustomModels::ClearGraphicsCache();
+	CTimer::SetFrameCounter(CTimer::GetFrameCounter() + 1);
+	g_lastResolvedTex = nullptr;
+	{
+		int uploadsBefore = g_directGpuUploads;
+		CCustomModels::ScopedImmediateTextures immScope;
+		CTxdStore::SetCurrentTxd(txdSlot);
+		Check(CCustomModels::Load(100), "model 100 loaded inside ScopedImmediateTextures");
+		RwTexture *immTex = g_lastResolvedTex;
+		Check(immTex != nullptr && immTex->raster != nullptr,
+			"ScopedImmediateTextures resolved non-null GPU raster immediately");
+		Check(g_directGpuUploads == uploadsBefore + 1 && immTex->refCount == 2,
+			"ScopedImmediateTextures uploaded full .btx in ONE direct pass with zero .tmb queue");
+		RwTextureDestroy(immTex);
+	}
+
+	// 6) Roads3-0.cls / Arzamas.cls regression test: COL3 blocks with nF == 0 and offV == limit
+	//    (both box-only barriers and bounds-only markers) must convert cleanly to ValidVC COLL!
+	{
+		std::vector<uint8> col3BoxOnly(148, 0);
+		std::memcpy(col3BoxOnly.data(), "COL3", 4);
+		W32At(col3BoxOnly, 4, (uint32)(col3BoxOnly.size() - 8)); // size = 140 -> limit = 144
+		std::memcpy(col3BoxOnly.data() + 8, "r3_curb_barrier_01", 18);
+		WFAt(col3BoxOnly, 32, -5.0f); WFAt(col3BoxOnly, 36, -1.0f); WFAt(col3BoxOnly, 40, 0.0f);
+		WFAt(col3BoxOnly, 44,  5.0f); WFAt(col3BoxOnly, 48,  1.0f); WFAt(col3BoxOnly, 52, 2.0f);
+		WFAt(col3BoxOnly, 56,  0.0f); WFAt(col3BoxOnly, 60,  0.0f); WFAt(col3BoxOnly, 64, 1.0f);
+		WFAt(col3BoxOnly, 68,  6.0f);
+		col3BoxOnly[74] = 1; // nB = 1, nS = 0, nF = 0
+		W32At(col3BoxOnly, 84, 116); // offS unused (nS == 0)
+		W32At(col3BoxOnly, 88, 116); // offB -> 120..147 (28 bytes)
+		W32At(col3BoxOnly, 96, 144); // offV == limit (the exact Roads3-0 / Arzamas pattern!)
+		W32At(col3BoxOnly, 100, 144);// offF == limit
+		WFAt(col3BoxOnly, 120, -5.0f); WFAt(col3BoxOnly, 124, -1.0f); WFAt(col3BoxOnly, 128, 0.0f);
+		WFAt(col3BoxOnly, 132,  5.0f); WFAt(col3BoxOnly, 136,  1.0f); WFAt(col3BoxOnly, 140, 2.0f);
+		col3BoxOnly[144] = 255; // BR road surface
+
+		customcol::Stats cstats;
+		std::vector<uint8> vcGame = customcol::ToGameFormat(col3BoxOnly, cstats);
+		Check(cstats.blocks == 1 && cstats.bad == 0 && cstats.boxes == 1,
+			"customcol::ToGameFormat converts nF==0, offV==limit COL3 block without rejection");
+		Check(customcolformat::ValidVC(vcGame.data(), vcGame.size()),
+			"converted Roads3-0/Arzamas box-only COL3 block passes ValidVC");
+	}
 
 	CTxdStore::RemoveTxd(ripSlot);
 	CTxdStore::RemoveTxd(txdSlot);

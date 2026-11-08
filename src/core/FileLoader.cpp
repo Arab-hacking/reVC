@@ -759,10 +759,11 @@ InstallCustomModel2dfxLights(CBaseModelInfo *info, const std::vector<SAStaticMod
 		const bool atNight = (fx.flags1 & 0x40) != 0;
 		const bool nightOnly = !atDay || (atNight && !atDay);
 
-		effect->light.dist = fx.coronaDist > 0.0f ? fx.coronaDist : 160.0f;
+		const float minCoronaDist = isStreetLamp ? 280.0f : 185.0f;
+		effect->light.dist = fx.coronaDist > minCoronaDist ? fx.coronaDist : minCoronaDist;
 		effect->light.range = fx.pointlightRange;
-		if(isStreetLamp && effect->light.range < 10.0f)
-			effect->light.range = 16.0f;
+		if(isStreetLamp && effect->light.range < 18.0f)
+			effect->light.range = 22.0f;
 		effect->light.size = withoutCorona ? 0.0f : (fx.coronaSize > 0.0f ? fx.coronaSize : 0.85f);
 		effect->light.shadowSize = fx.shadowSize;
 		effect->light.shadowIntensity = fx.shadowIntensity;

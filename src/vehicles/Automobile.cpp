@@ -25,6 +25,7 @@
 #include "Shadows.h"
 #include "PointLights.h"
 #include "Coronas.h"
+#include "Renderer.h"
 #include "SpecialFX.h"
 #include "WaterCannon.h"
 #include "WaterLevel.h"
@@ -2253,6 +2254,7 @@ CAutomobile::PreRender(void)
 		float angle = Abs(Acos(behindness));
 
 		// Headlights
+		const float vehLightMult = Max(TheCamera.LODDistMultiplier, CRenderer::ms_fLightDistScale);
 
 		CVector headLightPos = mi->m_positions[CAR_POS_HEADLIGHTS];
 		CVector lightR = GetMatrix() * headLightPos;
@@ -2266,28 +2268,28 @@ CAutomobile::PreRender(void)
 			float intensity = -0.5f*behindness + 0.3f;
 			float size = 1.0f - behindness;
 
-			if(behindness < -0.97f && camDist < 30.0f){
+			if(behindness < -0.97f && camDist < 30.0f * Max(1.0f, CRenderer::ms_fLightDistScale)){
 				// Directly in front and not too far away
 				if(pHandling->Flags & HANDLING_HALOGEN_LIGHTS){
 					if(Damage.GetLightStatus(VEHLIGHT_FRONT_LEFT) == LIGHT_STATUS_OK)
 						CCoronas::RegisterCorona((uintptr)this + 6, 150, 150, 195, 255,
-							lightL, 1.2f, 45.0f*TheCamera.LODDistMultiplier,
+							lightL, 1.2f, 65.0f*vehLightMult,
 							CCoronas::TYPE_HEADLIGHT, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
 							CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, angle);
 					if(Damage.GetLightStatus(VEHLIGHT_FRONT_RIGHT) == LIGHT_STATUS_OK)
 						CCoronas::RegisterCorona((uintptr)this + 7, 150, 150, 195, 255,
-							lightR, 1.2f, 45.0f*TheCamera.LODDistMultiplier,
+							lightR, 1.2f, 65.0f*vehLightMult,
 							CCoronas::TYPE_HEADLIGHT, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
 							CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, angle);
 				}else{
 					if(Damage.GetLightStatus(VEHLIGHT_FRONT_LEFT) == LIGHT_STATUS_OK)
 						CCoronas::RegisterCorona((uintptr)this + 6, 160, 160, 140, 255,
-							lightL, 1.2f, 45.0f*TheCamera.LODDistMultiplier,
+							lightL, 1.2f, 65.0f*vehLightMult,
 							CCoronas::TYPE_HEADLIGHT, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
 							CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, angle);
 					if(Damage.GetLightStatus(VEHLIGHT_FRONT_RIGHT) == LIGHT_STATUS_OK)
 						CCoronas::RegisterCorona((uintptr)this + 7, 160, 160, 140, 255,
-							lightR, 1.2f, 45.0f*TheCamera.LODDistMultiplier,
+							lightR, 1.2f, 65.0f*vehLightMult,
 							CCoronas::TYPE_HEADLIGHT, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
 							CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, angle);
 				}
@@ -2308,23 +2310,23 @@ CAutomobile::PreRender(void)
 				if(pHandling->Flags & HANDLING_HALOGEN_LIGHTS){
 					if(Damage.GetLightStatus(VEHLIGHT_FRONT_LEFT) == LIGHT_STATUS_OK)
 						CCoronas::RegisterCorona((uintptr)this, 190*intensity, 190*intensity, 255*intensity, 255,
-							lightL, size, 50.0f*TheCamera.LODDistMultiplier,
+							lightL, size, 80.0f*vehLightMult,
 							CCoronas::TYPE_STREAK, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
 							CCoronas::LOSCHECK_OFF, CCoronas::STREAK_ON, angle);
 					if(Damage.GetLightStatus(VEHLIGHT_FRONT_RIGHT) == LIGHT_STATUS_OK)
 						CCoronas::RegisterCorona((uintptr)this + 1, 190*intensity, 190*intensity, 255*intensity, 255,
-							lightR, size, 50.0f*TheCamera.LODDistMultiplier,
+							lightR, size, 80.0f*vehLightMult,
 							CCoronas::TYPE_STREAK, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
 							CCoronas::LOSCHECK_OFF, CCoronas::STREAK_ON, angle);
 				}else{
 					if(Damage.GetLightStatus(VEHLIGHT_FRONT_LEFT) == LIGHT_STATUS_OK)
 						CCoronas::RegisterCorona((uintptr)this, 210*intensity, 210*intensity, 195*intensity, 255,
-							lightL, size, 50.0f*TheCamera.LODDistMultiplier,
+							lightL, size, 80.0f*vehLightMult,
 							CCoronas::TYPE_STREAK, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
 							CCoronas::LOSCHECK_OFF, CCoronas::STREAK_ON, angle);
 					if(Damage.GetLightStatus(VEHLIGHT_FRONT_RIGHT) == LIGHT_STATUS_OK)
 						CCoronas::RegisterCorona((uintptr)this + 1, 210*intensity, 210*intensity, 195*intensity, 255,
-							lightR, size, 50.0f*TheCamera.LODDistMultiplier,
+							lightR, size, 80.0f*vehLightMult,
 							CCoronas::TYPE_STREAK, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
 							CCoronas::LOSCHECK_OFF, CCoronas::STREAK_ON, angle);
 				}
@@ -2332,9 +2334,9 @@ CAutomobile::PreRender(void)
 		}else{
 			// Behind car
 			if(Damage.GetLightStatus(VEHLIGHT_FRONT_LEFT) == LIGHT_STATUS_OK)
-				CCoronas::UpdateCoronaCoors((uintptr)this, lightL, 50.0f*TheCamera.LODDistMultiplier, angle);
+				CCoronas::UpdateCoronaCoors((uintptr)this, lightL, 80.0f*vehLightMult, angle);
 			if(Damage.GetLightStatus(VEHLIGHT_FRONT_RIGHT) == LIGHT_STATUS_OK)
-				CCoronas::UpdateCoronaCoors((uintptr)this + 1, lightR, 50.0f*TheCamera.LODDistMultiplier, angle);
+				CCoronas::UpdateCoronaCoors((uintptr)this + 1, lightR, 80.0f*vehLightMult, angle);
 		}
 
 		// bright lights
@@ -2362,12 +2364,12 @@ CAutomobile::PreRender(void)
 				size += 0.3f;
 				if(Damage.GetLightStatus(VEHLIGHT_REAR_LEFT) == LIGHT_STATUS_OK)
 					CCoronas::RegisterCorona((uintptr)this + 14, 128*intensity, 128*intensity, 128*intensity, 255,
-						lightL, size, 50.0f*TheCamera.LODDistMultiplier,
+						lightL, size, 80.0f*vehLightMult,
 						CCoronas::TYPE_STREAK, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
 						CCoronas::LOSCHECK_OFF, CCoronas::STREAK_ON, angle);
 				if(Damage.GetLightStatus(VEHLIGHT_REAR_RIGHT) == LIGHT_STATUS_OK)
 					CCoronas::RegisterCorona((uintptr)this + 15, 128*intensity, 128*intensity, 128*intensity, 255,
-						lightR, size, 50.0f*TheCamera.LODDistMultiplier,
+						lightR, size, 80.0f*vehLightMult,
 						CCoronas::TYPE_STREAK, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
 						CCoronas::LOSCHECK_OFF, CCoronas::STREAK_ON, angle);
 			}else{
@@ -2390,23 +2392,22 @@ CAutomobile::PreRender(void)
 				}else{
 					if(Damage.GetLightStatus(VEHLIGHT_REAR_LEFT) == LIGHT_STATUS_OK)
 						CCoronas::RegisterCorona((uintptr)this + 14, 128*intensity, 0, 0, 255,
-							lightL, size, 50.0f*TheCamera.LODDistMultiplier,
+							lightL, size, 80.0f*vehLightMult,
 							CCoronas::TYPE_STREAK, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
 							CCoronas::LOSCHECK_OFF, CCoronas::STREAK_ON, angle);
 					if(Damage.GetLightStatus(VEHLIGHT_REAR_RIGHT) == LIGHT_STATUS_OK)
 						CCoronas::RegisterCorona((uintptr)this + 15, 128*intensity, 0, 0, 255,
-							lightR, size, 50.0f*TheCamera.LODDistMultiplier,
+							lightR, size, 80.0f*vehLightMult,
 							CCoronas::TYPE_STREAK, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
 							CCoronas::LOSCHECK_OFF, CCoronas::STREAK_ON, angle);
 				}
 			}
 		}else{
 			// In front of car
-			// missing LODDistMultiplier probably a BUG
 			if(Damage.GetLightStatus(VEHLIGHT_REAR_LEFT) == LIGHT_STATUS_OK)
-				CCoronas::UpdateCoronaCoors((uintptr)this + 14, lightL, 50.0f, angle);
+				CCoronas::UpdateCoronaCoors((uintptr)this + 14, lightL, 80.0f*vehLightMult, angle);
 			if(Damage.GetLightStatus(VEHLIGHT_REAR_RIGHT) == LIGHT_STATUS_OK)
-				CCoronas::UpdateCoronaCoors((uintptr)this + 15, lightR, 50.0f, angle);
+				CCoronas::UpdateCoronaCoors((uintptr)this + 15, lightR, 80.0f*vehLightMult, angle);
 		}
 
 		// bright lights

@@ -182,8 +182,8 @@ CSunShadowMap::Render(void)
 		SunShadowMath::MakeVec3(camPos.x, camPos.y, camPos.z),
 		SunShadowMath::MakeVec3(camFwd.x, camFwd.y, camFwd.z),
 #ifdef ANDROID
-		68.0f,
-		155.0f,
+		(mobTier >= CMenuManager::MOBILE_GFX_HIGH) ? 96.0f : 72.0f,
+		(mobTier >= CMenuManager::MOBILE_GFX_HIGH) ? 185.0f : 155.0f,
 #else
 		112.0f,
 		200.0f,

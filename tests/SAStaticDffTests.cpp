@@ -588,14 +588,14 @@ int main() {
         fxClump->destroy();
     }
 
-    // Outdoor street lamps & 2dfx-lit static poles keep mesh drawDist >= 255m / 225m (< 299m non-big)
+    // Outdoor street lamps & 2dfx-lit static poles keep mesh drawDist >= 298m / 285m (< 299m non-big)
     assert(SAStaticModel::IsOutdoorStreetLampName("lamppost2"));
     assert(SAStaticModel::IsOutdoorStreetLampName("Gay_lamppost"));
     assert(SAStaticModel::IsOutdoorStreetLampName("streetlamp1"));
     assert(SAStaticModel::IsOutdoorStreetLampName("mlamppost"));
     assert(!SAStaticModel::IsOutdoorStreetLampName("table_lamp_int"));
-    assert(std::fabs(SAStaticModel::EffectiveStaticDrawDistance("lamppost2", 50.0f, false) - 255.0f) < 1.0e-3f);
-    assert(std::fabs(SAStaticModel::EffectiveStaticDrawDistance("prop_sign_lit", 80.0f, true) - 225.0f) < 1.0e-3f);
+    assert(std::fabs(SAStaticModel::EffectiveStaticDrawDistance("lamppost2", 50.0f, false) - 298.0f) < 1.0e-3f);
+    assert(std::fabs(SAStaticModel::EffectiveStaticDrawDistance("prop_sign_lit", 80.0f, true) - 285.0f) < 1.0e-3f);
     assert(std::fabs(SAStaticModel::EffectiveStaticDrawDistance("indoor_ sconce", 12.0f, true) - 12.0f) < 1.0e-3f);
     assert(std::fabs(SAStaticModel::EffectiveStaticDrawDistance("big_tower", 350.0f, true) - 350.0f) < 1.0e-3f);
 

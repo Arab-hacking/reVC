@@ -250,15 +250,15 @@ static LightEffect MakeStreetLampLight(float x, float y, float z)
     fx.r = 255;
     fx.g = 216;
     fx.b = 158;
-    fx.a = 200;
-    fx.coronaDist = 180.0f;
-    fx.pointlightRange = 18.0f;
-    fx.coronaSize = 0.95f;
-    fx.shadowSize = 7.5f;
+    fx.a = 215;
+    fx.coronaDist = 295.0f;
+    fx.pointlightRange = 24.0f;
+    fx.coronaSize = 1.10f;
+    fx.shadowSize = 9.5f;
     fx.flashType = 0;
     fx.reflection = 1;
     fx.flareType = 0;
-    fx.shadowIntensity = 52;
+    fx.shadowIntensity = 58;
     fx.flags1 = 0x40; // bAtNight
     fx.flags2 = 0;
     std::strncpy(fx.coronaName, "coronastar", sizeof(fx.coronaName) - 1);
@@ -359,10 +359,10 @@ float EffectiveStaticDrawDistance(const char *modelName, float ideDist, bool has
     if(ideDist >= 299.0f)
         return ideDist;
     if(IsOutdoorStreetLampName(modelName)){
-        return ideDist < 255.0f ? 255.0f : ideDist;
+        return ideDist < 298.0f ? 298.0f : ideDist;
     }
     if(hasLight2dfx && ideDist > 15.0f){
-        return ideDist < 225.0f ? 225.0f : ideDist;
+        return ideDist < 285.0f ? 285.0f : ideDist;
     }
     return ideDist;
 }

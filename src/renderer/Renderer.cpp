@@ -178,7 +178,7 @@ CRenderer::PreRender(void)
 			const CVector fromCam = pl.coors - camPos;
 			if(DotProduct(fromCam, camFwd) < -pl.radius * 1.15f)
 				continue;
-			const float maxSceneLightDist = 185.0f * Max(1.0f, CRenderer::ms_fLightDistScale) + pl.radius;
+			const float maxSceneLightDist = 285.0f * Max(1.0f, CRenderer::ms_fLightDistScale) + pl.radius;
 			if(fromCam.MagnitudeSqr() > sq(maxSceneLightDist))
 				continue;
 
@@ -1123,33 +1123,14 @@ CRenderer::ConstructRenderList(void)
 	// The atmospheric curve follows the same interpolated weather as the
 	// timecycle. Zero is the original GL3 fog/light behaviour (also used when
 	// the new rendering setting is disabled).
-#ifdef ANDROID
-	{
-		int tier = FrontEndMenuManager.m_PrefsMobileGraphics;
-		if(tier < 0) tier = 0;
-		if(tier > 2) tier = 2;
-		rw::setAtmosphereParams(rw::makeRGBAf(
-			GL3Atmosphere::Enabled ? (2.0f + 0.25f * (float)tier) : 0.0f,
-			GL3Atmosphere::Enabled ? GL3Atmosphere::Clamp01(CWeather::CloudCoverage) : 0.0f,
-			GL3Atmosphere::Enabled ? GL3Atmosphere::Clamp01(CWeather::Foggyness) : 0.0f,
-			GL3Atmosphere::Enabled ? dayNightBalance : 0.0f));
-#ifdef CUSTOM_MODELS
-		float fHour = (float)CClock::GetHours() + (float)CClock::GetMinutes() * (1.0f / 60.0f)
-		            + (float)CClock::GetSeconds() * (1.0f / 3600.0f);
-		float gradeRows[12];
-		CCustomTimecycle::EvaluateColorGrade(
-			fHour, CWeather::OldWeatherType, CWeather::NewWeatherType,
-			CWeather::InterpolationValue, gradeRows);
-		rw::setColorGradeMatrix(gradeRows);
-#endif
-	}
-#else
+	// Use the PC HDR/ACES atmospheric & PBR vehicle-reflection shader pipeline
+	// (u_atmosphere.x == 1.0) on both PC and Android so daytime sun, nighttime
+	// moonlight/pointlights, and vehicle reflections match the PC build 1:1.
 	rw::setAtmosphereParams(rw::makeRGBAf(
 		GL3Atmosphere::Enabled ? 1.0f : 0.0f,
 		GL3Atmosphere::Enabled ? GL3Atmosphere::Clamp01(CWeather::CloudCoverage) : 0.0f,
 		GL3Atmosphere::Enabled ? GL3Atmosphere::Clamp01(CWeather::Foggyness) : 0.0f,
 		GL3Atmosphere::Enabled ? dayNightBalance : 0.0f));
-#endif
 #endif
 
 	COcclusion::ProcessBeforeRendering();
@@ -1240,14 +1221,15 @@ CRenderer::ScanWorld(void)
 	prevPos = TheCamera.GetPosition();
 	prevFwd = TheCamera.GetForward();
 
+	const float scanLodDist = Max(LOD_DISTANCE, Min(f, 300.0f * Min(CRenderer::ms_fLightDistScale, 2.50f)));
 	if(cammatrix->at.z > 0.0f){
 		// looking up, bottom corners are further away
-		vectors[CORNER_LOD_LEFT] = vectors[CORNER_FAR_BOTLEFT] * LOD_DISTANCE/f;
-		vectors[CORNER_LOD_RIGHT] = vectors[CORNER_FAR_BOTRIGHT] * LOD_DISTANCE/f;
+		vectors[CORNER_LOD_LEFT] = vectors[CORNER_FAR_BOTLEFT] * scanLodDist/f;
+		vectors[CORNER_LOD_RIGHT] = vectors[CORNER_FAR_BOTRIGHT] * scanLodDist/f;
 	}else{
 		// looking down, top corners are further away
-		vectors[CORNER_LOD_LEFT] = vectors[CORNER_FAR_TOPLEFT] * LOD_DISTANCE/f;
-		vectors[CORNER_LOD_RIGHT] = vectors[CORNER_FAR_TOPRIGHT] * LOD_DISTANCE/f;
+		vectors[CORNER_LOD_LEFT] = vectors[CORNER_FAR_TOPLEFT] * scanLodDist/f;
+		vectors[CORNER_LOD_RIGHT] = vectors[CORNER_FAR_TOPRIGHT] * scanLodDist/f;
 	}
 	vectors[CORNER_PRIO_LEFT].x = vectors[CORNER_LOD_LEFT].x * 0.2f;
 	vectors[CORNER_PRIO_LEFT].y = vectors[CORNER_LOD_LEFT].y * 0.2f;
@@ -1294,7 +1276,7 @@ CRenderer::ScanWorld(void)
 		}else
 #endif
 		{
-			if(f > LOD_DISTANCE){
+			if(f > scanLodDist){
 #ifdef ANDROID
 				{
 					int camSX = CWorld::GetSectorIndexX(vectors[CORNER_CAM].x);

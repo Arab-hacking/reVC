@@ -108,7 +108,7 @@ rw::TexDictionary *neoTxd;
 
 bool bRenderingEnvMap;
 #ifdef ANDROID
-int32 EnvMapSize = 128;
+int32 EnvMapSize = 256;
 #else
 int32 EnvMapSize = 512;
 #endif
@@ -144,7 +144,7 @@ CreateEnvMapCam(rw::World *world)
 					cam->setFrame(frame);
 					cam->setNearPlane(0.1f);
 #ifdef ANDROID
-					cam->setFarPlane(160.0f);
+					cam->setFarPlane(300.0f);
 #else
 					cam->setFarPlane(350.0f);
 #endif
@@ -199,7 +199,10 @@ RenderEnvMapScene(void)
 {
 	CRenderer::RenderRoads();
 	CRenderer::RenderEverythingBarRoads();
-#ifndef ANDROID
+#ifdef ANDROID
+	if(FrontEndMenuManager.m_PrefsMobileGraphics >= CMenuManager::MOBILE_GFX_HIGH)
+		CRenderer::RenderFadingInEntities();
+#else
 	CRenderer::RenderFadingInEntities();
 #endif
 }
@@ -211,11 +214,10 @@ EnvMapRender(void)
 		return;
 #ifdef ANDROID
 	int8 mobTier = FrontEndMenuManager.m_PrefsMobileGraphics;
-	if(mobTier <= CMenuManager::MOBILE_GFX_LOW)
-		return;
 	static uint32 s_lastEnvFrame = 0xFFFFFFFFu;
 	uint32 curFrame = CTimer::GetFrameCounter();
-	uint32 stride = (mobTier >= CMenuManager::MOBILE_GFX_HIGH) ? 3u : 5u;
+	uint32 stride = (mobTier >= CMenuManager::MOBILE_GFX_HIGH) ? 2u :
+	                ((mobTier == CMenuManager::MOBILE_GFX_MEDIUM) ? 3u : 5u);
 	if(s_lastEnvFrame != 0xFFFFFFFFu && (uint32)(curFrame - s_lastEnvFrame) < stride)
 		return;
 	s_lastEnvFrame = curFrame;

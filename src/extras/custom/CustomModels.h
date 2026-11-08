@@ -81,6 +81,13 @@ public:
 		ScopedBlockingLoad(void) { BeginBlockingLoad(); }
 		~ScopedBlockingLoad(void) { EndBlockingLoad(); }
 	};
+	static void BeginImmediateTextures(void);
+	static void EndImmediateTextures(void);
+	static void UpgradeModelTexturesImmediate(int32 modelId);
+	struct ScopedImmediateTextures {
+		ScopedImmediateTextures(void) { BeginImmediateTextures(); }
+		~ScopedImmediateTextures(void) { EndImmediateTextures(); }
+	};
 #endif
 	// Reads, converts and installs the file of this stream id. Only call it
 	// when CanServe said yes for the same id.

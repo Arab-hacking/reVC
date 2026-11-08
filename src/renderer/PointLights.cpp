@@ -43,7 +43,7 @@ CPointLights::AddLight(uint8 type, CVector coors, CVector dir, float radius, flo
 	const float lightDistScale = Clamp(CRenderer::ms_fLightDistScale, LIGHTDIST_MIN, LIGHTDIST_MAX);
 	const float maxPointDist = (type == LIGHT_FOGONLY || type == LIGHT_FOGONLY_ALWAYS)
 		? MAX_DIST
-		: (85.0f * lightDistScale);
+		: (165.0f * lightDistScale);
 
 	const CVector dist = coors - camPos;
 	if(Abs(dist.x) >= maxPointDist || Abs(dist.y) >= maxPointDist)

@@ -14,11 +14,11 @@ class CEntity;
 #define DRAWDIST_MAX 3.00f
 #define DRAWDIST_RANGE (DRAWDIST_MAX - DRAWDIST_MIN)
 #define LIGHTDIST_MIN 0.50f
-#define LIGHTDIST_MAX 3.00f
+#define LIGHTDIST_MAX 5.00f
 #ifdef ANDROID
-#define LIGHTDIST_DEFAULT 1.35f
+#define LIGHTDIST_DEFAULT 2.50f
 #else
-#define LIGHTDIST_DEFAULT 1.20f
+#define LIGHTDIST_DEFAULT 2.00f
 #endif
 
 #include <vector>

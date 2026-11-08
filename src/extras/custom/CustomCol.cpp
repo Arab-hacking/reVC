@@ -53,7 +53,7 @@ SaneBounds(const float *mn, const float *mx)
 static bool
 SaneRadius(float r)
 {
-	return r == r && r > 0.001f && r < 1000.0f;
+	return r == r && r >= 0.0f && r < 100000.0f;
 }
 
 // the game crashes on more than this in one collision model
@@ -117,6 +117,33 @@ GameSurface(uint8 material, Stats &stats)
 {
 	if(material > SURFACE_CONCRETE_BEACH){
 		stats.materials++;
+		if(material == 255)
+			return SURFACE_TARMAC;
+		if(material == 80 || material == 81 || material == 83 ||
+		   (material >= 115 && material <= 125) || material == 141 ||
+		   material == 146 || material == 147 || material == 153)
+			return SURFACE_GRASS;
+		if(material == 35 || material == 40 || material == 41 ||
+		   (material >= 84 && material <= 89) || (material >= 96 && material <= 100) ||
+		   (material >= 126 && material <= 139))
+			return SURFACE_MUD_DRY;
+		if(material == 74 || material == 75 || material == 82 || material == 90 || material == 157)
+			return SURFACE_SAND;
+		if(material == 36 || material == 37 || (material >= 76 && material <= 79) ||
+		   material == 101 || material == 140)
+			return SURFACE_GRAVEL;
+		if((material >= 42 && material <= 44) || material == 72 || material == 73 ||
+		   material == 143 || material == 144 || (material >= 172 && material <= 174))
+			return SURFACE_WOOD_SOLID;
+		if(material >= 45 && material <= 47)
+			return SURFACE_GLASS;
+		if((material >= 50 && material <= 68) || material == 71 || material == 142 ||
+		   (material >= 162 && material <= 168) || material == 171)
+			return SURFACE_METAL_CHAIN_FENCE;
+		if(material == 38 || material == 39)
+			return SURFACE_WATER;
+		if(material == 70 || material == 102 || material == 108 || material == 145)
+			return SURFACE_PAVEMENT;
 		return SURFACE_DEFAULT;
 	}
 	return material;
@@ -240,21 +267,28 @@ ParseBlock(const uint8 *p, size_t n, Block &b)
 	// means the first byte behind the header. Unlike the first version of the
 	// format, the arrays carry no count of their own - the counts are in the
 	// header - so an offset points straight at the data.
+	// Unused sections in SA/BR COL3/CLST often carry off == end-of-block;
+	// ignore offsets whose element count is zero so box-only or bounds-only
+	// road/building collision blocks are never discarded.
 	uint32 limit = size + 4;		// everything the block holds, counted that way
-	// Even with a zero count, the pointers below must stay inside the block.
+	// Even with a zero count, section offsets must not point past end-of-block.
+	// Unused sections in SA/BR COL3/CLST legitimately carry off == limit; once
+	// bounds-checked against limit, ignore offsets whose element count is zero.
 	if((offS && offS > limit) || (offB && offB > limit) ||
 	   (offV && offV > limit) || (offF && offF > limit))
 		return false;
+	if(!b.nS) offS = 0;
+	if(!b.nB) offB = 0;
+	if(!b.nF) { offV = 0; offF = 0; }
+
 	if(b.nS && (!offS || (size_t)offS + (size_t)b.nS*V2_SPHERE > limit))
 		return false;
 	if(b.nB && (!offB || (size_t)offB + (size_t)b.nB*V2_BOX > limit))
 		return false;
 	if(b.nF && (!offF || (size_t)offF + (size_t)b.nF*V2_FACE > limit))
 		return false;
-	if(offV && (size_t)offV + V2_VERTEX > limit)
+	if(b.nF && (!offV || (size_t)offV + V2_VERTEX > limit))
 		return false;
-	if(b.nF && !offV)
-		return false;			// faces without vertices
 
 	// The vertex array is the only one whose length is not known before it is
 	// read, so the offset of the faces is the one that can sit on the wrong
@@ -388,6 +422,11 @@ FixBounds(const Block &b, float radius[1], float center[3], float bmin[3], float
 			float dz = (bmax[2] - bmin[2]) * 0.5f;
 			float diag = sqrtf(dx*dx + dy*dy + dz*dz);
 			*radius = diag > 0.001f ? diag : 0.5f;
+		}else{
+			bmin[0] = bmin[1] = bmin[2] = -0.5f;
+			bmax[0] = bmax[1] = bmax[2] = 0.5f;
+			center[0] = center[1] = center[2] = 0.0f;
+			*radius = 0.8660254f;
 		}
 		return;
 	}
@@ -403,6 +442,8 @@ FixBounds(const Block &b, float radius[1], float center[3], float bmin[3], float
 	center[2] = (mn[2] + mx[2]) * 0.5f;
 	float dx = (mx[0] - mn[0]) * 0.5f, dy = (mx[1] - mn[1]) * 0.5f, dz = (mx[2] - mn[2]) * 0.5f;
 	*radius = sqrtf(dx*dx + dy*dy + dz*dz);
+	if(*radius < 0.001f)
+		*radius = 0.5f;
 }
 
 static void
@@ -414,11 +455,41 @@ WriteBlock(std::vector<uint8> &out, const Block &b, Stats &stats)
 	w32(out, FCC_COLL);
 	w32(out, 0);					// patched below
 	for(i = 0; i < 22; i++)
-		out.push_back(b.name[i]);	// the name is not zero terminated in the file
-	w16(out, b.id);
+		out.push_back(b.name[i]);
+	w16(out, b.name[21] ? 0 : b.id);	// guarantee NUL terminator within 24-byte header field
 
 	if(b.v1){
+		size_t bodyStart = out.size();
 		out.insert(out.end(), b.copyFrom, b.copyFrom + b.copySize);
+		// Sanitize v1 surface IDs > 34 and repair negative/NaN radius so ValidVC accepts BOLL/COLL.
+		if(b.copySize >= 60){
+			uint8 *v1 = out.data() + bodyStart;
+			float rad = rFloat(v1);
+			if(!(rad >= 0.0f && rad < 100000.0f)){
+				float zero = 0.5f;
+				memcpy(v1, &zero, 4);
+			}
+			size_t p = 40;
+			auto stepCount = [&](uint32 &cnt, size_t elemSz, size_t surfOff) -> bool {
+				if(b.copySize - p < 4) return false;
+				cnt = r32(v1 + p); p += 4;
+				if(cnt > 32767 || cnt > (b.copySize - p) / elemSz) return false;
+				if(surfOff < elemSz){
+					for(uint32 k = 0; k < cnt; k++)
+						v1[p + (size_t)k * elemSz + surfOff] =
+							GameSurface(v1[p + (size_t)k * elemSz + surfOff], stats);
+				}
+				p += (size_t)cnt * elemSz;
+				return true;
+			};
+			uint32 nS = 0, nL = 0, nB = 0, nV = 0, nF = 0;
+			if(stepCount(nS, 20, 16) && stepCount(nL, 24, 99) &&
+			   stepCount(nB, 28, 24) && stepCount(nV, 12, 99) &&
+			   stepCount(nF, 16, 12)){
+				for(; p < b.copySize; p++)
+					v1[p] = 0;
+			}
+		}
 		uint32 size = (uint32)(out.size() - start - 8);
 		out[start+4] = (uint8)(size & 0xFF);
 		out[start+5] = (uint8)((size >> 8) & 0xFF);

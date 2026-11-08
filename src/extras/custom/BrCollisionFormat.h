@@ -37,13 +37,17 @@ inline bool Tag(const uint8_t *p) {
     return std::memcmp(p, "CLST", 4) == 0 || std::memcmp(p, "CLSF", 4) == 0;
 }
 inline bool Header(const uint8_t *p, size_t n, std::string &name) {
-    if(n < 120 || !Tag(p) || U32(p+4) != n-8 ||
+    bool isClsf = n >= 4 && std::memcmp(p, "CLSF", 4) == 0;
+    size_t minSize = isClsf ? 92u : 120u;
+    if(n < minSize || !Tag(p) || U32(p+4) != n-8 ||
        std::memcmp(p+28, "CED2", 4) != 0) return false;
     const uint8_t *nul = (const uint8_t *)std::memchr(p+8, 0, 20);
-    if(!nul || nul == p+8) return false;
-    for(const uint8_t *c = p+8; c < nul; c++)
-        if(*c < 33 || *c > 126 || *c == '/' || *c == '\\') return false;
-    name.assign((const char *)p+8, nul-(p+8));
+    const uint8_t *end = nul ? nul : (p+28);
+    while(end > p+8 && *(end-1) == ' ') end--;
+    if(end == p+8) return false;
+    for(const uint8_t *c = p+8; c < end; c++)
+        if(*c < 32 || *c > 126 || *c == '/' || *c == '\\') return false;
+    name.assign((const char *)p+8, end-(p+8));
     return true;
 }
 
@@ -55,8 +59,10 @@ inline size_t Index(const uint8_t *data, size_t size, std::vector<Block> &blocks
     if(!data) return size ? 1 : 0;
     for(size_t pos = 0; pos < size;) {
         if(size-pos < 8) { bad++; break; }
+        bool isClsf = std::memcmp(data+pos, "CLSF", 4) == 0;
+        uint32_t minLen = isClsf ? 84u : 112u;
         uint32_t length = U32(data+pos+4);
-        if(length < 112 || length > size-pos-8) { bad++; break; }
+        if(length < minLen || length > size-pos-8) { bad++; break; }
         size_t n = (size_t)length+8;
         std::string name;
         if(Header(data+pos, n, name)) {
@@ -70,7 +76,108 @@ inline size_t Index(const uint8_t *data, size_t size, std::vector<Block> &blocks
 inline bool Range(size_t off, size_t count, size_t item, size_t total) {
     return off >= 120 && off <= total && count <= (total-off)/item;
 }
-inline uint8_t Surface(uint8_t s) { return s <= 34 ? s : 0; }
+inline uint8_t Surface(uint8_t s) {
+    if(s <= 34) return s;
+    if(s > 178) return 0;
+    if(s == 80 || s == 81 || s == 83 || (s >= 115 && s <= 125) || s == 141 || s == 146 || s == 147 || s == 153)
+        return 2; // SURFACE_GRASS
+    if(s == 35 || s == 40 || s == 41 || (s >= 84 && s <= 89) || (s >= 96 && s <= 100) || (s >= 126 && s <= 139))
+        return 3; // SURFACE_MUD_DRY
+    if(s == 74 || s == 75 || s == 82 || s == 90 || s == 157)
+        return 19; // SURFACE_SAND
+    if(s == 36 || s == 37 || (s >= 76 && s <= 79) || s == 101 || s == 140)
+        return 17; // SURFACE_GRAVEL
+    if((s >= 42 && s <= 44) || s == 72 || s == 73 || s == 143 || s == 144 || s >= 172)
+        return 24; // SURFACE_WOOD_SOLID
+    if(s >= 45 && s <= 47)
+        return 7; // SURFACE_GLASS
+    if((s >= 50 && s <= 68) || s == 71 || s == 142 || (s >= 162 && s <= 168) || s == 171)
+        return 16; // SURFACE_METAL_CHAIN_FENCE
+    if(s == 38 || s == 39)
+        return 20; // SURFACE_WATER
+    if(s == 70 || s == 102 || s == 108 || s == 145)
+        return 5; // SURFACE_PAVEMENT
+    return 0;
+}
+
+// Convert a CLSF block whose body at +72 uses float32 COLL v1 arrays
+// (u32 nS, spheres[20], u32 nL, lines[24], u32 nB, boxes[28], u32 nV, verts[12], u32 nF, faces[16]).
+inline bool ConvertClsfV1(const uint8_t *p, size_t n, const std::string &name,
+                          float cx, float cy, float cz, float radius,
+                          std::vector<uint8_t> &out) {
+    if(n < 92 || std::memcmp(p, "CLSF", 4) != 0) return false;
+    size_t pos = 72;
+    auto takeCount = [&](uint32_t &cnt, size_t width, const uint8_t *&ptr) -> bool {
+        if(n - pos < 4) return false;
+        cnt = U32(p + pos); pos += 4;
+        if(cnt > 32767 || cnt > (n - pos) / width) return false;
+        ptr = p + pos;
+        pos += (size_t)cnt * width;
+        return true;
+    };
+    uint32_t nS = 0, nL = 0, nB = 0, nV = 0, nF = 0;
+    const uint8_t *sph = nullptr, *lin = nullptr, *box = nullptr, *vtx = nullptr, *fac = nullptr;
+    if(!takeCount(nS, 20, sph) || !takeCount(nL, 24, lin) || !takeCount(nB, 28, box) ||
+       !takeCount(nV, 12, vtx) || !takeCount(nF, 16, fac))
+        return false;
+    for(size_t rem = pos; rem < n; rem++)
+        if(p[rem] != 0) return false;
+    for(uint32_t k = 0; k < nS; k++) {
+        const uint8_t *s = sph + (size_t)k * 20;
+        for(int j = 0; j < 4; j++)
+            if(!std::isfinite(F32(s + j * 4)) || std::fabs(F32(s + j * 4)) > 1e6f) return false;
+        if(F32(s) < 0.0f) return false;
+    }
+    for(uint32_t k = 0; k < nB; k++) {
+        const uint8_t *b = box + (size_t)k * 28;
+        for(int j = 0; j < 6; j++) {
+            float x = F32(b + j * 4);
+            if(!std::isfinite(x) || std::fabs(x) > 1e6f || (j >= 3 && x < F32(b + (j - 3) * 4)))
+                return false;
+        }
+    }
+    for(uint32_t k = 0; k < nV * 3; k++)
+        if(!std::isfinite(F32(vtx + (size_t)k * 4)) || std::fabs(F32(vtx + (size_t)k * 4)) > 1e6f)
+            return false;
+    for(uint32_t k = 0; k < nF; k++) {
+        const uint8_t *f = fac + (size_t)k * 16;
+        if(U32(f) >= nV || U32(f + 4) >= nV || U32(f + 8) >= nV) return false;
+    }
+    out.reserve(8 + 24 + 40 + 20 + (size_t)nS * 20 + (size_t)nL * 24 +
+                (size_t)nB * 28 + (size_t)nV * 12 + (size_t)nF * 16);
+    out.insert(out.end(), (const uint8_t *)"COLL", (const uint8_t *)"COLL" + 4);
+    Put32(out, 0);
+    out.resize(32, 0);
+    std::memcpy(out.data() + 8, name.data(), name.size());
+    PutFloat(out, radius > 0.0f ? radius : 0.5f);
+    PutFloat(out, cx); PutFloat(out, cy); PutFloat(out, cz);
+    for(int k = 0; k < 6; k++) PutFloat(out, F32(p + 48 + k * 4));
+    Put32(out, nS);
+    for(uint32_t k = 0; k < nS; k++) {
+        const uint8_t *s = sph + (size_t)k * 20;
+        out.insert(out.end(), s, s + 16);
+        out.push_back(Surface(s[16])); out.push_back(s[17]); out.push_back(0); out.push_back(0);
+    }
+    Put32(out, nL);
+    if(nL) out.insert(out.end(), lin, lin + (size_t)nL * 24);
+    Put32(out, nB);
+    for(uint32_t k = 0; k < nB; k++) {
+        const uint8_t *b = box + (size_t)k * 28;
+        out.insert(out.end(), b, b + 24);
+        out.push_back(Surface(b[24])); out.push_back(b[25]); out.push_back(0); out.push_back(0);
+    }
+    Put32(out, nV);
+    if(nV) out.insert(out.end(), vtx, vtx + (size_t)nV * 12);
+    Put32(out, nF);
+    for(uint32_t k = 0; k < nF; k++) {
+        const uint8_t *f = fac + (size_t)k * 16;
+        out.insert(out.end(), f, f + 12);
+        out.push_back(Surface(f[12])); out.push_back(0); out.push_back(0); out.push_back(0);
+    }
+    uint32_t length = (uint32_t)out.size() - 8;
+    for(int j = 0; j < 4; j++) out[4 + j] = (uint8_t)(length >> (j * 8));
+    return true;
+}
 
 // Convert exactly one validated CLST/CLSF CED2 block into [COLL, size,
 // name[24], VC body]. Refuse uncertain or overlapping geometry, never pass
@@ -93,17 +200,21 @@ inline bool Convert(const uint8_t *p, size_t n, std::vector<uint8_t> &out) {
     if(radius == 0.0f) {
         float dx = F32(p+60)-F32(p+48), dy = F32(p+64)-F32(p+52), dz = F32(p+68)-F32(p+56);
         radius = std::sqrt(dx*dx+dy*dy+dz*dz) * 0.5f;
+        if(radius == 0.0f) radius = 0.5f;
     }
+    if(n < 120)
+        return ConvertClsfV1(p, n, name, cx, cy, cz, radius, out);
     uint32_t nA = U16(p+72), nB = U16(p+74), nF = U16(p+76);
     uint8_t version = p[80];
-    if(nA > 32767 || nB > 32767 || nF > 32767) return false;
+    if(nA > 32767 || nB > 32767 || nF > 32767)
+        return ConvertClsfV1(p, n, name, cx, cy, cz, radius, out);
     uint32_t a = U32(p+84), b = U32(p+88), v = U32(p+96), f = U32(p+100);
     size_t aPos = (size_t)a+4, bPos = (size_t)b+4;
     size_t vPos = (size_t)v+4, fPos = (size_t)f+4;
     if((nA && (!a || !Range(aPos, nA, 20, n))) ||
        (nB && (!b || !Range(bPos, nB, 28, n))) ||
        (nF && (!f || !v || !Range(fPos, nF, 8, n) || vPos < 120 || vPos >= fPos)))
-        return false;
+        return ConvertClsfV1(p, n, name, cx, cy, cz, radius, out);
     // A group count is stored immediately before faces in the full format.
     // Validate it so that group records cannot be mistaken for vertices.
     size_t endVerts = nF ? fPos : n;

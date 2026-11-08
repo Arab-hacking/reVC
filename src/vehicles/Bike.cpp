@@ -14,6 +14,7 @@
 #include "Shadows.h"
 #include "PointLights.h"
 #include "Coronas.h"
+#include "Renderer.h"
 #include "SpecialFX.h"
 #include "WaterLevel.h"
 #include "Floater.h"
@@ -1373,22 +1374,23 @@ CBike::PreRender(void)
 			mat = m_leanMatrix * mat;
 		}else
 			mat = m_leanMatrix;
+		const float bikeLightMult = Max(TheCamera.LODDistMultiplier, CRenderer::ms_fLightDistScale);
 		CVector light = mat * headLightPos;
 		if(behindness < 0.0f){
 			// In front of bike
 			float intensity = -0.5f*behindness + 0.3f;
 			float size = 1.0f - behindness;
 
-			if(behindness < -0.97f && camDist < 30.0f){
+			if(behindness < -0.97f && camDist < 30.0f * Max(1.0f, CRenderer::ms_fLightDistScale)){
 				// Directly in front and not too far away
 				if(pHandling->Flags & HANDLING_HALOGEN_LIGHTS){
 					CCoronas::RegisterCorona((uintptr)this + 6, 150, 150, 195, 255,
-						light, 1.2f, 45.0f*TheCamera.LODDistMultiplier,
+						light, 1.2f, 65.0f*bikeLightMult,
 						CCoronas::TYPE_HEADLIGHT, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
 						CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, angle);
 				}else{
 					CCoronas::RegisterCorona((uintptr)this + 6, 160, 160, 140, 255,
-						light, 1.2f, 45.0f*TheCamera.LODDistMultiplier,
+						light, 1.2f, 65.0f*bikeLightMult,
 						CCoronas::TYPE_HEADLIGHT, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
 						CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, angle);
 				}
@@ -1402,18 +1404,18 @@ CBike::PreRender(void)
 			}else{
 				if(pHandling->Flags & HANDLING_HALOGEN_LIGHTS){
 					CCoronas::RegisterCorona((uintptr)this + 1, 190*intensity, 190*intensity, 255*intensity, 255,
-						light, size, 50.0f*TheCamera.LODDistMultiplier,
+						light, size, 80.0f*bikeLightMult,
 						CCoronas::TYPE_STREAK, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
 						CCoronas::LOSCHECK_OFF, CCoronas::STREAK_ON, angle);
 				}else{
 					CCoronas::RegisterCorona((uintptr)this + 1, 210*intensity, 210*intensity, 195*intensity, 255,
-						light, size, 50.0f*TheCamera.LODDistMultiplier,
+						light, size, 80.0f*bikeLightMult,
 						CCoronas::TYPE_STREAK, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
 						CCoronas::LOSCHECK_OFF, CCoronas::STREAK_ON, angle);
 				}
 			}
 		}else{
-			CCoronas::UpdateCoronaCoors((uintptr)this, light, 50.0f*TheCamera.LODDistMultiplier, angle);
+			CCoronas::UpdateCoronaCoors((uintptr)this, light, 80.0f*bikeLightMult, angle);
 		}
 
 		// bright light
@@ -1446,13 +1448,13 @@ CBike::PreRender(void)
 						CCoronas::LOSCHECK_OFF, CCoronas::STREAK_ON, angle);
 				}else{
 					CCoronas::RegisterCorona((uintptr)this + 14, 128*intensity, 0, 0, 255,
-						light, size, 50.0f*TheCamera.LODDistMultiplier,
+						light, size, 80.0f*bikeLightMult,
 						CCoronas::TYPE_STREAK, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
 						CCoronas::LOSCHECK_OFF, CCoronas::STREAK_ON, angle);
 				}
 			}
 		}else{
-			CCoronas::UpdateCoronaCoors((uintptr)this + 14, light, 50.0f*TheCamera.LODDistMultiplier, angle);
+			CCoronas::UpdateCoronaCoors((uintptr)this + 14, light, 80.0f*bikeLightMult, angle);
 		}
 
 		// bright light

@@ -164,8 +164,25 @@ CCoronas::RegisterCorona(uint32 id, uint8 red, uint8 green, uint8 blue, uint8 al
 		for(i = 0; i < NUMCORONAS; i++)
 			if(aCoronas[i].id == 0)
 				break;
-		if(i == NUMCORONAS)
-			return;		// no space
+		if(i == NUMCORONAS){
+			// Evict the farthest non-sun corona if the new corona is closer
+			const CVector camPos = TheCamera.GetPosition();
+			float newDistSq = (coors - camPos).MagnitudeSqr();
+			float farthestDistSq = newDistSq;
+			int farthestIdx = -1;
+			for(int k = 0; k < NUMCORONAS; k++){
+				if(aCoronas[k].id == SUN_CORE || aCoronas[k].id == SUN_CORONA)
+					continue;
+				float d2 = (aCoronas[k].coors - camPos).MagnitudeSqr();
+				if(d2 > farthestDistSq){
+					farthestDistSq = d2;
+					farthestIdx = k;
+				}
+			}
+			if(farthestIdx < 0)
+				return;		// no space
+			i = farthestIdx;
+		}
 
 		aCoronas[i].fadeAlpha = 0;
 		aCoronas[i].offScreen = true;
@@ -317,8 +334,9 @@ CCoronas::Render(void)
 
 			if(aCoronas[i].fadeAlpha && spriteCoors.z < aCoronas[i].drawDist){
 				float recipz = 1.0f/spriteCoors.z;
-				float fadeDistance = aCoronas[i].drawDist / 2.0f;
-				float distanceFade = spriteCoors.z < fadeDistance ? 1.0f : 1.0f - (spriteCoors.z - fadeDistance)/fadeDistance;
+				float fadeStart = aCoronas[i].drawDist * 0.65f;
+				float fadeSpan = Max(aCoronas[i].drawDist - fadeStart, 1.0f);
+				float distanceFade = spriteCoors.z < fadeStart ? 1.0f : 1.0f - (spriteCoors.z - fadeStart)/fadeSpan;
 				int totalFade = aCoronas[i].fadeAlpha * distanceFade;
 
 				if(aCoronas[i].LOScheck)
@@ -943,7 +961,7 @@ CEntity::ProcessLightsForEntity(void)
 
 			// Light shadow
 			if(effect->light.shadow && effect->light.shadowSize != 0.0f){
-				const float shadowDrawDist = 90.0f * lightDistScale;
+				const float shadowDrawDist = 165.0f * lightDistScale;
 				if(lightOn){
 					CShadows::StoreStaticShadow((uintptr)this + i, SHADOWTYPE_ADDITIVE,
 						effect->light.shadow, &pos,

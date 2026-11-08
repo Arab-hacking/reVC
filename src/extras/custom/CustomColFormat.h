@@ -62,12 +62,14 @@ inline size_t Index(const uint8_t *data, size_t length, std::vector<Block> &bloc
         uint32_t size = U32(data+pos+4);
         if(size < 64 || size > length-pos-8) { bad++; break; }
         const uint8_t *name = data+pos+8;
-        const uint8_t *end = (const uint8_t *)std::memchr(name, 0, 22);
-        if(!end || end == name || end-name > 21) bad++;
+        const uint8_t *nul = (const uint8_t *)std::memchr(name, 0, 22);
+        const uint8_t *end = nul ? nul : (name + 22);
+        while(end > name && *(end - 1) == ' ') end--;
+        if(end == name) bad++;
         else {
             bool printable = true;
             for(const uint8_t *p = name; p < end; p++)
-                if(*p <= 32 || *p >= 127 || *p == '/' || *p == '\\') printable = false;
+                if(*p < 32 || *p >= 127 || *p == '/' || *p == '\\') printable = false;
             if(printable) {
                 Block b = { std::string((const char *)name, end-name), pos,
                             (size_t)size+8, std::memcmp(data+pos, "COLL", 4) == 0 };

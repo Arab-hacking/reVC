@@ -1167,16 +1167,50 @@ static inline bool clsfToCol3(const uint8_t* blk, size_t n, std::vector<uint8_t>
     return true;
 }
 
+// SA surface ID (0..178, plus BR 255) -> VC surface ID (0..34).
+static inline uint8_t saSurfaceToVc(uint8_t s) {
+    if (s <= 34) return s;
+    if (s == 255) return 1; // BR default road/tarmac
+    // SA grass / vegetation / meadow / crops
+    if ((s >= 9 && s <= 25) || s == 80 || s == 81 || s == 83 || (s >= 115 && s <= 125) || s == 141 || s == 146 || s == 147 || s == 153)
+        return 2; // SURFACE_GRASS
+    // SA dirt / mud / forest / earth
+    if ((s >= 26 && s <= 27) || s == 35 || s == 40 || s == 41 || (s >= 84 && s <= 89) || (s >= 96 && s <= 100) || (s >= 126 && s <= 139))
+        return 3; // SURFACE_MUD_DRY
+    // SA sand / beach
+    if ((s >= 28 && s <= 33) || s == 74 || s == 75 || s == 82 || s == 90 || s == 131 || s == 157)
+        return 19; // SURFACE_SAND
+    // SA gravel / rubble / rock / cliff
+    if (s == 34 || s == 36 || s == 37 || (s >= 76 && s <= 79) || s == 85 || s == 101 || s == 140)
+        return 17; // SURFACE_GRAVEL
+    // SA wood
+    if ((s >= 42 && s <= 44) || s == 72 || s == 73 || s == 143 || s == 144 || s == 172 || s == 173 || s == 174)
+        return 24; // SURFACE_WOOD_SOLID
+    // SA glass
+    if (s >= 45 && s <= 47)
+        return 7; // SURFACE_GLASS
+    // SA metal / fences / poles / containers / railings
+    if ((s >= 50 && s <= 68) || s == 71 || s == 142 || (s >= 162 && s <= 168) || s == 171)
+        return 16; // SURFACE_METAL_CHAIN_FENCE
+    // SA water
+    if (s == 38 || s == 39)
+        return 20; // SURFACE_WATER
+    // SA concrete / tiles / pavement / asphalt
+    if (s == 4 || s == 5 || s == 7 || s == 8 || s == 70 || s == 102 || s == 108 || s == 127 || s == 145)
+        return 5; // SURFACE_PAVEMENT
+    return 0; // SURFACE_DEFAULT
+}
+
 // Пост-обработка COL3-блока (после clsBlockToCol): материалы поверхностей > 178 (у BR массово 255) в SA читают мусор
-// за таблицей g_surfaceInfos -> странная физика/«дырки». Заменяем на 0 (default). Возвращает число исправленных граней.
+// за таблицей g_surfaceInfos -> странная физика/«дырки». Заменяем на валидные поверхности. Возвращает число исправленных граней.
 static inline int fixColBlockMaterials(uint8_t* blk, size_t n) {
     if (n < 120 || rd32(blk) != FCC_COL3) return 0;
-    uint32_t nF = blk[76] | (blk[77] << 8), nS = blk[72] | (blk[73] << 8), nB = blk[74] | (blk[75] << 8);
-    uint32_t offF = rd32(blk + 100), offS = rd32(blk + 92), offB = rd32(blk + 96);
+    uint32_t nS = blk[72] | (blk[73] << 8), nB = blk[74] | (blk[75] << 8), nF = blk[76] | (blk[77] << 8);
+    uint32_t offS = rd32(blk + 84), offB = rd32(blk + 88), offF = rd32(blk + 100);
     int fixed = 0;
-    if (nF && offF && (size_t)offF + 4 + (size_t)nF * 8 <= n) for (uint32_t i = 0; i < nF; i++) { uint8_t* m = blk + 4 + offF + i * 8 + 6; if (*m > 178) { *m = 0; fixed++; } }
-    if (nS && offS && (size_t)offS + 4 + (size_t)nS * 20 <= n) for (uint32_t i = 0; i < nS; i++) { uint8_t* m = blk + 4 + offS + i * 20 + 16; if (*m > 178) { *m = 0; fixed++; } }
-    if (nB && offB && (size_t)offB + 4 + (size_t)nB * 28 <= n) for (uint32_t i = 0; i < nB; i++) { uint8_t* m = blk + 4 + offB + i * 28 + 24; if (*m > 178) { *m = 0; fixed++; } }
+    if (nF && offF && (size_t)offF + 4 + (size_t)nF * 8 <= n) for (uint32_t i = 0; i < nF; i++) { uint8_t* m = blk + 4 + offF + (size_t)i * 8 + 6; if (*m > 34) { *m = saSurfaceToVc(*m); fixed++; } }
+    if (nS && offS && (size_t)offS + 4 + (size_t)nS * 20 <= n) for (uint32_t i = 0; i < nS; i++) { uint8_t* m = blk + 4 + offS + (size_t)i * 20 + 16; if (*m > 34) { *m = saSurfaceToVc(*m); fixed++; } }
+    if (nB && offB && (size_t)offB + 4 + (size_t)nB * 28 <= n) for (uint32_t i = 0; i < nB; i++) { uint8_t* m = blk + 4 + offB + (size_t)i * 28 + 24; if (*m > 34) { *m = saSurfaceToVc(*m); fixed++; } }
     return fixed;
 }
 // Есть ли в блоке (CLST/COL3) хоть какие-то объёмы (сферы/боксы/грани)? Пустой блок = только bbox.
@@ -1210,15 +1244,24 @@ static inline bool clsfToColl(const uint8_t* blk, size_t n, std::vector<uint8_t>
         if (z < bmin[2]) bmin[2] = z; if (z > bmax[2]) bmax[2] = z;
     };
     float fmin[3], fmax[3], fctr[3], frad;
-    memcpy(fmin, blk + 32, 12); memcpy(fmax, blk + 44, 12);
-    memcpy(fctr, blk + 56, 12); memcpy(&frad, blk + 68, 4);
-    if (std::isfinite(fmin[0]) && std::isfinite(fmin[1]) && std::isfinite(fmin[2]) &&
-        std::isfinite(fmax[0]) && std::isfinite(fmax[1]) && std::isfinite(fmax[2]) &&
-        fmin[0] <= fmax[0] && fmin[1] <= fmax[1] && fmin[2] <= fmax[2] &&
-        std::fabs(fmin[0]) < 1e5f && std::fabs(fmax[0]) < 1e5f &&
-        std::fabs(fmin[1]) < 1e5f && std::fabs(fmax[1]) < 1e5f &&
-        std::fabs(fmin[2]) < 1e5f && std::fabs(fmax[2]) < 1e5f) {
+    // Detect either COL2/COL3 bounds (min@32, max@44) or COL1/CLST bounds (min@48, max@60).
+    auto okBox = [](const float mn[3], const float mx[3]) {
+        return std::isfinite(mn[0]) && std::isfinite(mn[1]) && std::isfinite(mn[2]) &&
+               std::isfinite(mx[0]) && std::isfinite(mx[1]) && std::isfinite(mx[2]) &&
+               mn[0] <= mx[0] && mn[1] <= mx[1] && mn[2] <= mx[2] &&
+               std::fabs(mn[0]) < 1e5f && std::fabs(mx[0]) < 1e5f &&
+               std::fabs(mn[1]) < 1e5f && std::fabs(mx[1]) < 1e5f &&
+               std::fabs(mn[2]) < 1e5f && std::fabs(mx[2]) < 1e5f;
+    };
+    memcpy(fmin, blk + 48, 12); memcpy(fmax, blk + 60, 12);
+    if (okBox(fmin, fmax)) {
         grow(fmin[0], fmin[1], fmin[2]); grow(fmax[0], fmax[1], fmax[2]);
+    } else {
+        memcpy(fmin, blk + 32, 12); memcpy(fmax, blk + 44, 12);
+        memcpy(fctr, blk + 56, 12); memcpy(&frad, blk + 68, 4);
+        if (okBox(fmin, fmax)) {
+            grow(fmin[0], fmin[1], fmin[2]); grow(fmax[0], fmax[1], fmax[2]);
+        }
     }
     for (uint32_t i = 0; i < nS; i++) {
         float sr, sc[3]; memcpy(&sr, sph + (size_t)i * 20, 4); memcpy(sc, sph + (size_t)i * 20 + 4, 12);
@@ -1248,6 +1291,7 @@ static inline bool clsfToColl(const uint8_t* blk, size_t n, std::vector<uint8_t>
 
     out.assign(blk, blk + 32);
     memcpy(&out[0], "COLL", 4);
+    out[29] = 0; // ensure 22-byte name field is NUL-terminated before uint16 modelId
     out.resize(72, 0);
     memcpy(&out[32], &rad, 4);
     memcpy(&out[36], ctr, 12);
@@ -1258,7 +1302,7 @@ static inline bool clsfToColl(const uint8_t* blk, size_t n, std::vector<uint8_t>
     for (uint32_t i = 0; i < nS; i++) {
         const uint8_t* s = sph + (size_t)i * 20;
         out.insert(out.end(), s, s + 16);
-        out.push_back(s[16] <= 34 ? s[16] : 0); out.push_back(0); out.push_back(0); out.push_back(0);
+        out.push_back(saSurfaceToVc(s[16])); out.push_back(s[17]); out.push_back(0); out.push_back(0);
     }
     putU32(nL);
     if (nL) out.insert(out.end(), lin, lin + (size_t)nL * 24);
@@ -1266,7 +1310,7 @@ static inline bool clsfToColl(const uint8_t* blk, size_t n, std::vector<uint8_t>
     for (uint32_t i = 0; i < nB; i++) {
         const uint8_t* b = box + (size_t)i * 28;
         out.insert(out.end(), b, b + 24);
-        out.push_back(b[24] <= 34 ? b[24] : 0); out.push_back(0); out.push_back(0); out.push_back(0);
+        out.push_back(saSurfaceToVc(b[24])); out.push_back(b[25]); out.push_back(0); out.push_back(0);
     }
     putU32(nV);
     if (nV) out.insert(out.end(), vtx, vtx + (size_t)nV * 12);
@@ -1274,7 +1318,7 @@ static inline bool clsfToColl(const uint8_t* blk, size_t n, std::vector<uint8_t>
     for (uint32_t i = 0; i < nF; i++) {
         const uint8_t* f = fac + (size_t)i * 16;
         out.insert(out.end(), f, f + 12);
-        out.push_back(f[12] <= 34 ? f[12] : 0); out.push_back(0); out.push_back(0); out.push_back(f[15]);
+        out.push_back(saSurfaceToVc(f[12])); out.push_back(0); out.push_back(0); out.push_back(0);
     }
     clsPad4(out);
     return true;
@@ -1292,14 +1336,18 @@ static inline bool clsBlockToCol(const uint8_t* blk, size_t n, std::vector<uint8
         out.assign(blk, blk + n); memcpy(&out[0], "COL3", 4); clsSwapBounds(&out[32]); clsPad4(out); st.matFixed += fixColBlockMaterials(out.data(), out.size()); st.clst++; return true;
     }
 #ifdef ANDROID
-    if (f == FCC_CLSF) { if (!clsfToColl(blk, n, out)) { st.bad++; return false; } st.clsf++; return true; }
+    if (f == FCC_CLSF || f == FCC_BOLL || f == FCC_COLL) {
+        if (!clsfToColl(blk, n, out)) { st.bad++; return false; }
+        if (f == FCC_CLSF) st.clsf++; else st.passthru++;
+        return true;
+    }
 #else
     if (f == FCC_CLSF) { if (!clsfToCol3(blk, n, out)) { st.bad++; return false; } st.clsf++; return true; }
-#endif
     if (f == FCC_BOLL) {
         if (n < 72) { st.bad++; return false; }
         out.assign(blk, blk + n); memcpy(&out[0], "COLL", 4); clsPad4(out); st.passthru++; return true;
     }
+#endif
     out.assign(blk, blk + n); clsPad4(out); st.matFixed += fixColBlockMaterials(out.data(), out.size()); st.passthru++; return true;
 }
 

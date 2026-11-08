@@ -1428,28 +1428,32 @@ cSampleManager::GetBankContainingSound(uint32 offset)
 uint32
 cSampleManager::GetSampleBaseFrequency(uint32 nSample)
 {
-	ASSERT( nSample < TOTAL_AUDIO_SAMPLES );
+	if (nSample >= TOTAL_AUDIO_SAMPLES)
+		return 22050;
 	return m_aSamples[nSample].nFrequency;
 }
 
 uint32
 cSampleManager::GetSampleLoopStartOffset(uint32 nSample)
 {
-	ASSERT( nSample < TOTAL_AUDIO_SAMPLES );
+	if (nSample >= TOTAL_AUDIO_SAMPLES)
+		return 0;
 	return m_aSamples[nSample].nLoopStart;
 }
 
 int32
 cSampleManager::GetSampleLoopEndOffset(uint32 nSample)
 {
-	ASSERT( nSample < TOTAL_AUDIO_SAMPLES );
+	if (nSample >= TOTAL_AUDIO_SAMPLES)
+		return -1;
 	return m_aSamples[nSample].nLoopEnd;
 }
 
 uint32
 cSampleManager::GetSampleLength(uint32 nSample)
 {
-	ASSERT( nSample < TOTAL_AUDIO_SAMPLES );
+	if (nSample >= TOTAL_AUDIO_SAMPLES)
+		return 0;
 	return m_aSamples[nSample].nSize / sizeof(uint16);
 }
 

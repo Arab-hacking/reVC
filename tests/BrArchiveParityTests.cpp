@@ -2,9 +2,20 @@
 #define ANDROID 1
 #endif
 
+#include <cstdint>
+#ifndef nil
+#define nil nullptr
+#endif
+typedef uint8_t uint8;
+typedef uint16_t uint16;
+typedef uint32_t uint32;
+typedef uint64_t uint64;
+
+#include "../src/extras/custom/BrCollisionFormat.h"
 #include "../src/extras/custom/CustomColFormat.h"
 #include "../src/extras/custom/CustomWorldFormat.h"
 #include "../src/extras/custom/MobileSpawnerMath.h"
+#include "../src/extras/custom/br/brformats.h"
 
 #include <cassert>
 #include <cmath>
@@ -174,12 +185,110 @@ static void TestMobileSpawnerMath() {
 	assert(WrapIndex(-1, 12) == 11 && WrapIndex(12, 12) == 0 && WrapIndex(5, 0) == 0);
 }
 
+static void TestClsMaterialOffsetsAndClsfBollConversion() {
+	// 1. Regression test for fixColBlockMaterials: a CLST block with BOTH boxes and
+	// negative int16 vertices (e.g. -150.0m -> -19200 -> 0xB500, high byte 0xB5 = 181 > 178)
+	// must NOT treat offV (+96) as offB (+88) and corrupt vertex coordinates!
+	std::vector<uint8_t> clst(120, 0);
+	std::memcpy(clst.data(), "CLST", 4);
+	std::memcpy(clst.data() + 8, "road_arz_chunk_01", 17);
+	WF(clst, 32, 0.0f); WF(clst, 36, 0.0f); WF(clst, 40, 0.0f); WF(clst, 44, 220.0f);
+	WF(clst, 48, -160.0f); WF(clst, 52, -160.0f); WF(clst, 56, -10.0f);
+	WF(clst, 60,  160.0f); WF(clst, 64,  160.0f); WF(clst, 68,  20.0f);
+	W16(clst, 72, 0); // nS = 0
+	W16(clst, 74, 1); // nB = 1
+	W16(clst, 76, 1); // nF = 1
+	clst[80] = 0x02;
+	W32(clst, 84, 0);   // offS
+	W32(clst, 88, 116); // offB -> file offset 120 (28 bytes: 120..147)
+	W32(clst, 96, 144); // offV -> file offset 148 (3 * 6 = 18 bytes + 2 pad: 148..167)
+	W32(clst, 100, 164);// offF -> file offset 168 (8 bytes: 168..175)
+	clst.resize(176, 0);
+	// Box at 120..147 with BR surface 255 at +24 (offset 144)
+	WF(clst, 120, -2.0f); WF(clst, 124, -2.0f); WF(clst, 128, -1.0f);
+	WF(clst, 132,  2.0f); WF(clst, 136,  2.0f); WF(clst, 140,  1.0f);
+	clst[144] = 255;
+	// 3 vertices at 148..165, with negative coords whose high byte > 178 (0xB500 = -19200 = -150.0m)
+	const int16_t vx0 = -19200, vy0 = -19200, vz0 = 128;
+	const int16_t vx1 =  19200, vy1 = -19200, vz1 = 128;
+	const int16_t vx2 =      0, vy2 =  19200, vz2 = 128;
+	W16(clst, 148, (uint16_t)vx0); W16(clst, 150, (uint16_t)vy0); W16(clst, 152, (uint16_t)vz0);
+	W16(clst, 154, (uint16_t)vx1); W16(clst, 156, (uint16_t)vy1); W16(clst, 158, (uint16_t)vz1);
+	W16(clst, 160, (uint16_t)vx2); W16(clst, 162, (uint16_t)vy2); W16(clst, 164, (uint16_t)vz2);
+	// Face at 168..175 with SA grass surface 80
+	W16(clst, 168, 0); W16(clst, 170, 1); W16(clst, 172, 2);
+	clst[174] = 80;
+	W32(clst, 4, (uint32_t)(clst.size() - 8));
+
+	br::ClsStats clsSt;
+	std::vector<uint8_t> colOut = br::convertClsToCol(clst, clsSt);
+	assert(clsSt.blocks == 1 && clsSt.bad == 0 && clsSt.clst == 1);
+	// Box surface 255 mapped to tarmac (1), face surface 80 mapped to grass (2)
+	assert(colOut[144] == 1);
+	assert(colOut[174] == 2);
+	// EVERY negative vertex coordinate MUST remain 100% intact!
+	assert((int16_t)(colOut[148] | (colOut[149] << 8)) == vx0);
+	assert((int16_t)(colOut[150] | (colOut[151] << 8)) == vy0);
+	assert((int16_t)(colOut[154] | (colOut[155] << 8)) == vx1);
+	assert((int16_t)(colOut[156] | (colOut[157] << 8)) == vy1);
+	assert((int16_t)(colOut[162] | (colOut[163] << 8)) == vy2);
+
+	// 2. BOLL & CLSF with surface 255 must convert directly into ValidVC COLL
+	std::vector<uint8_t> boll(120, 0);
+	std::memcpy(boll.data(), "BOLL", 4);
+	std::memcpy(boll.data() + 8, "boll_curb_wall_01", 17);
+	WF(boll, 32, 3.0f); WF(boll, 36, 0.0f); WF(boll, 40, 0.0f); WF(boll, 44, 0.0f);
+	WF(boll, 48, -2.0f); WF(boll, 52, -2.0f); WF(boll, 56, -1.0f);
+	WF(boll, 60,  2.0f); WF(boll, 64,  2.0f); WF(boll, 68,  1.0f);
+	// 0 spheres, 0 lines, 1 box (with surface 255), 0 verts, 0 faces
+	W32(boll, 72, 0);
+	W32(boll, 76, 0);
+	W32(boll, 80, 1);
+	WF(boll, 84, -2.0f); WF(boll, 88, -2.0f); WF(boll, 92, -1.0f);
+	WF(boll, 96,  2.0f); WF(boll, 100, 2.0f); WF(boll, 104, 1.0f);
+	boll[108] = 255;
+	W32(boll, 112, 0);
+	W32(boll, 116, 0);
+	W32(boll, 4, (uint32_t)(boll.size() - 8));
+
+	br::ClsStats bollSt;
+	std::vector<uint8_t> bollVc = br::convertClsToCol(boll, bollSt);
+	assert(bollSt.blocks == 1 && bollSt.bad == 0);
+	assert(customcolformat::ValidVC(bollVc.data(), bollVc.size()));
+
+	// 3. CED2 CLSF with v1 float32 body + 20-char non-NUL-terminated name
+	std::vector<uint8_t> ced2Clsf(120, 0);
+	std::memcpy(ced2Clsf.data(), "CLSF", 4);
+	std::memcpy(ced2Clsf.data() + 8, "12345678901234567890", 20); // full 20 chars right before CED2
+	std::memcpy(ced2Clsf.data() + 28, "CED2", 4);
+	WF(ced2Clsf, 32, 0.0f); WF(ced2Clsf, 36, 0.0f); WF(ced2Clsf, 40, 0.0f); WF(ced2Clsf, 44, 4.0f);
+	WF(ced2Clsf, 48, -2.0f); WF(ced2Clsf, 52, -2.0f); WF(ced2Clsf, 56, -1.0f);
+	WF(ced2Clsf, 60,  2.0f); WF(ced2Clsf, 64,  2.0f); WF(ced2Clsf, 68,  1.0f);
+	W32(ced2Clsf, 72, 0); // nS
+	W32(ced2Clsf, 76, 0); // nL
+	W32(ced2Clsf, 80, 1); // nB = 1
+	WF(ced2Clsf, 84, -2.0f); WF(ced2Clsf, 88, -2.0f); WF(ced2Clsf, 92, -1.0f);
+	WF(ced2Clsf, 96,  2.0f); WF(ced2Clsf, 100, 2.0f); WF(ced2Clsf, 104, 1.0f);
+	ced2Clsf[108] = 80; // SA grass -> VC grass (2)
+	W32(ced2Clsf, 112, 0); // nV
+	W32(ced2Clsf, 116, 0); // nF
+	W32(ced2Clsf, 4, (uint32_t)(ced2Clsf.size() - 8));
+
+	std::vector<brcollision::Block> brRefs;
+	assert(brcollision::Index(ced2Clsf.data(), ced2Clsf.size(), brRefs) == 0);
+	assert(brRefs.size() == 1 && brRefs[0].name == "12345678901234567890");
+	std::vector<uint8_t> ced2Vc;
+	assert(brcollision::Convert(ced2Clsf.data(), ced2Clsf.size(), ced2Vc));
+	assert(customcolformat::ValidVC(ced2Vc.data(), ced2Vc.size()));
+}
+
 } // namespace
 
 int main() {
 	TestBollAndClsMixedIndexing();
 	TestAndroidIdeIplExactParity();
 	TestMobileSpawnerMath();
+	TestClsMaterialOffsetsAndClsfBollConversion();
 	std::puts("BR archive parity (BOLL/CLS, Android 23/31 IDE/IPL, LinkLods, MobileSpawner) tests passed");
 	return 0;
 }
