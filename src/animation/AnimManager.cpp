@@ -2128,14 +2128,30 @@ CAnimManager::LoadSAAnimFileFromCustom(const char *filename)
 	std::vector<uint8> customBuf;
 	if(!CCustomModels::LoadAnimFileFromCustom(filename, customBuf))
 		return;
+#ifdef ANDROID
+	if(!IsCompactAnimFile(customBuf.data(), customBuf.size()) &&
+	   !(customBuf.size() >= 4 && memcmp(customBuf.data(), "ANPK", 4) == 0)){
+		CUSTOM_LOG("animation %s: unrecognized custom anim header; VC uses native IFP\n", filename);
+		return;
+	}
+#else
 	if(!IsCompactAnimFile(customBuf.data(), customBuf.size())){
 		CUSTOM_LOG("animation %s: custom ANPK ignored; VC uses the native game IFP\n", filename);
 		return;
 	}
+#endif
 
 	int numNames = 0;
-	if(!br::SniffAnimNames(customBuf.data(), customBuf.size(), nil,
-		NUMANIMATIONS, numNames) || numNames <= 0){
+	bool validSniff = br::SniffAnimNames(customBuf.data(), customBuf.size(), nil,
+		NUMANIMATIONS, numNames) && numNames > 0;
+#ifdef ANDROID
+	if(!validSniff && br::convertAniToIfp(customBuf)){
+		numNames = 0;
+		validSniff = br::SniffAnimNames(customBuf.data(), customBuf.size(), nil,
+			NUMANIMATIONS, numNames) && numNames > 0;
+	}
+#endif
+	if(!validSniff){
 		CUSTOM_LOG("animation %s: invalid SA IFP structure, using game file\n", filename);
 		return;
 	}
@@ -2223,7 +2239,8 @@ CAnimManager::LoadAnimFile(RwStream *stream, bool compress, char (*uncompressedA
 	RwStreamRead(stream, &info, sizeof(IfpHeader));
 	ROUNDSIZE(info.size);
 	RwStreamRead(stream, buf, info.size);
-	CAnimBlock *animBlock = GetAnimationBlock(buf+4);
+	const char *targetBlockName = (blockNameOverride && blockNameOverride[0] != '\0') ? blockNameOverride : (buf + 4);
+	CAnimBlock *animBlock = GetAnimationBlock(targetBlockName);
 	if(animBlock){
 		// A replacement may have a different number of clips from the old
 		// dictionary. Reuse its slots only when they have the same capacity.
@@ -2233,10 +2250,13 @@ CAnimManager::LoadAnimFile(RwStream *stream, bool compress, char (*uncompressedA
 		}
 	}else{
 		animBlock = &ms_aAnimBlocks[ms_numAnimBlocks++];
-		strncpy(animBlock->name, buf+4, MAX_ANIMBLOCK_NAME);
+		strncpy(animBlock->name, targetBlockName, MAX_ANIMBLOCK_NAME);
+		animBlock->name[MAX_ANIMBLOCK_NAME - 1] = '\0';
+		animBlock->refCount = 0;
 		animBlock->numAnims = *(int*)buf;
 		animBlock->firstIndex = ms_numAnimations;
 	}
+	animBlock->unloadPending = false;
 
 	debug("Loading ANIMS %s\n", animBlock->name);
 	animBlock->isLoaded = true;

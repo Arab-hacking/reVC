@@ -1413,8 +1413,10 @@ SniffVCAnimNames(const uint8 *data, size_t size, char (*outNames)[24],
            length == 0 || length > 24 || memchr(data + start, '\0', length) == nil)
             return false;
         if(numNames < maxNames){
-            memcpy(outNames[numNames], data + start, length);
-            outNames[numNames][23] = '\0';
+            if(outNames){
+                memcpy(outNames[numNames], data + start, length);
+                outNames[numNames][23] = '\0';
+            }
             numNames++;
         }
         // DGAN and CPAN are containers; the game reads their headers and
@@ -1497,7 +1499,7 @@ SniffAnimNames(const uint8 *data, size_t size, char (*outNames)[24], int maxName
     if(data == nil || size < 8)
         return false;
     if(memcmp(data, "ANPK", 4) == 0)
-        return outNames && SniffVCAnimNames(data, size, outNames, maxNames, numNames, blockName);
+        return SniffVCAnimNames(data, size, outNames, maxNames, numNames, blockName);
     if(size < 40)
         return false;
     bool isANP3 = memcmp(data, "ANP3", 4) == 0;

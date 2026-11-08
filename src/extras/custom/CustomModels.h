@@ -1,16 +1,23 @@
 #ifndef __GTA_CUSTOMMODELS_H__
 #define __GTA_CUSTOMMODELS_H__
 
-// Runtime loader for explicitly placed custom resources:
+// Runtime loader for custom resources:
+// - PC (#ifndef ANDROID):
 //   custom/anim/*.ifp                  animation banks
 //   custom/img/*.{img,dir}             VC IMG v1 with DFF/TXD/COL/CLS entries
 //   custom/data/maps/*.{ide,ipl}       loose world definitions/placements
 //   custom/common.zip                  map IDE/IPL; data/peds.ide,
 //                                      data/vehicles.ide, data/weapons.ide;
 //                                      config.dat, timecyc.json, water.dat,
-//                                      carcols.dat (all under data/)
-// Other ZIPs, game-root img/ and game-root common/ are not custom sources.
-// The native VC game archives remain available to the normal streamer.
+//                                      carcols.dat, lods.info (all under data/)
+// - Android (#ifdef ANDROID):
+//   custom/zip/common.bpc              20-byte XOR stream archive with config.dat,
+//                                      texdb.dat, lods.info, IDE/IPL, .ani
+//   custom/zip/mesh/*.bpc              mounted strictly from CDIMAGE in config.dat
+//                                      (.mod head-TEA models, .cls, .ani)
+//   custom/zip/textures/*.astc.bpc     mounted strictly from TEXDB in texdb.dat
+//                                      (+ .tmb companions); .btx KTX1/ASTC uploaded
+//                                      directly to GPU without .txd conversion.
 
 #include <vector>
 #include <stddef.h>

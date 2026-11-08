@@ -27,6 +27,10 @@
 #include "ResidentObjectCache.h"
 #include "BackgroundAssetQueue.h"
 #include "SavehDiag.h"
+#ifdef ANDROID
+#include "BpcPipeline.h"
+#include "Timer.h"
+#endif
 
 // the container conversion, shared with brconv/brmod, so what the game does
 // here is byte for byte what the offline converter would have produced
@@ -65,13 +69,23 @@
 struct CustomSource
 {
 	uint64 mtime;
-	char loose[256];	// path to a loose file, its containing IMG, or common.zip
+	char loose[256];	// path to a loose file, its containing IMG, common.zip, or .bpc
 	char fname[256];	// diagnostic name, including the archive entry if applicable
 	uint64 imgOffset;	// byte offset of a validated IMG/DIR sector slice
 	uint32 imgBytes;
+	uint32 bpcAddr;		// (archId << 24) | entryIdx on Android .bpc; 0xFFFFFFFF otherwise
 	int zipEntry;	// only entries from custom/common.zip; -1 for loose files and IMG
 	bool inImg;
 };
+
+#ifdef ANDROID
+static std::vector<std::unique_ptr<CustomZip> > customBpcArchives;
+static std::map<std::string, CustomSource> customTmbBtx;
+static std::vector<CustomSource> customBpcClsEntries;
+static std::vector<CustomSource> customBpcColEntries;
+static bpcpipeline::BpcFreezeMonitor s_bpcFreezeMonitor(2500ull, 12000ull);
+static uint32 s_bpcLastPumpFrame = 0xFFFFFFFFu;
+#endif
 
 // Only common.zip supplies whitelisted map/actor/weapon IDE text, water,
 // car colours and optional lighting; model geometry, TXDs and collisions
@@ -241,6 +255,7 @@ MakeSource(uint64 mtime, const char *path, const char *fname)
 	src.mtime = mtime;
 	src.imgOffset = 0;
 	src.imgBytes = 0;
+	src.bpcAddr = 0xFFFFFFFFu;
 	src.zipEntry = -1;
 	src.inImg = false;
 	src.loose[0] = '\0';
@@ -465,6 +480,396 @@ ScanCommonZip(void)
 	}
 }
 
+#ifdef ANDROID
+static std::string
+ResolveExistingCasePath(const std::string &candidate)
+{
+	if(candidate.empty())
+		return std::string();
+	struct stat st;
+	if(stat(candidate.c_str(), &st) == 0 && S_ISREG(st.st_mode))
+		return candidate;
+
+	std::string cur;
+	size_t pos = 0;
+	if(candidate[0] == '/'){
+		cur = "/";
+		pos = 1;
+	}
+	while(pos <= candidate.size()){
+		size_t slash = candidate.find('/', pos);
+		bool isLast = (slash == std::string::npos);
+		std::string seg = isLast ? candidate.substr(pos) : candidate.substr(pos, slash - pos);
+		if(seg.empty()){
+			if(isLast) break;
+			pos = slash + 1;
+			continue;
+		}
+		std::string direct = (cur.empty() || cur == "/") ? (cur + seg) : (cur + "/" + seg);
+		if(stat(direct.c_str(), &st) == 0){
+			cur = direct;
+		}else{
+			std::vector<std::string> files, dirs;
+			const char *parentDir = cur.empty() ? "." : cur.c_str();
+			if(!ListDirectory(parentDir, files, dirs))
+				return std::string();
+			std::string want = ToLower(seg);
+			std::string matched;
+			const std::vector<std::string> &pool = isLast ? files : dirs;
+			for(size_t i = 0; i < pool.size(); i++){
+				size_t p = pool[i].find_last_of('/');
+				std::string base = (p == std::string::npos) ? pool[i] : pool[i].substr(p + 1);
+				if(ToLower(base) == want){
+					matched = pool[i];
+					break;
+				}
+			}
+			if(matched.empty() && isLast){
+				for(size_t i = 0; i < dirs.size(); i++){
+					size_t p = dirs[i].find_last_of('/');
+					std::string base = (p == std::string::npos) ? dirs[i] : dirs[i].substr(p + 1);
+					if(ToLower(base) == want)
+						return std::string();
+				}
+			}
+			if(matched.empty())
+				return std::string();
+			cur = matched;
+		}
+		if(isLast)
+			break;
+		pos = slash + 1;
+	}
+	if(stat(cur.c_str(), &st) == 0 && S_ISREG(st.st_mode))
+		return cur;
+	return std::string();
+}
+
+static std::string
+ResolveFirstCandidatePath(const std::vector<std::string> &candidates)
+{
+	for(size_t i = 0; i < candidates.size(); i++){
+		std::string hit = ResolveExistingCasePath(candidates[i]);
+		if(!hit.empty())
+			return hit;
+	}
+	return std::string();
+}
+
+static bool
+MountBpcArchive(const std::string &path, bool allowXor, uint8 &outArchId)
+{
+	if(path.empty() || path.size() >= sizeof(CustomSource::loose))
+		return false;
+	if(customBpcArchives.size() > bpcpipeline::BPC_MAX_ARCHIVES){
+		CUSTOM_LOG("bpc mount %s: archive slot limit (%u) reached\n",
+			path.c_str(), (unsigned)bpcpipeline::BPC_MAX_ARCHIVES);
+		return false;
+	}
+	std::unique_ptr<CustomZip> zip(new CustomZip);
+	if(!zip->Open(path.c_str(), allowXor))
+		return false;
+	outArchId = (uint8)customBpcArchives.size();
+	customBpcArchives.push_back(std::move(zip));
+	return true;
+}
+
+static void
+IndexBpcModelEntry(std::map<std::string, CustomSource> &target, const std::string &stem, const CustomSource &src)
+{
+	if(stem.empty())
+		return;
+	AddIndex(target, stem, src);
+	if(stem.size() > 20)
+		AddIndex(target, stem.substr(0, 20), src);
+}
+
+static void
+IndexBpcBtxEntry(std::map<std::string, CustomSource> &target, const std::string &stem, const CustomSource &src, bool overwrite)
+{
+	if(stem.empty())
+		return;
+	if(overwrite || target.find(stem) == target.end())
+		target[stem] = src;
+	if(stem.size() > 31){
+		std::string rwShort = stem.substr(0, 31);
+		if(overwrite || target.find(rwShort) == target.end())
+			target[rwShort] = src;
+	}
+}
+
+struct BpcIndexCounts {
+	unsigned mods, dffs, btxs, txds, clss, cols, anims;
+	BpcIndexCounts() : mods(0), dffs(0), btxs(0), txds(0), clss(0), cols(0), anims(0) {}
+};
+
+static void
+IndexBpcArchiveAssets(uint8 archId, const std::string &archPath, uint64 mtime,
+                      bool isThumbnailArchive, BpcIndexCounts &counts)
+{
+	const CustomZip *zip = customBpcArchives[archId].get();
+	if(!zip)
+		return;
+	const int num = zip->GetNumEntries();
+	for(int n = 0; n < num && (uint32)n <= 0x00FFFFFFu; n++){
+		const CustomZipEntry *ent = zip->GetEntry(n);
+		if(!ent || ent->name[0] == '\0' ||
+		   strlen(ent->name) >= CUSTOMZIP_MAX_NAME - 1 ||
+		   ent->uncompressedSize == 0 || ent->uncompressedSize > CUSTOM_MAX_ENTRY ||
+		   ent->compressedSize > CUSTOM_MAX_ENTRY + 1024 * 1024 ||
+		   (ent->method != 0 && ent->method != 8))
+			continue;
+
+		std::string normPath = commoncatalog::Path(ent->name);
+		std::string ext = Extension(ent->name);
+		std::string stem = ToLower(Stem(ent->name));
+
+		CustomSource src = MakeSource(mtime, archPath.c_str(), ent->name);
+		src.bpcAddr = bpcpipeline::MakeBpcAddr(archId, (uint32)n);
+		snprintf(src.fname, sizeof(src.fname), "%s:%s", archPath.c_str(), ent->name);
+
+		if(isThumbnailArchive){
+			if(ext == "btx"){
+				IndexBpcBtxEntry(customTmbBtx, stem, src, true);
+				counts.btxs++;
+			}
+			continue;
+		}
+
+		if(!normPath.empty() && normPath == "data/lods.info" && ent->uncompressedSize <= 1024 * 1024){
+			commonZipDataFiles["data/lods.info"] = src;
+			continue;
+		}
+		if(!normPath.empty() && (normPath == "models/generic/vehicle.txd" || normPath == "models/vehicle.txd")){
+			commonZipDataFiles[normPath] = src;
+		}
+
+		if(ext == "mod"){
+			IndexBpcModelEntry(customMods, stem, src);
+			counts.mods++;
+		}else if(ext == "dff"){
+			IndexBpcModelEntry(customDff, stem, src);
+			counts.dffs++;
+		}else if(ext == "btx"){
+			IndexBpcBtxEntry(customBtx, stem, src, true);
+			counts.btxs++;
+		}else if(ext == "txd"){
+			AddIndex(customTxdFiles, stem, src);
+			counts.txds++;
+		}else if(ext == "cls"){
+			customBpcClsEntries.push_back(src);
+			counts.clss++;
+		}else if(ext == "col"){
+			customBpcColEntries.push_back(src);
+			counts.cols++;
+		}else if(ext == "ani" || ext == "ifp"){
+			AddIndex(customAnims, stem, src);
+			counts.anims++;
+		}
+	}
+}
+
+static bool
+ScanAndroidBpcSystem(void)
+{
+	std::vector<std::string> commonCands;
+	commonCands.push_back(customFolderPath + "/zip/common.bpc");
+	commonCands.push_back(customFolderPath + "/common.bpc");
+	std::string commonPath = ResolveFirstCandidatePath(commonCands);
+
+	uint8 commonArchId = 0xFFu;
+	BpcIndexCounts totalCounts;
+	if(!commonPath.empty() && MountBpcArchive(commonPath, true, commonArchId)){
+		const CustomZip *commonZip = customBpcArchives[commonArchId].get();
+		const uint64 mtime = FileTime(commonPath.c_str());
+		for(int pass = 0; pass < 2; pass++){
+			for(int n = 0; n < commonZip->GetNumEntries() && (uint32)n <= 0x00FFFFFFu; n++){
+				const CustomZipEntry *ent = commonZip->GetEntry(n);
+				if(!ent || ent->name[0] == '\0' ||
+				   strlen(ent->name) >= CUSTOMZIP_MAX_NAME - 1 ||
+				   ent->uncompressedSize == 0 || ent->uncompressedSize > CUSTOM_MAX_ENTRY ||
+				   ent->compressedSize > CUSTOM_MAX_ENTRY + 1024 * 1024 ||
+				   (ent->method != 0 && ent->method != 8))
+					continue;
+				std::string key = commoncatalog::Path(ent->name);
+				if(key.empty())
+					continue;
+				if((key == "data/water.dat" && ent->uncompressedSize > 1024 * 1024) ||
+				   (key == "data/lods.info" && ent->uncompressedSize > 1024 * 1024) ||
+				   (key == "data/texdb.dat" && ent->uncompressedSize > 1024 * 1024) ||
+				   (key == "data/carcols.dat" && ent->uncompressedSize > 64 * 1024))
+					continue;
+
+				CustomSource src = MakeSource(mtime, commonPath.c_str(), ent->name);
+				src.bpcAddr = bpcpipeline::MakeBpcAddr(commonArchId, (uint32)n);
+				snprintf(src.fname, sizeof(src.fname), "%s:%s", commonPath.c_str(), ent->name);
+
+				if(pass == 0 && (key == "data/config.dat" || key == "data/texdb.dat" ||
+				                 key == "data/timecyc.json" || key == "data/water.dat" ||
+				                 key == "data/carcols.dat" || key == "data/lods.info" ||
+				                 key == "models/generic/vehicle.txd" || key == "models/vehicle.txd")){
+					commonZipDataFiles[key] = src;
+					continue;
+				}
+				if(pass == 0 && (key == "data/peds.ide" || key == "data/vehicles.ide" ||
+				                 key == "data/weapons.ide")){
+					commonZipIdeFiles[key] = src;
+					continue;
+				}
+				if(pass == 0 ? key.compare(0, 10, "data/maps/") != 0 :
+				               key.compare(0, 5, "maps/") != 0)
+					continue;
+				if(pass == 1)
+					key = "data/" + key;
+				if(key.size() >= sizeof(CustomSource::fname))
+					continue;
+				const std::string ext = Extension(key);
+				if(ext == "ide")
+					commonZipIdeFiles.insert(std::make_pair(key, src));
+				else if(ext == "ipl")
+					commonZipIplFiles.insert(std::make_pair(key, src));
+			}
+		}
+		IndexBpcArchiveAssets(commonArchId, commonPath, mtime, false, totalCounts);
+
+		unsigned overridden = 0;
+		for(std::map<std::string, CustomSource>::const_iterator it = commonZipIdeFiles.begin();
+		    it != commonZipIdeFiles.end(); ++it){
+			std::map<std::string, CustomSource>::iterator loose = customIdeFiles.find(it->first);
+			if(loose != customIdeFiles.end()){
+				looseIdeFallbacks.insert(*loose);
+				overridden++;
+			}
+			customIdeFiles[it->first] = it->second;
+		}
+		for(std::map<std::string, CustomSource>::const_iterator it = commonZipIplFiles.begin();
+		    it != commonZipIplFiles.end(); ++it){
+			std::map<std::string, CustomSource>::iterator loose = customIplFiles.find(it->first);
+			if(loose != customIplFiles.end()){
+				looseIplFallbacks.insert(*loose);
+				overridden++;
+			}
+			customIplFiles[it->first] = it->second;
+		}
+		CUSTOM_LOG("bpc common: mounted %s (xor=%d, %d entries, %u IDE / %u IPL, %u loose overridden)\n",
+			commonPath.c_str(), commonZip->IsXorEncrypted() ? 1 : 0,
+			commonZip->GetNumEntries(), (unsigned)commonZipIdeFiles.size(),
+			(unsigned)commonZipIplFiles.size(), overridden);
+	}else{
+		// Allow fallback to common.zip if common.bpc is absent.
+		ScanCommonZip();
+	}
+
+	// Read data/config.dat (from common.bpc/common.zip or custom/data/config.dat fallback)
+	std::vector<uint8> configBytes;
+	std::map<std::string, CustomSource>::const_iterator cfgIt = commonZipDataFiles.find("data/config.dat");
+	if(cfgIt != commonZipDataFiles.end())
+		ReadSource(cfgIt->second, configBytes);
+	if(configBytes.empty()){
+		std::vector<std::string> cfgCands;
+		cfgCands.push_back(customFolderPath + "/zip/data/config.dat");
+		cfgCands.push_back(customFolderPath + "/data/config.dat");
+		std::string cfgPath = ResolveFirstCandidatePath(cfgCands);
+		if(!cfgPath.empty()){
+			CustomSource cfgSrc = MakeSource(FileTime(cfgPath.c_str()), cfgPath.c_str(), "data/config.dat");
+			ReadSource(cfgSrc, configBytes);
+		}
+	}
+
+	std::vector<std::string> cdImages;
+	if(!configBytes.empty()){
+		commonZipConfig = commoncatalog::Parse(configBytes.data(), configBytes.size());
+		cdImages = bpcpipeline::ParseConfigCdImages((const char*)configBytes.data(), configBytes.size());
+	}
+
+	// Mount strictly the CDIMAGE mesh/*.bpc archives listed in data/config.dat
+	unsigned mountedMesh = 0, missingMesh = 0;
+	for(size_t i = 0; i < cdImages.size(); i++){
+		std::vector<std::string> cands = bpcpipeline::BuildCdImageCandidates(customFolderPath, cdImages[i]);
+		std::string bpcPath = ResolveFirstCandidatePath(cands);
+		uint8 archId = 0xFFu;
+		if(bpcPath.empty() || !MountBpcArchive(bpcPath, true, archId)){
+			missingMesh++;
+			CUSTOM_LOG("bpc CDIMAGE %s: archive not found or unreadable\n", cdImages[i].c_str());
+			continue;
+		}
+		BpcIndexCounts c;
+		IndexBpcArchiveAssets(archId, bpcPath, (uint64)(1000u + mountedMesh), false, c);
+		totalCounts.mods += c.mods;
+		totalCounts.dffs += c.dffs;
+		totalCounts.btxs += c.btxs;
+		totalCounts.txds += c.txds;
+		totalCounts.clss += c.clss;
+		totalCounts.cols += c.cols;
+		totalCounts.anims += c.anims;
+		mountedMesh++;
+		CUSTOM_LOG("bpc CDIMAGE [%u] %s: %d entries (%u .mod, %u .cls, %u .ani, %u .btx)\n",
+			(unsigned)archId, bpcPath.c_str(), customBpcArchives[archId]->GetNumEntries(),
+			c.mods, c.clss, c.anims, c.btxs);
+	}
+
+	// Read data/texdb.dat (from common.bpc or custom/data/texdb.dat fallback)
+	std::vector<uint8> texDbBytes;
+	std::map<std::string, CustomSource>::const_iterator texIt = commonZipDataFiles.find("data/texdb.dat");
+	if(texIt != commonZipDataFiles.end())
+		ReadSource(texIt->second, texDbBytes);
+	if(texDbBytes.empty()){
+		std::vector<std::string> texCands;
+		texCands.push_back(customFolderPath + "/zip/data/texdb.dat");
+		texCands.push_back(customFolderPath + "/data/texdb.dat");
+		std::string texPath = ResolveFirstCandidatePath(texCands);
+		if(!texPath.empty()){
+			CustomSource texSrc = MakeSource(FileTime(texPath.c_str()), texPath.c_str(), "data/texdb.dat");
+			ReadSource(texSrc, texDbBytes);
+		}
+	}
+
+	std::vector<std::string> texDbs;
+	if(!texDbBytes.empty())
+		texDbs = bpcpipeline::ParseTexDbManifest((const char*)texDbBytes.data(), texDbBytes.size());
+
+	// Mount strictly the TEXDB <base>.astc.bpc (+ companion .tmb) archives from data/texdb.dat
+	unsigned mountedTexDb = 0, missingTexDb = 0, mountedTmb = 0, presentBinaryTmb = 0;
+	for(size_t i = 0; i < texDbs.size(); i++){
+		std::vector<std::string> bpcCands = bpcpipeline::BuildTexDbBpcCandidates(customFolderPath, texDbs[i]);
+		std::string bpcPath = ResolveFirstCandidatePath(bpcCands);
+		uint8 archId = 0xFFu;
+		if(bpcPath.empty() || !MountBpcArchive(bpcPath, true, archId)){
+			missingTexDb++;
+			CUSTOM_LOG("bpc TEXDB %s: .astc.bpc archive not found or unreadable\n", texDbs[i].c_str());
+		}else{
+			BpcIndexCounts c;
+			IndexBpcArchiveAssets(archId, bpcPath, (uint64)(2000u + mountedTexDb), false, c);
+			totalCounts.btxs += c.btxs;
+			totalCounts.txds += c.txds;
+			mountedTexDb++;
+			CUSTOM_LOG("bpc TEXDB [%u] %s: %d entries (%u .btx)\n",
+				(unsigned)archId, bpcPath.c_str(), customBpcArchives[archId]->GetNumEntries(), c.btxs);
+		}
+
+		std::vector<std::string> tmbCands = bpcpipeline::BuildTexDbTmbCandidates(customFolderPath, texDbs[i]);
+		std::string tmbPath = ResolveFirstCandidatePath(tmbCands);
+		if(!tmbPath.empty()){
+			uint8 tmbArchId = 0xFFu;
+			if(MountBpcArchive(tmbPath, true, tmbArchId)){
+				BpcIndexCounts tc;
+				IndexBpcArchiveAssets(tmbArchId, tmbPath, (uint64)(3000u + mountedTmb), true, tc);
+				mountedTmb++;
+			}else{
+				presentBinaryTmb++;
+			}
+		}
+	}
+
+	CUSTOM_LOG("bpc summary: %u archives open, CDIMAGE %u/%u, TEXDB %u/%u (.tmb zip=%u bin=%u), indexed %u .mod, %u .dff, %u .btx, %u .cls, %u .ani\n",
+		(unsigned)customBpcArchives.size(),
+		mountedMesh, (unsigned)cdImages.size(),
+		mountedTexDb, (unsigned)texDbs.size(), mountedTmb, presentBinaryTmb,
+		totalCounts.mods, totalCounts.dffs, totalCounts.btxs, totalCounts.clss, totalCounts.anims);
+	return !customBpcArchives.empty();
+}
+#endif // ANDROID
+
 static void
 EnsureInitialised(void)
 {
@@ -480,10 +885,20 @@ EnsureInitialised(void)
 	const std::string maps = data.empty() ? std::string() : Subfolder(data, "maps");
 	if(!anim.empty()) ScanAssetFolder(anim, "anim", 0, st);
 	if(!maps.empty()) ScanAssetFolder(maps, "data/maps", 0, st);
+#ifdef ANDROID
+	ScanAndroidBpcSystem();
+	customActive = !customMods.empty() || !customDff.empty() || !customBtx.empty() ||
+	               !customTxdFiles.empty() || !customBpcClsEntries.empty() ||
+	               !customBpcColEntries.empty() || !customAnims.empty() ||
+	               !customIdeFiles.empty() || !customIplFiles.empty() ||
+	               !commonZipDataFiles.empty();
+	CUSTOM_LOG("==== custom folder (Android BPC + IMG): %s ====\n", customFolderPath.c_str());
+#else
 	ScanCommonZip();
 	customActive = !customAnims.empty() || !customIdeFiles.empty() ||
 	               !customIplFiles.empty() || !commonZipDataFiles.empty();
 	CUSTOM_LOG("==== custom folder: %s (IMG/DIR; loose anim/maps; common.zip maps + peds/vehicles/weapons IDE + config/timecyc/water/carcols only; other ZIPs, collision/, game-root img/ and common/ disabled)\n", customFolderPath.c_str());
+#endif
 	CUSTOM_LOG("scan: %d loose .ifp (%u names), %d loose IDE / %d loose IPL; %u total IDE / %u total IPL path(s); IMG collisions indexed at mount\n",
 		st.anim, (unsigned)customAnims.size(), st.ide, st.ipl,
 		(unsigned)customIdeFiles.size(), (unsigned)customIplFiles.size());
@@ -496,12 +911,28 @@ EnsureInitialised(void)
 // ---------------------------------------------------------------------------
 
 // Read only indexed loose files, bounded slices of validated IMG/DIR pairs,
-// or whitelisted entries in custom/common.zip. A collision IMG can be larger
-// than 2 GiB, so seek by a checked 64-bit offset rather than loading the image.
+// whitelisted entries in custom/common.zip, or mounted .bpc entries on Android.
 static bool
 ReadSource(const CustomSource &src, std::vector<uint8> &out)
 {
 	out.clear();
+#ifdef ANDROID
+	if(bpcpipeline::IsValidBpcAddr(src.bpcAddr)){
+		uint8 archId = bpcpipeline::BpcAddrArchive(src.bpcAddr);
+		uint32 entryIdx = bpcpipeline::BpcAddrEntry(src.bpcAddr);
+		if(archId >= customBpcArchives.size() || !customBpcArchives[archId] || !customBpcArchives[archId]->IsOpened())
+			return false;
+		const CustomZipEntry *ent = customBpcArchives[archId]->GetEntry((int)entryIdx);
+		if(ent == nil || ent->uncompressedSize == 0 || ent->uncompressedSize > CUSTOM_MAX_ENTRY)
+			return false;
+		out.resize((size_t)ent->uncompressedSize);
+		if(!customBpcArchives[archId]->Extract((int)entryIdx, out.data(), (uint32)out.size())){
+			out.clear();
+			return false;
+		}
+		return true;
+	}
+#endif
 	if(src.zipEntry >= 0) {
 		if(!customCommonZip) return false;
 		const CustomZipEntry *ent = customCommonZip->GetEntry(src.zipEntry);
@@ -614,7 +1045,11 @@ IndexNativeImageDirectories(void)
 	// Stock DFF metadata remains available to scripts when the VC map IDE is
 	// disabled. Reserve stock TXD names
 	// only when additional IMGs actually need that headroom.
+#ifdef ANDROID
+	bool reserveTxds = !customImageSlots.empty() || !customBpcArchives.empty();
+#else
 	bool reserveTxds = !customImageSlots.empty();
+#endif
 	unsigned reserved = 0, full = 0;
 	for(int n = CdStreamGetNumImages()-1; n >= 0; n--) {
 		if(customImageSlots.count(n)) continue;
@@ -660,8 +1095,16 @@ CCustomModels::ResetImageMounts(void)
 	customColBlocks.clear();
 	customBrColBlocks.clear();
 	customLegacyClsBlocks.clear();
+#ifdef ANDROID
+	customActive = !customMods.empty() || !customDff.empty() || !customBtx.empty() ||
+	               !customTxdFiles.empty() || !customBpcClsEntries.empty() ||
+	               !customBpcColEntries.empty() || !customAnims.empty() ||
+	               !customIdeFiles.empty() || !customIplFiles.empty() ||
+	               !commonZipDataFiles.empty();
+#else
 	customActive = !customAnims.empty() || !customIdeFiles.empty() ||
 	               !customIplFiles.empty() || !commonZipDataFiles.empty();
+#endif
 }
 
 bool
@@ -681,6 +1124,15 @@ CCustomModels::PairedImageTxd(const char *modelName)
 bool
 CCustomModels::HasImageTxd(const char *txdName)
 {
+#ifdef ANDROID
+	if(txdName && txdName[0]){
+		EnsureInitialised();
+		std::string key = ToLower(txdName);
+		if(customBtx.find(key) != customBtx.end() ||
+		   customTxdFiles.find(key) != customTxdFiles.end())
+			return true;
+	}
+#endif
 	return IsAutoMountedImage(imageModelTextures.FindAnyTxdImage(txdName));
 }
 
@@ -790,7 +1242,30 @@ CCustomModels::MountImages(void)
 	}
 	CUSTOM_LOG("custom/img/: %u IMG(s) found, %u mounted, %u skipped\n",
 		(unsigned)pairs.size(), mounted, rejected);
-	IndexBrCollisionBlocks(); // CED2/legacy CLS now have their IMG sources
+#ifdef ANDROID
+	// Register .cls and .col entries from mounted .bpc archives alongside any IMG collisions.
+	for(size_t i = 0; i < customBpcClsEntries.size(); i++){
+		const CustomSource &src = customBpcClsEntries[i];
+		const char *colon = strrchr(src.fname, ':');
+		std::string entryName = colon ? (colon + 1) : src.fname;
+		std::string key = ToLower(Stem(entryName));
+		AddIndex(customCls, key, src);
+		customClsSources.push_back(src);
+		customClsHasBrBlocks.push_back(false);
+	}
+	for(size_t i = 0; i < customBpcColEntries.size(); i++){
+		const CustomSource &src = customBpcColEntries[i];
+		std::vector<uint8> file;
+		int indexed = 0;
+		if(ReadSource(src, file) && IndexColContainer(file, src, indexed)){
+			const char *colon = strrchr(src.fname, ':');
+			std::string entryName = colon ? (colon + 1) : src.fname;
+			std::string key = ToLower(Stem(entryName));
+			AddIndex(customColFiles, key, src);
+		}
+	}
+#endif
+	IndexBrCollisionBlocks(); // CED2/legacy CLS now have their IMG/.bpc sources
 	IndexNativeImageDirectories(); // before CCustomWorld::LoadIde and CStreaming::Init
 }
 
@@ -854,6 +1329,7 @@ HasBrBlocks(const CustomSource &src)
 	for(size_t i = 0; i < customClsSources.size(); i++){
 		const CustomSource &other = customClsSources[i];
 		bool same = strcmp(src.loose, other.loose) == 0 &&
+		            src.bpcAddr == other.bpcAddr &&
 		            src.inImg == other.inImg &&
 		            (!src.inImg || (src.imgOffset == other.imgOffset &&
 		                            src.imgBytes == other.imgBytes));
@@ -1211,6 +1687,15 @@ CallGuarded(bool (*fn)(void*), void *arg, DWORD *code)
 #define CUSTOM_SEH_GUARD 1
 #endif
 
+#ifdef ANDROID
+static void BeginBpcModelTexScope(const PreparedModel *model, int32 txdSlot);
+static void EndBpcModelTexScope(void);
+struct ScopedBpcModelTexLoad {
+	ScopedBpcModelTexLoad(const PreparedModel *model, int32 txdSlot) { BeginBpcModelTexScope(model, txdSlot); }
+	~ScopedBpcModelTexLoad(void) { EndBpcModelTexScope(); }
+};
+#endif
+
 static bool
 LoadModelIntoGame(const std::string &key, int32 modelId)
 {
@@ -1259,6 +1744,9 @@ LoadModelIntoGame(const std::string &key, int32 modelId)
 	}
 #else
 	{
+#ifdef ANDROID
+		ScopedBpcModelTexLoad texScope(model.get(), mi->GetTxdSlot());
+#endif
 		GuardedLoadCtx ctx; ctx.mi = mi; ctx.stream = stream; ctx.modelId = modelId; ctx.ok = false;
 		ok = RunModelLoaders(&ctx);
 	}
@@ -1360,6 +1848,13 @@ DecodedTextureSize(const brtex::Texture &tex)
 static std::string
 BtxCacheKey(const CustomSource &src)
 {
+#ifdef ANDROID
+	if(bpcpipeline::IsValidBpcAddr(src.bpcAddr)){
+		char buf[32];
+		snprintf(buf, sizeof(buf), "bpc:%08X", (unsigned)src.bpcAddr);
+		return std::string(buf);
+	}
+#endif
 	return std::string("loose:") + src.loose;
 }
 
@@ -1607,7 +2102,11 @@ struct CpuWorkResult
 	std::string error;
 	unsigned milliseconds;
 };
+#ifdef ANDROID
+static customcache::BackgroundAssetQueue<CpuWorkResult> customCpuWorker(128, 32, 3);
+#else
 static customcache::BackgroundAssetQueue<CpuWorkResult> customCpuWorker(16, 1);
+#endif
 static std::map<int32, std::set<std::string> > customJobInterests;
 // If a prepared asset is evicted before the rest of a TXD fits in the LRU,
 // don't keep decoding it forever. Fall back to the ordinary load of that TXD.
@@ -1626,6 +2125,432 @@ TrackCpuJob(int32 streamId, const std::string &job)
 	if(streamId >= 0)
 		customJobInterests[streamId].insert(job);
 }
+
+#ifdef ANDROID
+// ---------------------------------------------------------------------------
+// Android TexDB direct-GPU .btx (rfmt + KTX1/ASTC) streaming & live .tmb upgrade
+// ---------------------------------------------------------------------------
+
+struct PreparedRawBtx
+{
+	std::vector<uint8> bytes;
+	bpcpipeline::BtxKtxGpuInfo gpu;
+	std::shared_ptr<brtex::Texture> cpuFallback;
+	bool useDirectGl;
+};
+
+struct TexDbWorkResult
+{
+	std::shared_ptr<PreparedRawBtx> raw;
+	std::string error;
+	unsigned milliseconds;
+};
+
+struct PendingBtxUpgrade
+{
+	RwTexture *tex;
+	CustomSource fullSrc;
+	std::string cacheKey;
+	std::string name;
+};
+
+static customcache::DecodedAssetCache<PreparedRawBtx> customRawBtxCache(CUSTOM_TEXTURE_CACHE_BYTES);
+static customcache::BackgroundAssetQueue<TexDbWorkResult> customTexDbWorker(256, 64, 2);
+static std::set<std::string> customFailedRawBtx;
+static std::string customTransientRawBtxKey;
+static std::shared_ptr<const PreparedRawBtx> customTransientRawBtx;
+static std::vector<PendingBtxUpgrade> s_pendingBtxUpgrades;
+static size_t customTexDbUploads = 0, customTexDbUpgrades = 0;
+
+static std::string RawBtxJobKey(const std::string &cacheKey) { return "x:" + cacheKey; }
+
+static bool
+CanHardwareAcceptAstc(void)
+{
+#if defined(LIBRW) && defined(RW_GL3)
+	return rw::platform == rw::PLATFORM_GL3 && rw::gl3::gl3Caps.astcSupported;
+#else
+	return false;
+#endif
+}
+
+static size_t
+PreparedRawBtxBytes(const PreparedRawBtx &raw)
+{
+	size_t total = sizeof(raw) + raw.bytes.capacity() + raw.gpu.mips.capacity() * sizeof(bpcpipeline::BtxMipSlice);
+	if(raw.cpuFallback)
+		total += DecodedTextureSize(*raw.cpuFallback);
+	return total;
+}
+
+static bool
+HasPreparedRawBtx(const std::string &cacheKey)
+{
+	return customRawBtxCache.Contains(cacheKey) ||
+	       (customTransientRawBtx && customTransientRawBtxKey == cacheKey) ||
+	       customFailedRawBtx.find(cacheKey) != customFailedRawBtx.end();
+}
+
+static std::shared_ptr<PreparedRawBtx>
+PrepareRawBtxOnWorker(const CustomSource &src, const std::string &name, bool allowGpuAstc, std::string &err)
+{
+	std::shared_ptr<PreparedRawBtx> out = std::make_shared<PreparedRawBtx>();
+	out->useDirectGl = false;
+	if(!ReadSource(src, out->bytes)){
+		err = "cannot read .btx entry from archive";
+		return std::shared_ptr<PreparedRawBtx>();
+	}
+	if(bpcpipeline::ParseBtxKtxGpu(out->bytes.data(), out->bytes.size(), out->gpu, &err) &&
+	   (!out->gpu.isAstc || allowGpuAstc)){
+		out->useDirectGl = true;
+		return out;
+	}
+	// Hardware lacks GL_KHR_texture_compression_astc_ldr or exotic uncompressed KTX type:
+	// fall back to CPU decode on the worker thread (still without creating any .txd).
+	std::shared_ptr<brtex::Texture> cpu = std::make_shared<brtex::Texture>();
+	cpu->name = name;
+	if(!brtex::parseBtx(out->bytes.data(), out->bytes.size(), *cpu, &err))
+		return std::shared_ptr<PreparedRawBtx>();
+	std::vector<uint8>().swap(out->bytes);
+	out->cpuFallback = cpu;
+	out->useDirectGl = false;
+	return out;
+}
+
+static bool
+QueueRawBtxPreparation(const std::string &cacheKey, const std::string &name,
+                       const CustomSource &source, int32 streamId, bool priority)
+{
+	if(HasPreparedRawBtx(cacheKey))
+		return true;
+	const CustomSource copy = source;
+	const bool allowAstc = CanHardwareAcceptAstc();
+	std::string jobKey = RawBtxJobKey(cacheKey);
+	bool queued = customTexDbWorker.Schedule(jobKey, [copy, name, allowAstc]{
+		std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
+		std::shared_ptr<TexDbWorkResult> res = std::make_shared<TexDbWorkResult>();
+		res->raw = PrepareRawBtxOnWorker(copy, name, allowAstc, res->error);
+		res->milliseconds = (unsigned)std::chrono::duration_cast<std::chrono::milliseconds>(
+			std::chrono::steady_clock::now() - start).count();
+		return res;
+	}, priority);
+	if(queued)
+		TrackCpuJob(streamId, jobKey);
+	return queued;
+}
+
+static std::shared_ptr<const PreparedRawBtx>
+GetOrLoadPreparedRawBtx(const CustomSource &src, const std::string &name)
+{
+	std::string key = BtxCacheKey(src);
+	std::shared_ptr<const PreparedRawBtx> cached = customRawBtxCache.Find(key);
+	if(cached)
+		return cached;
+	if(customTransientRawBtx && customTransientRawBtxKey == key){
+		std::shared_ptr<const PreparedRawBtx> ready = customTransientRawBtx;
+		customTransientRawBtx.reset();
+		customTransientRawBtxKey.clear();
+		return ready;
+	}
+	if(customFailedRawBtx.find(key) != customFailedRawBtx.end())
+		return std::shared_ptr<const PreparedRawBtx>();
+
+	std::string err;
+	std::shared_ptr<PreparedRawBtx> raw = PrepareRawBtxOnWorker(src, name, CanHardwareAcceptAstc(), err);
+	if(!raw){
+		customFailedRawBtx.insert(key);
+		CUSTOM_LOG("btx %s: %s\n", name.c_str(), err.c_str());
+		return std::shared_ptr<const PreparedRawBtx>();
+	}
+	customRawBtxCache.Insert(key, raw, PreparedRawBtxBytes(*raw));
+	return raw;
+}
+
+static bool
+UploadPreparedRawBtxToGlRaster(RwRaster *ras, const PreparedRawBtx &raw)
+{
+#if defined(LIBRW) && defined(RW_GL3)
+	if(ras == nil || !raw.useDirectGl || raw.gpu.mips.empty() || rw::platform != rw::PLATFORM_GL3)
+		return false;
+	const size_t numLevels = raw.gpu.mips.size() > 16u ? 16u : raw.gpu.mips.size();
+	rw::gl3::KtxMipUploadSlice slices[16];
+	for(size_t i = 0; i < numLevels; i++){
+		const bpcpipeline::BtxMipSlice &m = raw.gpu.mips[i];
+		if((size_t)m.dataOffset + (size_t)m.byteSize > raw.bytes.size())
+			return false;
+		slices[i].width = (int32)m.width;
+		slices[i].height = (int32)m.height;
+		slices[i].byteSize = m.byteSize;
+		slices[i].unpackAlignment = (int32)m.unpackAlignment;
+		slices[i].data = raw.bytes.data() + m.dataOffset;
+	}
+	return rw::gl3::uploadKtxDirect(
+		ras,
+		(int32)raw.gpu.glInternalFormat,
+		(int32)raw.gpu.glFormat,
+		(int32)raw.gpu.glType,
+		(int32)raw.gpu.bpp,
+		raw.gpu.isCompressed ? 1 : 0,
+		raw.gpu.hasAlpha ? 1 : 0,
+		(int32)numLevels,
+		slices) != 0;
+#else
+	(void)ras;
+	(void)raw;
+	return false;
+#endif
+}
+
+static RwTexture *
+BuildDirectGlTextureFromRawBtx(const PreparedRawBtx &raw, const char *name)
+{
+	if(raw.cpuFallback)
+		return BuildTextureGuarded(*raw.cpuFallback, name);
+#if defined(LIBRW) && defined(RW_GL3)
+	if(!raw.useDirectGl || raw.gpu.mips.empty() || rw::platform != rw::PLATFORM_GL3)
+		return nil;
+
+	uint32 fmt = rw::Raster::TEXTURE | rw::Raster::DONTALLOCATE;
+	if(raw.gpu.mips.size() > 1)
+		fmt |= rw::Raster::MIPMAP;
+	if(raw.gpu.isCompressed)
+		fmt |= (raw.gpu.hasAlpha ? rw::Raster::C8888 : rw::Raster::C888);
+	else if(raw.gpu.glType == bpcpipeline::BTX_GL_UNSIGNED_BYTE)
+		fmt |= (raw.gpu.bpp == 3 ? rw::Raster::C888 : (raw.gpu.hasAlpha ? rw::Raster::C8888 : rw::Raster::C888));
+	else if(raw.gpu.glType == bpcpipeline::BTX_GL_UNSIGNED_SHORT_4_4_4_4)
+		fmt |= rw::Raster::C4444;
+	else if(raw.gpu.glType == bpcpipeline::BTX_GL_UNSIGNED_SHORT_5_6_5)
+		fmt |= rw::Raster::C565;
+	else if(raw.gpu.glType == bpcpipeline::BTX_GL_UNSIGNED_SHORT_5_5_5_1)
+		fmt |= rw::Raster::C555;
+	else
+		fmt |= rw::Raster::C8888;
+
+	int32 depth = raw.gpu.isCompressed ? 16 : (int32)(raw.gpu.bpp * 8);
+	rw::Raster *ras = rw::Raster::create((int32)raw.gpu.width, (int32)raw.gpu.height, depth, fmt, rw::PLATFORM_GL3);
+	if(ras == nil)
+		return nil;
+	if(!UploadPreparedRawBtxToGlRaster(ras, raw)){
+		RwRasterDestroy(ras);
+		return nil;
+	}
+	RwTexture *texture = RwTextureCreate(ras);
+	if(texture == nil){
+		RwRasterDestroy(ras);
+		return nil;
+	}
+	strncpy(texture->name, name, 31);
+	texture->name[31] = '\0';
+	texture->mask[0] = '\0';
+	RwTextureSetFilterMode(texture, raw.gpu.mips.size() > 1 ? rwFILTERLINEARMIPLINEAR : rwFILTERLINEAR);
+	RwTextureSetAddressing(texture, rwTEXTUREADDRESSWRAP);
+	customTexDbUploads++;
+	return texture;
+#else
+	(void)name;
+	return nil;
+#endif
+}
+
+static void
+PumpPendingBtxUpgrades(void)
+{
+	if(s_pendingBtxUpgrades.empty())
+		return;
+	for(size_t i = 0; i < s_pendingBtxUpgrades.size(); ){
+		PendingBtxUpgrade &u = s_pendingBtxUpgrades[i];
+		// If the texture was already removed from its dictionary and all materials,
+		// only our pending-upgrade reference remains: drop it without GPU work.
+		if(u.tex == nil || u.tex->refCount <= 1 || u.tex->raster == nil){
+			if(u.tex)
+				RwTextureDestroy(u.tex);
+			s_pendingBtxUpgrades.erase(s_pendingBtxUpgrades.begin() + (ptrdiff_t)i);
+			continue;
+		}
+		if(customFailedRawBtx.find(u.cacheKey) != customFailedRawBtx.end()){
+			RwTextureDestroy(u.tex);
+			s_pendingBtxUpgrades.erase(s_pendingBtxUpgrades.begin() + (ptrdiff_t)i);
+			continue;
+		}
+		std::shared_ptr<const PreparedRawBtx> full = customRawBtxCache.Find(u.cacheKey);
+		if(!full && customTransientRawBtx && customTransientRawBtxKey == u.cacheKey){
+			full = customTransientRawBtx;
+			customTransientRawBtx.reset();
+			customTransientRawBtxKey.clear();
+		}
+		if(!full){
+			QueueRawBtxPreparation(u.cacheKey, u.name, u.fullSrc, -1, false);
+			i++;
+			continue;
+		}
+		if(!s_bpcFreezeMonitor.HasFrameBudget())
+			break;
+
+		std::chrono::steady_clock::time_point t0 = std::chrono::steady_clock::now();
+		if(full->useDirectGl && UploadPreparedRawBtxToGlRaster(u.tex->raster, *full)){
+			RwTextureSetFilterMode(u.tex, full->gpu.mips.size() > 1 ? rwFILTERLINEARMIPLINEAR : rwFILTERLINEAR);
+			customTexDbUpgrades++;
+		}
+		uint64_t elapsedUs = (uint64_t)std::chrono::duration_cast<std::chrono::microseconds>(
+			std::chrono::steady_clock::now() - t0).count();
+		if(s_bpcFreezeMonitor.RecordMainThreadWork(u.name.c_str(), elapsedUs))
+			CUSTOM_LOG("[FreezeMonitor] live .btx upgrade spike: %s took %llu us\n",
+				u.name.c_str(), (unsigned long long)elapsedUs);
+
+		RwTextureDestroy(u.tex);
+		s_pendingBtxUpgrades.erase(s_pendingBtxUpgrades.begin() + (ptrdiff_t)i);
+	}
+}
+
+static const PreparedModel *s_activeBpcModel = nil;
+static int32 s_activeBpcTxdSlot = -1;
+#ifdef LIBRW
+static rw::Texture *(*s_origBpcFindCB)(const char *name) = nil;
+#endif
+static int s_bpcTexScopeDepth = 0;
+
+#ifdef LIBRW
+static rw::Texture *
+BpcDirectTexFindCB(const char *name)
+{
+	if(s_origBpcFindCB){
+		rw::Texture *existing = s_origBpcFindCB(name);
+		if(existing)
+			return existing;
+	}
+	if(name == nil || name[0] == '\0')
+		return nil;
+
+	RwTexDictionary *dict = RwTexDictionaryGetCurrent();
+	if(dict == nil && s_activeBpcTxdSlot >= 0){
+		TxdDef *def = CTxdStore::GetSlot(s_activeBpcTxdSlot);
+		if(def){
+			if(def->texDict == nil)
+				CTxdStore::Create(s_activeBpcTxdSlot);
+			dict = def->texDict;
+		}
+	}
+	if(dict == nil)
+		return nil;
+
+	if(RwTexture *inDict = RwTexDictionaryFindNamedTexture(dict, name))
+		return inDict;
+	for(int cur = s_activeBpcTxdSlot >= 0 ? CTxdStore::GetParentTxdSlot(s_activeBpcTxdSlot) : -1, depth = 0;
+	    cur >= 0 && depth < 8;
+	    cur = CTxdStore::GetParentTxdSlot(cur), depth++){
+		TxdDef *pdef = CTxdStore::GetSlot(cur);
+		if(pdef && pdef->texDict){
+			if(RwTexture *inParent = RwTexDictionaryFindNamedTexture(pdef->texDict, name))
+				return inParent;
+		}
+	}
+
+	// 1. Check 4-layer pbrTerrain composite recipes extracted from the .mod
+	if(s_activeBpcModel){
+		for(size_t r = 0; r < s_activeBpcModel->stats.recipes.size(); r++){
+			const br::TerrainRecipe &recipe = s_activeBpcModel->stats.recipes[r];
+			if(ToLower(recipe.tex) == ToLower(name)){
+				std::string modelKey = s_activeBpcTxdSlot >= 0 && CTxdStore::GetTxdName(s_activeBpcTxdSlot)
+					? ToLower(CTxdStore::GetTxdName(s_activeBpcTxdSlot))
+					: ToLower(name);
+				std::shared_ptr<const brtex::Texture> baked = GetPreparedTexture(modelKey, name, &recipe);
+				if(baked){
+					RwTexture *built = BuildTextureGuarded(*baked, name);
+					if(built){
+						RwTexDictionaryAddTexture(dict, built);
+						if(s_activeBpcTxdSlot >= 0)
+							customLoadedTxds[s_activeBpcTxdSlot] = dict;
+						return built;
+					}
+				}
+				break;
+			}
+		}
+	}
+
+	// 2. Direct TexDB .btx lookup (full-res .astc.bpc, with optional .tmb preview + live upgrade)
+	const std::string key = ToLower(name);
+	const CustomSource *fullSrc = FindSource(customBtx, key);
+	const CustomSource *tmbSrc  = FindSource(customTmbBtx, key);
+	if(fullSrc == nil && tmbSrc == nil)
+		return nil;
+
+	RwTexture *built = nil;
+	if(fullSrc != nil){
+		std::string fullCacheKey = BtxCacheKey(*fullSrc);
+		if(HasPreparedRawBtx(fullCacheKey) || tmbSrc == nil){
+			std::shared_ptr<const PreparedRawBtx> raw = GetOrLoadPreparedRawBtx(*fullSrc, name);
+			if(raw)
+				built = BuildDirectGlTextureFromRawBtx(*raw, name);
+		}else{
+			// Full .btx is not in cache yet, while a tiny .tmb preview exists:
+			// upload .tmb immediately (<50 us) and schedule asynchronous live mip upgrade.
+			std::shared_ptr<const PreparedRawBtx> preview = GetOrLoadPreparedRawBtx(*tmbSrc, name);
+			if(preview){
+				built = BuildDirectGlTextureFromRawBtx(*preview, name);
+				if(built && preview->useDirectGl){
+					RwTextureAddRef(built);
+					PendingBtxUpgrade upg;
+					upg.tex = built;
+					upg.fullSrc = *fullSrc;
+					upg.cacheKey = fullCacheKey;
+					upg.name = name;
+					s_pendingBtxUpgrades.push_back(upg);
+					QueueRawBtxPreparation(fullCacheKey, name, *fullSrc, -1, true);
+				}
+			}
+			if(built == nil){
+				std::shared_ptr<const PreparedRawBtx> raw = GetOrLoadPreparedRawBtx(*fullSrc, name);
+				if(raw)
+					built = BuildDirectGlTextureFromRawBtx(*raw, name);
+			}
+		}
+	}else if(tmbSrc != nil){
+		std::shared_ptr<const PreparedRawBtx> preview = GetOrLoadPreparedRawBtx(*tmbSrc, name);
+		if(preview)
+			built = BuildDirectGlTextureFromRawBtx(*preview, name);
+	}
+
+	if(built){
+		RwTexDictionaryAddTexture(dict, built);
+		if(s_activeBpcTxdSlot >= 0)
+			customLoadedTxds[s_activeBpcTxdSlot] = dict;
+	}
+	return built;
+}
+#endif // LIBRW
+
+static void
+BeginBpcModelTexScope(const PreparedModel *model, int32 txdSlot)
+{
+	s_activeBpcModel = model;
+	s_activeBpcTxdSlot = txdSlot;
+#ifdef LIBRW
+	if(s_bpcTexScopeDepth++ == 0 && rw::Texture::findCB != BpcDirectTexFindCB){
+		s_origBpcFindCB = rw::Texture::findCB;
+		rw::Texture::findCB = BpcDirectTexFindCB;
+	}
+#endif
+}
+
+static void
+EndBpcModelTexScope(void)
+{
+#ifdef LIBRW
+	if(--s_bpcTexScopeDepth <= 0){
+		s_bpcTexScopeDepth = 0;
+		if(rw::Texture::findCB == BpcDirectTexFindCB)
+			rw::Texture::findCB = s_origBpcFindCB;
+		s_origBpcFindCB = nil;
+		s_activeBpcModel = nil;
+		s_activeBpcTxdSlot = -1;
+	}
+#else
+	s_activeBpcModel = nil;
+	s_activeBpcTxdSlot = -1;
+#endif
+}
+#endif // ANDROID
 
 static bool
 QueueModelPreparation(const std::string &key, int32 streamId, bool priority)
@@ -1702,6 +2627,13 @@ QueueTerrainPreparation(const std::string &cacheKey, const br::TerrainRecipe &re
 void
 CCustomModels::PumpBackgroundResults(void)
 {
+#ifdef ANDROID
+	uint32 curFrame = CTimer::GetFrameCounter();
+	if(curFrame != s_bpcLastPumpFrame){
+		s_bpcLastPumpFrame = curFrame;
+		s_bpcFreezeMonitor.BeginFrame();
+	}
+#endif
 	customcache::BackgroundAssetQueue<CpuWorkResult>::Completed completed;
 	while(customCpuWorker.Pop(completed)){
 		std::shared_ptr<CpuWorkResult> result = completed.value;
@@ -1714,6 +2646,32 @@ CCustomModels::PumpBackgroundResults(void)
 			if(model && model->readOk){
 				customDecodedModels.Insert(key, model, model->bytes.capacity() + sizeof(PreparedModel));
 				customWorkerModels++;
+#ifdef ANDROID
+				// Immediately fan out the model's .btx texture list onto the dedicated TexDB worker pool.
+				if(plan.usable){
+					for(size_t i = 0; i < model->textureNames.size(); i++){
+						const std::string &tname = model->textureNames[i];
+						const br::TerrainRecipe *recipe = nil;
+						for(size_t r = 0; r < model->stats.recipes.size(); r++)
+							if(model->stats.recipes[r].tex == tname)
+								recipe = &model->stats.recipes[r];
+						if(recipe){
+							std::string tkey = "terrain:" + key + ":" + ToLower(tname);
+							QueueTerrainPreparation(tkey, *recipe, -1, false);
+						}else{
+							const CustomSource *src = FindSource(customBtx, ToLower(tname));
+							if(src)
+								QueueRawBtxPreparation(BtxCacheKey(*src), tname, *src, -1, false);
+						}
+					}
+					for(size_t i = 0; i < model->uv2DualNames.size(); i++){
+						const std::string &dname = model->uv2DualNames[i];
+						const CustomSource *src = FindSource(customBtx, ToLower(dname));
+						if(src)
+							QueueRawBtxPreparation(BtxCacheKey(*src), dname, *src, -1, false);
+					}
+				}
+#endif
 			}
 			if(!plan.usable){
 				customWorkerFailures++;
@@ -1747,6 +2705,35 @@ CCustomModels::PumpBackgroundResults(void)
 			else ++it;
 		}
 	}
+#ifdef ANDROID
+	customcache::BackgroundAssetQueue<TexDbWorkResult>::Completed texDone;
+	while(customTexDbWorker.Pop(texDone)){
+		std::shared_ptr<TexDbWorkResult> res = texDone.value;
+		if(texDone.key.compare(0, 2, "x:") == 0){
+			std::string cacheKey = texDone.key.substr(2);
+			if(res && res->raw){
+				size_t bytes = PreparedRawBtxBytes(*res->raw);
+				if(!customRawBtxCache.Insert(cacheKey, res->raw, bytes)){
+					customTransientRawBtxKey = cacheKey;
+					customTransientRawBtx = res->raw;
+				}
+				customWorkerTextures++;
+			}else{
+				customFailedRawBtx.insert(cacheKey);
+				customWorkerFailures++;
+				CUSTOM_LOG("background TexDB %s: %s\n", cacheKey.c_str(),
+					res && !res->error.empty() ? res->error.c_str() : "worker error");
+			}
+		}
+		for(std::map<int32, std::set<std::string> >::iterator it = customJobInterests.begin(); it != customJobInterests.end(); ){
+			if(it->second.erase(texDone.key))
+				customCompletedCpuJobs[it->first].insert(texDone.key);
+			if(it->second.empty()) it = customJobInterests.erase(it);
+			else ++it;
+		}
+	}
+	PumpPendingBtxUpgrades();
+#endif
 }
 
 struct TxdSize { size_t bytes; bool measurable; };
@@ -1764,8 +2751,14 @@ CountTxdTexture(RwTexture *texture, void *arg)
 		return texture;
 	}
 	bool mips = (ras->format & rwRASTERFORMATMIPMAP) != 0;
+	bool compressed = false;
+#if defined(LIBRW) && defined(RW_GL3)
+	if(rw::platform == rw::PLATFORM_GL3)
+		compressed = GETGL3RASTEREXT(ras)->isCompressed != 0;
+#endif
 	for(;;){
-		size->bytes += (size_t)w * (size_t)h * 4; // conservative RGBA8 estimate
+		size->bytes += compressed ? (((size_t)(w + 3) / 4) * ((size_t)(h + 3) / 4) * 16)
+		                          : ((size_t)w * (size_t)h * 4);
 		if(!mips || (w == 1 && h == 1))
 			break;
 		w = w > 1 ? w / 2 : 1;
@@ -1814,6 +2807,13 @@ CCustomModels::ForgetTxdSlot(int32 slot)
 void
 CCustomModels::ClearGraphicsCache(void)
 {
+#ifdef ANDROID
+	for(size_t i = 0; i < s_pendingBtxUpgrades.size(); i++){
+		if(s_pendingBtxUpgrades[i].tex)
+			RwTextureDestroy(s_pendingBtxUpgrades[i].tex);
+	}
+	s_pendingBtxUpgrades.clear();
+#endif
 	customLoadedTxds.clear();
 	customResidentTxds.Clear(); // while RenderWare and the GPU context exist
 }
@@ -1979,9 +2979,12 @@ CCustomModels::SetNativeModelOverride(int32 modelId, bool enabled)
 void
 CCustomModels::Shutdown(void)
 {
-	// The worker may still be reading a loose file. Join it BEFORE the
-	// source indices and decoded caches are destroyed or a new game is started.
+	// The worker may still be reading an archive or loose file. Join all workers
+	// BEFORE the source indices, open .bpc fds and caches are destroyed.
 	customCpuWorker.Stop();
+#ifdef ANDROID
+	customTexDbWorker.Stop();
+#endif
 	customJobInterests.clear();
 	customCompletedCpuJobs.clear();
 	customPreparationWaits.clear();
@@ -1992,6 +2995,17 @@ CCustomModels::Shutdown(void)
 	customFailedCpuTextures.clear();
 	customTransientTexture.reset();
 	customTransientTextureKey.clear();
+#ifdef ANDROID
+	customRawBtxCache.Clear();
+	customFailedRawBtx.clear();
+	customTransientRawBtx.reset();
+	customTransientRawBtxKey.clear();
+	customTmbBtx.clear();
+	customBpcClsEntries.clear();
+	customBpcColEntries.clear();
+	customBpcArchives.clear();
+	s_bpcLastPumpFrame = 0xFFFFFFFFu;
+#endif
 	customMods.clear();
 	customBtx.clear();
 	customCls.clear();
@@ -2045,6 +3059,13 @@ bool
 CCustomModels::HasModelFile(const char *name)
 {
 	EnsureInitialised();
+#ifdef ANDROID
+	if(name && name[0]){
+		std::string key = ToLower(name);
+		if(customMods.find(key) != customMods.end() || customDff.find(key) != customDff.end())
+			return true;
+	}
+#endif
 	return name && imageModelTextures.FindDffImage(name) >= 0;
 }
 
@@ -2298,9 +3319,14 @@ CheckStreamPreparation(int32 streamId, bool priority)
 		return true;
 	if(streamId < STREAM_OFFSET_TXD){
 		CBaseModelInfo *mi = CModelInfo::GetModelInfo(streamId);
+#ifdef ANDROID
+		if(!mi || GetModelLoadKind(mi->GetModelType()) == MODELLOAD_UNSUPPORTED)
+			return true;
+#else
 		if(!mi || (!mi->IsSimple() && mi->GetModelType() != MITYPE_CLUMP &&
 		           mi->GetModelType() != MITYPE_VEHICLE && mi->GetModelType() != MITYPE_PED))
 			return true;
+#endif
 		std::string key = ToLower(mi->GetModelName());
 		if(rejectedArchiveModels.find(key) != rejectedArchiveModels.end() ||
 		   (customMods.find(key) == customMods.end() && customDff.find(key) == customDff.end()))
@@ -2311,6 +3337,62 @@ CheckStreamPreparation(int32 streamId, bool priority)
 		if(customDecodedModels.Contains(key)){
 			if(plan == customModPlans.end() || !plan->second.computed)
 				CanUseModel(key); // cache hit, no parsing or I/O
+#ifdef ANDROID
+			// Also ensure all .btx textures referenced by this model are prepared on TexDB worker
+			// (unless a .tmb preview exists, in which case we prefetch in background without blocking).
+			std::shared_ptr<const PreparedModel> prepared = customDecodedModels.Find(key);
+			if(prepared && prepared->usable){
+				bool pendingTex = false;
+				for(size_t i = 0; i < prepared->textureNames.size(); i++){
+					const std::string &tname = prepared->textureNames[i];
+					const br::TerrainRecipe *recipe = nil;
+					for(size_t r = 0; r < prepared->stats.recipes.size(); r++)
+						if(prepared->stats.recipes[r].tex == tname)
+							recipe = &prepared->stats.recipes[r];
+					if(recipe){
+						std::string tkey = "terrain:" + key + ":" + ToLower(tname);
+						if(!HasPreparedTexture(tkey)){
+							if(EvictedBeforeReady(streamId, TextureJobKey(tkey)))
+								return true;
+							QueueTerrainPreparation(tkey, *recipe, streamId, priority);
+							pendingTex = true;
+						}
+					}else{
+						std::string low = ToLower(tname);
+						const CustomSource *src = FindSource(customBtx, low);
+						if(src){
+							std::string ckey = BtxCacheKey(*src);
+							if(!HasPreparedRawBtx(ckey)){
+								bool hasTmb = !priority && (FindSource(customTmbBtx, low) != nil);
+								if(!hasTmb && EvictedBeforeReady(streamId, RawBtxJobKey(ckey)))
+									return true;
+								QueueRawBtxPreparation(ckey, tname, *src, hasTmb ? -1 : streamId, priority);
+								if(!hasTmb)
+									pendingTex = true;
+							}
+						}
+					}
+				}
+				for(size_t i = 0; i < prepared->uv2DualNames.size(); i++){
+					const std::string &dname = prepared->uv2DualNames[i];
+					std::string low = ToLower(dname);
+					const CustomSource *src = FindSource(customBtx, low);
+					if(src){
+						std::string ckey = BtxCacheKey(*src);
+						if(!HasPreparedRawBtx(ckey)){
+							bool hasTmb = !priority && (FindSource(customTmbBtx, low) != nil);
+							if(!hasTmb && EvictedBeforeReady(streamId, RawBtxJobKey(ckey)))
+								return true;
+							QueueRawBtxPreparation(ckey, dname, *src, hasTmb ? -1 : streamId, priority);
+							if(!hasTmb)
+								pendingTex = true;
+						}
+					}
+				}
+				if(pendingTex)
+					return false;
+			}
+#endif
 			return true;
 		}
 		if(EvictedBeforeReady(streamId, ModelJobKey(key))) return true;
@@ -2318,6 +3400,28 @@ CheckStreamPreparation(int32 streamId, bool priority)
 		return false;
 	}
 	if(streamId >= STREAM_OFFSET_TXD && streamId < STREAM_OFFSET_COL){
+#ifdef ANDROID
+		// On Android, TXD slots for .bpc models are lightweight empty dictionary containers;
+		// individual .btx KTX1/ASTC textures are uploaded directly to GPU during model load.
+		int32 slot = streamId - STREAM_OFFSET_TXD;
+		const char *slotName = CTxdStore::GetTxdName(slot);
+		if(!slotName || !slotName[0])
+			return true;
+		std::string key = ToLower(slotName);
+		if(PotentialModelForTxd(key).empty() && customTxdFiles.find(key) == customTxdFiles.end()){
+			const CustomSource *src = FindSource(customBtx, key);
+			if(src){
+				std::string ckey = BtxCacheKey(*src);
+				if(!HasPreparedRawBtx(ckey)){
+					if(EvictedBeforeReady(streamId, RawBtxJobKey(ckey)))
+						return true;
+					QueueRawBtxPreparation(ckey, key, *src, streamId, priority);
+					return false;
+				}
+			}
+		}
+		return true;
+#else
 		int32 slot = streamId - STREAM_OFFSET_TXD;
 		const char *slotName = CTxdStore::GetTxdName(slot);
 		if(!slotName || !slotName[0]) return true;
@@ -2381,6 +3485,7 @@ CheckStreamPreparation(int32 streamId, bool priority)
 			}
 		}
 		return !pending;
+#endif
 	}
 	return true;
 }
@@ -2417,6 +3522,10 @@ CCustomModels::IsStreamPrepared(int32 streamId, bool wait)
 	for(int attempts = 0; attempts < (wait ? 64 : 1); attempts++){
 		PumpBackgroundResults();
 		if(CheckStreamPreparation(streamId, wait)){
+#ifdef ANDROID
+			if(!wait && streamId >= 0 && streamId < STREAM_OFFSET_TXD && !s_bpcFreezeMonitor.HasFrameBudget())
+				return false;
+#endif
 			customPreparationWaits.erase(streamId);
 			customCompletedCpuJobs.erase(streamId);
 			return true;
@@ -2427,8 +3536,13 @@ CCustomModels::IsStreamPrepared(int32 streamId, bool wait)
 			if(first == customPreparationWaits.end())
 				first = customPreparationWaits.insert(std::make_pair(streamId, now)).first;
 			std::chrono::steady_clock::duration elapsed = now - first->second;
+#ifdef ANDROID
+			size_t activePending = customCpuWorker.PendingCount() + customTexDbWorker.PendingCount();
+#else
+			size_t activePending = customCpuWorker.PendingCount();
+#endif
 			if(elapsed < std::chrono::seconds(3) ||
-			   (customCpuWorker.PendingCount() != 0 && elapsed < std::chrono::seconds(30)))
+			   (activePending != 0 && elapsed < std::chrono::seconds(30)))
 				return false;
 			// Never deadlock streaming if the source exceeds the cache budget,
 			// is broken, or the worker cannot start. Three seconds is a safety
@@ -2439,9 +3553,18 @@ CCustomModels::IsStreamPrepared(int32 streamId, bool wait)
 			CUSTOM_LOG("background asset %d: deferred too long, using synchronous load\n", streamId);
 			return true;
 		}
+#ifdef ANDROID
+		if(customCpuWorker.PendingCount() != 0)
+			customCpuWorker.WaitForResult();
+		else if(customTexDbWorker.PendingCount() != 0)
+			customTexDbWorker.WaitForResult();
+		else
+			break;
+#else
 		if(customCpuWorker.PendingCount() == 0)
 			break; // thread unavailable or queue cannot accept an asset
 		customCpuWorker.WaitForResult();
+#endif
 	}
 	customSyncFallbackStreams.insert(streamId);
 	customWorkerSyncFallbacks++;
@@ -2475,18 +3598,94 @@ CCustomModels::CancelStreamPrefetch(int32 streamId)
 		bool shared = false;
 		for(std::map<int32, std::set<std::string> >::const_iterator other = customJobInterests.begin(); other != customJobInterests.end(); ++other)
 			if(other->second.find(*job) != other->second.end()) { shared = true; break; }
-		if(!shared) customCpuWorker.Cancel(*job);
+		if(!shared){
+#ifdef ANDROID
+			if(job->compare(0, 2, "x:") == 0)
+				customTexDbWorker.Cancel(*job);
+			else
+#endif
+				customCpuWorker.Cancel(*job);
+		}
 	}
 }
 
-// IMG models and TXDs always use the native streamer. Only a converted IMG
-// COL/CLS container referenced by a COLFILE directive needs a synthetic CD position;
-// per-model world collisions are installed separately by CCustomWorld.
+#ifdef ANDROID
+static bool
+LoadAndroidBpcTxdSlot(int32 slot, const std::string &key)
+{
+	if(RestoreCachedTxd(slot, key))
+		return true;
+	TxdDef *def = CTxdStore::GetSlot(slot);
+	if(def == nil)
+		return false;
+	if(def->texDict == nil)
+		CTxdStore::Create(slot);
+	if(def->texDict == nil)
+		return false;
+
+	if(customTxdFiles.find(key) != customTxdFiles.end())
+		MergeTxdFile(key, def->texDict);
+
+	// Standalone single-texture slot (when no .mod/.dff owns this slot): upload .btx directly to GPU.
+	if(PotentialModelForTxd(key).empty() && RwTexDictionaryFindNamedTexture(def->texDict, key.c_str()) == nil){
+		const CustomSource *src = FindSource(customBtx, key);
+		if(src){
+			std::shared_ptr<const PreparedRawBtx> raw = GetOrLoadPreparedRawBtx(*src, key);
+			if(raw){
+				RwTexture *tex = BuildDirectGlTextureFromRawBtx(*raw, key.c_str());
+				if(tex)
+					RwTexDictionaryAddTexture(def->texDict, tex);
+			}
+		}
+	}
+	customLoadedTxds[slot] = def->texDict;
+	return true;
+}
+#endif
+
+// IMG models and TXDs always use the native streamer. On Android (#ifdef ANDROID),
+// models (.mod/.dff), direct-GPU .btx TXD slots, and .cls/.col slots from mounted
+// .bpc archives are served here; on PC (#ifndef ANDROID), only COL/CLS slots are served.
 bool
 CCustomModels::CanServe(int32 streamId)
 {
+#ifdef ANDROID
+	if(streamId == nativeModelOverride || streamId < 0 || streamId >= STREAM_OFFSET_ANIM || !IsActive())
+		return false;
+	if(streamId < STREAM_OFFSET_COL && CStreaming::ms_aInfoForModel[streamId].m_size &&
+	   CCustomModels::IsAutoMountedImage(_GET_INDEX(CStreaming::ms_aInfoForModel[streamId].m_position)))
+		return false;
+	if(streamId < STREAM_OFFSET_TXD){
+		CBaseModelInfo *mi = CModelInfo::GetModelInfo(streamId);
+		if(mi == nil || GetModelLoadKind(mi->GetModelType()) == MODELLOAD_UNSUPPORTED)
+			return false;
+		std::string key = ToLower(mi->GetModelName());
+		if(rejectedArchiveModels.find(key) != rejectedArchiveModels.end())
+			return false;
+		if(customMods.find(key) == customMods.end() && customDff.find(key) == customDff.end())
+			return false;
+		std::map<std::string, ModPlan>::const_iterator plan = customModPlans.find(key);
+		if(plan != customModPlans.end() && plan->second.computed && !plan->second.usable)
+			return false;
+		return true;
+	}
+	if(streamId < STREAM_OFFSET_COL){
+		int32 slot = streamId - STREAM_OFFSET_TXD;
+		const char *slotName = CTxdStore::GetTxdName(slot);
+		if(slotName == nil || slotName[0] == '\0')
+			return false;
+		std::string key = ToLower(slotName);
+		if(customResidentTxds.Contains(slot, key))
+			return true;
+		if(!PotentialModelForTxd(key).empty())
+			return true;
+		return customBtx.find(key) != customBtx.end() ||
+		       customTxdFiles.find(key) != customTxdFiles.end();
+	}
+#else
 	if(streamId < STREAM_OFFSET_COL || streamId >= STREAM_OFFSET_ANIM || !IsActive())
 		return false;
+#endif
 	const char *name = CColStore::GetColName(streamId - STREAM_OFFSET_COL);
 	if(name == nil || name[0] == '\0') return false;
 	const std::string key = ToLower(name);
@@ -2498,7 +3697,35 @@ CCustomModels::CanServe(int32 streamId)
 bool
 CCustomModels::Load(int32 streamId)
 {
-	return CanServe(streamId) && LoadColSlot(streamId - STREAM_OFFSET_COL);
+	if(!CanServe(streamId))
+		return false;
+#ifdef ANDROID
+	if(streamId < STREAM_OFFSET_TXD){
+		CBaseModelInfo *mi = CModelInfo::GetModelInfo(streamId);
+		if(mi == nil)
+			return false;
+		std::string key = ToLower(mi->GetModelName());
+		std::chrono::steady_clock::time_point t0 = std::chrono::steady_clock::now();
+		bool ok = LoadModelIntoGame(key, streamId);
+		uint64_t elapsedUs = (uint64_t)std::chrono::duration_cast<std::chrono::microseconds>(
+			std::chrono::steady_clock::now() - t0).count();
+		if(s_bpcFreezeMonitor.RecordMainThreadWork(key.c_str(), elapsedUs)){
+			CUSTOM_LOG("[FreezeMonitor] model+GPU upload spike: %s (id %d) took %llu us\n",
+				key.c_str(), streamId, (unsigned long long)elapsedUs);
+		}
+		if(!ok)
+			rejectedArchiveModels.insert(key);
+		return ok;
+	}
+	if(streamId < STREAM_OFFSET_COL){
+		int32 slot = streamId - STREAM_OFFSET_TXD;
+		const char *slotName = CTxdStore::GetTxdName(slot);
+		if(slotName == nil || slotName[0] == '\0')
+			return false;
+		return LoadAndroidBpcTxdSlot(slot, ToLower(slotName));
+	}
+#endif
+	return LoadColSlot(streamId - STREAM_OFFSET_COL);
 }
 
 // ---------------------------------------------------------------------------
@@ -2807,6 +4034,17 @@ CCustomModels::PrintStats(void)
 		customWorkerModels, customWorkerTextures, customWorkerFailures, customWorkerSyncFallbacks,
 		customCpuWorker.PendingCount(), CUSTOM_MODEL_CACHE_BYTES / (1024u*1024u),
 		CUSTOM_TEXTURE_CACHE_BYTES / (1024u*1024u), CUSTOM_GPU_TXD_CACHE_BYTES / (1024u*1024u));
+#ifdef ANDROID
+	CUSTOM_LOG("bpc runtime: %zu open archives, %zu .mod, %zu .btx (%zu .tmb), TexDB cache %zu hit / %zu miss / %zu KiB, %zu GPU KTX uploads (%zu live upgrades), %zu TexDB pending\n",
+		customBpcArchives.size(), customMods.size(), customBtx.size(), customTmbBtx.size(),
+		customRawBtxCache.Hits(), customRawBtxCache.Misses(), customRawBtxCache.Bytes() / 1024,
+		customTexDbUploads, customTexDbUpgrades, customTexDbWorker.PendingCount());
+	CUSTOM_LOG("FreezeMonitor: %llu main-thread uploads, %llu spikes, slowest='%s' (%llu us)\n",
+		(unsigned long long)s_bpcFreezeMonitor.TotalUploads(),
+		(unsigned long long)s_bpcFreezeMonitor.TotalSpikes(),
+		s_bpcFreezeMonitor.SlowestAsset().c_str(),
+		(unsigned long long)s_bpcFreezeMonitor.MaxSingleAssetUs());
+#endif
 }
 
 // ---------------------------------------------------------------------------
@@ -2896,6 +4134,19 @@ CCustomModels::SkinTextureFromBtx(const char *skinname)
 	EnsureInitialised();
 
 	std::string key = ToLower(Stem(skinname));
+#ifdef ANDROID
+	const CustomSource *bpcSrc = FindSource(customBtx, key);
+	if(bpcSrc != nil){
+		std::shared_ptr<const PreparedRawBtx> raw = GetOrLoadPreparedRawBtx(*bpcSrc, key);
+		if(raw){
+			RwTexture *texture = BuildDirectGlTextureFromRawBtx(*raw, key.c_str());
+			if(texture){
+				CUSTOM_LOG("btx %s: uploaded directly to GPU from TexDB .bpc\n", skinname);
+				return texture;
+			}
+		}
+	}
+#endif
 	const CustomSource *src = FindSource(customImages, key);
 	if(src == nil)
 		return nil;

@@ -3,6 +3,21 @@
 #include "CustomZip.h"
 
 #include <stdio.h>
+#if !defined(_WIN32)
+#include <errno.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#endif
+#if defined(__has_include)
+#if (defined(ANDROID) && __has_include(<zlib.h>)) || (defined(REVC_USE_ZLIB) && __has_include(<zlib.h>))
+#define CUSTOMZIP_HAVE_ZLIB 1
+#include <zlib.h>
+#endif
+#elif defined(ANDROID) || defined(REVC_USE_ZLIB)
+#define CUSTOMZIP_HAVE_ZLIB 1
+#include <zlib.h>
+#endif
 
 // DEFLATE (RFC 1951) decompressor. Small and self contained: the archives are
 // read from the game process, so no external dependency is wanted here.
@@ -157,6 +172,24 @@ Codes(BitReader &br, Huffman &lit, Huffman &dist)
 int32
 CustomInflate(const uint8 *src, uint32 srcSize, uint8 *dst, uint32 dstSize)
 {
+#ifdef CUSTOMZIP_HAVE_ZLIB
+	if(dstSize == 0)
+		return srcSize == 0 ? 0 : -1;
+	z_stream zs;
+	memset(&zs, 0, sizeof(zs));
+	zs.next_in = const_cast<Bytef*>(reinterpret_cast<const Bytef*>(src));
+	zs.avail_in = srcSize;
+	zs.next_out = reinterpret_cast<Bytef*>(dst);
+	zs.avail_out = dstSize;
+	if(inflateInit2(&zs, -MAX_WBITS) != Z_OK)
+		return -1;
+	int ret = inflate(&zs, Z_FINISH);
+	uint32 produced = (uint32)zs.total_out;
+	inflateEnd(&zs);
+	if(ret != Z_STREAM_END && !(ret == Z_OK && zs.avail_out == 0 && zs.avail_in == 0))
+		return -1;
+	return (int32)produced;
+#else
 	using namespace deflate;
 
 	BitReader br;
@@ -210,13 +243,35 @@ CustomInflate(const uint8 *src, uint32 srcSize, uint8 *dst, uint32 dstSize)
 		if(last) break;
 	}
 	return (int32)out;
+#endif
 }
 
+
+void
+CustomZip::ApplyBpcXor(uint64 offset, uint8 *data, uint32 size)
+{
+	// 20-byte cyclic stream key used by encrypted .bpc archives (common.bpc):
+	// byte[i] ^= key[(fileOffset + i) % 20].
+	static const uint8 kBpcXorKey[20] = {
+		'1','c','K','1','a','5','U','F','2','t',
+		'U','8','*','G','2','l','W','#','&','%'
+	};
+	if(!data || size == 0)
+		return;
+	uint32 k = (uint32)(offset % 20u);
+	for(uint32 i = 0; i < size; i++){
+		data[i] ^= kBpcXorKey[k];
+		if(++k == 20u)
+			k = 0;
+	}
+}
 
 CustomZip::CustomZip(void)
 {
 	m_path[0] = '\0';
 	m_opened = false;
+	m_useXor = false;
+	m_fd = -1;
 	m_entries = nil;
 	m_numEntries = 0;
 	m_fileSize = 0;
@@ -230,9 +285,17 @@ CustomZip::~CustomZip(void)
 void
 CustomZip::Close(void)
 {
+#if !defined(_WIN32)
+	if(m_fd >= 0){
+		close(m_fd);
+		m_fd = -1;
+	}
+#endif
 	delete[] m_entries;
 	m_entries = nil;
 	m_numEntries = 0;
+	m_fileSize = 0;
+	m_useXor = false;
 	m_opened = false;
 }
 
@@ -259,23 +322,49 @@ GetU32(const uint8 *p)
 #endif
 
 bool
-CustomZip::ReadAt(uint64 offset, void *dst, uint32 size) const
+CustomZip::ReadRawAt(uint64 offset, void *dst, uint32 size) const
 {
-	FILE *f;
-	bool ok;
-
 	if(size == 0)
 		return true;
 	if(m_path[0] == '\0' || offset > m_fileSize || size > m_fileSize - offset)
 		return false;
-	f = fopen(m_path, "rb");
+#if !defined(_WIN32)
+	if(m_fd >= 0){
+		uint8 *out = (uint8*)dst;
+		uint32 done = 0;
+		while(done < size){
+			ssize_t r = pread(m_fd, out + done, (size_t)(size - done), (off_t)(offset + done));
+			if(r < 0){
+				if(errno == EINTR)
+					continue;
+				return false;
+			}
+			if(r == 0)
+				return false;
+			done += (uint32)r;
+		}
+		return true;
+	}
+#endif
+	FILE *f = fopen(m_path, "rb");
 	if(f == nil)
 		return false;
-	ok = CUSTOMZIP_SEEK(f, offset) && fread(dst, 1, size, f) == size;
+	bool ok = CUSTOMZIP_SEEK(f, offset) && fread(dst, 1, size, f) == size;
 	fclose(f);
 	return ok;
 }
 
+bool
+CustomZip::ReadAt(uint64 offset, void *dst, uint32 size) const
+{
+	if(!ReadRawAt(offset, dst, size))
+		return false;
+	if(m_useXor && size > 0)
+		ApplyBpcXor(offset, (uint8*)dst, size);
+	return true;
+}
+
+#if defined(_WIN32)
 // size of a file, without opening it twice
 static bool
 FileSize(const char *path, uint64 &size)
@@ -283,11 +372,7 @@ FileSize(const char *path, uint64 &size)
 	FILE *f = fopen(path, "rb");
 	if(f == nil)
 		return false;
-#if defined(_WIN32)
 	bool endOk = _fseeki64(f, 0, SEEK_END) == 0;
-#else
-	bool endOk = fseeko(f, 0, SEEK_END) == 0;
-#endif
 	if(!endOk){
 		fclose(f);
 		return false;
@@ -299,6 +384,7 @@ FileSize(const char *path, uint64 &size)
 	size = (uint64)n;
 	return true;
 }
+#endif
 
 static uint64
 GetU64(const uint8 *p)
@@ -307,7 +393,7 @@ GetU64(const uint8 *p)
 }
 
 bool
-CustomZip::Open(const char *path)
+CustomZip::Open(const char *path, bool allowXor)
 {
 	uint32 i, size;
 	uint8 *tail = nil;
@@ -320,18 +406,38 @@ CustomZip::Open(const char *path)
 	if(path == nil || strlen(path) >= sizeof(m_path)) return false;
 	strcpy(m_path, path);
 
+#if !defined(_WIN32)
+	m_fd = open(m_path, O_RDONLY);
+	if(m_fd < 0){
+		debug("custom: cannot open archive %s\n", m_path);
+		return false;
+	}
+	struct stat st;
+	if(fstat(m_fd, &st) != 0 || st.st_size < 0){
+		Close();
+		debug("custom: cannot stat archive %s\n", m_path);
+		return false;
+	}
+	m_fileSize = (uint64)st.st_size;
+#else
 	if(!FileSize(m_path, m_fileSize)){
 		debug("custom: cannot open archive %s\n", m_path);
 		return false;
 	}
-	if(m_fileSize < 22) return false;
+#endif
+	if(m_fileSize < 22){
+		Close();
+		return false;
+	}
 
 	// The end of central directory record sits at the end of the file, behind a
 	// comment of unknown length; scan back for its signature.
 	size = m_fileSize < 66560 ? (uint32)m_fileSize : 66560;	// EOCD + comment + zip64 locator
+	uint64 tailOff = m_fileSize - size;
 	tail = new uint8[size];
-	if(!ReadAt(m_fileSize - size, tail, size)){
+	if(!ReadRawAt(tailOff, tail, size)){
 		delete[] tail;
+		Close();
 		return false;
 	}
 	// The record itself has to be read where it is in the tail, not where the
@@ -339,7 +445,23 @@ CustomZip::Open(const char *path)
 	for(i = size - 22; i != (uint32)-1; i--){
 		if(GetU32(tail + i) == 0x06054b50){ eocdInTail = i; found = true; break; }
 	}
-	if(!found){ delete[] tail; debug("custom: %s is not a zip (no EOCD)\n", m_path); return false; }
+	if(!found && allowXor){
+		ApplyBpcXor(tailOff, tail, size);
+		for(i = size - 22; i != (uint32)-1; i--){
+			if(GetU32(tail + i) == 0x06054b50){
+				eocdInTail = i;
+				found = true;
+				m_useXor = true;
+				break;
+			}
+		}
+	}
+	if(!found){
+		delete[] tail;
+		Close();
+		debug("custom: %s is not a zip (no EOCD)\n", m_path);
+		return false;
+	}
 	numEntries = GetU16(tail + eocdInTail + 10);
 	cdSize = GetU32(tail + eocdInTail + 12);
 	cdOffset = GetU32(tail + eocdInTail + 16);
@@ -351,11 +473,11 @@ CustomZip::Open(const char *path)
 		uint8 loc[20];
 		uint8 rec[56];
 		uint64 locOff;
-		if(eocdInTail < 20 || eocdPos < 20 || cdSize == 0) return false;
-		if(!ReadAt(eocdPos - 20, loc, 20) || GetU32(loc) != 0x07064b50) return false;
+		if(eocdInTail < 20 || eocdPos < 20 || cdSize == 0){ Close(); return false; }
+		if(!ReadAt(eocdPos - 20, loc, 20) || GetU32(loc) != 0x07064b50){ Close(); return false; }
 		locOff = GetU64(loc + 8);
-		if(locOff + 56 > m_fileSize) return false;
-		if(!ReadAt(locOff, rec, 56) || GetU32(rec) != 0x06064b50) return false;
+		if(locOff + 56 > m_fileSize){ Close(); return false; }
+		if(!ReadAt(locOff, rec, 56) || GetU32(rec) != 0x06064b50){ Close(); return false; }
 		numEntries = GetU32(rec + 32);	// the low half of the 64 bit count
 		cdSize = GetU64(rec + 40);
 		cdOffset = GetU64(rec + 48);
@@ -363,11 +485,12 @@ CustomZip::Open(const char *path)
 
 	if(cdOffset > m_fileSize || cdSize > m_fileSize - cdOffset){
 		debug("custom: %s has a broken central directory\n", m_path);
+		Close();
 		return false;
 	}
-	if(numEntries == 0) return false;
+	if(numEntries == 0){ Close(); return false; }
 	if(numEntries > 100000) numEntries = 100000;		// sanity
-	if(cdSize > 64*1024*1024) return false;			// sanity
+	if(cdSize > 64*1024*1024){ Close(); return false; }	// sanity
 
 	m_entries = new CustomZipEntry[numEntries];
 	m_numEntries = 0;

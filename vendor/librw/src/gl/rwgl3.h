@@ -268,6 +268,7 @@ struct Gl3Raster
 	bool isCompressed;
 	bool hasAlpha;
 	bool autogenMipmap;
+	bool unflippedKtx;
 	int8 numLevels;
 	// cached filtermode and addressing
 	uint8 filterMode;
@@ -294,8 +295,20 @@ extern Gl3Caps gl3Caps;
 // this has to be set before the texture is filled:
 extern bool32 needToReadBackTextures;
 
+struct KtxMipUploadSlice
+{
+	int32 width;
+	int32 height;
+	uint32 byteSize;
+	int32 unpackAlignment;
+	const uint8 *data;
+};
+
 void allocateDXT(Raster *raster, int32 dxt, int32 numLevels, bool32 hasAlpha);
 void setMipLevels(Raster *raster, int32 numLevels);
+bool32 uploadKtxDirect(Raster *raster, int32 internalFormat, int32 format, int32 type,
+                       int32 bpp, bool32 isCompressed, bool32 hasAlpha,
+                       int32 numLevels, const KtxMipUploadSlice *levels);
 
 Texture *readNativeTexture(Stream *stream);
 void writeNativeTexture(Texture *tex, Stream *stream);

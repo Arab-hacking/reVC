@@ -35,20 +35,28 @@ class CustomZip
 {
 	char m_path[256];
 	bool m_opened;
+	bool m_useXor;
+	int m_fd;
 	CustomZipEntry *m_entries;
 	int m_numEntries;
 	uint64 m_fileSize;
 
+	bool ReadRawAt(uint64 offset, void *dst, uint32 size) const;
 	bool ReadAt(uint64 offset, void *dst, uint32 size) const;
 public:
 	CustomZip(void);
 	~CustomZip(void);
 
-	// reads the central directory; false if the file is not a readable zip
-	bool Open(const char *path);
+	// Applies the 20-byte BPC stream XOR ("1cK1a5UF2tU8*G2lW#&%") in place at arbitrary byte offset.
+	static void ApplyBpcXor(uint64 offset, uint8 *data, uint32 size);
+
+	// reads the central directory; when allowXor is true, auto-detects plain ZIP vs 20-byte XOR .bpc
+	bool Open(const char *path, bool allowXor = false);
 	void Close(void);
 	bool IsOpened(void) const { return m_opened; }
+	bool IsXorEncrypted(void) const { return m_useXor; }
 	const char *GetPath(void) const { return m_path; }
+	uint64 GetFileSize(void) const { return m_fileSize; }
 
 	int GetNumEntries(void) const { return m_numEntries; }
 	const CustomZipEntry *GetEntry(int i) const { return i >= 0 && i < m_numEntries ? &m_entries[i] : nil; }

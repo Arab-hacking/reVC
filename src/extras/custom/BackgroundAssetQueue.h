@@ -11,6 +11,7 @@
 #include <string>
 #include <system_error>
 #include <thread>
+#include <vector>
 
 // One CPU-only worker for custom archive reads, .mod preparation and .btx
 // decoding. No RenderWare objects, game model info or GPU calls may be touched
@@ -45,9 +46,10 @@ private:
 	std::deque<Job> waiting;
 	std::deque<Finished> finished;
 	std::map<std::string, uint64_t> pending;
-	std::thread worker;
+	std::vector<std::thread> workers;
 	const size_t maxPending;
 	const size_t maxFinished;
+	const size_t maxWorkers;
 	uint64_t nextTicket;
 	bool stopping;
 	bool unavailable;
@@ -89,8 +91,9 @@ private:
 	}
 
 public:
-	BackgroundAssetQueue(size_t maxJobs, size_t maxResults)
-		: maxPending(maxJobs), maxFinished(maxResults), nextTicket(0), stopping(false), unavailable(false) {}
+	BackgroundAssetQueue(size_t maxJobs, size_t maxResults, size_t numWorkers = 1)
+		: maxPending(maxJobs), maxFinished(maxResults), maxWorkers(numWorkers ? numWorkers : 1),
+		  nextTicket(0), stopping(false), unavailable(false) {}
 	BackgroundAssetQueue(const BackgroundAssetQueue&) = delete;
 	BackgroundAssetQueue& operator=(const BackgroundAssetQueue&) = delete;
 	~BackgroundAssetQueue(void) { Stop(); }
@@ -118,9 +121,15 @@ public:
 		}
 		if(pending.size() >= maxPending || maxPending == 0 || maxFinished == 0)
 			return false;
-		if(!worker.joinable()){
-			try { worker = std::thread(&BackgroundAssetQueue::Run, this); }
-			catch(const std::exception&) { unavailable = true; return false; }
+		if(workers.empty()){
+			for(size_t w = 0; w < maxWorkers; w++){
+				try { workers.emplace_back(&BackgroundAssetQueue::Run, this); }
+				catch(const std::exception&) { break; }
+			}
+			if(workers.empty()){
+				unavailable = true;
+				return false;
+			}
 		}
 		Job item;
 		item.key = key;
@@ -134,7 +143,7 @@ public:
 			waiting.insert(firstNormal, std::move(item));
 		}else
 			waiting.push_back(std::move(item));
-		changed.notify_all();
+		changed.notify_one();
 		return true;
 	}
 
@@ -192,8 +201,10 @@ public:
 			pending.clear();
 		}
 		changed.notify_all();
-		if(worker.joinable())
-			worker.join(); // the archive index must not be freed until this returns
+		for(size_t i = 0; i < workers.size(); i++)
+			if(workers[i].joinable())
+				workers[i].join(); // the archive index must not be freed until all workers return
+		workers.clear();
 		std::lock_guard<std::mutex> lock(mutex);
 		stopping = false;
 		unavailable = false;

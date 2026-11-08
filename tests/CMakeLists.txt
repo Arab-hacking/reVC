@@ -97,6 +97,16 @@ target_link_libraries(background_asset_queue_tests PRIVATE Threads::Threads)
 set_target_properties(background_asset_queue_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
 add_test(NAME background_asset_queue_tests COMMAND background_asset_queue_tests)
 
+add_executable(bpc_pipeline_tests
+    BpcPipelineTests.cpp ../src/extras/custom/CustomZip.cpp
+    ../src/extras/custom/br/third_party/astc_decomp.cpp)
+target_include_directories(bpc_pipeline_tests PRIVATE
+    ../tools/custom-folder-verification/shim
+    ../src/extras/custom ../src/extras/custom/br)
+target_link_libraries(bpc_pipeline_tests PRIVATE Threads::Threads)
+set_target_properties(bpc_pipeline_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+add_test(NAME bpc_pipeline_tests COMMAND bpc_pipeline_tests)
+
 add_executable(custom_water_tests CustomWaterTests.cpp)
 set_target_properties(custom_water_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
 add_test(NAME custom_water_tests COMMAND custom_water_tests)
@@ -254,6 +264,30 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Cla
     target_link_libraries(custom_archive_integration_tests PRIVATE Threads::Threads)
     set_target_properties(custom_archive_integration_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
     add_test(NAME custom_archive_integration_tests COMMAND custom_archive_integration_tests)
+
+    add_executable(android_bpc_archive_integration_tests
+        AndroidBpcArchiveIntegrationTests.cpp
+        ../src/extras/custom/CustomModels.cpp
+        ../src/extras/custom/CustomZip.cpp
+        ../src/extras/custom/CustomCol.cpp
+        ../src/rw/TxdStore.cpp
+        ../src/extras/custom/br/third_party/astc_decomp.cpp)
+    target_compile_definitions(android_bpc_archive_integration_tests PRIVATE
+        ANDROID LIBRW RW_GL3 LIBRW_SDL2 CMAKE_BUILD USE_OUR_VERSIONING AUDIO_OAL)
+    target_include_directories(android_bpc_archive_integration_tests PRIVATE
+        android_shim
+        ../vendor/librw ../vendor/librw/src/gl ../vendor/sdl2/include
+        ../src ../src/animation ../src/audio ../src/buildings ../src/collision
+        ../src/control ../src/core ../src/entities ../src/extras
+        ../src/extras/custom ../src/extras/custom/br ../src/fakerw ../src/math
+        ../src/modelinfo ../src/objects ../src/peds ../src/renderer ../src/rw
+        ../src/save ../src/skel ../src/text ../src/vehicles ../src/weapons)
+    target_compile_options(android_bpc_archive_integration_tests PRIVATE
+        -ffunction-sections -fdata-sections -Wno-write-strings -Wno-multichar)
+    target_link_options(android_bpc_archive_integration_tests PRIVATE -Wl,--gc-sections)
+    target_link_libraries(android_bpc_archive_integration_tests PRIVATE Threads::Threads)
+    set_target_properties(android_bpc_archive_integration_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+    add_test(NAME android_bpc_archive_integration_tests COMMAND android_bpc_archive_integration_tests)
 
     add_executable(script_save_validation_tests
         ScriptSaveValidationTests.cpp

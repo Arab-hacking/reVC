@@ -21,6 +21,27 @@ namespace gl3 {
 
 int32 nativeRasterOffset;
 
+#ifdef RW_OPENGL
+static bool
+getAstcBlockDims(int32 internalFormat, int *bw, int *bh)
+{
+	static const int kBlocks[14][2] = {
+		{ 4, 4 }, { 5, 4 }, { 5, 5 }, { 6, 5 }, { 6, 6 }, { 8, 5 }, { 8, 6 },
+		{ 8, 8 }, { 10, 5 }, { 10, 6 }, { 10, 8 }, { 10, 10 }, { 12, 10 }, { 12, 12 }
+	};
+	int idx = -1;
+	if(internalFormat >= 0x93B0 && internalFormat <= 0x93BD)
+		idx = internalFormat - 0x93B0;
+	else if(internalFormat >= 0x93D0 && internalFormat <= 0x93DD)
+		idx = internalFormat - 0x93D0;
+	if(idx < 0 || idx >= 14)
+		return false;
+	*bw = kBlocks[idx][0];
+	*bh = kBlocks[idx][1];
+	return true;
+}
+#endif
+
 static uint32
 getLevelSize(Raster *raster, int32 level)
 {
@@ -44,6 +65,13 @@ getLevelSize(Raster *raster, int32 level)
 	case GL_COMPRESSED_RGBA_S3TC_DXT3_EXT:
 	case GL_COMPRESSED_RGBA_S3TC_DXT5_EXT:
 		return (uint32)((w + 3) / 4) * (uint32)((h + 3) / 4) * 16;
+	default:
+		{
+			int bw = 0, bh = 0;
+			if(getAstcBlockDims(natras->internalFormat, &bw, &bh))
+				return (uint32)((w + bw - 1) / bw) * (uint32)((h + bh - 1) / bh) * 16;
+		}
+		break;
 	}
 #endif
 
@@ -428,6 +456,103 @@ setMipLevels(Raster *raster, int32 numLevels)
 #endif
 }
 
+bool32
+uploadKtxDirect(Raster *raster, int32 internalFormat, int32 format, int32 type,
+                int32 bpp, bool32 isCompressed, bool32 hasAlpha,
+                int32 numLevels, const KtxMipUploadSlice *levels)
+{
+	if(raster == nil || numLevels < 1 || levels == nil || levels[0].data == nil)
+		return 0;
+#ifdef RW_OPENGL
+	Gl3Raster *natras = GETGL3RASTEREXT(raster);
+	int bw = 4, bh = 4;
+	const bool isAstc = isCompressed && getAstcBlockDims(internalFormat, &bw, &bh);
+	if(isAstc && !gl3Caps.astcSupported)
+		return 0;
+
+	int32 uploadInternal = internalFormat;
+	if(!isCompressed && gl3Caps.gles && gl3Caps.glversion < 30){
+		// GLES 2.0 requires unsized internalFormat matching format.
+		uploadInternal = format;
+	}
+
+	if(natras->texid == 0){
+		glGenTextures(1, &natras->texid);
+		if(natras->texid == 0)
+			return 0;
+		natras->addressU = 0;
+		natras->addressV = 0;
+		natras->maxAnisotropy = 1;
+		natras->fbo = 0;
+		natras->fboMate = nil;
+	}
+
+	raster->width = levels[0].width;
+	raster->height = levels[0].height;
+	raster->originalWidth = levels[0].width;
+	raster->originalHeight = levels[0].height;
+	if(isCompressed){
+		raster->stride = ((levels[0].width + bw - 1) / bw) * 16;
+		raster->depth = 16;
+	}else{
+		raster->stride = levels[0].width * (bpp > 0 ? bpp : 4);
+		raster->depth = (bpp > 0 ? bpp : 4) * 8;
+	}
+	raster->originalStride = raster->stride;
+
+	int32 uploadLevels = numLevels;
+	if(gl3Caps.gles && gl3Caps.glversion < 30){
+		// Without GL_TEXTURE_MAX_LEVEL on ES 2.0, upload mip0 only unless a full chain to 1x1 is present.
+		const KtxMipUploadSlice &last = levels[numLevels - 1];
+		if(numLevels > 1 && (last.width != 1 || last.height != 1))
+			uploadLevels = 1;
+	}
+	if(uploadLevels > 1)
+		raster->format |= Raster::MIPMAP;
+	else
+		raster->format &= ~Raster::MIPMAP;
+	raster->format &= ~Raster::AUTOMIPMAP;
+
+	natras->internalFormat = uploadInternal;
+	natras->format = format;
+	natras->type = type;
+	natras->bpp = bpp;
+	natras->isCompressed = isCompressed ? 1 : 0;
+	natras->hasAlpha = hasAlpha ? 1 : 0;
+	natras->autogenMipmap = 0;
+	natras->unflippedKtx = 1;
+	natras->numLevels = (int8)uploadLevels;
+	natras->filterMode = 0; // force filter re-application on next bind (e.g. .tmb -> full .btx upgrade)
+
+	uint32 prev = bindTexture(natras->texid);
+	if(!isCompressed){
+		for(int32 l = 0; l < uploadLevels; l++){
+			int32 align = (levels[l].unpackAlignment == 4) ? 4 : 1;
+			glPixelStorei(GL_UNPACK_ALIGNMENT, align);
+			glTexImage2D(GL_TEXTURE_2D, l, uploadInternal,
+			             levels[l].width, levels[l].height, 0,
+			             format, type, levels[l].data);
+		}
+		glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+	}else{
+		for(int32 l = 0; l < uploadLevels; l++){
+			glCompressedTexImage2D(GL_TEXTURE_2D, l, uploadInternal,
+			                       levels[l].width, levels[l].height, 0,
+			                       (GLsizei)levels[l].byteSize, levels[l].data);
+		}
+	}
+	if(!gl3Caps.gles || gl3Caps.glversion >= 30)
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, uploadLevels - 1);
+	bindTexture(prev);
+	raster->flags &= ~Raster::DONTALLOCATE;
+	return 1;
+#else
+	(void)internalFormat; (void)format; (void)type; (void)bpp;
+	(void)isCompressed; (void)hasAlpha;
+	return 0;
+#endif
+}
+
 /*
 { 0, 0, 0 },
 { 16, 4, GL_RGBA },	// 1555
@@ -525,9 +650,14 @@ rasterLock(Raster *raster, int32 level, int32 lockMode)
 				raster->height /= 2;
 		}
 		if(natras->isCompressed){
-			int blockBytes = (natras->internalFormat == GL_COMPRESSED_RGBA_S3TC_DXT1_EXT ||
-			                  natras->internalFormat == GL_COMPRESSED_RGB_S3TC_DXT1_EXT) ? 8 : 16;
-			raster->stride = ((raster->width + 3) / 4) * blockBytes;
+			int bw = 4, bh = 4;
+			if(getAstcBlockDims(natras->internalFormat, &bw, &bh)){
+				raster->stride = ((raster->width + bw - 1) / bw) * 16;
+			}else{
+				int blockBytes = (natras->internalFormat == GL_COMPRESSED_RGBA_S3TC_DXT1_EXT ||
+				                  natras->internalFormat == GL_COMPRESSED_RGB_S3TC_DXT1_EXT) ? 8 : 16;
+				raster->stride = ((raster->width + 3) / 4) * blockBytes;
+			}
 		}else{
 			raster->stride = raster->width * (natras->bpp > 0 ? natras->bpp : 4);
 		}
@@ -886,6 +1016,7 @@ createNativeRaster(void *object, int32 offset, int32)
 {
 	Gl3Raster *ras = PLUGINOFFSET(Gl3Raster, object, offset);
 	ras->texid = 0;
+	ras->unflippedKtx = 0;
 	ras->fbo = 0;
 	ras->fboMate = nil;
 	ras->backingStore = nil;

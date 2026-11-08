@@ -626,6 +626,32 @@ setAddressV(uint32 stage, int32 addressing)
 }
 
 static void
+syncStage0UvMatrix(Raster *raster)
+{
+	static const float32 idmat[16] = {
+		1.0f, 0.0f, 0.0f, 0.0f,
+		0.0f, 1.0f, 0.0f, 0.0f,
+		0.0f, 0.0f, 1.0f, 0.0f,
+		0.0f, 0.0f, 0.0f, 1.0f
+	};
+	// Column-major 4x4: (u, v, 0, 1) -> (u, 1 - v, 0, 1) for raw KTX1 GPU uploads
+	// whose rows are in KTX1 bottom-up order without CPU vertical flipping.
+	static const float32 flipVMat[16] = {
+		1.0f,  0.0f, 0.0f, 0.0f,
+		0.0f, -1.0f, 0.0f, 0.0f,
+		0.0f,  0.0f, 1.0f, 0.0f,
+		0.0f,  1.0f, 0.0f, 1.0f
+	};
+	bool flipV = false;
+	if(raster && raster->platform == PLATFORM_GL3){
+		Gl3Raster *natras = PLUGINOFFSET(Gl3Raster, raster, nativeRasterOffset);
+		flipV = natras->unflippedKtx;
+	}
+	if(u_uvMatrix >= 0)
+		setUniform(u_uvMatrix, (void*)(flipV ? flipVMat : idmat));
+}
+
+static void
 setRasterStageOnly(uint32 stage, Raster *raster)
 {
 	bool32 alpha;
@@ -648,6 +674,7 @@ setRasterStageOnly(uint32 stage, Raster *raster)
 		}
 
 		if(stage == 0){
+			syncStage0UvMatrix(raster);
 			if(alpha != rwStateCache.textureAlpha){
 				rwStateCache.textureAlpha = alpha;
 				if(!rwStateCache.vertexAlpha){
@@ -698,6 +725,7 @@ setRasterStage(uint32 stage, Raster *raster)
 		}
 
 		if(stage == 0){
+			syncStage0UvMatrix(raster);
 			if(alpha != rwStateCache.textureAlpha){
 				rwStateCache.textureAlpha = alpha;
 				if(!rwStateCache.vertexAlpha){
@@ -1174,9 +1202,7 @@ setViewMatrix(float32 *mat)
 	setUniform(u_eye, eye);
 
 	syncEnvironmentUniforms();
-
-	static const float32 idmat[16] = { 1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1 };
-	setUniform(u_uvMatrix, (float32*)idmat);
+	syncStage0UvMatrix(rwStateCache.texstage[0].raster);
 
 	if(s_shadowEnabled && s_shadowDepthTex != 0 && !s_inShadowPass && boundTexture[3] != s_shadowDepthTex){
 		int32 prevStage = activeTexture < 0 ? 0 : activeTexture;
