@@ -158,6 +158,7 @@ int32 u_shadowParams = -1;
 int32 u_sceneLightPosRad = -1;
 int32 u_sceneLightColor = -1;
 int32 u_sceneLightDir = -1;
+int32 u_colorGrade = -1;
 
 Shader *defaultShader, *defaultShader_noAT;
 Shader *defaultShader_fullLight, *defaultShader_fullLight_noAT;
@@ -1182,6 +1183,11 @@ syncEnvironmentUniforms(void)
 		setUniform(u_sceneLightColor, col);
 		setUniform(u_sceneLightDir, dir);
 	}
+	if(u_colorGrade >= 0){
+		float32 grade[12];
+		getColorGradeMatrix(grade);
+		setUniform(u_colorGrade, grade);
+	}
 }
 
 void
@@ -2049,6 +2055,7 @@ initOpenGL(void)
 	u_sceneLightPosRad = registerUniform("u_sceneLightPosRad", UNIFORM_VEC4, MAX_LIGHTS);
 	u_sceneLightColor = registerUniform("u_sceneLightColor", UNIFORM_VEC4, MAX_LIGHTS);
 	u_sceneLightDir = registerUniform("u_sceneLightDir", UNIFORM_VEC4, MAX_LIGHTS);
+	u_colorGrade = registerUniform("u_colorGrade", UNIFORM_VEC4, 3);
 
 	// defaults before the game sets anything
 	float zero4[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
@@ -2058,6 +2065,7 @@ initOpenGL(void)
 	float one4[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
 	float sky4[4] = { 0.56f, 0.68f, 0.88f, 4.0f };
 	float idmat[16] = { 1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1 };
+	float idGrade[12] = { 1,0,0,0, 0,1,0,0, 0,0,1,0 };
 	setUniform(u_eye, zero4);
 	setUniform(u_sunDir, up4);
 	setUniform(u_sunMaterial, one4);
@@ -2070,6 +2078,7 @@ initOpenGL(void)
 	setUniform(u_sceneLightPosRad, zeroLights);
 	setUniform(u_sceneLightColor, zeroLights);
 	setUniform(u_sceneLightDir, zeroLights);
+	setUniform(u_colorGrade, idGrade);
 
 	// for im2d
 	registerUniform("u_xform", UNIFORM_VEC4);

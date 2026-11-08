@@ -21,10 +21,24 @@ main(void)
 	float visibility = AtmosphereVisibility(v_worldPos, v_fog);
 
 	if(u_brLightmap > 0.5 && u_atmosphere.x > 0.5){
-		// Exact Building.fs + LightMapEmissive.glsl (Shaders For BLAYZ RUSSIA PC):
-		// BR dual-UV night lightmap emits with emissionStrength = 2.0 at night.
 		float outAlpha = t0.a * v_color.a;
 		DoAlphaTest(outAlpha);
+
+		if(u_atmosphere.x >= 1.5){
+			float mDayNight = clamp(u_atmosphere.w, 0.0, 1.0);
+			float mLmFade = mDayNight * step(0.08, dot(t1.rgb, vec3(0.3333))) * t1.a;
+			vec3 mLit = BR_ShadeMobileWorldLinear(t0.rgb, v_color.rgb, v_worldPos, v_worldNormal, 0.0);
+			vec3 mGlow = t1.rgb * max(t0.rgb, vec3(0.18)) * 3.0;
+			vec3 mCombined = mix(mLit, max(mLit, mGlow), clamp(mLmFade, 0.0, 1.0));
+			vec4 mColor;
+			mColor.rgb = BR_ApplyMobileColorGrade(mix(u_fogColor.rgb, mCombined, visibility));
+			mColor.a = outAlpha;
+			FRAGCOLOR(mColor);
+			return;
+		}
+
+		// Exact Building.fs + LightMapEmissive.glsl (Shaders For BLAYZ RUSSIA PC):
+		// BR dual-UV night lightmap emits with emissionStrength = 2.0 at night.
 
 		float dayNight = clamp(u_atmosphere.w, 0.0, 1.0);
 		vec4 lmLin = BR_SRGBtoLINEAR(t1);

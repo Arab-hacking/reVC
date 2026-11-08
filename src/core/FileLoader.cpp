@@ -44,6 +44,10 @@
 #include "CustomSky.h"
 #include "Coronas.h"
 #include "Shadows.h"
+#ifdef ANDROID
+#include "Pools.h"
+#include "Camera.h"
+#endif
 
 char CFileLoader::ms_line[256];
 
@@ -144,6 +148,16 @@ CFileLoader::LoadLevel(const char *filename)
 			// disabled: the custom IDEs, streaming and collisions need it.
 			if(!CGame::bLoadViceCityMap && IsNativeVCMapFile(line + 4))
 				continue;
+#if defined(ANDROID) && defined(CUSTOM_MODELS)
+			if(CCustomModels::ReplacesNativeWorldMap()){
+				const char *iplPath = line + 4;
+				while(*iplPath == ' ' || *iplPath == '\t') iplPath++;
+				if(IsNativeVCMapFile(iplPath) ||
+				   CGeneral::faststricmp(iplPath, "DATA\\occlu.ipl") == 0 ||
+				   CGeneral::faststricmp(iplPath, "DATA/occlu.ipl") == 0)
+					continue;
+			}
+#endif
 			PUSH_MEMID(MEMID_WORLD);
 			LoadingScreenLoadingFile(line + 4);
 			LoadScene(line + 4);
@@ -1128,6 +1142,76 @@ CFileLoader::LoadAtomicFile(RwStream *stream, uint32 id)
 #endif
 				mi->SetAtomic(0, atomic); // one draw-distance slot, all clump parts
 				CVisibilityPlugins::SetAtomicModelInfo(atomic, mi);
+#ifdef ANDROID
+				if(mi->GetColModel() == &CTempColModels::ms_colModelBBox){
+					RpGeometry *geom = RpAtomicGetGeometry(atomic);
+					if(geom){
+						CVector bmin(1e30f, 1e30f, 1e30f), bmax(-1e30f, -1e30f, -1e30f);
+						bool haveBounds = false;
+						int32 nVerts = RpGeometryGetNumVertices(geom);
+						RpMorphTarget *mt = RpGeometryGetMorphTarget(geom, 0);
+						const RwV3d *verts = mt ? RpMorphTargetGetVertices(mt) : nil;
+						if(verts && nVerts > 0){
+							for(int32 vi = 0; vi < nVerts; vi++){
+								const RwV3d &v = verts[vi];
+								if(!(v.x == v.x && v.y == v.y && v.z == v.z)) continue;
+								if(v.x < bmin.x) bmin.x = v.x;
+								if(v.y < bmin.y) bmin.y = v.y;
+								if(v.z < bmin.z) bmin.z = v.z;
+								if(v.x > bmax.x) bmax.x = v.x;
+								if(v.y > bmax.y) bmax.y = v.y;
+								if(v.z > bmax.z) bmax.z = v.z;
+								haveBounds = true;
+							}
+						}
+						if(haveBounds){
+							CVector mid = (bmin + bmax) * 0.5f;
+							CVector halfExt = (bmax - bmin) * 0.5f;
+							float rad = halfExt.Magnitude();
+							if(rad > 1.5f && rad < 4000.0f &&
+							   CPools::GetColModelPool() &&
+							   CPools::GetColModelPool()->EnsureFree(8)){
+								CColModel *col = new CColModel();
+								if(col){
+									col->boundingBox.Set(bmin, bmax);
+									col->boundingSphere.Set(rad, mid);
+									col->level = LEVEL_GENERIC;
+									mi->SetColModel(col, true);
+									if(CPools::GetPtrNodePool() &&
+									   CPools::GetPtrNodePool()->EnsureFree(512)){
+										const CVector &camPos = TheCamera.GetPosition();
+										int cx = CWorld::GetSectorIndexX(camPos.x);
+										int cy = CWorld::GetSectorIndexY(camPos.y);
+										std::vector<CEntity*> relink;
+										for(int sy = cy - 8; sy <= cy + 8; sy++){
+											for(int sx = cx - 8; sx <= cx + 8; sx++){
+												CSector *sec = CWorld::GetSector(sx, sy);
+												if(!sec) continue;
+												for(int lk = 0; lk < 2; lk++){
+													CPtrList &lst = sec->m_lists[lk == 0 ? ENTITYLIST_BUILDINGS : ENTITYLIST_BUILDINGS_OVERLAP];
+													for(CPtrNode *nd = lst.first; nd; nd = nd->next){
+														CEntity *ent = (CEntity*)nd->item;
+														if(ent && ent->GetModelIndex() == id && !ent->bIsBIGBuilding){
+															bool dup = false;
+															for(size_t ri = 0; ri < relink.size(); ri++)
+																if(relink[ri] == ent){ dup = true; break; }
+															if(!dup) relink.push_back(ent);
+														}
+													}
+												}
+											}
+										}
+										for(size_t ri = 0; ri < relink.size(); ri++){
+											CWorld::Remove(relink[ri]);
+											CWorld::Add(relink[ri]);
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+#endif
 				if(mi->GetNum2dEffects() == 0){
 					if(dffLights.empty() && SAStaticModel::IsOutdoorStreetLampName(mi->GetModelName()))
 						SAStaticModel::EstimateStreetLampLights(atomic, dffLights);
@@ -1849,7 +1933,13 @@ CFileLoader::LoadObjectInstance(const char *line)
 			entity = new CBuilding;
 		entity->SetModelIndexNoCreate(id);
 		entity->GetMatrix() = CMatrix(xform);
+#if defined(ANDROID) && defined(CUSTOM_MODELS)
+		entity->m_level = CCustomModels::ReplacesNativeWorldMap()
+			? LEVEL_GENERIC
+			: CTheZones::GetLevelFromPosition(&entity->GetPosition());
+#else
 		entity->m_level = CTheZones::GetLevelFromPosition(&entity->GetPosition());
+#endif
 		entity->m_area = area;
 		if(mi->IsBuilding()){
 			if(mi->m_isBigBuilding)
@@ -1877,7 +1967,13 @@ CFileLoader::LoadObjectInstance(const char *line)
 		CWorld::Add(entity);
 		if(IsGlass(entity->GetModelIndex()) && !mi->m_isArtistGlass)
 			entity->bIsVisible = false;
+#if defined(ANDROID) && defined(CUSTOM_MODELS)
+		entity->m_level = CCustomModels::ReplacesNativeWorldMap()
+			? LEVEL_GENERIC
+			: CTheZones::GetLevelFromPosition(&entity->GetPosition());
+#else
 		entity->m_level = CTheZones::GetLevelFromPosition(&entity->GetPosition());
+#endif
 		entity->m_area = area;
 	}
 

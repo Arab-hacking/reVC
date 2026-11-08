@@ -182,6 +182,7 @@ extern const char *header_vert_src;
 extern const char *header_frag_src;
 
 extern Shader *im2dOverrideShader;
+extern Shader *im3dOverrideShader;
 
 // per Scene
 void setProjectionMatrix(float32*);
@@ -215,7 +216,11 @@ uint32 bindTexture(uint32 texid);
 
 void flushCache(void);
 
+#ifdef ANDROID
+enum { SHADOW_MAP_SIZE = 1024 };
+#else
 enum { SHADOW_MAP_SIZE = 2048 };
+#endif
 bool32 beginShadowPass(const float32 *lightView, const float32 *lightProj,
                        float32 strength, float32 normalBias, float32 fadeRadius);
 void endShadowPass(void);

@@ -122,6 +122,35 @@ class GL3ShaderTests(unittest.TestCase):
                                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
                     self.assertEqual(result.returncode, 0, result.stdout)
 
+    @unittest.skipUnless(VALIDATOR, "install glslangValidator to link GL3 shaders")
+    def test_mobile_terrain_and_water_shaders_link(self):
+        pipes_cpp = (ROOT / "src/extras/custompipes_gl.cpp").read_text()
+        water_cpp = (ROOT / "src/renderer/WaterLevel.cpp").read_text()
+        def extract_cstr(text, var):
+            blk = text.split("static const char *" + var + " =\n", 1)[1].split(";\n", 1)[0]
+            return "".join(ast.literal_eval(t) for t in re.findall(r'"(?:[^"\\]|\\.)*"', blk))
+        ter_vs = extract_cstr(pipes_cpp, "neoTerrain_vert_src")
+        ter_fs = extract_cstr(pipes_cpp, "neoTerrain_frag_src")
+        wat_vs = extract_cstr(water_cpp, "s_mobileWaterVS")
+        wat_fs = extract_cstr(water_cpp, "s_mobileWaterFS")
+        for version in ("330", "120", "310es", "300es", "100es"):
+            decl = shader_decl(version)
+            with tempfile.TemporaryDirectory(prefix="revc-gl3-mobile-") as folder:
+                vs_path = Path(folder) / "mob.vert"
+                fs_path = Path(folder) / "mob.frag"
+                with self.subTest(version=version, program="neoTerrain"):
+                    vs_path.write_text(decl + FULL_LIGHTS + embedded_source(VENDOR / "header.vert") + ter_vs)
+                    fs_path.write_text(decl + embedded_source(VENDOR / "header.frag") + ter_fs)
+                    result = subprocess.run([VALIDATOR, "-l", str(vs_path), str(fs_path)],
+                                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                    self.assertEqual(result.returncode, 0, result.stdout)
+                with self.subTest(version=version, program="mobileWater"):
+                    vs_path.write_text(decl + embedded_source(VENDOR / "header.vert") + wat_vs)
+                    fs_path.write_text(decl + embedded_source(VENDOR / "header.frag") + wat_fs)
+                    result = subprocess.run([VALIDATOR, "-l", str(vs_path), str(fs_path)],
+                                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                    self.assertEqual(result.returncode, 0, result.stdout)
+
     def test_view_matrix_eye_and_env_uniform_sync(self):
         gl3_cpp = (ROOT / "vendor/librw/src/gl/gl3device.cpp").read_text()
         # Column-major view inverse translation: E = -R^T * t (columns 0,1,2 dotted with col 3)
@@ -153,7 +182,8 @@ class GL3ShaderTests(unittest.TestCase):
             self.assertIn(sym, h_vs)
         for sym in ("BR_SRGBtoLINEAR", "BR_TonemapAces", "BR_StandardBRDF",
                     "BR_GetEnvBRDFApprox", "BR_GetSkySHDiffuse", "BR_ShadeMaterialHDR",
-                    "SampleSunShadow", "BR_INV_PI"):
+                    "SampleSunShadow", "BR_INV_PI", "u_colorGrade",
+                    "BR_ApplyMobileColorGrade", "BR_ShadeMobileWorldLinear"):
             self.assertIn(sym, h_fs)
         self.assertIn("SampleVehicleParaboloidEnv", veh_fs)
         self.assertIn("u_brLightmap > 0.5", world_fs)

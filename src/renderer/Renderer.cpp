@@ -35,7 +35,9 @@ bool GL3Atmosphere::Enabled = true;
 #include "custompipes.h"
 #include "Frontend.h"
 #ifdef CUSTOM_MODELS
+#include "CustomModels.h"
 #include "CustomWorld.h"
+#include "CustomTimecycle.h"
 #endif
 
 bool gbShowPedRoadGroups;
@@ -1000,8 +1002,15 @@ CRenderer::SetupBigBuildingVisibility(CEntity *ent)
 	// loaded or not completely faded in yet.
 	if(dist < mi->GetNearDistance() && (dist < LOD_DISTANCE || (nonLOD && nonLOD->m_isBigBuilding))){
 		// No non-LOD or non-LOD is completely visible.
+#ifdef ANDROID
+		if(nonLOD == nil){
+			// Unpaired BigBuilding (e.g. lod.ide shell with no matching near model):
+			// keep drawing down to distance 0 instead of popping out!
+		}else if(nonLOD->GetRwObject() && nonLOD->m_alpha == 255){
+#else
 		if(nonLOD == nil ||
 		   nonLOD->GetRwObject() && nonLOD->m_alpha == 255){
+#endif
 #ifdef CUSTOM_MODELS
 			if(ent->m_rwObject && CCustomWorld::OwnsModelSlot(ent->m_modelIndex) &&
 			   dist < mi->GetNearDistance() - FADE_DISTANCE)
@@ -1010,9 +1019,13 @@ CRenderer::SetupBigBuildingVisibility(CEntity *ent)
 			return VIS_INVISIBLE;
 		}
 
+#ifdef ANDROID
+		if(nonLOD && nonLOD->GetModelType() == MITYPE_TIME){
+#else
 		// But if it is a time object, we'd rather draw the wrong
 		// non-LOD than the right LOD.
 		if(nonLOD->GetModelType() == MITYPE_TIME){
+#endif
 			ti = (CTimeModelInfo*)nonLOD;
 			other = ti->GetOtherTimeModel();
 			if(other != -1 && CModelInfo::GetModelInfo(other)->GetRwObject())
@@ -1108,11 +1121,33 @@ CRenderer::ConstructRenderList(void)
 	// The atmospheric curve follows the same interpolated weather as the
 	// timecycle. Zero is the original GL3 fog/light behaviour (also used when
 	// the new rendering setting is disabled).
+#ifdef ANDROID
+	{
+		int tier = FrontEndMenuManager.m_PrefsMobileGraphics;
+		if(tier < 0) tier = 0;
+		if(tier > 2) tier = 2;
+		rw::setAtmosphereParams(rw::makeRGBAf(
+			GL3Atmosphere::Enabled ? (2.0f + 0.25f * (float)tier) : 0.0f,
+			GL3Atmosphere::Enabled ? GL3Atmosphere::Clamp01(CWeather::CloudCoverage) : 0.0f,
+			GL3Atmosphere::Enabled ? GL3Atmosphere::Clamp01(CWeather::Foggyness) : 0.0f,
+			GL3Atmosphere::Enabled ? dayNightBalance : 0.0f));
+#ifdef CUSTOM_MODELS
+		float fHour = (float)CClock::GetHours() + (float)CClock::GetMinutes() * (1.0f / 60.0f)
+		            + (float)CClock::GetSeconds() * (1.0f / 3600.0f);
+		float gradeRows[12];
+		CCustomTimecycle::EvaluateColorGrade(
+			fHour, CWeather::OldWeatherType, CWeather::NewWeatherType,
+			CWeather::InterpolationValue, gradeRows);
+		rw::setColorGradeMatrix(gradeRows);
+#endif
+	}
+#else
 	rw::setAtmosphereParams(rw::makeRGBAf(
 		GL3Atmosphere::Enabled ? 1.0f : 0.0f,
 		GL3Atmosphere::Enabled ? GL3Atmosphere::Clamp01(CWeather::CloudCoverage) : 0.0f,
 		GL3Atmosphere::Enabled ? GL3Atmosphere::Clamp01(CWeather::Foggyness) : 0.0f,
 		GL3Atmosphere::Enabled ? dayNightBalance : 0.0f));
+#endif
 #endif
 
 	COcclusion::ProcessBeforeRendering();
@@ -1258,6 +1293,15 @@ CRenderer::ScanWorld(void)
 #endif
 		{
 			if(f > LOD_DISTANCE){
+#ifdef ANDROID
+				{
+					int camSX = CWorld::GetSectorIndexX(vectors[CORNER_CAM].x);
+					int camSY = CWorld::GetSectorIndexY(vectors[CORNER_CAM].y);
+					for(int dy = -1; dy <= 1; dy++)
+						for(int dx = -1; dx <= 1; dx++)
+							ScanSectorList_Priority(CWorld::GetSector(camSX + dx, camSY + dy)->m_lists);
+				}
+#endif
 				// priority
 				poly[0].x = CWorld::GetSectorX(vectors[CORNER_CAM].x);
 				poly[0].y = CWorld::GetSectorY(vectors[CORNER_CAM].y);
@@ -1276,6 +1320,15 @@ CRenderer::ScanWorld(void)
 				poly[2].y = CWorld::GetSectorY(vectors[CORNER_LOD_RIGHT].y);
 				ScanSectorPoly(poly, 3, ScanSectorList);
 			}else{
+#ifdef ANDROID
+				{
+					int camSX = CWorld::GetSectorIndexX(vectors[CORNER_CAM].x);
+					int camSY = CWorld::GetSectorIndexY(vectors[CORNER_CAM].y);
+					for(int dy = -1; dy <= 1; dy++)
+						for(int dx = -1; dx <= 1; dx++)
+							ScanSectorList(CWorld::GetSector(camSX + dx, camSY + dy)->m_lists);
+				}
+#endif
 				poly[0].x = CWorld::GetSectorX(vectors[CORNER_CAM].x);
 				poly[0].y = CWorld::GetSectorY(vectors[CORNER_CAM].y);
 				poly[1].x = CWorld::GetSectorX(vectors[CORNER_FAR_TOPLEFT].x);
@@ -1285,6 +1338,12 @@ CRenderer::ScanWorld(void)
 				ScanSectorPoly(poly, 3, ScanSectorList);
 			}
 			
+#if defined(ANDROID) && defined(CUSTOM_MODELS)
+			if (CCustomModels::ReplacesNativeWorldMap()) {
+				ScanBigBuildingList(CWorld::GetBigBuildingList(LEVEL_BEACH));
+				ScanBigBuildingList(CWorld::GetBigBuildingList(LEVEL_MAINLAND));
+			} else
+#endif
 #ifdef NO_ISLAND_LOADING
 			if (FrontEndMenuManager.m_PrefsIslandLoading == CMenuManager::ISLAND_LOADING_HIGH) {
 				ScanBigBuildingList(CWorld::GetBigBuildingList(LEVEL_BEACH));
@@ -1370,6 +1429,15 @@ CRenderer::RequestObjectsInFrustum(void)
 			for(int y = y1; y <= y2; y++)
 				ScanSectorList_RequestModels(CWorld::GetSector(x1, y)->m_lists);
 	}else{
+#ifdef ANDROID
+		{
+			int camSX = CWorld::GetSectorIndexX(vectors[CORNER_CAM].x);
+			int camSY = CWorld::GetSectorIndexY(vectors[CORNER_CAM].y);
+			for(int dy = -1; dy <= 1; dy++)
+				for(int dx = -1; dx <= 1; dx++)
+					ScanSectorList_RequestModels(CWorld::GetSector(camSX + dx, camSY + dy)->m_lists);
+		}
+#endif
 		poly[0].x = CWorld::GetSectorX(vectors[CORNER_CAM].x);
 		poly[0].y = CWorld::GetSectorY(vectors[CORNER_CAM].y);
 		poly[1].x = CWorld::GetSectorX(vectors[CORNER_LOD_LEFT].x);

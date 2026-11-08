@@ -239,12 +239,13 @@ RwStream *RwStreamOpen(RwStreamType type, RwStreamAccessType, const void *pData)
 RwBool RwStreamFindChunk(RwStream *, RwUInt32, RwUInt32 *, RwUInt32 *) { return true; }
 RwBool RwStreamClose(RwStream *s, void *) { std::free(s); return true; }
 
-bool CFileLoader::LoadAtomicFile(RwStream *, uint32) {
+bool CFileLoader::LoadAtomicFile(RwStream *, uint32 modelId) {
 	if(g_simulateLoadDelayUs > 0)
 		usleep((useconds_t)g_simulateLoadDelayUs);
 	// Emulate RenderWare Texture::read resolving the model's texture through findCB!
 	if(rw::Texture::findCB){
-		RwTexture *t = rw::Texture::findCB("road_asphalt_br");
+		const char *texName = (modelId == 105) ? "ter_gpu_01_mask" : "road_asphalt_br";
+		RwTexture *t = rw::Texture::findCB(texName);
 		if(t){
 			RwTextureAddRef(t); // matches vendor/librw/src/texture.cpp:338
 			g_lastResolvedTex = t;
@@ -556,6 +557,144 @@ static std::vector<uint8> MakeAstcBtx(void)
 	return b;
 }
 
+static std::vector<uint8> MakeMixedClsWithLargeClsfAndCol3Tail(void)
+{
+	// 1) Valid CED2 CLST block ("ced2_prop"): 1 box
+	std::vector<uint8> ced2(120 + 28, 0);
+	std::memcpy(&ced2[0], "CLST", 4);
+	W32At(ced2, 4, (uint32)(ced2.size() - 8));
+	std::memcpy(&ced2[8], "ced2_prop", 9);
+	std::memcpy(&ced2[28], "CED2", 4);
+	WFAt(ced2, 44, 2.0f);
+	WFAt(ced2, 48, -1.0f); WFAt(ced2, 52, -1.0f); WFAt(ced2, 56, -1.0f);
+	WFAt(ced2, 60,  1.0f); WFAt(ced2, 64,  1.0f); WFAt(ced2, 68,  1.0f);
+	ced2[74] = 1; // nB = 1
+	W32At(ced2, 88, 120u - 4u);
+	WFAt(ced2, 120 +  0, -1.0f); WFAt(ced2, 120 +  4, -1.0f); WFAt(ced2, 120 +  8, -1.0f);
+	WFAt(ced2, 120 + 12,  1.0f); WFAt(ced2, 120 + 16,  1.0f); WFAt(ced2, 120 + 20,  1.0f);
+
+	// 2) Non-CED2 CLSF block ("wide_highway") with +-420 m vertices (> 256 m!)
+	std::vector<uint8> clsf(72 + 20 + 3 * 12 + 1 * 16, 0);
+	std::memcpy(&clsf[0], "CLSF", 4);
+	W32At(clsf, 4, (uint32)(clsf.size() - 8));
+	std::memcpy(&clsf[8], "wide_highway", 12);
+	WFAt(clsf, 32, -420.0f); WFAt(clsf, 36, -15.0f); WFAt(clsf, 40, -1.0f);
+	WFAt(clsf, 44,  420.0f); WFAt(clsf, 48,  15.0f); WFAt(clsf, 52,  1.0f);
+	WFAt(clsf, 56,    0.0f); WFAt(clsf, 60,   0.0f); WFAt(clsf, 64,  0.0f);
+	WFAt(clsf, 68,  421.0f);
+	size_t bo = 72;
+	W32At(clsf, bo, 0u); bo += 4;
+	W32At(clsf, bo, 0u); bo += 4;
+	W32At(clsf, bo, 0u); bo += 4;
+	W32At(clsf, bo, 3u); bo += 4;
+	WFAt(clsf, bo +  0, -420.0f); WFAt(clsf, bo +  4, -15.0f); WFAt(clsf, bo +  8, 0.0f);
+	WFAt(clsf, bo + 12,  420.0f); WFAt(clsf, bo + 16, -15.0f); WFAt(clsf, bo + 20, 0.0f);
+	WFAt(clsf, bo + 24,  420.0f); WFAt(clsf, bo + 28,  15.0f); WFAt(clsf, bo + 32, 0.0f);
+	bo += 36;
+	W32At(clsf, bo, 1u); bo += 4;
+	clsf[bo + 0] = 0; clsf[bo + 4] = 1; clsf[bo + 8] = 2;
+
+	// 3) Legacy SA COL3 block ("col3_bridge"): TBounds center @ tb+24..35, radius @ tb+36..39
+	std::vector<uint8> col3(120 + 28, 0);
+	std::memcpy(&col3[0], "COL3", 4);
+	W32At(col3, 4, (uint32)(col3.size() - 8));
+	std::memcpy(&col3[8], "col3_bridge", 11);
+	size_t tb = 32;
+	WFAt(col3, tb +  0, -10.0f); WFAt(col3, tb +  4, -20.0f); WFAt(col3, tb +  8, -5.0f);
+	WFAt(col3, tb + 12,  30.0f); WFAt(col3, tb + 16,  40.0f); WFAt(col3, tb + 20, 15.0f);
+	WFAt(col3, tb + 24,  10.0f); WFAt(col3, tb + 28,  10.0f); WFAt(col3, tb + 32,  5.0f);
+	WFAt(col3, tb + 36,  38.73f);
+	col3[74] = 1; // numBoxes = 1
+	W32At(col3, 88, 120u - 4u);
+	WFAt(col3, 120 +  0, -10.0f); WFAt(col3, 120 +  4, -20.0f); WFAt(col3, 120 +  8, -5.0f);
+	WFAt(col3, 120 + 12,  30.0f); WFAt(col3, 120 + 16,  40.0f); WFAt(col3, 120 + 20, 15.0f);
+
+	std::vector<uint8> all;
+	all.insert(all.end(), ced2.begin(), ced2.end());
+	all.insert(all.end(), clsf.begin(), clsf.end());
+	all.insert(all.end(), col3.begin(), col3.end());
+	return all;
+}
+
+static std::vector<uint8> MakePbrTerrainEncryptedMod(void)
+{
+	struct W {
+		std::vector<uint8> b; std::vector<size_t> st;
+		void u8(uint8 v) { b.push_back(v); }
+		void u16(uint16 v) { b.push_back((uint8)v); b.push_back((uint8)(v >> 8)); }
+		void u32(uint32 v) { for(int i = 0; i < 4; i++) b.push_back((uint8)(v >> (8 * i))); }
+		void f32(float v) { uint32 u; std::memcpy(&u, &v, 4); u32(u); }
+		void open(uint32 type) { u32(type); u32(0); u32(0x1803FFFFu); st.push_back(b.size()); }
+		void close() { size_t s = st.back(); st.pop_back(); uint32 len = (uint32)(b.size() - s); std::memcpy(&b[s - 8], &len, 4); }
+		void strChunk(const char *s) {
+			open(0x02);
+			size_t n = std::strlen(s) + 1;
+			while(n & 3u) n++;
+			for(size_t i = 0; i < n; i++) u8(i < std::strlen(s) ? (uint8)s[i] : 0);
+			close();
+		}
+		void texChunk(const char *name) {
+			open(0x06);
+			  open(0x01); u8(2); u8(0x11); u16(0); close();
+			  strChunk(name);
+			  strChunk("");
+			  open(0x03); close();
+			close();
+		}
+	} w;
+	w.open(0x10);
+	  w.open(0x01); w.u32(1); w.u32(0); w.u32(0); w.close();
+	  w.open(0x0E);
+	    w.open(0x01); w.u32(1);
+	      w.f32(1); w.f32(0); w.f32(0); w.f32(0); w.f32(1); w.f32(0); w.f32(0); w.f32(0); w.f32(1);
+	      w.f32(0); w.f32(0); w.f32(0); w.u32(0xFFFFFFFFu); w.u32(0);
+	    w.close();
+	    w.open(0x03); w.close();
+	  w.close();
+	  w.open(0x1A);
+	    w.open(0x01); w.u32(1); w.close();
+	    w.open(0x0F);
+	      w.open(0x01);
+	        w.u32(0x00000006u);
+	        w.u32(1); w.u32(3); w.u32(1);
+	        w.f32(0); w.f32(0); w.f32(1.0f); w.f32(0.0f); w.f32(1.0f); w.f32(1.0f);
+	        w.u16(1); w.u16(0); w.u16(0); w.u16(2);
+	        w.f32(0); w.f32(0); w.f32(25.0f); w.f32(36.0f); w.u32(1); w.u32(0);
+	        w.f32(0.0f); w.f32(0.0f); w.f32(0.0f);
+	        w.f32(50.0f); w.f32(0.0f); w.f32(0.0f);
+	        w.f32(0.0f); w.f32(50.0f); w.f32(0.0f);
+	      w.close();
+	      w.open(0x08);
+	        w.open(0x01); w.u32(1); w.u32(0xFFFFFFFFu); w.close();
+	        w.open(0x07);
+	          // Note: pbrTerrain materials in BR .mod have textured=0 and NO direct rwTEXTURE child;
+	          // fixTree extracts landscapeMask out of rwMATFX (0x120) type 9 and records TerrainRecipe!
+	          w.open(0x01); w.u32(0); w.u8(255); w.u8(255); w.u8(255); w.u8(255); w.u32(0); w.u32(0); w.f32(1); w.f32(1); w.f32(1); w.close();
+	          w.open(0x03);
+	            w.open(0x0120u); // rwMATFX type 9 (BR terrain v1)
+	              w.u32(9u); w.u32(9u);
+	              w.f32(10.0f); w.texChunk("tlayer_a");
+	              w.f32(12.0f); w.texChunk("tlayer_b");
+	              w.f32( 8.0f); w.texChunk("tlayer_c");
+	              w.f32(16.0f); w.texChunk("tlayer_d");
+	              w.f32( 1.0f); w.texChunk("ter_gpu_01_mask");
+	              w.u32(0u);
+	            w.close();
+	          w.close();
+	        w.close();
+	      w.close();
+	      w.open(0x03); w.close();
+	    w.close();
+	  w.close();
+	  w.open(0x14);
+	    w.open(0x01); w.u32(0); w.u32(0); w.u32(5); w.u32(0); w.close();
+	    w.open(0x03); w.close();
+	  w.close();
+	  w.open(0x03); w.close();
+	w.close();
+	return EncryptDffToMod(w.b);
+}
+
 static void WriteFileBytes(const std::string &path, const std::vector<uint8> &bytes)
 {
 	FILE *f = std::fopen(path.c_str(), "wb");
@@ -599,11 +738,15 @@ int main(void)
 	const char *centerIde = "objs\n9000, road_br_01, road_asphalt_br, 1, 200, 0\nend\n";
 	const char *centerIpl = "inst\n9000, road_br_01, 0, 10.0, 20.0, 3.0, 1, 1, 1, 0, 0, 0, 1\nend\n";
 	const char *pedAniDummy = "ANP3ped_test_block\0\0\0\0\0\0\0\0\0\0\x01\0\0\0\0\0\0\0";
+	std::string colorcycleDat;
+	for(int slot = 0; slot < 8; slot++)
+		colorcycleDat += "2.0 0.0 0.0 0.02  0.0 1.8 0.0 0.01  0.0 0.0 1.6 -0.01\n";
 
 	WriteFileBytes("custom/zip/common.bpc", MakeZip({
 		{ "data/config.dat", Bytes(cfgDat) },
 		{ "data/texdb.dat", Bytes(texdbDat) },
 		{ "data/lods.info", Bytes(lodsInfo) },
+		{ "data/colorcycle.dat", Bytes(colorcycleDat.c_str()) },
 		{ "data/maps/city/center.ide", Bytes(centerIde) },
 		{ "data/maps/city/center.ipl", Bytes(centerIpl) },
 		{ "anim/ped.ani", std::vector<uint8>((const uint8*)pedAniDummy, (const uint8*)pedAniDummy + 36) }
@@ -615,8 +758,10 @@ int main(void)
 		{ "road_br_02.mod", MakeEncryptedMod() },
 		{ "road_br_03.mod", MakeEncryptedMod() },
 		{ "nrock_ter498.mod", MakeMeshOnlyEncryptedMod() },
+		{ "ter_gpu_01.mod", MakePbrTerrainEncryptedMod() },
 		{ "missile.mod", MakeEmptyStubEncryptedMod() },
-		{ "world.col", MakeVcCol("road_br_01") }
+		{ "world.col", MakeVcCol("road_br_01") },
+		{ "mixed_roads.cls", MakeMixedClsWithLargeClsfAndCol3Tail() }
 	}, false));
 	WriteFileBytes("custom/zip/mesh/unlisted.bpc", MakeZip({
 		{ "secret_model.mod", MakeEncryptedMod() }
@@ -624,7 +769,12 @@ int main(void)
 
 	WriteFileBytes("custom/zip/textures/Roads3-0.astc.bpc", MakeZip({
 		{ "road_asphalt_br.btx", MakeAstcBtx() },
-		{ "brsky.btx", MakeAstcBtx() }
+		{ "brsky.btx", MakeAstcBtx() },
+		{ "ter_gpu_01_mask.btx", MakeAstcBtx() },
+		{ "tlayer_a.btx", MakeAstcBtx() },
+		{ "tlayer_b.btx", MakeAstcBtx() },
+		{ "tlayer_c.btx", MakeAstcBtx() },
+		{ "tlayer_d.btx", MakeAstcBtx() }
 	}, false));
 	// Real-world BR companion thumbnail archive naming (<db>.astc.bpc.tmb)
 	WriteFileBytes("custom/zip/textures/Roads3-0.astc.bpc.tmb", MakeZip({
@@ -641,8 +791,13 @@ int main(void)
 	CCustomModels::Initialise();
 	CCustomModels::MountImages();
 	Check(CCustomModels::IsActive(), "CCustomModels active with Android .bpc layout");
+	Check(CCustomModels::ReplacesNativeWorldMap(), "ReplacesNativeWorldMap() true when common.bpc mounts custom IPLs");
 
 	bool fromCommon = false;
+	std::vector<uint8> ccBytes;
+	Check(CCustomModels::ReadDataFile("data/colorcycle.dat", ccBytes, &fromCommon) && fromCommon && !ccBytes.empty(),
+		"read data/colorcycle.dat from XOR common.bpc on Android");
+
 	std::vector<uint8> lodBytes;
 	Check(CCustomModels::ReadDataFile("data/lods.info", lodBytes, &fromCommon) && fromCommon,
 		"read data/lods.info from XOR common.bpc");
@@ -672,6 +827,36 @@ int main(void)
 	std::vector<uint8> colBlock;
 	Check(CCustomModels::GetCollisionBlock("road_br_01", colBlock),
 		"GetCollisionBlock('road_br_01') returns per-model collision block after MountImages()");
+
+	// Verify mixed .cls (CED2 + >256m CLSF + legacy SA COL3 tail):
+	std::vector<uint8> ced2Blk, hwyBlk, col3Blk;
+	Check(CCustomModels::GetCollisionBlock("ced2_prop", ced2Blk),
+		"mixed .cls: CED2 block 'ced2_prop' indexed and converted");
+	Check(CCustomModels::GetCollisionBlock("wide_highway", hwyBlk) && hwyBlk.size() >= 64,
+		"mixed .cls: non-CED2 CLSF 'wide_highway' (> 256m) indexed alongside CED2");
+	{
+		// In VC COLL body (after 8-byte 'COLL'+size header): radius @ +24, center @ +28..39, min @ +40..51, max @ +52..63
+		float rad = 0.0f, minX = 0.0f, maxX = 0.0f;
+		std::memcpy(&rad,  &hwyBlk[24], 4);
+		std::memcpy(&minX, &hwyBlk[40], 4);
+		std::memcpy(&maxX, &hwyBlk[52], 4);
+		Check(minX <= -419.5f && maxX >= 419.5f && rad >= 419.5f,
+			"CLSF > 256m road vertices (-420..+420 m) preserved without +-255.99 m clamping");
+	}
+	Check(CCustomModels::GetCollisionBlock("col3_bridge", col3Blk) && col3Blk.size() >= 64,
+		"mixed .cls: legacy COL3 'col3_bridge' tail indexed and converted");
+	{
+		float rad = 0.0f, cx = 0.0f, cy = 0.0f, cz = 0.0f;
+		std::memcpy(&rad, &col3Blk[24], 4);
+		std::memcpy(&cx,  &col3Blk[28], 4);
+		std::memcpy(&cy,  &col3Blk[32], 4);
+		std::memcpy(&cz,  &col3Blk[36], 4);
+		Check(std::fabs(rad - 38.73f) < 0.05f &&
+		      std::fabs(cx - 10.0f) < 0.05f &&
+		      std::fabs(cy - 10.0f) < 0.05f &&
+		      std::fabs(cz -  5.0f) < 0.05f,
+			"COL3 TBounds center=(10,10,5) and radius=38.73 parsed from exact SA offsets (+24 / +36)");
+	}
 
 	// Native MODELS/TXD.IMG slots (m_size != 0) must pass straight through to stock CdStream
 	// in O(1) without calling CModelInfo::GetModelInfo(const char*) / FindModelForTxd!
@@ -856,6 +1041,38 @@ int main(void)
 		Check(CCustomModels::IsStreamPrepared(102, false),
 			"ScopedBlockingLoad overrides frame budget throttle inside LoadAllRequestedModels");
 	}
+
+	// 4) GPU 4-layer pbrTerrain test: ter_gpu_01.mod must NOT CPU-bake a 512x512 RGBA8 texture,
+	//    and loading it must register mask + 4 raw GPU .btx layers in FindGpuTerrainSplat!
+	CTimer::SetFrameCounter(CTimer::GetFrameCounter() + 1);
+	CSimpleModelInfo *miTer = CModelInfo::AddSimpleModel(105);
+	miTer->SetModelName("ter_gpu_01");
+	((CBaseModelInfo*)miTer)->SetTexDictionary("roads_br_txd");
+	Check(CCustomModels::CanServe(105), "CanServe(105) accepts ter_gpu_01.mod");
+	CCustomModels::PrefetchStream(105, true);
+	for(int spin = 0; spin < 200 && !CCustomModels::IsStreamPrepared(105, true); spin++){
+		usleep(2000);
+		CCustomModels::PumpBackgroundResults();
+	}
+	g_lastResolvedTex = nullptr;
+	CTxdStore::SetCurrentTxd(txdSlot);
+	Check(CCustomModels::Load(105), "ter_gpu_01.mod loaded via GPU 4-layer pbrTerrain path");
+	RwTexture *terMaskTex = g_lastResolvedTex;
+	Check(terMaskTex != nullptr, "BpcDirectTexFindCB resolved ter_gpu_01_mask GPU texture");
+	{
+		CCustomModels::GpuTerrainSplatInfo splat;
+		Check(CCustomModels::FindGpuTerrainSplat(terMaskTex, splat),
+			"FindGpuTerrainSplat registered GPU splat info for ter_gpu_01_mask");
+		Check(splat.layers[0] != nullptr && splat.layers[1] != nullptr &&
+		      splat.layers[2] != nullptr && splat.layers[3] != nullptr,
+			"all 4 GPU terrain detail layers (tlayer_a..d) resolved directly from .astc.bpc");
+		Check(std::fabs(splat.scale[0] - 10.0f) < 1e-3f &&
+		      std::fabs(splat.scale[1] - 12.0f) < 1e-3f &&
+		      std::fabs(splat.scale[2] -  8.0f) < 1e-3f &&
+		      std::fabs(splat.scale[3] - 16.0f) < 1e-3f,
+			"GPU terrain tile multipliers (10, 12, 8, 16) preserved from 0x0253F2FD spec");
+	}
+	RwTextureDestroy(terMaskTex);
 
 	CTxdStore::RemoveTxd(ripSlot);
 	CTxdStore::RemoveTxd(txdSlot);

@@ -17,6 +17,10 @@
 #include "Vehicle.h"
 #include "Clouds.h"
 #include "CustomSky.h"
+#ifdef ANDROID
+#include "Frontend.h"
+#include "Timer.h"
+#endif
 #ifdef CUSTOM_MODELS
 #include "SAStaticModel.h"
 #endif
@@ -103,7 +107,11 @@ SaCarSpecMatRead(rw::Stream *stream, int32 len, void *object, int32, int32)
 rw::TexDictionary *neoTxd;
 
 bool bRenderingEnvMap;
+#ifdef ANDROID
+int32 EnvMapSize = 128;
+#else
 int32 EnvMapSize = 512;
+#endif
 rw::Camera *EnvMapCam;
 rw::Texture *EnvMapTex;
 rw::Texture *EnvMaskTex;
@@ -135,7 +143,11 @@ CreateEnvMapCam(rw::World *world)
 					cam->zBuffer = zbuf;
 					cam->setFrame(frame);
 					cam->setNearPlane(0.1f);
+#ifdef ANDROID
+					cam->setFarPlane(160.0f);
+#else
 					cam->setFarPlane(350.0f);
+#endif
 					rw::V2d vw = { 1.35f, 1.35f };
 					cam->setViewWindow(&vw);
 					EnvMapTex = rw::Texture::create(fbuf);
@@ -187,7 +199,9 @@ RenderEnvMapScene(void)
 {
 	CRenderer::RenderRoads();
 	CRenderer::RenderEverythingBarRoads();
+#ifndef ANDROID
 	CRenderer::RenderFadingInEntities();
+#endif
 }
 
 void
@@ -195,6 +209,17 @@ EnvMapRender(void)
 {
 	if(VehiclePipeSwitch != VEHICLEPIPE_NEO || EnvMapCam == nil || EnvMapTex == nil)
 		return;
+#ifdef ANDROID
+	int8 mobTier = FrontEndMenuManager.m_PrefsMobileGraphics;
+	if(mobTier <= CMenuManager::MOBILE_GFX_LOW)
+		return;
+	static uint32 s_lastEnvFrame = 0xFFFFFFFFu;
+	uint32 curFrame = CTimer::GetFrameCounter();
+	uint32 stride = (mobTier >= CMenuManager::MOBILE_GFX_HIGH) ? 3u : 5u;
+	if(s_lastEnvFrame != 0xFFFFFFFFu && (uint32)(curFrame - s_lastEnvFrame) < stride)
+		return;
+	s_lastEnvFrame = curFrame;
+#endif
 
 	RwCameraEndUpdate(Scene.camera);
 

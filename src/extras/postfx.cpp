@@ -421,6 +421,17 @@ CPostFX::GetBackBuffer(RwCamera *cam)
 void
 CPostFX::Render(RwCamera *cam, uint32 red, uint32 green, uint32 blue, uint32 blur, int32 type, uint32 bluralpha)
 {
+#ifdef ANDROID
+	// On Android GL3, colour grading (data/colorcycle.dat), contrast and gamma run
+	// inline in fragment registers without allocating 4096x2048 RGBA8 RTs or
+	// triggering a full-frame GMEM glCopyTexSubImage2D resolve on tiled mobile GPUs.
+	if(GL3Atmosphere::Enabled &&
+	   type != MOTION_BLUR_SNIPER &&
+	   !MotionBlurOn &&
+	   CMBlur::Drunkness <= 0.001f){
+		return;
+	}
+#endif
 	PUSH_RENDERGROUP("CPostFX::Render");
 
 	EnsurePostFXBuffers(cam);

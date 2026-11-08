@@ -28,6 +28,7 @@
 #include "FileLoader.h"
 #include "TxdStore.h"
 #include "TempColModels.h"
+#include "ColStore.h"
 #include "ColModel.h"
 #include "Pools.h"
 #include "Streaming.h"
@@ -268,6 +269,10 @@ void PlaceInstance(const customworld::Instance &inst, IplContext &ctx)
        !CPools::GetPtrNodePool()->EnsureFree(nodes + 10000)) {
         ctx.capacity++; return;
     }
+#ifdef ANDROID
+    if(CColModel *col = mi->GetColModel())
+        col->level = LEVEL_GENERIC;
+#endif
     CFileLoader::LoadObjectInstance(vcLine);
     ctx.seen.insert(key);
     ctx.placed++;

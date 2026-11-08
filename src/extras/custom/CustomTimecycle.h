@@ -13,6 +13,9 @@ class CCustomTimecycle
 {
 public:
 	static void Apply(void);
+#ifdef ANDROID
+	static void EvaluateColorGrade(float fHour, int oldWeather, int newWeather, float weatherInterp, float outRows12[12]);
+#endif
 };
 
 #endif // __GTA_CUSTOMTIMECYCLE_H__

@@ -1186,14 +1186,116 @@ static inline bool colBlockHasGeometry(const uint8_t* blk, size_t n) {
     return (nS | nB | nF) != 0;
 }
 
+#ifdef ANDROID
+// Direct CLSF (float32 COL1-body) -> VC COLL v1 without int16/128 (+/-256m) clamping.
+static inline bool clsfToColl(const uint8_t* blk, size_t n, std::vector<uint8_t>& out) {
+    if (n < 72 || memcmp(blk + 28, "CED2", 4) == 0) return false;
+    const uint8_t* body = blk + 72; size_t bn = n - 72, off = 0;
+    auto need = [&](size_t k) { return off + k <= bn; };
+    if (!need(4)) return false; uint32_t nS = rd32(body + off); off += 4;
+    const uint8_t* sph = body + off; if (nS > 32767 || !need((size_t)nS * 20)) return false; off += (size_t)nS * 20;
+    if (!need(4)) return false; uint32_t nL = rd32(body + off); off += 4;
+    const uint8_t* lin = body + off; if (nL > 32767 || !need((size_t)nL * 24)) return false; off += (size_t)nL * 24;
+    if (!need(4)) return false; uint32_t nB = rd32(body + off); off += 4;
+    const uint8_t* box = body + off; if (nB > 32767 || !need((size_t)nB * 28)) return false; off += (size_t)nB * 28;
+    if (!need(4)) return false; uint32_t nV = rd32(body + off); off += 4;
+    const uint8_t* vtx = body + off; if (nV > 32767 || !need((size_t)nV * 12)) return false; off += (size_t)nV * 12;
+    if (!need(4)) return false; uint32_t nF = rd32(body + off); off += 4;
+    const uint8_t* fac = body + off; if (nF > 32767 || !need((size_t)nF * 16)) return false;
+
+    float bmin[3] = { 1e30f, 1e30f, 1e30f }, bmax[3] = { -1e30f, -1e30f, -1e30f };
+    auto grow = [&](float x, float y, float z) {
+        if (x < bmin[0]) bmin[0] = x; if (x > bmax[0]) bmax[0] = x;
+        if (y < bmin[1]) bmin[1] = y; if (y > bmax[1]) bmax[1] = y;
+        if (z < bmin[2]) bmin[2] = z; if (z > bmax[2]) bmax[2] = z;
+    };
+    float fmin[3], fmax[3], fctr[3], frad;
+    memcpy(fmin, blk + 32, 12); memcpy(fmax, blk + 44, 12);
+    memcpy(fctr, blk + 56, 12); memcpy(&frad, blk + 68, 4);
+    if (std::isfinite(fmin[0]) && std::isfinite(fmin[1]) && std::isfinite(fmin[2]) &&
+        std::isfinite(fmax[0]) && std::isfinite(fmax[1]) && std::isfinite(fmax[2]) &&
+        fmin[0] <= fmax[0] && fmin[1] <= fmax[1] && fmin[2] <= fmax[2] &&
+        std::fabs(fmin[0]) < 1e5f && std::fabs(fmax[0]) < 1e5f &&
+        std::fabs(fmin[1]) < 1e5f && std::fabs(fmax[1]) < 1e5f &&
+        std::fabs(fmin[2]) < 1e5f && std::fabs(fmax[2]) < 1e5f) {
+        grow(fmin[0], fmin[1], fmin[2]); grow(fmax[0], fmax[1], fmax[2]);
+    }
+    for (uint32_t i = 0; i < nS; i++) {
+        float sr, sc[3]; memcpy(&sr, sph + (size_t)i * 20, 4); memcpy(sc, sph + (size_t)i * 20 + 4, 12);
+        if (!std::isfinite(sr) || sr < 0.f || sr > 1e5f) return false;
+        for (int k = 0; k < 3; k++) if (!std::isfinite(sc[k]) || std::fabs(sc[k]) > 1e5f) return false;
+        grow(sc[0] - sr, sc[1] - sr, sc[2] - sr); grow(sc[0] + sr, sc[1] + sr, sc[2] + sr);
+    }
+    for (uint32_t i = 0; i < nB; i++) {
+        float mn[3], mx[3]; memcpy(mn, box + (size_t)i * 28, 12); memcpy(mx, box + (size_t)i * 28 + 12, 12);
+        for (int k = 0; k < 3; k++) if (!std::isfinite(mn[k]) || !std::isfinite(mx[k]) || mn[k] > mx[k] || std::fabs(mn[k]) > 1e5f || std::fabs(mx[k]) > 1e5f) return false;
+        grow(mn[0], mn[1], mn[2]); grow(mx[0], mx[1], mx[2]);
+    }
+    for (uint32_t i = 0; i < nV; i++) {
+        float v[3]; memcpy(v, vtx + (size_t)i * 12, 12);
+        for (int k = 0; k < 3; k++) if (!std::isfinite(v[k]) || std::fabs(v[k]) > 1e5f) return false;
+        grow(v[0], v[1], v[2]);
+    }
+    for (uint32_t i = 0; i < nF; i++) {
+        const uint8_t* f = fac + (size_t)i * 16;
+        if (rd32(f) >= nV || rd32(f + 4) >= nV || rd32(f + 8) >= nV) return false;
+    }
+    if (bmin[0] > bmax[0]) { bmin[0] = bmin[1] = bmin[2] = -0.5f; bmax[0] = bmax[1] = bmax[2] = 0.5f; }
+    float ctr[3] = { (bmin[0] + bmax[0]) * 0.5f, (bmin[1] + bmax[1]) * 0.5f, (bmin[2] + bmax[2]) * 0.5f };
+    float dx = (bmax[0] - bmin[0]) * 0.5f, dy = (bmax[1] - bmin[1]) * 0.5f, dz = (bmax[2] - bmin[2]) * 0.5f;
+    float rad = std::sqrt(dx * dx + dy * dy + dz * dz);
+    if (rad < 0.001f) rad = 0.5f;
+
+    out.assign(blk, blk + 32);
+    memcpy(&out[0], "COLL", 4);
+    out.resize(72, 0);
+    memcpy(&out[32], &rad, 4);
+    memcpy(&out[36], ctr, 12);
+    memcpy(&out[48], bmin, 12);
+    memcpy(&out[60], bmax, 12);
+    auto putU32 = [&](uint32_t v) { uint8_t b4[4]; wr32(b4, v); out.insert(out.end(), b4, b4 + 4); };
+    putU32(nS);
+    for (uint32_t i = 0; i < nS; i++) {
+        const uint8_t* s = sph + (size_t)i * 20;
+        out.insert(out.end(), s, s + 16);
+        out.push_back(s[16] <= 34 ? s[16] : 0); out.push_back(0); out.push_back(0); out.push_back(0);
+    }
+    putU32(nL);
+    if (nL) out.insert(out.end(), lin, lin + (size_t)nL * 24);
+    putU32(nB);
+    for (uint32_t i = 0; i < nB; i++) {
+        const uint8_t* b = box + (size_t)i * 28;
+        out.insert(out.end(), b, b + 24);
+        out.push_back(b[24] <= 34 ? b[24] : 0); out.push_back(0); out.push_back(0); out.push_back(0);
+    }
+    putU32(nV);
+    if (nV) out.insert(out.end(), vtx, vtx + (size_t)nV * 12);
+    putU32(nF);
+    for (uint32_t i = 0; i < nF; i++) {
+        const uint8_t* f = fac + (size_t)i * 16;
+        out.insert(out.end(), f, f + 12);
+        out.push_back(f[12] <= 34 ? f[12] : 0); out.push_back(0); out.push_back(0); out.push_back(f[15]);
+    }
+    clsPad4(out);
+    return true;
+}
+#endif
+
 // Один блок .cls -> COL3 блок. Пустой вектор при ошибке.
 static inline bool clsBlockToCol(const uint8_t* blk, size_t n, std::vector<uint8_t>& out, ClsStats& st) {
     uint32_t f = clsFourcc(blk);
+#ifdef ANDROID
+    if (n >= 32 && memcmp(blk + 28, "CED2", 4) == 0) return false;
+#endif
     if (f == FCC_CLST) {
         if (n < 72) { st.bad++; return false; }
         out.assign(blk, blk + n); memcpy(&out[0], "COL3", 4); clsSwapBounds(&out[32]); clsPad4(out); st.matFixed += fixColBlockMaterials(out.data(), out.size()); st.clst++; return true;
     }
+#ifdef ANDROID
+    if (f == FCC_CLSF) { if (!clsfToColl(blk, n, out)) { st.bad++; return false; } st.clsf++; return true; }
+#else
     if (f == FCC_CLSF) { if (!clsfToCol3(blk, n, out)) { st.bad++; return false; } st.clsf++; return true; }
+#endif
     out.assign(blk, blk + n); clsPad4(out); st.matFixed += fixColBlockMaterials(out.data(), out.size()); st.passthru++; return true;
 }
 

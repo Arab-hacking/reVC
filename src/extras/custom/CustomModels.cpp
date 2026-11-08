@@ -720,6 +720,7 @@ ScanAndroidBpcSystem(void)
 				if((key == "data/water.dat" && ent->uncompressedSize > 1024 * 1024) ||
 				   (key == "data/lods.info" && ent->uncompressedSize > 1024 * 1024) ||
 				   (key == "data/texdb.dat" && ent->uncompressedSize > 1024 * 1024) ||
+				   (key == "data/colorcycle.dat" && ent->uncompressedSize > 64 * 1024) ||
 				   (key == "data/carcols.dat" && ent->uncompressedSize > 64 * 1024))
 					continue;
 
@@ -728,7 +729,8 @@ ScanAndroidBpcSystem(void)
 				snprintf(src.fname, sizeof(src.fname), "%s:%s", commonPath.c_str(), ent->name);
 
 				if(pass == 0 && (key == "data/config.dat" || key == "data/texdb.dat" ||
-				                 key == "data/timecyc.json" || key == "data/water.dat" ||
+				                 key == "data/timecyc.json" || key == "data/colorcycle.dat" ||
+				                 key == "data/water.dat" ||
 				                 key == "data/carcols.dat" || key == "data/lods.info" ||
 				                 key == "models/generic/vehicle.txd" || key == "models/vehicle.txd")){
 					commonZipDataFiles[key] = src;
@@ -1322,8 +1324,13 @@ IndexBrCollisionBlocks(void)
 			BrBlockRef ref = { source, blocks[b].offset, blocks[b].size, src.mtime };
 			customBrColBlocks[key] = ref;
 		}
+#ifdef ANDROID
+		if(blocks.empty() || bad > 0) {
+#else
 		if(blocks.empty()) {
-			// Non-CED2 .cls entries may share a filename across user IMGs.
+#endif
+			// Non-CED2 .cls entries may share a filename across user IMGs
+			// (or coexist with CED2 blocks inside mixed containers like BRWinter.cls).
 			// Index the INTERNAL names of their converted blocks.
 			std::vector<uint8> game = LegacyClsToGame(data);
 			std::vector<customcolformat::Block> legacy;
@@ -1332,6 +1339,9 @@ IndexBrCollisionBlocks(void)
 				const customcolformat::Block &block = legacy[b];
 				if(!customcolformat::ValidVC(game.data()+block.offset, block.size)) continue;
 				std::string key = ToLower(block.name);
+#ifdef ANDROID
+				if(customBrColBlocks.find(key) != customBrColBlocks.end()) continue;
+#endif
 				std::map<std::string, BrBlockRef>::const_iterator found = customLegacyClsBlocks.find(key);
 				if(found != customLegacyClsBlocks.end() && found->second.mtime >= src.mtime) continue;
 				BrBlockRef ref = { source, block.offset, block.size, src.mtime };
@@ -1715,10 +1725,12 @@ CallGuarded(bool (*fn)(void*), void *arg, DWORD *code)
 #endif
 
 #ifdef ANDROID
-static void BeginBpcModelTexScope(const PreparedModel *model, int32 txdSlot);
+static void BeginBpcModelTexScope(const PreparedModel *model, const std::string &modelKey, int32 txdSlot);
 static void EndBpcModelTexScope(void);
 struct ScopedBpcModelTexLoad {
-	ScopedBpcModelTexLoad(const PreparedModel *model, int32 txdSlot) { BeginBpcModelTexScope(model, txdSlot); }
+	ScopedBpcModelTexLoad(const PreparedModel *model, const std::string &modelKey, int32 txdSlot) {
+		BeginBpcModelTexScope(model, modelKey, txdSlot);
+	}
 	~ScopedBpcModelTexLoad(void) { EndBpcModelTexScope(); }
 };
 #endif
@@ -1772,7 +1784,7 @@ LoadModelIntoGame(const std::string &key, int32 modelId)
 #else
 	{
 #ifdef ANDROID
-		ScopedBpcModelTexLoad texScope(model.get(), mi->GetTxdSlot());
+		ScopedBpcModelTexLoad texScope(model.get(), key, mi->GetTxdSlot());
 #endif
 		GuardedLoadCtx ctx; ctx.mi = mi; ctx.stream = stream; ctx.modelId = modelId; ctx.ok = false;
 		ok = RunModelLoaders(&ctx);
@@ -2343,6 +2355,36 @@ IsFullBpcTexResident(const std::string &cacheKey)
 	return it != s_bpcTexDbMap.end() && it->second.tex != nil && !it->second.isPreview;
 }
 
+static std::map<const RwTexture*, CCustomModels::GpuTerrainSplatInfo> s_gpuTerrainSplats;
+
+static void
+UnregisterGpuTerrainSplat(const RwTexture *maskTex)
+{
+	if(maskTex == nil)
+		return;
+	std::map<const RwTexture*, CCustomModels::GpuTerrainSplatInfo>::iterator it = s_gpuTerrainSplats.find(maskTex);
+	if(it == s_gpuTerrainSplats.end())
+		return;
+	CCustomModels::GpuTerrainSplatInfo info = it->second;
+	s_gpuTerrainSplats.erase(it);
+	for(int i = 0; i < 4; i++){
+		if(info.layers[i])
+			RwTextureDestroy(info.layers[i]);
+	}
+}
+
+bool
+CCustomModels::FindGpuTerrainSplat(const RwTexture *maskTex, GpuTerrainSplatInfo &out)
+{
+	if(maskTex == nil)
+		return false;
+	std::map<const RwTexture*, GpuTerrainSplatInfo>::const_iterator it = s_gpuTerrainSplats.find(maskTex);
+	if(it == s_gpuTerrainSplats.end())
+		return false;
+	out = it->second;
+	return true;
+}
+
 static void
 TrimBpcTexDbCache(void)
 {
@@ -2365,8 +2407,10 @@ TrimBpcTexDbCache(void)
 				s_bpcTexDbBytes -= it->second.gpuBytes;
 			else
 				s_bpcTexDbBytes = 0;
-			if(it->second.tex)
+			if(it->second.tex){
+				UnregisterGpuTerrainSplat(it->second.tex);
 				RwTextureDestroy(it->second.tex);
+			}
 			s_bpcTexDbMap.erase(it);
 			lru = s_bpcTexDbLru.erase(lru);
 			customTexDbEvictions++;
@@ -2586,6 +2630,7 @@ PumpPendingBtxUpgrades(void)
 					s_bpcTexDbBytes -= regIt->second.gpuBytes;
 				else
 					s_bpcTexDbBytes = 0;
+				UnregisterGpuTerrainSplat(regIt->second.tex);
 				RwTextureDestroy(regIt->second.tex);
 				s_bpcTexDbLru.erase(regIt->second.lruIt);
 				s_bpcTexDbMap.erase(regIt);
@@ -2659,7 +2704,9 @@ PumpPendingBtxUpgrades(void)
 }
 
 static const PreparedModel *s_activeBpcModel = nil;
+static std::string s_activeBpcModelKey;
 static int32 s_activeBpcTxdSlot = -1;
+static bool s_resolvingTerrainMask = false;
 #ifdef LIBRW
 static rw::Texture *(*s_origBpcFindCB)(const char *name) = nil;
 #endif
@@ -2683,23 +2730,69 @@ BpcDirectTexFindCB(const char *name)
 	}
 
 	// 1. Check 4-layer pbrTerrain composite recipes extracted from the .mod
-	if(s_activeBpcModel && dict){
+	if(!s_resolvingTerrainMask && s_activeBpcModel){
 		for(size_t r = 0; r < s_activeBpcModel->stats.recipes.size(); r++){
 			const br::TerrainRecipe &recipe = s_activeBpcModel->stats.recipes[r];
 			if(ToLower(recipe.tex) == ToLower(name)){
-				if(RwTexture *inDict = RwTexDictionaryFindNamedTexture(dict, name))
-					return inDict;
-				std::string modelKey = s_activeBpcTxdSlot >= 0 && CTxdStore::GetTxdName(s_activeBpcTxdSlot)
-					? ToLower(CTxdStore::GetTxdName(s_activeBpcTxdSlot))
-					: ToLower(name);
-				std::shared_ptr<const brtex::Texture> baked = GetPreparedTexture(modelKey, name, &recipe);
-				if(baked){
-					RwTexture *built = BuildTextureGuarded(*baked, name);
-					if(built){
-						RwTexDictionaryAddTexture(dict, built);
-						if(s_activeBpcTxdSlot >= 0)
-							customLoadedTxds[s_activeBpcTxdSlot] = dict;
-						return built;
+				const std::string lowMask = ToLower(recipe.tex);
+				const bool hasMaskBtx = (FindSource(customBtx, lowMask) != nil || FindSource(customTmbBtx, lowMask) != nil);
+				bool hasAnyLayerBtx = false;
+				for(int li = 0; li < 4; li++){
+					if(!recipe.layers[li].empty()){
+						std::string lowLay = ToLower(recipe.layers[li]);
+						if(FindSource(customBtx, lowLay) != nil || FindSource(customTmbBtx, lowLay) != nil){
+							hasAnyLayerBtx = true;
+							break;
+						}
+					}
+				}
+#ifdef RW_GL3
+				if(hasMaskBtx && hasAnyLayerBtx){
+					s_resolvingTerrainMask = true;
+					RwTexture *maskTex = BpcDirectTexFindCB(name);
+					if(maskTex != nil && s_gpuTerrainSplats.find(maskTex) == s_gpuTerrainSplats.end()){
+						CCustomModels::GpuTerrainSplatInfo splat;
+						bool gotLayer = false;
+						for(int li = 0; li < 4; li++){
+							splat.layers[li] = nil;
+							splat.scale[li] = recipe.scale[li] > 0.01f ? recipe.scale[li] : 1.0f;
+							if(!recipe.layers[li].empty()){
+								RwTexture *lt = BpcDirectTexFindCB(recipe.layers[li].c_str());
+								if(lt){
+									RwTextureAddRef(lt);
+									splat.layers[li] = lt;
+									gotLayer = true;
+								}
+							}
+						}
+						if(gotLayer)
+							s_gpuTerrainSplats[maskTex] = splat;
+					}
+					s_resolvingTerrainMask = false;
+					if(maskTex != nil)
+						return maskTex;
+				}
+#else
+				(void)hasMaskBtx;
+				(void)hasAnyLayerBtx;
+#endif
+				if(dict){
+					if(RwTexture *inDict = RwTexDictionaryFindNamedTexture(dict, name))
+						return inDict;
+					std::string modelKey = !s_activeBpcModelKey.empty()
+						? s_activeBpcModelKey
+						: (s_activeBpcTxdSlot >= 0 && CTxdStore::GetTxdName(s_activeBpcTxdSlot)
+							? ToLower(CTxdStore::GetTxdName(s_activeBpcTxdSlot))
+							: ToLower(name));
+					std::shared_ptr<const brtex::Texture> baked = GetPreparedTexture(modelKey, name, &recipe);
+					if(baked){
+						RwTexture *built = BuildTextureGuarded(*baked, name);
+						if(built){
+							RwTexDictionaryAddTexture(dict, built);
+							if(s_activeBpcTxdSlot >= 0)
+								customLoadedTxds[s_activeBpcTxdSlot] = dict;
+							return built;
+						}
 					}
 				}
 				break;
@@ -2798,9 +2891,10 @@ BpcDirectTexFindCB(const char *name)
 #endif // LIBRW
 
 static void
-BeginBpcModelTexScope(const PreparedModel *model, int32 txdSlot)
+BeginBpcModelTexScope(const PreparedModel *model, const std::string &modelKey, int32 txdSlot)
 {
 	s_activeBpcModel = model;
+	s_activeBpcModelKey = modelKey;
 	s_activeBpcTxdSlot = txdSlot;
 #ifdef LIBRW
 	if(s_bpcTexScopeDepth++ == 0 && rw::Texture::findCB != BpcDirectTexFindCB){
@@ -2820,10 +2914,12 @@ EndBpcModelTexScope(void)
 			rw::Texture::findCB = s_origBpcFindCB;
 		s_origBpcFindCB = nil;
 		s_activeBpcModel = nil;
+		s_activeBpcModelKey.clear();
 		s_activeBpcTxdSlot = -1;
 	}
 #else
 	s_activeBpcModel = nil;
+	s_activeBpcModelKey.clear();
 	s_activeBpcTxdSlot = -1;
 #endif
 }
@@ -3101,6 +3197,13 @@ void
 CCustomModels::ClearGraphicsCache(void)
 {
 #ifdef ANDROID
+	for(std::map<const RwTexture*, GpuTerrainSplatInfo>::iterator sit = s_gpuTerrainSplats.begin();
+	    sit != s_gpuTerrainSplats.end(); ++sit){
+		for(int li = 0; li < 4; li++)
+			if(sit->second.layers[li])
+				RwTextureDestroy(sit->second.layers[li]);
+	}
+	s_gpuTerrainSplats.clear();
 	for(size_t i = 0; i < s_pendingBtxUpgrades.size(); i++){
 		if(s_pendingBtxUpgrades[i].tex)
 			RwTextureDestroy(s_pendingBtxUpgrades[i].tex);
@@ -3456,6 +3559,17 @@ ReadActiveIpls(std::set<std::string> &active)
 	return true;
 }
 
+bool
+CCustomModels::ReplacesNativeWorldMap(void)
+{
+#ifdef ANDROID
+	EnsureInitialised();
+	return !commonZipConfig.ipl.empty() && !customIplFiles.empty();
+#else
+	return false;
+#endif
+}
+
 void
 CCustomModels::ForEachWorldFile(bool ide, WorldFileCallback callback, void *context)
 {
@@ -3666,12 +3780,49 @@ CheckStreamPreparation(int32 streamId, bool priority)
 						if(prepared->stats.recipes[r].tex == tname)
 							recipe = &prepared->stats.recipes[r];
 					if(recipe){
-						std::string tkey = "terrain:" + key + ":" + ToLower(tname);
-						if(!HasPreparedTexture(tkey)){
-							if(EvictedBeforeReady(streamId, TextureJobKey(tkey)))
-								return true;
-							QueueTerrainPreparation(tkey, *recipe, streamId, priority);
-							pendingTex = true;
+						const std::string lowMask = ToLower(recipe->tex);
+						const CustomSource *maskSrc = FindSource(customBtx, lowMask);
+						bool hasLayerSrc = false;
+						for(int li = 0; li < 4; li++){
+							if(!recipe->layers[li].empty() && FindSource(customBtx, ToLower(recipe->layers[li])) != nil){
+								hasLayerSrc = true;
+								break;
+							}
+						}
+#ifdef RW_GL3
+						if((maskSrc != nil || FindSource(customTmbBtx, lowMask) != nil) && hasLayerSrc){
+							std::string names5[5] = {
+								recipe->tex, recipe->layers[0], recipe->layers[1], recipe->layers[2], recipe->layers[3]
+							};
+							for(int ti = 0; ti < 5; ti++){
+								if(names5[ti].empty()) continue;
+								std::string lowN = ToLower(names5[ti]);
+								const CustomSource *s5 = FindSource(customBtx, lowN);
+								if(s5){
+									std::string ck5 = BtxCacheKey(*s5);
+									if(!IsFullBpcTexResident(ck5) && !HasPreparedRawBtx(ck5)){
+										bool hasTmb5 = (FindSource(customTmbBtx, lowN) != nil);
+										if(!hasTmb5 && EvictedBeforeReady(streamId, RawBtxJobKey(ck5)))
+											continue;
+										QueueRawBtxPreparation(ck5, names5[ti], *s5, hasTmb5 ? -1 : streamId, priority);
+										if(!hasTmb5)
+											pendingTex = true;
+									}
+								}
+							}
+						}else
+#else
+						(void)maskSrc;
+						(void)hasLayerSrc;
+#endif
+						{
+							std::string tkey = "terrain:" + key + ":" + ToLower(tname);
+							if(!HasPreparedTexture(tkey)){
+								if(EvictedBeforeReady(streamId, TextureJobKey(tkey)))
+									return true;
+								QueueTerrainPreparation(tkey, *recipe, streamId, priority);
+								pendingTex = true;
+							}
 						}
 					}else{
 						std::string low = ToLower(tname);
@@ -4440,6 +4591,9 @@ CCustomModels::ReadDataFile(const char *relpath, std::vector<uint8> &out,
 	if(relpath == nil || (strcmp(relpath, "data/timecyc.json") != 0 &&
 	                       strcmp(relpath, "data/water.dat") != 0 &&
 	                       strcmp(relpath, "data/carcols.dat") != 0 &&
+#ifdef ANDROID
+	                       strcmp(relpath, "data/colorcycle.dat") != 0 &&
+#endif
 	                       strcmp(relpath, "data/lods.info") != 0))
 		return false; // no arbitrary data, other ZIPs, or game-root common/ files
 	EnsureInitialised();

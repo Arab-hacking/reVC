@@ -568,6 +568,29 @@ getScenePointLights(float32 *outPosRad32, float32 *outColor32, float32 *outDir32
 	if(outColor32)  memcpy(outColor32, sceneLightColor, sizeof(sceneLightColor));
 	if(outDir32)    memcpy(outDir32, sceneLightDir, sizeof(sceneLightDir));
 }
+
+static float32 colorGradeRows[12] = {
+	1.0f, 0.0f, 0.0f, 0.0f,
+	0.0f, 1.0f, 0.0f, 0.0f,
+	0.0f, 0.0f, 1.0f, 0.0f
+};
+
+void
+setColorGradeMatrix(const float32 *rows12)
+{
+	if(rows12)
+		memcpy(colorGradeRows, rows12, sizeof(colorGradeRows));
+#ifdef RW_GL3
+	gl3::syncEnvironmentUniforms();
+#endif
+}
+
+void
+getColorGradeMatrix(float32 *outRows12)
+{
+	if(outRows12)
+		memcpy(outRows12, colorGradeRows, sizeof(colorGradeRows));
+}
 #endif
 
 namespace null {

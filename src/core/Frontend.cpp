@@ -576,6 +576,10 @@ CMenuManager::CMenuManager()
 	DMAudio.SetMusicMasterVolume(m_PrefsMusicVolume);
 	DMAudio.SetEffectsMasterVolume(m_PrefsSfxVolume);
 
+#ifdef ANDROID
+	m_PrefsMobileGraphics = MOBILE_GFX_HIGH;
+#endif
+
 #ifdef NO_ISLAND_LOADING
 	m_PrefsIslandLoading = ISLAND_LOADING_LOW;
 #endif

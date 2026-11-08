@@ -336,10 +336,11 @@ Shader::create(const char **vsrc, const char **fsrc)
 	glUseProgram(program);
 	char name[64];
 	GLint loc;
-	for(i = 0; i < 4; i++){
+	for(i = 0; i < 8; i++){
 		sprintf(name, "tex%d", i);
 		loc = glGetUniformLocation(program, name);
-		glUniform1i(loc, i);
+		if(loc >= 0)
+			glUniform1i(loc, i);
 	}
 
 	// reset program

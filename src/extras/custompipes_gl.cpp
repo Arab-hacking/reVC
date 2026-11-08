@@ -13,6 +13,9 @@
 #include "World.h"
 #include "custompipes.h"
 #include "custom/GraphicsBtx.h"
+#if defined(ANDROID) && defined(CUSTOM_MODELS)
+#include "CustomModels.h"
+#endif
 
 #ifdef EXTENDED_PIPELINES
 
@@ -29,6 +32,12 @@ static int32 u_rimData;
 
 static int32 u_lightMap;
 static int32 u_brLightmap;
+#if defined(ANDROID) && defined(CUSTOM_MODELS)
+static int32 u_terrainTileMult;
+static int32 u_terrainLayerValid;
+static int32 u_terrainFlipV;
+static int32 u_terrainMaskAlpha;
+#endif
 
 static int32 u_reflProps;
 static int32 u_specDir;
@@ -186,6 +195,81 @@ DestroyVehiclePipe(void)
  */
 
 rw::gl3::Shader *neoWorldShader;
+#if defined(ANDROID) && defined(CUSTOM_MODELS)
+static rw::gl3::Shader *neoTerrainShader;
+
+static const char *neoTerrain_vert_src =
+"VSIN(ATTRIB_POS) vec3 in_pos;\n"
+"VSOUT vec4 v_color;\n"
+"VSOUT vec2 v_tex0;\n"
+"VSOUT float v_fog;\n"
+"VSOUT vec3 v_worldPos;\n"
+"VSOUT vec3 v_worldNormal;\n"
+"void main(void)\n"
+"{\n"
+"	vec4 Vertex = u_world * vec4(in_pos, 1.0);\n"
+"	gl_Position = u_proj * u_view * Vertex;\n"
+"	vec3 Normal = mat3(u_world) * in_normal;\n"
+"	v_tex0 = (u_uvMatrix * vec4(in_tex0, 0.0, 1.0)).xy;\n"
+"	if(u_atmosphere.x > 0.5 || u_surfProps.w >= 1.5){\n"
+"		v_color = BR_EvalBuildingVertexColor(in_color, u_matColor, Vertex.xyz, Normal);\n"
+"	}else{\n"
+"		v_color = in_color;\n"
+"		v_color.rgb += u_ambLight.rgb*surfAmbient;\n"
+"		v_color.rgb += DoDynamicLight(Vertex.xyz, Normal)*surfDiffuse;\n"
+"		v_color = clamp(v_color, 0.0, 1.0);\n"
+"		v_color *= u_matColor;\n"
+"	}\n"
+"	v_worldPos = Vertex.xyz;\n"
+"	v_worldNormal = Normal;\n"
+"	v_fog = DoFogEye(Vertex.xyz);\n"
+"}\n";
+
+static const char *neoTerrain_frag_src =
+"uniform sampler2D tex0;\n"
+"uniform sampler2D tex1;\n"
+"uniform sampler2D tex2;\n"
+"uniform sampler2D tex4;\n"
+"uniform sampler2D tex5;\n"
+"uniform vec4 u_terrainTileMult;\n"
+"uniform vec4 u_terrainLayerValid;\n"
+"uniform vec4 u_terrainFlipV;\n"
+"uniform float u_terrainMaskAlpha;\n"
+"FSIN vec4 v_color;\n"
+"FSIN vec2 v_tex0;\n"
+"FSIN float v_fog;\n"
+"FSIN vec3 v_worldPos;\n"
+"FSIN vec3 v_worldNormal;\n"
+"void main(void)\n"
+"{\n"
+"	vec4 m = texture(tex0, vec2(v_tex0.x, 1.0 - v_tex0.y));\n"
+"	float w3 = u_terrainMaskAlpha > 0.5 ? m.a : max(0.0, 1.0 - min(1.0, m.r + m.g + m.b));\n"
+"	vec4 w = vec4(m.rgb, w3) * u_terrainLayerValid;\n"
+"	float wSum = w.x + w.y + w.z + w.w;\n"
+"	if(wSum <= 1.0e-4){\n"
+"		if(u_terrainLayerValid.x > 0.5) w = vec4(1.0, 0.0, 0.0, 0.0);\n"
+"		else if(u_terrainLayerValid.y > 0.5) w = vec4(0.0, 1.0, 0.0, 0.0);\n"
+"		else if(u_terrainLayerValid.z > 0.5) w = vec4(0.0, 0.0, 1.0, 0.0);\n"
+"		else w = vec4(0.0, 0.0, 0.0, 1.0);\n"
+"	}else{\n"
+"		w /= wSum;\n"
+"	}\n"
+"	vec2 baseTile = v_worldPos.xy * 0.2;\n"
+"	vec2 uv0 = baseTile * u_terrainTileMult.x; if(u_terrainFlipV.x < 0.5) uv0.y = -uv0.y;\n"
+"	vec2 uv1 = baseTile * u_terrainTileMult.y; if(u_terrainFlipV.y < 0.5) uv1.y = -uv1.y;\n"
+"	vec2 uv2 = baseTile * u_terrainTileMult.z; if(u_terrainFlipV.z < 0.5) uv2.y = -uv2.y;\n"
+"	vec2 uv3 = baseTile * u_terrainTileMult.w; if(u_terrainFlipV.w < 0.5) uv3.y = -uv3.y;\n"
+"	vec3 splat = texture(tex1, uv0).rgb * w.x\n"
+"	           + texture(tex2, uv1).rgb * w.y\n"
+"	           + texture(tex4, uv2).rgb * w.z\n"
+"	           + texture(tex5, uv3).rgb * w.w;\n"
+"	float visibility = AtmosphereVisibility(v_worldPos, v_fog);\n"
+"	vec4 color;\n"
+"	color.rgb = ShadeWorldSurfaceEx(splat, v_color.rgb, v_worldPos, v_worldNormal, visibility, 0.0);\n"
+"	color.a = 1.0;\n"
+"	FRAGCOLOR(color);\n"
+"}\n";
+#endif
 
 static void
 worldRenderCB(rw::Atomic *atomic, rw::gl3::InstanceDataHeader *header)
@@ -193,29 +277,114 @@ worldRenderCB(rw::Atomic *atomic, rw::gl3::InstanceDataHeader *header)
 	using namespace rw;
 	using namespace rw::gl3;
 
+#if defined(ANDROID) && defined(CUSTOM_MODELS)
+	bool hasGpuTerrain = false;
+	if(neoTerrainShader != nil){
+		CCustomModels::GpuTerrainSplatInfo dummy;
+		for(rw::uint32 mi = 0; mi < header->numMeshes; mi++){
+			if(header->inst[mi].material &&
+			   CCustomModels::FindGpuTerrainSplat(header->inst[mi].material->texture, dummy)){
+				hasGpuTerrain = true;
+				break;
+			}
+		}
+	}
+	if(!hasGpuTerrain && (!LightmapEnable || atomic->geometry->numTexCoordSets < 2)){
+		gl3::defaultRenderCB(atomic, header);
+		return;
+	}
+#else
 	// A DUAL material alone is not a baked lightmap. The source geometry must
 	// also contain the second UV set sampled by this pipeline.
 	if(!LightmapEnable || atomic->geometry->numTexCoordSets < 2){
 		gl3::defaultRenderCB(atomic, header);
 		return;
 	}
+#endif
 
 	Material *m;
 
 	setWorldMatrix(atomic->getFrame()->getLTM());
-	lightingCB(atomic);
+	int32 vsBits = lightingCB(atomic);
+#if !defined(ANDROID) || !defined(CUSTOM_MODELS)
+	(void)vsBits;
+#endif
 
 	setupVertexInput(header);
 
 	InstanceData *inst = header->inst;
 	rw::int32 n = header->numMeshes;
 
-	neoWorldShader->use();
-
 	float lightfactor[4];
 
 	while(n--){
 		m = inst->material;
+#if defined(ANDROID) && defined(CUSTOM_MODELS)
+		CCustomModels::GpuTerrainSplatInfo splat;
+		if(neoTerrainShader != nil && m && CCustomModels::FindGpuTerrainSplat(m->texture, splat)){
+			neoTerrainShader->use();
+			RGBA color = { 255, 255, 255, 255 };
+			setMaterial(atomic->geometry->flags, color, m->surfaceProps,
+			            (atomic->geometry->flags & rw::Geometry::PRELIT) ? 1.0f : 0.0f);
+			m->texture->setAddressU(Texture::CLAMP);
+			m->texture->setAddressV(Texture::CLAMP);
+			setTexture(0, m->texture);
+
+			static const int stageUnits[4] = { 1, 2, 4, 5 };
+			float valid4[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+			float flip4[4]  = { 1.0f, 1.0f, 1.0f, 1.0f };
+			for(int li = 0; li < 4; li++){
+				Texture *lt = splat.layers[li];
+				if(lt && lt->raster){
+					lt->setAddressU(Texture::WRAP);
+					lt->setAddressV(Texture::WRAP);
+					setTexture(stageUnits[li], lt);
+					valid4[li] = 1.0f;
+					Gl3Raster *lr = GETGL3RASTEREXT(lt->raster);
+					flip4[li] = lr->unflippedKtx ? 1.0f : 0.0f;
+				}else{
+					setTexture(stageUnits[li], nil);
+				}
+			}
+			float maskHasAlpha = 0.0f;
+			if(m->texture && m->texture->raster){
+				Gl3Raster *mr = GETGL3RASTEREXT(m->texture->raster);
+				maskHasAlpha = mr->hasAlpha ? 1.0f : 0.0f;
+			}
+			glUniform4fv(U(u_terrainTileMult), 1, splat.scale);
+			glUniform4fv(U(u_terrainLayerValid), 1, valid4);
+			glUniform4fv(U(u_terrainFlipV), 1, flip4);
+			glUniform1f(U(u_terrainMaskAlpha), maskHasAlpha);
+
+			rw::SetRenderState(VERTEXALPHA, FALSE);
+			gl3::setAlphaBlend(false);
+			drawInst(header, inst);
+			setTexture(0, nil);
+			setTexture(1, nil);
+			setTexture(2, nil);
+			setTexture(4, nil);
+			setTexture(5, nil);
+			inst++;
+			continue;
+		}
+		if(!LightmapEnable || atomic->geometry->numTexCoordSets < 2){
+			setMaterial(atomic->geometry->flags, m->color, m->surfaceProps,
+			            (atomic->geometry->flags & rw::Geometry::PRELIT) ? 1.0f : 0.0f);
+			setTexture(0, m->texture);
+			rw::SetRenderState(VERTEXALPHA, inst->vertexAlpha || m->color.alpha != 0xFF);
+			if((vsBits & VSLIGHT_MASK) == 0){
+				if(getAlphaTest()) defaultShader->use();
+				else defaultShader_noAT->use();
+			}else{
+				if(getAlphaTest()) defaultShader_fullLight->use();
+				else defaultShader_fullLight_noAT->use();
+			}
+			drawInst(header, inst);
+			inst++;
+			continue;
+		}
+#endif
+		neoWorldShader->use();
 		bool brLightmap = false;
 
 		if(MatFX::getEffects(m) == MatFX::DUAL){
@@ -268,6 +437,13 @@ CreateWorldPipe(void)
 	neoWorldShader = Shader::create(vs, fs);
 	assert(neoWorldShader);
 	}
+#if defined(ANDROID) && defined(CUSTOM_MODELS)
+	{
+	const char *tvs[] = { shaderDecl, "#define DIRECTIONALS\n#define POINTLIGHTS\n#define SPOTLIGHTS\n", header_vert_src, neoTerrain_vert_src, nil };
+	const char *tfs[] = { shaderDecl, header_frag_src, neoTerrain_frag_src, nil };
+	neoTerrainShader = Shader::create(tvs, tfs);
+	}
+#endif
 
 
 	rw::gl3::ObjPipeline *pipe = rw::gl3::ObjPipeline::create();
@@ -282,6 +458,12 @@ DestroyWorldPipe(void)
 {
 	neoWorldShader->destroy();
 	neoWorldShader = nil;
+#if defined(ANDROID) && defined(CUSTOM_MODELS)
+	if(neoTerrainShader){
+		neoTerrainShader->destroy();
+		neoTerrainShader = nil;
+	}
+#endif
 
 	((rw::gl3::ObjPipeline*)worldPipe)->destroy();
 	worldPipe = nil;
@@ -577,6 +759,12 @@ CustomPipeRegisterGL(void)
 
 	u_lightMap = rw::gl3::registerUniform("u_lightMap");
 	u_brLightmap = rw::gl3::registerUniform("u_brLightmap");
+#if defined(ANDROID) && defined(CUSTOM_MODELS)
+	u_terrainTileMult = rw::gl3::registerUniform("u_terrainTileMult");
+	u_terrainLayerValid = rw::gl3::registerUniform("u_terrainLayerValid");
+	u_terrainFlipV = rw::gl3::registerUniform("u_terrainFlipV");
+	u_terrainMaskAlpha = rw::gl3::registerUniform("u_terrainMaskAlpha");
+#endif
 
 	// u_eye is owned by librw (vec4). Registering it here as an unmanaged
 	// uniform would conflict with gl3::initOpenGL's typed registration.

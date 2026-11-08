@@ -376,7 +376,11 @@ CStreaming::Update(void)
 		return;
 
 	LoadBigBuildingsWhenNeeded();
+#ifdef ANDROID
+	if(!ms_disableStreaming)
+#else
 	if(!ms_disableStreaming && TheCamera.GetPosition().z < 55.0f)
+#endif
 		AddModelsToRequestList(TheCamera.GetPosition(), 0);
 
 	DeleteFarAwayRwObjects(TheCamera.GetPosition());
@@ -2349,6 +2353,13 @@ CStreaming::LoadBigBuildingsWhenNeeded(void)
 	   CTheZones::m_CurrLevel == CGame::currLevel)
 		return;
 
+#if defined(ANDROID) && defined(CUSTOM_MODELS)
+	if(CCustomModels::ReplacesNativeWorldMap()){
+		CGame::currLevel = CTheZones::m_CurrLevel;
+		return;
+	}
+#endif
+
 	CTimer::Suspend();
 	CGame::currLevel = CTheZones::m_CurrLevel;
 	ISLAND_LOADING_IS(LOW)
@@ -2934,6 +2945,95 @@ void
 CStreaming::LoadRequestedModels(void)
 {
 	static int currentChannel = 0;
+
+#if defined(ANDROID) && defined(CUSTOM_MODELS)
+	// Directly service already-prepared custom .bpc/.img TXDs and models on
+	// Android without routing them through dummy 1-sector GTA3.IMG CdStreamRead
+	// round-trips. Strictly bounded per frame to prevent frame-time spikes.
+	if(ms_channelError == -1){
+		const uint32 cpm = CTimer::GetCyclesPerMillisecond();
+		const uint32 budgetStartMs = cpm ? (CTimer::GetCurrentTimeInCycles() / cpm) : 0;
+		int customModelsLoaded = 0;
+		int customTxdsLoaded = 0;
+		for(int pass = 0; pass < 24; pass++){
+			if(cpm && customModelsLoaded > 0){
+				uint32 nowMs = CTimer::GetCurrentTimeInCycles() / cpm;
+				if((uint32)(nowMs - budgetStartMs) >= 4u)
+					break;
+			}
+			if(customModelsLoaded >= 10)
+				break;
+
+			int chosenId = -1;
+			for(int prioPass = 0; prioPass < 2 && chosenId == -1; prioPass++){
+				const bool requirePrio = (prioPass == 0 && ms_numPriorityRequests != 0);
+				int prefetched = 0;
+				for(CStreamingInfo *si = ms_startRequestedList.m_next;
+				    si != &ms_endRequestedList; si = si->m_next){
+					int sid = (int)(si - ms_aInfoForModel);
+					if(si->m_loadState != STREAMSTATE_INQUEUE)
+						continue;
+					if(requirePrio && !si->IsPriority())
+						continue;
+					if(sid >= STREAM_OFFSET_COL)
+						continue;
+
+					if(sid < STREAM_OFFSET_TXD){
+						CBaseModelInfo *mi = CModelInfo::GetModelInfo(sid);
+						if(!mi) continue;
+						int txdId = mi->GetTxdSlot();
+						if(txdId >= 0 && TxdNotLoaded(txdId)){
+							int txdSid = txdId + STREAM_OFFSET_TXD;
+							if(ms_aInfoForModel[txdSid].m_loadState == STREAMSTATE_INQUEUE &&
+							   CCustomModels::CanServe(txdSid) &&
+							   CCustomModels::IsStreamPrepared(txdSid, false)){
+								chosenId = txdSid;
+								break;
+							}
+							if(ms_aInfoForModel[txdSid].m_loadState == STREAMSTATE_NOTLOADED)
+								RequestTxd(txdId, si->m_flags & STREAMFLAGS_PRIORITY);
+							continue;
+						}
+						int animId = mi->GetAnimFileIndex();
+						if(AnimNotLoaded(animId)){
+							int animSid = animId + STREAM_OFFSET_ANIM;
+							if(ms_aInfoForModel[animSid].m_loadState == STREAMSTATE_NOTLOADED)
+								RequestAnim(animId, si->m_flags & STREAMFLAGS_PRIORITY);
+							continue;
+						}
+					}
+
+					if(!CCustomModels::CanServe(sid))
+						continue;
+					if(!CCustomModels::IsStreamPrepared(sid, false)){
+						if(prefetched < 16){
+							CCustomModels::PrefetchStream(sid);
+							prefetched++;
+						}
+						continue;
+					}
+					chosenId = sid;
+					break;
+				}
+			}
+
+			if(chosenId == -1)
+				break;
+
+			const bool isTxd = (chosenId >= STREAM_OFFSET_TXD && chosenId < STREAM_OFFSET_COL);
+			ms_aInfoForModel[chosenId].m_loadState = STREAMSTATE_READING;
+			ms_aInfoForModel[chosenId].RemoveFromList();
+			DecrementRef(chosenId);
+			LoadCustomFile(chosenId);
+			if(isTxd){
+				if(++customTxdsLoaded >= 32 && customModelsLoaded > 0)
+					break;
+			}else{
+				customModelsLoaded++;
+			}
+		}
+	}
+#endif
 
 	// We can't read with channel 1 while channel 0 is using its buffer
 	if(ms_bLoadingBigModel)

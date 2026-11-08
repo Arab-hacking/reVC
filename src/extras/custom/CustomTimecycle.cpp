@@ -515,9 +515,131 @@ ExpandGrids(const SlotGrid grids[BR_WEATHERS_USED], int weathers, bool atmospher
 // The custom/common.zip timecyc.json wins; the loose file is a read fallback.
 // Game-root common/, other ZIPs, weather presets, water and PostFX are never
 // imported. Sky/cloud/sun colours and scaled fog start are GL3-only.
+#ifdef ANDROID
+namespace {
+struct ColorcycleTable {
+	bool loaded;
+	int numWeathers;
+	float rows[24][8][12];
+};
+static ColorcycleTable s_colorcycle = { false, 0, {} };
+
+static void
+LoadColorcycleDat(void)
+{
+	s_colorcycle.loaded = false;
+	s_colorcycle.numWeathers = 0;
+	std::vector<uint8> raw;
+	if(!CCustomModels::ReadDataFile("data/colorcycle.dat", raw) || raw.empty())
+		return;
+
+	std::string text((const char*)raw.data(), raw.size());
+	std::vector<float> vals;
+	vals.reserve(23 * 8 * 12);
+	const char *p = text.c_str();
+	while(*p){
+		while(*p && (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n'))
+			p++;
+		if(!*p) break;
+		if(*p == '#' || (*p == '/' && p[1] == '/')){
+			while(*p && *p != '\n') p++;
+			continue;
+		}
+		char *endp = nil;
+		float v = std::strtof(p, &endp);
+		if(endp == p){
+			while(*p && *p != '\n') p++;
+			continue;
+		}
+		if(std::isfinite(v))
+			vals.push_back(v);
+		p = endp;
+	}
+
+	int totalSlots = (int)(vals.size() / 12);
+	int weathers = totalSlots / 8;
+	if(weathers <= 0)
+		return;
+	if(weathers > 24)
+		weathers = 24;
+
+	float maxDiag = 0.0f;
+	for(int w = 0; w < weathers; w++){
+		for(int s = 0; s < 8; s++){
+			const float *src = &vals[(w * 8 + s) * 12];
+			for(int k = 0; k < 12; k++)
+				s_colorcycle.rows[w][s][k] = src[k];
+			if(src[0] > maxDiag) maxDiag = src[0];
+			if(src[5] > maxDiag) maxDiag = src[5];
+			if(src[10] > maxDiag) maxDiag = src[10];
+		}
+	}
+	// SA/mobile colorcycle.dat uses PS2 2x colour scale (~2.0 diagonal); normalize to 1x.
+	if(maxDiag > 1.35f){
+		for(int w = 0; w < weathers; w++){
+			for(int s = 0; s < 8; s++){
+				float *r = s_colorcycle.rows[w][s];
+				r[0] *= 0.5f; r[1] *= 0.5f; r[2] *= 0.5f;
+				r[4] *= 0.5f; r[5] *= 0.5f; r[6] *= 0.5f;
+				r[8] *= 0.5f; r[9] *= 0.5f; r[10] *= 0.5f;
+			}
+		}
+	}
+	s_colorcycle.numWeathers = weathers;
+	s_colorcycle.loaded = true;
+	CUSTOM_LOG("common.bpc data/colorcycle.dat: %d weather(s) x 8 time slots loaded\n", weathers);
+}
+
+static void
+SampleColorcycleWeather(int w, float fHour, float out12[12])
+{
+	if(w < 0) w = 0;
+	if(w >= s_colorcycle.numWeathers) w = s_colorcycle.numWeathers - 1;
+	while(fHour < 0.0f) fHour += 24.0f;
+	while(fHour >= 24.0f) fHour -= 24.0f;
+
+	int s0 = 7, s1 = 0;
+	float t = 0.0f;
+	if(fHour >= (float)CycleHours[7]){
+		s0 = 7; s1 = 0;
+		t = (fHour - (float)CycleHours[7]) / (float)(24 - CycleHours[7]);
+	}else{
+		int i = 0;
+		while(i < 6 && !(fHour >= (float)CycleHours[i] && fHour < (float)CycleHours[i + 1]))
+			i++;
+		s0 = i; s1 = i + 1;
+		t = (fHour - (float)CycleHours[i]) / (float)(CycleHours[i + 1] - CycleHours[i]);
+	}
+	if(t < 0.0f) t = 0.0f;
+	if(t > 1.0f) t = 1.0f;
+	for(int k = 0; k < 12; k++)
+		out12[k] = s_colorcycle.rows[w][s0][k] + (s_colorcycle.rows[w][s1][k] - s_colorcycle.rows[w][s0][k]) * t;
+}
+} // namespace
+
+void
+CCustomTimecycle::EvaluateColorGrade(float fHour, int oldWeather, int newWeather, float weatherInterp, float outRows12[12])
+{
+	static const float id12[12] = { 1,0,0,0, 0,1,0,0, 0,0,1,0 };
+	if(!s_colorcycle.loaded || s_colorcycle.numWeathers <= 0){
+		memcpy(outRows12, id12, sizeof(id12));
+		return;
+	}
+	float a[12], b[12];
+	SampleColorcycleWeather(oldWeather, fHour, a);
+	SampleColorcycleWeather(newWeather, fHour, b);
+	float wi = weatherInterp < 0.0f ? 0.0f : (weatherInterp > 1.0f ? 1.0f : weatherInterp);
+	for(int k = 0; k < 12; k++)
+		outRows12[k] = a[k] + (b[k] - a[k]) * wi;
+}
+#endif
+
 void
 CCustomTimecycle::Apply(void)
 {
+#ifdef ANDROID
+	LoadColorcycleDat();
+#endif
 	std::vector<uint8> data;
 	bool fromCommon = false;
 	if(!CCustomModels::ReadDataFile("data/timecyc.json", data, &fromCommon))
@@ -542,5 +664,14 @@ void
 CCustomTimecycle::Apply(void)
 {
 }
+
+#ifdef ANDROID
+void
+CCustomTimecycle::EvaluateColorGrade(float, int, int, float, float outRows12[12])
+{
+	static const float id12[12] = { 1,0,0,0, 0,1,0,0, 0,0,1,0 };
+	memcpy(outRows12, id12, sizeof(id12));
+}
+#endif
 
 #endif // CUSTOM_MODELS

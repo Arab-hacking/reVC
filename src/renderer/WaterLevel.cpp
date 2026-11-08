@@ -35,6 +35,9 @@
 #include "CommonWater.h"
 #include "SavehDiag.h"
 #endif
+#if defined(ANDROID) && defined(LIBRW) && defined(RW_GL3)
+#include "GL3Atmosphere.h"
+#endif
 
 #define RwIm3DVertexSet_RGBA(vert, rgba) RwIm3DVertexSetRGBA(vert, rgba.red, rgba.green, rgba.blue, rgba.alpha) // (RwRGBAAssign(&(_dst)->color, &_src))
 
@@ -346,9 +349,88 @@ CWaterLevel::Initialise(Const char *pWaterDat)
 	printf("Done Initing waterlevels\n");
 }
 
+#if defined(ANDROID) && defined(LIBRW) && defined(RW_GL3)
+static rw::gl3::Shader *s_mobileWaterShader = nil;
+static GLint s_uMobileWaterParamsLoc = -1;
+
+static const char *s_mobileWaterVS =
+"VSIN(ATTRIB_POS) vec3 in_pos;\n"
+"VSOUT vec3 v_worldPos;\n"
+"VSOUT vec4 v_color;\n"
+"VSOUT vec2 v_tex0;\n"
+"VSOUT float v_fog;\n"
+"void main(void)\n"
+"{\n"
+"	vec4 Vertex = u_world * vec4(in_pos, 1.0);\n"
+"	v_worldPos = Vertex.xyz;\n"
+"	gl_Position = u_proj * u_view * Vertex;\n"
+"	v_color = in_color;\n"
+"	v_tex0 = in_tex0;\n"
+"	v_fog = DoFog(gl_Position.w);\n"
+"}\n";
+
+static const char *s_mobileWaterFS =
+"FSIN vec3 v_worldPos;\n"
+"FSIN vec4 v_color;\n"
+"FSIN vec2 v_tex0;\n"
+"FSIN float v_fog;\n"
+"uniform vec4 u_waterParams;\n"
+"void main(void)\n"
+"{\n"
+"	float move = u_waterParams.x;\n"
+"	vec2 uvA = v_worldPos.xy * 0.042 + vec2(move, move * 0.68);\n"
+"	vec2 uvB = v_worldPos.xy * 0.067 - vec2(move * 0.78, move * 1.12);\n"
+"	vec3 tA = texture(tex0, uvA).rgb;\n"
+"	vec3 tB = texture(tex0, uvB).rgb;\n"
+"	float rippleX = (tA.r - tB.g) * 0.16 + sin(v_worldPos.x * 0.55 + move * 18.0) * 0.030;\n"
+"	float rippleY = (tA.b - tB.r) * 0.16 + cos(v_worldPos.y * 0.48 - move * 15.0) * 0.030;\n"
+"	vec3 N = normalize(vec3(rippleX, rippleY, 1.0));\n"
+"	vec3 toEye = u_eye.xyz - v_worldPos;\n"
+"	vec3 V = toEye * inversesqrt(max(dot(toEye, toEye), 1.0e-6));\n"
+"	float fresnel = pow(clamp(1.0 - max(dot(V, N), 0.0), 0.0, 1.0), 3.5);\n"
+"	float sunLen2 = dot(u_sunDir.xyz, u_sunDir.xyz);\n"
+"	vec3 L = sunLen2 > 1.0e-6 ? u_sunDir.xyz * inversesqrt(sunLen2) : vec3(0.0, 0.0, 1.0);\n"
+"	float day = smoothstep(-0.04, 0.22, L.z);\n"
+"	float highSun = smoothstep(0.02, 0.58, L.z);\n"
+"	vec3 deepWater = mix(vec3(0.025, 0.055, 0.095), vec3(0.045, 0.145, 0.215), day);\n"
+"	deepWater = mix(deepWater, v_color.rgb * 0.68, 0.42);\n"
+"	vec3 skyRefl = mix(vec3(0.075, 0.115, 0.205), mix(vec3(0.68, 0.52, 0.40), vec3(0.46, 0.68, 0.90), highSun), day);\n"
+"	skyRefl = mix(skyRefl, clamp(u_skyAmbient.rgb * 1.25, vec3(0.10), vec3(0.96)), 0.35);\n"
+"	float foamDetail = dot(tA + tB, vec3(0.1667));\n"
+"	vec3 wCol = mix(deepWater * (0.86 + 0.28 * foamDetail), skyRefl, clamp(fresnel * 0.86 + 0.10, 0.0, 1.0));\n"
+"	vec3 H = L + V;\n"
+"	H *= inversesqrt(max(dot(H, H), 1.0e-6));\n"
+"	float sunGlint = pow(max(dot(N, H), 0.0), 88.0) * day * (1.0 - 0.55 * clamp(u_atmosphere.y, 0.0, 1.0));\n"
+"	wCol += mix(vec3(1.0, 0.72, 0.46), vec3(1.0, 0.96, 0.88), highSun) * (sunGlint * 0.95);\n"
+"	float outAlpha = u_waterParams.y > 0.5 ? clamp(mix(0.54, 0.93, fresnel), 0.45, 0.95) : 1.0;\n"
+"	vec3 graded = u_atmosphere.x >= 1.5 ? BR_ApplyMobileColorGrade(mix(u_fogColor.rgb, wCol, v_fog)) : mix(u_fogColor.rgb, wCol, v_fog);\n"
+"	FRAGCOLOR(vec4(graded, outAlpha));\n"
+"}\n";
+
+static rw::gl3::Shader *
+EnsureMobileWaterShader(void)
+{
+	if(s_mobileWaterShader == nil){
+		const char *vs[] = { rw::gl3::shaderDecl, rw::gl3::header_vert_src, s_mobileWaterVS, nil };
+		const char *fs[] = { rw::gl3::shaderDecl, rw::gl3::header_frag_src, s_mobileWaterFS, nil };
+		s_mobileWaterShader = rw::gl3::Shader::create(vs, fs);
+		if(s_mobileWaterShader)
+			s_uMobileWaterParamsLoc = glGetUniformLocation(s_mobileWaterShader->program, "u_waterParams");
+	}
+	return s_mobileWaterShader;
+}
+#endif
+
 void
 CWaterLevel::Shutdown()
 {
+#if defined(ANDROID) && defined(LIBRW) && defined(RW_GL3)
+	if(s_mobileWaterShader){
+		s_mobileWaterShader->destroy();
+		s_mobileWaterShader = nil;
+		s_uMobileWaterParamsLoc = -1;
+	}
+#endif
 #ifdef CUSTOM_MODELS
 	customWaterQuads.clear();
 #endif
@@ -1009,6 +1091,18 @@ void RenderCustomWaterTile(const commonwater::Quad &q, float left, float bottom,
 
 void RenderCustomWaterQuads(bool transparent, const RwRGBA &color)
 {
+#if defined(ANDROID) && defined(LIBRW) && defined(RW_GL3)
+	bool useMobWater = GL3Atmosphere::Enabled && EnsureMobileWaterShader() != nil;
+	if(useMobWater){
+		s_mobileWaterShader->use();
+		if(s_uMobileWaterParamsLoc >= 0){
+			float tMove = (float)(CTimer::GetTimeInMilliseconds() % 600000u) * 0.000032f;
+			float wp[4] = { tMove, transparent ? 1.0f : 0.0f, 0.0f, 0.0f };
+			glUniform4fv(s_uMobileWaterParamsLoc, 1, wp);
+		}
+		rw::gl3::im3dOverrideShader = s_mobileWaterShader;
+	}
+#endif
 	const float cell = 64.0f;
 	const float nearSqr = SQR(500.0f);
 	const float range = _GetWaterDrawDist();
@@ -1042,6 +1136,10 @@ void RenderCustomWaterQuads(bool transparent, const RwRGBA &color)
 		}
 	}
 	CWaterLevel::RenderAndEmptyRenderBuffer();
+#if defined(ANDROID) && defined(LIBRW) && defined(RW_GL3)
+	if(useMobWater)
+		rw::gl3::im3dOverrideShader = nil;
+#endif
 }
 
 } // namespace

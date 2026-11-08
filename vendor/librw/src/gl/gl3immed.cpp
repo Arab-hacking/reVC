@@ -192,6 +192,7 @@ im2DRenderIndexedPrimitive(PrimitiveType primType,
 // Im3D
 
 
+Shader *im3dOverrideShader;
 static Shader *im3dShader;
 static AttribDesc im3dattribDesc[4] = {
 	{ ATTRIB_POS,        GL_FLOAT,         GL_FALSE, 3,
@@ -259,7 +260,9 @@ im3DTransform(void *vertices, int32 numVertices, Matrix *world, uint32 flags)
 		world = &ident;
 	}
 	setWorldMatrix(world);
-	if(flags & im3d::LIGHTING){
+	if(im3dOverrideShader){
+		im3dOverrideShader->use();
+	}else if(flags & im3d::LIGHTING){
 		setMaterial(im3dMaterialColor, im3dSurfaceProps, 1.0f);
 		int32 vsBits = lightingCB();
 		defaultShader_fullLight->use();

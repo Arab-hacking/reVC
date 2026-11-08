@@ -792,6 +792,17 @@ public:
 	CMenuManager(void);
 	~CMenuManager(void) { UnloadTextures(); }
 
+#ifdef ANDROID
+	enum
+	{
+		MOBILE_GFX_LOW = 0,
+		MOBILE_GFX_MEDIUM = 1,
+		MOBILE_GFX_HIGH = 2
+	};
+
+	int8 m_PrefsMobileGraphics;
+#endif
+
 #ifdef NO_ISLAND_LOADING
 	enum
 	{

@@ -185,10 +185,17 @@ ParseBlock(const uint8 *p, size_t n, Block &b)
 	float sphRadius, sphCenter[3], sphMin[3], sphMax[3];
 	memcpy(boxMin, t, 12);
 	memcpy(boxMax, t + 12, 12);
+#ifdef ANDROID
+	// SA COL2/COL3 TBounds layout: vec3 min(0..11), vec3 max(12..23),
+	// vec3 center(24..35), float radius(36..39).
+	memcpy(boxCenter, t + 24, 12);
+	boxRadius = rFloat(t + 36);
+#else
 	// box first: the sphere follows it as radius then center, the way both
 	// the game and brformats lay it out
 	boxRadius = rFloat(t + 24);
 	memcpy(boxCenter, t + 28, 12);
+#endif
 	sphRadius = rFloat(t);
 	memcpy(sphCenter, t + 4, 12);
 	memcpy(sphMin, t + 16, 12);
@@ -302,8 +309,10 @@ FixBounds(const Block &b, float radius[1], float center[3], float bmin[3], float
 	memcpy(center, b.center, 12);
 	memcpy(bmin, b.bmin, 12);
 	memcpy(bmax, b.bmax, 12);
+#ifndef ANDROID
 	if(b.bounds)
 		return;
+#endif
 
 	float mn[3] = { 1e30f, 1e30f, 1e30f }, mx[3] = { -1e30f, -1e30f, -1e30f };
 	for(i = 0; i < b.nS; i++){
@@ -330,8 +339,59 @@ FixBounds(const Block &b, float radius[1], float center[3], float bmin[3], float
 			if(f > mx[k]) mx[k] = f;
 		}
 	}
+#ifdef ANDROID
+	if(b.bounds){
+		if(mn[0] <= mx[0]){
+			for(int k = 0; k < 3; k++){
+				if(mn[k] < bmin[k]) bmin[k] = mn[k];
+				if(mx[k] > bmax[k]) bmax[k] = mx[k];
+			}
+		}
+		float mid[3] = {
+			(bmin[0] + bmax[0]) * 0.5f,
+			(bmin[1] + bmax[1]) * 0.5f,
+			(bmin[2] + bmax[2]) * 0.5f
+		};
+		float hx = (bmax[0] - bmin[0]) * 0.5f;
+		float hy = (bmax[1] - bmin[1]) * 0.5f;
+		float hz = (bmax[2] - bmin[2]) * 0.5f;
+		float halfDiag = sqrtf(hx*hx + hy*hy + hz*hz);
+		bool centerOk = isfinite(center[0]) && isfinite(center[1]) && isfinite(center[2]);
+		if(centerOk){
+			float cdx = center[0] - mid[0], cdy = center[1] - mid[1], cdz = center[2] - mid[2];
+			if(sqrtf(cdx*cdx + cdy*cdy + cdz*cdz) > halfDiag + 2.0f)
+				centerOk = false;
+		}
+		if(!centerOk){
+			center[0] = mid[0];
+			center[1] = mid[1];
+			center[2] = mid[2];
+		}
+		float rx = fmaxf(fabsf(bmin[0] - center[0]), fabsf(bmax[0] - center[0]));
+		float ry = fmaxf(fabsf(bmin[1] - center[1]), fabsf(bmax[1] - center[1]));
+		float rz = fmaxf(fabsf(bmin[2] - center[2]), fabsf(bmax[2] - center[2]));
+		float minRad = sqrtf(rx*rx + ry*ry + rz*rz);
+		if(!SaneRadius(*radius) || *radius < minRad)
+			*radius = minRad > 0.001f ? minRad : 0.5f;
+		return;
+	}
+	if(mn[0] > mx[0]){
+		if(SaneBounds(bmin, bmax)){
+			center[0] = (bmin[0] + bmax[0]) * 0.5f;
+			center[1] = (bmin[1] + bmax[1]) * 0.5f;
+			center[2] = (bmin[2] + bmax[2]) * 0.5f;
+			float dx = (bmax[0] - bmin[0]) * 0.5f;
+			float dy = (bmax[1] - bmin[1]) * 0.5f;
+			float dz = (bmax[2] - bmin[2]) * 0.5f;
+			float diag = sqrtf(dx*dx + dy*dy + dz*dz);
+			*radius = diag > 0.001f ? diag : 0.5f;
+		}
+		return;
+	}
+#else
 	if(mn[0] > mx[0])
 		return;				// no geometry at all, nothing to build
+#endif
 
 	memcpy(bmin, mn, 12);
 	memcpy(bmax, mx, 12);

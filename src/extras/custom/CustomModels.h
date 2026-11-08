@@ -70,6 +70,11 @@ public:
 	static void CancelStreamPrefetch(int32 streamId);
 	static void PumpBackgroundResults(void);
 #ifdef ANDROID
+	struct GpuTerrainSplatInfo {
+		RwTexture *layers[4];
+		float scale[4];
+	};
+	static bool FindGpuTerrainSplat(const RwTexture *maskTex, GpuTerrainSplatInfo &out);
 	static void BeginBlockingLoad(void);
 	static void EndBlockingLoad(void);
 	struct ScopedBlockingLoad {
@@ -94,6 +99,7 @@ public:
 	typedef void (*WorldFileCallback)(const char *path, const unsigned char *data,
 	                                  size_t size, void *context);
 	static bool HasWorldFiles(void);
+	static bool ReplacesNativeWorldMap(void);
 	static bool HasModelFile(const char *name);
 	static void ForEachWorldFile(bool ide, WorldFileCallback callback, void *context);
 

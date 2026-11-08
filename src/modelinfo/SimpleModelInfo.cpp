@@ -118,13 +118,21 @@ CSimpleModelInfo::IncreaseAlpha(void)
 float
 CSimpleModelInfo::GetLodDistance(int i)
 {
-	return m_lodDistances[i] * TheCamera.LODDistMultiplier;
+	float mult = TheCamera.LODDistMultiplier;
+#ifdef ANDROID
+	if(mult < 1.0f) mult = 1.0f;
+#endif
+	return m_lodDistances[i] * mult;
 }
 
 float
 CSimpleModelInfo::GetNearDistance(void)
 {
-	return m_lodDistances[2] * TheCamera.LODDistMultiplier;
+	float mult = TheCamera.LODDistMultiplier;
+#ifdef ANDROID
+	if(mult < 1.0f) mult = 1.0f;
+#endif
+	return m_lodDistances[2] * mult;
 }
 
 float
@@ -135,7 +143,11 @@ CSimpleModelInfo::GetLargestLodDistance(void)
 		d = m_lodDistances[m_numAtomics-1];
 	else
 		d = m_lodDistances[m_firstDamaged-1];
-	return d * TheCamera.LODDistMultiplier;
+	float mult = TheCamera.LODDistMultiplier;
+#ifdef ANDROID
+	if(mult < 1.0f) mult = 1.0f;
+#endif
+	return d * mult;
 }
 
 RpAtomic*
@@ -145,8 +157,12 @@ CSimpleModelInfo::GetAtomicFromDistance(float dist)
 	i = 0;
 	if(m_isDamaged)
 		i = m_firstDamaged;
+	float mult = TheCamera.LODDistMultiplier;
+#ifdef ANDROID
+	if(mult < 1.0f) mult = 1.0f;
+#endif
 	for(; i < m_numAtomics; i++)
-		if(dist < m_lodDistances[i] * TheCamera.LODDistMultiplier)
+		if(dist < m_lodDistances[i] * mult)
 			return m_atomics[i];
 	return nil;
 }

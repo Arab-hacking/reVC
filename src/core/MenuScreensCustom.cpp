@@ -76,6 +76,13 @@
 	#define DENSITY_SLIDERS 
 #endif
 
+#ifdef ANDROID
+static const char *mobileQualityOpts[] = { "FEM_LOW", "FEM_MED", "FEM_HIG" };
+	#define MOBILE_QUALITY_SELECTOR MENUACTION_CFO_SELECT, "FET_GFX", { new CCFOSelect((int8*)&FrontEndMenuManager.m_PrefsMobileGraphics, "Graphics", "MobileQuality", mobileQualityOpts, ARRAY_SIZE(mobileQualityOpts), false) }, 0, 0, MENUALIGN_LEFT,
+#else
+	#define MOBILE_QUALITY_SELECTOR
+#endif
+
 #ifdef NO_ISLAND_LOADING
 	#define ISLAND_LOADING_SELECTOR MENUACTION_CFO_SELECT, "FEM_ISL", { new CCFOSelect((int8*)&FrontEndMenuManager.m_PrefsIslandLoading, "Graphics", "IslandLoading", islandLoadingOpts, ARRAY_SIZE(islandLoadingOpts), true, IslandLoadingAfterChange) }, 0, 0, MENUALIGN_LEFT,
 #else
@@ -127,6 +134,7 @@ void RestoreDefGraphics(int8 action) {
 	#endif
 	#ifdef GRAPHICS_MENU_OPTIONS // otherwise Frontend will handle those
 		#ifdef ANDROID
+			FrontEndMenuManager.m_PrefsMobileGraphics = CMenuManager::MOBILE_GFX_HIGH;
 			FrontEndMenuManager.m_PrefsFrameLimiter = false;
 			FrontEndMenuManager.m_PrefsVsyncDisp = false;
 			#ifdef LEGACY_MENU_OPTIONS
@@ -468,6 +476,7 @@ CMenuScreenCustom aScreens[] = {
 		MENUACTION_SCREENRES,	"FED_RES", {nil, SAVESLOT_NONE, MENUPAGE_DISPLAY_SETTINGS}, 0, 0, MENUALIGN_LEFT,
 		VIDEOMODE_SELECTOR
 		MULTISAMPLING_SELECTOR
+		MOBILE_QUALITY_SELECTOR
 		ISLAND_LOADING_SELECTOR
 		DUALPASS_SELECTOR
 		CUTSCENE_BORDERS_TOGGLE
@@ -885,6 +894,7 @@ CMenuScreenCustom aScreens[] = {
 #endif
 		MENUACTION_FRAMELIMIT,	"FEM_FRM", { nil, SAVESLOT_NONE, MENUPAGE_GRAPHICS_SETTINGS }, 0, 0, MENUALIGN_LEFT,
 		MULTISAMPLING_SELECTOR
+		MOBILE_QUALITY_SELECTOR
 		ISLAND_LOADING_SELECTOR
 		DUALPASS_SELECTOR
 #ifdef EXTENDED_COLOURFILTER

@@ -25,6 +25,9 @@
 #include "Replay.h"
 #include "Coronas.h"
 #include "SaveBuf.h"
+#if defined(ANDROID) && defined(CUSTOM_MODELS)
+#include "CustomModels.h"
+#endif
 
 #ifdef COMPATIBLE_SAVES
 #define SCRIPTPATHS_SAVE_SIZE 0x9C
@@ -1052,6 +1055,12 @@ CEscalators::Init(void) {
 		REVC_LOG_INFO("Skipping native VC escalators (LoadViceCityMap=0, Esc_step id=%d)", MI_ESCALATORSTEP);
 		return;
 	}
+#if defined(ANDROID) && defined(CUSTOM_MODELS)
+	if (CCustomModels::ReplacesNativeWorldMap()) {
+		REVC_LOG_INFO("Skipping native VC escalators (custom world IPLs active)");
+		return;
+	}
+#endif
 	if (MI_ESCALATORSTEP < 0 || MI_ESCALATORSTEP >= MODELINFOSIZE) {
 		REVC_LOG_WARNING("Skipping native VC escalators: Esc_step model index missing (%d)", MI_ESCALATORSTEP);
 		return;

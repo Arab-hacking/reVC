@@ -88,6 +88,55 @@ main(void)
 	float rubberKill = mix(1.0, smoothstep(0.04, 0.18, texLum), hasTex * isOpaque);
 	float envMapCoef = rawEnv * rubberKill;
 
+	if(u_atmosphere.x >= 1.5){
+		vec3 mBase = v_color.rgb * texSample.rgb;
+		if(isLitLamp > 0.5){
+			vec4 lampOut;
+			lampOut.rgb = BR_ApplyMobileColorGrade(mix(u_fogColor.rgb, clamp(mBase * 1.35, 0.0, 1.35), visibility));
+			lampOut.a = alpha;
+			FRAGCOLOR(lampOut);
+			return;
+		}
+		float mSunLen2 = dot(u_sunDir.xyz, u_sunDir.xyz);
+		vec3 mL = mSunLen2 > 1.0e-6 ? u_sunDir.xyz * inversesqrt(mSunLen2) : vec3(0.0, 0.0, 1.0);
+		float mDay = smoothstep(-0.04, 0.20, mL.z);
+		float mHighSun = smoothstep(0.02, 0.55, mL.z);
+		float mCloud = clamp(u_atmosphere.y, 0.0, 1.0);
+		float mShadow = mDay > 0.001 ? SampleSunShadow(v_worldPos, N) : 1.0;
+
+		float mHemi = clamp(N.z * 0.5 + 0.5, 0.0, 1.0);
+		vec3 mSkyAmb = mix(vec3(0.34, 0.39, 0.52), mix(vec3(0.58, 0.62, 0.70), vec3(0.78, 0.84, 0.94), mHighSun), mDay);
+		vec3 mAmb = mSkyAmb * mix(0.68, 1.08, mHemi) * (1.0 - 0.14 * mCloud);
+		float mNdotL = max(dot(N, mL), 0.0);
+		vec3 mSunCol = mix(vec3(0.56, 0.42, 0.28), vec3(0.52, 0.50, 0.46), mHighSun) * (mNdotL * mDay * (1.0 - 0.40 * mCloud));
+
+		vec3 mH = mL + V;
+		mH *= inversesqrt(max(dot(mH, mH), 1.0e-6));
+		float mSpec = pow(max(dot(N, mH), 0.0), 50.0) * mDay * mShadow * (0.22 + 0.55 * envMapCoef) * (1.0 - 0.45 * mCloud);
+
+		float mNoV = clamp(abs(dot(N, V)), 0.0, 1.0);
+		float mFresnel = mix(pow(1.0 - mNoV, 4.0), 1.0, clamp(fresnel, 0.18, 0.65));
+		vec3 mR = reflect(-V, N);
+		vec3 mEnvCol;
+		if(u_atmosphere.x >= 2.15){
+			vec3 mRp = normalize(vec3(mR.xy, abs(mR.z) + 1.0e-5));
+			vec2 mEnvUV = (mRp.xy / (1.0 + mRp.z)) * 0.485 + 0.5;
+			mEnvCol = pow(max(texture(tex1, vec2(mEnvUV.x, 1.0 - mEnvUV.y)).rgb, vec3(0.0)), vec3(0.8));
+		}else{
+			float rh = clamp(mR.z * 0.5 + 0.5, 0.0, 1.0);
+			mEnvCol = mix(mSkyAmb * 0.45, mSkyAmb * 1.25, smoothstep(0.35, 0.88, rh));
+		}
+		float isGlassM = 1.0 - smoothstep(0.72, 0.96, alpha);
+		float reflWeight = max(envMapCoef * 0.52, isGlassM * 0.65) * mFresnel * mix(0.60, 1.0, mShadow);
+
+		vec3 mCar = mBase * ((mAmb + mSunCol) * mShadow + v_pointSpot * 0.85) + vec3(mSpec) + mEnvCol * reflWeight;
+		vec4 mobOut;
+		mobOut.rgb = BR_ApplyMobileColorGrade(mix(u_fogColor.rgb, mCar, visibility));
+		mobOut.a = alpha;
+		FRAGCOLOR(mobOut);
+		return;
+	}
+
 	float isChrome = smoothstep(0.86, 0.96, u_surfProps.y) * mix(1.0, smoothstep(0.18, 0.52, texLum), hasTex);
 	float isGlass = 1.0 - smoothstep(0.72, 0.96, alpha);
 

@@ -229,6 +229,9 @@ RGBAf getSkyAmbientParams(void);
 // posRad: xyz = world pos, w = radius; color: rgb = linear intensity; dir: xyz = cone dir, w = isSpot.
 void setScenePointLights(int32 count, const float32 *posRad4, const float32 *color4, const float32 *dir4);
 void getScenePointLights(float32 *outPosRad32, float32 *outColor32, float32 *outDir32);
+// 3x4 RGB colour-grading matrix (3 * vec4 rows) from data/colorcycle.dat.
+void setColorGradeMatrix(const float32 *rows12);
+void getColorGradeMatrix(float32 *outRows12);
 #endif
 
 #define RWTOSTR_(X) #X
