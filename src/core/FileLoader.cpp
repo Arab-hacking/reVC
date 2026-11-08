@@ -1037,7 +1037,8 @@ CountSAStaticTextures(RpAtomic *atomic, void *data)
 	SAStaticTextureStats *stats = (SAStaticTextureStats*)data;
 	rw::Geometry *g = atomic->geometry;
 	if((atomic->object.object.flags & rw::Atomic::RENDER) &&
-	   g && g->numTriangles > 0 && g->numTexCoordSets > 0){
+	   g && (g->numTriangles > 0 || (g->meshHeader && g->meshHeader->totalIndices >= 3)) &&
+	   g->numTexCoordSets > 0){
 		for(int i = 0; i < g->matList.numMaterials; i++){
 			stats->uvMaterials++;
 			if(g->matList.materials[i] && g->matList.materials[i]->texture)
@@ -1070,6 +1071,10 @@ CFileLoader::LoadAtomicFile(RwStream *stream, uint32 id)
 	   mi->m_firstDamaged == 0 && CStreaming::ms_aInfoForModel[id].m_size)
 		saStatic = CCustomModels::IsAutoMountedImage(
 			_GET_INDEX(CStreaming::ms_aInfoForModel[id].m_position));
+#ifdef ANDROID
+	if(!saStatic && CCustomModels::CanServe(id))
+		saStatic = true;
+#endif
 	if(saStatic){
 		// The streamer normally does this already. The model's own TXD is
 		// selected for matched IMG pairs; otherwise the IDE assignment stays.
@@ -1109,6 +1114,18 @@ CFileLoader::LoadAtomicFile(RwStream *stream, uint32 id)
 			RpAtomic *atomic = SAStaticModel::TakeAtomic(clump, &error);
 			if(atomic){
 				CVisibilityPlugins::SetAtomicRenderCallback(atomic, nil);
+#ifdef ANDROID
+				if(!CCustomWorld::OwnsModelSlot(id) &&
+				   (mi->m_numAtomics > 1 || mi->m_firstDamaged != 0)){
+					float maxDist = mi->m_lodDistances[0];
+					for(int lod = 1; lod < mi->m_numAtomics; lod++)
+						if(mi->m_lodDistances[lod] > maxDist)
+							maxDist = mi->m_lodDistances[lod];
+					mi->m_lodDistances[0] = maxDist;
+					mi->m_numAtomics = 1;
+					mi->m_firstDamaged = 0;
+				}
+#endif
 				mi->SetAtomic(0, atomic); // one draw-distance slot, all clump parts
 				CVisibilityPlugins::SetAtomicModelInfo(atomic, mi);
 				if(mi->GetNum2dEffects() == 0){

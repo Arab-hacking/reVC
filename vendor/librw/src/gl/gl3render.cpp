@@ -23,6 +23,8 @@ namespace gl3 {
 void
 drawInst_simple(InstanceDataHeader *header, InstanceData *inst)
 {
+	if(inst->numIndex == 0)
+		return;
 	flushCache();
 	glDrawElements(header->primType, inst->numIndex,
 	               GL_UNSIGNED_SHORT, (void*)(uintptr)inst->offset);
@@ -64,6 +66,8 @@ drawInst_GSemu(InstanceDataHeader *header, InstanceData *inst)
 void
 drawInst(InstanceDataHeader *header, InstanceData *inst)
 {
+	if(inst->numIndex == 0)
+		return;
 	if(rw::GetRenderState(rw::GSALPHATEST))
 		drawInst_GSemu(header, inst);
 	else

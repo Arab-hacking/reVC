@@ -68,16 +68,22 @@ instanceMesh(rw::ObjPipeline *rwpipe, Geometry *geo)
 	Mesh *mesh = meshh->getMeshes();
 	uint32 offset = 0;
 	for(uint32 i = 0; i < header->numMeshes; i++){
-		findMinVertAndNumVertices(mesh->indices, mesh->numIndices,
-		                          &inst->minVert, &inst->numVertices);
-		assert(inst->minVert != 0xFFFFFFFF);
+		if(mesh->numIndices > 0){
+			findMinVertAndNumVertices(mesh->indices, mesh->numIndices,
+			                          &inst->minVert, &inst->numVertices);
+			assert(inst->minVert != 0xFFFFFFFF);
+		}else{
+			inst->minVert = 0;
+			inst->numVertices = 0;
+		}
 		inst->numIndex = mesh->numIndices;
 		inst->material = mesh->material;
 		inst->vertexAlpha = 0;
 		inst->program = 0;
 		inst->offset = offset;
-		memcpy((uint8*)header->indexBuffer + inst->offset,
-		       mesh->indices, inst->numIndex*2);
+		if(inst->numIndex > 0)
+			memcpy((uint8*)header->indexBuffer + inst->offset,
+			       mesh->indices, inst->numIndex*2);
 		offset += inst->numIndex*2;
 		mesh++;
 		inst++;
@@ -106,8 +112,10 @@ instance(rw::ObjPipeline *rwpipe, Atomic *atomic)
 {
 	ObjPipeline *pipe = (ObjPipeline*)rwpipe;
 	Geometry *geo = atomic->geometry;
-	// don't try to (re)instance native data
-	if(geo->flags & Geometry::NATIVE)
+	// don't try to (re)instance native or empty dummy data
+	if(geo == nil || geo->flags & Geometry::NATIVE)
+		return;
+	if(geo->numVertices <= 0 || geo->meshHeader == nil || geo->meshHeader->totalIndices == 0)
 		return;
 
 	InstanceDataHeader *header = (InstanceDataHeader*)geo->instData;
@@ -141,8 +149,14 @@ render(rw::ObjPipeline *rwpipe, Atomic *atomic)
 {
 	ObjPipeline *pipe = (ObjPipeline*)rwpipe;
 	Geometry *geo = atomic->geometry;
+	if(geo == nil || geo->numVertices <= 0)
+		return;
+	if(!(geo->flags & Geometry::NATIVE) &&
+	   (geo->meshHeader == nil || geo->meshHeader->totalIndices == 0))
+		return;
 	pipe->instance(atomic);
-	assert(geo->instData != nil);
+	if(geo->instData == nil)
+		return;
 	assert(geo->instData->platform == PLATFORM_GL3);
 #ifdef RW_GL3
 	if(isShadowPass()){

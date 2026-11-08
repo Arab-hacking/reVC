@@ -3084,6 +3084,10 @@ CStreaming::LoadAllRequestedModels(bool priority)
 	bInsideLoadAll = false;
 }
 #else
+#if defined(ANDROID) && defined(RW_GL3) && defined(LIBRW_SDL2)
+void psPumpLoadingEvents(void);
+#endif
+
 void
 CStreaming::LoadAllRequestedModels(bool priority)
 {
@@ -3102,6 +3106,10 @@ CStreaming::LoadAllRequestedModels(bool priority)
 	if(bInsideLoadAll)
 		return;
 	bInsideLoadAll = true;
+#if defined(ANDROID) && defined(CUSTOM_MODELS)
+	CCustomModels::ScopedBlockingLoad blockingLoadScope;
+	int pumpCounter = 0;
+#endif
 
 	if(priority)
 		numRequests = ms_numPriorityRequests;
@@ -3109,12 +3117,22 @@ CStreaming::LoadAllRequestedModels(bool priority)
 	FlushChannels();
 	imgOffset = GetCdImageOffset(CdStreamGetLastPosn());
 
+#if defined(ANDROID) && defined(CUSTOM_MODELS)
+	for(CStreamingInfo *queued = ms_startRequestedList.m_next;
+	    queued != &ms_endRequestedList; queued = queued->m_next)
+		CCustomModels::PrefetchStream(queued - ms_aInfoForModel, priority);
+#endif
+
 	while(ms_endRequestedList.m_prev != &ms_startRequestedList && numRequests > 0){
 		bool traceIteration = traceAfterAnimation > 0;
 		if(traceIteration)
 			CUSTOM_LOG("stream single: checking next request, remaining=%d\n", numRequests);
 		numRequests--;
-#ifdef CUSTOM_MODELS
+#if defined(ANDROID) && defined(RW_GL3) && defined(LIBRW_SDL2)
+		if((++pumpCounter & 31) == 0)
+			psPumpLoadingEvents();
+#endif
+#if defined(CUSTOM_MODELS) && !defined(ANDROID)
 		// Unlike normal per-frame streaming, this entry point deliberately
 		// waits for scripted/startup requests. Never let a still-queued CPU
 		// asset be mistaken for an empty file by GetNextFileOnCd.

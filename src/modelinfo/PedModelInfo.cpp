@@ -223,6 +223,8 @@ CPedModelInfo::AnimatePedColModelSkinned(RpClump *clump)
 	RwMatrix *invmat, *mat;
 	CColSphere *spheres = m_hitColModel->spheres;
 	RpHAnimHierarchy *hier = GetAnimHierarchyFromSkinClump(clump);
+	if(hier == nil)
+		return m_hitColModel;
 	invmat = RwMatrixCreate();
 	mat = RwMatrixCreate();
 	RwMatrixInvert(invmat, RwFrameGetMatrix(RpClumpGetFrame(clump)));
@@ -231,6 +233,10 @@ CPedModelInfo::AnimatePedColModelSkinned(RpClump *clump)
 		*mat = *invmat;
 		int id = ConvertPedNode2BoneTag(m_pColNodeInfos[i].pedNode);
 		int idx = RpHAnimIDGetIndex(hier, id);
+		if(idx < 0 || idx >= hier->numNodes){
+			spheres[i].center = CVector(m_pColNodeInfos[i].x, 0.0f, m_pColNodeInfos[i].z);
+			continue;
+		}
 
 		RwMatrixTransform(mat, &RpHAnimHierarchyGetMatrixArray(hier)[idx], rwCOMBINEPRECONCAT);
 		RwV3d pos = { 0.0f, 0.0f, 0.0f };
@@ -250,11 +256,18 @@ CPedModelInfo::AnimatePedColModelSkinnedWorld(RpClump *clump)
 		CreateHitColModelSkinned(clump);
 	CColSphere *spheres = m_hitColModel->spheres;
 	RpHAnimHierarchy *hier = GetAnimHierarchyFromSkinClump(clump);
+	if(hier == nil)
+		return m_hitColModel;
 	RwMatrix *mat;
 
 	for(int i = 0; i < NUMPEDINFONODES; i++){
 		int id = ConvertPedNode2BoneTag(m_pColNodeInfos[i].pedNode);
 		int idx = RpHAnimIDGetIndex(hier, id);
+		if(idx < 0 || idx >= hier->numNodes){
+			RwMatrix *rootLtm = RwFrameGetLTM(RpClumpGetFrame(clump));
+			spheres[i].center = CVector(rootLtm->pos) + CVector(m_pColNodeInfos[i].x, 0.0f, m_pColNodeInfos[i].z);
+			continue;
+		}
 
 		mat = &RpHAnimHierarchyGetMatrixArray(hier)[idx];
 		RwV3d pos = { 0.0f, 0.0f, 0.0f };

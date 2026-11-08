@@ -288,11 +288,15 @@ static inline bool brFindStruct(const uint8_t* p, const uint8_t* end, const uint
     return false;
 }
 
-// проверка одной geometry (чанк rwGEOMETRY): непустая, с материалами, данные внутри файла
-static inline bool brCheckGeometry(const BrChunk& geom, std::string& why) {
+// проверка одной geometry (чанк rwGEOMETRY): не обрезана; возвращает nonEmpty=true, если есть реальные грани
+// (либо в legacy-массиве треугольников rwSTRUCT, либо в расширении BinMeshPLG 0x050E).
+static inline bool brCheckGeometry(const BrChunk& geom, bool& nonEmpty, std::string& emptyWhy, std::string& why) {
+    nonEmpty = false;
     char t[160];
     const uint8_t* g = geom.p; const uint8_t* gend = geom.p + geom.len;
     const uint8_t* sd = nil; uint32_t slen = 0, numMats = 1;
+    const uint8_t* binMesh = nil; uint32_t binMeshLen = 0;
+    bool hasNativeData = false;
     while (g < gend) {
         BrChunk gk; const uint8_t* gkafter;
         if (!brChunkAt(g, gend, gk, gkafter)) break;
@@ -301,9 +305,18 @@ static inline bool brCheckGeometry(const BrChunk& geom, std::string& why) {
             const uint8_t* msd; uint32_t mlen;
             if (brFindStruct(gk.p, gk.p + gk.len, msd, mlen) && mlen >= 4)
                 numMats = rd32(msd);
+        } else if (gk.id == rwEXTENSION) {
+            const uint8_t* e = gk.p; const uint8_t* eend = gk.p + gk.len;
+            while (e < eend) {
+                BrChunk ek; const uint8_t* eafter;
+                if (!brChunkAt(e, eend, ek, eafter)) break;
+                e = eafter;
+                if (ek.id == 0x050E) { binMesh = ek.p; binMeshLen = ek.len; }
+                else if (ek.id == 0x0510 && ek.len > 0) hasNativeData = true;
+            }
         }
     }
-    if (!brFindStruct(geom.p, gend, sd, slen)) return true;    // без struct не судим
+    if (!brFindStruct(geom.p, gend, sd, slen)) { nonEmpty = true; return true; }    // без struct не судим
     if (slen < 16) {
         snprintf(t, sizeof t, "a geometry struct is too small (%u bytes)", slen);
         why = t;
@@ -311,11 +324,6 @@ static inline bool brCheckGeometry(const BrChunk& geom, std::string& why) {
     }
     uint32_t flags = rd32(sd), numTris = rd32(sd + 4), numVerts = rd32(sd + 8), numMorph = rd32(sd + 12);
     bool native = (flags & 0x01000000) != 0;
-    if (numVerts == 0 || numTris == 0) {
-        snprintf(t, sizeof t, "a geometry is empty (%u verts, %u tris) - an empty model stub", numVerts, numTris);
-        why = t;
-        return false;
-    }
     if (numVerts > 0x10000) {
         snprintf(t, sizeof t, "a geometry declares too many vertices (%u)", numVerts);
         why = t;
@@ -326,7 +334,7 @@ static inline bool brCheckGeometry(const BrChunk& geom, std::string& why) {
         why = t;
         return false;
     }
-    if (!native) {
+    if (!native && numVerts > 0) {
         uint64_t e0 = geometryStructSize(sd, slen, false);
         uint64_t e1 = e0 ? e0 : geometryStructSize(sd, slen, true);
         bool fits = (e0 > 0 && e0 <= slen) || (e1 > 0 && e1 <= slen);
@@ -336,16 +344,92 @@ static inline bool brCheckGeometry(const BrChunk& geom, std::string& why) {
             return false;
         }
     }
-    if (numMats == 0) {
-        snprintf(t, sizeof t, "a geometry has no materials - an empty model stub");
-        why = t;
-        return false;
+
+    uint32_t binMeshTris = 0;
+    if (binMesh != nil) {
+        if (binMeshLen < 12) {
+            why = "a geometry has a truncated BinMesh extension";
+            return false;
+        }
+        uint32_t meshFlags = rd32(binMesh), nSplit = rd32(binMesh + 4), totalIdx = rd32(binMesh + 8);
+        if (!native) {
+            if ((meshFlags & ~1u) != 0) {
+                why = "a geometry has an unsupported BinMesh primitive type";
+                return false;
+            }
+            size_t o = 12;
+            uint32_t sum = 0;
+            for (uint32_t sI = 0; sI < nSplit; sI++) {
+                if (o + 8 > binMeshLen) {
+                    why = "a geometry has a truncated BinMesh split header";
+                    return false;
+                }
+                uint32_t cnt = rd32(binMesh + o), mi = rd32(binMesh + o + 4);
+                o += 8;
+                if ((numMats && mi >= numMats) || o + (size_t)cnt * 4 > binMeshLen) {
+                    why = "a geometry has an out-of-bounds BinMesh split";
+                    return false;
+                }
+                if ((meshFlags & 1u) == 0 && (cnt % 3u) != 0) {
+                    why = "a geometry has an incomplete BinMesh triangle list";
+                    return false;
+                }
+                for (uint32_t k = 0; k < cnt; k++) {
+                    if (rd32(binMesh + o + (size_t)k * 4) >= numVerts) {
+                        why = "a geometry has a BinMesh vertex index out of range";
+                        return false;
+                    }
+                }
+                if ((meshFlags & 1u) != 0) {
+                    for (uint32_t k = 0; k + 2 < cnt; k++) {
+                        uint32_t i0 = rd32(binMesh + o + (size_t)k * 4);
+                        uint32_t i1 = rd32(binMesh + o + (size_t)(k + 1) * 4);
+                        uint32_t i2 = rd32(binMesh + o + (size_t)(k + 2) * 4);
+                        if (i0 != i1 && i1 != i2 && i0 != i2)
+                            binMeshTris++;
+                    }
+                } else {
+                    for (uint32_t k = 0; k + 2 < cnt; k += 3) {
+                        uint32_t i0 = rd32(binMesh + o + (size_t)k * 4);
+                        uint32_t i1 = rd32(binMesh + o + (size_t)(k + 1) * 4);
+                        uint32_t i2 = rd32(binMesh + o + (size_t)(k + 2) * 4);
+                        if (i0 != i1 && i1 != i2 && i0 != i2)
+                            binMeshTris++;
+                    }
+                }
+                o += (size_t)cnt * 4;
+                sum += cnt;
+            }
+            if (o != binMeshLen || sum != totalIdx) {
+                why = "a geometry has an inconsistent BinMesh index count";
+                return false;
+            }
+        } else if (hasNativeData && totalIdx >= 3) {
+            binMeshTris = (meshFlags & 1u) ? (totalIdx - 2) : (totalIdx / 3);
+        }
     }
+
+    uint32_t effectiveTris = numTris ? numTris : binMeshTris;
+    if (numVerts == 0 || effectiveTris == 0) {
+        if (emptyWhy.empty()) {
+            snprintf(t, sizeof t, "a geometry is empty (%u verts, %u tris) - an empty model stub", numVerts, effectiveTris);
+            emptyWhy = t;
+        }
+        return true;
+    }
+    if (numMats == 0) {
+        if (emptyWhy.empty()) {
+            snprintf(t, sizeof t, "a geometry has no materials - an empty model stub");
+            emptyWhy = t;
+        }
+        return true;
+    }
+    nonEmpty = true;
     return true;
 }
 
 // ищет в детях чанка все geometry и проверяет каждую; возвращает число проверенных
-static inline int brCheckGeometriesIn(const uint8_t* p, const uint8_t* end, std::string& why) {
+static inline int brCheckGeometriesIn(const uint8_t* p, const uint8_t* end, int& nonEmptyCount, std::string& emptyWhy, std::string& why) {
     int n = 0;
     const uint8_t* q = p;
     while (q < end) {
@@ -354,7 +438,9 @@ static inline int brCheckGeometriesIn(const uint8_t* p, const uint8_t* end, std:
         q = after;
         if (k.id != rwGEOMETRY) continue;
         n++;
-        if (!brCheckGeometry(k, why)) return -n;   // отрицательное — уже с ошибкой
+        bool nonEmpty = false;
+        if (!brCheckGeometry(k, nonEmpty, emptyWhy, why)) return -n;   // отрицательное — уже с ошибкой
+        if (nonEmpty) nonEmptyCount++;
     }
     return n;
 }
@@ -368,7 +454,8 @@ static inline bool validateClumpForGame(const uint8_t* p, size_t n, std::string&
     if (!brChunkAt(p, end, root, after)) return true;      // не разобрались — не бракуем
     if (root.id != rwCLUMP) return true;                   // не clump — пусть решает игра
 
-    int atomics = 0, atomicsWithGeom = 0, geomsChecked = 0;
+    int atomics = 0, atomicsWithGeom = 0, geomsChecked = 0, nonEmptyGeoms = 0;
+    std::string emptyWhy;
     const uint8_t* q = root.p; const uint8_t* qend = root.p + root.len;
     while (q < qend) {
         BrChunk k; const uint8_t* kafter;
@@ -377,11 +464,11 @@ static inline bool validateClumpForGame(const uint8_t* p, size_t n, std::string&
         if (k.id == rwATOMIC) {
             atomics++;
             // geometry либо внутри атомика, либо (старый BR-расклад) в GEOMLIST уровня clump
-            int own = brCheckGeometriesIn(k.p, k.p + k.len, why);
+            int own = brCheckGeometriesIn(k.p, k.p + k.len, nonEmptyGeoms, emptyWhy, why);
             if (own < 0) return false;                     // проверка geometry уже написала why
             if (own > 0) { atomicsWithGeom += own; geomsChecked += own; }
         } else if (k.id == rwGEOMLIST) {
-            int gn = brCheckGeometriesIn(k.p, k.p + k.len, why);
+            int gn = brCheckGeometriesIn(k.p, k.p + k.len, nonEmptyGeoms, emptyWhy, why);
             if (gn < 0) return false;
             geomsChecked += gn;
         }
@@ -400,6 +487,10 @@ static inline bool validateClumpForGame(const uint8_t* p, size_t n, std::string&
     if (atomicsWithGeom == 0 && geomsChecked == 0) {
         snprintf(t, sizeof t, "the atomics hold no geometry - an empty model stub");
         why = t;
+        return false;
+    }
+    if (nonEmptyGeoms == 0) {
+        why = emptyWhy.empty() ? "a geometry is empty (0 verts, 0 tris) - an empty model stub" : emptyWhy;
         return false;
     }
     return true;
@@ -672,24 +763,45 @@ static inline void fixTree(RwNode& node, uint32_t parentId, RwFixStats& st) {
     if (node.container && node.id == rwGEOMETRY) {
         // v6.7: BinMesh, не согласованный с геометрией (число сплитов/индексов не сходится с размером чанка, материал сплита >=
         // numMaterials, индекс >= numVerts) — удаляем: без плагина RpGeometryStreamRead строит меши заново из треугольников.
-        uint32_t numVerts = 0, numMat = 0;
-        for (auto& g : node.kids) if (g.id == rwSTRUCT && !g.container && g.data.size() >= 16) { numVerts = rd32(g.data.data() + 8); break; }
+        uint32_t geomFlags = 0, numVerts = 0, numMat = 0;
+        for (auto& g : node.kids) if (g.id == rwSTRUCT && !g.container && g.data.size() >= 16) { geomFlags = rd32(g.data.data()); numVerts = rd32(g.data.data() + 8); break; }
+        bool isNative = (geomFlags & 0x01000000) != 0;
         for (auto& g : node.kids) if (g.id == rwMATLIST && g.container && !g.kids.empty() && g.kids[0].id == rwSTRUCT && g.kids[0].data.size() >= 4) { numMat = rd32(g.kids[0].data.data()); break; }
         for (auto& g : node.kids) if (g.id == rwEXTENSION && g.container) for (size_t i = 0; i < g.kids.size();) {
             auto& e = g.kids[i]; bool bad = false;
-            if (e.id == 0x50E && !e.container) {
+            if (e.id == 0x50E && !e.container && !isNative) {
                 const uint8_t* b = e.data.data(); size_t bn = e.data.size();
                 if (bn < 12) bad = true;
                 else {
-                    uint32_t nSplit = rd32(b + 4), total = rd32(b + 8); size_t o = 12; uint32_t sum = 0;
+                    uint32_t meshFlags = rd32(b), nSplit = rd32(b + 4), total = rd32(b + 8);
+                    size_t o = 12; uint32_t sum = 0, emptySplits = 0;
                     for (uint32_t sI = 0; sI < nSplit && !bad; sI++) {
                         if (o + 8 > bn) { bad = true; break; }
                         uint32_t cnt = rd32(b + o), mi = rd32(b + o + 4); o += 8;
                         if ((numMat && mi >= numMat) || o + (size_t)cnt * 4 > bn) { bad = true; break; }
+                        if (cnt == 0) emptySplits++;
                         if (numVerts) for (uint32_t k = 0; k < cnt; k++) if (rd32(b + o + (size_t)k * 4) >= numVerts) { bad = true; break; }
                         o += (size_t)cnt * 4; sum += cnt;
                     }
                     if (!bad && (o != bn || sum != total)) bad = true;
+                    // Убираем пустые сплиты (cnt == 0) при непустом меше: GL3/SAStaticModel требуют непустых сплитов
+                    if (!bad && emptySplits > 0 && total > 0 && emptySplits < nSplit) {
+                        std::vector<uint8_t> compact;
+                        compact.reserve(bn - (size_t)emptySplits * 8);
+                        compact.resize(12);
+                        wr32(&compact[0], meshFlags);
+                        wr32(&compact[4], nSplit - emptySplits);
+                        wr32(&compact[8], total);
+                        size_t ro = 12;
+                        for (uint32_t sI = 0; sI < nSplit; sI++) {
+                            uint32_t cnt = rd32(b + ro);
+                            size_t splitBytes = 8 + (size_t)cnt * 4;
+                            if (cnt > 0)
+                                compact.insert(compact.end(), b + ro, b + ro + splitBytes);
+                            ro += splitBytes;
+                        }
+                        e.data.swap(compact);
+                    }
                 }
             }
             if (bad) { g.kids.erase(g.kids.begin() + i); st.binmeshDropped++; } else i++;

@@ -69,6 +69,14 @@ public:
 	static bool IsStreamPrepared(int32 streamId, bool wait);
 	static void CancelStreamPrefetch(int32 streamId);
 	static void PumpBackgroundResults(void);
+#ifdef ANDROID
+	static void BeginBlockingLoad(void);
+	static void EndBlockingLoad(void);
+	struct ScopedBlockingLoad {
+		ScopedBlockingLoad(void) { BeginBlockingLoad(); }
+		~ScopedBlockingLoad(void) { EndBlockingLoad(); }
+	};
+#endif
 	// Reads, converts and installs the file of this stream id. Only call it
 	// when CanServe said yes for the same id.
 	static bool Load(int32 streamId);

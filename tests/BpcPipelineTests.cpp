@@ -463,6 +463,147 @@ static void TestMultiWorkerQueueAndFreezeMonitor(void)
 	Check(mon.TotalSpikes() == 1 && mon.SlowestAsset() == "huge_building", "FreezeMonitor tracked slowest asset");
 }
 
+static std::vector<uint8_t> WrapRwChunkTest(uint32_t type, const std::vector<uint8_t> &payload, uint32_t ver = 0x1803FFFFu)
+{
+	std::vector<uint8_t> out;
+	PutU32(out, type);
+	PutU32(out, (uint32_t)payload.size());
+	PutU32(out, ver);
+	out.insert(out.end(), payload.begin(), payload.end());
+	return out;
+}
+
+static void AppendBytes(std::vector<uint8_t> &dst, const std::vector<uint8_t> &src)
+{
+	dst.insert(dst.end(), src.begin(), src.end());
+}
+
+static std::vector<uint8_t> BuildMultiGeomMeshOnlyDff(uint32_t badVertIdx)
+{
+	const uint32_t ver = 0x1803FFFFu;
+	// FrameList with 2 frames
+	std::vector<uint8_t> flStruct;
+	PutU32(flStruct, 2u);
+	for(int f = 0; f < 2; f++){
+		float mat[12] = { 1,0,0, 0,1,0, 0,0,1, 0,0,0 };
+		const uint8_t *mp = (const uint8_t*)mat;
+		flStruct.insert(flStruct.end(), mp, mp + sizeof(mat));
+		PutU32(flStruct, (f == 0) ? 0xFFFFFFFFu : 0u);
+		PutU32(flStruct, 0u);
+	}
+	std::vector<uint8_t> frameListBody = WrapRwChunkTest(0x0001u, flStruct, ver);
+	AppendBytes(frameListBody, WrapRwChunkTest(0x0003u, std::vector<uint8_t>(), ver));
+	AppendBytes(frameListBody, WrapRwChunkTest(0x0003u, std::vector<uint8_t>(), ver));
+	std::vector<uint8_t> frameList = WrapRwChunkTest(0x000Eu, frameListBody, ver);
+
+	// MaterialList with 2 materials (reused)
+	auto makeMat = [&]() -> std::vector<uint8_t> {
+		std::vector<uint8_t> ms;
+		PutU32(ms, 0u);
+		ms.push_back(255); ms.push_back(255); ms.push_back(255); ms.push_back(255);
+		PutU32(ms, 0u);
+		PutU32(ms, 0u);
+		float surf[3] = { 1.0f, 0.0f, 1.0f };
+		const uint8_t *sp = (const uint8_t*)surf;
+		ms.insert(ms.end(), sp, sp + sizeof(surf));
+		std::vector<uint8_t> mb = WrapRwChunkTest(0x0001u, ms, ver);
+		AppendBytes(mb, WrapRwChunkTest(0x0003u, std::vector<uint8_t>(), ver));
+		return WrapRwChunkTest(0x0007u, mb, ver);
+	};
+
+	// Geometry 0: 0-vert, 0-tri helper/dummy geometry (as found in multi-atomic SA vehicles/props)
+	std::vector<uint8_t> g0s;
+	PutU32(g0s, 0u); PutU32(g0s, 0u); PutU32(g0s, 0u); PutU32(g0s, 1u);
+	float bs0[4] = { 0, 0, 0, 0 };
+	g0s.insert(g0s.end(), (const uint8_t*)bs0, (const uint8_t*)bs0 + sizeof(bs0));
+	PutU32(g0s, 1u); PutU32(g0s, 0u);
+	std::vector<uint8_t> ml0s; PutU32(ml0s, 0u);
+	std::vector<uint8_t> g0b = WrapRwChunkTest(0x0001u, g0s, ver);
+	AppendBytes(g0b, WrapRwChunkTest(0x0008u, WrapRwChunkTest(0x0001u, ml0s, ver), ver));
+	AppendBytes(g0b, WrapRwChunkTest(0x0003u, std::vector<uint8_t>(), ver));
+	std::vector<uint8_t> geom0 = WrapRwChunkTest(0x000Fu, g0b, ver);
+
+	// Geometry 1: meshOnly geometry (numTris == 0 in rwSTRUCT, faces in BinMeshPLG 0x050E)
+	std::vector<uint8_t> g1s;
+	PutU32(g1s, 0x00000002u); // POSITIONS
+	PutU32(g1s, 0u);          // numTriangles = 0
+	PutU32(g1s, 3u);          // numVertices = 3
+	PutU32(g1s, 1u);
+	float bs1[4] = { 0, 0, 0, 5.0f };
+	g1s.insert(g1s.end(), (const uint8_t*)bs1, (const uint8_t*)bs1 + sizeof(bs1));
+	PutU32(g1s, 1u); PutU32(g1s, 0u);
+	float verts[9] = { 0,0,0, 2,0,0, 0,2,0 };
+	g1s.insert(g1s.end(), (const uint8_t*)verts, (const uint8_t*)verts + sizeof(verts));
+
+	std::vector<uint8_t> ml1s;
+	PutU32(ml1s, 2u); PutU32(ml1s, 0xFFFFFFFFu); PutU32(ml1s, 0xFFFFFFFFu);
+	std::vector<uint8_t> ml1b = WrapRwChunkTest(0x0001u, ml1s, ver);
+	AppendBytes(ml1b, makeMat());
+	AppendBytes(ml1b, makeMat());
+
+	std::vector<uint8_t> bm;
+	PutU32(bm, 0u);  // triList
+	PutU32(bm, 2u);  // 2 splits: split 0 is empty (0 indices), split 1 has 3 indices
+	PutU32(bm, 3u);  // totalIndices = 3
+	PutU32(bm, 0u); PutU32(bm, 0u);
+	PutU32(bm, 3u); PutU32(bm, 1u);
+	PutU32(bm, 0u); PutU32(bm, 1u); PutU32(bm, badVertIdx);
+	std::vector<uint8_t> g1Ext = WrapRwChunkTest(0x050Eu, bm, ver);
+
+	std::vector<uint8_t> g1b = WrapRwChunkTest(0x0001u, g1s, ver);
+	AppendBytes(g1b, WrapRwChunkTest(0x0008u, ml1b, ver));
+	AppendBytes(g1b, WrapRwChunkTest(0x0003u, g1Ext, ver));
+	std::vector<uint8_t> geom1 = WrapRwChunkTest(0x000Fu, g1b, ver);
+
+	std::vector<uint8_t> gls; PutU32(gls, 2u);
+	std::vector<uint8_t> glb = WrapRwChunkTest(0x0001u, gls, ver);
+	AppendBytes(glb, geom0);
+	AppendBytes(glb, geom1);
+	std::vector<uint8_t> geomList = WrapRwChunkTest(0x001Au, glb, ver);
+
+	auto makeAtomic = [&](uint32_t fi, uint32_t gi) -> std::vector<uint8_t> {
+		std::vector<uint8_t> as;
+		PutU32(as, fi); PutU32(as, gi); PutU32(as, 5u); PutU32(as, 0u);
+		std::vector<uint8_t> ab = WrapRwChunkTest(0x0001u, as, ver);
+		AppendBytes(ab, WrapRwChunkTest(0x0003u, std::vector<uint8_t>(), ver));
+		return WrapRwChunkTest(0x0014u, ab, ver);
+	};
+
+	std::vector<uint8_t> cs;
+	PutU32(cs, 2u); PutU32(cs, 0u); PutU32(cs, 0u);
+	std::vector<uint8_t> cb = WrapRwChunkTest(0x0001u, cs, ver);
+	AppendBytes(cb, frameList);
+	AppendBytes(cb, geomList);
+	AppendBytes(cb, makeAtomic(0u, 0u));
+	AppendBytes(cb, makeAtomic(1u, 1u));
+	AppendBytes(cb, WrapRwChunkTest(0x0003u, std::vector<uint8_t>(), ver));
+	return WrapRwChunkTest(0x0010u, cb, ver);
+}
+
+static void TestMeshOnlyMultiGeomAndCorruptedBinMesh(void)
+{
+	// 1. Valid multi-geometry clump (empty helper geom + meshOnly geom with empty split)
+	std::vector<uint8_t> validDff = BuildMultiGeomMeshOnlyDff(2u);
+	std::string reason;
+	Check(br::validateClumpForGame(validDff.data(), validDff.size(), reason),
+		"multi-geometry clump with dummy 0-face helper + meshOnly BinMeshPLG accepted");
+	std::vector<uint8_t> fixed = validDff;
+	br::RwFixStats st;
+	Check(br::normalizeDffToSA(fixed, st), "normalizeDffToSA succeeded on multi-geom meshOnly DFF");
+	Check(fixed.size() < validDff.size(),
+		"normalizeDffToSA compacted empty 0-index split from BinMeshPLG");
+	Check(br::validateClumpForGame(fixed.data(), fixed.size(), reason) && br::validateDff(fixed).empty(),
+		"fixed multi-geometry meshOnly DFF passes both validateClumpForGame and validateDff");
+
+	// 2. Corrupted BinMeshPLG with out-of-bounds vertex index (99 >= numVertices=3) MUST fail!
+	std::vector<uint8_t> badDff = BuildMultiGeomMeshOnlyDff(99u);
+	reason.clear();
+	Check(!br::validateClumpForGame(badDff.data(), badDff.size(), reason),
+		"corrupted BinMeshPLG vertex index out of range rejected cleanly");
+	Check(!br::validateDff(badDff).empty(),
+		"validateDff also rejects corrupted BinMeshPLG vertex index");
+}
+
 int main(void)
 {
 	TestVirtualBpcAddressing();
@@ -471,6 +612,7 @@ int main(void)
 	TestModPartialHeadTeaDecrypt();
 	TestDirectGpuBtxKtxParser();
 	TestMultiWorkerQueueAndFreezeMonitor();
+	TestMeshOnlyMultiGeomAndCorruptedBinMesh();
 	std::printf("BpcPipelineTests: ALL PASSED\n");
 	return 0;
 }

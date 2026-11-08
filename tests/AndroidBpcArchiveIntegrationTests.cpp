@@ -37,6 +37,8 @@ static int g_lastUploadedCompressed = 0;
 static int g_txdStreamReads = 0;
 static int g_linearGetModelInfoByNameCalls = 0;
 static int g_liveRwTextures = 0;
+static int g_simulateLoadDelayUs = 0;
+static std::vector<uint8> g_lastLoadedAtomicStreamBytes;
 static RwTexture *g_lastResolvedTex = nullptr;
 
 extern "C" bool CdStreamAddImage(const char *path) { g_images.push_back(path); return true; }
@@ -77,11 +79,20 @@ struct FakeModelStub : CBaseModelInfo {
 	RwObject *CreateInstance(RwMatrix *) override { return nullptr; }
 	RwObject *GetRwObject(void) override { return nullptr; }
 };
+static FakeModelStub g_fakeModel0;
 static FakeModelStub g_fakeModel100;
 static FakeModelStub g_fakeModel101;
+static FakeModelStub g_fakeModel102;
+static FakeModelStub g_fakeModel103;
+static FakeModelStub g_fakeModel104;
 CBaseModelInfo *CModelInfo::ms_modelInfoPtrs[MODELINFOSIZE];
 CSimpleModelInfo *CModelInfo::AddSimpleModel(int id) {
-	FakeModelStub *stub = (id == 101) ? &g_fakeModel101 : &g_fakeModel100;
+	FakeModelStub *stub = &g_fakeModel100;
+	if(id == 0) stub = &g_fakeModel0;
+	else if(id == 101) stub = &g_fakeModel101;
+	else if(id == 102) stub = &g_fakeModel102;
+	else if(id == 103) stub = &g_fakeModel103;
+	else if(id == 104) stub = &g_fakeModel104;
 	ms_modelInfoPtrs[id] = stub;
 	return (CSimpleModelInfo*)stub;
 }
@@ -99,8 +110,12 @@ CBaseModelInfo *CModelInfo::GetModelInfo(const char *name, int *id) {
 	return nullptr;
 }
 void CModelInfo::ShutDown(void) {
+	ms_modelInfoPtrs[0] = nullptr;
 	ms_modelInfoPtrs[100] = nullptr;
 	ms_modelInfoPtrs[101] = nullptr;
+	ms_modelInfoPtrs[102] = nullptr;
+	ms_modelInfoPtrs[103] = nullptr;
+	ms_modelInfoPtrs[104] = nullptr;
 }
 
 namespace rw {
@@ -212,15 +227,21 @@ RwTexDictionary *RwTexDictionaryGtaStreamRead(RwStream *) {
 	return nullptr;
 }
 
-RwStream *RwStreamOpen(RwStreamType, RwStreamAccessType, const void *pData) {
+RwStream *RwStreamOpen(RwStreamType type, RwStreamAccessType, const void *pData) {
 	RwStream *s = (RwStream*)std::calloc(1, sizeof(RwStream));
-	(void)pData;
+	if(type == rwSTREAMMEMORY && pData){
+		const RwMemory *mem = (const RwMemory*)pData;
+		if(mem->start && mem->length > 0)
+			g_lastLoadedAtomicStreamBytes.assign(mem->start, mem->start + mem->length);
+	}
 	return s;
 }
 RwBool RwStreamFindChunk(RwStream *, RwUInt32, RwUInt32 *, RwUInt32 *) { return true; }
 RwBool RwStreamClose(RwStream *s, void *) { std::free(s); return true; }
 
 bool CFileLoader::LoadAtomicFile(RwStream *, uint32) {
+	if(g_simulateLoadDelayUs > 0)
+		usleep((useconds_t)g_simulateLoadDelayUs);
 	// Emulate RenderWare Texture::read resolving the model's texture through findCB!
 	if(rw::Texture::findCB){
 		RwTexture *t = rw::Texture::findCB("road_asphalt_br");
@@ -362,9 +383,8 @@ static void TeaEncrypt8Rounds(uint32 &v0, uint32 &v1, const uint32 k[4])
 	}
 }
 
-static std::vector<uint8> MakeEncryptedMod(void)
+static std::vector<uint8> EncryptDffToMod(std::vector<uint8> dff)
 {
-	std::vector<uint8> dff = br::buildDummyDff();
 	size_t origLen = dff.size();
 	if(dff.size() < br::MOD_BLOCK)
 		dff.resize(br::MOD_BLOCK, 0);
@@ -387,6 +407,123 @@ static std::vector<uint8> MakeEncryptedMod(void)
 		br::wr32(&mod[br::MOD_HDR + off + 4], v1);
 	}
 	return mod;
+}
+
+static std::vector<uint8> MakeEncryptedMod(void)
+{
+	return EncryptDffToMod(br::buildDummyDff());
+}
+
+// Synthesize a BR meshOnly .mod (like nrock_ter498 / pcj600 / glendale / male01):
+// numTriangles == 0 in RpGeometry's rwSTRUCT, with 2 materials and BinMeshPLG (0x050E)
+// holding an empty 0-index split on material 0 + 3 valid triangle indices on material 1.
+static std::vector<uint8> MakeMeshOnlyEncryptedMod(void)
+{
+	struct W {
+		std::vector<uint8> b; std::vector<size_t> st;
+		void u8(uint8 v) { b.push_back(v); }
+		void u32(uint32 v) { for(int i = 0; i < 4; i++) b.push_back((uint8)(v >> (8 * i))); }
+		void f32(float v) { uint32 u; std::memcpy(&u, &v, 4); u32(u); }
+		void open(uint32 type) { u32(type); u32(0); u32(0x1803FFFFu); st.push_back(b.size()); }
+		void close() { size_t s = st.back(); st.pop_back(); uint32 len = (uint32)(b.size() - s); std::memcpy(&b[s - 8], &len, 4); }
+	} w;
+	w.open(0x10); // Clump
+	  w.open(0x01); w.u32(1); w.u32(0); w.u32(0); w.close();
+	  w.open(0x0E); // Frame List
+	    w.open(0x01); w.u32(1);
+	      w.f32(1); w.f32(0); w.f32(0); w.f32(0); w.f32(1); w.f32(0); w.f32(0); w.f32(0); w.f32(1);
+	      w.f32(0); w.f32(0); w.f32(0); w.u32(0xFFFFFFFFu); w.u32(0);
+	    w.close();
+	    w.open(0x03); w.close();
+	  w.close();
+	  w.open(0x1A); // Geometry List
+	    w.open(0x01); w.u32(1); w.close();
+	    w.open(0x0F); // Geometry
+	      w.open(0x01);
+	        w.u32(0x00000002u); // rpGEOMETRYPOSITIONS, !NATIVE
+	        w.u32(0);           // numTriangles == 0 in rwSTRUCT!
+	        w.u32(3);           // 3 vertices
+	        w.u32(1);           // 1 morph target
+	        w.f32(0); w.f32(0); w.f32(0); w.f32(1.0f); w.u32(1); w.u32(0);
+	        w.f32(0); w.f32(0); w.f32(0);
+	        w.f32(1); w.f32(0); w.f32(0);
+	        w.f32(0); w.f32(1); w.f32(0);
+	      w.close();
+	      w.open(0x08); // Material List (2 materials)
+	        w.open(0x01); w.u32(2); w.u32(0xFFFFFFFFu); w.u32(0xFFFFFFFFu); w.close();
+	        for(int m = 0; m < 2; m++){
+	          w.open(0x07);
+	            w.open(0x01); w.u32(0); w.u8(255); w.u8(255); w.u8(255); w.u8(255); w.u32(0); w.u32(0); w.f32(1); w.f32(1); w.f32(1); w.close();
+	            w.open(0x03); w.close();
+	          w.close();
+	        }
+	      w.close();
+	      w.open(0x03); // Extension with BinMeshPLG (0x050E)
+	        w.open(0x050E);
+	          w.u32(0); // triList
+	          w.u32(2); // 2 splits: split 0 is empty (0 indices), split 1 has 3 indices
+	          w.u32(3); // totalIndices = 3
+	          w.u32(0); w.u32(0); // empty split for material 0
+	          w.u32(3); w.u32(1); w.u32(0); w.u32(1); w.u32(2); // valid triangle for material 1
+	        w.close();
+	      w.close();
+	    w.close();
+	  w.close();
+	  w.open(0x14); // Atomic
+	    w.open(0x01); w.u32(0); w.u32(0); w.u32(5); w.u32(0); w.close();
+	    w.open(0x03); w.close();
+	  w.close();
+	  w.open(0x03); w.close();
+	w.close();
+	return EncryptDffToMod(w.b);
+}
+
+// Synthesize a genuine 0-triangle stub .mod (98 vertices, 0 legacy tris, no BinMesh faces, like missile.mod).
+static std::vector<uint8> MakeEmptyStubEncryptedMod(void)
+{
+	struct W {
+		std::vector<uint8> b; std::vector<size_t> st;
+		void u8(uint8 v) { b.push_back(v); }
+		void u32(uint32 v) { for(int i = 0; i < 4; i++) b.push_back((uint8)(v >> (8 * i))); }
+		void f32(float v) { uint32 u; std::memcpy(&u, &v, 4); u32(u); }
+		void open(uint32 type) { u32(type); u32(0); u32(0x1803FFFFu); st.push_back(b.size()); }
+		void close() { size_t s = st.back(); st.pop_back(); uint32 len = (uint32)(b.size() - s); std::memcpy(&b[s - 8], &len, 4); }
+	} w;
+	w.open(0x10);
+	  w.open(0x01); w.u32(1); w.u32(0); w.u32(0); w.close();
+	  w.open(0x0E);
+	    w.open(0x01); w.u32(1);
+	      w.f32(1); w.f32(0); w.f32(0); w.f32(0); w.f32(1); w.f32(0); w.f32(0); w.f32(0); w.f32(1);
+	      w.f32(0); w.f32(0); w.f32(0); w.u32(0xFFFFFFFFu); w.u32(0);
+	    w.close();
+	    w.open(0x03); w.close();
+	  w.close();
+	  w.open(0x1A);
+	    w.open(0x01); w.u32(1); w.close();
+	    w.open(0x0F);
+	      w.open(0x01);
+	        w.u32(0x00000002u);
+	        w.u32(0); w.u32(98); w.u32(1);
+	        w.f32(0); w.f32(0); w.f32(0); w.f32(1.0f); w.u32(1); w.u32(0);
+	        for(int i = 0; i < 98; i++){ w.f32(0); w.f32(0); w.f32(0); }
+	      w.close();
+	      w.open(0x08);
+	        w.open(0x01); w.u32(1); w.u32(0xFFFFFFFFu); w.close();
+	        w.open(0x07);
+	          w.open(0x01); w.u32(0); w.u8(255); w.u8(255); w.u8(255); w.u8(255); w.u32(0); w.u32(0); w.f32(1); w.f32(1); w.f32(1); w.close();
+	          w.open(0x03); w.close();
+	        w.close();
+	      w.close();
+	      w.open(0x03); w.close();
+	    w.close();
+	  w.close();
+	  w.open(0x14);
+	    w.open(0x01); w.u32(0); w.u32(0); w.u32(5); w.u32(0); w.close();
+	    w.open(0x03); w.close();
+	  w.close();
+	  w.open(0x03); w.close();
+	w.close();
+	return EncryptDffToMod(w.b);
 }
 
 static std::vector<uint8> MakeAstcBtx(void)
@@ -473,8 +610,12 @@ int main(void)
 	}, true /* XOR-encrypted! */));
 
 	WriteFileBytes("custom/zip/mesh/world_0.bpc", MakeZip({
+		{ "player.mod", MakeEncryptedMod() },
 		{ "road_br_01.mod", MakeEncryptedMod() },
 		{ "road_br_02.mod", MakeEncryptedMod() },
+		{ "road_br_03.mod", MakeEncryptedMod() },
+		{ "nrock_ter498.mod", MakeMeshOnlyEncryptedMod() },
+		{ "missile.mod", MakeEmptyStubEncryptedMod() },
 		{ "world.col", MakeVcCol("road_br_01") }
 	}, false));
 	WriteFileBytes("custom/zip/mesh/unlisted.bpc", MakeZip({
@@ -612,6 +753,109 @@ int main(void)
 
 	RwTextureDestroy(tex2); // release model 101 simulated material ref -> refCount==2
 	RwTextureDestroy(tex1); // release model 100 simulated material ref -> refCount==1 (TexDB registry)
+
+	// 3) Regression test for debug-13.log SIGSEGV at librevc.so+0x292500:
+	//    - Reserved "player.mod" in .bpc must NOT be indexed (MI_PLAYER = 0 stays native GTA3.IMG).
+	//    - Mesh-only BR models (numTriangles==0 in rwSTRUCT, faces in BinMeshPLG 0x050E, even with
+	//      an empty material split) must be accepted and have empty splits compacted away.
+	//    - Genuine 0-face stubs (98 verts, 0 legacy tris, 0 BinMesh tris) must still be rejected.
+	//    - Exhausting s_bpcFreezeMonitor's 8 ms per-frame budget on the same frame must NEVER block
+	//      native IMG models (!CanServe, such as MI_PLAYER = 0) nor custom .bpc models inside
+	//      CCustomModels::ScopedBlockingLoad (CStreaming::LoadAllRequestedModels), while still
+	//      throttling non-blocking per-frame custom .bpc loads until the next frame!
+	Check(!CCustomModels::HasModelFile("player"), "reserved player.mod skipped at .bpc index time");
+	CSimpleModelInfo *miPlayer = CModelInfo::AddSimpleModel(0);
+	miPlayer->SetModelName("player");
+	((CBaseModelInfo*)miPlayer)->SetTexDictionary("hmoca");
+
+	CSimpleModelInfo *miMeshOnly = CModelInfo::AddSimpleModel(102);
+	miMeshOnly->SetModelName("nrock_ter498");
+	((CBaseModelInfo*)miMeshOnly)->SetTexDictionary("roads_br_txd");
+
+	CSimpleModelInfo *miStub = CModelInfo::AddSimpleModel(103);
+	miStub->SetModelName("missile");
+	((CBaseModelInfo*)miStub)->SetTexDictionary("hmoca");
+
+	CSimpleModelInfo *miBudget = CModelInfo::AddSimpleModel(104);
+	miBudget->SetModelName("road_br_03");
+	((CBaseModelInfo*)miBudget)->SetTexDictionary("roads_br_txd");
+
+	Check(!CCustomModels::CanServe(0), "MI_PLAYER (0) is not served by .bpc");
+	Check(CCustomModels::CanServe(102), "meshOnly nrock_ter498.mod (0 legacy tris, BinMeshPLG faces) accepted");
+	CCustomModels::PrefetchStream(103, true);
+	for(int spin = 0; spin < 200 && !CCustomModels::IsStreamPrepared(103, true); spin++){
+		usleep(2000);
+		CCustomModels::PumpBackgroundResults();
+	}
+	Check(!CCustomModels::CanServe(103) && !CCustomModels::Load(103),
+		"genuine 0-face missile.mod stub (98 verts, 0 tris) rejected after background validation");
+	Check(CCustomModels::CanServe(104), "road_br_03.mod accepted");
+
+	// Prepare road_br_03 on worker before budget exhaustion test
+	CCustomModels::PrefetchStream(104, true);
+	for(int spin = 0; spin < 200 && !CCustomModels::IsStreamPrepared(104, true); spin++){
+		usleep(2000);
+		CCustomModels::PumpBackgroundResults();
+	}
+	Check(CCustomModels::IsStreamPrepared(104, true), "road_br_03 prepared on worker");
+
+	// Load nrock_ter498 with a 15 ms simulated main-thread conversion to exhaust the 12 ms frame budget
+	// on the current CTimer::m_FrameCounter, and verify empty BinMesh split compaction!
+	g_simulateLoadDelayUs = 15000;
+	g_lastResolvedTex = nullptr;
+	g_lastLoadedAtomicStreamBytes.clear();
+	CTxdStore::SetCurrentTxd(txdSlot);
+	Check(CCustomModels::Load(102), "meshOnly nrock_ter498.mod loaded cleanly");
+	g_simulateLoadDelayUs = 0;
+	if(g_lastResolvedTex) RwTextureDestroy(g_lastResolvedTex);
+	Check(!g_lastLoadedAtomicStreamBytes.empty(), "captured normalized nrock_ter498 DFF stream");
+	{
+		std::string why;
+		Check(br::validateClumpForGame(g_lastLoadedAtomicStreamBytes.data(),
+		      g_lastLoadedAtomicStreamBytes.size(), why),
+			"normalized meshOnly DFF passes validateClumpForGame");
+		// Verify BinMeshPLG (0x050E) had its empty split compacted from nSplit=2 down to nSplit=1!
+		bool foundCompactedBinMesh = false;
+		const uint8 *d = g_lastLoadedAtomicStreamBytes.data();
+		size_t n = g_lastLoadedAtomicStreamBytes.size();
+		for(size_t off = 0; off + 24 <= n; off += 4){
+			if(br::rd32(d + off) == 0x050Eu && br::rd32(d + off + 4) == 32u &&
+			   br::rd32(d + off + 12) == 0u && br::rd32(d + off + 16) == 1u &&
+			   br::rd32(d + off + 20) == 3u){
+				foundCompactedBinMesh = true;
+				break;
+			}
+		}
+		Check(foundCompactedBinMesh, "empty 0-index BinMesh split compacted away (nSplit 2 -> 1)");
+	}
+
+	// Now frame budget on CTimer::GetFrameCounter() == 1 is exhausted (> 12 ms used):
+	// - Native MI_PLAYER (0) MUST still return IsStreamPrepared(0, false) == true!
+	// - Non-blocking per-frame custom model 104 MUST be throttled (IsStreamPrepared(104, false) == false).
+	// - Advancing CTimer::SetFrameCounter() restores per-frame budget; exhausting it again and entering
+	//   ScopedBlockingLoad (LoadAllRequestedModels) overrides the throttle immediately!
+	Check(CCustomModels::IsStreamPrepared(0, false),
+		"native MI_PLAYER (0) NEVER throttled by exhausted s_bpcFreezeMonitor frame budget");
+	Check(!CCustomModels::IsStreamPrepared(104, false),
+		"per-frame custom .bpc model throttled when frame budget exhausted outside LoadAllRequestedModels");
+	CTimer::SetFrameCounter(CTimer::GetFrameCounter() + 1);
+	Check(CCustomModels::IsStreamPrepared(104, false),
+		"advancing CTimer::GetFrameCounter() restores per-frame .bpc model budget");
+
+	// Exhaust the new frame's budget again and verify ScopedBlockingLoad overrides it on the SAME frame!
+	g_simulateLoadDelayUs = 15000;
+	g_lastResolvedTex = nullptr;
+	CTxdStore::SetCurrentTxd(txdSlot);
+	Check(CCustomModels::Load(104), "road_br_03.mod loaded cleanly");
+	g_simulateLoadDelayUs = 0;
+	if(g_lastResolvedTex) RwTextureDestroy(g_lastResolvedTex);
+	Check(!CCustomModels::IsStreamPrepared(102, false),
+		"second frame budget exhausted for non-blocking per-frame load");
+	{
+		CCustomModels::ScopedBlockingLoad blockingScope;
+		Check(CCustomModels::IsStreamPrepared(102, false),
+			"ScopedBlockingLoad overrides frame budget throttle inside LoadAllRequestedModels");
+	}
 
 	CTxdStore::RemoveTxd(ripSlot);
 	CTxdStore::RemoveTxd(txdSlot);

@@ -87,6 +87,7 @@ static std::vector<CustomSource> customBpcClsEntries;
 static std::vector<CustomSource> customBpcColEntries;
 static bpcpipeline::BpcFreezeMonitor s_bpcFreezeMonitor(2500ull, 12000ull);
 static uint32 s_bpcLastPumpFrame = 0xFFFFFFFFu;
+static int32 s_bpcBlockingLoadDepth = 0;
 #endif
 
 // Only common.zip supplies whitelisted map/actor/weapon IDE text, water,
@@ -647,8 +648,10 @@ IndexBpcArchiveAssets(uint8 archId, const std::string &archPath, uint64 mtime,
 		}
 
 		if(ext == "mod"){
-			IndexBpcModelEntry(customMods, stem, src);
-			counts.mods++;
+			if(!brres::isReserved(stem)){
+				IndexBpcModelEntry(customMods, stem, src);
+				counts.mods++;
+			}
 		}else if(ext == "dff"){
 			IndexBpcModelEntry(customDff, stem, src);
 			counts.dffs++;
@@ -3315,6 +3318,7 @@ CCustomModels::Shutdown(void)
 	customTexDbSharedHits = 0;
 	customTexDbEvictions = 0;
 	s_bpcLastPumpFrame = 0xFFFFFFFFu;
+	s_bpcBlockingLoadDepth = 0;
 #endif
 	customMods.clear();
 	customBtx.clear();
@@ -3825,6 +3829,23 @@ CCustomModels::PrefetchStream(int32 streamId, bool priority)
 #endif
 }
 
+#ifdef ANDROID
+void
+CCustomModels::BeginBlockingLoad(void)
+{
+	s_bpcBlockingLoadDepth++;
+}
+
+void
+CCustomModels::EndBlockingLoad(void)
+{
+	if(s_bpcBlockingLoadDepth > 0)
+		s_bpcBlockingLoadDepth--;
+	if(s_bpcBlockingLoadDepth == 0)
+		s_bpcFreezeMonitor.BeginFrame();
+}
+#endif
+
 bool
 CCustomModels::IsStreamPrepared(int32 streamId, bool wait)
 {
@@ -3836,18 +3857,24 @@ CCustomModels::IsStreamPrepared(int32 streamId, bool wait)
 	EnsureInitialised();
 	if(customSyncFallbackStreams.find(streamId) != customSyncFallbackStreams.end())
 		return true;
-	for(int attempts = 0; attempts < (wait ? 64 : 1); attempts++){
-		PumpBackgroundResults();
-		if(CheckStreamPreparation(streamId, wait)){
 #ifdef ANDROID
-			if(!wait && streamId >= 0 && streamId < STREAM_OFFSET_TXD && !s_bpcFreezeMonitor.HasFrameBudget())
+	const bool effectiveWait = wait || (s_bpcBlockingLoadDepth > 0);
+#else
+	const bool effectiveWait = wait;
+#endif
+	for(int attempts = 0; attempts < (effectiveWait ? 64 : 1); attempts++){
+		PumpBackgroundResults();
+		if(CheckStreamPreparation(streamId, effectiveWait)){
+#ifdef ANDROID
+			if(!effectiveWait && streamId >= 0 && streamId < STREAM_OFFSET_TXD &&
+			   CanServe(streamId) && !s_bpcFreezeMonitor.HasFrameBudget())
 				return false;
 #endif
 			customPreparationWaits.erase(streamId);
 			customCompletedCpuJobs.erase(streamId);
 			return true;
 		}
-		if(!wait){
+		if(!effectiveWait){
 			std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
 			std::map<int32, std::chrono::steady_clock::time_point>::iterator first = customPreparationWaits.find(streamId);
 			if(first == customPreparationWaits.end())

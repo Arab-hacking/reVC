@@ -1623,8 +1623,10 @@ int8 CRunningScript::ProcessCommands0To99(int32 command)
 		script_assert(index < NUMPLAYERS);
 		printf("&&&&&&&&&&&&&Creating player: %d\n", index);
 		if (!CStreaming::HasModelLoaded(MI_PLAYER)) {
-			CStreaming::RequestSpecialModel(MI_PLAYER, "player", STREAMFLAGS_DONT_REMOVE | STREAMFLAGS_DEPENDENCY);
-			CStreaming::LoadAllRequestedModels(false);
+			CStreaming::RequestSpecialModel(MI_PLAYER, "player", STREAMFLAGS_PRIORITY | STREAMFLAGS_DONT_REMOVE | STREAMFLAGS_DEPENDENCY);
+			CStreaming::LoadAllRequestedModels(true);
+			if (!CStreaming::HasModelLoaded(MI_PLAYER))
+				CStreaming::LoadAllRequestedModels(false);
 		}
 		CPlayerPed::SetupPlayerPed(index);
 		CWorld::Players[index].m_pPed->CharCreatedBy = MISSION_CHAR;

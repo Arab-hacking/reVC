@@ -445,12 +445,27 @@ void
 CPed::SetModelIndex(uint32 mi)
 {
 	CEntity::SetModelIndex(mi);
+	if(GetClump() == nil){
+		CStreaming::RequestModel(mi, STREAMFLAGS_PRIORITY | STREAMFLAGS_KEEP_IN_MEMORY);
+		CStreaming::LoadAllRequestedModels(true);
+		if(!CStreaming::HasModelLoaded(mi))
+			CStreaming::LoadAllRequestedModels(false);
+		CEntity::SetModelIndex(mi);
+	}
+	CPedModelInfo *modelInfo = (CPedModelInfo *)CModelInfo::GetModelInfo(GetModelIndex());
+	if(modelInfo){
+		SetPedStats(modelInfo->m_pedStatType);
+		if(m_pedStats)
+			m_headingRate = m_pedStats->m_headingChangeRate;
+		m_animGroup = (AssocGroupId) modelInfo->m_animGroup;
+	}
+	if(GetClump() == nil){
+		REVC_LOG_ERROR("CPed::SetModelIndex(%u): clump is nil for model %s",
+			mi, modelInfo ? modelInfo->GetModelName() : "unknown");
+		return;
+	}
 	RpAnimBlendClumpInit(GetClump());
 	RpAnimBlendClumpFillFrameArray(GetClump(), m_pFrames);
-	CPedModelInfo *modelInfo = (CPedModelInfo *)CModelInfo::GetModelInfo(GetModelIndex());
-	SetPedStats(modelInfo->m_pedStatType);
-	m_headingRate = m_pedStats->m_headingChangeRate;
-	m_animGroup = (AssocGroupId) modelInfo->m_animGroup;
 	(*RPANIMBLENDCLUMPDATA(GetClump()))->usesSAAnimations = modelInfo->UsesSAAnimations();
 	// Associations are built against a skeleton-specific reference clump. This
 	// call also retries groups that had no native/SA reference during startup.
