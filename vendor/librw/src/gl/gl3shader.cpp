@@ -126,13 +126,12 @@ setUniform(int32 id, void *data)
 void
 flushUniforms(void)
 {
-	for(int i = 0; i < uniformRegistry.numUniforms; i++){
-		// this is bad!
-		if(i >= currentShader->numUniforms){
-			printf("trying to set uniform %d %s that doesn't exist!\n", i, uniformRegistry.uniforms[i].name);
-			continue;
-		}
-
+	if(currentShader == nil)
+		return;
+	int limit = uniformRegistry.numUniforms;
+	if(limit > currentShader->numUniforms)
+		limit = currentShader->numUniforms;
+	for(int i = 0; i < limit; i++){
 		int32 loc = currentShader->uniformLocations[i];
 		if(loc == -1)
 			continue;
@@ -195,21 +194,32 @@ compileshader(GLenum type, const char **src, GLuint *shader)
 	glCompileShader(shdr);
 	glGetShaderiv(shdr, GL_COMPILE_STATUS, &success);
 	if(!success){
+#ifndef ANDROID
 		printShaderSource(src);
+#endif
 		fprintf(stderr, "Error in %s shader\n",
 		  type == GL_VERTEX_SHADER ? "vertex" : "fragment");
+		len = 0;
 		glGetShaderiv(shdr, GL_INFO_LOG_LENGTH, &len);
-		log = (char*)rwMalloc(len > 0 ? len : 1, MEMDUR_FUNCTION);
-		if(len > 0)
-			glGetShaderInfoLog(shdr, len, nil, log);
-		else
+		GLsizei allocLen = (len > 0 ? len : 0) + 1;
+		log = (char*)rwMalloc(allocLen, MEMDUR_FUNCTION);
+		if(log){
 			log[0] = '\0';
-		fprintf(stderr, "%s\n", log);
+			if(len > 0){
+				GLsizei written = 0;
+				glGetShaderInfoLog(shdr, allocLen, &written, log);
+				if(written < 0) written = 0;
+				if(written >= allocLen) written = allocLen - 1;
+				log[written] = '\0';
+			}
+			fprintf(stderr, "%s\n", log);
 #ifdef ANDROID
-		__android_log_print(ANDROID_LOG_ERROR, "reVC", "Error in %s shader: %s",
-		                    type == GL_VERTEX_SHADER ? "vertex" : "fragment", log);
+			__android_log_print(ANDROID_LOG_ERROR, "reVC", "Error in %s shader: %s",
+			                    type == GL_VERTEX_SHADER ? "vertex" : "fragment", log);
 #endif
-		rwFree(log);
+			rwFree(log);
+		}
+		glDeleteShader(shdr);
 		return 1;
 	}
 	*shader = shdr;
@@ -242,17 +252,26 @@ linkprogram(GLint vs, GLint fs, GLuint *program)
 	glGetProgramiv(prog, GL_LINK_STATUS, &success);
 	if(!success){
 		fprintf(stderr, "Error in program\n");
+		len = 0;
 		glGetProgramiv(prog, GL_INFO_LOG_LENGTH, &len);
-		log = (char*)rwMalloc(len > 0 ? len : 1, MEMDUR_FUNCTION);
-		if(len > 0)
-			glGetProgramInfoLog(prog, len, nil, log);
-		else
+		GLsizei allocLen = (len > 0 ? len : 0) + 1;
+		log = (char*)rwMalloc(allocLen, MEMDUR_FUNCTION);
+		if(log){
 			log[0] = '\0';
-		fprintf(stderr, "%s\n", log);
+			if(len > 0){
+				GLsizei written = 0;
+				glGetProgramInfoLog(prog, allocLen, &written, log);
+				if(written < 0) written = 0;
+				if(written >= allocLen) written = allocLen - 1;
+				log[written] = '\0';
+			}
+			fprintf(stderr, "%s\n", log);
 #ifdef ANDROID
-		__android_log_print(ANDROID_LOG_ERROR, "reVC", "Error in shader program: %s", log);
+			__android_log_print(ANDROID_LOG_ERROR, "reVC", "Error in shader program: %s", log);
 #endif
-		rwFree(log);
+			rwFree(log);
+		}
+		glDeleteProgram(prog);
 		return 1;
 	}
 	*program = prog;

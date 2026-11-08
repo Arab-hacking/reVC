@@ -352,6 +352,7 @@ CWaterLevel::Initialise(Const char *pWaterDat)
 #if defined(ANDROID) && defined(LIBRW) && defined(RW_GL3)
 static rw::gl3::Shader *s_mobileWaterShader = nil;
 static GLint s_uMobileWaterParamsLoc = -1;
+static bool s_mobileWaterShaderTried = false;
 
 static const char *s_mobileWaterVS =
 "VSIN(ATTRIB_POS) vec3 in_pos;\n"
@@ -370,6 +371,7 @@ static const char *s_mobileWaterVS =
 "}\n";
 
 static const char *s_mobileWaterFS =
+"uniform sampler2D tex0;\n"
 "FSIN vec3 v_worldPos;\n"
 "FSIN vec4 v_color;\n"
 "FSIN vec2 v_tex0;\n"
@@ -410,7 +412,8 @@ static const char *s_mobileWaterFS =
 static rw::gl3::Shader *
 EnsureMobileWaterShader(void)
 {
-	if(s_mobileWaterShader == nil){
+	if(s_mobileWaterShader == nil && !s_mobileWaterShaderTried){
+		s_mobileWaterShaderTried = true;
 		const char *vs[] = { rw::gl3::shaderDecl, rw::gl3::header_vert_src, s_mobileWaterVS, nil };
 		const char *fs[] = { rw::gl3::shaderDecl, rw::gl3::header_frag_src, s_mobileWaterFS, nil };
 		s_mobileWaterShader = rw::gl3::Shader::create(vs, fs);
@@ -430,6 +433,7 @@ CWaterLevel::Shutdown()
 		s_mobileWaterShader = nil;
 		s_uMobileWaterParamsLoc = -1;
 	}
+	s_mobileWaterShaderTried = false;
 #endif
 #ifdef CUSTOM_MODELS
 	customWaterQuads.clear();

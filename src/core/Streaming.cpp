@@ -661,16 +661,20 @@ CStreaming::LoadCdDirectory(const char *dirname, int n)
 static char*
 GetObjectName(int streamId)
 {
-	static char objname[32];
-	if(streamId < STREAM_OFFSET_TXD)
-		sprintf(objname, "%s.dff", CModelInfo::GetModelInfo(streamId)->GetModelName());
-	else if(streamId >= STREAM_OFFSET_TXD && streamId < STREAM_OFFSET_COL)
-		sprintf(objname, "%s.txd", CTxdStore::GetTxdName(streamId-STREAM_OFFSET_TXD));
-	else if(streamId >= STREAM_OFFSET_COL && streamId < STREAM_OFFSET_ANIM)
-		sprintf(objname, "%s.col", CColStore::GetColName(streamId-STREAM_OFFSET_COL));
-	else{
+	static char objname[96];
+	if(streamId < STREAM_OFFSET_TXD){
+		CBaseModelInfo *mi = CModelInfo::GetModelInfo(streamId);
+		snprintf(objname, sizeof(objname), "%s.dff", (mi && mi->GetModelName()) ? mi->GetModelName() : "unknown");
+	}else if(streamId >= STREAM_OFFSET_TXD && streamId < STREAM_OFFSET_COL){
+		const char *tn = CTxdStore::GetTxdName(streamId-STREAM_OFFSET_TXD);
+		snprintf(objname, sizeof(objname), "%s.txd", tn ? tn : "unknown");
+	}else if(streamId >= STREAM_OFFSET_COL && streamId < STREAM_OFFSET_ANIM){
+		const char *cn = CColStore::GetColName(streamId-STREAM_OFFSET_COL);
+		snprintf(objname, sizeof(objname), "%s.col", cn ? cn : "unknown");
+	}else{
 		assert(streamId < NUMSTREAMINFO);
-		sprintf(objname, "%s.ifp", CAnimManager::GetAnimationBlock(streamId-STREAM_OFFSET_ANIM)->name);
+		CAnimBlock *ab = CAnimManager::GetAnimationBlock(streamId-STREAM_OFFSET_ANIM);
+		snprintf(objname, sizeof(objname), "%s.ifp", ab ? ab->name : "unknown");
 	}
 	return objname;
 }
@@ -2981,9 +2985,24 @@ CStreaming::LoadRequestedModels(void)
 					if(sid < STREAM_OFFSET_TXD){
 						CBaseModelInfo *mi = CModelInfo::GetModelInfo(sid);
 						if(!mi) continue;
+						int missingTxd = -1;
 						int txdId = mi->GetTxdSlot();
 						if(txdId >= 0 && TxdNotLoaded(txdId)){
-							int txdSid = txdId + STREAM_OFFSET_TXD;
+							missingTxd = txdId;
+						}else if(txdId >= 0){
+							for(int p = CTxdStore::GetParentTxdSlot(txdId), depth = 0;
+							    p >= 0 && depth < 8;
+							    p = CTxdStore::GetParentTxdSlot(p), depth++){
+								bool streamable = ms_aInfoForModel[p + STREAM_OFFSET_TXD].GetCdSize() > 0 ||
+								                  CCustomModels::CanServe(p + STREAM_OFFSET_TXD);
+								if(streamable && CTxdStore::GetSlot(p) && CTxdStore::GetSlot(p)->texDict == nil){
+									missingTxd = p;
+									break;
+								}
+							}
+						}
+						if(missingTxd >= 0){
+							int txdSid = missingTxd + STREAM_OFFSET_TXD;
 							if(ms_aInfoForModel[txdSid].m_loadState == STREAMSTATE_INQUEUE &&
 							   CCustomModels::CanServe(txdSid) &&
 							   CCustomModels::IsStreamPrepared(txdSid, false)){
@@ -2991,7 +3010,7 @@ CStreaming::LoadRequestedModels(void)
 								break;
 							}
 							if(ms_aInfoForModel[txdSid].m_loadState == STREAMSTATE_NOTLOADED)
-								RequestTxd(txdId, si->m_flags & STREAMFLAGS_PRIORITY);
+								RequestTxd(missingTxd, si->m_flags & STREAMFLAGS_PRIORITY);
 							continue;
 						}
 						int animId = mi->GetAnimFileIndex();
@@ -2999,6 +3018,31 @@ CStreaming::LoadRequestedModels(void)
 							int animSid = animId + STREAM_OFFSET_ANIM;
 							if(ms_aInfoForModel[animSid].m_loadState == STREAMSTATE_NOTLOADED)
 								RequestAnim(animId, si->m_flags & STREAMFLAGS_PRIORITY);
+							continue;
+						}
+					}else if(sid >= STREAM_OFFSET_TXD && sid < STREAM_OFFSET_COL){
+						int txdId = sid - STREAM_OFFSET_TXD;
+						int missingParent = -1;
+						for(int p = CTxdStore::GetParentTxdSlot(txdId), depth = 0;
+						    p >= 0 && depth < 8;
+						    p = CTxdStore::GetParentTxdSlot(p), depth++){
+							bool streamable = ms_aInfoForModel[p + STREAM_OFFSET_TXD].GetCdSize() > 0 ||
+							                  CCustomModels::CanServe(p + STREAM_OFFSET_TXD);
+							if(streamable && CTxdStore::GetSlot(p) && CTxdStore::GetSlot(p)->texDict == nil){
+								missingParent = p;
+								break;
+							}
+						}
+						if(missingParent >= 0){
+							int pSid = missingParent + STREAM_OFFSET_TXD;
+							if(ms_aInfoForModel[pSid].m_loadState == STREAMSTATE_INQUEUE &&
+							   CCustomModels::CanServe(pSid) &&
+							   CCustomModels::IsStreamPrepared(pSid, false)){
+								chosenId = pSid;
+								break;
+							}
+							if(ms_aInfoForModel[pSid].m_loadState == STREAMSTATE_NOTLOADED)
+								RequestTxd(missingParent, si->m_flags & STREAMFLAGS_PRIORITY);
 							continue;
 						}
 					}

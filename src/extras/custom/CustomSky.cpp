@@ -69,11 +69,12 @@ static rw::gl3::Shader *s_skyDomeProcShader = nil;
 static rw::Texture *s_skyDomeMaskTex = nil;
 static rw::Texture *s_skyDomeNormalTex = nil;
 static bool s_skyDomeUseProcedural = false;
-static int32 s_uSkyTop = -1;
-static int32 s_uSkyHorizon = -1;
-static int32 s_uSunColor = -1;
-static int32 s_uSunDir = -1;
-static int32 s_uCloudParams = -1;
+static bool s_skyDomeProcShaderTried = false;
+static GLint s_uSkyTopLoc = -1;
+static GLint s_uSkyHorizonLoc = -1;
+static GLint s_uSunColorLoc = -1;
+static GLint s_uSunDirLoc = -1;
+static GLint s_uCloudParamsLoc = -1;
 
 static const char *s_skyDomeVertSrc =
 "VSIN(ATTRIB_POS) vec3 in_pos;\n"
@@ -266,11 +267,11 @@ SkyDomeProcRenderCB(rw::Atomic *atomic, rw::gl3::InstanceDataHeader *header)
 	float uSunDir[4] = { sunV.x, sunV.z, sunV.y, sunVis };
 	float uCloud[4] = { tSec * 0.035f, cirrusCov, cumulusCov, 0.35f };
 
-	glUniform4fv(s_skyDomeProcShader->uniformLocations[s_uSkyTop], 1, uScat);
-	glUniform4fv(s_skyDomeProcShader->uniformLocations[s_uSkyHorizon], 1, uBot);
-	glUniform4fv(s_skyDomeProcShader->uniformLocations[s_uSunColor], 1, uSunCol);
-	glUniform4fv(s_skyDomeProcShader->uniformLocations[s_uSunDir], 1, uSunDir);
-	glUniform4fv(s_skyDomeProcShader->uniformLocations[s_uCloudParams], 1, uCloud);
+	if(s_uSkyTopLoc >= 0) glUniform4fv(s_uSkyTopLoc, 1, uScat);
+	if(s_uSkyHorizonLoc >= 0) glUniform4fv(s_uSkyHorizonLoc, 1, uBot);
+	if(s_uSunColorLoc >= 0) glUniform4fv(s_uSunColorLoc, 1, uSunCol);
+	if(s_uSunDirLoc >= 0) glUniform4fv(s_uSunDirLoc, 1, uSunDir);
+	if(s_uCloudParamsLoc >= 0) glUniform4fv(s_uCloudParamsLoc, 1, uCloud);
 
 	InstanceData *inst = header->inst;
 	for(rw::uint32 i = 0; i < header->numMeshes; i++){
@@ -284,25 +285,25 @@ SkyDomeProcRenderCB(rw::Atomic *atomic, rw::gl3::InstanceDataHeader *header)
 		inst++;
 	}
 	setTexture(1, nil);
+	setTexture(0, nil);
 	teardownVertexInput(header);
 }
 
 static void
 EnsureSkyDomeProcShader(void)
 {
-	if(s_skyDomeProcShader != nil)
+	if(s_skyDomeProcShader != nil || s_skyDomeProcShaderTried)
 		return;
-	if(s_uSkyTop < 0){
-		s_uSkyTop = rw::gl3::registerUniform("u_skyTop");
-		s_uSkyHorizon = rw::gl3::registerUniform("u_skyHorizon");
-		s_uSunColor = rw::gl3::registerUniform("u_sunColor");
-		s_uSunDir = rw::gl3::registerUniform("u_skySunDir");
-		s_uCloudParams = rw::gl3::registerUniform("u_cloudParams");
-	}
+	s_skyDomeProcShaderTried = true;
 	const char *vs[] = { rw::gl3::shaderDecl, rw::gl3::header_vert_src, s_skyDomeVertSrc, nil };
 	const char *fs[] = { rw::gl3::shaderDecl, rw::gl3::header_frag_src, s_skyDomeFragSrc, nil };
 	s_skyDomeProcShader = rw::gl3::Shader::create(vs, fs);
 	if(s_skyDomeProcShader){
+		s_uSkyTopLoc = glGetUniformLocation(s_skyDomeProcShader->program, "u_skyTop");
+		s_uSkyHorizonLoc = glGetUniformLocation(s_skyDomeProcShader->program, "u_skyHorizon");
+		s_uSunColorLoc = glGetUniformLocation(s_skyDomeProcShader->program, "u_sunColor");
+		s_uSunDirLoc = glGetUniformLocation(s_skyDomeProcShader->program, "u_skySunDir");
+		s_uCloudParamsLoc = glGetUniformLocation(s_skyDomeProcShader->program, "u_cloudParams");
 		s_skyDomeProcPipe = rw::gl3::ObjPipeline::create();
 		s_skyDomeProcPipe->instanceCB = rw::gl3::defaultInstanceCB;
 		s_skyDomeProcPipe->uninstanceCB = rw::gl3::defaultUninstanceCB;
@@ -856,6 +857,12 @@ CCustomSky::Shutdown(void)
 	s_skyDomeMaskTex = nil;
 	s_skyDomeNormalTex = nil;
 	s_skyDomeUseProcedural = false;
+	s_skyDomeProcShaderTried = false;
+	s_uSkyTopLoc = -1;
+	s_uSkyHorizonLoc = -1;
+	s_uSunColorLoc = -1;
+	s_uSunDirLoc = -1;
+	s_uCloudParamsLoc = -1;
 #endif
 	s_initialised = false;
 	s_hasSkyBox = false;

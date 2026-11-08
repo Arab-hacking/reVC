@@ -2641,7 +2641,11 @@ PumpPendingBtxUpgrades(void)
 		if(customFailedRawBtx.find(u.cacheKey) != customFailedRawBtx.end()){
 			if(inRegistry)
 				regIt->second.isPreview = false;
-			RwTextureDestroy(u.tex);
+			if(u.tex){
+				if(!inRegistry && u.tex->refCount <= 1)
+					UnregisterGpuTerrainSplat(u.tex);
+				RwTextureDestroy(u.tex);
+			}
 			s_pendingBtxUpgrades.erase(s_pendingBtxUpgrades.begin() + (ptrdiff_t)i);
 			continue;
 		}
@@ -2713,6 +2717,78 @@ static rw::Texture *(*s_origBpcFindCB)(const char *name) = nil;
 static int s_bpcTexScopeDepth = 0;
 
 #ifdef LIBRW
+static RwTexture *
+ResolveBpcTexDbOnly(const char *name)
+{
+	if(name == nil || name[0] == '\0')
+		return nil;
+	const std::string key = ToLower(name);
+	const CustomSource *fullSrc = FindSource(customBtx, key);
+	const CustomSource *tmbSrc  = FindSource(customTmbBtx, key);
+	if(fullSrc == nil && tmbSrc == nil)
+		return nil;
+
+	const std::string texDbKey = fullSrc ? BtxCacheKey(*fullSrc) : BtxCacheKey(*tmbSrc);
+	std::map<std::string, BpcTexDbLiveEntry>::iterator liveIt = s_bpcTexDbMap.find(texDbKey);
+	if(liveIt != s_bpcTexDbMap.end() && liveIt->second.tex != nil){
+		s_bpcTexDbLru.splice(s_bpcTexDbLru.end(), s_bpcTexDbLru, liveIt->second.lruIt);
+		customTexDbSharedHits++;
+		return liveIt->second.tex;
+	}
+
+	RwTexture *built = nil;
+	bool isPreview = false;
+	if(fullSrc != nil){
+		if(HasPreparedRawBtx(texDbKey) || tmbSrc == nil){
+			std::shared_ptr<const PreparedRawBtx> raw = GetOrLoadPreparedRawBtx(*fullSrc, name);
+			if(raw)
+				built = BuildDirectGlTextureFromRawBtx(*raw, name);
+		}else{
+			// Full .btx is not in cache yet, while a tiny 8x8 .tmb preview exists:
+			// upload .tmb immediately (<50 us) and schedule asynchronous live mip upgrade.
+			std::shared_ptr<const PreparedRawBtx> preview = GetOrLoadPreparedRawBtx(*tmbSrc, name);
+			if(preview){
+				built = BuildDirectGlTextureFromRawBtx(*preview, name);
+				if(built){
+					isPreview = true;
+					RwTextureAddRef(built);
+					PendingBtxUpgrade upg;
+					upg.tex = built;
+					upg.fullSrc = *fullSrc;
+					upg.cacheKey = texDbKey;
+					upg.name = name;
+					s_pendingBtxUpgrades.push_back(upg);
+					QueueRawBtxPreparation(texDbKey, name, *fullSrc, -1, true);
+				}
+			}
+			if(built == nil){
+				std::shared_ptr<const PreparedRawBtx> raw = GetOrLoadPreparedRawBtx(*fullSrc, name);
+				if(raw)
+					built = BuildDirectGlTextureFromRawBtx(*raw, name);
+			}
+		}
+	}else if(tmbSrc != nil){
+		std::shared_ptr<const PreparedRawBtx> preview = GetOrLoadPreparedRawBtx(*tmbSrc, name);
+		if(preview)
+			built = BuildDirectGlTextureFromRawBtx(*preview, name);
+	}
+
+	if(built != nil){
+		s_bpcTexDbLru.push_back(texDbKey);
+		std::list<std::string>::iterator lruIt = s_bpcTexDbLru.end();
+		--lruIt;
+		BpcTexDbLiveEntry entry;
+		entry.tex = built;
+		entry.gpuBytes = EstimateSingleBpcTextureBytes(built);
+		entry.isPreview = isPreview;
+		entry.lruIt = lruIt;
+		s_bpcTexDbMap[texDbKey] = entry;
+		s_bpcTexDbBytes += entry.gpuBytes;
+		return built;
+	}
+	return nil;
+}
+
 static rw::Texture *
 BpcDirectTexFindCB(const char *name)
 {
@@ -2749,15 +2825,21 @@ BpcDirectTexFindCB(const char *name)
 #ifdef RW_GL3
 				if(hasMaskBtx && hasAnyLayerBtx){
 					s_resolvingTerrainMask = true;
-					RwTexture *maskTex = BpcDirectTexFindCB(name);
-					if(maskTex != nil && s_gpuTerrainSplats.find(maskTex) == s_gpuTerrainSplats.end()){
+					// Resolve mask strictly from refcounted s_bpcTexDbMap so its
+					// lifecycle is 100% paired with UnregisterGpuTerrainSplat across
+					// ShutDownForRestart() and TXD slot evictions.
+					RwTexture *maskTex = ResolveBpcTexDbOnly(name);
+					bool hasSplat = (maskTex != nil && s_gpuTerrainSplats.find(maskTex) != s_gpuTerrainSplats.end());
+					if(maskTex != nil && !hasSplat){
 						CCustomModels::GpuTerrainSplatInfo splat;
 						bool gotLayer = false;
 						for(int li = 0; li < 4; li++){
 							splat.layers[li] = nil;
 							splat.scale[li] = recipe.scale[li] > 0.01f ? recipe.scale[li] : 1.0f;
 							if(!recipe.layers[li].empty()){
-								RwTexture *lt = BpcDirectTexFindCB(recipe.layers[li].c_str());
+								RwTexture *lt = ResolveBpcTexDbOnly(recipe.layers[li].c_str());
+								if(lt == nil)
+									lt = BpcDirectTexFindCB(recipe.layers[li].c_str());
 								if(lt){
 									RwTextureAddRef(lt);
 									splat.layers[li] = lt;
@@ -2765,11 +2847,13 @@ BpcDirectTexFindCB(const char *name)
 								}
 							}
 						}
-						if(gotLayer)
+						if(gotLayer){
 							s_gpuTerrainSplats[maskTex] = splat;
+							hasSplat = true;
+						}
 					}
 					s_resolvingTerrainMask = false;
-					if(maskTex != nil)
+					if(maskTex != nil && hasSplat)
 						return maskTex;
 				}
 #else
@@ -2803,69 +2887,8 @@ BpcDirectTexFindCB(const char *name)
 	// 2. Global refcounted TexDB .btx lookup BEFORE native VC TXDs so custom .btx
 	// textures are shared once across all models/TXD slots and never shadowed by
 	// same-named Vice City textures in generic.txd / cop.txd / landstal.txd.
-	const std::string key = ToLower(name);
-	const CustomSource *fullSrc = FindSource(customBtx, key);
-	const CustomSource *tmbSrc  = FindSource(customTmbBtx, key);
-	if(fullSrc != nil || tmbSrc != nil){
-		const std::string texDbKey = fullSrc ? BtxCacheKey(*fullSrc) : BtxCacheKey(*tmbSrc);
-		std::map<std::string, BpcTexDbLiveEntry>::iterator liveIt = s_bpcTexDbMap.find(texDbKey);
-		if(liveIt != s_bpcTexDbMap.end() && liveIt->second.tex != nil){
-			s_bpcTexDbLru.splice(s_bpcTexDbLru.end(), s_bpcTexDbLru, liveIt->second.lruIt);
-			customTexDbSharedHits++;
-			return liveIt->second.tex;
-		}
-
-		RwTexture *built = nil;
-		bool isPreview = false;
-		if(fullSrc != nil){
-			if(HasPreparedRawBtx(texDbKey) || tmbSrc == nil){
-				std::shared_ptr<const PreparedRawBtx> raw = GetOrLoadPreparedRawBtx(*fullSrc, name);
-				if(raw)
-					built = BuildDirectGlTextureFromRawBtx(*raw, name);
-			}else{
-				// Full .btx is not in cache yet, while a tiny 8x8 .tmb preview exists:
-				// upload .tmb immediately (<50 us) and schedule asynchronous live mip upgrade.
-				std::shared_ptr<const PreparedRawBtx> preview = GetOrLoadPreparedRawBtx(*tmbSrc, name);
-				if(preview){
-					built = BuildDirectGlTextureFromRawBtx(*preview, name);
-					if(built){
-						isPreview = true;
-						RwTextureAddRef(built);
-						PendingBtxUpgrade upg;
-						upg.tex = built;
-						upg.fullSrc = *fullSrc;
-						upg.cacheKey = texDbKey;
-						upg.name = name;
-						s_pendingBtxUpgrades.push_back(upg);
-						QueueRawBtxPreparation(texDbKey, name, *fullSrc, -1, true);
-					}
-				}
-				if(built == nil){
-					std::shared_ptr<const PreparedRawBtx> raw = GetOrLoadPreparedRawBtx(*fullSrc, name);
-					if(raw)
-						built = BuildDirectGlTextureFromRawBtx(*raw, name);
-				}
-			}
-		}else if(tmbSrc != nil){
-			std::shared_ptr<const PreparedRawBtx> preview = GetOrLoadPreparedRawBtx(*tmbSrc, name);
-			if(preview)
-				built = BuildDirectGlTextureFromRawBtx(*preview, name);
-		}
-
-		if(built != nil){
-			s_bpcTexDbLru.push_back(texDbKey);
-			std::list<std::string>::iterator lruIt = s_bpcTexDbLru.end();
-			--lruIt;
-			BpcTexDbLiveEntry entry;
-			entry.tex = built;
-			entry.gpuBytes = EstimateSingleBpcTextureBytes(built);
-			entry.isPreview = isPreview;
-			entry.lruIt = lruIt;
-			s_bpcTexDbMap[texDbKey] = entry;
-			s_bpcTexDbBytes += entry.gpuBytes;
-			return built;
-		}
-	}
+	if(RwTexture *texDbHit = ResolveBpcTexDbOnly(name))
+		return texDbHit;
 
 	// 3. Fallback to stock RW dictionary / parent TXD chain (e.g. generic.txd, vehicle.txd)
 	if(s_origBpcFindCB){
@@ -3031,8 +3054,39 @@ CCustomModels::PumpBackgroundResults(void)
 							if(model->stats.recipes[r].tex == tname)
 								recipe = &model->stats.recipes[r];
 						if(recipe){
-							std::string tkey = "terrain:" + key + ":" + ToLower(tname);
-							QueueTerrainPreparation(tkey, *recipe, -1, false);
+#ifdef RW_GL3
+							const std::string lowMask = ToLower(recipe->tex);
+							const bool hasMaskSrc = (FindSource(customBtx, lowMask) != nil || FindSource(customTmbBtx, lowMask) != nil);
+							bool hasLayerSrc = false;
+							for(int li = 0; li < 4; li++){
+								if(!recipe->layers[li].empty()){
+									std::string lowLay = ToLower(recipe->layers[li]);
+									if(FindSource(customBtx, lowLay) != nil || FindSource(customTmbBtx, lowLay) != nil){
+										hasLayerSrc = true;
+										break;
+									}
+								}
+							}
+							if(hasMaskSrc && hasLayerSrc){
+								const std::string names5[5] = {
+									recipe->tex, recipe->layers[0], recipe->layers[1], recipe->layers[2], recipe->layers[3]
+								};
+								for(int ti = 0; ti < 5; ti++){
+									if(names5[ti].empty())
+										continue;
+									const CustomSource *s5 = FindSource(customBtx, ToLower(names5[ti]));
+									if(s5){
+										std::string ck5 = BtxCacheKey(*s5);
+										if(!IsFullBpcTexResident(ck5))
+											QueueRawBtxPreparation(ck5, names5[ti], *s5, -1, false);
+									}
+								}
+							}else
+#endif
+							{
+								std::string tkey = "terrain:" + key + ":" + ToLower(tname);
+								QueueTerrainPreparation(tkey, *recipe, -1, false);
+							}
 						}else{
 							const CustomSource *src = FindSource(customBtx, ToLower(tname));
 							if(src){

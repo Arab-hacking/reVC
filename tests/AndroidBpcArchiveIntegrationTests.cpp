@@ -1074,6 +1074,30 @@ int main(void)
 	}
 	RwTextureDestroy(terMaskTex);
 
+	// Simulate CGame::ShutDownForRestart() unloading ter_gpu_01 + ClearGraphicsCache(),
+	// followed by a fresh reload on the second pass of main.scm (regression test for debug-15.log).
+	CCustomModels::ClearGraphicsCache();
+	{
+		CCustomModels::GpuTerrainSplatInfo staleSplat;
+		Check(!CCustomModels::FindGpuTerrainSplat(terMaskTex, staleSplat),
+			"ClearGraphicsCache unregisters stale GPU terrain splat entries");
+	}
+	CTimer::SetFrameCounter(CTimer::GetFrameCounter() + 1);
+	g_lastResolvedTex = nullptr;
+	CTxdStore::SetCurrentTxd(txdSlot);
+	Check(CCustomModels::Load(105), "ter_gpu_01.mod reloads cleanly after restart");
+	RwTexture *reloadedMaskTex = g_lastResolvedTex;
+	Check(reloadedMaskTex != nullptr, "reloaded ter_gpu_01_mask GPU texture is valid");
+	{
+		CCustomModels::GpuTerrainSplatInfo splat2;
+		Check(CCustomModels::FindGpuTerrainSplat(reloadedMaskTex, splat2),
+			"FindGpuTerrainSplat re-registers valid splat layers after restart");
+		for(int li = 0; li < 4; li++)
+			Check(splat2.layers[li] != nullptr && splat2.layers[li]->raster != nullptr,
+				"reloaded GPU terrain layer has live raster");
+	}
+	RwTextureDestroy(reloadedMaskTex);
+
 	CTxdStore::RemoveTxd(ripSlot);
 	CTxdStore::RemoveTxd(txdSlot);
 	CModelInfo::ShutDown();

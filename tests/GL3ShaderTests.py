@@ -198,6 +198,36 @@ class GL3ShaderTests(unittest.TestCase):
                         EXTRAS / "default_UV2.vert", EXTRAS / "neoRim.vert", EXTRAS / "neoRimSkin.vert"):
             self.assertIn("u_surfProps.w >= 1.5", embedded_source(vs_file))
 
+    def test_inline_mobile_shader_sampler_and_varying_contracts(self):
+        h_fs = embedded_source(VENDOR / "header.frag")
+        pipes_cpp = (ROOT / "src/extras/custompipes_gl.cpp").read_text()
+        water_cpp = (ROOT / "src/renderer/WaterLevel.cpp").read_text()
+        sky_cpp = (ROOT / "src/extras/custom/CustomSky.cpp").read_text()
+
+        def extract_cstr(text, var):
+            blk = text.split("static const char *" + var + " =\n", 1)[1].split(";\n", 1)[0]
+            return "".join(ast.literal_eval(t) for t in re.findall(r'"(?:[^"\\]|\\.)*"', blk))
+
+        pairs = [
+            ("skyDome", extract_cstr(sky_cpp, "s_skyDomeVertSrc"), extract_cstr(sky_cpp, "s_skyDomeFragSrc")),
+            ("neoTerrain", extract_cstr(pipes_cpp, "neoTerrain_vert_src"), extract_cstr(pipes_cpp, "neoTerrain_frag_src")),
+            ("mobileWater", extract_cstr(water_cpp, "s_mobileWaterVS"), extract_cstr(water_cpp, "s_mobileWaterFS")),
+        ]
+        for label, vs_body, fs_body in pairs:
+            combined_fs = h_fs + "\n" + fs_body
+            for sampler in set(re.findall(r"\btexture\s*\(\s*(tex\d+)\b", fs_body)):
+                self.assertRegex(
+                    combined_fs,
+                    rf"uniform\s+sampler2D(?:Shadow)?\s+{re.escape(sampler)}\s*;",
+                    f"{label} uses undeclared sampler {sampler}",
+                )
+            vs_outs = set(re.findall(r"VSOUT\s+(\w+\s+\w+)\s*;", vs_body))
+            fs_ins = set(re.findall(r"FSIN\s+(\w+\s+\w+)\s*;", fs_body))
+            self.assertEqual(fs_ins, vs_outs, f"{label} VSOUT/FSIN mismatch")
+
+        self.assertNotIn("registerUniform(", sky_cpp)
+        self.assertIn("s_mobileWaterShaderTried", water_cpp)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -321,7 +321,8 @@ worldRenderCB(rw::Atomic *atomic, rw::gl3::InstanceDataHeader *header)
 		m = inst->material;
 #if defined(ANDROID) && defined(CUSTOM_MODELS)
 		CCustomModels::GpuTerrainSplatInfo splat;
-		if(neoTerrainShader != nil && m && CCustomModels::FindGpuTerrainSplat(m->texture, splat)){
+		if(neoTerrainShader != nil && m && m->texture && m->texture->raster &&
+		   CCustomModels::FindGpuTerrainSplat(m->texture, splat)){
 			neoTerrainShader->use();
 			RGBA color = { 255, 255, 255, 255 };
 			setMaterial(atomic->geometry->flags, color, m->surfaceProps,
@@ -346,11 +347,8 @@ worldRenderCB(rw::Atomic *atomic, rw::gl3::InstanceDataHeader *header)
 					setTexture(stageUnits[li], nil);
 				}
 			}
-			float maskHasAlpha = 0.0f;
-			if(m->texture && m->texture->raster){
-				Gl3Raster *mr = GETGL3RASTEREXT(m->texture->raster);
-				maskHasAlpha = mr->hasAlpha ? 1.0f : 0.0f;
-			}
+			Gl3Raster *mr = GETGL3RASTEREXT(m->texture->raster);
+			float maskHasAlpha = mr->hasAlpha ? 1.0f : 0.0f;
 			glUniform4fv(U(u_terrainTileMult), 1, splat.scale);
 			glUniform4fv(U(u_terrainLayerValid), 1, valid4);
 			glUniform4fv(U(u_terrainFlipV), 1, flip4);
@@ -359,11 +357,11 @@ worldRenderCB(rw::Atomic *atomic, rw::gl3::InstanceDataHeader *header)
 			rw::SetRenderState(VERTEXALPHA, FALSE);
 			gl3::setAlphaBlend(false);
 			drawInst(header, inst);
-			setTexture(0, nil);
 			setTexture(1, nil);
 			setTexture(2, nil);
 			setTexture(4, nil);
 			setTexture(5, nil);
+			setTexture(0, nil);
 			inst++;
 			continue;
 		}
@@ -814,11 +812,18 @@ AtomicFirstPass(RpAtomic *atomic, int pass)
 	using namespace rw;
 	using namespace rw::gl3;
 
+	if(atomic == nil || atomic->geometry == nil || numBlendInsts[pass] >= 2000)
+		return;
+	if(!(atomic->geometry->flags & rw::Geometry::NATIVE) &&
+	   (atomic->geometry->meshHeader == nil || atomic->geometry->meshHeader->totalIndices == 0))
+		return;
+
 	BuildingInst *building = &blendInsts[pass][numBlendInsts[pass]];
 
 	atomic->getPipeline()->instance(atomic);
 	building->instHeader = (gl3::InstanceDataHeader*)atomic->geometry->instData;
-	assert(building->instHeader != nil);
+	if(building->instHeader == nil)
+		return;
 	assert(building->instHeader->platform == PLATFORM_GL3);
 	building->fadeAlpha = 255;
 	building->lighting = !!(atomic->geometry->flags & rw::Geometry::LIGHT);
@@ -862,7 +867,8 @@ AtomicFirstPass(RpAtomic *atomic, int pass)
 
 		drawInst(building->instHeader, inst);
 	}
-	teardownVertexInput(building->instHeader);
+	if(setupDone)
+		teardownVertexInput(building->instHeader);
 	if(defer)
 		numBlendInsts[pass]++;
 }
@@ -873,11 +879,18 @@ AtomicFullyTransparent(RpAtomic *atomic, int pass, int fadeAlpha)
 	using namespace rw;
 	using namespace rw::gl3;
 
+	if(atomic == nil || atomic->geometry == nil || numBlendInsts[pass] >= 2000)
+		return;
+	if(!(atomic->geometry->flags & rw::Geometry::NATIVE) &&
+	   (atomic->geometry->meshHeader == nil || atomic->geometry->meshHeader->totalIndices == 0))
+		return;
+
 	BuildingInst *building = &blendInsts[pass][numBlendInsts[pass]];
 
 	atomic->getPipeline()->instance(atomic);
 	building->instHeader = (gl3::InstanceDataHeader*)atomic->geometry->instData;
-	assert(building->instHeader != nil);
+	if(building->instHeader == nil)
+		return;
 	assert(building->instHeader->platform == PLATFORM_GL3);
 	building->fadeAlpha = fadeAlpha;
 	building->lighting = !!(atomic->geometry->flags & rw::Geometry::LIGHT);

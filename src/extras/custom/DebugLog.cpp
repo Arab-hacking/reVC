@@ -14,6 +14,12 @@
 #include <signal.h>
 #else
 #include <signal.h>
+#include <unistd.h>
+#include <fcntl.h>
+#ifdef __linux__
+#include <sys/syscall.h>
+#include <ucontext.h>
+#endif
 #ifdef __GLIBC__
 #include <execinfo.h>
 #elif defined(__ANDROID__)
@@ -144,8 +150,90 @@ DebugLogUnhandledException(EXCEPTION_POINTERS *info)
 
 #else
 
+#ifdef __linux__
+static bool
+DebugLogParseHexRange(const char *line, uintptr_t &lo, uintptr_t &hi, const char *&pathOut)
+{
+	lo = 0;
+	hi = 0;
+	pathOut = "";
+	const char *p = line;
+	while((*p >= '0' && *p <= '9') || (*p >= 'a' && *p <= 'f') || (*p >= 'A' && *p <= 'F')){
+		uintptr_t d = (*p <= '9') ? (uintptr_t)(*p - '0') : (uintptr_t)((*p | 0x20) - 'a' + 10);
+		lo = (lo << 4) | d;
+		p++;
+	}
+	if(*p != '-') return false;
+	p++;
+	while((*p >= '0' && *p <= '9') || (*p >= 'a' && *p <= 'f') || (*p >= 'A' && *p <= 'F')){
+		uintptr_t d = (*p <= '9') ? (uintptr_t)(*p - '0') : (uintptr_t)((*p | 0x20) - 'a' + 10);
+		hi = (hi << 4) | d;
+		p++;
+	}
+	// Jump to 6th column (pathname) in /proc/self/maps: perms offset dev inode pathname
+	int spaces = 0;
+	while(*p && *p != '\n'){
+		if(*p == ' '){
+			while(*p == ' ') p++;
+			spaces++;
+			if(spaces >= 5){
+				pathOut = p;
+				break;
+			}
+		}else{
+			p++;
+		}
+	}
+	return hi > lo;
+}
+
+static bool
+DebugLogLookupProcMap(uintptr_t addr, uintptr_t &baseOut, char *nameBuf, size_t nameCap)
+{
+	baseOut = 0;
+	if(nameCap > 0) nameBuf[0] = '\0';
+	if(addr == 0) return false;
+	int fd = open("/proc/self/maps", O_RDONLY);
+	if(fd < 0) return false;
+	char buf[2048];
+	char line[512];
+	size_t lineLen = 0;
+	bool found = false;
+	ssize_t n;
+	while(!found && (n = read(fd, buf, sizeof(buf))) > 0){
+		for(ssize_t i = 0; i < n; i++){
+			char c = buf[i];
+			if(c == '\n'){
+				line[lineLen] = '\0';
+				uintptr_t lo = 0, hi = 0;
+				const char *path = "";
+				if(DebugLogParseHexRange(line, lo, hi, path) && addr >= lo && addr < hi){
+					baseOut = lo;
+					const char *leaf = path;
+					for(const char *s = path; *s && *s != '\n'; s++)
+						if(*s == '/') leaf = s + 1;
+					size_t k = 0;
+					while(leaf[k] && leaf[k] != '\n' && k + 1 < nameCap){
+						nameBuf[k] = leaf[k];
+						k++;
+					}
+					if(nameCap > 0) nameBuf[k] = '\0';
+					found = true;
+					break;
+				}
+				lineLen = 0;
+			}else if(lineLen + 1 < sizeof(line)){
+				line[lineLen++] = c;
+			}
+		}
+	}
+	close(fd);
+	return found;
+}
+#endif
+
 static void
-DebugLogSignalHandler(int sig)
+DebugLogSignalAction(int sig, siginfo_t *info, void *ucontextRaw)
 {
 	static volatile sig_atomic_t s_inCrashHandler = 0;
 	if (s_inCrashHandler) {
@@ -162,9 +250,63 @@ DebugLogSignalHandler(int sig)
 		sig == SIGILL  ? "SIGILL (illegal instruction)" :
 		sig == SIGBUS  ? "SIGBUS (bus error)" :
 		"fatal signal";
-	char line[128];
+	char line[256];
 	snprintf(line, sizeof(line), "CRASH: %s - see the lines above for what was loaded last", what);
 	DebugLogCrashLine(line);
+
+#ifdef __linux__
+	long pid = (long)getpid();
+	long tid = (long)syscall(SYS_gettid);
+	uintptr_t faultAddr = info ? (uintptr_t)info->si_addr : 0;
+	int siCode = info ? info->si_code : 0;
+	uintptr_t regPc = 0, regLr = 0, regSp = 0, regFp = 0;
+	if(ucontextRaw){
+		ucontext_t *uc = (ucontext_t*)ucontextRaw;
+#if defined(__aarch64__)
+		regPc = (uintptr_t)uc->uc_mcontext.pc;
+		regSp = (uintptr_t)uc->uc_mcontext.sp;
+		regFp = (uintptr_t)uc->uc_mcontext.regs[29];
+		regLr = (uintptr_t)uc->uc_mcontext.regs[30];
+#elif defined(__arm__)
+		regPc = (uintptr_t)uc->uc_mcontext.arm_pc;
+		regSp = (uintptr_t)uc->uc_mcontext.arm_sp;
+		regFp = (uintptr_t)uc->uc_mcontext.arm_fp;
+		regLr = (uintptr_t)uc->uc_mcontext.arm_lr;
+#elif defined(__x86_64__)
+		regPc = (uintptr_t)uc->uc_mcontext.gregs[REG_RIP];
+		regSp = (uintptr_t)uc->uc_mcontext.gregs[REG_RSP];
+		regFp = (uintptr_t)uc->uc_mcontext.gregs[REG_RBP];
+#endif
+	}
+	snprintf(line, sizeof(line),
+		"CRASH-CTX: pid=%ld tid=%ld code=%d fault_addr=%p pc=%p lr=%p sp=%p fp=%p",
+		pid, tid, siCode, (void*)faultAddr, (void*)regPc, (void*)regLr, (void*)regSp, (void*)regFp);
+	DebugLogCrashLine(line);
+	if(regPc){
+		uintptr_t modBase = 0;
+		char modName[96];
+		if(DebugLogLookupProcMap(regPc, modBase, modName, sizeof(modName))){
+			snprintf(line, sizeof(line), "CRASH-PC: %s+0x%llx (%p)",
+				modName[0] ? modName : "[anon]",
+				(unsigned long long)(regPc - modBase), (void*)regPc);
+			DebugLogCrashLine(line);
+		}
+	}
+	if(regLr){
+		uintptr_t modBase = 0;
+		char modName[96];
+		if(DebugLogLookupProcMap(regLr, modBase, modName, sizeof(modName))){
+			snprintf(line, sizeof(line), "CRASH-LR: %s+0x%llx (%p)",
+				modName[0] ? modName : "[anon]",
+				(unsigned long long)(regLr - modBase), (void*)regLr);
+			DebugLogCrashLine(line);
+		}
+	}
+#else
+	(void)info;
+	(void)ucontextRaw;
+#endif
+
 #ifdef __GLIBC__
 	void *bt[32];
 	int n = backtrace(bt, 32);
@@ -179,20 +321,29 @@ DebugLogSignalHandler(int sig)
 		int depth;
 	};
 	struct AndroidBtHelper {
+		static void formatAddr(int idx, uintptr_t pc) {
+			char frameLine[200];
+			uintptr_t modBase = 0;
+			char modName[80];
+			if (g_libREVC != 0 && pc >= g_libREVC && pc < g_libREVC + 0x08000000ULL) {
+				snprintf(frameLine, sizeof(frameLine), "  #%02d librevc.so+0x%llx (%p)",
+					idx, (unsigned long long)(pc - g_libREVC), (void *)pc);
+			} else if (DebugLogLookupProcMap(pc, modBase, modName, sizeof(modName))) {
+				snprintf(frameLine, sizeof(frameLine), "  #%02d %s+0x%llx (%p)",
+					idx, modName[0] ? modName : "[anon]",
+					(unsigned long long)(pc - modBase), (void *)pc);
+			} else {
+				snprintf(frameLine, sizeof(frameLine), "  #%02d pc %p", idx, (void *)pc);
+			}
+			DebugLogCrashLine(frameLine);
+		}
 		static _Unwind_Reason_Code cb(struct _Unwind_Context *ctx, void *arg) {
 			AndroidBtState *st = (AndroidBtState *)arg;
 			if (st->depth >= 16)
 				return _URC_END_OF_STACK;
 			uintptr_t pc = _Unwind_GetIP(ctx);
 			if (pc) {
-				char frameLine[160];
-				if (g_libREVC != 0 && pc >= g_libREVC && pc < g_libREVC + 0x08000000ULL) {
-					snprintf(frameLine, sizeof(frameLine), "  #%02d librevc.so+0x%llx (%p)",
-						st->depth, (unsigned long long)(pc - g_libREVC), (void *)pc);
-				} else {
-					snprintf(frameLine, sizeof(frameLine), "  #%02d pc %p", st->depth, (void *)pc);
-				}
-				DebugLogCrashLine(frameLine);
+				formatAddr(st->depth, pc);
 				st->depth++;
 			}
 			return _URC_NO_REASON;
@@ -201,6 +352,25 @@ DebugLogSignalHandler(int sig)
 	DebugLogCrashLine("backtrace:");
 	AndroidBtState st = { 0 };
 	_Unwind_Backtrace(AndroidBtHelper::cb, &st);
+#if defined(__aarch64__)
+	// If DWARF unwind stopped inside a stripped leaf function in libc/GLES, also log FP chain
+	if (st.depth <= 4 && regFp != 0 && regSp != 0 && (regFp & 0x7u) == 0 &&
+	    regFp >= regSp && regFp - regSp < (1u << 20)) {
+		DebugLogCrashLine("fp-chain:");
+		uintptr_t curFp = regFp;
+		for (int f = 0; f < 12 && curFp >= regSp && curFp - regSp < (1u << 20) && (curFp & 0x7u) == 0; f++) {
+			const uintptr_t *pair = (const uintptr_t *)curFp;
+			uintptr_t nextFp = pair[0];
+			uintptr_t savedLr = pair[1];
+			if (savedLr == 0)
+				break;
+			AndroidBtHelper::formatAddr(f, savedLr);
+			if (nextFp <= curFp)
+				break;
+			curFp = nextFp;
+		}
+	}
+#endif
 #endif
 	DebugLogCrashLine("---- session ended abnormally ----");
 	// let the default handling produce a core dump / normal termination
@@ -235,11 +405,16 @@ DebugLogInit(void)
 	signal(SIGILL, DebugLogSignalHandler);
 	signal(SIGFPE, DebugLogSignalHandler);
 #else
-	signal(SIGSEGV, DebugLogSignalHandler);
-	signal(SIGABRT, DebugLogSignalHandler);
-	signal(SIGFPE, DebugLogSignalHandler);
-	signal(SIGILL, DebugLogSignalHandler);
-	signal(SIGBUS, DebugLogSignalHandler);
+	struct sigaction sa;
+	memset(&sa, 0, sizeof(sa));
+	sa.sa_sigaction = DebugLogSignalAction;
+	sigemptyset(&sa.sa_mask);
+	sa.sa_flags = SA_SIGINFO | SA_ONSTACK;
+	sigaction(SIGSEGV, &sa, nil);
+	sigaction(SIGABRT, &sa, nil);
+	sigaction(SIGFPE, &sa, nil);
+	sigaction(SIGILL, &sa, nil);
+	sigaction(SIGBUS, &sa, nil);
 #endif
 	atexit(DebugLogExitMarker);
 }
