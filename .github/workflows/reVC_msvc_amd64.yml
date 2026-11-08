@@ -26,20 +26,19 @@ jobs:
         submodules: 'true'
     - if: contains(matrix.platform, 'gl3_glfw')
       name: Download or build glfw
-      shell: pwsh
+      shell: bash
       run: |
-        curl.exe -fsSL --retry 2 --connect-timeout 15 -o "${{env.GLFW_FILE}}" "${{env.GLFW_URL}}"
-        if ($LASTEXITCODE -eq 0 -and (Test-Path "${{env.GLFW_FILE}}")) {
-          7z x "${{env.GLFW_FILE}}"
-        } else {
-          Write-Host "Release asset unavailable; building GLFW ${{env.GLFW_VER}} from source tag..."
-          git clone --depth 1 --branch "${{env.GLFW_VER}}" https://github.com/glfw/glfw.git glfw-src
-          cmake -S glfw-src -B glfw-build -A x64 -DGLFW_BUILD_EXAMPLES=OFF -DGLFW_BUILD_TESTS=OFF -DGLFW_BUILD_DOCS=OFF -DUSE_MSVC_RUNTIME_LIBRARY_DLL=ON
-          cmake --build glfw-build --config Release
-          New-Item -ItemType Directory -Force -Path "${{env.GLFW_BASE}}/include", "${{env.GLFW_BASE}}/lib-vc2019" | Out-Null
-          Copy-Item -Recurse -Force glfw-src/include/GLFW "${{env.GLFW_BASE}}/include/"
-          Copy-Item -Force glfw-build/src/Release/glfw3.lib "${{env.GLFW_BASE}}/lib-vc2019/glfw3.lib"
-        }
+        if curl -fsSL --retry 2 --connect-timeout 15 -o "${GLFW_FILE}" "${GLFW_URL}" && [ -s "${GLFW_FILE}" ]; then
+          7z x "${GLFW_FILE}"
+        else
+          echo "Release asset unavailable; building GLFW ${GLFW_VER} (${{matrix.buildtype}}) from tag..."
+          git clone --depth 1 --branch "${GLFW_VER}" https://github.com/glfw/glfw.git glfw-src
+          cmake -S glfw-src -B glfw-build -A x64 -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DGLFW_BUILD_EXAMPLES=OFF -DGLFW_BUILD_TESTS=OFF -DGLFW_BUILD_DOCS=OFF -DUSE_MSVC_RUNTIME_LIBRARY_DLL=ON
+          cmake --build glfw-build --config "${{matrix.buildtype}}"
+          mkdir -p "${GLFW_BASE}/include" "${GLFW_BASE}/lib-vc2019"
+          cp -r glfw-src/include/GLFW "${GLFW_BASE}/include/"
+          cp "glfw-build/src/${{matrix.buildtype}}/glfw3.lib" "${GLFW_BASE}/lib-vc2019/glfw3.lib"
+        fi
     - name: Configure build
       run: |
         ./premake5 vs2019 --with-librw --no-full-paths --glfwdir64=${{env.GLFW_BASE}}
