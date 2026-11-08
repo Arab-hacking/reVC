@@ -26,9 +26,8 @@ jobs:
         submodules: 'true'
     - if: ${{ matrix.platform }} == "win-amd64-librw_gl3_glfw-mss"
       name: Download glfw
-      uses: carlosperate/download-file-action@v1.0.3
-      with:
-        file-url: ${{env.GLFW_URL}}
+      run: |
+        curl.exe -fsSL --retry 6 --retry-delay 5 --retry-all-errors -o "${{env.GLFW_FILE}}" "${{env.GLFW_URL}}"
     - if: ${{ matrix.platform }} == "win-amd64-librw_gl3_glfw-mss"
       name: Unpack archives
       run: |
