@@ -172,6 +172,7 @@ static void TestManifestParsersAndPathCandidates(void)
 		"TEXDB textures/Roads3-0\n"
 		"TEXDB textures/interiors0-9\n"
 		"TEXDB textures/Characters.astc.bpc\n"
+		"TEXDB textures/Roads3-0.astc.bpc.tmb\n"
 		"TEXDB ../outside\n";
 
 	std::vector<std::string> tdbs = bpcpipeline::ParseTexDbManifest(texdbText, std::strlen(texdbText));
@@ -191,8 +192,12 @@ static void TestManifestParsersAndPathCandidates(void)
 		"TEXDB textures/Characters resolves to custom/zip/textures/Characters.astc.bpc");
 
 	std::vector<std::string> charTmb = bpcpipeline::BuildTexDbTmbCandidates("custom", tdbs[2]);
-	Check(!charTmb.empty() && charTmb[0] == "custom/zip/textures/Characters.tmb",
-		"TEXDB companion .tmb resolves to custom/zip/textures/Characters.tmb");
+	Check(charTmb.size() >= 4 &&
+	      charTmb[0] == "custom/zip/textures/Characters.astc.bpc.tmb" &&
+	      charTmb[1] == "custom/zip/textures/Characters.bpc.tmb" &&
+	      charTmb[2] == "custom/zip/textures/Characters.tmb" &&
+	      charTmb[3] == "custom/zip/textures/Characters.astc.tmb",
+		"TEXDB companion .tmb prioritizes <db>.astc.bpc.tmb with .bpc.tmb/.tmb/.astc.tmb fallbacks");
 }
 
 static void TestXorCommonBpcAndConcurrentPread(void)

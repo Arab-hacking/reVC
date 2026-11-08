@@ -3142,9 +3142,17 @@ CStreaming::LoadAllRequestedModels(bool priority)
 			CUSTOM_LOG("stream single: request dequeued id=%d\n", streamId);
 
 		if(ms_aInfoForModel[streamId].GetCdPosnAndSize(posn, size)){
+#if defined(ANDROID) && defined(CUSTOM_MODELS)
+			if(!CCustomModels::CanServe(streamId)){
+				do
+					status = CdStreamRead(0, ms_pStreamingBuffer[0], imgOffset+posn, size);
+				while(CdStreamSync(0) || status == STREAM_NONE);
+			}
+#else
 			do
 				status = CdStreamRead(0, ms_pStreamingBuffer[0], imgOffset+posn, size);
 			while(CdStreamSync(0) || status == STREAM_NONE);
+#endif
 			ms_aInfoForModel[streamId].m_loadState = STREAMSTATE_READING;
 			if(streamId >= STREAM_OFFSET_ANIM || traceIteration)
 				CUSTOM_LOG("stream single: read complete id=%d sectors=%u\n", streamId, size);

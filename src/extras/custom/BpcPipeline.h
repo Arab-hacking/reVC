@@ -215,9 +215,12 @@ inline std::vector<std::string> ParseTexDbManifest(const char *data, size_t size
 		std::string rel;
 		if(!ExtractDirectiveArg(line, "TEXDB", rel))
 			continue;
-		if(EndsWithCI(rel, ".astc.bpc"))
-			rel.erase(rel.size() - 9);
-		else if(EndsWithCI(rel, ".astc.tmb"))
+		if(EndsWithCI(rel, ".astc.bpc.tmb") || EndsWithCI(rel, ".etc2.bpc.tmb"))
+			rel.erase(rel.size() - 13);
+		else if(EndsWithCI(rel, ".bpc.tmb"))
+			rel.erase(rel.size() - 8);
+		else if(EndsWithCI(rel, ".astc.bpc") || EndsWithCI(rel, ".etc2.bpc") ||
+		        EndsWithCI(rel, ".astc.tmb") || EndsWithCI(rel, ".etc2.tmb"))
 			rel.erase(rel.size() - 9);
 		else if(EndsWithCI(rel, ".bpc") || EndsWithCI(rel, ".tmb"))
 			rel.erase(rel.size() - 4);
@@ -293,6 +296,9 @@ inline std::vector<std::string> BuildTexDbBpcCandidates(const std::string &custo
 }
 
 // Candidate filesystem paths for a TEXDB entry's companion .tmb thumbnail archive.
+// Real-world BR mobile packages name the companion "<db>.<fmt>.bpc.tmb" (e.g.
+// "textures/br_tex_mobile.astc.bpc.tmb" per MODEL_TEXTURE_STREAMING.md §2.1);
+// also support ".bpc.tmb", ".tmb", and ".astc.tmb" fallbacks.
 inline std::vector<std::string> BuildTexDbTmbCandidates(const std::string &customRoot, const std::string &basePath)
 {
 	std::vector<std::string> cands;
@@ -305,14 +311,22 @@ inline std::vector<std::string> BuildTexDbTmbCandidates(const std::string &custo
 
 	const bool hasDir = (clean.find('/') != std::string::npos);
 	if(StartsWithCI(clean, "zip/")){
+		AppendUniquePath(cands, root + "/" + clean + ".astc.bpc.tmb");
+		AppendUniquePath(cands, root + "/" + clean + ".bpc.tmb");
 		AppendUniquePath(cands, root + "/" + clean + ".tmb");
 		AppendUniquePath(cands, root + "/" + clean + ".astc.tmb");
 	}else if(!hasDir){
+		AppendUniquePath(cands, root + "/zip/textures/" + clean + ".astc.bpc.tmb");
+		AppendUniquePath(cands, root + "/zip/" + clean + ".astc.bpc.tmb");
+		AppendUniquePath(cands, root + "/zip/textures/" + clean + ".bpc.tmb");
+		AppendUniquePath(cands, root + "/zip/" + clean + ".bpc.tmb");
 		AppendUniquePath(cands, root + "/zip/textures/" + clean + ".tmb");
 		AppendUniquePath(cands, root + "/zip/" + clean + ".tmb");
 		AppendUniquePath(cands, root + "/zip/textures/" + clean + ".astc.tmb");
 		AppendUniquePath(cands, root + "/zip/" + clean + ".astc.tmb");
 	}else{
+		AppendUniquePath(cands, root + "/zip/" + clean + ".astc.bpc.tmb");
+		AppendUniquePath(cands, root + "/zip/" + clean + ".bpc.tmb");
 		AppendUniquePath(cands, root + "/zip/" + clean + ".tmb");
 		AppendUniquePath(cands, root + "/zip/" + clean + ".astc.tmb");
 	}

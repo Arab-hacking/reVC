@@ -6,6 +6,7 @@
 
 #include <string>
 #include <vector>
+#include <list>
 #include <map>
 #include <set>
 #include <algorithm>
@@ -54,6 +55,7 @@
 #else
 #include <dirent.h>
 #include <unistd.h>
+#include <sys/resource.h>
 #endif
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -669,9 +671,27 @@ IndexBpcArchiveAssets(uint8 archId, const std::string &archPath, uint64 mtime,
 	}
 }
 
+static void
+RaiseOpenFileDescriptorLimit(void)
+{
+#ifndef _WIN32
+	struct rlimit rl;
+	if(getrlimit(RLIMIT_NOFILE, &rl) == 0){
+		const rlim_t target = 4096;
+		rlim_t desired = rl.rlim_max == RLIM_INFINITY ? target
+		               : (rl.rlim_max < target ? rl.rlim_max : target);
+		if(rl.rlim_cur < desired){
+			rl.rlim_cur = desired;
+			setrlimit(RLIMIT_NOFILE, &rl);
+		}
+	}
+#endif
+}
+
 static bool
 ScanAndroidBpcSystem(void)
 {
+	RaiseOpenFileDescriptorLimit();
 	std::vector<std::string> commonCands;
 	commonCands.push_back(customFolderPath + "/zip/common.bpc");
 	commonCands.push_back(customFolderPath + "/common.bpc");
@@ -1467,6 +1487,7 @@ ReadModelEntry(const std::string &key)
 	return model;
 }
 
+#ifndef ANDROID
 // Names and terrain recipes are discovered once per TXD plan from the same
 // bytes that will later be given to RenderWare; no second XTEA pass.
 static bool
@@ -1481,6 +1502,7 @@ ModelTextureNames(const std::string &key, std::vector<std::string> &names,
 	uv2DualNames = model->uv2DualNames;
 	return true;
 }
+#endif
 
 // A .mod/.dff can hold anything that was a RenderWare file: the game only
 // takes clumps here (an "atomic" object is a clump with a single atomic as
@@ -1557,6 +1579,7 @@ struct TxdPlan
 static std::map<std::string, TxdPlan> customTxdPlans;
 static std::map<std::string, std::string> customTxdCandidates;
 
+#ifndef ANDROID
 // The dictionary a model uses does not always carry the model's name (a car is
 // called "hotdog" but its textures can live in "hotdog1"), so a name that is
 // not in the loose index was matched against a converted model (now unused).
@@ -1642,6 +1665,7 @@ GetTxdPlan(const std::string &key)
 		plan.serve = true;
 	return plan;
 }
+#endif // !ANDROID
 
 // the game loaders run under a guard on Windows: a model that is broken in a
 // way we did not anticipate must not take the game down - the exception is
@@ -1802,6 +1826,7 @@ MergeTxdFile(const std::string &key, RwTexDictionary *dict)
 	return ok;
 }
 
+#ifndef ANDROID
 static bool
 LoadTxdFileIntoSlot(int32 slot, const std::string &key)
 {
@@ -1816,6 +1841,7 @@ LoadTxdFileIntoSlot(int32 slot, const std::string &key)
 	CUSTOM_LOG("textures %s (slot %d): whole .txd from the archives, %s\n", key.c_str(), slot, ok ? "merged" : "FAILED");
 	return ok;
 }
+#endif
 
 
 
@@ -2154,15 +2180,198 @@ struct PendingBtxUpgrade
 	std::string name;
 };
 
+struct BpcTexDbLiveEntry
+{
+	RwTexture *tex;
+	size_t gpuBytes;
+	bool isPreview;
+	std::list<std::string>::iterator lruIt;
+};
+
 static customcache::DecodedAssetCache<PreparedRawBtx> customRawBtxCache(CUSTOM_TEXTURE_CACHE_BYTES);
 static customcache::BackgroundAssetQueue<TexDbWorkResult> customTexDbWorker(256, 64, 2);
 static std::set<std::string> customFailedRawBtx;
 static std::string customTransientRawBtxKey;
 static std::shared_ptr<const PreparedRawBtx> customTransientRawBtx;
 static std::vector<PendingBtxUpgrade> s_pendingBtxUpgrades;
-static size_t customTexDbUploads = 0, customTexDbUpgrades = 0;
+static std::map<std::string, BpcTexDbLiveEntry> s_bpcTexDbMap;
+static std::list<std::string> s_bpcTexDbLru;
+static size_t s_bpcTexDbBytes = 0;
+static std::vector<uint8> s_bpcTxdSlotState; // 0 = unknown, 1 = no custom model, 2 = custom model/txdp slot
+static size_t customTexDbUploads = 0, customTexDbUpgrades = 0, customTexDbSharedHits = 0, customTexDbEvictions = 0;
 
 static std::string RawBtxJobKey(const std::string &cacheKey) { return "x:" + cacheKey; }
+
+static void
+InvalidateAndroidBpcTxdSlotCache(void)
+{
+	for(size_t i = 0; i < s_bpcTxdSlotState.size(); i++)
+		if(s_bpcTxdSlotState[i] == 2)
+			s_bpcTxdSlotState[i] = 0;
+}
+
+static void
+RebuildAndroidBpcTxdSlotIndex(void)
+{
+	s_bpcTxdSlotState.assign(TXDSTORESIZE, 0);
+	if(customMods.empty() && customDff.empty())
+		return;
+	// Mark existing named TXD slots as 1 ("checked, no custom model"), leaving
+	// not-yet-created pool slots as 0 ("unknown") so dynamically added slots re-check cleanly.
+	for(int32 s = 0; s < TXDSTORESIZE; s++){
+		TxdDef *def = CTxdStore::GetSlot(s);
+		if(def && def->name[0])
+			s_bpcTxdSlotState[(size_t)s] = 1;
+	}
+	for(int32 id = 0; id < MODELINFOSIZE; id++){
+		CBaseModelInfo *mi = CModelInfo::GetModelInfo(id);
+		if(!mi)
+			continue;
+		int32 slot = mi->GetTxdSlot();
+		if(slot < 0 || slot >= TXDSTORESIZE || CTxdStore::GetSlot(slot) == nil)
+			continue;
+		const char *mname = mi->GetModelName();
+		if(!mname || !mname[0])
+			continue;
+		std::string mkey = ToLower(mname);
+		if(rejectedArchiveModels.find(mkey) != rejectedArchiveModels.end())
+			continue;
+		if(customMods.find(mkey) == customMods.end() && customDff.find(mkey) == customDff.end())
+			continue;
+		std::map<std::string, ModPlan>::const_iterator plan = customModPlans.find(mkey);
+		if(plan != customModPlans.end() && plan->second.computed && !plan->second.usable)
+			continue;
+		s_bpcTxdSlotState[(size_t)slot] = 2;
+		for(int p = CTxdStore::GetParentTxdSlot(slot), d = 0;
+		    p >= 0 && p < TXDSTORESIZE && CTxdStore::GetSlot(p) != nil && d < 8;
+		    p = CTxdStore::GetParentTxdSlot(p), d++){
+			s_bpcTxdSlotState[(size_t)p] = 2;
+		}
+	}
+}
+
+// O(1) lookup (with ~15 us integer-only fallback for slots added after Initialise)
+// replacing the O(28,332 * 32,768) FindModelForTxd scan on Android.
+static bool
+IsAndroidBpcModelOwnedTxdSlot(int32 slot)
+{
+	if(slot < 0 || slot >= TXDSTORESIZE || CTxdStore::GetSlot(slot) == nil ||
+	   (customMods.empty() && customDff.empty()))
+		return false;
+	if(s_bpcTxdSlotState.size() < (size_t)TXDSTORESIZE)
+		s_bpcTxdSlotState.resize(TXDSTORESIZE, 0);
+	uint8 st = s_bpcTxdSlotState[(size_t)slot];
+	if(st == 2)
+		return true;
+	if(st == 1)
+		return false;
+
+	for(int32 id = 0; id < MODELINFOSIZE; id++){
+		CBaseModelInfo *mi = CModelInfo::GetModelInfo(id);
+		if(!mi)
+			continue;
+		int32 mslot = mi->GetTxdSlot();
+		if(mslot < 0 || mslot >= TXDSTORESIZE || CTxdStore::GetSlot(mslot) == nil)
+			continue;
+		bool usesSlot = (mslot == slot);
+		if(!usesSlot){
+			for(int p = CTxdStore::GetParentTxdSlot(mslot), d = 0;
+			    p >= 0 && p < TXDSTORESIZE && CTxdStore::GetSlot(p) != nil && d < 8;
+			    p = CTxdStore::GetParentTxdSlot(p), d++){
+				if(p == slot){
+					usesSlot = true;
+					break;
+				}
+			}
+		}
+		if(!usesSlot)
+			continue;
+		const char *mname = mi->GetModelName();
+		if(!mname || !mname[0])
+			continue;
+		std::string mkey = ToLower(mname);
+		if(rejectedArchiveModels.find(mkey) != rejectedArchiveModels.end())
+			continue;
+		if(customMods.find(mkey) == customMods.end() && customDff.find(mkey) == customDff.end())
+			continue;
+		std::map<std::string, ModPlan>::const_iterator plan = customModPlans.find(mkey);
+		if(plan != customModPlans.end() && plan->second.computed && !plan->second.usable)
+			continue;
+		s_bpcTxdSlotState[(size_t)slot] = 2;
+		return true;
+	}
+	s_bpcTxdSlotState[(size_t)slot] = 1;
+	return false;
+}
+
+static size_t
+EstimateSingleBpcTextureBytes(RwTexture *texture)
+{
+	if(texture == nil)
+		return 0;
+	size_t bytes = sizeof(RwTexture);
+	RwRaster *ras = ((rw::Texture*)texture)->raster;
+	if(ras == nil)
+		return bytes;
+	int w = ras->width, h = ras->height;
+	if(w <= 0 || h <= 0 || w > 8192 || h > 8192)
+		return bytes + 64u;
+	bool mips = (ras->format & rwRASTERFORMATMIPMAP) != 0;
+	bool compressed = false;
+#if defined(LIBRW) && defined(RW_GL3)
+	if(rw::platform == rw::PLATFORM_GL3)
+		compressed = GETGL3RASTEREXT(ras)->isCompressed != 0;
+#endif
+	for(;;){
+		bytes += compressed ? (((size_t)(w + 3) / 4) * ((size_t)(h + 3) / 4) * 16)
+		                    : ((size_t)w * (size_t)h * 4);
+		if(!mips || (w == 1 && h == 1))
+			break;
+		w = w > 1 ? w / 2 : 1;
+		h = h > 1 ? h / 2 : 1;
+	}
+	return bytes;
+}
+
+static bool
+IsFullBpcTexResident(const std::string &cacheKey)
+{
+	std::map<std::string, BpcTexDbLiveEntry>::const_iterator it = s_bpcTexDbMap.find(cacheKey);
+	return it != s_bpcTexDbMap.end() && it->second.tex != nil && !it->second.isPreview;
+}
+
+static void
+TrimBpcTexDbCache(void)
+{
+	if(s_bpcTexDbBytes <= CUSTOM_GPU_TXD_CACHE_BYTES || s_bpcTexDbLru.empty())
+		return;
+	size_t scanned = 0;
+	const size_t maxScan = s_bpcTexDbLru.size() < 128u ? s_bpcTexDbLru.size() : 128u;
+	std::list<std::string>::iterator lru = s_bpcTexDbLru.begin();
+	while(lru != s_bpcTexDbLru.end() && s_bpcTexDbBytes > CUSTOM_GPU_TXD_CACHE_BYTES && scanned < maxScan){
+		scanned++;
+		std::map<std::string, BpcTexDbLiveEntry>::iterator it = s_bpcTexDbMap.find(*lru);
+		if(it == s_bpcTexDbMap.end()){
+			lru = s_bpcTexDbLru.erase(lru);
+			continue;
+		}
+		// refCount == 1 means ONLY s_bpcTexDbMap holds a reference (all clumps/materials
+		// behind the camera that used this texture have already been destroyed).
+		if(it->second.tex == nil || it->second.tex->refCount <= 1){
+			if(s_bpcTexDbBytes >= it->second.gpuBytes)
+				s_bpcTexDbBytes -= it->second.gpuBytes;
+			else
+				s_bpcTexDbBytes = 0;
+			if(it->second.tex)
+				RwTextureDestroy(it->second.tex);
+			s_bpcTexDbMap.erase(it);
+			lru = s_bpcTexDbLru.erase(lru);
+			customTexDbEvictions++;
+			continue;
+		}
+		++lru;
+	}
+}
 
 static bool
 CanHardwareAcceptAstc(void)
@@ -2359,15 +2568,31 @@ PumpPendingBtxUpgrades(void)
 		return;
 	for(size_t i = 0; i < s_pendingBtxUpgrades.size(); ){
 		PendingBtxUpgrade &u = s_pendingBtxUpgrades[i];
-		// If the texture was already removed from its dictionary and all materials,
-		// only our pending-upgrade reference remains: drop it without GPU work.
-		if(u.tex == nil || u.tex->refCount <= 1 || u.tex->raster == nil){
+		std::map<std::string, BpcTexDbLiveEntry>::iterator regIt = s_bpcTexDbMap.find(u.cacheKey);
+		const bool inRegistry = (regIt != s_bpcTexDbMap.end() && regIt->second.tex == u.tex);
+		const int32 idleRefs = 1 + (inRegistry ? 1 : 0);
+
+		// If every material/clump using this preview already unloaded, only the
+		// upgrade ref (+ registry ref) remains: cancel GPU upload and drop preview
+		// so a future stream-in cleanly schedules a fresh preview+upgrade.
+		if(u.tex == nil || u.tex->raster == nil || u.tex->refCount <= idleRefs){
 			if(u.tex)
 				RwTextureDestroy(u.tex);
+			if(inRegistry && regIt->second.tex->refCount <= 1){
+				if(s_bpcTexDbBytes >= regIt->second.gpuBytes)
+					s_bpcTexDbBytes -= regIt->second.gpuBytes;
+				else
+					s_bpcTexDbBytes = 0;
+				RwTextureDestroy(regIt->second.tex);
+				s_bpcTexDbLru.erase(regIt->second.lruIt);
+				s_bpcTexDbMap.erase(regIt);
+			}
 			s_pendingBtxUpgrades.erase(s_pendingBtxUpgrades.begin() + (ptrdiff_t)i);
 			continue;
 		}
 		if(customFailedRawBtx.find(u.cacheKey) != customFailedRawBtx.end()){
+			if(inRegistry)
+				regIt->second.isPreview = false;
 			RwTextureDestroy(u.tex);
 			s_pendingBtxUpgrades.erase(s_pendingBtxUpgrades.begin() + (ptrdiff_t)i);
 			continue;
@@ -2387,10 +2612,38 @@ PumpPendingBtxUpgrades(void)
 			break;
 
 		std::chrono::steady_clock::time_point t0 = std::chrono::steady_clock::now();
+		bool upgraded = false;
 		if(full->useDirectGl && UploadPreparedRawBtxToGlRaster(u.tex->raster, *full)){
 			RwTextureSetFilterMode(u.tex, full->gpu.mips.size() > 1 ? rwFILTERLINEARMIPLINEAR : rwFILTERLINEAR);
-			customTexDbUpgrades++;
+			upgraded = true;
+		}else if(full->cpuFallback){
+			RwTexture *cpuTex = BuildTextureGuarded(*full->cpuFallback, u.name.c_str());
+			if(cpuTex && cpuTex->raster){
+				RwRaster *oldRas = u.tex->raster;
+				u.tex->raster = cpuTex->raster;
+				cpuTex->raster = nil;
+				RwTextureSetFilterMode(u.tex, full->cpuFallback->mips.size() > 1 ? rwFILTERLINEARMIPLINEAR : rwFILTERLINEAR);
+				RwTextureDestroy(cpuTex);
+				if(oldRas)
+					RwRasterDestroy(oldRas);
+				upgraded = true;
+			}else if(cpuTex){
+				RwTextureDestroy(cpuTex);
+			}
 		}
+		if(upgraded)
+			customTexDbUpgrades++;
+
+		if(inRegistry){
+			if(s_bpcTexDbBytes >= regIt->second.gpuBytes)
+				s_bpcTexDbBytes -= regIt->second.gpuBytes;
+			else
+				s_bpcTexDbBytes = 0;
+			regIt->second.gpuBytes = EstimateSingleBpcTextureBytes(u.tex);
+			regIt->second.isPreview = false;
+			s_bpcTexDbBytes += regIt->second.gpuBytes;
+		}
+
 		uint64_t elapsedUs = (uint64_t)std::chrono::duration_cast<std::chrono::microseconds>(
 			std::chrono::steady_clock::now() - t0).count();
 		if(s_bpcFreezeMonitor.RecordMainThreadWork(u.name.c_str(), elapsedUs))
@@ -2413,11 +2666,6 @@ static int s_bpcTexScopeDepth = 0;
 static rw::Texture *
 BpcDirectTexFindCB(const char *name)
 {
-	if(s_origBpcFindCB){
-		rw::Texture *existing = s_origBpcFindCB(name);
-		if(existing)
-			return existing;
-	}
 	if(name == nil || name[0] == '\0')
 		return nil;
 
@@ -2430,26 +2678,14 @@ BpcDirectTexFindCB(const char *name)
 			dict = def->texDict;
 		}
 	}
-	if(dict == nil)
-		return nil;
-
-	if(RwTexture *inDict = RwTexDictionaryFindNamedTexture(dict, name))
-		return inDict;
-	for(int cur = s_activeBpcTxdSlot >= 0 ? CTxdStore::GetParentTxdSlot(s_activeBpcTxdSlot) : -1, depth = 0;
-	    cur >= 0 && depth < 8;
-	    cur = CTxdStore::GetParentTxdSlot(cur), depth++){
-		TxdDef *pdef = CTxdStore::GetSlot(cur);
-		if(pdef && pdef->texDict){
-			if(RwTexture *inParent = RwTexDictionaryFindNamedTexture(pdef->texDict, name))
-				return inParent;
-		}
-	}
 
 	// 1. Check 4-layer pbrTerrain composite recipes extracted from the .mod
-	if(s_activeBpcModel){
+	if(s_activeBpcModel && dict){
 		for(size_t r = 0; r < s_activeBpcModel->stats.recipes.size(); r++){
 			const br::TerrainRecipe &recipe = s_activeBpcModel->stats.recipes[r];
 			if(ToLower(recipe.tex) == ToLower(name)){
+				if(RwTexture *inDict = RwTexDictionaryFindNamedTexture(dict, name))
+					return inDict;
 				std::string modelKey = s_activeBpcTxdSlot >= 0 && CTxdStore::GetTxdName(s_activeBpcTxdSlot)
 					? ToLower(CTxdStore::GetTxdName(s_activeBpcTxdSlot))
 					: ToLower(name);
@@ -2468,55 +2704,93 @@ BpcDirectTexFindCB(const char *name)
 		}
 	}
 
-	// 2. Direct TexDB .btx lookup (full-res .astc.bpc, with optional .tmb preview + live upgrade)
+	// 2. Global refcounted TexDB .btx lookup BEFORE native VC TXDs so custom .btx
+	// textures are shared once across all models/TXD slots and never shadowed by
+	// same-named Vice City textures in generic.txd / cop.txd / landstal.txd.
 	const std::string key = ToLower(name);
 	const CustomSource *fullSrc = FindSource(customBtx, key);
 	const CustomSource *tmbSrc  = FindSource(customTmbBtx, key);
-	if(fullSrc == nil && tmbSrc == nil)
-		return nil;
+	if(fullSrc != nil || tmbSrc != nil){
+		const std::string texDbKey = fullSrc ? BtxCacheKey(*fullSrc) : BtxCacheKey(*tmbSrc);
+		std::map<std::string, BpcTexDbLiveEntry>::iterator liveIt = s_bpcTexDbMap.find(texDbKey);
+		if(liveIt != s_bpcTexDbMap.end() && liveIt->second.tex != nil){
+			s_bpcTexDbLru.splice(s_bpcTexDbLru.end(), s_bpcTexDbLru, liveIt->second.lruIt);
+			customTexDbSharedHits++;
+			return liveIt->second.tex;
+		}
 
-	RwTexture *built = nil;
-	if(fullSrc != nil){
-		std::string fullCacheKey = BtxCacheKey(*fullSrc);
-		if(HasPreparedRawBtx(fullCacheKey) || tmbSrc == nil){
-			std::shared_ptr<const PreparedRawBtx> raw = GetOrLoadPreparedRawBtx(*fullSrc, name);
-			if(raw)
-				built = BuildDirectGlTextureFromRawBtx(*raw, name);
-		}else{
-			// Full .btx is not in cache yet, while a tiny .tmb preview exists:
-			// upload .tmb immediately (<50 us) and schedule asynchronous live mip upgrade.
-			std::shared_ptr<const PreparedRawBtx> preview = GetOrLoadPreparedRawBtx(*tmbSrc, name);
-			if(preview){
-				built = BuildDirectGlTextureFromRawBtx(*preview, name);
-				if(built && preview->useDirectGl){
-					RwTextureAddRef(built);
-					PendingBtxUpgrade upg;
-					upg.tex = built;
-					upg.fullSrc = *fullSrc;
-					upg.cacheKey = fullCacheKey;
-					upg.name = name;
-					s_pendingBtxUpgrades.push_back(upg);
-					QueueRawBtxPreparation(fullCacheKey, name, *fullSrc, -1, true);
-				}
-			}
-			if(built == nil){
+		RwTexture *built = nil;
+		bool isPreview = false;
+		if(fullSrc != nil){
+			if(HasPreparedRawBtx(texDbKey) || tmbSrc == nil){
 				std::shared_ptr<const PreparedRawBtx> raw = GetOrLoadPreparedRawBtx(*fullSrc, name);
 				if(raw)
 					built = BuildDirectGlTextureFromRawBtx(*raw, name);
+			}else{
+				// Full .btx is not in cache yet, while a tiny 8x8 .tmb preview exists:
+				// upload .tmb immediately (<50 us) and schedule asynchronous live mip upgrade.
+				std::shared_ptr<const PreparedRawBtx> preview = GetOrLoadPreparedRawBtx(*tmbSrc, name);
+				if(preview){
+					built = BuildDirectGlTextureFromRawBtx(*preview, name);
+					if(built){
+						isPreview = true;
+						RwTextureAddRef(built);
+						PendingBtxUpgrade upg;
+						upg.tex = built;
+						upg.fullSrc = *fullSrc;
+						upg.cacheKey = texDbKey;
+						upg.name = name;
+						s_pendingBtxUpgrades.push_back(upg);
+						QueueRawBtxPreparation(texDbKey, name, *fullSrc, -1, true);
+					}
+				}
+				if(built == nil){
+					std::shared_ptr<const PreparedRawBtx> raw = GetOrLoadPreparedRawBtx(*fullSrc, name);
+					if(raw)
+						built = BuildDirectGlTextureFromRawBtx(*raw, name);
+				}
 			}
+		}else if(tmbSrc != nil){
+			std::shared_ptr<const PreparedRawBtx> preview = GetOrLoadPreparedRawBtx(*tmbSrc, name);
+			if(preview)
+				built = BuildDirectGlTextureFromRawBtx(*preview, name);
 		}
-	}else if(tmbSrc != nil){
-		std::shared_ptr<const PreparedRawBtx> preview = GetOrLoadPreparedRawBtx(*tmbSrc, name);
-		if(preview)
-			built = BuildDirectGlTextureFromRawBtx(*preview, name);
+
+		if(built != nil){
+			s_bpcTexDbLru.push_back(texDbKey);
+			std::list<std::string>::iterator lruIt = s_bpcTexDbLru.end();
+			--lruIt;
+			BpcTexDbLiveEntry entry;
+			entry.tex = built;
+			entry.gpuBytes = EstimateSingleBpcTextureBytes(built);
+			entry.isPreview = isPreview;
+			entry.lruIt = lruIt;
+			s_bpcTexDbMap[texDbKey] = entry;
+			s_bpcTexDbBytes += entry.gpuBytes;
+			return built;
+		}
 	}
 
-	if(built){
-		RwTexDictionaryAddTexture(dict, built);
-		if(s_activeBpcTxdSlot >= 0)
-			customLoadedTxds[s_activeBpcTxdSlot] = dict;
+	// 3. Fallback to stock RW dictionary / parent TXD chain (e.g. generic.txd, vehicle.txd)
+	if(s_origBpcFindCB){
+		rw::Texture *existing = s_origBpcFindCB(name);
+		if(existing)
+			return existing;
 	}
-	return built;
+	if(dict){
+		if(RwTexture *inDict = RwTexDictionaryFindNamedTexture(dict, name))
+			return inDict;
+	}
+	for(int cur = s_activeBpcTxdSlot >= 0 ? CTxdStore::GetParentTxdSlot(s_activeBpcTxdSlot) : -1, depth = 0;
+	    cur >= 0 && depth < 8;
+	    cur = CTxdStore::GetParentTxdSlot(cur), depth++){
+		TxdDef *pdef = CTxdStore::GetSlot(cur);
+		if(pdef && pdef->texDict){
+			if(RwTexture *inParent = RwTexDictionaryFindNamedTexture(pdef->texDict, name))
+				return inParent;
+		}
+	}
+	return nil;
 }
 #endif // LIBRW
 
@@ -2578,6 +2852,7 @@ QueueModelPreparation(const std::string &key, int32 streamId, bool priority)
 	return queued;
 }
 
+#ifndef ANDROID
 static bool
 QueueTexturePreparation(const std::string &cacheKey, const std::string &name,
                         const CustomSource &source, int32 streamId, bool priority)
@@ -2597,6 +2872,7 @@ QueueTexturePreparation(const std::string &cacheKey, const std::string &name,
 	if(queued) TrackCpuJob(streamId, jobKey);
 	return queued;
 }
+#endif
 
 static bool
 QueueTerrainPreparation(const std::string &cacheKey, const br::TerrainRecipe &recipe,
@@ -2660,20 +2936,29 @@ CCustomModels::PumpBackgroundResults(void)
 							QueueTerrainPreparation(tkey, *recipe, -1, false);
 						}else{
 							const CustomSource *src = FindSource(customBtx, ToLower(tname));
-							if(src)
-								QueueRawBtxPreparation(BtxCacheKey(*src), tname, *src, -1, false);
+							if(src){
+								std::string ckey = BtxCacheKey(*src);
+								if(!IsFullBpcTexResident(ckey))
+									QueueRawBtxPreparation(ckey, tname, *src, -1, false);
+							}
 						}
 					}
 					for(size_t i = 0; i < model->uv2DualNames.size(); i++){
 						const std::string &dname = model->uv2DualNames[i];
 						const CustomSource *src = FindSource(customBtx, ToLower(dname));
-						if(src)
-							QueueRawBtxPreparation(BtxCacheKey(*src), dname, *src, -1, false);
+						if(src){
+							std::string ckey = BtxCacheKey(*src);
+							if(!IsFullBpcTexResident(ckey))
+								QueueRawBtxPreparation(ckey, dname, *src, -1, false);
+						}
 					}
 				}
 #endif
 			}
 			if(!plan.usable){
+#ifdef ANDROID
+				InvalidateAndroidBpcTxdSlotCache();
+#endif
 				customWorkerFailures++;
 				CUSTOM_LOG("background model %s: rejected (%s)\n", key.c_str(),
 					model ? model->rejectReason.c_str() : "worker error");
@@ -2733,6 +3018,7 @@ CCustomModels::PumpBackgroundResults(void)
 		}
 	}
 	PumpPendingBtxUpgrades();
+	TrimBpcTexDbCache();
 #endif
 }
 
@@ -2802,6 +3088,10 @@ CCustomModels::ForgetTxdSlot(int32 slot)
 {
 	customLoadedTxds.erase(slot);
 	customResidentTxds.Erase(slot);
+#ifdef ANDROID
+	if(slot >= 0 && (size_t)slot < s_bpcTxdSlotState.size())
+		s_bpcTxdSlotState[(size_t)slot] = 0;
+#endif
 }
 
 void
@@ -2813,6 +3103,14 @@ CCustomModels::ClearGraphicsCache(void)
 			RwTextureDestroy(s_pendingBtxUpgrades[i].tex);
 	}
 	s_pendingBtxUpgrades.clear();
+	for(std::map<std::string, BpcTexDbLiveEntry>::iterator it = s_bpcTexDbMap.begin();
+	    it != s_bpcTexDbMap.end(); ++it){
+		if(it->second.tex)
+			RwTextureDestroy(it->second.tex);
+	}
+	s_bpcTexDbMap.clear();
+	s_bpcTexDbLru.clear();
+	s_bpcTexDbBytes = 0;
 #endif
 	customLoadedTxds.clear();
 	customResidentTxds.Clear(); // while RenderWare and the GPU context exist
@@ -2833,6 +3131,7 @@ RestoreCachedTxd(int32 slot, const std::string &key)
 	return true;
 }
 
+#ifndef ANDROID
 // builds the dictionary of one texture dictionary slot: every texture the
 // model references gets an RwTexture built from its .btx
 static bool
@@ -2897,6 +3196,7 @@ LoadTxdSlot(int32 slot, const std::string &key, TxdPlan &plan)
 	// requested again and again, and the model would never appear at all.
 	return true;
 }
+#endif // !ANDROID
 
 // ---------------------------------------------------------------------------
 // collision: .cls -> the .col the game reads
@@ -2947,6 +3247,10 @@ void
 CCustomModels::Initialise(void)
 {
 	EnsureInitialised();
+#ifdef ANDROID
+	customTxdCandidates.clear();
+	RebuildAndroidBpcTxdSlotIndex();
+#else
 	// CGame calls this after loading the IDE model names. Build the reverse
 	// model->TXD index once here, not by scanning every custom model in the
 	// hot CanServe/GetNextFileOnCd path. Like FindModelForTxd, prefer .mod
@@ -2968,6 +3272,7 @@ CCustomModels::Initialise(void)
 		   (isMod == (customMods.find(current->second) != customMods.end()) && modelKey < current->second))
 			customTxdCandidates[txdKey] = modelKey;
 	}
+#endif
 }
 
 void
@@ -3004,6 +3309,11 @@ CCustomModels::Shutdown(void)
 	customBpcClsEntries.clear();
 	customBpcColEntries.clear();
 	customBpcArchives.clear();
+	s_bpcTxdSlotState.clear();
+	customTexDbUploads = 0;
+	customTexDbUpgrades = 0;
+	customTexDbSharedHits = 0;
+	customTexDbEvictions = 0;
 	s_bpcLastPumpFrame = 0xFFFFFFFFu;
 #endif
 	customMods.clear();
@@ -3269,6 +3579,7 @@ CCustomModels::ForEachGameCollision(CollisionCallback callback, void *context, C
 	}
 }
 
+#ifndef ANDROID
 static std::string
 PotentialModelForTxd(const std::string &key)
 {
@@ -3289,6 +3600,7 @@ PotentialModelForTxd(const std::string &key)
 	customTxdCandidates[key] = modelKey; // including misses: CanServe runs often
 	return modelKey;
 }
+#endif
 
 static bool
 EvictedBeforeReady(int32 streamId, const std::string &job)
@@ -3362,8 +3674,8 @@ CheckStreamPreparation(int32 streamId, bool priority)
 						const CustomSource *src = FindSource(customBtx, low);
 						if(src){
 							std::string ckey = BtxCacheKey(*src);
-							if(!HasPreparedRawBtx(ckey)){
-								bool hasTmb = !priority && (FindSource(customTmbBtx, low) != nil);
+							if(!IsFullBpcTexResident(ckey) && !HasPreparedRawBtx(ckey)){
+								bool hasTmb = (FindSource(customTmbBtx, low) != nil);
 								if(!hasTmb && EvictedBeforeReady(streamId, RawBtxJobKey(ckey)))
 									return true;
 								QueueRawBtxPreparation(ckey, tname, *src, hasTmb ? -1 : streamId, priority);
@@ -3379,8 +3691,8 @@ CheckStreamPreparation(int32 streamId, bool priority)
 					const CustomSource *src = FindSource(customBtx, low);
 					if(src){
 						std::string ckey = BtxCacheKey(*src);
-						if(!HasPreparedRawBtx(ckey)){
-							bool hasTmb = !priority && (FindSource(customTmbBtx, low) != nil);
+						if(!IsFullBpcTexResident(ckey) && !HasPreparedRawBtx(ckey)){
+							bool hasTmb = (FindSource(customTmbBtx, low) != nil);
 							if(!hasTmb && EvictedBeforeReady(streamId, RawBtxJobKey(ckey)))
 								return true;
 							QueueRawBtxPreparation(ckey, dname, *src, hasTmb ? -1 : streamId, priority);
@@ -3408,15 +3720,20 @@ CheckStreamPreparation(int32 streamId, bool priority)
 		if(!slotName || !slotName[0])
 			return true;
 		std::string key = ToLower(slotName);
-		if(PotentialModelForTxd(key).empty() && customTxdFiles.find(key) == customTxdFiles.end()){
+		if(CStreaming::ms_aInfoForModel[streamId].m_size != 0 &&
+		   customTxdFiles.find(key) == customTxdFiles.end())
+			return true;
+		if(!IsAndroidBpcModelOwnedTxdSlot(slot) && customTxdFiles.find(key) == customTxdFiles.end()){
 			const CustomSource *src = FindSource(customBtx, key);
 			if(src){
 				std::string ckey = BtxCacheKey(*src);
-				if(!HasPreparedRawBtx(ckey)){
-					if(EvictedBeforeReady(streamId, RawBtxJobKey(ckey)))
+				if(!IsFullBpcTexResident(ckey) && !HasPreparedRawBtx(ckey)){
+					bool hasTmb = (FindSource(customTmbBtx, key) != nil);
+					if(!hasTmb && EvictedBeforeReady(streamId, RawBtxJobKey(ckey)))
 						return true;
-					QueueRawBtxPreparation(ckey, key, *src, streamId, priority);
-					return false;
+					QueueRawBtxPreparation(ckey, key, *src, hasTmb ? -1 : streamId, priority);
+					if(!hasTmb)
+						return false;
 				}
 			}
 		}
@@ -3627,14 +3944,39 @@ LoadAndroidBpcTxdSlot(int32 slot, const std::string &key)
 		MergeTxdFile(key, def->texDict);
 
 	// Standalone single-texture slot (when no .mod/.dff owns this slot): upload .btx directly to GPU.
-	if(PotentialModelForTxd(key).empty() && RwTexDictionaryFindNamedTexture(def->texDict, key.c_str()) == nil){
+	if(!IsAndroidBpcModelOwnedTxdSlot(slot) && RwTexDictionaryFindNamedTexture(def->texDict, key.c_str()) == nil){
 		const CustomSource *src = FindSource(customBtx, key);
+		const CustomSource *tmbSrc = FindSource(customTmbBtx, key);
 		if(src){
-			std::shared_ptr<const PreparedRawBtx> raw = GetOrLoadPreparedRawBtx(*src, key);
-			if(raw){
-				RwTexture *tex = BuildDirectGlTextureFromRawBtx(*raw, key.c_str());
-				if(tex)
+			std::string ckey = BtxCacheKey(*src);
+			if(HasPreparedRawBtx(ckey) || tmbSrc == nil){
+				std::shared_ptr<const PreparedRawBtx> raw = GetOrLoadPreparedRawBtx(*src, key);
+				if(raw){
+					RwTexture *tex = BuildDirectGlTextureFromRawBtx(*raw, key.c_str());
+					if(tex)
+						RwTexDictionaryAddTexture(def->texDict, tex);
+				}
+			}else{
+				std::shared_ptr<const PreparedRawBtx> preview = GetOrLoadPreparedRawBtx(*tmbSrc, key);
+				RwTexture *tex = preview ? BuildDirectGlTextureFromRawBtx(*preview, key.c_str()) : nil;
+				if(tex){
 					RwTexDictionaryAddTexture(def->texDict, tex);
+					RwTextureAddRef(tex);
+					PendingBtxUpgrade upg;
+					upg.tex = tex;
+					upg.fullSrc = *src;
+					upg.cacheKey = ckey;
+					upg.name = key;
+					s_pendingBtxUpgrades.push_back(upg);
+					QueueRawBtxPreparation(ckey, key, *src, -1, true);
+				}else{
+					std::shared_ptr<const PreparedRawBtx> raw = GetOrLoadPreparedRawBtx(*src, key);
+					if(raw){
+						tex = BuildDirectGlTextureFromRawBtx(*raw, key.c_str());
+						if(tex)
+							RwTexDictionaryAddTexture(def->texDict, tex);
+					}
+				}
 			}
 		}
 	}
@@ -3675,9 +4017,15 @@ CCustomModels::CanServe(int32 streamId)
 		if(slotName == nil || slotName[0] == '\0')
 			return false;
 		std::string key = ToLower(slotName);
+		// Native TXDs in MODELS/TXD.IMG or GTA3.IMG (m_size != 0) load via stock CdStream
+		// unless explicitly overridden by a whole .txd in custom archives; .bpc models
+		// sharing that slot still pull their .btx textures via BpcDirectTexFindCB.
+		if(CStreaming::ms_aInfoForModel[streamId].m_size != 0 &&
+		   customTxdFiles.find(key) == customTxdFiles.end())
+			return false;
 		if(customResidentTxds.Contains(slot, key))
 			return true;
-		if(!PotentialModelForTxd(key).empty())
+		if(IsAndroidBpcModelOwnedTxdSlot(slot))
 			return true;
 		return customBtx.find(key) != customBtx.end() ||
 		       customTxdFiles.find(key) != customTxdFiles.end();
@@ -3713,8 +4061,10 @@ CCustomModels::Load(int32 streamId)
 			CUSTOM_LOG("[FreezeMonitor] model+GPU upload spike: %s (id %d) took %llu us\n",
 				key.c_str(), streamId, (unsigned long long)elapsedUs);
 		}
-		if(!ok)
+		if(!ok){
 			rejectedArchiveModels.insert(key);
+			InvalidateAndroidBpcTxdSlotCache();
+		}
 		return ok;
 	}
 	if(streamId < STREAM_OFFSET_COL){
@@ -3732,6 +4082,7 @@ CCustomModels::Load(int32 streamId)
 // files the game reads from disk by name (the ones its data files list)
 // ---------------------------------------------------------------------------
 
+#ifndef ANDROID
 // Builds a texture dictionary holding everything the archives have for this
 // name. Used when the game loads a .txd by name instead of streaming it.
 static RwTexDictionary *
@@ -3768,6 +4119,7 @@ BuildDictionaryFor(const std::string &key)
 	(void)missing;
 	return dict;
 }
+#endif // !ANDROID
 
 // The native collision reader takes [name, bounds, geometry] without a size.
 // Validate IMG blocks first. A .col block wins over a .cls of the same model.
@@ -4035,9 +4387,10 @@ CCustomModels::PrintStats(void)
 		customCpuWorker.PendingCount(), CUSTOM_MODEL_CACHE_BYTES / (1024u*1024u),
 		CUSTOM_TEXTURE_CACHE_BYTES / (1024u*1024u), CUSTOM_GPU_TXD_CACHE_BYTES / (1024u*1024u));
 #ifdef ANDROID
-	CUSTOM_LOG("bpc runtime: %zu open archives, %zu .mod, %zu .btx (%zu .tmb), TexDB cache %zu hit / %zu miss / %zu KiB, %zu GPU KTX uploads (%zu live upgrades), %zu TexDB pending\n",
+	CUSTOM_LOG("bpc runtime: %zu open archives, %zu .mod, %zu .btx (%zu .tmb), TexDB CPU cache %zu hit / %zu miss / %zu KiB, live GPU TexDB %zu tex (%zu KiB, %zu shared hits, %zu evicted), %zu GPU KTX uploads (%zu live upgrades), %zu TexDB pending\n",
 		customBpcArchives.size(), customMods.size(), customBtx.size(), customTmbBtx.size(),
 		customRawBtxCache.Hits(), customRawBtxCache.Misses(), customRawBtxCache.Bytes() / 1024,
+		s_bpcTexDbMap.size(), s_bpcTexDbBytes / 1024, customTexDbSharedHits, customTexDbEvictions,
 		customTexDbUploads, customTexDbUpgrades, customTexDbWorker.PendingCount());
 	CUSTOM_LOG("FreezeMonitor: %llu main-thread uploads, %llu spikes, slowest='%s' (%llu us)\n",
 		(unsigned long long)s_bpcFreezeMonitor.TotalUploads(),

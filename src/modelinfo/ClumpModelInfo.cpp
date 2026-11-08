@@ -195,12 +195,16 @@ CClumpModelInfo::FillFrameArrayCB(RwFrame *frame, void *data)
 void
 CClumpModelInfo::FillFrameArray(RpClump *clump, RwFrame **frames)
 {
+	if(clump == nil || RpClumpGetFrame(clump) == nil)
+		return;
 	RwFrameForAllChildren(RpClumpGetFrame(clump), FillFrameArrayCB, frames);
 }
 
 RwFrame*
 CClumpModelInfo::GetFrameFromId(RpClump *clump, int32 id)
 {
+	if(clump == nil || RpClumpGetFrame(clump) == nil)
+		return nil;
 	RwObjectIdAssociation assoc;
 	assoc.id = id;
 	assoc.frame = nil;

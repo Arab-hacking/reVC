@@ -1360,6 +1360,15 @@ windowIconifyCB(int iconified) {
     WindowIconified = !!iconified;
 }
 
+#ifdef ANDROID
+void
+psPumpLoadingEvents(void)
+{
+    SDL_PumpEvents();
+    SDL_FlushEvents(SDL_FINGERDOWN, SDL_MULTIGESTURE);
+}
+#endif
+
 void inputEventHandler() {
     SDL_Event event;
 

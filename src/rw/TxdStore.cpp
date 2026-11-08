@@ -148,7 +148,10 @@ CTxdStore::FindTxdSlot(const char *name)
 char*
 CTxdStore::GetTxdName(int slot)
 {
-	return GetSlot(slot)->name;
+	if(slot < 0 || slot >= TXDSTORESIZE || ms_pTxdPool == nil)
+		return nil;
+	TxdDef *def = GetSlot(slot);
+	return def ? def->name : nil;
 }
 
 void

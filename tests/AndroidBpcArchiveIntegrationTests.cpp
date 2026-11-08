@@ -35,6 +35,9 @@ static int g_directGpuUploads = 0;
 static int g_lastUploadedInternalFmt = 0;
 static int g_lastUploadedCompressed = 0;
 static int g_txdStreamReads = 0;
+static int g_linearGetModelInfoByNameCalls = 0;
+static int g_liveRwTextures = 0;
+static RwTexture *g_lastResolvedTex = nullptr;
 
 extern "C" bool CdStreamAddImage(const char *path) { g_images.push_back(path); return true; }
 extern "C" int32 CdStreamGetNumImages(void) { return (int32)g_images.size(); }
@@ -75,21 +78,29 @@ struct FakeModelStub : CBaseModelInfo {
 	RwObject *GetRwObject(void) override { return nullptr; }
 };
 static FakeModelStub g_fakeModel100;
+static FakeModelStub g_fakeModel101;
 CBaseModelInfo *CModelInfo::ms_modelInfoPtrs[MODELINFOSIZE];
 CSimpleModelInfo *CModelInfo::AddSimpleModel(int id) {
-	ms_modelInfoPtrs[id] = &g_fakeModel100;
-	return (CSimpleModelInfo*)&g_fakeModel100;
+	FakeModelStub *stub = (id == 101) ? &g_fakeModel101 : &g_fakeModel100;
+	ms_modelInfoPtrs[id] = stub;
+	return (CSimpleModelInfo*)stub;
 }
 CBaseModelInfo *CModelInfo::GetModelInfo(const char *name, int *id) {
+	g_linearGetModelInfoByNameCalls++;
 	if(name && strcasecmp(name, "road_br_01") == 0){
 		if(id) *id = 100;
 		return ms_modelInfoPtrs[100];
+	}
+	if(name && strcasecmp(name, "road_br_02") == 0){
+		if(id) *id = 101;
+		return ms_modelInfoPtrs[101];
 	}
 	if(id) *id = -1;
 	return nullptr;
 }
 void CModelInfo::ShutDown(void) {
 	ms_modelInfoPtrs[100] = nullptr;
+	ms_modelInfoPtrs[101] = nullptr;
 }
 
 namespace rw {
@@ -145,6 +156,7 @@ RwTexture *RwTextureCreate(RwRaster *r) {
 	RwTexture *t = (RwTexture*)std::calloc(1, sizeof(RwTexture));
 	t->raster = r;
 	t->refCount = 1;
+	g_liveRwTextures++;
 	return t;
 }
 RwTexture *RwTextureAddRef(RwTexture *t) { if(t) t->refCount++; return t; }
@@ -153,6 +165,7 @@ RwBool RwTextureDestroy(RwTexture *t) {
 	if(--t->refCount <= 0){
 		if(t->raster) RwRasterDestroy(t->raster);
 		std::free(t);
+		g_liveRwTextures--;
 	}
 	return true;
 }
@@ -211,7 +224,10 @@ bool CFileLoader::LoadAtomicFile(RwStream *, uint32) {
 	// Emulate RenderWare Texture::read resolving the model's texture through findCB!
 	if(rw::Texture::findCB){
 		RwTexture *t = rw::Texture::findCB("road_asphalt_br");
-		if(t) RwTextureAddRef(t); // matches vendor/librw/src/texture.cpp:328
+		if(t){
+			RwTextureAddRef(t); // matches vendor/librw/src/texture.cpp:338
+			g_lastResolvedTex = t;
+		}
 		return t != nullptr;
 	}
 	return false;
@@ -458,6 +474,7 @@ int main(void)
 
 	WriteFileBytes("custom/zip/mesh/world_0.bpc", MakeZip({
 		{ "road_br_01.mod", MakeEncryptedMod() },
+		{ "road_br_02.mod", MakeEncryptedMod() },
 		{ "world.col", MakeVcCol("road_br_01") }
 	}, false));
 	WriteFileBytes("custom/zip/mesh/unlisted.bpc", MakeZip({
@@ -468,7 +485,8 @@ int main(void)
 		{ "road_asphalt_br.btx", MakeAstcBtx() },
 		{ "brsky.btx", MakeAstcBtx() }
 	}, false));
-	WriteFileBytes("custom/zip/textures/Roads3-0.tmb", MakeZip({
+	// Real-world BR companion thumbnail archive naming (<db>.astc.bpc.tmb)
+	WriteFileBytes("custom/zip/textures/Roads3-0.astc.bpc.tmb", MakeZip({
 		{ "road_asphalt_br.btx", MakeAstcBtx() }
 	}, false));
 	WriteFileBytes("custom/zip/textures/Secret.astc.bpc", MakeZip({
@@ -477,6 +495,7 @@ int main(void)
 
 	g_images.clear();
 	g_images.push_back("models/gta3.img");
+	g_images.push_back("models/txd.img");
 	CTxdStore::Initialise();
 	CCustomModels::Initialise();
 	CCustomModels::MountImages();
@@ -498,6 +517,7 @@ int main(void)
 		"ANIM\\PED.IFP resolved to anim/ped.ani inside XOR common.bpc");
 
 	Check(CCustomModels::HasModelFile("road_br_01"), "manifest-listed road_br_01.mod mounted");
+	Check(CCustomModels::HasModelFile("road_br_02"), "manifest-listed road_br_02.mod mounted");
 	Check(!CCustomModels::HasModelFile("secret_model"), "unlisted mesh/unlisted.bpc strictly ignored");
 
 	Check(CCustomModels::HasImageTxd("road_asphalt_br"), "manifest-listed road_asphalt_br.btx mounted");
@@ -512,51 +532,93 @@ int main(void)
 	Check(CCustomModels::GetCollisionBlock("road_br_01", colBlock),
 		"GetCollisionBlock('road_br_01') returns per-model collision block after MountImages()");
 
+	// Native MODELS/TXD.IMG slots (m_size != 0) must pass straight through to stock CdStream
+	// in O(1) without calling CModelInfo::GetModelInfo(const char*) / FindModelForTxd!
+	int32 nativeTxdSlot = CTxdStore::AddTxdSlot("hmoca");
+	CStreaming::ms_aInfoForModel[STREAM_OFFSET_TXD + nativeTxdSlot].m_position = 10u + (1u << 24);
+	CStreaming::ms_aInfoForModel[STREAM_OFFSET_TXD + nativeTxdSlot].m_size = 8u;
+	Check(!CCustomModels::CanServe(STREAM_OFFSET_TXD + nativeTxdSlot),
+		"native MODELS/TXD.IMG slot (m_size != 0) returns CanServe=false immediately");
+
 	// Verify async streaming preparation + direct GPU .btx upload on model load WITHOUT .txd
 	int32 txdSlot = CTxdStore::AddTxdSlot("roads_br_txd");
 	CSimpleModelInfo *mi = CModelInfo::AddSimpleModel(100);
 	mi->SetModelName("road_br_01");
 	((CBaseModelInfo*)mi)->SetTexDictionary("roads_br_txd");
 
-	// Load TXD slot first: must create an empty dictionary without RwTexDictionaryGtaStreamRead
+	// Placeholder TXD slot "rip" (m_size == 0, no rip.btx, no rip.txd) owned by second .mod
+	int32 ripSlot = CTxdStore::AddTxdSlot("rip");
+	CSimpleModelInfo *mi2 = CModelInfo::AddSimpleModel(101);
+	mi2->SetModelName("road_br_02");
+	((CBaseModelInfo*)mi2)->SetTexDictionary("rip");
+
+	CCustomModels::Initialise(); // rebuild O(1) TXD slot index after IDE registration
+
+	// Load TXD slots first: must create empty dictionaries without RwTexDictionaryGtaStreamRead
 	Check(CCustomModels::CanServe(STREAM_OFFSET_TXD + txdSlot), "CanServe(TXD slot) true for model-owned slot");
+	Check(CCustomModels::CanServe(STREAM_OFFSET_TXD + ripSlot), "CanServe('rip') true for m_size==0 placeholder slot");
 	Check(CCustomModels::Load(STREAM_OFFSET_TXD + txdSlot), "Load(TXD slot) creates empty dictionary");
+	Check(CCustomModels::Load(STREAM_OFFSET_TXD + ripSlot), "Load('rip') creates empty dictionary");
 	Check(g_txdStreamReads == 0 && g_directGpuUploads == 0,
-		"ZERO .txd stream reads and ZERO premature uploads on empty group TXD slot");
+		"ZERO .txd stream reads and ZERO premature uploads on empty group TXD slots");
+	Check(g_linearGetModelInfoByNameCalls == 0,
+		"strictly ZERO linear CModelInfo::GetModelInfo(name) calls in CanServe/Load");
 
-	// Async .mod worker preparation + load
+	// 1) Load model 100 directly (before any TexDB prefetch) so HasPreparedRawBtx is
+	// deterministically false: BpcDirectTexFindCB must upload the 8x8 .astc.bpc.tmb
+	// preview immediately (#1) and schedule an async in-place .astc.bpc upgrade (#2).
 	Check(CCustomModels::CanServe(100), "CanServe(100) resolves road_br_01.mod");
-	CCustomModels::PrefetchStream(100, true);
-	for(int spin = 0; spin < 200 && !CCustomModels::IsStreamPrepared(100, false); spin++){
-		usleep(2000);
-		CCustomModels::PumpBackgroundResults();
-	}
-	Check(CCustomModels::IsStreamPrepared(100, false), "async TEA .mod preparation finished on worker pool");
-
+	g_lastResolvedTex = nullptr;
 	CTxdStore::SetCurrentTxd(txdSlot);
 	Check(CCustomModels::Load(100), "CCustomModels::Load(100) loaded TEA .mod and resolved .btx directly");
-	Check(g_directGpuUploads >= 1, "rw::gl3::uploadKtxDirect invoked directly for .btx KTX1/ASTC");
+	RwTexture *tex1 = g_lastResolvedTex;
+	Check(tex1 != nullptr, "BpcDirectTexFindCB resolved road_asphalt_br texture for model 100");
+	Check(g_directGpuUploads == 1, "rw::gl3::uploadKtxDirect invoked immediately for .astc.bpc.tmb preview");
 	Check(g_lastUploadedCompressed == 1 && g_lastUploadedInternalFmt == 0x93B0,
 		"ASTC 4x4 KTX1 uploaded directly as GL_COMPRESSED_RGBA_ASTC_4x4_KHR (0x93B0)");
 	Check(g_txdStreamReads == 0, "strictly ZERO .txd conversions throughout entire model + texture load");
 
-	// Verify RwTexture live .tmb -> .astc.bpc upgrade and refCount accounting:
-	// While PendingBtxUpgrade is queued, refCount is 3 (dict + material + upgrade);
+	// Verify RwTexture live .astc.bpc.tmb -> .astc.bpc upgrade and refCount accounting:
+	// While PendingBtxUpgrade is queued, refCount is 3 (TexDB registry + material + upgrade);
 	// once customTexDbWorker finishes and PumpBackgroundResults runs, the raster is
-	// upgraded in place (2nd uploadKtxDirect) and refCount settles to 2 (dict + material).
-	RwTexture *dictTex = RwTexDictionaryFindNamedTexture(CTxdStore::GetSlot(txdSlot)->texDict, "road_asphalt_br");
-	Check(dictTex != nullptr, "BpcDirectTexFindCB registered texture in current TxdStore dictionary");
-	for(int spin = 0; spin < 200 && dictTex->refCount > 2; spin++){
+	// upgraded in place (2nd uploadKtxDirect) and refCount settles to 2 (TexDB registry + material).
+	for(int spin = 0; spin < 200 && tex1->refCount > 2; spin++){
 		usleep(2000);
 		CCustomModels::PumpBackgroundResults();
 	}
-	Check(g_directGpuUploads == 2, ".tmb preview uploaded immediately, then upgraded in place from .astc.bpc");
-	Check(dictTex->refCount == 2,
-		"after live .btx upgrade, refCount==2 (1 dictionary + 1 material)");
-	RwTextureDestroy(dictTex); // release simulated material ref -> dictionary still holds refCount==1
+	Check(g_directGpuUploads == 2, ".astc.bpc.tmb preview uploaded immediately, then upgraded in place from .astc.bpc");
+	Check(tex1->refCount == 2,
+		"after live .btx upgrade, refCount==2 (1 TexDB registry + 1 material)");
 
+	// 2) Async worker .mod preparation + second model (101) in a DIFFERENT TXD slot ("rip")
+	// referencing the SAME "road_asphalt_br": must reuse the exact same RwTexture* from
+	// the global TexDB registry with ZERO extra GPU uploads!
+	Check(CCustomModels::CanServe(101), "CanServe(101) resolves road_br_02.mod");
+	CCustomModels::PrefetchStream(101, true);
+	for(int spin = 0; spin < 200 && !CCustomModels::IsStreamPrepared(101, true); spin++){
+		usleep(2000);
+		CCustomModels::PumpBackgroundResults();
+	}
+	Check(CCustomModels::IsStreamPrepared(101, true), "async TEA .mod preparation finished on worker pool");
+	g_lastResolvedTex = nullptr;
+	CTxdStore::SetCurrentTxd(ripSlot);
+	Check(CCustomModels::Load(101), "CCustomModels::Load(101) loaded second model in 'rip' slot");
+	RwTexture *tex2 = g_lastResolvedTex;
+	Check(tex2 == tex1, "second model in different TXD slot ('rip') shares exact same RwTexture*");
+	Check(g_directGpuUploads == 2, "ZERO duplicate GPU uploads when sharing .btx across multiple TXD slots");
+	Check(tex1->refCount == 3, "shared RwTexture refCount==3 (1 TexDB registry + 2 materials)");
+	Check(g_linearGetModelInfoByNameCalls == 0,
+		"strictly ZERO linear CModelInfo::GetModelInfo(name) calls across entire session");
+
+	RwTextureDestroy(tex2); // release model 101 simulated material ref -> refCount==2
+	RwTextureDestroy(tex1); // release model 100 simulated material ref -> refCount==1 (TexDB registry)
+
+	CTxdStore::RemoveTxd(ripSlot);
+	CTxdStore::RemoveTxd(txdSlot);
 	CModelInfo::ShutDown();
 	CCustomModels::Shutdown();
+	Check(g_liveRwTextures == 0, "all TexDB RwTextures and rasters cleanly destroyed on Shutdown()");
+	CTxdStore::GameShutdown();
 	CTxdStore::Shutdown();
 	Check(chdir(oldCwd) == 0, "restore cwd");
 	std::string rmCmd = std::string("rm -rf ") + tmpRoot;

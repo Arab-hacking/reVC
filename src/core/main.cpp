@@ -668,10 +668,18 @@ ResetLoadingScreenBar()
 	NumberOfChunksLoaded = 0.0f;
 }
 
+#if defined(ANDROID) && defined(RW_GL3) && defined(LIBRW_SDL2)
+void psPumpLoadingEvents(void);
+#endif
+
 void
 LoadingScreen(const char *str1, const char *str2, const char *splashscreen)
 {
 	CSprite2d *splash;
+
+#if defined(ANDROID) && defined(RW_GL3) && defined(LIBRW_SDL2)
+	psPumpLoadingEvents();
+#endif
 
 	if(str1 != nil || str2 != nil)
 		REVC_LOG_INFO("Loading: %s%s%s", str1 == nil ? "" : str1,
@@ -762,6 +770,10 @@ void
 LoadingIslandScreen(const char *levelName)
 {
 	CSprite2d *splash;
+
+#if defined(ANDROID) && defined(RW_GL3) && defined(LIBRW_SDL2)
+	psPumpLoadingEvents();
+#endif
 
 	REVC_LOG_INFO("Loading island: %s", levelName == nil ? "unknown" : levelName);
 	splash = LoadSplash(nil);
