@@ -3,12 +3,18 @@
 #include "platform.h"
 #include "MobileTouchControls.h"
 #include "MobileTouchMath.h"
+#include "MobileSpawnerMath.h"
 
+#include "Automobile.h"
+#include "Bike.h"
+#include "Boat.h"
 #include "Camera.h"
 #include "Clock.h"
+#include "CustomModels.h"
 #include "CutsceneMgr.h"
 #include "DMAudio.h"
 #include "DebugLog.h"
+#include "Font.h"
 #include "Frontend.h"
 #include "General.h"
 #include "Hud.h"
@@ -16,6 +22,7 @@
 #include "ModelInfo.h"
 #include "NoClip.h"
 #include "Pad.h"
+#include "PedModelInfo.h"
 #include "Pickups.h"
 #include "PlayerPed.h"
 #include "Pools.h"
@@ -23,10 +30,13 @@
 #include "Renderer.h"
 #include "Replay.h"
 #include "RwHelper.h"
+#include "Shadows.h"
 #include "Sprite2d.h"
+#include "Streaming.h"
 #include "Timer.h"
 #include "TxdStore.h"
 #include "Vehicle.h"
+#include "VehicleModelInfo.h"
 #include "WeaponInfo.h"
 #include "WeaponType.h"
 #include "World.h"
@@ -37,6 +47,7 @@
 #endif
 
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 
 namespace {
@@ -110,6 +121,8 @@ enum MobileBtnId {
 	MBTN_SUBMISSION,
 	MBTN_YAW_LEFT,
 	MBTN_YAW_RIGHT,
+	MBTN_DEV_SKIN,
+	MBTN_DEV_VEHICLE,
 	MBTN_DEV_TOGGLE,
 	MBTN_DEV_FLY,
 	MBTN_DEV_TIME_PLUS,
@@ -140,7 +153,9 @@ enum FallbackGlyph {
 	GLYPH_STEER_MODE,
 	GLYPH_DOTS,
 	GLYPH_FLY,
-	GLYPH_LEGEND
+	GLYPH_LEGEND,
+	GLYPH_PERSON,
+	GLYPH_CLOSE
 };
 
 struct VirtualButton {
@@ -268,6 +283,344 @@ GetMetrics(void)
 		(int)SCREEN_WIDTH, (int)SCREEN_HEIGHT,
 		s_deviceDensity, dpi,
 		s_safeLeft, s_safeTop, s_safeRight, s_safeBottom);
+}
+
+// ---------------------------------------------------------------------------
+// Mobile Skin Switcher & Vehicle Spawner (Custom + Stock Catalog & Actions)
+// ---------------------------------------------------------------------------
+
+static mobilespawner::PanelMode s_spawnerMode = mobilespawner::PANEL_NONE;
+static std::vector<mobilespawner::CatalogItem> s_skinCatalog;
+static std::vector<mobilespawner::CatalogItem> s_vehCatalog;
+static int32 s_skinSelectedIdx = 0;
+static int32 s_skinFirstRow = 0;
+static int32 s_vehSelectedIdx = 0;
+static int32 s_vehFirstRow = 0;
+static int32 s_lastSpawnedVehRef = -1;
+static char s_spawnerToast[64] = { 0 };
+static uint32 s_spawnerToastUntilMs = 0;
+
+struct SpawnerPointerState {
+	bool active;
+	int64 fingerId;
+	float startX, startY;
+	float prevY;
+	float maxTravel;
+	float scrollResidualPx;
+	bool draggingScroll;
+	mobilespawner::PanelHit downHit;
+};
+static SpawnerPointerState s_spawnerPtr = { false, 0, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, false, mobilespawner::PHIT_NONE };
+
+static void
+SetSpawnerToast(const char *msg)
+{
+	if (!msg)
+		return;
+	std::snprintf(s_spawnerToast, sizeof(s_spawnerToast), "%s", msg);
+	s_spawnerToastUntilMs = CTimer::GetTimeInMilliseconds() + 2600;
+}
+
+static bool
+IsStreamableModelRegistered(int32 id, const char *modelName)
+{
+	if (id < 0 || id >= MODELINFOSIZE)
+		return false;
+	if (CStreaming::HasModelLoaded(id) || CStreaming::ms_aInfoForModel[id].m_size != 0)
+		return true;
+#ifdef CUSTOM_MODELS
+	if (modelName && *modelName && CCustomModels::HasModelFile(modelName))
+		return true;
+#else
+	(void)modelName;
+#endif
+	return false;
+}
+
+static void
+RebuildSkinCatalog(void)
+{
+	s_skinCatalog.clear();
+	for (int32 id = 0; id < MODELINFOSIZE; id++) {
+		CBaseModelInfo *base = CModelInfo::GetModelInfo(id);
+		if (!base || base->GetModelType() != MITYPE_PED)
+			continue;
+		CPedModelInfo *pmi = (CPedModelInfo*)base;
+		if (pmi->m_animGroup >= NUM_ANIM_ASSOC_GROUPS)
+			continue;
+		const char *name = pmi->GetModelName();
+		if (!name || !*name)
+			continue;
+		if (!IsStreamableModelRegistered(id, name))
+			continue;
+
+		mobilespawner::CatalogItem item;
+		item.modelId = id;
+		item.isCustom = (id >= 4900);
+		item.isSecondaryTag = pmi->UsesSAAnimations();
+		std::snprintf(item.name, sizeof(item.name), "%s", name);
+		s_skinCatalog.push_back(item);
+	}
+	mobilespawner::SortCatalogItems(s_skinCatalog, true);
+
+	CPlayerPed *ped = FindPlayerPed();
+	if (ped && !s_skinCatalog.empty()) {
+		const int32 curId = ped->GetModelIndex();
+		for (size_t i = 0; i < s_skinCatalog.size(); i++) {
+			if (s_skinCatalog[i].modelId == curId) {
+				s_skinSelectedIdx = (int32)i;
+				break;
+			}
+		}
+		s_skinSelectedIdx = Clamp(s_skinSelectedIdx, 0, (int32)s_skinCatalog.size() - 1);
+		if (s_skinFirstRow > s_skinSelectedIdx)
+			s_skinFirstRow = s_skinSelectedIdx;
+		if (s_skinFirstRow + 6 <= s_skinSelectedIdx)
+			s_skinFirstRow = Max(0, s_skinSelectedIdx - 5);
+	}
+}
+
+static void
+RebuildVehicleCatalog(void)
+{
+	s_vehCatalog.clear();
+	for (int32 id = 0; id < MODELINFOSIZE; id++) {
+		if (mobilespawner::IsExcludedStockVehicleId(id))
+			continue;
+		CBaseModelInfo *base = CModelInfo::GetModelInfo(id);
+		if (!base || base->GetModelType() != MITYPE_VEHICLE)
+			continue;
+		CVehicleModelInfo *vmi = (CVehicleModelInfo*)base;
+		if (vmi->m_vehicleType != VEHICLE_TYPE_CAR &&
+		    vmi->m_vehicleType != VEHICLE_TYPE_BIKE &&
+		    vmi->m_vehicleType != VEHICLE_TYPE_BOAT)
+			continue;
+		const char *name = vmi->GetModelName();
+		if (!name || !*name)
+			continue;
+		if (!IsStreamableModelRegistered(id, name))
+			continue;
+
+		mobilespawner::CatalogItem item;
+		item.modelId = id;
+		item.isCustom = (id >= 4900);
+		item.isSecondaryTag = (vmi->m_vehicleType == VEHICLE_TYPE_BIKE);
+		std::snprintf(item.name, sizeof(item.name), "%s", name);
+		s_vehCatalog.push_back(item);
+	}
+	mobilespawner::SortCatalogItems(s_vehCatalog, false);
+	if (!s_vehCatalog.empty())
+		s_vehSelectedIdx = Clamp(s_vehSelectedIdx, 0, (int32)s_vehCatalog.size() - 1);
+}
+
+static bool
+ApplyPlayerSkinModel(int32 modelId)
+{
+	CPlayerPed *ped = FindPlayerPed();
+	if (!ped || !ped->m_rwObject)
+		return false;
+	if (ped->InVehicle() || FindPlayerVehicle() != nil) {
+		SetSpawnerToast("EXIT VEHICLE TO CHANGE SKIN");
+		return false;
+	}
+	CBaseModelInfo *base = CModelInfo::GetModelInfo(modelId);
+	if (!base || base->GetModelType() != MITYPE_PED)
+		return false;
+	CPedModelInfo *info = (CPedModelInfo*)base;
+
+	const uint8 previousFlags = CStreaming::ms_aInfoForModel[modelId].m_flags;
+	CStreaming::RequestModel(modelId, STREAMFLAGS_DEPENDENCY | STREAMFLAGS_DONT_REMOVE);
+	CStreaming::LoadAllRequestedModels(false);
+	if (!CStreaming::HasModelLoaded(modelId) || !info->GetRwObject()) {
+		if (!(previousFlags & STREAMFLAGS_DONT_REMOVE))
+			CStreaming::SetModelIsDeletable(modelId);
+		char errBuf[64];
+		std::snprintf(errBuf, sizeof(errBuf), "LOAD FAILED: %s (%d)", info->GetModelName(), (int)modelId);
+		SetSpawnerToast(errBuf);
+		return false;
+	}
+
+	const int32 oldId = ped->GetModelIndex();
+	ped->ClearAttack();
+	ped->ClearWeaponTarget();
+	CWorld::Remove(ped);
+	ped->RemoveWeaponModel(-1);
+#ifdef USE_CUTSCENE_SHADOW_FOR_PED
+	if (ped->m_pRTShadow) {
+		delete ped->m_pRTShadow;
+		ped->m_pRTShadow = nil;
+	}
+#endif
+	ped->DeleteRwObject();
+	// CPed::SetModelIndex binds VC skeletons strictly to native VC anim groups
+	// and SA skeletons strictly to custom SA anim groups (usesSAAnimations).
+	ped->SetModelIndex(modelId);
+	CWorld::Add(ped);
+
+	const int32 weaponId = CWeaponInfo::GetWeaponInfo(ped->GetWeapon()->m_eWeaponType)->m_nModelId;
+	if (weaponId >= 0 && CStreaming::HasModelLoaded(weaponId))
+		ped->AddWeaponModel(weaponId);
+	if (!(previousFlags & STREAMFLAGS_DONT_REMOVE))
+		CStreaming::SetModelIsDeletable(modelId);
+
+	// Update catalog SA/VC tag now that clump skeleton has been inspected
+	for (size_t i = 0; i < s_skinCatalog.size(); i++) {
+		if (s_skinCatalog[i].modelId == modelId) {
+			s_skinCatalog[i].isSecondaryTag = info->UsesSAAnimations();
+			break;
+		}
+	}
+
+	char msg[64];
+	std::snprintf(msg, sizeof(msg), "SKIN %d: %s [%s]",
+		(int)modelId, info->GetModelName(), info->UsesSAAnimations() ? "SA" : "VC");
+	SetSpawnerToast(msg);
+	DMAudio.PlayFrontEndSound(SOUND_FRONTEND_ENTER_OR_ADJUST, 0);
+	REVC_LOG_INFO("Mobile skin switched: %d -> %d (%s, %s animations)",
+		(int)oldId, (int)modelId, info->GetModelName(), info->UsesSAAnimations() ? "SA" : "VC");
+	return true;
+}
+
+static bool
+SpawnVehicleByModel(int32 modelId)
+{
+	CPlayerPed *ped = FindPlayerPed();
+	if (!ped)
+		return false;
+	CBaseModelInfo *base = CModelInfo::GetModelInfo(modelId);
+	if (!base || base->GetModelType() != MITYPE_VEHICLE)
+		return false;
+	CVehicleModelInfo *vmi = (CVehicleModelInfo*)base;
+
+	const uint8 previousFlags = CStreaming::ms_aInfoForModel[modelId].m_flags;
+	CStreaming::RequestModel(modelId, STREAMFLAGS_DEPENDENCY | STREAMFLAGS_DONT_REMOVE);
+	CStreaming::LoadAllRequestedModels(false);
+	if (!CStreaming::HasModelLoaded(modelId) || !vmi->GetRwObject()) {
+		if (!(previousFlags & STREAMFLAGS_DONT_REMOVE))
+			CStreaming::SetModelIsDeletable(modelId);
+		char errBuf[64];
+		std::snprintf(errBuf, sizeof(errBuf), "VEH LOAD FAILED: %s (%d)", vmi->GetModelName(), (int)modelId);
+		SetSpawnerToast(errBuf);
+		return false;
+	}
+
+	// Clean up previous test-spawned vehicle if empty so repeated testing never fills pool
+	if (s_lastSpawnedVehRef >= 0) {
+		CVehicle *prevVeh = CPools::GetVehicle(s_lastSpawnedVehRef);
+		if (prevVeh && prevVeh != FindPlayerVehicle() &&
+		    prevVeh->pDriver == nil && prevVeh->m_nNumPassengers == 0) {
+			CWorld::Remove(prevVeh);
+			delete prevVeh;
+		}
+		s_lastSpawnedVehRef = -1;
+	}
+
+	CVehicle *curPlayerVeh = FindPlayerVehicle();
+	const CVector basePos = curPlayerVeh ? curPlayerVeh->GetPosition() : ped->GetPosition();
+	CVector fwd = curPlayerVeh ? curPlayerVeh->GetForward() : ped->GetForward();
+	if (fwd.x * fwd.x + fwd.y * fwd.y < 1.0e-4f)
+		fwd = TheCamera.GetForward();
+
+	const float distAhead = (vmi->m_vehicleType == VEHICLE_TYPE_BOAT) ? 8.0f : 5.5f;
+	float sx = basePos.x, sy = basePos.y, sz = basePos.z;
+	float rx = 1.0f, ry = 0.0f;
+	mobilespawner::ComputeVehicleSpawnTransform(
+		basePos.x, basePos.y, basePos.z, fwd.x, fwd.y, distAhead,
+		&sx, &sy, &sz, &rx, &ry);
+
+	CVehicle *spawned = nil;
+	if (vmi->m_vehicleType == VEHICLE_TYPE_BOAT) {
+		CBoat *boat = new CBoat(modelId, RANDOM_VEHICLE);
+		spawned = boat;
+	} else if (vmi->m_vehicleType == VEHICLE_TYPE_BIKE) {
+		CBike *bike = new CBike(modelId, RANDOM_VEHICLE);
+		if (bike)
+			bike->bIsStanding = true;
+		spawned = bike;
+	} else {
+		CAutomobile *car = new CAutomobile(modelId, RANDOM_VEHICLE);
+		spawned = car;
+	}
+
+	if (!spawned) {
+		if (!(previousFlags & STREAMFLAGS_DONT_REMOVE))
+			CStreaming::SetModelIsDeletable(modelId);
+		SetSpawnerToast("VEHICLE POOL FULL");
+		return false;
+	}
+
+	bool groundFound = false;
+	float groundZ = CWorld::FindGroundZFor3DCoord(sx, sy, basePos.z + 5.0f, &groundFound);
+	if (!groundFound) {
+		CColPoint cp;
+		CEntity *hitEnt = nil;
+		if (CWorld::ProcessVerticalLine(CVector(sx, sy, basePos.z + 30.0f), basePos.z - 40.0f,
+		                                cp, hitEnt, true, false, false, false, false, false, nil)) {
+			groundZ = cp.point.z;
+			groundFound = true;
+		}
+	}
+	CVector finalPos(sx, sy, (groundFound ? groundZ : basePos.z) + spawned->GetDistanceFromCentreOfMassToBaseOfModel() + 0.15f);
+	spawned->bIsStatic = false;
+	spawned->bEngineOn = false;
+	spawned->bLightsOn = false;
+	spawned->SetPosition(finalPos);
+	const float headingRad = std::atan2(-fwd.x, fwd.y);
+	spawned->SetOrientation(0.0f, 0.0f, headingRad);
+	spawned->SetStatus(STATUS_ABANDONED);
+	spawned->m_nDoorLock = CARLOCK_UNLOCKED;
+	CWorld::Add(spawned);
+
+	s_lastSpawnedVehRef = CPools::GetVehicleRef(spawned);
+	if (!(previousFlags & STREAMFLAGS_DONT_REMOVE)) {
+		CStreaming::SetModelIsDeletable(modelId);
+		CStreaming::SetModelTxdIsDeletable(modelId);
+	}
+
+	char msg[64];
+	std::snprintf(msg, sizeof(msg), "SPAWNED %d: %s", (int)modelId, vmi->GetModelName());
+	SetSpawnerToast(msg);
+	DMAudio.PlayFrontEndSound(SOUND_FRONTEND_ENTER_OR_ADJUST, 0);
+	REVC_LOG_INFO("Mobile vehicle spawned: %d (%s) at (%.1f, %.1f, %.1f)",
+		(int)modelId, vmi->GetModelName(), finalPos.x, finalPos.y, finalPos.z);
+	return true;
+}
+
+static mobilespawner::PickerLayout
+GetCurrentSpawnerLayout(const MobileTouchMath::MobileScreenMetrics &m)
+{
+	const float rDev = m.Dp(18.0f);
+	const float topIconY = m.marginTopPx + m.Dp(22.0f);
+	const float devX = Max(m.radarLeftPx + m.radarSizePx + m.Dp(24.0f) + rDev, m.screenW * 0.27f);
+	const float anchorX = (s_spawnerMode == mobilespawner::PANEL_VEHICLE) ? (devX + m.Dp(44.0f)) : devX;
+	return mobilespawner::BuildPickerLayout(m.screenW, m.screenH, anchorX, topIconY + rDev, m.Dp(1.0f));
+}
+
+static void
+StepAndTriggerSpawner(int32 delta, bool triggerAction)
+{
+	std::vector<mobilespawner::CatalogItem> &cat =
+		(s_spawnerMode == mobilespawner::PANEL_SKIN) ? s_skinCatalog : s_vehCatalog;
+	if (cat.empty())
+		return;
+	int32 &sel = (s_spawnerMode == mobilespawner::PANEL_SKIN) ? s_skinSelectedIdx : s_vehSelectedIdx;
+	int32 &firstRow = (s_spawnerMode == mobilespawner::PANEL_SKIN) ? s_skinFirstRow : s_vehFirstRow;
+
+	sel = mobilespawner::WrapIndex(sel + delta, (int)cat.size());
+	if (sel < firstRow)
+		firstRow = sel;
+	else if (sel >= firstRow + 6)
+		firstRow = Max(0, sel - 5);
+	firstRow = Clamp(firstRow, 0, Max(0, (int32)cat.size() - 6));
+
+	if (triggerAction) {
+		if (s_spawnerMode == mobilespawner::PANEL_SKIN)
+			ApplyPlayerSkinModel(cat[sel].modelId);
+		else
+			SpawnVehicleByModel(cat[sel].modelId);
+	} else {
+		DMAudio.PlayFrontEndSound(SOUND_FRONTEND_HIGHLIGHT_OPTION, 0);
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -719,15 +1072,17 @@ UpdateGameplayLayout(void)
 	const float camIconX = Min(hudRightBase - m.hudUnitPx * 212.0f, W - m.marginRightPx - m.Dp(165.0f));
 	SetCircleBtn(s_buttons[MBTN_CAM], camIconX, topIconY, rTopIcon, MTEX_CAM_TOGGLE, GLYPH_CAMERA);
 
-	// Subtle collapsible utility button (FLY / TIME+ / TIME-)
+	// Quick-access top bar buttons: Skin Switcher, Vehicle Spawner, and collapsible utility drawer (FLY / TIME+ / TIME-)
 	const float rDev = m.Dp(18.0f);
 	const float devX = Max(m.radarLeftPx + m.radarSizePx + m.Dp(24.0f) + rDev, W * 0.27f);
-	SetCircleBtn(s_buttons[MBTN_DEV_TOGGLE], devX, topIconY, rDev, MTEX_COUNT, GLYPH_DOTS);
+	const float devStep = m.Dp(44.0f);
+	SetCircleBtn(s_buttons[MBTN_DEV_SKIN], devX, topIconY, rDev, MTEX_COUNT, GLYPH_PERSON);
+	SetCircleBtn(s_buttons[MBTN_DEV_VEHICLE], devX + devStep, topIconY, rDev, MTEX_CAR, GLYPH_CAR);
+	SetCircleBtn(s_buttons[MBTN_DEV_TOGGLE], devX + devStep * 2.0f, topIconY, rDev, MTEX_COUNT, GLYPH_DOTS);
 	if (s_devDrawerOpen) {
-		const float step = m.Dp(44.0f);
-		SetCircleBtn(s_buttons[MBTN_DEV_FLY], devX + step, topIconY, rDev, MTEX_COUNT, GLYPH_FLY);
-		SetCircleBtn(s_buttons[MBTN_DEV_TIME_PLUS], devX + step * 2.0f, topIconY, rDev, MTEX_ZOOM_IN, GLYPH_PLUS);
-		SetCircleBtn(s_buttons[MBTN_DEV_TIME_MINUS], devX + step * 3.0f, topIconY, rDev, MTEX_ZOOM_OUT, GLYPH_MINUS);
+		SetCircleBtn(s_buttons[MBTN_DEV_FLY], devX + devStep * 3.0f, topIconY, rDev, MTEX_COUNT, GLYPH_FLY);
+		SetCircleBtn(s_buttons[MBTN_DEV_TIME_PLUS], devX + devStep * 4.0f, topIconY, rDev, MTEX_ZOOM_IN, GLYPH_PLUS);
+		SetCircleBtn(s_buttons[MBTN_DEV_TIME_MINUS], devX + devStep * 5.0f, topIconY, rDev, MTEX_ZOOM_OUT, GLYPH_MINUS);
 	}
 
 	// 3. IN VEHICLE LAYOUT (DP-sized pedals, steering, and context actions)
@@ -1016,6 +1371,24 @@ HandleGameplayButtonDownPulse(MobileBtnId btn)
 		}
 		break;
 	}
+	case MBTN_DEV_SKIN:
+		if (s_spawnerMode == mobilespawner::PANEL_SKIN) {
+			s_spawnerMode = mobilespawner::PANEL_NONE;
+		} else {
+			RebuildSkinCatalog();
+			s_spawnerMode = mobilespawner::PANEL_SKIN;
+		}
+		DMAudio.PlayFrontEndSound(SOUND_FRONTEND_HIGHLIGHT_OPTION, 0);
+		break;
+	case MBTN_DEV_VEHICLE:
+		if (s_spawnerMode == mobilespawner::PANEL_VEHICLE) {
+			s_spawnerMode = mobilespawner::PANEL_NONE;
+		} else {
+			RebuildVehicleCatalog();
+			s_spawnerMode = mobilespawner::PANEL_VEHICLE;
+		}
+		DMAudio.PlayFrontEndSound(SOUND_FRONTEND_HIGHLIGHT_OPTION, 0);
+		break;
 	case MBTN_DEV_TOGGLE:
 		s_devDrawerOpen = !s_devDrawerOpen;
 		break;
@@ -1226,7 +1599,7 @@ ApplyDirectSliderValue(int32 screen, int32 row, float touchX, float deltaX, bool
 	auto getNorm = [&]() -> float {
 		switch (action) {
 		case MENUACTION_BRIGHTNESS:     return FrontEndMenuManager.m_PrefsBrightness / 384.0f;
-		case MENUACTION_DRAWDIST:       return (FrontEndMenuManager.m_PrefsLOD - 0.925f) / 0.875f;
+		case MENUACTION_DRAWDIST:       return Clamp((FrontEndMenuManager.m_PrefsLOD - DRAWDIST_MIN) / DRAWDIST_RANGE, 0.0f, 1.0f);
 		case MENUACTION_MUSICVOLUME:    return FrontEndMenuManager.m_PrefsMusicVolume / 64.0f;
 		case MENUACTION_SFXVOLUME:      return FrontEndMenuManager.m_PrefsSfxVolume / 64.0f;
 		case MENUACTION_MP3VOLUMEBOOST: return FrontEndMenuManager.m_PrefsMP3BoostVolume / 64.0f;
@@ -1254,7 +1627,7 @@ ApplyDirectSliderValue(int32 screen, int32 row, float touchX, float deltaX, bool
 		FrontEndMenuManager.m_PrefsBrightness = (int32)Clamp(t * 384.0f + 0.5f, 0.0f, 384.0f);
 		break;
 	case MENUACTION_DRAWDIST:
-		FrontEndMenuManager.m_PrefsLOD = 0.925f + t * 0.875f;
+		FrontEndMenuManager.m_PrefsLOD = DRAWDIST_MIN + t * DRAWDIST_RANGE;
 		CRenderer::ms_lodDistScale = FrontEndMenuManager.m_PrefsLOD;
 		break;
 	case MENUACTION_MUSICVOLUME:
@@ -1886,6 +2259,16 @@ DrawFallbackGlyph(FallbackGlyph glyph, float cx, float cy, float r, const CRGBA 
 		DrawThickSegment(cx - r * 0.34f, cy,             cx + r * 0.34f, cy,             t * 1.2f, col);
 		DrawThickSegment(cx - r * 0.34f, cy + r * 0.26f, cx + r * 0.34f, cy + r * 0.26f, t * 1.2f, col);
 		break;
+	case GLYPH_PERSON:
+		DrawFilledCircle(cx, cy - r * 0.24f, r * 0.21f, col, col, 0.0f);
+		DrawThickSegment(cx - r * 0.34f, cy + r * 0.30f, cx - r * 0.14f, cy + r * 0.06f, t * 1.35f, col);
+		DrawThickSegment(cx - r * 0.16f, cy + r * 0.08f, cx + r * 0.16f, cy + r * 0.08f, t * 1.45f, col);
+		DrawThickSegment(cx + r * 0.14f, cy + r * 0.06f, cx + r * 0.34f, cy + r * 0.30f, t * 1.35f, col);
+		break;
+	case GLYPH_CLOSE:
+		DrawThickSegment(cx - r * 0.30f, cy - r * 0.30f, cx + r * 0.30f, cy + r * 0.30f, t * 1.35f, col);
+		DrawThickSegment(cx - r * 0.30f, cy + r * 0.30f, cx + r * 0.30f, cy - r * 0.30f, t * 1.35f, col);
+		break;
 	default:
 		break;
 	}
@@ -2214,6 +2597,8 @@ CMobileTouchControls::ResetTouches(void)
 	s_menuPendingChange = 0;
 	s_statsVelocityPxPerSec = 0.0f;
 	s_sprintJumpTap.Reset();
+	s_spawnerPtr.active = false;
+	s_spawnerMode = mobilespawner::PANEL_NONE;
 }
 
 void
@@ -2226,6 +2611,8 @@ CMobileTouchControls::OnFingerDown(int64 fingerId, float normX, float normY)
 
 	if (FrontEndMenuManager.m_bMenuActive) {
 		memset(s_pointers, 0, sizeof(s_pointers));
+		s_spawnerMode = mobilespawner::PANEL_NONE;
+		s_spawnerPtr.active = false;
 		OnMenuFingerDown(fingerId, x, y);
 		return;
 	}
@@ -2239,6 +2626,32 @@ CMobileTouchControls::OnFingerDown(int64 fingerId, float normX, float normY)
 	}
 
 	UpdateGameplayLayout();
+
+	// 0. If Skin / Vehicle picker panel is open, intercept touches inside it first
+	if (s_spawnerMode != mobilespawner::PANEL_NONE) {
+		const MobileBtnId topHit = FindHitGameplayButton(x, y, m.Dp(24.0f));
+		if (topHit == MBTN_DEV_SKIN || topHit == MBTN_DEV_VEHICLE || topHit == MBTN_PAUSE) {
+			s_spawnerPtr.active = false;
+		} else {
+			const mobilespawner::PickerLayout L = GetCurrentSpawnerLayout(m);
+			const mobilespawner::PanelHit ph = mobilespawner::HitTestPicker(L, x, y);
+			if (ph == mobilespawner::PHIT_OUTSIDE) {
+				s_spawnerMode = mobilespawner::PANEL_NONE;
+				s_spawnerPtr.active = false;
+				return;
+			}
+			s_spawnerPtr.active = true;
+			s_spawnerPtr.fingerId = fingerId;
+			s_spawnerPtr.startX = x;
+			s_spawnerPtr.startY = y;
+			s_spawnerPtr.prevY = y;
+			s_spawnerPtr.maxTravel = 0.0f;
+			s_spawnerPtr.scrollResidualPx = 0.0f;
+			s_spawnerPtr.draggingScroll = false;
+			s_spawnerPtr.downHit = ph;
+			return;
+		}
+	}
 
 	ActivePointer *p = AllocGameplayPointer(fingerId);
 	if (!p)
@@ -2288,6 +2701,39 @@ CMobileTouchControls::OnFingerMotion(int64 fingerId, float normX, float normY, f
 
 	if (FrontEndMenuManager.m_bMenuActive) {
 		OnMenuFingerMotion(fingerId, x, y);
+		return;
+	}
+
+	if (s_spawnerMode != mobilespawner::PANEL_NONE &&
+	    s_spawnerPtr.active && s_spawnerPtr.fingerId == fingerId) {
+		const float dx = x - s_spawnerPtr.startX;
+		const float dy = y - s_spawnerPtr.startY;
+		const float dist = Sqrt(dx * dx + dy * dy);
+		if (dist > s_spawnerPtr.maxTravel)
+			s_spawnerPtr.maxTravel = dist;
+
+		std::vector<mobilespawner::CatalogItem> &cat =
+			(s_spawnerMode == mobilespawner::PANEL_SKIN) ? s_skinCatalog : s_vehCatalog;
+		int32 &firstRow = (s_spawnerMode == mobilespawner::PANEL_SKIN) ? s_skinFirstRow : s_vehFirstRow;
+		const float stepDy = y - s_spawnerPtr.prevY;
+		s_spawnerPtr.prevY = y;
+
+		if (s_spawnerPtr.draggingScroll || Abs(dy) >= m.Dp(10.0f)) {
+			s_spawnerPtr.draggingScroll = true;
+			s_spawnerPtr.scrollResidualPx -= stepDy;
+			const float rowStep = m.Dp(26.0f);
+			const int32 maxFirst = Max(0, (int32)cat.size() - 6);
+			while (s_spawnerPtr.scrollResidualPx >= rowStep) {
+				s_spawnerPtr.scrollResidualPx -= rowStep;
+				if (firstRow < maxFirst)
+					firstRow++;
+			}
+			while (s_spawnerPtr.scrollResidualPx <= -rowStep) {
+				s_spawnerPtr.scrollResidualPx += rowStep;
+				if (firstRow > 0)
+					firstRow--;
+			}
+		}
 		return;
 	}
 
@@ -2357,6 +2803,53 @@ CMobileTouchControls::OnFingerUp(int64 fingerId, float normX, float normY)
 
 	if (FrontEndMenuManager.m_bMenuActive) {
 		OnMenuFingerUp(fingerId, x, y);
+		return;
+	}
+
+	if (s_spawnerMode != mobilespawner::PANEL_NONE &&
+	    s_spawnerPtr.active && s_spawnerPtr.fingerId == fingerId) {
+		const bool cleanTap = (!s_spawnerPtr.draggingScroll && s_spawnerPtr.maxTravel <= m.Dp(12.0f));
+		s_spawnerPtr.active = false;
+		if (cleanTap) {
+			const mobilespawner::PickerLayout L = GetCurrentSpawnerLayout(m);
+			const mobilespawner::PanelHit upHit = mobilespawner::HitTestPicker(L, x, y);
+			if (upHit == s_spawnerPtr.downHit) {
+				switch (upHit) {
+				case mobilespawner::PHIT_PREV:
+					StepAndTriggerSpawner(-1, true);
+					break;
+				case mobilespawner::PHIT_STEP_MINUS10:
+					StepAndTriggerSpawner(-10, false);
+					break;
+				case mobilespawner::PHIT_STEP_PLUS10:
+					StepAndTriggerSpawner(10, false);
+					break;
+				case mobilespawner::PHIT_NEXT:
+					StepAndTriggerSpawner(1, true);
+					break;
+				case mobilespawner::PHIT_CLOSE:
+					s_spawnerMode = mobilespawner::PANEL_NONE;
+					break;
+				default:
+					if (upHit >= mobilespawner::PHIT_ROW_0 && upHit <= mobilespawner::PHIT_ROW_5) {
+						const int32 rel = (int32)upHit - (int32)mobilespawner::PHIT_ROW_0;
+						std::vector<mobilespawner::CatalogItem> &cat =
+							(s_spawnerMode == mobilespawner::PANEL_SKIN) ? s_skinCatalog : s_vehCatalog;
+						int32 &sel = (s_spawnerMode == mobilespawner::PANEL_SKIN) ? s_skinSelectedIdx : s_vehSelectedIdx;
+						const int32 firstRow = (s_spawnerMode == mobilespawner::PANEL_SKIN) ? s_skinFirstRow : s_vehFirstRow;
+						const int32 targetIdx = firstRow + rel;
+						if (targetIdx >= 0 && targetIdx < (int32)cat.size()) {
+							sel = targetIdx;
+							if (s_spawnerMode == mobilespawner::PANEL_SKIN)
+								ApplyPlayerSkinModel(cat[sel].modelId);
+							else
+								SpawnVehicleByModel(cat[sel].modelId);
+						}
+					}
+					break;
+				}
+			}
+		}
 		return;
 	}
 
@@ -2592,6 +3085,156 @@ CMobileTouchControls::DrawMenuOverlay(void)
 #endif
 }
 
+#ifdef ANDROID
+static void
+DrawSpawnerTextLine(float x, float y, float scaleX, float scaleY, const CRGBA &col, const char *ascii, bool centre = false, float wrapRight = 4096.0f)
+{
+	if (!ascii || !*ascii)
+		return;
+	wchar wideBuf[96];
+	AsciiToUnicode(ascii, wideBuf);
+
+	CFont::SetBackgroundOff();
+	CFont::SetBackGroundOnlyTextOff();
+	CFont::SetPropOn();
+	CFont::SetFontStyle(FONT_STANDARD);
+	CFont::SetScale(scaleX, scaleY);
+	CFont::SetDropShadowPosition(1);
+	CFont::SetDropColor(CRGBA(0, 0, 0, col.a));
+	CFont::SetColor(col);
+	if (centre) {
+		CFont::SetRightJustifyOff();
+		CFont::SetCentreOn();
+		CFont::SetCentreSize(SCREEN_WIDTH);
+	} else {
+		CFont::SetCentreOff();
+		CFont::SetRightJustifyOff();
+		CFont::SetWrapx(wrapRight);
+	}
+	CFont::PrintString(x, y, wideBuf);
+}
+
+static void
+DrawSpawnerOverlay(const MobileTouchMath::MobileScreenMetrics &m)
+{
+	const uint32 nowMs = CTimer::GetTimeInMilliseconds();
+	const bool showToast = (s_spawnerToast[0] != '\0' && nowMs < s_spawnerToastUntilMs);
+	const bool showPanel = (s_spawnerMode != mobilespawner::PANEL_NONE);
+	if (!showToast && !showPanel)
+		return;
+
+	const float fontScaleY = Max(0.42f, m.Dp(14.5f) / 22.0f);
+	const float fontScaleX = fontScaleY * 0.48f;
+	bool queuedAnyText = false;
+
+	if (showPanel) {
+		const mobilespawner::PickerLayout L = GetCurrentSpawnerLayout(m);
+		const std::vector<mobilespawner::CatalogItem> &cat =
+			(s_spawnerMode == mobilespawner::PANEL_SKIN) ? s_skinCatalog : s_vehCatalog;
+		const int32 sel = (s_spawnerMode == mobilespawner::PANEL_SKIN) ? s_skinSelectedIdx : s_vehSelectedIdx;
+		const int32 firstRow = (s_spawnerMode == mobilespawner::PANEL_SKIN) ? s_skinFirstRow : s_vehFirstRow;
+
+		// Outer subtle border + dark translucent card + header strip
+		CSprite2d::DrawRect(CRect(L.left - m.Dp(1.5f), L.top - m.Dp(1.5f), L.right + m.Dp(1.5f), L.bottom + m.Dp(1.5f)),
+			CRGBA(255, 165, 220, 185));
+		CSprite2d::DrawRect(CRect(L.left, L.top, L.right, L.bottom),
+			CRGBA(14, 18, 26, 228));
+		CSprite2d::DrawRect(CRect(L.left, L.top, L.right, L.headerBottom),
+			CRGBA(28, 35, 50, 240));
+
+		// 5 header buttons: [<] [-10] [+10] [>] [X]
+		const float btnCy = L.BtnCenterY();
+		const float btnR = m.Dp(14.0f);
+		for (int b = 0; b < 5; b++) {
+			const float bx = L.BtnCenterX(b);
+			const CRGBA fill = (b == 4) ? CRGBA(90, 28, 42, 210) : CRGBA(42, 52, 74, 210);
+			DrawFilledCircle(bx, btnCy, btnR, fill, CRGBA(225, 232, 245, 165), m.Dp(1.3f));
+			if (b == 0)
+				DrawFallbackGlyph(GLYPH_ARROW_LEFT, bx, btnCy, btnR, CRGBA(255, 255, 255, 235));
+			else if (b == 3)
+				DrawFallbackGlyph(GLYPH_ARROW_RIGHT, bx, btnCy, btnR, CRGBA(255, 255, 255, 235));
+			else if (b == 4)
+				DrawFallbackGlyph(GLYPH_CLOSE, bx, btnCy, btnR, CRGBA(255, 210, 220, 240));
+		}
+
+		// Row highlight bars before text flush
+		for (int r = 0; r < L.visibleRows; r++) {
+			const int32 idx = firstRow + r;
+			if (idx < 0 || idx >= (int32)cat.size())
+				break;
+			const float ry1 = L.rowTop + L.rowHeight * (float)r;
+			const float ry2 = ry1 + L.rowHeight - m.Dp(2.0f);
+			if (idx == sel) {
+				CSprite2d::DrawRect(CRect(L.left + m.Dp(4.0f), ry1, L.right - m.Dp(4.0f), ry2),
+					CRGBA(235, 95, 175, 135));
+			} else if ((r & 1) == 1) {
+				CSprite2d::DrawRect(CRect(L.left + m.Dp(4.0f), ry1, L.right - m.Dp(4.0f), ry2),
+					CRGBA(255, 255, 255, 16));
+			}
+		}
+
+		// Scrollbar thumb on right edge
+		if ((int32)cat.size() > L.visibleRows) {
+			const float trackTop = L.rowTop;
+			const float trackH = L.rowHeight * (float)L.visibleRows;
+			const float thumbH = Max(m.Dp(18.0f), trackH * ((float)L.visibleRows / (float)cat.size()));
+			const float maxFirst = (float)Max(1, (int32)cat.size() - L.visibleRows);
+			const float thumbY = trackTop + (trackH - thumbH) * Clamp((float)firstRow / maxFirst, 0.0f, 1.0f);
+			CSprite2d::DrawRect(CRect(L.right - m.Dp(5.0f), thumbY, L.right - m.Dp(2.0f), thumbY + thumbH),
+				CRGBA(255, 180, 225, 190));
+		}
+
+		// Header text labels for -10 / +10
+		DrawSpawnerTextLine(L.BtnCenterX(1) - m.Dp(11.0f), btnCy - m.Dp(8.0f),
+			fontScaleX * 0.88f, fontScaleY * 0.88f, CRGBA(240, 245, 255, 240), "-10");
+		DrawSpawnerTextLine(L.BtnCenterX(2) - m.Dp(12.0f), btnCy - m.Dp(8.0f),
+			fontScaleX * 0.88f, fontScaleY * 0.88f, CRGBA(240, 245, 255, 240), "+10");
+		queuedAnyText = true;
+
+		if (cat.empty()) {
+			DrawSpawnerTextLine(L.left + m.Dp(12.0f), L.rowTop + m.Dp(12.0f),
+				fontScaleX, fontScaleY, CRGBA(220, 225, 235, 220),
+				"NO MODELS AVAILABLE", false, L.right - m.Dp(8.0f));
+		} else {
+			for (int r = 0; r < L.visibleRows; r++) {
+				const int32 idx = firstRow + r;
+				if (idx < 0 || idx >= (int32)cat.size())
+					break;
+				const mobilespawner::CatalogItem &it = cat[idx];
+				char line[64];
+				if (s_spawnerMode == mobilespawner::PANEL_SKIN) {
+					std::snprintf(line, sizeof(line), "%d %s [%s]",
+						(int)it.modelId, it.name, it.isSecondaryTag ? "SA" : "VC");
+				} else {
+					std::snprintf(line, sizeof(line), "%d %s%s",
+						(int)it.modelId, it.name, it.isSecondaryTag ? " [BIKE]" : "");
+				}
+				const CRGBA rowCol = (idx == sel)
+					? CRGBA(255, 255, 255, 255)
+					: (it.isCustom ? CRGBA(185, 240, 255, 235) : CRGBA(225, 228, 238, 225));
+				const float textY = L.rowTop + L.rowHeight * (float)r + m.Dp(6.0f);
+				DrawSpawnerTextLine(L.left + m.Dp(10.0f), textY,
+					fontScaleX, fontScaleY, rowCol, line, false, L.right - m.Dp(8.0f));
+			}
+		}
+	}
+
+	if (showToast) {
+		const float toastY = m.marginTopPx + m.Dp(54.0f);
+		const float toastHalfW = m.Dp(145.0f);
+		const float cx = m.screenW * 0.50f;
+		CSprite2d::DrawRect(CRect(cx - toastHalfW, toastY, cx + toastHalfW, toastY + m.Dp(26.0f)),
+			CRGBA(14, 18, 26, 205));
+		DrawSpawnerTextLine(cx, toastY + m.Dp(4.0f),
+			fontScaleX * 0.95f, fontScaleY * 0.95f, CRGBA(255, 230, 245, 245), s_spawnerToast, true);
+		queuedAnyText = true;
+	}
+
+	if (queuedAnyText)
+		CFont::DrawFonts();
+}
+#endif
+
 void
 CMobileTouchControls::Draw(void)
 {
@@ -2600,6 +3243,7 @@ CMobileTouchControls::Draw(void)
 		return;
 
 	UpdateGameplayLayout();
+	const MobileTouchMath::MobileScreenMetrics m = GetMetrics();
 
 	RwRenderStateSet(rwRENDERSTATEZTESTENABLE, (void*)FALSE);
 	RwRenderStateSet(rwRENDERSTATEZWRITEENABLE, (void*)FALSE);
@@ -2645,10 +3289,16 @@ CMobileTouchControls::Draw(void)
 			active = true;
 		if (i == MBTN_DEV_FLY && CNoClip::IsActive())
 			active = true;
+		if (i == MBTN_DEV_SKIN && s_spawnerMode == mobilespawner::PANEL_SKIN)
+			active = true;
+		if (i == MBTN_DEV_VEHICLE && s_spawnerMode == mobilespawner::PANEL_VEHICLE)
+			active = true;
 
 		const uint8 idleAlpha = (i == MBTN_DEV_TOGGLE && !s_devDrawerOpen) ? 105 : 195;
 		DrawVirtualButton(b, active, idleAlpha);
 	}
+
+	DrawSpawnerOverlay(m);
 
 	RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)FALSE);
 #endif

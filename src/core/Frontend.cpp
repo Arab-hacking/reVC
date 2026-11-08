@@ -767,10 +767,10 @@ CMenuManager::CheckSliderMovement(int value)
 		break;
 	case MENUACTION_DRAWDIST:
 		if(value > 0)
-			m_PrefsLOD += ((1.8f - 0.925f) / MENUSLIDER_LOGICAL_BARS);
+			m_PrefsLOD += (DRAWDIST_RANGE / MENUSLIDER_LOGICAL_BARS);
 		else
-			m_PrefsLOD -= ((1.8f - 0.925f) / MENUSLIDER_LOGICAL_BARS);
-		m_PrefsLOD = Clamp(m_PrefsLOD, 0.925f, 1.8f);
+			m_PrefsLOD -= (DRAWDIST_RANGE / MENUSLIDER_LOGICAL_BARS);
+		m_PrefsLOD = Clamp(m_PrefsLOD, DRAWDIST_MIN, DRAWDIST_MAX);
 		CRenderer::ms_lodDistScale = m_PrefsLOD;
 		break;
 
@@ -1645,7 +1645,7 @@ CMenuManager::DrawStandardMenus(bool activeScreen)
 							ProcessSlider(m_PrefsBrightness / 384.0f, SLIDER_Y(70.0f), HOVEROPTION_INCREASE_BRIGHTNESS, HOVEROPTION_DECREASE_BRIGHTNESS, SCREEN_WIDTH, true);
 							break;
 						case MENUACTION_DRAWDIST:
-							ProcessSlider((m_PrefsLOD - 0.925f) / 0.875f, SLIDER_Y(99.0f), HOVEROPTION_INCREASE_DRAWDIST, HOVEROPTION_DECREASE_DRAWDIST, SCREEN_WIDTH, true);
+							ProcessSlider(Clamp((m_PrefsLOD - DRAWDIST_MIN) / DRAWDIST_RANGE, 0.0f, 1.0f), SLIDER_Y(99.0f), HOVEROPTION_INCREASE_DRAWDIST, HOVEROPTION_DECREASE_DRAWDIST, SCREEN_WIDTH, true);
 							break;
 						case MENUACTION_MUSICVOLUME:
 							if(m_nPrefsAudio3DProviderIndex != NO_AUDIO_PROVIDER)
@@ -5058,6 +5058,7 @@ CMenuManager::ProcessUserInput(uint8 goDown, uint8 goUp, uint8 optionSelected, u
 					m_PrefsVsync = true;
 #endif
 					CRenderer::ms_lodDistScale = m_PrefsLOD;
+					CRenderer::ms_fLightDistScale = LIGHTDIST_DEFAULT;
 					m_PrefsShowSubtitles = false;
 #ifdef ASPECT_RATIO_SCALE
 					m_PrefsUseWideScreen = AR_AUTO;

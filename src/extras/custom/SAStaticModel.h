@@ -33,6 +33,7 @@ void ExtractClumpLights(rw::Clump *clump, std::vector<LightEffect> &out);
 
 // Heuristic fallback for custom outdoor streetlamp poles exported without a 2dfx chunk.
 bool IsOutdoorStreetLampName(const char *modelName);
+float EffectiveStaticDrawDistance(const char *modelName, float ideDist, bool hasLight2dfx);
 void EstimateStreetLampLights(rw::Atomic *bakedAtomic, std::vector<LightEffect> &out);
 
 // A VC simple/time model owns ONE atomic. Take the visible geometry of an SA

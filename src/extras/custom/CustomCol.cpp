@@ -21,8 +21,11 @@ namespace customcol {
 //     fourcc, size, name[22], id, bounds[40], counts, flags, offsets, data
 // (the offsets are counted from the end of the fourcc)
 #define FCC_COLL 0x4C4C4F43
+#define FCC_BOLL 0x4C4C4F42
 #define FCC_COL2 0x324C4F43
 #define FCC_COL3 0x334C4F43
+#define FCC_CLST 0x54534C43
+#define FCC_CLSF 0x46534C43
 
 #define BLOCK_HEAD 72		// fourcc + size + name + id + bounds, both versions
 #define V2_HEADER  48		// counts, flags and the offsets
@@ -152,7 +155,7 @@ ParseBlock(const uint8 *p, size_t n, Block &b)
 	if(n < BLOCK_HEAD)
 		return false;
 	fourcc = r32(p);
-	if(fourcc != FCC_COLL && fourcc != FCC_COL2 && fourcc != FCC_COL3)
+	if(fourcc != FCC_COLL && fourcc != FCC_BOLL && fourcc != FCC_COL2 && fourcc != FCC_COL3)
 		return false;
 	size = r32(p + 4);
 	if(size < 24 + 40 || size > n - 8)
@@ -168,7 +171,7 @@ ParseBlock(const uint8 *p, size_t n, Block &b)
 	// orders makes a box that contains something (a box that is inside out is
 	// invisible to the game), so a file written by either tool is understood.
 	t = p + 32;
-	if(fourcc == FCC_COLL){
+	if(fourcc == FCC_COLL || fourcc == FCC_BOLL){
 		b.radius = rFloat(t);
 		memcpy(b.center, t + 4, 12);
 		memcpy(b.bmin, t + 16, 12);
@@ -508,7 +511,15 @@ ToGameFormat(const std::vector<uint8> &col, Stats &stats)
 	while(pos + 8 <= col.size()){
 		const uint8 *p = col.data() + pos;
 		uint32 fourcc = r32(p);
-		if(fourcc != FCC_COLL && fourcc != FCC_COL2 && fourcc != FCC_COL3){
+		if(fourcc == FCC_CLST || fourcc == FCC_CLSF){
+			uint32 skipSize = r32(p + 4);
+			size_t avail = col.size() - pos;
+			if(skipSize >= 24 && (size_t)skipSize <= avail - 8){
+				pos += 8 + (size_t)skipSize;
+				continue;
+			}
+		}
+		if(fourcc != FCC_COLL && fourcc != FCC_BOLL && fourcc != FCC_COL2 && fourcc != FCC_COL3){
 			// the blocks are stored one after another; a gap means the file
 			// is not what it should be
 			pos++;

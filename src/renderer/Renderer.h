@@ -10,6 +10,16 @@ class CEntity;
 #endif
 #define FADE_DISTANCE 20.0f
 #define STREAM_DISTANCE 30.0f
+#define DRAWDIST_MIN 0.80f
+#define DRAWDIST_MAX 3.00f
+#define DRAWDIST_RANGE (DRAWDIST_MAX - DRAWDIST_MIN)
+#define LIGHTDIST_MIN 0.50f
+#define LIGHTDIST_MAX 3.00f
+#ifdef ANDROID
+#define LIGHTDIST_DEFAULT 1.35f
+#else
+#define LIGHTDIST_DEFAULT 1.20f
+#endif
 
 #include <vector>
 
@@ -58,6 +68,7 @@ class CRenderer
 	static BlockedRange *pEmptyBlockedRanges;
 public:
 	static float ms_lodDistScale;
+	static float ms_fLightDistScale;
 	static bool m_loadingPriority;
 
 	static void Init(void);

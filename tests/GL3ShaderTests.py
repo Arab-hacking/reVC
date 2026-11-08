@@ -228,6 +228,30 @@ class GL3ShaderTests(unittest.TestCase):
         self.assertNotIn("registerUniform(", sky_cpp)
         self.assertIn("s_mobileWaterShaderTried", water_cpp)
 
+    def test_mobile_matfx_vehicle_and_sky_contracts(self):
+        matfx_fs = embedded_source(VENDOR / "matfx_env.frag")
+        veh_fs = embedded_source(EXTRAS / "neoVehicle.frag")
+        sky_cpp = (ROOT / "src/extras/custom/CustomSky.cpp").read_text()
+
+        # Mobile matfx_env branch uses BR_ShadeMobileWorldLinear + BR_ApplyMobileColorGrade
+        self.assertIn("if(u_atmosphere.x >= 1.5)", matfx_fs)
+        self.assertIn("BR_ShadeMobileWorldLinear(", matfx_fs)
+        self.assertIn("BR_ApplyMobileColorGrade(", matfx_fs)
+
+        # Mobile neoVehicle branch samples tex1 paraboloid env + 4 dynamic night street lights + glass branch
+        self.assertIn("u_sceneLightPosRad[li]", veh_fs)
+        self.assertIn("u_sceneLightColor[li]", veh_fs)
+        self.assertIn("if(isGlassM > 0.05)", veh_fs)
+
+        # Procedural SkyDome restores prevAtmos and feeds u_skyTopColor + stars
+        self.assertIn("uniform vec4 u_skyTopColor;", sky_cpp)
+        self.assertIn("rw::setAtmosphereParams(prevAtmos);", sky_cpp)
+        self.assertIn("starVis", sky_cpp)
+
+        for name, src in (("matfx_env.frag", matfx_fs), ("neoVehicle.frag", veh_fs)):
+            self.assertEqual(src.count("{"), src.count("}"), f"{name} unbalanced braces")
+            self.assertEqual(src.count("("), src.count(")"), f"{name} unbalanced parens")
+
 
 if __name__ == "__main__":
     unittest.main()

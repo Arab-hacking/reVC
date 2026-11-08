@@ -76,6 +76,9 @@
 	#define DENSITY_SLIDERS 
 #endif
 
+#define LIGHT_DIST_SLIDER \
+	MENUACTION_CFO_SLIDER, "FEM_LGT", { new CCFOSlider(&CRenderer::ms_fLightDistScale, "Display", "LightDistance", LIGHTDIST_MIN, LIGHTDIST_MAX) }, 0, 0, MENUALIGN_LEFT,
+
 #ifdef ANDROID
 static const char *mobileQualityOpts[] = { "FEM_LOW", "FEM_MED", "FEM_HIG" };
 	#define MOBILE_QUALITY_SELECTOR MENUACTION_CFO_SELECT, "FET_GFX", { new CCFOSelect((int8*)&FrontEndMenuManager.m_PrefsMobileGraphics, "Graphics", "MobileQuality", mobileQualityOpts, ARRAY_SIZE(mobileQualityOpts), false) }, 0, 0, MENUALIGN_LEFT,
@@ -180,6 +183,7 @@ void RestoreDefDisplay(int8 action) {
 		FrontEndMenuManager.m_PrefsBrightness = 256;
 		FrontEndMenuManager.m_PrefsLOD = 1.2f;
 		CRenderer::ms_lodDistScale = 1.2f;
+		CRenderer::ms_fLightDistScale = LIGHTDIST_DEFAULT;
 		FrontEndMenuManager.m_PrefsShowSubtitles = false;
 		FrontEndMenuManager.m_PrefsShowLegends = true;
 		FrontEndMenuManager.m_PrefsRadarMode = 0;
@@ -460,6 +464,7 @@ CMenuScreenCustom aScreens[] = {
 	{ "FEH_DIS", MENUPAGE_OPTIONS, new CCustomScreenLayout({40, 78, 25, true}), nil,
 		MENUACTION_BRIGHTNESS,	"FED_BRI", {nil, SAVESLOT_NONE, MENUPAGE_DISPLAY_SETTINGS}, 0, 0, MENUALIGN_LEFT,
 		MENUACTION_DRAWDIST,	"FEM_LOD", {nil, SAVESLOT_NONE, MENUPAGE_DISPLAY_SETTINGS}, 0, 0, MENUALIGN_LEFT,
+		LIGHT_DIST_SLIDER
 		DENSITY_SLIDERS
 #ifdef LEGACY_MENU_OPTIONS
 		MENUACTION_FRAMESYNC,	"FEM_VSC", {nil, SAVESLOT_NONE, MENUPAGE_DISPLAY_SETTINGS}, 0, 0, MENUALIGN_LEFT,
@@ -494,6 +499,7 @@ CMenuScreenCustom aScreens[] = {
 #endif
 		MENUACTION_BRIGHTNESS,	"FED_BRI", { nil, SAVESLOT_NONE, MENUPAGE_DISPLAY_SETTINGS }, 0, 0, MENUALIGN_LEFT,
 		MENUACTION_DRAWDIST,	"FEM_LOD", { nil, SAVESLOT_NONE, MENUPAGE_DISPLAY_SETTINGS }, 0, 0, MENUALIGN_LEFT,
+		LIGHT_DIST_SLIDER
 		DENSITY_SLIDERS
 		CUTSCENE_BORDERS_TOGGLE
 		FREE_CAM_TOGGLE

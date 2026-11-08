@@ -17,6 +17,12 @@
 
 namespace customworld {
 
+#ifdef ANDROID
+enum { MAX_IDE_MODEL_NAME_LEN = 23, MAX_IDE_TXD_NAME_LEN = 31 };
+#else
+enum { MAX_IDE_MODEL_NAME_LEN = 20, MAX_IDE_TXD_NAME_LEN = 19 };
+#endif
+
 struct Model {
     enum Kind { OBJECT, TIME_OBJECT, ANIM_OBJECT, PED, VEHICLE, WEAPON } kind;
     int id;
@@ -34,8 +40,14 @@ struct Model {
 
 struct Instance {
     int id, interior, lod;
+    int instIndex;          // 0-based line index inside the IPL's inst section
     std::string name;
     float pos[3], quat[4];  // x, y, z, w
+    Instance() : id(-1), interior(0), lod(-1), instIndex(-1) {
+        pos[0] = pos[1] = pos[2] = 0.0f;
+        quat[0] = quat[1] = quat[2] = 0.0f;
+        quat[3] = 1.0f;
+    }
 };
 
 // Identical instances exported into multiple IPLs need only one building;
@@ -91,11 +103,12 @@ struct ModelIndex {
     std::map<std::string, std::string> txdParents; // lower(child) -> parent
     size_t conflicts, sharedNames;
     ModelIndex() : conflicts(0), sharedNames(0) {}
-    void Add(const Model &m) {
+    void Add(const Model &m, bool preserveExistingId = false) {
         std::string key = Lower(m.name);
         std::map<int, std::string>::iterator prev = lastNameForId.find(m.id);
         if(prev != lastNameForId.end() && prev->second != key) conflicts++;
-        lastNameForId[m.id] = key;
+        if(!preserveExistingId || prev == lastNameForId.end())
+            lastNameForId[m.id] = key;
         std::map<std::string, Model>::iterator same = definitions.find(key);
         if(same != definitions.end() && same->second.id != m.id) sharedNames++;
         definitions[key] = m;
@@ -200,7 +213,7 @@ inline bool ParseModel(const std::vector<std::string> &t, Model &m)
 {
     if(t.size() < 5 || t.size() > 10 || !Int(t[0], m.id) || m.id < 0) return false;
     m.name = ModelName(t[1]);
-    if(!Name(m.name, 20)) return false; // CBaseModelInfo::m_name[21]
+    if(!Name(m.name, MAX_IDE_MODEL_NAME_LEN)) return false;
     m.anim.clear();
     m.timeOn = m.timeOff = -1;
     if(m.kind == Model::ANIM_OBJECT) {
@@ -214,14 +227,14 @@ inline bool ParseModel(const std::vector<std::string> &t, Model &m)
         // this exact duplication, but never truncate an arbitrary name.
         if(m.txd.size() > 19 && Lower(m.txd) == Lower(m.name + m.name))
             m.txd = m.name;
-        if(!Name(m.txd, 19)) return false;
+        if(!Name(m.txd, MAX_IDE_TXD_NAME_LEN)) return false;
         m.anim = t[3]; // VC has no compatible per-object SA animation here.
         if(!Float(t[4], m.distance) || !UInt(t[5], m.flags)) return false;
     } else {
         m.txd = ModelName(t[2]);
         if(m.txd.size() > 19 && Lower(m.txd) == Lower(m.name + m.name))
             m.txd = m.name;
-        if(!Name(m.txd, 19)) return false;
+        if(!Name(m.txd, MAX_IDE_TXD_NAME_LEN)) return false;
         size_t end = t.size();
         if(m.kind == Model::TIME_OBJECT) {
             if(end == 5) {
@@ -268,7 +281,7 @@ inline bool ParsePed(const std::vector<std::string> &t, Model &m)
     m.pedStats = t[4];
     m.animGroup = t[5];
     m.anim = t[8];
-    if(!Name(m.name, 20) || !Name(m.txd, 19) || !Name(m.subtype, 24) ||
+    if(!Name(m.name, MAX_IDE_MODEL_NAME_LEN) || !Name(m.txd, MAX_IDE_TXD_NAME_LEN) || !Name(m.subtype, 24) ||
        !Name(m.pedStats, 31) || !Name(m.animGroup, 31) || !Name(m.anim, 63) ||
        !Hex(t[6], m.driveMask) || !UInt(t[7], m.flags) ||
        !Int(t[9], m.radio1) || m.radio1 < -1 || m.radio1 > 255 ||
@@ -291,7 +304,7 @@ inline bool ParseVehicle(const std::vector<std::string> &t, Model &m)
     m.anim = t[6];
     m.vehicleClass = Lower(t[7]);
     unsigned frequency, level;
-    if(!Name(m.name, 20) || !Name(m.txd, 19) || !Name(m.subtype, 16) ||
+    if(!Name(m.name, MAX_IDE_MODEL_NAME_LEN) || !Name(m.txd, MAX_IDE_TXD_NAME_LEN) || !Name(m.subtype, 16) ||
        !Name(m.handling, 16) || !Name(m.gameName, 31) ||
        !Name(m.anim, 63) || !Name(m.vehicleClass, 31) ||
        !UInt(t[8], frequency) || frequency > 255 ||
@@ -309,7 +322,7 @@ inline bool ParseWeapon(const std::vector<std::string> &t, Model &m)
     if(t.size() != 3 || !Int(t[0], m.id) || m.id < 0) return false;
     m.name = ModelName(t[1]);
     m.txd = m.name; // SA WEAP supplies no TXD; use same-named IMG pair if present
-    return Name(m.name, 20) && Name(m.txd, 19) &&
+    return Name(m.name, MAX_IDE_MODEL_NAME_LEN) && Name(m.txd, MAX_IDE_TXD_NAME_LEN) &&
            Float(t[2], m.distance) && m.distance > 0.0f && m.distance < 100000.0f;
 }
 
@@ -320,7 +333,7 @@ inline bool ParseInstance(const std::vector<std::string> &t, Instance &i)
        !Int(t[2], i.interior) || i.interior < 0 || i.interior > 127)
         return false;
     i.name = ModelName(t[1]);
-    if(!Name(i.name, 20)) return false;
+    if(!Name(i.name, MAX_IDE_MODEL_NAME_LEN)) return false;
     for(int k = 0; k < 3; k++)
         if(!Float(t[3+k], i.pos[k]) || std::fabs(i.pos[k]) > 100000.0f) return false;
     double norm = 0;
@@ -333,6 +346,7 @@ inline bool ParseInstance(const std::vector<std::string> &t, Instance &i)
     for(int k = 0; k < 4; k++) i.quat[k] *= scale;
     i.lod = -1;
     if(t.size() == 10 || Int(t[10], i.lod)) return true;
+    if(t[10] == "-1-1") { i.lod = -1; return true; }
     // Quest/race IPLs export a floating-point draw distance here (200.0 or
     // 299.0), not an index into the inst section. Their IDE already supplies
     // that distance; never turn it into a LOD link to an unrelated object.
@@ -366,11 +380,13 @@ Stats ParseWithTxdParents(const unsigned char *data, size_t size, bool ide,
     Stats stats;
     if(!data || size > 64u*1024u*1024u) { stats.rejected++; return stats; }
     std::string section;
+    int instLineIdx = 0;
     for(size_t pos = 0; pos < size;) {
         size_t end = pos;
         while(end < size && data[end] != '\n') end++;
         size_t n = end - pos;
         if(n > 511 || std::memchr(data + pos, 0, n) != NULL) {
+            if(!ide && section == "inst") instLineIdx++;
             stats.overlong++; pos = end + (end < size); continue;
         }
         std::string line((const char *)data + pos, n);
@@ -385,11 +401,17 @@ Stats ParseWithTxdParents(const unsigned char *data, size_t size, bool ide,
         if(t.size() == 1) {
             std::string keyword = Lower(t[0]);
             if(keyword == "end") section.clear();
-            else section = keyword; // BR files do not all use 'end' between sections
+            else {
+                section = keyword; // BR files do not all use 'end' between sections
+                if(section == "inst") instLineIdx = 0;
+            }
             continue;
         }
         if(ide && (section == "objs" || section == "tobj" || section == "anim" ||
                    section == "cars" || section == "peds" || section == "weap")) {
+            // SA/BR peds.ide supports inline FEET_OFFSET = <float> metadata directives.
+            if(section == "peds" && Lower(t[0]).compare(0, 11, "feet_offset") == 0)
+                continue;
             Model m;
             m.kind = section == "tobj" ? Model::TIME_OBJECT :
                      section == "anim" ? Model::ANIM_OBJECT :
@@ -414,6 +436,7 @@ Stats ParseWithTxdParents(const unsigned char *data, size_t size, bool ide,
                 stats.rejected++;
             }
         } else if(!ide && section == "inst") {
+            int curInstIdx = instLineIdx++;
             // Two BRmap_Interiors records contain "2499,8149" for their Z
             // coordinate. Repair ONLY this unambiguous 12-field shape; a
             // global decimal-comma rule would corrupt ordinary CSV records.
@@ -425,7 +448,7 @@ Stats ParseWithTxdParents(const unsigned char *data, size_t size, bool ide,
                 t.erase(t.begin()+6);
             }
             Instance i;
-            if(ParseInstance(t, i)) { onInstance(i); stats.records++; }
+            if(ParseInstance(t, i)) { i.instIndex = curInstIdx; onInstance(i); stats.records++; }
             else stats.rejected++;
         }
         // Other sections (e.g. BR occl and 2dfx) do not have VC's layout.

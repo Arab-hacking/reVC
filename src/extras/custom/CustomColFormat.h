@@ -29,6 +29,9 @@ inline float F32(const uint8_t *p) {
 }
 inline bool Tag(const uint8_t *p) {
     return std::memcmp(p, "COLL", 4) == 0 ||
+#ifdef ANDROID
+           std::memcmp(p, "BOLL", 4) == 0 ||
+#endif
            std::memcmp(p, "COL2", 4) == 0 ||
            std::memcmp(p, "COL3", 4) == 0;
 }
@@ -41,6 +44,15 @@ inline size_t Index(const uint8_t *data, size_t length, std::vector<Block> &bloc
     if(!data) return length ? 1 : 0;
     while(pos < length) {
         bool padding = true;
+#ifdef ANDROID
+        if(length-pos >= 8 && (std::memcmp(data+pos, "CLST", 4) == 0 || std::memcmp(data+pos, "CLSF", 4) == 0)) {
+            uint32_t skipSz = U32(data+pos+4);
+            if(skipSz >= 24 && skipSz <= length-pos-8) {
+                pos += (size_t)skipSz+8;
+                continue;
+            }
+        }
+#endif
         if(length-pos < 8 || !Tag(data+pos)) {
             for(size_t k = pos; k < length; k++)
                 if(data[k]) { padding = false; break; }
@@ -51,7 +63,7 @@ inline size_t Index(const uint8_t *data, size_t length, std::vector<Block> &bloc
         if(size < 64 || size > length-pos-8) { bad++; break; }
         const uint8_t *name = data+pos+8;
         const uint8_t *end = (const uint8_t *)std::memchr(name, 0, 22);
-        if(!end || end == name || end-name > 20) bad++;
+        if(!end || end == name || end-name > 21) bad++;
         else {
             bool printable = true;
             for(const uint8_t *p = name; p < end; p++)

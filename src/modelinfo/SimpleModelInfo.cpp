@@ -120,7 +120,7 @@ CSimpleModelInfo::GetLodDistance(int i)
 {
 	float mult = TheCamera.LODDistMultiplier;
 #ifdef ANDROID
-	if(mult < 1.0f) mult = 1.0f;
+	if(mult < DRAWDIST_MIN) mult = DRAWDIST_MIN;
 #endif
 	return m_lodDistances[i] * mult;
 }
@@ -130,7 +130,7 @@ CSimpleModelInfo::GetNearDistance(void)
 {
 	float mult = TheCamera.LODDistMultiplier;
 #ifdef ANDROID
-	if(mult < 1.0f) mult = 1.0f;
+	if(mult < DRAWDIST_MIN) mult = DRAWDIST_MIN;
 #endif
 	return m_lodDistances[2] * mult;
 }
@@ -145,7 +145,7 @@ CSimpleModelInfo::GetLargestLodDistance(void)
 		d = m_lodDistances[m_firstDamaged-1];
 	float mult = TheCamera.LODDistMultiplier;
 #ifdef ANDROID
-	if(mult < 1.0f) mult = 1.0f;
+	if(mult < DRAWDIST_MIN) mult = DRAWDIST_MIN;
 #endif
 	return d * mult;
 }

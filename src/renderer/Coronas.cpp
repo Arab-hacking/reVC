@@ -15,6 +15,8 @@
 #include "Coronas.h"
 #include "PointLights.h"
 #include "Shadows.h"
+#include "Renderer.h"
+#include "ModelInfo.h"
 #include "Clock.h"
 #include "Bridge.h"
 
@@ -744,9 +746,23 @@ CEntity::ProcessLightsForEntity(void)
 	flashTimer2 = 0;
 	flashTimer3 = 0;
 
-	n = CModelInfo::GetModelInfo(GetModelIndex())->GetNum2dEffects();
+	CBaseModelInfo *baseMi = CModelInfo::GetModelInfo(GetModelIndex());
+	if(baseMi == nil)
+		return;
+	const float lightDistScale = Clamp(CRenderer::ms_fLightDistScale, LIGHTDIST_MIN, LIGHTDIST_MAX);
+	float modelMaxDist = 0.0f;
+	bool syncCoronaToMesh = false;
+	bool modelNoFade = false;
+	if(baseMi->IsBuilding()){
+		CSimpleModelInfo *smi = (CSimpleModelInfo*)baseMi;
+		modelMaxDist = smi->GetLargestLodDistance();
+		syncCoronaToMesh = !smi->m_isBigBuilding && modelMaxDist > 0.0f;
+		modelNoFade = !!smi->m_noFade;
+	}
+
+	n = baseMi->GetNum2dEffects();
 	for(i = 0; i < n; i++, flashTimer1 += 0x80, flashTimer2 += 0x100, flashTimer3 += 0x200){
-		effect = CModelInfo::GetModelInfo(GetModelIndex())->Get2dEffect(i);
+		effect = baseMi->Get2dEffect(i);
 
 		switch(effect->type){
 		case EFFECT_LIGHT:
@@ -851,19 +867,35 @@ CEntity::ProcessLightsForEntity(void)
 				return;
 			}
 
-			// Corona
-			if(effect->light.corona && effect->light.size > 0.0f){
+			// Corona (synchronized with LightDistance and static pole draw distance)
+			float coronaDist;
+			coronaDist = effect->light.dist * lightDistScale;
+			float coronaMeshFade;
+			coronaMeshFade = 1.0f;
+			if(syncCoronaToMesh){
+				if(coronaDist > modelMaxDist)
+					coronaDist = modelMaxDist;
+				if(!modelNoFade && modelMaxDist > FADE_DISTANCE){
+					float camDist = (pos - TheCamera.GetPosition()).Magnitude();
+					if(camDist > modelMaxDist - FADE_DISTANCE)
+						coronaMeshFade = Clamp((modelMaxDist - camDist) / FADE_DISTANCE, 0.0f, 1.0f);
+				}
+			}
+			if(effect->light.corona && effect->light.size > 0.0f && coronaDist > 1.0f && coronaMeshFade > 0.01f){
+				uint8 cr = (uint8)Clamp((int)(effect->col.r * coronaMeshFade + 0.5f), 0, 255);
+				uint8 cg = (uint8)Clamp((int)(effect->col.g * coronaMeshFade + 0.5f), 0, 255);
+				uint8 cb = (uint8)Clamp((int)(effect->col.b * coronaMeshFade + 0.5f), 0, 255);
 				if(lightOn)
 					CCoronas::RegisterCorona((uintptr)this + i,
-						effect->col.r, effect->col.g, effect->col.b, 255,
-						pos, effect->light.size, effect->light.dist,
+						cr, cg, cb, 255,
+						pos, effect->light.size, coronaDist,
 						effect->light.corona, effect->light.flareType, effect->light.roadReflection,
 						effect->light.flags&LIGHTFLAG_LOSCHECK, CCoronas::STREAK_OFF, 0.0f,
 						!!(effect->light.flags&LIGHTFLAG_LONG_DIST));
 				else if(lightFlickering)
 					CCoronas::RegisterCorona((uintptr)this + i,
 						0, 0, 0, 255,
-						pos, effect->light.size, effect->light.dist,
+						pos, effect->light.size, coronaDist,
 						effect->light.corona, effect->light.flareType, effect->light.roadReflection,
 						effect->light.flags&LIGHTFLAG_LOSCHECK, CCoronas::STREAK_OFF, 0.0f,
 						!!(effect->light.flags&LIGHTFLAG_LONG_DIST));
@@ -873,16 +905,17 @@ CEntity::ProcessLightsForEntity(void)
 			bool alreadyProcessedFog;
 			alreadyProcessedFog = false;
 			if(effect->light.range != 0.0f && lightOn){
+				float scaledRange = effect->light.range * Clamp(0.85f + 0.25f * lightDistScale, 0.85f, 1.60f);
 				if(effect->col.r == 0 && effect->col.g == 0 && effect->col.b == 0){
 					CPointLights::AddLight(CPointLights::LIGHT_POINT,
 						pos, CVector(0.0f, 0.0f, 0.0f),
-						effect->light.range,
+						scaledRange,
 						0.0f, 0.0f, 0.0f,
 						CPointLights::FOG_NONE, true);
 				}else{
 					CPointLights::AddLight(CPointLights::LIGHT_POINT,
 						pos, CVector(0.0f, 0.0f, 0.0f),
-						effect->light.range,
+						scaledRange,
 						effect->col.r*CTimeCycle::GetSpriteBrightness()/255.0f,
 						effect->col.g*CTimeCycle::GetSpriteBrightness()/255.0f,
 						effect->col.b*CTimeCycle::GetSpriteBrightness()/255.0f,
@@ -910,6 +943,7 @@ CEntity::ProcessLightsForEntity(void)
 
 			// Light shadow
 			if(effect->light.shadow && effect->light.shadowSize != 0.0f){
+				const float shadowDrawDist = 90.0f * lightDistScale;
 				if(lightOn){
 					CShadows::StoreStaticShadow((uintptr)this + i, SHADOWTYPE_ADDITIVE,
 						effect->light.shadow, &pos,
@@ -919,14 +953,14 @@ CEntity::ProcessLightsForEntity(void)
 						effect->col.r*CTimeCycle::GetSpriteBrightness()*effect->light.shadowIntensity/255.0f,
 						effect->col.g*CTimeCycle::GetSpriteBrightness()*effect->light.shadowIntensity/255.0f,
 						effect->col.b*CTimeCycle::GetSpriteBrightness()*effect->light.shadowIntensity/255.0f,
-						15.0f, 1.0f, 40.0f, false, 0.0f);
+						24.0f, 1.0f, shadowDrawDist, false, 0.0f);
 				}else if(lightFlickering){
 					CShadows::StoreStaticShadow((uintptr)this + i, SHADOWTYPE_ADDITIVE,
 						effect->light.shadow, &pos,
 						effect->light.shadowSize, 0.0f,
 						0.0f, -effect->light.shadowSize,
 						0, 0.0f, 0.0f, 0.0f,
-						15.0f, 1.0f, 40.0f, false, 0.0f);
+						24.0f, 1.0f, shadowDrawDist, false, 0.0f);
 				}
 			}
 			break;

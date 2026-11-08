@@ -81,6 +81,7 @@ CVUVECTOR CRenderer::ms_vecCameraPosition;
 CVehicle *CRenderer::m_pFirstPersonVehicle;
 bool CRenderer::m_loadingPriority;
 float CRenderer::ms_lodDistScale = 1.2f;
+float CRenderer::ms_fLightDistScale = LIGHTDIST_DEFAULT;
 
 // unused
 BlockedRange CRenderer::aBlockedRanges[16];
@@ -177,7 +178,8 @@ CRenderer::PreRender(void)
 			const CVector fromCam = pl.coors - camPos;
 			if(DotProduct(fromCam, camFwd) < -pl.radius * 1.15f)
 				continue;
-			if(fromCam.MagnitudeSqr() > sq(185.0f + pl.radius))
+			const float maxSceneLightDist = 185.0f * Max(1.0f, CRenderer::ms_fLightDistScale) + pl.radius;
+			if(fromCam.MagnitudeSqr() > sq(maxSceneLightDist))
 				continue;
 
 			const float d2 = (pl.coors - focusPos).MagnitudeSqr();

@@ -560,7 +560,12 @@ bool LoadINISettings()
 #endif
 	ReadIniIfExists("Audio", "DynamicAcoustics", &FrontEndMenuManager.m_PrefsDMA);
 	ReadIniIfExists("Display", "Brightness", &FrontEndMenuManager.m_PrefsBrightness);
-	ReadIniIfExists("Display", "DrawDistance", &FrontEndMenuManager.m_PrefsLOD);
+	if (ReadIniIfExists("Display", "DrawDistance", &FrontEndMenuManager.m_PrefsLOD)) {
+		FrontEndMenuManager.m_PrefsLOD = Clamp(FrontEndMenuManager.m_PrefsLOD, DRAWDIST_MIN, DRAWDIST_MAX);
+		CRenderer::ms_lodDistScale = FrontEndMenuManager.m_PrefsLOD;
+	}
+	if (ReadIniIfExists("Display", "LightDistance", &CRenderer::ms_fLightDistScale))
+		CRenderer::ms_fLightDistScale = Clamp(CRenderer::ms_fLightDistScale, LIGHTDIST_MIN, LIGHTDIST_MAX);
 	ReadIniIfExists("Display", "Subtitles", &FrontEndMenuManager.m_PrefsShowSubtitles);
 	ReadIniIfExists("Graphics", "AspectRatio", &FrontEndMenuManager.m_PrefsUseWideScreen);
 	ReadIniIfExists("Graphics", "FrameLimiter", &FrontEndMenuManager.m_PrefsFrameLimiter);
@@ -686,6 +691,7 @@ void SaveINISettings()
 	StoreIni("Audio", "DynamicAcoustics", FrontEndMenuManager.m_PrefsDMA);
 	StoreIni("Display", "Brightness", FrontEndMenuManager.m_PrefsBrightness);
 	StoreIni("Display", "DrawDistance", FrontEndMenuManager.m_PrefsLOD);
+	StoreIni("Display", "LightDistance", CRenderer::ms_fLightDistScale);
 	StoreIni("Display", "Subtitles", FrontEndMenuManager.m_PrefsShowSubtitles);
 	StoreIni("Graphics", "AspectRatio", FrontEndMenuManager.m_PrefsUseWideScreen);
 #ifdef LEGACY_MENU_OPTIONS

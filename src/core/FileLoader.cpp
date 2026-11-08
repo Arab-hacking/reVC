@@ -819,6 +819,18 @@ InstallCustomModel2dfxLights(CBaseModelInfo *info, const std::vector<SAStaticMod
 
 	if(particleSlot != -1)
 		CTxdStore::PopCurrentTxd();
+
+	// Keep static light-bearing fixtures & lampposts visible as far as their coronas
+	// so coronas never float in mid-air after a short-drawDist pole disappears.
+	if(info->IsBuilding() && info->GetNum2dEffects() > 0){
+		CSimpleModelInfo *smi = (CSimpleModelInfo*)info;
+		if(!smi->m_isBigBuilding && smi->m_lodDistances[0] > 0.0f && smi->m_lodDistances[0] < 299.0f){
+			float boosted = SAStaticModel::EffectiveStaticDrawDistance(
+				smi->GetModelName(), smi->m_lodDistances[0], true);
+			if(boosted > smi->m_lodDistances[0])
+				smi->m_lodDistances[0] = boosted;
+		}
+	}
 }
 #endif
 

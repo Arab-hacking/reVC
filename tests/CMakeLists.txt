@@ -37,6 +37,11 @@ target_include_directories(mobile_touch_math_tests PRIVATE ../src/extras/custom)
 set_target_properties(mobile_touch_math_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
 add_test(NAME mobile_touch_math_tests COMMAND mobile_touch_math_tests)
 
+add_executable(br_archive_parity_tests BrArchiveParityTests.cpp)
+target_include_directories(br_archive_parity_tests PRIVATE ../src/extras/custom)
+set_target_properties(br_archive_parity_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+add_test(NAME br_archive_parity_tests COMMAND br_archive_parity_tests)
+
 add_executable(native_map_options_tests NativeMapOptionsTests.cpp)
 set_target_properties(native_map_options_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
 add_test(NAME native_map_options_tests COMMAND native_map_options_tests)

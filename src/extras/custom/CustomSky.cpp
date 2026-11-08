@@ -71,6 +71,7 @@ static rw::Texture *s_skyDomeNormalTex = nil;
 static bool s_skyDomeUseProcedural = false;
 static bool s_skyDomeProcShaderTried = false;
 static GLint s_uSkyTopLoc = -1;
+static GLint s_uSkyTopColorLoc = -1;
 static GLint s_uSkyHorizonLoc = -1;
 static GLint s_uSunColorLoc = -1;
 static GLint s_uSunDirLoc = -1;
@@ -94,6 +95,7 @@ static const char *s_skyDomeFragSrc =
 "uniform sampler2D tex0;\n"
 "uniform sampler2D tex1;\n"
 "uniform vec4 u_skyTop;\n"
+"uniform vec4 u_skyTopColor;\n"
 "uniform vec4 u_skyHorizon;\n"
 "uniform vec4 u_sunColor;\n"
 "uniform vec4 u_skySunDir;\n"
@@ -135,13 +137,24 @@ static const char *s_skyDomeFragSrc =
 "	if(u_atmosphere.x >= 1.5){\n"
 "		float highSun = smoothstep(0.02, 0.58, fsun.y);\n"
 "		float sunsetBand = smoothstep(-0.18, 0.08, fsun.y) * (1.0 - smoothstep(0.08, 0.42, fsun.y));\n"
-"		vec3 dayZenith = mix(vec3(0.18, 0.34, 0.64), vec3(0.16, 0.42, 0.84), highSun);\n"
-"		vec3 dayHoriz = mix(vec3(0.84, 0.56, 0.38), vec3(0.64, 0.78, 0.94), highSun);\n"
-"		dayHoriz = mix(dayHoriz, clamp(u_skyHorizon.rgb, vec3(0.15), vec3(0.98)), 0.38);\n"
-"		vec3 nightZenithM = vec3(0.022, 0.036, 0.082);\n"
-"		vec3 nightHorizM = vec3(0.062, 0.090, 0.172);\n"
-"		float hGrad = pow(clamp(py, 0.0, 1.0), 0.52);\n"
+"		float absBlend = clamp(abs(pos.y), 0.0, 1.0);\n"
+"		float horizBand = clamp(pos.y, 0.0, 0.20) * 5.0;\n"
+"		vec3 tcTop = clamp(u_skyTopColor.rgb, vec3(0.015), vec3(0.98));\n"
+"		vec3 tcBot = clamp(u_skyHorizon.rgb, vec3(0.025), vec3(0.98));\n"
+"		vec3 dayZenith = mix(mix(vec3(0.18, 0.34, 0.64), vec3(0.16, 0.42, 0.84), highSun), tcTop, 0.55);\n"
+"		vec3 dayHoriz = mix(mix(vec3(0.84, 0.56, 0.38), vec3(0.64, 0.78, 0.94), highSun), tcBot, 0.52);\n"
+"		vec3 nightZenithM = mix(vec3(0.020, 0.032, 0.076), tcTop * 0.75, 0.45);\n"
+"		vec3 nightHorizM = mix(vec3(0.058, 0.086, 0.165), tcBot * 0.75, 0.45);\n"
+"		float hGrad = mix(horizBand * 0.35, pow(absBlend, 0.54), 0.78);\n"
 "		vec3 mSky = mix(mix(dayHoriz, dayZenith, hGrad), mix(nightHorizM, nightZenithM, hGrad), nightMix);\n"
+"		float starVis = max(u_skyTopColor.w, smoothstep(0.45, 0.88, nightMix)) * smoothstep(0.06, 0.28, pos.y);\n"
+"		if(starVis > 0.01){\n"
+"			vec3 starCell = floor(pos * 190.0);\n"
+"			float sh = br_sky_hash(dot(starCell, vec3(12.9898, 78.233, 37.719)));\n"
+"			float twinkle = 0.72 + 0.28 * sin(u_cloudParams.x * 1.8 + sh * 43.0);\n"
+"			float starDot = smoothstep(0.9935, 0.9992, sh) * twinkle * starVis;\n"
+"			mSky += vec3(0.82, 0.88, 1.0) * (starDot * 0.85);\n"
+"		}\n"
 "		float sunGlow = pow(max(mu, 0.0), 6.0) * (1.0 - hGrad * 0.72) * sunsetBand;\n"
 "		mSky += vec3(0.62, 0.30, 0.12) * sunGlow;\n"
 "		float sunAboveM = smoothstep(-0.03, 0.08, fsun.y) * step(0.0, pos.y);\n"
@@ -149,13 +162,14 @@ static const char *s_skyDomeFragSrc =
 "		float sunHaloM = pow(max(mu, 0.0), 32.0) * 0.24 * sunAboveM;\n"
 "		vec3 sunColM = mix(vec3(1.0, 0.84, 0.64), clamp(u_sunColor.rgb, vec3(0.6), vec3(1.0)), 0.45);\n"
 "		mSky += sunColM * (sunDiscM * 0.95 + sunHaloM);\n"
-"		if(u_atmosphere.x >= 2.15 && pos.y > 0.03){\n"
+"		if(u_atmosphere.x >= 1.85 && pos.y > 0.03){\n"
 "			float cFade = smoothstep(0.03, 0.22, pos.y);\n"
 "			vec3 cCoord = (pos / max(pos.y, 0.07)) * 0.85 + vec3(u_cloudParams.x * 0.25, 0.0, u_cloudParams.x * 0.12);\n"
 "			float n2 = br_sky_noise(cCoord) * 0.66 + br_sky_noise(cCoord * 2.15) * 0.34;\n"
 "			float cMask = smoothstep(1.0 - u_cloudParams.z * 0.92, 0.96, n2) * cFade * 0.68;\n"
-"			vec3 cDay = mix(vec3(0.88, 0.74, 0.64), vec3(0.96, 0.97, 0.99), highSun);\n"
-"			vec3 cColM = mix(cDay, vec3(0.10, 0.14, 0.24), nightMix);\n"
+"			float sunCloudLit = pow(max(mu, 0.0), 4.0) * (1.0 - nightMix);\n"
+"			vec3 cDay = mix(vec3(0.88, 0.74, 0.64), vec3(0.96, 0.97, 0.99), highSun) + sunColM * (sunCloudLit * 0.28);\n"
+"			vec3 cColM = mix(cDay, vec3(0.09, 0.13, 0.22), nightMix);\n"
 "			mSky = mix(mSky, cColM, cMask);\n"
 "		}\n"
 "		if(pos.y < 0.0)\n"
@@ -244,12 +258,17 @@ SkyDomeProcRenderCB(rw::Atomic *atomic, rw::gl3::InstanceDataHeader *header)
 
 	s_skyDomeProcShader->use();
 
+	float topR = CTimeCycle::GetSkyTopRed() / 255.0f;
+	float topG = CTimeCycle::GetSkyTopGreen() / 255.0f;
+	float topB = CTimeCycle::GetSkyTopBlue() / 255.0f;
 	float botR = CTimeCycle::GetSkyBottomRed() / 255.0f;
 	float botG = CTimeCycle::GetSkyBottomGreen() / 255.0f;
 	float botB = CTimeCycle::GetSkyBottomBlue() / 255.0f;
 	float sunR = CTimeCycle::GetSunCoronaRed() / 255.0f;
 	float sunG = CTimeCycle::GetSunCoronaGreen() / 255.0f;
 	float sunB = CTimeCycle::GetSunCoronaBlue() / 255.0f;
+	int curHour = CClock::GetHours();
+	float starFactor = (curHour <= 4 || curHour > 22) ? 1.0f : (curHour == 5 || curHour == 22 ? 0.45f : 0.0f);
 
 	CVector sunV = CTimeCycle::m_VectorToSun[CTimeCycle::m_CurrentStoredValue];
 	float sunVis = sunV.z > -0.15f ? Clamp((sunV.z + 0.15f) / 0.45f, 0.0f, 1.0f) : 0.0f;
@@ -261,6 +280,7 @@ SkyDomeProcRenderCB(rw::Atomic *atomic, rw::gl3::InstanceDataHeader *header)
 
 	// SkyboxDynamicClouds.fs scattering with tamed Mie forward peak (g=0.74) so sunset sky does not white-out
 	float uScat[4] = { 0.0025f, 0.00024f, 0.74f, 4.0f };
+	float uTopCol[4] = { topR, topG, topB, starFactor };
 	float uBot[4] = { botR, botG, botB, hasNormalBand };
 	float uSunCol[4] = { sunR, sunG, sunB, 1.0f };
 	// Swizzle GTA Z-up sun vector into SkyboxDynamicClouds Y-up convention: (x, z, y)
@@ -268,6 +288,7 @@ SkyDomeProcRenderCB(rw::Atomic *atomic, rw::gl3::InstanceDataHeader *header)
 	float uCloud[4] = { tSec * 0.035f, cirrusCov, cumulusCov, 0.35f };
 
 	if(s_uSkyTopLoc >= 0) glUniform4fv(s_uSkyTopLoc, 1, uScat);
+	if(s_uSkyTopColorLoc >= 0) glUniform4fv(s_uSkyTopColorLoc, 1, uTopCol);
 	if(s_uSkyHorizonLoc >= 0) glUniform4fv(s_uSkyHorizonLoc, 1, uBot);
 	if(s_uSunColorLoc >= 0) glUniform4fv(s_uSunColorLoc, 1, uSunCol);
 	if(s_uSunDirLoc >= 0) glUniform4fv(s_uSunDirLoc, 1, uSunDir);
@@ -300,6 +321,7 @@ EnsureSkyDomeProcShader(void)
 	s_skyDomeProcShader = rw::gl3::Shader::create(vs, fs);
 	if(s_skyDomeProcShader){
 		s_uSkyTopLoc = glGetUniformLocation(s_skyDomeProcShader->program, "u_skyTop");
+		s_uSkyTopColorLoc = glGetUniformLocation(s_skyDomeProcShader->program, "u_skyTopColor");
 		s_uSkyHorizonLoc = glGetUniformLocation(s_skyDomeProcShader->program, "u_skyHorizon");
 		s_uSunColorLoc = glGetUniformLocation(s_skyDomeProcShader->program, "u_sunColor");
 		s_uSunDirLoc = glGetUniformLocation(s_skyDomeProcShader->program, "u_skySunDir");
@@ -991,6 +1013,10 @@ CCustomSky::Render(const CVector &camPos, bool forEnvMap)
 			bool proc = s_skyDomeUseProcedural;
 #else
 			bool proc = false;
+#endif
+#if defined(LIBRW) && defined(RW_GL3)
+			if(proc)
+				rw::setAtmosphereParams(prevAtmos);
 #endif
 			if(!proc){
 				// Modulate single-texture panoramic SkyDome smoothly across time of day

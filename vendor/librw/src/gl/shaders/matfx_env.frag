@@ -47,6 +47,34 @@ main(void)
 	vec3 toEye = u_eye.xyz - v_worldPos;
 	vec3 V = toEye * inversesqrt(max(dot(toEye, toEye), 1.0e-6));
 	float envCoef = clamp(shininess, 0.0, 1.0);
+
+	if(u_atmosphere.x >= 1.5){
+		vec3 mRefl = reflect(-V, N);
+		vec2 mEnvUV = (u_texMatrix * vec4(mRefl, 1.0)).xy;
+		vec3 mEnvTex = pow(max(texture(tex1, mEnvUV).rgb, vec3(0.0)), vec3(0.85)) * v_envColor.rgb;
+		float mNoV = clamp(abs(dot(V, N)), 0.0, 1.0);
+		float mFres = clamp(0.14 + 0.86 * br_pow4(1.0 - mNoV), 0.14, 0.88);
+		float mSunLen2 = dot(u_sunDir.xyz, u_sunDir.xyz);
+		vec3 mL = mSunLen2 > 1.0e-6 ? u_sunDir.xyz * inversesqrt(mSunLen2) : vec3(0.0, 0.0, 1.0);
+		float mDay = smoothstep(-0.04, 0.20, mL.z);
+		vec3 mH = normalize(mL + V);
+		float mSunSpec = pow(max(dot(N, mH), 0.0), 48.0) * mDay * envCoef * 0.45;
+		vec3 mSpec = (mEnvTex * mFres * envCoef * 0.72 + vec3(mSunSpec)) * visibility;
+		vec3 mBase = BR_ShadeMobileWorldLinear(texCol.rgb, v_color.rgb, v_worldPos, v_worldNormal, 0.0);
+		vec4 mOut;
+		if(outAlpha >= 0.98){
+			mOut.rgb = BR_ApplyMobileColorGrade(mix(u_fogColor.rgb, mBase + mSpec, visibility));
+			mOut.a = outAlpha;
+		}else{
+			vec3 mGradedBase = BR_ApplyMobileColorGrade(mix(u_fogColor.rgb, mBase, visibility));
+			vec3 mGradedSpec = BR_ApplyMobileColorGrade(mSpec);
+			mOut.rgb = clamp(mGradedBase * outAlpha + mGradedSpec * fba, 0.0, 1.0);
+			mOut.a = clamp(outAlpha + br_luminance(mGradedSpec) * 0.32 * (1.0 - outAlpha), 0.0, 1.0);
+		}
+		FRAGCOLOR(mOut);
+		return;
+	}
+
 	float smoothness = mix(0.25, 0.92, envCoef);
 	float linRough = 1.0 - smoothness;
 	float ggxAlpha = max(1.0e-4, linRough * linRough);

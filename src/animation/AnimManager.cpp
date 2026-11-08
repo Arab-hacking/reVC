@@ -2491,6 +2491,12 @@ CAnimManager::LoadAnimFile_ANP23(RwStream *stream, const char *ident, bool compr
 			debug("ANP%c: %s has an impossible sequence count\n", ident[3], hier->name);
 			return;
 		}
+		if(numSeq == 0){
+			hier->numSequences = 0;
+			hier->sequences = nil;
+			hier->totalLength = 0.0f;
+			continue;
+		}
 		hier->numSequences = numSeq;
 		hier->sequences = new CAnimBlendSequence[numSeq];
 		CAnimBlendSequence *seq = hier->sequences;

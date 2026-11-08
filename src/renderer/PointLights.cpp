@@ -9,6 +9,7 @@
 #include "Collision.h"
 #include "Sprite.h"
 #include "Timer.h"
+#include "Renderer.h"
 #include "PointLights.h"
 
 int16 CPointLights::NumLights;
@@ -38,36 +39,54 @@ CPointLights::InitPerFrame(void)
 void
 CPointLights::AddLight(uint8 type, CVector coors, CVector dir, float radius, float red, float green, float blue, uint8 fogType, bool castExtraShadows)
 {
-	CVector dist;
-	float distance;
+	const CVector camPos = TheCamera.GetPosition();
+	const float lightDistScale = Clamp(CRenderer::ms_fLightDistScale, LIGHTDIST_MIN, LIGHTDIST_MAX);
+	const float maxPointDist = (type == LIGHT_FOGONLY || type == LIGHT_FOGONLY_ALWAYS)
+		? MAX_DIST
+		: (85.0f * lightDistScale);
 
-	// The check is done in some weird way in the game
-	// we're doing it a bit better here
-	if(NumLights >= NUMPOINTLIGHTS)
+	const CVector dist = coors - camPos;
+	if(Abs(dist.x) >= maxPointDist || Abs(dist.y) >= maxPointDist)
 		return;
 
-	dist = coors - TheCamera.GetPosition();
-	if(Abs(dist.x) < MAX_DIST && Abs(dist.y) < MAX_DIST){
-		distance = dist.Magnitude();
-		if(distance < MAX_DIST){
-			aLights[NumLights].type = type;
-			aLights[NumLights].fogType = fogType;
-			aLights[NumLights].coors = coors;
-			aLights[NumLights].dir = dir;
-			aLights[NumLights].radius = radius;
-			aLights[NumLights].castExtraShadows = castExtraShadows;
-			if(distance < MAX_DIST*0.75f){
-				aLights[NumLights].red = red;
-				aLights[NumLights].green = green;
-				aLights[NumLights].blue = blue;
-			}else{
-				float fade = 1.0f - (distance/MAX_DIST - 0.75f)*4.0f;
-				aLights[NumLights].red = red * fade;
-				aLights[NumLights].green = green * fade;
-				aLights[NumLights].blue = blue * fade;
+	const float distSq = dist.MagnitudeSqr();
+	if(distSq >= sq(maxPointDist))
+		return;
+
+	int slot = NumLights;
+	if(slot >= NUMPOINTLIGHTS){
+		int farthestIdx = -1;
+		float farthestDistSq = distSq;
+		for(int i = 0; i < NUMPOINTLIGHTS; i++){
+			const float d2 = (aLights[i].coors - camPos).MagnitudeSqr();
+			if(d2 > farthestDistSq){
+				farthestDistSq = d2;
+				farthestIdx = i;
 			}
-			NumLights++;
 		}
+		if(farthestIdx < 0)
+			return;
+		slot = farthestIdx;
+	}else{
+		NumLights++;
+	}
+
+	const float distance = Sqrt(distSq);
+	aLights[slot].type = type;
+	aLights[slot].fogType = fogType;
+	aLights[slot].coors = coors;
+	aLights[slot].dir = dir;
+	aLights[slot].radius = radius;
+	aLights[slot].castExtraShadows = castExtraShadows;
+	if(distance < maxPointDist * 0.75f){
+		aLights[slot].red = red;
+		aLights[slot].green = green;
+		aLights[slot].blue = blue;
+	}else{
+		float fade = Clamp(1.0f - (distance / maxPointDist - 0.75f) * 4.0f, 0.0f, 1.0f);
+		aLights[slot].red = red * fade;
+		aLights[slot].green = green * fade;
+		aLights[slot].blue = blue * fade;
 	}
 }
 

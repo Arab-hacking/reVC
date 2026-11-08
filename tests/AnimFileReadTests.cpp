@@ -372,6 +372,46 @@ main(void)
 	}
 	Check(CAnimManager::GetAnimName(ASSOCGRP_BUDDY, ANIM_WEAPON_RELOAD) == nil,
 		"unavailable weapon slots are not mistaken for valid clip names");
+
+	// ANP3 with a numSeq == 0 placeholder clip (like ped.ani's empty stub) must
+	// keep sequences == nil without new CAnimBlendSequence[0] and still parse subsequent clips.
+	{
+		std::vector<uint8> v;
+		v.insert(v.end(), "ANP3", "ANP3" + 4);
+		Name(v, "colt45", 24);
+		U32(v, 2); // 2 clips: clip 0 has 0 sequences, clip 1 has 1 sequence
+		U32(v, 1);
+		// Clip 0: empty stub
+		Name(v, "EMPTY_STUB", 24);
+		U32(v, 0); // numSeq == 0
+		U32(v, 0);
+		U32(v, 1);
+		// Clip 1: real clip immediately after
+		Name(v, "AFTER_EMPTY", 24);
+		U32(v, 1);
+		U32(v, 32);
+		U32(v, 1);
+		Name(v, " Root", 24);
+		U32(v, 4);
+		U32(v, 2);
+		U32(v, 0);
+		for (int i = 0; i < 2; i++) {
+			U16(v, 0); U16(v, 0); U16(v, 0); U16(v, 4096);
+			U16(v, i * 60);
+			U16(v, 0); U16(v, 0); U16(v, 0);
+		}
+		customFile = v;
+		CAnimManager::LoadSAAnimFileFromCustom("ANIM\\COLT45.IFP");
+		CAnimBlock *stubBlk = CAnimManager::GetAnimationBlock("sa_colt45");
+		Check(stubBlk && stubBlk->isLoaded, "ANP3 block with numSeq==0 clip loads cleanly");
+		CAnimBlendHierarchy *emptyH = CAnimManager::GetAnimation("EMPTY_STUB", stubBlk);
+		CAnimBlendHierarchy *afterH = CAnimManager::GetAnimation("AFTER_EMPTY", stubBlk);
+		Check(emptyH && emptyH->numSequences == 0 && emptyH->sequences == nil,
+			"numSeq==0 clip keeps sequences==nil without zero-length allocation");
+		Check(afterH && afterH->numSequences == 1 && afterH->sequences != nil,
+			"clip following numSeq==0 stub parses intact");
+	}
+
 	puts("Native VC / custom SA bank isolation, weapon clips, real IFP reader and door offsets OK");
 	return 0;
 }

@@ -3629,31 +3629,89 @@ CCustomModels::ForEachWorldFile(bool ide, WorldFileCallback callback, void *cont
 {
 	EnsureInitialised();
 	if(callback == nil) return;
-	std::set<std::string> active;
-	const bool selected = !ide && ReadActiveIpls(active);
 	const std::map<std::string, CustomSource> &world = ide ? customIdeFiles : customIplFiles;
 	const std::map<std::string, CustomSource> &loose = ide ? looseIdeFallbacks : looseIplFallbacks;
+	auto emitEntry = [&](const std::string &pathKey, const CustomSource &src) {
+		std::vector<uint8> bytes;
+		if(!ReadSource(src, bytes)) {
+			std::map<std::string, CustomSource>::const_iterator backup = loose.find(pathKey);
+			if(src.zipEntry < 0 || backup == loose.end() ||
+			   !ReadSource(backup->second, bytes)) {
+				CUSTOM_LOG("world %s: cannot read %s\n", ide ? "IDE" : "IPL", pathKey.c_str());
+				return;
+			}
+			CUSTOM_LOG("world %s: common.zip %s unreadable; falling back to loose file\n",
+				ide ? "IDE" : "IPL", pathKey.c_str());
+		}
+		if(ide && (pathKey == "data/peds.ide" || pathKey == "data/vehicles.ide"))
+			CUSTOM_LOG("common.zip actor IDE %s: read %u bytes\n",
+				pathKey.c_str(), (unsigned)bytes.size());
+		else if(ide && pathKey == "data/weapons.ide")
+			CUSTOM_LOG("common.zip weapon IDE %s: read %u bytes\n",
+				pathKey.c_str(), (unsigned)bytes.size());
+		callback(pathKey.c_str(), bytes.data(), bytes.size(), context);
+	};
+
+#ifdef ANDROID
+	if(ide && !commonZipConfig.ide.empty()) {
+		std::vector<std::string> ordered;
+		std::set<std::string> emitted;
+		static const char *const kAlwaysActorIdes[] = {
+			"data/peds.ide", "data/vehicles.ide", "data/weapons.ide"
+		};
+		for(size_t i = 0; i < commonZipConfig.ide.size(); i++) {
+			const std::string &key = commonZipConfig.ide[i];
+			if(world.find(key) != world.end() && emitted.insert(key).second)
+				ordered.push_back(key);
+		}
+		if(!ordered.empty()) {
+			for(size_t a = 0; a < sizeof(kAlwaysActorIdes)/sizeof(kAlwaysActorIdes[0]); a++) {
+				std::string key(kAlwaysActorIdes[a]);
+				if(world.find(key) != world.end() && emitted.insert(key).second)
+					ordered.push_back(key);
+			}
+			for(std::map<std::string, CustomSource>::const_iterator it = world.begin();
+			    it != world.end(); ++it) {
+				if(commonZipIdeFiles.find(it->first) == commonZipIdeFiles.end() &&
+				   emitted.insert(it->first).second)
+					ordered.push_back(it->first);
+			}
+			CUSTOM_LOG("common.bpc config.dat: loading %u active IDE path(s) in manifest order (skipping %u inactive)\n",
+				(unsigned)ordered.size(),
+				(unsigned)(world.size() >= ordered.size() ? world.size() - ordered.size() : 0));
+			for(size_t i = 0; i < ordered.size(); i++) {
+				std::map<std::string, CustomSource>::const_iterator it = world.find(ordered[i]);
+				if(it != world.end()) emitEntry(it->first, it->second);
+			}
+			return;
+		}
+	}
+#endif
+
+	std::set<std::string> active;
+	const bool selected = !ide && ReadActiveIpls(active);
+#ifdef ANDROID
+	if(!ide && selected && !commonZipConfig.ipl.empty()) {
+		std::set<std::string> emitted;
+		for(size_t i = 0; i < commonZipConfig.ipl.size(); i++) {
+			const std::string &key = commonZipConfig.ipl[i];
+			if(!active.count(key)) continue;
+			std::map<std::string, CustomSource>::const_iterator it = world.find(key);
+			if(it != world.end() && emitted.insert(key).second)
+				emitEntry(it->first, it->second);
+		}
+		for(std::map<std::string, CustomSource>::const_iterator it = world.begin();
+		    it != world.end(); ++it) {
+			if(active.count(it->first) && emitted.insert(it->first).second)
+				emitEntry(it->first, it->second);
+		}
+		return;
+	}
+#endif
 	for(std::map<std::string, CustomSource>::const_iterator it = world.begin();
 	    it != world.end(); ++it) {
 		if(selected && !active.count(it->first)) continue;
-		std::vector<uint8> bytes;
-		if(!ReadSource(it->second, bytes)) {
-			std::map<std::string, CustomSource>::const_iterator backup = loose.find(it->first);
-			if(it->second.zipEntry < 0 || backup == loose.end() ||
-			   !ReadSource(backup->second, bytes)) {
-				CUSTOM_LOG("world %s: cannot read %s\n", ide ? "IDE" : "IPL", it->first.c_str());
-				continue;
-			}
-			CUSTOM_LOG("world %s: common.zip %s unreadable; falling back to loose file\n",
-				ide ? "IDE" : "IPL", it->first.c_str());
-		}
-		if(ide && (it->first == "data/peds.ide" || it->first == "data/vehicles.ide"))
-			CUSTOM_LOG("common.zip actor IDE %s: read %u bytes\n",
-				it->first.c_str(), (unsigned)bytes.size());
-		else if(ide && it->first == "data/weapons.ide")
-			CUSTOM_LOG("common.zip weapon IDE %s: read %u bytes\n",
-				it->first.c_str(), (unsigned)bytes.size());
-		callback(it->first.c_str(), bytes.data(), bytes.size(), context);
+		emitEntry(it->first, it->second);
 	}
 }
 

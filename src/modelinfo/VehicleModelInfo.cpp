@@ -1616,9 +1616,15 @@ CVehicleModelInfo::SetEnvironmentMap(void)
 		SetEnvironmentMapCB(m_comps[i], nil);
 	if(m_wheelId != -1){
 		wheelmi = (CSimpleModelInfo*)CModelInfo::GetModelInfo(m_wheelId);
-		for(i = 0; i < wheelmi->m_numAtomics; i++){
-			ConfigureAtomicReflectionCB(wheelmi->m_atomics[i], nil);
-			SetEnvironmentMapCB(wheelmi->m_atomics[i], nil);
+		if(wheelmi){
+			for(i = 0; i < wheelmi->m_numAtomics; i++){
+				ConfigureAtomicReflectionCB(wheelmi->m_atomics[i], nil);
+				SetEnvironmentMapCB(wheelmi->m_atomics[i], nil);
+#ifdef EXTENDED_PIPELINES
+				if(wheelmi->m_atomics[i])
+					CustomPipes::AttachVehiclePipe((rw::Atomic*)wheelmi->m_atomics[i]);
+#endif
+			}
 		}
 	}
 

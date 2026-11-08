@@ -18,6 +18,7 @@
 #include "CustomColFormat.h"
 #include "CustomModels.h"
 #include "CustomWorldFormat.h"
+#include "SAStaticModel.h"
 #include "ModelNameIndex.h"
 #include "SavehDiag.h"
 #include "ModelInfo.h"
@@ -66,15 +67,19 @@ void ReadIde(const char *path, const unsigned char *data, size_t size, void *use
     IdeContext &ctx = *(IdeContext *)user;
     ctx.files++;
     bool isLodFile = false;
+    bool isVehModsFile = false;
     if(path) {
         std::string lp = customworld::Lower(path);
         if(lp.size() >= 7 && lp.compare(lp.size() - 7, 7, "lod.ide") == 0 &&
            (lp.size() == 7 || lp[lp.size() - 8] == '/' || lp[lp.size() - 8] == '\\'))
             isLodFile = true;
+        if(lp.size() >= 12 && lp.compare(lp.size() - 12, 12, "veh_mods.ide") == 0 &&
+           (lp.size() == 12 || lp[lp.size() - 13] == '/' || lp[lp.size() - 13] == '\\'))
+            isVehModsFile = true;
     }
     customworld::Stats stats = customworld::ParseIde(data, size,
-        [&ctx, isLodFile](const customworld::Model &m) {
-            ctx.Add(m);
+        [&ctx, isLodFile, isVehModsFile](const customworld::Model &m) {
+            ctx.Add(m, isVehModsFile);
             if(isLodFile)
                 ctx.lodIdeNames.insert(customworld::Lower(m.name));
         },
@@ -187,11 +192,20 @@ int FindSlot(const customworld::Instance &inst,
 
 void LinkLods(const std::vector<customworld::Instance> &instances, IplContext &ctx)
 {
+    std::unordered_map<int, size_t> byLineIdx;
+    byLineIdx.reserve(instances.size());
+    for(size_t n = 0; n < instances.size(); n++) {
+        int lineIdx = instances[n].instIndex >= 0 ? instances[n].instIndex : (int)n;
+        byLineIdx[lineIdx] = n;
+    }
     for(size_t n = 0; n < instances.size(); n++) {
         const customworld::Instance &near = instances[n];
-        if(near.lod < 0 || (size_t)near.lod >= instances.size() || (size_t)near.lod == n)
+        if(near.lod < 0)
             continue;
-        int nearSlot = FindSlot(near), farSlot = FindSlot(instances[near.lod]);
+        std::unordered_map<int, size_t>::const_iterator farIt = byLineIdx.find(near.lod);
+        if(farIt == byLineIdx.end() || farIt->second == n)
+            continue;
+        int nearSlot = FindSlot(near), farSlot = FindSlot(instances[farIt->second]);
         if(nearSlot < 0 || farSlot < 0 || nearSlot == farSlot) continue;
         CBaseModelInfo *nearInfo = CModelInfo::GetModelInfo(nearSlot);
         CBaseModelInfo *farInfo = CModelInfo::GetModelInfo(farSlot);
@@ -327,10 +341,10 @@ void ReadIpl(const char *path, const unsigned char *data, size_t size, void *use
     std::vector<customworld::Instance> instances;
     customworld::Stats stats = customworld::ParseIpl(data, size,
         [&instances](const customworld::Instance &i) { instances.push_back(i); });
-    // IPL LOD fields are zero-based indexes in this file's inst section. A
-    // malformed line would shift all subsequent indexes: do not link that
-    // file's LODs to the wrong model, but still place its good instances.
-    if(!stats.rejected && !stats.overlong) LinkLods(instances, ctx);
+    // Instance::instIndex records the exact 0-based line position inside inst
+    // even when an intermediate record is rejected or overlong, so valid LOD
+    // indices remain aligned with their target instance.
+    LinkLods(instances, ctx);
     for(size_t n = 0; n < instances.size(); n++) PlaceInstance(instances[n], ctx);
     ctx.parsed += (unsigned)stats.records;
     ctx.bad += (unsigned)stats.rejected;
@@ -599,7 +613,12 @@ void CCustomWorld::LoadIde(void)
         if(type == MITYPE_SIMPLE || type == MITYPE_TIME) {
             CSimpleModelInfo *object = (CSimpleModelInfo *)mi;
             object->SetNumAtomics(1);
-            float distances[3] = { m.distance, m.distance, m.distance };
+            float effDist = m.distance;
+#ifdef LIBRW
+            if(!ctx.lodIdeNames.count(key))
+                effDist = SAStaticModel::EffectiveStaticDrawDistance(m.name.c_str(), m.distance, false);
+#endif
+            float distances[3] = { effDist, effDist, effDist };
             object->SetLodDistances(distances);
             object->m_alpha = 255;
             // Only VC-compatible object flags; BR flags are not LOD IDs.

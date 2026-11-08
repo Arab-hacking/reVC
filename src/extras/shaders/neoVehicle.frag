@@ -117,19 +117,49 @@ main(void)
 		float mNoV = clamp(abs(dot(N, V)), 0.0, 1.0);
 		float mFresnel = mix(pow(1.0 - mNoV, 4.0), 1.0, clamp(fresnel, 0.18, 0.65));
 		vec3 mR = reflect(-V, N);
-		vec3 mEnvCol;
-		if(u_atmosphere.x >= 2.15){
-			vec3 mRp = normalize(vec3(mR.xy, abs(mR.z) + 1.0e-5));
-			vec2 mEnvUV = (mRp.xy / (1.0 + mRp.z)) * 0.485 + 0.5;
-			mEnvCol = pow(max(texture(tex1, vec2(mEnvUV.x, 1.0 - mEnvUV.y)).rgb, vec3(0.0)), vec3(0.8));
-		}else{
-			float rh = clamp(mR.z * 0.5 + 0.5, 0.0, 1.0);
-			mEnvCol = mix(mSkyAmb * 0.45, mSkyAmb * 1.25, smoothstep(0.35, 0.88, rh));
-		}
+		float rh = clamp(mR.z * 0.5 + 0.5, 0.0, 1.0);
+		vec3 mSkyRefl = mix(mSkyAmb * 0.45, mSkyAmb * 1.25, smoothstep(0.35, 0.88, rh));
+		vec3 mRp = normalize(vec3(mR.xy, abs(mR.z) + 1.0e-5));
+		vec2 mEnvUV = (mRp.xy / (1.0 + mRp.z)) * 0.485 + 0.5;
+		vec3 mTexRefl = pow(max(texture(tex1, vec2(mEnvUV.x, 1.0 - mEnvUV.y)).rgb, vec3(0.0)), vec3(0.85));
+		vec3 mEnvCol = u_atmosphere.x >= 2.15 ? mix(mSkyRefl, mTexRefl, 0.82) : mix(mSkyRefl, mTexRefl, 0.45);
 		float isGlassM = 1.0 - smoothstep(0.72, 0.96, alpha);
-		float reflWeight = max(envMapCoef * 0.52, isGlassM * 0.65) * mFresnel * mix(0.60, 1.0, mShadow);
+		float reflWeight = max(envMapCoef * 0.54, isGlassM * 0.68) * mFresnel * mix(0.60, 1.0, mShadow);
 
-		vec3 mCar = mBase * ((mAmb + mSunCol) * mShadow + v_pointSpot * 0.85) + vec3(mSpec) + mEnvCol * reflWeight;
+		vec3 mDynDiff = v_pointSpot * 0.65;
+		vec3 mDynSpec = vec3(0.0);
+		for(int li = 0; li < 4; li++){
+			float rad = u_sceneLightPosRad[li].w;
+			if(rad <= 0.01)
+				break;
+			vec3 toLight = u_sceneLightPosRad[li].xyz - v_worldPos;
+			float d2 = dot(toLight, toLight);
+			float r2 = rad * rad;
+			if(d2 >= r2)
+				continue;
+			vec3 Lp = toLight * inversesqrt(max(d2, 1.0e-4));
+			float x2 = d2 / r2;
+			float atten = br_pow2(max(1.0 - x2, 0.0)) / (1.0 + 2.6 * x2);
+			if(u_sceneLightDir[li].w > 0.5)
+				atten *= smoothstep(0.30, 0.78, dot(-Lp, u_sceneLightDir[li].xyz));
+			float wrapDiff = max(dot(N, Lp) * 0.78 + 0.22, 0.0);
+			vec3 Hp = normalize(Lp + V);
+			float lSpec = pow(max(dot(N, Hp), 0.0), 44.0) * (0.18 + 0.52 * envMapCoef);
+			vec3 lCol = u_sceneLightColor[li].rgb * atten;
+			mDynDiff += lCol * (wrapDiff * 0.95);
+			mDynSpec += lCol * lSpec;
+		}
+
+		vec3 mCar = mBase * ((mAmb + mSunCol) * mShadow + mDynDiff) + vec3(mSpec) + mDynSpec + mEnvCol * reflWeight;
+		if(isGlassM > 0.05){
+			vec4 glassOut;
+			vec3 gBase = BR_ApplyMobileColorGrade(mix(u_fogColor.rgb, mBase * ((mAmb + mSunCol) * mShadow + mDynDiff), visibility));
+			vec3 gSpec = BR_ApplyMobileColorGrade((vec3(mSpec) + mDynSpec + mEnvCol * reflWeight) * visibility);
+			glassOut.rgb = clamp(gBase * alpha + gSpec, 0.0, 1.0);
+			glassOut.a = clamp(max(alpha, mFresnel * 0.42), 0.0, 1.0);
+			FRAGCOLOR(glassOut);
+			return;
+		}
 		vec4 mobOut;
 		mobOut.rgb = BR_ApplyMobileColorGrade(mix(u_fogColor.rgb, mCar, visibility));
 		mobOut.a = alpha;

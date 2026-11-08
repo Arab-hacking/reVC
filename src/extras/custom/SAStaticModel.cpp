@@ -326,25 +326,45 @@ bool IsOutdoorStreetLampName(const char *modelName)
     for(const char *p = modelName; *p; ++p)
         lower.push_back((char)std::tolower((unsigned char)*p));
 
-    // Never attach lights to LOD shells, power transmission towers, signs, or broken debris.
+    // Never attach lights to LOD shells, power transmission towers, signs, bollards, fences, or indoor furniture.
     if(lower.rfind("l2_", 0) == 0 || lower.rfind("l3_", 0) == 0 ||
        lower.rfind("lod", 0) == 0 || ContainsTokenCI(lower, "_lod") ||
        ContainsTokenCI(lower, "lep") || ContainsTokenCI(lower, "podstation") ||
        ContainsTokenCI(lower, "sign") || ContainsTokenCI(lower, "cone") ||
-       ContainsTokenCI(lower, "wreck") || ContainsTokenCI(lower, "traffic"))
+       ContainsTokenCI(lower, "wreck") || ContainsTokenCI(lower, "traffic") ||
+       ContainsTokenCI(lower, "stolbik") || ContainsTokenCI(lower, "zabor") ||
+       ContainsTokenCI(lower, "fence") || ContainsTokenCI(lower, "gate") ||
+       ContainsTokenCI(lower, "table") || ContainsTokenCI(lower, "desk") ||
+       ContainsTokenCI(lower, "ceil") || ContainsTokenCI(lower, "indoor"))
         return false;
 
     static const char *const kTokens[] = {
-        "lamplight", "lamppost", "lampost", "streetlamp", "street_light",
-        "strlamp", "voenlamp", "fonar", "stolb_light", "stolb1",
-        "lit_stolb", "bysstolb", "astolb8007", "astolb8008", "dr_stolb01",
-        "turmstolb", "grl_lamp", "rub_lamp", "bys_lamp", "event_lamp",
+        "lamplight", "lamppost", "lampost", "lmppst", "streetlamp", "street_light",
+        "streetlight", "strlamp", "strtlmp", "voenlamp", "fonar", "fnr",
+        "stolb", "bollardlight", "lighter", "svetof",
+        "grl_lamp", "rub_lamp", "bys_lamp", "event_lamp",
         "fish_lamp", "lb_lamp", "lamphub", "light1_a889", "chinalamp"
     };
     for(size_t i = 0; i < sizeof(kTokens)/sizeof(kTokens[0]); i++)
         if(ContainsTokenCI(lower, kTokens[i]))
             return true;
     return false;
+}
+
+float EffectiveStaticDrawDistance(const char *modelName, float ideDist, bool hasLight2dfx)
+{
+    if(!std::isfinite(ideDist) || ideDist <= 0.0f)
+        return ideDist;
+    // Keep landmarks / BigBuildings (>= 299m) and tiny indoor props (<= 15m) untouched.
+    if(ideDist >= 299.0f)
+        return ideDist;
+    if(IsOutdoorStreetLampName(modelName)){
+        return ideDist < 255.0f ? 255.0f : ideDist;
+    }
+    if(hasLight2dfx && ideDist > 15.0f){
+        return ideDist < 225.0f ? 225.0f : ideDist;
+    }
+    return ideDist;
 }
 
 void EstimateStreetLampLights(rw::Atomic *bakedAtomic, std::vector<LightEffect> &out)

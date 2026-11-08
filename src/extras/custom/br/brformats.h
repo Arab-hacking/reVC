@@ -1105,9 +1105,9 @@ static inline std::vector<uint8_t> convertModToDff(const std::vector<uint8_t>& m
 //   COL3/COLL/COL2 блоки (если встретятся) копируются как есть.
 // ---------------------------------------------------------------------------
 static inline uint32_t clsFourcc(const uint8_t* p) { return rd32(p); }
-static const uint32_t FCC_CLST = 0x54534C43, FCC_CLSF = 0x46534C43, FCC_COL3 = 0x334C4F43, FCC_COL2 = 0x324C4F43, FCC_COLL = 0x4C4C4F43;
-static inline bool isClsBlockFourcc(uint32_t f) { return f == FCC_CLST || f == FCC_CLSF || f == FCC_COL3 || f == FCC_COL2 || f == FCC_COLL; }
-static inline bool isClsFile(const uint8_t* p, size_t n) { return n >= 8 && (clsFourcc(p) == FCC_CLST || clsFourcc(p) == FCC_CLSF); }
+static const uint32_t FCC_CLST = 0x54534C43, FCC_CLSF = 0x46534C43, FCC_COL3 = 0x334C4F43, FCC_COL2 = 0x324C4F43, FCC_COLL = 0x4C4C4F43, FCC_BOLL = 0x4C4C4F42;
+static inline bool isClsBlockFourcc(uint32_t f) { return f == FCC_CLST || f == FCC_CLSF || f == FCC_COL3 || f == FCC_COL2 || f == FCC_COLL || f == FCC_BOLL; }
+static inline bool isClsFile(const uint8_t* p, size_t n) { return n >= 8 && (clsFourcc(p) == FCC_CLST || clsFourcc(p) == FCC_CLSF || clsFourcc(p) == FCC_BOLL); }
 
 struct ClsStats { int blocks = 0, clst = 0, clsf = 0, passthru = 0, bad = 0, matFixed = 0; };
 
@@ -1296,6 +1296,10 @@ static inline bool clsBlockToCol(const uint8_t* blk, size_t n, std::vector<uint8
 #else
     if (f == FCC_CLSF) { if (!clsfToCol3(blk, n, out)) { st.bad++; return false; } st.clsf++; return true; }
 #endif
+    if (f == FCC_BOLL) {
+        if (n < 72) { st.bad++; return false; }
+        out.assign(blk, blk + n); memcpy(&out[0], "COLL", 4); clsPad4(out); st.passthru++; return true;
+    }
     out.assign(blk, blk + n); clsPad4(out); st.matFixed += fixColBlockMaterials(out.data(), out.size()); st.passthru++; return true;
 }
 
@@ -1729,14 +1733,22 @@ SniffAnimNames(const uint8 *data, size_t size, char (*outNames)[24], int maxName
     // real .ani exporters leave padding and sometimes old frame data behind
     // the last animation; those bytes are not additional animation blocks.
     size_t pos = 36;
+    uint32 nonEmptyClips = 0;
     for(uint32 a = 0; a < header.numAnims; a++){
         if(pos > size || size - pos < (isANP3 ? 36u : 28u))
             return false;
+        if(data[pos] <= 0x20 || data[pos] >= 0x7F)
+            return false;
         uint32 numSeq = SniffU32(data + pos + 24);
+        uint32 framesSz = isANP3 ? SniffU32(data + pos + 28) : 0;
         uint32 animNameOff = pos;
         pos += isANP3 ? 36 : 28;   // ANP3 adds frame data size and an unused word
-        if(numSeq == 0 || numSeq > 4096 || numNames >= maxNames)
+        if(numSeq > 4096 || numNames >= maxNames)
             return false;
+        if(numSeq == 0 && isANP3 && framesSz != 0)
+            return false;
+        if(numSeq > 0)
+            nonEmptyClips++;
         if(outNames){
             memcpy(outNames[numNames], data + animNameOff, 23);
             outNames[numNames][23] = '\0';
@@ -1761,7 +1773,7 @@ SniffAnimNames(const uint8 *data, size_t size, char (*outNames)[24], int maxName
             pos += fsz * (size_t)numFrames;
         }
     }
-    return numNames == (int)header.numAnims;
+    return nonEmptyClips > 0 && numNames == (int)header.numAnims;
 }
 
 } // namespace br

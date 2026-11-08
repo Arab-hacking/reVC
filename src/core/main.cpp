@@ -1651,7 +1651,7 @@ Idle(void *arg)
 #ifdef FIX_BUGS
 		RwRenderStateSet(rwRENDERSTATEZWRITEENABLE, (void *)FALSE); // TODO: temp? this fixes OpenGL render but there should be a better place for this
 		// This has to be done BEFORE RwCameraBeginUpdate
-		RwCameraSetFarClipPlane(Scene.camera, CTimeCycle::GetFarClip());
+		RwCameraSetFarClipPlane(Scene.camera, Max(CTimeCycle::GetFarClip(), 600.0f * CRenderer::ms_lodDistScale));
 		RwCameraSetFogDistance(Scene.camera, CTimeCycle::GetFogStart());
 #endif
 
@@ -2055,7 +2055,7 @@ void TheGame(void)
 
 #ifdef FIX_BUGS
 				// This has to be done BEFORE RwCameraBeginUpdate
-				RwCameraSetFarClipPlane(Scene.camera, CTimeCycle::GetFarClip());
+				RwCameraSetFarClipPlane(Scene.camera, Max(CTimeCycle::GetFarClip(), 600.0f * CRenderer::ms_lodDistScale));
 				RwCameraSetFogDistance(Scene.camera, CTimeCycle::GetFogStart());
 #endif
 
