@@ -11,8 +11,8 @@ android {
         applicationId "com.revc.game"
         minSdk 24
         targetSdk 35
-        versionCode 1
-        versionName "reVC-0.0.1"
+        versionCode project.hasProperty('revcVersionCode') ? project.property('revcVersionCode').toInteger() : 1
+        versionName project.hasProperty('revcVersionName') ? project.property('revcVersionName').toString() : "reVC-0.0.1"
 
         ndkVersion '27.2.12479018'
 

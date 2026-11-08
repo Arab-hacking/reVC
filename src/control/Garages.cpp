@@ -204,7 +204,7 @@ int16 CGarages::AddOne(float X1, float Y1, float Z1, float X2, float Y2, float X
 {
 	if (NumGarages >= NUM_GARAGES) {
 		assert(0);
-		return NumGarages++;
+		return NUM_GARAGES - 1;
 	}
 	CGarage* pGarage = &aGarages[NumGarages];
 	pGarage->m_fInfX = Min(Min(Min(X1, X2), X3), X2 + X3 - X1);
@@ -1490,26 +1490,32 @@ void CGarage::BuildRotatedDoorMatrix(CEntity * pDoor, float fPosition)
 void CGarage::UpdateCrusherAngle()
 {
 	RefreshDoorPointers(false);
-	m_pDoor2->GetMatrix().SetRotateXOnly(TWOPI - m_fDoorPos);
-	m_pDoor2->GetMatrix().UpdateRW();
-	m_pDoor2->UpdateRwFrame();
+	if (m_pDoor2) {
+		m_pDoor2->GetMatrix().SetRotateXOnly(TWOPI - m_fDoorPos);
+		m_pDoor2->GetMatrix().UpdateRW();
+		m_pDoor2->UpdateRwFrame();
+	}
 }
 
 void CGarage::UpdateCrusherShake(float X, float Y)
 {
 	RefreshDoorPointers(false);
-	m_pDoor1->GetMatrix().GetPosition().x += X;
-	m_pDoor1->GetMatrix().GetPosition().y += Y;
-	m_pDoor1->GetMatrix().UpdateRW();
-	m_pDoor1->UpdateRwFrame();
-	m_pDoor1->GetMatrix().GetPosition().x -= X;
-	m_pDoor1->GetMatrix().GetPosition().y -= Y;
-	m_pDoor2->GetMatrix().GetPosition().x += X;
-	m_pDoor2->GetMatrix().GetPosition().y += Y;
-	m_pDoor2->GetMatrix().UpdateRW();
-	m_pDoor2->UpdateRwFrame();
-	m_pDoor2->GetMatrix().GetPosition().x -= X;
-	m_pDoor2->GetMatrix().GetPosition().y -= Y;
+	if (m_pDoor1) {
+		m_pDoor1->GetMatrix().GetPosition().x += X;
+		m_pDoor1->GetMatrix().GetPosition().y += Y;
+		m_pDoor1->GetMatrix().UpdateRW();
+		m_pDoor1->UpdateRwFrame();
+		m_pDoor1->GetMatrix().GetPosition().x -= X;
+		m_pDoor1->GetMatrix().GetPosition().y -= Y;
+	}
+	if (m_pDoor2) {
+		m_pDoor2->GetMatrix().GetPosition().x += X;
+		m_pDoor2->GetMatrix().GetPosition().y += Y;
+		m_pDoor2->GetMatrix().UpdateRW();
+		m_pDoor2->UpdateRwFrame();
+		m_pDoor2->GetMatrix().GetPosition().x -= X;
+		m_pDoor2->GetMatrix().GetPosition().y -= Y;
+	}
 }
 
 void CGarage::RefreshDoorPointers(bool bCreate)

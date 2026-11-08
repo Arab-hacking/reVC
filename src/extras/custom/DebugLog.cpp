@@ -370,6 +370,19 @@ DebugLogSignalAction(int sig, siginfo_t *info, void *ucontextRaw)
 			curFp = nextFp;
 		}
 	}
+	if (st.depth <= 4 && regSp != 0 && g_libREVC != 0) {
+		uintptr_t spAligned = (regSp + 7u) & ~(uintptr_t)7u;
+		uintptr_t pageEnd = (regSp & ~(uintptr_t)0xfffu) + 0x1000u;
+		int found = 0;
+		for (uintptr_t cur = spAligned; cur + sizeof(uintptr_t) <= pageEnd && cur - spAligned < 1024u && found < 8; cur += sizeof(uintptr_t)) {
+			uintptr_t val = *(const uintptr_t *)cur;
+			if (val >= g_libREVC && val < g_libREVC + 0x01000000ULL && (val & 0x3u) == 0) {
+				if (found == 0)
+					DebugLogCrashLine("sp-scan:");
+				AndroidBtHelper::formatAddr(found++, val);
+			}
+		}
+	}
 #endif
 #endif
 	DebugLogCrashLine("---- session ended abnormally ----");

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Reject an Android APK that contains only the Java launcher (no native game)."""
 
+import os
 import re
 import shutil
 import subprocess
@@ -24,6 +25,15 @@ REQUIRED_LIBRARIES = {
 
 
 def check(apk_path: Path) -> None:
+    expected_sha = b""
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        head = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            check=True, capture_output=True, text=True,
+            cwd=Path(__file__).resolve().parent).stdout.strip()
+        if re.fullmatch(r"[0-9a-f]{40}", head):
+            expected_sha = head.encode("ascii")
+
     with zipfile.ZipFile(apk_path) as apk:
         files = set(apk.namelist())
         for abi, (elf_class, machine, openal) in REQUIRED_LIBRARIES.items():
@@ -47,6 +57,10 @@ def check(apk_path: Path) -> None:
                 executable = Path(temp) / "librevc.so"
                 with apk.open(f"lib/{abi}/librevc.so") as source, executable.open("wb") as target:
                     shutil.copyfileobj(source, target)
+                if expected_sha and expected_sha not in executable.read_bytes():
+                    raise ValueError(
+                        f"{abi}/librevc.so does not embed current Git HEAD {expected_sha.decode()}"
+                    )
                 symbols = subprocess.run(
                     ["readelf", "--dyn-syms", "--wide", str(executable)],
                     check=True, capture_output=True, text=True).stdout

@@ -7,6 +7,8 @@ on:
       - 'android/launcher/**'
       - 'src/**'
       - 'vendor/librw/**'
+      - 'tools/android/**'
+      - '.github/workflows/build-android.yml'
       - 'CMakeLists.txt'
   pull_request:
     branches: [ "miami" ]
@@ -14,6 +16,8 @@ on:
       - 'android/launcher/**'
       - 'src/**'
       - 'vendor/librw/**'
+      - 'tools/android/**'
+      - '.github/workflows/build-android.yml'
       - 'CMakeLists.txt'
   release:
     types: published 
@@ -82,9 +86,17 @@ jobs:
 
       - name: Build ${{ matrix.variant }} APK
         shell: bash
+        env:
+          RUN_NUMBER: ${{ github.run_number }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set +e
-          ./gradlew "$ASSEMBLE_TASK" --no-daemon --stacktrace --parallel --build-cache > gradle-build.log 2>&1
+          VER_CODE=$((1000 + RUN_NUMBER))
+          VER_NAME="reVC-0.0.1-${PR_HEAD_SHA:0:7}"
+          ./gradlew "$ASSEMBLE_TASK" \
+            "-PrevcVersionCode=${VER_CODE}" \
+            "-PrevcVersionName=${VER_NAME}" \
+            --no-daemon --stacktrace --parallel --build-cache > gradle-build.log 2>&1
           result=$?
           if (( result != 0 )); then
             # Expose diagnostics as check annotations: API clients and PR
