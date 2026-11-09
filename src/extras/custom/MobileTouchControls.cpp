@@ -1321,6 +1321,17 @@ FindHitGameplayButton(float x, float y, float minTouchRadiusPx)
 	return MBTN_NONE;
 }
 
+// The tap latch keeps a press visible for a couple of UpdatePad() frames; it
+// has to be retired on every path that reaches the pad, including the early
+// exits, otherwise a press could stay latched while the game is paused.
+static void
+RetireButtonTapLatch(void)
+{
+	for (int i = 0; i < MBTN_COUNT; i++)
+		if (s_buttonTapFrames[i] > 0)
+			s_buttonTapFrames[i]--;
+}
+
 static bool
 IsGameplayButtonHeld(MobileBtnId id)
 {
@@ -2965,6 +2976,7 @@ CMobileTouchControls::UpdatePad(CPad *pad)
 	if (s_pulseSkipCutscene) {
 		st.Cross = 255;
 		s_pulseSkipCutscene = false;
+		RetireButtonTapLatch();
 		return;
 	}
 
@@ -3030,11 +3042,7 @@ CMobileTouchControls::UpdatePad(CPad *pad)
 	if (s_pulseCrouch)     { st.LeftShock = 255;      s_pulseCrouch = false; }
 	if (s_pulseSubmission) { st.RightShock = 255;     s_pulseSubmission = false; }
 
-	// Retire the tap latch after it has been visible for this frame.
-	for (int i = 0; i < MBTN_COUNT; i++) {
-		if (s_buttonTapFrames[i] > 0)
-			s_buttonTapFrames[i]--;
-	}
+	RetireButtonTapLatch();
 #else
 	(void)pad;
 #endif
