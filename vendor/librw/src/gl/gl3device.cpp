@@ -1503,6 +1503,14 @@ beginUpdate(Camera *cam)
 static void
 endUpdate(Camera *cam)
 {
+#ifdef ANDROID
+	if(gl3Caps.gles && gl3Caps.glversion >= 30 &&
+	   cam && cam->frameBuffer && cam->frameBuffer->type == Raster::CAMERATEXTURE &&
+	   cam->zBuffer && currentFramebuffer != 0 && glad_glInvalidateFramebuffer != nil){
+		GLenum att[2] = { GL_DEPTH_ATTACHMENT, GL_STENCIL_ATTACHMENT };
+		glInvalidateFramebuffer(GL_FRAMEBUFFER, 2, att);
+	}
+#endif
 }
 
 static void

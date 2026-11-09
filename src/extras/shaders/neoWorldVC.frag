@@ -26,10 +26,11 @@ main(void)
 
 		if(u_atmosphere.x >= 1.5){
 			float mDayNight = clamp(u_atmosphere.w, 0.0, 1.0);
-			float mLmFade = mDayNight * step(0.08, dot(t1.rgb, vec3(0.3333))) * t1.a;
+			float mLmMulti = (u_skyAmbient.a > 0.01 && u_skyAmbient.a < 2.0) ? u_skyAmbient.a : 0.65;
+			float mLmFade = clamp(mDayNight * t1.a * step(0.04, dot(t1.rgb, vec3(0.3333))), 0.0, 1.0);
 			vec3 mLit = BR_ShadeMobileWorldLinear(t0.rgb, v_color.rgb, v_worldPos, v_worldNormal, 0.0);
-			vec3 mGlow = t1.rgb * max(t0.rgb, vec3(0.18)) * 3.0;
-			vec3 mCombined = mix(mLit, max(mLit, mGlow), clamp(mLmFade, 0.0, 1.0));
+			vec3 mGlow = t1.rgb * max(t0.rgb, vec3(0.22)) * (3.0 * mLmMulti);
+			vec3 mCombined = mix(mLit, max(mLit, mGlow), mLmFade);
 			vec4 mColor;
 			mColor.rgb = BR_ApplyMobileColorGrade(mix(u_fogColor.rgb, mCombined, visibility));
 			mColor.a = outAlpha;

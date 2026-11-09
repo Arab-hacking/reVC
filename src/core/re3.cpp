@@ -661,6 +661,14 @@ bool LoadINISettings()
 	FrontEndMenuManager.m_ControlMethod = CONTROL_STANDARD;
 	CCamera::m_bUseMouse3rdPerson = true;
 	CVehicle::m_bDisableMouseSteering = true;
+#ifdef EXTENDED_COLOURFILTER
+	{
+		int32 mobilePostFxVer = 0;
+		ReadIniIfExists("Graphics", "MobilePostFXVersion", &mobilePostFxVer);
+		if (mobilePostFxVer < 1)
+			CPostFX::EffectSwitch = CPostFX::POSTFX_OFF;
+	}
+#endif
 #ifdef FREE_CAM
 	CCamera::bFreeCam = true;
 #endif
@@ -761,6 +769,10 @@ void SaveINISettings()
 			}
 		}
 	}
+#endif
+
+#if defined(ANDROID) && defined(EXTENDED_COLOURFILTER)
+	StoreIni("Graphics", "MobilePostFXVersion", (int32)1);
 #endif
 
 	if(!ini.write(cfg))

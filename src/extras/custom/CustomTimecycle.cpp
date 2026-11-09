@@ -474,7 +474,36 @@ ExpandGrids(const SlotGrid grids[BR_WEATHERS_USED], int weathers, bool atmospher
 		expandShadowField(CTimeCycle::m_nShadowStrength, CycleSlot::F_SHAD, true);
 		expandShadowField(CTimeCycle::m_nLightShadowStrength, CycleSlot::F_LIGHTSHAD, false);
 		expandShadowField(CTimeCycle::m_nPoleShadowStrength, CycleSlot::F_POLESHAD, false);
-#ifdef RW_GL3
+#ifdef ANDROID
+		// On Android, apply mobile timecyc.json FarClip, FogStart, SpriteSize,
+		// SpriteBrght, SunSize, and WaterRGBA directly as in the mobile client.
+		if(has[CycleSlot::F_FARCLIP]){
+			ExpandField(CTimeCycle::m_fFarClip, w, g, CycleSlot::F_FARCLIP, 1.0f, 150.0f, 1500.0f);
+		}
+		if(has[CycleSlot::F_FOGSTART]){
+			for(int h = 0; h < NUMHOURS; h++){
+				float start;
+				if(!SampleField(g, h, CycleSlot::F_FOGSTART, start))
+					continue;
+				float maxStart = (float)CTimeCycle::m_fFarClip[h][w] - 25.0f;
+				if(start < -200.0f) start = -200.0f;
+				if(start > maxStart) start = maxStart;
+				CTimeCycle::m_fFogStart[h][w] = (int16)lroundf(start);
+			}
+		}
+		if(has[CycleSlot::F_SUNSIZE])
+			ExpandField(CTimeCycle::m_fSunSize, w, g, CycleSlot::F_SUNSIZE, 10.0f, 1.0f, 127.0f);
+		if(has[CycleSlot::F_SPRITESIZE])
+			ExpandField(CTimeCycle::m_fSpriteSize, w, g, CycleSlot::F_SPRITESIZE, 10.0f, 1.0f, 127.0f);
+		if(has[CycleSlot::F_SPRITEBRGHT])
+			ExpandField(CTimeCycle::m_fSpriteBrightness, w, g, CycleSlot::F_SPRITEBRGHT, 10.0f, 2.5f, 127.0f);
+		if(has[CycleSlot::F_WATER_R]){
+			ExpandField(CTimeCycle::m_fWaterRed, w, g, CycleSlot::F_WATER_R, 1.0f, 0.0f, 255.0f);
+			ExpandField(CTimeCycle::m_fWaterGreen, w, g, CycleSlot::F_WATER_G, 1.0f, 0.0f, 255.0f);
+			ExpandField(CTimeCycle::m_fWaterBlue, w, g, CycleSlot::F_WATER_B, 1.0f, 0.0f, 255.0f);
+			ExpandField(CTimeCycle::m_fWaterAlpha, w, g, CycleSlot::F_WATER_A, 1.0f, 0.0f, 255.0f);
+		}
+#elif defined(RW_GL3)
 		if(atmosphere && has[CycleSlot::F_FOGSTART] && has[CycleSlot::F_FARCLIP]){
 			// Import the source fog *ratio*, not its far clip. Replacing VC's
 			// far distance would clip the user's map and its streaming objects.
@@ -637,9 +666,6 @@ CCustomTimecycle::EvaluateColorGrade(float fHour, int oldWeather, int newWeather
 void
 CCustomTimecycle::Apply(void)
 {
-#ifdef ANDROID
-	LoadColorcycleDat();
-#endif
 	std::vector<uint8> data;
 	bool fromCommon = false;
 	if(!CCustomModels::ReadDataFile("data/timecyc.json", data, &fromCommon))

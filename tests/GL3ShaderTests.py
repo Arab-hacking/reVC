@@ -229,26 +229,41 @@ class GL3ShaderTests(unittest.TestCase):
         self.assertIn("s_mobileWaterShaderTried", water_cpp)
 
     def test_mobile_matfx_vehicle_and_sky_contracts(self):
+        h_fs = embedded_source(VENDOR / "header.frag")
         matfx_fs = embedded_source(VENDOR / "matfx_env.frag")
         veh_fs = embedded_source(EXTRAS / "neoVehicle.frag")
+        world_fs = embedded_source(EXTRAS / "neoWorldVC.frag")
         sky_cpp = (ROOT / "src/extras/custom/CustomSky.cpp").read_text()
+        renderer_cpp = (ROOT / "src/renderer/Renderer.cpp").read_text()
+        postfx_cpp = (ROOT / "src/extras/postfx.cpp").read_text()
 
-        # Mobile matfx_env branch uses BR_ShadeMobileWorldLinear + BR_ApplyMobileColorGrade
+        # Mobile world/shadow/gamma parity: 0.30 shadow cap, pure pow(color, u_localInvGamma), lightmapMulti=0.65
+        self.assertIn("0.30 * (1.0 - mVis)", h_fs)
+        self.assertNotIn("over / (vec3(1.0) + over * 4.0)", h_fs)
+        self.assertIn("0.65", world_fs)
+        self.assertIn("0.65f", renderer_cpp)
+        self.assertIn("int CPostFX::EffectSwitch = POSTFX_OFF;", postfx_cpp)
+
+        # Mobile matfx_env & neoVehicle use Fresnel [0.15, 0.70] + pow(env, 0.8) + additive clearcoat
         self.assertIn("if(u_atmosphere.x >= 1.5)", matfx_fs)
+        self.assertIn("0.15, 0.70", matfx_fs)
         self.assertIn("BR_ShadeMobileWorldLinear(", matfx_fs)
         self.assertIn("BR_ApplyMobileColorGrade(", matfx_fs)
 
-        # Mobile neoVehicle branch samples tex1 paraboloid env + 4 dynamic night street lights + glass branch
+        self.assertIn("0.15, 0.70", veh_fs)
+        self.assertIn("vec3(0.8)", veh_fs)
         self.assertIn("u_sceneLightPosRad[li]", veh_fs)
         self.assertIn("u_sceneLightColor[li]", veh_fs)
         self.assertIn("if(isGlassM > 0.05)", veh_fs)
 
-        # Procedural SkyDome restores prevAtmos and feeds u_skyTopColor + stars
+        # Procedural SkyDome restores prevAtmos and gates mobile stars strictly to hours 0..4 and 23
         self.assertIn("uniform vec4 u_skyTopColor;", sky_cpp)
         self.assertIn("rw::setAtmosphereParams(prevAtmos);", sky_cpp)
         self.assertIn("starVis", sky_cpp)
+        self.assertIn("(curHour <= 4 || curHour > 22) ? 1.0f : 0.0f", sky_cpp)
 
-        for name, src in (("matfx_env.frag", matfx_fs), ("neoVehicle.frag", veh_fs)):
+        for name, src in (("header.frag", h_fs), ("matfx_env.frag", matfx_fs),
+                          ("neoVehicle.frag", veh_fs), ("neoWorldVC.frag", world_fs)):
             self.assertEqual(src.count("{"), src.count("}"), f"{name} unbalanced braces")
             self.assertEqual(src.count("("), src.count(")"), f"{name} unbalanced parens")
 

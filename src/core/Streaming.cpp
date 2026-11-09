@@ -354,6 +354,81 @@ uint64 timeProcessingTXD;
 uint64 timeProcessingDFF;
 #endif
 
+#ifdef ANDROID
+namespace {
+static float s_mobileRamLodScale = 1.0f;
+static int s_mobileVehReqBudget = 3;
+static int s_mobileAsyncReqBudget = 5;
+static uint32 s_lastMemSampleFrame = 0xFFFFFFFFu;
+static size_t s_cachedAvailRamMB = 1024;
+
+static size_t
+SampleAndroidAvailRamMB(void)
+{
+	uint32 fc = CTimer::GetFrameCounter();
+	if(s_lastMemSampleFrame != 0xFFFFFFFFu && (uint32)(fc - s_lastMemSampleFrame) < 60u)
+		return s_cachedAvailRamMB;
+	s_lastMemSampleFrame = fc;
+
+	FILE *fp = fopen("/proc/meminfo", "rb");
+	if(!fp)
+		return s_cachedAvailRamMB;
+	char buf[512];
+	size_t n = fread(buf, 1, sizeof(buf) - 1, fp);
+	fclose(fp);
+	buf[n] = '\0';
+	const char *p = strstr(buf, "MemAvailable:");
+	if(p){
+		p += sizeof("MemAvailable:") - 1;
+		while(*p == ' ' || *p == '\t') p++;
+		unsigned long kb = strtoul(p, nil, 10);
+		if(kb > 0)
+			s_cachedAvailRamMB = (size_t)(kb / 1024ul);
+	}
+	return s_cachedAvailRamMB;
+}
+
+static void
+UpdateMobileStreamingHeadroom(void)
+{
+	size_t availMB = SampleAndroidAvailRamMB();
+	float targetScale = 1.0f;
+	if(availMB < 280){
+		targetScale = 0.60f;
+		s_mobileVehReqBudget = 1;
+		s_mobileAsyncReqBudget = 2;
+	}else if(availMB < 450){
+		targetScale = 0.75f;
+		s_mobileVehReqBudget = 1;
+		s_mobileAsyncReqBudget = 2;
+	}else{
+		targetScale = 1.0f;
+		s_mobileVehReqBudget = 3;
+		s_mobileAsyncReqBudget = 5;
+	}
+	float dt = Min(CTimer::GetTimeStepInSeconds(), 0.1f);
+	if(dt > 0.0f){
+		float maxStep = 0.25f * dt;
+		float diff = targetScale - s_mobileRamLodScale;
+		if(diff > maxStep) diff = maxStep;
+		else if(diff < -maxStep) diff = -maxStep;
+		s_mobileRamLodScale += diff;
+	}
+	CRenderer::ms_lodDistScale = Clamp(FrontEndMenuManager.m_PrefsLOD * s_mobileRamLodScale, DRAWDIST_MIN, DRAWDIST_MAX);
+
+	// Mobile vehicle loaded-count hysteresis (35 unload ceiling / 25 steady target)
+	int32 loadedVehs = CStreaming::ms_numVehiclesLoaded;
+	const int32 normalTarget = Min((int32)25, (int32)MAXVEHICLESLOADED);
+	if(availMB < 450)
+		desiredNumVehiclesLoaded = Min((int32)18, (int32)MAXVEHICLESLOADED);
+	else if(loadedVehs > 35)
+		desiredNumVehiclesLoaded = normalTarget;
+	else if(desiredNumVehiclesLoaded < normalTarget)
+		desiredNumVehiclesLoaded = normalTarget;
+}
+} // namespace
+#endif
+
 void
 CStreaming::Update(void)
 {
@@ -365,6 +440,9 @@ CStreaming::Update(void)
 	timeProcessingDFF = 0;
 #endif
 
+#ifdef ANDROID
+	UpdateMobileStreamingHeadroom();
+#endif
 	UpdateMemoryUsed();
 
 	if(ms_channelError != -1){
@@ -2958,14 +3036,17 @@ CStreaming::LoadRequestedModels(void)
 		const uint32 cpm = CTimer::GetCyclesPerMillisecond();
 		const uint32 budgetStartMs = cpm ? (CTimer::GetCurrentTimeInCycles() / cpm) : 0;
 		int customModelsLoaded = 0;
+		int customVehModelsLoaded = 0;
+		int customAsyncModelsLoaded = 0;
 		int customTxdsLoaded = 0;
+		const int maxTotalModels = s_mobileVehReqBudget + s_mobileAsyncReqBudget;
 		for(int pass = 0; pass < 24; pass++){
 			if(cpm && customModelsLoaded > 0){
 				uint32 nowMs = CTimer::GetCurrentTimeInCycles() / cpm;
 				if((uint32)(nowMs - budgetStartMs) >= 4u)
 					break;
 			}
-			if(customModelsLoaded >= 10)
+			if(customModelsLoaded >= maxTotalModels && ms_numPriorityRequests == 0)
 				break;
 
 			int chosenId = -1;
@@ -2985,6 +3066,15 @@ CStreaming::LoadRequestedModels(void)
 					if(sid < STREAM_OFFSET_TXD){
 						CBaseModelInfo *mi = CModelInfo::GetModelInfo(sid);
 						if(!mi) continue;
+						if(!si->IsPriority()){
+							if(mi->GetModelType() == MITYPE_VEHICLE){
+								if(customVehModelsLoaded >= s_mobileVehReqBudget)
+									continue;
+							}else{
+								if(customAsyncModelsLoaded >= s_mobileAsyncReqBudget)
+									continue;
+							}
+						}
 						int missingTxd = -1;
 						int txdId = mi->GetTxdSlot();
 						if(txdId >= 0 && TxdNotLoaded(txdId)){
@@ -3065,6 +3155,9 @@ CStreaming::LoadRequestedModels(void)
 				break;
 
 			const bool isTxd = (chosenId >= STREAM_OFFSET_TXD && chosenId < STREAM_OFFSET_COL);
+			const bool isVehModel = (!isTxd && chosenId < STREAM_OFFSET_TXD &&
+			                         CModelInfo::GetModelInfo(chosenId) &&
+			                         CModelInfo::GetModelInfo(chosenId)->GetModelType() == MITYPE_VEHICLE);
 			ms_aInfoForModel[chosenId].m_loadState = STREAMSTATE_READING;
 			ms_aInfoForModel[chosenId].RemoveFromList();
 			DecrementRef(chosenId);
@@ -3074,6 +3167,10 @@ CStreaming::LoadRequestedModels(void)
 					break;
 			}else{
 				customModelsLoaded++;
+				if(isVehModel)
+					customVehModelsLoaded++;
+				else
+					customAsyncModelsLoaded++;
 			}
 		}
 	}

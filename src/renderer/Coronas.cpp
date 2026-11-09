@@ -142,6 +142,13 @@ CCoronas::RegisterCorona(uint32 id, uint8 red, uint8 green, uint8 blue, uint8 al
 {
 	int i;
 
+#ifdef ANDROID
+	// Mobile client skips per-frame CPU LineOfSight raycasts on world/vehicle coronas,
+	// relying on hardware Z-testing (ZTESTENABLE=TRUE when LOScheck==0) instead.
+	if(id != SUN_CORONA)
+		LOScheck = LOSCHECK_OFF;
+#endif
+
 	if(sq(drawDist) < (TheCamera.GetPosition() - coors).MagnitudeSqr2D())
 		return;
 
@@ -278,7 +285,39 @@ CCoronas::Render(void)
 	RwRenderStateSet(rwRENDERSTATESRCBLEND, (void*)rwBLENDONE);
 	RwRenderStateSet(rwRENDERSTATEDESTBLEND, (void*)rwBLENDONE);
 
+#ifdef ANDROID
+	CSprite::InitSpriteBuffer();
+	RwRaster *curBatchRaster = nil;
+	int curBatchZTest = -1;
+	auto setCoronaBatchState = [&](RwRaster *ras, int ztest){
+		if(ras != curBatchRaster || ztest != curBatchZTest){
+			CSprite::FlushSpriteBuffer();
+			if(ztest != curBatchZTest){
+				RwRenderStateSet(rwRENDERSTATEZTESTENABLE, ztest ? (void*)TRUE : (void*)FALSE);
+				curBatchZTest = ztest;
+			}
+			if(ras != curBatchRaster){
+				RwRenderStateSet(rwRENDERSTATETEXTURERASTER, ras);
+				curBatchRaster = ras;
+			}
+		}
+	};
+#endif
+
 	for(i = 0; i < NUMCORONAS; i++){
+#ifdef ANDROID
+		if(aCoronas[i].drawStreak){
+			for(j = 5; j > 0; j--){
+				aCoronas[i].prevX[j] = aCoronas[i].prevX[j-1];
+				aCoronas[i].prevY[j] = aCoronas[i].prevY[j-1];
+				aCoronas[i].prevRed[j] = aCoronas[i].prevRed[j-1];
+				aCoronas[i].prevGreen[j] = aCoronas[i].prevGreen[j-1];
+				aCoronas[i].prevBlue[j] = aCoronas[i].prevBlue[j-1];
+				aCoronas[i].hasValue[j] = aCoronas[i].hasValue[j-1];
+			}
+			aCoronas[i].hasValue[0] = false;
+		}
+#else
 		for(j = 5; j > 0; j--){
 			aCoronas[i].prevX[j] = aCoronas[i].prevX[j-1];
 			aCoronas[i].prevY[j] = aCoronas[i].prevY[j-1];
@@ -288,6 +327,7 @@ CCoronas::Render(void)
 			aCoronas[i].hasValue[j] = aCoronas[i].hasValue[j-1];
 		}
 		aCoronas[i].hasValue[0] = false;
+#endif
 
 		if(aCoronas[i].id == 0 ||
 		   aCoronas[i].fadeAlpha == 0 && aCoronas[i].alpha == 0)
@@ -306,6 +346,9 @@ CCoronas::Render(void)
 				aCoronas[i].offScreen = true;
 				aCoronas[i].sightClear = false;
 			}else{
+#ifdef ANDROID
+				if(aCoronas[i].drawStreak){
+#endif
 				if(CTimer::GetTimeInMilliseconds() > aCoronas[i].lastLOScheck + 2000){
 					aCoronas[i].lastLOScheck = CTimer::GetTimeInMilliseconds();
 					aCoronas[i].sightClear = CWorld::GetIsLineOfSightClear(
@@ -329,6 +372,9 @@ CCoronas::Render(void)
 					   Abs(aCoronas[i].prevY[0] - aCoronas[i].prevY[1]) > 50.0f)
 						aCoronas[i].hasValue[0] = false;
 				}
+#ifdef ANDROID
+				}
+#endif
 			}
 
 
@@ -339,17 +385,25 @@ CCoronas::Render(void)
 				float distanceFade = spriteCoors.z < fadeStart ? 1.0f : 1.0f - (spriteCoors.z - fadeStart)/fadeSpan;
 				int totalFade = aCoronas[i].fadeAlpha * distanceFade;
 
+#ifdef ANDROID
+				int wantZTest = aCoronas[i].LOScheck ? 0 : 1;
+#else
 				if(aCoronas[i].LOScheck)
 					RwRenderStateSet(rwRENDERSTATEZTESTENABLE, (void*)FALSE);
 				else
 					RwRenderStateSet(rwRENDERSTATEZTESTENABLE, (void*)TRUE);
+#endif
 
 				// render corona itself
 				if(aCoronas[i].texture){
 					float fogscale = CWeather::Foggyness*Min(spriteCoors.z, 40.0f)/40.0f + 1.0f;
 					if(CCoronas::aCoronas[i].id == SUN_CORE)
 						spriteCoors.z = 0.95f * RwCameraGetFarClipPlane(Scene.camera);
+#ifdef ANDROID
+					setCoronaBatchState(RwTextureGetRaster(aCoronas[i].texture), wantZTest);
+#else
 					RwRenderStateSet(rwRENDERSTATETEXTURERASTER, RwTextureGetRaster(aCoronas[i].texture));
+#endif
 					spriteCoors.z -= aCoronas[i].nearDist;
 
 					if(aCoronas[i].texture == gpCoronaTexture[8]){
@@ -359,7 +413,12 @@ CCoronas::Render(void)
 						float hscale = 0.35f - (wscale - 0.5f) * 0.06f;
 						hscale = Max(hscale, 0.15f);
 
-						CSprite::RenderOneXLUSprite(spriteCoors.x, spriteCoors.y, spriteCoors.z,
+#ifdef ANDROID
+						CSprite::RenderBufferedOneXLUSprite(
+#else
+						CSprite::RenderOneXLUSprite(
+#endif
+							spriteCoors.x, spriteCoors.y, spriteCoors.z,
 							spritew * aCoronas[i].size * wscale,
 							spriteh * aCoronas[i].size * fogscale * hscale,
 							CCoronas::aCoronas[i].red / fogscale,
@@ -369,7 +428,11 @@ CCoronas::Render(void)
 							recipz,
 							255);
 					}else{
+#ifdef ANDROID
+						CSprite::RenderBufferedOneXLUSprite_Rotate_Aspect(
+#else
 						CSprite::RenderOneXLUSprite_Rotate_Aspect(
+#endif
 							spriteCoors.x, spriteCoors.y, spriteCoors.z,
 							spritew * aCoronas[i].size * fogscale,
 							spriteh * aCoronas[i].size * fogscale,
@@ -394,8 +457,13 @@ CCoronas::Render(void)
 					}
 
 					for(; flare->texture; flare++){
+#ifdef ANDROID
+						setCoronaBatchState(RwTextureGetRaster(gpCoronaTexture[flare->texture + 4]), wantZTest);
+						CSprite::RenderBufferedOneXLUSprite(
+#else
 						RwRenderStateSet(rwRENDERSTATETEXTURERASTER, RwTextureGetRaster(gpCoronaTexture[flare->texture + 4]));
 						CSprite::RenderOneXLUSprite(
+#endif
 							(spriteCoors.x - (screenw/2)) * flare->position + (screenw/2),
 							(spriteCoors.y - (screenh/2)) * flare->position + (screenh/2),
 							spriteCoors.z,
@@ -411,6 +479,9 @@ CCoronas::Render(void)
 			}
 		}
 	}
+#ifdef ANDROID
+	CSprite::FlushSpriteBuffer();
+#endif
 
 	RwRenderStateSet(rwRENDERSTATEZWRITEENABLE, (void*)FALSE);
 	RwRenderStateSet(rwRENDERSTATEZTESTENABLE, (void*)FALSE);
@@ -716,9 +787,24 @@ CRegisteredCorona::Update(void)
 	if(!registeredThisFrame)
 		alpha = 0;
 
+#ifdef ANDROID
+	bool sunBlocked = false;
+	if(LOScheck){
+		if(CCoronas::SunBlockedByClouds && id == CCoronas::SUN_CORONA){
+			sunBlocked = true;
+		}else if(firstUpdate || (CTimer::GetFrameCounter() & 3u) == 0u){
+			sightClear = CWorld::GetIsLineOfSightClear(coors, TheCamera.GetPosition(), true, false, false, false, false, false);
+			sunBlocked = !sightClear;
+		}else{
+			sunBlocked = !sightClear;
+		}
+	}
+	if(sunBlocked){
+#else
 	if(LOScheck &&
 	   (CCoronas::SunBlockedByClouds && id == CCoronas::SUN_CORONA ||
 	    !CWorld::GetIsLineOfSightClear(coors, TheCamera.GetPosition(), true, false, false, false, false, false))){
+#endif
 		// Corona is blocked, fade out
 		fadeAlpha = Max(fadeAlpha - 15.0f*CTimer::GetTimeStep(), 0.0f);
 	}else if(offScreen){

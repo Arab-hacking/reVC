@@ -1115,22 +1115,37 @@ CRenderer::ConstructRenderList(void)
 		CTimeCycle::GetDirectionalRed(), CTimeCycle::GetDirectionalGreen(),
 		CTimeCycle::GetDirectionalBlue(),
 		Min(1.0f, Max(0.0f, CTimeCycle::GetShadowStrength()/255.0f))));
+#ifdef ANDROID
+	// Mobile client pipeline: u_atmosphere.x >= 1.5 selects mobile world/vehicle/sky/water
+	// shaders, u_skyAmbient.a carries lightmapMulti (0.65), and u_localInvGamma applies
+	// Brightness directly in shaders without full-screen PostFX backbuffer copies.
+	int8 mobTier = FrontEndMenuManager.m_PrefsMobileGraphics;
+	float mobAtmosMode = (mobTier <= CMenuManager::MOBILE_GFX_LOW) ? 1.7f :
+	                     ((mobTier == CMenuManager::MOBILE_GFX_MEDIUM) ? 2.0f : 2.2f);
+	float invGamma = Clamp(1.0f - (FrontEndMenuManager.m_PrefsBrightness - 256) * (0.20f / 256.0f), 0.78f, 1.22f);
+	rw::setLocalInvGamma(invGamma);
+	rw::setSkyAmbientParams(rw::makeRGBAf(
+		(0.55f * CTimeCycle::GetSkyTopRed()   + 0.45f * CTimeCycle::GetSkyBottomRed())   / 255.0f,
+		(0.55f * CTimeCycle::GetSkyTopGreen() + 0.45f * CTimeCycle::GetSkyBottomGreen()) / 255.0f,
+		(0.55f * CTimeCycle::GetSkyTopBlue()  + 0.45f * CTimeCycle::GetSkyBottomBlue())  / 255.0f,
+		0.65f));
+	rw::setAtmosphereParams(rw::makeRGBAf(
+		GL3Atmosphere::Enabled ? mobAtmosMode : 0.0f,
+		GL3Atmosphere::Enabled ? GL3Atmosphere::Clamp01(CWeather::CloudCoverage) : 0.0f,
+		GL3Atmosphere::Enabled ? GL3Atmosphere::Clamp01(CWeather::Foggyness) : 0.0f,
+		GL3Atmosphere::Enabled ? dayNightBalance : 0.0f));
+#else
 	rw::setSkyAmbientParams(rw::makeRGBAf(
 		(0.55f * CTimeCycle::GetSkyTopRed()   + 0.45f * CTimeCycle::GetSkyBottomRed())   / 255.0f,
 		(0.55f * CTimeCycle::GetSkyTopGreen() + 0.45f * CTimeCycle::GetSkyBottomGreen()) / 255.0f,
 		(0.55f * CTimeCycle::GetSkyTopBlue()  + 0.45f * CTimeCycle::GetSkyBottomBlue())  / 255.0f,
 		4.0f));
-	// The atmospheric curve follows the same interpolated weather as the
-	// timecycle. Zero is the original GL3 fog/light behaviour (also used when
-	// the new rendering setting is disabled).
-	// Use the PC HDR/ACES atmospheric & PBR vehicle-reflection shader pipeline
-	// (u_atmosphere.x == 1.0) on both PC and Android so daytime sun, nighttime
-	// moonlight/pointlights, and vehicle reflections match the PC build 1:1.
 	rw::setAtmosphereParams(rw::makeRGBAf(
 		GL3Atmosphere::Enabled ? 1.0f : 0.0f,
 		GL3Atmosphere::Enabled ? GL3Atmosphere::Clamp01(CWeather::CloudCoverage) : 0.0f,
 		GL3Atmosphere::Enabled ? GL3Atmosphere::Clamp01(CWeather::Foggyness) : 0.0f,
 		GL3Atmosphere::Enabled ? dayNightBalance : 0.0f));
+#endif
 #endif
 
 	COcclusion::ProcessBeforeRendering();

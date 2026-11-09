@@ -17,7 +17,11 @@
 RwRaster *CPostFX::pFrontBuffer;
 RwRaster *CPostFX::pBackBuffer;
 bool CPostFX::bJustInitialised;
+#ifdef ANDROID
+int CPostFX::EffectSwitch = POSTFX_OFF;
+#else
 int CPostFX::EffectSwitch = POSTFX_NORMAL;
+#endif
 bool CPostFX::BlurOn = false;
 bool CPostFX::MotionBlurOn = false;
 

@@ -141,21 +141,24 @@ static const char *s_skyDomeFragSrc =
 "		float horizBand = clamp(pos.y, 0.0, 0.20) * 5.0;\n"
 "		vec3 tcTop = clamp(u_skyTopColor.rgb, vec3(0.015), vec3(0.98));\n"
 "		vec3 tcBot = clamp(u_skyHorizon.rgb, vec3(0.025), vec3(0.98));\n"
-"		vec3 dayZenith = mix(mix(vec3(0.18, 0.34, 0.64), vec3(0.16, 0.42, 0.84), highSun), tcTop, 0.55);\n"
-"		vec3 dayHoriz = mix(mix(vec3(0.84, 0.56, 0.38), vec3(0.64, 0.78, 0.94), highSun), tcBot, 0.52);\n"
-"		vec3 nightZenithM = mix(vec3(0.020, 0.032, 0.076), tcTop * 0.75, 0.45);\n"
-"		vec3 nightHorizM = mix(vec3(0.058, 0.086, 0.165), tcBot * 0.75, 0.45);\n"
-"		float hGrad = mix(horizBand * 0.35, pow(absBlend, 0.54), 0.78);\n"
-"		vec3 mSky = mix(mix(dayHoriz, dayZenith, hGrad), mix(nightHorizM, nightZenithM, hGrad), nightMix);\n"
-"		float starVis = max(u_skyTopColor.w, smoothstep(0.45, 0.88, nightMix)) * smoothstep(0.06, 0.28, pos.y);\n"
+"		vec3 dayZenith = mix(mix(vec3(0.18, 0.36, 0.68), vec3(0.16, 0.44, 0.86), highSun), tcTop, 0.62);\n"
+"		vec3 dayHoriz = mix(mix(vec3(0.86, 0.58, 0.40), vec3(0.66, 0.80, 0.96), highSun), tcBot, 0.58);\n"
+"		vec3 nightZenithM = mix(vec3(0.018, 0.028, 0.068), tcTop * 0.85, 0.55);\n"
+"		vec3 nightHorizM = mix(vec3(0.052, 0.078, 0.150), tcBot * 0.85, 0.55);\n"
+"		vec3 zenCol = mix(dayZenith, nightZenithM, nightMix);\n"
+"		vec3 horCol = mix(dayHoriz, nightHorizM, nightMix);\n"
+"		vec3 underCol = horCol * 0.86;\n"
+"		vec3 upperSky = mix(horCol, zenCol, pow(absBlend, 0.54));\n"
+"		vec3 mSky = pos.y >= 0.0 ? mix(underCol, upperSky, horizBand) : mix(horCol, underCol, smoothstep(0.0, -0.35, pos.y));\n"
+"		float starVis = u_skyTopColor.w * smoothstep(0.06, 0.28, pos.y);\n"
 "		if(starVis > 0.01){\n"
 "			vec3 starCell = floor(pos * 190.0);\n"
 "			float sh = br_sky_hash(dot(starCell, vec3(12.9898, 78.233, 37.719)));\n"
-"			float twinkle = 0.72 + 0.28 * sin(u_cloudParams.x * 1.8 + sh * 43.0);\n"
+"			float twinkle = 0.75 + 0.25 * sin(u_cloudParams.x * 1.8 + sh * 43.0);\n"
 "			float starDot = smoothstep(0.9935, 0.9992, sh) * twinkle * starVis;\n"
-"			mSky += vec3(0.82, 0.88, 1.0) * (starDot * 0.85);\n"
+"			mSky += vec3(0.84, 0.90, 1.0) * (starDot * 0.90);\n"
 "		}\n"
-"		float sunGlow = pow(max(mu, 0.0), 6.0) * (1.0 - hGrad * 0.72) * sunsetBand;\n"
+"		float sunGlow = pow(max(mu, 0.0), 6.0) * (1.0 - absBlend * 0.72) * sunsetBand;\n"
 "		mSky += vec3(0.62, 0.30, 0.12) * sunGlow;\n"
 "		float sunAboveM = smoothstep(-0.03, 0.08, fsun.y) * step(0.0, pos.y);\n"
 "		float sunDiscM = clamp((mu - 0.9955) * 210.0, 0.0, 1.0) * sunAboveM;\n"
@@ -168,13 +171,11 @@ static const char *s_skyDomeFragSrc =
 "			float n2 = br_sky_noise(cCoord) * 0.66 + br_sky_noise(cCoord * 2.15) * 0.34;\n"
 "			float cMask = smoothstep(1.0 - u_cloudParams.z * 0.92, 0.96, n2) * cFade * 0.68;\n"
 "			float sunCloudLit = pow(max(mu, 0.0), 4.0) * (1.0 - nightMix);\n"
-"			vec3 cDay = mix(vec3(0.88, 0.74, 0.64), vec3(0.96, 0.97, 0.99), highSun) + sunColM * (sunCloudLit * 0.28);\n"
+"			vec3 cDay = mix(vec3(0.90, 0.76, 0.66), vec3(0.97, 0.98, 1.0), highSun) + sunColM * (sunCloudLit * 0.28);\n"
 "			vec3 cColM = mix(cDay, vec3(0.09, 0.13, 0.22), nightMix);\n"
 "			mSky = mix(mSky, cColM, cMask);\n"
 "		}\n"
-"		if(pos.y < 0.0)\n"
-"			mSky *= mix(1.0, 0.86, smoothstep(0.0, -0.40, pos.y));\n"
-"		FRAGCOLOR(vec4(BR_ApplyMobileColorGrade(clamp(mSky, 0.0, 1.25)), 1.0));\n"
+"		FRAGCOLOR(vec4(BR_ApplyMobileColorGrade(clamp(mSky, 0.0, 1.0)), 1.0));\n"
 "		return;\n"
 "	}\n"
 "	float Br = u_skyTop.x;\n"
@@ -268,7 +269,11 @@ SkyDomeProcRenderCB(rw::Atomic *atomic, rw::gl3::InstanceDataHeader *header)
 	float sunG = CTimeCycle::GetSunCoronaGreen() / 255.0f;
 	float sunB = CTimeCycle::GetSunCoronaBlue() / 255.0f;
 	int curHour = CClock::GetHours();
+#ifdef ANDROID
+	float starFactor = (curHour <= 4 || curHour > 22) ? 1.0f : 0.0f;
+#else
 	float starFactor = (curHour <= 4 || curHour > 22) ? 1.0f : (curHour == 5 || curHour == 22 ? 0.45f : 0.0f);
+#endif
 
 	CVector sunV = CTimeCycle::m_VectorToSun[CTimeCycle::m_CurrentStoredValue];
 	float sunVis = sunV.z > -0.15f ? Clamp((sunV.z + 0.15f) / 0.45f, 0.0f, 1.0f) : 0.0f;

@@ -56,6 +56,11 @@ vec4 BR_SRGBtoLINEAR(vec4 srgbIn)
 	return vec4(linOut, srgbIn.w);
 }
 
+vec3 BR_SRGBtoLINEAR(vec3 srgbIn)
+{
+	return BR_SRGBtoLINEAR(vec4(srgbIn, 1.0)).rgb;
+}
+
 // ColorCorrectionCommon.glsl: Stephen Hill RRT+ODT ACES with whitePoint normalization
 vec3 BR_Aces(vec3 color, float whitePoint)
 {
@@ -90,14 +95,7 @@ vec3 BR_TonemapAces(vec3 hdrLinear, float whitePoint, float gamma)
 
 vec3 BR_ApplyMobileColorGrade(vec3 c)
 {
-	vec3 g = vec3(
-		dot(c, u_colorGrade[0].xyz) + u_colorGrade[0].w,
-		dot(c, u_colorGrade[1].xyz) + u_colorGrade[1].w,
-		dot(c, u_colorGrade[2].xyz) + u_colorGrade[2].w);
-	g = max(g, vec3(0.0));
-	vec3 over = max(g - vec3(0.80), vec3(0.0));
-	g = min(g, vec3(0.80)) + over / (vec3(1.0) + over * 4.0);
-	return pow(clamp(g, 0.0, 1.0), vec3(u_localInvGamma.x));
+	return pow(clamp(c, 0.0, 1.0), vec3(u_localInvGamma.x));
 }
 
 float AtmosphereVisibility(vec3 worldPos, float oldVisibility)
@@ -107,6 +105,8 @@ float AtmosphereVisibility(vec3 worldPos, float oldVisibility)
 	float d = length(worldPos - u_eye.xyz);
 	float span = max(u_fogEnd - u_fogStart, 1.0);
 	float t = clamp((d - u_fogStart) / span, 0.0, 1.0);
+	if(u_atmosphere.x >= 1.5)
+		return 1.0 - t;
 	float weather = clamp(0.7*clamp(u_atmosphere.y, 0.0, 1.0) +
 	                      0.6*clamp(u_atmosphere.z, 0.0, 1.0), 0.0, 1.0);
 	float density = 1.0 + 1.2*weather;
@@ -164,19 +164,15 @@ float SampleSunShadow(vec3 worldPos, vec3 N)
 		if(mMaxEdge >= 0.992 || mProj.z <= 0.0005 || mProj.z >= 0.9995)
 			return planarVis;
 		float mFade = smoothstep(0.992, 0.82, mMaxEdge);
-		float mAng = 6.2831853 * fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
-		float mCs = cos(mAng);
-		float mSn = sin(mAng);
-		mat2 mRot = mat2(mCs, mSn, -mSn, mCs);
-		float mRad = u_shadowParams.y * 1.45;
-		float mZRef = mProj.z - max(0.0018 * s4, 0.00035);
+		float mRad = max(u_shadowParams.y * 1.10, 0.0005);
+		float mZRef = mProj.z - max(0.0018 * s4, 0.0001);
 		float mVis = 0.0;
-		mVis += (mZRef <= texture(tex3, mProj.xy + (mRot * vec2(-0.94201624, -0.39906216)) * mRad).r) ? 1.0 : 0.0;
-		mVis += (mZRef <= texture(tex3, mProj.xy + (mRot * vec2( 0.94558609, -0.76890725)) * mRad).r) ? 1.0 : 0.0;
-		mVis += (mZRef <= texture(tex3, mProj.xy + (mRot * vec2(-0.09418410,  0.92938870)) * mRad).r) ? 1.0 : 0.0;
-		mVis += (mZRef <= texture(tex3, mProj.xy + (mRot * vec2( 0.34495938,  0.29387760)) * mRad).r) ? 1.0 : 0.0;
+		mVis += (mZRef <= texture(tex3, mProj.xy + vec2(-0.94201624, -0.39906216) * mRad).r) ? 1.0 : 0.0;
+		mVis += (mZRef <= texture(tex3, mProj.xy + vec2( 0.94558609, -0.76890725) * mRad).r) ? 1.0 : 0.0;
+		mVis += (mZRef <= texture(tex3, mProj.xy + vec2(-0.09418410,  0.92938870) * mRad).r) ? 1.0 : 0.0;
+		mVis += (mZRef <= texture(tex3, mProj.xy + vec2( 0.34495938,  0.29387760) * mRad).r) ? 1.0 : 0.0;
 		mVis *= 0.25;
-		float mapShadowVis = 1.0 - clamp(u_shadowParams.x, 0.0, 1.0) * 0.48 * (1.0 - mVis);
+		float mapShadowVis = 1.0 - clamp(u_shadowParams.x, 0.0, 1.0) * 0.30 * (1.0 - mVis);
 		return mix(planarVis, min(planarVis, mapShadowVis), mFade);
 	}
 
@@ -499,44 +495,48 @@ vec3 BR_ShadeMobileWorldLinear(
 	float shadowVis = day > 0.001 ? SampleSunShadow(worldPos, N) : 1.0;
 
 	float hemi = clamp(N.z * 0.5 + 0.5, 0.0, 1.0);
-	vec3 daySkyAmb = mix(vec3(0.56, 0.58, 0.64), vec3(0.76, 0.82, 0.92), highSun);
-	vec3 skyTint = mix(daySkyAmb, clamp(u_skyAmbient.rgb * 1.25, vec3(0.32), vec3(1.05)), 0.38);
-	vec3 nightAmb = vec3(0.32, 0.37, 0.50);
-	vec3 ambCol = mix(nightAmb, skyTint, day) * mix(0.68, 1.06, hemi) * (1.0 - 0.14 * cloud);
+	vec3 daySkyAmb = mix(vec3(0.84, 0.85, 0.88), vec3(0.92, 0.94, 0.98), highSun);
+	vec3 skyTint = mix(daySkyAmb, clamp(u_skyAmbient.rgb * 1.35, vec3(0.55), vec3(1.04)), 0.30);
+	vec3 nightAmb = vec3(0.34, 0.39, 0.52);
+	vec3 ambCol = mix(nightAmb, skyTint, day) * mix(0.84, 1.04, hemi) * (1.0 - 0.12 * cloud);
 
 	float ndotl = max(dot(N, L), 0.0);
 	if(isFoliage > 0.5)
 		ndotl = max(ndotl, max(dot(-N, L), 0.0) * 0.42);
-	vec3 sunWarm = mix(vec3(0.54, 0.40, 0.26), vec3(0.50, 0.48, 0.44), highSun);
-	vec3 sunTint = mix(sunWarm, sunWarm * clamp(u_sunMaterial.rgb, vec3(0.45), vec3(1.20)), 0.30);
-	vec3 directSun = sunTint * (ndotl * day * (1.0 - 0.42 * cloud));
+	vec3 sunLightCol = mix(vec3(0.24, 0.19, 0.14), vec3(0.20, 0.20, 0.20), highSun);
+	sunLightCol = mix(sunLightCol, sunLightCol * clamp(u_sunMaterial.rgb, vec3(0.55), vec3(1.15)), 0.30);
+
+	vec3 baseCol = texSrgb * clamp(vertColor, vec3(0.36), vec3(1.20));
+	vec3 diffuseVec = ndotl * baseCol * sunLightCol * (day * (1.0 - 0.35 * cloud));
 
 	vec3 toEye = u_eye.xyz - worldPos;
 	vec3 V = toEye * inversesqrt(max(dot(toEye, toEye), 1.0e-6));
 	vec3 H = L + V;
 	H *= inversesqrt(max(dot(H, H), 1.0e-6));
-	float spec = pow(max(dot(N, H), 0.0), 50.0) * (isSkinDynamic > 0.5 ? 0.14 : 0.05) * day * shadowVis * (1.0 - 0.5 * cloud);
+	float specAmt = pow(max(dot(N, H), 0.0), 50.0) * (isSkinDynamic > 0.5 ? 0.40 : 0.15) * day * (1.0 - 0.45 * cloud);
+	vec3 specular = sunLightCol * specAmt;
 
-	vec3 baseCol = texSrgb * clamp(vertColor, vec3(0.28), vec3(1.25));
-	vec3 lit = baseCol * (ambCol + directSun) * shadowVis + vec3(spec);
+	vec3 lit = (baseCol * ambCol + diffuseVec + specular) * shadowVis;
 
-	// Up to 4 dynamic streetlamps / headlights on mobile (no per-light pow())
-	for(int li = 0; li < 4; li++){
-		float rad = u_sceneLightPosRad[li].w;
-		if(rad <= 0.01)
-			break;
-		vec3 toLight = u_sceneLightPosRad[li].xyz - worldPos;
-		float d2 = dot(toLight, toLight);
-		float r2 = rad * rad;
-		if(d2 >= r2)
-			continue;
-		vec3 Lp = toLight * inversesqrt(max(d2, 1.0e-4));
-		float x2 = d2 / r2;
-		float atten = br_pow2(max(1.0 - x2, 0.0)) / (1.0 + 2.8 * x2);
-		if(u_sceneLightDir[li].w > 0.5)
-			atten *= smoothstep(0.30, 0.78, dot(-Lp, u_sceneLightDir[li].xyz));
-		float wrapDiff = max(dot(N, Lp) * 0.75 + 0.25, 0.0);
-		lit += baseCol * u_sceneLightColor[li].rgb * (wrapDiff * atten * 0.95);
+	// Static world geometry uses 0 per-pixel pointlights on mobile; dynamic skins catch up to 2 nearby beams
+	if(isSkinDynamic > 0.5){
+		for(int li = 0; li < 2; li++){
+			float rad = u_sceneLightPosRad[li].w;
+			if(rad <= 0.01)
+				break;
+			vec3 toLight = u_sceneLightPosRad[li].xyz - worldPos;
+			float d2 = dot(toLight, toLight);
+			float r2 = rad * rad;
+			if(d2 >= r2)
+				continue;
+			vec3 Lp = toLight * inversesqrt(max(d2, 1.0e-4));
+			float x2 = d2 / r2;
+			float atten = br_pow2(max(1.0 - x2, 0.0)) / (1.0 + 2.8 * x2);
+			if(u_sceneLightDir[li].w > 0.5)
+				atten *= smoothstep(0.30, 0.78, dot(-Lp, u_sceneLightDir[li].xyz));
+			float wrapDiff = max(dot(N, Lp) * 0.75 + 0.25, 0.0);
+			lit += baseCol * u_sceneLightColor[li].rgb * (wrapDiff * atten * 0.85);
+		}
 	}
 	return max(lit, vec3(0.0));
 }
