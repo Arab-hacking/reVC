@@ -22,18 +22,24 @@ class CJavaWrapper
 {
     jmethodID s_ExitGame;
 public:
+    // Global reference to the Java activity; never null while the object is
+    // alive. Owned by this object (NewGlobalRef/DeleteGlobalRef).
     jobject activity;
 
     CJavaWrapper(JNIEnv* env, jobject activity);
     ~CJavaWrapper();
 
+    CJavaWrapper(const CJavaWrapper&) = delete;
+    CJavaWrapper& operator=(const CJavaWrapper&) = delete;
+
     void ExitGame();
 
     // static methods
     static JNIEnv* GetEnv();
+    static void DetachThread();
 };
 
 extern CJavaWrapper* g_pJavaWrapper;
 #endif
 
-#endif //REVC_CJAVAWRAPPER_H
+#endif // REVC_CJAVAWRAPPER_H

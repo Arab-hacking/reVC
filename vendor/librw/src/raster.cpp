@@ -328,6 +328,25 @@ conv_RGBA8888_from_ARGB1555(uint8 *out, uint8 *in)
 }
 
 void
+conv_ARGB1555_from_RGBA8888(uint8 *out, uint8 *in)
+{
+	uint32 r = in[0] >> 3;
+	uint32 g = in[1] >> 3;
+	uint32 b = in[2] >> 3;
+	uint32 a = in[3] >= 0x80 ? 1 : 0;
+	out[0] = b | g<<5;
+	out[1] = g>>3 | r<<2 | a<<7;
+}
+
+void
+conv_RGB888_from_RGBA8888(uint8 *out, uint8 *in)
+{
+	out[0] = in[0];
+	out[1] = in[1];
+	out[2] = in[2];
+}
+
+void
 conv_ABGR1555_from_ARGB1555(uint8 *out, uint8 *in)
 {
 	uint32 r, b;

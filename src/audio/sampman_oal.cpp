@@ -223,6 +223,23 @@ add_providers()
 		//if ( defaultProvider > MAXPROVIDERS )
 		defaultProvider = 0;
 	}
+	else
+	{
+		// Nothing enumerated (common on Android before the audio route is
+		// available, and on emulators). Register one entry pointing at the
+		// implementation-defined default device so InitializeSampleManager()
+		// still finds a provider and provider 0 has a valid name instead of an
+		// empty string.
+		providers[0].id = NULL;
+		strcpy(providers[0].name, "OPENAL SOFT");
+		providers[0].sources = MAXCHANNELS;
+		providers[0].bSupportsFx = false;
+		SampleManager.Set3DProviderName(0, providers[0].name);
+		for(int j = 1; j < MAXPROVIDERS; j++)
+			SampleManager.Set3DProviderName(j, NULL);
+		SampleManager.SetNum3DProvidersAvailable(1);
+		defaultProvider = 0;
+	}
 }
 
 static void
@@ -851,18 +868,40 @@ cSampleManager::Initialise(void)
 						0,
 						};
 		
+		// These used to be plain ASSERTs, which are compiled out in release (NDEBUG)
+		// builds: alcOpenDevice() returning NULL (no audio route yet, emulator,
+		// restricted device) then went straight into alcCreateContext(NULL, ...)
+		// and crashed. Report the failure and let the game run without audio.
 		ALDevice  = alcOpenDevice(providers[index].id);
-		ASSERT(ALDevice != NULL);
-		
-		ALContext = alcCreateContext(ALDevice, attr);
-		ASSERT(ALContext != NULL);
-		
-		alcMakeContextCurrent(ALContext);
-	
-		const char* ext=(const char*)alGetString(AL_EXTENSIONS);
-		if ( strstr(ext,"AL_SOFT_loop_points")==NULL )
+		if ( ALDevice == NULL )
 		{
-			ASSERT(strstr(ext, "AL_SOFT_loop_points") != NULL);
+			debug("SAMPLEMAN-OAL: alcOpenDevice(\"%s\") failed; audio disabled\n",
+			      providers[index].id ? providers[index].id : "(default)");
+			ASSERT(ALDevice != NULL);
+			ALDevice = NULL;
+			return FALSE;
+		}
+
+		ALContext = alcCreateContext(ALDevice, attr);
+		if ( ALContext == NULL )
+		{
+			debug("SAMPLEMAN-OAL: alcCreateContext failed; audio disabled\n");
+			ASSERT(ALContext != NULL);
+			alcCloseDevice(ALDevice);
+			ALDevice = NULL;
+			return FALSE;
+		}
+
+		alcMakeContextCurrent(ALContext);
+
+		const char* ext=(const char*)alGetString(AL_EXTENSIONS);
+		if ( ext == NULL || strstr(ext,"AL_SOFT_loop_points")==NULL )
+		{
+			// The streaming path loops buffers with AL_SOFT_loop_points; without
+			// it streamed audio (radio, cutscene voices) would loop the whole
+			// buffer. OpenAL Soft always has it, so treat it as fatal but don't
+			// crash on a NULL extension string.
+			debug("SAMPLEMAN-OAL: AL_SOFT_loop_points missing; audio disabled\n");
 			Terminate();
 			return FALSE;
 		}

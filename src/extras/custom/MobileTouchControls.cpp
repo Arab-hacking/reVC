@@ -259,6 +259,12 @@ static bool s_pulseInteract = false;
 static bool s_pulseCrouch = false;
 static bool s_pulseSubmission = false;
 static bool s_pulseSkipCutscene = false;
+// A quick tap produces SDL_FINGERDOWN and SDL_FINGERUP inside one
+// inputEventHandler() pass, so the pointer is already gone by the time
+// UpdatePad() samples the buttons and the press was lost entirely (attack,
+// sprint, brake...). Every button press latches a couple of frames of
+// "held" so at least one UpdatePad() sees it.
+static int8 s_buttonTapFrames[MBTN_COUNT];
 static bool s_pulseFlyToggle = false;
 static MobileTouchMath::SprintJumpDoubleTap s_sprintJumpTap;
 
@@ -297,6 +303,9 @@ static int32 s_skinFirstRow = 0;
 static int32 s_vehSelectedIdx = 0;
 static int32 s_vehFirstRow = 0;
 static int32 s_lastSpawnedVehRef = -1;
+// Model of the vehicle we spawned last, so a recycled pool slot (same pool flag,
+// different model - traffic, mission or script cars) is never deleted below.
+static int32 s_lastSpawnedVehModel = -1;
 static char s_spawnerToast[64] = { 0 };
 static uint32 s_spawnerToastUntilMs = 0;
 
@@ -525,12 +534,18 @@ SpawnVehicleByModel(int32 modelId)
 	// Clean up previous test-spawned vehicle if empty so repeated testing never fills pool
 	if (s_lastSpawnedVehRef >= 0) {
 		CVehicle *prevVeh = CPools::GetVehicle(s_lastSpawnedVehRef);
+		// GetVehicle() only validates the pool flag, so a freed slot can hand back
+		// an unrelated vehicle that happens to reuse the same flag. Requiring the
+		// model we spawned (and no occupants) keeps this from deleting traffic or
+		// a mission vehicle.
 		if (prevVeh && prevVeh != FindPlayerVehicle() &&
+		    (s_lastSpawnedVehModel < 0 || prevVeh->GetModelIndex() == s_lastSpawnedVehModel) &&
 		    prevVeh->pDriver == nil && prevVeh->m_nNumPassengers == 0) {
 			CWorld::Remove(prevVeh);
 			delete prevVeh;
 		}
 		s_lastSpawnedVehRef = -1;
+		s_lastSpawnedVehModel = -1;
 	}
 
 	CVehicle *curPlayerVeh = FindPlayerVehicle();
@@ -590,6 +605,7 @@ SpawnVehicleByModel(int32 modelId)
 	CWorld::Add(spawned);
 
 	s_lastSpawnedVehRef = CPools::GetVehicleRef(spawned);
+	s_lastSpawnedVehModel = modelId;
 	if (!(previousFlags & STREAMFLAGS_DONT_REMOVE)) {
 		CStreaming::SetModelIsDeletable(modelId);
 		CStreaming::SetModelTxdIsDeletable(modelId);
@@ -1090,7 +1106,10 @@ UpdateGameplayLayout(void)
 	const float camIconX = Min(hudRightBase - m.hudUnitPx * 212.0f, W - m.marginRightPx - m.Dp(165.0f));
 	SetCircleBtn(s_buttons[MBTN_CAM], camIconX, topIconY, rTopIcon, MTEX_CAM_TOGGLE, GLYPH_CAMERA);
 
-	// Quick-access top bar buttons: Skin Switcher, Vehicle Spawner, and collapsible utility drawer (FLY / TIME+ / TIME-)
+#ifndef MASTER
+	// Quick-access top bar buttons: Skin Switcher, Vehicle Spawner, and collapsible utility drawer (FLY / TIME+ / TIME-).
+	// Developer tooling: MASTER (release) builds keep the buttons in the enum
+	// but never lay them out, so the spawner/fly/time cheats cannot be reached.
 	const float rDev = m.Dp(18.0f);
 	const float devX = Max(m.radarLeftPx + m.radarSizePx + m.Dp(24.0f) + rDev, W * 0.27f);
 	const float devStep = m.Dp(44.0f);
@@ -1102,6 +1121,7 @@ UpdateGameplayLayout(void)
 		SetCircleBtn(s_buttons[MBTN_DEV_TIME_PLUS], devX + devStep * 4.0f, topIconY, rDev, MTEX_ZOOM_IN, GLYPH_PLUS);
 		SetCircleBtn(s_buttons[MBTN_DEV_TIME_MINUS], devX + devStep * 5.0f, topIconY, rDev, MTEX_ZOOM_OUT, GLYPH_MINUS);
 	}
+#endif // !MASTER
 
 	// 3. IN VEHICLE LAYOUT (DP-sized pedals, steering, and context actions)
 	if (veh) {
@@ -1304,11 +1324,13 @@ FindHitGameplayButton(float x, float y, float minTouchRadiusPx)
 static bool
 IsGameplayButtonHeld(MobileBtnId id)
 {
+	if (id < 0 || id >= MBTN_COUNT)
+		return false;
 	for (int i = 0; i < MAX_TOUCH_POINTERS; i++) {
 		if (s_pointers[i].active && s_pointers[i].btn == id)
 			return true;
 	}
-	return false;
+	return s_buttonTapFrames[id] > 0;
 }
 
 static ActivePointer*
@@ -2615,6 +2637,7 @@ CMobileTouchControls::ResetTouches(void)
 	s_menuPendingChange = 0;
 	s_statsVelocityPxPerSec = 0.0f;
 	s_sprintJumpTap.Reset();
+	memset(s_buttonTapFrames, 0, sizeof(s_buttonTapFrames));
 	s_spawnerPtr.active = false;
 	s_spawnerMode = mobilespawner::PANEL_NONE;
 }
@@ -2681,6 +2704,7 @@ CMobileTouchControls::OnFingerDown(int64 fingerId, float normX, float normY)
 	MobileBtnId hitBtn = FindHitGameplayButton(x, y, m.Dp(24.0f));
 	if (hitBtn != MBTN_NONE) {
 		p->btn = hitBtn;
+		s_buttonTapFrames[hitBtn] = 2;
 		HandleGameplayButtonDownPulse(hitBtn);
 		return;
 	}
@@ -3005,6 +3029,12 @@ CMobileTouchControls::UpdatePad(CPad *pad)
 	if (s_pulseInteract)   { st.LeftShoulder1 = 255;  s_pulseInteract = false; }
 	if (s_pulseCrouch)     { st.LeftShock = 255;      s_pulseCrouch = false; }
 	if (s_pulseSubmission) { st.RightShock = 255;     s_pulseSubmission = false; }
+
+	// Retire the tap latch after it has been visible for this frame.
+	for (int i = 0; i < MBTN_COUNT; i++) {
+		if (s_buttonTapFrames[i] > 0)
+			s_buttonTapFrames[i]--;
+	}
 #else
 	(void)pad;
 #endif

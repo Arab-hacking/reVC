@@ -40,13 +40,28 @@ ALDeviceList::ALDeviceList()
 
 	defaultDeviceIndex = 0;
 
+	// ALC_ALL_DEVICES_SPECIFIER/ALC_DEFAULT_ALL_DEVICES_SPECIFIER come from
+	// ALC_ENUMERATE_ALL_EXT and OpenAL Soft returns NULL for them when only
+	// ALC_ENUMERATION_EXT is advertised (which is the case on some Android
+	// builds and on any implementation without that extension). The old code
+	// checked only ALC_ENUMERATION_EXT and then dereferenced the result, so the
+	// first alcGetString(NULL, ...) that returned NULL crashed at *devices.
+	const bool canEnumerateAll = alcIsExtensionPresent(NULL, "ALC_ENUMERATE_ALL_EXT") == AL_TRUE;
+	const ALCenum devicesSpecifier =
+		canEnumerateAll ? ALC_ALL_DEVICES_SPECIFIER : ALC_DEVICE_SPECIFIER;
+	const ALCenum defaultSpecifier =
+		canEnumerateAll ? ALC_DEFAULT_ALL_DEVICES_SPECIFIER : ALC_DEFAULT_DEVICE_SPECIFIER;
+
 	if (alcIsExtensionPresent(NULL, "ALC_ENUMERATION_EXT")) {
-		devices = (char *)alcGetString(NULL, ALC_ALL_DEVICES_SPECIFIER);
-		defaultDeviceName = (char *)alcGetString(NULL, ALC_DEFAULT_ALL_DEVICES_SPECIFIER);
-		
+		devices = (char *)alcGetString(NULL, devicesSpecifier);
+		defaultDeviceName = (char *)alcGetString(NULL, defaultSpecifier);
+		if (defaultDeviceName == NULL)
+			defaultDeviceName = "";
+
 		index = 0;
 		// go through device list (each device terminated with a single NULL, list terminated with double NULL)
-		while (*devices != '\0') {
+		while (devices != NULL && *devices != '\0' &&
+		       nNumOfDevices < (unsigned int)(sizeof(aDeviceInfo) / sizeof(aDeviceInfo[0]))) {
 			if (strcmp(defaultDeviceName, devices) == 0) {
 				defaultDeviceIndex = index;
 			}
@@ -56,7 +71,7 @@ ALDeviceList::ALDeviceList()
 				if (context) {
 					alcMakeContextCurrent(context);
 					// if new actual device name isn't already in the list, then add it...
-					actualDeviceName = alcGetString(device, ALC_ALL_DEVICES_SPECIFIER);
+					actualDeviceName = alcGetString(device, devicesSpecifier);
 					if ((actualDeviceName != NULL) && (strlen(actualDeviceName) > 0)) {
 						ALDEVICEINFO &ALDeviceInfo = aDeviceInfo[nNumOfDevices++];
 						ALDeviceInfo.bSelected = true;
@@ -91,14 +106,25 @@ ALDeviceList::ALDeviceList()
 						if (alIsExtensionPresent("EAX-RAM") == AL_TRUE)
 							ALDeviceInfo.Extensions |= ADEXT_EAX_RAM;
 
-						// Get Source Count
-						ALDeviceInfo.uiSourceCount = GetMaxNumSources();
+						// Get Source Count. GetMaxNumSources() looks the device up in
+						// aDeviceInfo by index, but the entry is only filled in at the
+						// end of this block, so it used to return 0 (or, for the first
+						// device, read an out-of-date slot) for every device.
+						{
+							ALCint maxSources = 0;
+							alcGetIntegerv(device, ALC_MONO_SOURCES, 1, &maxSources);
+							if (maxSources <= 0)
+								alcGetIntegerv(device, ALC_STEREO_SOURCES, 1, &maxSources);
+							ALDeviceInfo.uiSourceCount = maxSources > 0 ? (unsigned int)maxSources : 0u;
+						}
 					}
 					alcMakeContextCurrent(NULL);
 					alcDestroyContext(context);
 				}
 				alcCloseDevice(device);
 			}
+			if (devices == NULL)
+				break;
 			devices += strlen(devices) + 1;
 			index += 1;
 		}

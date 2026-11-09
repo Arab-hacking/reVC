@@ -1715,6 +1715,13 @@ void CStream::Update()
 
 		// Relying a lot on left buffer states in here
 
+		// The left/right sources advance independently: the two counters are
+		// sampled one after the other, so they rarely match on the first read.
+		// An unbounded spin here hung the main thread whenever the pair stayed
+		// desynchronised for good (e.g. one source failed to queue a buffer and
+		// then stopped), which on Android showed up as a frozen frame with audio.
+		// Retry a bounded number of times and fall back to the left source.
+		int spin = 0;
 		do
 		{
 			//alSourcef(m_pAlSources[0], AL_ROLLOFF_FACTOR, 0.0f);
@@ -1723,9 +1730,12 @@ void CStream::Update()
 			//alSourcef(m_pAlSources[1], AL_ROLLOFF_FACTOR, 0.0f);
 			alGetSourcei(m_pAlSources[1], AL_BUFFERS_QUEUED, &totalBuffers[1]);
 			alGetSourcei(m_pAlSources[1], AL_BUFFERS_PROCESSED, &buffersProcessed[1]);
-		} while (buffersProcessed[0] != buffersProcessed[1]);
+			if (buffersProcessed[0] == buffersProcessed[1])
+				break;
+		} while (++spin < 8);
 
-		assert(buffersProcessed[0] == buffersProcessed[1]);
+		if (buffersProcessed[0] != buffersProcessed[1])
+			buffersProcessed[1] = buffersProcessed[0];
 
 		// Correcting OpenAL concepts here:
 		// AL_BUFFERS_QUEUED = Number of *all* buffers in queue, including processed, processing and pending
@@ -1749,7 +1759,10 @@ void CStream::Update()
 		}
 		else
 		{
-			static std::queue<std::pair<ALuint, ALuint>> tempFillBuffer;
+			// Was a function-scope static: the queue survived between streams, so a
+			// stream that deactivated mid-drain (m_bActive false) left stale buffer
+			// pairs behind and the next stream inherited them.
+			std::queue<std::pair<ALuint, ALuint>> tempFillBuffer;
 
 			while ( buffersProcessed[0]-- )
 			{

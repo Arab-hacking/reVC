@@ -655,9 +655,20 @@ bool LoadINISettings()
 #endif
 
 #ifdef ANDROID
-	FrontEndMenuManager.m_PrefsFrameLimiter = 0;
-	FrontEndMenuManager.m_PrefsVsync = 0;
-	FrontEndMenuManager.m_PrefsVsyncDisp = 0;
+	// Frame limiter, VSync and widescreen were read from reVC.ini above and are
+	// offered in the in-game menu. Forcing them here made the menu show values
+	// that were never applied (and silently reset the player's choice on every
+	// launch). Only add the platform defaults for the keys the file did not
+	// contain, which is what a first run should get.
+	if (!cfg.get("Graphics").has("FrameLimiter"))
+		FrontEndMenuManager.m_PrefsFrameLimiter = 0;
+	if (!cfg.get("Graphics").has("VSync"))
+		FrontEndMenuManager.m_PrefsVsyncDisp = 0;
+#ifdef ASPECT_RATIO_SCALE
+	if (!cfg.get("Graphics").has("AspectRatio"))
+		FrontEndMenuManager.m_PrefsUseWideScreen = AR_AUTO;
+#endif
+	FrontEndMenuManager.m_PrefsVsync = FrontEndMenuManager.m_PrefsVsyncDisp;
 	FrontEndMenuManager.m_ControlMethod = CONTROL_STANDARD;
 	CCamera::m_bUseMouse3rdPerson = true;
 	CVehicle::m_bDisableMouseSteering = true;
@@ -668,9 +679,6 @@ bool LoadINISettings()
 		if (mobilePostFxVer < 1)
 			CPostFX::EffectSwitch = CPostFX::POSTFX_OFF;
 	}
-#endif
-#ifdef FREE_CAM
-	CCamera::bFreeCam = true;
 #endif
 #endif
 

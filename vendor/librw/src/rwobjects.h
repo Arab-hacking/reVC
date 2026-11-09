@@ -326,6 +326,10 @@ void conv_ARGB1555_from_RGB555(uint8 *out, uint8 *in);
 void conv_RGBA5551_from_ARGB1555(uint8 *out, uint8 *in);
 void conv_ARGB1555_from_RGBA5551(uint8 *out, uint8 *in);
 void conv_RGBA8888_from_ARGB1555(uint8 *out, uint8 *in);
+// GLES keeps every raster as RGBA8, so a 16/24-bit raster still has to be
+// converted down from 4-byte pixels when it is read back.
+void conv_ARGB1555_from_RGBA8888(uint8 *out, uint8 *in);
+void conv_RGB888_from_RGBA8888(uint8 *out, uint8 *in);
 void conv_ABGR1555_from_ARGB1555(uint8 *out, uint8 *in);
 inline void conv_8_from_8(uint8 *out, uint8 *in) { *out = *in; }
 // some swaps are the same, so these are just more descriptive names

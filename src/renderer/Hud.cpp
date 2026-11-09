@@ -1076,14 +1076,12 @@ void CHud::Draw()
 			}
 		}
 
-#ifdef ANDROID
-		#undef SCREEN_SCALE_X
-		#undef SCREEN_SCALE_Y
-		#undef SCREEN_SCALE_FROM_RIGHT
-		#define SCREEN_SCALE_X(a) SCREEN_SCALE_Y(a)
-		#define SCREEN_SCALE_Y(a) ((a) * (SCREEN_HEIGHT / DEFAULT_SCREEN_HEIGHT))
-		#define SCREEN_SCALE_FROM_RIGHT(a) (SCREEN_WIDTH - SCREEN_SCALE_X(a))
-#endif
+		// The touch-control scaling defined at the top of CHud::Draw is left in
+		// place here. This second #undef/#define pair used to replace it with
+		// SCREEN_SCALE_X(a) = SCREEN_SCALE_Y(a) *and* redefine SCREEN_SCALE_Y on
+		// top of itself for everything the rest of the frame drew, so the radar,
+		// wanted level and subtitles scaled differently from the money counter
+		// and weapons above them (and inconsistently between call sites).
 
 		/*
 			DrawRadar

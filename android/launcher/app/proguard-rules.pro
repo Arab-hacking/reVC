@@ -22,7 +22,6 @@
 
 -dontusemixedcaseclassnames
 -dontskipnonpubliclibraryclasses
--verbose
 
 # If you want to enable optimization, you should include the comenta o proguard pra ve
 # following:
@@ -119,16 +118,23 @@
     void hapticStop(int);
 }
 
- -dontwarn com.revc.game.MainActivity*
- -keep class com.revc.game.MainActivity { *; }
+# MainActivity is only referenced from the manifest; keep its name so the
+# manifest entry keeps working after R8.
+-keep class com.revc.game.MainActivity { *; }
 
- -dontwarn androidx.**
- -keep class androidx.** { *; }
+# Do not keep all of AndroidX: -dontwarn is enough for the optional classes
+# SDL touches reflectively, and keeping everything bloats the release APK.
+-dontwarn androidx.**
 
- -dontwarn org.ini4j.**
- -keep class org.ini4j.** { *; }
+# All native entry points are resolved by name from libSDL2.so. Keeping the
+# whole vendored package (with names) is the only reliable way to survive R8.
+-keep class org.libsdl.app.** { *; }
+-keepclasseswithmembernames,includedescriptorclasses class * {
+    native <methods>;
+}
+-keep,includedescriptorclasses class org.libsdl.app.**$$* { *; }
+-dontwarn org.libsdl.app.**
 
- -repackageclasses 'a'
 
  -keepattributes Exceptions, InnerClasses, Signature, Deprecated, SourceFile,
  LineNumberTable, *Annotation*, EnclosingMethod
@@ -136,9 +142,9 @@
 
  -dontwarn org.jetbrains.annotations.**
 
+# Only strip the two chatty levels; dropping warnings/errors hides real
+# diagnostics from `adb logcat` on release devices.
 -assumenosideeffects class android.util.Log {
     public static *** d(...);
     public static *** v(...);
-    public static *** w(...);
-    public static *** i(...);
 }

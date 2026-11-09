@@ -282,6 +282,9 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
        }
     }
 
+    /** Intent extra carrying the app-owned directory that holds the game data. */
+    public static final String EXTRA_GAME_DIR = "revc.gameDir";
+
     /**
      * This method is called by SDL before starting the native application thread.
      * It can be overridden to provide the arguments after the application name.
@@ -291,7 +294,7 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
     protected String[] getArguments() {
         // The launcher installs reVC support data and asks the player for
         // their own Vice City files in this app-owned, writable directory.
-        String gameDir = getIntent().getStringExtra("revc.gameDir");
+        String gameDir = getIntent().getStringExtra(EXTRA_GAME_DIR);
         if (gameDir == null && getExternalFilesDir(null) != null) {
             gameDir = getExternalFilesDir(null).getAbsolutePath();
         }
@@ -1016,68 +1019,79 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
     }
 
     /**
-     * Unlocks the display's maximum hardware refresh rate (90/120/144/165+ Hz)
-     * for both WindowManager.LayoutParams and SurfaceFlinger frame rate hints.
+     * Asks the platform for the highest refresh rate that is available at the
+     * display's current resolution.
+     *
+     * Careful: a naive "pick the mode with the biggest refresh rate" sweep also
+     * switches to a lower panel resolution (some panels expose e.g. 120 Hz only
+     * at 1080p while running at 1440p otherwise), and it also changed the
+     * render surface size under SDL's feet. The display mode is therefore kept
+     * as it is and only the frame-rate hints are raised.
      */
     public void applyHighestRefreshRate() {
+        Display display;
+        try {
+            if (Build.VERSION.SDK_INT >= 30) {
+                display = getDisplay();
+            } else {
+                WindowManager wm = getWindowManager();
+                display = wm != null ? wm.getDefaultDisplay() : null;
+            }
+        } catch (Exception e) {
+            Log.v(TAG, "applyHighestRefreshRate: no display (" + e + ")");
+            return;
+        }
+        if (display == null) {
+            return;
+        }
+
+        float bestHz;
+        try {
+            Display.Mode activeMode = display.getMode();
+            bestHz = (activeMode != null) ? activeMode.getRefreshRate()
+                                          : display.getRefreshRate();
+            Display.Mode[] modes = display.getSupportedModes();
+            if (modes != null && activeMode != null) {
+                for (Display.Mode mode : modes) {
+                    if (mode.getPhysicalWidth() == activeMode.getPhysicalWidth() &&
+                            mode.getPhysicalHeight() == activeMode.getPhysicalHeight() &&
+                            mode.getRefreshRate() > bestHz) {
+                        bestHz = mode.getRefreshRate();
+                    }
+                }
+            }
+        } catch (Exception e) {
+            Log.v(TAG, "applyHighestRefreshRate: mode query failed (" + e + ")");
+            return;
+        }
+        if (!(bestHz > 0.0f)) {
+            return;
+        }
+
         try {
             Window window = getWindow();
-            if (window == null) {
-                return;
-            }
-            Display display = (Build.VERSION.SDK_INT >= 30)
-                    ? getDisplay()
-                    : getWindowManager().getDefaultDisplay();
-            if (display == null) {
-                return;
-            }
-
-            Display.Mode activeMode = display.getMode();
-            Display.Mode[] modes = display.getSupportedModes();
-            Display.Mode bestMode = activeMode;
-            float bestHz = (activeMode != null) ? activeMode.getRefreshRate() : display.getRefreshRate();
-
-            if (modes != null && modes.length > 0) {
-                // Prefer highest refresh rate at native physical resolution first
-                for (Display.Mode m : modes) {
-                    if (activeMode != null &&
-                        m.getPhysicalWidth() == activeMode.getPhysicalWidth() &&
-                        m.getPhysicalHeight() == activeMode.getPhysicalHeight() &&
-                        m.getRefreshRate() > bestHz) {
-                        bestMode = m;
-                        bestHz = m.getRefreshRate();
-                    }
-                }
-                // Fallback: if a higher-Hz mode exists across any supported resolution, consider it
-                for (Display.Mode m : modes) {
-                    if (m.getRefreshRate() > bestHz) {
-                        bestMode = m;
-                        bestHz = m.getRefreshRate();
-                    }
+            if (window != null) {
+                WindowManager.LayoutParams lp = window.getAttributes();
+                // preferredDisplayModeId is deliberately left alone: setting it
+                // to a different mode id would also resize the window/surface.
+                if (Math.abs(lp.preferredRefreshRate - bestHz) > 0.1f) {
+                    lp.preferredRefreshRate = bestHz;
+                    window.setAttributes(lp);
                 }
             }
+        } catch (Exception e) {
+            Log.v(TAG, "applyHighestRefreshRate: window hint failed (" + e + ")");
+        }
 
-            WindowManager.LayoutParams lp = window.getAttributes();
-            boolean changed = false;
-            if (bestMode != null && lp.preferredDisplayModeId != bestMode.getModeId()) {
-                lp.preferredDisplayModeId = bestMode.getModeId();
-                changed = true;
-            }
-            if (bestHz > 0.0f && Math.abs(lp.preferredRefreshRate - bestHz) > 0.1f) {
-                lp.preferredRefreshRate = bestHz;
-                changed = true;
-            }
-            if (changed) {
-                window.setAttributes(lp);
-            }
-
-            if (Build.VERSION.SDK_INT >= 30 && mSurface != null) {
+        if (Build.VERSION.SDK_INT >= 30 && mSurface != null) {
+            try {
                 Surface surface = mSurface.getNativeSurface();
-                if (surface != null && surface.isValid() && bestHz > 0.0f) {
+                if (surface != null && surface.isValid()) {
                     surface.setFrameRate(bestHz, Surface.FRAME_RATE_COMPATIBILITY_DEFAULT);
                 }
+            } catch (Exception e) {
+                Log.v(TAG, "applyHighestRefreshRate: setFrameRate failed (" + e + ")");
             }
-        } catch (Throwable ignored) {
         }
     }
 
@@ -1118,23 +1132,11 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
      * This method is called by SDL using JNI.
      */
     public static boolean shouldMinimizeOnFocusLoss() {
-/*
-        if (Build.VERSION.SDK_INT >= 24) {
-            if (mSingleton == null) {
-                return true;
-            }
-
-            if (mSingleton.isInMultiWindowMode()) {
-                return false;
-            }
-
-            if (mSingleton.isInPictureInPictureMode()) {
-                return false;
-            }
-        }
-
-        return true;
-*/
+        // Android already suspends the activity through onPause()/onResume() when
+        // the app leaves the foreground. Minimizing on top of that (which is
+        // what returning true asks SDL to do) would also tear the window down
+        // when a system dialog - permission prompt, volume panel, controller
+        // pairing - steals focus for a moment. Keep the upstream SDL behaviour.
         return false;
     }
 

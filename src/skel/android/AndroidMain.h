@@ -21,6 +21,9 @@ namespace AndWrapper {
 
     bool InitLibraries();
     void SystemInitialize();
+    // Initialises logging, crash handling and the JNI wrapper. Must be called
+    // from the game's main() thread once the storage root is known.
+    void AndroidPlatformInit();
     void TimeInitialize();
     void* GetJNI();
     void* GetJNIFunc();

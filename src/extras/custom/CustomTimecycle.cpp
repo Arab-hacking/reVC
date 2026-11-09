@@ -666,6 +666,16 @@ CCustomTimecycle::EvaluateColorGrade(float fHour, int oldWeather, int newWeather
 void
 CCustomTimecycle::Apply(void)
 {
+#ifdef ANDROID
+	// data/colorcycle.dat feeds the 3x4 grading matrix uploaded as u_colorGrade
+	// by Renderer::ConstructRenderList(). Load it once; without the file the
+	// matrix stays identity and the mobile shaders are unaffected.
+	static bool colorcycleTried = false;
+	if(!colorcycleTried){
+		colorcycleTried = true;
+		LoadColorcycleDat();
+	}
+#endif
 	std::vector<uint8> data;
 	bool fromCommon = false;
 	if(!CCustomModels::ReadDataFile("data/timecyc.json", data, &fromCommon))

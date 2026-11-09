@@ -116,6 +116,31 @@ CText::Unload(void)
 	memset(szMissionTableName, 0, sizeof(szMissionTableName));
 }
 
+namespace {
+	struct FallbackText {
+		const char *key;
+		const wchar *text;
+	};
+
+	wchar *FallbackTextPtr(const wchar *text)
+	{
+		return const_cast<wchar*>(text);
+	}
+
+	// Static (not heap) so CText::Unload() and the text reload path stay simple.
+	const wchar s_lightDistLabel[] = {
+		'L','I','G','H','T',' ','D','I','S','T','A','N','C','E', 0
+	};
+	const wchar s_mobileQualityLabel[] = {
+		'G','R','A','P','H','I','C','S',' ','Q','U','A','L','I','T','Y', 0
+	};
+
+	const FallbackText s_fallbackText[] = {
+		{ "FEM_LGT", s_lightDistLabel },
+		{ "FEM_GFX", s_mobileQualityLabel },
+	};
+}
+
 wchar*
 CText::Get(const char *key)
 {
@@ -132,11 +157,14 @@ CText::Get(const char *key)
 #else
 		outstr = mission_keyArray.Search(key, &result);
 #endif
-	if (!result && key != nil && strcmp(key, "FEM_LGT") == 0) {
-		static wchar s_lightDistLabel[] = {
-			'L','I','G','H','T',' ','D','I','S','T','A','N','C','E', 0
-		};
-		return s_lightDistLabel;
+	if (!result && key != nil) {
+		// reVC adds menu entries whose GXT keys do not exist in the original
+		// Vice City text tables (the stock GXT is a player-supplied file we
+		// cannot extend). Without a fallback those rows show an empty label.
+		for (size_t i = 0; i < ARRAY_SIZE(s_fallbackText); i++) {
+			if (strcmp(key, s_fallbackText[i].key) == 0)
+				return FallbackTextPtr(s_fallbackText[i].text);
+		}
 	}
 	return outstr;
 }

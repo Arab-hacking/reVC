@@ -72,7 +72,10 @@ re3_sem_open(const char* format, ...)
     char semName[21];
     va_list va;
     va_start(va, format);
-    vsprintf(semName, format, va);
+    int written = vsnprintf(semName, sizeof(semName), format, va);
+    va_end(va);
+    if (written < 0 || written >= (int)sizeof(semName))
+        return SEM_FAILED;
 
     return sem_open(semName, O_CREAT, 0644, 1);
 }
@@ -86,9 +89,11 @@ re3_sem_close(sem_t* sem, const char* format, ...)
     char semName[21];
     va_list va;
     va_start(va, format);
-    vsprintf(semName, format, va);
+    int written = vsnprintf(semName, sizeof(semName), format, va);
+    va_end(va);
 
-    sem_unlink(semName);
+    if (written > 0 && written < (int)sizeof(semName))
+        sem_unlink(semName);
 }
 
 #endif
@@ -122,6 +127,11 @@ pthread_t _gCdStreamThread;
 sem_t *gCdStreamSema; // released when we have new thing to read(so channel is set)
 int8 gCdStreamThreadStatus; // 0: created 1:priority set up 2:abort now
 Queue gChannelRequestQ;
+// The request queue is written by the game thread and read by the streaming
+// thread; without this lock head/tail were updated concurrently and requests
+// were silently lost (or the same channel read twice).
+pthread_mutex_t gChannelRequestQMutex = PTHREAD_MUTEX_INITIALIZER;
+int32 gChannelRequestQCount;
 bool _gbCdStreamOverlapped;
 #endif
 
@@ -142,7 +152,8 @@ CdStreamInitThread(void)
 	gChannelRequestQ.head = 0;
 	gChannelRequestQ.tail = 0;
 	gChannelRequestQ.size = gNumChannels + 1;
-	ASSERT(gChannelRequestQ.items != nil );
+	gChannelRequestQCount = 0;
+	ASSERT(gChannelRequestQ.items != nil);
     gCdStreamSema = RE3_SEM_OPEN("/semaphore_cd_stream");
 
     if (gCdStreamSema == SEM_FAILED) {
@@ -281,26 +292,39 @@ GetGTA3ImgSize(void)
 void
 CdStreamShutdown(void)
 {
-    // Destroying semaphores and free(gpReadInfo) will be done at threads
+    // Semaphores are destroyed by the streaming thread(s); the read info array
+    // is only released here, once every thread has been joined.
 #ifndef ONE_THREAD_PER_CHANNEL
+	if (gCdStreamSema == nil || gpReadInfo == nil)
+		return;
 	gCdStreamThreadStatus = 2;
 	sem_post(gCdStreamSema);
 	pthread_join(_gCdStreamThread, nil);
+	gCdStreamThreadStatus = 0;
 #else
+	if (gpReadInfo == nil)
+		return;
 	for ( int32 i = 0; i < gNumChannels; i++ ) {
 		gpReadInfo[i].nThreadStatus = 2;
 		sem_post(gpReadInfo[i].pStartSemaphore);
 		pthread_join(gpReadInfo[i].pChannelThread, nil);
 	}
 #endif
+	free(gpReadInfo);
+	gpReadInfo = nil;
+	gNumChannels = 0;
 }
 
 
 int32
 CdStreamRead(int32 channel, void *buffer, uint32 offset, uint32 size)
 {
-	ASSERT( channel < gNumChannels );
-	ASSERT( buffer != nil );
+	// None of these are assertions any more: ASSERT() compiles to nothing in
+	// release builds, so an out-of-range channel used to index a null pointer.
+	if ( gpReadInfo == nil || channel < 0 || channel >= gNumChannels || buffer == nil ) {
+		REVC_LOG_ERROR("CdStreamRead: invalid channel %d (num %d)", channel, gNumChannels);
+		return STREAM_ERROR;
+	}
 
 	lastPosnRead = size + offset;
 
@@ -312,7 +336,14 @@ CdStreamRead(int32 channel, void *buffer, uint32 offset, uint32 size)
 	ASSERT( pChannel != nil );
 
 	if ( pChannel->nSectorsToRead != 0 || pChannel->bReading ) {
-		if (pChannel->hFile == hImage - 1 && pChannel->nSectorOffset == _GET_OFFSET(offset) && pChannel->nSectorsToRead >= size)
+		// Only a request for exactly the same file/offset/buffer can be
+		// coalesced. Comparing just the sector count reported STREAM_SUCCESS for
+		// a *different* destination buffer, which the streaming thread was not
+		// filling - the caller then decoded uninitialised memory.
+		if (pChannel->hFile == hImage - 1 &&
+		    pChannel->nSectorOffset == _GET_OFFSET(offset) &&
+		    pChannel->pBuffer == buffer &&
+		    pChannel->nSectorsToRead >= size)
 			return STREAM_SUCCESS;
 #ifdef FLUSHABLE_STREAMING
 		flushStream[channel] = 1;
@@ -330,7 +361,9 @@ CdStreamRead(int32 channel, void *buffer, uint32 offset, uint32 size)
 	pChannel->bLocked = 0;
 
 #ifndef ONE_THREAD_PER_CHANNEL
+	pthread_mutex_lock(&gChannelRequestQMutex);
 	AddToQueue(&gChannelRequestQ, channel);
+	pthread_mutex_unlock(&gChannelRequestQMutex);
     if ( sem_post(gCdStreamSema) != 0 )
 		printf("Signal Sema Error\n");
 #else
@@ -344,9 +377,9 @@ CdStreamRead(int32 channel, void *buffer, uint32 offset, uint32 size)
 int32
 CdStreamGetStatus(int32 channel)
 {
-	ASSERT( channel < gNumChannels );
+	if ( gpReadInfo == nil || channel < 0 || channel >= gNumChannels )
+		return STREAM_NONE;
 	CdReadInfo *pChannel = &gpReadInfo[channel];
-	ASSERT( pChannel != nil );
 
 #ifdef ONE_THREAD_PER_CHANNEL
 	if (pChannel->nThreadStatus == 2)
@@ -383,9 +416,9 @@ CdStreamGetLastPosn(void)
 int32
 CdStreamSync(int32 channel)
 {
-	ASSERT( channel < gNumChannels );
+	if ( gpReadInfo == nil || channel < 0 || channel >= gNumChannels )
+		return STREAM_NONE;
 	CdReadInfo *pChannel = &gpReadInfo[channel];
-	ASSERT( pChannel != nil );
 
 #ifdef FLUSHABLE_STREAMING
 	if (flushStream[channel]) {
@@ -408,10 +441,13 @@ CdStreamSync(int32 channel)
 	}
 #endif
 
-	if ( pChannel->nSectorsToRead != 0 )
+	if ( pChannel->nSectorsToRead != 0 || pChannel->bReading )
 	{
 		pChannel->bLocked = true;
-		while (pChannel->bLocked && pChannel->nSectorsToRead != 0){
+		// `nSectorsToRead` alone is not enough: the streaming thread clears it
+		// before it has finished writing the buffer, so the caller could start
+		// decoding while the read was still in flight. Wait for bReading too.
+		while (pChannel->bLocked && (pChannel->nSectorsToRead != 0 || pChannel->bReading)){
 			sem_wait(pChannel->pDoneSemaphore);
 		}
 		pChannel->bLocked = false;
@@ -422,41 +458,39 @@ CdStreamSync(int32 channel)
 	return pChannel->nStatus;
 }
 
+// All three helpers are called with gChannelRequestQMutex held.
 void
 AddToQueue(Queue *queue, int32 item)
 {
-	ASSERT( queue != nil );
-	ASSERT( queue->items != nil );
+	if ( queue == nil || queue->items == nil )
+		return;
+	if ( gChannelRequestQCount >= queue->size - 1 ) {
+		// The queue used to overwrite its oldest entry and report the full
+		// state only through the debug log: the read request then never
+		// completed and the game stalled waiting for it.
+		debug("CdStream request queue is full\n");
+		return;
+	}
 	queue->items[queue->tail] = item;
-
 	queue->tail = (queue->tail + 1) % queue->size;
-
-	if ( queue->head == queue->tail )
-		debug("Queue is full\n");
+	gChannelRequestQCount++;
 }
 
 int32
 GetFirstInQueue(Queue *queue)
 {
-	ASSERT( queue != nil );
-	if ( queue->head == queue->tail )
+	if ( queue == nil || queue->items == nil || gChannelRequestQCount == 0 )
 		return -1;
-
-	ASSERT( queue->items != nil );
 	return queue->items[queue->head];
 }
 
 void
 RemoveFirstInQueue(Queue *queue)
 {
-	ASSERT( queue != nil );
-	if ( queue->head == queue->tail )
-	{
-		debug("Queue is empty\n");
+	if ( queue == nil || queue->items == nil || gChannelRequestQCount == 0 )
 		return;
-	}
-
 	queue->head = (queue->head + 1) % queue->size;
+	gChannelRequestQCount--;
 }
 
 void *CdStreamThread(void *param)
@@ -465,24 +499,30 @@ void *CdStreamThread(void *param)
 
 #ifndef ONE_THREAD_PER_CHANNEL
 	while (gCdStreamThreadStatus != 2) {
-		sem_wait(gCdStreamSema);
+		if (sem_wait(gCdStreamSema) != 0) {
+			if (errno == EINTR)
+				continue;
+			break;
+		}
 
+		pthread_mutex_lock(&gChannelRequestQMutex);
 		int32 channel = GetFirstInQueue(&gChannelRequestQ);
-		
+		if (channel != -1)
+			RemoveFirstInQueue(&gChannelRequestQ);
+		pthread_mutex_unlock(&gChannelRequestQMutex);
+
 		// spurious wakeup
 		if (channel == -1)
 			continue;
 #else
 	int channel = *((int*)param);
+	free(param);
 	while (gpReadInfo[channel].nThreadStatus != 2){
 		sem_wait(gpReadInfo[channel].pStartSemaphore);
 #endif
 
 		CdReadInfo *pChannel = &gpReadInfo[channel];
-		ASSERT( pChannel != nil );
-
-		// spurious wakeup or we sent interrupt signal for flushing
-		if(pChannel->nSectorsToRead == 0)
+		if (pChannel->nSectorsToRead == 0)
 			continue;
 
 		pChannel->bReading = true;
@@ -502,48 +542,80 @@ void *CdStreamThread(void *param)
 #endif
 		if ( pChannel->nStatus == STREAM_NONE )
 		{
-			ASSERT(pChannel->hFile >= 0);
-			ASSERT(pChannel->pBuffer != nil );
-
-			lseek(pChannel->hFile, (size_t)pChannel->nSectorOffset * (size_t)CDSTREAM_SECTOR_SIZE, SEEK_SET);
-			if (read(pChannel->hFile, pChannel->pBuffer, pChannel->nSectorsToRead * CDSTREAM_SECTOR_SIZE) == -1) {
-				// pChannel->nSectorsToRead == 0 at this point means we wanted to flush channel
-				// STREAM_WAITING is a little hack to make CStreaming not process this data
-				pChannel->nStatus = pChannel->nSectorsToRead == 0 ? STREAM_WAITING : STREAM_ERROR;
+			if (pChannel->hFile < 0 || pChannel->pBuffer == nil) {
+				pChannel->nStatus = STREAM_ERROR;
 			} else {
-				pChannel->nStatus = STREAM_NONE;
+				off_t wanted = (off_t)pChannel->nSectorsToRead * CDSTREAM_SECTOR_SIZE;
+				off_t position = (off_t)pChannel->nSectorOffset * CDSTREAM_SECTOR_SIZE;
+				if (lseek(pChannel->hFile, position, SEEK_SET) != position) {
+					pChannel->nStatus = pChannel->nSectorsToRead == 0 ? STREAM_WAITING : STREAM_ERROR;
+				} else {
+					// A single read() may return less than asked for (large
+					// request, low memory, EINTR). The old code accepted that as
+					// success and the game decoded a half-filled buffer.
+					uint8 *destination = (uint8*)pChannel->pBuffer;
+					off_t remaining = wanted;
+					bool failed = false;
+					while (remaining > 0) {
+						ssize_t got = read(pChannel->hFile, destination, (size_t)remaining);
+						if (got < 0) {
+							if (errno == EINTR) {
+								if (pChannel->nSectorsToRead == 0) { failed = false; break; }
+								continue;
+							}
+							failed = true;
+							break;
+						}
+						if (got == 0) { // unexpected EOF
+							failed = true;
+							break;
+						}
+						destination += got;
+						remaining -= got;
+					}
+					if (failed || remaining != 0)
+						// nSectorsToRead == 0 means we wanted to flush channel;
+						// STREAM_WAITING is a little hack to make CStreaming not process this data
+						pChannel->nStatus = pChannel->nSectorsToRead == 0 ? STREAM_WAITING : STREAM_ERROR;
+					else
+						pChannel->nStatus = STREAM_NONE;
+				}
 			}
 		}
 
-#ifndef ONE_THREAD_PER_CHANNEL
-		RemoveFirstInQueue(&gChannelRequestQ);
-#endif
-
+		// Clear the request before waking the waiter, otherwise CdStreamSync()
+		// can spin on a request that is already finished.
 		pChannel->nSectorsToRead = 0;
+		pChannel->bReading = false;
 		if ( pChannel->bLocked )
 		{
 			pChannel->bLocked = 0;
 			sem_post(pChannel->pDoneSemaphore);
 		}
-		pChannel->bReading = false;
 	}
-	char semName[20];
+
 #ifndef ONE_THREAD_PER_CHANNEL
 	for ( int32 i = 0; i < gNumChannels; i++ )
 	{
 		RE3_SEM_CLOSE(gpReadInfo[i].pDoneSemaphore, "/semaphore_done%d", i);
 	}
 	RE3_SEM_CLOSE(gCdStreamSema, "/semaphore_cd_stream");
+	gCdStreamSema = nil;
 	free(gChannelRequestQ.items);
+	gChannelRequestQ.items = nil;
 #else
 	RE3_SEM_CLOSE(gpReadInfo[channel].pStartSemaphore, "/semaphore_start%d", channel);
+	gpReadInfo[channel].pStartSemaphore = nil;
 
 	RE3_SEM_CLOSE(gpReadInfo[channel].pDoneSemaphore, "/semaphore_done%d", channel);
+	gpReadInfo[channel].pDoneSemaphore = nil;
 #endif
-	if (gpReadInfo)
-		free(gpReadInfo);
-	gpReadInfo = nil;
+	// gpReadInfo is deliberately NOT freed here: CdStreamShutdown() releases it
+	// after pthread_join(), so the other channels (one thread per channel) and
+	// the game thread can never see a dangling array. The old free() here was
+	// the double-free/use-after-free seen right after a level restart.
 	pthread_exit(nil);
+	return nil;
 }
 
 bool

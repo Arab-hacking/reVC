@@ -11,9 +11,22 @@
 В [Android Actions этого репозитория](https://github.com/Arab-hacking/reVC/actions/workflows/build-android.yml)
 выберите **успешный запуск для своей ветки/PR** и скачайте артефакт
 `revc-release` (внутри `app-release.apk`). Для диагностики есть `revc-debug`.
-Это тестовые APK: конфигурация Release пока подписана отладочным ключом, не
-ключом для Google Play. Установка на Android 7.0+ может потребовать разрешения
-устанавливать APK из выбранного источника.
+Release-вариант больше **не подписывается отладочным ключом**. Если ключ не
+задан, CI собирает неподписанный `app-release-unsigned.apk` — подпишите его
+`apksigner` перед установкой или задайте собственный keystore:
+
+```bash
+export REVC_KEYSTORE=/path/to/revc.jks
+export REVC_KEYSTORE_PASSWORD=...
+export REVC_KEY_ALIAS=revc
+export REVC_KEY_PASSWORD=...
+./gradlew assembleRelease
+```
+
+Те же значения можно передать через `-PrevcKeystore=...`,
+`-PrevcKeystorePassword=...`, `-PrevcKeyAlias=...`, `-PrevcKeyPassword=...`.
+Установка на Android 7.0+ может потребовать разрешения устанавливать APK из
+выбранного источника.
 
 Сборка из исходников: откройте `android/launcher` в Android Studio с JDK 17,
 SDK 35, NDK `27.2.12479018` и CMake `3.22.1`. Клонируйте репозиторий с
