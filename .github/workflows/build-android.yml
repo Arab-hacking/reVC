@@ -149,7 +149,20 @@ jobs:
             find app/build/outputs -name '*.apk' -print >&2 || true
             exit 1
           fi
+          # This step runs in android/launcher, but `uses:` steps (the artifact
+          # upload below) are always resolved from the repository root - the
+          # job-level working-directory only applies to `run:`. Emitting the
+          # bare app/build/... path therefore made upload-artifact report
+          # "No files were found ... app/build/outputs/apk/debug/app-debug.apk"
+          # even though the build and the APK verification had succeeded.
+          root_apk="android/launcher/${apk}"
+          if [ ! -f "${GITHUB_WORKSPACE}/${root_apk}" ]; then
+            echo "APK path ${root_apk} does not resolve from the workspace root" >&2
+            exit 1
+          fi
           echo "apk=${apk}" >> "$GITHUB_OUTPUT"
+          echo "apk_path=${root_apk}" >> "$GITHUB_OUTPUT"
+          echo "APK: ${root_apk} ($(du -h "${apk}" | cut -f1))"
 
       - name: Verify game library and assets in APK
         run: python3 ../../tools/android/check_apk.py "${{ steps.apk.outputs.apk }}"
@@ -158,5 +171,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: revc-${{ matrix.variant }}
-          path: ${{ steps.apk.outputs.apk }}
+          path: ${{ steps.apk.outputs.apk_path }}
           if-no-files-found: error
+          retention-days: 14
