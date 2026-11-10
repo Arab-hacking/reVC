@@ -355,7 +355,7 @@ uint64 timeProcessingDFF;
 #endif
 
 #ifdef ANDROID
-#include "core/OptimizationConfig.h"
+#include "OptimizationConfig.h"
 namespace {
 static float s_mobileRamLodScale = 1.0f;
 static int s_mobileVehReqBudget = OPT_vehicleRequestsPerFrame;
