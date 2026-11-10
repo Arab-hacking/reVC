@@ -193,7 +193,13 @@ class GL3ShaderTests(unittest.TestCase):
                 self.fail("%s uses undeclared uniform %s" % (body.name, name))
 
     def test_paraboloid_capture_contract(self):
-        """The capture pass must follow the client's vertex projection."""
+        """The capture pass and the material sampling must use one mapping.
+
+        The client writes the env map with the polar projection (0x42b527) and
+        samples it with the matching mapping (0x434bb8). Getting the producer
+        and the consumer out of step is invisible in a build and only shows up
+        as "reflections look wrong", so pin both halves here.
+        """
         h_vs = embedded_source(VENDOR / "header.vert")
         # 0x42b527, verbatim arithmetic
         self.assertIn("vec3 ReflVector = worldPos - u_eye.xyz;", h_vs)
@@ -201,14 +207,31 @@ class GL3ShaderTests(unittest.TestCase):
         self.assertIn("length(ReflVector) * 0.002", h_vs)
         self.assertIn("uniform vec4 u_paraboloid;", h_vs)
         self.assertIn("uniform vec4 u_paraboloid;", embedded_source(VENDOR / "header.frag"))
-        # both world vertex stages use it, and the capture body is flat
-        for vs in ("default.vert", "skin.vert"):
-            self.assertIn("ParaboloidProjection(Vertex.xyz)", embedded_source(VENDOR / vs))
-        self.assertIn("u_paraboloid.x > 0.5", embedded_source(VENDOR / "simple.frag"))
-        # the material reflection samples the polar map when the capture feeds it
-        fx = embedded_source(VENDOR / "matfx_env.frag")
-        self.assertIn("u_envMapMode.x > 0.5", fx)
-        self.assertIn("planar * (refl0.z * 0.5 + 0.5) * 0.5 + 0.5", fx)
+
+        # Every vertex stage that computes gl_Position from a perspective
+        # matrix must honour the capture pass, otherwise that geometry lands in
+        # the env map with the wrong projection (and the map is garbage).
+        stages = [VENDOR / "default.vert", VENDOR / "skin.vert", VENDOR / "matfx_env.vert"] + \
+                 [EXTRAS / n for n in ("neoVehicle.vert", "neoRim.vert", "neoRimSkin.vert",
+                                       "default_UV2.vert", "neoGloss.vert")]
+        for vs in stages:
+            text = embedded_source(vs)
+            with self.subTest(stage=vs.name):
+                self.assertIn("u_paraboloid.x > 0.5 ? ParaboloidProjection(", text)
+
+        # The vehicle material shader samples the captured map with the polar
+        # mapping the capture writes (not a perspective UV matrix).
+        veh = embedded_source(EXTRAS / "neoVehicle.frag")
+        self.assertIn("SampleVehicleParaboloidEnv", veh)
+        # ...using the capture's own polar mapping, not a stereographic one.
+        self.assertIn("rplanar * (r.z * 0.5 + 0.5) * 0.5 + 0.5", veh)
+        self.assertNotIn("1.0 + rp.z", veh)
+        # ...and custompipes actually feeds the capture into that texture unit.
+        pipes = (ROOT / "src/extras/custompipes.cpp").read_text()
+        self.assertIn("beginParaboloidPass", pipes)
+        self.assertIn("setCaptureEyePosition", pipes)
+        pipes_gl = (ROOT / "src/extras/custompipes_gl.cpp").read_text()
+        self.assertIn("setTexture(1, EnvMapTex)", pipes_gl)
 
     def test_view_matrix_eye_and_env_uniform_sync(self):
         gl3_cpp = (ROOT / "vendor/librw/src/gl/gl3device.cpp").read_text()

@@ -34,20 +34,7 @@ main(void)
 	if(u_atmosphere.x < 0.5){
 		vec4 pass1 = v_color * texCol;
 		vec3 refl0 = reflect(-V0_global, N0_global);
-		// u_envMapMode.x: 0 = ordinary 2D env map (game TXD, u_texMatrix UV),
-		// 1 = paraboloid capture. The capture pass writes NDC straight into the
-		// map (0x42b527), so the lookup is the same polar projection:
-		//   ReflPos = normalize(refl.xy) * (refl.z * 0.5 + 0.5)   (0x434bb8)
-		//   uv      = ReflPos * 0.5 + 0.5      (NDC -> texture space)
-		vec2 envUV0;
-		if(u_envMapMode.x > 0.5){
-			vec2 planar = refl0.xy;
-			float plen2 = dot(planar, planar);
-			planar = plen2 > 1.0e-12 ? planar * inversesqrt(plen2) : vec2(0.0);
-			envUV0 = planar * (refl0.z * 0.5 + 0.5) * 0.5 + 0.5;
-		}else{
-			envUV0 = (u_texMatrix * vec4(refl0, 1.0)).xy;
-		}
+		vec2 envUV0 = (u_texMatrix * vec4(refl0, 1.0)).xy;
 		// Black Russia reflection chain (13.1, verbatim):
 		//   envmap.rgb = texture(tex2, ReflPos).rgb;               (0x3e1241)
 		//   envmap.rgb = envmap.rgb * fresnelFactor * u_envMapCoef;(0x40b632)

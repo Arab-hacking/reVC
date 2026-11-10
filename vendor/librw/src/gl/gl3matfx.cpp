@@ -92,24 +92,6 @@ uploadEnvMatrix(Frame *frame)
 	setUniform(u_texMatrix, &envMtx);
 }
 
-// The paraboloid capture (see ParaboloidEnvMap) is registered here so the
-// shader can switch its lookup. The client stores a polar projection in the
-// map, so sampling it through u_texMatrix (a 2D UV matrix) would be wrong:
-//   ReflPos = normalize(refl.xy) * (refl.z * 0.5 + 0.5)              (0x434bb8)
-static Texture *s_paraboloidTex;
-
-void
-setMatFXParaboloidTex(Texture *tex)
-{
-	s_paraboloidTex = tex;
-}
-
-Texture *
-getMatFXParaboloidTex(void)
-{
-	return s_paraboloidTex;
-}
-
 void
 matfxEnvRender(InstanceDataHeader *header, InstanceData *inst, int32 vsBits, uint32 flags, MatFX::Env *env)
 {
@@ -120,10 +102,6 @@ matfxEnvRender(InstanceDataHeader *header, InstanceData *inst, int32 vsBits, uin
 		matfxDefaultRender(header, inst, vsBits, flags);
 		return;
 	}
-
-	// A captured paraboloid map is sampled with the polar projection, every
-	// other env map (game TXD) keeps RenderWare's u_texMatrix path.
-	setEnvMapMode(s_paraboloidTex != nil && env->tex == s_paraboloidTex);
 
 	setTexture(0, m->texture);
 	setTexture(1, env->tex);

@@ -247,7 +247,33 @@ EnvMapRender(void)
 	skycol.blue = (CTimeCycle::GetSkyTopBlue() + CTimeCycle::GetSkyBottomBlue()) / 2;
 	skycol.alpha = 255;
 	EnvMapCam->clear(&skycol, rwCAMERACLEARZ|rwCAMERACLEARIMAGE);
-	RwCameraBeginUpdate(EnvMapCam);
+
+	// The client renders its env map with the paraboloid projection printed
+	// straight into NDC (0x42b527), not with a perspective camera, and the
+	// material shaders sample it with the matching polar mapping. Bind that
+	// capture to the same raster the vehicle pipeline reads as tex1 so the
+	// producer and the consumer finally agree. The reflection mask below is
+	// part of the env map, so it is drawn while the raster is still bound.
+	bool paraboloid = false;
+	uint32 envFbo = 0;
+#ifdef RW_GL3
+	envFbo = rw::gl3::rasterFramebuffer((rw::Raster*)EnvMapCam->frameBuffer);
+	if(envFbo != 0)
+		paraboloid = rw::gl3::beginParaboloidPass(envFbo, EnvMapSize, EnvMapSize, &skycol);
+#endif
+	if(!paraboloid){
+		// Non-GL3 backends (and a raster without an FBO) keep the perspective
+		// camera path.
+		RwCameraBeginUpdate(EnvMapCam);
+	}else{
+#ifdef RW_GL3
+		rw::V3d envEye;
+		envEye.x = camPos.x;
+		envEye.y = camPos.y;
+		envEye.z = camPos.z;
+		rw::gl3::setCaptureEyePosition(envEye);
+#endif
+	}
 	bRenderingEnvMap = true;
 	CCustomSky::Render(CVector(camPos.x, camPos.y, camPos.z), true);
 	RenderEnvMapScene();
@@ -265,9 +291,13 @@ EnvMapRender(void)
 		rw::SetRenderState(rw::SRCBLEND, rw::BLENDSRCALPHA);
 		rw::SetRenderState(rw::DESTBLEND, rw::BLENDINVSRCALPHA);
 	}
-	RwCameraEndUpdate(EnvMapCam);
-
-
+	if(paraboloid){
+#ifdef RW_GL3
+		rw::gl3::endParaboloidPass();
+#endif
+	}else{
+		RwCameraEndUpdate(EnvMapCam);
+	}
 	RwCameraBeginUpdate(Scene.camera);
 
 	// debug env map

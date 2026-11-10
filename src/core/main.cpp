@@ -81,7 +81,6 @@
 #include "custompipes.h"
 #include "CustomSky.h"
 #include "SunShadowMap.h"
-#include "ParaboloidEnvMap.h"
 #if defined(CUSTOM_MODELS) && defined(LIBRW)
 #include "SAStaticModel.h"
 #endif
@@ -1398,18 +1397,6 @@ if(gbRenderFadingInEntities)
 }
 #endif
 
-// Обход сцены для захвата карты окружения. Тот же набор рендереров, что и у
-// основной сцены, но без неба/воды/эффектов: карта хранит окружение (здания,
-// дороги, транспорт), а не полный кадр.
-static void
-RenderParaboloidScene(void)
-{
-	DefinedState();
-	CRenderer::RenderRoads();
-	CRenderer::RenderEverythingBarRoads();
-	CRenderer::RenderFadingInEntities();
-}
-
 void
 RenderScene(void)
 {
@@ -1689,15 +1676,6 @@ Idle(void *arg)
 		RwCameraSetFarClipPlane(Scene.camera, CTimeCycle::GetFarClip());
 		RwCameraSetFogDistance(Scene.camera, CTimeCycle::GetFogStart());
 #endif
-
-		// Параболоидальная карта окружения клиента: отдельный проход до
-		// основной сцены. Внутри прохода пайплайн мира рисует атомы плоско
-		// (см. gl3pipe/paraboloidCaptureAtomic), поэтому колбэк — обычный
-		// обход CRenderer, а не отдельный набор вызовов.
-		CParaboloidEnvMap::Capture(&RenderParaboloidScene, CParaboloidEnvMap::UpdateStride());
-		// Первый удачный захват — материал машин переключается на живую карту
-		// (до этого отражения идут по плоскому fallback).
-		CVehicleModelInfo::RefreshReflectionEnvTexture();
 
 		tbStartTimer(0, "RenderScene");
 		RenderScene();

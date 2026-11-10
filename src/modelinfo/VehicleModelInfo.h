@@ -198,9 +198,6 @@ public:
 	static RpMaterial *GetMatFXEffectMaterialCB(RpMaterial *material, void *data);
 	void SetEnvironmentMap(void);
 	static void LoadEnvironmentMaps(void);
-	// Switches vehicle reflections to the captured paraboloid map once it is
-	// available (no-op until then, and without the GL3 capture).
-	static void RefreshReflectionEnvTexture(void);
 	static void ShutdownEnvironmentMaps(void);
 
 	static int GetMaximumNumberOfPassengersFromNumberOfDoors(int id);

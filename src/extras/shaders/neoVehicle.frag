@@ -31,9 +31,15 @@ DoDirLightSpec(vec3 N, vec3 V, vec3 L, float power)
 vec3
 SampleVehicleParaboloidEnv(vec3 roughR, float linearRoughness, vec3 L, vec3 sunDirectColor, vec3 sunAmbientColor)
 {
+	// Must invert exactly what the capture pass wrote (header.vert,
+	// ParaboloidProjection / client 0x42b527):
+	//   NDC.xy = normalize(r.xy) * (r.z * 0.5 + 0.5)
+	// so the lookup is the same polar mapping, not a stereographic one.
 	vec3 r = roughR * inversesqrt(max(dot(roughR, roughR), 1.0e-6));
-	vec3 rp = normalize(vec3(r.xy, abs(r.z) + 1.0e-5));
-	vec2 envUV = (rp.xy / (1.0 + rp.z)) * 0.485 + 0.5;
+	vec2 rplanar = r.xy;
+	float rlen2 = dot(rplanar, rplanar);
+	rplanar = rlen2 > 1.0e-12 ? rplanar * inversesqrt(rlen2) : vec2(0.0);
+	vec2 envUV = rplanar * (r.z * 0.5 + 0.5) * 0.5 + 0.5;
 	vec3 texEnvLin = BR_SRGBtoLINEAR(texture(tex1, vec2(envUV.x, 1.0 - envUV.y))).rgb * 0.68;
 
 	float hemiMask = smoothstep(-0.28, 0.14, r.z);

@@ -44,27 +44,36 @@ color.rgb += diffuse + specular + env;
 
 ### Что изменено в reVC
 
+Ключевой факт: на Android машины рисует **не** `matfx_env.*` из librw, а свой
+конвейер `neoVehicle.*` (`custompipes_gl.cpp`, `setTexture(1, EnvMapTex)`), а
+`u_atmosphere.x` на устройстве всегда `>= 1.5` (LOW 1.7 / MED 2.0 / HIGH 2.2),
+тогда как «клиентская» ветка в `matfx_env.frag` включается при `< 0.5`. То есть
+правки только в desktop-ветке `matfx_env` на экране **не видны** — с этого и
+начался промах.
+
 | Файл | Изменение |
 | --- | --- |
-| `src/renderer/ParaboloidEnvMap.{h,cpp}` | Захват: `rwRASTERTYPECAMERATEXTURE` 256×256, z-буфер, `RwTexture`, `UpdateStride()`, `Capture(renderScene, stride)` |
-| `vendor/librw/src/gl/shaders/header.vert` | `ParaboloidProjection()` — арифметика `0x42b527` дословно, NaN-безопасно |
-| `default.vert`, `skin.vert` | `gl_Position = u_paraboloid.x > 0.5 ? ParaboloidProjection(Vertex.xyz) : u_proj*u_view*Vertex;` |
-| `simple.frag` | плоская ветвь цвета на время захвата |
-| `header.frag` | `uniform vec4 u_paraboloid;`, `uniform vec4 u_envMapMode;` |
-| `matfx_env.frag` | полярная выборка карты при `u_envMapMode.x > 0.5`; иначе прежний `u_texMatrix` |
-| `gl3device.cpp` | `u_paraboloid`, `u_envMapMode`, `begin/endParaboloidPass`, `set/getEnvMapMode`, `setCaptureEyePosition` |
-| `gl3matfx.cpp` | `setMatFXParaboloidTex()` — переключение выборки только для текстуры захвата |
+| `vendor/librw/src/gl/shaders/header.vert` | `ParaboloidProjection()` — арифметика `0x42b527` дословно, NaN-безопасно (`inversesqrt`, вырожденный `xy` → центр) |
+| `default.vert`, `skin.vert`, `matfx_env.vert` | `gl_Position = u_paraboloid.x > 0.5 ? ParaboloidProjection(...) : u_proj*u_view*Vertex` |
+| `neoVehicle.vert`, `neoRim.vert`, `neoRimSkin.vert`, `default_UV2.vert`, `neoGloss.vert` | то же — **именно эти стадии рисуют машины на Android** |
+| `neoVehicle.frag` | сэмплинг карты приведён к проекции захвата (полярная, `0x42b527`), раньше был стереографический `rp.xy/(1+rp.z)` |
+| `src/extras/custompipes.cpp` | `EnvMapRender()` пишет карту в `EnvMapTex` через `beginParaboloidPass`/`endParaboloidPass`, `u_eye` = точка зонда; маска отражения рисуется **внутри** прохода, до `endParaboloidPass` |
+| `gl3device.cpp` | `u_paraboloid`, `begin/endParaboloidPass`, `setCaptureEyePosition`, `rasterFramebuffer`, восстановление `u_eye` на выходе |
 | `gl3pipe.cpp` | ветка захвата в `ObjPipeline::render` |
-| `VehicleModelInfo.cpp` | `RefreshReflectionEnvTexture()` — материалы машин переводятся на живую карту |
+| `GraphicsParity.h` | формулы тумана/отражений/пост-обработки |
+| `tests/GraphicsParityTests.cpp` | 100 проверок значений |
+| `tests/GL3ShaderTests.py` | контракт захвата + «каждый используемый uniform объявлен» |
 
-Ключевое решение: проходу захвата **не нужна камера**. `ParaboloidProjection`
-считает NDC прямо из позиции вершины, поэтому `RwCameraBeginUpdate` (который
-перезаписал бы `u_eye`, `u_proj`, `u_view` и viewport главной камеры) не
-вызывается вовсе. Вместо этого — `beginParaboloidPass(fbo, w, h, skyColor)` /
-`endParaboloidPass()`; выход восстанавливает `u_eye` из сохранённой view-матрицы.
+Проход захвата **не нуждается в камере**: `ParaboloidProjection` считает NDC из
+позиции вершины, поэтому `RwCameraBeginUpdate` не вызывается (он перезаписал бы
+`u_eye`/`u_proj`/`u_view` и viewport главной камеры). На выходе `u_eye`
+восстанавливается из сохранённой view-матрицы.
 
-Материалы, у которых env-map — **не** наша текстура (родные TXD-карты игры),
-продолжают идти по `u_texMatrix`, как раньше: поведение не ломается.
+Отдельно: раньше в `main.cpp` был **второй**, параллельный захват
+(`CParaboloidEnvMap`), который создавал собственную текстуру, никуда не
+подключённую, и вдобавок дублировал проход сцены каждый кадр. Он удалён —
+захват теперь один, в существующем `EnvMapRender()`, и пишет ровно в ту
+текстуру, которую читает шейдер машины.
 
 ## 2. Туман (глава 12) — уже соответствовал
 

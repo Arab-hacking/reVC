@@ -9,7 +9,11 @@ void
 main(void)
 {
 	vec4 Vertex = u_world * vec4(in_pos, 1.0);
-	gl_Position = u_proj * u_view * Vertex;
+	// Paraboloid capture pass (client 0x42b527): while u_paraboloid.x > 0.5 the
+	// scene is written with the polar projection instead of the camera, so the
+	// env-map being rendered uses the same mapping the materials sample.
+	gl_Position = u_paraboloid.x > 0.5 ? ParaboloidProjection(Vertex.xyz)
+	                                  : u_proj * u_view * Vertex;
 	vec3 Normal = normalize(mat3(u_world) * in_normal);
 
 	v_tex0 = in_tex0;

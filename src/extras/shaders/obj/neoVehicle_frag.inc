@@ -5,10 +5,12 @@ const char *neoVehicle_frag_src =
 "uniform vec4 u_reflProps;\n"
 "uniform vec4 u_specDir[5];\n"
 "uniform vec4 u_specColor[5];\n"
+
 "#define fresnel (u_reflProps.x)\n"
 "#define lightStrength (u_reflProps.y)\n"
 "#define shininess (u_reflProps.z)\n"
 "#define specularity (u_reflProps.w)\n"
+
 "FSIN vec4 v_color;\n"
 "FSIN vec4 v_prelit;\n"
 "FSIN vec4 v_lightFog;\n"
@@ -16,39 +18,51 @@ const char *neoVehicle_frag_src =
 "FSIN vec2 v_tex0;\n"
 "FSIN vec3 v_worldPos;\n"
 "FSIN vec3 v_worldNormal;\n"
+
 "float\n"
 "DoDirLightSpec(vec3 N, vec3 V, vec3 L, float power)\n"
 "{\n"
 "	vec3 H = normalize(V + L);\n"
 "	return pow(clamp(dot(N, H), 0.0, 1.0), power);\n"
 "}\n"
+
 "// ParaboloidEnvMap.glsl adapted to EnvMapCam (+Z zenith at center (0.5, 0.5)).\n"
 "// EnvMapTex is an LDR tonemapped raster, so undo ACES 1.8x exposure_bias (0.68)\n"
 "// before re-tonemapping in BR_ShadeMaterialHDR.\n"
 "vec3\n"
 "SampleVehicleParaboloidEnv(vec3 roughR, float linearRoughness, vec3 L, vec3 sunDirectColor, vec3 sunAmbientColor)\n"
 "{\n"
+"	// Must invert exactly what the capture pass wrote (header.vert,\n"
+"	// ParaboloidProjection / client 0x42b527):\n"
+"	//   NDC.xy = normalize(r.xy) * (r.z * 0.5 + 0.5)\n"
+"	// so the lookup is the same polar mapping, not a stereographic one.\n"
 "	vec3 r = roughR * inversesqrt(max(dot(roughR, roughR), 1.0e-6));\n"
-"	vec3 rp = normalize(vec3(r.xy, abs(r.z) + 1.0e-5));\n"
-"	vec2 envUV = (rp.xy / (1.0 + rp.z)) * 0.485 + 0.5;\n"
+"	vec2 rplanar = r.xy;\n"
+"	float rlen2 = dot(rplanar, rplanar);\n"
+"	rplanar = rlen2 > 1.0e-12 ? rplanar * inversesqrt(rlen2) : vec2(0.0);\n"
+"	vec2 envUV = rplanar * (r.z * 0.5 + 0.5) * 0.5 + 0.5;\n"
 "	vec3 texEnvLin = BR_SRGBtoLINEAR(texture(tex1, vec2(envUV.x, 1.0 - envUV.y))).rgb * 0.68;\n"
+
 "	float hemiMask = smoothstep(-0.28, 0.14, r.z);\n"
 "	vec3 analyticSky = BR_EvalAnalyticalSkyEnv(r, L, sunDirectColor, sunAmbientColor);\n"
 "	vec3 crispEnv = mix(analyticSky * 0.75, texEnvLin, hemiMask * 0.88);\n"
 "	vec3 roughSky = BR_GetSkySHDiffuse(r, sunAmbientColor);\n"
 "	return mix(crispEnv, roughSky, smoothstep(0.15, 0.85, linearRoughness));\n"
 "}\n"
+
 "void\n"
 "main(void)\n"
 "{\n"
 "	vec4 texSample = texture(tex0, vec2(v_tex0.x, 1.0-v_tex0.y));\n"
 "	float alpha = clamp(v_color.a * texSample.a, 0.0, 1.0);\n"
 "	DoAlphaTest(alpha);\n"
+
 "	float hasVertNormal;\n"
 "	vec3 N = ResolveWorldNormal(v_worldPos, v_worldNormal, hasVertNormal);\n"
 "	vec3 toEye = u_eye.xyz - v_worldPos;\n"
 "	vec3 V = toEye * inversesqrt(max(dot(toEye, toEye), 1.0e-6));\n"
 "	float visibility = AtmosphereVisibility(v_worldPos, v_lightFog.w);\n"
+
 "	// Legacy fallback when GL3Atmosphere=0\n"
 "	if(u_atmosphere.x < 0.5){\n"
 "		vec3 legacyVert = clamp(v_prelit.rgb + u_ambLight.rgb * u_surfProps.x + v_lightFog.rgb, 0.0, 1.4);\n"
@@ -69,15 +83,18 @@ const char *neoVehicle_frag_src =
 "		FRAGCOLOR(legacyOut);\n"
 "		return;\n"
 "	}\n"
+
 "	// --- Exact Vehicle.fs (Shaders For BLAYZ RUSSIA PC) ---\n"
 "	float isUnlit = step(1.5, u_surfProps.w);\n"
 "	float hasTex = step(0.5, u_surfProps.w - 2.0 * isUnlit);\n"
 "	float isLitLamp = max(isUnlit, step(1.25, u_surfProps.x));\n"
 "	float texLum = br_luminance(texSample.rgb);\n"
 "	float isOpaque = step(0.95, alpha);\n"
+
 "	float rawEnv = clamp(u_surfProps.y / 0.72, 0.0, 1.0);\n"
 "	float rubberKill = mix(1.0, smoothstep(0.04, 0.18, texLum), hasTex * isOpaque);\n"
 "	float envMapCoef = rawEnv * rubberKill;\n"
+
 "	if(u_atmosphere.x >= 1.5){\n"
 "		vec3 mBase = v_color.rgb * texSample.rgb;\n"
 "		if(isLitLamp > 0.5){\n"
@@ -93,20 +110,24 @@ const char *neoVehicle_frag_src =
 "		float mHighSun = smoothstep(0.02, 0.55, mL.z);\n"
 "		float mCloud = clamp(u_atmosphere.y, 0.0, 1.0);\n"
 "		float mShadow = mDay > 0.001 ? SampleSunShadow(v_worldPos, N) : 1.0;\n"
+
 "		float mHemi = clamp(N.z * 0.5 + 0.5, 0.0, 1.0);\n"
 "		vec3 mDayAmb = mix(vec3(0.84, 0.85, 0.88), vec3(0.92, 0.94, 0.98), mHighSun);\n"
 "		vec3 mSkyTint = mix(mDayAmb, clamp(u_skyAmbient.rgb * 1.35, vec3(0.55), vec3(1.04)), 0.30);\n"
 "		vec3 mAmb = mix(vec3(0.36, 0.41, 0.54), mSkyTint, mDay) * mix(0.84, 1.04, mHemi) * (1.0 - 0.12 * mCloud);\n"
+
 "		float mNdotL = max(dot(N, mL), 0.0);\n"
 "		vec3 mSunLightCol = mix(vec3(0.24, 0.19, 0.14), vec3(0.20, 0.20, 0.20), mHighSun);\n"
 "		mSunLightCol = mix(mSunLightCol, mSunLightCol * clamp(u_sunMaterial.rgb, vec3(0.55), vec3(1.15)), 0.30);\n"
 "		vec3 mDiffVec = mNdotL * mBase * mSunLightCol * (mDay * (1.0 - 0.35 * mCloud));\n"
+
 "		vec3 mH = mL + V;\n"
 "		mH *= inversesqrt(max(dot(mH, mH), 1.0e-6));\n"
 "		float isGlassM = 1.0 - smoothstep(0.72, 0.96, alpha);\n"
 "		float mEffEnv = max(envMapCoef, isGlassM * 0.85);\n"
 "		float mSpecAmt = pow(max(dot(N, mH), 0.0), 50.0) * 0.40 * mDay * (0.35 + 0.65 * mEffEnv) * (1.0 - 0.45 * mCloud);\n"
 "		vec3 mSpecVec = mSunLightCol * (mSpecAmt * 2.5);\n"
+
 "		// Mobile ParaboloidEnvMap + Fresnel [0.15 .. 0.70], pow(env, 0.8), additive composition\n"
 "		float mNoV = clamp(abs(dot(V, N)), 0.0, 1.0);\n"
 "		float mFresnel = clamp(pow(1.0 - mNoV, 3.5), 0.15, 0.70);\n"
@@ -118,6 +139,7 @@ const char *neoVehicle_frag_src =
 "		vec3 mTexRefl = pow(max(texture(tex1, vec2(mEnvUV.x, 1.0 - mEnvUV.y)).rgb, vec3(0.0)), vec3(0.8));\n"
 "		mTexRefl *= mix(0.48, 1.0, smoothstep(-0.42, 0.06, mR.z));\n"
 "		vec3 mEnvAdd = mTexRefl * (mFresnel * mEffEnv);\n"
+
 "		vec3 mDynDiff = v_pointSpot * 0.55;\n"
 "		vec3 mDynSpec = vec3(0.0);\n"
 "		for(int li = 0; li < 2; li++){\n"
@@ -141,6 +163,7 @@ const char *neoVehicle_frag_src =
 "			mDynDiff += lCol * (wrapDiff * 0.85);\n"
 "			mDynSpec += lCol * lSpec;\n"
 "		}\n"
+
 "		vec3 mDiffuseLit = (mBase * mAmb + mDiffVec) * mShadow + mBase * mDynDiff;\n"
 "		vec3 mGlossAdd = mSpecVec * mShadow + mDynSpec + mEnvAdd;\n"
 "		vec3 mCar = mDiffuseLit + mGlossAdd;\n"
@@ -159,8 +182,10 @@ const char *neoVehicle_frag_src =
 "		FRAGCOLOR(mobOut);\n"
 "		return;\n"
 "	}\n"
+
 "	float isChrome = smoothstep(0.86, 0.96, u_surfProps.y) * mix(1.0, smoothstep(0.18, 0.52, texLum), hasTex);\n"
 "	float isGlass = 1.0 - smoothstep(0.72, 0.96, alpha);\n"
+
 "	// Vehicle.fs lines 57-60:\n"
 "	// smoothness = mix(0.3, 0.95, u_envMapCoef);\n"
 "	// metallness = mix(0.0, 0.1, u_envMapCoef);\n"
@@ -168,21 +193,26 @@ const char *neoVehicle_frag_src =
 "	float smoothness = mix(0.30, 0.95, max(envMapCoef, max(isChrome, isGlass)));\n"
 "	float metalness = mix(mix(0.0, 0.10, envMapCoef), 0.88, isChrome) * isOpaque;\n"
 "	float reflectance = mix(BR_DEFAULT_REFLECTANCE, 0.80, max(envMapCoef, isGlass));\n"
+
 "	// Vehicle.fs lines 43-49: SRGBtoLINEAR(tex0) * matColor\n"
 "	vec3 baseSrgb = v_color.rgb * texSample.rgb;\n"
 "	vec3 albedoLin = BR_SRGBtoLINEAR(vec4(baseSrgb, 1.0)).rgb * (vec3(1.0) + v_pointSpot);\n"
+
 "	float sunLen2 = dot(u_sunDir.xyz, u_sunDir.xyz);\n"
 "	vec3 L = sunLen2 > 1.0e-6 ? u_sunDir.xyz * inversesqrt(sunLen2) : vec3(0.0, 0.0, 1.0);\n"
 "	vec3 sunDirectColor;\n"
 "	vec3 sunAmbientColor;\n"
 "	float dayFactor;\n"
 "	BR_GetSceneLightColors(L, sunDirectColor, sunAmbientColor, dayFactor);\n"
+
 "	float linRough = clamp(1.0 - smoothness, 0.04, 1.0);\n"
 "	float ggxAlpha = max(1.0e-4, linRough * linRough);\n"
 "	vec3 roughR = BR_GetRoughReflectionVec(reflect(-V, N), N, ggxAlpha);\n"
 "	vec3 customEnvLin = SampleVehicleParaboloidEnv(roughR, linRough, L, sunDirectColor, sunAmbientColor);\n"
+
 "	float whitePoint = max(u_skyAmbient.a, 2.5);\n"
 "	vec4 color;\n"
+
 "	if(isOpaque > 0.5){\n"
 "		vec3 hdr = BR_ShadeMaterialHDR(\n"
 "			albedoLin, v_worldPos, N,\n"
@@ -211,6 +241,7 @@ const char *neoVehicle_frag_src =
 "		color.rgb = clamp(mix(u_fogColor.rgb, baseLdr, visibility) * alpha + specLdr * visibility, 0.0, 1.0);\n"
 "		color.a = clamp(max(alpha, glassFres * 0.55), 0.0, 1.0);\n"
 "	}\n"
+
 "	FRAGCOLOR(color);\n"
 "}\n"
 ;

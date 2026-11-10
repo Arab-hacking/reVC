@@ -31,7 +31,6 @@ uniform vec4 u_sceneLightPosRad[8]; // xyz: world pos, w: radius
 uniform vec4 u_sceneLightColor[8];  // rgb: linear intensity
 uniform vec4 u_sceneLightDir[8];    // xyz: cone dir, w: >0.5 for directional spotlight
 uniform vec4 u_colorGrade[3];       // 3x4 RGB grading matrix from data/colorcycle.dat
-uniform vec4 u_envMapMode;          // x: 0 = matrix UV, 1 = paraboloid capture (0x434bb8)
 // x > 0.5 while the paraboloid capture pass draws the scene (0x42b527).
 uniform vec4 u_paraboloid;
 uniform sampler2D tex3;		// directional sun shadow depth map

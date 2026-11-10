@@ -32,7 +32,6 @@ const char *header_frag_src =
 "uniform vec4 u_sceneLightColor[8];  // rgb: linear intensity\n"
 "uniform vec4 u_sceneLightDir[8];    // xyz: cone dir, w: >0.5 for directional spotlight\n"
 "uniform vec4 u_colorGrade[3];       // 3x4 RGB grading matrix from data/colorcycle.dat\n"
-"uniform vec4 u_envMapMode;          // x: 0 = matrix UV, 1 = paraboloid capture (0x434bb8)\n"
 "// x > 0.5 while the paraboloid capture pass draws the scene (0x42b527).\n"
 "uniform vec4 u_paraboloid;\n"
 "uniform sampler2D tex3;		// directional sun shadow depth map\n"

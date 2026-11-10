@@ -162,8 +162,6 @@ int32 u_colorGrade = -1;
 // Paraboloid environment capture (Black Russia client, 0x42b527). x > 0.5
 // switches every world vertex shader to the paraboloid projection.
 int32 u_paraboloid = -1;
-// x: 0 = env map sampled through u_texMatrix, 1 = paraboloid capture (0x434bb8).
-int32 u_envMapMode = -1;
 
 Shader *defaultShader, *defaultShader_noAT;
 Shader *defaultShader_fullLight, *defaultShader_fullLight_noAT;
@@ -2118,7 +2116,6 @@ initOpenGL(void)
 	u_sceneLightDir = registerUniform("u_sceneLightDir", UNIFORM_VEC4, MAX_LIGHTS);
 	u_colorGrade = registerUniform("u_colorGrade", UNIFORM_VEC4, 3);
 	u_paraboloid = registerUniform("u_paraboloid", UNIFORM_VEC4);
-	u_envMapMode = registerUniform("u_envMapMode", UNIFORM_VEC4);
 
 	// defaults before the game sets anything
 	float zero4[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
@@ -2145,7 +2142,6 @@ initOpenGL(void)
 	{
 		float off4[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
 		setUniform(u_paraboloid, off4);
-		setUniform(u_envMapMode, off4);
 	}
 
 	// for im2d
@@ -2394,22 +2390,6 @@ beginParaboloidPass(uint32 fbo, int32 width, int32 height, const RGBA *clearColo
 	}
 	setParaboloidPass(1);
 	return 1;
-}
-
-void
-setEnvMapMode(bool32 paraboloid)
-{
-	float32 v[4] = { paraboloid ? 1.0f : 0.0f, 0.0f, 0.0f, 0.0f };
-	setUniform(u_envMapMode, v);
-}
-
-bool32
-getEnvMapMode(void)
-{
-	Uniform *u = &uniformRegistry.uniforms[u_envMapMode];
-	if(u->data == nil)
-		return 0;
-	return *(float32*)u->data > 0.5f;
 }
 
 uint32
