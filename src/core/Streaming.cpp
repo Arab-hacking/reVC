@@ -418,8 +418,8 @@ UpdateMobileStreamingHeadroom(void)
 
 	// Mobile vehicle loaded-count hysteresis (unload ceiling / steady target),
 	// now scaled by the pressure mode instead of a fixed free-RAM threshold.
-	const int32 normalTarget = revcopt::PreservedVehicles(Min((int32)25, (int32)MAXVEHICLESLOADED));
-	const int32 ceiling = revcopt::PreservedVehicles(Min((int32)35, (int32)MAXVEHICLESLOADED));
+	const int32 normalTarget = revcopt::VehicleRingTarget(Min((int32)25, (int32)MAXVEHICLESLOADED));
+	const int32 ceiling = revcopt::VehicleRingTarget(Min((int32)35, (int32)MAXVEHICLESLOADED));
 	const int32 loadedVehs = CStreaming::ms_numVehiclesLoaded;
 	if(loadedVehs > ceiling)
 		desiredNumVehiclesLoaded = normalTarget;

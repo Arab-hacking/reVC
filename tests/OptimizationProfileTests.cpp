@@ -230,6 +230,7 @@ TestModeMachine(void)
 	assert(c.TargetDistanceScale() == 1.0f);
 	assert(c.DistanceScale() == 1.0f);
 	assert(c.VehicleRequestsPerFrame() == 3);
+	assert(c.VehicleRingTarget(25) == 25);
 
 	// 200 MB used -> 56 MB free: below the 48 MB leave threshold but above the
 	// 32 MB enter threshold, so the previous (off) state must survive.
@@ -243,6 +244,7 @@ TestModeMachine(void)
 	// quota flips as soon as pressure passes projectedPressureThrottle
 	assert(c.VehicleRequestsPerFrame() == 1);
 	assert(c.AsyncRequestsPerFrame() == 2);
+	assert(c.VehicleRingTarget(25) == 20);    // 80 % under mitigation
 
 	// The delay: 1000 ms must pass before the target scale drops.
 	assert(c.TargetDistanceScale() == 1.0f);
@@ -267,7 +269,11 @@ TestModeMachine(void)
 	for(int i = 0; i < 100; i++)
 		c.Update(5000 + i * 250, 250 * MB, 0, 0.25f);
 	assert(c.DistanceScale() > 0.599f && c.DistanceScale() < 0.601f);
-	assert(c.PreservedVehicles(70) == 70 / 4);
+	// The vehicle ring buffer keeps 60 % of its normal target under critical,
+	// not a quarter: a fourth of 25 cars pops traffic in and out.
+	assert(c.VehicleRingTarget(25) == 15);
+	assert(c.VehicleRingTarget(35) == 21);
+	assert(c.VehicleRingTarget(6) == 6);      // floor never exceeds the target
 
 	// Recovery has its own, longer delay: leave at 24 MB, come back to 60 MB free.
 	c.Update(9000, 196 * MB, 0, 0.0f);  // 60 MB free

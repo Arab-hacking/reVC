@@ -243,11 +243,11 @@ Current(void)
 }
 
 int
-PreservedVehicles(int maxSlots)
+VehicleRingTarget(int normalSlots)
 {
 	if(!s_started)
-		return maxSlots;
-	return s_controller.PreservedVehicles(maxSlots);
+		return normalSlots;
+	return s_controller.VehicleRingTarget(normalSlots);
 }
 
 float
@@ -286,7 +286,7 @@ Current(void)
 	return s;
 }
 
-int PreservedVehicles(int maxSlots) { return maxSlots; }
+int VehicleRingTarget(int normalSlots) { return normalSlots; }
 
 float FarPlaneMargin(void) { return 1.0f; }
 

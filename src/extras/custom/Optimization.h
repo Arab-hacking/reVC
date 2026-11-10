@@ -38,8 +38,9 @@ OptimizationSnapshot Tick(unsigned nowMs, float dtSeconds, unsigned long long av
 // Last value returned by Tick, for callers that run before streaming.
 const OptimizationSnapshot &Current(void);
 
-// Number of vehicle models the ring buffer should keep, given its capacity.
-int PreservedVehicles(int maxSlots);
+// Number of vehicle models the ring buffer should keep, given its normal
+// target (80 % under mitigation, 60 % under critical, floor of eight).
+int VehicleRingTarget(int normalSlots);
 
 // worldDistance.farPlaneMarginScale: the far clip follows the distance scale
 // with this margin, so it has to be applied wherever the far plane is set.

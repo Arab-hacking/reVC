@@ -491,18 +491,28 @@ public:
 			return params.constrainedAsyncRequestsPerFrame;
 		return params.asyncRequestsPerFrame;
 	}
-	// §4.2 / §8.5: how many models the vehicle ring buffer keeps.
-	int PreservedVehicles(int maxSlots) const
+	// How many models the vehicle ring buffer keeps.
+	//
+	// This is a reVC-side policy, not a ported number: the client's
+	// preservedPlayers* fields size a *multiplayer* remote-player set, and the
+	// single-player ring buffer has no equivalent (its divisor would cut 25
+	// loaded cars to 8 in soft mode, which shows up as traffic popping in).
+	// Keep a mild, monotonic reduction instead: 80 % under mitigation, 60 %
+	// under critical, never below eight cars.
+	int VehicleRingTarget(int normalSlots) const
 	{
-		if(maxSlots <= 0)
+		if(normalSlots <= 0)
 			return 0;
+		int target = normalSlots;
 		if(critical)
-			return maxSlots / (params.severePreservedPlayersDivisor > 0
-			                       ? params.severePreservedPlayersDivisor : 1);
-		if(mitigation)
-			return maxSlots / (params.preservedPlayersDivisor > 0
-			                       ? params.preservedPlayersDivisor : 1);
-		return maxSlots;
+			target = normalSlots * 3 / 5;
+		else if(mitigation)
+			target = normalSlots * 4 / 5;
+		if(target < 8)
+			target = 8;
+		if(target > normalSlots)
+			target = normalSlots;
+		return target;
 	}
 	// True when the appearance budget should fall back to a cheap skin.
 	bool SkinFallbackWanted(void) const

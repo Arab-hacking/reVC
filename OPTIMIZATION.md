@@ -62,9 +62,10 @@ else                    targetScale = 1.00f;   // мгновенный пере�
    каждый кадр). Теперь у каждого режима пара порогов: 32/48 и 8/24 МБ.
 
 Дополнительно квота запросов за кадр теперь берётся из того же автомата
-(3 → 1 и 5 → 2), а число сохранённых машин делится на `preservedPlayersDivisor`
-в мягком режиме и на `severePreservedPlayersDivisor` в критическом — вместо
-фиксированных 25/35/18.
+(3 → 1 и 5 → 2), а цель кольцевого буфера машин снижается мягко: 100 / 80 / 60 %
+от обычной. Делители `preservedPlayers*` из клиента сюда **не** переносятся —
+они задают размер набора удалённых игроков в мультиплеере, и их применение
+уменьшило бы 25 машин до 8, то есть до видимого «выскакивания» трафика.
 
 ## Что применяется
 
@@ -73,7 +74,7 @@ else                    targetScale = 1.00f;   // мгновенный пере�
 | `mitigation*/critical*DistanceScale` | `CRenderer::ms_lodDistScale` (умножается на ползунок дальности из меню) |
 | `farPlaneMarginScale` | `RwCameraSetFarClipPlane` в `main.cpp`: `max(FarClip, 600 · scale · margin)` |
 | `vehicle/asyncRequestsPerFrame` | квота загрузок в `LoadRequestedModels` на Android |
-| `preservedPlayersDivisor` | `desiredNumVehiclesLoaded` (кольцевой буфер машин) |
+| режим (normal/mitigation/critical) | `desiredNumVehiclesLoaded`: 100 / 80 / 60 % от обычной цели (политика reVC, не число из клиента) |
 | `projectedPressureThrottle` | выбор обычной/стеснённой квоты |
 | остальные дистанции | прочитаны, провалидированы и доступны через `revcopt::Current()`; потребителя в одиночной игре у них нет (глава 09, §9.6: в клиенте их тоже читает только валидатор) |
 
