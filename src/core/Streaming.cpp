@@ -3558,6 +3558,11 @@ CStreaming::UpdateMemoryUsed(void)
 
 #define STREAM_DIST 80.0f
 
+// §9.4: the client caps one world walk at 0x7d0 = 2000 entities. Without a
+// cap a dense sector can make a single frame request thousands of models,
+// which is exactly the stall the per-frame quota exists to prevent.
+static int32 s_worldWalkConsidered;
+
 void
 CStreaming::AddModelsToRequestList(const CVector &pos, int32 flags)
 {
@@ -3578,12 +3583,15 @@ CStreaming::AddModelsToRequestList(const CVector &pos, int32 flags)
 	iymax = CWorld::GetSectorIndexY(ymax);
 
 	CWorld::AdvanceCurrentScanCode();
+	s_worldWalkConsidered = 0;
 
 	for(iy = iymin; iy <= iymax; iy++){
 		dy = iy - CWorld::GetSectorIndexY(pos.y);
 		for(ix = ixmin; ix <= ixmax; ix++){
 
 			if(CRenderer::m_loadingPriority && ms_numModelsRequested > 5)
+				return;
+			if(s_worldWalkConsidered >= revcopt::WORLD_WALK_MAX_ENTITIES)
 				return;
 
 			dx = ix - CWorld::GetSectorIndexX(pos.x);
@@ -3618,6 +3626,10 @@ CStreaming::ProcessEntitiesInSectorList(CPtrList &list, float x, float y, float 
 		if(e->m_scanCode == CWorld::GetCurrentScanCode())
 			continue;
 
+		if(s_worldWalkConsidered >= revcopt::WORLD_WALK_MAX_ENTITIES)
+			return;
+		s_worldWalkConsidered++;
+
 		e->m_scanCode = CWorld::GetCurrentScanCode();
 		if(!e->bStreamingDontDelete && IsAreaVisible(e->m_area) && !e->bDontStream && e->bIsVisible){
 			CTimeModelInfo *mi = (CTimeModelInfo*)CModelInfo::GetModelInfo(e->GetModelIndex());
@@ -3645,6 +3657,10 @@ CStreaming::ProcessEntitiesInSectorList(CPtrList &list, int32 flags)
 
 		if(e->m_scanCode == CWorld::GetCurrentScanCode())
 			continue;
+
+		if(s_worldWalkConsidered >= revcopt::WORLD_WALK_MAX_ENTITIES)
+			return;
+		s_worldWalkConsidered++;
 
 		e->m_scanCode = CWorld::GetCurrentScanCode();
 		if(!e->bStreamingDontDelete && IsAreaVisible(e->m_area) && !e->bDontStream && e->bIsVisible){

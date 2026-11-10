@@ -1,4 +1,5 @@
 #include "OptimizationProfile.h"
+#include "Optimization.h"
 
 #include <cassert>
 #include <cstdio>
@@ -483,6 +484,89 @@ TestPressureDrivesAllThreeOutputs(void)
 	printf("pressure drives all three outputs ok\n");
 }
 
+// ---------------------------------------------------------------------------
+// Chapter 9 §9.1 - pressure from the exact 0xe582b4 disassembly.
+//   denominator = limit - (base + extraReserved)
+//   numerator   = max(used - base, 0) + reserveBytes
+// The reserve lives in the numerator, not the denominator.
+// ---------------------------------------------------------------------------
+static bool
+Near(float a, float b, float eps) { return a > b - eps && a < b + eps; }
+
+static void
+TestPressureUsesBaseAndReserveExactly(void)
+{
+	const size_t MB = (size_t)1 << 20;
+	Controller c;
+	c.SetBudgetBytes(320 * MB);
+
+	// No base, no reserve: plain used/limit.
+	c.Update(0, 160 * MB, 0, 1.0f/60.0f);
+	assert(Near(c.Pressure(), 0.5f, 0.001f));
+
+	// Reserve adds to the numerator, so pressure grows without the limit moving.
+	c.Reset();
+	c.SetBudgetBytes(320 * MB);
+	c.Update(0, 160 * MB, 0, 1.0f/60.0f, 32 * MB, 0);
+	assert(Near(c.Pressure(), 192.0f/320.0f, 0.001f));
+
+	// extraReservedBytes shrinks the denominator instead.
+	c.Reset();
+	c.SetBudgetBytes(320 * MB);
+	c.Update(0, 160 * MB, 0, 1.0f/60.0f, 0, 64 * MB);
+	assert(Near(c.Pressure(), 160.0f/256.0f, 0.001f));
+
+	// used below base saturates the numerator at zero (no negative pressure).
+	c.Reset();
+	c.SetBudgetBytes(320 * MB);
+	c.Update(0, 32 * MB, 96 * MB, 1.0f/60.0f);
+	assert(Near(c.Pressure(), 0.0f, 0.001f));
+
+	// base is subtracted from usage, not added to it.
+	c.Reset();
+	c.SetBudgetBytes(320 * MB);
+	c.Update(0, 192 * MB, 32 * MB, 1.0f/60.0f);
+	assert(Near(c.Pressure(), 160.0f/288.0f, 0.001f));
+	printf("pressure uses base and reserve exactly ok\n");
+}
+
+// freeHeadroomMb follows the same accounting: a full pool reports none, so the
+// mode machine can still reach critical.
+static void
+TestFreeHeadroomFollowsTheSameAccounting(void)
+{
+	const size_t MB = (size_t)1 << 20;
+	Controller c;
+	c.SetBudgetBytes(320 * MB);
+	c.Update(0, 192 * MB, 0, 1.0f/60.0f);
+	assert(Near(c.FreeHeadroomMb(), 128.0f, 0.05f));
+
+	c.Reset();
+	c.SetBudgetBytes(320 * MB);
+	c.Update(0, 320 * MB, 0, 1.0f/60.0f);
+	assert(c.FreeHeadroomMb() < 0.05f);
+	printf("free headroom follows the same accounting ok\n");
+}
+
+// §9.4 constants: one world walk is capped at 2000 entities (0x7d0) and the
+// start ring at 512 slots (0x200). Both are client constants, not config.
+static void
+TestWorldWalkLimits(void)
+{
+	assert(revcopt::WORLD_WALK_MAX_ENTITIES == 2000);
+	assert(revcopt::WORLD_WALK_RING_SLOTS == 512);
+
+	assert(revcopt::WorldWalkHasBudget(0, 5));
+	assert(revcopt::WorldWalkHasBudget(4, 5));
+	assert(!revcopt::WorldWalkHasBudget(5, 5));
+	assert(!revcopt::WorldWalkHasBudget(2000, 4000));
+
+	assert(revcopt::WorldWalkRingCapacity(0) == 0);
+	assert(revcopt::WorldWalkRingCapacity(64) == 64);
+	assert(revcopt::WorldWalkRingCapacity(4000) == 512);
+	printf("world walk limits ok\n");
+}
+
 int
 main(void)
 {
@@ -498,6 +582,9 @@ main(void)
 	TestPoolOccupancyIsThePressureInput();
 	TestFarPlaneMarginAcceptsSubUnitValues();
 	TestPressureDrivesAllThreeOutputs();
+	TestPressureUsesBaseAndReserveExactly();
+	TestFreeHeadroomFollowsTheSameAccounting();
+	TestWorldWalkLimits();
 	printf("optimization profile tests passed\n");
 	return 0;
 }

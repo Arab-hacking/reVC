@@ -54,7 +54,33 @@ const OptimizationSnapshot &Current(void);
 // target (80 % under mitigation, 60 % under critical, floor of eight).
 int VehicleRingTarget(int normalSlots);
 
-// worldDistance.farPlaneMarginScale: the far clip follows the distance scale
+// Chapter 9 §9.4 — the world walk behind the per-frame request quota.
+//
+// The client bounds one walk with `cmp w24, #0x7d0` (2000 entities) and keeps a
+// ring of `#0x200` (512) candidates; both are constants in 0x17dec18, not
+// config fields. Mirroring them here keeps a walk from running away on a
+// densely populated sector and bounds the bookkeeping allocation.
+enum {
+	WORLD_WALK_MAX_ENTITIES = 2000,   // 0x7d0
+	WORLD_WALK_RING_SLOTS   = 512     // 0x200
+};
+
+// True while this walk may still consider another entity (the client's
+// `cmp w25, w22` quota test combined with the 2000 cap).
+inline bool WorldWalkHasBudget(int considered, int quota)
+{
+	return considered < quota && considered < WORLD_WALK_MAX_ENTITIES;
+}
+
+// Capacity of the start ring, clamped to what the caller can allocate.
+inline int WorldWalkRingCapacity(int wanted)
+{
+	if(wanted <= 0)
+		return 0;
+	return wanted < WORLD_WALK_RING_SLOTS ? wanted : WORLD_WALK_RING_SLOTS;
+}
+
+// The streaming memory limit: the far clip follows the distance scale
 // with this margin, so it has to be applied wherever the far plane is set.
 float FarPlaneMargin(void);
 

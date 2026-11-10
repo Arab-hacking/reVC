@@ -424,7 +424,22 @@ public:
 	// bare streamed size is not a valid input - this build has no custom
 	// allocator, so it stays far below the RAM-derived budget and pressure
 	// never crosses the thresholds.
-	void Update(uint32_t nowMs, size_t usedBytes, size_t baseBytes, float dtSeconds)
+	// Chapter 9 §9.1 decodes 0xe582b4 instruction by instruction:
+	//
+	//   x8  = base                     [limit+0x498]
+	//   x11 = used                     [limit+0x490]
+	//   x10 = limit                    [limit+0x670]
+	//   x9  = [limit+0x4a8] + base        ; reserveA joins the DENOMINATOR
+	//   x9  = limit - x9                  ; denominator
+	//   x8  = used - base                 ; saturating at 0 (csel ..., lo)
+	//   x8  = x8 + [limit+0x4a0]          ; reserveB joins the NUMERATOR
+	//   pressure = (float)x8 / (float)x9
+	//
+	// reserveA is the extra allocation the client keeps out of the budget;
+	// reserveB is the running allocation need. Neither is part of the config,
+	// so the port exposes them as arguments instead of inventing values.
+	void Update(uint32_t nowMs, size_t usedBytes, size_t baseBytes, float dtSeconds,
+	            size_t reserveBytes = 0, size_t extraReservedBytes = 0)
 	{
 		if(dtSeconds <= 0.0f)
 			dtSeconds = 0.0f;
@@ -433,17 +448,23 @@ public:
 
 		size_t limit = budgetBytes;
 		size_t base = baseBytes < limit ? baseBytes : 0;
-		size_t span = limit - base;
-		size_t used = usedBytes > base ? usedBytes - base : 0;
+		size_t extra = extraReservedBytes;
 
-		// saturation (used - base) / (limit - base)
-		pressure = span ? (float)used / (float)span : 1.0f;
+		// Denominator: limit - (base + extraReserved), clamped up like `csinc ..., hi`.
+		size_t denominator = limit > base + extra ? limit - (base + extra) : 1;
+		// Numerator: (used - base) saturated at zero, plus the running reserve.
+		size_t numerator = usedBytes > base ? usedBytes - base : 0;
+		numerator += reserveBytes;
+
+		pressure = (float)numerator / (float)denominator;
 		if(pressure > 1.0f)
 			pressure = 1.0f;
 
-		// free headroom in bytes: the client compares it against the Mb
-		// thresholds converted with a 20-bit fixed point shift.
-		freeBytes = usedBytes < limit ? limit - usedBytes : 0;
+		// Free headroom in bytes: the mode machine compares the remaining bytes
+		// against the Mb thresholds shifted by 20 (fcvtzu ..., #0x14), so the
+		// residual is limit minus everything currently accounted for.
+		size_t accounted = base + extra + numerator;
+		freeBytes = accounted < limit ? limit - accounted : 0;
 		freeHeadroomMb = (float)freeBytes / (float)((size_t)1 << 20);
 
 		UpdateModes();

@@ -209,8 +209,15 @@ Tick(unsigned nowMs, float dtSeconds, unsigned long long usedBytes,
 		used = 0;	// nothing known: report no pressure rather than full
 	}
 
+	// §9.1: 0xe582b4 also folds two allocator figures in - [limit+0x4a8] into
+	// the denominator (a reservations block kept out of the budget) and
+	// [limit+0x4a0] into the numerator (the running allocation need). Both come
+	// from the client's allocator, which this build does not have
+	// (USE_CUSTOM_ALLOCATOR is off), so they are genuinely zero here rather
+	// than approximated with an invented share of the budget.
 	uint32 before = s_controller.ModeRevision();
-	s_controller.Update(nowMs, used, 0, dtSeconds);
+	s_controller.Update(nowMs, used, 0, dtSeconds,
+	                    /*reserveBytes=*/0, /*extraReservedBytes=*/0);
 	Publish(s_controller);
 
 	if(s_controller.ModeRevision() != before) {
