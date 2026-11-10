@@ -580,6 +580,13 @@ CMenuManager::CMenuManager()
 	m_PrefsMobileGraphics = MOBILE_GFX_HIGH;
 #endif
 
+// TEST GRAPHICS defaults
+	m_PrefsShadowQuality = 2;
+	m_PrefsReflectionQuality = 2;
+	m_PrefsTestDrawDist = 1.5f;
+	m_PrefsWaterQuality = 2;
+	m_PrefsParticleQuality = 2;
+
 #ifdef NO_ISLAND_LOADING
 	m_PrefsIslandLoading = ISLAND_LOADING_LOW;
 #endif
@@ -772,6 +779,39 @@ CMenuManager::CheckSliderMovement(int value)
 			m_PrefsLOD -= (DRAWDIST_RANGE / MENUSLIDER_LOGICAL_BARS);
 		m_PrefsLOD = Clamp(m_PrefsLOD, DRAWDIST_MIN, DRAWDIST_MAX);
 		CRenderer::ms_lodDistScale = m_PrefsLOD;
+		break;
+
+	// TEST GRAPHICS handlers
+	case MENUACTION_TEST_SHADOW_QUALITY:
+		if(value > 0)
+			m_PrefsShadowQuality = Clamp(m_PrefsShadowQuality + 1, 0, 3);
+		else
+			m_PrefsShadowQuality = Clamp(m_PrefsShadowQuality - 1, 0, 3);
+		break;
+	case MENUACTION_TEST_REFLECTION_QUALITY:
+		if(value > 0)
+			m_PrefsReflectionQuality = Clamp(m_PrefsReflectionQuality + 1, 0, 3);
+		else
+			m_PrefsReflectionQuality = Clamp(m_PrefsReflectionQuality - 1, 0, 3);
+		break;
+	case MENUACTION_TEST_DRAWDIST:
+		if(value > 0)
+			m_PrefsTestDrawDist += (DRAWDIST_RANGE / MENUSLIDER_LOGICAL_BARS);
+		else
+			m_PrefsTestDrawDist -= (DRAWDIST_RANGE / MENUSLIDER_LOGICAL_BARS);
+		m_PrefsTestDrawDist = Clamp(m_PrefsTestDrawDist, DRAWDIST_MIN, DRAWDIST_MAX);
+		break;
+	case MENUACTION_TEST_WATER_QUALITY:
+		if(value > 0)
+			m_PrefsWaterQuality = Clamp(m_PrefsWaterQuality + 1, 0, 3);
+		else
+			m_PrefsWaterQuality = Clamp(m_PrefsWaterQuality - 1, 0, 3);
+		break;
+	case MENUACTION_TEST_PARTICLE_QUALITY:
+		if(value > 0)
+			m_PrefsParticleQuality = Clamp(m_PrefsParticleQuality + 1, 0, 3);
+		else
+			m_PrefsParticleQuality = Clamp(m_PrefsParticleQuality - 1, 0, 3);
 		break;
 
 	// I wonder the idea behind clamping those max to 65
@@ -1644,10 +1684,25 @@ CMenuManager::DrawStandardMenus(bool activeScreen)
 						case MENUACTION_BRIGHTNESS:
 							ProcessSlider(m_PrefsBrightness / 384.0f, SLIDER_Y(70.0f), HOVEROPTION_INCREASE_BRIGHTNESS, HOVEROPTION_DECREASE_BRIGHTNESS, SCREEN_WIDTH, true);
 							break;
-						case MENUACTION_DRAWDIST:
-							ProcessSlider(Clamp((m_PrefsLOD - DRAWDIST_MIN) / DRAWDIST_RANGE, 0.0f, 1.0f), SLIDER_Y(99.0f), HOVEROPTION_INCREASE_DRAWDIST, HOVEROPTION_DECREASE_DRAWDIST, SCREEN_WIDTH, true);
-							break;
-						case MENUACTION_MUSICVOLUME:
+							case MENUACTION_DRAWDIST:
+								ProcessSlider(Clamp((m_PrefsLOD - DRAWDIST_MIN) / DRAWDIST_RANGE, 0.0f, 1.0f), SLIDER_Y(99.0f), HOVEROPTION_INCREASE_DRAWDIST, HOVEROPTION_DECREASE_DRAWDIST, SCREEN_WIDTH, true);
+								break;
+							case MENUACTION_TEST_SHADOW_QUALITY:
+								ProcessSlider(m_PrefsShadowQuality / 3.0f, SLIDER_Y(70.0f), HOVEROPTION_INCREASE_SHADOW_QUALITY, HOVEROPTION_DECREASE_SHADOW_QUALITY, SCREEN_WIDTH, true);
+								break;
+							case MENUACTION_TEST_REFLECTION_QUALITY:
+								ProcessSlider(m_PrefsReflectionQuality / 3.0f, SLIDER_Y(99.0f), HOVEROPTION_INCREASE_REFLECTION_QUALITY, HOVEROPTION_DECREASE_REFLECTION_QUALITY, SCREEN_WIDTH, true);
+								break;
+							case MENUACTION_TEST_DRAWDIST:
+								ProcessSlider(Clamp((m_PrefsTestDrawDist - DRAWDIST_MIN) / DRAWDIST_RANGE, 0.0f, 1.0f), SLIDER_Y(128.0f), HOVEROPTION_INCREASE_TEST_DRAWDIST, HOVEROPTION_DECREASE_TEST_DRAWDIST, SCREEN_WIDTH, true);
+								break;
+							case MENUACTION_TEST_WATER_QUALITY:
+								ProcessSlider(m_PrefsWaterQuality / 3.0f, SLIDER_Y(157.0f), HOVEROPTION_INCREASE_WATER_QUALITY, HOVEROPTION_DECREASE_WATER_QUALITY, SCREEN_WIDTH, true);
+								break;
+							case MENUACTION_TEST_PARTICLE_QUALITY:
+								ProcessSlider(m_PrefsParticleQuality / 3.0f, SLIDER_Y(186.0f), HOVEROPTION_INCREASE_PARTICLE_QUALITY, HOVEROPTION_DECREASE_PARTICLE_QUALITY, SCREEN_WIDTH, true);
+								break;
+								case MENUACTION_MUSICVOLUME:
 							if(m_nPrefsAudio3DProviderIndex != NO_AUDIO_PROVIDER)
 								ProcessSlider(m_PrefsMusicVolume / 64.0f, SLIDER_Y(70.0f), HOVEROPTION_INCREASE_MUSICVOLUME, HOVEROPTION_DECREASE_MUSICVOLUME, SCREEN_WIDTH, true);
 							break;
@@ -4535,10 +4590,15 @@ CMenuManager::UserInput(void)
 			case HOVEROPTION_INCREASE_SFXVOLUME:
 			case HOVEROPTION_INCREASE_MOUSESENS:
 #ifdef CUSTOM_FRONTEND_OPTIONS
-			case HOVEROPTION_INCREASE_CFO_SLIDER:
+				case HOVEROPTION_INCREASE_CFO_SLIDER:
 #endif
-				CheckSliderMovement(1);
-				break;
+				case HOVEROPTION_INCREASE_SHADOW_QUALITY:
+				case HOVEROPTION_INCREASE_REFLECTION_QUALITY:
+				case HOVEROPTION_INCREASE_TEST_DRAWDIST:
+				case HOVEROPTION_INCREASE_WATER_QUALITY:
+				case HOVEROPTION_INCREASE_PARTICLE_QUALITY:
+					CheckSliderMovement(1);
+					break;
 			case HOVEROPTION_DECREASE_BRIGHTNESS:
 			case HOVEROPTION_DECREASE_MP3BOOST:
 			case HOVEROPTION_DECREASE_DRAWDIST:
@@ -4546,10 +4606,15 @@ CMenuManager::UserInput(void)
 			case HOVEROPTION_DECREASE_SFXVOLUME:
 			case HOVEROPTION_DECREASE_MOUSESENS:
 #ifdef CUSTOM_FRONTEND_OPTIONS
-			case HOVEROPTION_DECREASE_CFO_SLIDER:
+				case HOVEROPTION_DECREASE_CFO_SLIDER:
 #endif
-				CheckSliderMovement(-1);
-				break;
+				case HOVEROPTION_DECREASE_SHADOW_QUALITY:
+				case HOVEROPTION_DECREASE_REFLECTION_QUALITY:
+				case HOVEROPTION_DECREASE_TEST_DRAWDIST:
+				case HOVEROPTION_DECREASE_WATER_QUALITY:
+				case HOVEROPTION_DECREASE_PARTICLE_QUALITY:
+					CheckSliderMovement(-1);
+					break;
 			}
 		}
 
@@ -5075,9 +5140,11 @@ CMenuManager::ProcessUserInput(uint8 goDown, uint8 goUp, uint8 optionSelected, u
 #ifdef CUSTOM_FRONTEND_OPTIONS
 					extern void RestoreDefGraphics(int8);
 					extern void RestoreDefDisplay(int8);
+					extern void RestoreDefTestGraphics(int8);
 
 					RestoreDefGraphics(FEOPTION_ACTION_SELECT);
 					RestoreDefDisplay(FEOPTION_ACTION_SELECT);
+					RestoreDefTestGraphics(FEOPTION_ACTION_SELECT);
 #endif
 					SaveSettings();
 				} else if (m_nCurrScreen == MENUPAGE_CONTROLLER_PC) {

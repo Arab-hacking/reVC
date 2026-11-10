@@ -115,6 +115,16 @@ static const char *mobileQualityOpts[] = { "FEM_LOW", "FEM_MED", "FEM_HIG" };
 const char *filterNames[] = { "FEM_NON", "FEM_SIM", "FEM_NRM", "FEM_MOB" };
 const char *off_on[] = { "FEM_OFF", "FEM_ON" };
 
+void RestoreDefTestGraphics(int8 action) {
+	if (action != FEOPTION_ACTION_SELECT)
+		return;
+	FrontEndMenuManager.m_PrefsShadowQuality = 2;
+	FrontEndMenuManager.m_PrefsReflectionQuality = 2;
+	FrontEndMenuManager.m_PrefsTestDrawDist = 1.5f;
+	FrontEndMenuManager.m_PrefsWaterQuality = 2;
+	FrontEndMenuManager.m_PrefsParticleQuality = 2;
+}
+
 void RestoreDefGraphics(int8 action) {
 	if (action != FEOPTION_ACTION_SELECT)
 		return;
@@ -911,6 +921,21 @@ CMenuScreenCustom aScreens[] = {
 		// re3.cpp inserts here pipeline selectors if neo/neo.txd exists and EXTENDED_PIPELINES defined
 		MENUACTION_CFO_DYNAMIC,	"FET_DEF", { new CCFODynamic(nil, nil, nil, nil, RestoreDefGraphics) }, 320, 0, MENUALIGN_CENTER,
 		MENUACTION_GOBACK,		"FEDS_TB", {nil, SAVESLOT_NONE, MENUPAGE_NONE}, 320, 0, MENUALIGN_CENTER,
+	},
+
+	// MENUPAGE_TEST_GRAPHICS
+#ifdef ANDROID
+	{ "FET_GFX", MENUPAGE_GRAPHICS_SETTINGS, new CCustomScreenLayout({40, 82, 30, false, true}), GraphicsGoBack,
+#else
+	{ "FET_GFX", MENUPAGE_GRAPHICS_SETTINGS, new CCustomScreenLayout({40, 78, 25, true, true}), GraphicsGoBack,
+#endif
+		MENUACTION_TEST_SHADOW_QUALITY, "FET_SHQ", { nil, SAVESLOT_NONE, MENUPAGE_TEST_GRAPHICS }, 0, 0, MENUALIGN_LEFT,
+		MENUACTION_TEST_REFLECTION_QUALITY, "FET_RFQ", { nil, SAVESLOT_NONE, MENUPAGE_TEST_GRAPHICS }, 0, 0, MENUALIGN_LEFT,
+		MENUACTION_TEST_DRAWDIST, "FET_DDI", { nil, SAVESLOT_NONE, MENUPAGE_TEST_GRAPHICS }, 0, 0, MENUALIGN_LEFT,
+		MENUACTION_TEST_WATER_QUALITY, "FET_WAQ", { nil, SAVESLOT_NONE, MENUPAGE_TEST_GRAPHICS }, 0, 0, MENUALIGN_LEFT,
+		MENUACTION_TEST_PARTICLE_QUALITY, "FET_PAQ", { nil, SAVESLOT_NONE, MENUPAGE_TEST_GRAPHICS }, 0, 0, MENUALIGN_LEFT,
+		MENUACTION_CFO_DYNAMIC, "FET_DEF", { new CCFODynamic(nil, nil, nil, nil, RestoreDefTestGraphics) }, 320, 0, MENUALIGN_CENTER,
+		MENUACTION_GOBACK, "FEDS_TB", {nil, SAVESLOT_NONE, MENUPAGE_NONE}, 320, 0, MENUALIGN_CENTER,
 	},
 #endif
 
