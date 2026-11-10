@@ -355,12 +355,21 @@ uint64 timeProcessingDFF;
 #endif
 
 #ifdef ANDROID
+#include "core/OptimizationConfig.h"
 namespace {
 static float s_mobileRamLodScale = 1.0f;
-static int s_mobileVehReqBudget = 3;
-static int s_mobileAsyncReqBudget = 5;
+static int s_mobileVehReqBudget = OPT_vehicleRequestsPerFrame;
+static int s_mobileAsyncReqBudget = OPT_asyncRequestsPerFrame;
 static uint32 s_lastMemSampleFrame = 0xFFFFFFFFu;
 static size_t s_cachedAvailRamMB = 1024;
+static size_t s_cachedTotalRamMB = 4096;
+
+// Memory pressure state (analysis ch. 2, 3, 9)
+static bool s_inMitigation = false;
+static bool s_inCritical = false;
+static int   s_mitigationTimerMs = 0;
+static int   s_recoveryTimerMs = 0;
+static float s_targetDistanceScale = 1.0f;
 
 static size_t
 SampleAndroidAvailRamMB(void)
@@ -377,6 +386,7 @@ SampleAndroidAvailRamMB(void)
 	size_t n = fread(buf, 1, sizeof(buf) - 1, fp);
 	fclose(fp);
 	buf[n] = '\0';
+
 	const char *p = strstr(buf, "MemAvailable:");
 	if(p){
 		p += sizeof("MemAvailable:") - 1;
@@ -385,43 +395,133 @@ SampleAndroidAvailRamMB(void)
 		if(kb > 0)
 			s_cachedAvailRamMB = (size_t)(kb / 1024ul);
 	}
+	p = strstr(buf, "MemTotal:");
+	if(p){
+		p += sizeof("MemTotal:") - 1;
+		while(*p == ' ' || *p == '\t') p++;
+		unsigned long kb = strtoul(p, nil, 10);
+		if(kb > 0)
+			s_cachedTotalRamMB = (size_t)(kb / 1024ul);
+	}
 	return s_cachedAvailRamMB;
+}
+
+// Select memory budget from the scaling table (analysis ch. 8.5)
+static size_t
+GetMemoryBudgetMb(void)
+{
+	size_t ramGb = s_cachedTotalRamMB / 1024;
+	for(int i = OPT_memoryBudgetScalingCount - 1; i >= 0; i--){
+		if(ramGb >= OPT_memoryBudgetScaling[i].minimumRamGb)
+			return OPT_memoryBudgetScaling[i].budgetMb;
+	}
+	return OPT_memoryBudgetScaling[0].budgetMb;
 }
 
 static void
 UpdateMobileStreamingHeadroom(void)
 {
 	size_t availMB = SampleAndroidAvailRamMB();
+	size_t budgetMB = GetMemoryBudgetMb();
+	float headroomMb = (float)(budgetMB - (s_cachedTotalRamMB - availMB));
+
+	// Determine target distance scale (analysis ch. 2, 3, 9)
+	// Hysteresis: enter mitigation when headroom < 32MB, leave when > 48MB
+	// Enter critical when headroom < 8MB, leave when > 24MB
 	float targetScale = 1.0f;
-	if(availMB < 280){
-		targetScale = 0.60f;
-		s_mobileVehReqBudget = 1;
-		s_mobileAsyncReqBudget = 2;
-	}else if(availMB < 450){
-		targetScale = 0.75f;
-		s_mobileVehReqBudget = 1;
-		s_mobileAsyncReqBudget = 2;
+	bool wantMitigation = false;
+	bool wantCritical = false;
+
+	if(s_inCritical){
+		if(headroomMb > OPT_criticalLeaveHeadroomMb)
+			wantMitigation = true; // drop from critical to mitigation
+		else
+			wantCritical = true;
+	}else if(s_inMitigation){
+		if(headroomMb > OPT_mitigationLeaveHeadroomMb)
+			wantMitigation = false; // leave mitigation
+		else
+			wantMitigation = true;
+		if(headroomMb < OPT_criticalEnterHeadroomMb)
+			wantCritical = true;
 	}else{
-		targetScale = 1.0f;
-		s_mobileVehReqBudget = 3;
-		s_mobileAsyncReqBudget = 5;
+		if(headroomMb < OPT_criticalEnterHeadroomMb)
+			wantCritical = true;
+		else if(headroomMb < OPT_mitigationEnterHeadroomMb)
+			wantMitigation = true;
 	}
+
+	if(wantCritical)
+		targetScale = OPT_criticalDistanceScale;
+	else if(wantMitigation)
+		targetScale = OPT_mitigationDistanceScale;
+
+	// Delay timers (analysis ch. 3: mitigationDelayMs / recoveryDelayMs)
+	int dtMs = (int)(CTimer::GetTimeStepInSeconds() * 1000.0f);
+	if(dtMs <= 0) dtMs = 1;
+
+	if(wantCritical){
+		s_inMitigation = true;
+		s_inCritical = true;
+		s_targetDistanceScale = OPT_criticalDistanceScale;
+		s_mobileVehReqBudget = OPT_constrainedVehicleRequestsPerFrame;
+		s_mobileAsyncReqBudget = OPT_constrainedAsyncRequestsPerFrame;
+	}else if(wantMitigation){
+		if(!s_inMitigation){
+			s_mitigationTimerMs += dtMs;
+			if(s_mitigationTimerMs < OPT_mitigationDelayMs)
+				targetScale = 1.0f; // wait for delay to elapse
+		}
+		if(s_mitigationTimerMs >= OPT_mitigationDelayMs || s_inMitigation){
+			s_inMitigation = true;
+			s_inCritical = false;
+			s_targetDistanceScale = OPT_mitigationDistanceScale;
+			s_mobileVehReqBudget = OPT_constrainedVehicleRequestsPerFrame;
+			s_mobileAsyncReqBudget = OPT_constrainedAsyncRequestsPerFrame;
+		}
+	}else{
+		// No pressure — recover with recoveryDelayMs
+		if(s_inMitigation || s_inCritical){
+			s_recoveryTimerMs += dtMs;
+			if(s_recoveryTimerMs < OPT_recoveryDelayMs)
+				targetScale = s_targetDistanceScale; // hold current scale
+		}
+		if(s_recoveryTimerMs >= OPT_recoveryDelayMs || (!s_inMitigation && !s_inCritical)){
+			s_inMitigation = false;
+			s_inCritical = false;
+			s_mitigationTimerMs = 0;
+			s_recoveryTimerMs = 0;
+			s_targetDistanceScale = 1.0f;
+			s_mobileVehReqBudget = OPT_vehicleRequestsPerFrame;
+			s_mobileAsyncReqBudget = OPT_asyncRequestsPerFrame;
+		}
+	}
+
+	// Gradual scale change (analysis ch. 3: distanceScaleChangePerSecond)
 	float dt = Min(CTimer::GetTimeStepInSeconds(), 0.1f);
 	if(dt > 0.0f){
-		float maxStep = 0.25f * dt;
+		float maxStep = OPT_distanceScaleChangePerSecond * dt;
 		float diff = targetScale - s_mobileRamLodScale;
 		if(diff > maxStep) diff = maxStep;
 		else if(diff < -maxStep) diff = -maxStep;
 		s_mobileRamLodScale += diff;
 	}
-	CRenderer::ms_lodDistScale = Clamp(FrontEndMenuManager.m_PrefsLOD * s_mobileRamLodScale, DRAWDIST_MIN, DRAWDIST_MAX);
 
-	// Mobile vehicle loaded-count hysteresis (35 unload ceiling / 25 steady target)
+	// Apply farPlaneMarginScale (analysis ch. 3)
+	float marginScale = OPT_farPlaneMarginScale;
+	CRenderer::ms_lodDistScale = Clamp(FrontEndMenuManager.m_PrefsLOD * s_mobileRamLodScale * marginScale, DRAWDIST_MIN, DRAWDIST_MAX);
+
+	// Vehicle loaded-count targets (analysis ch. 4, 8).
+	// The analysis defines vehicleUnloadDistance/ReloadDistance as streaming
+	// distances (35/25 m) for the network vehicle system; in this codebase
+	// the loaded-vehicle count is adjusted by pressure state instead.
 	int32 loadedVehs = CStreaming::ms_numVehiclesLoaded;
-	const int32 normalTarget = Min((int32)25, (int32)MAXVEHICLESLOADED);
-	if(availMB < 450)
-		desiredNumVehiclesLoaded = Min((int32)18, (int32)MAXVEHICLESLOADED);
-	else if(loadedVehs > 35)
+	const int32 normalTarget = Min(25, (int32)MAXVEHICLESLOADED);
+	if(s_inCritical)
+		desiredNumVehiclesLoaded = Min(15, (int32)MAXVEHICLESLOADED);
+	else if(s_inMitigation)
+		desiredNumVehiclesLoaded = Min(18, (int32)MAXVEHICLESLOADED);
+	else if(loadedVehs > normalTarget + 10)
 		desiredNumVehiclesLoaded = normalTarget;
 	else if(desiredNumVehiclesLoaded < normalTarget)
 		desiredNumVehiclesLoaded = normalTarget;

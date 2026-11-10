@@ -47,11 +47,11 @@ enum Config {
 	// Pool sizes
 	NUMPTRNODES = 300000, // initial size; BR IPL pool grows in stable blocks
 	NUMENTRYINFOS = 3200,
-	NUMPEDS = 140,
-	NUMVEHICLES = 110,
+	NUMPEDS = 999,
+	NUMVEHICLES = 2000,
 	NUMBUILDINGS = 50000, // initial size; expands for custom IPLs
 	NUMTREADABLES = 1,
-	NUMOBJECTS = 460,
+	NUMOBJECTS = 999,
 	NUMDUMMIES = 2340,
 	NUMAUDIOSCRIPTOBJECTS = 192,
 	NUMCOLMODELS = 35000, // stock + up to ~27k ZIP CLS/COL world collisions (not a cache)
