@@ -165,6 +165,11 @@ CStreamingInfo::RemoveFromList(void)
 	m_prev = nil;
 }
 
+#ifdef CUSTOM_MODELS
+// Defined with the per-frame pressure code below; used here to size the cap.
+static size_t BudgetStreamingCap(void);
+#endif
+
 void
 CStreaming::Init2(void)
 {
@@ -287,6 +292,18 @@ CStreaming::Init2(void)
 	// CStreaming::Update on Android (see UpdateMobileStreamingHeadroom).
 #ifdef CUSTOM_MODELS
 	revcopt::Startup();
+	// The RAM-derived budget replaces the platform guess as the streaming cap.
+	// This has to happen before the pools are sized below, otherwise the cap
+	// and the thresholds in the config describe different amounts of memory -
+	// which is how the headroom test could never fire.
+	{
+		size_t budgetCap = BudgetStreamingCap();
+		if(budgetCap != 0 && budgetCap != ms_memoryAvailable) {
+			debug("Streaming budget %zu MB (RAM table) replaces %zu MB\n",
+			      budgetCap >> 20, ms_memoryAvailable >> 20);
+			ms_memoryAvailable = budgetCap;
+		}
+	}
 #endif
 
 	// find island LODs
@@ -407,12 +424,34 @@ SampleAndroidAvailRamMB(void)
 // The previous version compared a fixed MemAvailable against 280/450 MB, which
 // reacted to *device* free memory rather than to the streaming budget and
 // switched instantly.
+// Streaming cap from the client's memoryBudgetScaling table (180 / 256 / 320 /
+// 384 MB by installed RAM). In the client this budget *is* the allocator limit
+// handed to streaming (chapter 9 §9.1: "предел задаётся один раз при
+// инициализации стриминга по памяти устройства"), so sizing the cap from it
+// makes the headroom thresholds mean the same thing here as there.
+static size_t
+BudgetStreamingCap(void)
+{
+	size_t budget = revcopt::BudgetBytes();
+	if(budget != 0)
+		return budget;
+	// Optimization module disabled: keep the platform figure.
+	extern size_t _dwMemAvailPhys;
+	size_t mb = 1024 * 1024;
+	size_t cap = (_dwMemAvailPhys - 10 * mb) / 2;
+	if(cap < 65 * mb)
+		cap = 65 * mb;
+	return cap;
+}
+
 static void
 UpdateMobileStreamingHeadroom(void)
 {
 	unsigned long long availBytes = (unsigned long long)SampleAndroidAvailRamMB() * 1024ull * 1024ull;
 	OptimizationSnapshot s = revcopt::Tick((unsigned)CTimer::GetTimeInMilliseconds(),
-	                                       CTimer::GetTimeStepInSeconds(), availBytes);
+	                                       CTimer::GetTimeStepInSeconds(),
+	                                       (unsigned long long)CStreaming::ms_memoryUsed,
+	                                       availBytes);
 	s_mobileVehReqBudget = s.vehicleRequestsPerFrame;
 	s_mobileAsyncReqBudget = s.asyncRequestsPerFrame;
 

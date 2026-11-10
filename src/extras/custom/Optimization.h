@@ -31,9 +31,21 @@ bool Startup(void);
 bool ConfigLoaded(void);
 const char *ConfigSource(void);
 
-// Called once per frame from streaming. availableBytes is the device's free
-// RAM (Android: MemAvailable); pass 0 when it is unknown.
-OptimizationSnapshot Tick(unsigned nowMs, float dtSeconds, unsigned long long availableBytes);
+// Called once per frame from streaming.
+//
+// usedBytes      - what streaming currently holds (CStreaming::ms_memoryUsed),
+//                  the "занято" term of the client's pressure (§9.1).
+// availableBytes - the device's free RAM (Android: MemAvailable); 0 if unknown.
+//                  Only used as a fallback when usedBytes is not known.
+OptimizationSnapshot Tick(unsigned nowMs, float dtSeconds,
+                          unsigned long long usedBytes,
+                          unsigned long long availableBytes);
+
+// The streaming memory limit the client derives from installed RAM through the
+// memoryBudgetScaling table (180 / 256 / 320 / 384 MB, clamped 64..4096).
+// In the client this value *is* the allocator limit given to streaming, so the
+// pool is sized from it and the headroom thresholds are expressed against it.
+size_t BudgetBytes(void);
 
 // Last value returned by Tick, for callers that run before streaming.
 const OptimizationSnapshot &Current(void);

@@ -189,7 +189,11 @@ Sanitize(Params &p)
 	p.distanceScaleChangePerSecond = ClampF(p.distanceScaleChangePerSecond, 0.01f, 8.0f);
 	p.mitigationDelayMs = ClampF(p.mitigationDelayMs, 0.0f, 60000.0f);
 	p.recoveryDelayMs = ClampF(p.recoveryDelayMs, 0.0f, 60000.0f);
-	p.farPlaneMarginScale = ClampF(p.farPlaneMarginScale, 1.0f, 2.0f);
+	// Not clamped up to 1.0: the client only checks that the margin is a
+	// positive scale, and a margin below 1 is exactly the GPU-saving knob
+	// chapter 3.2 tells mods to turn. Clamping it to 1.0 silently discarded
+	// every such setting.
+	p.farPlaneMarginScale = ClampF(p.farPlaneMarginScale, 0.10f, 4.0f);
 
 	p.vehicleUnloadDistance = ClampF(p.vehicleUnloadDistance, 5.0f, 500.0f);
 	p.vehicleReloadDistance = ClampF(p.vehicleReloadDistance, 1.0f, p.vehicleUnloadDistance);
@@ -414,8 +418,12 @@ public:
 		budgetBytes = bytes;
 	}
 
-	// baseBytes is the reservation the client keeps out of the pressure maths
-	// (allocator base + reserve, chapter 9 §9.1). Pass 0 to ignore it.
+	// `usedBytes` must be the pool usage measured the way the client measures
+	// it: relative to the streaming cap, i.e. the allocator base plus what is
+	// actually streamed. `baseBytes` is that reservation (chapter 9 §9.1). The
+	// bare streamed size is not a valid input - this build has no custom
+	// allocator, so it stays far below the RAM-derived budget and pressure
+	// never crosses the thresholds.
 	void Update(uint32_t nowMs, size_t usedBytes, size_t baseBytes, float dtSeconds)
 	{
 		if(dtSeconds <= 0.0f)
@@ -499,6 +507,10 @@ public:
 	// loaded cars to 8 in soft mode, which shows up as traffic popping in).
 	// Keep a mild, monotonic reduction instead: 80 % under mitigation, 60 %
 	// under critical, never below eight cars.
+	//
+	// The clamp is a floor, not a target: with the normal target at 25 slots
+	// the three modes give 25 / 20 / 15, so the reduction is real. It only
+	// collapses to a single value for a caller that already asks for eight.
 	int VehicleRingTarget(int normalSlots) const
 	{
 		if(normalSlots <= 0)

@@ -169,7 +169,8 @@ ConfigSource(void)
 }
 
 OptimizationSnapshot
-Tick(unsigned nowMs, float dtSeconds, unsigned long long availableBytes)
+Tick(unsigned nowMs, float dtSeconds, unsigned long long usedBytes,
+     unsigned long long availableBytes)
 {
 	if(!s_started)
 		Startup();
@@ -188,18 +189,24 @@ Tick(unsigned nowMs, float dtSeconds, unsigned long long availableBytes)
 			s_controller.SetBudgetBytes(budget);
 	}
 
-	// Used = budget - free, measured from the device's own free-RAM figure when
-	// it is available: that is what the client's pressure function divides.
+	// "used" is pool occupancy, exactly as the client's machine computes it
+	// (chapter 9 §9.2: limit - base = denominator, used - base = numerator).
+	// Deriving it from the device's free RAM instead was wrong in both
+	// directions: it is not comparable with the RAM-derived budget, and on
+	// Android the limit for a 64-bit app is ~3-4 GB while the budget is a few
+	// hundred MB, so pressure stayed pinned at 1.0 and the distance scale sat
+	// at the critical value for the whole session.
 	size_t budget = s_controller.BudgetBytes();
-	size_t used = 0;
-	if(availableBytes != 0) {
-		size_t avail = (size_t)availableBytes;
-		used = avail < budget ? budget - avail : budget;
+	size_t used;
+	if(usedBytes != 0) {
+		used = (size_t)usedBytes;
 	} else if(s_availableMb != 0) {
+		// No pool figure yet: fall back to the old free-RAM comparison so a
+		// caller that cannot measure usage still gets a sane signal.
 		size_t avail = s_availableMb << 20;
 		used = avail < budget ? budget - avail : budget;
 	} else {
-		used = budget;	// unknown: report full pressure rather than none
+		used = 0;	// nothing known: report no pressure rather than full
 	}
 
 	uint32 before = s_controller.ModeRevision();
@@ -240,6 +247,14 @@ Current(void)
 		s_snapshot.skinFallbackWanted = false;
 	}
 	return s_snapshot;
+}
+
+size_t
+BudgetBytes(void)
+{
+	if(!s_started)
+		return (size_t)256 << 20;
+	return s_controller.BudgetBytes();
 }
 
 int
@@ -286,6 +301,7 @@ Current(void)
 	return s;
 }
 
+size_t BudgetBytes(void) { return (size_t)0; }
 int VehicleRingTarget(int normalSlots) { return normalSlots; }
 
 float FarPlaneMargin(void) { return 1.0f; }

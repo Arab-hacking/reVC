@@ -144,7 +144,9 @@ TestBadConfig(void)
 	assert(LoadConfig(wild, strlen(wild), w, err) > 0);
 	assert(w.mitigationDistanceScale >= 0.10f);
 	assert(w.criticalDistanceScale <= w.mitigationDistanceScale);
-	assert(w.farPlaneMarginScale >= 1.0f);
+	// 0.1 is a legitimate sub-unit margin (§3.2 turns it for GPU savings), so
+	// it must survive; only a non-positive value is rejected.
+	assert(w.farPlaneMarginScale > 0.099f && w.farPlaneMarginScale < 0.101f);
 	assert(w.distanceScaleChangePerSecond > 0.0f);
 	assert(w.vehicleReloadDistance <= w.vehicleUnloadDistance);
 
@@ -387,6 +389,100 @@ TestRefreshRateScaling(void)
 	printf("refresh-rate scaling ok\n");
 }
 
+
+static void
+TestPoolOccupancyIsThePressureInput(void)
+{
+	// §9.2: the machine divides (used - base) by (limit - base), where "used"
+	// is the pool occupancy relative to the streaming cap, not the raw byte
+	// count of streamed data and certainly not the device's free RAM.
+	//
+	// This is the regression that made the whole feature a no-op in game: the
+	// caller fed ms_memoryUsed alone, which for a several-hundred-MB budget
+	// stays far below 32 MB of headroom pressure, so neither mode ever fired.
+	const size_t MB = (size_t)1 << 20;
+	Params p;
+	p.mitigationDelayMs = 0.0f;
+	p.recoveryDelayMs = 0.0f;
+
+	// Streamed-only figure (the old, broken input): no mode, full distance.
+	Controller raw;
+	raw.SetBudgetBytes(320 * MB);
+	raw.SetParams(p);
+	for(int i = 0; i < 300; i++)
+		raw.Update((uint32_t)(i * 17), 60 * MB, 0, 1.0f / 60.0f);
+	assert(!raw.MitigationActive());
+	assert(raw.DistanceScale() > 0.999f);
+
+	// Same streamed data plus the allocation base: the budget really is 90 %
+	// consumed, so the soft mode must engage and pull the scale to 0.75.
+	Controller occ;
+	occ.SetBudgetBytes(320 * MB);
+	occ.SetParams(p);
+	for(int i = 0; i < 300; i++)
+		occ.Update((uint32_t)(i * 17), (240 + 60) * MB, 0, 1.0f / 60.0f);
+	assert(occ.MitigationActive());
+	assert(!occ.CriticalActive());
+	assert(occ.DistanceScale() > 0.749f && occ.DistanceScale() < 0.751f);
+	printf("pool occupancy is the pressure input ok\n");
+}
+
+static void
+TestFarPlaneMarginAcceptsSubUnitValues(void)
+{
+	// §3.2 calls farPlaneMarginScale the knob to turn for GPU savings. The
+	// validator used to clamp it up to 1.0, which silently discarded any
+	// value below one; only a non-positive margin is invalid.
+	Params p;
+	p.farPlaneMarginScale = 0.8f;
+	Sanitize(p);
+	assert(p.farPlaneMarginScale > 0.799f && p.farPlaneMarginScale < 0.801f);
+
+	p.farPlaneMarginScale = 0.0f;
+	Sanitize(p);
+	assert(p.farPlaneMarginScale > 0.0f);
+
+	p.farPlaneMarginScale = 1.05f;
+	Sanitize(p);
+	assert(p.farPlaneMarginScale > 1.049f && p.farPlaneMarginScale < 1.051f);
+	printf("far plane margin accepts sub-unit values ok\n");
+}
+
+static void
+TestPressureDrivesAllThreeOutputs(void)
+{
+	// One pressure value must move the distance scale, the ring target and the
+	// request quota together; a stale branch in any of them is invisible until
+	// the device is under load.
+	const size_t MB = (size_t)1 << 20;
+	Params p;
+	p.mitigationDelayMs = 0.0f;
+	p.recoveryDelayMs = 0.0f;
+
+	Controller idle;
+	idle.SetBudgetBytes(320 * MB);
+	idle.SetParams(p);
+	for(int i = 0; i < 300; i++)
+		idle.Update((uint32_t)(i * 17), 80 * MB, 0, 1.0f / 60.0f);
+	assert(!idle.MitigationActive());
+	assert(idle.VehicleRequestsPerFrame() == 3);
+	assert(idle.AsyncRequestsPerFrame() == 5);
+	assert(idle.VehicleRingTarget(25) == 25);
+
+	Controller loaded;
+	loaded.SetBudgetBytes(320 * MB);
+	loaded.SetParams(p);
+	for(int i = 0; i < 900; i++)
+		loaded.Update((uint32_t)(i * 17), 319 * MB, 0, 1.0f / 60.0f);
+	assert(loaded.CriticalActive());
+	assert(loaded.DistanceScale() > 0.599f && loaded.DistanceScale() < 0.601f);
+	assert(loaded.VehicleRequestsPerFrame() == 1);
+	assert(loaded.AsyncRequestsPerFrame() == 2);
+	assert(loaded.VehicleRingTarget(25) == 15);
+	assert(loaded.VehicleRingTarget(35) == 21);
+	printf("pressure drives all three outputs ok\n");
+}
+
 int
 main(void)
 {
@@ -399,6 +495,9 @@ main(void)
 	TestHysteresisNeverOscillates();
 	TestBudgetIsNotDeviceRam();
 	TestRefreshRateScaling();
+	TestPoolOccupancyIsThePressureInput();
+	TestFarPlaneMarginAcceptsSubUnitValues();
+	TestPressureDrivesAllThreeOutputs();
 	printf("optimization profile tests passed\n");
 	return 0;
 }
