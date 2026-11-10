@@ -228,6 +228,25 @@ void disableShadowMap(void);
 bool32 isShadowPass(void);
 void shadowRenderAtomic(Atomic *atomic, InstanceDataHeader *header, bool32 skinned);
 
+// Paraboloid environment capture (Black Russia client, 0x42b527).
+void setParaboloidPass(bool32 on);
+bool32 isParaboloidPass(void);
+bool32 paraboloidCaptureAtomic(Atomic *atomic);
+bool32 beginParaboloidPass(uint32 fbo, int32 width, int32 height, const RGBA *clearColor);
+void endParaboloidPass(void);
+// FBO behind a camera texture raster (0 when it has none).
+uint32 rasterFramebuffer(Raster *raster);
+// 0 = env map sampled through u_texMatrix (game TXD), 1 = paraboloid capture.
+void setEnvMapMode(bool32 paraboloid);
+bool32 getEnvMapMode(void);
+// Texture holding the paraboloid capture; MatFX switches its lookup when a
+// material's env map is this texture.
+void setMatFXParaboloidTex(Texture *tex);
+Texture *getMatFXParaboloidTex(void);
+// u_eye override: the capture point must be the point the map is sampled from.
+void setCaptureEyePosition(const V3d &pos);
+void clearCaptureEyePosition(void);
+
 #endif
 
 class ObjPipeline : public rw::ObjPipeline

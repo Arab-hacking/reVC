@@ -199,6 +199,28 @@ vec4 BR_EvalDynamicVertexColor(vec4 inColor, vec4 matColor, vec3 worldPos, vec3 
 	return vec4(col * matColor.rgb, outAlpha);
 }
 
+// Paraboloid environment capture (Black Russia client, 0x42b527):
+//   vec3 ReflVector = Vertex.xyz - u_eye.xyz;
+//   vec3 ReflPos = normalize(ReflVector);
+//   ReflPos.xy = normalize(ReflPos.xy) * (ReflPos.z * 0.5 + 0.5);
+//   gl_Position = vec4(ReflPos.xy, length(ReflVector) * 0.002, 1.0);
+// u_paraboloid.x > 0.5 selects this projection for the whole scene pass, so the
+// 256x256 env map holds a real paraboloid (not a perspective probe).
+uniform vec4 u_paraboloid;
+
+vec4 ParaboloidProjection(vec3 worldPos)
+{
+	vec3 ReflVector = worldPos - u_eye.xyz;
+	vec3 ReflPos = normalize(ReflVector);
+	vec2 planar = ReflPos.xy;
+	float len2 = dot(planar, planar);
+	// normalize() of a zero vector is NaN; looking exactly along the axis must
+	// map to the centre of the paraboloid, where every edge lands.
+	planar = len2 > 1.0e-12 ? planar * inversesqrt(len2) : vec2(0.0);
+	ReflPos.xy = planar * (ReflPos.z * 0.5 + 0.5);
+	return vec4(ReflPos.xy, length(ReflVector) * 0.002, 1.0);
+}
+
 float DoFog(float w)
 {
 	return clamp((w - u_fogEnd)*u_fogRange, u_fogDisable, 1.0);

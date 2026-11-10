@@ -22,6 +22,7 @@
 #include "ModelInfo.h"
 #include "custompipes.h"
 #include "VehicleMaterialClassify.h"
+#include "ParaboloidEnvMap.h"
 #ifdef CUSTOM_MODELS
 #include "CustomModels.h"
 #include "CommonCarcols.h"
@@ -1485,6 +1486,19 @@ IsRegisteredEditableMaterial(CVehicleModelInfo *veh, RpMaterial *mat)
 	return false;
 }
 
+// Env map used for reflections: the live paraboloid capture if it exists,
+// otherwise the static fallback. Materials take the pointer at setup time, so
+// the map is re-applied by RefreshReflectionEnvTexture() once it appears.
+static RwTexture *s_reflectionEnvTex;
+
+static RwTexture *
+ReflectionEnvTexture(void)
+{
+	if(s_reflectionEnvTex == nil && gpFallbackEnvTexture)
+		s_reflectionEnvTex = gpFallbackEnvTexture;
+	return s_reflectionEnvTex;
+}
+
 static RpMaterial*
 ConfigureVehicleMaterialReflectionCB(RpMaterial *material, void *data)
 {
@@ -1535,10 +1549,13 @@ ConfigureVehicleMaterialReflectionCB(RpMaterial *material, void *data)
 		RpMaterialSetTexture(material, gpWhiteTexture);
 
 	// Ensure MatFX fallback pipeline also has a valid envmap setup on SA/BR cars
-	if(spec > 0.0f && gpFallbackEnvTexture &&
+	// Reflection source: the captured paraboloid map when the capture pass is
+	// up (that is what the client reflects: 256x256, client projection), else
+	// the flat sky-gradient fallback.
+	if(spec > 0.0f && ReflectionEnvTexture() &&
 	   RpMatFXMaterialGetEffects(material) == rpMATFXEFFECTNULL){
 		RpMatFXMaterialSetEffects(material, rpMATFXEFFECTENVMAP);
-		RpMatFXMaterialSetupEnvMap(material, gpFallbackEnvTexture, pMatFxIdentityFrame, FALSE, spec);
+		RpMatFXMaterialSetupEnvMap(material, ReflectionEnvTexture(), pMatFxIdentityFrame, FALSE, spec);
 	}
 	return material;
 }
@@ -1633,6 +1650,60 @@ CVehicleModelInfo::SetEnvironmentMap(void)
 	for(i = 0; i < m_numComps; i++)
 		if(m_comps[i])
 			CustomPipes::AttachVehiclePipe((rw::Atomic*)m_comps[i]);
+#endif
+}
+
+// Repoint an already configured material at the current reflection env map.
+static RpMaterial*
+RepointReflectionEnvCB(RpMaterial *material, void *)
+{
+	RwTexture *tex = ReflectionEnvTexture();
+	if(tex == nil)
+		return material;
+	if(RpMatFXMaterialGetEffects(material) == rpMATFXEFFECTENVMAP &&
+	   RpMatFXMaterialGetEnvMapTexture(material) != tex)
+		RpMatFXMaterialSetupEnvMap(material, tex, pMatFxIdentityFrame, FALSE,
+		                           RpMatFXMaterialGetEnvMapCoefficient(material));
+	return material;
+}
+
+static RpAtomic*
+RepointReflectionEnvAtomicCB(RpAtomic *atomic, void *data)
+{
+	if(atomic && RpAtomicGetGeometry(atomic))
+		RpGeometryForAllMaterials(RpAtomicGetGeometry(atomic), RepointReflectionEnvCB, data);
+	return atomic;
+}
+
+// Point the env-map pipeline at the captured paraboloid texture. Called once
+// the capture has produced its first frame; materials created earlier still
+// hold the fallback, so they are refreshed lazily through
+// SetDefaultEnvironmentMapCB (which reads ReflectionEnvTexture()).
+void
+CVehicleModelInfo::RefreshReflectionEnvTexture(void)
+{
+#ifdef RW_GL3
+	RwTexture *capture = (RwTexture*)CParaboloidEnvMap::GetTexture();
+	if(capture == nil || capture == s_reflectionEnvTex)
+		return;
+	s_reflectionEnvTex = capture;
+	// The MatFX shader switches to the polar lookup only for this texture; the
+	// game's own TXD env maps keep RenderWare's u_texMatrix path.
+	rw::gl3::setMatFXParaboloidTex((rw::Texture*)capture);
+
+	// Vehicles loaded before the first capture already hold the fallback map.
+	// Repoint every MatFX env material that is still on it, once.
+	for(int32 m = 0; m < MODELINFOSIZE; m++){
+		CBaseModelInfo *mi = CModelInfo::GetModelInfo(m);
+		if(mi == nil || mi->GetModelType() != MITYPE_VEHICLE)
+			continue;
+		CVehicleModelInfo *vmi = (CVehicleModelInfo*)mi;
+		if(vmi->m_clump)
+			RpClumpForAllAtomics(vmi->m_clump, RepointReflectionEnvAtomicCB, nil);
+		for(int32 c = 0; c < vmi->m_numComps; c++)
+			if(vmi->m_comps[c])
+				RepointReflectionEnvAtomicCB(vmi->m_comps[c], nil);
+	}
 #endif
 }
 

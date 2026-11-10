@@ -42,6 +42,12 @@ def embedded_source(source):
     return "".join(ast.literal_eval(line) for line in block.splitlines() if line.strip())
 
 
+def strip_comments(source):
+    """GLSL comments are not code: a uniform named in a comment is not a use."""
+    source = re.sub(r"/\*.*?\*/", " ", source, flags=re.S)
+    return re.sub(r"//[^\n]*", "", source)
+
+
 def shader_decl(version):
     cpp = (ROOT / "vendor/librw/src/gl/gl3device.cpp").read_text()
     block = cpp.split("const char *shaderDecl" + version + " =\n", 1)[1]
@@ -150,6 +156,59 @@ class GL3ShaderTests(unittest.TestCase):
                     result = subprocess.run([VALIDATOR, "-l", str(vs_path), str(fs_path)],
                                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
                     self.assertEqual(result.returncode, 0, result.stdout)
+
+    def test_all_used_uniforms_are_declared(self):
+        """Every uniform a body reads must be declared by its header.
+
+        This catches the class of bug where a body starts using a new uniform
+        (e.g. u_paraboloid for the paraboloid capture) but only the vertex
+        header declares it - the program then fails to link on the device.
+        """
+        declared = set()
+        for header in ("header.vert", "header.frag"):
+            for line in strip_comments(embedded_source(VENDOR / header)).splitlines():
+                m = re.match(r"\s*uniform\s+(?:\w+\s+)*(\w+)\s*\[", line)
+                if m:
+                    declared.add(m.group(1))
+                m = re.match(r"\s*uniform\s+(?:\w+\s+)*(\w+)\s*(?:=|;)", line)
+                if m:
+                    declared.add(m.group(1))
+        # locals/defines that look like uniforms but are not
+        allow = {"u_materialAmbientInstancing"}
+        bodies = [VENDOR / n for n in ("default.vert", "skin.vert", "simple.frag",
+                                       "matfx_env.vert", "matfx_env.frag", "im2d.vert", "im3d.vert")]
+        bparts = ", ".join(map(str, bodies))
+        declared_extra = set(declared)
+        for body in bodies:
+            for line in strip_comments(embedded_source(body)).splitlines():
+                m = re.match(r"\s*uniform\s+(?:\w+\s+)*(\w+)", line)
+                if m:
+                    declared_extra.add(m.group(1))
+        for body in bodies:
+            text = strip_comments(embedded_source(body))
+            used = set(re.findall(r"\bu_[A-Za-z0-9_]+", text))
+            for name in sorted(used):
+                if name in declared_extra or name in allow:
+                    continue
+                self.fail("%s uses undeclared uniform %s" % (body.name, name))
+
+    def test_paraboloid_capture_contract(self):
+        """The capture pass must follow the client's vertex projection."""
+        h_vs = embedded_source(VENDOR / "header.vert")
+        # 0x42b527, verbatim arithmetic
+        self.assertIn("vec3 ReflVector = worldPos - u_eye.xyz;", h_vs)
+        self.assertIn("ReflPos.xy = planar * (ReflPos.z * 0.5 + 0.5);", h_vs)
+        self.assertIn("length(ReflVector) * 0.002", h_vs)
+        self.assertIn("uniform vec4 u_paraboloid;", h_vs)
+        self.assertIn("uniform vec4 u_paraboloid;", embedded_source(VENDOR / "header.frag"))
+        # both world vertex stages use it, and the capture body is flat
+        for vs in ("default.vert", "skin.vert"):
+            self.assertIn("ParaboloidProjection(Vertex.xyz)", embedded_source(VENDOR / vs))
+        self.assertIn("u_paraboloid.x > 0.5", embedded_source(VENDOR / "simple.frag"))
+        # the material reflection samples the polar map when the capture feeds it
+        fx = embedded_source(VENDOR / "matfx_env.frag")
+        self.assertIn("u_envMapMode.x > 0.5", fx)
+        self.assertIn("planar * (refl0.z * 0.5 + 0.5) * 0.5 + 0.5", fx)
 
     def test_view_matrix_eye_and_env_uniform_sync(self):
         gl3_cpp = (ROOT / "vendor/librw/src/gl/gl3device.cpp").read_text()

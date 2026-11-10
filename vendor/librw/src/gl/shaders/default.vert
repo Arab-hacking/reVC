@@ -10,7 +10,8 @@ void
 main(void)
 {
 	vec4 Vertex = u_world * vec4(in_pos, 1.0);
-	gl_Position = u_proj * u_view * Vertex;
+	gl_Position = u_paraboloid.x > 0.5 ? ParaboloidProjection(Vertex.xyz)
+	                                   : u_proj * u_view * Vertex;
 	vec3 Normal = mat3(u_world) * in_normal;
 
 	v_tex0 = (u_uvMatrix * vec4(in_tex0, 0.0, 1.0)).xy;

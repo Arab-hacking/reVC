@@ -159,6 +159,11 @@ int32 u_sceneLightPosRad = -1;
 int32 u_sceneLightColor = -1;
 int32 u_sceneLightDir = -1;
 int32 u_colorGrade = -1;
+// Paraboloid environment capture (Black Russia client, 0x42b527). x > 0.5
+// switches every world vertex shader to the paraboloid projection.
+int32 u_paraboloid = -1;
+// x: 0 = env map sampled through u_texMatrix, 1 = paraboloid capture (0x434bb8).
+int32 u_envMapMode = -1;
 
 Shader *defaultShader, *defaultShader_noAT;
 Shader *defaultShader_fullLight, *defaultShader_fullLight_noAT;
@@ -2112,6 +2117,8 @@ initOpenGL(void)
 	u_sceneLightColor = registerUniform("u_sceneLightColor", UNIFORM_VEC4, MAX_LIGHTS);
 	u_sceneLightDir = registerUniform("u_sceneLightDir", UNIFORM_VEC4, MAX_LIGHTS);
 	u_colorGrade = registerUniform("u_colorGrade", UNIFORM_VEC4, 3);
+	u_paraboloid = registerUniform("u_paraboloid", UNIFORM_VEC4);
+	u_envMapMode = registerUniform("u_envMapMode", UNIFORM_VEC4);
 
 	// defaults before the game sets anything
 	float zero4[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
@@ -2135,6 +2142,11 @@ initOpenGL(void)
 	setUniform(u_sceneLightColor, zeroLights);
 	setUniform(u_sceneLightDir, zeroLights);
 	setUniform(u_colorGrade, idGrade);
+	{
+		float off4[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+		setUniform(u_paraboloid, off4);
+		setUniform(u_envMapMode, off4);
+	}
 
 	// for im2d
 	registerUniform("u_xform", UNIFORM_VEC4);
@@ -2286,6 +2298,165 @@ ensureShadowFbo(void)
 
 	s_shadowReady = 1;
 	return 1;
+}
+
+// ---------------------------------------------------------------------------
+// Paraboloid environment capture (Black Russia client, renderer/ParaboloidEnvMap)
+//
+// The client projects the whole scene straight into a 256x256 map with the
+// vertex formula at 0x42b527 instead of rendering a perspective cube probe.
+// The projection lives in header.vert (ParaboloidProjection) and is selected by
+// u_paraboloid.x; these helpers only drive the render target and the flag.
+//
+// There are no gluLookAt/projection matrices in this pass: positions come out
+// of gl_Position directly (w stays 1.0), so the vertex stage needs no proj/view.
+// ---------------------------------------------------------------------------
+static bool32 s_inParaboloidPass = 0;
+static uint32 s_savedParaboloidFbo = 0;
+static int32 s_savedParaboloidViewport[4];
+
+void
+setParaboloidPass(bool32 on)
+{
+	float32 v[4] = { on ? 1.0f : 0.0f, 0.0f, 0.0f, 0.0f };
+	setUniform(u_paraboloid, v);
+	s_inParaboloidPass = on ? 1 : 0;
+}
+
+bool32
+isParaboloidPass(void)
+{
+	return s_inParaboloidPass;
+}
+
+// The scene renderers call this once per atomic. Inside the capture pass the
+// atomic is drawn with the unlit/default pipeline, because the client bakes
+// lighting into the map as a flat texel (see simple.frag u_paraboloid branch)
+// and applies fresnel + u_envMapCoef when the map is sampled (0x40b632).
+bool32
+paraboloidCaptureAtomic(Atomic *atomic)
+{
+	if(!s_inParaboloidPass || atomic == nil || atomic->geometry == nil)
+		return 0;
+
+	Geometry *geo = atomic->geometry;
+	if(geo->instData == nil || geo->instData->platform != PLATFORM_GL3)
+		return 0;
+
+	InstanceDataHeader *header = (InstanceDataHeader*)geo->instData;
+	uint32 flags = geo->flags;
+	InstanceData *inst = header->inst;
+	int32 n = header->numMeshes;
+
+	setWorldMatrix(atomic->getFrame()->getLTM());
+	setupVertexInput(header);
+
+	while(n--){
+		Material *m = inst->material;
+		if(m == nil){
+			inst++;
+			continue;
+		}
+		setMaterial(flags, m->color, m->surfaceProps);
+		setTexture(0, m->texture);
+		rw::SetRenderState(VERTEXALPHA, inst->vertexAlpha || m->color.alpha != 0xFF);
+		if(getAlphaTest())
+			defaultShader->use();
+		else
+			defaultShader_noAT->use();
+		drawInst_simple(header, inst);
+		inst++;
+	}
+
+	teardownVertexInput(header);
+	return 1;
+}
+
+bool32
+beginParaboloidPass(uint32 fbo, int32 width, int32 height, const RGBA *clearColor)
+{
+	if(s_inParaboloidPass)
+		return 0;	// nested capture is never valid
+
+	s_savedParaboloidFbo = currentFramebuffer;
+	glGetIntegerv(GL_VIEWPORT, s_savedParaboloidViewport);
+
+	bindFramebuffer(fbo);
+	glViewport(0, 0, width, height);
+	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+	glDepthMask(GL_TRUE);
+	glEnable(GL_DEPTH_TEST);
+	glDisable(GL_SCISSOR_TEST);
+	if(clearColor){
+		glClearColor(clearColor->red/255.0f, clearColor->green/255.0f,
+		             clearColor->blue/255.0f, clearColor->alpha/255.0f);
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+	}
+	setParaboloidPass(1);
+	return 1;
+}
+
+void
+setEnvMapMode(bool32 paraboloid)
+{
+	float32 v[4] = { paraboloid ? 1.0f : 0.0f, 0.0f, 0.0f, 0.0f };
+	setUniform(u_envMapMode, v);
+}
+
+bool32
+getEnvMapMode(void)
+{
+	Uniform *u = &uniformRegistry.uniforms[u_envMapMode];
+	if(u->data == nil)
+		return 0;
+	return *(float32*)u->data > 0.5f;
+}
+
+uint32
+rasterFramebuffer(Raster *raster)
+{
+	if(raster == nil)
+		return 0;
+	Gl3Raster *natras = GETGL3RASTEREXT(raster);
+	return natras ? natras->fbo : 0;
+}
+
+void
+setCaptureEyePosition(const V3d &pos)
+{
+	float32 eye[4] = { pos.x, pos.y, pos.z, 0.0f };
+	setUniform(u_eye, eye);
+}
+
+void
+clearCaptureEyePosition(void)
+{
+	// Next setViewMatrix re-derives the eye from the camera view matrix.
+	if(currentShader)
+		flushUniforms();
+}
+
+void
+endParaboloidPass(void)
+{
+	if(!s_inParaboloidPass)
+		return;
+	setParaboloidPass(0);
+	// The main pass restores its own viewport and framebuffer, but its view
+	// matrix was uploaded before the capture: re-derive u_eye from it so the
+	// material reflections sample the map from the right point again.
+	{
+		const float32 *m = uniformScene.view;
+		float32 eye[4];
+		eye[0] = -(m[0]*m[12] + m[1]*m[13] + m[2]*m[14]);
+		eye[1] = -(m[4]*m[12] + m[5]*m[13] + m[6]*m[14]);
+		eye[2] = -(m[8]*m[12] + m[9]*m[13] + m[10]*m[14]);
+		eye[3] = 0.0f;
+		setUniform(u_eye, eye);
+	}
+	glViewport(s_savedParaboloidViewport[0], s_savedParaboloidViewport[1],
+	           s_savedParaboloidViewport[2], s_savedParaboloidViewport[3]);
+	bindFramebuffer(s_savedParaboloidFbo);
 }
 
 void

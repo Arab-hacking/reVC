@@ -18,6 +18,15 @@ main(void)
 #endif
 	FRAGCOLOR(vec4(1.0));
 #else
+	// Paraboloid environment capture keeps the flat material colour: lighting
+	// is baked into the map by the caller (the client multiplies the captured
+	// texel by fresnel and u_envMapCoef when it is sampled, see 0x40b632).
+	if(u_paraboloid.x > 0.5){
+		vec4 captureCol = texture(tex0, vec2(v_tex0.x, 1.0-v_tex0.y));
+		DoAlphaTest(captureCol.a * v_color.a);
+		FRAGCOLOR(vec4(captureCol.rgb, 1.0));
+		return;
+	}
 	vec4 texCol = texture(tex0, vec2(v_tex0.x, 1.0-v_tex0.y));
 	vec4 color = vec4(texCol.rgb * v_color.rgb, texCol.a * v_color.a);
 	DoAlphaTest(color.a);

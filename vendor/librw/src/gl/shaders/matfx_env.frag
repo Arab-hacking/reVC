@@ -24,16 +24,40 @@ main(void)
 	float visibility = AtmosphereVisibility(v_worldPos, v_fog);
 	float fba = max(outAlpha, disableFBA);
 
+	// Shared geometry normal/view used by both reflection branches. The
+	// paraboloid capture writes v_worldNormal under the same bit pair the
+	// client uses for its reflection block (mask 0x100040, ch. 13.8.3).
+	float hasVN_global;
+	vec3 N0_global = ResolveWorldNormal(v_worldPos, v_worldNormal, hasVN_global);
+	vec3 V0_global = normalize(u_eye.xyz - v_worldPos);
+
 	if(u_atmosphere.x < 0.5){
 		vec4 pass1 = v_color * texCol;
-		float hasVN0;
-		vec3 N0 = ResolveWorldNormal(v_worldPos, v_worldNormal, hasVN0);
-		vec3 V0 = normalize(u_eye.xyz - v_worldPos);
-		vec3 refl0 = reflect(-V0, N0);
-		vec2 envUV0 = (u_texMatrix * vec4(refl0, 1.0)).xy;
-		vec3 envmap0 = pow(max(texture(tex1, envUV0).rgb, vec3(0.0)), vec3(0.8));
-		float fres0 = clamp(pow(1.0 - clamp(abs(dot(V0, N0)), 0.0, 1.0), 3.5), 0.15, 0.70);
-		vec3 pass2 = envmap0 * v_envColor.rgb * fres0 * shininess * visibility;
+		vec3 refl0 = reflect(-V0_global, N0_global);
+		// u_envMapMode.x: 0 = ordinary 2D env map (game TXD, u_texMatrix UV),
+		// 1 = paraboloid capture. The capture pass writes NDC straight into the
+		// map (0x42b527), so the lookup is the same polar projection:
+		//   ReflPos = normalize(refl.xy) * (refl.z * 0.5 + 0.5)   (0x434bb8)
+		//   uv      = ReflPos * 0.5 + 0.5      (NDC -> texture space)
+		vec2 envUV0;
+		if(u_envMapMode.x > 0.5){
+			vec2 planar = refl0.xy;
+			float plen2 = dot(planar, planar);
+			planar = plen2 > 1.0e-12 ? planar * inversesqrt(plen2) : vec2(0.0);
+			envUV0 = planar * (refl0.z * 0.5 + 0.5) * 0.5 + 0.5;
+		}else{
+			envUV0 = (u_texMatrix * vec4(refl0, 1.0)).xy;
+		}
+		// Black Russia reflection chain (13.1, verbatim):
+		//   envmap.rgb = texture(tex2, ReflPos).rgb;               (0x3e1241)
+		//   envmap.rgb = envmap.rgb * fresnelFactor * u_envMapCoef;(0x40b632)
+		//   envmap.rgb = pow(envmap.rgb, vec3(0.8));               (0x43f1e5)
+		//   color.rgb += (diffuseVec + specular + envmap.rgb);     (0x4309d9)
+		// fresnelFactor = 1 - |dot(-viewVec, v_worldNormal)|       (0x43f19d)
+		// No pow(,3.5) and no 0.15..0.70 clamp: those are not in the client.
+		float fres0 = 1.0 - abs(dot(-V0_global, N0_global));
+		vec3 envmap0 = pow(max(texture(tex1, envUV0).rgb * fres0 * shininess, vec3(0.0)), vec3(0.8));
+		vec3 pass2 = envmap0 * v_envColor.rgb * visibility;
 		pass1.rgb = ShadeWorldSurfaceEx(texCol.rgb, v_color.rgb, v_worldPos, v_worldNormal, visibility, 0.0);
 		vec4 legacyCol;
 		legacyCol.rgb = clamp(pass1.rgb * outAlpha + pass2 * fba, 0.0, 1.0);

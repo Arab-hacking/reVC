@@ -166,6 +166,13 @@ render(rw::ObjPipeline *rwpipe, Atomic *atomic)
 		                   pipe->instanceCB == skinInstanceCB);
 		return;
 	}
+	if(isParaboloidPass()){
+		// The capture pass draws every atomic flat: the client's paraboloid
+		// map stores the material colour and lighting is applied when the map
+		// is sampled (fresnel * u_envMapCoef, 0x40b632).
+		paraboloidCaptureAtomic(atomic);
+		return;
+	}
 #endif
 	if(pipe->renderCB)
 		pipe->renderCB(atomic, (InstanceDataHeader*)geo->instData);

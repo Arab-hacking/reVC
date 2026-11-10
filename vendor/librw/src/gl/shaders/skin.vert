@@ -19,7 +19,11 @@ main(void)
 	}
 
 	vec4 Vertex = u_world * vec4(SkinVertex, 1.0);
-	gl_Position = u_proj * u_view * Vertex;
+	// Both branches live in one shader and are selected at draw time (client
+	// 0x40b2aa / 0x43f0b8): skinning is applied by bit 2, the paraboloid
+	// capture is a separate pass flag and uses the deformed vertex.
+	gl_Position = u_paraboloid.x > 0.5 ? ParaboloidProjection(Vertex.xyz)
+	                                   : u_proj * u_view * Vertex;
 	vec3 Normal = mat3(u_world) * SkinNormal;
 
 	v_tex0 = (u_uvMatrix * vec4(in_tex0, 0.0, 1.0)).xy;

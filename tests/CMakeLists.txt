@@ -32,6 +32,13 @@ add_executable(noclip_movement_tests NoClipMovementTests.cpp)
 set_target_properties(noclip_movement_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
 add_test(NAME noclip_movement_tests COMMAND noclip_movement_tests)
 
+# Black Russia graphics parity: constants and formulas of the client's
+# reflection, fog and post-processing shaders (PUNCT ANALYSE v38, graphic 09/12/13).
+add_executable(graphics_parity_tests GraphicsParityTests.cpp)
+target_include_directories(graphics_parity_tests PRIVATE ../src/extras/custom)
+set_target_properties(graphics_parity_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+add_test(NAME graphics_parity_tests COMMAND graphics_parity_tests)
+
 add_executable(mobile_touch_math_tests MobileTouchMathTests.cpp)
 target_include_directories(mobile_touch_math_tests PRIVATE ../src/extras/custom)
 set_target_properties(mobile_touch_math_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
