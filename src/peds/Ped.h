@@ -876,11 +876,9 @@ public:
 	void ScanForDelayedResponseThreats();
 
 	// Static methods
-	// With a ped, approach offsets come from that ped's VC or SA animation
-	// bank; the no-ped overload remains native VC for vehicle-only callers.
-	static CVector GetLocalPositionToOpenCarDoor(CVehicle *veh, uint32 component, float offset, CPed *ped = nil);
-	static CVector GetPositionToOpenCarDoor(CVehicle *veh, uint32 component, float seatPosMult, CPed *ped = nil);
-	static CVector GetPositionToOpenCarDoor(CVehicle* veh, uint32 component, CPed *ped = nil);
+	static CVector GetLocalPositionToOpenCarDoor(CVehicle *veh, uint32 component, float offset);
+	static CVector GetPositionToOpenCarDoor(CVehicle *veh, uint32 component, float seatPosMult);
+	static CVector GetPositionToOpenCarDoor(CVehicle* veh, uint32 component);
 	static void Initialise(void);
 	static void SetAnimOffsetForEnterOrExitVehicle(void);
 	static void LoadFightData(void);

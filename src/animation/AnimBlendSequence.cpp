@@ -70,7 +70,7 @@ CAnimBlendSequence::Uncompress(void)
 {
 	int i;
 
-	if(numFrames == 0 || keyFramesCompressed == nil)
+	if(numFrames == 0)
 		return;
 
 	PUSH_MEMID(MEMID_ANIMATION);

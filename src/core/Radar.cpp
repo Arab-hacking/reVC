@@ -21,7 +21,6 @@
 #include "SpecialFX.h"
 #include "Font.h"
 #include "SaveBuf.h"
-#include "MobileTouchControls.h"
 
 float CRadar::m_radarRange;
 sRadarTrace CRadar::ms_RadarTrace[NUMRADARBLIPS];
@@ -146,22 +145,27 @@ CVector CRadar::TargetMarkerPos;
 float CRadar::cachedCos;
 float CRadar::cachedSin;
 
-bool IsNativeRadarTile(int32 x, int32 y)
+void ClipRadarTileCoords(int32 &x, int32 &y)
 {
-	return x >= 0 && x < RADAR_NUM_TILES && y >= 0 && y < RADAR_NUM_TILES;
+	if (x < 0)
+		x = 0;
+	if (x > RADAR_NUM_TILES-1)
+		x = RADAR_NUM_TILES-1;
+	if (y < 0)
+		y = 0;
+	if (y > RADAR_NUM_TILES-1)
+		y = RADAR_NUM_TILES-1;
 }
 
 void RequestMapSection(int32 x, int32 y)
 {
-	// Radar art has only 8x8 VC tiles. Outside that area there is no tile
-	// to stream; repeating an edge tile makes the map look artificially walled.
-	if (!IsNativeRadarTile(x, y)) return;
+	ClipRadarTileCoords(x, y);
 	CStreaming::RequestTxd(gRadarTxdIds[x + RADAR_NUM_TILES * y], STREAMFLAGS_DONT_REMOVE | STREAMFLAGS_DEPENDENCY);
 }
 
 void RemoveMapSection(int32 x, int32 y)
 {
-	if (IsNativeRadarTile(x, y))
+	if (x >= 0 && x <= RADAR_NUM_TILES - 1 && y >= 0 && y <= RADAR_NUM_TILES - 1)
 		CStreaming::RemoveTxd(gRadarTxdIds[x + RADAR_NUM_TILES * y]);
 }
 
@@ -694,8 +698,8 @@ void CRadar::DrawRadarMap()
 	DrawRadarMask();
 
 	// top left ist (0, 0)
-	int x = WorldSectorIndex(vec2DRadarOrigin.x, RADAR_MIN_X, RADAR_TILE_SIZE);
-	int y = RADAR_NUM_TILES - 1 - WorldSectorIndex(vec2DRadarOrigin.y, RADAR_MIN_Y, RADAR_TILE_SIZE);
+	int x = Floor((vec2DRadarOrigin.x - RADAR_MIN_X) / RADAR_TILE_SIZE);
+	int y = Ceil((RADAR_NUM_TILES - 1) - (vec2DRadarOrigin.y - RADAR_MIN_Y) / RADAR_TILE_SIZE);
 	StreamRadarSections(x, y);
 
 	RwRenderStateSet(rwRENDERSTATEFOGENABLE, (void*)FALSE);
@@ -783,8 +787,8 @@ void CRadar::DrawRadarSection(int32 x, int32 y)
 	int numVertices;
 	RwTexture *texture = nil;
 
-	if (!IsNativeRadarTile(x, y)) return; // no map art beyond native tiles
 	GetTextureCorners(x, y, worldPoly);
+	ClipRadarTileCoords(x, y);
 
 	if (!CTheScripts::bPlayerIsInTheStatium &&
 		(!(txd = CTxdStore::GetSlot(gRadarTxdIds[x + RADAR_NUM_TILES * y])->texDict) || !(texture = GetFirstTexture(txd))))
@@ -1130,7 +1134,6 @@ CRadar::LoadTextures()
 	}
 #endif
 	CTxdStore::PopCurrentTxd();
-	CMobileTouchControls::UpgradeRadarSprites();
 }
 
 void CRadar::RemoveRadarSections()
@@ -1333,16 +1336,14 @@ void CRadar::Shutdown()
 void CRadar::StreamRadarSections(const CVector &posn)
 {
 	if (!CStreaming::ms_disableStreaming)
-		StreamRadarSections(WorldSectorIndex(posn.x, RADAR_MIN_X, RADAR_TILE_SIZE),
-			RADAR_NUM_TILES - 1 - WorldSectorIndex(posn.y, RADAR_MIN_Y, RADAR_TILE_SIZE));
+		StreamRadarSections(Floor((RADAR_MAX_X + posn.x) / RADAR_TILE_SIZE), Ceil((RADAR_NUM_TILES - 1) - (RADAR_MAX_Y + posn.y) / RADAR_TILE_SIZE));
 }
 
 void CRadar::StreamRadarSections(int32 x, int32 y)
 {
 	for (int i = 0; i < RADAR_NUM_TILES; ++i) {
 		for (int j = 0; j < RADAR_NUM_TILES; ++j) {
-			if ((int64(i) >= int64(x) - 1 && int64(i) <= int64(x) + 1) &&
-			    (int64(j) >= int64(y) - 1 && int64(j) <= int64(y) + 1))
+			if ((i >= x - 1 && i <= x + 1) && (j >= y - 1 && j <= y + 1))
 				RequestMapSection(i, j);
 			else
 				RemoveMapSection(i, j);
@@ -1377,19 +1378,12 @@ void CRadar::TransformRadarPointToScreenSpace(CVector2D &out, const CVector2D &i
 		out.x = (FrontEndMenuManager.m_fMapCenterX - FrontEndMenuManager.m_fMapSize) + (MENU_MAP_LENGTH / 2 + MENU_MAP_LEFT_OFFSET + in.x) * FrontEndMenuManager.m_fMapSize * MENU_MAP_WIDTH_SCALE * 2.0f / MENU_MAP_LENGTH;
 		out.y = (FrontEndMenuManager.m_fMapCenterY - FrontEndMenuManager.m_fMapSize) + (MENU_MAP_LENGTH / 2 - MENU_MAP_TOP_OFFSET - in.y) * FrontEndMenuManager.m_fMapSize * MENU_MAP_HEIGHT_SCALE * 2.0f / MENU_MAP_LENGTH;
 	} else {
-#ifdef ANDROID
-		float mobRadarL = 0.0f, mobRadarT = 0.0f, mobRadarW = 0.0f, mobRadarH = 0.0f;
-		CMobileTouchControls::GetMobileRadarRect(&mobRadarL, &mobRadarT, &mobRadarW, &mobRadarH);
-		out.x = (in.x + 1.0f) * 0.5f * mobRadarW + mobRadarL;
-		out.y = (1.0f - in.y) * 0.5f * mobRadarH + mobRadarT;
-#else
 #ifdef FIX_BUGS
 		out.x = (in.x + 1.0f) * 0.5f * SCREEN_SCALE_X(RADAR_WIDTH) + SCREEN_SCALE_X(RADAR_LEFT);
 #else
 		out.x = (in.x + 1.0f) * 0.5f * SCREEN_SCALE_X(RADAR_WIDTH) + RADAR_LEFT;
 #endif
 		out.y = (1.0f - in.y) * 0.5f * SCREEN_SCALE_Y(RADAR_HEIGHT) + SCREEN_SCALE_FROM_BOTTOM(RADAR_BOTTOM + RADAR_HEIGHT);
-#endif
 	}
 }
 

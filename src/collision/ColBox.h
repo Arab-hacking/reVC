@@ -13,11 +13,9 @@ struct CBox
 
 struct CColBox : public CBox
 {
-	uint8 material;
-	uint8 light;
 	uint8 surface;
+	uint8 piece;
 
-	void Set(const CVector &min, const CVector &max, uint8 material, uint8 light, uint8 surface);
 	void Set(const CVector &min, const CVector &max, uint8 surf, uint8 piece);
 	using CBox::Set;
 

@@ -22,29 +22,8 @@ CClumpModelInfo::DeleteRwObject(void)
 static RpAtomic*
 SetHierarchyForSkinAtomic(RpAtomic *atomic, void *data)
 {
-	if(RpSkinGeometryGetSkin(RpAtomicGetGeometry(atomic)))
-		RpSkinAtomicSetHAnimHierarchy(atomic, (RpHAnimHierarchy*)data);
-	return atomic;
-}
-
-static RpAtomic*
-NormalizeSkinWeightsCallback(RpAtomic *atomic, void*)
-{
-	RpGeometry *geometry = RpAtomicGetGeometry(atomic);
-	RpSkin *skin = RpSkinGeometryGetSkin(geometry);
-	if(skin){
-		for(int i = 0; i < RpGeometryGetNumVertices(geometry); i++){
-			RwMatrixWeights *weights = (RwMatrixWeights*)&RpSkinGetVertexBoneWeights(skin)[i];
-			float sum = weights->w0 + weights->w1 + weights->w2 + weights->w3;
-			if(sum > 0.0f){
-				weights->w0 /= sum;
-				weights->w1 /= sum;
-				weights->w2 /= sum;
-				weights->w3 /= sum;
-			}
-		}
-	}
-	return atomic;
+	RpSkinAtomicSetHAnimHierarchy(atomic, (RpHAnimHierarchy*)data);
+	return nil;
 }
 
 RwObject*
@@ -94,10 +73,27 @@ CClumpModelInfo::SetClump(RpClump *clump)
 	if(GetAnimFileIndex() != -1)
 		CAnimManager::AddAnimBlockRef(GetAnimFileIndex());
 	if(IsClumpSkinned(clump)){
-		RpHAnimHierarchy *hier = GetAnimHierarchyFromClump(clump);
+		int i;
+		RpHAnimHierarchy *hier;
+		RpAtomic *skinAtomic;
+		RpSkin *skin;
+
+		hier = GetAnimHierarchyFromClump(clump);
 		assert(hier);
 		RpClumpForAllAtomics(clump, SetHierarchyForSkinAtomic, hier);
-		RpClumpForAllAtomics(clump, NormalizeSkinWeightsCallback, nil);
+		skinAtomic = GetFirstAtomic(clump);
+
+		assert(skinAtomic);
+		skin = RpSkinGeometryGetSkin(RpAtomicGetGeometry(skinAtomic));
+		// ignore const
+		for(i = 0; i < RpGeometryGetNumVertices(RpAtomicGetGeometry(skinAtomic)); i++){
+			RwMatrixWeights *weights = (RwMatrixWeights*)&RpSkinGetVertexBoneWeights(skin)[i];
+			float sum = weights->w0 + weights->w1 + weights->w2 + weights->w3;
+			weights->w0 /= sum;
+			weights->w1 /= sum;
+			weights->w2 /= sum;
+			weights->w3 /= sum;
+		}
 		RpHAnimHierarchySetFlags(hier, (RpHAnimHierarchyFlag)(rpHANIMHIERARCHYUPDATEMODELLINGMATRICES|rpHANIMHIERARCHYUPDATELTMS));
 	}
 }
@@ -195,16 +191,12 @@ CClumpModelInfo::FillFrameArrayCB(RwFrame *frame, void *data)
 void
 CClumpModelInfo::FillFrameArray(RpClump *clump, RwFrame **frames)
 {
-	if(clump == nil || RpClumpGetFrame(clump) == nil)
-		return;
 	RwFrameForAllChildren(RpClumpGetFrame(clump), FillFrameArrayCB, frames);
 }
 
 RwFrame*
 CClumpModelInfo::GetFrameFromId(RpClump *clump, int32 id)
 {
-	if(clump == nil || RpClumpGetFrame(clump) == nil)
-		return nil;
 	RwObjectIdAssociation assoc;
 	assoc.id = id;
 	assoc.frame = nil;

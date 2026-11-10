@@ -1,6 +1,5 @@
 #define WITHD3D
 #include "common.h"
-#include <vector>
 #include <rpskin.h>
 
 #include "Timecycle.h"
@@ -204,50 +203,25 @@ GetFirstTexture(RwTexDictionary *txd)
 	return tex;
 }
 
-static RpAtomic*
-GetFirstSkinnedAtomicCallback(RpAtomic *atomic, void *data)
-{
-	if(RpSkinGeometryGetSkin(RpAtomicGetGeometry(atomic))){
-		*(RpAtomic**)data = atomic;
-		return nil;
-	}
-	return atomic;
-}
-
-RpAtomic*
-GetFirstSkinnedAtomic(RpClump *clump)
-{
-	RpAtomic *atomic = nil;
-	if(clump)
-		RpClumpForAllAtomics(clump, GetFirstSkinnedAtomicCallback, &atomic);
-	return atomic;
-}
-
 bool
 IsClumpSkinned(RpClump *clump)
 {
-	return GetFirstSkinnedAtomic(clump) != nil;
+	RpAtomic *atomic = GetFirstAtomic(clump);
+	return atomic ? RpSkinGeometryGetSkin(RpAtomicGetGeometry(atomic)) : nil;
 }
 
 static RpAtomic*
 GetAnimHierarchyCallback(RpAtomic *atomic, void *data)
 {
-	if(RpSkinGeometryGetSkin(RpAtomicGetGeometry(atomic))){
-		RpHAnimHierarchy *hier = RpSkinAtomicGetHAnimHierarchy(atomic);
-		if(hier){
-			*(RpHAnimHierarchy**)data = hier;
-			return nil;
-		}
-	}
-	return atomic;
+	*(RpHAnimHierarchy**)data = RpSkinAtomicGetHAnimHierarchy(atomic);
+	return nil;
 }
 
 RpHAnimHierarchy*
 GetAnimHierarchyFromSkinClump(RpClump *clump)
 {
 	RpHAnimHierarchy *hier = nil;
-	if(clump)
-		RpClumpForAllAtomics(clump, GetAnimHierarchyCallback, &hier);
+	RpClumpForAllAtomics(clump, GetAnimHierarchyCallback, &hier);
 	return hier;
 }
 
@@ -280,13 +254,13 @@ SkinGetBonePositionsToTable(RpClump *clump, RwV3d *boneTable)
 	RpHAnimHierarchy *hier;
 	int numBones;
 	RwMatrix m, invmat;
-	std::vector<int> stack;
+	int stack[32];
 	int sp;
 
 	if(boneTable == nil)
 		return;
 
-	atomic = GetFirstSkinnedAtomic(clump);
+	atomic = GetFirstAtomic(clump);		// mobile, also VC
 	assert(atomic);
 	skin = RpSkinGeometryGetSkin(RpAtomicGetGeometry(atomic));
 	assert(skin);
@@ -296,20 +270,20 @@ SkinGetBonePositionsToTable(RpClump *clump, RwV3d *boneTable)
 	boneTable[0].y = 0.0f;
 	boneTable[0].z = 0.0f;
 	numBones = RpSkinGetNumBones(skin);
-	if(numBones <= 0 || hier->numNodes < numBones)
-		return;
-	stack.resize(numBones, 0);
 	parent = 0;
 	sp = 0;
+#ifdef FIX_BUGS
+	stack[0] = 0;	// i think this is ok
+#endif
 	for(i = 1; i < numBones; i++){
 		RwMatrixCopy(&m, &RpSkinGetSkinToBoneMatrices(skin)[i]);
 		RwMatrixInvert(&invmat, &m);
 		const RwMatrix *x = RpSkinGetSkinToBoneMatrices(skin);
 		RwV3dTransformPoints(&boneTable[i], &invmat.pos, 1, &x[parent]);
-		if((HIERNODEINFO(hier)[i].flags & rpHANIMPUSHPARENTMATRIX) && sp + 1 < numBones)
+		if(HIERNODEINFO(hier)[i].flags & rpHANIMPUSHPARENTMATRIX)
 			stack[++sp] = parent;
 		if(HIERNODEINFO(hier)[i].flags & rpHANIMPOPPARENTMATRIX)
-			parent = sp > 0 ? stack[sp--] : 0;
+			parent = stack[sp--];
 		else
 			parent = i;
 

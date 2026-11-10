@@ -7,7 +7,6 @@ CAnimBlendClumpData::CAnimBlendClumpData(void)
 {
 	numFrames = 0;
 	velocity2d = nil;
-	usesSAAnimations = false;
 	frames = nil;
 	link.Init();
 }

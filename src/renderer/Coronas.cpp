@@ -15,8 +15,6 @@
 #include "Coronas.h"
 #include "PointLights.h"
 #include "Shadows.h"
-#include "Renderer.h"
-#include "ModelInfo.h"
 #include "Clock.h"
 #include "Bridge.h"
 
@@ -142,13 +140,6 @@ CCoronas::RegisterCorona(uint32 id, uint8 red, uint8 green, uint8 blue, uint8 al
 {
 	int i;
 
-#ifdef ANDROID
-	// Mobile client skips per-frame CPU LineOfSight raycasts on world/vehicle coronas,
-	// relying on hardware Z-testing (ZTESTENABLE=TRUE when LOScheck==0) instead.
-	if(id != SUN_CORONA)
-		LOScheck = LOSCHECK_OFF;
-#endif
-
 	if(sq(drawDist) < (TheCamera.GetPosition() - coors).MagnitudeSqr2D())
 		return;
 
@@ -171,25 +162,8 @@ CCoronas::RegisterCorona(uint32 id, uint8 red, uint8 green, uint8 blue, uint8 al
 		for(i = 0; i < NUMCORONAS; i++)
 			if(aCoronas[i].id == 0)
 				break;
-		if(i == NUMCORONAS){
-			// Evict the farthest non-sun corona if the new corona is closer
-			const CVector camPos = TheCamera.GetPosition();
-			float newDistSq = (coors - camPos).MagnitudeSqr();
-			float farthestDistSq = newDistSq;
-			int farthestIdx = -1;
-			for(int k = 0; k < NUMCORONAS; k++){
-				if(aCoronas[k].id == SUN_CORE || aCoronas[k].id == SUN_CORONA)
-					continue;
-				float d2 = (aCoronas[k].coors - camPos).MagnitudeSqr();
-				if(d2 > farthestDistSq){
-					farthestDistSq = d2;
-					farthestIdx = k;
-				}
-			}
-			if(farthestIdx < 0)
-				return;		// no space
-			i = farthestIdx;
-		}
+		if(i == NUMCORONAS)
+			return;		// no space
 
 		aCoronas[i].fadeAlpha = 0;
 		aCoronas[i].offScreen = true;
@@ -285,39 +259,7 @@ CCoronas::Render(void)
 	RwRenderStateSet(rwRENDERSTATESRCBLEND, (void*)rwBLENDONE);
 	RwRenderStateSet(rwRENDERSTATEDESTBLEND, (void*)rwBLENDONE);
 
-#ifdef ANDROID
-	CSprite::InitSpriteBuffer();
-	RwRaster *curBatchRaster = nil;
-	int curBatchZTest = -1;
-	auto setCoronaBatchState = [&](RwRaster *ras, int ztest){
-		if(ras != curBatchRaster || ztest != curBatchZTest){
-			CSprite::FlushSpriteBuffer();
-			if(ztest != curBatchZTest){
-				RwRenderStateSet(rwRENDERSTATEZTESTENABLE, ztest ? (void*)TRUE : (void*)FALSE);
-				curBatchZTest = ztest;
-			}
-			if(ras != curBatchRaster){
-				RwRenderStateSet(rwRENDERSTATETEXTURERASTER, ras);
-				curBatchRaster = ras;
-			}
-		}
-	};
-#endif
-
 	for(i = 0; i < NUMCORONAS; i++){
-#ifdef ANDROID
-		if(aCoronas[i].drawStreak){
-			for(j = 5; j > 0; j--){
-				aCoronas[i].prevX[j] = aCoronas[i].prevX[j-1];
-				aCoronas[i].prevY[j] = aCoronas[i].prevY[j-1];
-				aCoronas[i].prevRed[j] = aCoronas[i].prevRed[j-1];
-				aCoronas[i].prevGreen[j] = aCoronas[i].prevGreen[j-1];
-				aCoronas[i].prevBlue[j] = aCoronas[i].prevBlue[j-1];
-				aCoronas[i].hasValue[j] = aCoronas[i].hasValue[j-1];
-			}
-			aCoronas[i].hasValue[0] = false;
-		}
-#else
 		for(j = 5; j > 0; j--){
 			aCoronas[i].prevX[j] = aCoronas[i].prevX[j-1];
 			aCoronas[i].prevY[j] = aCoronas[i].prevY[j-1];
@@ -327,7 +269,6 @@ CCoronas::Render(void)
 			aCoronas[i].hasValue[j] = aCoronas[i].hasValue[j-1];
 		}
 		aCoronas[i].hasValue[0] = false;
-#endif
 
 		if(aCoronas[i].id == 0 ||
 		   aCoronas[i].fadeAlpha == 0 && aCoronas[i].alpha == 0)
@@ -346,9 +287,6 @@ CCoronas::Render(void)
 				aCoronas[i].offScreen = true;
 				aCoronas[i].sightClear = false;
 			}else{
-#ifdef ANDROID
-				if(aCoronas[i].drawStreak){
-#endif
 				if(CTimer::GetTimeInMilliseconds() > aCoronas[i].lastLOScheck + 2000){
 					aCoronas[i].lastLOScheck = CTimer::GetTimeInMilliseconds();
 					aCoronas[i].sightClear = CWorld::GetIsLineOfSightClear(
@@ -372,38 +310,26 @@ CCoronas::Render(void)
 					   Abs(aCoronas[i].prevY[0] - aCoronas[i].prevY[1]) > 50.0f)
 						aCoronas[i].hasValue[0] = false;
 				}
-#ifdef ANDROID
-				}
-#endif
 			}
 
 
 			if(aCoronas[i].fadeAlpha && spriteCoors.z < aCoronas[i].drawDist){
 				float recipz = 1.0f/spriteCoors.z;
-				float fadeStart = aCoronas[i].drawDist * 0.65f;
-				float fadeSpan = Max(aCoronas[i].drawDist - fadeStart, 1.0f);
-				float distanceFade = spriteCoors.z < fadeStart ? 1.0f : 1.0f - (spriteCoors.z - fadeStart)/fadeSpan;
+				float fadeDistance = aCoronas[i].drawDist / 2.0f;
+				float distanceFade = spriteCoors.z < fadeDistance ? 1.0f : 1.0f - (spriteCoors.z - fadeDistance)/fadeDistance;
 				int totalFade = aCoronas[i].fadeAlpha * distanceFade;
 
-#ifdef ANDROID
-				int wantZTest = aCoronas[i].LOScheck ? 0 : 1;
-#else
 				if(aCoronas[i].LOScheck)
 					RwRenderStateSet(rwRENDERSTATEZTESTENABLE, (void*)FALSE);
 				else
 					RwRenderStateSet(rwRENDERSTATEZTESTENABLE, (void*)TRUE);
-#endif
 
 				// render corona itself
 				if(aCoronas[i].texture){
 					float fogscale = CWeather::Foggyness*Min(spriteCoors.z, 40.0f)/40.0f + 1.0f;
 					if(CCoronas::aCoronas[i].id == SUN_CORE)
 						spriteCoors.z = 0.95f * RwCameraGetFarClipPlane(Scene.camera);
-#ifdef ANDROID
-					setCoronaBatchState(RwTextureGetRaster(aCoronas[i].texture), wantZTest);
-#else
 					RwRenderStateSet(rwRENDERSTATETEXTURERASTER, RwTextureGetRaster(aCoronas[i].texture));
-#endif
 					spriteCoors.z -= aCoronas[i].nearDist;
 
 					if(aCoronas[i].texture == gpCoronaTexture[8]){
@@ -413,12 +339,7 @@ CCoronas::Render(void)
 						float hscale = 0.35f - (wscale - 0.5f) * 0.06f;
 						hscale = Max(hscale, 0.15f);
 
-#ifdef ANDROID
-						CSprite::RenderBufferedOneXLUSprite(
-#else
-						CSprite::RenderOneXLUSprite(
-#endif
-							spriteCoors.x, spriteCoors.y, spriteCoors.z,
+						CSprite::RenderOneXLUSprite(spriteCoors.x, spriteCoors.y, spriteCoors.z,
 							spritew * aCoronas[i].size * wscale,
 							spriteh * aCoronas[i].size * fogscale * hscale,
 							CCoronas::aCoronas[i].red / fogscale,
@@ -428,11 +349,7 @@ CCoronas::Render(void)
 							recipz,
 							255);
 					}else{
-#ifdef ANDROID
-						CSprite::RenderBufferedOneXLUSprite_Rotate_Aspect(
-#else
 						CSprite::RenderOneXLUSprite_Rotate_Aspect(
-#endif
 							spriteCoors.x, spriteCoors.y, spriteCoors.z,
 							spritew * aCoronas[i].size * fogscale,
 							spriteh * aCoronas[i].size * fogscale,
@@ -457,13 +374,8 @@ CCoronas::Render(void)
 					}
 
 					for(; flare->texture; flare++){
-#ifdef ANDROID
-						setCoronaBatchState(RwTextureGetRaster(gpCoronaTexture[flare->texture + 4]), wantZTest);
-						CSprite::RenderBufferedOneXLUSprite(
-#else
 						RwRenderStateSet(rwRENDERSTATETEXTURERASTER, RwTextureGetRaster(gpCoronaTexture[flare->texture + 4]));
 						CSprite::RenderOneXLUSprite(
-#endif
 							(spriteCoors.x - (screenw/2)) * flare->position + (screenw/2),
 							(spriteCoors.y - (screenh/2)) * flare->position + (screenh/2),
 							spriteCoors.z,
@@ -479,9 +391,6 @@ CCoronas::Render(void)
 			}
 		}
 	}
-#ifdef ANDROID
-	CSprite::FlushSpriteBuffer();
-#endif
 
 	RwRenderStateSet(rwRENDERSTATEZWRITEENABLE, (void*)FALSE);
 	RwRenderStateSet(rwRENDERSTATEZTESTENABLE, (void*)FALSE);
@@ -756,17 +665,16 @@ CCoronas::DoSunAndMoon(void)
 	sunCoors += TheCamera.GetPosition();
 
 	if(CTimeCycle::GetSunDirection().z > -0.2f){
-		float effectiveSunSize = Min(CTimeCycle::GetSunSize(), 3.2f) * 0.34f;
-		float size = ((CGeneral::GetRandomNumber()&0xFF) * 0.005f + 10.0f) * effectiveSunSize;
+		float size = ((CGeneral::GetRandomNumber()&0xFF) * 0.005f + 10.0f) * CTimeCycle::GetSunSize();
 		RegisterCorona(SUN_CORE,
 			CTimeCycle::GetSunCoreRed(), CTimeCycle::GetSunCoreGreen(), CTimeCycle::GetSunCoreBlue(),
-			175, sunCoors, size,
+			255, sunCoors, size,
 			999999.88f, TYPE_STAR, FLARE_NONE, REFLECTION_OFF, LOSCHECK_OFF, STREAK_OFF, 0.0f);
 
 		if(CTimeCycle::GetSunDirection().z > 0.0f && !CGame::IsInInterior())
 			RegisterCorona(SUN_CORONA,
 				CTimeCycle::GetSunCoronaRed(), CTimeCycle::GetSunCoronaGreen(), CTimeCycle::GetSunCoronaBlue(),
-				105, sunCoors, 22.0f * effectiveSunSize,
+				255, sunCoors, 25.0f * CTimeCycle::GetSunSize(),
 				999999.88f, TYPE_STAR, FLARE_SUN, REFLECTION_OFF, LOSCHECK_ON, STREAK_OFF, 0.0f);
 	}
 
@@ -787,24 +695,9 @@ CRegisteredCorona::Update(void)
 	if(!registeredThisFrame)
 		alpha = 0;
 
-#ifdef ANDROID
-	bool sunBlocked = false;
-	if(LOScheck){
-		if(CCoronas::SunBlockedByClouds && id == CCoronas::SUN_CORONA){
-			sunBlocked = true;
-		}else if(firstUpdate || (CTimer::GetFrameCounter() & 3u) == 0u){
-			sightClear = CWorld::GetIsLineOfSightClear(coors, TheCamera.GetPosition(), true, false, false, false, false, false);
-			sunBlocked = !sightClear;
-		}else{
-			sunBlocked = !sightClear;
-		}
-	}
-	if(sunBlocked){
-#else
 	if(LOScheck &&
 	   (CCoronas::SunBlockedByClouds && id == CCoronas::SUN_CORONA ||
 	    !CWorld::GetIsLineOfSightClear(coors, TheCamera.GetPosition(), true, false, false, false, false, false))){
-#endif
 		// Corona is blocked, fade out
 		fadeAlpha = Max(fadeAlpha - 15.0f*CTimer::GetTimeStep(), 0.0f);
 	}else if(offScreen){
@@ -850,23 +743,9 @@ CEntity::ProcessLightsForEntity(void)
 	flashTimer2 = 0;
 	flashTimer3 = 0;
 
-	CBaseModelInfo *baseMi = CModelInfo::GetModelInfo(GetModelIndex());
-	if(baseMi == nil)
-		return;
-	const float lightDistScale = Clamp(CRenderer::ms_fLightDistScale, LIGHTDIST_MIN, LIGHTDIST_MAX);
-	float modelMaxDist = 0.0f;
-	bool syncCoronaToMesh = false;
-	bool modelNoFade = false;
-	if(baseMi->IsBuilding()){
-		CSimpleModelInfo *smi = (CSimpleModelInfo*)baseMi;
-		modelMaxDist = smi->GetLargestLodDistance();
-		syncCoronaToMesh = !smi->m_isBigBuilding && modelMaxDist > 0.0f;
-		modelNoFade = !!smi->m_noFade;
-	}
-
-	n = baseMi->GetNum2dEffects();
+	n = CModelInfo::GetModelInfo(GetModelIndex())->GetNum2dEffects();
 	for(i = 0; i < n; i++, flashTimer1 += 0x80, flashTimer2 += 0x100, flashTimer3 += 0x200){
-		effect = baseMi->Get2dEffect(i);
+		effect = CModelInfo::GetModelInfo(GetModelIndex())->Get2dEffect(i);
 
 		switch(effect->type){
 		case EFFECT_LIGHT:
@@ -971,55 +850,36 @@ CEntity::ProcessLightsForEntity(void)
 				return;
 			}
 
-			// Corona (synchronized with LightDistance and static pole draw distance)
-			float coronaDist;
-			coronaDist = effect->light.dist * lightDistScale;
-			float coronaMeshFade;
-			coronaMeshFade = 1.0f;
-			if(syncCoronaToMesh){
-				if(coronaDist > modelMaxDist)
-					coronaDist = modelMaxDist;
-				if(!modelNoFade && modelMaxDist > FADE_DISTANCE){
-					float camDist = (pos - TheCamera.GetPosition()).Magnitude();
-					if(camDist > modelMaxDist - FADE_DISTANCE)
-						coronaMeshFade = Clamp((modelMaxDist - camDist) / FADE_DISTANCE, 0.0f, 1.0f);
-				}
-			}
-			if(effect->light.corona && effect->light.size > 0.0f && coronaDist > 1.0f && coronaMeshFade > 0.01f){
-				uint8 cr = (uint8)Clamp((int)(effect->col.r * coronaMeshFade + 0.5f), 0, 255);
-				uint8 cg = (uint8)Clamp((int)(effect->col.g * coronaMeshFade + 0.5f), 0, 255);
-				uint8 cb = (uint8)Clamp((int)(effect->col.b * coronaMeshFade + 0.5f), 0, 255);
-				if(lightOn)
-					CCoronas::RegisterCorona((uintptr)this + i,
-						cr, cg, cb, 255,
-						pos, effect->light.size, coronaDist,
-						effect->light.corona, effect->light.flareType, effect->light.roadReflection,
-						effect->light.flags&LIGHTFLAG_LOSCHECK, CCoronas::STREAK_OFF, 0.0f,
-						!!(effect->light.flags&LIGHTFLAG_LONG_DIST));
-				else if(lightFlickering)
-					CCoronas::RegisterCorona((uintptr)this + i,
-						0, 0, 0, 255,
-						pos, effect->light.size, coronaDist,
-						effect->light.corona, effect->light.flareType, effect->light.roadReflection,
-						effect->light.flags&LIGHTFLAG_LOSCHECK, CCoronas::STREAK_OFF, 0.0f,
-						!!(effect->light.flags&LIGHTFLAG_LONG_DIST));
-			}
+			// Corona
+			if(lightOn)
+				CCoronas::RegisterCorona((uintptr)this + i,
+					effect->col.r, effect->col.g, effect->col.b, 255,
+					pos, effect->light.size, effect->light.dist,
+					effect->light.corona, effect->light.flareType, effect->light.roadReflection,
+					effect->light.flags&LIGHTFLAG_LOSCHECK, CCoronas::STREAK_OFF, 0.0f,
+					!!(effect->light.flags&LIGHTFLAG_LONG_DIST));
+			else if(lightFlickering)
+				CCoronas::RegisterCorona((uintptr)this + i,
+					0, 0, 0, 255,
+					pos, effect->light.size, effect->light.dist,
+					effect->light.corona, effect->light.flareType, effect->light.roadReflection,
+					effect->light.flags&LIGHTFLAG_LOSCHECK, CCoronas::STREAK_OFF, 0.0f,
+					!!(effect->light.flags&LIGHTFLAG_LONG_DIST));
 
 			// Pointlight
 			bool alreadyProcessedFog;
 			alreadyProcessedFog = false;
 			if(effect->light.range != 0.0f && lightOn){
-				float scaledRange = effect->light.range * Clamp(0.85f + 0.25f * lightDistScale, 0.85f, 1.60f);
 				if(effect->col.r == 0 && effect->col.g == 0 && effect->col.b == 0){
 					CPointLights::AddLight(CPointLights::LIGHT_POINT,
 						pos, CVector(0.0f, 0.0f, 0.0f),
-						scaledRange,
+						effect->light.range,
 						0.0f, 0.0f, 0.0f,
 						CPointLights::FOG_NONE, true);
 				}else{
 					CPointLights::AddLight(CPointLights::LIGHT_POINT,
 						pos, CVector(0.0f, 0.0f, 0.0f),
-						scaledRange,
+						effect->light.range,
 						effect->col.r*CTimeCycle::GetSpriteBrightness()/255.0f,
 						effect->col.g*CTimeCycle::GetSpriteBrightness()/255.0f,
 						effect->col.b*CTimeCycle::GetSpriteBrightness()/255.0f,
@@ -1046,8 +906,7 @@ CEntity::ProcessLightsForEntity(void)
 			}
 
 			// Light shadow
-			if(effect->light.shadow && effect->light.shadowSize != 0.0f){
-				const float shadowDrawDist = 165.0f * lightDistScale;
+			if(effect->light.shadowSize != 0.0f){
 				if(lightOn){
 					CShadows::StoreStaticShadow((uintptr)this + i, SHADOWTYPE_ADDITIVE,
 						effect->light.shadow, &pos,
@@ -1057,14 +916,14 @@ CEntity::ProcessLightsForEntity(void)
 						effect->col.r*CTimeCycle::GetSpriteBrightness()*effect->light.shadowIntensity/255.0f,
 						effect->col.g*CTimeCycle::GetSpriteBrightness()*effect->light.shadowIntensity/255.0f,
 						effect->col.b*CTimeCycle::GetSpriteBrightness()*effect->light.shadowIntensity/255.0f,
-						24.0f, 1.0f, shadowDrawDist, false, 0.0f);
+						15.0f, 1.0f, 40.0f, false, 0.0f);
 				}else if(lightFlickering){
 					CShadows::StoreStaticShadow((uintptr)this + i, SHADOWTYPE_ADDITIVE,
 						effect->light.shadow, &pos,
 						effect->light.shadowSize, 0.0f,
 						0.0f, -effect->light.shadowSize,
 						0, 0.0f, 0.0f, 0.0f,
-						24.0f, 1.0f, shadowDrawDist, false, 0.0f);
+						15.0f, 1.0f, 40.0f, false, 0.0f);
 				}
 			}
 			break;

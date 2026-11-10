@@ -14,22 +14,16 @@ struct CColModel
 	CBox boundingBox;
 	int16 numSpheres;
 	int16 numBoxes;
-	int16 numVertices;
 	int16 numTriangles;
 	int8 numLines;
 	uint8 level;	// colstore slot but probably still named level
-	uint8 flags;
 	bool ownsCollisionVolumes;
 	CColSphere *spheres;
-	CColSphere *sphereW;
+	CColLine *lines;
 	CColBox *boxes;
 	CompressedVector *vertices;
 	CColTriangle *triangles;
-	CColTrianglePlane *planes;
-	CColTrianglePlane *tree;
-	void *vectorBegin;
-	void *vectorEnd;
-	void *vectorCap;
+	CColTrianglePlane *trianglePlanes;
 
 	CColModel(void);
 	~CColModel(void);

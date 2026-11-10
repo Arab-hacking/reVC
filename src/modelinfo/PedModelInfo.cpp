@@ -14,106 +14,9 @@ void
 CPedModelInfo::DeleteRwObject(void)
 {
 	CClumpModelInfo::DeleteRwObject();
-	m_bSAAnimationModel = false;
-	m_clumpStreamVersion = 0;
 	if(m_hitColModel)
 		delete m_hitColModel;
 	m_hitColModel = nil;
-}
-
-static bool
-EqualsIgnoreCaseTrim(const char *s, const char *lit)
-{
-	if(s == nil || lit == nil)
-		return false;
-	while(*s == ' ' || *s == '\t')
-		s++;
-	while(*lit){
-		char a = *s++;
-		char b = *lit++;
-		if(a >= 'A' && a <= 'Z') a += 'a' - 'A';
-		if(b >= 'A' && b <= 'Z') b += 'a' - 'A';
-		if(a != b)
-			return false;
-	}
-	while(*s == ' ' || *s == '\t')
-		s++;
-	return *s == '\0';
-}
-
-static bool
-StartsWithIgnoreCaseTrim(const char *s, const char *prefix)
-{
-	if(s == nil || prefix == nil)
-		return false;
-	while(*s == ' ' || *s == '\t')
-		s++;
-	while(*prefix){
-		char a = *s++;
-		char b = *prefix++;
-		if(a >= 'A' && a <= 'Z') a += 'a' - 'A';
-		if(b >= 'A' && b <= 'Z') b += 'a' - 'A';
-		if(a != b)
-			return false;
-	}
-	return true;
-}
-
-static RwFrame*
-FindSAFrameMarkerCB(RwFrame *frame, void *data)
-{
-	const char *name = GetFrameNodeName(frame);
-	if(name && (EqualsIgnoreCaseTrim(name, "Normal") ||
-	            StartsWithIgnoreCaseTrim(name, "Bip01 Pelvis") ||
-	            StartsWithIgnoreCaseTrim(name, "Bip01 Spine"))){
-		*(bool*)data = true;
-		return nil;
-	}
-	RwFrameForAllChildren(frame, FindSAFrameMarkerCB, data);
-	return *(bool*)data ? nil : frame;
-}
-
-bool
-CPedModelInfo::DetectSAAnimationClump(RpClump *clump, uint32 clumpStreamVersion)
-{
-	// Both VC and SA skinned pedestrian DFFs share the 19 core BoneTag IDs
-	// (0..5, 21..25, 31..35, 41..43, 51..53), so checking only those IDs
-	// misclassifies stock VC peds (cop, player, etc.) as SA skeletons.
-	// Require a valid skinned ped hierarchy first, then check SA-specific
-	// markers: RW 3.6+ DFF version, SA-only facial/torso bone tags, or SA
-	// 3ds Max Bip01/Normal bone frame names.
-	static const int requiredBones[] = {
-		BONE_root, BONE_pelvis, BONE_spine1, BONE_neck, BONE_head,
-		BONE_l_clavicle, BONE_l_upperarm, BONE_l_forearm, BONE_l_hand,
-		BONE_l_finger, BONE_r_clavicle, BONE_r_upperarm, BONE_r_forearm,
-		BONE_r_hand, BONE_r_finger, BONE_l_thigh, BONE_l_calf, BONE_l_foot,
-		BONE_r_thigh, BONE_r_calf, BONE_r_foot
-	};
-	// SA-exclusive eBoneTag IDs: BONE_L_BROW(6), BONE_R_BROW(7), BONE_JAW(8),
-	// BONE_BELLY(201), BONE_R_BREAST(301), BONE_L_BREAST(302).
-	static const int saExclusiveBones[] = { 6, 7, 8, 201, 301, 302 };
-	RpHAnimHierarchy *hier;
-
-	if(clump == nil || !IsClumpSkinned(clump))
-		return false;
-	hier = GetAnimHierarchyFromSkinClump(clump);
-	if(hier == nil)
-		return false;
-	for(uint32 i = 0; i < ARRAY_SIZE(requiredBones); i++)
-		if(RpHAnimIDGetIndex(hier, requiredBones[i]) < 0)
-			return false;
-
-	if(clumpStreamVersion >= 0x36000)
-		return true;
-
-	for(uint32 i = 0; i < ARRAY_SIZE(saExclusiveBones); i++)
-		if(RpHAnimIDGetIndex(hier, saExclusiveBones[i]) >= 0)
-			return true;
-
-	bool foundSAFrameName = false;
-	if(RpClumpGetFrame(clump))
-		RwFrameForAllChildren(RpClumpGetFrame(clump), FindSAFrameMarkerCB, &foundSAFrameName);
-	return foundSAFrameName;
 }
 
 // leftover...
@@ -139,7 +42,6 @@ CPedModelInfo::SetClump(RpClump *clump)
 	CustomPipes::AttachRimPipe(clump);
 #endif
 	CClumpModelInfo::SetClump(clump);
-	m_bSAAnimationModel = DetectSAAnimationClump(clump, m_clumpStreamVersion);
 	SetFrameIds(m_pPedIds);	// not needed in VC actually
 	if(m_hitColModel == nil)
 		CreateHitColModelSkinned(clump);
@@ -201,7 +103,7 @@ CPedModelInfo::CreateHitColModelSkinned(RpClump *clump)
 #endif
 		spheres[i].radius = m_pColNodeInfos[i].radius;
 		spheres[i].surface = SURFACE_PED;
-		spheres[i].material = m_pColNodeInfos[i].pieceType;
+		spheres[i].piece = m_pColNodeInfos[i].pieceType;
 	}
 	RwMatrixDestroy(invmat);
 	RwMatrixDestroy(mat);
@@ -223,8 +125,6 @@ CPedModelInfo::AnimatePedColModelSkinned(RpClump *clump)
 	RwMatrix *invmat, *mat;
 	CColSphere *spheres = m_hitColModel->spheres;
 	RpHAnimHierarchy *hier = GetAnimHierarchyFromSkinClump(clump);
-	if(hier == nil)
-		return m_hitColModel;
 	invmat = RwMatrixCreate();
 	mat = RwMatrixCreate();
 	RwMatrixInvert(invmat, RwFrameGetMatrix(RpClumpGetFrame(clump)));
@@ -233,10 +133,6 @@ CPedModelInfo::AnimatePedColModelSkinned(RpClump *clump)
 		*mat = *invmat;
 		int id = ConvertPedNode2BoneTag(m_pColNodeInfos[i].pedNode);
 		int idx = RpHAnimIDGetIndex(hier, id);
-		if(idx < 0 || idx >= hier->numNodes){
-			spheres[i].center = CVector(m_pColNodeInfos[i].x, 0.0f, m_pColNodeInfos[i].z);
-			continue;
-		}
 
 		RwMatrixTransform(mat, &RpHAnimHierarchyGetMatrixArray(hier)[idx], rwCOMBINEPRECONCAT);
 		RwV3d pos = { 0.0f, 0.0f, 0.0f };
@@ -256,18 +152,11 @@ CPedModelInfo::AnimatePedColModelSkinnedWorld(RpClump *clump)
 		CreateHitColModelSkinned(clump);
 	CColSphere *spheres = m_hitColModel->spheres;
 	RpHAnimHierarchy *hier = GetAnimHierarchyFromSkinClump(clump);
-	if(hier == nil)
-		return m_hitColModel;
 	RwMatrix *mat;
 
 	for(int i = 0; i < NUMPEDINFONODES; i++){
 		int id = ConvertPedNode2BoneTag(m_pColNodeInfos[i].pedNode);
 		int idx = RpHAnimIDGetIndex(hier, id);
-		if(idx < 0 || idx >= hier->numNodes){
-			RwMatrix *rootLtm = RwFrameGetLTM(RpClumpGetFrame(clump));
-			spheres[i].center = CVector(rootLtm->pos) + CVector(m_pColNodeInfos[i].x, 0.0f, m_pColNodeInfos[i].z);
-			continue;
-		}
 
 		mat = &RpHAnimHierarchyGetMatrixArray(hier)[idx];
 		RwV3d pos = { 0.0f, 0.0f, 0.0f };

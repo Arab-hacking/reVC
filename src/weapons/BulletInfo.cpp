@@ -1,7 +1,6 @@
 #include "common.h"
 
 #include "BulletInfo.h"
-#include "BulletTravel.h"
 
 #include "AnimBlendAssociation.h"
 #include "DMAudio.h"
@@ -37,6 +36,11 @@ uint32 bulletInfoInUse;
 #define NUM_TYRE_POP_SMOKES (4)
 #define NUM_OTHER_SPARKS (8)
 #define BULLET_HIT_FORCE (7.5f)
+
+#define BULLET_BOUNDARY_MIN_X -2400.0f
+#define BULLET_BOUNDARY_MAX_X 1600.0f
+#define BULLET_BOUNDARY_MIN_Y -2000.0f
+#define BULLET_BOUNDARY_MAX_Y 2000.0f
 
 CBulletInfo gaBulletInfo[CBulletInfo::NUM_BULLETS];
 bool bPlayerSniperBullet;
@@ -105,18 +109,14 @@ void CBulletInfo::Update(void)
 #ifdef SQUEEZE_PERFORMANCE
 			bulletInfoInUse--;
 #endif
-			continue; // expired bullets must not collide for one extra frame
 		}
 		CVector vecOldPos = pBullet->m_vecPosition;
 		CVector vecNewPos = pBullet->m_vecPosition + pBullet->m_vecSpeed * CTimer::GetTimeStep() * 0.5f;
-		if (!BulletSegmentIsFinite(vecOldPos, vecNewPos)) {
-			pBullet->m_bInUse = false;
-#ifdef SQUEEZE_PERFORMANCE
-			bulletInfoInUse--;
-#endif
-			continue; // only non-finite math, never a gameplay map edge
-		}
 
+		if ( vecNewPos.x <= BULLET_BOUNDARY_MIN_X || vecNewPos.x >= BULLET_BOUNDARY_MAX_X || vecNewPos.y <= BULLET_BOUNDARY_MIN_Y || vecNewPos.y >= BULLET_BOUNDARY_MAX_Y ) {
+			pBullet->m_bInUse = false;
+			continue;
+		}
 		CWorld::bIncludeDeadPeds = true;
 		CWorld::bIncludeBikers = true;
 		CWorld::bIncludeCarTyres = true;

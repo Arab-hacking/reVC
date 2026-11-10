@@ -13,9 +13,6 @@
 #include "ColStore.h"
 #include "VarConsole.h"
 #include "Pools.h"
-#if defined(ANDROID) && defined(CUSTOM_MODELS)
-#include "CustomModels.h"
-#endif
 
 CPool<ColDef,ColDef> *CColStore::ms_pColPool;
 #ifndef MASTER
@@ -175,12 +172,6 @@ CColStore::LoadCollision(const CVector2D &pos)
 
 	if(CStreaming::ms_disableStreaming)
 		return;
-#if defined(ANDROID) && defined(CUSTOM_MODELS)
-	if(CCustomModels::ReplacesNativeWorldMap()){
-		bLoadAtSecondPosition = false;
-		return;
-	}
-#endif
 
 	for(i = 1; i < COLSTORESIZE; i++){
 		if(GetSlot(i) == nil)
@@ -225,10 +216,6 @@ void
 CColStore::RequestCollision(const CVector2D &pos)
 {
 	int i;
-#if defined(ANDROID) && defined(CUSTOM_MODELS)
-	if(CCustomModels::ReplacesNativeWorldMap())
-		return;
-#endif
 
 	for(i = 1; i < COLSTORESIZE; i++)
 		if(GetSlot(i) && GetBoundingBox(i).IsPointInside(pos, -115.0f))
@@ -242,10 +229,6 @@ CColStore::EnsureCollisionIsInMemory(const CVector2D &pos)
 
 	if(CStreaming::ms_disableStreaming)
 		return;
-#if defined(ANDROID) && defined(CUSTOM_MODELS)
-	if(CCustomModels::ReplacesNativeWorldMap())
-		return;
-#endif
 
 	for(i = 1; i < COLSTORESIZE; i++)
 		if(GetSlot(i) && GetBoundingBox(i).IsPointInside(pos, -110.0f) &&
@@ -263,10 +246,6 @@ bool
 CColStore::HasCollisionLoaded(const CVector2D &pos)
 {
 	int i;
-#if defined(ANDROID) && defined(CUSTOM_MODELS)
-	if(CCustomModels::ReplacesNativeWorldMap())
-		return true;
-#endif
 
 	for(i = 1; i < COLSTORESIZE; i++)
 		if(GetSlot(i) && GetBoundingBox(i).IsPointInside(pos, -115.0f) &&

@@ -13,17 +13,6 @@
 #include "TxdStore.h"
 #include "Renderer.h"
 #include "World.h"
-#include "Camera.h"
-#include "Vehicle.h"
-#include "Clouds.h"
-#include "CustomSky.h"
-#ifdef ANDROID
-#include "Frontend.h"
-#include "Timer.h"
-#endif
-#ifdef CUSTOM_MODELS
-#include "SAStaticModel.h"
-#endif
 #include "custompipes.h"
 
 #ifndef LIBRW
@@ -40,11 +29,6 @@ CustomMatCtor(void *object, int32, int32)
 	CustomMatExt *ext = GetCustomMatExt((rw::Material*)object);
 	ext->glossTex = nil;
 	ext->haveGloss = false;
-	ext->hasSaEnv = false;
-	ext->saShininess = 0.0f;
-	ext->hasSaSpec = false;
-	ext->saSpecularity = 0.0f;
-	memset(ext->saSpecTex, 0, sizeof(ext->saSpecTex));
 	return object;
 }
 
@@ -55,51 +39,7 @@ CustomMatCopy(void *dst, void *src, int32, int32)
 	CustomMatExt *dstext = GetCustomMatExt((rw::Material*)dst);
 	dstext->glossTex = srcext->glossTex;
 	dstext->haveGloss = srcext->haveGloss;
-	dstext->hasSaEnv = srcext->hasSaEnv;
-	dstext->saShininess = srcext->saShininess;
-	dstext->hasSaSpec = srcext->hasSaSpec;
-	dstext->saSpecularity = srcext->saSpecularity;
-	memcpy(dstext->saSpecTex, srcext->saSpecTex, sizeof(dstext->saSpecTex));
 	return dst;
-}
-
-// SA CustomCarEnvMap (0x0253F2FC, 24 bytes) & CustomCarSpecMap (0x0253F2F6, 28 bytes)
-static rw::Stream*
-SaCarEnvMatRead(rw::Stream *stream, int32 len, void *object, int32, int32)
-{
-	CustomMatExt *ext = GetCustomMatExt((rw::Material*)object);
-	if(len >= 24){
-		float vals[5];
-		stream->read32(vals, 20);
-		stream->seek(len - 20);
-		if(vals[4] >= 0.0f && vals[4] <= 10.0f){
-			ext->hasSaEnv = true;
-			ext->saShininess = vals[4];
-		}
-	}else if(len > 0){
-		stream->seek(len);
-	}
-	return stream;
-}
-
-static rw::Stream*
-SaCarSpecMatRead(rw::Stream *stream, int32 len, void *object, int32, int32)
-{
-	CustomMatExt *ext = GetCustomMatExt((rw::Material*)object);
-	if(len >= 28){
-		float spec = stream->readF32();
-		stream->read8(ext->saSpecTex, 24);
-		ext->saSpecTex[23] = '\0';
-		if(len > 28)
-			stream->seek(len - 28);
-		if(spec >= 0.0f && spec <= 10.0f){
-			ext->hasSaSpec = true;
-			ext->saSpecularity = spec;
-		}
-	}else if(len > 0){
-		stream->seek(len);
-	}
-	return stream;
 }
 
 
@@ -107,24 +47,10 @@ SaCarSpecMatRead(rw::Stream *stream, int32 len, void *object, int32, int32)
 rw::TexDictionary *neoTxd;
 
 bool bRenderingEnvMap;
-#ifdef ANDROID
-int32 EnvMapSize = 256;
-#else
-int32 EnvMapSize = 512;
-#endif
+int32 EnvMapSize = 128;
 rw::Camera *EnvMapCam;
 rw::Texture *EnvMapTex;
 rw::Texture *EnvMaskTex;
-static bool zipCarMaskOwned;
-
-void
-SetCarReflectionMask(rw::Texture *mask)
-{
-	if(zipCarMaskOwned && EnvMaskTex) EnvMaskTex->destroy();
-	zipCarMaskOwned = mask != nil;
-	EnvMaskTex = mask ? mask : (neoTxd ? neoTxd->find("CarReflectionMask") : nil);
-}
-
 static rw::RWDEVICE::Im2DVertex EnvScreenQuad[4];
 static int16 QuadIndices[6] = { 0, 1, 2, 0, 2, 3 };
 
@@ -143,25 +69,17 @@ CreateEnvMapCam(rw::World *world)
 					cam->zBuffer = zbuf;
 					cam->setFrame(frame);
 					cam->setNearPlane(0.1f);
-#ifdef ANDROID
-					cam->setFarPlane(300.0f);
-#else
-					cam->setFarPlane(350.0f);
-#endif
-					rw::V2d vw = { 1.35f, 1.35f };
+					cam->setFarPlane(250.0f);
+					rw::V2d vw = { 2.0f, 2.0f };
 					cam->setViewWindow(&vw);
+					world->addCamera(cam);
 					EnvMapTex = rw::Texture::create(fbuf);
-					if(EnvMapTex) {
-						world->addCamera(cam);
-						EnvMapTex->setFilter(rw::Texture::LINEAR);
-						EnvMapTex->setAddressU(rw::Texture::CLAMP);
-						EnvMapTex->setAddressV(rw::Texture::CLAMP);
-						frame->matrix.right.x = -1.0f;
-						frame->matrix.up.y = -1.0f;
-						frame->matrix.update();
-						return cam;
-					}
-					cam->destroy();
+					EnvMapTex->setFilter(rw::Texture::LINEAR);
+
+					frame->matrix.right.x = -1.0f;
+					frame->matrix.up.y = -1.0f;
+					frame->matrix.update();
+					return cam;
 				}
 				frame->destroy();
 			}
@@ -199,64 +117,34 @@ RenderEnvMapScene(void)
 {
 	CRenderer::RenderRoads();
 	CRenderer::RenderEverythingBarRoads();
-#ifdef ANDROID
-	if(FrontEndMenuManager.m_PrefsMobileGraphics >= CMenuManager::MOBILE_GFX_HIGH)
-		CRenderer::RenderFadingInEntities();
-#else
 	CRenderer::RenderFadingInEntities();
-#endif
 }
 
 void
 EnvMapRender(void)
 {
-	if(VehiclePipeSwitch != VEHICLEPIPE_NEO || EnvMapCam == nil || EnvMapTex == nil)
+	if(VehiclePipeSwitch != VEHICLEPIPE_NEO)
 		return;
-#ifdef ANDROID
-	int8 mobTier = FrontEndMenuManager.m_PrefsMobileGraphics;
-	static uint32 s_lastEnvFrame = 0xFFFFFFFFu;
-	uint32 curFrame = CTimer::GetFrameCounter();
-	uint32 stride = (mobTier >= CMenuManager::MOBILE_GFX_HIGH) ? 2u :
-	                ((mobTier == CMenuManager::MOBILE_GFX_MEDIUM) ? 3u : 5u);
-	if(s_lastEnvFrame != 0xFFFFFFFFu && (uint32)(curFrame - s_lastEnvFrame) < stride)
-		return;
-	s_lastEnvFrame = curFrame;
-#endif
 
 	RwCameraEndUpdate(Scene.camera);
 
-	// Place the upward probe right above the player's vehicle roof (or follow
-	// the active camera when free-flying far from the ped in NoClip/cutscenes)
-	// so the rendered scene matches CRenderer's camera-culled render list.
-	CVector probePos = FindPlayerCoors();
-	if(CVehicle *veh = FindPlayerVehicle()){
-		probePos = veh->GetPosition();
-		probePos.z += 0.8f;
-	}else if((TheCamera.GetPosition() - probePos).MagnitudeSqr() > 900.0f){
-		probePos = TheCamera.GetPosition();
-	}else{
-		probePos.z += 0.5f;
-	}
-	rw::V3d camPos = probePos;
+	// Neo does this differently, but i'm not quite convinced it's much better
+	rw::V3d camPos = FindPlayerCoors();
 	EnvMapCam->getFrame()->matrix.pos = camPos;
 	EnvMapCam->getFrame()->transform(&EnvMapCam->getFrame()->matrix, rw::COMBINEREPLACE);
 
 	rw::RGBA skycol;
-	skycol.red = (CTimeCycle::GetSkyTopRed() + CTimeCycle::GetSkyBottomRed()) / 2;
-	skycol.green = (CTimeCycle::GetSkyTopGreen() + CTimeCycle::GetSkyBottomGreen()) / 2;
-	skycol.blue = (CTimeCycle::GetSkyTopBlue() + CTimeCycle::GetSkyBottomBlue()) / 2;
+	skycol.red = CTimeCycle::GetSkyBottomRed();
+	skycol.green = CTimeCycle::GetSkyBottomGreen();
+	skycol.blue = CTimeCycle::GetSkyBottomBlue();
 	skycol.alpha = 255;
 	EnvMapCam->clear(&skycol, rwCAMERACLEARZ|rwCAMERACLEARIMAGE);
 	RwCameraBeginUpdate(EnvMapCam);
 	bRenderingEnvMap = true;
-	CCustomSky::Render(CVector(camPos.x, camPos.y, camPos.z), true);
 	RenderEnvMapScene();
 	bRenderingEnvMap = false;
 
-	// Only apply an explicitly supplied custom reflection mask; neo.txd's stock
-	// CarReflectionMask is 0 in the zenith center and <= 74/255 everywhere else,
-	// which blackens car roofs/hoods and kills 71% of sky reflection brightness.
-	if(zipCarMaskOwned && EnvMaskTex){
+	if(EnvMaskTex){
 		rw::SetRenderState(rw::VERTEXALPHA, TRUE);
 		rw::SetRenderState(rw::SRCBLEND, rw::BLENDZERO);
 		rw::SetRenderState(rw::DESTBLEND, rw::BLENDSRCCOLOR);
@@ -282,10 +170,6 @@ EnvMapInit(void)
 		EnvMaskTex = neoTxd->find("CarReflectionMask");
 
 	EnvMapCam = CreateEnvMapCam(Scene.world);
-	if(EnvMapCam == nil || EnvMapTex == nil) {
-		VehiclePipeSwitch = VEHICLEPIPE_MATFX;
-		return; // unsupported/failed RT, do not dereference an absent camera
-	}
 
 	int width = EnvMapCam->frameBuffer->width;
 	int height = EnvMapCam->frameBuffer->height;
@@ -332,12 +216,9 @@ EnvMapInit(void)
 static void
 EnvMapShutdown(void)
 {
-	SetCarReflectionMask(nil); // release any optional mask; neo.txd owns its fallback
-	if(EnvMapTex) {
-		EnvMapTex->raster = nil;
-		EnvMapTex->destroy();
-		EnvMapTex = nil;
-	}
+	EnvMapTex->raster = nil;
+	EnvMapTex->destroy();
+	EnvMapTex = nil;
 	DestroyCam(EnvMapCam);
 	EnvMapCam = nil;
 }
@@ -361,7 +242,7 @@ EnvMapShutdown(void)
 
 InterpolatedFloat::InterpolatedFloat(float init)
 {
-	curInterpolator = -1.0f;
+	curInterpolator = 61;	// compared against second
 	for(int h = 0; h < 24; h++)
 		for(int w = 0; w < NUMWEATHERS; w++)
 			data[h][w] = init;
@@ -376,18 +257,17 @@ InterpolatedFloat::Read(char *s, int line, int field)
 float
 InterpolatedFloat::Get(void)
 {
-	float key = (float)(CClock::GetHours() * 3600 + CClock::GetMinutes() * 60 + CClock::GetSeconds());
-	if(curInterpolator != key){
+	if(curInterpolator != CClock::GetSeconds()){
 		INTERP_SETUP
 		curVal = INTERP(data);
-		curInterpolator = key;
+		curInterpolator = CClock::GetSeconds();
 	}
 	return curVal;
 }
 
 InterpolatedColor::InterpolatedColor(const Color &init)
 {
-	curInterpolator = -1.0f;
+	curInterpolator = 61;	// compared against second
 	for(int h = 0; h < 24; h++)
 		for(int w = 0; w < NUMWEATHERS; w++)
 			data[h][w] = init;
@@ -404,14 +284,13 @@ InterpolatedColor::Read(char *s, int line, int field)
 Color
 InterpolatedColor::Get(void)
 {
-	float key = (float)(CClock::GetHours() * 3600 + CClock::GetMinutes() * 60 + CClock::GetSeconds());
-	if(curInterpolator != key){
+	if(curInterpolator != CClock::GetSeconds()){
 		INTERP_SETUP
 		curVal.r = INTERPF(data, r);
 		curVal.g = INTERPF(data, g);
 		curVal.b = INTERPF(data, b);
 		curVal.a = INTERPF(data, a);
-		curInterpolator = key;
+		curInterpolator = CClock::GetSeconds();
 	}
 	return curVal;
 }
@@ -462,7 +341,7 @@ ReadTweakValueTable(char *fp, InterpolatedValue &interp)
  * Neo Vehicle pipe
  */
 
-int32 VehiclePipeSwitch = VEHICLEPIPE_NEO;
+int32 VehiclePipeSwitch = VEHICLEPIPE_MATFX;
 float VehicleShininess = 1.0f;
 float VehicleSpecularity = 1.0f;
 InterpolatedFloat Fresnel(0.4f);
@@ -629,15 +508,10 @@ CustomPipeRegister(void)
 
 	CustomMatOffset = rw::Material::registerPlugin(sizeof(CustomMatExt), MAKECHUNKID(rwVENDORID_ROCKSTAR, 0x80),
 		CustomMatCtor, nil, CustomMatCopy);
-	rw::Material::registerPluginStream(0x0253F2FC, SaCarEnvMatRead, nil, nil);
-	rw::Material::registerPluginStream(0x0253F2F6, SaCarSpecMatRead, nil, nil);
-#ifdef CUSTOM_MODELS
-	SAStaticModel::RegisterPlugins();
-#endif
 }
 
 
-// Load textures from TXD parent chain / vehicle.txd / generic as fallback
+// Load textures from generic as fallback
 
 rw::TexDictionary *genericTxd;
 rw::Texture *(*defaultFindCB)(const char *name);
@@ -647,8 +521,6 @@ customFindCB(const char *name)
 {
 	rw::Texture *res = defaultFindCB(name);
 	if(res == nil)
-		res = CTxdStore::FindTextureInHierarchy(CTxdStore::GetCurrentTxdSlot(), name);
-	if(res == nil && genericTxd)
 		res = genericTxd->find(name);
 	return res;
 }

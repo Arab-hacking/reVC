@@ -37,7 +37,6 @@ if(ANDROID)
             log
             GLESv3
             OpenSLES
-            z
     )
 endif()
 

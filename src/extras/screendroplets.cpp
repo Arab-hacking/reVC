@@ -196,9 +196,6 @@ StartStoring(int numIndices, int numVertices, RwImVertexIndex **indexStart, Im2D
 void
 ScreenDroplets::Render(void)
 {
-	if(!ms_enabled || ms_numDrops <= 0 || CPostFX::pBackBuffer == nil)
-		return;
-
 	ScreenDrop *drop;
 
 	DefinedState();

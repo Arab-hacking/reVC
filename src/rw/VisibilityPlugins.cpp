@@ -42,31 +42,29 @@ float CVisibilityPlugins::ms_pedFadeDist;
 void
 CVisibilityPlugins::Initialise(void)
 {
-	// These lists are per-frame render work, not streaming/collision caches.
-	// Keep their native initial sizes but do not drop alpha geometry once full.
-	m_alphaList.Init(NUMALPHALIST, 64);
+	m_alphaList.Init(NUMALPHALIST);
 	m_alphaList.head.item.sort = 0.0f;
 	m_alphaList.tail.item.sort = 100000000.0f;
 
-	m_alphaBoatAtomicList.Init(NUMBOATALPHALIST, 64);
+	m_alphaBoatAtomicList.Init(NUMBOATALPHALIST);
 	m_alphaBoatAtomicList.head.item.sort = 0.0f;
 	m_alphaBoatAtomicList.tail.item.sort = 100000000.0f;
 
 #ifdef ASPECT_RATIO_SCALE
 	// default 150 is not enough for bigger FOVs
-	m_alphaEntityList.Init(NUMALPHAENTITYLIST * 3, 256);
+	m_alphaEntityList.Init(NUMALPHAENTITYLIST * 3);
 #else
-	m_alphaEntityList.Init(NUMALPHAENTITYLIST, 256);
+	m_alphaEntityList.Init(NUMALPHAENTITYLIST);
 #endif // ASPECT_RATIO_SCALE
 	m_alphaEntityList.head.item.sort = 0.0f;
 	m_alphaEntityList.tail.item.sort = 100000000.0f;
 
-	m_alphaUnderwaterEntityList.Init(NUMALPHAUNTERWATERENTITYLIST, 64);
+	m_alphaUnderwaterEntityList.Init(NUMALPHAUNTERWATERENTITYLIST);
 	m_alphaUnderwaterEntityList.head.item.sort = 0.0f;
 	m_alphaUnderwaterEntityList.tail.item.sort = 100000000.0f;
 
 #ifdef NEW_RENDERER
-	m_alphaBuildingList.Init(NUMALPHAENTITYLIST, 256);
+	m_alphaBuildingList.Init(NUMALPHAENTITYLIST);
 	m_alphaBuildingList.head.item.sort = 0.0f;
 	m_alphaBuildingList.tail.item.sort = 100000000.0f;
 #endif
@@ -654,12 +652,7 @@ CVisibilityPlugins::RenderVehicleTailRotorAlphaCB(RpAtomic *atomic)
 RpAtomic*
 CVisibilityPlugins::RenderPlayerCB(RpAtomic *atomic)
 {
-	CClumpModelInfo *modelInfo = GetClumpModelInfo(RpAtomicGetClump(atomic));
-	bool hasSASkin = modelInfo && modelInfo->GetModelType() == MITYPE_PED &&
-		((CPedModelInfo*)modelInfo)->UsesSAAnimations();
-	// The VC skin system replaces every material with one texture. Keep it for
-	// native player skins, but let a SA DFF render its own multi-material TXD.
-	if(CWorld::Players[0].m_pSkinTexture && !hasSASkin)
+	if(CWorld::Players[0].m_pSkinTexture)
 		RpGeometryForAllMaterials(RpAtomicGetGeometry(atomic), SetTextureCB, CWorld::Players[0].m_pSkinTexture);
 	RENDERCALLBACK(atomic);
 	return atomic;

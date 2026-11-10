@@ -3325,7 +3325,7 @@ CWeapon::CheckForShootingVehicleOccupant(CEntity **victim, CColPoint *point, eWe
 				CCollision::CalculateTrianglePlanes(colModel);
 				for (int i = 0; i < colModel->numTriangles; i++) {
 					if (colModel->triangles[i].surface == SURFACE_GLASS &&
-						CCollision::TestLineTriangle(shootLine, colModel->vertices, colModel->triangles[i], colModel->planes[i])) {
+						CCollision::TestLineTriangle(shootLine, colModel->vertices, colModel->triangles[i], colModel->trianglePlanes[i])) {
 						passesGlass = true;
 						break;
 					}

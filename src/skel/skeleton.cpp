@@ -311,7 +311,6 @@ RsRwInitialize(void *displayID)
 	 
 	if (!RwEngineInit(psGetMemoryFunctions(), 0, rsRESOURCESDEFAULTARENASIZE))
 	{
-		REVC_LOG_ERROR("RwEngineInit failed");
 		return (FALSE);
 	}
 
@@ -330,7 +329,6 @@ RsRwInitialize(void *displayID)
 	 */
 	if (RsEventHandler(rsPLUGINATTACH, nil) == rsEVENTERROR)
 	{
-		REVC_LOG_ERROR("Failed to attach RenderWare plugins");
 		return (FALSE);
 	}
 
@@ -339,7 +337,6 @@ RsRwInitialize(void *displayID)
 	 */
 	if (RsEventHandler(rsINPUTDEVICEATTACH, nil) == rsEVENTERROR)
 	{
-		REVC_LOG_ERROR("Failed to attach input devices");
 		return (FALSE);
 	}
 	
@@ -347,14 +344,12 @@ RsRwInitialize(void *displayID)
 
 	if (!RwEngineOpen(&openParams))
 	{
-		REVC_LOG_ERROR("RwEngineOpen failed");
 		RwEngineTerm();
 		return (FALSE);
 	}
 	
 	if (RsEventHandler(rsSELECTDEVICE, displayID) == rsEVENTERROR)
 	{
-		REVC_LOG_ERROR("No RenderWare display device could be selected");
 		RwEngineClose();
 		RwEngineTerm();
 		return (FALSE);
@@ -362,7 +357,6 @@ RsRwInitialize(void *displayID)
 	
 	if (!RwEngineStart())
 	{
-		REVC_LOG_ERROR("RwEngineStart failed");
 		RwEngineClose();
 		RwEngineTerm();
 		return (FALSE);
@@ -378,7 +372,6 @@ RsRwInitialize(void *displayID)
 	RwTextureSetAutoMipmapping(TRUE);
 	RwTextureSetMipmapping(FALSE);
 
-	REVC_LOG_INFO("RenderWare engine started");
 	return TRUE;
 }
 
@@ -410,11 +403,7 @@ RsInitialize(void)
 	RsGlobal.width = DEFAULT_SCREEN_WIDTH;
 	RsGlobal.height = DEFAULT_SCREEN_HEIGHT;
 	
-#ifdef ANDROID
-	RsGlobal.maxFPS = 240;
-#else
 	RsGlobal.maxFPS = 30;
-#endif
 	 
 	RsGlobal.quit = FALSE;
 

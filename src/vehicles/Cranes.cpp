@@ -53,18 +53,20 @@ void CCranes::InitCranes(void)
 {
 	CarsCollectedMilitaryCrane = 0;
 	NumCranes = 0;
-	CWorld::ForEachAllocatedSector([](CSector *sector) {
-		for(CPtrNode *pNode = sector->m_lists[ENTITYLIST_BUILDINGS].first; pNode; pNode = pNode->next){
-			CEntity *pEntity = (CEntity*)pNode->item;
-			if(MODELID_CRANE_1 == pEntity->GetModelIndex() ||
-			   MODELID_CRANE_2 == pEntity->GetModelIndex() ||
-			   MODELID_CRANE_3 == pEntity->GetModelIndex() ||
-			   MODELID_CRANE_4 == pEntity->GetModelIndex() ||
-			   MODELID_CRANE_5 == pEntity->GetModelIndex() ||
-			   MODELID_CRANE_6 == pEntity->GetModelIndex())
-				AddThisOneCrane(pEntity);
+	for (int i = 0; i < NUMSECTORS_X; i++) {
+		for (int j = 0; j < NUMSECTORS_Y; j++) {
+			for (CPtrNode* pNode = CWorld::GetSector(i, j)->m_lists[ENTITYLIST_BUILDINGS].first; pNode; pNode = pNode->next) {
+				CEntity* pEntity = (CEntity*)pNode->item;
+				if (MODELID_CRANE_1 == pEntity->GetModelIndex() ||
+					MODELID_CRANE_2 == pEntity->GetModelIndex() ||
+					MODELID_CRANE_3 == pEntity->GetModelIndex() ||
+					MODELID_CRANE_4 == pEntity->GetModelIndex() ||
+					MODELID_CRANE_5 == pEntity->GetModelIndex() ||
+					MODELID_CRANE_6 == pEntity->GetModelIndex())
+					AddThisOneCrane(pEntity);
+			}
 		}
-	});
+	}
 	for (CPtrNode* pNode = CWorld::GetBigBuildingList(LEVEL_MAINLAND).first; pNode; pNode = pNode->next) {
 		CEntity* pEntity = (CEntity*)pNode->item;
 		if (MODELID_CRANE_1 == pEntity->GetModelIndex() ||
@@ -108,17 +110,17 @@ void CCranes::ActivateCrane(float fInfX, float fSupX, float fInfY, float fSupY, 
 		Y = fDropOffY;
 	}
 	int index = 0;
-	for (int i = 0; i < NumCranes && i < NUM_CRANES; i++) {
-		if (!aCranes[i].m_pCraneEntity)
-			continue;
+	for (int i = 0; i < NumCranes; i++) {
 		float distance = (CVector2D(X, Y) - aCranes[i].m_pCraneEntity->GetPosition()).Magnitude();
 		if (distance < fMinDistance && distance < MAX_DISTANCE_TO_FIND_CRANE) {
 			fMinDistance = distance;
 			index = i;
 		}
 	}
-	if (fMinDistance == MAX_DISTANCE || !aCranes[index].m_pCraneEntity)
+#ifdef FIX_BUGS // classic
+	if (fMinDistance == MAX_DISTANCE)
 		return;
+#endif
 	CCrane* pCrane = &aCranes[index];
 	pCrane->m_fPickupX1 = fInfX;
 	pCrane->m_fPickupX2 = fSupX;
@@ -154,17 +156,17 @@ void CCranes::DeActivateCrane(float X, float Y)
 {
 	float fMinDistance = MAX_DISTANCE;
 	int index = 0;
-	for (int i = 0; i < NumCranes && i < NUM_CRANES; i++) {
-		if (!aCranes[i].m_pCraneEntity)
-			continue;
+	for (int i = 0; i < NumCranes; i++) {
 		float distance = (CVector2D(X, Y) - aCranes[i].m_pCraneEntity->GetPosition()).Magnitude();
 		if (distance < fMinDistance && distance < MAX_DISTANCE_TO_FIND_CRANE) {
 			fMinDistance = distance;
 			index = i;
 		}
 	}
-	if (fMinDistance == MAX_DISTANCE || !aCranes[index].m_pCraneEntity)
+#ifdef FIX_BUGS // classic
+	if (fMinDistance == MAX_DISTANCE)
 		return;
+#endif
 	aCranes[index].m_nCraneStatus = CCrane::DEACTIVATED;
 	aCranes[index].m_nCraneState = CCrane::IDLE;
 }
@@ -173,9 +175,7 @@ bool CCranes::IsThisCarPickedUp(float X, float Y, CVehicle* pVehicle)
 {
 	int index = 0;
 	bool result = false;
-	for (int i = 0; i < NumCranes && i < NUM_CRANES; i++) {
-		if (!aCranes[i].m_pCraneEntity)
-			continue;
+	for (int i = 0; i < NumCranes; i++) {
 		float distance = (CVector2D(X, Y) - aCranes[i].m_pCraneEntity->GetPosition()).Magnitude();
 		if (distance < MAX_DISTANCE_TO_FIND_CRANE && aCranes[i].m_pVehiclePickedUp == pVehicle) {
 			if (aCranes[i].m_nCraneState == CCrane::LIFTING_TARGET || aCranes[i].m_nCraneState == CCrane::ROTATING_TARGET)
@@ -187,9 +187,7 @@ bool CCranes::IsThisCarPickedUp(float X, float Y, CVehicle* pVehicle)
 
 void CCranes::UpdateCranes(void)
 {
-	for (int i = 0; i < NumCranes && i < NUM_CRANES; i++) {
-		if (!aCranes[i].m_pCraneEntity)
-			continue;
+	for (int i = 0; i < NumCranes; i++) {
 		if (aCranes[i].m_bIsTop || aCranes[i].m_bIsCrusher ||
 			(TheCamera.GetPosition().x + CRANE_UPDATE_RADIUS > aCranes[i].m_pCraneEntity->GetPosition().x &&
 				TheCamera.GetPosition().x - CRANE_UPDATE_RADIUS < aCranes[i].m_pCraneEntity->GetPosition().x &&
@@ -201,7 +199,7 @@ void CCranes::UpdateCranes(void)
 
 void CCrane::Update(void)
 {
-	if (CReplay::IsPlayingBack() || !m_pCraneEntity)
+	if (CReplay::IsPlayingBack())
 		return;
 	if (((m_nCraneStatus == ACTIVATED || m_nCraneStatus == DEACTIVATED) &&
 		Abs(TheCamera.GetGameCamPosition().x - m_pCraneEntity->GetPosition().x) < CRANE_MOVEMENT_PROCESSING_RADIUS &&
@@ -212,10 +210,17 @@ void CCrane::Update(void)
 			if (GoTowardsTarget(m_fPickupAngle, m_fPickupDistance, GetHeightToPickup()) &&
 				CTimer::GetTimeInMilliseconds() > m_nTimeForNextCheck) {
 				CWorld::AdvanceCurrentScanCode();
+#ifdef FIX_BUGS
+				int xstart = Max(0, CWorld::GetSectorIndexX(m_fPickupX1));
+				int xend = Min(NUMSECTORS_X - 1, CWorld::GetSectorIndexX(m_fPickupX2));
+				int ystart = Max(0, CWorld::GetSectorIndexY(m_fPickupY1));
+				int yend = Min(NUMSECTORS_Y - 1, CWorld::GetSectorIndexY(m_fPickupY2));
+#else
 				int xstart = CWorld::GetSectorIndexX(m_fPickupX1);
 				int xend = CWorld::GetSectorIndexX(m_fPickupX2);
 				int ystart = CWorld::GetSectorIndexY(m_fPickupY1);
-				int yend = CWorld::GetSectorIndexY(m_fPickupY2);
+				int yend = CWorld::GetSectorIndexY(m_fPickupY1);
+#endif
 				assert(xstart <= xend);
 				assert(ystart <= yend);
 				for (int i = xstart; i <= xend; i++) {
@@ -680,7 +685,6 @@ void CCranes::Load(uint8* buf, uint32 size)
 	INITSAVEBUF
 
 	ReadSaveBuf(&NumCranes, buf);
-	NumCranes = Clamp(NumCranes, 0, NUM_CRANES);
 	ReadSaveBuf(&CarsCollectedMilitaryCrane, buf);
 	for (int i = 0; i < NUM_CRANES; i++) {
 #ifdef COMPATIBLE_SAVES
@@ -730,18 +734,6 @@ void CCranes::Load(uint8* buf, uint32 size)
 		if (pCrane->m_pVehiclePickedUp != nil)
 			pCrane->m_pVehiclePickedUp = CPools::GetVehiclePool()->GetSlot((uintptr)pCrane->m_pVehiclePickedUp - 1);
 #endif
-	}
-	for (int i = 0; i < NUM_CRANES; i++) {
-		CEntity *ent = aCranes[i].m_pCraneEntity;
-		if (ent &&
-		    MODELID_CRANE_1 != ent->GetModelIndex() &&
-		    MODELID_CRANE_2 != ent->GetModelIndex() &&
-		    MODELID_CRANE_3 != ent->GetModelIndex() &&
-		    MODELID_CRANE_4 != ent->GetModelIndex() &&
-		    MODELID_CRANE_5 != ent->GetModelIndex() &&
-		    MODELID_CRANE_6 != ent->GetModelIndex()) {
-			aCranes[i].m_pCraneEntity = nil;
-		}
 	}
 
 	VALIDATESAVEBUF(size);

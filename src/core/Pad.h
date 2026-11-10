@@ -12,7 +12,6 @@ enum {
 	PLAYERCONTROL_PHONE = 64,
 	PLAYERCONTROL_CUTSCENE = 128,
 	PLAYERCONTROL_SHORTCUT_TAXI = 256,
-	PLAYERCONTROL_NOCLIP = 512,
 };
 
 class CControllerState
@@ -226,9 +225,6 @@ public:
 	
 	static void DoCheats(void);
 	void DoCheats(int16 unk);
-	// PC: '-' / '+' (including numpad) cycle registered ped models.
-	static void ProcessPlayerModelKeys(void);
-	static void ProcessTimeOfDayKeys(void);
 	
 	static void StopPadsShaking(void);
 	void StopShaking(int16 pad);
@@ -492,8 +488,6 @@ public:
 	int16 GetRightStickY(void)    { return NewState.RightStickY; }
 
 	bool ArePlayerControlsDisabled(void) { return DisablePlayerControls != PLAYERCONTROL_ENABLED; }
-	// Noclip disables ped/car actions, but must not disable mouse look.
-	bool AreCameraControlsDisabled(void) { return (DisablePlayerControls & ~PLAYERCONTROL_NOCLIP) != PLAYERCONTROL_ENABLED; }
 	void SetDisablePlayerControls(uint16 who) { DisablePlayerControls |= who; }
 	void SetEnablePlayerControls(uint16 who) { DisablePlayerControls &= ~who; }
 	bool IsPlayerControlsDisabledBy(uint16 who) { return DisablePlayerControls & who; }
