@@ -994,92 +994,6 @@ Const static bool8 HornPattern[8][44] = {
      FALSE, FALSE, FALSE, FALSE, TRUE, TRUE, TRUE,  TRUE,  TRUE, TRUE, TRUE, TRUE, TRUE, TRUE,  TRUE,  TRUE,  TRUE, FALSE, FALSE, FALSE, FALSE, FALSE},
 };
 
-static int32
-ResolveVehicleAudioIndex(const CVehicle *veh)
-{
-	if (veh == nil)
-		return 0;
-	const int32 rawIdx = (int32)veh->m_modelIndex - MI_FIRST_VEHICLE;
-	if (rawIdx >= 0 && rawIdx < MAX_CARS)
-		return rawIdx;
-
-	int32 fallback = MI_ADMIRAL - MI_FIRST_VEHICLE;
-	if (veh->m_vehType == VEHICLE_TYPE_BIKE) {
-		fallback = MI_PCJ600 - MI_FIRST_VEHICLE;
-		if (veh->pHandling != nil) {
-			switch (veh->pHandling->nIdentifier) {
-			case HANDLING_DIRTBIKE:
-				fallback = MI_SANCHEZ - MI_FIRST_VEHICLE;
-				break;
-			case HANDLING_ANGEL:
-			case HANDLING_FREEWAY:
-				fallback = MI_FREEWAY - MI_FIRST_VEHICLE;
-				break;
-			case HANDLING_MOPED:
-				fallback = MI_FAGGIO - MI_FIRST_VEHICLE;
-				break;
-			default:
-				break;
-			}
-		}
-	} else if (veh->m_vehType == VEHICLE_TYPE_BOAT) {
-		fallback = MI_SPEEDER - MI_FIRST_VEHICLE;
-	} else if (veh->pHandling != nil) {
-		switch (veh->pHandling->nIdentifier) {
-		case HANDLING_LANDSTAL:
-		case HANDLING_RANCHER:
-		case HANDLING_PATRIOT:
-		case HANDLING_FBIRANCH:
-		case HANDLING_SANDKING:
-			fallback = MI_LANDSTAL - MI_FIRST_VEHICLE;
-			break;
-		case HANDLING_INFERNUS:
-		case HANDLING_CHEETAH:
-		case HANDLING_BANSHEE:
-		case HANDLING_STINGER:
-		case HANDLING_COMET:
-		case HANDLING_PHEONIX:
-		case HANDLING_DELUXO:
-		case HANDLING_HOTRING:
-			fallback = MI_CHEETAH - MI_FIRST_VEHICLE;
-			break;
-		case HANDLING_SABRETUR:
-		case HANDLING_SABRE1:
-		case HANDLING_STALLION:
-			fallback = MI_SABRETUR - MI_FIRST_VEHICLE;
-			break;
-		case HANDLING_LINERUN:
-		case HANDLING_FLATBED:
-		case HANDLING_BARRACKS:
-		case HANDLING_PACKER:
-		case HANDLING_TRASH:
-		case HANDLING_MULE:
-		case HANDLING_YANKEE:
-		case HANDLING_BENSON:
-			fallback = MI_FLATBED - MI_FIRST_VEHICLE;
-			break;
-		case HANDLING_BUS:
-		case HANDLING_COACH:
-			fallback = MI_COACH - MI_FIRST_VEHICLE;
-			break;
-		case HANDLING_POLICE:
-		case HANDLING_ENFORCER:
-		case HANDLING_AMBULAN:
-		case HANDLING_FIRETRUK:
-		case HANDLING_FBICAR:
-			fallback = MI_POLICE - MI_FIRST_VEHICLE;
-			break;
-		default:
-			if (veh->pHandling->Transmission.fMaxVelocity > 0.95f)
-				fallback = MI_CHEETAH - MI_FIRST_VEHICLE;
-			break;
-		}
-	}
-	if (fallback < 0 || fallback >= MAX_CARS)
-		return 0;
-	return fallback;
-}
-
 void
 cAudioManager::ProcessVehicle(CVehicle* veh)
 {
@@ -1105,7 +1019,7 @@ cAudioManager::ProcessVehicle(CVehicle* veh)
 	params.m_pVehicle = veh;
 	params.m_fDistance = GetDistanceSquared(m_sQueueSample.m_vecPos);
 	params.m_pTransmission = veh->pHandling != nil ? &veh->pHandling->Transmission : nil;
-	params.m_nIndex = ResolveVehicleAudioIndex(veh);
+	params.m_nIndex = veh->m_modelIndex - MI_FIRST_VEHICLE;
 	if (veh->GetStatus() == STATUS_SIMPLE)
 		params.m_fVelocityChange = veh->AutoPilot.m_fMaxTrafficSpeed * 0.02f;
 	else
@@ -3853,12 +3767,7 @@ cAudioManager::ProcessBoatEngine(cVehicleParams& params)
 			BaseFreq = 1782;
 			break;
 		default:
-			freqModificator = 6000;
-			volModificator = 60;
-			isV12 = TRUE;
-			BaseFreq = 9000;
-			BaseVol = 20;
-			break;
+			return TRUE;
 		}
 
 		bool8 bIsPlayerVeh;

@@ -192,8 +192,6 @@ cAudioManager::SetUpOneShotCollisionSound(const cAudioCollision &col)
 			s1 = col.m_bSurface1;
 			s2 = col.m_bSurface2;
 		}
-		if(s1 >= ARRAY_SIZE(gOneShotCol)) s1 = SURFACE_DEFAULT;
-		if(s2 >= ARRAY_SIZE(gOneShotCol)) s2 = SURFACE_DEFAULT;
 		ratio = GetCollisionOneShotRatio(s1, col.m_fIntensity1);
 		if(s1 == SURFACE_CAR && s2 == SURFACE_PED) ratio /= 4.0f;
 		if(s1 == SURFACE_CAR && ratio < 0.6f) {
@@ -207,8 +205,6 @@ cAudioManager::SetUpOneShotCollisionSound(const cAudioCollision &col)
 			    ComputeVolume(emittingVol, COLLISION_MAX_DIST, m_sQueueSample.m_fDistance);
 			if(m_sQueueSample.m_nVolume > 0) {
 				m_sQueueSample.m_nSampleIndex = gOneShotCol[s1];
-				if(m_sQueueSample.m_nSampleIndex >= TOTAL_AUDIO_SAMPLES)
-					continue;
 				switch(m_sQueueSample.m_nSampleIndex) {
 				case SFX_COL_TARMAC_1:
 					m_sQueueSample.m_nSampleIndex += m_anRandomTable[3] % 5;

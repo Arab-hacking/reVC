@@ -13,11 +13,6 @@ struct CustomMatExt
 {
 	rw::Texture *glossTex;
 	bool haveGloss;
-	bool hasSaEnv;
-	float saShininess;
-	bool hasSaSpec;
-	float saSpecularity;
-	char saSpecTex[24];
 };
 extern rw::int32 CustomMatOffset;
 inline CustomMatExt *GetCustomMatExt(rw::Material *mat) {
@@ -86,9 +81,6 @@ extern int32 EnvMapSize;
 extern rw::Camera *EnvMapCam;
 extern rw::Texture *EnvMapTex;
 extern rw::Texture *EnvMaskTex;
-// Takes ownership of an optional car mask, or restores neo.txd
-// when nil. Does not change the dynamically rendered scene reflection RT.
-void SetCarReflectionMask(rw::Texture *mask);
 void EnvMapRender(void);
 
 enum {

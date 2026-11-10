@@ -14,9 +14,6 @@
 #include "Timecycle.h"
 #include "Renderer.h"
 #include "Clouds.h"
-#ifdef RW_GL3
-#include "GL3Atmosphere.h"
-#endif
 
 #define SMALLSTRIPHEIGHT 4.0f
 #define HORIZSTRIPHEIGHT 48.0f
@@ -197,15 +194,6 @@ CClouds::Render(void)
 
 	// Low clouds
 	float lowcloudintensity = 1.0f - Max(Max(CWeather::Foggyness, CWeather::CloudCoverage), CWeather::ExtraSunnyness);
-#ifdef RW_GL3
-	if(GL3Atmosphere::Enabled){
-		// Keep a soft low-cloud layer in cloudy weather instead of fading it
-		// completely out as the native VC formula does. Fog still obscures it.
-		lowcloudintensity = (0.55f + 0.20f*GL3Atmosphere::Clamp01(CWeather::CloudCoverage)) *
-			(1.0f - 0.65f*GL3Atmosphere::Clamp01(CWeather::Foggyness)) *
-			(1.0f - GL3Atmosphere::Clamp01(CWeather::ExtraSunnyness));
-	}
-#endif
 	int r = CTimeCycle::GetLowCloudsRed() * lowcloudintensity;
 	int g = CTimeCycle::GetLowCloudsGreen() * lowcloudintensity;
 	int b = CTimeCycle::GetLowCloudsBlue() * lowcloudintensity;
@@ -369,93 +357,61 @@ CClouds::RenderBackground(int16 topred, int16 topgreen, int16 topblue,
 		int fogg = (topgreen + 2 * botgreen) / 3;
 		int fogb = (topblue + 2 * botblue) / 3;
 
-#ifdef RW_GL3
-		if(GL3Atmosphere::Enabled){
-			// The background reaches the same fog colour as distant geometry;
-			// the old bottom-to-fog 4px stripe made a conspicuous horizon seam.
-			// Two broad colour transitions preserve the weather/timecycle sky,
-			// without adding a full-screen postprocess or replacing VC clouds.
-			float height = SCREEN_HEIGHT * 0.75f;
-			float topLeft = ms_horizonZ + ms_HorizonTilt - height;
-			float topRight = ms_horizonZ - ms_HorizonTilt - height;
-			float midLeft = ms_horizonZ + ms_HorizonTilt - height*0.38f;
-			float midRight = ms_horizonZ - ms_HorizonTilt - height*0.38f;
-			float horizonLeft = ms_horizonZ + ms_HorizonTilt;
-			float horizonRight = ms_horizonZ - ms_HorizonTilt;
-			CRGBA zenith(topred, topgreen, topblue, alpha);
-			CRGBA mid((2*topred + botred)/3, (2*topgreen + botgreen)/3,
-				(2*topblue + botblue)/3, alpha);
-			CRGBA haze(fogr, fogg, fogb, alpha);
+		// Draw top/bottom gradient
+		float gradheight = SCREEN_HEIGHT/2.0f;
 
-			if(topLeft > 0.0f || topRight > 0.0f)
-				CSprite2d::DrawAnyRect(0.0f, -2*SCREEN_HEIGHT, SCREEN_WIDTH, -2*SCREEN_HEIGHT,
-					0.0f, topLeft, SCREEN_WIDTH, topRight, zenith, zenith, zenith, zenith);
-			CSprite2d::DrawAnyRect(0.0f, topLeft, SCREEN_WIDTH, topRight,
-				0.0f, midLeft, SCREEN_WIDTH, midRight, zenith, zenith, mid, mid);
-			CSprite2d::DrawAnyRect(0.0f, midLeft, SCREEN_WIDTH, midRight,
-				0.0f, horizonLeft, SCREEN_WIDTH, horizonRight, mid, mid, haze, haze);
-			CSprite2d::DrawAnyRect(0.0f, horizonLeft, SCREEN_WIDTH, horizonRight,
-				0.0f, horizonLeft + SMALLSTRIPHEIGHT, SCREEN_WIDTH, horizonRight + SMALLSTRIPHEIGHT,
-					haze, haze, haze, haze);
-		}else
-#endif
-		{
-			// Original VC gradient (also used when GL3Atmosphere=0).
-			float gradheight = SCREEN_HEIGHT/2.0f;
+		ms_colourTop.r = topred;
+		ms_colourTop.g = topgreen;
+		ms_colourTop.b = topblue;
+		ms_colourTop.a = alpha;
+		ms_colourBottom.r = botred;
+		ms_colourBottom.g = botgreen;
+		ms_colourBottom.b = botblue;
+		ms_colourBottom.a = alpha;
 
+		float botright = ms_horizonZ - ms_HorizonTilt;
+		float botleft = ms_horizonZ + ms_HorizonTilt;
+		float topright = botright - gradheight;
+		float topleft = botleft - gradheight;
+
+		CSprite2d::DrawAnyRect(0.0f, topleft,  SCREEN_WIDTH, topright,  0.0f, botleft,  SCREEN_WIDTH, botright,
+			 ms_colourTop, ms_colourTop, ms_colourBottom, ms_colourBottom);
+
+		// draw the small stripe (whatever it's supposed to be)
+		ms_colourTop.r = fogr;
+		ms_colourTop.g = fogg;
+		ms_colourTop.b = fogb;
+		ms_colourTop.a = alpha;
+		topright = ms_horizonZ - ms_HorizonTilt;
+		topleft = ms_horizonZ + ms_HorizonTilt;
+		botright = topright + SMALLSTRIPHEIGHT;
+		botleft = topleft + SMALLSTRIPHEIGHT;
+		CSprite2d::DrawAnyRect(0.0f, topleft,  SCREEN_WIDTH, topright,  0.0f, botleft,  SCREEN_WIDTH, botright,
+			ms_colourTop, ms_colourTop, ms_colourTop, ms_colourTop);
+
+		// Only top
+		if(ms_horizonZ + ms_HorizonTilt - gradheight > 0.0f ||
+		   ms_horizonZ - ms_HorizonTilt - gradheight > 0.0f){
 			ms_colourTop.r = topred;
 			ms_colourTop.g = topgreen;
 			ms_colourTop.b = topblue;
 			ms_colourTop.a = alpha;
-			ms_colourBottom.r = botred;
-			ms_colourBottom.g = botgreen;
-			ms_colourBottom.b = botblue;
-			ms_colourBottom.a = alpha;
 
-			float botright = ms_horizonZ - ms_HorizonTilt;
-			float botleft = ms_horizonZ + ms_HorizonTilt;
-			float topright = botright - gradheight;
-			float topleft = botleft - gradheight;
+			if(ms_horizonZ - Abs(ms_HorizonTilt) - gradheight > SCREEN_HEIGHT){
+				// only top is visible
+				topleft = 0.0f;
+				topright = 0.0f;
+				botleft = SCREEN_HEIGHT;
+				botright = SCREEN_HEIGHT;
+			}else{
+				botright = ms_horizonZ - ms_HorizonTilt - gradheight;
+				botleft = ms_horizonZ + ms_HorizonTilt - gradheight;
+				topright = Min(ms_horizonZ - ms_HorizonTilt - 2*SCREEN_HEIGHT, 0.0f);
+				topleft = Min(ms_horizonZ + ms_HorizonTilt - 2*SCREEN_HEIGHT, 0.0f);
+			}
 
-			CSprite2d::DrawAnyRect(0.0f, topleft,  SCREEN_WIDTH, topright,  0.0f, botleft,  SCREEN_WIDTH, botright,
-				 ms_colourTop, ms_colourTop, ms_colourBottom, ms_colourBottom);
-
-			// draw the small stripe (whatever it's supposed to be)
-			ms_colourTop.r = fogr;
-			ms_colourTop.g = fogg;
-			ms_colourTop.b = fogb;
-			ms_colourTop.a = alpha;
-			topright = ms_horizonZ - ms_HorizonTilt;
-			topleft = ms_horizonZ + ms_HorizonTilt;
-			botright = topright + SMALLSTRIPHEIGHT;
-			botleft = topleft + SMALLSTRIPHEIGHT;
 			CSprite2d::DrawAnyRect(0.0f, topleft,  SCREEN_WIDTH, topright,  0.0f, botleft,  SCREEN_WIDTH, botright,
 				ms_colourTop, ms_colourTop, ms_colourTop, ms_colourTop);
-
-			// Only top
-			if(ms_horizonZ + ms_HorizonTilt - gradheight > 0.0f ||
-			   ms_horizonZ - ms_HorizonTilt - gradheight > 0.0f){
-				ms_colourTop.r = topred;
-				ms_colourTop.g = topgreen;
-				ms_colourTop.b = topblue;
-				ms_colourTop.a = alpha;
-
-				if(ms_horizonZ - Abs(ms_HorizonTilt) - gradheight > SCREEN_HEIGHT){
-					// only top is visible
-					topleft = 0.0f;
-					topright = 0.0f;
-					botleft = SCREEN_HEIGHT;
-					botright = SCREEN_HEIGHT;
-				}else{
-					botright = ms_horizonZ - ms_HorizonTilt - gradheight;
-					botleft = ms_horizonZ + ms_HorizonTilt - gradheight;
-					topright = Min(ms_horizonZ - ms_HorizonTilt - 2*SCREEN_HEIGHT, 0.0f);
-					topleft = Min(ms_horizonZ + ms_HorizonTilt - 2*SCREEN_HEIGHT, 0.0f);
-				}
-
-				CSprite2d::DrawAnyRect(0.0f, topleft,  SCREEN_WIDTH, topright,  0.0f, botleft,  SCREEN_WIDTH, botright,
-					ms_colourTop, ms_colourTop, ms_colourTop, ms_colourTop);
-			}
 		}
 
 		// Set both to fog colour for RenderHorizon

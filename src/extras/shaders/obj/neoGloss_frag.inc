@@ -17,8 +17,8 @@ const char *neoGloss_frag_src =
 "	vec3 n = 2.0*v_normal-1.0;            // unpack\n"
 "	vec3 v = 2.0*v_light-1.0;             //\n"
 
-"	float s = max(dot(normalize(n), normalize(v)), 0.0);\n"
-"	color *= pow(s, 8.0) * v_fog * glossMult;\n"
+"	float s = dot(n, v);\n"
+"	color = s*s*s*s*s*s*s*s*color*v_fog*glossMult;\n"
 
 "	DoAlphaTest(color.a);\n"
 

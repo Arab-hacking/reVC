@@ -71,7 +71,7 @@ CTempColModels::Initialise(void)
 	for (i = 0; i < ARRAY_SIZE(s_aPedGSpheres); i++) {
 #endif
 		s_aPedSpheres[i].surface = SURFACE_PED;
-		s_aPedSpheres[i].material = 0;
+		s_aPedSpheres[i].piece = 0;
 	}
 
 	ms_colModelPed1.boundingSphere.Set(1.25f, CVector(0.0f, 0.0f, 0.0f));
@@ -90,7 +90,7 @@ CTempColModels::Initialise(void)
 
 	for (i = 0; i < ARRAY_SIZE(s_aPed2Spheres); i++) {
 		s_aPed2Spheres[i].surface = SURFACE_PED;
-		s_aPed2Spheres[i].material = 0;
+		s_aPed2Spheres[i].piece = 0;
 	}
 
 	ms_colModelPed2.boundingSphere.Set(2.0f, CVector(0.0f, 0.0f, 0.0f));
@@ -114,10 +114,10 @@ CTempColModels::Initialise(void)
 	s_aPedGSpheres[1].surface = SURFACE_PED;
 	s_aPedGSpheres[2].surface = SURFACE_PED;
 	s_aPedGSpheres[3].surface = SURFACE_PED;
-	s_aPedGSpheres[0].material = 4;
-	s_aPedGSpheres[1].material = 1;
-	s_aPedGSpheres[2].material = 0;
-	s_aPedGSpheres[3].material = 6;
+	s_aPedGSpheres[0].piece = 4;
+	s_aPedGSpheres[1].piece = 1;
+	s_aPedGSpheres[2].piece = 0;
+	s_aPedGSpheres[3].piece = 6;
 
 	ms_colModelPedGroundHit.boundingSphere.Set(2.0f, CVector(0.0f, 0.0f, 0.0f));
 	ms_colModelPedGroundHit.boundingBox.Set(CVector(-0.4f, -1.0f, -1.25f), CVector(0.4f, 1.2f, -0.5f));
@@ -140,7 +140,7 @@ CTempColModels::Initialise(void)
 	for (i = 0; i < ARRAY_SIZE(s_aPed2Spheres); i++) {
 #endif
 		s_aDoorSpheres[i].surface = SURFACE_CAR_PANEL;
-		s_aDoorSpheres[i].material = 0;
+		s_aDoorSpheres[i].piece = 0;
 	}
 
 	ms_colModelDoor1.boundingSphere.Set(1.5f, CVector(0.0f, -0.6f, 0.0f));
@@ -160,7 +160,7 @@ CTempColModels::Initialise(void)
 
 	for (i = 0; i < ARRAY_SIZE(s_aBumperSpheres); i++) {
 		s_aBumperSpheres[i].surface = SURFACE_CAR_PANEL;
-		s_aBumperSpheres[i].material = 0;
+		s_aBumperSpheres[i].piece = 0;
 	}
 
 	ms_colModelBumper1.boundingSphere.Set(2.2f, CVector(0.0f, -0.6f, 0.0f));
@@ -180,7 +180,7 @@ CTempColModels::Initialise(void)
 
 	for (i = 0; i < ARRAY_SIZE(s_aPanelSpheres); i++) {
 		s_aPanelSpheres[i].surface = SURFACE_CAR_PANEL;
-		s_aPanelSpheres[i].material = 0;
+		s_aPanelSpheres[i].piece = 0;
 	}
 
 	ms_colModelPanel1.boundingSphere.Set(1.4f, CVector(0.0f, 0.0f, 0.0f));
@@ -200,7 +200,7 @@ CTempColModels::Initialise(void)
 
 	for (i = 0; i < ARRAY_SIZE(s_aBonnetSpheres); i++) {
 		s_aBonnetSpheres[i].surface = SURFACE_CAR_PANEL;
-		s_aBonnetSpheres[i].material = 0;
+		s_aBonnetSpheres[i].piece = 0;
 	}
 
 	ms_colModelBonnet1.boundingSphere.Set(1.7f, CVector(0.0f, 0.5f, 0.0f));
@@ -220,7 +220,7 @@ CTempColModels::Initialise(void)
 
 	for (i = 0; i < ARRAY_SIZE(s_aBootSpheres); i++) {
 		s_aBootSpheres[i].surface = SURFACE_CAR_PANEL;
-		s_aBootSpheres[i].material = 0;
+		s_aBootSpheres[i].piece = 0;
 	}
 
 	ms_colModelBoot1.boundingSphere.Set(1.4f, CVector(0.0f, -0.4f, 0.0f));
@@ -242,7 +242,7 @@ CTempColModels::Initialise(void)
 	for (i = 0; i < ARRAY_SIZE(s_aBootSpheres); i++) {
 #endif
 		s_aWheelSpheres[i].surface = SURFACE_WHEELBASE;
-		s_aWheelSpheres[i].material = 0;
+		s_aWheelSpheres[i].piece = 0;
 	}
 
 	ms_colModelWheel1.boundingSphere.Set(1.4f, CVector(0.0f, 0.0f, 0.0f));
@@ -264,7 +264,7 @@ CTempColModels::Initialise(void)
 	for (i = 0; i < ARRAY_SIZE(s_aBootSpheres); i++) {
 #endif
 		s_aBodyPartSpheres1[i].surface = SURFACE_PED;
-		s_aBodyPartSpheres1[i].material = 0;
+		s_aBodyPartSpheres1[i].piece = 0;
 	}
 
 	ms_colModelBodyPart1.boundingSphere.Set(0.7f, CVector(0.4f, 0.0f, 0.0f));
@@ -286,7 +286,7 @@ CTempColModels::Initialise(void)
 	for (i = 0; i < ARRAY_SIZE(s_aBootSpheres); i++) {
 #endif
 		s_aBodyPartSpheres2[i].surface = SURFACE_PED;
-		s_aBodyPartSpheres2[i].material = 0;
+		s_aBodyPartSpheres2[i].piece = 0;
 	}
 
 	ms_colModelBodyPart2.boundingSphere.Set(0.5f, CVector(0.25f, 0.0f, 0.0f));

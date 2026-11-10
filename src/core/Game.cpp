@@ -2,10 +2,6 @@
 #include "platform.h"
 
 #include "Game.h"
-#ifdef CUSTOM_MODELS
-#include "CustomModels.h"
-#include "CustomWorld.h"
-#endif
 #include "main.h"
 #include "RwHelper.h"
 #include "Accident.h"
@@ -47,7 +43,6 @@
 #include "MemoryCard.h"
 #include "MemoryHeap.h"
 #include "Pad.h"
-#include "NoClip.h"
 #include "Particle.h"
 #include "ParticleObject.h"
 #include "PedRoutes.h"
@@ -75,10 +70,6 @@
 #include "SurfaceTable.h"
 #include "TempColModels.h"
 #include "Timecycle.h"
-#ifdef CUSTOM_MODELS
-#include "CustomTimecycle.h"
-#endif
-#include "CustomSky.h"
 #include "TrafficLights.h"
 #include "Train.h"
 #include "TxdStore.h"
@@ -113,7 +104,6 @@ bool CGame::frenchGame;
 bool CGame::germanGame;
 bool CGame::noProstitutes;
 bool CGame::playingIntro;
-bool CGame::bLoadViceCityMap = true;
 char CGame::aDatFile[32];
 #ifdef MORE_LANGUAGES
 bool CGame::russianGame = false;
@@ -171,9 +161,7 @@ void MessageScreen(char *msg)
 bool
 CGame::InitialiseOnceBeforeRW(void)
 {
-	REVC_LOG_INFO("Preparing game filesystem and streaming");
 	CFileMgr::Initialise();
-	REVC_LOG_INFO("Game directory: %s", CFileMgr::GetRootDirName());
 	CdStreamInit(MAX_CDCHANNELS);
 	debug("size of matrix %d\n", sizeof(CMatrix));
 	debug("size of placeable %d\n", sizeof(CPlaceable));
@@ -188,7 +176,6 @@ CGame::InitialiseOnceBeforeRW(void)
 	// if (numCustomFrontendOptions == 0 && numCustomFrontendScreens == 0)
 	CustomFrontendOptionsPopulate();
 #endif
-	REVC_LOG_INFO("Game pre-initialization complete");
 	return true;
 }
 
@@ -204,7 +191,6 @@ void ReplaceAtomicPipeCallback();
 bool
 CGame::InitialiseRenderWare(void)
 {
-	REVC_LOG_INFO("Creating RenderWare camera, world and textures");
 	CFileMgr::SetDir("");
 	ValidateVersion();
 #ifdef USE_TEXTURE_POOL
@@ -229,7 +215,6 @@ CGame::InitialiseRenderWare(void)
 	ASSERT(Scene.camera != nil);
 	if (!Scene.camera)
 	{
-		REVC_LOG_ERROR("Could not create RenderWare camera");
 		return (false);
 	}
 	
@@ -248,7 +233,6 @@ CGame::InitialiseRenderWare(void)
 	ASSERT(Scene.world != nil);
 	if (!Scene.world)
 	{
-		REVC_LOG_ERROR("Could not create RenderWare world");
 		CameraDestroy(Scene.camera);
 		Scene.camera = nil;
 		return (false);
@@ -294,17 +278,11 @@ CGame::InitialiseRenderWare(void)
 	ScreenDroplets::InitDraw();
 #endif
 
-	REVC_LOG_INFO("RenderWare world ready");
 	return (true);
 }
 
 void CGame::ShutdownRenderWare(void)
 {
-	REVC_LOG_INFO("Shutting down RenderWare world");
-#ifdef CUSTOM_MODELS
-	// A detached TXD still owns GPU rasters: release it before the device.
-	CCustomModels::ClearGraphicsCache();
-#endif
 #ifdef SCREEN_DROPLETS
 	ScreenDroplets::Shutdown();
 #endif
@@ -339,12 +317,10 @@ void CGame::ShutdownRenderWare(void)
 #ifdef USE_TEXTURE_POOL
 	_TexturePoolsShutdown();
 #endif
-	REVC_LOG_INFO("RenderWare world shut down");
 }
 
 bool CGame::InitialiseOnceAfterRW(void)
 {
-	REVC_LOG_INFO("Initializing text, timer and audio");
 	TheText.Load();
 	CTimer::Initialise();
 	CTempColModels::Initialise();
@@ -352,9 +328,6 @@ bool CGame::InitialiseOnceAfterRW(void)
 	CSurfaceTable::Initialise("DATA\\SURFACE.DAT");
 	CPedStats::Initialise();
 	CTimeCycle::Initialise();
-#ifdef CUSTOM_MODELS
-	CCustomTimecycle::Apply();	// optional custom/data/timecyc.json or common.zip: GL3 sky/fog too
-#endif
 #ifdef GTA_PS2
 	LoadingScreen("Loading the Game", "Initialising audio", GetRandomSplashScreen());
 #endif
@@ -380,35 +353,21 @@ bool CGame::InitialiseOnceAfterRW(void)
 	DMAudio.SetEffectsFadeVol(127);
 	DMAudio.SetMusicFadeVol(127);
 #endif
-	REVC_LOG_INFO("Text, timer and audio initialized");
 	return true;
 }
 
 void
 CGame::FinalShutdown(void)
-{
-	REVC_LOG_INFO("Stopping texture, statistics and streaming systems");
-	CCustomSky::Shutdown();
-#ifdef CUSTOM_MODELS
-	CCustomWorld::Shutdown();
-	CCustomModels::PrintStats();
-	CCustomModels::Shutdown();
-#endif
+{	
 	CTxdStore::Shutdown();
 	CPedStats::Shutdown();
 	CdStreamShutdown();
-	REVC_LOG_INFO("Game systems stopped");
 }
 
 bool CGame::Initialise(const char* datFile)
 {
-	REVC_LOG_INFO("Initializing game from %s", datFile);
 	ResetLoadingScreenBar();
 	strcpy(aDatFile, datFile);
-	CCustomSky::Shutdown();
-#ifdef CUSTOM_MODELS
-	CCustomWorld::Shutdown(); // fresh BR ID mapping on a game restart
-#endif
 
 #ifdef GTA_PS2
 	// TODO: upload VU0 collision code here
@@ -495,18 +454,10 @@ bool CGame::Initialise(const char* datFile)
 	CPickups::Init();
 	CTheCarGenerators::Init();
 
-#ifdef CUSTOM_MODELS
-	CCustomModels::ResetImageMounts(); // a new game may reuse the process
-#endif
 	CdStreamAddImage("MODELS\\GTA3.IMG");
 
 	CFileLoader::LoadLevel("DATA\\DEFAULT.DAT");
 	CFileLoader::LoadLevel(datFile);
-#ifdef CUSTOM_MODELS
-	// After native IPLs: IDEs and model streaming are already initialized,
-	// and CED2 collisions are attached before the new entities are created.
-	CCustomWorld::LoadIpl();
-#endif
 
 	LoadingScreen("Loading the Game", "Add Particles", nil);
 	CWorld::AddParticles();
@@ -523,18 +474,12 @@ bool CGame::Initialise(const char* datFile)
 	TestModelIndices();
 
 	LoadingScreen("Loading the Game", "Setup water", nil);
-	CWaterLevel::Initialise(bLoadViceCityMap ? "DATA\\WATER.DAT" : nil);
+	CWaterLevel::Initialise("DATA\\WATER.DAT");
 	TheConsole.Init();
 	CDraw::SetFOV(120.0f);
 	CDraw::ms_fLODDistance = 500.0f;
 
 	LoadingScreen("Loading the Game", "Setup streaming", nil);
-#ifdef CUSTOM_MODELS
-	// Index loose custom/anim and custom/data/maps plus selected common.zip
-	// paths. Model/TXD streaming from custom/img mounted earlier in LoadLevel.
-	CCustomModels::Initialise();
-	CStreaming::LoadVCPedAnimationReference();
-#endif
 	CStreaming::LoadInitialVehicles();
 	CStreaming::LoadInitialPeds();
 	CStreaming::RequestBigBuildings(LEVEL_GENERIC);
@@ -583,9 +528,6 @@ bool CGame::Initialise(const char* datFile)
 
 	LoadingScreen("Loading the Game", "Load scripts", nil);
 	PUSH_MEMID(MEMID_SCRIPT);
-#if defined(ANDROID) && defined(USE_DEBUG_SCRIPT_LOADER)
-	CTheScripts::ScriptToLoad = 1;
-#endif
 	CTheScripts::Init();
 	CGangs::Initialise();
 	POP_MEMID();
@@ -594,9 +536,7 @@ bool CGame::Initialise(const char* datFile)
 	CClock::Initialise(1000);
 	CHeli::InitHelis();
 	CCranes::InitCranes();
-	REVC_LOG_INFO("Game variables: helis and cranes ready; initializing moving things");
 	CMovingThings::Init();
-	REVC_LOG_INFO("Game variables: moving things ready");
 	CDarkel::Init();
 	CStats::Init();
 	CPacManPickups::Init();
@@ -646,14 +586,11 @@ bool CGame::Initialise(const char* datFile)
 
 	DMAudio.SetStartingTrackPositions(TRUE);
 	DMAudio.ChangeMusicMode(MUSICMODE_GAME);
-	REVC_LOG_INFO("Game initialization complete (level=%d, area=%d)", currLevel, currArea);
 	return true;
 }
 
 bool CGame::ShutDown(void)
 {
-	CNoClip::Reset();
-	REVC_LOG_INFO("Shutting down current game");
 #ifdef USE_TEXTURE_POOL
 	_TexturePoolsUnknown(false);
 #endif
@@ -692,9 +629,6 @@ bool CGame::ShutDown(void)
 	CVehicleModelInfo::ShutdownEnvironmentMaps();
 	CRadar::Shutdown();
 	CStreaming::Shutdown();
-#ifdef CUSTOM_MODELS
-	CCustomModels::ClearGraphicsCache();
-#endif
 	CTxdStore::GameShutdown();
 	CCollision::Shutdown();
 	CWaterLevel::Shutdown();
@@ -713,13 +647,11 @@ bool CGame::ShutDown(void)
 #ifdef USE_TEXTURE_POOL
 	_TexturePoolsFinalShutdown();
 #endif
-	REVC_LOG_INFO("Current game shut down");
 	return true;
 }
 
 void CGame::ReInitGameObjectVariables(void)
 {
-	CNoClip::Reset();
 	CGameLogic::InitAtStartOfGame();
 #ifdef PS2_MENU
 	if ( !TheMemoryCard.m_bWantToLoad )
@@ -738,9 +670,6 @@ void CGame::ReInitGameObjectVariables(void)
 	CRadar::Initialise();
 	CCarCtrl::ReInit();
 	CTimeCycle::Initialise();
-#ifdef CUSTOM_MODELS
-	CCustomTimecycle::Apply();	// optional custom/data/timecyc.json or common.zip: GL3 sky/fog too
-#endif
 	CDraw::SetFOV(120.0f);
 	CDraw::ms_fLODDistance = 500.0f;
 	CStreaming::RequestBigBuildings(LEVEL_GENERIC);
@@ -765,10 +694,6 @@ void CGame::ReInitGameObjectVariables(void)
 	gPhoneInfo.Initialise();
 
 	PUSH_MEMID(MEMID_SCRIPT);
-#if defined(ANDROID) && defined(USE_DEBUG_SCRIPT_LOADER)
-	if ( !FrontEndMenuManager.m_bWantToLoad )
-		CTheScripts::ScriptToLoad = 1;
-#endif
 	CTheScripts::Init();
 	CGangs::Initialise();
 	POP_MEMID();
@@ -814,7 +739,6 @@ void CGame::ReloadIPLs(void)
 
 void CGame::ShutDownForRestart(void)
 {
-	CNoClip::Reset();
 #ifdef USE_TEXTURE_POOL
 	_TexturePoolsUnknown(false);
 #endif
@@ -890,7 +814,6 @@ void CGame::InitialiseWhenRestarting(void)
 		}
 		else
 		{
-			REVC_LOG_ERROR("Saved game could not be loaded (error=%d); restarting", PcSaveHelper.nErrorCode);
 			for ( int32 i = 0; i < 50; i++ )
 			{
 				HandleExit();
@@ -902,9 +825,8 @@ void CGame::InitialiseWhenRestarting(void)
 			CTimer::Stop();
 			CTimer::Initialise();
 			FrontEndMenuManager.m_bWantToLoad = false;
-			currLevel = LEVEL_GENERIC;
-			TheCamera.Init();
 			ReInitGameObjectVariables();
+			currLevel = LEVEL_GENERIC;
 			CCollision::SortOutCollisionAfterLoad();
 		}
 #ifdef XBOX_MESSAGE_SCREEN
@@ -961,9 +883,6 @@ void CGame::Process(void)
 		CRecordDataForGame::SaveOrRetrieveDataForThisFrame();
 		CRecordDataForChase::SaveOrRetrieveDataForThisFrame();
 		CPad::DoCheats();
-		CPad::ProcessPlayerModelKeys();
-		CPad::ProcessTimeOfDayKeys();
-		CNoClip::ProcessInput();
 		CClock::Update();
 		CWeather::Update();
 
@@ -1023,7 +942,6 @@ void CGame::Process(void)
 		CSpecialFX::Update();
 		CRopes::Update();
 		CTimeCycle::Update();
-		CNoClip::Move();
 		if (CReplay::ShouldStandardCameraBeProcessed())
 			TheCamera.Process();
 		CCullZones::Update();
@@ -1217,7 +1135,7 @@ MoveColModelMemory(CColModel& colModel, bool onlyOne)
 		return true;
 	if (MoveMem((void**)&colModel.triangles) && onlyOne)
 		return true;
-	if (MoveMem((void**)&colModel.planes) && onlyOne)
+	if (MoveMem((void**)&colModel.trianglePlanes) && onlyOne)
 		return true;
 	return false;
 }

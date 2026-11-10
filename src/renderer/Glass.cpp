@@ -781,7 +781,7 @@ CGlass::CarWindscreenShatters(CVehicle *vehicle, bool unk)
 	
 	CCollision::CalculateTrianglePlanes(col);
 	
-	CColTrianglePlane *triPlanes = col->planes;
+	CColTrianglePlane *triPlanes = col->trianglePlanes;
 	
 	if ( triPlanes == nil )
 		return;
@@ -869,10 +869,10 @@ CGlass::HasGlassBeenShatteredAtCoors(float x, float y, float z)
 	CEntity *entity = nil;
 	float dist = 20.0f;
 	  
-	int32 nStartX = CWorld::GetSectorIndexX(x - 30.0f);
-	int32 nStartY = CWorld::GetSectorIndexY(y - 30.0f);
-	int32 nEndX   = CWorld::GetSectorIndexX(x + 30.0f);
-	int32 nEndY   = CWorld::GetSectorIndexY(y + 30.0f);
+	int32 nStartX = Max(CWorld::GetSectorIndexX(x - 30.0f), 0);
+	int32 nStartY = Max(CWorld::GetSectorIndexY(y - 30.0f), 0);
+	int32 nEndX   = Min(CWorld::GetSectorIndexX(x + 30.0f), NUMSECTORS_X-1);
+	int32 nEndY   = Min(CWorld::GetSectorIndexY(y + 30.0f), NUMSECTORS_Y-1);
 
 	CWorld::AdvanceCurrentScanCode();
 	
@@ -943,7 +943,7 @@ CGlass::BreakGlassPhysically(CVector pos, float radius)
 		return;
 	
 	CColSphere sphere;
-	sphere.material = 0;
+	sphere.piece = 0;
 	sphere.radius = radius;
 	sphere.surface = 0;
 	
@@ -975,7 +975,7 @@ CGlass::BreakGlassPhysically(CVector pos, float radius)
 					for ( int32 j = 0; j < col->numTriangles; j++ )
 					{
 						if ( CCollision::TestSphereTriangle(sphere,
-							col->vertices, col->triangles[j], col->planes[j]) )
+							col->vertices, col->triangles[j], col->trianglePlanes[j]) )
 						{
 							hit = true;
 						}

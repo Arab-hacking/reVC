@@ -25,11 +25,7 @@
 
 #define MENU_DEFAULT_CONTENT_X 320
 #define MENU_DEFAULT_CONTENT_Y 100
-#ifdef ANDROID
-#define MENU_DEFAULT_LINE_HEIGHT 30
-#else
 #define MENU_DEFAULT_LINE_HEIGHT 29
-#endif
 
 #define RIGHT_ALIGNED_TEXT_RIGHT_MARGIN(xMargin) (xMargin + 30.0f)
 
@@ -52,21 +48,6 @@
 #define MENUSLIDER_SMALLEST_BAR 8.0f
 #define MENUSLIDER_BIGGEST_BAR 25.0f
 
-#ifdef ANDROID
-#define BIGTEXT2_X_SCALE 0.64f // For FONT_STANDARD
-#define BIGTEXT2_Y_SCALE 1.24f
-#define BIGTEXT_X_SCALE 0.66f // For FONT_HEADING
-#define BIGTEXT_Y_SCALE 1.08f
-#define MEDIUMTEXT_X_SCALE 0.54f // For FONT_STANDARD
-#define MEDIUMTEXT_Y_SCALE 1.08f
-#define SMALLTEXT_X_SCALE 0.46f // For FONT_STANDARD
-#define SMALLTEXT_Y_SCALE 0.96f
-#define SMALLESTTEXT_X_SCALE 0.34f // For FONT_STANDARD
-#define SMALLESTTEXT_Y_SCALE 0.76f
-
-#define LISTITEM_X_SCALE 0.50f
-#define LISTITEM_Y_SCALE 0.78f
-#else
 #define BIGTEXT2_X_SCALE 0.6f // For FONT_STANDARD
 #define BIGTEXT2_Y_SCALE 1.2f
 #define BIGTEXT_X_SCALE 0.6f // For FONT_HEADING
@@ -80,7 +61,6 @@
 
 #define LISTITEM_X_SCALE 0.4f // Only unproportional and commonly used scale for FONT_STANDARD
 #define LISTITEM_Y_SCALE 0.6f
-#endif
 
 #define HELPER_TEXT_RIGHT_MARGIN MENU_X_MARGIN
 #define HELPER_TEXT_BOTTOM_MARGIN 18.f
@@ -99,13 +79,9 @@
 #define PLAYERSETUP_SKIN_COLUMN_LEFT 220.0f
 #define PLAYERSETUP_DATE_COLUMN_RIGHT 56.0f
 #define PLAYERSETUP_LIST_BODY_TOP 77
-#ifdef ANDROID
-#define PLAYERSETUP_ROW_HEIGHT 18
-#define STATS_ROW_HEIGHT 20.0f
-#else
 #define PLAYERSETUP_ROW_HEIGHT 9
+
 #define STATS_ROW_HEIGHT 17.0f
-#endif
 #define STATS_ROW_LEFT_MARGIN 110.0f
 #define STATS_ROW_RIGHT_MARGIN 113.0f
 #define STATS_TOP_Y 135.0f // Just faded in
@@ -250,7 +226,6 @@ enum eMenuScreen
 
 #ifdef GRAPHICS_MENU_OPTIONS
 	MENUPAGE_GRAPHICS_SETTINGS,
-	MENUPAGE_TEST_GRAPHICS,
 #endif
 #ifdef DETECT_JOYSTICK_MENU
 	MENUPAGE_DETECT_JOYSTICK,
@@ -336,12 +311,6 @@ enum eMenuAction
 	MENUACTION_REJECT_RETRY,
 	MENUACTION_UNK114
 #endif
-// TEST GRAPHICS (analysis: mobile pipeline settings)
-	MENUACTION_TEST_SHADOW_QUALITY,
-	MENUACTION_TEST_REFLECTION_QUALITY,
-	MENUACTION_TEST_DRAWDIST,
-	MENUACTION_TEST_WATER_QUALITY,
-	MENUACTION_TEST_PARTICLE_QUALITY,
 };
 
 enum eCheckHover
@@ -386,19 +355,6 @@ enum eCheckHover
 	HOVEROPTION_INCREASE_CFO_SLIDER,
 	HOVEROPTION_DECREASE_CFO_SLIDER,
 #endif
-
-	// TEST GRAPHICS hover options
-	HOVEROPTION_INCREASE_SHADOW_QUALITY,
-	HOVEROPTION_DECREASE_SHADOW_QUALITY,
-	HOVEROPTION_INCREASE_REFLECTION_QUALITY,
-	HOVEROPTION_DECREASE_REFLECTION_QUALITY,
-	HOVEROPTION_INCREASE_TEST_DRAWDIST,
-	HOVEROPTION_DECREASE_TEST_DRAWDIST,
-	HOVEROPTION_INCREASE_WATER_QUALITY,
-	HOVEROPTION_DECREASE_WATER_QUALITY,
-	HOVEROPTION_INCREASE_PARTICLE_QUALITY,
-	HOVEROPTION_DECREASE_PARTICLE_QUALITY,
-
 	HOVEROPTION_NOT_HOVERING,
 };
 
@@ -812,24 +768,6 @@ public:
 	CMenuManager(void);
 	~CMenuManager(void) { UnloadTextures(); }
 
-#ifdef ANDROID
-	enum
-	{
-		MOBILE_GFX_LOW = 0,
-		MOBILE_GFX_MEDIUM = 1,
-		MOBILE_GFX_HIGH = 2
-	};
-
-	int8 m_PrefsMobileGraphics;
-
-	// TEST GRAPHICS (analysis: mobile pipeline settings)
-	int8 m_PrefsShadowQuality;
-	int8 m_PrefsReflectionQuality;
-	float m_PrefsTestDrawDist;
-	int8 m_PrefsWaterQuality;
-	int8 m_PrefsParticleQuality;
-#endif
-
 #ifdef NO_ISLAND_LOADING
 	enum
 	{
@@ -880,9 +818,6 @@ public:
 	void DrawQuitGameScreen();
 	void DrawFrontEnd();
 	void DrawBackground(bool transitionCall);
-#ifdef CUSTOM_MODELS
-	bool SkinListHas(const char *name);
-#endif
 	void DrawPlayerSetupScreen(bool);
 	int FadeIn(int alpha);
 	int GetStartOptionsCntrlConfigScreens();

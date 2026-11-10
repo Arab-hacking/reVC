@@ -11,28 +11,36 @@
 #include <SDL_main.h>
 #include <SignalHandler.h>
 #include <patch/patch.h>
-#include <sys/time.h>
 
 JavaVM* javaVM = NULL;
 char* StorageRootBuffer = NULL;
-uintptr_t g_libREVC = 0;
+uintptr_t g_libREVC = NULL;
 
 bool AndWrapper::AppInitialized = false;
 bool AndWrapper::AppStarted = false;
 
-// SDL's own libSDL2.so implements SDLActivity.nativeSetupJNI. Exporting that
-// same Java symbol here could make the VM invoke our old, incompatible wrapper
-// instead of SDL's setup routine. The game path is passed as --dir by the
-// launcher; no extra JNI method (or external-storage permission) is required.
-extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *)
+JAVA_WRAPPER Java_org_libsdl_app_SDLActivity_nativeSetupJNI(JNIEnv* env, jobject initGame)
 {
-    javaVM = vm;
-    g_libREVC = Patch::FindLib("librevc.so");
-    return JNI_VERSION_1_6;
+    if(!javaVM) {
+        env->GetJavaVM(&javaVM);
+    }
+
+    g_pJavaWrapper = new CJavaWrapper(env, initGame);
+}
+
+JAVA_WRAPPER Java_com_revc_game_core_REVC_setGamePath(JNIEnv *env, jobject obj, jstring value)
+{
+    const char* root = env->GetStringUTFChars(value, NULL);
+    setenv("STORAGE_ROOT", root, 1);
+
+    StorageRootBuffer = getenv("STORAGE_ROOT");
+    debug("Storage Root: %s", StorageRootBuffer);
+
+    env->ReleaseStringUTFChars(value, root);
 }
 
 bool AndWrapper::InitLibraries() {
-	g_libREVC = Patch::FindLib("librevc.so");
+	g_libREVC = Patch::FindLib("libreVC.so");
 
 	if (!g_libREVC) {
 		Logger::Log("[ERROR]: Required libraries not found!");
@@ -59,49 +67,98 @@ void* AndWrapper::GetJNIFunc() {
 }
 
 void* AndWrapper::GetObj() {
-    return nullptr;
+    //return s_event_globalThiz;
 }
 
 const char* AndWrapper::GetAppId()
 {
-    return "com.revc.game";
+    /*JNIEnv* CurrentJNIEnv; // x19
+    jobject v1; // x20
+    const char *v2; // x21
+    jboolean v4[4]; // [xsp+Ch] [xbp-14h] BYREF
+
+    if (!staticAppId[0]) {
+        CurrentJNIEnv = CJavaWrapper::GetEnv();
+
+        v1 = _JNIEnv::CallObjectMethod(CurrentJNIEnv, s_event_globalThiz, s_GetAppId);
+        v2 = CurrentJNIEnv->functions->GetStringUTFChars(CurrentJNIEnv, (jstring)v1, v4);
+        strcpy(staticAppId, v2);
+        CurrentJNIEnv->functions->ReleaseStringUTFChars(CurrentJNIEnv, (jstring)v1, v2);
+        CurrentJNIEnv->functions->DeleteLocalRef(CurrentJNIEnv, v1);
+    }
+    return staticAppId;*/
 }
 
 const char* AndWrapper::GetDeviceID()
 {
-    return "";
+    /*JNIEnv *CurrentJNIEnv; // x19
+    jobject v1; // x20
+    const char *v2; // x21
+    jboolean v4[4]; // [xsp+Ch] [xbp-24h] BYREF
+
+    CurrentJNIEnv = NVThreadGetCurrentJNIEnv();
+    v1 = JNIEnv::CallObjectMethod(CurrentJNIEnv, s_event_globalThiz, s_GetDeviceID);
+    v2 = CurrentJNIEnv->functions->GetStringUTFChars(CurrentJNIEnv, (jstring)v1, v4);
+    strncpy(staticDeviceID, v2, 0x80uLL);
+    CurrentJNIEnv->functions->ReleaseStringUTFChars(CurrentJNIEnv, (jstring)v1, v2);
+    CurrentJNIEnv->functions->DeleteLocalRef(CurrentJNIEnv, v1);
+    return staticDeviceID;*/
 }
 
 int AndWrapper::GetDeviceInfo(int index)
 {
-    (void)index;
-    return 0;
+    //JNIEnv *CurrentJNIEnv; // x0
+
+    //CurrentJNIEnv = NVThreadGetCurrentJNIEnv();
+    //return _JNIEnv::CallIntMethod(CurrentJNIEnv, s_event_globalThiz, s_GetDeviceInfo, (unsigned int)index);
 }
 
 bool AndWrapper::IsAppInstalled(const char* app)
 {
-    (void)app;
-    return false;
+    /*_JNIEnv *CurrentJNIEnv; // x20
+    __int64 v3; // x19
+    bool v4; // w21
+
+    CurrentJNIEnv = NVThreadGetCurrentJNIEnv();
+    v3 = (__int64)CurrentJNIEnv->functions->NewStringUTF(CurrentJNIEnv, app);
+    v4 = _JNIEnv::CallBooleanMethod(CurrentJNIEnv, s_event_globalThiz, s_IsAppInstalled, v3) != 0;
+    CurrentJNIEnv->functions->DeleteLocalRef(CurrentJNIEnv, (jobject)v3);
+    return v4;*/
 }
 
 void AndWrapper::OpenLink(const char* link)
 {
-    (void)link;
+    /*_JNIEnv *CurrentJNIEnv; // x20
+    __int64 v3; // x19
+
+    CurrentJNIEnv = NVThreadGetCurrentJNIEnv();
+    v3 = (__int64)CurrentJNIEnv->functions->NewStringUTF(CurrentJNIEnv, link);
+    _JNIEnv::CallVoidMethod(CurrentJNIEnv, s_event_globalThiz, s_OpenLink, v3);
+    CurrentJNIEnv->functions->DeleteLocalRef(CurrentJNIEnv, (jobject)v3);*/
 }
 
 bool AndWrapper::DeviceIsTV()
 {
-    return false;
+    //_JNIEnv *CurrentJNIEnv; // x0
+
+    //CurrentJNIEnv = NVThreadGetCurrentJNIEnv();
+    //return _JNIEnv::CallBooleanMethod(CurrentJNIEnv, s_event_globalThiz, s_IsTV) != 0;
 }
 
 int AndWrapper::DeviceLocale()
 {
-    return 0;
+   // _JNIEnv *CurrentJNIEnv; // x0
+
+ //   CurrentJNIEnv = NVThreadGetCurrentJNIEnv();
+  //  return _JNIEnv::CallIntMethod(CurrentJNIEnv, s_event_globalThiz, s_GetDeviceLocale);
 }
 
 int AndWrapper::DeviceType()
 {
-    return 0;
+    //_JNIEnv *CurrentJNIEnv; // x0
+
+    //CurrentJNIEnv = NVThreadGetCurrentJNIEnv();
+    //return _JNIEnv::CallIntMethod(CurrentJNIEnv, s_event_globalThiz, s_GetDeviceType);
 }
 
 void AndWrapper::SystemInitialize()
@@ -358,14 +415,13 @@ void __fastcall OS_ApplicationEvent(OSEventType type, void *data)
 JNI_WRAPPER int InitializeGame() {
     debug("Initialize Game");
 
-    if (!AndWrapper::InitLibraries()) return 0;
+    if (!AndWrapper::InitLibraries()) return NULL;
 
     int argc = 0;
     char* argv[1] = { nullptr };
 
     SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
-    SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "0");
-    SDL_SetHint(SDL_HINT_MOUSE_TOUCH_EVENTS, "0");
+   // SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "0");
 
     CrashHandler::SetupSignalHandlers();
 

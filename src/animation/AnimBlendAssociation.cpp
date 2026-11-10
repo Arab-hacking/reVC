@@ -9,11 +9,8 @@
 
 CAnimBlendAssociation::CAnimBlendAssociation(void)
 {
-	numNodes = 0;
 	groupId = -1;
 	nodes = nil;
-	hierarchy = nil;
-	animBlockRef = -1;
 	blendAmount = 1.0f;
 	blendDelta = 0.0f;
 	currentTime = 0.0f;
@@ -28,7 +25,6 @@ CAnimBlendAssociation::CAnimBlendAssociation(void)
 CAnimBlendAssociation::CAnimBlendAssociation(CAnimBlendAssociation &other)
 {
 	nodes = nil;
-	animBlockRef = -1;
 	blendAmount = 1.0f;
 	blendDelta = 0.0f;
 	currentTime = 0.0f;
@@ -39,29 +35,10 @@ CAnimBlendAssociation::CAnimBlendAssociation(CAnimBlendAssociation &other)
 	Init(other);
 }
 
-CAnimBlendAssociation::CAnimBlendAssociation(CAnimBlendAssociation &other, RpClump *clump)
-{
-	nodes = nil;
-	animBlockRef = -1;
-	blendAmount = 1.0f;
-	blendDelta = 0.0f;
-	currentTime = 0.0f;
-	speed = 1.0f;
-	timeStep = 0.0f;
-	callbackType = CB_NONE;
-	link.Init();
-	Init(other, clump);
-}
-
 CAnimBlendAssociation::~CAnimBlendAssociation(void)
 {
 	FreeAnimBlendNodeArray();
 	link.Remove();
-	if(animBlockRef >= 0){
-		int32 block = animBlockRef;
-		animBlockRef = -1;
-		CAnimManager::RemoveAnimBlockRefWithoutDelete(block);
-	}
 }
 
 
@@ -83,66 +60,45 @@ CAnimBlendAssociation::FreeAnimBlendNodeArray(void)
 }
 
 void
-CAnimBlendAssociation::BindNodesToClump(RpClump *clump)
+CAnimBlendAssociation::Init(RpClump *clump, CAnimBlendHierarchy *hier)
 {
-	CAnimBlendClumpData *clumpData = *RPANIMBLENDCLUMPDATA(clump);
-	assert(clumpData && clumpData->frames && clumpData->numFrames > 0);
-	assert(hierarchy);
+	int i;
+	AnimBlendFrameData *frame;
 
-	// A template can have fewer bones than a custom ped. FrameUpdate advances
-	// a pointer once per frame, so copying the template's nodes here would read
-	// past the end of the allocation. Bone order can differ even when the frame
-	// counts match; map each sequence to this clump's frames instead.
-	FreeAnimBlendNodeArray();
-	nodes = nil;
+	CAnimBlendClumpData *clumpData = *RPANIMBLENDCLUMPDATA(clump);
 	numNodes = clumpData->numFrames;
 	AllocateAnimBlendNodeArray(numNodes);
-	for(int i = 0; i < numNodes; i++)
+	for(i = 0; i < numNodes; i++)
 		nodes[i].association = this;
+	hierarchy = hier;
 
-	for(int i = 0; i < hierarchy->numSequences; i++){
-		CAnimBlendSequence *seq = &hierarchy->sequences[i];
-		AnimBlendFrameData *frame = seq->boneTag == -1 ?
-			RpAnimBlendClumpFindFrame(clump, seq->name) :
-			RpAnimBlendClumpFindBone(clump, seq->boneTag);
+	// Init every node from a sequence and a Clump frame
+	// NB: This is where the order of nodes is defined
+	for(i = 0; i < hier->numSequences; i++){
+		CAnimBlendSequence *seq = &hier->sequences[i];
+		if(seq->boneTag == -1)
+			frame = RpAnimBlendClumpFindFrame(clump, seq->name);
+		else
+			frame = RpAnimBlendClumpFindBone(clump, seq->boneTag);
 		if(frame && seq->numFrames > 0)
 			nodes[frame - clumpData->frames].sequence = seq;
 	}
 }
 
 void
-CAnimBlendAssociation::Init(RpClump *clump, CAnimBlendHierarchy *hier)
+CAnimBlendAssociation::Init(CAnimBlendAssociation &assoc)
 {
-	animBlockRef = -1;
+	int i;
 
-	// A custom animation set can be missing individual animations.
-	if(hier == nil)
-		return;
-
-	hierarchy = hier;
-	BindNodesToClump(clump);
-}
-
-void
-CAnimBlendAssociation::Init(CAnimBlendAssociation &assoc, RpClump *clump)
-{
 	hierarchy = assoc.hierarchy;
-	animBlockRef = hierarchy ? CAnimManager::GetAnimationBlockForHierarchy(hierarchy) : -1;
-	if(animBlockRef >= 0)
-		CAnimManager::AddAnimBlockRef(animBlockRef);
+	numNodes = assoc.numNodes;
 	flags = assoc.flags;
 	animId = assoc.animId;
 	groupId = assoc.groupId;
-	if(clump){
-		BindNodesToClump(clump);
-	}else{
-		// Cutscene/global associations retain the reference skeleton's order.
-		numNodes = assoc.numNodes;
-		AllocateAnimBlendNodeArray(numNodes);
-		for(int i = 0; i < numNodes; i++){
-			nodes[i] = assoc.nodes[i];
-			nodes[i].association = this;
-		}
+	AllocateAnimBlendNodeArray(numNodes);
+	for(i = 0; i < numNodes; i++){
+		nodes[i] = assoc.nodes[i];
+		nodes[i].association = this;
 	}
 }
 
@@ -174,12 +130,6 @@ CAnimBlendAssociation::SetCurrentTime(float time)
 {
 	int i;
 
-	// A truncated custom clip can have no timed keyframes. Repeating clips
-	// must not loop forever subtracting a zero duration.
-	if(hierarchy == nil || hierarchy->totalLength <= 0.0f){
-		currentTime = 0.0f;
-		return;
-	}
 	for(currentTime = time; currentTime >= hierarchy->totalLength; currentTime -= hierarchy->totalLength)
 		if (!IsRepeating()) {
 			currentTime = hierarchy->totalLength;
@@ -205,10 +155,6 @@ CAnimBlendAssociation::SetCurrentTime(float time)
 void
 CAnimBlendAssociation::SyncAnimation(CAnimBlendAssociation *other)
 {
-	if(other == nil || other->hierarchy == nil || other->hierarchy->totalLength <= 0.0f){
-		SetCurrentTime(0.0f);
-		return;
-	}
 	SetCurrentTime(other->currentTime/other->hierarchy->totalLength * hierarchy->totalLength);
 }
 

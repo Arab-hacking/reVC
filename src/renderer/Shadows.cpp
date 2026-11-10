@@ -22,9 +22,6 @@
 #include "Script.h"
 #include "TimeStep.h"
 #include "Shadows.h"
-#include "ShadowTriWinding.h"
-#include "SunShadowMap.h"
-#include "GL3Atmosphere.h"
 #include "CutsceneObject.h"
 #include "CutsceneShadow.h"
 #include "Clock.h"
@@ -514,11 +511,7 @@ CShadows::StoreShadowForVehicle(CVehicle *pCar, VEH_SHD_TYPE type)
 				break;
 				
 			default:
-#ifdef RW_GL3
-				fDrawDistance = GL3Atmosphere::Enabled ? 48.0f : 18.0f;
-#else
 				fDrawDistance = 18.0f;
-#endif
 				break;
 		}
 
@@ -536,9 +529,6 @@ CShadows::StoreShadowForVehicle(CVehicle *pCar, VEH_SHD_TYPE type)
 				nColorStrength = (int32)(fMult * CTimeCycle::GetShadowStrength());
 			else
 				nColorStrength = CTimeCycle::GetShadowStrength();
-
-			if ( CSunShadowMap::IsActive() )
-				nColorStrength = (int32)(nColorStrength * 0.62f);
 			
 			
 			float fVehicleHeight  = pCar->GetColModel()->boundingBox.GetSize().y;
@@ -896,9 +886,6 @@ CShadows::StoreShadowForPedObject(CEntity *pPedObject, float fDisplacementX, flo
 {	
 	ASSERT(pPedObject != nil);
 
-	if ( CSunShadowMap::IsActive() )
-		return;
-
 	CVector PedPos = pPedObject->GetPosition();
 
 	float fDistToCamSqr = (PedPos - TheCamera.GetPosition()).MagnitudeSqr2D();
@@ -1019,9 +1006,6 @@ CShadows::StoreShadowForPole(CEntity *pPole, float fOffsetX, float fOffsetY, flo
 {
 	ASSERT(pPole != nil);
 
-	if ( CSunShadowMap::IsActive() )
-		return;
-
 	if ( CTimeCycle::GetShadowStrength() != 0 )
 	{
 		if ( pPole->GetUp().z < 0.5f )
@@ -1083,14 +1067,10 @@ CShadows::RenderStoredShadows(void)
 
 	RenderBuffer::ClearRenderBuffer();
 
-	int32 prevCull = rwCULLMODECULLBACK;
-	RwRenderStateGet(rwRENDERSTATECULLMODE, &prevCull);
-
 	RwRenderStateSet(rwRENDERSTATEZWRITEENABLE,      (void *)FALSE);
 	RwRenderStateSet(rwRENDERSTATEZTESTENABLE,       (void *)TRUE);
 	RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void *)TRUE);
 	RwRenderStateSet(rwRENDERSTATETEXTUREADDRESS,    (void *)rwTEXTUREADDRESSCLAMP);
-	RwRenderStateSet(rwRENDERSTATECULLMODE,          (void *)rwCULLMODECULLNONE);
 
 
 	for ( int32 i = 0; i < ShadowsStoredToBeRendered; i++ )
@@ -1122,10 +1102,10 @@ CShadows::RenderStoredShadows(void)
 					float fStartY = shadowPos.y - fHeight;
 					float fEndY   = shadowPos.y + fHeight;
 
-					int32 nStartX = CWorld::GetSectorIndexX(fStartX);
-					int32 nStartY = CWorld::GetSectorIndexY(fStartY);
-					int32 nEndX   = CWorld::GetSectorIndexX(fEndX);
-					int32 nEndY   = CWorld::GetSectorIndexY(fEndY);
+					int32 nStartX = Max(CWorld::GetSectorIndexX(fStartX), 0);
+					int32 nStartY = Max(CWorld::GetSectorIndexY(fStartY), 0);
+					int32 nEndX   = Min(CWorld::GetSectorIndexX(fEndX), NUMSECTORS_X-1);
+					int32 nEndY   = Min(CWorld::GetSectorIndexY(fEndY), NUMSECTORS_Y-1);
 
 					CWorld::AdvanceCurrentScanCode();
 
@@ -1256,7 +1236,6 @@ CShadows::RenderStoredShadows(void)
 	RwRenderStateSet(rwRENDERSTATEZWRITEENABLE,      (void *)TRUE);
 	RwRenderStateSet(rwRENDERSTATEZTESTENABLE,       (void *)TRUE);
 	RwRenderStateSet(rwRENDERSTATETEXTUREADDRESS,    (void *)rwTEXTUREADDRESSWRAP);
-	RwRenderStateSet(rwRENDERSTATECULLMODE,          (void *)(uintptr)prevCull);
 
 	ShadowsStoredToBeRendered = 0;
 
@@ -1271,14 +1250,10 @@ CShadows::RenderStaticShadows(void)
 
 	RenderBuffer::ClearRenderBuffer();
 
-	int32 prevCull = rwCULLMODECULLBACK;
-	RwRenderStateGet(rwRENDERSTATECULLMODE, &prevCull);
-
 	RwRenderStateSet(rwRENDERSTATEZWRITEENABLE,      (void *)FALSE);
 	RwRenderStateSet(rwRENDERSTATEZTESTENABLE,       (void *)TRUE);
 	RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void *)TRUE);
 	RwRenderStateSet(rwRENDERSTATEFOGENABLE,         (void *)FALSE);
-	RwRenderStateSet(rwRENDERSTATECULLMODE,          (void *)rwCULLMODECULLNONE);
 
 	SetAlphaTest(0);
 
@@ -1339,7 +1314,6 @@ CShadows::RenderStaticShadows(void)
 
 	RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void *)FALSE);
 	RwRenderStateSet(rwRENDERSTATEZWRITEENABLE,      (void *)TRUE);
-	RwRenderStateSet(rwRENDERSTATECULLMODE,          (void *)(uintptr)prevCull);
 
 	POP_RENDERGROUP();
 }
@@ -1358,10 +1332,10 @@ CShadows::GeneratePolysForStaticShadow(int16 nStaticShadowID)
 	float fStartY = shadowPos.y - fHeight;
 	float fEndY   = shadowPos.y + fHeight;
 
-	int32 nStartX = CWorld::GetSectorIndexX(fStartX);
-	int32 nStartY = CWorld::GetSectorIndexY(fStartY);
-	int32 nEndX   = CWorld::GetSectorIndexX(fEndX);
-	int32 nEndY   = CWorld::GetSectorIndexY(fEndY);
+	int32 nStartX = Max(CWorld::GetSectorIndexX(fStartX), 0);
+	int32 nStartY = Max(CWorld::GetSectorIndexY(fStartY), 0);
+	int32 nEndX   = Min(CWorld::GetSectorIndexX(fEndX), NUMSECTORS_X-1);
+	int32 nEndY   = Min(CWorld::GetSectorIndexY(fEndY), NUMSECTORS_Y-1);
 
 	CWorld::AdvanceCurrentScanCode();
 
@@ -1624,7 +1598,7 @@ CShadows::CastShadowEntityXY(CEntity *pEntity,  float fStartX, float fStartY, fl
 
 	for ( int32 i = 0; i < pCol->numTriangles; i++ )
 	{
-		CColTrianglePlane *pColTriPlanes = pCol->planes;
+		CColTrianglePlane *pColTriPlanes = pCol->trianglePlanes;
 		ASSERT(pColTriPlanes != nil);
 
 		CVector normal;
@@ -1639,7 +1613,6 @@ CShadows::CastShadowEntityXY(CEntity *pEntity,  float fStartX, float fStartY, fl
 			pCol->GetTrianglePoint(PointA, pColTri[i].a);
 			pCol->GetTrianglePoint(PointB, pColTri[i].b);
 			pCol->GetTrianglePoint(PointC, pColTri[i].c);
-			ShadowTriWinding::OrientShadowTriangleCCW(normal.z, PointB, PointC);
 
 			if (   (PointA.x > MinX || PointB.x > MinX || PointC.x > MinX)
 				&& (PointA.x < MaxX || PointB.x < MaxX || PointC.x < MaxX)
@@ -2281,11 +2254,9 @@ CShadows::CastShadowEntityXYZ(CEntity *pEntity, CVector *pPosn,
 			collision->GetTrianglePoint(p[1], collision->triangles[i].b);
 			collision->GetTrianglePoint(p[2], collision->triangles[i].c);
 			
-			if ( CCollision::TestSphereTriangle(colSphere, collision->vertices, collision->triangles[i], collision->planes[i]) )
+			if ( CCollision::TestSphereTriangle(colSphere, collision->vertices, collision->triangles[i], collision->trianglePlanes[i]) )
 			{
-				CVector n(collision->planes[i].GetNormalX(), collision->planes[i].GetNormalY(), collision->planes[i].GetNormalZ());
-				if(n.z < 0.0f)
-					n = -n;
+				CVector n(collision->trianglePlanes[i].GetNormalX(), collision->trianglePlanes[i].GetNormalY(), collision->trianglePlanes[i].GetNormalZ());
 				CVector offset = n * 0.028f;
 				
 				p[0] += offset;

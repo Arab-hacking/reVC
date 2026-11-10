@@ -8,7 +8,6 @@
 #include "ZoneCull.h"
 #include "CutsceneMgr.h"
 #include "FileMgr.h"
-#include "Game.h"
 #include "Timecycle.h"
 
 uint8 CTimeCycle::m_nAmbientRed[NUMHOURS][NUMWEATHERS];
@@ -398,10 +397,6 @@ CTimeCycle::Update(void)
 
 	if(m_FogReduction != 0)
 		m_fCurrentFarClip = Max(m_fCurrentFarClip, m_FogReduction/64.0f * 650.0f);
-	if(CGame::CanSeeOutSideFromCurrArea())
-		m_fCurrentFarClip = Max(m_fCurrentFarClip, 2200.0f);
-	if(CClock::GetHours() >= 19 || CClock::GetHours() < 7)
-		m_fCurrentSpriteBrightness = Max(m_fCurrentSpriteBrightness, 1.15f);
 
 	m_CurrentStoredValue = (m_CurrentStoredValue+1)&0xF;
 

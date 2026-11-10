@@ -26,9 +26,6 @@
 #include "Text.h"
 #include "RwHelper.h"
 #include "Frontend.h"
-#ifdef CUSTOM_MODELS
-#include "CustomModels.h"
-#endif
 #endif //GTA_PC
 
 float texLoadTime;
@@ -39,29 +36,6 @@ int32 texNumLoaded;
 #else
 #define READNATIVE(stream, tex, size) RWSRCGLOBAL(stdFunc[rwSTANDARDNATIVETEXTUREREAD](stream, tex, size))
 #endif
-
-// The TXD struct is { int16 numTextures; int16 deviceId; } in both VC and SA files.
-// The original VC code below read it as a single int32, which works for VC TXDs only
-// because their device id is 0 there. SA TXDs store e.g. 2 (D3D9) in the high word,
-// so the count came out as 0x0002000F = 131087 and the loader tried to read tens of
-// thousands of textures until it failed - which made every SA TXD unloadable and the
-// game re-request the vehicle in an endless loop (freeze before cutscenes).
-// Reading the two int16s separately works for both formats.
-static int32
-ReadTxdNumTextures(RwStream *stream, RwUInt32 size)
-{
-	int16 numTextures, deviceId;
-
-	if(size < 4)
-		return -1;
-	if(RwStreamRead(stream, &numTextures, 2) != 2)
-		return -1;
-	if(RwStreamRead(stream, &deviceId, 2) != 2)
-		return -1;
-	if(size > 4)
-		RwStreamSkip(stream, size - 4);
-	return numTextures;
-}
 
 RwTexture*
 RwTextureGtaStreamRead(RwStream *stream)
@@ -111,8 +85,7 @@ RwTexDictionaryGtaStreamRead(RwStream *stream)
 
 	if(!RwStreamFindChunk(stream, rwID_STRUCT, &size, &version))
 		return nil;
-	numTextures = ReadTxdNumTextures(stream, size);
-	if(numTextures < 0)
+	if(RwStreamRead(stream, &numTextures, size) != size)
 		return nil;
 
 	texDict = RwTexDictionaryCreate();
@@ -146,9 +119,8 @@ RwTexDictionaryGtaStreamRead1(RwStream *stream)
 	numberTextures = 0;
 	if(!RwStreamFindChunk(stream, rwID_STRUCT, &size, &version))
 		return nil;
-	assert(size >= 4);
-	numTextures = ReadTxdNumTextures(stream, size);
-	if(numTextures < 0)
+	assert(size == 4);
+	if(RwStreamRead(stream, &numTextures, size) != size)
 		return nil;
 
 	texDict = RwTexDictionaryCreate();
@@ -324,9 +296,8 @@ bool
 CanVideoCardDoDXT(void)
 {
 #ifdef LIBRW
-#ifdef RW_GL3
-	return rw::gl3::gl3Caps.dxtSupported != 0;
-#elif defined(RW_OPENGL)
+	// TODO
+#ifdef RW_OPENGL
 	return false;
 #else
 	return true;
@@ -445,12 +416,6 @@ CreateTxdImageForVideoCard()
 		ConvertingTexturesScreen(i, TXDSTORESIZE, "CVT_MSG");
 
 		if (CTxdStore::GetSlot(i) != nil && CStreaming::IsObjectInCdImage(i + STREAM_OFFSET_TXD)) {
-#ifdef CUSTOM_MODELS
-			// Never repack user custom/img/ archives into models/txd.img.
-			int imgIdx = _GET_INDEX(CStreaming::ms_aInfoForModel[i + STREAM_OFFSET_TXD].m_position);
-			if (CCustomModels::IsAutoMountedImage(imgIdx))
-				continue;
-#endif
 #ifdef FIX_BUGS
 			if(strcmp(CTxdStore::GetTxdName(i), "generic") == 0)
 				continue;
@@ -461,11 +426,11 @@ CreateTxdImageForVideoCard()
 			CStreaming::FlushChannels();
 
 			char filename[64];
-			snprintf(filename, sizeof(filename), "%s.txd", CTxdStore::GetTxdName(i));
+			sprintf(filename, "%s.txd", CTxdStore::GetTxdName(i));
 
 			if (CTxdStore::GetSlot(i)->texDict) {
 
-				uint64 pos = (uint64)STREAMTELL(img);
+				int32 pos = STREAMTELL(img);
 
 				if (RwTexDictionaryStreamWrite(CTxdStore::GetSlot(i)->texDict, img) == nil) {
 					DealWithTxdWriteError(i, TXDSTORESIZE, "CVT_ERR");
@@ -479,9 +444,8 @@ CreateTxdImageForVideoCard()
 					return false;
 				}
 
-				uint64 endPos = (uint64)STREAMTELL(img);
-				uint32 size = (uint32)(endPos - pos);
-				uint32 num = size % CDSTREAM_SECTOR_SIZE;
+				int32 size = STREAMTELL(img) - pos;
+				int32 num = size % CDSTREAM_SECTOR_SIZE;
 
 				size /= CDSTREAM_SECTOR_SIZE;
 				if (num != 0) {
@@ -490,7 +454,7 @@ CreateTxdImageForVideoCard()
 					RwStreamWrite(img, buf, num);
 				}
 
-				dirInfo.offset = (uint32)(pos / CDSTREAM_SECTOR_SIZE);
+				dirInfo.offset = pos / CDSTREAM_SECTOR_SIZE;
 				dirInfo.size = size;
 				strncpy(dirInfo.name, filename, sizeof(dirInfo.name));
 				pDir->AddItem(dirInfo);

@@ -13,7 +13,6 @@
 #include "RpAnimBlend.h"
 #include "ControllerConfig.h"
 #include "Pad.h"
-#include "NoClip.h"
 #include "Frontend.h"
 #include "General.h"
 #include "Timecycle.h"
@@ -30,9 +29,6 @@
 #include "DMAudio.h"
 #include "Bike.h"
 #include "Pickups.h"
-#ifdef ANDROID
-#include "MobileTouchControls.h"
-#endif
 
 bool PrintDebugCode = false;
 int16 DebugCamMode;
@@ -41,11 +37,7 @@ extern float fRangePlayerRadius;
 extern float fCloseNearClipLimit;
 
 #ifdef FREE_CAM
-#ifdef ANDROID
-bool CCamera::bFreeCam = true;
-#else
 bool CCamera::bFreeCam = false;
-#endif
 int nPreviousMode = -1;
 #endif
 
@@ -234,11 +226,7 @@ CCam::Process(void)
 		break;
 	case MODE_CAM_ON_A_STRING:
 #ifdef FREE_CAM
-#ifdef ANDROID
-		if(!CVehicle::bCheat5)
-#else
 		if(CCamera::bFreeCam && !CVehicle::bCheat5)
-#endif
 			Process_FollowCar_SA(CameraTarget, TargetOrientation, SpeedVar, TargetSpeedVar);
 		else
 #endif
@@ -249,17 +237,11 @@ CCam::Process(void)
 //	case MODE_CHRIS:
 	case MODE_BEHINDBOAT:
 #ifdef FREE_CAM
-#ifdef ANDROID
-		Process_FollowCar_SA(CameraTarget, TargetOrientation, SpeedVar, TargetSpeedVar);
-#else
 		if (CCamera::bFreeCam)
 			Process_FollowCar_SA(CameraTarget, TargetOrientation, SpeedVar, TargetSpeedVar);
 		else
+#endif
 			Process_BehindBoat(CameraTarget, TargetOrientation, SpeedVar, TargetSpeedVar);
-#endif
-#else
-		Process_BehindBoat(CameraTarget, TargetOrientation, SpeedVar, TargetSpeedVar);
-#endif
 		break;
 	case MODE_PLAYER_FALLEN_WATER:
 		Process_Player_Fallen_Water(CameraTarget, TargetOrientation, SpeedVar, TargetSpeedVar);
@@ -1402,7 +1384,7 @@ CCam::Process_FollowPedWithMouse(const CVector &CameraTarget, float TargetOrient
 		float MouseX = CPad::GetPad(0)->GetMouseX();
 		float MouseY = CPad::GetPad(0)->GetMouseY();
 		float LookLeftRight, LookUpDown;
-		if((MouseX != 0.0f || MouseY != 0.0f) && !CPad::GetPad(0)->AreCameraControlsDisabled()){
+		if((MouseX != 0.0f || MouseY != 0.0f) && !CPad::GetPad(0)->ArePlayerControlsDisabled()){
 			UseMouse = true;
 			LookLeftRight = -2.5f*MouseX;
 			LookUpDown = 4.0f*MouseY;
@@ -1470,7 +1452,7 @@ CCam::Process_FollowPedWithMouse(const CVector &CameraTarget, float TargetOrient
 	// Clip Source and fix near clip
 	CWorld::pIgnoreEntity = CamTargetEntity;
 	entity = nil;
-	if(!CNoClip::IsActive() && CWorld::ProcessLineOfSight(TargetCoors, Source, colPoint, entity, true, true, true, true, false, false, true)){
+	if(CWorld::ProcessLineOfSight(TargetCoors, Source, colPoint, entity, true, true, true, true, false, false, true)){
 		float PedColDist = (TargetCoors - colPoint.point).Magnitude();
 		float ColCamDist = CamDist - PedColDist;
 		if(entity->IsPed() && ColCamDist > DEFAULT_NEAR + 0.1f){
@@ -1495,7 +1477,7 @@ CCam::Process_FollowPedWithMouse(const CVector &CameraTarget, float TargetOrient
 	float ViewPlaneWidth = ViewPlaneHeight * CDraw::CalculateAspectRatio() * fTweakFOV;
 	float Near = RwCameraGetNearClipPlane(Scene.camera);
 	float radius = ViewPlaneWidth*Near;
-	entity = CNoClip::IsActive() ? nil : CWorld::TestSphereAgainstWorld(Source + Front*Near, radius, nil, true, true, false, true, false, false);
+	entity = CWorld::TestSphereAgainstWorld(Source + Front*Near, radius, nil, true, true, false, true, false, false);
 	int i = 0;
 	while(entity){
 		CVector CamToCol = gaTempSphereColPoints[0].point - Source;
@@ -1519,7 +1501,7 @@ CCam::Process_FollowPedWithMouse(const CVector &CameraTarget, float TargetOrient
 		radius = ViewPlaneWidth*Near;
 #endif
 		// Keep testing
-		entity = CNoClip::IsActive() ? nil : CWorld::TestSphereAgainstWorld(Source + Front*Near, radius, nil, true, true, false, true, false, false);
+		entity = CWorld::TestSphereAgainstWorld(Source + Front*Near, radius, nil, true, true, false, true, false, false);
 
 		i++;
 		if(i > 5)
@@ -3992,6 +3974,15 @@ CCam::Process_Debug(const CVector&, float, float, float)
 			CWorld::Players[CWorld::PlayerInFocus].m_pPed->SetPosition(Source);
 	}
 
+	// stay inside sectors
+	while(CWorld::GetSectorX(Source.x) > NUMSECTORS_X-5.0f)
+		Source.x -= 1.0f;
+	while(CWorld::GetSectorX(Source.x) < 5.0f)
+		Source.x += 1.0f;
+	while(CWorld::GetSectorY(Source.y) > NUMSECTORS_X-5.0f)
+		Source.y -= 1.0f;
+	while(CWorld::GetSectorY(Source.y) < 5.0f)
+		Source.y += 1.0f;
 	GetVectorsReadyForRW();
 
 #ifdef FIX_BUGS
@@ -4061,6 +4052,15 @@ CCam::Process_Debug(const CVector&, float, float, float)
 			CWorld::Players[CWorld::PlayerInFocus].m_pPed->SetPosition(Source);
 	}
 
+	// stay inside sectors
+	while(CWorld::GetSectorX(Source.x) > NUMSECTORS_X-5.0f)
+		Source.x -= 1.0f;
+	while(CWorld::GetSectorX(Source.x) < 5.0f)
+		Source.x += 1.0f;
+	while(CWorld::GetSectorY(Source.y) > NUMSECTORS_X-5.0f)
+		Source.y -= 1.0f;
+	while(CWorld::GetSectorY(Source.y) < 5.0f)
+		Source.y += 1.0f;
 	GetVectorsReadyForRW();
 
 	if(CPad::GetPad(1)->GetLeftShockJustDown() && gbBigWhiteDebugLightSwitchedOn)
@@ -4140,6 +4140,15 @@ CCam::Process_Editor(const CVector&, float, float, float)
 			
 	}
 
+	// stay inside sectors
+	while(CWorld::GetSectorX(Source.x) > NUMSECTORS_X-5.0f)
+		Source.x -= 1.0f;
+	while(CWorld::GetSectorX(Source.x) < 5.0f)
+		Source.x += 1.0f;
+	while(CWorld::GetSectorY(Source.y) > NUMSECTORS_X-5.0f)
+		Source.y -= 1.0f;
+	while(CWorld::GetSectorY(Source.y) < 5.0f)
+		Source.y += 1.0f;
 	GetVectorsReadyForRW();
 
 	if(CPad::GetPad(1)->GetLeftShockJustDown() && gbBigWhiteDebugLightSwitchedOn)
@@ -4756,7 +4765,7 @@ CCam::Process_FollowPed_Rotation(const CVector &CameraTarget, float TargetOrient
 	// Clip Source and fix near clip
 	CWorld::pIgnoreEntity = CamTargetEntity;
 	entity = nil;
-	if(!CNoClip::IsActive() && CWorld::ProcessLineOfSight(TargetCoors, Source, colPoint, entity, true, true, true, true, false, false, true)){
+	if(CWorld::ProcessLineOfSight(TargetCoors, Source, colPoint, entity, true, true, true, true, false, false, true)){
 		float PedColDist = (TargetCoors - colPoint.point).Magnitude();
 		float ColCamDist = CamDist - PedColDist;
 		if(entity->IsPed() && ColCamDist > DEFAULT_NEAR + 0.1f){
@@ -4781,7 +4790,7 @@ CCam::Process_FollowPed_Rotation(const CVector &CameraTarget, float TargetOrient
 	float ViewPlaneWidth = ViewPlaneHeight * CDraw::CalculateAspectRatio() * fTweakFOV;
 	float Near = RwCameraGetNearClipPlane(Scene.camera);
 	float radius = ViewPlaneWidth*Near;
-	entity = CNoClip::IsActive() ? nil : CWorld::TestSphereAgainstWorld(Source + Front*Near, radius, nil, true, true, false, true, false, false);
+	entity = CWorld::TestSphereAgainstWorld(Source + Front*Near, radius, nil, true, true, false, true, false, false);
 	int i = 0;
 	while(entity){
 		CVector CamToCol = gaTempSphereColPoints[0].point - Source;
@@ -4800,7 +4809,7 @@ CCam::Process_FollowPed_Rotation(const CVector &CameraTarget, float TargetOrient
 		// Keep testing
 		Near = RwCameraGetNearClipPlane(Scene.camera);
 		radius = ViewPlaneWidth*Near;
-		entity = CNoClip::IsActive() ? nil : CWorld::TestSphereAgainstWorld(Source + Front*Near, radius, nil, true, true, false, true, false, false);
+		entity = CWorld::TestSphereAgainstWorld(Source + Front*Near, radius, nil, true, true, false, true, false, false);
 
 		i++;
 		if(i > 5)
@@ -5139,7 +5148,7 @@ CCam::Process_FollowCar_SA(const CVector& CameraTarget, float TargetOrientation,
 
 #ifdef GTA_PC_CONTROLS
 	// FIX: Disable mouse movement in drive-by, it's buggy. Original SA bug.
-	if (/*bFreeMouseCam &&*/ CCamera::m_bUseMouse3rdPerson && !pad->AreCameraControlsDisabled() && nextDirectionIsForward) {
+	if (/*bFreeMouseCam &&*/ CCamera::m_bUseMouse3rdPerson && !pad->ArePlayerControlsDisabled() && nextDirectionIsForward) {
 		float mouseY = pad->GetMouseY() * 2.0f;
 		float mouseX = pad->GetMouseX() * -2.0f;
 
@@ -5161,14 +5170,7 @@ CCam::Process_FollowCar_SA(const CVector& CameraTarget, float TargetOrientation,
 			yMovement = 0.0;
 			xMovement = 0.0;
 			targetAlpha = Alpha;
-#ifdef ANDROID
-			if (CMobileTouchControls::IsLookPointerActive())
-				stepsLeftToChangeBetaByMouse = 1.0f * 50.0f;
-			else
-				stepsLeftToChangeBetaByMouse = Max(0.0f, stepsLeftToChangeBetaByMouse - CTimer::GetTimeStep());
-#else
 			stepsLeftToChangeBetaByMouse = Max(0.0f, stepsLeftToChangeBetaByMouse - CTimer::GetTimeStep());
-#endif
 			mouseChangesBeta = true;
 		}
 	}
@@ -5297,7 +5299,7 @@ CCam::Process_FollowCar_SA(const CVector& CameraTarget, float TargetOrientation,
 	m_aTargetHistoryPosTwo.z = TargetCoors.z - nextFrontZ * newDistance;
 
 	// SA calls SetColVarsVehicle in here
-	if (nextDirectionIsForward && !CNoClip::IsActive()) {
+	if (nextDirectionIsForward) {
 
 		// LCS uses exactly the same collision code as FollowPedWithMouse, so we will do so.
 
