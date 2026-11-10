@@ -567,6 +567,39 @@ TestWorldWalkLimits(void)
 	printf("world walk limits ok\n");
 }
 
+// ---------------------------------------------------------------------------
+// The combined draw-distance multiplier. The regression this guards against:
+// clamping the product to the slider minimum meant a player who kept the
+// draw-distance slider low never saw the mitigation at all, because
+// 0.80 x 0.60 = 0.48 was forced straight back to 0.80.
+// ---------------------------------------------------------------------------
+static void
+TestMitigationIsVisibleAtTheSliderFloor(void)
+{
+	const float MIN = 0.80f, MAX = 3.00f;
+
+	// No pressure: the slider passes through unchanged.
+	assert(Near(revcopt::EffectiveDrawDistanceScale(1.20f, 1.0f, MIN, MAX), 1.20f, 1e-4f));
+
+	// Mitigation and critical must both be perceptibly below the slider value
+	// even when the slider sits at its own minimum.
+	assert(Near(revcopt::EffectiveDrawDistanceScale(0.80f, 0.75f, MIN, MAX), 0.60f, 1e-4f));
+	assert(Near(revcopt::EffectiveDrawDistanceScale(0.80f, 0.60f, MIN, MAX), 0.48f, 1e-4f));
+
+	// Same relative reduction at a mid slider.
+	assert(Near(revcopt::EffectiveDrawDistanceScale(1.20f, 0.75f, MIN, MAX), 0.90f, 1e-4f));
+	assert(Near(revcopt::EffectiveDrawDistanceScale(1.20f, 0.60f, MIN, MAX), 0.72f, 1e-4f));
+
+	// The slider itself is still bounded.
+	assert(Near(revcopt::EffectiveDrawDistanceScale(0.10f, 1.0f, MIN, MAX), MIN, 1e-4f));
+	assert(Near(revcopt::EffectiveDrawDistanceScale(9.00f, 1.0f, MIN, MAX), MAX, 1e-4f));
+
+	// Never below the critical floor and never above the slider maximum.
+	assert(revcopt::EffectiveDrawDistanceScale(0.80f, 0.0f, MIN, MAX) >= MIN*0.60f - 1e-4f);
+	assert(revcopt::EffectiveDrawDistanceScale(3.00f, 5.0f, MIN, MAX) <= MAX + 1e-4f);
+	printf("mitigation is visible at the slider floor ok\n");
+}
+
 int
 main(void)
 {
@@ -585,6 +618,7 @@ main(void)
 	TestPressureUsesBaseAndReserveExactly();
 	TestFreeHeadroomFollowsTheSameAccounting();
 	TestWorldWalkLimits();
+	TestMitigationIsVisibleAtTheSliderFloor();
 	printf("optimization profile tests passed\n");
 	return 0;
 }

@@ -231,8 +231,16 @@ Tick(unsigned nowMs, float dtSeconds, unsigned long long usedBytes,
 
 	// Fold the multiplier into the menu's draw-distance preference exactly where
 	// the old RAM heuristic did, so the slider keeps its meaning.
-	float menuScale = FrontEndMenuManager.m_PrefsLOD;
-	float wanted = Clamp(menuScale * s_snapshot.distanceScale, DRAWDIST_MIN, DRAWDIST_MAX);
+	//
+	// The clamp has to be relative, not absolute. Clamping the product to
+	// DRAWDIST_MIN (0.80) hid the mitigation whenever the slider sat low: with
+	// the slider at 0.80 the critical scale of 0.60 asks for 0.48 and the clamp
+	// forced it back to 0.80, i.e. no reduction at all. The slider floor governs
+	// the slider; the optimisation stage multiplies below it, which is also how
+	// the client separates worldDistance from the user's draw-distance choice.
+	float wanted = revcopt::EffectiveDrawDistanceScale(FrontEndMenuManager.m_PrefsLOD,
+	                                                   s_snapshot.distanceScale,
+	                                                   DRAWDIST_MIN, DRAWDIST_MAX);
 	if(s_appliedScale < 0.0f || fabsf(wanted - s_appliedScale) > 0.002f) {
 		s_appliedScale = wanted;
 		CRenderer::ms_lodDistScale = wanted;

@@ -54,6 +54,29 @@ const OptimizationSnapshot &Current(void);
 // target (80 % under mitigation, 60 % under critical, floor of eight).
 int VehicleRingTarget(int normalSlots);
 
+// Combined draw-distance multiplier handed to CRenderer::ms_lodDistScale.
+//
+// The menu slider and the optimisation stage are separate controls, so the
+// clamp must be relative: clamping the product to the slider's own minimum
+// swallowed the mitigation whenever the slider sat low (0.80 slider x 0.60
+// critical = 0.48 was forced back up to 0.80, i.e. no reduction at all).
+// `sliderMin`/`sliderMax` bound the user's slider; the optimisation stage is
+// allowed to multiply below the slider floor.
+inline float EffectiveDrawDistanceScale(float slider, float distanceScale,
+                                        float sliderMin, float sliderMax)
+{
+	float menu = slider < sliderMin ? sliderMin : (slider > sliderMax ? sliderMax : slider);
+	if(distanceScale < 0.0f)
+		distanceScale = 0.0f;
+	float wanted = menu * distanceScale;
+	float floorScale = sliderMin * 0.60f;	// slider minimum x critical multiplier
+	if(wanted < floorScale)
+		return floorScale;
+	if(wanted > sliderMax)
+		return sliderMax;
+	return wanted;
+}
+
 // Chapter 9 §9.4 — the world walk behind the per-frame request quota.
 //
 // The client bounds one walk with `cmp w24, #0x7d0` (2000 entities) and keeps a
