@@ -165,9 +165,27 @@ CStreamingInfo::RemoveFromList(void)
 	m_prev = nil;
 }
 
-#ifdef CUSTOM_MODELS
-// Defined with the per-frame pressure code below; used here to size the cap.
-static size_t BudgetStreamingCap(void);
+
+#if defined(ANDROID) && defined(CUSTOM_MODELS)
+// Streaming cap from the client's memoryBudgetScaling table (180 / 256 / 320 /
+// 384 MB by installed RAM). In the client this budget *is* the allocator limit
+// handed to streaming (chapter 9 §9.1: it is set once when streaming is
+// initialised, from device memory), so sizing the cap from it makes the
+// headroom thresholds in the config mean the same thing here as there.
+static size_t
+BudgetStreamingCap(void)
+{
+	size_t budget = revcopt::BudgetBytes();
+	if(budget != 0)
+		return budget;
+	// Optimization module disabled: keep the platform figure.
+	extern size_t _dwMemAvailPhys;
+	size_t mb = 1024 * 1024;
+	size_t cap = (_dwMemAvailPhys - 10 * mb) / 2;
+	if(cap < 65 * mb)
+		cap = 65 * mb;
+	return cap;
+}
 #endif
 
 void
@@ -295,7 +313,9 @@ CStreaming::Init2(void)
 	// The RAM-derived budget replaces the platform guess as the streaming cap.
 	// This has to happen before the pools are sized below, otherwise the cap
 	// and the thresholds in the config describe different amounts of memory -
-	// which is how the headroom test could never fire.
+	// which is how the headroom test could never fire. The cap helper lives
+	// with the Android per-frame code, so other platforms keep the guess.
+#if defined(ANDROID)
 	{
 		size_t budgetCap = BudgetStreamingCap();
 		if(budgetCap != 0 && budgetCap != ms_memoryAvailable) {
@@ -304,6 +324,7 @@ CStreaming::Init2(void)
 			ms_memoryAvailable = budgetCap;
 		}
 	}
+#endif
 #endif
 
 	// find island LODs
@@ -390,6 +411,7 @@ static int s_mobileAsyncReqBudget = 5;
 static uint32 s_lastMemSampleFrame = 0xFFFFFFFFu;
 static size_t s_cachedAvailRamMB = 1024;
 
+
 static size_t
 SampleAndroidAvailRamMB(void)
 {
@@ -414,34 +436,6 @@ SampleAndroidAvailRamMB(void)
 			s_cachedAvailRamMB = (size_t)(kb / 1024ul);
 	}
 	return s_cachedAvailRamMB;
-}
-
-// Memory pressure drives the draw distance and the per-frame request quota.
-// The measurements (/proc/meminfo, the RAM -> budget table) and the hysteresis
-// state machine live in extras/custom/Optimization.*, which mirrors the mobile
-// client: soft mode under 32 MB of headroom (leave at 48), critical under 8
-// (leave at 24), 0.75 / 0.6 distance, 0.25 per second, delayed 1 s / 3 s.
-// The previous version compared a fixed MemAvailable against 280/450 MB, which
-// reacted to *device* free memory rather than to the streaming budget and
-// switched instantly.
-// Streaming cap from the client's memoryBudgetScaling table (180 / 256 / 320 /
-// 384 MB by installed RAM). In the client this budget *is* the allocator limit
-// handed to streaming (chapter 9 §9.1: "предел задаётся один раз при
-// инициализации стриминга по памяти устройства"), so sizing the cap from it
-// makes the headroom thresholds mean the same thing here as there.
-static size_t
-BudgetStreamingCap(void)
-{
-	size_t budget = revcopt::BudgetBytes();
-	if(budget != 0)
-		return budget;
-	// Optimization module disabled: keep the platform figure.
-	extern size_t _dwMemAvailPhys;
-	size_t mb = 1024 * 1024;
-	size_t cap = (_dwMemAvailPhys - 10 * mb) / 2;
-	if(cap < 65 * mb)
-		cap = 65 * mb;
-	return cap;
 }
 
 static void
