@@ -1,4 +1,5 @@
 #include "common.h"
+#include "ParaboloidEnvMap.h"
 
 #ifdef RW_GL3
 
@@ -10,7 +11,6 @@
 #include "Timecycle.h"
 #include "Weather.h"
 #include "World.h"
-#include "ParaboloidEnvMap.h"
 #ifdef ANDROID
 #include "Frontend.h"
 #endif
@@ -167,5 +167,21 @@ CParaboloidEnvMap::Capture(void (*renderScene)(void), int32 stride)
 	s_lastFrame = frame;
 	return true;
 }
+
+#else // !RW_GL3
+
+// The paraboloid capture is a GL3 mechanism (it needs the shader-side
+// ParaboloidProjection and the capture-pass uniforms). Other backends keep the
+// static fallback env map, so the interface degrades to no-ops instead of
+// failing to link.
+
+bool CParaboloidEnvMap::Init(void) { return false; }
+void CParaboloidEnvMap::Shutdown(void) {}
+bool CParaboloidEnvMap::IsReady(void) { return false; }
+bool CParaboloidEnvMap::Capture(void (*)(void), int32) { return false; }
+void CParaboloidEnvMap::Invalidate(void) {}
+int32 CParaboloidEnvMap::UpdateStride(void) { return 1; }
+void *CParaboloidEnvMap::GetTexture(void) { return nil; }
+const char *CParaboloidEnvMap::GetError(void) { return "paraboloid capture requires RW_GL3"; }
 
 #endif // RW_GL3
