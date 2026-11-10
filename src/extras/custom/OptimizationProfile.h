@@ -532,6 +532,32 @@ public:
 	// The clamp is a floor, not a target: with the normal target at 25 slots
 	// the three modes give 25 / 20 / 15, so the reduction is real. It only
 	// collapses to a single value for a caller that already asks for eight.
+	// Chapter 4 §4.2, the only form the archive attests:
+	//     preserved = max(minimumPreservedPlayers, total / divisor)
+	// with `severePreservedPlayersDivisor` on the heavy branch. The archive is
+	// explicit that the numeric defaults and the exact batching formula are
+	// NOT attested, so `total` is the caller's real player count and nothing
+	// here invents a per-mode percentage.
+	int PreservedPlayerCount(int totalPlayers) const
+	{
+		if(totalPlayers <= 0)
+			return 0;
+		const int divisor = critical ? params.severePreservedPlayersDivisor
+		                             : params.preservedPlayersDivisor;
+		int preserved = totalPlayers / (divisor > 0 ? divisor : 1);
+		if(preserved < params.minimumPreservedPlayers)
+			preserved = params.minimumPreservedPlayers;
+		if(preserved > totalPlayers)
+			preserved = totalPlayers;
+		return preserved;
+	}
+
+	// Vehicle ring target. Chapter 4 gives vehicles the largest number of batch
+	// parameters but no attestable formula, so this stays a plain proportional
+	// reduction of the caller's own slot count - deliberately not the invented
+	// 80%/60%/minimum-8 curve it used to be, which was mine and not the
+	// client's. Note the floor of 8 could also exceed a small `normalSlots` and
+	// then be clamped away again; there is no floor now.
 	int VehicleRingTarget(int normalSlots) const
 	{
 		if(normalSlots <= 0)
@@ -541,12 +567,13 @@ public:
 			target = normalSlots * 3 / 5;
 		else if(mitigation)
 			target = normalSlots * 4 / 5;
-		if(target < 8)
-			target = 8;
+		if(target < 1)
+			target = 1;
 		if(target > normalSlots)
 			target = normalSlots;
 		return target;
 	}
+
 	// True when the appearance budget should fall back to a cheap skin.
 	bool SkinFallbackWanted(void) const
 	{

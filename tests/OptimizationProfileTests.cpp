@@ -276,7 +276,10 @@ TestModeMachine(void)
 	// not a quarter: a fourth of 25 cars pops traffic in and out.
 	assert(c.VehicleRingTarget(25) == 15);
 	assert(c.VehicleRingTarget(35) == 21);
-	assert(c.VehicleRingTarget(6) == 6);      // floor never exceeds the target
+	// No absolute floor: the min-8 it used to have was invented, not the
+	// client's, and it also collapsed to the caller's count for small rings.
+	assert(c.VehicleRingTarget(6) == 3);
+	assert(c.VehicleRingTarget(1) == 1);
 
 	// Recovery has its own, longer delay: leave at 24 MB, come back to 60 MB free.
 	c.Update(9000, 196 * MB, 0, 0.0f);  // 60 MB free
@@ -600,6 +603,47 @@ TestMitigationIsVisibleAtTheSliderFloor(void)
 	printf("mitigation is visible at the slider floor ok\n");
 }
 
+// ---------------------------------------------------------------------------
+// Chapter 4 §4.2 - the only player-preservation form the archive attests:
+//     preserved = max(minimumPreservedPlayers, total / divisor)
+// with the severe divisor on the heavy branch. The archive says the defaults
+// and the batching formula are not attested, so these tests pin the SHAPE and
+// the configured values, not an invented percentage.
+// ---------------------------------------------------------------------------
+static void
+TestPreservedPlayersFollowTheAttestedForm(void)
+{
+	Params p;
+	assert(p.minimumPreservedPlayers == 8);
+	assert(p.preservedPlayersDivisor == 3);
+	assert(p.severePreservedPlayersDivisor == 4);
+
+	Controller c;
+	c.SetParams(p);
+
+	// Normal branch: total/3, but never below the minimum.
+	assert(c.PreservedPlayerCount(60) == 20);
+	assert(c.PreservedPlayerCount(24) == 8);
+	assert(c.PreservedPlayerCount(9) == 8);		// 9/3 = 3, floor 8 wins
+	assert(c.PreservedPlayerCount(8) == 8);
+	assert(c.PreservedPlayerCount(0) == 0);
+
+	// Never claims more players than exist.
+	assert(c.PreservedPlayerCount(2) == 2);
+
+	// Heavy branch uses the severe divisor, so fewer players are preserved.
+	const size_t MB = (size_t)1 << 20;
+	Controller heavy;
+	heavy.SetBudgetBytes(320 * MB);
+	heavy.SetParams(p);
+	for(int i = 0; i < 1200; i++)
+		heavy.Update((uint32_t)(i * 17), 320 * MB, 0, 1.0f / 60.0f);
+	assert(heavy.CriticalActive());
+	assert(heavy.PreservedPlayerCount(60) == 15);	// 60/4 = 15
+	assert(heavy.PreservedPlayerCount(60) < c.PreservedPlayerCount(60));
+	printf("preserved players follow the attested form ok\n");
+}
+
 int
 main(void)
 {
@@ -619,6 +663,7 @@ main(void)
 	TestFreeHeadroomFollowsTheSameAccounting();
 	TestWorldWalkLimits();
 	TestMitigationIsVisibleAtTheSliderFloor();
+	TestPreservedPlayersFollowTheAttestedForm();
 	printf("optimization profile tests passed\n");
 	return 0;
 }
