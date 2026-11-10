@@ -9,14 +9,21 @@ CColModel::CColModel(void)
 {
 	numSpheres = 0;
 	spheres = nil;
+	sphereW = nil;
 	numLines = 0;
 	lines = nil;
 	numBoxes = 0;
 	boxes = nil;
+	numVertices = 0;
 	numTriangles = 0;
 	vertices = nil;
 	triangles = nil;
-	trianglePlanes = nil;
+	planes = nil;
+	tree = nil;
+	vectorBegin = nil;
+	vectorEnd = nil;
+	vectorCap = nil;
+	flags = 0;
 	level = LEVEL_GENERIC;	// generic col slot
 	ownsCollisionVolumes = true;
 }
@@ -45,21 +52,28 @@ CColModel::RemoveCollisionVolumes(void)
 {
 	if(ownsCollisionVolumes){
 		RwFree(spheres);
+		RwFree(sphereW);
 		RwFree(lines);
 		RwFree(boxes);
 		RwFree(vertices);
 		RwFree(triangles);
+		RwFree(planes);
+		RwFree(tree);
 		CCollision::RemoveTrianglePlanes(this);
 	}
 	numSpheres = 0;
 	numLines = 0;
 	numBoxes = 0;
+	numVertices = 0;
 	numTriangles = 0;
 	spheres = nil;
+	sphereW = nil;
 	lines = nil;
 	boxes = nil;
 	vertices = nil;
 	triangles = nil;
+	planes = nil;
+	tree = nil;
 }
 
 void
@@ -68,10 +82,10 @@ CColModel::CalculateTrianglePlanes(void)
 	PUSH_MEMID(MEMID_COLLISION);
 
 	// HACK: allocate space for one more element to stuff the link pointer into
-	trianglePlanes = (CColTrianglePlane*)RwMalloc(sizeof(CColTrianglePlane) * (numTriangles+1));
-	REGISTER_MEMPTR(&trianglePlanes);
+	planes = (CColTrianglePlane*)RwMalloc(sizeof(CColTrianglePlane) * (numTriangles+1));
+	REGISTER_MEMPTR(&planes);
 	for(int i = 0; i < numTriangles; i++)
-		trianglePlanes[i].Set(vertices, triangles[i]);
+		planes[i].Set(vertices, triangles[i]);
 
 	POP_MEMID();
 }
@@ -79,22 +93,22 @@ CColModel::CalculateTrianglePlanes(void)
 void
 CColModel::RemoveTrianglePlanes(void)
 {
-	RwFree(trianglePlanes);
-	trianglePlanes = nil;
+	RwFree(planes);
+	planes = nil;
 }
 
 void
 CColModel::SetLinkPtr(CLink<CColModel*> *lptr)
 {
-	assert(trianglePlanes);
-	*(CLink<CColModel*>**)ALIGNPTR(&trianglePlanes[numTriangles]) = lptr;
+	assert(planes);
+	*(CLink<CColModel*>**)ALIGNPTR(&planes[numTriangles]) = lptr;
 }
 
 CLink<CColModel*>*
 CColModel::GetLinkPtr(void)
 {
-	assert(trianglePlanes);
-	return *(CLink<CColModel*>**)ALIGNPTR(&trianglePlanes[numTriangles]);
+	assert(planes);
+	return *(CLink<CColModel*>**)ALIGNPTR(&planes[numTriangles]);
 }
 
 void
@@ -127,6 +141,15 @@ CColModel::operator=(const CColModel &other)
 		if(spheres)
 			RwFree(spheres);
 		spheres = nil;
+	}
+
+	// copy sphereW (light spheres)
+	if(other.sphereW){
+		sphereW = (CColSphere*)RwMalloc(other.numSpheres*sizeof(CColSphere));
+		for(i = 0; i < other.numSpheres; i++)
+			sphereW[i] = other.sphereW[i];
+	}else{
+		sphereW = nil;
 	}
 
 	// copy lines
@@ -183,6 +206,7 @@ CColModel::operator=(const CColModel &other)
 			for(i = 0; i < numVerts; i++)
 				vertices[i] = other.vertices[i];
 		}
+		numVertices = numVerts;
 
 		// copy triangles
 		if(numTriangles != other.numTriangles){
@@ -193,14 +217,35 @@ CColModel::operator=(const CColModel &other)
 		}
 		for(i = 0; i < numTriangles; i++)
 			triangles[i] = other.triangles[i];
+
+		// copy planes
+		if(other.planes){
+			if(planes)
+				RwFree(planes);
+			planes = (CColTrianglePlane*)RwMalloc(numTriangles*sizeof(CColTrianglePlane));
+			for(i = 0; i < numTriangles; i++)
+				planes[i] = other.planes[i];
+		}else{
+			planes = nil;
+		}
 	}else{
 		numTriangles = 0;
+		numVertices = 0;
 		if(triangles)
 			RwFree(triangles);
 		triangles = nil;
 		if(vertices)
 			RwFree(vertices);
 		vertices = nil;
+		if(planes)
+			RwFree(planes);
+		planes = nil;
 	}
+
+	flags = other.flags;
+	tree = other.tree;
+	vectorBegin = other.vectorBegin;
+	vectorEnd = other.vectorEnd;
+	vectorCap = other.vectorCap;
 	return *this;
 }

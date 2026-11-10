@@ -586,8 +586,11 @@ CFileLoader::LoadCollisionModel(uint8 *buf, CColModel &model, char *modelname)
 #endif
 			buf += 12;
 		}
-	}else
+		model.numVertices = numVertices;
+	}else{
 		model.vertices = nil;
+		model.numVertices = 0;
+	}
 
 	model.numTriangles = *(int16*)buf;
 	buf += 4;
@@ -595,7 +598,7 @@ CFileLoader::LoadCollisionModel(uint8 *buf, CColModel &model, char *modelname)
 		model.triangles = (CColTriangle*)RwMalloc(model.numTriangles*sizeof(CColTriangle));
 		REGISTER_MEMPTR(&model.triangles);
 		for(i = 0; i < model.numTriangles; i++){
-			model.triangles[i].Set(*(int32*)buf, *(int32*)(buf+4), *(int32*)(buf+8), buf[12]);
+			model.triangles[i].Set(*(int32*)buf, *(int32*)(buf+4), *(int32*)(buf+8), buf[12], buf[15]);
 			buf += 16;
 		}
 	}else

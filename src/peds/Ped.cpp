@@ -5017,7 +5017,7 @@ CPed::PreRender(void)
 				for(int i = 0; i < ourCol->numSpheres; i++) {
 					CColSphere *sphere = &ourCol->spheres[i];
 					CVector splashPos;
-					switch (sphere->piece) {
+					switch (sphere->material) {
 						case PEDPIECE_LEFTARM:
 						case PEDPIECE_RIGHTARM:
 						case PEDPIECE_HEAD:

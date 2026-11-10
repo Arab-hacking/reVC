@@ -13,9 +13,12 @@ struct CSphere
 
 struct CColSphere : public CSphere
 {
+	uint8 light;
 	uint8 surface;
-	uint8 piece;
+	uint8 pad;
+	uint8 material;
 
+	void Set(float radius, const CVector &center, uint8 light, uint8 surface, uint8 material);
 	void Set(float radius, const CVector &center, uint8 surf, uint8 piece);
 	bool IntersectRay(CVector const &from, CVector const &dir, CVector &entry, CVector &exit);
 	using CSphere::Set;

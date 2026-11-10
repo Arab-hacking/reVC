@@ -1217,7 +1217,7 @@ MoveColModelMemory(CColModel& colModel, bool onlyOne)
 		return true;
 	if (MoveMem((void**)&colModel.triangles) && onlyOne)
 		return true;
-	if (MoveMem((void**)&colModel.trianglePlanes) && onlyOne)
+	if (MoveMem((void**)&colModel.planes) && onlyOne)
 		return true;
 	return false;
 }

@@ -2217,7 +2217,7 @@ CPed::FightStrike(CVector &touchedNodePos, bool fightWithWeapon)
 
 					// We can beat him too
 					if (sq(maxDistanceToBeat) > attackDistance.MagnitudeSqr()) {
-						FightHitPed(nearPed, touchedNodePos, attackDistance, hisPieces[j].piece);
+						FightHitPed(nearPed, touchedNodePos, attackDistance, hisPieces[j].material);
 						pedFound = 1;
 						break;
 					}
@@ -2248,7 +2248,7 @@ CPed::FightStrike(CVector &touchedNodePos, bool fightWithWeapon)
 
 						// We can beat him too
 						if (sq(maxDistanceToBeat2) > attackDistance.MagnitudeSqr()) {
-							FightHitPed(nearPed, extendedTouchPoint, attackDistance, hisPieces[j].piece);
+							FightHitPed(nearPed, extendedTouchPoint, attackDistance, hisPieces[j].material);
 							break;
 						}
 					}

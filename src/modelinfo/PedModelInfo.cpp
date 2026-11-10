@@ -201,7 +201,7 @@ CPedModelInfo::CreateHitColModelSkinned(RpClump *clump)
 #endif
 		spheres[i].radius = m_pColNodeInfos[i].radius;
 		spheres[i].surface = SURFACE_PED;
-		spheres[i].piece = m_pColNodeInfos[i].pieceType;
+		spheres[i].material = m_pColNodeInfos[i].pieceType;
 	}
 	RwMatrixDestroy(invmat);
 	RwMatrixDestroy(mat);

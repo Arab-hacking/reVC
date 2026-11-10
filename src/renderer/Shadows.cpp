@@ -1624,7 +1624,7 @@ CShadows::CastShadowEntityXY(CEntity *pEntity,  float fStartX, float fStartY, fl
 
 	for ( int32 i = 0; i < pCol->numTriangles; i++ )
 	{
-		CColTrianglePlane *pColTriPlanes = pCol->trianglePlanes;
+		CColTrianglePlane *pColTriPlanes = pCol->planes;
 		ASSERT(pColTriPlanes != nil);
 
 		CVector normal;
@@ -2281,9 +2281,9 @@ CShadows::CastShadowEntityXYZ(CEntity *pEntity, CVector *pPosn,
 			collision->GetTrianglePoint(p[1], collision->triangles[i].b);
 			collision->GetTrianglePoint(p[2], collision->triangles[i].c);
 			
-			if ( CCollision::TestSphereTriangle(colSphere, collision->vertices, collision->triangles[i], collision->trianglePlanes[i]) )
+			if ( CCollision::TestSphereTriangle(colSphere, collision->vertices, collision->triangles[i], collision->planes[i]) )
 			{
-				CVector n(collision->trianglePlanes[i].GetNormalX(), collision->trianglePlanes[i].GetNormalY(), collision->trianglePlanes[i].GetNormalZ());
+				CVector n(collision->planes[i].GetNormalX(), collision->planes[i].GetNormalY(), collision->planes[i].GetNormalZ());
 				if(n.z < 0.0f)
 					n = -n;
 				CVector offset = n * 0.028f;

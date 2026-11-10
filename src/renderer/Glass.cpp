@@ -781,7 +781,7 @@ CGlass::CarWindscreenShatters(CVehicle *vehicle, bool unk)
 	
 	CCollision::CalculateTrianglePlanes(col);
 	
-	CColTrianglePlane *triPlanes = col->trianglePlanes;
+	CColTrianglePlane *triPlanes = col->planes;
 	
 	if ( triPlanes == nil )
 		return;
@@ -943,7 +943,7 @@ CGlass::BreakGlassPhysically(CVector pos, float radius)
 		return;
 	
 	CColSphere sphere;
-	sphere.piece = 0;
+	sphere.material = 0;
 	sphere.radius = radius;
 	sphere.surface = 0;
 	
@@ -975,7 +975,7 @@ CGlass::BreakGlassPhysically(CVector pos, float radius)
 					for ( int32 j = 0; j < col->numTriangles; j++ )
 					{
 						if ( CCollision::TestSphereTriangle(sphere,
-							col->vertices, col->triangles[j], col->trianglePlanes[j]) )
+							col->vertices, col->triangles[j], col->planes[j]) )
 						{
 							hit = true;
 						}
