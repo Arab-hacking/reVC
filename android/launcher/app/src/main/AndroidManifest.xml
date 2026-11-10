@@ -18,7 +18,8 @@
         android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
 
-    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+    <!-- Game files are imported via the system picker into app-owned storage;
+         no MANAGE_EXTERNAL_STORAGE permission is needed. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
@@ -61,13 +62,14 @@
         android:anyDensity="true"
         android:largeScreens="true"
         android:normalScreens="true"
-        android:resizeable="true"
+        android:resizeable="false"
         android:smallScreens="true" />
 
     <application
         android:gwpAsanMode="always"
         android:isGame="true"
         android:appCategory="game"
+        android:resizeableActivity="false"
         android:allowAudioPlaybackCapture="true"
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
@@ -81,8 +83,15 @@
         android:theme="@style/Theme.ReVC"
         tools:targetApi="31">
 
+        <property
+            android:name="android.window.PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY"
+            android:value="true" />
+
         <activity
             android:name=".MainActivity"
+            android:screenOrientation="sensorLandscape"
+            android:resizeableActivity="false"
+            android:configChanges="layoutDirection|locale|orientation|uiMode|screenLayout|screenSize|smallestScreenSize|keyboard|keyboardHidden|navigation"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -94,18 +103,14 @@
         <activity
             android:name="org.libsdl.app.SDLActivity"
             android:alwaysRetainTaskState="true"
-            android:launchMode="singleInstance"
+            android:launchMode="singleTask"
             android:hardwareAccelerated="true"
             android:largeHeap="true"
+            android:screenOrientation="sensorLandscape"
+            android:resizeableActivity="false"
             android:configChanges="layoutDirection|locale|orientation|uiMode|screenLayout|screenSize|smallestScreenSize|keyboard|keyboardHidden|navigation"
             android:preferMinimalPostProcessing="true"
-            android:exported="true">
-
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity>
+            android:exported="false" />
 
         <provider
             android:name="androidx.core.content.FileProvider"
@@ -119,7 +124,7 @@
 
         <meta-data
             android:name="android.max_aspect"
-            android:value="2.1" />
+            android:value="2.6" />
     </application>
 
 </manifest>

@@ -11,12 +11,17 @@
 #include "RwHelper.h"
 #include "Camera.h"
 #include "MBlur.h"
+#include "GL3Atmosphere.h"
 #include "postfx.h"
 
 RwRaster *CPostFX::pFrontBuffer;
 RwRaster *CPostFX::pBackBuffer;
 bool CPostFX::bJustInitialised;
+#ifdef ANDROID
+int CPostFX::EffectSwitch = POSTFX_OFF;
+#else
 int CPostFX::EffectSwitch = POSTFX_NORMAL;
+#endif
 bool CPostFX::BlurOn = false;
 bool CPostFX::MotionBlurOn = false;
 
@@ -30,6 +35,7 @@ void *contrast_PS;
 #endif
 #ifdef RW_OPENGL
 int32 u_blurcolor;
+int32 u_blurTexel;
 int32 u_contrastAdd;
 int32 u_contrastMult;
 rw::gl3::Shader *colourFilterVC;
@@ -41,6 +47,7 @@ CPostFX::InitOnce(void)
 {
 #ifdef RW_OPENGL
 	u_blurcolor = rw::gl3::registerUniform("u_blurcolor");
+	u_blurTexel = rw::gl3::registerUniform("u_blurTexel");
 	u_contrastAdd = rw::gl3::registerUniform("u_contrastAdd");
 	u_contrastMult = rw::gl3::registerUniform("u_contrastMult");
 #endif
@@ -300,9 +307,21 @@ CPostFX::RenderOverlayShader(RwCamera *cam, int32 r, int32 g, int32 b, int32 a)
 		rw::d3d::im2dOverridePS = colourfilterVC_PS;
 #endif
 #ifdef RW_OPENGL
+		float blurTexel[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+		if(GL3Atmosphere::Enabled && pBackBuffer && cam && RwCameraGetRaster(cam)){
+			const float texW = (float)Max(1, RwRasterGetWidth(pBackBuffer));
+			const float texH = (float)Max(1, RwRasterGetHeight(pBackBuffer));
+			const float camW = (float)Max(1, RwRasterGetWidth(RwCameraGetRaster(cam)));
+			const float camH = (float)Max(1, RwRasterGetHeight(RwCameraGetRaster(cam)));
+			blurTexel[0] = 1.0f / texW;
+			blurTexel[1] = 1.0f / texH;
+			blurTexel[2] = Min(1.0f, camW / texW);
+			blurTexel[3] = Min(1.0f, camH / texH);
+		}
 		rw::gl3::im2dOverrideShader = colourFilterVC;
 		colourFilterVC->use();
 		glUniform4fv(colourFilterVC->uniformLocations[u_blurcolor], 1, blurcolors);
+		glUniform4fv(colourFilterVC->uniformLocations[u_blurTexel], 1, blurTexel);
 #endif
 	}
 	RwIm2DRenderIndexedPrimitive(rwPRIMTYPETRILIST, Vertex, 4, Index, 6);
@@ -378,9 +397,26 @@ CPostFX::NeedFrontBuffer(int32 type)
 	return false;
 }
 
+static void
+EnsurePostFXBuffers(RwCamera *cam)
+{
+	if(cam == nil || RwCameraGetRaster(cam) == nil)
+		return;
+	uint32 width  = Pow(2.0f, int32(log2(RwRasterGetWidth (RwCameraGetRaster(cam))))+1);
+	uint32 height = Pow(2.0f, int32(log2(RwRasterGetHeight(RwCameraGetRaster(cam))))+1);
+	if(CPostFX::pFrontBuffer == nil || CPostFX::pBackBuffer == nil ||
+	   (uint32)RwRasterGetWidth(CPostFX::pBackBuffer) != width ||
+	   (uint32)RwRasterGetHeight(CPostFX::pBackBuffer) != height){
+		CPostFX::Open(cam);
+	}
+}
+
 void
 CPostFX::GetBackBuffer(RwCamera *cam)
 {
+	EnsurePostFXBuffers(cam);
+	if(pBackBuffer == nil)
+		return;
 	RwRasterPushContext(pBackBuffer);
 	RwRasterRenderFast(RwCameraGetRaster(cam), 0, 0);
 	RwRasterPopContext();
@@ -389,10 +425,20 @@ CPostFX::GetBackBuffer(RwCamera *cam)
 void
 CPostFX::Render(RwCamera *cam, uint32 red, uint32 green, uint32 blue, uint32 blur, int32 type, uint32 bluralpha)
 {
+#ifdef ANDROID
+	// On Android GL3, colour grading (data/colorcycle.dat), contrast and gamma run
+	// inline in fragment registers without allocating 4096x2048 RGBA8 RTs or
+	// triggering a full-frame GMEM glCopyTexSubImage2D resolve on tiled mobile GPUs.
+	if(GL3Atmosphere::Enabled &&
+	   type != MOTION_BLUR_SNIPER &&
+	   !MotionBlurOn &&
+	   CMBlur::Drunkness <= 0.001f){
+		return;
+	}
+#endif
 	PUSH_RENDERGROUP("CPostFX::Render");
 
-	if(pFrontBuffer == nil)
-		Open(cam);
+	EnsurePostFXBuffers(cam);
 	assert(pFrontBuffer);
 	assert(pBackBuffer);
 

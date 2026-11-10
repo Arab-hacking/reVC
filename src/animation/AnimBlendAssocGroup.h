@@ -2,6 +2,7 @@
 #define __GTA_ANIMBLENDASSOCGROUP_H__
 
 class CAnimBlendAssociation;
+class CAnimBlendHierarchy;
 struct CAnimBlock;
 
 class CAnimBlendAssocGroup
@@ -19,9 +20,11 @@ public:
 	CAnimBlendAssociation *GetAnimation(uint32 id);
 	CAnimBlendAssociation *GetAnimation(const char *name);
 	CAnimBlendAssociation *CopyAnimation(uint32 id);
+	CAnimBlendAssociation *CopyAnimation(uint32 id, RpClump *clump);
 	CAnimBlendAssociation *CopyAnimation(const char *name);
 	void CreateAssociations(const char *name);
 	void CreateAssociations(const char *blockName, RpClump *clump, const char **animNames, int numAssocs);
+	void CreateAssociations(const char *blockName, RpClump *clump, CAnimBlendHierarchy *const *hierarchies, int numAssocs);
 };
 
 #endif // __GTA_ANIMBLENDASSOCGROUP_H__

@@ -40,6 +40,10 @@
 #include "Zones.h"
 #include "Bike.h"
 #include "Wanted.h"
+#ifdef CUSTOM_MODELS
+#include "CustomModels.h"
+#include "CustomWorld.h"
+#endif
 
 #ifdef FIX_BUGS
 static bool IsSlideObjectUsedWrongByScript(const CVector& posTarget, const CVector& slideBy)
@@ -2001,6 +2005,12 @@ int8 CRunningScript::ProcessCommands900To999(int32 command)
 	{
 		CollectParameters(&m_nIp, 3);
 		CVector pos = *(CVector*)&ScriptParams[0];
+#if defined(ANDROID) && defined(CUSTOM_MODELS)
+		if (CCustomModels::ReplacesNativeWorldMap() && FindPlayerPed() == nil) {
+			if (CCustomWorld::ResolveSpawnPosition(pos, nil))
+				pos.z += 1.0f;
+		}
+#endif
 #ifdef FIX_BUGS
 		CTimer::Suspend();
 #else
@@ -2124,10 +2134,15 @@ int8 CRunningScript::ProcessCommands900To999(int32 command)
 	case COMMAND_ADD_BLIP_FOR_PICKUP:
 	{
 		CollectParameters(&m_nIp, 1);
-		CObject* pObject = CPickups::aPickUps[CPickups::GetActualPickupIndex(ScriptParams[0])].m_pObject;
+		int pickupIndex = CPickups::GetActualPickupIndex(ScriptParams[0]);
+		CObject* pObject = pickupIndex >= 0 ? CPickups::aPickUps[pickupIndex].m_pObject : nil;
 		CRadar::GetActualBlipArrayIndex(CollectNextParameterWithoutIncreasingPC(m_nIp));
-		int handle = CRadar::SetEntityBlip(BLIP_OBJECT, CPools::GetObjectPool()->GetIndex(pObject), 6, BLIP_DISPLAY_BOTH);
-		CRadar::ChangeBlipScale(handle, 3);
+		int handle = -1;
+		if (pObject != nil) {
+			handle = CRadar::SetEntityBlip(BLIP_OBJECT, CPools::GetObjectPool()->GetIndex(pObject), 6, BLIP_DISPLAY_BOTH);
+			if (handle != -1)
+				CRadar::ChangeBlipScale(handle, 3);
+		}
 		ScriptParams[0] = handle;
 		StoreParameters(&m_nIp, 1);
 		return 0;

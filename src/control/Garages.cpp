@@ -204,7 +204,7 @@ int16 CGarages::AddOne(float X1, float Y1, float Z1, float X2, float Y2, float X
 {
 	if (NumGarages >= NUM_GARAGES) {
 		assert(0);
-		return NumGarages++;
+		return NUM_GARAGES - 1;
 	}
 	CGarage* pGarage = &aGarages[NumGarages];
 	pGarage->m_fInfX = Min(Min(Min(X1, X2), X3), X2 + X3 - X1);
@@ -1490,26 +1490,32 @@ void CGarage::BuildRotatedDoorMatrix(CEntity * pDoor, float fPosition)
 void CGarage::UpdateCrusherAngle()
 {
 	RefreshDoorPointers(false);
-	m_pDoor2->GetMatrix().SetRotateXOnly(TWOPI - m_fDoorPos);
-	m_pDoor2->GetMatrix().UpdateRW();
-	m_pDoor2->UpdateRwFrame();
+	if (m_pDoor2) {
+		m_pDoor2->GetMatrix().SetRotateXOnly(TWOPI - m_fDoorPos);
+		m_pDoor2->GetMatrix().UpdateRW();
+		m_pDoor2->UpdateRwFrame();
+	}
 }
 
 void CGarage::UpdateCrusherShake(float X, float Y)
 {
 	RefreshDoorPointers(false);
-	m_pDoor1->GetMatrix().GetPosition().x += X;
-	m_pDoor1->GetMatrix().GetPosition().y += Y;
-	m_pDoor1->GetMatrix().UpdateRW();
-	m_pDoor1->UpdateRwFrame();
-	m_pDoor1->GetMatrix().GetPosition().x -= X;
-	m_pDoor1->GetMatrix().GetPosition().y -= Y;
-	m_pDoor2->GetMatrix().GetPosition().x += X;
-	m_pDoor2->GetMatrix().GetPosition().y += Y;
-	m_pDoor2->GetMatrix().UpdateRW();
-	m_pDoor2->UpdateRwFrame();
-	m_pDoor2->GetMatrix().GetPosition().x -= X;
-	m_pDoor2->GetMatrix().GetPosition().y -= Y;
+	if (m_pDoor1) {
+		m_pDoor1->GetMatrix().GetPosition().x += X;
+		m_pDoor1->GetMatrix().GetPosition().y += Y;
+		m_pDoor1->GetMatrix().UpdateRW();
+		m_pDoor1->UpdateRwFrame();
+		m_pDoor1->GetMatrix().GetPosition().x -= X;
+		m_pDoor1->GetMatrix().GetPosition().y -= Y;
+	}
+	if (m_pDoor2) {
+		m_pDoor2->GetMatrix().GetPosition().x += X;
+		m_pDoor2->GetMatrix().GetPosition().y += Y;
+		m_pDoor2->GetMatrix().UpdateRW();
+		m_pDoor2->UpdateRwFrame();
+		m_pDoor2->GetMatrix().GetPosition().x -= X;
+		m_pDoor2->GetMatrix().GetPosition().y -= Y;
+	}
 }
 
 void CGarage::RefreshDoorPointers(bool bCreate)
@@ -1726,10 +1732,10 @@ void CGarage::FindDoorsEntities()
 {
 	m_pDoor1 = nil;
 	m_pDoor2 = nil;
-	int xstart = Max(0, CWorld::GetSectorIndexX(GetGarageCenterX() - 100.0f));
-	int xend = Min(NUMSECTORS_X - 1, CWorld::GetSectorIndexX(GetGarageCenterX() + 100.0f));
-	int ystart = Max(0, CWorld::GetSectorIndexY(GetGarageCenterY() - 100.0f));
-	int yend = Min(NUMSECTORS_Y - 1, CWorld::GetSectorIndexY(GetGarageCenterY() + 100.0f));
+	int xstart = CWorld::GetSectorIndexX(GetGarageCenterX() - 100.0f);
+	int xend = CWorld::GetSectorIndexX(GetGarageCenterX() + 100.0f);
+	int ystart = CWorld::GetSectorIndexY(GetGarageCenterY() - 100.0f);
+	int yend = CWorld::GetSectorIndexY(GetGarageCenterY() + 100.0f);
 	assert(xstart <= xend);
 	assert(ystart <= yend);
 

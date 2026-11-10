@@ -17,8 +17,17 @@ struct CColTriangle
 	uint16 a;
 	uint16 b;
 	uint16 c;
+	uint8 material;
 	uint8 surface;
 
+	void Set(int a, int b, int c, uint8 material, uint8 surface)
+	{
+		this->a = a;
+		this->b = b;
+		this->c = c;
+		this->material = material;
+		this->surface = surface;
+	}
 	void Set(int a, int b, int c, uint8 surf)
 	{
 		this->a = a;

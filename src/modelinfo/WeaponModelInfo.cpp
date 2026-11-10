@@ -29,6 +29,7 @@ void
 CWeaponModelInfo::Init(void)
 {
 	CSimpleModelInfo::Init();
+	m_animFileIndex = -1; // the base store is reused when starting a new game
 	SetWeaponInfo(0);
 }
 

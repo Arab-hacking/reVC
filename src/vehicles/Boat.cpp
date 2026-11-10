@@ -497,11 +497,7 @@ CBoat::ProcessControl(void)
 			}
 		}
 
-		// Slow down or push down boat as it approaches the world limits
-		m_vecMoveSpeed.x = Min(m_vecMoveSpeed.x, -(GetPosition().x - (WORLD_MAX_X-100.0f))*0.01f);	// east
-		m_vecMoveSpeed.x = Max(m_vecMoveSpeed.x, -(GetPosition().x - (WORLD_MIN_X+100.0f))*0.01f);	// west
-		m_vecMoveSpeed.y = Min(m_vecMoveSpeed.y, -(GetPosition().y - (WORLD_MAX_Y-100.0f))*0.01f);	// north
-		m_vecMoveSpeed.y = Max(m_vecMoveSpeed.y, -(GetPosition().y - (WORLD_MIN_Y+100.0f))*0.01f);	// south
+		// The native sector grid is not a physical boundary for boats.
 
 		if(!onLand && bBoatInWater && !bSeparateTurnForce)
 			ApplyWaterResistance();

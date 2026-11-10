@@ -10,6 +10,18 @@ class CEntity;
 #endif
 #define FADE_DISTANCE 20.0f
 #define STREAM_DISTANCE 30.0f
+#define DRAWDIST_MIN 0.80f
+#define DRAWDIST_MAX 3.00f
+#define DRAWDIST_RANGE (DRAWDIST_MAX - DRAWDIST_MIN)
+#define LIGHTDIST_MIN 0.50f
+#define LIGHTDIST_MAX 5.00f
+#ifdef ANDROID
+#define LIGHTDIST_DEFAULT 2.50f
+#else
+#define LIGHTDIST_DEFAULT 2.00f
+#endif
+
+#include <vector>
 
 extern bool gbShowPedRoadGroups;
 extern bool gbShowCarRoadGroups;
@@ -36,15 +48,15 @@ struct BlockedRange
 class CRenderer
 {
 	static int32 ms_nNoOfVisibleEntities;
-	static CEntity *ms_aVisibleEntityPtrs[NUMVISIBLEENTITIES];
+	static std::vector<CEntity *> ms_aVisibleEntityPtrs;
 	static int32 ms_nNoOfInVisibleEntities;
-	static CEntity *ms_aInVisibleEntityPtrs[NUMINVISIBLEENTITIES];
+	static std::vector<CEntity *> ms_aInVisibleEntityPtrs;
 #ifdef NEW_RENDERER
 	static int32 ms_nNoOfVisibleVehicles;
-	static CEntity *ms_aVisibleVehiclePtrs[NUMVISIBLEENTITIES];
+	static std::vector<CEntity *> ms_aVisibleVehiclePtrs;
 	// for cWorldStream emulation
 	static int32 ms_nNoOfVisibleBuildings;
-	static CEntity *ms_aVisibleBuildingPtrs[NUMVISIBLEENTITIES];
+	static std::vector<CEntity *> ms_aVisibleBuildingPtrs;
 #endif
 
 	static CVUVECTOR ms_vecCameraPosition;
@@ -56,6 +68,7 @@ class CRenderer
 	static BlockedRange *pEmptyBlockedRanges;
 public:
 	static float ms_lodDistScale;
+	static float ms_fLightDistScale;
 	static bool m_loadingPriority;
 
 	static void Init(void);

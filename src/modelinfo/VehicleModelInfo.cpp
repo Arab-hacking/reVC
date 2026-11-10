@@ -1,3 +1,4 @@
+#include "SavehDiag.h"
 #include "common.h"
 #include <rpmatfx.h>
 
@@ -20,6 +21,11 @@
 #include "ModelIndices.h"
 #include "ModelInfo.h"
 #include "custompipes.h"
+#include "VehicleMaterialClassify.h"
+#ifdef CUSTOM_MODELS
+#include "CustomModels.h"
+#include "CommonCarcols.h"
+#endif
 
 int8 CVehicleModelInfo::ms_compsToUse[2] = { -2, -2 };
 int8 CVehicleModelInfo::ms_compsUsed[2];
@@ -27,7 +33,13 @@ RwRGBA CVehicleModelInfo::ms_vehicleColourTable[256];
 RwTexture *CVehicleModelInfo::ms_colourTextureTable[256];
 
 RwTexture *gpWhiteTexture;
+static RwTexture *gpFallbackEnvTexture;
 RwFrame *pMatFxIdentityFrame;
+
+// true while the currently processed vehicle model uses the GTA:San Andreas
+// node naming convention (see "GTA:San Andreas vehicle support" below).
+// Always false unless SA_VEHICLE_MODELS is defined.
+static bool gVehicleIsSAHierarchy;
 
 enum {
 	VEHICLE_FLAG_COLLAPSE	= 0x2,
@@ -72,6 +84,17 @@ RwObjectNameIdAssocation carIds[] = {
 	{ "headlights",		CAR_POS_HEADLIGHTS,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
 	{ "taillights",		CAR_POS_TAILLIGHTS,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
 	{ "exhaust",		CAR_POS_EXHAUST,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
+#ifdef SA_VEHICLE_MODELS
+	// GTA:SA and many converted/modded models name these frames without a
+	// "_dummy" suffix. They are only accepted if the canonical name above was
+	// not found, because CClumpModelInfo::SetFrameIds ignores frames that
+	// already carry a hierarchy id.
+	{ "bump_front",		CAR_BUMP_FRONT,	VEHICLE_FLAG_FRONT | VEHICLE_FLAG_COLLAPSE },
+	{ "bump_rear",		CAR_BUMP_REAR,	VEHICLE_FLAG_REAR | VEHICLE_FLAG_COLLAPSE },
+	{ "bonnet",		CAR_BONNET,	VEHICLE_FLAG_COLLAPSE },
+	{ "boot",		CAR_BOOT,	VEHICLE_FLAG_REAR | VEHICLE_FLAG_COLLAPSE },
+	{ "windscreen",		CAR_WINDSCREEN,	VEHICLE_FLAG_WINDSCREEN | VEHICLE_FLAG_DRAWLAST | VEHICLE_FLAG_FRONT | VEHICLE_FLAG_COLLAPSE },
+#endif
 	{ "extra1",		0, VEHICLE_FLAG_DRAWLAST | VEHICLE_FLAG_COMP | CLUMP_FLAG_NO_HIERID },
 	{ "extra2",		0, VEHICLE_FLAG_DRAWLAST | VEHICLE_FLAG_COMP | CLUMP_FLAG_NO_HIERID },
 	{ "extra3",		0, VEHICLE_FLAG_DRAWLAST | VEHICLE_FLAG_COMP | CLUMP_FLAG_NO_HIERID },
@@ -179,6 +202,10 @@ CVehicleModelInfo::CVehicleModelInfo(void)
 	}
 	m_numColours = 0;
 	m_animFileIndex = -1;
+#ifdef SA_VEHICLE_MODELS
+	m_bHasEmbeddedColModel = false;
+#endif
+	m_bSAWheelMesh = false;
 }
 
 void
@@ -240,10 +267,270 @@ CVehicleModelInfo::CreateInstance(void)
 	return (RwObject*)clump;
 }
 
+#ifdef SA_VEHICLE_MODELS
+//
+// GTA:San Andreas vehicle support
+//
+// Vice City marks the level of detail of every vehicle mesh in the frame node
+// name: only atomics whose name contains "_hi" (or starts with "extra") are
+// drawn as part of the vehicle, "_lo" ones are removed and "_vlo" ones are used
+// for the very low detail pass. A mesh with any other name is not rendered at
+// all.
+//
+// San Andreas models don't use that convention - their meshes are named "body",
+// "interior", "lights_front", "windscreen_stock" and so on, so under VC rules
+// such a vehicle is invisible (only its "_vlo" mesh would show up).
+//
+// A model counts as SA-style when none of its atomic frames carries a VC LOD
+// marker. In that case every mesh that is not a LOD/damage part is drawn in hi
+// detail, exactly like San Andreas does it.
+//
+static RpAtomic*
+DetectSAHierarchyCB(RpAtomic *atomic, void *data)
+{
+	char *name = GetFrameNodeName(RpAtomicGetFrame(atomic));
+	if(name && strstr(name, "_hi"))
+		*(bool*)data = true;
+	return atomic;
+}
+
+static bool
+IsSAHierarchy(RpClump *clump)
+{
+	bool hasHi = false;
+	RpClumpForAllAtomics(clump, DetectSAHierarchyCB, &hasHi);
+	return !hasHi;
+}
+
+// true if the frame or any of its children has an atomic attached
+static RwObject*
+FrameHasObjectCB(RwObject *object, void *data)
+{
+	*(bool*)data = true;
+	return object;
+}
+
+static RwFrame*
+FrameTreeHasObjectCB(RwFrame *frame, void *data)
+{
+	RwFrameForAllObjects(frame, FrameHasObjectCB, data);
+	if(!*(bool*)data)
+		RwFrameForAllChildren(frame, FrameTreeHasObjectCB, data);
+	return frame;
+}
+
+static bool
+FrameHasObject(RwFrame *frame)
+{
+	bool found = false;
+	FrameTreeHasObjectCB(frame, &found);
+	return found;
+}
+
+void
+CVehicleModelInfo::AddGenericWheelModel(RwFrame *frame)
+{
+	RpAtomic *atomic;
+	RwV3d scale;
+
+	if(m_wheelId == -1){
+		RwFrameDestroy(frame);
+		return;
+	}
+	atomic = (RpAtomic*)CModelInfo::GetModelInfo(m_wheelId)->CreateInstance();
+	RwFrameDestroy(RpAtomicGetFrame(atomic));
+	RpAtomicSetFrame(atomic, frame);
+	RpClumpAddAtomic(m_clump, atomic);
+	CVisibilityPlugins::SetAtomicRenderCallback(atomic,
+		CVisibilityPlugins::RenderWheelAtomicCB);
+	scale.x = m_wheelScale;
+	scale.y = m_wheelScale;
+	scale.z = m_wheelScale;
+	RwFrameScale(frame, &scale, rwCOMBINEPRECONCAT);
+}
+
+#ifdef SA_VEHICLE_MODELS
+void
+CVehicleModelInfo::SetEmbeddedColModel(CColModel *col)
+{
+	// the collision that came with the DFF wins over what the .col files gave
+	// this model index before
+	if(m_colModel != col)
+		DeleteCollisionModel();
+	SetColModel(col, true);
+	m_bHasEmbeddedColModel = true;
+}
+#endif
+
+// SA models carry their wheel meshes inside the DFF: there is one "wheel" mesh,
+// attached to the first wheel dummy, which the SA game clones onto the remaining
+// wheel_*_dummy frames. Do the same here, otherwise the car would lose three of
+// its wheels (VC vehicles used to have their wheels in a separate model).
+static RwFrame*
+FindChildAtomicFrameCB(RwFrame *frame, void *data)
+{
+	RwFrame **result = (RwFrame**)data;
+	bool found = false;
+
+	RwFrameForAllObjects(frame, FrameHasObjectCB, &found);
+	if(found){
+		*result = frame;
+		return nil;
+	}
+	RwFrameForAllChildren(frame, FindChildAtomicFrameCB, data);
+	return *result ? nil : frame;
+}
+
+// returns the frame holding the wheel mesh of a wheel dummy (or nil)
+static RwFrame*
+FindWheelMeshFrame(RwFrame *dummy)
+{
+	RwFrame *f;
+
+	if(dummy == nil)
+		return nil;
+	if(GetFirstObject(dummy))
+		return dummy;
+	f = nil;
+	RwFrameForAllChildren(dummy, FindChildAtomicFrameCB, &f);
+	return f;
+}
+
+// "wheel_rf_dummy" -> 'f', "wheel_lb_dummy" -> 'b' etc; 0 if the name doesn't
+// follow the usual wheel dummy convention
+static char
+WheelDummyFrontRearPos(RwFrame *dummy)
+{
+	char *name = GetFrameNodeName(dummy);
+	char *s;
+
+	if(name == nil)
+		return 0;
+	s = strstr(name, "wheel_");
+	if(s == nil)
+		return 0;
+	s += 6;
+	return s[0] != '\0' ? s[1] : 0;
+}
+
+// Radius of a wheel mesh around its own origin. An SA wheel is modelled at its
+// real size and centred on the axle: x points along the axle, y and z are the
+// radial directions, so the largest |y|/|z| of the vertices is the tyre radius.
+float
+CVehicleModelInfo::GetWheelMeshRadius(RpAtomic *atomic)
+{
+	RpGeometry *geo;
+	RwV3d *verts;
+	int32 i, numVerts;
+	float radius, v;
+
+	geo = RpAtomicGetGeometry(atomic);
+	if(geo == nil || geo->morphTargets == nil || geo->numMorphTargets <= 0)
+		return 0.0f;
+	verts = geo->morphTargets[0].vertices;
+	numVerts = geo->numVertices;
+	if(verts == nil || numVerts <= 0)
+		return 0.0f;
+
+	radius = 0.0f;
+	for(i = 0; i < numVerts; i++){
+		v = Abs(verts[i].y);
+		if(v > radius) radius = v;
+		v = Abs(verts[i].z);
+		if(v > radius) radius = v;
+	}
+	return radius;
+}
+
+void
+CVehicleModelInfo::CloneSAWheelMeshes(RwFrame **wheelFrames, int32 numWheels)
+{
+	int32 i, j;
+	char pos;
+
+	// The wheel meshes were authored for SA, where the game takes the tyre radius
+	// directly from the mesh. VC instead assumes the wheel model was a unit wheel
+	// scaled by m_wheelScale, i.e. radius = 0.5*m_wheelScale. Keep both views
+	// consistent by deriving m_wheelScale from the mesh: with that every
+	// 0.5*m_wheelScale (suspension line, m_fHeightAboveRoad, m_aWheelPosition,
+	// wheel collision spheres, ProcessWheelRotation, ...) is the real radius and
+	// the tyres of the SA model end up exactly on the road. The mesh itself is
+	// then rendered unscaled (GetWheelRenderScale).
+	for(i = 0; i < numWheels; i++){
+		RwFrame *f = FindWheelMeshFrame(wheelFrames[i]);
+		RpAtomic *srcAtomic;
+		float radius;
+
+		if(f == nil)
+			continue;
+		srcAtomic = (RpAtomic*)GetFirstObject(f);
+		if(srcAtomic == nil)
+			continue;
+		radius = GetWheelMeshRadius(srcAtomic);
+		if(radius > 0.001f){
+			m_wheelScale = 2.0f*radius;
+			m_bSAWheelMesh = true;
+		}
+		break;
+	}
+
+	for(i = 0; i < numWheels; i++){
+		RwFrame *src, *f;
+		RpAtomic *srcAtomic, *atomic;
+
+		if(wheelFrames[i] == nil || FrameHasObject(wheelFrames[i]))
+			continue;	// already has a wheel mesh
+
+		// find the most suitable wheel mesh to clone: one from a dummy in the
+		// same position (front/middle/rear) is best, any other one will do too
+		src = nil;
+		pos = WheelDummyFrontRearPos(wheelFrames[i]);
+		for(j = 0; j < numWheels; j++){
+			if(wheelFrames[j] == nil || j == i)
+				continue;
+			f = FindWheelMeshFrame(wheelFrames[j]);
+			if(f == nil)
+				continue;
+			if(src == nil)
+				src = f;
+			if(pos && WheelDummyFrontRearPos(wheelFrames[j]) == pos){
+				src = f;
+				break;
+			}
+		}
+		if(src == nil)
+			continue;
+		srcAtomic = (RpAtomic*)GetFirstObject(src);
+		if(srcAtomic == nil)
+			continue;
+
+		atomic = RpAtomicClone(srcAtomic);
+		if(atomic == nil)
+			continue;
+		// the mesh keeps the offset it had relative to its own dummy, the new
+		// dummy contributes the position of the wheel
+		f = RwFrameCreate();
+		*RwFrameGetMatrix(f) = *RwFrameGetMatrix(src);
+		RwFrameUpdateObjects(f);
+		RpAtomicSetFrame(atomic, f);
+		RwFrameAddChild(wheelFrames[i], f);
+		RpClumpAddAtomic(m_clump, atomic);
+		// same render callback as the original wheel mesh (VC's RenderWheelAtomicCB
+		// belongs to the separate wheel model VC used and must not be used here)
+		CVisibilityPlugins::SetAtomicRenderCallback(atomic,
+			RpAtomicGetRenderCallBack(srcAtomic));
+	}
+}
+#endif // SA_VEHICLE_MODELS
+
 void
 CVehicleModelInfo::SetClump(RpClump *clump)
 {
 	CClumpModelInfo::SetClump(clump);
+#ifdef SA_VEHICLE_MODELS
+	// must be known before the render callbacks are chosen
+	gVehicleIsSAHierarchy = IsSAHierarchy(clump);
+#endif
 	SetAtomicRenderCallbacks();
 	SetFrameIds(ms_vehicleDescs[m_vehicleType]);
 	PreprocessHierarchy();
@@ -336,13 +623,20 @@ CVehicleModelInfo::SetAtomicRendererCB(RpAtomic *atomic, void *data)
 			CVisibilityPlugins::SetAtomicRenderCallback(atomic, CVisibilityPlugins::RenderVehicleHiDetailAlphaCB);
 		else
 			CVisibilityPlugins::SetAtomicRenderCallback(atomic, CVisibilityPlugins::RenderVehicleHiDetailCB);
+	}else if(strstr(name, "_vlo"))
+		CVisibilityPlugins::SetAtomicRenderCallback(atomic, CVisibilityPlugins::RenderVehicleReallyLowDetailCB);
+	else if(gVehicleIsSAHierarchy){
+		// SA hierarchy: no VC LOD markers at all, so everything that is not a
+		// LOD or damage part is drawn in hi detail
+		if(alpha)
+			CVisibilityPlugins::SetAtomicRenderCallback(atomic, CVisibilityPlugins::RenderVehicleHiDetailAlphaCB);
+		else
+			CVisibilityPlugins::SetAtomicRenderCallback(atomic, CVisibilityPlugins::RenderVehicleHiDetailCB);
 	}else if(strstr(name, "_lo")){
 		RpClumpRemoveAtomic(clump, atomic);
 		RpAtomicDestroy(atomic);
 		return atomic;		// BUG: nil in gta
-	}else if(strstr(name, "_vlo"))
-		CVisibilityPlugins::SetAtomicRenderCallback(atomic, CVisibilityPlugins::RenderVehicleReallyLowDetailCB);
-	else
+	}else
 		CVisibilityPlugins::SetAtomicRenderCallback(atomic, nil);
 	HideDamagedAtomicCB(atomic, nil);
 	return atomic;
@@ -369,7 +663,12 @@ CVehicleModelInfo::SetAtomicRendererCB_BigVehicle(RpAtomic *atomic, void *data)
 			CVisibilityPlugins::SetAtomicRenderCallback(atomic, CVisibilityPlugins::RenderVehicleLowDetailCB_BigVehicle);
 	}else if(strstr(name, "_vlo"))
 		CVisibilityPlugins::SetAtomicRenderCallback(atomic, CVisibilityPlugins::RenderVehicleReallyLowDetailCB_BigVehicle);
-	else
+	else if(gVehicleIsSAHierarchy){
+		if(alpha)
+			CVisibilityPlugins::SetAtomicRenderCallback(atomic, CVisibilityPlugins::RenderVehicleHiDetailAlphaCB_BigVehicle);
+		else
+			CVisibilityPlugins::SetAtomicRenderCallback(atomic, CVisibilityPlugins::RenderVehicleHiDetailCB_BigVehicle);
+	}else
 		CVisibilityPlugins::SetAtomicRenderCallback(atomic, nil);
 	HideDamagedAtomicCB(atomic, nil);
 	return atomic;
@@ -391,7 +690,12 @@ CVehicleModelInfo::SetAtomicRendererCB_Train(RpAtomic *atomic, void *data)
 			CVisibilityPlugins::SetAtomicRenderCallback(atomic, CVisibilityPlugins::RenderTrainHiDetailCB);
 	}else if(strstr(name, "_vlo"))
 		CVisibilityPlugins::SetAtomicRenderCallback(atomic, CVisibilityPlugins::RenderVehicleReallyLowDetailCB_BigVehicle);
-	else
+	else if(gVehicleIsSAHierarchy){
+		if(alpha)
+			CVisibilityPlugins::SetAtomicRenderCallback(atomic, CVisibilityPlugins::RenderTrainHiDetailAlphaCB);
+		else
+			CVisibilityPlugins::SetAtomicRenderCallback(atomic, CVisibilityPlugins::RenderTrainHiDetailCB);
+	}else
 		CVisibilityPlugins::SetAtomicRenderCallback(atomic, nil);
 	HideDamagedAtomicCB(atomic, nil);
 	return atomic;
@@ -421,7 +725,12 @@ CVehicleModelInfo::SetAtomicRendererCB_Boat(RpAtomic *atomic, void *data)
 		return atomic;		// BUG: not done by gta
 	}else if(strstr(name, "_vlo"))
 		CVisibilityPlugins::SetAtomicRenderCallback(atomic, CVisibilityPlugins::RenderVehicleLoDetailCB_Boat);
-	else{
+	else if(gVehicleIsSAHierarchy){
+		if(alpha)
+			CVisibilityPlugins::SetAtomicRenderCallback(atomic, CVisibilityPlugins::RenderVehicleHiDetailAlphaCB_Boat);
+		else
+			CVisibilityPlugins::SetAtomicRenderCallback(atomic, CVisibilityPlugins::RenderVehicleHiDetailCB_Boat);
+	}else{
 		if(alpha)
 			CVisibilityPlugins::SetAtomicRenderCallback(atomic, CVisibilityPlugins::RenderVehicleHiDetailAlphaCB_Boat);
 		else
@@ -466,13 +775,20 @@ CVehicleModelInfo::SetAtomicRendererCB_RealHeli(RpAtomic *atomic, void *data)
 			CVisibilityPlugins::SetAtomicRenderCallback(atomic, CVisibilityPlugins::RenderVehicleHiDetailAlphaCB);
 		else
 			CVisibilityPlugins::SetAtomicRenderCallback(atomic, CVisibilityPlugins::RenderVehicleHiDetailCB);
+	}else if(strstr(name, "_vlo"))
+		CVisibilityPlugins::SetAtomicRenderCallback(atomic, CVisibilityPlugins::RenderVehicleReallyLowDetailCB);
+	else if(gVehicleIsSAHierarchy){
+		// SA hierarchy: no VC LOD markers at all, so everything that is not a
+		// LOD or damage part is drawn in hi detail
+		if(alpha)
+			CVisibilityPlugins::SetAtomicRenderCallback(atomic, CVisibilityPlugins::RenderVehicleHiDetailAlphaCB);
+		else
+			CVisibilityPlugins::SetAtomicRenderCallback(atomic, CVisibilityPlugins::RenderVehicleHiDetailCB);
 	}else if(strstr(name, "_lo")){
 		RpClumpRemoveAtomic(clump, atomic);
 		RpAtomicDestroy(atomic);
 		return atomic;		// BUG: nil in gta
-	}else if(strstr(name, "_vlo"))
-		CVisibilityPlugins::SetAtomicRenderCallback(atomic, CVisibilityPlugins::RenderVehicleReallyLowDetailCB);
-	else
+	}else
 		CVisibilityPlugins::SetAtomicRenderCallback(atomic, nil);
 	HideDamagedAtomicCB(atomic, nil);
 	return atomic;
@@ -539,6 +855,11 @@ CVehicleModelInfo::PreprocessHierarchy(void)
 	desc = ms_vehicleDescs[m_vehicleType];
 	m_numDoors = 0;
 	m_numComps = 0;
+#ifdef SA_VEHICLE_MODELS
+	// VC knows up to 6 wheel dummies (wheel_rf/rm/rb/lf/lm/lb_dummy)
+	RwFrame *wheelFrames[6] = { nil, nil, nil, nil, nil, nil };
+	int32 wheelFramesFound = 0;
+#endif
 
 	for(i = 0; desc[i].name; i++){
 		RwObjectNameAssociation assoc;
@@ -564,6 +885,15 @@ CVehicleModelInfo::PreprocessHierarchy(void)
 			RwFrameDestroy(assoc.frame);
 		}else{
 			atomic = (RpAtomic*)GetFirstObject(assoc.frame);
+			if(atomic == nil)
+				continue;
+			if(m_numComps >= (int32)(sizeof(m_comps)/sizeof(m_comps[0]))){
+				// models with more extra parts than VC supports (SA car
+				// conversions often have 8+) keep the atomic in the clump
+				// instead of overflowing m_comps[]
+				SetVehicleComponentFlags(assoc.frame, desc[i].flags);
+				continue;
+			}
 			RpClumpRemoveAtomic(m_clump, atomic);
 			RwFrameRemoveChild(assoc.frame);
 			SetVehicleComponentFlags(assoc.frame, desc[i].flags);
@@ -598,23 +928,48 @@ CVehicleModelInfo::PreprocessHierarchy(void)
 		SetVehicleComponentFlags(assoc.frame, desc[i].flags);
 
 		if(desc[i].flags & VEHICLE_FLAG_ADD_WHEEL){
-			if(m_wheelId == -1)
-				RwFrameDestroy(assoc.frame);
-			else{
-				RwV3d scale;
-				atomic = (RpAtomic*)CModelInfo::GetModelInfo(m_wheelId)->CreateInstance();
-				RwFrameDestroy(RpAtomicGetFrame(atomic));
-				RpAtomicSetFrame(atomic, assoc.frame);
-				RpClumpAddAtomic(m_clump, atomic);
-				CVisibilityPlugins::SetAtomicRenderCallback(atomic,
-					CVisibilityPlugins::RenderWheelAtomicCB);
-				scale.x = m_wheelScale;
-				scale.y = m_wheelScale;
-				scale.z = m_wheelScale;
-				RwFrameScale(assoc.frame, &scale, rwCOMBINEPRECONCAT);
+#ifdef SA_VEHICLE_MODELS
+			if(gVehicleIsSAHierarchy){
+				// SA models bring their own wheel meshes. Just collect the dummies
+				// here; what to do with them is decided after the loop, because we
+				// have to know whether the model has a wheel mesh at all before
+				// falling back to the separate VC wheel model.
+				if(wheelFramesFound < (int32)(sizeof(wheelFrames)/sizeof(wheelFrames[0])))
+					wheelFrames[wheelFramesFound++] = assoc.frame;
+				continue;
 			}
+#endif
+			AddGenericWheelModel(assoc.frame);
 		}
 	}
+
+#ifdef SA_VEHICLE_MODELS
+	// SA vehicles store a single wheel mesh which has to be instantiated on all
+	// wheel dummy frames (in SA the game does that itself). Note that the mesh
+	// often hangs on a child frame of its dummy (usually "wheel" under
+	// "wheel_rf_dummy"), not directly on the dummy.
+	if(wheelFramesFound > 0){
+		bool hasOwnWheels = false;
+		for(i = 0; i < wheelFramesFound; i++)
+			if(FrameHasObject(wheelFrames[i]))
+				hasOwnWheels = true;
+		if(hasOwnWheels)
+			CloneSAWheelMeshes(wheelFrames, wheelFramesFound);
+		else	// no wheel mesh in the model: use the VC wheel model as before
+			for(i = 0; i < wheelFramesFound; i++)
+				AddGenericWheelModel(wheelFrames[i]);
+	}
+#endif
+#ifdef SA_VEHICLE_MODELS
+	{
+		bool own = false;
+		for(i = 0; i < wheelFramesFound; i++)
+			if(FrameHasObject(wheelFrames[i])) own = true;
+		SAVEH_LOG("[SAVEH] load %s type %d saHierarchy %d wheelId %d wheelFrames %d ownWheelMesh %d saMesh %d radius %.4f wheelScale %.4f\n",
+			GetModelName(), m_vehicleType, gVehicleIsSAHierarchy, m_wheelId, wheelFramesFound,
+			own, m_bSAWheelMesh, 0.5f*m_wheelScale, m_wheelScale);
+	}
+#endif
 }
 
 void
@@ -806,18 +1161,26 @@ struct editableMatCBData
 RpMaterial*
 CVehicleModelInfo::GetEditableMaterialListCB(RpMaterial *material, void *data)
 {
-	RwRGBA white = { 255, 255, 255, 255 };
 	const RwRGBA *col;
 	editableMatCBData *cbdata;
+	int slot = 0;
 
 	cbdata = (editableMatCBData*)data;
 	col = RpMaterialGetColor(material);
-	if(col->red == 0x3C && col->green == 0xFF && col->blue == 0){
-		cbdata->vehicle->m_materials1[cbdata->numMats1++] = material;
-		RpMaterialSetColor(material, &white);
-	}else if(col->red == 0xFF && col->green == 0 && col->blue == 0xAF){
-		cbdata->vehicle->m_materials2[cbdata->numMats2++] = material;
-		RpMaterialSetColor(material, &white);
+	if(customveh::IsEditableCarColorMarker(col->red, col->green, col->blue, slot)){
+		RwRGBA white = { 255, 255, 255, col->alpha };
+		if(slot == 1){
+			// one slot is reserved for the terminating nil
+			if(cbdata->numMats1 < NUM_FIRST_MATERIALS-1){
+				cbdata->vehicle->m_materials1[cbdata->numMats1++] = material;
+				RpMaterialSetColor(material, &white);
+			}
+		}else if(slot == 2){
+			if(cbdata->numMats2 < NUM_SECOND_MATERIALS-1){
+				cbdata->vehicle->m_materials2[cbdata->numMats2++] = material;
+				RpMaterialSetColor(material, &white);
+			}
+		}
 	}
 	return material;
 }
@@ -1056,6 +1419,28 @@ CVehicleModelInfo::LoadVehicleColours(void)
 	}
 
 	CFileMgr::CloseFile(fd);
+
+#ifdef CUSTOM_MODELS
+	// The SA table in common.zip only supplies RGB palette entries (no VC
+	// `car` section). Apply it after the native VC file so its vehicle colour
+	// combinations remain intact. A malformed archive must not change any
+	// palette entry or prevent loading the game's stock colours.
+	std::vector<uint8> bytes;
+	if(CCustomModels::ReadDataFile("data/carcols.dat", bytes)) {
+		std::vector<commoncarcols::RGB> palette;
+		if(commoncarcols::Parse(bytes.data(), bytes.size(), palette)) {
+			for(size_t n = 0; n < palette.size(); n++) {
+				ms_vehicleColourTable[n].red = palette[n].r;
+				ms_vehicleColourTable[n].green = palette[n].g;
+				ms_vehicleColourTable[n].blue = palette[n].b;
+				ms_vehicleColourTable[n].alpha = 0xFF;
+			}
+			CUSTOM_LOG("common.zip data/carcols.dat: applied %u RGB colours; native VC car combinations retained\n",
+				(unsigned)palette.size());
+		} else
+			CUSTOM_LOG("common.zip data/carcols.dat: invalid palette; native VC colours retained\n");
+	}
+#endif
 }
 
 void
@@ -1080,6 +1465,97 @@ CVehicleModelInfo::GetMatFXEffectMaterialCB(RpMaterial *material, void *data)
 	return nil;
 }
 
+struct VehicleReflSetupCtx
+{
+	CVehicleModelInfo *vehicle;
+	const char *frameName;
+};
+
+static bool
+IsRegisteredEditableMaterial(CVehicleModelInfo *veh, RpMaterial *mat)
+{
+	if(!veh || !mat)
+		return false;
+	for(RpMaterial **p = veh->m_materials1; *p; ++p)
+		if(*p == mat)
+			return true;
+	for(RpMaterial **p = veh->m_materials2; *p; ++p)
+		if(*p == mat)
+			return true;
+	return false;
+}
+
+static RpMaterial*
+ConfigureVehicleMaterialReflectionCB(RpMaterial *material, void *data)
+{
+	VehicleReflSetupCtx *ctx = (VehicleReflSetupCtx*)data;
+	const RwRGBA *col = RpMaterialGetColor(material);
+	RwTexture *baseTex = RpMaterialGetTexture(material);
+
+	customveh::VehicleMatInput in;
+	memset(&in, 0, sizeof(in));
+	in.isEditablePaint = ctx && IsRegisteredEditableMaterial(ctx->vehicle, material);
+	in.r = col ? col->red : 255;
+	in.g = col ? col->green : 255;
+	in.b = col ? col->blue : 255;
+	in.a = col ? col->alpha : 255;
+	in.frameName = ctx ? ctx->frameName : nil;
+	in.texName = baseTex ? RwTextureGetName(baseTex) : nil;
+#ifdef LIBRW
+	in.rawStructSpecular = ((rw::Material*)material)->surfaceProps.specular;
+#else
+	in.rawStructSpecular = RpMaterialGetSurfaceProperties(material)->specular;
+#endif
+	if(RpMatFXMaterialGetEffects(material) == rpMATFXEFFECTENVMAP){
+		in.hasMatFxEnv = true;
+		in.rawMatFxCoef = RpMatFXMaterialGetEnvMapCoefficient(material);
+	}
+#ifdef EXTENDED_PIPELINES
+	if(CustomPipes::CustomMatOffset > 0){
+		CustomPipes::CustomMatExt *ext = CustomPipes::GetCustomMatExt((rw::Material*)material);
+		if(ext){
+			in.hasSaEnv = ext->hasSaEnv;
+			in.saShininess = ext->saShininess;
+			in.hasSaSpec = ext->hasSaSpec;
+			in.saSpecularity = ext->saSpecularity;
+		}
+	}
+#endif
+
+	const float spec = customveh::ComputeVehicleMaterialSpecular(in);
+#ifdef LIBRW
+	((rw::Material*)material)->surfaceProps.specular = spec;
+#else
+	RwSurfaceProperties surf = *RpMaterialGetSurfaceProperties(material);
+	surf.specular = spec;
+	RpMaterialSetSurfaceProperties(material, &surf);
+#endif
+
+	if(spec > 0.0f && in.isEditablePaint && baseTex == nil && gpWhiteTexture)
+		RpMaterialSetTexture(material, gpWhiteTexture);
+
+	// Ensure MatFX fallback pipeline also has a valid envmap setup on SA/BR cars
+	if(spec > 0.0f && gpFallbackEnvTexture &&
+	   RpMatFXMaterialGetEffects(material) == rpMATFXEFFECTNULL){
+		RpMatFXMaterialSetEffects(material, rpMATFXEFFECTENVMAP);
+		RpMatFXMaterialSetupEnvMap(material, gpFallbackEnvTexture, pMatFxIdentityFrame, FALSE, spec);
+	}
+	return material;
+}
+
+static RpAtomic*
+ConfigureAtomicReflectionCB(RpAtomic *atomic, void *data)
+{
+	if(!atomic || !RpAtomicGetGeometry(atomic))
+		return atomic;
+	VehicleReflSetupCtx ctx;
+	ctx.vehicle = (CVehicleModelInfo*)data;
+	RwFrame *f = RpAtomicGetFrame(atomic);
+	ctx.frameName = f ? GetFrameNodeName(f) : nil;
+	RpGeometryForAllMaterials(RpAtomicGetGeometry(atomic), ConfigureVehicleMaterialReflectionCB, &ctx);
+	return atomic;
+}
+
 RpMaterial*
 CVehicleModelInfo::SetDefaultEnvironmentMapCB(RpMaterial *material, void *data)
 {
@@ -1087,6 +1563,8 @@ CVehicleModelInfo::SetDefaultEnvironmentMapCB(RpMaterial *material, void *data)
 		RpMatFXMaterialSetEnvMapFrame(material, pMatFxIdentityFrame);
 		if(RpMaterialGetTexture(material) == nil)
 			RpMaterialSetTexture(material, gpWhiteTexture);
+		if(RpMatFXMaterialGetEnvMapTexture(material) == nil && gpFallbackEnvTexture)
+			RpMatFXMaterialSetEnvMapTexture(material, gpFallbackEnvTexture);
 		RpMatFXMaterialSetEffects(material, rpMATFXEFFECTENVMAP);
 #ifndef PS2_MATFX
 		float coef = RpMatFXMaterialGetEnvMapCoefficient(material);
@@ -1127,15 +1605,34 @@ CVehicleModelInfo::SetEnvironmentMap(void)
 		RwFrameGetLTM(pMatFxIdentityFrame);
 	}
 
+	// Populate Neo specular/shininess from SA/BR/MatFX/paint/glass metadata
+	// BEFORE SetDefaultEnvironmentMapCB scales MatFX coef by 0.25f.
+	RpClumpForAllAtomics(m_clump, ConfigureAtomicReflectionCB, this);
+	for(i = 0; i < m_numComps; i++)
+		ConfigureAtomicReflectionCB(m_comps[i], this);
+
 	RpClumpForAllAtomics(m_clump, SetEnvironmentMapCB, nil);
+	for(i = 0; i < m_numComps; i++)
+		SetEnvironmentMapCB(m_comps[i], nil);
 	if(m_wheelId != -1){
 		wheelmi = (CSimpleModelInfo*)CModelInfo::GetModelInfo(m_wheelId);
-		for(i = 0; i < wheelmi->m_numAtomics; i++)
-			SetEnvironmentMapCB(wheelmi->m_atomics[i], nil);
+		if(wheelmi){
+			for(i = 0; i < wheelmi->m_numAtomics; i++){
+				ConfigureAtomicReflectionCB(wheelmi->m_atomics[i], nil);
+				SetEnvironmentMapCB(wheelmi->m_atomics[i], nil);
+#ifdef EXTENDED_PIPELINES
+				if(wheelmi->m_atomics[i])
+					CustomPipes::AttachVehiclePipe((rw::Atomic*)wheelmi->m_atomics[i]);
+#endif
+			}
+		}
 	}
 
 #ifdef EXTENDED_PIPELINES
 	CustomPipes::AttachVehiclePipe(m_clump);
+	for(i = 0; i < m_numComps; i++)
+		if(m_comps[i])
+			CustomPipes::AttachVehiclePipe((rw::Atomic*)m_comps[i]);
 #endif
 }
 
@@ -1152,6 +1649,39 @@ CVehicleModelInfo::LoadEnvironmentMaps(void)
 		RwTextureGetName(gpWhiteTexture)[0] = '@';
 		RwTextureSetFilterMode(gpWhiteTexture, rwFILTERLINEAR);
 	}
+	if(gpFallbackEnvTexture == nil){
+		RwImage *img = RwImageCreate(16, 16, 32);
+		RwUInt8 *pixels = (RwUInt8*)RwMalloc(16 * 16 * 4);
+		for(int y = 0; y < 16; y++){
+			float t = (float)y / 15.0f;
+			// Smooth sky-to-horizon reflection fallback for MatFX
+			RwUInt8 r = (RwUInt8)(155.0f + 75.0f * t);
+			RwUInt8 g = (RwUInt8)(190.0f + 45.0f * t);
+			RwUInt8 b = (RwUInt8)(235.0f + 15.0f * t);
+			for(int x = 0; x < 16; x++){
+				int idx = (y * 16 + x) * 4;
+				pixels[idx + 0] = r;
+				pixels[idx + 1] = g;
+				pixels[idx + 2] = b;
+				pixels[idx + 3] = 255;
+			}
+		}
+		RwImageSetPixels(img, pixels);
+		RwImageSetStride(img, 16 * 4);
+		RwImageSetPalette(img, nil);
+		RwInt32 w, h, d, fmt;
+		RwImageFindRasterFormat(img, rwRASTERTYPETEXTURE, &w, &h, &d, &fmt);
+		RwRaster *ras = RwRasterCreate(w, h, d, fmt);
+		RwRasterSetFromImage(ras, img);
+		RwImageDestroy(img);
+		RwFree(pixels);
+		gpFallbackEnvTexture = RwTextureCreate(ras);
+		if(gpFallbackEnvTexture){
+			RwTextureGetName(gpFallbackEnvTexture)[0] = '@';
+			RwTextureSetFilterMode(gpFallbackEnvTexture, rwFILTERLINEAR);
+			RwTextureSetAddressing(gpFallbackEnvTexture, rwTEXTUREADDRESSCLAMP);
+		}
+	}
 	CTxdStore::PopCurrentTxd();
 }
 
@@ -1160,6 +1690,10 @@ CVehicleModelInfo::ShutdownEnvironmentMaps(void)
 {
 	RwTextureDestroy(gpWhiteTexture);
 	gpWhiteTexture = nil;
+	if(gpFallbackEnvTexture){
+		RwTextureDestroy(gpFallbackEnvTexture);
+		gpFallbackEnvTexture = nil;
+	}
 	RwFrameDestroy(pMatFxIdentityFrame);
 	pMatFxIdentityFrame = nil;
 }

@@ -1,6 +1,14 @@
 #define WITHD3D
 #include "common.h"
 
+#ifdef RW_GL3
+#include "Timecycle.h"
+#include "Weather.h"
+#include "GL3Atmosphere.h"
+
+bool GL3Atmosphere::Enabled = true;
+#endif
+
 #include "main.h"
 #include "Lights.h"
 #include "ModelInfo.h"
@@ -23,8 +31,14 @@
 #include "PointLights.h"
 #include "Occlusion.h"
 #include "Renderer.h"
+#include "FrameRenderList.h"
 #include "custompipes.h"
 #include "Frontend.h"
+#ifdef CUSTOM_MODELS
+#include "CustomModels.h"
+#include "CustomWorld.h"
+#include "CustomTimecycle.h"
+#endif
 
 bool gbShowPedRoadGroups;
 bool gbShowCarRoadGroups;
@@ -53,20 +67,21 @@ struct EntityInfo
 CLinkList<EntityInfo> gSortedVehiclesAndPeds;
 
 int32 CRenderer::ms_nNoOfVisibleEntities;
-CEntity *CRenderer::ms_aVisibleEntityPtrs[NUMVISIBLEENTITIES];
-CEntity *CRenderer::ms_aInVisibleEntityPtrs[NUMINVISIBLEENTITIES];
+std::vector<CEntity *> CRenderer::ms_aVisibleEntityPtrs;
+std::vector<CEntity *> CRenderer::ms_aInVisibleEntityPtrs;
 int32 CRenderer::ms_nNoOfInVisibleEntities;
 #ifdef NEW_RENDERER
 int32 CRenderer::ms_nNoOfVisibleVehicles;
-CEntity *CRenderer::ms_aVisibleVehiclePtrs[NUMVISIBLEENTITIES];
+std::vector<CEntity *> CRenderer::ms_aVisibleVehiclePtrs;
 int32 CRenderer::ms_nNoOfVisibleBuildings;
-CEntity *CRenderer::ms_aVisibleBuildingPtrs[NUMVISIBLEENTITIES];
+std::vector<CEntity *> CRenderer::ms_aVisibleBuildingPtrs;
 #endif
 
 CVUVECTOR CRenderer::ms_vecCameraPosition;
 CVehicle *CRenderer::m_pFirstPersonVehicle;
 bool CRenderer::m_loadingPriority;
 float CRenderer::ms_lodDistScale = 1.2f;
+float CRenderer::ms_fLightDistScale = LIGHTDIST_DEFAULT;
 
 // unused
 BlockedRange CRenderer::aBlockedRanges[16];
@@ -76,7 +91,14 @@ BlockedRange* CRenderer::pEmptyBlockedRanges;
 void
 CRenderer::Init(void)
 {
-	gSortedVehiclesAndPeds.Init(40);
+	// More than 40 visible vehicles/peds can coexist in a modded world.
+	gSortedVehiclesAndPeds.Init(40, 64);
+	ms_aVisibleEntityPtrs.reserve(NUMVISIBLEENTITIES);
+	ms_aInVisibleEntityPtrs.reserve(NUMINVISIBLEENTITIES);
+#ifdef NEW_RENDERER
+	ms_aVisibleVehiclePtrs.reserve(NUMVISIBLEENTITIES);
+	ms_aVisibleBuildingPtrs.reserve(NUMVISIBLEENTITIES);
+#endif
 	SortBIGBuildings();
 }
 
@@ -84,6 +106,12 @@ void
 CRenderer::Shutdown(void)
 {
 	gSortedVehiclesAndPeds.Shutdown();
+	ClearFrameRenderItems(ms_aVisibleEntityPtrs, ms_nNoOfVisibleEntities);
+	ClearFrameRenderItems(ms_aInVisibleEntityPtrs, ms_nNoOfInVisibleEntities);
+#ifdef NEW_RENDERER
+	ClearFrameRenderItems(ms_aVisibleVehiclePtrs, ms_nNoOfVisibleVehicles);
+	ClearFrameRenderItems(ms_aVisibleBuildingPtrs, ms_nNoOfVisibleBuildings);
+#endif
 }
 
 void
@@ -123,6 +151,91 @@ CRenderer::PreRender(void)
 
 	CHeli::SpecialHeliPreRender();
 	CShadows::RenderExtraPlayerShadows();
+
+#if defined(LIBRW) && defined(RW_OPENGL)
+	{
+		float posRad[8 * 4];
+		float col[8 * 4];
+		float dir[8 * 4];
+		memset(posRad, 0, sizeof(posRad));
+		memset(col, 0, sizeof(col));
+		memset(dir, 0, sizeof(dir));
+
+		int chosenIdx[8] = { -1, -1, -1, -1, -1, -1, -1, -1 };
+		float chosenScore[8] = { 1.0e30f, 1.0e30f, 1.0e30f, 1.0e30f, 1.0e30f, 1.0e30f, 1.0e30f, 1.0e30f };
+		int chosenCount = 0;
+
+		const CVector camPos = TheCamera.GetPosition();
+		const CVector camFwd = TheCamera.GetForward();
+		const CVector focusPos = camPos + camFwd * 14.0f;
+
+		for(int li = 0; li < CPointLights::NumLights; li++){
+			const CRegisteredPointLight &pl = CPointLights::aLights[li];
+			if(pl.type != CPointLights::LIGHT_POINT && pl.type != CPointLights::LIGHT_DIRECTIONAL)
+				continue;
+			if(pl.radius <= 0.25f || (pl.red + pl.green + pl.blue) <= 0.01f)
+				continue;
+			const CVector fromCam = pl.coors - camPos;
+			if(DotProduct(fromCam, camFwd) < -pl.radius * 1.15f)
+				continue;
+			const float maxSceneLightDist = 285.0f * Max(1.0f, CRenderer::ms_fLightDistScale) + pl.radius;
+			if(fromCam.MagnitudeSqr() > sq(maxSceneLightDist))
+				continue;
+
+			const float d2 = (pl.coors - focusPos).MagnitudeSqr();
+			float score = d2 / Max(pl.radius * pl.radius, 4.0f);
+			if(pl.type == CPointLights::LIGHT_DIRECTIONAL)
+				score *= 0.45f; // Prioritize active vehicle headlight cones
+
+			int insertAt = -1;
+			if(chosenCount < 8){
+				insertAt = chosenCount++;
+			}else if(score < chosenScore[7]){
+				insertAt = 7;
+			}
+			if(insertAt >= 0){
+				chosenIdx[insertAt] = li;
+				chosenScore[insertAt] = score;
+				while(insertAt > 0 && chosenScore[insertAt] < chosenScore[insertAt - 1]){
+					int tmpI = chosenIdx[insertAt - 1];
+					float tmpS = chosenScore[insertAt - 1];
+					chosenIdx[insertAt - 1] = chosenIdx[insertAt];
+					chosenScore[insertAt - 1] = chosenScore[insertAt];
+					chosenIdx[insertAt] = tmpI;
+					chosenScore[insertAt] = tmpS;
+					insertAt--;
+				}
+			}
+		}
+
+		for(int k = 0; k < chosenCount; k++){
+			const CRegisteredPointLight &pl = CPointLights::aLights[chosenIdx[k]];
+			posRad[k * 4 + 0] = pl.coors.x;
+			posRad[k * 4 + 1] = pl.coors.y;
+			posRad[k * 4 + 2] = pl.coors.z;
+			posRad[k * 4 + 3] = pl.radius;
+
+			col[k * 4 + 0] = Max(pl.red, 0.0f);
+			col[k * 4 + 1] = Max(pl.green, 0.0f);
+			col[k * 4 + 2] = Max(pl.blue, 0.0f);
+			col[k * 4 + 3] = 1.0f;
+
+			if(pl.type == CPointLights::LIGHT_DIRECTIONAL){
+				CVector d = pl.dir;
+				if(d.MagnitudeSqr() > 1.0e-5f)
+					d.Normalise();
+				else
+					d = CVector(0.0f, 1.0f, 0.0f);
+				dir[k * 4 + 0] = d.x;
+				dir[k * 4 + 1] = d.y;
+				dir[k * 4 + 2] = d.z;
+				dir[k * 4 + 3] = 1.0f;
+			}
+		}
+
+		rw::setScenePointLights(chosenCount, posRad, col, dir);
+	}
+#endif
 }
 
 void
@@ -591,10 +704,10 @@ CRenderer::RenderTransparentWater(void)
 void
 CRenderer::ClearForFrame(void)
 {
-	ms_nNoOfVisibleEntities = 0;
-	ms_nNoOfVisibleVehicles = 0;
-	ms_nNoOfVisibleBuildings = 0;
-	ms_nNoOfInVisibleEntities = 0;
+	ClearFrameRenderItems(ms_aVisibleEntityPtrs, ms_nNoOfVisibleEntities);
+	ClearFrameRenderItems(ms_aVisibleVehiclePtrs, ms_nNoOfVisibleVehicles);
+	ClearFrameRenderItems(ms_aVisibleBuildingPtrs, ms_nNoOfVisibleBuildings);
+	ClearFrameRenderItems(ms_aInVisibleEntityPtrs, ms_nNoOfInVisibleEntities);
 	gSortedVehiclesAndPeds.Clear();
 
 	WorldRender::numBlendInsts[PASS_NOZ] = 0;
@@ -865,21 +978,56 @@ CRenderer::SetupBigBuildingVisibility(CEntity *ent)
 	}else if(mi->GetModelType() == MITYPE_VEHICLE)
 		return ent->IsVisible() ? VIS_VISIBLE : VIS_INVISIBLE;
 
-	float dist = (ms_vecCameraPosition-ent->GetPosition()).Magnitude();
+	float distSq = (ms_vecCameraPosition-ent->GetPosition()).MagnitudeSqr();
+#ifdef CUSTOM_MODELS
+	if(ent->m_rwObject == nil && CCustomWorld::OwnsModelSlot(ent->m_modelIndex)){
+		float maxReach = mi->GetLodDistance(0) + FADE_DISTANCE + STREAM_DISTANCE;
+		if(distSq >= maxReach * maxReach)
+			return VIS_INVISIBLE;
+	}
+#endif
+	float dist = Sqrt(distSq);
 	CSimpleModelInfo *nonLOD = mi->GetRelatedModel();
+
+#ifdef CUSTOM_MODELS
+	// Self far-proxy BigBuilding for un-paired landmarks with drawDist > 300m:
+	// below LOD_DISTANCE the regular sector CBuilding draws (and holds collision).
+	if(!mi->m_isBigBuilding && dist < mi->GetNearDistance()){
+		if(ent->m_rwObject)
+			ent->DeleteRwObject();
+		return VIS_INVISIBLE;
+	}
+#endif
 
 	// Find out whether to draw below near distance.
 	// This is only the case if there is a non-LOD which is either not
 	// loaded or not completely faded in yet.
-	if(dist < mi->GetNearDistance() && dist < LOD_DISTANCE){
+	if(dist < mi->GetNearDistance() && (dist < LOD_DISTANCE || (nonLOD && nonLOD->m_isBigBuilding))){
 		// No non-LOD or non-LOD is completely visible.
+#ifdef ANDROID
+		if(nonLOD == nil){
+			// Unpaired BigBuilding (e.g. lod.ide shell with no matching near model):
+			// keep drawing down to distance 0 instead of popping out!
+		}else if(nonLOD->GetRwObject() && nonLOD->m_alpha == 255){
+#else
 		if(nonLOD == nil ||
-		   nonLOD->GetRwObject() && nonLOD->m_alpha == 255)
+		   nonLOD->GetRwObject() && nonLOD->m_alpha == 255){
+#endif
+#ifdef CUSTOM_MODELS
+			if(ent->m_rwObject && CCustomWorld::OwnsModelSlot(ent->m_modelIndex) &&
+			   dist < mi->GetNearDistance() - FADE_DISTANCE)
+				ent->DeleteRwObject();
+#endif
 			return VIS_INVISIBLE;
+		}
 
+#ifdef ANDROID
+		if(nonLOD && nonLOD->GetModelType() == MITYPE_TIME){
+#else
 		// But if it is a time object, we'd rather draw the wrong
 		// non-LOD than the right LOD.
 		if(nonLOD->GetModelType() == MITYPE_TIME){
+#endif
 			ti = (CTimeModelInfo*)nonLOD;
 			other = ti->GetOtherTimeModel();
 			if(other != -1 && CModelInfo::GetModelInfo(other)->GetRwObject())
@@ -955,13 +1103,58 @@ CRenderer::SetupBigBuildingVisibility(CEntity *ent)
 void
 CRenderer::ConstructRenderList(void)
 {
+#ifdef RW_GL3
+	// The GL3 material shaders use the timecycle sun, weather-dependent
+	// directional/sky colours, and day-night balance (BLAYZ RUSSIA PC PBR).
+	// Neither setting changes the D3D9 lighting path.
+	CVector sunDir = CTimeCycle::GetSunDirection();
+	float dayFactor = GL3Atmosphere::Clamp01((sunDir.z + 0.04f) / 0.22f);
+	float dayNightBalance = 1.0f - dayFactor;
+	rw::setSunDirection(sunDir);
+	rw::setSunMaterialParams(rw::makeRGBAf(
+		CTimeCycle::GetDirectionalRed(), CTimeCycle::GetDirectionalGreen(),
+		CTimeCycle::GetDirectionalBlue(),
+		Min(1.0f, Max(0.0f, CTimeCycle::GetShadowStrength()/255.0f))));
+#ifdef ANDROID
+	// Mobile client pipeline: u_atmosphere.x >= 1.5 selects mobile world/vehicle/sky/water
+	// shaders, u_skyAmbient.a carries lightmapMulti (0.65), and u_localInvGamma applies
+	// Brightness directly in shaders without full-screen PostFX backbuffer copies.
+	int8 mobTier = FrontEndMenuManager.m_PrefsMobileGraphics;
+	float mobAtmosMode = (mobTier <= CMenuManager::MOBILE_GFX_LOW) ? 1.7f :
+	                     ((mobTier == CMenuManager::MOBILE_GFX_MEDIUM) ? 2.0f : 2.2f);
+	float invGamma = Clamp(1.0f - (FrontEndMenuManager.m_PrefsBrightness - 256) * (0.20f / 256.0f), 0.78f, 1.22f);
+	rw::setLocalInvGamma(invGamma);
+	rw::setSkyAmbientParams(rw::makeRGBAf(
+		(0.55f * CTimeCycle::GetSkyTopRed()   + 0.45f * CTimeCycle::GetSkyBottomRed())   / 255.0f,
+		(0.55f * CTimeCycle::GetSkyTopGreen() + 0.45f * CTimeCycle::GetSkyBottomGreen()) / 255.0f,
+		(0.55f * CTimeCycle::GetSkyTopBlue()  + 0.45f * CTimeCycle::GetSkyBottomBlue())  / 255.0f,
+		0.65f));
+	rw::setAtmosphereParams(rw::makeRGBAf(
+		GL3Atmosphere::Enabled ? mobAtmosMode : 0.0f,
+		GL3Atmosphere::Enabled ? GL3Atmosphere::Clamp01(CWeather::CloudCoverage) : 0.0f,
+		GL3Atmosphere::Enabled ? GL3Atmosphere::Clamp01(CWeather::Foggyness) : 0.0f,
+		GL3Atmosphere::Enabled ? dayNightBalance : 0.0f));
+#else
+	rw::setSkyAmbientParams(rw::makeRGBAf(
+		(0.55f * CTimeCycle::GetSkyTopRed()   + 0.45f * CTimeCycle::GetSkyBottomRed())   / 255.0f,
+		(0.55f * CTimeCycle::GetSkyTopGreen() + 0.45f * CTimeCycle::GetSkyBottomGreen()) / 255.0f,
+		(0.55f * CTimeCycle::GetSkyTopBlue()  + 0.45f * CTimeCycle::GetSkyBottomBlue())  / 255.0f,
+		4.0f));
+	rw::setAtmosphereParams(rw::makeRGBAf(
+		GL3Atmosphere::Enabled ? 1.0f : 0.0f,
+		GL3Atmosphere::Enabled ? GL3Atmosphere::Clamp01(CWeather::CloudCoverage) : 0.0f,
+		GL3Atmosphere::Enabled ? GL3Atmosphere::Clamp01(CWeather::Foggyness) : 0.0f,
+		GL3Atmosphere::Enabled ? dayNightBalance : 0.0f));
+#endif
+#endif
+
 	COcclusion::ProcessBeforeRendering();
 #ifdef NEW_RENDERER
 	if(!gbNewRenderer)
 #endif
 {
-	ms_nNoOfVisibleEntities = 0;
-	ms_nNoOfInVisibleEntities = 0;
+	ClearFrameRenderItems(ms_aVisibleEntityPtrs, ms_nNoOfVisibleEntities);
+	ClearFrameRenderItems(ms_aInVisibleEntityPtrs, ms_nNoOfInVisibleEntities);
 }
 	ms_vecCameraPosition = TheCamera.GetPosition();
 
@@ -1043,14 +1236,15 @@ CRenderer::ScanWorld(void)
 	prevPos = TheCamera.GetPosition();
 	prevFwd = TheCamera.GetForward();
 
+	const float scanLodDist = Max(LOD_DISTANCE, Min(f, 300.0f * Min(CRenderer::ms_fLightDistScale, 2.50f)));
 	if(cammatrix->at.z > 0.0f){
 		// looking up, bottom corners are further away
-		vectors[CORNER_LOD_LEFT] = vectors[CORNER_FAR_BOTLEFT] * LOD_DISTANCE/f;
-		vectors[CORNER_LOD_RIGHT] = vectors[CORNER_FAR_BOTRIGHT] * LOD_DISTANCE/f;
+		vectors[CORNER_LOD_LEFT] = vectors[CORNER_FAR_BOTLEFT] * scanLodDist/f;
+		vectors[CORNER_LOD_RIGHT] = vectors[CORNER_FAR_BOTRIGHT] * scanLodDist/f;
 	}else{
 		// looking down, top corners are further away
-		vectors[CORNER_LOD_LEFT] = vectors[CORNER_FAR_TOPLEFT] * LOD_DISTANCE/f;
-		vectors[CORNER_LOD_RIGHT] = vectors[CORNER_FAR_TOPRIGHT] * LOD_DISTANCE/f;
+		vectors[CORNER_LOD_LEFT] = vectors[CORNER_FAR_TOPLEFT] * scanLodDist/f;
+		vectors[CORNER_LOD_RIGHT] = vectors[CORNER_FAR_TOPRIGHT] * scanLodDist/f;
 	}
 	vectors[CORNER_PRIO_LEFT].x = vectors[CORNER_LOD_LEFT].x * 0.2f;
 	vectors[CORNER_PRIO_LEFT].y = vectors[CORNER_LOD_LEFT].y * 0.2f;
@@ -1077,13 +1271,9 @@ CRenderer::ScanWorld(void)
 		LimitFrustumVector(vectors[CORNER_FAR_BOTLEFT], vectors[CORNER_CAM], -100.0f);
 		rect.ContainPoint(vectors[CORNER_FAR_BOTLEFT]);
 		x1 = CWorld::GetSectorIndexX(rect.left);
-		if(x1 < 0) x1 = 0;
 		x2 = CWorld::GetSectorIndexX(rect.right);
-		if(x2 >= NUMSECTORS_X-1) x2 = NUMSECTORS_X-1;
 		y1 = CWorld::GetSectorIndexY(rect.top);
-		if(y1 < 0) y1 = 0;
 		y2 = CWorld::GetSectorIndexY(rect.bottom);
-		if(y2 >= NUMSECTORS_Y-1) y2 = NUMSECTORS_Y-1;
 		for(; x1 <= x2; x1++)
 			for(int y = y1; y <= y2; y++)
 				ScanSectorList(CWorld::GetSector(x1, y)->m_lists);
@@ -1101,7 +1291,16 @@ CRenderer::ScanWorld(void)
 		}else
 #endif
 		{
-			if(f > LOD_DISTANCE){
+			if(f > scanLodDist){
+#ifdef ANDROID
+				{
+					int camSX = CWorld::GetSectorIndexX(vectors[CORNER_CAM].x);
+					int camSY = CWorld::GetSectorIndexY(vectors[CORNER_CAM].y);
+					for(int dy = -1; dy <= 1; dy++)
+						for(int dx = -1; dx <= 1; dx++)
+							ScanSectorList_Priority(CWorld::GetSector(camSX + dx, camSY + dy)->m_lists);
+				}
+#endif
 				// priority
 				poly[0].x = CWorld::GetSectorX(vectors[CORNER_CAM].x);
 				poly[0].y = CWorld::GetSectorY(vectors[CORNER_CAM].y);
@@ -1120,6 +1319,15 @@ CRenderer::ScanWorld(void)
 				poly[2].y = CWorld::GetSectorY(vectors[CORNER_LOD_RIGHT].y);
 				ScanSectorPoly(poly, 3, ScanSectorList);
 			}else{
+#ifdef ANDROID
+				{
+					int camSX = CWorld::GetSectorIndexX(vectors[CORNER_CAM].x);
+					int camSY = CWorld::GetSectorIndexY(vectors[CORNER_CAM].y);
+					for(int dy = -1; dy <= 1; dy++)
+						for(int dx = -1; dx <= 1; dx++)
+							ScanSectorList(CWorld::GetSector(camSX + dx, camSY + dy)->m_lists);
+				}
+#endif
 				poly[0].x = CWorld::GetSectorX(vectors[CORNER_CAM].x);
 				poly[0].y = CWorld::GetSectorY(vectors[CORNER_CAM].y);
 				poly[1].x = CWorld::GetSectorX(vectors[CORNER_FAR_TOPLEFT].x);
@@ -1129,6 +1337,12 @@ CRenderer::ScanWorld(void)
 				ScanSectorPoly(poly, 3, ScanSectorList);
 			}
 			
+#if defined(ANDROID) && defined(CUSTOM_MODELS)
+			if (CCustomModels::ReplacesNativeWorldMap()) {
+				ScanBigBuildingList(CWorld::GetBigBuildingList(LEVEL_BEACH));
+				ScanBigBuildingList(CWorld::GetBigBuildingList(LEVEL_MAINLAND));
+			} else
+#endif
 #ifdef NO_ISLAND_LOADING
 			if (FrontEndMenuManager.m_PrefsIslandLoading == CMenuManager::ISLAND_LOADING_HIGH) {
 				ScanBigBuildingList(CWorld::GetBigBuildingList(LEVEL_BEACH));
@@ -1207,17 +1421,22 @@ CRenderer::RequestObjectsInFrustum(void)
 		LimitFrustumVector(vectors[CORNER_FAR_BOTLEFT], vectors[CORNER_CAM], -100.0f);
 		rect.ContainPoint(vectors[CORNER_FAR_BOTLEFT]);
 		x1 = CWorld::GetSectorIndexX(rect.left);
-		if(x1 < 0) x1 = 0;
 		x2 = CWorld::GetSectorIndexX(rect.right);
-		if(x2 >= NUMSECTORS_X-1) x2 = NUMSECTORS_X-1;
 		y1 = CWorld::GetSectorIndexY(rect.top);
-		if(y1 < 0) y1 = 0;
 		y2 = CWorld::GetSectorIndexY(rect.bottom);
-		if(y2 >= NUMSECTORS_Y-1) y2 = NUMSECTORS_Y-1;
 		for(; x1 <= x2; x1++)
 			for(int y = y1; y <= y2; y++)
 				ScanSectorList_RequestModels(CWorld::GetSector(x1, y)->m_lists);
 	}else{
+#ifdef ANDROID
+		{
+			int camSX = CWorld::GetSectorIndexX(vectors[CORNER_CAM].x);
+			int camSY = CWorld::GetSectorIndexY(vectors[CORNER_CAM].y);
+			for(int dy = -1; dy <= 1; dy++)
+				for(int dx = -1; dx <= 1; dx++)
+					ScanSectorList_RequestModels(CWorld::GetSector(camSX + dx, camSY + dy)->m_lists);
+		}
+#endif
 		poly[0].x = CWorld::GetSectorX(vectors[CORNER_CAM].x);
 		poly[0].y = CWorld::GetSectorY(vectors[CORNER_CAM].y);
 		poly[1].x = CWorld::GetSectorX(vectors[CORNER_LOD_LEFT].x);
@@ -1282,11 +1501,9 @@ CalcNewDelta(RwV2d *a, RwV2d *b)
 	return (b->x - a->x) / (b->y - a->y);
 }
 
-#ifdef FIX_BUGS
-#define TOINT(x) ((int)Floor(x))
-#else
-#define TOINT(x) ((int)(x))
-#endif
+// Negative outlying sectors must round down, not toward the native grid.
+// Do not cast an out-of-range float to int when a camera is far from VC.
+#define TOINT(x) WorldSectorIndex((x), 0.0f, 1.0f)
 
 void
 CRenderer::ScanSectorPoly(RwV2d *poly, int32 numVertices, void (*scanfunc)(CPtrList *))
@@ -1302,8 +1519,8 @@ CRenderer::ScanSectorPoly(RwV2d *poly, int32 numVertices, void (*scanfunc)(CPtrL
 	miny = poly[0].y;
 	maxy = poly[0].y;
 	a2 = 0;
-	xstart = 9999;
-	xend = -9999;
+	xstart = INT_MAX;
+	xend = INT_MIN;
 
 	for(i = 1; i < numVertices; i++){
 		if(poly[i].y > maxy)
@@ -1321,7 +1538,7 @@ CRenderer::ScanSectorPoly(RwV2d *poly, int32 numVertices, void (*scanfunc)(CPtrL
 	for(i = 0; i < numVertices; i++){
 		b1 = b2--;
 		if(b2 < 0) b2 = numVertices-1;
-		if(poly[b1].x < xstart)
+		if(TOINT(poly[b1].x) < xstart)
 			xstart = TOINT(poly[b1].x);
 		if(TOINT(poly[b1].y) != TOINT(poly[b2].y))
 			break;
@@ -1349,12 +1566,10 @@ CRenderer::ScanSectorPoly(RwV2d *poly, int32 numVertices, void (*scanfunc)(CPtrL
 			xend = TOINT(xA);
 	}
 
-	while(y <= yend && y < NUMSECTORS_Y){
-		// scan one x-line
-		if(y >= 0 && xstart < NUMSECTORS_X)
-			for(x = xstart; x <= xend && x != NUMSECTORS_X; x++)
-				if(x >= 0)
-					scanfunc(CWorld::GetSector(x, y)->m_lists);
+	while(y <= yend){
+		// Additional map sectors have the same size as the native grid.
+		for(x = xstart; x <= xend; x++)
+			scanfunc(CWorld::GetSector(x, y)->m_lists);
 
 		// advance one scan line
 		y++;
@@ -1444,12 +1659,12 @@ CRenderer::InsertEntityIntoList(CEntity *ent)
 #ifdef NEW_RENDERER
 	// TODO: there are more flags being checked here
 	if(gbNewRenderer && (ent->IsVehicle() || ent->IsPed()))
-		ms_aVisibleVehiclePtrs[ms_nNoOfVisibleVehicles++] = ent;
+		AppendFrameRenderItem(ms_aVisibleVehiclePtrs, ms_nNoOfVisibleVehicles, ent);
 	else if(gbNewRenderer && ent->IsBuilding())
-		ms_aVisibleBuildingPtrs[ms_nNoOfVisibleBuildings++] = ent;
+		AppendFrameRenderItem(ms_aVisibleBuildingPtrs, ms_nNoOfVisibleBuildings, ent);
 	else
 #endif
-		ms_aVisibleEntityPtrs[ms_nNoOfVisibleEntities++] = ent;
+		AppendFrameRenderItem(ms_aVisibleEntityPtrs, ms_nNoOfVisibleEntities, ent);
 }
 
 void
@@ -1510,10 +1725,8 @@ CRenderer::ScanSectorList(CPtrList *lists)
 				ent->bOffscreen = true;
 				dx = ms_vecCameraPosition.x - ent->GetPosition().x;
 				dy = ms_vecCameraPosition.y - ent->GetPosition().y;
-				if(dx > -30.0f && dx < 30.0f &&
-				   dy > -30.0f && dy < 30.0f &&
-				   ms_nNoOfInVisibleEntities < NUMINVISIBLEENTITIES - 1)
-					ms_aInVisibleEntityPtrs[ms_nNoOfInVisibleEntities++] = ent;
+				if(dx > -30.0f && dx < 30.0f && dy > -30.0f && dy < 30.0f)
+					AppendFrameRenderItem(ms_aInVisibleEntityPtrs, ms_nNoOfInVisibleEntities, ent);
 				break;
 			case VIS_STREAMME:
 				if(!CStreaming::ms_disableStreaming)
@@ -1555,10 +1768,8 @@ CRenderer::ScanSectorList_Priority(CPtrList *lists)
 				ent->bOffscreen = true;
 				dx = ms_vecCameraPosition.x - ent->GetPosition().x;
 				dy = ms_vecCameraPosition.y - ent->GetPosition().y;
-				if(dx > -30.0f && dx < 30.0f &&
-				   dy > -30.0f && dy < 30.0f &&
-				   ms_nNoOfInVisibleEntities < NUMINVISIBLEENTITIES - 1)
-					ms_aInVisibleEntityPtrs[ms_nNoOfInVisibleEntities++] = ent;
+				if(dx > -30.0f && dx < 30.0f && dy > -30.0f && dy < 30.0f)
+					AppendFrameRenderItem(ms_aInVisibleEntityPtrs, ms_nNoOfInVisibleEntities, ent);
 				break;
 			case VIS_STREAMME:
 				if(!CStreaming::ms_disableStreaming){
@@ -1598,10 +1809,8 @@ CRenderer::ScanSectorList_Subway(CPtrList *lists)
 				ent->bOffscreen = true;
 				dx = ms_vecCameraPosition.x - ent->GetPosition().x;
 				dy = ms_vecCameraPosition.y - ent->GetPosition().y;
-				if(dx > -30.0f && dx < 30.0f &&
-				   dy > -30.0f && dy < 30.0f &&
-				   ms_nNoOfInVisibleEntities < NUMINVISIBLEENTITIES - 1)
-					ms_aInVisibleEntityPtrs[ms_nNoOfInVisibleEntities++] = ent;
+				if(dx > -30.0f && dx < 30.0f && dy > -30.0f && dy < 30.0f)
+					AppendFrameRenderItem(ms_aInVisibleEntityPtrs, ms_nNoOfInVisibleEntities, ent);
 				break;
 			}
 		}
@@ -1635,12 +1844,10 @@ CRenderer::ScanSectorList_RequestModels(CPtrList *lists)
 void
 CRenderer::SortBIGBuildings(void)
 {
-	int x, y;
-	for(y = 0; y < NUMSECTORS_Y; y++)
-		for(x = 0; x < NUMSECTORS_X; x++){
-			SortBIGBuildingsForSectorList(&CWorld::GetSector(x, y)->m_lists[ENTITYLIST_BUILDINGS]);
-			SortBIGBuildingsForSectorList(&CWorld::GetSector(x, y)->m_lists[ENTITYLIST_BUILDINGS_OVERLAP]);
-		}
+	CWorld::ForEachAllocatedSector([](CSector *sector) {
+		SortBIGBuildingsForSectorList(&sector->m_lists[ENTITYLIST_BUILDINGS]);
+		SortBIGBuildingsForSectorList(&sector->m_lists[ENTITYLIST_BUILDINGS_OVERLAP]);
+	});
 }
 
 void

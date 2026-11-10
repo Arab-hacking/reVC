@@ -110,9 +110,13 @@ HANDLE FindFirstFile(const char* pathname, WIN32_FIND_DATA* firstfile) {
     if (realFolder)
         free(realFolder);
 
-	HANDLE d;
-	if ((d = (HANDLE)opendir(firstfile->folder)) == NULL || !FindNextFile(d, firstfile))
+	HANDLE d = (HANDLE)opendir(firstfile->folder);
+	if (d == NULL)
 		return NULL;
+	if (!FindNextFile(d, firstfile)) {
+		closedir((DIR*)d);
+		return NULL;
+	}
 
 	return d;
 }
@@ -120,18 +124,22 @@ HANDLE FindFirstFile(const char* pathname, WIN32_FIND_DATA* firstfile) {
 bool FindNextFile(HANDLE d, WIN32_FIND_DATA* finddata) {
 	dirent *file;
 	static struct stat fileStats;
-	static char path[PATH_MAX], relativepath[NAME_MAX + sizeof(finddata->folder) + 1];
-	int extensionLen = strlen(finddata->extension);
+	static char relativepath[NAME_MAX + sizeof(finddata->folder) + 2];
+	int extensionLen = (int)strlen(finddata->extension);
 	while ((file = readdir((DIR*)d)) != NULL) {
+		if (strcmp(file->d_name, ".") == 0 || strcmp(file->d_name, "..") == 0)
+			continue;
 
+		int nameLen = (int)strlen(file->d_name);
 		// We only want "DT_REG"ular Files, but reportedly some FS and OSes gives DT_UNKNOWN as type.
 		if ((file->d_type == DT_UNKNOWN || file->d_type == DT_REG || file->d_type == DT_LNK) &&
-			(extensionLen == 0 || strncasecmp(&file->d_name[strlen(file->d_name) - extensionLen], finddata->extension, extensionLen) == 0)) {
+			(extensionLen == 0 || (nameLen >= extensionLen && strncasecmp(&file->d_name[nameLen - extensionLen], finddata->extension, extensionLen) == 0))) {
 
-			sprintf(relativepath, "%s/%s", finddata->folder, file->d_name);
-			realpath(relativepath, path);
-			stat(path, &fileStats);
-			strncpy(finddata->cFileName, file->d_name, sizeof(finddata->cFileName));
+			snprintf(relativepath, sizeof(relativepath), "%s/%s", finddata->folder, file->d_name);
+			if (stat(relativepath, &fileStats) != 0 || S_ISDIR(fileStats.st_mode))
+				continue;
+			strncpy(finddata->cFileName, file->d_name, sizeof(finddata->cFileName) - 1);
+			finddata->cFileName[sizeof(finddata->cFileName) - 1] = '\0';
 			finddata->ftLastWriteTime = fileStats.st_mtime;
 			return true;
 		}
@@ -243,22 +251,39 @@ int _caserename(const char *old_filename, const char *new_filename)
 // Returned string should freed manually (if exists)
 char* casepath(char const* path, bool checkPathFirst)
 {
-    if (checkPathFirst && access(path, F_OK) != -1) {
-        // File path is correct
+    if (!path)
         return nil;
-    }
 
     size_t l = strlen(path);
     char* p = (char*)alloca(l + 1);
-    char* out = (char*)malloc(l + 3); // for extra ./
     strcpy(p, path);
 
     // my addon: linux doesn't handle filenames with spaces at the end nicely
     p = trim(p);
+    l = strlen(p);
 
+    if (checkPathFirst) {
+        bool hadBackslash = false;
+        char* slashNorm = (char*)alloca(l + 1);
+        for (size_t i = 0; i <= l; i++) {
+            if (p[i] == '\\') {
+                slashNorm[i] = '/';
+                hadBackslash = true;
+            } else {
+                slashNorm[i] = p[i];
+            }
+        }
+        if (access(slashNorm, F_OK) != -1) {
+            // If there were no backslashes, caller's original string already works;
+            // if backslashes were converted, return the normalized path.
+            return hadBackslash ? strdup(slashNorm) : nil;
+        }
+    }
+
+    char* out = (char*)malloc(l + 4); // for extra ./ and trailing slash
     size_t rl = 0;
 
-    DIR* d;
+    DIR* d = NULL;
     char* c;
 
     #if defined(__SWITCH__) || defined(PSP2)
@@ -273,23 +298,14 @@ char* casepath(char const* path, bool checkPathFirst)
     }
     else
     #endif
-#if defined(ANDROID) // TODO: Android is fuck!!!
-    char cwd[MAX_PATH];
-    getcwd(cwd, sizeof(cwd));
-
-    char* pos = strstr(p, CFileMgr::GetRootDirName());
-    if (pos != NULL) {
-        pos += strlen(CFileMgr::GetRootDirName());
-        p = pos;
-    }
-    d = opendir(cwd);
-    out[0] = '.';
-    out[1] = 0;
-    rl = 1;
-#else
+    // Android uses normal POSIX paths too. Note that on Android 11+ SELinux,
+    // ancestor directories (/, /storage, /storage/emulated/0/Android/data) are
+    // execute-only (0711): opendir("/") returns NULL (EACCES), while stat() and
+    // opendir() on the app's own directory succeed. Never pass NULL to readdir().
     if (p[0] == '/' || p[0] == '\\')
     {
         d = opendir("/");
+        out[0] = '\0';
     }
     else
     {
@@ -298,12 +314,11 @@ char* casepath(char const* path, bool checkPathFirst)
         out[1] = 0;
         rl = 1;
     }
-#endif
 
     bool cantProceed = false; // just convert slashes in what's left in string, don't correct case of letters(because we can't)
     bool mayBeTrailingSlash = false;
 
-    while (c = strsep(&p, "/\\"))
+    while ((c = strsep(&p, "/\\")) != NULL)
     {
         // May be trailing slash(allow), slash at the start(avoid), or multiple slashes(avoid)
         if (*c == '\0')
@@ -325,22 +340,40 @@ char* casepath(char const* path, bool checkPathFirst)
             continue;
         }
 
+        if (!d)
+        {
+            // Unreadable ancestor directory (e.g. Android SELinux 0711 / or /Android/data):
+            // advance with exact component if it is a traversable directory, and open it
+            // as soon as permissions allow so child paths still get case-folded.
+            strcpy(out + rl, c);
+            rl += strlen(c);
+            struct stat st;
+            if (stat(out, &st) == 0 && S_ISDIR(st.st_mode)) {
+                d = opendir(out);
+            } else {
+                cantProceed = true;
+            }
+            continue;
+        }
+
         struct dirent* e;
-        while (e = readdir(d))
+        while ((e = readdir(d)) != NULL)
         {
             if (strcasecmp(c, e->d_name) == 0)
             {
                 strcpy(out + rl, e->d_name);
                 int reportedLen = (int)strlen(e->d_name);
                 rl += reportedLen;
-                assert(reportedLen == strlen(c) && "casepath: This is not good at all");
+                assert(reportedLen == (int)strlen(c) && "casepath: This is not good at all");
 
                 closedir(d);
                 d = opendir(out);
 
                 // Either it wasn't a folder, or permission error, I/O error etc.
                 if (!d) {
-                    cantProceed = true;
+                    struct stat st;
+                    if (!(stat(out, &st) == 0 && S_ISDIR(st.st_mode)))
+                        cantProceed = true;
                 }
 
                 break;
@@ -353,6 +386,8 @@ char* casepath(char const* path, bool checkPathFirst)
             // No match, add original name and continue converting further slashes.
             strcpy(out + rl, c);
             rl += strlen(c);
+            closedir(d);
+            d = NULL;
             cantProceed = true;
         }
     }

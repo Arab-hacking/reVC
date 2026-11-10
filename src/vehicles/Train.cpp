@@ -273,14 +273,9 @@ CTrain::ProcessControl(void)
 		int y, ymin, ymax;
 
 		xmin = CWorld::GetSectorIndexX(front.x - 3.0f);
-		if(xmin < 0) xmin = 0;
 		xmax = CWorld::GetSectorIndexX(front.x + 3.0f);
-		if(xmax > NUMSECTORS_X-1) xmax = NUMSECTORS_X-1;
 		ymin = CWorld::GetSectorIndexY(front.y - 3.0f);
-		if(ymin < 0) ymin = 0;
 		ymax = CWorld::GetSectorIndexY(front.y + 3.0f);
-		if(ymax > NUMSECTORS_Y-1) ymax = NUMSECTORS_X-1;
-
 		CWorld::AdvanceCurrentScanCode();
 
 		for(y = ymin; y <= ymax; y++)

@@ -982,22 +982,10 @@ CPopulation::TestSafeForRealObject(CDummyObject *dummy)
 
 	float radius = dummyCol->boundingSphere.radius;
 	int minX = CWorld::GetSectorIndexX(dummy->GetPosition().x - radius);
-	if (minX < 0) minX = 0;
 	int minY = CWorld::GetSectorIndexY(dummy->GetPosition().y - radius);
-	if (minY < 0) minY = 0;
 	int maxX = CWorld::GetSectorIndexX(dummy->GetPosition().x + radius);
-#ifdef FIX_BUGS
-	if (maxX >= NUMSECTORS_X) maxX = NUMSECTORS_X - 1;
-#else
-	if (maxX >= NUMSECTORS_X) maxX = NUMSECTORS_X;
-#endif
 
 	int maxY = CWorld::GetSectorIndexY(dummy->GetPosition().y + radius);
-#ifdef FIX_BUGS
-	if (maxY >= NUMSECTORS_Y) maxY = NUMSECTORS_Y - 1;
-#else
-	if (maxY >= NUMSECTORS_Y) maxY = NUMSECTORS_Y;
-#endif
 
 	float colRadius = dummy->GetBoundRadius();
 	CVUVECTOR colCentre;

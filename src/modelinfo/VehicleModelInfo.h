@@ -4,8 +4,17 @@
 #include "ClumpModelInfo.h"
 
 enum {
+#ifdef SA_VEHICLE_MODELS
+	// GTA:SA models (and SA conversions in particular) can share the vehicle
+	// colour between far more materials than VC models do - one SA car easily
+	// has 70+ materials carrying the primary car colour marker (60,255,0).
+	// The original VC values are too small for those and would overflow.
+	NUM_FIRST_MATERIALS = 96,
+	NUM_SECOND_MATERIALS = 48,
+#else
 	NUM_FIRST_MATERIALS = 24,
 	NUM_SECOND_MATERIALS = 20,
+#endif
 	NUM_VEHICLE_COLOURS = 8,
 };
 
@@ -104,6 +113,18 @@ public:
 		int32 m_animFileIndex;
 		char *m_animFileName;
 	};
+#ifdef SA_VEHICLE_MODELS
+	// set when the collision of this model came from inside the DFF (SA style);
+	// such a model must not get its collision replaced by the VC .col entry of
+	// the vehicle whose model id it replaces
+	bool m_bHasEmbeddedColModel;
+#endif
+	// set when the model brought its own wheel meshes (SA style). VC derives the
+	// wheel radius from m_wheelScale (radius = 0.5*scale) and scales the wheel
+	// mesh by it on rendering. For SA models the mesh is already the right size
+	// and m_wheelScale is set to the true diameter (2*radius), so rendering must
+	// not scale it again.
+	bool m_bSAWheelMesh;
 
 	static int8 ms_compsToUse[2];
 	static int8 ms_compsUsed[2];
@@ -120,6 +141,26 @@ public:
 	int GetAnimFileIndex(void) { return m_animFileIndex; }
 
 	static RwFrame *CollapseFramesCB(RwFrame *frame, void *data);
+	// instantiates the separate VC wheel model on a wheel dummy frame
+	// (used by VC models and by SA models that carry no wheel mesh at all)
+	void AddGenericWheelModel(RwFrame *frame);
+#ifdef SA_VEHICLE_MODELS
+	// GTA:SA models contain their wheel meshes; this clones the single "wheel"
+	// mesh of such models onto all four wheel dummies
+	void CloneSAWheelMeshes(RwFrame **wheelFrames, int32 numWheels);
+	// radius of a wheel mesh around its own origin (SA wheels are modelled at
+	// their real size, so this is the radius the physics has to use)
+	static float GetWheelMeshRadius(RpAtomic *atomic);
+	// collision that came inside the DFF (SA style COL3 block)
+	bool HasEmbeddedColModel(void) { return m_bHasEmbeddedColModel; }
+	void SetEmbeddedColModel(CColModel *col);
+#endif
+	// scale the wheel meshes have to be rendered with: SA models carry their
+	// wheels at their final size, VC models get their separate wheel model scaled
+	// by m_wheelScale
+	float GetWheelRenderScale(void) { return m_bSAWheelMesh ? 1.0f : m_wheelScale; }
+	// true when the wheel meshes came with the model (SA style)
+	bool HasOwnWheelMeshes(void) { return m_bSAWheelMesh; }
 	static RwObject *MoveObjectsCB(RwObject *object, void *data);
 	static RpAtomic *HideDamagedAtomicCB(RpAtomic *atomic, void *data);
 	static RpAtomic *HideAllComponentsAtomicCB(RpAtomic *atomic, void *data);

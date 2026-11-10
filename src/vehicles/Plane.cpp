@@ -694,6 +694,16 @@ CPlane::InitPlanes(void)
 	// Jumbo
 	if(pPathNodes == nil){
 		pPathNodes = LoadPath("data\\paths\\flight.dat", NumPathNodes, TotalLengthOfFlightPath, true);
+		if(pPathNodes == nil || NumPathNodes <= 0){
+			for(i = 0; i < 6; i++){
+				aPlaneLineBits[i].type = 0;
+				aPlaneLineBits[i].time = 0.0f;
+				aPlaneLineBits[i].position = 0.0f;
+				aPlaneLineBits[i].speed = 0.0f;
+				aPlaneLineBits[i].acceleration = 0.0f;
+			}
+			TotalDurationOfFlightPath = 1.0f;
+		}else{
 
 		// Figure out which nodes are on ground
 		for(i = 0; i < NumPathNodes; i++){
@@ -768,6 +778,7 @@ CPlane::InitPlanes(void)
 		// end
 		aPlaneLineBits[5].time = time;
 		TotalDurationOfFlightPath = time;
+		}
 	}
 
 	// Dodo
@@ -787,14 +798,16 @@ CPlane::InitPlanes(void)
 	CStreaming::LoadAllRequestedModels(false);
 
 	// NB: 3 hardcoded also in CPlaneTrails
-	for(i = 0; i < 3; i++){
-		CPlane *plane = new CPlane(MI_AIRTRAIN, PERMANENT_VEHICLE);
-		plane->GetMatrix().SetTranslate(0.0f, 0.0f, 0.0f);
-		plane->SetStatus(STATUS_ABANDONED);
-		plane->bIsLocked = true;
-		plane->m_nPlaneId = i;
-		plane->m_nCurPathNode = 0;
-		CWorld::Add(plane);
+	if(CStreaming::HasModelLoaded(MI_AIRTRAIN) && CModelInfo::GetModelInfo(MI_AIRTRAIN) != nil){
+		for(i = 0; i < 3; i++){
+			CPlane *plane = new CPlane(MI_AIRTRAIN, PERMANENT_VEHICLE);
+			plane->GetMatrix().SetTranslate(0.0f, 0.0f, 0.0f);
+			plane->SetStatus(STATUS_ABANDONED);
+			plane->bIsLocked = true;
+			plane->m_nPlaneId = i;
+			plane->m_nCurPathNode = 0;
+			CWorld::Add(plane);
+		}
 	}
 }
 
@@ -817,19 +830,33 @@ CPlane::LoadPath(char const *filename, int32 &numNodes, float &totalLength, bool
 	int bp, lp;
 	int i;
 
-	CFileMgr::LoadFile(filename, work_buff, sizeof(work_buff), "r");
+	int bytesRead = CFileMgr::LoadFile(filename, work_buff, sizeof(work_buff) - 1, "r");
+	if(bytesRead <= 0){
+		numNodes = 0;
+		totalLength = 0.0f;
+		return nil;
+	}
+	work_buff[bytesRead] = '\0';
 	*gString = '\0';
-	for(bp = 0, lp = 0; work_buff[bp] != '\n'; bp++, lp++)
+	for(bp = 0, lp = 0; work_buff[bp] != '\n' && work_buff[bp] != '\0' && lp < (int)sizeof(gString) - 1; bp++, lp++)
 		gString[lp] = work_buff[bp];
-	bp++;
+	if(work_buff[bp] == '\n')
+		bp++;
 	gString[lp] = '\0';
-	sscanf(gString, "%d", &numNodes);
+	numNodes = 0;
+	if(sscanf(gString, "%d", &numNodes) != 1 || numNodes <= 0){
+		numNodes = 0;
+		totalLength = 0.0f;
+		return nil;
+	}
 	CPlaneNode *nodes = new CPlaneNode[numNodes];
 
 	for(i = 0; i < numNodes; i++){
-		for(lp = 0; work_buff[bp] != '\n' && work_buff[bp] != '\0'; bp++, lp++)
+		nodes[i].p = CVector(0.0f, 0.0f, 14.0f);
+		for(lp = 0; work_buff[bp] != '\n' && work_buff[bp] != '\0' && lp < (int)sizeof(gString) - 1; bp++, lp++)
 			gString[lp] = work_buff[bp];
-		bp++;
+		if(work_buff[bp] == '\n')
+			bp++;
 		// BUG: game doesn't terminate string
 		gString[lp] = '\0';
 		sscanf(gString, "%f %f %f", &nodes[i].p.x, &nodes[i].p.y, &nodes[i].p.z);
@@ -859,7 +886,7 @@ CPlane::UpdatePlanes(void)
 	uint32 time;
 	float t, deltaT;
 
-	if(CReplay::IsPlayingBack())
+	if(CReplay::IsPlayingBack() || pPathNodes == nil || NumPathNodes <= 0)
 		return;
 
 	// Jumbo jets
@@ -867,7 +894,7 @@ CPlane::UpdatePlanes(void)
 	for(i = 0; i < 3; i++){
 		t = TotalDurationOfFlightPath * (float)(time & 0x7FFFF)/0x80000;
 		// find current frame
-		for(j = 0; t > aPlaneLineBits[j+1].time; j++);
+		for(j = 0; j < 4 && t > aPlaneLineBits[j+1].time; j++);
 
 		OldPlanePathPosition[i] = PlanePathPosition[i];
 		deltaT = t - aPlaneLineBits[j].time;

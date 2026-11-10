@@ -132,6 +132,12 @@ CText::Get(const char *key)
 #else
 		outstr = mission_keyArray.Search(key, &result);
 #endif
+	if (!result && key != nil && strcmp(key, "FEM_LGT") == 0) {
+		static wchar s_lightDistLabel[] = {
+			'L','I','G','H','T',' ','D','I','S','T','A','N','C','E', 0
+		};
+		return s_lightDistLabel;
+	}
 	return outstr;
 }
 

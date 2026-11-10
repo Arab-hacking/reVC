@@ -7,6 +7,7 @@
 #include "Clock.h"
 #include "Renderer.h"
 #include "ModelInfo.h"
+#include "ModelLoadDispatch.h"
 #include "TxdStore.h"
 #include "ModelIndices.h"
 #include "Pools.h"
@@ -17,6 +18,7 @@
 #include "Entity.h"
 #include "FileMgr.h"
 #include "FileLoader.h"
+#include "AnimManager.h"
 #include "Zones.h"
 #include "Radar.h"
 #include "Camera.h"
@@ -27,6 +29,12 @@
 #include "CutsceneMgr.h"
 #include "CdStream.h"
 #include "Streaming.h"
+#ifdef CUSTOM_MODELS
+#include "CustomModels.h"
+#include "CustomWorld.h"
+#include "ModelNameIndex.h"
+#endif
+#include "SavehDiag.h"
 #include "Replay.h"
 #include "main.h"
 #include "ColStore.h"
@@ -37,6 +45,16 @@
 #include "Font.h"
 #include "Frontend.h"
 #include "VarConsole.h"
+
+#if defined(_MSC_VER)
+#include <intrin.h>
+#pragma intrinsic(_ReturnAddress)
+#define STREAMING_CALLER_ADDRESS() _ReturnAddress()
+#elif defined(__GNUC__) || defined(__clang__)
+#define STREAMING_CALLER_ADDRESS() __builtin_return_address(0)
+#else
+#define STREAMING_CALLER_ADDRESS() nil
+#endif
 
 bool CStreaming::ms_disableStreaming;
 bool CStreaming::ms_bLoadingBigModel;
@@ -90,6 +108,29 @@ bool gbPrintStreamingBuffer; // TODO
 bool
 CStreamingInfo::GetCdPosnAndSize(uint32 &posn, uint32 &size)
 {
+#ifdef CUSTOM_MODELS
+	// This fixes the one case that ConvertBufferToObject cannot fix by itself:
+	// a file that the game's images do not contain at all.
+	// The streaming code expects every requested file to have a place in
+	// an image (GetNextFileOnCd throws away the requests it cannot place), so
+	// such a file is given the position and size of a single sector. Its data
+	// is never read - the file is built in memory - and because nothing chains
+	// to it, it always ends up alone in a channel: the made up position can
+	// never spoil the read of a real file. Files that are in an image keep
+	// their real position and size, so the adjacency the channel reader
+	// depends on ("load up to 4 adjacent files") is untouched.
+	if(m_size == 0){
+		intptr_t diff = (intptr_t)this - (intptr_t)CStreaming::ms_aInfoForModel;
+		if(diff >= 0 && diff % (intptr_t)sizeof(CStreamingInfo) == 0){
+			int32 id = (int32)(diff / (intptr_t)sizeof(CStreamingInfo));
+			if(id < NUMSTREAMINFO && CCustomModels::CanServe(id)){
+				posn = 0;
+				size = 1;
+				return true;
+			}
+		}
+	}
+#endif
 	if(m_size == 0)
 		return false;
 	posn = m_position;
@@ -313,6 +354,181 @@ uint64 timeProcessingTXD;
 uint64 timeProcessingDFF;
 #endif
 
+#ifdef ANDROID
+#include "OptimizationConfig.h"
+namespace {
+static float s_mobileRamLodScale = 1.0f;
+static int s_mobileVehReqBudget = OPT_vehicleRequestsPerFrame;
+static int s_mobileAsyncReqBudget = OPT_asyncRequestsPerFrame;
+static uint32 s_lastMemSampleFrame = 0xFFFFFFFFu;
+static size_t s_cachedAvailRamMB = 1024;
+static size_t s_cachedTotalRamMB = 4096;
+
+// Memory pressure state (analysis ch. 2, 3, 9)
+static bool s_inMitigation = false;
+static bool s_inCritical = false;
+static int   s_mitigationTimerMs = 0;
+static int   s_recoveryTimerMs = 0;
+static float s_targetDistanceScale = 1.0f;
+
+static size_t
+SampleAndroidAvailRamMB(void)
+{
+	uint32 fc = CTimer::GetFrameCounter();
+	if(s_lastMemSampleFrame != 0xFFFFFFFFu && (uint32)(fc - s_lastMemSampleFrame) < 60u)
+		return s_cachedAvailRamMB;
+	s_lastMemSampleFrame = fc;
+
+	FILE *fp = fopen("/proc/meminfo", "rb");
+	if(!fp)
+		return s_cachedAvailRamMB;
+	char buf[512];
+	size_t n = fread(buf, 1, sizeof(buf) - 1, fp);
+	fclose(fp);
+	buf[n] = '\0';
+
+	const char *p = strstr(buf, "MemAvailable:");
+	if(p){
+		p += sizeof("MemAvailable:") - 1;
+		while(*p == ' ' || *p == '\t') p++;
+		unsigned long kb = strtoul(p, nil, 10);
+		if(kb > 0)
+			s_cachedAvailRamMB = (size_t)(kb / 1024ul);
+	}
+	p = strstr(buf, "MemTotal:");
+	if(p){
+		p += sizeof("MemTotal:") - 1;
+		while(*p == ' ' || *p == '\t') p++;
+		unsigned long kb = strtoul(p, nil, 10);
+		if(kb > 0)
+			s_cachedTotalRamMB = (size_t)(kb / 1024ul);
+	}
+	return s_cachedAvailRamMB;
+}
+
+// Select memory budget from the scaling table (analysis ch. 8.5)
+static size_t
+GetMemoryBudgetMb(void)
+{
+	size_t ramGb = s_cachedTotalRamMB / 1024;
+	for(int i = OPT_memoryBudgetScalingCount - 1; i >= 0; i--){
+		if(ramGb >= OPT_memoryBudgetScaling[i].minimumRamGb)
+			return OPT_memoryBudgetScaling[i].budgetMb;
+	}
+	return OPT_memoryBudgetScaling[0].budgetMb;
+}
+
+static void
+UpdateMobileStreamingHeadroom(void)
+{
+	size_t availMB = SampleAndroidAvailRamMB();
+	size_t budgetMB = GetMemoryBudgetMb();
+	float headroomMb = (float)(budgetMB - (s_cachedTotalRamMB - availMB));
+
+	// Determine target distance scale (analysis ch. 2, 3, 9)
+	// Hysteresis: enter mitigation when headroom < 32MB, leave when > 48MB
+	// Enter critical when headroom < 8MB, leave when > 24MB
+	float targetScale = 1.0f;
+	bool wantMitigation = false;
+	bool wantCritical = false;
+
+	if(s_inCritical){
+		if(headroomMb > OPT_criticalLeaveHeadroomMb)
+			wantMitigation = true; // drop from critical to mitigation
+		else
+			wantCritical = true;
+	}else if(s_inMitigation){
+		if(headroomMb > OPT_mitigationLeaveHeadroomMb)
+			wantMitigation = false; // leave mitigation
+		else
+			wantMitigation = true;
+		if(headroomMb < OPT_criticalEnterHeadroomMb)
+			wantCritical = true;
+	}else{
+		if(headroomMb < OPT_criticalEnterHeadroomMb)
+			wantCritical = true;
+		else if(headroomMb < OPT_mitigationEnterHeadroomMb)
+			wantMitigation = true;
+	}
+
+	if(wantCritical)
+		targetScale = OPT_criticalDistanceScale;
+	else if(wantMitigation)
+		targetScale = OPT_mitigationDistanceScale;
+
+	// Delay timers (analysis ch. 3: mitigationDelayMs / recoveryDelayMs)
+	int dtMs = (int)(CTimer::GetTimeStepInSeconds() * 1000.0f);
+	if(dtMs <= 0) dtMs = 1;
+
+	if(wantCritical){
+		s_inMitigation = true;
+		s_inCritical = true;
+		s_targetDistanceScale = OPT_criticalDistanceScale;
+		s_mobileVehReqBudget = OPT_constrainedVehicleRequestsPerFrame;
+		s_mobileAsyncReqBudget = OPT_constrainedAsyncRequestsPerFrame;
+	}else if(wantMitigation){
+		if(!s_inMitigation){
+			s_mitigationTimerMs += dtMs;
+			if(s_mitigationTimerMs < OPT_mitigationDelayMs)
+				targetScale = 1.0f; // wait for delay to elapse
+		}
+		if(s_mitigationTimerMs >= OPT_mitigationDelayMs || s_inMitigation){
+			s_inMitigation = true;
+			s_inCritical = false;
+			s_targetDistanceScale = OPT_mitigationDistanceScale;
+			s_mobileVehReqBudget = OPT_constrainedVehicleRequestsPerFrame;
+			s_mobileAsyncReqBudget = OPT_constrainedAsyncRequestsPerFrame;
+		}
+	}else{
+		// No pressure — recover with recoveryDelayMs
+		if(s_inMitigation || s_inCritical){
+			s_recoveryTimerMs += dtMs;
+			if(s_recoveryTimerMs < OPT_recoveryDelayMs)
+				targetScale = s_targetDistanceScale; // hold current scale
+		}
+		if(s_recoveryTimerMs >= OPT_recoveryDelayMs || (!s_inMitigation && !s_inCritical)){
+			s_inMitigation = false;
+			s_inCritical = false;
+			s_mitigationTimerMs = 0;
+			s_recoveryTimerMs = 0;
+			s_targetDistanceScale = 1.0f;
+			s_mobileVehReqBudget = OPT_vehicleRequestsPerFrame;
+			s_mobileAsyncReqBudget = OPT_asyncRequestsPerFrame;
+		}
+	}
+
+	// Gradual scale change (analysis ch. 3: distanceScaleChangePerSecond)
+	float dt = Min(CTimer::GetTimeStepInSeconds(), 0.1f);
+	if(dt > 0.0f){
+		float maxStep = OPT_distanceScaleChangePerSecond * dt;
+		float diff = targetScale - s_mobileRamLodScale;
+		if(diff > maxStep) diff = maxStep;
+		else if(diff < -maxStep) diff = -maxStep;
+		s_mobileRamLodScale += diff;
+	}
+
+	// Apply farPlaneMarginScale (analysis ch. 3)
+	float marginScale = OPT_farPlaneMarginScale;
+	CRenderer::ms_lodDistScale = Clamp(FrontEndMenuManager.m_PrefsLOD * s_mobileRamLodScale * marginScale, DRAWDIST_MIN, DRAWDIST_MAX);
+
+	// Vehicle loaded-count targets (analysis ch. 4, 8).
+	// The analysis defines vehicleUnloadDistance/ReloadDistance as streaming
+	// distances (35/25 m) for the network vehicle system; in this codebase
+	// the loaded-vehicle count is adjusted by pressure state instead.
+	int32 loadedVehs = CStreaming::ms_numVehiclesLoaded;
+	const int32 normalTarget = Min(25, (int32)MAXVEHICLESLOADED);
+	if(s_inCritical)
+		desiredNumVehiclesLoaded = Min(15, (int32)MAXVEHICLESLOADED);
+	else if(s_inMitigation)
+		desiredNumVehiclesLoaded = Min(18, (int32)MAXVEHICLESLOADED);
+	else if(loadedVehs > normalTarget + 10)
+		desiredNumVehiclesLoaded = normalTarget;
+	else if(desiredNumVehiclesLoaded < normalTarget)
+		desiredNumVehiclesLoaded = normalTarget;
+}
+} // namespace
+#endif
+
 void
 CStreaming::Update(void)
 {
@@ -324,6 +540,9 @@ CStreaming::Update(void)
 	timeProcessingDFF = 0;
 #endif
 
+#ifdef ANDROID
+	UpdateMobileStreamingHeadroom();
+#endif
 	UpdateMemoryUsed();
 
 	if(ms_channelError != -1){
@@ -335,7 +554,11 @@ CStreaming::Update(void)
 		return;
 
 	LoadBigBuildingsWhenNeeded();
+#ifdef ANDROID
+	if(!ms_disableStreaming)
+#else
 	if(!ms_disableStreaming && TheCamera.GetPosition().z < 55.0f)
+#endif
 		AddModelsToRequestList(TheCamera.GetPosition(), 0);
 
 	DeleteFarAwayRwObjects(TheCamera.GetPosition());
@@ -396,6 +619,48 @@ CStreaming::LoadCdDirectory(void)
 		LoadCdDirectory(dirname, i);
 	}
 
+#ifdef CUSTOM_MODELS
+	// The IMG index is final now. Models installed from custom IDEs were
+	// paired before creating their TXD slots; also cover native VC building
+	// slots replaced by a DFF + same-name TXD from custom/img/. The winners
+	// can come from different auto-mounted IMGs; never pick a stock TXD just
+	// because its name collides. Leave unpaired IDE and VC multi-LOD alone.
+	int paired = 0, rebound = 0;
+	for(int model = 0; model < MODELINFOSIZE; model++){
+		CBaseModelInfo *mi = CModelInfo::GetModelInfo(model);
+		if(!mi) continue;
+		if(mi->IsBuilding()){
+			CSimpleModelInfo *simple = (CSimpleModelInfo*)mi;
+			// Leave native VC multi-LOD damaged buildings alone unless custom-owned
+			if(!CCustomWorld::OwnsModelSlot(model) &&
+			   (simple->m_numAtomics != 1 || simple->m_firstDamaged != 0))
+				continue;
+		}
+		CStreamingInfo &dff = ms_aInfoForModel[model];
+		if(!dff.GetCdSize()) continue;
+		int image = _GET_INDEX(dff.m_position);
+		if(!CCustomModels::IsAutoMountedImage(image)) continue;
+		int txd = CTxdStore::FindTxdSlot(mi->GetModelName());
+		if(txd < 0) continue;
+		CStreamingInfo &texture = ms_aInfoForModel[txd + STREAM_OFFSET_TXD];
+		if(!texture.GetCdSize() ||
+		   !CCustomModels::IsAutoMountedImage(_GET_INDEX(texture.m_position)))
+			continue;
+		paired++;
+		int oldTxd = mi->GetTxdSlot();
+		if(oldTxd != txd){
+			if(mi->GetRwObject() || mi->GetNumRefs()) continue;
+			mi->SetTexDictionary(mi->GetModelName());
+			if(oldTxd >= 0 && CTxdStore::GetParentTxdSlot(txd) < 0 &&
+			   (ms_aInfoForModel[oldTxd + STREAM_OFFSET_TXD].GetCdSize() > 0 ||
+			    CTxdStore::GetSlot(oldTxd)->texDict != nil))
+				CTxdStore::SetTxdParent(txd, oldTxd);
+			rebound++;
+		}
+	}
+	REVC_LOG_INFO("custom/img/: %d DFF/TXD same-name pairs confirmed, %d model TXD associations updated", paired, rebound);
+#endif
+
 	ms_lastImageRead = 0;
 	ms_imageSize /= CDSTREAM_SECTOR_SIZE;
 }
@@ -403,22 +668,47 @@ CStreaming::LoadCdDirectory(void)
 void
 CStreaming::LoadCdDirectory(const char *dirname, int n)
 {
-	int fd, lastID, imgSelector;
+	int fd, lastID;
+	uint32 imgSelector;
 	int modelId;
 	CDirectory::DirectoryInfo direntry;
 	char *dot;
 
 	lastID = -1;
 	fd = CFileMgr::OpenFile(dirname, "rb");
-	assert(fd > 0);
+	if(fd <= 0){
+		REVC_LOG_ERROR("Cannot read CD directory %s for IMG %d", dirname, n);
+		return;
+	}
 
-	imgSelector = n<<24;
+	int entries = 0, registered = 0, duplicates = 0;
+	imgSelector = (uint32)n<<24;
+#ifdef CUSTOM_MODELS
+	int unknownModels = 0, ignoredTypes = 0, fullTxds = 0;
+	bool modelsOnly = CCustomModels::IsAutoMountedImage(n);
+	// A large custom/data/maps/ IDE can register ~28k models. Scanning the
+	// model-info array for each IMG DFF would be quadratic at boot. This
+	// temporary metadata index is rebuilt per directory and freed afterward;
+	// it does not retain models or change any resident-asset cache budget.
+	customimg::ModelNameIndex modelNames(MAX_MODEL_NAME);
+	modelNames.Reserve(MODELINFOSIZE);
+	for(int id = 0; id < MODELINFOSIZE; id++) {
+		CBaseModelInfo *mi = CModelInfo::GetModelInfo(id);
+		if(mi) modelNames.Add(mi->GetModelName(), id);
+	}
+#endif
 	assert(sizeof(direntry) == 32);
 	while(CFileMgr::Read(fd, (char*)&direntry, sizeof(direntry))){
+		entries++;
 		bool bAddToStreaming = false;
 
+#ifndef CUSTOM_MODELS
 		if(direntry.size > (uint32)ms_streamingBufferSize)
 			ms_streamingBufferSize = direntry.size;
+#else
+		if(!modelsOnly && direntry.size > (uint32)ms_streamingBufferSize)
+			ms_streamingBufferSize = direntry.size;
+#endif
 		direntry.name[23] = '\0';
 		dot = strchr(direntry.name, '.');
 		if(dot == nil || dot-direntry.name > 20){
@@ -426,23 +716,68 @@ CStreaming::LoadCdDirectory(const char *dirname, int n)
 			lastID = -1;
 			continue;
 		}
+#ifdef CUSTOM_MODELS
+		// The native streamer receives only DFF/TXD from user IMGs. COL/CLS
+		// entries were indexed separately and converted to VC COLL by the
+		// custom collision loader; never stream raw SA collision bytes here.
+		if(modelsOnly && (dot-direntry.name > 19 || dot[4] != '\0' ||
+		   (strncasecmp(dot+1, "DFF", 3) != 0 &&
+		    strncasecmp(dot+1, "TXD", 3) != 0))){
+			ignoredTypes++;
+			lastID = -1;
+			continue;
+		}
+#endif
 
 		*dot = '\0';
 
 		if(strncasecmp(dot+1, "DFF", 3) == 0){
+#ifdef CUSTOM_MODELS
+			modelId = modelNames.Find(direntry.name);
+			// Preserve the game's case-insensitive behavior for rare non-ASCII
+			// stock names, which the ASCII-only fast index cannot represent.
+			if(modelId == -1 && !customimg::ModelNameIndex::IsASCII(direntry.name))
+				CModelInfo::GetModelInfo(direntry.name, &modelId);
+			if(modelId >= 0){
+#else
 			if(CModelInfo::GetModelInfo(direntry.name, &modelId)){
+#endif
 				bAddToStreaming = true;
 			}else{
+#ifdef CUSTOM_MODELS
+				unknownModels++;
+				// Auto-mounted IMGs can hold tens of thousands of DFFs without
+				// IDEs, which are not script-loadable special models. Native
+				// images must retain theirs; CDirectory grows when needed.
+				if(!modelsOnly){
+#endif
 #ifdef FIX_BUGS
-				// remember which cdimage this came from
-				ms_pExtraObjectsDir->AddItem(direntry, n);
+					ms_pExtraObjectsDir->AddItem(direntry, n);
 #else
-				ms_pExtraObjectsDir->AddItem(direntry);
+					ms_pExtraObjectsDir->AddItem(direntry);
+#endif
+#ifdef CUSTOM_MODELS
+				}
 #endif
 				lastID = -1;
 			}
 		}else if(strncasecmp(dot+1, "TXD", 3) == 0){
+#ifdef CUSTOM_MODELS
+			// TxdDef::name[20] must hold the full stem, including NUL.
+			if(dot-direntry.name > 19) {
+				ignoredTypes++;
+				lastID = -1;
+				continue;
+			}
+#endif
 			modelId = CTxdStore::FindTxdSlot(direntry.name);
+#ifdef CUSTOM_MODELS
+			if(modelId == -1 && !(modelsOnly ? CTxdStore::HasFreeCustomSlot() : CTxdStore::HasFreeSlot())) {
+				fullTxds++;
+				lastID = -1;
+				continue;
+			}
+#endif
 			if(modelId == -1)
 				modelId = CTxdStore::AddTxdSlot(direntry.name);
 			modelId += STREAM_OFFSET_TXD;
@@ -464,11 +799,21 @@ CStreaming::LoadCdDirectory(const char *dirname, int n)
 
 		if(bAddToStreaming){
 			if(ms_aInfoForModel[modelId].GetCdSize()){
-				debug("%s.%s appears more than once in %s\n", direntry.name, dot+1, dirname);
+				int previous = _GET_INDEX(ms_aInfoForModel[modelId].m_position);
+				const char *image = previous < CdStreamGetNumImages() ?
+					CdStreamGetImageName(previous) : nil;
+				debug("%s.%s appears more than once in %s; keeping %s\n",
+					direntry.name, dot+1, dirname, image ? image : "unknown IMG");
+				duplicates++;
 				lastID = -1;
 			}else{
+#ifdef CUSTOM_MODELS
+				if(modelsOnly && direntry.size > (uint32)ms_streamingBufferSize)
+					ms_streamingBufferSize = direntry.size;
+#endif
 				direntry.offset |= imgSelector;
 				ms_aInfoForModel[modelId].SetCdPosnAndSize(direntry.offset, direntry.size);
+				registered++;
 				if(lastID != -1)
 					ms_aInfoForModel[lastID].m_nextID = modelId;
 				lastID = modelId;
@@ -477,21 +822,37 @@ CStreaming::LoadCdDirectory(const char *dirname, int n)
 	}
 
 	CFileMgr::CloseFile(fd);
+	REVC_LOG_INFO("CD directory %s (IMG %d): %d entries, %d registered, %d duplicates",
+		dirname, n, entries, registered, duplicates);
+#ifdef CUSTOM_MODELS
+	if(modelsOnly && (unknownModels || ignoredTypes || fullTxds))
+		REVC_LOG_INFO("IMG %d: %d DFF without IDE, %d non-DFF/TXD entries bypassed by native streaming, %d TXDs over slot limit",
+			n, unknownModels, ignoredTypes, fullTxds);
+	if(!modelsOnly && unknownModels)
+		REVC_LOG_INFO("IMG %d: %d DFF without IDE encountered; extra directory now holds %d unique models",
+			n, unknownModels, ms_pExtraObjectsDir->numEntries);
+	if(!modelsOnly && fullTxds)
+		REVC_LOG_ERROR("IMG %d: %d native TXDs could not be registered: TXD slots exhausted", n, fullTxds);
+#endif
 }
 
 static char*
 GetObjectName(int streamId)
 {
-	static char objname[32];
-	if(streamId < STREAM_OFFSET_TXD)
-		sprintf(objname, "%s.dff", CModelInfo::GetModelInfo(streamId)->GetModelName());
-	else if(streamId >= STREAM_OFFSET_TXD && streamId < STREAM_OFFSET_COL)
-		sprintf(objname, "%s.txd", CTxdStore::GetTxdName(streamId-STREAM_OFFSET_TXD));
-	else if(streamId >= STREAM_OFFSET_COL && streamId < STREAM_OFFSET_ANIM)
-		sprintf(objname, "%s.col", CColStore::GetColName(streamId-STREAM_OFFSET_COL));
-	else{
+	static char objname[96];
+	if(streamId < STREAM_OFFSET_TXD){
+		CBaseModelInfo *mi = CModelInfo::GetModelInfo(streamId);
+		snprintf(objname, sizeof(objname), "%s.dff", (mi && mi->GetModelName()) ? mi->GetModelName() : "unknown");
+	}else if(streamId >= STREAM_OFFSET_TXD && streamId < STREAM_OFFSET_COL){
+		const char *tn = CTxdStore::GetTxdName(streamId-STREAM_OFFSET_TXD);
+		snprintf(objname, sizeof(objname), "%s.txd", tn ? tn : "unknown");
+	}else if(streamId >= STREAM_OFFSET_COL && streamId < STREAM_OFFSET_ANIM){
+		const char *cn = CColStore::GetColName(streamId-STREAM_OFFSET_COL);
+		snprintf(objname, sizeof(objname), "%s.col", cn ? cn : "unknown");
+	}else{
 		assert(streamId < NUMSTREAMINFO);
-		sprintf(objname, "%s.ifp", CAnimManager::GetAnimationBlock(streamId-STREAM_OFFSET_ANIM)->name);
+		CAnimBlock *ab = CAnimManager::GetAnimationBlock(streamId-STREAM_OFFSET_ANIM);
+		snprintf(objname, sizeof(objname), "%s.ifp", ab ? ab->name : "unknown");
 	}
 	return objname;
 }
@@ -517,6 +878,21 @@ CStreaming::ConvertBufferToObject(int8 *buf, int32 streamId)
 
 	startTime = CTimer::GetCurrentTimeInCycles() / CTimer::GetCyclesPerMillisecond();
 
+#ifdef CUSTOM_MODELS
+	// The file comes from the game's custom folder, so the bytes that were
+	// read from the image are not used at all: the file is decompressed and
+	// converted in memory instead. Everything around the load is the same, so
+	// the model ends up in exactly the state a file from the image would.
+	if(CCustomModels::CanServe(streamId)){
+		LoadCustomFile(streamId);
+		endTime = CTimer::GetCurrentTimeInCycles() / CTimer::GetCyclesPerMillisecond();
+		timeDiff = endTime - startTime;
+		if(timeDiff > 5)
+			debug("%s (custom) took %d ms\n", GetObjectName(streamId), timeDiff);
+		return ms_aInfoForModel[streamId].m_loadState == STREAMSTATE_LOADED;
+	}
+#endif
+
 	cdsize = ms_aInfoForModel[streamId].GetCdSize();
 	mem.start = (uint8*)buf;
 	mem.length = cdsize * CDSTREAM_SECTOR_SIZE;
@@ -526,14 +902,29 @@ CStreaming::ConvertBufferToObject(int8 *buf, int32 streamId)
 		// Model
 		mi = CModelInfo::GetModelInfo(streamId);
 
-		// Txd and anim have to be loaded
+		// Txd (including any streamable txdp parent chain) and anim have to be loaded
 		int animId = mi->GetAnimFileIndex();
+		bool txdReady =
 #ifdef FIX_BUGS
-		if(!HasTxdLoaded(mi->GetTxdSlot()) ||
+			HasTxdLoaded(mi->GetTxdSlot());
 #else
-		// texDict will exist even if only first part has loaded
-		if(CTxdStore::GetSlot(mi->GetTxdSlot())->texDict == nil ||
+			CTxdStore::GetSlot(mi->GetTxdSlot())->texDict != nil;
 #endif
+		if(txdReady){
+			for(int p = CTxdStore::GetParentTxdSlot(mi->GetTxdSlot()), depth = 0;
+			    p >= 0 && depth < 8; p = CTxdStore::GetParentTxdSlot(p), depth++){
+				bool streamable = ms_aInfoForModel[p + STREAM_OFFSET_TXD].GetCdSize() > 0
+#ifdef CUSTOM_MODELS
+					|| CCustomModels::CanServe(p + STREAM_OFFSET_TXD)
+#endif
+					;
+				if(streamable && CTxdStore::GetSlot(p)->texDict == nil && !HasTxdLoaded(p)){
+					RequestTxd(p, ms_aInfoForModel[streamId].m_flags & STREAMFLAGS_PRIORITY);
+					txdReady = false;
+				}
+			}
+		}
+		if(!txdReady ||
 		   animId != -1 && !CAnimManager::GetAnimationBlock(animId)->isLoaded){
 			RemoveModel(streamId);
 			ReRequestModel(streamId);
@@ -550,21 +941,34 @@ CStreaming::ConvertBufferToObject(int8 *buf, int32 streamId)
 
 		PUSH_MEMID(MEMID_STREAM_MODELS);
 		CTxdStore::SetCurrentTxd(mi->GetTxdSlot());
-		if(mi->IsSimple()){
+		// The IDE determines the model info type. Never treat an arbitrary DFF
+		// as a ped or vehicle merely because of its filename/root-node name.
+		switch(GetModelLoadKind(mi->GetModelType())){
+		case MODELLOAD_ATOMIC:
 			success = CFileLoader::LoadAtomicFile(stream, streamId);
-			// TODO(MIAMI)? complain if file is not pre-instanced. we hardly are interested in that
-		} else if (mi->GetModelType() == MITYPE_VEHICLE) {
-			// load vehicles in two parts
-			CModelInfo::GetModelInfo(streamId)->AddRef();
+			break;
+		case MODELLOAD_VEHICLE:
+			// Vehicles must be read in two stages.
+			mi->AddRef();
 			success = CFileLoader::StartLoadClumpFile(stream, streamId);
 			if(success)
 				ms_aInfoForModel[streamId].m_loadState = STREAMSTATE_STARTED;
-		}else{
+			else
+				mi->RemoveRef();
+			break;
+		case MODELLOAD_PED:
+		case MODELLOAD_CLUMP:
 			success = CFileLoader::LoadClumpFile(stream, streamId);
 #ifdef USE_CUSTOM_ALLOCATOR
 			if(success)
 				RpClumpForAllAtomics((RpClump*)mi->GetRwObject(), RegisterAtomicMemPtrsCB, nil);
 #endif
+			break;
+		default:
+			REVC_LOG_WARNING("Streaming: unsupported model info type %d for %s (id %d)",
+				mi->GetModelType(), mi->GetModelName(), streamId);
+			success = false;
+			break;
 		}
 		POP_MEMID();
 		UpdateMemoryUsed();
@@ -605,7 +1009,15 @@ CStreaming::ConvertBufferToObject(int8 *buf, int32 streamId)
 		UpdateMemoryUsed();
 
 		if(!success){
-			debug("Failed to load %s.txd\n", CTxdStore::GetTxdName(streamId - STREAM_OFFSET_TXD));
+			uint32 pos = ms_aInfoForModel[streamId].m_position;
+			int imageIndex = _GET_INDEX(pos);
+			const char *image = imageIndex < CdStreamGetNumImages() ?
+				CdStreamGetImageName(imageIndex) : nil;
+			const uint8 *header = (const uint8*)buf;
+			REVC_LOG_ERROR("Failed to load %s.txd from %s (sector=%u, sectors=%d, header=%02X %02X %02X %02X)",
+				CTxdStore::GetTxdName(streamId - STREAM_OFFSET_TXD),
+				image ? image : "unknown IMG", _GET_OFFSET(pos), cdsize,
+				(unsigned)header[0], (unsigned)header[1], (unsigned)header[2], (unsigned)header[3]);
 			RemoveModel(streamId);
 			ReRequestModel(streamId);
 			RwStreamClose(stream, &mem);
@@ -631,12 +1043,34 @@ CStreaming::ConvertBufferToObject(int8 *buf, int32 streamId)
 			return false;
 		}
 		PUSH_MEMID(MEMID_STREAM_ANIMATION);
+#ifdef CUSTOM_MODELS
+		CAnimBlock *animBlock = CAnimManager::GetAnimationBlock(streamId - STREAM_OFFSET_ANIM);
+		if(animBlock){
+			char customAnimFile[64];
+			snprintf(customAnimFile, sizeof(customAnimFile), "ANIM\\%s.IFP", animBlock->name);
+			CAnimManager::LoadSAAnimFileFromCustom(customAnimFile);
+		}
+#endif
 		CAnimManager::LoadAnimFile(stream, true, nil);
+#ifdef CUSTOM_MODELS
+		CUSTOM_LOG("stream animation %d: native VC block loaded; building groups\n",
+			streamId - STREAM_OFFSET_ANIM);
+#endif
 		CAnimManager::CreateAnimAssocGroups();
+#ifdef CUSTOM_MODELS
+		CUSTOM_LOG("stream animation %d: groups returned\n", streamId - STREAM_OFFSET_ANIM);
+#endif
 		POP_MEMID();
+#ifdef CUSTOM_MODELS
+		CUSTOM_LOG("stream animation %d: memory scope popped\n", streamId - STREAM_OFFSET_ANIM);
+#endif
 	}
 
 	RwStreamClose(stream, &mem);
+#ifdef CUSTOM_MODELS
+	if(streamId >= STREAM_OFFSET_ANIM)
+		CUSTOM_LOG("stream animation %d: native stream closed\n", streamId - STREAM_OFFSET_ANIM);
+#endif
 
 	if(streamId < STREAM_OFFSET_TXD){
 		// Model
@@ -661,6 +1095,10 @@ CStreaming::ConvertBufferToObject(int8 *buf, int32 streamId)
 		// Txd and anims
 		if(CanRemoveModel(streamId))
 			ms_aInfoForModel[streamId].AddToList(&ms_startLoadedList);
+#ifdef CUSTOM_MODELS
+		if(streamId >= STREAM_OFFSET_ANIM)
+			CUSTOM_LOG("stream animation %d: loaded-list update complete\n", streamId - STREAM_OFFSET_ANIM);
+#endif
 	}
 
 	// Mark objects as loaded
@@ -670,11 +1108,19 @@ CStreaming::ConvertBufferToObject(int8 *buf, int32 streamId)
 		ms_memoryUsed += ms_aInfoForModel[streamId].GetCdSize() * CDSTREAM_SECTOR_SIZE;
 #endif
 	}
+#ifdef CUSTOM_MODELS
+	if(streamId >= STREAM_OFFSET_ANIM)
+		CUSTOM_LOG("stream animation %d: load state committed\n", streamId - STREAM_OFFSET_ANIM);
+#endif
 
 	endTime = CTimer::GetCurrentTimeInCycles() / CTimer::GetCyclesPerMillisecond();
 	timeDiff = endTime - startTime;
 	if(timeDiff > 5)
 		debug("%s took %d ms\n", GetObjectName(streamId), timeDiff);
+#ifdef CUSTOM_MODELS
+	if(streamId >= STREAM_OFFSET_ANIM)
+		CUSTOM_LOG("stream animation %d: load routine returning\n", streamId - STREAM_OFFSET_ANIM);
+#endif
 
 	return true;
 }
@@ -759,6 +1205,12 @@ CStreaming::RequestModel(int32 id, int32 flags)
 {
 	CSimpleModelInfo *mi;
 
+	if(id >= STREAM_OFFSET_ANIM && id < NUMSTREAMINFO){
+		CAnimBlock *animBlock = CAnimManager::GetAnimationBlock(id - STREAM_OFFSET_ANIM);
+		if(animBlock)
+			animBlock->unloadPending = false;
+	}
+
 	if(ms_aInfoForModel[id].m_loadState == STREAMSTATE_INQUEUE){
 		// updgrade to priority
 		if(flags & STREAMFLAGS_PRIORITY && !ms_aInfoForModel[id].IsPriority()){
@@ -792,6 +1244,16 @@ CStreaming::RequestModel(int32 id, int32 flags)
 			if(id < STREAM_OFFSET_TXD){
 				mi = (CSimpleModelInfo*)CModelInfo::GetModelInfo(id);
 				RequestTxd(mi->GetTxdSlot(), flags);
+				for(int p = CTxdStore::GetParentTxdSlot(mi->GetTxdSlot()), depth = 0;
+				    p >= 0 && depth < 8; p = CTxdStore::GetParentTxdSlot(p), depth++){
+					bool streamable = ms_aInfoForModel[p + STREAM_OFFSET_TXD].GetCdSize() > 0
+#ifdef CUSTOM_MODELS
+						|| CCustomModels::CanServe(p + STREAM_OFFSET_TXD)
+#endif
+						;
+					if(streamable)
+						RequestTxd(p, flags & STREAMFLAGS_PRIORITY);
+				}
 				int anim = mi->GetAnimFileIndex();
 				if(anim != -1)
 					RequestAnim(anim, STREAMFLAGS_DEPENDENCY);
@@ -805,6 +1267,10 @@ CStreaming::RequestModel(int32 id, int32 flags)
 		ms_aInfoForModel[id].m_loadState = STREAMSTATE_INQUEUE;
 		ms_aInfoForModel[id].m_flags = flags;
 	}
+#ifdef CUSTOM_MODELS
+	if(ms_aInfoForModel[id].m_loadState == STREAMSTATE_INQUEUE)
+		CCustomModels::PrefetchStream(id, ms_aInfoForModel[id].IsPriority());
+#endif
 }
 
 #define BIGBUILDINGFLAGS STREAMFLAGS_DONT_REMOVE
@@ -851,6 +1317,11 @@ CStreaming::RequestBigBuildings(eLevelName level, const CVector &pos)
 #endif
 		)
 			if(b->bStreamBIGBuilding){
+#ifdef CUSTOM_MODELS
+				if(CCustomWorld::OwnsModelSlot(b->GetModelIndex()) &&
+				   (b->GetPosition() - pos).MagnitudeSqr() > sq(420.0f))
+					continue;
+#endif
 				if(CRenderer::ShouldModelBeStreamed(b, pos))
 					RequestModel(b->GetModelIndex(), 0);
 			}else
@@ -891,16 +1362,12 @@ void
 CStreaming::InstanceLoadedModels(const CVector &pos)
 {
 	int minX = CWorld::GetSectorIndexX(pos.x - 80.0f);
-	if(minX <= 0) minX = 0;
 
 	int minY = CWorld::GetSectorIndexY(pos.y - 80.0f);
-	if(minY <= 0) minY = 0;
 
 	int maxX = CWorld::GetSectorIndexX(pos.x + 80.0f);
-	if(maxX >= NUMSECTORS_X) maxX = NUMSECTORS_X - 1;
 
 	int maxY = CWorld::GetSectorIndexY(pos.y + 80.0f);
-	if(maxY >= NUMSECTORS_Y) maxY = NUMSECTORS_Y - 1;
 
 	int x, y;
 	for(y = minY; y <= maxY; y++){
@@ -990,9 +1457,14 @@ CStreaming::RequestSpecialModel(int32 modelId, const char *modelName, int32 flag
 	uint32 pos, size;
 	int i, n;
 
-	mi = CModelInfo::GetModelInfo(modelId);
+	mi = modelId >= 0 && modelId < MODELINFOSIZE ? CModelInfo::GetModelInfo(modelId) : nil;
+	if(mi == nil || modelName == nil || modelName[0] == '\0'){
+		CUSTOM_LOG("special model: invalid model id=%d or empty name; request ignored\n", modelId);
+		return;
+	}
 	if(strncasecmp("CSPlay", modelName, 6) == 0){
-		char *curname = CModelInfo::GetModelInfo(MI_PLAYER)->GetModelName();
+		CBaseModelInfo *player = CModelInfo::GetModelInfo(MI_PLAYER);
+		const char *curname = player ? player->GetModelName() : "";
 		for(int i = 0; CSnames[i][0]; i++){
 			if(strcasecmp(curname, IGnames[i]) == 0){
 				modelName = CSnames[i];
@@ -1000,11 +1472,42 @@ CStreaming::RequestSpecialModel(int32 modelId, const char *modelName, int32 flag
 			}
 		}
 	}
+	// Reject nonterminated/corrupt names before comparing them or copying
+	// into CBaseModelInfo::m_name. SCM keys are fixed-width, not C strings.
+	size_t nameLen = 0;
+	while(nameLen < MAX_MODEL_NAME && modelName[nameLen]) nameLen++;
+	if(nameLen == MAX_MODEL_NAME){
+		CUSTOM_LOG("special model id=%d: name exceeds %d bytes; request ignored\n",
+			modelId, MAX_MODEL_NAME-1);
+		return;
+	}
 	if(!CGeneral::faststrcmp(mi->GetModelName(), modelName)){
 		// Already have the correct name, just request it
 		RequestModel(modelId, flags);
 		return;
 	}
+
+	// Ordinary IDE DFFs are not kept in ms_pExtraObjectsDir; user IMGs also
+	// omit their orphan DFFs from that directory. Both are valid script
+	// special models, so consult the pre-indexed DIR metadata before changing
+	// the slot name, unloading its old model or deleting referencing peds.
+	bool found = false;
+#ifdef CUSTOM_MODELS
+	found = CCustomModels::FindModelDffInImage(modelName, pos, size);
+#endif
+	if(!found) found = ms_pExtraObjectsDir->FindItem(modelName, pos, size);
+	if(found && (size == 0 || _GET_INDEX(pos) >= CdStreamGetNumImages())){
+		CUSTOM_LOG("special model id=%d name=%s: invalid IMG record index=%u, sectors=%u; keeping old model\n",
+			modelId, modelName, (unsigned)_GET_INDEX(pos), (unsigned)size);
+		return;
+	}
+	if(!found){
+		CUSTOM_LOG("special model id=%d name=%s (old=%s): no DFF in mounted IMG; keeping old model\n",
+			modelId, modelName, mi->GetModelName());
+		return;
+	}
+	CUSTOM_LOG("special model id=%d name=%s (old=%s): source=mounted IMG %s\n",
+		modelId, modelName, mi->GetModelName(), CdStreamGetImageName(_GET_INDEX(pos)));
 
 	if(mi->GetNumRefs() > 0){
 		n = CPools::GetPedPool()->GetSize()-1;
@@ -1040,8 +1543,6 @@ CStreaming::RequestSpecialModel(int32 modelId, const char *modelName, int32 flag
 	}else
 		RemoveModel(modelId);
 
-	bool found = ms_pExtraObjectsDir->FindItem(modelName, pos, size);
-	assert(found);
 	mi->ClearTexDictionary();
 	if(CTxdStore::FindTxdSlot(modelName) == -1)
 		mi->SetTexDictionary("generic");
@@ -1084,15 +1585,32 @@ CStreaming::RemoveModel(int32 id)
 {
 	int i;
 
+	// An active animation association owns a block reference. Do not let an
+	// explicit removal or memory-pressure path invalidate its hierarchy.
+	if(id >= STREAM_OFFSET_ANIM && id < NUMSTREAMINFO &&
+	   CAnimManager::GetNumRefsToAnimBlock(id - STREAM_OFFSET_ANIM) > 0){
+		CAnimManager::GetAnimationBlock(id - STREAM_OFFSET_ANIM)->unloadPending = true;
+		debug("Keeping animation block %d loaded while associations reference it\n", id - STREAM_OFFSET_ANIM);
+		return;
+	}
+
 	if(ms_aInfoForModel[id].m_loadState == STREAMSTATE_NOTLOADED)
 		return;
 
+#ifdef CUSTOM_MODELS
+	CCustomModels::CancelStreamPrefetch(id);
+#endif
 	if(ms_aInfoForModel[id].m_loadState == STREAMSTATE_LOADED){
 		if(id < STREAM_OFFSET_TXD)
 			CModelInfo::GetModelInfo(id)->DeleteRwObject();
-		else if(id >= STREAM_OFFSET_TXD && id < STREAM_OFFSET_COL)
-			CTxdStore::RemoveTxd(id - STREAM_OFFSET_TXD);
-		else if(id >= STREAM_OFFSET_COL && id < STREAM_OFFSET_ANIM)
+		else if(id >= STREAM_OFFSET_TXD && id < STREAM_OFFSET_COL){
+#ifdef CUSTOM_MODELS
+			// Custom TXDs are already GPU-ready. Keep a bounded number of
+			// evicted dictionaries instead of decoding and uploading them again.
+			if(!CCustomModels::RetainTxdOnUnload(id - STREAM_OFFSET_TXD))
+#endif
+				CTxdStore::RemoveTxd(id - STREAM_OFFSET_TXD);
+		}else if(id >= STREAM_OFFSET_COL && id < STREAM_OFFSET_ANIM)
 			CColStore::RemoveCol(id - STREAM_OFFSET_COL);
 		else if(id >= STREAM_OFFSET_ANIM){
 			assert(id < NUMSTREAMINFO);
@@ -1437,6 +1955,22 @@ CStreaming::RemoveLoadedZoneModel(void)
 	return false;
 }
 
+static bool
+DoesModelUseTxdInHierarchy(int32 modelStreamId, int32 txdId)
+{
+	if(modelStreamId < 0 || modelStreamId >= STREAM_OFFSET_TXD)
+		return false;
+	CBaseModelInfo *mi = CModelInfo::GetModelInfo(modelStreamId);
+	if(mi == nil)
+		return false;
+	for(int cur = mi->GetTxdSlot(), depth = 0; cur >= 0 && depth < 8;
+	    cur = CTxdStore::GetParentTxdSlot(cur), depth++){
+		if(cur == txdId)
+			return true;
+	}
+	return false;
+}
+
 bool
 CStreaming::IsTxdUsedByRequestedModels(int32 txdId)
 {
@@ -1446,19 +1980,16 @@ CStreaming::IsTxdUsedByRequestedModels(int32 txdId)
 
 	for(si = ms_startRequestedList.m_next; si != &ms_endRequestedList; si = si->m_next){
 		streamId = si - ms_aInfoForModel;
-		if(streamId < STREAM_OFFSET_TXD &&
-		   CModelInfo::GetModelInfo(streamId)->GetTxdSlot() == txdId)
+		if(DoesModelUseTxdInHierarchy(streamId, txdId))
 			return true;
 	}
 
 	for(i = 0; i < 4; i++){
 		streamId = ms_channel[0].streamIds[i];
-		if(streamId != -1 && streamId < STREAM_OFFSET_TXD &&
-		   CModelInfo::GetModelInfo(streamId)->GetTxdSlot() == txdId)
+		if(DoesModelUseTxdInHierarchy(streamId, txdId))
 			return true;
 		streamId = ms_channel[1].streamIds[i];
-		if(streamId != -1 && streamId < STREAM_OFFSET_TXD &&
-		   CModelInfo::GetModelInfo(streamId)->GetTxdSlot() == txdId)
+		if(DoesModelUseTxdInHierarchy(streamId, txdId))
 			return true;
 	}
 
@@ -1597,6 +2128,97 @@ CStreaming::SetMissionDoesntRequireModel(int32 id)
 			ms_aInfoForModel[id].AddToList(&ms_startLoadedList);
 	}
 }
+
+#ifdef CUSTOM_MODELS
+static RpAtomic*
+RemoveVCPedReferenceAtomicCB(RpAtomic *atomic, void *data)
+{
+	RpClump *clump = (RpClump*)data;
+	RpClumpRemoveAtomic(clump, atomic);
+	RpAtomicDestroy(atomic);
+	return atomic;
+}
+
+static RpClump*
+CreateVCPedAnimationReference(CPedModelInfo *pedInfo)
+{
+	RpClump *clump = pedInfo ? (RpClump*)pedInfo->CreateInstance() : nil;
+	if(clump)
+		RpClumpForAllAtomics(clump, RemoveVCPedReferenceAtomicCB, clump);
+	return clump;
+}
+
+static void
+RemoveVCPedModelForReload(CPedModelInfo *copInfo, int32 txdSlot)
+{
+	CStreaming::RemoveModel(MI_COP);
+	// Some data-file clumps can exist before Streaming has marked their slots
+	// loaded. Remove those directly as well so the custom override can reload.
+	if(copInfo && copInfo->GetRwObject())
+		copInfo->DeleteRwObject();
+	if(txdSlot >= 0 && CStreaming::HasTxdLoaded(txdSlot) && CTxdStore::GetNumRefs(txdSlot) == 0)
+		CStreaming::RemoveModel(txdSlot + STREAM_OFFSET_TXD);
+}
+
+void
+CStreaming::LoadVCPedAnimationReference(void)
+{
+	CBaseModelInfo *baseInfo = CModelInfo::GetModelInfo(MI_COP);
+	CPedModelInfo *copInfo;
+	RpClump *reference;
+	int32 txdSlot;
+	bool customCop;
+
+	if(baseInfo == nil || baseInfo->GetModelType() != MITYPE_PED)
+		return;
+	copInfo = (CPedModelInfo*)baseInfo;
+	txdSlot = copInfo->GetTxdSlot();
+	customCop = CCustomModels::CanServe(MI_COP);
+	CUSTOM_LOG("animation groups: setting up the native VC reference (custom cop=%d, resident=%d, resident SA=%d)\n",
+		customCop, copInfo->GetRwObject() != nil, copInfo->UsesSAAnimations());
+
+	// Capture a resident native cop before any initial-ped custom model can
+	// replace it. Keep it resident when there is no custom replacement.
+	if(copInfo->GetRwObject() && !copInfo->UsesSAAnimations()){
+		reference = CreateVCPedAnimationReference(copInfo);
+		if(reference){
+			CAnimManager::SetVCPedAnimationReference(reference);
+			if(customCop)
+				RemoveVCPedModelForReload(copInfo, txdSlot);
+			CUSTOM_LOG("animation groups: saved the resident native VC cop clump as an animation reference\n");
+			return;
+		}
+		CUSTOM_LOG("animation groups: couldn't clone the resident native VC cop; keeping it loaded as the reference\n");
+		return;
+	}
+
+	// Build and save a native skeleton unconditionally. The first animation
+	// groups can be created before any stock VC ped is resident (even when only
+	// some of the initial peds are overridden), so waiting for a future native
+	// ped leaves VC associations without a skeleton reference.
+	if(copInfo->GetRwObject() || HasModelLoaded(MI_COP))
+		RemoveVCPedModelForReload(copInfo, txdSlot);
+
+	CCustomModels::SetNativeModelOverride(MI_COP, true);
+	RequestModel(MI_COP, STREAMFLAGS_PRIORITY | STREAMFLAGS_DONT_REMOVE);
+	LoadAllRequestedModels(false);
+	CCustomModels::SetNativeModelOverride(MI_COP, false);
+
+	if(HasModelLoaded(MI_COP) && copInfo->GetRwObject() && !copInfo->UsesSAAnimations()){
+		reference = CreateVCPedAnimationReference(copInfo);
+		if(reference){
+			CAnimManager::SetVCPedAnimationReference(reference);
+			if(customCop)
+				RemoveVCPedModelForReload(copInfo, txdSlot);
+			CUSTOM_LOG("animation groups: saved the native VC cop clump as an animation reference\n");
+			return;
+		}
+		CUSTOM_LOG("animation groups: couldn't clone the native VC cop; keeping it loaded as the reference\n");
+	}else{
+		CUSTOM_LOG("animation groups: couldn't load the native VC cop reference clump\n");
+	}
+}
+#endif
 
 void
 CStreaming::LoadInitialPeds(void)
@@ -1913,6 +2535,13 @@ CStreaming::LoadBigBuildingsWhenNeeded(void)
 	   CTheZones::m_CurrLevel == CGame::currLevel)
 		return;
 
+#if defined(ANDROID) && defined(CUSTOM_MODELS)
+	if(CCustomModels::ReplacesNativeWorldMap()){
+		CGame::currLevel = CTheZones::m_CurrLevel;
+		return;
+	}
+#endif
+
 	CTimer::Suspend();
 	CGame::currLevel = CTheZones::m_CurrLevel;
 	ISLAND_LOADING_IS(LOW)
@@ -2035,6 +2664,13 @@ CStreaming::GetNextFileOnCd(int32 lastPosn, bool priority)
 		}else if(streamId >= STREAM_OFFSET_ANIM && CCutsceneMgr::IsCutsceneProcessing())
 			continue;
 
+#ifdef CUSTOM_MODELS
+		// Keep the request (and the usual TXD-before-model ordering) alive
+		// while the worker reads/decodes custom CPU assets. Do not block a
+		// frame on the archive, and do not pin objects behind the camera.
+		if(!CCustomModels::IsStreamPrepared(streamId, false))
+			continue;
+#endif
 		if(ms_aInfoForModel[streamId].GetCdPosnAndSize(posn, size)){
 			if(posn < posnFirst){
 				// find first requested file in image
@@ -2058,9 +2694,10 @@ CStreaming::GetNextFileOnCd(int32 lastPosn, bool priority)
 	if(streamIdNext == -1)
 		streamIdNext = streamIdFirst;
 
-	if(streamIdNext == -1 && ms_numPriorityRequests != 0){
-		// try non-priority files
-		ms_numPriorityRequests = 0;
+	if(streamIdNext == -1 && priority && ms_numPriorityRequests != 0){
+		// Try non-priority files while priority assets prepare. Do not zero
+		// the live request count: DecrementRef still needs it when those
+		// deferred priority requests eventually reach the CD channel.
 		streamIdNext = GetNextFileOnCd(lastPosn, false);
 	}
 
@@ -2118,18 +2755,46 @@ CStreaming::RequestModelStream(int32 ch)
 		ms_bLoadingBigModel = true;
 	}
 
-	// Load up to 4 adjacent files
+// Load up to 4 adjacent files
 	haveBigFile = 0;
 	havePed = 0;
 	totalSize = 0;
+#ifdef CUSTOM_MODELS
+	bool haveCustomAsset = false;
+	// GetNextFileOnCd may return a normal file if priority CPU work is
+	// still outstanding; do not reject that very file in the batch loop.
+	bool allowNormal = !ms_aInfoForModel[streamId].IsPriority();
+#endif
 	for(i = 0; i < 4; i++){
 		// no more files we can read
 		if(streamId == -1 || ms_aInfoForModel[streamId].m_loadState != STREAMSTATE_INQUEUE)
 			break;
 
 		// also stop at non-priority files
+#ifdef CUSTOM_MODELS
+		// Adjacent CD entries bypass GetNextFileOnCd; they must not slip
+		// into the same channel before their custom CPU data is ready.
+		if(!CCustomModels::IsStreamPrepared(streamId, false))
+			break;
+		bool customAsset = CCustomModels::CanServe(streamId);
+		// RW/GPU uploads still happen on the game thread. Avoid batching
+		// multiple custom TXDs/models into a single channel conversion.
+		if(customAsset && haveCustomAsset)
+			break;
+#endif
+#ifdef CUSTOM_MODELS
+		// A just-completed validation can remove a provisional custom file
+		// with no native IMG entry. Let GetNextFileOnCd handle it next pass.
+		if(!ms_aInfoForModel[streamId].GetCdPosnAndSize(unused, size))
+			break;
+#else
 		ms_aInfoForModel[streamId].GetCdPosnAndSize(unused, size);
+#endif
+#ifdef CUSTOM_MODELS
+		if(ms_numPriorityRequests != 0 && !allowNormal && !ms_aInfoForModel[streamId].IsPriority())
+#else
 		if(ms_numPriorityRequests != 0 && !ms_aInfoForModel[streamId].IsPriority())
+#endif
 			break;
 
 		// Can't load certain combinations of files together
@@ -2145,6 +2810,9 @@ CStreaming::RequestModelStream(int32 ch)
 		}
 
 		// Now add the file
+#ifdef CUSTOM_MODELS
+		if(customAsset) haveCustomAsset = true;
+#endif
 		ms_channel[ch].streamIds[i] = streamId;
 		ms_channel[ch].offsets[i] = totalSize;
 		totalSize += size;
@@ -2173,6 +2841,12 @@ CStreaming::RequestModelStream(int32 ch)
 	// clear remaining slots
 	for(; i < 4; i++)
 		ms_channel[ch].streamIds[i] = -1;
+#ifdef CUSTOM_MODELS
+	if(totalSize == 0){
+		ms_bLoadingBigModel = false;
+		return; // nothing actually entered the channel
+	}
+#endif
 	// Now read the data
 	assert(!(ms_bLoadingBigModel && ch == 1));	// this would clobber the buffer
 	if(CdStreamRead(ch, ms_pStreamingBuffer[ch], imgOffset+posn, totalSize) == STREAM_NONE)
@@ -2183,6 +2857,152 @@ CStreaming::RequestModelStream(int32 ch)
 	ms_channel[ch].position = imgOffset+posn;
 	ms_channel[ch].numTries = 0;
 }
+
+#ifdef CUSTOM_MODELS
+// Loads one file from the game's custom folder. This is the place where such a
+// file turns into a game object, and it is written so that afterwards nothing
+// can tell the difference to a file that was read from the image: the texture
+// dictionary and the animations are referenced while the model is read, the
+// dictionary is the current one, the vehicle list is updated, the stream info
+// goes to "loaded" and the memory the file uses is accounted for.
+//
+// The caller (ConvertBufferToObject) has already taken the file out of the
+// requested list and dropped its reference, exactly like before any other load.
+void
+CStreaming::LoadCustomFile(int32 streamId)
+{
+	uint32 startTime, endTime, timeDiff;
+	CBaseModelInfo *mi;
+	int animId;
+	bool success;
+
+	startTime = CTimer::GetCurrentTimeInCycles() / CTimer::GetCyclesPerMillisecond();
+
+	if(streamId < STREAM_OFFSET_TXD){
+		// Model
+		mi = CModelInfo::GetModelInfo(streamId);
+		animId = mi->GetAnimFileIndex();
+
+		// Txd (including any streamable txdp parent chain) and anim have to be loaded
+		bool txdReady = CTxdStore::GetSlot(mi->GetTxdSlot())->texDict != nil;
+		if(txdReady){
+			for(int p = CTxdStore::GetParentTxdSlot(mi->GetTxdSlot()), depth = 0;
+			    p >= 0 && depth < 8; p = CTxdStore::GetParentTxdSlot(p), depth++){
+				bool streamable = ms_aInfoForModel[p + STREAM_OFFSET_TXD].GetCdSize() > 0 ||
+				                  CCustomModels::CanServe(p + STREAM_OFFSET_TXD);
+				if(streamable && CTxdStore::GetSlot(p)->texDict == nil){
+					RequestTxd(p, ms_aInfoForModel[streamId].m_flags & STREAMFLAGS_PRIORITY);
+					txdReady = false;
+				}
+			}
+		}
+		if(!txdReady ||
+		   animId != -1 && !CAnimManager::GetAnimationBlock(animId)->isLoaded){
+			RemoveModel(streamId);
+			ReRequestModel(streamId);
+			return;
+		}
+
+		CTxdStore::AddRef(mi->GetTxdSlot());
+#if GTA_VERSION > GTAVC_PS2
+		if(animId != -1)
+			CAnimManager::AddAnimBlockRef(animId);
+#endif
+
+		PUSH_MEMID(MEMID_STREAM_MODELS);
+		CTxdStore::SetCurrentTxd(mi->GetTxdSlot());
+		success = CCustomModels::Load(streamId);
+		if(success && mi->GetModelType() == MITYPE_VEHICLE)
+			success = AddToLoadedVehiclesList(streamId);
+		POP_MEMID();
+		UpdateMemoryUsed();
+
+		// Txd and anims no longer needed
+		CTxdStore::RemoveRefWithoutDelete(mi->GetTxdSlot());
+#if GTA_VERSION > GTAVC_PS2
+		if(animId != -1)
+			CAnimManager::RemoveAnimBlockRefWithoutDelete(animId);
+#endif
+
+		if(!success){
+			debug("Failed to load %s from the custom folder\n", mi->GetModelName());
+			RemoveModel(streamId);
+			ReRequestModel(streamId);
+			return;
+		}
+	}else if(streamId >= STREAM_OFFSET_TXD && streamId < STREAM_OFFSET_COL){
+		// Txd
+		if((ms_aInfoForModel[streamId].m_flags & STREAMFLAGS_KEEP_IN_MEMORY) == 0 &&
+		   !IsTxdUsedByRequestedModels(streamId - STREAM_OFFSET_TXD)){
+			RemoveModel(streamId);
+			return;
+		}
+
+		PUSH_MEMID(MEMID_STREAM_TEXUTRES);
+		success = CCustomModels::Load(streamId);
+		POP_MEMID();
+		UpdateMemoryUsed();
+
+		if(!success){
+			debug("Failed to load %s.txd from the custom folder\n", CTxdStore::GetTxdName(streamId - STREAM_OFFSET_TXD));
+			RemoveModel(streamId);
+			ReRequestModel(streamId);
+			return;
+		}
+	}else if(streamId >= STREAM_OFFSET_COL && streamId < STREAM_OFFSET_ANIM){
+		PUSH_MEMID(MEMID_STREAM_COLLISION);
+		success = CCustomModels::Load(streamId);
+		POP_MEMID();
+
+		if(!success){
+			debug("Failed to load %s.col from the custom folder\n", CColStore::GetColName(streamId - STREAM_OFFSET_COL));
+			RemoveModel(streamId);
+			ReRequestModel(streamId);
+			return;
+		}
+	}else{
+		assert(0 && "invalid streamId");
+		return;
+	}
+
+	// Model
+	// Vehicles and Peds not in loaded list
+	if(streamId < STREAM_OFFSET_TXD){
+		if(mi->GetModelType() != MITYPE_VEHICLE && mi->GetModelType() != MITYPE_PED){
+			CSimpleModelInfo *smi = (CSimpleModelInfo*)mi;
+
+			// Set fading for some objects
+			if(mi->IsSimple() && !smi->m_isBigBuilding){
+				if(ms_aInfoForModel[streamId].m_flags & STREAMFLAGS_NOFADE)
+					smi->m_alpha = 255;
+				else
+					smi->m_alpha = 0;
+			}
+
+			if(CanRemoveModel(streamId))
+				ms_aInfoForModel[streamId].AddToList(&ms_startLoadedList);
+		}
+	}else if(streamId >= STREAM_OFFSET_TXD && streamId < STREAM_OFFSET_COL ||
+	         streamId >= STREAM_OFFSET_ANIM){
+		// Txd and anims
+		if(CanRemoveModel(streamId))
+			ms_aInfoForModel[streamId].AddToList(&ms_startLoadedList);
+	}
+
+	// Mark objects as loaded; no speculative jobs for this request need to
+	// keep a reference to the archive or their per-request readiness markers.
+	ms_aInfoForModel[streamId].m_loadState = STREAMSTATE_LOADED;
+	CCustomModels::CancelStreamPrefetch(streamId);
+#ifndef USE_CUSTOM_ALLOCATOR
+	ms_memoryUsed += ms_aInfoForModel[streamId].GetCdSize() * CDSTREAM_SECTOR_SIZE;
+#endif
+
+	endTime = CTimer::GetCurrentTimeInCycles() / CTimer::GetCyclesPerMillisecond();
+	timeDiff = endTime - startTime;
+	if(timeDiff > 5)
+		debug("%s (custom) took %d ms\n", GetObjectName(streamId), timeDiff);
+}
+#endif
 
 // Load data previously read from disc
 bool
@@ -2227,8 +3047,15 @@ CStreaming::ProcessLoadingChannel(int32 ch)
 					RemoveTxd(CModelInfo::GetModelInfo(id)->GetTxdSlot());
 			}else{
 				MakeSpaceFor(cdsize * CDSTREAM_SECTOR_SIZE);
+#ifdef CUSTOM_MODELS
+				CUSTOM_LOG("stream channel %d: converting id=%d at slot %d\n", ch, id, i);
+#endif
 				ConvertBufferToObject(&ms_pStreamingBuffer[ch][ms_channel[ch].offsets[i]*CDSTREAM_SECTOR_SIZE],
 					id);
+#ifdef CUSTOM_MODELS
+				CUSTOM_LOG("stream channel %d: conversion returned for id=%d, state=%d\n",
+					ch, id, ms_aInfoForModel[id].m_loadState);
+#endif
 				if(ms_aInfoForModel[id].m_loadState == STREAMSTATE_STARTED){
 					// queue for second part
 					ms_channel[ch].state = CHANNELSTATE_STARTED;
@@ -2238,6 +3065,10 @@ CStreaming::ProcessLoadingChannel(int32 ch)
 						ms_channel[ch].streamIds[i] = -1;
 				}else
 					ms_channel[ch].streamIds[i] = -1;
+#ifdef CUSTOM_MODELS
+				CUSTOM_LOG("stream channel %d: slot %d bookkeeping complete for id=%d\n",
+					ch, i, id);
+#endif
 			}
 		}
 	}
@@ -2249,6 +3080,9 @@ CStreaming::ProcessLoadingChannel(int32 ch)
 			ms_channel[1].streamIds[i] = -1;
 		ms_channel[1].state = CHANNELSTATE_IDLE;
 	}
+#ifdef CUSTOM_MODELS
+	CUSTOM_LOG("stream channel %d: processing complete\n", ch);
+#endif
 
 	return true;
 }
@@ -2293,6 +3127,154 @@ void
 CStreaming::LoadRequestedModels(void)
 {
 	static int currentChannel = 0;
+
+#if defined(ANDROID) && defined(CUSTOM_MODELS)
+	// Directly service already-prepared custom .bpc/.img TXDs and models on
+	// Android without routing them through dummy 1-sector GTA3.IMG CdStreamRead
+	// round-trips. Strictly bounded per frame to prevent frame-time spikes.
+	if(ms_channelError == -1){
+		const uint32 cpm = CTimer::GetCyclesPerMillisecond();
+		const uint32 budgetStartMs = cpm ? (CTimer::GetCurrentTimeInCycles() / cpm) : 0;
+		int customModelsLoaded = 0;
+		int customVehModelsLoaded = 0;
+		int customAsyncModelsLoaded = 0;
+		int customTxdsLoaded = 0;
+		const int maxTotalModels = s_mobileVehReqBudget + s_mobileAsyncReqBudget;
+		for(int pass = 0; pass < 24; pass++){
+			if(cpm && customModelsLoaded > 0){
+				uint32 nowMs = CTimer::GetCurrentTimeInCycles() / cpm;
+				if((uint32)(nowMs - budgetStartMs) >= 4u)
+					break;
+			}
+			if(customModelsLoaded >= maxTotalModels && ms_numPriorityRequests == 0)
+				break;
+
+			int chosenId = -1;
+			for(int prioPass = 0; prioPass < 2 && chosenId == -1; prioPass++){
+				const bool requirePrio = (prioPass == 0 && ms_numPriorityRequests != 0);
+				int prefetched = 0;
+				for(CStreamingInfo *si = ms_startRequestedList.m_next;
+				    si != &ms_endRequestedList; si = si->m_next){
+					int sid = (int)(si - ms_aInfoForModel);
+					if(si->m_loadState != STREAMSTATE_INQUEUE)
+						continue;
+					if(requirePrio && !si->IsPriority())
+						continue;
+					if(sid >= STREAM_OFFSET_COL)
+						continue;
+
+					if(sid < STREAM_OFFSET_TXD){
+						CBaseModelInfo *mi = CModelInfo::GetModelInfo(sid);
+						if(!mi) continue;
+						if(!si->IsPriority()){
+							if(mi->GetModelType() == MITYPE_VEHICLE){
+								if(customVehModelsLoaded >= s_mobileVehReqBudget)
+									continue;
+							}else{
+								if(customAsyncModelsLoaded >= s_mobileAsyncReqBudget)
+									continue;
+							}
+						}
+						int missingTxd = -1;
+						int txdId = mi->GetTxdSlot();
+						if(txdId >= 0 && TxdNotLoaded(txdId)){
+							missingTxd = txdId;
+						}else if(txdId >= 0){
+							for(int p = CTxdStore::GetParentTxdSlot(txdId), depth = 0;
+							    p >= 0 && depth < 8;
+							    p = CTxdStore::GetParentTxdSlot(p), depth++){
+								bool streamable = ms_aInfoForModel[p + STREAM_OFFSET_TXD].GetCdSize() > 0 ||
+								                  CCustomModels::CanServe(p + STREAM_OFFSET_TXD);
+								if(streamable && CTxdStore::GetSlot(p) && CTxdStore::GetSlot(p)->texDict == nil){
+									missingTxd = p;
+									break;
+								}
+							}
+						}
+						if(missingTxd >= 0){
+							int txdSid = missingTxd + STREAM_OFFSET_TXD;
+							if(ms_aInfoForModel[txdSid].m_loadState == STREAMSTATE_INQUEUE &&
+							   CCustomModels::CanServe(txdSid) &&
+							   CCustomModels::IsStreamPrepared(txdSid, false)){
+								chosenId = txdSid;
+								break;
+							}
+							if(ms_aInfoForModel[txdSid].m_loadState == STREAMSTATE_NOTLOADED)
+								RequestTxd(missingTxd, si->m_flags & STREAMFLAGS_PRIORITY);
+							continue;
+						}
+						int animId = mi->GetAnimFileIndex();
+						if(AnimNotLoaded(animId)){
+							int animSid = animId + STREAM_OFFSET_ANIM;
+							if(ms_aInfoForModel[animSid].m_loadState == STREAMSTATE_NOTLOADED)
+								RequestAnim(animId, si->m_flags & STREAMFLAGS_PRIORITY);
+							continue;
+						}
+					}else if(sid >= STREAM_OFFSET_TXD && sid < STREAM_OFFSET_COL){
+						int txdId = sid - STREAM_OFFSET_TXD;
+						int missingParent = -1;
+						for(int p = CTxdStore::GetParentTxdSlot(txdId), depth = 0;
+						    p >= 0 && depth < 8;
+						    p = CTxdStore::GetParentTxdSlot(p), depth++){
+							bool streamable = ms_aInfoForModel[p + STREAM_OFFSET_TXD].GetCdSize() > 0 ||
+							                  CCustomModels::CanServe(p + STREAM_OFFSET_TXD);
+							if(streamable && CTxdStore::GetSlot(p) && CTxdStore::GetSlot(p)->texDict == nil){
+								missingParent = p;
+								break;
+							}
+						}
+						if(missingParent >= 0){
+							int pSid = missingParent + STREAM_OFFSET_TXD;
+							if(ms_aInfoForModel[pSid].m_loadState == STREAMSTATE_INQUEUE &&
+							   CCustomModels::CanServe(pSid) &&
+							   CCustomModels::IsStreamPrepared(pSid, false)){
+								chosenId = pSid;
+								break;
+							}
+							if(ms_aInfoForModel[pSid].m_loadState == STREAMSTATE_NOTLOADED)
+								RequestTxd(missingParent, si->m_flags & STREAMFLAGS_PRIORITY);
+							continue;
+						}
+					}
+
+					if(!CCustomModels::CanServe(sid))
+						continue;
+					if(!CCustomModels::IsStreamPrepared(sid, false)){
+						if(prefetched < 16){
+							CCustomModels::PrefetchStream(sid);
+							prefetched++;
+						}
+						continue;
+					}
+					chosenId = sid;
+					break;
+				}
+			}
+
+			if(chosenId == -1)
+				break;
+
+			const bool isTxd = (chosenId >= STREAM_OFFSET_TXD && chosenId < STREAM_OFFSET_COL);
+			const bool isVehModel = (!isTxd && chosenId < STREAM_OFFSET_TXD &&
+			                         CModelInfo::GetModelInfo(chosenId) &&
+			                         CModelInfo::GetModelInfo(chosenId)->GetModelType() == MITYPE_VEHICLE);
+			ms_aInfoForModel[chosenId].m_loadState = STREAMSTATE_READING;
+			ms_aInfoForModel[chosenId].RemoveFromList();
+			DecrementRef(chosenId);
+			LoadCustomFile(chosenId);
+			if(isTxd){
+				if(++customTxdsLoaded >= 32 && customModelsLoaded > 0)
+					break;
+			}else{
+				customModelsLoaded++;
+				if(isVehModel)
+					customVehModelsLoaded++;
+				else
+					customAsyncModelsLoaded++;
+			}
+		}
+	}
+#endif
 
 	// We can't read with channel 1 while channel 0 is using its buffer
 	if(ms_bLoadingBigModel)
@@ -2443,19 +3425,32 @@ CStreaming::LoadAllRequestedModels(bool priority)
 	bInsideLoadAll = false;
 }
 #else
+#if defined(ANDROID) && defined(RW_GL3) && defined(LIBRW_SDL2)
+void psPumpLoadingEvents(void);
+#endif
+
 void
 CStreaming::LoadAllRequestedModels(bool priority)
 {
+#ifdef CUSTOM_MODELS
+	void *callerAddress = STREAMING_CALLER_ADDRESS();
+#endif
 	static bool bInsideLoadAll = false;
 	int imgOffset, streamId, status;
 	int i;
 	uint32 posn, size;
 
 	int numRequests = 4*ms_numModelsRequested;
+	int traceAfterAnimation = 0;
+	bool sawAnimation = false;
 
 	if(bInsideLoadAll)
 		return;
 	bInsideLoadAll = true;
+#if defined(ANDROID) && defined(CUSTOM_MODELS)
+	CCustomModels::ScopedBlockingLoad blockingLoadScope;
+	int pumpCounter = 0;
+#endif
 
 	if(priority)
 		numRequests = ms_numPriorityRequests;
@@ -2463,24 +3458,70 @@ CStreaming::LoadAllRequestedModels(bool priority)
 	FlushChannels();
 	imgOffset = GetCdImageOffset(CdStreamGetLastPosn());
 
+#if defined(ANDROID) && defined(CUSTOM_MODELS)
+	for(CStreamingInfo *queued = ms_startRequestedList.m_next;
+	    queued != &ms_endRequestedList; queued = queued->m_next)
+		CCustomModels::PrefetchStream(queued - ms_aInfoForModel, priority);
+#endif
+
 	while(ms_endRequestedList.m_prev != &ms_startRequestedList && numRequests > 0){
+		bool traceIteration = traceAfterAnimation > 0;
+		if(traceIteration)
+			CUSTOM_LOG("stream single: checking next request, remaining=%d\n", numRequests);
 		numRequests--;
+#if defined(ANDROID) && defined(RW_GL3) && defined(LIBRW_SDL2)
+		if((++pumpCounter & 31) == 0)
+			psPumpLoadingEvents();
+#endif
+#if defined(CUSTOM_MODELS) && !defined(ANDROID)
+		// Unlike normal per-frame streaming, this entry point deliberately
+		// waits for scripted/startup requests. Never let a still-queued CPU
+		// asset be mistaken for an empty file by GetNextFileOnCd.
+		for(CStreamingInfo *queued = ms_startRequestedList.m_next;
+		    queued != &ms_endRequestedList; queued = queued->m_next)
+			CCustomModels::IsStreamPrepared(queued - ms_aInfoForModel, true);
+#endif
 		streamId = GetNextFileOnCd(0, priority);
-		if(streamId == -1)
+		if(streamId == -1){
+			if(traceIteration)
+				CUSTOM_LOG("stream single: no next request\n");
 			break;
+		}
+		if(streamId >= STREAM_OFFSET_ANIM){
+			traceAfterAnimation = 3;
+			sawAnimation = true;
+			CUSTOM_LOG("stream single: selected animation id=%d name=%s\n", streamId, GetObjectName(streamId));
+		}else if(traceIteration)
+			CUSTOM_LOG("stream single: selected id=%d name=%s after animation\n", streamId, GetObjectName(streamId));
 
 		ms_aInfoForModel[streamId].RemoveFromList();
 		ms_channel[0].streamIds[0] = streamId;
 		DecrementRef(streamId);
+		if(streamId >= STREAM_OFFSET_ANIM || traceIteration)
+			CUSTOM_LOG("stream single: request dequeued id=%d\n", streamId);
 
 		if(ms_aInfoForModel[streamId].GetCdPosnAndSize(posn, size)){
+#if defined(ANDROID) && defined(CUSTOM_MODELS)
+			if(!CCustomModels::CanServe(streamId)){
+				do
+					status = CdStreamRead(0, ms_pStreamingBuffer[0], imgOffset+posn, size);
+				while(CdStreamSync(0) || status == STREAM_NONE);
+			}
+#else
 			do
 				status = CdStreamRead(0, ms_pStreamingBuffer[0], imgOffset+posn, size);
 			while(CdStreamSync(0) || status == STREAM_NONE);
+#endif
 			ms_aInfoForModel[streamId].m_loadState = STREAMSTATE_READING;
+			if(streamId >= STREAM_OFFSET_ANIM || traceIteration)
+				CUSTOM_LOG("stream single: read complete id=%d sectors=%u\n", streamId, size);
 
 			MakeSpaceFor(size * CDSTREAM_SECTOR_SIZE);
+			if(streamId >= STREAM_OFFSET_ANIM || traceIteration)
+				CUSTOM_LOG("stream single: space ready id=%d\n", streamId);
 			ConvertBufferToObject(ms_pStreamingBuffer[0], streamId);
+			if(streamId >= STREAM_OFFSET_ANIM || traceIteration)
+				CUSTOM_LOG("stream single: conversion returned id=%d state=%d\n", streamId, ms_aInfoForModel[streamId].m_loadState);
 			if(ms_aInfoForModel[streamId].m_loadState == STREAMSTATE_STARTED)
 				FinishLoadingLargeFile(ms_pStreamingBuffer[0], streamId);
 
@@ -2493,7 +3534,13 @@ CStreaming::LoadAllRequestedModels(bool priority)
 			// empty
 			ms_aInfoForModel[streamId].m_loadState = STREAMSTATE_LOADED;
 		}
+		if(streamId >= STREAM_OFFSET_ANIM || traceIteration)
+			CUSTOM_LOG("stream single: iteration complete id=%d\n", streamId);
+		if(traceAfterAnimation > 0)
+			traceAfterAnimation--;
 	}
+	if(sawAnimation)
+		CUSTOM_LOG("stream single: request loop finished, remaining=%d\n", numRequests);
 
 	ms_bLoadingBigModel = false;
 	for(i = 0; i < 4; i++){
@@ -2502,8 +3549,11 @@ CStreaming::LoadAllRequestedModels(bool priority)
 	}
 	ms_channel[1].state = CHANNELSTATE_IDLE;
 	bInsideLoadAll = false;
+	if(sawAnimation)
+		CUSTOM_LOG("stream single: LoadAllRequestedModels returning; caller=%p\n", callerAddress);
 }
 #endif
+#undef STREAMING_CALLER_ADDRESS
 
 void
 CStreaming::FlushChannels(void)
@@ -2590,13 +3640,9 @@ CStreaming::AddModelsToRequestList(const CVector &pos, int32 flags)
 	ymax = pos.y + STREAM_DIST;
 
 	ixmin = CWorld::GetSectorIndexX(xmin);
-	if(ixmin < 0) ixmin = 0;
 	ixmax = CWorld::GetSectorIndexX(xmax);
-	if(ixmax >= NUMSECTORS_X) ixmax = NUMSECTORS_X-1;
 	iymin = CWorld::GetSectorIndexY(ymin);
-	if(iymin < 0) iymin = 0;
 	iymax = CWorld::GetSectorIndexY(ymax);
-	if(iymax >= NUMSECTORS_Y) iymax = NUMSECTORS_Y-1;
 
 	CWorld::AdvanceCurrentScanCode();
 
@@ -2686,6 +3732,15 @@ CStreaming::DeleteFarAwayRwObjects(const CVector &pos)
 
 	posx = CWorld::GetSectorIndexX(pos.x);
 	posy = CWorld::GetSectorIndexY(pos.y);
+	// A teleport should evict old RW instances once, not step through every
+	// intervening sector. Models remain streamable on the next visible frame.
+	if((int64)posx - ms_oldSectorX > 30 || (int64)ms_oldSectorX - posx > 30 ||
+	   (int64)posy - ms_oldSectorY > 30 || (int64)ms_oldSectorY - posy > 30){
+		DeleteAllRwObjects();
+		ms_oldSectorX = posx;
+		ms_oldSectorY = posy;
+		return;
+	}
 
 	// Move oldSectorX/Y to new sector and delete RW objects in its "wake" for every step:
 	// O is the old sector, <- is the direction in which we move it,
@@ -2704,17 +3759,9 @@ CStreaming::DeleteFarAwayRwObjects(const CVector &pos)
 		if(posx < ms_oldSectorX){
 			for(r = 2; r <= 10; r++){
 				x = ms_oldSectorX + r;
-				if(x < 0)
-					continue;
-				if(x >= NUMSECTORS_X)
-					break;
 
 				for(i = -r; i <= r; i++){
 					y = ms_oldSectorY + i;
-					if(y < 0)
-						continue;
-					if(y >= NUMSECTORS_Y)
-						break;
 
 					sect = CWorld::GetSector(x, y);
 					DeleteRwObjectsInSectorList(sect->m_lists[ENTITYLIST_BUILDINGS]);
@@ -2727,17 +3774,9 @@ CStreaming::DeleteFarAwayRwObjects(const CVector &pos)
 		}else{
 			for(r = 2; r <= 10; r++){
 				x = ms_oldSectorX - r;
-				if(x < 0)
-					break;
-				if(x >= NUMSECTORS_X)
-					continue;
 
 				for(i = -r; i <= r; i++){
 					y = ms_oldSectorY + i;
-					if(y < 0)
-						continue;
-					if(y >= NUMSECTORS_Y)
-						break;
 
 					sect = CWorld::GetSector(x, y);
 					DeleteRwObjectsInSectorList(sect->m_lists[ENTITYLIST_BUILDINGS]);
@@ -2754,17 +3793,9 @@ CStreaming::DeleteFarAwayRwObjects(const CVector &pos)
 		if(posy < ms_oldSectorY){
 			for(r = 2; r <= 10; r++){
 				y = ms_oldSectorY + r;
-				if(y < 0)
-					continue;
-				if(y >= NUMSECTORS_Y)
-					break;
 
 				for(i = -r; i <= r; i++){
 					x = ms_oldSectorX + i;
-					if(x < 0)
-						continue;
-					if(x >= NUMSECTORS_X)
-						break;
 
 					sect = CWorld::GetSector(x, y);
 					DeleteRwObjectsInSectorList(sect->m_lists[ENTITYLIST_BUILDINGS]);
@@ -2777,17 +3808,9 @@ CStreaming::DeleteFarAwayRwObjects(const CVector &pos)
 		}else{
 			for(r = 2; r <= 10; r++){
 				y = ms_oldSectorY - r;
-				if(y < 0)
-					break;
-				if(y >= NUMSECTORS_Y)
-					continue;
 
 				for(i = -r; i <= r; i++){
 					x = ms_oldSectorX + i;
-					if(x < 0)
-						continue;
-					if(x >= NUMSECTORS_X)
-						break;
 
 					sect = CWorld::GetSector(x, y);
 					DeleteRwObjectsInSectorList(sect->m_lists[ENTITYLIST_BUILDINGS]);
@@ -2804,36 +3827,25 @@ CStreaming::DeleteFarAwayRwObjects(const CVector &pos)
 void
 CStreaming::DeleteAllRwObjects(void)
 {
-	int x, y;
-	CSector *sect;
-
-	for(x = 0; x < NUMSECTORS_X; x++)
-		for(y = 0; y < NUMSECTORS_Y; y++){
-			sect = CWorld::GetSector(x, y);
-			DeleteRwObjectsInSectorList(sect->m_lists[ENTITYLIST_BUILDINGS]);
-			DeleteRwObjectsInSectorList(sect->m_lists[ENTITYLIST_BUILDINGS_OVERLAP]);
-			DeleteRwObjectsInSectorList(sect->m_lists[ENTITYLIST_OBJECTS]);
-			DeleteRwObjectsInSectorList(sect->m_lists[ENTITYLIST_OBJECTS_OVERLAP]);
-			DeleteRwObjectsInSectorList(sect->m_lists[ENTITYLIST_DUMMIES]);
-			DeleteRwObjectsInSectorList(sect->m_lists[ENTITYLIST_DUMMIES_OVERLAP]);
-		}
+	CWorld::ForEachAllocatedSector([](CSector *sect) {
+		DeleteRwObjectsInSectorList(sect->m_lists[ENTITYLIST_BUILDINGS]);
+		DeleteRwObjectsInSectorList(sect->m_lists[ENTITYLIST_BUILDINGS_OVERLAP]);
+		DeleteRwObjectsInSectorList(sect->m_lists[ENTITYLIST_OBJECTS]);
+		DeleteRwObjectsInSectorList(sect->m_lists[ENTITYLIST_OBJECTS_OVERLAP]);
+		DeleteRwObjectsInSectorList(sect->m_lists[ENTITYLIST_DUMMIES]);
+		DeleteRwObjectsInSectorList(sect->m_lists[ENTITYLIST_DUMMIES_OVERLAP]);
+	});
 }
 
 void
 CStreaming::DeleteRwObjectsAfterDeath(const CVector &pos)
 {
-	int ix, iy;
-	int x, y;
-	CSector *sect;
-
-	ix = CWorld::GetSectorIndexX(pos.x);
-	iy = CWorld::GetSectorIndexY(pos.y);
-
-	for(x = 0; x < NUMSECTORS_X; x++)
-		for(y = 0; y < NUMSECTORS_Y; y++)
-			if(Abs(ix - x) > 3.0f &&
-			   Abs(iy - y) > 3.0f){
-				sect = CWorld::GetSector(x, y);
+	int ix = CWorld::GetSectorIndexX(pos.x);
+	int iy = CWorld::GetSectorIndexY(pos.y);
+	for(int x = 0; x < NUMSECTORS_X; x++)
+		for(int y = 0; y < NUMSECTORS_Y; y++)
+			if(Abs(ix - x) > 3.0f && Abs(iy - y) > 3.0f){
+				CSector *sect = CWorld::GetSector(x, y);
 				DeleteRwObjectsInSectorList(sect->m_lists[ENTITYLIST_BUILDINGS]);
 				DeleteRwObjectsInSectorList(sect->m_lists[ENTITYLIST_BUILDINGS_OVERLAP]);
 				DeleteRwObjectsInSectorList(sect->m_lists[ENTITYLIST_OBJECTS]);
@@ -2841,6 +3853,17 @@ CStreaming::DeleteRwObjectsAfterDeath(const CVector &pos)
 				DeleteRwObjectsInSectorList(sect->m_lists[ENTITYLIST_DUMMIES]);
 				DeleteRwObjectsInSectorList(sect->m_lists[ENTITYLIST_DUMMIES_OVERLAP]);
 			}
+	for(const auto &entry : CWorld::GetExtraSectors()){
+		int x = entry.first.first, y = entry.first.second;
+		if(Abs(ix - x) <= 3.0f || Abs(iy - y) <= 3.0f) continue;
+		CSector *sect = CWorld::GetSector(x, y);
+		DeleteRwObjectsInSectorList(sect->m_lists[ENTITYLIST_BUILDINGS]);
+		DeleteRwObjectsInSectorList(sect->m_lists[ENTITYLIST_BUILDINGS_OVERLAP]);
+		DeleteRwObjectsInSectorList(sect->m_lists[ENTITYLIST_OBJECTS]);
+		DeleteRwObjectsInSectorList(sect->m_lists[ENTITYLIST_OBJECTS_OVERLAP]);
+		DeleteRwObjectsInSectorList(sect->m_lists[ENTITYLIST_DUMMIES]);
+		DeleteRwObjectsInSectorList(sect->m_lists[ENTITYLIST_DUMMIES_OVERLAP]);
+	}
 }
 
 void
@@ -2855,26 +3878,47 @@ CStreaming::DeleteRwObjectsBehindCamera(size_t mem)
 	if(ms_memoryUsed < mem)
 		return;
 
+#ifdef CUSTOM_MODELS
+	// Linked BR LODs are VC big buildings, which live outside the ordinary
+	// sector lists and have bStreamingDontDelete set. They must not pin their
+	// RW clones (or their streamed models) behind the camera under pressure.
+	// Leave stock big buildings alone and keep on-screen custom LODs intact.
+	for(int level = 0; level < NUM_LEVELS; level++) {
+		for(CPtrNode *node = CWorld::GetBigBuildingList((eLevelName)level).first;
+		    node; node = node->next) {
+			CEntity *e = (CEntity *)node->item;
+			int id = e->GetModelIndex();
+			if(!CCustomWorld::OwnsModelSlot(id) || !e->bStreamBIGBuilding ||
+			   !e->m_rwObject || e->bImBeingRendered || e->GetIsOnScreen()) continue;
+			e->DeleteRwObject();
+			if(CModelInfo::GetModelInfo(id)->GetNumRefs() == 0 &&
+			   CanRemoveModel(id) && ms_aInfoForModel[id].m_loadState == STREAMSTATE_LOADED)
+				RemoveModel(id);
+			if(ms_memoryUsed < mem) return;
+		}
+	}
+#endif
+
 	ix = CWorld::GetSectorIndexX(TheCamera.GetPosition().x);
 	iy = CWorld::GetSectorIndexY(TheCamera.GetPosition().y);
 
 	if(Abs(TheCamera.GetForward().x) > Abs(TheCamera.GetForward().y)){
 		// looking west/east
 
-		ymin = Max(iy - 10, 0);
-		ymax = Min(iy + 10, NUMSECTORS_Y - 1);
+		ymin = iy - 10;
+		ymax = iy + 10;
 		assert(ymin <= ymax);
 
 		// Delete a block of sectors that we know is behind the camera
 		if(TheCamera.GetForward().x > 0.0f){
 			// looking east
-			xmax = Max(ix - 2, 0);
-			xmin = Max(ix - 10, 0);
+			xmax = ix - 2;
+			xmin = ix - 10;
 			inc = 1;
 		}else{
 			// looking west
-			xmax = Min(ix + 2, NUMSECTORS_X - 1);
-			xmin = Min(ix + 10, NUMSECTORS_X - 1);
+			xmax = ix + 2;
+			xmin = ix + 10;
 			inc = -1;
 		}
 		for(y = ymin; y <= ymax; y++){
@@ -2895,13 +3939,13 @@ CStreaming::DeleteRwObjectsBehindCamera(size_t mem)
 		// Now a block that intersects with the camera's frustum
 		if(TheCamera.GetForward().x > 0.0f){
 			// looking east
-			xmax = Max(ix + 10, 0);
-			xmin = Max(ix - 2, 0);
+			xmax = ix + 10;
+			xmin = ix - 2;
 			inc = 1;
 		}else{
 			// looking west
-			xmax = Min(ix - 10, NUMSECTORS_X - 1);
-			xmin = Min(ix + 2, NUMSECTORS_X - 1);
+			xmax = ix - 10;
+			xmin = ix + 2;
 			inc = -1;
 		}
 		for(y = ymin; y <= ymax; y++){
@@ -2927,20 +3971,20 @@ CStreaming::DeleteRwObjectsBehindCamera(size_t mem)
 	}else{
 		// looking north/south
 
-		xmin = Max(ix - 10, 0);
-		xmax = Min(ix + 10, NUMSECTORS_X - 1);
+		xmin = ix - 10;
+		xmax = ix + 10;
 		assert(xmin <= xmax);
 
 		// Delete a block of sectors that we know is behind the camera
 		if(TheCamera.GetForward().y > 0.0f){
 			// looking north
-			ymax = Max(iy - 2, 0);
-			ymin = Max(iy - 10, 0);
+			ymax = iy - 2;
+			ymin = iy - 10;
 			inc = 1;
 		}else{
 			// looking south
-			ymax = Min(iy + 2, NUMSECTORS_Y - 1);
-			ymin = Min(iy + 10, NUMSECTORS_Y - 1);
+			ymax = iy + 2;
+			ymin = iy + 10;
 			inc = -1;
 		}
 		for(x = xmin; x <= xmax; x++){
@@ -2960,13 +4004,13 @@ CStreaming::DeleteRwObjectsBehindCamera(size_t mem)
 		// Now a block that intersects with the camera's frustum
 		if(TheCamera.GetForward().y > 0.0f){
 			// looking north
-			ymax = Max(iy + 10, 0);
-			ymin = Max(iy - 2, 0);
+			ymax = iy + 10;
+			ymin = iy - 2;
 			inc = 1;
 		}else{
 			// looking south
-			ymax = Min(iy - 10, NUMSECTORS_Y - 1);
-			ymin = Min(iy + 2, NUMSECTORS_Y - 1);
+			ymax = iy - 10;
+			ymin = iy + 2;
 			inc = -1;
 		}
 		for(x = xmin; x <= xmax; x++){

@@ -1,6 +1,9 @@
 #include "common.h"
 
 #include "AudioManager.h"
+#ifdef AUDIO_OAL
+#include "AudioEntitySlots.h"
+#endif
 #include "audio_enums.h"
 
 #include "AudioScriptObject.h"
@@ -12,6 +15,8 @@
 #include "World.h"
 #include "ZoneCull.h"
 #include "debugmenu.h"
+#include <climits>
+#include <new>
 
 #ifdef DEBUGMENU
 SETTWEAKPATH("Audio");
@@ -44,9 +49,13 @@ cAudioManager::cAudioManager()
 	m_bDynamicAcousticModelingStatus = TRUE;
 #endif
 
-	for (uint32 i = 0; i < NUM_AUDIOENTITIES; i++) {
+#ifdef AUDIO_OAL
+	m_asAudioEntities.resize(NUM_AUDIOENTITIES);
+	m_aAudioEntityOrderList.resize(NUM_AUDIOENTITIES);
+#endif
+	for (uint32 i = 0; i < GetAudioEntityCapacity(); i++) {
 		m_asAudioEntities[i].m_bIsUsed = FALSE;
-		m_aAudioEntityOrderList[i] = NUM_AUDIOENTITIES;
+		m_aAudioEntityOrderList[i] = GetAudioEntityCapacity();
 	}
 	m_nAudioEntitiesCount = 0;
 	m_FrameCounter = 0;
@@ -93,9 +102,9 @@ cAudioManager::Terminate()
 	if (m_bIsInitialised) {
 		MusicManager.Terminate();
 
-		for (uint32 i = 0; i < NUM_AUDIOENTITIES; i++) {
+		for (uint32 i = 0; i < GetAudioEntityCapacity(); i++) {
 			m_asAudioEntities[i].m_bIsUsed = FALSE;
-			m_aAudioEntityOrderList[i] = ARRAY_SIZE(m_aAudioEntityOrderList);
+			m_aAudioEntityOrderList[i] = GetAudioEntityCapacity();
 		}
 
 		m_nAudioEntitiesCount = 0;
@@ -153,10 +162,10 @@ cAudioManager::CreateEntity(eAudioType type, void *entity)
 	for (uint8 i = 0; i < NUM_SOUND_QUEUES; i++)
 		for (uint8 j = 0; j < m_nRequestedCount[i]; j++) {
 			tSound &sound = m_aRequestedQueue[i][m_aRequestedOrderList[i][j]];
-			if (sound.m_nEntityIndex < 0) continue;
+			if (sound.m_nEntityIndex < 0 || (uint32)sound.m_nEntityIndex >= GetAudioEntityCapacity()) continue;
 			if (!m_asAudioEntities[sound.m_nEntityIndex].m_bIsUsed) {
 				bool found = false;
-				for (uint8 k = 0; k < stillUsedEntitiesCount; k++) {
+				for (uint32 k = 0; k < stillUsedEntitiesCount; k++) {
 					if (stillUsedEntities[k] == sound.m_nEntityIndex) {
 						found = true;
 						break;
@@ -168,48 +177,61 @@ cAudioManager::CreateEntity(eAudioType type, void *entity)
 		}
 #endif
 
-	for (uint32 i = 0; i < NUM_AUDIOENTITIES; i++) {
-		if (!m_asAudioEntities[i].m_bIsUsed) {
+	uint32 i = 0;
+	for (; i < GetAudioEntityCapacity(); i++) {
+		if (m_asAudioEntities[i].m_bIsUsed) continue;
 #ifdef FIX_BUGS
-			// skip if ID is still used by queued sample
-			bool skip = false;
-			for (uint8 j = 0; j < stillUsedEntitiesCount; j++) {
-				if (stillUsedEntities[j] == i) {
-					//debug("audio entity %i still used, skipping\n", i);
-					skip = true;
-					break;
-				}
+		// Queued sounds may still refer to a just-destroyed entity ID.
+		bool stillUsed = false;
+		for (uint32 j = 0; j < stillUsedEntitiesCount; j++) {
+			if (stillUsedEntities[j] == (int32)i) {
+				stillUsed = true;
+				break;
 			}
-			if (skip)
-				continue;
-#endif
-
-			m_asAudioEntities[i].m_bIsUsed = TRUE;
-			m_asAudioEntities[i].m_bStatus = FALSE;
-			m_asAudioEntities[i].m_nType = type;
-			m_asAudioEntities[i].m_pEntity = entity;
-			m_asAudioEntities[i].m_awAudioEvent[0] = SOUND_NO_SOUND;
-			m_asAudioEntities[i].m_awAudioEvent[1] = SOUND_NO_SOUND;
-			m_asAudioEntities[i].m_awAudioEvent[2] = SOUND_NO_SOUND;
-			m_asAudioEntities[i].m_awAudioEvent[3] = SOUND_NO_SOUND;
-			m_asAudioEntities[i].m_AudioEvents = 0;
-			m_aAudioEntityOrderList[m_nAudioEntitiesCount++] = i;
-			return i;
 		}
+		if (stillUsed) continue;
+#endif
+		break;
 	}
-	return AEHANDLE_ERROR_NOFREESLOT;
+
+	if (i == GetAudioEntityCapacity()) {
+#ifdef AUDIO_OAL
+		// Audio handles are int32; grow both registries together without
+		// invalidating IDs already held by peds, cars and queued samples.
+		const uint32 oldSize = GetAudioEntityCapacity();
+		if (!GrowAudioEntitySlots(m_asAudioEntities, m_aAudioEntityOrderList, 128, INT_MAX))
+			return AEHANDLE_ERROR_NOFREESLOT;
+		for (uint32 j = oldSize; j < GetAudioEntityCapacity(); j++)
+			m_asAudioEntities[j].m_bIsUsed = FALSE;
+#else
+		return AEHANDLE_ERROR_NOFREESLOT;
+#endif
+	}
+	if (m_nAudioEntitiesCount >= GetAudioEntityCapacity())
+		return AEHANDLE_ERROR_NOFREESLOT;
+	m_asAudioEntities[i].m_bIsUsed = TRUE;
+	m_asAudioEntities[i].m_bStatus = FALSE;
+	m_asAudioEntities[i].m_nType = type;
+	m_asAudioEntities[i].m_pEntity = entity;
+	m_asAudioEntities[i].m_awAudioEvent[0] = SOUND_NO_SOUND;
+	m_asAudioEntities[i].m_awAudioEvent[1] = SOUND_NO_SOUND;
+	m_asAudioEntities[i].m_awAudioEvent[2] = SOUND_NO_SOUND;
+	m_asAudioEntities[i].m_awAudioEvent[3] = SOUND_NO_SOUND;
+	m_asAudioEntities[i].m_AudioEvents = 0;
+	m_aAudioEntityOrderList[m_nAudioEntitiesCount++] = i;
+	return i;
 }
 
 void
 cAudioManager::DestroyEntity(int32 id)
 {
-	if (m_bIsInitialised && id >= 0 && id < NUM_AUDIOENTITIES && m_asAudioEntities[id].m_bIsUsed) {
+	if (m_bIsInitialised && id >= 0 && (uint32)id < GetAudioEntityCapacity() && m_asAudioEntities[id].m_bIsUsed) {
 		m_asAudioEntities[id].m_bIsUsed = FALSE;
 		for (uint32 i = 0; i < m_nAudioEntitiesCount; ++i) {
 			if (id == m_aAudioEntityOrderList[i]) {
-				if (i < NUM_AUDIOENTITIES - 1)
+				if (i + 1 < m_nAudioEntitiesCount)
 					memmove(&m_aAudioEntityOrderList[i], &m_aAudioEntityOrderList[i + 1], sizeof(uint32) * (m_nAudioEntitiesCount - (i + 1)));
-				m_aAudioEntityOrderList[--m_nAudioEntitiesCount] = NUM_AUDIOENTITIES;
+				m_aAudioEntityOrderList[--m_nAudioEntitiesCount] = GetAudioEntityCapacity();
 				return;
 			}
 		}
@@ -219,7 +241,7 @@ cAudioManager::DestroyEntity(int32 id)
 bool8
 cAudioManager::GetEntityStatus(int32 id)
 {
-	if (m_bIsInitialised && id >= 0 && id < NUM_AUDIOENTITIES && m_asAudioEntities[id].m_bIsUsed)
+	if (m_bIsInitialised && id >= 0 && (uint32)id < GetAudioEntityCapacity() && m_asAudioEntities[id].m_bIsUsed)
 		return m_asAudioEntities[id].m_bStatus;
 	return FALSE;
 }
@@ -227,14 +249,14 @@ cAudioManager::GetEntityStatus(int32 id)
 void
 cAudioManager::SetEntityStatus(int32 id, bool8 status)
 {
-	if (m_bIsInitialised && id >= 0 && id < NUM_AUDIOENTITIES && m_asAudioEntities[id].m_bIsUsed)
+	if (m_bIsInitialised && id >= 0 && (uint32)id < GetAudioEntityCapacity() && m_asAudioEntities[id].m_bIsUsed)
 		m_asAudioEntities[id].m_bStatus = status;
 }
 
 void *
 cAudioManager::GetEntityPointer(int32 id)
 {
-	if (m_bIsInitialised && id >= 0 && id < NUM_AUDIOENTITIES && m_asAudioEntities[id].m_bIsUsed)
+	if (m_bIsInitialised && id >= 0 && (uint32)id < GetAudioEntityCapacity() && m_asAudioEntities[id].m_bIsUsed)
 		return m_asAudioEntities[id].m_pEntity;
 	return NULL;
 }
@@ -252,7 +274,7 @@ cAudioManager::PlayOneShot(int32 index, uint16 sound, float vol)
 {
 
 	if (m_bIsInitialised) {
-		if (index >= 0 && index < NUM_AUDIOENTITIES) {
+		if (index >= 0 && (uint32)index < GetAudioEntityCapacity()) {
 			tAudioEntity &entity = m_asAudioEntities[index];
 			if (entity.m_bIsUsed) {
 				if (sound < SOUND_TOTAL_SOUNDS) {
@@ -364,7 +386,7 @@ cAudioManager::DestroyAllGameCreatedEntities()
 	cAudioScriptObject *entity;
 
 	if (m_bIsInitialised) {
-		for (uint32 i = 0; i < NUM_AUDIOENTITIES; i++) {
+		for (uint32 i = 0; i < GetAudioEntityCapacity(); i++) {
 			if (m_asAudioEntities[i].m_bIsUsed) {
 				switch (m_asAudioEntities[i].m_nType) {
 				case AUDIOTYPE_PHYSICAL:

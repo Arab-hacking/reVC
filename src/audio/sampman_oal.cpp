@@ -914,7 +914,7 @@ cSampleManager::Initialise(void)
 
 	{	
 		for ( int32 i = 0; i < TOTAL_STREAMED_SOUNDS; i++ )
-			nStreamLength[i] = 0;
+			nStreamLength[i] = 1;
 	}
 
 #ifdef AUDIO_CACHE
@@ -923,11 +923,16 @@ cSampleManager::Initialise(void)
 		debug("Loadind audio cache (If game crashes around here, then your cache is corrupted, remove audio/sound.cache)\n");
 		fread(nStreamLength, sizeof(uint32), TOTAL_STREAMED_SOUNDS, cacheFile);
 		fclose(cacheFile);
+		for ( int32 i = 0; i < TOTAL_STREAMED_SOUNDS; i++ ) {
+			if ( nStreamLength[i] == 0 )
+				nStreamLength[i] = 1;
+		}
 	} else
 	{
 		debug("Cannot load audio cache\n");
 #endif
 
+		int32 openedStreamCount = 0;
 		for ( int32 i = 0; i < TOTAL_STREAMED_SOUNDS; i++ )
 		{	
 			if ( aStream[0] && (
@@ -939,18 +944,23 @@ cSampleManager::Initialise(void)
 				uint32 tatalms = aStream[0]->GetLengthMS();
 				aStream[0]->Close();
 				
-				nStreamLength[i] = tatalms;
-			} else
-				USERERROR("Can't open '%s'\n", StreamedNameTable[i]);
+				nStreamLength[i] = tatalms > 0 ? tatalms : 1;
+				openedStreamCount++;
+			} else {
+				nStreamLength[i] = 1;
+				debug("Audio stream missing (skipped): %s\n", StreamedNameTable[i]);
+			}
 		}
 #ifdef AUDIO_CACHE
-		cacheFile = fcaseopen("audio\\sound.cache", "wb");
-		if(cacheFile) {
-			debug("Saving audio cache\n");
-			fwrite(nStreamLength, sizeof(uint32), TOTAL_STREAMED_SOUNDS, cacheFile);
-			fclose(cacheFile);
-		} else {
-			debug("Cannot save audio cache\n");
+		if (openedStreamCount > 0) {
+			cacheFile = fcaseopen("audio\\sound.cache", "wb");
+			if(cacheFile) {
+				debug("Saving audio cache\n");
+				fwrite(nStreamLength, sizeof(uint32), TOTAL_STREAMED_SOUNDS, cacheFile);
+				fclose(cacheFile);
+			} else {
+				debug("Cannot save audio cache\n");
+			}
 		}
 	}
 #endif
@@ -1079,8 +1089,10 @@ cSampleManager::Initialise(void)
 void
 cSampleManager::Terminate(void)
 {
-	for (int32 i = 0; i < MAX_STREAMS; i++)
-		aStream[i]->Close();
+	for (int32 i = 0; i < MAX_STREAMS; i++) {
+		if (aStream[i])
+			aStream[i]->Close();
+	}
 
 	for ( int32 i = 0; i < NUM_CHANNELS; i++ )
 		aChannel[i].Term();
@@ -1131,8 +1143,10 @@ cSampleManager::Terminate(void)
 
 	CStream::Terminate();
 
-	for(int32 i = 0; i < MAX_STREAMS; i++)
+	for(int32 i = 0; i < MAX_STREAMS; i++) {
 		delete aStream[i];
+		aStream[i] = NULL;
+	}
 
 	if ( nSampleBankMemoryStartAddress[SFX_BANK_0] != 0 )
 	{
@@ -1414,28 +1428,32 @@ cSampleManager::GetBankContainingSound(uint32 offset)
 uint32
 cSampleManager::GetSampleBaseFrequency(uint32 nSample)
 {
-	ASSERT( nSample < TOTAL_AUDIO_SAMPLES );
+	if (nSample >= TOTAL_AUDIO_SAMPLES)
+		return 22050;
 	return m_aSamples[nSample].nFrequency;
 }
 
 uint32
 cSampleManager::GetSampleLoopStartOffset(uint32 nSample)
 {
-	ASSERT( nSample < TOTAL_AUDIO_SAMPLES );
+	if (nSample >= TOTAL_AUDIO_SAMPLES)
+		return 0;
 	return m_aSamples[nSample].nLoopStart;
 }
 
 int32
 cSampleManager::GetSampleLoopEndOffset(uint32 nSample)
 {
-	ASSERT( nSample < TOTAL_AUDIO_SAMPLES );
+	if (nSample >= TOTAL_AUDIO_SAMPLES)
+		return -1;
 	return m_aSamples[nSample].nLoopEnd;
 }
 
 uint32
 cSampleManager::GetSampleLength(uint32 nSample)
 {
-	ASSERT( nSample < TOTAL_AUDIO_SAMPLES );
+	if (nSample >= TOTAL_AUDIO_SAMPLES)
+		return 0;
 	return m_aSamples[nSample].nSize / sizeof(uint16);
 }
 
@@ -1718,6 +1736,8 @@ cSampleManager::PreloadStreamedFile(tTrack nFile, uint8 nStream)
 	if ( nFile < TOTAL_STREAMED_SOUNDS )
 	{
 		CStream *stream = aStream[nStream];
+		if (!stream)
+			return;
 
 		stream->Close();
 #ifdef PS2_AUDIO_PATHS
@@ -1737,6 +1757,8 @@ cSampleManager::PauseStream(bool8 nPauseFlag, uint8 nStream)
 	ASSERT( nStream < MAX_STREAMS );
 	
 	CStream *stream = aStream[nStream];
+	if (!stream)
+		return;
 	
 	if ( stream->IsOpened() )
 	{
@@ -1750,6 +1772,8 @@ cSampleManager::StartPreloadedStreamedFile(uint8 nStream)
 	ASSERT( nStream < MAX_STREAMS );
 	
 	CStream *stream = aStream[nStream];
+	if (!stream)
+		return;
 	
 	if ( stream->IsOpened() )
 	{
@@ -1765,7 +1789,7 @@ cSampleManager::StartStreamedFile(tTrack nFile, uint32 nPos, uint8 nStream)
 	uint32 position = nPos;
 	char filename[MAX_PATH];
 	
-	if ( nFile >= TOTAL_STREAMED_SOUNDS )
+	if ( nFile >= TOTAL_STREAMED_SOUNDS || !aStream[nStream] )
 		return FALSE;
 
 	aStream[nStream]->Close();
@@ -1919,6 +1943,8 @@ cSampleManager::StopStreamedFile(uint8 nStream)
 	ASSERT( nStream < MAX_STREAMS );
 
 	CStream *stream = aStream[nStream];
+	if (!stream)
+		return;
 	
 	stream->Close();
 
@@ -1932,6 +1958,8 @@ cSampleManager::GetStreamedFilePosition(uint8 nStream)
 	ASSERT( nStream < MAX_STREAMS );
 	
 	CStream *stream = aStream[nStream];
+	if (!stream)
+		return 0;
 	
 	if ( stream->IsOpened() )
 	{
@@ -1975,6 +2003,8 @@ cSampleManager::SetStreamedVolumeAndPan(uint8 nVolume, uint8 nPan, bool8 nEffect
 	nStreamPan   [nStream] = nPan;
 	
 	CStream *stream = aStream[nStream];
+	if (!stream)
+		return;
 	
 	if ( stream->IsOpened() )
 	{
@@ -1996,7 +2026,7 @@ cSampleManager::GetStreamedFileLength(uint8 nStream)
 {
 	ASSERT( nStream < TOTAL_STREAMED_SOUNDS );
 
-	return nStreamLength[nStream];
+	return nStreamLength[nStream] > 0 ? nStreamLength[nStream] : 1;
 }
 
 bool8
@@ -2005,6 +2035,8 @@ cSampleManager::IsStreamPlaying(uint8 nStream)
 	ASSERT( nStream < MAX_STREAMS );
 	
 	CStream *stream = aStream[nStream];
+	if (!stream)
+		return FALSE;
 	
 	if ( stream->IsOpened() )
 	{
@@ -2022,7 +2054,7 @@ cSampleManager::Service(void)
 	{
 		CStream *stream = aStream[i];
 		
-		if ( stream->IsOpened() )
+		if ( stream && stream->IsOpened() )
 			stream->Update();
 	}
 }

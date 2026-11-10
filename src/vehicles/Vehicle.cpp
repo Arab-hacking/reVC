@@ -596,24 +596,10 @@ CVehicle::DoBladeCollision(CVector pos, CMatrix &matrix, int16 rotorType, float 
 	pos = matrix * pos;
 	bool hadCollision = false;
 	int minX = CWorld::GetSectorIndexX(pos.x - radius);
-	if(minX <= 0) minX = 0;
-
 	int minY = CWorld::GetSectorIndexY(pos.y - radius);
-	if(minY <= 0) minY = 0;
-
 	int maxX = CWorld::GetSectorIndexX(pos.x + radius);
-#ifdef FIX_BUGS
-	if(maxX >= NUMSECTORS_X) maxX = NUMSECTORS_X - 1;
-#else
-	if(maxX >= NUMSECTORS_X) maxX = NUMSECTORS_X;
-#endif
 
 	int maxY = CWorld::GetSectorIndexY(pos.y + radius);
-#ifdef FIX_BUGS
-	if(maxY >= NUMSECTORS_Y) maxY = NUMSECTORS_Y - 1;
-#else
-	if(maxY >= NUMSECTORS_Y) maxY = NUMSECTORS_Y;
-#endif
 
 	CWorld::AdvanceCurrentScanCode();
 	for(int curY = minY; curY <= maxY; curY++) {

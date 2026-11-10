@@ -46,6 +46,7 @@
     # for some reason these aren't compatible with allowoptimization modifier
     boolean supportsRelativeMouse();
     void setWindowStyle(boolean);
+    native void nativeSetMobileDisplayMetrics(float, float, float, int, int, int, int);
 }
 
 -keep,includedescriptorclasses,allowoptimization class org.libsdl.app.SDLActivity {

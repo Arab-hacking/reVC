@@ -1,4 +1,5 @@
 #define _CRT_SECURE_NO_WARNINGS
+#include <errno.h>
 #include <fcntl.h>
 #ifdef _WIN32
 #include <direct.h>
@@ -48,14 +49,10 @@ void mychdir(char const *path)
 #endif
 	char* r = casepath(path, false);
     if (r) {
-#if defined(ANDROID)
-		char path[MAX_PATH];
-		strcpy(path, CFileMgr::GetRootDirName());
-		strcat(path, r);
-        chdir(path);
-#else
+        // casepath already returns a complete absolute path when given one.
+        // Prefixing the Android root a second time prevented SetDir from
+        // entering the game directory (root/root/data).
         chdir(r);
-#endif
 		free(r);
     } else {
         errno = ENOENT;
@@ -225,6 +222,7 @@ myfopen(const char *filename, const char *mode)
 	for(fd = 1; fd < NUMFILES; fd++)
 		if(myfiles[fd].file == nil)
 			goto found;
+	errno = EMFILE;
 	return 0;	// no free fd
 found:
 	myfiles[fd].isText = strchr(mode, 'b') == nil;
@@ -367,11 +365,27 @@ void
 CFileMgr::Initialise(void)
 {
 #if defined(ANDROID)
-	if(getenv("STORAGE_ROOT") != NULL) {
-		strcpy(ms_rootDirName, getenv("STORAGE_ROOT"));
-		strcat(ms_rootDirName, "/");
-        debug("Android: Root Dir: %s\n", ms_rootDirName);
+	const char *root = getenv("STORAGE_ROOT");
+	if(root != nil && root[0] != '\0') {
+		int written = snprintf(ms_rootDirName, sizeof(ms_rootDirName), "%s%s",
+			root, root[strlen(root)-1] == '/' ? "" : "/");
+		if(written < 0 || written >= (int)sizeof(ms_rootDirName)) {
+			debug("Android: game directory path is too long\n");
+			ms_rootDirName[0] = '\0';
+		}
 	}
+	if(ms_rootDirName[0] == '\0') {
+		if(_getcwd(ms_rootDirName, sizeof(ms_rootDirName)) == nil)
+			return;
+		size_t length = strlen(ms_rootDirName);
+		if(length + 1 >= sizeof(ms_rootDirName))
+			return;
+		ms_rootDirName[length] = '/';
+		ms_rootDirName[length+1] = '\0';
+	}
+	strcpy(ms_dirName, ms_rootDirName);
+	mychdir(ms_rootDirName);
+	debug("Android: Root Dir: %s\n", ms_rootDirName);
 #elif defined(__APPLE__)
 	FindBundledGameFiles(bundledGameFilesDir, sizeof(bundledGameFilesDir));
 	if(ms_rootDirName[0] == '\0' && !FindGameRoot(ms_rootDirName, sizeof(ms_rootDirName)))
@@ -469,7 +483,9 @@ void
 CFileMgr::SetDirMyDocuments(void)
 {
 	SetDir("");	// better start at the root if user directory is relative
-	mychdir(_psGetUserFilesFolder());
+	const char *userFiles = _psGetUserFilesFolder();
+	REVC_LOG_INFO("User files directory: %s", userFiles);
+	mychdir(userFiles);
 }
 
 ssize_t
@@ -479,8 +495,11 @@ CFileMgr::LoadFile(const char *file, uint8 *buf, int maxlen, const char *mode)
 	ssize_t n, len;
 
 	fd = myfopen(file, mode);
-	if(fd == 0)
+	if(fd == 0){
+		int error = errno;
+		REVC_LOG_ERROR("Failed to load %s (mode=%s, errno=%d): %s", file, mode, error, strerror(error));
 		return -1;
+	}
 	len = 0;
 	do{
 		n = myfread(buf + len, 1, 0x4000, fd);
@@ -493,20 +512,26 @@ CFileMgr::LoadFile(const char *file, uint8 *buf, int maxlen, const char *mode)
 	}while(n == 0x4000);
 	buf[len] = 0;
 	myfclose(fd);
+	debug("CFileMgr::LoadFile: %s (%zd bytes)\n", file, len);
 	return len;
 }
 
 int
 CFileMgr::OpenFile(const char *file, const char *mode)
 {
-	debug("CFileMgr::OpenFile: %s", file);
-	return myfopen(file, mode);
+	int fd = myfopen(file, mode);
+	if(fd == 0){
+		int error = errno;
+		debug("CFileMgr::OpenFile failed: %s (mode=%s, errno=%d): %s\n", file, mode, error, strerror(error));
+	}else{
+		debug("CFileMgr::OpenFile: %s (mode=%s, fd=%d)\n", file, mode, fd);
+	}
+	return fd;
 }
 
 int
 CFileMgr::OpenFileForWriting(const char *file)
 {
-	debug("CFileMgr::OpenFileForWriting: %s", file);
 	return OpenFile(file, "wb");
 }
 

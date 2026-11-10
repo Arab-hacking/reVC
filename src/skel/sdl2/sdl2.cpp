@@ -31,6 +31,7 @@ long _dwOperatingSystemVersion;
 #include "AnimViewer.h"
 #include "Font.h"
 #include "MemoryMgr.h"
+#include "MobileTouchControls.h"
 
 #if defined ANDROID
 #include "JavaWrapper.h"
@@ -81,21 +82,22 @@ char gSelectedJoystickName[128] = "";
 void _psCreateFolder(const char *path)
 {
 #if defined(ANDROID)
-	const char* pathroot = StorageRootBuffer;
+	const char* pathroot = getenv("STORAGE_ROOT");
 	char dbPath[1024];
-	snprintf(dbPath, sizeof(dbPath), "%s%s", pathroot, path);
-	mkdir(dbPath, 0755);
-	debug("Creating Folder Path: %s", dbPath);
+	int length = pathroot && *pathroot
+		? snprintf(dbPath, sizeof(dbPath), "%s/%s", pathroot, path)
+		: snprintf(dbPath, sizeof(dbPath), "%s", path);
+	if(length >= 0 && length < (int)sizeof(dbPath)) {
+		mkdir(dbPath, 0755);
+		debug("Creating Folder Path: %s", dbPath);
+	}
 #else
     debug("Creating Folder Path: %s", path);
     struct stat info;
-    char fullpath[PATH_MAX];
-    realpath(path, fullpath);
-
-    if (lstat(fullpath, &info) != 0) {
+    if (stat(path, &info) != 0) {
         if (errno == ENOENT || (errno != EACCES && !S_ISDIR(info.st_mode))) {
-		debug("Creating Folder FullPath: %s", fullpath);
-            mkdir(fullpath, 0755);
+            debug("Creating Folder: %s", path);
+            mkdir(path, 0755);
         }
     }
 #endif
@@ -138,14 +140,22 @@ psCameraBeginUpdate(RwCamera *camera)
 void
 psCameraShowRaster(RwCamera *camera)
 {
-#ifdef LEGACY_MENU_OPTIONS
-    if (FrontEndMenuManager.m_PrefsVsync || FrontEndMenuManager.m_bMenuActive)
-#else
-        if (FrontEndMenuManager.m_PrefsFrameLimiter || FrontEndMenuManager.m_bMenuActive)
-#endif
+#ifdef ANDROID
+    if (FrontEndMenuManager.m_PrefsVsync)
         RwCameraShowRaster(camera, PSGLOBAL(window), rwRASTERFLIPWAITVSYNC);
     else
         RwCameraShowRaster(camera, PSGLOBAL(window), rwRASTERFLIPDONTWAIT);
+#elif defined(LEGACY_MENU_OPTIONS)
+    if (FrontEndMenuManager.m_PrefsVsync || FrontEndMenuManager.m_bMenuActive)
+        RwCameraShowRaster(camera, PSGLOBAL(window), rwRASTERFLIPWAITVSYNC);
+    else
+        RwCameraShowRaster(camera, PSGLOBAL(window), rwRASTERFLIPDONTWAIT);
+#else
+    if (FrontEndMenuManager.m_PrefsFrameLimiter || FrontEndMenuManager.m_bMenuActive)
+        RwCameraShowRaster(camera, PSGLOBAL(window), rwRASTERFLIPWAITVSYNC);
+    else
+        RwCameraShowRaster(camera, PSGLOBAL(window), rwRASTERFLIPDONTWAIT);
+#endif
 
     return;
 }
@@ -195,9 +205,13 @@ psTimer(void)
 void
 psMouseSetPos(RwV2d *pos)
 {
+#ifdef ANDROID
+    (void)pos;
+#else
     SDL_WarpMouseInWindow(PSGLOBAL(window), pos->x, pos->y);
     PSGLOBAL(lastMousePos.x) = (RwInt32)pos->x;
     PSGLOBAL(lastMousePos.y) = (RwInt32)pos->y;
+#endif
 }
 
 /*
@@ -258,7 +272,11 @@ psInitialize(void)
     RsGlobal.ps = &PsGlobal;
 
     PsGlobal.fullScreen = FALSE;
+#ifdef ANDROID
+    PsGlobal.cursorIsInWindow = TRUE;
+#else
     PsGlobal.cursorIsInWindow = FALSE;
+#endif
     WindowFocused = TRUE;
     WindowIconified = FALSE;
 
@@ -279,10 +297,12 @@ psInitialize(void)
 	// Mandatory for Linux(Unix? Posix?) to set lang. to environment lang.
 	setlocale(LC_ALL, "");
 
-	char *systemLang, *keyboardLang;
+	const char *systemLang, *keyboardLang;
 
 	systemLang = setlocale (LC_ALL, NULL);
 	keyboardLang = setlocale (LC_CTYPE, NULL);
+	if (!systemLang) systemLang = "C";
+	if (!keyboardLang) keyboardLang = "C";
 
 	short lang;
 	lang = !strncmp(systemLang, "fr_",3) ? LANG_FRENCH :
@@ -335,10 +355,19 @@ psInitialize(void)
 
 #ifndef __APPLE__
     struct sysinfo systemInfo;
-    sysinfo(&systemInfo);
-    _dwMemAvailPhys = systemInfo.freeram;
-    debug("Physical memory size %u\n", systemInfo.totalram);
-    debug("Available physical memory %u\n", systemInfo.freeram);
+    if (sysinfo(&systemInfo) == 0) {
+        uint64_t unit = systemInfo.mem_unit ? (uint64_t)systemInfo.mem_unit : 1ULL;
+        uint64_t avail = (uint64_t)systemInfo.freeram * unit;
+        if (avail < 128ULL * 1024ULL * 1024ULL)
+            avail = 256ULL * 1024ULL * 1024ULL;
+        if (avail > 1024ULL * 1024ULL * 1024ULL)
+            avail = 1024ULL * 1024ULL * 1024ULL;
+        _dwMemAvailPhys = (size_t)avail;
+        debug("Physical memory size %llu\n", (unsigned long long)((uint64_t)systemInfo.totalram * unit));
+        debug("Available physical memory %llu\n", (unsigned long long)avail);
+    } else {
+        _dwMemAvailPhys = 256 * 1024 * 1024;
+    }
 #else
     uint64_t size = 0;
 	uint64_t page_size = 0;
@@ -596,8 +625,21 @@ psSelectDevice()
         }
 
         if(bestFsMode < 0){
-            printf("WARNING: Cannot find desired video mode, selecting device cancelled\n");
-            return FALSE;
+            // On Android (or displays with a single native resolution larger than
+            // a saved desktop revc.ini mode), pick the largest available exclusive
+            // mode, or fall back to the default display mode 0 instead of aborting.
+            for(RwInt32 m = 0; m < RwEngineGetNumVideoModes(); m++){
+                RwEngineGetVideoModeInfo(&vm, m);
+                if((vm.flags & rwVIDEOMODEEXCLUSIVE) &&
+                   (bestFsMode < 0 || (vm.width * vm.height >= bestWidth * bestHeight))){
+                    bestWidth = vm.width;
+                    bestHeight = vm.height;
+                    bestDepth = vm.depth;
+                    bestFsMode = m;
+                }
+            }
+            if(bestFsMode < 0)
+                bestFsMode = bestWndMode >= 0 ? bestWndMode : 0;
         }
         GcurSelVM = bestFsMode;
 
@@ -611,6 +653,9 @@ psSelectDevice()
     RwEngineGetVideoModeInfo(&vm, GcurSelVM);
 
 #ifdef IMPROVED_VIDEOMODE
+#ifdef ANDROID
+    FrontEndMenuManager.m_nPrefsWindowed = 0;
+#endif
     if (FrontEndMenuManager.m_nPrefsWindowed)
         GcurSelVM = bestWndMode;
 
@@ -673,21 +718,16 @@ psSelectDevice()
 
 bool IsThisJoystickBlacklisted(int i)
 {
-#ifndef DETECT_JOYSTICK_MENU
-    return false;
-#else
     if (SDL_IsGameController(i))
-		return false;
-
-	const char* joyname = SDL_JoystickNameForIndex(i);
-
-	if (gSelectedJoystickName[0] != '\0'
-			&& strncmp(joyname, gSelectedJoystickName, strlen(gSelectedJoystickName)) == 0) {
-		return false;
-	}
-
-	return true;
+        return false;
+#ifdef DETECT_JOYSTICK_MENU
+    const char* joyname = SDL_JoystickNameForIndex(i);
+    if (joyname != nullptr && gSelectedJoystickName[0] != '\0' &&
+        strncmp(joyname, gSelectedJoystickName, strlen(gSelectedJoystickName)) == 0) {
+        return false;
+    }
 #endif
+    return true;
 }
 
 void _InputInitialiseJoys()
@@ -706,7 +746,9 @@ void _InputInitialiseJoys()
 #if defined ANDROID
         const char* pathRoot = getenv("STORAGE_ROOT");
         char SDL_GAMEPAD_DB_PATH[MAX_PATH];
-        snprintf(SDL_GAMEPAD_DB_PATH, sizeof(SDL_GAMEPAD_DB_PATH), "%s%s", pathRoot, "gamecontrollerdb.txt");
+        snprintf(SDL_GAMEPAD_DB_PATH, sizeof(SDL_GAMEPAD_DB_PATH), "%s%s%s",
+                 pathRoot ? pathRoot : "", pathRoot && *pathRoot ? "/" : "",
+                 "gamecontrollerdb.txt");
 #else
         char bundledPath[FILEMGR_PATH_SIZE];
         const char* SDL_GAMEPAD_DB_PATH = CFileMgr::ResolveBundledGameFile(
@@ -771,35 +813,43 @@ void _InputShutdownMouse()
 
 bool _InputMouseNeedsExclusive()
 {
-#if 0
-    TODO SDL2
-	// That was the cause of infamous mouse bug on Win.
-	RwVideoMode vm;
-	RwEngineGetVideoModeInfo(&vm, GcurSelVM);
-
-	// If windowed, free the cursor on menu(where this func. is called and DISABLED-HIDDEN transition is done accordingly)
-	// If it's fullscreen, be sure that it didn't stuck on HIDDEN.
-	return !(vm.flags & rwVIDEOMODEEXCLUSIVE) || lastCursorMode == GLFW_CURSOR_HIDDEN;
-#endif
     return false;
 }
 
-// Relative mouse support: the game derives deltas from polled positions,
-// but confined positions stall at window/monitor edges. Accumulate the true
-// deltas from the motion events instead; the game consumes them once per frame.
 static bool mouseRelativeMode = false;
 static int mouseRelX = 0, mouseRelY = 0;
+static int latchedMouseButtons = 0;
+static int latchedMouseFrames = 0;
 
 bool _InputMouseIsRelative(void)
 {
+#ifdef ANDROID
+    return gGameState == GS_PLAYING_GAME && !FrontEndMenuManager.m_bMenuActive && !WindowIconified;
+#else
     return mouseRelativeMode;
+#endif
 }
 
 void _InputConsumeMouseRelative(int *dx, int *dy)
 {
+#ifdef ANDROID
+    CMobileTouchControls::ConsumeLookDelta(dx, dy);
+#else
     *dx = mouseRelX;
     *dy = mouseRelY;
     mouseRelX = mouseRelY = 0;
+#endif
+}
+
+int _InputConsumeLatchedMouseButtons(void)
+{
+    if (latchedMouseFrames <= 0)
+        return 0;
+    latchedMouseFrames--;
+    int mask = latchedMouseButtons;
+    if (latchedMouseFrames == 0)
+        latchedMouseButtons = 0;
+    return mask;
 }
 
 void psPostRWinit(void)
@@ -953,10 +1003,12 @@ void InitialiseLanguage()
     // Mandatory for Linux(Unix? Posix?) to set lang. to environment lang.
     setlocale(LC_ALL, "");
 
-    char *systemLang, *keyboardLang;
+    const char *systemLang, *keyboardLang;
 
     systemLang = setlocale (LC_ALL, NULL);
     keyboardLang = setlocale (LC_CTYPE, NULL);
+    if (!systemLang) systemLang = "C";
+    if (!keyboardLang) keyboardLang = "C";
 
     short primUserLCID, primSystemLCID;
     primUserLCID = primSystemLCID = !strncmp(systemLang, "fr_",3) ? LANG_FRENCH :
@@ -1223,6 +1275,7 @@ static const std::unordered_map<int, int> keymap = {
         {SDLK_RCTRL,		rsRCTRL},
         {SDLK_RALT,			rsRALT},
         {SDLK_RGUI,			rsRWIN},
+        {SDLK_AC_BACK,		rsESC},
         //{SDLK_MENU,			rsNULL}
 };
 
@@ -1274,11 +1327,16 @@ cursorCB(double xpos, double ypos) {
     if (!FrontEndMenuManager.m_bMenuActive)
         return;
 
-    // TODO remove?
-    //int winw, winh;
-    //SDL_GetWindowSize(PSGLOBAL(window), &winw, &winh);
-    FrontEndMenuManager.m_nMouseTempPosX = xpos; // * (RsGlobal.maximumWidth / winw);
-    FrontEndMenuManager.m_nMouseTempPosY = ypos; // * (RsGlobal.maximumHeight / winh);
+    int winw = 0, winh = 0;
+    if (PSGLOBAL(window))
+        SDL_GetWindowSize(PSGLOBAL(window), &winw, &winh);
+    if (winw > 0 && winh > 0 && RsGlobal.maximumWidth > 0 && RsGlobal.maximumHeight > 0) {
+        FrontEndMenuManager.m_nMouseTempPosX = (int)(xpos * ((double)RsGlobal.maximumWidth / (double)winw));
+        FrontEndMenuManager.m_nMouseTempPosY = (int)(ypos * ((double)RsGlobal.maximumHeight / (double)winh));
+    } else {
+        FrontEndMenuManager.m_nMouseTempPosX = (int)xpos;
+        FrontEndMenuManager.m_nMouseTempPosY = (int)ypos;
+    }
 }
 
 void
@@ -1286,11 +1344,14 @@ cursorEnterCB(int entered) {
     PSGLOBAL(cursorIsInWindow) = !!entered;
 }
 
-void windowFocusCB(int focused) {
+void
+windowFocusCB(int focused) {
     WindowFocused = !!focused;
     if (!focused) {
-        // deltas accumulated while unfocused must not fire on refocus
         mouseRelX = mouseRelY = 0;
+#ifdef ANDROID
+        CMobileTouchControls::ResetTouches();
+#endif
     }
 }
 
@@ -1299,6 +1360,15 @@ windowIconifyCB(int iconified) {
     WindowIconified = !!iconified;
 }
 
+#ifdef ANDROID
+void
+psPumpLoadingEvents(void)
+{
+    SDL_PumpEvents();
+    SDL_FlushEvents(SDL_FINGERDOWN, SDL_MULTIGESTURE);
+}
+#endif
+
 void inputEventHandler() {
     SDL_Event event;
 
@@ -1306,15 +1376,57 @@ void inputEventHandler() {
         switch (event.type) {
             case SDL_KEYDOWN:	/* fall-through */
             case SDL_KEYUP:
+#ifdef ANDROID
+                if (event.key.keysym.sym == SDLK_AC_BACK) {
+                    keypressCB(SDLK_ESCAPE, event.type, 0);
+                    break;
+                }
+#endif
                 keypressCB(event.key.keysym.sym, event.type, 0);
                 break;
 
             case SDL_MOUSEMOTION:
+#ifdef ANDROID
+                break;
+#else
+                PSGLOBAL(cursorIsInWindow) = true;
                 cursorCB(event.motion.x, event.motion.y);
                 mouseRelX += event.motion.xrel;
                 mouseRelY += event.motion.yrel;
                 break;
-            case SDL_MOUSEWHEEL: scrollCB(event.wheel.x, event.wheel.y); break;
+#endif
+
+            case SDL_MOUSEBUTTONDOWN:
+#ifdef ANDROID
+                break;
+#else
+                PSGLOBAL(cursorIsInWindow) = true;
+                cursorCB(event.button.x, event.button.y);
+                latchedMouseButtons |= SDL_BUTTON(event.button.button);
+                if (latchedMouseFrames < 2)
+                    latchedMouseFrames = 2;
+                break;
+#endif
+
+            case SDL_MOUSEWHEEL:
+#ifndef ANDROID
+                scrollCB(event.wheel.x, event.wheel.y);
+#endif
+                break;
+
+#ifdef ANDROID
+            case SDL_FINGERDOWN:
+                PSGLOBAL(cursorIsInWindow) = true;
+                CMobileTouchControls::OnFingerDown((int64)event.tfinger.fingerId, event.tfinger.x, event.tfinger.y);
+                break;
+            case SDL_FINGERMOTION:
+                CMobileTouchControls::OnFingerMotion((int64)event.tfinger.fingerId,
+                    event.tfinger.x, event.tfinger.y, event.tfinger.dx, event.tfinger.dy);
+                break;
+            case SDL_FINGERUP:
+                CMobileTouchControls::OnFingerUp((int64)event.tfinger.fingerId, event.tfinger.x, event.tfinger.y);
+                break;
+#endif
 
             // note that SDL_CONTROLLERDEVICEADDED/REMOVED exists, but it did not work for me
             case SDL_JOYDEVICEADDED:	/* fall-through */
@@ -1325,7 +1437,11 @@ void inputEventHandler() {
             case SDL_WINDOWEVENT:
                 switch (event.window.event) {
                     case SDL_WINDOWEVENT_ENTER: cursorEnterCB(true); break;
-                    case SDL_WINDOWEVENT_LEAVE: cursorEnterCB(false); break;
+                    case SDL_WINDOWEVENT_LEAVE:
+#ifndef ANDROID
+                        cursorEnterCB(false);
+#endif
+                        break;
                     case SDL_WINDOWEVENT_FOCUS_GAINED: windowFocusCB(true); break;
                     case SDL_WINDOWEVENT_FOCUS_LOST: windowFocusCB(false); break;
                     // TODO should it be minimized/maximized/restored instead of shown/hidden?
@@ -1339,10 +1455,7 @@ void inputEventHandler() {
         }
     }
 
-    // Grab the mouse during gameplay (GLFW_CURSOR_DISABLED equivalent):
-    // relative motion + pointer confinement, so the hidden cursor can't
-    // wander off to another monitor or stall at the window edge.
-    // The frontend needs absolute positions, so keep it free there.
+#ifndef ANDROID
     bool wantRelative = gGameState == GS_PLAYING_GAME &&
                         !FrontEndMenuManager.m_bMenuActive && !WindowIconified;
     if (wantRelative != mouseRelativeMode) {
@@ -1358,14 +1471,12 @@ void inputEventHandler() {
                 PSGLOBAL(lastMousePos.y) = y;
             }
         } else {
-            // switch failed: never leave the menu with a grabbed pointer and
-            // garbage coordinates — release the grab and fall back to polling
             SDL_SetWindowGrab(PSGLOBAL(window), SDL_FALSE);
             SDL_ShowCursor(SDL_DISABLE);
             mouseRelativeMode = false;
         }
     }
-    
+#endif
 }
 
 /*
@@ -1400,6 +1511,12 @@ main(int argc, char *argv[])
             setenv("STORAGE_ROOT", gamePath, 1);
         }
     }
+#ifdef ANDROID
+    StorageRootBuffer = getenv("STORAGE_ROOT");
+    SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "0");
+    SDL_SetHint(SDL_HINT_MOUSE_TOUCH_EVENTS, "0");
+    SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
+#endif
 
     /*
      * Initialize the platform independent data.
@@ -1438,6 +1555,14 @@ main(int argc, char *argv[])
     }
 
     psPostRWinit();
+#ifdef ANDROID
+    SDL_ShowCursor(SDL_DISABLE);
+    {
+        float ddpi = 0.0f, hdpi = 0.0f, vdpi = 0.0f;
+        if (SDL_GetDisplayDPI(0, &ddpi, &hdpi, &vdpi) == 0 && ddpi > 40.0f)
+            CMobileTouchControls::SetFallbackDpi(ddpi);
+    }
+#endif
 
     ControlsManager.InitDefaultControlConfigMouse(MousePointerStateHelper.GetMouseSetUp());
 
@@ -1757,12 +1882,19 @@ main(int argc, char *argv[])
 
                     case GS_PLAYING_GAME:
                     {
+#ifdef ANDROID
+                        if ( RwInitialised )
+                        {
+                            RsEventHandler(rsIDLE, (void *)TRUE);
+                        }
+#else
                         float ms = (float)CTimer::GetCurrentTimeInCycles() / (float)CTimer::GetCyclesPerMillisecond();
                         if ( RwInitialised )
                         {
                             if (!FrontEndMenuManager.m_PrefsFrameLimiter || (1000.0f / (float)RsGlobal.maxFPS) < ms)
                                 RsEventHandler(rsIDLE, (void *)TRUE);
                         }
+#endif
                         break;
                     }
                 }
@@ -2002,11 +2134,15 @@ void joysChangeCB(int jid, int event)
 {
     if (event == SDL_JOYDEVICEADDED && !IsThisJoystickBlacklisted(jid)) {
         if (PSGLOBAL(joy1id) == -1) {
-            assert(gamepad1 == nullptr);
+            if (gamepad1 != nullptr)
+                return;
             gamepad1 = SDL_GameControllerOpen(jid);
-            assert(gamepad1 != nullptr);
+            if (gamepad1 == nullptr)
+                return;
 #ifdef DETECT_JOYSTICK_MENU
-            strncpy(gSelectedJoystickName, SDL_JoystickNameForIndex(jid), sizeof(gSelectedJoystickName));
+            const char *jname = SDL_JoystickNameForIndex(jid);
+            if (jname)
+                strncpy(gSelectedJoystickName, jname, sizeof(gSelectedJoystickName) - 1);
 #endif
             // This is behind LOAD_INI_SETTINGS, because otherwise the Init call below will destroy/overwrite your bindings.
 #ifdef LOAD_INI_SETTINGS
@@ -2017,22 +2153,24 @@ void joysChangeCB(int jid, int event)
             // Do not close the controller handle, it is done in the device remove handler (below)
 #endif
         } else if (PSGLOBAL(joy2id) == -1) {
-            assert(gamepad2 == nullptr);
+            if (gamepad2 != nullptr)
+                return;
             gamepad2 = SDL_GameControllerOpen(jid);
-            assert(gamepad2 != nullptr);
+            if (gamepad2 == nullptr)
+                return;
             SDL_Joystick* joy = SDL_GameControllerGetJoystick(gamepad2);
             PSGLOBAL(joy2id) = SDL_JoystickInstanceID(joy);	// needed to get right ID for remove event
         }
 
     } else if (event == SDL_JOYDEVICEREMOVED) {
         if (PSGLOBAL(joy1id) == jid) {
-            assert(gamepad1 != nullptr);
-            SDL_GameControllerClose(gamepad1);
+            if (gamepad1 != nullptr)
+                SDL_GameControllerClose(gamepad1);
             PSGLOBAL(joy1id) = -1;
             gamepad1 = nullptr;
         } else if (PSGLOBAL(joy2id) == jid) {
-            assert(gamepad2 != nullptr);
-            SDL_GameControllerClose(gamepad2);
+            if (gamepad2 != nullptr)
+                SDL_GameControllerClose(gamepad2);
             PSGLOBAL(joy2id) = -1;
             gamepad2 = nullptr;
         }
