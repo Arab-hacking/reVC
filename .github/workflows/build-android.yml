@@ -1,8 +1,11 @@
 name: reVC Android
 
 on:
+  # Any push that touches the sources builds the APK. There is deliberately no
+  # `branches:` filter here: work happens on feature branches, and a filtered
+  # push trigger (plus a pull_request trigger that cannot fire while the PR has
+  # conflicts) is what previously left the branch without any Android build.
   push:
-    branches: [ "miami" ]
     paths:
       - 'android/launcher/**'
       - 'src/**'
