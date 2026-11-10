@@ -33,6 +33,7 @@
 #include "CustomModels.h"
 #include "CustomWorld.h"
 #include "ModelNameIndex.h"
+#include "Optimization.h"
 #endif
 #include "SavehDiag.h"
 #include "Replay.h"
@@ -281,6 +282,13 @@ CStreaming::Init2(void)
 #undef MB
 #endif
 
+	// Memory-pressure optimization: read the RAM budget and the optional
+	// data/optimization.json once. The per-frame state machine runs from
+	// CStreaming::Update on Android (see UpdateMobileStreamingHeadroom).
+#ifdef CUSTOM_MODELS
+	revcopt::Startup();
+#endif
+
 	// find island LODs
 
 	pIslandLODmainlandEntity = nil;
@@ -356,9 +364,12 @@ uint64 timeProcessingDFF;
 
 #ifdef ANDROID
 namespace {
-static float s_mobileRamLodScale = 1.0f;
 static int s_mobileVehReqBudget = 3;
 static int s_mobileAsyncReqBudget = 5;
+
+// free RAM as reported by the kernel. revcopt owns the polling interval and the
+// decision logic; this stays a plain memoised read so the frame does not hit
+// /proc every tick.
 static uint32 s_lastMemSampleFrame = 0xFFFFFFFFu;
 static size_t s_cachedAvailRamMB = 1024;
 
@@ -388,40 +399,29 @@ SampleAndroidAvailRamMB(void)
 	return s_cachedAvailRamMB;
 }
 
+// Memory pressure drives the draw distance and the per-frame request quota.
+// The measurements (/proc/meminfo, the RAM -> budget table) and the hysteresis
+// state machine live in extras/custom/Optimization.*, which mirrors the mobile
+// client: soft mode under 32 MB of headroom (leave at 48), critical under 8
+// (leave at 24), 0.75 / 0.6 distance, 0.25 per second, delayed 1 s / 3 s.
+// The previous version compared a fixed MemAvailable against 280/450 MB, which
+// reacted to *device* free memory rather than to the streaming budget and
+// switched instantly.
 static void
 UpdateMobileStreamingHeadroom(void)
 {
-	size_t availMB = SampleAndroidAvailRamMB();
-	float targetScale = 1.0f;
-	if(availMB < 280){
-		targetScale = 0.60f;
-		s_mobileVehReqBudget = 1;
-		s_mobileAsyncReqBudget = 2;
-	}else if(availMB < 450){
-		targetScale = 0.75f;
-		s_mobileVehReqBudget = 1;
-		s_mobileAsyncReqBudget = 2;
-	}else{
-		targetScale = 1.0f;
-		s_mobileVehReqBudget = 3;
-		s_mobileAsyncReqBudget = 5;
-	}
-	float dt = Min(CTimer::GetTimeStepInSeconds(), 0.1f);
-	if(dt > 0.0f){
-		float maxStep = 0.25f * dt;
-		float diff = targetScale - s_mobileRamLodScale;
-		if(diff > maxStep) diff = maxStep;
-		else if(diff < -maxStep) diff = -maxStep;
-		s_mobileRamLodScale += diff;
-	}
-	CRenderer::ms_lodDistScale = Clamp(FrontEndMenuManager.m_PrefsLOD * s_mobileRamLodScale, DRAWDIST_MIN, DRAWDIST_MAX);
+	unsigned long long availBytes = (unsigned long long)SampleAndroidAvailRamMB() * 1024ull * 1024ull;
+	OptimizationSnapshot s = revcopt::Tick((unsigned)CTimer::GetTimeInMilliseconds(),
+	                                       CTimer::GetTimeStepInSeconds(), availBytes);
+	s_mobileVehReqBudget = s.vehicleRequestsPerFrame;
+	s_mobileAsyncReqBudget = s.asyncRequestsPerFrame;
 
-	// Mobile vehicle loaded-count hysteresis (35 unload ceiling / 25 steady target)
-	int32 loadedVehs = CStreaming::ms_numVehiclesLoaded;
-	const int32 normalTarget = Min((int32)25, (int32)MAXVEHICLESLOADED);
-	if(availMB < 450)
-		desiredNumVehiclesLoaded = Min((int32)18, (int32)MAXVEHICLESLOADED);
-	else if(loadedVehs > 35)
+	// Mobile vehicle loaded-count hysteresis (unload ceiling / steady target),
+	// now scaled by the pressure mode instead of a fixed free-RAM threshold.
+	const int32 normalTarget = revcopt::PreservedVehicles(Min((int32)25, (int32)MAXVEHICLESLOADED));
+	const int32 ceiling = revcopt::PreservedVehicles(Min((int32)35, (int32)MAXVEHICLESLOADED));
+	const int32 loadedVehs = CStreaming::ms_numVehiclesLoaded;
+	if(loadedVehs > ceiling)
 		desiredNumVehiclesLoaded = normalTarget;
 	else if(desiredNumVehiclesLoaded < normalTarget)
 		desiredNumVehiclesLoaded = normalTarget;

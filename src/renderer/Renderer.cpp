@@ -1134,6 +1134,18 @@ CRenderer::ConstructRenderList(void)
 		GL3Atmosphere::Enabled ? GL3Atmosphere::Clamp01(CWeather::CloudCoverage) : 0.0f,
 		GL3Atmosphere::Enabled ? GL3Atmosphere::Clamp01(CWeather::Foggyness) : 0.0f,
 		GL3Atmosphere::Enabled ? dayNightBalance : 0.0f));
+#ifdef CUSTOM_MODELS
+	// 3x4 colour-grade matrix for the current hour/weather from
+	// data/colorcycle.dat; u_colorGrade stays identity without that file.
+	{
+		float grade[12];
+		float fHour = (float)CClock::GetHours() + (float)CClock::GetMinutes() / 60.0f;
+		CCustomTimecycle::EvaluateColorGrade(fHour,
+			CWeather::OldWeatherType, CWeather::NewWeatherType,
+			CWeather::InterpolationValue, grade);
+		rw::setColorGradeMatrix(grade);
+	}
+#endif
 #else
 	rw::setSkyAmbientParams(rw::makeRGBAf(
 		(0.55f * CTimeCycle::GetSkyTopRed()   + 0.45f * CTimeCycle::GetSkyBottomRed())   / 255.0f,

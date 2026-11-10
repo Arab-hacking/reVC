@@ -35,6 +35,7 @@ long _dwOperatingSystemVersion;
 
 #if defined ANDROID
 #include "JavaWrapper.h"
+#include "AndroidMain.h"
 extern char* StorageRootBuffer;
 #endif
 
@@ -82,23 +83,45 @@ char gSelectedJoystickName[128] = "";
 void _psCreateFolder(const char *path)
 {
 #if defined(ANDROID)
+	// Android only lets the game write inside its own storage root, so every
+	// relative path (userfiles/, .set files, screenshots...) is anchored there.
 	const char* pathroot = getenv("STORAGE_ROOT");
 	char dbPath[1024];
-	int length = pathroot && *pathroot
+	int length = (pathroot && *pathroot)
 		? snprintf(dbPath, sizeof(dbPath), "%s/%s", pathroot, path)
 		: snprintf(dbPath, sizeof(dbPath), "%s", path);
-	if(length >= 0 && length < (int)sizeof(dbPath)) {
-		mkdir(dbPath, 0755);
-		debug("Creating Folder Path: %s", dbPath);
+	if (length <= 0 || length >= (int)sizeof(dbPath)) {
+		debug("Folder path too long: %s", path);
+		return;
 	}
+
+	// mkdir() only creates the last component: userfiles/gta_vc.set needs the
+	// parent as well, and a failed parent used to fail silently.
+	for (char* separator = dbPath + 1; *separator != '\0'; separator++) {
+		if (*separator != '/')
+			continue;
+		*separator = '\0';
+		if (mkdir(dbPath, 0755) != 0 && errno != EEXIST)
+			debug("Cannot create folder %s: %s", dbPath, strerror(errno));
+		*separator = '/';
+	}
+	if (mkdir(dbPath, 0755) != 0 && errno != EEXIST)
+		debug("Cannot create folder %s: %s", dbPath, strerror(errno));
+	else
+		debug("Creating Folder Path: %s", dbPath);
 #else
     debug("Creating Folder Path: %s", path);
     struct stat info;
     if (stat(path, &info) != 0) {
-        if (errno == ENOENT || (errno != EACCES && !S_ISDIR(info.st_mode))) {
+        // `info` is not filled in when stat() fails; the old condition called
+        // S_ISDIR() on that uninitialised memory.
+        if (errno == ENOENT) {
             debug("Creating Folder: %s", path);
-            mkdir(path, 0755);
+            if (mkdir(path, 0755) != 0 && errno != EEXIST)
+                debug("Cannot create folder %s: %s", path, strerror(errno));
         }
+    } else if (!S_ISDIR(info.st_mode)) {
+        debug("Not a folder, cannot create: %s", path);
     }
 #endif
 }
@@ -484,6 +507,8 @@ void _psSelectScreenVM(RwInt32 videoMode)
     }
     else
         FrontEndMenuManager.LoadAllTextures();
+    // _psSetVideoMode already re-creates the device and pushes the new camera
+    // size; nothing else has to be done here.
 }
 
 /*
@@ -1135,10 +1160,10 @@ void HandleExit()
 }
 
 void terminateHandler(int sig, siginfo_t *info, void *ucontext) {
-#if defined(ANDROID)
-    if(g_pJavaWrapper)
-        g_pJavaWrapper->ExitGame();
-#endif
+    // Signal handlers may only call async-signal-safe functions, so the JNI
+    // call to the Java activity (which used to be here) is gone. RsGlobal.quit
+    // only flips a bool and is checked by the main loop, which then runs the
+    // regular shutdown path and lets SDLActivity finish itself.
     RsGlobal.quit = TRUE;
 }
 
@@ -1493,11 +1518,14 @@ main(int argc, char *argv[])
 #endif
 
     struct sigaction act;
+    memset(&act, 0, sizeof(act));
     act.sa_sigaction = terminateHandler;
+    sigemptyset(&act.sa_mask); // leaving sa_mask uninitialised blocks random signals
     act.sa_flags = SA_SIGINFO;
     sigaction(SIGTERM, &act, NULL);
 #ifdef FLUSHABLE_STREAMING
     struct sigaction sa;
+    memset(&sa, 0, sizeof(sa));
     sigemptyset(&sa.sa_mask);
     sa.sa_handler = dummyHandler;
     sa.sa_flags = 0;
@@ -1516,6 +1544,10 @@ main(int argc, char *argv[])
     SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "0");
     SDL_SetHint(SDL_HINT_MOUSE_TOUCH_EVENTS, "0");
     SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
+    // Logging, crash handler and the JNI bridge to SDLActivity. The game is
+    // started from SDLActivity's own thread via the exported SDL_main, so this
+    // is the first place where the storage root is known.
+    AndWrapper::AndroidPlatformInit();
 #endif
 
     /*

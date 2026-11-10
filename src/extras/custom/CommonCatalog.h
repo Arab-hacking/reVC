@@ -89,6 +89,7 @@ inline Catalog Parse(const unsigned char *bytes, size_t size)
 inline bool CanReadData(const std::string &path)
 {
     return path == "data/config.dat" || path == "data/timecyc.json" ||
+           path == "data/optimization.json" ||
            path == "data/water.dat" || path == "data/carcols.dat";
 }
 

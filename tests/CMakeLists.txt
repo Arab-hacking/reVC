@@ -270,6 +270,35 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Cla
     set_target_properties(custom_archive_integration_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
     add_test(NAME custom_archive_integration_tests COMMAND custom_archive_integration_tests)
 
+    # Memory-pressure optimization: the 48-parameter table, the RAM -> budget
+    # mapping, the pressure function and the hysteresis state machine. Header
+    # only, so the test builds without the engine.
+    add_executable(optimization_profile_tests OptimizationProfileTests.cpp)
+    target_include_directories(optimization_profile_tests PRIVATE ../src/extras/custom)
+    set_target_properties(optimization_profile_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+    add_test(NAME optimization_profile_tests COMMAND optimization_profile_tests)
+
+    # The COL2/COL3 TBounds block stores the bounding sphere in one of two
+    # orders depending on which tool wrote the file; the converter has to
+    # recognise it instead of guessing from the platform.
+    add_executable(custom_col_bounds_tests
+        CustomColBoundsTests.cpp
+        ../src/extras/custom/CustomCol.cpp)
+    target_compile_definitions(custom_col_bounds_tests PRIVATE
+        LIBRW RW_GL3 LIBRW_SDL2 CMAKE_BUILD USE_OUR_VERSIONING AUDIO_OAL)
+    target_include_directories(custom_col_bounds_tests PRIVATE
+        ../vendor/librw ../vendor/librw/src/gl ../vendor/sdl2/include
+        ../src ../src/animation ../src/audio ../src/buildings ../src/collision
+        ../src/control ../src/core ../src/entities ../src/extras
+        ../src/extras/custom ../src/extras/custom/br ../src/fakerw ../src/math
+        ../src/modelinfo ../src/objects ../src/peds ../src/renderer ../src/rw
+        ../src/save ../src/skel ../src/text ../src/vehicles ../src/weapons)
+    target_compile_options(custom_col_bounds_tests PRIVATE
+        -ffunction-sections -fdata-sections -Wno-write-strings -Wno-multichar)
+    target_link_options(custom_col_bounds_tests PRIVATE -Wl,--gc-sections)
+    set_target_properties(custom_col_bounds_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+    add_test(NAME custom_col_bounds_tests COMMAND custom_col_bounds_tests)
+
     add_executable(android_bpc_archive_integration_tests
         AndroidBpcArchiveIntegrationTests.cpp
         ../src/extras/custom/CustomModels.cpp

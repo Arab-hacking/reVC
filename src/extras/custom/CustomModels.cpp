@@ -426,6 +426,7 @@ ScanCommonZip(void)
 				CustomSource src = MakeSource(mtime, path.c_str(), ent->name);
 				src.zipEntry = n;
 				if(pass == 0 && (key == "data/config.dat" || key == "data/timecyc.json" ||
+			                 key == "data/optimization.json" ||
 			                 key == "data/water.dat" || key == "data/carcols.dat" ||
 			                 key == "data/lods.info" ||
 			                 key == "models/generic/vehicle.txd" || key == "models/vehicle.txd")) {
@@ -730,6 +731,7 @@ ScanAndroidBpcSystem(void)
 				snprintf(src.fname, sizeof(src.fname), "%s:%s", commonPath.c_str(), ent->name);
 
 				if(pass == 0 && (key == "data/config.dat" || key == "data/texdb.dat" ||
+			                 key == "data/optimization.json" ||
 				                 key == "data/timecyc.json" || key == "data/colorcycle.dat" ||
 				                 key == "data/water.dat" ||
 				                 key == "data/carcols.dat" || key == "data/lods.info" ||
@@ -4823,6 +4825,7 @@ CCustomModels::ReadDataFile(const char *relpath, std::vector<uint8> &out,
 	if(fromCommon) *fromCommon = false;
 	out.clear();
 	if(relpath == nil || (strcmp(relpath, "data/timecyc.json") != 0 &&
+	                       strcmp(relpath, "data/optimization.json") != 0 &&
 	                       strcmp(relpath, "data/water.dat") != 0 &&
 	                       strcmp(relpath, "data/carcols.dat") != 0 &&
 #ifdef ANDROID

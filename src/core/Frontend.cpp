@@ -3275,18 +3275,14 @@ CMenuManager::LoadSettings()
 	m_PrefsVsync = m_PrefsVsyncDisp;
 #endif
 #ifdef ANDROID
-	m_PrefsFrameLimiter = 0;
-	m_PrefsVsyncDisp = 0;
-	m_PrefsVsync = 0;
-#ifdef ASPECT_RATIO_SCALE
-	m_PrefsUseWideScreen = AR_AUTO;
-#endif
+	// Frame limiter, VSync, widescreen and the free camera were read from the
+	// saved settings just above; resetting them here made the in-game options
+	// write values that were then overwritten on the next start. Only the
+	// touch-only defaults (no mouse steering, third-person mouse camera) stay.
+	m_PrefsVsync = m_PrefsVsyncDisp;
 	m_ControlMethod = CONTROL_STANDARD;
 	CCamera::m_bUseMouse3rdPerson = true;
 	CVehicle::m_bDisableMouseSteering = true;
-#ifdef FREE_CAM
-	CCamera::bFreeCam = true;
-#endif
 #endif
 	CRenderer::ms_lodDistScale = m_PrefsLOD;
 

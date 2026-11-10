@@ -151,6 +151,11 @@ if(NINTENDO_SWITCH)
     include(NXFunctions)
 endif()
 
+if(ANDROID)
+    # Cross-compilation defaults (ABI checks, no host-side librw tools, ...)
+    include("${CMAKE_CURRENT_LIST_DIR}/cmake/android/AndroidConfig.cmake")
+endif()
+
 if(NOT COMMAND reVC_platform_target)
     function(reVC_platform_target)
     endfunction()

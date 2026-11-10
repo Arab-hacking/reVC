@@ -9,6 +9,7 @@
 #include "logger/log.h"
 #include <SDL_hints.h>
 #include <SDL_main.h>
+#include <SDL_system.h>
 #include <SignalHandler.h>
 #include <patch/patch.h>
 #include <sys/time.h>
@@ -32,14 +33,15 @@ extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *)
 }
 
 bool AndWrapper::InitLibraries() {
-	g_libREVC = Patch::FindLib("librevc.so");
+	if (g_libREVC == 0)
+		g_libREVC = Patch::FindLib("librevc.so");
 
 	if (!g_libREVC) {
 		Logger::Log("[ERROR]: Required libraries not found!");
 		return false;
 	}
 
-	Logger::Log("[INFO]: libreVC base: 0x%X", g_libREVC);
+	Logger::Log("[INFO]: librevc base: 0x%lx", (unsigned long)g_libREVC);
 	return true;
 }
 
@@ -59,7 +61,7 @@ void* AndWrapper::GetJNIFunc() {
 }
 
 void* AndWrapper::GetObj() {
-    return nullptr;
+    return g_pJavaWrapper != nullptr ? g_pJavaWrapper->activity : nullptr;
 }
 
 const char* AndWrapper::GetAppId()
@@ -106,7 +108,28 @@ int AndWrapper::DeviceType()
 
 void AndWrapper::SystemInitialize()
 {
+}
 
+// Called from the game's main() once the storage root (--dir) is known.
+// SDLActivity resolves SDL_main by name and runs it on its own thread, so this
+// is the first point where logging files, crash handlers and the JNI bridge to
+// the Java activity can be set up.
+void AndWrapper::AndroidPlatformInit()
+{
+    g_libREVC = Patch::FindLib("librevc.so");
+    Logger::Init();
+
+    if (g_pJavaWrapper == nullptr) {
+        JNIEnv* env = CJavaWrapper::GetEnv();
+        jobject activity = reinterpret_cast<jobject>(SDL_AndroidGetActivity());
+        if (env != nullptr && activity != nullptr)
+            g_pJavaWrapper = new CJavaWrapper(env, activity);
+        else
+            Logger::Log("[WARN]: no Java activity; native->Java calls disabled");
+    }
+
+    CrashHandler::SetupSignalHandlers();
+    Logger::Log("[INFO]: librevc base: 0x%lx", (unsigned long)g_libREVC);
 }
 /*
 int32_t __fastcall NVEventAppMain(int32_t argc, char **argv)
@@ -354,23 +377,5 @@ void __fastcall OS_ApplicationEvent(OSEventType type, void *data)
             return;
     }
 }*/
-
-JNI_WRAPPER int InitializeGame() {
-    debug("Initialize Game");
-
-    if (!AndWrapper::InitLibraries()) return 0;
-
-    int argc = 0;
-    char* argv[1] = { nullptr };
-
-    SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
-    SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "0");
-    SDL_SetHint(SDL_HINT_MOUSE_TOUCH_EVENTS, "0");
-
-    CrashHandler::SetupSignalHandlers();
-
-    int result = SDL_main(argc, argv);
-    return result;
-}
 
 #endif

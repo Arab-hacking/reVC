@@ -156,11 +156,25 @@ CSunShadowMap::Render(void)
 		rw::gl3::disableShadowMap();
 		return;
 	}
+	// Last frame's shadow map is reused on alternate frames at medium quality.
+	// The cache used to be validated against the camera position only, so a
+	// stationary player kept a stale map while the sun moved with the game clock
+	// and while the weather changed the shadow strength, which made shadows
+	// visibly detach from the casters. Minute-resolution time and the weather
+	// driven strength are now part of the cache key.
 	static bool s_haveCachedShadow = false;
 	static CVector s_lastShadowCamPos(0.0f, 0.0f, 0.0f);
+	static uint16 s_lastShadowClockMin = 0xFFFF;
+	static uint16 s_lastShadowWeatherKey = 0xFFFF;
+	const uint16 clockMin = (uint16)(CClock::GetHours() * 60 + CClock::GetMinutes());
+	const uint16 weatherKey =
+		(uint16)((int)(GL3Atmosphere::Clamp01(CWeather::CloudCoverage) * 63.0f) * 64 +
+		        (int)(GL3Atmosphere::Clamp01(CWeather::Rain) * 63.0f));
 	if(mobTier == CMenuManager::MOBILE_GFX_MEDIUM &&
 	   s_haveCachedShadow &&
 	   (CTimer::GetFrameCounter() & 1u) != 0u &&
+	   clockMin == s_lastShadowClockMin &&
+	   weatherKey == s_lastShadowWeatherKey &&
 	   (TheCamera.GetPosition() - s_lastShadowCamPos).MagnitudeSqr() < 16.0f){
 		s_sunShadowActive = true;
 		return;
@@ -262,6 +276,8 @@ CSunShadowMap::Render(void)
 #ifdef ANDROID
 	s_haveCachedShadow = true;
 	s_lastShadowCamPos = camPos;
+	s_lastShadowClockMin = clockMin;
+	s_lastShadowWeatherKey = weatherKey;
 #endif
 	s_sunShadowActive = true;
 }

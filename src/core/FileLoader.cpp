@@ -1977,9 +1977,10 @@ CFileLoader::LoadObjectInstance(const char *line)
 		entity = new CDummyObject;
 		entity->SetModelIndexNoCreate(id);
 		entity->GetMatrix() = CMatrix(xform);
-		CWorld::Add(entity);
-		if(IsGlass(entity->GetModelIndex()) && !mi->m_isArtistGlass)
-			entity->bIsVisible = false;
+		// m_level has to be set before CWorld::Add(): Add() files a big building
+		// into ms_bigBuildingsList[m_level], so assigning it afterwards left the
+		// dummy in the list slot of whatever level it had at construction and the
+		// per-level removal passes then never found it again.
 #if defined(ANDROID) && defined(CUSTOM_MODELS)
 		entity->m_level = CCustomModels::ReplacesNativeWorldMap()
 			? LEVEL_GENERIC
@@ -1988,6 +1989,9 @@ CFileLoader::LoadObjectInstance(const char *line)
 		entity->m_level = CTheZones::GetLevelFromPosition(&entity->GetPosition());
 #endif
 		entity->m_area = area;
+		CWorld::Add(entity);
+		if(IsGlass(entity->GetModelIndex()) && !mi->m_isArtistGlass)
+			entity->bIsVisible = false;
 	}
 
 	RwMatrixDestroy(xform);

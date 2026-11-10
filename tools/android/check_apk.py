@@ -76,6 +76,19 @@ def check(apk_path: Path) -> None:
                             f"lib/{abi}/{dependency}" not in files):
                         raise ValueError(f"Unpackaged dependency of {abi} game: {dependency}")
 
+        # Shipped tuning file for the memory-pressure optimization. The game
+        # works without it (the built-in defaults match the file), but a stale
+        # or hand-edited copy is a common support case, so require it.
+        name = "assets/data/optimization.json"
+        if name not in files:
+            raise ValueError(f"Missing reVC support file: {name}")
+        with apk.open(name) as tuning:
+            text = tuning.read().decode("utf-8", "replace")
+        for section in ("memoryPressure", "worldDistance", "networkVehicles",
+                        "remotePlayerAppearance", "asyncModelRequests"):
+            if f'"{section}"' not in text:
+                raise ValueError(f"{name} lost its {section} section")
+
         for name in ("assets/data/freeroam_miami.scm",
                      "assets/models/generic.txd",
                      "assets/gamecontrollerdb.txt"):

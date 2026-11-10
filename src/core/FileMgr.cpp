@@ -466,14 +466,35 @@ CFileMgr::ChangeDir(const char *dir)
 void
 CFileMgr::SetDir(const char *dir)
 {
-	strcpy(ms_dirName, ms_rootDirName);
-	if(*dir != '\0'){
-		strcat(ms_dirName, dir);
-#ifndef ANDROID
-        // BUG in the game it seems, it's off by one
-		if(dir[strlen(dir)-1] != '\\')
-			strcat(ms_dirName, "\\");
+	if (dir == nil)
+		dir = "";
+
+	// Unbounded strcpy/strcat of the root and the caller-supplied directory
+	// could overflow ms_dirName (a deep custom/CLS path is enough).
+	int length = snprintf(ms_dirName, sizeof(ms_dirName), "%s%s", ms_rootDirName, dir);
+	if (length < 0 || length >= (int)sizeof(ms_dirName)) {
+		debug("CFileMgr::SetDir: path too long: %s%s", ms_rootDirName, dir);
+		ms_dirName[0] = '\0';
+		errno = ENAMETOOLONG;
+		return;
+	}
+	// Every platform needs the trailing separator, otherwise the next
+	// relative open ("meta.xml" after SetDir("custom")) resolves one level up.
+	// On Windows the game itself omits/expects a backslash; on POSIX (and
+	// Android in particular) a missing slash silently changed the directory.
+	if (length > 0 && ms_dirName[length - 1] != '/' && ms_dirName[length - 1] != '\\') {
+		if (length + 2 >= (int)sizeof(ms_dirName)) {
+			debug("CFileMgr::SetDir: path too long: %s", ms_dirName);
+			ms_dirName[0] = '\0';
+			errno = ENAMETOOLONG;
+			return;
+		}
+#ifdef _WIN32
+		ms_dirName[length] = '\\';
+#else
+		ms_dirName[length] = '/';
 #endif
+		ms_dirName[length + 1] = '\0';
 	}
 	debug("CFileMgr::SetDir: %s", ms_dirName);
 	mychdir(ms_dirName);

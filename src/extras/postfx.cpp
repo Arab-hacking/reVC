@@ -59,11 +59,29 @@ CPostFX::Open(RwCamera *cam)
 	if(pFrontBuffer)
 		Close();
 
-	uint32 width  = Pow(2.0f, int32(log2(RwRasterGetWidth (RwCameraGetRaster(cam))))+1);
-	uint32 height = Pow(2.0f, int32(log2(RwRasterGetHeight(RwCameraGetRaster(cam))))+1);
+	// Use the camera raster size, not the next power of two. Rounding up turned
+	// e.g. 1920x1080 into 4096x2048 and allocated two of those as RGBA8 render
+	// targets (~64 MB of GPU memory), which is what made the game run out of
+	// memory or thrash on phones. Legacy GL is gone, so NPOT targets are fine.
+	uint32 width  = RwRasterGetWidth(RwCameraGetRaster(cam));
+	uint32 height = RwRasterGetHeight(RwCameraGetRaster(cam));
+	if(width == 0 || height == 0){
+		pFrontBuffer = nil;
+		pBackBuffer = nil;
+		return;
+	}
 	uint32 depth  = RwRasterGetDepth(RwCameraGetRaster(cam));
 	pFrontBuffer = RwRasterCreate(width, height, depth, rwRASTERTYPECAMERATEXTURE);
 	pBackBuffer = RwRasterCreate(width, height, depth, rwRASTERTYPECAMERATEXTURE);
+	if(pFrontBuffer == nil || pBackBuffer == nil){
+		// One of the two allocations failed (low memory): release whatever was
+		// created and leave the effect disabled instead of rendering into nil.
+		if(pFrontBuffer) RwRasterDestroy(pFrontBuffer);
+		if(pBackBuffer) RwRasterDestroy(pBackBuffer);
+		pFrontBuffer = nil;
+		pBackBuffer = nil;
+		return;
+	}
 	bJustInitialised = true;
 
 	float zero, xmax, ymax;
@@ -402,8 +420,8 @@ EnsurePostFXBuffers(RwCamera *cam)
 {
 	if(cam == nil || RwCameraGetRaster(cam) == nil)
 		return;
-	uint32 width  = Pow(2.0f, int32(log2(RwRasterGetWidth (RwCameraGetRaster(cam))))+1);
-	uint32 height = Pow(2.0f, int32(log2(RwRasterGetHeight(RwCameraGetRaster(cam))))+1);
+	uint32 width  = RwRasterGetWidth(RwCameraGetRaster(cam));
+	uint32 height = RwRasterGetHeight(RwCameraGetRaster(cam));
 	if(CPostFX::pFrontBuffer == nil || CPostFX::pBackBuffer == nil ||
 	   (uint32)RwRasterGetWidth(CPostFX::pBackBuffer) != width ||
 	   (uint32)RwRasterGetHeight(CPostFX::pBackBuffer) != height){
@@ -459,6 +477,13 @@ CPostFX::Render(RwCamera *cam, uint32 red, uint32 green, uint32 blue, uint32 blu
 	RwRenderStateSet(rwRENDERSTATETEXTUREFILTER, (void*)rwFILTERNEAREST);
 	RwRenderStateSet(rwRENDERSTATEZTESTENABLE, (void*)FALSE);
 	RwRenderStateSet(rwRENDERSTATEZWRITEENABLE, (void*)FALSE);
+
+	// Open() may have failed to allocate the buffers (low memory); the overlay
+	// passes below dereference them through the render-state texture slot.
+	if(pFrontBuffer == nil || pBackBuffer == nil){
+		POP_RENDERGROUP();
+		return;
+	}
 
 	if(type == MOTION_BLUR_SNIPER){
 		if(!bJustInitialised)

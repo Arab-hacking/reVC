@@ -2,6 +2,30 @@ plugins {
     alias(libs.plugins.android.application)
 }
 
+// Release APKs used to be signed with the shared Android debug key, which is
+// both insecure and impossible to update over a properly signed build. When a
+// keystore is supplied (locally via gradle.properties or in CI via environment
+// variables / -P properties) it is used for release builds; otherwise the
+// release variant is left unsigned and AGP names the artifact
+// `app-release-unsigned.apk` instead of silently shipping a debug-key APK.
+def releaseKeystore = null
+def releaseKeystorePassword = null
+def releaseKeyAlias = null
+def releaseKeyPassword = null
+
+if (project.hasProperty('revcKeystore')) {
+    releaseKeystore = project.property('revcKeystore')
+    releaseKeystorePassword = project.findProperty('revcKeystorePassword')
+    releaseKeyAlias = project.findProperty('revcKeyAlias')
+    releaseKeyPassword = project.findProperty('revcKeyPassword')
+} else if (System.getenv('REVC_KEYSTORE') != null) {
+    releaseKeystore = System.getenv('REVC_KEYSTORE')
+    releaseKeystorePassword = System.getenv('REVC_KEYSTORE_PASSWORD')
+    releaseKeyAlias = System.getenv('REVC_KEY_ALIAS')
+    releaseKeyPassword = System.getenv('REVC_KEY_PASSWORD')
+}
+def hasReleaseSigning = releaseKeystore != null && file(releaseKeystore).exists()
+
 android {
 
     namespace 'com.revc.game'
@@ -20,19 +44,32 @@ android {
 
         ndk {
             abiFilters "armeabi-v7a", "arm64-v8a"
+            // Ship stripped shared objects. The native build keeps its debug
+            // symbols in the build tree; only the packaged copies are reduced.
+            debugSymbolLevel 'NONE'
+        }
+    }
+
+    signingConfigs {
+        if (hasReleaseSigning) {
+            release {
+                storeFile file(releaseKeystore)
+                storePassword releaseKeystorePassword
+                keyAlias releaseKeyAlias
+                keyPassword releaseKeyPassword
+            }
         }
     }
 
     buildTypes {
         release {
-            signingConfig signingConfigs.debug
-
-            externalNativeBuild {
-                cmake {
-                    cppFlags '-O3', '-fvisibility=hidden'
-                }
+            if (hasReleaseSigning) {
+                signingConfig signingConfigs.release
             }
 
+            // CMake build flags come from CMake itself (AGP configures the
+            // native build as Release/RelWithDebInfo per variant). Passing -O3
+            // or -g through cppFlags used to fight those settings.
             debuggable false
             minifyEnabled true
             shrinkResources true
@@ -45,12 +82,6 @@ android {
         debug {
             signingConfig signingConfigs.debug
 
-            externalNativeBuild {
-                cmake {
-                    cppFlags '-g', '-DDEBUG'
-                }
-            }
-
             debuggable true
             minifyEnabled false
             jniDebuggable true
@@ -59,8 +90,20 @@ android {
     }
 
     packagingOptions {
-        jniLibs.excludes += ['META-INF/*']
-        resources.excludes += ['META-INF/*']
+        // Do not blanket-exclude META-INF: dependencies keep service/version
+        // metadata there. Only signature files must go, they are invalid after
+        // the APK is re-signed anyway.
+        resources.excludes += [
+                'META-INF/*.SF',
+                'META-INF/*.DSA',
+                'META-INF/*.RSA',
+                'META-INF/*.EC',
+                'META-INF/MANIFEST.MF',
+                'META-INF/*.kotlin_module',
+                'META-INF/versions/**/module-info.class',
+        ]
+        // Load the .so files straight from the APK (minSdk 24+ supports it).
+        jniLibs.useLegacyPackaging = false
     }
 
     compileOptions {
@@ -80,9 +123,15 @@ android {
         buildConfig = true
     }
 
+    lint {
+        // The vendored SDL Java files use APIs deprecated in newer SDKs; they
+        // are known-good and reviewed upstream, so do not fail the CI build.
+        abortOnError false
+        checkReleaseBuilds false
+    }
+
     sourceSets {
         main {
-            jniLibs.srcDir 'jniLibs'
             // reVC support files only; GTA Vice City game assets are supplied
             // by the player and are NEVER checked into or bundled with the APK.
             assets.srcDir file('../../../gamefiles')

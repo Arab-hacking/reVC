@@ -908,19 +908,40 @@ rasterFromImage(Raster *raster, Image *image)
 	}
 
 	uint8 *pixels = raster->pixels;
-	assert(pixels);
+	if(pixels == nil || image->pixels == nil ||
+	   image->width != raster->width || image->height != raster->height){
+		// assert() is compiled out in release builds, and the loops below would
+		// then copy rows of a mismatching size into (or out of) the wrong buffer.
+		if(unlock)
+			raster->unlock(0);
+		if(truecolimg)
+			truecolimg->destroy();
+		RWERROR((ERR_INVRASTER));
+		return 0;
+	}
 	uint8 *imgpixels = image->pixels + (image->height-1)*image->stride;
 
+	// A 24-bit image on a GLES raster needs a 4-byte native pixel: the RGBA
+	// conversion writes four bytes and used to run past the end of the last
+	// pixel of every row (and of the whole buffer on the final row).
+	const int dstBpp = natras->bpp > 0 ? natras->bpp : (image->depth / 8);
+	if(image->depth >= 24 && dstBpp < 4){
+		if(unlock)
+			raster->unlock(0);
+		if(truecolimg)
+			truecolimg->destroy();
+		RWERROR((ERR_INVRASTER));
+		return 0;
+	}
+
 	int x, y;
-	assert(image->width == raster->width);
-	assert(image->height == raster->height);
 	for(y = 0; y < image->height; y++){
 		uint8 *imgrow = imgpixels;
 		uint8 *rasrow = pixels;
 		for(x = 0; x < image->width; x++){
 			conv(rasrow, imgrow);
 			imgrow += image->bpp;
-			rasrow += natras->bpp;
+			rasrow += dstBpp;
 		}
 		imgpixels -= image->stride;
 		pixels += raster->stride;
@@ -953,19 +974,31 @@ rasterToImage(Raster *raster)
 		return nil;
 	}
 
+	// The readback buffer holds what the GPU really stores, which is not always
+	// the raster format: on GLES every raster is created as RGBA8 (see
+	// rasterCreateCameraTexture) and glReadPixels only supports RGBA there, so a
+	// C1555/C888 raster still yields 4 bytes per pixel. Reading those with the
+	// 16/24-bit converters produced a half-width, shifted image and ran past the
+	// end of the last row.
+	const int srcBpp = natras->bpp > 0 ? natras->bpp : (raster->depth / 8);
+
 	void (*conv)(uint8 *out, uint8 *in) = nil;
+	void (*convWide)(uint8 *out, uint8 *in) = nil;  // same, from 4-byte pixels
 	switch(raster->format & 0xF00){
 	case Raster::C1555:
 		depth = 16;
 		conv = conv_ARGB1555_from_RGBA5551;
+		convWide = conv_ARGB1555_from_RGBA8888;
 		break;
 	case Raster::C8888:
 		depth = 32;
 		conv = conv_RGBA8888_from_RGBA8888;
+		convWide = conv;
 		break;
 	case Raster::C888:
 		depth = 24;
 		conv = conv_RGB888_from_RGB888;
+		convWide = conv_RGB888_from_RGBA8888;
 		break;
 
 	default:
@@ -973,6 +1006,17 @@ rasterToImage(Raster *raster)
 	case Raster::C565:
 	case Raster::C4444:
 	case Raster::LUM8:
+		if(unlock)
+			raster->unlock(0);
+		RWERROR((ERR_INVRASTER));
+		return nil;
+	}
+
+	if(srcBpp == 4)
+		conv = convWide;
+	if(srcBpp < 2 || srcBpp > 4 || raster->pixels == nil){
+		if(unlock)
+			raster->unlock(0);
 		RWERROR((ERR_INVRASTER));
 		return nil;
 	}
@@ -983,7 +1027,6 @@ rasterToImage(Raster *raster)
 		return nil;
 	}
 		
-	uint8 *in, *out;
 	image = Image::create(raster->width, raster->height, depth);
 	image->allocate();
 
@@ -991,15 +1034,29 @@ rasterToImage(Raster *raster)
 	uint8 *pixels = raster->pixels;
 
 	int x, y;
-	assert(image->width == raster->width);
-	assert(image->height == raster->height);
+	if(image->width != raster->width || image->height != raster->height){
+		if(unlock)
+			raster->unlock(0);
+		delete image;
+		RWERROR((ERR_INVRASTER));
+		return nil;
+	}
 	for(y = 0; y < image->height; y++){
 		uint8 *imgrow = imgpixels;
 		uint8 *rasrow = pixels;
 		for(x = 0; x < image->width; x++){
-			conv(imgrow, rasrow);
+			if(srcBpp == 4)
+				conv(imgrow, rasrow);
+			else{
+				// Desktop 16/24-bit native pixels: the native converters only
+				// look at the first two or three bytes, so hand them a widened
+				// copy and let the row pointer advance by the real stride.
+				uint8 widened[4] = { rasrow[0], rasrow[1],
+				                     srcBpp == 3 ? rasrow[2] : (uint8)0, 255 };
+				conv(imgrow, widened);
+			}
 			imgrow += image->bpp;
-			rasrow += natras->bpp;
+			rasrow += srcBpp;
 		}
 		imgpixels -= image->stride;
 		pixels += raster->stride;

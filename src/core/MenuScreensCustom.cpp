@@ -81,7 +81,10 @@
 
 #ifdef ANDROID
 static const char *mobileQualityOpts[] = { "FEM_LOW", "FEM_MED", "FEM_HIG" };
-	#define MOBILE_QUALITY_SELECTOR MENUACTION_CFO_SELECT, "FET_GFX", { new CCFOSelect((int8*)&FrontEndMenuManager.m_PrefsMobileGraphics, "Graphics", "MobileQuality", mobileQualityOpts, ARRAY_SIZE(mobileQualityOpts), false) }, 0, 0, MENUALIGN_LEFT,
+	// The row label must be its own GXT entry: reusing the graphics-menu title
+	// ("FET_GFX") made the option read "Graphics" and collide with the page
+	// header, so the player could not tell what the row changed.
+	#define MOBILE_QUALITY_SELECTOR MENUACTION_CFO_SELECT, "FEM_GFX", { new CCFOSelect((int8*)&FrontEndMenuManager.m_PrefsMobileGraphics, "Graphics", "MobileQuality", mobileQualityOpts, ARRAY_SIZE(mobileQualityOpts), false) }, 0, 0, MENUALIGN_LEFT,
 #else
 	#define MOBILE_QUALITY_SELECTOR
 #endif

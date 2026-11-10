@@ -163,11 +163,19 @@ enum Config {
 };
 
 // We don't expect to compile for PS2 or Xbox
-// but it might be interesting for documentation purposes
+// but it might be interesting for documentation purposes.
+//
+// GTA_PC is always the code base. GTA_MOBILE is an *additional* target marker
+// for the Android port: the platform block below is an #if/#elif chain in which
+// the GTA_PC branch wins, so the mobile-only defines are applied additively in
+// the `#if defined GTA_MOBILE` section of that branch instead of relying on a
+// branch that can never be reached while GTA_PC is defined.
 #define GTA_PC
+#if defined ANDROID
+#define GTA_MOBILE
+#endif
 //#define GTA_PS2
 //#define GTA_XBOX
-#define GTA_MOBILE
 
 // Version defines
 #define GTAVC_PS2	400
@@ -205,10 +213,11 @@ enum Config {
 #	define PC_MENU
 #	define PC_WATER
 #	define GTA_PC_CONTROLS	// enables keyboard and mouse. currently GTA_PC and a few other defines will not work without this
+#	ifdef GTA_MOBILE
+#		define MISSION_REPLAY
+#		//#define SIMPLER_MISSIONS	// mobile mission simplifications are deliberately off
+#	endif
 #elif defined GTA_XBOX
-#elif defined GTA_MOBILE
-#	define MISSION_REPLAY
-#	define SIMPLER_MISSIONS
 #endif
 
 // This is enabled for all released games.

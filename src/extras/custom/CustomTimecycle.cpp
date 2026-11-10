@@ -6,6 +6,7 @@
 #include <cmath>
 
 #include "CustomTimecycle.h"
+#include "MiniJson.h"
 #include "CustomTimecycleShadow.h"
 #include "CustomModels.h"
 #include "DebugLog.h"
@@ -20,158 +21,8 @@
 #include <string>
 #include <vector>
 
-// ---------------------------------------------------------------------------
-// a small JSON reader - only what the client's files need: objects, arrays,
-// numbers, strings, booleans, whitespace, a BOM at the front
-// ---------------------------------------------------------------------------
-
-struct JValue
-{
-	enum Type { NIL, BOOL, NUM, STR, ARR, OBJ };
-	Type type;
-	bool b;
-	double num;
-	std::string str;
-	std::vector<JValue> arr;
-	std::vector<std::string> keys;	// parallel to the members of an object
-	std::vector<JValue> vals;
-
-	JValue() : type(NIL), b(false), num(0) {}
-
-	const JValue *Find(const char *key) const {
-		if(type != OBJ) return nil;
-		for(size_t i = 0; i < keys.size(); i++)
-			if(keys[i] == key)
-				return &vals[i];
-		return nil;
-	}
-	int NumInt(int def) const { return type == NUM ? (int)lround(num) : def; }
-	float NumFloat(float def) const { return type == NUM ? (float)num : def; }
-};
-
-struct JParser
-{
-	const char *p, *end;
-	std::string err;
-
-	void SkipWs(void) {
-		while(p < end && (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n' ||
-		                  *p == '\xef' || *p == '\xbb' || *p == '\xbf'))
-			p++;
-		// tolerate // line comments (hand-edited files might have them)
-		if(p+1 < end && p[0] == '/' && p[1] == '/'){
-			while(p < end && *p != '\n')
-				p++;
-			SkipWs();
-		}
-	}
-
-	bool Parse(JValue &out) {
-		SkipWs();
-		if(p >= end){ err = "unexpected end"; return false; }
-		char c = *p;
-		if(c == '{') return ParseObj(out);
-		if(c == '[') return ParseArr(out);
-		if(c == '"') { out.type = JValue::STR; return ParseStr(out.str); }
-		if(c == 't' && end-p >= 4 && strncmp(p, "true", 4) == 0){ p += 4; out.type = JValue::BOOL; out.b = true; return true; }
-		if(c == 'f' && end-p >= 5 && strncmp(p, "false", 5) == 0){ p += 5; out.type = JValue::BOOL; out.b = false; return true; }
-		if(c == 'n' && end-p >= 4 && strncmp(p, "null", 4) == 0){ p += 4; out.type = JValue::NIL; return true; }
-		char *e;
-		double v = strtod(p, &e);
-		if(e == p){ err = "bad value"; return false; }
-		out.type = JValue::NUM;
-		out.num = v;
-		p = e;
-		return true;
-	}
-	bool ParseObj(JValue &out) {
-		out.type = JValue::OBJ;
-		p++;	// {
-		SkipWs();
-		if(p < end && *p == '}'){ p++; return true; }
-		for(;;){
-			SkipWs();
-			if(p >= end || *p != '"'){ err = "expected a key"; return false; }
-			std::string key;
-			if(!ParseStr(key)) return false;
-			SkipWs();
-			if(p >= end || *p != ':'){ err = "expected ':'"; return false; }
-			p++;
-			JValue v;
-			if(!Parse(v)) return false;
-			out.keys.push_back(key);
-			out.vals.push_back(v);
-			SkipWs();
-			if(p < end && *p == '}'){ p++; return true; }
-			if(p >= end || *p != ','){ err = "expected ',' or '}'"; return false; }
-			p++;
-		}
-	}
-	bool ParseArr(JValue &out) {
-		out.type = JValue::ARR;
-		p++;	// [
-		SkipWs();
-		if(p < end && *p == ']'){ p++; return true; }
-		for(;;){
-			JValue v;
-			if(!Parse(v)) return false;
-			out.arr.push_back(v);
-			SkipWs();
-			if(p < end && *p == ']'){ p++; return true; }
-			if(p >= end || *p != ','){ err = "expected ',' or ']'"; return false; }
-			p++;
-		}
-	}
-	bool ParseStr(std::string &out) {
-		p++;	// "
-		out.clear();
-		while(p < end && *p != '"'){
-			if(*p == '\\' && p+1 < end){
-				p++;
-				switch(*p){
-				case 'n': out += '\n'; break;
-				case 't': out += '\t'; break;
-				case 'r': out += '\r'; break;
-				case 'b': case 'f': break;
-				case 'u': {
-					if(end-p >= 5){
-						wchar_t w = (wchar_t)strtol(std::string(p+1, p+5).c_str(), nil, 16);
-						// a UTF-8 downcast is enough for the names in there
-						if(w < 0x80) out += (char)w;
-						else if(w < 0x800){ out += (char)(0xC0 | (w >> 6)); out += (char)(0x80 | (w & 0x3F)); }
-						else { out += (char)(0xE0 | (w >> 12)); out += (char)(0x80 | ((w >> 6) & 0x3F)); out += (char)(0x80 | (w & 0x3F)); }
-						p += 4;
-					}
-					break;
-				}
-				default: out += *p; break;
-				}
-				p++;
-			}else
-				out += *p++;
-		}
-		if(p >= end){ err = "unterminated string"; return false; }
-		p++;	// "
-		return true;
-	}
-};
-
-static bool
-JsonParse(const std::vector<uint8> &data, JValue &out, std::string &err)
-{
-	// skip a UTF-8 BOM
-	size_t off = 0;
-	if(data.size() >= 3 && data[0] == 0xEF && data[1] == 0xBB && data[2] == 0xBF)
-		off = 3;
-	JParser jp;
-	jp.p = (const char*)data.data() + off;
-	jp.end = (const char*)data.data() + data.size();
-	if(!jp.Parse(out)){
-		err = jp.err;
-		return false;
-	}
-	return true;
-}
+// The JSON reader lives in MiniJson.h, shared with the optimization config.
+// It keeps the tolerance this file always had: BOM, // comments, \u escapes.
 
 // ---------------------------------------------------------------------------
 // the time cycle itself
@@ -204,38 +55,38 @@ struct CycleSlot
 
 	void Clear(void) { memset(has, 0, sizeof(has)); memset(v, 0, sizeof(v)); }
 
-	void ReadRGB(const JValue *obj, const char *key, int f0) {
-		const JValue *a = obj->Find(key);
-		if(a == nil || a->type != JValue::ARR || a->arr.size() < 3)
+	void ReadRGB(const minijson::Value *obj, const char *key, int f0) {
+		const minijson::Value *a = obj->Find(key);
+		if(a == nil || a->type != minijson::Value::ARR || a->items.size() < 3)
 			return;
 		for(int c = 0; c < 3; c++)
-			if(a->arr[c].type != JValue::NUM || !std::isfinite(a->arr[c].num))
+			if(a->items[c].type != minijson::Value::NUM || !std::isfinite(a->items[c].num))
 				return;
 		has[f0+0] = has[f0+1] = has[f0+2] = true;
-		v[f0+0] = a->arr[0].NumFloat(0);
-		v[f0+1] = a->arr[1].NumFloat(0);
-		v[f0+2] = a->arr[2].NumFloat(0);
+		v[f0+0] = (float)a->items[0].num;
+		v[f0+1] = (float)a->items[1].num;
+		v[f0+2] = (float)a->items[2].num;
 	}
-	void ReadRGBA(const JValue *obj, const char *key, int f0) {
-		const JValue *a = obj->Find(key);
-		if(a == nil || a->type != JValue::ARR || a->arr.size() < 4)
+	void ReadRGBA(const minijson::Value *obj, const char *key, int f0) {
+		const minijson::Value *a = obj->Find(key);
+		if(a == nil || a->type != minijson::Value::ARR || a->items.size() < 4)
 			return;
 		for(int i = 0; i < 4; i++)
-			if(a->arr[i].type != JValue::NUM || !std::isfinite(a->arr[i].num))
+			if(a->items[i].type != minijson::Value::NUM || !std::isfinite(a->items[i].num))
 				return;
 		for(int i = 0; i < 4; i++){
 			has[f0+i] = true;
-			v[f0+i] = a->arr[i].NumFloat(0);
+			v[f0+i] = (float)a->items[i].num;
 		}
 	}
-	void ReadNum(const JValue *obj, const char *key, int f) {
-		const JValue *a = obj->Find(key);
-		if(a == nil || a->type != JValue::NUM || !std::isfinite(a->num))
+	void ReadNum(const minijson::Value *obj, const char *key, int f) {
+		const minijson::Value *a = obj->Find(key);
+		if(a == nil || a->type != minijson::Value::NUM || !std::isfinite(a->num))
 			return;
 		has[f] = true;
 		v[f] = (float)a->num;
 	}
-	void Read(const JValue *obj) {
+	void Read(const minijson::Value *obj) {
 		ReadRGB(obj, "AmbientRGB", F_AMBIENT_R);
 		ReadRGB(obj, "AmbientPhysicalRGB", F_AMBPHYS_R);
 		ReadRGB(obj, "DirectionalRGB", F_DIR_R);
@@ -271,9 +122,9 @@ struct SlotGrid
 static bool
 ParseTimecycle(const std::vector<uint8> &data, SlotGrid grids[BR_WEATHERS_USED], int &weathersOut)
 {
-	JValue root;
+	minijson::Value root;
 	std::string err;
-	if(!JsonParse(data, root, err) || root.type != JValue::ARR){
+	if(!minijson::Parse(data, root, err) || root.type != minijson::Value::ARR){
 		CUSTOM_LOG("timecycle: timecyc.json could not be parsed (%s)\n", err.c_str());
 		return false;
 	}
@@ -283,18 +134,18 @@ ParseTimecycle(const std::vector<uint8> &data, SlotGrid grids[BR_WEATHERS_USED],
 			grids[w].slots[sI].Clear();
 	memset(grids, 0, sizeof(SlotGrid) * BR_WEATHERS_USED);
 
-	int weathers = root.arr.size() < BR_WEATHERS_USED ? (int)root.arr.size() : BR_WEATHERS_USED;
+	int weathers = root.items.size() < BR_WEATHERS_USED ? (int)root.items.size() : BR_WEATHERS_USED;
 	int slotsRead = 0;
 
 	for(int w = 0; w < weathers; w++){
-		const JValue &jw = root.arr[w];
-		if(jw.type != JValue::ARR)
+		const minijson::Value &jw = root.items[w];
+		if(jw.type != minijson::Value::ARR)
 			continue;
-		int n = jw.arr.size() < 8 ? (int)jw.arr.size() : 8;
+		int n = jw.items.size() < 8 ? (int)jw.items.size() : 8;
 		for(int sI = 0; sI < n; sI++){
-			if(jw.arr[sI].type != JValue::OBJ)
+			if(jw.items[sI].type != minijson::Value::OBJ)
 				continue;
-			grids[w].slots[sI].Read(&jw.arr[sI]);
+			grids[w].slots[sI].Read(&jw.items[sI]);
 			grids[w].present[sI] = true;
 			slotsRead++;
 		}
@@ -666,6 +517,16 @@ CCustomTimecycle::EvaluateColorGrade(float fHour, int oldWeather, int newWeather
 void
 CCustomTimecycle::Apply(void)
 {
+#ifdef ANDROID
+	// data/colorcycle.dat feeds the 3x4 grading matrix uploaded as u_colorGrade
+	// by Renderer::ConstructRenderList(). Load it once; without the file the
+	// matrix stays identity and the mobile shaders are unaffected.
+	static bool colorcycleTried = false;
+	if(!colorcycleTried){
+		colorcycleTried = true;
+		LoadColorcycleDat();
+	}
+#endif
 	std::vector<uint8> data;
 	bool fromCommon = false;
 	if(!CCustomModels::ReadDataFile("data/timecyc.json", data, &fromCommon))

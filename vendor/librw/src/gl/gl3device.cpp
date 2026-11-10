@@ -1129,14 +1129,32 @@ setLights(WorldLights *lightData)
 		}
 	}
 
-	uniformObject.lightParams[n].type = 0.0f;
-
+	// Terminate the array: leftovers of a previous frame were otherwise used as
+	// an extra light, because the shaders loop until type == 0.
+	if(n >= MAX_LIGHTS)
+		n = MAX_LIGHTS - 1;
+	for(; n < MAX_LIGHTS; n++){
+		uniformObject.lightParams[n].type = 0.0f;
+		uniformObject.lightColor[n].red = 0.0f;
+		uniformObject.lightColor[n].green = 0.0f;
+		uniformObject.lightColor[n].blue = 0.0f;
+		uniformObject.lightColor[n].alpha = 0.0f;
+		uniformObject.lightPosition[n].x = 0.0f;
+		uniformObject.lightPosition[n].y = 0.0f;
+		uniformObject.lightPosition[n].z = 0.0f;
+		uniformObject.lightDirection[n].x = 0.0f;
+		uniformObject.lightDirection[n].y = 0.0f;
+		uniformObject.lightDirection[n].z = 0.0f;
+	}
 	setUniform(u_ambLight, &uniformObject.ambLight);
+out:
+	// The light arrays must be uploaded even when the loop stopped early
+	// (n == MAX_LIGHTS used to jump straight to `out`, leaving the shader with
+	// the previous frame's lights).
 	setUniform(u_lightParams, uniformObject.lightParams);
 	setUniform(u_lightPosition, uniformObject.lightPosition);
 	setUniform(u_lightDirection, uniformObject.lightDirection);
 	setUniform(u_lightColor, uniformObject.lightColor);
-out:
 	objectDirty = 1;
 	return bits;
 }
@@ -1335,13 +1353,21 @@ flushCache(void)
 static void
 setFrameBuffer(Camera *cam)
 {
+	if(cam == nil || cam->frameBuffer == nil){
+		return;
+	}
 	Raster *fbuf = cam->frameBuffer->parent;
-	Raster *zbuf = cam->zBuffer->parent;
-	assert(fbuf);
+	// cam->zBuffer may legitimately be nil (depth-less camera). The old code
+	// dereferenced cam->zBuffer->parent before any check, and assert() only
+	// aborts in debug builds - in release this was a null pointer read.
+	Raster *zbuf = cam->zBuffer ? cam->zBuffer->parent : nil;
+	if(fbuf == nil)
+		return;
 
 	Gl3Raster *natfb = PLUGINOFFSET(Gl3Raster, fbuf, nativeRasterOffset);
-	Gl3Raster *natzb = PLUGINOFFSET(Gl3Raster, zbuf, nativeRasterOffset);
-	assert(fbuf->type == Raster::CAMERA || fbuf->type == Raster::CAMERATEXTURE);
+	Gl3Raster *natzb = zbuf ? PLUGINOFFSET(Gl3Raster, zbuf, nativeRasterOffset) : nil;
+	if(natfb == nil)
+		return;
 
 	// Have to make sure depth buffer is attached to FB's fbo
 	bindFramebuffer(natfb->fbo);
@@ -1708,10 +1734,15 @@ static struct {
 	{ SDL_GL_CONTEXT_PROFILE_CORE, 3, 3 },
 	{ SDL_GL_CONTEXT_PROFILE_CORE, 2, 1 },
 #endif
+	// The GL3 backend compiles ES 3.0 shaders and needs vertex array objects,
+	// integer textures and depth textures, none of which exist in ES 2.0. Asking
+	// for 3.x first made some drivers hand out an ES 2 context (Android accepts
+	// the closest match above the request unless the version is exact), which
+	// then failed at the first glBindVertexArray. ES 2.0 is still tried last so
+	// the error message is "missing feature" instead of "cannot create context".
 	{ SDL_GL_CONTEXT_PROFILE_ES, 3, 2 },
 	{ SDL_GL_CONTEXT_PROFILE_ES, 3, 1 },
 	{ SDL_GL_CONTEXT_PROFILE_ES, 3, 0 },
-	{ SDL_GL_CONTEXT_PROFILE_ES, 2, 0 },
 	{ 0, 0, 0 },
 };
 
@@ -1785,28 +1816,45 @@ startSDL2(void)
 		return 0;
 	}
 
-	if (!((gl3Caps.gles ? gladLoadGLES2Loader : gladLoadGLLoader) ((GLADloadproc) SDL_GL_GetProcAddress, gl3Caps.glversion)) ) {
-		RWERROR((ERR_GENERAL, "gladLoadGLLoader failed"));
+	// Ask the driver what it actually handed out *before* loading the entry
+	// points. Android (and several desktop drivers) return the closest context
+	// at or above the request, so asking for ES 3.2 usually yields ES 3.0/3.1.
+	// glad only loads the function set of the version it is told about, and it
+	// fails outright when that version has entry points the driver does not
+	// have, which turned a perfectly usable ES 3.0 context into "gladLoadGLLoader
+	// failed" and a black screen. glGetString exists since ES 2.0, so it can be
+	// resolved directly here.
+	typedef const GLubyte* (*PFNGLGETSTRINGPROC)(GLenum);
+	PFNGLGETSTRINGPROC getStringProc =
+		(PFNGLGETSTRINGPROC)SDL_GL_GetProcAddress("glGetString");
+	const char *verStr = getStringProc ? (const char*)getStringProc(GL_VERSION) : nil;
+	if(verStr){
+		const char *p = verStr;
+		while(*p && (*p < '0' || *p > '9'))
+			p++;
+		int maj = 0, min = 0;
+		if(sscanf(p, "%d.%d", &maj, &min) >= 1 && maj > 0){
+			int actualVer = maj * 10 + min;
+			if(actualVer < gl3Caps.glversion)
+				gl3Caps.glversion = actualVer;
+		}
+	}
+	printf("OpenGL version: %s\n", verStr ? verStr : "(null)");
+
+	if(gl3Caps.gles && gl3Caps.glversion < 30){
+		// Every shader in this backend is ES 3.00; refuse early with a message
+		// that says so instead of failing on the first missing function.
+		RWERROR((ERR_GENERAL, "OpenGL ES 3.0 is required by the GL3 renderer"));
 		SDL_GL_DeleteContext(ctx);
 		SDL_DestroyWindow(win);
 		return 0;
 	}
 
-	const char *verStr = (const char*)glGetString(GL_VERSION);
-	printf("OpenGL version: %s\n", verStr ? verStr : "(null)");
-	if(gl3Caps.gles && verStr){
-		const char *esTag = strstr(verStr, "OpenGL ES");
-		if(esTag){
-			int maj = 0, min = 0;
-			const char *p = esTag + 9;
-			while(*p && (*p < '0' || *p > '9'))
-				p++;
-			if(sscanf(p, "%d.%d", &maj, &min) == 2 && maj >= 2){
-				int actualVer = maj * 10 + min;
-				if(actualVer < gl3Caps.glversion)
-					gl3Caps.glversion = actualVer;
-			}
-		}
+	if (!((gl3Caps.gles ? gladLoadGLES2Loader : gladLoadGLLoader) ((GLADloadproc) SDL_GL_GetProcAddress, gl3Caps.glversion)) ) {
+		RWERROR((ERR_GENERAL, "gladLoadGLLoader failed"));
+		SDL_GL_DeleteContext(ctx);
+		SDL_DestroyWindow(win);
+		return 0;
 	}
 
 	glGlobals.window = win;

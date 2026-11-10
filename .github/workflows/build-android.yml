@@ -2,6 +2,7 @@ name: reVC Android
 
 on:
   push:
+    branches: [ "miami" ]
     paths:
       - 'android/launcher/**'
       - 'src/**'
@@ -9,6 +10,7 @@ on:
       - 'tools/android/**'
       - '.github/workflows/build-android.yml'
       - 'CMakeLists.txt'
+      - 'cmake/**'
   pull_request:
     branches: [ "miami" ]
     paths:
@@ -18,15 +20,20 @@ on:
       - 'tools/android/**'
       - '.github/workflows/build-android.yml'
       - 'CMakeLists.txt'
+      - 'cmake/**'
   release:
-    types: published 
+    types: published
 
   workflow_dispatch:
 
 permissions:
   contents: read
   actions: write
-  
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build-android:
     name: Build Android APK (${{ matrix.variant }})
@@ -61,10 +68,15 @@ jobs:
       - name: Declare build version
         id: vars
         shell: bash
-        env:
-          HEAD_REF: ${{ github.head_ref || github.ref_name }}
+        # `git describe` used to be pointed at refs/remotes/origin/${HEAD_REF},
+        # which does not exist for pull requests from forks or for tags, so the
+        # step failed before Gradle even started. Describe HEAD instead - it is
+        # always checked out, and `--always` keeps it working without tags.
         run: |
-          echo "build_version=$(git describe --always --tags "refs/remotes/origin/${HEAD_REF}")" >> $GITHUB_OUTPUT
+          set -euo pipefail
+          version="$(git describe --always --tags --dirty=+ 2>/dev/null || git rev-parse --short=7 HEAD)"
+          echo "build_version=${version}" >> "$GITHUB_OUTPUT"
+          echo "short_sha=$(git rev-parse --short=7 HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Set up Gradle cache
         uses: actions/cache@v4
@@ -81,7 +93,14 @@ jobs:
         run: ./gradlew clean
 
       - name: Set assemble task name
-        run: echo "ASSEMBLE_TASK=assemble${{ matrix.variant == 'debug' && 'Debug' || 'Release' }}" >> $GITHUB_ENV
+        env:
+          VARIANT: ${{ matrix.variant }}
+        run: |
+          if [ "${VARIANT}" = "debug" ]; then
+            echo "ASSEMBLE_TASK=assembleDebug" >> "$GITHUB_ENV"
+          else
+            echo "ASSEMBLE_TASK=assembleRelease" >> "$GITHUB_ENV"
+          fi
 
       - name: Build ${{ matrix.variant }} APK
         shell: bash
@@ -92,13 +111,16 @@ jobs:
           set +e
           VER_CODE=$((1000 + RUN_NUMBER))
           VER_NAME="reVC-0.0.1-${PR_HEAD_SHA:0:7}"
-          ./gradlew "$ASSEMBLE_TASK" \
+          ./gradlew "${ASSEMBLE_TASK}" \
             "-PrevcVersionCode=${VER_CODE}" \
             "-PrevcVersionName=${VER_NAME}" \
             --no-daemon --stacktrace --parallel --build-cache > gradle-build.log 2>&1
           result=$?
+          # Always surface the Gradle log in the job output: without this the
+          # native compile errors are invisible when the step fails.
+          tail -n 400 gradle-build.log
           if (( result != 0 )); then
-            # Expose diagnostics as check annotations: API clients and PR
+            # Also expose diagnostics as check annotations: API clients and PR
             # reviewers can read them even when the raw Actions log is unavailable.
             python3 - <<'PY'
           from pathlib import Path
@@ -113,12 +135,42 @@ jobs:
           fi
           exit "$result"
 
+      - name: Locate APK
+        id: apk
+        shell: bash
+        env:
+          VARIANT: ${{ matrix.variant }}
+        run: |
+          set -euo pipefail
+          # An unsigned release build is named app-release-unsigned.apk.
+          apk="$(find app/build/outputs/apk/${VARIANT} -maxdepth 1 -name '*.apk' -print -quit)"
+          if [ -z "${apk}" ]; then
+            echo "No APK produced for ${VARIANT}" >&2
+            find app/build/outputs -name '*.apk' -print >&2 || true
+            exit 1
+          fi
+          # This step runs in android/launcher, but `uses:` steps (the artifact
+          # upload below) are always resolved from the repository root - the
+          # job-level working-directory only applies to `run:`. Emitting the
+          # bare app/build/... path therefore made upload-artifact report
+          # "No files were found ... app/build/outputs/apk/debug/app-debug.apk"
+          # even though the build and the APK verification had succeeded.
+          root_apk="android/launcher/${apk}"
+          if [ ! -f "${GITHUB_WORKSPACE}/${root_apk}" ]; then
+            echo "APK path ${root_apk} does not resolve from the workspace root" >&2
+            exit 1
+          fi
+          echo "apk=${apk}" >> "$GITHUB_OUTPUT"
+          echo "apk_path=${root_apk}" >> "$GITHUB_OUTPUT"
+          echo "APK: ${root_apk} ($(du -h "${apk}" | cut -f1))"
+
       - name: Verify game library and assets in APK
-        run: python3 ../../tools/android/check_apk.py app/build/outputs/apk/${{ matrix.variant }}/app-${{ matrix.variant }}.apk
+        run: python3 ../../tools/android/check_apk.py "${{ steps.apk.outputs.apk }}"
 
       - name: Upload ${{ matrix.variant }} APK
         uses: actions/upload-artifact@v4
         with:
           name: revc-${{ matrix.variant }}
-          path: android/launcher/app/build/outputs/apk/${{ matrix.variant }}/app-${{ matrix.variant }}.apk
+          path: ${{ steps.apk.outputs.apk_path }}
           if-no-files-found: error
+          retention-days: 14

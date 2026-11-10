@@ -46,6 +46,12 @@ revc_android_prebuilt(OpenAL::OpenAL
 
 set(LIBRW_TOOLS OFF CACHE BOOL "No librw tools in Android APK" FORCE)
 set(LIBRW_INSTALL OFF CACHE BOOL "No librw install in Android APK" FORCE)
+set(REVC_INSTALL OFF CACHE BOOL "No CPack install rules in Android APK" FORCE)
+
+# The prebuilt libraries above must win: the game's CMake only calls
+# find_package() for them when no imported target exists yet.
+include("${REVC_GAME_DIR}/cmake/android/AndroidConfig.cmake")
+
 add_subdirectory("${REVC_GAME_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/game_build")
 if(NOT TARGET reVC)
     message(FATAL_ERROR "The Android APK must build the reVC native game target")

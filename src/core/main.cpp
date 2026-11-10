@@ -13,6 +13,7 @@
 #include "main.h"
 #ifdef CUSTOM_MODELS
 #include "../extras/custom/DebugLog.h"
+#include "../extras/custom/Optimization.h"
 #endif
 #include "CdStream.h"
 #include "General.h"
@@ -1650,8 +1651,12 @@ Idle(void *arg)
 
 #ifdef FIX_BUGS
 		RwRenderStateSet(rwRENDERSTATEZWRITEENABLE, (void *)FALSE); // TODO: temp? this fixes OpenGL render but there should be a better place for this
+		// The far clip follows the pressure-driven distance scale, with the
+		// configurable farPlaneMarginScale on top (client default 1.05): fog
+		// already reaches full at FarClip, this only widens the culled volume.
+		const float gFarPlaneMargin = revcopt::FarPlaneMargin();
 		// This has to be done BEFORE RwCameraBeginUpdate
-		RwCameraSetFarClipPlane(Scene.camera, Max(CTimeCycle::GetFarClip(), 600.0f * CRenderer::ms_lodDistScale));
+		RwCameraSetFarClipPlane(Scene.camera, Max(CTimeCycle::GetFarClip(), 600.0f * CRenderer::ms_lodDistScale * gFarPlaneMargin));
 		RwCameraSetFogDistance(Scene.camera, CTimeCycle::GetFogStart());
 #endif
 
@@ -2054,8 +2059,9 @@ void TheGame(void)
 				// TODO(MIAMI): something ps2all specific
 
 #ifdef FIX_BUGS
+				const float gFarPlaneMargin = revcopt::FarPlaneMargin();
 				// This has to be done BEFORE RwCameraBeginUpdate
-				RwCameraSetFarClipPlane(Scene.camera, Max(CTimeCycle::GetFarClip(), 600.0f * CRenderer::ms_lodDistScale));
+				RwCameraSetFarClipPlane(Scene.camera, Max(CTimeCycle::GetFarClip(), 600.0f * CRenderer::ms_lodDistScale * gFarPlaneMargin));
 				RwCameraSetFogDistance(Scene.camera, CTimeCycle::GetFogStart());
 #endif
 

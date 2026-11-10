@@ -32,7 +32,9 @@ freeInstanceData(Geometry *geometry)
 	glDeleteBuffers(1, &header->ibo);
 	glDeleteBuffers(1, &header->vbo);
 #ifdef RW_GL_USE_VAOS
-	glDeleteBuffers(1, &header->vao);
+	// VAOs are not buffer objects: glDeleteBuffers() left the vertex array
+	// object allocated and only produced a GL_INVALID_ENUM.
+	glDeleteVertexArrays(1, &header->vao);
 #endif
 	rwFree(header->indexBuffer);
 	rwFree(header->vertexBuffer);

@@ -122,15 +122,15 @@ DebugLogVectoredException(EXCEPTION_POINTERS *info)
 static void
 DebugLogSignalHandler(int sig)
 {
+	// Windows CRT signals: keep this to async-signal-safe work only, so no
+	// snprintf allocation and no variable-length formatting inside the handler.
 	const char *what =
-		sig == SIGSEGV ? "SIGSEGV (invalid memory access)" :
-		sig == SIGABRT ? "SIGABRT (abort - failed assert or out of memory)" :
-		sig == SIGFPE  ? "SIGFPE (arithmetic error)" :
-		sig == SIGILL  ? "SIGILL (illegal instruction)" :
-		"fatal signal";
-	char line[128];
-	snprintf(line, sizeof(line), "CRASH: %s - see the lines above for what was loaded last", what);
-	DebugLogCrashLine(line);
+		sig == SIGSEGV ? "CRASH: SIGSEGV (invalid memory access)\n" :
+		sig == SIGABRT ? "CRASH: SIGABRT (abort - failed assert or out of memory)\n" :
+		sig == SIGFPE  ? "CRASH: SIGFPE (arithmetic error)\n" :
+		sig == SIGILL  ? "CRASH: SIGILL (illegal instruction)\n" :
+		"CRASH: fatal signal\n";
+	DebugLogCrashLine(what);
 	DebugLogCrashLine("---- session ended abnormally ----");
 	signal(sig, SIG_DFL);
 	raise(sig);
@@ -353,36 +353,12 @@ DebugLogSignalAction(int sig, siginfo_t *info, void *ucontextRaw)
 	AndroidBtState st = { 0 };
 	_Unwind_Backtrace(AndroidBtHelper::cb, &st);
 #if defined(__aarch64__)
-	// If DWARF unwind stopped inside a stripped leaf function in libc/GLES, also log FP chain
-	if (st.depth <= 4 && regFp != 0 && regSp != 0 && (regFp & 0x7u) == 0 &&
-	    regFp >= regSp && regFp - regSp < (1u << 20)) {
-		DebugLogCrashLine("fp-chain:");
-		uintptr_t curFp = regFp;
-		for (int f = 0; f < 12 && curFp >= regSp && curFp - regSp < (1u << 20) && (curFp & 0x7u) == 0; f++) {
-			const uintptr_t *pair = (const uintptr_t *)curFp;
-			uintptr_t nextFp = pair[0];
-			uintptr_t savedLr = pair[1];
-			if (savedLr == 0)
-				break;
-			AndroidBtHelper::formatAddr(f, savedLr);
-			if (nextFp <= curFp)
-				break;
-			curFp = nextFp;
-		}
-	}
-	if (st.depth <= 4 && regSp != 0 && g_libREVC != 0) {
-		uintptr_t spAligned = (regSp + 7u) & ~(uintptr_t)7u;
-		uintptr_t pageEnd = (regSp & ~(uintptr_t)0xfffu) + 0x1000u;
-		int found = 0;
-		for (uintptr_t cur = spAligned; cur + sizeof(uintptr_t) <= pageEnd && cur - spAligned < 1024u && found < 8; cur += sizeof(uintptr_t)) {
-			uintptr_t val = *(const uintptr_t *)cur;
-			if (val >= g_libREVC && val < g_libREVC + 0x01000000ULL && (val & 0x3u) == 0) {
-				if (found == 0)
-					DebugLogCrashLine("sp-scan:");
-				AndroidBtHelper::formatAddr(found++, val);
-			}
-		}
-	}
+	// The FP-chain and stack scans that used to run here dereferenced raw stack
+	// words without checking that they are mapped. After a stack overflow (the
+	// most common crash in this engine) the scanner itself faulted, and that
+	// second SIGSEGV replaced the real report. _Unwind_Backtrace above already
+	// walks the frames safely, so only its output is kept.
+	(void)regFp;
 #endif
 #endif
 	DebugLogCrashLine("---- session ended abnormally ----");

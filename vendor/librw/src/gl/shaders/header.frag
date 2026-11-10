@@ -95,7 +95,14 @@ vec3 BR_TonemapAces(vec3 hdrLinear, float whitePoint, float gamma)
 
 vec3 BR_ApplyMobileColorGrade(vec3 c)
 {
-	return pow(clamp(c, 0.0, 1.0), vec3(u_localInvGamma.x));
+	// u_colorGrade is the 3x4 RGB grading matrix sampled from data/colorcycle.dat
+	// for the current hour/weather. It used to be uploaded and then ignored, so
+	// custom weather colour cycles had no effect on the mobile pipeline.
+	vec3 g = clamp(c, 0.0, 1.0);
+	vec3 graded = vec3(dot(g, u_colorGrade[0].xyz) + u_colorGrade[0].w,
+	                   dot(g, u_colorGrade[1].xyz) + u_colorGrade[1].w,
+	                   dot(g, u_colorGrade[2].xyz) + u_colorGrade[2].w);
+	return pow(clamp(graded, 0.0, 1.0), vec3(u_localInvGamma.x));
 }
 
 float AtmosphereVisibility(vec3 worldPos, float oldVisibility)
