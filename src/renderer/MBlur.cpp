@@ -86,8 +86,10 @@ CMBlur::MotionBlurOpen(RwCamera *cam)
 		
 	if(BlurOn)
 	{
-		uint32 width  = Pow(2.0f, int32(log2(RwRasterGetWidth (RwCameraGetRaster(cam))))+1);
-		uint32 height = Pow(2.0f, int32(log2(RwRasterGetHeight(RwCameraGetRaster(cam))))+1);
+		// Exact camera size: the next power of two doubled the memory of the
+		// (already full-screen) blur target on every non-PoT resolution.
+		uint32 width  = RwRasterGetWidth(RwCameraGetRaster(cam));
+		uint32 height = RwRasterGetHeight(RwCameraGetRaster(cam));
 		uint32 depth  = RwRasterGetDepth(RwCameraGetRaster(cam));
 		
 #ifndef LIBRW
@@ -277,8 +279,15 @@ CMBlur::CreateImmediateModeData(RwCamera *cam, RwRect *rect, RwIm2DVertex *verts
 			y2 -= HALFPX;
 		}
 
-		int32 width  = Pow(2.0f, int32(log2(RwRasterGetWidth (RwCameraGetRaster(cam))))+1);
-		int32 height = Pow(2.0f, int32(log2(RwRasterGetHeight(RwCameraGetRaster(cam))))+1);
+		// Must match the size used by MBlurOpen(), otherwise the UVs address the
+		// wrong texel (and the previous PoT rounding also shifted the overlay by
+		// up to half a screen on non-PoT resolutions).
+		int32 width  = RwRasterGetWidth(RwCameraGetRaster(cam));
+		int32 height = RwRasterGetHeight(RwCameraGetRaster(cam));
+		if(width <= 0 || height <= 0){
+			width = 1;
+			height = 1;
+		}
 		u1 = x1/width + u1Off;
 		v1 = y1/height + v1Off;
 		u2 = x2/width + u2Off;
@@ -618,8 +627,12 @@ CMBlur::OverlayRenderFx(RwCamera *cam, RwRaster *frontBuf)
 		case FXTYPE_BLOOD1:
 		case FXTYPE_BLOOD2: {
 			drawWaterDrops = true;
-			int32 width  = Pow(2.0f, int32(log2(RwRasterGetWidth (RwCameraGetRaster(cam))))+1);
-			int32 height = Pow(2.0f, int32(log2(RwRasterGetHeight(RwCameraGetRaster(cam))))+1);
+			int32 width  = RwRasterGetWidth(RwCameraGetRaster(cam));
+			int32 height = RwRasterGetHeight(RwCameraGetRaster(cam));
+			if(width <= 0 || height <= 0){
+				width = 1;
+				height = 1;
+			}
 
 			float u1Off = (fxRect[i].w - fxRect[i].x)/width;
 			float u2Off = u1Off - (fxRect[i].w - fxRect[i].x + 0.5f)*0.66f/width;

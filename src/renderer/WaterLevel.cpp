@@ -30,6 +30,14 @@
 #include "WaterLevel.h"
 #include "SurfaceTable.h"
 #include "WaterCreatures.h"
+#ifdef CUSTOM_MODELS
+#include "CustomModels.h"
+#include "CommonWater.h"
+#include "SavehDiag.h"
+#endif
+#if defined(ANDROID) && defined(LIBRW) && defined(RW_GL3)
+#include "GL3Atmosphere.h"
+#endif
 
 #define RwIm3DVertexSet_RGBA(vert, rgba) RwIm3DVertexSetRGBA(vert, rgba.red, rgba.green, rgba.blue, rgba.alpha) // (RwRGBAAssign(&(_dst)->color, &_src))
 
@@ -47,6 +55,11 @@ float CWaterLevel::ms_aWaterZs[48];
 CRect CWaterLevel::ms_aWaterRects[48];
 int8 CWaterLevel::aWaterBlockList[MAX_LARGE_SECTORS][MAX_LARGE_SECTORS];
 int8 CWaterLevel::aWaterFineBlockList[MAX_SMALL_SECTORS][MAX_SMALL_SECTORS];
+#ifdef CUSTOM_MODELS
+// Separate from VC's 48 rectangles/int8 indices and fixed 128x128 raster:
+// the supplied SA water has 366 quads, some sloped or outside the VC grid.
+static std::vector<commonwater::Quad> customWaterQuads;
+#endif
 bool CWaterLevel::WavesCalculatedThisFrame;
 
 
@@ -116,7 +129,37 @@ void
 CWaterLevel::Initialise(Const char *pWaterDat)
 {
 	ms_nNoOfWaterLevels = 0;
-	
+#ifdef CUSTOM_MODELS
+	customWaterQuads.clear();
+	std::vector<uint8> waterBytes;
+	if(CCustomModels::ReadDataFile("data/water.dat", waterBytes)) {
+		commonwater::Stats stats;
+		if(commonwater::Parse(waterBytes.data(), waterBytes.size(), customWaterQuads, stats))
+			CUSTOM_LOG("common.zip data/water.dat: %u SA water quads loaded, %u invalid, %u unsupported; native VC water replaced\n",
+				(unsigned)stats.accepted, (unsigned)stats.invalid, (unsigned)stats.unsupported);
+		else {
+			customWaterQuads.clear();
+			CUSTOM_LOG("common.zip data/water.dat: incompatible/empty (%u invalid, %u unsupported); %s\n",
+				(unsigned)stats.invalid, (unsigned)stats.unsupported,
+				pWaterDat ? "using native VC water" : "no water (VC map disabled)");
+		}
+	}
+#endif
+	// A nil path means the native water is disabled. Both WATER.DAT and the
+	// precomputed WATERPRO.DAT must be bypassed; empty lookup tables alone
+	// would otherwise contain zeros (valid water level indices).
+	for(int32 x = 0; x < MAX_LARGE_SECTORS; x++)
+		for(int32 y = 0; y < MAX_LARGE_SECTORS; y++)
+			aWaterBlockList[x][y] = NO_WATER;
+	for(int32 x = 0; x < MAX_SMALL_SECTORS; x++)
+		for(int32 y = 0; y < MAX_SMALL_SECTORS; y++)
+			aWaterFineBlockList[x][y] = NO_WATER;
+
+	if(pWaterDat != nil
+#ifdef CUSTOM_MODELS
+	   && customWaterQuads.empty()
+#endif
+	){
 #ifdef MASTER
 	int32 hFile = -1;
 
@@ -211,9 +254,9 @@ CWaterLevel::Initialise(Const char *pWaterDat)
 						{
 							CVector worldPos = CVector(worldX + i * (SMALL_SECTOR_SIZE / 8), worldY + j * (SMALL_SECTOR_SIZE / 8), ms_aWaterZs[aWaterFineBlockList[x][y]]);
 
-							if ((worldPos.x > WORLD_MIN_X && worldPos.x < WORLD_MAX_X) && (worldPos.y > WORLD_MIN_Y && worldPos.y < WORLD_MAX_Y) &&
-								(!WaterLevelAccordingToRectangles(worldPos.x, worldPos.y) || TestVisibilityForFineWaterBlocks(worldPos)))
-								continue;
+							if (!WaterLevelAccordingToRectangles(worldPos.x, worldPos.y) ||
+						    TestVisibilityForFineWaterBlocks(worldPos))
+							continue;
 
 							// at least one point in the tile wasn't blocked, so don't remove water
 							i = 1000;
@@ -274,7 +317,8 @@ CWaterLevel::Initialise(Const char *pWaterDat)
 		CColStore::RemoveAllCollision();
 	}
 #endif
-	
+	} // Native VC water source (WATER.DAT or WATERPRO.DAT)
+
 	CTxdStore::PushCurrentTxd();
 
 	int32 slot = CTxdStore::FindTxdSlot("particle");
@@ -305,9 +349,108 @@ CWaterLevel::Initialise(Const char *pWaterDat)
 	printf("Done Initing waterlevels\n");
 }
 
+#if defined(ANDROID) && defined(LIBRW) && defined(RW_GL3)
+static rw::gl3::Shader *s_mobileWaterShader = nil;
+static GLint s_uMobileWaterParamsLoc = -1;
+static bool s_mobileWaterShaderTried = false;
+
+static const char *s_mobileWaterVS =
+"VSIN(ATTRIB_POS) vec3 in_pos;\n"
+"VSOUT vec3 v_worldPos;\n"
+"VSOUT vec4 v_color;\n"
+"VSOUT vec2 v_tex0;\n"
+"VSOUT float v_fog;\n"
+"void main(void)\n"
+"{\n"
+"	vec4 Vertex = u_world * vec4(in_pos, 1.0);\n"
+"	v_worldPos = Vertex.xyz;\n"
+"	gl_Position = u_proj * u_view * Vertex;\n"
+"	v_color = in_color;\n"
+"	v_tex0 = in_tex0;\n"
+"	v_fog = DoFog(gl_Position.w);\n"
+"}\n";
+
+static const char *s_mobileWaterFS =
+"uniform sampler2D tex0;\n"
+"FSIN vec3 v_worldPos;\n"
+"FSIN vec4 v_color;\n"
+"FSIN vec2 v_tex0;\n"
+"FSIN float v_fog;\n"
+"uniform vec4 u_waterParams;\n"
+"void main(void)\n"
+"{\n"
+"	float move = u_waterParams.x;\n"
+"	float waveStrength = 0.015;\n"
+"	vec2 uvBase = v_worldPos.xy * 0.042;\n"
+"	vec3 d0 = texture(tex0, vec2(uvBase.x + move, uvBase.y)).rgb * 2.0 - 1.0;\n"
+"	vec3 d1 = texture(tex0, vec2(-uvBase.x, uvBase.y + move)).rgb * 2.0 - 1.0;\n"
+"	vec2 dist = (d0.xy + d1.xy) * waveStrength;\n"
+"	vec3 tA = texture(tex0, uvBase + dist + vec2(move * 0.65, move * 0.45)).rgb;\n"
+"	vec3 tB = texture(tex0, uvBase * 1.45 - dist - vec2(move * 0.55, move * 0.85)).rgb;\n"
+"	vec3 N = normalize(vec3((d0.x + d1.x) * 0.14, (d0.y + d1.y) * 0.14, 1.0));\n"
+"	vec3 toEye = u_eye.xyz - v_worldPos;\n"
+"	vec3 V = toEye * inversesqrt(max(dot(toEye, toEye), 1.0e-6));\n"
+"	float zFres = abs(V.z);\n"
+"	float fresnel = clamp(pow(1.0 - clamp(zFres, 0.0, 1.0), 3.0), 0.12, 0.88);\n"
+"	float sunLen2 = dot(u_sunDir.xyz, u_sunDir.xyz);\n"
+"	vec3 L = sunLen2 > 1.0e-6 ? u_sunDir.xyz * inversesqrt(sunLen2) : vec3(0.0, 0.0, 1.0);\n"
+"	float day = smoothstep(-0.04, 0.22, L.z);\n"
+"	float highSun = smoothstep(0.02, 0.58, L.z);\n"
+"	vec3 skyRefl = mix(vec3(0.07, 0.12, 0.22), mix(vec3(0.70, 0.54, 0.42), vec3(0.46, 0.70, 0.92), highSun), day);\n"
+"	skyRefl = mix(skyRefl, clamp(u_skyAmbient.rgb * 1.30, vec3(0.10), vec3(0.96)), 0.38);\n"
+"	vec3 mobileTeal = vec3(0.0, 0.30, 0.50) * mix(0.38, 1.0, day);\n"
+"	vec3 tcWater = mix(mobileTeal, v_color.rgb, 0.42);\n"
+"	float foamDetail = dot(tA + tB, vec3(0.1667));\n"
+"	vec3 wCol = mix(tcWater * (0.86 + 0.28 * foamDetail), skyRefl, fresnel);\n"
+"	wCol = mix(wCol, mobileTeal, 0.30);\n"
+"	wCol = mix(wCol, mobileTeal, 0.15 * (1.0 - fresnel));\n"
+"	vec3 H = L + V;\n"
+"	H *= inversesqrt(max(dot(H, H), 1.0e-6));\n"
+"	float sunGlint = pow(max(dot(N, H), 0.0), 80.0) * day * (1.0 - 0.50 * clamp(u_atmosphere.y, 0.0, 1.0));\n"
+"	float vis = AtmosphereVisibility(v_worldPos, v_fog);\n"
+"	float outAlpha = u_waterParams.y > 0.5 ? clamp(mix(0.65, 0.94, fresnel), 0.55, 0.95) : 1.0;\n"
+"	vec3 graded;\n"
+"	if(u_atmosphere.x > 0.5 && u_atmosphere.x < 1.5){\n"
+"		vec3 linWater = BR_SRGBtoLINEAR(vec4(wCol, 1.0)).rgb * mix(0.88, 1.18, day);\n"
+"		linWater += mix(vec3(1.5, 0.85, 0.40), vec3(2.2, 2.05, 1.80), highSun) * sunGlint;\n"
+"		vec3 hdrFog = BR_SRGBtoLINEAR(u_fogColor).rgb;\n"
+"		graded = BR_TonemapAces(mix(hdrFog, linWater, vis), max(u_skyAmbient.a, 2.5), 2.2);\n"
+"	}else{\n"
+"		wCol += mix(vec3(1.0, 0.72, 0.46), vec3(1.0, 0.96, 0.88), highSun) * (sunGlint * 0.90);\n"
+"		graded = u_atmosphere.x >= 1.5 ? BR_ApplyMobileColorGrade(mix(u_fogColor.rgb, wCol, vis)) : mix(u_fogColor.rgb, wCol, vis);\n"
+"	}\n"
+"	FRAGCOLOR(vec4(graded, outAlpha));\n"
+"}\n";
+
+static rw::gl3::Shader *
+EnsureMobileWaterShader(void)
+{
+	if(s_mobileWaterShader == nil && !s_mobileWaterShaderTried){
+		s_mobileWaterShaderTried = true;
+		const char *vs[] = { rw::gl3::shaderDecl, rw::gl3::header_vert_src, s_mobileWaterVS, nil };
+		const char *fs[] = { rw::gl3::shaderDecl, rw::gl3::header_frag_src, s_mobileWaterFS, nil };
+		s_mobileWaterShader = rw::gl3::Shader::create(vs, fs);
+		if(s_mobileWaterShader)
+			s_uMobileWaterParamsLoc = glGetUniformLocation(s_mobileWaterShader->program, "u_waterParams");
+	}
+	return s_mobileWaterShader;
+}
+#endif
+
 void
 CWaterLevel::Shutdown()
 {
+#if defined(ANDROID) && defined(LIBRW) && defined(RW_GL3)
+	if(s_mobileWaterShader){
+		s_mobileWaterShader->destroy();
+		s_mobileWaterShader = nil;
+		s_uMobileWaterParamsLoc = -1;
+	}
+	s_mobileWaterShaderTried = false;
+#endif
+#ifdef CUSTOM_MODELS
+	customWaterQuads.clear();
+#endif
 	DestroyWavyAtomic();
 
 #define _DELETE_TEXTURE(t) if ( t )	\
@@ -552,6 +695,14 @@ CWaterLevel::AddWaterLevel(float fXLeft, float fYBottom, float fXRight, float fY
 bool
 CWaterLevel::WaterLevelAccordingToRectangles(float fX, float fY, float *pfOutLevel)
 {
+#ifdef CUSTOM_MODELS
+	if(!customWaterQuads.empty()) {
+		float z;
+		if(!commonwater::Sample(customWaterQuads, fX, fY, z)) return false;
+		if(pfOutLevel) *pfOutLevel = z;
+		return true;
+	}
+#endif
 	if (ms_nNoOfWaterLevels <= 0) return false;
 
 	for (int32 i = 0; i < ms_nNoOfWaterLevels; i++)
@@ -609,20 +760,15 @@ CWaterLevel::TestVisibilityForFineWaterBlocks(const CVector &worldPos)
 		lineEnd.y += tab[i].y;
 		lineEnd.z += 100.0f;
 
-		if ((lineEnd.x > WORLD_MIN_X && lineEnd.x < WORLD_MAX_X) && (lineEnd.y > WORLD_MIN_Y && lineEnd.y < WORLD_MAX_Y))
+		if (!CWorld::ProcessLineOfSight(lineStart, lineEnd, col, entity, true, false, false, false, true, false))
 		{
-			if (!CWorld::ProcessLineOfSight(lineStart, lineEnd, col, entity, true, false, false, false, true, false))
-			{
-				lineStart.x += 0.4f;
-				lineStart.y += 0.4f;
-				lineEnd.x += 0.4f;
-				lineEnd.y += 0.4f;
+			lineStart.x += 0.4f;
+			lineStart.y += 0.4f;
+			lineEnd.x += 0.4f;
+			lineEnd.y += 0.4f;
 
-				if (!CWorld::ProcessLineOfSight(lineStart, lineEnd, col, entity, true, false, false, false, true, false))
-				{
-					return false;
-				}
-			}
+			if (!CWorld::ProcessLineOfSight(lineStart, lineEnd, col, entity, true, false, false, false, true, false))
+				return false;
 		}
 	}
 
@@ -707,13 +853,28 @@ CWaterLevel::RemoveIsolatedWater()
 bool
 CWaterLevel::GetWaterLevel(float fX, float fY, float fZ, float *pfOutLevel, bool bDontCheckZ)
 {
+#ifdef CUSTOM_MODELS
+	if(!customWaterQuads.empty()) {
+		float level;
+		if(!commonwater::Sample(customWaterQuads, fX, fY, level)) return false;
+		ASSERT(pfOutLevel != nil);
+		float angle = (CTimer::GetTimeInMilliseconds() & 4095) * (TWOPI / 4096.0f);
+		*pfOutLevel = level + Sin((fX + fY) * (TWOPI / SMALL_SECTOR_SIZE) + angle)
+		                       * (CWeather::WindClipped * 0.4f + 0.2f);
+		if(!bDontCheckZ && *pfOutLevel - fZ > 3.0f) {
+			*pfOutLevel = 0.0f;
+			return false;
+		}
+		return true;
+	}
+#endif
 	int32 x = WATER_TO_SMALL_SECTOR_X(fX + WATER_X_OFFSET);
 	int32 y = WATER_TO_SMALL_SECTOR_Y(fY);
 		
-#ifdef FIX_BUGS
-	if ( x < 0 || x >= MAX_SMALL_SECTORS ) return false;
-	if ( y < 0 || y >= MAX_SMALL_SECTORS ) return false;
-#endif
+	// Flying past the old VC water grid must not index it out of bounds,
+	// regardless of whether FIX_BUGS is enabled in this build.
+	if ( ms_nNoOfWaterLevels <= 0 || x < 0 || x >= MAX_SMALL_SECTORS ||
+	     y < 0 || y >= MAX_SMALL_SECTORS ) return false;
 
 	int8 nBlock = aWaterFineBlockList[x][y];
 
@@ -749,14 +910,18 @@ CWaterLevel::GetWaterLevel(float fX, float fY, float fZ, float *pfOutLevel, bool
 bool
 CWaterLevel::GetWaterLevelNoWaves(float fX, float fY, float fZ, float *pfOutLevel)
 {
+#ifdef CUSTOM_MODELS
+	if(!customWaterQuads.empty()) {
+		ASSERT(pfOutLevel != nil);
+		return commonwater::Sample(customWaterQuads, fX, fY, *pfOutLevel);
+	}
+#endif
 	int32 x = WATER_TO_SMALL_SECTOR_X(fX + WATER_X_OFFSET);
 	int32 y = WATER_TO_SMALL_SECTOR_Y(fY);
 		
-#ifdef FIX_BUGS
-	if ( x < 0 || x >= MAX_SMALL_SECTORS ) return false;
-	if ( y < 0 || y >= MAX_SMALL_SECTORS ) return false;
-#endif
-	
+	if ( ms_nNoOfWaterLevels <= 0 || x < 0 || x >= MAX_SMALL_SECTORS ||
+	     y < 0 || y >= MAX_SMALL_SECTORS ) return false;
+
 	int8 nBlock = aWaterFineBlockList[x][y];
 		
 	if ( nBlock == NO_WATER )
@@ -783,6 +948,21 @@ CWaterLevel::GetWaterWavesOnly(short x, short y)
 CVector
 CWaterLevel::GetWaterNormal(float fX, float fY)
 {
+#ifdef CUSTOM_MODELS
+	if(!customWaterQuads.empty()) {
+		float z, slopeX, slopeY;
+		if(commonwater::Sample(customWaterQuads, fX, fY, z, &slopeX, &slopeY)) {
+			float angle = (CTimer::GetTimeInMilliseconds() & 4095) * (TWOPI / 4096.0f);
+			float waveSlope = (CWeather::WindClipped * 0.4f + 0.2f)
+			                * (TWOPI / SMALL_SECTOR_SIZE)
+			                * Cos((fX + fY) * (TWOPI / SMALL_SECTOR_SIZE) + angle);
+			CVector normal(-slopeX-waveSlope, -slopeY-waveSlope, 1.0f);
+			normal.Normalise();
+			return normal;
+		}
+		return CVector(0.0f, 0.0f, 1.0f);
+	}
+#endif
 	//TODO: BUG ? no x offset
 	
 	int32 x = WATER_TO_SMALL_SECTOR_X(fX);
@@ -893,9 +1073,129 @@ SectorRadius(float fSize)
 	return Sqrt(Pow(fSize, 2) + Pow(fSize, 2));
 }
 
+#ifdef CUSTOM_MODELS
+namespace {
+
+// Draw only the area of a validated SA quad covered by one 64-unit cell.
+// Using the original corner heights keeps sloping water aligned with the
+// collision/boat query, rather than reducing a river to a flat VC rectangle.
+void RenderCustomWaterTile(const commonwater::Quad &q, float left, float bottom,
+                           float right, float top, const RwRGBA &color)
+{
+	if(TempBufferIndicesStored >= TEMPBUFFERINDEXSIZE-6 ||
+	   TempBufferVerticesStored >= TEMPBUFFERVERTSIZE-4)
+		CWaterLevel::RenderAndEmptyRenderBuffer();
+	const float x[4] = { left, left, right, right };
+	const float y[4] = { bottom, top, top, bottom };
+	int32 vertex = TempBufferVerticesStored;
+	for(int k = 0; k < 4; k++) {
+		RwIm3DVertexSetPos(&TempBufferRenderVertices[vertex+k], x[k], y[k],
+		                   q.Height(x[k], y[k]) - _fWaterZOffset);
+		RwIm3DVertexSetU(&TempBufferRenderVertices[vertex+k], x[k]/SMALL_SECTOR_SIZE + TEXTURE_ADDU);
+		RwIm3DVertexSetV(&TempBufferRenderVertices[vertex+k], y[k]/SMALL_SECTOR_SIZE + TEXTURE_ADDV);
+		RwIm3DVertexSet_RGBA(&TempBufferRenderVertices[vertex+k], color);
+	}
+	int32 index = TempBufferIndicesStored;
+	TempBufferRenderIndexList[index+0] = vertex+0;
+	TempBufferRenderIndexList[index+1] = vertex+2;
+	TempBufferRenderIndexList[index+2] = vertex+1;
+	TempBufferRenderIndexList[index+3] = vertex+0;
+	TempBufferRenderIndexList[index+4] = vertex+3;
+	TempBufferRenderIndexList[index+5] = vertex+2;
+	TempBufferVerticesStored += 4;
+	TempBufferIndicesStored += 6;
+}
+
+void RenderCustomWaterQuads(bool transparent, const RwRGBA &color)
+{
+#if defined(ANDROID) && defined(LIBRW) && defined(RW_GL3)
+	bool useMobWater = GL3Atmosphere::Enabled && EnsureMobileWaterShader() != nil;
+	if(useMobWater){
+		s_mobileWaterShader->use();
+		if(s_uMobileWaterParamsLoc >= 0){
+			float tMove = (float)(CTimer::GetTimeInMilliseconds() % 600000u) * 0.000032f;
+			float wp[4] = { tMove, transparent ? 1.0f : 0.0f, 0.0f, 0.0f };
+			glUniform4fv(s_uMobileWaterParamsLoc, 1, wp);
+		}
+		rw::gl3::im3dOverrideShader = s_mobileWaterShader;
+	}
+#endif
+	const float cell = 64.0f;
+	const float nearSqr = SQR(500.0f);
+	const float range = _GetWaterDrawDist();
+	const float rangeSqr = SQR(range + cell);
+	const CVector camera = TheCamera.GetPosition();
+	for(const commonwater::Quad &q : customWaterQuads) {
+		if(q.right < camera.x-range || q.left > camera.x+range ||
+		   q.top < camera.y-range || q.bottom > camera.y+range) continue;
+		int x0 = (int)std::floor(std::max(q.left, camera.x-range)/cell);
+		int x1 = (int)std::ceil(std::min(q.right, camera.x+range)/cell);
+		int y0 = (int)std::floor(std::max(q.bottom, camera.y-range)/cell);
+		int y1 = (int)std::ceil(std::min(q.top, camera.y+range)/cell);
+		for(int x = x0; x < x1; x++) {
+			float left = std::max(q.left, x*cell);
+			float right = std::min(q.right, (x+1)*cell);
+			if(left >= right) continue;
+			for(int y = y0; y < y1; y++) {
+				float bottom = std::max(q.bottom, y*cell);
+				float top = std::min(q.top, (y+1)*cell);
+				if(bottom >= top) continue;
+				float cx = (left+right)*0.5f, cy = (bottom+top)*0.5f;
+				float distanceSqr = SQR(cx-camera.x) + SQR(cy-camera.y);
+				if(distanceSqr > rangeSqr || (distanceSqr < nearSqr) != transparent)
+					continue;
+				float z = q.Height(cx, cy);
+				float radius = 0.5f * std::sqrt(SQR(right-left) + SQR(top-bottom) +
+				                                SQR(q.maxZ-q.minZ)) + 2.0f;
+				if(!TheCamera.IsSphereVisible(CVector(cx, cy, z), radius)) continue;
+				RenderCustomWaterTile(q, left, bottom, right, top, color);
+			}
+		}
+	}
+	CWaterLevel::RenderAndEmptyRenderBuffer();
+#if defined(ANDROID) && defined(LIBRW) && defined(RW_GL3)
+	if(useMobWater)
+		rw::gl3::im3dOverrideShader = nil;
+#endif
+}
+
+} // namespace
+#endif
+
 void
 CWaterLevel::RenderWater()
 {
+#ifdef CUSTOM_MODELS
+	if(!customWaterQuads.empty()) {
+#ifndef MASTER
+		if(gbDontRenderWater) return;
+#endif
+		if(!CGame::CanSeeWaterFromCurrArea()) return;
+		if(!CTimer::GetIsPaused()) {
+			float wind = CWeather::WindClipped * 0.0005f + 0.0006f;
+			TEXTURE_ADDU += wind;
+			TEXTURE_ADDV += wind;
+		}
+		if(TEXTURE_ADDU >= 1.0f) TEXTURE_ADDU = 0.0f;
+		if(TEXTURE_ADDV >= 1.0f) TEXTURE_ADDV = 0.0f;
+#ifdef PC_WATER
+		_fWaterZOffset = CWeather::WindClipped * 0.5f + 0.25f;
+#endif
+		TempBufferVerticesStored = TempBufferIndicesStored = 0;
+		RwRenderStateSet(rwRENDERSTATETEXTURERASTER, (void *)gpWaterRaster);
+		RwRenderStateSet(rwRENDERSTATEFOGENABLE, (void *)TRUE);
+		RwRenderStateSet(rwRENDERSTATESRCBLEND, (void *)rwBLENDONE);
+		RwRenderStateSet(rwRENDERSTATEDESTBLEND, (void *)rwBLENDZERO);
+		RwRGBA color = { 0, 0, 0, 255 };
+		color.red = CTimeCycle::GetWaterRed();
+		color.green = CTimeCycle::GetWaterGreen();
+		color.blue = CTimeCycle::GetWaterBlue();
+		RenderCustomWaterQuads(false, color);
+		DefinedState();
+		return;
+	}
+#endif
+	if(ms_nNoOfWaterLevels <= 0) return;
 //"Custom" Don't Render Water Toggle
 #ifndef MASTER
 	if (gbDontRenderWater)
@@ -1191,6 +1491,32 @@ CWaterLevel::RenderWater()
 void
 CWaterLevel::RenderTransparentWater(void)
 {
+#ifdef CUSTOM_MODELS
+	if(!customWaterQuads.empty()) {
+#ifndef MASTER
+		if(gbDontRenderWater) return;
+#endif
+		if(!CGame::CanSeeWaterFromCurrArea()) return;
+		PUSH_RENDERGROUP("CWaterLevel::RenderTransparentWater");
+		_bSeaLife = false;
+		TempBufferVerticesStored = TempBufferIndicesStored = 0;
+		RenderBoatWakes();
+		RwRenderStateSet(rwRENDERSTATETEXTURERASTER, (void *)gpWaterRaster);
+		RwRenderStateSet(rwRENDERSTATEFOGENABLE, (void *)TRUE);
+		RwRenderStateSet(rwRENDERSTATESRCBLEND, (void *)rwBLENDSRCALPHA);
+		RwRenderStateSet(rwRENDERSTATEDESTBLEND, (void *)rwBLENDINVSRCALPHA);
+		RwRGBA color = { 0, 0, 0, 255 };
+		color.red = CTimeCycle::GetWaterRed();
+		color.green = CTimeCycle::GetWaterGreen();
+		color.blue = CTimeCycle::GetWaterBlue();
+		color.alpha = CTimeCycle::GetWaterAlpha();
+		RenderCustomWaterQuads(true, color);
+		DefinedState();
+		POP_RENDERGROUP();
+		return;
+	}
+#endif
+	if(ms_nNoOfWaterLevels <= 0) return;
 	bool bUseCamEndX  = false;
 	bool bUseCamStartY = false;
 	
@@ -2125,6 +2451,14 @@ CWaterLevel::RenderWavyMask(float fX, float fY, float fZ,
 void
 CWaterLevel::PreCalcWaterGeometry(void)
 {
+#ifdef CUSTOM_MODELS
+	// The native wavy mask indexes the fixed Vice City 128x128 grid. Custom
+	// water is drawn from the actual SA quads instead, even beyond that grid.
+	if(!customWaterQuads.empty()) {
+		RequireWavySector = WavesCalculatedThisFrame = MaskCalculatedThisFrame = false;
+		return;
+	}
+#endif
 	if ( !RequireWavySector )
 	{
 		WavesCalculatedThisFrame = false;
@@ -2695,6 +3029,19 @@ CWaterLevel::RenderWakeSegment(CVector2D &vecA, CVector2D &vecB, CVector2D &vecC
 		float fZB = _GetWindedWave(PosB.x, PosB.y) + fWakeZ;
 		float fZC = _GetWindedWave(PosC.x, PosC.y) + fWakeZ;
 		float fZD = _GetWindedWave(PosD.x, PosD.y) + fWakeZ;
+#ifdef CUSTOM_MODELS
+		if(!customWaterQuads.empty()) {
+			float a, b, c, d;
+			if(!commonwater::Sample(customWaterQuads, PosA.x, PosA.y, a) ||
+			   !commonwater::Sample(customWaterQuads, PosB.x, PosB.y, b) ||
+			   !commonwater::Sample(customWaterQuads, PosC.x, PosC.y, c) ||
+			   !commonwater::Sample(customWaterQuads, PosD.x, PosD.y, d)) continue;
+			fZA += a - fWakeZ;
+			fZB += b - fWakeZ;
+			fZC += c - fWakeZ;
+			fZD += d - fWakeZ;
+		}
+#endif
 	
 		int32 vidx = TempBufferVerticesStored;
 	
@@ -2881,6 +3228,10 @@ CWaterLevel::RenderOneFlatSmallWaterPolyBlended(float fX, float fY, float fZ, fl
 float
 CWaterLevel::CalcDistanceToWater(float fX, float fY)
 {
+#ifdef CUSTOM_MODELS
+	if(!customWaterQuads.empty())
+		return commonwater::DistanceToWater(customWaterQuads, fX, fY);
+#endif
 	const float fSectorMaxRenderDist = 250.0f;
 	
 	int32 nStartX = WATER_TO_SMALL_SECTOR_X(fX - fSectorMaxRenderDist + WATER_X_OFFSET) - 1;
@@ -2969,10 +3320,9 @@ CWaterLevel::IsLocationOutOfWorldBounds_WS(CVector const &vecPosn, int nOffset)
 bool
 CWaterLevel::GetGroundLevel_WS(CVector const &vecPosn, float *pfOutLevel, ColData *pData, float fDistance)
 {
-	if ( IsLocationOutOfWorldBounds_WS(vecPosn, 0) )
-		return false;
-	else
-		return GetGroundLevel(vecPosn, pfOutLevel, pData, fDistance);
+	// The 80x80 water/sea-life grid is not a collision-world boundary. A
+	// custom island beyond VC must still be allowed to provide ground here.
+	return GetGroundLevel(vecPosn, pfOutLevel, pData, fDistance);
 }
 
 bool

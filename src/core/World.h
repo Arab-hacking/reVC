@@ -5,21 +5,24 @@
 #include "Lists.h"
 #include "PlayerInfo.h"
 #include "Collision.h"
+#include "WorldSectorMath.h"
+#include <array>
+#include <map>
+#include <utility>
 
-/* Sectors span from -2400 to 1600 in x and -2000 to 2000 y.
- * With 80x80 sectors, each is 50x50 units. */
-
+/* Keep the native 50-unit grid for compatibility and allocate additional
+ * sectors only where entities exist. The native grid is not a world border. */
 #define SECTOR_SIZE_X (50.0f)
 #define SECTOR_SIZE_Y (50.0f)
 
-#define NUMSECTORS_X (80)
-#define NUMSECTORS_Y (80)
+#define NUMSECTORS_X (160)
+#define NUMSECTORS_Y (160)
 
 #define WORLD_SIZE_X (NUMSECTORS_X * SECTOR_SIZE_X)
 #define WORLD_SIZE_Y (NUMSECTORS_Y * SECTOR_SIZE_Y)
 
-#define WORLD_MIN_X (-2400.0f)
-#define WORLD_MIN_Y (-2000.0f)
+#define WORLD_MIN_X (-4000.0f)
+#define WORLD_MIN_Y (-4000.0f)
 
 #define WORLD_MAX_X (WORLD_MIN_X + WORLD_SIZE_X)
 #define WORLD_MAX_Y (WORLD_MIN_Y + WORLD_SIZE_Y)
@@ -55,6 +58,9 @@ class CWorld
 	static CPtrList ms_bigBuildingsList[NUM_LEVELS];
 	static CPtrList ms_listMovingEntityPtrs;
 	static CSector ms_aSectors[NUMSECTORS_Y][NUMSECTORS_X];
+	// std::map keeps the address of each sector stable for CEntryInfoNode.
+	static std::map<std::pair<int, int>, CSector> ms_extraSectors;
+	static CSector ms_emptySector;
 	static uint16 ms_nCurrentScanCode;
 
 public:
@@ -74,7 +80,36 @@ public:
 	static void Remove(CEntity *entity);
 	static void Add(CEntity *entity);
 
-	static CSector *GetSector(int x, int y) { if (x > NUMSECTORS_X - 1 || y > NUMSECTORS_Y - 1) return &ms_aSectors[0][0]; return &ms_aSectors[y][x]; }
+	// Reads of unoccupied outlying sectors share an empty sector, without
+	// growing the map just because the camera or a ray passes over empty land.
+	static CSector *GetSector(int x, int y);
+	static CSector *EnsureSector(int x, int y);
+	static const std::map<std::pair<int, int>, CSector> &GetExtraSectors(void) { return ms_extraSectors; }
+	// Replay must snapshot list heads without copying CSector/CPtrList: copying
+	// those owning lists would free the original pool nodes on destruction.
+	typedef std::map<std::pair<int, int>, std::array<CPtrNode*, NUMSECTORENTITYLISTS>> ReplaySectorSnapshot;
+	static void SaveExtraSectorsForReplay(ReplaySectorSnapshot &snapshot) {
+		snapshot.clear();
+		for(const auto &entry : ms_extraSectors){
+			auto &heads = snapshot[entry.first];
+			for(int i = 0; i < NUMSECTORENTITYLISTS; i++)
+				heads[i] = entry.second.m_lists[i].first;
+		}
+	}
+	static void RestoreExtraSectorsFromReplay(const ReplaySectorSnapshot &snapshot) {
+		for(auto &entry : ms_extraSectors){
+			auto saved = snapshot.find(entry.first);
+			for(int i = 0; i < NUMSECTORENTITYLISTS; i++)
+				entry.second.m_lists[i].first = saved == snapshot.end() ? nil : saved->second[i];
+		}
+	}
+	template<class Visitor> static void ForEachAllocatedSector(Visitor visit) {
+		for(int y = 0; y < NUMSECTORS_Y; y++)
+			for(int x = 0; x < NUMSECTORS_X; x++)
+				visit(&ms_aSectors[y][x]);
+		for(auto &entry : ms_extraSectors)
+			visit(&entry.second);
+	}
 	static CPtrList &GetBigBuildingList(eLevelName i) { return ms_bigBuildingsList[i]; }
 	static CPtrList &GetMovingEntityList(void) { return ms_listMovingEntityPtrs; }
 	static uint16 GetCurrentScanCode(void) { return ms_nCurrentScanCode; }
@@ -128,8 +163,8 @@ public:
 
 	static float GetSectorX(float f) { return ((f - WORLD_MIN_X)/SECTOR_SIZE_X); }
 	static float GetSectorY(float f) { return ((f - WORLD_MIN_Y)/SECTOR_SIZE_Y); }
-	static int GetSectorIndexX(float f) { return (int)GetSectorX(f); }
-	static int GetSectorIndexY(float f) { return (int)GetSectorY(f); }
+	static int GetSectorIndexX(float f) { return WorldSectorIndex(f, WORLD_MIN_X, SECTOR_SIZE_X); }
+	static int GetSectorIndexY(float f) { return WorldSectorIndex(f, WORLD_MIN_Y, SECTOR_SIZE_Y); }
 	static float GetWorldX(int x) { return x*SECTOR_SIZE_X + WORLD_MIN_X; }
 	static float GetWorldY(int y) { return y*SECTOR_SIZE_Y + WORLD_MIN_Y; }
 

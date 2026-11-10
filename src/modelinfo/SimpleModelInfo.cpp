@@ -6,6 +6,9 @@
 #include "ModelInfo.h"
 #include "AnimManager.h"
 #include "custompipes.h"
+#ifdef CUSTOM_MODELS
+#include "CustomModels.h"
+#endif
 
 void
 CSimpleModelInfo::DeleteRwObject(void)
@@ -112,16 +115,39 @@ CSimpleModelInfo::IncreaseAlpha(void)
 		m_alpha += 0x10;
 }
 
+static inline float
+EffectiveSimpleLodMultiplier(const CSimpleModelInfo *smi, float minMult)
+{
+	float mult = TheCamera.LODDistMultiplier;
+	if(mult < minMult)
+		mult = minMult;
+	if(!smi->m_isBigBuilding && ((CBaseModelInfo*)smi)->GetNum2dEffects() > 0){
+		float lightMult = Min(CRenderer::ms_fLightDistScale, 2.50f);
+		if(lightMult > mult)
+			mult = lightMult;
+	}
+	return mult;
+}
+
 float
 CSimpleModelInfo::GetLodDistance(int i)
 {
-	return m_lodDistances[i] * TheCamera.LODDistMultiplier;
+#ifdef ANDROID
+	float mult = EffectiveSimpleLodMultiplier(this, DRAWDIST_MIN);
+#else
+	float mult = EffectiveSimpleLodMultiplier(this, 0.0f);
+#endif
+	return m_lodDistances[i] * mult;
 }
 
 float
 CSimpleModelInfo::GetNearDistance(void)
 {
-	return m_lodDistances[2] * TheCamera.LODDistMultiplier;
+	float mult = TheCamera.LODDistMultiplier;
+#ifdef ANDROID
+	if(mult < DRAWDIST_MIN) mult = DRAWDIST_MIN;
+#endif
+	return m_lodDistances[2] * mult;
 }
 
 float
@@ -132,7 +158,12 @@ CSimpleModelInfo::GetLargestLodDistance(void)
 		d = m_lodDistances[m_numAtomics-1];
 	else
 		d = m_lodDistances[m_firstDamaged-1];
-	return d * TheCamera.LODDistMultiplier;
+#ifdef ANDROID
+	float mult = EffectiveSimpleLodMultiplier(this, DRAWDIST_MIN);
+#else
+	float mult = EffectiveSimpleLodMultiplier(this, 0.0f);
+#endif
+	return d * mult;
 }
 
 RpAtomic*
@@ -142,8 +173,13 @@ CSimpleModelInfo::GetAtomicFromDistance(float dist)
 	i = 0;
 	if(m_isDamaged)
 		i = m_firstDamaged;
+#ifdef ANDROID
+	float mult = EffectiveSimpleLodMultiplier(this, 1.0f);
+#else
+	float mult = EffectiveSimpleLodMultiplier(this, 0.0f);
+#endif
 	for(; i < m_numAtomics; i++)
-		if(dist < m_lodDistances[i] * TheCamera.LODDistMultiplier)
+		if(dist < m_lodDistances[i] * mult)
 			return m_atomics[i];
 	return nil;
 }
@@ -151,7 +187,8 @@ CSimpleModelInfo::GetAtomicFromDistance(float dist)
 RpAtomic*
 CSimpleModelInfo::GetFirstAtomicFromDistance(float dist)
 {
-	if(dist < m_lodDistances[0] * TheCamera.LODDistMultiplier)
+	float mult = EffectiveSimpleLodMultiplier(this, 0.0f);
+	if(dist < m_lodDistances[0] * mult)
 		return m_atomics[0];
 	return nil;
 }

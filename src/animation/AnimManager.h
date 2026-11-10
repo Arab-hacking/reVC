@@ -86,6 +86,7 @@ struct CAnimBlock
 	int16 refCount;
 	int32 firstIndex;	// first animtion in ms_aAnimations
 	int32 numAnims;
+	bool unloadPending;	// parallel SA bank waits for active associations to release it
 };
 
 struct AnimAssocDesc
@@ -112,16 +113,23 @@ class CAnimManager
 	static int32 ms_numAnimBlocks;
 	static int32 ms_numAnimations;
 	static CAnimBlendAssocGroup *ms_aAnimAssocGroups;
+	static CAnimBlendAssocGroup *ms_aSAAnimAssocGroups;	// per-clump SA associations; VC groups remain native
+	static RpClump *ms_pVCPedAnimationReference;	// owned native VC skeleton for custom-model startup
 	static CLinkList<CAnimBlendHierarchy*> ms_animCache;
+	static CAnimBlendAssocGroup *GetAnimAssocGroup(RpClump *clump, AssocGroupId groupId);
 public:
 
 	static void Initialise(void);
 	static void Shutdown(void);
+	// Takes ownership of a temporary native VC ped clump used only as an
+	// association-building reference when all loaded peds are SA models.
+	static void SetVCPedAnimationReference(RpClump *clump);
 	static void UncompressAnimation(CAnimBlendHierarchy *anim);
 	static void RemoveFromUncompressedCache(CAnimBlendHierarchy *hier);
 	static CAnimBlock *GetAnimationBlock(int32 block) { return &ms_aAnimBlocks[block]; }
 	static CAnimBlock *GetAnimationBlock(const char *name);
 	static int32 GetAnimationBlockIndex(const char *name);
+	static int32 GetAnimationBlockForHierarchy(CAnimBlendHierarchy *hierarchy);
 	static int32 RegisterAnimBlock(const char *name);
 	static int32 GetNumRefsToAnimBlock(int32 block);
 	static void AddAnimBlockRef(int32 block);
@@ -129,18 +137,39 @@ public:
 	static void RemoveAnimBlockRef(int32 block);
 	static void RemoveAnimBlock(int32 block);
 	static CAnimBlendHierarchy *GetAnimation(const char *name, CAnimBlock *animBlock);
-	static CAnimBlendHierarchy *GetAnimation(int32 n) { return &ms_aAnimations[n]; }
+	static CAnimBlendHierarchy *GetAnimation(int32 n) { return n >= 0 && n < NUMANIMATIONS ? &ms_aAnimations[n] : nil; }
+	// A hierarchy may only be used with a clump from the same animation bank.
+	// A null clump denotes an explicitly native-VC-only lookup.
+	static bool IsAnimationCompatibleWithClump(RpClump *clump, CAnimBlendHierarchy *hierarchy);
+	// Vehicle approach offsets must come from the ped's own bank. The native
+	// lookup also works without a VC reference clump.
+	static CAnimBlendHierarchy *GetAnimHierarchyForOffset(AssocGroupId groupId, AnimationId animId);
+	static CAnimBlendHierarchy *GetAnimHierarchyForOffset(RpClump *clump, AssocGroupId groupId, AnimationId animId);
 	static const char *GetAnimGroupName(AssocGroupId groupId);
+	// Expected clip name for a group slot, even when its IFP is absent.
+	static const char *GetAnimName(AssocGroupId groupId, AnimationId animId);
 	static CAnimBlendAssociation *CreateAnimAssociation(AssocGroupId groupId, AnimationId animId);
+	static CAnimBlendAssociation *CreateAnimAssociation(RpClump *clump, AssocGroupId groupId, AnimationId animId);
 	static CAnimBlendAssociation *GetAnimAssociation(AssocGroupId groupId, AnimationId animId);
 	static CAnimBlendAssociation *GetAnimAssociation(AssocGroupId groupId, const char *name);
+	static CAnimBlendAssociation *GetAnimAssociation(RpClump *clump, AssocGroupId groupId, AnimationId animId);
+	static CAnimBlendAssociation *GetAnimAssociation(RpClump *clump, AssocGroupId groupId, const char *name);
 	static CAnimBlendAssociation *AddAnimation(RpClump *clump, AssocGroupId groupId, AnimationId animId);
 	static CAnimBlendAssociation *AddAnimationAndSync(RpClump *clump, CAnimBlendAssociation *syncanim, AssocGroupId groupId, AnimationId animId);
 	static CAnimBlendAssociation *BlendAnimation(RpClump *clump, AssocGroupId groupId, AnimationId animId, float delta);
 	static void LoadAnimFiles(void);
 	static void LoadAnimFile(const char *filename);
-	static void LoadAnimFile(RwStream *stream, bool compress, char (*uncompressedAnims)[32] = nil);
-	static void CreateAnimAssocGroups(void);
+	static void LoadAnimFile(RwStream *stream, bool compress, char (*uncompressedAnims)[32] = nil, const char *blockNameOverride = nil);
+#ifdef CUSTOM_MODELS
+	// Only compact SA/BR ANP2/ANP3 files from custom enter the parallel sa_*
+	// bank. ANPK (including a custom VC replacement) never replaces native VC.
+	static void LoadSAAnimFileFromCustom(const char *filename);
+#endif
+	// SA/BR animation packages with the compact header (ANP2/ANP3), as found
+	// in San Andreas ifp files and Black Russia .ani containers
+	static void LoadAnimFile_ANP23(RwStream *stream, const char *ident, bool compress,
+		const char *blockName, uint32 numAnims, const char *blockNameOverride = nil);
+	static void CreateAnimAssocGroups(int preferredModelIndex = -1);
 	static void RemoveLastAnimFile(void);
 	static CAnimBlendAssocGroup* GetAnimAssocGroups(void) { return ms_aAnimAssocGroups; }
 };

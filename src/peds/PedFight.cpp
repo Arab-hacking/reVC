@@ -22,6 +22,19 @@
 #include "Automobile.h"
 #include "WaterLevel.h"
 #include "World.h"
+
+// The parallel SA bank can be missing a particular reaction. Resolve on the
+// target clump so the fallback remains in its own skeleton's animation bank.
+static CAnimBlendAssociation *
+BlendDamageReaction(RpClump *clump, AnimationId anim, float blendSpeed = 8.0f)
+{
+	CAnimBlendAssociation *assoc = RpAnimBlendClumpGetAssociation(clump, anim);
+	if(!assoc || assoc->blendDelta < 0.0f)
+		assoc = CAnimManager::BlendAnimation(clump, ASSOCGRP_STD, anim, blendSpeed);
+	if(!assoc && anim != ANIM_STD_HIT_FRONT)
+		assoc = CAnimManager::BlendAnimation(clump, ASSOCGRP_STD, ANIM_STD_HIT_FRONT, blendSpeed);
+	return assoc;
+}
 #include "Bike.h"
 #include "Glass.h"
 #include "SpecialFX.h"
@@ -157,6 +170,40 @@ CheckForPedsOnGroundToAttack(CPed *attacker, CPed **pedOnGround)
 	return stateToReturn;
 }
 
+// An SA ped may have ped.ifp but no matching weapon dictionary in custom.
+// Do not borrow a native VC clip: the association bank must match the clump's
+// skeleton. Report the missing slot once so repeated AI attacks do not flood
+// the log, and let the caller leave its attack/aim state safely.
+static void
+ReportUnavailableWeaponAnim(CPed *ped, AnimationId animId, AssocGroupId groupId = NUM_ANIM_ASSOC_GROUPS)
+{
+	RpClump *clump = ped->GetClump();
+	CAnimBlendClumpData *data = clump && RpAnimBlendClumpIsInitialized(clump) ?
+		*RPANIMBLENDCLUMPDATA(clump) : nil;
+	int bank = data && data->usesSAAnimations ? 1 : 0;
+	int weapon = ped->GetWeapon()->m_eWeaponType;
+	int group = groupId == NUM_ANIM_ASSOC_GROUPS ?
+		CWeaponInfo::GetWeaponInfo(ped->GetWeapon()->m_eWeaponType)->m_AnimToPlay : groupId;
+	int anim = animId;
+	static bool warned[2][NUM_ANIM_ASSOC_GROUPS][ANIM_STRIP_G + 1] = {};
+	if(group >= 0 && group < NUM_ANIM_ASSOC_GROUPS && anim >= 0 && anim <= ANIM_STRIP_G){
+		if(warned[bank][group][anim])
+			return;
+		warned[bank][group][anim] = true;
+	}
+	const char *groupName = group >= 0 && group < NUM_ANIM_ASSOC_GROUPS ?
+		CAnimManager::GetAnimGroupName((AssocGroupId)group) : nil;
+	const char *clipName = groupName ? CAnimManager::GetAnimName((AssocGroupId)group, animId) : nil;
+	if(bank && groupName && clipName){
+		REVC_LOG_WARNING("Weapon animation unavailable: ped=%d, SA skeleton=1, weapon=%d, group=%d (%s), anim=%d (%s); check custom/%s.ifp or .ani (ANP2/ANP3) for this clip and compatible SA bones",
+			ped->GetModelIndex(), weapon, group, groupName, anim, clipName, groupName);
+		return;
+	}
+	REVC_LOG_WARNING("Weapon animation unavailable: ped=%d, SA skeleton=%d, weapon=%d, group=%d, anim=%d; %s",
+		ped->GetModelIndex(), bank, weapon, group, anim,
+		bank ? "check the matching SA IFP/ANI in custom" : "check the native VC animation bank");
+}
+
 void
 CPed::SetPointGunAt(CEntity *to)
 {
@@ -186,12 +233,17 @@ CPed::SetPointGunAt(CEntity *to)
 	}
 
 	if (!aimAssoc || aimAssoc->blendDelta < 0.0f) {
-		if (bCrouchWhenShooting && bIsDucking && GetCrouchFireAnim(curWeapon)) {
-			aimAssoc = CAnimManager::BlendAnimation(GetClump(), curWeapon->m_AnimToPlay, GetCrouchFireAnim(curWeapon), 4.0f);
-		} else {
-			aimAssoc = CAnimManager::AddAnimation(GetClump(), curWeapon->m_AnimToPlay, ANIM_WEAPON_FIRE);
+		AnimationId aimAnim = bCrouchWhenShooting && bIsDucking && GetCrouchFireAnim(curWeapon) ?
+			GetCrouchFireAnim(curWeapon) : ANIM_WEAPON_FIRE;
+		if (aimAnim == ANIM_WEAPON_FIRE)
+			aimAssoc = CAnimManager::AddAnimation(GetClump(), curWeapon->m_AnimToPlay, aimAnim);
+		else
+			aimAssoc = CAnimManager::BlendAnimation(GetClump(), curWeapon->m_AnimToPlay, aimAnim, 4.0f);
+		if (!aimAssoc) {
+			ReportUnavailableWeaponAnim(this, aimAnim);
+			ClearPointGunAt();
+			return;
 		}
-
 		aimAssoc->blendAmount = 0.0f;
 		aimAssoc->blendDelta = 8.0f;
 	}
@@ -285,6 +337,11 @@ CPed::SetAttack(CEntity *victim)
 				bIsAttacking = false;
 
 				CAnimBlendAssociation *animAssoc = CAnimManager::BlendAnimation(GetClump(), curWeapon->m_AnimToPlay, ANIM_MELEE_ATTACK_START, 8.0f);
+				if (!animAssoc) {
+					ReportUnavailableWeaponAnim(this, ANIM_MELEE_ATTACK_START);
+					RestorePreviousState();
+					return;
+				}
 				animAssoc->SetRun();
 				if (animAssoc->currentTime == animAssoc->hierarchy->totalLength)
 					animAssoc->SetCurrentTime(0.0f);
@@ -305,6 +362,11 @@ CPed::SetAttack(CEntity *victim)
 			SetPedState(PED_ATTACK);
 			bIsAttacking = false;
 			CAnimBlendAssociation* animAssoc = CAnimManager::BlendAnimation(GetClump(), curWeapon->m_AnimToPlay, ANIM_MELEE_ATTACK_START, 8.0f);
+			if (!animAssoc) {
+				ReportUnavailableWeaponAnim(this, ANIM_MELEE_ATTACK_START);
+				RestorePreviousState();
+				return;
+			}
 			animAssoc->SetRun();
 			if (animAssoc->currentTime == animAssoc->hierarchy->totalLength)
 				animAssoc->SetCurrentTime(0.0f);
@@ -396,12 +458,14 @@ CPed::SetAttack(CEntity *victim)
 
 			SetPedState(PED_ATTACK);
 			SetMoveState(PEDMOVE_NONE);
+			AnimationId fireAnim;
 			if (bCrouchWhenShooting && bIsDucking && curWeapon->IsFlagSet(WEAPONFLAG_CROUCHFIRE)) {
-				CAnimBlendAssociation* curMoveAssoc = RpAnimBlendClumpGetAssociation(GetClump(), GetCrouchFireAnim(curWeapon));
+				fireAnim = GetCrouchFireAnim(curWeapon);
+				CAnimBlendAssociation* curMoveAssoc = RpAnimBlendClumpGetAssociation(GetClump(), fireAnim);
 				if (curMoveAssoc) {
-					if (strcmp(CAnimManager::GetAnimAssociation(curWeapon->m_AnimToPlay, GetCrouchFireAnim(curWeapon))->hierarchy->name, curMoveAssoc->hierarchy->name) != 0) {
+					CAnimBlendAssociation *requestedMoveAssoc = CAnimManager::GetAnimAssociation(GetClump(), curWeapon->m_AnimToPlay, GetCrouchFireAnim(curWeapon));
+					if (requestedMoveAssoc && strcmp(requestedMoveAssoc->hierarchy->name, curMoveAssoc->hierarchy->name) != 0)
 						delete curMoveAssoc;
-					}
 				}
 				animAssoc = CAnimManager::BlendAnimation(GetClump(), curWeapon->m_AnimToPlay, GetCrouchFireAnim(curWeapon), 8.0f);
 			} else {
@@ -409,7 +473,6 @@ CPed::SetAttack(CEntity *victim)
 				if (curWeapon->m_eWeaponFire == WEAPON_FIRE_MELEE)
 					animDelta = 1000.0f;
 
-				AnimationId fireAnim;
 				if (curWeapon->IsFlagSet(WEAPONFLAG_THROW))
 					fireAnim = ANIM_THROWABLE_START_THROW;
 				else if (CGame::nastyGame && (curWeapon->IsFlagSet(WEAPONFLAG_GROUND_2ND) || curWeapon->IsFlagSet(WEAPONFLAG_GROUND_3RD))) {
@@ -425,13 +488,19 @@ CPed::SetAttack(CEntity *victim)
 
 				CAnimBlendAssociation* curFireAssoc = RpAnimBlendClumpGetAssociation(GetClump(), fireAnim);
 				if (curFireAssoc) {
-					if (strcmp(CAnimManager::GetAnimAssociation(curWeapon->m_AnimToPlay, fireAnim)->hierarchy->name, curFireAssoc->hierarchy->name) != 0) {
+					CAnimBlendAssociation *requestedFireAssoc = CAnimManager::GetAnimAssociation(GetClump(), curWeapon->m_AnimToPlay, fireAnim);
+					if (requestedFireAssoc && strcmp(requestedFireAssoc->hierarchy->name, curFireAssoc->hierarchy->name) != 0)
 						delete curFireAssoc;
-					}
 				}
 				animAssoc = CAnimManager::BlendAnimation(GetClump(), curWeapon->m_AnimToPlay, fireAnim, animDelta);
 			}
 
+			if (!animAssoc) {
+				ReportUnavailableWeaponAnim(this, fireAnim);
+				bIsAttacking = false;
+				RestorePreviousState();
+				return;
+			}
 			animAssoc->SetRun();
 			if (animAssoc->currentTime == animAssoc->hierarchy->totalLength)
 				animAssoc->SetCurrentTime(0.0f);
@@ -518,18 +587,23 @@ CPed::FinishedAttackCB(CAnimBlendAssociation *attackAssoc, void *arg)
 			if (GetCrouchFireAnim(currentWeapon) && attackAssoc) {
 				if (attackAssoc->animId == GetCrouchFireAnim(currentWeapon) && !reloadAnimAssoc) {
 					newAnim = CAnimManager::BlendAnimation(ped->GetClump(), ASSOCGRP_STD, ANIM_STD_DUCK_WEAPON, 8.0f);
-					newAnim->SetCurrentTime(newAnim->hierarchy->totalLength);
-					newAnim->flags &= ~ASSOC_RUNNING;
+					if (newAnim) {
+						newAnim->SetCurrentTime(newAnim->hierarchy->totalLength);
+						newAnim->flags &= ~ASSOC_RUNNING;
+					}
 				}
 			}
 		}
 	} else if (attackAssoc && attackAssoc->animId == ANIM_THROWABLE_START_THROW && currentWeapon->m_AnimToPlay == ASSOCGRP_THROW) {
-		if ((!ped->IsPlayer() || ((CPlayerPed*)ped)->m_bHaveTargetSelected) && ped->IsPlayer()) {
-			attackAssoc->blendDelta = -1000.0f;
-			newAnim = CAnimManager::AddAnimation(ped->GetClump(), currentWeapon->m_AnimToPlay, ANIM_THROWABLE_THROWU);
-		} else {
-			attackAssoc->blendDelta = -1000.0;
-			newAnim = CAnimManager::AddAnimation(ped->GetClump(), currentWeapon->m_AnimToPlay, ANIM_THROWABLE_THROW);
+		AnimationId nextAnim = (!ped->IsPlayer() || ((CPlayerPed*)ped)->m_bHaveTargetSelected) && ped->IsPlayer() ?
+			ANIM_THROWABLE_THROWU : ANIM_THROWABLE_THROW;
+		attackAssoc->blendDelta = -1000.0f;
+		newAnim = CAnimManager::AddAnimation(ped->GetClump(), currentWeapon->m_AnimToPlay, nextAnim);
+		if (!newAnim) {
+			ReportUnavailableWeaponAnim(ped, nextAnim);
+			ped->bIsAttacking = false;
+			ped->RestorePreviousState();
+			return;
 		}
 		newAnim->SetFinishCallback(FinishedAttackCB, ped);
 
@@ -540,8 +614,10 @@ CPed::FinishedAttackCB(CAnimBlendAssociation *attackAssoc, void *arg)
 		if (GetCrouchFireAnim(currentWeapon) && attackAssoc) {
 			if (attackAssoc->animId == GetCrouchFireAnim(currentWeapon) && !reloadAnimAssoc) {
 				newAnim = CAnimManager::BlendAnimation(ped->GetClump(), ASSOCGRP_STD, ANIM_STD_DUCK_WEAPON, 8.0f);
-				newAnim->SetCurrentTime(newAnim->hierarchy->totalLength);
-				newAnim->flags &= ~ASSOC_RUNNING;
+				if (newAnim) {
+					newAnim->SetCurrentTime(newAnim->hierarchy->totalLength);
+					newAnim->flags &= ~ASSOC_RUNNING;
+				}
 			}
 		}
 
@@ -552,12 +628,14 @@ CPed::FinishedAttackCB(CAnimBlendAssociation *attackAssoc, void *arg)
 		AnimationId groundAnim = GetFireAnimGround(currentWeapon);
 		CAnimBlendAssociation *groundAnimAssoc = RpAnimBlendClumpGetAssociation(ped->GetClump(), groundAnim);
 		if (!(groundAnimAssoc && (groundAnimAssoc->blendAmount > 0.95f || groundAnimAssoc->blendDelta > 0.0f))) {
-			if (attackAssoc && attackAssoc->animId == ANIM_MELEE_ATTACK) {
-				newAnim = CAnimManager::BlendAnimation(
-					ped->GetClump(), currentWeapon->m_AnimToPlay, GetSecondFireAnim(currentWeapon), 8.0f);
-			} else {
-				newAnim = CAnimManager::BlendAnimation(
-					ped->GetClump(), currentWeapon->m_AnimToPlay, ANIM_MELEE_ATTACK, 8.0f);
+			AnimationId nextAnim = attackAssoc && attackAssoc->animId == ANIM_MELEE_ATTACK ?
+				GetSecondFireAnim(currentWeapon) : ANIM_MELEE_ATTACK;
+			newAnim = CAnimManager::BlendAnimation(ped->GetClump(), currentWeapon->m_AnimToPlay, nextAnim, 8.0f);
+			if (!newAnim) {
+				ReportUnavailableWeaponAnim(ped, nextAnim);
+				ped->bIsAttacking = false;
+				ped->RestorePreviousState();
+				return;
 			}
 			newAnim->SetFinishCallback(FinishedAttackCB, ped);
 		}
@@ -599,13 +677,21 @@ CPed::FinishedReloadCB(CAnimBlendAssociation *reloadAssoc, void *arg)
 		if (weapon->IsFlagSet(WEAPONFLAG_RELOAD) && reloadAssoc) {
 			if (reloadAssoc->animId == GetCrouchReloadAnim(weapon) && !crouchFireAssoc) {
 				CAnimBlendAssociation *crouchAssoc = CAnimManager::BlendAnimation(ped->GetClump(), ASSOCGRP_STD, ANIM_STD_DUCK_WEAPON, 8.0f);
-				crouchAssoc->SetCurrentTime(crouchAssoc->hierarchy->totalLength);
-				crouchAssoc->flags &= ~ASSOC_RUNNING;
+				if (crouchAssoc) {
+					crouchAssoc->SetCurrentTime(crouchAssoc->hierarchy->totalLength);
+					crouchAssoc->flags &= ~ASSOC_RUNNING;
+				}
 			}
 		}
 	} else if (weapon->IsFlagSet(WEAPONFLAG_RELOAD_LOOP2START) && ped->bIsAttacking) {
 		CAnimBlendAssociation *fireAssoc =
 			CAnimManager::BlendAnimation(ped->GetClump(), weapon->m_AnimToPlay, GetPrimaryFireAnim(weapon), 8.0f);
+		if (!fireAssoc) {
+			ReportUnavailableWeaponAnim(ped, GetPrimaryFireAnim(weapon));
+			ped->bIsAttacking = false;
+			ped->RestorePreviousState();
+			return;
+		}
 		fireAssoc->SetFinishCallback(FinishedAttackCB, ped);
 		fireAssoc->SetRun();
 		if (fireAssoc->currentTime == reloadAssoc->hierarchy->totalLength)
@@ -778,22 +864,25 @@ CPed::Attack(void)
 		if (!throwAssoc) {
 			if (attackShouldContinue) {
 				if (ourWeapon->m_eWeaponFire != WEAPON_FIRE_PROJECTILE || !IsPlayer() || ((CPlayerPed*)this)->m_bHaveTargetSelected) {
+					AnimationId nextFireAnim;
 					if (bCrouchWhenShooting && bIsDucking && GetCrouchFireAnim(ourWeapon)) {
-						weaponAnimAssoc = CAnimManager::BlendAnimation(GetClump(), ourWeapon->m_AnimToPlay, GetCrouchFireAnim(ourWeapon), 8.0f);
-
+						nextFireAnim = GetCrouchFireAnim(ourWeapon);
 					} else if(GetSecondFireAnim(ourWeapon) && CGeneral::GetRandomNumber() & 1){
-						weaponAnimAssoc = CAnimManager::BlendAnimation(GetClump(), ourWeapon->m_AnimToPlay, GetSecondFireAnim(ourWeapon), 8.0f);
-
+						nextFireAnim = GetSecondFireAnim(ourWeapon);
 					} else if(!CGame::nastyGame || ourWeapon->m_eWeaponFire != WEAPON_FIRE_MELEE ||
-					          !GetFireAnimGround(ourWeapon, false) || 
+					          !GetFireAnimGround(ourWeapon, false) ||
 						 CheckForPedsOnGroundToAttack(this, nil) < PED_ON_THE_FLOOR) {
-
-						weaponAnimAssoc = CAnimManager::BlendAnimation(GetClump(), ourWeapon->m_AnimToPlay, GetFireAnimNotDucking(ourWeapon), 8.0f);
-
+						nextFireAnim = GetFireAnimNotDucking(ourWeapon);
 					} else {
-						weaponAnimAssoc = CAnimManager::BlendAnimation(GetClump(), ourWeapon->m_AnimToPlay, GetFireAnimGround(ourWeapon, false), 8.0f);
+						nextFireAnim = GetFireAnimGround(ourWeapon, false);
 					}
-
+					weaponAnimAssoc = CAnimManager::BlendAnimation(GetClump(), ourWeapon->m_AnimToPlay, nextFireAnim, 8.0f);
+					if (!weaponAnimAssoc) {
+						ReportUnavailableWeaponAnim(this, nextFireAnim);
+						bIsAttacking = false;
+						RestorePreviousState();
+						return;
+					}
 					weaponAnimAssoc->SetFinishCallback(FinishedAttackCB, this);
 					weaponAnimAssoc->SetRun();
 
@@ -975,11 +1064,19 @@ CPed::Attack(void)
 		if (GetWeapon()->m_eWeaponState == WEAPONSTATE_RELOADING) {
 			if (GetReloadAnim(ourWeapon) && !reloadAnimAssoc) {
 				if (!CWorld::Players[CWorld::PlayerInFocus].m_bFastReload) {
+					AnimationId reloadAnim = bIsDucking && GetCrouchReloadAnim(ourWeapon) ?
+						GetCrouchReloadAnim(ourWeapon) : GetReloadAnim(ourWeapon);
 					CAnimBlendAssociation *newReloadAssoc = CAnimManager::BlendAnimation(
-						GetClump(), ourWeapon->m_AnimToPlay,
-						bIsDucking && GetCrouchReloadAnim(ourWeapon) ? GetCrouchReloadAnim(ourWeapon) : GetReloadAnim(ourWeapon),
-						8.0f);
-					newReloadAssoc->SetFinishCallback(FinishedReloadCB, this);
+						GetClump(), ourWeapon->m_AnimToPlay, reloadAnim, 8.0f);
+					if (newReloadAssoc)
+						newReloadAssoc->SetFinishCallback(FinishedReloadCB, this);
+					else {
+						ReportUnavailableWeaponAnim(this, reloadAnim);
+						bIsAttacking = false;
+						bIsPointingGunAt = false;
+						RestorePreviousState();
+						return;
+					}
 				}
 				ClearLookFlag();
 				ClearAimFlag();
@@ -1007,15 +1104,27 @@ CPed::Attack(void)
 					if (GetFireAnimGround(ourWeapon, false)) {
 						weaponAnimAssoc = CAnimManager::BlendAnimation(GetClump(), ourWeapon->m_AnimToPlay, fireAnim, 8.0f);
 					} else {
-						weaponAnimAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_KICKGROUND, 8.0f);
+						fireAnim = ANIM_STD_KICKGROUND;
+						weaponAnimAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, fireAnim, 8.0f);
 					}
+				}
+				if (!weaponAnimAssoc) {
+					ReportUnavailableWeaponAnim(this, fireAnim,
+						fireAnim == ANIM_STD_KICKGROUND ? ASSOCGRP_STD : ourWeapon->m_AnimToPlay);
+					bIsAttacking = false;
+					RestorePreviousState();
+					return;
 				}
 				weaponAnimAssoc->SetFinishCallback(FinishedAttackCB, this);
 			} else if (GetSecondFireAnim(ourWeapon)) {
-				if (weaponAnimAssoc->animId == GetSecondFireAnim(ourWeapon)) {
-					weaponAnimAssoc = CAnimManager::BlendAnimation(GetClump(), ourWeapon->m_AnimToPlay, ANIM_WEAPON_FIRE, 8.0f);
-				} else {
-					weaponAnimAssoc = CAnimManager::BlendAnimation(GetClump(), ourWeapon->m_AnimToPlay, GetSecondFireAnim(ourWeapon), 8.0f);
+				AnimationId nextFireAnim = weaponAnimAssoc->animId == GetSecondFireAnim(ourWeapon) ?
+					ANIM_WEAPON_FIRE : GetSecondFireAnim(ourWeapon);
+				weaponAnimAssoc = CAnimManager::BlendAnimation(GetClump(), ourWeapon->m_AnimToPlay, nextFireAnim, 8.0f);
+				if (!weaponAnimAssoc) {
+					ReportUnavailableWeaponAnim(this, nextFireAnim);
+					bIsAttacking = false;
+					RestorePreviousState();
+					return;
 				}
 				weaponAnimAssoc->SetFinishCallback(FinishedAttackCB, this);
 			} else {
@@ -1108,6 +1217,7 @@ CPed::StartFightAttack(uint8 buttonPressure)
 	if (m_curFightMove > FIGHTMOVE_NULL && m_curFightMove != FIGHTMOVE_IDLE) {
 		animAssoc = CAnimManager::BlendAnimation(GetClump(), m_curFightMove < FIGHTMOVE_MELEE1 ? ASSOCGRP_STD : weaponInfo->m_AnimToPlay,
 			tFightMoves[m_curFightMove].animId, 8.0f);
+		if(!animAssoc){ EndFight(ENDFIGHT_FAST); return; }
 
 		if (weaponInfo->m_AnimToPlay == ASSOCGRP_KNIFE && m_curFightMove >= FIGHTMOVE_MELEE1) {
 			switch (GetWeapon()->m_eWeaponType) {
@@ -1207,13 +1317,12 @@ CPed::StartFightDefend(uint8 direction, uint8 hitLevel, uint8 unk)
 							shotAnim = ANIM_STD_HITBYGUN_FRONT;
 							break;
 					}
-					CAnimBlendAssociation *shotAssoc = RpAnimBlendClumpGetAssociation(GetClump(), shotAnim);
-					if (!shotAssoc || shotAssoc->blendDelta < 0.0f)
-						shotAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, shotAnim, 8.0f);
-
-					shotAssoc->SetCurrentTime(0.0f);
-					shotAssoc->SetRun();
-					shotAssoc->flags |= ASSOC_FADEOUTWHENDONE;
+					CAnimBlendAssociation *shotAssoc = BlendDamageReaction(GetClump(), shotAnim);
+					if(shotAssoc){
+						shotAssoc->SetCurrentTime(0.0f);
+						shotAssoc->SetRun();
+						shotAssoc->flags |= ASSOC_FADEOUTWHENDONE;
+					}
 				} else {
 					int time = CGeneral::GetRandomNumberInRange(1000, 3000);
 					SetWaitState(WAITSTATE_PLAYANIM_DUCK, &time);
@@ -1253,13 +1362,12 @@ CPed::StartFightDefend(uint8 direction, uint8 hitLevel, uint8 unk)
 				if (fall) {
 					SetFall(500, hitAnim, false);
 				} else {
-					CAnimBlendAssociation *hitAssoc = RpAnimBlendClumpGetAssociation(GetClump(), hitAnim);
-					if (!hitAssoc || hitAssoc->blendDelta < 0.0f)
-						hitAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, hitAnim, 8.0f);
-
-					hitAssoc->SetCurrentTime(0.0f);
-					hitAssoc->SetRun();
-					hitAssoc->flags |= ASSOC_FADEOUTWHENDONE;
+					CAnimBlendAssociation *hitAssoc = BlendDamageReaction(GetClump(), hitAnim);
+					if(hitAssoc){
+						hitAssoc->SetCurrentTime(0.0f);
+						hitAssoc->SetRun();
+						hitAssoc->flags |= ASSOC_FADEOUTWHENDONE;
+					}
 				}
 			}
 			Say(SOUND_PED_DEFEND);
@@ -1324,7 +1432,8 @@ CPed::StartFightDefend(uint8 direction, uint8 hitLevel, uint8 unk)
 				m_curFightMove = FIGHTMOVE_HITONFLOOR;
 
 			if (m_nPedState == PED_FIGHT) {
-				CAnimBlendAssociation *moveAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, tFightMoves[m_curFightMove].animId, 8.0f);
+				CAnimBlendAssociation *moveAssoc = BlendDamageReaction(GetClump(), tFightMoves[m_curFightMove].animId);
+				if(!moveAssoc){ EndFight(ENDFIGHT_FAST); return; }
 				moveAssoc->SetCurrentTime(0.0f);
 				moveAssoc->SetFinishCallback(FinishFightMoveCB, this);
 				if (IsPlayer())
@@ -1335,9 +1444,11 @@ CPed::StartFightDefend(uint8 direction, uint8 hitLevel, uint8 unk)
 
 			} else if (IsPlayer() && GetWeapon()->m_eWeaponType != WEAPONTYPE_UNARMED && GetWeapon()->m_eWeaponType != WEAPONTYPE_BRASSKNUCKLE &&
 					!CWeaponInfo::GetWeaponInfo(GetWeapon()->m_eWeaponType)->IsFlagSet(WEAPONFLAG_FIGHTMODE)) {
-				CAnimBlendAssociation *moveAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, tFightMoves[m_curFightMove].animId, 4.0f);
-				moveAssoc->SetCurrentTime(0.0f);
-				moveAssoc->speed = 1.2f;
+				CAnimBlendAssociation *moveAssoc = BlendDamageReaction(GetClump(), tFightMoves[m_curFightMove].animId, 4.0f);
+				if(moveAssoc){
+					moveAssoc->SetCurrentTime(0.0f);
+					moveAssoc->speed = 1.2f;
+				}
 
 			} else {
 				if (m_nPedState != PED_AIM_GUN && m_nPedState != PED_ATTACK)
@@ -1378,8 +1489,10 @@ CPed::StartFightDefend(uint8 direction, uint8 hitLevel, uint8 unk)
 				} else {
 					fightIdleAssoc = CAnimManager::AddAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_FIGHT_IDLE);
 				}
-				fightIdleAssoc->blendAmount = 1.0f;
-				CAnimBlendAssociation *moveAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, tFightMoves[m_curFightMove].animId, 8.0f);
+				if(fightIdleAssoc)
+					fightIdleAssoc->blendAmount = 1.0f;
+				CAnimBlendAssociation *moveAssoc = BlendDamageReaction(GetClump(), tFightMoves[m_curFightMove].animId);
+				if(!moveAssoc){ EndFight(ENDFIGHT_FAST); return; }
 				moveAssoc->SetFinishCallback(FinishFightMoveCB, this);
 				m_fightState = FIGHTSTATE_NO_MOVE;
 				m_takeAStepAfterAttack = false;
@@ -1516,6 +1629,7 @@ CPed::Fight(void)
 					m_lastFightMove = m_curFightMove;
 					// Notice that it increases fight move index, because we're in combo!
 					animAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, tFightMoves[++m_curFightMove].animId, 8.0f);
+					if(!animAssoc){ EndFight(ENDFIGHT_FAST); return; }
 					animAssoc->SetFinishCallback(FinishFightMoveCB, this);
 					animAssoc->SetCurrentTime(0.1f * animAssoc->hierarchy->totalLength);
 					animAssoc->speed = 0.8f;
@@ -1541,6 +1655,7 @@ CPed::Fight(void)
 
 			animAssoc = CAnimManager::BlendAnimation(GetClump(), m_curFightMove < FIGHTMOVE_MELEE1 ? ASSOCGRP_STD : weaponInfo->m_AnimToPlay,
 				tFightMoves[m_curFightMove].animId, 8.0f);
+			if(!animAssoc){ EndFight(ENDFIGHT_FAST); return; }
 
 			if (weaponInfo->m_AnimToPlay != ASSOCGRP_KNIFE || m_curFightMove < FIGHTMOVE_MELEE1) {
 				if (m_curFightMove == FIGHTMOVE_BACKKICK)
@@ -1593,11 +1708,12 @@ CPed::Fight(void)
 			animAssoc->SetCurrentTime(0.0f);
 			animAssoc->blendDelta = 4.0f;
 			animAssoc->SetRun();
-		} else {
-			animAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, tFightMoves[m_curFightMove].animId, 32.0f);
-		}
-		animAssoc->SetFinishCallback(FinishFightMoveCB, this);
-		m_fightState = FIGHTSTATE_NO_MOVE;
+			} else {
+				animAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, tFightMoves[m_curFightMove].animId, 32.0f);
+			}
+			if(!animAssoc){ EndFight(ENDFIGHT_FAST); return; }
+			animAssoc->SetFinishCallback(FinishFightMoveCB, this);
+			m_fightState = FIGHTSTATE_NO_MOVE;
 		m_fightButtonPressure = 0;
 		m_takeAStepAfterAttack = false;
 
@@ -1971,7 +2087,8 @@ CPed::EndFight(uint8 endType)
 			break;
 		case ENDFIGHT_FAST:
 			CAnimManager::BlendAnimation(GetClump(), m_animGroup, ANIM_STD_IDLE, 8.0f);
-			CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_FIGHT_2IDLE, 8.0f)->speed = 2.0f;
+			if(CAnimBlendAssociation *fade = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_FIGHT_2IDLE, 8.0f))
+				fade->speed = 2.0f;
 			break;
 		default:
 			break;
@@ -2200,7 +2317,8 @@ CPed::FightHitPed(CPed *victim, CVector &touchPoint, CVector &dir, int16 piece)
 	victim->StartFightDefend(direction, tFightMoves[m_curFightMove].hitLevel, unk2);
 	PlayHitSound(victim);
 	m_fightState = FIGHTSTATE_JUST_ATTACKED;
-	RpAnimBlendClumpGetAssociation(GetClump(), tFightMoves[m_curFightMove].animId)->speed = 0.6f;
+	if (CAnimBlendAssociation *attack = RpAnimBlendClumpGetAssociation(GetClump(), tFightMoves[m_curFightMove].animId))
+		attack->speed = 0.6f;
 
 	if (!victim->DyingOrDead()) {
 		if(fightingWithWeapon)
@@ -2386,7 +2504,10 @@ CPed::LoadFightData(void)
 		if (strcmp(animName, "default") != 0) {
 			if (strcmp(animName, "null") != 0) {
 				animAssoc = CAnimManager::GetAnimAssociation(ASSOCGRP_STD, animName);
-				tFightMoves[moveId].animId = (AnimationId)animAssoc->animId;
+				if(animAssoc)
+					tFightMoves[moveId].animId = (AnimationId)animAssoc->animId;
+				else
+					debug("Fight data: missing standard animation %s; keeping the built-in move mapping\n", animName);
 			} else {
 				tFightMoves[moveId].animId = ANIM_STD_WALK;
 			}
@@ -3511,7 +3632,8 @@ CPed::CollideWithPed(CPed *collideWith)
 								SetLookFlag(collideWith, false);
 								TurnBody();
 								animAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_PARTIAL_PUNCH, 8.0f);
-								animAssoc->flags |= ASSOC_FADEOUTWHENDONE;
+								if (animAssoc)
+									animAssoc->flags |= ASSOC_FADEOUTWHENDONE;
 								m_nPedStateTimer = CTimer::GetTimeInMilliseconds() + 2000;
 								if (!heIsMissionChar) {
 									CVector2D posDiff2D(posDiff);
@@ -3551,7 +3673,8 @@ CPed::CollideWithPed(CPed *collideWith)
 
 				if (collideWith->IsPedInControl() && CTimer::GetTimeInMilliseconds() > collideWith->m_nPedStateTimer) {
 					animAssoc = CAnimManager::BlendAnimation(collideWith->GetClump(), ASSOCGRP_STD, animToPlay, 8.0f);
-					animAssoc->flags |= ASSOC_FADEOUTWHENDONE;
+					if (animAssoc)
+						animAssoc->flags |= ASSOC_FADEOUTWHENDONE;
 					collideWith->m_nPedStateTimer = CTimer::GetTimeInMilliseconds() + 1000;
 					if (m_nPedState == PED_ATTACK)
 						DMAudio.PlayOneShot(m_audioEntityId, SOUND_49, 0.0f);
@@ -4021,7 +4144,15 @@ CPed::DriveVehicle(void)
 			if (!backAssoc)
 				backAssoc = CAnimManager::AddAnimation(GetClump(), bike->m_bikeAnimType, ANIM_BIKE_LEANB);
 
-			if (bike->m_fPedLeanAmountUD < 0.0f) {
+			// SA bike banks may not provide both VC lean animations.
+			if (!fwdAssoc || !backAssoc) {
+				static bool warnedMissingBikePitch = false;
+				if (!warnedMissingBikePitch) {
+					REVC_LOG_WARNING("Bike pitch animation missing (model=%d, group=%d); skipping pitch",
+						bike->GetModelIndex(), bike->m_bikeAnimType);
+					warnedMissingBikePitch = true;
+				}
+			} else if (bike->m_fPedLeanAmountUD < 0.0f) {
 				backAssoc->blendAmount = fwdBackBlend;
 				backAssoc->SetCurrentTime(-(bike->m_fPedLeanAmountUD * backAssoc->hierarchy->totalLength));
 				backAssoc->flags &= ~ASSOC_RUNNING;
@@ -4038,7 +4169,14 @@ CPed::DriveVehicle(void)
 		if (!rightAssoc)
 			rightAssoc = CAnimManager::AddAnimation(GetClump(), bike->m_bikeAnimType, ANIM_BIKE_RIGHT);
 
-		if (bike->m_fPedLeanAmountLR < 0.0f) {
+		if (!leftAssoc || !rightAssoc) {
+			static bool warnedMissingBikeRoll = false;
+			if (!warnedMissingBikeRoll) {
+				REVC_LOG_WARNING("Bike roll animation missing (model=%d, group=%d); skipping roll",
+					bike->GetModelIndex(), bike->m_bikeAnimType);
+				warnedMissingBikeRoll = true;
+			}
+		} else if (bike->m_fPedLeanAmountLR < 0.0f) {
 			leftAssoc->blendAmount = leftRightBlend;
 			leftAssoc->SetCurrentTime(-(bike->m_fPedLeanAmountLR * leftAssoc->hierarchy->totalLength));
 			leftAssoc->flags &= ~ASSOC_RUNNING;

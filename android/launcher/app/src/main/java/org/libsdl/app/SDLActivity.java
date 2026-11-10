@@ -30,6 +30,7 @@ import android.util.DisplayMetrics;
 import android.util.Log;
 import android.util.SparseArray;
 import android.view.Display;
+import android.view.DisplayCutout;
 import android.view.Gravity;
 import android.view.InputDevice;
 import android.view.KeyEvent;
@@ -38,6 +39,7 @@ import android.view.Surface;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
+import android.view.WindowInsets;
 import android.view.WindowManager;
 import android.view.inputmethod.BaseInputConnection;
 import android.view.inputmethod.EditorInfo;
@@ -268,9 +270,9 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
      * @return names of shared libraries to be loaded (e.g. "SDL2", "main").
      */
     protected String[] getLibraries() {
-        return new String[] {
-            "SDL2", "openal", "revc"
-        };
+        // OpenAL and mpg123 are loaded as dependencies of librevc.so, using
+        // their ELF SONAMEs (libOpenAL32.so / libOpenAL64.so on Android).
+        return new String[] { "SDL2", "revc" };
     }
 
     // Load the .so
@@ -280,6 +282,9 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
        }
     }
 
+    /** Intent extra carrying the app-owned directory that holds the game data. */
+    public static final String EXTRA_GAME_DIR = "revc.gameDir";
+
     /**
      * This method is called by SDL before starting the native application thread.
      * It can be overridden to provide the arguments after the application name.
@@ -287,7 +292,13 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
      * @return arguments for the native application.
      */
     protected String[] getArguments() {
-        return new String[0];
+        // The launcher installs reVC support data and asks the player for
+        // their own Vice City files in this app-owned, writable directory.
+        String gameDir = getIntent().getStringExtra(EXTRA_GAME_DIR);
+        if (gameDir == null && getExternalFilesDir(null) != null) {
+            gameDir = getExternalFilesDir(null).getAbsolutePath();
+        }
+        return gameDir == null ? new String[0] : new String[] { "--dir", gameDir };
     }
 
     public static void initialize() {
@@ -318,6 +329,8 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
         Log.v(TAG, "Model: " + Build.MODEL);
         Log.v(TAG, "onCreate()");
         super.onCreate(savedInstanceState);
+        setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
+        applyHighestRefreshRate();
 
         try {
             Thread.currentThread().setName("SDLActivity");
@@ -410,6 +423,23 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
         setContentView(mLayout);
 
         setWindowStyle(false);
+
+        if (Build.VERSION.SDK_INT >= 28) {
+            WindowManager.LayoutParams lp = getWindow().getAttributes();
+            lp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+            getWindow().setAttributes(lp);
+        }
+
+        updateMobileDisplayMetrics(null);
+        if (Build.VERSION.SDK_INT >= 20) {
+            getWindow().getDecorView().setOnApplyWindowInsetsListener(new View.OnApplyWindowInsetsListener() {
+                @Override
+                public WindowInsets onApplyWindowInsets(View v, WindowInsets insets) {
+                    updateMobileDisplayMetrics(insets);
+                    return v.onApplyWindowInsets(insets);
+                }
+            });
+        }
 
         getWindow().getDecorView().setOnSystemUiVisibilityChangeListener(this);
 
@@ -532,6 +562,7 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
 
         mHasFocus = hasFocus;
         if (hasFocus) {
+           applyHighestRefreshRate();
            mNextNativeState = NativeState.RESUMED;
            SDLActivity.getMotionListener().reclaimRelativeMouseModeIfNeeded();
 
@@ -929,6 +960,35 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
     public static native void nativeAddTouch(int touchId, String name);
     public static native void nativePermissionResult(int requestCode, boolean result);
     public static native void onNativeLocaleChanged();
+    public static native void nativeSetMobileDisplayMetrics(float density, float xdpi, float ydpi,
+                                                            int safeLeft, int safeTop, int safeRight, int safeBottom);
+
+    private void updateMobileDisplayMetrics(WindowInsets insets) {
+        if (SDLActivity.mBrokenLibraries) {
+            return;
+        }
+        try {
+            DisplayMetrics dm = getResources().getDisplayMetrics();
+            int safeL = 0, safeT = 0, safeR = 0, safeB = 0;
+            if (Build.VERSION.SDK_INT >= 28) {
+                WindowInsets wi = insets;
+                if (wi == null && getWindow() != null && getWindow().getDecorView() != null) {
+                    wi = getWindow().getDecorView().getRootWindowInsets();
+                }
+                if (wi != null) {
+                    DisplayCutout cutout = wi.getDisplayCutout();
+                    if (cutout != null) {
+                        safeL = cutout.getSafeInsetLeft();
+                        safeT = cutout.getSafeInsetTop();
+                        safeR = cutout.getSafeInsetRight();
+                        safeB = cutout.getSafeInsetBottom();
+                    }
+                }
+            }
+            nativeSetMobileDisplayMetrics(dm.density, dm.xdpi, dm.ydpi, safeL, safeT, safeR, safeB);
+        } catch (Throwable ignored) {
+        }
+    }
 
     /**
      * This method is called by SDL using JNI.
@@ -959,68 +1019,97 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
     }
 
     /**
+     * Asks the platform for the highest refresh rate that is available at the
+     * display's current resolution.
+     *
+     * Careful: a naive "pick the mode with the biggest refresh rate" sweep also
+     * switches to a lower panel resolution (some panels expose e.g. 120 Hz only
+     * at 1080p while running at 1440p otherwise), and it also changed the
+     * render surface size under SDL's feet. The display mode is therefore kept
+     * as it is and only the frame-rate hints are raised.
+     */
+    public void applyHighestRefreshRate() {
+        Display display;
+        try {
+            if (Build.VERSION.SDK_INT >= 30) {
+                display = getDisplay();
+            } else {
+                WindowManager wm = getWindowManager();
+                display = wm != null ? wm.getDefaultDisplay() : null;
+            }
+        } catch (Exception e) {
+            Log.v(TAG, "applyHighestRefreshRate: no display (" + e + ")");
+            return;
+        }
+        if (display == null) {
+            return;
+        }
+
+        float bestHz;
+        try {
+            Display.Mode activeMode = display.getMode();
+            bestHz = (activeMode != null) ? activeMode.getRefreshRate()
+                                          : display.getRefreshRate();
+            Display.Mode[] modes = display.getSupportedModes();
+            if (modes != null && activeMode != null) {
+                for (Display.Mode mode : modes) {
+                    if (mode.getPhysicalWidth() == activeMode.getPhysicalWidth() &&
+                            mode.getPhysicalHeight() == activeMode.getPhysicalHeight() &&
+                            mode.getRefreshRate() > bestHz) {
+                        bestHz = mode.getRefreshRate();
+                    }
+                }
+            }
+        } catch (Exception e) {
+            Log.v(TAG, "applyHighestRefreshRate: mode query failed (" + e + ")");
+            return;
+        }
+        if (!(bestHz > 0.0f)) {
+            return;
+        }
+
+        try {
+            Window window = getWindow();
+            if (window != null) {
+                WindowManager.LayoutParams lp = window.getAttributes();
+                // preferredDisplayModeId is deliberately left alone: setting it
+                // to a different mode id would also resize the window/surface.
+                if (Math.abs(lp.preferredRefreshRate - bestHz) > 0.1f) {
+                    lp.preferredRefreshRate = bestHz;
+                    window.setAttributes(lp);
+                }
+            }
+        } catch (Exception e) {
+            Log.v(TAG, "applyHighestRefreshRate: window hint failed (" + e + ")");
+        }
+
+        if (Build.VERSION.SDK_INT >= 30 && mSurface != null) {
+            try {
+                Surface surface = mSurface.getNativeSurface();
+                if (surface != null && surface.isValid()) {
+                    surface.setFrameRate(bestHz, Surface.FRAME_RATE_COMPATIBILITY_DEFAULT);
+                }
+            } catch (Exception e) {
+                Log.v(TAG, "applyHighestRefreshRate: setFrameRate failed (" + e + ")");
+            }
+        }
+    }
+
+    /**
      * This can be overridden
      */
     public void setOrientationBis(int w, int h, boolean resizable, String hint)
     {
-        int orientation_landscape = -1;
-        int orientation_portrait = -1;
-
-        /* If set, hint "explicitly controls which UI orientations are allowed". */
-        if (hint.contains("LandscapeRight") && hint.contains("LandscapeLeft")) {
-            orientation_landscape = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE;
-        } else if (hint.contains("LandscapeLeft")) {
-            orientation_landscape = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE;
-        } else if (hint.contains("LandscapeRight")) {
-            orientation_landscape = ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE;
-        }
-
-        /* exact match to 'Portrait' to distinguish with PortraitUpsideDown */
-        boolean contains_Portrait = hint.contains("Portrait ") || hint.endsWith("Portrait");
-
-        if (contains_Portrait && hint.contains("PortraitUpsideDown")) {
-            orientation_portrait = ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT;
-        } else if (contains_Portrait) {
-            orientation_portrait = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT;
-        } else if (hint.contains("PortraitUpsideDown")) {
-            orientation_portrait = ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT;
-        }
-
-        boolean is_landscape_allowed = (orientation_landscape != -1);
-        boolean is_portrait_allowed = (orientation_portrait != -1);
-        int req; /* Requested orientation */
-
-        /* No valid hint, nothing is explicitly allowed */
-        if (!is_portrait_allowed && !is_landscape_allowed) {
-            if (resizable) {
-                /* All orientations are allowed, respecting user orientation lock setting */
-                req = ActivityInfo.SCREEN_ORIENTATION_FULL_USER;
-            } else {
-                /* Fixed window and nothing specified. Get orientation from w/h of created window */
-                req = (w > h ? ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE : ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT);
-            }
-        } else {
-            /* At least one orientation is allowed */
-            if (resizable) {
-                if (is_portrait_allowed && is_landscape_allowed) {
-                    /* hint allows both landscape and portrait, promote to full user */
-                    req = ActivityInfo.SCREEN_ORIENTATION_FULL_USER;
-                } else {
-                    /* Use the only one allowed "orientation" */
-                    req = (is_landscape_allowed ? orientation_landscape : orientation_portrait);
-                }
-            } else {
-                /* Fixed window and both orientations are allowed. Choose one. */
-                if (is_portrait_allowed && is_landscape_allowed) {
-                    req = (w > h ? orientation_landscape : orientation_portrait);
-                } else {
-                    /* Use the only one allowed "orientation" */
-                    req = (is_landscape_allowed ? orientation_landscape : orientation_portrait);
-                }
+        // Portrait mode is strictly disabled: always enforce sensor landscape.
+        int req = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE;
+        if (hint != null) {
+            if (hint.contains("LandscapeLeft") && !hint.contains("LandscapeRight")) {
+                req = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE;
+            } else if (hint.contains("LandscapeRight") && !hint.contains("LandscapeLeft")) {
+                req = ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE;
             }
         }
-
-        Log.v(TAG, "setOrientation() requestedOrientation=" + req + " width=" + w +" height="+ h +" resizable=" + resizable + " hint=" + hint);
+        Log.v(TAG, "setOrientation() forced landscape=" + req + " width=" + w + " height=" + h + " hint=" + hint);
         mSingleton.setRequestedOrientation(req);
     }
 
@@ -1043,23 +1132,11 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
      * This method is called by SDL using JNI.
      */
     public static boolean shouldMinimizeOnFocusLoss() {
-/*
-        if (Build.VERSION.SDK_INT >= 24) {
-            if (mSingleton == null) {
-                return true;
-            }
-
-            if (mSingleton.isInMultiWindowMode()) {
-                return false;
-            }
-
-            if (mSingleton.isInPictureInPictureMode()) {
-                return false;
-            }
-        }
-
-        return true;
-*/
+        // Android already suspends the activity through onPause()/onResume() when
+        // the app leaves the foreground. Minimizing on top of that (which is
+        // what returning true asks SDL to do) would also tear the window down
+        // when a system dialog - permission prompt, volume panel, controller
+        // pairing - steals focus for a moment. Keep the upstream SDL behaviour.
         return false;
     }
 

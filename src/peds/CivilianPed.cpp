@@ -495,10 +495,10 @@ void CCivilianPed::UseNearbyAttractors()
 	float right = GetPosition().x + gDistanceToSeekAttractors;
 	float top = GetPosition().y - gDistanceToSeekAttractors;
 	float bottom = GetPosition().y + gDistanceToSeekAttractors;
-	int xstart = Max(0, CWorld::GetSectorIndexX(left));
-	int xend = Min(NUMSECTORS_X - 1, CWorld::GetSectorIndexX(right));
-	int ystart = Max(0, CWorld::GetSectorIndexY(top));
-	int yend = Min(NUMSECTORS_Y - 1, CWorld::GetSectorIndexY(bottom));
+	int xstart = CWorld::GetSectorIndexX(left);
+	int xend = CWorld::GetSectorIndexX(right);
+	int ystart = CWorld::GetSectorIndexY(top);
+	int yend = CWorld::GetSectorIndexY(bottom);
 	assert(xstart <= xend);
 	assert(ystart <= yend);
 
@@ -551,14 +551,9 @@ CCivilianPed::EnterVacantNearbyCars(void)
 				CVehicle *foundCar = nil;
 				float closestDist = FLT_MAX;
 				int minX = CWorld::GetSectorIndexX(GetPosition().x - 10.0f);
-				if (minX < 0) minX = 0;
 				int minY = CWorld::GetSectorIndexY(GetPosition().y - 10.0f);
-				if (minY < 0) minY = 0;
 				int maxX = CWorld::GetSectorIndexX(GetPosition().x + 10.0f);
-				if (maxX > NUMSECTORS_X - 1) maxX = NUMSECTORS_X - 1;
 				int maxY = CWorld::GetSectorIndexY(GetPosition().y + 10.0f);
-				if (maxY > NUMSECTORS_Y - 1) maxY = NUMSECTORS_Y - 1;
-
 				for (int curY = minY; curY <= maxY; curY++) {
 					for (int curX = minX; curX <= maxX; curX++) {
 						CSector* sector = CWorld::GetSector(curX, curY);

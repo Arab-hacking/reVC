@@ -14,6 +14,7 @@
 #include "Object.h"
 #include "Pad.h"
 #include "Pickups.h"
+#include "PickupModelValidation.h"
 #include "PlayerPed.h"
 #include "Wanted.h"
 #include "DMAudio.h"
@@ -184,12 +185,19 @@ CPickup::GiveUsAPickUpObject(CObject **ppObject, CObject **ppExtraObject, int32 
 
 	object = extraObject = nil;
 
+	CBaseModelInfo *modelInfo = GetPickupModelInfo(m_eModelIndex);
+	if (modelInfo == nil)
+		return nil;
+
 	int32 modelId = -1;
-	if (CModelInfo::GetModelInfo(m_eModelIndex)->GetModelType() == MITYPE_WEAPON) {
-		CWeaponInfo *weaponInfo = CWeaponInfo::GetWeaponInfo(((CWeaponModelInfo*)CModelInfo::GetModelInfo(m_eModelIndex))->GetWeaponInfo());
+	if (modelInfo->GetModelType() == MITYPE_WEAPON) {
+		CWeaponInfo *weaponInfo = CWeaponInfo::GetWeaponInfo(((CWeaponModelInfo*)modelInfo)->GetWeaponInfo());
 		modelId = weaponInfo->m_nModelId;
 		if (modelId == m_eModelIndex)
 			modelId = weaponInfo->m_nModel2Id;
+		// A weapon's secondary model is optional, even if its IDE is absent.
+		if (GetPickupModelInfo(modelId) == nil)
+			modelId = -1;
 	}
 
 	if (handle >= 0) {
@@ -296,6 +304,16 @@ CPickup::Update(CPlayerPed *player, CVehicle *vehicle, int playerId)
 	bool result = false;
 	float waterLevel;
 
+	// A saved/respawning pickup can also reference a model from a disabled
+	// native IDE. Retire it once rather than trying to create it each frame.
+	if (m_pObject == nil && GetPickupModelInfo(m_eModelIndex) == nil) {
+		REVC_LOG_WARNING("Discarding pickup with unavailable model %d (type=%u)",
+			m_eModelIndex, (uint32)m_eType);
+		m_eType = PICKUP_NONE;
+		m_bRemoved = true;
+		return false;
+	}
+
 	if (m_pObject) {
 		m_pObject->GetMatrix().GetPosition() = m_vecPos;
 		if (m_pExtraObject)
@@ -310,7 +328,8 @@ CPickup::Update(CPlayerPed *player, CVehicle *vehicle, int playerId)
 
 		m_fRevenue = Min(m_fRevenue, m_nQuantity);
 
-		m_pObject->m_nCostValue = m_fRevenue < 10 ? 0 : m_fRevenue;
+		if (m_pObject)
+			m_pObject->m_nCostValue = m_fRevenue < 10 ? 0 : m_fRevenue;
 	}
 
 	if (m_bRemoved) {
@@ -709,7 +728,7 @@ bool
 CPickups::TestForPickupsInBubble(CVector pos, float range)
 {
 	for (int i = 0; i < NUMPICKUPS; i++) {
-		if ((aPickUps[i].m_vecPos - pos).Magnitude() < range)
+		if (aPickUps[i].m_eType != PICKUP_NONE && (aPickUps[i].m_vecPos - pos).Magnitude() < range)
 			return true;
 	}
 	return false;
@@ -755,7 +774,7 @@ CPickups::PassTime(uint32 time)
 int32
 CPickups::GetActualPickupIndex(int32 index)
 {
-	if (index == -1) return -1;
+	if (index == -1 || (uint16)index >= NUMPICKUPS) return -1;
 
 	// doesn't look nice
 	if ((uint16)((index & 0xFFFF0000) >> 16) != aPickUps[(uint16)index].m_nIndex) return -1;
@@ -825,6 +844,15 @@ CPickups::RemovePickUp(int32 pickupIndex)
 int32
 CPickups::GenerateNewOne(CVector pos, uint32 modelIndex, uint8 type, uint32 quantity, uint32 rate, bool highPriority, char* pText)
 {
+	// In map-free mode the stock script still requests VC pickups whose
+	// DATA/MAPS IDEs were deliberately not loaded. Do not allocate a slot or
+	// call CObject with a missing model: GetModelInfo(-1) is unchecked.
+	if (modelIndex >= MODELINFOSIZE || GetPickupModelInfo(modelIndex) == nil) {
+		REVC_LOG_WARNING("Skipping pickup: missing/incompatible model %d (type=%u at %.1f, %.1f, %.1f)",
+			(int32)modelIndex, (uint32)type, pos.x, pos.y, pos.z);
+		return -1;
+	}
+
 	bool bFreeFound = false;
 	int32 slot = 0;
 
@@ -923,11 +951,14 @@ CPickups::ModelForWeapon(eWeaponType weaponType)
 eWeaponType
 CPickups::WeaponForModel(int32 model)
 {
+	if (model < 0 || model >= MODELINFOSIZE) return WEAPONTYPE_UNARMED;
 	if (model == MI_PICKUP_BODYARMOUR) return WEAPONTYPE_ARMOUR;
 	if (model == MI_PICKUP_HEALTH) return WEAPONTYPE_HEALTH;
 	if (model == MI_PICKUP_ADRENALINE) return WEAPONTYPE_ARMOUR;
-	if (model == -1) return WEAPONTYPE_UNARMED;
-	return ((CWeaponModelInfo*)CModelInfo::GetModelInfo(model))->GetWeaponInfo();
+	CBaseModelInfo *modelInfo = GetPickupModelInfo(model);
+	if (modelInfo == nil || modelInfo->GetModelType() != MITYPE_WEAPON)
+		return WEAPONTYPE_UNARMED;
+	return ((CWeaponModelInfo*)modelInfo)->GetWeaponInfo();
 }
 
 void

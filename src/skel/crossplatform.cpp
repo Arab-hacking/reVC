@@ -75,8 +75,10 @@ void tmToSystemTime(const tm *tm, SYSTEMTIME *out) {
 
 void GetLocalTime_CP(SYSTEMTIME *out) {
     time_t timestamp = time(nil);
-    tm *localTm = localtime(&timestamp);
-    tmToSystemTime(localTm, out);
+    tm localTm;
+    if (localtime_r(&timestamp, &localTm) == nil)
+        return;
+    tmToSystemTime(&localTm, out);
 }
 #endif
 
@@ -84,6 +86,8 @@ void GetLocalTime_CP(SYSTEMTIME *out) {
 #ifndef _WIN32
 HANDLE FindFirstFile(const char* pathname, WIN32_FIND_DATA* firstfile) {
 	char pathCopy[MAX_PATH];
+	if (pathname == nil || strlen(pathname) >= sizeof(pathCopy) || firstfile == nil)
+		return nil;
 	strcpy(pathCopy, pathname);
 
 	char *folder = strtok(pathCopy, "*");
@@ -100,38 +104,54 @@ HANDLE FindFirstFile(const char* pathname, WIN32_FIND_DATA* firstfile) {
         folder = realFolder;
 	}
 
-	strncpy(firstfile->folder, folder, sizeof(firstfile->folder));
+	// strncpy() does not terminate when the source is too long; the resulting
+	// garbage folder name was then passed to opendir().
+	strncpy(firstfile->folder, folder, sizeof(firstfile->folder) - 1);
+	firstfile->folder[sizeof(firstfile->folder) - 1] = '\0';
 
-	if (extension)
-		strncpy(firstfile->extension, extension, sizeof(firstfile->extension));
-	else
+	if (extension) {
+		strncpy(firstfile->extension, extension, sizeof(firstfile->extension) - 1);
+		firstfile->extension[sizeof(firstfile->extension) - 1] = '\0';
+	} else {
 		firstfile->extension[0] = '\0';
+	}
 
     if (realFolder)
         free(realFolder);
 
-	HANDLE d;
-	if ((d = (HANDLE)opendir(firstfile->folder)) == NULL || !FindNextFile(d, firstfile))
+	HANDLE d = (HANDLE)opendir(firstfile->folder);
+	if (d == NULL)
 		return NULL;
+	if (!FindNextFile(d, firstfile)) {
+		closedir((DIR*)d);
+		return NULL;
+	}
 
 	return d;
 }
 
 bool FindNextFile(HANDLE d, WIN32_FIND_DATA* finddata) {
 	dirent *file;
-	static struct stat fileStats;
-	static char path[PATH_MAX], relativepath[NAME_MAX + sizeof(finddata->folder) + 1];
-	int extensionLen = strlen(finddata->extension);
+	// These used to be static: the game opens nested scans (IMG inside a
+	// directory, custom archives inside the game folder), which overwrote the
+	// path/stats of the outer scan and returned files from the wrong folder.
+	struct stat fileStats;
+	char relativepath[NAME_MAX + sizeof(finddata->folder) + 2];
+	int extensionLen = (int)strlen(finddata->extension);
 	while ((file = readdir((DIR*)d)) != NULL) {
+		if (strcmp(file->d_name, ".") == 0 || strcmp(file->d_name, "..") == 0)
+			continue;
 
+		int nameLen = (int)strlen(file->d_name);
 		// We only want "DT_REG"ular Files, but reportedly some FS and OSes gives DT_UNKNOWN as type.
 		if ((file->d_type == DT_UNKNOWN || file->d_type == DT_REG || file->d_type == DT_LNK) &&
-			(extensionLen == 0 || strncasecmp(&file->d_name[strlen(file->d_name) - extensionLen], finddata->extension, extensionLen) == 0)) {
+			(extensionLen == 0 || (nameLen >= extensionLen && strncasecmp(&file->d_name[nameLen - extensionLen], finddata->extension, extensionLen) == 0))) {
 
-			sprintf(relativepath, "%s/%s", finddata->folder, file->d_name);
-			realpath(relativepath, path);
-			stat(path, &fileStats);
-			strncpy(finddata->cFileName, file->d_name, sizeof(finddata->cFileName));
+			snprintf(relativepath, sizeof(relativepath), "%s/%s", finddata->folder, file->d_name);
+			if (stat(relativepath, &fileStats) != 0 || S_ISDIR(fileStats.st_mode))
+				continue;
+			strncpy(finddata->cFileName, file->d_name, sizeof(finddata->cFileName) - 1);
+			finddata->cFileName[sizeof(finddata->cFileName) - 1] = '\0';
 			finddata->ftLastWriteTime = fileStats.st_mtime;
 			return true;
 		}
@@ -156,8 +176,12 @@ void GetDateFormat(int unused1, int unused2, SYSTEMTIME* in, int unused3, char* 
 }
 
 void FileTimeToSystemTime(time_t* writeTime, SYSTEMTIME* out) {
-	tm *ptm = gmtime(writeTime);
-	tmToSystemTime(ptm, out);
+	tm tmValue;
+	// gmtime() returns a pointer to a shared static tm: the game converts save
+	// timestamps from several threads.
+	if (gmtime_r(writeTime, &tmValue) == nil)
+		return;
+	tmToSystemTime(&tmValue, out);
 }
 #endif
 
@@ -165,7 +189,13 @@ void FileTimeToSystemTime(time_t* writeTime, SYSTEMTIME* out) {
 wchar*
 AllocUnicode(const char* src)
 {
-	wchar *dst = (wchar*)malloc(strlen(src)*2 + 2);
+	if (src == nil)
+		return nil;
+	// One wchar per input byte plus the terminator; the old 2x allocation
+	// overflowed for very long strings and wasted memory for short ones.
+	wchar *dst = (wchar*)malloc((strlen(src) + 1) * sizeof(wchar));
+	if (dst == nil)
+		return nil;
 	wchar *i = dst;
 	while((*i++ = (unsigned char)*src++) != '\0');
 	return dst;
@@ -243,22 +273,41 @@ int _caserename(const char *old_filename, const char *new_filename)
 // Returned string should freed manually (if exists)
 char* casepath(char const* path, bool checkPathFirst)
 {
-    if (checkPathFirst && access(path, F_OK) != -1) {
-        // File path is correct
+    if (!path)
         return nil;
-    }
 
     size_t l = strlen(path);
+    if (l > 4000) // alloca of an unbounded path can blow the game's stack
+        return nil;
     char* p = (char*)alloca(l + 1);
-    char* out = (char*)malloc(l + 3); // for extra ./
     strcpy(p, path);
 
     // my addon: linux doesn't handle filenames with spaces at the end nicely
     p = trim(p);
+    l = strlen(p);
 
+    if (checkPathFirst) {
+        bool hadBackslash = false;
+        char* slashNorm = (char*)alloca(l + 1);
+        for (size_t i = 0; i <= l; i++) {
+            if (p[i] == '\\') {
+                slashNorm[i] = '/';
+                hadBackslash = true;
+            } else {
+                slashNorm[i] = p[i];
+            }
+        }
+        if (access(slashNorm, F_OK) != -1) {
+            // If there were no backslashes, caller's original string already works;
+            // if backslashes were converted, return the normalized path.
+            return hadBackslash ? strdup(slashNorm) : nil;
+        }
+    }
+
+    char* out = (char*)malloc(l + 4); // for extra ./ and trailing slash
     size_t rl = 0;
 
-    DIR* d;
+    DIR* d = NULL;
     char* c;
 
     #if defined(__SWITCH__) || defined(PSP2)
@@ -273,23 +322,14 @@ char* casepath(char const* path, bool checkPathFirst)
     }
     else
     #endif
-#if defined(ANDROID) // TODO: Android is fuck!!!
-    char cwd[MAX_PATH];
-    getcwd(cwd, sizeof(cwd));
-
-    char* pos = strstr(p, CFileMgr::GetRootDirName());
-    if (pos != NULL) {
-        pos += strlen(CFileMgr::GetRootDirName());
-        p = pos;
-    }
-    d = opendir(cwd);
-    out[0] = '.';
-    out[1] = 0;
-    rl = 1;
-#else
+    // Android uses normal POSIX paths too. Note that on Android 11+ SELinux,
+    // ancestor directories (/, /storage, /storage/emulated/0/Android/data) are
+    // execute-only (0711): opendir("/") returns NULL (EACCES), while stat() and
+    // opendir() on the app's own directory succeed. Never pass NULL to readdir().
     if (p[0] == '/' || p[0] == '\\')
     {
         d = opendir("/");
+        out[0] = '\0';
     }
     else
     {
@@ -298,12 +338,11 @@ char* casepath(char const* path, bool checkPathFirst)
         out[1] = 0;
         rl = 1;
     }
-#endif
 
     bool cantProceed = false; // just convert slashes in what's left in string, don't correct case of letters(because we can't)
     bool mayBeTrailingSlash = false;
 
-    while (c = strsep(&p, "/\\"))
+    while ((c = strsep(&p, "/\\")) != NULL)
     {
         // May be trailing slash(allow), slash at the start(avoid), or multiple slashes(avoid)
         if (*c == '\0')
@@ -320,27 +359,55 @@ char* casepath(char const* path, bool checkPathFirst)
 
         if (cantProceed)
         {
-            strcpy(out + rl, c);
-            rl += strlen(c);
+            size_t cl = strlen(c);
+            if (rl + cl >= l + 4) { closedir(d); free(out); return nil; }
+            memcpy(out + rl, c, cl + 1);
+            rl += cl;
+            continue;
+        }
+
+        if (!d)
+        {
+            // Unreadable ancestor directory (e.g. Android SELinux 0711 / or /Android/data):
+            // advance with exact component if it is a traversable directory, and open it
+            // as soon as permissions allow so child paths still get case-folded.
+            size_t cl = strlen(c);
+            if (rl + cl >= l + 4) { free(out); return nil; }
+            memcpy(out + rl, c, cl + 1);
+            rl += cl;
+            struct stat st;
+            if (stat(out, &st) == 0 && S_ISDIR(st.st_mode)) {
+                d = opendir(out);
+            } else {
+                cantProceed = true;
+            }
             continue;
         }
 
         struct dirent* e;
-        while (e = readdir(d))
+        while ((e = readdir(d)) != NULL)
         {
             if (strcasecmp(c, e->d_name) == 0)
             {
-                strcpy(out + rl, e->d_name);
-                int reportedLen = (int)strlen(e->d_name);
-                rl += reportedLen;
-                assert(reportedLen == strlen(c) && "casepath: This is not good at all");
+                int reportedLen = (int)snprintf(out + rl, l + 4 - rl, "%s", e->d_name);
+                if (reportedLen < 0 || rl + (size_t)reportedLen >= l + 4) {
+                    // Would not fit in the buffer: give up on case folding
+                    // instead of asserting (release builds ignore assert() and
+                    // used to overflow `out` here).
+                    closedir(d);
+                    free(out);
+                    return nil;
+                }
+                rl += (size_t)reportedLen;
 
                 closedir(d);
                 d = opendir(out);
 
                 // Either it wasn't a folder, or permission error, I/O error etc.
                 if (!d) {
-                    cantProceed = true;
+                    struct stat st;
+                    if (!(stat(out, &st) == 0 && S_ISDIR(st.st_mode)))
+                        cantProceed = true;
                 }
 
                 break;
@@ -351,8 +418,12 @@ char* casepath(char const* path, bool checkPathFirst)
         {
             debug("casepath couldn't find dir/file \"%s\", full path was %s\n", c, path);
             // No match, add original name and continue converting further slashes.
-            strcpy(out + rl, c);
-            rl += strlen(c);
+            size_t cl = strlen(c);
+            if (rl + cl >= l + 4) { closedir(d); free(out); return nil; }
+            memcpy(out + rl, c, cl + 1);
+            rl += cl;
+            closedir(d);
+            d = NULL;
             cantProceed = true;
         }
     }
@@ -374,8 +445,10 @@ char* casepath(char const* path, bool checkPathFirst)
 char *strdate(char *buf) {
 	time_t timestamp;
 	time(&timestamp);
-	tm *localTm = localtime(&timestamp);
-	strftime(buf, 10, "%m/%d/%y", localTm);
+	tm localTm;
+	if (localtime_r(&timestamp, &localTm) == nil)
+		return buf;
+	strftime(buf, 10, "%m/%d/%y", &localTm);
 	return buf;
 }
 

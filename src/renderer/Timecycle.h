@@ -1,8 +1,11 @@
 #ifndef __GTA_TIMECYCLE_H__
 #define __GTA_TIMECYCLE_H__
 
+class CCustomTimecycle;	// fills the tables out of the client's data files
+
 class CTimeCycle
 {
+public:		// the tables are written by the game code and the custom loader
 	static uint8 m_nAmbientRed[NUMHOURS][NUMWEATHERS];
 	static uint8 m_nAmbientGreen[NUMHOURS][NUMWEATHERS];
 	static uint8 m_nAmbientBlue[NUMHOURS][NUMWEATHERS];

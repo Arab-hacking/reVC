@@ -84,6 +84,16 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
     @Override
     public void surfaceCreated(SurfaceHolder holder) {
         Log.v("SDL", "surfaceCreated()");
+        if (SDLActivity.mSingleton != null) {
+            SDLActivity.mSingleton.runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    if (SDLActivity.mSingleton != null) {
+                        SDLActivity.mSingleton.applyHighestRefreshRate();
+                    }
+                }
+            });
+        }
         SDLActivity.onNativeSurfaceCreated();
     }
 
@@ -132,6 +142,14 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
 
         Log.v("SDL", "Window size: " + width + "x" + height);
         Log.v("SDL", "Device size: " + nDeviceWidth + "x" + nDeviceHeight);
+        SDLActivity.mSingleton.runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                if (SDLActivity.mSingleton != null) {
+                    SDLActivity.mSingleton.applyHighestRefreshRate();
+                }
+            }
+        });
         SDLActivity.nativeSetScreenResolution(width, height, nDeviceWidth, nDeviceHeight, mDisplay.getRefreshRate());
         SDLActivity.onNativeResize();
 

@@ -478,10 +478,11 @@ bool
 CdStreamAddImage(char const *path)
 {
 	ASSERT(path != nil);
-	ASSERT(gNumImages < MAX_CDIMAGES);
-	
-	SetLastError(0);
-	
+	if(gNumImages >= MAX_CDIMAGES || strlen(path) >= sizeof(gCdImageNames[0])){
+		REVC_LOG_ERROR("Cannot mount IMG %s: too many images or path too long", path);
+		return false;
+	}
+
 	gImgFiles[gNumImages] = CreateFile(path,
 	                                   GENERIC_READ,
 	                                   FILE_SHARE_READ,
@@ -489,15 +490,26 @@ CdStreamAddImage(char const *path)
 	                                   OPEN_EXISTING,
 	                                   _gdwCdStreamFlags | FILE_FLAG_RANDOM_ACCESS | FILE_ATTRIBUTE_READONLY,
 	                                   nil);
-	
-	ASSERT( gImgFiles[gNumImages] != nil );
-	if ( gImgFiles[gNumImages] == NULL )
+
+	// CreateFile returns INVALID_HANDLE_VALUE, *not* NULL, on failure. A bad
+	// handle used to be registered as an IMG, leaving DIR entries pointing at
+	// an unreadable archive (and preventing fallback to GTA3.IMG).
+	if(gImgFiles[gNumImages] == INVALID_HANDLE_VALUE){
+		DWORD error = GetLastError();
+		gImgFiles[gNumImages] = nil;
+		REVC_LOG_ERROR("Cannot mount IMG %s (Win32 error %lu)", path, (unsigned long)error);
 		return false;
-	
+	}
+
 	strcpy(gCdImageNames[gNumImages], path);
-	
+	LARGE_INTEGER bytes;
+	if(GetFileSizeEx(gImgFiles[gNumImages], &bytes))
+		REVC_LOG_INFO("Mounted IMG %d: %s (%llu bytes)", gNumImages, path,
+			(unsigned long long)bytes.QuadPart);
+	else
+		REVC_LOG_WARNING("Mounted IMG %d: %s (file size unavailable, Win32 error %lu)",
+			gNumImages, path, (unsigned long)GetLastError());
 	gNumImages++;
-	
 	return true;
 }
 

@@ -15,6 +15,9 @@
 #include "Camera.h"
 #include "Weather.h"
 #include "Timecycle.h"
+#ifdef RW_GL3
+#include "GL3Atmosphere.h"
+#endif
 #include "Clock.h"
 #include "World.h"
 #include "Vehicle.h"
@@ -41,6 +44,7 @@
 #include "custompipes.h"
 #include "MemoryHeap.h"
 #include "FileMgr.h"
+#include "DebugLog.h"
 #include "Camera.h"
 #include "MBlur.h"
 #include "ControllerConfig.h"
@@ -517,13 +521,20 @@ void SaveINIControllerSettings()
 #endif
 	StoreIni("Controller", "PadButtonsInited", ControlsManager.ms_padButtonsInited);
 
-	ini.write(cfg);
+	if(!ini.write(cfg))
+		REVC_LOG_ERROR("Could not save controller settings to reVC.ini");
+	else
+		REVC_LOG_INFO("Saved controller settings to reVC.ini");
 }
 
 bool LoadINISettings()
 {
-	if (!ini.read(cfg))
+	CGame::bLoadViceCityMap = true;
+	if (!ini.read(cfg)){
+		REVC_LOG_WARNING("Could not read reVC.ini; using default settings");
 		return false;
+	}
+	REVC_LOG_INFO("Loaded settings from reVC.ini");
 
 #ifdef IMPROVED_VIDEOMODE
 	ReadIniIfExists("VideoMode", "Width", &FrontEndMenuManager.m_nPrefsWidth);
@@ -549,7 +560,17 @@ bool LoadINISettings()
 #endif
 	ReadIniIfExists("Audio", "DynamicAcoustics", &FrontEndMenuManager.m_PrefsDMA);
 	ReadIniIfExists("Display", "Brightness", &FrontEndMenuManager.m_PrefsBrightness);
-	ReadIniIfExists("Display", "DrawDistance", &FrontEndMenuManager.m_PrefsLOD);
+	if (ReadIniIfExists("Display", "DrawDistance", &FrontEndMenuManager.m_PrefsLOD)) {
+		FrontEndMenuManager.m_PrefsLOD = Clamp(FrontEndMenuManager.m_PrefsLOD, DRAWDIST_MIN, DRAWDIST_MAX);
+		CRenderer::ms_lodDistScale = FrontEndMenuManager.m_PrefsLOD;
+	}
+	if (ReadIniIfExists("Display", "LightDistance", &CRenderer::ms_fLightDistScale)) {
+		int32 lightDistVer = 0;
+		ReadIniIfExists("Display", "LightDistanceVersion", &lightDistVer);
+		if (lightDistVer < 2 && CRenderer::ms_fLightDistScale < LIGHTDIST_DEFAULT)
+			CRenderer::ms_fLightDistScale = LIGHTDIST_DEFAULT;
+		CRenderer::ms_fLightDistScale = Clamp(CRenderer::ms_fLightDistScale, LIGHTDIST_MIN, LIGHTDIST_MAX);
+	}
 	ReadIniIfExists("Display", "Subtitles", &FrontEndMenuManager.m_PrefsShowSubtitles);
 	ReadIniIfExists("Graphics", "AspectRatio", &FrontEndMenuManager.m_PrefsUseWideScreen);
 	ReadIniIfExists("Graphics", "FrameLimiter", &FrontEndMenuManager.m_PrefsFrameLimiter);
@@ -558,6 +579,10 @@ bool LoadINISettings()
 	ReadIniIfExists("Graphics", "Trails", &CMBlur::BlurOn);
 #endif
 	ReadIniIfExists("General", "SkinFile", FrontEndMenuManager.m_PrefsSkinFile, 256);
+	ReadIniIfExists("World", "LoadViceCityMap", &CGame::bLoadViceCityMap);
+#ifdef RW_GL3
+	ReadIniIfExists("Rendering", "GL3Atmosphere", &GL3Atmosphere::Enabled);
+#endif
 	ReadIniIfExists("Controller", "Method", &FrontEndMenuManager.m_ControlMethod);
 	ReadIniIfExists("General", "Language", &FrontEndMenuManager.m_PrefsLanguage);
 	ReadIniIfExists("Display", "ShowHud", &FrontEndMenuManager.m_PrefsShowHud);
@@ -629,6 +654,34 @@ bool LoadINISettings()
 	CCarCtrl::MaxNumberOfCarsInUse = DEFAULT_MAX_NUMBER_OF_CARS * CIniFile::CarNumberMultiplier;
 #endif
 
+#ifdef ANDROID
+	// Frame limiter, VSync and widescreen were read from reVC.ini above and are
+	// offered in the in-game menu. Forcing them here made the menu show values
+	// that were never applied (and silently reset the player's choice on every
+	// launch). Only add the platform defaults for the keys the file did not
+	// contain, which is what a first run should get.
+	if (!cfg.get("Graphics").has("FrameLimiter"))
+		FrontEndMenuManager.m_PrefsFrameLimiter = 0;
+	if (!cfg.get("Graphics").has("VSync"))
+		FrontEndMenuManager.m_PrefsVsyncDisp = 0;
+#ifdef ASPECT_RATIO_SCALE
+	if (!cfg.get("Graphics").has("AspectRatio"))
+		FrontEndMenuManager.m_PrefsUseWideScreen = AR_AUTO;
+#endif
+	FrontEndMenuManager.m_PrefsVsync = FrontEndMenuManager.m_PrefsVsyncDisp;
+	FrontEndMenuManager.m_ControlMethod = CONTROL_STANDARD;
+	CCamera::m_bUseMouse3rdPerson = true;
+	CVehicle::m_bDisableMouseSteering = true;
+#ifdef EXTENDED_COLOURFILTER
+	{
+		int32 mobilePostFxVer = 0;
+		ReadIniIfExists("Graphics", "MobilePostFXVersion", &mobilePostFxVer);
+		if (mobilePostFxVer < 1)
+			CPostFX::EffectSwitch = CPostFX::POSTFX_OFF;
+	}
+#endif
+#endif
+
 	return true;
 }
 
@@ -659,6 +712,8 @@ void SaveINISettings()
 	StoreIni("Audio", "DynamicAcoustics", FrontEndMenuManager.m_PrefsDMA);
 	StoreIni("Display", "Brightness", FrontEndMenuManager.m_PrefsBrightness);
 	StoreIni("Display", "DrawDistance", FrontEndMenuManager.m_PrefsLOD);
+	StoreIni("Display", "LightDistance", CRenderer::ms_fLightDistScale);
+	StoreIni("Display", "LightDistanceVersion", (int32)2);
 	StoreIni("Display", "Subtitles", FrontEndMenuManager.m_PrefsShowSubtitles);
 	StoreIni("Graphics", "AspectRatio", FrontEndMenuManager.m_PrefsUseWideScreen);
 #ifdef LEGACY_MENU_OPTIONS
@@ -667,6 +722,10 @@ void SaveINISettings()
 #endif
 	StoreIni("Graphics", "FrameLimiter", FrontEndMenuManager.m_PrefsFrameLimiter);
 	StoreIni("General", "SkinFile", FrontEndMenuManager.m_PrefsSkinFile, 256);
+	StoreIni("World", "LoadViceCityMap", (uint8)CGame::bLoadViceCityMap);
+#ifdef RW_GL3
+	StoreIni("Rendering", "GL3Atmosphere", (uint8)GL3Atmosphere::Enabled);
+#endif
 	StoreIni("Controller", "Method", FrontEndMenuManager.m_ControlMethod);
 	StoreIni("General", "Language", FrontEndMenuManager.m_PrefsLanguage);
 	StoreIni("Display", "ShowHud", FrontEndMenuManager.m_PrefsShowHud);
@@ -720,7 +779,14 @@ void SaveINISettings()
 	}
 #endif
 
-	ini.write(cfg);
+#if defined(ANDROID) && defined(EXTENDED_COLOURFILTER)
+	StoreIni("Graphics", "MobilePostFXVersion", (int32)1);
+#endif
+
+	if(!ini.write(cfg))
+		REVC_LOG_ERROR("Could not save reVC.ini");
+	else
+		REVC_LOG_INFO("Saved settings to reVC.ini");
 }
 
 #endif
@@ -1219,131 +1285,149 @@ extern bool gbRenderWorld2;
 #endif
 
 #ifndef __MWERKS__
-#ifndef MASTER
-const int   re3_buffsize = 1024;
-static char re3_buff[re3_buffsize];
-#endif
+static const int re3_buffsize = 4096;
 
-#ifndef MASTER
-void re3_assert(const char *expr, const char *filename, unsigned int lineno, const char *func)
+static void
+FormatLogMessage(char *buffer, size_t size, const char *format, va_list args)
 {
+	int length = vsnprintf(buffer, size, format, args);
+	if(length < 0){
+		strcpy(buffer, "[format error]");
+	}else if(length >= (int)size){
+		const char suffix[] = " ... [truncated]";
+		memcpy(buffer + size - sizeof(suffix), suffix, sizeof(suffix));
+	}
+}
+
+static void
+PrintDebugMessage(const char *message, const char *prefix)
+{
+#ifndef MASTER
+	char display[re3_buffsize + 32];
+	snprintf(display, sizeof(display), "%s%s", prefix, message);
+#if defined ANDROID
+	__android_log_print(strcmp(prefix, "[ERROR]: ") == 0 ? ANDROID_LOG_ERROR : ANDROID_LOG_DEBUG,
+		"reVC-DEBUG", "%s", display);
+#endif
+	printf("%s", display);
+	CDebug::DebugAddText(display);
+#else
+	(void)message;
+	(void)prefix;
+#endif
+}
+
+#ifndef MASTER
+void
+re3_assert(const char *expr, const char *filename, unsigned int lineno, const char *func)
+{
+	DebugLog::Write("FATAL", filename, lineno, func, "Assertion failed: %s", expr);
+
+	char message[re3_buffsize];
+	snprintf(message, sizeof(message),
+		"Assertion failed!\nFile: %s\nLine: %u\nFunction: %s\nExpression: %s\n\n(Press Retry to debug the application)",
+		filename, lineno, func, expr);
 #ifdef _WIN32
-	int nCode;
-
-	strcpy_s(re3_buff, re3_buffsize, "Assertion failed!" );
-	strcat_s(re3_buff, re3_buffsize, "\n" );	
-	
-	strcat_s(re3_buff, re3_buffsize, "File: ");
-	strcat_s(re3_buff, re3_buffsize, filename );
-	strcat_s(re3_buff, re3_buffsize, "\n" );	
-
-	strcat_s(re3_buff, re3_buffsize, "Line: " );
-	_itoa_s( lineno, re3_buff + strlen(re3_buff), re3_buffsize - strlen(re3_buff), 10 );
-	strcat_s(re3_buff, re3_buffsize, "\n");
-	
-	strcat_s(re3_buff, re3_buffsize, "Function: ");
-	strcat_s(re3_buff, re3_buffsize, func );
-	strcat_s(re3_buff, re3_buffsize, "\n" );	
-	
-	strcat_s(re3_buff, re3_buffsize, "Expression: ");
-	strcat_s(re3_buff, re3_buffsize, expr);
-	strcat_s(re3_buff, re3_buffsize, "\n");
-
-	strcat_s(re3_buff, re3_buffsize, "\n" );
-	strcat_s(re3_buff, re3_buffsize, "(Press Retry to debug the application)");
-
-
-	nCode = ::MessageBoxA(nil, re3_buff, "reVC Assertion Failed!",
+	int code = ::MessageBoxA(nil, message, "reVC Assertion Failed!",
 		MB_ABORTRETRYIGNORE|MB_ICONHAND|MB_SETFOREGROUND|MB_TASKMODAL);
-
-	if (nCode == IDABORT)
-	{
+	if(code == IDABORT){
 		raise(SIGABRT);
 		_exit(3);
 	}
-
-	if (nCode == IDRETRY)
-	{
+	if(code == IDRETRY){
 		__debugbreak();
 		return;
 	}
-
-	if (nCode == IDIGNORE)
+	if(code == IDIGNORE)
 		return;
-
 	abort();
 #else
-	// TODO
-	printf("\nreVC ASSERT FAILED\n\tFile: %s\n\tLine: %d\n\tFunction: %s\n\tExpression: %s\n",filename,lineno,func,expr);
-	assert(false);
+	fprintf(stderr, "%s\n", message);
+	abort();
 #endif
 }
 #endif
 
-void re3_debug(const char *format, ...)
+void
+re3_debug(const char *format, ...)
 {
+	char message[re3_buffsize];
+	va_list args;
+	va_start(args, format);
+	FormatLogMessage(message, sizeof(message), format, args);
+	va_end(args);
+	DebugLog::WriteMessage("DEBUG", nil, 0, nil, message);
+	PrintDebugMessage(message, "");
+}
+
+void
+re3_log(const char *level, const char *filename, unsigned int lineno, const char *func, const char *format, ...)
+{
+	char message[re3_buffsize];
+	va_list args;
+	va_start(args, format);
+	FormatLogMessage(message, sizeof(message), format, args);
+	va_end(args);
+	DebugLog::WriteMessage(level, filename, lineno, func, message);
+
+	// Keep the existing console/on-screen debug output alongside the file log.
+	if(strcmp(level, "DEBUG") == 0)
+		PrintDebugMessage(message, "[DBG]: ");
+	else if(strcmp(level, "ERROR") == 0)
+		PrintDebugMessage(message, "[ERROR]: ");
+	else if(strcmp(level, "DEV") == 0)
+		PrintDebugMessage(message, "[DEV]: ");
+}
+
+void
+re3_trace(const char *filename, unsigned int lineno, const char *func, const char *format, ...)
+{
+	char message[re3_buffsize];
+	va_list args;
+	va_start(args, format);
+	FormatLogMessage(message, sizeof(message), format, args);
+	va_end(args);
+	DebugLog::WriteMessage("TRACE", filename, lineno, func, message);
+
 #ifndef MASTER
-	va_list va;
-	va_start(va, format);
-#ifdef _WIN32
-	vsprintf_s(re3_buff, re3_buffsize, format, va);
-#else
-	vsprintf(re3_buff, format, va);
-#endif
-	va_end(va);
+	char display[re3_buffsize * 2];
+	snprintf(display, sizeof(display), "[%s.%s:%u]: %s", filename, func, lineno, message);
 #if defined ANDROID
-    __android_log_print(ANDROID_LOG_DEBUG, "reVC-DEBUG", re3_buff);
+	__android_log_print(ANDROID_LOG_DEBUG, "reVC-TRACE", "%s", display);
 #endif
-	printf("%s", re3_buff);
-	CDebug::DebugAddText(re3_buff);
-#endif
-}
-
-#ifndef MASTER
-void re3_trace(const char *filename, unsigned int lineno, const char *func, const char *format, ...)
-{
-	char buff[re3_buffsize *2];
-	va_list va;
-	va_start(va, format);
 #ifdef _WIN32
-	vsprintf_s(re3_buff, re3_buffsize, format, va);
-	va_end(va);
-	
-	sprintf_s(buff, re3_buffsize * 2, "[%s.%s:%d]: %s", filename, func, lineno, re3_buff);
+	OutputDebugString(display);
 #else
-	vsprintf(re3_buff, format, va);
-	va_end(va);
-	
-	sprintf(buff, "[%s.%s:%d]: %s", filename, func, lineno, re3_buff);
+	// OutputDebugString maps to re3_debug on POSIX; do not log the same trace twice.
+	char consoleText[sizeof(display) + 16];
+	snprintf(consoleText, sizeof(consoleText), "[DBG-2]: %s\n", display);
+	printf("%s", consoleText);
+	CDebug::DebugAddText(consoleText);
 #endif
-#if defined ANDROID
-    __android_log_print(ANDROID_LOG_DEBUG, "reVC-TRACE", buff);
 #endif
-	OutputDebugString(buff);
 }
-#endif
 
 #ifndef MASTER
-void re3_usererror(const char *format, ...)
+void
+re3_usererror(const char *format, ...)
 {
-	va_list va;
-	va_start(va, format);
+	char message[re3_buffsize];
+	va_list args;
+	va_start(args, format);
+	FormatLogMessage(message, sizeof(message), format, args);
+	va_end(args);
+	DebugLog::WriteMessage("FATAL", nil, 0, nil, message);
 #ifdef _WIN32
-	vsprintf_s(re3_buff, re3_buffsize, format, va);
-	va_end(va);
-	
-	::MessageBoxA(nil, re3_buff, "reVC Error!",
+	::MessageBoxA(nil, message, "reVC Error!",
 		MB_OK|MB_ICONHAND|MB_SETFOREGROUND|MB_TASKMODAL);
-
 	raise(SIGABRT);
 	_exit(3);
 #else
-	vsprintf(re3_buff, format, va);
 #if defined ANDROID
-    __android_log_print(ANDROID_LOG_ERROR, "reVC-ERROR", re3_buff);
+	__android_log_print(ANDROID_LOG_ERROR, "reVC-ERROR", "%s", message);
 #endif
-	printf("\nreVC Error!\n\t%s\n",re3_buff);
-	assert(false);
+	fprintf(stderr, "\nreVC Error!\n\t%s\n", message);
+	abort();
 #endif
 }
 #endif

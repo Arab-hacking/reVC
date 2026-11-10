@@ -1117,10 +1117,10 @@ CCarCtrl::FindMaximumSpeedForThisCarInTraffic(CVehicle* pVehicle)
 	float right = pVehicle->GetPosition().x + DISTANCE_TO_SCAN_FOR_DANGER;
 	float top = pVehicle->GetPosition().y - DISTANCE_TO_SCAN_FOR_DANGER;
 	float bottom = pVehicle->GetPosition().y + DISTANCE_TO_SCAN_FOR_DANGER;
-	int xstart = Max(0, CWorld::GetSectorIndexX(left));
-	int xend = Min(NUMSECTORS_X - 1, CWorld::GetSectorIndexX(right));
-	int ystart = Max(0, CWorld::GetSectorIndexY(top));
-	int yend = Min(NUMSECTORS_Y - 1, CWorld::GetSectorIndexY(bottom));
+	int xstart = CWorld::GetSectorIndexX(left);
+	int xend = CWorld::GetSectorIndexX(right);
+	int ystart = CWorld::GetSectorIndexY(top);
+	int yend = CWorld::GetSectorIndexY(bottom);
 	assert(xstart <= xend);
 	assert(ystart <= yend);
 
@@ -1151,10 +1151,10 @@ CCarCtrl::ScanForPedDanger(CVehicle* pVehicle)
 	float right = pVehicle->GetPosition().x + DISTANCE_TO_SCAN_FOR_PED_DANGER;
 	float top = pVehicle->GetPosition().y - DISTANCE_TO_SCAN_FOR_PED_DANGER;
 	float bottom = pVehicle->GetPosition().y + DISTANCE_TO_SCAN_FOR_PED_DANGER;
-	int xstart = Max(0, CWorld::GetSectorIndexX(left));
-	int xend = Min(NUMSECTORS_X - 1, CWorld::GetSectorIndexX(right));
-	int ystart = Max(0, CWorld::GetSectorIndexY(top));
-	int yend = Min(NUMSECTORS_Y - 1, CWorld::GetSectorIndexY(bottom));
+	int xstart = CWorld::GetSectorIndexX(left);
+	int xend = CWorld::GetSectorIndexX(right);
+	int ystart = CWorld::GetSectorIndexY(top);
+	int yend = CWorld::GetSectorIndexY(bottom);
 	assert(xstart <= xend);
 	assert(ystart <= yend);
 
@@ -1495,10 +1495,10 @@ float CCarCtrl::FindAngleToWeaveThroughTraffic(CVehicle* pVehicle, CPhysical* pT
 	float right = pVehicle->GetPosition().x + distanceToTest;
 	float top = pVehicle->GetPosition().y - distanceToTest;
 	float bottom = pVehicle->GetPosition().y + distanceToTest;
-	int xstart = Max(0, CWorld::GetSectorIndexX(left));
-	int xend = Min(NUMSECTORS_X - 1, CWorld::GetSectorIndexX(right));
-	int ystart = Max(0, CWorld::GetSectorIndexY(top));
-	int yend = Min(NUMSECTORS_Y - 1, CWorld::GetSectorIndexY(bottom));
+	int xstart = CWorld::GetSectorIndexX(left);
+	int xend = CWorld::GetSectorIndexX(right);
+	int ystart = CWorld::GetSectorIndexY(top);
+	int yend = CWorld::GetSectorIndexY(bottom);
 	assert(xstart <= xend);
 	assert(ystart <= yend);
 

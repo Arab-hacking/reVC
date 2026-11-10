@@ -1,0 +1,66 @@
+{
+	"$comment": "Memory-pressure optimization, ported from the mobile client. Every key is optional and keeps the default shown here. Relative to the streaming memory budget, not to device RAM: the budget is chosen from installed RAM (180 / 256 / 320 / 384 MB).",
+
+	"memoryPressure": {
+		"mitigationEnterHeadroomMb": 32,
+		"mitigationLeaveHeadroomMb": 48,
+		"criticalEnterHeadroomMb": 8,
+		"criticalLeaveHeadroomMb": 24,
+		"projectedPressureThrottle": 0.75
+	},
+
+	"worldDistance": {
+		"mitigationDistanceScale": 0.75,
+		"criticalDistanceScale": 0.6,
+		"distanceScaleChangePerSecond": 0.25,
+		"mitigationDelayMs": 1000,
+		"recoveryDelayMs": 3000,
+		"farPlaneMarginScale": 1.05
+	},
+
+	"networkVehicles": {
+		"vehicleUnloadDistance": 35,
+		"vehicleReloadDistance": 25,
+		"aggressiveVehicleUnloadDistance": 20,
+		"aggressiveVehicleReloadDistance": 15,
+		"aggressiveVehicleProtectedDistance": 20,
+		"aggressiveVehicleUpdateIntervalMs": 250,
+		"vehicleBatchMin": 2,
+		"vehicleBatchMax": 8,
+		"vehicleBatchDensityDivisor": 16,
+		"vehicleRequestsPerFrame": 3,
+		"constrainedVehicleRequestsPerFrame": 1,
+		"vehicleModelTimeoutMs": 3000,
+		"vehicleModelMaxRequests": 50
+	},
+
+	"remotePlayerAppearance": {
+		"accessoryUnloadDistance": 20,
+		"accessoryReloadDistance": 15,
+		"skinUnloadDistance": 30,
+		"skinReloadDistance": 25,
+		"appearancePreserveDistance": 30,
+		"accessoryProtectedDistance": 12,
+		"skinProtectedDistance": 20,
+		"fallbackSkinProjectedPressure": 0.98,
+		"severeProjectedPressure": 1.0,
+		"aggressivePlayerUpdateIntervalMs": 250,
+		"playerBatchMin": 2,
+		"playerBatchMax": 8,
+		"playerBatchDensityDivisor": 12,
+		"minimumPreservedPlayers": 8,
+		"preservedPlayersDivisor": 3,
+		"severePreservedPlayersDivisor": 4
+	},
+
+	"asyncModelRequests": {
+		"asyncRequestsPerFrame": 5,
+		"constrainedAsyncRequestsPerFrame": 2,
+		"asyncModelTimeoutMs": 10000,
+		"asyncModelMaxRequests": 150,
+		"retryBaseDelayMs": 100,
+		"retryMaxDelayMs": 2000,
+		"retryMaxExponent": 5,
+		"cleanupChecksPerFrame": 100
+	}
+}

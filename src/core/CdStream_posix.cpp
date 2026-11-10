@@ -1,12 +1,10 @@
 #ifndef _WIN32
 #include "common.h"
-#ifdef GTA_PC || GTA_MOBILE
+#if defined(GTA_PC) || defined(GTA_MOBILE)
 #include "crossplatform.h"
 #include <signal.h>
 #include <pthread.h>
-#ifndef ANDROID
 #include <semaphore.h>
-#endif
 #include <sys/types.h>
 #include <unistd.h>
 #include <sys/time.h>
@@ -20,6 +18,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <errno.h>
 #include <sys/resource.h>
 #include <stdarg.h>
 #include <limits.h>
@@ -29,6 +28,7 @@
 #endif
 
 #include "CdStream.h"
+#include "FileMgr.h"
 #include "MemoryMgr.h"
 
 #define CDDEBUG(f, ...)   debug ("%s: " f "\n", "cdvd_stream", ## __VA_ARGS__)
@@ -45,7 +45,8 @@ sem_t*
 re3_sem_open(void)
 {
 	sem_t* sem = (sem_t*)malloc(sizeof(sem_t));
-	if (sem_init(sem, 0, 1) == -1) {
+	if (!sem || sem_init(sem, 0, 1) == -1) {
+		free(sem);
 		sem = SEM_FAILED;
 	}
 
@@ -56,11 +57,13 @@ re3_sem_open(void)
 void
 re3_sem_close(sem_t* sem)
 {
-	sem_destroy(sem);
-	free(sem);
+	if (sem && sem != SEM_FAILED) {
+		sem_destroy(sem);
+		free(sem);
+	}
 }
 
-#elif !defined(ANDROID)
+#else
 
 #define RE3_SEM_OPEN re3_sem_open
 sem_t*
@@ -69,7 +72,10 @@ re3_sem_open(const char* format, ...)
     char semName[21];
     va_list va;
     va_start(va, format);
-    vsprintf(semName, format, va);
+    int written = vsnprintf(semName, sizeof(semName), format, va);
+    va_end(va);
+    if (written < 0 || written >= (int)sizeof(semName))
+        return SEM_FAILED;
 
     return sem_open(semName, O_CREAT, 0644, 1);
 }
@@ -83,9 +89,11 @@ re3_sem_close(sem_t* sem, const char* format, ...)
     char semName[21];
     va_list va;
     va_start(va, format);
-    vsprintf(semName, format, va);
+    int written = vsnprintf(semName, sizeof(semName), format, va);
+    va_end(va);
 
-    sem_unlink(semName);
+    if (written > 0 && written < (int)sizeof(semName))
+        sem_unlink(semName);
 }
 
 #endif
@@ -103,15 +111,11 @@ struct CdReadInfo
 	pthread_t pChannelThread;
 	sem_t *pStartSemaphore;
 #endif
-#ifndef ANDROID
 	sem_t *pDoneSemaphore; // used for CdStreamSync
-#elif ANDROID
-	pthread_mutex_t pDoneSemaphore; // used for CdStreamSync
-#endif
 	int32 hFile;
 };
 
-char gCdImageNames[MAX_CDIMAGES+1][64];
+char gCdImageNames[MAX_CDIMAGES+1][256];
 int32 gNumImages;
 int32 gNumChannels;
 
@@ -120,13 +124,14 @@ char *gImgNames[MAX_CDIMAGES];
 
 #ifndef ONE_THREAD_PER_CHANNEL
 pthread_t _gCdStreamThread;
-#ifndef ANDROID
 sem_t *gCdStreamSema; // released when we have new thing to read(so channel is set)
-#elif ANDROID
-pthread_mutex_t gCdStreamSema; // released when we have new thing to read(so channel is set)
-#endif
 int8 gCdStreamThreadStatus; // 0: created 1:priority set up 2:abort now
 Queue gChannelRequestQ;
+// The request queue is written by the game thread and read by the streaming
+// thread; without this lock head/tail were updated concurrently and requests
+// were silently lost (or the same channel read twice).
+pthread_mutex_t gChannelRequestQMutex = PTHREAD_MUTEX_INITIALIZER;
+int32 gChannelRequestQCount;
 bool _gbCdStreamOverlapped;
 #endif
 
@@ -147,26 +152,21 @@ CdStreamInitThread(void)
 	gChannelRequestQ.head = 0;
 	gChannelRequestQ.tail = 0;
 	gChannelRequestQ.size = gNumChannels + 1;
-	ASSERT(gChannelRequestQ.items != nil );
-#ifndef ANDROID
+	gChannelRequestQCount = 0;
+	ASSERT(gChannelRequestQ.items != nil);
     gCdStreamSema = RE3_SEM_OPEN("/semaphore_cd_stream");
-
 
     if (gCdStreamSema == SEM_FAILED) {
         CDTRACE("failed to create stream semaphore");
         ASSERT(0);
         return;
     }
-#elif ANDROID
-	//pthread_mutex_unlock(&gCdStreamSema);
-#endif
 #endif
 
 	if ( gNumChannels > 0 )
 	{
 		for ( int32 i = 0; i < gNumChannels; i++ )
 		{
-#ifndef ANDROID
             gpReadInfo[i].pDoneSemaphore = RE3_SEM_OPEN("/semaphore_done%d", i);
 
 			if (gpReadInfo[i].pDoneSemaphore == SEM_FAILED)
@@ -175,9 +175,6 @@ CdStreamInitThread(void)
 				ASSERT(0);
 				return;
 			}
-#elif ANDROID
-			//pthread_mutex_unlock(&gpReadInfo[i].doneMutex);
-#endif
 
 #ifdef ONE_THREAD_PER_CHANNEL
 			gpReadInfo[i].pStartSemaphore = RE3_SEM_OPEN("/semaphore_start%d", i);
@@ -223,29 +220,23 @@ void
 CdStreamInit(int32 numChannels)
 {
 	struct statvfs fsInfo;
+	memset(&fsInfo, 0, sizeof(fsInfo));
 #if defined ANDROID
-	char imgPath[MAX_PATH];
-	if(StorageRootBuffer == NULL) {
-		char pwd[128];
-		getcwd(pwd, 128);
-		setenv("STORAGE_ROOT", pwd, 1);
-        debug("%s\n", pwd);
+	const char *rootDir = CFileMgr::GetRootDirName();
+	if (StorageRootBuffer == NULL && rootDir != NULL && rootDir[0] != '\0') {
+		setenv("STORAGE_ROOT", rootDir, 1);
+		StorageRootBuffer = getenv("STORAGE_ROOT");
 	}
-	
-	debug("FILES %s\n", StorageRootBuffer);
-	strcpy(imgPath, StorageRootBuffer);
-	strcat(imgPath, "/models/gta3.img");
-    debug("%s\n", imgPath);
-
-    if((statvfs(imgPath, &fsInfo)) < 0)
-#elif !defined(ANDROID)
-    if((statvfs("models/gta3.img", &fsInfo)) < 0)
-#endif
-	{
+	const char *vfsTarget = (rootDir != NULL && rootDir[0] != '\0') ? rootDir : ".";
+	if (statvfs(vfsTarget, &fsInfo) < 0 || fsInfo.f_bsize <= 0) {
+		fsInfo.f_bsize = 4096;
+	}
+#else
+	if (statvfs("models/gta3.img", &fsInfo) < 0 && statvfs(".", &fsInfo) < 0) {
 		CDTRACE("can't get filesystem info");
-		ASSERT(0);
-		return;
+		fsInfo.f_bsize = 4096;
 	}
+#endif
 #if defined ANDROID
 	_gdwCdStreamFlags = O_RDONLY;
 #elif defined __linux__
@@ -253,15 +244,10 @@ CdStreamInit(int32 numChannels)
 #else
 	_gdwCdStreamFlags = O_RDONLY;
 #endif
-	// People say it's slower
-/*
-	if ( fsInfo.f_bsize <= CDSTREAM_SECTOR_SIZE )
-	{
-		_gdwCdStreamFlags |= O_DIRECT;
-		debug("Using no buffered loading for streaming\n");
-	}
-*/
-	void *pBuffer = (void *)RwMallocAlign(CDSTREAM_SECTOR_SIZE, (RwUInt32)fsInfo.f_bsize);
+	RwUInt32 alignSize = 4096;
+	if (fsInfo.f_bsize >= 512 && ((RwUInt32)fsInfo.f_bsize & ((RwUInt32)fsInfo.f_bsize - 1)) == 0)
+		alignSize = (RwUInt32)fsInfo.f_bsize;
+	void *pBuffer = (void *)RwMallocAlign(CDSTREAM_SECTOR_SIZE, alignSize);
 	ASSERT( pBuffer != nil );
 
 	gNumImages = 0;
@@ -285,55 +271,60 @@ GetGTA3ImgSize(void)
 {
 	ASSERT( gImgFiles[0] > 0 );
 	struct stat statbuf;
+	if (fstat(gImgFiles[0] - 1, &statbuf) == 0)
+		return (uint32)statbuf.st_size;
 
-	char path[PATH_MAX];
-	realpath(gImgNames[0], path);
-	if (stat(path, &statbuf) == -1) {
-		// Try case-insensitivity
+	if (stat(gImgNames[0], &statbuf) == -1) {
 		char* real = casepath(gImgNames[0], false);
-		if (real)
-		{
-			realpath(real, path);
+		if (real) {
+			int ok = stat(real, &statbuf);
 			free(real);
-			if (stat(path, &statbuf) != -1)
-				goto ok;
+			if (ok != -1)
+				return (uint32)statbuf.st_size;
 		}
-
 		CDTRACE("can't get size of gta3.img");
 		ASSERT(0);
 		return 0;
 	}
-	ok:
 	return (uint32)statbuf.st_size;
 }
 
 void
 CdStreamShutdown(void)
 {
-    // Destroying semaphores and free(gpReadInfo) will be done at threads
+    // Semaphores are destroyed by the streaming thread(s); the read info array
+    // is only released here, once every thread has been joined.
 #ifndef ONE_THREAD_PER_CHANNEL
+	if (gCdStreamSema == nil || gpReadInfo == nil)
+		return;
 	gCdStreamThreadStatus = 2;
-#ifndef ANDROID
 	sem_post(gCdStreamSema);
-#elif ANDROID
-	pthread_mutex_unlock(&gCdStreamSema);
-#endif
 	pthread_join(_gCdStreamThread, nil);
+	gCdStreamThreadStatus = 0;
 #else
+	if (gpReadInfo == nil)
+		return;
 	for ( int32 i = 0; i < gNumChannels; i++ ) {
 		gpReadInfo[i].nThreadStatus = 2;
 		sem_post(gpReadInfo[i].pStartSemaphore);
 		pthread_join(gpReadInfo[i].pChannelThread, nil);
 	}
 #endif
+	free(gpReadInfo);
+	gpReadInfo = nil;
+	gNumChannels = 0;
 }
 
 
 int32
 CdStreamRead(int32 channel, void *buffer, uint32 offset, uint32 size)
 {
-	ASSERT( channel < gNumChannels );
-	ASSERT( buffer != nil );
+	// None of these are assertions any more: ASSERT() compiles to nothing in
+	// release builds, so an out-of-range channel used to index a null pointer.
+	if ( gpReadInfo == nil || channel < 0 || channel >= gNumChannels || buffer == nil ) {
+		REVC_LOG_ERROR("CdStreamRead: invalid channel %d (num %d)", channel, gNumChannels);
+		return STREAM_ERROR;
+	}
 
 	lastPosnRead = size + offset;
 
@@ -345,7 +336,14 @@ CdStreamRead(int32 channel, void *buffer, uint32 offset, uint32 size)
 	ASSERT( pChannel != nil );
 
 	if ( pChannel->nSectorsToRead != 0 || pChannel->bReading ) {
-		if (pChannel->hFile == hImage - 1 && pChannel->nSectorOffset == _GET_OFFSET(offset) && pChannel->nSectorsToRead >= size)
+		// Only a request for exactly the same file/offset/buffer can be
+		// coalesced. Comparing just the sector count reported STREAM_SUCCESS for
+		// a *different* destination buffer, which the streaming thread was not
+		// filling - the caller then decoded uninitialised memory.
+		if (pChannel->hFile == hImage - 1 &&
+		    pChannel->nSectorOffset == _GET_OFFSET(offset) &&
+		    pChannel->pBuffer == buffer &&
+		    pChannel->nSectorsToRead >= size)
 			return STREAM_SUCCESS;
 #ifdef FLUSHABLE_STREAMING
 		flushStream[channel] = 1;
@@ -363,12 +361,10 @@ CdStreamRead(int32 channel, void *buffer, uint32 offset, uint32 size)
 	pChannel->bLocked = 0;
 
 #ifndef ONE_THREAD_PER_CHANNEL
+	pthread_mutex_lock(&gChannelRequestQMutex);
 	AddToQueue(&gChannelRequestQ, channel);
-#if defined ANDROID
-	if ( pthread_mutex_unlock(&gCdStreamSema) != 0 )
-#else
+	pthread_mutex_unlock(&gChannelRequestQMutex);
     if ( sem_post(gCdStreamSema) != 0 )
-#endif
 		printf("Signal Sema Error\n");
 #else
 	if ( sem_post(pChannel->pStartSemaphore) != 0 )
@@ -381,9 +377,9 @@ CdStreamRead(int32 channel, void *buffer, uint32 offset, uint32 size)
 int32
 CdStreamGetStatus(int32 channel)
 {
-	ASSERT( channel < gNumChannels );
+	if ( gpReadInfo == nil || channel < 0 || channel >= gNumChannels )
+		return STREAM_NONE;
 	CdReadInfo *pChannel = &gpReadInfo[channel];
-	ASSERT( pChannel != nil );
 
 #ifdef ONE_THREAD_PER_CHANNEL
 	if (pChannel->nThreadStatus == 2)
@@ -420,9 +416,9 @@ CdStreamGetLastPosn(void)
 int32
 CdStreamSync(int32 channel)
 {
-	ASSERT( channel < gNumChannels );
+	if ( gpReadInfo == nil || channel < 0 || channel >= gNumChannels )
+		return STREAM_NONE;
 	CdReadInfo *pChannel = &gpReadInfo[channel];
-	ASSERT( pChannel != nil );
 
 #ifdef FLUSHABLE_STREAMING
 	if (flushStream[channel]) {
@@ -437,11 +433,7 @@ CdStreamSync(int32 channel)
 			pthread_kill(_gCdStreamThread, SIGUSR1);
 #endif
 			while (pChannel->bLocked)
-#ifndef ANDROID
 				sem_wait(pChannel->pDoneSemaphore);
-#elif ANDROID
-				pthread_mutex_lock(&pChannel->pDoneSemaphore);
-#endif
 		}
 		pChannel->bReading = false;
 		flushStream[channel] = false;
@@ -449,15 +441,14 @@ CdStreamSync(int32 channel)
 	}
 #endif
 
-	if ( pChannel->nSectorsToRead != 0 )
+	if ( pChannel->nSectorsToRead != 0 || pChannel->bReading )
 	{
 		pChannel->bLocked = true;
-		while (pChannel->bLocked && pChannel->nSectorsToRead != 0){
-#ifndef ANDROID
+		// `nSectorsToRead` alone is not enough: the streaming thread clears it
+		// before it has finished writing the buffer, so the caller could start
+		// decoding while the read was still in flight. Wait for bReading too.
+		while (pChannel->bLocked && (pChannel->nSectorsToRead != 0 || pChannel->bReading)){
 			sem_wait(pChannel->pDoneSemaphore);
-#elif ANDROID
-			pthread_mutex_lock(&pChannel->pDoneSemaphore);
-#endif
 		}
 		pChannel->bLocked = false;
 	}
@@ -467,41 +458,39 @@ CdStreamSync(int32 channel)
 	return pChannel->nStatus;
 }
 
+// All three helpers are called with gChannelRequestQMutex held.
 void
 AddToQueue(Queue *queue, int32 item)
 {
-	ASSERT( queue != nil );
-	ASSERT( queue->items != nil );
+	if ( queue == nil || queue->items == nil )
+		return;
+	if ( gChannelRequestQCount >= queue->size - 1 ) {
+		// The queue used to overwrite its oldest entry and report the full
+		// state only through the debug log: the read request then never
+		// completed and the game stalled waiting for it.
+		debug("CdStream request queue is full\n");
+		return;
+	}
 	queue->items[queue->tail] = item;
-
 	queue->tail = (queue->tail + 1) % queue->size;
-
-	if ( queue->head == queue->tail )
-		debug("Queue is full\n");
+	gChannelRequestQCount++;
 }
 
 int32
 GetFirstInQueue(Queue *queue)
 {
-	ASSERT( queue != nil );
-	if ( queue->head == queue->tail )
+	if ( queue == nil || queue->items == nil || gChannelRequestQCount == 0 )
 		return -1;
-
-	ASSERT( queue->items != nil );
 	return queue->items[queue->head];
 }
 
 void
 RemoveFirstInQueue(Queue *queue)
 {
-	ASSERT( queue != nil );
-	if ( queue->head == queue->tail )
-	{
-		debug("Queue is empty\n");
+	if ( queue == nil || queue->items == nil || gChannelRequestQCount == 0 )
 		return;
-	}
-
 	queue->head = (queue->head + 1) % queue->size;
+	gChannelRequestQCount--;
 }
 
 void *CdStreamThread(void *param)
@@ -510,28 +499,30 @@ void *CdStreamThread(void *param)
 
 #ifndef ONE_THREAD_PER_CHANNEL
 	while (gCdStreamThreadStatus != 2) {
-#ifndef ANDROID
-		sem_wait(gCdStreamSema);
-#elif ANDROID
-		pthread_mutex_lock(&gCdStreamSema);
-#endif
+		if (sem_wait(gCdStreamSema) != 0) {
+			if (errno == EINTR)
+				continue;
+			break;
+		}
 
+		pthread_mutex_lock(&gChannelRequestQMutex);
 		int32 channel = GetFirstInQueue(&gChannelRequestQ);
-		
+		if (channel != -1)
+			RemoveFirstInQueue(&gChannelRequestQ);
+		pthread_mutex_unlock(&gChannelRequestQMutex);
+
 		// spurious wakeup
 		if (channel == -1)
 			continue;
 #else
 	int channel = *((int*)param);
+	free(param);
 	while (gpReadInfo[channel].nThreadStatus != 2){
 		sem_wait(gpReadInfo[channel].pStartSemaphore);
 #endif
 
 		CdReadInfo *pChannel = &gpReadInfo[channel];
-		ASSERT( pChannel != nil );
-
-		// spurious wakeup or we sent interrupt signal for flushing
-		if(pChannel->nSectorsToRead == 0)
+		if (pChannel->nSectorsToRead == 0)
 			continue;
 
 		pChannel->bReading = true;
@@ -551,92 +542,118 @@ void *CdStreamThread(void *param)
 #endif
 		if ( pChannel->nStatus == STREAM_NONE )
 		{
-			ASSERT(pChannel->hFile >= 0);
-			ASSERT(pChannel->pBuffer != nil );
-
-			lseek(pChannel->hFile, (size_t)pChannel->nSectorOffset * (size_t)CDSTREAM_SECTOR_SIZE, SEEK_SET);
-			if (read(pChannel->hFile, pChannel->pBuffer, pChannel->nSectorsToRead * CDSTREAM_SECTOR_SIZE) == -1) {
-				// pChannel->nSectorsToRead == 0 at this point means we wanted to flush channel
-				// STREAM_WAITING is a little hack to make CStreaming not process this data
-				pChannel->nStatus = pChannel->nSectorsToRead == 0 ? STREAM_WAITING : STREAM_ERROR;
+			if (pChannel->hFile < 0 || pChannel->pBuffer == nil) {
+				pChannel->nStatus = STREAM_ERROR;
 			} else {
-				pChannel->nStatus = STREAM_NONE;
+				off_t wanted = (off_t)pChannel->nSectorsToRead * CDSTREAM_SECTOR_SIZE;
+				off_t position = (off_t)pChannel->nSectorOffset * CDSTREAM_SECTOR_SIZE;
+				if (lseek(pChannel->hFile, position, SEEK_SET) != position) {
+					pChannel->nStatus = pChannel->nSectorsToRead == 0 ? STREAM_WAITING : STREAM_ERROR;
+				} else {
+					// A single read() may return less than asked for (large
+					// request, low memory, EINTR). The old code accepted that as
+					// success and the game decoded a half-filled buffer.
+					uint8 *destination = (uint8*)pChannel->pBuffer;
+					off_t remaining = wanted;
+					bool failed = false;
+					while (remaining > 0) {
+						ssize_t got = read(pChannel->hFile, destination, (size_t)remaining);
+						if (got < 0) {
+							if (errno == EINTR) {
+								if (pChannel->nSectorsToRead == 0) { failed = false; break; }
+								continue;
+							}
+							failed = true;
+							break;
+						}
+						if (got == 0) { // unexpected EOF
+							failed = true;
+							break;
+						}
+						destination += got;
+						remaining -= got;
+					}
+					if (failed || remaining != 0)
+						// nSectorsToRead == 0 means we wanted to flush channel;
+						// STREAM_WAITING is a little hack to make CStreaming not process this data
+						pChannel->nStatus = pChannel->nSectorsToRead == 0 ? STREAM_WAITING : STREAM_ERROR;
+					else
+						pChannel->nStatus = STREAM_NONE;
+				}
 			}
 		}
 
-#ifndef ONE_THREAD_PER_CHANNEL
-		RemoveFirstInQueue(&gChannelRequestQ);
-#endif
-
+		// Clear the request before waking the waiter, otherwise CdStreamSync()
+		// can spin on a request that is already finished.
 		pChannel->nSectorsToRead = 0;
+		pChannel->bReading = false;
 		if ( pChannel->bLocked )
 		{
 			pChannel->bLocked = 0;
-#ifndef ANDROID
 			sem_post(pChannel->pDoneSemaphore);
-#else
-            pthread_mutex_unlock(&pChannel->pDoneSemaphore);
-#endif
 		}
-		pChannel->bReading = false;
 	}
-	char semName[20];
+
 #ifndef ONE_THREAD_PER_CHANNEL
 	for ( int32 i = 0; i < gNumChannels; i++ )
 	{
-#ifndef ANDROID
 		RE3_SEM_CLOSE(gpReadInfo[i].pDoneSemaphore, "/semaphore_done%d", i);
-#elif ANDROID
-		pthread_mutex_destroy(&gpReadInfo[i].pDoneSemaphore);
-#endif
 	}
-#ifndef ANDROID
 	RE3_SEM_CLOSE(gCdStreamSema, "/semaphore_cd_stream");
-#elif ANDROID
-    pthread_mutex_destroy(&gCdStreamSema);
-#endif
+	gCdStreamSema = nil;
 	free(gChannelRequestQ.items);
+	gChannelRequestQ.items = nil;
 #else
 	RE3_SEM_CLOSE(gpReadInfo[channel].pStartSemaphore, "/semaphore_start%d", channel);
+	gpReadInfo[channel].pStartSemaphore = nil;
 
 	RE3_SEM_CLOSE(gpReadInfo[channel].pDoneSemaphore, "/semaphore_done%d", channel);
+	gpReadInfo[channel].pDoneSemaphore = nil;
 #endif
-	if (gpReadInfo)
-		free(gpReadInfo);
-	gpReadInfo = nil;
+	// gpReadInfo is deliberately NOT freed here: CdStreamShutdown() releases it
+	// after pthread_join(), so the other channels (one thread per channel) and
+	// the game thread can never see a dangling array. The old free() here was
+	// the double-free/use-after-free seen right after a level restart.
 	pthread_exit(nil);
+	return nil;
 }
 
 bool
 CdStreamAddImage(char const *path)
 {
 	ASSERT(path != nil);
-	ASSERT(gNumImages < MAX_CDIMAGES);
+	if(gNumImages >= MAX_CDIMAGES || strlen(path) >= sizeof(gCdImageNames[0])){
+		REVC_LOG_ERROR("Cannot mount IMG %s: too many images or path too long", path);
+		return false;
+	}
 
 	gImgFiles[gNumImages] = open(path, _gdwCdStreamFlags);
 
 	// Fix case sensitivity and backslashes.
-	if (gImgFiles[gNumImages] == -1) {
-		char* real = casepath(path, false);
-		if (real)
-		{
+	if(gImgFiles[gNumImages] == -1){
+		char *real = casepath(path, false);
+		if(real){
 			gImgFiles[gNumImages] = open(real, _gdwCdStreamFlags);
 			free(real);
 		}
 	}
 
-	if ( gImgFiles[gNumImages] == -1 ) {
-		assert(false);
+	if(gImgFiles[gNumImages] == -1){
+		int error = errno;
+		REVC_LOG_ERROR("Cannot mount IMG %s (errno=%d): %s", path, error, strerror(error));
 		return false;
 	}
 
+	struct stat st;
+	if(fstat(gImgFiles[gNumImages], &st) == 0)
+		REVC_LOG_INFO("Mounted IMG %d: %s (%llu bytes)", gNumImages, path,
+			(unsigned long long)st.st_size);
+	else
+		REVC_LOG_WARNING("Mounted IMG %d: %s (size unavailable)", gNumImages, path);
 	gImgNames[gNumImages] = strdup(path);
 	gImgFiles[gNumImages]++; // because -1: error 0: not used
-
 	strcpy(gCdImageNames[gNumImages], path);
-
 	gNumImages++;
-
 	return true;
 }
 

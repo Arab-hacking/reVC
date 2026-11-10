@@ -1,4 +1,5 @@
 #include "common.h"
+#include <stdlib.h>
 #include <time.h>
 #include "rpmatfx.h"
 #include "rphanim.h"
@@ -10,6 +11,10 @@
 #endif
 
 #include "main.h"
+#ifdef CUSTOM_MODELS
+#include "../extras/custom/DebugLog.h"
+#include "../extras/custom/Optimization.h"
+#endif
 #include "CdStream.h"
 #include "General.h"
 #include "RwHelper.h"
@@ -54,6 +59,7 @@
 #include "Timecycle.h"
 #include "TxdStore.h"
 #include "FileMgr.h"
+#include "DebugLog.h"
 #include "Text.h"
 #include "RpAnimBlend.h"
 #include "Frontend.h"
@@ -73,6 +79,11 @@
 #include "Ropes.h"
 #include "postfx.h"
 #include "custompipes.h"
+#include "CustomSky.h"
+#include "SunShadowMap.h"
+#if defined(CUSTOM_MODELS) && defined(LIBRW)
+#include "SAStaticModel.h"
+#endif
 #include "screendroplets.h"
 #include "VarConsole.h"
 #ifdef USE_OUR_VERSIONING
@@ -397,6 +408,7 @@ PluginAttach(void)
 	if( !RpWorldPluginAttach() )
 	{
 		printf("Couldn't attach world plugin\n");
+		REVC_LOG_ERROR("Couldn't attach world plugin");
 		
 		return FALSE;
 	}
@@ -404,18 +416,21 @@ PluginAttach(void)
 	if( !RpSkinPluginAttach() )
 	{
 		printf("Couldn't attach RpSkin plugin\n");
+		REVC_LOG_ERROR("Couldn't attach RpSkin plugin");
 		
 		return FALSE;
 	}
 #ifndef LIBRW
 	if (!RtAnimInitialize())
 	{
+		REVC_LOG_ERROR("Couldn't initialize RenderWare animation");
 		return FALSE;
 	}
 #endif
 	if( !RpHAnimPluginAttach() )
 	{
 		printf("Couldn't attach RpHAnim plugin\n");
+		REVC_LOG_ERROR("Couldn't attach RpHAnim plugin");
 		
 		return FALSE;
 	}
@@ -423,6 +438,7 @@ PluginAttach(void)
 	if( !NodeNamePluginAttach() )
 	{
 		printf("Couldn't attach node name plugin\n");
+		REVC_LOG_ERROR("Couldn't attach node name plugin");
 		
 		return FALSE;
 	}
@@ -430,6 +446,7 @@ PluginAttach(void)
 	if( !CVisibilityPlugins::PluginAttach() )
 	{
 		printf("Couldn't attach visibility plugins\n");
+		REVC_LOG_ERROR("Couldn't attach visibility plugins");
 		
 		return FALSE;
 	}
@@ -437,6 +454,7 @@ PluginAttach(void)
 	if( !RpAnimBlendPluginAttach() )
 	{
 		printf("Couldn't attach RpAnimBlend plugin\n");
+		REVC_LOG_ERROR("Couldn't attach RpAnimBlend plugin");
 		
 		return FALSE;
 	}
@@ -444,6 +462,7 @@ PluginAttach(void)
 	if( !RpMatFXPluginAttach() )
 	{
 		printf("Couldn't attach RpMatFX plugin\n");
+		REVC_LOG_ERROR("Couldn't attach RpMatFX plugin");
 		
 		return FALSE;
 	}
@@ -452,6 +471,9 @@ PluginAttach(void)
 #endif
 #ifdef EXTENDED_PIPELINES
 	CustomPipes::CustomPipeRegister();
+#endif
+#if defined(CUSTOM_MODELS) && defined(LIBRW)
+	SAStaticModel::RegisterPlugins();
 #endif
 
 	return TRUE;
@@ -636,6 +658,8 @@ GetLevelSplashScreen(int level)
 		"splash3",
 	};
 
+	if(level < 0 || level >= (int)ARRAY_SIZE(splashScreens))
+		return nil;
 	return splashScreens[level];
 }
 
@@ -645,10 +669,22 @@ ResetLoadingScreenBar()
 	NumberOfChunksLoaded = 0.0f;
 }
 
+#if defined(ANDROID) && defined(RW_GL3) && defined(LIBRW_SDL2)
+void psPumpLoadingEvents(void);
+#endif
+
 void
 LoadingScreen(const char *str1, const char *str2, const char *splashscreen)
 {
 	CSprite2d *splash;
+
+#if defined(ANDROID) && defined(RW_GL3) && defined(LIBRW_SDL2)
+	psPumpLoadingEvents();
+#endif
+
+	if(str1 != nil || str2 != nil)
+		REVC_LOG_INFO("Loading: %s%s%s", str1 == nil ? "" : str1,
+			str1 != nil && str2 != nil ? " - " : "", str2 == nil ? "" : str2);
 
 #ifdef DISABLE_LOADING_SCREEN
 	if (str1 && str2)
@@ -736,6 +772,11 @@ LoadingIslandScreen(const char *levelName)
 {
 	CSprite2d *splash;
 
+#if defined(ANDROID) && defined(RW_GL3) && defined(LIBRW_SDL2)
+	psPumpLoadingEvents();
+#endif
+
+	REVC_LOG_INFO("Loading island: %s", levelName == nil ? "unknown" : levelName);
 	splash = LoadSplash(nil);
 	if(!DoRWStuffStartOfFrame(0, 0, 0, 0, 0, 0, 255))
 		return;
@@ -1281,8 +1322,10 @@ void
 RenderScene_new(void)
 {
 	PUSH_RENDERGROUP("RenderScene_new");
-	CClouds::Render();
-	DoRWRenderHorizon();
+	if(!CCustomSky::Render(TheCamera.GetPosition(), false)){
+		CClouds::Render();
+		DoRWRenderHorizon();
+	}
 
 	MattRenderScene();
 	DefinedState();
@@ -1364,8 +1407,10 @@ RenderScene(void)
 	}
 #endif
 	PUSH_RENDERGROUP("RenderScene");
-	CClouds::Render();
-	DoRWRenderHorizon();
+	if(!CCustomSky::Render(TheCamera.GetPosition(), false)){
+		CClouds::Render();
+		DoRWRenderHorizon();
+	}
 	CRenderer::RenderRoads();
 	CCoronas::RenderReflections();
 	CRenderer::RenderEverythingBarRoads();
@@ -1601,12 +1646,17 @@ Idle(void *arg)
 
 		tbStartTimer(0, "PreRender");
 		CRenderer::PreRender();
+		CSunShadowMap::Render();
 		tbEndTimer("PreRender");
 
 #ifdef FIX_BUGS
 		RwRenderStateSet(rwRENDERSTATEZWRITEENABLE, (void *)FALSE); // TODO: temp? this fixes OpenGL render but there should be a better place for this
+		// The far clip follows the pressure-driven distance scale, with the
+		// configurable farPlaneMarginScale on top (client default 1.05): fog
+		// already reaches full at FarClip, this only widens the culled volume.
+		const float gFarPlaneMargin = revcopt::FarPlaneMargin();
 		// This has to be done BEFORE RwCameraBeginUpdate
-		RwCameraSetFarClipPlane(Scene.camera, CTimeCycle::GetFarClip());
+		RwCameraSetFarClipPlane(Scene.camera, Max(CTimeCycle::GetFarClip(), 600.0f * CRenderer::ms_lodDistScale * gFarPlaneMargin));
 		RwCameraSetFogDistance(Scene.camera, CTimeCycle::GetFogStart());
 #endif
 
@@ -1643,9 +1693,11 @@ Idle(void *arg)
 		        TheCamera.SetMotionBlurAlpha(150);
 
 #ifdef SCREEN_DROPLETS
-		CPostFX::GetBackBuffer(Scene.camera);
 		ScreenDroplets::Process();
-		ScreenDroplets::Render();
+		if(ScreenDroplets::ms_enabled && ScreenDroplets::ms_numDrops > 0){
+			CPostFX::GetBackBuffer(Scene.camera);
+			ScreenDroplets::Render();
+		}
 #endif
 
 		tbStartTimer(0, "RenderMotionBlur");
@@ -1741,6 +1793,34 @@ InitialiseGame(void)
 	CGame::Initialise("DATA\\GTA_VC.DAT");
 }
 
+#ifndef __MWERKS__
+static void
+InitialiseDebugLog(void)
+{
+	// Desktop builds use the launch directory (normally the game directory).
+	// macOS app bundles may start in an unwritable directory; Android uses its
+	// selected storage root. The open file survives CFileMgr's chdir calls.
+#if defined __APPLE__
+	const char *directory = GetMacOSUserFilesFolder();
+#elif defined ANDROID
+	const char *directory = getenv("STORAGE_ROOT");
+#else
+	const char *directory = nil;
+#endif
+	char path[FILEMGR_PATH_SIZE];
+	if(directory != nil && directory[0] != '\0'){
+		int length = snprintf(path, sizeof(path), "%s/debug.log", directory);
+		if(length < 0 || length >= (int)sizeof(path)){
+			fprintf(stderr, "reVC: debug log path is too long\n");
+			return;
+		}
+	}else{
+		strcpy(path, "debug.log");
+	}
+	DebugLog::Init(path);
+}
+#endif
+
 RsEventStatus
 AppEventHandler(RsEvent event, void *param)
 {
@@ -1748,47 +1828,81 @@ AppEventHandler(RsEvent event, void *param)
 	{
 		case rsINITIALIZE:
 		{
-			CGame::InitialiseOnceBeforeRW();
-			return RsInitialize() ? rsEVENTPROCESSED : rsEVENTERROR;
+#ifndef __MWERKS__
+			InitialiseDebugLog();
+#endif
+#ifdef CUSTOM_MODELS
+			DebugLogInit();	// crash handlers share the core debug.log sink
+#endif
+			REVC_LOG_INFO("Starting reVC");
+#ifdef USE_OUR_VERSIONING
+			REVC_LOG_INFO("Git revision: %s", g_GIT_SHA1);
+#endif
+			if(!CGame::InitialiseOnceBeforeRW()){
+				REVC_LOG_ERROR("Game pre-initialization failed");
+				return rsEVENTERROR;
+			}
+			if(!RsInitialize()){
+				REVC_LOG_ERROR("Platform initialization failed");
+				return rsEVENTERROR;
+			}
+			REVC_LOG_INFO("Platform initialized");
+			return rsEVENTPROCESSED;
 		}
 
 		case rsCAMERASIZE:
 		{
-											
-			CameraSize(Scene.camera, (RwRect *)param,
-				SCREEN_VIEWWINDOW, DEFAULT_ASPECT_RATIO);
-			
+			RwRect *rect = (RwRect *)param;
+			if(rect != nil)
+				REVC_LOG_INFO("Camera resized to %dx%d", rect->w, rect->h);
+			CameraSize(Scene.camera, rect, SCREEN_VIEWWINDOW, DEFAULT_ASPECT_RATIO);
 			return rsEVENTPROCESSED;
 		}
 
 		case rsRWINITIALIZE:
 		{
-			return Initialise3D(param) ? rsEVENTPROCESSED : rsEVENTERROR;
+			REVC_LOG_INFO("Initializing RenderWare and 3D components");
+			if(!Initialise3D(param)){
+				REVC_LOG_ERROR("RenderWare/3D initialization failed");
+				return rsEVENTERROR;
+			}
+			REVC_LOG_INFO("RenderWare and 3D components ready");
+			return rsEVENTPROCESSED;
 		}
 
 		case rsRWTERMINATE:
 		{
+			REVC_LOG_INFO("Terminating 3D components");
 			Terminate3D();
-
+			REVC_LOG_INFO("3D components terminated");
 			return rsEVENTPROCESSED;
 		}
 
 		case rsTERMINATE:
 		{
+			REVC_LOG_INFO("Shutting down reVC");
 			CGame::FinalShutdown();
-
+			REVC_LOG_INFO("Shutdown complete");
+#ifndef __MWERKS__
+			DebugLog::Shutdown();
+#endif
 			return rsEVENTPROCESSED;
 		}
 
 		case rsPLUGINATTACH:
 		{
-			return PluginAttach() ? rsEVENTPROCESSED : rsEVENTERROR;
+			if(!PluginAttach()){
+				REVC_LOG_ERROR("RenderWare plugin attachment failed");
+				return rsEVENTERROR;
+			}
+			REVC_LOG_INFO("RenderWare plugins attached");
+			return rsEVENTPROCESSED;
 		}
 
 		case rsINPUTDEVICEATTACH:
 		{
 			AttachInputDevices();
-
+			REVC_LOG_INFO("Input devices attached");
 			return rsEVENTPROCESSED;
 		}
 
@@ -1808,9 +1922,15 @@ AppEventHandler(RsEvent event, void *param)
 
 		case rsACTIVATE:
 		{
+			REVC_LOG_INFO("Application %s", param ? "activated" : "deactivated");
 			param ? DMAudio.ReacquireDigitalHandle() : DMAudio.ReleaseDigitalHandle();
-
 			return rsEVENTPROCESSED;
+		}
+
+		case rsQUITAPP:
+		{
+			REVC_LOG_INFO("Quit requested");
+			return rsEVENTNOTPROCESSED;
 		}
 
 		default:
@@ -1935,11 +2055,13 @@ void TheGame(void)
 			if ((!FrontEndMenuManager.m_bMenuActive || FrontEndMenuManager.m_bRenderGameInMenu == true) && TheCamera.GetScreenFadeStatus() != FADE_2 )
 			{
 				CRenderer::PreRender();
+				CSunShadowMap::Render();
 				// TODO(MIAMI): something ps2all specific
 
 #ifdef FIX_BUGS
+				const float gFarPlaneMargin = revcopt::FarPlaneMargin();
 				// This has to be done BEFORE RwCameraBeginUpdate
-				RwCameraSetFarClipPlane(Scene.camera, CTimeCycle::GetFarClip());
+				RwCameraSetFarClipPlane(Scene.camera, Max(CTimeCycle::GetFarClip(), 600.0f * CRenderer::ms_lodDistScale * gFarPlaneMargin));
 				RwCameraSetFogDistance(Scene.camera, CTimeCycle::GetFogStart());
 #endif
 
@@ -2401,8 +2523,16 @@ main(int argc, char *argv[])
 {
 #ifdef __MWERKS__
 	mwInit(); // metrowerks initialisation
+#elif !defined(__APPLE__) && !defined(ANDROID)
+	// Other desktop entry points do not use WinMain. Open the sink before
+	// installing crash handlers, just as WinMain does on Windows.
+	DebugLog::Init("debug.log");
+#ifdef CUSTOM_MODELS
+	DebugLogInit();
 #endif
-
+#endif
+	// macOS and Android choose their writable log path during rsINITIALIZE;
+	// their crash handlers are registered there after the log is open.
 	SystemInit();
 
 	if(RsEventHandler(rsINITIALIZE, nil) == rsEVENTERROR)

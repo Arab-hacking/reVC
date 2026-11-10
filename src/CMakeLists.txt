@@ -33,11 +33,16 @@ target_link_libraries(${EXECUTABLE} PRIVATE
 )
 
 if(ANDROID)
-    target_link_libraries(${EXECUTABLE} PRIVATE
-            log
-            GLESv3
-            OpenSLES
-    )
+    if(REVC_ANDROID_PLATFORM_LIBS)
+        target_link_libraries(${EXECUTABLE} PRIVATE ${REVC_ANDROID_PLATFORM_LIBS})
+    else()
+        target_link_libraries(${EXECUTABLE} PRIVATE
+                log
+                GLESv3
+                OpenSLES
+                z
+        )
+    endif()
 endif()
 
 target_include_directories(${EXECUTABLE}
@@ -61,6 +66,12 @@ if(LIBRW_PLATFORM_D3D9)
 endif()
 
 if(ANDROID)
+    # OpenAL is linked as the shared libOpenAL32.so/libOpenAL64.so prebuilt, so
+    # AL_LIBTYPE_STATIC must NOT be defined (it is only meaningful on Windows,
+    # where it switches AL_API from __declspec(dllimport) to nothing).
+    #
+    # HAVE_EFFICIENT_UNALIGNED_ACCESS must not be claimed either: it is false on
+    # armv7 and the Android build compiles for both ABIs.
     target_compile_definitions(${EXECUTABLE} PRIVATE
             ANDROID
             _ANDROID
@@ -69,14 +80,12 @@ if(ANDROID)
             POSIX
             _POSIX
             NO_HOOK_MALLOC
-            AL_LIBTYPE_STATIC
             GNUC
             RW_GL3
             LIBRW_SDL2
             LIBRW
             AUDIO_OAL
             USE_OUR_VERSIONING
-            HAVE_EFFICIENT_UNALIGNED_ACCESS
             VECTORIZE_SINCOS
         )
 else()

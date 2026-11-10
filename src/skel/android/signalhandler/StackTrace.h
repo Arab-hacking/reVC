@@ -8,59 +8,58 @@
 #if defined ANDROID
 
 #include <dlfcn.h>
-#include <execinfo.h>
+#include <stdint.h>
 #include <unwind.h>
 
 extern uintptr_t g_libREVC;
 
-#if ANDROID_x32
+#if defined(__arm__)
 #define PRINT_CRASH_STATES(context) \
 	Logger::CrashLog("register states:"); \
-	Logger::CrashLog("r0: 0x%X, r1: 0x%X, r2: 0x%X, r3: 0x%X", (context)->uc_mcontext.arm_r0, (context)->uc_mcontext.arm_r1, (context)->uc_mcontext.arm_r2, (context)->uc_mcontext.arm_r3); \
-	Logger::CrashLog("r4: 0x%x, r5: 0x%x, r6: 0x%x, r7: 0x%x", (context)->uc_mcontext.arm_r4, (context)->uc_mcontext.arm_r5, (context)->uc_mcontext.arm_r6, (context)->uc_mcontext.arm_r7); \
-	Logger::CrashLog("r8: 0x%x, r9: 0x%x, sl: 0x%x, fp: 0x%x", (context)->uc_mcontext.arm_r8, (context)->uc_mcontext.arm_r9, (context)->uc_mcontext.arm_r10, (context)->uc_mcontext.arm_fp); \
-	Logger::CrashLog("ip: 0x%x, sp: 0x%x, lr: 0x%x, pc: 0x%x", (context)->uc_mcontext.arm_ip, (context)->uc_mcontext.arm_sp, (context)->uc_mcontext.arm_lr, (context)->uc_mcontext.arm_pc); \
-    Logger::CrashLog("1: libreVC.so + 0x%X", context->uc_mcontext.arm_pc - g_libREVC); \
-    Logger::CrashLog("2: libreVC.so + 0x%X", context->uc_mcontext.arm_lr - g_libREVC);
+	Logger::CrashLog("r0: 0x%lx, r1: 0x%lx, r2: 0x%lx, r3: 0x%lx", (unsigned long)(context)->uc_mcontext.arm_r0, (unsigned long)(context)->uc_mcontext.arm_r1, (unsigned long)(context)->uc_mcontext.arm_r2, (unsigned long)(context)->uc_mcontext.arm_r3); \
+	Logger::CrashLog("r4: 0x%lx, r5: 0x%lx, r6: 0x%lx, r7: 0x%lx", (unsigned long)(context)->uc_mcontext.arm_r4, (unsigned long)(context)->uc_mcontext.arm_r5, (unsigned long)(context)->uc_mcontext.arm_r6, (unsigned long)(context)->uc_mcontext.arm_r7); \
+	Logger::CrashLog("r8: 0x%lx, r9: 0x%lx, sl: 0x%lx, fp: 0x%lx", (unsigned long)(context)->uc_mcontext.arm_r8, (unsigned long)(context)->uc_mcontext.arm_r9, (unsigned long)(context)->uc_mcontext.arm_r10, (unsigned long)(context)->uc_mcontext.arm_fp); \
+	Logger::CrashLog("ip: 0x%lx, sp: 0x%lx, lr: 0x%lx, pc: 0x%lx", (unsigned long)(context)->uc_mcontext.arm_ip, (unsigned long)(context)->uc_mcontext.arm_sp, (unsigned long)(context)->uc_mcontext.arm_lr, (unsigned long)(context)->uc_mcontext.arm_pc);
+#elif defined(__aarch64__)
+#define PRINT_CRASH_STATES(context) \
+	Logger::CrashLog("sp: 0x%lx, pc: 0x%lx, lr: 0x%lx", (unsigned long)(context)->uc_mcontext.sp, (unsigned long)(context)->uc_mcontext.pc, (unsigned long)(context)->uc_mcontext.regs[30]);
 #else
 #define PRINT_CRASH_STATES(context) \
-    Logger::CrashLog("1: libreVC.so + 0x%llx", context->uc_mcontext.pc - g_libREVC); \
-    Logger::CrashLog("2: libreVC.so + 0x%llx", context->uc_mcontext.regs[30] - g_libREVC);
+	(void)(context);
 #endif
 
 class CStackTrace
 {
 public:
-    static void printBacktrace()
-    {
-        Logger::CrashLog("------------ START BACKTRACE ------------");
-        Logger::CrashLog(" ");
-        PrintStackTrace();
-    }
+	static void printBacktrace()
+	{
+		Logger::CrashLog("------------ START BACKTRACE ------------");
+		Logger::CrashLog(" ");
+		PrintStackTrace();
+		Logger::CrashLog("------------  END BACKTRACE  ------------");
+	}
 
 private:
-    static _Unwind_Reason_Code TraceFunction(_Unwind_Context* context, void* arg) {
-        uintptr_t pc = _Unwind_GetIP(context);
+	static _Unwind_Reason_Code TraceFunction(_Unwind_Context* context, void* arg) {
+		uintptr_t pc = _Unwind_GetIP(context);
+		if (pc == 0)
+			return _URC_NO_REASON;
 
-        Dl_info info;
-        if (dladdr(reinterpret_cast<void*>(pc), &info) && info.dli_sname != nullptr) {
-            Logger::CrashLog("[adr: %p reVC: %p] %s\n",
-                     reinterpret_cast<void*>(pc),
-                     reinterpret_cast<void*>(pc - g_libREVC),
-                     info.dli_sname);
-        } else {
-            Logger::CrashLog("[adr: %p reVC: %p] name not found\n",
-                     reinterpret_cast<void*>(pc),
-                     reinterpret_cast<void*>(pc - g_libREVC));
-        }
+		// Offsets are printed relative to the game library so they stay usable
+		// with a different load address; dli_fname is deliberately not printed
+		// because dladdr is not guaranteed to be async-signal-safe.
+		if (g_libREVC != 0 && pc > g_libREVC)
+			Logger::CrashLog("librevc.so + 0x%lx (abs 0x%lx)",
+			                 (unsigned long)(pc - g_libREVC), (unsigned long)pc);
+		else
+			Logger::CrashLog("abs 0x%lx", (unsigned long)pc);
 
-        return _URC_NO_REASON;
-    }
+		return _URC_NO_REASON;
+	}
 
-    static void PrintStackTrace() {
-        _Unwind_Backtrace(TraceFunction, nullptr);
-    }
-
+	static void PrintStackTrace() {
+		_Unwind_Backtrace(TraceFunction, nullptr);
+	}
 };
 #endif
 

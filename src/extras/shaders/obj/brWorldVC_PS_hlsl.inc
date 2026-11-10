@@ -1,0 +1,28 @@
+const char *brWorldVC_PS_hlsl_src =
+"// UV2 lightmaps selected from zip/, not generic MatFX DUAL/detail textures.\n"
+"// BR scene formula: albedo is blended with 3x lightmap RGB by lightmap alpha.\n"
+"sampler2D Diffuse : register(s0);\n"
+"sampler2D Light : register(s1);\n"
+"float4 fogColor : register(c0);\n"
+"float4 lm : register(c1);\n"
+
+"struct PS_INPUT\n"
+"{\n"
+"    float4 Color : COLOR0;\n"
+"    float3 Tex0 : TEXCOORD0;\n"
+"    float2 Tex1 : TEXCOORD1;\n"
+"};\n"
+
+"float4 main(PS_INPUT IN) : COLOR\n"
+"{\n"
+"    float4 albedo = tex2D(Diffuse, IN.Tex0.xy);\n"
+"    float4 base = albedo * IN.Color;\n"
+"    float4 lightmap = tex2D(Light, IN.Tex1);\n"
+"    float3 lit = lerp(base.rgb,\n"
+"                      albedo.rgb * lightmap.rgb * 3.0,\n"
+"                      saturate(lightmap.a * lm.x));\n"
+"    base.rgb = lerp(fogColor.rgb, lit, IN.Tex0.z);\n"
+"    base.a *= lm.a;\n"
+"    return base;\n"
+"}\n"
+;
