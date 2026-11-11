@@ -1338,9 +1338,16 @@ IndexBrCollisionBlocks(void)
 			std::vector<uint8> game = LegacyClsToGame(data);
 			std::vector<customcolformat::Block> legacy;
 			customcolformat::Index(game.data(), game.size(), legacy);
+			unsigned emptyLegacy = 0;
 			for(size_t b = 0; b < legacy.size(); b++) {
 				const customcolformat::Block &block = legacy[b];
-				if(!customcolformat::ValidVC(game.data()+block.offset, block.size)) continue;
+				if(!customcolformat::ValidVC(game.data()+block.offset, block.size)) {
+					// Distinguish "not a collision model at all" from "a valid
+					// header with no sections". The second is what a stub .cls
+					// looks like, and the count is the only way to see it.
+					emptyLegacy++;
+					continue;
+				}
 				std::string key = ToLower(block.name);
 #ifdef ANDROID
 				if(customBrColBlocks.find(key) != customBrColBlocks.end()) continue;
@@ -1350,8 +1357,8 @@ IndexBrCollisionBlocks(void)
 				BrBlockRef ref = { source, block.offset, block.size, src.mtime };
 				customLegacyClsBlocks[key] = ref;
 			}
-			if(!legacy.empty()) CUSTOM_LOG("collision container %s: %u legacy .cls block(s)\n",
-				src.fname, (unsigned)legacy.size());
+			if(!legacy.empty()) CUSTOM_LOG("collision container %s: %u legacy .cls block(s), %u with no geometry\n",
+				src.fname, (unsigned)legacy.size(), emptyLegacy);
 		}
 		if(!blocks.empty() || bad)
 			CUSTOM_LOG("collision container %s: %u CED2 block(s), %u invalid chunk(s)\n",
