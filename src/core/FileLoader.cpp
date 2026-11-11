@@ -1340,9 +1340,18 @@ CFileLoader::LoadAtomicFile(RwStream *stream, uint32 id)
 							CVector mid = (bmin + bmax) * 0.5f;
 							CVector halfExt = (bmax - bmin) * 0.5f;
 							float rad = halfExt.Magnitude();
-							if(rad > 1.5f && rad < 4000.0f &&
-							   CPools::GetColModelPool() &&
-							   CPools::GetColModelPool()->EnsureFree(8)){
+							// This box is the only collision the model will ever get
+							// here, so every way out of it has to leave a name behind:
+							// a model that silently falls through this gate is drawn
+							// with nothing to stand or shoot on, which is exactly the
+							// "collision is missing here" a player runs into.
+							if(!(rad > 1.5f && rad < 4000.0f))
+								REVC_LOG_WARNING("collision %s: no .col, and the mesh box radius %.3f is outside 1.5..4000, so no collision box was created",
+									mi->GetModelName(), rad);
+							else if(!CPools::GetColModelPool() || !CPools::GetColModelPool()->EnsureFree(8))
+								REVC_LOG_ERROR("collision %s: no .col, and the collision model pool cannot take another box, so no collision box was created",
+									mi->GetModelName());
+							else{
 								CColModel *col = new CColModel();
 								if(col){
 									col->boundingBox.Set(bmin, bmax);
