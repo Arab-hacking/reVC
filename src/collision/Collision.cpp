@@ -1633,11 +1633,24 @@ CCollision::ProcessVerticalLine(const CColLine &line,
 #endif
 }
 
+// Ceilings for the per-pair candidate lists built in ProcessColModels. The
+// assert names in the client give the real values: 'effectiveSpheresA <=
+// MAXNUMSPHERES' / 'numSpheresB <= MAXNUMSPHERES' compare against 0x81 (129)
+// and 'numTrianglesB <= MAXNUMTRIS' against 0x640 (1600). The port was running
+// 128 and 600, so a model whose bounding sphere overlaps 600..1600 triangles
+// had its candidate list cut short and hits were lost - the assert would have
+// caught it, but asserts are compiled out in release. Spheres were one short,
+// which drops the last sphere of any model that has exactly 129 (the limit for
+// the client).
+//
+// Boxes and lines keep the port's values: the analysis confirms the assert
+// names exist ('numBoxesB <= MAXNUMBOXES', 'effectiveLinesA <= MAXNUMLINES')
+// but not their numbers, so changing those would be guesswork.
 enum {
-	MAXNUMSPHERES = 128,
+	MAXNUMSPHERES = 129,
 	MAXNUMBOXES = 32,
 	MAXNUMLINES = 16,
-	MAXNUMTRIS = 600
+	MAXNUMTRIS = 1600
 };
 
 #ifdef VU_COLLISION
@@ -2030,9 +2043,17 @@ CCollision::ProcessColModels(const CMatrix &matrixA, CColModel &modelA,
 		if(TestSphereBox(bsphereAB, modelB.boxes[i]))
 			aBoxIndicesB[numBoxesB++] = i;
 	CalculateTrianglePlanes(&modelB);
-	for(i = 0; i < modelB.numTriangles; i++)
+	for(i = 0; i < modelB.numTriangles; i++){
+		// The list is fixed size and the assert below is compiled out in
+		// release, so the bound has to be enforced here or the write runs past
+		// the array. Reaching it means the model has more candidate triangles
+		// than the client's limit; keeping the first MAXNUMTRIS matches the
+		// order the client processes them in.
+		if(numTrianglesB >= MAXNUMTRIS)
+			break;
 		if(TestSphereTriangle(bsphereAB, modelB.vertices, modelB.triangles[i], modelB.trianglePlanes[i]))
 			aTriangleIndicesB[numTrianglesB++] = i;
+	}
 	assert(numSpheresB <= MAXNUMSPHERES);
 	assert(numBoxesB <= MAXNUMBOXES);
 	assert(numTrianglesB <= MAXNUMTRIS);

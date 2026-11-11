@@ -462,7 +462,11 @@ CFileLoader::LoadCollisionFileFirstTime(uint8 *buffer, uint32 size, uint8 colSlo
 		memcpy(work_buff, buffer+32, modelsize-24);
 		size -= 32 + (modelsize-24);
 		buffer += 32 + (modelsize-24);
-		if(modelsize > 15*1024)
+		// 15 KB was below what a legal model can weigh: 1600 triangles (the
+		// client's MAXNUMTRIS) plus their vertices is ~25 KB, so ordinary large
+		// models were reported as huge. The client bounds the collision buffer
+		// at 0x001B7740 (1 800 000) bytes, so use that.
+		if(modelsize > 1800000)
 			debug("colmodel %s is huge, size %d\n", modelname, modelsize);
 
 		mi = CModelInfo::GetModelInfo(modelname, &modelIndex);
@@ -515,7 +519,11 @@ CFileLoader::LoadCollisionFile(uint8 *buffer, uint32 size, uint8 colSlot)
 		memcpy(work_buff, buffer+32, modelsize-24);
 		size -= 32 + (modelsize-24);
 		buffer += 32 + (modelsize-24);
-		if(modelsize > 15*1024)
+		// 15 KB was below what a legal model can weigh: 1600 triangles (the
+		// client's MAXNUMTRIS) plus their vertices is ~25 KB, so ordinary large
+		// models were reported as huge. The client bounds the collision buffer
+		// at 0x001B7740 (1 800 000) bytes, so use that.
+		if(modelsize > 1800000)
 			debug("colmodel %s is huge, size %d\n", modelname, modelsize);
 
 		mi = CModelInfo::GetModelInfo(modelname, CColStore::GetSlot(colSlot)->minIndex, CColStore::GetSlot(colSlot)->maxIndex);
