@@ -56,16 +56,14 @@ BrChunk(const char *tag, const char *name, size_t extra)
 }
 
 // A valid VC (COLL) block: 32-byte header, bounds, then the five section
-// counters (spheres, lines, boxes, vertices, faces) all zero. That is 92 bytes,
-// which is the minimum the native-layout validator accepts - a block without
-// its section counters is not a collision model at all.
+// counters and one box. The counters alone are a 92-byte header with no
+// geometry at all; that shape validates structurally but is not a collision
+// model, and the validator now refuses it, so the fixture carries a box.
 static std::vector<uint8_t>
 ColBlock(const char *name)
 {
 	std::vector<uint8_t> c(72 + 5*4, 0);
 	std::memcpy(&c[0], "COLL", 4);
-	uint32_t len = (uint32_t)(c.size() - 8);
-	for(int i = 0; i < 4; i++) c[4+i] = (uint8_t)(len >> (i*8));
 	std::memcpy(&c[8], name, std::strlen(name));
 	float radius = 1.0f;
 	std::memcpy(&c[32], &radius, 4);
@@ -73,6 +71,25 @@ ColBlock(const char *name)
 	for(int k = 0; k < 3; k++) std::memcpy(&c[48+k*4], &v[k], 4);
 	float w[3] = { 1.0f, 2.0f, 3.0f };
 	for(int k = 0; k < 3; k++) std::memcpy(&c[60+k*4], &w[k], 4);
+	// Counts and their data are interleaved: spheres count, spheres, lines
+	// count, lines, boxes count, boxes, vertices count, vertices, faces count,
+	// faces. Here: 0 spheres, 0 lines, 1 box, then 0 vertices and 0 faces.
+	uint32_t zero = 0, one = 1;
+	std::memcpy(&c[72], &zero, 4);           // spheres
+	std::memcpy(&c[76], &zero, 4);           // lines
+	std::memcpy(&c[80], &one, 4);            // boxes
+	size_t boxAt = 84;
+	c.resize(boxAt + 28, 0);
+	for(int k = 0; k < 6; k++){
+		float f = (k < 3) ? v[k] : w[k-3];
+		std::memcpy(&c[boxAt + k*4], &f, 4);
+	}
+	size_t after = boxAt + 28;
+	c.resize(after + 8, 0);                  // vertices count, faces count
+	std::memcpy(&c[after], &zero, 4);
+	std::memcpy(&c[after+4], &zero, 4);
+	uint32_t len = (uint32_t)(c.size() - 8);
+	for(int i = 0; i < 4; i++) c[4+i] = (uint8_t)(len >> (i*8));
 	return c;
 }
 
@@ -263,9 +280,37 @@ TestEmptyBrChunkIsRejected(void)
 	Check(game.empty(), "nothing is written for an empty chunk");
 }
 
+// The same emptiness in the native layout: a 92-byte COLL with all five
+// counters zero. It used to pass ValidVC, get indexed, install, and leave the
+// model owning an empty collision model - so the fallback that would have built
+// a box from the mesh never ran.
+static void
+TestEmptyColBlockIsRejected(void)
+{
+	std::vector<uint8_t> c(92, 0);
+	std::memcpy(&c[0], "COLL", 4);
+	uint32_t len = (uint32_t)(c.size() - 8);
+	for(int i = 0; i < 4; i++) c[4+i] = (uint8_t)(len >> (i*8));
+	std::memcpy(&c[8], "empty_road", 10);
+	float radius = 1.0f;
+	std::memcpy(&c[32], &radius, 4);
+	float mn[3] = { -1.0f, -2.0f, -3.0f };
+	float mx[3] = { 1.0f, 2.0f, 3.0f };
+	for(int k = 0; k < 3; k++) std::memcpy(&c[48+k*4], &mn[k], 4);
+	for(int k = 0; k < 3; k++) std::memcpy(&c[60+k*4], &mx[k], 4);
+
+	Check(!customcolformat::ValidVC(c.data(), c.size()),
+	      "a COLL with every section count zero is not a usable collision model");
+	// and the block that does carry geometry still passes
+	std::vector<uint8_t> full = ColBlock("real_road");
+	Check(customcolformat::ValidVC(full.data(), full.size()),
+	      "a COLL with a box still validates");
+}
+
 int
 main(void)
 {
+	TestEmptyColBlockIsRejected();
 	TestEmptyBrChunkIsRejected();
 	TestBrContainerHoldsSeveralModels();
 	TestBrContainerSurvivesImgRounding();

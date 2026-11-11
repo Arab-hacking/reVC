@@ -143,6 +143,14 @@ inline bool ValidVC(const uint8_t *p, size_t n) {
             return false;
     }
     for(; at < n; at++) if(p[at]) return false; // optional zero alignment
+    // A block whose five counters are all zero is a well-formed COLL header and
+    // nothing else: 92 bytes, no spheres, no boxes, no faces. It validates, it
+    // indexes, it installs, and the model then owns an empty collision model -
+    // GetColModel() is non-null, so nothing looks for a real one and the model
+    // is drawn with nothing to collide with. That is a model with no collision,
+    // not a valid empty one, so it must not pass as a usable block.
+    if(spheres == 0 && boxes == 0 && faces == 0)
+        return false;
     return true;
 }
 
