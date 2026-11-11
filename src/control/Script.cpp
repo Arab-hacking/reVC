@@ -327,6 +327,11 @@ void CMissionCleanup::RemoveEntityFromList(int32 id, uint8 type)
 
 void CMissionCleanup::CheckIfCollisionHasLoadedForMissionObjects()
 {
+	// Runs every frame from CTheScripts::Process, and each hit costs a full
+	// CColStore::HasCollisionLoaded scan. In free roam the list is empty, so
+	// skip the 50 pool lookups entirely instead of walking dead slots.
+	if (m_nCount == 0)
+		return;
 	for (int i = 0; i < MAX_CLEANUP; i++) {
 		switch (m_sEntities[i].type) {
 		case CLEANUP_CAR:
