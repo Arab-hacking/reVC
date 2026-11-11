@@ -285,6 +285,15 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Cla
     set_target_properties(optimization_profile_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
     add_test(NAME optimization_profile_tests COMMAND optimization_profile_tests)
 
+    # The collision slot policy: which store slots a frame wants loaded. It was
+    # inlined in CColStore::LoadCollision next to a per-slot scan of the mission
+    # cleanup list, so it could not be tested or reasoned about on its own.
+    add_executable(col_slot_selection_tests ColSlotSelectionTests.cpp)
+    target_include_directories(col_slot_selection_tests PRIVATE
+        ../src ../src/collision ../src/math)
+    set_target_properties(col_slot_selection_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+    add_test(NAME col_slot_selection_tests COMMAND col_slot_selection_tests)
+
     # The COL2/COL3 TBounds block stores the bounding sphere in one of two
     # orders depending on which tool wrote the file; the converter has to
     # recognise it instead of guessing from the platform.

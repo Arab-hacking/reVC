@@ -11,6 +11,8 @@
 #include "Frontend.h"
 #include "Physical.h"
 #include "ColStore.h"
+#define COLSLOTSELECTION_IMPLEMENTATION
+#include "ColSlotSelection.h"
 #include "VarConsole.h"
 #include "Pools.h"
 #if defined(ANDROID) && defined(CUSTOM_MODELS)
@@ -182,37 +184,50 @@ CColStore::LoadCollision(const CVector2D &pos)
 	}
 #endif
 
+	// Read the mission cleanup list once instead of once per collision slot.
+	// The old shape ran the full MAX_CLEANUP scan inside the slot loop, so it
+	// cost COLSTORESIZE (31) x MAX_CLEANUP (50) iterations - with a pool lookup
+	// per iteration - on every call, and this call runs every frame from
+	// CStreaming::Update and again from CCollision::SortOutCollisionAfterLoad.
+	CPhysical *missionEntities[MAX_CLEANUP];
+	int numMissionEntities = 0;
+	// m_nCount counts the occupied entries, so in free roam - the common case -
+	// there is nothing to scan at all and the whole loop is skipped.
+	for(int j = 0; j < MAX_CLEANUP && CTheScripts::MissionCleanUp.m_nCount != 0; j++){
+		CPhysical *pEntity = nil;
+		cleanup_entity_struct *pCleanup = &CTheScripts::MissionCleanUp.m_sEntities[j];
+		if(pCleanup->type == CLEANUP_CAR){
+			pEntity = CPools::GetVehiclePool()->GetAt(pCleanup->id);
+			if(!pEntity || pEntity->GetStatus() == STATUS_WRECKED)
+				continue;
+		}else if(pCleanup->type == CLEANUP_CHAR){
+			pEntity = CPools::GetPedPool()->GetAt(pCleanup->id);
+			if(!pEntity || ((CPed*)pEntity)->DyingOrDead())
+				continue;
+		}else
+			continue;
+		if(!pEntity->bDontLoadCollision && !pEntity->bIsFrozen)
+			missionEntities[numMissionEntities++] = pEntity;
+	}
+
+	const bool atSecondPosition = bLoadAtSecondPosition;
+	const CVector2D second = secondPosition;
+
 	for(i = 1; i < COLSTORESIZE; i++){
 		if(GetSlot(i) == nil)
 			continue;
 
-		bool wantThisOne = false;
+		CRect &bounds = GetBoundingBox(i);
+		CVector2D missionPositions[MAX_CLEANUP];
+		for(int j = 0; j < numMissionEntities; j++)
+			missionPositions[j] = missionEntities[j]->GetPosition();
+		const bool wantThisOne = ColSlotWantedFor(bounds, GetColName(i), pos,
+		                                          atSecondPosition, second,
+		                                          missionPositions, numMissionEntities);
 
-		if(GetBoundingBox(i).IsPointInside(pos) ||
-		   bLoadAtSecondPosition && GetBoundingBox(i).IsPointInside(secondPosition, -119.0f) ||
-		   strcmp(GetColName(i), "yacht") == 0){
-			wantThisOne = true;
-		}else{
-			for (int j = 0; j < MAX_CLEANUP; j++) {
-				CPhysical* pEntity = nil;
-				cleanup_entity_struct* pCleanup = &CTheScripts::MissionCleanUp.m_sEntities[j];
-				if (pCleanup->type == CLEANUP_CAR) {
-					pEntity = CPools::GetVehiclePool()->GetAt(pCleanup->id);
-					if (!pEntity || pEntity->GetStatus() == STATUS_WRECKED)
-						continue;
-				}
-				else if (pCleanup->type == CLEANUP_CHAR) {
-					pEntity = CPools::GetPedPool()->GetAt(pCleanup->id);
-					if (!pEntity || ((CPed*)pEntity)->DyingOrDead())
-						continue;
-				}
-				if (pEntity && !pEntity->bDontLoadCollision && !pEntity->bIsFrozen) {
-					if (GetBoundingBox(i).IsPointInside(pEntity->GetPosition(), -80.0f))
-						wantThisOne = true;
-				}
-			}
-		}
-
+		// Unconditional, exactly as before: RemoveCol also cancels a slot that
+		// is merely queued, so asking first whether it is loaded would leave a
+		// pending request alive for a slot we no longer want.
 		if(wantThisOne)
 			CStreaming::RequestCol(i, STREAMFLAGS_PRIORITY);
 		else
@@ -231,7 +246,7 @@ CColStore::RequestCollision(const CVector2D &pos)
 #endif
 
 	for(i = 1; i < COLSTORESIZE; i++)
-		if(GetSlot(i) && GetBoundingBox(i).IsPointInside(pos, -115.0f))
+		if(GetSlot(i) && ColSlotWithinRequestRadius(GetBoundingBox(i), pos))
 			CStreaming::RequestCol(i, STREAMFLAGS_PRIORITY);
 }
 
@@ -248,14 +263,27 @@ CColStore::EnsureCollisionIsInMemory(const CVector2D &pos)
 #endif
 
 	for(i = 1; i < COLSTORESIZE; i++)
-		if(GetSlot(i) && GetBoundingBox(i).IsPointInside(pos, -110.0f) &&
+		if(GetSlot(i) && ColSlotNearby(GetBoundingBox(i), pos) &&
 		   !CStreaming::HasColLoaded(i)){
 			CStreaming::RequestCol(i, 0);
 			if(TheCamera.GetScreenFadeStatus() == FADE_0)
 				FrontEndMenuManager.MessageScreen("LOADCOL", false);
 			CTimer::Suspend();
+			// One LoadAllRequestedModels satisfies every slot inside the radius,
+			// so blocking a second time per slot is pure added stall. Break when
+			// nothing is left unloaded nearby, i.e. when a second pass would
+			// find no work.
 			CStreaming::LoadAllRequestedModels(false);
 			CTimer::Resume();
+			bool morePending = false;
+			for(int j = i + 1; j < COLSTORESIZE; j++)
+				if(GetSlot(j) && ColSlotNearby(GetBoundingBox(j), pos) &&
+				   !CStreaming::HasColLoaded(j)){
+					morePending = true;
+					break;
+				}
+			if(!morePending)
+				return;
 		}
 }
 
@@ -269,7 +297,7 @@ CColStore::HasCollisionLoaded(const CVector2D &pos)
 #endif
 
 	for(i = 1; i < COLSTORESIZE; i++)
-		if(GetSlot(i) && GetBoundingBox(i).IsPointInside(pos, -115.0f) &&
+		if(GetSlot(i) && ColSlotWithinLoadedRadius(GetBoundingBox(i), pos) &&
 		   !GetSlot(i)->isLoaded)
 			return false;
 	return true;
