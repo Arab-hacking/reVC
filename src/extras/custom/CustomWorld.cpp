@@ -123,6 +123,20 @@ void LogUnresolved(const char *prefix, const char *reason, const std::map<std::s
                                               const std::pair<unsigned, std::string> &b) {
         return a.first != b.first ? a.first > b.first : a.second < b.second;
     });
+    // Group by reason first: with thousands of rejects the reason is what says
+    // what to fix, and 16 sample names cannot be read as a distribution.
+    std::map<std::string, unsigned> byReason;
+    for(size_t i = 0; i < names.size(); i++) {
+        const std::string &full = names[i].second;
+        size_t open = full.rfind(" (");
+        std::string why = (open != std::string::npos && full[full.size()-1] == ')')
+            ? full.substr(open+2, full.size()-open-3) : std::string("unspecified");
+        byReason[why] += names[i].first;
+    }
+    for(std::map<std::string, unsigned>::const_iterator r = byReason.begin(); r != byReason.end(); ++r)
+        CUSTOM_LOG("%s: %s - %s: %u block(s)\n",
+            prefix, reason, r->first.c_str(), r->second);
+
     const size_t shown = std::min(names.size(), size_t(16));
     for(size_t i = 0; i < shown; i++)
         CUSTOM_LOG("%s: %s %s: %u placement(s)\n",
@@ -194,11 +208,28 @@ void ReadCollision(const char *name, const unsigned char *block, size_t size, vo
     ColContext &ctx = *(ColContext *)user;
     std::map<std::string, int>::const_iterator it =
         nameSlots.find(customworld::Lower(customworld::ModelName(name)));
-    if(it == nameSlots.end()) { ctx.missing++; return; }
+    if(it == nameSlots.end()) { ctx.missing++; ctx.missingNames[customworld::Lower(customworld::ModelName(name))]++; return; }
     CBaseModelInfo *mi = CModelInfo::GetModelInfo(it->second);
     if(!mi || !mi->IsBuilding()) return;
     std::vector<uint8_t> game;
-    if(!brcollision::Convert(block, size, game)) { ctx.invalid++; return; }
+    const char *why = nullptr;
+    if(!brcollision::Convert(block, size, game, &why)) {
+        // Name it and say why. A .cls chunk that will not convert is a block
+        // the model was supposed to get its collision from, so this is exactly
+        // the model that ends up standing in nothing - and without the name the
+        // summary only ever said "5858 rejected".
+        const char *reason = why ? why : "unknown";
+        ctx.invalid++;
+        ctx.invalidNames[customworld::Lower(customworld::ModelName(name)) + " (" + reason + ")"]++;
+        if(ctx.sample.size() < 12) {
+            char line[256];
+            std::snprintf(line, sizeof(line),
+                "collision %s: rejected, CED2 chunk of %u bytes: %s",
+                customworld::ModelName(name).c_str(), (unsigned)size, reason);
+            ctx.sample.push_back(line);
+        }
+        return;
+    }
     InstallCollision(name, game.data(), game.size(), ctx);
 }
 

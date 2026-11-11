@@ -118,8 +118,11 @@ inline uint8_t Surface(uint8_t s) {
 // (u32 nS, spheres[20], u32 nL, lines[24], u32 nB, boxes[28], u32 nV, verts[12], u32 nF, faces[16]).
 inline bool ConvertClsfV1(const uint8_t *p, size_t n, const std::string &name,
                           float cx, float cy, float cz, float radius,
-                          std::vector<uint8_t> &out) {
-    if(n < 92 || std::memcmp(p, "CLSF", 4) != 0) return false;
+                          std::vector<uint8_t> &out, const char **why = nullptr) {
+    if(n < 92 || std::memcmp(p, "CLSF", 4) != 0) {
+        if(why) *why = "v1 body: not a CLSF chunk";
+        return false;
+    }
     size_t pos = 72;
     auto takeCount = [&](uint32_t &cnt, size_t width, const uint8_t *&ptr) -> bool {
         if(n - pos < 4) return false;
@@ -132,14 +135,18 @@ inline bool ConvertClsfV1(const uint8_t *p, size_t n, const std::string &name,
     uint32_t nS = 0, nL = 0, nB = 0, nV = 0, nF = 0;
     const uint8_t *sph = nullptr, *lin = nullptr, *box = nullptr, *vtx = nullptr, *fac = nullptr;
     if(!takeCount(nS, 20, sph) || !takeCount(nL, 24, lin) || !takeCount(nB, 28, box) ||
-       !takeCount(nV, 12, vtx) || !takeCount(nF, 16, fac))
+       !takeCount(nV, 12, vtx) || !takeCount(nF, 16, fac)) {
+        if(why) *why = "v1 body: a section count does not fit the chunk";
         return false;
+    }
     // Nothing to collide with. Returning true here writes a structurally valid
     // COLL whose every count is zero: it validates, it installs, and the model
     // is left with an empty collision model while the log says the block was
     // accepted. That is the missing-collision a player stands in.
-    if(nS == 0 && nB == 0 && nF == 0)
+    if(nS == 0 && nB == 0 && nF == 0) {
+        if(why) *why = "v1 body: every section count is zero";
         return false;
+    }
     for(size_t rem = pos; rem < n; rem++)
         if(p[rem] != 0) return false;
     for(uint32_t k = 0; k < nS; k++) {
@@ -204,18 +211,24 @@ inline bool ConvertClsfV1(const uint8_t *p, size_t n, const std::string &name,
 // raw .cls through the unsafe VC collision reader. The A/B elements are SA's
 // 20-byte spheres and 28-byte boxes; group tables are only for acceleration
 // and are not needed by VC's triangle collision implementation.
-inline bool Convert(const uint8_t *p, size_t n, std::vector<uint8_t> &out) {
+inline bool Convert(const uint8_t *p, size_t n, std::vector<uint8_t> &out, const char **why = nullptr) {
+    // Every way out of here is a model that will have no collision from this
+    // container, and "5858 rejected" does not say which of a dozen checks fired.
+    // The reason is returned alongside so the log can name it.
+    auto no = [&](const char *r) { if(why) *why = r; out.clear(); return false; };
     out.clear();
     std::string name;
-    if(!p || !Header(p, n, name) || n > 8u*1024u*1024u) return false;
-    for(int k = 0; k < 10; k++) if(!std::isfinite(F32(p+32+4*k))) return false;
+    if(!p) return no("no data");
+    if(n > 8u*1024u*1024u) return no("chunk larger than 8 MB");
+    if(!Header(p, n, name)) return no("not a CED2 header (tag, size, name or CED2 magic)");
+    for(int k = 0; k < 10; k++) if(!std::isfinite(F32(p+32+4*k))) return no("bounds contain NaN or infinity");
     float cx = F32(p+32), cy = F32(p+36), cz = F32(p+40);
     float radius = F32(p+44);
-    if(radius < 0.0f || radius > 100000.0f) return false;
+    if(radius < 0.0f || radius > 100000.0f) return no("bounding radius out of range");
     for(int k = 0; k < 3; k++)
         if(F32(p+60+4*k) < F32(p+48+4*k) ||
            std::fabs(F32(p+48+4*k)) > 1e6f ||
-           std::fabs(F32(p+60+4*k)) > 1e6f) return false;
+           std::fabs(F32(p+60+4*k)) > 1e6f) return no("bounding box is inside out or out of range");
     // A zero-radius marker can still have a valid bounding box.
     if(radius == 0.0f) {
         float dx = F32(p+60)-F32(p+48), dy = F32(p+64)-F32(p+52), dz = F32(p+68)-F32(p+56);
@@ -237,32 +250,36 @@ inline bool Convert(const uint8_t *p, size_t n, std::vector<uint8_t> &out) {
     // All-zero counts are also what a v1 float32 body looks like when it is
     // read as a CED2 header (the v1 body starts with u32 counts at +72), so
     // this is the point where that layout has to be tried before giving up.
-    if(nA == 0 && nB == 0 && nF == 0)
-        return ConvertClsfV1(p, n, name, cx, cy, cz, radius, out);
+    if(nA == 0 && nB == 0 && nF == 0) {
+        if(ConvertClsfV1(p, n, name, cx, cy, cz, radius, out)) return true;
+        return no("no spheres, boxes or faces, and not a v1 float body either");
+    }
     uint32_t a = U32(p+84), b = U32(p+88), v = U32(p+96), f = U32(p+100);
     size_t aPos = (size_t)a+4, bPos = (size_t)b+4;
     size_t vPos = (size_t)v+4, fPos = (size_t)f+4;
     if((nA && (!a || !Range(aPos, nA, 20, n))) ||
        (nB && (!b || !Range(bPos, nB, 28, n))) ||
-       (nF && (!f || !v || !Range(fPos, nF, 8, n) || vPos < 120 || vPos >= fPos)))
-        return ConvertClsfV1(p, n, name, cx, cy, cz, radius, out);
+       (nF && (!f || !v || !Range(fPos, nF, 8, n) || vPos < 120 || vPos >= fPos))) {
+        if(ConvertClsfV1(p, n, name, cx, cy, cz, radius, out)) return true;
+        return no("sphere/box/face offsets do not point inside the chunk, and not a v1 float body either");
+    }
     // A group count is stored immediately before faces in the full format.
     // Validate it so that group records cannot be mistaken for vertices.
     size_t endVerts = nF ? fPos : n;
     if(nF && (version & 8)) {
-        if(fPos < 124) return false;
+        if(fPos < 124) return no("group table before the face array");
         uint32_t nGroups = U32(p+fPos-4);
-        if(nGroups > 4096 || (size_t)nGroups > (fPos-4-120)/28) return false;
+        if(nGroups > 4096 || (size_t)nGroups > (fPos-4-120)/28) return no("group count does not fit the chunk");
         endVerts = fPos-4-(size_t)nGroups*28;
         if(nGroups) {
             uint32_t next = 0;
             for(uint32_t g = 0; g < nGroups; g++) {
                 const uint8_t *group = p+endVerts+g*28;
                 uint32_t first = U16(group+24), last = U16(group+26);
-                if(first != next || last < first || last >= nF) return false;
+                if(first != next || last < first || last >= nF) return no("group records do not tile the face array");
                 next = last+1;
             }
-            if(next != nF) return false;
+            if(next != nF) return no("groups do not cover every face");
         }
     }
     uint32_t nV = 0;
@@ -271,18 +288,18 @@ inline bool Convert(const uint8_t *p, size_t n, std::vector<uint8_t> &out) {
         uint32_t hi = U16(face);
         if(U16(face+2) > hi) hi = U16(face+2);
         if(U16(face+4) > hi) hi = U16(face+4);
-        if(hi >= 32767) return false;
+        if(hi >= 32767) return no("a face indexes a vertex beyond 32767");
         if(hi+1 > nV) nV = hi+1;
     }
-    if(nF && (endVerts < vPos || !Range(vPos, nV, 6, endVerts))) return false;
+    if(nF && (endVerts < vPos || !Range(vPos, nV, 6, endVerts))) return no("vertex array does not fit before the faces");
     // Disjoint arrays. In particular do not read a group record or a face
     // as a vertex/sphere/box if an offset in the chunk is corrupt.
     size_t aEnd = aPos+(size_t)nA*20, bEnd = bPos+(size_t)nB*28;
-    if(nA && nB && aPos < bEnd && bPos < aEnd) return false;
+    if(nA && nB && aPos < bEnd && bPos < aEnd) return no("sphere and box arrays overlap");
     if(nF && ((nA && aPos < endVerts && aEnd > vPos) ||
               (nB && bPos < endVerts && bEnd > vPos) ||
               (nA && aPos < n && aEnd > endVerts) ||
-              (nB && bPos < n && bEnd > endVerts))) return false;
+              (nB && bPos < n && bEnd > endVerts))) return no("a geometry array overlaps the vertex/group area");
 
     out.reserve(8+24+40+20+(size_t)nA*20+(size_t)nB*28+(size_t)nV*12+(size_t)nF*16);
     out.insert(out.end(), (const uint8_t *)"COLL", (const uint8_t *)"COLL"+4);
