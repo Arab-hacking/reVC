@@ -262,29 +262,26 @@ CColStore::EnsureCollisionIsInMemory(const CVector2D &pos)
 		return;
 #endif
 
+	// Request first, block second. This used to suspend the timer and call
+	// LoadAllRequestedModels once per unloaded slot inside the radius, so
+	// entering an area with three pending colliders meant three full frame
+	// stalls. One LoadAllRequestedModels satisfies every slot that is already
+	// queued, so queue them all and block once.
+	bool requested = false;
 	for(i = 1; i < COLSTORESIZE; i++)
 		if(GetSlot(i) && ColSlotNearby(GetBoundingBox(i), pos) &&
 		   !CStreaming::HasColLoaded(i)){
 			CStreaming::RequestCol(i, 0);
-			if(TheCamera.GetScreenFadeStatus() == FADE_0)
-				FrontEndMenuManager.MessageScreen("LOADCOL", false);
-			CTimer::Suspend();
-			// One LoadAllRequestedModels satisfies every slot inside the radius,
-			// so blocking a second time per slot is pure added stall. Break when
-			// nothing is left unloaded nearby, i.e. when a second pass would
-			// find no work.
-			CStreaming::LoadAllRequestedModels(false);
-			CTimer::Resume();
-			bool morePending = false;
-			for(int j = i + 1; j < COLSTORESIZE; j++)
-				if(GetSlot(j) && ColSlotNearby(GetBoundingBox(j), pos) &&
-				   !CStreaming::HasColLoaded(j)){
-					morePending = true;
-					break;
-				}
-			if(!morePending)
-				return;
+			requested = true;
 		}
+
+	if(requested){
+		if(TheCamera.GetScreenFadeStatus() == FADE_0)
+			FrontEndMenuManager.MessageScreen("LOADCOL", false);
+		CTimer::Suspend();
+		CStreaming::LoadAllRequestedModels(false);
+		CTimer::Resume();
+	}
 }
 
 bool
