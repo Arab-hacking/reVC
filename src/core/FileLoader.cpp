@@ -232,6 +232,11 @@ CFileLoader::LoadCollisionFile(const char *filename, uint8 colSlot)
 	char modelname[24];
 	CBaseModelInfo *mi;
 	ColHeader header;
+	// Per-file tally. A .col whose every record parses to no geometry is a
+	// truncated or damaged file, and that is a different problem from a few
+	// odd records inside an otherwise good one - the totals alone cannot tell
+	// them apart.
+	unsigned records = 0, noInfo = 0;
 
 	PUSH_MEMID(MEMID_COLLISION);
 
@@ -282,6 +287,7 @@ CFileLoader::LoadCollisionFile(const char *filename, uint8 colSlot)
 		size_t colbodysize = header.size;
 #endif
 
+		records++;
 		mi = CModelInfo::GetModelInfo(modelname, nil);
 		if(mi){
 			// Read into a scratch model first. A record can be long enough to
@@ -314,9 +320,13 @@ CFileLoader::LoadCollisionFile(const char *filename, uint8 colSlot)
 				mi->SetColModel(model, true);
 			}
 		}else{
+			noInfo++;
 			debug("colmodel %s can't find a modelinfo\n", modelname);
 		}
 	}
+
+	debug("collision file %s: %u record(s), %u without a modelinfo\n",
+	      filename, records, noInfo);
 
 	CFileMgr::CloseFile(fd);
 
