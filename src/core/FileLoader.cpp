@@ -284,7 +284,28 @@ CFileLoader::LoadCollisionFile(const char *filename, uint8 colSlot)
 
 		mi = CModelInfo::GetModelInfo(modelname, nil);
 		if(mi){
-			if(mi->GetColModel() && mi->DoesOwnColModel()){
+			// Read into a scratch model first. A record can be long enough to
+			// pass every bounds check and still carry no geometry at all (a
+			// header with five zero counters is the size the log showed for
+			// every GENERIC.COL entry). Installing that empty model is worse
+			// than installing nothing: GetColModel() stops being nil, so the
+			// SA-static fallback that builds a box from the mesh never runs and
+			// the model is drawn with nothing to stand on.
+			//
+			// The native model is left untouched in that case - it keeps the
+			// box CTempColModels gave it at IDE load - and the name is logged,
+			// because a silent drop here is the "collision is missing" symptom.
+			CColModel parsed;
+			parsed.level = colSlot;
+			LoadCollisionModel(colbody+24, colbodysize > 24 ? colbodysize-24 : 0, parsed, modelname);
+			bool empty = parsed.numSpheres == 0 && parsed.numBoxes == 0 && parsed.numTriangles == 0;
+			// Drop the scratch copy's volumes now; assigning the model below
+			// allocates its own, so nothing would free these.
+			parsed.RemoveCollisionVolumes();
+			if(empty){
+				debug("colmodel %s: record has no geometry, keeping the model's own collision\n",
+				      modelname);
+			}else if(mi->GetColModel() && mi->DoesOwnColModel()){
 				LoadCollisionModel(colbody+24, colbodysize > 24 ? colbodysize-24 : 0, *mi->GetColModel(), modelname);
 			}else{
 				CColModel *model = new CColModel;
