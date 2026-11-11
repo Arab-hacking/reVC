@@ -105,7 +105,13 @@ struct ColContext {
     std::map<std::string, unsigned> missingNames;   // no IDE/IPL slot to attach to
     std::map<std::string, unsigned> fullNames;      // collision pool exhausted
     std::vector<std::string> sample;                // first few, with the reason
-    ColContext() : installed(0), replaced(0), invalid(0), missing(0), full(0), freeModels(0) {}
+    // Blocks that were accepted as valid VC layout and still parsed to no
+    // geometry at all - a different fault from "rejected", and invisible in
+    // the tallies above.
+    unsigned noGeometry;
+    std::vector<std::string> noGeometryNames;
+    ColContext() : installed(0), replaced(0), invalid(0), missing(0), full(0),
+                   freeModels(0), noGeometry(0) {}
 };
 
 void LogUnresolved(const char *prefix, const char *reason, const std::map<std::string, unsigned> &counts)
@@ -174,6 +180,13 @@ void InstallCollision(const char *name, const uint8_t *game, size_t size, ColCon
     mi->SetColModel(col, true);
     ctx.freeModels--;
     ctx.installed++;
+    // Tally what actually arrived, not just that a block was accepted. A block
+    // can pass every validation above and still parse to nothing, and then the
+    // summary says "22469 installed" while the map has no collision at all.
+    if(col->numSpheres == 0 && col->numBoxes == 0 && col->numTriangles == 0){
+        ctx.noGeometry++;
+        if(ctx.noGeometryNames.size() < 12) ctx.noGeometryNames.push_back(key);
+    }
 }
 
 void ReadCollision(const char *name, const unsigned char *block, size_t size, void *user)
@@ -894,8 +907,15 @@ void CCustomWorld::LoadCollisions(void)
                 lodInfo->SetColModel(nearCol, false);
         }
     }
-    CUSTOM_LOG("custom IMG collision: %u installed, %u replacements, %u invalid, %u outside IDE, %u over pool capacity\n",
-        ctx.installed, ctx.replaced, ctx.invalid, ctx.missing, ctx.full);
+    CUSTOM_LOG("custom IMG collision: %u installed, %u replacements, %u invalid, %u outside IDE, %u over pool capacity, %u installed with no geometry\n",
+        ctx.installed, ctx.replaced, ctx.invalid, ctx.missing, ctx.full, ctx.noGeometry);
+    if(ctx.noGeometry){
+        std::string names;
+        for(size_t i = 0; i < ctx.noGeometryNames.size(); i++)
+            names += (i ? ", " : "") + ctx.noGeometryNames[i];
+        CUSTOM_LOG("custom IMG collision: %u block(s) parsed to no geometry; first: %s\n",
+            ctx.noGeometry, names.c_str());
+    }
     // Name what was rejected and why. Without this the summary above only says
     // how many collision blocks were dropped, which does not tell anyone where
     // in the map the missing collision is.

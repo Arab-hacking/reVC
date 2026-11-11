@@ -679,7 +679,8 @@ CFileLoader::LoadCollisionModel(uint8 *buf, size_t bufsize, CColModel &model, ch
 	ColRecord r(buf, bufsize, modelname);
 
 	if(!r.Has(44)){
-		debug("colmodel %s: record too short for its header\n", modelname);
+		debug("colmodel %s: record too short for its header (%u bytes)\n",
+		      modelname, (unsigned)bufsize);
 		return;
 	}
 	model.boundingSphere.radius = *(float*)(r.p);
@@ -757,8 +758,9 @@ CFileLoader::LoadCollisionModel(uint8 *buf, size_t bufsize, CColModel &model, ch
 	// the "collision is missing here" a player runs into, so the name has to be
 	// in the log next to the numbers that produced it.
 	if(model.numSpheres == 0 && model.numBoxes == 0 && model.numTriangles == 0)
-		debug("colmodel %s: no usable collision geometry (%d spheres, %d boxes, %d triangles, %d vertices)\n",
-		      modelname, model.numSpheres, model.numBoxes, model.numTriangles, numVertices);
+		debug("colmodel %s: no usable collision geometry (%d spheres, %d boxes, %d triangles, %d vertices), record %u bytes\n",
+		      modelname, model.numSpheres, model.numBoxes, model.numTriangles, numVertices,
+		      (unsigned)bufsize);
 }
 
 static void
