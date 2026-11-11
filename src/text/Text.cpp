@@ -135,9 +135,53 @@ namespace {
 		'G','R','A','P','H','I','C','S',' ','Q','U','A','L','I','T','Y', 0
 	};
 
+	// The TEST GRAPHICS page keeps its own labels here as well: it is reachable
+	// on every build, and a stock Vice City American.gxt has none of its keys.
+	// These mirror utils/gxt/american.txt; keep the two in step.
+	const wchar s_tgfTitle[] = {
+		'T','E','S','T',' ','G','R','A','P','H','I','C','S', 0
+	};
+	const wchar s_tgfShadows[] = {
+		'S','H','A','D','O','W','S', 0
+	};
+	const wchar s_tgfReflections[] = {
+		'C','A','R',' ','R','E','F','L','E','C','T','I','O','N','S', 0
+	};
+	const wchar s_tgfDrawDistance[] = {
+		'D','R','A','W',' ','D','I','S','T','A','N','C','E', 0
+	};
+	const wchar s_tgfEffects[] = {
+		'E','F','F','E','C','T','S', 0
+	};
+	const wchar s_tgfFpsLimit[] = {
+		'F','P','S',' ','L','I','M','I','T', 0
+	};
+	const wchar s_tgfClose[] = {
+		'C','L','O','S','E', 0
+	};
+	const wchar s_tgfDefault[] = {
+		'D','E','F','A','U','L','T', 0
+	};
+	const wchar s_tgfFar[] = {
+		'F','A','R', 0
+	};
+	const wchar s_tgfVeryFar[] = {
+		'V','E','R','Y',' ','F','A','R', 0
+	};
+
 	const FallbackText s_fallbackText[] = {
 		{ "FEM_LGT", s_lightDistLabel },
 		{ "FEM_GFX", s_mobileQualityLabel },
+		{ "FET_TGF", s_tgfTitle },
+		{ "FEM_SHD", s_tgfShadows },
+		{ "FEM_RFL", s_tgfReflections },
+		{ "FEM_DDI", s_tgfDrawDistance },
+		{ "FEM_EFF", s_tgfEffects },
+		{ "FEM_MXF", s_tgfFpsLimit },
+		{ "FEM_CLS", s_tgfClose },
+		{ "FEM_STD", s_tgfDefault },
+		{ "FEM_FAR", s_tgfFar },
+		{ "FEM_VFR", s_tgfVeryFar },
 	};
 }
 

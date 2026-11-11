@@ -3,6 +3,7 @@
 #include "SunShadowMap.h"
 #include "SunShadowMath.h"
 #include "GL3Atmosphere.h"
+#include "TestGraphics.h"
 #include "main.h"
 #include "Game.h"
 #include "Clock.h"
@@ -146,7 +147,11 @@ CSunShadowMap::Render(void)
 {
 	s_sunShadowActive = false;
 
-	if(!GL3Atmosphere::Enabled || Scene.camera == nil || !CGame::CanSeeOutSideFromCurrArea()){
+	// TEST GRAPHICS `shad` (client table 0x3d0a70). Level 0 means the client
+	// never creates the shadow map, so the pass is skipped outright: a pass with
+	// zero strength would still walk every sector and render every caster.
+	if(!GL3Atmosphere::Enabled || Scene.camera == nil || !CGame::CanSeeOutSideFromCurrArea() ||
+	   TestGraphicsShadowLevel() <= 0){
 		rw::gl3::disableShadowMap();
 		return;
 	}
@@ -202,9 +207,18 @@ CSunShadowMap::Render(void)
 		112.0f,
 		200.0f,
 #endif
+
 		rw::gl3::SHADOW_MAP_SIZE);
 
-	float strength = Max(rawShad, 0.72f) * setup.fadeStrength * cloudFactor;
+	// `shad` shrinks the sampled volume as well as the strength, which is where
+	// the saving comes from: fewer sectors are walked when a caster can no
+	// longer reach into view.
+	const float shadowExtent = TestGraphicsShadowExtentScale();
+	setup.halfExtentXY *= shadowExtent;
+	setup.halfDepthZ *= shadowExtent;
+
+	float strength = Max(rawShad, 0.72f) * setup.fadeStrength * cloudFactor *
+	                 TestGraphicsShadowStrengthScale();
 	if(!setup.active || strength <= 0.02f){
 #ifdef ANDROID
 		s_haveCachedShadow = false;
@@ -213,11 +227,17 @@ CSunShadowMap::Render(void)
 		return;
 	}
 
+	// A smaller map in the client means fewer texels over the same ground; the
+	// depth texture here has a fixed size, so the same property is expressed
+	// through the depth bias - coarser coverage needs a wider bias or the
+	// caster shadows itself.
+	const float shadowBias = 0.075f * TestGraphicsShadowBiasScale();
+
 	if(!rw::gl3::beginShadowPass(
 		setup.lightView,
 		setup.lightProj,
 		Min(1.0f, strength),
-		0.075f,
+		shadowBias,
 		setup.halfExtentXY)){
 #ifdef ANDROID
 		s_haveCachedShadow = false;

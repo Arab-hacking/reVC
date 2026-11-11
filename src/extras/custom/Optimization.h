@@ -78,6 +78,18 @@ inline float EffectiveDrawDistanceScale(float slider, float distanceScale,
 	return wanted;
 }
 
+// TEST GRAPHICS `dd` is applied on top of the slider and the pressure stage,
+// and the client caps the product of the two multipliers at 2.2 (fcsel at
+// 0xde3964). The slider's own maximum still bounds the result, so a menu value
+// can not push the far plane past what the player's slider asks for.
+inline float ClampDrawDistanceScale(float wanted, float sliderMax)
+{
+	float ceiling = sliderMax < 2.2f ? sliderMax : 2.2f;
+	if(!(wanted > 0.0f))
+		return 0.0f;
+	return wanted > ceiling ? ceiling : wanted;
+}
+
 // Chapter 9 §9.4 — the world walk behind the per-frame request quota.
 //
 // The client bounds one walk with `cmp w24, #0x7d0` (2000 entities) and keeps a

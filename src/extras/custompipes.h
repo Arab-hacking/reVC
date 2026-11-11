@@ -90,6 +90,15 @@ extern rw::Texture *EnvMaskTex;
 // when nil. Does not change the dynamically rendered scene reflection RT.
 void SetCarReflectionMask(rw::Texture *mask);
 void EnvMapRender(void);
+// The reflection RT is sized from EnvMapSize when the camera is created, so a
+// size change means recreating both. Exposed for the TEST GRAPHICS menu, whose
+// `refl` key is exactly this size (client 0x1894a34 reads table 0x3d0a70).
+// EnvMapReinit(nil) retries at the platform default after a failure.
+void EnvMapReinit(int32 size);
+// Texture the vehicle shader must sample on stage 1: the captured environment
+// map, or a 1x1 black stand-in when reflections are off. Never nil once the
+// pipe is up, so tex1 can not inherit the previous material's texture.
+rw::Texture *EnvMapTextureForShading(void);
 
 enum {
 	VEHICLEPIPE_MATFX,

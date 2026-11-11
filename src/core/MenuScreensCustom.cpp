@@ -30,6 +30,7 @@
 #include "IniFile.h"
 #include "CarCtrl.h"
 #include "Population.h"
+#include "TestGraphics.h"
 
 // Menu screens array is at the bottom of the file.
 
@@ -113,6 +114,45 @@ static const char *mobileQualityOpts[] = { "FEM_LOW", "FEM_MED", "FEM_HIG" };
 	#define SELECT_CONTROLLER_TYPE  MENUACTION_CFO_SELECT, "FEC_TYP", { new CCFOSelect((int8*)&FrontEndMenuManager.m_PrefsControllerType, "Controller", "Type", controllerTypes, ARRAY_SIZE(controllerTypes), false, ControllerTypeAfterChange) }, 0, 0, MENUALIGN_LEFT,
 #else
 	#define SELECT_CONTROLLER_TYPE
+#endif
+
+#ifdef TEST_GRAPHICS_MENU
+// TEST GRAPHICS rows. Every callback re-applies the whole block instead of
+// poking one renderer global: the block is what decides which value wins (see
+// TestGraphics.h), and applying it twice is free.
+const char *shadowLevels[] = { "FEM_OFF", "FEM_LOW", "FEM_MED", "FEM_HIG" };
+const char *reflectLevels[] = { "FEM_OFF", "FEM_LOW", "FEM_MED", "FEM_HIG" };
+// dd is a multiplier, not a ladder: index 3 is the *largest* distance (1.1x),
+// so the labels are distances and index 1 is the client default.
+const char *distanceLevels[] = { "FEM_CLS", "FEM_STD", "FEM_FAR", "FEM_VFR" };
+// effect is 0..3 with 0 meaning "the whole post block is skipped"; the client's
+// default is 1, so the labels are the client's own scale, not a redressed
+// on/off switch.
+const char *effectLevels[] = { "FEM_OFF", "FEM_LOW", "FEM_MED", "FEM_HIG" };
+
+void TestGraphicsAfterChange(int8 before, int8 after) {
+	(void)before; (void)after;
+	TestGraphicsApply();
+}
+
+// maxFps is not a level but a short list of ceilings, and 0 means "no cap".
+// It is drawn and cycled by hand because CCFOSelect only knows how to walk a
+// fixed int8 list.
+wchar* MaxFpsDraw(bool *disabled, bool userHovering) {
+	(void)disabled; (void)userHovering;
+	return TheText.Get(revctestgfx::MaxFpsText(TestGraphicsSettings().maxFps));
+}
+
+void MaxFpsPress(int8 action) {
+	if (action != FEOPTION_ACTION_SELECT)
+		return;
+	TestGraphicsSettings().maxFps = revctestgfx::CycleMaxFps(TestGraphicsSettings().maxFps);
+	TestGraphicsApply();
+}
+
+void TestGraphicsGoBack() {
+	TestGraphicsApply();
+}
 #endif
 
 const char *filterNames[] = { "FEM_NON", "FEM_SIM", "FEM_NRM", "FEM_MOB" };
@@ -746,6 +786,9 @@ CMenuScreenCustom aScreens[] = {
 #ifdef GRAPHICS_MENU_OPTIONS
 		 MENUACTION_CHANGEMENU,		"FET_GFX", {nil, SAVESLOT_NONE, MENUPAGE_GRAPHICS_SETTINGS}, 0, 0, MENUALIGN_CENTER,
 #endif
+#ifdef TEST_GRAPHICS_MENU
+		 MENUACTION_CHANGEMENU,		"FET_TGF", {nil, SAVESLOT_NONE, MENUPAGE_TEST_GRAPHICS}, 0, 0, MENUALIGN_CENTER,
+#endif
 		 MENUACTION_CHANGEMENU,		"FEO_LAN", {nil, SAVESLOT_NONE, MENUPAGE_LANGUAGE_SETTINGS}, 0, 0, MENUALIGN_CENTER,
 		 MENUACTION_PLAYERSETUP,	"FET_PS", {nil, SAVESLOT_NONE, MENUPAGE_SKIN_SELECT}, 0, 0, MENUALIGN_CENTER,
 		 MENUACTION_GOBACK,			"FEDS_TB", {nil, SAVESLOT_NONE, 0}, 0, 0, MENUALIGN_CENTER,
@@ -914,6 +957,22 @@ CMenuScreenCustom aScreens[] = {
 		// re3.cpp inserts here pipeline selectors if neo/neo.txd exists and EXTENDED_PIPELINES defined
 		MENUACTION_CFO_DYNAMIC,	"FET_DEF", { new CCFODynamic(nil, nil, nil, nil, RestoreDefGraphics) }, 320, 0, MENUALIGN_CENTER,
 		MENUACTION_GOBACK,		"FEDS_TB", {nil, SAVESLOT_NONE, MENUPAGE_NONE}, 320, 0, MENUALIGN_CENTER,
+	},
+#endif
+
+#ifdef TEST_GRAPHICS_MENU
+	// MENUPAGE_TEST_GRAPHICS
+#ifdef ANDROID
+	{ "FET_TGF", MENUPAGE_OPTIONS, new CCustomScreenLayout({40, 82, 30, false, true}), TestGraphicsGoBack,
+#else
+	{ "FET_TGF", MENUPAGE_OPTIONS, new CCustomScreenLayout({40, 78, 25, true, true}), TestGraphicsGoBack,
+#endif
+		MENUACTION_CFO_SELECT, "FEM_SHD", { new CCFOSelect((int8*)&TestGraphicsSettings().shadows, "TestGraphics", "Shadows", shadowLevels, ARRAY_SIZE(shadowLevels), false, TestGraphicsAfterChange) }, 0, 0, MENUALIGN_LEFT,
+		MENUACTION_CFO_SELECT, "FEM_RFL", { new CCFOSelect((int8*)&TestGraphicsSettings().reflections, "TestGraphics", "Reflections", reflectLevels, ARRAY_SIZE(reflectLevels), false, TestGraphicsAfterChange) }, 0, 0, MENUALIGN_LEFT,
+		MENUACTION_CFO_SELECT, "FEM_DDI", { new CCFOSelect((int8*)&TestGraphicsSettings().drawDistance, "TestGraphics", "DrawDistance", distanceLevels, ARRAY_SIZE(distanceLevels), false, TestGraphicsAfterChange) }, 0, 0, MENUALIGN_LEFT,
+		MENUACTION_CFO_SELECT, "FEM_EFF", { new CCFOSelect((int8*)&TestGraphicsSettings().effects, "TestGraphics", "Effects", effectLevels, ARRAY_SIZE(effectLevels), false, TestGraphicsAfterChange) }, 0, 0, MENUALIGN_LEFT,
+		MENUACTION_CFO_DYNAMIC, "FEM_MXF", { new CCFODynamic(nil, "TestGraphics", "MaxFps", MaxFpsDraw, MaxFpsPress) }, 0, 0, MENUALIGN_LEFT,
+		MENUACTION_GOBACK, "FEDS_TB", {nil, SAVESLOT_NONE, MENUPAGE_NONE}, 320, 0, MENUALIGN_CENTER,
 	},
 #endif
 

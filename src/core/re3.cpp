@@ -95,6 +95,9 @@ mysrand(unsigned int seed)
 
 #ifdef CUSTOM_FRONTEND_OPTIONS
 #include "frontendoption.h"
+#ifdef TEST_GRAPHICS_MENU
+#include "TestGraphics.h"
+#endif
 
 
 
@@ -645,6 +648,12 @@ bool LoadINISettings()
 			}
 		}
 	}
+#endif
+
+	// The rows above have been filled from the file; clamp them once and
+	// publish the result to the renderer.
+#ifdef TEST_GRAPHICS_MENU
+	TestGraphicsApply();
 #endif
 
 	// Fetched in above block, but needs evaluation

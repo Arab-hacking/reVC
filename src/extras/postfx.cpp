@@ -13,6 +13,7 @@
 #include "MBlur.h"
 #include "GL3Atmosphere.h"
 #include "postfx.h"
+#include "TestGraphics.h"
 
 RwRaster *CPostFX::pFrontBuffer;
 RwRaster *CPostFX::pBackBuffer;
@@ -454,6 +455,12 @@ CPostFX::Render(RwCamera *cam, uint32 red, uint32 green, uint32 blue, uint32 blu
 		return;
 	}
 #endif
+	// TEST GRAPHICS `effect = 0`: the client skips the whole post block with a
+	// single `cbnz` (0xe787d4). The sniper scope is gameplay, not a quality
+	// effect, so it keeps working whatever the menu says.
+	if(type != MOTION_BLUR_SNIPER && !TestGraphicsEffectsEnabled())
+		return;
+
 	PUSH_RENDERGROUP("CPostFX::Render");
 
 	EnsurePostFXBuffers(cam);

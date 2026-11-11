@@ -25,6 +25,7 @@
 #include "SAStaticModel.h"
 #endif
 #include "custompipes.h"
+#include "TestGraphics.h"
 
 #ifndef LIBRW
 #error "Need librw for EXTENDED_PIPELINES"
@@ -112,9 +113,17 @@ int32 EnvMapSize = 256;
 #else
 int32 EnvMapSize = 512;
 #endif
+// Value EnvMapSize had before any menu touched it; EnvMapReinit(nil) restores
+// it after a failed allocation at a smaller size.
+static const int32 DefaultEnvMapSize = EnvMapSize;
 rw::Camera *EnvMapCam;
 rw::Texture *EnvMapTex;
 rw::Texture *EnvMaskTex;
+// Stand-in bound to stage 1 while `refl = 0`. The vehicle shader always samples
+// tex1, so dropping the texture would make it sample whatever was left bound
+// (the previous material) instead of "no reflection".
+static rw::Texture *BlackEnvTex;
+static rw::Texture *CreateBlackEnvTex(void);
 static bool zipCarMaskOwned;
 
 void
@@ -211,6 +220,11 @@ void
 EnvMapRender(void)
 {
 	if(VehiclePipeSwitch != VEHICLEPIPE_NEO || EnvMapCam == nil || EnvMapTex == nil)
+		return;
+	// TEST GRAPHICS `refl = 0`: the client's getter 0x1894a08 returns NULL and
+	// the cache is never rendered. Skipping the pass here is the same saving -
+	// the scene is not drawn a second time for a map nobody samples.
+	if(!TestGraphicsReflectionEnabled())
 		return;
 #ifdef ANDROID
 	int8 mobTier = FrontEndMenuManager.m_PrefsMobileGraphics;
@@ -311,6 +325,9 @@ EnvMapInit(void)
 	if(neoTxd)
 		EnvMaskTex = neoTxd->find("CarReflectionMask");
 
+	if(BlackEnvTex == nil)
+		BlackEnvTex = CreateBlackEnvTex();
+
 	EnvMapCam = CreateEnvMapCam(Scene.world);
 	if(EnvMapCam == nil || EnvMapTex == nil) {
 		VehiclePipeSwitch = VEHICLEPIPE_MATFX;
@@ -359,10 +376,37 @@ EnvMapInit(void)
 	EnvScreenQuad[3].setV(0.0f, recipZ);
 }
 
-static void
-EnvMapShutdown(void)
+static rw::Texture*
+CreateBlackEnvTex(void)
 {
-	SetCarReflectionMask(nil); // release any optional mask; neo.txd owns its fallback
+	rw::Raster *ras = rw::Raster::create(1, 1, 32, rw::Raster::C8888);
+	if(ras == nil)
+		return nil;
+	uint8 *px = ras->lock(0, rw::Raster::LOCKWRITE | rw::Raster::LOCKNOFETCH);
+	if(px) {
+		// RGBA order matches C8888; alpha 255 so alpha blending stays sane.
+		px[0] = 0; px[1] = 0; px[2] = 0; px[3] = 255;
+		ras->unlock(0);
+	}
+	rw::Texture *tex = rw::Texture::create(ras);
+	if(tex == nil) {
+		ras->destroy();
+		return nil;
+	}
+	tex->setFilter(rw::Texture::LINEAR);
+	tex->setAddressU(rw::Texture::CLAMP);
+	tex->setAddressV(rw::Texture::CLAMP);
+	return tex;
+}
+
+static void
+EnvMapShutdownNoMask(void)
+{
+	if(BlackEnvTex) {
+		BlackEnvTex->raster = nil;
+		BlackEnvTex->destroy();
+		BlackEnvTex = nil;
+	}
 	if(EnvMapTex) {
 		EnvMapTex->raster = nil;
 		EnvMapTex->destroy();
@@ -370,6 +414,46 @@ EnvMapShutdown(void)
 	}
 	DestroyCam(EnvMapCam);
 	EnvMapCam = nil;
+}
+
+static void
+EnvMapShutdown(void)
+{
+	SetCarReflectionMask(nil); // release any optional mask; neo.txd owns its fallback
+	EnvMapShutdownNoMask();
+}
+
+rw::Texture*
+EnvMapTextureForShading(void)
+{
+	return EnvMapTex ? EnvMapTex : BlackEnvTex;
+}
+
+void
+EnvMapReinit(int32 size)
+{
+	if(size <= 0) {
+		// `refl = 0`: the client's getter 0x1894a08 returns NULL below level 1
+		// and no map is ever rendered, so the camera and its raster go away.
+		EnvMapShutdownNoMask();
+		return;
+	}
+
+	// The mask lives in an external TXD and survives the RT; only the camera
+	// and its textures are tied to the size.
+	EnvMapShutdownNoMask();
+
+	int32 prev = EnvMapSize;
+	EnvMapSize = size;
+	EnvMapInit();
+
+	if(EnvMapCam == nil || EnvMapTex == nil) {
+		// A 512x512 RGBA8 + depth pair can fail on a tight device. Falling
+		// back to the platform default keeps reflections working instead of
+		// silently turning them off for the rest of the session.
+		EnvMapSize = prev;
+		EnvMapInit();
+	}
 }
 
 /*

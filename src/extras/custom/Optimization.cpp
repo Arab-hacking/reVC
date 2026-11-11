@@ -10,6 +10,9 @@
 #include "Renderer.h"
 #include "Frontend.h"
 #include "Timer.h"
+#ifdef TEST_GRAPHICS_MENU
+#include "TestGraphics.h"
+#endif
 
 #ifdef CUSTOM_MODELS
 
@@ -242,6 +245,15 @@ Tick(unsigned nowMs, float dtSeconds, unsigned long long usedBytes,
 	float wanted = revcopt::EffectiveDrawDistanceScale(FrontEndMenuManager.m_PrefsLOD,
 	                                                   s_snapshot.distanceScale,
 	                                                   DRAWDIST_MIN, DRAWDIST_MAX);
+
+#ifdef TEST_GRAPHICS_MENU
+	// TEST GRAPHICS `dd`. The client multiplies the object and LOD distance by
+	// table 0x3d34e0 and caps the product at 2.2 (0xde3964). It is the player's
+	// own choice, so it is applied after both the slider and the pressure
+	// stage, and the cap is the client's, not the slider's.
+	wanted = revcopt::ClampDrawDistanceScale(wanted * TestGraphicsDrawDistanceMultiplier(),
+	                                         DRAWDIST_MAX);
+#endif
 	if(s_appliedScale < 0.0f || fabsf(wanted - s_appliedScale) > 0.002f) {
 		s_appliedScale = wanted;
 		CRenderer::ms_lodDistScale = wanted;

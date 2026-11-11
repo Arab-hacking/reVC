@@ -430,3 +430,8 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Cla
     endforeach()
     target_compile_definitions(anim_file_read_compressed_tests PRIVATE ANIM_COMPRESSION)
 endif()
+
+add_executable(test_graphics_tests TestGraphicsTests.cpp)
+target_include_directories(test_graphics_tests PRIVATE ../src/extras/custom)
+set_target_properties(test_graphics_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+add_test(NAME test_graphics_tests COMMAND test_graphics_tests)

@@ -90,7 +90,10 @@ vehicleRenderCB(rw::Atomic *atomic, rw::gl3::InstanceDataHeader *header)
 	using namespace rw::gl3;
 
 	// TODO: make this less of a kludge
-	if(VehiclePipeSwitch == VEHICLEPIPE_MATFX || EnvMapTex == nil){
+	// EnvMapTextureForShading() is never nil once the pipe is up: with
+	// reflections off it is a 1x1 black stand-in, so the shader still samples
+	// "no reflection" instead of whatever tex1 held from the previous draw.
+	if(VehiclePipeSwitch == VEHICLEPIPE_MATFX || EnvMapTextureForShading() == nil){
 		matFXGlobals.pipelines[rw::platform]->render(atomic);
 		return;
 	}
@@ -116,7 +119,7 @@ vehicleRenderCB(rw::Atomic *atomic, rw::gl3::InstanceDataHeader *header)
 	reflProps[0] = Fresnel.Get();
 	reflProps[1] = SpecColor.Get().a;
 
-	setTexture(1, EnvMapTex);
+	setTexture(1, EnvMapTextureForShading());
 
 	SetRenderState(SRCBLEND, BLENDONE);
 

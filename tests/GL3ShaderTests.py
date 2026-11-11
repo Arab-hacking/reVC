@@ -231,7 +231,15 @@ class GL3ShaderTests(unittest.TestCase):
         self.assertIn("beginParaboloidPass", pipes)
         self.assertIn("setCaptureEyePosition", pipes)
         pipes_gl = (ROOT / "src/extras/custompipes_gl.cpp").read_text()
-        self.assertIn("setTexture(1, EnvMapTex)", pipes_gl)
+        # Unit 1 must receive the texture the capture writes, or a stand-in that
+        # the accessor returns when reflections are switched off. Both come from
+        # the same helper, so the unit can never inherit the previous material.
+        self.assertIn("setTexture(1, EnvMapTextureForShading())", pipes_gl)
+        pipes_cpp = (ROOT / "src/extras/custompipes.cpp").read_text()
+        self.assertIn("EnvMapTextureForShading(void)", pipes_cpp)
+        pipes_d3d = (ROOT / "src/extras/custompipes_d3d9.cpp").read_text()
+        self.assertIn("d3d::setTexture(1, EnvMapTextureForShading())", pipes_d3d)
+        self.assertIn("return EnvMapTex ? EnvMapTex : BlackEnvTex;", pipes_cpp)
 
     def test_view_matrix_eye_and_env_uniform_sync(self):
         gl3_cpp = (ROOT / "vendor/librw/src/gl/gl3device.cpp").read_text()

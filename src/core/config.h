@@ -447,6 +447,7 @@ enum Config {
 #		define MULTISAMPLING		// adds MSAA option
 #		define INVERT_LOOK_FOR_PAD // enable the hidden option
 #		define PED_CAR_DENSITY_SLIDERS
+#		define TEST_GRAPHICS_MENU // adds the Options -> TEST GRAPHICS page (client keys of chapter 17/19)
 #	endif
 #endif
 

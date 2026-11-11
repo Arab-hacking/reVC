@@ -14432,6 +14432,50 @@ PED DENSITY
 [FEM_CAR]
 CAR DENSITY
 
+{ test graphics — client keys of PUNCT ANALYSE ch. 17/19 }
+[FET_TGF]
+TEST GRAPHICS
+
+[FEM_SHD]
+SHADOWS
+
+[FEM_RFL]
+CAR REFLECTIONS
+
+[FEM_DDI]
+DRAW DISTANCE
+
+[FEM_EFF]
+EFFECTS
+
+[FEM_MXF]
+FPS LIMIT
+
+{ draw distance is a multiplier, so the four labels are distances }
+[FEM_CLS]
+CLOSE
+
+[FEM_STD]
+DEFAULT
+
+[FEM_FAR]
+FAR
+
+[FEM_VFR]
+VERY FAR
+
+[FEM_30]
+30
+
+[FEM_60]
+60
+
+[FEM_90]
+90
+
+[FEM_120]
+120
+
 { end of file }
 [DUMMY]
 THIS LABEL NEEDS TO BE HERE !!!

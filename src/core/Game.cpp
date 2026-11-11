@@ -6,6 +6,9 @@
 #include "CustomModels.h"
 #include "CustomWorld.h"
 #endif
+#ifdef TEST_GRAPHICS_MENU
+#include "TestGraphics.h"
+#endif
 #include "main.h"
 #include "RwHelper.h"
 #include "Accident.h"
@@ -187,6 +190,11 @@ CGame::InitialiseOnceBeforeRW(void)
 	// Not needed here but may be needed in future
 	// if (numCustomFrontendOptions == 0 && numCustomFrontendScreens == 0)
 	CustomFrontendOptionsPopulate();
+#endif
+#ifdef TEST_GRAPHICS_MENU
+	// Defaults first: the rows below are filled from the ini afterwards, and
+	// TestGraphicsApply clamps whatever the file contained.
+	TestGraphicsStartup();
 #endif
 	REVC_LOG_INFO("Game pre-initialization complete");
 	return true;
