@@ -325,6 +325,11 @@ CFileLoader::LoadCollisionFile(const char *filename, uint8 colSlot)
 		}
 	}
 
+	// Record count per file. A .col whose records all parse to no geometry is a
+	// damaged or truncated file, and that is a different problem from a few odd
+	// records inside an otherwise good one - the totals alone cannot tell them
+	// apart. The count is what shows it: GENERIC.COL holds thousands of models,
+	// so a count far below that is the file, not the parser.
 	debug("collision file %s: %u record(s), %u without a modelinfo\n",
 	      filename, records, noInfo);
 
