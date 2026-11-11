@@ -285,6 +285,13 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Cla
     set_target_properties(optimization_profile_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
     add_test(NAME optimization_profile_tests COMMAND optimization_profile_tests)
 
+    # Several collision models per container (.col and .cls), including the
+    # sector-padded slices an IMG actually hands over.
+    add_executable(collision_container_tests CollisionContainerTests.cpp)
+    target_include_directories(collision_container_tests PRIVATE ../src/extras/custom)
+    set_target_properties(collision_container_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+    add_test(NAME collision_container_tests COMMAND collision_container_tests)
+
     # The collision slot policy: which store slots a frame wants loaded. It was
     # inlined in CColStore::LoadCollision next to a per-slot scan of the mission
     # cleanup list, so it could not be tested or reasoned about on its own.

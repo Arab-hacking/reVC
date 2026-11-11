@@ -446,6 +446,18 @@ CFileLoader::LoadCollisionFileFirstTime(uint8 *buffer, uint32 size, uint8 colSlo
 		modelsize = header->size;
 		if(header->ident != 'LLOC')
 			return size-8 < CDSTREAM_SECTOR_SIZE;
+		// The block layout is tag(4) + size(4) + name(24) + body, and size counts
+		// everything after the first 8 bytes. A size smaller than the 24-byte
+		// name makes the copy below wrap around and overwrite the whole
+		// collision model with garbage; a size larger than the buffer reads past
+		// the end. Chapter 3 of the collision analysis walks these records by
+		// declared length, so a record that does not fit is a corrupt stream:
+		// stop there instead of reading on.
+		if(modelsize < 24 || modelsize > size - 8){
+			debug("colmodel stream truncated: record size %u, %u bytes left\n",
+			      (unsigned)modelsize, (unsigned)size);
+			return false;
+		}
 		memcpy(modelname, buffer+8, 24);
 		memcpy(work_buff, buffer+32, modelsize-24);
 		size -= 32 + (modelsize-24);
@@ -487,6 +499,18 @@ CFileLoader::LoadCollisionFile(uint8 *buffer, uint32 size, uint8 colSlot)
 		modelsize = header->size;
 		if(header->ident != 'LLOC')
 			return size-8 < CDSTREAM_SECTOR_SIZE;
+		// The block layout is tag(4) + size(4) + name(24) + body, and size counts
+		// everything after the first 8 bytes. A size smaller than the 24-byte
+		// name makes the copy below wrap around and overwrite the whole
+		// collision model with garbage; a size larger than the buffer reads past
+		// the end. Chapter 3 of the collision analysis walks these records by
+		// declared length, so a record that does not fit is a corrupt stream:
+		// stop there instead of reading on.
+		if(modelsize < 24 || modelsize > size - 8){
+			debug("colmodel stream truncated: record size %u, %u bytes left\n",
+			      (unsigned)modelsize, (unsigned)size);
+			return false;
+		}
 		memcpy(modelname, buffer+8, 24);
 		memcpy(work_buff, buffer+32, modelsize-24);
 		size -= 32 + (modelsize-24);

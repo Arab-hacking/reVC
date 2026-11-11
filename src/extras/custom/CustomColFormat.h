@@ -43,7 +43,6 @@ inline size_t Index(const uint8_t *data, size_t length, std::vector<Block> &bloc
     size_t bad = 0, pos = 0;
     if(!data) return length ? 1 : 0;
     while(pos < length) {
-        bool padding = true;
 #ifdef ANDROID
         if(length-pos >= 8 && (std::memcmp(data+pos, "CLST", 4) == 0 || std::memcmp(data+pos, "CLSF", 4) == 0)) {
             uint32_t skipSz = U32(data+pos+4);
@@ -54,10 +53,14 @@ inline size_t Index(const uint8_t *data, size_t length, std::vector<Block> &bloc
         }
 #endif
         if(length-pos < 8 || !Tag(data+pos)) {
-            for(size_t k = pos; k < length; k++)
-                if(data[k]) { padding = false; break; }
-            if(!padding) bad++;
-            break;
+            // Zero alignment between two records (and a zero tail at the end of
+            // a sector-padded file) is not an error. Skipping it keeps the
+            // records after the first aligned one; the old code stopped the
+            // whole walk here, so every later entry in a padded container -
+            // including the second and subsequent models of a .cls - was lost.
+            for(; pos < length && data[pos] == 0; pos++) {}
+            if(pos >= length) break;            // trailing padding only
+            if(length-pos < 8 || !Tag(data+pos)) { bad++; break; }
         }
         uint32_t size = U32(data+pos+4);
         if(size < 64 || size > length-pos-8) { bad++; break; }

@@ -58,6 +58,20 @@ inline size_t Index(const uint8_t *data, size_t size, std::vector<Block> &blocks
     size_t bad = 0;
     if(!data) return size ? 1 : 0;
     for(size_t pos = 0; pos < size;) {
+        // Chunks inside a .cls are not always packed back to back: IMG entries
+        // and converted archives put zero alignment between them, and a .cls
+        // stored in a sector-padded image ends with a zero tail. Stepping over
+        // that is not an error - treating it as one used to drop every block
+        // after the first aligned one, because the walk gave up (break) here.
+        // A gap that contains anything other than zeroes is still a defect.
+        if(!(size-pos >= 4 && Tag(data+pos))) {
+            size_t skip = pos;
+            while(skip < size && data[skip] == 0) skip++;
+            if(skip == pos) { bad++; break; }   // real garbage, not padding
+            pos = skip;
+            if(pos >= size) break;              // zero tail: nothing after it
+            continue;
+        }
         if(size-pos < 8) { bad++; break; }
         bool isClsf = std::memcmp(data+pos, "CLSF", 4) == 0;
         uint32_t minLen = isClsf ? 84u : 112u;
