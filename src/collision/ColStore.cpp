@@ -46,6 +46,18 @@ CColStore::Shutdown(void)
 	ms_pColPool = nil;
 }
 
+bool
+CColStore::HasFreeSlot(void)
+{
+	return ms_pColPool && ms_pColPool->GetNoOfFreeSpaces() > 0;
+}
+
+int
+CColStore::GetPoolSize(void)
+{
+	return ms_pColPool ? ms_pColPool->GetSize() : 0;
+}
+
 int
 CColStore::AddColSlot(const char *name)
 {

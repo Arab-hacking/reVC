@@ -19,6 +19,10 @@ class CColStore
 public:
 	static void Initialise(void);
 	static void Shutdown(void);
+	// False when every slot is taken; callers must not add a slot they cannot
+	// get, because AddColSlot dereferences the pool result.
+	static bool HasFreeSlot(void);
+	static int GetPoolSize(void);
 	static int AddColSlot(const char *name);
 	static void RemoveColSlot(int32 slot);
 	static int FindColSlot(const char *name);

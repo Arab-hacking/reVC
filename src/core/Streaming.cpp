@@ -617,7 +617,7 @@ CStreaming::LoadCdDirectory(const char *dirname, int n)
 	int entries = 0, registered = 0, duplicates = 0;
 	imgSelector = (uint32)n<<24;
 #ifdef CUSTOM_MODELS
-	int unknownModels = 0, ignoredTypes = 0, fullTxds = 0;
+	int unknownModels = 0, ignoredTypes = 0, fullTxds = 0, fullCols = 0;
 	bool modelsOnly = CCustomModels::IsAutoMountedImage(n);
 	// A large custom/data/maps/ IDE can register ~28k models. Scanning the
 	// model-info array for each IMG DFF would be quadratic at boot. This
@@ -717,8 +717,18 @@ CStreaming::LoadCdDirectory(const char *dirname, int n)
 			bAddToStreaming = true;
 		}else if(strncasecmp(dot+1, "COL", 3) == 0){
 			modelId = CColStore::FindColSlot(direntry.name);
-			if(modelId == -1)
+			if(modelId == -1){
+				// AddColSlot dereferences the pool result, so a full store has to
+				// be caught here. Silently skipping leaves the models in this
+				// file without collision, which shows up as objects you can walk
+				// through, so it is counted and reported with the IMG summary.
+				if(!CColStore::HasFreeSlot()){
+					fullCols++;
+					lastID = -1;
+					continue;
+				}
 				modelId = CColStore::AddColSlot(direntry.name);
+			}
 			modelId += STREAM_OFFSET_COL;
 			bAddToStreaming = true;
 		}else if(strncasecmp(dot+1, "IFP", 3) == 0){
@@ -766,6 +776,9 @@ CStreaming::LoadCdDirectory(const char *dirname, int n)
 			n, unknownModels, ms_pExtraObjectsDir->numEntries);
 	if(!modelsOnly && fullTxds)
 		REVC_LOG_ERROR("IMG %d: %d native TXDs could not be registered: TXD slots exhausted", n, fullTxds);
+	if(fullCols)
+		REVC_LOG_ERROR("IMG %d: %d COL files could not be registered: collision slots exhausted (%d in use); their models will have no collision",
+			n, fullCols, CColStore::GetPoolSize());
 #endif
 }
 
