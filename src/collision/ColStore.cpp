@@ -210,6 +210,13 @@ CColStore::LoadCollision(const CVector2D &pos)
 			missionEntities[numMissionEntities++] = pEntity;
 	}
 
+	// Cache their positions too. Asking each entity for its position inside the
+	// slot loop would put a virtual call per slot per entity back into the hot
+	// path, which is the cost this rewrite exists to remove.
+	CVector2D missionPositions[MAX_CLEANUP];
+	for(int j = 0; j < numMissionEntities; j++)
+		missionPositions[j] = missionEntities[j]->GetPosition();
+
 	const bool atSecondPosition = bLoadAtSecondPosition;
 	const CVector2D second = secondPosition;
 
@@ -218,9 +225,6 @@ CColStore::LoadCollision(const CVector2D &pos)
 			continue;
 
 		CRect &bounds = GetBoundingBox(i);
-		CVector2D missionPositions[MAX_CLEANUP];
-		for(int j = 0; j < numMissionEntities; j++)
-			missionPositions[j] = missionEntities[j]->GetPosition();
 		const bool wantThisOne = ColSlotWantedFor(bounds, GetColName(i), pos,
 		                                          atSecondPosition, second,
 		                                          missionPositions, numMissionEntities);
