@@ -97,8 +97,34 @@ void ReadIde(const char *path, const unsigned char *data, size_t size, void *use
 struct ColContext {
     unsigned installed, replaced, invalid, missing, full;
     int freeModels;
+    // Per-name detail for the rejections. A collision that is dropped here
+    // leaves its model in the world with nothing to collide with - exactly the
+    // "no collision here" the player notices - so the log has to name the
+    // model and say why, not just tally it.
+    std::map<std::string, unsigned> invalidNames;   // present, but not a usable VC block
+    std::map<std::string, unsigned> missingNames;   // no IDE/IPL slot to attach to
+    std::map<std::string, unsigned> fullNames;      // collision pool exhausted
+    std::vector<std::string> sample;                // first few, with the reason
     ColContext() : installed(0), replaced(0), invalid(0), missing(0), full(0), freeModels(0) {}
 };
+
+void LogUnresolved(const char *prefix, const char *reason, const std::map<std::string, unsigned> &counts)
+{
+    if(counts.empty()) return;
+    std::vector<std::pair<unsigned, std::string> > names;
+    for(const auto &entry : counts) names.emplace_back(entry.second, entry.first);
+    std::sort(names.begin(), names.end(), [](const std::pair<unsigned, std::string> &a,
+                                              const std::pair<unsigned, std::string> &b) {
+        return a.first != b.first ? a.first > b.first : a.second < b.second;
+    });
+    const size_t shown = std::min(names.size(), size_t(16));
+    for(size_t i = 0; i < shown; i++)
+        CUSTOM_LOG("%s: %s %s: %u placement(s)\n",
+            prefix, reason, names[i].second.c_str(), names[i].first);
+    if(names.size() > shown)
+        CUSTOM_LOG("%s: %s: %u more unique name(s), showing the 16 most frequent\n",
+            prefix, reason, (unsigned)(names.size() - shown));
+}
 
 // A complete, checked VC COLL block comes from a COL/CLS entry in custom/img/.
 // These models own their collisions independently of RW object streaming.
@@ -106,15 +132,38 @@ void InstallCollision(const char *name, const uint8_t *game, size_t size, ColCon
 {
     std::string key = customworld::Lower(customworld::ModelName(name));
     std::map<std::string, int>::const_iterator it = nameSlots.find(key);
-    if(it == nameSlots.end()) { ctx.missing++; return; }
+    if(it == nameSlots.end()) { ctx.missing++; ctx.missingNames[key]++; return; }
     CBaseModelInfo *mi = CModelInfo::GetModelInfo(it->second);
-    if(!mi || !mi->IsBuilding()) return;
+    if(!mi || !mi->IsBuilding()) {
+        ctx.missing++; ctx.missingNames[key]++;
+        return;
+    }
     std::vector<customcolformat::Block> blocks;
-    if(customcolformat::Index(game, size, blocks) || blocks.size() != 1 ||
+    size_t badBlocks = customcolformat::Index(game, size, blocks);
+    if(badBlocks || blocks.size() != 1 ||
        customworld::Lower(customworld::ModelName(blocks[0].name)) != key ||
-       !customcolformat::ValidVC(game, size)) { ctx.invalid++; return; }
+       !customcolformat::ValidVC(game, size)) {
+        // Keep the reason, since "invalid" covers four different faults and
+        // they point at different things to fix in the files.
+        const char *why;
+        if(badBlocks) why = "malformed block";
+        else if(blocks.empty()) why = "no block";
+        else if(customworld::Lower(customworld::ModelName(blocks[0].name)) != key) why = "internal name does not match";
+        else why = "not a valid VC layout";
+        ctx.invalid++;
+        ctx.invalidNames[key + " (" + why + ")"]++;
+        if(ctx.sample.size() < 12) {
+            char line[256];
+            std::snprintf(line, sizeof(line),
+                "collision %s: rejected, %s; block %u bytes, expected model name '%s' got '%s'",
+                key.c_str(), why, (unsigned)size, key.c_str(),
+                blocks.empty() ? "-" : customworld::ModelName(blocks[0].name).c_str());
+            ctx.sample.push_back(line);
+        }
+        return;
+    }
     bool replacing = mi->DoesOwnColModel() && mi->GetColModel() != nil;
-    if(ctx.freeModels + (int)replacing <= 100) { ctx.full++; return; }
+    if(ctx.freeModels + (int)replacing <= 100) { ctx.full++; ctx.fullNames[key]++; return; }
     if(replacing) { ctx.freeModels++; ctx.replaced++; }
     mi->DeleteCollisionModel();
     CColModel *col = new CColModel;
@@ -154,11 +203,17 @@ bool HasWorldCollisionTarget(const char *name, void *)
 
 struct IplContext {
     unsigned files, parsed, bad, overlong, placed, duplicates, linkedLod, noModel, noAsset, outside, capacity;
+    unsigned noCollision;
     std::unordered_set<customworld::PlacementKey, customworld::PlacementHash> seen;
     std::map<std::string, unsigned> unknownNames, missingDffNames;
+    // Instances dropped because their model has no collision model at all.
+    // The player sees these as objects you walk or drive through, so the name
+    // and the instance count are worth a line in the log.
+    std::map<std::string, unsigned> noCollisionNames;
     customimg::ModelNameIndex nativeBuildings;
     IplContext() : files(0), parsed(0), bad(0), overlong(0), placed(0), duplicates(0), linkedLod(0),
-                   noModel(0), noAsset(0), outside(0), capacity(0), nativeBuildings(MAX_MODEL_NAME) {
+                   noModel(0), noAsset(0), outside(0), capacity(0), noCollision(0),
+                   nativeBuildings(MAX_MODEL_NAME) {
         // A partial IMG pack can leave most of the 100k IPL placements without
         // a new IDE slot. Searching 32k model-info entries for each miss would
         // be quadratic. Resolve by *name* among already registered VC buildings;
@@ -229,9 +284,18 @@ void PlaceInstance(const customworld::Instance &inst, IplContext &ctx)
     }
 
     CBaseModelInfo *mi = CModelInfo::GetModelInfo(slot);
-    if(!mi || !mi->IsBuilding() || mi->GetColModel() == nil) {
+    if(!mi || !mi->IsBuilding()) {
         ctx.noModel++;
         ctx.unknownNames[customworld::Lower(inst.name)]++;
+        return;
+    }
+    // A building with no collision model is not an unknown model: the model
+    // exists and would be drawn, it just has nothing to collide with. It is
+    // counted separately so a log can say which models are missing collision
+    // instead of only "unknown model".
+    if(mi->GetColModel() == nil) {
+        ctx.noCollision++;
+        ctx.noCollisionNames[customworld::Lower(mi->GetModelName())]++;
         return;
     }
     if(!CCustomModels::HasModelFile(mi->GetModelName()) &&
@@ -453,24 +517,6 @@ bool CanAddModel(ModelInfoType type)
     case MITYPE_WEAPON: return CModelInfo::CanAddWeaponModel();
     default: return CModelInfo::CanAddSimpleModel();
     }
-}
-
-void LogUnresolved(const char *reason, const std::map<std::string, unsigned> &counts)
-{
-    if(counts.empty()) return;
-    std::vector<std::pair<unsigned, std::string> > names;
-    for(const auto &entry : counts) names.emplace_back(entry.second, entry.first);
-    std::sort(names.begin(), names.end(), [](const std::pair<unsigned, std::string> &a,
-                                              const std::pair<unsigned, std::string> &b) {
-        return a.first != b.first ? a.first > b.first : a.second < b.second;
-    });
-    const size_t shown = std::min(names.size(), size_t(16));
-    for(size_t i = 0; i < shown; i++)
-        CUSTOM_LOG("BR IPL: %s %s: %u placement(s)\n",
-            reason, names[i].second.c_str(), names[i].first);
-    if(names.size() > shown)
-        CUSTOM_LOG("BR IPL: %s: %u more unique name(s), showing the 16 most frequent\n",
-            reason, (unsigned)(names.size() - shown));
 }
 
 } // namespace
@@ -850,6 +896,17 @@ void CCustomWorld::LoadCollisions(void)
     }
     CUSTOM_LOG("custom IMG collision: %u installed, %u replacements, %u invalid, %u outside IDE, %u over pool capacity\n",
         ctx.installed, ctx.replaced, ctx.invalid, ctx.missing, ctx.full);
+    // Name what was rejected and why. Without this the summary above only says
+    // how many collision blocks were dropped, which does not tell anyone where
+    // in the map the missing collision is.
+    for(size_t i = 0; i < ctx.sample.size(); i++)
+        CUSTOM_LOG("%s\n", ctx.sample[i].c_str());
+    if(ctx.sample.size() < ctx.invalid)
+        CUSTOM_LOG("collision: %u more rejected block(s), showing %u\n",
+            (unsigned)(ctx.invalid - ctx.sample.size()), (unsigned)ctx.sample.size());
+    LogUnresolved("custom collision", "rejected", ctx.invalidNames);
+    LogUnresolved("custom collision", "no model slot", ctx.missingNames);
+    LogUnresolved("custom collision", "dropped, pool full", ctx.fullNames);
 }
 
 void CCustomWorld::LoadIpl(void)
@@ -857,12 +914,15 @@ void CCustomWorld::LoadIpl(void)
     if(modelSlots.empty()) return;
     IplContext ctx;
     CCustomModels::ForEachWorldFile(false, ReadIpl, &ctx);
-    CUSTOM_LOG("BR IPL: %u file(s), %u record(s), %u placed, %u exact duplicates, %u LOD link(s), %u invalid, %u long, %u unknown models, %u without DFF, %u invalid coordinates, %u allocation/handle failures; pools %d buildings / %d sector nodes\n",
+    CUSTOM_LOG("BR IPL: %u file(s), %u record(s), %u placed, %u exact duplicates, %u LOD link(s), %u invalid, %u long, %u unknown models, %u without DFF, %u without collision, %u invalid coordinates, %u allocation/handle failures; pools %d buildings / %d sector nodes\n",
         ctx.files, ctx.parsed, ctx.placed, ctx.duplicates, ctx.linkedLod, ctx.bad, ctx.overlong,
-        ctx.noModel, ctx.noAsset, ctx.outside, ctx.capacity,
+        ctx.noModel, ctx.noAsset, ctx.noCollision, ctx.outside, ctx.capacity,
         CPools::GetBuildingPool()->GetSize(), CPools::GetPtrNodePool()->GetSize());
-    LogUnresolved("unresolved model", ctx.unknownNames);
-    LogUnresolved("missing DFF", ctx.missingDffNames);
+    LogUnresolved("BR IPL", "unresolved model", ctx.unknownNames);
+    LogUnresolved("BR IPL", "missing DFF", ctx.missingDffNames);
+    // Instances whose model exists but has no collision model: these are drawn
+    // and can be walked through.
+    LogUnresolved("BR IPL", "model without collision", ctx.noCollisionNames);
 }
 
 bool CCustomWorld::OwnsModelSlot(int slot)

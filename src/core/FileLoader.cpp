@@ -751,6 +751,14 @@ CFileLoader::LoadCollisionModel(uint8 *buf, size_t bufsize, CColModel &model, ch
 		model.triangles = nil;
 
 	DropUnusableTriangles(model, numVertices, modelname);
+
+	// One line per model that ended up with no usable solid geometry at all.
+	// Such a model is drawn but has nothing to collide with, which is exactly
+	// the "collision is missing here" a player runs into, so the name has to be
+	// in the log next to the numbers that produced it.
+	if(model.numSpheres == 0 && model.numBoxes == 0 && model.numTriangles == 0)
+		debug("colmodel %s: no usable collision geometry (%d spheres, %d boxes, %d triangles, %d vertices)\n",
+		      modelname, model.numSpheres, model.numBoxes, model.numTriangles, numVertices);
 }
 
 static void

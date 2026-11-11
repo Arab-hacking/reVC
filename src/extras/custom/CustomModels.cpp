@@ -3411,14 +3411,24 @@ static bool
 LoadColSlot(int32 slot)
 {
 	const char *name = CColStore::GetColName(slot);
-	if(name == nil || name[0] == '\0')
+	if(name == nil || name[0] == '\0'){
+		// A collision slot with no name cannot be resolved to any file. The
+		// models registered in it will have no collision, so say so.
+		CUSTOM_LOG("collision slot %d: no name, cannot be loaded; its models have no collision\n", slot);
 		return false;
+	}
 	std::string key = ToLower(name);
 	bool haveCls = customCls.find(key) != customCls.end() &&
 	               !HasBrBlocks(customCls.find(key)->second);
 	bool haveFile = customColFiles.find(key) != customColFiles.end();
-	if(!haveCls && !haveFile)
+	if(!haveCls && !haveFile){
+		// This is the "the game asked for a collision file and the custom
+		// folder does not have it" case: silent until now, and it leaves every
+		// model in that slot with no collision at all.
+		CUSTOM_LOG("collision %s (slot %d): not found in the custom folder (.col or .cls); its models have no collision\n",
+			key.c_str(), slot);
 		return false;
+	}
 
 	std::vector<uint8> game;
 	bool useCol = false;
