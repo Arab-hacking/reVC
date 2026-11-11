@@ -570,6 +570,21 @@ CFileLoader::LoadCollisionFile(uint8 *buffer, uint32 size, uint8 colSlot)
 	return true;
 }
 
+// A count field in a .col record decides how much memory is allocated and how
+// far the read pointer advances. A negative or oversized value cannot come from
+// a file the game wrote, and letting it through reads past the record and
+// leaves every following section misaligned, so it is reported and clamped.
+static int32
+ClampCount(int32 count, int32 max, const char *modelname, const char *what)
+{
+	if(count < 0 || count > max){
+		debug("colmodel %s: %s count %d out of range, clamped to %d\n",
+		      modelname, what, count, count < 0 ? 0 : max);
+		return count < 0 ? 0 : max;
+	}
+	return count;
+}
+
 void
 CFileLoader::LoadCollisionModel(uint8 *buf, CColModel &model, char *modelname)
 {
@@ -585,7 +600,13 @@ CFileLoader::LoadCollisionModel(uint8 *buf, CColModel &model, char *modelname)
 	model.boundingBox.max.x = *(float*)(buf+28);
 	model.boundingBox.max.y = *(float*)(buf+32);
 	model.boundingBox.max.z = *(float*)(buf+36);
-	model.numSpheres = *(int16*)(buf+40);
+	// The counts come straight from the file and decide how much is allocated
+	// and how far the read pointer advances, so a corrupt record makes the
+	// loader read past the end of its buffer and leaves the following sections
+	// misaligned. They are clamped to what the format can legally hold before
+	// either happens. Chapter 8 of the collision analysis puts the ceilings at
+	// 129 spheres, 1600 triangles; boxes and lines use the processing limits.
+	model.numSpheres = ClampCount(*(int16*)(buf+40), MAX_COLSPHERES, modelname, "spheres");
 	buf += 44;
 	if(model.numSpheres > 0){
 		model.spheres = (CColSphere*)RwMalloc(model.numSpheres*sizeof(CColSphere));
@@ -597,7 +618,7 @@ CFileLoader::LoadCollisionModel(uint8 *buf, CColModel &model, char *modelname)
 	}else
 		model.spheres = nil;
 
-	model.numLines = *(int16*)buf;
+	model.numLines = ClampCount(*(int16*)buf, MAX_COLLINES, modelname, "lines");
 	buf += 4;
 	if(model.numLines > 0){
 		//model.lines = (CColLine*)RwMalloc(model.numLines*sizeof(CColLine));
@@ -611,7 +632,7 @@ CFileLoader::LoadCollisionModel(uint8 *buf, CColModel &model, char *modelname)
 	model.numLines = 0;
 	model.lines = nil;
 
-	model.numBoxes = *(int16*)buf;
+	model.numBoxes = ClampCount(*(int16*)buf, MAX_COLBOXES, modelname, "boxes");
 	buf += 4;
 	if(model.numBoxes > 0){
 		model.boxes = (CColBox*)RwMalloc(model.numBoxes*sizeof(CColBox));
@@ -623,7 +644,7 @@ CFileLoader::LoadCollisionModel(uint8 *buf, CColModel &model, char *modelname)
 	}else
 		model.boxes = nil;
 
-	int32 numVertices = *(int16*)buf;
+	int32 numVertices = ClampCount(*(int16*)buf, MAX_COLVERTS, modelname, "vertices");
 	buf += 4;
 	if(numVertices > 0){
 		model.vertices = (CompressedVector*)RwMalloc(numVertices*sizeof(CompressedVector));
@@ -641,7 +662,7 @@ CFileLoader::LoadCollisionModel(uint8 *buf, CColModel &model, char *modelname)
 	}else
 		model.vertices = nil;
 
-	model.numTriangles = *(int16*)buf;
+	model.numTriangles = ClampCount(*(int16*)buf, MAX_COLTRIS, modelname, "triangles");
 	buf += 4;
 	if(model.numTriangles > 0){
 		model.triangles = (CColTriangle*)RwMalloc(model.numTriangles*sizeof(CColTriangle));

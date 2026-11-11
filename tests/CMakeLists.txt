@@ -285,6 +285,13 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Cla
     set_target_properties(optimization_profile_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
     add_test(NAME optimization_profile_tests COMMAND optimization_profile_tests)
 
+    # Collision ceilings that the client asserts on (129 spheres, 1600 tris)
+    # and the bounds the loader applies to the counts it reads from a file.
+    add_executable(collision_count_limit_tests CollisionCountLimitsTests.cpp)
+    target_include_directories(collision_count_limit_tests PRIVATE ../src/collision)
+    set_target_properties(collision_count_limit_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+    add_test(NAME collision_count_limit_tests COMMAND collision_count_limit_tests)
+
     # Several collision models per container (.col and .cls), including the
     # sector-padded slices an IMG actually hands over.
     add_executable(collision_container_tests CollisionContainerTests.cpp)

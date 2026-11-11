@@ -2,6 +2,7 @@
 #define __GTA_COLLISION_H__
 
 #include "ColModel.h"
+#include "ColLimits.h"
 #include "Game.h"	// for eLevelName
 #ifdef VU_COLLISION
 #include "VuVector.h"
@@ -23,6 +24,7 @@ struct CStoredCollPoly
 #else
 #define MAX_COLLISION_POINTS 32
 #endif
+
 
 class CCollision
 {

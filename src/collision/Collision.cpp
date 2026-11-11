@@ -1633,26 +1633,6 @@ CCollision::ProcessVerticalLine(const CColLine &line,
 #endif
 }
 
-// Ceilings for the per-pair candidate lists built in ProcessColModels. The
-// assert names in the client give the real values: 'effectiveSpheresA <=
-// MAXNUMSPHERES' / 'numSpheresB <= MAXNUMSPHERES' compare against 0x81 (129)
-// and 'numTrianglesB <= MAXNUMTRIS' against 0x640 (1600). The port was running
-// 128 and 600, so a model whose bounding sphere overlaps 600..1600 triangles
-// had its candidate list cut short and hits were lost - the assert would have
-// caught it, but asserts are compiled out in release. Spheres were one short,
-// which drops the last sphere of any model that has exactly 129 (the limit for
-// the client).
-//
-// Boxes and lines keep the port's values: the analysis confirms the assert
-// names exist ('numBoxesB <= MAXNUMBOXES', 'effectiveLinesA <= MAXNUMLINES')
-// but not their numbers, so changing those would be guesswork.
-enum {
-	MAXNUMSPHERES = 129,
-	MAXNUMBOXES = 32,
-	MAXNUMLINES = 16,
-	MAXNUMTRIS = 1600
-};
-
 #ifdef VU_COLLISION
 #ifdef GTA_PS2
 #define SPR(off) ((uint8*)(0x70000000 + (off)))
@@ -2008,22 +1988,26 @@ CCollision::ProcessColModels(const CMatrix &matrixA, CColModel &modelA,
 	matBA = Invert(matrixA, matBA);
 	matBA *= matrixB;
 
-	// transform modelA's spheres and lines to B space
-	for(i = 0; i < modelA.numSpheres; i++){
+	// transform modelA's spheres and lines to B space. Both arrays are fixed
+	// size and the asserts that would catch an oversized model are compiled out
+	// in release, so the loop bounds are clamped as well.
+	int numSpheresAIn = Min(modelA.numSpheres, MAX_COLSPHERES);
+	int numLinesAIn = Min(modelA.numLines, MAX_COLLINES);
+	for(i = 0; i < numSpheresAIn; i++){
 		CColSphere &s = modelA.spheres[i];
 		aSpheresA[i].Set(s.radius, matAB * s.center, s.surface, s.piece);
 	}
-	for(i = 0; i < modelA.numLines; i++)
+	for(i = 0; i < numLinesAIn; i++)
 		aLinesA[i].Set(matAB * modelA.lines[i].p0, matAB * modelA.lines[i].p1);
 
 	// Test them against model B's bounding volumes
 	int numSpheresA = 0;
 	int numLinesA = 0;
-	for(i = 0; i < modelA.numSpheres; i++)
+	for(i = 0; i < numSpheresAIn; i++)
 		if(TestSphereBox(aSpheresA[i], modelB.boundingBox))
 			aSphereIndicesA[numSpheresA++] = i;
 	// no actual check???
-	for(i = 0; i < modelA.numLines; i++)
+	for(i = 0; i < numLinesAIn; i++)
 		aLineIndicesA[numLinesA++] = i;
 	// No collision
 	if(numSpheresA == 0 && numLinesA == 0)
@@ -2033,13 +2017,15 @@ CCollision::ProcessColModels(const CMatrix &matrixA, CColModel &modelA,
 	int numSpheresB = 0;
 	int numBoxesB = 0;
 	int numTrianglesB = 0;
-	for(i = 0; i < modelB.numSpheres; i++){
+	int numSpheresBIn = Min(modelB.numSpheres, MAX_COLSPHERES);
+	int numBoxesBIn = Min(modelB.numBoxes, MAX_COLBOXES);
+	for(i = 0; i < numSpheresBIn; i++){
 		s.radius = modelB.spheres[i].radius;
 		s.center = matBA * modelB.spheres[i].center;
 		if(TestSphereBox(s, modelA.boundingBox))
 			aSphereIndicesB[numSpheresB++] = i;
 	}
-	for(i = 0; i < modelB.numBoxes; i++)
+	for(i = 0; i < numBoxesBIn; i++)
 		if(TestSphereBox(bsphereAB, modelB.boxes[i]))
 			aBoxIndicesB[numBoxesB++] = i;
 	CalculateTrianglePlanes(&modelB);
