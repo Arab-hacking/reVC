@@ -245,8 +245,28 @@ CFileLoader::LoadCollisionFile(const char *filename, uint8 colSlot)
 	assert(fd > 0);
 
 	while(CFileMgr::Read(fd, (char*)&header, sizeof(header))){
-		assert(header.ident == 'LLOC');
-		CFileMgr::Read(fd, (char*)work_buff, header.size);
+		// The record size comes straight from the file and the read lands in a
+		// fixed 55 000-byte buffer, so an unchecked size writes past it: a .col
+		// whose record claims to be larger than the buffer overruns the global,
+		// and a body shorter than the 24-byte name below makes the copy read
+		// whatever the previous record left behind. The tag was only an assert,
+		// which is compiled out in release, so a corrupt or non-collision file
+		// was walked to the end. Chapter 3 walks records by declared length, so
+		// a record that does not fit is a truncated stream: stop there.
+		if(header.ident != 'LLOC'){
+			debug("collision file %s: bad record tag %08x, stopping\n",
+			      filename, (unsigned)header.ident);
+			break;
+		}
+		if(header.size < 24 || header.size > sizeof(work_buff)){
+			debug("collision file %s: record size %u out of range, stopping\n",
+			      filename, (unsigned)header.size);
+			break;
+		}
+		if(CFileMgr::Read(fd, (char*)work_buff, header.size) != header.size){
+			debug("collision file %s: truncated record, stopping\n", filename);
+			break;
+		}
 		memcpy(modelname, work_buff, 24);
 
 #ifdef CUSTOM_MODELS
