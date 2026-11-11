@@ -134,6 +134,12 @@ inline bool ConvertClsfV1(const uint8_t *p, size_t n, const std::string &name,
     if(!takeCount(nS, 20, sph) || !takeCount(nL, 24, lin) || !takeCount(nB, 28, box) ||
        !takeCount(nV, 12, vtx) || !takeCount(nF, 16, fac))
         return false;
+    // Nothing to collide with. Returning true here writes a structurally valid
+    // COLL whose every count is zero: it validates, it installs, and the model
+    // is left with an empty collision model while the log says the block was
+    // accepted. That is the missing-collision a player stands in.
+    if(nS == 0 && nB == 0 && nF == 0)
+        return false;
     for(size_t rem = pos; rem < n; rem++)
         if(p[rem] != 0) return false;
     for(uint32_t k = 0; k < nS; k++) {
@@ -221,6 +227,17 @@ inline bool Convert(const uint8_t *p, size_t n, std::vector<uint8_t> &out) {
     uint32_t nA = U16(p+72), nB = U16(p+74), nF = U16(p+76);
     uint8_t version = p[80];
     if(nA > 32767 || nB > 32767 || nF > 32767)
+        return ConvertClsfV1(p, n, name, cx, cy, cz, radius, out);
+    // A block with no spheres, no boxes and no faces has nothing to collide
+    // with. Converting it "succeeds" and produces a valid-looking COLL with
+    // every count at zero, which then installs cleanly and leaves the model
+    // with an empty collision model - the map has no collision there while the
+    // log says the block was accepted.
+    //
+    // All-zero counts are also what a v1 float32 body looks like when it is
+    // read as a CED2 header (the v1 body starts with u32 counts at +72), so
+    // this is the point where that layout has to be tried before giving up.
+    if(nA == 0 && nB == 0 && nF == 0)
         return ConvertClsfV1(p, n, name, cx, cy, cz, radius, out);
     uint32_t a = U32(p+84), b = U32(p+88), v = U32(p+96), f = U32(p+100);
     size_t aPos = (size_t)a+4, bPos = (size_t)b+4;

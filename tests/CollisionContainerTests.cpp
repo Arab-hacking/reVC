@@ -240,9 +240,33 @@ TestIndexedBlockValidatesAsVc(void)
 	}
 }
 
+// A CED2 chunk whose three counts are all zero converts to a COLL block that is
+// structurally valid and completely empty: 0 spheres, 0 boxes, 0 faces. The game
+// accepts that model and the map ends up with no collision there, while every
+// tally on the way up says the block was installed. It has to be rejected.
+static void
+TestEmptyBrChunkIsRejected(void)
+{
+	std::vector<uint8_t> chunk = BrChunk("CLSF", "empty_road", 0);
+	Check(chunk.size() == 120, "chunk is a bare header");
+	float radius = 5.0f;
+	std::memcpy(&chunk[44], &radius, 4);
+	float bmin[3] = { -10.0f, -10.0f, -10.0f };
+	float bmax[3] = { 10.0f, 10.0f, 10.0f };
+	for(int k = 0; k < 3; k++) std::memcpy(&chunk[48+k*4], &bmin[k], 4);
+	for(int k = 0; k < 3; k++) std::memcpy(&chunk[60+k*4], &bmax[k], 4);
+	// counts at +72 are already zero in BrChunk
+
+	std::vector<uint8_t> game;
+	Check(!brcollision::Convert(chunk.data(), chunk.size(), game),
+	      "a chunk with no spheres, boxes or faces is not converted");
+	Check(game.empty(), "nothing is written for an empty chunk");
+}
+
 int
 main(void)
 {
+	TestEmptyBrChunkIsRejected();
 	TestBrContainerHoldsSeveralModels();
 	TestBrContainerSurvivesImgRounding();
 	TestBrContainerSurvivesAlignmentBetweenChunks();
