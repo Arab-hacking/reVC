@@ -4081,11 +4081,26 @@ CStreaming::MakeSpaceFor(int32 size)
 	}
 #undef MB
 #endif
-	while(ms_memoryUsed >= ms_memoryAvailable - size)
+	// §7.5: eviction is paced, not an unbounded scan. MakeSpaceFor used to call
+	// RemoveLeastUsedModel until it ran out of candidates, and that is exactly
+	// the frame-long stall the check exists to avoid: a single load could walk
+	// the whole loaded list. The check budget comes from the optimisation
+	// profile (cleanupChecksPerFrame, 100 by default) and shrinks under
+	// pressure. When the budget runs out we still free the objects behind the
+	// camera and let the next frame continue - the model stays requested.
+	int checks = revcopt::Current().cleanupChecksPerFrame;
+	if(checks < 1)
+		checks = 1;
+	while(ms_memoryUsed >= ms_memoryAvailable - size){
+		if(checks-- <= 0){
+			DeleteRwObjectsBehindCamera(ms_memoryAvailable - size);
+			return;
+		}
 		if(!RemoveLeastUsedModel(STREAMFLAGS_20)){
 			DeleteRwObjectsBehindCamera(ms_memoryAvailable - size);
 			return;
 		}
+	}
 }
 
 void

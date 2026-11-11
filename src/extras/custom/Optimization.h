@@ -19,6 +19,7 @@ struct OptimizationSnapshot
 	bool critical;             // hard mode active
 	int vehicleRequestsPerFrame;
 	int asyncRequestsPerFrame;
+	int cleanupChecksPerFrame;    // how many eviction candidates to test per frame
 	bool skinFallbackWanted;
 };
 

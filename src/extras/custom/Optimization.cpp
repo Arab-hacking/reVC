@@ -92,6 +92,7 @@ Publish(const Controller &c)
 	s_snapshot.critical = c.CriticalActive();
 	s_snapshot.vehicleRequestsPerFrame = c.VehicleRequestsPerFrame();
 	s_snapshot.asyncRequestsPerFrame = c.AsyncRequestsPerFrame();
+	s_snapshot.cleanupChecksPerFrame = c.CleanupChecksPerFrame();
 	s_snapshot.skinFallbackWanted = c.SkinFallbackWanted();
 }
 
@@ -259,6 +260,7 @@ Current(void)
 		s_snapshot.critical = false;
 		s_snapshot.vehicleRequestsPerFrame = 3;
 		s_snapshot.asyncRequestsPerFrame = 5;
+		s_snapshot.cleanupChecksPerFrame = 100;
 		s_snapshot.skinFallbackWanted = false;
 	}
 	return s_snapshot;
@@ -306,6 +308,7 @@ Tick(unsigned, float, unsigned long long)
 	s.distanceScale = 1.0f;
 	s.vehicleRequestsPerFrame = 3;
 	s.asyncRequestsPerFrame = 5;
+	s.cleanupChecksPerFrame = 100;
 	return s;
 }
 

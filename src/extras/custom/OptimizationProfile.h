@@ -504,6 +504,24 @@ public:
 	size_t BudgetBytes(void) const { return budgetBytes; }
 
 	// §9.4: the same branch the client uses to pick the per-frame quota.
+	// Chapter 7 §7.5: eviction is paced rather than unbounded - "выгрузка
+	// порционная (cleanupChecksPerFrame) — против фризов". The configured
+	// budget is the ceiling; under pressure fewer candidates are tested per
+	// frame so the check itself cannot become the stall.
+	int CleanupChecksPerFrame(void) const
+	{
+		int checks = params.cleanupChecksPerFrame;
+		if(checks < 1)
+			checks = 1;
+		if(critical)
+			checks /= 2;
+		else if(mitigation)
+			checks = checks * 3 / 4;
+		if(checks < 1)
+			checks = 1;
+		return checks;
+	}
+
 	int VehicleRequestsPerFrame(void) const
 	{
 		if(params.mitigationEnterHeadroomMb <= 0.0f)

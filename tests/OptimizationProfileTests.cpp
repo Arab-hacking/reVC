@@ -644,6 +644,55 @@ TestPreservedPlayersFollowTheAttestedForm(void)
 	printf("preserved players follow the attested form ok\n");
 }
 
+// ---------------------------------------------------------------------------
+// Chapter 7 §7.5 - eviction is paced. MakeSpaceFor used to loop until it ran
+// out of candidates, so one load could walk the whole loaded list inside a
+// single frame. The check budget must be the configured ceiling and must fall
+// as pressure rises.
+// ---------------------------------------------------------------------------
+static void
+TestCleanupChecksArePaced(void)
+{
+	Params p;
+	assert(p.cleanupChecksPerFrame == 100);
+
+	const size_t MB = (size_t)1 << 20;
+	Controller idle;
+	idle.SetBudgetBytes(320 * MB);
+	idle.SetParams(p);
+	idle.Update(0, 80 * MB, 0, 1.0f/60.0f);
+	assert(idle.CleanupChecksPerFrame() == 100);
+
+	// Mitigation: 3/4 of the budget. Critical: half.
+	Controller soft;
+	soft.SetBudgetBytes(320 * MB);
+	soft.SetParams(p);
+	for(int i = 0; i < 1200; i++)
+		soft.Update((uint32_t)(i*17), 300 * MB, 0, 1.0f/60.0f);
+	assert(soft.MitigationActive());
+	assert(soft.CleanupChecksPerFrame() == 75);
+
+	Controller hard;
+	hard.SetBudgetBytes(320 * MB);
+	hard.SetParams(p);
+	for(int i = 0; i < 1200; i++)
+		hard.Update((uint32_t)(i*17), 320 * MB, 0, 1.0f/60.0f);
+	assert(hard.CriticalActive());
+	assert(hard.CleanupChecksPerFrame() == 50);
+
+	// Degenerate configuration must still leave at least one check, otherwise
+	// MakeSpaceFor could never free anything.
+	Params zero = p;
+	zero.cleanupChecksPerFrame = 0;
+	Sanitize(zero);
+	assert(zero.cleanupChecksPerFrame >= 1);
+	Controller z;
+	z.SetParams(zero);
+	z.Update(0, 320 * MB, 0, 1.0f/60.0f);
+	assert(z.CleanupChecksPerFrame() >= 1);
+	printf("cleanup checks are paced ok\n");
+}
+
 int
 main(void)
 {
@@ -664,6 +713,7 @@ main(void)
 	TestWorldWalkLimits();
 	TestMitigationIsVisibleAtTheSliderFloor();
 	TestPreservedPlayersFollowTheAttestedForm();
+	TestCleanupChecksArePaced();
 	printf("optimization profile tests passed\n");
 	return 0;
 }
