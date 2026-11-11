@@ -237,6 +237,7 @@ CFileLoader::LoadCollisionFile(const char *filename, uint8 colSlot)
 	// odd records inside an otherwise good one - the totals alone cannot tell
 	// them apart.
 	unsigned records = 0, noInfo = 0;
+	size_t bytesWalked = 0;
 
 	PUSH_MEMID(MEMID_COLLISION);
 
@@ -288,6 +289,7 @@ CFileLoader::LoadCollisionFile(const char *filename, uint8 colSlot)
 #endif
 
 		records++;
+		bytesWalked += 8 + (size_t)header.size;
 		mi = CModelInfo::GetModelInfo(modelname, nil);
 		if(mi){
 			// Read into a scratch model first. A record can be long enough to
@@ -330,8 +332,8 @@ CFileLoader::LoadCollisionFile(const char *filename, uint8 colSlot)
 	// records inside an otherwise good one - the totals alone cannot tell them
 	// apart. The count is what shows it: GENERIC.COL holds thousands of models,
 	// so a count far below that is the file, not the parser.
-	debug("collision file %s: %u record(s), %u without a modelinfo\n",
-	      filename, records, noInfo);
+	debug("collision file %s: %u record(s), %u without a modelinfo, %u bytes walked\n",
+	      filename, records, noInfo, (unsigned)bytesWalked);
 
 	CFileMgr::CloseFile(fd);
 
