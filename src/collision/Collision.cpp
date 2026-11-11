@@ -1991,8 +1991,8 @@ CCollision::ProcessColModels(const CMatrix &matrixA, CColModel &modelA,
 	// transform modelA's spheres and lines to B space. Both arrays are fixed
 	// size and the asserts that would catch an oversized model are compiled out
 	// in release, so the loop bounds are clamped as well.
-	int numSpheresAIn = Min(modelA.numSpheres, MAX_COLSPHERES);
-	int numLinesAIn = Min(modelA.numLines, MAX_COLLINES);
+	int numSpheresAIn = Min(modelA.numSpheres, MAXNUMSPHERES);
+	int numLinesAIn = Min(modelA.numLines, MAXNUMLINES);
 	for(i = 0; i < numSpheresAIn; i++){
 		CColSphere &s = modelA.spheres[i];
 		aSpheresA[i].Set(s.radius, matAB * s.center, s.surface, s.piece);
@@ -2017,8 +2017,8 @@ CCollision::ProcessColModels(const CMatrix &matrixA, CColModel &modelA,
 	int numSpheresB = 0;
 	int numBoxesB = 0;
 	int numTrianglesB = 0;
-	int numSpheresBIn = Min(modelB.numSpheres, MAX_COLSPHERES);
-	int numBoxesBIn = Min(modelB.numBoxes, MAX_COLBOXES);
+	int numSpheresBIn = Min(modelB.numSpheres, MAXNUMSPHERES);
+	int numBoxesBIn = Min(modelB.numBoxes, MAXNUMBOXES);
 	for(i = 0; i < numSpheresBIn; i++){
 		s.radius = modelB.spheres[i].radius;
 		s.center = matBA * modelB.spheres[i].center;

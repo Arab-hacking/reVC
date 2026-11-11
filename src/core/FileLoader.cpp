@@ -272,18 +272,24 @@ CFileLoader::LoadCollisionFile(const char *filename, uint8 colSlot)
 #ifdef CUSTOM_MODELS
 		// the custom folder wins over the game's own collision file
 		uint8 *colbody = work_buff;
-		if(CCustomModels::GetCollisionBlock(modelname, customColBlock))
+		size_t colbodysize = header.size;
+		if(CCustomModels::GetCollisionBlock(modelname, customColBlock)){
 			colbody = customColBlock.data();
+			colbodysize = customColBlock.size();
+		}
+#else
+		uint8 *colbody = work_buff;
+		size_t colbodysize = header.size;
 #endif
 
 		mi = CModelInfo::GetModelInfo(modelname, nil);
 		if(mi){
 			if(mi->GetColModel() && mi->DoesOwnColModel()){
-				LoadCollisionModel(colbody+24, *mi->GetColModel(), modelname);
+				LoadCollisionModel(colbody+24, colbodysize > 24 ? colbodysize-24 : 0, *mi->GetColModel(), modelname);
 			}else{
 				CColModel *model = new CColModel;
 				model->level = colSlot;
-				LoadCollisionModel(colbody+24, *model, modelname);
+				LoadCollisionModel(colbody+24, colbodysize > 24 ? colbodysize-24 : 0, *model, modelname);
 				mi->SetColModel(model, true);
 			}
 		}else{
@@ -480,6 +486,7 @@ CFileLoader::LoadCollisionFileFirstTime(uint8 *buffer, uint32 size, uint8 colSlo
 		}
 		memcpy(modelname, buffer+8, 24);
 		memcpy(work_buff, buffer+32, modelsize-24);
+		size_t workbuffsize = modelsize - 24;
 		size -= 32 + (modelsize-24);
 		buffer += 32 + (modelsize-24);
 		// 15 KB was below what a legal model can weigh: 1600 triangles (the
@@ -501,7 +508,7 @@ CFileLoader::LoadCollisionFileFirstTime(uint8 *buffer, uint32 size, uint8 colSlo
 			CColStore::IncludeModelIndex(colSlot, modelIndex);
 			CColModel *model = new CColModel;
 			model->level = colSlot;
-			LoadCollisionModel(work_buff, *model, modelname);
+			LoadCollisionModel(work_buff, workbuffsize, *model, modelname);
 			mi->SetColModel(model, true);
 		}else{
 			debug("colmodel %s can't find a modelinfo\n", modelname);
@@ -537,6 +544,7 @@ CFileLoader::LoadCollisionFile(uint8 *buffer, uint32 size, uint8 colSlot)
 		}
 		memcpy(modelname, buffer+8, 24);
 		memcpy(work_buff, buffer+32, modelsize-24);
+		size_t workbuffsize = modelsize - 24;
 		size -= 32 + (modelsize-24);
 		buffer += 32 + (modelsize-24);
 		// 15 KB was below what a legal model can weigh: 1600 triangles (the
@@ -556,11 +564,11 @@ CFileLoader::LoadCollisionFile(uint8 *buffer, uint32 size, uint8 colSlot)
 #endif
 		if(mi){
 			if(mi->GetColModel()){
-				LoadCollisionModel(work_buff, *mi->GetColModel(), modelname);
+				LoadCollisionModel(work_buff, workbuffsize, *mi->GetColModel(), modelname);
 			}else{
 				CColModel *model = new CColModel;
 				model->level = colSlot;
-				LoadCollisionModel(work_buff, *model, modelname);
+				LoadCollisionModel(work_buff, workbuffsize, *model, modelname);
 				mi->SetColModel(model, true);
 			}
 		}else{
@@ -570,109 +578,179 @@ CFileLoader::LoadCollisionFile(uint8 *buffer, uint32 size, uint8 colSlot)
 	return true;
 }
 
-// A count field in a .col record decides how much memory is allocated and how
-// far the read pointer advances. A negative or oversized value cannot come from
-// a file the game wrote, and letting it through reads past the record and
-// leaves every following section misaligned, so it is reported and clamped.
-static int32
-ClampCount(int32 count, int32 max, const char *modelname, const char *what)
+// Reading a .col record.
+//
+// The five section counts are read with a signed halfword load, exactly as the
+// client's unpacker reads them (`ldrsh` at 0xe04be8 and the counters that
+// follow), and each one advances the read pointer by count*elementSize. The
+// client trusts these numbers; a record the game wrote always has them right.
+//
+// The port also reads records produced by other tools, so it cannot assume that.
+// An earlier attempt clamped the counts, which was wrong and crashed: the clamp
+// changed how far the pointer moved, so every following section was read from
+// the wrong place. A model with 48 boxes got 32 boxes read, the vertex counter
+// then landed on box data and came out negative (clamped to zero) while the
+// triangle counter stayed positive - the model ended up with triangles indexing
+// a vertex array that was never allocated, and dereferenced null the first time
+// it was used.
+//
+// The numbers are therefore taken at face value. What is checked is that they
+// fit in the record that is actually there: the caller passes the record size,
+// each section is bounds-checked against it before anything is written, and the
+// first section that does not fit ends the read. Nothing is clamped and nothing
+// shifts.
+
+// A .col record as the loader walks it. `size` is the number of body bytes
+// available after the 32-byte header (name included).
+class ColRecord
 {
-	if(count < 0 || count > max){
-		debug("colmodel %s: %s count %d out of range, clamped to %d\n",
-		      modelname, what, count, count < 0 ? 0 : max);
-		return count < 0 ? 0 : max;
+public:
+	uint8 *p;
+	size_t left;
+	const char *name;
+
+	ColRecord(uint8 *buf, size_t size, const char *n) : p(buf), left(size), name(n) {}
+
+	bool Has(size_t n) const { return left >= n; }
+
+	int32 ReadCount(void)
+	{
+		if(!Has(4)) return -1;
+		int32 v = *(int16 *)p;
+		p += 4;
+		left -= 4;
+		return v;
 	}
-	return count;
+
+	// Checks a count against what is actually left. A negative count, or a
+	// section bigger than the record, means the record is not what it claims.
+	bool SectionFits(int32 count, size_t elemSize, const char *what) const
+	{
+		if(count < 0){
+			debug("colmodel %s: negative %s count %d\n", name, what, count);
+			return false;
+		}
+		if((uint64)count * elemSize > (uint64)left){
+			debug("colmodel %s: %s count %d needs %u bytes, %u left in the record\n",
+			      name, what, count, (unsigned)((uint64)count * elemSize), (unsigned)left);
+			return false;
+		}
+		return true;
+	}
+
+	void Skip(size_t n) { p += n; left -= n; }
+};
+
+// A collision model with triangles but no vertices, or with a triangle pointing
+// past the last vertex, is not usable: every check that follows indexes the
+// vertex array with those numbers (CalculateTrianglePlanes does it first, from
+// the collision cache, before any entity is even drawn). Dropping the triangle
+// list keeps the model's spheres and boxes, which is what the game falls back to
+// when a model's detail is unusable - and it is a whole lot better than
+// dereferencing null on the loading screen.
+static void
+DropUnusableTriangles(CColModel &model, int32 numVertices, const char *modelname)
+{
+	if(model.numTriangles == 0)
+		return;
+	if(model.vertices == nil || numVertices <= 0){
+		debug("colmodel %s: %d triangles but no vertices, dropping them\n",
+		      modelname, model.numTriangles);
+		model.triangles = nil;
+		model.numTriangles = 0;
+		return;
+	}
+	for(int i = 0; i < model.numTriangles; i++){
+		CColTriangle &t = model.triangles[i];
+		if(t.a >= numVertices || t.b >= numVertices || t.c >= numVertices){
+			debug("colmodel %s: triangle %d points past the last vertex (%d of %d), dropping the list\n",
+			      modelname, i, (int)t.a, numVertices);
+			model.triangles = nil;
+			model.numTriangles = 0;
+			return;
+		}
+	}
 }
 
 void
-CFileLoader::LoadCollisionModel(uint8 *buf, CColModel &model, char *modelname)
+CFileLoader::LoadCollisionModel(uint8 *buf, size_t bufsize, CColModel &model, char *modelname)
 {
 	int i;
+	ColRecord r(buf, bufsize, modelname);
 
-	model.boundingSphere.radius = *(float*)(buf);
-	model.boundingSphere.center.x = *(float*)(buf+4);
-	model.boundingSphere.center.y = *(float*)(buf+8);
-	model.boundingSphere.center.z = *(float*)(buf+12);
-	model.boundingBox.min.x = *(float*)(buf+16);
-	model.boundingBox.min.y = *(float*)(buf+20);
-	model.boundingBox.min.z = *(float*)(buf+24);
-	model.boundingBox.max.x = *(float*)(buf+28);
-	model.boundingBox.max.y = *(float*)(buf+32);
-	model.boundingBox.max.z = *(float*)(buf+36);
-	// The counts come straight from the file and decide how much is allocated
-	// and how far the read pointer advances, so a corrupt record makes the
-	// loader read past the end of its buffer and leaves the following sections
-	// misaligned. They are clamped to what the format can legally hold before
-	// either happens. Chapter 8 of the collision analysis puts the ceilings at
-	// 129 spheres, 1600 triangles; boxes and lines use the processing limits.
-	model.numSpheres = ClampCount(*(int16*)(buf+40), MAX_COLSPHERES, modelname, "spheres");
-	buf += 44;
-	if(model.numSpheres > 0){
+	if(!r.Has(44)){
+		debug("colmodel %s: record too short for its header\n", modelname);
+		return;
+	}
+	model.boundingSphere.radius = *(float*)(r.p);
+	model.boundingSphere.center.x = *(float*)(r.p+4);
+	model.boundingSphere.center.y = *(float*)(r.p+8);
+	model.boundingSphere.center.z = *(float*)(r.p+12);
+	model.boundingBox.min.x = *(float*)(r.p+16);
+	model.boundingBox.min.y = *(float*)(r.p+20);
+	model.boundingBox.min.z = *(float*)(r.p+24);
+	model.boundingBox.max.x = *(float*)(r.p+28);
+	model.boundingBox.max.y = *(float*)(r.p+32);
+	model.boundingBox.max.z = *(float*)(r.p+36);
+	model.numSpheres = *(int16*)(r.p+40);
+	r.Skip(44);
+
+	if(model.numSpheres > 0 && r.SectionFits(model.numSpheres, sizeof(CColSphere), "sphere")){
 		model.spheres = (CColSphere*)RwMalloc(model.numSpheres*sizeof(CColSphere));
 		REGISTER_MEMPTR(&model.spheres);
 		for(i = 0; i < model.numSpheres; i++){
-			model.spheres[i].Set(*(float*)buf, *(CVector*)(buf+4), buf[16], buf[17]);
-			buf += 20;
+			model.spheres[i].Set(*(float*)r.p, *(CVector*)(r.p+4), r.p[16], r.p[17]);
+			r.Skip(20);
 		}
 	}else
 		model.spheres = nil;
 
-	model.numLines = ClampCount(*(int16*)buf, MAX_COLLINES, modelname, "lines");
-	buf += 4;
-	if(model.numLines > 0){
+	model.numLines = r.ReadCount();
+	if(model.numLines > 0 && r.SectionFits(model.numLines, 24, "line")){
 		//model.lines = (CColLine*)RwMalloc(model.numLines*sizeof(CColLine));
 		REGISTER_MEMPTR(&model.lines);
-		for(i = 0; i < model.numLines; i++){
-			//model.lines[i].Set(*(CVector*)buf, *(CVector*)(buf+12));
-			buf += 24;
-		}
-	}else
-		model.lines = nil;
+		for(i = 0; i < model.numLines; i++)
+			r.Skip(24);
+	}
+	// The game never uses collision lines for anything but the four wheels of a
+	// vehicle, and those come from the DFF, so the list is dropped either way.
 	model.numLines = 0;
 	model.lines = nil;
 
-	model.numBoxes = ClampCount(*(int16*)buf, MAX_COLBOXES, modelname, "boxes");
-	buf += 4;
-	if(model.numBoxes > 0){
+	model.numBoxes = r.ReadCount();
+	if(model.numBoxes > 0 && r.SectionFits(model.numBoxes, sizeof(CColBox), "box")){
 		model.boxes = (CColBox*)RwMalloc(model.numBoxes*sizeof(CColBox));
 		REGISTER_MEMPTR(&model.boxes);
 		for(i = 0; i < model.numBoxes; i++){
-			model.boxes[i].Set(*(CVector*)buf, *(CVector*)(buf+12), buf[24], buf[25]);
-			buf += 28;
+			model.boxes[i].Set(*(CVector*)r.p, *(CVector*)(r.p+12), r.p[24], r.p[25]);
+			r.Skip(28);
 		}
 	}else
 		model.boxes = nil;
 
-	int32 numVertices = ClampCount(*(int16*)buf, MAX_COLVERTS, modelname, "vertices");
-	buf += 4;
-	if(numVertices > 0){
+	int32 numVertices = r.ReadCount();
+	if(numVertices > 0 && r.SectionFits(numVertices, sizeof(CompressedVector), "vertex")){
 		model.vertices = (CompressedVector*)RwMalloc(numVertices*sizeof(CompressedVector));
 		REGISTER_MEMPTR(&model.vertices);
 		for(i = 0; i < numVertices; i++){
-			model.vertices[i].Set(*(float*)buf, *(float*)(buf+4), *(float*)(buf+8));
-#if 0
-			if(Abs(*(float*)buf) >= 256.0f ||
-			   Abs(*(float*)(buf+4)) >= 256.0f ||
-			   Abs(*(float*)(buf+8)) >= 256.0f)
-				printf("%s:Collision volume too big\n", modelname);
-#endif
-			buf += 12;
+			model.vertices[i].Set(*(float*)r.p, *(float*)(r.p+4), *(float*)(r.p+8));
+			r.Skip(12);
 		}
 	}else
 		model.vertices = nil;
 
-	model.numTriangles = ClampCount(*(int16*)buf, MAX_COLTRIS, modelname, "triangles");
-	buf += 4;
-	if(model.numTriangles > 0){
+	model.numTriangles = r.ReadCount();
+	if(model.numTriangles > 0 && r.SectionFits(model.numTriangles, 16, "triangle")){
 		model.triangles = (CColTriangle*)RwMalloc(model.numTriangles*sizeof(CColTriangle));
 		REGISTER_MEMPTR(&model.triangles);
 		for(i = 0; i < model.numTriangles; i++){
-			model.triangles[i].Set(*(int32*)buf, *(int32*)(buf+4), *(int32*)(buf+8), buf[12]);
-			buf += 16;
+			model.triangles[i].Set(*(int32*)r.p, *(int32*)(r.p+4), *(int32*)(r.p+8), r.p[12]);
+			r.Skip(16);
 		}
 	}else
 		model.triangles = nil;
+
+	DropUnusableTriangles(model, numVertices, modelname);
 }
 
 static void

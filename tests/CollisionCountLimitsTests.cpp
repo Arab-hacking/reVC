@@ -32,13 +32,14 @@ Check(bool cond, const char *what)
 	}
 }
 
-// Same behaviour as the helper in CFileLoader.cpp.
-static int32
-ClampCount(int32 count, int32 max)
+// Same rule as ColRecord::SectionFits in CFileLoader.cpp: a count is accepted
+// when it is not negative and the section it describes fits in what is left.
+static bool
+Fits(int32 count, size_t elemSize, size_t left)
 {
-	if(count < 0 || count > max)
-		return count < 0 ? 0 : max;
-	return count;
+	if(count < 0)
+		return false;
+	return (unsigned long long)count * elemSize <= (unsigned long long)left;
 }
 
 int main(void)
@@ -46,29 +47,26 @@ int main(void)
 	// The numbers the client asserts on.
 	Check(MAXNUMSPHERES == 129, "MAXNUMSPHERES is the client's 0x81");
 	Check(MAXNUMTRIS == 1600, "MAXNUMTRIS is the client's 0x640");
+	Check(MAXNUMBOXES == 101, "MAXNUMBOXES is the client's 0x65");
 
-	// What the loader is allowed to read into a model.
-	Check(MAX_COLSPHERES == MAXNUMSPHERES, "the loader accepts as many spheres as the check allows");
-	Check(MAX_COLTRIS == MAXNUMTRIS, "the loader accepts as many triangles as the check allows");
-	Check(MAX_COLBOXES == MAXNUMBOXES, "box ceiling is shared with the check");
-	Check(MAX_COLLINES == MAXNUMLINES, "line ceiling is shared with the check");
+	// Loading must not apply any of these as a clamp. Real maps ship models with
+	// more than 32 boxes; cutting them down would both hide collision and - as
+	// happened - move the read pointer into the next section.
 
-	// A legal count passes through untouched.
-	Check(ClampCount(0, MAX_COLSPHERES) == 0, "an empty section stays empty");
-	Check(ClampCount(129, MAX_COLSPHERES) == 129, "a full sphere list is kept");
-	Check(ClampCount(1600, MAX_COLTRIS) == 1600, "a full triangle list is kept");
+	// A read of a section is accepted when it fits in the bytes that are left.
+	// 48 boxes - an ordinary value on a real map - must be accepted.
+	Check(Fits(48, 28, 2000), "48 boxes fit in a 2000-byte record");
+	Check(Fits(129, 20, 3000), "129 spheres fit in a 3000-byte record");
+	Check(Fits(1600, 16, 25600), "1600 triangles fit in exactly their own size");
+	Check(Fits(0, 28, 0), "an empty section always fits");
 
-	// Out of range values are bounded, not passed on.
-	Check(ClampCount(130, MAX_COLSPHERES) == MAX_COLSPHERES, "too many spheres is clamped");
-	Check(ClampCount(1601, MAX_COLTRIS) == MAX_COLTRIS, "too many triangles is clamped");
-	Check(ClampCount(32767, MAX_COLTRIS) == MAX_COLTRIS, "the largest signed 16-bit count is clamped");
-	Check(ClampCount(-1, MAX_COLSPHERES) == 0, "a negative count becomes an empty section");
-	Check(ClampCount(-32768, MAX_COLTRIS) == 0, "the smallest signed 16-bit count becomes empty");
-
-	// Vertices have no assert of their own; the ceiling must still be positive
-	// and large enough for a legal model.
-	Check(MAX_COLVERTS > 1600, "the vertex ceiling allows a legal model");
-	Check(ClampCount(32767, MAX_COLVERTS) == 32767, "a large but legal vertex list is kept");
+	// A read is refused when it would run past the record, which is the only
+	// thing that has to be caught: clamping the count instead used to shift
+	// every following section and produce triangles with no vertices.
+	Check(!Fits(-1, 28, 2000), "a negative count is refused");
+	Check(!Fits(-32768, 16, 2000), "the smallest signed 16-bit count is refused");
+	Check(!Fits(1601, 16, 25600), "1601 triangles do not fit in 25600 bytes");
+	Check(!Fits(48, 28, 100), "48 boxes do not fit in 100 bytes");
 
 	if(failures){
 		printf("%d collision count limit check(s) failed\n", failures);

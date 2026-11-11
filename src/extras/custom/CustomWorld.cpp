@@ -121,7 +121,7 @@ void InstallCollision(const char *name, const uint8_t *game, size_t size, ColCon
     col->level = 0; // not an IMG collision slot that the engine may evict
     char modelName[24];
     std::snprintf(modelName, sizeof(modelName), "%s", name);
-    CFileLoader::LoadCollisionModel((uint8_t *)game+32, *col, modelName);
+    CFileLoader::LoadCollisionModel((uint8_t *)game+32, size > 32 ? size-32 : 0, *col, modelName);
     mi->SetColModel(col, true);
     ctx.freeModels--;
     ctx.installed++;
