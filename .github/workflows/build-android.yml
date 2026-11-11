@@ -68,6 +68,67 @@ jobs:
           java-version: 17
           cache: gradle
 
+      # The release APK has to be installable. AGP only signs a release build
+      # when it is given a keystore, and with none supplied it emits
+      # `app-release-unsigned.apk` - a file Android refuses to install unless
+      # the user runs apksigner by hand first. The keystore is therefore
+      # generated per build when the repository has no secret configured, so
+      # every release artifact is signed and needs no post-processing.
+      #
+      # A generated key is throwaway: builds signed with different keys cannot
+      # update each other, so an APK from one run replaces, not upgrades, an APK
+      # from another. Configure REVC_KEYSTORE_BASE64 and friends (see
+      # ANDROID_BUILD.md) to pin one identity across builds and updates.
+      - name: Prepare release signing key
+        id: signing
+        shell: bash
+        env:
+          SECRET_KEYSTORE_B64: ${{ secrets.REVC_KEYSTORE_BASE64 }}
+          SECRET_KEYSTORE_PASS: ${{ secrets.REVC_KEYSTORE_PASSWORD }}
+          SECRET_KEY_ALIAS: ${{ secrets.REVC_KEY_ALIAS }}
+          SECRET_KEY_PASS: ${{ secrets.REVC_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          workdir="${RUNNER_TEMP}/signing"
+          mkdir -p "${workdir}"
+          keytool_opts=(-noprompt -storetype PKCS12)
+
+          if [ -n "${SECRET_KEYSTORE_B64}" ]; then
+            echo "Using the keystore supplied through repository secrets"
+            printf '%s' "${SECRET_KEYSTORE_B64}" | base64 -d > "${workdir}/revc.jks"
+            store_pass="${SECRET_KEYSTORE_PASS:?REVC_KEYSTORE_PASSWORD is required with REVC_KEYSTORE_BASE64}"
+            alias="${SECRET_KEY_ALIAS:?REVC_KEY_ALIAS is required with REVC_KEYSTORE_BASE64}"
+            key_pass="${SECRET_KEY_PASS:-$store_pass}"
+          else
+            echo "No keystore secret configured: generating one for this build"
+            store_pass="$(head -c 24 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 24)"
+            alias="revc"
+            key_pass="${store_pass}"
+            keytool -genkeypair "${keytool_opts[@]}" \
+              -keystore "${workdir}/revc.jks" \
+              -alias "${alias}" \
+              -keyalg RSA -keysize 2048 -validity 10950 \
+              -storepass "${store_pass}" -keypass "${key_pass}" \
+              -dname "CN=reVC, OU=Android, O=reVC, L=unknown, ST=unknown, C=XX"
+          fi
+
+          # The signing fingerprint goes into the log: it is what tells two
+          # builds apart when an update is refused as "not signed by the same
+          # certificate", and it is the only way to compare a local build with
+          # a downloaded artifact.
+          fingerprint="$(keytool -list -v -keystore "${workdir}/revc.jks" \
+            -alias "${alias}" -storepass "${store_pass}" 2>/dev/null \
+            | sed -n 's/.*SHA256: *//p' | head -n1)"
+          echo "Signed with SHA-256: ${fingerprint:-<unknown>}"
+
+          {
+            echo "keystore=${workdir}/revc.jks"
+            echo "store_password=${store_pass}"
+            echo "key_alias=${alias}"
+            echo "key_password=${key_pass}"
+            echo "fingerprint=${fingerprint}"
+          } >> "${GITHUB_OUTPUT}"
+
       - name: Declare build version
         id: vars
         shell: bash
@@ -114,9 +175,16 @@ jobs:
           set +e
           VER_CODE=$((1000 + RUN_NUMBER))
           VER_NAME="reVC-0.0.1-${PR_HEAD_SHA:0:7}"
+          # Pass the keystore prepared above. Without it the release variant is
+          # unsigned and cannot be installed; with it, the APK is signed by the
+          # build itself and needs no apksigner step afterwards.
           ./gradlew "${ASSEMBLE_TASK}" \
             "-PrevcVersionCode=${VER_CODE}" \
             "-PrevcVersionName=${VER_NAME}" \
+            "-PrevcKeystore=${{ steps.signing.outputs.keystore }}" \
+            "-PrevcKeystorePassword=${{ steps.signing.outputs.store_password }}" \
+            "-PrevcKeyAlias=${{ steps.signing.outputs.key_alias }}" \
+            "-PrevcKeyPassword=${{ steps.signing.outputs.key_password }}" \
             --no-daemon --stacktrace --parallel --build-cache > gradle-build.log 2>&1
           result=$?
           # Always surface the Gradle log in the job output: without this the
@@ -145,13 +213,30 @@ jobs:
           VARIANT: ${{ matrix.variant }}
         run: |
           set -euo pipefail
-          # An unsigned release build is named app-release-unsigned.apk.
-          apk="$(find app/build/outputs/apk/${VARIANT} -maxdepth 1 -name '*.apk' -print -quit)"
+          # A release build that lost its keystore silently becomes
+          # `app-release-unsigned.apk`, so an unsigned file must never be
+          # picked up and published as if it were installable.
+          #
+          # Prefer the exact Gradle output name, then fall back to any APK, so a
+          # renamed or single-output variant still resolves.
+          apk=""
+          for candidate in \
+            "app/build/outputs/apk/${VARIANT}/app-${VARIANT}.apk" \
+            "app/build/outputs/apk/${VARIANT}/app-${VARIANT}-signed.apk"; do
+            if [ -f "${candidate}" ]; then apk="${candidate}"; break; fi
+          done
+          if [ -z "${apk}" ]; then
+            apk="$(find app/build/outputs/apk/${VARIANT} -maxdepth 1 -name '*.apk' -print -quit)"
+          fi
           if [ -z "${apk}" ]; then
             echo "No APK produced for ${VARIANT}" >&2
             find app/build/outputs -name '*.apk' -print >&2 || true
             exit 1
           fi
+          case "${apk}" in
+            *unsigned*) echo "APK ${apk} is unsigned; refusing to publish it" >&2
+                        exit 1 ;;
+          esac
           # This step runs in android/launcher, but `uses:` steps (the artifact
           # upload below) are always resolved from the repository root - the
           # job-level working-directory only applies to `run:`. Emitting the
@@ -169,6 +254,56 @@ jobs:
 
       - name: Verify game library and assets in APK
         run: python3 ../../tools/android/check_apk.py "${{ steps.apk.outputs.apk }}"
+
+      # A built APK is not necessarily an installable one. apksigner is the
+      # authority on that, and it also prints the certificate the file carries,
+      # which is what has to match the previous build for an update to be
+      # accepted by Android.
+      - name: Verify APK signature
+        shell: bash
+        env:
+          APK: ${{ steps.apk.outputs.apk }}
+          EXPECTED_SHA: ${{ steps.signing.outputs.fingerprint }}
+        run: |
+          set -euo pipefail
+          # apksigner lives in the SDK's build-tools. The runner sets
+          # ANDROID_HOME, but which build-tools directory is present differs per
+          # image, so look there first and fall back to the newest apksigner
+          # reachable on disk before giving up.
+          signer=""
+          for roots in "${ANDROID_HOME:-}" "${ANDROID_SDK_ROOT:-}" "${HOME}/android-sdk"; do
+            [ -n "${roots}" ] || continue
+            candidate="$(ls -d "${roots}"/build-tools/*/apksigner 2>/dev/null | sort -V | tail -n1)"
+            if [ -n "${candidate}" ] && [ -x "${candidate}" ]; then
+              signer="${candidate}"
+              break
+            fi
+          done
+          if [ -z "${signer}" ]; then
+            signer="$(command -v apksigner 2>/dev/null || true)"
+          fi
+          if [ -z "${signer}" ]; then
+            echo "apksigner not found; lookups tried ANDROID_HOME, ANDROID_SDK_ROOT and PATH" >&2
+            find / -name apksigner -type f 2>/dev/null | head -n5 >&2 || true
+            exit 1
+          fi
+          echo "Verifying with ${signer}"
+
+          if ! "${signer}" verify --verbose "${APK}" > apksigner.log 2>&1; then
+            echo "APK ${APK} failed apksigner verification" >&2
+            cat apksigner.log >&2
+            exit 1
+          fi
+          grep -E '^Verified using v[12] scheme.*true' apksigner.log || true
+
+          actual="$(sed -n 's/^Signer #1 certificate SHA-256 digest: *//p' apksigner.log | head -n1)"
+          echo "APK signer SHA-256: ${actual:-<unknown>}"
+          if [ -n "${EXPECTED_SHA}" ] && [ -n "${actual}" ] &&
+             [ "${actual}" != "${EXPECTED_SHA}" ]; then
+            echo "APK is signed by ${actual}, expected ${EXPECTED_SHA}" >&2
+            exit 1
+          fi
+          echo "APK signature and certificate match the keystore used for this build"
 
       - name: Upload ${{ matrix.variant }} APK
         uses: actions/upload-artifact@v4
