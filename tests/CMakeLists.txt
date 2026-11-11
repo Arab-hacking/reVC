@@ -435,3 +435,13 @@ add_executable(test_graphics_tests TestGraphicsTests.cpp)
 target_include_directories(test_graphics_tests PRIVATE ../src/extras/custom)
 set_target_properties(test_graphics_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
 add_test(NAME test_graphics_tests COMMAND test_graphics_tests)
+
+# The menu's .ini round-trip dereferences a row's value pointer for every row
+# that has a save key, so a row built as `CCFODynamic(nil, "cat", "key", ...)`
+# crashed the boot (SIGSEGV right after gta_vc.set). Source-level, because the
+# menu itself cannot be instantiated without RenderWare.
+add_executable(menu_ini_round_trip_tests MenuIniRoundTripTests.cpp)
+set_target_properties(menu_ini_round_trip_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+add_test(NAME menu_ini_round_trip_tests COMMAND menu_ini_round_trip_tests)
+set_tests_properties(menu_ini_round_trip_tests PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})

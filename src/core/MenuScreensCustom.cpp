@@ -971,7 +971,10 @@ CMenuScreenCustom aScreens[] = {
 		MENUACTION_CFO_SELECT, "FEM_RFL", { new CCFOSelect((int8*)&TestGraphicsSettings().reflections, "TestGraphics", "Reflections", reflectLevels, ARRAY_SIZE(reflectLevels), false, TestGraphicsAfterChange) }, 0, 0, MENUALIGN_LEFT,
 		MENUACTION_CFO_SELECT, "FEM_DDI", { new CCFOSelect((int8*)&TestGraphicsSettings().drawDistance, "TestGraphics", "DrawDistance", distanceLevels, ARRAY_SIZE(distanceLevels), false, TestGraphicsAfterChange) }, 0, 0, MENUALIGN_LEFT,
 		MENUACTION_CFO_SELECT, "FEM_EFF", { new CCFOSelect((int8*)&TestGraphicsSettings().effects, "TestGraphics", "Effects", effectLevels, ARRAY_SIZE(effectLevels), false, TestGraphicsAfterChange) }, 0, 0, MENUALIGN_LEFT,
-		MENUACTION_CFO_DYNAMIC, "FEM_MXF", { new CCFODynamic(nil, "TestGraphics", "MaxFps", MaxFpsDraw, MaxFpsPress) }, 0, 0, MENUALIGN_LEFT,
+		// The value pointer must not be nil while `save` is set: both
+		// SaveINISettings() and the draw path read *(int8*)value unconditionally,
+		// so a "draw-only" row with a save key dereferences null at startup.
+		MENUACTION_CFO_DYNAMIC, "FEM_MXF", { new CCFODynamic((int8*)&TestGraphicsSettings().maxFps, "TestGraphics", "MaxFps", MaxFpsDraw, MaxFpsPress) }, 0, 0, MENUALIGN_LEFT,
 		MENUACTION_GOBACK, "FEDS_TB", {nil, SAVESLOT_NONE, MENUPAGE_NONE}, 320, 0, MENUALIGN_CENTER,
 	},
 #endif

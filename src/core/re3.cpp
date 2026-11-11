@@ -632,7 +632,7 @@ bool LoadINISettings()
 				break;
 				
 			// CFO check
-			if (option.m_Action < MENUACTION_NOTHING && option.m_CFO->save) {
+			if (option.m_Action < MENUACTION_NOTHING && option.m_CFO->save && option.m_CFO->value) {
 				// Migrate from old .ini to new .ini
 				// Old values can only be int8, new ones can contain float if it is slider
 				if (migrate && ReadIniIfExists("FrontendOptions", option.m_CFO->save, (int8*)option.m_CFO->value))
@@ -778,7 +778,11 @@ void SaveINISettings()
 			if (option.m_Action == MENUACTION_NOTHING)
 				break;
 				
-			if (option.m_Action < MENUACTION_NOTHING && option.m_CFO->save) {
+			// value can be nil: rows whose label is produced entirely by their
+			// draw callback (the "restore defaults" buttons) have nothing to
+			// store. Dereferencing it here crashed at startup as soon as such a
+			// row also carried a save key.
+			if (option.m_Action < MENUACTION_NOTHING && option.m_CFO->save && option.m_CFO->value) {
 				if (option.m_Action == MENUACTION_CFO_SLIDER)
 					StoreIni(option.m_CFO->saveCat, option.m_CFO->save, *(float*)option.m_CFO->value);
 				else

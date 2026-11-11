@@ -154,7 +154,10 @@ struct Settings
 	int8_t reflections;	// refl       0..3
 	int8_t drawDistance;	// dd         0..3
 	int8_t effects;		// effect     0..3 (0 = block skipped)
-	int maxFps;		// maxFps     ceiling only, cycled by hand
+	// One byte as well: the .ini round-trip for a select/dynamic row reads and
+	// writes a single int8 through the row's value pointer, so a wider field
+	// would only ever get its low byte updated. 120 fits.
+	int8_t maxFps;		// maxFps     ceiling only, cycled by hand
 
 	// Client defaults (chapter 18.5, SettingsHelper.getSerializedSettings):
 	// shadow_quality_new 0, reflection_on_car_new 0, distance_new 1,
@@ -205,7 +208,7 @@ inline Applied Apply(const Settings &s)
 	a.envMapSize = EnvMapSize(s.reflections);
 	a.distanceMultiplier = ClampDistanceMultiplier(DrawDistanceMultiplier(s.drawDistance));
 	a.effectsEnabled = EffectsEnabled(s.effects);
-	a.maxFps = s.maxFps < 0 ? 0 : (s.maxFps > 1000 ? 1000 : s.maxFps);
+	a.maxFps = s.maxFps < 0 ? 0 : (int)s.maxFps;
 	return a;
 }
 
