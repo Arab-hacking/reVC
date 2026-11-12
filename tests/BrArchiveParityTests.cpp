@@ -256,30 +256,38 @@ static void TestClsMaterialOffsetsAndClsfBollConversion() {
 	assert(bollSt.blocks == 1 && bollSt.bad == 0);
 	assert(customcolformat::ValidVC(bollVc.data(), bollVc.size()));
 
-	// 3. CED2 CLSF with v1 float32 body + 20-char non-NUL-terminated name
-	std::vector<uint8_t> ced2Clsf(120, 0);
+	// 3. CED2 CLSF with a 20-character name (no terminator, the CED2 marker sits
+	// where the padding would be) and a box body: numBoxes at +0x30, boxes from
+	// +0x34. This is the layout of PUNCT ANALYSE v45 section 10.3, not the old
+	// "counts at +72" one.
+	std::vector<uint8_t> ced2Clsf(8 + 0x18 + 0x34 + 28, 0);
 	std::memcpy(ced2Clsf.data(), "CLSF", 4);
-	std::memcpy(ced2Clsf.data() + 8, "12345678901234567890", 20); // full 20 chars right before CED2
-	std::memcpy(ced2Clsf.data() + 28, "CED2", 4);
-	WF(ced2Clsf, 32, 0.0f); WF(ced2Clsf, 36, 0.0f); WF(ced2Clsf, 40, 0.0f); WF(ced2Clsf, 44, 4.0f);
-	WF(ced2Clsf, 48, -2.0f); WF(ced2Clsf, 52, -2.0f); WF(ced2Clsf, 56, -1.0f);
-	WF(ced2Clsf, 60,  2.0f); WF(ced2Clsf, 64,  2.0f); WF(ced2Clsf, 68,  1.0f);
-	W32(ced2Clsf, 72, 0); // nS
-	W32(ced2Clsf, 76, 0); // nL
-	W32(ced2Clsf, 80, 1); // nB = 1
-	WF(ced2Clsf, 84, -2.0f); WF(ced2Clsf, 88, -2.0f); WF(ced2Clsf, 92, -1.0f);
-	WF(ced2Clsf, 96,  2.0f); WF(ced2Clsf, 100, 2.0f); WF(ced2Clsf, 104, 1.0f);
-	ced2Clsf[108] = 80; // SA grass -> VC grass (2)
-	W32(ced2Clsf, 112, 0); // nV
-	W32(ced2Clsf, 116, 0); // nF
+	std::memcpy(ced2Clsf.data() + 8, "12345678901234567890", 20);
+	std::memcpy(ced2Clsf.data() + 8 + 20, "CED2", 4);
+	size_t h = 8 + 0x18;
+	WF(ced2Clsf, h + 0x00, -2.0f); WF(ced2Clsf, h + 0x04, -2.0f); WF(ced2Clsf, h + 0x08, -1.0f);
+	WF(ced2Clsf, h + 0x0c,  2.0f); WF(ced2Clsf, h + 0x10,  2.0f); WF(ced2Clsf, h + 0x14,  1.0f);
+	WF(ced2Clsf, h + 0x18,  0.0f); WF(ced2Clsf, h + 0x1c,  0.0f); WF(ced2Clsf, h + 0x20,  0.0f);
+	WF(ced2Clsf, h + 0x24,  3.0f);
+	W32(ced2Clsf, h + 0x30, 1);                    // numBoxes; the box starts at +0x34
+	WF(ced2Clsf, h + 0x34,  -2.0f); WF(ced2Clsf, h + 0x38,  -2.0f); WF(ced2Clsf, h + 0x3c,  -1.0f);
+	WF(ced2Clsf, h + 0x40,   2.0f); WF(ced2Clsf, h + 0x44,   2.0f); WF(ced2Clsf, h + 0x48,   1.0f);
+	ced2Clsf[h + 0x34 + 24] = 80;                  // SA grass -> VC grass (2)
 	W32(ced2Clsf, 4, (uint32_t)(ced2Clsf.size() - 8));
 
 	std::vector<brcollision::Block> brRefs;
 	assert(brcollision::Index(ced2Clsf.data(), ced2Clsf.size(), brRefs) == 0);
 	assert(brRefs.size() == 1 && brRefs[0].name == "12345678901234567890");
 	std::vector<uint8_t> ced2Vc;
-	assert(brcollision::Convert(ced2Clsf.data(), ced2Clsf.size(), ced2Vc));
+	const char *why = nullptr;
+	assert(brcollision::Convert(ced2Clsf.data(), ced2Clsf.size(), ced2Vc, &why));
 	assert(customcolformat::ValidVC(ced2Vc.data(), ced2Vc.size()));
+	// 0 spheres, 0 lines, 1 box, 0 vertices, 0 triangles.
+	assert(brcollision::U32(ced2Vc.data() + 72) == 0);
+	assert(brcollision::U32(ced2Vc.data() + 76) == 0);
+	assert(brcollision::U32(ced2Vc.data() + 80) == 1);
+	assert(brcollision::U32(ced2Vc.data() + 112) == 0);
+	assert(brcollision::U32(ced2Vc.data() + 116) == 0);
 }
 
 } // namespace

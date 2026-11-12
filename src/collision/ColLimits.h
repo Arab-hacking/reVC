@@ -1,36 +1,40 @@
 #ifndef __GTA_COLLIMITS_H__
 #define __GTA_COLLIMITS_H__
 
-// Ceilings for collision models and for the per-pair candidate lists built in
-// CCollision::ProcessColModels.
+// Sizes of the per-pair candidate lists in CCollision::ProcessColModels, taken
+// from the loop bounds in the client's own code (PUNCT ANALYSE v45, section
+// 10.4). These are not "how many volumes a model may have" - they are how many
+// candidates one pass keeps, and each is one byte inside the assert that
+// follows the loop:
 //
-// The client states these as asserts, and the assert text carries the number:
+//   loop stops at   assert fires at   name
+//   -------------   --------------   -------------------------------------
+//   spheres A  0x80 (128)    0x81    'effectiveSpheresA <= MAXNUMSPHERES'
+//   lines A    0x10 (16)     0x11    'effectiveLinesA <= MAXNUMLINES'
+//   spheres B  0x80 (128)    0x81    'numSpheresB <= MAXNUMSPHERES'
+//   boxes   B  0x64 (100)    0x65    'numBoxesB <= MAXNUMBOXES'
+//   tris    B  0x640 (1600) 0x641    'numTrianglesB <= MAXNUMTRIS'
 //
-//   'effectiveSpheresA <= MAXNUMSPHERES'  0x81  -> 129
-//   'numSpheresB <= MAXNUMSPHERES'        0x81  -> 129
-//   'numTrianglesB <= MAXNUMTRIS'         0x640 -> 1600
-//   'numBoxesB <= MAXNUMBOXES'            0x65  -> 101
+// Both halves of that are visible in the disassembly: the loops leave at
+// 0xdc1178 (`cmp w8,#0x80`), 0xdc1244 (`cmp w11,#0x64`), 0xdc12e8
+// (`cmp w8,#0x640`) and 0xdc0d64 (`cmp w21,#0x11`), and the asserts are
+// `cmp #0x81` (0xdc0d50, 0xdc12fc), `cmp #0x65` (0xdc130c) and `cmp #0x641`
+// (0xdc1318). The assert is compiled out in release builds, so the loop bound is
+// the behaviour that matters: the client itself never keeps more than these
+// numbers of candidates, and the port has to stop at the same place or it
+// processes hits in an order the client does not.
 //
-// The port was running 128, 600 and 32. A model whose bounding sphere overlaps
-// between 600 and 1600 triangles therefore had its candidate list cut short and
-// hits were lost silently, because the assert that would have caught it is
-// compiled out in release. The sphere count was one short, which drops the last
-// sphere of any model that has exactly 129.
+// Note that the older value 0x640 for triangles and 0x65 for boxes were being
+// read as the limits themselves; they are the "@+1" assertion, one above the
+// bound. That off-by-one is harmless for triangles (1601 candidates never
+// happen) but it is wrong as a stated limit, and it is what made an earlier
+// revision of the analysis call 101 triangles.
 //
-// Boxes were the worst of the three: real maps ship collision models with more
-// than 32 boxes - a log from a full map shows 510 of them, up to 274 - and the
-// port examined only the first 32 of each, so a third or more of a building's
-// collision was invisible to the checks.
-//
-// Lines keep the port's value: the analysis confirms that the assert name
-// 'effectiveLinesA <= MAXNUMLINES' exists, but does not pin the number.
-//
-// This header is deliberately dependency-free: the limits are also checked by a
-// unit test that does not build the game, and it must see the real values rather
-// than a copy of them.
+// This header is deliberately dependency-free: a unit test checks these values
+// without building the game, so it must see the real numbers, not a copy.
 enum {
-	MAXNUMSPHERES = 129,
-	MAXNUMBOXES = 101,
+	MAXNUMSPHERES = 128,
+	MAXNUMBOXES = 100,
 	MAXNUMLINES = 16,
 	MAXNUMTRIS = 1600
 };

@@ -560,40 +560,52 @@ static std::vector<uint8> MakeAstcBtx(void)
 
 static std::vector<uint8> MakeMixedClsWithLargeClsfAndCol3Tail(void)
 {
-	// 1) Valid CED2 CLST block ("ced2_prop"): 1 box
-	std::vector<uint8> ced2(120 + 28, 0);
+	// 1) A CLST block ("ced2_prop") with one box. Layout per PUNCT ANALYSE v45
+	// section 10.3: name[24] at +8, structure at +0x18, pointers resolved as
+	// st + (field - 0x1c), boxes 28 bytes. The CED2 marker sits in the name
+	// padding, which is a real variant of the format.
+	std::vector<uint8> ced2(8 + 0x18 + 0x48 + 28, 0);
 	std::memcpy(&ced2[0], "CLST", 4);
 	W32At(ced2, 4, (uint32)(ced2.size() - 8));
 	std::memcpy(&ced2[8], "ced2_prop", 9);
-	std::memcpy(&ced2[28], "CED2", 4);
-	WFAt(ced2, 44, 2.0f);
-	WFAt(ced2, 48, -1.0f); WFAt(ced2, 52, -1.0f); WFAt(ced2, 56, -1.0f);
-	WFAt(ced2, 60,  1.0f); WFAt(ced2, 64,  1.0f); WFAt(ced2, 68,  1.0f);
-	ced2[74] = 1; // nB = 1
-	W32At(ced2, 88, 120u - 4u);
-	WFAt(ced2, 120 +  0, -1.0f); WFAt(ced2, 120 +  4, -1.0f); WFAt(ced2, 120 +  8, -1.0f);
-	WFAt(ced2, 120 + 12,  1.0f); WFAt(ced2, 120 + 16,  1.0f); WFAt(ced2, 120 + 20,  1.0f);
+	std::memcpy(&ced2[8 + 20], "CED2", 4);
+	{
+		size_t st = 8 + 0x18;
+		WFAt(ced2, st + 0x00, 0.0f); WFAt(ced2, st + 0x04, 0.0f); WFAt(ced2, st + 0x08, 0.0f);
+		WFAt(ced2, st + 0x0c, 1.7320508f);
+		WFAt(ced2, st + 0x10, -1.0f); WFAt(ced2, st + 0x14, -1.0f); WFAt(ced2, st + 0x18, -1.0f);
+		WFAt(ced2, st + 0x1c,  1.0f); WFAt(ced2, st + 0x20,  1.0f); WFAt(ced2, st + 0x24,  1.0f);
+		ced2[st + 0x2a] = 1;                       // nb = 1, no spheres, no triangles
+		size_t boxRel = st + 0x48;                 // payload-relative offset of the array
+		W32At(ced2, st + 0x38, (uint32)(boxRel + 4));
+		size_t boxAt = 8 + boxRel;
+		WFAt(ced2, boxAt +  0, -1.0f); WFAt(ced2, boxAt +  4, -1.0f); WFAt(ced2, boxAt +  8, -1.0f);
+		WFAt(ced2, boxAt + 12,  1.0f); WFAt(ced2, boxAt + 16,  1.0f); WFAt(ced2, boxAt + 20,  1.0f);
+	}
 
-	// 2) Non-CED2 CLSF block ("wide_highway") with +-420 m vertices (> 256 m!)
-	std::vector<uint8> clsf(72 + 20 + 3 * 12 + 1 * 16, 0);
+	// 2) A CLSF block ("wide_highway") with +-420 m float3 vertices (> 256 m!).
+	// numBoxes = 0 at +0x30, so +0x34 is numTriangles and the vertices start at
+	// +0x38 as float3; the 16-byte triangles end the record.
+	std::vector<uint8> clsf(8 + 0x18 + 0x38 + 3 * 12 + 1 * 16, 0);
 	std::memcpy(&clsf[0], "CLSF", 4);
 	W32At(clsf, 4, (uint32)(clsf.size() - 8));
 	std::memcpy(&clsf[8], "wide_highway", 12);
-	WFAt(clsf, 32, -420.0f); WFAt(clsf, 36, -15.0f); WFAt(clsf, 40, -1.0f);
-	WFAt(clsf, 44,  420.0f); WFAt(clsf, 48,  15.0f); WFAt(clsf, 52,  1.0f);
-	WFAt(clsf, 56,    0.0f); WFAt(clsf, 60,   0.0f); WFAt(clsf, 64,  0.0f);
-	WFAt(clsf, 68,  421.0f);
-	size_t bo = 72;
-	W32At(clsf, bo, 0u); bo += 4;
-	W32At(clsf, bo, 0u); bo += 4;
-	W32At(clsf, bo, 0u); bo += 4;
-	W32At(clsf, bo, 3u); bo += 4;
-	WFAt(clsf, bo +  0, -420.0f); WFAt(clsf, bo +  4, -15.0f); WFAt(clsf, bo +  8, 0.0f);
-	WFAt(clsf, bo + 12,  420.0f); WFAt(clsf, bo + 16, -15.0f); WFAt(clsf, bo + 20, 0.0f);
-	WFAt(clsf, bo + 24,  420.0f); WFAt(clsf, bo + 28,  15.0f); WFAt(clsf, bo + 32, 0.0f);
-	bo += 36;
-	W32At(clsf, bo, 1u); bo += 4;
-	clsf[bo + 0] = 0; clsf[bo + 4] = 1; clsf[bo + 8] = 2;
+	{
+		size_t st = 8 + 0x18;
+		WFAt(clsf, st + 0x00, -420.0f); WFAt(clsf, st + 0x04, -15.0f); WFAt(clsf, st + 0x08, -1.0f);
+		WFAt(clsf, st + 0x0c,  420.0f); WFAt(clsf, st + 0x10,  15.0f); WFAt(clsf, st + 0x14,  1.0f);
+		WFAt(clsf, st + 0x18,    0.0f); WFAt(clsf, st + 0x1c,   0.0f); WFAt(clsf, st + 0x20,  0.0f);
+		WFAt(clsf, st + 0x24,  421.0f);
+		W32At(clsf, st + 0x30, 0u);                // numBoxes = 0
+		W32At(clsf, st + 0x34, 1u);                // numTriangles = 1
+		size_t v = st + 0x38;
+		WFAt(clsf, v +  0, -420.0f); WFAt(clsf, v +  4, -15.0f); WFAt(clsf, v +  8, 0.0f);
+		WFAt(clsf, v + 12,  420.0f); WFAt(clsf, v + 16, -15.0f); WFAt(clsf, v + 20, 0.0f);
+		WFAt(clsf, v + 24,  420.0f); WFAt(clsf, v + 28,  15.0f); WFAt(clsf, v + 32, 0.0f);
+		size_t t = v + 36;
+		W32At(clsf, t + 0, 0u); W32At(clsf, t + 4, 1u); W32At(clsf, t + 8, 2u);
+		W32At(clsf, t + 12, 30u << 24);
+	}
 
 	// 3) Legacy SA COL3 block ("col3_bridge"): TBounds center @ tb+24..35, radius @ tb+36..39
 	std::vector<uint8> col3(120 + 28, 0);

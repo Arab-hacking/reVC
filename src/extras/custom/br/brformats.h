@@ -1328,9 +1328,14 @@ static inline bool clsfToColl(const uint8_t* blk, size_t n, std::vector<uint8_t>
 // Один блок .cls -> COL3 блок. Пустой вектор при ошибке.
 static inline bool clsBlockToCol(const uint8_t* blk, size_t n, std::vector<uint8_t>& out, ClsStats& st) {
     uint32_t f = clsFourcc(blk);
-#ifdef ANDROID
-    if (n >= 32 && memcmp(blk + 28, "CED2", 4) == 0) return false;
-#endif
+    // A "CED2" marker in the name padding means the record was already read by
+    // BrCollisionFormat, with the layout the analysis actually proves (name[24]
+    // at +8, structure at +0x18, six-byte vertices, eight-byte triangles). The
+    // path below assumes COL3-style offsets counted from +4 of a 72-byte header,
+    // which is not that layout, so handing such a record to it produces geometry
+    // read from the wrong bytes. It is skipped on every platform now, not just
+    // on Android: a record the other reader owns has one owner.
+    if (n >= 32 && memcmp(blk + 28, "CED2", 4) == 0) { st.bad++; return false; }
     if (f == FCC_CLST) {
         if (n < 72) { st.bad++; return false; }
         out.assign(blk, blk + n); memcpy(&out[0], "COL3", 4); clsSwapBounds(&out[32]); clsPad4(out); st.matFixed += fixColBlockMaterials(out.data(), out.size()); st.clst++; return true;

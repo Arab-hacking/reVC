@@ -28,37 +28,120 @@ static void A32(std::vector<uint8_t> &b, uint32_t n) {
     A16(b, (uint16_t)n); A16(b, (uint16_t)(n>>16));
 }
 
-static std::vector<uint8_t> MakeBlock(const char *tag = "CLST", bool groups = true)
+// A .cls record in the layout PUNCT ANALYSE v45 section 10.3 documents:
+// tag, size, name[24] at +8, the structure at +0x18, then the arrays, with each
+// pointer field holding the array's payload offset plus four.
+//
+//   CLST: spheres x,y,z,r (20 B), boxes 28 B, vertices s16x3/128 (6 B),
+//         triangles HHHBB (8 B) ending the record.
+//   CLSF: no pointers. 40-byte header, numBoxes at +0x30 and boxes from +0x34,
+//         or numBoxes = 0 and numTriangles at +0x34 with float3 vertices and
+//         16-byte triangles ending the record.
+//
+// Bounds are built from the geometry so the record is self-consistent (centre
+// at the middle of the box, radius reaching a corner), which is what all 17 594
+// CLST records in the corpus do.
+static std::vector<uint8_t> MakeBlock(const char *tag = "CLST", bool triangles = true)
 {
-    std::vector<uint8_t> b(120, 0);
-    std::memcpy(b.data(), tag, 4);
-    std::memcpy(b.data()+8, "XmasBox1", 8);
-    std::memcpy(b.data()+28, "CED2", 4);
-    WF(b, 32, 1.0f); WF(b, 36, 2.0f); WF(b, 40, 3.0f); WF(b, 44, 10.0f);
-    WF(b, 48, -2.0f); WF(b, 52, -3.0f); WF(b, 56, -4.0f);
-    WF(b, 60, 4.0f); WF(b, 64, 5.0f); WF(b, 68, 6.0f);
-    W16(b, 72, 1); W16(b, 74, 1); W16(b, 76, 1);
-    b[80] = groups ? 0x0a : 0x02;
-    W32(b, 84, 116); W32(b, 88, 136); W32(b, 96, 164);
-    b.resize(140, 0); // sphere A at 120 (SA: cx,cy,cz,radius,surface,piece)
-    WF(b, 120, 3.0f); WF(b, 124, 2.0f); WF(b, 128, 1.0f); WF(b, 132, 0.5f);
-    b[136] = 255; b[137] = 5;
-    b.resize(168, 0); // box B at 140
-    WF(b, 140, -1); WF(b, 144, -1); WF(b, 148, -1);
-    WF(b, 152, 1); WF(b, 156, 1); WF(b, 160, 1);
-    b[164] = 254;
-    b.resize(188, 0); // three vertices (0,0,0), (1,0,0), (0,2,0); 2B padding
-    W16(b, 174, 128); W16(b, 182, 256);
-    if(groups) {
-        b.resize(216, 0); // group bounds + u16 firstFace,lastFace
-        W16(b, 212, 0); W16(b, 214, 0);
-        b.resize(220, 0); W32(b, 216, 1); // group count immediately before faces
+    const size_t payload = 8, stOff = 0x18;
+    const bool clsf = std::strcmp(tag, "CLSF") == 0;
+
+    if(clsf){
+        if(!triangles){
+            // Box variant: one 1x1x1 box at the origin, 28 bytes from +0x34.
+            std::vector<uint8_t> b(payload + stOff + 0x34 + 28, 0);
+            std::memcpy(&b[0], "CLSF", 4);
+            std::memcpy(&b[payload], "XmasBox1", 8);
+            size_t h = payload + stOff;
+            WF(b, h + 0x00, -0.5f); WF(b, h + 0x04, -0.5f); WF(b, h + 0x08, -0.5f);
+            WF(b, h + 0x0c,  0.5f); WF(b, h + 0x10,  0.5f); WF(b, h + 0x14,  0.5f);
+            WF(b, h + 0x18,  0.0f); WF(b, h + 0x1c,  0.0f); WF(b, h + 0x20,  0.0f);
+            WF(b, h + 0x24,  0.8660254f);
+            W32(b, h + 0x30, 1);                 // numBoxes; +0x34 is the box itself
+            WF(b, h + 0x34 +  0, -0.5f); WF(b, h + 0x34 +  4, -0.5f); WF(b, h + 0x34 +  8, -0.5f);
+            WF(b, h + 0x34 + 12,  0.5f); WF(b, h + 0x34 + 16,  0.5f); WF(b, h + 0x34 + 20,  0.5f);
+            b[h + 0x34 + 24] = 80;               // SA grass -> VC grass
+            W32(b, 4, (uint32_t)(b.size() - 8));
+            return b;
+        }
+        // Triangle variant: three float3 vertices at +0x38, then the 16-byte
+        // triangles at the end of the record.
+        const uint32_t nt = 1;
+        size_t vertOff = payload + stOff + 0x38;
+        size_t triOff = vertOff + 3 * 12;
+        std::vector<uint8_t> b(triOff + nt * 16, 0);
+        std::memcpy(&b[0], "CLSF", 4);
+        std::memcpy(&b[payload], "XmasBox1", 8);
+        size_t h = payload + stOff;
+        WF(b, h + 0x00, 0.0f); WF(b, h + 0x04, 0.0f); WF(b, h + 0x08, 0.0f);
+        WF(b, h + 0x0c, 2.0f); WF(b, h + 0x10, 2.0f); WF(b, h + 0x14, 0.0f);
+        WF(b, h + 0x18, 1.0f); WF(b, h + 0x1c, 1.0f); WF(b, h + 0x20, 0.0f);
+        WF(b, h + 0x24, 1.4142135f);
+        W32(b, h + 0x30, 0);                     // numBoxes = 0 selects the other body
+        W32(b, h + 0x34, nt);                    // numTriangles
+        WF(b, vertOff +  0, 0.0f); WF(b, vertOff +  4, 0.0f); WF(b, vertOff +  8, 0.0f);
+        WF(b, vertOff + 12, 2.0f); WF(b, vertOff + 16, 0.0f); WF(b, vertOff + 20, 0.0f);
+        WF(b, vertOff + 24, 0.0f); WF(b, vertOff + 28, 2.0f); WF(b, vertOff + 32, 0.0f);
+        W32(b, triOff + 0, 0); W32(b, triOff + 4, 1); W32(b, triOff + 8, 2);
+        W32(b, triOff + 12, 80u << 24);          // surface in the top byte
+        W32(b, 4, (uint32_t)(b.size() - 8));
+        return b;
     }
-    size_t face = b.size(); b.resize(face+8, 0);
-    W16(b, face, 0); W16(b, face+2, 1); W16(b, face+4, 2);
-    b[face+6] = 255; b[face+7] = 0xff;
-    W32(b, 100, (uint32_t)face-4); // offsets are relative to block+4
-    W32(b, 4, (uint32_t)b.size()-8);
+
+    // CLST: one sphere, one box and (optionally) one triangle, so every array
+    // the converter walks is exercised. Offsets below are payload-relative, the
+    // frame the analysis' field list is written in; a pointer field holds the
+    // payload offset plus four, which is what the reader's `st + (field-0x1c)`
+    // resolves to the array.
+    const size_t nS = 1, nB = 1, nV = triangles ? 3 : 0, nT = triangles ? 1 : 0;
+    size_t rel = stOff + 0x48;
+    size_t sphRel = rel; rel += nS * 20;
+    size_t boxRel = rel; rel += nB * 28;
+    size_t vertRel = rel; rel += nV * 6;
+    size_t triRel = rel; rel += nT * 8;
+    std::vector<uint8_t> b(payload + rel, 0);
+    std::memcpy(&b[0], "CLST", 4);
+    std::memcpy(&b[payload], "XmasBox1", 8);
+
+    // Geometry: sphere at (3,2,1) r=0.5, box (-1,-1,-1)..(1,1,1), triangle
+    // (0,0,0) (1,0,0) (0,2,0) in 1/128 units. Bounds enclose all of it.
+    float bmin[3] = { -1.0f, -1.0f, -1.0f };
+    float bmax[3] = { 3.5f, 2.5f, 1.5f };
+    float ctr[3] = { (bmin[0]+bmax[0])*0.5f, (bmin[1]+bmax[1])*0.5f, (bmin[2]+bmax[2])*0.5f };
+    float hx = (bmax[0]-bmin[0])*0.5f, hy = (bmax[1]-bmin[1])*0.5f, hz = (bmax[2]-bmin[2])*0.5f;
+    float radius = std::sqrt(hx*hx + hy*hy + hz*hz);
+
+    size_t s = payload + stOff;
+    WF(b, s + 0x00, ctr[0]); WF(b, s + 0x04, ctr[1]); WF(b, s + 0x08, ctr[2]);
+    WF(b, s + 0x0c, radius);
+    WF(b, s + 0x10, bmin[0]); WF(b, s + 0x14, bmin[1]); WF(b, s + 0x18, bmin[2]);
+    WF(b, s + 0x1c, bmax[0]); WF(b, s + 0x20, bmax[1]); WF(b, s + 0x24, bmax[2]);
+    W16(b, s + 0x28, (uint16_t)nS);
+    W16(b, s + 0x2a, (uint16_t)nB);
+    W16(b, s + 0x2c, (uint16_t)nT);
+    b[s + 0x30] = 0x02;
+    auto ptr = [](size_t payloadOff) { return (uint32_t)(payloadOff + 4); };
+    W32(b, s + 0x34, ptr(sphRel));
+    W32(b, s + 0x38, ptr(boxRel));
+    W32(b, s + 0x40, nV ? ptr(vertRel) : 0u);
+    W32(b, s + 0x44, nT ? ptr(triRel) : 0u);
+
+    size_t sphAt = payload + sphRel, boxAt = payload + boxRel;
+    size_t vertAt = payload + vertRel, triAt = payload + triRel;
+    WF(b, sphAt + 0, 3.0f); WF(b, sphAt + 4, 2.0f);
+    WF(b, sphAt + 8, 1.0f); WF(b, sphAt + 12, 0.5f);
+    b[sphAt + 16] = 255; b[sphAt + 17] = 5;
+    WF(b, boxAt +  0, -1.0f); WF(b, boxAt +  4, -1.0f); WF(b, boxAt +  8, -1.0f);
+    WF(b, boxAt + 12,  1.0f); WF(b, boxAt + 16,  1.0f); WF(b, boxAt + 20,  1.0f);
+    b[boxAt + 24] = 254;
+    if(triangles){
+        W16(b, vertAt +  0, 0);   W16(b, vertAt +  2, 0);   W16(b, vertAt +  4, 0);
+        W16(b, vertAt +  6, 128); W16(b, vertAt +  8, 0);   W16(b, vertAt + 10, 0);
+        W16(b, vertAt + 12, 0);   W16(b, vertAt + 14, 256); W16(b, vertAt + 16, 0);
+        W16(b, triAt + 0, 0); W16(b, triAt + 2, 1); W16(b, triAt + 4, 2);
+        b[triAt + 6] = 255; b[triAt + 7] = 0xff;
+    }
+    W32(b, 4, (uint32_t)(b.size() - 8));
     return b;
 }
 
@@ -282,47 +365,92 @@ static void TestCollision()
     assert(brcollision::Index(file.data(), file.size(), refs) == 0);
     assert(refs.size() == 2 && refs[0].name == "XmasBox1" && refs[1].name == "OtherBox");
     assert(refs[1].offset == one.size() && refs[1].size == two.size());
+
+    // The converted block is a COLL the game's own reader accepts: tag, size,
+    // name[24], then radius/centre/bbox at +32 and the five sections at +72.
     std::vector<uint8_t> game;
-    assert(brcollision::Convert(one.data(), one.size(), game));
+    const char *why = nullptr;
+    assert(brcollision::Convert(one.data(), one.size(), game, &why));
     assert(std::memcmp(game.data(), "COLL", 4) == 0 &&
            brcollision::U32(game.data()+4) == game.size()-8);
     assert(std::strcmp((const char *)game.data()+8, "XmasBox1") == 0);
-    assert(std::fabs(brcollision::F32(game.data()+32) - 10.0f) < 1e-5f);
-    assert(std::fabs(brcollision::F32(game.data()+36) - 1.0f) < 1e-5f);
-    assert(brcollision::U32(game.data()+72) == 1); // VC sphere count
-    assert(std::fabs(brcollision::F32(game.data()+76) - 0.5f) < 1e-5f);
-    assert(game[92] == 0 && game[93] == 5); // invalid SA material clamped
-    assert(brcollision::U32(game.data()+100) == 1); // VC box count
-    assert(game[129] == 0); // invalid SA box material clamped
-    assert(brcollision::U32(game.data()+132) == 3); // vertices
-    assert(std::fabs(brcollision::F32(game.data()+148) - 1.0f) < 1e-5f);
-    assert(brcollision::U32(game.data()+172) == 1); // face count
-    assert(brcollision::U32(game.data()+180) == 1);
-    assert(game[188] == 0); // invalid SA triangle material clamped
-    assert(brcollision::Convert(two.data(), two.size(), game)); // CLSF also CED2
+    // Centre of the box that encloses the sphere, the box and the triangle.
+    // sqrt(2.25^2 + 1.75^2 + 1.25^2): the corner of the box the geometry fills.
+    assert(std::fabs(brcollision::F32(game.data()+32) - 3.11247f) < 1e-3f);
+    assert(std::fabs(brcollision::F32(game.data()+36) - 1.25f) < 1e-4f);
+    assert(std::fabs(brcollision::F32(game.data()+40) - 0.75f) < 1e-4f);
+    assert(std::fabs(brcollision::F32(game.data()+44) - 0.25f) < 1e-4f);
 
+    assert(brcollision::U32(game.data()+72) == 1);          // spheres
+    // CLST stores x,y,z,r and COLL stores r,x,y,z.
+    assert(std::fabs(brcollision::F32(game.data()+76) - 0.5f) < 1e-5f);
+    assert(std::fabs(brcollision::F32(game.data()+80) - 3.0f) < 1e-5f);
+    assert(game[92] == 0 && game[93] == 5);                 // SA surface 255 clamped
+    assert(brcollision::U32(game.data()+96) == 0);          // lines
+    assert(brcollision::U32(game.data()+100) == 1);         // boxes
+    assert(std::fabs(brcollision::F32(game.data()+104) - (-1.0f)) < 1e-5f);
+    assert(game[128] == 0);                                 // SA surface 254 clamped
+    assert(brcollision::U32(game.data()+132) == 3);         // vertices: maxIndex+1
+    assert(std::fabs(brcollision::F32(game.data()+148) - 1.0f) < 1e-5f); // 128/128
+    assert(brcollision::U32(game.data()+172) == 1);         // triangles
+    assert(brcollision::U32(game.data()+176) == 0);
+    assert(brcollision::U32(game.data()+180) == 1);         // face indices
+    assert(brcollision::U32(game.data()+184) == 2);
+    assert(game.size() == 188 + 4);
+    assert(game.size() == 72 + 4 + 20 + 4 + 4 + 28 + 4 + 36 + 4 + 16);
+
+    // The CLSF box variant converts as well, and its single box survives.
+    assert(brcollision::Convert(two.data(), two.size(), game, &why));
+    assert(std::memcmp(game.data(), "COLL", 4) == 0);
+    assert(brcollision::U32(game.data()+72) == 0);          // spheres
+    assert(brcollision::U32(game.data()+76) == 0);          // lines
+    assert(brcollision::U32(game.data()+80) == 1);          // boxes
+    assert(brcollision::U32(game.data()+112) == 0);         // vertices
+    assert(brcollision::U32(game.data()+116) == 0);         // triangles
+
+    // A CLSF whose vertices are float3 keeps them as float metres - there is no
+    // 1/128 quantisation in that body, and no +/-256 m clamp either. The counts
+    // sit behind an empty sphere and line section, so: 0 spheres, 0 lines,
+    // 0 boxes, 3 vertices, 1 triangle.
+    std::vector<uint8_t> clsfTris = MakeBlock("CLSF", true);
+    assert(brcollision::Convert(clsfTris.data(), clsfTris.size(), game, &why));
+    assert(brcollision::U32(game.data()+72) == 0);          // spheres
+    assert(brcollision::U32(game.data()+96) == 0);          // boxes
+    assert(brcollision::U32(game.data()+84) == 3);          // vertices
+    // Vertex 0 is (0,0,0) and vertex 1 is (2,0,0), so x of the second float is 2.
+    assert(std::fabs(brcollision::F32(game.data()+100) - 2.0f) < 1e-5f);
+    assert(brcollision::U32(game.data()+124) == 1);         // triangles
+    assert(brcollision::U32(game.data()+128) == 0);
+    assert(brcollision::U32(game.data()+132) == 1);
+    assert(brcollision::U32(game.data()+136) == 2);
+
+    // Damage that has to be refused rather than half-read.
     std::vector<uint8_t> damaged = one;
-    W32(damaged, 100, 0xFFFFFFFF); // outside file
-    assert(!brcollision::Convert(damaged.data(), damaged.size(), game));
+    W32(damaged, 4, 0x7FFFFFF0u);                            // size outside the file
+    assert(!brcollision::Convert(damaged.data(), damaged.size(), game, &why));
     damaged = one;
-    W16(damaged, damaged.size()-6, 50); // face wants non-existent vertex
-    assert(!brcollision::Convert(damaged.data(), damaged.size(), game));
+    W16(damaged, damaged.size()-6, 50);                      // vertex that is not there
+    assert(!brcollision::Convert(damaged.data(), damaged.size(), game, &why));
     damaged = one;
-    W16(damaged, 212, 1); // group does not cover first face
-    assert(!brcollision::Convert(damaged.data(), damaged.size(), game));
+    WF(damaged, 8 + 0x18 + 0x0c, -1.0f);                     // negative bounding radius
+    assert(!brcollision::Convert(damaged.data(), damaged.size(), game, &why));
     damaged = one;
-    WF(damaged, 132, -0.5f); // invalid sphere radius
-    assert(!brcollision::Convert(damaged.data(), damaged.size(), game));
+    // A box that is inside out. The box array is found the way the converter
+    // finds it: the pointer field holds the payload offset plus four, so the
+    // file offset is the field value plus four.
+    {
+        size_t boxAt = (size_t)brcollision::U32(damaged.data() + 8 + 0x18 + 0x38) + 4;
+        WF(damaged, boxAt, 5.0f);                            // min.x past max.x
+    }
+    assert(!brcollision::Convert(damaged.data(), damaged.size(), game, &why));
     damaged = one;
-    WF(damaged, 152, -2.0f); // box max.x < min.x
-    assert(!brcollision::Convert(damaged.data(), damaged.size(), game));
+    W32(damaged, 8 + 0x18 + 0x34, 0);                        // sphere pointer dropped
+    assert(!brcollision::Convert(damaged.data(), damaged.size(), game, &why));
     damaged = one;
-    W32(damaged, 88, 116); // box overlaps sphere A
-    assert(!brcollision::Convert(damaged.data(), damaged.size(), game));
-    damaged = one;
-    std::memcpy(damaged.data()+28, "XXXX", 4);
-    assert(!brcollision::Convert(damaged.data(), damaged.size(), game));
-    assert(!brcollision::Convert(one.data(), one.size()-1, game));
+    W32(damaged, 8 + 0x18 + 0x44, 4);                        // pointer field below 0x1c
+    assert(!brcollision::Convert(damaged.data(), damaged.size(), game, &why));
+    assert(!brcollision::Convert(one.data(), one.size()-1, game, &why));
+    // Truncating the container stops the walk at the record that does not fit.
     damaged = file;
     damaged.resize(one.size()+7);
     refs.clear();

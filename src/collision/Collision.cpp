@@ -2000,15 +2000,23 @@ CCollision::ProcessColModels(const CMatrix &matrixA, CColModel &modelA,
 	for(i = 0; i < numLinesAIn; i++)
 		aLinesA[i].Set(matAB * modelA.lines[i].p0, matAB * modelA.lines[i].p1);
 
-	// Test them against model B's bounding volumes
+	// Test them against model B's bounding volumes. Same rule as below: the
+	// client's collection loop leaves at the limit and its assert names
+	// MAXNUMSPHERES/MAXNUMLINES, so the arrays cannot be overrun here either.
 	int numSpheresA = 0;
 	int numLinesA = 0;
-	for(i = 0; i < numSpheresAIn; i++)
+	for(i = 0; i < numSpheresAIn; i++){
+		if(numSpheresA >= MAXNUMSPHERES)
+			break;
 		if(TestSphereBox(aSpheresA[i], modelB.boundingBox))
 			aSphereIndicesA[numSpheresA++] = i;
+	}
 	// no actual check???
-	for(i = 0; i < numLinesAIn; i++)
+	for(i = 0; i < numLinesAIn; i++){
+		if(numLinesA >= MAXNUMLINES)
+			break;
 		aLineIndicesA[numLinesA++] = i;
+	}
 	// No collision
 	if(numSpheresA == 0 && numLinesA == 0)
 		return 0;
@@ -2020,14 +2028,25 @@ CCollision::ProcessColModels(const CMatrix &matrixA, CColModel &modelA,
 	int numSpheresBIn = Min(modelB.numSpheres, MAXNUMSPHERES);
 	int numBoxesBIn = Min(modelB.numBoxes, MAXNUMBOXES);
 	for(i = 0; i < numSpheresBIn; i++){
+		// The client's loop leaves at MAXNUMSPHERES candidates and its assert
+		// then fires at MAXNUMSPHERES+1; the assert is gone in release, so the
+		// loop bound is the behaviour. Stopping here keeps the candidate list -
+		// and therefore the order collisions are applied - the same as the
+		// client's. The bound is explicit because this write is what would run
+		// off the end of the array.
+		if(numSpheresB >= MAXNUMSPHERES)
+			break;
 		s.radius = modelB.spheres[i].radius;
 		s.center = matBA * modelB.spheres[i].center;
 		if(TestSphereBox(s, modelA.boundingBox))
 			aSphereIndicesB[numSpheresB++] = i;
 	}
-	for(i = 0; i < numBoxesBIn; i++)
+	for(i = 0; i < numBoxesBIn; i++){
+		if(numBoxesB >= MAXNUMBOXES)
+			break;
 		if(TestSphereBox(bsphereAB, modelB.boxes[i]))
 			aBoxIndicesB[numBoxesB++] = i;
+	}
 	CalculateTrianglePlanes(&modelB);
 	for(i = 0; i < modelB.numTriangles; i++){
 		// The list is fixed size and the assert below is compiled out in

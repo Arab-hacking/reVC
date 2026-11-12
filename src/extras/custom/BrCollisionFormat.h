@@ -1,10 +1,33 @@
 #ifndef REVC_BR_COLLISION_FORMAT_H
 #define REVC_BR_COLLISION_FORMAT_H
 
-// The BR .cls container is NOT an SA .col: CLST and CLSF both have name[20]
-// followed by CED2 and bounds in (sphere centre,radius; bbox) order. Validate
-// every offset before converting one block to the old COLL layout read by VC.
-// No game or RenderWare dependencies, so this is also fuzz/sanitizer testable.
+// The BR .cls container is not an SA .col, and it is not a VC record either.
+//
+// Layout, per PUNCT ANALYSE v45 section 10.3 (17 606 records parsed from 81
+// real .cls files, 0 errors):
+//
+//   tag[4] + u32 size + payload,   next record at 8 + size
+//   payload + 0x00   char name[24]
+//   payload + 0x18   the structure the client's unpacker reads as `st`
+//
+// CLST keeps its arrays behind pointers, counted from `st`:
+//
+//   st+0x00 center   st+0x0c radius   st+0x10 bbox.min   st+0x1c bbox.max
+//   st+0x28 ns(i16)  st+0x2a nb(u16)  st+0x2c nt(i16)    st+0x30 flags
+//   st+0x34 pSpheres st+0x38 pBoxes   st+0x40 pVertices  st+0x44 pTriangles
+//
+//   address of an array = st + (field - 0x1c), i.e. block + value + 4
+//
+// The three things that are easy to get wrong here, all confirmed on data:
+//   * spheres are x,y,z,r (COLL stores r,x,y,z - the orders are not shared);
+//   * vertices are 6 bytes, s16 x3 scaled by 1/128, not float3;
+//   * triangles are 8 bytes (HHHBB) and end the record exactly.
+//
+// CLSF has no pointers: a 40-byte header (bbox.min, bbox.max, center, radius)
+// followed by two counters, then one of two mutually exclusive bodies.
+//
+// Nothing here is passed through to the game's COLL reader unchanged: a .cls
+// block is converted to the COLL v1 body that reader already validates.
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -19,6 +42,7 @@ struct Block {
 };
 
 inline uint16_t U16(const uint8_t *p) { return (uint16_t)(p[0] | (p[1] << 8)); }
+inline int16_t I16(const uint8_t *p) { return (int16_t)U16(p); }
 inline uint32_t U32(const uint8_t *p) {
     return (uint32_t)p[0] | ((uint32_t)p[1] << 8) |
            ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
@@ -36,60 +60,66 @@ inline void PutFloat(std::vector<uint8_t> &out, float f) {
 inline bool Tag(const uint8_t *p) {
     return std::memcmp(p, "CLST", 4) == 0 || std::memcmp(p, "CLSF", 4) == 0;
 }
-inline bool Header(const uint8_t *p, size_t n, std::string &name) {
-    bool isClsf = n >= 4 && std::memcmp(p, "CLSF", 4) == 0;
-    size_t minSize = isClsf ? 92u : 120u;
-    if(n < minSize || !Tag(p) || U32(p+4) != n-8 ||
-       std::memcmp(p+28, "CED2", 4) != 0) return false;
-    const uint8_t *nul = (const uint8_t *)std::memchr(p+8, 0, 20);
-    const uint8_t *end = nul ? nul : (p+28);
-    while(end > p+8 && *(end-1) == ' ') end--;
-    if(end == p+8) return false;
-    for(const uint8_t *c = p+8; c < end; c++)
-        if(*c < 32 || *c > 126 || *c == '/' || *c == '\\') return false;
-    name.assign((const char *)p+8, end-(p+8));
+inline bool IsClsf(const uint8_t *p) { return std::memcmp(p, "CLSF", 4) == 0; }
+
+// The first 24 bytes of the payload hold the model name. Some records carry a
+// four-byte "CED2" marker at payload+20 instead of padding; when it is there the
+// name field is the 20 bytes in front of it (a full 20-character name has no
+// terminator, which is legal - the client stores it in a fixed field too). A
+// record without the marker simply has up to 24 characters of name.
+inline bool Name(const uint8_t *p, size_t n, std::string &name) {
+    if(n < 8 + 24) return false;
+    const uint8_t *field = p + 8;
+    size_t limit = 24;
+    if(std::memcmp(field + 20, "CED2", 4) == 0) limit = 20;
+    size_t len = 0;
+    while(len < limit && field[len] != 0) len++;
+    while(len > 0 && field[len - 1] == ' ') len--;
+    if(len == 0) return false;
+    for(size_t k = 0; k < len; k++)
+        if(field[k] < 32 || field[k] > 126 || field[k] == '/' || field[k] == '\\') return false;
+    name.assign((const char *)field, len);
     return true;
 }
 
-// Walk by declared lengths, not by searching the compressed mesh for a magic
-// string (which can appear inside the payload). Reject truncated/invalid
-// chunks; still allow good chunks before a bad tail.
+// Walk by declared length, never by searching the payload for a tag: a float in
+// a bounding box can spell "CLST" by accident. Zero padding between blocks (an
+// IMG entry is sector rounded, converted archives align) is skipped; anything
+// else that is not a tag is a defect and is counted, but the good blocks in
+// front of it are kept.
 inline size_t Index(const uint8_t *data, size_t size, std::vector<Block> &blocks) {
     size_t bad = 0;
     if(!data) return size ? 1 : 0;
     for(size_t pos = 0; pos < size;) {
-        // Chunks inside a .cls are not always packed back to back: IMG entries
-        // and converted archives put zero alignment between them, and a .cls
-        // stored in a sector-padded image ends with a zero tail. Stepping over
-        // that is not an error - treating it as one used to drop every block
-        // after the first aligned one, because the walk gave up (break) here.
-        // A gap that contains anything other than zeroes is still a defect.
-        if(!(size-pos >= 4 && Tag(data+pos))) {
+        if(!(size - pos >= 4 && Tag(data + pos))) {
             size_t skip = pos;
             while(skip < size && data[skip] == 0) skip++;
-            if(skip == pos) { bad++; break; }   // real garbage, not padding
+            if(skip == pos) { bad++; break; }
             pos = skip;
-            if(pos >= size) break;              // zero tail: nothing after it
+            if(pos >= size) break;
             continue;
         }
-        if(size-pos < 8) { bad++; break; }
-        bool isClsf = std::memcmp(data+pos, "CLSF", 4) == 0;
-        uint32_t minLen = isClsf ? 84u : 112u;
-        uint32_t length = U32(data+pos+4);
-        if(length < minLen || length > size-pos-8) { bad++; break; }
-        size_t n = (size_t)length+8;
+        if(size - pos < 8) { bad++; break; }
+        // Smallest payload either tag can have and still hold its header: 24
+        // bytes of name plus the 0x48-byte CLST structure, or plus the 0x34
+        // bytes of a CLSF down to its numBoxes counter. The corpus' smallest
+        // real records are 104 (empty CLST) and 84 (empty CLSF), so this floor
+        // is below every record it has to accept and only rejects a length that
+        // could not describe one.
+        uint32_t minLen = IsClsf(data + pos) ? (0x18u + 0x34u) : (0x18u + 0x48u);
+        uint32_t length = U32(data + pos + 4);
+        if(length < minLen || length > size - pos - 8) { bad++; break; }
+        size_t n = (size_t)length + 8;
         std::string name;
-        if(Header(data+pos, n, name)) {
-            Block b = { name, pos, n }; blocks.push_back(b);
+        if(Name(data + pos, n, name)) {
+            Block b = { name, pos, n };
+            blocks.push_back(b);
         } else bad++;
         pos += n;
     }
     return bad;
 }
 
-inline bool Range(size_t off, size_t count, size_t item, size_t total) {
-    return off >= 120 && off <= total && count <= (total-off)/item;
-}
 inline uint8_t Surface(uint8_t s) {
     if(s <= 34) return s;
     if(s > 178) return 0;
@@ -114,242 +144,330 @@ inline uint8_t Surface(uint8_t s) {
     return 0;
 }
 
-// Convert a CLSF block whose body at +72 uses float32 COLL v1 arrays
-// (u32 nS, spheres[20], u32 nL, lines[24], u32 nB, boxes[28], u32 nV, verts[12], u32 nF, faces[16]).
-inline bool ConvertClsfV1(const uint8_t *p, size_t n, const std::string &name,
-                          float cx, float cy, float cz, float radius,
-                          std::vector<uint8_t> &out, const char **why = nullptr) {
-    if(n < 92 || std::memcmp(p, "CLSF", 4) != 0) {
-        if(why) *why = "v1 body: not a CLSF chunk";
-        return false;
+// Length of the CLST/CLSF structure the client's unpacker fills: pointers end
+// at st+0x48, and every array address is derived from st.
+enum { ST_SIZE = 0x48 };
+
+// One converted model, in the layout the game's own reader expects: the VC
+// COLL v1 body (radius, centre, bbox, then counts interleaved with their
+// arrays). Written by hand rather than by reusing a block, so a .cls block can
+// never reach the native reader with a .cls header on it.
+struct Out {
+    std::vector<uint8_t> &v;
+    void Header(float radius, const float center[3], const float bmin[3], const float bmax[3]) {
+        PutFloat(v, radius);
+        for(int k = 0; k < 3; k++) PutFloat(v, center[k]);
+        for(int k = 0; k < 3; k++) PutFloat(v, bmin[k]);
+        for(int k = 0; k < 3; k++) PutFloat(v, bmax[k]);
     }
-    size_t pos = 72;
-    auto takeCount = [&](uint32_t &cnt, size_t width, const uint8_t *&ptr) -> bool {
-        if(n - pos < 4) return false;
-        cnt = U32(p + pos); pos += 4;
-        if(cnt > 32767 || cnt > (n - pos) / width) return false;
-        ptr = p + pos;
-        pos += (size_t)cnt * width;
+    void Finish() {
+        uint32_t length = (uint32_t)v.size() - 8;
+        for(int j = 0; j < 4; j++) v[4 + j] = (uint8_t)(length >> (j * 8));
+    }
+};
+
+inline void StartBlock(std::vector<uint8_t> &out, const std::string &name) {
+    out.clear();
+    out.insert(out.end(), (const uint8_t *)"COLL", (const uint8_t *)"COLL" + 4);
+    Put32(out, 0);              // patched by Finish
+    out.resize(32, 0);          // name[24], no raw .cls bytes in a VC header
+    std::memcpy(out.data() + 8, name.data(), name.size());
+}
+
+inline bool SaneBox(const float mn[3], const float mx[3]) {
+    for(int k = 0; k < 3; k++) {
+        if(!std::isfinite(mn[k]) || !std::isfinite(mx[k])) return false;
+        if(std::fabs(mn[k]) > 1e6f || std::fabs(mx[k]) > 1e6f) return false;
+        if(mx[k] < mn[k]) return false;
+    }
+    return true;
+}
+
+// ---- CLST -------------------------------------------------------------
+//
+// A CLST record is empty when flags, ns, nb and nt are all zero (6 205 of the
+// 17 594 records in the corpus). Such a record carries a bounding box and
+// nothing else. It is *not* a reason to fail: the game installs it, and the
+// port has to keep behaving the same way, so it is converted to the COLL body
+// with every count at zero and the caller decides what to do with it. The one
+// thing that must never happen is a record that is reported as converted while
+// its geometry was dropped on the floor, so a record that says it has n
+// triangles and cannot produce them is refused with a reason.
+inline bool ConvertClst(const uint8_t *p, size_t n, const std::string &name,
+                        std::vector<uint8_t> &out, const char **why) {
+    auto no = [&](const char *r) { if(why) *why = r; out.clear(); return false; };
+    if(n < 8 + 24 + ST_SIZE) return no("CLST record shorter than its 24-byte name and 0x48-byte structure");
+    const uint8_t *st = p + 8 + 0x18;
+    const size_t stOff = (size_t)(st - p);          // 0x20 for a .cls block
+
+    for(int k = 0; k < 10; k++)
+        if(!std::isfinite(F32(st + 4 * k))) return no("bounds contain NaN or infinity");
+    float center[3] = { F32(st + 0x00), F32(st + 0x04), F32(st + 0x08) };
+    float radius = F32(st + 0x0c);
+    float bmin[3] = { F32(st + 0x10), F32(st + 0x14), F32(st + 0x18) };
+    float bmax[3] = { F32(st + 0x1c), F32(st + 0x20), F32(st + 0x24) };
+    if(!std::isfinite(radius) || radius < 0.0f || radius > 1e6f)
+        return no("bounding radius out of range");
+    if(!SaneBox(bmin, bmax)) return no("bounding box is inside out or out of range");
+
+    int ns = I16(st + 0x28);
+    int nb = (int)U16(st + 0x2a);
+    int nt = I16(st + 0x2c);
+    // Bit 3 of the flags says the record also carries a block of axis-aligned
+    // boxes used to narrow down which triangles to test: 5 154 of the records
+    // have it, between the vertices and the triangles. It is acceleration data,
+    // not collision geometry, and the port recomputes its own candidate list,
+    // so it is deliberately not converted - the geometry is the same either way.
+    uint8_t flags = st[0x30];
+    (void)flags;
+    if(ns < 0 || nt < 0) return no("negative sphere or triangle count");
+    // Addresses are derived from st, so a pointer value is a byte offset into
+    // the record; 0 means "no array".
+    uint32_t pSph = U32(st + 0x34), pBox = U32(st + 0x38);
+    uint32_t pVert = U32(st + 0x40), pTri = U32(st + 0x44);
+    const size_t arrBase = 0x1c;
+
+    // 6 205 of the 17 594 records in the corpus carry a bounding box and no
+    // geometry at all. That is what the data says, not damage. Installing such
+    // a record is what leaves a model owning an empty collision model, so
+    // GetColModel() stops being nil and the box-from-the-mesh fallback never
+    // runs - the model is then drawn with nothing to stand on. Refusing it here
+    // is what makes the caller keep the model's own collision, and the reason
+    // string is what names it in the log.
+    if(ns == 0 && nb == 0 && nt == 0)
+        return no("record has no spheres, boxes or triangles");
+
+    // Spheres and boxes are addressed the same way as the vertices.
+    auto addr = [&](uint32_t field, size_t count, size_t item, size_t &pos) -> bool {
+        if(field == 0) { pos = 0; return count == 0; }
+        if(field < arrBase) return false;
+        size_t off = stOff + (size_t)(field - arrBase);
+        if(off > n || count > (n - off) / item) return false;
+        pos = off;
         return true;
     };
-    uint32_t nS = 0, nL = 0, nB = 0, nV = 0, nF = 0;
-    const uint8_t *sph = nullptr, *lin = nullptr, *box = nullptr, *vtx = nullptr, *fac = nullptr;
-    if(!takeCount(nS, 20, sph) || !takeCount(nL, 24, lin) || !takeCount(nB, 28, box) ||
-       !takeCount(nV, 12, vtx) || !takeCount(nF, 16, fac)) {
-        if(why) *why = "v1 body: a section count does not fit the chunk";
-        return false;
+
+    size_t sphPos = 0, boxPos = 0;
+    if(!addr(pSph, (size_t)ns, 20, sphPos)) return no("sphere array points outside the record");
+    if(!addr(pBox, (size_t)nb, 28, boxPos)) return no("box array points outside the record");
+
+    // Triangles end the record exactly; the vertex count is not stored, it is
+    // maxIndex+1 over the triangles themselves.
+    size_t triPos = 0, vertPos = 0, vertEnd = 0;
+    uint32_t nv = 0;
+    if(nt) {
+        if(pTri == 0 || pTri < arrBase) return no("record with triangles has no triangle pointer");
+        triPos = stOff + (size_t)(pTri - arrBase);
+        if(triPos > n || (size_t)nt > (n - triPos) / 8)
+            return no("triangle array does not fit the record");
+        // Triangles end the record in all 17 594 CLST records of the corpus; a
+        // record where they do not has been read with the wrong pointer base.
+        if(triPos + (size_t)nt * 8 != n)
+            return no("triangle array does not end the record");
+        uint32_t hi = 0;
+        for(int k = 0; k < nt; k++) {
+            const uint8_t *t = p + triPos + (size_t)k * 8;
+            for(int j = 0; j < 3; j++) {
+                uint32_t idx = U16(t + j * 2);
+                if(idx + 1 > hi) hi = idx + 1;
+            }
+        }
+        nv = hi;
+        if(pVert == 0 || pVert < arrBase)
+            return no("record with triangles has no vertex pointer");
+        vertPos = stOff + (size_t)(pVert - arrBase);
+        if(vertPos > n || (size_t)nv > (n - vertPos) / 6)
+            return no("vertex array does not fit before the triangles");
+        vertEnd = vertPos + (size_t)nv * 6;
+        if(vertEnd > triPos) return no("vertex array overlaps the triangles");
     }
-    // Nothing to collide with. Returning true here writes a structurally valid
-    // COLL whose every count is zero: it validates, it installs, and the model
-    // is left with an empty collision model while the log says the block was
-    // accepted. That is the missing-collision a player stands in.
-    if(nS == 0 && nB == 0 && nF == 0) {
-        if(why) *why = "v1 body: every section count is zero";
-        return false;
+
+    StartBlock(out, name);
+    Out o = { out };
+    o.Header(radius, center, bmin, bmax);
+    Put32(out, (uint32_t)ns);
+    for(int k = 0; k < ns; k++) {
+        const uint8_t *s = p + sphPos + (size_t)k * 20;
+        float x = F32(s + 0), y = F32(s + 4), z = F32(s + 8), r = F32(s + 12);
+        for(int j = 0; j < 4; j++) {
+            float val = F32(s + j * 4);
+            if(!std::isfinite(val) || std::fabs(val) > 1e6f) return no("sphere coordinate out of range");
+        }
+        if(r < 0.0f) return no("negative sphere radius");
+        // CLST is x,y,z,r; the COLL body wants r,x,y,z.
+        PutFloat(out, r); PutFloat(out, x); PutFloat(out, y); PutFloat(out, z);
+        out.push_back(Surface(s[16])); out.push_back(s[17]); out.push_back(0); out.push_back(0);
     }
-    for(size_t rem = pos; rem < n; rem++)
-        if(p[rem] != 0) return false;
-    for(uint32_t k = 0; k < nS; k++) {
-        const uint8_t *s = sph + (size_t)k * 20;
-        for(int j = 0; j < 4; j++)
-            if(!std::isfinite(F32(s + j * 4)) || std::fabs(F32(s + j * 4)) > 1e6f) return false;
-        if(F32(s) < 0.0f) return false;
-    }
-    for(uint32_t k = 0; k < nB; k++) {
-        const uint8_t *b = box + (size_t)k * 28;
+    Put32(out, 0);               // lines: the format has no line array
+    Put32(out, (uint32_t)nb);
+    for(int k = 0; k < nb; k++) {
+        const uint8_t *b = p + boxPos + (size_t)k * 28;
         for(int j = 0; j < 6; j++) {
             float x = F32(b + j * 4);
-            if(!std::isfinite(x) || std::fabs(x) > 1e6f || (j >= 3 && x < F32(b + (j - 3) * 4)))
-                return false;
-        }
-    }
-    for(uint32_t k = 0; k < nV * 3; k++)
-        if(!std::isfinite(F32(vtx + (size_t)k * 4)) || std::fabs(F32(vtx + (size_t)k * 4)) > 1e6f)
-            return false;
-    for(uint32_t k = 0; k < nF; k++) {
-        const uint8_t *f = fac + (size_t)k * 16;
-        if(U32(f) >= nV || U32(f + 4) >= nV || U32(f + 8) >= nV) return false;
-    }
-    out.reserve(8 + 24 + 40 + 20 + (size_t)nS * 20 + (size_t)nL * 24 +
-                (size_t)nB * 28 + (size_t)nV * 12 + (size_t)nF * 16);
-    out.insert(out.end(), (const uint8_t *)"COLL", (const uint8_t *)"COLL" + 4);
-    Put32(out, 0);
-    out.resize(32, 0);
-    std::memcpy(out.data() + 8, name.data(), name.size());
-    PutFloat(out, radius > 0.0f ? radius : 0.5f);
-    PutFloat(out, cx); PutFloat(out, cy); PutFloat(out, cz);
-    for(int k = 0; k < 6; k++) PutFloat(out, F32(p + 48 + k * 4));
-    Put32(out, nS);
-    for(uint32_t k = 0; k < nS; k++) {
-        const uint8_t *s = sph + (size_t)k * 20;
-        out.insert(out.end(), s, s + 16);
-        out.push_back(Surface(s[16])); out.push_back(s[17]); out.push_back(0); out.push_back(0);
-    }
-    Put32(out, nL);
-    if(nL) out.insert(out.end(), lin, lin + (size_t)nL * 24);
-    Put32(out, nB);
-    for(uint32_t k = 0; k < nB; k++) {
-        const uint8_t *b = box + (size_t)k * 28;
-        out.insert(out.end(), b, b + 24);
-        out.push_back(Surface(b[24])); out.push_back(b[25]); out.push_back(0); out.push_back(0);
-    }
-    Put32(out, nV);
-    if(nV) out.insert(out.end(), vtx, vtx + (size_t)nV * 12);
-    Put32(out, nF);
-    for(uint32_t k = 0; k < nF; k++) {
-        const uint8_t *f = fac + (size_t)k * 16;
-        out.insert(out.end(), f, f + 12);
-        out.push_back(Surface(f[12])); out.push_back(0); out.push_back(0); out.push_back(0);
-    }
-    uint32_t length = (uint32_t)out.size() - 8;
-    for(int j = 0; j < 4; j++) out[4 + j] = (uint8_t)(length >> (j * 8));
-    return true;
-}
-
-// Convert exactly one validated CLST/CLSF CED2 block into [COLL, size,
-// name[24], VC body]. Refuse uncertain or overlapping geometry, never pass
-// raw .cls through the unsafe VC collision reader. The A/B elements are SA's
-// 20-byte spheres and 28-byte boxes; group tables are only for acceleration
-// and are not needed by VC's triangle collision implementation.
-inline bool Convert(const uint8_t *p, size_t n, std::vector<uint8_t> &out, const char **why = nullptr) {
-    // Every way out of here is a model that will have no collision from this
-    // container, and "5858 rejected" does not say which of a dozen checks fired.
-    // The reason is returned alongside so the log can name it.
-    auto no = [&](const char *r) { if(why) *why = r; out.clear(); return false; };
-    out.clear();
-    std::string name;
-    if(!p) return no("no data");
-    if(n > 8u*1024u*1024u) return no("chunk larger than 8 MB");
-    if(!Header(p, n, name)) return no("not a CED2 header (tag, size, name or CED2 magic)");
-    for(int k = 0; k < 10; k++) if(!std::isfinite(F32(p+32+4*k))) return no("bounds contain NaN or infinity");
-    float cx = F32(p+32), cy = F32(p+36), cz = F32(p+40);
-    float radius = F32(p+44);
-    if(radius < 0.0f || radius > 100000.0f) return no("bounding radius out of range");
-    for(int k = 0; k < 3; k++)
-        if(F32(p+60+4*k) < F32(p+48+4*k) ||
-           std::fabs(F32(p+48+4*k)) > 1e6f ||
-           std::fabs(F32(p+60+4*k)) > 1e6f) return no("bounding box is inside out or out of range");
-    // A zero-radius marker can still have a valid bounding box.
-    if(radius == 0.0f) {
-        float dx = F32(p+60)-F32(p+48), dy = F32(p+64)-F32(p+52), dz = F32(p+68)-F32(p+56);
-        radius = std::sqrt(dx*dx+dy*dy+dz*dz) * 0.5f;
-        if(radius == 0.0f) radius = 0.5f;
-    }
-    if(n < 120)
-        return ConvertClsfV1(p, n, name, cx, cy, cz, radius, out);
-    uint32_t nA = U16(p+72), nB = U16(p+74), nF = U16(p+76);
-    uint8_t version = p[80];
-    if(nA > 32767 || nB > 32767 || nF > 32767)
-        return ConvertClsfV1(p, n, name, cx, cy, cz, radius, out);
-    // A block with no spheres, no boxes and no faces has nothing to collide
-    // with. Converting it "succeeds" and produces a valid-looking COLL with
-    // every count at zero, which then installs cleanly and leaves the model
-    // with an empty collision model - the map has no collision there while the
-    // log says the block was accepted.
-    //
-    // All-zero counts are also what a v1 float32 body looks like when it is
-    // read as a CED2 header (the v1 body starts with u32 counts at +72), so
-    // this is the point where that layout has to be tried before giving up.
-    if(nA == 0 && nB == 0 && nF == 0) {
-        if(ConvertClsfV1(p, n, name, cx, cy, cz, radius, out)) return true;
-        return no("no spheres, boxes or faces, and not a v1 float body either");
-    }
-    uint32_t a = U32(p+84), b = U32(p+88), v = U32(p+96), f = U32(p+100);
-    size_t aPos = (size_t)a+4, bPos = (size_t)b+4;
-    size_t vPos = (size_t)v+4, fPos = (size_t)f+4;
-    if((nA && (!a || !Range(aPos, nA, 20, n))) ||
-       (nB && (!b || !Range(bPos, nB, 28, n))) ||
-       (nF && (!f || !v || !Range(fPos, nF, 8, n) || vPos < 120 || vPos >= fPos))) {
-        if(ConvertClsfV1(p, n, name, cx, cy, cz, radius, out)) return true;
-        return no("sphere/box/face offsets do not point inside the chunk, and not a v1 float body either");
-    }
-    // A group count is stored immediately before faces in the full format.
-    // Validate it so that group records cannot be mistaken for vertices.
-    size_t endVerts = nF ? fPos : n;
-    if(nF && (version & 8)) {
-        if(fPos < 124) return no("group table before the face array");
-        uint32_t nGroups = U32(p+fPos-4);
-        if(nGroups > 4096 || (size_t)nGroups > (fPos-4-120)/28) return no("group count does not fit the chunk");
-        endVerts = fPos-4-(size_t)nGroups*28;
-        if(nGroups) {
-            uint32_t next = 0;
-            for(uint32_t g = 0; g < nGroups; g++) {
-                const uint8_t *group = p+endVerts+g*28;
-                uint32_t first = U16(group+24), last = U16(group+26);
-                if(first != next || last < first || last >= nF) return no("group records do not tile the face array");
-                next = last+1;
-            }
-            if(next != nF) return no("groups do not cover every face");
-        }
-    }
-    uint32_t nV = 0;
-    for(uint32_t k = 0; k < nF; k++) {
-        const uint8_t *face = p+fPos+(size_t)k*8;
-        uint32_t hi = U16(face);
-        if(U16(face+2) > hi) hi = U16(face+2);
-        if(U16(face+4) > hi) hi = U16(face+4);
-        if(hi >= 32767) return no("a face indexes a vertex beyond 32767");
-        if(hi+1 > nV) nV = hi+1;
-    }
-    if(nF && (endVerts < vPos || !Range(vPos, nV, 6, endVerts))) return no("vertex array does not fit before the faces");
-    // Disjoint arrays. In particular do not read a group record or a face
-    // as a vertex/sphere/box if an offset in the chunk is corrupt.
-    size_t aEnd = aPos+(size_t)nA*20, bEnd = bPos+(size_t)nB*28;
-    if(nA && nB && aPos < bEnd && bPos < aEnd) return no("sphere and box arrays overlap");
-    if(nF && ((nA && aPos < endVerts && aEnd > vPos) ||
-              (nB && bPos < endVerts && bEnd > vPos) ||
-              (nA && aPos < n && aEnd > endVerts) ||
-              (nB && bPos < n && bEnd > endVerts))) return no("a geometry array overlaps the vertex/group area");
-
-    out.reserve(8+24+40+20+(size_t)nA*20+(size_t)nB*28+(size_t)nV*12+(size_t)nF*16);
-    out.insert(out.end(), (const uint8_t *)"COLL", (const uint8_t *)"COLL"+4);
-    Put32(out, 0); // length filled below
-    out.resize(32, 0); // name[24], no raw CED2 bytes in a VC header
-    std::memcpy(out.data()+8, name.data(), name.size());
-    PutFloat(out, radius);
-    PutFloat(out, cx); PutFloat(out, cy); PutFloat(out, cz);
-    for(int k = 0; k < 6; k++) PutFloat(out, F32(p+48+k*4));
-    Put32(out, nA);
-    for(uint32_t k = 0; k < nA; k++) {
-        const uint8_t *s = p+aPos+(size_t)k*20;
-        for(int j = 0; j < 4; j++)
-            if(!std::isfinite(F32(s+j*4)) || std::fabs(F32(s+j*4)) > 1e6f) {
-                out.clear(); return false;
-            }
-        if(F32(s+12) < 0.0f) { out.clear(); return false; }
-        PutFloat(out, F32(s+12));
-        for(int j = 0; j < 3; j++) PutFloat(out, F32(s+j*4));
-        out.push_back(Surface(s[16])); out.push_back(s[17]); out.push_back(0); out.push_back(0);
-    }
-    Put32(out, 0); // lines, not present in CED2
-    Put32(out, nB);
-    for(uint32_t k = 0; k < nB; k++) {
-        const uint8_t *box = p+bPos+(size_t)k*28;
-        for(int j = 0; j < 6; j++) {
-            float x = F32(box+j*4);
-            if(!std::isfinite(x) || std::fabs(x) > 1e6f ||
-               (j >= 3 && x < F32(box+(j-3)*4))) {
-                out.clear(); return false;
-            }
+            if(!std::isfinite(x) || std::fabs(x) > 1e6f) return no("box coordinate out of range");
+            if(j >= 3 && x < F32(b + (j - 3) * 4)) return no("box is inside out");
             PutFloat(out, x);
         }
-        out.push_back(Surface(box[24])); out.push_back(box[25]); out.push_back(0); out.push_back(0);
+        out.push_back(Surface(b[24])); out.push_back(b[25]); out.push_back(0); out.push_back(0);
     }
-    Put32(out, nV);
-    for(uint32_t k = 0; k < nV; k++) {
-        const uint8_t *vert = p+vPos+(size_t)k*6;
-        for(int j = 0; j < 3; j++) PutFloat(out, (int16_t)U16(vert+j*2) / 128.0f);
+    Put32(out, nv);
+    for(uint32_t k = 0; k < nv; k++) {
+        const uint8_t *v = p + vertPos + (size_t)k * 6;
+        for(int j = 0; j < 3; j++) PutFloat(out, I16(v + j * 2) / 128.0f);
     }
-    Put32(out, nF);
-    for(uint32_t k = 0; k < nF; k++) {
-        const uint8_t *face = p+fPos+(size_t)k*8;
-        for(int j = 0; j < 3; j++) Put32(out, U16(face+j*2));
-        out.push_back(Surface(face[6])); out.push_back(0); out.push_back(0); out.push_back(0);
+    Put32(out, (uint32_t)nt);
+    for(int k = 0; k < nt; k++) {
+        const uint8_t *t = p + triPos + (size_t)k * 8;
+        for(int j = 0; j < 3; j++) {
+            uint32_t idx = U16(t + j * 2);
+            if(idx >= nv) return no("triangle indexes a vertex that is not there");
+            Put32(out, idx);
+        }
+        out.push_back(Surface(t[6])); out.push_back(0); out.push_back(0); out.push_back(0);
     }
-    uint32_t length = (uint32_t)out.size()-8;
-    for(int j = 0; j < 4; j++) out[4+j] = (uint8_t)(length >> (j*8));
+    o.Finish();
     return true;
 }
 
+// ---- CLSF -------------------------------------------------------------
+//
+// 12 records, all of them in BRWinter.cls. The header is 40 bytes read straight
+// off the payload, with no pointer indirection:
+//
+//   payload+0x00 bbox.min   +0x0c bbox.max   +0x18 center   +0x24 radius
+//   payload+0x28 u32 (0 in all 12)           +0x2c u32 (0 in all 12)
+//   payload+0x30 numBoxes   -- body starts at 0x34, 28-byte boxes, 8-byte aligned
+//   payload+0x34 numTriangles  -- body starts at 0x38, float3 vertices,
+//                                 a 16-byte "fast" list, then the 16-byte
+//                                 triangles that end the record
+//
+// Both counters are zero in 6 of the 12: an empty 84-byte record.
+//
+// The "fast" 16-byte list is left alone. It holds the same fields as the main
+// triangles but does not take part in numTriangles, and one record in the
+// corpus is not enough to prove what it is for; the main array is the model.
+inline bool ConvertClsf(const uint8_t *p, size_t n, const std::string &name,
+                        std::vector<uint8_t> &out, const char **why) {
+    auto no = [&](const char *r) { if(why) *why = r; out.clear(); return false; };
+    // The smallest record in the corpus is 84 bytes: 24 name + 40 header + the
+    // four bytes of numBoxes. numTriangles is only present when the record is
+    // longer than that.
+    if(n < 8 + 0x18 + 0x34) return no("CLSF record shorter than its header");
+    const uint8_t *st = p + 8 + 0x18;
+    float bmin[3] = { F32(st + 0x00), F32(st + 0x04), F32(st + 0x08) };
+    float bmax[3] = { F32(st + 0x0c), F32(st + 0x10), F32(st + 0x14) };
+    float center[3] = { F32(st + 0x18), F32(st + 0x1c), F32(st + 0x20) };
+    float radius = F32(st + 0x24);
+    for(int k = 0; k < 3; k++) {
+        if(!std::isfinite(bmin[k]) || !std::isfinite(bmax[k]) ||
+           !std::isfinite(center[k])) return no("bounds contain NaN or infinity");
+    }
+    if(!std::isfinite(radius) || radius < 0.0f || radius > 1e6f)
+        return no("bounding radius out of range");
+    if(!SaneBox(bmin, bmax)) return no("bounding box is inside out or out of range");
+    // The two bodies are mutually exclusive: either +0x30 is numBoxes and the
+    // boxes start at +0x34 (so +0x34 is the first box, not a counter), or
+    // numBoxes is zero and +0x34 is numTriangles. Reading both as counters
+    // makes a box record look like it also has triangles.
+    uint32_t numBoxes = U32(st + 0x30);
+    uint32_t numTris = 0;
+    if(numBoxes == 0) {
+        if(n < 8 + 0x18 + 0x38) return no("record has no boxes or triangles");
+        numTris = U32(st + 0x34);
+        if(numTris == 0) return no("record has no boxes or triangles");
+    }
+
+    if(numBoxes) {
+        size_t boxPos = (size_t)(st - p) + 0x34;
+        if(numBoxes > 4096 || boxPos > n || (size_t)numBoxes > (n - boxPos) / 28)
+            return no("CLSF box array does not fit the record");
+        StartBlock(out, name);
+        Out o = { out };
+        o.Header(radius, center, bmin, bmax);
+        Put32(out, 0);           // spheres
+        Put32(out, 0);           // lines
+        Put32(out, numBoxes);
+        for(uint32_t k = 0; k < numBoxes; k++) {
+            const uint8_t *b = p + boxPos + (size_t)k * 28;
+            for(int j = 0; j < 6; j++) {
+                float x = F32(b + j * 4);
+                if(!std::isfinite(x) || std::fabs(x) > 1e6f)
+                    return no("CLSF box coordinate out of range");
+                if(j >= 3 && x < F32(b + (j - 3) * 4)) return no("CLSF box is inside out");
+                PutFloat(out, x);
+            }
+            out.push_back(Surface(b[24])); out.push_back(b[25]); out.push_back(0); out.push_back(0);
+        }
+        Put32(out, 0);           // vertices
+        Put32(out, 0);           // triangles
+        o.Finish();
+        return true;
+    }
+
+    // Triangles: float3 vertices at 0x38, main array ending the record.
+    if(numTris > 65535) return no("CLSF triangle count out of range");
+    size_t triPos = n - (size_t)numTris * 16;
+    size_t vertPos = (size_t)(st - p) + 0x38;
+    if(triPos < vertPos) return no("CLSF triangles do not fit behind the vertices");
+    uint32_t nv = 0;
+    for(uint32_t k = 0; k < numTris; k++) {
+        const uint8_t *t = p + triPos + (size_t)k * 16;
+        for(int j = 0; j < 3; j++) {
+            uint32_t idx = U32(t + j * 4);
+            if(idx + 1 > nv) nv = idx + 1;
+        }
+    }
+    if(nv == 0) return no("CLSF triangles index no vertices");
+    if(vertPos > n || (size_t)nv > (n - vertPos) / 12)
+        return no("CLSF vertex count does not fit before the triangles");
+    size_t vertEnd = vertPos + (size_t)nv * 12;
+    // Between the vertices and the main triangles sits the 16-byte fast list.
+    // It must not overlap either array; where it is empty this is an identity.
+    if(vertEnd > triPos) return no("CLSF vertices overlap the triangles");
+
+    StartBlock(out, name);
+    Out o = { out };
+    o.Header(radius, center, bmin, bmax);
+    Put32(out, 0);               // spheres
+    Put32(out, 0);               // lines
+    Put32(out, 0);               // boxes
+    Put32(out, nv);
+    for(uint32_t k = 0; k < nv; k++) {
+        const uint8_t *v = p + vertPos + (size_t)k * 12;
+        for(int j = 0; j < 3; j++) {
+            float x = F32(v + j * 4);
+            if(!std::isfinite(x) || std::fabs(x) > 1e6f)
+                return no("CLSF vertex coordinate out of range");
+            PutFloat(out, x);
+        }
+    }
+    Put32(out, numTris);
+    for(uint32_t k = 0; k < numTris; k++) {
+        const uint8_t *t = p + triPos + (size_t)k * 16;
+        for(int j = 0; j < 3; j++) {
+            uint32_t idx = U32(t + j * 4);
+            if(idx >= nv) return no("CLSF triangle indexes a vertex that is not there");
+            Put32(out, idx);
+        }
+        out.push_back(Surface(t[12])); out.push_back(0); out.push_back(0); out.push_back(0);
+    }
+    o.Finish();
+    return true;
+}
+
+// Convert exactly one CLST or CLSF record into a [COLL, size, name[24], COLL v1
+// body]. `p` is the record including its 8-byte tag and size.
+inline bool Convert(const uint8_t *p, size_t n, std::vector<uint8_t> &out, const char **why = nullptr) {
+    auto no = [&](const char *r) { if(why) *why = r; out.clear(); return false; };
+    out.clear();
+    if(!p) return no("no data");
+    if(n > 16u * 1024u * 1024u) return no("record larger than 16 MB");
+    if(n < 8 || !Tag(p)) return no("not a CLST or CLSF record");
+    if(U32(p + 4) != n - 8) return no("declared size does not match the record");
+    std::string name;
+    if(!Name(p, n, name)) return no("record has no usable model name");
+    return IsClsf(p) ? ConvertClsf(p, n, name, out, why)
+                      : ConvertClst(p, n, name, out, why);
+}
 } // namespace brcollision
 #endif
