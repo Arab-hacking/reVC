@@ -179,13 +179,17 @@ psCameraShowRaster(RwCamera *camera)
 		const int holdMs = TestGraphicsFrameHoldMs(frameMs);
 		if(holdMs > 0){
 			// Sleep, not a spin: the frame is already finished, this waits
-			// out the rest of the budget. clock_nanosleep is relative here,
-			// and a signal cuts it short, which is fine -- the next frame
-			// simply measures less time left over.
+			// out the rest of the budget. A signal may cut the sleep short,
+			// which is harmless -- the next frame simply measures less time
+			// left over.
+#ifdef _WIN32
+			Sleep((DWORD)holdMs);
+#else
 			struct timespec ts;
 			ts.tv_sec  = holdMs / 1000;
 			ts.tv_nsec = (long)(holdMs % 1000) * 1000000L;
-			clock_nanosleep(CLOCK_MONOTONIC, 0, &ts, nil);
+			nanosleep(&ts, nil);
+#endif
 		}
 	}
 #endif
