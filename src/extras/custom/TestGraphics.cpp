@@ -137,6 +137,15 @@ TestGraphicsEffectsEnabled(void)
 	return s_started ? s_applied.effectsEnabled : true;
 }
 
+// The ceiling is enforced where the frame is presented, not by dropping the
+// work: holding the frame back keeps the simulation at one step per presented
+// frame, which is what the client's maxFps does too.
+int
+TestGraphicsFrameHoldMs(float frameMs)
+{
+	return (int)revctestgfx::FrameHoldMs(TestGraphicsMaxFps(), frameMs);
+}
+
 int
 TestGraphicsMaxFps(void)
 {

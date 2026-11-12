@@ -224,6 +224,21 @@ inline int CycleMaxFps(int current)
 	return values[0];
 }
 
+// How long a frame has to be held back to stay under the ceiling.
+//
+// Returns 0 when there is nothing to wait for: no ceiling, a frame that
+// already missed its budget, or a frame time the caller could not measure.
+// The result is in milliseconds; the platform layer sleeps for it before it
+// presents the frame, which keeps the simulation at one step per presented
+// frame instead of dropping work.
+inline float FrameHoldMs(int maxFps, float frameMs)
+{
+	if(maxFps <= 0 || frameMs <= 0.0f)
+		return 0.0f;
+	const float budget = 1000.0f / (float)maxFps;
+	return frameMs < budget ? budget - frameMs : 0.0f;
+}
+
 inline const char *MaxFpsText(int value)
 {
 	static const char *const names[] = { "FEM_OFF", "FEM_30", "FEM_60", "FEM_90", "FEM_120" };
@@ -251,6 +266,8 @@ float TestGraphicsDrawDistanceMultiplier(void);
 bool  TestGraphicsReflectionEnabled(void);
 bool  TestGraphicsEffectsEnabled(void);
 int   TestGraphicsMaxFps(void);
+// 0 means "no ceiling". Read by the platform layer when it presents a frame.
+int   TestGraphicsFrameHoldMs(float frameMs);
 
 // Settings block the menu edits, plus the apply/startup pair.
 revctestgfx::Settings &TestGraphicsSettings(void);

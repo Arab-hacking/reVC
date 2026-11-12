@@ -6,6 +6,7 @@ long _dwOperatingSystemVersion;
 #include <errno.h>
 #include <locale.h>
 #include <signal.h>
+#include <time.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <unordered_map>
@@ -32,6 +33,9 @@ long _dwOperatingSystemVersion;
 #include "Font.h"
 #include "MemoryMgr.h"
 #include "MobileTouchControls.h"
+#ifdef TEST_GRAPHICS_MENU
+#include "TestGraphics.h"
+#endif
 
 #if defined ANDROID
 #include "JavaWrapper.h"
@@ -163,6 +167,28 @@ psCameraBeginUpdate(RwCamera *camera)
 void
 psCameraShowRaster(RwCamera *camera)
 {
+#ifdef TEST_GRAPHICS_MENU
+	// TEST GRAPHICS `maxFps`: the client's ceiling, enforced where the frame is
+	// presented. On Android nothing else applies one at all -- the frame limiter
+	// used on desktop only exists in the non-Android branch of the main loop.
+	{
+		static uint32 s_lastFrameMs = 0;
+		const uint32 nowMs = CTimer::GetTimeInMilliseconds();
+		const float frameMs = s_lastFrameMs ? (float)(nowMs - s_lastFrameMs) : 0.0f;
+		s_lastFrameMs = nowMs;
+		const int holdMs = TestGraphicsFrameHoldMs(frameMs);
+		if(holdMs > 0){
+			// Sleep, not a spin: the frame is already finished, this waits
+			// out the rest of the budget. clock_nanosleep is relative here,
+			// and a signal cuts it short, which is fine -- the next frame
+			// simply measures less time left over.
+			struct timespec ts;
+			ts.tv_sec  = holdMs / 1000;
+			ts.tv_nsec = (long)(holdMs % 1000) * 1000000L;
+			clock_nanosleep(CLOCK_MONOTONIC, 0, &ts, nil);
+		}
+	}
+#endif
 #ifdef ANDROID
     if (FrontEndMenuManager.m_PrefsVsync)
         RwCameraShowRaster(camera, PSGLOBAL(window), rwRASTERFLIPWAITVSYNC);

@@ -113,6 +113,26 @@ TestDrawDistance(void)
 	CheckFloat(ClampDistanceMultiplier(0.8f * DrawDistanceMultiplier(0)), 0.4f, "slider floor * 0.5 = 0.4, below the floor on purpose");
 }
 
+// --- fps ceiling: hold the frame, do not drop the work ---------------
+static void
+TestFrameHold(void)
+{
+	// 60 fps means a 16.67 ms budget.
+	Check(FrameHoldMs(60, 0.0f) == 0.0f, "an unmeasurable frame is not throttled");
+	Check(FrameHoldMs(0, 8.0f) == 0.0f, "no ceiling means no hold");
+	CheckFloat(FrameHoldMs(60, 0.0f + 0.0001f), 1000.0f / 60.0f, "a first frame is held for the whole budget");
+	CheckFloat(FrameHoldMs(60, 16.0f), 1000.0f / 60.0f - 16.0f, "a fast frame is held for the remainder");
+	Check(FrameHoldMs(60, 16.67f) <= 0.01f, "a frame that used its budget is not held");
+	Check(FrameHoldMs(30, 40.0f) == 0.0f, "a frame over budget is never held back");
+	Check(FrameHoldMs(120, 4.0f) < FrameHoldMs(60, 4.0f), "a higher ceiling holds less of the same frame");
+
+	// The platform layer passes the milliseconds straight to clock_nanosleep, so
+	// the value is truncated to whole milliseconds: 12 of a 12.67 ms hold.
+	CheckInt((int)FrameHoldMs(60, 4.0f), 12, "default 60 fps holds 12 ms of a 4 ms frame");
+	CheckInt((int)FrameHoldMs(120, 4.0f), 4, "120 fps holds 4 ms of the same frame");
+	CheckInt((int)FrameHoldMs(0, 4.0f), 0, "ceiling off holds nothing");
+}
+
 // --- effect: one `cbnz` over the whole post block ------------------------
 static void
 TestEffects(void)
@@ -200,6 +220,7 @@ main(void)
 	TestShadowLevels();
 	TestDrawDistance();
 	TestEffects();
+	TestFrameHold();
 	TestDefaults();
 	TestApply();
 	TestMenuClamps();
