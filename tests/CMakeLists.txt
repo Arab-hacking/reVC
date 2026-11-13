@@ -462,3 +462,18 @@ set_target_properties(boot_order_guard_tests PROPERTIES CXX_STANDARD 11 CXX_STAN
 add_test(NAME boot_order_guard_tests COMMAND boot_order_guard_tests)
 set_tests_properties(boot_order_guard_tests PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+
+# handling.cfg is the client's own data file and HandlingMgr parses it with the
+# loader's column map, so the parser is exercised here instead of in-game: the
+# stub directory holds the few engine headers the two sources need, which keeps
+# RenderWare and SDL out of the build. The shipped file is read from the
+# repository, so the counters and a sample of records are checked against it.
+add_executable(handling_parser_tests
+    HandlingParserTests.cpp
+    ../src/vehicles/HandlingMgr.cpp
+    ../src/vehicles/Transmission.cpp)
+target_include_directories(handling_parser_tests PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/vehicles_stub ../src/vehicles)
+set_target_properties(handling_parser_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+add_test(NAME handling_parser_tests COMMAND handling_parser_tests
+    ${CMAKE_CURRENT_SOURCE_DIR}/../gamefiles/data/handling.cfg)

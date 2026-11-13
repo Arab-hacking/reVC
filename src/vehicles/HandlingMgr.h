@@ -7,8 +7,9 @@
 //
 // Source: VEHICLES-v3, chapter 2, function HandlingMgr::LoadHandlingData
 // @ 0x1804c78 (947 instructions) and the data file the client ships
-// (data/handling.cfg: 597 cars, 16 boats, 23 bikes, 24 flying, 2 cranes,
-// 30 vehicle-anim-group lines).
+// (data/handling.cfg: 567 cars, 16 boats, 23 bikes, 24 flying, 2 cranes).
+// The 597 the chapter quotes is a different build; on this file it was
+// inflated by the UTF-8 BOM line, see LoadHandlingData.
 //
 // Deliberately NOT a Vice City parser any more:
 //   * there is no fixed list of 106 VC handling names. A record is found by the
@@ -18,7 +19,7 @@
 //     Dimensions.x/y/z there and derived fTurnMass from them;
 //   * fEngineInertia (column 14) exists and is kept;
 //   * fields VC never had: suspension high speed damping, suspension upper
-//     limit as a real column, the vehicle anim group and fHighLightsAngle;
+//     limit as a real column, the per-record anim group id and fHighLightsAngle;
 //   * model flags and handling flags are two separate hex columns and, unlike
 //     VC, are *not* OR-ed together into one mask.
 //
@@ -187,15 +188,6 @@ struct tHandlingData
 	float    fApproxHeight;
 };
 
-// One '*' line: the vehicle anim group table. The client keeps it in its own
-// array; the port needs the ids only, the door animation code is VC's.
-struct tAnimGroupHandlingData
-{
-	char     Name[24];
-	int32    nIndex;
-	int32    Groups[2];                // columns 1 and 2
-};
-
 struct tBikeHandlingData
 {
 	char     Name[24];
@@ -354,7 +346,7 @@ public:
 
 	// Numbers actually read from the file. The arrays are sized at the client's
 	// own limits so an id taken from a save or a script can never run past them.
-	uint32 NumCars, NumBikes, NumFlying, NumBoats, NumCranes, NumAnimGroups;
+	uint32 NumCars, NumBikes, NumFlying, NumBoats, NumCranes;
 
 	// Diagnostics: how many model names failed to resolve, for the log.
 	void ReportMissing(void) { nMissing++; }
@@ -369,7 +361,6 @@ private:
 	// The client keeps cranes in a std::vector; a fixed array is used here
 	// because the size is bounded anyway and the manager lives for the session.
 	tCraneHandlingData  CraneHandlingData[HANDLING_MAX_CARS];
-	tAnimGroupHandlingData AnimGroupHandlingData[HANDLING_MAX_CARS];
 
 	int32 nMissing;
 };

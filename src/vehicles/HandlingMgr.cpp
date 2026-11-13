@@ -270,32 +270,6 @@ ParseCraneLine(const char *line, tCraneHandlingData *h)
 	}
 }
 
-// VEHICLE ANIM GROUPS — '^' lines, 35 columns; the port needs the two group ids
-// (columns 1 and 2) to be able to name the table at all.
-static void
-ParseAnimGroupLine(const char *line, tAnimGroupHandlingData *h)
-{
-	char tok[64];
-	int col = 0;
-	const char *p = line;
-	for(;;){
-		p = NextToken(p, tok, sizeof(tok));
-		if(tok[0] == '\0')
-			return;
-		if(col == 0)
-			CopyName(h->Name, sizeof(h->Name), tok);
-		else if(col == 1)
-			h->Groups[0] = TokenInt(tok);
-		else if(col == 2)
-			h->Groups[1] = TokenInt(tok);
-		else
-			return;
-		col++;
-		if(*p == '\0' || *p == '\n' || *p == '\r')
-			return;
-	}
-}
-
 } // namespace
 
 cHandlingDataMgr::cHandlingDataMgr(void)
@@ -317,7 +291,7 @@ cHandlingDataMgr::Initialise(void)
 void
 cHandlingDataMgr::LoadHandlingData(void)
 {
-	NumCars = NumBikes = NumFlying = NumBoats = NumCranes = NumAnimGroups = 0;
+	NumCars = NumBikes = NumFlying = NumBoats = NumCranes = 0;
 	nMissing = 0;
 
 	// The client reads the file into a buffer capped at 0x1b773f = 1 799 999
@@ -363,9 +337,18 @@ cHandlingDataMgr::LoadHandlingData(void)
 		while(lineLength > 0 && line[lineLength-1] == '\r')
 			line[--lineLength] = '\0';
 
+		// Terminator test first, then the dispatcher: the client compares the
+		// first eight bytes of the line with ";the end" at 0x1804e58 and only
+		// then looks at the type byte at 0x1804e64. The order matters — the
+		// terminator starts with ';', so a dispatcher-first parser treats it as
+		// an ordinary comment and keeps reading past it.
+		if(strncmp(line, HandlingEnd, strlen(HandlingEnd)) == 0)
+			break;
+
 		// Type is the first byte of the line, exactly like the client's
 		// dispatcher at 0x1804e64. ';' and '^' skip the line — '^' is the
-		// vehicle anim group table, which the client skips as well.
+		// vehicle anim group table (30 lines), which the client skips as well:
+		// nothing on the vehicle side reads it, so it is not stored.
 		const char *s = line;
 		switch(*s){
 		case '\0': case ';': case '^':
@@ -377,11 +360,6 @@ cHandlingDataMgr::LoadHandlingData(void)
 			s++;		// marker byte, then the name column
 			break;
 		}
-
-		// Terminator test: the client compares the first eight bytes of the line
-		// with ";the end" and leaves the loop on a match.
-		if(strncmp(s, HandlingEnd, strlen(HandlingEnd)) == 0)
-			break;
 
 		switch(line[0]){
 		case '!':	// bike
