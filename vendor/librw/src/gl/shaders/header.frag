@@ -157,13 +157,25 @@ float SampleSunShadow(vec3 worldPos, vec3 N)
 	float ndotl = clamp(dot(N, L), 0.0, 1.0);
 	float slope = 1.0 - ndotl;
 
+	// Terminator correction (mesh_shadow_* in the client): surfaces that face
+	// away from the sun still read as sunlit in the shadow map, so the client
+	// darkens them by strength*0.3*pow(1-diffuse, 24) on top of the map. Without
+	// it the terminator of every curved surface (car bodies, peds, rounded
+	// facades) pops from lit to shadowed along a hard line. Mobile carried it
+	// inside planarVis; it is one shared term for both paths now so the
+	// desktop branch gets the same falloff.
+	float terminator = 0.3 * clamp(u_shadowParams.x, 0.0, 1.0) * pow((1.0 - ndotl), 24.0);
+
 	if(u_atmosphere.x >= 1.5){
 		float s2 = slope * slope;
 		float s4 = s2 * s2;
-		float s8 = s4 * s4;
-		float planarVis = 1.0 - 0.30 * (s8 * s8 * s8);
+		// planarVis is the mobile stand-in used when the map cannot answer
+		// (outside the cascade, degenerate depth). The old constant 0.30 times
+		// the same s^24 term the shared `terminator` computes is folded in here
+		// through `terminator`, so it is not applied twice.
+		float planarVis = 1.0;
 		if(u_shadowParams.x <= 0.001)
-			return planarVis;
+			return max(1.0 - terminator, 0.0);
 		vec3 mBiased = worldPos + N * (u_shadowParams.z * (0.45 + 1.15 * slope))
 		                        + L * (u_shadowParams.z * 0.35);
 		vec4 mSc = u_shadowMatrix * vec4(mBiased, 1.0);
@@ -171,7 +183,7 @@ float SampleSunShadow(vec3 worldPos, vec3 N)
 		vec2 mEdge = abs(mProj.xy * 2.0 - 1.0);
 		float mMaxEdge = max(mEdge.x, mEdge.y);
 		if(mMaxEdge >= 0.992 || mProj.z <= 0.0005 || mProj.z >= 0.9995)
-			return planarVis;
+			return max(planarVis - terminator, 0.0);
 		float mFade = smoothstep(0.992, 0.82, mMaxEdge);
 		float mRad = max(u_shadowParams.y * 1.10, 0.0005);
 		float mZRef = mProj.z - max(0.0018 * s4, 0.0001);
@@ -181,8 +193,8 @@ float SampleSunShadow(vec3 worldPos, vec3 N)
 		mVis += (mZRef <= texture(tex3, mProj.xy + vec2(-0.09418410,  0.92938870) * mRad).r) ? 1.0 : 0.0;
 		mVis += (mZRef <= texture(tex3, mProj.xy + vec2( 0.34495938,  0.29387760) * mRad).r) ? 1.0 : 0.0;
 		mVis *= 0.25;
-		float mapShadowVis = 1.0 - clamp(u_shadowParams.x, 0.0, 1.0) * 0.30 * (1.0 - mVis);
-		return mix(planarVis, min(planarVis, mapShadowVis), mFade);
+		float mapShadowVis = 1.0 - clamp(u_shadowParams.x, 0.0, 1.0) * (1.0 - mVis);
+		return max(mix(planarVis, min(planarVis, mapShadowVis), mFade) - terminator, 0.0);
 	}
 
 	if(u_shadowParams.x <= 0.001)
@@ -194,7 +206,7 @@ float SampleSunShadow(vec3 worldPos, vec3 N)
 	vec2 edge = abs(proj.xy * 2.0 - 1.0);
 	float maxEdge = max(edge.x, edge.y);
 	if(maxEdge >= 0.995 || proj.z <= 0.0005 || proj.z >= 0.9995)
-		return 1.0;
+		return max(1.0 - terminator, 0.0);
 	float cascadeFade = smoothstep(0.995, 0.80, maxEdge);
 
 	float ang = 6.2831853 * fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
@@ -215,7 +227,7 @@ float SampleSunShadow(vec3 worldPos, vec3 N)
 	vis += (zRef <= texture(tex3, proj.xy + (rot * vec2( 0.97484398,  0.75648379)) * rad).r) ? 1.0 : 0.0;
 	vis += (zRef <= texture(tex3, proj.xy + (rot * vec2( 0.44323325, -0.97511554)) * rad).r) ? 1.0 : 0.0;
 	vis *= (1.0 / 9.0);
-	return mix(1.0, vis, clamp(u_shadowParams.x, 0.0, 1.0) * cascadeFade);
+	return max(mix(1.0, vis, clamp(u_shadowParams.x, 0.0, 1.0) * cascadeFade) - terminator, 0.0);
 }
 
 // --- pbr/ModelsBRDF.glsl & pbr/RoughMip.glsl & pbr/LightMaterialGBufFS.glsl ---

@@ -327,8 +327,12 @@ class GL3ShaderTests(unittest.TestCase):
         renderer_cpp = (ROOT / "src/renderer/Renderer.cpp").read_text()
         postfx_cpp = (ROOT / "src/extras/postfx.cpp").read_text()
 
-        # Mobile world/shadow/gamma parity: 0.30 shadow cap, pure pow(color, u_localInvGamma), lightmapMulti=0.65
-        self.assertIn("0.30 * (1.0 - mVis)", h_fs)
+        # Shadow parity: both desktop and mobile paths carry the client's terminator
+        # correction (strength * 0.3 * pow(1 - N.L, 24)) and neither path scales the
+        # map result by an extra 0.30. Softness comes from the PCF taps alone.
+        self.assertIn("0.3 * clamp(u_shadowParams.x, 0.0, 1.0) * pow((1.0 - ndotl), 24.0)", h_fs)
+        self.assertNotIn("0.30 * (1.0 - mVis)", h_fs)
+        # Mobile world/gamma parity: pure pow(color, u_localInvGamma), lightmapMulti=0.65
         self.assertNotIn("over / (vec3(1.0) + over * 4.0)", h_fs)
         self.assertIn("0.65", world_fs)
         self.assertIn("0.65f", renderer_cpp)
