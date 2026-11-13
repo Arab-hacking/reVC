@@ -281,6 +281,12 @@ public:
 	float m_fHealth;           // 1000.0f = full health. 250.0f = fire. 0 -> explode
 	uint8 m_nCurrentGear;
 	float m_fChangeGearTime;
+	// SA's gearbox history (m_fGearChangeCount and the two inertia values that
+	// CalculateDriveAcceleration writes). m_fInertiaValue1 is the gear position
+	// reached last frame, m_fInertiaValue2 the smoothed acceleration multiplier;
+	// without them every frame would pull at full engine force from a standstill.
+	float m_fInertiaValue1;
+	float m_fInertiaValue2;
 #if (!defined GTA_PS2 || defined FIX_BUGS)
 	CEntity* m_pBombRigger;
 #endif

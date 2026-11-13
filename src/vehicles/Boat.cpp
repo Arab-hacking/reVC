@@ -739,8 +739,11 @@ CBoat::ProcessControl(void)
 			else
 				m_fMovingSpeed = 0.0f;
 		}
-	}else if(bCheat8)
-		FlyingControl(FLIGHT_MODEL_PLANE);
+	}
+	// VC's "flying fish" cheat made boats fly by running the car flight model on
+	// them. The client has no such cheat and the handling data now comes from
+	// its own file, so the branch is gone; the cheat's flag only feeds
+	// COMMAND_ARE_ANY_CAR_CHEATS_ACTIVATED, as with the others.
 
 	if(m_bIsAnchored){
 		m_vecMoveSpeed.x = 0.0f;

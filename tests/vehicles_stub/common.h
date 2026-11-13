@@ -30,6 +30,8 @@ typedef uint8 bool8;
 template<class T> inline T Max(T a, T b) { return a > b ? a : b; }
 template<class T> inline T Min(T a, T b) { return a < b ? a : b; }
 template<class T> inline T Abs(T a) { return a < 0 ? -a : a; }
+// Same macro as src/core/common.h.
+#define Clamp(v, low, high) ((v)<(low) ? (low) : (v)>(high) ? (high) : (v))
 inline float Sin(float x) { return sinf(x); }
 inline float Cos(float x) { return cosf(x); }
 

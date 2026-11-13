@@ -182,14 +182,16 @@ TestColumnMap(void)
 	CHECK(h->Transmission.nNumberOfGears == 5, "col 11 gears %d", h->Transmission.nNumberOfGears);
 
 	// Columns 12..16: the transmission block. fMaxVelocity is replaced by the
-	// drag/acceleration equilibrium during load, so it is not compared; the
-	// engine acceleration is scaled by 1/2500 and then by the drive type.
+	// drag/acceleration equilibrium during load, so it is not compared. The
+	// engine acceleration goes through SA's chain: x0.4 in the parser, then
+	// x1/50^2 for the tick conversion, then /2 (or /4 for four-wheel drive).
 	CHECKF(h->Transmission.fEngineInertia, 40.0f, "col 14 fEngineInertia");
-	CHECKF(h->Transmission.fEngineAcceleration, 12.0f/(50.0f*50.0f)/2.0f, "col 13 fEngineAcceleration");
+	CHECKF(h->Transmission.fEngineAcceleration, 12.0f*0.4f/(50.0f*50.0f)/2.0f, "col 13 fEngineAcceleration");
 	CHECK(h->Transmission.nDriveType == 'R', "col 15 drive '%c'", h->Transmission.nDriveType);
 	CHECK(h->Transmission.nEngineType == 'P', "col 16 engine '%c'", h->Transmission.nEngineType);
-	// The gear box reads the handling flags through the record's own mask.
-	CHECK(h->Transmission.Flags == 0x4000000, "transmission flags %08x", h->Transmission.Flags);
+	// The gear box reads the handling flags from the transmission block, where
+	// SA keeps its own copy.
+	CHECK(h->Transmission.HandlingFlags == 0x4000000, "transmission flags %08x", h->Transmission.HandlingFlags);
 
 	// Columns 17..20.
 	CHECKF(h->fBrakeDeceleration, 7.0f/(50.0f*50.0f), "col 17 fBrakeDeceleration");
@@ -221,17 +223,27 @@ TestColumnMap(void)
 	CHECK(h->nAnimGroup == 7, "col 37 nAnimGroup %d", h->nAnimGroup);
 	CHECKF(h->fSuspensionHighSpdComDamp, 0.125f, "col 38 fSuspensionHighSpdComDamp");
 
-	// Derived values must be consistent with the columns they come from.
+	// Derived values must be consistent with the columns they come from (SA's
+	// ConvertDataToGameUnits: buoyancy is mass*0.8/percentSubmerged).
 	CHECKF(h->fInvMass, 1.0f/1000.0f, "fInvMass");
-	CHECKF(h->fBuoyancy, 100.0f/60.0f*GRAVITY*1000.0f, "fBuoyancy");
+	CHECKF(h->fBuoyancy, 1000.0f*0.8f/60.0f, "fBuoyancy");
 	CHECKF(h->fAirResistanceFactor, 0.5f/1000.0f, "fAirResistanceFactor");
 	CHECKF(h->fApproxHeight, 2.0f*0.3f + 1.0f, "fApproxHeight");
 
-	// Gear ratios follow the gear count; the top gear is the fMaxVelocity end.
-	CHECKF(h->Transmission.GearRatios[0], 1.0f, "gear ratio 1");
-	CHECKF(h->Transmission.GearRatios[4], 1.0f - 0.62f, "gear ratio 5");
-	// Five ratios only: the record has five forward gears and the array is
-	// that size, so the sixth slot does not exist by construction.
+	// The gear table follows SA's InitGearRatios: evenly spaced over the top
+	// speed, first gear at half a gear's worth, last gear on fMaxVelocity.
+	cTransmission *t = &h->Transmission;
+	float halfGear = 0.5f * t->fMaxVelocity / t->nNumberOfGears;
+	float maxGear = t->fMaxVelocity - halfGear;
+	CHECKF(t->Gears[1].MaxVelocity, 1.0f*maxGear/5.0f + halfGear, "gear 1 top");
+	CHECKF(t->Gears[5].MaxVelocity, 5.0f*maxGear/5.0f + halfGear, "gear 5 top");
+	CHECKF(t->Gears[5].MaxVelocity, t->fMaxVelocity, "top gear reaches fMaxVelocity");
+	CHECKF(t->Gears[0].MaxVelocity, t->fMaxReverseVelocity, "reverse gear top");
+	// The gears are strictly increasing, which is what the shift logic needs.
+	for(int i = 1; i < 5; i++)
+		CHECK(t->Gears[i].MaxVelocity < t->Gears[i+1].MaxVelocity,
+		      "gear %d top %.4f is not below gear %d top %.4f",
+		      i, t->Gears[i].MaxVelocity, i+1, t->Gears[i+1].MaxVelocity);
 }
 
 // A name that is only in a secondary section must not resolve to a car record:
@@ -377,6 +389,157 @@ TestShippedFile(void)
 	}
 }
 
+
+// ---------------------------------------------------------------------------
+// The gearbox itself: SA's CalculateDriveAcceleration (gta-reversed 0x6D05E0).
+// ---------------------------------------------------------------------------
+static void
+TestDriveAcceleration(void)
+{
+	cTransmission t;
+	memset(&t, 0, sizeof(t));
+	t.nNumberOfGears = 5;
+	t.nDriveType = 'R';
+	t.fMaxVelocity = 1.0f;          // metres per tick, arbirary but consistent
+	t.fMaxFlatVelocity = 1.0f / 1.2f;
+	t.fMaxReverseVelocity = -0.2f;
+	t.fEngineAcceleration = 0.004f;
+	t.fEngineInertia = 20.0f;
+	t.HandlingFlags = 0;
+	t.InitGearRatios();
+
+	const float ts = CTimer::GetTimeStep();
+
+	// 1. A single gear with the same numbers: speedMultiplier is 1, so the force
+	// is engineAcceleration * 0.4 * gas * timestep, with no inertia damping
+	// (a6/a7 are null). This is the amount the old VC code multiplied by a
+	// per-gear constant instead.
+	{
+		cTransmission one;
+		memset(&one, 0, sizeof(one));
+		one.nNumberOfGears = 1;
+		one.fMaxVelocity = 1.0f;
+		one.fMaxReverseVelocity = -0.2f;
+		one.fEngineAcceleration = 0.004f;
+		one.fEngineInertia = 20.0f;
+		one.InitGearRatios();
+
+		uint8 gear = 1;
+		float velocity = 0.0f;
+		float a = one.CalculateDriveAcceleration(1.0f, gear, velocity, nil, nil, 4, false);
+		CHECKF(a, 0.004f * 0.4f * 1.0f * ts, "one-gear drive acceleration");
+		CHECK(gear == 1, "one-gear: gear moved to %d", gear);
+	}
+
+	// 2. The pull falls off with the gear: first gear has gearNumber = 1, so
+	// multiplier 3+1; the top gear has gearNumber = 0, multiplier 1.
+	{
+		uint8 gear = 1;
+		float velocity = 0.0f;
+		float a1 = t.CalculateDriveAcceleration(1.0f, gear, velocity, nil, nil, 4, false);
+		CHECKF(a1, 0.004f * 4.0f * 0.4f * ts, "first gear drive acceleration");
+
+		// Sit inside the top gear's own span: above its ChangeDownVelocity and
+		// below its ChangeUpVelocity, otherwise the loop would shift down first.
+		gear = 5;
+		velocity = 0.85f;
+		CHECK(t.Gears[5].ChangeDownVelocity < velocity && velocity <= t.Gears[5].ChangeUpVelocity,
+		      "test velocity is not inside the top gear's span");
+		float a5 = t.CalculateDriveAcceleration(1.0f, gear, velocity, nil, nil, 4, false);
+		CHECK(gear == 5, "top gear test left gear %d", gear);
+		CHECKF(a5, 0.004f * 1.0f * 0.4f * ts, "fifth gear drive acceleration");
+		CHECK(a5 < a1, "top gear must pull less than first");
+	}
+
+	// 3. 1G and 2G boost raise the multiplier (5 and 4 instead of 3).
+	{
+		cTransmission boosted;
+		memset(&boosted, 0, sizeof(boosted));
+		boosted.nNumberOfGears = 5;
+		boosted.fMaxVelocity = 1.0f;
+		boosted.fMaxReverseVelocity = -0.2f;
+		boosted.fEngineAcceleration = 0.004f;
+		boosted.fEngineInertia = 20.0f;
+		boosted.HandlingFlags = HANDLING_1G_BOOST;
+		boosted.InitGearRatios();
+
+		uint8 gear = 1;
+		float velocity = 0.0f;
+		float a = boosted.CalculateDriveAcceleration(1.0f, gear, velocity, nil, nil, 4, false);
+		CHECKF(a, 0.004f * 6.0f * 0.4f * ts, "1G boost first gear");
+
+		boosted.HandlingFlags = HANDLING_2G_BOOST;
+		gear = 1;
+		velocity = 0.0f;
+		a = boosted.CalculateDriveAcceleration(1.0f, gear, velocity, nil, nil, 4, false);
+		CHECKF(a, 0.004f * 5.0f * 0.4f * ts, "2G boost first gear");
+	}
+
+	// 4. The inertia history damps the first frames: with a6/a7 the acceleration
+	// starts well below the undamped value and climbs, which is what stops a car
+	// from pulling at full engine force from a standstill.
+	{
+		float a6 = 0.0f, a7 = 0.0f;
+		uint8 gear = 1;
+		float velocity = 0.0f;
+		float first = t.CalculateDriveAcceleration(1.0f, gear, velocity, &a6, &a7, 4, false);
+		float undamped = 0.004f * 4.0f * 0.4f * ts;
+		CHECK(first < undamped, "inertia did not damp the first frame (%.6f vs %.6f)", first, undamped);
+		CHECK(a7 > 0.0f && a7 <= 1.0f, "a7 out of range: %f", a7);
+
+		// Let it settle at a fixed velocity and the multiplier must climb toward
+		// the undamped value.
+		float prev = first;
+		for(int i = 0; i < 60; i++){
+			float a = t.CalculateDriveAcceleration(1.0f, gear, velocity, &a6, &a7, 4, false);
+			CHECK(a <= undamped + 1e-6f, "accelerated past the undamped value");
+			prev = a;
+		}
+		CHECK(prev > first, "acceleration did not rise as the gear settled");
+	}
+
+	// 5. No wheels on the ground: the engine spins up freely and the multiplier
+	// is pinned to 0.1.
+	{
+		float a6 = 0.0f, a7 = 0.5f;
+		uint8 gear = 1;
+		float velocity = 0.0f;
+		t.CalculateDriveAcceleration(1.0f, gear, velocity, &a6, &a7, 0, false);
+		CHECKF(a7, 0.1f, "airborne a7");
+		CHECK(a6 > 0.0f, "airborne a6 did not grow");
+	}
+
+	// 6. At the top of the gearbox the engine still pulls (the top gear's own
+	// force), and above fMaxVelocity there is nothing left to give.
+	{
+		uint8 gear = 5;
+		float velocity = t.fMaxVelocity;
+		float a = t.CalculateDriveAcceleration(1.0f, gear, velocity, nil, nil, 4, false);
+		CHECKF(a, 0.004f * 1.0f * 0.4f * ts, "force at the gearbox top is not the top gear's");
+
+		gear = 5;
+		velocity = t.fMaxVelocity + 0.025f;
+		float over = t.CalculateDriveAcceleration(1.0f, gear, velocity, nil, nil, 4, false);
+		CHECKF(over, 0.0f, "force above fMaxVelocity");
+
+		// Below the reverse limit the engine is cut as well.
+		gear = 0;
+		velocity = t.fMaxReverseVelocity - 0.01f;
+		float rev = t.CalculateDriveAcceleration(1.0f, gear, velocity, nil, nil, 4, false);
+		CHECKF(rev, 0.0f, "force below the reverse limit");
+	}
+
+	// 7. Nitros doubles the drive force.
+	{
+		uint8 gear = 1;
+		float velocity = 0.0f;
+		float plain = t.CalculateDriveAcceleration(1.0f, gear, velocity, nil, nil, 4, false);
+		gear = 1;
+		float nitro = t.CalculateDriveAcceleration(1.0f, gear, velocity, nil, nil, 4, true);
+		CHECKF(nitro, 2.0f * plain, "nitros multiplier");
+	}
+}
+
 int
 main(int argc, char **argv)
 {
@@ -398,6 +561,7 @@ main(int argc, char **argv)
 	fclose(f);
 
 	TestShippedFile();
+	TestDriveAcceleration();
 
 	printf("\n%s (%d problems)\n", gProblems == 0 ? "PASS" : "FAIL", gProblems);
 	return gProblems == 0 ? 0 : 1;

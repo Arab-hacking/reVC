@@ -716,11 +716,13 @@ CBike::ProcessControl(void)
 			}
 		}
 
-		bool gripCheat = true;
+		// SA's gearbox; see CAutomobile::ProcessControl. The "strong grip" cheat
+		// no longer reaches this call.
 		fwdSpeed = DotProduct(m_vecMoveSpeed, GetForward());
-		if(!CVehicle::bCheat3)
-			gripCheat = false;
-		acceleration = pHandling->Transmission.CalculateDriveAcceleration(m_fGasPedal, m_nCurrentGear, m_fChangeGearTime, fwdSpeed, gripCheat);
+		acceleration = pHandling->Transmission.CalculateDriveAcceleration(
+			m_fGasPedal, m_nCurrentGear, fwdSpeed,
+			&m_fInertiaValue1, &m_fInertiaValue2,
+			m_nDriveWheelsOnGround, false);
 		acceleration /= m_fForceMultiplier;
 
 		brake = m_fBrakePedal * pHandling->fBrakeDeceleration * CTimer::GetTimeStep();

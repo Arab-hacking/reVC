@@ -126,8 +126,14 @@ ParseCarLine(const char *line, tHandlingData *h)
 		}
 		col++;
 		if(*p == '\0' || *p == '\n' || *p == '\r')
-			return;
+			break;
 	}
+
+	// SA's tHandlingData::InitFromData ends with two things the client loader
+	// also does: the handling flags are copied onto the transmission block, and
+	// the engine acceleration is scaled by 0.4 before the unit conversion.
+	h->Transmission.HandlingFlags = h->HandlingFlags;
+	h->Transmission.fEngineAcceleration *= 0.4f;
 }
 
 // BIKE — 16 columns, fully linear: name, index, then 15 floats at +0x1c..+0x54.
@@ -424,71 +430,71 @@ cHandlingDataMgr::LoadHandlingData(void)
 void
 cHandlingDataMgr::ConvertDataToGameUnits(tHandlingData *handling)
 {
-	float velocity, a, b;
+	// SA's conversion (gta-reversed cHandlingDataMgr::ConvertDataToGameUnits,
+	// 0x6F5080). Everything the physics touches is brought to the port's units
+	// here, once: acceleration and braking to "per tick per tick", velocities to
+	// "metres per tick".
+	#define ACCEL_CONST    (1.0f/(50.0f*50.0f))
+	#define VELOCITY_CONST (0.277778f/50.0f)
 
-	// Units: the client file's acceleration/deceleration is m/s^2 while the
-	// port's physics runs on 1/50 s steps, so velocities are divided by 50^2.
-	// The same conversion VC applied, unchanged by the file format.
-	handling->Transmission.fEngineAcceleration *= 1.0f/(50.0f*50.0f);
-	handling->Transmission.fMaxVelocity *= 1000.0f/(60.0f*60.0f * 50.0f);
-	handling->fBrakeDeceleration *= 1.0f/(50.0f*50.0f);
+	cTransmission *t = &handling->Transmission;
 
-	// The VC parser derived fTurnMass from Dimensions (x*y, then *5 when small).
-	// The client file has fTurnMass as a column; a line that stopped before it
-	// leaves zero, and only then is the VC-style fallback applied so a short
-	// record still has usable inertia.
-	if(handling->fTurnMass <= 0.0f)
-		handling->fTurnMass = Max(handling->fMass * 0.7f, 10.0f);
+	// tHandlingData::InitFromData already scaled the engine acceleration by 0.4
+	// (see ParseCarLine); SA applies its unit conversion on top of that.
+	t->fEngineAcceleration *= ACCEL_CONST;
+	t->fMaxVelocity *= VELOCITY_CONST;
+	handling->fBrakeDeceleration *= ACCEL_CONST;
 
-	// The two places that used the VC dimensions: air resistance was
-	// Dimensions.x*Dimensions.z/mass, and the stabiliser offset used
-	// Dimension.z as a body height. The client file has no dimensions, so the
-	// drag column stands in for the first and the centre of mass for the second.
-	// Both are converted once here so the physics keeps seeing port units.
+	handling->fInvMass = 1.0f/handling->fMass;
+	handling->fBuoyancy = handling->fMass * 0.8f / (float)Max(handling->nPercentSubmerged, 1);
+	handling->fCollisionDamageMultiplier *= handling->fInvMass * 2000.0f;
+
+	// SA finds the speed at which the engine acceleration and the drag balance
+	// out. Note the two different drag formulas: above 0.01 the coefficient is
+	// applied as mass-scaled drag, below it through the reciprocal form.
+	float engineAccelLimit = t->fEngineAcceleration / 6.0f;
+	float maxVelocity = t->fMaxVelocity;
+	while(maxVelocity > 0.0f){
+		maxVelocity -= 0.01f;
+		if(handling->fDragMult >= 0.01f){
+			if(SQR(maxVelocity) * (handling->fDragMult/2.0f) / 1000.0f <= engineAccelLimit)
+				break;
+			continue;
+		}
+		float fRecip = 1.0f/(SQR(maxVelocity) * handling->fDragMult + 1.0f);
+		if((fRecip - 1.0f) * -maxVelocity <= engineAccelLimit)
+			break;
+	}
+
+	t->fMaxFlatVelocity = maxVelocity;
+	t->fMaxCruiseVelocity = maxVelocity;
+	t->fMaxVelocity = maxVelocity * 1.2f;
+	// Two-wheelers reverse at a fixed crawl; everything else at a quarter of
+	// the flat speed, but never slower than 0.2 (m/s in port units).
+	if(handling->ModelFlags & MODEL_IS_BIKE)
+		t->fMaxReverseVelocity = -0.05f;
+	else
+		t->fMaxReverseVelocity = Min(-maxVelocity * 0.3f, -0.2f);
+
+	t->fEngineAcceleration /= (t->nDriveType == '4') ? 4.0f : 2.0f;
+
+	// The gearbox reads the 1G/2G boost bits; SA keeps the handling flags on the
+	// transmission block.
+	t->HandlingFlags = handling->HandlingFlags;
+
+	t->InitGearRatios();
+
+	// The client file has no Dimensions (VC kept x/y/z there), but the port's
+	// physics still needs the two values VC derived from them: the air-resistance
+	// factor (was Dimensions.x*Dimensions.z/mass) and the body height used to
+	// offset the stabiliser (was Dimensions.z). fDragMult carries the drag and
+	// the centre of mass the height, as before.
 	handling->fAirResistanceFactor = handling->fDragMult / Max(handling->fMass, 1.0f);
 	handling->fApproxHeight = 2.0f*Abs(handling->CentreOfMass.z) + 1.0f;
 
-	handling->fInvMass = handling->fMass > 0.0f ? 1.0f/handling->fMass : 0.0f;
-	handling->fCollisionDamageMultiplier *= 2000.0f/handling->fMass;
-	handling->fBuoyancy = handling->nPercentSubmerged != 0
-		? 100.0f/handling->nPercentSubmerged * GRAVITY*handling->fMass
-		: 0.0f;
-
-	// Where engine acceleration and drag balance out: the same search VC did,
-	// now on the client's fMaxVelocity/fDragMult.
-	a = 0.0f;
-	b = 100.0f;
-	velocity = handling->Transmission.fMaxVelocity;
-	while(a < b && velocity > 0.0f){
-		velocity -= 0.01f;
-		a = handling->Transmission.fEngineAcceleration/6.0f;
-		float a_drag = 0.5f*SQR(velocity) * handling->fDragMult / handling->fMass;
-		b = -velocity * (1.0f/(a_drag + 1.0f) - 1.0f);
-	}
-
-	// Reverse speed: the port's transmission still works VC-style (step 3
-	// replaces it with the client's gear model), so the VC per-class constants
-	// stay for now.
-	handling->Transmission.fMaxCruiseVelocity = velocity;
-	handling->Transmission.fMaxVelocity = velocity * 1.2f;
-	if(handling->ModelFlags & MODEL_IS_BIKE)
-		handling->Transmission.fMaxReverseVelocity = -0.05f;
-	else
-		handling->Transmission.fMaxReverseVelocity = -0.2f;
-
-	if(handling->Transmission.nDriveType == '4')
-		handling->Transmission.fEngineAcceleration /= 4.0f;
-	else
-		handling->Transmission.fEngineAcceleration /= 2.0f;
-
-	// The gear model reads the boost bits; the client keeps them on the handling
-	// record's own flag column, and tHandlingData::Transmission::Flags mirrors
-	// it so the transmission code does not need the record back.
-	handling->Transmission.Flags = handling->HandlingFlags;
-
-	handling->Transmission.InitGearRatios();
+	#undef ACCEL_CONST
+	#undef VELOCITY_CONST
 }
-
 void
 cHandlingDataMgr::ConvertBikeDataToGameUnits(tBikeHandlingData *handling)
 {

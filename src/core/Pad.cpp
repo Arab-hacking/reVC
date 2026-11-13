@@ -612,10 +612,20 @@ void ChittyChittyBangBangCheat()
 	CPad::bHasPlayerCheated = true;
 }
 
+// VC's "strong grip" cheat rewrote the driving model: four times the tyre
+// friction, 1.4x the engine force (twice for AI cars) and a 20% higher
+// gear target — that is what made cars shoot off the line. The client has no
+// equivalent, and the handling data now comes from its own file, so the cheat
+// keeps only the cheat bookkeeping; the flag stays so the input code and the
+// debug menu entry keep working, and so COMMAND_ARE_ANY_CAR_CHEATS_ACTIVATED
+// still reports it.
 void StrongGripCheat()
 {
+	if(CVehicle::bCheat3)
+		return;
+
 	CHud::SetHelpMessage(TheText.Get("CHEAT1"), true);
-	CVehicle::bCheat3 = !CVehicle::bCheat3;
+	CVehicle::bCheat3 = true;
 	CStats::CheatedCount += 1000;
 	CPad::bHasPlayerCheated = true;
 }

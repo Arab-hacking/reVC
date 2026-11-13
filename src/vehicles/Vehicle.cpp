@@ -74,6 +74,8 @@ CVehicle::CVehicle(uint8 CreatedBy)
 
 	m_nCurrentGear = 1;
 	m_fChangeGearTime = 0.0f;
+	m_fInertiaValue1 = 0.0f;
+	m_fInertiaValue2 = 0.0f;
 	m_fSteerInput = 0.0f;
 	m_type = ENTITY_TYPE_VEHICLE;
 	VehicleCreatedBy = CreatedBy;

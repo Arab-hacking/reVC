@@ -368,7 +368,7 @@ CAutomobile::ProcessControl(void)
 	AutoPilot.m_bSlowedDownBecauseOfPeds = false;
 
 	// Set Center of Mass to make car more stable
-	if(strongGrip1 || bCheat3)
+	if(strongGrip1)
 		m_vecCentreOfMass.z = 0.3f*m_aSuspensionSpringLength[0] + -1.0f*m_fHeightAboveRoad;
 	else if(pHandling->HandlingFlags & HANDLING_NPC_ANTI_ROLL && GetStatus() == STATUS_PHYSICS)
 		m_vecCentreOfMass.z = pHandling->CentreOfMass.z - 0.2f*pHandling->fApproxHeight;
@@ -656,7 +656,7 @@ CAutomobile::ProcessControl(void)
 		HydraulicControl();
 		break;
 	default:
-		if(CVehicle::bCheat3 || carHasNitro){
+		if(carHasNitro){
 			// Make vehicle jump when horn is sounded
 			if(GetStatus() == STATUS_PLAYER && m_vecMoveSpeed.MagnitudeSqr() > sq(0.2f) &&
 			// BUG: game checks [0] four times, instead of all wheels
@@ -848,11 +848,15 @@ CAutomobile::ProcessControl(void)
 			}
 		}
 
-		bool gripCheat = true;
+		// SA's gearbox: the inertia history lives on the vehicle (m_fInertiaValue1/2)
+		// and the drive force is damped by it, so a car cannot pull at full engine
+		// force from a standstill. The "strong grip" cheat used to raise this call's
+		// multiplier by 20%; it is gone, so nothing here is scaled by a cheat.
 		fwdSpeed = DotProduct(m_vecMoveSpeed, GetForward());
-		if(!strongGrip1 && !CVehicle::bCheat3)
-			gripCheat = false;
-		float acceleration = pHandling->Transmission.CalculateDriveAcceleration(m_fGasPedal, m_nCurrentGear, m_fChangeGearTime, fwdSpeed, gripCheat);
+		float acceleration = pHandling->Transmission.CalculateDriveAcceleration(
+			m_fGasPedal, m_nCurrentGear, fwdSpeed,
+			&m_fInertiaValue1, &m_fInertiaValue2,
+			m_nDriveWheelsOnGround, carHasNitro);
 		acceleration /= m_fForceMultiplier;
 
 		if(IsRealHeli() || IsRealPlane())
@@ -937,17 +941,12 @@ CAutomobile::ProcessControl(void)
 			traction = 0.004f;
 		traction *= pHandling->fTractionMultiplier / 4.0f;
 		traction /= m_fForceMultiplier;
-		if(CVehicle::bCheat3)
-			traction *= 4.0f;
-
-		if(FindPlayerVehicle() != this && (strongGrip1 || CVehicle::bCheat3)){
-			traction *= 1.2f;
-			acceleration *= 1.4f;
-			if(strongGrip2 || CVehicle::bCheat3){
-				traction *= 1.3f;
-				acceleration *= 1.4f;
-			}
-		}
+		// VC had a "strong grip" cheat here that multiplied the traction (x4 the
+		// tyre friction, then x1.2/x1.3 for AI cars) and the acceleration (x1.4,
+		// twice). That is what made cars accelerate far quicker than the handling
+		// data allows; nothing replaces it. The AI behaviour it was meant to help
+		// comes from the handling flags (HANDLING_NPC_ANTI_ROLL,
+		// HANDLING_NPC_NEUTRAL_HANDL) and from strongGrip1 above.
 
 		static float fThrust;
 		static tWheelState WheelState[4];
@@ -1410,7 +1409,7 @@ CAutomobile::ProcessControl(void)
 					m_bSirenOrAlarm = !m_bSirenOrAlarm;
 				}else
 					m_nCarHornTimer = 0;
-			}else if(GetModelIndex() != MI_VOODOO && !CVehicle::bCheat3 && !carHasNitro){
+			}else if(GetModelIndex() != MI_VOODOO && !carHasNitro){
 				if(!IsAlarmOn()){
 					if(Pads[0].GetHorn())
 						m_nCarHornTimer = 1;

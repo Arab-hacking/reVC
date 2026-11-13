@@ -4,141 +4,191 @@
 #include "HandlingMgr.h"
 #include "Transmission.h"
 
+// Constants of SA's gearbox (cTransmission.h in gta-reversed).
+#define TRANSMISSION_FREE_ACCELERATION 0.1f
+#define TRANSMISSION_SMOOTHER_FRAC     0.85f
+
+// 0x6D0460
 void
 cTransmission::InitGearRatios(void)
 {
-	int i;
-	float velocityDiff;
-
-	// SA-style block: five forward ratios, reverse is gear 0. The client's
-	// handling data carries the gear *count* and the top speed but no ratios, so
-	// these are a linear fall-off from 1.0 (first gear) to 0.38 (top gear). The
-	// absolute per-gear velocities below are what the gear-changing code and the
-	// audio pitch use, and their spacing is the same as before, so shift
-	// behaviour does not change; what changes is that the gear the car is in now
-	// comes from the ratio, the way SA computes it, instead of VC's pre-baked
-	// per-gear velocity table.
-	for(i = 0; i < 5; i++)
-		GearRatios[i] = 0.0f;
-
-	for(i = 0; i < nNumberOfGears && i < 5; i++)
-		GearRatios[i] = 1.0f - 0.62f*(float)i/(float)Max(nNumberOfGears - 1, 1);
-
+	// SA spaces the gears evenly over the top speed: the first gear reaches
+	// half a gear's worth of velocity, each following gear adds a full gear's
+	// worth, and the last one lands on fMaxVelocity.
 	memset(Gears, 0, sizeof(Gears));
 
-	// Absolute per-gear velocities from the ratios; the audio code still reads
-	// these (it converts them into a pitch), so they have to stay meaningful.
-	for(i = 1; i <= nNumberOfGears && i < 6; i++){
-		Gears[i].fMaxVelocity = GearRatios[i-1] * fMaxVelocity;
+	float averageHalfGearVelocity = 0.5f * fMaxVelocity / nNumberOfGears;
+	float maxGearVelocity = fMaxVelocity - averageHalfGearVelocity;
 
-		velocityDiff = Gears[i].fMaxVelocity - Gears[i-1].fMaxVelocity;
+	for(uint8 i = 1; i <= nNumberOfGears; i++){
+		tTransmissionGear *gear = &Gears[i];
+		tTransmissionGear *prev = &Gears[i-1];
+
+		gear->MaxVelocity = (float)i * maxGearVelocity / nNumberOfGears + averageHalfGearVelocity;
+
+		float velocityDifference = gear->MaxVelocity - prev->MaxVelocity;
 
 		if(i >= nNumberOfGears){
-			Gears[i].fShiftUpVelocity = fMaxVelocity;
+			gear->ChangeUpVelocity = fMaxVelocity;
 		}else{
-			Gears[i+1].fShiftDownVelocity = velocityDiff*0.42f + Gears[i-1].fMaxVelocity;
-			Gears[i].fShiftUpVelocity = velocityDiff*0.6667f + Gears[i-1].fMaxVelocity;
+			Gears[i+1].ChangeDownVelocity = 0.42f * velocityDifference + prev->MaxVelocity;
+			gear->ChangeUpVelocity = 0.6667f * velocityDifference + prev->MaxVelocity;
 		}
 	}
 
-	// Reverse gear
-	Gears[0].fMaxVelocity = fMaxReverseVelocity;
-	Gears[0].fShiftUpVelocity = -0.01f;
-	Gears[0].fShiftDownVelocity = fMaxReverseVelocity;
-
-	Gears[1].fShiftDownVelocity = -0.01f;
+	Gears[0].MaxVelocity = fMaxReverseVelocity;
+	Gears[0].ChangeUpVelocity = -0.01f;
+	Gears[0].ChangeDownVelocity = fMaxReverseVelocity;
+	Gears[1].ChangeDownVelocity = -0.01f;
 }
 
+// 0x6D0530
 void
 cTransmission::CalculateGearForSimpleCar(float speed, uint8 &gear)
 {
-	static tGear *pGearRatio;
-
-	pGearRatio = &Gears[gear];
 	fCurVelocity = speed;
-	if(speed > pGearRatio->fShiftUpVelocity)
-		gear++;
-	else if(speed < pGearRatio->fShiftDownVelocity){
-		if(gear - 1 < 0)
-			gear = 0;
-		else
+
+	tTransmissionGear *g = &Gears[gear];
+	if(speed > g->ChangeUpVelocity){
+		if(gear < nNumberOfGears)
+			gear++;
+	}else if(speed < g->ChangeDownVelocity){
+		if(gear > 0)
 			gear--;
 	}
 }
 
+// 0x6D05E0
 float
-cTransmission::CalculateDriveAcceleration(const float &gasPedal, uint8 &gear, float &time, const float &velocity, bool cheat)
+cTransmission::CalculateDriveAcceleration(const float &gasPedal, uint8 &gear, float &velocity,
+                                          float *a6, float *a7, uint8 wheelsOnGround, bool nitros)
 {
-	static float fAcceleration = 0.0f;
-	static float fVelocity;
-	static float fCheat;
-	static tGear *pGearRatio;
-
-	fVelocity = velocity;
-	if(fVelocity < fMaxReverseVelocity){
-		fVelocity = fMaxReverseVelocity;
+	float currentVelocity = velocity;
+	if(currentVelocity < fMaxReverseVelocity)
 		return 0.0f;
-	}
-	if(fVelocity > fMaxVelocity){
-		fVelocity = fMaxVelocity;
-		return 0.0f;
-	}
-	fCurVelocity = fVelocity;
 
-	assert(gear <= nNumberOfGears);
+	while(currentVelocity <= fMaxVelocity){
+		fCurVelocity = currentVelocity;
 
-	pGearRatio = &Gears[gear];
-	if(fVelocity > pGearRatio->fShiftUpVelocity){
-		if(gear != 0 || gasPedal > 0.0f){
-			gear++;
-			return CalculateDriveAcceleration(gasPedal, gear, time, fVelocity, false);
+		tTransmissionGear *g = &Gears[gear];
+		bool accelerate = false;
+		bool shiftToLowerGear = false;
+		bool skipInertia = false;
+
+		if(currentVelocity > g->ChangeUpVelocity){
+			if(gear == 0 && gasPedal <= 0.0f)
+				accelerate = true;
+			else
+				gear++;
+		}else{
+			if(currentVelocity >= g->ChangeDownVelocity || gear == 0 || (gear == 1 && gasPedal >= 0.0f))
+				accelerate = true;
+			shiftToLowerGear = true;
 		}
-	}else if(fVelocity < pGearRatio->fShiftDownVelocity && gear != 0){
-		if(gear != 1 || gasPedal < 0.0f){
+
+		if(accelerate){
+			float speedMultiplier;
+			float nitrosMultiplier;
+
+			if(nNumberOfGears == 1){
+				speedMultiplier = 1.0f;
+				nitrosMultiplier = 1.0f;
+			}else if(gear >= 1){
+				// SA: the gear's pull is the remaining fraction of the gear
+				// range, squared, times 3 (5 with 1G boost, 4 with 2G boost).
+				float gearNumber = 1.0f - ((float)gear - 1.0f) / ((float)nNumberOfGears - 1.0f);
+				gearNumber *= gearNumber;
+				if(HandlingFlags & HANDLING_1G_BOOST)
+					speedMultiplier = gearNumber * 5.0f;
+				else if(HandlingFlags & HANDLING_2G_BOOST)
+					speedMultiplier = gearNumber * 4.0f;
+				else
+					speedMultiplier = gearNumber * 3.0f;
+				speedMultiplier += 1.0f;
+				nitrosMultiplier = 1.0f;
+			}else{
+				// reverse gear
+				speedMultiplier = 4.5f;
+				nitrosMultiplier = 1.0f;
+			}
+
+			if(nitros)
+				nitrosMultiplier = 2.0f;
+
+			// 0.4 is SA's global acceleration scale (ConvertDataToGameUnits
+			// multiplies the engine acceleration by 0.4 before anything else).
+			float driveAcceleration = speedMultiplier * fEngineAcceleration * nitrosMultiplier * 0.4f
+			                        * gasPedal * CTimer::GetTimeStep();
+
+			if(a6 && a7 && !skipInertia){
+				if(wheelsOnGround){
+					// Position of the current velocity inside the gear's span.
+					float currentDownVelocityDiff;
+					float upDownVelocityDiff;
+					float maxVelocityChange = fMaxVelocity / (float)nNumberOfGears * (1.0f/3.0f);
+
+					if(gear){
+						if(gear == 1){
+							currentDownVelocityDiff = maxVelocityChange + currentVelocity;
+							upDownVelocityDiff = maxVelocityChange + Gears[1].ChangeUpVelocity;
+						}else{
+							currentDownVelocityDiff = currentVelocity - g->ChangeDownVelocity;
+							upDownVelocityDiff = g->ChangeUpVelocity - g->ChangeDownVelocity;
+						}
+					}else{
+						// reverse
+						currentDownVelocityDiff = maxVelocityChange - currentVelocity;
+						upDownVelocityDiff = maxVelocityChange - Gears[0].ChangeDownVelocity;
+					}
+
+					float velocityDiffRatio = currentDownVelocityDiff / upDownVelocityDiff;
+					float inertiaMultiplier = velocityDiffRatio - *a6;
+					float acceleration = 1.0f - inertiaMultiplier * fEngineInertia;
+					acceleration = Clamp(acceleration, 0.1f, 1.0f);
+
+					*a6 = velocityDiffRatio;
+					*a7 = acceleration * (1.0f - TRANSMISSION_SMOOTHER_FRAC) + TRANSMISSION_SMOOTHER_FRAC * *a7;
+
+					driveAcceleration *= *a7;
+				}else{
+					// Wheels in the air: the engine spins up freely.
+					*a6 += Abs(gasPedal) / fEngineInertia * CTimer::GetTimeStep() * TRANSMISSION_FREE_ACCELERATION;
+					*a6 = Min(*a6, 1.0f);
+					*a7 = 0.1f;
+				}
+			}
+
+			float gearMaxVelocity = g->MaxVelocity;
+			float changeInVelocity;
+
+			if(gearMaxVelocity >= 0.0f || currentVelocity >= gearMaxVelocity){
+				if(gearMaxVelocity <= 0.0f)
+					return driveAcceleration;
+				if(currentVelocity <= gearMaxVelocity)
+					return driveAcceleration;
+				changeInVelocity = currentVelocity - gearMaxVelocity;
+			}else{
+				changeInVelocity = gearMaxVelocity - currentVelocity;
+			}
+
+			// Within 0.05 of the gear's top the engine cuts out smoothly.
+			driveAcceleration *= (1.0f - Min(changeInVelocity / 0.05f, 1.0f));
+			return driveAcceleration;
+		}
+
+		if(shiftToLowerGear)
 			gear--;
-			return CalculateDriveAcceleration(gasPedal, gear, time, fVelocity, false);
-		}
+
+		// SA drops the inertia history once the loop shifts again, so a gear
+		// change inside the same frame is not damped twice.
+		a6 = nil;
+		a7 = nil;
+		wheelsOnGround = 0;
+		nitros = false;
+
+		if(currentVelocity < fMaxReverseVelocity)
+			return 0.0f;
 	}
 
-	float speedMul, accelMul;
-
-	if(gear < 1){
-		// going reverse
-		accelMul = (Flags & HANDLING_2G_BOOST) ? 2.0f : 1.0f;
-		speedMul = -1.0f;
-	}else if(nNumberOfGears <= 1){
-		accelMul = 1.0f;
-		speedMul = 1.0f;
-	}else{
-		// The gear ratio drives the force: this is the SA model, where the
-		// acceleration available in a gear is the engine acceleration multiplied
-		// by that gear's ratio, instead of VC's hand-tuned per-gear multipliers.
-		speedMul = 3.0f*SQR(GearRatios[gear-1]) + 1.0f;
-		if(Flags & HANDLING_2G_BOOST){
-			accelMul = (GearRatios[gear-1] > 0.9f) ? ((Flags & HANDLING_1G_BOOST) ? 2.0f : 1.6f) : 1.0f;
-		}else if(Flags & HANDLING_1G_BOOST && GearRatios[gear-1] > 0.9f){
-			accelMul = 2.0f;
-		}else
-			accelMul = 1.0f;
-	}
-
-	// fEngineInertia damps how fast the engine can reach a new gear's target: 0
-	// is "no damping" (the file's 5.0 default behaves like the old code), high
-	// values make the car feel heavier in the lower gears.
-	float inertiaMul = 1.0f;
-	if(fEngineInertia > 0.0f)
-		inertiaMul = 1.0f/(1.0f + fEngineInertia*0.004f);
-	accelMul *= inertiaMul;
-
-	if(cheat)
-		fCheat = 1.2f;
-	else
-		fCheat = 1.0f;
-	float targetVelocity = Gears[gear].fMaxVelocity*speedMul*fCheat;
-	float accel = (targetVelocity - fVelocity) * (fEngineAcceleration*accelMul) / Abs(targetVelocity);
-	if(Abs(fVelocity) < Abs(Gears[gear].fMaxVelocity*fCheat))
-		fAcceleration = gasPedal * accel * CTimer::GetTimeStep();
-	else
-		fAcceleration = 0.0f;
-	return fAcceleration;
+	return 0.0f;
 }
