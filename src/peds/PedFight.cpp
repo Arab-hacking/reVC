@@ -4205,7 +4205,7 @@ CPed::DriveVehicle(void)
 	CAnimBlendAssociation* rDriveAssoc;
 	CAnimBlendAssociation* lbAssoc;
 	CAnimBlendAssociation* sitAssoc;
-	if (m_pMyVehicle->IsBoat() && !(m_pMyVehicle->pHandling->Flags & HANDLING_SIT_IN_BOAT)) {
+	if (m_pMyVehicle->IsBoat() && !(m_pMyVehicle->pHandling->ModelFlags & MODEL_SIT_IN_BOAT)) {
 		sitAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_BOAT_DRIVE);
 
 		if (!sitAssoc || sitAssoc->blendAmount < 1.0f) {
@@ -4265,7 +4265,7 @@ CPed::DriveVehicle(void)
 
 			if (rDriveAssoc)
 				rDriveAssoc->blendAmount = Clamp(steerAngle * -100.0f / 61.0f, 0.0f, 1.0f);
-			else if (m_pMyVehicle->IsBoat() && !(m_pMyVehicle->pHandling->Flags & HANDLING_SIT_IN_BOAT))
+			else if (m_pMyVehicle->IsBoat() && !(m_pMyVehicle->pHandling->ModelFlags & MODEL_SIT_IN_BOAT))
 				CAnimManager::AddAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_BOAT_DRIVE_RIGHT);
 			else if (m_pMyVehicle->bLowVehicle)
 				CAnimManager::AddAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_CAR_DRIVE_RIGHT_LO);
@@ -4278,7 +4278,7 @@ CPed::DriveVehicle(void)
 
 			if (lDriveAssoc)
 				lDriveAssoc->blendAmount = Clamp(steerAngle * 100.0f / 61.0f, 0.0f, 1.0f);
-			else if (m_pMyVehicle->IsBoat() && !(m_pMyVehicle->pHandling->Flags & HANDLING_SIT_IN_BOAT))
+			else if (m_pMyVehicle->IsBoat() && !(m_pMyVehicle->pHandling->ModelFlags & MODEL_SIT_IN_BOAT))
 				CAnimManager::AddAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_BOAT_DRIVE_LEFT);
 			else if (m_pMyVehicle->bLowVehicle)
 				CAnimManager::AddAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_CAR_DRIVE_LEFT_LO);
@@ -4294,7 +4294,7 @@ CPed::DriveVehicle(void)
 			|| TheCamera.Cams[TheCamera.ActiveCam].DirectionWasLooking != LOOKING_LEFT)
 			&& (!lbAssoc || lbAssoc->blendAmount < 1.0f && lbAssoc->blendDelta <= 0.0f)) {
 
-			if (m_pMyVehicle->IsBoat() && !(m_pMyVehicle->pHandling->Flags & HANDLING_SIT_IN_BOAT))
+			if (m_pMyVehicle->IsBoat() && !(m_pMyVehicle->pHandling->ModelFlags & MODEL_SIT_IN_BOAT))
 				CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_BOAT_LOOKBEHIND, 4.0f);
 			else
 				CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_CAR_LOOKBEHIND, 4.0f);

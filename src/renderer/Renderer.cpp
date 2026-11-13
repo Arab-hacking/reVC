@@ -809,7 +809,7 @@ CRenderer::SetupEntityVisibility(CEntity *ent)
 				   ent->GetModelIndex() == MI_RHINO ||
 				   ent->GetModelIndex() == MI_COACH ||
 				   TheCamera.m_bInATunnelAndABigVehicle ||
-				   direction == LOOKING_BEHIND && veh->pHandling->Flags & HANDLING_UNKNOWN){
+				   direction == LOOKING_BEHIND && veh->pHandling->ModelFlags & MODEL_IS_BIG){
 					ent->bNoBrightHeadLights = true;
 					return VIS_OFFSCREEN;
 				}

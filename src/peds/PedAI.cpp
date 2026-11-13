@@ -4049,7 +4049,7 @@ CPed::SetEnterCar_AllClear(CVehicle *car, uint32 doorNode, uint32 doorFlag)
 	m_nPedStateTimer = CTimer::GetTimeInMilliseconds() + 600;
 
 	if (car->IsBoat()) {
-		if (car->pHandling->Flags & HANDLING_SIT_IN_BOAT)
+		if (car->pHandling->ModelFlags & MODEL_SIT_IN_BOAT)
 			m_pVehicleAnim = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_CAR_SIT, 100.0f);
 		else
 			m_pVehicleAnim = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_BOAT_DRIVE, 100.0f);
@@ -6119,7 +6119,7 @@ void
 CPed::AddInCarAnims(CVehicle* car, bool isDriver)
 {
 	if (car->IsBoat()) {
-		if (car->pHandling->Flags & HANDLING_SIT_IN_BOAT) {
+		if (car->pHandling->ModelFlags & MODEL_SIT_IN_BOAT) {
 			m_pVehicleAnim = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_CAR_SIT, 100.0f);
 		} else {
 			m_pVehicleAnim = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_BOAT_DRIVE, 100.0f);
@@ -6157,7 +6157,7 @@ CPed::RemoveDrivebyAnims()
 	AnimationId LeftAnim = ANIM_STD_CAR_DRIVEBY_LEFT;
 	AnimationId RightAnim = ANIM_STD_CAR_DRIVEBY_RIGHT;
 
-	if (m_pMyVehicle->pHandling->Flags & HANDLING_IS_BIKE) {
+	if (m_pMyVehicle->pHandling->ModelFlags & MODEL_IS_BIKE) {
 		LeftAnim = ANIM_BIKE_DRIVEBY_RHS;
 		RightAnim = ANIM_BIKE_DRIVEBY_LHS;
 	} else if (m_pMyVehicle->bLowVehicle) {

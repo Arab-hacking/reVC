@@ -3,246 +3,273 @@
 
 #include "Transmission.h"
 
-enum tVehicleType
+// Handling data, read the way the Black Russia client reads it.
+//
+// Source: VEHICLES-v3, chapter 2, function HandlingMgr::LoadHandlingData
+// @ 0x1804c78 (947 instructions) and the data file the client ships
+// (data/handling.cfg: 597 cars, 16 boats, 23 bikes, 24 flying, 2 cranes,
+// 30 vehicle-anim-group lines).
+//
+// Deliberately NOT a Vice City parser any more:
+//   * there is no fixed list of 106 VC handling names. A record is found by the
+//     name column that every record stores, so a custom handling.cfg with any
+//     names works and the ids are simply file order;
+//   * the first data columns are fMass, fTurnMass, fDragMult — VC put
+//     Dimensions.x/y/z there and derived fTurnMass from them;
+//   * fEngineInertia (column 14) exists and is kept;
+//   * fields VC never had: suspension high speed damping, suspension upper
+//     limit as a real column, the vehicle anim group and fHighLightsAngle;
+//   * model flags and handling flags are two separate hex columns and, unlike
+//     VC, are *not* OR-ed together into one mask.
+//
+// Record layouts (bytes, from the analysis of the loader):
+//   car     0x104, 600 max      boat   0x54, 50 max
+//   bike    0x58, 50 max        flying 0x64, 50 max
+//   crane   0x8c, std::vector on the client (fixed array here)
+
+// Game-side limits, taken from the loader's own comparisons:
+//   0x1804eec  cmp w26, #0x258   600     > "hard limit for number of handlings"
+//   0x1804e90/0x1805278/0x1805064 cmp w26, #0x32   50 for boats/flying/bikes
+// Same meaning as VC's NUMHANDLINGS/NUMBIKEHANDLINGS/... but these no longer
+// index a fixed name table.
+#define HANDLING_MAX_CARS    600
+#define HANDLING_MAX_BIKES   50
+#define HANDLING_MAX_FLYING  50
+#define HANDLING_MAX_BOATS   50
+
+// Flags of the two hex columns. Names and bit values follow the field
+// description block at the top of data/handling.cfg: the file writes them as
+// hex digits, one nibble per group, so a bit is the digit's value inside its
+// nibble (1, 2, 4, 8).
+enum eModelFlags
 {
-	HANDLING_LANDSTAL,
-	HANDLING_IDAHO,
-	HANDLING_STINGER,
-	HANDLING_LINERUN,
-	HANDLING_PEREN,
-	HANDLING_SENTINEL,
-	HANDLING_PATRIOT,
-	HANDLING_FIRETRUK,
-	HANDLING_TRASH,
-	HANDLING_STRETCH,
-	HANDLING_MANANA,
-	HANDLING_INFERNUS,
-	HANDLING_PONY,
-	HANDLING_MULE,
-	HANDLING_CHEETAH,
-	HANDLING_AMBULAN,
-	HANDLING_FBICAR,
-	HANDLING_MOONBEAM,
-	HANDLING_ESPERANT,
-	HANDLING_TAXI,
-	HANDLING_KURUMA,
-	HANDLING_BOBCAT,
-	HANDLING_MRWHOOP,
-	HANDLING_BFINJECT,
-	HANDLING_POLICE,
-	HANDLING_ENFORCER,
-	HANDLING_SECURICA,
-	HANDLING_BANSHEE,
-	HANDLING_BUS,
-	HANDLING_RHINO,
-	HANDLING_BARRACKS,
-	HANDLING_TRAIN,
-	HANDLING_HELI,
-	HANDLING_DODO,
-	HANDLING_COACH,
-	HANDLING_CABBIE,
-	HANDLING_STALLION,
-	HANDLING_RUMPO,
-	HANDLING_RCBANDIT,
-	HANDLING_MAFIA,
-	HANDLING_AIRTRAIN,
-	HANDLING_DEADDODO,
-	HANDLING_FLATBED,
-	HANDLING_YANKEE,
-	HANDLING_GOLFCART,
-	HANDLING_VOODOO,
-	HANDLING_WASHING,
-	HANDLING_CUBAN,
-	HANDLING_ROMERO,
-	HANDLING_PACKER,
-	HANDLING_ADMIRAL,
-	HANDLING_GANGBUR,
-	HANDLING_ZEBRA,
-	HANDLING_TOPFUN,
-	HANDLING_GLENDALE,
-	HANDLING_OCEANIC,
-	HANDLING_HERMES,
-	HANDLING_SABRE1,
-	HANDLING_SABRETUR,
-	HANDLING_PHEONIX,
-	HANDLING_WALTON,
-	HANDLING_REGINA,
-	HANDLING_COMET,
-	HANDLING_DELUXO,
-	HANDLING_BURRITO,
-	HANDLING_SPAND,
-	HANDLING_BAGGAGE,
-	HANDLING_KAUFMAN,
-	HANDLING_RANCHER,
-	HANDLING_FBIRANCH,
-	HANDLING_VIRGO,
-	HANDLING_GREENWOO,
-	HANDLING_HOTRING,
-	HANDLING_SANDKING,
-	HANDLING_BLISTAC,
-	HANDLING_BOXVILLE,
-	HANDLING_BENSON,
-	HANDLING_DESPERAD,
-	HANDLING_LOVEFIST,
-	HANDLING_BLOODRA,
-	HANDLING_BLOODRB,
-
-	HANDLING_BIKE,
-	HANDLING_MOPED,
-	HANDLING_DIRTBIKE,
-	HANDLING_ANGEL,
-	HANDLING_FREEWAY,
-
-	HANDLING_PREDATOR,
-	HANDLING_SPEEDER,
-	HANDLING_REEFER,
-	HANDLING_RIO,
-	HANDLING_SQUALO,
-	HANDLING_TROPIC,
-	HANDLING_COASTGRD,
-	HANDLING_DINGHY,
-	HANDLING_MARQUIS,
-	HANDLING_CUPBOAT,
-	HANDLING_SEAPLANE,	// both boat and plane!
-	HANDLING_SPARROW,
-	HANDLING_SEASPAR,
-	HANDLING_MAVERICK,
-	HANDLING_COASTMAV,
-	HANDLING_POLMAV,
-	HANDLING_HUNTER,
-	HANDLING_RCBARON,
-	HANDLING_RCGOBLIN,
-	HANDLING_RCCOPTER,
-
-	NUMHANDLINGS,
-
-	NUMBIKEHANDLINGS = HANDLING_FREEWAY+1 - HANDLING_BIKE,
-	NUMFLYINGHANDLINGS = HANDLING_RCCOPTER+1 - HANDLING_SEAPLANE,
-	NUMBOATHANDLINGS = HANDLING_SEAPLANE+1 - HANDLING_PREDATOR,
+	// 1st digit
+	MODEL_IS_VAN               = 0x0000001,
+	MODEL_IS_BUS               = 0x0000002,
+	MODEL_IS_LOW               = 0x0000004,
+	MODEL_IS_BIG               = 0x0000008,
+	// 2nd digit
+	MODEL_REVERSE_BONNET       = 0x0000010,
+	MODEL_HANGING_BOOT         = 0x0000020,
+	MODEL_TAILGATE_BOOT        = 0x0000040,
+	MODEL_NOSWING_BOOT         = 0x0000080,
+	// 3rd digit
+	MODEL_NO_DOORS             = 0x0000100,
+	MODEL_TANDEM_SEATS         = 0x0000200,
+	MODEL_SIT_IN_BOAT          = 0x0000400,
+	MODEL_CONVERTIBLE          = 0x0000800,
+	// 4th digit
+	MODEL_NO_EXHAUST           = 0x0001000,
+	MODEL_DOUBLE_EXHAUST       = 0x0002000,
+	MODEL_NO1FPS_LOOK_BEHIND   = 0x0004000,
+	MODEL_FORCE_DOOR_CHECK     = 0x0008000,
+	// 5th digit
+	MODEL_AXLE_F_NOTILT        = 0x0010000,
+	MODEL_AXLE_F_SOLID         = 0x0020000,
+	MODEL_AXLE_F_MCPHERSON     = 0x0040000,
+	MODEL_AXLE_F_REVERSE       = 0x0080000,
+	// 6th digit
+	MODEL_AXLE_R_NOTILT        = 0x0100000,
+	MODEL_AXLE_R_SOLID         = 0x0200000,
+	MODEL_AXLE_R_MCPHERSON     = 0x0400000,
+	MODEL_AXLE_R_REVERSE       = 0x0800000,
+	// 7th digit
+	MODEL_IS_BIKE              = 0x1000000,
+	MODEL_IS_HELI              = 0x2000000,
+	MODEL_IS_PLANE             = 0x4000000,
+	MODEL_IS_BOAT              = 0x8000000,
+	// 8th digit
+	MODEL_BOUNCE_PANELS        = 0x10000000,
+	MODEL_DOUBLE_RWHEELS       = 0x20000000,
+	MODEL_FORCE_GROUND_CLEARANCE = 0x40000000,
+	MODEL_IS_HATCHBACK         = 0x80000000,
 };
 
-enum tField // most likely a handling field enum, never used so :shrug:
+enum eHandlingFlags
 {
-
-};
-
-enum
-{
-	HANDLING_1G_BOOST = 1,
-	HANDLING_2G_BOOST = 2,
-	HANDLING_REV_BONNET = 4,
-	HANDLING_HANGING_BOOT = 8,
-	HANDLING_NO_DOORS = 0x10,
-	HANDLING_IS_VAN = 0x20,
-	HANDLING_IS_BUS = 0x40,
-	HANDLING_IS_LOW = 0x80,
-	HANDLING_DBL_EXHAUST = 0x100,
-	HANDLING_TAILGATE_BOOT = 0x200,
-	HANDLING_NOSWING_BOOT = 0x400,
-	HANDLING_NONPLAYER_STABILISER = 0x800,
-	HANDLING_NEUTRALHANDLING = 0x1000,
-	HANDLING_HAS_NO_ROOF = 0x2000,
-	HANDLING_IS_BIG = 0x4000,
-	HANDLING_HALOGEN_LIGHTS = 0x8000,
-	HANDLING_IS_BIKE = 0x10000,
-	HANDLING_IS_HELI = 0x20000,
-	HANDLING_IS_PLANE = 0x40000,
-	HANDLING_IS_BOAT = 0x80000,
-	HANDLING_NO_EXHAUST = 0x100000,
-	HANDLING_REARWHEEL_1ST = 0x200000,
-	HANDLING_HANDBRAKE_TYRE = 0x400000,
-	HANDLING_SIT_IN_BOAT = 0x800000,
-	HANDLING_FAT_REARW = 0x1000000,
-	HANDLING_NARROW_FRONTW = 0x2000000,
-	HANDLING_GOOD_INSAND = 0x4000000,
-	HANDLING_UNKNOWN = 0x8000000,	// something for helis and planes
+	// 1st digit
+	HANDLING_1G_BOOST             = 0x0000001,
+	HANDLING_2G_BOOST             = 0x0000002,
+	HANDLING_NPC_ANTI_ROLL        = 0x0000004,
+	HANDLING_NPC_NEUTRAL_HANDL    = 0x0000008,
+	// 2nd digit
+	HANDLING_NO_HANDBRAKE         = 0x0000010,
+	HANDLING_STEER_REARWHEELS     = 0x0000020,
+	HANDLING_HB_REARWHEEL_STEER   = 0x0000040,
+	HANDLING_ALT_STEER_OPT        = 0x0000080,
+	// 3rd digit
+	HANDLING_WHEEL_F_NARROW2      = 0x0000100,
+	HANDLING_WHEEL_F_NARROW       = 0x0000200,
+	HANDLING_WHEEL_F_WIDE         = 0x0000400,
+	HANDLING_WHEEL_F_WIDE2        = 0x0000800,
+	// 4th digit
+	HANDLING_WHEEL_R_NARROW2      = 0x0001000,
+	HANDLING_WHEEL_R_NARROW       = 0x0002000,
+	HANDLING_WHEEL_R_WIDE         = 0x0004000,
+	HANDLING_WHEEL_R_WIDE2        = 0x0008000,
+	// 5th digit
+	HANDLING_HYDRAULIC_GEOM       = 0x0010000,
+	HANDLING_HYDRAULIC_INST       = 0x0020000,
+	HANDLING_HYDRAULIC_NONE       = 0x0040000,
+	HANDLING_NOS_INST             = 0x0080000,
+	// 6th digit
+	HANDLING_OFFROAD_ABILITY      = 0x0100000,
+	HANDLING_OFFROAD_ABILITY2     = 0x0200000,
+	HANDLING_HALOGEN_LIGHTS       = 0x0400000,
+	HANDLING_PROC_REARWHEEL_1ST   = 0x0800000,
+	// 7th digit
+	HANDLING_USE_MAXSP_LIMIT      = 0x1000000,
+	HANDLING_LOW_RIDER            = 0x2000000,
+	HANDLING_STREET_RACER         = 0x4000000,
+	HANDLING_OPENING_HEADLIGHTS   = 0x8000000,
+	// 8th digit
+	HANDLING_ACTIVE_SPOILER       = 0x10000000,
 };
 
 struct tHandlingData
 {
-	tVehicleType nIdentifier;
-	float fMass;
-	float fInvMass;
-	float fTurnMass;
-	CVector Dimension;
-	CVector CentreOfMass;
-	int8 nPercentSubmerged;
-	float fBuoyancy;
-	float fTractionMultiplier;
-	cTransmission Transmission;
-	float fBrakeDeceleration;
-	float fBrakeBias;
-	int8 bABS;
-	float fSteeringLock;
-	float fTractionLoss;
-	float fTractionBias;
-	float fUnused;
-	float fSuspensionForceLevel;
-	float fSuspensionDampingLevel;
-	float fSuspensionUpperLimit;
-	float fSuspensionLowerLimit;
-	float fSuspensionBias;
-	float fSuspensionAntidiveMultiplier;
-	float fCollisionDamageMultiplier;
-	uint32 Flags;
-	float fSeatOffsetDistance;
-	int32 nMonetaryValue;
-	int8 FrontLights;
-	int8 RearLights;
+	// The client keeps the name in the record (+0x00, 24 bytes) and the ordinal
+	// in +0x18. Both are here: the name is what the record is looked up by.
+	char     Name[24];
+	int32    nIndex;
+
+	// Column -> field, from the client's jump table (chapter 2.7 and the
+	// per-column dump in the analysis data). Note that the file order and the
+	// record order differ: columns 4..6 are the centre of mass, columns 9 and 10
+	// jump back to traction loss/bias, and columns 21/22 are the suspension
+	// levels, which VC had in the middle of the block.
+	float    fMass;                    // col 1  +0x1c
+	float    fTurnMass;                // col 2  +0x24
+	float    fDragMult;                // col 3  +0x28
+	CVector  CentreOfMass;             // cols 4..6 +0x2c/+0x30/+0x34
+	int32    nPercentSubmerged;        // col 7  u8  +0x38
+	float    fTractionMultiplier;      // col 8  +0x40
+	float    fTractionLoss;            // col 9  +0xbc
+	float    fTractionBias;            // col 10 +0xc0
+	cTransmission Transmission;        // cols 11..16
+	//   nNumberOfGears      col 11 u8   +0x8e
+	//   fMaxVelocity        col 12      transmission block
+	//   fEngineAcceleration col 13
+	//   fEngineInertia      col 14
+	//   nDriveType          col 15 char +0x8c
+	//   nEngineType         col 16 char +0x8d
+	float    fBrakeDeceleration;       // col 17 +0x94
+	float    fBrakeBias;               // col 18 +0x98
+	bool     bABS;                     // col 19 u8  +0xb4
+	float    fSteeringLock;            // col 20 +0x9c
+	float    fSuspensionForceLevel;    // col 21 +0xc8
+	float    fSuspensionDampingLevel;  // col 22 +0xcc
+	float    fSuspensionUpperLimit;    // col 24 +0xd0
+	float    fSuspensionLowerLimit;    // col 25 +0xd4
+	float    fSuspensionBias;          // col 26 +0xd8
+	float    fSuspensionAntidiveMultiplier; // col 27 +0xdc
+	float    fSeatOffsetDistance;      // col 28 +0xec
+	float    fCollisionDamageMultiplier; // col 29 +0xe0
+	int32    nMonetaryValue;           // col 30 i32 +0xf0
+	uint32   ModelFlags;               // col 31 hex +0xe4
+	uint32   HandlingFlags;            // col 32 hex -> +0x90
+	uint8    FrontLights;              // col 33 u8  +0xf4
+	uint8    RearLights;               // col 34 u8  +0xf5
+	float    fHighLightsAngle;         // col 36 +0xf8 (radians in the file)
+	uint8    nAnimGroup;               // col 37 u8  +0xfc
+	float    fSuspensionHighSpdComDamp;// col 38 +0x100 (VC never had it)
+	// Column 23 and column 35 have no record field in the client either: their
+	// jump table entries point straight back at the token loop.
+
+	// Derived values, computed once after the file is read; not columns.
+	float    fInvMass;
+	float    fBuoyancy;
+	// VC derived the air-resistance factor from Dimensions.x*Dimensions.z and the
+	// centre-of-mass offset from Dimension.z. The client file has no dimensions;
+	// fDragMult carries the drag and these two keep the call sites honest about
+	// where the numbers come from now.
+	float    fAirResistanceFactor;
+	float    fApproxHeight;
+};
+
+// One '*' line: the vehicle anim group table. The client keeps it in its own
+// array; the port needs the ids only, the door animation code is VC's.
+struct tAnimGroupHandlingData
+{
+	char     Name[24];
+	int32    nIndex;
+	int32    Groups[2];                // columns 1 and 2
 };
 
 struct tBikeHandlingData
 {
-	tVehicleType nIdentifier;
-	float fLeanFwdCOM;
-	float fLeanFwdForce;
-	float fLeanBakCOM;
-	float fLeanBackForce;
-	float fMaxLean;
-	float fFullAnimLean;
-	float fDesLean;
-	float fSpeedSteer;
-	float fSlipSteer;
-	float fNoPlayerCOMz;
-	float fWheelieAng;
-	float fStoppieAng;
-	float fWheelieSteer;
-	float fWheelieStabMult;
-	float fStoppieStabMult;
+	char     Name[24];
+	int32    nIndex;
+	// cols 1..15, linear, +0x1c .. +0x54
+	float    fLeanFwdCOM;
+	float    fLeanFwdForce;
+	float    fLeanBakCOM;
+	float    fLeanBackForce;
+	float    fMaxLean;
+	float    fFullAnimLean;
+	float    fDesLean;
+	float    fSpeedSteer;
+	float    fSlipSteer;
+	float    fNoPlayerCOMz;
+	float    fWheelieAng;
+	float    fStoppieAng;
+	float    fWheelieSteer;
+	float    fWheelieStabMult;
+	float    fStoppieStabMult;
 };
 
 struct tBoatHandlingData
 {
-	tVehicleType nIdentifier;
-	float fThrustY;
-	float fThrustZ;
-	float fThrustAppZ;
-	float fAqPlaneForce;
-	float fAqPlaneLimit;
-	float fAqPlaneOffset;
-	float fWaveAudioMult;
-	float fLook_L_R_BehindCamHeight;
-	CVector vecMoveRes;
-	CVector vecTurnRes;
+	char     Name[24];
+	int32    nIndex;
+	// cols 1..14, +0x1c .. +0x50, with the last column landing back inside at
+	// +0x38 (between columns 7 and 8). Assigned by name, so the oddity does not
+	// leak into the code.
+	float    fThrustY;
+	float    fThrustZ;
+	float    fThrustAppZ;
+	float    fAqPlaneForce;
+	float    fAqPlaneLimit;
+	float    fAqPlaneOffset;
+	float    fWaveAudioMult;
+	float    fLook_L_R_BehindCamHeight;
+	CVector  vecMoveRes;
+	CVector  vecTurnRes;
 };
 
-struct  tFlyingHandlingData
+struct tFlyingHandlingData
 {
-	tVehicleType nIdentifier;
-	float fThrust;
-	float fThrustFallOff;
-	float fYaw;
-	float fYawStab;
-	float fSideSlip;
-	float fRoll;
-	float fRollStab;
-	float fPitch;
-	float fPitchStab;
-	float fFormLift;
-	float fAttackLift;
-	float fMoveRes;
-	CVector vecTurnRes;
-	CVector vecSpeedRes;
+	char     Name[24];
+	int32    nIndex;
+	// cols 1..11 and 15..21; columns 12, 13 and 14 are parsed and dropped by the
+	// client (their table entries point at the loop head).
+	float    fThrust;
+	float    fThrustFallOff;
+	float    fYaw;
+	float    fYawStab;
+	float    fSideSlip;
+	float    fRoll;
+	float    fRollStab;
+	float    fPitch;
+	float    fPitchStab;
+	float    fFormLift;
+	float    fAttackLift;
+	CVector  vecTurnRes;
+	CVector  vecSpeedRes;
+	// Column 21 (+0x60) is a scalar the client stores and nothing in this port
+	// read before; the flight model needs a per-axis damping multiplier where VC
+	// used one float, and this is the only scalar left in the flying record, so
+	// it serves as that "move resistance" until the flight model is rewritten.
+	float    fMoveRes;
+};
+
+// Cranes: one sscanf of 29 fields on the client, std::vector storage.
+struct tCraneHandlingData
+{
+	char     Name[24];
+	int32    nIndex;
+	float    Values[27];
+	int32    nValue;
 };
 
 class CVehicle;
@@ -256,26 +283,95 @@ private:
 	float field_8;	//
 	float field_C;	// unused it seems
 	float field_10;	//
-	tHandlingData HandlingData[NUMHANDLINGS];
-	tBikeHandlingData BikeHandlingData[NUMBIKEHANDLINGS];
-	tFlyingHandlingData FlyingHandlingData[NUMFLYINGHANDLINGS];
-	tBoatHandlingData BoatHandlingData[NUMBOATHANDLINGS];
 
 public:
 	cHandlingDataMgr(void);
 	void Initialise(void);
 	void LoadHandlingData(void);
-	int FindExactWord(const char *word, const char *words, int wordLen, int numWords);
-	void ConvertDataToWorldUnits(tHandlingData *handling);
 	void ConvertDataToGameUnits(tHandlingData *handling);
 	void ConvertBikeDataToGameUnits(tBikeHandlingData *handling);
+
+	// Lookup by name, like the client's own name search: records keep the name
+	// they were read with. Returns -1 when the name is not in the file; the
+	// caller decides what to fall back to.
 	int32 GetHandlingId(const char *name);
-	tHandlingData *GetHandlingData(tVehicleType id) { return &HandlingData[id]; }
-	tBikeHandlingData *GetBikePointer(uint8 id) { return &BikeHandlingData[id-HANDLING_BIKE]; }
-	tFlyingHandlingData *GetFlyingPointer(uint8 id);
-	tBoatHandlingData *GetBoatPointer(uint8 id);
-	bool HasRearWheelDrive(tVehicleType id) { return HandlingData[id].Transmission.nDriveType != 'F'; }
-	bool HasFrontWheelDrive(tVehicleType id) { return HandlingData[id].Transmission.nDriveType != 'R'; }
+	int32 GetBikeHandlingId(const char *name);
+	int32 GetFlyingHandlingId(const char *name);
+	int32 GetBoatHandlingId(const char *name);
+	int32 GetCraneHandlingId(const char *name);
+
+	tHandlingData *GetHandlingData(int32 id)
+	{
+		if(id < 0 || id >= (int32)NumCars) return &HandlingData[0];
+		return &HandlingData[id];
+	}
+	// The client's GetBikePointer/GetFlyingPointer/GetBoatPointer take a *car*
+	// record id, take that record's name and return the record of their own kind
+	// that has the same name (0x18064e4 / 0x18060e0 / 0x18062e4: umaddl by 0x104
+	// into the car array, then strncmp(bikeRecord.name, carRecord.name, 24)).
+	// The first record of the kind is the fallback when the name is absent.
+	tBikeHandlingData *GetBikePointer(int32 id)
+	{
+		if(NumBikes == 0) return &BikeHandlingData[0];
+		if(id >= 0 && id < (int32)NumCars){
+			const char *name = HandlingData[id].Name;
+			for(uint32 i = 0; i < NumBikes; i++)
+				if(strncmp(BikeHandlingData[i].Name, name, sizeof(HandlingData[id].Name)) == 0)
+					return &BikeHandlingData[i];
+		}
+		return &BikeHandlingData[0];
+	}
+	tFlyingHandlingData *GetFlyingPointer(int32 id)
+	{
+		if(NumFlying == 0) return &FlyingHandlingData[0];
+		if(id >= 0 && id < (int32)NumCars){
+			const char *name = HandlingData[id].Name;
+			for(uint32 i = 0; i < NumFlying; i++)
+				if(strncmp(FlyingHandlingData[i].Name, name, sizeof(HandlingData[id].Name)) == 0)
+					return &FlyingHandlingData[i];
+		}
+		return &FlyingHandlingData[0];
+	}
+	tBoatHandlingData *GetBoatPointer(int32 id)
+	{
+		if(NumBoats == 0) return &BoatHandlingData[0];
+		if(id >= 0 && id < (int32)NumCars){
+			const char *name = HandlingData[id].Name;
+			for(uint32 i = 0; i < NumBoats; i++)
+				if(strncmp(BoatHandlingData[i].Name, name, sizeof(HandlingData[id].Name)) == 0)
+					return &BoatHandlingData[i];
+		}
+		return &BoatHandlingData[0];
+	}
+	tCraneHandlingData *GetCranePointer(int32 id)
+	{
+		if(id < 0 || id >= (int32)NumCranes) return &CraneHandlingData[0];
+		return &CraneHandlingData[id];
+	}
+
+	bool HasRearWheelDrive(int32 id) { return GetHandlingData(id)->Transmission.nDriveType != 'F'; }
+	bool HasFrontWheelDrive(int32 id) { return GetHandlingData(id)->Transmission.nDriveType != 'R'; }
+
+	// Numbers actually read from the file. The arrays are sized at the client's
+	// own limits so an id taken from a save or a script can never run past them.
+	uint32 NumCars, NumBikes, NumFlying, NumBoats, NumCranes, NumAnimGroups;
+
+	// Diagnostics: how many model names failed to resolve, for the log.
+	void ReportMissing(void) { nMissing++; }
+	int32 CountMissing(void) const { return nMissing; }
+
+private:
+	tHandlingData       HandlingData[HANDLING_MAX_CARS];
+	tBikeHandlingData   BikeHandlingData[HANDLING_MAX_BIKES];
+	tFlyingHandlingData FlyingHandlingData[HANDLING_MAX_FLYING];
+	tBoatHandlingData   BoatHandlingData[HANDLING_MAX_BOATS];
+
+	// The client keeps cranes in a std::vector; a fixed array is used here
+	// because the size is bounded anyway and the manager lives for the session.
+	tCraneHandlingData  CraneHandlingData[HANDLING_MAX_CARS];
+	tAnimGroupHandlingData AnimGroupHandlingData[HANDLING_MAX_CARS];
+
+	int32 nMissing;
 };
 extern cHandlingDataMgr mod_HandlingManager;
 

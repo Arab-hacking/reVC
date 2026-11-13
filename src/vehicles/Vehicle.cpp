@@ -464,7 +464,7 @@ CVehicle::FlyingControl(eFlightModel flightModel)
 	case FLIGHT_MODEL_HELI:
 	{
 #ifdef RESTORE_ALLCARSHELI_CHEAT
-		tFlyingHandlingData* flyingHandling = bAllCarCheat && !IsRealHeli() ? mod_HandlingManager.GetFlyingPointer(HANDLING_MAVERICK) : pFlyingHandling;
+		tFlyingHandlingData* flyingHandling = bAllCarCheat && !IsRealHeli() ? mod_HandlingManager.GetFlyingPointer(mod_HandlingManager.GetHandlingId("MAVERICK")) : pFlyingHandling;
 #else
 		tFlyingHandlingData* flyingHandling = pFlyingHandling;
 #endif
@@ -1615,7 +1615,7 @@ CVehicle::IsVehicleNormal(void)
 bool
 CVehicle::CarHasRoof(void)
 {
-	if((pHandling->Flags & HANDLING_HAS_NO_ROOF) == 0)
+	if((pHandling->ModelFlags & MODEL_CONVERTIBLE) == 0)
 		return true;
 	// component 0 is assumed to be a roof
 	return m_aExtras[0] == 0 || m_aExtras[1] == 0;
@@ -2484,16 +2484,18 @@ CVehicle::Load(uint8*& buf)
 eVehicleAppearance
 CVehicle::GetVehicleAppearance(void)
 {
-	uint32 flags = pHandling->Flags & 0xF0000;
+	// The client's model flags put the vehicle kind in the 7th digit, so the
+	// mask has to cover it (VC had it in the low 0x40000 range of one mask).
+	uint32 flags = pHandling->ModelFlags & (MODEL_IS_BIKE|MODEL_IS_HELI|MODEL_IS_PLANE|MODEL_IS_BOAT);
 	if (flags == 0)
 		return VEHICLE_APPEARANCE_CAR;
-	if (flags == HANDLING_IS_BIKE)
+	if (flags == MODEL_IS_BIKE)
 		return VEHICLE_APPEARANCE_BIKE;
-	if (flags == HANDLING_IS_HELI)
+	if (flags == MODEL_IS_HELI)
 		return VEHICLE_APPEARANCE_HELI;
-	if (flags == HANDLING_IS_PLANE)
+	if (flags == MODEL_IS_PLANE)
 		return VEHICLE_APPEARANCE_PLANE;
-	if (flags == HANDLING_IS_BOAT)
+	if (flags == MODEL_IS_BOAT)
 		return VEHICLE_APPEARANCE_BOAT;
 	return VEHICLE_APPEARANCE_NONE;
 }

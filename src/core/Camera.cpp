@@ -619,7 +619,7 @@ CCamera::Process(void)
 	if(!CCutsceneMgr::IsRunning() || CCutsceneMgr::UseLodMultiplier()){
 		LODDistMultiplier = 70.0f/CDraw::GetFOV();
 
-		if(GetPosition().z > 55.0f && FindPlayerVehicle() && FindPlayerVehicle()->pHandling->Flags & (HANDLING_IS_HELI|HANDLING_IS_PLANE) ||
+		if(GetPosition().z > 55.0f && FindPlayerVehicle() && FindPlayerVehicle()->pHandling->ModelFlags & (MODEL_IS_HELI|MODEL_IS_PLANE) ||
 		   FindPlayerPed()->m_attachedTo){
 			LODDistMultiplier *= 1.0f + Max((GetPosition().z - 55.0f)/60.0f, 0.0f);
 			float NewNear = DEFAULT_NEAR * (1.0f + Max((GetPosition().z - 55.0f)/60.0f, 0.0f));

@@ -64,15 +64,15 @@ CBoat::CBoat(int mi, uint8 owner) : CVehicle(owner)
 	m_nPoliceShoutTimer = CTimer::GetTimeInMilliseconds();
 	SetModelIndex(mi);
 
-	pHandling = mod_HandlingManager.GetHandlingData((tVehicleType)minfo->m_handlingId);
-	pFlyingHandling = mod_HandlingManager.GetFlyingPointer((tVehicleType)minfo->m_handlingId);
-	pBoatHandling = mod_HandlingManager.GetBoatPointer((tVehicleType)minfo->m_handlingId);
+	pHandling = mod_HandlingManager.GetHandlingData(minfo->m_handlingId);
+	pFlyingHandling = mod_HandlingManager.GetFlyingPointer(minfo->m_handlingId);
+	pBoatHandling = mod_HandlingManager.GetBoatPointer(minfo->m_handlingId);
 	minfo->ChooseVehicleColour(m_currentColour1, m_currentColour2);
 
 	m_fMass = pHandling->fMass;
 	m_fTurnMass = pHandling->fTurnMass / 2.0f;
 	m_vecCentreOfMass = pHandling->CentreOfMass;
-	m_fAirResistance = pHandling->Dimension.x * pHandling->Dimension.z / m_fMass;
+	m_fAirResistance = pHandling->fAirResistanceFactor;
 	m_fElasticity = 0.1f;
 	m_fBuoyancy = pHandling->fBuoyancy;
 	m_fSteerAngle = 0.0f;

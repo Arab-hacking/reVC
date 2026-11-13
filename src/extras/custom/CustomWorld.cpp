@@ -508,35 +508,46 @@ int VehicleType(const std::string &s)
     return -1; // also excludes trains: the BR track/path format is not VC's
 }
 
+// Does the handling record with this id fit this vehicle type? Used to reject a
+// record of the wrong family (a boat record on a car) before the model is built.
 bool HandlingMatches(int type, int id)
 {
-    if(id < 0 || id >= NUMHANDLINGS) return false;
-    if(IsCarLikeType(type))
-        return id < HANDLING_BIKE && !(mod_HandlingManager.GetHandlingData((tVehicleType)id)->Flags &
-            (HANDLING_IS_BIKE | HANDLING_IS_BOAT | HANDLING_IS_HELI | HANDLING_IS_PLANE));
-    if(IsBikeLikeType(type)) return id >= HANDLING_BIKE && id <= HANDLING_FREEWAY;
-    if(type == VEHICLE_TYPE_BOAT) return id >= HANDLING_PREDATOR && id <= HANDLING_CUPBOAT;
-    if(type == VEHICLE_TYPE_HELI)
-        return id >= HANDLING_SPARROW && id <= HANDLING_RCCOPTER && id != HANDLING_RCBARON;
-    if(type == VEHICLE_TYPE_PLANE)
-        return id == HANDLING_SEAPLANE || id == HANDLING_RCBARON;
+    tHandlingData *h = mod_HandlingManager.GetHandlingData(id);
+    // Trailers have no flag of their own; they share the car record family.
+    if(IsCarLikeType(type) || type == VEHICLE_TYPE_TRAILER)
+        return !(h->ModelFlags & (MODEL_IS_BIKE | MODEL_IS_BOAT | MODEL_IS_HELI | MODEL_IS_PLANE));
+    if(IsBikeLikeType(type)) return (h->ModelFlags & MODEL_IS_BIKE) != 0;
+    if(type == VEHICLE_TYPE_BOAT) return (h->ModelFlags & MODEL_IS_BOAT) != 0;
+    if(type == VEHICLE_TYPE_HELI) return (h->ModelFlags & MODEL_IS_HELI) != 0;
+    if(type == VEHICLE_TYPE_PLANE) return (h->ModelFlags & MODEL_IS_PLANE) != 0;
     return false;
 }
 
+// Find the handling record for a custom vehicle. The record is looked up by the
+// name written in the .ide, the way the client does it, and the value stored on
+// the model info is always an index into the *car* array: that is what the
+// vehicle constructors index with, and the bike/boat/flying records are then
+// found by that record's name (see cHandlingDataMgr::GetBikePointer).
+// A name that only exists in a secondary section is therefore reported as a
+// fallback, and so is a name of the wrong family; a name that is in no section
+// at all falls back to the first car record of the right family.
 int BuiltinHandling(int type, const std::string &name, bool &fallback)
 {
     std::string id = name;
     for(char &c : id) c = (char)std::toupper((unsigned char)c);
+
     int result = mod_HandlingManager.GetHandlingId(id.c_str());
-    fallback = !HandlingMatches(type, result);
+    fallback = result < 0 || !HandlingMatches(type, result);
     if(!fallback) return result;
-    // Подставляем handling того же семейства: у trike/prtcrn/craneof
-    // мотоциклетные данные, у mtruck/quad/bmx — автомобильные.
-    if(IsBikeLikeType(type)) return HANDLING_BIKE;
-    if(type == VEHICLE_TYPE_BOAT) return HANDLING_PREDATOR;
-    if(type == VEHICLE_TYPE_HELI) return HANDLING_MAVERICK;
-    if(type == VEHICLE_TYPE_PLANE) return HANDLING_SEAPLANE;
-    return HANDLING_LANDSTAL;
+
+    // Family default: the first car record whose flags say it is of this kind.
+    // VC used fixed indices here; the client file has no such table, so the
+    // flags are what is left to recognise the kind by.
+    for(uint32 i = 0; i < mod_HandlingManager.NumCars; i++){
+        if(HandlingMatches(type, (int)i))
+            return (int)i;
+    }
+    return 0;
 }
 
 ePedType SafePedType(const std::string &s)

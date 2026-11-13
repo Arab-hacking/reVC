@@ -1875,7 +1875,25 @@ CFileLoader::LoadVehicleObject(const char *line)
 	}else
 		assert(0);
 
+	// The client resolves the handling name through one helper (0xb4aa54 ->
+	// 0x1806080) and stores the result in the model info (+0x6c). In the shipped
+	// data every bike/boat/flying name also has a car record of the same name,
+	// and the type-specific pointers (GetBikePointer and friends) find their
+	// record by that name, so the car record's ordinal is what gets stored.
 	mi->m_handlingId = mod_HandlingManager.GetHandlingId(handlingId);
+	if(mi->m_handlingId < 0){
+		// The model info stores an index into the car records: that is what the
+		// constructors index the physics with, and the bike/boat/flying records
+		// are then looked up by that record's name. A name that only exists in a
+		// secondary section therefore cannot be used as-is.
+		bool elsewhere = mod_HandlingManager.GetBikeHandlingId(handlingId) >= 0 ||
+		                 mod_HandlingManager.GetFlyingHandlingId(handlingId) >= 0 ||
+		                 mod_HandlingManager.GetBoatHandlingId(handlingId) >= 0;
+		REVC_LOG_WARNING("vehicle %s: handling \"%s\" %s; using record 0", model, handlingId,
+		                 elsewhere ? "has no car record" : "is not in handling.cfg");
+		mod_HandlingManager.ReportMissing();
+		mi->m_handlingId = 0;
+	}
 
 	if(strcmp(vehclass, "normal") == 0)
 		mi->m_vehicleClass = CCarCtrl::NORMAL;

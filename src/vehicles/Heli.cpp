@@ -55,7 +55,7 @@ CHeli::CHeli(int32 id, uint8 CreatedBy)
 
 	CVehicleModelInfo *mi = (CVehicleModelInfo*)CModelInfo::GetModelInfo(id);
 	m_vehType = VEHICLE_TYPE_HELI;
-	pHandling = mod_HandlingManager.GetHandlingData((tVehicleType)mi->m_handlingId);
+	pHandling = mod_HandlingManager.GetHandlingData(mi->m_handlingId);
 	SetModelIndex(id);
 	m_heliStatus = HELI_STATUS_HOVER;
 	m_pathState = 0;

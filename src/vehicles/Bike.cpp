@@ -93,9 +93,9 @@ CBike::CBike(int32 id, uint8 CreatedBy)
 
 	SetModelIndex(id);
 
-	pHandling = mod_HandlingManager.GetHandlingData((tVehicleType)mi->m_handlingId);
-	pBikeHandling = mod_HandlingManager.GetBikePointer((tVehicleType)mi->m_handlingId);
-	pFlyingHandling = mod_HandlingManager.GetFlyingPointer((tVehicleType)mi->m_handlingId);
+	pHandling = mod_HandlingManager.GetHandlingData(mi->m_handlingId);
+	pBikeHandling = mod_HandlingManager.GetBikePointer(mi->m_handlingId);
+	pFlyingHandling = mod_HandlingManager.GetFlyingPointer(mi->m_handlingId);
 
 	m_bike_unused1 = 20.0f;
 	m_bike_unused2 = 0;
@@ -111,7 +111,7 @@ CBike::CBike(int32 id, uint8 CreatedBy)
 	m_fTurnMass = pHandling->fTurnMass;
 	m_vecCentreOfMass = pHandling->CentreOfMass;
 	m_vecCentreOfMass.z = 0.1f;
-	m_fAirResistance = pHandling->Dimension.x*pHandling->Dimension.z/m_fMass;
+	m_fAirResistance = pHandling->fAirResistanceFactor;
 	m_fElasticity = 0.05f;
 	m_fBuoyancy = pHandling->fBuoyancy;
 
@@ -724,7 +724,7 @@ CBike::ProcessControl(void)
 		acceleration /= m_fForceMultiplier;
 
 		brake = m_fBrakePedal * pHandling->fBrakeDeceleration * CTimer::GetTimeStep();
-		bool neutralHandling = GetStatus() != STATUS_PLAYER && GetStatus() != STATUS_PLAYER_REMOTE && (pHandling->Flags & HANDLING_NEUTRALHANDLING);
+		bool neutralHandling = GetStatus() != STATUS_PLAYER && GetStatus() != STATUS_PLAYER_REMOTE && (pHandling->HandlingFlags & HANDLING_NPC_NEUTRAL_HANDL);
 		float brakeBiasFront = neutralHandling ? 1.0f : 2.0f*pHandling->fBrakeBias;
 		float brakeBiasRear  = neutralHandling ? 1.0f : 2.0f*(1.0f-pHandling->fBrakeBias);
 		float tractionBiasFront = neutralHandling ? 1.0f : 2.0f*pHandling->fTractionBias;
@@ -811,7 +811,7 @@ CBike::ProcessControl(void)
 		static float fThrust;
 		static tWheelState WheelState[2];
 		CVector initialMoveSpeed = m_vecMoveSpeed;
-		bool rearWheelsFirst = !!(pHandling->Flags & HANDLING_REARWHEEL_1ST);
+		bool rearWheelsFirst = !!(pHandling->HandlingFlags & HANDLING_PROC_REARWHEEL_1ST);
 
 		// Process front wheel - first try
 
@@ -1383,7 +1383,7 @@ CBike::PreRender(void)
 
 			if(behindness < -0.97f && camDist < 30.0f * Max(1.0f, CRenderer::ms_fLightDistScale)){
 				// Directly in front and not too far away
-				if(pHandling->Flags & HANDLING_HALOGEN_LIGHTS){
+				if(pHandling->HandlingFlags & HANDLING_HALOGEN_LIGHTS){
 					CCoronas::RegisterCorona((uintptr)this + 6, 150, 150, 195, 255,
 						light, 1.2f, 65.0f*bikeLightMult,
 						CCoronas::TYPE_HEADLIGHT, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
@@ -1402,7 +1402,7 @@ CBike::PreRender(void)
 					CCoronas::TYPE_STREAK, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
 					CCoronas::LOSCHECK_OFF, CCoronas::STREAK_ON, angle);
 			}else{
-				if(pHandling->Flags & HANDLING_HALOGEN_LIGHTS){
+				if(pHandling->HandlingFlags & HANDLING_HALOGEN_LIGHTS){
 					CCoronas::RegisterCorona((uintptr)this + 1, 190*intensity, 190*intensity, 255*intensity, 255,
 						light, size, 80.0f*bikeLightMult,
 						CCoronas::TYPE_STREAK, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
@@ -1686,7 +1686,7 @@ CBike::PreRender(void)
 	}
 
 	// Exhaust smoke
-	if(bEngineOn && !(pHandling->Flags & HANDLING_NO_EXHAUST) && fwdSpeed < 130.0f){
+	if(bEngineOn && !(pHandling->ModelFlags & MODEL_NO_EXHAUST) && fwdSpeed < 130.0f){
 		CVector exhaustPos = mi->m_positions[CAR_POS_EXHAUST];
 		CVector pos1, pos2, dir;
 
@@ -1705,7 +1705,7 @@ CBike::PreRender(void)
 
 			bool dblExhaust = false;
 			pos1 = GetMatrix() * exhaustPos;
-			if(pHandling->Flags & HANDLING_DBL_EXHAUST){
+			if(pHandling->ModelFlags & MODEL_DOUBLE_EXHAUST){
 				dblExhaust = true;
 				pos2 = exhaustPos;
 				pos2.x = -pos2.x;

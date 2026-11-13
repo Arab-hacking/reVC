@@ -421,8 +421,8 @@ public:
 	CVehicleModelInfo* GetModelInfo() { return (CVehicleModelInfo*)CModelInfo::GetModelInfo(GetModelIndex()); }
 	bool IsTaxi(void) { return GetModelIndex() == MI_TAXI || GetModelIndex() == MI_CABBIE || GetModelIndex() == MI_ZEBRA || GetModelIndex() == MI_KAUFMAN; }
 	bool IsLimo(void) { return GetModelIndex() == MI_STRETCH || GetModelIndex() == MI_LOVEFIST; }
-	bool IsRealHeli(void) { return !!(pHandling->Flags & HANDLING_IS_HELI); }
-	bool IsRealPlane(void) { return !!(pHandling->Flags & HANDLING_IS_PLANE); }
+	bool IsRealHeli(void) { return !!(pHandling->ModelFlags & MODEL_IS_HELI); }
+	bool IsRealPlane(void) { return !!(pHandling->ModelFlags & MODEL_IS_PLANE); }
 
 	static bool bWheelsOnlyCheat;
 	static bool bAllDodosCheat;

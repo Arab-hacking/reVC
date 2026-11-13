@@ -999,87 +999,37 @@ ResolveVehicleAudioIndex(const CVehicle *veh)
 {
 	if (veh == nil)
 		return 0;
+	// The audio tables are indexed by model id (aVehicleSettings[]), and a model
+	// in the first MAX_CARS slots always resolves to itself. Anything past that
+	// (a custom model added on top of the stock range) falls back to a stock
+	// model of the same family.
 	const int32 rawIdx = (int32)veh->m_modelIndex - MI_FIRST_VEHICLE;
 	if (rawIdx >= 0 && rawIdx < MAX_CARS)
 		return rawIdx;
 
-	int32 fallback = MI_ADMIRAL - MI_FIRST_VEHICLE;
-	// veh здесь const CVehicle*, поэтому проверяем тип напрямую
-	if (veh->m_vehType == VEHICLE_TYPE_BIKE || veh->m_vehType == VEHICLE_TYPE_TRIKE ||
-	    veh->m_vehType == VEHICLE_TYPE_PRTCRN || veh->m_vehType == VEHICLE_TYPE_CRANEOF) {
-		fallback = MI_PCJ600 - MI_FIRST_VEHICLE;
-		if (veh->pHandling != nil) {
-			switch (veh->pHandling->nIdentifier) {
-			case HANDLING_DIRTBIKE:
-				fallback = MI_SANCHEZ - MI_FIRST_VEHICLE;
-				break;
-			case HANDLING_ANGEL:
-			case HANDLING_FREEWAY:
-				fallback = MI_FREEWAY - MI_FIRST_VEHICLE;
-				break;
-			case HANDLING_MOPED:
-				fallback = MI_FAGGIO - MI_FIRST_VEHICLE;
-				break;
-			default:
-				break;
-			}
-		}
-	} else if (veh->m_vehType == VEHICLE_TYPE_BOAT) {
-		fallback = MI_SPEEDER - MI_FIRST_VEHICLE;
-	} else if (veh->pHandling != nil) {
-		switch (veh->pHandling->nIdentifier) {
-		case HANDLING_LANDSTAL:
-		case HANDLING_RANCHER:
-		case HANDLING_PATRIOT:
-		case HANDLING_FBIRANCH:
-		case HANDLING_SANDKING:
-			fallback = MI_LANDSTAL - MI_FIRST_VEHICLE;
-			break;
-		case HANDLING_INFERNUS:
-		case HANDLING_CHEETAH:
-		case HANDLING_BANSHEE:
-		case HANDLING_STINGER:
-		case HANDLING_COMET:
-		case HANDLING_PHEONIX:
-		case HANDLING_DELUXO:
-		case HANDLING_HOTRING:
-			fallback = MI_CHEETAH - MI_FIRST_VEHICLE;
-			break;
-		case HANDLING_SABRETUR:
-		case HANDLING_SABRE1:
-		case HANDLING_STALLION:
-			fallback = MI_SABRETUR - MI_FIRST_VEHICLE;
-			break;
-		case HANDLING_LINERUN:
-		case HANDLING_FLATBED:
-		case HANDLING_BARRACKS:
-		case HANDLING_PACKER:
-		case HANDLING_TRASH:
-		case HANDLING_MULE:
-		case HANDLING_YANKEE:
-		case HANDLING_BENSON:
-			fallback = MI_FLATBED - MI_FIRST_VEHICLE;
-			break;
-		case HANDLING_BUS:
-		case HANDLING_COACH:
-			fallback = MI_COACH - MI_FIRST_VEHICLE;
-			break;
-		case HANDLING_POLICE:
-		case HANDLING_ENFORCER:
-		case HANDLING_AMBULAN:
-		case HANDLING_FIRETRUK:
-		case HANDLING_FBICAR:
-			fallback = MI_POLICE - MI_FIRST_VEHICLE;
-			break;
-		default:
-			if (veh->pHandling->Transmission.fMaxVelocity > 0.95f)
-				fallback = MI_CHEETAH - MI_FIRST_VEHICLE;
-			break;
-		}
+	// VC picked the fallback by handling id (HANDLING_CHEETAH, HANDLING_FREEWAY,
+	// ...). The handling records are now read from the client's data/handling.cfg
+	// by name, so their ordinals say nothing about the car; the choice is made
+	// from the vehicle's own type instead, which is what the sound bank depends
+	// on. The indices are the rows of aVehicleSettings[], i.e. model ids.
+	if (veh->IsBoat())
+		return MI_SPEEDER - MI_FIRST_VEHICLE;
+	if (veh->IsBike())
+		return MI_PCJ600 - MI_FIRST_VEHICLE;
+	if (veh->IsHeli())
+		return MI_POLMAV - MI_FIRST_VEHICLE;
+	if (veh->IsPlane())
+		return MI_SKIMMER - MI_FIRST_VEHICLE;
+
+	// Cars: a fast car gets the sports bank, a heavy one the truck bank, the
+	// rest the standard one.
+	if (veh->pHandling != nil) {
+		if (veh->pHandling->ModelFlags & (MODEL_IS_BIG | MODEL_IS_BUS | MODEL_IS_VAN))
+			return MI_LINERUN - MI_FIRST_VEHICLE;
+		if (veh->pHandling->Transmission.fMaxVelocity > 0.95f)
+			return MI_CHEETAH - MI_FIRST_VEHICLE;
 	}
-	if (fallback < 0 || fallback >= MAX_CARS)
-		return 0;
-	return fallback;
+	return MI_ADMIRAL - MI_FIRST_VEHICLE;
 }
 
 void

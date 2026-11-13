@@ -106,53 +106,22 @@ extern bool gbFastTime;
 extern bool gGravityCheat;
 #endif
 
+// VC's "loadsoflittlet hings" cheat worked by rewriting handling records and
+// wheel scale through their VC handling indices (HANDLING_LANDSTAL,
+// HANDLING_PATRIOT, ...). Those indices do not exist any more: the client file
+// is read by name and a record's ordinal is just its line number in
+// data/handling.cfg, so the same number would hit an unrelated car. There is no
+// equivalent in the client's own cheat list either, so the cheat keeps only its
+// side effects — the "you cheated" flag and the help message — and the string
+// stays so the input code and the debug menu entry keep working.
 void SpecialCarCheats()
 {
-	if ( !CVehicle::bCheat9 )
-	{
-		((CVehicleModelInfo*)CModelInfo::GetModelInfo(MI_INFERNUS))->m_wheelScaleFront *= 1.3f;
-		((CVehicleModelInfo*)CModelInfo::GetModelInfo(MI_CHEETAH))->m_wheelScaleFront *= 1.3f;
-		((CVehicleModelInfo*)CModelInfo::GetModelInfo(MI_PHEONIX))->m_wheelScaleFront *= 1.3f;
-		((CVehicleModelInfo*)CModelInfo::GetModelInfo(MI_DELUXO))->m_wheelScaleFront *= 1.3f;
-		mod_HandlingManager.GetHandlingData(HANDLING_LANDSTAL)->Transmission.fEngineAcceleration *= 2.0f;
-		mod_HandlingManager.GetHandlingData(HANDLING_PATRIOT)->Transmission.fEngineAcceleration *= 2.0f;
-		mod_HandlingManager.GetHandlingData(HANDLING_BOBCAT)->Transmission.fEngineAcceleration *= 2.0f;
-		mod_HandlingManager.GetHandlingData(HANDLING_BFINJECT)->Transmission.fEngineAcceleration *= 2.0f;
-		mod_HandlingManager.GetHandlingData(HANDLING_RANCHER)->Transmission.fEngineAcceleration *= 2.0f;
-		mod_HandlingManager.GetHandlingData(HANDLING_DESPERAD)->Transmission.fEngineAcceleration *= 2.0f;
-		mod_HandlingManager.GetHandlingData(HANDLING_DELUXO)->Transmission.fEngineAcceleration *= 2.0f;
+	if ( CVehicle::bCheat9 )
+		return;
 
-		mod_HandlingManager.GetHandlingData(HANDLING_BAGGAGE)->Transmission.fEngineAcceleration *= 2.0f;
-		mod_HandlingManager.GetHandlingData(HANDLING_BAGGAGE)->Transmission.fMaxVelocity *= 2.0f;
-		mod_HandlingManager.GetHandlingData(HANDLING_BAGGAGE)->Transmission.InitGearRatios();
-
-		mod_HandlingManager.GetHandlingData(HANDLING_GOLFCART)->Transmission.fEngineAcceleration *= 2.0f;
-		mod_HandlingManager.GetHandlingData(HANDLING_GOLFCART)->Transmission.fMaxVelocity *= 2.0f;
-		mod_HandlingManager.GetHandlingData(HANDLING_GOLFCART)->Transmission.InitGearRatios();
-
-		mod_HandlingManager.GetHandlingData(HANDLING_STINGER)->fCollisionDamageMultiplier *= 0.25f;
-		mod_HandlingManager.GetHandlingData(HANDLING_STINGER)->fMass *= 2.5f;
-		mod_HandlingManager.GetHandlingData(HANDLING_STINGER)->fTurnMass *= 4.0f;
-
-		mod_HandlingManager.GetHandlingData(HANDLING_BANSHEE)->fCollisionDamageMultiplier *= 0.25f;
-		mod_HandlingManager.GetHandlingData(HANDLING_BANSHEE)->fMass *= 2.5f;
-		mod_HandlingManager.GetHandlingData(HANDLING_BANSHEE)->fTurnMass *= 4.0f;
-
-		mod_HandlingManager.GetHandlingData(HANDLING_SABRETUR)->fCollisionDamageMultiplier *= 0.25f;
-		mod_HandlingManager.GetHandlingData(HANDLING_SABRETUR)->fMass *= 2.5f;
-		mod_HandlingManager.GetHandlingData(HANDLING_SABRETUR)->fTurnMass *= 4.0f;
-
-		mod_HandlingManager.GetHandlingData(HANDLING_COMET)->fCollisionDamageMultiplier *= 0.25f;
-		mod_HandlingManager.GetHandlingData(HANDLING_COMET)->fMass *= 2.5f;
-		mod_HandlingManager.GetHandlingData(HANDLING_COMET)->fTurnMass *= 4.0f;
-
-		mod_HandlingManager.GetHandlingData(HANDLING_DELUXO)->fCollisionDamageMultiplier *= 0.25f;
-		mod_HandlingManager.GetHandlingData(HANDLING_DELUXO)->fMass *= 2.5f;
-		mod_HandlingManager.GetHandlingData(HANDLING_DELUXO)->fTurnMass *= 4.0f;
-		CHud::SetHelpMessage(TheText.Get("CHEAT1"), true);
-		CVehicle::bCheat9 = true;
-		CPad::bHasPlayerCheated = true;
-	}
+	CHud::SetHelpMessage(TheText.Get("CHEAT1"), true);
+	CVehicle::bCheat9 = true;
+	CPad::bHasPlayerCheated = true;
 }
 
 void PickUpChicksCheat()

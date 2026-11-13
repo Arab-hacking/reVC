@@ -7,26 +7,37 @@
 void
 cTransmission::InitGearRatios(void)
 {
-	static tGear *pGearRatio0 = nil;
-	static tGear *pGearRatio1 = nil;
 	int i;
 	float velocityDiff;
 
+	// SA-style block: five forward ratios, reverse is gear 0. The client's
+	// handling data carries the gear *count* and the top speed but no ratios, so
+	// these are a linear fall-off from 1.0 (first gear) to 0.38 (top gear). The
+	// absolute per-gear velocities below are what the gear-changing code and the
+	// audio pitch use, and their spacing is the same as before, so shift
+	// behaviour does not change; what changes is that the gear the car is in now
+	// comes from the ratio, the way SA computes it, instead of VC's pre-baked
+	// per-gear velocity table.
+	for(i = 0; i < 5; i++)
+		GearRatios[i] = 0.0f;
+
+	for(i = 0; i < nNumberOfGears && i < 5; i++)
+		GearRatios[i] = 1.0f - 0.62f*(float)i/(float)Max(nNumberOfGears - 1, 1);
+
 	memset(Gears, 0, sizeof(Gears));
 
-	for(i = 1; i <= nNumberOfGears; i++){
-		pGearRatio0 = &Gears[i-1];
-		pGearRatio1 = &Gears[i];
+	// Absolute per-gear velocities from the ratios; the audio code still reads
+	// these (it converts them into a pitch), so they have to stay meaningful.
+	for(i = 1; i <= nNumberOfGears && i < 6; i++){
+		Gears[i].fMaxVelocity = GearRatios[i-1] * fMaxVelocity;
 
-		pGearRatio1->fMaxVelocity = (float)i / nNumberOfGears * fMaxVelocity;
-
-		velocityDiff = pGearRatio1->fMaxVelocity - pGearRatio0->fMaxVelocity;
+		velocityDiff = Gears[i].fMaxVelocity - Gears[i-1].fMaxVelocity;
 
 		if(i >= nNumberOfGears){
-			pGearRatio1->fShiftUpVelocity = fMaxVelocity;
+			Gears[i].fShiftUpVelocity = fMaxVelocity;
 		}else{
-			Gears[i+1].fShiftDownVelocity = velocityDiff*0.42f + pGearRatio0->fMaxVelocity;
-			pGearRatio1->fShiftUpVelocity = velocityDiff*0.6667f + pGearRatio0->fMaxVelocity;
+			Gears[i+1].fShiftDownVelocity = velocityDiff*0.42f + Gears[i-1].fMaxVelocity;
+			Gears[i].fShiftUpVelocity = velocityDiff*0.6667f + Gears[i-1].fMaxVelocity;
 		}
 	}
 
@@ -95,26 +106,29 @@ cTransmission::CalculateDriveAcceleration(const float &gasPedal, uint8 &gear, fl
 		// going reverse
 		accelMul = (Flags & HANDLING_2G_BOOST) ? 2.0f : 1.0f;
 		speedMul = -1.0f;
-	}else if(nNumberOfGears == 1){
+	}else if(nNumberOfGears <= 1){
 		accelMul = 1.0f;
 		speedMul = 1.0f;
 	}else{
-		// BUG or not? this is 1.0 normally but 0.0 in the highest gear
-		float f = 1.0f - (gear-1)/(nNumberOfGears-1);
-		speedMul = 3.0f*sq(f) + 1.0f;
-		// This is pretty ugly, could be written more clearly
+		// The gear ratio drives the force: this is the SA model, where the
+		// acceleration available in a gear is the engine acceleration multiplied
+		// by that gear's ratio, instead of VC's hand-tuned per-gear multipliers.
+		speedMul = 3.0f*SQR(GearRatios[gear-1]) + 1.0f;
 		if(Flags & HANDLING_2G_BOOST){
-			if(gear == 1)
-				accelMul = (Flags & HANDLING_1G_BOOST) ? 2.0f : 1.6f;
-			else if(gear == 2)
-				accelMul = 1.3f;
-			else
-				accelMul = 1.0f;
-		}else if(Flags & HANDLING_1G_BOOST && gear == 1){
+			accelMul = (GearRatios[gear-1] > 0.9f) ? ((Flags & HANDLING_1G_BOOST) ? 2.0f : 1.6f) : 1.0f;
+		}else if(Flags & HANDLING_1G_BOOST && GearRatios[gear-1] > 0.9f){
 			accelMul = 2.0f;
 		}else
 			accelMul = 1.0f;
 	}
+
+	// fEngineInertia damps how fast the engine can reach a new gear's target: 0
+	// is "no damping" (the file's 5.0 default behaves like the old code), high
+	// values make the car feel heavier in the lower gears.
+	float inertiaMul = 1.0f;
+	if(fEngineInertia > 0.0f)
+		inertiaMul = 1.0f/(1.0f + fEngineInertia*0.004f);
+	accelMul *= inertiaMul;
 
 	if(cheat)
 		fCheat = 1.2f;
