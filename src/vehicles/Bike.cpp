@@ -1642,6 +1642,10 @@ CBike::PreRender(void)
 	}
 
 	// Front wheel
+	// Модель без колёсных узлов (например craneof/prtcrn, которые тоже ездят
+	// на CBike, или нестандартная модель) раньше роняла игру здесь: RwFrameGetMatrix(nil).
+	if(m_aBikeNodes[BIKE_WHEEL_FRONT] == nil || m_aBikeNodes[BIKE_WHEEL_REAR] == nil)
+		return;
 	mat.Attach(RwFrameGetMatrix(m_aBikeNodes[BIKE_WHEEL_FRONT]));
 	pos.x = mat.GetPosition().x;
 	pos.z = m_aWheelPosition[BIKEWHEEL_FRONT] - m_fFrontForkZ;
@@ -1653,10 +1657,12 @@ CBike::PreRender(void)
 		mat.SetRotateX(m_aWheelRotation[BIKEWHEEL_FRONT]);
 	mat.Translate(pos);
 	mat.UpdateRW();
-	// and mudguard
-	mat.Attach(RwFrameGetMatrix(m_aBikeNodes[BIKE_MUDGUARD]));
-	mat.SetTranslateOnly(pos);
-	mat.UpdateRW();
+	// and mudguard (may be absent in converted models)
+	if(m_aBikeNodes[BIKE_MUDGUARD]){
+		mat.Attach(RwFrameGetMatrix(m_aBikeNodes[BIKE_MUDGUARD]));
+		mat.SetTranslateOnly(pos);
+		mat.UpdateRW();
+	}
 
 	// Rear wheel
 	mat.Attach(RwFrameGetMatrix(m_aBikeNodes[BIKE_WHEEL_REAR]));
@@ -2418,6 +2424,13 @@ CBike::SetUpWheelColModel(CColModel *colModel)
 	colModel->boundingSphere = vehColModel->boundingSphere;
 	colModel->boundingBox = vehColModel->boundingBox;
 
+	// без колёсных узлов коллизию колёс строить не из чего (см. ProcessControl)
+	if(m_aBikeNodes[BIKE_WHEEL_FRONT] == nil || m_aBikeNodes[BIKE_WHEEL_REAR] == nil){
+#ifdef FIX_BUGS
+		RwMatrixDestroy(mat);
+#endif
+		return false;
+	}
 	GetRelativeMatrix(mat, m_aBikeNodes[BIKE_WHEEL_FRONT], m_aBikeNodes[BIKE_CHASSIS]);
 	colModel->spheres[0].Set(0.5f*mi->m_wheelScaleFront, *RwMatrixGetPos(mat), SURFACE_RUBBER, CAR_PIECE_WHEEL_LF);
 	GetRelativeMatrix(mat, m_aBikeNodes[BIKE_WHEEL_REAR], m_aBikeNodes[BIKE_CHASSIS]);

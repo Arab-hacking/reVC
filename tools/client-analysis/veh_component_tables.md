@@ -441,6 +441,7 @@
 | `misc_a`..`misc_d`, `aspl_a`..`aspl_c` | слотов нет; `misc_c` у клиента к тому же продублирован (hid 22 дважды) — это его данные, не опечатка выгрузки |
 | `exhaust_ok`, `headlights2`, `taillights2`, `water_splash_origin`, `engine`, `petrolcap`, `hookup`, `turnlights_front`, `turnlights_rear` | только IS_DUMMY/IS_VEH_STRUCT_PART, а `m_positions[]` порта — 5 слотов под позиции VC; добавлять их ради нуля эффекта нельзя |
 | `ped_middleseat` (trike) | нет слота позиции |
+| `crane_cable_dummy`, `hook_cable_dummy`, `boom mount`, `boom1`, `boom2` (prtcrn/craneof) | у клиента они получают номера 2…6 (вилка/колесо/руль мотоцикла), но кран ездит на `CBike`, и эти номера означали бы «повернуть вилку». Оставлены структурными частями без hierarchyId; кран всё равно не анимирует стрелу через скелет мотоцикла |
 
 `plane` (тип 4) у клиента — пустая таблица, и в порте теперь тоже: прежний VC-список
 (`wheel_front_dummy`, `light_tailplane`, ...) убран. Следствие: `CPlane` не получает

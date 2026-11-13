@@ -274,19 +274,22 @@ RwObjectNameIdAssocation trikeIds[] = {
 	{ nil, 0, 0 }
 };
 
-// prtcrn и craneof — 0x215bd20. У клиента у этих моделей нет ни одного узла
-// CBike: крановые кадры (crane_cable_dummy, hook_cable_dummy, boom mount,
-// boom1, boom2) получают номера 2..6 из ТОЙ ЖЕ таблицы, но это отдельные
-// кадры, а не вилка/колесо/руль. Повторяем номера клиента — слоты eBikeNodes
-// совпадают по количеству (BIKE_NUM_NODES = 8, максимум здесь 7).
+// prtcrn и craneof — 0x215bd20. Кадры крана (crane_cable_dummy,
+// hook_cable_dummy, boom mount, boom1, boom2) у клиента получают те же номера
+// 2..6, что у мотоцикла вилка/колесо/руль, — но это отдельные кадры, и в
+// CBike::ProcessControl номер 2 означал бы «повернуть вилку». Поэтому здесь
+// они остаются структурными частями без hierarchyId, а chassis и место
+// водителя — как есть: кран держится в мире, его стрела анимируется
+// отдельным кодом (Cranes.cpp), а не скелетом мотоцикла.
 RwObjectNameIdAssocation prtcrnIds[] = {
 	{ "chassis_dummy",	BIKE_CHASSIS,	0 },
-	{ "crane_cable_dummy",	BIKE_FORKS_FRONT,	0 },
-	{ "hook_cable_dummy",	BIKE_MUDGUARD,	0 },
-	{ "boom mount",		BIKE_FORKS_REAR,	0 },
-	{ "boom1",		BIKE_WHEEL_FRONT,	0 },
-	{ "boom2",		BIKE_WHEEL_REAR,	0 },
-	{ "ped_frontseat",	BIKE_HANDLEBARS,	0 },
+	{ "crane_cable_dummy",	0,	VEHICLE_FLAG_COMP | CLUMP_FLAG_NO_HIERID },
+	{ "hook_cable_dummy",	0,	VEHICLE_FLAG_COMP | CLUMP_FLAG_NO_HIERID },
+	{ "boom mount",		0,	VEHICLE_FLAG_COMP | CLUMP_FLAG_NO_HIERID },
+	{ "boom1",		0,	VEHICLE_FLAG_COMP | CLUMP_FLAG_NO_HIERID },
+	{ "boom2",		0,	VEHICLE_FLAG_COMP | CLUMP_FLAG_NO_HIERID },
+	{ "headlights",		CAR_POS_HEADLIGHTS,	VEHICLE_FLAG_COMP | VEHICLE_FLAG_DUMMY | CLUMP_FLAG_NO_HIERID },
+	{ "ped_frontseat",	0,	VEHICLE_FLAG_COMP | VEHICLE_FLAG_DUMMY | CLUMP_FLAG_NO_HIERID },
 	{ nil, 0, 0 }
 };
 
