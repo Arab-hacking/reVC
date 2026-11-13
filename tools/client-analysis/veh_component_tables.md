@@ -422,3 +422,26 @@
 
 всего записей: **8**
 
+
+## Что перенесено в код, а что нет
+
+Перенесено в `src/modelinfo/VehicleModelInfo.cpp` 11.11.2026: все записи, у которых
+есть слот в перечислениях узлов порта. Номера узлов **пересчитаны** — у клиента это
+номера SA (`eCarNodes` из SA: chassis 1, wheel_rf 2, ..., aspl_c 26), у порта своя
+нумерация, и `CClumpModelInfo::FillFrameArray` пишет `frames[id]` без проверки границ.
+Поэтому `hierarchyId` из таблиц клиента напрямую вставлять нельзя: `aspl_c` = 26
+затёр бы всё, что лежит в объекте после `m_aCarNodes[19]`.
+
+Не перенесено (и почему):
+
+| запись | причина |
+|---|---|
+| `chassis`, `chassis_dummy` (hid 1) | у порта корневой кадр клампа и так доступен, отдельного слота нет; hid 1 занят `CAR_WHEEL_RF`/`BIKE_CHASSIS` |
+| `wing_rr_dummy`, `wing_lr_dummy` | у клиента их нет; в порте слоты есть (в VC задние крылья — отдельные кадры), поэтому они остаются в таблице порта, а отсутствие кадра компенсируется в `CAutomobile::SetModelIndex` |
+| `misc_a`..`misc_d`, `aspl_a`..`aspl_c` | слотов нет; `misc_c` у клиента к тому же продублирован (hid 22 дважды) — это его данные, не опечатка выгрузки |
+| `exhaust_ok`, `headlights2`, `taillights2`, `water_splash_origin`, `engine`, `petrolcap`, `hookup`, `turnlights_front`, `turnlights_rear` | только IS_DUMMY/IS_VEH_STRUCT_PART, а `m_positions[]` порта — 5 слотов под позиции VC; добавлять их ради нуля эффекта нельзя |
+| `ped_middleseat` (trike) | нет слота позиции |
+
+`plane` (тип 4) у клиента — пустая таблица, и в порте теперь тоже: прежний VC-список
+(`wheel_front_dummy`, `light_tailplane`, ...) убран. Следствие: `CPlane` не получает
+`m_aPlaneNodes` из иерархии — так же, как у клиента.

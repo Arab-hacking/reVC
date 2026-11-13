@@ -41,103 +41,161 @@ RwFrame *pMatFxIdentityFrame;
 // Always false unless SA_VEHICLE_MODELS is defined.
 static bool gVehicleIsSAHierarchy;
 
+// Флаги компонентов ровно как у клиента (eVehicleComponentFlags, значения
+// сняты с таблиц 0x215b330/0x215b620/0x215b890/0x215b930/0x215b9b0/0x215ba30/
+// 0x215bba0/0x215bd20). VC-шный набор был другим и часть смыслов нёс иначе,
+// поэтому он заменён, а не расширен.
+//
+// Заодно: бит 0 (IS_VEH_STRUCT_PART) совпадает с CLUMP_FLAG_NO_HIERID, и это
+// не совпадение смыслов, а одно и то же — «структурная часть, которой номер
+// узла не нужен». CClumpModelInfo::SetFrameIds по этому биту не проставляет
+// hierarchyId, и для dummy/extra-кадров машины это именно то, что нужно.
 enum {
-	VEHICLE_FLAG_COLLAPSE	= 0x2,
-	VEHICLE_FLAG_ADD_WHEEL	= 0x4,
-	VEHICLE_FLAG_POS	= 0x8,
-	VEHICLE_FLAG_DOOR	= 0x10,
-	VEHICLE_FLAG_LEFT	= 0x20,
-	VEHICLE_FLAG_RIGHT	= 0x40,
-	VEHICLE_FLAG_FRONT	= 0x80,
-	VEHICLE_FLAG_REAR	= 0x100,
-	VEHICLE_FLAG_COMP	= 0x200,
-	VEHICLE_FLAG_DRAWLAST	= 0x400,
-	VEHICLE_FLAG_WINDSCREEN	= 0x800,
-	VEHICLE_FLAG_ANGLECULL	= 0x1000,
-	VEHICLE_FLAG_REARDOOR	= 0x2000,
-	VEHICLE_FLAG_FRONTDOOR	= 0x4000,
+	VEHICLE_FLAG_COMP          = 0x00000001, // IS_VEH_STRUCT_PART
+	VEHICLE_FLAG_COLLAPSE      = 0x00000002, // IS_DAMAGEABLE
+	VEHICLE_FLAG_ADD_WHEEL     = 0x00000004, // IS_WHEEL
+	VEHICLE_FLAG_DUMMY         = 0x00000008, // IS_DUMMY — точка, а не узел
+	VEHICLE_FLAG_POS           = 0x00000008, // прежнее VC-имя того же бита
+	VEHICLE_FLAG_DOOR          = 0x00000010, // IS_DOOR
+	VEHICLE_FLAG_LEFT          = 0x00000020, // COMP_IS_LEFT
+	VEHICLE_FLAG_RIGHT         = 0x00000040, // COMP_IS_RIGHT
+	VEHICLE_FLAG_FRONT         = 0x00000080, // COMP_IS_FRONT
+	VEHICLE_FLAG_REAR          = 0x00000100, // COMP_IS_REAR
+	VEHICLE_FLAG_EXTRA         = 0x00000200, // IS_EXTRA
+	VEHICLE_FLAG_ALPHA         = 0x00000400, // COMP_HAS_ALPHA
+	VEHICLE_FLAG_GLASS         = 0x00000800, // COMP_IS_GLASS
+	VEHICLE_FLAG_CULL          = 0x00001000, // COMP_CULL
+	VEHICLE_FLAG_REARDOOR      = 0x00002000, // COMP_IS_REAR_DOOR
+	VEHICLE_FLAG_FRONTDOOR     = 0x00004000, // COMP_IS_FRONT_DOOR
+	VEHICLE_FLAG_SWINGING      = 0x00008000, // COMP_SWINGING
+	VEHICLE_FLAG_MAIN_WHEEL    = 0x00010000, // IS_MAIN_WHEEL
+	VEHICLE_FLAG_UPGRADE       = 0x00020000, // IS_UPGRADE
+	VEHICLE_FLAG_NOREFLECT     = 0x00040000, // COMP_DISABLE_REFLECTIONS
+	VEHICLE_FLAG_TRAIN_FRONT_BOGIE = 0x00100000,
+	VEHICLE_FLAG_TRAIN_REAR_BOGIE  = 0x00200000,
+	VEHICLE_FLAG_RENDER_ALWAYS = 0x00400000, // COMP_RENDER_ALWAYS
+	VEHICLE_FLAG_UNK29         = 0x20000000, // UNKN_4
 };
 
+// Таблицы компонентов. Значения сняты с клиента (адреса — его .bss-массив
+// 0x215bdb0, содержимое восстановлено по релокациям .rela.dyn), но номера
+// узлов переведены в нумерацию этого порта: hierarchyId попадает в
+// m_aCarNodes[]/m_aBikeNodes[]/… через FillFrameArray, который не проверяет
+// границы, а порядок узлов у SA другой. Что именно не перенесено и почему —
+// в tools/client-analysis/veh_component_tables.md §"Что не перенесено".
 RwObjectNameIdAssocation carIds[] = {
-	{ "wheel_rf_dummy",	CAR_WHEEL_RF,	VEHICLE_FLAG_RIGHT | VEHICLE_FLAG_ADD_WHEEL },
-	{ "wheel_rm_dummy",	CAR_WHEEL_RM,	VEHICLE_FLAG_RIGHT | VEHICLE_FLAG_ADD_WHEEL },
-	{ "wheel_rb_dummy",	CAR_WHEEL_RB,	VEHICLE_FLAG_RIGHT | VEHICLE_FLAG_ADD_WHEEL },
-	{ "wheel_lf_dummy",	CAR_WHEEL_LF,	VEHICLE_FLAG_LEFT | VEHICLE_FLAG_ADD_WHEEL },
-	{ "wheel_lm_dummy",	CAR_WHEEL_LM,	VEHICLE_FLAG_LEFT | VEHICLE_FLAG_ADD_WHEEL },
-	{ "wheel_lb_dummy",	CAR_WHEEL_LB,	VEHICLE_FLAG_LEFT | VEHICLE_FLAG_ADD_WHEEL },
-	{ "bump_front_dummy",	CAR_BUMP_FRONT,	VEHICLE_FLAG_FRONT | VEHICLE_FLAG_COLLAPSE },
-	{ "bonnet_dummy",	CAR_BONNET,	VEHICLE_FLAG_COLLAPSE },
+	// car, mtruck, quad, bmx — одна и та же таблица 0x215b330
+	{ "wheel_rf_dummy",	CAR_WHEEL_RF,	VEHICLE_FLAG_ADD_WHEEL | VEHICLE_FLAG_RIGHT },
+	{ "wheel_rm_dummy",	CAR_WHEEL_RM,	VEHICLE_FLAG_ADD_WHEEL | VEHICLE_FLAG_RIGHT },
+	{ "wheel_rb_dummy",	CAR_WHEEL_RB,	VEHICLE_FLAG_ADD_WHEEL | VEHICLE_FLAG_RIGHT },
+	{ "wheel_lf_dummy",	CAR_WHEEL_LF,	VEHICLE_FLAG_ADD_WHEEL | VEHICLE_FLAG_LEFT },
+	{ "wheel_lm_dummy",	CAR_WHEEL_LM,	VEHICLE_FLAG_ADD_WHEEL | VEHICLE_FLAG_LEFT },
+	{ "wheel_lb_dummy",	CAR_WHEEL_LB,	VEHICLE_FLAG_ADD_WHEEL | VEHICLE_FLAG_LEFT },
+	{ "door_rf_dummy",	CAR_DOOR_RF,	VEHICLE_FLAG_COLLAPSE | VEHICLE_FLAG_DOOR | VEHICLE_FLAG_RIGHT | VEHICLE_FLAG_CULL | VEHICLE_FLAG_FRONTDOOR },
+	{ "door_rr_dummy",	CAR_DOOR_RR,	VEHICLE_FLAG_COLLAPSE | VEHICLE_FLAG_DOOR | VEHICLE_FLAG_RIGHT | VEHICLE_FLAG_REAR | VEHICLE_FLAG_CULL | VEHICLE_FLAG_REARDOOR },
+	{ "door_lf_dummy",	CAR_DOOR_LF,	VEHICLE_FLAG_COLLAPSE | VEHICLE_FLAG_DOOR | VEHICLE_FLAG_LEFT | VEHICLE_FLAG_CULL | VEHICLE_FLAG_FRONTDOOR },
+	{ "door_lr_dummy",	CAR_DOOR_LR,	VEHICLE_FLAG_COLLAPSE | VEHICLE_FLAG_DOOR | VEHICLE_FLAG_LEFT | VEHICLE_FLAG_REAR | VEHICLE_FLAG_CULL | VEHICLE_FLAG_REARDOOR },
+	{ "bump_front_dummy",	CAR_BUMP_FRONT,	VEHICLE_FLAG_COLLAPSE | VEHICLE_FLAG_FRONT },
+	{ "bump_rear_dummy",	CAR_BUMP_REAR,	VEHICLE_FLAG_COLLAPSE | VEHICLE_FLAG_REAR },
 	{ "wing_rf_dummy",	CAR_WING_RF,	VEHICLE_FLAG_COLLAPSE },
-	{ "wing_rr_dummy",	CAR_WING_RR,	VEHICLE_FLAG_RIGHT | VEHICLE_FLAG_COLLAPSE },
-	{ "door_rf_dummy",	CAR_DOOR_RF,	VEHICLE_FLAG_FRONTDOOR | VEHICLE_FLAG_ANGLECULL | VEHICLE_FLAG_RIGHT | VEHICLE_FLAG_DOOR | VEHICLE_FLAG_COLLAPSE },
-	{ "door_rr_dummy",	CAR_DOOR_RR,	VEHICLE_FLAG_REARDOOR | VEHICLE_FLAG_ANGLECULL | VEHICLE_FLAG_REAR | VEHICLE_FLAG_RIGHT | VEHICLE_FLAG_DOOR | VEHICLE_FLAG_COLLAPSE },
 	{ "wing_lf_dummy",	CAR_WING_LF,	VEHICLE_FLAG_COLLAPSE },
-	{ "wing_lr_dummy",	CAR_WING_LR,	VEHICLE_FLAG_LEFT | VEHICLE_FLAG_COLLAPSE },
-	{ "door_lf_dummy",	CAR_DOOR_LF,	VEHICLE_FLAG_FRONTDOOR | VEHICLE_FLAG_ANGLECULL | VEHICLE_FLAG_LEFT | VEHICLE_FLAG_DOOR | VEHICLE_FLAG_COLLAPSE },
-	{ "door_lr_dummy",	CAR_DOOR_LR,	VEHICLE_FLAG_REARDOOR | VEHICLE_FLAG_ANGLECULL | VEHICLE_FLAG_REAR | VEHICLE_FLAG_LEFT | VEHICLE_FLAG_DOOR | VEHICLE_FLAG_COLLAPSE },
-	{ "boot_dummy",		CAR_BOOT,	VEHICLE_FLAG_REAR | VEHICLE_FLAG_COLLAPSE },
-	{ "bump_rear_dummy",	CAR_BUMP_REAR,	VEHICLE_FLAG_REAR | VEHICLE_FLAG_COLLAPSE },
-	{ "windscreen_dummy",	CAR_WINDSCREEN,	VEHICLE_FLAG_WINDSCREEN | VEHICLE_FLAG_DRAWLAST | VEHICLE_FLAG_FRONT | VEHICLE_FLAG_COLLAPSE },
-
-	{ "ped_frontseat",	CAR_POS_FRONTSEAT,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
-	{ "ped_backseat",	CAR_POS_BACKSEAT,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
-	{ "headlights",		CAR_POS_HEADLIGHTS,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
-	{ "taillights",		CAR_POS_TAILLIGHTS,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
-	{ "exhaust",		CAR_POS_EXHAUST,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
+	{ "bonnet_dummy",	CAR_BONNET,	VEHICLE_FLAG_COLLAPSE },
+	{ "boot_dummy",		CAR_BOOT,	VEHICLE_FLAG_COLLAPSE | VEHICLE_FLAG_REAR },
+	{ "windscreen_dummy",	CAR_WINDSCREEN,	VEHICLE_FLAG_COLLAPSE | VEHICLE_FLAG_FRONT | VEHICLE_FLAG_ALPHA | VEHICLE_FLAG_GLASS },
+	// dummy-точки: имя -> m_positions[], номер берётся из eCarPositions порта
+	{ "ped_frontseat",	CAR_POS_FRONTSEAT,	VEHICLE_FLAG_COMP | VEHICLE_FLAG_DUMMY | VEHICLE_FLAG_SWINGING | CLUMP_FLAG_NO_HIERID },
+	{ "ped_backseat",	CAR_POS_BACKSEAT,	VEHICLE_FLAG_COMP | VEHICLE_FLAG_DUMMY | VEHICLE_FLAG_SWINGING | CLUMP_FLAG_NO_HIERID },
+	{ "headlights",		CAR_POS_HEADLIGHTS,	VEHICLE_FLAG_COMP | VEHICLE_FLAG_DUMMY | CLUMP_FLAG_NO_HIERID },
+	{ "taillights",		CAR_POS_TAILLIGHTS,	VEHICLE_FLAG_COMP | VEHICLE_FLAG_DUMMY | CLUMP_FLAG_NO_HIERID },
+	{ "exhaust",		CAR_POS_EXHAUST,	VEHICLE_FLAG_COMP | VEHICLE_FLAG_DUMMY | CLUMP_FLAG_NO_HIERID },
+	// задние крылья: см. комментарий к CAR_WING_RR в Vehicle.h
+	{ "wing_rr_dummy",	CAR_WING_RR,	VEHICLE_FLAG_COLLAPSE | VEHICLE_FLAG_RIGHT },
+	{ "wing_lr_dummy",	CAR_WING_LR,	VEHICLE_FLAG_COLLAPSE | VEHICLE_FLAG_LEFT },
 #ifdef SA_VEHICLE_MODELS
 	// GTA:SA and many converted/modded models name these frames without a
 	// "_dummy" suffix. They are only accepted if the canonical name above was
 	// not found, because CClumpModelInfo::SetFrameIds ignores frames that
 	// already carry a hierarchy id.
-	{ "bump_front",		CAR_BUMP_FRONT,	VEHICLE_FLAG_FRONT | VEHICLE_FLAG_COLLAPSE },
-	{ "bump_rear",		CAR_BUMP_REAR,	VEHICLE_FLAG_REAR | VEHICLE_FLAG_COLLAPSE },
+	{ "bump_front",		CAR_BUMP_FRONT,	VEHICLE_FLAG_COLLAPSE | VEHICLE_FLAG_FRONT },
+	{ "bump_rear",		CAR_BUMP_REAR,	VEHICLE_FLAG_COLLAPSE | VEHICLE_FLAG_REAR },
 	{ "bonnet",		CAR_BONNET,	VEHICLE_FLAG_COLLAPSE },
-	{ "boot",		CAR_BOOT,	VEHICLE_FLAG_REAR | VEHICLE_FLAG_COLLAPSE },
-	{ "windscreen",		CAR_WINDSCREEN,	VEHICLE_FLAG_WINDSCREEN | VEHICLE_FLAG_DRAWLAST | VEHICLE_FLAG_FRONT | VEHICLE_FLAG_COLLAPSE },
+	{ "boot",		CAR_BOOT,	VEHICLE_FLAG_COLLAPSE | VEHICLE_FLAG_REAR },
+	{ "windscreen",		CAR_WINDSCREEN,	VEHICLE_FLAG_COLLAPSE | VEHICLE_FLAG_FRONT | VEHICLE_FLAG_ALPHA | VEHICLE_FLAG_GLASS },
 #endif
-	{ "extra1",		0, VEHICLE_FLAG_DRAWLAST | VEHICLE_FLAG_COMP | CLUMP_FLAG_NO_HIERID },
-	{ "extra2",		0, VEHICLE_FLAG_DRAWLAST | VEHICLE_FLAG_COMP | CLUMP_FLAG_NO_HIERID },
-	{ "extra3",		0, VEHICLE_FLAG_DRAWLAST | VEHICLE_FLAG_COMP | CLUMP_FLAG_NO_HIERID },
-	{ "extra4",		0, VEHICLE_FLAG_DRAWLAST | VEHICLE_FLAG_COMP | CLUMP_FLAG_NO_HIERID },
-	{ "extra5",		0, VEHICLE_FLAG_DRAWLAST | VEHICLE_FLAG_COMP | CLUMP_FLAG_NO_HIERID },
-	{ "extra6",		0, VEHICLE_FLAG_DRAWLAST | VEHICLE_FLAG_COMP | CLUMP_FLAG_NO_HIERID },
+	{ "extra1",		0, VEHICLE_FLAG_COMP | VEHICLE_FLAG_EXTRA | VEHICLE_FLAG_ALPHA | CLUMP_FLAG_NO_HIERID },
+	{ "extra2",		0, VEHICLE_FLAG_COMP | VEHICLE_FLAG_EXTRA | VEHICLE_FLAG_ALPHA | CLUMP_FLAG_NO_HIERID },
+	{ "extra3",		0, VEHICLE_FLAG_COMP | VEHICLE_FLAG_EXTRA | VEHICLE_FLAG_ALPHA | CLUMP_FLAG_NO_HIERID },
+	{ "extra4",		0, VEHICLE_FLAG_COMP | VEHICLE_FLAG_EXTRA | VEHICLE_FLAG_ALPHA | CLUMP_FLAG_NO_HIERID },
+	{ "extra5",		0, VEHICLE_FLAG_COMP | VEHICLE_FLAG_EXTRA | VEHICLE_FLAG_ALPHA | CLUMP_FLAG_NO_HIERID },
+	{ "extra6",		0, VEHICLE_FLAG_COMP | VEHICLE_FLAG_EXTRA | VEHICLE_FLAG_ALPHA | CLUMP_FLAG_NO_HIERID },
+	{ nil, 0, 0 }
+};
+
+// trailer — таблица 0x215b620. Отличается от car тем, что у него нет ни
+// misc_*, ни aspl_*, и есть только три двери.
+RwObjectNameIdAssocation trailerIds[] = {
+	{ "wheel_rf_dummy",	CAR_WHEEL_RF,	VEHICLE_FLAG_ADD_WHEEL | VEHICLE_FLAG_RIGHT },
+	{ "wheel_rm_dummy",	CAR_WHEEL_RM,	VEHICLE_FLAG_ADD_WHEEL | VEHICLE_FLAG_RIGHT },
+	{ "wheel_rb_dummy",	CAR_WHEEL_RB,	VEHICLE_FLAG_ADD_WHEEL | VEHICLE_FLAG_RIGHT },
+	{ "wheel_lf_dummy",	CAR_WHEEL_LF,	VEHICLE_FLAG_ADD_WHEEL | VEHICLE_FLAG_LEFT },
+	{ "wheel_lm_dummy",	CAR_WHEEL_LM,	VEHICLE_FLAG_ADD_WHEEL | VEHICLE_FLAG_LEFT },
+	{ "wheel_lb_dummy",	CAR_WHEEL_LB,	VEHICLE_FLAG_ADD_WHEEL | VEHICLE_FLAG_LEFT },
+	{ "door_rf_dummy",	CAR_DOOR_RF,	VEHICLE_FLAG_COLLAPSE | VEHICLE_FLAG_DOOR | VEHICLE_FLAG_RIGHT | VEHICLE_FLAG_CULL | VEHICLE_FLAG_FRONTDOOR },
+	{ "door_rr_dummy",	CAR_DOOR_RR,	VEHICLE_FLAG_COLLAPSE | VEHICLE_FLAG_DOOR | VEHICLE_FLAG_RIGHT | VEHICLE_FLAG_REAR | VEHICLE_FLAG_CULL | VEHICLE_FLAG_REARDOOR },
+	{ "door_lf_dummy",	CAR_DOOR_LF,	VEHICLE_FLAG_COLLAPSE | VEHICLE_FLAG_DOOR | VEHICLE_FLAG_LEFT | VEHICLE_FLAG_CULL | VEHICLE_FLAG_FRONTDOOR },
+	{ "door_lr_dummy",	CAR_DOOR_LR,	VEHICLE_FLAG_COLLAPSE | VEHICLE_FLAG_DOOR | VEHICLE_FLAG_LEFT | VEHICLE_FLAG_REAR | VEHICLE_FLAG_CULL | VEHICLE_FLAG_REARDOOR },
+	{ "bump_front_dummy",	CAR_BUMP_FRONT,	VEHICLE_FLAG_COLLAPSE | VEHICLE_FLAG_FRONT },
+	{ "bump_rear_dummy",	CAR_BUMP_REAR,	VEHICLE_FLAG_COLLAPSE | VEHICLE_FLAG_REAR },
+	{ "wing_rf_dummy",	CAR_WING_RF,	VEHICLE_FLAG_COLLAPSE },
+	{ "wing_lf_dummy",	CAR_WING_LF,	VEHICLE_FLAG_COLLAPSE },
+	{ "bonnet_dummy",	CAR_BONNET,	VEHICLE_FLAG_COLLAPSE },
+	{ "boot_dummy",		CAR_BOOT,	VEHICLE_FLAG_COLLAPSE | VEHICLE_FLAG_REAR },
+	{ "windscreen_dummy",	CAR_WINDSCREEN,	VEHICLE_FLAG_COLLAPSE | VEHICLE_FLAG_FRONT | VEHICLE_FLAG_ALPHA | VEHICLE_FLAG_GLASS },
+	{ "ped_frontseat",	CAR_POS_FRONTSEAT,	VEHICLE_FLAG_COMP | VEHICLE_FLAG_DUMMY | VEHICLE_FLAG_SWINGING | CLUMP_FLAG_NO_HIERID },
+	{ "ped_backseat",	CAR_POS_BACKSEAT,	VEHICLE_FLAG_COMP | VEHICLE_FLAG_DUMMY | VEHICLE_FLAG_SWINGING | CLUMP_FLAG_NO_HIERID },
+	{ "headlights",		CAR_POS_HEADLIGHTS,	VEHICLE_FLAG_COMP | VEHICLE_FLAG_DUMMY | CLUMP_FLAG_NO_HIERID },
+	{ "taillights",		CAR_POS_TAILLIGHTS,	VEHICLE_FLAG_COMP | VEHICLE_FLAG_DUMMY | CLUMP_FLAG_NO_HIERID },
+	{ "exhaust",		CAR_POS_EXHAUST,	VEHICLE_FLAG_COMP | VEHICLE_FLAG_DUMMY | CLUMP_FLAG_NO_HIERID },
+	{ "extra1",		0, VEHICLE_FLAG_COMP | VEHICLE_FLAG_EXTRA | VEHICLE_FLAG_ALPHA | CLUMP_FLAG_NO_HIERID },
+	{ "extra2",		0, VEHICLE_FLAG_COMP | VEHICLE_FLAG_EXTRA | VEHICLE_FLAG_ALPHA | CLUMP_FLAG_NO_HIERID },
+	{ "extra3",		0, VEHICLE_FLAG_COMP | VEHICLE_FLAG_EXTRA | VEHICLE_FLAG_ALPHA | CLUMP_FLAG_NO_HIERID },
+	{ "extra4",		0, VEHICLE_FLAG_COMP | VEHICLE_FLAG_EXTRA | VEHICLE_FLAG_ALPHA | CLUMP_FLAG_NO_HIERID },
+	{ "extra5",		0, VEHICLE_FLAG_COMP | VEHICLE_FLAG_EXTRA | VEHICLE_FLAG_ALPHA | CLUMP_FLAG_NO_HIERID },
+	{ "extra6",		0, VEHICLE_FLAG_COMP | VEHICLE_FLAG_EXTRA | VEHICLE_FLAG_ALPHA | CLUMP_FLAG_NO_HIERID },
 	{ nil, 0, 0 }
 };
 
 RwObjectNameIdAssocation boatIds[] = {
+	// boat — 0x215b890
 	{ "boat_moving_hi",	BOAT_MOVING,	0 },
 	{ "boat_rudder_hi",	BOAT_RUDDER,	0 },
 	{ "boat_flap_left",	BOAT_FLAP_LEFT,	0 },
 	{ "boat_flap_right",	BOAT_FLAP_RIGHT,	0 },
 	{ "boat_rearflap_left",	BOAT_REARFLAP_LEFT,	0 },
 	{ "boat_rearflap_right",	BOAT_REARFLAP_RIGHT,	0 },
-#ifdef FIX_BUGS
-	// let's just accept both
-	{ "windscreen",		BOAT_WINDSCREEN,	VEHICLE_FLAG_WINDSCREEN | VEHICLE_FLAG_DRAWLAST },
-	{ "windscreen_hi_ok",		BOAT_WINDSCREEN,	VEHICLE_FLAG_WINDSCREEN | VEHICLE_FLAG_DRAWLAST },
-#else
-#ifdef GTA_PS2
-	{ "windscreen",		BOAT_WINDSCREEN,	VEHICLE_FLAG_WINDSCREEN | VEHICLE_FLAG_DRAWLAST },
-#else
-	{ "windscreen_hi_ok",		BOAT_WINDSCREEN,	VEHICLE_FLAG_WINDSCREEN | VEHICLE_FLAG_DRAWLAST },
-#endif
-#endif
-	{ "ped_frontseat",	BOAT_POS_FRONTSEAT,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
+	// у клиента обе записи есть всегда; CClumpModelInfo::SetFrameIds
+	// пропускает кадр, если он уже получил hierarchyId, поэтому вторая
+	// запись срабатывает только когда первой в модели не нашлось
+	{ "windscreen",		BOAT_WINDSCREEN,	VEHICLE_FLAG_ALPHA | VEHICLE_FLAG_GLASS },
+	{ "windscreen_hi_ok",	BOAT_WINDSCREEN,	VEHICLE_FLAG_ALPHA | VEHICLE_FLAG_GLASS },
+	{ "ped_frontseat",	BOAT_POS_FRONTSEAT,	VEHICLE_FLAG_COMP | VEHICLE_FLAG_DUMMY | VEHICLE_FLAG_SWINGING | CLUMP_FLAG_NO_HIERID },
 	{ nil, 0, 0 }
 };
 
 RwObjectNameIdAssocation trainIds[] = {
-	{ "door_lhs_dummy",	TRAIN_DOOR_LHS,	VEHICLE_FLAG_LEFT | VEHICLE_FLAG_COLLAPSE },
-	{ "door_rhs_dummy",	TRAIN_DOOR_RHS,	VEHICLE_FLAG_LEFT | VEHICLE_FLAG_COLLAPSE },
-	{ "light_front",	TRAIN_POS_LIGHT_FRONT,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
-	{ "light_rear",		TRAIN_POS_LIGHT_REAR,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
-	{ "ped_left_entry",	TRAIN_POS_LEFT_ENTRY,	VEHICLE_FLAG_DOOR | VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
-	{ "ped_mid_entry",	TRAIN_POS_MID_ENTRY,	VEHICLE_FLAG_DOOR | VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
-	{ "ped_right_entry",	TRAIN_POS_RIGHT_ENTRY,	VEHICLE_FLAG_DOOR | VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
+	// train — 0x215b930
+	{ "door_lhs_dummy",	TRAIN_DOOR_LHS,	VEHICLE_FLAG_COLLAPSE | VEHICLE_FLAG_LEFT },
+	{ "door_rhs_dummy",	TRAIN_DOOR_RHS,	VEHICLE_FLAG_COLLAPSE | VEHICLE_FLAG_LEFT },
+	{ "light_front",		TRAIN_POS_LIGHT_FRONT,	VEHICLE_FLAG_COMP | VEHICLE_FLAG_DUMMY | CLUMP_FLAG_NO_HIERID },
+	{ "light_rear",		TRAIN_POS_LIGHT_REAR,	VEHICLE_FLAG_COMP | VEHICLE_FLAG_DUMMY | CLUMP_FLAG_NO_HIERID },
+	{ "ped_left_entry",	TRAIN_POS_LEFT_ENTRY,	VEHICLE_FLAG_COMP | VEHICLE_FLAG_DUMMY | VEHICLE_FLAG_DOOR | CLUMP_FLAG_NO_HIERID },
+	{ "ped_mid_entry",	TRAIN_POS_MID_ENTRY,	VEHICLE_FLAG_COMP | VEHICLE_FLAG_DUMMY | VEHICLE_FLAG_DOOR | CLUMP_FLAG_NO_HIERID },
+	{ "ped_right_entry",	TRAIN_POS_RIGHT_ENTRY,	VEHICLE_FLAG_COMP | VEHICLE_FLAG_DUMMY | VEHICLE_FLAG_DOOR | CLUMP_FLAG_NO_HIERID },
 	{ nil, 0, 0 }
 };
 
 RwObjectNameIdAssocation heliIds[] = {
+	// heli — 0x215b9b0
 	{ "chassis_dummy",	HELI_CHASSIS,	VEHICLE_FLAG_COLLAPSE },
 	{ "toprotor",		HELI_TOPROTOR,	0 },
 	{ "backrotor",		HELI_BACKROTOR,	0 },
@@ -148,16 +206,24 @@ RwObjectNameIdAssocation heliIds[] = {
 	{ nil, 0, 0 }
 };
 
+// plane — 0x34e7ab0. У клиента таблица ПУСТАЯ: в .bss лежат восемь байт и ни
+// одной релокации, то есть SA-самолёты не получают ни одного hierarchyId.
+// Но порт грузит и VC-модели (их plane-иерархия — единственный источник
+// позиций для бортовых огней, см. CPlane::ProcessControl), поэтому
+// VC-имена оставлены ниже отдельным блоком: у SA-модели их просто не
+// находится, и всё работает как у клиента.
 RwObjectNameIdAssocation planeIds[] = {
+	// VC-совместимость: у клиента этих записей нет
 	{ "wheel_front_dummy",	PLANE_WHEEL_FRONT,	0 },
 	{ "wheel_rear_dummy",	PLANE_WHEEL_READ,	0 },
-	{ "light_tailplane",	PLANE_POS_LIGHT_TAIL,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
-	{ "light_left",		PLANE_POS_LIGHT_LEFT,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
-	{ "light_right",	PLANE_POS_LIGHT_RIGHT,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
+	{ "light_tailplane",	PLANE_POS_LIGHT_TAIL,	VEHICLE_FLAG_DUMMY | VEHICLE_FLAG_COMP | CLUMP_FLAG_NO_HIERID },
+	{ "light_left",		PLANE_POS_LIGHT_LEFT,	VEHICLE_FLAG_DUMMY | VEHICLE_FLAG_COMP | CLUMP_FLAG_NO_HIERID },
+	{ "light_right",		PLANE_POS_LIGHT_RIGHT,	VEHICLE_FLAG_DUMMY | VEHICLE_FLAG_COMP | CLUMP_FLAG_NO_HIERID },
 	{ nil, 0, 0 }
 };
 
 RwObjectNameIdAssocation bikeIds[] = {
+	// bike — 0x215ba30
 	{ "chassis_dummy",	BIKE_CHASSIS,	0 },
 	{ "forks_front",	BIKE_FORKS_FRONT,	0 },
 	{ "forks_rear",		BIKE_FORKS_REAR,	0 },
@@ -165,27 +231,91 @@ RwObjectNameIdAssocation bikeIds[] = {
 	{ "wheel_rear",		BIKE_WHEEL_REAR,	0 },
 	{ "mudguard",		BIKE_MUDGUARD,	0 },
 	{ "handlebars",		BIKE_HANDLEBARS,	0 },
-	{ "ped_frontseat",	CAR_POS_FRONTSEAT,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
-	{ "ped_backseat",	CAR_POS_BACKSEAT,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
-	{ "headlights",		CAR_POS_HEADLIGHTS,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
-	{ "taillights",		CAR_POS_TAILLIGHTS,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
-	{ "exhaust",		CAR_POS_EXHAUST,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
-	{ "extra1",		0,	VEHICLE_FLAG_DRAWLAST | VEHICLE_FLAG_COMP | CLUMP_FLAG_NO_HIERID },
-	{ "extra2",		0,	VEHICLE_FLAG_DRAWLAST | VEHICLE_FLAG_COMP | CLUMP_FLAG_NO_HIERID },
-	{ "extra3",		0,	VEHICLE_FLAG_DRAWLAST | VEHICLE_FLAG_COMP | CLUMP_FLAG_NO_HIERID },
-	{ "extra4",		0,	VEHICLE_FLAG_DRAWLAST | VEHICLE_FLAG_COMP | CLUMP_FLAG_NO_HIERID },
-	{ "extra5",		0,	VEHICLE_FLAG_DRAWLAST | VEHICLE_FLAG_COMP | CLUMP_FLAG_NO_HIERID },
-	{ "extra6",		0,	VEHICLE_FLAG_DRAWLAST | VEHICLE_FLAG_COMP | CLUMP_FLAG_NO_HIERID },
+	// позиции общие с машинами: m_positions[] у порта одно на все типы, и
+	// именно CAR_POS_HEADLIGHTS читает CFire::StartFire
+	{ "ped_frontseat",	CAR_POS_FRONTSEAT,	VEHICLE_FLAG_COMP | VEHICLE_FLAG_DUMMY | VEHICLE_FLAG_SWINGING | CLUMP_FLAG_NO_HIERID },
+	{ "ped_backseat",	CAR_POS_BACKSEAT,	VEHICLE_FLAG_COMP | VEHICLE_FLAG_DUMMY | VEHICLE_FLAG_SWINGING | CLUMP_FLAG_NO_HIERID },
+	{ "taillights",		CAR_POS_TAILLIGHTS,	VEHICLE_FLAG_COMP | VEHICLE_FLAG_DUMMY | CLUMP_FLAG_NO_HIERID },
+	{ "exhaust",		CAR_POS_EXHAUST,	VEHICLE_FLAG_COMP | VEHICLE_FLAG_DUMMY | CLUMP_FLAG_NO_HIERID },
+	// точка фары: у клиента это IS_VEH_STRUCT_PART без позиции, но VC-мотоциклы
+	// (и CFire) берут отсюда CAR_POS_HEADLIGHTS
+	{ "headlights",		CAR_POS_HEADLIGHTS,	VEHICLE_FLAG_COMP | VEHICLE_FLAG_DUMMY | CLUMP_FLAG_NO_HIERID },
+	{ "extra1",		0, VEHICLE_FLAG_COMP | VEHICLE_FLAG_EXTRA | VEHICLE_FLAG_ALPHA | CLUMP_FLAG_NO_HIERID },
+	{ "extra2",		0, VEHICLE_FLAG_COMP | VEHICLE_FLAG_EXTRA | VEHICLE_FLAG_ALPHA | CLUMP_FLAG_NO_HIERID },
+	{ "extra3",		0, VEHICLE_FLAG_COMP | VEHICLE_FLAG_EXTRA | VEHICLE_FLAG_ALPHA | CLUMP_FLAG_NO_HIERID },
+	{ "extra4",		0, VEHICLE_FLAG_COMP | VEHICLE_FLAG_EXTRA | VEHICLE_FLAG_ALPHA | CLUMP_FLAG_NO_HIERID },
+	{ "extra5",		0, VEHICLE_FLAG_COMP | VEHICLE_FLAG_EXTRA | VEHICLE_FLAG_ALPHA | CLUMP_FLAG_NO_HIERID },
+	{ "extra6",		0, VEHICLE_FLAG_COMP | VEHICLE_FLAG_EXTRA | VEHICLE_FLAG_ALPHA | CLUMP_FLAG_NO_HIERID },
 	{ nil, 0, 0 }
 };
 
-RwObjectNameIdAssocation *CVehicleModelInfo::ms_vehicleDescs[] = {
-	carIds,
-	boatIds,
-	trainIds,
-	heliIds,
-	planeIds,
-	bikeIds
+RwObjectNameIdAssocation trikeIds[] = {
+	// trike — 0x215bba0; едет на CBike, поэтому номера узлов — из eBikeNodes
+	{ "chassis_dummy",	BIKE_CHASSIS,	0 },
+	{ "forks_front",	BIKE_FORKS_FRONT,	0 },
+	{ "forks_rear",		BIKE_FORKS_REAR,	0 },
+	{ "wheel_front",	BIKE_WHEEL_FRONT,	0 },
+	{ "wheel_rear",		BIKE_WHEEL_REAR,	0 },
+	{ "mudguard",		BIKE_MUDGUARD,	0 },
+	{ "handlebars",		BIKE_HANDLEBARS,	0 },
+	{ "wheel_middle",	BIKE_WHEEL_MIDDLE,	0 },
+	{ "forks_middle",	BIKE_FORKS_MIDDLE,	0 },
+	{ "ped_frontseat",	CAR_POS_FRONTSEAT,	VEHICLE_FLAG_COMP | VEHICLE_FLAG_DUMMY | VEHICLE_FLAG_SWINGING | CLUMP_FLAG_NO_HIERID },
+	{ "ped_backseat",	CAR_POS_BACKSEAT,	VEHICLE_FLAG_COMP | VEHICLE_FLAG_DUMMY | VEHICLE_FLAG_SWINGING | CLUMP_FLAG_NO_HIERID },
+	{ "headlights",		CAR_POS_HEADLIGHTS,	VEHICLE_FLAG_COMP | VEHICLE_FLAG_DUMMY | CLUMP_FLAG_NO_HIERID },
+	{ "taillights",		CAR_POS_TAILLIGHTS,	VEHICLE_FLAG_COMP | VEHICLE_FLAG_DUMMY | CLUMP_FLAG_NO_HIERID },
+	{ "exhaust",		CAR_POS_EXHAUST,	VEHICLE_FLAG_COMP | VEHICLE_FLAG_DUMMY | CLUMP_FLAG_NO_HIERID },
+	{ "extra1",		0, VEHICLE_FLAG_COMP | VEHICLE_FLAG_EXTRA | VEHICLE_FLAG_ALPHA | CLUMP_FLAG_NO_HIERID },
+	{ "extra2",		0, VEHICLE_FLAG_COMP | VEHICLE_FLAG_EXTRA | VEHICLE_FLAG_ALPHA | CLUMP_FLAG_NO_HIERID },
+	{ "extra3",		0, VEHICLE_FLAG_COMP | VEHICLE_FLAG_EXTRA | VEHICLE_FLAG_ALPHA | CLUMP_FLAG_NO_HIERID },
+	{ "extra4",		0, VEHICLE_FLAG_COMP | VEHICLE_FLAG_EXTRA | VEHICLE_FLAG_ALPHA | CLUMP_FLAG_NO_HIERID },
+	{ "extra5",		0, VEHICLE_FLAG_COMP | VEHICLE_FLAG_EXTRA | VEHICLE_FLAG_ALPHA | CLUMP_FLAG_NO_HIERID },
+	{ "extra6",		0, VEHICLE_FLAG_COMP | VEHICLE_FLAG_EXTRA | VEHICLE_FLAG_ALPHA | CLUMP_FLAG_NO_HIERID },
+	{ nil, 0, 0 }
+};
+
+// prtcrn и craneof — 0x215bd20. У клиента у этих моделей нет ни одного узла
+// CBike: крановые кадры (crane_cable_dummy, hook_cable_dummy, boom mount,
+// boom1, boom2) получают номера 2..6 из ТОЙ ЖЕ таблицы, но это отдельные
+// кадры, а не вилка/колесо/руль. Повторяем номера клиента — слоты eBikeNodes
+// совпадают по количеству (BIKE_NUM_NODES = 8, максимум здесь 7).
+RwObjectNameIdAssocation prtcrnIds[] = {
+	{ "chassis_dummy",	BIKE_CHASSIS,	0 },
+	{ "crane_cable_dummy",	BIKE_FORKS_FRONT,	0 },
+	{ "hook_cable_dummy",	BIKE_MUDGUARD,	0 },
+	{ "boom mount",		BIKE_FORKS_REAR,	0 },
+	{ "boom1",		BIKE_WHEEL_FRONT,	0 },
+	{ "boom2",		BIKE_WHEEL_REAR,	0 },
+	{ "ped_frontseat",	BIKE_HANDLEBARS,	0 },
+	{ nil, 0, 0 }
+};
+
+// ms_vehicleDescs[m_vehicleType] без проверки границ читать нельзя: тип
+// приходит из IDE и до разбора бывает -1 (см. CModelInfo::AddVehicleModel).
+static RwObjectNameIdAssocation*
+GetVehicleDescArray(int32 type)
+{
+	static RwObjectNameIdAssocation empty[] = { { nil, 0, 0 } };
+
+	if(type < 0 || type >= NUM_VEHICLE_TYPES)
+		return empty;
+	return CVehicleModelInfo::ms_vehicleDescs[type];
+}
+
+RwObjectNameIdAssocation *CVehicleModelInfo::ms_vehicleDescs[NUM_VEHICLE_TYPES] = {
+	carIds,		// 0  car
+	boatIds,		// 1  boat
+	trainIds,	// 2  train
+	heliIds,		// 3  heli
+	planeIds,	// 4  plane
+	bikeIds,		// 5  bike
+	carIds,		// 6  mtruck
+	trailerIds,	// 7  trailer
+	carIds,		// 8  quad
+	carIds,		// 9  bmx
+	trikeIds,	// 10 trike
+	prtcrnIds,	// 11 prtcrn
+	prtcrnIds,	// 12 craneof
 };
 
 bool gbBlackCars;
@@ -535,7 +665,7 @@ CVehicleModelInfo::SetClump(RpClump *clump)
 	gVehicleIsSAHierarchy = IsSAHierarchy(clump);
 #endif
 	SetAtomicRenderCallbacks();
-	SetFrameIds(ms_vehicleDescs[m_vehicleType]);
+	SetFrameIds(GetVehicleDescArray(m_vehicleType));
 	PreprocessHierarchy();
 	FindEditableMaterialList();
 	SetEnvironmentMap();
@@ -864,7 +994,7 @@ CVehicleModelInfo::PreprocessHierarchy(void)
 	RpAtomic *atomic;
 	RwV3d *rwvec;
 
-	desc = ms_vehicleDescs[m_vehicleType];
+	desc = GetVehicleDescArray(m_vehicleType);
 	m_numDoors = 0;
 	m_numComps = 0;
 #ifdef SA_VEHICLE_MODELS
@@ -896,20 +1026,27 @@ CVehicleModelInfo::PreprocessHierarchy(void)
 				RwV3dTransformPoints(rwvec, rwvec, 1, RwFrameGetMatrix(f));
 			RwFrameDestroy(assoc.frame);
 		}else{
-			atomic = (RpAtomic*)GetFirstObject(assoc.frame);
-			if(atomic == nil)
-				continue;
-			if(m_numComps >= (int32)(sizeof(m_comps)/sizeof(m_comps[0]))){
-				// models with more extra parts than VC supports (SA car
-				// conversions often have 8+) keep the atomic in the clump
-				// instead of overflowing m_comps[]
+			// only IS_EXTRA goes to m_comps[]. The client uses IS_VEH_STRUCT_PART
+			// for the structural dummies it must not touch (engine, petrolcap,
+			// hookup, headlight cones, turn lights), and treating those as extra
+			// parts would hide them as random components.
+			if(desc[i].flags & VEHICLE_FLAG_EXTRA){
+				atomic = (RpAtomic*)GetFirstObject(assoc.frame);
+				if(atomic == nil)
+					continue;
+				if(m_numComps >= (int32)(sizeof(m_comps)/sizeof(m_comps[0]))){
+					// models with more extra parts than VC supports (SA car
+					// conversions often have 8+) keep the atomic in the clump
+					// instead of overflowing m_comps[]
+					SetVehicleComponentFlags(assoc.frame, desc[i].flags);
+					continue;
+				}
+				RpClumpRemoveAtomic(m_clump, atomic);
+				RwFrameRemoveChild(assoc.frame);
 				SetVehicleComponentFlags(assoc.frame, desc[i].flags);
-				continue;
-			}
-			RpClumpRemoveAtomic(m_clump, atomic);
-			RwFrameRemoveChild(assoc.frame);
-			SetVehicleComponentFlags(assoc.frame, desc[i].flags);
-			m_comps[m_numComps++] = atomic;
+				m_comps[m_numComps++] = atomic;
+			}else
+				SetVehicleComponentFlags(assoc.frame, desc[i].flags);
 		}
 	}
 
@@ -993,13 +1130,21 @@ CVehicleModelInfo::SetVehicleComponentFlags(RwFrame *frame, uint32 flags)
 
 #define SETFLAGS(f) RwFrameForAllObjects(frame, SetAtomicFlagCB, (void*)(f))
 
-	if(flags & VEHICLE_FLAG_WINDSCREEN){
+	// У клиента нет отдельных битов WINDSCREEN/ANGLECULL: список стекла и
+	// углового отсечения — это COMP_IS_GLASS/COMP_HAS_ALPHA/COMP_CULL, а
+	// рисуемый последним компонент — COMP_RENDER_ALWAYS. Раскладываем их по
+	// тем флагам атомика, которые понимает CVisibilityPlugins.
+	if(flags & VEHICLE_FLAG_GLASS){
 		if(this == CModelInfo::GetModelInfo(MI_RHINO))
 			return;
 		SETFLAGS(ATOMIC_FLAG_WINDSCREEN);
 	}
 
-	if(flags & VEHICLE_FLAG_ANGLECULL)
+	// COMP_HAS_ALPHA отдельного флага атомика не получает: в этом порте
+	// альфа-проход выбирается по материалу (SetAtomicRendererCB смотрит
+	// HasAlphaMaterialCB), а не по фрейму.
+
+	if(flags & VEHICLE_FLAG_CULL)
 		SETFLAGS(ATOMIC_FLAG_ANGLECULL);
 
 	if(flags & VEHICLE_FLAG_FRONT)
@@ -1016,7 +1161,7 @@ CVehicleModelInfo::SetVehicleComponentFlags(RwFrame *frame, uint32 flags)
 	else if(flags & VEHICLE_FLAG_FRONTDOOR)
 		SETFLAGS(ATOMIC_FLAG_FRONTDOOR);
 
-	if(flags & VEHICLE_FLAG_DRAWLAST)
+	if(flags & VEHICLE_FLAG_RENDER_ALWAYS)
 		SETFLAGS(ATOMIC_FLAG_DRAWLAST);
 }
 

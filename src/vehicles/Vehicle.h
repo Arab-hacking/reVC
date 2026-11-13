@@ -21,6 +21,16 @@ enum {
 	PERMANENT_VEHICLE = 4,
 };
 
+// Номера узлов — это hierarchyId, который таблицы компонентов (см.
+// VehicleModelInfo.cpp, carIds[]) проставляют кадрам, а m_aCarNodes[] —
+// обычный массив, который CAutomobile::SetupModelNodes заполняет через
+// CClumpModelInfo::FillFrameArray без проверки границ. Поэтому номер обязан
+// совпадать со своим слотом: у клиента (SA) порядок другой (chassis 1,
+// wing_rr/wing_lr есть, misc/aspl идут до 26), и копировать его сюда нельзя —
+// frame[26] при 19 слотах затирал бы соседние поля объекта.
+// Отличие от SA: нет chassis (порт берёт корневой кадр клампа), нет
+// wing_rr/wing_lr (порт растит задние крылья из wing_rf/wing_lf — см.
+// CAutomobile::SetupSuspensionLines), нет misc_a..e/aspl_a..c.
 enum eCarNodes
 {
 	CAR_WHEEL_RF = 1,

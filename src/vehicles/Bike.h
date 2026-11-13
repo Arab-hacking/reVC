@@ -5,6 +5,12 @@
 #include "Skidmarks.h"
 #include "AnimManager.h"
 
+// Номера — это hierarchyId из bikeIds[]/trikeIds[]/prtcrnIds[]
+// (VehicleModelInfo.cpp) и слоты m_aBikeNodes[]: FillFrameArray пишет по
+// номеру без проверки границ. trike добавляет средние вилку и колесо
+// (у клиента они есть в trike-таблице); prtcrn/craneof садятся на те же
+// слоты, но там это кадры стрелы, а не вилка/колесо — их никто не читает,
+// кроме обработки компонентов.
 enum eBikeNodes {
 	BIKE_NODE_NONE,
 	BIKE_CHASSIS,
@@ -14,6 +20,8 @@ enum eBikeNodes {
 	BIKE_WHEEL_REAR,
 	BIKE_MUDGUARD,
 	BIKE_HANDLEBARS,
+	BIKE_WHEEL_MIDDLE,
+	BIKE_FORKS_MIDDLE,
 	BIKE_NUM_NODES
 };
 

@@ -249,6 +249,17 @@ CAutomobile::SetModelIndex(uint32 id)
 {
 	CVehicle::SetModelIndex(id);
 	SetupModelNodes();
+#ifdef SA_VEHICLE_MODELS
+	CVehicleModelInfo *vmi = (CVehicleModelInfo*)CModelInfo::GetModelInfo(GetModelIndex());
+	// SA-модели называют только передние крылья (wing_rf_dummy/wing_lf_dummy),
+	// а ремонт и частицы попадания в порте адресуются задним слотам. Пустые
+	// слоты заполняем кадрами передних крыльев: RigidChassis/SetupPanelDamage
+	// ожидают, что m_aCarNodes[CAR_WING_RR/LR] указывает на живой кадр.
+	if(m_aCarNodes[CAR_WING_RR] == nil && m_aCarNodes[CAR_WING_RF])
+		m_aCarNodes[CAR_WING_RR] = vmi->GetFrameFromId(GetClump(), CAR_WING_RF);
+	if(m_aCarNodes[CAR_WING_LR] == nil && m_aCarNodes[CAR_WING_LF])
+		m_aCarNodes[CAR_WING_LR] = vmi->GetFrameFromId(GetClump(), CAR_WING_LF);
+#endif
 }
 
 #define SAND_SLOWDOWN (0.01f)
