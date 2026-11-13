@@ -1917,7 +1917,16 @@ CFileLoader::LoadVehicleObject(const char *line)
 		mi->m_vehicleClass = CCarCtrl::LEISUREBOAT;
 	else if(strcmp(vehclass, "workerboat") == 0)
 		mi->m_vehicleClass = CCarCtrl::WORKERBOAT;
-	else if(strcmp(vehclass, "ignore") == 0) {
+	else {
+		// Класс вне таблицы (и, что то же самое, "ignore") — это -1.
+		// Клиент: 0xb4b3ac знает одиннадцать имён и на промахе отдаёт -1
+		// (csinv w0, w8, wzr, eq). Дальше LoadVehicleObject пишет его в
+		// mi+0x72 и делает bics wzr, w8, w0 при w8 = 0xffff; для -1 флаг Z
+		// встаёт, и ветка пуша (0xb4aa74..0xb4aaac: memcpy записи и вызов
+		// 0xb6dff4) пропускается целиком, вместе с записью частоты в +0x76.
+		// То есть запись не попадает в файл определений, и машина не едет
+		// в поток. У нас пушить -1 в CCarCtrl::AddToCarArray нельзя (assert
+		// и CarArrays[-1]), поэтому выходим здесь же.
 		mi->m_vehicleClass = -1;
 		return;
 	}
