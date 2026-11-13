@@ -111,14 +111,19 @@ main(void)
 		float mShadow = mDay > 0.001 ? SampleSunShadow(v_worldPos, N) : 1.0;
 
 		float mHemi = clamp(N.z * 0.5 + 0.5, 0.0, 1.0);
+		// Same rebalance as BR_ShadeMobileWorldLinear: the cold sky term used to
+		// make up ~82% of the light and painted every body blue-grey. Ambient is
+		// a fill now and the sun carries the contrast, otherwise cars and the
+		// world they stand on drift apart.
 		vec3 mDayAmb = mix(vec3(0.84, 0.85, 0.88), vec3(0.92, 0.94, 0.98), mHighSun);
-		vec3 mSkyTint = mix(mDayAmb, clamp(u_skyAmbient.rgb * 1.35, vec3(0.55), vec3(1.04)), 0.30);
-		vec3 mAmb = mix(vec3(0.36, 0.41, 0.54), mSkyTint, mDay) * mix(0.84, 1.04, mHemi) * (1.0 - 0.12 * mCloud);
+		vec3 mSkyTint = mix(mDayAmb, clamp(u_skyAmbient.rgb, vec3(0.30), vec3(1.10)), 0.12);
+		vec3 mAmb = mix(vec3(0.34, 0.39, 0.52), mSkyTint, mDay) *
+		           mix(mix(0.26, 0.34, mHemi), mix(0.10, 0.15, mHemi) * (1.0 - 0.18 * mCloud), mDay);
 
 		float mNdotL = max(dot(N, mL), 0.0);
-		vec3 mSunLightCol = mix(vec3(0.24, 0.19, 0.14), vec3(0.20, 0.20, 0.20), mHighSun);
-		mSunLightCol = mix(mSunLightCol, mSunLightCol * clamp(u_sunMaterial.rgb, vec3(0.55), vec3(1.15)), 0.30);
-		vec3 mDiffVec = mNdotL * mBase * mSunLightCol * (mDay * (1.0 - 0.35 * mCloud));
+		vec3 mSunLightCol = mix(vec3(1.06, 0.94, 0.76), vec3(0.98, 0.97, 0.95), mHighSun);
+		mSunLightCol = mix(mSunLightCol, mSunLightCol * clamp(u_sunMaterial.rgb, vec3(0.60), vec3(1.15)), 0.25);
+		vec3 mDiffVec = mNdotL * mBase * mSunLightCol * (mDay * (1.0 - 0.35 * mCloud) * 0.80);
 
 		vec3 mH = mL + V;
 		mH *= inversesqrt(max(dot(mH, mH), 1.0e-6));

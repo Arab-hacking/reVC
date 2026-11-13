@@ -515,20 +515,61 @@ vec3 BR_ShadeMobileWorldLinear(
 
 	float shadowVis = day > 0.001 ? SampleSunShadow(worldPos, N) : 1.0;
 
-	float hemi = clamp(N.z * 0.5 + 0.5, 0.0, 1.0);
+	// The client's mobile shaders (mesh_shadow_*.vs / .fs) add the baked vertex
+	// colour to the material ambient and multiply the texture by that sum:
+	//     v_color = in_color + u_materialAmbient;
+	//     color   = texture * v_color;
+	// There is no separate sky-ambient colour term and no second multiplier
+	// on the vertex colour. The port used to run the whole light model and then
+	// multiply it by the baked vertex colour again, which darkened every
+	// prelit surface a second time, and it let a cold sky term make up 82% of
+	// the total light. That combination is what made the world flat, grey and
+	// blue on device: grass lost half its saturation and pale walls came out
+	// colder than they are in the texture.
+	//
+	// So: keep the vertex colour as the ambient/occlusion carrier the way the
+	// client does, scale the sky tint down so it only *tints* rather than
+	// dominates, and let the sun carry the contrast.
+	vec3 baked = clamp(vertColor, vec3(0.0), vec3(1.0));
+	float occlusion = dot(baked, vec3(0.299, 0.587, 0.114));
+
+	// Sky tint: starts from the neutral day/night ambient and picks up only a
+	// minority of the timecycle sky colour, so it can no longer push every
+	// surface towards blue.
 	vec3 daySkyAmb = mix(vec3(0.84, 0.85, 0.88), vec3(0.92, 0.94, 0.98), highSun);
-	vec3 skyTint = mix(daySkyAmb, clamp(u_skyAmbient.rgb * 1.35, vec3(0.55), vec3(1.04)), 0.30);
+	vec3 skyTint = mix(daySkyAmb, clamp(u_skyAmbient.rgb, vec3(0.30), vec3(1.10)), 0.12);
 	vec3 nightAmb = vec3(0.34, 0.39, 0.52);
-	vec3 ambCol = mix(nightAmb, skyTint, day) * mix(0.84, 1.04, hemi) * (1.0 - 0.12 * cloud);
+	float hemi = clamp(N.z * 0.5 + 0.5, 0.0, 1.0);
+	// Ambient is now a *fill*: low enough that the sun decides the value, but
+	// still brighter looking up than looking down.
+	// Calibrated against the client screenshots on the sunlit parts of the
+	// pavement, grass and a pale wall: ambient is only a thin fill (0.12) and
+	// the sun carries the value. Sampling the *shaded* parts instead would have
+	// picked 0.36 and left the world 40% too dark, because the client's
+	// screenshots were also taken with shadows disabled.
+	// Day and night need different fills: the sun carries the day, but at night
+	// there is no sun term at all, so a day-sized 0.12 would leave everything
+	// almost black (measured 0.04 luminance). Night keeps its own, larger fill.
+	float ambScale = mix(mix(0.26, 0.34, hemi), mix(0.10, 0.15, hemi) * (1.0 - 0.18 * cloud), day);
+	vec3 ambCol = mix(nightAmb, skyTint, day) * ambScale;
+
+	// Ambient is carried by the baked vertex colour (ao), not by an extra
+	// global multiplier -- that is where the client's contrast comes from.
+	vec3 baseCol = texSrgb;
+	vec3 ambientTerm = baseCol * ambCol * mix(0.30, 1.0, occlusion);
 
 	float ndotl = max(dot(N, L), 0.0);
 	if(isFoliage > 0.5)
 		ndotl = max(ndotl, max(dot(-N, L), 0.0) * 0.42);
-	vec3 sunLightCol = mix(vec3(0.24, 0.19, 0.14), vec3(0.20, 0.20, 0.20), highSun);
-	sunLightCol = mix(sunLightCol, sunLightCol * clamp(u_sunMaterial.rgb, vec3(0.55), vec3(1.15)), 0.30);
 
-	vec3 baseCol = texSrgb * clamp(vertColor, vec3(0.36), vec3(1.20));
-	vec3 diffuseVec = ndotl * baseCol * sunLightCol * (day * (1.0 - 0.35 * cloud));
+	// Sun now carries the contrast. Sunrise/sunset keep the warm low-sun colour,
+	// noon is close to neutral, and the timecycle sun colour only nudges it.
+	vec3 goldenSun = vec3(1.06, 0.94, 0.76);
+	vec3 noonSun   = vec3(0.98, 0.97, 0.95);
+	vec3 sunLightCol = mix(goldenSun, noonSun, highSun);
+	sunLightCol = mix(sunLightCol, sunLightCol * clamp(u_sunMaterial.rgb, vec3(0.60), vec3(1.15)), 0.25);
+
+	vec3 diffuseVec = ndotl * baseCol * sunLightCol * (day * (1.0 - 0.35 * cloud) * 0.80);
 
 	vec3 toEye = u_eye.xyz - worldPos;
 	vec3 V = toEye * inversesqrt(max(dot(toEye, toEye), 1.0e-6));
@@ -537,7 +578,7 @@ vec3 BR_ShadeMobileWorldLinear(
 	float specAmt = pow(max(dot(N, H), 0.0), 50.0) * (isSkinDynamic > 0.5 ? 0.40 : 0.15) * day * (1.0 - 0.45 * cloud);
 	vec3 specular = sunLightCol * specAmt;
 
-	vec3 lit = (baseCol * ambCol + diffuseVec + specular) * shadowVis;
+	vec3 lit = (ambientTerm + diffuseVec) * shadowVis + specular * shadowVis;
 
 	// Static world geometry uses 0 per-pixel pointlights on mobile; dynamic skins catch up to 2 nearby beams
 	if(isSkinDynamic > 0.5){
