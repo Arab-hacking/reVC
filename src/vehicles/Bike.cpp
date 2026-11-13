@@ -1368,7 +1368,11 @@ CBike::PreRender(void)
 
 		CMatrix mat;
 		CVector headLightPos = mi->m_positions[CAR_POS_HEADLIGHTS];
-		if(GetModelIndex() == 152){	// this is the bobcat in VC, but we don't want that effect anyway
+		// A raw 152 used to be here: that was the Bobcat in VC's model order and
+		// in the port's table it is the Pizzaboy, so the headlight matrix was
+		// turning with the wheel on the wrong bike. Named, like the rest of the
+		// file.
+		if(GetModelIndex() == MI_PIZZABOY){
 			mat.SetUnity();
 			mat.RotateZ(m_fWheelAngle);
 			mat = m_leanMatrix * mat;
