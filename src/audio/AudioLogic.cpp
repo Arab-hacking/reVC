@@ -1004,7 +1004,9 @@ ResolveVehicleAudioIndex(const CVehicle *veh)
 		return rawIdx;
 
 	int32 fallback = MI_ADMIRAL - MI_FIRST_VEHICLE;
-	if (veh->IsBike()) {
+	// veh здесь const CVehicle*, поэтому проверяем тип напрямую
+	if (veh->m_vehType == VEHICLE_TYPE_BIKE || veh->m_vehType == VEHICLE_TYPE_TRIKE ||
+	    veh->m_vehType == VEHICLE_TYPE_PRTCRN || veh->m_vehType == VEHICLE_TYPE_CRANEOF) {
 		fallback = MI_PCJ600 - MI_FIRST_VEHICLE;
 		if (veh->pHandling != nil) {
 			switch (veh->pHandling->nIdentifier) {
@@ -1022,7 +1024,7 @@ ResolveVehicleAudioIndex(const CVehicle *veh)
 				break;
 			}
 		}
-	} else if (veh->IsBoat()) {
+	} else if (veh->m_vehType == VEHICLE_TYPE_BOAT) {
 		fallback = MI_SPEEDER - MI_FIRST_VEHICLE;
 	} else if (veh->pHandling != nil) {
 		switch (veh->pHandling->nIdentifier) {
@@ -2417,9 +2419,6 @@ cAudioManager::ProcessPlayersVehicleEngine(cVehicleParams& params, CVehicle* veh
 	case VEHICLE_TYPE_MTRUCK:
 	case VEHICLE_TYPE_QUAD:
 	case VEHICLE_TYPE_BMX:
-	case VEHICLE_TYPE_MTRUCK:
-	case VEHICLE_TYPE_QUAD:
-	case VEHICLE_TYPE_BMX:
 	case VEHICLE_TYPE_CAR:
 		automobile = (CAutomobile*)params.m_pVehicle;
 		wheelsOnGround = automobile->m_nDriveWheelsOnGround;
@@ -2428,9 +2427,6 @@ cAudioManager::ProcessPlayersVehicleEngine(cVehicleParams& params, CVehicle* veh
 		wheelState = automobile->m_aWheelState;
 		velocityChangeForAudio = automobile->m_fVelocityChangeForAudio;
 		break;
-	case VEHICLE_TYPE_TRIKE:
-	case VEHICLE_TYPE_PRTCRN:
-	case VEHICLE_TYPE_CRANEOF:
 	case VEHICLE_TYPE_TRIKE:
 	case VEHICLE_TYPE_PRTCRN:
 	case VEHICLE_TYPE_CRANEOF:

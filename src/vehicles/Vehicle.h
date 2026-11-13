@@ -21,6 +21,24 @@ enum {
 	PERMANENT_VEHICLE = 4,
 };
 
+// Класс машины в формате сохранения/воспроизведения. В сейве (и в
+// демо-записи) VC пишет три значения: 0 — автомобиль, 1 — лодка, 5 —
+// мотоцикл. m_vehType теперь клиентский (0…12), поэтому писать его напрямую
+// нельзя: mtruck (6), quad (8), bmx (9) и trailer (7) грузились бы как
+// «неизвестный тип», а trike/prtcrn/craneof — тоже. Вертолёты и самолёты в
+// стоковом формате всегда лежали под кодом автомобиля.
+static inline int32 VehicleSaveClass(int32 type)
+{
+	if(type == VEHICLE_TYPE_BOAT)
+		return VEHICLE_TYPE_BOAT;
+	if(type == VEHICLE_TYPE_BIKE || type == VEHICLE_TYPE_TRIKE ||
+	   type == VEHICLE_TYPE_PRTCRN || type == VEHICLE_TYPE_CRANEOF)
+		return VEHICLE_TYPE_BIKE;
+	// Поезда и всё остальное попадают под код автомобиля, как и раньше:
+	// CPools::SaveVehiclePool вообще не пишет поезда.
+	return VEHICLE_TYPE_CAR;
+}
+
 // Номера узлов — это hierarchyId, который таблицы компонентов (см.
 // VehicleModelInfo.cpp, carIds[]) проставляют кадрам, а m_aCarNodes[] —
 // обычный массив, который CAutomobile::SetupModelNodes заполняет через
@@ -329,37 +347,19 @@ public:
 	virtual void Load(uint8*& buf);
 #endif
 
-// Класс машины в формате сохранения/воспроизведения. В сейве (и в
-// демо-записи) VC пишет три значения: 0 — автомобиль, 1 — лодка, 5 —
-// мотоцикл. m_vehType теперь клиентский (0…12), поэтому писать его напрямую
-// нельзя: mtruck (6), quad (8), bmx (9) и trailer (7) грузились бы как
-// «неизвестный тип», а trike/prtcrn/craneof — тоже. Вертолёты и самолёты в
-// стоковом формате всегда лежали под кодом автомобиля.
-static inline int32 VehicleSaveClass(int32 type)
-{
-	if(type == VEHICLE_TYPE_BOAT)
-		return VEHICLE_TYPE_BOAT;
-	if(type == VEHICLE_TYPE_BIKE || type == VEHICLE_TYPE_TRIKE ||
-	   type == VEHICLE_TYPE_PRTCRN || type == VEHICLE_TYPE_CRANEOF)
-		return VEHICLE_TYPE_BIKE;
-	if(type == VEHICLE_TYPE_TRAIN)
-		return VEHICLE_TYPE_TRAIN;	// как и раньше: поезда в сейв не попадают
-	return VEHICLE_TYPE_CAR;
-}
-
 	eVehicleAppearance GetVehicleAppearance(void);
 	// Класс-обёртки остались прежними, но тип у объекта теперь клиентский
 	// (13 значений, см. eVehicleType). mtruck/quad/bmx для игры — обычный
 	// автомобиль, trike/prtcrn/craneof — мотоцикл: так они и создаются
 	// (CAutomobile/CBike), а тип лишь описывает модель.
-	bool IsCar(void)  { return m_vehType == VEHICLE_TYPE_CAR || m_vehType == VEHICLE_TYPE_MTRUCK ||
-	                           m_vehType == VEHICLE_TYPE_QUAD || m_vehType == VEHICLE_TYPE_BMX; }
-	bool IsBoat(void) { return m_vehType == VEHICLE_TYPE_BOAT; }
-	bool IsTrain(void) { return m_vehType == VEHICLE_TYPE_TRAIN; }
-	bool IsHeli(void) { return m_vehType == VEHICLE_TYPE_HELI; }
-	bool IsPlane(void) { return m_vehType == VEHICLE_TYPE_PLANE; }
-	bool IsBike(void) { return m_vehType == VEHICLE_TYPE_BIKE || m_vehType == VEHICLE_TYPE_TRIKE ||
-	                           m_vehType == VEHICLE_TYPE_PRTCRN || m_vehType == VEHICLE_TYPE_CRANEOF; }
+	bool IsCar(void) const { return m_vehType == VEHICLE_TYPE_CAR || m_vehType == VEHICLE_TYPE_MTRUCK ||
+	                                m_vehType == VEHICLE_TYPE_QUAD || m_vehType == VEHICLE_TYPE_BMX; }
+	bool IsBoat(void) const { return m_vehType == VEHICLE_TYPE_BOAT; }
+	bool IsTrain(void) const { return m_vehType == VEHICLE_TYPE_TRAIN; }
+	bool IsHeli(void) const { return m_vehType == VEHICLE_TYPE_HELI; }
+	bool IsPlane(void) const { return m_vehType == VEHICLE_TYPE_PLANE; }
+	bool IsBike(void) const { return m_vehType == VEHICLE_TYPE_BIKE || m_vehType == VEHICLE_TYPE_TRIKE ||
+	                                m_vehType == VEHICLE_TYPE_PRTCRN || m_vehType == VEHICLE_TYPE_CRANEOF; }
 
 	void FlyingControl(eFlightModel flightModel);
 	bool DoBladeCollision(CVector pos, CMatrix &matrix, int16 rotorType, float radius, float damageMult);
