@@ -67,6 +67,8 @@ ApplyEnvMapSize(void)
 	CustomPipes::EnvMapReinit(s_applied.envMapSize);
 }
 
+} // namespace
+
 // Called once CustomPipeInit has built the reflection map. Until this runs the
 // menu can record a requested size but must not touch a raster.
 void
@@ -79,8 +81,6 @@ TestGraphicsEngineReady(void)
 		s_envMapDirty = false;
 	ApplyEnvMapSize();
 }
-
-} // namespace
 
 void
 TestGraphicsStartup(void)
