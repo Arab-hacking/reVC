@@ -343,9 +343,9 @@ CVehicleModelInfo::AddGenericWheelModel(RwFrame *frame)
 	RpClumpAddAtomic(m_clump, atomic);
 	CVisibilityPlugins::SetAtomicRenderCallback(atomic,
 		CVisibilityPlugins::RenderWheelAtomicCB);
-	scale.x = m_wheelScale;
-	scale.y = m_wheelScale;
-	scale.z = m_wheelScale;
+	scale.x = m_wheelScaleFront;
+	scale.y = m_wheelScaleFront;
+	scale.z = m_wheelScaleFront;
 	RwFrameScale(frame, &scale, rwCOMBINEPRECONCAT);
 }
 
@@ -450,9 +450,9 @@ CVehicleModelInfo::CloneSAWheelMeshes(RwFrame **wheelFrames, int32 numWheels)
 
 	// The wheel meshes were authored for SA, where the game takes the tyre radius
 	// directly from the mesh. VC instead assumes the wheel model was a unit wheel
-	// scaled by m_wheelScale, i.e. radius = 0.5*m_wheelScale. Keep both views
-	// consistent by deriving m_wheelScale from the mesh: with that every
-	// 0.5*m_wheelScale (suspension line, m_fHeightAboveRoad, m_aWheelPosition,
+	// scaled by m_wheelScaleFront, i.e. radius = 0.5*m_wheelScaleFront. Keep both views
+	// consistent by deriving m_wheelScaleFront from the mesh: with that every
+	// 0.5*m_wheelScaleFront (suspension line, m_fHeightAboveRoad, m_aWheelPosition,
 	// wheel collision spheres, ProcessWheelRotation, ...) is the real radius and
 	// the tyres of the SA model end up exactly on the road. The mesh itself is
 	// then rendered unscaled (GetWheelRenderScale).
@@ -468,7 +468,10 @@ CVehicleModelInfo::CloneSAWheelMeshes(RwFrame **wheelFrames, int32 numWheels)
 			continue;
 		radius = GetWheelMeshRadius(srcAtomic);
 		if(radius > 0.001f){
-			m_wheelScale = 2.0f*radius;
+			// радиус снят с самого меша, он одинаков для всех колёс модели,
+			// поэтому пишем в оба поля (клиентские +0x60 и +0x64)
+			m_wheelScaleFront = 2.0f*radius;
+			m_wheelScaleRear = 2.0f*radius;
 			m_bSAWheelMesh = true;
 		}
 		break;
@@ -797,6 +800,15 @@ CVehicleModelInfo::SetAtomicRendererCB_RealHeli(RpAtomic *atomic, void *data)
 void
 CVehicleModelInfo::SetAtomicRenderCallbacks(void)
 {
+	// Типы перечислены в порядке клиента (см. eVehicleType): mtruck/quad/bmx
+	// идут по пути обычного автомобиля, trike/prtcrn/craneof — по пути мотоцикла,
+	// потому что именно так раскладывает их IDE-парсер клиента (0xb4b0fc).
+	bool isBikeLike = m_vehicleType == VEHICLE_TYPE_BIKE ||
+	                  m_vehicleType == VEHICLE_TYPE_BMX ||
+	                  m_vehicleType == VEHICLE_TYPE_TRIKE ||
+	                  m_vehicleType == VEHICLE_TYPE_PRTCRN ||
+	                  m_vehicleType == VEHICLE_TYPE_CRANEOF;
+
 #ifdef GTA_TRAIN
 	if(m_vehicleType == VEHICLE_TYPE_TRAIN)
 		RpClumpForAllAtomics(m_clump, SetAtomicRendererCB_Train, nil);
@@ -808,7 +820,7 @@ CVehicleModelInfo::SetAtomicRenderCallbacks(void)
 		RpClumpForAllAtomics(m_clump, SetAtomicRendererCB_BigVehicle, nil);
 	else if(m_vehicleType == VEHICLE_TYPE_BOAT)
 		RpClumpForAllAtomics(m_clump, SetAtomicRendererCB_Boat, m_clump);
-	else if(mod_HandlingManager.GetHandlingData((tVehicleType)m_handlingId)->Flags & HANDLING_IS_HELI)
+	else if(!isBikeLike && mod_HandlingManager.GetHandlingData((tVehicleType)m_handlingId)->Flags & HANDLING_IS_HELI)
 		RpClumpForAllAtomics(m_clump, SetAtomicRendererCB_RealHeli, m_clump);
 	else
 		RpClumpForAllAtomics(m_clump, SetAtomicRendererCB, m_clump);
@@ -967,7 +979,7 @@ CVehicleModelInfo::PreprocessHierarchy(void)
 			if(FrameHasObject(wheelFrames[i])) own = true;
 		SAVEH_LOG("[SAVEH] load %s type %d saHierarchy %d wheelId %d wheelFrames %d ownWheelMesh %d saMesh %d radius %.4f wheelScale %.4f\n",
 			GetModelName(), m_vehicleType, gVehicleIsSAHierarchy, m_wheelId, wheelFramesFound,
-			own, m_bSAWheelMesh, 0.5f*m_wheelScale, m_wheelScale);
+			own, m_bSAWheelMesh, 0.5f*m_wheelScaleFront, m_wheelScaleFront);
 	}
 #endif
 }

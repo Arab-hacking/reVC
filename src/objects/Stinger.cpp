@@ -146,7 +146,7 @@ CStinger::CheckForBurstTyres()
 
 		if (pAutomobile == nil && pBike == nil) continue;
 		
-		float maxWheelDistToSpike = sq(((CVehicleModelInfo*)CModelInfo::GetModelInfo(vehsInRange[i]->GetModelIndex()))->m_wheelScale + 0.1f);
+		float maxWheelDistToSpike = sq(((CVehicleModelInfo*)CModelInfo::GetModelInfo(vehsInRange[i]->GetModelIndex()))->m_wheelScaleFront + 0.1f);
 
 		for (int wheelId = 0; wheelId < 4; wheelId++) {
 			if ((pAutomobile != nil && pAutomobile->m_aSuspensionSpringRatioPrev[wheelId] < 1.0f) ||

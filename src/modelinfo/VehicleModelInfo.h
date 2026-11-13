@@ -34,13 +34,26 @@ enum {
 	ATOMIC_FLAG_NOCULL	= 0x800,
 };
 
+// Тип машины ровно в том порядке, в каком его присваивает клиент
+// (Black Russia, libblackrussia-client.so, разбор строки vehicles.ide — функция
+// 0xb4b0fc). Порядок НЕ совпадает с eVehicleType из GTA:SA и не совпадает с
+// порядком VC: в VC было шесть значений, здесь их тринадцать, и, например,
+// bike/bmx стоят в другом месте. Значение хранится в CVehicleModelInfo::m_vehicleType
+// и индексирует ms_vehicleDescs[], поэтому менять порядок нельзя.
 enum eVehicleType {
-	VEHICLE_TYPE_CAR,
-	VEHICLE_TYPE_BOAT,
-	VEHICLE_TYPE_TRAIN,
-	VEHICLE_TYPE_HELI,
-	VEHICLE_TYPE_PLANE,
-	VEHICLE_TYPE_BIKE,
+	VEHICLE_TYPE_CAR,      // 0  "car"
+	VEHICLE_TYPE_BOAT,     // 1  "boat"
+	VEHICLE_TYPE_TRAIN,    // 2  "train"
+	VEHICLE_TYPE_HELI,     // 3  "heli"
+	VEHICLE_TYPE_PLANE,    // 4  "plane"
+	VEHICLE_TYPE_BIKE,     // 5  "bike"
+	VEHICLE_TYPE_MTRUCK,   // 6  "mtruck"
+	VEHICLE_TYPE_TRAILER,  // 7  "trailer"
+	VEHICLE_TYPE_QUAD,     // 8  "quad"
+	VEHICLE_TYPE_BMX,      // 9  "bmx"
+	VEHICLE_TYPE_TRIKE,    // 10 "trike"
+	VEHICLE_TYPE_PRTCRN,   // 11 "prtcrn"
+	VEHICLE_TYPE_CRANEOF,  // 12 "craneof" (и всё, что клиент не распознал)
 	NUM_VEHICLE_TYPES
 };
 
@@ -85,7 +98,13 @@ public:
 	uint8 m_lastColour2;
 	char m_gameName[10];
 	int32 m_vehicleType;
-	float m_wheelScale;
+	// Клиент хранит два размера колеса: +0x60 переднее, +0x64 заднее (оба
+	// заполняет IDE-парсер 0xb4b0fc). В присланном vehicles.ide они различаются
+	// у 49 моделей из 587. Порт пока использует одно значение (m_wheelScaleFront),
+	// равное переднему, — физика колёс ещё переписывается на SA. Как только
+	// она будет брать размер по конкретному колесу, читать отсюда.
+	float m_wheelScaleFront;
+	float m_wheelScaleRear;
 	union {
 		int16 m_wheelId;
 		int16 m_planeLodId;
@@ -120,9 +139,9 @@ public:
 	bool m_bHasEmbeddedColModel;
 #endif
 	// set when the model brought its own wheel meshes (SA style). VC derives the
-	// wheel radius from m_wheelScale (radius = 0.5*scale) and scales the wheel
+	// wheel radius from m_wheelScaleFront (radius = 0.5*scale) and scales the wheel
 	// mesh by it on rendering. For SA models the mesh is already the right size
-	// and m_wheelScale is set to the true diameter (2*radius), so rendering must
+	// and m_wheelScaleFront is set to the true diameter (2*radius), so rendering must
 	// not scale it again.
 	bool m_bSAWheelMesh;
 
@@ -157,8 +176,8 @@ public:
 #endif
 	// scale the wheel meshes have to be rendered with: SA models carry their
 	// wheels at their final size, VC models get their separate wheel model scaled
-	// by m_wheelScale
-	float GetWheelRenderScale(void) { return m_bSAWheelMesh ? 1.0f : m_wheelScale; }
+	// by m_wheelScaleFront
+	float GetWheelRenderScale(void) { return m_bSAWheelMesh ? 1.0f : m_wheelScaleFront; }
 	// true when the wheel meshes came with the model (SA style)
 	bool HasOwnWheelMeshes(void) { return m_bSAWheelMesh; }
 	static RwObject *MoveObjectsCB(RwObject *object, void *data);

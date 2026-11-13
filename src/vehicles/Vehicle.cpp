@@ -218,6 +218,16 @@ void
 CVehicle::SetModelIndex(uint32 id)
 {
 	CEntity::SetModelIndex(id);
+	// Тип берём из модели, а не только из конструктора класса. У клиента
+	// (eVehicleType, порядок из IDE-парсера 0xb4b0fc) типов тринадцать, и
+	// часть из них ездит на другом классе: trailer — это CAutomobile, но тип
+	// у него VEHICLE_TYPE_TRAILER, а trike/prtcrn/craneof — CBike с чужим типом.
+	// Без этого switch(GetVehicleAppearance()) в звуке и Camera.cpp уходил бы
+	// в ветку мотоцикла для трейлера.
+	CBaseModelInfo *mi = CModelInfo::GetModelInfo(id);
+	if(mi && mi->GetModelType() == MITYPE_VEHICLE)
+		m_vehType = (eVehicleType)((CVehicleModelInfo*)mi)->m_vehicleType;
+
 	m_aExtras[0] = CVehicleModelInfo::ms_compsUsed[0];
 	m_aExtras[1] = CVehicleModelInfo::ms_compsUsed[1];
 	m_nNumMaxPassengers = CVehicleModelInfo::GetMaximumNumberOfPassengersFromNumberOfDoors(id);

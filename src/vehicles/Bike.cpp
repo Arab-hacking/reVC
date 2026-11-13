@@ -217,7 +217,7 @@ CBike::ProcessControl(void)
 	bool bStuckInSand = false;
 	float brake = 0.0f;
 	CColModel *colModel = GetColModel();
-	float wheelScale = ((CVehicleModelInfo*)CModelInfo::GetModelInfo(GetModelIndex()))->m_wheelScale;
+	float wheelScale = ((CVehicleModelInfo*)CModelInfo::GetModelInfo(GetModelIndex()))->m_wheelScaleFront;
 	bWarnedPeds = false;
 	bLeanMatrixClean = false;
 	m_doingBurnout = 0;
@@ -1575,19 +1575,19 @@ CBike::PreRender(void)
 		float springRatio = Min(m_aSuspensionSpringRatioPrev[BIKESUSP_F1], m_aSuspensionSpringRatioPrev[BIKESUSP_F2]);
 		CVector contactPoint(0.0f,
 			(colModel->lines[BIKESUSP_F1].p0.y - colModel->lines[BIKESUSP_F2].p0.y)/2.0f,
-			colModel->lines[BIKESUSP_F1].p0.z - m_aSuspensionSpringLength[BIKESUSP_F1]*springRatio - 0.5f*mi->m_wheelScale);
+			colModel->lines[BIKESUSP_F1].p0.z - m_aSuspensionSpringLength[BIKESUSP_F1]*springRatio - 0.5f*mi->m_wheelScaleFront);
 		CVector contactSpeed = GetSpeed(contactPoint);
 		// Why is wheel state always normal?
-		m_aWheelSpeed[BIKEWHEEL_FRONT] = ProcessWheelRotation(WHEEL_STATE_NORMAL, frontWheelFwd, contactSpeed, 0.5f*mi->m_wheelScale);
+		m_aWheelSpeed[BIKEWHEEL_FRONT] = ProcessWheelRotation(WHEEL_STATE_NORMAL, frontWheelFwd, contactSpeed, 0.5f*mi->m_wheelScaleFront);
 		m_aWheelRotation[BIKEWHEEL_FRONT] += m_aWheelSpeed[BIKEWHEEL_FRONT];
 	}
 	if(m_aWheelTimer[BIKESUSP_R1] > 0.0f || m_aWheelTimer[BIKESUSP_R2] > 0.0f){
 		float springRatio = Min(m_aSuspensionSpringRatioPrev[BIKESUSP_R1], m_aSuspensionSpringRatioPrev[BIKESUSP_R2]);
 		CVector contactPoint(0.0f,
 			(colModel->lines[BIKESUSP_R1].p0.y - colModel->lines[BIKESUSP_R2].p0.y)/2.0f,
-			colModel->lines[BIKESUSP_R1].p0.z - m_aSuspensionSpringLength[BIKESUSP_R1]*springRatio - 0.5f*mi->m_wheelScale);
+			colModel->lines[BIKESUSP_R1].p0.z - m_aSuspensionSpringLength[BIKESUSP_R1]*springRatio - 0.5f*mi->m_wheelScaleFront);
 		CVector contactSpeed = GetSpeed(contactPoint);
-		m_aWheelSpeed[BIKEWHEEL_REAR] = ProcessWheelRotation(m_aWheelState[BIKEWHEEL_REAR], rearWheelFwd, contactSpeed, 0.5f*mi->m_wheelScale);
+		m_aWheelSpeed[BIKEWHEEL_REAR] = ProcessWheelRotation(m_aWheelState[BIKEWHEEL_REAR], rearWheelFwd, contactSpeed, 0.5f*mi->m_wheelScaleFront);
 		m_aWheelRotation[BIKEWHEEL_REAR] += m_aWheelSpeed[BIKEWHEEL_REAR];
 	}
 
@@ -2419,9 +2419,9 @@ CBike::SetUpWheelColModel(CColModel *colModel)
 	colModel->boundingBox = vehColModel->boundingBox;
 
 	GetRelativeMatrix(mat, m_aBikeNodes[BIKE_WHEEL_FRONT], m_aBikeNodes[BIKE_CHASSIS]);
-	colModel->spheres[0].Set(0.5f*mi->m_wheelScale, *RwMatrixGetPos(mat), SURFACE_RUBBER, CAR_PIECE_WHEEL_LF);
+	colModel->spheres[0].Set(0.5f*mi->m_wheelScaleFront, *RwMatrixGetPos(mat), SURFACE_RUBBER, CAR_PIECE_WHEEL_LF);
 	GetRelativeMatrix(mat, m_aBikeNodes[BIKE_WHEEL_REAR], m_aBikeNodes[BIKE_CHASSIS]);
-	colModel->spheres[1].Set(0.5f*mi->m_wheelScale, *RwMatrixGetPos(mat), SURFACE_RUBBER, CAR_PIECE_WHEEL_LR);
+	colModel->spheres[1].Set(0.5f*mi->m_wheelScaleFront, *RwMatrixGetPos(mat), SURFACE_RUBBER, CAR_PIECE_WHEEL_LR);
 	colModel->numSpheres = 2;
 #ifdef FIX_BUGS
 	RwMatrixDestroy(mat);
@@ -2831,19 +2831,19 @@ CBike::SetupSuspensionLines(void)
 			switch(i){
 			case BIKESUSP_F1:
 				node = m_aBikeNodes[BIKE_WHEEL_FRONT];
-				suspOffset = 0.25f*mi->m_wheelScale;
+				suspOffset = 0.25f*mi->m_wheelScaleFront;
 				break;
 			case BIKESUSP_F2:
 				node = m_aBikeNodes[BIKE_WHEEL_FRONT];
-				suspOffset = -0.25f*mi->m_wheelScale;
+				suspOffset = -0.25f*mi->m_wheelScaleFront;
 				break;
 			case BIKESUSP_R1:
 				node = m_aBikeNodes[BIKE_WHEEL_REAR];
-				suspOffset = 0.25f*mi->m_wheelScale;
+				suspOffset = 0.25f*mi->m_wheelScaleFront;
 				break;
 			case BIKESUSP_R2:
 				node = m_aBikeNodes[BIKE_WHEEL_REAR];
-				suspOffset = -0.25f*mi->m_wheelScale;
+				suspOffset = -0.25f*mi->m_wheelScaleFront;
 				break;
 			}
 
@@ -2869,12 +2869,12 @@ CBike::SetupSuspensionLines(void)
 
 		if(mi->HasOwnWheelMeshes()){
 			// model's tyre bottom minus the static sag
-			posn.z = colModel->lines[i].p0.z - suspUpperLimit - mi->m_wheelScale*0.5f - suspSag;
+			posn.z = colModel->lines[i].p0.z - suspUpperLimit - mi->m_wheelScaleFront*0.5f - suspSag;
 		}else{
 			// lowermost wheel position
 			posn.z += pHandling->fSuspensionLowerLimit - suspUpperLimit;
 			// lowest point on tyre
-			posn.z -= mi->m_wheelScale*0.5f;
+			posn.z -= mi->m_wheelScaleFront*0.5f;
 		}
 		colModel->lines[i].p1 = posn;
 
@@ -2891,9 +2891,9 @@ CBike::SetupSuspensionLines(void)
 
 	// Compress spring somewhat to get normal height on road
 	m_fHeightAboveRoad = m_aSuspensionSpringLength[0]*(1.0f - 1.0f/(4.0f*pHandling->fSuspensionForceLevel))
-			- colModel->lines[0].p0.z + mi->m_wheelScale*0.5f;
+			- colModel->lines[0].p0.z + mi->m_wheelScaleFront*0.5f;
 	for(i = 0; i < 2; i++)
-		m_aWheelPosition[i] = mi->m_wheelScale*0.5f - m_fHeightAboveRoad;
+		m_aWheelPosition[i] = mi->m_wheelScaleFront*0.5f - m_fHeightAboveRoad;
 
 	// adjust col model to include suspension lines
 	if(colModel->boundingBox.min.z > colModel->lines[0].p1.z)

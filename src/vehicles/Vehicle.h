@@ -320,12 +320,18 @@ public:
 #endif
 
 	eVehicleAppearance GetVehicleAppearance(void);
-	bool IsCar(void) { return m_vehType == VEHICLE_TYPE_CAR; }
+	// Класс-обёртки остались прежними, но тип у объекта теперь клиентский
+	// (13 значений, см. eVehicleType). mtruck/quad/bmx для игры — обычный
+	// автомобиль, trike/prtcrn/craneof — мотоцикл: так они и создаются
+	// (CAutomobile/CBike), а тип лишь описывает модель.
+	bool IsCar(void)  { return m_vehType == VEHICLE_TYPE_CAR || m_vehType == VEHICLE_TYPE_MTRUCK ||
+	                           m_vehType == VEHICLE_TYPE_QUAD || m_vehType == VEHICLE_TYPE_BMX; }
 	bool IsBoat(void) { return m_vehType == VEHICLE_TYPE_BOAT; }
 	bool IsTrain(void) { return m_vehType == VEHICLE_TYPE_TRAIN; }
 	bool IsHeli(void) { return m_vehType == VEHICLE_TYPE_HELI; }
 	bool IsPlane(void) { return m_vehType == VEHICLE_TYPE_PLANE; }
-	bool IsBike(void) { return m_vehType == VEHICLE_TYPE_BIKE; }
+	bool IsBike(void) { return m_vehType == VEHICLE_TYPE_BIKE || m_vehType == VEHICLE_TYPE_TRIKE ||
+	                           m_vehType == VEHICLE_TYPE_PRTCRN || m_vehType == VEHICLE_TYPE_CRANEOF; }
 
 	void FlyingControl(eFlightModel flightModel);
 	bool DoBladeCollision(CVector pos, CMatrix &matrix, int16 rotorType, float radius, float damageMult);

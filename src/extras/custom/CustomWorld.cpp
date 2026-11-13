@@ -657,7 +657,8 @@ void CCustomWorld::LoadIde(void)
             // Only built-in VC handling is used. No SA physics, wheel model
             // IDs, component rules or traffic spawning data are imported.
             vehicle->m_wheelId = -1; // SA wheels are embedded in the DFF
-            vehicle->m_wheelScale = 1.0f;
+            vehicle->m_wheelScaleFront = 1.0f;
+            vehicle->m_wheelScaleRear = 1.0f;
             vehicle->m_bikeSteerAngle = vehicleType == VEHICLE_TYPE_BIKE ? 35.0f : 0.0f;
             vehicle->m_compRules = 0;
             vehicle->m_vehicleClass = -1;

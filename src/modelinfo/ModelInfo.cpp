@@ -189,6 +189,9 @@ CModelInfo::AddVehicleModel(int id)
 		modelinfo->m_positions[i] = CVector(0.0f, 0.0f, 0.0f);
 	modelinfo->m_vehicleType = -1;
 	modelinfo->m_wheelId = -1;
+	// разбор IDE ещё не дошёл — до него размеры должны быть безопасными
+	modelinfo->m_wheelScaleFront = 1.0f;
+	modelinfo->m_wheelScaleRear = 1.0f;
 	modelinfo->m_numComps = 0;
 	modelinfo->m_numDoors = 0;
 	modelinfo->m_materials1[0] = nil;
@@ -237,15 +240,23 @@ CModelInfo::IsBoatModel(int32 id)
 bool
 CModelInfo::IsBikeModel(int32 id)
 {
-	return GetModelInfo(id)->GetModelType() == MITYPE_VEHICLE &&
-		((CVehicleModelInfo*)GetModelInfo(id))->m_vehicleType == VEHICLE_TYPE_BIKE;
+	if(GetModelInfo(id)->GetModelType() != MITYPE_VEHICLE)
+		return false;
+	const int32 t = ((CVehicleModelInfo*)GetModelInfo(id))->m_vehicleType;
+	// trike/prtcrn/craneof клиент создаёт тем же классом, что и bike
+	return t == VEHICLE_TYPE_BIKE || t == VEHICLE_TYPE_TRIKE ||
+	       t == VEHICLE_TYPE_PRTCRN || t == VEHICLE_TYPE_CRANEOF;
 }
 
 bool
 CModelInfo::IsCarModel(int32 id)
 {
-	return GetModelInfo(id)->GetModelType() == MITYPE_VEHICLE &&
-		((CVehicleModelInfo*)GetModelInfo(id))->m_vehicleType == VEHICLE_TYPE_CAR;
+	if(GetModelInfo(id)->GetModelType() != MITYPE_VEHICLE)
+		return false;
+	const int32 t = ((CVehicleModelInfo*)GetModelInfo(id))->m_vehicleType;
+	// mtruck/quad/bmx ездят на CAutomobile точно так же, как car
+	return t == VEHICLE_TYPE_CAR || t == VEHICLE_TYPE_MTRUCK ||
+	       t == VEHICLE_TYPE_QUAD || t == VEHICLE_TYPE_BMX;
 }
 
 bool

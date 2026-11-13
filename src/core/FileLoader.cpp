@@ -1780,14 +1780,25 @@ CFileLoader::LoadVehicleObject(const char *line)
 	char type[8], handlingId[16], gamename[32], animFile[16], vehclass[12];
 	uint32 frequency, comprules;
 	int32 level, misc;
-	float wheelScale;
+	float wheelScale, wheelScaleRear;
 	CVehicleModelInfo *mi;
 	char *p;
 
-	sscanf(line, "%d %s %s %s %s %s %s %s %d %d %x %d %f",
+	// Клиент читает строку машины одним sscanf с 15 спецификациями (0xb6e7e0,
+	// формат на 0x4231f4): ..., freq, flags, comprules, wheelModelId,
+	// масштаб колеса перед, масштаб колеса зад. Двух последних спецификаций
+	// VC не знал — отсюда два float вместо одного.
+	// В записях без заднего размера (boat/plane — 11 полей, старый VC-формат —
+	// 13) sscanf оставит переменную нетронутой, поэтому значение по умолчанию
+	// задано заранее и заднее подменяется передним, если его не прочитали.
+	wheelScale = 1.0f;
+	wheelScaleRear = 1.0f;
+	int parsed = sscanf(line, "%d %s %s %s %s %s %s %s %d %d %x %d %f %f",
 		&id, model, txd,
 		type, handlingId, gamename, animFile, vehclass,
-		&frequency, &level, &comprules, &misc, &wheelScale);
+		&frequency, &level, &comprules, &misc, &wheelScale, &wheelScaleRear);
+	if(parsed < 14)
+		wheelScaleRear = wheelScale;
 
 	mi = CModelInfo::AddVehicleModel(id);
 	mi->SetModelName(model);
@@ -1799,9 +1810,15 @@ CFileLoader::LoadVehicleObject(const char *line)
 	mi->m_level = level;
 	mi->m_compRules = comprules;
 
+	// Порядок сравнений и присваиваемые значения повторяют IDE-парсер клиента
+	// (Black Russia, функция 0xb4b0fc): там 13 типов, и «bike» — это 5, а не 9,
+	// как в GTA:SA. Масштаб колеса клиент хранит двумя числами (переднее и
+	// заднее), здесь — одним, потому что физика порта пока берёт только его;
+	// см. VehicleModelInfo.h, eVehicleType.
 	if(strcmp(type, "car") == 0){
 		mi->m_wheelId = misc;
-		mi->m_wheelScale = wheelScale;
+		mi->m_wheelScaleFront = wheelScale;
+		mi->m_wheelScaleRear = wheelScaleRear;
 		mi->m_vehicleType = VEHICLE_TYPE_CAR;
 	}else if(strcmp(type, "boat") == 0){
 		mi->m_vehicleType = VEHICLE_TYPE_BOAT;
@@ -1811,12 +1828,50 @@ CFileLoader::LoadVehicleObject(const char *line)
 		mi->m_vehicleType = VEHICLE_TYPE_HELI;
 	}else if(strcmp(type, "plane") == 0){
 		mi->m_planeLodId = misc;
-		mi->m_wheelScale = 1.0f;
+		// у клиента plane принудительно получает 1.0 в оба поля (0xb4b29c)
+		mi->m_wheelScaleFront = 1.0f;
+		mi->m_wheelScaleRear = 1.0f;
 		mi->m_vehicleType = VEHICLE_TYPE_PLANE;
 	}else if(strcmp(type, "bike") == 0){
 		mi->m_bikeSteerAngle = misc;
-		mi->m_wheelScale = wheelScale;
+		mi->m_wheelScaleFront = wheelScale;
+		mi->m_wheelScaleRear = wheelScaleRear;
 		mi->m_vehicleType = VEHICLE_TYPE_BIKE;
+	}else if(strcmp(type, "trike") == 0){
+		mi->m_bikeSteerAngle = misc;
+		mi->m_wheelScaleFront = wheelScale;
+		mi->m_wheelScaleRear = wheelScaleRear;
+		mi->m_vehicleType = VEHICLE_TYPE_TRIKE;
+	}else if(strcmp(type, "mtruck") == 0){
+		mi->m_wheelId = misc;
+		mi->m_wheelScaleFront = wheelScale;
+		mi->m_wheelScaleRear = wheelScaleRear;
+		mi->m_vehicleType = VEHICLE_TYPE_MTRUCK;
+	}else if(strcmp(type, "trailer") == 0){
+		mi->m_wheelId = misc;
+		mi->m_wheelScaleFront = wheelScale;
+		mi->m_wheelScaleRear = wheelScaleRear;
+		mi->m_vehicleType = VEHICLE_TYPE_TRAILER;
+	}else if(strcmp(type, "quad") == 0){
+		mi->m_wheelId = misc;
+		mi->m_wheelScaleFront = wheelScale;
+		mi->m_wheelScaleRear = wheelScaleRear;
+		mi->m_vehicleType = VEHICLE_TYPE_QUAD;
+	}else if(strcmp(type, "bmx") == 0){
+		mi->m_bikeSteerAngle = misc;
+		mi->m_wheelScaleFront = wheelScale;
+		mi->m_wheelScaleRear = wheelScaleRear;
+		mi->m_vehicleType = VEHICLE_TYPE_BMX;
+	}else if(strcmp(type, "prtcrn") == 0){
+		mi->m_bikeSteerAngle = misc;
+		mi->m_wheelScaleFront = wheelScale;
+		mi->m_wheelScaleRear = wheelScaleRear;
+		mi->m_vehicleType = VEHICLE_TYPE_PRTCRN;
+	}else if(strcmp(type, "craneof") == 0){
+		mi->m_wheelId = misc;
+		mi->m_wheelScaleFront = wheelScale;
+		mi->m_wheelScaleRear = wheelScaleRear;
+		mi->m_vehicleType = VEHICLE_TYPE_CRANEOF;
 	}else
 		assert(0);
 

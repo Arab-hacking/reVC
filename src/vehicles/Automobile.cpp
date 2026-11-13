@@ -909,14 +909,14 @@ CAutomobile::ProcessControl(void)
 			float roadZ, wheelBottom, wheelGap;
 			roadZ = m_aSuspensionSpringRatio[0] < 1.0f ? m_aWheelColPoints[0].point.z : 0.0f;
 			wheelBottom = (GetMatrix() * CVector(0.0f, 0.0f, m_aWheelPosition[0])).z
-				- dmi->m_wheelScale*0.5f*dmi->GetWheelRenderScale();
+				- dmi->m_wheelScaleFront*0.5f*dmi->GetWheelRenderScale();
 			wheelGap = wheelBottom - roadZ;
 			SAVEH_LOG("[SAVEH] player z %.4f vz %.4f h %.4f roadZ %.4f gap %.4f wheelGap %.4f | ratios %.3f %.3f %.3f %.3f wheels %d notOnGround %d | numLines %d tris %d special %d colOwn %d scale %.4f renderScale %.4f saMesh %d\n",
 				GetPosition().z, m_vecMoveSpeed.z, m_fHeightAboveRoad, roadZ, GetPosition().z - roadZ, wheelGap,
 				m_aSuspensionSpringRatio[0], m_aSuspensionSpringRatio[1], m_aSuspensionSpringRatio[2], m_aSuspensionSpringRatio[3],
 				m_nWheelsOnGround, CWorld::Players[CWorld::PlayerInFocus].m_nTimeNotFullyOnGround,
 				dcm->numLines, dcm->numTriangles, bUsingSpecialColModel, dcm == dmi->GetColModel(),
-				dmi->m_wheelScale, dmi->GetWheelRenderScale(), dmi->HasOwnWheelMeshes());
+				dmi->m_wheelScaleFront, dmi->GetWheelRenderScale(), dmi->HasOwnWheelMeshes());
 		}
 
 		float traction;
@@ -2546,9 +2546,9 @@ CAutomobile::PreRender(void)
 
 	CMatrix mat;
 	CVector pos;
-	// VC scales the separate wheel model of the car by m_wheelScale while
+	// VC scales the separate wheel model of the car by m_wheelScaleFront while
 	// rendering. SA models bring their own wheels at their final size, so for
-	// them the wheel meshes must not be scaled at all (m_wheelScale of such a
+	// them the wheel meshes must not be scaled at all (m_wheelScaleFront of such a
 	// model is the true wheel diameter, see CloneSAWheelMeshes).
 	float wheelRenderScale = mi->GetWheelRenderScale();
 
@@ -2572,9 +2572,9 @@ CAutomobile::PreRender(void)
 			contactPoints[i] = m_aWheelColPoints[i].point - GetPosition();
 			contactSpeeds[i] = GetSpeed(contactPoints[i]);
 			if (i == CARWHEEL_FRONT_LEFT || i == CARWHEEL_FRONT_RIGHT)
-				m_aWheelSpeed[i] = ProcessWheelRotation(m_aWheelState[i], frontWheelFwd, contactSpeeds[i], 0.5f*mi->m_wheelScale);
+				m_aWheelSpeed[i] = ProcessWheelRotation(m_aWheelState[i], frontWheelFwd, contactSpeeds[i], 0.5f*mi->m_wheelScaleFront);
 			else
-				m_aWheelSpeed[i] = ProcessWheelRotation(m_aWheelState[i], rearWheelFwd, contactSpeeds[i], 0.5f*mi->m_wheelScale);
+				m_aWheelSpeed[i] = ProcessWheelRotation(m_aWheelState[i], rearWheelFwd, contactSpeeds[i], 0.5f*mi->m_wheelScaleFront);
 			m_aWheelRotation[i] += m_aWheelSpeed[i];
 		}
 	}
@@ -2609,7 +2609,7 @@ CAutomobile::PreRender(void)
 #endif
 		}else{
 			// tilt wheel depending oh how much it presses on ground
-			float groundOffset = pos.z + m_fHeightAboveRoad - 0.5f*mi->m_wheelScale;
+			float groundOffset = pos.z + m_fHeightAboveRoad - 0.5f*mi->m_wheelScaleFront;
 			if(GetModelIndex() == MI_VOODOO)
 				groundOffset *= 0.6f;
 			mat.RotateY(Asin(Clamp(-groundOffset, -1.0f, 1.0f)));
@@ -2650,7 +2650,7 @@ CAutomobile::PreRender(void)
 #endif
 		}else{
 			// tilt wheel depending oh how much it presses on ground
-			float groundOffset = pos.z + m_fHeightAboveRoad - 0.5f*mi->m_wheelScale;
+			float groundOffset = pos.z + m_fHeightAboveRoad - 0.5f*mi->m_wheelScaleFront;
 			if(GetModelIndex() == MI_VOODOO)
 				groundOffset *= 0.6f;
 			mat.RotateY(Asin(Clamp(groundOffset, -1.0f, 1.0f)));
@@ -2683,7 +2683,7 @@ CAutomobile::PreRender(void)
 #endif
 			}else{
 				// tilt wheel depending oh how much it presses on ground
-				float groundOffset = pos.z + m_fHeightAboveRoad - 0.5f*mi->m_wheelScale;
+				float groundOffset = pos.z + m_fHeightAboveRoad - 0.5f*mi->m_wheelScaleFront;
 				if(GetModelIndex() == MI_VOODOO)
 					groundOffset *= 0.6f;
 				mat.RotateY(Asin(Clamp(-groundOffset, -1.0f, 1.0f)));
@@ -2717,7 +2717,7 @@ CAutomobile::PreRender(void)
 #endif
 			}else{
 				// tilt wheel depending oh how much it presses on ground
-				float groundOffset = pos.z + m_fHeightAboveRoad - 0.5f*mi->m_wheelScale;
+				float groundOffset = pos.z + m_fHeightAboveRoad - 0.5f*mi->m_wheelScaleFront;
 				if(GetModelIndex() == MI_VOODOO)
 					groundOffset *= 0.6f;
 				mat.RotateY(Asin(Clamp(groundOffset, -1.0f, 1.0f)));
@@ -2851,7 +2851,7 @@ CAutomobile::PreRender(void)
 #endif
 			}else{
 				// tilt wheel depending oh how much it presses on ground
-				float groundOffset = pos.z + m_fHeightAboveRoad - 0.5f*mi->m_wheelScale;
+				float groundOffset = pos.z + m_fHeightAboveRoad - 0.5f*mi->m_wheelScaleFront;
 				if(GetModelIndex() == MI_VOODOO)
 					groundOffset *= 0.6f;
 				mat.RotateY(Asin(Clamp(-groundOffset, -1.0f, 1.0f)));
@@ -2892,7 +2892,7 @@ CAutomobile::PreRender(void)
 #endif
 			}else{
 				// tilt wheel depending oh how much it presses on ground
-				float groundOffset = pos.z + m_fHeightAboveRoad - 0.5f*mi->m_wheelScale;
+				float groundOffset = pos.z + m_fHeightAboveRoad - 0.5f*mi->m_wheelScaleFront;
 				if(GetModelIndex() == MI_VOODOO)
 					groundOffset *= 0.6f;
 				mat.RotateY(Asin(Clamp(groundOffset, -1.0f, 1.0f)));
@@ -3398,7 +3398,7 @@ CAutomobile::HydraulicControl(void)
 	float wheelPositions[4];
 	CVehicleModelInfo *mi = (CVehicleModelInfo*)CModelInfo::GetModelInfo(GetModelIndex());
 	CColModel *normalColModel = mi->GetColModel();
-	float wheelRadius = 0.5f*mi->m_wheelScale;
+	float wheelRadius = 0.5f*mi->m_wheelScaleFront;
 	CPlayerInfo *playerInfo = &CWorld::Players[CWorld::PlayerInFocus];
 	CColModel *specialColModel = &playerInfo->m_ColModel;
 
@@ -4017,7 +4017,7 @@ CAutomobile::RcbanditCheck1CarWheels(CPtrList &list)
 						mi->GetWheelPosn(i, wheelPos);
 						matW2B = Invert(GetMatrix());
 						sph.center = matW2B * (car->GetMatrix() * wheelPos);
-						sph.radius = mi->m_wheelScale*0.25f;
+						sph.radius = mi->m_wheelScaleFront*0.25f;
 						if(CCollision::TestSphereBox(sph, colModel->boundingBox))
 							return 1;
 					}
@@ -4864,19 +4864,19 @@ CAutomobile::SetUpWheelColModel(CColModel *colModel)
 
 	CMatrix mat;
 	mat.Attach(RwFrameGetMatrix(m_aCarNodes[CAR_WHEEL_LF]));
-	colModel->spheres[0].Set(mi->m_wheelScale / 2, mat.GetPosition(), SURFACE_RUBBER, CAR_PIECE_WHEEL_LF);
+	colModel->spheres[0].Set(mi->m_wheelScaleFront / 2, mat.GetPosition(), SURFACE_RUBBER, CAR_PIECE_WHEEL_LF);
 	mat.Attach(RwFrameGetMatrix(m_aCarNodes[CAR_WHEEL_LB]));
-	colModel->spheres[1].Set(mi->m_wheelScale / 2, mat.GetPosition(), SURFACE_RUBBER, CAR_PIECE_WHEEL_LR);
+	colModel->spheres[1].Set(mi->m_wheelScaleFront / 2, mat.GetPosition(), SURFACE_RUBBER, CAR_PIECE_WHEEL_LR);
 	mat.Attach(RwFrameGetMatrix(m_aCarNodes[CAR_WHEEL_RF]));
-	colModel->spheres[2].Set(mi->m_wheelScale / 2, mat.GetPosition(), SURFACE_RUBBER, CAR_PIECE_WHEEL_RF);
+	colModel->spheres[2].Set(mi->m_wheelScaleFront / 2, mat.GetPosition(), SURFACE_RUBBER, CAR_PIECE_WHEEL_RF);
 	mat.Attach(RwFrameGetMatrix(m_aCarNodes[CAR_WHEEL_RB]));
-	colModel->spheres[3].Set(mi->m_wheelScale / 2, mat.GetPosition(), SURFACE_RUBBER, CAR_PIECE_WHEEL_RR);
+	colModel->spheres[3].Set(mi->m_wheelScaleFront / 2, mat.GetPosition(), SURFACE_RUBBER, CAR_PIECE_WHEEL_RR);
 
 	if(m_aCarNodes[CAR_WHEEL_LM] != nil && m_aCarNodes[CAR_WHEEL_RM] != nil){
 		mat.Attach(RwFrameGetMatrix(m_aCarNodes[CAR_WHEEL_LM]));
-		colModel->spheres[4].Set(mi->m_wheelScale / 2, mat.GetPosition(), SURFACE_RUBBER, CAR_PIECE_WHEEL_LR);
+		colModel->spheres[4].Set(mi->m_wheelScaleFront / 2, mat.GetPosition(), SURFACE_RUBBER, CAR_PIECE_WHEEL_LR);
 		mat.Attach(RwFrameGetMatrix(m_aCarNodes[CAR_WHEEL_RM]));
-		colModel->spheres[5].Set(mi->m_wheelScale / 2, mat.GetPosition(), SURFACE_RUBBER, CAR_PIECE_WHEEL_RR);
+		colModel->spheres[5].Set(mi->m_wheelScaleFront / 2, mat.GetPosition(), SURFACE_RUBBER, CAR_PIECE_WHEEL_RR);
 		colModel->numSpheres = 6;
 	}else
 		colModel->numSpheres = 4;
@@ -5047,7 +5047,7 @@ CAutomobile::SetupSuspensionLines(void)
 	// springLength/(4*forceLevel) below the fully extended pose - which is also what
 	// the m_fHeightAboveRoad formula below assumes. A VC model brings a separate
 	// unit wheel and the handling data is authored around that (dummy height ==
-	// 0.5*m_wheelScale == tyre radius, lowerLimit == -sag), so the line can be built
+	// 0.5*m_wheelScaleFront == tyre radius, lowerLimit == -sag), so the line can be built
 	// from the limits. An SA model brings its own wheels at their true size, so the
 	// model defines where the tyre is: end the line at the tyre bottom of the model
 	// minus the sag, exactly like a VC model whose dummy sits at "tyre bottom +
@@ -5073,12 +5073,12 @@ CAutomobile::SetupSuspensionLines(void)
 
 		if(mi->HasOwnWheelMeshes()){
 			// model's tyre bottom (dummy z - tyre radius) minus the static sag
-			posn.z = m_aWheelPosition[i] - mi->m_wheelScale*0.5f - suspSag;
+			posn.z = m_aWheelPosition[i] - mi->m_wheelScaleFront*0.5f - suspSag;
 		}else{
 			// lowermost wheel position
 			posn.z += pHandling->fSuspensionLowerLimit - suspUpperLimit;
 			// lowest point on tyre
-			posn.z -= mi->m_wheelScale*0.5f;
+			posn.z -= mi->m_wheelScaleFront*0.5f;
 		}
 		colModel->lines[i].p1 = posn;
 
@@ -5089,12 +5089,12 @@ CAutomobile::SetupSuspensionLines(void)
 
 	// Compress spring somewhat to get normal height on road
 	m_fHeightAboveRoad = m_aSuspensionSpringLength[0]*(1.0f - 1.0f/(4.0f*pHandling->fSuspensionForceLevel))
-			- colModel->lines[0].p0.z + mi->m_wheelScale*0.5f;
+			- colModel->lines[0].p0.z + mi->m_wheelScaleFront*0.5f;
 	for(i = 0; i < 4; i++)
-		m_aWheelPosition[i] = mi->m_wheelScale*0.5f - m_fHeightAboveRoad;
+		m_aWheelPosition[i] = mi->m_wheelScaleFront*0.5f - m_fHeightAboveRoad;
 
 	SAVEH_LOG("[SAVEH] suspension model %d saMesh %d scale %.4f r %.4f dummyZ %.4f upper %.4f lower %.4f force %.4f sag %.4f | p0 %.4f p1 %.4f lineLen %.4f springLen %.4f h %.4f | col sph %d box %d tri %d lines %d bboxz %.4f..%.4f embedded %d\n",
-		GetModelIndex(), mi->HasOwnWheelMeshes(), mi->m_wheelScale, mi->m_wheelScale*0.5f, m_aWheelPosition[0],
+		GetModelIndex(), mi->HasOwnWheelMeshes(), mi->m_wheelScaleFront, mi->m_wheelScaleFront*0.5f, m_aWheelPosition[0],
 		pHandling->fSuspensionUpperLimit, pHandling->fSuspensionLowerLimit, pHandling->fSuspensionForceLevel, suspSag,
 		colModel->lines[0].p0.z, colModel->lines[0].p1.z, m_aSuspensionLineLength[0], m_aSuspensionSpringLength[0],
 		m_fHeightAboveRoad,
