@@ -74,7 +74,10 @@ CPlane::CPlane(int32 id, uint8 CreatedBy)
 
 	m_fMass = 100000000.0f;
 	m_fTurnMass = 100000000.0f;
-	m_fAirResistance = 0.9994f;
+	// SA's CPlane inherits CAutomobile and leaves this to the constructor,
+	// which reads the drag column. 0.9994 was VC's constant; the client file
+	// carries a real drag for every plane (0.1 .. 1.0 in the car section).
+	m_fAirResistance = pHandling->fAirResistanceFactor;
 	m_fElasticity = 0.05f;
 
 	bUsesCollision = false;

@@ -62,7 +62,10 @@ CHeli::CHeli(int32 id, uint8 CreatedBy)
 
 	m_fMass = 100000000.0f;
 	m_fTurnMass = 100000000.0f;
-	m_fAirResistance = 0.9994f;
+	// SA's CHeli inherits CAutomobile, whose constructor sets this from the
+	// drag column through GetDefaultAirResistance(); the heli never overrides
+	// it. 0.9994 was VC's value and made the drag depend on nothing at all.
+	m_fAirResistance = pHandling->fAirResistanceFactor;
 	m_fElasticity = 0.05f;
 
 	m_nHeliId = 0;

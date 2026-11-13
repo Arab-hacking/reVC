@@ -52,7 +52,9 @@ CTrain::CTrain(int32 id, uint8 CreatedBy)
 
 	m_fMass = 100000000.0f;
 	m_fTurnMass = 100000000.0f;
-	m_fAirResistance = 0.9994f;
+	// SA's CTrain::CTrain sets this from the drag column the same way; 0.9994
+	// was VC's constant and hid the train's own drag (1.0 .. 3.5 in the file).
+	m_fAirResistance = pHandling->fAirResistanceFactor;
 	m_fElasticity = 0.05f;
 
 	m_bProcessDoor = true;
