@@ -142,6 +142,30 @@ Scaling-разрешения через FBO в librw нет, поэтому ст
 Остальные шесть ключей (`res`, `water`, `vegetation`, `fps`, `snowIntensity`,
 `winterSlip`) не выведены по причинам, перечисленным в шапке `TestGraphics.h`.
 
+### Порядок загрузки: `refl` и RenderWare
+
+Настройки читаются **до** инициализации RenderWare: `RsInitialize()` →
+`psInitialize()` → `FrontEndMenuManager.LoadSettings()` → `LoadINISettings()`
+выполняются раньше `RsRwInitialize()` → `RwEngineInit()`. До `RwEngineInit`
+указатель `rw::Engine::memfuncs.rwmalloc` равен `nil`, поэтому любой `rwMalloc`
+(в том числе `Raster::create` внутри `EnvMapReinit`) — это косвенный вызов по
+адресу 0. На устройстве это выглядело как
+
+```
+CRASH-CTX: ... fault_addr=0x0 pc=0x0 ...
+CRASH-LR: base.apk+0x50bf70
+```
+
+сразу после `LoadINISettings`, до `Platform initialized`, и провоцировалось
+ненулевым `refl` в `reVC.ini`: строка CAR REFLECTIONS заставляла apply-проход
+пересоздавать render-target отражений, пока движка ещё не было.
+
+Теперь `TestGraphicsApply()` только запоминает запрошенный размер, а сам RT
+пересобирается в `TestGraphicsEngineReady()`, которую `Game.cpp` зовёт сразу
+после `CustomPipes::CustomPipeInit()`; дополнительно `EnvMapReinit` сам
+выходит, пока `rw::Engine::state < Opened`. Стережёт это
+`tests/BootOrderGuardTests.cpp`.
+
 ### Память пост-обработки
 
 `CPostFX::Open` больше не округляет размеры буферов до степени двойки:

@@ -273,5 +273,9 @@ int   TestGraphicsFrameHoldMs(float frameMs);
 revctestgfx::Settings &TestGraphicsSettings(void);
 void TestGraphicsStartup(void);
 void TestGraphicsApply(void);
+// LoadINISettings runs before RwEngineInit, so an apply from there can only
+// record the requested reflection size. Call this once the pipelines exist to
+// pick a size the ini asked for; safe to call more than once.
+void TestGraphicsEngineReady(void);
 
 #endif // REVC_CUSTOM_TESTGRAPHICS_H

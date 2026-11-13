@@ -453,3 +453,12 @@ set_target_properties(menu_ini_round_trip_tests PROPERTIES CXX_STANDARD 11 CXX_S
 add_test(NAME menu_ini_round_trip_tests COMMAND menu_ini_round_trip_tests)
 set_tests_properties(menu_ini_round_trip_tests PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+
+# LoadINISettings runs before RwEngineInit, so the TEST GRAPHICS apply pass must
+# not create a raster from there: rwMalloc goes through a nil function pointer
+# and the boot dies with pc=0 (debug-6.log). Source-level, same reason as above.
+add_executable(boot_order_guard_tests BootOrderGuardTests.cpp)
+set_target_properties(boot_order_guard_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+add_test(NAME boot_order_guard_tests COMMAND boot_order_guard_tests)
+set_tests_properties(boot_order_guard_tests PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})

@@ -298,6 +298,11 @@ CGame::InitialiseRenderWare(void)
 #ifdef EXTENDED_PIPELINES
 	CustomPipes::CustomPipeInit();	// need Scene.world for this
 #endif
+#ifdef TEST_GRAPHICS_MENU
+	// The ini was read before RenderWare existed, so a non-default `refl` is
+	// only now applicable; CustomPipeInit built the map at the default size.
+	TestGraphicsEngineReady();
+#endif
 #ifdef SCREEN_DROPLETS
 	ScreenDroplets::InitDraw();
 #endif

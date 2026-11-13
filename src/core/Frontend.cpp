@@ -3261,7 +3261,9 @@ CMenuManager::LoadSettings()
 
 #ifdef LOAD_INI_SETTINGS
 	if (LoadINISettings()) {
+		REVC_LOG_INFO("LoadSettings: reVC.ini read, loading controller bindings");
 		LoadINIControllerSettings();
+		REVC_LOG_INFO("LoadSettings: controller bindings loaded");
 	}
 #endif
 
@@ -3284,6 +3286,7 @@ CMenuManager::LoadSettings()
 	CCamera::m_bUseMouse3rdPerson = true;
 	CVehicle::m_bDisableMouseSteering = true;
 #endif
+	REVC_LOG_INFO("LoadSettings: platform defaults applied");
 	CRenderer::ms_lodDistScale = m_PrefsLOD;
 
 	if (m_nPrefsAudio3DProviderIndex == NO_AUDIO_PROVIDER)
@@ -3291,6 +3294,7 @@ CMenuManager::LoadSettings()
 
 	m_lastWorking3DAudioProvider = m_nPrefsAudio3DProviderIndex;
 
+	REVC_LOG_INFO("LoadSettings: audio provider and language step");
 	if (m_PrefsLanguage == prevLang)
 		m_bLanguageLoaded = false;
 	else {

@@ -35,6 +35,21 @@ revctestgfx::Applied s_applied;
 bool s_started = false;
 bool s_envMapDirty = false;
 
+// TestGraphicsApply is also called from LoadINISettings, and that runs inside
+// RsInitialize - before RwEngineInit. Reaching a raster from there goes through
+// Engine::memfuncs.rwmalloc while it is still nil, i.e. an indirect call to
+// address 0, which is exactly the pc=0 SIGSEGV seen on device once reVC.ini
+// carried a non-zero `refl`. The reflection map is therefore only rebuilt after
+// CustomPipeInit has created the pipelines (TestGraphicsEngineReady); until then
+// the requested size just stays pending.
+bool s_pipesReady = false;
+
+bool
+CanTouchRenderWare(void)
+{
+	return s_pipesReady;
+}
+
 // Rebuild the capture camera when the requested RT size changed. While the
 // camera is gone EnvMapRender returns immediately, so there is no window in
 // which the capture pass could run against a half-destroyed raster.
@@ -43,9 +58,26 @@ ApplyEnvMapSize(void)
 {
 	if(!s_envMapDirty)
 		return;
+	// Not yet applicable: keep the flag so the call from Game.cpp after
+	// CustomPipeInit does the work.
+	if(!CanTouchRenderWare())
+		return;
 	s_envMapDirty = false;
 
 	CustomPipes::EnvMapReinit(s_applied.envMapSize);
+}
+
+// Called once CustomPipeInit has built the reflection map. Until this runs the
+// menu can record a requested size but must not touch a raster.
+void
+TestGraphicsEngineReady(void)
+{
+	s_pipesReady = true;
+	// EnvMapInit built the map at its default size, so a pending request for a
+	// different one still has to run; a matching one is already satisfied.
+	if(s_envMapDirty && s_applied.envMapSize == CustomPipes::EnvMapSize)
+		s_envMapDirty = false;
+	ApplyEnvMapSize();
 }
 
 } // namespace

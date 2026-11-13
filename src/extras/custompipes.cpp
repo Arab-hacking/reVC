@@ -432,6 +432,12 @@ EnvMapTextureForShading(void)
 void
 EnvMapReinit(int32 size)
 {
+	// Before RwEngineInit (LoadINISettings runs first on the boot path) the
+	// allocator below is a nil function pointer, so creating or destroying a
+	// raster here jumps to address 0. The caller keeps the request pending.
+	if(rw::Engine::state < rw::Engine::Opened)
+		return;
+
 	if(size <= 0) {
 		// `refl = 0`: the client's getter 0x1894a08 returns NULL below level 1
 		// and no map is ever rendered, so the camera and its raster go away.
