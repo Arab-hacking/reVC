@@ -613,8 +613,8 @@ bool CGame::Initialise(const char* datFile)
 	CDarkel::Init();
 	CStats::Init();
 	CPacManPickups::Init();
-	// The sheet system is gone; CRubbish now only loads the texture the
-	// plane banner shares with the old newspapers.
+	// The leaf/newspaper sheets themselves are gone; this only loads the
+	// texture the plane banner's tail shares with them.
 	CRubbish::Init();
 	CClouds::Init();
 	CSpecialFX::Init();
@@ -1034,7 +1034,6 @@ void CGame::Process(void)
 		CPacManPickups::Update();
 		CPickups::Update();
 		CGarages::Update();
-		// CRubbish::Update();
 		CSpecialFX::Update();
 		CRopes::Update();
 		CTimeCycle::Update();
