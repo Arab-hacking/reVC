@@ -154,6 +154,15 @@ TestFormatDetails(void)
 		CHECK(h->Transmission.nNumberOfGears == 0, "short: gears %d", h->Transmission.nNumberOfGears);
 		CHECK(h->ModelFlags == 0 && h->HandlingFlags == 0, "short: flags not zero");
 	}
+
+	// 5. Below the 0.01 threshold GetDefaultAirResistance() returns the drag as
+	// it stands, with no division at all - the other half of the same branch.
+	BuildSynthetic(buf, sizeof(buf), nil,
+	               "SLICK 1000 2000 0.008\n;the end\n", nil);
+	LoadFrom(buf, strlen(buf), "tiny drag");
+	CHECK(mod_HandlingManager.NumCars == 1, "tiny drag: %u cars", mod_HandlingManager.NumCars);
+	CHECKF(mod_HandlingManager.GetHandlingData(0)->fAirResistanceFactor, 0.008f,
+	       "tiny drag fAirResistanceFactor");
 }
 
 // The column map itself: every column of a car record must land in its own
@@ -227,7 +236,10 @@ TestColumnMap(void)
 	// ConvertDataToGameUnits: buoyancy is mass*0.8/percentSubmerged).
 	CHECKF(h->fInvMass, 1.0f/1000.0f, "fInvMass");
 	CHECKF(h->fBuoyancy, 1000.0f*0.8f/60.0f, "fBuoyancy");
-	CHECKF(h->fAirResistanceFactor, 0.5f/1000.0f, "fAirResistanceFactor");
+	// Drag 0.5 is above the 0.01 threshold, so it goes through the /2000 branch
+	// of GetDefaultAirResistance() - the value CAutomobile stores in
+	// m_fAirResistance. The mass takes no part in it.
+	CHECKF(h->fAirResistanceFactor, 0.5f/1000.0f/2.0f, "fAirResistanceFactor");
 	CHECKF(h->fApproxHeight, 2.0f*0.3f + 1.0f, "fApproxHeight");
 
 	// The gear table follows SA's InitGearRatios: evenly spaced over the top

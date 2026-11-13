@@ -563,8 +563,16 @@ CPhysical::ApplyAirResistance(void)
 		float f = Pow(m_fAirResistance, CTimer::GetTimeStep());
 		m_vecMoveSpeed *= f;
 		m_vecTurnSpeed *= f;
-	}else if(GetStatus() != STATUS_GHOST){ 
-		float f = Pow(1.0f/Abs(1.0f + m_fAirResistance*0.5f*m_vecMoveSpeed.MagnitudeSqr()), CTimer::GetTimeStep());
+	}else if(GetStatus() != STATUS_GHOST){
+		// CVehicle::ProcessControl (0xbd6968..0xbd69a4) builds the base as
+		// 1 + 0.5*drag*|v|^2 and, with an fcsel, falls back to
+		// 1 - 0.5*drag*|v|^2 when that goes negative - not to its absolute
+		// value. Below the 0.1 threshold a negative base is unreachable in
+		// practice, but the client's expression is this one.
+		float fBase = 1.0f + m_fAirResistance*0.5f*m_vecMoveSpeed.MagnitudeSqr();
+		if(fBase < 0.0f)
+			fBase = 1.0f - m_fAirResistance*0.5f*m_vecMoveSpeed.MagnitudeSqr();
+		float f = Pow(1.0f/fBase, CTimer::GetTimeStep());
 		m_vecMoveSpeed *= f;
 		m_vecTurnSpeed *= 0.99f;
 	}

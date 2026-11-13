@@ -180,10 +180,10 @@ struct tHandlingData
 	// Derived values, computed once after the file is read; not columns.
 	float    fInvMass;
 	float    fBuoyancy;
-	// VC derived the air-resistance factor from Dimensions.x*Dimensions.z and the
-	// centre-of-mass offset from Dimension.z. The client file has no dimensions;
-	// fDragMult carries the drag and these two keep the call sites honest about
-	// where the numbers come from now.
+	// What CAutomobile and CBike store into m_fAirResistance (+0x1d4) in their
+	// constructors: the drag column run through GetDefaultAirResistance()
+	// (0x1815708) - fDragMult itself below 0.01, fDragMult/2000 above it.
+	// fApproxHeight comes from the centre of mass, for the stabiliser offset.
 	float    fAirResistanceFactor;
 	float    fApproxHeight;
 };

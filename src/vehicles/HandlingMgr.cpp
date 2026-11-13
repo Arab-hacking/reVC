@@ -484,12 +484,25 @@ cHandlingDataMgr::ConvertDataToGameUnits(tHandlingData *handling)
 
 	t->InitGearRatios();
 
-	// The client file has no Dimensions (VC kept x/y/z there), but the port's
-	// physics still needs the two values VC derived from them: the air-resistance
-	// factor (was Dimensions.x*Dimensions.z/mass) and the body height used to
-	// offset the stabiliser (was Dimensions.z). fDragMult carries the drag and
-	// the centre of mass the height, as before.
-	handling->fAirResistanceFactor = handling->fDragMult / Max(handling->fMass, 1.0f);
+	// Air resistance. CAutomobile's and CBike's constructors load the drag
+	// column (+0x28) and pass it through CVehicle::GetDefaultAirResistance()
+	// before storing it in m_fAirResistance (+0x1d4):
+	//
+	//   0x017cf4d8  ldr s0, [x8, #0x28]   ; handling->fDragMult
+	//   0x017cf4dc  bl  #0x1815708        ; GetDefaultAirResistance
+	//   0x017cf4e8  str s0, [x19, #0x1d4] ; m_fAirResistance
+	//
+	// Nothing divides by the mass. That was VC, where the factor came from
+	// Dimensions.x*Dimensions.z/mass, and it made light cars brake far harder
+	// than the client (mass/2000 as a multiplier) while the heavy ones barely
+	// lost speed at all (AT400 was 30x too slippery). It also pushed the two
+	// RC cars past the 0.1 threshold in ApplyAirResistance, into the branch
+	// where drag is an exponential base above one - they sped up on their own.
+	handling->fAirResistanceFactor = handling->fDragMult <= 0.01f
+	                                 ? handling->fDragMult
+	                                 : handling->fDragMult / 1000.0f / 2.0f;
+	// The body height still comes from the centre of mass: the client file has
+	// no Dimensions for the stabiliser offset, and that path is unchanged.
 	handling->fApproxHeight = 2.0f*Abs(handling->CentreOfMass.z) + 1.0f;
 
 	#undef ACCEL_CONST
