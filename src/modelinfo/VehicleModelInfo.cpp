@@ -1569,8 +1569,20 @@ CVehicleModelInfo::LoadVehicleColours(void)
 				&colors[10], &colors[11],
 				&colors[12], &colors[13],
 				&colors[14], &colors[15]);
-			CVehicleModelInfo *mi = (CVehicleModelInfo*)CModelInfo::GetModelInfo(name, nil);
-			assert(mi);
+			CBaseModelInfo *base = CModelInfo::GetModelInfo(name, nil);
+			// Клиент ищет имя в hash-map и проверяет тип записи:
+			// ldrb w9, [x8, #0x20] / cmp w9, #6 / csel x27, x8, xzr, eq
+			// (0x15bd92c..0x15bd934). Всё, что не машина, превращается в
+			// NULL, а следом cbz x27 идёт в ветку ассерта 1744 ('modelInfo')
+			// и abort. У нас GetModelInfo(name, nil) перебирает все модели
+			// подряд, поэтому без проверки типа имя педа или статика в
+			// секции car давало бы cast чужого объекта к CVehicleModelInfo
+			// и запись m_numColours/m_colours1/m_colours2 в середину чужой
+			// структуры.
+			assert(base != nil && base->GetModelType() == MITYPE_VEHICLE);
+			if(base == nil || base->GetModelType() != MITYPE_VEHICLE)
+				continue;
+			CVehicleModelInfo *mi = (CVehicleModelInfo*)base;
 			mi->m_numColours = (n-1)/2;
 			for(i = 0; i < mi->m_numColours; i++){
 				mi->m_colours1[i] = colors[i*2 + 0];
