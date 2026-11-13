@@ -7,7 +7,6 @@
 #include "ZoneCull.h"
 #include "Camera.h"
 #include "Darkel.h"
-#include "Rubbish.h"
 #include "Explosion.h"
 #include "Particle.h"
 #include "ParticleObject.h"
@@ -231,7 +230,7 @@ CBike::ProcessControl(void)
 
 	ActivateBombWhenEntered();
 
-	CRubbish::StirUp(this);
+	// See CAutomobile::ProcessControl: the rubbish system is gone.
 
 	UpdateClumpAlpha();
 
@@ -2252,73 +2251,9 @@ CBike::AddDamagedVehicleParticles(void)
 int32
 CBike::AddWheelDirtAndWater(CColPoint *colpoint, uint32 belowEffectSpeed)
 {
-	int i;
-	CVector dir;
-	static float minSize = 0.02f;
-	static float maxSize = 0.04f;
-	static RwRGBA grassCol = { 8, 24, 8, 255 };
-	static RwRGBA gravelCol = { 64, 64, 64, 255 };
-	static RwRGBA mudCol = { 64, 32, 16, 255 };
-	static RwRGBA sandCol = { 170, 165, 140, 255 };
-	static RwRGBA waterCol = { 48, 48, 64, 0 };
-
-	if(!belowEffectSpeed &&
-	   colpoint->surfaceB != SURFACE_SAND && colpoint->surfaceB != SURFACE_SAND_BEACH)
-		return 0;
-
-	switch(colpoint->surfaceB){
-	case SURFACE_GRASS:
-		dir.x = -0.05f*m_vecMoveSpeed.x;
-		dir.y = -0.05f*m_vecMoveSpeed.y;
-		for(i = 0; i < 4; i++){
-			dir.z = CGeneral::GetRandomNumberInRange(0.03f, 0.04f);
-			CParticle::AddParticle(PARTICLE_WHEEL_DIRT, colpoint->point, dir, nil,
-				CGeneral::GetRandomNumberInRange(minSize, maxSize), grassCol);
-		}
-		return 0;
-	case SURFACE_GRAVEL:
-		dir.x = -0.05f*m_vecMoveSpeed.x;
-		dir.y = -0.05f*m_vecMoveSpeed.y;
-		for(i = 0; i < 4; i++){
-			dir.z = CGeneral::GetRandomNumberInRange(0.03f, 0.04f);
-			CParticle::AddParticle(PARTICLE_WHEEL_DIRT, colpoint->point, dir, nil,
-				CGeneral::GetRandomNumberInRange(minSize, maxSize), gravelCol);
-		}
-		return 1;
-	case SURFACE_MUD_DRY:
-		dir.x = -0.05f*m_vecMoveSpeed.x;
-		dir.y = -0.05f*m_vecMoveSpeed.y;
-		for(i = 0; i < 4; i++){
-			dir.z = CGeneral::GetRandomNumberInRange(0.03f, 0.04f);
-			CParticle::AddParticle(PARTICLE_WHEEL_DIRT, colpoint->point, dir, nil,
-				CGeneral::GetRandomNumberInRange(minSize, maxSize), mudCol);
-		}
-		return 0;
-	case SURFACE_SAND:
-	case SURFACE_SAND_BEACH:
-		if(CTimer::GetFrameCounter() & 2)
-			return 0;
-		dir.x = 0.75f*m_vecMoveSpeed.x;
-		dir.y = 0.75f*m_vecMoveSpeed.y;
-		for(i = 0; i < 1; i++){
-			dir.z = CGeneral::GetRandomNumberInRange(0.02f, 0.055f);
-			CParticle::AddParticle(PARTICLE_SAND, colpoint->point, dir, nil,
-				0.8f*m_vecMoveSpeed.Magnitude(), sandCol);
-		}
-		return 0;
-	default:
-		if(CWeather::WetRoads > 0.01f){
-			CParticle::AddParticle(
-				PARTICLE_WATERSPRAY,
-				colpoint->point + CVector(0.0f, 0.0f, 0.25f+0.25f),
-				CVector(0.0f, 0.0f, CGeneral::GetRandomNumberInRange(0.005f, 0.04f)),
-				nil,
-				CGeneral::GetRandomNumberInRange(0.1f, 0.5f), waterCol);
-			return 0;
-		}	
-		return 1;
-	}
-
+	// See CAutomobile::AddWheelDirtAndWater: the wheel dirt/sand/spray particles
+	// are gone, for bikes too.
+	(void)colpoint; (void)belowEffectSpeed;
 	return 0;
 }
 

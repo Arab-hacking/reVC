@@ -29,7 +29,6 @@
 #include "Radar.h"
 #include "Record.h"
 #include "RpAnimBlend.h"
-#include "Rubbish.h"
 #include "SpecialFX.h"
 #include "Stats.h"
 #include "Streaming.h"
@@ -1589,8 +1588,9 @@ int8 CRunningScript::ProcessCommands900To999(int32 command)
 		CRouteNode::RemoveRoute(ScriptParams[0]);
 		return 0;
 	case COMMAND_SWITCH_RUBBISH:
+		// The leaves/newspaper sheets are gone, but the script opcode has to keep
+		// consuming its parameter or every later opcode reads shifted values.
 		CollectParameters(&m_nIp, 1);
-		CRubbish::SetVisibility(ScriptParams[0] != 0);
 		return 0;
 	case COMMAND_REMOVE_PARTICLE_EFFECTS_IN_AREA:
 	{

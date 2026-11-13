@@ -13,7 +13,6 @@
 #include "ZoneCull.h"
 #include "Camera.h"
 #include "Darkel.h"
-#include "Rubbish.h"
 #include "Fire.h"
 #include "Explosion.h"
 #include "Particle.h"
@@ -360,7 +359,9 @@ CAutomobile::ProcessControl(void)
 					pPassengers[i]->SetObjective(OBJECTIVE_LEAVE_CAR, this);
 	}
 
-	CRubbish::StirUp(this);
+	// CRubbish::StirUp(this) used to kick the leaves/newspapers lying around
+	// the map into the air as the car drove over them. That whole system is
+	// gone (see Rubbish.cpp), so there is nothing to stir up.
 
 	UpdateClumpAlpha();
 
@@ -4467,72 +4468,13 @@ CAutomobile::AddDamagedVehicleParticles(void)
 int32
 CAutomobile::AddWheelDirtAndWater(CColPoint *colpoint, uint32 belowEffectSpeed)
 {
-	int i;
-	CVector dir;
-	static RwRGBA grassCol = { 8, 24, 8, 255 };
-	static RwRGBA gravelCol = { 64, 64, 64, 255 };
-	static RwRGBA mudCol = { 64, 32, 16, 255 };
-	static RwRGBA sandCol = { 170, 165, 140, 255 };
-	static RwRGBA waterCol = { 48, 48, 64, 0 };
-
-	if(!belowEffectSpeed &&
-	   colpoint->surfaceB != SURFACE_SAND && colpoint->surfaceB != SURFACE_SAND_BEACH)
-		return 0;
-
-	switch(colpoint->surfaceB){
-	case SURFACE_GRASS:
-		dir.x = -0.05f*m_vecMoveSpeed.x;
-		dir.y = -0.05f*m_vecMoveSpeed.y;
-		for(i = 0; i < 4; i++){
-			dir.z = CGeneral::GetRandomNumberInRange(0.03f, 0.06f);
-			CParticle::AddParticle(PARTICLE_WHEEL_DIRT, colpoint->point, dir, nil,
-				CGeneral::GetRandomNumberInRange(0.02f, 0.1f), grassCol);
-		}
-		return 0;
-	case SURFACE_GRAVEL:
-		dir.x = -0.05f*m_vecMoveSpeed.x;
-		dir.y = -0.05f*m_vecMoveSpeed.y;
-		for(i = 0; i < 4; i++){
-			dir.z = CGeneral::GetRandomNumberInRange(0.03f, 0.06f);
-			CParticle::AddParticle(PARTICLE_WHEEL_DIRT, colpoint->point, dir, nil,
-				CGeneral::GetRandomNumberInRange(0.05f, 0.09f), gravelCol);
-		}
-		return 1;
-	case SURFACE_MUD_DRY:
-		dir.x = -0.05f*m_vecMoveSpeed.x;
-		dir.y = -0.05f*m_vecMoveSpeed.y;
-		for(i = 0; i < 4; i++){
-			dir.z = CGeneral::GetRandomNumberInRange(0.03f, 0.06f);
-			CParticle::AddParticle(PARTICLE_WHEEL_DIRT, colpoint->point, dir, nil,
-				CGeneral::GetRandomNumberInRange(0.02f, 0.06f), mudCol);
-		}
-		return 0;
-	case SURFACE_SAND:
-	case SURFACE_SAND_BEACH:
-		if(CTimer::GetFrameCounter() & 2 ||
-		   CWeather::WetRoads > 0.0f && CGeneral::GetRandomNumberInRange(CWeather::WetRoads, 1.01f) > 0.5f)
-			return 0;
-		dir.x = 0.5f*m_vecMoveSpeed.x;
-		dir.y = 0.5f*m_vecMoveSpeed.y;
-		for(i = 0; i < 1; i++){
-			dir.z = CGeneral::GetRandomNumberInRange(0.02f, 0.055f);
-			CParticle::AddParticle(PARTICLE_SAND, colpoint->point, dir, nil,
-				2.0f*m_vecMoveSpeed.Magnitude(), sandCol);
-		}
-		return 0;
-	default:
-		if(CWeather::WetRoads > 0.01f){
-			if(CTimer::GetFrameCounter() & 1)
-				CParticle::AddParticle(
-					PARTICLE_WATERSPRAY,
-					colpoint->point + CVector(0.0f, 0.0f, 0.25f+0.25f),
-					CVector(0.0f, 0.0f, CGeneral::GetRandomNumberInRange(0.005f, 0.04f)),
-					nil,
-					CGeneral::GetRandomNumberInRange(0.1f, 0.5f), waterCol);
-			return 0;
-		}
-		return 1;
-	}
+	// VC spawned dirt, gravel, mud and sand particles under the wheels on
+	// unpaved surfaces (and water spray when the roads were wet), which is the
+	// brown cloud that followed a car around. Both vehicles now share this stub:
+	// nothing is spawned, and the return value says "no dirt", so the callers
+	// do not add the burning-rubber smoke that was tied to it either.
+	(void)colpoint; (void)belowEffectSpeed;
+	return 0;
 }
 
 void

@@ -9,7 +9,6 @@
 #include "Sprite.h"
 #include "Coronas.h"
 #include "PointLights.h"
-#include "Rubbish.h"
 #include "Timecycle.h"
 #include "General.h"
 #include "Timer.h"
@@ -249,7 +248,7 @@ CPlaneBanner::Render(void)
 			RwRenderStateSet(rwRENDERSTATESRCBLEND, (void*)rwBLENDSRCALPHA);
 			RwRenderStateSet(rwRENDERSTATEDESTBLEND, (void*)rwBLENDINVSRCALPHA);
 			RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)TRUE);
-			RwRenderStateSet(rwRENDERSTATETEXTURERASTER, RwTextureGetRaster(gpRubbishTexture[2]));
+			RwRenderStateSet(rwRENDERSTATETEXTURERASTER, RwTextureGetRaster(gpPlaneBannerTexture));
 
 #ifdef FIX_BUGS
 			if(RwIm3DTransform(TempBufferRenderVertices, TempBufferVerticesStored, nil, rwIM3D_VERTEXXYZ|rwIM3D_VERTEXUV|rwIM3D_VERTEXRGBA)){
