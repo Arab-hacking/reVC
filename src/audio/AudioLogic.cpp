@@ -2063,14 +2063,14 @@ cAudioManager::ProcessVehicleEngine(cVehicleParams& params)
 							else {
 								if (currentGear > 0) {
 									relativeGearChange = Min(1.0f,
-										params.m_fVelocityChange - transmission->Gears[currentGear].fShiftDownVelocity) / transmission->fMaxVelocity * 2.5f;
+										params.m_fVelocityChange - transmission->Gears[currentGear].ChangeDownVelocity) / transmission->fMaxVelocity * 2.5f;
 									if (traction == 0.0f && params.m_pVehicle->GetStatus() != STATUS_SIMPLE &&
-										params.m_fVelocityChange < transmission->Gears[1].fShiftUpVelocity)
+										params.m_fVelocityChange < transmission->Gears[1].ChangeUpVelocity)
 										traction = 0.7f;
 									modificator = traction * *gasPedalAudioPtr * 0.95f + (1.0f - traction) * relativeGearChange;
 								} else {
 									modificator = Min(1.0f,
-										1.0f - Abs((params.m_fVelocityChange - transmission->Gears[0].fShiftDownVelocity) / transmission->fMaxReverseVelocity));
+										1.0f - Abs((params.m_fVelocityChange - transmission->Gears[0].ChangeDownVelocity) / transmission->fMaxReverseVelocity));
 								}
 							}
 						} else
