@@ -767,10 +767,20 @@ CCamera::CamControl(void)
 					vehType = VEHICLE_TYPE_CAR;
 
 				switch(vehType){
+				// клиентские типы: mtruck/quad/bmx — автомобиль,
+				// trike/prtcrn/craneof — мотоцикл (ездят на CAutomobile/CBike)
+				case VEHICLE_TYPE_MTRUCK:
+				case VEHICLE_TYPE_QUAD:
+				case VEHICLE_TYPE_BMX:
 				case VEHICLE_TYPE_CAR:
+				case VEHICLE_TYPE_TRIKE:
+				case VEHICLE_TYPE_PRTCRN:
+				case VEHICLE_TYPE_CRANEOF:
 				case VEHICLE_TYPE_BIKE:{
 					CAttributeZone *stairsZone = nil;
-					if(vehType == VEHICLE_TYPE_BIKE && CCullZones::CamStairsForPlayer()){
+					if((vehType == VEHICLE_TYPE_BIKE || vehType == VEHICLE_TYPE_TRIKE ||
+					    vehType == VEHICLE_TYPE_PRTCRN || vehType == VEHICLE_TYPE_CRANEOF) &&
+					   CCullZones::CamStairsForPlayer()){
 						stairsZone = CCullZones::FindZoneWithStairsAttributeForPlayer();
 						if(stairsZone)
 							stairs = true;

@@ -323,7 +323,7 @@ INITSAVEBUF
 #else
 			if ((pVehicle->IsCar() || pVehicle->IsBoat() || pVehicle->IsBike()) && pVehicle->VehicleCreatedBy == MISSION_VEHICLE) {
 #endif
-				WriteSaveBuf(buf, pVehicle->m_vehType);
+				WriteSaveBuf(buf, VehicleSaveClass(pVehicle->m_vehType));
 				WriteSaveBuf(buf, pVehicle->GetModelIndex());
 				WriteSaveBuf(buf, GetVehicleRef(pVehicle));
 				pVehicle->Save(buf);
@@ -334,7 +334,7 @@ INITSAVEBUF
 #else
 			if (pVehicle->IsCar() && pVehicle->VehicleCreatedBy == MISSION_VEHICLE) {
 #endif
-				WriteSaveBuf(buf, pVehicle->m_vehType);
+				WriteSaveBuf(buf, VehicleSaveClass(pVehicle->m_vehType));
 				WriteSaveBuf(buf, pVehicle->GetModelIndex());
 				WriteSaveBuf(buf, GetVehicleRef(pVehicle));
 				memcpy(buf, pVehicle, sizeof(CAutomobile));
@@ -345,7 +345,7 @@ INITSAVEBUF
 #else
 			if (pVehicle->IsBoat() && pVehicle->VehicleCreatedBy == MISSION_VEHICLE) {
 #endif
-				WriteSaveBuf(buf, pVehicle->m_vehType);
+				WriteSaveBuf(buf, VehicleSaveClass(pVehicle->m_vehType));
 				WriteSaveBuf(buf, pVehicle->GetModelIndex());
 				WriteSaveBuf(buf, GetVehicleRef(pVehicle));
 				memcpy(buf, pVehicle, sizeof(CBoat));
@@ -356,7 +356,7 @@ INITSAVEBUF
 #else
 			if (pVehicle->IsBike() && pVehicle->VehicleCreatedBy == MISSION_VEHICLE) {
 #endif
-				WriteSaveBuf(buf, pVehicle->m_vehType);
+				WriteSaveBuf(buf, VehicleSaveClass(pVehicle->m_vehType));
 				WriteSaveBuf(buf, pVehicle->GetModelIndex());
 				WriteSaveBuf(buf, GetVehicleRef(pVehicle));
 				memcpy(buf, pVehicle, sizeof(CBike));

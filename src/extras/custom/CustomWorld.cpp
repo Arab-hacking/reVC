@@ -473,27 +473,48 @@ ModelInfoType ModelType(customworld::Model::Kind kind)
     }
 }
 
-// BR uses SA vehicle classes. Only instantiate classes that have a matching
-// native VC vehicle implementation; never reinterpret a trailer/quad/BMX as a
-// car or install SA handling data into VC's fixed-size handling tables.
+// BR uses SA vehicle classes. Клиентская нумерация типов (0…12) совпадает с
+// тем, что делает IDE-парсер клиента (0xb4b0fc), поэтому таблицы компонентов
+// и два размера колеса понимают такие модели без пересчёта. Ездят они всё
+// равно на классах порта: car/mtruck/quad/bmx -> CAutomobile, bike/trike/
+// prtcrn/craneof -> CBike.
+static bool IsCarLikeType(int type)
+{
+    return type == VEHICLE_TYPE_CAR || type == VEHICLE_TYPE_MTRUCK ||
+           type == VEHICLE_TYPE_QUAD || type == VEHICLE_TYPE_BMX;
+}
+
+static bool IsBikeLikeType(int type)
+{
+    return type == VEHICLE_TYPE_BIKE || type == VEHICLE_TYPE_TRIKE ||
+           type == VEHICLE_TYPE_PRTCRN || type == VEHICLE_TYPE_CRANEOF;
+}
+
 int VehicleType(const std::string &s)
 {
     const std::string type = customworld::Lower(s);
     if(type == "car") return VEHICLE_TYPE_CAR;
+    if(type == "mtruck") return VEHICLE_TYPE_MTRUCK;
+    if(type == "quad") return VEHICLE_TYPE_QUAD;
+    if(type == "bmx") return VEHICLE_TYPE_BMX;
     if(type == "bike") return VEHICLE_TYPE_BIKE;
+    if(type == "trike") return VEHICLE_TYPE_TRIKE;
+    if(type == "prtcrn") return VEHICLE_TYPE_PRTCRN;
+    if(type == "craneof") return VEHICLE_TYPE_CRANEOF;
     if(type == "boat") return VEHICLE_TYPE_BOAT;
     if(type == "heli") return VEHICLE_TYPE_HELI;
     if(type == "plane") return VEHICLE_TYPE_PLANE;
+    if(type == "trailer") return VEHICLE_TYPE_TRAILER;
     return -1; // also excludes trains: the BR track/path format is not VC's
 }
 
 bool HandlingMatches(int type, int id)
 {
     if(id < 0 || id >= NUMHANDLINGS) return false;
-    if(type == VEHICLE_TYPE_CAR)
+    if(IsCarLikeType(type))
         return id < HANDLING_BIKE && !(mod_HandlingManager.GetHandlingData((tVehicleType)id)->Flags &
             (HANDLING_IS_BIKE | HANDLING_IS_BOAT | HANDLING_IS_HELI | HANDLING_IS_PLANE));
-    if(type == VEHICLE_TYPE_BIKE) return id >= HANDLING_BIKE && id <= HANDLING_FREEWAY;
+    if(IsBikeLikeType(type)) return id >= HANDLING_BIKE && id <= HANDLING_FREEWAY;
     if(type == VEHICLE_TYPE_BOAT) return id >= HANDLING_PREDATOR && id <= HANDLING_CUPBOAT;
     if(type == VEHICLE_TYPE_HELI)
         return id >= HANDLING_SPARROW && id <= HANDLING_RCCOPTER && id != HANDLING_RCBARON;
@@ -509,13 +530,13 @@ int BuiltinHandling(int type, const std::string &name, bool &fallback)
     int result = mod_HandlingManager.GetHandlingId(id.c_str());
     fallback = !HandlingMatches(type, result);
     if(!fallback) return result;
-    switch(type) {
-    case VEHICLE_TYPE_BIKE: return HANDLING_BIKE;
-    case VEHICLE_TYPE_BOAT: return HANDLING_PREDATOR;
-    case VEHICLE_TYPE_HELI: return HANDLING_MAVERICK;
-    case VEHICLE_TYPE_PLANE: return HANDLING_SEAPLANE;
-    default: return HANDLING_LANDSTAL;
-    }
+    // Подставляем handling того же семейства: у trike/prtcrn/craneof
+    // мотоциклетные данные, у mtruck/quad/bmx — автомобильные.
+    if(IsBikeLikeType(type)) return HANDLING_BIKE;
+    if(type == VEHICLE_TYPE_BOAT) return HANDLING_PREDATOR;
+    if(type == VEHICLE_TYPE_HELI) return HANDLING_MAVERICK;
+    if(type == VEHICLE_TYPE_PLANE) return HANDLING_SEAPLANE;
+    return HANDLING_LANDSTAL;
 }
 
 ePedType SafePedType(const std::string &s)
@@ -659,7 +680,7 @@ void CCustomWorld::LoadIde(void)
             vehicle->m_wheelId = -1; // SA wheels are embedded in the DFF
             vehicle->m_wheelScaleFront = 1.0f;
             vehicle->m_wheelScaleRear = 1.0f;
-            vehicle->m_bikeSteerAngle = vehicleType == VEHICLE_TYPE_BIKE ? 35.0f : 0.0f;
+            vehicle->m_bikeSteerAngle = IsBikeLikeType(vehicleType) ? 35.0f : 0.0f;
             vehicle->m_compRules = 0;
             vehicle->m_vehicleClass = -1;
             vehicle->m_level = 0;

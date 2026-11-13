@@ -4822,8 +4822,8 @@ CPed::PreRender(void)
 		bIsWindModifierTurnedOn = true;
 
 	if (GetPedState() == PED_DRIVING && m_pMyVehicle) {
-		if (m_pMyVehicle->m_vehType == VEHICLE_TYPE_BIKE
-			|| (m_pMyVehicle->m_vehType == VEHICLE_TYPE_CAR && m_pMyVehicle->IsOpenTopCar()))
+		if (m_pMyVehicle->IsBike()
+			|| (m_pMyVehicle->IsCar() && m_pMyVehicle->IsOpenTopCar()))
 			bIsPedDrivingBikeOrOpenTopCar = true;
 	}
 
@@ -5436,8 +5436,8 @@ CPed::SetGetUp(void)
 
 		CVehicle *collidingVeh = (CVehicle*)m_pCollidingEntity;
 		CVehicle *veh = (CVehicle*)CPedPlacement::IsPositionClearOfCars(&GetPosition());
-		if (veh && veh->m_vehType != VEHICLE_TYPE_BIKE && veh != m_attachedTo ||
-			collidingVeh && collidingVeh->IsVehicle() && collidingVeh->m_vehType != VEHICLE_TYPE_BIKE
+		if (veh && !veh->IsBike() && veh != m_attachedTo ||
+			collidingVeh && collidingVeh->IsVehicle() && !((CVehicle*)collidingVeh)->IsBike()
 			&& ((uint8)(CTimer::GetFrameCounter() + m_randomSeed + 5) % 8 ||
 				 CCollision::ProcessColModels(GetMatrix(), *GetColModel(), collidingVeh->GetMatrix(), *collidingVeh->GetColModel(),
 					aTempPedColPts, nil, nil) > 0)) {
@@ -6934,7 +6934,7 @@ CPed::SetEvasiveDive(CPhysical *reason, uint8 onlyRandomJump)
 
 	angleToFace = m_fRotationCur;
 	CVehicle *veh = (CVehicle*) reason;
-	if (reason->IsVehicle() && veh->m_vehType == VEHICLE_TYPE_CAR && veh->m_nCarHornTimer != 0 && !IsPlayer()) {
+	if (reason->IsVehicle() && veh->IsCar() && veh->m_nCarHornTimer != 0 && !IsPlayer()) {
 		onlyRandomJump = true;
 	}
 

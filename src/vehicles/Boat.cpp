@@ -1325,7 +1325,7 @@ CBoat::FillBoatList()
 		camFwd /= camDist;
 	for (int i = CPools::GetVehiclePool()->GetSize() - 1; i >= 0; i--) {
 		CBoat *boat = (CBoat *)(CPools::GetVehiclePool()->GetSlot(i));
-		if (boat && boat->m_vehType == VEHICLE_TYPE_BOAT) {
+		if (boat && boat->IsBoat()) {
 			if (boat->m_nNumWakePoints != 0) {
 				CVector2D camToBoat = CVector2D(boat->GetPosition()) - camPos;
 				float distToCam = DotProduct2D(camFwd, camToBoat);

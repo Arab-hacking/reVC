@@ -92,7 +92,8 @@ static int32 NextValidModelId(int32 mi, int32 step)
 #endif
 			|| pInfo->GetModelType() == MITYPE_VEHICLE &&
 #ifdef FIX_BUGS
-			(pVehicleInfo->m_vehicleType == VEHICLE_TYPE_CAR || pVehicleInfo->m_vehicleType == VEHICLE_TYPE_BOAT))
+			(pVehicleInfo->m_vehicleType >= VEHICLE_TYPE_CAR && pVehicleInfo->m_vehicleType != VEHICLE_TYPE_TRAIN &&
+			 pVehicleInfo->m_vehicleType != VEHICLE_TYPE_HELI && pVehicleInfo->m_vehicleType != VEHICLE_TYPE_PLANE))
 #else // && and || priority failure it seems, also crashes on special models
 			pVehicleInfo->m_vehicleType == VEHICLE_TYPE_CAR || pVehicleInfo->m_vehicleType == VEHICLE_TYPE_BOAT)
 #endif

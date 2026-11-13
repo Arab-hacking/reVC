@@ -319,7 +319,7 @@ CPlayerInfo::Process(void)
 					if (!veh->IsBoat() || veh->m_nDoorLock == CARLOCK_LOCKED_PLAYER_INSIDE) {
 						if (veh->GetStatus() != STATUS_WRECKED && veh->GetStatus() != STATUS_TRAIN_MOVING && veh->m_nDoorLock != CARLOCK_LOCKED_PLAYER_INSIDE) {
 							bool canJumpOff = false;
-							if (veh->m_vehType == VEHICLE_TYPE_BIKE) {
+							if (veh->IsBike()) {
 								canJumpOff = veh->CanPedJumpOffBike();
 							} else if (veh->pDriver == m_pPed) {
 								canJumpOff = veh->CanPedJumpOutCar();
@@ -605,7 +605,7 @@ CPlayerInfo::FindClosestCarSectorList(CPtrList& carList, CPed* ped, float unk1, 
 
 			car->m_scanCode = CWorld::GetCurrentScanCode();
 			if (car->GetStatus() != STATUS_WRECKED && car->GetStatus() != STATUS_TRAIN_MOVING
-				&& (car->GetUp().z > 0.3f || (car->IsVehicle() && ((CVehicle*)car)->m_vehType == VEHICLE_TYPE_BIKE))) {
+				&& (car->GetUp().z > 0.3f || (car->IsVehicle() && ((CVehicle*)car)->IsBike()))) {
 				CVector carCentre = car->GetBoundCentre();
 
 				if (Abs(ped->GetPosition().z - carCentre.z) < 2.0f || car->IsCar() && carCentre.z < ped->GetPosition().z && ped->GetPosition().z - 4.f < carCentre.z) {

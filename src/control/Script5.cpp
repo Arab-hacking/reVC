@@ -2840,13 +2840,13 @@ void CTheScripts::CleanUpThisPed(CPed* pPed)
 		pPed->m_objectiveTimer = CTimer::GetTimeInMilliseconds() + 30000;
 	if (pPed->InVehicle()) {
 		if (pPed->m_pMyVehicle->pDriver == pPed) {
-			if (pPed->m_pMyVehicle->m_vehType == VEHICLE_TYPE_CAR) {
+			if (pPed->m_pMyVehicle->IsCar()) {
 				CCarCtrl::JoinCarWithRoadSystem(pPed->m_pMyVehicle);
 				pPed->m_pMyVehicle->AutoPilot.m_nCarMission = MISSION_CRUISE;
 			}
 		}
 		else {
-			if (pPed->m_pMyVehicle->m_vehType == VEHICLE_TYPE_CAR) {
+			if (pPed->m_pMyVehicle->IsCar()) {
 				pPed->SetObjective(OBJECTIVE_LEAVE_CAR, pPed->m_pMyVehicle);
 				pPed->bWanderPathAfterExitingCar = true;
 			}

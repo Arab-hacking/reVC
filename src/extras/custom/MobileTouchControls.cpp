@@ -400,8 +400,17 @@ RebuildVehicleCatalog(void)
 		if (!base || base->GetModelType() != MITYPE_VEHICLE)
 			continue;
 		CVehicleModelInfo *vmi = (CVehicleModelInfo*)base;
+		// клиентские типы 0…12: машины (в т.ч. mtruck/quad/bmx/trailer),
+		// мотоциклы (в т.ч. trike/prtcrn/craneof) и лодки
 		if (vmi->m_vehicleType != VEHICLE_TYPE_CAR &&
+		    vmi->m_vehicleType != VEHICLE_TYPE_MTRUCK &&
+		    vmi->m_vehicleType != VEHICLE_TYPE_QUAD &&
+		    vmi->m_vehicleType != VEHICLE_TYPE_BMX &&
+		    vmi->m_vehicleType != VEHICLE_TYPE_TRAILER &&
 		    vmi->m_vehicleType != VEHICLE_TYPE_BIKE &&
+		    vmi->m_vehicleType != VEHICLE_TYPE_TRIKE &&
+		    vmi->m_vehicleType != VEHICLE_TYPE_PRTCRN &&
+		    vmi->m_vehicleType != VEHICLE_TYPE_CRANEOF &&
 		    vmi->m_vehicleType != VEHICLE_TYPE_BOAT)
 			continue;
 		const char *name = vmi->GetModelName();

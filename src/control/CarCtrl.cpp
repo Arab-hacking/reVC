@@ -1225,7 +1225,7 @@ void CCarCtrl::SlowCarDownForPedsSectorList(CPtrList& lst, CVehicle* pVehicle, f
 			continue;
 		float sidewaysDistance = ABS(DotProduct(pVehicle->GetRight(), vecToPed));
 		float sideLength = pVehicle->GetModelInfo()->GetColModel()->boundingBox.max.x;
-		if (pVehicle->m_vehType == VEHICLE_TYPE_BIKE)
+		if (pVehicle->IsBike())
 			sideLength *= 1.6f;
 		if (sideLength + 0.5f < sidewaysDistance)
 			/* If car is far enough taking side into account, don't care */

@@ -329,6 +329,24 @@ public:
 	virtual void Load(uint8*& buf);
 #endif
 
+// Класс машины в формате сохранения/воспроизведения. В сейве (и в
+// демо-записи) VC пишет три значения: 0 — автомобиль, 1 — лодка, 5 —
+// мотоцикл. m_vehType теперь клиентский (0…12), поэтому писать его напрямую
+// нельзя: mtruck (6), quad (8), bmx (9) и trailer (7) грузились бы как
+// «неизвестный тип», а trike/prtcrn/craneof — тоже. Вертолёты и самолёты в
+// стоковом формате всегда лежали под кодом автомобиля.
+static inline int32 VehicleSaveClass(int32 type)
+{
+	if(type == VEHICLE_TYPE_BOAT)
+		return VEHICLE_TYPE_BOAT;
+	if(type == VEHICLE_TYPE_BIKE || type == VEHICLE_TYPE_TRIKE ||
+	   type == VEHICLE_TYPE_PRTCRN || type == VEHICLE_TYPE_CRANEOF)
+		return VEHICLE_TYPE_BIKE;
+	if(type == VEHICLE_TYPE_TRAIN)
+		return VEHICLE_TYPE_TRAIN;	// как и раньше: поезда в сейв не попадают
+	return VEHICLE_TYPE_CAR;
+}
+
 	eVehicleAppearance GetVehicleAppearance(void);
 	// Класс-обёртки остались прежними, но тип у объекта теперь клиентский
 	// (13 значений, см. eVehicleType). mtruck/quad/bmx для игры — обычный

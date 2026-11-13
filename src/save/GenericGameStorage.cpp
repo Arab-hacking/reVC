@@ -187,8 +187,18 @@ IsLoadedSaveVehicleModel(int16 id, uint32 type)
 		return false;
 	const int vehicleType = ((CVehicleModelInfo*)base)->m_vehicleType;
 	// Automobiles also cover the heli/plane models in the stock save format.
+	// Тип модели пришёл из IDE и теперь клиентский (13 значений), а type —
+	// это метка блока сохранения (0/1/2), поэтому сравниваем «семействами»:
+	// car-сейв описывает и mtruck/quad/bmx/trailer, bike-сейв — и trike/
+	// prtcrn/craneof (последние ездят на CBike).
 	if (type == VEHICLE_TYPE_CAR)
-		return vehicleType == VEHICLE_TYPE_CAR || vehicleType == VEHICLE_TYPE_HELI || vehicleType == VEHICLE_TYPE_PLANE;
+		return vehicleType == VEHICLE_TYPE_CAR || vehicleType == VEHICLE_TYPE_HELI ||
+		       vehicleType == VEHICLE_TYPE_PLANE || vehicleType == VEHICLE_TYPE_MTRUCK ||
+		       vehicleType == VEHICLE_TYPE_QUAD || vehicleType == VEHICLE_TYPE_BMX ||
+		       vehicleType == VEHICLE_TYPE_TRAILER;
+	if (type == VEHICLE_TYPE_BIKE)
+		return vehicleType == VEHICLE_TYPE_BIKE || vehicleType == VEHICLE_TYPE_TRIKE ||
+		       vehicleType == VEHICLE_TYPE_PRTCRN || vehicleType == VEHICLE_TYPE_CRANEOF;
 	return vehicleType == (int)type;
 }
 

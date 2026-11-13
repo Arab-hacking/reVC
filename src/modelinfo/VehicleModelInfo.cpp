@@ -1114,9 +1114,10 @@ CVehicleModelInfo::PreprocessHierarchy(void)
 		bool own = false;
 		for(i = 0; i < wheelFramesFound; i++)
 			if(FrameHasObject(wheelFrames[i])) own = true;
-		SAVEH_LOG("[SAVEH] load %s type %d saHierarchy %d wheelId %d wheelFrames %d ownWheelMesh %d saMesh %d radius %.4f wheelScale %.4f\n",
+		SAVEH_LOG("[SAVEH] load %s type %d saHierarchy %d wheelId %d wheelFrames %d ownWheelMesh %d saMesh %d radius %.4f wheelScale %.4f/%.4f comps %d doors %d\n",
 			GetModelName(), m_vehicleType, gVehicleIsSAHierarchy, m_wheelId, wheelFramesFound,
-			own, m_bSAWheelMesh, 0.5f*m_wheelScaleFront, m_wheelScaleFront);
+			own, m_bSAWheelMesh, 0.5f*m_wheelScaleFront, m_wheelScaleFront, m_wheelScaleRear,
+			(int)m_numComps, (int)m_numDoors);
 	}
 #endif
 }

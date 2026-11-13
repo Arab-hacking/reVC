@@ -305,7 +305,7 @@ int8 CRunningScript::ProcessCommands800To899(int32 command)
 		CollectParameters(&m_nIp, 2);
 		CVehicle* pVehicle = CPools::GetVehiclePool()->GetAt(ScriptParams[0]);
 		script_assert(pVehicle);
-		script_assert(pVehicle->m_vehType == VEHICLE_TYPE_CAR);
+		script_assert(pVehicle->IsCar());
 		CAutomobile* pCar = (CAutomobile*)pVehicle;
 		pCar->bBigWheels = (ScriptParams[1] != 0);
 		return 0;

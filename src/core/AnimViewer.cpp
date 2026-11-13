@@ -281,11 +281,19 @@ CAnimViewer::Update(void)
 			if (modelInfo->GetModelType() == MITYPE_VEHICLE) {
 
 				CVehicleModelInfo* veh = (CVehicleModelInfo*)modelInfo;
-				if (veh->m_vehicleType == VEHICLE_TYPE_CAR) {
+				// клиентские типы (13): mtruck/quad/bmx — это CAutomobile,
+				// trike/prtcrn/craneof — CBike, иначе модель попала бы в CObject
+				if (veh->m_vehicleType == VEHICLE_TYPE_CAR ||
+				   veh->m_vehicleType == VEHICLE_TYPE_MTRUCK ||
+				   veh->m_vehicleType == VEHICLE_TYPE_QUAD ||
+				   veh->m_vehicleType == VEHICLE_TYPE_BMX) {
 					pTarget = new CAutomobile(modelId, RANDOM_VEHICLE);
 				} else if (veh->m_vehicleType == VEHICLE_TYPE_BOAT) {
 					pTarget = new CBoat(modelId, RANDOM_VEHICLE);
-				} else if (veh->m_vehicleType == VEHICLE_TYPE_BIKE) {
+				} else if (veh->m_vehicleType == VEHICLE_TYPE_BIKE ||
+				          veh->m_vehicleType == VEHICLE_TYPE_TRIKE ||
+				          veh->m_vehicleType == VEHICLE_TYPE_PRTCRN ||
+				          veh->m_vehicleType == VEHICLE_TYPE_CRANEOF) {
 					pTarget = new CBike(modelId, RANDOM_VEHICLE);
 				} else {
 					pTarget = new CObject(modelId, true);

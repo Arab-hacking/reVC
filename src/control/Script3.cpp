@@ -260,7 +260,7 @@ int8 CRunningScript::ProcessCommands500To599(int32 command)
 		CollectParameters(&m_nIp, 2);
 		CVehicle* pVehicle = CPools::GetVehiclePool()->GetAt(ScriptParams[0]);
 		script_assert(pVehicle);
-		script_assert(pVehicle->m_vehType == VEHICLE_TYPE_CAR);
+		script_assert(pVehicle->IsCar());
 		((CAutomobile*)pVehicle)->SetTaxiLight(ScriptParams[1] != 0);
 		return 0;
 	}
@@ -378,7 +378,7 @@ int8 CRunningScript::ProcessCommands500To599(int32 command)
 		CollectParameters(&m_nIp, 1);
 		CAutomobile* pCar = (CAutomobile*)CPools::GetVehiclePool()->GetAt(ScriptParams[0]);
 		script_assert(pCar);
-		script_assert(pCar->m_vehType == VEHICLE_TYPE_CAR);
+		script_assert(pCar->IsCar());
 		UpdateCompareFlag(pCar->m_bombType != 0); //TODO: enum
 		return 0;
 	}
@@ -454,7 +454,7 @@ int8 CRunningScript::ProcessCommands500To599(int32 command)
 		CollectParameters(&m_nIp, 2);
 		CAutomobile* pCar = (CAutomobile*)CPools::GetVehiclePool()->GetAt(ScriptParams[0]);
 		script_assert(pCar);
-		script_assert(pCar->m_vehType == VEHICLE_TYPE_CAR);
+		script_assert(pCar->IsCar());
 		UpdateCompareFlag(pCar->m_bombType == ScriptParams[1]);
 		return 0;
 	}
@@ -719,7 +719,7 @@ int8 CRunningScript::ProcessCommands500To599(int32 command)
 		CollectParameters(&m_nIp, 2);
 		CVehicle* pVehicle = CPools::GetVehiclePool()->GetAt(ScriptParams[0]);
 		script_assert(pVehicle);
-		script_assert(pVehicle->m_vehType == VEHICLE_TYPE_CAR);
+		script_assert(pVehicle->IsCar());
 		((CAutomobile*)pVehicle)->m_bombType = ScriptParams[1];
 		((CAutomobile*)pVehicle)->m_pBombRigger = FindPlayerPed();
 		return 0;
@@ -1223,7 +1223,7 @@ int8 CRunningScript::ProcessCommands600To699(int32 command)
 		//assert(pVehicle->m_vehType == VEHICLE_TYPE_CAR);
 		// they DO call this for bikes, we don't really want to destroy the structure...
 #ifdef FIX_BUGS
-		if (pVehicle->m_vehType == VEHICLE_TYPE_CAR)
+		if (pVehicle->IsCar())
 #endif
 			((CAutomobile*)pVehicle)->bFixedColour = (ScriptParams[1] == 0);
 		

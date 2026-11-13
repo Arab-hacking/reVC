@@ -1244,7 +1244,7 @@ CPed::ProcessObjective(void)
 								}
 							}
 						}
-						if (m_carInObjective->IsUpsideDown() && m_carInObjective->m_vehType != VEHICLE_TYPE_BIKE) {
+						if (m_carInObjective->IsUpsideDown() && !m_carInObjective->IsBike()) {
 							RestorePreviousObjective();
 							RestorePreviousState();
 							return;
@@ -6296,7 +6296,7 @@ CPed::PositionPedOutOfCollision(void)
 	}
 	if (!foundAPos) {
 		// Top of veh.
-		if (veh->m_vehType == 0) {
+		if (veh->m_vehType == VEHICLE_TYPE_CAR) {
 			newPos = vehCol->boundingBox.max.z * veh->GetUp() + vehPos;
 			newPos.z += FEET_OFFSET;
 			GetMatrix().SetTranslate(newPos);

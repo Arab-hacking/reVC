@@ -792,7 +792,8 @@ void CReplay::StoreCarUpdate(CVehicle *vehicle, int id)
 	if (vehicle->GetModelIndex() == MI_SKIMMER)
 		vp->skimmer_speed = 50.0f * ((CBoat*)vehicle)->m_fMovingSpeed;
 	vp->render_scorched = vehicle->bRenderScorched;
-	vp->vehicle_type = vehicle->m_vehType;
+	// запись VC-шная: пишем класс (0/1/5), а не клиентский тип 0…12
+	vp->vehicle_type = (int8)VehicleSaveClass(vehicle->m_vehType);
 	Record.m_nOffset += sizeof(tVehicleUpdatePacket);
 }
 
@@ -991,6 +992,14 @@ bool CReplay::PlayBackThisFrameInterpolation(CAddressInReplayBuffer *buffer, flo
 				}
 				else {
 					switch (vp->vehicle_type) {
+					// клиентские типы из IDE (13 значений): mtruck/quad/bmx едут
+					// на CAutomobile, trike/prtcrn/craneof — на CBike, trailer —
+					// тоже CAutomobile. Без этих меток new_v остался бы
+					// неинициализированным.
+					case VEHICLE_TYPE_MTRUCK:
+					case VEHICLE_TYPE_QUAD:
+					case VEHICLE_TYPE_BMX:
+					case VEHICLE_TYPE_TRAILER:
 					case VEHICLE_TYPE_CAR:
 						new_v = new(vp->index << 8) CAutomobile(mi, 2);	
 						break;
@@ -1007,7 +1016,15 @@ bool CReplay::PlayBackThisFrameInterpolation(CAddressInReplayBuffer *buffer, flo
 						new_v = new(vp->index << 8) CPlane(mi, 2);
 						break;
 					case VEHICLE_TYPE_BIKE: // not possible
+					case VEHICLE_TYPE_TRIKE:
+					case VEHICLE_TYPE_PRTCRN:
+					case VEHICLE_TYPE_CRANEOF:
 						new_v = new(vp->index << 8) CBike(mi, 2);
+						break;
+					default:
+						// FPLANE и всё, что не опознано, повторяем поведением
+						// самолёта — как это делал прежний тип 4
+						new_v = new(vp->index << 8) CPlane(mi, 2);
 						break;
 					}
 					new_v->SetStatus(STATUS_PLAYER_PLAYBACKFROMBUFFER);

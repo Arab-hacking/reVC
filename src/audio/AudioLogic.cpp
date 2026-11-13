@@ -1004,7 +1004,7 @@ ResolveVehicleAudioIndex(const CVehicle *veh)
 		return rawIdx;
 
 	int32 fallback = MI_ADMIRAL - MI_FIRST_VEHICLE;
-	if (veh->m_vehType == VEHICLE_TYPE_BIKE) {
+	if (veh->IsBike()) {
 		fallback = MI_PCJ600 - MI_FIRST_VEHICLE;
 		if (veh->pHandling != nil) {
 			switch (veh->pHandling->nIdentifier) {
@@ -1022,7 +1022,7 @@ ResolveVehicleAudioIndex(const CVehicle *veh)
 				break;
 			}
 		}
-	} else if (veh->m_vehType == VEHICLE_TYPE_BOAT) {
+	} else if (veh->IsBoat()) {
 		fallback = MI_SPEEDER - MI_FIRST_VEHICLE;
 	} else if (veh->pHandling != nil) {
 		switch (veh->pHandling->nIdentifier) {
@@ -1119,6 +1119,11 @@ cAudioManager::ProcessVehicle(CVehicle* veh)
 		return;
 	}
 	switch (params.m_VehicleType) {
+	// mtruck/quad/bmx ездят на CAutomobile, trike/prtcrn/craneof — на CBike:
+	// без этих меток у них не было бы ни звука двигателя, ни шума дороги.
+	case VEHICLE_TYPE_MTRUCK:
+	case VEHICLE_TYPE_QUAD:
+	case VEHICLE_TYPE_BMX:
 	case VEHICLE_TYPE_CAR:
 		UpdateGasPedalAudio(veh, params.m_VehicleType);
 		if (veh->m_modelIndex == MI_RCBANDIT || veh->m_modelIndex == MI_RCBARON) {
@@ -1178,6 +1183,9 @@ cAudioManager::ProcessVehicle(CVehicle* veh)
 		ProcessVehicleOneShots(params);
 		ProcessVehicleFlatTyre(params);
 		break;
+	case VEHICLE_TYPE_TRIKE:
+	case VEHICLE_TYPE_PRTCRN:
+	case VEHICLE_TYPE_CRANEOF:
 	case VEHICLE_TYPE_BIKE:
 		UpdateGasPedalAudio(veh, params.m_VehicleType);
 		if (ProcessVehicleRoadNoise(params)) {
@@ -1793,6 +1801,9 @@ cAudioManager::ProcessVehicleFlatTyre(cVehicleParams& params)
 
 	if (params.m_fDistance < SQR(FLAT_TYRE_MAX_DIST)) {
 		switch (params.m_VehicleType) {
+		case VEHICLE_TYPE_MTRUCK:
+		case VEHICLE_TYPE_QUAD:
+		case VEHICLE_TYPE_BMX:
 		case VEHICLE_TYPE_CAR:
 			automobile = (CAutomobile*)params.m_pVehicle;
 			wheelBurst = FALSE;
@@ -1802,6 +1813,9 @@ cAudioManager::ProcessVehicleFlatTyre(cVehicleParams& params)
 			if (!wheelBurst)
 				return TRUE;
 			break;
+		case VEHICLE_TYPE_TRIKE:
+		case VEHICLE_TYPE_PRTCRN:
+		case VEHICLE_TYPE_CRANEOF:
 		case VEHICLE_TYPE_BIKE:
 			bike = (CBike*)params.m_pVehicle;
 			wheelBurst = FALSE;
@@ -1855,9 +1869,15 @@ cAudioManager::ProcessVehicleRoadNoise(cVehicleParams& params)
 
 	if (params.m_fDistance < SQR(VEHICLE_ROAD_NOISE_MAX_DIST)) {
 		switch (params.m_VehicleType) {
+		case VEHICLE_TYPE_MTRUCK:
+		case VEHICLE_TYPE_QUAD:
+		case VEHICLE_TYPE_BMX:
 		case VEHICLE_TYPE_CAR:
 			wheelsOnGround = ((CAutomobile*)params.m_pVehicle)->m_nWheelsOnGround;
 			break;
+		case VEHICLE_TYPE_TRIKE:
+		case VEHICLE_TYPE_PRTCRN:
+		case VEHICLE_TYPE_CRANEOF:
 		case VEHICLE_TYPE_BIKE:
 			wheelsOnGround = ((CBike*)params.m_pVehicle)->m_nWheelsOnGround;
 			break;
@@ -1916,9 +1936,15 @@ cAudioManager::ProcessWetRoadNoise(cVehicleParams& params)
 
 	if (params.m_fDistance < SQR(WET_ROAD_NOISE_MAX_DIST)) {
 		switch (params.m_VehicleType) {
+		case VEHICLE_TYPE_MTRUCK:
+		case VEHICLE_TYPE_QUAD:
+		case VEHICLE_TYPE_BMX:
 		case VEHICLE_TYPE_CAR:
 			wheelsOnGround = ((CAutomobile*)params.m_pVehicle)->m_nWheelsOnGround;
 			break;
+		case VEHICLE_TYPE_TRIKE:
+		case VEHICLE_TYPE_PRTCRN:
+		case VEHICLE_TYPE_CRANEOF:
 		case VEHICLE_TYPE_BIKE:
 			wheelsOnGround = ((CBike*)params.m_pVehicle)->m_nWheelsOnGround;
 			break;
@@ -2010,6 +2036,9 @@ cAudioManager::ProcessVehicleEngine(cVehicleParams& params)
 						break;
 					}
 					switch (params.m_VehicleType) {
+					case VEHICLE_TYPE_MTRUCK:
+					case VEHICLE_TYPE_QUAD:
+					case VEHICLE_TYPE_BMX:
 					case VEHICLE_TYPE_CAR:
 						automobile = (CAutomobile*)params.m_pVehicle;
 						wheelsOnGround = automobile->m_nDriveWheelsOnGround;
@@ -2017,6 +2046,9 @@ cAudioManager::ProcessVehicleEngine(cVehicleParams& params)
 						wheelState = automobile->m_aWheelState;
 						gasPedalAudioPtr = &automobile->m_fGasPedalAudio;
 						break;
+					case VEHICLE_TYPE_TRIKE:
+					case VEHICLE_TYPE_PRTCRN:
+					case VEHICLE_TYPE_CRANEOF:
 					case VEHICLE_TYPE_BIKE:
 						bike = (CBike*)params.m_pVehicle;
 						wheelsOnGround = bike->m_nDriveWheelsOnGround;
@@ -2181,8 +2213,16 @@ cAudioManager::UpdateGasPedalAudio(CVehicle* veh, int vehType)
 	float* gasPealAudioPtr;
 
 	switch(vehType) {
-	case VEHICLE_TYPE_CAR: gasPealAudioPtr = &((CAutomobile *)veh)->m_fGasPedalAudio; break;
-	case VEHICLE_TYPE_BIKE: gasPealAudioPtr = &((CBike *)veh)->m_fGasPedalAudio; break;
+	case VEHICLE_TYPE_CAR:
+	case VEHICLE_TYPE_MTRUCK:
+	case VEHICLE_TYPE_QUAD:
+	case VEHICLE_TYPE_BMX:
+		gasPealAudioPtr = &((CAutomobile *)veh)->m_fGasPedalAudio; break;
+	case VEHICLE_TYPE_BIKE:
+	case VEHICLE_TYPE_TRIKE:
+	case VEHICLE_TYPE_PRTCRN:
+	case VEHICLE_TYPE_CRANEOF:
+		gasPealAudioPtr = &((CBike *)veh)->m_fGasPedalAudio; break;
 	default: return;
 	}
 	if (*gasPealAudioPtr < gasPedal)
@@ -2374,6 +2414,12 @@ cAudioManager::ProcessPlayersVehicleEngine(cVehicleParams& params, CVehicle* veh
 		currentGear = params.m_pVehicle->m_nCurrentGear;
 
 	switch (params.m_VehicleType) {
+	case VEHICLE_TYPE_MTRUCK:
+	case VEHICLE_TYPE_QUAD:
+	case VEHICLE_TYPE_BMX:
+	case VEHICLE_TYPE_MTRUCK:
+	case VEHICLE_TYPE_QUAD:
+	case VEHICLE_TYPE_BMX:
 	case VEHICLE_TYPE_CAR:
 		automobile = (CAutomobile*)params.m_pVehicle;
 		wheelsOnGround = automobile->m_nDriveWheelsOnGround;
@@ -2382,6 +2428,12 @@ cAudioManager::ProcessPlayersVehicleEngine(cVehicleParams& params, CVehicle* veh
 		wheelState = automobile->m_aWheelState;
 		velocityChangeForAudio = automobile->m_fVelocityChangeForAudio;
 		break;
+	case VEHICLE_TYPE_TRIKE:
+	case VEHICLE_TYPE_PRTCRN:
+	case VEHICLE_TYPE_CRANEOF:
+	case VEHICLE_TYPE_TRIKE:
+	case VEHICLE_TYPE_PRTCRN:
+	case VEHICLE_TYPE_CRANEOF:
 	case VEHICLE_TYPE_BIKE:
 		bike = (CBike*)params.m_pVehicle;
 		wheelsOnGround = bike->m_nDriveWheelsOnGround;
@@ -2702,6 +2754,9 @@ cAudioManager::ProcessVehicleSkidding(cVehicleParams& params)
 
 	if (params.m_fDistance < SQR(VEHICLE_SKIDDING_MAX_DIST)) {
 		switch (params.m_VehicleType) {
+		case VEHICLE_TYPE_MTRUCK:
+		case VEHICLE_TYPE_QUAD:
+		case VEHICLE_TYPE_BMX:
 		case VEHICLE_TYPE_CAR:
 			automobile = (CAutomobile*)params.m_pVehicle;
 			numWheels = 4;
@@ -2709,6 +2764,9 @@ cAudioManager::ProcessVehicleSkidding(cVehicleParams& params)
 			wheelsOnGround = automobile->m_nWheelsOnGround;
 			gasPedalAudio = automobile->m_fGasPedalAudio;
 			break;
+		case VEHICLE_TYPE_TRIKE:
+		case VEHICLE_TYPE_PRTCRN:
+		case VEHICLE_TYPE_CRANEOF:
 		case VEHICLE_TYPE_BIKE:
 			bike = (CBike*)params.m_pVehicle;
 			numWheels = 2;

@@ -109,7 +109,7 @@ int8 CRunningScript::ProcessCommands1000To1099(int32 command)
 		CollectParameters(&m_nIp, 2);
 		CVehicle* pVehicle = CPools::GetVehiclePool()->GetAt(ScriptParams[0]);
 		script_assert(pVehicle);
-		script_assert(pVehicle->m_vehType == VEHICLE_TYPE_CAR);
+		script_assert(pVehicle->IsCar());
 		CAutomobile* pCar = (CAutomobile*)pVehicle;
 		pCar->bNotDamagedUpsideDown = (ScriptParams[1] != 0);
 		return 0;
@@ -512,8 +512,8 @@ int8 CRunningScript::ProcessCommands1000To1099(int32 command)
 		CollectParameters(&m_nIp, 2);
 		CVehicle* pVehicle = CPools::GetVehiclePool()->GetAt(ScriptParams[0]);
 		float fTraction = *(float*)&ScriptParams[1];
-		script_assert(pVehicle->m_vehType == VEHICLE_TYPE_CAR || pVehicle->m_vehType == VEHICLE_TYPE_BIKE);
-		if (pVehicle->m_vehType == VEHICLE_TYPE_CAR)
+		script_assert(pVehicle->IsCar() || pVehicle->IsBike());
+		if (pVehicle->IsCar())
 			((CAutomobile*)pVehicle)->m_fTraction = fTraction;
 		else
 			((CBike*)pVehicle)->m_fTraction = fTraction;
@@ -931,7 +931,7 @@ int8 CRunningScript::ProcessCommands1100To1199(int32 command)
 		CollectParameters(&m_nIp, 2);
 		CVehicle* pVehicle = CPools::GetVehiclePool()->GetAt(ScriptParams[0]);
 		script_assert(pVehicle);
-		script_assert(pVehicle->m_vehType == VEHICLE_TYPE_CAR);
+		script_assert(pVehicle->IsCar());
 		CAutomobile* pCar = (CAutomobile*)pVehicle;
 		pCar->bMoreResistantToDamage = ScriptParams[1];
 		return 0;
@@ -1586,7 +1586,7 @@ int8 CRunningScript::ProcessCommands1100To1199(int32 command)
 	{
 		CollectParameters(&m_nIp, 2);
 		CVehicle* pVehicle = CPools::GetVehiclePool()->GetAt(ScriptParams[0]);
-		script_assert(pVehicle && pVehicle->m_vehType == VEHICLE_TYPE_CAR);
+		script_assert(pVehicle && pVehicle->IsCar());
 		((CAutomobile*)pVehicle)->bTankDetonateCars = ScriptParams[1];
 		return 0;
 	}
@@ -1609,7 +1609,7 @@ int8 CRunningScript::ProcessCommands1100To1199(int32 command)
 		bool bOnFire = false;
 		if (pVehicle->m_pCarFire)
 			bOnFire = true;
-		if (pVehicle->m_vehType == VEHICLE_TYPE_CAR && ((CAutomobile*)pVehicle)->Damage.GetEngineStatus() >= ENGINE_STATUS_ON_FIRE)
+		if (pVehicle->IsCar() && ((CAutomobile*)pVehicle)->Damage.GetEngineStatus() >= ENGINE_STATUS_ON_FIRE)
 			bOnFire = true;
 		if (pVehicle->m_fHealth < 250.0f)
 			bOnFire = true;
