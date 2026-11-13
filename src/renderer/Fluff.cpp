@@ -4,6 +4,7 @@
 #include "RenderBuffer.h"
 #include "Entity.h"
 #include "Fluff.h"
+#include "Rubbish.h"
 #include "Game.h"
 #include "Camera.h"
 #include "Sprite.h"

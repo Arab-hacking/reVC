@@ -84,6 +84,7 @@
 #include "TrafficLights.h"
 #include "Train.h"
 #include "TxdStore.h"
+#include "Rubbish.h"
 #include "User.h"
 #include "VisibilityPlugins.h"
 #include "WaterCannon.h"
@@ -612,7 +613,9 @@ bool CGame::Initialise(const char* datFile)
 	CDarkel::Init();
 	CStats::Init();
 	CPacManPickups::Init();
-	// CRubbish::Init(); — the leaves/newspaper sheets are gone.
+	// The sheet system is gone; CRubbish now only loads the texture the
+	// plane banner shares with the old newspapers.
+	CRubbish::Init();
 	CClouds::Init();
 	CSpecialFX::Init();
 	CRopes::Init();
@@ -710,7 +713,7 @@ bool CGame::ShutDown(void)
 	CTxdStore::GameShutdown();
 	CCollision::Shutdown();
 	CWaterLevel::Shutdown();
-	// CRubbish::Shutdown();
+	CRubbish::Shutdown();
 	CClouds::Shutdown();
 	CShadows::Shutdown();
 	CCoronas::Shutdown();
