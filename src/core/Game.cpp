@@ -23,6 +23,7 @@
 #include "Console.h"
 #include "Coronas.h"
 #include "Cranes.h"
+#include "CarModComponent.h"
 #include "Credits.h"
 #include "CutsceneMgr.h"
 #include "DMAudio.h"
@@ -525,6 +526,10 @@ bool CGame::Initialise(const char* datFile)
 	CWorld::AddParticles();
 	CVehicleModelInfo::LoadVehicleColours();
 	CVehicleModelInfo::LoadEnvironmentMaps();
+	// Тюнинг: клиент грузит DATA/CARMODS-LEGACY.DAT и DATA/CARMODS.DAT
+	// отдельной подсистемой (вход 0x17fa3f4). Если файлов нет, загрузка
+	// молча ничего не делает.
+	CCarModComponentPool::Load();
 	CTheZones::PostZoneCreation();
 	POP_MEMID();
 
