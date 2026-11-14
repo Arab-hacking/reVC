@@ -16,7 +16,6 @@
 #include "Text.h"
 #include "SavehDiag.h"
 
-#include "rw/rwcore.h"
 #include <algorithm>
 
 bool CCarModMenu::m_bOpen;
