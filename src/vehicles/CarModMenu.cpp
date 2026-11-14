@@ -11,9 +11,6 @@
 #include "VehicleModelInfo.h"
 #include "Streaming.h"
 #include "PlayerInfo.h"
-#include "Pad.h"
-#include "Font.h"
-#include "Text.h"
 #include "SavehDiag.h"
 #include "RwHelper.h"
 
@@ -264,81 +261,89 @@ CCarModMenu::ToggleSelected(void)
 		Install(*mod);
 }
 
+int32
+CCarModMenu::GetCount(void)
+{
+	return (int32)m_aCandidates.size();
+}
+
+int32
+CCarModMenu::GetSelected(void)
+{
+	return m_nSelected;
+}
+
+int32
+CCarModMenu::GetFirstVisible(void)
+{
+	return m_nFirstVisible;
+}
+
+void
+CCarModMenu::StepSelection(int32 delta)
+{
+	MoveSelection(delta);
+}
+
+void
+CCarModMenu::ActivateSelected(void)
+{
+	ToggleSelected();
+}
+
+// Прокрутка списка стрелками панели (по 6 строк, как у спавнера машин).
+void
+CCarModMenu::ToggleFirstVisible(int32 delta)
+{
+	int32 count = (int32)m_aCandidates.size();
+	if(count <= MAX_VISIBLE)
+		return;
+	m_nFirstVisible += delta * MAX_VISIBLE;
+	if(m_nFirstVisible < 0)
+		m_nFirstVisible = 0;
+	if(m_nFirstVisible > count - MAX_VISIBLE)
+		m_nFirstVisible = count - MAX_VISIBLE;
+	if(m_nSelected < m_nFirstVisible)
+		m_nSelected = m_nFirstVisible;
+	if(m_nSelected >= m_nFirstVisible + MAX_VISIBLE)
+		m_nSelected = m_nFirstVisible + MAX_VISIBLE - 1;
+}
+
+void
+CCarModMenu::ClosePanel(void)
+{
+	Close();
+}
+
+// Описание строки: имя детали, слот и признак «стоит».
+void
+CCarModMenu::GetRowText(int32 index, char *out, int32 outSize)
+{
+	if(index < 0 || index >= (int32)m_aCandidates.size()){
+		if(outSize > 0) out[0] = '\0';
+		return;
+	}
+
+	const CCarModComponent *mod = m_aCandidates[index];
+	bool installed = false;
+	for(size_t i = 0; i < m_aInstalled.size(); i++)
+		if(m_aInstalled[i] == mod)
+			installed = true;
+
+	snprintf(out, outSize, "%s%s  slot %d", installed ? "* " : "",
+	         mod->m_name.c_str(), mod->m_slot);
+}
+
+// Панель закрывается сама, если машина под игроком сменилась или пропала:
+// деталь ставится в конкретную машину, и держать список от другой нет смысла.
 void
 CCarModMenu::Process(void)
 {
 	if(!m_bOpen)
 		return;
 
-	// Машина могла исчезнуть (игрок вышел, машина удалена пулом).
 	if(m_pVehicle == nil || FindPlayerVehicle() != m_pVehicle){
 		Close();
 		return;
 	}
-
-	CPad *pad = CPad::GetPad(0);
-	if(pad->GetDPadUpJustDown())   MoveSelection(-1);
-	if(pad->GetDPadDownJustDown()) MoveSelection(1);
-	if(pad->GetCrossJustDown())    ToggleSelected();
-	if(pad->GetSquareJustDown())   Close(); // выход
-}
-
-void
-CCarModMenu::Draw(void)
-{
-	if(!m_bOpen)
-		return;
-
-	wchar wbuf[160];
-	char buf[160];
-
-	CFont::SetPropOn();
-	CFont::SetBackgroundOff();
-	CFont::SetCentreOff();
-	CFont::SetColor(CRGBA(255, 220, 120, 255));
-
-	float y = 60.0f;
-
-	snprintf(buf, sizeof(buf), "CAR MODS  model %d  candidates %d  installed %d",
-	         m_pVehicle ? (int)m_pVehicle->GetModelIndex() : -1,
-	         (int)m_aCandidates.size(), (int)m_aInstalled.size());
-	AsciiToUnicode(buf, wbuf);
-	CFont::PrintString(40.0f, y, wbuf);
-	y += 24.0f;
-
-	if(m_aCandidates.empty()){
-		AsciiToUnicode("no carmods data (DATA/CARMODS.DAT)", wbuf);
-		CFont::PrintString(40.0f, y, wbuf);
-		return;
-	}
-
-	int32 last = m_nFirstVisible + MAX_VISIBLE;
-	if(last > (int32)m_aCandidates.size())
-		last = (int32)m_aCandidates.size();
-
-	for(int32 i = m_nFirstVisible; i < last; i++){
-		const CCarModComponent *mod = m_aCandidates[i];
-
-		bool installed = false;
-		for(size_t k = 0; k < m_aInstalled.size(); k++)
-			if(m_aInstalled[k] == mod)
-				installed = true;
-
-		snprintf(buf, sizeof(buf), "%c %-20.20s slot %2d id %4d model %4d",
-		         installed ? '*' : ' ',
-		         mod->m_name.c_str(), mod->m_slot, mod->m_uniqueId, mod->m_modelId);
-
-		if(i == m_nSelected)
-			CFont::SetColor(CRGBA(255, 255, 255, 255));
-		else
-			CFont::SetColor(CRGBA(170, 170, 170, 255));
-
-		AsciiToUnicode(buf, wbuf);
-		CFont::PrintString(40.0f, y, wbuf);
-		y += 20.0f;
-	}
-
-	CFont::SetColor(CRGBA(120, 220, 120, 255));
-	AsciiToUnicode("UP/DOWN select    CROSS install/remove    SQUARE exit", wbuf);
-	CFont::PrintString(40.0f, y + 16.0f, wbuf);
 }

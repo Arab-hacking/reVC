@@ -1,4 +1,5 @@
 #include "common.h"
+#include "CarModMenu.h"
 #include "crossplatform.h"
 #include "platform.h"
 #include "MobileTouchControls.h"
@@ -127,6 +128,7 @@ enum MobileBtnId {
 	MBTN_DEV_FLY,
 	MBTN_DEV_TIME_PLUS,
 	MBTN_DEV_TIME_MINUS,
+	MBTN_DEV_CARMOD,
 	MBTN_COUNT
 };
 
@@ -152,6 +154,7 @@ enum FallbackGlyph {
 	GLYPH_HORN,
 	GLYPH_STEER_MODE,
 	GLYPH_DOTS,
+	GLYPH_CARMOD,
 	GLYPH_FLY,
 	GLYPH_LEGEND,
 	GLYPH_PERSON,
@@ -296,6 +299,10 @@ GetMetrics(void)
 // ---------------------------------------------------------------------------
 
 static mobilespawner::PanelMode s_spawnerMode = mobilespawner::PANEL_NONE;
+// Панель тюнинга: рисуется тем же кодом, что панель спавнера, но состояние
+// живёт в CCarModMenu (пул деталей клиента).
+static bool s_carModPtrActive = false;
+static int64 s_carModPtrFinger = -1;
 static std::vector<mobilespawner::CatalogItem> s_skinCatalog;
 static std::vector<mobilespawner::CatalogItem> s_vehCatalog;
 static int32 s_skinSelectedIdx = 0;
@@ -637,6 +644,57 @@ GetCurrentSpawnerLayout(const MobileTouchMath::MobileScreenMetrics &m)
 	const float devX = Max(m.radarLeftPx + m.radarSizePx + m.Dp(24.0f) + rDev, m.screenW * 0.27f);
 	const float anchorX = (s_spawnerMode == mobilespawner::PANEL_VEHICLE) ? (devX + m.Dp(44.0f)) : devX;
 	return mobilespawner::BuildPickerLayout(m.screenW, m.screenH, anchorX, topIconY + rDev, m.Dp(1.0f));
+}
+
+// Панель тюнинга ставится на месте кнопки тюнинга, чуть ниже верхнего ряда.
+static mobilespawner::PickerLayout
+GetCarModLayout(const MobileTouchMath::MobileScreenMetrics &m)
+{
+	const float rDev = m.Dp(18.0f);
+	const float topIconY = m.marginTopPx + m.Dp(22.0f);
+	const float devX = Max(m.radarLeftPx + m.radarSizePx + m.Dp(24.0f) + rDev, m.screenW * 0.27f);
+	const float anchorX = devX - m.Dp(44.0f);
+	return mobilespawner::BuildPickerLayout(m.screenW, m.screenH, anchorX, topIconY + rDev, m.Dp(1.0f));
+}
+
+// Тап по строке: выбрать её и поставить/снять деталь.
+static void
+CarModPickRow(int32 rel)
+{
+	const int32 idx = CCarModMenu::GetFirstVisible() + rel;
+	if (idx < 0 || idx >= CCarModMenu::GetCount())
+		return;
+	// Довести выбор до нужной строки, сколько бы шагов ни понадобилось.
+	const int32 diff = idx - CCarModMenu::GetSelected();
+	CCarModMenu::StepSelection(diff);
+	CCarModMenu::ActivateSelected();
+	DMAudio.PlayFrontEndSound(SOUND_FRONTEND_ENTER_OR_ADJUST, 0);
+}
+
+// Тап по шапке панели: [<] [-6] [+6] [>] [X].
+static void
+CarModPickHeader(mobilespawner::PanelHit ph)
+{
+	switch (ph) {
+	case mobilespawner::PHIT_PREV:
+		CCarModMenu::StepSelection(-1);
+		break;
+	case mobilespawner::PHIT_STEP_MINUS10:
+		CCarModMenu::ToggleFirstVisible(-1);
+		break;
+	case mobilespawner::PHIT_STEP_PLUS10:
+		CCarModMenu::ToggleFirstVisible(1);
+		break;
+	case mobilespawner::PHIT_NEXT:
+		CCarModMenu::StepSelection(1);
+		break;
+	case mobilespawner::PHIT_CLOSE:
+		CCarModMenu::ClosePanel();
+		break;
+	default:
+		return;
+	}
+	DMAudio.PlayFrontEndSound(SOUND_FRONTEND_HIGHLIGHT_OPTION, 0);
 }
 
 static void
@@ -1125,6 +1183,7 @@ UpdateGameplayLayout(void)
 	SetCircleBtn(s_buttons[MBTN_DEV_SKIN], devX, topIconY, rDev, MTEX_COUNT, GLYPH_PERSON);
 	SetCircleBtn(s_buttons[MBTN_DEV_VEHICLE], devX + devStep, topIconY, rDev, MTEX_CAR, GLYPH_CAR);
 	SetCircleBtn(s_buttons[MBTN_DEV_TOGGLE], devX + devStep * 2.0f, topIconY, rDev, MTEX_COUNT, GLYPH_DOTS);
+	SetCircleBtn(s_buttons[MBTN_DEV_CARMOD], devX - devStep, topIconY, rDev, MTEX_COUNT, GLYPH_CARMOD);
 	if (s_devDrawerOpen) {
 		SetCircleBtn(s_buttons[MBTN_DEV_FLY], devX + devStep * 3.0f, topIconY, rDev, MTEX_COUNT, GLYPH_FLY);
 		SetCircleBtn(s_buttons[MBTN_DEV_TIME_PLUS], devX + devStep * 4.0f, topIconY, rDev, MTEX_ZOOM_IN, GLYPH_PLUS);
@@ -1451,6 +1510,18 @@ HandleGameplayButtonDownPulse(MobileBtnId btn)
 		break;
 	case MBTN_DEV_TOGGLE:
 		s_devDrawerOpen = !s_devDrawerOpen;
+		break;
+	case MBTN_DEV_CARMOD:
+		// Тюнинг имеет смысл только у машины под игроком.
+		if (FindPlayerVehicle() == nil) {
+			DMAudio.PlayFrontEndSound(SOUND_FRONTEND_FAIL, 0);
+			break;
+		}
+		if (CCarModMenu::IsOpen())
+			CCarModMenu::ClosePanel();
+		else
+			CCarModMenu::Open();
+		DMAudio.PlayFrontEndSound(SOUND_FRONTEND_HIGHLIGHT_OPTION, 0);
 		break;
 	case MBTN_DEV_FLY:
 		s_pulseFlyToggle = true;
@@ -2271,6 +2342,14 @@ DrawFallbackGlyph(FallbackGlyph glyph, float cx, float cy, float r, const CRGBA 
 		DrawFilledCircle(cx - r * 0.26f, cy + r * 0.28f, r * 0.13f, col, col, 0.0f);
 		DrawFilledCircle(cx + r * 0.26f, cy + r * 0.28f, r * 0.13f, col, col, 0.0f);
 		break;
+	case GLYPH_CARMOD:
+		// Машина с гаечным ключом: силуэт машины и перекрещённые линии.
+		DrawThickSegment(cx - r * 0.40f, cy + r * 0.10f, cx + r * 0.14f, cy + r * 0.10f, t * 1.5f, col);
+		DrawFilledCircle(cx - r * 0.24f, cy + r * 0.26f, r * 0.12f, col, col, 0.0f);
+		DrawFilledCircle(cx + r * 0.02f, cy + r * 0.26f, r * 0.12f, col, col, 0.0f);
+		DrawThickSegment(cx + r * 0.16f, cy - r * 0.06f, cx + r * 0.40f, cy - r * 0.34f, t * 1.4f, col);
+		DrawThickSegment(cx + r * 0.16f, cy - r * 0.34f, cx + r * 0.40f, cy - r * 0.06f, t * 1.4f, col);
+		break;
 	case GLYPH_EXIT:
 		DrawThickSegment(cx - r * 0.36f, cy, cx + r * 0.30f, cy, t * 1.2f, col);
 		DrawThickSegment(cx + r * 0.04f, cy - r * 0.28f, cx + r * 0.34f, cy, t * 1.2f, col);
@@ -2714,6 +2793,23 @@ CMobileTouchControls::OnFingerDown(int64 fingerId, float normX, float normY)
 		}
 	}
 
+	// 0b. Панель тюнинга перехватывает касания внутри себя.
+	if (CCarModMenu::IsOpen()) {
+		const mobilespawner::PickerLayout L = GetCarModLayout(m);
+		const mobilespawner::PanelHit ph = mobilespawner::HitTestPicker(L, x, y);
+		if (ph != mobilespawner::PHIT_OUTSIDE) {
+			s_carModPtrActive = true;
+			s_carModPtrFinger = fingerId;
+			// У списка нет скролла перетаскиванием: шапка листает, строки
+			// выбирают и ставят/снимают деталь.
+			if (ph >= mobilespawner::PHIT_ROW_0 && ph <= mobilespawner::PHIT_ROW_5)
+				CarModPickRow((int32)ph - (int32)mobilespawner::PHIT_ROW_0);
+			else
+				CarModPickHeader(ph);
+			return;
+		}
+	}
+
 	ActivePointer *p = AllocGameplayPointer(fingerId);
 	if (!p)
 		return;
@@ -2763,6 +2859,12 @@ CMobileTouchControls::OnFingerMotion(int64 fingerId, float normX, float normY, f
 
 	if (FrontEndMenuManager.m_bMenuActive) {
 		OnMenuFingerMotion(fingerId, x, y);
+		return;
+	}
+
+	if (s_carModPtrActive && s_carModPtrFinger == fingerId) {
+		s_carModPtrActive = false;
+		s_carModPtrFinger = -1;
 		return;
 	}
 
@@ -2865,6 +2967,12 @@ CMobileTouchControls::OnFingerUp(int64 fingerId, float normX, float normY)
 
 	if (FrontEndMenuManager.m_bMenuActive) {
 		OnMenuFingerUp(fingerId, x, y);
+		return;
+	}
+
+	if (s_carModPtrActive && s_carModPtrFinger == fingerId) {
+		s_carModPtrActive = false;
+		s_carModPtrFinger = -1;
 		return;
 	}
 
@@ -3300,6 +3408,99 @@ DrawSpawnerOverlay(const MobileTouchMath::MobileScreenMetrics &m)
 }
 #endif
 
+#ifdef ANDROID
+static void DrawSpawnerTextLine(float x, float y, float scaleX, float scaleY, const CRGBA &col,
+	const char *ascii, bool centre, float wrapRight);
+
+// Панель тюнинга: та же геометрия и тот же вид, что у панели спавнера машин,
+// но строки — детали из пула CCarModComponent для текущей машины.
+static void
+DrawCarModOverlay(const MobileTouchMath::MobileScreenMetrics &m)
+{
+	if (!CCarModMenu::IsOpen())
+		return;
+
+	const mobilespawner::PickerLayout L = GetCarModLayout(m);
+	const float fontScaleY = Max(0.42f, m.Dp(14.5f) / 22.0f);
+	const float fontScaleX = fontScaleY * 0.48f;
+	const int32 count = CCarModMenu::GetCount();
+	const int32 sel = CCarModMenu::GetSelected();
+	const int32 firstRow = CCarModMenu::GetFirstVisible();
+
+	// Рамка, карточка и полоса шапки.
+	CSprite2d::DrawRect(CRect(L.left - m.Dp(1.5f), L.top - m.Dp(1.5f), L.right + m.Dp(1.5f), L.bottom + m.Dp(1.5f)),
+		CRGBA(255, 165, 220, 185));
+	CSprite2d::DrawRect(CRect(L.left, L.top, L.right, L.bottom), CRGBA(14, 18, 26, 228));
+	CSprite2d::DrawRect(CRect(L.left, L.top, L.right, L.headerBottom), CRGBA(28, 35, 50, 240));
+
+	// Шапка: [<] [-6] [+6] [>] [X]
+	const float btnCy = L.BtnCenterY();
+	const float btnR = m.Dp(14.0f);
+	for (int b = 0; b < 5; b++) {
+		const float bx = L.BtnCenterX(b);
+		const CRGBA fill = (b == 4) ? CRGBA(90, 28, 42, 210) : CRGBA(42, 52, 74, 210);
+		DrawFilledCircle(bx, btnCy, btnR, fill, CRGBA(225, 232, 245, 165), m.Dp(1.3f));
+		if (b == 0)
+			DrawFallbackGlyph(GLYPH_ARROW_LEFT, bx, btnCy, btnR, CRGBA(255, 255, 255, 235));
+		else if (b == 3)
+			DrawFallbackGlyph(GLYPH_ARROW_RIGHT, bx, btnCy, btnR, CRGBA(255, 255, 255, 235));
+		else if (b == 4)
+			DrawFallbackGlyph(GLYPH_CLOSE, bx, btnCy, btnR, CRGBA(255, 210, 220, 240));
+	}
+
+	// Подсветка строк.
+	for (int r = 0; r < L.visibleRows; r++) {
+		const int32 idx = firstRow + r;
+		if (idx < 0 || idx >= count)
+			break;
+		const float ry1 = L.rowTop + L.rowHeight * (float)r;
+		const float ry2 = ry1 + L.rowHeight - m.Dp(2.0f);
+		if (idx == sel)
+			CSprite2d::DrawRect(CRect(L.left + m.Dp(4.0f), ry1, L.right - m.Dp(4.0f), ry2),
+				CRGBA(235, 95, 175, 135));
+		else if ((r & 1) == 1)
+			CSprite2d::DrawRect(CRect(L.left + m.Dp(4.0f), ry1, L.right - m.Dp(4.0f), ry2),
+				CRGBA(255, 255, 255, 16));
+	}
+
+	// Полоса прокрутки.
+	if (count > L.visibleRows) {
+		const float trackTop = L.rowTop;
+		const float trackH = L.rowHeight * (float)L.visibleRows;
+		const float thumbH = Max(m.Dp(18.0f), trackH * ((float)L.visibleRows / (float)count));
+		const float maxFirst = (float)Max(1, count - L.visibleRows);
+		const float thumbY = trackTop + (trackH - thumbH) * Clamp((float)firstRow / maxFirst, 0.0f, 1.0f);
+		CSprite2d::DrawRect(CRect(L.right - m.Dp(5.0f), thumbY, L.right - m.Dp(2.0f), thumbY + thumbH),
+			CRGBA(255, 180, 225, 190));
+	}
+
+	DrawSpawnerTextLine(L.BtnCenterX(1) - m.Dp(11.0f), btnCy - m.Dp(8.0f),
+		fontScaleX * 0.88f, fontScaleY * 0.88f, CRGBA(240, 245, 255, 240), "-6");
+	DrawSpawnerTextLine(L.BtnCenterX(2) - m.Dp(11.0f), btnCy - m.Dp(8.0f),
+		fontScaleX * 0.88f, fontScaleY * 0.88f, CRGBA(240, 245, 255, 240), "+6");
+
+	if (count == 0) {
+		DrawSpawnerTextLine(L.left + m.Dp(12.0f), L.rowTop + m.Dp(12.0f),
+			fontScaleX, fontScaleY, CRGBA(220, 225, 235, 220),
+			"NO CARMODS (DATA/CARMODS.DAT)", false, L.right - m.Dp(8.0f));
+	} else {
+		for (int r = 0; r < L.visibleRows; r++) {
+			const int32 idx = firstRow + r;
+			if (idx < 0 || idx >= count)
+				break;
+			char line[96];
+			CCarModMenu::GetRowText(idx, line, sizeof(line));
+			DrawSpawnerTextLine(L.left + m.Dp(10.0f), L.rowTop + L.rowHeight * (float)r + m.Dp(8.0f),
+				fontScaleX, fontScaleY,
+				(idx == sel) ? CRGBA(255, 255, 255, 245) : CRGBA(215, 220, 230, 220),
+				line, false, L.right - m.Dp(10.0f));
+		}
+	}
+
+	CFont::DrawFonts();
+}
+#endif
+
 void
 CMobileTouchControls::Draw(void)
 {
@@ -3364,6 +3565,7 @@ CMobileTouchControls::Draw(void)
 	}
 
 	DrawSpawnerOverlay(m);
+	DrawCarModOverlay(m);
 
 	RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)FALSE);
 #endif

@@ -11,9 +11,12 @@ class CVehicle;
 class CCarModComponent;
 
 // Экран тюнинга. В клиенте такого экрана нет: там детали ставятся скриптом
-// через CCarModComponentPool, а интерфейса игрок не видит. Здесь — отладочный
-// экран, чтобы подсистему можно было проверить в игре, пока данных и модельера
-// нет.
+// через CCarModComponentPool, а интерфейса игрок не видит. Здесь — отладочная
+// панель, чтобы подсистему можно было проверить на телефоне, пока данных и
+// модельера нет.
+//
+// Панель рисует MobileTouchControls (как панель спавнера машин), а состояние
+// живёт здесь. Входа два: кнопка в верхнем ряду и сенсорный ввод по панели.
 //
 // Экран не выдумывает данные: он показывает то, что реально лежит в пуле
 // (DATA/CARMODS.DAT + DATA/CARMODS-LEGACY.DAT) для текущей машины, и ставит
@@ -24,7 +27,7 @@ class CCarModMenu
 {
 public:
 	enum {
-		MAX_VISIBLE = 10,
+		MAX_VISIBLE = 6, // столько строк в панели, как у спавнера машин
 	};
 
 	static void Initialise(void);
@@ -35,11 +38,20 @@ public:
 	static void Close(void);
 	static bool IsOpen(void);
 
-	// Вызывается каждый кадр, пока экран открыт.
-	static void Process(void);
+	// Навигация панели. Строки идут парами: выбор строки и установка/снятие.
+	static int32 GetCount(void);
+	static int32 GetSelected(void);
+	static int32 GetFirstVisible(void);
+	static void StepSelection(int32 delta);
+	static void ActivateSelected(void);
+	static void ToggleFirstVisible(int32 delta);
+	static void ClosePanel(void);
 
-	// Рисуется поверх игры (вызывается из отрисовки, как CSceneEdit::Draw).
-	static void Draw(void);
+	// Описание строки для отрисовки: имя детали, слот, стоит ли.
+	static void GetRowText(int32 index, char *out, int32 outSize);
+
+	// Каждый кадр: закрыть панель, если игрок вышел из машины.
+	static void Process(void);
 
 private:
 	static bool m_bOpen;
