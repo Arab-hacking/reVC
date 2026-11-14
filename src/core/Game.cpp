@@ -24,6 +24,7 @@
 #include "Coronas.h"
 #include "Cranes.h"
 #include "CarModComponent.h"
+#include "CarModMenu.h"
 #include "Credits.h"
 #include "CutsceneMgr.h"
 #include "DMAudio.h"
@@ -597,6 +598,7 @@ bool CGame::Initialise(const char* datFile)
 	gPhoneInfo.Initialise();
 #ifdef GTA_SCENE_EDIT
 	CSceneEdit::Initialise();
+	CCarModMenu::Initialise();
 #endif
 
 	LoadingScreen("Loading the Game", "Load scripts", nil);
@@ -983,6 +985,7 @@ void CGame::Process(void)
 		CPad::DoCheats();
 		CPad::ProcessPlayerModelKeys();
 		CPad::ProcessTimeOfDayKeys();
+		CPad::ProcessCarModMenuKey();
 		CNoClip::ProcessInput();
 		CClock::Update();
 		CWeather::Update();
@@ -1000,6 +1003,7 @@ void CGame::Process(void)
 		CSkidmarks::Update();
 		CAntennas::Update();
 		CGlass::Update();
+		CCarModMenu::Process();
 #ifdef GTA_SCENE_EDIT
 		CSceneEdit::Update();
 #endif

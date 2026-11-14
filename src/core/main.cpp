@@ -72,6 +72,7 @@
 #include "MemoryCard.h"
 #include "MemoryHeap.h"
 #include "SceneEdit.h"
+#include "CarModMenu.h"
 #include "debugmenu.h"
 #include "Clock.h"
 #include "Occlusion.h"
@@ -1521,6 +1522,7 @@ Render2dStuff(void)
 
 	MusicManager.DisplayRadioStationName();
 	TheConsole.Display();
+	CCarModMenu::Draw();
 #ifdef GTA_SCENE_EDIT
 	if(CSceneEdit::m_bEditOn)
 		CSceneEdit::Draw();

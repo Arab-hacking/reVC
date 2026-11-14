@@ -1,5 +1,6 @@
 #define WITHDINPUT
 #include "common.h"
+#include "CarModMenu.h"
 #include "crossplatform.h"
 #include "platform.h"
 #ifdef XINPUT
@@ -373,6 +374,29 @@ void ChangePlayerModel(const char* name) {
 		CStreaming::LoadAllRequestedModels(0);
 		FindPlayerPed()->Dress();
 	}
+}
+
+// Кнопка тюнинга. В клиенте отдельного экрана тюнинга нет — детали ставит
+// скрипт. Здесь 'T' открывает отладочный экран CCarModMenu для машины игрока,
+// чтобы подсистему можно было проверить в игре.
+void
+CPad::ProcessCarModMenuKey(void)
+{
+	if(CCarModMenu::IsOpen())
+		return; // клавишей только открываем, закрывает сам экран
+
+	CPad *pad = GetPad(PAD1);
+	if(FrontEndMenuManager.m_bMenuActive || CCutsceneMgr::IsRunning() ||
+	   CReplay::IsPlayingBack() || pad->ArePlayerControlsDisabled())
+		return;
+
+	if(!pad->GetCharJustDown('t') && !pad->GetCharJustDown('T'))
+		return;
+
+	if(FindPlayerVehicle() == nil)
+		return;
+
+	CCarModMenu::Open();
 }
 
 void

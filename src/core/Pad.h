@@ -229,6 +229,7 @@ public:
 	// PC: '-' / '+' (including numpad) cycle registered ped models.
 	static void ProcessPlayerModelKeys(void);
 	static void ProcessTimeOfDayKeys(void);
+	static void ProcessCarModMenuKey(void);
 	
 	static void StopPadsShaking(void);
 	void StopShaking(int16 pad);
