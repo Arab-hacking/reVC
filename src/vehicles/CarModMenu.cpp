@@ -15,6 +15,7 @@
 #include "Font.h"
 #include "Text.h"
 #include "SavehDiag.h"
+#include "RwHelper.h"
 
 #include <algorithm>
 
@@ -181,7 +182,7 @@ CCarModMenu::Install(const CCarModComponent &mod)
 		return;
 
 	RpClump *vehicleClump = (RpClump*)m_pVehicle->m_rwObject;
-	if(RwObjectGetType(vehicleClump) != rpCLUMP)
+	if(RwObjectGetType((RwObject*)vehicleClump) != rpCLUMP)
 		return;
 
 	RpAtomic *atomic = RpAtomicClone(srcAtomic);
@@ -221,7 +222,7 @@ CCarModMenu::Remove(const CCarModComponent &mod)
 		return;
 
 	RpClump *vehicleClump = (RpClump*)m_pVehicle->m_rwObject;
-	if(RwObjectGetType(vehicleClump) != rpCLUMP)
+	if(RwObjectGetType((RwObject*)vehicleClump) != rpCLUMP)
 		return;
 
 	// Ищем атомик, чей кадр — прямой потомок кадра клампа: у самой машины
