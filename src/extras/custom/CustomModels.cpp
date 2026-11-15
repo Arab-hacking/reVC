@@ -4845,6 +4845,8 @@ CCustomModels::ReadDataFile(const char *relpath, std::vector<uint8> &out,
 	                       strcmp(relpath, "data/optimization.json") != 0 &&
 	                       strcmp(relpath, "data/water.dat") != 0 &&
 	                       strcmp(relpath, "data/carcols.dat") != 0 &&
+	                       strcmp(relpath, "data/carmods.dat") != 0 &&
+	                       strcmp(relpath, "data/carmods-legacy.dat") != 0 &&
 #ifdef ANDROID
 	                       strcmp(relpath, "data/colorcycle.dat") != 0 &&
 #endif

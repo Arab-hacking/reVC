@@ -8,6 +8,7 @@
 #include "FileMgr.h"
 #include "Streaming.h"
 #include "SavehDiag.h"
+#include "CustomModels.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -97,6 +98,49 @@ CCarModComponentPool::GetGlobalVector(void)
 }
 
 // 0x17fa3f4: обнуление флагов и загрузка, ровно в этом порядке
+
+// Клиентские данные лежат в custom/: пробуем custom/data/<name> (и common.zip),
+// и только потом старый путь DATA/<NAME>. Раньше загрузчик смотрел только в
+// DATA/, поэтому при установленном клиентском пакете carmods.dat "не находился".
+static bool
+ReadCarModsFromCustom(const char *relPath, std::string &out)
+{
+	std::vector<uint8> data;
+	if(!CCustomModels::ReadDataFile(relPath, data, nil))
+		return false;
+	if(data.empty())
+		return false;
+	out.assign((const char*)data.data(), data.size());
+	return true;
+}
+
+// Построчный ридер по уже прочитанному тексту. fmemopen требует _GNU_SOURCE,
+// поэтому обходимся без него: загрузчик принимает любую из двух реализаций.
+struct CarModsTextReader
+{
+	const std::string *text;
+	size_t pos;
+	bool Read(char *line, int maxLen);
+};
+
+bool
+CarModsTextReader::Read(char *line, int maxLen)
+{
+	if(text == nil || pos >= text->size() || maxLen <= 1)
+		return false;
+	const size_t begin = pos;
+	size_t end = text->find('\n', begin);
+	if(end == std::string::npos)
+		end = text->size();
+	size_t len = end - begin;
+	if(len > (size_t)(maxLen - 1))
+		len = (size_t)(maxLen - 1);
+	memcpy(line, text->data() + begin, len);
+	line[len] = '\0';
+	pos = (end < text->size()) ? end + 1 : text->size();
+	return true;
+}
+
 // (0x17fa41c -> bl 0x17fbbb0).
 void
 CCarModComponentPool::Load(void)
@@ -126,16 +170,27 @@ CCarModComponentPool::LoadCarModsDat(void)
 	char line[MAX_LINE];
 	uint32 lineNum = 0;
 
-	// Клиент открывает DATA/CARMODS.DAT прописными (цвета — строчными).
-	CFileMgr::ChangeDir("\\DATA\\");
-	fd = CFileMgr::OpenFile("CARMODS.DAT", "r");
-	CFileMgr::ChangeDir("\\");
+	// Клиентский пакет кладёт файл в custom/data/ (иногда внутрь common.zip),
+	// поэтому сначала смотрим туда и только потом в старый DATA/, прописными.
+	std::string customText;
+	CarModsTextReader customReader = { nil, 0 };
+	const bool fromCustom = ReadCarModsFromCustom("data/carmods.dat", customText);
+	if(fromCustom){
+		customReader.text = &customText;
+		CUSTOM_LOG("carmods.dat: read from custom/data/carmods.dat (%u bytes)\n",
+		           (unsigned)customText.size());
+	}else{
+		CFileMgr::ChangeDir("\\DATA\\");
+		fd = CFileMgr::OpenFile("CARMODS.DAT", "r");
+		CFileMgr::ChangeDir("\\");
 
-	// Нет файла — не ошибка: данных может не быть вовсе, порт работает молча.
-	if(fd == 0)
-		return false;
+		// Нет файла — не ошибка: данных может не быть вовсе, порт работает молча.
+		if(fd == 0)
+			return false;
+	}
 
-	while(CFileMgr::ReadLine(fd, line, MAX_LINE)){
+	while(fromCustom ? customReader.Read(line, MAX_LINE)
+	                 : CFileMgr::ReadLine(fd, line, MAX_LINE)){
 		const char *tok = line;
 		lineNum++;
 
@@ -173,7 +228,8 @@ CCarModComponentPool::LoadCarModsDat(void)
 		AddUnique(uniqueId, type, slot, modelId, name, std::move(extra));
 	}
 
-	CFileMgr::CloseFile(fd);
+	if(!fromCustom)
+		CFileMgr::CloseFile(fd);
 	return true;
 }
 
@@ -234,13 +290,25 @@ CCarModComponentPool::LoadLegacyVehicleUpgrades(void)
 	char line[MAX_LINE];
 	int section = SECTION_NONE;
 
-	CFileMgr::ChangeDir("\\DATA\\");
-	fd = CFileMgr::OpenFile("CARMODS-LEGACY.DAT", "r");
-	CFileMgr::ChangeDir("\\");
-	if(fd == 0)
-		return false;
+	// Клиентский пакет кладёт файл в custom/data/, поэтому сначала смотрим
+	// туда (включая common.zip), и только затем — в старый DATA/.
+	std::string customText;
+	CarModsTextReader customReader = { nil, 0 };
+	const bool fromCustom = ReadCarModsFromCustom("data/carmods-legacy.dat", customText);
+	if(fromCustom){
+		customReader.text = &customText;
+		CUSTOM_LOG("carmods-legacy: read from custom/data/carmods-legacy.dat (%u bytes)\n",
+		           (unsigned)customText.size());
+	}else{
+		CFileMgr::ChangeDir("\\DATA\\");
+		fd = CFileMgr::OpenFile("CARMODS-LEGACY.DAT", "r");
+		CFileMgr::ChangeDir("\\");
+		if(fd == 0)
+			return false;
+	}
 
-	while(CFileMgr::ReadLine(fd, line, MAX_LINE)){
+	while(fromCustom ? customReader.Read(line, MAX_LINE)
+	                 : CFileMgr::ReadLine(fd, line, MAX_LINE)){
 		char *p = line;
 
 		while(*p == ' ' || *p == '\t')
@@ -294,7 +362,8 @@ CCarModComponentPool::LoadLegacyVehicleUpgrades(void)
 		}
 	}
 
-	CFileMgr::CloseFile(fd);
+	if(!fromCustom)
+		CFileMgr::CloseFile(fd);
 	return true;
 }
 

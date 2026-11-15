@@ -191,12 +191,8 @@ CCam::Process(void)
 			Process_FollowPedWithMouse(CameraTarget, TargetOrientation, SpeedVar, TargetSpeedVar);
 		else
 #endif
-#ifdef FREE_CAM
-			if(CCamera::bFreeCam)
-				Process_FollowPed_Rotation(CameraTarget, TargetOrientation, SpeedVar, TargetSpeedVar);
-			else
-#endif
-			Process_FollowPed(CameraTarget, TargetOrientation, SpeedVar, TargetSpeedVar);
+			// Free cam is always on: the ped camera is the client's rotation one.
+			Process_FollowPed_Rotation(CameraTarget, TargetOrientation, SpeedVar, TargetSpeedVar);
 		break;
 //	case MODE_AIMING:
 	case MODE_DEBUG:
@@ -233,33 +229,17 @@ CCam::Process(void)
 		Process_FlyBy(CameraTarget, TargetOrientation, SpeedVar, TargetSpeedVar);
 		break;
 	case MODE_CAM_ON_A_STRING:
-#ifdef FREE_CAM
-#ifdef ANDROID
-		if(!CVehicle::bCheat5)
-#else
-		if(CCamera::bFreeCam && !CVehicle::bCheat5)
-#endif
-			Process_FollowCar_SA(CameraTarget, TargetOrientation, SpeedVar, TargetSpeedVar);
-		else
-#endif
-			Process_Cam_On_A_String(CameraTarget, TargetOrientation, SpeedVar, TargetSpeedVar);
+		// Free cam is always on: the client drives this mode with its SA car camera,
+		// so the stock Cam_On_A_String (the "string" that lags behind the car) is
+		// never selected.
+		Process_FollowCar_SA(CameraTarget, TargetOrientation, SpeedVar, TargetSpeedVar);
 		break;
 //	case MODE_REACTION:
 //	case MODE_FOLLOW_PED_WITH_BIND:
 //	case MODE_CHRIS:
 	case MODE_BEHINDBOAT:
-#ifdef FREE_CAM
-#ifdef ANDROID
+		// Free cam is always on for boats too.
 		Process_FollowCar_SA(CameraTarget, TargetOrientation, SpeedVar, TargetSpeedVar);
-#else
-		if (CCamera::bFreeCam)
-			Process_FollowCar_SA(CameraTarget, TargetOrientation, SpeedVar, TargetSpeedVar);
-		else
-			Process_BehindBoat(CameraTarget, TargetOrientation, SpeedVar, TargetSpeedVar);
-#endif
-#else
-		Process_BehindBoat(CameraTarget, TargetOrientation, SpeedVar, TargetSpeedVar);
-#endif
 		break;
 	case MODE_PLAYER_FALLEN_WATER:
 		Process_Player_Fallen_Water(CameraTarget, TargetOrientation, SpeedVar, TargetSpeedVar);

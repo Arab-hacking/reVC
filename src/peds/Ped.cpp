@@ -1682,8 +1682,8 @@ CPed::ProcessBuoyancy(void)
 					bTryingToReachDryLand = false;
 					CVector pos = GetPosition();
 					if (PlacePedOnDryLand()) {
-						if (m_fHealth > 20.0f)
-							InflictDamage(nil, WEAPONTYPE_DROWNING, 15.0f, PEDPIECE_TORSO, false);
+						// No drowning damage: the client never kills the player for
+						// touching water, so getting out of it costs nothing.
 
 						if (bIsInTheAir) {
 							RpAnimBlendClumpSetBlendDeltas(GetClump(), ASSOC_PARTIAL, -1000.0f);
@@ -1707,7 +1707,8 @@ CPed::ProcessBuoyancy(void)
 			m_vecMoveSpeed.z *= speedMult;
 			bIsStanding = false;
 			bIsDrowning = true;
-			InflictDamage(nil, WEAPONTYPE_DROWNING, 3.0f * CTimer::GetTimeStep(), PEDPIECE_TORSO, 0);
+			// No drowning damage (client behaviour); the swim animation and the
+			// buoyancy above are kept, only the health drain is gone.
 		}
 		if (buoyancyImpulse.z / m_fMass > GRAVITY * 0.25f * CTimer::GetTimeStep()) {
 			if (speedMult == 0.0f) {
