@@ -1480,8 +1480,12 @@ CCam::Process_FollowPedWithMouse(const CVector &CameraTarget, float TargetOrient
 				Source = colPoint.point;
 				if(PedColDist < DEFAULT_NEAR + 0.3f)
 					RwCameraSetNearClipPlane(Scene.camera, Max(PedColDist-0.3f, 0.05f));
-			}else{
-				RwCameraSetNearClipPlane(Scene.camera, Min(ColCamDist-0.35f, DEFAULT_NEAR));
+			}else if(ColCamDist < 1.2f){
+				// Client (sub_00b1b0b8): with the collided ped more than 1.2 units from
+				// the target the near plane is left alone, the camera has already cleared
+				// the obstacle. Below that it is pulled in to ColCamDist-0.35, floored at
+				// 0.05 — the client never uses DEFAULT_NEAR on this branch.
+				RwCameraSetNearClipPlane(Scene.camera, Max(ColCamDist - 0.35f, 0.05f));
 			}
 		}else{
 			Source = colPoint.point;
@@ -4934,9 +4938,15 @@ CCam::Process_FollowCar_SA(const CVector& CameraTarget, float TargetOrientation,
 
 	float minDistForVehType = CARCAM_SET[camSetArrPos][4];
 
-	if (TheCamera.CarZoomIndicator == CAM_ZOOM_1 && (camSetArrPos < 2 || camSetArrPos == 7)) {
+	// Client (sub_00b205e0) shortens the minimum distance to 0.65 of CARCAM_SET[..][4]
+	// only for camera sets 2..6, i.e. everything except cars, bikes and the firetruck:
+	//   if(q == 1 && set > 1 && set != 7) mult = 0.65;
+	// The port drives the same 0.65 from the player zoom instead, because it has no
+	// preset ladder to test against. The set range is now the client's: the old
+	// (pos < 2 || pos == 7) test shortened cars/bikes/firetruck and left everything
+	// else alone, which is exactly inverted.
+	if(TheCamera.CarZoomIndicator == CAM_ZOOM_1 && camSetArrPos > 1 && camSetArrPos < 7)
 		minDistForVehType = minDistForVehType * 0.65f;
-	}
 
 	float nextDistance = Max(newDistance, minDistForVehType);
 
