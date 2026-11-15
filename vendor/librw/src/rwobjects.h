@@ -748,6 +748,11 @@ struct Camera
 	V2d viewOffset;
 	float32 nearPlane, farPlane;
 	float32 fogPlane;
+	// End of the fog ramp. 0 means "same as farPlane" (stock RenderWare
+	// behaviour). The game widens farPlane for culling, which used to stretch
+	// the fog across the whole view; setting this keeps fog at the timecyc
+	// FarClip instead.
+	float32 fogEnd;
 	int32 projection;
 
 	Matrix viewMatrix;

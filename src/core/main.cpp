@@ -1654,6 +1654,10 @@ Idle(void *arg)
 		// This has to be done BEFORE RwCameraBeginUpdate
 		RwCameraSetFarClipPlane(Scene.camera, Max(CTimeCycle::GetFarClip(), 600.0f * CRenderer::ms_lodDistScale * gFarPlaneMargin));
 		RwCameraSetFogDistance(Scene.camera, CTimeCycle::GetFogStart());
+		// Keep the fog ramp at the timecyc FarClip. Previously fogEnd was the
+		// widened farPlane (>=600m), which stretched the ramp so far that nothing
+		// in view was ever fogged - the "no fog in the distance" symptom.
+		Scene.camera->fogEnd = CTimeCycle::GetFarClip();
 #endif
 
 		if(CWeather::LightningFlash && !CCullZones::CamNoRain()){
@@ -2059,6 +2063,9 @@ void TheGame(void)
 				// This has to be done BEFORE RwCameraBeginUpdate
 				RwCameraSetFarClipPlane(Scene.camera, Max(CTimeCycle::GetFarClip(), 600.0f * CRenderer::ms_lodDistScale * gFarPlaneMargin));
 				RwCameraSetFogDistance(Scene.camera, CTimeCycle::GetFogStart());
+				// Same as the main pass: keep the fog ramp at the timecyc FarClip
+				// instead of the widened far plane.
+				Scene.camera->fogEnd = CTimeCycle::GetFarClip();
 #endif
 
 				if (CWeather::LightningFlash && !CCullZones::CamNoRain())

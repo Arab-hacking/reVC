@@ -292,6 +292,7 @@ Camera::create(void)
 	cam->nearPlane = 0.05f;
 	cam->farPlane = 10.0f;
 	cam->fogPlane = 5.0f;
+	cam->fogEnd = 0.0f;
 	cam->projection = Camera::PERSPECTIVE;
 
 	cam->frameBuffer = nil;
@@ -327,6 +328,7 @@ Camera::clone(void)
 	cam->nearPlane = this->nearPlane;
 	cam->farPlane = this->farPlane;
 	cam->fogPlane = this->fogPlane;
+	cam->fogEnd = this->fogEnd;
 	cam->projection = this->projection;
 
 	cam->frameBuffer = this->frameBuffer;

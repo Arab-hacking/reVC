@@ -1518,8 +1518,11 @@ beginUpdate(Camera *cam)
 		uniformStateDirty[RWGL_FOGSTART] = true;
 		stateDirty = 1;
 	}
-	if(rwStateCache.fogEnd != cam->farPlane){
-		rwStateCache.fogEnd = cam->farPlane;
+	// cam->fogEnd lets the game keep the fog ramp at the timecyc FarClip while
+	// farPlane is widened for culling. 0 keeps stock behaviour.
+	const float32 wantFogEnd = cam->fogEnd > 0.0f ? cam->fogEnd : cam->farPlane;
+	if(rwStateCache.fogEnd != wantFogEnd){
+		rwStateCache.fogEnd = wantFogEnd;
 		uniformStateDirty[RWGL_FOGEND] = true;
 		stateDirty = 1;
 	}
