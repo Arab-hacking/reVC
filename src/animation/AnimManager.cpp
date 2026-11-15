@@ -1911,7 +1911,7 @@ CAnimManager::LoadAnimFiles(void)
 	// treats it as the base bank. A pack that ships custom/.../anim/ped.ani
 	// therefore replaces PED.IFP entirely rather than landing in a parallel
 	// "sa_ped" bank that ordinary VC peds never query.
-	const bool customBasePeds = LoadBaseAnimFileFromCustom("ANIM\\PED.ANI", "PED");
+	const bool customBasePeds = false;
 	if(customBasePeds){
 		CUSTOM_LOG("animations: pedestrian dictionary served by custom PED.ANI\n");
 	}else{
