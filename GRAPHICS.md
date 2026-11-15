@@ -102,11 +102,54 @@ FS: rgb = mix(rgb, u_fogColor.rgb, v_fog)
 Формулы зафиксированы в `GraphicsParity.h` и покрыты тестом — как только
 появятся реальные значения, шейдер собирается без домыслов.
 
+## 3a. Яркость и освещение — клиентский boost (`sub_01809500`)
+
+Главное расхождение с клиентом было не в шейдерах, а в том, **какой ambient**
+попадает в шейдеры. Клиент не отдаёт в GPU сырой `AmbientRGB` из `timecyc`:
+он прогоняет интерполированный ambient через boost и грузит результат.
+
+Точная последовательность (адреса — как в псевдокоде):
+
+| Шаг | Адрес | Что происходит |
+|---|---|---|
+| интерполяция | `0x2280377`–`0x2280390` | `DAT_0399a6d4/…d8/…dc` = билинейный ambient (час × погода), 0..255 |
+| нормализация | `0x2280814`–`0x2280816` | `/255` → 0..1 |
+| **boost** | `0x2280837`–`0x2280843` | `m = max(r,g,b)`; `k = m*3.6 - m` = `m*2.6`; `rgb += k` |
+| low-light rescale | `0x2280845`–`0x2280848` | если `m < 0.156`: `rgb *= 0.156/m` |
+| upload | `0x2299861`–`0x2299866` | `DAT_022638d0 * rgb` → `FUN_01675a6c` (ambient в GPU); directional — с `*1.5` |
+
+`DAT_022638d0` — отдельная адаптация экспозиции: `+= dt*0.03`, клампится в
+`[0.6, 1.0]` (`0x2222020`, `0x2222104`), то есть ночью/в интерьере картинка
+дополнительно темнеет до 0.6.
+
+Итог: при `max ≈ 0.9` boost даёт `+2.34`, то есть ambient **примерно втрое**
+ярче сырого timecyc — это и есть «яркая» картинка BR.
+
+Реализация в порте: `CTimeCycle::CalcLightBoost()` (`src/renderer/Timecycle.cpp`)
+считает тот же triple, `SetLightsWithTimeOfDayColour()` (`src/rw/Lights.cpp`)
+подставляет его в `AmbientLightColourForFrame`. Включается
+`[Rendering] ClientLightBoost=1`.
+
+**Почему по умолчанию выключен.** В `CustomTimecycle.cpp` уже был ночной floor
+(`minAmb 44/50/68`, клампы Directional), написанный как замена этого boost.
+Обе коррекции вместе складываются, поэтому при `ClientLightBoost=1` floor
+отключается — работает только клиентская математика.
+
 ## 4. Что осталось за рамками
 
 * Инстансинг биллбордов (40 в клиенте) и PBR-набор из 13 карт — API librw нет,
   вводить его значило бы переписать пайплайн, а не воспроизвести значения.
 * ETC2-загрузка: в librw есть S3TC и ASTC, ETC2-пути в клиенте не найдено.
+  Сам клиент ASTC/ETC2 **декларирует** (`gl3renderqueue.cpp`, строки
+  `GL_KHR_texture_compression_astc_ldr`, `OES_compressed_ETC2_RGBA8_texture`,
+  `GL_IMG_texture_compression_pvrtc`), но контент у него всё равно проходит через
+  CPU-декод: `brtex.h` разбирает `.btx`/ASTC в RGBA на воркере
+  (`basisu::astc::decompress`), а в GPU уходит либо прямой ASTC-путь
+  (`PrepareRawBtxOnWorker` → `useDirectGl`), либо CPU-fallback.
+  Важное следствие для порта: если на устройстве нет `GL_EXT_texture_compression_s3tc`,
+  `readNativeTexture` для DXT возвращает `ERR_FORMAT_UNSUPPORTED`
+  (`vendor/librw/src/gl/gl3raster.cpp:1197`) и текстура не грузится вовсе —
+  ASTC-архивы клиента этим путём не страдают, а вот обычные DXT `.txd` да.
 * Noesis/VR-шейдеры (`01_bodies/noesis_*`, `vr_*`) — не часть игры.
 ## 5. Меню «TEST GRAPHICS» (главы 17–19)
 

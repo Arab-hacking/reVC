@@ -48,6 +48,14 @@ SetLightsWithTimeOfDayColour(RpWorld *)
 			AmbientLightColourForFrame.blue = CTimeCycle::GetAmbientBlue() * CCoronas::LightsMult;
 		}
 
+		// Client lighting boost (sub_01809500): the client uploads this boosted triple
+		// instead of the raw timecyc ambient, which is why BR's scene reads much brighter.
+		if(CTimeCycle::HasLightBoost()){
+			AmbientLightColourForFrame.red = CTimeCycle::GetLightBoostRed() * CCoronas::LightsMult;
+			AmbientLightColourForFrame.green = CTimeCycle::GetLightBoostGreen() * CCoronas::LightsMult;
+			AmbientLightColourForFrame.blue = CTimeCycle::GetLightBoostBlue() * CCoronas::LightsMult;
+		}
+
 		if(USEBLURCOLORS){
 			AmbientLightColourForFrame_PedsCarsAndObjects.red = CTimeCycle::GetAmbientRed_Obj_Bl() * CCoronas::LightsMult;
 			AmbientLightColourForFrame_PedsCarsAndObjects.green = CTimeCycle::GetAmbientGreen_Obj_Bl() * CCoronas::LightsMult;

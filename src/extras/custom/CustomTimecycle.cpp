@@ -236,7 +236,10 @@ ExpandGrids(const SlotGrid grids[BR_WEATHERS_USED], int weathers, bool atmospher
 		}
 		// Reconcile SA/BR night timecyc anomalies (AmbientRGB ~0, AmbientPhysicalRGB ~249, DirectionalRGB 255 at midnight)
 		// so night buildings are clearly readable under moonlight while dynamic objects/vehicles match the night scene.
-		for(int h = 0; h < NUMHOURS; h++){
+		// This floor was written as a stand-in for the client's own lighting boost
+		// (CTimeCycle::CalcLightBoost, sub_01809500). When that boost is enabled the raw
+		// client data must be kept, otherwise the two corrections compound.
+		for(int h = 0; !CTimeCycle::ClientLightBoost && h < NUMHOURS; h++){
 			float nightWeight = 0.0f;
 			if(h <= 4 || h >= 22)
 				nightWeight = 1.0f;

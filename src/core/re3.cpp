@@ -586,6 +586,7 @@ bool LoadINISettings()
 #ifdef RW_GL3
 	ReadIniIfExists("Rendering", "GL3Atmosphere", &GL3Atmosphere::Enabled);
 #endif
+	ReadIniIfExists("Rendering", "ClientLightBoost", &CTimeCycle::ClientLightBoost);
 	ReadIniIfExists("Controller", "Method", &FrontEndMenuManager.m_ControlMethod);
 	ReadIniIfExists("General", "Language", &FrontEndMenuManager.m_PrefsLanguage);
 	ReadIniIfExists("Display", "ShowHud", &FrontEndMenuManager.m_PrefsShowHud);
@@ -735,6 +736,7 @@ void SaveINISettings()
 #ifdef RW_GL3
 	StoreIni("Rendering", "GL3Atmosphere", (uint8)GL3Atmosphere::Enabled);
 #endif
+	StoreIni("Rendering", "ClientLightBoost", (uint8)CTimeCycle::ClientLightBoost);
 	StoreIni("Controller", "Method", FrontEndMenuManager.m_ControlMethod);
 	StoreIni("General", "Language", FrontEndMenuManager.m_PrefsLanguage);
 	StoreIni("Display", "ShowHud", FrontEndMenuManager.m_PrefsShowHud);

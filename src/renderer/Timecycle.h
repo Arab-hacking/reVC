@@ -74,6 +74,15 @@ public:		// the tables are written by the game code and the custom loader
 	static float m_fCurrentDirectionalRed;
 	static float m_fCurrentDirectionalGreen;
 	static float m_fCurrentDirectionalBlue;
+	// Black Russia client lighting boost (sub_01809500 in the client library).
+	// The client keeps a second RGB triple derived from the interpolated ambient and
+	// feeds it to the sky/ambient upload instead of the raw timecyc ambient.
+	static float m_fCurrentLightBoostRed;
+	static float m_fCurrentLightBoostGreen;
+	static float m_fCurrentLightBoostBlue;
+	// Low-light rescale factor the client applies to the boosted triple while the
+	// brightest channel of the ambient stays under the 0.156 threshold.
+	static float m_fCurrentLightLowScale;
 	static int32 m_nCurrentSkyTopRed;
 	static int32 m_nCurrentSkyTopGreen;
 	static int32 m_nCurrentSkyTopBlue;
@@ -118,6 +127,10 @@ public:		// the tables are written by the game code and the custom loader
 	static int32 m_FogReduction;
 
 public:
+	// [Rendering] ClientLightBoost in the ini. Mirrors the client's lighting boost from
+	// sub_01809500. Off by default: the port's own night floor (CustomTimecycle.cpp) was
+	// added as a stand-in for this and the two must not be applied together.
+	static bool ClientLightBoost;
 	static int32 m_bExtraColourOn;
 	static int32 m_ExtraColour;
 	static float m_ExtraColourInter;
@@ -142,6 +155,13 @@ public:
 	static float GetAmbientRed_Obj_Bl(void) { return m_fCurrentAmbientRed_Obj_Bl; }
 	static float GetAmbientGreen_Obj_Bl(void) { return m_fCurrentAmbientGreen_Obj_Bl; }
 	static float GetAmbientBlue_Obj_Bl(void) { return m_fCurrentAmbientBlue_Obj_Bl; }
+	// Client lighting boost, already normalised to 0..1 and rescaled for low light.
+	static float GetLightBoostRed(void) { return m_fCurrentLightBoostRed; }
+	static float GetLightBoostGreen(void) { return m_fCurrentLightBoostGreen; }
+	static float GetLightBoostBlue(void) { return m_fCurrentLightBoostBlue; }
+	static bool HasLightBoost(void) { return m_fCurrentLightBoostRed != 0.0f ||
+	                                         m_fCurrentLightBoostGreen != 0.0f ||
+	                                         m_fCurrentLightBoostBlue != 0.0f; }
 	static float GetDirectionalRed(void) { return m_fCurrentDirectionalRed; }
 	static float GetDirectionalGreen(void) { return m_fCurrentDirectionalGreen; }
 	static float GetDirectionalBlue(void) { return m_fCurrentDirectionalBlue; }
@@ -190,6 +210,7 @@ public:
 
 	static void Initialise(void);
 	static void Update(void);
+	static void CalcLightBoost(void);
 	static float Interpolate(int8 *a, int8 *b);
 	static float Interpolate(uint8 *a, uint8 *b);
 	static float Interpolate(int16 *a, int16 *b);

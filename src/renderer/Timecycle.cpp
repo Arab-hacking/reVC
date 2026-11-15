@@ -80,6 +80,11 @@ float CTimeCycle::m_fCurrentAmbientBlue_Obj_Bl;
 float CTimeCycle::m_fCurrentDirectionalRed;
 float CTimeCycle::m_fCurrentDirectionalGreen;
 float CTimeCycle::m_fCurrentDirectionalBlue;
+float CTimeCycle::m_fCurrentLightBoostRed;
+float CTimeCycle::m_fCurrentLightBoostGreen;
+float CTimeCycle::m_fCurrentLightBoostBlue;
+float CTimeCycle::m_fCurrentLightLowScale;
+bool CTimeCycle::ClientLightBoost;
 int32 CTimeCycle::m_nCurrentSkyTopRed;
 int32 CTimeCycle::m_nCurrentSkyTopGreen;
 int32 CTimeCycle::m_nCurrentSkyTopBlue;
@@ -312,6 +317,40 @@ CTimeCycle::StopExtraColour(bool fade)
 		m_ExtraColourInter = 0.0f;
 }
 
+// Black Russia client lighting boost, mirrored from sub_01809500 of the client library
+// (interpolated ambient at 0x399a6d4..0x399a6dc, result at 0x2280814..0x2280848).
+// The client takes the interpolated ambient, promotes it to 0..1, expands the brightest
+// channel with x*3.6-x and adds that to all three channels, then rescales the whole triple
+// so the brightest channel is at least 0.156. This is what makes BR's lighting read so much
+// brighter than stock VC: the ambient is roughly doubled before it reaches the shaders.
+void
+CTimeCycle::CalcLightBoost(void)
+{
+	if(!ClientLightBoost){
+		m_fCurrentLightBoostRed = m_fCurrentLightBoostGreen = m_fCurrentLightBoostBlue = 0.0f;
+		m_fCurrentLightLowScale = 1.0f;
+		return;
+	}
+
+	float r = m_fCurrentAmbientRed;
+	float g = m_fCurrentAmbientGreen;
+	float b = m_fCurrentAmbientBlue;
+
+	float maxChan = Max(b, Max(r, g));
+	float boost = maxChan * 3.6f - maxChan;
+	float scale = 1.0f;
+
+	// "if(max < 0.156) scale = 0.156/max" — the client divides, so a black ambient
+	// stays black instead of producing an infinite boost.
+	if(maxChan < 0.156f && maxChan > 0.0f)
+		scale = 0.156f / maxChan;
+
+	m_fCurrentLightLowScale = scale;
+	m_fCurrentLightBoostRed = (r + boost) * scale;
+	m_fCurrentLightBoostGreen = (g + boost) * scale;
+	m_fCurrentLightBoostBlue = (b + boost) * scale;
+}
+
 void
 CTimeCycle::Update(void)
 {
@@ -517,6 +556,8 @@ CTimeCycle::Update(void)
 	m_fCurrentDirectionalRed /= 255.0f;
 	m_fCurrentDirectionalGreen /= 255.0f;
 	m_fCurrentDirectionalBlue /= 255.0f;
+
+	CalcLightBoost();
 
 	CShadows::CalcPedShadowValues(sunPos, 
 		&m_fShadowFrontX[m_CurrentStoredValue], &m_fShadowFrontY[m_CurrentStoredValue],
