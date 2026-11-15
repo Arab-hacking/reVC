@@ -216,11 +216,11 @@ uint32 bindTexture(uint32 texid);
 
 void flushCache(void);
 
-#ifdef ANDROID
-enum { SHADOW_MAP_SIZE = 1024 };
-#else
+// The shadow volume is re-centred on the player every frame and only spans the
+// near range (~96 m on mobile), so texel density is what decides whether edges
+// read as smooth or as blocks of pixels. 1024 over that span is ~9 cm/texel and
+// was visibly blocky; 2048 halves it and still fits comfortably in GLES3.
 enum { SHADOW_MAP_SIZE = 2048 };
-#endif
 bool32 beginShadowPass(const float32 *lightView, const float32 *lightProj,
                        float32 strength, float32 normalBias, float32 fadeRadius);
 void endShadowPass(void);

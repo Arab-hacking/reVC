@@ -185,7 +185,11 @@ float SampleSunShadow(vec3 worldPos, vec3 N)
 		if(mMaxEdge >= 0.992 || mProj.z <= 0.0005 || mProj.z >= 0.9995)
 			return max(planarVis - terminator, 0.0);
 		float mFade = smoothstep(0.992, 0.82, mMaxEdge);
-		float mRad = max(u_shadowParams.y * 1.10, 0.0005);
+		// 1.10 texels was too tight for a 1024 map covering ~96 m: one texel is
+		// ~9 cm of world, so a four-tap kernel produced a visibly stair-stepped,
+		// "pixel" edge. A wider kernel trades a slightly softer line for edges
+		// that no longer read as blocks of pixels.
+		float mRad = max(u_shadowParams.y * 2.20, 0.0005);
 		float mZRef = mProj.z - max(0.0018 * s4, 0.0001);
 		float mVis = 0.0;
 		mVis += (mZRef <= texture(tex3, mProj.xy + vec2(-0.94201624, -0.39906216) * mRad).r) ? 1.0 : 0.0;
@@ -537,7 +541,12 @@ vec3 BR_ShadeMobileWorldLinear(
 	float specAmt = pow(max(dot(N, H), 0.0), 50.0) * (isSkinDynamic > 0.5 ? 0.40 : 0.15) * day * (1.0 - 0.45 * cloud);
 	vec3 specular = sunLightCol * specAmt;
 
-	vec3 lit = (baseCol * ambCol + diffuseVec + specular) * shadowVis;
+	// Only the direct sun is occluded. Multiplying the ambient term too made
+	// every surface in shade go to near-black - whole building walls turned
+	// solid dark the moment they fell inside the shadow volume, which is what
+	// "buildings turn black" looked like. The BR path above already keeps
+	// ambient outside the shadow term (see shadowTerm at the direct light).
+	vec3 lit = baseCol * ambCol + (diffuseVec + specular) * shadowVis;
 
 	// Static world geometry uses 0 per-pixel pointlights on mobile; dynamic skins catch up to 2 nearby beams
 	if(isSkinDynamic > 0.5){
