@@ -66,6 +66,11 @@ namespace revctestgfx {
 // --- level tables (client 0x3d0a70 / 0x3d34e0) ----------------------------
 enum { GFX_LEVELS = 4 };
 
+// Default `shad` level. The client ships 0 (off), but a disabled pass leaves the
+// city with no sun shadows at all, so the port starts at the top level and lets
+// the player lower it in TEST GRAPHICS.
+enum { GFX_SHADOW_DEFAULT = 3 };
+
 // Render target size for `refl = level`; 0 means "no capture at all", which is
 // what the client's getter 0x1894a08 returns below level 1.
 inline int EnvMapSize(int level)
@@ -163,10 +168,15 @@ struct Settings
 	// shadow_quality_new 0, reflection_on_car_new 0, distance_new 1,
 	// effect_quality_new 1, maxFps 60. ssaa_new is 0 as well, and 0 is the only
 	// value this port can honour — see the note at the top.
+	//
+	// Shadows are the exception: the client ships shadow_quality_new = 0, but
+	// shadowLevel 0 does not merely soften the pass, it disables it outright -
+	// and without the pass the city has no sun shadows at all, which reads as
+	// "the sun does not work". Default to the full level instead.
 	static Settings Defaults(void)
 	{
 		Settings s;
-		s.shadows = 0;
+		s.shadows = GFX_SHADOW_DEFAULT;
 		s.reflections = 0;
 		s.drawDistance = 1;
 		s.effects = 1;

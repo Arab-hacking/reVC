@@ -148,7 +148,10 @@ static void
 TestDefaults(void)
 {
 	Settings s = Settings::Defaults();
-	CheckInt(s.shadows, 0, "shadow_quality_new defaults to 0");
+	// The client ships shadow_quality_new = 0, but level 0 disables the shadow
+	// pass entirely and the city then has no sun shadows at all. The port
+	// deliberately starts at the top level.
+	CheckInt(s.shadows, GFX_SHADOW_DEFAULT, "shadows default to the full level");
 	CheckInt(s.reflections, 0, "reflection_on_car_new defaults to 0");
 	CheckInt(s.drawDistance, 1, "distance_new defaults to 1 (not 0)");
 	CheckInt(s.effects, 1, "effect_quality_new defaults to 1");
@@ -162,10 +165,9 @@ TestApply(void)
 	Settings s = Settings::Defaults();
 	Applied a = Apply(s);
 
-	// Defaults are "no shadows, no reflections" - the two things chapter 18
-	// proved are off out of the box.
-	CheckInt(a.shadowLevel, 0, "default: shadow pass off");
-	CheckFloat(a.shadowStrength, 0.0f, "default: shadow strength 0");
+	// Defaults are "shadows on (deviation from the client), no reflections".
+	CheckInt(a.shadowLevel, GFX_SHADOW_DEFAULT, "default: shadow pass stays on");
+	CheckFloat(a.shadowStrength, 1.0f, "default: full shadow strength");
 	CheckInt(a.envMapSize, 0, "default: no reflection RT");
 	CheckFloat(a.distanceMultiplier, 0.7f, "default: dd=1 -> 0.7");
 	Check(a.effectsEnabled, "default: post block runs");
