@@ -1945,6 +1945,18 @@ CAnimManager::LoadAnimFiles(void)
 	};
 	for(int i = 0; i < ARRAY_SIZE(saSupportAnimFiles); i++)
 		LoadSAAnimFileFromCustom(saSupportAnimFiles[i]);
+
+	// The list above only covers the VC bank names this port knows about. A
+	// custom/bpc pack can ship dictionaries under any stem ("ped.ani",
+	// "BR_ANIM.ifp", ...), and those were scanned into customAnims and then
+	// never loaded, which is why bpc animations appeared not to apply.
+	std::vector<std::string> customAnimNames;
+	CCustomModels::GetCustomAnimNames(customAnimNames);
+	for(size_t i = 0; i < customAnimNames.size(); i++){
+		char filename[80];
+		snprintf(filename, sizeof(filename), "ANIM\\%s.IFP", customAnimNames[i].c_str());
+		LoadSAAnimFileFromCustom(filename);
+	}
 #endif
 	ms_aAnimAssocGroups = new CAnimBlendAssocGroup[NUM_ANIM_ASSOC_GROUPS];
 	ms_aSAAnimAssocGroups = new CAnimBlendAssocGroup[NUM_ANIM_ASSOC_GROUPS];

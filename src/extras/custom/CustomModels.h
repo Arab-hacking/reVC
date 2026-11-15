@@ -99,6 +99,12 @@ public:
 	// Serve an .ifp from custom/anim/; VC banks still use native assets.
 	static bool LoadAnimFileFromCustom(const char *filename, std::vector<uint8> &out);
 
+	// Every .ifp/.ani the custom archive exposed, as bare stems ("ped",
+	// "BIKEV", ...). The fixed list in CAnimManager only names the VC banks it
+	// knows about; a bpc pack can carry dictionaries under any name, and those
+	// used to be indexed and never loaded.
+	static void GetCustomAnimNames(std::vector<std::string> &names);
+
 	// Loose world files are only scanned under custom/data/maps/. The one
 	// permitted ZIP also supplies data/peds.ide, data/vehicles.ide and
 	// data/weapons.ide. The optional active_ipl.txt selects IPLs; IDEs are

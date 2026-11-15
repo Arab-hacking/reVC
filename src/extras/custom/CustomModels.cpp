@@ -4618,6 +4618,19 @@ CCustomModels::GetCollisionBlock(const char *modelname, std::vector<uint8> &out)
 // loose <name>.ifp files inside custom/anim/ are indexed; the animation
 // manager validates the format and reserves native ANPK for VC skeletons.
 bool
+void
+CCustomModels::GetCustomAnimNames(std::vector<std::string> &names)
+{
+	names.clear();
+	EnsureInitialised();
+	if(!customActive)
+		return;
+	for(std::map<std::string, CustomSource>::const_iterator it = customAnims.begin();
+	    it != customAnims.end(); ++it)
+		names.push_back(it->first);
+}
+
+bool
 CCustomModels::LoadAnimFileFromCustom(const char *filename, std::vector<uint8> &out)
 {
 	if(filename == nil)
