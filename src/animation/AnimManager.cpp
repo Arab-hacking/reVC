@@ -1899,10 +1899,30 @@ HasNewSAAnimation(CAnimBlendAssocGroup *saGroup, int groupId, const AnimAssocDef
 	return false;
 }
 
+#ifdef CUSTOM_MODELS
+static bool LoadBaseAnimFileFromCustom(const char *filename, const char *blockName);
+#endif
+
 void
 CAnimManager::LoadAnimFiles(void)
 {
+#ifdef CUSTOM_MODELS
+	// The client reads the whole pedestrian dictionary from ANIM\\PED.ANI and
+	// treats it as the base bank. A pack that ships custom/.../anim/ped.ani
+	// therefore replaces PED.IFP entirely rather than landing in a parallel
+	// "sa_ped" bank that ordinary VC peds never query.
+	const bool customBasePeds = LoadBaseAnimFileFromCustom("ANIM\\PED.ANI", "PED");
+	if(customBasePeds){
+		CUSTOM_LOG("animations: pedestrian dictionary served by custom PED.ANI\n");
+	}else{
+		// No custom dictionary: fall back to the game's own PED.IFP. Skipping it
+		// when the custom one loaded matters - loading both would re-register
+		// block "PED" from the IFP and silently undo the replacement.
+		LoadAnimFile("ANIM\\PED.IFP");
+	}
+#else
 	LoadAnimFile("ANIM\\PED.IFP");
+#endif
 #ifdef CUSTOM_MODELS
 	// SA splits fighting, weapon, style, car and bike clips across IFP banks.
 	// Load optional banks used by VC's association slots so SA peds never need
@@ -1953,6 +1973,10 @@ CAnimManager::LoadAnimFiles(void)
 	std::vector<std::string> customAnimNames;
 	CCustomModels::GetCustomAnimNames(customAnimNames);
 	for(size_t i = 0; i < customAnimNames.size(); i++){
+		// "ped" already went in as the base dictionary above. Sending it here
+		// too would put a second copy into sa_ped and double the clips.
+		if(strcasecmp(customAnimNames[i].c_str(), "ped") == 0)
+			continue;
 		char filename[80];
 		snprintf(filename, sizeof(filename), "ANIM\\%s.IFP", customAnimNames[i].c_str());
 		LoadSAAnimFileFromCustom(filename);
@@ -2193,6 +2217,68 @@ CAnimManager::LoadSAAnimFileFromCustom(const char *filename)
 	CUSTOM_LOG("animation %s: %s in parallel bank %s; native VC dictionary kept\n",
 		filename, loadedBlock && loadedBlock->isLoaded ? "loaded" : "FAILED to load",
 		blockName);
+}
+#endif
+
+#ifdef CUSTOM_MODELS
+// The client loads its whole pedestrian dictionary from one file,
+// "ANIM\\PED.ANI" (LoadBaseAnimations @0xd37314): 294 clips in ANP3, read
+// unconditionally at startup, before any model is set up. It is the base
+// dictionary the game then indexes by block name, not a parallel SA bank.
+//
+// This port loaded "ANIM\\PED.IFP" and pushed every custom .ani into a "sa_%s"
+// bank that only SA-skeleton models ever look at, so a pack that ships
+// custom/zip/common.bpc/anim/ped.ani changed nothing for the ordinary VC peds.
+// Here the .ani is loaded under the plain block name, which is what the client
+// does and what the VC association groups actually reference.
+static bool
+LoadBaseAnimFileFromCustom(const char *filename, const char *blockName)
+{
+	std::vector<uint8> customBuf;
+	if(!CCustomModels::LoadAnimFileFromCustom(filename, customBuf))
+		return false;
+	if(customBuf.size() < 0x24){
+		CUSTOM_LOG("base animation %s: file is too small to be an ANP3\n", filename);
+		return false;
+	}
+	// .ani carries the group name right after the magic; .ifp carries a size.
+	// Read the layout the same way the rest of the loader does, then let the
+	// ANP3 reader handle either.
+	animfile::ANP23Header parsed;
+	if(!animfile::ParseANP23Header(customBuf.data() + 4, customBuf.size() - 4,
+	                               customBuf.size(), parsed)){
+		CUSTOM_LOG("base animation %s: unrecognized ANP3 header, game file kept\n", filename);
+		return false;
+	}
+	if(parsed.numAnims == 0){
+		CUSTOM_LOG("base animation %s: 0 clips, game file kept\n", filename);
+		return false;
+	}
+
+	RwMemory mem;
+	mem.start = customBuf.data();
+	mem.length = (uint32)customBuf.size();
+	RwStream *stream = RwStreamOpen(rwSTREAMMEMORY, rwSTREAMREAD, &mem);
+	if(stream == nil)
+		return false;
+	char ident[5] = { 0 };
+	RwStreamRead(stream, ident, 4);
+	if(memcmp(ident, "ANP2", 4) != 0 && memcmp(ident, "ANP3", 4) != 0){
+		RwStreamClose(stream, nil);
+		CUSTOM_LOG("base animation %s: not ANP2/ANP3 (%.4s), game file kept\n", filename, ident);
+		return false;
+	}
+	CAnimBlock *before = GetAnimationBlock(blockName);
+	const bool hadBlock = before && before->isLoaded;
+	LoadAnimFile_ANP23(stream, ident, true, blockName, parsed.numAnims, blockName);
+	RwStreamClose(stream, nil);
+
+	CAnimBlock *after = GetAnimationBlock(blockName);
+	const bool loaded = after && after->isLoaded;
+	CUSTOM_LOG("base animation %s: %s block '%s' (%u clips)%s\n",
+		filename, loaded ? "loaded" : "FAILED to load", blockName,
+		(unsigned)parsed.numAnims, hadBlock ? ", replaced the game dictionary" : "");
+	return loaded;
 }
 #endif
 
