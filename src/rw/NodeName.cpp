@@ -68,6 +68,16 @@ NodeNamePluginAttach(void)
 	return gPluginOffset != -1;
 }
 
+// Записать имя кадра. Плагин держит 24 байта, поэтому имя режется по 23.
+void
+SetFrameNodeName(RwFrame *frame, const char *name)
+{
+	if(frame == nil || gPluginOffset < 0)
+		return;
+	strncpy(NODENAMEEXT(frame), name ? name : "", 23);
+	NODENAMEEXT(frame)[23] = '\0';
+}
+
 char*
 GetFrameNodeName(RwFrame *frame)
 {
