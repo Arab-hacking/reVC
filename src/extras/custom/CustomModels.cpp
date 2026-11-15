@@ -4617,7 +4617,6 @@ CCustomModels::GetCollisionBlock(const char *modelname, std::vector<uint8> &out)
 // Animation dictionaries are requested by path ("ANIM\\PED.IFP"). Only
 // loose <name>.ifp files inside custom/anim/ are indexed; the animation
 // manager validates the format and reserves native ANPK for VC skeletons.
-bool
 void
 CCustomModels::GetCustomAnimNames(std::vector<std::string> &names)
 {
