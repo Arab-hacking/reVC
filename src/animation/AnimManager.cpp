@@ -1911,7 +1911,7 @@ CAnimManager::LoadAnimFiles(void)
 	// treats it as the base bank. A pack that ships custom/.../anim/ped.ani
 	// therefore replaces PED.IFP entirely rather than landing in a parallel
 	// "sa_ped" bank that ordinary VC peds never query.
-	const bool customBasePeds = false;
+	const bool customBasePeds = LoadBaseAnimFileFromCustom("ANIM\\PED.ANI", "PED");
 	if(customBasePeds){
 		CUSTOM_LOG("animations: pedestrian dictionary served by custom PED.ANI\n");
 	}else{
@@ -2268,12 +2268,14 @@ LoadBaseAnimFileFromCustom(const char *filename, const char *blockName)
 		CUSTOM_LOG("base animation %s: not ANP2/ANP3 (%.4s), game file kept\n", filename, ident);
 		return false;
 	}
-	CAnimBlock *before = GetAnimationBlock(blockName);
+	// Static free function: the CAnimManager members below need qualification,
+	// otherwise the compiler reports C3861 "identifier not found".
+	CAnimBlock *before = CAnimManager::GetAnimationBlock(blockName);
 	const bool hadBlock = before && before->isLoaded;
-	LoadAnimFile_ANP23(stream, ident, true, blockName, parsed.numAnims, blockName);
+	CAnimManager::LoadAnimFile_ANP23(stream, ident, true, blockName, parsed.numAnims, blockName);
 	RwStreamClose(stream, nil);
 
-	CAnimBlock *after = GetAnimationBlock(blockName);
+	CAnimBlock *after = CAnimManager::GetAnimationBlock(blockName);
 	const bool loaded = after && after->isLoaded;
 	CUSTOM_LOG("base animation %s: %s block '%s' (%u clips)%s\n",
 		filename, loaded ? "loaded" : "FAILED to load", blockName,
