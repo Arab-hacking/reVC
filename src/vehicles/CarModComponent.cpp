@@ -6,6 +6,7 @@
 #include "Vehicle.h"
 #include "ModelInfo.h"
 #include "FileMgr.h"
+#include "Streaming.h"
 #include "SavehDiag.h"
 
 #include <stdio.h>
@@ -350,41 +351,66 @@ CCarModComponentPool::AddWheelUpgradeLine(const char *tokens)
 	}
 }
 
-// 0x17fa790 AddToVehicle(const CCarModComponent&, CVehicle&, bool).
+// 0x17fa4ec AddToVehicle(const CCarModComponent&, CVehicle&, bool bAttach).
 //
-// Снято точно (tools/client-analysis/carmod_attach.md):
-//   0x17fa7b0  cmp w2,#0x2d ; b.lo   -- слот >= 45 уходит в глобальный
-//                вектор (bl 0x17cc648 -> 0x3ae9f38), иначе по машине;
-//   0x17fa804  bl 0x180d48c          -- FindBySlot(vehicle, slot)
-//   0x17fa814  ldr x0,[x0,#0x28]     -- найденный узел (0 == не найден)
-//   0x17fa840  bl 0x17f7830          -- и это НЕ крепление.
+// Разобрано по псевдокоду (tools/client-analysis/carmod_attach.md):
+//   0x17fa4ec  FUN_018fa790(pool, vehicle, mod->slot)  -- снять деталь в этом слоте
+//   0x17fa504  IsModelLoaded(mod->modelId)             -- модель обязана быть в памяти
+//   0x17fa590  RequestModel + ожидание до 100 попыток; иначе assert
+//              "Cant load model Id %u for car mod component"
+//   0x17fa6xx  if (!(mod->m_bHiddenFromWheel))  0x17f9158(mod, vehicle)
+//              else                              0x17f8be0(mod, vehicle)
 //
-// 0x17f7830 разобрана отдельно и оказалась снятием детали: её строки —
-// 'Trying to remove missing component Id %u slot %', 'Can't remove component
-// Id %u slot %u vehicle id %u' и 'Wrong position type %d, for dummy %s'.
-// При флаге +0x40 она уходит хвостовым переходом в 0x17f67ec, который снимает
-// владение с четырёх объектов машины по типам 2..5 и стирает узел.
+// Две ветки крепления: обычная (деталь на видимой машине) и для деталей,
+// которые не показываются в колесе выбора (m_bHiddenFromWheel, +0x40).
+// Обе заканчиваются записью узла 0x78 в список машины (см. carmod_attach.md).
 //
-// Поэтому визуального крепления в порте нет и здесь: клиент строит узел
-// 0x78 байт (кадр, матрица, атомик) и клонирует в него атомик модели детали
-// в коде, который ещё не снят. Здесь остаётся проверенная часть — проверка
-// слота и учёт деталей за машиной.
-void
-CCarModComponentPool::AddToVehicle(const CCarModComponent &mod, CVehicle &vehicle, bool b)
+// Порт переносит проверки и учёт; визуальное крепление делает CCarModMenu,
+// потому что ему нужен загруженный атомик модели, а не только кламп.
+bool
+CCarModComponentPool::AddToVehicle(const CCarModComponent &mod, CVehicle &vehicle, bool bAttach)
 {
-	(void)b;
+	(void)bAttach;
 
-	if(mod.m_slot >= MAX_CAR_MOD_SLOTS){
-		// Деталь выше 45-го слота не крепится к конкретной машине, а лежит
-		// в общем векторе клиента 0x3ae9f38.
-		g_carModGlobalVector.push_back(const_cast<CCarModComponent*>(&mod));
-		return;
+	// Слот вне диапазона: клиент не привязывает такую деталь к машине.
+	if(mod.m_slot < 0 || mod.m_slot >= MAX_CAR_MOD_SLOTS)
+		return false;
+
+	// Клиент сначала снимает всё, что стоит в этом слоте, и только потом
+	// ставит новое. Иначе в списке машины остался бы старый узел.
+	RemoveFromVehicle(vehicle, mod.m_slot);
+
+	if(!mod.IsValid() || mod.m_modelId <= 0)
+		return false;
+
+	// Без модели в памяти клиент не крепит деталь, а грузит её и ждёт.
+	if(!CStreaming::HasModelLoaded(mod.m_modelId)){
+		CStreaming::RequestModel(mod.m_modelId, 0);
+		return false;
 	}
 
-	if(!mod.IsValid())
+	g_vehicleMods[&vehicle].push_back(&mod);
+	return true;
+}
+
+// 0x17f7830 RemoveFromVehicle(CCarModComponent*, CVehicle*): ищет узел по слоту
+// (0x180d490 -> узел+0x08) и снимает владение с четырёх объектов (+0x08..+0x20),
+// затем стирает узел (0x17f67ec).
+void
+CCarModComponentPool::RemoveFromVehicle(CVehicle &vehicle, int32 slot)
+{
+	std::map<const CVehicle*, std::vector<const CCarModComponent*>>::iterator it =
+		g_vehicleMods.find(&vehicle);
+	if(it == g_vehicleMods.end())
 		return;
 
-	g_vehicleMods[&vehicle].push_back(&mod);
+	std::vector<const CCarModComponent*> &list = it->second;
+	for(size_t i = 0; i < list.size(); i++){
+		if(list[i] != nil && list[i]->m_slot == slot){
+			list.erase(list.begin() + i);
+			return;
+		}
+	}
 }
 
 // Список деталей машины. Клиент держит его внутри самой машины, порт — здесь

@@ -65,7 +65,7 @@ private:
 	static void BuildList(CVehicle *vehicle);
 	static void MoveSelection(int32 delta);
 	static void ToggleSelected(void);
-	static void Install(const CCarModComponent &mod);
+	static bool Install(const CCarModComponent &mod);
 	static void Remove(const CCarModComponent &mod);
 };
 

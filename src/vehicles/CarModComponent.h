@@ -73,7 +73,11 @@ public:
 	static bool LoadLegacyVehicleUpgrades(void);
 
 	// Крепление детали к машине, 0x17fa790.
-	static void AddToVehicle(const CCarModComponent &mod, CVehicle &vehicle, bool b);
+	// 0x17fa4ec: снять слот, проверить/подгрузить модель, учесть деталь.
+	static bool AddToVehicle(const CCarModComponent &mod, CVehicle &vehicle, bool bAttach);
+
+	// 0x17f7830: снять деталь, стоящую в слоте.
+	static void RemoveFromVehicle(CVehicle &vehicle, int32 slot);
 
 	// Детали, привязанные к конкретной машине. В клиенте они лежат в самой
 	// машине (vehicle+0x5a0, шаг 0x78, поле +0x70 — слот). В порт это поле

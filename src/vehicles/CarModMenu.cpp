@@ -13,8 +13,12 @@
 #include "PlayerInfo.h"
 #include "SavehDiag.h"
 #include "RwHelper.h"
+#include "NodeName.h"
 
 #include <algorithm>
+#include <string.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 bool CCarModMenu::m_bOpen;
 int32 CCarModMenu::m_nSelected;
@@ -147,55 +151,32 @@ CCarModMenu::MoveSelection(int32 delta)
 // который ещё не снят (см. tools/client-analysis/carmod_attach.md, §5).
 // Поэтому здесь тот же приём, но без позиции/поворота детали — её задаёт
 // модель детали собственным кадром.
-void
-CCarModMenu::Install(const CCarModComponent &mod)
+// Поиск кадра (dummy) по имени в клампе. Клиент делает то же самое:
+// 0x16b4650(clump, component->m_name) — деталь садится на dummy машины,
+// имя которого записано в carmods.dat (см. carmod_attach.md).
+static RwFrame *
+FindFrameByName(RwFrame *frame, const char *name)
 {
-	if(m_pVehicle == nil)
-		return;
+	if(frame == nil || name == nil || *name == '\0')
+		return nil;
 
-	for(size_t i = 0; i < m_aInstalled.size(); i++)
-		if(m_aInstalled[i] == &mod)
-			return; // уже стоит
+	const char *frameName = GetFrameNodeName(frame);
+	if(frameName && strcmp(frameName, name) == 0)
+		return frame;
 
-	CCarModComponentPool::AddToVehicle(mod, *m_pVehicle, false);
-	m_aInstalled.push_back(&mod);
-
-	// Визуальная часть: нужен загруженный кламп модели детали.
-	if(!CStreaming::HasModelLoaded(mod.m_modelId)){
-		CStreaming::RequestModel(mod.m_modelId, 0);
-		CUSTOM_LOG("carmodmenu: model %d not loaded yet, requested\n", mod.m_modelId);
-		return;
+	for(RwFrame *child = frame->child; child; child = child->next){
+		RwFrame *found = FindFrameByName(child, name);
+		if(found)
+			return found;
 	}
-
-	if(m_pVehicle->m_rwObject == nil)
-		return;
-
-	CClumpModelInfo *partInfo = (CClumpModelInfo*)CModelInfo::GetModelInfo(mod.m_modelId);
-	if(partInfo == nil || partInfo->m_clump == nil)
-		return;
-
-	RpAtomic *srcAtomic = GetFirstAtomic(partInfo->m_clump);
-	if(srcAtomic == nil)
-		return;
-
-	RpClump *vehicleClump = (RpClump*)m_pVehicle->m_rwObject;
-	if(RwObjectGetType((RwObject*)vehicleClump) != rpCLUMP)
-		return;
-
-	RpAtomic *atomic = RpAtomicClone(srcAtomic);
-	RwFrame *frame = RwFrameCreate();
-	RwFrameTransform(frame, RwFrameGetMatrix(RpAtomicGetFrame(srcAtomic)), rwCOMBINEREPLACE);
-	RpAtomicSetFrame(atomic, frame);
-	RpClumpAddAtomic(vehicleClump, atomic);
-	RwFrameAddChild(RpClumpGetFrame(vehicleClump), frame);
-
-	CUSTOM_LOG("carmodmenu: installed '%s' (uniqueId %d, slot %d, model %d)\n",
-	           mod.m_name.c_str(), mod.m_uniqueId, mod.m_slot, mod.m_modelId);
+	return nil;
 }
 
-// Контекст поиска детали среди атомиков клампа машины.
+// Контекст снятия: атомики деталей помечены именем слота, чтобы снимать
+// именно тот, который поставил Install, а не любой чужой.
 struct SRemoveCtx {
 	RwFrame *root;
+	int32 slot;
 	RpAtomic *found;
 };
 
@@ -206,12 +187,82 @@ RemoveFindCB(RpAtomic *atomic, void *data)
 	if(ctx->found)
 		return atomic;
 	RwFrame *frame = RpAtomicGetFrame(atomic);
-	if(frame && RwFrameGetParent(frame) == ctx->root)
+	if(frame == nil || RwFrameGetParent(frame) != ctx->root)
+		return atomic;
+	const char *name = GetFrameNodeName(frame);
+	if(name && atoi(name) == ctx->slot)
 		ctx->found = atomic;
 	return atomic;
 }
 
-// Снимает деталь: убирает атомик из клампа и кадр, который мы под него создали.
+// Крепление детали, как в клиенте: снять то, что стоит в этом слоте, найти
+// dummy по имени из carmods.dat, склонировать атомик и посадить его на этот
+// кадр — тогда деталь встаёт в свою точку крепления, а не в центр машины.
+// Кадру даётся имя слота: по нему Remove находит свою деталь.
+bool
+CCarModMenu::Install(const CCarModComponent &mod)
+{
+	if(m_pVehicle == nil)
+		return false;
+
+	// Старую деталь в том же слоте клиент снимает перед установкой.
+	for(size_t i = 0; i < m_aInstalled.size(); i++){
+		if(m_aInstalled[i] != nil && m_aInstalled[i]->m_slot == mod.m_slot){
+			Remove(*m_aInstalled[i]);
+			break;
+		}
+	}
+
+	if(!CCarModComponentPool::AddToVehicle(mod, *m_pVehicle, true))
+		return false;
+
+	if(!m_pVehicle->m_rwObject)
+		return false;
+
+	CClumpModelInfo *partInfo = (CClumpModelInfo*)CModelInfo::GetModelInfo(mod.m_modelId);
+	if(partInfo == nil || partInfo->m_clump == nil)
+		return false;
+
+	RpAtomic *srcAtomic = GetFirstAtomic(partInfo->m_clump);
+	if(srcAtomic == nil)
+		return false;
+
+	RpClump *vehicleClump = (RpClump*)m_pVehicle->m_rwObject;
+	if(RwObjectGetType((RwObject*)vehicleClump) != rpCLUMP)
+		return false;
+
+	// Имя dummy берём из carmods.dat — это ровно то, что делает клиент.
+	RwFrame *dummy = FindFrameByName(RpClumpGetFrame(vehicleClump), mod.m_name.c_str());
+	if(dummy == nil){
+		CUSTOM_LOG("carmodmenu: no dummy '%s' on model %d, slot %d\n",
+		           mod.m_name.c_str(), m_pVehicle->GetModelIndex(), mod.m_slot);
+		return false;
+	}
+
+	RpAtomic *atomic = RpAtomicClone(srcAtomic);
+	RwFrame *frame = RwFrameCreate();
+	// Матрица детали: у клиента она собирается из dummy (0x16a208c в
+	// 0x17f9174). Здесь берём матрицу самого dummy — этого достаточно,
+	// чтобы деталь встала в точку крепления.
+	RwFrameTransform(frame, RwFrameGetMatrix(dummy), rwCOMBINEREPLACE);
+
+	// Метка слота на кадре: по ней Remove находит именно свою деталь.
+	char slotName[16];
+	snprintf(slotName, sizeof(slotName), "%d", mod.m_slot);
+	SetFrameNodeName(frame, slotName);
+
+	RpAtomicSetFrame(atomic, frame);
+	RwFrameAddChild(dummy, frame);
+	RpClumpAddAtomic(vehicleClump, atomic);
+
+	m_aInstalled.push_back(&mod);
+	CUSTOM_LOG("carmodmenu: installed '%s' (uniqueId %d, slot %d, model %d) on '%s'\n",
+	           mod.m_name.c_str(), mod.m_uniqueId, mod.m_slot, mod.m_modelId, mod.m_name.c_str());
+	return true;
+}
+
+// Снятие: убирает атомик, который Install повесил на dummy, и освобождает кадр.
+// Учёт в пуле чистится по слоту.
 void
 CCarModMenu::Remove(const CCarModComponent &mod)
 {
@@ -222,11 +273,9 @@ CCarModMenu::Remove(const CCarModComponent &mod)
 	if(RwObjectGetType((RwObject*)vehicleClump) != rpCLUMP)
 		return;
 
-	// Ищем атомик, чей кадр — прямой потомок кадра клампа: у самой машины
-	// атомики сидят на своих именованных кадрах глубже, а деталь мы вешаем
-	// прямо на корневой кадр (см. Install).
 	SRemoveCtx ctx;
 	ctx.root = RpClumpGetFrame(vehicleClump);
+	ctx.slot = mod.m_slot;
 	ctx.found = nil;
 	RpClumpForAllAtomics(vehicleClump, RemoveFindCB, &ctx);
 
@@ -236,11 +285,14 @@ CCarModMenu::Remove(const CCarModComponent &mod)
 		RwFrame *f = RpAtomicGetFrame(found);
 		if(f)
 			RwFrameDestroy(f);
+		RpAtomicDestroy(found);
 	}
+
+	CCarModComponentPool::RemoveFromVehicle(*m_pVehicle, mod.m_slot);
 
 	m_aInstalled.erase(std::remove(m_aInstalled.begin(), m_aInstalled.end(), &mod),
 	                   m_aInstalled.end());
-	CUSTOM_LOG("carmodmenu: removed '%s'\n", mod.m_name.c_str());
+	CUSTOM_LOG("carmodmenu: removed '%s' (slot %d)\n", mod.m_name.c_str(), mod.m_slot);
 }
 
 void
