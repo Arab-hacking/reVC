@@ -1111,9 +1111,15 @@ CRenderer::ConstructRenderList(void)
 	float dayFactor = GL3Atmosphere::Clamp01((sunDir.z + 0.04f) / 0.22f);
 	float dayNightBalance = 1.0f - dayFactor;
 	rw::setSunDirection(sunDir);
+	// The timecycle stores directional as 0..255; the shader expects 0..1 and
+	// clamps to 0.35..1.15. Feeding raw 0..255 pinned every channel to 1.15, so
+	// the sun was always maximally warm - one of the reasons lighting read as
+	// tinted rather than sunny. Normalise here.
+	const float kColourToUnit = 1.0f / 255.0f;
 	rw::setSunMaterialParams(rw::makeRGBAf(
-		CTimeCycle::GetDirectionalRed(), CTimeCycle::GetDirectionalGreen(),
-		CTimeCycle::GetDirectionalBlue(),
+		CTimeCycle::GetDirectionalRed() * kColourToUnit,
+		CTimeCycle::GetDirectionalGreen() * kColourToUnit,
+		CTimeCycle::GetDirectionalBlue() * kColourToUnit,
 		Min(1.0f, Max(0.0f, CTimeCycle::GetShadowStrength()/255.0f))));
 #ifdef ANDROID
 	// Mobile client pipeline: u_atmosphere.x >= 1.5 selects mobile world/vehicle/sky/water
