@@ -20,6 +20,7 @@
 //                                      directly to GPU without .txd conversion.
 
 #include <vector>
+#include <string>
 #include <stddef.h>
 
 class CCustomModels
