@@ -496,13 +496,23 @@ ScanCommonZip(void)
 }
 
 #ifdef CUSTOM_BPC_ARCHIVES
+static bool
+IsRegularBpcFile(const struct stat &st)
+{
+#ifdef _WIN32
+	return (st.st_mode & _S_IFMT) == _S_IFREG;
+#else
+	return S_ISREG(st.st_mode);
+#endif
+}
+
 static std::string
 ResolveExistingCasePath(const std::string &candidate)
 {
 	if(candidate.empty())
 		return std::string();
 	struct stat st;
-	if(stat(candidate.c_str(), &st) == 0 && S_ISREG(st.st_mode))
+	if(stat(candidate.c_str(), &st) == 0 && IsRegularBpcFile(st))
 		return candidate;
 
 	std::string cur;
@@ -555,7 +565,7 @@ ResolveExistingCasePath(const std::string &candidate)
 			break;
 		pos = slash + 1;
 	}
-	if(stat(cur.c_str(), &st) == 0 && S_ISREG(st.st_mode))
+	if(stat(cur.c_str(), &st) == 0 && IsRegularBpcFile(st))
 		return cur;
 	return std::string();
 }
@@ -1060,7 +1070,7 @@ ImageBytes(const char *path)
 	return ((uint64)fa.nFileSizeHigh << 32) | fa.nFileSizeLow;
 #else
 	struct stat st;
-	return stat(path, &st) == 0 && S_ISREG(st.st_mode) ? (uint64)st.st_size : 0;
+	return stat(path, &st) == 0 && IsRegularBpcFile(st) ? (uint64)st.st_size : 0;
 #endif
 }
 
