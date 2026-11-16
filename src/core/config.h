@@ -337,6 +337,11 @@ enum Config {
 	#define CUSTOM_MODELS_FOLDER "custom"
 #endif
 
+// Also read the manifest-driven .bpc archives (custom/zip/common.bpc,
+// custom/zip/mesh/*.bpc and custom/zip/textures/*.astc.bpc) on the desktop
+// builds, not only on Android.
+#define CUSTOM_BPC
+
 // GTA:SA vehicles (and mods converted from them) often keep the frame name of
 // the car they were converted from in the DFF, so a model file may contain a
 // clump whose root frame does not know the name of the model at all. Fall back

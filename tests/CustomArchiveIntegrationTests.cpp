@@ -3,6 +3,7 @@
 // fixtures. Unused game/RenderWare sections are garbage-collected at link time.
 #include "common.h"
 #include "CustomModels.h"
+#include "CustomZip.h"
 #include "CustomColFormat.h"
 #include "CustomImgFormat.h"
 #include "CustomWorldFormat.h"
@@ -12,6 +13,8 @@
 #include "CdStream.h"
 #include "ColStore.h"
 #include "Streaming.h"
+#include "ModelInfo.h"
+#include "FileLoader.h"
 #include "TxdStore.h"
 
 #include <algorithm>
@@ -48,6 +51,38 @@ void re3_log(const char *, const char *, unsigned int, const char *, const char 
 void re3_assert(const char *, const char *, unsigned int, const char *) { std::abort(); }
 FILE *_fcaseopen(const char *name, const char *mode) { return std::fopen(name, mode); }
 RwBool RwTexDictionaryDestroy(RwTexDictionary *) { return true; }
+
+// Desktop BPC serving now reaches model/texture loaders through Load(). This
+// scanner/collision test has no renderer: unexpected rendering must fail loudly.
+CStreamingInfo CStreaming::ms_aInfoForModel[NUMSTREAMINFO];
+CBaseModelInfo *CModelInfo::ms_modelInfoPtrs[MODELINFOSIZE];
+CBaseModelInfo *CModelInfo::GetModelInfo(const char *, int *id) { if(id) *id = -1; return nullptr; }
+bool CFileLoader::LoadAtomicFile(RwStream *, uint32) { std::abort(); }
+bool CFileLoader::LoadClumpFile(RwStream *, uint32) { std::abort(); }
+bool CFileLoader::StartLoadClumpFile(RwStream *, uint32) { std::abort(); }
+bool CFileLoader::FinishLoadClumpFile(RwStream *, uint32) { std::abort(); }
+RwStream *RwStreamOpen(RwStreamType, RwStreamAccessType, const void *) { std::abort(); }
+RwBool RwStreamClose(RwStream *, void *) { std::abort(); }
+RwBool RwStreamFindChunk(RwStream *, RwUInt32, RwUInt32 *, RwUInt32 *) { std::abort(); }
+RwTexDictionary *RwTexDictionaryCreate() { std::abort(); }
+RwTexDictionary *RwTexDictionaryGtaStreamRead(RwStream *) { std::abort(); }
+RwTexture *RwTexDictionaryFindNamedTexture(RwTexDictionary *, const char *) { std::abort(); }
+RwTexture *RwTexDictionaryAddTexture(RwTexDictionary *, RwTexture *) { std::abort(); }
+const RwTexDictionary *RwTexDictionaryForAllTextures(const RwTexDictionary *, RwTextureCallBack, void *) { std::abort(); }
+RwRaster *RwRasterCreate(RwInt32, RwInt32, RwInt32, RwInt32) { std::abort(); }
+RwUInt8 *RwRasterLock(RwRaster *, RwUInt8, RwInt32) { std::abort(); }
+RwBool RwRasterDestroy(RwRaster *) { std::abort(); }
+RwTexture *RwTextureCreate(RwRaster *) { std::abort(); }
+RwTexture *RwTextureSetAddressing(RwTexture *, RwTextureAddressMode) { std::abort(); }
+RwTexture *RwTextureSetFilterMode(RwTexture *, RwTextureFilterMode) { std::abort(); }
+namespace rw {
+int32 platform = PLATFORM_GL3;
+void Raster::unlock(int32) { std::abort(); }
+namespace gl3 {
+int32 nativeRasterOffset = 0;
+void setMipLevels(Raster *, int32) { std::abort(); }
+}
+}
 
 static void W16(std::vector<uint8> &b, size_t at, uint16 n) {
     b[at] = (uint8)n; b[at+1] = (uint8)(n>>8);
@@ -774,6 +809,47 @@ int main() {
     CCustomModels::MountImages();
     assert(CCustomModels::IsActive() && CCustomModels::GetCollisionBlock("onlyIMG", selected));
     CCustomModels::Shutdown(); CTxdStore::Shutdown();
+
+    // Desktop (no ANDROID define): common.bpc manifests mount mesh and TexDB
+    // archives; entries can be extracted, collisions loaded and reopened.
+    assert(std::rename("custom", "custom_collision_off") == 0);
+    MkDir("custom"); MkDir("custom/zip");
+    MkDir("custom/zip/mesh"); MkDir("custom/zip/textures");
+    Zip("custom/zip/common.bpc", {
+        { "data/config.dat", Bytes("CDIMAGE mesh/world.bpc\n") },
+        { "data/texdb.dat", Bytes("TEXDB textures/roads\n") },
+        { "data/lods.info", Bytes("bpc_model,bpc_lod\n") },
+        { "data/maps/bpc.ide", Bytes("objs\nend\n") }
+    });
+    Zip("custom/zip/mesh/world.bpc", {
+        { "world.col", Col("bpcOnly") },
+        { "bpc_model.dff", Bytes("indexed model fixture") }
+    });
+    Zip("custom/zip/textures/roads.astc.bpc", { { "bpc_tex.btx", RawBtx(4, 4) } });
+    // Exercise the XOR-encrypted common archive with the real scanner as well.
+    FILE *common = std::fopen("custom/zip/common.bpc", "rb");
+    assert(common);
+    std::fseek(common, 0, SEEK_END);
+    std::vector<uint8> encrypted((size_t)std::ftell(common));
+    std::rewind(common);
+    assert(std::fread(encrypted.data(), 1, encrypted.size(), common) == encrypted.size());
+    std::fclose(common);
+    CustomZip::ApplyBpcXor(0, encrypted.data(), (uint32)encrypted.size());
+    Write("custom/zip/common.bpc", encrypted);
+    for(int pass = 0; pass < 2; ++pass) {
+        images.clear(); images.push_back("models/gta3.img");
+        CTxdStore::Initialise(); CCustomModels::MountImages();
+        assert(CCustomModels::IsActive() && CCustomModels::HasWorldFiles());
+        assert(CCustomModels::HasModelFile("bpc_model"));
+        assert(CCustomModels::HasImageTxd("bpc_tex"));
+        std::vector<uint8> config;
+        assert(CCustomModels::ReadDataFile("data/lods.info", config));
+        assert(config == Bytes("bpc_model,bpc_lod\n"));
+        assert(CCustomModels::GetCollisionBlock("bpcOnly", selected));
+        assert(CCustomModels::CanServe(STREAM_OFFSET_COL));
+        assert(CCustomModels::Load(STREAM_OFFSET_COL));
+        CCustomModels::Shutdown(); CTxdStore::Shutdown();
+    }
 
     assert(chdir("..") == 0);
     RemoveTree(root);

@@ -1,9 +1,13 @@
 # Пользовательские ресурсы reVC: расположение файлов
 
-Игра читает **только указанные папки и один архив** внутри `<каталог игры>/custom/` (или внутри `REVC_CUSTOM_DIR`, если переменная задана):
+Игра читает **указанные папки, `common.zip` и BPC-архивы по манифестам** внутри `<каталог игры>/custom/` (или внутри `REVC_CUSTOM_DIR`, если переменная задана):
 
 ```text
 custom/
+  zip/
+    common.bpc              # config.dat, texdb.dat, карты и разрешённые таблицы
+    mesh/*.bpc              # архивы из CDIMAGE в config.dat
+    textures/*.astc.bpc     # базы из TEXDB в texdb.dat
   common.zip                # необязательно: data/maps/**/*.ide, **/*.ipl,
                             # data/peds.ide, data/vehicles.ide, data/weapons.ide,
                             # data/config.dat, data/timecyc.json,
@@ -29,7 +33,39 @@ custom/
 
 **Единственное ZIP-исключение — `custom/common.zip`:** из него читаются IDE/IPL в `data/maps/` (старый псевдоним `maps/` также понимается), **ровно три корневых IDE: `data/peds.ide`, `data/vehicles.ide`, `data/weapons.ide`**, `data/config.dat` для выбора IPL, `data/timecyc.json` для света и, в GL3, атмосферы, а также `data/water.dat` и `data/carcols.dat`. Другие корневые IDE, например `data/misc.ide`, не импортируются. При совпадении относительного пути карты или `timecyc.json` приоритет у записи `custom/common.zip`; одноимённая карта не загружается дважды. Имена архива без учёта регистра, относительные пути проверяются, одна запись ограничена 64 МиБ (для воды — 1 МиБ, палитры — 64 КиБ). Если запись ZIP не читается, резервный распакованный файл используется **только для карт и `timecyc.json`**; корневые IDE, вода и таблица цветов из `custom/data/` не сканируются.
 
-**Не загружаются:** все прочие пользовательские ZIP (`custom/old.zip`, `zip/*.zip`, вложенные ZIP), а из `custom/common.zip` — DFF/TXD/COL/CLS/IFP/MOD/BTX и другие файлы; также корневые `img/*.img`, `common/`, папка `custom/collision/` и отдельные `.mod`, `.btx`, `.dff`, `.txd`, `.col`, `.cls`, `.ifp`, `.ide`, `.ipl` в старых местах. Распаковать ZIP и оставить файлы в `custom/` недостаточно: разместите **совместимые** файлы в папках и форматах выше. `.ani` не сканируются: для совместимых ANP2/ANP3-анимаций подготовьте `.ifp` отдельно. `.bpc`, аудио/AUDO, `data/features/` и физика автомобилей не импортируются. Конфиг из **корневого** `common/data/config.dat` не используется.
+**Не загружаются:** все прочие пользовательские ZIP (`custom/old.zip`, `zip/*.zip`, вложенные ZIP), а из `custom/common.zip` — DFF/TXD/COL/CLS/IFP/MOD/BTX и другие файлы; также корневые `img/*.img`, `common/`, папка `custom/collision/` и отдельные `.mod`, `.btx`, `.dff`, `.txd`, `.col`, `.cls`, `.ifp`, `.ide`, `.ipl` в старых местах. Распаковать ZIP и оставить файлы в `custom/` недостаточно: разместите **совместимые** файлы в папках и форматах выше. `.ani` не сканируются: для совместимых ANP2/ANP3-анимаций подготовьте `.ifp` отдельно. Аудио/AUDO, `data/features/` и физика автомобилей не импортируются. Конфиг из **корневого** `common/data/config.dat` не используется.
+
+## BPC на PC и Android
+
+Поддержка включена по умолчанию (`CUSTOM_BPC` в `src/core/config.h`).
+`custom/zip/common.bpc` открывается как ZIP-контейнер, в том числе с 20-байтовым
+циклическим XOR. Из его `data/config.dat` читаются директивы `CDIMAGE`,
+из `data/texdb.dat` — `TEXDB`. Например:
+
+```text
+# data/config.dat
+CDIMAGE mesh/world.bpc
+# data/texdb.dat
+TEXDB textures/roads
+```
+
+Они подключают `custom/zip/mesh/world.bpc` и
+`custom/zip/textures/roads.astc.bpc`. Сканирование всего каталога вместо
+манифестов не производится. При отсутствии/ошибке открытия `common.bpc`
+сохраняется резервный `custom/common.zip` и существующий поиск отдельных
+манифестов в `custom/zip/data/` и `custom/data/`.
+
+Из BPC индексируются `.mod`, `.dff`, `.btx`, `.txd`, `.cls`, `.col`, `.ani`/`.ifp`;
+из common — разрешённые таблицы и карты. На PC текстуры проходят существующий
+CPU-декодер BTX/ASTC и создаются средствами RenderWare; Android сохраняет
+прямую GPU-загрузку. Нативные модели/TXD пользовательских IMG остаются у
+штатного стримера. Совместимость содержимого с загрузчиками игры всё ещё обязательна.
+
+Проверки: `bpc_pipeline_tests` проверяет XOR, ZIP и BTX/ASTC;
+`custom_archive_integration_tests` без `ANDROID` проверяет реальный сканер,
+манифесты, индексацию mesh/TexDB, чтение таблиц и коллизий, повторное открытие;
+`android_bpc_archive_integration_tests` проверяет Android-путь с GPU-заглушками.
+Эти тесты не заменяют запуск игры с реальными ресурсами.
 
 ## IMG: модели, текстуры и коллизии
 

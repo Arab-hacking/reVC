@@ -4,6 +4,13 @@
 
 #ifdef CUSTOM_MODELS
 
+// .bpc archive reading (custom/zip/common.bpc, custom/zip/mesh/*.bpc and
+// custom/zip/textures/*.astc.bpc) is compiled on Android and, with CUSTOM_BPC,
+// on the desktop builds too.
+#if defined(ANDROID) || defined(CUSTOM_BPC)
+#define CUSTOM_BPC_ARCHIVES 1
+#endif
+
 #include <string>
 #include <vector>
 #include <list>
@@ -28,8 +35,10 @@
 #include "ResidentObjectCache.h"
 #include "BackgroundAssetQueue.h"
 #include "SavehDiag.h"
-#ifdef ANDROID
+#ifdef CUSTOM_BPC_ARCHIVES
 #include "BpcPipeline.h"
+#endif
+#ifdef ANDROID
 #include "Timer.h"
 #endif
 
@@ -75,16 +84,18 @@ struct CustomSource
 	char fname[256];	// diagnostic name, including the archive entry if applicable
 	uint64 imgOffset;	// byte offset of a validated IMG/DIR sector slice
 	uint32 imgBytes;
-	uint32 bpcAddr;		// (archId << 24) | entryIdx on Android .bpc; 0xFFFFFFFF otherwise
+	uint32 bpcAddr;		// (archId << 24) | entryIdx in .bpc; 0xFFFFFFFF otherwise
 	int zipEntry;	// only entries from custom/common.zip; -1 for loose files and IMG
 	bool inImg;
 };
 
-#ifdef ANDROID
+#ifdef CUSTOM_BPC_ARCHIVES
 static std::vector<std::unique_ptr<CustomZip> > customBpcArchives;
 static std::map<std::string, CustomSource> customTmbBtx;
 static std::vector<CustomSource> customBpcClsEntries;
 static std::vector<CustomSource> customBpcColEntries;
+#endif
+#ifdef ANDROID
 static bpcpipeline::BpcFreezeMonitor s_bpcFreezeMonitor(2500ull, 12000ull);
 static uint32 s_bpcLastPumpFrame = 0xFFFFFFFFu;
 static int32 s_bpcBlockingLoadDepth = 0;
@@ -484,7 +495,7 @@ ScanCommonZip(void)
 	}
 }
 
-#ifdef ANDROID
+#ifdef CUSTOM_BPC_ARCHIVES
 static std::string
 ResolveExistingCasePath(const std::string &candidate)
 {
@@ -521,7 +532,7 @@ ResolveExistingCasePath(const std::string &candidate)
 			std::string matched;
 			const std::vector<std::string> &pool = isLast ? files : dirs;
 			for(size_t i = 0; i < pool.size(); i++){
-				size_t p = pool[i].find_last_of('/');
+				size_t p = pool[i].find_last_of("/\\");
 				std::string base = (p == std::string::npos) ? pool[i] : pool[i].substr(p + 1);
 				if(ToLower(base) == want){
 					matched = pool[i];
@@ -530,7 +541,7 @@ ResolveExistingCasePath(const std::string &candidate)
 			}
 			if(matched.empty() && isLast){
 				for(size_t i = 0; i < dirs.size(); i++){
-					size_t p = dirs[i].find_last_of('/');
+					size_t p = dirs[i].find_last_of("/\\");
 					std::string base = (p == std::string::npos) ? dirs[i] : dirs[i].substr(p + 1);
 					if(ToLower(base) == want)
 						return std::string();
@@ -693,7 +704,7 @@ RaiseOpenFileDescriptorLimit(void)
 }
 
 static bool
-ScanAndroidBpcSystem(void)
+ScanBpcSystem(void)
 {
 	RaiseOpenFileDescriptorLimit();
 	std::vector<std::string> commonCands;
@@ -782,7 +793,7 @@ ScanAndroidBpcSystem(void)
 			commonZip->GetNumEntries(), (unsigned)commonZipIdeFiles.size(),
 			(unsigned)commonZipIplFiles.size(), overridden);
 	}else{
-		// Allow fallback to common.zip if common.bpc is absent.
+		// Parse the ZIP config before mounting its referenced mesh archives.
 		ScanCommonZip();
 	}
 
@@ -894,7 +905,7 @@ ScanAndroidBpcSystem(void)
 		totalCounts.mods, totalCounts.dffs, totalCounts.btxs, totalCounts.clss, totalCounts.anims);
 	return !customBpcArchives.empty();
 }
-#endif // ANDROID
+#endif // CUSTOM_BPC_ARCHIVES
 
 static void
 EnsureInitialised(void)
@@ -911,14 +922,14 @@ EnsureInitialised(void)
 	const std::string maps = data.empty() ? std::string() : Subfolder(data, "maps");
 	if(!anim.empty()) ScanAssetFolder(anim, "anim", 0, st);
 	if(!maps.empty()) ScanAssetFolder(maps, "data/maps", 0, st);
-#ifdef ANDROID
-	ScanAndroidBpcSystem();
+#ifdef CUSTOM_BPC_ARCHIVES
+	ScanBpcSystem();
 	customActive = !customMods.empty() || !customDff.empty() || !customBtx.empty() ||
 	               !customTxdFiles.empty() || !customBpcClsEntries.empty() ||
 	               !customBpcColEntries.empty() || !customAnims.empty() ||
 	               !customIdeFiles.empty() || !customIplFiles.empty() ||
 	               !commonZipDataFiles.empty();
-	CUSTOM_LOG("==== custom folder (Android BPC + IMG): %s ====\n", customFolderPath.c_str());
+	CUSTOM_LOG("==== custom folder (BPC + IMG): %s ====\n", customFolderPath.c_str());
 #else
 	ScanCommonZip();
 	customActive = !customAnims.empty() || !customIdeFiles.empty() ||
@@ -937,12 +948,12 @@ EnsureInitialised(void)
 // ---------------------------------------------------------------------------
 
 // Read only indexed loose files, bounded slices of validated IMG/DIR pairs,
-// whitelisted entries in custom/common.zip, or mounted .bpc entries on Android.
+// whitelisted entries in custom/common.zip, or mounted .bpc entries.
 static bool
 ReadSource(const CustomSource &src, std::vector<uint8> &out)
 {
 	out.clear();
-#ifdef ANDROID
+#ifdef CUSTOM_BPC_ARCHIVES
 	if(bpcpipeline::IsValidBpcAddr(src.bpcAddr)){
 		uint8 archId = bpcpipeline::BpcAddrArchive(src.bpcAddr);
 		uint32 entryIdx = bpcpipeline::BpcAddrEntry(src.bpcAddr);
@@ -1071,7 +1082,7 @@ IndexNativeImageDirectories(void)
 	// Stock DFF metadata remains available to scripts when the VC map IDE is
 	// disabled. Reserve stock TXD names
 	// only when additional IMGs actually need that headroom.
-#ifdef ANDROID
+#ifdef CUSTOM_BPC_ARCHIVES
 	bool reserveTxds = !customImageSlots.empty() || !customBpcArchives.empty();
 #else
 	bool reserveTxds = !customImageSlots.empty();
@@ -1121,7 +1132,7 @@ CCustomModels::ResetImageMounts(void)
 	customColBlocks.clear();
 	customBrColBlocks.clear();
 	customLegacyClsBlocks.clear();
-#ifdef ANDROID
+#ifdef CUSTOM_BPC_ARCHIVES
 	customActive = !customMods.empty() || !customDff.empty() || !customBtx.empty() ||
 	               !customTxdFiles.empty() || !customBpcClsEntries.empty() ||
 	               !customBpcColEntries.empty() || !customAnims.empty() ||
@@ -1150,7 +1161,7 @@ CCustomModels::PairedImageTxd(const char *modelName)
 bool
 CCustomModels::HasImageTxd(const char *txdName)
 {
-#ifdef ANDROID
+#ifdef CUSTOM_BPC_ARCHIVES
 	if(txdName && txdName[0]){
 		EnsureInitialised();
 		std::string key = ToLower(txdName);
@@ -1268,7 +1279,7 @@ CCustomModels::MountImages(void)
 	}
 	CUSTOM_LOG("custom/img/: %u IMG(s) found, %u mounted, %u skipped\n",
 		(unsigned)pairs.size(), mounted, rejected);
-#ifdef ANDROID
+#ifdef CUSTOM_BPC_ARCHIVES
 	// Register .cls and .col entries from mounted .bpc archives alongside any IMG collisions.
 	for(size_t i = 0; i < customBpcClsEntries.size(); i++){
 		const CustomSource &src = customBpcClsEntries[i];
@@ -1890,7 +1901,7 @@ DecodedTextureSize(const brtex::Texture &tex)
 static std::string
 BtxCacheKey(const CustomSource &src)
 {
-#ifdef ANDROID
+#ifdef CUSTOM_BPC_ARCHIVES
 	if(bpcpipeline::IsValidBpcAddr(src.bpcAddr)){
 		char buf[32];
 		snprintf(buf, sizeof(buf), "bpc:%08X", (unsigned)src.bpcAddr);
@@ -3508,10 +3519,7 @@ CCustomModels::Shutdown(void)
 	customFailedRawBtx.clear();
 	customTransientRawBtx.reset();
 	customTransientRawBtxKey.clear();
-	customTmbBtx.clear();
-	customBpcClsEntries.clear();
-	customBpcColEntries.clear();
-	customBpcArchives.clear();
+
 	s_bpcTxdSlotState.clear();
 	customTexDbUploads = 0;
 	customTexDbUpgrades = 0;
@@ -3520,6 +3528,12 @@ CCustomModels::Shutdown(void)
 	s_bpcLastPumpFrame = 0xFFFFFFFFu;
 	s_bpcBlockingLoadDepth = 0;
 	s_bpcImmediateTexDepth = 0;
+#endif
+#ifdef CUSTOM_BPC_ARCHIVES
+	customTmbBtx.clear();
+	customBpcClsEntries.clear();
+	customBpcColEntries.clear();
+	customBpcArchives.clear();
 #endif
 	customMods.clear();
 	customBtx.clear();
@@ -3574,7 +3588,7 @@ bool
 CCustomModels::HasModelFile(const char *name)
 {
 	EnsureInitialised();
-#ifdef ANDROID
+#ifdef CUSTOM_BPC_ARCHIVES
 	if(name && name[0]){
 		std::string key = ToLower(name);
 		if(customMods.find(key) != customMods.end() || customDff.find(key) != customDff.end())
@@ -4397,9 +4411,8 @@ LoadAndroidBpcTxdSlot(int32 slot, const std::string &key)
 }
 #endif
 
-// IMG models and TXDs always use the native streamer. On Android (#ifdef ANDROID),
-// models (.mod/.dff), direct-GPU .btx TXD slots, and .cls/.col slots from mounted
-// .bpc archives are served here; on PC (#ifndef ANDROID), only COL/CLS slots are served.
+// IMG models and TXDs keep the native streamer. BPC entries use the custom
+// loaders; desktop textures use the CPU decoder instead of Android GPU streaming.
 bool
 CCustomModels::CanServe(int32 streamId)
 {
@@ -4443,8 +4456,31 @@ CCustomModels::CanServe(int32 streamId)
 		       customTxdFiles.find(key) != customTxdFiles.end();
 	}
 #else
-	if(streamId < STREAM_OFFSET_COL || streamId >= STREAM_OFFSET_ANIM || !IsActive())
+	if(streamId == nativeModelOverride || streamId < 0 || streamId >= STREAM_OFFSET_ANIM || !IsActive())
 		return false;
+	if(streamId < STREAM_OFFSET_COL && CStreaming::ms_aInfoForModel[streamId].m_size &&
+	   IsAutoMountedImage(_GET_INDEX(CStreaming::ms_aInfoForModel[streamId].m_position)))
+		return false;
+	if(streamId < STREAM_OFFSET_TXD){
+		CBaseModelInfo *mi = CModelInfo::GetModelInfo(streamId);
+		if(!mi || GetModelLoadKind(mi->GetModelType()) == MODELLOAD_UNSUPPORTED)
+			return false;
+		const std::string key = ToLower(mi->GetModelName());
+		if(rejectedArchiveModels.find(key) != rejectedArchiveModels.end() ||
+		   (customMods.find(key) == customMods.end() && customDff.find(key) == customDff.end()))
+			return false;
+		std::map<std::string, ModPlan>::const_iterator plan = customModPlans.find(key);
+		return plan == customModPlans.end() || !plan->second.computed || plan->second.usable;
+	}
+	if(streamId < STREAM_OFFSET_COL){
+		const char *name = CTxdStore::GetTxdName(streamId - STREAM_OFFSET_TXD);
+		if(!name || !name[0]) return false;
+		const std::string key = ToLower(name);
+		// Do not replace native dictionaries with an incomplete set of BTX files.
+		if(CStreaming::ms_aInfoForModel[streamId].m_size && customTxdFiles.find(key) == customTxdFiles.end())
+			return false;
+		return GetTxdPlan(key).serve;
+	}
 #endif
 	const char *name = CColStore::GetColName(streamId - STREAM_OFFSET_COL);
 	if(name == nil || name[0] == '\0') return false;
@@ -4485,6 +4521,22 @@ CCustomModels::Load(int32 streamId)
 		if(slotName == nil || slotName[0] == '\0')
 			return false;
 		return LoadAndroidBpcTxdSlot(slot, ToLower(slotName));
+	}
+#else
+	if(streamId < STREAM_OFFSET_TXD){
+		CBaseModelInfo *mi = CModelInfo::GetModelInfo(streamId);
+		const std::string key = ToLower(mi->GetModelName());
+		bool ok = LoadModelIntoGame(key, streamId);
+		if(!ok) rejectedArchiveModels.insert(key);
+		return ok;
+	}
+	if(streamId < STREAM_OFFSET_COL){
+		int32 slot = streamId - STREAM_OFFSET_TXD;
+		const std::string key = ToLower(CTxdStore::GetTxdName(slot));
+		TxdPlan &plan = GetTxdPlan(key);
+		if(plan.haveTxdFile && !plan.haveModel && !plan.haveBtx)
+			return LoadTxdFileIntoSlot(slot, key);
+		return LoadTxdSlot(slot, key, plan);
 	}
 #endif
 	return LoadColSlot(streamId - STREAM_OFFSET_COL);
@@ -4798,6 +4850,10 @@ CCustomModels::PrintStats(void)
 		customWorkerModels, customWorkerTextures, customWorkerFailures, customWorkerSyncFallbacks,
 		customCpuWorker.PendingCount(), CUSTOM_MODEL_CACHE_BYTES / (1024u*1024u),
 		CUSTOM_TEXTURE_CACHE_BYTES / (1024u*1024u), CUSTOM_GPU_TXD_CACHE_BYTES / (1024u*1024u));
+#ifdef CUSTOM_BPC_ARCHIVES
+	CUSTOM_LOG("bpc archives: %zu open, %zu models, %zu textures, %zu previews\n",
+		customBpcArchives.size(), customMods.size() + customDff.size(), customBtx.size(), customTmbBtx.size());
+#endif
 #ifdef ANDROID
 	CUSTOM_LOG("bpc runtime: %zu open archives, %zu .mod, %zu .btx (%zu .tmb), TexDB CPU cache %zu hit / %zu miss / %zu KiB, live GPU TexDB %zu tex (%zu KiB, %zu shared hits, %zu evicted), %zu GPU KTX uploads (%zu live upgrades), %zu TexDB pending\n",
 		customBpcArchives.size(), customMods.size(), customBtx.size(), customTmbBtx.size(),
