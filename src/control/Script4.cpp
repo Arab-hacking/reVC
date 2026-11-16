@@ -29,7 +29,6 @@
 #include "Radar.h"
 #include "Record.h"
 #include "RpAnimBlend.h"
-#include "Rubbish.h"
 #include "SpecialFX.h"
 #include "Stats.h"
 #include "Streaming.h"
@@ -1590,7 +1589,7 @@ int8 CRunningScript::ProcessCommands900To999(int32 command)
 		return 0;
 	case COMMAND_SWITCH_RUBBISH:
 		CollectParameters(&m_nIp, 1);
-		CRubbish::SetVisibility(ScriptParams[0] != 0);
+		// Compatibility no-op: consume the argument so existing scripts stay aligned.
 		return 0;
 	case COMMAND_REMOVE_PARTICLE_EFFECTS_IN_AREA:
 	{

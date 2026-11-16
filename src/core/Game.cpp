@@ -63,7 +63,6 @@
 #include "Replay.h"
 #include "Restart.h"
 #include "RoadBlocks.h"
-#include "Rubbish.h"
 #include "SceneEdit.h"
 #include "Script.h"
 #include "Shadows.h"
@@ -610,7 +609,6 @@ bool CGame::Initialise(const char* datFile)
 	CDarkel::Init();
 	CStats::Init();
 	CPacManPickups::Init();
-	CRubbish::Init();
 	CClouds::Init();
 	CSpecialFX::Init();
 	CRopes::Init();
@@ -708,7 +706,6 @@ bool CGame::ShutDown(void)
 	CTxdStore::GameShutdown();
 	CCollision::Shutdown();
 	CWaterLevel::Shutdown();
-	CRubbish::Shutdown();
 	CClouds::Shutdown();
 	CShadows::Shutdown();
 	CCoronas::Shutdown();
@@ -1029,7 +1026,6 @@ void CGame::Process(void)
 		CPacManPickups::Update();
 		CPickups::Update();
 		CGarages::Update();
-		CRubbish::Update();
 		CSpecialFX::Update();
 		CRopes::Update();
 		CTimeCycle::Update();

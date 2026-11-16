@@ -30,7 +30,6 @@
 #include "Shadows.h"
 #include "Skidmarks.h"
 #include "Antennas.h"
-#include "Rubbish.h"
 #include "Particle.h"
 #include "Pickups.h"
 #include "WeaponEffects.h"
@@ -1344,7 +1343,6 @@ RenderEffects_new(void)
 	// CRenderer::GenerateEnvironmentMap
 	CShadows::RenderStoredShadows();
 	CSkidmarks::Render();
-	CRubbish::Render();
 */
 
 	// these aren't really effects
@@ -1373,7 +1371,6 @@ if(gbRenderFadingInEntities)
 	CShadows::RenderStaticShadows();
 	CShadows::RenderStoredShadows();
 	CSkidmarks::Render();
-	CRubbish::Render();
 
 	CGlass::Render();
 	// CMattRenderer::ResetRenderStates
@@ -1459,7 +1456,6 @@ RenderEffects(void)
 	CShadows::RenderStoredShadows();
 	CSkidmarks::Render();
 	CAntennas::Render();
-	CRubbish::Render();
 	CCoronas::Render();
 	CParticle::Render();
 	CPacManPickups::Render();

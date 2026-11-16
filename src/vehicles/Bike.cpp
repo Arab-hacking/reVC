@@ -7,7 +7,6 @@
 #include "ZoneCull.h"
 #include "Camera.h"
 #include "Darkel.h"
-#include "Rubbish.h"
 #include "Explosion.h"
 #include "Particle.h"
 #include "ParticleObject.h"
@@ -231,7 +230,6 @@ CBike::ProcessControl(void)
 
 	ActivateBombWhenEntered();
 
-	CRubbish::StirUp(this);
 
 	UpdateClumpAlpha();
 

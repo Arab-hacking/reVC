@@ -9,7 +9,7 @@
 #include "Sprite.h"
 #include "Coronas.h"
 #include "PointLights.h"
-#include "Rubbish.h"
+#include "TxdStore.h"
 #include "Timecycle.h"
 #include "General.h"
 #include "Timer.h"
@@ -34,6 +34,10 @@
 #else
 #define SCRIPTPATHS_SAVE_SIZE sizeof(aArray)
 #endif
+
+// Plane banners formerly borrowed the newspaper texture from street rubbish.
+// Keep their independent texture reference without retaining that system.
+static RwTexture *s_planeBannerTexture;
 
 CPlaneTrail CPlaneTrails::aArray[6];
 RwImVertexIndex TrailIndices[32] = {
@@ -208,6 +212,8 @@ CPlaneBanner::Update(void)
 void
 CPlaneBanner::Render(void)
 {
+	if(s_planeBannerTexture == nil)
+		return;
 	int i;
 	if(m_pos[0].z > -50.0f){
 		float camDist = (TheCamera.GetPosition() - m_pos[0]).Magnitude();
@@ -249,7 +255,7 @@ CPlaneBanner::Render(void)
 			RwRenderStateSet(rwRENDERSTATESRCBLEND, (void*)rwBLENDSRCALPHA);
 			RwRenderStateSet(rwRENDERSTATEDESTBLEND, (void*)rwBLENDINVSRCALPHA);
 			RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)TRUE);
-			RwRenderStateSet(rwRENDERSTATETEXTURERASTER, RwTextureGetRaster(gpRubbishTexture[2]));
+			RwRenderStateSet(rwRENDERSTATETEXTURERASTER, RwTextureGetRaster(s_planeBannerTexture));
 
 #ifdef FIX_BUGS
 			if(RwIm3DTransform(TempBufferRenderVertices, TempBufferVerticesStored, nil, rwIM3D_VERTEXXYZ|rwIM3D_VERTEXUV|rwIM3D_VERTEXRGBA)){
@@ -403,6 +409,12 @@ void CMovingThings::Init()
 	CPlaneTrails::Init();
 	CSmokeTrails::Init();
 	CPlaneBanners::Init();
+	if(s_planeBannerTexture == nil){
+		CTxdStore::PushCurrentTxd();
+		CTxdStore::SetCurrentTxd(CTxdStore::FindTxdSlot("particle"));
+		s_planeBannerTexture = RwTextureRead("newspaper01_64", nil);
+		CTxdStore::PopCurrentTxd();
+	}
 	CPointLights::Init();
 
 	Num = 0;
@@ -432,6 +444,10 @@ void CMovingThings::Init()
 
 void CMovingThings::Shutdown()
 {
+	if(s_planeBannerTexture){
+		RwTextureDestroy(s_planeBannerTexture);
+		s_planeBannerTexture = nil;
+	}
 	
 	aScrollBars[0].SetVisibility(false);
 	CEscalators::Shutdown();

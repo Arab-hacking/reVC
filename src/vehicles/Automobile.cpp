@@ -13,7 +13,6 @@
 #include "ZoneCull.h"
 #include "Camera.h"
 #include "Darkel.h"
-#include "Rubbish.h"
 #include "Fire.h"
 #include "Explosion.h"
 #include "Particle.h"
@@ -349,7 +348,6 @@ CAutomobile::ProcessControl(void)
 					pPassengers[i]->SetObjective(OBJECTIVE_LEAVE_CAR, this);
 	}
 
-	CRubbish::StirUp(this);
 
 	UpdateClumpAlpha();
 
