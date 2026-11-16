@@ -241,6 +241,11 @@ RwBool RwStreamFindChunk(RwStream *, RwUInt32, RwUInt32 *, RwUInt32 *) { return 
 RwBool RwStreamClose(RwStream *s, void *) { std::free(s); return true; }
 
 bool CFileLoader::LoadAtomicFile(RwStream *, uint32 modelId) {
+#ifdef REVC_DESKTOP_BPC_TEST
+	const char *name = modelId == 101 ? "other_btx" : "road_asphalt_br";
+	g_lastResolvedTex = RwTexDictionaryFindNamedTexture(g_currentDict, name);
+	return g_lastResolvedTex && g_lastResolvedTex->raster;
+#else
 	if(g_simulateLoadDelayUs > 0)
 		usleep((useconds_t)g_simulateLoadDelayUs);
 	// Emulate RenderWare Texture::read resolving the model's texture through findCB!
@@ -254,6 +259,7 @@ bool CFileLoader::LoadAtomicFile(RwStream *, uint32 modelId) {
 		return t != nullptr;
 	}
 	return false;
+#endif
 }
 bool CFileLoader::LoadClumpFile(RwStream *, uint32) { return true; }
 bool CFileLoader::StartLoadClumpFile(RwStream *, uint32) { return true; }
@@ -709,6 +715,7 @@ static void CollectWorldFile(const char *path, const unsigned char *data, size_t
 	(*m)[path] = std::string((const char*)data, size);
 }
 
+#ifndef REVC_DESKTOP_BPC_TEST
 int main(void)
 {
 	std::memset(&rw::gl3::gl3Caps, 0, sizeof(rw::gl3::gl3Caps));
@@ -1161,3 +1168,5 @@ int main(void)
 	std::printf("AndroidBpcArchiveIntegrationTests: ALL PASSED\n");
 	return 0;
 }
+
+#endif // !REVC_DESKTOP_BPC_TEST

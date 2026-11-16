@@ -1623,46 +1623,26 @@ static std::map<std::string, std::string> customTxdCandidates;
 static bool
 FindModelForTxd(const std::string &txdName, std::string &modelKey)
 {
-	std::map<std::string, CustomSource>::const_iterator it;
-	std::map<std::string, ModPlan>::const_iterator plan;
-	for(it = customMods.begin(); it != customMods.end(); ++it){
-		// a model that is already known to be unusable is skipped; the others
-		// are only looked at, not converted - converting a whole map pack here
-		// would cost seconds
-		plan = customModPlans.find(it->first);
-		if(plan != customModPlans.end() && plan->second.computed && !plan->second.usable)
-			continue;
-		int32 id = -1;
-		CBaseModelInfo *mi = CModelInfo::GetModelInfo(it->first.c_str(), &id);
-		if(mi == nil || id < 0)
-			continue;
-		int32 slot = mi->GetTxdSlot();
-		if(slot < 0)
-			continue;
-		const char *name = CTxdStore::GetTxdName(slot);
-		if(name && name[0] && ToLower(name) == txdName){
-			modelKey = it->first;
-			return true;
+	// A miss used to call the linear name lookup once for EACH archive model:
+	// O(custom models * model slots) on the game thread for every unknown TXD.
+	// Walk registered IDs once instead; preserve MOD-first/lexical preference.
+	bool foundMod = false;
+	for(int32 id = 0; id < MODELINFOSIZE; ++id){
+		CBaseModelInfo *mi = CModelInfo::GetModelInfo(id);
+		if(!mi || mi->GetTxdSlot() < 0) continue;
+		const char *txd = CTxdStore::GetTxdName(mi->GetTxdSlot());
+		if(!txd || ToLower(txd) != txdName) continue;
+		std::string key = ToLower(mi->GetModelName());
+		bool isMod = customMods.find(key) != customMods.end();
+		if(!isMod && customDff.find(key) == customDff.end()) continue;
+		std::map<std::string, ModPlan>::const_iterator plan = customModPlans.find(key);
+		if(plan != customModPlans.end() && plan->second.computed && !plan->second.usable) continue;
+		if(modelKey.empty() || (isMod && !foundMod) || (isMod == foundMod && key < modelKey)){
+			modelKey = key;
+			foundMod = isMod;
 		}
 	}
-	for(it = customDff.begin(); it != customDff.end(); ++it){
-		plan = customModPlans.find(it->first);
-		if(plan != customModPlans.end() && plan->second.computed && !plan->second.usable)
-			continue;
-		int32 id = -1;
-		CBaseModelInfo *mi = CModelInfo::GetModelInfo(it->first.c_str(), &id);
-		if(mi == nil || id < 0)
-			continue;
-		int32 slot = mi->GetTxdSlot();
-		if(slot < 0)
-			continue;
-		const char *name = CTxdStore::GetTxdName(slot);
-		if(name && name[0] && ToLower(name) == txdName){
-			modelKey = it->first;
-			return true;
-		}
-	}
-	return false;
+	return !modelKey.empty();
 }
 
 static std::string PotentialModelForTxd(const std::string &key);
@@ -1759,6 +1739,10 @@ struct ScopedBpcModelTexLoad {
 };
 #endif
 
+#ifndef ANDROID
+static void PrepareDesktopModelTextures(const PreparedModel &model, const std::string &key, int32 slot);
+#endif
+
 static bool
 LoadModelIntoGame(const std::string &key, int32 modelId)
 {
@@ -1779,6 +1763,11 @@ LoadModelIntoGame(const std::string &key, int32 modelId)
 		return false;
 	}
 
+#ifndef ANDROID
+	// A shared/native TXD may already be resident but lack THIS model's BTX.
+	// Fill it before RW reads materials, including the MSVC guarded load path.
+	PrepareDesktopModelTextures(*model, key, mi->GetTxdSlot());
+#endif
 	RwMemory mem;
 	// rwSTREAMREAD never writes the memory; keep the shared input alive until
 	// RwStreamClose even if LRU eviction happens while a different asset loads.
@@ -2156,6 +2145,38 @@ DestroyCachedTxd(RwTexDictionary *dict)
 static const size_t CUSTOM_GPU_TXD_CACHE_BYTES = 64u * 1024u * 1024u;
 static customcache::ResidentObjectCache<RwTexDictionary> customResidentTxds(CUSTOM_GPU_TXD_CACHE_BYTES, DestroyCachedTxd);
 static std::map<int32, RwTexDictionary*> customLoadedTxds;
+
+#ifndef ANDROID
+static void
+PrepareDesktopModelTextures(const PreparedModel &model, const std::string &key, int32 slot)
+{
+	if(slot < 0 || slot >= TXDSTORESIZE) return;
+	TxdDef *def = CTxdStore::GetSlot(slot);
+	if(!def) return;
+	if(!def->texDict) CTxdStore::Create(slot);
+	if(!def->texDict) return;
+	std::vector<std::string> names = model.textureNames;
+	names.insert(names.end(), model.uv2DualNames.begin(), model.uv2DualNames.end());
+	unsigned added = 0, missing = 0;
+	for(size_t i = 0; i < names.size(); ++i){
+		const std::string name = ToLower(names[i]);
+		if(RwTexDictionaryFindNamedTexture(def->texDict, name.c_str())) continue;
+		const br::TerrainRecipe *recipe = nil;
+		for(size_t r = 0; r < model.stats.recipes.size(); ++r)
+			if(ToLower(model.stats.recipes[r].tex) == name) recipe = &model.stats.recipes[r];
+		if(!recipe && !FindSource(customBtx, name)) continue; // native/parent texture
+		std::shared_ptr<const brtex::Texture> decoded = GetPreparedTexture(key, name, recipe);
+		RwTexture *texture = decoded ? BuildTextureGuarded(*decoded, name.c_str()) : nil;
+		if(!texture){ ++missing; continue; }
+		// One owning TXD reference; RW Texture::read adds the material reference.
+		RwTexDictionaryAddTexture(def->texDict, texture);
+		++added;
+	}
+	if(added) customLoadedTxds[slot] = def->texDict;
+	if(added || missing)
+		CUSTOM_LOG("model textures %s slot=%d: %u added, %u failed\n", key.c_str(), slot, added, missing);
+}
+#endif
 
 // CPU preparation is separate from RenderWare. The only things passed to the
 // worker are immutable loose-source descriptors, names and terrain recipes.
@@ -4041,6 +4062,31 @@ CheckStreamPreparation(int32 streamId, bool priority)
 				if(pendingTex)
 					return false;
 			}
+#else
+			std::shared_ptr<const PreparedModel> prepared = customDecodedModels.Find(key);
+			if(prepared && prepared->usable){
+				bool pending = false;
+				TxdDef *def = mi->GetTxdSlot() >= 0 ? CTxdStore::GetSlot(mi->GetTxdSlot()) : nil;
+				std::vector<std::string> names = prepared->textureNames;
+				names.insert(names.end(), prepared->uv2DualNames.begin(), prepared->uv2DualNames.end());
+				for(size_t i = 0; i < names.size(); ++i){
+					std::string name = ToLower(names[i]);
+					if(def && def->texDict && RwTexDictionaryFindNamedTexture(def->texDict, name.c_str())) continue;
+					const br::TerrainRecipe *recipe = nil;
+					for(size_t r = 0; r < prepared->stats.recipes.size(); ++r)
+						if(ToLower(prepared->stats.recipes[r].tex) == name) recipe = &prepared->stats.recipes[r];
+					const CustomSource *src = FindSource(customBtx, name);
+					if(!recipe && !src) continue;
+					std::string cacheKey = recipe ? "terrain:" + key + ":" + name : BtxCacheKey(*src);
+					if(HasPreparedTexture(cacheKey)) continue;
+					if(EvictedBeforeReady(streamId, TextureJobKey(cacheKey))) return true;
+					if(recipe) QueueTerrainPreparation(cacheKey, *recipe, streamId, priority);
+					else QueueTexturePreparation(cacheKey, name, *src, streamId, priority);
+					pending = true;
+				}
+				if(pending) return false;
+			}
+
 #endif
 			return true;
 		}

@@ -270,6 +270,22 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Cla
     set_target_properties(custom_archive_integration_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
     add_test(NAME custom_archive_integration_tests COMMAND custom_archive_integration_tests)
 
+    add_executable(desktop_bpc_textures_tests
+        DesktopBpcTexturesTests.cpp
+        ../src/extras/custom/CustomModels.cpp ../src/extras/custom/CustomZip.cpp
+        ../src/extras/custom/CustomCol.cpp ../src/rw/TxdStore.cpp
+        ../src/extras/custom/br/third_party/astc_decomp.cpp)
+    target_include_directories(desktop_bpc_textures_tests PRIVATE
+        $<TARGET_PROPERTY:custom_archive_integration_tests,INCLUDE_DIRECTORIES>)
+    target_compile_definitions(desktop_bpc_textures_tests PRIVATE
+        LIBRW RW_GL3 LIBRW_SDL2 CMAKE_BUILD USE_OUR_VERSIONING AUDIO_OAL)
+    target_compile_options(desktop_bpc_textures_tests PRIVATE
+        -ffunction-sections -fdata-sections -Wno-write-strings -Wno-multichar)
+    target_link_options(desktop_bpc_textures_tests PRIVATE -Wl,--gc-sections)
+    target_link_libraries(desktop_bpc_textures_tests PRIVATE Threads::Threads)
+    set_target_properties(desktop_bpc_textures_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+    add_test(NAME desktop_bpc_textures_tests COMMAND desktop_bpc_textures_tests)
+
     add_executable(android_bpc_archive_integration_tests
         AndroidBpcArchiveIntegrationTests.cpp
         ../src/extras/custom/CustomModels.cpp
