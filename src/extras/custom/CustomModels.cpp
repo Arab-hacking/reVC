@@ -1070,7 +1070,7 @@ ImageBytes(const char *path)
 	return ((uint64)fa.nFileSizeHigh << 32) | fa.nFileSizeLow;
 #else
 	struct stat st;
-	return stat(path, &st) == 0 && IsRegularBpcFile(st) ? (uint64)st.st_size : 0;
+	return stat(path, &st) == 0 && S_ISREG(st.st_mode) ? (uint64)st.st_size : 0;
 #endif
 }
 
