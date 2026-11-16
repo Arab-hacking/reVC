@@ -13,7 +13,7 @@
 #include "World.h"
 #include "custompipes.h"
 #include "custom/GraphicsBtx.h"
-#if defined(ANDROID) && defined(CUSTOM_MODELS)
+#if defined(CUSTOM_BPC_TEXDB) && defined(CUSTOM_MODELS)
 #include "CustomModels.h"
 #endif
 
@@ -32,7 +32,7 @@ static int32 u_rimData;
 
 static int32 u_lightMap;
 static int32 u_brLightmap;
-#if defined(ANDROID) && defined(CUSTOM_MODELS)
+#if defined(CUSTOM_BPC_TEXDB) && defined(CUSTOM_MODELS)
 static int32 u_terrainTileMult;
 static int32 u_terrainLayerValid;
 static int32 u_terrainFlipV;
@@ -195,7 +195,7 @@ DestroyVehiclePipe(void)
  */
 
 rw::gl3::Shader *neoWorldShader;
-#if defined(ANDROID) && defined(CUSTOM_MODELS)
+#if defined(CUSTOM_BPC_TEXDB) && defined(CUSTOM_MODELS)
 static rw::gl3::Shader *neoTerrainShader;
 
 static const char *neoTerrain_vert_src =
@@ -286,7 +286,7 @@ worldRenderCB(rw::Atomic *atomic, rw::gl3::InstanceDataHeader *header)
 	using namespace rw;
 	using namespace rw::gl3;
 
-#if defined(ANDROID) && defined(CUSTOM_MODELS)
+#if defined(CUSTOM_BPC_TEXDB) && defined(CUSTOM_MODELS)
 	bool hasGpuTerrain = false;
 	if(neoTerrainShader != nil){
 		CCustomModels::GpuTerrainSplatInfo dummy;
@@ -315,7 +315,7 @@ worldRenderCB(rw::Atomic *atomic, rw::gl3::InstanceDataHeader *header)
 
 	setWorldMatrix(atomic->getFrame()->getLTM());
 	int32 vsBits = lightingCB(atomic);
-#if !defined(ANDROID) || !defined(CUSTOM_MODELS)
+#if !defined(CUSTOM_BPC_TEXDB) || !defined(CUSTOM_MODELS)
 	(void)vsBits;
 #endif
 
@@ -328,7 +328,7 @@ worldRenderCB(rw::Atomic *atomic, rw::gl3::InstanceDataHeader *header)
 
 	while(n--){
 		m = inst->material;
-#if defined(ANDROID) && defined(CUSTOM_MODELS)
+#if defined(CUSTOM_BPC_TEXDB) && defined(CUSTOM_MODELS)
 		CCustomModels::GpuTerrainSplatInfo splat;
 		if(neoTerrainShader != nil && m && m->texture && m->texture->raster &&
 		   CCustomModels::FindGpuTerrainSplat(m->texture, splat)){
@@ -444,7 +444,7 @@ CreateWorldPipe(void)
 	neoWorldShader = Shader::create(vs, fs);
 	assert(neoWorldShader);
 	}
-#if defined(ANDROID) && defined(CUSTOM_MODELS)
+#if defined(CUSTOM_BPC_TEXDB) && defined(CUSTOM_MODELS)
 	{
 	const char *tvs[] = { shaderDecl, "#define DIRECTIONALS\n#define POINTLIGHTS\n#define SPOTLIGHTS\n", header_vert_src, neoTerrain_vert_src, nil };
 	const char *tfs[] = { shaderDecl, header_frag_src, neoTerrain_frag_src, nil };
@@ -465,7 +465,7 @@ DestroyWorldPipe(void)
 {
 	neoWorldShader->destroy();
 	neoWorldShader = nil;
-#if defined(ANDROID) && defined(CUSTOM_MODELS)
+#if defined(CUSTOM_BPC_TEXDB) && defined(CUSTOM_MODELS)
 	if(neoTerrainShader){
 		neoTerrainShader->destroy();
 		neoTerrainShader = nil;
@@ -766,7 +766,7 @@ CustomPipeRegisterGL(void)
 
 	u_lightMap = rw::gl3::registerUniform("u_lightMap");
 	u_brLightmap = rw::gl3::registerUniform("u_brLightmap");
-#if defined(ANDROID) && defined(CUSTOM_MODELS)
+#if defined(CUSTOM_BPC_TEXDB) && defined(CUSTOM_MODELS)
 	u_terrainTileMult = rw::gl3::registerUniform("u_terrainTileMult");
 	u_terrainLayerValid = rw::gl3::registerUniform("u_terrainLayerValid");
 	u_terrainFlipV = rw::gl3::registerUniform("u_terrainFlipV");

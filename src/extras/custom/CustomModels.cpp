@@ -38,7 +38,7 @@
 #ifdef CUSTOM_BPC_ARCHIVES
 #include "BpcPipeline.h"
 #endif
-#ifdef ANDROID
+#ifdef CUSTOM_BPC_TEXDB
 #include "Timer.h"
 #endif
 
@@ -95,7 +95,7 @@ static std::map<std::string, CustomSource> customTmbBtx;
 static std::vector<CustomSource> customBpcClsEntries;
 static std::vector<CustomSource> customBpcColEntries;
 #endif
-#ifdef ANDROID
+#ifdef CUSTOM_BPC_TEXDB
 static bpcpipeline::BpcFreezeMonitor s_bpcFreezeMonitor(2500ull, 12000ull);
 static uint32 s_bpcLastPumpFrame = 0xFFFFFFFFu;
 static int32 s_bpcBlockingLoadDepth = 0;
@@ -1524,7 +1524,7 @@ ReadModelEntry(const std::string &key)
 	return model;
 }
 
-#ifndef ANDROID
+#ifndef CUSTOM_BPC_TEXDB
 // Names and terrain recipes are discovered once per TXD plan from the same
 // bytes that will later be given to RenderWare; no second XTEA pass.
 static bool
@@ -1616,7 +1616,7 @@ struct TxdPlan
 static std::map<std::string, TxdPlan> customTxdPlans;
 static std::map<std::string, std::string> customTxdCandidates;
 
-#ifndef ANDROID
+#ifndef CUSTOM_BPC_TEXDB
 // The dictionary a model uses does not always carry the model's name (a car is
 // called "hotdog" but its textures can live in "hotdog1"), so a name that is
 // not in the loose index was matched against a converted model (now unused).
@@ -1728,7 +1728,7 @@ CallGuarded(bool (*fn)(void*), void *arg, DWORD *code)
 #define CUSTOM_SEH_GUARD 1
 #endif
 
-#ifdef ANDROID
+#ifdef CUSTOM_BPC_TEXDB
 static void BeginBpcModelTexScope(const PreparedModel *model, const std::string &modelKey, int32 txdSlot);
 static void EndBpcModelTexScope(void);
 struct ScopedBpcModelTexLoad {
@@ -1739,7 +1739,7 @@ struct ScopedBpcModelTexLoad {
 };
 #endif
 
-#ifndef ANDROID
+#ifndef CUSTOM_BPC_TEXDB
 static void PrepareDesktopModelTextures(const PreparedModel &model, const std::string &key, int32 slot);
 #endif
 
@@ -1763,7 +1763,7 @@ LoadModelIntoGame(const std::string &key, int32 modelId)
 		return false;
 	}
 
-#ifndef ANDROID
+#ifndef CUSTOM_BPC_TEXDB
 	// A shared/native TXD may already be resident but lack THIS model's BTX.
 	// Fill it before RW reads materials, including the MSVC guarded load path.
 	PrepareDesktopModelTextures(*model, key, mi->GetTxdSlot());
@@ -1781,6 +1781,9 @@ LoadModelIntoGame(const std::string &key, int32 modelId)
 
 	// the same three loaders the game uses, chosen the same way - under a
 	// guard on Windows, so a broken model cannot take the game down
+#ifdef CUSTOM_BPC_TEXDB
+	ScopedBpcModelTexLoad texScope(model.get(), key, mi->GetTxdSlot());
+#endif
 	bool ok;
 #ifdef CUSTOM_SEH_GUARD
 	{
@@ -1796,9 +1799,6 @@ LoadModelIntoGame(const std::string &key, int32 modelId)
 	}
 #else
 	{
-#ifdef ANDROID
-		ScopedBpcModelTexLoad texScope(model.get(), key, mi->GetTxdSlot());
-#endif
 		GuardedLoadCtx ctx; ctx.mi = mi; ctx.stream = stream; ctx.modelId = modelId; ctx.ok = false;
 		ok = RunModelLoaders(&ctx);
 	}
@@ -1854,7 +1854,7 @@ MergeTxdFile(const std::string &key, RwTexDictionary *dict)
 	return ok;
 }
 
-#ifndef ANDROID
+#ifndef CUSTOM_BPC_TEXDB
 static bool
 LoadTxdFileIntoSlot(int32 slot, const std::string &key)
 {
@@ -2146,7 +2146,7 @@ static const size_t CUSTOM_GPU_TXD_CACHE_BYTES = 64u * 1024u * 1024u;
 static customcache::ResidentObjectCache<RwTexDictionary> customResidentTxds(CUSTOM_GPU_TXD_CACHE_BYTES, DestroyCachedTxd);
 static std::map<int32, RwTexDictionary*> customLoadedTxds;
 
-#ifndef ANDROID
+#ifndef CUSTOM_BPC_TEXDB
 static void
 PrepareDesktopModelTextures(const PreparedModel &model, const std::string &key, int32 slot)
 {
@@ -2188,7 +2188,7 @@ struct CpuWorkResult
 	std::string error;
 	unsigned milliseconds;
 };
-#ifdef ANDROID
+#ifdef CUSTOM_BPC_TEXDB
 static customcache::BackgroundAssetQueue<CpuWorkResult> customCpuWorker(128, 32, 3);
 #else
 static customcache::BackgroundAssetQueue<CpuWorkResult> customCpuWorker(16, 1);
@@ -2212,9 +2212,9 @@ TrackCpuJob(int32 streamId, const std::string &job)
 		customJobInterests[streamId].insert(job);
 }
 
-#ifdef ANDROID
+#ifdef CUSTOM_BPC_TEXDB
 // ---------------------------------------------------------------------------
-// Android TexDB direct-GPU .btx (rfmt + KTX1/ASTC) streaming & live .tmb upgrade
+// Shared Android/desktop GL3 TexDB direct-GPU .btx (rfmt + KTX1/ASTC) streaming & live .tmb upgrade
 // ---------------------------------------------------------------------------
 
 struct PreparedRawBtx
@@ -3061,7 +3061,7 @@ QueueModelPreparation(const std::string &key, int32 streamId, bool priority)
 	return queued;
 }
 
-#ifndef ANDROID
+#ifndef CUSTOM_BPC_TEXDB
 static bool
 QueueTexturePreparation(const std::string &cacheKey, const std::string &name,
                         const CustomSource &source, int32 streamId, bool priority)
@@ -3112,7 +3112,7 @@ QueueTerrainPreparation(const std::string &cacheKey, const br::TerrainRecipe &re
 void
 CCustomModels::PumpBackgroundResults(void)
 {
-#ifdef ANDROID
+#ifdef CUSTOM_BPC_TEXDB
 	uint32 curFrame = CTimer::GetFrameCounter();
 	if(curFrame != s_bpcLastPumpFrame){
 		s_bpcLastPumpFrame = curFrame;
@@ -3131,7 +3131,7 @@ CCustomModels::PumpBackgroundResults(void)
 			if(model && model->readOk){
 				customDecodedModels.Insert(key, model, model->bytes.capacity() + sizeof(PreparedModel));
 				customWorkerModels++;
-#ifdef ANDROID
+#ifdef CUSTOM_BPC_TEXDB
 				// Immediately fan out the model's .btx texture list onto the dedicated TexDB worker pool.
 				if(plan.usable){
 					for(size_t i = 0; i < model->textureNames.size(); i++){
@@ -3196,7 +3196,7 @@ CCustomModels::PumpBackgroundResults(void)
 #endif
 			}
 			if(!plan.usable){
-#ifdef ANDROID
+#ifdef CUSTOM_BPC_TEXDB
 				InvalidateAndroidBpcTxdSlotCache();
 #endif
 				customWorkerFailures++;
@@ -3230,7 +3230,7 @@ CCustomModels::PumpBackgroundResults(void)
 			else ++it;
 		}
 	}
-#ifdef ANDROID
+#ifdef CUSTOM_BPC_TEXDB
 	customcache::BackgroundAssetQueue<TexDbWorkResult>::Completed texDone;
 	while(customTexDbWorker.Pop(texDone)){
 		std::shared_ptr<TexDbWorkResult> res = texDone.value;
@@ -3328,7 +3328,7 @@ CCustomModels::ForgetTxdSlot(int32 slot)
 {
 	customLoadedTxds.erase(slot);
 	customResidentTxds.Erase(slot);
-#ifdef ANDROID
+#ifdef CUSTOM_BPC_TEXDB
 	if(slot >= 0 && (size_t)slot < s_bpcTxdSlotState.size())
 		s_bpcTxdSlotState[(size_t)slot] = 0;
 #endif
@@ -3337,7 +3337,7 @@ CCustomModels::ForgetTxdSlot(int32 slot)
 void
 CCustomModels::ClearGraphicsCache(void)
 {
-#ifdef ANDROID
+#ifdef CUSTOM_BPC_TEXDB
 	for(std::map<const RwTexture*, GpuTerrainSplatInfo>::iterator sit = s_gpuTerrainSplats.begin();
 	    sit != s_gpuTerrainSplats.end(); ++sit){
 		for(int li = 0; li < 4; li++)
@@ -3378,7 +3378,7 @@ RestoreCachedTxd(int32 slot, const std::string &key)
 	return true;
 }
 
-#ifndef ANDROID
+#ifndef CUSTOM_BPC_TEXDB
 // builds the dictionary of one texture dictionary slot: every texture the
 // model references gets an RwTexture built from its .btx
 static bool
@@ -3494,7 +3494,7 @@ void
 CCustomModels::Initialise(void)
 {
 	EnsureInitialised();
-#ifdef ANDROID
+#ifdef CUSTOM_BPC_TEXDB
 	customTxdCandidates.clear();
 	RebuildAndroidBpcTxdSlotIndex();
 #else
@@ -3534,7 +3534,7 @@ CCustomModels::Shutdown(void)
 	// The worker may still be reading an archive or loose file. Join all workers
 	// BEFORE the source indices, open .bpc fds and caches are destroyed.
 	customCpuWorker.Stop();
-#ifdef ANDROID
+#ifdef CUSTOM_BPC_TEXDB
 	customTexDbWorker.Stop();
 #endif
 	customJobInterests.clear();
@@ -3547,7 +3547,7 @@ CCustomModels::Shutdown(void)
 	customFailedCpuTextures.clear();
 	customTransientTexture.reset();
 	customTransientTextureKey.clear();
-#ifdef ANDROID
+#ifdef CUSTOM_BPC_TEXDB
 	customRawBtxCache.Clear();
 	customFailedRawBtx.clear();
 	customTransientRawBtx.reset();
@@ -3900,7 +3900,7 @@ CCustomModels::ForEachGameCollision(CollisionCallback callback, void *context, C
 	}
 }
 
-#ifndef ANDROID
+#ifndef CUSTOM_BPC_TEXDB
 static std::string
 PotentialModelForTxd(const std::string &key)
 {
@@ -3952,7 +3952,7 @@ CheckStreamPreparation(int32 streamId, bool priority)
 		return true;
 	if(streamId < STREAM_OFFSET_TXD){
 		CBaseModelInfo *mi = CModelInfo::GetModelInfo(streamId);
-#ifdef ANDROID
+#ifdef CUSTOM_BPC_TEXDB
 		if(!mi || GetModelLoadKind(mi->GetModelType()) == MODELLOAD_UNSUPPORTED)
 			return true;
 #else
@@ -3970,7 +3970,7 @@ CheckStreamPreparation(int32 streamId, bool priority)
 		if(customDecodedModels.Contains(key)){
 			if(plan == customModPlans.end() || !plan->second.computed)
 				CanUseModel(key); // cache hit, no parsing or I/O
-#ifdef ANDROID
+#ifdef CUSTOM_BPC_TEXDB
 			// Also ensure all .btx textures referenced by this model are prepared on TexDB worker
 			// (unless a .tmb preview exists, in which case we prefetch in background without blocking).
 			std::shared_ptr<const PreparedModel> prepared = customDecodedModels.Find(key);
@@ -4095,7 +4095,7 @@ CheckStreamPreparation(int32 streamId, bool priority)
 		return false;
 	}
 	if(streamId >= STREAM_OFFSET_TXD && streamId < STREAM_OFFSET_COL){
-#ifdef ANDROID
+#ifdef CUSTOM_BPC_TEXDB
 		// On Android, TXD slots for .bpc models are lightweight empty dictionary containers;
 		// individual .btx KTX1/ASTC textures are uploaded directly to GPU during model load.
 		int32 slot = streamId - STREAM_OFFSET_TXD;
@@ -4208,7 +4208,7 @@ CCustomModels::PrefetchStream(int32 streamId, bool priority)
 #endif
 }
 
-#ifdef ANDROID
+#ifdef CUSTOM_BPC_TEXDB
 void
 CCustomModels::BeginBlockingLoad(void)
 {
@@ -4314,7 +4314,7 @@ CCustomModels::IsStreamPrepared(int32 streamId, bool wait)
 	EnsureInitialised();
 	if(customSyncFallbackStreams.find(streamId) != customSyncFallbackStreams.end())
 		return true;
-#ifdef ANDROID
+#ifdef CUSTOM_BPC_TEXDB
 	const bool effectiveWait = wait || (s_bpcBlockingLoadDepth > 0);
 #else
 	const bool effectiveWait = wait;
@@ -4322,7 +4322,7 @@ CCustomModels::IsStreamPrepared(int32 streamId, bool wait)
 	for(int attempts = 0; attempts < (effectiveWait ? 64 : 1); attempts++){
 		PumpBackgroundResults();
 		if(CheckStreamPreparation(streamId, effectiveWait)){
-#ifdef ANDROID
+#ifdef CUSTOM_BPC_TEXDB
 			if(!effectiveWait && streamId >= 0 && streamId < STREAM_OFFSET_TXD &&
 			   CanServe(streamId) && !s_bpcFreezeMonitor.HasFrameBudget())
 				return false;
@@ -4337,7 +4337,7 @@ CCustomModels::IsStreamPrepared(int32 streamId, bool wait)
 			if(first == customPreparationWaits.end())
 				first = customPreparationWaits.insert(std::make_pair(streamId, now)).first;
 			std::chrono::steady_clock::duration elapsed = now - first->second;
-#ifdef ANDROID
+#ifdef CUSTOM_BPC_TEXDB
 			size_t activePending = customCpuWorker.PendingCount() + customTexDbWorker.PendingCount();
 #else
 			size_t activePending = customCpuWorker.PendingCount();
@@ -4354,7 +4354,7 @@ CCustomModels::IsStreamPrepared(int32 streamId, bool wait)
 			CUSTOM_LOG("background asset %d: deferred too long, using synchronous load\n", streamId);
 			return true;
 		}
-#ifdef ANDROID
+#ifdef CUSTOM_BPC_TEXDB
 		if(customCpuWorker.PendingCount() != 0)
 			customCpuWorker.WaitForResult();
 		else if(customTexDbWorker.PendingCount() != 0)
@@ -4400,7 +4400,7 @@ CCustomModels::CancelStreamPrefetch(int32 streamId)
 		for(std::map<int32, std::set<std::string> >::const_iterator other = customJobInterests.begin(); other != customJobInterests.end(); ++other)
 			if(other->second.find(*job) != other->second.end()) { shared = true; break; }
 		if(!shared){
-#ifdef ANDROID
+#ifdef CUSTOM_BPC_TEXDB
 			if(job->compare(0, 2, "x:") == 0)
 				customTexDbWorker.Cancel(*job);
 			else
@@ -4410,7 +4410,7 @@ CCustomModels::CancelStreamPrefetch(int32 streamId)
 	}
 }
 
-#ifdef ANDROID
+#ifdef CUSTOM_BPC_TEXDB
 static bool
 LoadAndroidBpcTxdSlot(int32 slot, const std::string &key)
 {
@@ -4474,7 +4474,7 @@ LoadAndroidBpcTxdSlot(int32 slot, const std::string &key)
 bool
 CCustomModels::CanServe(int32 streamId)
 {
-#ifdef ANDROID
+#ifdef CUSTOM_BPC_TEXDB
 	if(streamId == nativeModelOverride || streamId < 0 || streamId >= STREAM_OFFSET_ANIM || !IsActive())
 		return false;
 	if(streamId < STREAM_OFFSET_COL && CStreaming::ms_aInfoForModel[streamId].m_size &&
@@ -4568,7 +4568,7 @@ CCustomModels::Load(int32 streamId)
 			CUSTOM_LOG("STREAM LOAD END id=%d duration=%lld us (returned)\n", id, us);
 		}
 	} trace(streamId);
-#ifdef ANDROID
+#ifdef CUSTOM_BPC_TEXDB
 	if(streamId < STREAM_OFFSET_TXD){
 		CBaseModelInfo *mi = CModelInfo::GetModelInfo(streamId);
 		if(mi == nil)
@@ -4619,7 +4619,7 @@ CCustomModels::Load(int32 streamId)
 // files the game reads from disk by name (the ones its data files list)
 // ---------------------------------------------------------------------------
 
-#ifndef ANDROID
+#ifndef CUSTOM_BPC_TEXDB
 // Builds a texture dictionary holding everything the archives have for this
 // name. Used when the game loads a .txd by name instead of streaming it.
 static RwTexDictionary *
@@ -4927,7 +4927,7 @@ CCustomModels::PrintStats(void)
 	CUSTOM_LOG("bpc archives: %zu open, %zu models, %zu textures, %zu previews\n",
 		customBpcArchives.size(), customMods.size() + customDff.size(), customBtx.size(), customTmbBtx.size());
 #endif
-#ifdef ANDROID
+#ifdef CUSTOM_BPC_TEXDB
 	CUSTOM_LOG("bpc runtime: %zu open archives, %zu .mod, %zu .btx (%zu .tmb), TexDB CPU cache %zu hit / %zu miss / %zu KiB, live GPU TexDB %zu tex (%zu KiB, %zu shared hits, %zu evicted), %zu GPU KTX uploads (%zu live upgrades), %zu TexDB pending\n",
 		customBpcArchives.size(), customMods.size(), customBtx.size(), customTmbBtx.size(),
 		customRawBtxCache.Hits(), customRawBtxCache.Misses(), customRawBtxCache.Bytes() / 1024,
@@ -5031,7 +5031,7 @@ CCustomModels::SkinTextureFromBtx(const char *skinname)
 	EnsureInitialised();
 
 	std::string key = ToLower(Stem(skinname));
-#ifdef ANDROID
+#ifdef CUSTOM_BPC_TEXDB
 	const CustomSource *bpcSrc = FindSource(customBtx, key);
 	if(bpcSrc != nil){
 		std::shared_ptr<const PreparedRawBtx> raw = GetOrLoadPreparedRawBtx(*bpcSrc, key);

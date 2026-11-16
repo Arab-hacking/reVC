@@ -10,7 +10,7 @@
 //                                      data/vehicles.ide, data/weapons.ide;
 //                                      config.dat, timecyc.json, water.dat,
 //                                      carcols.dat, lods.info (all under data/)
-// - Android (#ifdef ANDROID):
+// - Android and desktop CUSTOM_BPC (GL3 uses the shared TexDB path):
 //   custom/zip/common.bpc              20-byte XOR stream archive with config.dat,
 //                                      texdb.dat, lods.info, IDE/IPL, .ani
 //   custom/zip/mesh/*.bpc              mounted strictly from CDIMAGE in config.dat
@@ -69,7 +69,7 @@ public:
 	static bool IsStreamPrepared(int32 streamId, bool wait);
 	static void CancelStreamPrefetch(int32 streamId);
 	static void PumpBackgroundResults(void);
-#ifdef ANDROID
+#ifdef CUSTOM_BPC_TEXDB
 	struct GpuTerrainSplatInfo {
 		RwTexture *layers[4];
 		float scale[4];

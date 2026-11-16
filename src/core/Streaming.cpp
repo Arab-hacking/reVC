@@ -3128,9 +3128,9 @@ CStreaming::LoadRequestedModels(void)
 {
 	static int currentChannel = 0;
 
-#if defined(ANDROID) && defined(CUSTOM_MODELS)
+#if defined(CUSTOM_BPC_TEXDB) && defined(CUSTOM_MODELS)
 	// Directly service already-prepared custom .bpc/.img TXDs and models on
-	// Android without routing them through dummy 1-sector GTA3.IMG CdStreamRead
+	// GL3 without routing them through dummy 1-sector GTA3.IMG CdStreamRead
 	// round-trips. Strictly bounded per frame to prevent frame-time spikes.
 	if(ms_channelError == -1){
 		const uint32 cpm = CTimer::GetCyclesPerMillisecond();
@@ -3139,7 +3139,14 @@ CStreaming::LoadRequestedModels(void)
 		int customVehModelsLoaded = 0;
 		int customAsyncModelsLoaded = 0;
 		int customTxdsLoaded = 0;
-		const int maxTotalModels = s_mobileVehReqBudget + s_mobileAsyncReqBudget;
+#ifdef ANDROID
+		const int vehicleBudget = s_mobileVehReqBudget;
+		const int asyncBudget = s_mobileAsyncReqBudget;
+#else
+		const int vehicleBudget = 1;
+		const int asyncBudget = 3;
+#endif
+		const int maxTotalModels = vehicleBudget + asyncBudget;
 		for(int pass = 0; pass < 24; pass++){
 			if(cpm && customModelsLoaded > 0){
 				uint32 nowMs = CTimer::GetCurrentTimeInCycles() / cpm;
@@ -3168,10 +3175,10 @@ CStreaming::LoadRequestedModels(void)
 						if(!mi) continue;
 						if(!si->IsPriority()){
 							if(mi->GetModelType() == MITYPE_VEHICLE){
-								if(customVehModelsLoaded >= s_mobileVehReqBudget)
+								if(customVehModelsLoaded >= vehicleBudget)
 									continue;
 							}else{
-								if(customAsyncModelsLoaded >= s_mobileAsyncReqBudget)
+								if(customAsyncModelsLoaded >= asyncBudget)
 									continue;
 							}
 						}
@@ -3447,7 +3454,7 @@ CStreaming::LoadAllRequestedModels(bool priority)
 	if(bInsideLoadAll)
 		return;
 	bInsideLoadAll = true;
-#if defined(ANDROID) && defined(CUSTOM_MODELS)
+#if defined(CUSTOM_BPC_TEXDB) && defined(CUSTOM_MODELS)
 	CCustomModels::ScopedBlockingLoad blockingLoadScope;
 	int pumpCounter = 0;
 #endif
@@ -3458,7 +3465,7 @@ CStreaming::LoadAllRequestedModels(bool priority)
 	FlushChannels();
 	imgOffset = GetCdImageOffset(CdStreamGetLastPosn());
 
-#if defined(ANDROID) && defined(CUSTOM_MODELS)
+#if defined(CUSTOM_BPC_TEXDB) && defined(CUSTOM_MODELS)
 	for(CStreamingInfo *queued = ms_startRequestedList.m_next;
 	    queued != &ms_endRequestedList; queued = queued->m_next)
 		CCustomModels::PrefetchStream(queued - ms_aInfoForModel, priority);
@@ -3473,7 +3480,7 @@ CStreaming::LoadAllRequestedModels(bool priority)
 		if((++pumpCounter & 31) == 0)
 			psPumpLoadingEvents();
 #endif
-#if defined(CUSTOM_MODELS) && !defined(ANDROID)
+#if defined(CUSTOM_MODELS) && !defined(CUSTOM_BPC_TEXDB)
 		// Unlike normal per-frame streaming, this entry point deliberately
 		// waits for scripted/startup requests. Never let a still-queued CPU
 		// asset be mistaken for an empty file by GetNextFileOnCd.
@@ -3501,7 +3508,7 @@ CStreaming::LoadAllRequestedModels(bool priority)
 			CUSTOM_LOG("stream single: request dequeued id=%d\n", streamId);
 
 		if(ms_aInfoForModel[streamId].GetCdPosnAndSize(posn, size)){
-#if defined(ANDROID) && defined(CUSTOM_MODELS)
+#if defined(CUSTOM_BPC_TEXDB) && defined(CUSTOM_MODELS)
 			if(!CCustomModels::CanServe(streamId)){
 				do
 					status = CdStreamRead(0, ms_pStreamingBuffer[0], imgOffset+posn, size);

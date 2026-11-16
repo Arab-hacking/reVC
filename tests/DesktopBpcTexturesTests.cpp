@@ -1,5 +1,5 @@
 // Share the synthetic BPC/ASTC fixtures and headless RenderWare stubs, but
-// compile the real CustomModels.cpp WITHOUT ANDROID (including its CPU path).
+// compile the real CustomModels.cpp WITHOUT ANDROID (desktop GL TexDB).
 #define REVC_DESKTOP_BPC_TEST
 #include "AndroidBpcArchiveIntegrationTests.cpp"
 
@@ -49,8 +49,13 @@ static std::vector<uint8> TexturedMod(const char *name)
 	std::vector<uint8> dff = br::buildDummyDff();
 	return EncryptDffToMod(TexturedTree(dff.data(), dff.size(), name));
 }
-int main()
+int main(int argc, char **)
 {
+#ifdef CUSTOM_BPC_TEXDB
+	std::memset(&rw::gl3::gl3Caps, 0, sizeof(rw::gl3::gl3Caps));
+	rw::gl3::gl3Caps.glversion = 33;
+	rw::gl3::gl3Caps.astcSupported = argc == 1;
+#endif
 	char root[] = "/tmp/revc_desktop_tex_XXXXXX";
 	Check(mkdtemp(root) != nullptr, "temporary directory");
 	char old[4096]; Check(getcwd(old, sizeof(old)) && chdir(root) == 0, "cwd");
@@ -83,10 +88,21 @@ int main()
 	CTxdStore::SetCurrentTxd(slot);
 	for(int id = 100; id <= 101; ++id){
 		Check(CCustomModels::Load(id), "per-model ASTC texture resolved before reading materials");
-		Check(g_lastResolvedTex && g_lastResolvedTex->raster, "real CPU decoded raster");
+		Check(g_lastResolvedTex && g_lastResolvedTex->raster, "material resolved a real raster");
+#ifdef CUSTOM_BPC_TEXDB
+		Check(rw::Texture::findCB == nullptr, "model scope restored the previous find callback");
+		Check(RwTexDictionaryFindNamedTexture(g_currentDict,
+			id == 100 ? "road_asphalt_br" : "other_btx") == nullptr,
+			"shared TexDB does not populate or replace the native dictionary");
+		RwTextureDestroy(g_lastResolvedTex); // material released; cache keeps its reference
+#endif
 	}
-	Check(g_liveRwTextures == 2, "both models' textures in the same TXD");
+	Check(g_liveRwTextures == 2, "both models' textures retained without duplication");
 	Check(CCustomModels::Load(101) && g_liveRwTextures == 2, "no duplicate GPU uploads on reload");
+#ifdef CUSTOM_BPC_TEXDB
+	RwTextureDestroy(g_lastResolvedTex);
+	Check(g_directGpuUploads == (argc == 1 ? 2 : 0), "ASTC hardware upload or CPU fallback chosen from capabilities");
+#endif
 	int absent = CTxdStore::AddTxdSlot("no_custom_model");
 	for(int i = 0; i < 8; ++i)
 		Check(!CCustomModels::CanServe(STREAM_OFFSET_TXD + absent), "native/missing TXD fallback");

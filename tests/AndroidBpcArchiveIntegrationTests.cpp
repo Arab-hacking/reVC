@@ -241,7 +241,7 @@ RwBool RwStreamFindChunk(RwStream *, RwUInt32, RwUInt32 *, RwUInt32 *) { return 
 RwBool RwStreamClose(RwStream *s, void *) { std::free(s); return true; }
 
 bool CFileLoader::LoadAtomicFile(RwStream *, uint32 modelId) {
-#ifdef REVC_DESKTOP_BPC_TEST
+#if defined(REVC_DESKTOP_BPC_TEST) && !defined(CUSTOM_BPC_TEXDB)
 	const char *name = modelId == 101 ? "other_btx" : "road_asphalt_br";
 	g_lastResolvedTex = RwTexDictionaryFindNamedTexture(g_currentDict, name);
 	return g_lastResolvedTex && g_lastResolvedTex->raster;
@@ -251,6 +251,9 @@ bool CFileLoader::LoadAtomicFile(RwStream *, uint32 modelId) {
 	// Emulate RenderWare Texture::read resolving the model's texture through findCB!
 	if(rw::Texture::findCB){
 		const char *texName = (modelId == 105) ? "ter_gpu_01_mask" : "road_asphalt_br";
+#ifdef REVC_DESKTOP_BPC_TEST
+		if(modelId == 101) texName = "other_btx";
+#endif
 		RwTexture *t = rw::Texture::findCB(texName);
 		if(t){
 			RwTextureAddRef(t); // matches vendor/librw/src/texture.cpp:338
@@ -799,12 +802,16 @@ int main(void)
 	CCustomModels::Initialise();
 	CCustomModels::MountImages();
 	Check(CCustomModels::IsActive(), "CCustomModels active with Android .bpc layout");
+#ifdef ANDROID
 	Check(CCustomModels::ReplacesNativeWorldMap(), "ReplacesNativeWorldMap() true when common.bpc mounts custom IPLs");
 
+#endif
 	bool fromCommon = false;
 	std::vector<uint8> ccBytes;
+#ifdef ANDROID
 	Check(CCustomModels::ReadDataFile("data/colorcycle.dat", ccBytes, &fromCommon) && fromCommon && !ccBytes.empty(),
 		"read data/colorcycle.dat from XOR common.bpc on Android");
+#endif
 
 	std::vector<uint8> lodBytes;
 	Check(CCustomModels::ReadDataFile("data/lods.info", lodBytes, &fromCommon) && fromCommon,

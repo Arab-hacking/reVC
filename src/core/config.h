@@ -342,6 +342,12 @@ enum Config {
 // builds, not only on Android.
 #define CUSTOM_BPC
 
+// Share the existing TexDB worker/GPU/cache/material path with desktop GL3.
+// Non-GL builds keep the CPU dictionary loader. CPU-only is also testable.
+#if defined(ANDROID) || (defined(CUSTOM_BPC) && defined(LIBRW) && defined(RW_GL3) && !defined(REVC_BPC_CPU_ONLY))
+#define CUSTOM_BPC_TEXDB
+#endif
+
 // GTA:SA vehicles (and mods converted from them) often keep the frame name of
 // the car they were converted from in the DFF, so a model file may contain a
 // clump whose root frame does not know the name of the model at all. Fall back

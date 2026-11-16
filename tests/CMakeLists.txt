@@ -255,7 +255,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Cla
         ../src/rw/TxdStore.cpp
         ../src/extras/custom/br/third_party/astc_decomp.cpp)
     target_compile_definitions(custom_archive_integration_tests PRIVATE
-        LIBRW RW_GL3 LIBRW_SDL2 CMAKE_BUILD USE_OUR_VERSIONING AUDIO_OAL)
+        REVC_BPC_CPU_ONLY LIBRW RW_GL3 LIBRW_SDL2 CMAKE_BUILD USE_OUR_VERSIONING AUDIO_OAL)
     target_include_directories(custom_archive_integration_tests PRIVATE
         ../vendor/librw ../vendor/librw/src/gl ../vendor/sdl2/include
         ../src ../src/animation ../src/audio ../src/buildings ../src/collision
@@ -285,6 +285,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Cla
     target_link_libraries(desktop_bpc_textures_tests PRIVATE Threads::Threads)
     set_target_properties(desktop_bpc_textures_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
     add_test(NAME desktop_bpc_textures_tests COMMAND desktop_bpc_textures_tests)
+    add_test(NAME desktop_bpc_textures_cpu_fallback_tests COMMAND desktop_bpc_textures_tests cpu-fallback)
 
     add_executable(android_bpc_archive_integration_tests
         AndroidBpcArchiveIntegrationTests.cpp
