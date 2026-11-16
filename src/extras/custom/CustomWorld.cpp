@@ -336,6 +336,7 @@ void PlaceInstance(const customworld::Instance &inst, IplContext &ctx)
 
 void ReadIpl(const char *path, const unsigned char *data, size_t size, void *user)
 {
+    CUSTOM_LOG("BR IPL BEGIN: %s (%zu bytes)\n", path, size);
     IplContext &ctx = *(IplContext *)user;
     ctx.files++;
     std::vector<customworld::Instance> instances;
@@ -344,8 +345,14 @@ void ReadIpl(const char *path, const unsigned char *data, size_t size, void *use
     // Instance::instIndex records the exact 0-based line position inside inst
     // even when an intermediate record is rejected or overlong, so valid LOD
     // indices remain aligned with their target instance.
+    CUSTOM_LOG("BR IPL %s: parsed %zu instances; linking LODs\n", path, instances.size());
     LinkLods(instances, ctx);
-    for(size_t n = 0; n < instances.size(); n++) PlaceInstance(instances[n], ctx);
+    for(size_t n = 0; n < instances.size(); n++) {
+        if(n % 256 == 0)
+            CUSTOM_LOG("BR IPL %s: placing instance %zu/%zu\n", path, n, instances.size());
+        PlaceInstance(instances[n], ctx);
+    }
+    CUSTOM_LOG("BR IPL END: %s; total placed=%u\n", path, ctx.placed);
     ctx.parsed += (unsigned)stats.records;
     ctx.bad += (unsigned)stats.rejected;
     ctx.overlong += (unsigned)stats.overlong;

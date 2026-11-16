@@ -4,6 +4,8 @@
 #include <chrono>
 #include <errno.h>
 #include <mutex>
+#include <thread>
+#include <functional>
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
@@ -100,7 +102,8 @@ namespace DebugLog
 			while(*end != '\0' && *end != '\n' && *end != '\r')
 				end++;
 
-			fprintf(logFile, "[%s.%03d] [%s]", timestamp, millis, level);
+			fprintf(logFile, "[%s.%03d] [tid=%zu] [%s]", timestamp, millis,
+				std::hash<std::thread::id>()(std::this_thread::get_id()), level);
 			if(file != NULL && file[0] != '\0')
 				fprintf(logFile, " [%s:%u %s]", file, line, function == NULL ? "" : function);
 			fprintf(logFile, " %.*s\n", (int)(end - text), text);

@@ -974,6 +974,8 @@ ReadSource(const CustomSource &src, std::vector<uint8> &out)
 			return false;
 		out.resize((size_t)ent->uncompressedSize);
 		if(!customBpcArchives[archId]->Extract((int)entryIdx, out.data(), (uint32)out.size())){
+			CUSTOM_LOG("BPC READ FAILED archive=%u entry=%u source=%s expected=%u bytes\n",
+				(unsigned)archId, (unsigned)entryIdx, src.fname, (unsigned)out.size());
 			out.clear();
 			return false;
 		}
@@ -4505,6 +4507,21 @@ CCustomModels::Load(int32 streamId)
 {
 	if(!CanServe(streamId))
 		return false;
+	// END means the call returned (not necessarily success); a missing END
+	// identifies an interrupted load. No per-frame polling messages.
+	struct StreamLoadTrace {
+		int32 id;
+		std::chrono::steady_clock::time_point begin;
+		StreamLoadTrace(int32 value) : id(value), begin(std::chrono::steady_clock::now()) {
+			CUSTOM_LOG("STREAM LOAD BEGIN id=%d type=%s\n", id,
+				id < STREAM_OFFSET_TXD ? "model" : id < STREAM_OFFSET_COL ? "txd" : "collision");
+		}
+		~StreamLoadTrace() {
+			long long us = (long long)std::chrono::duration_cast<std::chrono::microseconds>(
+				std::chrono::steady_clock::now() - begin).count();
+			CUSTOM_LOG("STREAM LOAD END id=%d duration=%lld us (returned)\n", id, us);
+		}
+	} trace(streamId);
 #ifdef ANDROID
 	if(streamId < STREAM_OFFSET_TXD){
 		CBaseModelInfo *mi = CModelInfo::GetModelInfo(streamId);

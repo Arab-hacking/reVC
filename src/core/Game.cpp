@@ -505,7 +505,9 @@ bool CGame::Initialise(const char* datFile)
 #ifdef CUSTOM_MODELS
 	// After native IPLs: IDEs and model streaming are already initialized,
 	// and CED2 collisions are attached before the new entities are created.
+	REVC_LOG_INFO("STARTUP custom IPL BEGIN");
 	CCustomWorld::LoadIpl();
+	REVC_LOG_INFO("STARTUP custom IPL END");
 #endif
 
 	LoadingScreen("Loading the Game", "Add Particles", nil);
@@ -516,7 +518,9 @@ bool CGame::Initialise(const char* datFile)
 	POP_MEMID();
 
 	LoadingScreen("Loading the Game", "Setup paths", nil);
+	REVC_LOG_INFO("STARTUP PreparePathData BEGIN");
 	ThePaths.PreparePathData();
+	REVC_LOG_INFO("STARTUP PreparePathData END");
 	for (int i = 0; i < NUMPLAYERS; i++)
 		CWorld::Players[i].Clear();
 	CWorld::Players[0].LoadPlayerSkin();
@@ -535,10 +539,16 @@ bool CGame::Initialise(const char* datFile)
 	CCustomModels::Initialise();
 	CStreaming::LoadVCPedAnimationReference();
 #endif
+	REVC_LOG_INFO("STARTUP LoadInitialVehicles BEGIN");
 	CStreaming::LoadInitialVehicles();
+	REVC_LOG_INFO("STARTUP LoadInitialVehicles END");
+	REVC_LOG_INFO("STARTUP LoadInitialPeds BEGIN");
 	CStreaming::LoadInitialPeds();
+	REVC_LOG_INFO("STARTUP LoadInitialPeds END");
 	CStreaming::RequestBigBuildings(LEVEL_GENERIC);
+	REVC_LOG_INFO("STARTUP LoadAllRequestedModels BEGIN");
 	CStreaming::LoadAllRequestedModels(false);
+	REVC_LOG_INFO("STARTUP LoadAllRequestedModels END");
 	CStreaming::RemoveIslandsNotUsed(currLevel);
 	printf("Streaming uses %zuK of its memory", CStreaming::ms_memoryUsed / 1024); // original modifier was %d
 

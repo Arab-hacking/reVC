@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include <string.h>
+#include <exception>
 
 #include "DebugLog.h"
 #include "../../core/DebugLog.h"
@@ -11,6 +12,7 @@
 
 #ifdef _WIN32
 #include <windows.h>
+#include <dbghelp.h>
 #include <signal.h>
 #else
 #include <signal.h>
@@ -68,6 +70,82 @@ DebugLogCrashLine(const char *line)
 }
 
 #ifdef _WIN32
+
+// Resolve DbgHelp and the absolute output path before a crash (CWD changes
+// during startup). Never link against a new import library or load it in SEH.
+typedef BOOL (WINAPI *WriteDumpFn)(HANDLE, DWORD, HANDLE, MINIDUMP_TYPE,
+    PMINIDUMP_EXCEPTION_INFORMATION, PMINIDUMP_USER_STREAM_INFORMATION,
+    PMINIDUMP_CALLBACK_INFORMATION);
+static WriteDumpFn writeDump;
+static char dumpPath[MAX_PATH];
+static volatile LONG reportingCrash;
+
+static void
+DebugLogWindowsContext(EXCEPTION_POINTERS *info)
+{
+    if(!info || !info->ExceptionRecord || !info->ContextRecord) return;
+    char line[1024];
+    EXCEPTION_RECORD *r = info->ExceptionRecord;
+    MEMORY_BASIC_INFORMATION memory = {};
+    if(VirtualQuery(r->ExceptionAddress, &memory, sizeof(memory))){
+        char module[MAX_PATH] = {};
+        GetModuleFileNameA((HMODULE)memory.AllocationBase, module, sizeof(module));
+        snprintf(line, sizeof(line), "CRASH context: pid=%lu tid=%lu module=%s base=%p RVA=0x%llX",
+            (unsigned long)GetCurrentProcessId(), (unsigned long)GetCurrentThreadId(),
+            module, memory.AllocationBase,
+            (unsigned long long)((uintptr_t)r->ExceptionAddress - (uintptr_t)memory.AllocationBase));
+        DebugLogCrashLine(line);
+    }
+    CONTEXT *c = info->ContextRecord;
+#if defined(_M_X64) || defined(__x86_64__)
+    snprintf(line, sizeof(line),
+        "REGISTERS RIP=%llX RSP=%llX RBP=%llX RAX=%llX RBX=%llX RCX=%llX RDX=%llX RSI=%llX RDI=%llX FLAGS=%lX",
+        (unsigned long long)c->Rip, (unsigned long long)c->Rsp, (unsigned long long)c->Rbp,
+        (unsigned long long)c->Rax, (unsigned long long)c->Rbx, (unsigned long long)c->Rcx,
+        (unsigned long long)c->Rdx, (unsigned long long)c->Rsi, (unsigned long long)c->Rdi,
+        (unsigned long)c->EFlags);
+    DebugLogCrashLine(line);
+    snprintf(line, sizeof(line), "REGISTERS R8=%llX R9=%llX R10=%llX R11=%llX R12=%llX R13=%llX R14=%llX R15=%llX",
+        (unsigned long long)c->R8, (unsigned long long)c->R9, (unsigned long long)c->R10,
+        (unsigned long long)c->R11, (unsigned long long)c->R12, (unsigned long long)c->R13,
+        (unsigned long long)c->R14, (unsigned long long)c->R15);
+    DebugLogCrashLine(line);
+#elif defined(_M_IX86) || defined(__i386__)
+    snprintf(line, sizeof(line), "REGISTERS EIP=%lX ESP=%lX EBP=%lX EAX=%lX EBX=%lX ECX=%lX EDX=%lX",
+        (unsigned long)c->Eip, (unsigned long)c->Esp, (unsigned long)c->Ebp,
+        (unsigned long)c->Eax, (unsigned long)c->Ebx, (unsigned long)c->Ecx, (unsigned long)c->Edx);
+    DebugLogCrashLine(line);
+#endif
+}
+
+static void
+DebugLogSaveDump(EXCEPTION_POINTERS *info)
+{
+    if(InterlockedCompareExchange(&reportingCrash, 1, 0) != 0) return;
+    if(!writeDump || !dumpPath[0]){
+        DebugLogCrashLine("CRASH dump unavailable: DbgHelp was not initialized");
+        return;
+    }
+    HANDLE file = CreateFileA(dumpPath, GENERIC_WRITE, 0, nil, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nil);
+    if(file == INVALID_HANDLE_VALUE){
+        DebugLogCrashLine("CRASH dump: cannot create output file");
+        return;
+    }
+    MINIDUMP_EXCEPTION_INFORMATION exception = {};
+    exception.ThreadId = GetCurrentThreadId();
+    exception.ExceptionPointers = info;
+    exception.ClientPointers = FALSE;
+    BOOL ok = writeDump(GetCurrentProcess(), GetCurrentProcessId(), file,
+        (MINIDUMP_TYPE)(MiniDumpNormal | MiniDumpWithThreadInfo | MiniDumpWithUnloadedModules),
+        info ? &exception : nil, nil, nil);
+    DWORD error = ok ? ERROR_SUCCESS : GetLastError();
+    FlushFileBuffers(file);
+    CloseHandle(file);
+    char line[512];
+    snprintf(line, sizeof(line), "CRASH dump: %s (error=%lu) path=%s; retain matching EXE and PDB",
+        ok ? "saved" : "FAILED", (unsigned long)error, dumpPath);
+    DebugLogCrashLine(line);
+}
 
 // A Windows access violation is a structured exception. The CRT SIGSEGV
 // handler below loses the original CONTEXT, so catch first-chance AVs here and
@@ -131,6 +209,7 @@ DebugLogSignalHandler(int sig)
 	char line[128];
 	snprintf(line, sizeof(line), "CRASH: %s - see the lines above for what was loaded last", what);
 	DebugLogCrashLine(line);
+	DebugLogSaveDump(nil);
 	DebugLogCrashLine("---- session ended abnormally ----");
 	signal(sig, SIG_DFL);
 	raise(sig);
@@ -139,11 +218,14 @@ DebugLogSignalHandler(int sig)
 static LONG WINAPI
 DebugLogUnhandledException(EXCEPTION_POINTERS *info)
 {
+	if(!info || !info->ExceptionRecord) return EXCEPTION_CONTINUE_SEARCH;
 	char line[128];
 	snprintf(line, sizeof(line), "CRASH: exception 0x%08lX at %p - see the lines above for what was loaded last",
 		(unsigned long)info->ExceptionRecord->ExceptionCode,
 		info->ExceptionRecord->ExceptionAddress);
 	DebugLogCrashLine(line);
+	DebugLogWindowsContext(info);
+	DebugLogSaveDump(info);
 	DebugLogCrashLine("---- session ended abnormally ----");
 	return EXCEPTION_CONTINUE_SEARCH;
 }
@@ -393,6 +475,20 @@ DebugLogSignalAction(int sig, siginfo_t *info, void *ucontextRaw)
 
 #endif // _WIN32
 
+// An uncaught C++ exception can otherwise terminate without reaching SEH.
+static void
+DebugLogTerminate(void)
+{
+    DebugLogCrashLine("CRASH: std::terminate (uncaught exception or noexcept violation)");
+    std::exception_ptr exception = std::current_exception();
+    if(exception){
+        try { std::rethrow_exception(exception); }
+        catch(const std::exception &e) { DebugLogCrashLine(e.what()); }
+        catch(...) { DebugLogCrashLine("CRASH: non-standard C++ exception"); }
+    }
+    abort(); // existing SIGABRT handler records abnormal exit and attempts a dump
+}
+
 static void
 DebugLogExitMarker(void)
 {
@@ -409,6 +505,14 @@ DebugLogInit(void)
 	DebugLog::Write("INFO", nil, 0, nil, "Custom-folder diagnostics and crash handlers enabled");
 
 #ifdef _WIN32
+	DWORD pathLength = GetFullPathNameA("crash.dmp", sizeof(dumpPath), dumpPath, nil);
+	if(pathLength == 0 || pathLength >= sizeof(dumpPath)) dumpPath[0] = '\0';
+	HMODULE dbghelp = LoadLibraryA("dbghelp.dll");
+	if(dbghelp) writeDump = (WriteDumpFn)GetProcAddress(dbghelp, "MiniDumpWriteDump");
+	DebugLog::Write("INFO", nil, 0, nil, "Crash dump %s: %s (keep matching EXE/PDB)",
+		writeDump ? "enabled" : "unavailable", dumpPath);
+	ULONG stackReserve = 64 * 1024;
+	SetThreadStackGuarantee(&stackReserve); // main-thread stack overflow reporting
 	AddVectoredExceptionHandler(1, DebugLogVectoredException);
 	SetUnhandledExceptionFilter(DebugLogUnhandledException);
 	// assert() and abort() go through the CRT, not through the unhandled
@@ -429,6 +533,7 @@ DebugLogInit(void)
 	sigaction(SIGILL, &sa, nil);
 	sigaction(SIGBUS, &sa, nil);
 #endif
+	std::set_terminate(DebugLogTerminate);
 	atexit(DebugLogExitMarker);
 }
 

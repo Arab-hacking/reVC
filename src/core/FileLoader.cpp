@@ -68,6 +68,7 @@ LoadingScreenLoadingFile(const char *filename)
 void
 CFileLoader::LoadLevel(const char *filename)
 {
+	REVC_LOG_INFO("LOADLEVEL BEGIN: %s", filename);
 	int fd;
 	RwTexDictionary *savedTxd;
 	bool objectsLoaded;
@@ -177,12 +178,18 @@ CFileLoader::LoadLevel(const char *filename)
 	CFileMgr::CloseFile(fd);
 	RwTexDictionarySetCurrent(savedTxd);
 
+	REVC_LOG_INFO("LOADLEVEL %s: grow collision bounds BEGIN", filename);
 	int i;
 	for(i = 1; i < COLSTORESIZE; i++)
 		if(CColStore::GetSlot(i))
 			CColStore::GetBoundingBox(i).Grow(120.0f);
+	REVC_LOG_INFO("LOADLEVEL %s: RepositionCertainDynamicObjects BEGIN", filename);
 	CWorld::RepositionCertainDynamicObjects();
+	REVC_LOG_INFO("LOADLEVEL %s: RepositionCertainDynamicObjects END", filename);
+	REVC_LOG_INFO("LOADLEVEL %s: RemoveAllCollision BEGIN", filename);
 	CColStore::RemoveAllCollision();
+	REVC_LOG_INFO("LOADLEVEL %s: RemoveAllCollision END", filename);
+	REVC_LOG_INFO("LOADLEVEL END: %s", filename);
 }
 
 char*

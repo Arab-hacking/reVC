@@ -57,6 +57,7 @@ main(void)
 		lines[0][8] == '-' && lines[0][11] == ' ' && lines[0][20] == '.' &&
 		lines[0][24] == ']' && lines[0].find("[INFO] [Game.cpp:42 Initialise] Started game at 100%") != std::string::npos,
 		"timestamp, severity, source and formatted message");
+	Check(lines[0].find("[tid=") != std::string::npos, "normal entries identify their thread");
 	for(size_t i = 1; i < 4; ++i)
 		Check(lines[i].find("[ERROR] [main.cpp:123 AppEventHandler] ") != std::string::npos,
 			"each multi-line message line is prefixed");
