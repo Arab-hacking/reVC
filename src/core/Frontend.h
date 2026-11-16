@@ -334,7 +334,7 @@ enum eMenuAction
 #endif
 #ifdef MISSION_REPLAY
 	MENUACTION_REJECT_RETRY,
-	MENUACTION_UNK114
+	MENUACTION_UNK114,
 #endif
 // TEST GRAPHICS (analysis: mobile pipeline settings)
 	MENUACTION_TEST_SHADOW_QUALITY,

@@ -22,6 +22,7 @@ struct CColModel
 	bool ownsCollisionVolumes;
 	CColSphere *spheres;
 	CColSphere *sphereW;
+	CColLine *lines; // suspension/collision rays; owned and copied by ColModel.cpp
 	CColBox *boxes;
 	CompressedVector *vertices;
 	CColTriangle *triangles;
