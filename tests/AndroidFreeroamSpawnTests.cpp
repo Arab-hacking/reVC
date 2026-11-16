@@ -146,7 +146,7 @@ void *CColModel::operator new(size_t sz) throw() { return ::operator new(sz); }
 void CColModel::operator delete(void *p, size_t) throw() { ::operator delete(p); }
 CColModel::CColModel(void) { std::memset(this, 0, sizeof(*this)); }
 CColModel::~CColModel(void) {}
-void CFileLoader::LoadCollisionModel(uint8 *, CColModel &, char *) {}
+void CFileLoader::LoadCollisionModel(uint8 *, size_t, CColModel &, char *) {}
 void CFileLoader::LoadObjectInstance(const char *) {}
 int32 CTxdStore::FindTxdSlot(const char *) { return -1; }
 int32 CTxdStore::AddTxdSlot(const char *) { return 0; }

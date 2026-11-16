@@ -28,6 +28,7 @@
 #include "CdStream.h"
 #include <vector>
 #include "FileLoader.h"
+#include "ColRecordBounds.h"
 #ifdef CUSTOM_MODELS
 #include "CustomModels.h"
 #include "CustomWorld.h"
@@ -251,26 +252,34 @@ CFileLoader::LoadCollisionFile(const char *filename, uint8 colSlot)
 	fd = CFileMgr::OpenFile(filename, "rb");
 	assert(fd > 0);
 
-	while(CFileMgr::Read(fd, (char*)&header, sizeof(header))){
-		assert(header.ident == 'LLOC');
-		CFileMgr::Read(fd, (char*)work_buff, header.size);
-		memcpy(modelname, work_buff, 24);
+	while(CFileMgr::Read(fd, (char*)&header, sizeof(header)) == sizeof(header)){
+		if(header.ident != 'LLOC' || header.size < 24 || header.size > 16u*1024u*1024u){
+			debug("collision file %s: invalid/oversized record %u\n", filename, header.size);
+			break;
+		}
+		std::vector<uint8> record(header.size);
+		if(CFileMgr::Read(fd, (char*)record.data(), header.size) != header.size) break;
+		memcpy(modelname, record.data(), 24);
+		modelname[23] = '\0';
+		uint8 *colbody = record.data();
+		size_t colbodysize = header.size;
 
 #ifdef CUSTOM_MODELS
 		// the custom folder wins over the game's own collision file
-		uint8 *colbody = work_buff;
-		if(CCustomModels::GetCollisionBlock(modelname, customColBlock))
+		if(CCustomModels::GetCollisionBlock(modelname, customColBlock)){
 			colbody = customColBlock.data();
+			colbodysize = customColBlock.size();
+		}
 #endif
 
 		mi = CModelInfo::GetModelInfo(modelname, nil);
 		if(mi){
 			if(mi->GetColModel() && mi->DoesOwnColModel()){
-				LoadCollisionModel(colbody+24, *mi->GetColModel(), modelname);
+				LoadCollisionModel(colbody+24, colbodysize >= 24 ? colbodysize-24 : 0, *mi->GetColModel(), modelname);
 			}else{
 				CColModel *model = new CColModel;
 				model->level = colSlot;
-				LoadCollisionModel(colbody+24, *model, modelname);
+				LoadCollisionModel(colbody+24, colbodysize >= 24 ? colbodysize-24 : 0, *model, modelname);
 				mi->SetColModel(model, true);
 			}
 		}else{
@@ -453,12 +462,18 @@ CFileLoader::LoadCollisionFileFirstTime(uint8 *buffer, uint32 size, uint8 colSlo
 		modelsize = header->size;
 		if(header->ident != 'LLOC')
 			return size-8 < CDSTREAM_SECTOR_SIZE;
+		if(modelsize < 24 || modelsize > size-8){
+			debug("colmodel stream: invalid/truncated record %u (%u bytes left)\n", modelsize, size);
+			return false;
+		}
 		memcpy(modelname, buffer+8, 24);
-		memcpy(work_buff, buffer+32, modelsize-24);
-		size -= 32 + (modelsize-24);
-		buffer += 32 + (modelsize-24);
-		if(modelsize > 15*1024)
-			debug("colmodel %s is huge, size %d\n", modelname, modelsize);
+		modelname[23] = '\0';
+		// Parse from the bounded stream itself: large valid records must not
+		// overflow the fixed work_buff used by the loose-file loader.
+		uint8 *colbody = buffer+32;
+		size_t colbodysize = modelsize-24;
+		size -= 8 + modelsize;
+		buffer += 8 + modelsize;
 
 		mi = CModelInfo::GetModelInfo(modelname, &modelIndex);
 #ifdef SA_VEHICLE_MODELS
@@ -472,7 +487,7 @@ CFileLoader::LoadCollisionFileFirstTime(uint8 *buffer, uint32 size, uint8 colSlo
 			CColStore::IncludeModelIndex(colSlot, modelIndex);
 			CColModel *model = new CColModel;
 			model->level = colSlot;
-			LoadCollisionModel(work_buff, *model, modelname);
+			LoadCollisionModel(colbody, colbodysize, *model, modelname);
 			mi->SetColModel(model, true);
 		}else{
 			debug("colmodel %s can't find a modelinfo\n", modelname);
@@ -494,12 +509,18 @@ CFileLoader::LoadCollisionFile(uint8 *buffer, uint32 size, uint8 colSlot)
 		modelsize = header->size;
 		if(header->ident != 'LLOC')
 			return size-8 < CDSTREAM_SECTOR_SIZE;
+		if(modelsize < 24 || modelsize > size-8){
+			debug("colmodel stream: invalid/truncated record %u (%u bytes left)\n", modelsize, size);
+			return false;
+		}
 		memcpy(modelname, buffer+8, 24);
-		memcpy(work_buff, buffer+32, modelsize-24);
-		size -= 32 + (modelsize-24);
-		buffer += 32 + (modelsize-24);
-		if(modelsize > 15*1024)
-			debug("colmodel %s is huge, size %d\n", modelname, modelsize);
+		modelname[23] = '\0';
+		// Parse from the bounded stream itself: large valid records must not
+		// overflow the fixed work_buff used by the loose-file loader.
+		uint8 *colbody = buffer+32;
+		size_t colbodysize = modelsize-24;
+		size -= 8 + modelsize;
+		buffer += 8 + modelsize;
 
 		mi = CModelInfo::GetModelInfo(modelname, CColStore::GetSlot(colSlot)->minIndex, CColStore::GetSlot(colSlot)->maxIndex);
 #ifdef SA_VEHICLE_MODELS
@@ -511,11 +532,11 @@ CFileLoader::LoadCollisionFile(uint8 *buffer, uint32 size, uint8 colSlot)
 #endif
 		if(mi){
 			if(mi->GetColModel()){
-				LoadCollisionModel(work_buff, *mi->GetColModel(), modelname);
+				LoadCollisionModel(colbody, colbodysize, *mi->GetColModel(), modelname);
 			}else{
 				CColModel *model = new CColModel;
 				model->level = colSlot;
-				LoadCollisionModel(work_buff, *model, modelname);
+				LoadCollisionModel(colbody, colbodysize, *model, modelname);
 				mi->SetColModel(model, true);
 			}
 		}else{
@@ -526,90 +547,59 @@ CFileLoader::LoadCollisionFile(uint8 *buffer, uint32 size, uint8 colSlot)
 }
 
 void
-CFileLoader::LoadCollisionModel(uint8 *buf, CColModel &model, char *modelname)
+CFileLoader::LoadCollisionModel(uint8 *buf, size_t bufsize, CColModel &model, char *modelname)
 {
-	int i;
-
-	model.boundingSphere.radius = *(float*)(buf);
-	model.boundingSphere.center.x = *(float*)(buf+4);
-	model.boundingSphere.center.y = *(float*)(buf+8);
-	model.boundingSphere.center.z = *(float*)(buf+12);
-	model.boundingBox.min.x = *(float*)(buf+16);
-	model.boundingBox.min.y = *(float*)(buf+20);
-	model.boundingBox.min.z = *(float*)(buf+24);
-	model.boundingBox.max.x = *(float*)(buf+28);
-	model.boundingBox.max.y = *(float*)(buf+32);
-	model.boundingBox.max.z = *(float*)(buf+36);
-	model.numSpheres = *(int16*)(buf+40);
-	buf += 44;
-	if(model.numSpheres > 0){
+	colrecord::Layout layout;
+	if(!colrecord::Validate(buf, bufsize, layout)){
+		debug("colmodel %s: invalid/truncated COLL body (%u bytes), retaining previous collision\n",
+		      modelname, (unsigned)bufsize);
+		return;
+	}
+	// Validation is complete. Retire any old planes/arrays before replacing them.
+	model.RemoveCollisionVolumes();
+	model.ownsCollisionVolumes = true;
+	model.boundingSphere.radius = *(float*)buf;
+	model.boundingSphere.center = *(CVector*)(buf+4);
+	model.boundingBox.min = *(CVector*)(buf+16);
+	model.boundingBox.max = *(CVector*)(buf+28);
+	model.numSpheres = layout.count[0];
+	model.numBoxes = layout.count[2];
+	model.numVertices = layout.count[3];
+	model.numTriangles = layout.count[4];
+	// Suspension lines come from the vehicle DFF. Skip their full on-disk
+	// count, not CColModel's int8 count, when locating the following sections.
+	if(model.numSpheres){
 		model.spheres = (CColSphere*)RwMalloc(model.numSpheres*sizeof(CColSphere));
 		REGISTER_MEMPTR(&model.spheres);
-		for(i = 0; i < model.numSpheres; i++){
-			model.spheres[i].Set(*(float*)buf, *(CVector*)(buf+4), buf[16], buf[17]);
-			buf += 20;
+		for(int i = 0; i < model.numSpheres; i++){
+			uint8 *p = buf + layout.offset[0] + i*20;
+			model.spheres[i].Set(*(float*)p, *(CVector*)(p+4), p[16], p[17]);
 		}
-	}else
-		model.spheres = nil;
-
-	model.numLines = *(int16*)buf;
-	buf += 4;
-	if(model.numLines > 0){
-		//model.lines = (CColLine*)RwMalloc(model.numLines*sizeof(CColLine));
-		REGISTER_MEMPTR(&model.lines);
-		for(i = 0; i < model.numLines; i++){
-			//model.lines[i].Set(*(CVector*)buf, *(CVector*)(buf+12));
-			buf += 24;
-		}
-	}else
-		model.lines = nil;
-	model.numLines = 0;
-	model.lines = nil;
-
-	model.numBoxes = *(int16*)buf;
-	buf += 4;
-	if(model.numBoxes > 0){
+	}
+	if(model.numBoxes){
 		model.boxes = (CColBox*)RwMalloc(model.numBoxes*sizeof(CColBox));
 		REGISTER_MEMPTR(&model.boxes);
-		for(i = 0; i < model.numBoxes; i++){
-			model.boxes[i].Set(*(CVector*)buf, *(CVector*)(buf+12), buf[24], buf[25]);
-			buf += 28;
+		for(int i = 0; i < model.numBoxes; i++){
+			uint8 *p = buf + layout.offset[2] + i*28;
+			model.boxes[i].Set(*(CVector*)p, *(CVector*)(p+12), p[24], p[25]);
 		}
-	}else
-		model.boxes = nil;
-
-	int32 numVertices = *(int16*)buf;
-	buf += 4;
-	if(numVertices > 0){
-		model.vertices = (CompressedVector*)RwMalloc(numVertices*sizeof(CompressedVector));
-		REGISTER_MEMPTR(&model.vertices);
-		for(i = 0; i < numVertices; i++){
-			model.vertices[i].Set(*(float*)buf, *(float*)(buf+4), *(float*)(buf+8));
-#if 0
-			if(Abs(*(float*)buf) >= 256.0f ||
-			   Abs(*(float*)(buf+4)) >= 256.0f ||
-			   Abs(*(float*)(buf+8)) >= 256.0f)
-				printf("%s:Collision volume too big\n", modelname);
-#endif
-			buf += 12;
-		}
-		model.numVertices = numVertices;
-	}else{
-		model.vertices = nil;
-		model.numVertices = 0;
 	}
-
-	model.numTriangles = *(int16*)buf;
-	buf += 4;
-	if(model.numTriangles > 0){
+	if(model.numVertices){
+		model.vertices = (CompressedVector*)RwMalloc(model.numVertices*sizeof(CompressedVector));
+		REGISTER_MEMPTR(&model.vertices);
+		for(int i = 0; i < model.numVertices; i++){
+			uint8 *p = buf + layout.offset[3] + i*12;
+			model.vertices[i].Set(*(float*)p, *(float*)(p+4), *(float*)(p+8));
+		}
+	}
+	if(model.numTriangles){
 		model.triangles = (CColTriangle*)RwMalloc(model.numTriangles*sizeof(CColTriangle));
 		REGISTER_MEMPTR(&model.triangles);
-		for(i = 0; i < model.numTriangles; i++){
-			model.triangles[i].Set(*(int32*)buf, *(int32*)(buf+4), *(int32*)(buf+8), buf[12], buf[15]);
-			buf += 16;
+		for(int i = 0; i < model.numTriangles; i++){
+			uint8 *p = buf + layout.offset[4] + i*16;
+			model.triangles[i].Set(*(int32*)p, *(int32*)(p+4), *(int32*)(p+8), p[12], p[15]);
 		}
-	}else
-		model.triangles = nil;
+	}
 }
 
 static void

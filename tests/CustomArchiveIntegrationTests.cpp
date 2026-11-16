@@ -161,13 +161,17 @@ static std::vector<uint8> Col3(const char *name) {
     return b;
 }
 static std::vector<uint8> Cls(const char *name) {
-    std::vector<uint8> b(120, 0);
-    std::memcpy(b.data(), "CLST", 4); W32(b, 4, 112);
+    std::vector<uint8> b(148, 0);
+    std::memcpy(b.data(), "CLST", 4); W32(b, 4, 140);
     std::memcpy(b.data()+8, name, std::strlen(name));
     std::memcpy(b.data()+28, "CED2", 4);
     WF(b, 44, 2);
     WF(b, 48, -1); WF(b, 52, -1); WF(b, 56, -1);
     WF(b, 60, 1); WF(b, 64, 1); WF(b, 68, 1);
+    b[74] = 1; // one box, not a bounds-only CLST stub
+    W32(b, 88, 116); // payload-relative pointer + 4
+    WF(b, 120, -1); WF(b, 124, -1); WF(b, 128, -1);
+    WF(b, 132, 1); WF(b, 136, 1); WF(b, 140, 1);
     return b;
 }
 static std::vector<uint8> LegacyCls(const char *name) {
@@ -231,7 +235,7 @@ static void Collision(const char *name, const unsigned char *data, size_t size, 
 }
 static void Ced2(const char *name, const unsigned char *data, size_t size, void *user) {
     std::map<std::string, std::string> &out = *(std::map<std::string, std::string> *)user;
-    assert(size == 120 && !std::memcmp(data, "CLST", 4));
+    assert(size == 148 && !std::memcmp(data, "CLST", 4));
     out[name] = std::string((const char *)data+8);
 }
 
@@ -446,10 +450,11 @@ int main() {
     assert(ide.begin()->second.find("house1 r3 100") != std::string::npos);
     assert(ipl.size() == 2 && ipl.count("data/maps/level_events/test.ipl") &&
            ipl.count("data/maps/level_events/alternate.ipl"));
-    assert(cls.size() == 2 && cls["house1"] == "house1" && cls["house2"] == "house2");
-    assert(col.size() == 6 && col["house1"] == "house1" && col["house3"] == "house3" &&
+    // A CED2 marker is optional: native CLST records use the same parser.
+    assert(cls.size() == 3 && cls["house1"] == "house1" && cls["house2"] == "house2" && cls["house6"] == "house6");
+    assert(col.size() == 5 && col["house1"] == "house1" && col["house3"] == "house3" &&
            col["house4"] == "house4" && col["house5"] == "house5" &&
-           col["house6"] == "house6" && col["house7"] == "house7");
+           col["house7"] == "house7");
     std::vector<uint8> selected;
     assert(CCustomModels::GetCollisionBlock("house1", selected));
     float radius = 0; std::memcpy(&radius, selected.data()+24, 4);

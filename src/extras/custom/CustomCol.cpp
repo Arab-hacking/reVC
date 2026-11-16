@@ -56,6 +56,27 @@ SaneRadius(float r)
 	return r == r && r >= 0.0f && r < 100000.0f;
 }
 
+static float
+DistanceToBoxCenter(const float *center, const float *mid)
+{
+	const float cx = center[0] - mid[0], cy = center[1] - mid[1], cz = center[2] - mid[2];
+	if(!(cx == cx) || !(cy == cy) || !(cz == cz))
+		return 1.0e30f;
+	return sqrtf(cx*cx + cy*cy + cz*cz);
+}
+
+// A bounding sphere for a box is centred on (or very near) the box centre;
+// anything further out means the bytes were read with the wrong layout.
+static bool
+CenterInsideBox(const float *center, const float *mid, float halfDiag)
+{
+	for(int i = 0; i < 3; i++)
+		if(!(center[i] == center[i]) || center[i] > 1.0e6f || center[i] < -1.0e6f)
+			return false;
+	const float cx = center[0] - mid[0], cy = center[1] - mid[1], cz = center[2] - mid[2];
+	return sqrtf(cx*cx + cy*cy + cz*cz) <= halfDiag + 2.0f;
+}
+
 // the game crashes on more than this in one collision model
 #define MAX_VERTICES 32767
 #define MAX_FACES    32767
@@ -215,17 +236,49 @@ ParseBlock(const uint8 *p, size_t n, Block &b)
 	float sphRadius, sphCenter[3], sphMin[3], sphMax[3];
 	memcpy(boxMin, t, 12);
 	memcpy(boxMax, t + 12, 12);
-#ifdef ANDROID
-	// SA COL2/COL3 TBounds layout: vec3 min(0..11), vec3 max(12..23),
-	// vec3 center(24..35), float radius(36..39).
-	memcpy(boxCenter, t + 24, 12);
-	boxRadius = rFloat(t + 36);
-#else
-	// box first: the sphere follows it as radius then center, the way both
-	// the game and brformats lay it out
-	boxRadius = rFloat(t + 24);
-	memcpy(boxCenter, t + 28, 12);
-#endif
+	{
+		// Behind min/max, COL2/COL3 carry the sphere in one of two orders:
+		//   SA (and the mobile engine): vec3 center (24..35), float radius (36..39)
+		//   other tools (brformats style): float radius (24..27), vec3 center (28..39)
+		// This used to be picked by an #ifdef ANDROID, so the very same .col/.cls
+		// was read with a different layout on Android and on desktop - one of the
+		// two always got a centre of (radius, center.x, center.y) and a radius
+		// taken from the low word of center.z. Pick whichever pair is actually
+		// self-consistent (finite sane radius whose centre sits inside the box)
+		// so every platform converts the file identically.
+		float saCenter[3], otherCenter[3];
+		memcpy(saCenter, t + 24, 12);
+		const float saRadius = rFloat(t + 36);
+		const float otherRadius = rFloat(t + 24);
+		memcpy(otherCenter, t + 28, 12);
+
+		const float mid[3] = {
+			(boxMin[0] + boxMax[0]) * 0.5f,
+			(boxMin[1] + boxMax[1]) * 0.5f,
+			(boxMin[2] + boxMax[2]) * 0.5f
+		};
+		const float hx = (boxMax[0] - boxMin[0]) * 0.5f;
+		const float hy = (boxMax[1] - boxMin[1]) * 0.5f;
+		const float hz = (boxMax[2] - boxMin[2]) * 0.5f;
+		const float halfDiag = sqrtf(hx*hx + hy*hy + hz*hz);
+
+		const bool saOk = SaneRadius(saRadius) && CenterInsideBox(saCenter, mid, halfDiag);
+		const bool otherOk = SaneRadius(otherRadius) && CenterInsideBox(otherCenter, mid, halfDiag);
+		// Both readings of a real file often pass the sanity check (the radius
+		// of one order is a coordinate of the other, and a coordinate inside
+		// the box is also a plausible radius), so rank them: a bounding sphere
+		// sits at or very near the centre of its box, that is what breaks the
+		// tie. Identical scores keep the SA order.
+		const float saDist = DistanceToBoxCenter(saCenter, mid);
+		const float otherDist = DistanceToBoxCenter(otherCenter, mid);
+		if(otherOk && (!saOk || otherDist < saDist)){
+			memcpy(boxCenter, otherCenter, 12);
+			boxRadius = otherRadius;
+		}else{
+			memcpy(boxCenter, saCenter, 12);
+			boxRadius = saRadius;
+		}
+	}
 	sphRadius = rFloat(t);
 	memcpy(sphCenter, t + 4, 12);
 	memcpy(sphMin, t + 16, 12);

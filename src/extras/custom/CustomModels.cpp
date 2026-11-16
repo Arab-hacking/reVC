@@ -1348,11 +1348,7 @@ IndexBrCollisionBlocks(void)
 			BrBlockRef ref = { source, blocks[b].offset, blocks[b].size, src.mtime };
 			customBrColBlocks[key] = ref;
 		}
-#ifdef ANDROID
 		if(blocks.empty() || bad > 0) {
-#else
-		if(blocks.empty()) {
-#endif
 			// Non-CED2 .cls entries may share a filename across user IMGs
 			// (or coexist with CED2 blocks inside mixed containers like BRWinter.cls).
 			// Index the INTERNAL names of their converted blocks.
@@ -1363,9 +1359,7 @@ IndexBrCollisionBlocks(void)
 				const customcolformat::Block &block = legacy[b];
 				if(!customcolformat::ValidVC(game.data()+block.offset, block.size)) continue;
 				std::string key = ToLower(block.name);
-#ifdef ANDROID
 				if(customBrColBlocks.find(key) != customBrColBlocks.end()) continue;
-#endif
 				std::map<std::string, BrBlockRef>::const_iterator found = customLegacyClsBlocks.find(key);
 				if(found != customLegacyClsBlocks.end() && found->second.mtime >= src.mtime) continue;
 				BrBlockRef ref = { source, block.offset, block.size, src.mtime };

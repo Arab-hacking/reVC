@@ -400,4 +400,33 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Cla
     target_link_options(col_model_lifetime_tests PRIVATE -Wl,--gc-sections)
     set_target_properties(col_model_lifetime_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
     add_test(NAME col_model_lifetime_tests COMMAND col_model_lifetime_tests)
+    # Same BPC fixture on PC: catches platform-only loss of mixed CLS/COL3 blocks.
+    add_executable(desktop_bpc_collision_tests
+        AndroidBpcArchiveIntegrationTests.cpp
+        ../src/extras/custom/CustomModels.cpp ../src/extras/custom/CustomZip.cpp
+        ../src/extras/custom/CustomCol.cpp ../src/rw/TxdStore.cpp
+        ../src/extras/custom/br/third_party/astc_decomp.cpp)
+    target_include_directories(desktop_bpc_collision_tests PRIVATE
+        $<TARGET_PROPERTY:custom_archive_integration_tests,INCLUDE_DIRECTORIES>)
+    target_compile_definitions(desktop_bpc_collision_tests PRIVATE
+        LIBRW RW_GL3 LIBRW_SDL2 CMAKE_BUILD USE_OUR_VERSIONING AUDIO_OAL)
+    target_compile_options(desktop_bpc_collision_tests PRIVATE
+        -ffunction-sections -fdata-sections -Wno-write-strings -Wno-multichar)
+    target_link_options(desktop_bpc_collision_tests PRIVATE -Wl,--gc-sections)
+    target_link_libraries(desktop_bpc_collision_tests PRIVATE Threads::Threads)
+    set_target_properties(desktop_bpc_collision_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+    add_test(NAME desktop_bpc_collision_tests COMMAND desktop_bpc_collision_tests)
+
+    add_executable(collision_record_load_tests
+        CollisionRecordLoadTests.cpp ../src/core/FileLoader.cpp
+        ../src/collision/ColModel.cpp ../src/collision/ColSphere.cpp ../src/collision/ColBox.cpp)
+    target_include_directories(collision_record_load_tests PRIVATE
+        $<TARGET_PROPERTY:custom_archive_integration_tests,INCLUDE_DIRECTORIES>)
+    target_compile_definitions(collision_record_load_tests PRIVATE
+        LIBRW RW_GL3 LIBRW_SDL2 CMAKE_BUILD USE_OUR_VERSIONING AUDIO_OAL)
+    target_compile_options(collision_record_load_tests PRIVATE
+        -ffunction-sections -fdata-sections -Wno-write-strings -Wno-multichar)
+    target_link_options(collision_record_load_tests PRIVATE -Wl,--gc-sections)
+    set_target_properties(collision_record_load_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+    add_test(NAME collision_record_load_tests COMMAND collision_record_load_tests)
 endif()

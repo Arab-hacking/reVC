@@ -208,6 +208,7 @@ static void TestCol() {
     assert(customcolformat::ValidVC(a.data(), a.size()));
     std::vector<uint8_t> b = Triangle("house2");
     std::vector<uint8_t> file = a;
+    file.insert(file.end(), 16, 0); // alignment must not hide the next model
     file.insert(file.end(), b.begin(), b.end());
     std::vector<customcolformat::Block> blocks;
     assert(customcolformat::Index(file.data(), file.size(), blocks) == 0);

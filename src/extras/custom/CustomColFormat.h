@@ -43,22 +43,16 @@ inline size_t Index(const uint8_t *data, size_t length, std::vector<Block> &bloc
     size_t bad = 0, pos = 0;
     if(!data) return length ? 1 : 0;
     while(pos < length) {
-        bool padding = true;
-#ifdef ANDROID
+        while(pos < length && data[pos] == 0) pos++;
+        if(pos == length) break;
+        // Mixed CLS containers can have CLST/CLSF records before COLL/COL3.
         if(length-pos >= 8 && (std::memcmp(data+pos, "CLST", 4) == 0 || std::memcmp(data+pos, "CLSF", 4) == 0)) {
             uint32_t skipSz = U32(data+pos+4);
-            if(skipSz >= 24 && skipSz <= length-pos-8) {
-                pos += (size_t)skipSz+8;
-                continue;
-            }
+            if(skipSz < 24 || skipSz > length-pos-8) { bad++; break; }
+            pos += 8 + skipSz;
+            continue;
         }
-#endif
-        if(length-pos < 8 || !Tag(data+pos)) {
-            for(size_t k = pos; k < length; k++)
-                if(data[k]) { padding = false; break; }
-            if(!padding) bad++;
-            break;
-        }
+        if(length-pos < 8 || !Tag(data+pos)) { bad++; break; }
         uint32_t size = U32(data+pos+4);
         if(size < 64 || size > length-pos-8) { bad++; break; }
         const uint8_t *name = data+pos+8;
