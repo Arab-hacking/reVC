@@ -148,6 +148,7 @@ public:
 	// GTA:SA models contain their wheel meshes; this clones the single "wheel"
 	// mesh of such models onto all four wheel dummies
 	void CloneSAWheelMeshes(RwFrame **wheelFrames, int32 numWheels);
+	void PreprocessSACarHierarchy(void);
 	// radius of a wheel mesh around its own origin (SA wheels are modelled at
 	// their real size, so this is the radius the physics has to use)
 	static float GetWheelMeshRadius(RpAtomic *atomic);
@@ -158,7 +159,7 @@ public:
 	// scale the wheel meshes have to be rendered with: SA models carry their
 	// wheels at their final size, VC models get their separate wheel model scaled
 	// by m_wheelScale
-	float GetWheelRenderScale(void) { return m_bSAWheelMesh ? 1.0f : m_wheelScale; }
+	float GetWheelRenderScale(void) { return m_vehicleType == VEHICLE_TYPE_CAR || m_bSAWheelMesh ? 1.0f : m_wheelScale; }
 	// true when the wheel meshes came with the model (SA style)
 	bool HasOwnWheelMeshes(void) { return m_bSAWheelMesh; }
 	static RwObject *MoveObjectsCB(RwObject *object, void *data);

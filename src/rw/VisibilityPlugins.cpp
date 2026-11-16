@@ -260,6 +260,15 @@ CVisibilityPlugins::RenderFadingUnderwaterEntities(void)
 	RenderFadingEntities(m_alphaUnderwaterEntityList);
 }
 
+// SA embedded wheels render their own geometry, never look up
+// a CSimpleModelInfo or replace geometry with a separate VC wheel LOD.
+RpAtomic*
+CVisibilityPlugins::RenderSAWheelAtomicCB(RpAtomic *atomic)
+{
+	RENDERCALLBACK(atomic);
+	return atomic;
+}
+
 RpAtomic*
 CVisibilityPlugins::RenderWheelAtomicCB(RpAtomic *atomic)
 {

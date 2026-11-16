@@ -429,4 +429,20 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Cla
     target_link_options(collision_record_load_tests PRIVATE -Wl,--gc-sections)
     set_target_properties(collision_record_load_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
     add_test(NAME collision_record_load_tests COMMAND collision_record_load_tests)
+    add_executable(sa_vehicle_collision_load_tests
+        SAVehicleCollisionLoadTests.cpp ../src/core/FileLoader.cpp
+        ../src/collision/ColModel.cpp ../src/collision/ColSphere.cpp ../src/collision/ColBox.cpp)
+    add_executable(sa_car_render_policy_tests
+        SACarRenderPolicyTests.cpp ../src/modelinfo/VehicleModelInfo.cpp)
+    foreach(sa_target sa_vehicle_collision_load_tests sa_car_render_policy_tests)
+        target_include_directories(${sa_target} PRIVATE
+            $<TARGET_PROPERTY:custom_archive_integration_tests,INCLUDE_DIRECTORIES>)
+        target_compile_definitions(${sa_target} PRIVATE
+            LIBRW RW_GL3 LIBRW_SDL2 CMAKE_BUILD USE_OUR_VERSIONING AUDIO_OAL)
+        target_compile_options(${sa_target} PRIVATE
+            -ffunction-sections -fdata-sections -Wno-write-strings -Wno-multichar)
+        target_link_options(${sa_target} PRIVATE -Wl,--gc-sections)
+        set_target_properties(${sa_target} PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+        add_test(NAME ${sa_target} COMMAND ${sa_target})
+    endforeach()
 endif()

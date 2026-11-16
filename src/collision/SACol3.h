@@ -6,6 +6,7 @@
 // type are legal to repeat, so this doesn't collide with common.h/rwplcore.h
 #include <string.h>
 #include <stdint.h>
+#include <cmath>
 typedef uint8_t uint8;
 typedef int16_t int16;
 typedef uint16_t uint16;
@@ -58,55 +59,77 @@ struct SACol3
 #define SACOL3_VERT_SIZE   6
 #define SACOL3_FACE_SIZE   8
 
+// Read little-endian fields without alignment assumptions. DFF extension
+// chunks need not be naturally aligned.
+static inline uint32 SAColRead32(const uint8 *p)
+{
+	return uint32(p[0]) | uint32(p[1]) << 8 | uint32(p[2]) << 16 | uint32(p[3]) << 24;
+}
+static inline uint16 SAColRead16(const uint8 *p) { return uint16(p[0]) | uint16(p[1]) << 8; }
 static inline bool
 SACol3Parse(const uint8 *buf, uint32 size, SACol3 &col)
 {
-	uint32 numFaces, offSpheres, offBoxes, offVerts, offFaces;
-	uint32 vertsEnd;
-
-	if(size < 0x6C || memcmp(buf, "COL3", 4) != 0)
-		return false;
-	// offsets in the file are relative to the byte after the FourCC
-	numFaces   = *(const uint16*)(buf+0x4C);
-	offSpheres = *(const uint32*)(buf+0x54) + 4;
-	offBoxes   = *(const uint32*)(buf+0x58) + 4;
-	offVerts   = *(const uint32*)(buf+0x60) + 4;
-	offFaces   = *(const uint32*)(buf+0x64) + 4;
-
-	// the vertex section ends where the face section starts; that gives us the
-	// vertex count, which the format itself doesn't store
-	if(offVerts > offFaces || (offFaces - offVerts) % SACOL3_VERT_SIZE != 0)
-		return false;
-	vertsEnd = offFaces;
-
-	col.numSpheres = *(const uint16*)(buf+0x48);
-	col.numBoxes   = *(const uint16*)(buf+0x4A);
-	col.numFaces   = numFaces;
-	col.numVerts   = (vertsEnd - offVerts) / SACOL3_VERT_SIZE;
-
-	if(offSpheres + col.numSpheres*SACOL3_SPHERE_SIZE > size ||
-	   offBoxes + col.numBoxes*SACOL3_BOX_SIZE > size ||
-	   offVerts + col.numVerts*SACOL3_VERT_SIZE > size ||
-	   offFaces + col.numFaces*SACOL3_FACE_SIZE > size)
-		return false;
-	memcpy(col.boundingMin, buf+0x20, 12);
-	memcpy(col.boundingMax, buf+0x2C, 12);
-	memcpy(col.boundingCenter, buf+0x38, 12);
-	col.boundingRadius = *(const float*)(buf+0x44);
-
-	col.spheres = (uint8*)(buf + offSpheres);
-	col.boxes   = (uint8*)(buf + offBoxes);
-	col.verts   = (int16*)(buf + offVerts);
-	col.faces   = (uint8*)(buf + offFaces);
-
-	// face indices have to be inside the vertex array
-	for(uint32 i = 0; i < col.numFaces; i++){
-		const uint8 *f = col.faces + i*SACOL3_FACE_SIZE;
-		if(*(const uint16*)f >= col.numVerts ||
-		   *(const uint16*)(f+2) >= col.numVerts ||
-		   *(const uint16*)(f+4) >= col.numVerts)
-			return false;
-	}
+	if(!buf || size < 0x6C) return false;
+	const bool v3 = memcmp(buf, "COL3", 4) == 0;
+	if(!v3 && memcmp(buf, "COL2", 4) != 0) return false;
+	const uint32 header = v3 ? 0x78u : 0x6Cu;
+	if(size < header || SAColRead32(buf+4) != size-8) return false;
+	SACol3 parsed = {};
+	parsed.numSpheres = SAColRead16(buf+0x48);
+	parsed.numBoxes = SAColRead16(buf+0x4A);
+	parsed.numFaces = SAColRead16(buf+0x4C);
+	// The receiving physics structures use signed 16-bit counters.
+	if(parsed.numSpheres > 32767 || parsed.numBoxes > 32767 || parsed.numFaces > 32767) return false;
+	auto section = [&](uint32 field, uint32 count, uint32 width, uint32 &at) -> bool {
+		if(!count) { at = 0; return true; }
+		uint32 offset = SAColRead32(buf+field);
+		if(offset > size-4) return false;
+		at = offset+4;
+		return at >= header && at <= size && count <= (size-at)/width;
+	};
+	uint32 spheres, boxes, faces, verts;
+	if(!section(0x54, parsed.numSpheres, SACOL3_SPHERE_SIZE, spheres) ||
+	   !section(0x58, parsed.numBoxes, SACOL3_BOX_SIZE, boxes) ||
+	   !section(0x64, parsed.numFaces, SACOL3_FACE_SIZE, faces)) return false;
+	if(parsed.numFaces){
+		// SA infers the vertex count from face indices. Padding/face groups
+		// between the vertex and face arrays are not extra vertices.
+		uint32 highest = 0;
+		for(uint32 i = 0; i < parsed.numFaces; i++)
+			for(uint32 j = 0; j < 3; j++){
+				uint32 index = SAColRead16(buf+faces+i*8+j*2);
+				if(index > highest) highest = index;
+			}
+		parsed.numVerts = highest+1;
+		if(parsed.numVerts > 32767 || !section(0x60, parsed.numVerts, SACOL3_VERT_SIZE, verts) ||
+		   verts > faces || parsed.numVerts > (faces-verts)/SACOL3_VERT_SIZE) return false;
+	}else verts = 0;
+	memcpy(parsed.boundingMin, buf+0x20, 12);
+	memcpy(parsed.boundingMax, buf+0x2C, 12);
+	memcpy(parsed.boundingCenter, buf+0x38, 12);
+	memcpy(&parsed.boundingRadius, buf+0x44, 4);
+	if(!std::isfinite(parsed.boundingRadius) || parsed.boundingRadius < 0) return false;
+	for(int k = 0; k < 3; k++)
+		if(!std::isfinite(parsed.boundingMin[k]) || !std::isfinite(parsed.boundingMax[k]) ||
+		   !std::isfinite(parsed.boundingCenter[k]) || parsed.boundingMin[k] > parsed.boundingMax[k]) return false;
+	// The view is published only after all floating geometry is validated.
+	for(uint32 i = 0; i < parsed.numSpheres; i++)
+		for(uint32 k = 0; k < 4; k++){
+			float value; memcpy(&value, buf+spheres+i*20+k*4, 4);
+			if(!std::isfinite(value) || (k == 3 && value < 0)) return false;
+		}
+	for(uint32 i = 0; i < parsed.numBoxes; i++)
+		for(uint32 k = 0; k < 3; k++){
+			float mn, mx;
+			memcpy(&mn, buf+boxes+i*28+k*4, 4);
+			memcpy(&mx, buf+boxes+i*28+12+k*4, 4);
+			if(!std::isfinite(mn) || !std::isfinite(mx) || mn > mx) return false;
+		}
+	parsed.spheres = parsed.numSpheres ? (uint8*)buf+spheres : nullptr;
+	parsed.boxes = parsed.numBoxes ? (uint8*)buf+boxes : nullptr;
+	parsed.verts = parsed.numVerts ? (int16*)(buf+verts) : nullptr;
+	parsed.faces = parsed.numFaces ? (uint8*)buf+faces : nullptr;
+	col = parsed;
 	return true;
 }
 

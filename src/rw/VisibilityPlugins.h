@@ -51,6 +51,7 @@ public:
 	static void SetupVehicleVariables(RpClump *vehicle);
 
 	static RpAtomic *RenderWheelAtomicCB(RpAtomic *atomic);
+	static RpAtomic *RenderSAWheelAtomicCB(RpAtomic *atomic);
 	static RpAtomic *RenderObjNormalAtomic(RpAtomic *atomic);
 	static RpAtomic *RenderAlphaAtomic(RpAtomic *atomic, int alpha);
 	static RpAtomic *RenderWeaponCB(RpAtomic *atomic);

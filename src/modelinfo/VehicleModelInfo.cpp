@@ -529,7 +529,7 @@ CVehicleModelInfo::SetClump(RpClump *clump)
 	CClumpModelInfo::SetClump(clump);
 #ifdef SA_VEHICLE_MODELS
 	// must be known before the render callbacks are chosen
-	gVehicleIsSAHierarchy = IsSAHierarchy(clump);
+	gVehicleIsSAHierarchy = m_vehicleType == VEHICLE_TYPE_CAR || IsSAHierarchy(clump);
 #endif
 	SetAtomicRenderCallbacks();
 	SetFrameIds(ms_vehicleDescs[m_vehicleType]);
@@ -578,10 +578,12 @@ CVehicleModelInfo::MoveObjectsCB(RwObject *object, void *data)
 RpAtomic*
 CVehicleModelInfo::HideDamagedAtomicCB(RpAtomic *atomic, void *data)
 {
-	if(strstr(GetFrameNodeName(RpAtomicGetFrame(atomic)), "_dam")){
+	const char *name = GetFrameNodeName(RpAtomicGetFrame(atomic));
+	if(!name) return atomic;
+	if(strstr(name, "_dam")){
 		RpAtomicSetFlags(atomic, 0);
 		CVisibilityPlugins::SetAtomicFlag(atomic, ATOMIC_FLAG_DAM);
-	}else if(strstr(GetFrameNodeName(RpAtomicGetFrame(atomic)), "_ok"))
+	}else if(strstr(name, "_ok"))
 		CVisibilityPlugins::SetAtomicFlag(atomic, ATOMIC_FLAG_OK);
 	return atomic;
 }
@@ -607,37 +609,23 @@ CVehicleModelInfo::HasAlphaMaterialCB(RpMaterial *material, void *data)
 }
 
 
+// SA 0x4C77E0: all ordinary car atomics are high detail except _vlo.
+// No VC _hi requirement, _lo stripping or name-based format detection.
 RpAtomic*
 CVehicleModelInfo::SetAtomicRendererCB(RpAtomic *atomic, void *data)
 {
-	RpClump *clump;
-	char *name;
-	bool alpha;
-
-	clump = (RpClump*)data;
-	name = GetFrameNodeName(RpAtomicGetFrame(atomic));
-	alpha = false;
-	RpGeometryForAllMaterials(RpAtomicGetGeometry(atomic), HasAlphaMaterialCB, &alpha);
-	if(strstr(name, "_hi") || !CGeneral::faststrncmp(name, "extra", 5)) {
-		if(alpha || strncmp(name, "windscreen", 10) == 0)
-			CVisibilityPlugins::SetAtomicRenderCallback(atomic, CVisibilityPlugins::RenderVehicleHiDetailAlphaCB);
-		else
-			CVisibilityPlugins::SetAtomicRenderCallback(atomic, CVisibilityPlugins::RenderVehicleHiDetailCB);
-	}else if(strstr(name, "_vlo"))
+	(void)data;
+	const char *name = GetFrameNodeName(RpAtomicGetFrame(atomic));
+	if(name == nil) name = "";
+	if(strstr(name, "_vlo"))
 		CVisibilityPlugins::SetAtomicRenderCallback(atomic, CVisibilityPlugins::RenderVehicleReallyLowDetailCB);
-	else if(gVehicleIsSAHierarchy){
-		// SA hierarchy: no VC LOD markers at all, so everything that is not a
-		// LOD or damage part is drawn in hi detail
-		if(alpha)
-			CVisibilityPlugins::SetAtomicRenderCallback(atomic, CVisibilityPlugins::RenderVehicleHiDetailAlphaCB);
-		else
-			CVisibilityPlugins::SetAtomicRenderCallback(atomic, CVisibilityPlugins::RenderVehicleHiDetailCB);
-	}else if(strstr(name, "_lo")){
-		RpClumpRemoveAtomic(clump, atomic);
-		RpAtomicDestroy(atomic);
-		return atomic;		// BUG: nil in gta
-	}else
-		CVisibilityPlugins::SetAtomicRenderCallback(atomic, nil);
+	else{
+		bool alpha = false;
+		RpGeometryForAllMaterials(RpAtomicGetGeometry(atomic), HasAlphaMaterialCB, &alpha);
+		CVisibilityPlugins::SetAtomicRenderCallback(atomic,
+			alpha || strncmp(name, "windscreen", 10) == 0 ?
+			CVisibilityPlugins::RenderVehicleHiDetailAlphaCB : CVisibilityPlugins::RenderVehicleHiDetailCB);
+	}
 	HideDamagedAtomicCB(atomic, nil);
 	return atomic;
 }
@@ -843,9 +831,94 @@ GetOkAndDamagedAtomicCB(RwObject *object, void *data)
 	return object;
 }
 
+#ifdef SA_VEHICLE_MODELS
+// Adapted from gta-reversed CVehicleModelInfo::PreprocessHierarchy (0x4C8E60).
+// Engine hierarchy IDs remain the reVC ABI; automobile physics is not ported.
+void
+CVehicleModelInfo::PreprocessSACarHierarchy(void)
+{
+	RwObjectNameIdAssocation *desc = ms_vehicleDescs[VEHICLE_TYPE_CAR];
+	m_numDoors = 0;
+	m_numComps = 0;
+	m_bSAWheelMesh = false;
+	RpAtomic *mainWheel = nil;
+	for(int i = 0; desc[i].name; i++){
+		if((desc[i].flags & (VEHICLE_FLAG_POS|VEHICLE_FLAG_COMP)) == 0) continue;
+		RwObjectNameAssociation assoc;
+		assoc.frame = nil; assoc.name = desc[i].name;
+		RwFrameForAllChildren(RpClumpGetFrame(m_clump), FindFrameFromNameWithoutIdCB, &assoc);
+		if(!assoc.frame) continue;
+		if(desc[i].flags & VEHICLE_FLAG_POS){
+			RwV3d *pos = &m_positions[desc[i].hierId];
+			*pos = *RwMatrixGetPos(RwFrameGetMatrix(assoc.frame));
+			RwFrame *parent = RwFrameGetParent(assoc.frame);
+			while(parent && RwFrameGetParent(parent)){
+				RwV3dTransformPoints(pos, pos, 1, RwFrameGetMatrix(parent));
+				parent = RwFrameGetParent(parent);
+			}
+			RwFrameDestroy(assoc.frame);
+		}else{
+			RpAtomic *extra = (RpAtomic*)GetFirstObject(assoc.frame);
+			if(!extra || m_numComps >= (int)(sizeof(m_comps)/sizeof(m_comps[0]))) continue;
+			RpClumpRemoveAtomic(m_clump, extra);
+			RwFrameRemoveChild(assoc.frame);
+			SetVehicleComponentFlags(assoc.frame, desc[i].flags);
+			m_comps[m_numComps++] = extra;
+		}
+	}
+	// SA's main wheel is wheel_rf_dummy, not whichever wheel happens to be
+	// encountered first. Missing wheel geometry never invokes VC wheel models.
+	RwObjectIdAssociation wheel;
+	wheel.frame = nil; wheel.id = CAR_WHEEL_RF;
+	RwFrameForAllChildren(RpClumpGetFrame(m_clump), FindFrameFromIdCB, &wheel);
+	RwFrame *mesh = FindWheelMeshFrame(wheel.frame);
+	if(mesh){
+		mainWheel = (RpAtomic*)GetFirstObject(mesh);
+		float radius = mainWheel ? GetWheelMeshRadius(mainWheel) : 0.0f;
+		// Compatibility bridge to the deliberately retained reVC physics only.
+		if(radius > 0.001f) m_wheelScale = 2.0f*radius;
+		m_bSAWheelMesh = mainWheel != nil;
+	}
+	for(int i = 0; desc[i].name; i++){
+		if(desc[i].flags & (VEHICLE_FLAG_POS|VEHICLE_FLAG_COMP)) continue;
+		RwObjectIdAssociation assoc;
+		assoc.frame = nil; assoc.id = desc[i].hierId;
+		RwFrameForAllChildren(RpClumpGetFrame(m_clump), FindFrameFromIdCB, &assoc);
+		if(!assoc.frame) continue;
+		if(desc[i].flags & VEHICLE_FLAG_DOOR) m_numDoors++;
+		if(desc[i].flags & VEHICLE_FLAG_COLLAPSE){
+			RpAtomic *parts[2] = { nil, nil };
+			RwFrameForAllChildren(assoc.frame, CollapseFramesCB, assoc.frame);
+			RwFrameUpdateObjects(assoc.frame);
+			RwFrameForAllObjects(assoc.frame, GetOkAndDamagedAtomicCB, parts);
+			if(parts[0] && parts[1]) RpAtomicSetRenderCallBack(parts[1], RpAtomicGetRenderCallBack(parts[0]));
+		}
+		SetVehicleComponentFlags(assoc.frame, desc[i].flags);
+		if(!(desc[i].flags & VEHICLE_FLAG_ADD_WHEEL) || !mainWheel) continue;
+		if(desc[i].hierId == CAR_WHEEL_RF){
+			RwFrameForAllChildren(assoc.frame, CollapseFramesCB, assoc.frame);
+			RwFrameUpdateObjects(assoc.frame);
+			CVisibilityPlugins::SetAtomicRenderCallback(mainWheel, CVisibilityPlugins::RenderSAWheelAtomicCB);
+		}else{
+			RpAtomic *clone = RpAtomicClone(mainWheel);
+			if(!clone) continue;
+			RpAtomicSetFrame(clone, assoc.frame);
+			RpClumpAddAtomic(m_clump, clone);
+			CVisibilityPlugins::SetAtomicRenderCallback(clone, CVisibilityPlugins::RenderSAWheelAtomicCB);
+		}
+	}
+}
+#endif
+
 void
 CVehicleModelInfo::PreprocessHierarchy(void)
 {
+#ifdef SA_VEHICLE_MODELS
+	if(m_vehicleType == VEHICLE_TYPE_CAR){
+		PreprocessSACarHierarchy();
+		return;
+	}
+#endif
 	int32 i;
 	RwObjectNameIdAssocation *desc;
 	RwFrame *f;
