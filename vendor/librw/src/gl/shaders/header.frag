@@ -114,8 +114,16 @@ float AtmosphereVisibility(vec3 worldPos, float oldVisibility)
 	float d = length(worldPos - u_eye.xyz);
 	float span = max(u_fogEnd - u_fogStart, 1.0);
 	float t = clamp((d - u_fogStart) / span, 0.0, 1.0);
-	if(u_atmosphere.x >= 1.5)
-		return 1.0 - t;
+	if(u_atmosphere.x >= 1.5){
+		// Client Posteffects/Fog.fs and GroundFog.fs are exponential in density:
+		//     t = clamp((dist/(far-near) - start) * 1/(end-start), 0, 1);
+		//     fogAmount = 1.0 - exp(-t * density);
+		// A plain 1.0 - t ramp is linear, so the far plane stayed readable and
+		// the distance never actually hazed over. Weather thickens the medium.
+		float fogDensity = 1.0 + 1.35 * clamp(u_atmosphere.y, 0.0, 1.0) +
+		                   1.80 * clamp(u_atmosphere.z, 0.0, 1.0);
+		return exp(-t * fogDensity);
+	}
 	float weather = clamp(0.7*clamp(u_atmosphere.y, 0.0, 1.0) +
 	                      0.6*clamp(u_atmosphere.z, 0.0, 1.0), 0.0, 1.0);
 	float density = 1.0 + 1.2*weather;

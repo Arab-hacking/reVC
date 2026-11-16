@@ -26,6 +26,16 @@ int CPostFX::EffectSwitch = POSTFX_NORMAL;
 bool CPostFX::BlurOn = false;
 bool CPostFX::MotionBlurOn = false;
 
+// Client Posteffects/Vignette.fs parameters, packed as
+//   vignetteParams = (aspect, scale, bias), vignetteColor = (r, g, b, strength)
+// The client feeds these from its assets; the values below are a mild starting
+// point that darkens only the frame corners. VIGNETTE_STRENGTH = 0 turns the
+// pass back into the plain contrast step this port always did.
+#define VIGNETTE_ASPECT   1.0f
+#define VIGNETTE_SCALE    1.25f
+#define VIGNETTE_BIAS    -0.62f
+#define VIGNETTE_STRENGTH 0.28f
+
 static RwIm2DVertex Vertex[4];
 static RwIm2DVertex Vertex2[4];
 static RwImVertexIndex Index[6] = { 0, 1, 2, 0, 2, 3 };
@@ -39,6 +49,8 @@ int32 u_blurcolor;
 int32 u_blurTexel;
 int32 u_contrastAdd;
 int32 u_contrastMult;
+int32 u_vignette;
+int32 u_vignetteColor;
 rw::gl3::Shader *colourFilterVC;
 rw::gl3::Shader *contrast;
 #endif
@@ -51,6 +63,8 @@ CPostFX::InitOnce(void)
 	u_blurTexel = rw::gl3::registerUniform("u_blurTexel");
 	u_contrastAdd = rw::gl3::registerUniform("u_contrastAdd");
 	u_contrastMult = rw::gl3::registerUniform("u_contrastMult");
+	u_vignette = rw::gl3::registerUniform("u_vignette");
+	u_vignetteColor = rw::gl3::registerUniform("u_vignetteColor");
 #endif
 }
 
@@ -313,6 +327,14 @@ CPostFX::RenderOverlayShader(RwCamera *cam, int32 r, int32 g, int32 b, int32 a)
 		contrast->use();
 		glUniform3fv(contrast->uniformLocations[u_contrastMult], 1, mult);
 		glUniform3fv(contrast->uniformLocations[u_contrastAdd], 1, add);
+		// Client Posteffects/Vignette.fs. The port had the contrast step but no
+		// vignette at all, which is part of why the frame read flatter than the
+		// client's. Parameters come from the tuning block so the look stays a
+		// decision, not a hardcoded guess.
+		const float vign[4] = { VIGNETTE_ASPECT, VIGNETTE_SCALE, VIGNETTE_BIAS, 1.0f };
+		const float vignCol[4] = { 0.0f, 0.0f, 0.0f, VIGNETTE_STRENGTH };
+		glUniform4fv(contrast->uniformLocations[u_vignette], 1, vign);
+		glUniform4fv(contrast->uniformLocations[u_vignetteColor], 1, vignCol);
 #endif
 	}else{
 		float f = Intensity;
