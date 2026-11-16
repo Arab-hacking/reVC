@@ -334,7 +334,7 @@ enum eMenuAction
 #endif
 #ifdef MISSION_REPLAY
 	MENUACTION_REJECT_RETRY,
-	MENUACTION_UNK114
+	MENUACTION_UNK114,
 #endif
 // TEST GRAPHICS (analysis: mobile pipeline settings)
 	MENUACTION_TEST_SHADOW_QUALITY,
@@ -821,14 +821,14 @@ public:
 	};
 
 	int8 m_PrefsMobileGraphics;
+#endif
 
-	// TEST GRAPHICS (analysis: mobile pipeline settings)
+	// TEST GRAPHICS settings are used by both desktop and mobile menus.
 	int8 m_PrefsShadowQuality;
 	int8 m_PrefsReflectionQuality;
 	float m_PrefsTestDrawDist;
 	int8 m_PrefsWaterQuality;
 	int8 m_PrefsParticleQuality;
-#endif
 
 #ifdef NO_ISLAND_LOADING
 	enum
