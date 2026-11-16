@@ -51,15 +51,17 @@ void
 CColModel::RemoveCollisionVolumes(void)
 {
 	if(ownsCollisionVolumes){
+		// The cache link lives after planes[numTriangles]. Unlink while that
+		// allocation and the original count are still valid; this also frees
+		// planes. Freeing it here first caused a use-after-free/double free.
+		CCollision::RemoveTrianglePlanes(this);
 		RwFree(spheres);
 		RwFree(sphereW);
 		RwFree(lines);
 		RwFree(boxes);
 		RwFree(vertices);
 		RwFree(triangles);
-		RwFree(planes);
 		RwFree(tree);
-		CCollision::RemoveTrianglePlanes(this);
 	}
 	numSpheres = 0;
 	numLines = 0;

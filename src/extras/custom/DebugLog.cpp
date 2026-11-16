@@ -165,7 +165,9 @@ DebugLogVectoredException(EXCEPTION_POINTERS *info)
 	record = info->ExceptionRecord;
 	if(record->ExceptionCode != EXCEPTION_ACCESS_VIOLATION &&
 	   record->ExceptionCode != EXCEPTION_IN_PAGE_ERROR &&
-	   record->ExceptionCode != EXCEPTION_STACK_OVERFLOW)
+	   record->ExceptionCode != EXCEPTION_STACK_OVERFLOW &&
+	   record->ExceptionCode != 0xC0000374UL && // STATUS_HEAP_CORRUPTION
+	   record->ExceptionCode != 0xC0000409UL)   // STATUS_STACK_BUFFER_OVERRUN / fail-fast
 		return EXCEPTION_CONTINUE_SEARCH;
 
 	context = info->ContextRecord;
@@ -194,6 +196,13 @@ DebugLogVectoredException(EXCEPTION_POINTERS *info)
 			operation, (void*)(uintptr_t)record->ExceptionInformation[1]);
 		DebugLogCrashLine(line);
 	}
+	// Heap termination may bypass the unhandled filter. Record these when
+	// Windows delivers them to VEH; true fast-fail can still bypass all handlers.
+	if(record->ExceptionCode == 0xC0000374UL || record->ExceptionCode == 0xC0000409UL){
+		DebugLogWindowsContext(info);
+		DebugLogSaveDump(info);
+	}
+
 	return EXCEPTION_CONTINUE_SEARCH;
 }
 

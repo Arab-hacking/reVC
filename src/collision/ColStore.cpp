@@ -131,8 +131,15 @@ CColStore::RemoveCol(int32 slot)
 		CBaseModelInfo *mi = CModelInfo::GetModelInfo(id);
 		if(mi){
 			CColModel *col = mi->GetColModel();
-			if(col && col->level == slot)
+			if(col && col->level == slot){
+				REVC_LOG_INFO("COL FREE BEGIN slot=%d model=%d name=%s col=%p owns=%d spheres=%p sphereW=%p lines=%p boxes=%p vertices=%p triangles=%p planes=%p tree=%p",
+					slot, id, mi->GetModelName(), (void*)col, (int)col->ownsCollisionVolumes,
+					(void*)col->spheres, (void*)col->sphereW, (void*)col->lines,
+					(void*)col->boxes, (void*)col->vertices, (void*)col->triangles,
+					(void*)col->planes, (void*)col->tree);
 				col->RemoveCollisionVolumes();
+				REVC_LOG_INFO("COL FREE END slot=%d model=%d", slot, id);
+			}
 		}
 	}
 }
@@ -154,8 +161,11 @@ CColStore::RemoveAllCollision(void)
 	int i;
 	for(i = 1; i < COLSTORESIZE; i++)
 		if(GetSlot(i))
-			if(CStreaming::CanRemoveCol(i))
+			if(CStreaming::CanRemoveCol(i)){
+				REVC_LOG_INFO("COL REMOVE BEGIN slot=%d name=%s", i, GetColName(i));
 				CStreaming::RemoveCol(i);
+				REVC_LOG_INFO("COL REMOVE END slot=%d", i);
+			}
 }
 
 static bool bLoadAtSecondPosition;

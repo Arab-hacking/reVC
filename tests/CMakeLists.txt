@@ -370,4 +370,17 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Cla
     add_test(NAME ${reader_test} COMMAND ${reader_test})
     endforeach()
     target_compile_definitions(anim_file_read_compressed_tests PRIVATE ANIM_COMPRESSION)
+    # Real cleanup code; checked allocator/cache stub detects freeing planes
+    # before unlinking the cached link embedded at the end of that allocation.
+    add_executable(col_model_lifetime_tests
+        ColModelLifetimeTests.cpp ../src/collision/ColModel.cpp)
+    target_include_directories(col_model_lifetime_tests PRIVATE
+        $<TARGET_PROPERTY:custom_archive_integration_tests,INCLUDE_DIRECTORIES>)
+    target_compile_definitions(col_model_lifetime_tests PRIVATE
+        LIBRW RW_GL3 LIBRW_SDL2 CMAKE_BUILD USE_OUR_VERSIONING AUDIO_OAL)
+    target_compile_options(col_model_lifetime_tests PRIVATE
+        -ffunction-sections -fdata-sections -Wno-write-strings -Wno-multichar)
+    target_link_options(col_model_lifetime_tests PRIVATE -Wl,--gc-sections)
+    set_target_properties(col_model_lifetime_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+    add_test(NAME col_model_lifetime_tests COMMAND col_model_lifetime_tests)
 endif()
