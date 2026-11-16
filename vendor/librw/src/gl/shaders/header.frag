@@ -541,12 +541,18 @@ vec3 BR_ShadeMobileWorldLinear(
 	float specAmt = pow(max(dot(N, H), 0.0), 50.0) * (isSkinDynamic > 0.5 ? 0.40 : 0.15) * day * (1.0 - 0.45 * cloud);
 	vec3 specular = sunLightCol * specAmt;
 
-	// Only the direct sun is occluded. Multiplying the ambient term too made
-	// every surface in shade go to near-black - whole building walls turned
-	// solid dark the moment they fell inside the shadow volume, which is what
-	// "buildings turn black" looked like. The BR path above already keeps
-	// ambient outside the shadow term (see shadowTerm at the direct light).
-	vec3 lit = baseCol * ambCol + (diffuseVec + specular) * shadowVis;
+	// Client formula, verbatim from mesh_shadow_clip/ mesh_shadow_fog.fs:
+	//     shadow = 0.3 * (1.0 - visibility);
+	//     shadow = max(shadow, 0.3 * pow(1.0 - diffuse, 24.0));
+	//     color.rgb *= (1.0 - shadow);
+	// A shadow in the client can darken a surface by at most 30% - it is a
+	// shade, not an absence of light. This port turned shadowVis into a
+	// multiplier on the direct term, so a fully shadowed wall lost the sun
+	// completely and read as a solid black slab. Reproduce the client: cap the
+	// darkening at 30% and keep it multiplicative on the final colour.
+	float clientShadow = 0.3 * (1.0 - shadowVis);
+	clientShadow = max(clientShadow, 0.3 * pow(1.0 - ndotl, 24.0));
+	vec3 lit = (baseCol * ambCol + diffuseVec + specular) * (1.0 - clientShadow);
 
 	// Static world geometry uses 0 per-pixel pointlights on mobile; dynamic skins catch up to 2 nearby beams
 	if(isSkinDynamic > 0.5){
