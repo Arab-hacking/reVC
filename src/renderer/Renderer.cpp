@@ -538,6 +538,12 @@ CRenderer::RenderOneBuilding(CEntity *ent, float camdist)
 		fadefactor = (mi->GetLargestLodDistance() - (camdist - FADE_DISTANCE))/FADE_DISTANCE;
 		if(fadefactor > 1.0f)
 			fadefactor = 1.0f;
+		// Clamp the bottom too. Past the fade window fadefactor goes negative,
+		// and alpha is unsigned, so it wrapped to a huge value: the object
+		// popped back to opaque instead of staying vanished, which is the
+		// flicker seen when running along a row of LOD buildings.
+		if(fadefactor < 0.0f)
+			fadefactor = 0.0f;
 		alpha = mi->m_alpha * fadefactor;
 
 		if(alpha == 255)

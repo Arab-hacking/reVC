@@ -174,7 +174,11 @@ CSimpleModelInfo::GetAtomicFromDistance(float dist)
 	if(m_isDamaged)
 		i = m_firstDamaged;
 #ifdef ANDROID
-	float mult = EffectiveSimpleLodMultiplier(this, 1.0f);
+	// Must be the same floor as GetLargestLodDistance/GetLodDistance. With 1.0f
+	// here the atomic outlived the fade window whenever the draw-distance
+	// slider sat under 1.0, so fadefactor ran negative and the object kept
+	// switching between transparent and fully opaque.
+	float mult = EffectiveSimpleLodMultiplier(this, DRAWDIST_MIN);
 #else
 	float mult = EffectiveSimpleLodMultiplier(this, 0.0f);
 #endif
