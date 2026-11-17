@@ -462,60 +462,82 @@ CPhysical::ApplyFrictionTurnForce(float jx, float jy, float jz, float px, float 
 	m_vecTurnFriction += turnimpulse*(1.0f/m_fTurnMass);
 }
 
+// 0x543C90
 bool
-CPhysical::ApplySpringCollision(float springConst, CVector &springDir, CVector &point, float springRatio, float bias)
+CPhysical::ApplySpringCollision(float forceLevel, CVector &direction, CVector &point, float springRatio,
+	float bias, float &dampingLimit)
 {
-	float compression = 1.0f - springRatio;
-	if(compression > 0.0f){
-		float step = Min(CTimer::GetTimeStep(), 3.0f);
-		float impulse = -GRAVITY*m_fMass*step * springConst * compression * bias*2.0f;
-		ApplyMoveForce(springDir*impulse);
-		ApplyTurnForce(springDir*impulse, point);
-	}
-	return true;
-}
-
-bool
-CPhysical::ApplySpringCollisionAlt(float springConst, CVector &springDir, CVector &point, float springRatio, float bias, CVector &forceDir)
-{
-	float compression = 1.0f - springRatio;
-	if(compression > 0.0f){
-		if(DotProduct(springDir, forceDir) > 0.0f)
-			forceDir *= -1.0f;
-		float step = Min(CTimer::GetTimeStep(), 3.0f);
-		float impulse = GRAVITY*m_fMass*step * springConst * compression * bias*2.0f;
-		if(bIsHeavy)
-			impulse *= 0.75f;
-		ApplyMoveForce(forceDir*impulse);
-		ApplyTurnForce(forceDir*impulse, point);
-	}
-	return true;
-}
-
-// What exactly is speed?
-bool
-CPhysical::ApplySpringDampening(float damping, CVector &springDir, CVector &point, CVector &speed)
-{
-	float speedA = DotProduct(speed, springDir);
-	float speedB = DotProduct(GetSpeed(point), springDir);
-#ifdef FIX_BUGS
-	if (speedB == 0.0f)
+	float stress = 1.0f - springRatio;
+	if(stress <= 0.0f)
 		return true;
-#endif
+
 	float step = Min(CTimer::GetTimeStep(), 3.0f);
-	float impulse = -damping * (speedA + speedB)/2.0f * m_fMass * step * 0.53f;
+
+	dampingLimit = stress * (step * m_fMass) * forceLevel * bias * 0.016f;
 	if(bIsHeavy)
-		impulse *= 2.0f;
+		dampingLimit *= 0.75f;
 
-	// what is this?
-	float a = m_fTurnMass / ((point.MagnitudeSqr() + 1.0f) * 2.0f * m_fMass);
-	a = Min(a, 1.0f);
-	float b = Abs(impulse / (speedB * m_fMass));
-	if(a < b)
-		impulse *= a/b;
+	CVector force = direction * (dampingLimit / (bias * 2.0f));
+	ApplyMoveForce(force);
+	ApplyTurnForce(force, point);
+	return true;
+}
 
-	ApplyMoveForce(springDir*impulse);
-	ApplyTurnForce(springDir*impulse, point);
+// 0x543D60
+bool
+CPhysical::ApplySpringCollisionAlt(float forceLevel, CVector &direction, CVector &point, float springRatio,
+	float bias, CVector &normal, float &dampingLimit)
+{
+	float stress = 1.0f - springRatio;
+	if(stress <= 0.0f)
+		return true;
+
+	if(DotProduct(direction, normal) > 0.0f)
+		normal *= -1.0f;
+
+	float step = Min(CTimer::GetTimeStep(), 3.0f);
+
+	dampingLimit = stress * (step * m_fMass) * forceLevel * bias * 0.016f;
+	if(bIsHeavy)
+		dampingLimit *= 0.75f;
+
+	ApplyMoveForce(normal * dampingLimit);
+	ApplyTurnForce(normal * dampingLimit, point);
+	return true;
+}
+
+// 0x543E90
+bool
+CPhysical::ApplySpringDampening(float damping, float dampingLimit, CVector &direction, CVector &point, CVector &speed)
+{
+	float speedAlongSpring = DotProduct(speed, direction);
+	float pointSpeedAlongSpring = DotProduct(GetSpeed(point), direction);
+
+	float step = Min(CTimer::GetTimeStep(), 3.0f);
+	float forcePerStep = step * damping;
+	if(bIsHeavy)
+		forcePerStep *= 2.0f;
+
+	// A spring can only take the compression force it already carries, so the
+	// dampening impulse is clamped to the limit reported by the spring.
+	forcePerStep = Clamp(forcePerStep, -DAMPING_LIMIT_IN_FRAME, DAMPING_LIMIT_IN_FRAME);
+
+	float damp = -(forcePerStep * speedAlongSpring);
+	if(damp > 0.0f && damp + pointSpeedAlongSpring > 0.0f)
+		damp = pointSpeedAlongSpring >= 0.0f ? 0.0f : -pointSpeedAlongSpring;
+	else if(damp < 0.0f && damp + pointSpeedAlongSpring < 0.0f)
+		damp = pointSpeedAlongSpring <= 0.0f ? 0.0f : -pointSpeedAlongSpring;
+
+	CVector centre = Multiply3x3(GetMatrix(), m_vecCentreOfMass);
+	CVector distance = point - centre;
+	float force = GetMass(distance, direction) * damp;
+
+	float limit = Abs(dampingLimit) * DAMPING_LIMIT_OF_SPRING_FORCE;
+	if(force > limit)
+		force = limit;
+
+	ApplyMoveForce(direction * force);
+	ApplyTurnForce(direction * force, point);
 	return true;
 }
 

@@ -11,6 +11,11 @@ enum {
 
 #define GRAVITY (0.008f)
 
+// Per-frame clamp of the dampening impulse and the fraction of the spring
+// force a damper may counteract, both read from the executable.
+const float DAMPING_LIMIT_IN_FRAME = 0.25f;
+const float DAMPING_LIMIT_OF_SPRING_FORCE = 0.998f;
+
 class CTreadable;
 
 class CPhysical : public CEntity
@@ -157,8 +162,15 @@ public:
 	void ApplyFrictionTurnForce(const CVector &j, const CVector &p) { ApplyFrictionTurnForce(j.x, j.y, j.z, p.x, p.y, p.z); }
 	// springRatio: 1.0 fully extended, 0.0 fully compressed
 	bool ApplySpringCollision(float springConst, CVector &springDir, CVector &point, float springRatio, float bias);
-	bool ApplySpringCollisionAlt(float springConst, CVector &springDir, CVector &point, float springRatio, float bias, CVector &forceDir);
-	bool ApplySpringDampening(float damping, CVector &springDir, CVector &point, CVector &speed);
+	// SA suspension springs. The force level is the handling value, the ratio is
+	// the suspension compression (0 = fully compressed, 1 = fully extended) and
+	// the damping limit is what ApplySpringCollisionAlt reports back so that the
+	// dampening stage can clamp itself.
+	bool ApplySpringCollision(float forceLevel, CVector &direction, CVector &point, float springRatio,
+		float bias, float &dampingLimit);
+	bool ApplySpringCollisionAlt(float forceLevel, CVector &direction, CVector &point, float springRatio,
+		float bias, CVector &normal, float &dampingLimit);
+	bool ApplySpringDampening(float damping, float dampingLimit, CVector &direction, CVector &point, CVector &speed);
 	void ApplyGravity(void);
 	void ApplyFriction(void);
 	void ApplyAirResistance(void);

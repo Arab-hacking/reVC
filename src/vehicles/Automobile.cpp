@@ -781,6 +781,10 @@ CAutomobile::ProcessControl(void)
 		}
 
 		// Make springs push up vehicle
+		float dampingLimits[4];
+		for(i = 0; i < 4; i++)
+			dampingLimits[i] = 0.0f;
+
 		for(i = 0; i < 4; i++){
 			if(m_aSuspensionSpringRatio[i] < 1.0f){
 				float bias = m_pHandlingData->m_fSuspensionBiasBetweenFrontAndRear;
@@ -789,7 +793,7 @@ CAutomobile::ProcessControl(void)
 
 				ApplySpringCollisionAlt(m_pHandlingData->m_fSuspensionForceLevel,
 					springDirections[i], contactPoints[i],
-					m_aSuspensionSpringRatio[i], bias, m_aWheelColPoints[i].normal);
+					m_aSuspensionSpringRatio[i], bias, m_aWheelColPoints[i].normal, dampingLimits[i]);
 
 				m_aWheelSkidmarkUnk[i] = false;
 				if(m_aWheelColPoints[i].surfaceB == SURFACE_GRASS ||
@@ -823,15 +827,14 @@ CAutomobile::ProcessControl(void)
 
 		// dampen springs
 		for(i = 0; i < 4; i++)
-			if(m_aSuspensionSpringRatio[i] < 0.99999f)
-				ApplySpringDampening(m_pHandlingData->m_fSuspensionDampingLevel,
+			if(m_aSuspensionSpringRatio[i] < 1.0f)
+				ApplySpringDampening(m_pHandlingData->m_fSuspensionDampingLevel, dampingLimits[i],
 					springDirections[i], contactPoints[i], contactSpeeds[i]);
 
-		// Get speed at contact points again
+		// Get speed at contact points again, now that the springs have been applied
 		for(i = 0; i < 4; i++){
 			contactSpeeds[i] = GetSpeed(contactPoints[i]);
 			if(m_aGroundPhysical[i]){
-				// subtract movement of physical we're standing on
 				contactSpeeds[i] -= m_aGroundPhysical[i]->GetSpeed(m_aGroundOffset[i]);
 				m_aGroundPhysical[i] = nil;
 			}
