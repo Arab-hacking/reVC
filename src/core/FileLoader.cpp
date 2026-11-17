@@ -275,8 +275,8 @@ CFileLoader::LoadCollisionFile(const char *filename, uint8 colSlot)
 		mi = CModelInfo::GetModelInfo(modelname, nil);
 #ifdef SA_VEHICLE_MODELS
 		if(mi && mi->GetModelType() == MITYPE_VEHICLE &&
-		   ((CVehicleModelInfo*)mi)->m_vehicleType == VEHICLE_TYPE_CAR)
-			continue; // SA-only cars must load their own DFF collision.
+		   ((CVehicleModelInfo*)mi)->HasEmbeddedColModel())
+			continue; // Never overwrite validated model-owned collision.
 #endif
 		if(mi){
 			if(mi->GetColModel() && mi->DoesOwnColModel()){
@@ -509,8 +509,7 @@ CFileLoader::LoadCollisionFileFirstTime(uint8 *buffer, uint32 size, uint8 colSlo
 		mi = CModelInfo::GetModelInfo(modelname, &modelIndex);
 #ifdef SA_VEHICLE_MODELS
 		if(mi && mi->GetModelType() == MITYPE_VEHICLE &&
-		   (((CVehicleModelInfo*)mi)->m_vehicleType == VEHICLE_TYPE_CAR ||
-		    ((CVehicleModelInfo*)mi)->HasEmbeddedColModel())){
+		   ((CVehicleModelInfo*)mi)->HasEmbeddedColModel()){
 			debug("colmodel %s: collision is inside the DFF, keeping it\n", modelname);
 			mi = nil;
 		}
@@ -557,8 +556,7 @@ CFileLoader::LoadCollisionFile(uint8 *buffer, uint32 size, uint8 colSlot)
 		mi = CModelInfo::GetModelInfo(modelname, CColStore::GetSlot(colSlot)->minIndex, CColStore::GetSlot(colSlot)->maxIndex);
 #ifdef SA_VEHICLE_MODELS
 		if(mi && mi->GetModelType() == MITYPE_VEHICLE &&
-		   (((CVehicleModelInfo*)mi)->m_vehicleType == VEHICLE_TYPE_CAR ||
-		    ((CVehicleModelInfo*)mi)->HasEmbeddedColModel())){
+		   ((CVehicleModelInfo*)mi)->HasEmbeddedColModel()){
 			debug("colmodel %s: collision is inside the DFF, keeping it\n", modelname);
 			mi = nil;
 		}
@@ -868,6 +866,36 @@ InstallCustomModel2dfxLights(CBaseModelInfo *info, const std::vector<SAStaticMod
 }
 #endif
 
+#ifdef SA_VEHICLE_MODELS
+static bool
+PrepareVehicleCollision(RwStream *stream, int32 id, uint32 body, uint32 size)
+{
+	CVehicleModelInfo *mi = (CVehicleModelInfo*)CModelInfo::GetModelInfo(id);
+	if(LoadEmbeddedVehicleCollision(stream, id, body, size)) return true;
+	if(mi->m_vehicleType != VEHICLE_TYPE_CAR) return true;
+#ifdef CUSTOM_MODELS
+	if(CCustomModels::CanServe(id)){
+		// BR may ship collision separately in CLS/COL archives. Read by model
+		// name, never by the VC slot whose geometry the custom car replaces.
+		std::vector<uint8> block;
+		colrecord::Layout layout;
+		if(CCustomModels::GetCollisionBlock(mi->GetModelName(), block) &&
+		   block.size() >= 24 && colrecord::Validate(block.data()+24, block.size()-24, layout)){
+			CColModel *col = new CColModel;
+			CFileLoader::LoadCollisionModel(block.data()+24, block.size()-24, *col, mi->GetModelName());
+			mi->SetEmbeddedColModel(col); // protects model-owned collision from stock COL reloads
+			return true;
+		}
+		REVC_LOG_WARNING("Custom car %s: neither valid embedded nor matching archive collision", mi->GetModelName());
+		return false;
+	}
+#endif
+	// SA support does not make stock IMG vehicles SA files. Their validated
+	// external COLL was loaded before streaming; absence of a COL3 is normal.
+	return mi->GetColModel() != nil && mi->DoesOwnColModel();
+}
+#endif
+
 static bool
 PrepareAndInstallClump(RpClump *clump, CBaseModelInfo *info, const char *source, uint32 clumpVersion = 0)
 {
@@ -978,8 +1006,8 @@ CFileLoader::LoadClumpFile(const char *filename)
 			          GetModelLoadKind(mi->GetModelType()) == MODELLOAD_VEHICLE)){
 #ifdef SA_VEHICLE_MODELS
 				if(mi->GetModelType() == MITYPE_VEHICLE){
-					bool embedded = LoadEmbeddedVehicleCollision(stream, modelIndex, clumpBody, clumpSize);
-					if(((CVehicleModelInfo*)mi)->m_vehicleType == VEHICLE_TYPE_CAR && !embedded){
+					bool collisionReady = PrepareVehicleCollision(stream, modelIndex, clumpBody, clumpSize);
+					if(!collisionReady){
 						REVC_LOG_WARNING("SA car %s: missing/invalid embedded collision", mi->GetModelName());
 						RpClumpDestroy(clump);
 						continue;
@@ -1063,11 +1091,11 @@ CFileLoader::FinishLoadClumpFile(RwStream *stream, uint32 id)
 
 	if(clump){
 #ifdef SA_VEHICLE_MODELS
-		bool embedded = saClumpBodyKnown &&
-			LoadEmbeddedVehicleCollision(stream, id, saClumpBodyPos, saClumpBodySize);
+		bool collisionReady = saClumpBodyKnown &&
+			PrepareVehicleCollision(stream, id, saClumpBodyPos, saClumpBodySize);
 		saClumpBodyKnown = false;
-		if(((CVehicleModelInfo*)mi)->m_vehicleType == VEHICLE_TYPE_CAR && !embedded){
-			REVC_LOG_WARNING("SA car %s: missing/invalid embedded COL2/COL3; refusing VC collision fallback", mi->GetModelName());
+		if(!collisionReady){
+			REVC_LOG_WARNING("Vehicle %s: no valid model collision after embedded/archive lookup", mi->GetModelName());
 			RpClumpDestroy(clump);
 			return false;
 		}

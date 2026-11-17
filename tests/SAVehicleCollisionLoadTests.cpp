@@ -6,6 +6,7 @@
 #include "ColModel.h"
 #include "Collision.h"
 #include "Pools.h"
+#include "ColStore.h"
 #include "SACol3.h"
 #include <set>
 #include <vector>
@@ -34,13 +35,15 @@ RwObject *CClumpModelInfo::CreateInstance(RwMatrix *) { return nullptr; }
 void CClumpModelInfo::SetClump(RpClump *) {}
 void CClumpModelInfo::SetAnimFile(const char *) {}
 void CClumpModelInfo::ConvertAnimFileIndex() {}
-CVehicleModelInfo::CVehicleModelInfo() : CClumpModelInfo(MITYPE_VEHICLE) {}
+CVehicleModelInfo::CVehicleModelInfo() : CClumpModelInfo(MITYPE_VEHICLE) { m_vehicleType = VEHICLE_TYPE_CAR; m_bHasEmbeddedColModel = false; }
 void CVehicleModelInfo::DeleteRwObject() {}
 RwObject *CVehicleModelInfo::CreateInstance() { return nullptr; }
 void CVehicleModelInfo::SetClump(RpClump *) {}
 void CVehicleModelInfo::SetAnimFile(const char *) {}
 void CVehicleModelInfo::ConvertAnimFileIndex() {}
-void CVehicleModelInfo::SetEmbeddedColModel(CColModel *m) { if(m_colModel) delete m_colModel; m_colModel = m; }
+void CVehicleModelInfo::SetEmbeddedColModel(CColModel *m) { if(m_colModel) delete m_colModel; m_colModel = m; m_bHasEmbeddedColModel = true; }
+CBaseModelInfo *CModelInfo::GetModelInfo(const char *, int *id) { if(id) *id = 100; return testVehicle; }
+void CColStore::IncludeModelIndex(int32, int32) {}
 static const uint8 *input;
 static size_t inputSize;
 RwUInt32 RwStreamRead(RwStream *, void *dst, RwUInt32 n) { if(n > inputSize) return 0; std::memcpy(dst, input, n); return n; }
@@ -53,6 +56,15 @@ int main() {
     CPools::Initialise();
     CVehicleModelInfo vehicle;
     testVehicle = &vehicle; CModelInfo::AddVehicleModel(100);
+    // Stock IMG cars legitimately use an external COLL, not embedded COL3.
+    // The SA feature flag must not cause the external loader to discard them.
+    std::vector<uint8> external(8+24+60, 0);
+    std::memcpy(external.data(), "COLL", 4); W32(external, 4, external.size()-8);
+    std::memcpy(external.data()+8, "police", 6);
+    WF(external, 32, 2.0f);
+    Check(CFileLoader::LoadCollisionFileFirstTime(external.data(), external.size(), 0), "native external COLL read");
+    Check(vehicle.GetColModel() && vehicle.GetColModel()->boundingSphere.radius == 2.0f,
+          "stock car external collision retained with SA support enabled");
     const size_t spheres = 120, verts = 140, faces = 164; // six bytes of padding before faces
     std::vector<uint8> block(faces+8, 0);
     std::memcpy(block.data(), "COL3", 4); W32(block, 4, block.size()-8);
@@ -79,6 +91,10 @@ int main() {
         Check(col->vertices[0].Get().x == -1 && col->spheres[0].center.x == 0.25f && col->spheres[0].radius == 0.5f, "geometry copied before temporary buffer is freed");
         Check(live.size() == 3, "temporary buffer freed, no reload leak");
     }
+    CColModel *embedded = vehicle.GetColModel();
+    Check(CFileLoader::LoadCollisionFileFirstTime(external.data(), external.size(), 0), "external collision reload");
+    Check(vehicle.GetColModel() == embedded && vehicle.GetColModel()->numTriangles == 1,
+          "external COLL never replaces embedded SA collision");
     CColModel *old = vehicle.GetColModel();
     W32(block, 0x60, 0xFFFFFFFFu);
     Check(!CFileLoader::LoadSAVehicleColModel(nullptr, 100, block.size()) && vehicle.GetColModel() == old, "overflowing offset rejected without replacement");

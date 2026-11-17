@@ -138,3 +138,31 @@ Validation:
 - Desktop and Android syntax checks of CustomModels.cpp and Game.cpp.
 - No real-asset GPU/Windows playtest; resource factories, instance lifetime and
   shared vehicle dictionary population have syntax coverage, not runtime coverage.
+
+## debug-4.log: stock vehicle collision regression
+
+The supplied Windows log reports revision 677b39f, repeated missing-embedded-COL
+failures for stock IMG vehicle names (including police and packer), then an
+access violation reading 0xC at executable RVA 0x2E8A1A. There is no stack trace
+or matching PDB in the attachment; the precise faulting function is NOT established.
+The last audio log lines alone do not implicate the audio system.
+
+Correct the demonstrated loader regression rather than requiring all mounted
+resources to be SA DFFs:
+- External COLL readers accept vehicle collisions unless validated model-owned
+  collision already exists. Previously they skipped every CAR even when it was
+  a stock IMG model with no embedded collision.
+- Vehicle preparation tries embedded COL first. A custom car can instead use
+  validated archive COL/CLS looked up by its own model name, never an unrelated
+  stock collision by replacement ID. That collision is protected from stock reloads.
+- Stock streamed cars can use their already-owned external collision and no longer
+  fail simply because their DFF has no SA extension. Custom cars without either
+  valid source still fail rather than silently inheriting stock collision.
+- No physics, handling, rendering or audio changes.
+
+Regression coverage invokes the real external COLL loader for a CAR, verifies its
+collision is installed, then verifies an external reload cannot replace embedded
+SA geometry. Existing malformed/unaligned/lifetime checks remain. Native COLL and
+SA vehicle collision tests pass, including SA adapter ASan/UBSan; Android syntax
+check passes. Windows crash resolution still requires a repeat run; use the matching
+EXE/PDB and crash.dmp if RVA 0x2E8A1A recurs.
