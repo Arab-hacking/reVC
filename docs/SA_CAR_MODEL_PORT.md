@@ -166,3 +166,31 @@ SA geometry. Existing malformed/unaligned/lifetime checks remain. Native COLL an
 SA vehicle collision tests pass, including SA adapter ASan/UBSan; Android syntax
 check passes. Windows crash resolution still requires a repeat run; use the matching
 EXE/PDB and crash.dmp if RVA 0x2E8A1A recurs.
+
+## debug-5.log / crash (2).txt: optional wheel atomic dereference
+
+The attachment named .txt is an MDMP, not a text report. Log revision: 8b404e9.
+Fault: write to 0x2 at RVA 0x1E1E20, SP 0xAF4F97F558. The original AMD64
+CONTEXT preserved on the crash-handler stack (flags 0x10005F) has RCX=0,
+RDX=0, RIP=0x7FF770971E20. Return-address candidate at original SP is exe RVA
+0x2BAB98. The saved context also has R14=199, consistent with the just-streamed
+sparrow model, but this register alone is not a symbolized model identification.
+
+A concrete matching unsafe path exists in CAutomobile's helicopter setup:
+`RpAtomicSetFlags((RpAtomic*)GetFirstObject(wheelDummy), 0)`. RW atomic flags
+are at byte offset 2. Empty wheel dummies are legal with embedded geometry; a
+null first object therefore produces exactly this kind of write. Do not synthesize
+VC wheel meshes merely to satisfy this assumption.
+
+Use a checked optional-node operation in vehicle construction and Fix(): skip a
+missing frame, empty dummy or non-atomic object; preserve the existing flags=0
+operation for valid atomics. No physics/handling algorithm, shader, render callback
+or normal rendering path is changed. (Fix is the vehicle repair path, not save
+restoration.)
+
+Tests exercise the exact helper with missing/empty/non-atomic/valid nodes and
+repeat calls; ASan/UBSan pass. Automobile.cpp desktop and Android syntax checks
+pass (existing pointer-size warning remains). Matching Windows CI EXE/PDB download
+was unavailable from the sandbox artifact host, so this is a verified null-path
+fix consistent with the dump, not a fully symbolized Windows reproduction. The
+next Windows run must confirm the observed crash no longer occurs.

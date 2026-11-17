@@ -49,6 +49,7 @@
 #include "PlayerPed.h"
 #include "Object.h"
 #include "Automobile.h"
+#include "VehicleNodeAtomic.h"
 #include "Bike.h"
 #include "Wanted.h"
 #include "SaveBuf.h"
@@ -223,20 +224,20 @@ CAutomobile::CAutomobile(int32 id, uint8 CreatedBy)
 	m_weaponDoorTimerRight = m_weaponDoorTimerLeft;
 
 	if(GetModelIndex() == MI_DODO){
-		RpAtomicSetFlags((RpAtomic*)GetFirstObject(m_aCarNodes[CAR_WHEEL_LF]), 0);
+		HideOptionalVehicleNodeAtomic(m_aCarNodes[CAR_WHEEL_LF]);
 		CMatrix mat1;
 		mat1.Attach(RwFrameGetMatrix(m_aCarNodes[CAR_WHEEL_RF]));
 		CMatrix mat2(RwFrameGetMatrix(m_aCarNodes[CAR_WHEEL_LF]));
 		mat1.GetPosition() += CVector(mat2.GetPosition().x + 0.1f, 0.0f, mat2.GetPosition().z);
 		mat1.UpdateRW();
 	}else if(GetModelIndex() == MI_HUNTER){
-		RpAtomicSetFlags((RpAtomic*)GetFirstObject(m_aCarNodes[CAR_WHEEL_LB]), 0);
-		RpAtomicSetFlags((RpAtomic*)GetFirstObject(m_aCarNodes[CAR_WHEEL_RB]), 0);
+		HideOptionalVehicleNodeAtomic(m_aCarNodes[CAR_WHEEL_LB]);
+		HideOptionalVehicleNodeAtomic(m_aCarNodes[CAR_WHEEL_RB]);
 	}else if(IsRealHeli()){
-		RpAtomicSetFlags((RpAtomic*)GetFirstObject(m_aCarNodes[CAR_WHEEL_LF]), 0);
-		RpAtomicSetFlags((RpAtomic*)GetFirstObject(m_aCarNodes[CAR_WHEEL_RF]), 0);
-		RpAtomicSetFlags((RpAtomic*)GetFirstObject(m_aCarNodes[CAR_WHEEL_LB]), 0);
-		RpAtomicSetFlags((RpAtomic*)GetFirstObject(m_aCarNodes[CAR_WHEEL_RB]), 0);
+		HideOptionalVehicleNodeAtomic(m_aCarNodes[CAR_WHEEL_LF]);
+		HideOptionalVehicleNodeAtomic(m_aCarNodes[CAR_WHEEL_RF]);
+		HideOptionalVehicleNodeAtomic(m_aCarNodes[CAR_WHEEL_LB]);
+		HideOptionalVehicleNodeAtomic(m_aCarNodes[CAR_WHEEL_RB]);
 	}else if(GetModelIndex() == MI_RHINO){
 		bExplosionProof = true;
 		bBulletProof = true;
@@ -5423,13 +5424,13 @@ CAutomobile::Fix(void)
 		Damage.SetWheelStatus(component, WHEEL_STATUS_OK);
 
 	if(GetModelIndex() == MI_HUNTER){
-		RpAtomicSetFlags((RpAtomic*)GetFirstObject(m_aCarNodes[CAR_WHEEL_LB]), 0);
-		RpAtomicSetFlags((RpAtomic*)GetFirstObject(m_aCarNodes[CAR_WHEEL_RB]), 0);
+		HideOptionalVehicleNodeAtomic(m_aCarNodes[CAR_WHEEL_LB]);
+		HideOptionalVehicleNodeAtomic(m_aCarNodes[CAR_WHEEL_RB]);
 	}else if(IsRealHeli()){
-		RpAtomicSetFlags((RpAtomic*)GetFirstObject(m_aCarNodes[CAR_WHEEL_LF]), 0);
-		RpAtomicSetFlags((RpAtomic*)GetFirstObject(m_aCarNodes[CAR_WHEEL_RF]), 0);
-		RpAtomicSetFlags((RpAtomic*)GetFirstObject(m_aCarNodes[CAR_WHEEL_LB]), 0);
-		RpAtomicSetFlags((RpAtomic*)GetFirstObject(m_aCarNodes[CAR_WHEEL_RB]), 0);
+		HideOptionalVehicleNodeAtomic(m_aCarNodes[CAR_WHEEL_LF]);
+		HideOptionalVehicleNodeAtomic(m_aCarNodes[CAR_WHEEL_RF]);
+		HideOptionalVehicleNodeAtomic(m_aCarNodes[CAR_WHEEL_LB]);
+		HideOptionalVehicleNodeAtomic(m_aCarNodes[CAR_WHEEL_RB]);
 	}
 }
 

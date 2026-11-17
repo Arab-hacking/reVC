@@ -456,3 +456,14 @@ add_executable(br_vehicle_resources_tests BRVehicleResourcesTests.cpp)
 target_include_directories(br_vehicle_resources_tests PRIVATE ../src/extras/custom)
 set_target_properties(br_vehicle_resources_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
 add_test(NAME br_vehicle_resources_tests COMMAND br_vehicle_resources_tests)
+
+if(TARGET custom_archive_integration_tests)
+    add_executable(vehicle_node_atomic_tests VehicleNodeAtomicTests.cpp)
+    target_include_directories(vehicle_node_atomic_tests PRIVATE
+        $<TARGET_PROPERTY:custom_archive_integration_tests,INCLUDE_DIRECTORIES>)
+    target_compile_definitions(vehicle_node_atomic_tests PRIVATE
+        LIBRW RW_GL3 LIBRW_SDL2 CMAKE_BUILD USE_OUR_VERSIONING AUDIO_OAL)
+    target_compile_options(vehicle_node_atomic_tests PRIVATE -Wno-write-strings -Wno-multichar)
+    set_target_properties(vehicle_node_atomic_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+    add_test(NAME vehicle_node_atomic_tests COMMAND vehicle_node_atomic_tests)
+endif()
