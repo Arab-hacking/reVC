@@ -253,6 +253,9 @@ public:
 	float m_fHealth;           // 1000.0f = full health. 250.0f = fire. 0 -> explode
 	uint8 m_nCurrentGear;
 	float m_fChangeGearTime;
+	// SA engine inertia state belongs to each instance, not the shared handling.
+	float m_fTransmissionInertiaRatio;
+	float m_fTransmissionInertiaSmoothing;
 #if (!defined GTA_PS2 || defined FIX_BUGS)
 	CEntity* m_pBombRigger;
 #endif

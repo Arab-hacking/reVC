@@ -718,8 +718,14 @@ CBike::ProcessControl(void)
 		fwdSpeed = DotProduct(m_vecMoveSpeed, GetForward());
 		if(!CVehicle::bCheat3)
 			gripCheat = false;
-		acceleration = pHandling->Transmission.CalculateDriveAcceleration(m_fGasPedal, m_nCurrentGear, m_fChangeGearTime, fwdSpeed, gripCheat);
-		acceleration /= m_fForceMultiplier;
+		acceleration = 0.0f;
+		if(bEngineOn){
+			acceleration = pHandling->Transmission.CalculateDriveAcceleration(m_fGasPedal, m_nCurrentGear, m_fChangeGearTime, fwdSpeed,
+				&m_fTransmissionInertiaRatio, &m_fTransmissionInertiaSmoothing,
+				m_nDriveWheelsOnGround != 0,
+				gripCheat ? TRANSMISSION_CHEAT_PERFECT : TRANSMISSION_CHEAT_NONE);
+			acceleration /= m_fForceMultiplier;
+		}
 
 		brake = m_fBrakePedal * pHandling->fBrakeDeceleration * CTimer::GetTimeStep();
 		bool neutralHandling = GetStatus() != STATUS_PLAYER && GetStatus() != STATUS_PLAYER_REMOTE && (pHandling->Flags & HANDLING_NEUTRALHANDLING);

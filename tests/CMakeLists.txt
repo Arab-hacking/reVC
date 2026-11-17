@@ -467,3 +467,14 @@ if(TARGET custom_archive_integration_tests)
     set_target_properties(vehicle_node_atomic_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
     add_test(NAME vehicle_node_atomic_tests COMMAND vehicle_node_atomic_tests)
 endif()
+
+if(TARGET custom_archive_integration_tests)
+    add_executable(sa_transmission_tests SATransmissionTests.cpp ../src/vehicles/Transmission.cpp)
+    target_include_directories(sa_transmission_tests PRIVATE
+        $<TARGET_PROPERTY:custom_archive_integration_tests,INCLUDE_DIRECTORIES>)
+    target_compile_definitions(sa_transmission_tests PRIVATE
+        LIBRW RW_GL3 LIBRW_SDL2 CMAKE_BUILD USE_OUR_VERSIONING AUDIO_OAL)
+    target_compile_options(sa_transmission_tests PRIVATE -Wno-write-strings -Wno-multichar)
+    set_target_properties(sa_transmission_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+    add_test(NAME sa_transmission_tests COMMAND sa_transmission_tests)
+endif()

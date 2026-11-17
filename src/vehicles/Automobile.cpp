@@ -840,11 +840,14 @@ CAutomobile::ProcessControl(void)
 		fwdSpeed = DotProduct(m_vecMoveSpeed, GetForward());
 		if(!strongGrip1 && !CVehicle::bCheat3)
 			gripCheat = false;
-		float acceleration = pHandling->Transmission.CalculateDriveAcceleration(m_fGasPedal, m_nCurrentGear, m_fChangeGearTime, fwdSpeed, gripCheat);
-		acceleration /= m_fForceMultiplier;
-
-		if(IsRealHeli() || IsRealPlane())
-			acceleration = 0.0f;
+		float acceleration = 0.0f;
+		if(bEngineOn && !IsRealHeli() && !IsRealPlane()){
+			acceleration = pHandling->Transmission.CalculateDriveAcceleration(m_fGasPedal, m_nCurrentGear, m_fChangeGearTime, fwdSpeed,
+				&m_fTransmissionInertiaRatio, &m_fTransmissionInertiaSmoothing,
+				m_nDriveWheelsOnGround != 0,
+				gripCheat ? TRANSMISSION_CHEAT_PERFECT : TRANSMISSION_CHEAT_NONE);
+			acceleration /= m_fForceMultiplier;
+		}
 
 		if(bAudioChangingGear && m_fGasPedal > 0.4f && m_fBrakePedal < 0.1f && fwdSpeed > 0.15f &&
 		   this == FindPlayerVehicle() && TheCamera.Cams[TheCamera.ActiveCam].Mode != CCam::MODE_1STPERSON){

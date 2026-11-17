@@ -74,6 +74,8 @@ CVehicle::CVehicle(uint8 CreatedBy)
 
 	m_nCurrentGear = 1;
 	m_fChangeGearTime = 0.0f;
+	m_fTransmissionInertiaRatio = 0.0f;
+	m_fTransmissionInertiaSmoothing = 0.0f;
 	m_fSteerInput = 0.0f;
 	m_type = ENTITY_TYPE_VEHICLE;
 	VehicleCreatedBy = CreatedBy;
@@ -2461,6 +2463,8 @@ CVehicle::Load(uint8*& buf)
 	ReadSaveBuf(&m_nCurrentGear, buf);
 	SkipSaveBuf(buf, 3);
 	ReadSaveBuf(&m_fChangeGearTime, buf);
+	m_fTransmissionInertiaRatio = 0.0f;
+	m_fTransmissionInertiaSmoothing = 0.0f;
 	SkipSaveBuf(buf, 12);
 	ReadSaveBuf(&m_nTimeOfDeath, buf);
 	SkipSaveBuf(buf, 2);
