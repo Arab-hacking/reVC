@@ -81,6 +81,15 @@ Done so far:
   roll-back-onto-wheels step. `CBike::ProcessControl` uses the same order.
 - The Rhino carries the eight extra track suspension lines the reference builds
   in `SetupSuspensionLines`, with their lengths stored in the rear door angles.
+- `CPhysical::ApplyAirResistance` is the reference version: the speed lost per
+  frame is `1 - |speed| * m_fAirResistance` to the power of the time step,
+  multiplied by 2.5 inside the cull zones flagged `ExtraAirResistance` for
+  automobiles and bikes; the turn speed is damped by 0.99.
+- The flight arcade model is gone with `CVehicle::FlyingControl` and
+  `eFlightModel`: the aeroplane and helicopter handling belong to `CPlane` and
+  `CHeli` (stage 4), so the automobile keeps only the rotor spin-up, the blade
+  collision and the helicopter weapons. The dodo and flying-car cheats went with
+  it.
 
 Still open in this stage:
 
@@ -88,23 +97,15 @@ Still open in this stage:
   loads the 35-entry VC `surface.dat`, so the rail-bed wheel drop cannot be
   ported until `CSurfaceTable` moves to the SA 179-entry table; the rest of
   `DoBurstAndSoftGroundRatios` is done.
-- `m_fSuspensionHighSpdComDamp` is not read yet: it belongs to the wheel stage
-  below, not to the springs.
 
 Remaining work:
 
-- Suspension: per-wheel `CAutomobile::ProcessSuspension` over
-  `CPhysical::ApplySpringCollision`/`ApplySpringDamp`, driven by the SA
-  `m_fSuspensionForceLevel`, `m_fSuspensionDampingLevel`,
-  `m_fSuspensionHighSpdComDamp`, `m_fSuspensionBiasBetweenFrontAndRear` and the
-  `VEHICLE_HANDLING_WHEEL_*` flags instead of the VC bounding-box heuristics.
-- Wheels: SA wheel radius and `m_fMassRecip` based traction, ABS and
-  handbrake handling, per-wheel collision flags.
-- Braking/traction split by `m_fBrakeBias`, `m_fTractionBias`,
-  `m_fTractionLoss` and `m_fBrakeDeceleration` as the reference does.
-- Air resistance and the stabiliser torque use the collision model's bounding
-  box, not `m_vecCentreOfMass`; the centre of mass only feeds the inertia
-  offset.
+- The brake and traction bias in `ProcessControl` still carries the VC
+  `2 * m_fBrakeBias` / `2 - m_fBrakeBias` split with the `// looks like a bug`
+  note; the reference uses `2 * bias` on both axles. Changing it is a handling
+  change, so it is left for a stage that can be driven and compared.
+- The stabiliser torque uses the collision model's bounding box, not
+  `m_vecCentreOfMass`; the centre of mass only feeds the inertia offset.
 
 ## Stage 4 — other classes
 
