@@ -105,15 +105,24 @@ Still open in this stage:
   the SA 179-entry table. That is a surface-table job, tracked with the data
   files, not an automobile-physics one.
 
-## Stage 4 — other classes
+## Stage 4 — other classes (in progress, `CBoat` first)
 
-In order, each deleting its VC counterpart:
+In order, each deleting its VC counterpart. The reference is complete for
+`CBoat` only; `CBike`, `CHeli`, `CPlane` and `CTrain` are mostly
+`plugin::CallMethod` stubs there, so those classes are ported from the
+executable's behaviour around the parts that are reversed, not line by line.
 
 1. `CBike` — bike lean, wheelie/stoppie, `tBikeHandlingData` limits.
 2. `CBoat` — `tBoatHandlingData` thrust, anchors, wake audio hookup.
+   Done: the throttle/brake/rudder input stage (`ProcessControlInputs` with
+   `m_fRawSteerAngle` and the mouse rudder) and the hull burn-down of
+   `m_fBuoyancyConstant`, which also renames `CPhysical::m_fBuoyancy` to the
+   reference name.
 3. `CHeli` and `CPlane`, then `CFlyingHandlingData` aerodynamics for both.
-4. `CTrain` — track, bogies, `VEHICLE_TYPE_TRAIN` only; the `GTA_TRAIN` and
-   `EXPLODING_AIRTRAIN` switches go away with it.
+4. `CTrain` — track, bogies, `VEHICLE_TYPE_TRAIN` only; the `GTA_TRAIN`
+   switch goes away with it. Blocked: the audio tables still lack the train
+   samples, so `Train.cpp` and its callers in `AudioLogic.cpp` cannot compile
+   without them.
 5. `CMonsterTruck`, `CQuadBike`, `CBmx`, `CTrailer`.
 6. `CBuoyancy` for the generic floating path.
 
