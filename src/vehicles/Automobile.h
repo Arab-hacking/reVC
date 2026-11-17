@@ -136,6 +136,10 @@ public:
 	// Pushes the car up on its springs and dampers and rolls it back onto its
 	// wheels when it is resting on its side at low speed.
 	void ProcessSuspension(void);
+	// How much of the tyre's grip the wheel actually gets: the more the spring
+	// is compressed, the more weight sits on it. Offroad handling makes loose
+	// ground less punishing.
+	float GetWheelAdhesionScale(int wheel, bool front);
 	void ResetSuspension(void);
 	void SetupSuspensionLines(void);
 	void ScanForCrimes(void);

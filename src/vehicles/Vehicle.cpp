@@ -767,155 +767,113 @@ CVehicle::BladeColSectorList(CPtrList &list, CColModel &rotorColModel, CMatrix &
 float fBurstSpeedMax = 0.3f;
 float fBurstTyreMod = 0.13f;
 
+// Wheel traction and braking, shared by every wheeled vehicle. The state is a
+// per-wheel out-parameter because the caller keeps it between frames: a wheel
+// that was already skidding loses grip for as long as it keeps sliding.
 void
 CVehicle::ProcessWheel(CVector &wheelFwd, CVector &wheelRight, CVector &wheelContactSpeed, CVector &wheelContactPoint,
-	int32 wheelsOnGround, float thrust, float brake, float adhesion, int8 wheelId, float *wheelSpeed, tWheelState *wheelState, uint16 wheelStatus)
+	int32 wheelsOnGround, float thrust, float brake, float adhesion, int8 wheelId, float &wheelSpeedUnused,
+	tWheelState &wheelState, uint16 wheelStatus)
 {
-	// BUG: using statics here is probably a bad idea
-	static bool bAlreadySkidding = false;	// this is never reset
-	static bool bBraking;
-	static bool bDriving;
+	bool braking = brake != 0.0f;
+	bool driving = !braking && thrust != 0.0f;
+	bool alreadySkidding = wheelState != WHEEL_STATE_NORMAL;
 
-#ifdef FIX_SIGNIFICANT_BUGS
-	bAlreadySkidding = false;
-#endif
+	float contactSpeedFwd = DotProduct(wheelContactSpeed, wheelFwd);
+	float contactSpeedRight = DotProduct(wheelContactSpeed, wheelRight);
+
+	adhesion *= CTimer::GetTimeStep();
+	if(alreadySkidding){
+		adhesion *= m_pHandlingData->m_fTractionLoss;
+		if(wheelState == WHEEL_STATE_SPINNING &&
+		   (GetStatus() == STATUS_PLAYER || GetStatus() == STATUS_PLAYER_REMOTE))
+			adhesion *= 1.0f - Abs(m_fGasPedal)*WS_ALREADY_SPINNING_LOSS;
+	}
+
+	wheelState = WHEEL_STATE_NORMAL;
 
 	// how much force we want to apply in these axes
 	float fwd = 0.0f;
 	float right = 0.0f;
 
-	bBraking = brake != 0.0f;
-	if(bBraking)
-		thrust = 0.0f;
-	bDriving = thrust != 0.0f;
-
-	float contactSpeedFwd = DotProduct(wheelContactSpeed, wheelFwd);
-	float contactSpeedRight = DotProduct(wheelContactSpeed, wheelRight);
-
-	if(*wheelState != WHEEL_STATE_NORMAL)
-		bAlreadySkidding = true;
-	*wheelState = WHEEL_STATE_NORMAL;
-
-	adhesion *= CTimer::GetTimeStep();
-	if(bAlreadySkidding)
-		adhesion *= m_pHandlingData->m_fTractionLoss;
-
-	// moving sideways
+	// moving sideways: oppose the contact point's sideways speed
 	if(contactSpeedRight != 0.0f){
-		// exert opposing force
 		right = -contactSpeedRight/wheelsOnGround;
-		// BUG?
-		// contactSpeedRight is independent of framerate but right has timestep as a factor
-		// so we probably have to fix this
-		// fixing this causes jittery cars at 15fps, and causes the car to move backwards slowly at 18fps
-		// at 19fps, the effects are gone ...
-		//right *= CTimer::GetTimeStepFix();
-
-		if(wheelStatus == WHEEL_STATUS_BURST){
-			float fwdspeed = Min(contactSpeedFwd, fBurstSpeedMax);
-			right += fwdspeed * CGeneral::GetRandomNumberInRange(-fBurstTyreMod, fBurstTyreMod);
-		}
+		if(wheelStatus == WHEEL_STATUS_BURST)
+			right += Min(contactSpeedFwd, fBurstSpeedMax)*CGeneral::GetRandomNumberInRange(-fBurstTyreMod, fBurstTyreMod);
 	}
 
-	if(bDriving){
+	if(driving){
 		fwd = thrust;
-
-		// limit sideways force (why?)
-		if(right > 0.0f){
-			if(right > adhesion)
-				right = adhesion;
-		}else{
-			if(right < -adhesion)
-				right = -adhesion;
-		}
+		right = Clamp(right, -adhesion, adhesion);
 	}else if(contactSpeedFwd != 0.0f){
 		fwd = -contactSpeedFwd/wheelsOnGround;
-#ifdef FIX_BUGS
-		// contactSpeedFwd is independent of framerate but fwd has timestep as a factor
-		// so we probably have to fix this
-		// better get rid of it here too
-		//fwd *= CTimer::GetTimeStepFix();
-#endif
 
-		if(!bBraking){
-			if(m_fGasPedal < 0.01f){
-				if(IsBike())
-					brake = 0.6f * mod_HandlingManager.fWheelFriction / (m_pHandlingData->m_fMass + 200.0f);
-				else if(m_pHandlingData->m_fMass < 500.0f)
-					brake = 0.2f * mod_HandlingManager.fWheelFriction / m_pHandlingData->m_fMass;
+		// no pedal pressed: engine braking, weaker for light vehicles
+		if(!braking && Abs(m_fGasPedal) < 0.01f){
+			if(IsBike())
+				brake = mod_HandlingManager.fWheelFriction*0.6f/(m_pHandlingData->m_fMass + 200.0f);
+			else if(IsSubPlane())
+				brake = 0.0f;
+			else{
+				brake = mod_HandlingManager.fWheelFriction/m_pHandlingData->m_fMass;
+				if(m_pHandlingData->m_fMass < 500.0f)
+					brake *= 0.1f;
 				else if(GetModelIndex() == MI_RCBANDIT)
-					brake = 0.2f * mod_HandlingManager.fWheelFriction / m_pHandlingData->m_fMass;
-				else
-					brake = mod_HandlingManager.fWheelFriction / m_pHandlingData->m_fMass;
-#ifdef FIX_BUGS
-				brake *= CTimer::GetTimeStepFix();
-#endif
+					brake *= 0.2f;
 			}
 		}
 
 		if(brake > adhesion){
 			if(Abs(contactSpeedFwd) > 0.005f)
-				*wheelState = WHEEL_STATE_FIXED;
-		}else {
-			if(fwd > 0.0f){
-				if(fwd > brake)
-					fwd = brake;
-			}else{
-				if(fwd < -brake)
-					fwd = -brake;
-			}
-		}
+				wheelState = WHEEL_STATE_FIXED;
+		}else
+			fwd = Clamp(fwd, -brake, brake);
 	}
 
-	float speedSq = sq(right) + sq(fwd);
-	if(sq(adhesion) < speedSq){
-		if(*wheelState != WHEEL_STATE_FIXED){
-			if(bDriving && contactSpeedFwd < 0.2f)
-				*wheelState = WHEEL_STATE_SPINNING;
-			else
-				*wheelState = WHEEL_STATE_SKIDDING;
+	float slipSq = sq(right) + sq(fwd);
+	if(slipSq > sq(adhesion)){
+		if(wheelState != WHEEL_STATE_FIXED){
+			// the outer front wheel is allowed twice the longitudinal slip
+			// before it is considered spinning, which is what makes a
+			// rear-wheel-drive car step out under power
+			float tractionLimit = contactSpeedFwd > 0.15f && (!wheelId || wheelId == CARWHEEL_FRONT_RIGHT)
+				? 2.0f*WS_TRAC_FRAC_LIMIT
+				: WS_TRAC_FRAC_LIMIT;
+			wheelState = driving && tractionLimit*adhesion < Abs(fwd)
+				? WHEEL_STATE_SPINNING
+				: WHEEL_STATE_SKIDDING;
 		}
 
-		float l = Sqrt(speedSq);
-		float tractionLoss = bAlreadySkidding ? 1.0f : m_pHandlingData->m_fTractionLoss;
-		right *= adhesion * tractionLoss / l;
-		fwd *= adhesion * tractionLoss / l;
+		float tractionLoss = 1.0f;
+		if(!alreadySkidding && wheelState == WHEEL_STATE_SPINNING &&
+		   (GetStatus() == STATUS_PLAYER || GetStatus() == STATUS_PLAYER_REMOTE))
+			tractionLoss = m_pHandlingData->m_fTractionLoss*(1.0f - Abs(m_fGasPedal)*WS_ALREADY_SPINNING_LOSS);
+		tractionLoss *= adhesion/Sqrt(slipSq);
+		fwd *= tractionLoss;
+		right *= tractionLoss;
 	}
 
 	if(fwd != 0.0f || right != 0.0f){
-		CVector totalSpeed = fwd*wheelFwd + right*wheelRight;
+		CVector moveVec = fwd*wheelFwd + right*wheelRight;
+		CVector turnVec = moveVec;
 
-		CVector turnDirection = totalSpeed;
-		bool separateTurnForce = false;	// BUG: not initialized on PC
-		if(m_pHandlingData->m_fSuspensionAntiDiveMultiplier > 0.0f){
-			if(bBraking){
-				separateTurnForce = true;
-				turnDirection = totalSpeed - m_pHandlingData->m_fSuspensionAntiDiveMultiplier*fwd*wheelFwd;
-			}else if(bDriving){
-				separateTurnForce = true;
-				turnDirection = totalSpeed - 0.5f*m_pHandlingData->m_fSuspensionAntiDiveMultiplier*fwd*wheelFwd;
-			}
-		}
-
-		CVector direction = totalSpeed;
-
-		float speed = totalSpeed.Magnitude();
-		float turnSpeed;
+		// anti-dive: brake and drive forces are split off the move force so the
+		// suspension can counteract the pitch they would otherwise cause
+		bool separateTurnForce = m_pHandlingData->m_fSuspensionAntiDiveMultiplier > 0.0f && (braking || driving);
 		if(separateTurnForce)
-			turnSpeed = turnDirection.Magnitude();
-		else
-			turnSpeed = speed;
-		direction.Normalise();
+			turnVec -= (braking ? 1.0f : 0.5f)*m_pHandlingData->m_fSuspensionAntiDiveMultiplier*wheelFwd*fwd;
+
+		float speed = moveVec.Magnitude();
+		float turnSpeed = separateTurnForce ? turnVec.Magnitude() : speed;
+		moveVec.Normalise();
 		if(separateTurnForce)
-			turnDirection.Normalise();
+			turnVec.Normalise();
 		else
-			turnDirection = direction;
+			turnVec = moveVec;
 
-		float impulse = speed*m_fMass;
-		float turnImpulse = turnSpeed*GetMass(wheelContactPoint, turnDirection);
-
-		ApplyMoveForce(impulse * direction);
-		ApplyTurnForce(turnImpulse * turnDirection, wheelContactPoint);
+		ApplyMoveForce(moveVec*m_fMass*speed);
+		ApplyTurnForce(turnVec*GetMass(wheelContactPoint, turnVec)*turnSpeed, wheelContactPoint);
 	}
 }
 

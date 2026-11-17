@@ -900,8 +900,7 @@ CAutomobile::ProcessControl(void)
 			}
 		}
 
-		static float fThrust;
-		static tWheelState WheelState[4];
+		float fThrust;
 
 		bool rearWheelsFirst = !!(m_pHandlingData->m_nHandlingFlags & VEHICLE_HANDLING_PROC_REARWHEEL_1ST);
 
@@ -931,9 +930,10 @@ CAutomobile::ProcessControl(void)
 
 				m_aWheelColPoints[CARWHEEL_FRONT_LEFT].surfaceA = SURFACE_WHEELBASE;
 				float adhesion = CSurfaceTable::GetAdhesiveLimit(m_aWheelColPoints[CARWHEEL_FRONT_LEFT])*traction;
-				if(GetStatus() == STATUS_PLAYER)
+				if(GetStatus() == STATUS_PLAYER){
 					adhesion *= CSurfaceTable::GetWetMultiplier(m_aWheelColPoints[CARWHEEL_FRONT_LEFT].surfaceB);
-				WheelState[CARWHEEL_FRONT_LEFT] = m_aWheelState[CARWHEEL_FRONT_LEFT];
+					adhesion *= GetWheelAdhesionScale(CARWHEEL_FRONT_LEFT, true);
+				}
 
 				if(Damage.GetWheelStatus(CARWHEEL_FRONT_LEFT) == WHEEL_STATUS_BURST)
 					ProcessWheel(wheelFwd, wheelRight,
@@ -942,8 +942,8 @@ CAutomobile::ProcessControl(void)
 						brake*brakeBiasFront,
 						adhesion*tractionBiasFront*Damage.m_fWheelDamageEffect,
 						CARWHEEL_FRONT_LEFT,
-						&m_aWheelSpeed[CARWHEEL_FRONT_LEFT],
-						&WheelState[CARWHEEL_FRONT_LEFT],
+						m_aWheelSpeed[CARWHEEL_FRONT_LEFT],
+						m_aWheelState[CARWHEEL_FRONT_LEFT],
 						WHEEL_STATUS_BURST);
 				else
 					ProcessWheel(wheelFwd, wheelRight,
@@ -952,8 +952,8 @@ CAutomobile::ProcessControl(void)
 						brake*brakeBiasFront,
 						adhesion*tractionBiasFront,
 						CARWHEEL_FRONT_LEFT,
-						&m_aWheelSpeed[CARWHEEL_FRONT_LEFT],
-						&WheelState[CARWHEEL_FRONT_LEFT],
+						m_aWheelSpeed[CARWHEEL_FRONT_LEFT],
+						m_aWheelState[CARWHEEL_FRONT_LEFT],
 						WHEEL_STATUS_OK);
 			}
 
@@ -974,9 +974,10 @@ CAutomobile::ProcessControl(void)
 
 				m_aWheelColPoints[CARWHEEL_FRONT_RIGHT].surfaceA = SURFACE_WHEELBASE;
 				float adhesion = CSurfaceTable::GetAdhesiveLimit(m_aWheelColPoints[CARWHEEL_FRONT_RIGHT])*traction;
-				if(GetStatus() == STATUS_PLAYER)
+				if(GetStatus() == STATUS_PLAYER){
 					adhesion *= CSurfaceTable::GetWetMultiplier(m_aWheelColPoints[CARWHEEL_FRONT_RIGHT].surfaceB);
-				WheelState[CARWHEEL_FRONT_RIGHT] = m_aWheelState[CARWHEEL_FRONT_RIGHT];
+					adhesion *= GetWheelAdhesionScale(CARWHEEL_FRONT_RIGHT, true);
+				}
 
 				if(Damage.GetWheelStatus(CARWHEEL_FRONT_RIGHT) == WHEEL_STATUS_BURST)
 					ProcessWheel(wheelFwd, wheelRight,
@@ -985,8 +986,8 @@ CAutomobile::ProcessControl(void)
 						brake*brakeBiasFront,
 						adhesion*tractionBiasFront*Damage.m_fWheelDamageEffect,
 						CARWHEEL_FRONT_RIGHT,
-						&m_aWheelSpeed[CARWHEEL_FRONT_RIGHT],
-						&WheelState[CARWHEEL_FRONT_RIGHT],
+						m_aWheelSpeed[CARWHEEL_FRONT_RIGHT],
+						m_aWheelState[CARWHEEL_FRONT_RIGHT],
 						WHEEL_STATUS_BURST);
 				else
 					ProcessWheel(wheelFwd, wheelRight,
@@ -995,8 +996,8 @@ CAutomobile::ProcessControl(void)
 						brake*brakeBiasFront,
 						adhesion*tractionBiasFront,
 						CARWHEEL_FRONT_RIGHT,
-						&m_aWheelSpeed[CARWHEEL_FRONT_RIGHT],
-						&WheelState[CARWHEEL_FRONT_RIGHT],
+						m_aWheelSpeed[CARWHEEL_FRONT_RIGHT],
+						m_aWheelState[CARWHEEL_FRONT_RIGHT],
 						WHEEL_STATUS_OK);
 			}
 		}
@@ -1077,9 +1078,10 @@ CAutomobile::ProcessControl(void)
 
 				m_aWheelColPoints[CARWHEEL_REAR_LEFT].surfaceA = SURFACE_WHEELBASE;
 				float adhesion = CSurfaceTable::GetAdhesiveLimit(m_aWheelColPoints[CARWHEEL_REAR_LEFT])*rearTraction;
-				if(GetStatus() == STATUS_PLAYER)
+				if(GetStatus() == STATUS_PLAYER){
 					adhesion *= CSurfaceTable::GetWetMultiplier(m_aWheelColPoints[CARWHEEL_REAR_LEFT].surfaceB);
-				WheelState[CARWHEEL_REAR_LEFT] = m_aWheelState[CARWHEEL_REAR_LEFT];
+					adhesion *= GetWheelAdhesionScale(CARWHEEL_REAR_LEFT, false);
+				}
 
 				if(Damage.GetWheelStatus(CARWHEEL_REAR_LEFT) == WHEEL_STATUS_BURST)
 					ProcessWheel(wheelFwd, wheelRight,
@@ -1088,8 +1090,8 @@ CAutomobile::ProcessControl(void)
 						rearBrake*brakeBiasRear,
 						adhesion*tractionBiasRear*Damage.m_fWheelDamageEffect,
 						CARWHEEL_REAR_LEFT,
-						&m_aWheelSpeed[CARWHEEL_REAR_LEFT],
-						&WheelState[CARWHEEL_REAR_LEFT],
+						m_aWheelSpeed[CARWHEEL_REAR_LEFT],
+						m_aWheelState[CARWHEEL_REAR_LEFT],
 						WHEEL_STATUS_BURST);
 				else
 					ProcessWheel(wheelFwd, wheelRight,
@@ -1098,8 +1100,8 @@ CAutomobile::ProcessControl(void)
 						rearBrake*brakeBiasRear,
 						adhesion*tractionBiasRear,
 						CARWHEEL_REAR_LEFT,
-						&m_aWheelSpeed[CARWHEEL_REAR_LEFT],
-						&WheelState[CARWHEEL_REAR_LEFT],
+						m_aWheelSpeed[CARWHEEL_REAR_LEFT],
+						m_aWheelState[CARWHEEL_REAR_LEFT],
 						WHEEL_STATUS_OK);
 			}
 
@@ -1122,9 +1124,10 @@ CAutomobile::ProcessControl(void)
 
 				m_aWheelColPoints[CARWHEEL_REAR_RIGHT].surfaceA = SURFACE_WHEELBASE;
 				float adhesion = CSurfaceTable::GetAdhesiveLimit(m_aWheelColPoints[CARWHEEL_REAR_RIGHT])*rearTraction;
-				if(GetStatus() == STATUS_PLAYER)
+				if(GetStatus() == STATUS_PLAYER){
 					adhesion *= CSurfaceTable::GetWetMultiplier(m_aWheelColPoints[CARWHEEL_REAR_RIGHT].surfaceB);
-				WheelState[CARWHEEL_REAR_RIGHT] = m_aWheelState[CARWHEEL_REAR_RIGHT];
+					adhesion *= GetWheelAdhesionScale(CARWHEEL_REAR_RIGHT, false);
+				}
 
 				if(Damage.GetWheelStatus(CARWHEEL_REAR_RIGHT) == WHEEL_STATUS_BURST)
 					ProcessWheel(wheelFwd, wheelRight,
@@ -1133,8 +1136,8 @@ CAutomobile::ProcessControl(void)
 						rearBrake*brakeBiasRear,
 						adhesion*tractionBiasRear*Damage.m_fWheelDamageEffect,
 						CARWHEEL_REAR_RIGHT,
-						&m_aWheelSpeed[CARWHEEL_REAR_RIGHT],
-						&WheelState[CARWHEEL_REAR_RIGHT],
+						m_aWheelSpeed[CARWHEEL_REAR_RIGHT],
+						m_aWheelState[CARWHEEL_REAR_RIGHT],
 						WHEEL_STATUS_BURST);
 				else
 					ProcessWheel(wheelFwd, wheelRight,
@@ -1143,8 +1146,8 @@ CAutomobile::ProcessControl(void)
 						rearBrake*brakeBiasRear,
 						adhesion*tractionBiasRear,
 						CARWHEEL_REAR_RIGHT,
-						&m_aWheelSpeed[CARWHEEL_REAR_RIGHT],
-						&WheelState[CARWHEEL_REAR_RIGHT],
+						m_aWheelSpeed[CARWHEEL_REAR_RIGHT],
+						m_aWheelState[CARWHEEL_REAR_RIGHT],
 						WHEEL_STATUS_OK);
 			}
 		}
@@ -1221,9 +1224,10 @@ CAutomobile::ProcessControl(void)
 
 				m_aWheelColPoints[CARWHEEL_FRONT_LEFT].surfaceA = SURFACE_WHEELBASE;
 				float adhesion = CSurfaceTable::GetAdhesiveLimit(m_aWheelColPoints[CARWHEEL_FRONT_LEFT])*traction;
-				if(GetStatus() == STATUS_PLAYER)
+				if(GetStatus() == STATUS_PLAYER){
 					adhesion *= CSurfaceTable::GetWetMultiplier(m_aWheelColPoints[CARWHEEL_FRONT_LEFT].surfaceB);
-				WheelState[CARWHEEL_FRONT_LEFT] = m_aWheelState[CARWHEEL_FRONT_LEFT];
+					adhesion *= GetWheelAdhesionScale(CARWHEEL_FRONT_LEFT, true);
+				}
 
 				if(Damage.GetWheelStatus(CARWHEEL_FRONT_LEFT) == WHEEL_STATUS_BURST)
 					ProcessWheel(wheelFwd, wheelRight,
@@ -1232,8 +1236,8 @@ CAutomobile::ProcessControl(void)
 						brake*brakeBiasFront,
 						adhesion*tractionBiasFront*Damage.m_fWheelDamageEffect,
 						CARWHEEL_FRONT_LEFT,
-						&m_aWheelSpeed[CARWHEEL_FRONT_LEFT],
-						&WheelState[CARWHEEL_FRONT_LEFT],
+						m_aWheelSpeed[CARWHEEL_FRONT_LEFT],
+						m_aWheelState[CARWHEEL_FRONT_LEFT],
 						WHEEL_STATUS_BURST);
 				else
 					ProcessWheel(wheelFwd, wheelRight,
@@ -1242,8 +1246,8 @@ CAutomobile::ProcessControl(void)
 						brake*brakeBiasFront,
 						adhesion*tractionBiasFront,
 						CARWHEEL_FRONT_LEFT,
-						&m_aWheelSpeed[CARWHEEL_FRONT_LEFT],
-						&WheelState[CARWHEEL_FRONT_LEFT],
+						m_aWheelSpeed[CARWHEEL_FRONT_LEFT],
+						m_aWheelState[CARWHEEL_FRONT_LEFT],
 						WHEEL_STATUS_OK);
 			}
 
@@ -1264,9 +1268,10 @@ CAutomobile::ProcessControl(void)
 
 				m_aWheelColPoints[CARWHEEL_FRONT_RIGHT].surfaceA = SURFACE_WHEELBASE;
 				float adhesion = CSurfaceTable::GetAdhesiveLimit(m_aWheelColPoints[CARWHEEL_FRONT_RIGHT])*traction;
-				if(GetStatus() == STATUS_PLAYER)
+				if(GetStatus() == STATUS_PLAYER){
 					adhesion *= CSurfaceTable::GetWetMultiplier(m_aWheelColPoints[CARWHEEL_FRONT_RIGHT].surfaceB);
-				WheelState[CARWHEEL_FRONT_RIGHT] = m_aWheelState[CARWHEEL_FRONT_RIGHT];
+					adhesion *= GetWheelAdhesionScale(CARWHEEL_FRONT_RIGHT, true);
+				}
 
 				if(Damage.GetWheelStatus(CARWHEEL_FRONT_RIGHT) == WHEEL_STATUS_BURST)
 					ProcessWheel(wheelFwd, wheelRight,
@@ -1275,8 +1280,8 @@ CAutomobile::ProcessControl(void)
 						brake*brakeBiasFront,
 						adhesion*tractionBiasFront*Damage.m_fWheelDamageEffect,
 						CARWHEEL_FRONT_RIGHT,
-						&m_aWheelSpeed[CARWHEEL_FRONT_RIGHT],
-						&WheelState[CARWHEEL_FRONT_RIGHT],
+						m_aWheelSpeed[CARWHEEL_FRONT_RIGHT],
+						m_aWheelState[CARWHEEL_FRONT_RIGHT],
 						WHEEL_STATUS_BURST);
 				else
 					ProcessWheel(wheelFwd, wheelRight,
@@ -1285,8 +1290,8 @@ CAutomobile::ProcessControl(void)
 						brake*brakeBiasFront,
 						adhesion*tractionBiasFront,
 						CARWHEEL_FRONT_RIGHT,
-						&m_aWheelSpeed[CARWHEEL_FRONT_RIGHT],
-						&WheelState[CARWHEEL_FRONT_RIGHT],
+						m_aWheelSpeed[CARWHEEL_FRONT_RIGHT],
+						m_aWheelState[CARWHEEL_FRONT_RIGHT],
 						WHEEL_STATUS_OK);
 			}
 		}
@@ -1334,8 +1339,6 @@ CAutomobile::ProcessControl(void)
 			else
 				m_aWheelPosition[i] += (wheelPos - m_aWheelPosition[i])*0.75f;
 		}
-		for(i = 0; i < 4; i++)
-			m_aWheelState[i] = WheelState[i];
 		if(m_fGasPedal < 0.0f){
 			if(m_aWheelState[CARWHEEL_REAR_LEFT] == WHEEL_STATE_SPINNING)
 				m_aWheelState[CARWHEEL_REAR_LEFT] = WHEEL_STATE_NORMAL;
@@ -4981,6 +4984,29 @@ CAutomobile::PlayHornIfNecessary(void)
 	   AutoPilot.m_bSlowedDownBecauseOfCars)
 		if(!HasCarStoppedBecauseOfLight())
 			PlayCarHorn();
+}
+
+float
+CAutomobile::GetWheelAdhesionScale(int wheel, bool front)
+{
+	float bias = 2.0f*m_pHandlingData->m_fSuspensionBiasBetweenFrontAndRear;
+	if(!front)
+		bias = 2.0f - bias;
+
+	// weight transfer: a compressed spring loads its wheel, but only up to twice
+	// the nominal load, otherwise a car on two wheels would never lose grip
+	float scale = Min(bias*m_pHandlingData->m_fSuspensionForceLevel*4.0f*(1.0f - m_aSuspensionSpringRatio[wheel]),
+		2.0f);
+
+	if(m_pHandlingData->m_nHandlingFlags & VEHICLE_HANDLING_OFFROAD_ABILITY2){
+		if(CSurfaceTable::GetAdhesionGroup(m_aWheelColPoints[wheel].surfaceB) > ADHESIVE_ROAD)
+			scale *= 1.4f;
+	}else if(m_pHandlingData->m_nHandlingFlags & VEHICLE_HANDLING_OFFROAD_ABILITY){
+		if(CSurfaceTable::GetAdhesionGroup(m_aWheelColPoints[wheel].surfaceB) > ADHESIVE_ROAD)
+			scale *= 1.15f;
+	}
+
+	return scale;
 }
 
 // 0x6A47F0
