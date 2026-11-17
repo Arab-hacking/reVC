@@ -48,6 +48,25 @@ counts, bound invalid restored gears and shift iteration, handle zero-inertia
 free-rev without NaN. Supported forward gears are 1..5 (six array slots including
 reverse); do not trust the contradictory 1..6 header comment in the reference.
 
+## Completed: SA handling data
+
+`src/vehicles/cHandlingDataMgr.cpp` replaces the VC handling manager and parser:
+
+- The 210-name table in `tVehicleType.h` is the handling id space, exposed as
+  `enum eHandlingId`; the VC `HANDLING_*` macros and the old name table are gone.
+- Vehicle (36 columns), bike (15, `!`), flying (21, `$`) and boat (14, `%`)
+  records are parsed in the reference column order and validated before they are
+  stored; a rejected line leaves the record byte-identical.
+- `ConvertDataToGameUnits`/`ConvertBikeDataToGameUnits` apply the reference unit
+  conversions, derive `m_fMassRecip`, `m_fBuoyancyConstant`, the flat, cruise and
+  reverse velocities, and initialise the gear ratios.
+- Records are reached through `m_pHandlingData`, `m_pFlyingHandlingData`,
+  `m_pBikeHandlingData` and `m_pBoatHandlingData` with the canonical SA member
+  names. `HandlingMgr.{h,cpp}` and `Transmission.{h,cpp}` are deleted;
+  `cTransmission.{h,cpp}` and `cHandlingDataMgr.{h,cpp}` replace them.
+- `tests/HandlingDataMgrTests.cpp` covers parsing, unit conversion, flag
+  reachability and lookup bounds; it and `tests/TransmissionTests.cpp` pass.
+
 ## Tests performed
 
 - `SATransmissionTests` compiles the real Transmission.cpp with a timer stub.
@@ -65,31 +84,24 @@ reverse); do not trust the contradictory 1..6 header comment in the reference.
   Vehicle pass; existing integer/pointer-size warnings remain.
 - No Windows runtime or vehicle-dynamics playtest performed for this stage.
 
-## Still NOT migrated
+## Superseded by the staged plan
 
-This is an intentionally explicit checklist, not completed functionality:
+The handling registry/parser is no longer VC: `cHandlingDataMgr` now carries the
+SA tables and parser (see *Completed: SA handling data* above). The remaining
+work is tracked stage by stage in `docs/SA_VEHICLE_MIGRATION_PLAN.md`:
 
-1. **Handling registry/parser and units:** still the VC name table and parser.
-   It does not yet load SA/BR 36-column handling or engine inertia from the
-   archive. Current records use neutral inertia=1 as an explicit transitional
-   default. SA drag, model/handling flags, expanded identifiers and special
-   handling tables need their own bounded parser and migration. Do not copy the
-   BR analysis's misaligned handling-column summary over the canonical SA parser.
-2. **Contact/suspension/traction/braking:** Automobile/Bike contact loops and
-   old Dimension-derived resistance/turn-mass calculations are not SA ports.
-3. **Vehicle identity and classes:** reVC model constants, aircraft-as-automobile
-   cases, boats, trains and special classes are still present. Their constructors,
-   model-node assumptions and subtype dispatch must move together.
-4. **Model admission/spawn:** native VC IMG vehicle definitions and streaming
-   compatibility remain. Simply rejecting these DFFs reintroduces unloaded-model
-   assumptions in scripts, car generators and constructors. A source-authoritative
-   SA/BR registry and failure-aware spawn sites must precede removing that bridge.
-5. **Rendering/material application:** previous material/resource stages are not
-   a complete SA CarFX/env/spec/light/plate renderer or per-instance BR palette
-   composition. Model-only changes do not satisfy this item.
-6. **Gameplay integration:** door tasks, occupants, damage, AI/autopilot, audio,
+1. **Vehicle identity and classes:** the model-info `eVehicleType` enumeration,
+   `CVehicle::m_vehType`, the pool allocation unit and the missing
+   `CMonsterTruck`/`CQuadBike`/`CBmx`/`CTrailer` classes.
+2. **Contact/suspension/traction/braking:** Automobile/Bike contact loops and the
+   remaining bounding-box heuristics are not SA ports yet.
+3. **Model admission/spawn:** native VC IMG vehicle definitions and streaming
+   compatibility remain.
+4. **Rendering/material application:** the SA CarFX/env/spec/light/plate renderer
+   and per-instance BR palette composition are not complete.
+5. **Gameplay integration:** door tasks, occupants, damage, AI/autopilot, audio,
    animations, weapons, trailers, hydraulics/upgrades, scripts, save/load and
-   streaming dependencies still require reference-by-reference migration.
+   streaming dependencies.
 
 Local vehicle implementation is roughly 15600 lines across Vehicle, Automobile,
 Bike, Boat, Heli, Plane, HandlingMgr and Transmission alone, excluding dependencies.

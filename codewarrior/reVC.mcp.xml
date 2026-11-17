@@ -3958,14 +3958,14 @@
                 </FILE>
                 <FILE>
                     <PATHTYPE>Name</PATHTYPE>
-                    <PATH>HandlingMgr.cpp</PATH>
+                    <PATH>cHandlingDataMgr.cpp</PATH>
                     <PATHFORMAT>Windows</PATHFORMAT>
                     <FILEKIND>Text</FILEKIND>
                     <FILEFLAGS>Debug</FILEFLAGS>
                 </FILE>
                 <FILE>
                     <PATHTYPE>Name</PATHTYPE>
-                    <PATH>HandlingMgr.h</PATH>
+                    <PATH>cHandlingDataMgr.h</PATH>
                     <PATHFORMAT>Windows</PATHFORMAT>
                     <FILEKIND>Text</FILEKIND>
                     <FILEFLAGS></FILEFLAGS>
@@ -4014,14 +4014,14 @@
                 </FILE>
                 <FILE>
                     <PATHTYPE>Name</PATHTYPE>
-                    <PATH>Transmission.cpp</PATH>
+                    <PATH>cTransmission.cpp</PATH>
                     <PATHFORMAT>Windows</PATHFORMAT>
                     <FILEKIND>Text</FILEKIND>
                     <FILEFLAGS>Debug</FILEFLAGS>
                 </FILE>
                 <FILE>
                     <PATHTYPE>Name</PATHTYPE>
-                    <PATH>Transmission.h</PATH>
+                    <PATH>cTransmission.h</PATH>
                     <PATHFORMAT>Windows</PATHFORMAT>
                     <FILEKIND>Text</FILEKIND>
                     <FILEFLAGS></FILEFLAGS>
@@ -6294,12 +6294,12 @@
                 </FILEREF>
                 <FILEREF>
                     <PATHTYPE>Name</PATHTYPE>
-                    <PATH>HandlingMgr.cpp</PATH>
+                    <PATH>cHandlingDataMgr.cpp</PATH>
                     <PATHFORMAT>Windows</PATHFORMAT>
                 </FILEREF>
                 <FILEREF>
                     <PATHTYPE>Name</PATHTYPE>
-                    <PATH>HandlingMgr.h</PATH>
+                    <PATH>cHandlingDataMgr.h</PATH>
                     <PATHFORMAT>Windows</PATHFORMAT>
                 </FILEREF>
                 <FILEREF>
@@ -6334,12 +6334,12 @@
                 </FILEREF>
                 <FILEREF>
                     <PATHTYPE>Name</PATHTYPE>
-                    <PATH>Transmission.cpp</PATH>
+                    <PATH>cTransmission.cpp</PATH>
                     <PATHFORMAT>Windows</PATHFORMAT>
                 </FILEREF>
                 <FILEREF>
                     <PATHTYPE>Name</PATHTYPE>
-                    <PATH>Transmission.h</PATH>
+                    <PATH>cTransmission.h</PATH>
                     <PATHFORMAT>Windows</PATHFORMAT>
                 </FILEREF>
                 <FILEREF>
@@ -10459,14 +10459,14 @@
                 </FILE>
                 <FILE>
                     <PATHTYPE>Name</PATHTYPE>
-                    <PATH>HandlingMgr.cpp</PATH>
+                    <PATH>cHandlingDataMgr.cpp</PATH>
                     <PATHFORMAT>Windows</PATHFORMAT>
                     <FILEKIND>Text</FILEKIND>
                     <FILEFLAGS>Debug</FILEFLAGS>
                 </FILE>
                 <FILE>
                     <PATHTYPE>Name</PATHTYPE>
-                    <PATH>HandlingMgr.h</PATH>
+                    <PATH>cHandlingDataMgr.h</PATH>
                     <PATHFORMAT>Windows</PATHFORMAT>
                     <FILEKIND>Text</FILEKIND>
                     <FILEFLAGS></FILEFLAGS>
@@ -10515,14 +10515,14 @@
                 </FILE>
                 <FILE>
                     <PATHTYPE>Name</PATHTYPE>
-                    <PATH>Transmission.cpp</PATH>
+                    <PATH>cTransmission.cpp</PATH>
                     <PATHFORMAT>Windows</PATHFORMAT>
                     <FILEKIND>Text</FILEKIND>
                     <FILEFLAGS>Debug</FILEFLAGS>
                 </FILE>
                 <FILE>
                     <PATHTYPE>Name</PATHTYPE>
-                    <PATH>Transmission.h</PATH>
+                    <PATH>cTransmission.h</PATH>
                     <PATHFORMAT>Windows</PATHFORMAT>
                     <FILEKIND>Text</FILEKIND>
                     <FILEFLAGS></FILEFLAGS>
@@ -12795,12 +12795,12 @@
                 </FILEREF>
                 <FILEREF>
                     <PATHTYPE>Name</PATHTYPE>
-                    <PATH>HandlingMgr.cpp</PATH>
+                    <PATH>cHandlingDataMgr.cpp</PATH>
                     <PATHFORMAT>Windows</PATHFORMAT>
                 </FILEREF>
                 <FILEREF>
                     <PATHTYPE>Name</PATHTYPE>
-                    <PATH>HandlingMgr.h</PATH>
+                    <PATH>cHandlingDataMgr.h</PATH>
                     <PATHFORMAT>Windows</PATHFORMAT>
                 </FILEREF>
                 <FILEREF>
@@ -12835,12 +12835,12 @@
                 </FILEREF>
                 <FILEREF>
                     <PATHTYPE>Name</PATHTYPE>
-                    <PATH>Transmission.cpp</PATH>
+                    <PATH>cTransmission.cpp</PATH>
                     <PATHFORMAT>Windows</PATHFORMAT>
                 </FILEREF>
                 <FILEREF>
                     <PATHTYPE>Name</PATHTYPE>
-                    <PATH>Transmission.h</PATH>
+                    <PATH>cTransmission.h</PATH>
                     <PATHFORMAT>Windows</PATHFORMAT>
                 </FILEREF>
                 <FILEREF>
@@ -15673,13 +15673,13 @@
             <FILEREF>
                 <TARGETNAME>Debug</TARGETNAME>
                 <PATHTYPE>Name</PATHTYPE>
-                <PATH>HandlingMgr.cpp</PATH>
+                <PATH>cHandlingDataMgr.cpp</PATH>
                 <PATHFORMAT>Windows</PATHFORMAT>
             </FILEREF>
             <FILEREF>
                 <TARGETNAME>Debug</TARGETNAME>
                 <PATHTYPE>Name</PATHTYPE>
-                <PATH>HandlingMgr.h</PATH>
+                <PATH>cHandlingDataMgr.h</PATH>
                 <PATHFORMAT>Windows</PATHFORMAT>
             </FILEREF>
             <FILEREF>
@@ -15721,13 +15721,13 @@
             <FILEREF>
                 <TARGETNAME>Debug</TARGETNAME>
                 <PATHTYPE>Name</PATHTYPE>
-                <PATH>Transmission.cpp</PATH>
+                <PATH>cTransmission.cpp</PATH>
                 <PATHFORMAT>Windows</PATHFORMAT>
             </FILEREF>
             <FILEREF>
                 <TARGETNAME>Debug</TARGETNAME>
                 <PATHTYPE>Name</PATHTYPE>
-                <PATH>Transmission.h</PATH>
+                <PATH>cTransmission.h</PATH>
                 <PATHFORMAT>Windows</PATHFORMAT>
             </FILEREF>
             <FILEREF>
