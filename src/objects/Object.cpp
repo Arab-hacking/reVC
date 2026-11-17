@@ -126,7 +126,7 @@ CObject::ProcessControl(void)
 	if (m_nCollisionDamageEffect)
 		ObjectDamage(m_fDamageImpulse);
 	CPhysical::ProcessControl();
-	if (mod_Buoyancy.ProcessBuoyancy(this, m_fBuoyancy, &point, &impulse)) {
+	if (mod_Buoyancy.ProcessBuoyancy(this, m_fBuoyancyConstant, &point, &impulse)) {
 		bIsInWater = true;
 		SetIsStatic(false);
 		ApplyMoveForce(impulse);

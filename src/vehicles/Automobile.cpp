@@ -168,7 +168,7 @@ m_nVehicleSubType = VEHICLE_TYPE_AUTOMOBILE;
 	m_vecCentreOfMass = m_pHandlingData->m_vecCentreOfMass;
 	m_fAirResistance = (float)mi->GetColModel()->boundingBox.max.x * (float)mi->GetColModel()->boundingBox.max.z / m_fMass;
 	m_fElasticity = 0.05f;
-	m_fBuoyancy = m_pHandlingData->m_fBuoyancyConstant;
+	m_fBuoyancyConstant = m_pHandlingData->m_fBuoyancyConstant;
 
 	m_fOrientation = m_fPlaneSteer = 0.0f;
 
@@ -3618,7 +3618,7 @@ CAutomobile::ProcessBuoyancy(void)
 	int i;
 	CVector impulse, point;
 
-	if(mod_Buoyancy.ProcessBuoyancy(this, m_fBuoyancy, &point, &impulse)){
+	if(mod_Buoyancy.ProcessBuoyancy(this, m_fBuoyancyConstant, &point, &impulse)){
 		bTouchingWater = true;
 		float timeStep = Max(CTimer::GetTimeStep(), 0.01f);
 		float impulseRatio = impulse.z / (GRAVITY * m_fMass * timeStep);
@@ -5705,7 +5705,7 @@ CAutomobile::SpawnFlyingComponent(int32 component, uint32 type)
 	obj->m_fTurnMass = 25.0f;
 	obj->m_fAirResistance = 0.97f;
 	obj->m_fElasticity = 0.1f;
-	obj->m_fBuoyancy = obj->m_fMass*GRAVITY/0.75f;
+	obj->m_fBuoyancyConstant = obj->m_fMass*GRAVITY/0.75f;
 	obj->ObjectCreatedBy = TEMP_OBJECT;
 	obj->SetIsStatic(false);
 	obj->bIsPickup = false;

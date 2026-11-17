@@ -113,7 +113,7 @@ m_nVehicleSubType = VEHICLE_TYPE_BIKE;
 	m_vecCentreOfMass.z = 0.1f;
 	m_fAirResistance = (float)mi->GetColModel()->boundingBox.max.x * (float)mi->GetColModel()->boundingBox.max.z / m_fMass;
 	m_fElasticity = 0.05f;
-	m_fBuoyancy = m_pHandlingData->m_fBuoyancyConstant;
+	m_fBuoyancyConstant = m_pHandlingData->m_fBuoyancyConstant;
 
 	m_fSteerAngle = 0.0f;
 	m_fWheelAngle = 0.0f;
@@ -1956,7 +1956,7 @@ CBike::ProcessBuoyancy(void)
 	int i;
 	CVector impulse, point;
 
-	if(mod_Buoyancy.ProcessBuoyancy(this, m_fBuoyancy, &point, &impulse)){
+	if(mod_Buoyancy.ProcessBuoyancy(this, m_fBuoyancyConstant, &point, &impulse)){
 		bTouchingWater = true;
 		ApplyMoveForce(impulse);
 		ApplyTurnForce(impulse, point);

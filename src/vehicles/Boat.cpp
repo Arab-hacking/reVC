@@ -78,7 +78,7 @@ m_nVehicleSubType = VEHICLE_TYPE_BOAT;
 	m_vecCentreOfMass = m_pHandlingData->m_vecCentreOfMass;
 	m_fAirResistance = (float)minfo->GetColModel()->boundingBox.max.x * (float)minfo->GetColModel()->boundingBox.max.z / m_fMass;
 	m_fElasticity = 0.1f;
-	m_fBuoyancy = m_pHandlingData->m_fBuoyancyConstant;
+	m_fBuoyancyConstant = m_pHandlingData->m_fBuoyancyConstant;
 	m_fSteerAngle = 0.0f;
 	m_fGasPedal = 0.0f;
 	m_fBrakePedal = 0.0f;
@@ -134,9 +134,13 @@ CBoat::ProcessControl(void)
 	bool onLand = m_fDamageImpulse > 0.0f && m_vecDamageNormal.z > 0.1f;
 
 	PruneWakeTrail();
+	ProcessDelayedExplosion();
 
-	if(bRenderScorched)
-		m_fBuoyancy *= 0.99f;
+	// A burnt boat loses buoyancy until it has burnt down to the buoyancy the
+	// scorched hull can still carry.
+	float massCheck = m_fMass*0.008f*100.0f/125.0f;
+	if(bRenderScorched && massCheck < m_fBuoyancyConstant)
+		m_fBuoyancyConstant -= m_fMass*0.001f*0.008f;
 
 #ifdef FIX_BUGS
 	if(FindPlayerPed() && FindPlayerPed()->m_pWanted->GetWantedLevel() > 0 && GetModelIndex() == MI_PREDATOR && pDriver && IsPolicePedModel(pDriver->GetModelIndex())) {
@@ -745,8 +749,6 @@ CBoat::ProcessControl(void)
 			GetMatrix().SetTranslateOnly(pos);
 		}
 	}
-
-	ProcessDelayedExplosion();
 }
 
 void
@@ -894,7 +896,7 @@ CBoat::BlowUpCar(CEntity *culprit)
 	obj->m_fTurnMass = 25.0f;
 	obj->m_fAirResistance = 0.99f;
 	obj->m_fElasticity = 0.1f;
-	obj->m_fBuoyancy = obj->m_fMass*GRAVITY/0.75f;
+	obj->m_fBuoyancyConstant = obj->m_fMass*GRAVITY/0.75f;
 	obj->ObjectCreatedBy = TEMP_OBJECT;
 	obj->SetIsStatic(false);
 	obj->bIsPickup = false;

@@ -668,7 +668,7 @@ CHeli::SpawnFlyingComponent(int32 component)
 	obj->m_fTurnMass = 25.0f;
 	obj->m_fAirResistance = 0.99f;
 	obj->m_fElasticity = 0.1f;
-	obj->m_fBuoyancy = obj->m_fMass*GRAVITY/0.75f;
+	obj->m_fBuoyancyConstant = obj->m_fMass*GRAVITY/0.75f;
 	obj->ObjectCreatedBy = TEMP_OBJECT;
 	obj->SetIsStatic(false);
 	obj->bIsPickup = false;
