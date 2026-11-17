@@ -115,9 +115,14 @@ executable's behaviour around the parts that are reversed, not line by line.
 1. `CBike` — bike lean, wheelie/stoppie, `tBikeHandlingData` limits.
 2. `CBoat` — `tBoatHandlingData` thrust, anchors, wake audio hookup.
    Done: the throttle/brake/rudder input stage (`ProcessControlInputs` with
-   `m_fRawSteerAngle` and the mouse rudder) and the hull burn-down of
+   `m_fRawSteerAngle` and the mouse rudder); the hull burn-down of
    `m_fBuoyancyConstant`, which also renames `CPhysical::m_fBuoyancy` to the
-   reference name.
+   reference name and floats the hull on its own copy; the wake trail with a
+   per-point hull speed (`m_WakeCoords`, `m_WakeBoatSpeed`, `m_WakePtCounters`)
+   and the reference append rules.
+   Open: the wake is still drawn by `CWaterLevel`; the reference moved it to
+   `CBoat::RenderWakePoints` with a camera-distance fade, which belongs with
+   the renderer work.
 3. `CHeli` and `CPlane`, then `CFlyingHandlingData` aerodynamics for both.
 4. `CTrain` — track, bogies, `VEHICLE_TYPE_TRAIN` only; the `GTA_TRAIN`
    switch goes away with it. Blocked: the audio tables still lack the train
