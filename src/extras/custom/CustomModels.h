@@ -21,6 +21,7 @@
 
 #include <vector>
 #include <stddef.h>
+#include "BRVehicleResources.h"
 
 class CCustomModels
 {
@@ -41,6 +42,21 @@ public:
 	static int PairedImageTxd(const char *modelName);
 	static bool HasImageTxd(const char *txdName);
 	static void EnsureVehicleTxdLoaded(void);
+	// Independent GPU resources: caller owns one ref, release with RwTextureDestroy.
+	// Palette is an explicit row-major 16x16 RGBA table, not a guessed four-colour layout.
+	static RwTexture *CreateVehiclePaletteTexture(const RwRGBA *entries, size_t count);
+	static RwTexture *CreateVehicleTonerTexture(const RwRGBA &colour);
+	// BR carmods.dat metadata; call after IDE registration. No eager loading of all mods.
+	static bool LoadVehicleUpgrades(void);
+	static void GetVehicleUpgrades(int32 vehicle, std::vector<brvehicle::Upgrade> &out);
+	static bool RequestVehicleUpgrade(int32 vehicle, int32 uniqueId);
+	// Nonblocking. Returns a cloned RW object and pins its model until Release.
+	// Caller handles attachment to the named dummy; no physics/collision changes.
+	static RwObject *CreateVehicleUpgradeInstance(int32 vehicle, int32 uniqueId);
+	static void ReleaseVehicleUpgradeInstance(RwObject *object);
+	// Before destroying a parent clump, release its instances; global cleanup
+	// runs before world/model shutdown, not after their frames have been freed.
+	static void ClearVehicleUpgrades(void);
 	// Script special models may request DFFs without an IDE, or DFFs already
 	// bound to another IDE slot. Locate the highest-priority mounted IMG record
 	// by name without reading any model bytes; result is sector position/size.
@@ -120,7 +136,7 @@ public:
 	static void ForEachGameCollision(CollisionCallback callback, void *context,
 	                                 CollisionFilter filter = nullptr);
 
-	// Only data/timecyc.json, data/water.dat and data/carcols.dat can be
+	// Named tables including carmods.dat, timecyc.json, water.dat and carcols.dat can be
 	// served here. Timecyc uses loose custom/data/timecyc.json if the ZIP
 	// entry is absent/unreadable; water and colours are ZIP-only and fall
 	// back to the game's native data when absent/unusable.

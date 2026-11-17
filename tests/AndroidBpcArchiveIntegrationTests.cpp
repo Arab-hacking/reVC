@@ -15,6 +15,7 @@
 #include "Streaming.h"
 #include "Timer.h"
 #include "TxdStore.h"
+#include "VehicleUpgradeRwStubs.h"
 
 #include <cassert>
 #include <cstdio>

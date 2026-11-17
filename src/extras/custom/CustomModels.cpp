@@ -125,6 +125,10 @@ static std::map<std::string, CustomSource> looseIdeFallbacks, looseIplFallbacks;
 static std::unique_ptr<CustomZip> customCommonZip;
 static std::map<std::string, CustomSource> commonZipIdeFiles, commonZipIplFiles;
 static std::map<std::string, CustomSource> commonZipDataFiles;
+static std::vector<brvehicle::Upgrade> vehicleUpgrades;
+static bool vehicleUpgradesRead;
+static std::map<RwObject*, int32> vehicleUpgradeInstances;
+
 static commoncatalog::Catalog commonZipConfig;
 // Keep a source for every IMG collision entry, even with repeated filenames.
 static std::vector<CustomSource> customClsSources, customColSources;
@@ -430,14 +434,15 @@ ScanCommonZip(void)
 				// intentionally narrower than the general 64 MiB map/IMG ceiling.
 				if((key == "data/water.dat" && ent->uncompressedSize > 1024*1024) ||
 				   (key == "data/lods.info" && ent->uncompressedSize > 1024*1024) ||
-				   (key == "data/carcols.dat" && ent->uncompressedSize > 64*1024)) {
+				   (key == "data/carcols.dat" && ent->uncompressedSize > 64*1024) ||
+				   (key == "data/carmods.dat" && ent->uncompressedSize > 1024*1024)) {
 					CUSTOM_LOG("common.zip: %s exceeds data table size limit\n", key.c_str());
 					continue;
 				}
 				CustomSource src = MakeSource(mtime, path.c_str(), ent->name);
 				src.zipEntry = n;
 				if(pass == 0 && (key == "data/config.dat" || key == "data/timecyc.json" ||
-			                 key == "data/water.dat" || key == "data/carcols.dat" ||
+			                 key == "data/water.dat" || key == "data/carcols.dat" || key == "data/carmods.dat" ||
 			                 key == "data/lods.info" ||
 			                 key == "models/generic/vehicle.txd" || key == "models/vehicle.txd")) {
 					commonZipDataFiles.insert(std::make_pair(key, src));
@@ -743,7 +748,8 @@ ScanBpcSystem(void)
 				   (key == "data/lods.info" && ent->uncompressedSize > 1024 * 1024) ||
 				   (key == "data/texdb.dat" && ent->uncompressedSize > 1024 * 1024) ||
 				   (key == "data/colorcycle.dat" && ent->uncompressedSize > 64 * 1024) ||
-				   (key == "data/carcols.dat" && ent->uncompressedSize > 64 * 1024))
+				   (key == "data/carcols.dat" && ent->uncompressedSize > 64 * 1024) ||
+				   (key == "data/carmods.dat" && ent->uncompressedSize > 1024 * 1024))
 					continue;
 
 				CustomSource src = MakeSource(mtime, commonPath.c_str(), ent->name);
@@ -753,7 +759,7 @@ ScanBpcSystem(void)
 				if(pass == 0 && (key == "data/config.dat" || key == "data/texdb.dat" ||
 				                 key == "data/timecyc.json" || key == "data/colorcycle.dat" ||
 				                 key == "data/water.dat" ||
-				                 key == "data/carcols.dat" || key == "data/lods.info" ||
+				                 key == "data/carcols.dat" || key == "data/carmods.dat" || key == "data/lods.info" ||
 				                 key == "models/generic/vehicle.txd" || key == "models/vehicle.txd")){
 					commonZipDataFiles[key] = src;
 					continue;
@@ -3527,6 +3533,7 @@ CCustomModels::Shutdown(void)
 {
 	// The worker may still be reading an archive or loose file. Join all workers
 	// BEFORE the source indices, open .bpc fds and caches are destroyed.
+	ClearVehicleUpgrades();
 	customCpuWorker.Stop();
 #ifdef CUSTOM_BPC_TEXDB
 	customTexDbWorker.Stop();
@@ -4803,6 +4810,140 @@ CreateProceduralVehicleFallbackTex(const char *name, bool specDot)
 	return BuildTexture(proc, name);
 }
 
+RwTexture *
+CCustomModels::CreateVehiclePaletteTexture(const RwRGBA *entries, size_t count)
+{
+	if(!entries || count != 256) return nil;
+	brtex::Texture texture;
+	texture.hasAlpha = false;
+	brtex::Mip mip;
+	mip.w = mip.h = 16;
+	mip.rgba.resize(256*4);
+	for(size_t i = 0; i < 256; ++i){
+		mip.rgba[i*4] = entries[i].red;
+		mip.rgba[i*4+1] = entries[i].green;
+		mip.rgba[i*4+2] = entries[i].blue;
+		mip.rgba[i*4+3] = entries[i].alpha;
+		texture.hasAlpha |= entries[i].alpha != 255;
+	}
+	texture.mips.push_back(mip);
+	RwTexture *result = BuildTexture(texture, "remapvehicles");
+	if(result) RwTextureSetFilterMode(result, rwFILTERNEAREST);
+	return result;
+}
+
+RwTexture *
+CCustomModels::CreateVehicleTonerTexture(const RwRGBA &colour)
+{
+	RwRGBA entries[256];
+	for(size_t i = 0; i < 256; ++i) entries[i] = colour;
+	RwTexture *result = CreateVehiclePaletteTexture(entries, 256);
+	if(result) RwTextureSetName(result, "remaptoner");
+	return result;
+}
+
+bool
+CCustomModels::LoadVehicleUpgrades(void)
+{
+	std::vector<uint8> bytes;
+	std::vector<brvehicle::Upgrade> parsed;
+	vehicleUpgradesRead = true;
+	if(!ReadDataFile("data/carmods.dat", bytes)) return false;
+	if(!brvehicle::ParseUpgrades(bytes.data(), bytes.size(), parsed)){
+		CUSTOM_LOG("BR carmods.dat: invalid table; previous definitions retained\n");
+		return false;
+	}
+	vehicleUpgrades.swap(parsed);
+	CUSTOM_LOG("BR carmods.dat: loaded %u component definitions\n", (unsigned)vehicleUpgrades.size());
+	return true;
+}
+
+void
+CCustomModels::GetVehicleUpgrades(int32 vehicle, std::vector<brvehicle::Upgrade> &out)
+{
+	if(!vehicleUpgradesRead) LoadVehicleUpgrades();
+	out.clear();
+	for(size_t i = 0; i < vehicleUpgrades.size(); ++i)
+		if(vehicleUpgrades[i].vehicle == vehicle) out.push_back(vehicleUpgrades[i]);
+}
+
+static CBaseModelInfo *
+VehicleUpgradeModel(int32 vehicle, int32 uniqueId, int32 &model)
+{
+	if(vehicle < 0 || vehicle >= MODELINFOSIZE) return nil;
+	CBaseModelInfo *parent = CModelInfo::GetModelInfo(vehicle);
+	if(!parent || parent->GetModelType() != MITYPE_VEHICLE) return nil;
+	std::vector<brvehicle::Upgrade> candidates;
+	CCustomModels::GetVehicleUpgrades(vehicle, candidates);
+	for(size_t i = 0; i < candidates.size(); ++i){
+		if(candidates[i].id != uniqueId) continue;
+		model = candidates[i].model;
+		// BR external IDs may exceed the engine table. Never truncate or wrap.
+		if(model < 0 || model >= MODELINFOSIZE) return nil;
+		CBaseModelInfo *mi = CModelInfo::GetModelInfo(model);
+		if(mi && (mi->GetModelType() == MITYPE_SIMPLE || mi->GetModelType() == MITYPE_CLUMP)) return mi;
+		return nil;
+	}
+	return nil;
+}
+
+bool
+CCustomModels::RequestVehicleUpgrade(int32 vehicle, int32 uniqueId)
+{
+	int32 model;
+	if(!VehicleUpgradeModel(vehicle, uniqueId, model)) return false;
+	CStreaming::RequestModel(model, 0);
+	return true;
+}
+
+RwObject *
+CCustomModels::CreateVehicleUpgradeInstance(int32 vehicle, int32 uniqueId)
+{
+	int32 model;
+	CBaseModelInfo *mi = VehicleUpgradeModel(vehicle, uniqueId, model);
+	if(!mi || !CStreaming::HasModelLoaded(model)) return nil;
+	RwObject *object = mi->CreateInstance();
+	if(object){
+		mi->AddRef();
+		vehicleUpgradeInstances[object] = model;
+	}
+	return object;
+}
+
+void
+CCustomModels::ClearVehicleUpgrades(void)
+{
+	while(!vehicleUpgradeInstances.empty())
+		ReleaseVehicleUpgradeInstance(vehicleUpgradeInstances.begin()->first);
+	vehicleUpgrades.clear();
+	vehicleUpgradesRead = false;
+}
+
+void
+CCustomModels::ReleaseVehicleUpgradeInstance(RwObject *object)
+{
+	std::map<RwObject*, int32>::iterator it = vehicleUpgradeInstances.find(object);
+	if(it == vehicleUpgradeInstances.end()) return;
+	CBaseModelInfo *mi = CModelInfo::GetModelInfo(it->second);
+	if(RwObjectGetType(object) == rpCLUMP){
+		RwFrame *frame = RpClumpGetFrame((RpClump*)object);
+		if(frame && RwFrameGetParent(frame)) RwFrameRemoveChild(frame);
+		RpClumpDestroy((RpClump*)object);
+	}else{
+		RpClump *clump = RpAtomicGetClump((RpAtomic*)object);
+		if(clump) RpClumpRemoveAtomic(clump, (RpAtomic*)object);
+		RwFrame *frame = RpAtomicGetFrame((RpAtomic*)object);
+		RpAtomicSetFrame((RpAtomic*)object, nil);
+		RpAtomicDestroy((RpAtomic*)object);
+		if(frame){
+			if(RwFrameGetParent(frame)) RwFrameRemoveChild(frame);
+			RwFrameDestroy(frame);
+		}
+	}
+	if(mi) mi->RemoveRef();
+	vehicleUpgradeInstances.erase(it);
+}
+
 void
 CCustomModels::EnsureVehicleTxdLoaded(void)
 {
@@ -4879,6 +5020,30 @@ CCustomModels::EnsureVehicleTxdLoaded(void)
 	if(def->refCount == 0)
 		CTxdStore::AddRef(slot);
 
+	// BR has standalone BTX resources, not a physical vehicle.txd. Resolve the
+	// global materials explicitly as the native TXD may not mention them at all.
+#ifdef CUSTOM_BPC_TEXDB
+	if(def->texDict){
+		static const char *names[] = { "remapvehicles", "remapvehiclessnow",
+			"remaptoner", "remaptonersnow", "vehiclelights128", "vehiclelightson128",
+			"v_t_left", "v_t_right", "plate_remap", "platem_remap" };
+		ScopedBlockingLoad blocking;
+		for(size_t i = 0; i < sizeof(names)/sizeof(names[0]); ++i){
+			RwTexture *texture = ResolveBpcTexDbOnly(names[i]);
+			if(!texture) continue; // missing/unsupported BTX is not a fatal error
+			RwTexture *old = RwTexDictionaryFindNamedTexture(def->texDict, names[i]);
+			if(old == texture) continue;
+			RwTextureAddRef(texture); // dictionary owns a ref independent of TexDB
+			if(old){
+				old->dict->remove(old);
+				RwTextureDestroy(old);
+			}
+			RwTexDictionaryAddTexture(def->texDict, texture);
+		}
+	}
+#endif
+	LoadVehicleUpgrades();
+
 	if(def->texDict){
 		static const char *envNames[] = {
 			"vehicleenvmap128",
@@ -4948,6 +5113,7 @@ CCustomModels::ReadDataFile(const char *relpath, std::vector<uint8> &out,
 	if(relpath == nil || (strcmp(relpath, "data/timecyc.json") != 0 &&
 	                       strcmp(relpath, "data/water.dat") != 0 &&
 	                       strcmp(relpath, "data/carcols.dat") != 0 &&
+	                       strcmp(relpath, "data/carmods.dat") != 0 &&
 #ifdef ANDROID
 	                       strcmp(relpath, "data/colorcycle.dat") != 0 &&
 #endif

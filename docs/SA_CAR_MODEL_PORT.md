@@ -97,3 +97,44 @@ persistence/selection, overlay composition, light atlas switching, plate generat
 and carmods loading/attachment remain unimplemented. No render callbacks, shaders,
 physics or handling code changed in this follow-up. Implementing BR shader-specific
 palette/toner composition requires separately scoped rendering work.
+
+## BR shared resources and upgrade streaming
+
+Reference: supplied `vehicles.txt`, analysis 04 §§11.2–11.5, analysis 02 §3,
+and the actual `_data/data_carmods.dat` (not merely its six-column summary).
+
+Implemented:
+- Explicitly resolve BR shared BTX resources into the vehicle dictionary through
+  the existing TexDB loader: remapvehicles[/snow], remaptoner[/snow], lights off/on,
+  left/right indicators, plate_remap and platem_remap. TexDB and dictionary refs
+  are independent; unavailable BTX resources are skipped without synthetic plates.
+- Create private 16x16 RGBA palette textures from an explicit 256-entry table and
+  private solid-colour toner textures. Callers own the returned ref. No cached
+  BTX texture or raster is edited. The UV-to-colour layout is NOT guessed.
+- Index bounded `data/carmods.dat` in common.zip/common.bpc and expose validated
+  metadata by vehicle. Parse UTF-8 BOM, commas, optional/multiple stock names,
+  sparse IDs, exact duplicate records; reject conflicting duplicates and malformed
+  numbers/names. The supplied file has 2711 rows, 2704 distinct definitions (seven
+  identical duplicates), including model IDs larger than the engine's model table.
+- Expose nonblocking request/create/release APIs for selected component models.
+  Validate vehicle/type/model-table bounds before streamer access; no truncation
+  of BR external IDs. Instances pin model/TXD refs and teardown removes frame/clump
+  links. Global cleanup runs before world/model shutdown. Owners must release an
+  attached component BEFORE destroying its parent clump.
+
+Not implemented / not claimed:
+- These APIs do not select upgrades automatically, register missing component IDEs,
+  remap external model IDs, attach to dummies or hide stock geometry automatically.
+- Private palette/toner factories do not by themselves implement BR multitexture
+  palette/overlay shaders. There is no per-vehicle palette binding/persistence yet.
+- Loading the light/plate resources is not automatic light-state switching, plate
+  text generation or a BR material shader. Existing rendering remains unchanged.
+- No physics, handling, shader or render-callback changes in this stage.
+
+Validation:
+- BRVehicleResourcesTests including the actual supplied carmods table, ASan/UBSan.
+- DesktopBpcTexturesTests, direct ASTC and CPU fallback, with real common.bpc
+  carmods indexing/reading and vehicle-specific lookup fixtures.
+- Desktop and Android syntax checks of CustomModels.cpp and Game.cpp.
+- No real-asset GPU/Windows playtest; resource factories, instance lifetime and
+  shared vehicle dictionary population have syntax coverage, not runtime coverage.

@@ -16,6 +16,7 @@
 #include "ModelInfo.h"
 #include "FileLoader.h"
 #include "TxdStore.h"
+#include "VehicleUpgradeRwStubs.h"
 
 #include <algorithm>
 #include <cassert>

@@ -691,6 +691,9 @@ bool CGame::ShutDown(void)
 	}
 	
 	CRenderer::Shutdown();
+#ifdef CUSTOM_MODELS
+	CCustomModels::ClearVehicleUpgrades();
+#endif
 	CWorld::ShutDown();
 	DMAudio.DestroyAllGameCreatedEntities();
 	CModelInfo::ShutDown();

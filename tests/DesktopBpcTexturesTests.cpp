@@ -63,7 +63,9 @@ int main(int argc, char **)
 	mkdir("custom/zip/mesh", 0755); mkdir("custom/zip/textures", 0755);
 	WriteFileBytes("custom/zip/common.bpc", MakeZip({
 		{ "data/config.dat", Bytes("CDIMAGE mesh/world.bpc\n") },
-		{ "data/texdb.dat", Bytes("TEXDB textures/roads\n") }
+		{ "data/texdb.dat", Bytes("TEXDB textures/roads\n") },
+		{ "data/carmods.dat", Bytes("79 420 9 chassis_dummy 1807 exhaust_stock exhaust\n"
+		                           "90, 551, 6, boot, 3501351, null\n") }
 	}, true));
 	WriteFileBytes("custom/zip/mesh/world.bpc", MakeZip({
 		{ "road_br_01.mod", TexturedMod("road_asphalt_br") },
@@ -81,6 +83,16 @@ int main(int argc, char **)
 		mi->SetTexDictionary("shared_native");
 	}
 	CCustomModels::Initialise();
+	Check(CCustomModels::LoadVehicleUpgrades(), "read real carmods path from common.bpc");
+	std::vector<brvehicle::Upgrade> upgrades;
+	CCustomModels::GetVehicleUpgrades(420, upgrades);
+	Check(upgrades.size() == 1 && upgrades[0].id == 79 && upgrades[0].stockParts.size() == 2,
+		"vehicle-specific sparse upgrade lookup preserves multiple stock names");
+	CCustomModels::GetVehicleUpgrades(551, upgrades);
+	Check(upgrades.size() == 1 && upgrades[0].model == 3501351 && upgrades[0].stockParts.empty(),
+		"large external BR IDs retained in metadata without truncation");
+	CCustomModels::GetVehicleUpgrades(999, upgrades);
+	Check(upgrades.empty(), "unknown vehicle has no upgrades");
 	// Native TXD is not replaced, but each custom model must contribute its own
 	// textures even when that shared dictionary is already nonempty.
 	CStreaming::ms_aInfoForModel[STREAM_OFFSET_TXD + slot].m_size = 1;
