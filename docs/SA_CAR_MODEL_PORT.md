@@ -72,3 +72,28 @@ from the presence of an SA-only geometry-loading branch.
   stubs; checks plain names, `_hi`, `_lo`, `_vlo`, alpha, windscreen and damage.
 * Existing native COLL loader test still passes. Changed sources pass GCC
   syntax checks for desktop GL3 and Android. These are not GPU/gameplay tests.
+
+## BR analysis: material channels (follow-up)
+
+Reference: user-supplied vehicles.txt ZIP, `vehicles/Анализ/02-data-formats.md`
+(section 4) and `04-textures.md` (11.2–11.5). The reference contains provisional
+interpretations; do not treat its native addresses/layouts as portable C++ ABI.
+
+- Preserve four distinct SA RGB paint-marker channels during material discovery.
+  Channels 3/4 have their own bounded, terminated lists and reflection registration.
+- Add an explicit four-colour model-material API, preserving alpha. Existing
+  two-colour gameplay calls touch only channels 1/2; no physics/handling/entity
+  state changes are made. Until an explicit four-colour caller supplies them,
+  channels 3/4 remain neutral white, not aliases of 1/2.
+- BR body remap recognition uses a case-sensitive `remap` prefix, excluding
+  `remaptoner` first. `plate_remap`/`platem_remap` and toner overlays must not
+  acquire body-paint reflection heuristics just because they contain `remap`.
+
+Validation: standalone VehicleMaterialChannelsTests and desktop/Android syntax
+checks for VehicleModelInfo.cpp. No GPU or real BR asset run performed.
+
+This is not a complete BR port. Palette pixel replacement, per-instance four-colour
+persistence/selection, overlay composition, light atlas switching, plate generation,
+and carmods loading/attachment remain unimplemented. No render callbacks, shaders,
+physics or handling code changed in this follow-up. Implementing BR shader-specific
+palette/toner composition requires separately scoped rendering work.

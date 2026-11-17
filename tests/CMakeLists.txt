@@ -446,3 +446,8 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Cla
         add_test(NAME ${sa_target} COMMAND ${sa_target})
     endforeach()
 endif()
+
+add_executable(vehicle_material_channels_tests VehicleMaterialChannelsTests.cpp)
+target_include_directories(vehicle_material_channels_tests PRIVATE ../src/extras/custom)
+set_target_properties(vehicle_material_channels_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+add_test(NAME vehicle_material_channels_tests COMMAND vehicle_material_channels_tests)

@@ -101,6 +101,8 @@ public:
 	float m_bikeSteerAngle;
 	RpMaterial *m_materials1[NUM_FIRST_MATERIALS];
 	RpMaterial *m_materials2[NUM_SECOND_MATERIALS];
+	RpMaterial *m_materials3[NUM_FIRST_MATERIALS];
+	RpMaterial *m_materials4[NUM_FIRST_MATERIALS];
 	uint8 m_colours1[NUM_VEHICLE_COLOURS];
 	uint8 m_colours2[NUM_VEHICLE_COLOURS];
 	uint8 m_numColours;
@@ -189,6 +191,7 @@ public:
 	static RpAtomic *GetEditableMaterialListCB(RpAtomic *atomic, void *data);
 	void FindEditableMaterialList(void);
 	void SetVehicleColour(uint8 c1, uint8 c2);
+	void SetVehicleColour(uint8 c1, uint8 c2, uint8 c3, uint8 c4);
 	void ChooseVehicleColour(uint8 &col1, uint8 &col2);
 	void AvoidSameVehicleColour(uint8 *col1, uint8 *col2);
 	static void LoadVehicleColours(void);

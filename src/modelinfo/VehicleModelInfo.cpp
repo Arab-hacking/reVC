@@ -1229,6 +1229,8 @@ struct editableMatCBData
 	CVehicleModelInfo *vehicle;
 	int32 numMats1;
 	int32 numMats2;
+	int32 numMats3;
+	int32 numMats4;
 };
 
 RpMaterial*
@@ -1253,6 +1255,12 @@ CVehicleModelInfo::GetEditableMaterialListCB(RpMaterial *material, void *data)
 				cbdata->vehicle->m_materials2[cbdata->numMats2++] = material;
 				RpMaterialSetColor(material, &white);
 			}
+		}else if(slot == 3 && cbdata->numMats3 < NUM_FIRST_MATERIALS-1){
+			cbdata->vehicle->m_materials3[cbdata->numMats3++] = material;
+			RpMaterialSetColor(material, &white);
+		}else if(slot == 4 && cbdata->numMats4 < NUM_FIRST_MATERIALS-1){
+			cbdata->vehicle->m_materials4[cbdata->numMats4++] = material;
+			RpMaterialSetColor(material, &white);
 		}
 	}
 	return material;
@@ -1277,11 +1285,14 @@ CVehicleModelInfo::FindEditableMaterialList(void)
 	cbdata.vehicle = this;
 	cbdata.numMats1 = 0;
 	cbdata.numMats2 = 0;
+	cbdata.numMats3 = cbdata.numMats4 = 0;
 	RpClumpForAllAtomics(m_clump, GetEditableMaterialListCB, &cbdata);
 	for(i = 0; i < m_numComps; i++)
 		GetEditableMaterialListCB(m_comps[i], &cbdata);
 	m_materials1[cbdata.numMats1] = nil;
 	m_materials2[cbdata.numMats2] = nil;
+	m_materials3[cbdata.numMats3] = nil;
+	m_materials4[cbdata.numMats4] = nil;
 	maxFirstMaterials = Max(maxFirstMaterials, cbdata.numMats1);
 	maxSecondMaterials = Max(maxSecondMaterials, cbdata.numMats2);
 	m_currentColour1 = -1;
@@ -1314,6 +1325,26 @@ CVehicleModelInfo::SetVehicleColour(uint8 c1, uint8 c2)
 			colp->blue = col.blue;
 		}
 		m_currentColour2 = c2;
+	}
+}
+
+// Explicit four-channel entry point for model/material clients. The existing
+// two-colour gameplay API deliberately does not overwrite channels 3 and 4.
+void
+CVehicleModelInfo::SetVehicleColour(uint8 c1, uint8 c2, uint8 c3, uint8 c4)
+{
+	SetVehicleColour(c1, c2);
+	RpMaterial **lists[] = { m_materials3, m_materials4 };
+	const uint8 colours[] = { c3, c4 };
+	for(int i = 0; i < 2; ++i){
+		const RwRGBA &colour = ms_vehicleColourTable[colours[i]];
+		for(RpMaterial **p = lists[i]; *p; ++p){
+			RwRGBA value = *RpMaterialGetColor(*p);
+			value.red = colour.red;
+			value.green = colour.green;
+			value.blue = colour.blue;
+			RpMaterialSetColor(*p, &value);
+		}
 	}
 }
 
@@ -1555,6 +1586,10 @@ IsRegisteredEditableMaterial(CVehicleModelInfo *veh, RpMaterial *mat)
 	for(RpMaterial **p = veh->m_materials2; *p; ++p)
 		if(*p == mat)
 			return true;
+	for(RpMaterial **p = veh->m_materials3; *p; ++p)
+		if(*p == mat) return true;
+	for(RpMaterial **p = veh->m_materials4; *p; ++p)
+		if(*p == mat) return true;
 	return false;
 }
 

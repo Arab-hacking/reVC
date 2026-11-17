@@ -48,20 +48,21 @@ inline bool ContainsTokenCI(const char *haystack, const char *needle)
 
 inline bool IsEditableCarColorMarker(uint8_t r, uint8_t g, uint8_t b, int &outSlot)
 {
-	// VC/SA primary (#3CFF00) and SA tertiary/primary (#00FFFF)
-	if((r == 0x3C && g == 0xFF && b == 0x00) ||
-	   (r == 0x00 && g == 0xFF && b == 0xFF)){
-		outSlot = 1;
-		return true;
-	}
-	// VC/SA secondary (#FF00AF) and SA quaternary/secondary (#FF00FF)
-	if((r == 0xFF && g == 0x00 && b == 0xAF) ||
-	   (r == 0xFF && g == 0x00 && b == 0xFF)){
-		outSlot = 2;
-		return true;
-	}
-	outSlot = 0;
-	return false;
+	// SA has four independent paint channels, not two aliases.
+	if(r == 60 && g == 255 && b == 0) outSlot = 1;
+	else if(r == 255 && g == 0 && b == 175) outSlot = 2;
+	else if(r == 0 && g == 255 && b == 255) outSlot = 3;
+	else if(r == 255 && g == 0 && b == 255) outSlot = 4;
+	else { outSlot = 0; return false; }
+	return true;
+}
+
+// BR loader 0x17800f8 tests remaptoner before the generic remap prefix.
+// Do not mistake plates containing "remap" or the black toner overlay for paint.
+inline bool IsBRBodyRemap(const char *name)
+{
+	return name && std::strncmp(name, "remap", 5) == 0 &&
+	       std::strncmp(name, "remaptoner", 10) != 0;
 }
 
 inline bool IsVehicleLightMarker(uint8_t r, uint8_t g, uint8_t b)
@@ -147,7 +148,7 @@ inline bool IsLikelyBodyShellPaint(const char *frameName, const char *texName, u
 	if(ContainsTokenCI(texName, "underbody"))
 		return false;
 	const bool paintTex =
-		ContainsTokenCI(texName, "remap") ||
+		IsBRBodyRemap(texName) ||
 		ContainsTokenCI(texName, "kuzov") ||
 		ContainsTokenCI(texName, "carpaint") ||
 		ContainsTokenCI(texName, "paint") ||
