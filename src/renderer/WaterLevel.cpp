@@ -2889,11 +2889,11 @@ CWaterLevel::RenderBoatWakes(void)
 		float fAplhaB;
 		float fSizeB;
 		
-		for ( int32 wake = 1; wake < pBoat->m_nNumWakePoints; wake++ )
+		for ( int32 wake = 1; wake < pBoat->m_NumWakeCoords; wake++ )
 		{
 			bool bRender = true;
 			
-			float fTimeleft = CBoat::WAKE_LIFETIME - pBoat->m_afWakePointLifeTime[wake];
+			float fTimeleft = CBoat::WAKE_LIFETIME - pBoat->m_WakePtCounters[wake];
 
 			float fWakeSizeB = ((float)wake * 0.19f) + fSize - fWakeLifeTimeMult * Max(fTimeleft, 0.0f);
 			
@@ -2901,7 +2901,7 @@ CWaterLevel::RenderBoatWakes(void)
 			if ( fSizeB < 0.0f )
 				fSizeB = 1.0f;
 			
-			if ( wake == pBoat->m_nNumWakePoints - 1 )
+			if ( wake == pBoat->m_NumWakeCoords - 1 )
 			{
 				// set alpha to 0 if it's last point
 				fAplhaB = 0.0f;
@@ -2909,13 +2909,13 @@ CWaterLevel::RenderBoatWakes(void)
 			else
 			{
 				// clip (-100, 500), less lifetime - less val
-				float val = 500.0f - (CBoat::WAKE_LIFETIME - pBoat->m_afWakePointLifeTime[wake])
+				float val = 500.0f - (CBoat::WAKE_LIFETIME - pBoat->m_WakePtCounters[wake])
 						* 600.0f / CBoat::WAKE_LIFETIME;
 						
 				fAplhaB = Clamp(val, 0.0f, 255.0f);
 			}
 
-			CVector2D vecDistB = pBoat->m_avec2dWakePoints[wake - 1] - pBoat->m_avec2dWakePoints[wake];
+			CVector2D vecDistB = pBoat->m_WakeCoords[wake - 1] - pBoat->m_WakeCoords[wake];
 
 			float fScal = vecDistB.MagnitudeSqr();
 			
@@ -2936,23 +2936,23 @@ CWaterLevel::RenderBoatWakes(void)
 			
 			CVector2D vecAA
 			(
-				pBoat->m_avec2dWakePoints[wake - 1].x - (fSizeA * vecDistA.y),
-				pBoat->m_avec2dWakePoints[wake - 1].y + (fSizeA * vecDistA.x)
+				pBoat->m_WakeCoords[wake - 1].x - (fSizeA * vecDistA.y),
+				pBoat->m_WakeCoords[wake - 1].y + (fSizeA * vecDistA.x)
 			);
 			CVector2D vecAB
 			(
-				pBoat->m_avec2dWakePoints[wake - 1].x + (fSizeA * vecDistA.y),
-				pBoat->m_avec2dWakePoints[wake - 1].y - (fSizeA * vecDistA.x)
+				pBoat->m_WakeCoords[wake - 1].x + (fSizeA * vecDistA.y),
+				pBoat->m_WakeCoords[wake - 1].y - (fSizeA * vecDistA.x)
 			);
 			CVector2D vecBA
 			(
-				pBoat->m_avec2dWakePoints[wake].x     + (fSizeB * vecDistB.y),
-				pBoat->m_avec2dWakePoints[wake].y     - (fSizeB * vecDistB.x)
+				pBoat->m_WakeCoords[wake].x     + (fSizeB * vecDistB.y),
+				pBoat->m_WakeCoords[wake].y     - (fSizeB * vecDistB.x)
 			);                                                                            
 			CVector2D vecBB                         
 			(                                       
-				pBoat->m_avec2dWakePoints[wake].x     - (fSizeB * vecDistB.y),
-				pBoat->m_avec2dWakePoints[wake].y     + (fSizeB * vecDistB.x)
+				pBoat->m_WakeCoords[wake].x     - (fSizeB * vecDistB.y),
+				pBoat->m_WakeCoords[wake].y     + (fSizeB * vecDistB.x)
 			);
 			
 			if ( bRender )

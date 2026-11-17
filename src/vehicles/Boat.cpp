@@ -102,10 +102,10 @@ m_nVehicleSubType = VEHICLE_TYPE_BOAT;
 	bTouchingWater = true;
 	m_fDamage = 0.0f;
 	m_pSetOnFireEntity = nil;
-	m_nNumWakePoints = 0;
+	m_NumWakeCoords = 0;
 
-	for (int16 i = 0; i < ARRAY_SIZE(m_afWakePointLifeTime); i++)
-		m_afWakePointLifeTime[i] = 0.0f;
+	for (int16 i = 0; i < ARRAY_SIZE(m_WakePtCounters); i++)
+		m_WakePtCounters[i] = 0.0f;
 
 	m_nAmmoInClip = 20;
 
@@ -1267,12 +1267,12 @@ CBoat::IsSectorAffectedByWake(CVector2D sector, float fSize, CBoat **apBoats)
 		if ( !pBoat )
 			break;
 		
-		for ( int j = 0; j < pBoat->m_nNumWakePoints; j++ )
+		for ( int j = 0; j < pBoat->m_NumWakeCoords; j++ )
 		{
-			 float fDist = (WAKE_LIFETIME - pBoat->m_afWakePointLifeTime[j]) * fShapeTime + float(j) * fShapeLength + fSize;
+			 float fDist = (WAKE_LIFETIME - pBoat->m_WakePtCounters[j]) * fShapeTime + float(j) * fShapeLength + fSize;
 			 
-			 if ( Abs(pBoat->m_avec2dWakePoints[j].x - sector.x) < fDist
-				&& Abs(pBoat->m_avec2dWakePoints[i].y - sector.y) < fDist )
+			 if ( Abs(pBoat->m_WakeCoords[j].x - sector.x) < fDist
+				&& Abs(pBoat->m_WakeCoords[i].y - sector.y) < fDist )
 			 {
 				 apBoats[numVerts] = pBoat;
 				 numVerts = 1; // += ?
@@ -1288,16 +1288,16 @@ CBoat::IsSectorAffectedByWake(CVector2D sector, float fSize, CBoat **apBoats)
 float
 CBoat::IsVertexAffectedByWake(CVector vecVertex, CBoat *pBoat)
 {
-	for ( int i = 0; i < pBoat->m_nNumWakePoints; i++ )
+	for ( int i = 0; i < pBoat->m_NumWakeCoords; i++ )
 	{
-		float fMaxDist = (WAKE_LIFETIME - pBoat->m_afWakePointLifeTime[i]) * fShapeTime + float(i) * fShapeLength;
+		float fMaxDist = (WAKE_LIFETIME - pBoat->m_WakePtCounters[i]) * fShapeTime + float(i) * fShapeLength;
 		
-		CVector2D vecDist = pBoat->m_avec2dWakePoints[i] - CVector2D(vecVertex);
+		CVector2D vecDist = pBoat->m_WakeCoords[i] - CVector2D(vecVertex);
 		
 		float fDist = vecDist.MagnitudeSqr();
 		
 		if ( fDist < SQR(fMaxDist) )
-			return 1.0f - Min(fRangeMult * Sqrt(fDist / SQR(fMaxDist)) + (WAKE_LIFETIME - pBoat->m_afWakePointLifeTime[i]) * fTimeMult, 1.0f);
+			return 1.0f - Min(fRangeMult * Sqrt(fDist / SQR(fMaxDist)) + (WAKE_LIFETIME - pBoat->m_WakePtCounters[i]) * fTimeMult, 1.0f);
 	}
 
 	return 0.0f;
@@ -1329,7 +1329,7 @@ CBoat::FillBoatList()
 	for (int i = CPools::GetVehiclePool()->GetSize() - 1; i >= 0; i--) {
 		CBoat *boat = (CBoat *)(CPools::GetVehiclePool()->GetSlot(i));
 		if (boat && boat->m_nVehicleType == VEHICLE_TYPE_BOAT) {
-			if (boat->m_nNumWakePoints != 0) {
+			if (boat->m_NumWakeCoords != 0) {
 				CVector2D camToBoat = CVector2D(boat->GetPosition()) - camPos;
 				float distToCam = DotProduct2D(camFwd, camToBoat);
 				if(distToCam > 100.0f || distToCam < -15.0f)
@@ -1364,48 +1364,57 @@ CBoat::PruneWakeTrail(void)
 {
 	int i;
 
-	for(i = 0; i < ARRAY_SIZE(m_afWakePointLifeTime); i++){
-		if(m_afWakePointLifeTime[i] <= 0.0f)
+	for(i = 0; i < ARRAY_SIZE(m_WakePtCounters); i++){
+		if(m_WakePtCounters[i] <= 0.0f)
 			break;
-		if(m_afWakePointLifeTime[i] <= CTimer::GetTimeStep()){
-			m_afWakePointLifeTime[i] = 0.0f;
+		if(m_WakePtCounters[i] <= CTimer::GetTimeStep()){
+			m_WakePtCounters[i] = 0.0f;
 			break;
 		}
-		m_afWakePointLifeTime[i] -= CTimer::GetTimeStep();
+		m_WakePtCounters[i] -= CTimer::GetTimeStep();
 	}
-	m_nNumWakePoints = i;
+	m_NumWakeCoords = i;
 }
 
 void
 CBoat::AddWakePoint(CVector point)
 {
-	int i;
-	if(m_afWakePointLifeTime[0] > 0.0f){
-		if((CVector2D(GetPosition()) - m_avec2dWakePoints[0]).MagnitudeSqr() < SQR(2.0f)) {
-			if(GetStatus() == STATUS_PLAYER){
-				if(m_nNumWakePoints >= 31)
-					m_nNumWakePoints = 31;
-			}else if(VehicleCreatedBy == MISSION_VEHICLE){
-				if(m_nNumWakePoints >= 20)
-					m_nNumWakePoints = 20;
-			}else{
-				if(m_nNumWakePoints >= 15)
-					m_nNumWakePoints = 15;
-			}
-			for(i = m_nNumWakePoints; i != 0; i--){
-				m_avec2dWakePoints[i] = m_avec2dWakePoints[i-1];
-				m_afWakePointLifeTime[i] = m_afWakePointLifeTime[i-1];
-			}
-			m_avec2dWakePoints[0] = point;
-			m_afWakePointLifeTime[0] = 150.0f;
-			if(m_nNumWakePoints < ARRAY_SIZE(m_afWakePointLifeTime))
-				m_nNumWakePoints++;
-		}
-	}else{
-		m_avec2dWakePoints[0] = point;
-		m_afWakePointLifeTime[0] = 150.0f;
-		m_nNumWakePoints = 1;
+	uint8 intensity = m_vecMoveSpeed.Magnitude() * 100.0f;
+
+	// the first point just starts the trail
+	if(m_WakePtCounters[0] <= 0.0f){
+		m_WakeCoords[0] = point;
+		m_WakeBoatSpeed[0] = intensity;
+		m_WakePtCounters[0] = WAKE_LIFETIME;
+		m_NumWakeCoords = 1;
+		return;
 	}
+
+	// too close to the last point, the trail would break up
+	if((CVector2D(GetPosition()) - m_WakeCoords[0]).MagnitudeSqr() <= SQR(MIN_WAKE_INTERVAL))
+		return;
+
+	// how long a trail a boat of this kind may leave
+	uint16 maxWakePoints = 31;
+	if(GetStatus() != STATUS_PLAYER){
+		if(VehicleCreatedBy == MISSION_VEHICLE)
+			maxWakePoints = 20;
+		else
+			maxWakePoints = 15;
+	}
+
+	uint16 numWakePoints = Min((uint16)m_NumWakeCoords, maxWakePoints);
+	for(int i = numWakePoints; i > 0; i--){
+		m_WakeCoords[i] = m_WakeCoords[i-1];
+		m_WakeBoatSpeed[i] = m_WakeBoatSpeed[i-1];
+		m_WakePtCounters[i] = m_WakePtCounters[i-1];
+	}
+
+	m_WakeCoords[0] = point;
+	m_WakeBoatSpeed[0] = intensity;
+	m_WakePtCounters[0] = WAKE_LIFETIME;
+	if(m_NumWakeCoords < ARRAY_SIZE(m_WakePtCounters))
+		m_NumWakeCoords++;
 }
 
 void

@@ -41,9 +41,10 @@ public:
 	CVector m_vecBuoyancePoint;
 	float m_fPrevVolumeUnderWater;
 	int16 m_nDeltaVolumeUnderWater;
-	uint16 m_nNumWakePoints;
-	CVector2D m_avec2dWakePoints[32];
-	float m_afWakePointLifeTime[32];
+	uint16 m_NumWakeCoords;
+	CVector2D m_WakeCoords[32];
+	uint8 m_WakeBoatSpeed[32];
+	float m_WakePtCounters[32];
 
 	static float MAX_WAKE_LENGTH;
 	static float MIN_WAKE_INTERVAL;
