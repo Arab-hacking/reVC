@@ -559,7 +559,7 @@ CCivilianPed::EnterVacantNearbyCars(void)
 						CSector* sector = CWorld::GetSector(curX, curY);
 						for (CPtrNode* node = sector->m_lists[ENTITYLIST_VEHICLES].first; node; node = node->next) {
 							CVehicle* veh = (CVehicle*)node->item;
-							if (veh && veh->IsCar()) {
+							if (veh && veh->IsAutomobile()) {
 
 								// Looks like PARKED_VEHICLE condition isn't there in Mobile.
 								if (veh->VehicleCreatedBy == RANDOM_VEHICLE || veh->VehicleCreatedBy == PARKED_VEHICLE) {

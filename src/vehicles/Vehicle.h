@@ -145,12 +145,12 @@ enum eFlightModel
 
 enum eVehicleAppearance
 {
-	VEHICLE_APPEARANCE_NONE,
-	VEHICLE_APPEARANCE_CAR,
-	VEHICLE_APPEARANCE_BIKE,
-	VEHICLE_APPEARANCE_HELI,
-	VEHICLE_APPEARANCE_BOAT,
-	VEHICLE_APPEARANCE_PLANE,
+	VEHICLE_APPEARANCE_NONE = 0,
+	VEHICLE_APPEARANCE_AUTOMOBILE = 1,
+	VEHICLE_APPEARANCE_BIKE = 2,
+	VEHICLE_APPEARANCE_HELI = 3,
+	VEHICLE_APPEARANCE_BOAT = 4,
+	VEHICLE_APPEARANCE_PLANE = 5,
 };
 
 // TODO: what is this even?
@@ -280,7 +280,8 @@ public:
 	int8 m_comedyControlState;
 	CStoredCollPoly m_aCollPolys[2];     // poly which is under front/rear part of car
 	float m_fSteerInput;
-	eVehicleType m_vehType;
+	eVehicleType m_nVehicleType;
+	eVehicleType m_nVehicleSubType;	// differs from the type only for vehicles that behave as two classes, e.g. the vortex
 
 	static void *operator new(size_t) throw();
 	static void *operator new(size_t sz, int slot) throw();
@@ -323,12 +324,40 @@ public:
 #endif
 
 	eVehicleAppearance GetVehicleAppearance(void);
-	bool IsCar(void) { return m_vehType == VEHICLE_TYPE_CAR; }
-	bool IsBoat(void) { return m_vehType == VEHICLE_TYPE_BOAT; }
-	bool IsTrain(void) { return m_vehType == VEHICLE_TYPE_TRAIN; }
-	bool IsHeli(void) { return m_vehType == VEHICLE_TYPE_HELI; }
-	bool IsPlane(void) { return m_vehType == VEHICLE_TYPE_PLANE; }
-	bool IsBike(void) { return m_vehType == VEHICLE_TYPE_BIKE; }
+
+	bool IsVehicleTypeValid(void) { return m_nVehicleType != VEHICLE_TYPE_IGNORE; }
+	bool IsAutomobile(void) { return m_nVehicleType == VEHICLE_TYPE_AUTOMOBILE; }
+	bool IsMonsterTruck(void) { return m_nVehicleType == VEHICLE_TYPE_MTRUCK; }
+	bool IsQuad(void) { return m_nVehicleType == VEHICLE_TYPE_QUAD; }
+	bool IsHeli(void) { return m_nVehicleType == VEHICLE_TYPE_HELI; }
+	bool IsPlane(void) { return m_nVehicleType == VEHICLE_TYPE_PLANE; }
+	bool IsBoat(void) { return m_nVehicleType == VEHICLE_TYPE_BOAT; }
+	bool IsTrain(void) { return m_nVehicleType == VEHICLE_TYPE_TRAIN; }
+	bool IsFakeAircraft(void) { return m_nVehicleType == VEHICLE_TYPE_FHELI || m_nVehicleType == VEHICLE_TYPE_FPLANE; }
+	bool IsBike(void) { return m_nVehicleType == VEHICLE_TYPE_BIKE; }
+	bool IsBMX(void) { return m_nVehicleType == VEHICLE_TYPE_BMX; }
+	bool IsTrailer(void) { return m_nVehicleType == VEHICLE_TYPE_TRAILER; }
+
+	bool IsSubVehicleTypeValid(void) { return m_nVehicleSubType != VEHICLE_TYPE_IGNORE; }
+	bool IsSubAutomobile(void) { return m_nVehicleSubType == VEHICLE_TYPE_AUTOMOBILE; }
+	bool IsSubMonsterTruck(void) { return m_nVehicleSubType == VEHICLE_TYPE_MTRUCK; }
+	bool IsSubQuad(void) { return m_nVehicleSubType == VEHICLE_TYPE_QUAD; }
+	bool IsSubHeli(void) { return m_nVehicleSubType == VEHICLE_TYPE_HELI; }
+	bool IsSubPlane(void) { return m_nVehicleSubType == VEHICLE_TYPE_PLANE; }
+	bool IsSubBoat(void) { return m_nVehicleSubType == VEHICLE_TYPE_BOAT; }
+	bool IsSubTrain(void) { return m_nVehicleSubType == VEHICLE_TYPE_TRAIN; }
+	bool IsSubFakeAircraft(void) { return m_nVehicleSubType == VEHICLE_TYPE_FHELI || m_nVehicleSubType == VEHICLE_TYPE_FPLANE; }
+	bool IsSubBike(void) { return m_nVehicleSubType == VEHICLE_TYPE_BIKE; }
+	bool IsSubBMX(void) { return m_nVehicleSubType == VEHICLE_TYPE_BMX; }
+	bool IsSubTrailer(void) { return m_nVehicleSubType == VEHICLE_TYPE_TRAILER; }
+
+	// The handling record carries the real class of the physics, which can be
+	// narrower than the runtime type (an "RC bandit" is an automobile that the
+	// handling line marks as a bike-like body).
+	bool IsRealBike(void) { return m_pHandlingData->m_bIsBike; }
+	bool IsRealHeli(void) { return m_pHandlingData->m_bIsHeli; }
+	bool IsRealPlane(void) { return m_pHandlingData->m_bIsPlane; }
+	bool IsRealBoat(void) { return m_pHandlingData->m_bIsBoat; }
 
 	void FlyingControl(eFlightModel flightModel);
 	bool DoBladeCollision(CVector pos, CMatrix &matrix, int16 rotorType, float radius, float damageMult);
@@ -390,8 +419,6 @@ public:
 	CVehicleModelInfo* GetModelInfo() { return (CVehicleModelInfo*)CModelInfo::GetModelInfo(GetModelIndex()); }
 	bool IsTaxi(void) { return GetModelIndex() == MI_TAXI || GetModelIndex() == MI_CABBIE || GetModelIndex() == MI_ZEBRA || GetModelIndex() == MI_KAUFMAN; }
 	bool IsLimo(void) { return GetModelIndex() == MI_STRETCH || GetModelIndex() == MI_LOVEFIST; }
-	bool IsRealHeli(void) { return !!(m_pHandlingData->m_nModelFlags & VEHICLE_HANDLING_MODEL_IS_HELI); }
-	bool IsRealPlane(void) { return !!(m_pHandlingData->m_nModelFlags & VEHICLE_HANDLING_MODEL_IS_PLANE); }
 
 	static bool bWheelsOnlyCheat;
 	static bool bAllDodosCheat;

@@ -147,6 +147,23 @@ CPools::MakeSureSlotInObjectPoolIsEmpty(int32 slot)
 #define CopyFromBuf(buf, data) memcpy(&data, buf, sizeof(data)); SkipSaveBuf(buf, sizeof(data));
 #define CopyToBuf(buf, data) memcpy(buf, &data, sizeof(data)); SkipSaveBuf(buf, sizeof(data));
 
+// Types written by the legacy save format: 0 car, 1 boat, 2 train, 3 heli,
+// 4 plane, 5 bike. They are mapped onto eVehicleType on load instead of being
+// compared against it directly.
+static eVehicleType
+LegacySaveVehicleType(uint32 type)
+{
+	switch(type){
+	case 0: return VEHICLE_TYPE_AUTOMOBILE;
+	case 1: return VEHICLE_TYPE_BOAT;
+	case 2: return VEHICLE_TYPE_TRAIN;
+	case 3: return VEHICLE_TYPE_HELI;
+	case 4: return VEHICLE_TYPE_PLANE;
+	case 5: return VEHICLE_TYPE_BIKE;
+	default: return VEHICLE_TYPE_IGNORE;
+	}
+}
+
 void CPools::LoadVehiclePool(uint8* buf, uint32 size)
 {
 INITSAVEBUF
@@ -160,17 +177,18 @@ INITSAVEBUF
 		int32 slot;
 
 		ReadSaveBuf(&type, buf);
+		const eVehicleType vehicleType = LegacySaveVehicleType(type);
 		ReadSaveBuf(&model, buf);
 		CStreaming::RequestModel(model, STREAMFLAGS_DEPENDENCY);
 		CStreaming::LoadAllRequestedModels(false);
 		ReadSaveBuf(&slot, buf);
 		CVehicle* pVehicle;
 #ifdef COMPATIBLE_SAVES
-		if (type == VEHICLE_TYPE_BOAT)
+		if (vehicleType == VEHICLE_TYPE_BOAT)
 			pVehicle = new(slot) CBoat(model, RANDOM_VEHICLE);
-		else if (type == VEHICLE_TYPE_CAR)
+		else if (vehicleType == VEHICLE_TYPE_AUTOMOBILE)
 			pVehicle = new(slot) CAutomobile(model, RANDOM_VEHICLE);
-		else if (type == VEHICLE_TYPE_BIKE)
+		else if (vehicleType == VEHICLE_TYPE_BIKE)
 			pVehicle = new(slot) CBike(model, RANDOM_VEHICLE);
 		else
 			assert(0);
@@ -179,14 +197,14 @@ INITSAVEBUF
 		CWorld::Add(pVehicle);
 #else
 		char* vbuf = new char[Max(CBike::nSaveStructSize, Max(CAutomobile::nSaveStructSize, CBoat::nSaveStructSize))];
-		if (type == VEHICLE_TYPE_BOAT) {
+		if (vehicleType == VEHICLE_TYPE_BOAT) {
 			memcpy(vbuf, buf, sizeof(CBoat));
 			SkipSaveBuf(buf, sizeof(CBoat));
 			CBoat* pBoat = new(slot) CBoat(model, RANDOM_VEHICLE);
 			pVehicle = pBoat;
 			--CCarCtrl::NumRandomCars;
 		}
-		else if (type == VEHICLE_TYPE_CAR) {
+		else if (vehicleType == VEHICLE_TYPE_AUTOMOBILE) {
 			memcpy(vbuf, buf, sizeof(CAutomobile));
 			SkipSaveBuf(buf, sizeof(CAutomobile));
 			CStreaming::RequestModel(model, 0); // is it needed?
@@ -197,7 +215,7 @@ INITSAVEBUF
 			pAutomobile->Damage = ((CAutomobile*)vbuf)->Damage;
 			pAutomobile->SetupDamageAfterLoad();
 		}
-		else if (type == VEHICLE_TYPE_BIKE) {
+		else if (vehicleType == VEHICLE_TYPE_BIKE) {
 #ifdef FIX_BUGS
 			memcpy(vbuf, buf, sizeof(CBike));
 #else
@@ -253,6 +271,21 @@ INITSAVEBUF
 VALIDATESAVEBUF(size)
 }
 
+// Inverse of LegacySaveVehicleType: the save format only knows the six classes
+// it always had, and everything else is stored as the automobile it behaves as.
+static uint32
+SaveVehicleType(eVehicleType type)
+{
+	switch(type){
+	case VEHICLE_TYPE_BOAT:  return 1;
+	case VEHICLE_TYPE_TRAIN: return 2;
+	case VEHICLE_TYPE_HELI:  return 3;
+	case VEHICLE_TYPE_PLANE: return 4;
+	case VEHICLE_TYPE_BIKE:  return 5;
+	default:                 return 0;
+	}
+}
+
 void CPools::SaveVehiclePool(uint8* buf, uint32* size)
 {
 INITSAVEBUF
@@ -276,7 +309,7 @@ INITSAVEBUF
 #else
 		if (!pVehicle->pDriver && !bHasPassenger) {
 #endif
-			if (pVehicle->IsCar() && (pVehicle->VehicleCreatedBy == MISSION_VEHICLE || bForceSaving))
+			if (pVehicle->IsAutomobile() && (pVehicle->VehicleCreatedBy == MISSION_VEHICLE || bForceSaving))
 				++nNumCars;
 			if (pVehicle->IsBoat() && (pVehicle->VehicleCreatedBy == MISSION_VEHICLE || bForceSaving))
 				++nNumBoats;
@@ -284,7 +317,7 @@ INITSAVEBUF
 				++nNumBikes;
 #else
 		if (!pVehicle->pDriver && !bHasPassenger) {
-			if (pVehicle->IsCar() && pVehicle->VehicleCreatedBy == MISSION_VEHICLE)
+			if (pVehicle->IsAutomobile() && pVehicle->VehicleCreatedBy == MISSION_VEHICLE)
 				++nNumCars;
 			if (pVehicle->IsBoat() && pVehicle->VehicleCreatedBy == MISSION_VEHICLE)
 				++nNumBoats;
@@ -319,22 +352,22 @@ INITSAVEBUF
 #endif
 #ifdef COMPATIBLE_SAVES
 #ifdef MISSION_REPLAY
-			if ((pVehicle->IsCar() || pVehicle->IsBoat() || pVehicle->IsBike()) && (pVehicle->VehicleCreatedBy == MISSION_VEHICLE || bForceSaving)) {
+			if ((pVehicle->IsAutomobile() || pVehicle->IsBoat() || pVehicle->IsBike()) && (pVehicle->VehicleCreatedBy == MISSION_VEHICLE || bForceSaving)) {
 #else
-			if ((pVehicle->IsCar() || pVehicle->IsBoat() || pVehicle->IsBike()) && pVehicle->VehicleCreatedBy == MISSION_VEHICLE) {
+			if ((pVehicle->IsAutomobile() || pVehicle->IsBoat() || pVehicle->IsBike()) && pVehicle->VehicleCreatedBy == MISSION_VEHICLE) {
 #endif
-				WriteSaveBuf(buf, pVehicle->m_vehType);
+				WriteSaveBuf(buf, SaveVehicleType(pVehicle->m_nVehicleType));
 				WriteSaveBuf(buf, pVehicle->GetModelIndex());
 				WriteSaveBuf(buf, GetVehicleRef(pVehicle));
 				pVehicle->Save(buf);
 			}
 #else
 #ifdef MISSION_REPLAY
-			if (pVehicle->IsCar() && (pVehicle->VehicleCreatedBy == MISSION_VEHICLE || bForceSaving)) {
+			if (pVehicle->IsAutomobile() && (pVehicle->VehicleCreatedBy == MISSION_VEHICLE || bForceSaving)) {
 #else
-			if (pVehicle->IsCar() && pVehicle->VehicleCreatedBy == MISSION_VEHICLE) {
+			if (pVehicle->IsAutomobile() && pVehicle->VehicleCreatedBy == MISSION_VEHICLE) {
 #endif
-				WriteSaveBuf(buf, pVehicle->m_vehType);
+				WriteSaveBuf(buf, SaveVehicleType(pVehicle->m_nVehicleType));
 				WriteSaveBuf(buf, pVehicle->GetModelIndex());
 				WriteSaveBuf(buf, GetVehicleRef(pVehicle));
 				memcpy(buf, pVehicle, sizeof(CAutomobile));
@@ -345,7 +378,7 @@ INITSAVEBUF
 #else
 			if (pVehicle->IsBoat() && pVehicle->VehicleCreatedBy == MISSION_VEHICLE) {
 #endif
-				WriteSaveBuf(buf, pVehicle->m_vehType);
+				WriteSaveBuf(buf, SaveVehicleType(pVehicle->m_nVehicleType));
 				WriteSaveBuf(buf, pVehicle->GetModelIndex());
 				WriteSaveBuf(buf, GetVehicleRef(pVehicle));
 				memcpy(buf, pVehicle, sizeof(CBoat));
@@ -356,7 +389,7 @@ INITSAVEBUF
 #else
 			if (pVehicle->IsBike() && pVehicle->VehicleCreatedBy == MISSION_VEHICLE) {
 #endif
-				WriteSaveBuf(buf, pVehicle->m_vehType);
+				WriteSaveBuf(buf, SaveVehicleType(pVehicle->m_nVehicleType));
 				WriteSaveBuf(buf, pVehicle->GetModelIndex());
 				WriteSaveBuf(buf, GetVehicleRef(pVehicle));
 				memcpy(buf, pVehicle, sizeof(CBike));

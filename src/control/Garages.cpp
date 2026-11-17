@@ -4,6 +4,7 @@
 #include "main.h"
 
 #include "Bike.h"
+#include "CarCtrl.h"
 #include "Boat.h"
 #include "DMAudio.h"
 #include "General.h"
@@ -428,7 +429,7 @@ void CGarage::Update()
 			}
 			UpdateDoorsHeight();
 #ifdef FIX_BUGS
-			if (FindPlayerVehicle() && FindPlayerVehicle()->IsCar())
+			if (FindPlayerVehicle() && FindPlayerVehicle()->IsAutomobile())
 #else
 			if (FindPlayerVehicle())
 #endif
@@ -455,11 +456,11 @@ void CGarage::Update()
 #else
 				bool bChangedColour;
 #endif
-				if (FindPlayerVehicle() && (FindPlayerVehicle()->IsCar() || FindPlayerVehicle()->IsBike())) {
+				if (FindPlayerVehicle() && (FindPlayerVehicle()->IsAutomobile() || FindPlayerVehicle()->IsBike())) {
 					if (FindPlayerVehicle()->m_fHealth < FREE_RESPRAY_HEALTH_THRESHOLD)
 						bTakeMoney = true;
 					FindPlayerVehicle()->m_fHealth = 1000.0f;
-					if (FindPlayerVehicle()->IsCar()) {
+					if (FindPlayerVehicle()->IsAutomobile()) {
 						((CAutomobile*)(FindPlayerVehicle()))->m_fFireBlowUpTimer = 0.0f;
 						((CAutomobile*)(FindPlayerVehicle()))->Fix();
 					}
@@ -475,7 +476,7 @@ void CGarage::Update()
 					}
 					bChangedColour = false;
 #ifdef FIX_BUGS
-					if (!FindPlayerVehicle()->IsCar() || !((CAutomobile*)(FindPlayerVehicle()))->bFixedColour) {
+					if (!FindPlayerVehicle()->IsAutomobile() || !((CAutomobile*)(FindPlayerVehicle()))->bFixedColour) {
 #else
 					if (!((CAutomobile*)(FindPlayerVehicle()))->bFixedColour) {
 #endif
@@ -588,7 +589,7 @@ void CGarage::Update()
 					m_eGarageState = GS_OPENING;
 					if (!CGarages::BombsAreFree)
 						CWorld::Players[CWorld::PlayerInFocus].m_nMoney = Max(0, CWorld::Players[CWorld::PlayerInFocus].m_nMoney - BOMB_PRICE);
-					if (FindPlayerVehicle() && (FindPlayerVehicle()->IsCar() || FindPlayerVehicle()->IsBike())) {
+					if (FindPlayerVehicle() && (FindPlayerVehicle()->IsAutomobile() || FindPlayerVehicle()->IsBike())) {
 #if (!defined GTA_PS2 || defined FIX_BUGS)
 						FindPlayerVehicle()->m_bombType = CGarages::GetBombTypeForGarageType(m_eGarageType);
 						FindPlayerVehicle()->m_pBombRigger = FindPlayerPed();
@@ -747,7 +748,7 @@ void CGarage::Update()
 			if (m_pTarget && !FindPlayerVehicle() && IsEntityEntirelyInside3D(m_pTarget, 0.0f) &&
 				!IsAnyOtherCarTouchingGarage(m_pTarget) && IsEntityEntirelyOutside(FindPlayerPed(), 2.0f)) {
 #ifdef FIX_BUGS
-				if (!m_pTarget->IsCar() ||
+				if (!m_pTarget->IsAutomobile() ||
 					((CAutomobile*)(m_pTarget))->Damage.GetEngineStatus() <= ENGINE_STATUS_ON_FIRE &&
 					((CAutomobile*)(m_pTarget))->m_fFireBlowUpTimer == 0.0f) {
 #else
@@ -1133,7 +1134,7 @@ bool CGarage::IsStaticPlayerCarEntirelyInside()
 {
 	if (!FindPlayerVehicle())
 		return false;
-	if (!FindPlayerVehicle()->IsCar() && !FindPlayerVehicle()->IsBike())
+	if (!FindPlayerVehicle()->IsAutomobile() && !FindPlayerVehicle()->IsBike())
 		return false;
 	if (FindPlayerPed()->GetPedState() != PED_DRIVING)
 		return false;
@@ -1849,7 +1850,7 @@ void CStoredCar::StoreCar(CVehicle* pVehicle)
 	if (pVehicle->bExplosionProof) m_nFlags |= FLAG_EXPLOSIONPROOF;
 	if (pVehicle->bCollisionProof) m_nFlags |= FLAG_COLLISIONPROOF;
 	if (pVehicle->bMeleeProof) m_nFlags |= FLAG_MELEEPROOF;
-	if (pVehicle->IsCar() || pVehicle->IsBike())
+	if (pVehicle->IsAutomobile() || pVehicle->IsBike())
 		m_nCarBombType = ((CAutomobile*)pVehicle)->m_bombType; // NB: cast to CAutomobile is original behaviour
 }
 
@@ -1866,17 +1867,11 @@ CVehicle* CStoredCar::RestoreCar()
 	{
 		CVehicleModelInfo::SetComponentsToUse(m_nVariationA, m_nVariationB);
 	}
-	CVehicle* pVehicle;
-	if (CModelInfo::IsBoatModel(m_nModelIndex))
-		pVehicle = new CBoat(m_nModelIndex, RANDOM_VEHICLE);
-	else if (CModelInfo::IsBikeModel(m_nModelIndex))
-	{
-		CBike* pBike = new CBike(m_nModelIndex, RANDOM_VEHICLE);
-		pBike->bIsStanding = true;
-		pVehicle = pBike;
-	}
-	else
-		pVehicle = new CAutomobile(m_nModelIndex, RANDOM_VEHICLE);
+	CVehicle* pVehicle = CCarCtrl::GetNewVehicleDependingOnCarModel(m_nModelIndex, RANDOM_VEHICLE);
+	if (pVehicle == nil)
+		return nil;
+	if (pVehicle->IsBike())
+		((CBike*)pVehicle)->bIsStanding = true;
 	pVehicle->SetPosition(m_vecPos);
 	pVehicle->SetStatus(STATUS_ABANDONED);
 	pVehicle->GetForward() = m_vecAngle;
@@ -1887,7 +1882,7 @@ CVehicle* CStoredCar::RestoreCar()
 	pVehicle->m_currentColour2 = m_nSecondaryColor;
 	pVehicle->m_nRadioStation = m_nRadioStation;
 	pVehicle->bFreebies = false;
-	if (pVehicle->IsCar())
+	if (pVehicle->IsAutomobile())
 	{
 		((CAutomobile*)pVehicle)->m_bombType = m_nCarBombType;
 #ifdef FIX_BUGS
@@ -2004,7 +1999,7 @@ void CGarage::TidyUpGarage()
 	while (--i) {
 #endif
 		CVehicle* pVehicle = CPools::GetVehiclePool()->GetSlot(i);
-		if (pVehicle && (pVehicle->IsCar() || pVehicle->IsBike())) {
+		if (pVehicle && (pVehicle->IsAutomobile() || pVehicle->IsBike())) {
 			if (IsPointInsideGarage(pVehicle->GetPosition())) {
 				if (pVehicle->GetStatus() == STATUS_WRECKED || pVehicle->GetUp().z < 0.5f) {
 					CWorld::Remove(pVehicle);
@@ -2026,7 +2021,7 @@ void CGarage::TidyUpGarageClose()
 		CVehicle* pVehicle = CPools::GetVehiclePool()->GetSlot(i);
 		if (!pVehicle)
 			continue;
-		if ((!pVehicle->IsCar() && !pVehicle->IsBike()) || pVehicle->GetStatus() != STATUS_WRECKED || !IsEntityTouching3D(pVehicle))
+		if ((!pVehicle->IsAutomobile() && !pVehicle->IsBike()) || pVehicle->GetStatus() != STATUS_WRECKED || !IsEntityTouching3D(pVehicle))
 			continue;
 		bool bRemove = false;
 		if (m_eGarageState != GS_FULLYCLOSED) {

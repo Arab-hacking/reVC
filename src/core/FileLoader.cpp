@@ -872,7 +872,7 @@ PrepareVehicleCollision(RwStream *stream, int32 id, uint32 body, uint32 size)
 {
 	CVehicleModelInfo *mi = (CVehicleModelInfo*)CModelInfo::GetModelInfo(id);
 	if(LoadEmbeddedVehicleCollision(stream, id, body, size)) return true;
-	if(mi->m_vehicleType != VEHICLE_TYPE_CAR) return true;
+	if(mi->m_nVehicleType != VEHICLE_TYPE_AUTOMOBILE) return true;
 #ifdef CUSTOM_MODELS
 	if(CCustomModels::CanServe(id)){
 		// BR may ship collision separately in CLS/COL archives. Read by model
@@ -1655,24 +1655,49 @@ CFileLoader::LoadVehicleObject(const char *line)
 	mi->m_level = level;
 	mi->m_compRules = comprules;
 
+	// The type column names the runtime class. The SA spelling of every class the
+	// engine instantiates is accepted, so a converted data set does not have to be
+	// translated into the VC subset first.
 	if(strcmp(type, "car") == 0){
+		mi->m_nVehicleType = VEHICLE_TYPE_AUTOMOBILE;
 		mi->m_wheelId = misc;
 		mi->m_wheelScale = wheelScale;
-		mi->m_vehicleType = VEHICLE_TYPE_CAR;
-	}else if(strcmp(type, "boat") == 0){
-		mi->m_vehicleType = VEHICLE_TYPE_BOAT;
-	}else if(strcmp(type, "train") == 0){
-		mi->m_vehicleType = VEHICLE_TYPE_TRAIN;
+	}else if(strcmp(type, "mtruck") == 0){
+		mi->m_nVehicleType = VEHICLE_TYPE_MTRUCK;
+		mi->m_wheelId = misc;
+		mi->m_wheelScale = wheelScale;
+	}else if(strcmp(type, "quad") == 0){
+		mi->m_nVehicleType = VEHICLE_TYPE_QUAD;
+		mi->m_wheelId = misc;
+		mi->m_wheelScale = wheelScale;
 	}else if(strcmp(type, "heli") == 0){
-		mi->m_vehicleType = VEHICLE_TYPE_HELI;
+		mi->m_nVehicleType = VEHICLE_TYPE_HELI;
+		mi->m_wheelId = misc;
+		mi->m_wheelScale = wheelScale;
 	}else if(strcmp(type, "plane") == 0){
+		mi->m_nVehicleType = VEHICLE_TYPE_PLANE;
+		mi->m_wheelId = misc;
+		mi->m_wheelScale = wheelScale;
+	}else if(strcmp(type, "f_plane") == 0){
+		mi->m_nVehicleType = VEHICLE_TYPE_FPLANE;
 		mi->m_planeLodId = misc;
 		mi->m_wheelScale = 1.0f;
-		mi->m_vehicleType = VEHICLE_TYPE_PLANE;
+	}else if(strcmp(type, "boat") == 0){
+		mi->m_nVehicleType = VEHICLE_TYPE_BOAT;
+	}else if(strcmp(type, "train") == 0){
+		mi->m_nVehicleType = VEHICLE_TYPE_TRAIN;
 	}else if(strcmp(type, "bike") == 0){
+		mi->m_nVehicleType = VEHICLE_TYPE_BIKE;
 		mi->m_bikeSteerAngle = misc;
 		mi->m_wheelScale = wheelScale;
-		mi->m_vehicleType = VEHICLE_TYPE_BIKE;
+	}else if(strcmp(type, "bmx") == 0){
+		mi->m_nVehicleType = VEHICLE_TYPE_BMX;
+		mi->m_bikeSteerAngle = misc;
+		mi->m_wheelScale = wheelScale;
+	}else if(strcmp(type, "trailer") == 0){
+		mi->m_nVehicleType = VEHICLE_TYPE_TRAILER;
+		mi->m_wheelId = misc;
+		mi->m_wheelScale = wheelScale;
 	}else
 		assert(0);
 

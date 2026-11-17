@@ -485,7 +485,7 @@ void CCarAI::UpdateCarAI(CVehicle* pVehicle)
 
 	if (pVehicle->bIsLawEnforcer && FindPlayerPed()->m_pWanted->GetWantedLevel() > 0) {
 		if (!FindPlayerVehicle() ||
-			FindPlayerVehicle()->GetVehicleAppearance() == VEHICLE_APPEARANCE_CAR ||
+			FindPlayerVehicle()->GetVehicleAppearance() == VEHICLE_APPEARANCE_AUTOMOBILE ||
 			FindPlayerVehicle()->GetVehicleAppearance() == VEHICLE_APPEARANCE_BIKE) {
 			if (pVehicle->GetVehicleAppearance() == VEHICLE_APPEARANCE_BOAT) {
 				pVehicle->AutoPilot.m_nTempAction = TEMPACT_WAIT;
@@ -493,7 +493,7 @@ void CCarAI::UpdateCarAI(CVehicle* pVehicle)
 			}
 		}
 		else if (FindPlayerVehicle()->GetVehicleAppearance() == VEHICLE_APPEARANCE_BOAT) {
-			if (pVehicle->GetVehicleAppearance() == VEHICLE_APPEARANCE_CAR ||
+			if (pVehicle->GetVehicleAppearance() == VEHICLE_APPEARANCE_AUTOMOBILE ||
 				pVehicle->GetVehicleAppearance() == VEHICLE_APPEARANCE_BIKE) {
 				pVehicle->AutoPilot.m_nTempAction = TEMPACT_WAIT;
 				pVehicle->AutoPilot.m_nTimeTempAction = CTimer::GetTimeInMilliseconds() + 1000;
@@ -763,7 +763,7 @@ void CCarAI::MakeWayForCarWithSiren(CVehicle *pVehicle)
 		CVehicle* vehicle = CPools::GetVehiclePool()->GetSlot(i);
 		if (!vehicle)
 			continue;
-		if (!vehicle->IsCar() && !vehicle->IsBike())
+		if (!vehicle->IsAutomobile() && !vehicle->IsBike())
 			continue;
 		if (vehicle->GetStatus() != STATUS_SIMPLE && vehicle->GetStatus() != STATUS_PHYSICS)
 			continue;

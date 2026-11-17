@@ -764,7 +764,7 @@ void CReplay::StoreCarUpdate(CVehicle *vehicle, int id)
 	vp->matrix.CompressFromFullMatrix(vehicle->GetMatrix());
 	vp->health = vehicle->m_fHealth / 4.0f; /* Not anticipated that health can be > 1000. */
 	vp->acceleration = vehicle->m_fGasPedal * 100.0f;
-	vp->panels = vehicle->IsCar() ? ((CAutomobile*)vehicle)->Damage.m_panelStatus : 0;
+	vp->panels = vehicle->IsAutomobile() ? ((CAutomobile*)vehicle)->Damage.m_panelStatus : 0;
 	vp->velocityX = 8000.0f * Max(-4.0f, Min(4.0f, vehicle->GetMoveSpeed().x)); /* 8000!? */
 	vp->velocityY = 8000.0f * Max(-4.0f, Min(4.0f, vehicle->GetMoveSpeed().y));
 	vp->velocityZ = 8000.0f * Max(-4.0f, Min(4.0f, vehicle->GetMoveSpeed().z));
@@ -775,7 +775,7 @@ void CReplay::StoreCarUpdate(CVehicle *vehicle, int id)
 		vp->car_gun = 128.0f / PI * ((CAutomobile*)vehicle)->m_fCarGunLR;
 	else
 		vp->wheel_state = 50.0f * vehicle->m_fSteerAngle;
-	if (vehicle->IsCar()){
+	if (vehicle->IsAutomobile()){
 		CAutomobile* car = (CAutomobile*)vehicle;
 		for (int i = 0; i < 4; i++){
 			vp->wheel_susp_dist[i] = 50.0f * car->m_aSuspensionSpringRatio[i];
@@ -792,7 +792,7 @@ void CReplay::StoreCarUpdate(CVehicle *vehicle, int id)
 	if (vehicle->GetModelIndex() == MI_SKIMMER)
 		vp->skimmer_speed = 50.0f * ((CBoat*)vehicle)->m_fMovingSpeed;
 	vp->render_scorched = vehicle->bRenderScorched;
-	vp->vehicle_type = vehicle->m_vehType;
+	vp->vehicle_type = vehicle->m_nVehicleType;
 	Record.m_nOffset += sizeof(tVehicleUpdatePacket);
 }
 
@@ -845,7 +845,7 @@ void CReplay::ProcessCarUpdate(CVehicle *vehicle, float interpolation, CAddressI
 	vehicle->m_vecTurnSpeed = CVector(0.0f, 0.0f, 0.0f);
 	vehicle->m_fHealth = 4 * vp->health;
 	vehicle->m_fGasPedal = vp->acceleration / 100.0f;
-	if (vehicle->IsCar())
+	if (vehicle->IsAutomobile())
 		ApplyPanelDamageToCar(vp->panels, (CAutomobile*)vehicle, true);
 	vehicle->m_vecMoveSpeed = CVector(vp->velocityX / 8000.0f, vp->velocityY / 8000.0f, vp->velocityZ / 8000.0f);
 	if (vehicle->GetModelIndex() == MI_RHINO) {
@@ -854,7 +854,7 @@ void CReplay::ProcessCarUpdate(CVehicle *vehicle, float interpolation, CAddressI
 	}else{
 		vehicle->m_fSteerAngle = vp->wheel_state / 50.0f;
 	}
-	if (vehicle->IsCar()) {
+	if (vehicle->IsAutomobile()) {
 		CAutomobile* car = (CAutomobile*)vehicle;
 		for (int i = 0; i < 4; i++) {
 			car->m_aSuspensionSpringRatio[i] = vp->wheel_susp_dist[i] / 50.0f;
@@ -892,7 +892,7 @@ void CReplay::ProcessCarUpdate(CVehicle *vehicle, float interpolation, CAddressI
 		}
 	}
 	vehicle->bEngineOn = true;
-	if (vehicle->IsCar())
+	if (vehicle->IsAutomobile())
 		((CAutomobile*)vehicle)->m_nDriveWheelsOnGround = 4;
 	CWorld::Remove(vehicle);
 	CWorld::Add(vehicle);
@@ -991,7 +991,7 @@ bool CReplay::PlayBackThisFrameInterpolation(CAddressInReplayBuffer *buffer, flo
 				}
 				else {
 					switch (vp->vehicle_type) {
-					case VEHICLE_TYPE_CAR:
+					case VEHICLE_TYPE_AUTOMOBILE:
 						new_v = new(vp->index << 8) CAutomobile(mi, 2);	
 						break;
 					case VEHICLE_TYPE_BOAT:
@@ -1511,7 +1511,7 @@ void CReplay::RestoreStuffFromMem(void)
 		vehicle->m_rwObject = nil;
 		vehicle->m_modelIndex = -1;
 		vehicle->SetModelIndex(mi);
-		if (vehicle->IsCar()) {
+		if (vehicle->IsAutomobile()) {
 			CAutomobile* car = (CAutomobile*)vehicle;
 			if (mi == MI_DODO) {
 				RpAtomicSetFlags((RpAtomic*)GetFirstObject(car->m_aCarNodes[CAR_WHEEL_LF]), 0);
@@ -1532,7 +1532,7 @@ void CReplay::RestoreStuffFromMem(void)
 				RpAtomicSetFlags((RpAtomic*)GetFirstObject(car->m_aCarNodes[CAR_WHEEL_RB]), 0);
 			}
 		}
-		if (vehicle->IsCar()){
+		if (vehicle->IsAutomobile()){
 			CAutomobile* car = (CAutomobile*)vehicle;
 			int32 panels = car->Damage.m_panelStatus;
 			car->Damage.m_panelStatus = 0;

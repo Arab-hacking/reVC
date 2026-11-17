@@ -71,7 +71,7 @@ CFire::ProcessFire(void)
 			if (ped->m_nMoveState != PEDMOVE_RUN)
 				m_vecPos.z -= 1.0f;
 			if (ped->bInVehicle && ped->m_pMyVehicle) {
-				if (ped->m_pMyVehicle->IsCar())
+				if (ped->m_pMyVehicle->IsAutomobile())
 					ped->m_pMyVehicle->m_fHealth = 75.0f;
 			} else if (m_pEntity == (CPed *)FindPlayerPed()) {
 				fDamagePlayer = 1.2f * CTimer::GetTimeStep();
@@ -118,7 +118,7 @@ CFire::ProcessFire(void)
 		m_nNextTimeToAddFlames = CTimer::GetTimeInMilliseconds() + (m_fWaterExtinguishCountdown < 0.3f ? 400 : (m_fWaterExtinguishCountdown < 0.7f ? 200 : 80));
 		firePos = m_vecPos;
 
-		if (veh && veh->IsVehicle() && veh->IsCar()) {
+		if (veh && veh->IsVehicle() && veh->IsAutomobile()) {
 			CVehicleModelInfo *mi = ((CVehicleModelInfo*)CModelInfo::GetModelInfo(veh->GetModelIndex()));
 			CVector ModelInfo = mi->m_positions[CAR_POS_HEADLIGHTS];
 			ModelInfo = m_pEntity->GetMatrix() * ModelInfo;
@@ -236,7 +236,7 @@ CFireManager::StartFire(CEntity *entityOnFire, CEntity *fleeFrom, float strength
 	} else if (entityOnFire->IsVehicle()) {
 		if (veh->m_pCarFire)
 			return nil;
-		if (veh->IsCar() &&  ((CAutomobile *)veh)->Damage.GetEngineStatus() >= 225)
+		if (veh->IsAutomobile() &&  ((CAutomobile *)veh)->Damage.GetEngineStatus() >= 225)
 			return nil;
 	}
 	CFire *fire = GetNextFreeFire();
@@ -431,7 +431,7 @@ CFireManager::StartScriptFire(const CVector &pos, CEntity *target, float strengt
 		} else if (target->IsVehicle()) {
 			if (veh->m_pCarFire)
 				veh->m_pCarFire->Extinguish();
-			if (veh->IsCar() && ((CAutomobile *)veh)->Damage.GetEngineStatus() >= 225) {
+			if (veh->IsAutomobile() && ((CAutomobile *)veh)->Damage.GetEngineStatus() >= 225) {
 				((CAutomobile *)veh)->Damage.SetEngineStatus(215);
 			}
 		}

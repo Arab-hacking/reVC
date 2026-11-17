@@ -343,13 +343,9 @@ CCarCtrl::GenerateOneRandomCar()
 	if (lanesOnCurrentRoad == 0)
 		/* Not spawning vehicle if road is one way and intended direction is opposide to that way. */
 		return;
-	CVehicle* pVehicle;
-	if (CModelInfo::IsBoatModel(carModel))
-		pVehicle = new CBoat(carModel, RANDOM_VEHICLE);
-	else if (CModelInfo::IsBikeModel(carModel))
-		pVehicle = new CBike(carModel, RANDOM_VEHICLE);
-	else
-		pVehicle = new CAutomobile(carModel, RANDOM_VEHICLE);
+	CVehicle* pVehicle = GetNewVehicleDependingOnCarModel(carModel, RANDOM_VEHICLE);
+	if (pVehicle == nil)
+		return;
 	pVehicle->AutoPilot.m_nPrevRouteNode = 0;
 	pVehicle->AutoPilot.m_nCurrentRouteNode = curNodeId;
 	pVehicle->AutoPilot.m_nNextRouteNode = nextNodeId;
@@ -1225,7 +1221,7 @@ void CCarCtrl::SlowCarDownForPedsSectorList(CPtrList& lst, CVehicle* pVehicle, f
 			continue;
 		float sidewaysDistance = ABS(DotProduct(pVehicle->GetRight(), vecToPed));
 		float sideLength = pVehicle->GetModelInfo()->GetColModel()->boundingBox.max.x;
-		if (pVehicle->m_vehType == VEHICLE_TYPE_BIKE)
+		if (pVehicle->m_nVehicleType == VEHICLE_TYPE_BIKE)
 			sideLength *= 1.6f;
 		if (sideLength + 0.5f < sidewaysDistance)
 			/* If car is far enough taking side into account, don't care */
@@ -3057,6 +3053,37 @@ void CCarCtrl::ClearInterestingVehicleList()
 {
 	for (int i = 0; i < MAX_CARS_TO_KEEP; i++) {
 		apCarsToKeep[i] = nil;
+	}
+}
+
+// The class of a model decides what gets constructed. Classes the engine does
+// not implement yet are built as their nearest implemented class so that a data
+// set naming them still spawns a working vehicle of the right physics.
+CVehicle *CCarCtrl::GetNewVehicleDependingOnCarModel(int32 modelId, uint8 createdBy)
+{
+	CVehicleModelInfo *mi = (CVehicleModelInfo*)CModelInfo::GetModelInfo(modelId);
+
+	switch(mi->m_nVehicleType){
+	case VEHICLE_TYPE_HELI:
+		return new CHeli(modelId, createdBy);
+	case VEHICLE_TYPE_PLANE:
+	case VEHICLE_TYPE_FPLANE:
+		return new CPlane(modelId, createdBy);
+	case VEHICLE_TYPE_BOAT:
+		return new CBoat(modelId, createdBy);
+	case VEHICLE_TYPE_TRAIN:
+		return new CTrain(modelId, createdBy);
+	case VEHICLE_TYPE_BIKE:
+		return new CBike(modelId, createdBy);
+	case VEHICLE_TYPE_BMX:
+	case VEHICLE_TYPE_QUAD:
+	case VEHICLE_TYPE_MTRUCK:
+	case VEHICLE_TYPE_TRAILER:
+	case VEHICLE_TYPE_FHELI:
+	case VEHICLE_TYPE_AUTOMOBILE:
+		return new CAutomobile(modelId, createdBy);
+	default:
+		return nil;
 	}
 }
 

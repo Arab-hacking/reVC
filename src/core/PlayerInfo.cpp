@@ -128,7 +128,7 @@ CPlayerInfo::Process(void)
 		m_nTimeSpentOnWheelie = 0;
 		m_nTimeSpentOnStoppie = 0;
 		m_nCancelWheelStuntTimer = 0;
-	} else if (m_pPed->m_pMyVehicle->IsCar()) {
+	} else if (m_pPed->m_pMyVehicle->IsAutomobile()) {
 		CAutomobile *car = (CAutomobile*)m_pPed->m_pMyVehicle;
 
 		if (car->m_nWheelsOnGround < 3)
@@ -319,7 +319,7 @@ CPlayerInfo::Process(void)
 					if (!veh->IsBoat() || veh->m_nDoorLock == CARLOCK_LOCKED_PLAYER_INSIDE) {
 						if (veh->GetStatus() != STATUS_WRECKED && veh->GetStatus() != STATUS_TRAIN_MOVING && veh->m_nDoorLock != CARLOCK_LOCKED_PLAYER_INSIDE) {
 							bool canJumpOff = false;
-							if (veh->m_vehType == VEHICLE_TYPE_BIKE) {
+							if (veh->m_nVehicleType == VEHICLE_TYPE_BIKE) {
 								canJumpOff = veh->CanPedJumpOffBike();
 							} else if (veh->pDriver == m_pPed) {
 								canJumpOff = veh->CanPedJumpOutCar();
@@ -434,7 +434,7 @@ CPlayerInfo::Process(void)
 	if (!(CTimer::GetFrameCounter() & 31)) {
 		CVehicle *veh = FindPlayerVehicle();
 		if (veh && m_pPed->bInVehicle && veh->GetUp().z < 0.0f
-			&& veh->m_vecMoveSpeed.Magnitude() < 0.05f && (veh->IsCar() || veh->IsBoat()) && !veh->bIsInWater) {
+			&& veh->m_vecMoveSpeed.Magnitude() < 0.05f && (veh->IsAutomobile() || veh->IsBoat()) && !veh->bIsInWater) {
 
 			if (veh->GetUp().z < -0.5f) {
 				m_nUpsideDownCounter += 2;
@@ -447,7 +447,7 @@ CPlayerInfo::Process(void)
 
 		if (m_nUpsideDownCounter > 6 && veh->bCanBeDamaged) {
 			veh->m_fHealth = 249.0f < veh->m_fHealth ? 249.0f : veh->m_fHealth;
-			if (veh->IsCar()) {
+			if (veh->IsAutomobile()) {
 				CAutomobile* car = (CAutomobile*)veh;
 				car->Damage.SetEngineStatus(225);
 				car->m_pSetOnFireEntity = nil;
@@ -468,7 +468,7 @@ CPlayerInfo::Process(void)
 				CStats::DistanceTravelledByHelicoptor += veh->m_fDistanceTravelled;
 			if (veh->GetVehicleAppearance() == VEHICLE_APPEARANCE_PLANE)
 				CStats::DistanceTravelledByPlane += veh->m_fDistanceTravelled;
-			if (veh->GetVehicleAppearance() == VEHICLE_APPEARANCE_CAR)
+			if (veh->GetVehicleAppearance() == VEHICLE_APPEARANCE_AUTOMOBILE)
 				CStats::DistanceTravelledByCar += veh->m_fDistanceTravelled;
 			if (veh->GetVehicleAppearance() == VEHICLE_APPEARANCE_BIKE)
 				CStats::DistanceTravelledByBike += veh->m_fDistanceTravelled;
@@ -605,10 +605,10 @@ CPlayerInfo::FindClosestCarSectorList(CPtrList& carList, CPed* ped, float unk1, 
 
 			car->m_scanCode = CWorld::GetCurrentScanCode();
 			if (car->GetStatus() != STATUS_WRECKED && car->GetStatus() != STATUS_TRAIN_MOVING
-				&& (car->GetUp().z > 0.3f || (car->IsVehicle() && ((CVehicle*)car)->m_vehType == VEHICLE_TYPE_BIKE))) {
+				&& (car->GetUp().z > 0.3f || (car->IsVehicle() && ((CVehicle*)car)->m_nVehicleType == VEHICLE_TYPE_BIKE))) {
 				CVector carCentre = car->GetBoundCentre();
 
-				if (Abs(ped->GetPosition().z - carCentre.z) < 2.0f || car->IsCar() && carCentre.z < ped->GetPosition().z && ped->GetPosition().z - 4.f < carCentre.z) {
+				if (Abs(ped->GetPosition().z - carCentre.z) < 2.0f || car->IsAutomobile() && carCentre.z < ped->GetPosition().z && ped->GetPosition().z - 4.f < carCentre.z) {
 					float dist = (ped->GetPosition() - carCentre).Magnitude2D();
 					if (dist <= 10.0f && !CCranes::IsThisCarBeingCarriedByAnyCrane(car)) {
 						EvaluateCarPosition(car, ped, dist, lastCloseness, closestCarOutput);

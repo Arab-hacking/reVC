@@ -280,14 +280,8 @@ CAnimViewer::Update(void)
 
 			if (modelInfo->GetModelType() == MITYPE_VEHICLE) {
 
-				CVehicleModelInfo* veh = (CVehicleModelInfo*)modelInfo;
-				if (veh->m_vehicleType == VEHICLE_TYPE_CAR) {
-					pTarget = new CAutomobile(modelId, RANDOM_VEHICLE);
-				} else if (veh->m_vehicleType == VEHICLE_TYPE_BOAT) {
-					pTarget = new CBoat(modelId, RANDOM_VEHICLE);
-				} else if (veh->m_vehicleType == VEHICLE_TYPE_BIKE) {
-					pTarget = new CBike(modelId, RANDOM_VEHICLE);
-				} else {
+				pTarget = CCarCtrl::GetNewVehicleDependingOnCarModel(modelId, RANDOM_VEHICLE);
+				if (!pTarget) {
 					pTarget = new CObject(modelId, true);
 					if (!modelInfo->GetColModel()) {
 						modelInfo->SetColModel(&CTempColModels::ms_colModelWheel1);

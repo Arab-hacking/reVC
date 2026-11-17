@@ -182,7 +182,7 @@ CEmergencyPed::MedicAI(void)
 	}
 
 	if (InVehicle()) {
-		if (m_pMyVehicle->IsCar() && m_objective != OBJECTIVE_LEAVE_CAR) {
+		if (m_pMyVehicle->IsAutomobile() && m_objective != OBJECTIVE_LEAVE_CAR) {
 			if (gAccidentManager.FindNearestAccident(m_pMyVehicle->GetPosition(), &distToEmergency)
 				&& distToEmergency < 25.0f && m_pMyVehicle->m_vecMoveSpeed.Magnitude() < 0.01f) {
 

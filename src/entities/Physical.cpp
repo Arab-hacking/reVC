@@ -2243,13 +2243,13 @@ CPhysical::ProcessCollision(void)
 		CTimer::SetTimeStep(savedTimeStep);
 		if(IsVehicle()){
 			CVehicle *veh = (CVehicle*)this;
-			if(veh->m_vehType == VEHICLE_TYPE_CAR){
+			if(veh->m_nVehicleType == VEHICLE_TYPE_AUTOMOBILE){
 				CAutomobile *car = (CAutomobile*)this;
 				car->m_aSuspensionSpringRatio[0] = 1.0f;
 				car->m_aSuspensionSpringRatio[1] = 1.0f;
 				car->m_aSuspensionSpringRatio[2] = 1.0f;
 				car->m_aSuspensionSpringRatio[3] = 1.0f;
-			}else if(veh->m_vehType == VEHICLE_TYPE_BIKE){
+			}else if(veh->m_nVehicleType == VEHICLE_TYPE_BIKE){
 				CBike *bike = (CBike*)this;
 				bike->m_aSuspensionSpringRatio[0] = 1.0f;
 				bike->m_aSuspensionSpringRatio[1] = 1.0f;

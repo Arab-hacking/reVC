@@ -1086,7 +1086,7 @@ CCam::Process_FollowPed(const CVector &CameraTarget, float TargetOrientation, fl
 	}
 
 	if(FindPlayerVehicle())
-		if(FindPlayerVehicle()->m_vehType == VEHICLE_TYPE_TRAIN)
+		if(FindPlayerVehicle()->m_nVehicleType == VEHICLE_TYPE_TRAIN)
 			StandingInTrain = true;
 
 	if(TheCamera.m_bCamDirectlyInFront){
@@ -2429,7 +2429,7 @@ CCam::Process_M16_1stPerson(const CVector &CameraTarget, float, float, float)
 			if(Beta > TargetPed->m_attachRotStep){
 				Beta = TargetPed->m_attachRotStep;
 				CAutomobile *heli = (CAutomobile*)TargetPed->m_attachedTo;
-				if(heli->IsVehicle() && heli->IsCar() && heli->IsRealHeli() && heli->m_fHeliOrientation > 0.0f){
+				if(heli->IsVehicle() && heli->IsAutomobile() && heli->IsRealHeli() && heli->m_fHeliOrientation > 0.0f){
 					float heliOrient = heli->m_fHeliOrientation + CTimer::GetTimeStep()*0.01f;
 					if(heliOrient < 0.0f) heliOrient += TWOPI;
 					else if(heliOrient > TWOPI) heliOrient -= TWOPI;
@@ -2438,7 +2438,7 @@ CCam::Process_M16_1stPerson(const CVector &CameraTarget, float, float, float)
 			}else if(Beta < -TargetPed->m_attachRotStep){
 				Beta = -TargetPed->m_attachRotStep;
 				CAutomobile *heli = (CAutomobile*)TargetPed->m_attachedTo;
-				if(heli->IsVehicle() && heli->IsCar() && heli->IsRealHeli() && heli->m_fHeliOrientation > 0.0f){
+				if(heli->IsVehicle() && heli->IsAutomobile() && heli->IsRealHeli() && heli->m_fHeliOrientation > 0.0f){
 					float heliOrient = heli->m_fHeliOrientation - CTimer::GetTimeStep()*0.01f;
 					if(heliOrient < 0.0f) heliOrient += TWOPI;
 					else if(heliOrient > TWOPI) heliOrient -= TWOPI;
@@ -4837,7 +4837,7 @@ CCam::Process_FollowCar_SA(const CVector& CameraTarget, float TargetOrientation,
 	bool isPlane = car->GetVehicleAppearance() == VEHICLE_APPEARANCE_PLANE;
 	bool isHeli = car->GetVehicleAppearance() == VEHICLE_APPEARANCE_HELI;
 	bool isBike = car->GetVehicleAppearance() == VEHICLE_APPEARANCE_BIKE;
-	bool isCar = car->IsCar() && !isPlane && !isHeli && !isBike;
+	bool isCar = car->IsAutomobile() && !isPlane && !isHeli && !isBike;
 
 	CPad* pad = CPad::GetPad(0);
 

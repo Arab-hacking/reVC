@@ -179,13 +179,22 @@ RwObjectNameIdAssocation bikeIds[] = {
 	{ nil, 0, 0 }
 };
 
-RwObjectNameIdAssocation *CVehicleModelInfo::ms_vehicleDescs[] = {
-	carIds,
-	boatIds,
-	trainIds,
-	heliIds,
-	planeIds,
-	bikeIds
+// One hierarchy table per eVehicleType. The classes the VC model set does not
+// have yet reuse the table of the closest class they behave like, so the array
+// is indexed by the type word without holes or fallback arithmetic.
+RwObjectNameIdAssocation *CVehicleModelInfo::ms_vehicleDescs[NUM_VEHICLE_TYPES] = {
+	/* AUTOMOBILE */ carIds,
+	/* MTRUCK     */ carIds,
+	/* QUAD       */ carIds,
+	/* HELI       */ heliIds,
+	/* PLANE      */ planeIds,
+	/* BOAT       */ boatIds,
+	/* TRAIN      */ trainIds,
+	/* FHELI      */ heliIds,
+	/* FPLANE     */ planeIds,
+	/* BIKE       */ bikeIds,
+	/* BMX        */ bikeIds,
+	/* TRAILER    */ carIds,
 };
 
 bool gbBlackCars;
@@ -529,10 +538,10 @@ CVehicleModelInfo::SetClump(RpClump *clump)
 	CClumpModelInfo::SetClump(clump);
 #ifdef SA_VEHICLE_MODELS
 	// must be known before the render callbacks are chosen
-	gVehicleIsSAHierarchy = m_vehicleType == VEHICLE_TYPE_CAR || IsSAHierarchy(clump);
+	gVehicleIsSAHierarchy = m_nVehicleType == VEHICLE_TYPE_AUTOMOBILE || IsSAHierarchy(clump);
 #endif
 	SetAtomicRenderCallbacks();
-	SetFrameIds(ms_vehicleDescs[m_vehicleType]);
+	SetFrameIds(ms_vehicleDescs[m_nVehicleType]);
 	PreprocessHierarchy();
 	FindEditableMaterialList();
 	SetEnvironmentMap();
@@ -786,15 +795,15 @@ void
 CVehicleModelInfo::SetAtomicRenderCallbacks(void)
 {
 #ifdef GTA_TRAIN
-	if(m_vehicleType == VEHICLE_TYPE_TRAIN)
+	if(m_nVehicleType == VEHICLE_TYPE_TRAIN)
 		RpClumpForAllAtomics(m_clump, SetAtomicRendererCB_Train, nil);
 	else
 #endif
-	if(m_vehicleType == VEHICLE_TYPE_HELI)
+	if(m_nVehicleType == VEHICLE_TYPE_HELI || m_nVehicleType == VEHICLE_TYPE_FHELI)
 		RpClumpForAllAtomics(m_clump, SetAtomicRendererCB_Heli, nil);
-	else if(m_vehicleType == VEHICLE_TYPE_PLANE)
+	else if(m_nVehicleType == VEHICLE_TYPE_PLANE || m_nVehicleType == VEHICLE_TYPE_FPLANE)
 		RpClumpForAllAtomics(m_clump, SetAtomicRendererCB_BigVehicle, nil);
-	else if(m_vehicleType == VEHICLE_TYPE_BOAT)
+	else if(m_nVehicleType == VEHICLE_TYPE_BOAT)
 		RpClumpForAllAtomics(m_clump, SetAtomicRendererCB_Boat, m_clump);
 	else if(mod_HandlingManager.GetVehiclePointer((uint32)m_handlingId)->m_bIsHeli)
 		RpClumpForAllAtomics(m_clump, SetAtomicRendererCB_RealHeli, m_clump);
@@ -837,7 +846,7 @@ GetOkAndDamagedAtomicCB(RwObject *object, void *data)
 void
 CVehicleModelInfo::PreprocessSACarHierarchy(void)
 {
-	RwObjectNameIdAssocation *desc = ms_vehicleDescs[VEHICLE_TYPE_CAR];
+	RwObjectNameIdAssocation *desc = ms_vehicleDescs[VEHICLE_TYPE_AUTOMOBILE];
 	m_numDoors = 0;
 	m_numComps = 0;
 	m_bSAWheelMesh = false;
@@ -875,7 +884,8 @@ CVehicleModelInfo::PreprocessSACarHierarchy(void)
 	if(mesh){
 		mainWheel = (RpAtomic*)GetFirstObject(mesh);
 		float radius = mainWheel ? GetWheelMeshRadius(mainWheel) : 0.0f;
-		// Compatibility bridge to the deliberately retained reVC physics only.
+		// The wheel mesh is modelled at its real size, so this is the radius the
+		// physics has to use; the VC path scales a separate wheel model instead.
 		if(radius > 0.001f) m_wheelScale = 2.0f*radius;
 		m_bSAWheelMesh = mainWheel != nil;
 	}
@@ -914,7 +924,7 @@ void
 CVehicleModelInfo::PreprocessHierarchy(void)
 {
 #ifdef SA_VEHICLE_MODELS
-	if(m_vehicleType == VEHICLE_TYPE_CAR){
+	if(m_nVehicleType == VEHICLE_TYPE_AUTOMOBILE){
 		PreprocessSACarHierarchy();
 		return;
 	}
@@ -925,7 +935,7 @@ CVehicleModelInfo::PreprocessHierarchy(void)
 	RpAtomic *atomic;
 	RwV3d *rwvec;
 
-	desc = ms_vehicleDescs[m_vehicleType];
+	desc = ms_vehicleDescs[m_nVehicleType];
 	m_numDoors = 0;
 	m_numComps = 0;
 #ifdef SA_VEHICLE_MODELS
@@ -1039,7 +1049,7 @@ CVehicleModelInfo::PreprocessHierarchy(void)
 		for(i = 0; i < wheelFramesFound; i++)
 			if(FrameHasObject(wheelFrames[i])) own = true;
 		SAVEH_LOG("[SAVEH] load %s type %d saHierarchy %d wheelId %d wheelFrames %d ownWheelMesh %d saMesh %d radius %.4f wheelScale %.4f\n",
-			GetModelName(), m_vehicleType, gVehicleIsSAHierarchy, m_wheelId, wheelFramesFound,
+			GetModelName(), m_nVehicleType, gVehicleIsSAHierarchy, m_wheelId, wheelFramesFound,
 			own, m_bSAWheelMesh, 0.5f*m_wheelScale, m_wheelScale);
 	}
 #endif

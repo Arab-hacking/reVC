@@ -157,7 +157,7 @@ void SpecialCarCheats()
 
 void PickUpChicksCheat()
 {
-	if ( FindPlayerVehicle() && (FindPlayerVehicle()->IsCar() || FindPlayerVehicle()->IsBike()) )
+	if ( FindPlayerVehicle() && (FindPlayerVehicle()->IsAutomobile() || FindPlayerVehicle()->IsBike()) )
 	{
 		CVehicle *vehicle = FindPlayerVehicle();
 		if ( FindPlayerVehicle()->IsBike() )
@@ -310,7 +310,7 @@ void HealthCheat()
 	FindPlayerPed()->m_fHealth = CWorld::Players[0].m_nMaxHealth;
 	if (FindPlayerVehicle()) {
 		FindPlayerVehicle()->m_fHealth = 1000.0f;
-		if (FindPlayerVehicle()->m_vehType == VEHICLE_TYPE_CAR) {
+		if (FindPlayerVehicle()->m_nVehicleType == VEHICLE_TYPE_AUTOMOBILE) {
 			((CAutomobile*)FindPlayerVehicle())->Damage.SetEngineStatus(0);
 			for (int32 i = 0; i < 4; i++)
 				((CAutomobile*)FindPlayerVehicle())->Damage.SetWheelStatus(i, WHEEL_STATUS_OK);

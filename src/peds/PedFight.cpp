@@ -3224,7 +3224,7 @@ CPed::InflictDamage(CEntity *damagedBy, eWeaponType method, float damage, ePedPi
 					((CBike*)m_pMyVehicle)->KnockOffRider(method, direction, this, false);
 					bDone = true;
 				} else {
-					if (m_pMyVehicle->GetVehicleAppearance() == VEHICLE_APPEARANCE_CAR) {
+					if (m_pMyVehicle->GetVehicleAppearance() == VEHICLE_APPEARANCE_AUTOMOBILE) {
 						if (m_pMyVehicle->pDriver == this) {
 							if (m_pMyVehicle->GetStatus() == STATUS_SIMPLE) {
 								m_pMyVehicle->SetStatus(STATUS_PHYSICS);
@@ -3884,7 +3884,7 @@ CPed::KillPedWithCar(CVehicle *car, float impulse)
 					if (damageDir > 3)
 						damageDir = damageDir - 4;
 
-					if (car->IsCar()) {
+					if (car->IsAutomobile()) {
 						CObject *bonnet = ((CAutomobile*)car)->RemoveBonnetInPedCollision();
 
 						if (bonnet) {

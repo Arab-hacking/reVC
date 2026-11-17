@@ -43,7 +43,8 @@ CTrain::CTrain(int32 id, uint8 CreatedBy)
 {
 #ifdef GTA_TRAIN
 	CVehicleModelInfo *mi = (CVehicleModelInfo*)CModelInfo::GetModelInfo(id);
-	m_vehType = VEHICLE_TYPE_TRAIN;
+	m_nVehicleType = VEHICLE_TYPE_TRAIN;
+m_nVehicleSubType = VEHICLE_TYPE_TRAIN;
 	m_pHandlingData = mod_HandlingManager.GetVehiclePointer((uint32)mi->m_handlingId);
 	SetModelIndex(id);
 

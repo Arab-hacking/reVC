@@ -1346,7 +1346,7 @@ CPed::ScanForInterestingStuff(void)
 
 				if (veh->VehicleCreatedBy != MISSION_VEHICLE) {
 					if (veh->m_vecMoveSpeed.Magnitude() <= 0.1f && veh->IsVehicleNormal()
-						&& veh->IsCar() && bestMonetaryValue < veh->m_pHandlingData->m_nMonetaryValue) {
+						&& veh->IsAutomobile() && bestMonetaryValue < veh->m_pHandlingData->m_nMonetaryValue) {
 						mostExpensiveVehAround = i;
 						bestMonetaryValue = veh->m_pHandlingData->m_nMonetaryValue;
 					}
@@ -4021,7 +4021,7 @@ CPed::PedSetOutCarCB(CAnimBlendAssociation *animAssoc, void *arg)
 	}
 
 	ped->bInVehicle = false;
-	if (veh && (veh->IsCar() || veh->IsBike())) {
+	if (veh && (veh->IsAutomobile() || veh->IsBike())) {
 		CWorld::pIgnoreEntity = veh;
 		if (CWorld::TestSphereAgainstWorld(ped->GetPosition() - CVector(0.f, 0.f, 0.2f),
 				0.4f, veh, true, true, false, false, false, false)
@@ -4822,8 +4822,8 @@ CPed::PreRender(void)
 		bIsWindModifierTurnedOn = true;
 
 	if (GetPedState() == PED_DRIVING && m_pMyVehicle) {
-		if (m_pMyVehicle->m_vehType == VEHICLE_TYPE_BIKE
-			|| (m_pMyVehicle->m_vehType == VEHICLE_TYPE_CAR && m_pMyVehicle->IsOpenTopCar()))
+		if (m_pMyVehicle->m_nVehicleType == VEHICLE_TYPE_BIKE
+			|| (m_pMyVehicle->m_nVehicleType == VEHICLE_TYPE_AUTOMOBILE && m_pMyVehicle->IsOpenTopCar()))
 			bIsPedDrivingBikeOrOpenTopCar = true;
 	}
 
@@ -5436,8 +5436,8 @@ CPed::SetGetUp(void)
 
 		CVehicle *collidingVeh = (CVehicle*)m_pCollidingEntity;
 		CVehicle *veh = (CVehicle*)CPedPlacement::IsPositionClearOfCars(&GetPosition());
-		if (veh && veh->m_vehType != VEHICLE_TYPE_BIKE && veh != m_attachedTo ||
-			collidingVeh && collidingVeh->IsVehicle() && collidingVeh->m_vehType != VEHICLE_TYPE_BIKE
+		if (veh && veh->m_nVehicleType != VEHICLE_TYPE_BIKE && veh != m_attachedTo ||
+			collidingVeh && collidingVeh->IsVehicle() && collidingVeh->m_nVehicleType != VEHICLE_TYPE_BIKE
 			&& ((uint8)(CTimer::GetFrameCounter() + m_randomSeed + 5) % 8 ||
 				 CCollision::ProcessColModels(GetMatrix(), *GetColModel(), collidingVeh->GetMatrix(), *collidingVeh->GetColModel(),
 					aTempPedColPts, nil, nil) > 0)) {
@@ -5669,7 +5669,7 @@ CPed::Seek(void)
 									false, true, false, false, false, false);
 
 				if (obstacle) {
-					if (!obstacle->IsVehicle() || ((CVehicle*)obstacle)->IsCar()) {
+					if (!obstacle->IsVehicle() || ((CVehicle*)obstacle)->IsAutomobile()) {
 						distanceToCountItDone = 2.5f;
 					} else {
 						CVehicleModelInfo *vehModel = (CVehicleModelInfo *)CModelInfo::GetModelInfo(obstacle->GetModelIndex());
@@ -6864,7 +6864,7 @@ CPed::SetEvasiveStep(CPhysical *reason, uint8 animType)
 	if (neededTurn > PI)
 		neededTurn = TWOPI - neededTurn;
 
-	if (reason->IsVehicle() && ((CVehicle*)reason)->IsCar()) {
+	if (reason->IsVehicle() && ((CVehicle*)reason)->IsAutomobile()) {
 		CVehicle *veh = (CVehicle*)reason;
 		if (veh->m_nCarHornTimer != 0) {
 			vehPressedHorn = true;
@@ -6934,7 +6934,7 @@ CPed::SetEvasiveDive(CPhysical *reason, uint8 onlyRandomJump)
 
 	angleToFace = m_fRotationCur;
 	CVehicle *veh = (CVehicle*) reason;
-	if (reason->IsVehicle() && veh->m_vehType == VEHICLE_TYPE_CAR && veh->m_nCarHornTimer != 0 && !IsPlayer()) {
+	if (reason->IsVehicle() && veh->m_nVehicleType == VEHICLE_TYPE_AUTOMOBILE && veh->m_nCarHornTimer != 0 && !IsPlayer()) {
 		onlyRandomJump = true;
 	}
 

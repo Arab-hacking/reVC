@@ -35,7 +35,7 @@ RwObject *CClumpModelInfo::CreateInstance(RwMatrix *) { return nullptr; }
 void CClumpModelInfo::SetClump(RpClump *) {}
 void CClumpModelInfo::SetAnimFile(const char *) {}
 void CClumpModelInfo::ConvertAnimFileIndex() {}
-CVehicleModelInfo::CVehicleModelInfo() : CClumpModelInfo(MITYPE_VEHICLE) { m_vehicleType = VEHICLE_TYPE_CAR; m_bHasEmbeddedColModel = false; }
+CVehicleModelInfo::CVehicleModelInfo() : CClumpModelInfo(MITYPE_VEHICLE) { m_nVehicleType = VEHICLE_TYPE_AUTOMOBILE; m_bHasEmbeddedColModel = false; }
 void CVehicleModelInfo::DeleteRwObject() {}
 RwObject *CVehicleModelInfo::CreateInstance() { return nullptr; }
 void CVehicleModelInfo::SetClump(RpClump *) {}

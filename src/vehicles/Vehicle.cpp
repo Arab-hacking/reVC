@@ -78,6 +78,10 @@ CVehicle::CVehicle(uint8 CreatedBy)
 	m_fTransmissionInertiaSmoothing = 0.0f;
 	m_fSteerInput = 0.0f;
 	m_type = ENTITY_TYPE_VEHICLE;
+	// The derived constructor overwrites this with its own class; IGNORE marks
+	// an instance whose class has not been chosen yet.
+	m_nVehicleType = VEHICLE_TYPE_IGNORE;
+	m_nVehicleSubType = VEHICLE_TYPE_IGNORE;
 	VehicleCreatedBy = CreatedBy;
 	m_nRouteSeed = 0;
 	bIsLocked = false;
@@ -735,7 +739,7 @@ CVehicle::BladeColSectorList(CPtrList &list, CColModel &rotorColModel, CMatrix &
 				}
 
 				// Apply Collision
-				if(IsCar()){
+				if(IsAutomobile()){
 					CAutomobile *heli = (CAutomobile*)this;
 					if(heli->m_aWheelSpeed[1] > 0.15f){
 						ApplyCollision(CWorld::m_aTempColPts[i], impulse);
@@ -1188,7 +1192,7 @@ CVehicle::InflictDamage(CEntity *damagedBy, eWeaponType weaponType, float damage
 		return;
 
 	// Pop tires
-	if(damagedBy && damagedBy->IsPed() && (IsCar() || IsBike())){
+	if(damagedBy && damagedBy->IsPed() && (IsAutomobile() || IsBike())){
 		int accuracy = 0;
 		switch(weaponType){
 		case WEAPONTYPE_COLT45:
@@ -1224,7 +1228,7 @@ CVehicle::InflictDamage(CEntity *damagedBy, eWeaponType weaponType, float damage
 		if(accuracy != 0 && !bTyresDontBurst && (CGeneral::GetRandomNumber()&0x7F) < accuracy){
 			if(IsBike())
 				BurstTyre(FindTyreNearestPoint(pos.x, pos.y) + CAR_PIECE_WHEEL_LF, false);
-			else if(GetVehicleAppearance() == VEHICLE_APPEARANCE_CAR)
+			else if(GetVehicleAppearance() == VEHICLE_APPEARANCE_AUTOMOBILE)
 				BurstTyre(FindTyreNearestPoint(pos.x, pos.y) + CAR_PIECE_WHEEL_LF, true);
 		}
 	}
@@ -1284,7 +1288,7 @@ CVehicle::InflictDamage(CEntity *damagedBy, eWeaponType weaponType, float damage
 				}
 			}
 			if (oldHealth >= DAMAGE_HEALTH_TO_CATCH_FIRE && m_fHealth < DAMAGE_HEALTH_TO_CATCH_FIRE) {
-				if (IsCar()) {
+				if (IsAutomobile()) {
 					CAutomobile* pThisCar = (CAutomobile*)this;
 					pThisCar->Damage.SetEngineStatus(ENGINE_STATUS_ON_FIRE);
 					pThisCar->m_pSetOnFireEntity = damagedBy;
@@ -1411,7 +1415,7 @@ CVehicle::ExtinguishCarFire(void)
 		m_fHealth = Max(m_fHealth, 300.0f);
 	if(m_pCarFire)
 		m_pCarFire->Extinguish();
-	if(IsCar()){
+	if(IsAutomobile()){
 		CAutomobile *car = (CAutomobile*)this;
 		if(car->Damage.GetEngineStatus() >= ENGINE_STATUS_ON_FIRE)
 			car->Damage.SetEngineStatus(ENGINE_STATUS_ON_FIRE-10);
@@ -1531,7 +1535,7 @@ CVehicle::MakeNonDraggedPedsLeaveVehicle(CPed *ped1, CPed *ped2, CPlayerPed *&pl
 		time += CGeneral::GetRandomNumberInRange(300.0f, 600.0f);
 	}
 
-	if(IsCar() && numPeds2 > 0 && CGeneral::GetRandomTrueFalse())
+	if(IsAutomobile() && numPeds2 > 0 && CGeneral::GetRandomTrueFalse())
 		for(i = 0; i < numPeds2; i++)
 			if(peds2[i]->IsFemale() || CGeneral::GetRandomTrueFalse()){
 				peds2[i]->m_leaveCarTimer = CTimer::GetTimeInMilliseconds() + 10000;
@@ -1553,7 +1557,7 @@ CVehicle::ProcessDelayedExplosion(void)
 	else
 		m_nBombTimer -= tick;
 
-	if(IsCar() && ((CAutomobile*)this)->m_bombType == CARBOMB_TIMEDACTIVE && (m_nBombTimer & 0xFE00) != (prev & 0xFE00))
+	if(IsAutomobile() && ((CAutomobile*)this)->m_bombType == CARBOMB_TIMEDACTIVE && (m_nBombTimer & 0xFE00) != (prev & 0xFE00))
 		DMAudio.PlayOneShot(m_audioEntityId, SOUND_CAR_BOMB_TICK, 0.0f);
 
 	if (m_nBombTimer == 0)
@@ -2112,7 +2116,7 @@ CVehicle::HeliDustGenerate(CEntity *heli, float radius, float ground, int rnd)
 
 	CVector heliPos = heli->GetPosition();
 
-	if(heli->IsVehicle() && ((CVehicle*)heli)->IsCar()){
+	if(heli->IsVehicle() && ((CVehicle*)heli)->IsAutomobile()){
 		heliPos.x -= (heliPos.z - ground)*heli->GetUp().x*offset*0.5f;
 		heliPos.y -= (heliPos.z - ground)*heli->GetUp().y*offset*0.5f;
 	}
@@ -2210,7 +2214,7 @@ void
 CVehicle::DoSunGlare(void)
 {
 	if(bRenderScorched || GetPosition().z < 0.0f ||
-	   GetVehicleAppearance() != VEHICLE_APPEARANCE_CAR || CWeather::SunGlare <= 0.0f)
+	   GetVehicleAppearance() != VEHICLE_APPEARANCE_AUTOMOBILE || CWeather::SunGlare <= 0.0f)
 		return;
 
 	CVector camDir = TheCamera.GetPosition() - GetPosition();
@@ -2478,24 +2482,34 @@ CVehicle::Load(uint8*& buf)
 eVehicleAppearance
 CVehicle::GetVehicleAppearance(void)
 {
-	uint32 flags = m_pHandlingData->m_nHandlingFlags & 0xF0000;
-	if (flags == 0)
-		return VEHICLE_APPEARANCE_CAR;
-	if (flags == VEHICLE_HANDLING_MODEL_IS_BIKE)
-		return VEHICLE_APPEARANCE_BIKE;
-	if (flags == VEHICLE_HANDLING_MODEL_IS_HELI)
-		return VEHICLE_APPEARANCE_HELI;
-	if (flags == VEHICLE_HANDLING_MODEL_IS_PLANE)
+	uint32 flags = m_pHandlingData->m_nModelFlags &
+		(VEHICLE_HANDLING_MODEL_IS_BOAT |
+		 VEHICLE_HANDLING_MODEL_IS_PLANE |
+		 VEHICLE_HANDLING_MODEL_IS_HELI |
+		 VEHICLE_HANDLING_MODEL_IS_BIKE);
+
+	if(flags <= VEHICLE_HANDLING_MODEL_IS_HELI){
+		switch(flags){
+		case VEHICLE_HANDLING_MODEL_IS_HELI: return VEHICLE_APPEARANCE_HELI;
+		case VEHICLE_HANDLING_MODEL_NONE:    return VEHICLE_APPEARANCE_AUTOMOBILE;
+		case VEHICLE_HANDLING_MODEL_IS_BIKE: return VEHICLE_APPEARANCE_BIKE;
+		default:                             return VEHICLE_APPEARANCE_NONE;
+		}
+	}
+
+	if(flags == VEHICLE_HANDLING_MODEL_IS_PLANE)
 		return VEHICLE_APPEARANCE_PLANE;
-	if (flags == VEHICLE_HANDLING_MODEL_IS_BOAT)
-		return VEHICLE_APPEARANCE_BOAT;
-	return VEHICLE_APPEARANCE_NONE;
+
+	if(flags != VEHICLE_HANDLING_MODEL_IS_BOAT)
+		return VEHICLE_APPEARANCE_NONE;
+
+	return VEHICLE_APPEARANCE_BOAT;
 }
 
 bool
 IsVehiclePointerValid(CVehicle* pVehicle)
 {
-	if (!pVehicle)
+	if(pVehicle == nil)
 		return false;
 	int index = CPools::GetVehiclePool()->GetJustIndex_NoFreeAssert(pVehicle);
 #ifdef FIX_BUGS
@@ -2504,5 +2518,7 @@ IsVehiclePointerValid(CVehicle* pVehicle)
 	if (index < 0 || index > NUMVEHICLES)
 #endif
 		return false;
-	return pVehicle->m_vehType == VEHICLE_TYPE_PLANE || pVehicle->m_entryInfoList.first;
+	// Planes keep no collision list of their own, so they are always usable;
+	// every other vehicle has to be in the world to be handed out.
+	return pVehicle->m_nVehicleType == VEHICLE_TYPE_FPLANE || pVehicle->m_entryInfoList.first;
 }

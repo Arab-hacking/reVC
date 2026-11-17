@@ -260,7 +260,7 @@ int8 CRunningScript::ProcessCommands500To599(int32 command)
 		CollectParameters(&m_nIp, 2);
 		CVehicle* pVehicle = CPools::GetVehiclePool()->GetAt(ScriptParams[0]);
 		script_assert(pVehicle);
-		script_assert(pVehicle->m_vehType == VEHICLE_TYPE_CAR);
+		script_assert(pVehicle->m_nVehicleType == VEHICLE_TYPE_AUTOMOBILE);
 		((CAutomobile*)pVehicle)->SetTaxiLight(ScriptParams[1] != 0);
 		return 0;
 	}
@@ -378,7 +378,7 @@ int8 CRunningScript::ProcessCommands500To599(int32 command)
 		CollectParameters(&m_nIp, 1);
 		CAutomobile* pCar = (CAutomobile*)CPools::GetVehiclePool()->GetAt(ScriptParams[0]);
 		script_assert(pCar);
-		script_assert(pCar->m_vehType == VEHICLE_TYPE_CAR);
+		script_assert(pCar->m_nVehicleType == VEHICLE_TYPE_AUTOMOBILE);
 		UpdateCompareFlag(pCar->m_bombType != 0); //TODO: enum
 		return 0;
 	}
@@ -454,7 +454,7 @@ int8 CRunningScript::ProcessCommands500To599(int32 command)
 		CollectParameters(&m_nIp, 2);
 		CAutomobile* pCar = (CAutomobile*)CPools::GetVehiclePool()->GetAt(ScriptParams[0]);
 		script_assert(pCar);
-		script_assert(pCar->m_vehType == VEHICLE_TYPE_CAR);
+		script_assert(pCar->m_nVehicleType == VEHICLE_TYPE_AUTOMOBILE);
 		UpdateCompareFlag(pCar->m_bombType == ScriptParams[1]);
 		return 0;
 	}
@@ -719,7 +719,7 @@ int8 CRunningScript::ProcessCommands500To599(int32 command)
 		CollectParameters(&m_nIp, 2);
 		CVehicle* pVehicle = CPools::GetVehiclePool()->GetAt(ScriptParams[0]);
 		script_assert(pVehicle);
-		script_assert(pVehicle->m_vehType == VEHICLE_TYPE_CAR);
+		script_assert(pVehicle->m_nVehicleType == VEHICLE_TYPE_AUTOMOBILE);
 		((CAutomobile*)pVehicle)->m_bombType = ScriptParams[1];
 		((CAutomobile*)pVehicle)->m_pBombRigger = FindPlayerPed();
 		return 0;
@@ -1220,10 +1220,10 @@ int8 CRunningScript::ProcessCommands600To699(int32 command)
 		CollectParameters(&m_nIp, 2);
 		CVehicle* pVehicle = CPools::GetVehiclePool()->GetAt(ScriptParams[0]);
 		script_assert(pVehicle);
-		//assert(pVehicle->m_vehType == VEHICLE_TYPE_CAR);
+		//assert(pVehicle->m_nVehicleType == VEHICLE_TYPE_AUTOMOBILE);
 		// they DO call this for bikes, we don't really want to destroy the structure...
 #ifdef FIX_BUGS
-		if (pVehicle->m_vehType == VEHICLE_TYPE_CAR)
+		if (pVehicle->m_nVehicleType == VEHICLE_TYPE_AUTOMOBILE)
 #endif
 			((CAutomobile*)pVehicle)->bFixedColour = (ScriptParams[1] == 0);
 		
@@ -1298,7 +1298,7 @@ int8 CRunningScript::ProcessCommands600To699(int32 command)
 		CollectParameters(&m_nIp, 1);
 		CVehicle* pVehicle = CPools::GetVehiclePool()->GetAt(ScriptParams[0]);
 		script_assert(pVehicle);
-		UpdateCompareFlag(pVehicle->m_vehType == VEHICLE_TYPE_BOAT);
+		UpdateCompareFlag(pVehicle->m_nVehicleType == VEHICLE_TYPE_BOAT);
 		return 0;
 	}
 	case COMMAND_SET_CHAR_OBJ_GOTO_AREA_ANY_MEANS:
@@ -1704,7 +1704,7 @@ int8 CRunningScript::ProcessCommands700To799(int32 command)
 		CollectParameters(&m_nIp, 4);
 		CVehicle* pVehicle = CPools::GetVehiclePool()->GetAt(ScriptParams[0]);
 		script_assert(pVehicle);
-		script_assert(pVehicle->m_vehType == VEHICLE_TYPE_BOAT);
+		script_assert(pVehicle->m_nVehicleType == VEHICLE_TYPE_BOAT);
 		CBoat* pBoat = (CBoat*)pVehicle;
 		CVector pos = *(CVector*)&ScriptParams[1];
 		if (pos.z <= MAP_Z_LOW_LIMIT)
@@ -1722,7 +1722,7 @@ int8 CRunningScript::ProcessCommands700To799(int32 command)
 		CollectParameters(&m_nIp, 1);
 		CVehicle* pVehicle = CPools::GetVehiclePool()->GetAt(ScriptParams[0]);
 		script_assert(pVehicle);
-		script_assert(pVehicle->m_vehType == VEHICLE_TYPE_BOAT);
+		script_assert(pVehicle->m_nVehicleType == VEHICLE_TYPE_BOAT);
 		CBoat* pBoat = (CBoat*)pVehicle;
 		pBoat->AutoPilot.m_nCarMission = MISSION_NONE;
 		pBoat->SetStatus(STATUS_PHYSICS);
@@ -1797,7 +1797,7 @@ int8 CRunningScript::ProcessCommands700To799(int32 command)
 		CollectParameters(&m_nIp, 2);
 		CVehicle* pVehicle = CPools::GetVehiclePool()->GetAt(ScriptParams[0]);
 		script_assert(pVehicle);
-		script_assert(pVehicle->m_vehType == VEHICLE_TYPE_BOAT);
+		script_assert(pVehicle->m_nVehicleType == VEHICLE_TYPE_BOAT);
 		CBoat* pBoat = (CBoat*)pVehicle;
 		pBoat->AutoPilot.m_nCruiseSpeed = *(float*)&ScriptParams[1];
 		return 0;

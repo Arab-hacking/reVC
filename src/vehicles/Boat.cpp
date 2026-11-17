@@ -53,7 +53,8 @@ const uint32 CBoat::nSaveStructSize =
 CBoat::CBoat(int mi, uint8 owner) : CVehicle(owner)
 {
 	CVehicleModelInfo *minfo = (CVehicleModelInfo*)CModelInfo::GetModelInfo(mi);
-	m_vehType = VEHICLE_TYPE_BOAT;
+	m_nVehicleType = VEHICLE_TYPE_BOAT;
+m_nVehicleSubType = VEHICLE_TYPE_BOAT;
 	m_fAccelerate = 0.0f;
 	m_fBrake = 0.0f;
 	m_fSteeringLeftRight = 0.0f;
@@ -1325,7 +1326,7 @@ CBoat::FillBoatList()
 		camFwd /= camDist;
 	for (int i = CPools::GetVehiclePool()->GetSize() - 1; i >= 0; i--) {
 		CBoat *boat = (CBoat *)(CPools::GetVehiclePool()->GetSlot(i));
-		if (boat && boat->m_vehType == VEHICLE_TYPE_BOAT) {
+		if (boat && boat->m_nVehicleType == VEHICLE_TYPE_BOAT) {
 			if (boat->m_nNumWakePoints != 0) {
 				CVector2D camToBoat = CVector2D(boat->GetPosition()) - camPos;
 				float distToCam = DotProduct2D(camFwd, camToBoat);

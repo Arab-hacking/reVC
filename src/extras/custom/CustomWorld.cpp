@@ -372,38 +372,52 @@ ModelInfoType ModelType(customworld::Model::Kind kind)
     }
 }
 
-// BR uses SA vehicle classes. Only instantiate classes that have a matching
-// native VC vehicle implementation; never reinterpret a trailer/quad/BMX as a
-// car or install SA handling data into VC's fixed-size handling tables.
-int VehicleType(const std::string &s)
+// Class named by a custom vehicle definition. The engine instantiates exactly
+// this class, so a definition must not claim a class that has no native
+// implementation: trains stay excluded because the BR track/path format is not
+// the one CTrain drives on.
+eVehicleType VehicleType(const std::string &s)
 {
     const std::string type = customworld::Lower(s);
-    if(type == "car") return VEHICLE_TYPE_CAR;
+    if(type == "car") return VEHICLE_TYPE_AUTOMOBILE;
+    if(type == "mtruck" || type == "monstertruck") return VEHICLE_TYPE_MTRUCK;
+    if(type == "quad") return VEHICLE_TYPE_QUAD;
     if(type == "bike") return VEHICLE_TYPE_BIKE;
+    if(type == "bmx") return VEHICLE_TYPE_BMX;
     if(type == "boat") return VEHICLE_TYPE_BOAT;
-    if(type == "heli") return VEHICLE_TYPE_HELI;
+    if(type == "heli" || type == "f_heli") return VEHICLE_TYPE_HELI;
     if(type == "plane") return VEHICLE_TYPE_PLANE;
-    return -1; // also excludes trains: the BR track/path format is not VC's
+    if(type == "trailer") return VEHICLE_TYPE_TRAILER;
+    return VEHICLE_TYPE_IGNORE; // also excludes trains: the BR track/path format is not VC's
 }
 
-bool HandlingMatches(int type, int id)
+
+bool HandlingMatches(eVehicleType type, int id)
 {
     if(id < 0 || id >= NUM_HANDLINGS) return false;
     const tHandlingData *h = mod_HandlingManager.GetVehiclePointer((uint32)id);
-    const bool isBike  = h->m_bIsBike;
-    const bool isBoat  = h->m_bIsBoat;
-    const bool isHeli  = h->m_bIsHeli;
-    const bool isPlane = h->m_bIsPlane;
-    if(type == VEHICLE_TYPE_CAR)
-        return !(isBike || isBoat || isHeli || isPlane);
-    if(type == VEHICLE_TYPE_BIKE) return isBike;
-    if(type == VEHICLE_TYPE_BOAT) return isBoat;
-    if(type == VEHICLE_TYPE_HELI) return isHeli;
-    if(type == VEHICLE_TYPE_PLANE) return isPlane;
-    return false;
+
+    // The class of a vehicle comes from its handling line, the same rule the
+    // engine uses when it instantiates a model.
+    eVehicleType handlingType;
+    switch(id) {
+    case HANDLING_QUADBIKE: handlingType = VEHICLE_TYPE_QUAD; break;
+    case HANDLING_BIKE: case HANDLING_BMX: case HANDLING_MTB: handlingType = VEHICLE_TYPE_BMX; break;
+    case HANDLING_MONSTER_A: case HANDLING_MONSTER_B: handlingType = VEHICLE_TYPE_MTRUCK; break;
+    case HANDLING_ARTICT1: case HANDLING_ARTICT2: case HANDLING_ARTICT3: handlingType = VEHICLE_TYPE_TRAILER; break;
+    default:
+        if(h->m_bIsBoat) handlingType = VEHICLE_TYPE_BOAT;
+        else if(h->m_bIsPlane) handlingType = VEHICLE_TYPE_PLANE;
+        else if(h->m_bIsHeli) handlingType = VEHICLE_TYPE_HELI;
+        else if(h->m_bIsBike) handlingType = VEHICLE_TYPE_BIKE;
+        else handlingType = VEHICLE_TYPE_AUTOMOBILE;
+        break;
+    }
+    return handlingType == type;
 }
 
-int BuiltinHandling(int type, const std::string &name, bool &fallback)
+
+int BuiltinHandling(eVehicleType type, const std::string &name, bool &fallback)
 {
     std::string id = name;
     for(char &c : id) c = (char)std::toupper((unsigned char)c);
@@ -517,13 +531,13 @@ void CCustomWorld::LoadIde(void)
         const customworld::Model &m = *item;
         const std::string key = customworld::Lower(m.name);
         const ModelInfoType type = ModelType(m.kind);
-        const int vehicleType = type == MITYPE_VEHICLE ? VehicleType(m.subtype) : -1;
+        const int vehicleType = type == MITYPE_VEHICLE ? (int)VehicleType(m.subtype) : (int)VEHICLE_TYPE_IGNORE;
         if(type == MITYPE_VEHICLE && vehicleType < 0) { unsupported++; continue; }
         std::unordered_map<std::string, int>::const_iterator old = existing.find(key);
         if(old != existing.end()) {
             CBaseModelInfo *mi = CModelInfo::GetModelInfo(old->second);
             if(mi->GetModelType() != type ||
-               (type == MITYPE_VEHICLE && ((CVehicleModelInfo *)mi)->m_vehicleType != vehicleType)) {
+               (type == MITYPE_VEHICLE && ((CVehicleModelInfo *)mi)->m_nVehicleType != vehicleType)) {
                 incompatible++;
                 continue;
             }
@@ -570,14 +584,17 @@ void CCustomWorld::LoadIde(void)
         } else if(type == MITYPE_VEHICLE) {
             CVehicleModelInfo *vehicle = CModelInfo::AddVehicleModel(next);
             bool fallback = false;
-            vehicle->m_vehicleType = vehicleType;
-            vehicle->m_handlingId = BuiltinHandling(vehicleType, m.handling, fallback);
+            vehicle->m_nVehicleType = (eVehicleType)vehicleType;
+            vehicle->m_handlingId = BuiltinHandling((eVehicleType)vehicleType, m.handling, fallback);
             fallbackHandling += fallback;
-            // Only built-in VC handling is used. No SA physics, wheel model
-            // IDs, component rules or traffic spawning data are imported.
+            // Custom vehicles reuse the built-in handling line they named; the
+            // engine supplies the physics from that line and the class it
+            // declares. No wheel model id, component rules or traffic spawning
+            // data is imported from the archive.
             vehicle->m_wheelId = -1; // SA wheels are embedded in the DFF
             vehicle->m_wheelScale = 1.0f;
-            vehicle->m_bikeSteerAngle = vehicleType == VEHICLE_TYPE_BIKE ? 35.0f : 0.0f;
+            vehicle->m_bikeSteerAngle =
+                vehicleType == VEHICLE_TYPE_BIKE || vehicleType == VEHICLE_TYPE_BMX ? 35.0f : 0.0f;
             vehicle->m_compRules = 0;
             vehicle->m_vehicleClass = -1;
             vehicle->m_level = 0;
@@ -827,7 +844,7 @@ void CCustomWorld::LoadIde(void)
         }
     }
 
-    CUSTOM_LOG("BR IDE: %u file(s), %u record(s), %u invalid, %u long, %u source ID conflicts, %u installed, %u native reused, %u incompatible, %u unsupported vehicle types, %u without DFF, %u over capacity, %u VC handling fallbacks, %u paired IMG TXDs, %u txdp links, %u LOD chains, %u long-range landmarks\n",
+    CUSTOM_LOG("BR IDE: %u file(s), %u record(s), %u invalid, %u long, %u source ID conflicts, %u installed, %u native reused, %u incompatible, %u unsupported vehicle types, %u without DFF, %u over capacity, %u handling fallbacks, %u paired IMG TXDs, %u txdp links, %u LOD chains, %u long-range landmarks\n",
         ctx.files, ctx.parsed, ctx.bad, ctx.overlong, ctx.conflicts, installed,
         reusedNative, incompatible, unsupported, noAsset, full, fallbackHandling, paired, txdParentsLinked,
         (unsigned)lodChainByNearSlot.size(), (unsigned)selfFarProxySlots.size());

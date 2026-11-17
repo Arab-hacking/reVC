@@ -95,7 +95,7 @@ int8 CRunningScript::ProcessCommands800To899(int32 command)
 	{
 		CollectParameters(&m_nIp, 2);
 		CBoat* pBoat = (CBoat*)CPools::GetVehiclePool()->GetAt(ScriptParams[0]);
-		script_assert(pBoat && pBoat->m_vehType == VEHICLE_TYPE_BOAT);
+		script_assert(pBoat && pBoat->m_nVehicleType == VEHICLE_TYPE_BOAT);
 		pBoat->m_bIsAnchored = (ScriptParams[1] != 0);
 		return 0;
 	}
@@ -147,7 +147,7 @@ int8 CRunningScript::ProcessCommands800To899(int32 command)
 			CVehicle* pVehicle = CPools::GetVehiclePool()->GetSlot(i);
 			if (!pVehicle)
 				continue;
-			if (pVehicle->GetVehicleAppearance() != VEHICLE_APPEARANCE_CAR && pVehicle->GetVehicleAppearance() != VEHICLE_APPEARANCE_BIKE)
+			if (pVehicle->GetVehicleAppearance() != VEHICLE_APPEARANCE_AUTOMOBILE && pVehicle->GetVehicleAppearance() != VEHICLE_APPEARANCE_BIKE)
 				continue;
 			if (!pVehicle->bUsesCollision)
 				continue;
@@ -304,7 +304,7 @@ int8 CRunningScript::ProcessCommands800To899(int32 command)
 		CollectParameters(&m_nIp, 2);
 		CVehicle* pVehicle = CPools::GetVehiclePool()->GetAt(ScriptParams[0]);
 		script_assert(pVehicle);
-		script_assert(pVehicle->m_vehType == VEHICLE_TYPE_CAR);
+		script_assert(pVehicle->m_nVehicleType == VEHICLE_TYPE_AUTOMOBILE);
 		CAutomobile* pCar = (CAutomobile*)pVehicle;
 		pCar->bBigWheels = (ScriptParams[1] != 0);
 		return 0;
@@ -1458,7 +1458,7 @@ int8 CRunningScript::ProcessCommands900To999(int32 command)
 			CBike* pBike = (CBike*)pVehicle;
 			pBike->bWaterTight = ScriptParams[1] != 0;
 		}
-		else if (pVehicle->IsCar()) {
+		else if (pVehicle->IsAutomobile()) {
 			CAutomobile* pCar = (CAutomobile*)pVehicle;
 			pCar->bWaterTight = ScriptParams[1] != 0;
 		}

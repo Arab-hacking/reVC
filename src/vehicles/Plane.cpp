@@ -68,7 +68,8 @@ CPlane::CPlane(int32 id, uint8 CreatedBy)
  : CVehicle(CreatedBy)
 {
 	CVehicleModelInfo *mi = (CVehicleModelInfo*)CModelInfo::GetModelInfo(id);
-	m_vehType = VEHICLE_TYPE_PLANE;
+	m_nVehicleType = VEHICLE_TYPE_PLANE;
+m_nVehicleSubType = VEHICLE_TYPE_PLANE;
 	m_pHandlingData = mod_HandlingManager.GetVehiclePointer((uint32)mi->m_handlingId);
 	SetModelIndex(id);
 

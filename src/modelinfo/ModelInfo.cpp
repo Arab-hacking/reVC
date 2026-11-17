@@ -187,7 +187,7 @@ CModelInfo::AddVehicleModel(int id)
 #endif
 	for(int i = 0; i < NUM_VEHICLE_POSITIONS; i++)
 		modelinfo->m_positions[i] = CVector(0.0f, 0.0f, 0.0f);
-	modelinfo->m_vehicleType = -1;
+	modelinfo->m_nVehicleType = VEHICLE_TYPE_IGNORE;
 	modelinfo->m_wheelId = -1;
 	modelinfo->m_numComps = 0;
 	modelinfo->m_numDoors = 0;
@@ -227,39 +227,49 @@ CModelInfo::GetModelInfo(const char *name, int minIndex, int maxIndex)
 	return nil;
 }
 
+// These answer "is this model driven by that class", not "is this the exact
+// type word": every class the engine implements as a CAutomobile answers the
+// car query, and both two-wheeler classes answer the bike query.
+static inline CVehicleModelInfo *AsVehicleModel(int32 id)
+{
+	CBaseModelInfo *mi = CModelInfo::GetModelInfo(id);
+	return mi && mi->GetModelType() == MITYPE_VEHICLE ? (CVehicleModelInfo*)mi : nil;
+}
+
 bool
 CModelInfo::IsBoatModel(int32 id)
 {
-	return GetModelInfo(id)->GetModelType() == MITYPE_VEHICLE &&
-		((CVehicleModelInfo*)GetModelInfo(id))->m_vehicleType == VEHICLE_TYPE_BOAT;
+	CVehicleModelInfo *mi = AsVehicleModel(id);
+	return mi && mi->m_nVehicleType == VEHICLE_TYPE_BOAT;
 }
 
 bool
 CModelInfo::IsBikeModel(int32 id)
 {
-	return GetModelInfo(id)->GetModelType() == MITYPE_VEHICLE &&
-		((CVehicleModelInfo*)GetModelInfo(id))->m_vehicleType == VEHICLE_TYPE_BIKE;
+	CVehicleModelInfo *mi = AsVehicleModel(id);
+	return mi && (mi->m_nVehicleType == VEHICLE_TYPE_BIKE || mi->m_nVehicleType == VEHICLE_TYPE_BMX);
 }
 
 bool
 CModelInfo::IsCarModel(int32 id)
 {
-	return GetModelInfo(id)->GetModelType() == MITYPE_VEHICLE &&
-		((CVehicleModelInfo*)GetModelInfo(id))->m_vehicleType == VEHICLE_TYPE_CAR;
+	CVehicleModelInfo *mi = AsVehicleModel(id);
+	return mi && (mi->m_nVehicleType == VEHICLE_TYPE_AUTOMOBILE || mi->m_nVehicleType == VEHICLE_TYPE_MTRUCK ||
+	              mi->m_nVehicleType == VEHICLE_TYPE_QUAD || mi->m_nVehicleType == VEHICLE_TYPE_TRAILER);
 }
 
 bool
 CModelInfo::IsHeliModel(int32 id)
 {
-	return GetModelInfo(id)->GetModelType() == MITYPE_VEHICLE &&
-		((CVehicleModelInfo*)GetModelInfo(id))->m_vehicleType == VEHICLE_TYPE_HELI;
+	CVehicleModelInfo *mi = AsVehicleModel(id);
+	return mi && (mi->m_nVehicleType == VEHICLE_TYPE_HELI || mi->m_nVehicleType == VEHICLE_TYPE_FHELI);
 }
 
 bool
 CModelInfo::IsPlaneModel(int32 id)
 {
-	return GetModelInfo(id)->GetModelType() == MITYPE_VEHICLE &&
-		((CVehicleModelInfo*)GetModelInfo(id))->m_vehicleType == VEHICLE_TYPE_PLANE;
+	CVehicleModelInfo *mi = AsVehicleModel(id);
+	return mi && (mi->m_nVehicleType == VEHICLE_TYPE_PLANE || mi->m_nVehicleType == VEHICLE_TYPE_FPLANE);
 }
 
 void

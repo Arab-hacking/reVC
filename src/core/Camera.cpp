@@ -762,12 +762,12 @@ CCamera::CamControl(void)
 					if(CarZoomIndicator != CAM_ZOOM_1STPRS && CarZoomIndicator != CAM_ZOOM_TOPDOWN)
 						ReqMode = CCam::MODE_CAM_ON_A_STRING;
 
-				int vehType = ((CVehicle*)pTargetEntity)->m_vehType;
+				eVehicleType vehType = ((CVehicle*)pTargetEntity)->m_nVehicleType;
 				if(((CVehicle*)pTargetEntity)->IsBoat() && pTargetEntity->GetModelIndex() == MI_SKIMMER)
-					vehType = VEHICLE_TYPE_CAR;
+					vehType = VEHICLE_TYPE_AUTOMOBILE;
 
 				switch(vehType){
-				case VEHICLE_TYPE_CAR:
+				case VEHICLE_TYPE_AUTOMOBILE:
 				case VEHICLE_TYPE_BIKE:{
 					CAttributeZone *stairsZone = nil;
 					if(vehType == VEHICLE_TYPE_BIKE && CCullZones::CamStairsForPlayer()){
@@ -931,7 +931,7 @@ CCamera::CamControl(void)
 				}
 
 				// Check if we have to go into first person
-				if(vehType == VEHICLE_TYPE_CAR && !m_bPlayerIsInGarage){
+				if(vehType == VEHICLE_TYPE_AUTOMOBILE && !m_bPlayerIsInGarage){
 					if(CCullZones::Cam1stPersonForPlayer() && 
 					   pTargetEntity->GetColModel()->boundingBox.GetSize().z >= 3.026f &&
 					   pToGarageWeAreInForHackAvoidFirstPerson == nil){
@@ -2058,7 +2058,7 @@ void
 CCamera::GetArrPosForVehicleType(int apperance, int &index)
 {
 	switch(apperance){
-	case VEHICLE_APPEARANCE_CAR: index = 0; break;
+	case VEHICLE_APPEARANCE_AUTOMOBILE: index = 0; break;
 	case VEHICLE_APPEARANCE_BIKE: index = 1; break;
 	case VEHICLE_APPEARANCE_HELI: index = 2; break;
 	case VEHICLE_APPEARANCE_PLANE: index = 3; break;
@@ -2976,7 +2976,7 @@ CCamera::TryToStartNewCamMode(int obbeMode)
 		i = CPools::GetVehiclePool()->GetSize();
 		while(--i >= 0){
 			veh = CPools::GetVehiclePool()->GetSlot(i);
-			if(veh && veh->IsCar() && veh != FindPlayerVehicle() && veh->bIsLawEnforcer){
+			if(veh && veh->IsAutomobile() && veh != FindPlayerVehicle() && veh->bIsLawEnforcer){
 				float dx = veh->GetPosition().x - FindPlayerCoors().x;
 				float dy = veh->GetPosition().y - FindPlayerCoors().y;
 				float dist = (veh->GetPosition() - FindPlayerCoors()).Magnitude();
@@ -3004,7 +3004,7 @@ CCamera::TryToStartNewCamMode(int obbeMode)
 		i = CPools::GetVehiclePool()->GetSize();
 		while(--i >= 0){
 			veh = CPools::GetVehiclePool()->GetSlot(i);
-			if(veh && veh->IsCar() && veh != FindPlayerVehicle() && veh->bIsLawEnforcer){
+			if(veh && veh->IsAutomobile() && veh != FindPlayerVehicle() && veh->bIsLawEnforcer){
 				float dx = veh->GetPosition().x - FindPlayerCoors().x;
 				float dy = veh->GetPosition().y - FindPlayerCoors().y;
 				float dist = (veh->GetPosition() - FindPlayerCoors()).Magnitude();

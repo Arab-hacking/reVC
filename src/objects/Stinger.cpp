@@ -139,7 +139,7 @@ CStinger::CheckForBurstTyres()
 		CAutomobile *pAutomobile = nil;
 		CBike *pBike = nil;
 
-		if (vehsInRange[i]->IsCar())
+		if (vehsInRange[i]->IsAutomobile())
 			pAutomobile = (CAutomobile*)vehsInRange[i];
 		else if (vehsInRange[i]->IsBike())
 			pBike = (CBike*)vehsInRange[i];

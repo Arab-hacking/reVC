@@ -84,7 +84,8 @@ CBike::CBike(int32 id, uint8 CreatedBy)
 		break;
 	default: assert(0 && "invalid bike model ID");
 	}
-	m_vehType = VEHICLE_TYPE_BIKE;
+	m_nVehicleType = VEHICLE_TYPE_BIKE;
+m_nVehicleSubType = VEHICLE_TYPE_BIKE;
 
 	m_fFireBlowUpTimer = 0.0f;
 	m_doingBurnout = 0;

@@ -127,7 +127,7 @@ int8 CRunningScript::ProcessCommands1200To1299(int32 command)
 		script_assert(pVehicle);
 		float speed = *(float*)&ScriptParams[1] / GAME_SPEED_TO_CARAI_SPEED;
 		pVehicle->SetMoveSpeed(pVehicle->GetForward() * speed);
-		if (pVehicle->IsRealHeli() && pVehicle->IsCar())
+		if (pVehicle->IsRealHeli() && pVehicle->IsAutomobile())
 			((CAutomobile*)pVehicle)->m_aWheelSpeed[1] = 0.22f;
 		return 0;
 	}
@@ -263,7 +263,7 @@ int8 CRunningScript::ProcessCommands1200To1299(int32 command)
 	{
 		CollectParameters(&m_nIp, 2);
 		CAutomobile* pHeli = (CAutomobile*)CPools::GetVehiclePool()->GetAt(ScriptParams[0]);
-		script_assert(pHeli && pHeli->IsCar() && pHeli->IsRealHeli());
+		script_assert(pHeli && pHeli->IsAutomobile() && pHeli->IsRealHeli());
 		float fAngle = DEGTORAD(*(float*)&ScriptParams[1] - 90.0f);
 		while (fAngle < 0.0f)
 			fAngle += TWOPI;
@@ -276,7 +276,7 @@ int8 CRunningScript::ProcessCommands1200To1299(int32 command)
 	{
 		CollectParameters(&m_nIp, 1);
 		CAutomobile* pHeli = (CAutomobile*)CPools::GetVehiclePool()->GetAt(ScriptParams[0]);
-		script_assert(pHeli && pHeli->IsCar() && pHeli->IsRealHeli());
+		script_assert(pHeli && pHeli->IsAutomobile() && pHeli->IsRealHeli());
 		pHeli->ClearHeliOrientation();
 		return 0;
 	}
@@ -284,7 +284,7 @@ int8 CRunningScript::ProcessCommands1200To1299(int32 command)
 	{
 		CollectParameters(&m_nIp, 5);
 		CAutomobile* pPlane = (CAutomobile*)CPools::GetVehiclePool()->GetAt(ScriptParams[0]);
-		script_assert(pPlane && pPlane->IsCar() && pPlane->IsRealPlane());
+		script_assert(pPlane && pPlane->IsAutomobile() && pPlane->IsRealPlane());
 		pPlane->TellPlaneToGoToCoors(*(float*)&ScriptParams[1], *(float*)&ScriptParams[2], *(float*)&ScriptParams[3], ScriptParams[4]);
 		return 0;
 	}
@@ -383,7 +383,7 @@ int8 CRunningScript::ProcessCommands1200To1299(int32 command)
 	{
 		CollectParameters(&m_nIp, 1);
 		CAutomobile* pCar = (CAutomobile*)CPools::GetVehiclePool()->GetAt(ScriptParams[0]);
-		script_assert(pCar&& pCar->IsCar());
+		script_assert(pCar&& pCar->IsAutomobile());
 		pCar->PopBoot();
 		return 0;
 	}
@@ -672,7 +672,7 @@ int8 CRunningScript::ProcessCommands1200To1299(int32 command)
 	{
 		CollectParameters(&m_nIp, 1);
 		CAutomobile* pCar = (CAutomobile*)CPools::GetVehiclePool()->GetAt(ScriptParams[0]);
-		script_assert(pCar&& pCar->IsCar());
+		script_assert(pCar&& pCar->IsAutomobile());
 		pCar->CloseAllDoors();
 		return 0;
 	}
@@ -694,7 +694,7 @@ int8 CRunningScript::ProcessCommands1200To1299(int32 command)
 	{
 		CollectParameters(&m_nIp, 1);
 		CAutomobile* pCar = (CAutomobile*)CPools::GetVehiclePool()->GetAt(ScriptParams[0]);
-		script_assert(pCar && pCar->IsCar());
+		script_assert(pCar && pCar->IsAutomobile());
 		pCar->PopBootUsingPhysics();
 		return 0;
 	}
@@ -956,7 +956,7 @@ int8 CRunningScript::ProcessCommands1300To1399(int32 command)
 			CVehicle* pVehicle = CPools::GetVehiclePool()->GetSlot(i);
 			if (!pVehicle)
 				continue;
-			if (pVehicle->GetVehicleAppearance() != VEHICLE_APPEARANCE_CAR && pVehicle->GetVehicleAppearance() != VEHICLE_APPEARANCE_BIKE)
+			if (pVehicle->GetVehicleAppearance() != VEHICLE_APPEARANCE_AUTOMOBILE && pVehicle->GetVehicleAppearance() != VEHICLE_APPEARANCE_BIKE)
 				continue;
 			if (ScriptParams[4] != pVehicle->GetModelIndex() && ScriptParams[4] >= 0)
 				continue;
@@ -1195,7 +1195,7 @@ int8 CRunningScript::ProcessCommands1300To1399(int32 command)
 		pVehicle->pDriver->RegisterReference((CEntity**)&pVehicle->pDriver);
 		pPed->bInVehicle = true;
 		pVehicle->SetStatus(STATUS_PHYSICS);
-		if (pVehicle->m_vehType == VEHICLE_TYPE_BOAT)
+		if (pVehicle->m_nVehicleType == VEHICLE_TYPE_BOAT)
 			pVehicle->AutoPilot.m_nCarMission = MISSION_CRUISE;
 		pVehicle->bEngineOn = true;
 		pVehicle->m_nZoneLevel = CTheZones::GetLevelFromPosition(&pVehicle->GetPosition());
@@ -1267,7 +1267,7 @@ int8 CRunningScript::ProcessCommands1300To1399(int32 command)
 	{
 		CollectParameters(&m_nIp, 1);
 		CAutomobile* pHeli = (CAutomobile*)CPools::GetVehiclePool()->GetAt(ScriptParams[0]);
-		script_assert(pHeli && pHeli->IsCar() && pHeli->IsRealHeli());
+		script_assert(pHeli && pHeli->IsAutomobile() && pHeli->IsRealHeli());
 		pHeli->bHeliDestroyed = true;
 		return 0;
 	}

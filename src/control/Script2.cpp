@@ -299,7 +299,7 @@ int8 CRunningScript::ProcessCommands300To399(int32 command)
 	{
 		CollectParameters(&m_nIp, 1);
 		CVehicle* pVehicle = CPools::GetVehiclePool()->GetAt(ScriptParams[0]);
-		script_assert(pVehicle && pVehicle->IsCar());
+		script_assert(pVehicle && pVehicle->IsAutomobile());
 		CAutomobile* pCar = (CAutomobile*)pVehicle;
 		UpdateCompareFlag(pCar->GetAllWheelsOffGround());
 		return 0;

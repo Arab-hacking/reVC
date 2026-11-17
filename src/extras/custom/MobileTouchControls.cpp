@@ -391,9 +391,9 @@ RebuildVehicleCatalog(void)
 		if (!base || base->GetModelType() != MITYPE_VEHICLE)
 			continue;
 		CVehicleModelInfo *vmi = (CVehicleModelInfo*)base;
-		if (vmi->m_vehicleType != VEHICLE_TYPE_CAR &&
-		    vmi->m_vehicleType != VEHICLE_TYPE_BIKE &&
-		    vmi->m_vehicleType != VEHICLE_TYPE_BOAT)
+		if (vmi->m_nVehicleType != VEHICLE_TYPE_AUTOMOBILE &&
+		    vmi->m_nVehicleType != VEHICLE_TYPE_BIKE &&
+		    vmi->m_nVehicleType != VEHICLE_TYPE_BOAT)
 			continue;
 		const char *name = vmi->GetModelName();
 		if (!name || !*name)
@@ -404,7 +404,7 @@ RebuildVehicleCatalog(void)
 		mobilespawner::CatalogItem item;
 		item.modelId = id;
 		item.isCustom = (id >= 4900);
-		item.isSecondaryTag = (vmi->m_vehicleType == VEHICLE_TYPE_BIKE);
+		item.isSecondaryTag = (vmi->m_nVehicleType == VEHICLE_TYPE_BIKE);
 		std::snprintf(item.name, sizeof(item.name), "%s", name);
 		s_vehCatalog.push_back(item);
 	}
@@ -539,7 +539,7 @@ SpawnVehicleByModel(int32 modelId)
 	if (fwd.x * fwd.x + fwd.y * fwd.y < 1.0e-4f)
 		fwd = TheCamera.GetForward();
 
-	const float distAhead = (vmi->m_vehicleType == VEHICLE_TYPE_BOAT) ? 8.0f : 5.5f;
+	const float distAhead = (vmi->m_nVehicleType == VEHICLE_TYPE_BOAT) ? 8.0f : 5.5f;
 	float sx = basePos.x, sy = basePos.y, sz = basePos.z;
 	float rx = 1.0f, ry = 0.0f;
 	mobilespawner::ComputeVehicleSpawnTransform(
@@ -547,10 +547,10 @@ SpawnVehicleByModel(int32 modelId)
 		&sx, &sy, &sz, &rx, &ry);
 
 	CVehicle *spawned = nil;
-	if (vmi->m_vehicleType == VEHICLE_TYPE_BOAT) {
+	if (vmi->m_nVehicleType == VEHICLE_TYPE_BOAT) {
 		CBoat *boat = new CBoat(modelId, RANDOM_VEHICLE);
 		spawned = boat;
-	} else if (vmi->m_vehicleType == VEHICLE_TYPE_BIKE) {
+	} else if (vmi->m_nVehicleType == VEHICLE_TYPE_BIKE) {
 		CBike *bike = new CBike(modelId, RANDOM_VEHICLE);
 		if (bike)
 			bike->bIsStanding = true;

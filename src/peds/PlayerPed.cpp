@@ -1797,7 +1797,7 @@ CPlayerPed::ProcessControl(void)
 	}
 	if (m_nPedState == PED_DRIVING && m_objective != OBJECTIVE_LEAVE_CAR) {
 		if (!CReplay::IsPlayingBack() || m_pMyVehicle) {
-			if (m_pMyVehicle->IsCar() && ((CAutomobile*)m_pMyVehicle)->Damage.GetDoorStatus(DOOR_FRONT_LEFT) == DOOR_STATUS_SWINGING) {
+			if (m_pMyVehicle->IsAutomobile() && ((CAutomobile*)m_pMyVehicle)->Damage.GetDoorStatus(DOOR_FRONT_LEFT) == DOOR_STATUS_SWINGING) {
 				CAnimBlendAssociation *rollDoorAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_CAR_CLOSE_DOOR_ROLLING_LHS);
 
 				if (m_pMyVehicle->m_nGettingOutFlags & CAR_DOOR_FLAG_LF || rollDoorAssoc || (rollDoorAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_CAR_CLOSE_DOOR_ROLLING_LO_LHS))) {
@@ -2128,7 +2128,7 @@ CPlayerPed::SetNearbyPedsToInteractWithPlayer(void)
 				}
 			} else if (CPopulation::CanSolicitPlayerInCar(mi)) {
 				if (InVehicle() && m_pMyVehicle->IsVehicleNormal()) {
-					if (m_pMyVehicle->IsCar()) {
+					if (m_pMyVehicle->IsAutomobile()) {
 						CVector distToVeh = nearPed->GetPosition() - m_pMyVehicle->GetPosition();
 						if (distToVeh.MagnitudeSqr() < 25.0f && m_pMyVehicle->IsRoomForPedToLeaveCar(CAR_DOOR_LF, nil) && nearPed->m_objective == OBJECTIVE_NONE) {
 							nearPed->SetObjective(OBJECTIVE_SOLICIT_VEHICLE, m_pMyVehicle);

@@ -1,7 +1,12 @@
 #ifndef __GTA_CARCTRL_H__
 #define __GTA_CARCTRL_H__
 #include "PathFind.h"
+#include "Automobile.h"
+#include "Bike.h"
 #include "Boat.h"
+#include "Heli.h"
+#include "Plane.h"
+#include "Train.h"
 #include "Vehicle.h"
 
 #define GAME_SPEED_TO_METERS_PER_SECOND 50.0f
@@ -58,6 +63,9 @@ public:
 		TOTAL_CUSTOM_CLASSES = NUM_CAR_CLASSES + NUM_BOAT_CLASSES
 	};
 
+	// Instantiates the class a model declares. Every spawn site goes through it,
+	// so a model always becomes the class its type word names.
+	static CVehicle *GetNewVehicleDependingOnCarModel(int32 modelId, uint8 createdBy);
 	static void SwitchVehicleToRealPhysics(CVehicle*);
 	static void AddToCarArray(int32 id, int32 vehclass);
 	static void UpdateCarCount(CVehicle*, bool);

@@ -1244,7 +1244,7 @@ CPed::ProcessObjective(void)
 								}
 							}
 						}
-						if (m_carInObjective->IsUpsideDown() && m_carInObjective->m_vehType != VEHICLE_TYPE_BIKE) {
+						if (m_carInObjective->IsUpsideDown() && m_carInObjective->m_nVehicleType != VEHICLE_TYPE_BIKE) {
 							RestorePreviousObjective();
 							RestorePreviousState();
 							return;
@@ -2640,7 +2640,7 @@ CPed::PedAnimDoorOpenCB(CAnimBlendAssociation* animAssoc, void* arg)
 			}
 		}
 #ifdef CANCELLABLE_CAR_ENTER
-		if (!veh->IsDoorMissing(door) && veh->CanPedOpenLocks(ped) && veh->IsCar()) {
+		if (!veh->IsDoorMissing(door) && veh->CanPedOpenLocks(ped) && veh->IsAutomobile()) {
 			((CAutomobile*)veh)->Damage.SetDoorStatus(door, DOOR_STATUS_SWINGING);
 		}
 #endif
@@ -2649,12 +2649,12 @@ CPed::PedAnimDoorOpenCB(CAnimBlendAssociation* animAssoc, void* arg)
 		ped->bCancelEnteringCar = false;
 		return;
 	}
-	if (!veh->IsDoorMissing(door) && veh->IsCar()) {
+	if (!veh->IsDoorMissing(door) && veh->IsAutomobile()) {
 		((CAutomobile*)veh)->Damage.SetDoorStatus(door, DOOR_STATUS_SWINGING);
 	}
 
 	if (veh->m_vecMoveSpeed.Magnitude() > 0.2f ||
-		veh->IsCar() && veh->GetVehicleAppearance() == VEHICLE_APPEARANCE_HELI && ((CAutomobile*)veh)->m_nWheelsOnGround == 0) {
+		veh->IsAutomobile() && veh->GetVehicleAppearance() == VEHICLE_APPEARANCE_HELI && ((CAutomobile*)veh)->m_nWheelsOnGround == 0) {
 		ped->QuitEnteringCar();
 		if (ped->m_vehDoor != CAR_DOOR_LF && ped->m_vehDoor != CAR_DOOR_LR)
 			ped->SetFall(1000, ANIM_STD_HIGHIMPACT_LEFT, false);
@@ -2695,7 +2695,7 @@ CPed::PedAnimDoorOpenCB(CAnimBlendAssociation* animAssoc, void* arg)
 				ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), ASSOCGRP_STD, ANIM_STD_CAR_GET_IN_RHS);
 			}
 
-			if (ped->m_vehDoor == CAR_DOOR_RF && pedInSeat && veh->IsCar())
+			if (ped->m_vehDoor == CAR_DOOR_RF && pedInSeat && veh->IsAutomobile())
 				pedInSeat->SetObjective(OBJECTIVE_LEAVE_CAR, veh);
 		}
 		
@@ -2920,7 +2920,7 @@ CPed::PedAnimGetInCB(CAnimBlendAssociation *animAssoc, void *arg)
 	}
 	if (ped->IsPlayer() && ped->m_vehDoor == CAR_DOOR_LF
 		&& (Pads[0].GetAccelerate() >= 255.0f || Pads[0].GetBrake() >= 255.0f)
-		&& veh->IsCar() && !veh->pDriver) {
+		&& veh->IsAutomobile() && !veh->pDriver) {
 
 		if (!animAssoc || animAssoc->animId != ANIM_STD_CAR_JUMP_IN_LO_LHS)
 		if (((CAutomobile*)veh)->Damage.GetDoorStatus(DOOR_FRONT_LEFT) != DOOR_STATUS_MISSING)
@@ -2960,7 +2960,7 @@ CPed::PedAnimGetInCB(CAnimBlendAssociation *animAssoc, void *arg)
 		doorClosed = false;
 
 	} else if (!veh->IsDoorMissing(enterDoor)) {
-		if (veh->IsCar())
+		if (veh->IsAutomobile())
 			((CAutomobile*)veh)->Damage.SetDoorStatus(enterDoor, DOOR_STATUS_SWINGING);
 	}
 
@@ -3284,7 +3284,7 @@ CPed::PedAnimStepOutCarCB(CAnimBlendAssociation* animAssoc, void* arg)
 				break;
 		}
 		CPad* pad = CPad::GetPad(padNo);
-		bool engineIsIntact = veh->IsCar() && ((CAutomobile*)veh)->Damage.GetEngineStatus() >= 225;
+		bool engineIsIntact = veh->IsAutomobile() && ((CAutomobile*)veh)->Damage.GetEngineStatus() >= 225;
 		if (!pad->ArePlayerControlsDisabled() && veh->m_nDoorLock != CARLOCK_FORCE_SHUT_DOORS
 			&& (pad->GetTarget()
 				|| pad->NewState.LeftStickX
@@ -3485,7 +3485,7 @@ CPed::LineUpPedWithCar(PedLineUpPhase phase)
 				break;
 			case ANIM_STD_CAR_GET_IN_RHS:
 			case ANIM_STD_CAR_GET_IN_LHS:
-				if (veh && veh->IsCar() && veh->bIsBus) {
+				if (veh && veh->IsAutomobile() && veh->bIsBus) {
 					multExtractedFromAnimBus = true;
 					zBlend = Min(m_pVehicleAnim->GetProgress(), 0.5f) / 0.5f;
 				}
@@ -3553,7 +3553,7 @@ CPed::LineUpPedWithCar(PedLineUpPhase phase)
 	autoZPos = neededPos;
 
 	if (veh->bIsInWater) {
-		if (veh->m_vehType == VEHICLE_TYPE_BOAT && veh->IsUpsideDown())
+		if (veh->m_nVehicleType == VEHICLE_TYPE_BOAT && veh->IsUpsideDown())
 			autoZPos.z += 1.0f;
 	} else {
 		CPedPlacement::FindZCoorForPed(&autoZPos);
@@ -3634,7 +3634,7 @@ CPed::LineUpPedWithCar(PedLineUpPhase phase)
 	}
 
 	if (CTimer::GetTimeInMilliseconds() < m_nPedStateTimer)
-		stillGettingInOut = veh->m_vehType != VEHICLE_TYPE_BOAT || bOnBoat;
+		stillGettingInOut = veh->m_nVehicleType != VEHICLE_TYPE_BOAT || bOnBoat;
 
 	if (!stillGettingInOut) {
 		m_fRotationCur = m_fRotationDest;
@@ -4624,7 +4624,7 @@ CPed::ExitCar(void)
 				if (m_vehDoor == CAR_BOOT || m_vehDoor == CAR_BUMP_REAR) {
 					((CBike*)m_pMyVehicle)->KnockOffRider(WEAPONTYPE_UNARMED, 0, this, false);
 				}
-			} else if (m_pMyVehicle->IsCar()) {
+			} else if (m_pMyVehicle->IsAutomobile()) {
 				if (RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_ROLLOUT_LHS)) {
 					((CAutomobile*)m_pMyVehicle)->KnockPedOutCar(WEAPONTYPE_UNIDENTIFIED, CAR_DOOR_LF, this);
 				} else if (RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_ROLLOUT_RHS)) {
@@ -4645,7 +4645,7 @@ CPed::ExitCar(void)
 			LineUpPedWithCar(LINE_UP_TO_CAR_FALL);
 
 	} else if (exitAnim == ANIM_STD_ROLLOUT_LHS || exitAnim == ANIM_STD_ROLLOUT_RHS) {
-		if (animTime > 0.07f && m_pMyVehicle && m_pMyVehicle->IsCar()) {
+		if (animTime > 0.07f && m_pMyVehicle && m_pMyVehicle->IsAutomobile()) {
 			if (exitAnim == ANIM_STD_ROLLOUT_LHS) {
 				((CAutomobile*)m_pMyVehicle)->KnockPedOutCar(WEAPONTYPE_UNIDENTIFIED, CAR_DOOR_LF, this);
 			} else {
@@ -5514,7 +5514,7 @@ CPed::RegisterThreatWithGangPeds(CEntity *attacker)
 
 					if (nearVehDriver && nearVehDriver != this && nearVehDriver->m_nPedType == m_nPedType && nearVehDriver->CharCreatedBy == RANDOM_CHAR) {
 
-						if (nearVeh->IsVehicleNormal() && nearVeh->IsCar()) {
+						if (nearVeh->IsVehicleNormal() && nearVeh->IsAutomobile()) {
 							nearVeh->AutoPilot.m_nCruiseSpeed = GAME_SPEED_TO_CARAI_SPEED * nearVeh->m_pHandlingData->m_Transmission.m_fMaxCruiseVelocity * 0.8f;
 							nearVeh->AutoPilot.m_nCarMission = MISSION_RAMPLAYER_FARAWAY;
 							nearVeh->SetStatus(STATUS_PHYSICS);
@@ -5687,7 +5687,7 @@ CPed::DuckAndCover(void)
 
 		for (int i = 0; i < lastVehicle; i++) {
 			CVehicle *veh = (CVehicle*) vehicles[i];
-			if (veh->IsCar() && veh->m_vecMoveSpeed.Magnitude() <= 0.02f
+			if (veh->IsAutomobile() && veh->m_vecMoveSpeed.Magnitude() <= 0.02f
 				&& !veh->bIsBus && !veh->bIsVan && !veh->bIsBig
 				&& veh->m_numPedsUseItAsCover < 3) {
 
@@ -6296,7 +6296,7 @@ CPed::PositionPedOutOfCollision(void)
 	}
 	if (!foundAPos) {
 		// Top of veh.
-		if (veh->m_vehType == 0) {
+		if (veh->IsAutomobile()) {
 			newPos = vehCol->boundingBox.max.z * veh->GetUp() + vehPos;
 			newPos.z += FEET_OFFSET;
 			GetMatrix().SetTranslate(newPos);

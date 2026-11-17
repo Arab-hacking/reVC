@@ -1004,7 +1004,7 @@ ResolveVehicleAudioIndex(const CVehicle *veh)
 		return rawIdx;
 
 	int32 fallback = MI_ADMIRAL - MI_FIRST_VEHICLE;
-	if (veh->m_vehType == VEHICLE_TYPE_BIKE) {
+	if (veh->m_nVehicleType == VEHICLE_TYPE_BIKE) {
 		fallback = MI_PCJ600 - MI_FIRST_VEHICLE;
 		if (veh->m_pHandlingData != nil) {
 			switch (veh->m_pHandlingData->m_nVehicleId) {
@@ -1022,7 +1022,7 @@ ResolveVehicleAudioIndex(const CVehicle *veh)
 				break;
 			}
 		}
-	} else if (veh->m_vehType == VEHICLE_TYPE_BOAT) {
+	} else if (veh->m_nVehicleType == VEHICLE_TYPE_BOAT) {
 		fallback = MI_SPEEDER - MI_FIRST_VEHICLE;
 	} else if (veh->m_pHandlingData != nil) {
 		switch (veh->m_pHandlingData->m_nVehicleId) {
@@ -1111,7 +1111,7 @@ cAudioManager::ProcessVehicle(CVehicle* veh)
 		params.m_fVelocityChange = veh->AutoPilot.m_fMaxTrafficSpeed * 0.02f;
 	else
 		params.m_fVelocityChange = DotProduct(veh->m_vecMoveSpeed, veh->GetForward());
-	params.m_VehicleType = veh->m_vehType;
+	params.m_VehicleType = veh->m_nVehicleType;
 		
 	if (CGame::currArea == AREA_MALL && FindVehicleOfPlayer() != veh) {
 		ProcessVehicleOneShots(params);
@@ -1120,7 +1120,13 @@ cAudioManager::ProcessVehicle(CVehicle* veh)
 		return;
 	}
 	switch (params.m_VehicleType) {
-	case VEHICLE_TYPE_CAR:
+	// The quad, the monster truck and the trailer share the automobile audio
+	// path; the engine treats them as automobiles for engine and road noise.
+	case VEHICLE_TYPE_AUTOMOBILE:
+	case VEHICLE_TYPE_MTRUCK:
+	case VEHICLE_TYPE_QUAD:
+	case VEHICLE_TYPE_TRAILER:
+	case VEHICLE_TYPE_FPLANE:
 		UpdateGasPedalAudio(veh, params.m_VehicleType);
 		if (veh->m_modelIndex == MI_RCBANDIT || veh->m_modelIndex == MI_RCBARON) {
 			ProcessModelVehicle(params);
@@ -1170,7 +1176,8 @@ cAudioManager::ProcessVehicle(CVehicle* veh)
 		ProcessBoatMovingOverWater(params);
 		ProcessVehicleOneShots(params);
 		break;
-	case VEHICLE_TYPE_HELI: 
+	case VEHICLE_TYPE_HELI:
+	case VEHICLE_TYPE_FHELI:
 		ProcessCarHeli(params);
 		ProcessVehicleOneShots(params);
 		break;
@@ -1180,6 +1187,7 @@ cAudioManager::ProcessVehicle(CVehicle* veh)
 		ProcessVehicleFlatTyre(params);
 		break;
 	case VEHICLE_TYPE_BIKE:
+	case VEHICLE_TYPE_BMX:
 		UpdateGasPedalAudio(veh, params.m_VehicleType);
 		if (ProcessVehicleRoadNoise(params)) {
 			if (CWeather::WetRoads > 0.0f)
@@ -1794,7 +1802,7 @@ cAudioManager::ProcessVehicleFlatTyre(cVehicleParams& params)
 
 	if (params.m_fDistance < SQR(FLAT_TYRE_MAX_DIST)) {
 		switch (params.m_VehicleType) {
-		case VEHICLE_TYPE_CAR:
+		case VEHICLE_TYPE_AUTOMOBILE:
 			automobile = (CAutomobile*)params.m_pVehicle;
 			wheelBurst = FALSE;
 			for (int i = 0; i < 4; i++)
@@ -1856,7 +1864,7 @@ cAudioManager::ProcessVehicleRoadNoise(cVehicleParams& params)
 
 	if (params.m_fDistance < SQR(VEHICLE_ROAD_NOISE_MAX_DIST)) {
 		switch (params.m_VehicleType) {
-		case VEHICLE_TYPE_CAR:
+		case VEHICLE_TYPE_AUTOMOBILE:
 			wheelsOnGround = ((CAutomobile*)params.m_pVehicle)->m_nWheelsOnGround;
 			break;
 		case VEHICLE_TYPE_BIKE:
@@ -1917,7 +1925,7 @@ cAudioManager::ProcessWetRoadNoise(cVehicleParams& params)
 
 	if (params.m_fDistance < SQR(WET_ROAD_NOISE_MAX_DIST)) {
 		switch (params.m_VehicleType) {
-		case VEHICLE_TYPE_CAR:
+		case VEHICLE_TYPE_AUTOMOBILE:
 			wheelsOnGround = ((CAutomobile*)params.m_pVehicle)->m_nWheelsOnGround;
 			break;
 		case VEHICLE_TYPE_BIKE:
@@ -2011,7 +2019,7 @@ cAudioManager::ProcessVehicleEngine(cVehicleParams& params)
 						break;
 					}
 					switch (params.m_VehicleType) {
-					case VEHICLE_TYPE_CAR:
+					case VEHICLE_TYPE_AUTOMOBILE:
 						automobile = (CAutomobile*)params.m_pVehicle;
 						wheelsOnGround = automobile->m_nDriveWheelsOnGround;
 						wheelsOnGroundPrev = automobile->m_nDriveWheelsOnGroundPrev;
@@ -2182,7 +2190,7 @@ cAudioManager::UpdateGasPedalAudio(CVehicle* veh, int vehType)
 	float* gasPealAudioPtr;
 
 	switch(vehType) {
-	case VEHICLE_TYPE_CAR: gasPealAudioPtr = &((CAutomobile *)veh)->m_fGasPedalAudio; break;
+	case VEHICLE_TYPE_AUTOMOBILE: gasPealAudioPtr = &((CAutomobile *)veh)->m_fGasPedalAudio; break;
 	case VEHICLE_TYPE_BIKE: gasPealAudioPtr = &((CBike *)veh)->m_fGasPedalAudio; break;
 	default: return;
 	}
@@ -2375,7 +2383,13 @@ cAudioManager::ProcessPlayersVehicleEngine(cVehicleParams& params, CVehicle* veh
 		currentGear = params.m_pVehicle->m_nCurrentGear;
 
 	switch (params.m_VehicleType) {
-	case VEHICLE_TYPE_CAR:
+	// The quad, the monster truck and the trailer share the automobile audio
+	// path; the engine treats them as automobiles for engine and road noise.
+	case VEHICLE_TYPE_AUTOMOBILE:
+	case VEHICLE_TYPE_MTRUCK:
+	case VEHICLE_TYPE_QUAD:
+	case VEHICLE_TYPE_TRAILER:
+	case VEHICLE_TYPE_FPLANE:
 		automobile = (CAutomobile*)params.m_pVehicle;
 		wheelsOnGround = automobile->m_nDriveWheelsOnGround;
 		wheelsOnGroundPrev = automobile->m_nDriveWheelsOnGroundPrev;
@@ -2541,7 +2555,7 @@ PlayCruising:
 				AddPlayerCarSample(PLAYER_VEHICLE_ENGINE_VOLUME, freq, soundOffset + SFX_CAR_AFTER_ACCEL_1, engineSoundType, 64, TRUE);
 			}
 		} else {
-			stuckInSand = params.m_VehicleType == VEHICLE_TYPE_CAR && ((CAutomobile*)params.m_pVehicle)->bStuckInSand;
+			stuckInSand = params.m_VehicleType == VEHICLE_TYPE_AUTOMOBILE && ((CAutomobile*)params.m_pVehicle)->bStuckInSand;
 			if (accelerateState < 150 || wheelsOnGround == 0 || params.m_pVehicle->bIsHandbrakeOn || lostTraction
 				|| (currentGear < 2 && params.m_fVelocityChange - velocityChangeForAudio < 0.01f) || brakeState > 0) {
 				if (((wheelsOnGround == 0 || params.m_pVehicle->bIsHandbrakeOn || lostTraction) && !stuckInSand) || brakeState > 0) {
@@ -2703,7 +2717,7 @@ cAudioManager::ProcessVehicleSkidding(cVehicleParams& params)
 
 	if (params.m_fDistance < SQR(VEHICLE_SKIDDING_MAX_DIST)) {
 		switch (params.m_VehicleType) {
-		case VEHICLE_TYPE_CAR:
+		case VEHICLE_TYPE_AUTOMOBILE:
 			automobile = (CAutomobile*)params.m_pVehicle;
 			numWheels = 4;
 			wheelStateArr = automobile->m_aWheelState;
@@ -3163,7 +3177,7 @@ cAudioManager::ProcessCarBombTick(cVehicleParams& params)
 	if (params.m_fDistance < SQR(CAR_BOMB_TICK_MAX_DIST)) {
 		if (params.m_pVehicle->bEngineOn) {
 			switch (params.m_VehicleType) {
-			case VEHICLE_TYPE_CAR:
+			case VEHICLE_TYPE_AUTOMOBILE:
 				bombType = params.m_pVehicle->m_bombType;
 				break;
 			case VEHICLE_TYPE_BIKE:
@@ -3332,7 +3346,7 @@ cAudioManager::ProcessVehicleOneShots(cVehicleParams& params)
 			SET_SOUND_REFLECTION(TRUE);
 			break;
 		case SOUND_CAR_ENGINE_START:
-			if (params.m_pVehicle->GetVehicleAppearance() != VEHICLE_APPEARANCE_CAR
+			if (params.m_pVehicle->GetVehicleAppearance() != VEHICLE_APPEARANCE_AUTOMOBILE
 				|| params.m_pVehicle->m_modelIndex == MI_CADDY)
 				continue;
 			Vol = VEHICLE_ONE_SHOT_CAR_ENGINE_START_VOLUME;

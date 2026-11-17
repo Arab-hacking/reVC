@@ -740,7 +740,7 @@ CWeapon::FireMelee(CEntity *shooter, CVector &fireSource)
 		}
 	}
 	CVehicle *nearVeh = (CVehicle*)CWorld::TestSphereAgainstWorld(fireSource, info->m_fRadius, nil, false, true, false, false, false, false);
-	if (nearVeh && nearVeh->IsCar())
+	if (nearVeh && nearVeh->IsAutomobile())
 	{
 		CAutomobile *nearCar = (CAutomobile*)nearVeh;
 		m_eWeaponState = WEAPONSTATE_MELEE_MADECONTACT;
@@ -3312,7 +3312,7 @@ CWeapon::CheckForShootingVehicleOccupant(CEntity **victim, CColPoint *point, eWe
 			}
 		}
 	}
-	if (veh->IsCar()) {
+	if (veh->IsAutomobile()) {
 		CVector distVec = target - source;
 		if (DotProduct(distVec, veh->GetForward()) < 0.0f && DotProduct(distVec, veh->GetUp()) <= 0.0f) {
 			CColModel *colModel = veh->GetColModel();

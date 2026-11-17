@@ -14,6 +14,10 @@
 typedef CPool<CPtrNode> CCPtrNodePool;
 typedef CPool<CEntryInfoNode> CEntryInfoNodePool;
 typedef CPool<CPed,CPlayerPed> CPedPool;
+// A slot is one fixed block, so the entry type must be the largest vehicle the
+// engine can construct. CAutomobile is bigger than CBike, CBoat, CHeli, CPlane
+// and CTrain, so it sizes the slot; every class is placed into these blocks by
+// CVehicle::operator new and keeps its real dynamic type.
 typedef CPool<CVehicle,CAutomobile> CVehiclePool;
 typedef CPool<CBuilding> CBuildingPool;
 typedef CPool<CTreadable> CTreadablePool;

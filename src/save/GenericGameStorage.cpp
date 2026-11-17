@@ -177,6 +177,7 @@ WritePoolSaveBlock(int file, uint32 &totalSize, void (*save)(uint8 *, uint32 *),
 	return true;
 }
 
+// Type words stored by the legacy save format: 0 car, 1 boat, 5 bike.
 static bool
 IsLoadedSaveVehicleModel(int16 id, uint32 type)
 {
@@ -185,11 +186,17 @@ IsLoadedSaveVehicleModel(int16 id, uint32 type)
 	CBaseModelInfo *base = CModelInfo::GetModelInfo(id);
 	if (base == nil || base->GetModelType() != MITYPE_VEHICLE)
 		return false;
-	const int vehicleType = ((CVehicleModelInfo*)base)->m_vehicleType;
-	// Automobiles also cover the heli/plane models in the stock save format.
-	if (type == VEHICLE_TYPE_CAR)
-		return vehicleType == VEHICLE_TYPE_CAR || vehicleType == VEHICLE_TYPE_HELI || vehicleType == VEHICLE_TYPE_PLANE;
-	return vehicleType == (int)type;
+	const eVehicleType vehicleType = ((CVehicleModelInfo*)base)->m_nVehicleType;
+	// The "car" class of the stock save format also covers helis and planes.
+	if (type == 0)
+		return vehicleType == VEHICLE_TYPE_AUTOMOBILE || vehicleType == VEHICLE_TYPE_HELI ||
+		       vehicleType == VEHICLE_TYPE_PLANE || vehicleType == VEHICLE_TYPE_FHELI ||
+		       vehicleType == VEHICLE_TYPE_FPLANE;
+	if (type == 1)
+		return vehicleType == VEHICLE_TYPE_BOAT;
+	if (type == 5)
+		return vehicleType == VEHICLE_TYPE_BIKE;
+	return false;
 }
 
 static bool
@@ -206,7 +213,7 @@ CheckSavedVehiclePool(const uint8 *buf, std::size_t size)
 {
 	return ValidateSavedVehiclePool(buf, size,
 		CAutomobile::nSaveStructSize, CBoat::nSaveStructSize, CBike::nSaveStructSize,
-		VEHICLE_TYPE_CAR, VEHICLE_TYPE_BOAT, VEHICLE_TYPE_BIKE,
+		0, 1, 5,
 		IsLoadedSaveVehicleModel);
 }
 

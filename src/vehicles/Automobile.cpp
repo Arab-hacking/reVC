@@ -77,7 +77,8 @@ CAutomobile::CAutomobile(int32 id, uint8 CreatedBy)
 {
 	int i;
 
-	m_vehType = VEHICLE_TYPE_CAR;
+	m_nVehicleType = VEHICLE_TYPE_AUTOMOBILE;
+m_nVehicleSubType = VEHICLE_TYPE_AUTOMOBILE;
 
 	CVehicleModelInfo *mi = (CVehicleModelInfo*)CModelInfo::GetModelInfo(id);
 	m_fFireBlowUpTimer = 0.0f;
@@ -1752,7 +1753,7 @@ CAutomobile::PreRender(void)
 
 	// Wheel particles
 
-	if(GetModelIndex() == MI_DODO || GetVehicleAppearance() != VEHICLE_APPEARANCE_CAR){
+	if(GetModelIndex() == MI_DODO || GetVehicleAppearance() != VEHICLE_APPEARANCE_AUTOMOBILE){
 		; // nothing
 	}else if(GetModelIndex() == MI_RCBANDIT){
 		for(i = 0; i < 4; i++){
@@ -4004,7 +4005,7 @@ CAutomobile::RcbanditCheck1CarWheels(CPtrList &list)
 
 	for(node = list.first; node; node = node->next){
 		car = (CAutomobile*)node->item;
-		if(this != car && car->IsCar() && car->GetModelIndex() != MI_RCBANDIT &&
+		if(this != car && car->IsAutomobile() && car->GetModelIndex() != MI_RCBANDIT &&
 		   car->m_scanCode != CWorld::GetCurrentScanCode()){
 			car->m_scanCode = CWorld::GetCurrentScanCode();
 
@@ -4262,7 +4263,7 @@ CAutomobile::VehicleDamage(float impulse, uint16 damagedPiece)
 			   m_pDamageEntity && m_pDamageEntity->IsVehicle() &&
 			   (this != FindPlayerVehicle() || ((CVehicle*)m_pDamageEntity)->VehicleCreatedBy == MISSION_VEHICLE) &&
 			   ((CVehicle*)m_pDamageEntity)->pDriver){
-				if(GetVehicleAppearance() == VEHICLE_APPEARANCE_CAR)
+				if(GetVehicleAppearance() == VEHICLE_APPEARANCE_AUTOMOBILE)
 					pDriver->Say(SOUND_PED_CRASH_CAR);
 				else
 					pDriver->Say(SOUND_PED_CRASH_VEHICLE);
@@ -5121,7 +5122,7 @@ CAutomobile::SetupSuspensionLines(void)
 void
 CAutomobile::ScanForCrimes(void)
 {
-	if(FindPlayerVehicle() && FindPlayerVehicle()->IsCar())
+	if(FindPlayerVehicle() && FindPlayerVehicle()->IsAutomobile())
 		if(FindPlayerVehicle()->IsAlarmOn())
 			// if player's alarm is on, increase wanted level
 			if((FindPlayerVehicle()->GetPosition() - GetPosition()).MagnitudeSqr() < sq(20.0f))
@@ -5205,7 +5206,7 @@ CPed::MakeTyresMuddySectorList(CPtrList &list)
 			veh->m_scanCode = CWorld::GetCurrentScanCode();
 
 			if (Abs(GetPosition().x - veh->GetPosition().x) < 10.0f && Abs(GetPosition().y - veh->GetPosition().y) < 10.0f) {				
-				if (veh->IsCar()) {
+				if (veh->IsAutomobile()) {
 					bike = nil;
 					car = (CAutomobile*)veh;
 				} else if (veh->IsBike()) {

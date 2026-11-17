@@ -2,6 +2,7 @@
 #define __GTA_VEHICLEMODELINFO_H__
 
 #include "ClumpModelInfo.h"
+#include "eVehicleType.h"
 
 enum {
 #ifdef SA_VEHICLE_MODELS
@@ -32,16 +33,6 @@ enum {
 	ATOMIC_FLAG_REARDOOR	= 0x200,
 	ATOMIC_FLAG_FRONTDOOR	= 0x400,
 	ATOMIC_FLAG_NOCULL	= 0x800,
-};
-
-enum eVehicleType {
-	VEHICLE_TYPE_CAR,
-	VEHICLE_TYPE_BOAT,
-	VEHICLE_TYPE_TRAIN,
-	VEHICLE_TYPE_HELI,
-	VEHICLE_TYPE_PLANE,
-	VEHICLE_TYPE_BIKE,
-	NUM_VEHICLE_TYPES
 };
 
 enum eCarPositions
@@ -84,7 +75,7 @@ public:
 	uint8 m_lastColour1;
 	uint8 m_lastColour2;
 	char m_gameName[10];
-	int32 m_vehicleType;
+	eVehicleType m_nVehicleType;
 	float m_wheelScale;
 	union {
 		int16 m_wheelId;
@@ -161,7 +152,7 @@ public:
 	// scale the wheel meshes have to be rendered with: SA models carry their
 	// wheels at their final size, VC models get their separate wheel model scaled
 	// by m_wheelScale
-	float GetWheelRenderScale(void) { return m_vehicleType == VEHICLE_TYPE_CAR || m_bSAWheelMesh ? 1.0f : m_wheelScale; }
+	float GetWheelRenderScale(void) { return m_nVehicleType == VEHICLE_TYPE_AUTOMOBILE || m_bSAWheelMesh ? 1.0f : m_wheelScale; }
 	// true when the wheel meshes came with the model (SA style)
 	bool HasOwnWheelMeshes(void) { return m_bSAWheelMesh; }
 	static RwObject *MoveObjectsCB(RwObject *object, void *data);
@@ -182,7 +173,7 @@ public:
 	void SetVehicleComponentFlags(RwFrame *frame, uint32 flags);
 	void PreprocessHierarchy(void);
 	void GetWheelPosn(int32 n, CVector &pos);
-	const CVector &GetFrontSeatPosn(void) { return m_vehicleType == VEHICLE_TYPE_BOAT ? m_positions[BOAT_POS_FRONTSEAT] : m_positions[CAR_POS_FRONTSEAT]; }
+	const CVector &GetFrontSeatPosn(void) { return m_nVehicleType == VEHICLE_TYPE_BOAT ? m_positions[BOAT_POS_FRONTSEAT] : m_positions[CAR_POS_FRONTSEAT]; }
 
 	int32 ChooseComponent(void);
 	int32 ChooseSecondComponent(void);

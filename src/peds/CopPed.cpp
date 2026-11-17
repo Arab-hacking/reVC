@@ -282,7 +282,7 @@ CCopPed::ScanForCrimes(void)
 	CVehicle *playerVeh = FindPlayerVehicle();
 
 	// Look for car alarms
-	if (playerVeh && playerVeh->IsCar()) {
+	if (playerVeh && playerVeh->IsAutomobile()) {
 		if (playerVeh->IsAlarmOn()) {
 			if ((playerVeh->GetPosition() - GetPosition()).MagnitudeSqr() < sq(20.0f))
 				FindPlayerPed()->SetWantedLevelNoDrop(1);
@@ -845,7 +845,7 @@ CCopPed::ProcessHeliSwat(void)
 void
 CCopPed::ProcessStingerCop(void)
 {
-	if (m_pStinger->bIsDeployed || FindPlayerVehicle() && (FindPlayerVehicle()->IsCar() || FindPlayerVehicle()->IsBike())) {
+	if (m_pStinger->bIsDeployed || FindPlayerVehicle() && (FindPlayerVehicle()->IsAutomobile() || FindPlayerVehicle()->IsBike())) {
 		if (m_pStinger->bIsDeployed) {
 			m_pStinger->Process();
 		} else {

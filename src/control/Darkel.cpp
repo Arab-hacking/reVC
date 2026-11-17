@@ -212,7 +212,7 @@ CDarkel::RegisterCarBlownUpByPlayer(CVehicle *vehicle)
 	}
 	RegisteredKills[vehicle->GetModelIndex()]++;
 	switch (vehicle->GetVehicleAppearance()) {
-	case VEHICLE_APPEARANCE_CAR:
+	case VEHICLE_APPEARANCE_AUTOMOBILE:
 	case VEHICLE_APPEARANCE_BIKE:
 		CStats::CarsExploded++;;
 		break;

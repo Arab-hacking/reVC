@@ -829,13 +829,9 @@ SpawnCar(int id)
 				return;
 		}
 
-		CVehicle *v;
-		if(CModelInfo::IsBoatModel(id))
-			v = new CBoat(id, RANDOM_VEHICLE);
-		else if(CModelInfo::IsBikeModel(id))
-			v = new CBike(id, RANDOM_VEHICLE);
-		else
-			v = new CAutomobile(id, RANDOM_VEHICLE);
+		CVehicle *v = CCarCtrl::GetNewVehicleDependingOnCarModel(id, RANDOM_VEHICLE);
+		if(v == nil)
+			return;
 
 		v->bHasBeenOwnedByPlayer = true;
 		if(carCol1)
@@ -863,7 +859,7 @@ FixCar(void)
 	if(veh == nil)
 		return;
 	veh->m_fHealth = 1000.0f;
-	if(veh->IsCar()){
+	if(veh->IsAutomobile()){
 		((CAutomobile*)veh)->Damage.SetEngineStatus(0);
 		((CAutomobile*)veh)->Fix();
 	}else if(veh->IsBike()){
@@ -889,7 +885,7 @@ TeleportToWaypoint(void)
 static void
 SwitchCarCollision(void)
 {
-	if (FindPlayerVehicle() && FindPlayerVehicle()->IsCar())
+	if (FindPlayerVehicle() && FindPlayerVehicle()->IsAutomobile())
 		FindPlayerVehicle()->bUsesCollision = !FindPlayerVehicle()->bUsesCollision;
 }
 
@@ -909,7 +905,7 @@ PlaceOnRoad(void)
 	if(veh == nil)
 		return;
 
-	if(veh->IsCar())
+	if(veh->IsAutomobile())
 		((CAutomobile*)veh)->PlaceOnRoadProperly();
 }
 
