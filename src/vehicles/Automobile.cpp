@@ -829,7 +829,7 @@ CAutomobile::ProcessControl(void)
 		brake = m_fBrakePedal * m_pHandlingData->m_fBrakeDeceleration * CTimer::GetTimeStep();
 		bool neutralHandling = GetStatus() != STATUS_PLAYER && GetStatus() != STATUS_PLAYER_REMOTE && (m_pHandlingData->m_nHandlingFlags & VEHICLE_HANDLING_NPC_NEUTRAL_HANDL);
 		float brakeBiasFront = neutralHandling ? 1.0f : 2.0f*m_pHandlingData->m_fBrakeBias;
-		float brakeBiasRear  = neutralHandling ? 1.0f : 2.0f-m_pHandlingData->m_fBrakeBias;	// looks like a bug, but it was correct in III...
+		float brakeBiasRear  = neutralHandling ? 1.0f : 2.0f-brakeBiasFront;
 		float tractionBiasFront = neutralHandling ? 1.0f : 2.0f*m_pHandlingData->m_fTractionBias;
 		float tractionBiasRear  = neutralHandling ? 1.0f : 2.0f-tractionBiasFront;
 

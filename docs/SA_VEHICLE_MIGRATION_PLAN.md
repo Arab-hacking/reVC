@@ -100,10 +100,9 @@ Still open in this stage:
 
 Remaining work:
 
-- The brake and traction bias in `ProcessControl` still carries the VC
-  `2 * m_fBrakeBias` / `2 - m_fBrakeBias` split with the `// looks like a bug`
-  note; the reference uses `2 * bias` on both axles. Changing it is a handling
-  change, so it is left for a stage that can be driven and compared.
+- The brake and traction bias in `ProcessControl` now splits as the reference
+  does, `2 * bias` on the front axle and `2 - 2 * bias` on the rear; the VC
+  comment about the III axle split is gone.
 - The stabiliser torque uses the collision model's bounding box, not
   `m_vecCentreOfMass`; the centre of mass only feeds the inertia offset.
 
