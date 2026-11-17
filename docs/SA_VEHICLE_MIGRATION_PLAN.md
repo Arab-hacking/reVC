@@ -43,24 +43,29 @@ when the VC code path it replaces is deleted, not disabled.
 
 Tests: `tests/TransmissionTests.cpp`, `tests/HandlingDataMgrTests.cpp`.
 
-## Stage 2 — vehicle identity and class hierarchy
+## Stage 2 — vehicle identity and class hierarchy (done)
 
-Introduce `eVehicleType` (`VEHICLE_TYPE_IGNORE` −1 … `VEHICLE_TYPE_TRAILER` 11)
-in `eVehicleType.h` and switch to it in the same stage; it replaces the
-model-info `VEHICLE_TYPE_CAR/BOAT/TRAIN/HELI/PLANE/BIKE` enumeration, which has
-a different order and no monster-truck, quad, BMX, trailer, fake-heli or
-fake-plane class. The header is added together with its first user so no
+`eVehicleType` (`VEHICLE_TYPE_IGNORE` −1 … `VEHICLE_TYPE_TRAILER` 11) lives in
+`eVehicleType.h` and replaces the model-info
+`VEHICLE_TYPE_CAR/BOAT/TRAIN/HELI/PLANE/BIKE` enumeration, which had a different
+order and no monster-truck, quad, BMX, trailer, fake-heli or fake-plane class.
+`CVehicleModelInfo::ms_vehicleDescs` is indexed by it, one node table per class. The header is added together with its first user so no
 unreferenced file is left behind.
 
-- `CVehicle::m_nVehicleType` / `m_nVehicleSubType`, both derived from the
-  handling record and the model info, replacing the single `m_vehType`.
-- `CVehiclePool` becomes `CPool<CVehicle, CHeli>`; the largest allocation unit
-  must cover `CHeli` before `CVehiclePool::New` hands out smaller objects.
-- New classes with canonical constructors: `CMonsterTruck`, `CQuadBike`,
-  `CBmx`, `CTrailer`. `CVehicle::IsCar/IsBoat/IsTrain/IsHeli/IsPlane/IsBike`
-  are re-expressed in terms of the new type word.
-- Model-info admission (`CVehicleModelInfo::SetModelInfo`) maps the handling
-  record plus the model to a `eVehicleType` instead of the VC table.
+- `CVehicle::m_nVehicleType` / `m_nVehicleSubType` replace the single
+  `m_vehType`; the `IsAutomobile`/`IsBike`/`IsBoat`/… and `IsSub*` predicates
+  come straight from the reference, and the VC `IsCar` accessor is gone.
+- `CVehiclePool` keeps `CAutomobile` as its entry type: it is the largest class
+  the engine constructs, so every derived instance fits a slot.
+- `CFileLoader::LoadVehicleObject` accepts the whole SA type column and
+  `CCarCtrl::GetNewVehicleDependingOnCarModel` instantiates the class, so the
+  VC "boat / bike / else car" ladders are gone from every spawn site.
+- `CVehicle::GetVehicleAppearance` follows the reference model-flag mask.
+- Save/load maps the legacy on-disk type words (`0..5`) in both directions.
+
+Still missing from this stage: the classes themselves (`CMonsterTruck`,
+`CQuadBike`, `CBmx`, `CTrailer`) are declared in the type word and built as
+their nearest implemented parent until stage 4 adds them.
 
 ## Stage 3 — automobile physics
 
