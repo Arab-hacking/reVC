@@ -67,7 +67,31 @@ Still missing from this stage: the classes themselves (`CMonsterTruck`,
 `CQuadBike`, `CBmx`, `CTrailer`) are declared in the type word and built as
 their nearest implemented parent until stage 4 adds them.
 
-## Stage 3 — automobile physics
+## Stage 3 — automobile physics (in progress)
+
+Done so far:
+
+- Springs and dampers: `CPhysical::ApplySpringCollision`,
+  `ApplySpringCollisionAlt` and `ApplySpringDampening` carry the SA formulas and
+  the 0.25 / 0.998 limits the executable keeps at `0x8CD7A0` and `0x8CD7A4`.
+  A spring reports the damping force it can carry, the damper is clamped by it.
+- `CAutomobile::DoBurstAndSoftGroundRatios` owns the per-wheel compression
+  (missing wheel, burst tyre, sand, offroad flags); `CAutomobile::ProcessSuspension`
+  owns the spring/damper stage, the hydraulic and Vortex tweaks, and the
+  roll-back-onto-wheels step. `CBike::ProcessControl` uses the same order.
+- The Rhino carries the eight extra track suspension lines the reference builds
+  in `SetupSuspensionLines`, with their lengths stored in the rear door angles.
+
+Still open in this stage:
+
+- `SURFACE_RAILTRACK` only exists in the SA surface table. The repository still
+  loads the 35-entry VC `surface.dat`, so the rail-bed wheel drop cannot be
+  ported until `CSurfaceTable` moves to the SA 179-entry table; the rest of
+  `DoBurstAndSoftGroundRatios` is done.
+- `m_fSuspensionHighSpdComDamp` is not read yet: it belongs to the wheel stage
+  below, not to the springs.
+
+Remaining work:
 
 - Suspension: per-wheel `CAutomobile::ProcessSuspension` over
   `CPhysical::ApplySpringCollision`/`ApplySpringDamp`, driven by the SA
