@@ -45,10 +45,12 @@ Tests: `tests/TransmissionTests.cpp`, `tests/HandlingDataMgrTests.cpp`.
 
 ## Stage 2 — vehicle identity and class hierarchy
 
-`eVehicleType` (`VEHICLE_TYPE_IGNORE` −1 … `VEHICLE_TYPE_TRAILER` 11) replaces
-the model-info `VEHICLE_TYPE_CAR/BOAT/TRAIN/HELI/PLANE/BIKE` enumeration, which
-has a different order and no monster-truck, quad, BMX, trailer, fake-heli or
-fake-plane class.
+Introduce `eVehicleType` (`VEHICLE_TYPE_IGNORE` −1 … `VEHICLE_TYPE_TRAILER` 11)
+in `eVehicleType.h` and switch to it in the same stage; it replaces the
+model-info `VEHICLE_TYPE_CAR/BOAT/TRAIN/HELI/PLANE/BIKE` enumeration, which has
+a different order and no monster-truck, quad, BMX, trailer, fake-heli or
+fake-plane class. The header is added together with its first user so no
+unreferenced file is left behind.
 
 - `CVehicle::m_nVehicleType` / `m_nVehicleSubType`, both derived from the
   handling record and the model info, replacing the single `m_vehType`.
