@@ -29,6 +29,7 @@
 #include "Shadows.h"
 #include "Wanted.h"
 #include "SaveBuf.h"
+#include "ControllerConfig.h"
 
 #define INVALID_ORIENTATION (-9999.99f)
 
@@ -40,6 +41,11 @@ float fShapeLength = 0.4f;
 float fShapeTime = 0.05f;
 float fRangeMult = 0.6f;
 float fTimeMult = 1.2f/CBoat::WAKE_LIFETIME;
+
+static const float BOAT_STEER_SMOOTH_RATE = 0.2f;
+static const float BOAT_MOUSE_STEER_SCALE = -0.0035f;
+static const float BOAT_STEER_DAMP_THRESHOLD = 0.5f;
+static const float BOAT_STEER_DAMP_BASE = 0.985f;
 
 CBoat *CBoat::apFrameWakeGeneratingBoats[4];
 
@@ -55,9 +61,6 @@ CBoat::CBoat(int mi, uint8 owner) : CVehicle(owner)
 	CVehicleModelInfo *minfo = (CVehicleModelInfo*)CModelInfo::GetModelInfo(mi);
 	m_nVehicleType = VEHICLE_TYPE_BOAT;
 m_nVehicleSubType = VEHICLE_TYPE_BOAT;
-	m_fAccelerate = 0.0f;
-	m_fBrake = 0.0f;
-	m_fSteeringLeftRight = 0.0f;
 	m_nPadID = 0;
 	m_fMovingRotation = 0.0f;
 	m_fMovingSpeed = 0.0f;
@@ -749,26 +752,41 @@ CBoat::ProcessControl(void)
 void
 CBoat::ProcessControlInputs(uint8 pad)
 {
-	m_nPadID = pad;
-	if(m_nPadID > 3)
-		m_nPadID = 3;
+	m_nPadID = Min(pad, (uint8)3);
+	CPad *padState = CPad::GetPad(pad);
 
-	m_fBrake += (CPad::GetPad(pad)->GetBrake()/255.0f - m_fBrake)*0.1f;
-	m_fBrake = Clamp(m_fBrake, 0.0f, 1.0f);
+	m_fBrakePedal = Clamp(m_fBrakePedal + (padState->GetBrake()/255.0f - m_fBrakePedal)*0.1f, 0.0f, 1.0f);
+	if(m_fBrakePedal >= 0.05f){
+		m_fGasPedal = m_fBrakePedal * -0.3f;
+	}else{
+		m_fBrakePedal = 0.0f;
+		m_fGasPedal = padState->GetAccelerate()/255.0f;
+	}
 
-	if(m_fBrake < 0.05f){
-		m_fBrake = 0.0f;
-		m_fAccelerate += (CPad::GetPad(pad)->GetAccelerate()/255.0f - m_fAccelerate)*0.1f;
-		m_fAccelerate = Clamp(m_fAccelerate, 0.0f, 1.0f);
-	}else
-		m_fAccelerate = -m_fBrake*0.3f;
+	// The reference also suppresses the mouse rudder in its mouse look mode;
+	// this port has no such mode, so the mouse always steers here.
+	int16 steerInput = padState->GetSteeringLeftRight();
+	if(CCamera::m_bUseMouse3rdPerson && !CVehicle::m_bDisableMouseSteering){
+		if(CPad::NewMouseControllerState.x == 0.0f && m_fRawSteerAngle == 0.0f ||
+		   CVehicle::m_nLastControlInput != MOUSE || steerInput != 0){
+			m_fRawSteerAngle += (-steerInput/128.0f - m_fRawSteerAngle) * BOAT_STEER_SMOOTH_RATE * CTimer::GetTimeStep();
+			CVehicle::m_nLastControlInput = KEYBOARD;
+		}else{
+			m_fRawSteerAngle += CPad::NewMouseControllerState.x * BOAT_MOUSE_STEER_SCALE;
+			CVehicle::m_nLastControlInput = MOUSE;
 
-	m_fSteeringLeftRight += (-CPad::GetPad(pad)->GetSteeringLeftRight()/128.0f - m_fSteeringLeftRight)*0.2f;
-	m_fSteeringLeftRight = Clamp(m_fSteeringLeftRight, -1.0f, 1.0f);
+			// the rudder is damped close to the centre line
+			if(Abs(m_fRawSteerAngle) < BOAT_STEER_DAMP_THRESHOLD)
+				m_fRawSteerAngle *= Pow(BOAT_STEER_DAMP_BASE, CTimer::GetTimeStep());
+		}
+	}else{
+		m_fRawSteerAngle += (-steerInput/128.0f - m_fRawSteerAngle) * BOAT_STEER_SMOOTH_RATE * CTimer::GetTimeStep();
+		CVehicle::m_nLastControlInput = KEYBOARD;
+	}
 
-	float steeringSq = m_fSteeringLeftRight < 0.0f ? -SQR(m_fSteeringLeftRight) : SQR(m_fSteeringLeftRight);
-	m_fSteerAngle = m_pHandlingData->m_fSteeringLock * DEGTORAD(steeringSq);
-	m_fGasPedal = m_fAccelerate;
+	m_fRawSteerAngle = Clamp(m_fRawSteerAngle, -1.0f, 1.0f);
+	float signedSquare = m_fRawSteerAngle < 0.0f ? -SQR(m_fRawSteerAngle) : SQR(m_fRawSteerAngle);
+	m_fSteerAngle = m_pHandlingData->m_fSteeringLock * DEGTORAD(signedSquare);
 }
 
 float fSeaPlaneWaterResistance = 30.0f;

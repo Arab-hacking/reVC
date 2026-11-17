@@ -5,6 +5,7 @@
 #include "Timer.h"
 #include "Pad.h"
 #include "Vehicle.h"
+#include "ControllerConfig.h"
 #include "Bike.h"
 #include "Automobile.h"
 #include "Pools.h"
@@ -44,6 +45,7 @@ bool CVehicle::bCheat10;
 bool CVehicle::bHoverCheat;
 bool CVehicle::bAllTaxisHaveNitro;
 bool CVehicle::m_bDisableMouseSteering = true;
+int32 CVehicle::m_nLastControlInput = KEYBOARD;
 bool CVehicle::bDisableRemoteDetonation;
 bool CVehicle::bDisableRemoteDetonationOnContact;
 #ifndef MASTER

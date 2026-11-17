@@ -35,9 +35,6 @@ public:
 	CEntity *m_pSetOnFireEntity;
 	float m_skimmerThingTimer;
 	bool m_boat_unused3;
-	float m_fAccelerate;
-	float m_fBrake;
-	float m_fSteeringLeftRight;
 	uint8 m_nPadID;
 	int32 m_boat_unused4;
 	float m_fVolumeUnderWater;

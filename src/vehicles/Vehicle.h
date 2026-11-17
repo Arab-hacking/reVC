@@ -269,6 +269,7 @@ public:
 	int8 m_comedyControlState;
 	CStoredCollPoly m_aCollPolys[2];     // poly which is under front/rear part of car
 	float m_fSteerInput;
+	float m_fRawSteerAngle;
 	eVehicleType m_nVehicleType;
 	eVehicleType m_nVehicleSubType;	// differs from the type only for vehicles that behave as two classes, e.g. the vortex
 
@@ -421,6 +422,7 @@ public:
 	static bool bHoverCheat;
 	static bool bAllTaxisHaveNitro;
 	static bool m_bDisableMouseSteering;
+	static int32 m_nLastControlInput;
 	// Extra air resistance inside the cull zones that carry the flag.
 	static constexpr float m_fAirResistanceMult = 2.5f;
 	static bool bDisableRemoteDetonation;
