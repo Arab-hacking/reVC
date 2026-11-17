@@ -9,6 +9,24 @@ CDoor::CDoor(void)
 }
 
 void
+CDoor::SetExtraWheelPositions(float wheel1, float wheel2, float wheel3, float wheel4)
+{
+	m_fMaxAngle = wheel1;
+	m_fMinAngle = wheel2;
+	m_fAngle = wheel3;
+	m_fPrevAngle = wheel4;
+}
+
+void
+CDoor::GetExtraWheelPositions(float &wheel1, float &wheel2, float &wheel3, float &wheel4)
+{
+	wheel1 = m_fMaxAngle;
+	wheel2 = m_fMinAngle;
+	wheel3 = m_fAngle;
+	wheel4 = m_fPrevAngle;
+}
+
+void
 CDoor::Open(float ratio)
 {
 	float open;

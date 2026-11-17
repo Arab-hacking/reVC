@@ -41,6 +41,11 @@ public:
 	float GetAngleOpenRatio(void);
 	bool IsFullyOpen(void);
 	bool IsClosed(void);	// dead
+
+	// The Rhino stores the suspension lengths of its eight extra track wheels
+	// in the angles of its two rear doors, hence these accessors.
+	void SetExtraWheelPositions(float wheel1, float wheel2, float wheel3, float wheel4);
+	void GetExtraWheelPositions(float &wheel1, float &wheel2, float &wheel3, float &wheel4);
 };
 
 class CTrainDoor

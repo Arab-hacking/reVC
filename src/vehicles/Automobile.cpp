@@ -63,6 +63,15 @@ int g_iLastProcessedModelIndexAutoEnt = 0;
 
 RwObject *GetCurrentAtomicObjectCB(RwObject *object, void *data);
 
+// Number of suspension lines the collision model carries: one per wheel, plus
+// eight more for the Rhino so that its wide tracks get three passes.
+#define NUM_AUTOMOBILE_SUSP_LINES 4
+#define NUM_RHINO_EXTRA_SUSP_LINES 8
+#define NUM_RHINO_SUSP_LINES (NUM_AUTOMOBILE_SUSP_LINES + NUM_RHINO_EXTRA_SUSP_LINES)
+
+// How hard a car resting on its side is rolled back onto its wheels.
+#define ROLL_ONTO_WHEELS_FORCE (0.0025f)
+
 bool CAutomobile::m_sAllTaxiLights;
 
 const uint32 CAutomobile::nSaveStructSize =
@@ -202,8 +211,11 @@ m_nVehicleSubType = VEHICLE_TYPE_AUTOMOBILE;
 
 	CColModel *colModel = mi->GetColModel();
 	if(colModel->lines == nil){
-		colModel->lines = (CColLine*)RwMalloc(4*sizeof(CColLine));
-		colModel->numLines = 4;
+		// The Rhino carries eight extra suspension lines spread over its
+		// tracks, see CAutomobile::SetupSuspensionLines.
+		int numLines = GetModelIndex() == MI_RHINO ? NUM_RHINO_SUSP_LINES : NUM_AUTOMOBILE_SUSP_LINES;
+		colModel->lines = (CColLine*)RwMalloc(numLines*sizeof(CColLine));
+		colModel->numLines = numLines;
 	}
 
 	SetupSuspensionLines();
@@ -268,6 +280,7 @@ CAutomobile::ProcessControl(void)
 {
 	int i;
 	float wheelRot;
+	float fwdSpeed = 0.0f;
 	CColModel *colModel;
 	float brake = 0.0f;
 
@@ -746,55 +759,17 @@ CAutomobile::ProcessControl(void)
 			m_aSuspensionSpringRatio[i] = (m_aSuspensionSpringRatio[i]-wheelRadius)/(1.0f-wheelRadius);
 		}
 
-		float fwdSpeed = Abs(DotProduct(m_vecMoveSpeed, GetForward()));
+		// A monster truck keeps its own suspension ratio, it is driven by its own
+		// class which overrides the whole suspension stage.
+		DoBurstAndSoftGroundRatios();
+
+		ProcessSuspension();
+
 		CVector contactPoints[4];	// relative to model
 		CVector contactSpeeds[4];	// speed at contact points
-		CVector springDirections[4];	// normalized, in world space
-
-		for(i = 0; i < 4; i++){
-			// Set spring under certain circumstances
-			if(Damage.GetWheelStatus(i) == WHEEL_STATUS_MISSING)
-				m_aSuspensionSpringRatio[i] = 1.0f;
-			else if(Damage.GetWheelStatus(i) == WHEEL_STATUS_BURST){
-				// wheel more bumpy the faster we are
-				if(CGeneral::GetRandomNumberInRange(0, (uint16)(40*fwdSpeed) + 98) < 100){
-					m_aSuspensionSpringRatio[i] += 0.3f*(m_aSuspensionLineLength[i]-m_aSuspensionSpringLength[i])/m_aSuspensionSpringLength[i];
-					if(m_aSuspensionSpringRatio[i] > 1.0f)
-						m_aSuspensionSpringRatio[i] = 1.0f;
-				}
-			}else if(CSurfaceTable::GetAdhesionGroup(m_aWheelColPoints[i].surfaceB) == ADHESIVE_SAND &&
-			         GetModelIndex() != MI_RHINO){
-				fwdSpeed *= 0.7f;
-				float f = 1.0f - fwdSpeed/0.3f - 0.7f*CWeather::WetRoads;
-				f = Max(f, 0.4f);
-				m_aSuspensionSpringRatio[i] += 0.35f*f*(m_aSuspensionLineLength[i]-m_aSuspensionSpringLength[i])/m_aSuspensionSpringLength[i];
-				if(m_aSuspensionSpringRatio[i] > 1.0f)
-					m_aSuspensionSpringRatio[i] = 1.0f;
-			}
-
-			// get points and directions if spring is compressed
-			if(m_aSuspensionSpringRatio[i] < 1.0f){
-				contactPoints[i] = m_aWheelColPoints[i].point - GetPosition();
-				springDirections[i] = Multiply3x3(GetMatrix(), colModel->lines[i].p1 - colModel->lines[i].p0);
-				springDirections[i].Normalise();
-			}
-		}
-
-		// Make springs push up vehicle
-		float dampingLimits[4];
-		for(i = 0; i < 4; i++)
-			dampingLimits[i] = 0.0f;
 
 		for(i = 0; i < 4; i++){
 			if(m_aSuspensionSpringRatio[i] < 1.0f){
-				float bias = m_pHandlingData->m_fSuspensionBiasBetweenFrontAndRear;
-				if(i == CARWHEEL_REAR_LEFT || i == CARWHEEL_REAR_RIGHT)
-					bias = 1.0f - bias;
-
-				ApplySpringCollisionAlt(m_pHandlingData->m_fSuspensionForceLevel,
-					springDirections[i], contactPoints[i],
-					m_aSuspensionSpringRatio[i], bias, m_aWheelColPoints[i].normal, dampingLimits[i]);
-
 				m_aWheelSkidmarkUnk[i] = false;
 				if(m_aWheelColPoints[i].surfaceB == SURFACE_GRASS ||
 				   m_aWheelColPoints[i].surfaceB == SURFACE_MUD_DRY)
@@ -805,6 +780,7 @@ CAutomobile::ProcessControl(void)
 					m_aWheelSkidmarkUnk[i] = true;
 				}else
 					m_aWheelSkidmarkType[i] = SKIDMARK_NORMAL;
+				contactPoints[i] = m_aWheelColPoints[i].point - GetPosition();
 			}else{
 				contactPoints[i] = Multiply3x3(GetMatrix(), colModel->lines[i].p1);
 			}
@@ -815,26 +791,6 @@ CAutomobile::ProcessControl(void)
 			contactSpeeds[i] = GetSpeed(contactPoints[i]);
 			if(m_aGroundPhysical[i]){
 				// subtract movement of physical we're standing on
-				contactSpeeds[i] -= m_aGroundPhysical[i]->GetSpeed(m_aGroundOffset[i]);
-#ifndef FIX_BUGS
-				// this shouldn't be reset because we still need it below
-				m_aGroundPhysical[i] = nil;
-#endif
-			}
-			if(m_aSuspensionSpringRatio[i] < 1.0f && m_aWheelColPoints[i].normal.z > 0.35f)
-				springDirections[i] = -m_aWheelColPoints[i].normal;
-		}
-
-		// dampen springs
-		for(i = 0; i < 4; i++)
-			if(m_aSuspensionSpringRatio[i] < 1.0f)
-				ApplySpringDampening(m_pHandlingData->m_fSuspensionDampingLevel, dampingLimits[i],
-					springDirections[i], contactPoints[i], contactSpeeds[i]);
-
-		// Get speed at contact points again, now that the springs have been applied
-		for(i = 0; i < 4; i++){
-			contactSpeeds[i] = GetSpeed(contactPoints[i]);
-			if(m_aGroundPhysical[i]){
 				contactSpeeds[i] -= m_aGroundPhysical[i]->GetSpeed(m_aGroundOffset[i]);
 				m_aGroundPhysical[i] = nil;
 			}
@@ -5027,6 +4983,205 @@ CAutomobile::PlayHornIfNecessary(void)
 			PlayCarHorn();
 }
 
+// 0x6A47F0
+void
+CAutomobile::DoBurstAndSoftGroundRatios(void)
+{
+	float forwardSpeed = Abs(DotProduct(m_vecMoveSpeed, GetForward()));
+
+	for(int i = 0; i < 4; i++){
+		CColPoint &wheelColPoint = m_aWheelColPoints[i];
+		float &compression = m_aSuspensionSpringRatio[i];
+		// how much travel the spring has left, as a fraction of the line length
+		float remaining = (m_aSuspensionLineLength[i] - m_aSuspensionSpringLength[i]) / m_aSuspensionLineLength[i];
+
+		switch(Damage.GetWheelStatus(i)){
+		case WHEEL_STATUS_MISSING:
+			compression = 1.0f;
+			break;
+		case WHEEL_STATUS_BURST:
+			// the faster the car goes the more often the burst tyre bounces
+			if(CGeneral::GetRandomNumberInRange(0, (int32)(forwardSpeed*40.0f) + 98) < 100)
+				compression = Min(compression + remaining/4.0f, 1.0f);
+			break;
+		default:
+			if(compression < 1.0f &&
+			   CSurfaceTable::GetAdhesionGroup(wheelColPoint.surfaceB) == ADHESIVE_SAND &&
+			   GetModelIndex() != MI_RHINO){
+				// sand drags the wheel up into the arch, and more so the slower
+				// the car goes: it digs in instead of riding over the surface
+				float offroadFactor = 0.3f;
+				if(m_pHandlingData->m_nHandlingFlags & VEHICLE_HANDLING_OFFROAD_ABILITY2)
+					offroadFactor = 0.15f;
+				else if(m_pHandlingData->m_nHandlingFlags & VEHICLE_HANDLING_OFFROAD_ABILITY)
+					offroadFactor = 0.2f;
+
+				float adhesionFactor = 1.0f - forwardSpeed/0.3f*0.7f - CWeather::WetRoads*0.7f;
+				adhesionFactor = Max(0.4f, adhesionFactor);
+
+				compression = Min(compression + offroadFactor*remaining*adhesionFactor, 1.0f);
+			}
+			break;
+		}
+	}
+}
+
+// 0x6AFB10
+void
+CAutomobile::ProcessSuspension(void)
+{
+	float springLength[4];
+	float dampingLimits[4];
+	for(int i = 0; i < 4; i++){
+		springLength[i] = m_aSuspensionSpringRatio[i];
+		dampingLimits[i] = 0.0f;
+	}
+
+	float forwardSpeed = Abs(DotProduct(m_vecMoveSpeed, GetForward()));
+	bool isRhino = GetModelIndex() == MI_RHINO;
+	// The Vortex rides on its own cushion of water: its springs push straight
+	// up instead of along the collision normal, and the fan thrust stiffens them.
+	bool isVortex = m_pHandlingData->m_nVehicleId == HANDLING_VORTEX;
+
+	// The Rhino carries eight more suspension lines spread over its tracks, so
+	// it runs the whole stage three times with different lengths.
+	int numWheelLoops = isRhino && !CReplay::IsPlayingBack() ? 3 : 1;
+
+	CVector contactPoints[4];
+	CVector directions[4];
+	for(int wheelLoop = 0; wheelLoop < numWheelLoops; wheelLoop++){
+		for(int i = 0; i < 4; i++){
+			directions[i] = GetUp()*-1.0f;
+			if(springLength[i] < 1.0f)
+				contactPoints[i] = m_aWheelColPoints[i].point - GetPosition();
+			else
+				contactPoints[i] = CVector(0.0f, 0.0f, 0.0f);
+		}
+
+		for(int i = 0; i < 4; i++){
+			if(springLength[i] >= 1.0f)
+				continue;
+
+			float bias = m_pHandlingData->m_fSuspensionBiasBetweenFrontAndRear;
+			if(i == CARWHEEL_REAR_LEFT || i == CARWHEEL_REAR_RIGHT)
+				bias = 1.0f - bias;
+
+			float forceLevel = m_pHandlingData->m_fSuspensionForceLevel;
+			if(m_pHandlingData->m_nHandlingFlags & VEHICLE_HANDLING_HYDRAULIC_GEOM &&
+			   m_pHandlingData->m_nHandlingFlags & VEHICLE_HANDLING_HYDRAULIC_INST){
+				if(m_pHandlingData->m_nHandlingFlags & VEHICLE_HANDLING_NPC_NEUTRAL_HANDL &&
+				   GetStatus() == STATUS_PHYSICS)
+					bias = 0.5f;
+				if(forwardSpeed < 0.15f)
+					forceLevel *= 1.5f;
+			}
+
+			if(CVehicle::bCheat8 || isVortex)
+				ApplySpringCollision(forceLevel, directions[i], contactPoints[i],
+					springLength[i], bias, dampingLimits[i]);
+			else
+				ApplySpringCollisionAlt(forceLevel, directions[i], contactPoints[i],
+					springLength[i], bias, m_aWheelColPoints[i].normal, dampingLimits[i]);
+		}
+
+		CVector contactSpeeds[4];
+		for(int i = 0; i < 4; i++){
+			contactSpeeds[i] = GetSpeed(contactPoints[i]);
+			if(m_aGroundPhysical[i])
+				contactSpeeds[i] -= m_aGroundPhysical[i]->GetSpeed(m_aGroundOffset[i]);
+
+			if(m_aSuspensionSpringRatio[i] < 1.0f && m_aWheelColPoints[i].normal.z > 0.35f)
+				directions[i] = -m_aWheelColPoints[i].normal;
+		}
+
+		for(int i = 0; i < 4; i++){
+			float damping = m_pHandlingData->m_fSuspensionDampingLevel;
+			if((m_pHandlingData->m_nHandlingFlags & VEHICLE_HANDLING_HYDRAULIC_INST) &&
+			   damping > 0.1f && forwardSpeed < 0.15f)
+				damping = 0.1f;
+
+			if(springLength[i] < 1.0f && !IsMonsterTruck())
+				ApplySpringDampening(damping, dampingLimits[i], directions[i],
+					contactPoints[i], contactSpeeds[i]);
+		}
+
+		if(!isRhino)
+			continue;
+
+		if(numWheelLoops <= 1 || wheelLoop > 1)
+			break;
+
+		// The extra track lengths live in the rear doors of the Rhino.
+		int wheelLines[4];
+		if(wheelLoop == 0){
+			wheelLines[CARWHEEL_FRONT_LEFT] = 4;
+			wheelLines[CARWHEEL_REAR_LEFT] = 7;
+			wheelLines[CARWHEEL_FRONT_RIGHT] = 8;
+			wheelLines[CARWHEEL_REAR_RIGHT] = 11;
+
+			Doors[DOOR_REAR_LEFT].GetExtraWheelPositions(springLength[CARWHEEL_FRONT_LEFT],
+				dampingLimits[CARWHEEL_FRONT_LEFT], dampingLimits[CARWHEEL_REAR_LEFT], springLength[CARWHEEL_REAR_LEFT]);
+			Doors[DOOR_REAR_RIGHT].GetExtraWheelPositions(springLength[CARWHEEL_FRONT_RIGHT],
+				dampingLimits[CARWHEEL_FRONT_RIGHT], dampingLimits[CARWHEEL_REAR_RIGHT], springLength[CARWHEEL_REAR_RIGHT]);
+		}else{
+			Doors[DOOR_REAR_LEFT].GetExtraWheelPositions(dampingLimits[CARWHEEL_FRONT_LEFT],
+				springLength[CARWHEEL_FRONT_LEFT], springLength[CARWHEEL_REAR_LEFT], dampingLimits[CARWHEEL_REAR_LEFT]);
+			Doors[DOOR_REAR_RIGHT].GetExtraWheelPositions(dampingLimits[CARWHEEL_FRONT_RIGHT],
+				springLength[CARWHEEL_FRONT_RIGHT], springLength[CARWHEEL_REAR_RIGHT], dampingLimits[CARWHEEL_REAR_RIGHT]);
+
+			wheelLines[CARWHEEL_FRONT_LEFT] = 5;
+			wheelLines[CARWHEEL_REAR_LEFT] = 6;
+			wheelLines[CARWHEEL_FRONT_RIGHT] = 9;
+			wheelLines[CARWHEEL_REAR_RIGHT] = 10;
+		}
+
+		CColModel *colModel = GetColModel();
+		for(int i = 0; i < 4; i++){
+			CColLine &line = colModel->lines[wheelLines[i]];
+			contactPoints[i] = line.p1;
+			contactPoints[i].z -= m_aSuspensionLineLength[i]*springLength[i];
+			contactPoints[i] = Multiply3x3(GetMatrix(), contactPoints[i]);
+
+			// the extra lines are shorter, rescale the length to 0..1
+			float springTension = 1.0f - m_aSuspensionSpringLength[i]/m_aSuspensionLineLength[i];
+			springLength[i] = (springLength[i] - springTension)/(1.0f - springTension);
+		}
+	}
+
+	// Roll a car that rests on its side back onto its wheels.
+	float speedThreshold = 0.02f;
+	float rollForce = ROLL_ONTO_WHEELS_FORCE;
+	if(GetStatus() != STATUS_PLAYER && GetStatus() != STATUS_PLAYER_REMOTE){
+		speedThreshold *= 2.0f;
+		rollForce *= 2.0f;
+	}
+
+	if(forwardSpeed < speedThreshold){
+		float direction = 0.0f;
+		if(m_aSuspensionSpringRatio[CARWHEEL_FRONT_LEFT] == 1.0f &&
+		   m_aSuspensionSpringRatio[CARWHEEL_REAR_LEFT] == 1.0f &&
+		   (m_aSuspensionSpringRatio[CARWHEEL_FRONT_RIGHT] < 1.0f ||
+		    m_aSuspensionSpringRatio[CARWHEEL_REAR_RIGHT] < 1.0f))
+			direction = 1.0f;
+		else if(m_aSuspensionSpringRatio[CARWHEEL_FRONT_RIGHT] == 1.0f &&
+		        m_aSuspensionSpringRatio[CARWHEEL_REAR_RIGHT] == 1.0f &&
+		        (m_aSuspensionSpringRatio[CARWHEEL_FRONT_LEFT] < 1.0f ||
+		         m_aSuspensionSpringRatio[CARWHEEL_REAR_LEFT] < 1.0f))
+			direction = -1.0f;
+
+		if(direction != 0.0f){
+			CVector right = CrossProduct(GetForward(), CVector(0.0f, 0.0f, 1.0f));
+			// only when the car is really lying on its side, not leaning
+			if(Abs(DotProduct(right, GetRight())) < 0.6f){
+				CColModel *colModel = GetColModel();
+				ApplyTurnForce(GetUp()*direction*rollForce*m_fTurnMass,
+					GetRight()*colModel->boundingBox.max.x);
+				ApplyMoveForce(-right*rollForce*m_fMass*direction);
+			}
+		}
+	}
+}
+
 void
 CAutomobile::ResetSuspension(void)
 {
@@ -5113,6 +5268,19 @@ CAutomobile::SetupSuspensionLines(void)
 	float radius = Max(colModel->boundingBox.min.Magnitude(), colModel->boundingBox.max.Magnitude());
 	if(colModel->boundingSphere.radius < radius)
 		colModel->boundingSphere.radius = radius;
+
+	// The Rhino has 12 suspension lines: the eight extra ones run along its
+	// tracks, each interpolated between the two wheel lines of that side.
+	if(GetModelIndex() == MI_RHINO){
+		int line = NUM_AUTOMOBILE_SUSP_LINES;
+		for(i = 0; i < NUM_AUTOMOBILE_SUSP_LINES; i += NUM_AUTOMOBILE_SUSP_LINES/2){
+			for(int j = 0; j < 4; j++, line++){
+				float t = (float)(j + 1)/(float)(NUM_AUTOMOBILE_SUSP_LINES + 1);
+				colModel->lines[line].p0 = colModel->lines[i].p0*(1.0f - t) + colModel->lines[i+1].p0*t;
+				colModel->lines[line].p1 = colModel->lines[i].p1*(1.0f - t) + colModel->lines[i+1].p1*t;
+			}
+		}
+	}
 
 	if(GetModelIndex() == MI_RCBANDIT){
 		colModel->boundingSphere.radius = 2.0f;

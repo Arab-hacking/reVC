@@ -129,6 +129,13 @@ public:
 	void AddDamagedVehicleParticles(void);
 	int32 AddWheelDirtAndWater(CColPoint *colpoint, uint32 belowEffectSpeed);
 	void PlayHornIfNecessary(void);
+	// Applies the per-wheel suspension compression the damage model and the
+	// ground surface ask for: a missing wheel hangs, a burst one shakes with
+	// speed, sand and rail beds push the wheel up.
+	void DoBurstAndSoftGroundRatios(void);
+	// Pushes the car up on its springs and dampers and rolls it back onto its
+	// wheels when it is resting on its side at low speed.
+	void ProcessSuspension(void);
 	void ResetSuspension(void);
 	void SetupSuspensionLines(void);
 	void ScanForCrimes(void);
