@@ -1855,10 +1855,8 @@ CBike::ProcessControlInputs(uint8 pad)
 
 	// Lean forward/backward
 	float updown;
-#ifdef FREE_CAM
 	if (CCamera::bFreeCam) updown = CPad::IsAffectedByController ? -CPad::GetPad(pad)->GetSteeringUpDown()/128.0f : CPad::GetPad(pad)->GetCarGunUpDown()/128.0f;
 	else
-#endif
 	updown = -CPad::GetPad(pad)->GetSteeringUpDown()/128.0f + CPad::GetPad(pad)->GetCarGunUpDown()/128.0f;
 	m_fLeanInput += (updown - m_fLeanInput)*0.2f*CTimer::GetTimeStep();
 	m_fLeanInput = Clamp(m_fLeanInput, -1.0f, 1.0f);

@@ -491,8 +491,6 @@ static_assert(false, "SUPPORT_XBOX_SCRIPT and SUPPORT_MOBILE_SCRIPT are mutually
 //#define USE_BETA_REPLAY_MODE // adds another replay mode, a few seconds slomo (caution: buggy!)
 
 // Vehicles
-#define EXPLODING_AIRTRAIN	// can blow up jumbo jet with rocket launcher
-#define CPLANE_ROTORS		// make the rotors of the NPC police heli rotate
 
 // Pickups
 //#define MONEY_MESSAGES

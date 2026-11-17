@@ -3165,9 +3165,7 @@ CAutomobile::FireTruckControl(void)
 	if(this == FindPlayerVehicle()){
 		if(!CPad::GetPad(0)->GetCarGunFired())
 			return;
-#ifdef FREE_CAM
 		if (!CCamera::bFreeCam)
-#endif 
 		{
 			m_fCarGunLR += CPad::GetPad(0)->GetCarGunLeftRight() * 0.00025f * CTimer::GetTimeStep();
 			m_fCarGunUD += CPad::GetPad(0)->GetCarGunUpDown() * 0.0001f * CTimer::GetTimeStep();
@@ -3240,9 +3238,7 @@ CAutomobile::TankControl(void)
 
 	// Rotate turret
 	float prevAngle = m_fCarGunLR;
-#ifdef FREE_CAM
 	if(!CCamera::bFreeCam)
-#endif
 		m_fCarGunLR -= CPad::GetPad(0)->GetCarGunLeftRight() * 0.00015f * CTimer::GetTimeStep();
 
 	if(m_fCarGunLR < 0.0f)

@@ -89,9 +89,7 @@ m_nVehicleSubType = VEHICLE_TYPE_PLANE;
 	m_level = LEVEL_GENERIC;
 
 	m_isFarAway = false;
-#ifdef CPLANE_ROTORS
 	m_fRotorRotation = 0.0f;
-#endif
 }
 
 CPlane::~CPlane()
@@ -103,7 +101,6 @@ void
 CPlane::SetModelIndex(uint32 id)
 {
 	CVehicle::SetModelIndex(id);
-#ifdef CPLANE_ROTORS
 	int i;
 	for(i = 0; i < NUM_PLANE_NODES; i++)
 		m_aPlaneNodes[i] = nil;
@@ -117,7 +114,6 @@ CPlane::SetModelIndex(uint32 id)
 		m_aPlaneNodes[PLANE_BACKROTOR] = heliNodes[HELI_BACKROTOR];
 	}else
 		CClumpModelInfo::FillFrameArray(GetClump(), m_aPlaneNodes);
-#endif
 }
 
 void
@@ -651,7 +647,6 @@ CPlane::PreRender(void)
 			CCoronas::LOSCHECK_OFF, CCoronas::STREAK_ON, 0.0f);
 	}
 
-#ifdef CPLANE_ROTORS
 	CMatrix mat;
 	CVector pos;
 	m_fRotorRotation += 3.14f/6.5f;
@@ -672,7 +667,6 @@ CPlane::PreRender(void)
 		mat.Translate(pos);
 		mat.UpdateRW();
 	}
-#endif
 }
 
 void
@@ -1014,11 +1008,7 @@ CPlane::TestRocketCollision(CVector *rocketPos)
 	while(--i >= 0){
 		CPlane *plane = (CPlane*)CPools::GetVehiclePool()->GetSlot(i);
 		if(plane &&
-#ifdef EXPLODING_AIRTRAIN
 		   (plane->GetModelIndex() == MI_AIRTRAIN || plane->GetModelIndex() == MI_DEADDODO) &&
-#else
-		   plane->GetModelIndex() != MI_AIRTRAIN && plane->GetModelIndex() == MI_DEADDODO &&	// strange check
-#endif
 		   !plane->m_bHasBeenHit && (*rocketPos - plane->GetPosition()).Magnitude() < 25.0f){
 			plane->m_nFrameWhenHit = CTimer::GetFrameCounter();
 			plane->m_bHasBeenHit = true;

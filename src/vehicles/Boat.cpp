@@ -947,14 +947,10 @@ CBoat::PreRender(void)
 			// FIX: Planes can also be controlled with GetCarGunUpDown
 #ifdef FIX_BUGS
 			static float steeringUpDown = 0.0f;
-#ifdef FREE_CAM
 			if(!CCamera::bFreeCam || (CCamera::bFreeCam && !CPad::IsAffectedByController))
-#endif
-			steeringUpDown += ((Abs(CPad::GetPad(0)->GetCarGunUpDown()) > 1.0f ? (-CPad::GetPad(0)->GetCarGunUpDown()/128.0f) : (-CPad::GetPad(0)->GetSteeringUpDown()/128.0f)) - steeringUpDown) * Min(1.f, CTimer::GetTimeStep()/5.f);
-#ifdef FREE_CAM
+				steeringUpDown += ((Abs(CPad::GetPad(0)->GetCarGunUpDown()) > 1.0f ? (-CPad::GetPad(0)->GetCarGunUpDown()/128.0f) : (-CPad::GetPad(0)->GetSteeringUpDown()/128.0f)) - steeringUpDown) * Min(1.f, CTimer::GetTimeStep()/5.f);
 			else
 				steeringUpDown = -CPad::GetPad(0)->GetSteeringUpDown()/128.0f;
-#endif
 #else
 			float steeringUpDown = -CPad::GetPad(0)->GetSteeringUpDown()/128.0f;
 #endif
