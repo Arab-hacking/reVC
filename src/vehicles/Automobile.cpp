@@ -1375,13 +1375,9 @@ CAutomobile::ProcessControl(void)
 			}
 		}
 
-		// Flying
+		// Rotor
 
 		bool playRotorSound = false;
-		bool isPlane = GetModelIndex() == MI_DODO || bAllDodosCheat;
-#ifdef FIX_BUGS
-		isPlane = isPlane && !IsRealHeli();
-#endif
 		if(GetStatus() != STATUS_PLAYER && GetStatus() != STATUS_PLAYER_REMOTE && GetStatus() != STATUS_PHYSICS){
 			if(IsRealHeli()){
 				bEngineOn = false;
@@ -1390,44 +1386,13 @@ CAutomobile::ProcessControl(void)
 					if(m_aWheelSpeed[1] < 0.154f && m_aWheelSpeed[1] > 0.0044f)
 						playRotorSound = true;
 			}
-		}else if(isPlane && m_vecMoveSpeed.Magnitude() > 0.0f && CTimer::GetTimeStep() > 0.0f){
-			if(GetModelIndex() == MI_DODO)
-				FlyingControl(FLIGHT_MODEL_DODO);
-			else
-				FlyingControl(FLIGHT_MODEL_PLANE);
-		}else if(GetModelIndex() == MI_RCBARON){
-			FlyingControl(FLIGHT_MODEL_RCPLANE);
-		}else if(IsRealHeli() || bAllCarCheat){
-#ifdef RESTORE_ALLCARSHELI_CHEAT
-			if (bAllCarCheat)
-				FlyingControl(FLIGHT_MODEL_HELI);
-			else
-#endif
-			{
-				// Speed up rotor
-				if (m_aWheelSpeed[1] < 0.22f && !bIsInWater) {
-					if (GetModelIndex() == MI_RCRAIDER || GetModelIndex() == MI_RCGOBLIN)
-						m_aWheelSpeed[1] += 0.003f;
-					else
-						m_aWheelSpeed[1] += 0.001f;
-				}
-
-				// Fly
-				if (m_aWheelSpeed[1] > 0.15f) {
-					if (GetModelIndex() == MI_RCRAIDER || GetModelIndex() == MI_RCGOBLIN)
-						FlyingControl(FLIGHT_MODEL_RCHELI);
-					else if (m_nWheelsOnGround < 4 && !(GetModelIndex() == MI_SEASPAR && bTouchingWater) ||
-						CPad::GetPad(0)->GetAccelerate() != 0 ||
-#ifndef FREE_CAM
-						CPad::GetPad(0)->GetCarGunUpDown() > 1.0f ||
-#else
-						((!CCamera::bFreeCam || (CCamera::bFreeCam && !CPad::IsAffectedByController)) && CPad::GetPad(0)->GetCarGunUpDown() > 1.0f) ||
-#endif
-						Abs(m_vecMoveSpeed.x) > 0.02f ||
-						Abs(m_vecMoveSpeed.y) > 0.02f ||
-						Abs(m_vecMoveSpeed.z) > 0.02f)
-						FlyingControl(FLIGHT_MODEL_HELI);
-				}
+		}else if(IsRealHeli()){
+			// Speed up rotor
+			if (m_aWheelSpeed[1] < 0.22f && !bIsInWater) {
+				if (GetModelIndex() == MI_RCRAIDER || GetModelIndex() == MI_RCGOBLIN)
+					m_aWheelSpeed[1] += 0.003f;
+				else
+					m_aWheelSpeed[1] += 0.001f;
 			}
 
 			// Blade collision

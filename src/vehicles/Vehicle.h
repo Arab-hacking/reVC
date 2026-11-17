@@ -132,17 +132,6 @@ enum tWheelState
 	WHEEL_STATE_FIXED,	// not rotating
 };
 
-enum eFlightModel
-{
-	FLIGHT_MODEL_DODO,
-	FLIGHT_MODEL_RCPLANE,
-	FLIGHT_MODEL_RCHELI,
-	FLIGHT_MODEL_SEAPLANE,
-	FLIGHT_MODEL_PLANE_UNUSED,
-	FLIGHT_MODEL_PLANE,
-	FLIGHT_MODEL_HELI
-};
-
 enum eVehicleAppearance
 {
 	VEHICLE_APPEARANCE_NONE = 0,
@@ -359,7 +348,6 @@ public:
 	bool IsRealPlane(void) { return m_pHandlingData->m_bIsPlane; }
 	bool IsRealBoat(void) { return m_pHandlingData->m_bIsBoat; }
 
-	void FlyingControl(eFlightModel flightModel);
 	bool DoBladeCollision(CVector pos, CMatrix &matrix, int16 rotorType, float radius, float damageMult);
 	bool BladeColSectorList(CPtrList &list, CColModel &rotorColModel, CMatrix &matrix, int16 rotorType, float damageMult);
 

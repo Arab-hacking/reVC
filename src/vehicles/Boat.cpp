@@ -729,20 +729,6 @@ CBoat::ProcessControl(void)
 #endif
 	}
 
-	if(m_modelIndex == MI_SKIMMER && CTimer::GetTimeStep() > 0.0f){
-		if(GetStatus() == STATUS_PLAYER){
-			if(m_fMovingSpeed < 0.22f)
-				m_fMovingSpeed += 0.001f*CTimer::GetTimeStep();
-			FlyingControl(FLIGHT_MODEL_SEAPLANE);
-		}else{
-			if(m_fMovingSpeed > 0.0005f*CTimer::GetTimeStep())
-				m_fMovingSpeed -= 0.0005f*CTimer::GetTimeStep();
-			else
-				m_fMovingSpeed = 0.0f;
-		}
-	}else if(bCheat8)
-		FlyingControl(FLIGHT_MODEL_PLANE);
-
 	if(m_bIsAnchored){
 		m_vecMoveSpeed.x = 0.0f;
 		m_vecMoveSpeed.y = 0.0f;
