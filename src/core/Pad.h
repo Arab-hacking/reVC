@@ -228,7 +228,7 @@ public:
 	void DoCheats(int16 unk);
 	// PC: '-' / '+' (including numpad) cycle registered ped models.
 	static void ProcessPlayerModelKeys(void);
-	// PC: Shift + '-' / '+' cycles registered vehicle models and spawns one.
+	// PC: Shift + 7 / 8 cycles registered vehicle models and spawns one.
 	static void ProcessVehicleSpawnKeys(void);
 	static void ProcessTimeOfDayKeys(void);
 	
@@ -236,7 +236,7 @@ public:
 	void StopShaking(int16 pad);
 	
 	static CPad *GetPad(int32 pad);
-	// last model Shift + '+' / '-' spawned; also the cycle anchor when the
+	// last model Shift + 8 / 7 spawned; also the cycle anchor when the
 	// player is on foot
 	static int32 lastSpawnedVehicleModel;
 	

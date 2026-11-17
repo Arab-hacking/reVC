@@ -161,10 +161,12 @@ over every `src/*/*.cpp`, plus a manual `g++` link of the pure-logic tests
 
 ## Debug keys
 
-`+` / `-` (main row or keypad) cycle the player skins, as before. With Shift
-held they walk the registered vehicle models instead: `Shift+=` (which is `+`
-on the main row) spawns the next streamable vehicle three metres in front of
-the player and asks him to get in, `Shift+-` walks the list backwards. Trains
+`+` / `-` (main row or keypad) cycle the player skins, as before. `Shift+8`
+and `Shift+7` walk the registered vehicle models instead: `Shift+8` (`+` on
+the main row) spawns the next streamable vehicle three metres in front of
+the player and asks him to get in, `Shift+7` (`-`) walks the list backwards.
+The bare digits are free, so the key press still reaches the cheat parser and
+the ped cycle. Trains
 are skipped because they cannot stand on a road here. The walk starts from the
 car the player is in, or from the previous spawn when he is on foot, and skips
 models whose assets are not registered, so a half-populated `vehicles.ide`

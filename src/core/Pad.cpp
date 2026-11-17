@@ -520,9 +520,9 @@ CPad::ProcessTimeOfDayKeys(void)
 #endif
 }
 
-// Shift + '+' / '-' spawns the next or previous streamable vehicle in front of
-// the player and puts him behind the wheel, so the whole fleet can be tried out
-// without typing a cheat per model.
+// Shift + 8 ('+') and Shift + 7 ('-') spawn the next or previous streamable
+// vehicle in front of the player and put him behind the wheel, so the whole
+// fleet can be tried out without typing a cheat per model.
 void
 CPad::ProcessVehicleSpawnKeys(void)
 {
@@ -532,8 +532,10 @@ CPad::ProcessVehicleSpawnKeys(void)
 	   CReplay::IsPlayingBack() || pad->ArePlayerControlsDisabled())
 		return;
 
-	const bool minus = pad->GetMinusJustDown();
-	const bool plus = pad->GetPlusJustDown();
+	// Shift+8 is '+' and Shift+7 is '-' on the main row, so the spawn does not
+	// fight the ped skin cycle that owns the bare '+' and '-' keys.
+	const bool plus = pad->GetCharJustDown('8');
+	const bool minus = pad->GetCharJustDown('7');
 	if(minus == plus)
 		return;
 
@@ -628,7 +630,7 @@ CPad::ProcessVehicleSpawnKeys(void)
 
 		if(!(previousFlags & STREAMFLAGS_DONT_REMOVE))
 			CStreaming::SetModelIsDeletable(modelId);
-		REVC_LOG_INFO("Vehicle spawned with Shift+%c: %d (%s)", plus ? '+' : '-',
+		REVC_LOG_INFO("Vehicle spawned with Shift+%c: %d (%s)", plus ? '8' : '7',
 			modelId, info->GetModelName());
 		return;
 	}
