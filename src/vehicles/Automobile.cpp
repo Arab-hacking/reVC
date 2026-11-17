@@ -3043,6 +3043,36 @@ CAutomobile::ProcessEntityCollision(CEntity *ent, CColPoint *colpoints)
 				bHasHitWall = true;
 	}
 
+	// High speed damping: a car whose suspension was compressed by a hard
+	// landing gets an extra contact point per wheel, so that the impact is
+	// heard and felt at the wheel and not only at the body.
+	if(numWheelCollisions > 0 && ent->IsBuilding() && m_pHandlingData->m_fSuspensionHighSpdComDamp > 0.0f){
+		for(i = 0; i < 4; i++){
+			if(Damage.GetWheelStatus(i) != WHEEL_STATUS_OK || numCollisions >= MAX_COLLISION_POINTS)
+				continue;
+
+			// how far the spring has travelled past where it was last frame
+			float wheelRadius = 1.0f - m_aSuspensionSpringLength[i]/m_aSuspensionLineLength[i];
+			float compression = Min(m_aSuspensionSpringRatioPrev[i],
+				m_aSuspensionSpringRatio[i] + (1.0f - m_aSuspensionSpringRatio[i])*wheelRadius);
+			float compressionDelta = (compression - m_aSuspensionSpringRatio[i])*m_aSuspensionLineLength[i];
+			if(compressionDelta <= 0.1f)
+				continue;
+
+			if(CSurfaceTable::GetAdhesionGroup(m_aWheelColPoints[i].surfaceB) == ADHESIVE_SAND)
+				continue;
+
+			CColPoint &point = colpoints[numCollisions];
+			point = m_aWheelColPoints[i];
+			point.depth = Abs(DotProduct(m_aWheelColPoints[i].normal, GetUp()))*
+				Min(Abs(DotProduct(m_vecMoveSpeed, GetForward())), 0.3f)*
+				Min(0.2f, compressionDelta)*m_pHandlingData->m_fSuspensionHighSpdComDamp/0.3f;
+			point.pieceA = CAR_PIECE_WHEEL_LF + i;
+			point.surfaceA = point.surfaceB = SURFACE_WHEELBASE;
+			numCollisions++;
+		}
+	}
+
 	return numCollisions;
 }
 
