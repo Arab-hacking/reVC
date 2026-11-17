@@ -67,7 +67,7 @@ Still missing from this stage: the classes themselves (`CMonsterTruck`,
 `CQuadBike`, `CBmx`, `CTrailer`) are declared in the type word and built as
 their nearest implemented parent until stage 4 adds them.
 
-## Stage 3 — automobile physics (in progress)
+## Stage 3 — automobile physics (done)
 
 Done so far:
 
@@ -91,20 +91,19 @@ Done so far:
   collision and the helicopter weapons. The dodo and flying-car cheats went with
   it.
 
+- The brake and traction bias in `ProcessControl` splits as the reference does,
+  `2 * bias` on the front axle and `2 - 2 * bias` on the rear.
+- The stabiliser torque and the roll-back-onto-wheels step measure the car with
+  the collision model's bounding box; the centre of mass only feeds the inertia
+  offset.
+
 Still open in this stage:
 
 - `SURFACE_RAILTRACK` only exists in the SA surface table. The repository still
-  loads the 35-entry VC `surface.dat`, so the rail-bed wheel drop cannot be
-  ported until `CSurfaceTable` moves to the SA 179-entry table; the rest of
-  `DoBurstAndSoftGroundRatios` is done.
-
-Remaining work:
-
-- The brake and traction bias in `ProcessControl` now splits as the reference
-  does, `2 * bias` on the front axle and `2 - 2 * bias` on the rear; the VC
-  comment about the III axle split is gone.
-- The stabiliser torque uses the collision model's bounding box, not
-  `m_vecCentreOfMass`; the centre of mass only feeds the inertia offset.
+  loads the 35-entry VC `surface.dat`, so the rail-bed wheel drop in
+  `DoBurstAndSoftGroundRatios` cannot be ported until `CSurfaceTable` moves to
+  the SA 179-entry table. That is a surface-table job, tracked with the data
+  files, not an automobile-physics one.
 
 ## Stage 4 — other classes
 
