@@ -146,7 +146,7 @@ CObjectData::SetObjectData(int32 modelId, CObject &object)
 	object.m_fTurnMass = objinfo->m_fTurnMass;
 	object.m_fAirResistance = objinfo->m_fAirResistance;
 	object.m_fElasticity = objinfo->m_fElasticity;
-	object.m_fBuoyancy = objinfo->m_fBuoyancy;
+	object.m_fBuoyancyConstant = objinfo->m_fBuoyancy;
 	object.m_fUprootLimit = objinfo->m_fUprootLimit;
 	object.m_fCollisionDamageMultiplier = objinfo->m_fCollisionDamageMultiplier;
 	object.m_nCollisionDamageEffect = objinfo->m_nCollisionDamageEffect;
