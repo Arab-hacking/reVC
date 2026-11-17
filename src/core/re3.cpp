@@ -806,7 +806,6 @@ void RainyWeatherCheat();
 void FoggyWeatherCheat();
 void FastWeatherCheat();
 void OnlyRenderWheelsCheat();
-void ChittyChittyBangBangCheat();
 void StrongGripCheat();
 void SpecialCarCheats();
 void PickUpChicksCheat();
@@ -1063,7 +1062,6 @@ DebugMenuPopulate(void)
 		DebugMenuAddCmd("Cheats", "Foggy weather", FoggyWeatherCheat);
 		DebugMenuAddCmd("Cheats", "Fast weather", FastWeatherCheat);
 		DebugMenuAddCmd("Cheats", "Only render wheels", OnlyRenderWheelsCheat);
-		DebugMenuAddCmd("Cheats", "Chitty chitty bang bang", ChittyChittyBangBangCheat);
 		DebugMenuAddCmd("Cheats", "Strong grip", StrongGripCheat);
 		DebugMenuAddCmd("Cheats", "Special car", SpecialCarCheats);
 		DebugMenuAddCmd("Cheats", "Pickup chicks", PickUpChicksCheat);

@@ -13,6 +13,7 @@ enum eZoneAttribs
 	ATTRZONE_POLICEABANDONCARS	= 0x100,
 	ATTRZONE_ROOMFORAUDIO		= 0x200,
 	ATTRZONE_WATERFUDGE		= 0x400,
+	ATTRZONE_EXTRA_AIRRESISTANCE	= 0x4000,
 };
 
 struct CAttributeZone
@@ -61,5 +62,6 @@ public:
 	static bool PoliceAbandonCars(void) { return (CurrentFlags_Camera & ATTRZONE_POLICEABANDONCARS) != 0; }
 	static bool InRoomForAudio(void) { return (CurrentFlags_Camera & ATTRZONE_ROOMFORAUDIO) != 0; }
 	static bool WaterFudge(void) { return (CurrentFlags_Camera & ATTRZONE_WATERFUDGE) != 0; }
+	static bool DoExtraAirResistanceForPlayer(void) { return (CurrentFlags_Player & ATTRZONE_EXTRA_AIRRESISTANCE) != 0; }
 	static int32 GetWantedLevelDrop(void) { return CurrentWantedLevelDrop_Player; }
 };

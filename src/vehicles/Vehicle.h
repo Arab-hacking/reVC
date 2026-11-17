@@ -412,7 +412,6 @@ public:
 	bool IsLimo(void) { return GetModelIndex() == MI_STRETCH || GetModelIndex() == MI_LOVEFIST; }
 
 	static bool bWheelsOnlyCheat;
-	static bool bAllDodosCheat;
 	static bool bCheat3;
 	static bool bCheat4;
 	static bool bCheat5;
@@ -422,6 +421,8 @@ public:
 	static bool bHoverCheat;
 	static bool bAllTaxisHaveNitro;
 	static bool m_bDisableMouseSteering;
+	// Extra air resistance inside the cull zones that carry the flag.
+	static constexpr float m_fAirResistanceMult = 2.5f;
 	static bool bDisableRemoteDetonation;
 	static bool bDisableRemoteDetonationOnContact;
 #ifndef MASTER

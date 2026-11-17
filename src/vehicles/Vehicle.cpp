@@ -35,7 +35,6 @@
 #include "SaveBuf.h"
 
 bool CVehicle::bWheelsOnlyCheat;
-bool CVehicle::bAllDodosCheat;
 bool CVehicle::bCheat3;
 bool CVehicle::bCheat4;
 bool CVehicle::bCheat5;

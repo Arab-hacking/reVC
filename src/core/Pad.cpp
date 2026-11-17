@@ -631,18 +631,6 @@ void OnlyRenderWheelsCheat()
 	CPad::bHasPlayerCheated = true;
 }
 
-void ChittyChittyBangBangCheat()
-{
-#ifdef BETTER_ALLCARSAREDODO_CHEAT
-	CHud::SetHelpMessage(TheText.Get(!CVehicle::bAllDodosCheat ? "CHEAT1" : "CHEATOF"), true);
-#else
-	CHud::SetHelpMessage(TheText.Get("CHEAT1"), true);
-#endif
-	CVehicle::bAllDodosCheat = !CVehicle::bAllDodosCheat;
-	CStats::CheatedCount += 1000;
-	CPad::bHasPlayerCheated = true;
-}
-
 void StrongGripCheat()
 {
 	CHud::SetHelpMessage(TheText.Get("CHEAT1"), true);
@@ -743,22 +731,6 @@ void KangarooCheat()
 
 	playerPed->m_fMass = m_fMass;
 	playerPed->m_fAirResistance = 0.4f / m_fMass;
-}
-#endif
-
-#ifdef RESTORE_ALLCARSHELI_CHEAT
-void AllCarsHeliCheat(void)
-{
-	wchar* string;
-	if (bAllCarCheat) {
-		string = TheText.Get("CHEATOF");
-		bAllCarCheat = false;
-	}
-	else {
-		string = TheText.Get("CHEAT1");
-		bAllCarCheat = true;
-	}
-	CHud::SetHelpMessage(string, true);
 }
 #endif
 
@@ -1367,10 +1339,6 @@ void CPad::AddToCheatString(char c)
 	else if ( !_CHEATCMP("T1T4S11") )
 		OnlyRenderWheelsCheat();
 
-	// "R4C32D13"		-	RIGHT R2 CIRCLE R1 L2 DOWN L1 R1
-	else if ( !_CHEATCMP("31D23C4R") )
-		ChittyChittyBangBangCheat();
-
 	// "3141L33T"		-	R1 L1 R2 L1 LEFT R1 R1 TRIANGLE
 	else if ( !_CHEATCMP("T33L1413") )
 		StrongGripCheat();
@@ -1543,11 +1511,6 @@ void CPad::AddToPCCheatString(char c)
 	else if (!Cheat_strncmp(KeyBoardCheatString, "GJLOVgOHF]N[SeRNs")) {
 		KeyBoardCheatString[0] = ' ';
 		OnlyRenderWheelsCheat();
-	}
-	//COMEFLYWITHME
-	else if (!Cheat_strncmp(KeyBoardCheatString, "HROUVr\\SGPZWJ")) {
-		KeyBoardCheatString[0] = ' ';
-		ChittyChittyBangBangCheat();
 	}
 	// "GRIPISEVERYTHING"
 	else if (!Cheat_strncmp(KeyBoardCheatString, "JSPIatULWP`QWi_M")) {
@@ -1735,12 +1698,6 @@ void CPad::AddToPCCheatString(char c)
 	// "PEDDEBUG"
 	if (!_CHEATCMP("GUBEDDEP"))
 		CPed::SwitchDebugDisplay();
-#endif
-
-#ifdef RESTORE_ALLCARSHELI_CHEAT
-	// "CARSAREHELI"
-	if (!_CHEATCMP("ILEHERASRAC"))
-		AllCarsHeliCheat();
 #endif
 
 #ifdef WALLCLIMB_CHEAT
@@ -3634,7 +3591,6 @@ void CPad::ResetCheats(void)
 	CTimer::SetTimeScale(1.0f);
 
 	CVehicle::bWheelsOnlyCheat = false;
-	CVehicle::bAllDodosCheat = false;
 	CVehicle::bCheat3 = false;
 	CVehicle::bCheat4 = false;
 	CVehicle::bCheat5 = false;
@@ -3643,9 +3599,6 @@ void CPad::ResetCheats(void)
 	CVehicle::bCheat8 = false;
 	CVehicle::bCheat9 = false;
 	CVehicle::bCheat10 = false;
-#ifdef RESTORE_ALLCARSHELI_CHEAT
-	bAllCarCheat = false;
-#endif
 	gbBlackCars = false;
 	gbPinkCars = false;
 

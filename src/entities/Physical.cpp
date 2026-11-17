@@ -1,6 +1,7 @@
 #include "common.h"
 
 #include "World.h"
+#include "ZoneCull.h"
 #include "General.h"
 #include "Timer.h"
 #include "Stats.h"
@@ -581,14 +582,20 @@ CPhysical::ApplyFriction(void)
 void
 CPhysical::ApplyAirResistance(void)
 {
-	if(m_fAirResistance > 0.1f){
+	if(m_fAirResistance <= 0.1f || IsVehicle()){
+		float fSpeedMagnitude = m_vecMoveSpeed.Magnitude() * m_fAirResistance;
+		if(CCullZones::DoExtraAirResistanceForPlayer() && IsVehicle()){
+			CVehicle *vehicle = (CVehicle*)this;
+			if(vehicle->IsAutomobile() || vehicle->IsSubBike())
+				fSpeedMagnitude = CVehicle::m_fAirResistanceMult * fSpeedMagnitude;
+		}
+
+		m_vecMoveSpeed *= Pow(1.0f - fSpeedMagnitude, CTimer::GetTimeStep());
+		m_vecTurnSpeed *= 0.99f;
+	}else{
 		float f = Pow(m_fAirResistance, CTimer::GetTimeStep());
 		m_vecMoveSpeed *= f;
 		m_vecTurnSpeed *= f;
-	}else if(GetStatus() != STATUS_GHOST){ 
-		float f = Pow(1.0f/Abs(1.0f + m_fAirResistance*0.5f*m_vecMoveSpeed.MagnitudeSqr()), CTimer::GetTimeStep());
-		m_vecMoveSpeed *= f;
-		m_vecTurnSpeed *= 0.99f;
 	}
 }
 

@@ -184,6 +184,5 @@ public:
 };
 
 extern CVector vecHunterGunPos;
-extern bool bAllCarCheat;
 
 #endif // __GTA_AUTOMOBILE_H__

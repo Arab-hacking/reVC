@@ -54,8 +54,6 @@
 #include "Wanted.h"
 #include "SaveBuf.h"
 
-bool bAllCarCheat;
-
 #if defined ANDROID
 int16 g_usLastProcessedModelIndexAutomobile = 0;
 int g_iLastProcessedModelIndexAutoEnt = 0;
@@ -2533,10 +2531,6 @@ CAutomobile::PreRender(void)
 					CGeneral::GetRandomNumberInRange(0.0f, 10.0f),
 					CGeneral::GetRandomNumberInRange(0.0f, 90.0f), 1);
 			}
-#ifdef BETTER_ALLCARSAREDODO_CHEAT
-		} else if (bAllDodosCheat && m_nDriveWheelsOnGround == 0 && m_nDriveWheelsOnGroundPrev == 0) {
-			mat.RotateY(-HALFPI);
-#endif
 		}else{
 			// tilt wheel depending oh how much it presses on ground
 			float groundOffset = pos.z + m_fHeightAboveRoad - 0.5f*mi->m_wheelScale;
@@ -2574,10 +2568,6 @@ CAutomobile::PreRender(void)
 					CGeneral::GetRandomNumberInRange(0.0f, 10.0f),
 					CGeneral::GetRandomNumberInRange(0.0f, 90.0f), 1);
 			}
-#ifdef BETTER_ALLCARSAREDODO_CHEAT
-		} else if (bAllDodosCheat && m_nDriveWheelsOnGround == 0 && m_nDriveWheelsOnGroundPrev == 0) {
-			mat.RotateY(HALFPI);
-#endif
 		}else{
 			// tilt wheel depending oh how much it presses on ground
 			float groundOffset = pos.z + m_fHeightAboveRoad - 0.5f*mi->m_wheelScale;
@@ -2607,10 +2597,6 @@ CAutomobile::PreRender(void)
 			   m_aWheelColPoints[CARWHEEL_REAR_RIGHT].surfaceB == SURFACE_WATER){
 				// hovering on water
 				mat.RotateY(-HALFPI);
-#ifdef BETTER_ALLCARSAREDODO_CHEAT
-			} else if (bAllDodosCheat && m_nDriveWheelsOnGround == 0 && m_nDriveWheelsOnGroundPrev == 0) {
-				mat.RotateY(-HALFPI);
-#endif
 			}else{
 				// tilt wheel depending oh how much it presses on ground
 				float groundOffset = pos.z + m_fHeightAboveRoad - 0.5f*mi->m_wheelScale;
@@ -2641,10 +2627,6 @@ CAutomobile::PreRender(void)
 			   m_aWheelColPoints[CARWHEEL_REAR_LEFT].surfaceB == SURFACE_WATER){
 				// hovering on water
 				mat.RotateY(HALFPI);
-#ifdef BETTER_ALLCARSAREDODO_CHEAT
-			} else if (bAllDodosCheat && m_nDriveWheelsOnGround == 0 && m_nDriveWheelsOnGroundPrev == 0) {
-				mat.RotateY(HALFPI);
-#endif
 			}else{
 				// tilt wheel depending oh how much it presses on ground
 				float groundOffset = pos.z + m_fHeightAboveRoad - 0.5f*mi->m_wheelScale;
@@ -2775,10 +2757,6 @@ CAutomobile::PreRender(void)
 						CGeneral::GetRandomNumberInRange(0.0f, 90.0f),
 						CGeneral::GetRandomNumberInRange(0.0f, 10.0f), 1);
 				}
-#ifdef BETTER_ALLCARSAREDODO_CHEAT
-			} else if (bAllDodosCheat && m_nDriveWheelsOnGround == 0 && m_nDriveWheelsOnGroundPrev == 0) {
-				mat.RotateY(-HALFPI);
-#endif
 			}else{
 				// tilt wheel depending oh how much it presses on ground
 				float groundOffset = pos.z + m_fHeightAboveRoad - 0.5f*mi->m_wheelScale;
@@ -2816,10 +2794,6 @@ CAutomobile::PreRender(void)
 						CGeneral::GetRandomNumberInRange(0.0f, 90.0f),
 						CGeneral::GetRandomNumberInRange(0.0f, 10.0f), 1);
 				}
-#ifdef BETTER_ALLCARSAREDODO_CHEAT
-			} else if (bAllDodosCheat && m_nDriveWheelsOnGround == 0 && m_nDriveWheelsOnGroundPrev == 0) {
-				mat.RotateY(HALFPI);
-#endif
 			}else{
 				// tilt wheel depending oh how much it presses on ground
 				float groundOffset = pos.z + m_fHeightAboveRoad - 0.5f*mi->m_wheelScale;

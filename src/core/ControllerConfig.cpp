@@ -825,32 +825,9 @@ void CControllerConfigManager::AffectControllerStateOn_ButtonDown_Driving(int32 
 			state.RightStickX = 128;
 	}
 	
-	bool isDodo = false;
-	if (FindPlayerVehicle() && (FindPlayerVehicle()->IsVehicle() && (
-		FindPlayerVehicle()->GetModelIndex() == MI_DODO
-#ifdef FIX_BUGS
-		|| (CVehicle::bAllDodosCheat && !FindPlayerVehicle()->IsRealHeli())
-#endif
-		)))
-	{
-		isDodo = true;
-	}
-
-	
 	if (button == GetControllerKeyAssociatedWithAction(VEHICLE_TURRETUP, type))
 	{
-		if (isDodo == true)
-		{
-			if (state.LeftStickY == -128 || m_aSimCheckers[SIM_Y1][type]) // BUG: should be SIM_Y2. SIM_Y1 it's DPAD
-			{
-				state.LeftStickY = 0;
-				m_aSimCheckers[SIM_Y2][type] = true;
-			}
-			else
-				state.LeftStickY = 128;
-		}
-
-		else if (state.RightStickY == -128 || m_aSimCheckers[SIM_Y2][type])
+		if (state.RightStickY == -128 || m_aSimCheckers[SIM_Y2][type])
 		{
 			state.RightStickY = 0;
 			m_aSimCheckers[SIM_Y2][type] = true;
@@ -863,18 +840,7 @@ void CControllerConfigManager::AffectControllerStateOn_ButtonDown_Driving(int32 
 	
 	if (button == GetControllerKeyAssociatedWithAction(VEHICLE_TURRETDOWN, type))
 	{
-		if (isDodo == true)
-		{
-			if (state.LeftStickY == 128 || m_aSimCheckers[SIM_Y1][type]) // BUG: should be SIM_Y2. SIM_Y1 it's DPAD
-			{
-				state.LeftStickY = 0;
-				m_aSimCheckers[SIM_Y2][type] = true;
-			}
-			else
-				state.LeftStickY = -128;
-		}
-
-		else if (state.RightStickY == 128 || m_aSimCheckers[SIM_Y2][type])
+		if (state.RightStickY == 128 || m_aSimCheckers[SIM_Y2][type])
 		{
 			state.RightStickY = 0;
 			m_aSimCheckers[SIM_Y2][type] = true;
