@@ -33,6 +33,7 @@
 #include "AnimManager.h"
 #include "WeaponInfo.h"
 #include "PlayerModelCycle.h"
+#include "VehicleSpawnKey.h"
 #include "Clock.h"
 #include "Timecycle.h"
 #include "CustomSky.h"
@@ -86,6 +87,7 @@ unsigned char act_align[6];
 #ifdef GTA_PC_CONTROLS
 CKeyboardState CPad::OldKeyState;
 CKeyboardState CPad::NewKeyState;
+int32 CPad::lastSpawnedVehicleModel = -1;
 CKeyboardState CPad::TempKeyState;
 
 char CPad::KeyBoardCheatString[30];
@@ -514,6 +516,121 @@ CPad::ProcessTimeOfDayKeys(void)
 		CClock::SetGameClock((uint8)newHour, (uint8)newMinute);
 		CTimeCycle::Update();
 		REVC_LOG_INFO("Time of day changed via Numpad: %02d:%02d", newHour, newMinute);
+	}
+#endif
+}
+
+// Shift + '+' / '-' spawns the next or previous streamable vehicle in front of
+// the player and puts him behind the wheel, so the whole fleet can be tried out
+// without typing a cheat per model.
+void
+CPad::ProcessVehicleSpawnKeys(void)
+{
+#ifdef GTA_PC_CONTROLS
+	CPad *pad = GetPad(PAD1);
+	if(FrontEndMenuManager.m_bMenuActive || CCutsceneMgr::IsRunning() ||
+	   CReplay::IsPlayingBack() || pad->ArePlayerControlsDisabled())
+		return;
+
+	const bool minus = pad->GetMinusJustDown();
+	const bool plus = pad->GetPlusJustDown();
+	if(minus == plus)
+		return;
+
+	const bool shiftHeld = pad->GetShift() || pad->GetLeftShift() || pad->GetRightShift();
+	if(!shiftHeld)
+		return;
+
+	CPlayerPed *ped = FindPlayerPed();
+	if(!ped || !ped->m_rwObject || !ped->IsPedInControl())
+		return;
+
+	auto eligible = [](int id) {
+		CBaseModelInfo *base = CModelInfo::GetModelInfo(id);
+		if(!base || base->GetModelType() != MITYPE_VEHICLE)
+			return false;
+		CVehicleModelInfo *info = (CVehicleModelInfo*)base;
+		switch(info->m_nVehicleType){
+		case VEHICLE_TYPE_AUTOMOBILE:
+		case VEHICLE_TYPE_MTRUCK:
+		case VEHICLE_TYPE_QUAD:
+		case VEHICLE_TYPE_BIKE:
+		case VEHICLE_TYPE_BMX:
+		case VEHICLE_TYPE_BOAT:
+		case VEHICLE_TYPE_HELI:
+		case VEHICLE_TYPE_FHELI:
+		case VEHICLE_TYPE_PLANE:
+		case VEHICLE_TYPE_FPLANE:
+		case VEHICLE_TYPE_TRAILER:
+			break;
+		default:
+			// trains have no road to stand on here and the rest is not drivable
+			return false;
+		}
+		return CStreaming::HasModelLoaded(id) || CStreaming::ms_aInfoForModel[id].m_size != 0;
+	};
+
+	// The cycle starts from the spawn the player is in, or from the last model
+	// this key produced, so repeated presses really walk the list.
+	const int direction = plus ? 1 : -1;
+	CVehicle *current = FindPlayerVehicle();
+	int start = current ? current->GetModelIndex() : lastSpawnedVehicleModel;
+	if(start < 0 || start >= MODELINFOSIZE)
+		start = 0;
+
+	int modelId = start, firstTried = -1;
+	for(;;){
+		modelId = FindNextVehicleModel(modelId, direction, MODELINFOSIZE, eligible);
+		if(modelId < 0 || modelId == start || modelId == firstTried)
+			return;
+		if(firstTried < 0)
+			firstTried = modelId;
+
+		uint8 previousFlags = CStreaming::ms_aInfoForModel[modelId].m_flags;
+		CStreaming::RequestModel(modelId, STREAMFLAGS_DEPENDENCY | STREAMFLAGS_DONT_REMOVE);
+		CStreaming::LoadAllRequestedModels(false);
+		CVehicleModelInfo *info = (CVehicleModelInfo*)CModelInfo::GetModelInfo(modelId);
+		if(!CStreaming::HasModelLoaded(modelId) || !info->GetRwObject()){
+			REVC_LOG_WARNING("Vehicle model %d did not load; trying the next one", modelId);
+			if(!(previousFlags & STREAMFLAGS_DONT_REMOVE))
+				CStreaming::SetModelIsDeletable(modelId);
+			continue;
+		}
+
+		CVehicle *vehicle = CCarCtrl::GetNewVehicleDependingOnCarModel(modelId, MISSION_VEHICLE);
+		if(!vehicle){
+			if(!(previousFlags & STREAMFLAGS_DONT_REMOVE))
+				CStreaming::SetModelIsDeletable(modelId);
+			continue;
+		}
+
+		// Drop it on the pavement in front of the player, nose towards him, and
+		// put him in the driver seat.
+		CVector pos = ped->GetPosition() + ped->GetForward()*3.0f;
+		bool foundGround;
+		float groundZ = CWorld::FindGroundZFor3DCoord(pos.x, pos.y, pos.z + 1.0f, &foundGround);
+		if(foundGround)
+			pos.z = groundZ;
+		vehicle->SetPosition(pos);
+		vehicle->SetOrientation(0.0f, 0.0f, ped->GetForward().Heading() + PI);
+		vehicle->SetStatus(STATUS_ABANDONED);
+		vehicle->m_nDoorLock = CARLOCK_UNLOCKED;
+		CWorld::Add(vehicle);
+
+		// Ask him to get in; if he is driving, he first steps out of the car he
+		// is in and only then walks over to the new one.
+		if(ped->bInVehicle && ped->m_pMyVehicle)
+			ped->SetObjective(OBJECTIVE_LEAVE_CAR, ped->m_pMyVehicle);
+		else
+			ped->SetObjective(OBJECTIVE_ENTER_CAR_AS_DRIVER, vehicle);
+
+		lastSpawnedVehicleModel = modelId;
+
+		if(!(previousFlags & STREAMFLAGS_DONT_REMOVE))
+			CStreaming::SetModelIsDeletable(modelId);
+		REVC_LOG_INFO("Vehicle spawned with Shift+%c: %d (%s)", plus ? '+' : '-',
+			modelId, info->GetModelName());
+		return;
 	}
 #endif
 }

@@ -972,6 +972,7 @@ void CGame::Process(void)
 		CRecordDataForChase::SaveOrRetrieveDataForThisFrame();
 		CPad::DoCheats();
 		CPad::ProcessPlayerModelKeys();
+		CPad::ProcessVehicleSpawnKeys();
 		CPad::ProcessTimeOfDayKeys();
 		CNoClip::ProcessInput();
 		CClock::Update();

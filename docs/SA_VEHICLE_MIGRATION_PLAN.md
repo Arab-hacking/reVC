@@ -158,3 +158,14 @@ g++ -std=c++11 -fsyntax-only -DLIBRW -DRW_GL3 -DLIBRW_SDL2 -DCMAKE_BUILD \
 
 over every `src/*/*.cpp`, plus a manual `g++` link of the pure-logic tests
 (`tests/TransmissionTests.cpp`, `tests/HandlingDataMgrTests.cpp`).
+
+## Debug keys
+
+`+` / `-` (main row or keypad) cycle the player skins, as before. With Shift
+held they walk the registered vehicle models instead: `Shift+=` (which is `+`
+on the main row) spawns the next streamable vehicle three metres in front of
+the player and asks him to get in, `Shift+-` walks the list backwards. Trains
+are skipped because they cannot stand on a road here. The walk starts from the
+car the player is in, or from the previous spawn when he is on foot, and skips
+models whose assets are not registered, so a half-populated `vehicles.ide`
+cannot stall the cycle. The search lives in `src/control/VehicleSpawnKey.h`.
