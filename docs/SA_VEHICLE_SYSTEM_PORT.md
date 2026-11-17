@@ -69,14 +69,14 @@ reverse); do not trust the contradictory 1..6 header comment in the reference.
 
 This is an intentionally explicit checklist, not completed functionality:
 
-1. **Handling registry/parser and units:** still the VC name table and parser.
-   It does not yet load SA/BR 36-column handling or engine inertia from the
-   archive. Current records use neutral inertia=1 as an explicit transitional
-   default. SA drag, model/handling flags, expanded identifiers and special
-   handling tables need their own bounded parser and migration. Do not copy the
-   BR analysis's misaligned handling-column summary over the canonical SA parser.
-2. **Contact/suspension/traction/braking:** Automobile/Bike contact loops and
-   old Dimension-derived resistance/turn-mass calculations are not SA ports.
+1. **Handling registry/parser and units:** SA/BR parser, stable full-width registry,
+   archive loading and canonical SA conversion now implemented (see below).
+   Legacy boot data remains for stock definitions; removing stock admission and
+   every legacy consumer is NOT complete. Raw SA model and handling words are
+   separate; a named temporary compatibility view remains for unported consumers.
+2. **Contact/suspension/traction/braking:** Automobile/Bike contact loops are not
+   SA ports. SA entries now use supplied turn mass and SA drag-based air resistance
+   (including Boat); old Dimension-based stabilization still needs migration.
 3. **Vehicle identity and classes:** reVC model constants, aircraft-as-automobile
    cases, boats, trains and special classes are still present. Their constructors,
    model-node assumptions and subtype dispatch must move together.
@@ -96,3 +96,36 @@ Bike, Boat, Heli, Plane, HandlingMgr and Transmission alone, excluding dependenc
 Replacing files wholesale would import unresolved SA engine globals and ABI
 assumptions rather than a working port. Each migrated subsystem must have numeric
 or runtime regression tests and remove, rather than silently retain, its old path.
+
+## SA handling registry implementation
+
+- `SAHandlingData.h`: bounded transactional 36-column parser with independent
+  32-bit flag words, 15/14/21-value auxiliary schemas and retained BR extensions.
+  Accepts the supplied double BOM, comments, final lines without newline and
+  canonical RCRAIDER wind typo. Rejects truncation, duplicate names, nonfinite
+  values, embedded NUL, invalid gear counts and oversized input. Crane and animation
+  rows are explicitly counted/skipped; their semantics are NOT ported.
+- Real supplied BR table: **565 base records, 23 bikes, 16 boats, 24 flying**.
+  Boat suspension columns intentionally are not constrained like road-car columns:
+  supplied valid boats include negative traction, bias >1, reversed limits.
+- `LoadSAHandlingData` installs stable maps atomically, preserves matching native
+  handling IDs and allocates new IDs beyond `NUMHANDLINGS`. No uint8 truncation
+  in auxiliary lookups; no reload that could invalidate live handling pointers.
+  Unknown names return -1 instead of aliasing the first dynamic entry.
+- Canonical mass, turn mass, drag, engine inertia, high-speed damping, flags,
+  animation group and three extra flying fields stored. SA conversion from
+  pinned `cHandlingDataMgr::ConvertDataToGameUnits` (0x6F5080), including drive
+  split, terminal velocity iteration, max-speed flag, RC reverse and bike reverse.
+- Common ZIP/BPC and vehicles ZIP data lookup admits `data/handling.cfg` with
+  a 1 MiB ceiling. CustomWorld resolves named SA records, requires matching
+  auxiliary type data and refuses generic VC handling substitution once SA
+  handling is installed. Native same-name definitions receive their SA handling.
+- `SAHandlingLoadTests` exercises real manager/parser/transmission, numeric
+  conversions, immutable pointer stability, malformed input and >255 auxiliary
+  IDs. Optional fixture argument verifies every supplied base record resolves.
+  Standalone and ASan/UBSan runs pass with the actual BR table. Full desktop
+  syntax checks pass; full Windows asset runtime remains unverified.
+
+This is not a claim that all vehicle logic has been migrated. In particular,
+stock models, legacy flag consumers, class dispatch, contact dynamics, resource
+rendering and gameplay integrations in the remaining checklist still exist.

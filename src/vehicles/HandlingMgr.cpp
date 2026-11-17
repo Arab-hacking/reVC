@@ -4,6 +4,11 @@
 #include "FileMgr.h"
 #include "Physical.h"
 #include "HandlingMgr.h"
+#include "SAHandlingData.h"
+#ifdef CUSTOM_MODELS
+#include "CustomModels.h"
+#endif
+#include <algorithm>
 
 cHandlingDataMgr mod_HandlingManager;
 
@@ -120,13 +125,25 @@ const char VehicleNames[NUMHANDLINGS][14] = {
 
 cHandlingDataMgr::cHandlingDataMgr(void)
 {
-	memset(this, 0, sizeof(*this));
+	field_0 = fWheelFriction = field_8 = field_C = field_10 = 0.0f;
+	for(auto &entry : HandlingData) entry = tHandlingData{};
+	for(auto &entry : BikeHandlingData) entry = tBikeHandlingData{};
+	for(auto &entry : BoatHandlingData) entry = tBoatHandlingData{};
+	for(auto &entry : FlyingHandlingData) entry = tFlyingHandlingData{};
 }
 
 void
 cHandlingDataMgr::Initialise(void)
 {
 	LoadHandlingData();
+#ifdef CUSTOM_MODELS
+	std::vector<uint8> saBytes;
+	std::string error;
+	if(CCustomModels::ReadDataFile("data/handling.cfg", saBytes)){
+		if(!LoadSAHandlingData(saBytes.data(), saBytes.size(), &error))
+			REVC_LOG_WARNING("SA handling not installed: %s", error.c_str());
+	}
+#endif
 	field_0 = 0.1f;
 	fWheelFriction = 0.9f;
 	field_8 = 1.0f;
@@ -415,25 +432,180 @@ cHandlingDataMgr::ConvertBikeDataToGameUnits(tBikeHandlingData *handling)
 int32
 cHandlingDataMgr::GetHandlingId(const char *name)
 {
+	if(!name) return -1;
+	auto sa = m_saNames.find(name);
+	if(sa != m_saNames.end()) return sa->second;
 	int i;
 	for(i = 0; i < NUMHANDLINGS; i++)
 		if(strncmp(VehicleNames[i], name, 14) == 0)
 			break;
-	return i;
+	return i == NUMHANDLINGS && !m_saNames.empty() ? -1 : i;
 }
 
 tFlyingHandlingData*
-cHandlingDataMgr::GetFlyingPointer(uint8 id)
+cHandlingDataMgr::GetFlyingPointer(int32 id)
 {
+	auto sa = m_saFlying.find(id);
+	if(sa != m_saFlying.end()) return &sa->second;
 	if(id >= HANDLING_SEAPLANE && id <= HANDLING_RCCOPTER)
 		return &FlyingHandlingData[id-HANDLING_SEAPLANE];
 	return &FlyingHandlingData[0];
 }
 
 tBoatHandlingData*
-cHandlingDataMgr::GetBoatPointer(uint8 id)
+cHandlingDataMgr::GetBoatPointer(int32 id)
 {
+	auto sa = m_saBoats.find(id);
+	if(sa != m_saBoats.end()) return &sa->second;
 	if(id >= HANDLING_PREDATOR && id <= HANDLING_SEAPLANE)
 		return &BoatHandlingData[id-HANDLING_PREDATOR];
 	return &BoatHandlingData[0];
+}
+
+
+tBikeHandlingData *
+cHandlingDataMgr::GetBikePointer(int32 id)
+{
+	auto sa = m_saBikes.find(id);
+	if(sa != m_saBikes.end()) return &sa->second;
+	if(id >= HANDLING_BIKE && id <= HANDLING_FREEWAY)
+		return &BikeHandlingData[id-HANDLING_BIKE];
+	return &BikeHandlingData[0];
+}
+
+namespace {
+// Transitional view for consumers not yet migrated to SA's TWO flag words.
+// Never put the raw SA word in Flags: its bits have different meanings.
+uint32 SACompatibilityFlags(uint32 model, uint32 handling)
+{
+	uint32 result = handling & 3;
+	const uint32 modelBits[][2] = {
+		{1u<<0,HANDLING_IS_VAN},{1u<<1,HANDLING_IS_BUS},{1u<<2,HANDLING_IS_LOW},
+		{1u<<3,HANDLING_IS_BIG},{1u<<4,HANDLING_REV_BONNET},{1u<<5,HANDLING_HANGING_BOOT},
+		{1u<<6,HANDLING_TAILGATE_BOOT},{1u<<7,HANDLING_NOSWING_BOOT},{1u<<8,HANDLING_NO_DOORS},
+		{1u<<10,HANDLING_SIT_IN_BOAT},{1u<<11,HANDLING_HAS_NO_ROOF},{1u<<12,HANDLING_NO_EXHAUST},
+		{1u<<13,HANDLING_DBL_EXHAUST},{1u<<24,HANDLING_IS_BIKE},{1u<<25,HANDLING_IS_HELI},
+		{1u<<26,HANDLING_IS_PLANE},{1u<<27,HANDLING_IS_BOAT}
+	};
+	for(const auto &bit : modelBits) if(model & bit[0]) result |= bit[1];
+	if(handling & (1u<<2)) result |= HANDLING_NONPLAYER_STABILISER;
+	if(handling & (1u<<3)) result |= HANDLING_NEUTRALHANDLING;
+	if(handling & (1u<<22)) result |= HANDLING_HALOGEN_LIGHTS;
+	if(handling & (1u<<23)) result |= HANDLING_REARWHEEL_1ST;
+	if(handling & ((1u<<20)|(1u<<21))) result |= HANDLING_GOOD_INSAND;
+	return result;
+}
+void ConvertSAUnits(tHandlingData &h, bool isBike, bool rcBandit)
+{
+	// gta-reversed cHandlingDataMgr::ConvertDataToGameUnits, SA 0x6F5080.
+	auto &t = h.Transmission;
+	t.fEngineAcceleration *= 0.4f/(50.0f*50.0f);
+	t.fMaxVelocity *= 0.277778f/50.0f;
+	h.fBrakeDeceleration /= 50.0f*50.0f;
+	h.fInvMass = 1.0f/h.fMass;
+	h.fBuoyancy = h.fMass*0.8f/h.nPercentSubmerged;
+	h.fCollisionDamageMultiplier *= h.fInvMass*2000.0f;
+	const float limit = t.fEngineAcceleration/6.0f;
+	float velocity = t.fMaxVelocity;
+	while(velocity > 0.0f){
+		velocity -= 0.01f;
+		if(h.fDragMult >= 0.01f){
+			if(velocity*velocity*(h.fDragMult/2.0f)/1000.0f <= limit) break;
+		}else{
+			const float reciprocal = 1.0f/(velocity*velocity*h.fDragMult+1.0f);
+			if((reciprocal-1.0f)*-velocity <= limit) break;
+		}
+	}
+	if(rcBandit){
+		t.fMaxCruiseVelocity = velocity;
+		t.fMaxReverseVelocity = -velocity;
+	}else if(h.nHandlingFlags & (1u<<24)){
+		t.fMaxCruiseVelocity = velocity/1.2f;
+		t.fMaxReverseVelocity = std::min(-t.fMaxCruiseVelocity/4.0f,-0.2f);
+	}else{
+		t.fMaxVelocity = velocity*1.2f;
+		t.fMaxCruiseVelocity = velocity;
+		t.fMaxReverseVelocity = isBike ? -0.05f : std::min(-velocity*0.3f,-0.2f);
+	}
+	t.fEngineAcceleration /= t.nDriveType=='4' ? 4.0f : 2.0f;
+	t.InitGearRatios();
+}
+}
+
+bool
+cHandlingDataMgr::LoadSAHandlingData(const uint8 *data, size_t size, std::string *error)
+{
+	sahandling::Table table;
+	if(!sahandling::Parse(data,size,table,error)) return false;
+	// Do not relocate data after vehicles have taken pointers into the registry.
+	if(!m_saCars.empty()){
+		if(error) *error = "SA handling registry is already installed; runtime reload is not supported";
+		return false;
+	}
+	std::map<std::string,int32> names;
+	std::map<int32,tHandlingData> cars;
+	std::map<int32,tBikeHandlingData> bikes;
+	std::map<int32,tBoatHandlingData> boats;
+	std::map<int32,tFlyingHandlingData> flying;
+	int32 next = NUMHANDLINGS;
+	for(const auto &source : table.cars){
+		int32 id = FindExactWord(source.name.c_str(),(const char*)VehicleNames,14,NUMHANDLINGS);
+		if(id < 0 || id >= NUMHANDLINGS) id = next++;
+		names[source.name] = id;
+		tHandlingData h = {};
+		h.nIdentifier = (tVehicleType)id;
+		h.fMass=source.mass; h.fTurnMass=source.turnMass; h.fDragMult=source.drag;
+		h.CentreOfMass=CVector(source.centre[0],source.centre[1],source.centre[2]);
+		h.nPercentSubmerged=source.submerged;
+		h.fTractionMultiplier=source.traction; h.fTractionLoss=source.tractionLoss; h.fTractionBias=source.tractionBias;
+		auto &t=h.Transmission;
+		t.nNumberOfGears=source.gears; t.nDriveType=source.drive; t.nEngineType=source.engine;
+		t.fMaxVelocity=source.velocity; t.fEngineAcceleration=source.acceleration; t.fEngineInertia=source.inertia;
+		t.Flags=source.handlingFlags;
+		h.fBrakeDeceleration=source.brake; h.fBrakeBias=source.brakeBias; h.bABS=source.abs;
+		h.fSteeringLock=source.steering; h.fSuspensionForceLevel=source.spring;
+		h.fSuspensionDampingLevel=source.damping; h.fSuspensionHighSpdComDamp=source.highSpeedDamping;
+		h.fSuspensionUpperLimit=source.upper; h.fSuspensionLowerLimit=source.lower;
+		h.fSuspensionBias=source.suspensionBias; h.fSuspensionAntidiveMultiplier=source.antiDive;
+		h.fSeatOffsetDistance=source.seatOffset; h.fCollisionDamageMultiplier=source.collisionDamage;
+		h.nMonetaryValue=source.money; h.FrontLights=source.frontLights; h.RearLights=source.rearLights;
+		h.nModelFlags=source.modelFlags; h.nHandlingFlags=source.handlingFlags; h.nAnimGroup=source.animGroup;
+		h.Flags=SACompatibilityFlags(source.modelFlags,source.handlingFlags); h.bSAData=true;
+		bool isBike=(source.modelFlags & (1u<<24))!=0;
+		for(const auto &special : table.bikes) if(special.name==source.name) isBike=true;
+		ConvertSAUnits(h,isBike,source.name=="RCBANDIT");
+		cars[id]=h;
+	}
+	for(const auto &source : table.bikes){
+		auto id=names.find(source.name); if(id==names.end()) continue;
+		tBikeHandlingData h={}; h.nIdentifier=(tVehicleType)id->second;
+		float *fields[]={&h.fLeanFwdCOM,&h.fLeanFwdForce,&h.fLeanBakCOM,&h.fLeanBackForce,
+			&h.fMaxLean,&h.fFullAnimLean,&h.fDesLean,&h.fSpeedSteer,&h.fSlipSteer,
+			&h.fNoPlayerCOMz,&h.fWheelieAng,&h.fStoppieAng,&h.fWheelieSteer,&h.fWheelieStabMult,&h.fStoppieStabMult};
+		for(size_t i=0;i<15;++i) *fields[i]=source.values[i];
+		ConvertBikeDataToGameUnits(&h); bikes[id->second]=h;
+	}
+	for(const auto &source : table.boats){
+		auto id=names.find(source.name); if(id==names.end()) continue;
+		tBoatHandlingData h={}; h.nIdentifier=(tVehicleType)id->second;
+		float *fields[]={&h.fThrustY,&h.fThrustZ,&h.fThrustAppZ,&h.fAqPlaneForce,&h.fAqPlaneLimit,
+			&h.fAqPlaneOffset,&h.fWaveAudioMult,&h.vecMoveRes.x,&h.vecMoveRes.y,&h.vecMoveRes.z,
+			&h.vecTurnRes.x,&h.vecTurnRes.y,&h.vecTurnRes.z,&h.fLook_L_R_BehindCamHeight};
+		for(size_t i=0;i<14;++i) *fields[i]=source.values[i];
+		boats[id->second]=h;
+	}
+	for(const auto &source : table.flying){
+		auto id=names.find(source.name); if(id==names.end()) continue;
+		tFlyingHandlingData h={}; h.nIdentifier=(tVehicleType)id->second;
+		float *fields[]={&h.fThrust,&h.fThrustFallOff,&h.fYaw,&h.fYawStab,&h.fSideSlip,&h.fRoll,&h.fRollStab,
+			&h.fPitch,&h.fPitchStab,&h.fFormLift,&h.fAttackLift,&h.fGearUpR,&h.fGearDownL,&h.fWindMult,
+			&h.fMoveRes,&h.vecTurnRes.x,&h.vecTurnRes.y,&h.vecTurnRes.z,&h.vecSpeedRes.x,&h.vecSpeedRes.y,&h.vecSpeedRes.z};
+		for(size_t i=0;i<21;++i) *fields[i]=source.values[i];
+		flying[id->second]=h;
+	}
+	m_saNames.swap(names); m_saCars.swap(cars); m_saBikes.swap(bikes);
+	m_saBoats.swap(boats); m_saFlying.swap(flying);
+	REVC_LOG_INFO("Installed SA handling: %u cars, %u bike, %u boat, %u flying records",
+		(unsigned)m_saCars.size(),(unsigned)m_saBikes.size(),(unsigned)m_saBoats.size(),(unsigned)m_saFlying.size());
+	return true;
 }

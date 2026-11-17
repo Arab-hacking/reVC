@@ -110,7 +110,7 @@ CBike::CBike(int32 id, uint8 CreatedBy)
 	m_fTurnMass = pHandling->fTurnMass;
 	m_vecCentreOfMass = pHandling->CentreOfMass;
 	m_vecCentreOfMass.z = 0.1f;
-	m_fAirResistance = pHandling->Dimension.x*pHandling->Dimension.z/m_fMass;
+	m_fAirResistance = pHandling->GetAirResistance();
 	m_fElasticity = 0.05f;
 	m_fBuoyancy = pHandling->fBuoyancy;
 

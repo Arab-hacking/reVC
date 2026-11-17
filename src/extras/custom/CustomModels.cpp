@@ -435,14 +435,14 @@ ScanCommonZip(void)
 				if((key == "data/water.dat" && ent->uncompressedSize > 1024*1024) ||
 				   (key == "data/lods.info" && ent->uncompressedSize > 1024*1024) ||
 				   (key == "data/carcols.dat" && ent->uncompressedSize > 64*1024) ||
-				   (key == "data/carmods.dat" && ent->uncompressedSize > 1024*1024)) {
+				   ((key == "data/carmods.dat" || key == "data/handling.cfg") && ent->uncompressedSize > 1024*1024)) {
 					CUSTOM_LOG("common.zip: %s exceeds data table size limit\n", key.c_str());
 					continue;
 				}
 				CustomSource src = MakeSource(mtime, path.c_str(), ent->name);
 				src.zipEntry = n;
 				if(pass == 0 && (key == "data/config.dat" || key == "data/timecyc.json" ||
-			                 key == "data/water.dat" || key == "data/carcols.dat" || key == "data/carmods.dat" ||
+			                 key == "data/water.dat" || key == "data/carcols.dat" || key == "data/carmods.dat" || key == "data/handling.cfg" ||
 			                 key == "data/lods.info" ||
 			                 key == "models/generic/vehicle.txd" || key == "models/vehicle.txd")) {
 					commonZipDataFiles.insert(std::make_pair(key, src));
@@ -749,7 +749,7 @@ ScanBpcSystem(void)
 				   (key == "data/texdb.dat" && ent->uncompressedSize > 1024 * 1024) ||
 				   (key == "data/colorcycle.dat" && ent->uncompressedSize > 64 * 1024) ||
 				   (key == "data/carcols.dat" && ent->uncompressedSize > 64 * 1024) ||
-				   (key == "data/carmods.dat" && ent->uncompressedSize > 1024 * 1024))
+				   ((key == "data/carmods.dat" || key == "data/handling.cfg") && ent->uncompressedSize > 1024 * 1024))
 					continue;
 
 				CustomSource src = MakeSource(mtime, commonPath.c_str(), ent->name);
@@ -759,7 +759,7 @@ ScanBpcSystem(void)
 				if(pass == 0 && (key == "data/config.dat" || key == "data/texdb.dat" ||
 				                 key == "data/timecyc.json" || key == "data/colorcycle.dat" ||
 				                 key == "data/water.dat" ||
-				                 key == "data/carcols.dat" || key == "data/carmods.dat" || key == "data/lods.info" ||
+				                 key == "data/carcols.dat" || key == "data/carmods.dat" || key == "data/handling.cfg" || key == "data/lods.info" ||
 				                 key == "models/generic/vehicle.txd" || key == "models/vehicle.txd")){
 					commonZipDataFiles[key] = src;
 					continue;
@@ -5114,6 +5114,7 @@ CCustomModels::ReadDataFile(const char *relpath, std::vector<uint8> &out,
 	                       strcmp(relpath, "data/water.dat") != 0 &&
 	                       strcmp(relpath, "data/carcols.dat") != 0 &&
 	                       strcmp(relpath, "data/carmods.dat") != 0 &&
+	                       strcmp(relpath, "data/handling.cfg") != 0 &&
 #ifdef ANDROID
 	                       strcmp(relpath, "data/colorcycle.dat") != 0 &&
 #endif

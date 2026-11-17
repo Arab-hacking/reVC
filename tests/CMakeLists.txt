@@ -477,4 +477,16 @@ if(TARGET custom_archive_integration_tests)
     target_compile_options(sa_transmission_tests PRIVATE -Wno-write-strings -Wno-multichar)
     set_target_properties(sa_transmission_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
     add_test(NAME sa_transmission_tests COMMAND sa_transmission_tests)
+
+    add_executable(sa_handling_load_tests SAHandlingLoadTests.cpp
+        ../src/vehicles/HandlingMgr.cpp ../src/vehicles/Transmission.cpp)
+    target_include_directories(sa_handling_load_tests PRIVATE
+        $<TARGET_PROPERTY:custom_archive_integration_tests,INCLUDE_DIRECTORIES>)
+    target_compile_definitions(sa_handling_load_tests PRIVATE
+        LIBRW RW_GL3 LIBRW_SDL2 CMAKE_BUILD USE_OUR_VERSIONING AUDIO_OAL)
+    target_compile_options(sa_handling_load_tests PRIVATE
+        -Wno-write-strings -Wno-multichar -ffunction-sections -fdata-sections)
+    target_link_options(sa_handling_load_tests PRIVATE -Wl,--gc-sections)
+    set_target_properties(sa_handling_load_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+    add_test(NAME sa_handling_load_tests COMMAND sa_handling_load_tests)
 endif()

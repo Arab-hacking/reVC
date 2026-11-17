@@ -388,7 +388,16 @@ int VehicleType(const std::string &s)
 
 bool HandlingMatches(int type, int id)
 {
-    if(id < 0 || id >= NUMHANDLINGS) return false;
+    if(id < 0) return false;
+    if(mod_HandlingManager.IsSAHandling(id)){
+        const uint32 flags = mod_HandlingManager.GetHandlingData((tVehicleType)id)->nModelFlags;
+        if(type == VEHICLE_TYPE_BIKE) return mod_HandlingManager.HasSABikeHandling(id);
+        if(type == VEHICLE_TYPE_BOAT) return mod_HandlingManager.HasSABoatHandling(id);
+        if(type == VEHICLE_TYPE_HELI) return (flags & (1u<<25)) && mod_HandlingManager.HasSAFlyingHandling(id);
+        if(type == VEHICLE_TYPE_PLANE) return (flags & (1u<<26)) && mod_HandlingManager.HasSAFlyingHandling(id);
+        return type == VEHICLE_TYPE_CAR && !(flags & 0x0F000000u) && !mod_HandlingManager.HasSABikeHandling(id);
+    }
+    if(id >= NUMHANDLINGS) return false;
     if(type == VEHICLE_TYPE_CAR)
         return id < HANDLING_BIKE && !(mod_HandlingManager.GetHandlingData((tVehicleType)id)->Flags &
             (HANDLING_IS_BIKE | HANDLING_IS_BOAT | HANDLING_IS_HELI | HANDLING_IS_PLANE));
@@ -406,8 +415,10 @@ int BuiltinHandling(int type, const std::string &name, bool &fallback)
     std::string id = name;
     for(char &c : id) c = (char)std::toupper((unsigned char)c);
     int result = mod_HandlingManager.GetHandlingId(id.c_str());
+    if(mod_HandlingManager.HasSAHandlingData() && !mod_HandlingManager.IsSAHandling(result)) return -1;
     fallback = !HandlingMatches(type, result);
     if(!fallback) return result;
+    if(mod_HandlingManager.HasSAHandlingData()) return -1; // no generic VC substitution for SA records
     switch(type) {
     case VEHICLE_TYPE_BIKE: return HANDLING_BIKE;
     case VEHICLE_TYPE_BOAT: return HANDLING_PREDATOR;
@@ -517,6 +528,12 @@ void CCustomWorld::LoadIde(void)
         const ModelInfoType type = ModelType(m.kind);
         const int vehicleType = type == MITYPE_VEHICLE ? VehicleType(m.subtype) : -1;
         if(type == MITYPE_VEHICLE && vehicleType < 0) { unsupported++; continue; }
+        int resolvedHandling = -1;
+        bool handlingFallback = false;
+        if(type == MITYPE_VEHICLE){
+            resolvedHandling = BuiltinHandling(vehicleType, m.handling, handlingFallback);
+            if(resolvedHandling < 0){ unsupported++; continue; }
+        }
         std::unordered_map<std::string, int>::const_iterator old = existing.find(key);
         if(old != existing.end()) {
             CBaseModelInfo *mi = CModelInfo::GetModelInfo(old->second);
@@ -525,6 +542,8 @@ void CCustomWorld::LoadIde(void)
                 incompatible++;
                 continue;
             }
+            if(type == MITYPE_VEHICLE && mod_HandlingManager.IsSAHandling(resolvedHandling))
+                ((CVehicleModelInfo*)mi)->m_handlingId = resolvedHandling;
             nameSlots[key] = old->second;
             reusedNative++;
             continue; // keep known-safe native collision, scripts, ped/vehicle data
@@ -567,12 +586,10 @@ void CCustomWorld::LoadIde(void)
             mi = ped;
         } else if(type == MITYPE_VEHICLE) {
             CVehicleModelInfo *vehicle = CModelInfo::AddVehicleModel(next);
-            bool fallback = false;
             vehicle->m_vehicleType = vehicleType;
-            vehicle->m_handlingId = BuiltinHandling(vehicleType, m.handling, fallback);
-            fallbackHandling += fallback;
-            // Only built-in VC handling is used. No SA physics, wheel model
-            // IDs, component rules or traffic spawning data are imported.
+            vehicle->m_handlingId = resolvedHandling;
+            fallbackHandling += handlingFallback;
+            // SA records retain their own mass, inertia and independent flag words.
             vehicle->m_wheelId = -1; // SA wheels are embedded in the DFF
             vehicle->m_wheelScale = 1.0f;
             vehicle->m_bikeSteerAngle = vehicleType == VEHICLE_TYPE_BIKE ? 35.0f : 0.0f;

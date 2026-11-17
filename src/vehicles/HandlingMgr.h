@@ -2,6 +2,9 @@
 #define __GTA_HANDLINGMGR_H__
 
 #include "Transmission.h"
+#include <map>
+#include <string>
+#include <vector>
 
 enum tVehicleType
 {
@@ -189,6 +192,17 @@ struct tHandlingData
 	int32 nMonetaryValue;
 	int8 FrontLights;
 	int8 RearLights;
+	// Canonical SA fields are kept separate from the temporary legacy flag view.
+	float fDragMult;
+	float fSuspensionHighSpdComDamp;
+	uint32 nModelFlags;
+	uint32 nHandlingFlags;
+	uint8 nAnimGroup;
+	bool bSAData;
+	float GetAirResistance(void) const {
+		if(bSAData) return fDragMult <= 0.01f ? fDragMult : fDragMult/1000.0f/2.0f;
+		return Dimension.x*Dimension.z/fMass;
+	}
 };
 
 struct tBikeHandlingData
@@ -241,6 +255,7 @@ struct  tFlyingHandlingData
 	float fFormLift;
 	float fAttackLift;
 	float fMoveRes;
+	float fGearUpR, fGearDownL, fWindMult;
 	CVector vecTurnRes;
 	CVector vecSpeedRes;
 };
@@ -261,21 +276,38 @@ private:
 	tFlyingHandlingData FlyingHandlingData[NUMFLYINGHANDLINGS];
 	tBoatHandlingData BoatHandlingData[NUMBOATHANDLINGS];
 
+	std::map<std::string, int32> m_saNames;
+	std::map<int32, tHandlingData> m_saCars;
+	std::map<int32, tBikeHandlingData> m_saBikes;
+	std::map<int32, tBoatHandlingData> m_saBoats;
+	std::map<int32, tFlyingHandlingData> m_saFlying;
+
 public:
 	cHandlingDataMgr(void);
 	void Initialise(void);
 	void LoadHandlingData(void);
+	bool LoadSAHandlingData(const uint8 *data, size_t size, std::string *error = nil);
+	bool HasSAHandlingData(void) const { return !m_saCars.empty(); }
+	bool IsSAHandling(int32 id) const { return m_saCars.count(id) != 0; }
+	bool HasSABikeHandling(int32 id) const { return m_saBikes.count(id) != 0; }
+	bool HasSABoatHandling(int32 id) const { return m_saBoats.count(id) != 0; }
+	bool HasSAFlyingHandling(int32 id) const { return m_saFlying.count(id) != 0; }
 	int FindExactWord(const char *word, const char *words, int wordLen, int numWords);
 	void ConvertDataToWorldUnits(tHandlingData *handling);
 	void ConvertDataToGameUnits(tHandlingData *handling);
 	void ConvertBikeDataToGameUnits(tBikeHandlingData *handling);
 	int32 GetHandlingId(const char *name);
-	tHandlingData *GetHandlingData(tVehicleType id) { return &HandlingData[id]; }
-	tBikeHandlingData *GetBikePointer(uint8 id) { return &BikeHandlingData[id-HANDLING_BIKE]; }
-	tFlyingHandlingData *GetFlyingPointer(uint8 id);
-	tBoatHandlingData *GetBoatPointer(uint8 id);
-	bool HasRearWheelDrive(tVehicleType id) { return HandlingData[id].Transmission.nDriveType != 'F'; }
-	bool HasFrontWheelDrive(tVehicleType id) { return HandlingData[id].Transmission.nDriveType != 'R'; }
+	tHandlingData *GetHandlingData(tVehicleType id) {
+		auto sa = m_saCars.find(id);
+		if(sa != m_saCars.end()) return &sa->second;
+		assert(id >= 0 && id < NUMHANDLINGS);
+		return &HandlingData[id >= 0 && id < NUMHANDLINGS ? id : 0];
+	}
+	tBikeHandlingData *GetBikePointer(int32 id);
+	tFlyingHandlingData *GetFlyingPointer(int32 id);
+	tBoatHandlingData *GetBoatPointer(int32 id);
+	bool HasRearWheelDrive(tVehicleType id) { return GetHandlingData(id)->Transmission.nDriveType != 'F'; }
+	bool HasFrontWheelDrive(tVehicleType id) { return GetHandlingData(id)->Transmission.nDriveType != 'R'; }
 };
 extern cHandlingDataMgr mod_HandlingManager;
 
