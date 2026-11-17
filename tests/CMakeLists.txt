@@ -469,12 +469,20 @@ if(TARGET custom_archive_integration_tests)
 endif()
 
 if(TARGET custom_archive_integration_tests)
-    add_executable(sa_transmission_tests SATransmissionTests.cpp ../src/vehicles/Transmission.cpp)
-    target_include_directories(sa_transmission_tests PRIVATE
-        $<TARGET_PROPERTY:custom_archive_integration_tests,INCLUDE_DIRECTORIES>)
-    target_compile_definitions(sa_transmission_tests PRIVATE
-        LIBRW RW_GL3 LIBRW_SDL2 CMAKE_BUILD USE_OUR_VERSIONING AUDIO_OAL)
-    target_compile_options(sa_transmission_tests PRIVATE -Wno-write-strings -Wno-multichar)
-    set_target_properties(sa_transmission_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
-    add_test(NAME sa_transmission_tests COMMAND sa_transmission_tests)
+    foreach(handling_target transmission_tests handling_data_mgr_tests)
+        if(handling_target STREQUAL "transmission_tests")
+            set(handling_source TransmissionTests.cpp)
+        else()
+            set(handling_source HandlingDataMgrTests.cpp)
+        endif()
+        add_executable(${handling_target} ${handling_source}
+            ../src/vehicles/cTransmission.cpp ../src/vehicles/cHandlingDataMgr.cpp)
+        target_include_directories(${handling_target} PRIVATE
+            $<TARGET_PROPERTY:custom_archive_integration_tests,INCLUDE_DIRECTORIES>)
+        target_compile_definitions(${handling_target} PRIVATE
+            LIBRW RW_GL3 LIBRW_SDL2 CMAKE_BUILD USE_OUR_VERSIONING AUDIO_OAL)
+        target_compile_options(${handling_target} PRIVATE -Wno-write-strings -Wno-multichar)
+        set_target_properties(${handling_target} PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+        add_test(NAME ${handling_target} COMMAND ${handling_target})
+    endforeach()
 endif()

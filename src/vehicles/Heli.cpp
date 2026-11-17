@@ -25,7 +25,7 @@
 #include "Wanted.h"
 #include "DMAudio.h"
 #include "Object.h"
-#include "HandlingMgr.h"
+#include "cHandlingDataMgr.h"
 #include "Ropes.h"
 #include "Heli.h"
 #ifdef FIX_BUGS
@@ -55,7 +55,7 @@ CHeli::CHeli(int32 id, uint8 CreatedBy)
 
 	CVehicleModelInfo *mi = (CVehicleModelInfo*)CModelInfo::GetModelInfo(id);
 	m_vehType = VEHICLE_TYPE_HELI;
-	pHandling = mod_HandlingManager.GetHandlingData((tVehicleType)mi->m_handlingId);
+	m_pHandlingData = mod_HandlingManager.GetVehiclePointer((uint32)mi->m_handlingId);
 	SetModelIndex(id);
 	m_heliStatus = HELI_STATUS_HOVER;
 	m_pathState = 0;

@@ -7,7 +7,7 @@
 #include "NodeName.h"
 #include "TxdStore.h"
 #include "Weather.h"
-#include "HandlingMgr.h"
+#include "cHandlingDataMgr.h"
 #include "VisibilityPlugins.h"
 #include "FileMgr.h"
 #include "World.h"
@@ -796,7 +796,7 @@ CVehicleModelInfo::SetAtomicRenderCallbacks(void)
 		RpClumpForAllAtomics(m_clump, SetAtomicRendererCB_BigVehicle, nil);
 	else if(m_vehicleType == VEHICLE_TYPE_BOAT)
 		RpClumpForAllAtomics(m_clump, SetAtomicRendererCB_Boat, m_clump);
-	else if(mod_HandlingManager.GetHandlingData((tVehicleType)m_handlingId)->Flags & HANDLING_IS_HELI)
+	else if(mod_HandlingManager.GetVehiclePointer((uint32)m_handlingId)->m_bIsHeli)
 		RpClumpForAllAtomics(m_clump, SetAtomicRendererCB_RealHeli, m_clump);
 	else
 		RpClumpForAllAtomics(m_clump, SetAtomicRendererCB, m_clump);
@@ -1050,7 +1050,7 @@ CVehicleModelInfo::SetVehicleComponentFlags(RwFrame *frame, uint32 flags)
 {
 	tHandlingData *handling;
 
-	handling = mod_HandlingManager.GetHandlingData((tVehicleType)m_handlingId);
+	handling = mod_HandlingManager.GetVehiclePointer((uint32)m_handlingId);
 
 #define SETFLAGS(f) RwFrameForAllObjects(frame, SetAtomicFlagCB, (void*)(f))
 
@@ -1065,7 +1065,7 @@ CVehicleModelInfo::SetVehicleComponentFlags(RwFrame *frame, uint32 flags)
 
 	if(flags & VEHICLE_FLAG_FRONT)
 		SETFLAGS(ATOMIC_FLAG_FRONT);
-	else if(flags & VEHICLE_FLAG_REAR && (handling->Flags & HANDLING_IS_VAN || (flags & (VEHICLE_FLAG_LEFT|VEHICLE_FLAG_RIGHT)) == 0))
+	else if(flags & VEHICLE_FLAG_REAR && (handling->m_bIsVan || (flags & (VEHICLE_FLAG_LEFT|VEHICLE_FLAG_RIGHT)) == 0))
 		SETFLAGS(ATOMIC_FLAG_REAR);
 	else if(flags & VEHICLE_FLAG_LEFT)
 		SETFLAGS(ATOMIC_FLAG_LEFT);

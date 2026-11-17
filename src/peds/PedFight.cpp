@@ -4024,7 +4024,7 @@ CPed::DriveVehicle(void)
 				if (walkbackAssoc && walkbackAssoc->blendDelta >= 0.0f)
 					walkbackAssoc->blendDelta = -4.0f;
 			} else {
-				float maxReverseSpeed = bike->pHandling->Transmission.fMaxReverseVelocity;
+				float maxReverseSpeed = bike->m_pHandlingData->m_Transmission.m_fMaxReverseVelocity;
 				if (3.5f * maxReverseSpeed > velocityFwdDotProd && (bike->m_nWheelsOnGround || bike->GetUp().z < -0.5f)) {
 					bike->KnockOffRider(WEAPONTYPE_FALL, 2, this, false);
 					if (bike->pPassengers[0])
@@ -4062,7 +4062,7 @@ CPed::DriveVehicle(void)
 			targetLRLean = 0.0f;
 			timeBlend = Pow(0.86f, CTimer::GetTimeStep());
 		} else {
-			targetLRLean = Clamp(bike->m_fLeanLRAngle / bike->pBikeHandling->fFullAnimLean, -1.0f, 1.0f);
+			targetLRLean = Clamp(bike->m_fLeanLRAngle / bike->m_pBikeHandlingData->m_fFullAnimLean, -1.0f, 1.0f);
 			timeBlend = Pow(0.86f, CTimer::GetTimeStep());
 		}
 
@@ -4081,19 +4081,19 @@ CPed::DriveVehicle(void)
 				if (0.0f == bike->m_aWheelTimer[2] && 0.0f == bike->m_aWheelTimer[3] &&
 					(bike->GetForward().z < 0.0f && (bike->m_aWheelTimer[0] != 0.0f || bike->m_aWheelTimer[1] != 0.0f))) {
 
-					stoppieAng = bike->pBikeHandling->fStoppieAng;
+					stoppieAng = bike->m_pBikeHandlingData->m_fStoppieAng;
 					if (stoppieAng - bike->GetForward().z > 0.6f * stoppieAng)
 						bike->bWheelieCam = true;
 				}
 			} else {
-				float wheelieAng = bike->pBikeHandling->fWheelieAng;
+				float wheelieAng = bike->m_pBikeHandlingData->m_fWheelieAng;
 				neededAngForWheelie = wheelieAng - bike->GetForward().z;
 				if (neededAngForWheelie < wheelieAng / 2.f)
 					bike->bWheelieCam = true;
 			}
 			if (neededAngForWheelie >= 0.15f) {
 				if (bike->m_fBrakePedal <= 0.5f || velocityFwdDotProd <= 0.01f) {
-					if (bike->m_fGasPedal > 0.5f && targetUDLean <= 0.0f && 0.3f * bike->pHandling->Transmission.fMaxCruiseVelocity > velocityFwdDotProd) {
+					if (bike->m_fGasPedal > 0.5f && targetUDLean <= 0.0f && 0.3f * bike->m_pHandlingData->m_Transmission.m_fMaxCruiseVelocity > velocityFwdDotProd) {
 						targetUDLean = Min(0.1f, targetUDLean);
 					}
 				} else {
@@ -4205,7 +4205,7 @@ CPed::DriveVehicle(void)
 	CAnimBlendAssociation* rDriveAssoc;
 	CAnimBlendAssociation* lbAssoc;
 	CAnimBlendAssociation* sitAssoc;
-	if (m_pMyVehicle->IsBoat() && !(m_pMyVehicle->pHandling->Flags & HANDLING_SIT_IN_BOAT)) {
+	if (m_pMyVehicle->IsBoat() && !(m_pMyVehicle->m_pHandlingData->m_nModelFlags & VEHICLE_HANDLING_MODEL_SIT_IN_BOAT)) {
 		sitAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_BOAT_DRIVE);
 
 		if (!sitAssoc || sitAssoc->blendAmount < 1.0f) {
@@ -4265,7 +4265,7 @@ CPed::DriveVehicle(void)
 
 			if (rDriveAssoc)
 				rDriveAssoc->blendAmount = Clamp(steerAngle * -100.0f / 61.0f, 0.0f, 1.0f);
-			else if (m_pMyVehicle->IsBoat() && !(m_pMyVehicle->pHandling->Flags & HANDLING_SIT_IN_BOAT))
+			else if (m_pMyVehicle->IsBoat() && !(m_pMyVehicle->m_pHandlingData->m_nModelFlags & VEHICLE_HANDLING_MODEL_SIT_IN_BOAT))
 				CAnimManager::AddAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_BOAT_DRIVE_RIGHT);
 			else if (m_pMyVehicle->bLowVehicle)
 				CAnimManager::AddAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_CAR_DRIVE_RIGHT_LO);
@@ -4278,7 +4278,7 @@ CPed::DriveVehicle(void)
 
 			if (lDriveAssoc)
 				lDriveAssoc->blendAmount = Clamp(steerAngle * 100.0f / 61.0f, 0.0f, 1.0f);
-			else if (m_pMyVehicle->IsBoat() && !(m_pMyVehicle->pHandling->Flags & HANDLING_SIT_IN_BOAT))
+			else if (m_pMyVehicle->IsBoat() && !(m_pMyVehicle->m_pHandlingData->m_nModelFlags & VEHICLE_HANDLING_MODEL_SIT_IN_BOAT))
 				CAnimManager::AddAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_BOAT_DRIVE_LEFT);
 			else if (m_pMyVehicle->bLowVehicle)
 				CAnimManager::AddAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_CAR_DRIVE_LEFT_LO);
@@ -4294,7 +4294,7 @@ CPed::DriveVehicle(void)
 			|| TheCamera.Cams[TheCamera.ActiveCam].DirectionWasLooking != LOOKING_LEFT)
 			&& (!lbAssoc || lbAssoc->blendAmount < 1.0f && lbAssoc->blendDelta <= 0.0f)) {
 
-			if (m_pMyVehicle->IsBoat() && !(m_pMyVehicle->pHandling->Flags & HANDLING_SIT_IN_BOAT))
+			if (m_pMyVehicle->IsBoat() && !(m_pMyVehicle->m_pHandlingData->m_nModelFlags & VEHICLE_HANDLING_MODEL_SIT_IN_BOAT))
 				CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_BOAT_LOOKBEHIND, 4.0f);
 			else
 				CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_CAR_LOOKBEHIND, 4.0f);

@@ -8,7 +8,7 @@
 #include "DMAudio.h"
 #include "General.h"
 #include "Font.h"
-#include "HandlingMgr.h"
+#include "cHandlingDataMgr.h"
 #include "Hud.h"
 #include "Messages.h"
 #include "ModelIndices.h"

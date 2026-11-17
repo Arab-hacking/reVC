@@ -11,7 +11,7 @@
 #include "World.h"
 #include "Ped.h"
 #include "DMAudio.h"
-#include "HandlingMgr.h"
+#include "cHandlingDataMgr.h"
 #include "Train.h"
 #include "AudioScriptObject.h"
 
@@ -44,7 +44,7 @@ CTrain::CTrain(int32 id, uint8 CreatedBy)
 #ifdef GTA_TRAIN
 	CVehicleModelInfo *mi = (CVehicleModelInfo*)CModelInfo::GetModelInfo(id);
 	m_vehType = VEHICLE_TYPE_TRAIN;
-	pHandling = mod_HandlingManager.GetHandlingData((tVehicleType)mi->m_handlingId);
+	m_pHandlingData = mod_HandlingManager.GetVehiclePointer((uint32)mi->m_handlingId);
 	SetModelIndex(id);
 
 	Doors[0].Init(0.8f, 0.0f, 1, 0);

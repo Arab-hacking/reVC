@@ -15,7 +15,7 @@
 #include "Explosion.h"
 #include "Fluff.h"
 #include "World.h"
-#include "HandlingMgr.h"
+#include "cHandlingDataMgr.h"
 #include "Heli.h"
 #include "Plane.h"
 #include "MemoryHeap.h"
@@ -69,7 +69,7 @@ CPlane::CPlane(int32 id, uint8 CreatedBy)
 {
 	CVehicleModelInfo *mi = (CVehicleModelInfo*)CModelInfo::GetModelInfo(id);
 	m_vehType = VEHICLE_TYPE_PLANE;
-	pHandling = mod_HandlingManager.GetHandlingData((tVehicleType)mi->m_handlingId);
+	m_pHandlingData = mod_HandlingManager.GetVehiclePointer((uint32)mi->m_handlingId);
 	SetModelIndex(id);
 
 	m_fMass = 100000000.0f;

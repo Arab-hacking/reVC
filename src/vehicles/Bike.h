@@ -37,7 +37,7 @@ public:
 	CMatrix m_leanMatrix;
 	CVector m_vecAvgSurfaceNormal;
 	CVector m_vecAvgSurfaceRight;
-	tBikeHandlingData *pBikeHandling;
+	tBikeHandlingData *m_pBikeHandlingData;
 	AssocGroupId m_bikeAnimType;
 	uint8 m_wheelStatus[2];
 	CColPoint m_aWheelColPoints[4];

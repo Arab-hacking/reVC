@@ -14,7 +14,7 @@
 #include "Fire.h"
 #include "Garages.h"
 #include "General.h"
-#include "HandlingMgr.h"
+#include "cHandlingDataMgr.h"
 #include "Heli.h"
 #include "ModelIndices.h"
 #include "MusicManager.h"
@@ -32,7 +32,7 @@
 #include "Stats.h"
 #include "SurfaceTable.h"
 #include "Train.h"
-#include "Transmission.h"
+#include "cTransmission.h"
 #include "Vehicle.h"
 #include "WaterCannon.h"
 #include "Weather.h"
@@ -1006,12 +1006,12 @@ ResolveVehicleAudioIndex(const CVehicle *veh)
 	int32 fallback = MI_ADMIRAL - MI_FIRST_VEHICLE;
 	if (veh->m_vehType == VEHICLE_TYPE_BIKE) {
 		fallback = MI_PCJ600 - MI_FIRST_VEHICLE;
-		if (veh->pHandling != nil) {
-			switch (veh->pHandling->nIdentifier) {
+		if (veh->m_pHandlingData != nil) {
+			switch (veh->m_pHandlingData->m_nVehicleId) {
 			case HANDLING_DIRTBIKE:
 				fallback = MI_SANCHEZ - MI_FIRST_VEHICLE;
 				break;
-			case HANDLING_ANGEL:
+			case HANDLING_CHOPPERBIKE:
 			case HANDLING_FREEWAY:
 				fallback = MI_FREEWAY - MI_FIRST_VEHICLE;
 				break;
@@ -1024,27 +1024,27 @@ ResolveVehicleAudioIndex(const CVehicle *veh)
 		}
 	} else if (veh->m_vehType == VEHICLE_TYPE_BOAT) {
 		fallback = MI_SPEEDER - MI_FIRST_VEHICLE;
-	} else if (veh->pHandling != nil) {
-		switch (veh->pHandling->nIdentifier) {
+	} else if (veh->m_pHandlingData != nil) {
+		switch (veh->m_pHandlingData->m_nVehicleId) {
 		case HANDLING_LANDSTAL:
-		case HANDLING_RANCHER:
+		case HANDLING_FBIRANCHER:
 		case HANDLING_PATRIOT:
-		case HANDLING_FBIRANCH:
+		case HANDLING_RANCHER:
 		case HANDLING_SANDKING:
 			fallback = MI_LANDSTAL - MI_FIRST_VEHICLE;
 			break;
 		case HANDLING_INFERNUS:
 		case HANDLING_CHEETAH:
 		case HANDLING_BANSHEE:
-		case HANDLING_STINGER:
+		case HANDLING_BUFFALO:
 		case HANDLING_COMET:
 		case HANDLING_PHEONIX:
-		case HANDLING_DELUXO:
+		case HANDLING_ELEGY:
 		case HANDLING_HOTRING:
 			fallback = MI_CHEETAH - MI_FIRST_VEHICLE;
 			break;
-		case HANDLING_SABRETUR:
-		case HANDLING_SABRE1:
+		case HANDLING_SULTAN:
+		case HANDLING_SABRE:
 		case HANDLING_STALLION:
 			fallback = MI_SABRETUR - MI_FIRST_VEHICLE;
 			break;
@@ -1062,15 +1062,16 @@ ResolveVehicleAudioIndex(const CVehicle *veh)
 		case HANDLING_COACH:
 			fallback = MI_COACH - MI_FIRST_VEHICLE;
 			break;
-		case HANDLING_POLICE:
+		case HANDLING_POLICE_LS:
+		case HANDLING_POLICE_SF:
+		case HANDLING_POLICE_VG:
 		case HANDLING_ENFORCER:
 		case HANDLING_AMBULAN:
 		case HANDLING_FIRETRUK:
-		case HANDLING_FBICAR:
 			fallback = MI_POLICE - MI_FIRST_VEHICLE;
 			break;
 		default:
-			if (veh->pHandling->Transmission.fMaxVelocity > 0.95f)
+			if (veh->m_pHandlingData->m_Transmission.m_fMaxVelocity > 0.95f)
 				fallback = MI_CHEETAH - MI_FIRST_VEHICLE;
 			break;
 		}
@@ -1104,7 +1105,7 @@ cAudioManager::ProcessVehicle(CVehicle* veh)
 	params.m_bDistanceCalculated = FALSE;
 	params.m_pVehicle = veh;
 	params.m_fDistance = GetDistanceSquared(m_sQueueSample.m_vecPos);
-	params.m_pTransmission = veh->pHandling != nil ? &veh->pHandling->Transmission : nil;
+	params.m_pTransmission = veh->m_pHandlingData != nil ? &veh->m_pHandlingData->m_Transmission : nil;
 	params.m_nIndex = ResolveVehicleAudioIndex(veh);
 	if (veh->GetStatus() == STATUS_SIMPLE)
 		params.m_fVelocityChange = veh->AutoPilot.m_fMaxTrafficSpeed * 0.02f;
@@ -1560,7 +1561,7 @@ cAudioManager::ProcessReverseGear(cVehicleParams& params)
 			CalculateDistance(params.m_bDistanceCalculated, params.m_fDistance);
 			automobile = (CAutomobile*)params.m_pVehicle;
 			if (automobile->m_nDriveWheelsOnGround > 0)
-				modificator = params.m_fVelocityChange / params.m_pTransmission->fMaxReverseVelocity;
+				modificator = params.m_fVelocityChange / params.m_pTransmission->m_fMaxReverseVelocity;
 			else {
 				if (automobile->m_nDriveWheelsOnGroundPrev > 0)
 					automobile->m_fGasPedalAudio *= 0.4f;
@@ -1814,7 +1815,7 @@ cAudioManager::ProcessVehicleFlatTyre(cVehicleParams& params)
 		default:
 			return TRUE;
 		}
-		modifier = Min(1.0f, Abs(params.m_fVelocityChange) / (0.3f * params.m_pTransmission->fMaxVelocity));
+		modifier = Min(1.0f, Abs(params.m_fVelocityChange) / (0.3f * params.m_pTransmission->m_fMaxVelocity));
 		if (modifier > 0.01f) {
 			Vol = (FLAT_TYRE_VOLUME * modifier);
 			CalculateDistance(params.m_bDistanceCalculated, params.m_fDistance);
@@ -1869,7 +1870,7 @@ cAudioManager::ProcessVehicleRoadNoise(cVehicleParams& params)
 			velocity = Abs(params.m_fVelocityChange);
 			if (velocity > 0.0f) {
 				CalculateDistance(params.m_bDistanceCalculated, params.m_fDistance);
-				Vol = VEHICLE_ROAD_NOISE_VOLUME * Min(1.0f, velocity / (0.5f * params.m_pTransmission->fMaxVelocity));
+				Vol = VEHICLE_ROAD_NOISE_VOLUME * Min(1.0f, velocity / (0.5f * params.m_pTransmission->m_fMaxVelocity));
 				m_sQueueSample.m_nVolume = ComputeVolume(Vol, VEHICLE_ROAD_NOISE_MAX_DIST, m_sQueueSample.m_fDistance);
 				if (m_sQueueSample.m_nVolume > 0) {
 					m_sQueueSample.m_nCounter = 0;
@@ -1930,7 +1931,7 @@ cAudioManager::ProcessWetRoadNoise(cVehicleParams& params)
 			velChange = Abs(params.m_fVelocityChange);
 			if (velChange > 0.0f) {
 				CalculateDistance(params.m_bDistanceCalculated, params.m_fDistance);
-				relativeVelocity = Min(1.0f, velChange / (0.5f * params.m_pTransmission->fMaxVelocity));
+				relativeVelocity = Min(1.0f, velChange / (0.5f * params.m_pTransmission->m_fMaxVelocity));
 				Vol = WET_ROAD_NOISE_VOLUME * relativeVelocity * CWeather::WetRoads;
 				m_sQueueSample.m_nVolume = ComputeVolume(Vol, WET_ROAD_NOISE_MAX_DIST, m_sQueueSample.m_fDistance);
 				if (m_sQueueSample.m_nVolume > 0) {
@@ -1999,10 +2000,10 @@ cAudioManager::ProcessVehicleEngine(cVehicleParams& params)
 					case MI_PIZZABOY:
 					case MI_FAGGIO:
 						isMoped = TRUE;
-						currentGear = transmission->nNumberOfGears;
+						currentGear = transmission->m_nNumberOfGears;
 						break;
 					case MI_CADDY:
-						currentGear = transmission->nNumberOfGears;
+						currentGear = transmission->m_nNumberOfGears;
 						isGolfCart = TRUE;
 						break;
 					default:
@@ -2035,7 +2036,7 @@ cAudioManager::ProcessVehicleEngine(cVehicleParams& params)
 						} else if (params.m_pVehicle->GetStatus() == STATUS_SIMPLE || isMoped || isGolfCart) {
 							traction = 0.0f;
 						} else {
-							switch (transmission->nDriveType) {
+							switch (transmission->m_nDriveType) {
 							case '4':
 								if (params.m_VehicleType == VEHICLE_TYPE_BIKE) {
 									for (uint8 i = 0; i < 2; i++)
@@ -2073,20 +2074,20 @@ cAudioManager::ProcessVehicleEngine(cVehicleParams& params)
 								break;
 							}
 						}
-						if (transmission->fMaxVelocity > 0.0f) {
+						if (transmission->m_fMaxVelocity > 0.0f) {
 							if (isMoped || isGolfCart)
-								modificator = Min(1.0f, Abs(params.m_fVelocityChange / transmission->fMaxVelocity > 1.0f));
+								modificator = Min(1.0f, Abs(params.m_fVelocityChange / transmission->m_fMaxVelocity > 1.0f));
 							else {
 								if (currentGear > 0) {
 									relativeGearChange = Min(1.0f,
-										params.m_fVelocityChange - transmission->Gears[currentGear].fShiftDownVelocity) / transmission->fMaxVelocity * 2.5f;
+										params.m_fVelocityChange - transmission->m_aGears[currentGear].m_ChangeDownVelocity) / transmission->m_fMaxVelocity * 2.5f;
 									if (traction == 0.0f && params.m_pVehicle->GetStatus() != STATUS_SIMPLE &&
-										params.m_fVelocityChange < transmission->Gears[1].fShiftUpVelocity)
+										params.m_fVelocityChange < transmission->m_aGears[1].m_ChangeUpVelocity)
 										traction = 0.7f;
 									modificator = traction * *gasPedalAudioPtr * 0.95f + (1.0f - traction) * relativeGearChange;
 								} else {
 									modificator = Min(1.0f,
-										1.0f - Abs((params.m_fVelocityChange - transmission->Gears[0].fShiftDownVelocity) / transmission->fMaxReverseVelocity));
+										1.0f - Abs((params.m_fVelocityChange - transmission->m_aGears[0].m_ChangeDownVelocity) / transmission->m_fMaxReverseVelocity));
 								}
 							}
 						} else
@@ -2360,7 +2361,7 @@ cAudioManager::ProcessPlayersVehicleEngine(cVehicleParams& params, CVehicle* veh
 	slowingDown = params.m_fVelocityChange < -0.001f;
 	channelUsed = SampleManager.GetChannelUsedFlag(nChannel);
 	if (params.m_pVehicle->GetModelIndex() == MI_PIZZABOY || params.m_pVehicle->GetModelIndex() == MI_FAGGIO) {
-		CurrentPretendGear = params.m_pTransmission->nNumberOfGears;
+		CurrentPretendGear = params.m_pTransmission->m_nNumberOfGears;
 		currentGear = CurrentPretendGear;
 		if (params.m_pVehicle->bIsHandbrakeOn) {
 			brakeState = 0;
@@ -2395,7 +2396,7 @@ cAudioManager::ProcessPlayersVehicleEngine(cVehicleParams& params, CVehicle* veh
 		return;
 	}
 	if (!isMoped) {
-		switch (params.m_pTransmission->nDriveType) {
+		switch (params.m_pTransmission->m_nDriveType) {
 		case '4':
 			if (params.m_VehicleType != VEHICLE_TYPE_BIKE) {
 				wheelInUseCounter = 0;
@@ -2503,7 +2504,7 @@ cAudioManager::ProcessPlayersVehicleEngine(cVehicleParams& params, CVehicle* veh
 		}
 	} else
 		gearSoundStartTime = CTimer::GetTimeInMilliseconds();
-	relativeVelocityChange = 2.0f * params.m_fVelocityChange / params.m_pTransmission->fMaxVelocity;
+	relativeVelocityChange = 2.0f * params.m_fVelocityChange / params.m_pTransmission->m_fMaxVelocity;
 	accelerationMultipler = Clamp(relativeVelocityChange, 0.0f, 1.0f);
 	gasPedalAudio = accelerationMultipler;
 	switch (engineSoundType) {
@@ -2525,7 +2526,7 @@ PlayCruising:
 			bAccelSampleStopped = TRUE;
 			SampleManager.StopChannel(nChannel);
 			if (!isMoped && (accelerateState < 150 || wheelsOnGround == 0 || brakeState > 0 || params.m_pVehicle->bIsHandbrakeOn
-				|| lostTraction || currentGear < params.m_pTransmission->nNumberOfGears - 1)) {
+				|| lostTraction || currentGear < params.m_pTransmission->m_nNumberOfGears - 1)) {
 				nCruising = 0;
 			} else {
 				if (accelerateState < 220 || params.m_fVelocityChange + 0.001f < velocityChangeForAudio) {
@@ -2583,7 +2584,7 @@ PlayCruising:
 
 				if (!channelUsed) {
 					if (!processedAccelSampleStopped) {
-						if (CurrentPretendGear < params.m_pTransmission->nNumberOfGears - 1)
+						if (CurrentPretendGear < params.m_pTransmission->m_nNumberOfGears - 1)
 							CurrentPretendGear++;
 						else {
 							nCruising = 1;
@@ -2639,7 +2640,7 @@ PlayCruising:
 			else if (params.m_VehicleType == VEHICLE_TYPE_BIKE)
 				gasPedalAudio = 0.0f;
 			else
-				gasPedalAudio = Min(1.0f, params.m_fVelocityChange / params.m_pTransmission->fMaxReverseVelocity);
+				gasPedalAudio = Min(1.0f, params.m_fVelocityChange / params.m_pTransmission->m_fMaxReverseVelocity);
 			*gasPedalAudioPtr = Max(0.0f, gasPedalAudio);
 		} else if (LastAccel > 0) {
 			if (channelUsed) {
@@ -2727,7 +2728,7 @@ cAudioManager::ProcessVehicleSkidding(cVehicleParams& params)
 				if (wheelStateArr[i] == WHEEL_STATE_NORMAL)
 					continue;
 				transmission = params.m_pTransmission;
-				switch (transmission->nDriveType) {
+				switch (transmission->m_nDriveType) {
 				case '4':
 					newSkidVal = GetVehicleDriveWheelSkidValue(params.m_pVehicle, wheelStateArr[i], gasPedalAudio, transmission, params.m_fVelocityChange);
 					break;
@@ -2816,7 +2817,7 @@ cAudioManager::GetVehicleDriveWheelSkidValue(CVehicle *veh, tWheelState wheelSta
 			relativeVelChange = (gasPedalAudio - 0.4f) * (5.0f / 3.0f) * 0.75f;
 		break;
 	case WHEEL_STATE_SKIDDING:
-		relativeVelChange = Min(1.0f, Abs(velocityChange) / transmission->fMaxVelocity);
+		relativeVelChange = Min(1.0f, Abs(velocityChange) / transmission->m_fMaxVelocity);
 		break;
 	case WHEEL_STATE_FIXED:
 		relativeVel = gasPedalAudio;
@@ -2825,7 +2826,7 @@ cAudioManager::GetVehicleDriveWheelSkidValue(CVehicle *veh, tWheelState wheelSta
 
 		velChange = Abs(velocityChange);
 		if (velChange > 0.04f)
-			relativeVelChange = Min(1.0f, velChange / transmission->fMaxVelocity);
+			relativeVelChange = Min(1.0f, velChange / transmission->m_fMaxVelocity);
 		if (relativeVel > relativeVelChange)
 			relativeVelChange = relativeVel;
 
@@ -2843,7 +2844,7 @@ cAudioManager::GetVehicleNonDriveWheelSkidValue(CVehicle *veh, tWheelState wheel
 	float relativeVelChange = 0.0f;
 
 	if (wheelState == WHEEL_STATE_SKIDDING)
-		relativeVelChange = Min(1.0f, Abs(velocityChange) / transmission->fMaxVelocity);
+		relativeVelChange = Min(1.0f, Abs(velocityChange) / transmission->m_fMaxVelocity);
 
 	return Max(relativeVelChange, Min(1.0f, Abs(veh->m_vecTurnSpeed.z) * 20.0f));
 }

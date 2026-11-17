@@ -586,7 +586,7 @@ CCam::GetBoatLook_L_R_HeightOffset(float &Offset)
 	CVehicleModelInfo *mi = (CVehicleModelInfo*)CModelInfo::GetModelInfo(CamTargetEntity->GetModelIndex());
 	tBoatHandlingData *handling = mod_HandlingManager.GetBoatPointer(mi->m_handlingId);
 	if(handling){
-		Offset = handling->fLook_L_R_BehindCamHeight;
+		Offset = handling->m_fLook_L_R_BehindCamHeight;
 		return true;
 	}
 	return false;	// can't happen, we always get a boat pointer back

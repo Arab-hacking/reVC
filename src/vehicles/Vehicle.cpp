@@ -8,7 +8,7 @@
 #include "Bike.h"
 #include "Automobile.h"
 #include "Pools.h"
-#include "HandlingMgr.h"
+#include "cHandlingDataMgr.h"
 #include "CarCtrl.h"
 #include "Population.h"
 #include "ModelIndices.h"
@@ -272,7 +272,7 @@ CVehicle::GetHeightAboveRoad(void)
 void
 CVehicle::FlyingControl(eFlightModel flightModel)
 {
-	if(pFlyingHandling == nil)
+	if(m_pFlyingHandlingData == nil)
 		return;
 
 	switch(flightModel){
@@ -358,16 +358,16 @@ CVehicle::FlyingControl(eFlightModel flightModel)
 		fSteerUD *= -fSteerMult;
 
 		// thrust
-		float fThrust = pFlyingHandling->fThrust;
-		float fThrustFallOff = pFlyingHandling->fThrustFallOff;
-		float fThrustFallOffBack = pFlyingHandling->fThrustFallOff * 8.0f;
+		float fThrust = m_pFlyingHandlingData->m_fThrust;
+		float fThrustFallOff = m_pFlyingHandlingData->m_fThrustFallOff;
+		float fThrustFallOffBack = m_pFlyingHandlingData->m_fThrustFallOff * 8.0f;
 #ifdef BETTER_ALLCARSAREDODO_CHEAT
 		if (bAllDodosCheat && !IsRealPlane()) {
-			fThrust = pHandling->Transmission.fEngineAcceleration
-				* (pHandling->Transmission.nDriveType == '4' ? 4.0f : 2.0f);
-			fThrust = 5.0f * Max(fThrust, pFlyingHandling->fThrust); //tweak: (cars engines too weak to thrust car on air)
-			fThrustFallOff = Min(0.7f / pHandling->Transmission.fMaxVelocity, fThrustFallOff); //tweak: (use 0.7 instead of 1.0 to make cars 30% faster)
-			fThrustFallOffBack = -1.0f / pHandling->Transmission.fMaxReverseVelocity;
+			fThrust = m_pHandlingData->m_Transmission.m_fEngineAcceleration
+				* (m_pHandlingData->m_Transmission.m_nDriveType == '4' ? 4.0f : 2.0f);
+			fThrust = 5.0f * Max(fThrust, m_pFlyingHandlingData->m_fThrust); //tweak: (cars engines too weak to thrust car on air)
+			fThrustFallOff = Min(0.7f / m_pHandlingData->m_Transmission.m_fMaxVelocity, fThrustFallOff); //tweak: (use 0.7 instead of 1.0 to make cars 30% faster)
+			fThrustFallOffBack = -1.0f / m_pHandlingData->m_Transmission.m_fMaxReverseVelocity;
 		}
 #endif
 		float fForwSpeed = DotProduct(GetMoveSpeed(), GetForward());
@@ -386,11 +386,11 @@ CVehicle::FlyingControl(eFlightModel flightModel)
 
 		// left/right
 		float fSideSpeed = -DotProduct(GetMoveSpeed(), GetRight());
-		float fSideSlipAccel = pFlyingHandling->fSideSlip * fSideSpeed * Abs(fSideSpeed);
+		float fSideSlipAccel = m_pFlyingHandlingData->m_fSideSlip * fSideSpeed * Abs(fSideSpeed);
 		ApplyMoveForce(m_fMass * GetRight() * fSideSlipAccel * CTimer::GetTimeStep());
 
 		float fYaw = -DotProduct(GetSpeed(vecTail), GetRight());
-		float fYawAccel = pFlyingHandling->fYawStab * fYaw * Abs(fYaw) + pFlyingHandling->fYaw * fSteerLR * fForwSpeed;
+		float fYawAccel = m_pFlyingHandlingData->m_fYawStab * fYaw * Abs(fYaw) + m_pFlyingHandlingData->m_fYaw * fSteerLR * fForwSpeed;
 		ApplyTurnForce(fYawAccel * GetRight() * m_fTurnMass * CTimer::GetTimeStep(), vecTail);
 
 		float fRollAccel;
@@ -398,25 +398,25 @@ CVehicle::FlyingControl(eFlightModel flightModel)
 			float fDirectionMultiplier = CPad::GetPad(0)->GetLookRight();
 			if (CPad::GetPad(0)->GetLookLeft())
 				fDirectionMultiplier = -1;
-			fRollAccel = (0.5f * fDirectionMultiplier + fSteerLR) * pFlyingHandling->fRoll;
+			fRollAccel = (0.5f * fDirectionMultiplier + fSteerLR) * m_pFlyingHandlingData->m_fRoll;
 		}
 		else
-			fRollAccel = fSteerLR * pFlyingHandling->fRoll;
+			fRollAccel = fSteerLR * m_pFlyingHandlingData->m_fRoll;
 		ApplyTurnForce(GetRight() * fRollAccel * fForwSpeed * m_fTurnMass * CTimer::GetTimeStep(), GetUp());
 
 		CVector vecFRight = CrossProduct(GetForward(), CVector(0.0f, 0.0f, 1.0f));
 		CVector vecStabilise = (GetUp().z > 0.0f) ? vecFRight : -vecFRight;
 		float fStabiliseDirection = (GetRight().z > 0.0f) ? -1.0f : 1.0f;
-		float fStabiliseSpeed = pFlyingHandling->fRollStab * fStabiliseDirection * (1.0f - DotProduct(GetRight(), vecStabilise)) * (1.0f - Abs(GetForward().z));
+		float fStabiliseSpeed = m_pFlyingHandlingData->m_fRollStab * fStabiliseDirection * (1.0f - DotProduct(GetRight(), vecStabilise)) * (1.0f - Abs(GetForward().z));
 		ApplyTurnForce(fStabiliseSpeed * m_fTurnMass * GetRight(), GetUp()); // no CTimer::GetTimeStep(), is it right?
 
 		// up/down
 		float fTail = -DotProduct(GetSpeed(vecTail), GetUp());
-		float fPitchAccel = pFlyingHandling->fPitchStab * fTail * Abs(fTail) + pFlyingHandling->fPitch * fSteerUD * fForwSpeed;
+		float fPitchAccel = m_pFlyingHandlingData->m_fPitchStab * fTail * Abs(fTail) + m_pFlyingHandlingData->m_fPitch * fSteerUD * fForwSpeed;
 		ApplyTurnForce(fPitchAccel * m_fTurnMass * GetUp() * CTimer::GetTimeStep(), vecTail);
 
 		float fLift = DotProduct(GetMoveSpeed(), GetUp()) / Max(0.01f, GetMoveSpeed().Magnitude()); //accel*angle
-		float fLiftAccel = (pFlyingHandling->fFormLift - pFlyingHandling->fAttackLift * fLift) * SQR(fForwSpeed);
+		float fLiftAccel = (m_pFlyingHandlingData->m_fFormLift - m_pFlyingHandlingData->m_fAttackLift * fLift) * SQR(fForwSpeed);
 		float fLiftImpulse = fLiftAccel * m_fMass * CTimer::GetTimeStep();
 		if (GRAVITY * CTimer::GetTimeStep() * m_fMass < fLiftImpulse) {
 			if (flightModel == FLIGHT_MODEL_RCPLANE && GetPosition().z > 50.0f)
@@ -431,13 +431,13 @@ CVehicle::FlyingControl(eFlightModel flightModel)
 		ApplyMoveForce(fLiftImpulse * GetUp());
 
 		CVector vecResistance;
-		vecResistance = pFlyingHandling->vecTurnRes;
+		vecResistance = m_pFlyingHandlingData->m_vecTurnRes;
 		float rX = Pow(vecResistance.x, CTimer::GetTimeStep());
 		float rY = Pow(vecResistance.y, CTimer::GetTimeStep());
 		float rZ = Pow(vecResistance.z, CTimer::GetTimeStep());
 		CVector vecTurnSpeed = Multiply3x3(m_vecTurnSpeed, GetMatrix());
 		vecTurnSpeed.x *= rX;
-		float fResistance = vecTurnSpeed.y * (1.0f / (pFlyingHandling->vecSpeedRes.y * SQR(vecTurnSpeed.y) + 1.0f)) * rY - vecTurnSpeed.y;
+		float fResistance = vecTurnSpeed.y * (1.0f / (m_pFlyingHandlingData->m_vecSpeedRes.y * SQR(vecTurnSpeed.y) + 1.0f)) * rY - vecTurnSpeed.y;
 		vecTurnSpeed.z *= rZ;
 		m_vecTurnSpeed = Multiply3x3(GetMatrix(), vecTurnSpeed);
 		ApplyTurnForce(-GetUp() * fResistance * m_fTurnMass, GetRight() + Multiply3x3(GetMatrix(), m_vecCentreOfMass));
@@ -456,11 +456,11 @@ CVehicle::FlyingControl(eFlightModel flightModel)
 	case FLIGHT_MODEL_HELI:
 	{
 #ifdef RESTORE_ALLCARSHELI_CHEAT
-		tFlyingHandlingData* flyingHandling = bAllCarCheat && !IsRealHeli() ? mod_HandlingManager.GetFlyingPointer(HANDLING_MAVERICK) : pFlyingHandling;
+		tFlyingHandlingData* flyingHandling = bAllCarCheat && !IsRealHeli() ? mod_HandlingManager.GetFlyingPointer((uint32)HANDLING_MAVERICK) : m_pFlyingHandlingData;
 #else
-		tFlyingHandlingData* flyingHandling = pFlyingHandling;
+		tFlyingHandlingData* flyingHandling = m_pFlyingHandlingData;
 #endif
-		float rm = Pow(flyingHandling->fMoveRes, CTimer::GetTimeStep());
+		float rm = Pow(flyingHandling->m_fMoveRes, CTimer::GetTimeStep());
 		m_vecMoveSpeed *= rm;
 		if (GetStatus() != STATUS_PLAYER && GetStatus() != STATUS_PLAYER_REMOTE)
 			return;
@@ -469,11 +469,11 @@ CVehicle::FlyingControl(eFlightModel flightModel)
 		if(fThrust < 0.0f)
 			fThrust *= 2.0f;
 		if(flightModel == FLIGHT_MODEL_RCHELI){
-			fThrust = flyingHandling->fThrust * fThrust + 0.45f;
+			fThrust = flyingHandling->m_fThrust * fThrust + 0.45f;
 			ApplyMoveForce(GRAVITY * CVector(0.0f, 0.0f, 0.5f) * m_fMass * CTimer::GetTimeStep());
 		}else
-			fThrust = flyingHandling->fThrust * fThrust + 0.95f;
-		fThrust -= flyingHandling->fThrustFallOff * fUpSpeed;
+			fThrust = flyingHandling->m_fThrust * fThrust + 0.95f;
+		fThrust -= flyingHandling->m_fThrustFallOff * fUpSpeed;
 		if(flightModel == FLIGHT_MODEL_RCHELI && GetPosition().z > 40.0f)
 			fThrust *= 10.0f/(GetPosition().z - 30.0f);
 		else if(GetPosition().z > 80.0f)
@@ -481,20 +481,20 @@ CVehicle::FlyingControl(eFlightModel flightModel)
 		ApplyMoveForce(GRAVITY * GetUp() * fThrust * m_fMass * CTimer::GetTimeStep());
 
 		if (GetUp().z > 0.0f){
-			float upRight = Clamp(GetRight().z, -flyingHandling->fFormLift, flyingHandling->fFormLift);
-			float upImpulseRight = -upRight * flyingHandling->fAttackLift * m_fTurnMass * CTimer::GetTimeStep();
+			float upRight = Clamp(GetRight().z, -flyingHandling->m_fFormLift, flyingHandling->m_fFormLift);
+			float upImpulseRight = -upRight * flyingHandling->m_fAttackLift * m_fTurnMass * CTimer::GetTimeStep();
 			ApplyTurnForce(upImpulseRight * GetUp(), GetRight());
 
-			float upFwd = Clamp(GetForward().z, -flyingHandling->fFormLift, flyingHandling->fFormLift);
-			float upImpulseFwd = -upFwd * flyingHandling->fAttackLift * m_fTurnMass * CTimer::GetTimeStep();
+			float upFwd = Clamp(GetForward().z, -flyingHandling->m_fFormLift, flyingHandling->m_fFormLift);
+			float upImpulseFwd = -upFwd * flyingHandling->m_fAttackLift * m_fTurnMass * CTimer::GetTimeStep();
 			ApplyTurnForce(upImpulseFwd * GetUp(), GetForward());
 		}else{
-			float upRight = GetRight().z < 0.0f ? -flyingHandling->fFormLift : flyingHandling->fFormLift;
-			float upImpulseRight = -upRight * flyingHandling->fAttackLift * m_fTurnMass * CTimer::GetTimeStep();
+			float upRight = GetRight().z < 0.0f ? -flyingHandling->m_fFormLift : flyingHandling->m_fFormLift;
+			float upImpulseRight = -upRight * flyingHandling->m_fAttackLift * m_fTurnMass * CTimer::GetTimeStep();
 			ApplyTurnForce(upImpulseRight * GetUp(), GetRight());
 
-			float upFwd = GetForward().z < 0.0f ? -flyingHandling->fFormLift : flyingHandling->fFormLift;
-			float upImpulseFwd = -upFwd * flyingHandling->fAttackLift * m_fTurnMass * CTimer::GetTimeStep();
+			float upFwd = GetForward().z < 0.0f ? -flyingHandling->m_fFormLift : flyingHandling->m_fFormLift;
+			float upImpulseFwd = -upFwd * flyingHandling->m_fAttackLift * m_fTurnMass * CTimer::GetTimeStep();
 			ApplyTurnForce(upImpulseFwd * GetUp(), GetForward());
 		}
 
@@ -524,25 +524,25 @@ CVehicle::FlyingControl(eFlightModel flightModel)
 			fPitch = -CPad::GetPad(0)->GetCarGunUpDown() / 128.0f;
 		if (CPad::GetPad(0)->GetHorn()) {
 			fYaw = 0.0f;
-			fPitch = Clamp(flyingHandling->fPitchStab * DotProduct(m_vecMoveSpeed, GetForward()), -200.0f, 1.3f);
-			fRoll = Clamp(flyingHandling->fRollStab * DotProduct(m_vecMoveSpeed, GetRight()), -200.0f, 1.3f);
+			fPitch = Clamp(flyingHandling->m_fPitchStab * DotProduct(m_vecMoveSpeed, GetForward()), -200.0f, 1.3f);
+			fRoll = Clamp(flyingHandling->m_fRollStab * DotProduct(m_vecMoveSpeed, GetRight()), -200.0f, 1.3f);
 		}
-		ApplyTurnForce(fPitch * GetUp() * flyingHandling->fPitch * m_fTurnMass * CTimer::GetTimeStep(), GetForward());
-		ApplyTurnForce(fRoll * GetUp() * flyingHandling->fRoll * m_fTurnMass * CTimer::GetTimeStep(), GetRight());
+		ApplyTurnForce(fPitch * GetUp() * flyingHandling->m_fPitch * m_fTurnMass * CTimer::GetTimeStep(), GetForward());
+		ApplyTurnForce(fRoll * GetUp() * flyingHandling->m_fRoll * m_fTurnMass * CTimer::GetTimeStep(), GetRight());
 
 		float fSideSpeed = -DotProduct(GetMoveSpeed(), GetRight());
-		float fSideSlipAccel = flyingHandling->fSideSlip * fSideSpeed * Abs(fSideSpeed);
+		float fSideSlipAccel = flyingHandling->m_fSideSlip * fSideSpeed * Abs(fSideSpeed);
 		ApplyMoveForce(m_fMass * GetRight() * fSideSlipAccel * CTimer::GetTimeStep());
-		float fYawAccel = flyingHandling->fYawStab * fSideSpeed * Abs(fSideSpeed) + flyingHandling->fYaw * fYaw;
+		float fYawAccel = flyingHandling->m_fYawStab * fSideSpeed * Abs(fSideSpeed) + flyingHandling->m_fYaw * fYaw;
 		ApplyTurnForce(fYawAccel * GetRight() * m_fTurnMass * CTimer::GetTimeStep(), -GetForward());
 
-		ApplyTurnForce(fYaw * GetForward() * flyingHandling->fYaw * m_fTurnMass * CTimer::GetTimeStep(), GetRight());
+		ApplyTurnForce(fYaw * GetForward() * flyingHandling->m_fYaw * m_fTurnMass * CTimer::GetTimeStep(), GetRight());
 
-		float rX = Pow(flyingHandling->vecTurnRes.x, CTimer::GetTimeStep());
-		float rY = Pow(flyingHandling->vecTurnRes.y, CTimer::GetTimeStep());
-		float rZ = Pow(flyingHandling->vecTurnRes.z, CTimer::GetTimeStep());
+		float rX = Pow(flyingHandling->m_vecTurnRes.x, CTimer::GetTimeStep());
+		float rY = Pow(flyingHandling->m_vecTurnRes.y, CTimer::GetTimeStep());
+		float rZ = Pow(flyingHandling->m_vecTurnRes.z, CTimer::GetTimeStep());
 		CVector vecTurnSpeed = Multiply3x3(m_vecTurnSpeed, GetMatrix());
-		float fResistanceMultiplier = Pow(1.0f / (flyingHandling->vecSpeedRes.z * SQR(vecTurnSpeed.z) + 1.0f) * rZ, CTimer::GetTimeStep());
+		float fResistanceMultiplier = Pow(1.0f / (flyingHandling->m_vecSpeedRes.z * SQR(vecTurnSpeed.z) + 1.0f) * rZ, CTimer::GetTimeStep());
 		float fResistance = vecTurnSpeed.z * fResistanceMultiplier - vecTurnSpeed.z;
 		vecTurnSpeed.x *= rX;
 		vecTurnSpeed.y *= rY;
@@ -794,7 +794,7 @@ CVehicle::ProcessWheel(CVector &wheelFwd, CVector &wheelRight, CVector &wheelCon
 
 	adhesion *= CTimer::GetTimeStep();
 	if(bAlreadySkidding)
-		adhesion *= pHandling->fTractionLoss;
+		adhesion *= m_pHandlingData->m_fTractionLoss;
 
 	// moving sideways
 	if(contactSpeedRight != 0.0f){
@@ -836,13 +836,13 @@ CVehicle::ProcessWheel(CVector &wheelFwd, CVector &wheelRight, CVector &wheelCon
 		if(!bBraking){
 			if(m_fGasPedal < 0.01f){
 				if(IsBike())
-					brake = 0.6f * mod_HandlingManager.fWheelFriction / (pHandling->fMass + 200.0f);
-				else if(pHandling->fMass < 500.0f)
-					brake = 0.2f * mod_HandlingManager.fWheelFriction / pHandling->fMass;
+					brake = 0.6f * mod_HandlingManager.fWheelFriction / (m_pHandlingData->m_fMass + 200.0f);
+				else if(m_pHandlingData->m_fMass < 500.0f)
+					brake = 0.2f * mod_HandlingManager.fWheelFriction / m_pHandlingData->m_fMass;
 				else if(GetModelIndex() == MI_RCBANDIT)
-					brake = 0.2f * mod_HandlingManager.fWheelFriction / pHandling->fMass;
+					brake = 0.2f * mod_HandlingManager.fWheelFriction / m_pHandlingData->m_fMass;
 				else
-					brake = mod_HandlingManager.fWheelFriction / pHandling->fMass;
+					brake = mod_HandlingManager.fWheelFriction / m_pHandlingData->m_fMass;
 #ifdef FIX_BUGS
 				brake *= CTimer::GetTimeStepFix();
 #endif
@@ -873,7 +873,7 @@ CVehicle::ProcessWheel(CVector &wheelFwd, CVector &wheelRight, CVector &wheelCon
 		}
 
 		float l = Sqrt(speedSq);
-		float tractionLoss = bAlreadySkidding ? 1.0f : pHandling->fTractionLoss;
+		float tractionLoss = bAlreadySkidding ? 1.0f : m_pHandlingData->m_fTractionLoss;
 		right *= adhesion * tractionLoss / l;
 		fwd *= adhesion * tractionLoss / l;
 	}
@@ -883,13 +883,13 @@ CVehicle::ProcessWheel(CVector &wheelFwd, CVector &wheelRight, CVector &wheelCon
 
 		CVector turnDirection = totalSpeed;
 		bool separateTurnForce = false;	// BUG: not initialized on PC
-		if(pHandling->fSuspensionAntidiveMultiplier > 0.0f){
+		if(m_pHandlingData->m_fSuspensionAntiDiveMultiplier > 0.0f){
 			if(bBraking){
 				separateTurnForce = true;
-				turnDirection = totalSpeed - pHandling->fSuspensionAntidiveMultiplier*fwd*wheelFwd;
+				turnDirection = totalSpeed - m_pHandlingData->m_fSuspensionAntiDiveMultiplier*fwd*wheelFwd;
 			}else if(bDriving){
 				separateTurnForce = true;
-				turnDirection = totalSpeed - 0.5f*pHandling->fSuspensionAntidiveMultiplier*fwd*wheelFwd;
+				turnDirection = totalSpeed - 0.5f*m_pHandlingData->m_fSuspensionAntiDiveMultiplier*fwd*wheelFwd;
 			}
 		}
 
@@ -952,7 +952,7 @@ CVehicle::ProcessBikeWheel(CVector &wheelFwd, CVector &wheelRight, CVector &whee
 
 	adhesion *= CTimer::GetTimeStep();
 	if(bAlreadySkidding)
-		adhesion *= pHandling->fTractionLoss;
+		adhesion *= m_pHandlingData->m_fTractionLoss;
 
 	if(special == BIKE_WHEELSPEC_2 || special == BIKE_WHEELSPEC_3)
 		contactSpeedRight = 0.0f;
@@ -999,8 +999,8 @@ CVehicle::ProcessBikeWheel(CVector &wheelFwd, CVector &wheelRight, CVector &whee
 		if(!bBraking){
 			if(m_fGasPedal < 0.01f){
 				if(IsBike())
-					brake = 0.6f * mod_HandlingManager.fWheelFriction / (pHandling->fMass + 200.0f);
-				else if(pHandling->fMass < 500.0f)
+					brake = 0.6f * mod_HandlingManager.fWheelFriction / (m_pHandlingData->m_fMass + 200.0f);
+				else if(m_pHandlingData->m_fMass < 500.0f)
 					brake = mod_HandlingManager.fWheelFriction / m_fMass;
 				else if(GetModelIndex() == MI_RCBANDIT)
 					brake = 0.2f * mod_HandlingManager.fWheelFriction / m_fMass;
@@ -1036,7 +1036,7 @@ CVehicle::ProcessBikeWheel(CVector &wheelFwd, CVector &wheelRight, CVector &whee
 		}
 
 		float l = Sqrt(speedSq);
-		float tractionLoss = bAlreadySkidding ? 1.0f : pHandling->fTractionLoss;
+		float tractionLoss = bAlreadySkidding ? 1.0f : m_pHandlingData->m_fTractionLoss;
 		right *= adhesion * tractionLoss / l;
 		fwd *= adhesion * tractionLoss / l;
 
@@ -1044,7 +1044,7 @@ CVehicle::ProcessBikeWheel(CVector &wheelFwd, CVector &wheelRight, CVector &whee
 			right *= destabTraction;
 	}else if(destabTraction < 1.0f){
 		if(!bAlreadySkidding)
-			destabTraction *= pHandling->fTractionLoss;
+			destabTraction *= m_pHandlingData->m_fTractionLoss;
 		if(sq(adhesion*destabTraction) < speedSq){
 			float l = Sqrt(speedSq);
 			right *= adhesion * destabTraction / l;
@@ -1236,7 +1236,7 @@ CVehicle::InflictDamage(CEntity *damagedBy, eWeaponType weaponType, float damage
 			if (m_randomSeed < DAMAGE_FLEE_IN_CAR_PROBABILITY_VALUE) {
 				CCarCtrl::SwitchVehicleToRealPhysics(this);
 				AutoPilot.m_nDrivingStyle = DRIVINGSTYLE_AVOID_CARS;
-				AutoPilot.m_nCruiseSpeed = GAME_SPEED_TO_CARAI_SPEED * pHandling->Transmission.fMaxCruiseVelocity;
+				AutoPilot.m_nCruiseSpeed = GAME_SPEED_TO_CARAI_SPEED * m_pHandlingData->m_Transmission.m_fMaxCruiseVelocity;
 				SetStatus(STATUS_PHYSICS);
 			}
 		}
@@ -1607,7 +1607,7 @@ CVehicle::IsVehicleNormal(void)
 bool
 CVehicle::CarHasRoof(void)
 {
-	if((pHandling->Flags & HANDLING_HAS_NO_ROOF) == 0)
+	if((m_pHandlingData->m_nModelFlags & VEHICLE_HANDLING_MODEL_CONVERTIBLE) == 0)
 		return true;
 	// component 0 is assumed to be a roof
 	return m_aExtras[0] == 0 || m_aExtras[1] == 0;
@@ -2478,16 +2478,16 @@ CVehicle::Load(uint8*& buf)
 eVehicleAppearance
 CVehicle::GetVehicleAppearance(void)
 {
-	uint32 flags = pHandling->Flags & 0xF0000;
+	uint32 flags = m_pHandlingData->m_nHandlingFlags & 0xF0000;
 	if (flags == 0)
 		return VEHICLE_APPEARANCE_CAR;
-	if (flags == HANDLING_IS_BIKE)
+	if (flags == VEHICLE_HANDLING_MODEL_IS_BIKE)
 		return VEHICLE_APPEARANCE_BIKE;
-	if (flags == HANDLING_IS_HELI)
+	if (flags == VEHICLE_HANDLING_MODEL_IS_HELI)
 		return VEHICLE_APPEARANCE_HELI;
-	if (flags == HANDLING_IS_PLANE)
+	if (flags == VEHICLE_HANDLING_MODEL_IS_PLANE)
 		return VEHICLE_APPEARANCE_PLANE;
-	if (flags == HANDLING_IS_BOAT)
+	if (flags == VEHICLE_HANDLING_MODEL_IS_BOAT)
 		return VEHICLE_APPEARANCE_BOAT;
 	return VEHICLE_APPEARANCE_NONE;
 }

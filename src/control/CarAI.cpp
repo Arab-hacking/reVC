@@ -6,7 +6,7 @@
 #include "AutoPilot.h"
 #include "CarCtrl.h"
 #include "General.h"
-#include "HandlingMgr.h"
+#include "cHandlingDataMgr.h"
 #include "ModelIndices.h"
 #include "PlayerPed.h"
 #include "Wanted.h"
@@ -686,10 +686,10 @@ int32 CCarAI::FindPoliceCarSpeedForWantedLevel(CVehicle* pVehicle)
 	case 0: return CGeneral::GetRandomNumberInRange(12, 16);
 	case 1: return 25;
 	case 2: return 34;
-	case 3: return GAME_SPEED_TO_CARAI_SPEED * pVehicle->pHandling->Transmission.fMaxVelocity * 0.9f;
-	case 4: return GAME_SPEED_TO_CARAI_SPEED * pVehicle->pHandling->Transmission.fMaxVelocity * 1.2f;
-	case 5: return GAME_SPEED_TO_CARAI_SPEED * pVehicle->pHandling->Transmission.fMaxVelocity * 1.25f;
-	case 6: return GAME_SPEED_TO_CARAI_SPEED * pVehicle->pHandling->Transmission.fMaxVelocity * 1.3f;
+	case 3: return GAME_SPEED_TO_CARAI_SPEED * pVehicle->m_pHandlingData->m_Transmission.m_fMaxVelocity * 0.9f;
+	case 4: return GAME_SPEED_TO_CARAI_SPEED * pVehicle->m_pHandlingData->m_Transmission.m_fMaxVelocity * 1.2f;
+	case 5: return GAME_SPEED_TO_CARAI_SPEED * pVehicle->m_pHandlingData->m_Transmission.m_fMaxVelocity * 1.25f;
+	case 6: return GAME_SPEED_TO_CARAI_SPEED * pVehicle->m_pHandlingData->m_Transmission.m_fMaxVelocity * 1.3f;
 	default: return 0;
 	}
 }

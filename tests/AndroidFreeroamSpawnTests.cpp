@@ -39,7 +39,7 @@
 #include "Streaming.h"
 #include "PedType.h"
 #include "AnimManager.h"
-#include "HandlingMgr.h"
+#include "cHandlingDataMgr.h"
 #include "Game.h"
 #include "SaveBuf.h"
 

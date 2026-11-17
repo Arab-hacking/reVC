@@ -4,7 +4,7 @@
 #include "General.h"
 #include "Timecycle.h"
 #include "Weather.h"
-#include "HandlingMgr.h"
+#include "cHandlingDataMgr.h"
 #include "CarAI.h"
 #include "CarCtrl.h"
 #include "RwHelper.h"
@@ -64,17 +64,17 @@ CBoat::CBoat(int mi, uint8 owner) : CVehicle(owner)
 	m_nPoliceShoutTimer = CTimer::GetTimeInMilliseconds();
 	SetModelIndex(mi);
 
-	pHandling = mod_HandlingManager.GetHandlingData((tVehicleType)minfo->m_handlingId);
-	pFlyingHandling = mod_HandlingManager.GetFlyingPointer((tVehicleType)minfo->m_handlingId);
-	pBoatHandling = mod_HandlingManager.GetBoatPointer((tVehicleType)minfo->m_handlingId);
+	m_pHandlingData = mod_HandlingManager.GetVehiclePointer((uint32)minfo->m_handlingId);
+	m_pFlyingHandlingData = mod_HandlingManager.GetFlyingPointer((uint32)minfo->m_handlingId);
+	m_pBoatHandlingData = mod_HandlingManager.GetBoatPointer((uint32)minfo->m_handlingId);
 	minfo->ChooseVehicleColour(m_currentColour1, m_currentColour2);
 
-	m_fMass = pHandling->fMass;
-	m_fTurnMass = pHandling->fTurnMass / 2.0f;
-	m_vecCentreOfMass = pHandling->CentreOfMass;
-	m_fAirResistance = pHandling->Dimension.x * pHandling->Dimension.z / m_fMass;
+	m_fMass = m_pHandlingData->m_fMass;
+	m_fTurnMass = m_pHandlingData->m_fTurnMass / 2.0f;
+	m_vecCentreOfMass = m_pHandlingData->m_vecCentreOfMass;
+	m_fAirResistance = (float)minfo->GetColModel()->boundingBox.max.x * (float)minfo->GetColModel()->boundingBox.max.z / m_fMass;
 	m_fElasticity = 0.1f;
-	m_fBuoyancy = pHandling->fBuoyancy;
+	m_fBuoyancy = m_pHandlingData->m_fBuoyancyConstant;
 	m_fSteerAngle = 0.0f;
 	m_fGasPedal = 0.0f;
 	m_fBrakePedal = 0.0f;
@@ -226,7 +226,7 @@ CBoat::ProcessControl(void)
 	default: break;
 	}
 
-	float collisionDamage = pHandling->fCollisionDamageMultiplier * m_fDamageImpulse;
+	float collisionDamage = m_pHandlingData->m_fCollisionDamageMultiplier * m_fDamageImpulse;
 #ifdef FIX_BUGS
 	if(GetStatus() == STATUS_PLAYER && CStats::GetPercentageProgress() >= 100.0f)
 		collisionDamage *= 0.5f;
@@ -315,7 +315,7 @@ CBoat::ProcessControl(void)
 
 	CVector buoyanceImpulse(0.0f, 0.0f, 0.0f);
 	CVector buoyancePoint(0.0f, 0.0f, 0.0f);
-	if(mod_Buoyancy.ProcessBuoyancyBoat(this, pHandling->fBuoyancy, &buoyancePoint, &buoyanceImpulse, bSeparateTurnForce)){
+	if(mod_Buoyancy.ProcessBuoyancyBoat(this, m_pHandlingData->m_fBuoyancyConstant, &buoyancePoint, &buoyanceImpulse, bSeparateTurnForce)){
 		// Process boat in water
 		if(0.1f * m_fMass * GRAVITY*CTimer::GetTimeStep() < buoyanceImpulse.z){
 			bBoatInWater = true;
@@ -363,16 +363,16 @@ CBoat::ProcessControl(void)
 			}
 
 		if(!onLand && bBoatInWater && GetUp().z > 0.0f){
-			float impulse = m_vecMoveSpeed.MagnitudeSqr()*pBoatHandling->fAqPlaneForce*buoyanceImpulse.z*CTimer::GetTimeStep()*0.5f;
+			float impulse = m_vecMoveSpeed.MagnitudeSqr()*m_pBoatHandlingData->m_fAqPlaneForce*buoyanceImpulse.z*CTimer::GetTimeStep()*0.5f;
 			if(GetModelIndex() == MI_SKIMMER)
 				impulse *= 1.0f + m_fGasPedal;
 			else if(m_fGasPedal > 0.05f)
 				impulse *= m_fGasPedal;
 			else
 				impulse = 0.0f;
-			impulse = Min(impulse, GRAVITY*pBoatHandling->fAqPlaneLimit*m_fMass*CTimer::GetTimeStep());
+			impulse = Min(impulse, GRAVITY*m_pBoatHandlingData->m_fAqPlaneLimit*m_fMass*CTimer::GetTimeStep());
 			ApplyMoveForce(impulse*GetUp());
-			ApplyTurnForce(impulse*GetUp(), buoyancePoint - pBoatHandling->fAqPlaneOffset*GetForward());
+			ApplyTurnForce(impulse*GetUp(), buoyancePoint - m_pBoatHandlingData->m_fAqPlaneOffset*GetForward());
 		}
 
 		// Handle boat moving forward
@@ -383,7 +383,7 @@ CBoat::ProcessControl(void)
 
 			float steerFactor = 1.0f;
 			if(GetStatus() == STATUS_PLAYER){
-				float steerLoss = DotProduct(m_vecMoveSpeed, GetForward())*pHandling->fTractionBias;
+				float steerLoss = DotProduct(m_vecMoveSpeed, GetForward())*m_pHandlingData->m_fTractionBias;
 				if(CPad::GetPad(0)->GetHandBrake())
 					steerLoss *= 0.5f;
 				steerFactor -= steerLoss;
@@ -391,7 +391,7 @@ CBoat::ProcessControl(void)
 			}
 
 			CVector boundMin = GetColModel()->boundingBox.min;
-			CVector propeller(0.0f, boundMin.y*pBoatHandling->fThrustY, boundMin.z*pBoatHandling->fThrustZ);
+			CVector propeller(0.0f, boundMin.y*m_pBoatHandlingData->m_fThrustY, boundMin.z*m_pBoatHandlingData->m_fThrustZ);
 			propeller = Multiply3x3(GetMatrix(), propeller);
 			CVector propellerWorld = GetPosition() + propeller;
 
@@ -413,7 +413,7 @@ CBoat::ProcessControl(void)
 						bSlowAhead = true;
 
 					CVector forceDir = Multiply3x3(GetMatrix(), CVector(-steerSin, steerCos, -Abs(m_fSteerAngle)));
-					CVector force = propellerDepth * m_fGasPedal * 40.0f * pHandling->Transmission.fEngineAcceleration * pHandling->fMass * forceDir;
+					CVector force = propellerDepth * m_fGasPedal * 40.0f * m_pHandlingData->m_Transmission.m_fEngineAcceleration * m_pHandlingData->m_fMass * forceDir;
 					if(force.z > 0.2f)
 						force.z = SQR(1.2f - force.z) + 0.2f;
 					if(onLand){
@@ -426,8 +426,8 @@ CBoat::ProcessControl(void)
 						ApplyMoveForce(force * CTimer::GetTimeStep());
 					}else{
 						ApplyMoveForce(force * CTimer::GetTimeStep());
-						ApplyTurnForce(force * CTimer::GetTimeStep(), propeller - pBoatHandling->fThrustAppZ*GetUp());
-						float rightForce = -DotProduct(GetRight(), force)*pHandling->fTractionMultiplier;
+						ApplyTurnForce(force * CTimer::GetTimeStep(), propeller - m_pBoatHandlingData->m_fThrustAppZ*GetUp());
+						float rightForce = -DotProduct(GetRight(), force)*m_pHandlingData->m_fTractionMultiplier;
 						ApplyTurnForce(rightForce*GetRight() * CTimer::GetTimeStep(), GetUp());
 					}
 
@@ -462,7 +462,7 @@ CBoat::ProcessControl(void)
 					bSlowAhead = true;
 
 				if(!onLand && bSlowAhead){
-					float force = pHandling->fTractionLoss*DotProduct(m_vecMoveSpeed, GetForward());
+					float force = m_pHandlingData->m_fTractionLoss*DotProduct(m_vecMoveSpeed, GetForward());
 					force = Min(force, 0.01f*m_fTurnMass);
 					if(m_fGasPedal > 0.01f){
 						if(GetStatus() == STATUS_PLAYER)
@@ -481,17 +481,17 @@ CBoat::ProcessControl(void)
 			}else
 				bPropellerInWater = false;
 
-			if(pHandling->fSuspensionBias != 0.0f){
+			if(m_pHandlingData->m_fSuspensionBiasBetweenFrontAndRear != 0.0f){
 				CVector right = CrossProduct(GetForward(), CVector(0.0f, 0.0f, 1.0f));
 				float rightSpeed = DotProduct(m_vecMoveSpeed, right);
-				float impulse = 0.1f*pHandling->fSuspensionBias * m_fMass * m_fVolumeUnderWater * rightSpeed * CTimer::GetTimeStep();
+				float impulse = 0.1f*m_pHandlingData->m_fSuspensionBiasBetweenFrontAndRear * m_fMass * m_fVolumeUnderWater * rightSpeed * CTimer::GetTimeStep();
 				ApplyMoveForce(right - impulse * 0.3f * CVector(-right.y, right.x, 0.0f));
 			}
 
 			if(GetStatus() == STATUS_PLAYER && CPad::GetPad(0)->GetHandBrake()){
 				float fwdSpeed = DotProduct(m_vecMoveSpeed, GetForward());
 				if(fwdSpeed > 0.0f){
-					float impulse = -0.1f*pHandling->fSuspensionLowerLimit * m_fMass * m_fVolumeUnderWater * fwdSpeed * CTimer::GetTimeStep();
+					float impulse = -0.1f*m_pHandlingData->m_fSuspensionLowerLimit * m_fMass * m_fVolumeUnderWater * fwdSpeed * CTimer::GetTimeStep();
 					ApplyMoveForce(impulse * GetForward());
 				}
 			}
@@ -504,9 +504,9 @@ CBoat::ProcessControl(void)
 
 		if((GetModelIndex() != MI_SKIMMER || m_skimmerThingTimer == 0.0f) && !bSeparateTurnForce){
 			// No idea what exactly is going on here besides drag in YZ
-			float fx = Pow(pBoatHandling->vecTurnRes.x, CTimer::GetTimeStep());
-			float fy = Pow(pBoatHandling->vecTurnRes.y, CTimer::GetTimeStep());
-			float fz = Pow(pBoatHandling->vecTurnRes.z, CTimer::GetTimeStep());
+			float fx = Pow(m_pBoatHandlingData->m_vecTurnRes.x, CTimer::GetTimeStep());
+			float fy = Pow(m_pBoatHandlingData->m_vecTurnRes.y, CTimer::GetTimeStep());
+			float fz = Pow(m_pBoatHandlingData->m_vecTurnRes.z, CTimer::GetTimeStep());
 			m_vecTurnSpeed = Multiply3x3(m_vecTurnSpeed, GetMatrix());	// invert - to local space
 			// TODO: figure this out
 			float magic = 1.0f/(1000.0f * SQR(m_vecTurnSpeed.x) + 1.0f) * fx;
@@ -522,17 +522,17 @@ CBoat::ProcessControl(void)
 
 		// Falling into water
 		if(!onLand && bBoatInWater && GetUp().z > 0.0f){
-			float splashVol = m_nDeltaVolumeUnderWater*pBoatHandling->fWaveAudioMult;
+			float splashVol = m_nDeltaVolumeUnderWater*m_pBoatHandlingData->m_fWaveAudioMult;
 			if(splashVol > 200.0f)
 				DMAudio.PlayOneShot(m_audioEntityId, SOUND_CAR_SPLASH, splashVol);
 
 			if(m_nDeltaVolumeUnderWater > 200){
 				float speedUp = m_vecMoveSpeed.MagnitudeSqr() * m_nDeltaVolumeUnderWater * 0.001f;
-				if(speedUp + m_vecMoveSpeed.z > pHandling->fBrakeDeceleration)
-					speedUp = pHandling->fBrakeDeceleration - m_vecMoveSpeed.z;
+				if(speedUp + m_vecMoveSpeed.z > m_pHandlingData->m_fBrakeDeceleration)
+					speedUp = m_pHandlingData->m_fBrakeDeceleration - m_vecMoveSpeed.z;
 				if(speedUp < 0.0f) speedUp = 0.0f;
 				float speedFwd = DotProduct(m_vecMoveSpeed, GetForward());
-				speedFwd *= -m_nDeltaVolumeUnderWater * 0.01f * pHandling->fBrakeBias;
+				speedFwd *= -m_nDeltaVolumeUnderWater * 0.01f * m_pHandlingData->m_fBrakeBias;
 				CVector speed = speedFwd*GetForward() + CVector(0.0f, 0.0f, speedUp);
 				CVector splashImpulse = speed * m_fMass;
 				ApplyMoveForce(splashImpulse);
@@ -780,7 +780,7 @@ CBoat::ProcessControlInputs(uint8 pad)
 	m_fSteeringLeftRight = Clamp(m_fSteeringLeftRight, -1.0f, 1.0f);
 
 	float steeringSq = m_fSteeringLeftRight < 0.0f ? -SQR(m_fSteeringLeftRight) : SQR(m_fSteeringLeftRight);
-	m_fSteerAngle = pHandling->fSteeringLock * DEGTORAD(steeringSq);
+	m_fSteerAngle = m_pHandlingData->m_fSteeringLock * DEGTORAD(steeringSq);
 	m_fGasPedal = m_fAccelerate;
 }
 
@@ -790,15 +790,15 @@ void
 CBoat::ApplyWaterResistance(void)
 {
 	// TODO: figure out how this works
-	float resistance = 0.001f * pHandling->fSuspensionForceLevel * SQR(m_fVolumeUnderWater) * m_fMass;
+	float resistance = 0.001f * m_pHandlingData->m_fSuspensionForceLevel * SQR(m_fVolumeUnderWater) * m_fMass;
 	if(GetModelIndex() == MI_SKIMMER)
 		resistance *= fSeaPlaneWaterResistance;
 	float fwdSpeed = DotProduct(GetMoveSpeed(), GetForward());
 	float magic = (SQR(fwdSpeed) + 0.05f) * resistance + 1.0f;
 	magic = Abs(magic);
-	float fx = Pow(pBoatHandling->vecMoveRes.x/magic, 0.5f*CTimer::GetTimeStep());
-	float fy = Pow(pBoatHandling->vecMoveRes.y/magic, 0.5f*CTimer::GetTimeStep());
-	float fz = Pow(pBoatHandling->vecMoveRes.z/magic, 0.5f*CTimer::GetTimeStep());
+	float fx = Pow(m_pBoatHandlingData->m_vecMoveRes.x/magic, 0.5f*CTimer::GetTimeStep());
+	float fy = Pow(m_pBoatHandlingData->m_vecMoveRes.y/magic, 0.5f*CTimer::GetTimeStep());
+	float fz = Pow(m_pBoatHandlingData->m_vecMoveRes.z/magic, 0.5f*CTimer::GetTimeStep());
 
 	m_vecMoveSpeed = Multiply3x3(m_vecMoveSpeed, GetMatrix());	// invert - to local space
 	m_vecMoveSpeed.x *= fx;

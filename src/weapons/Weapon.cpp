@@ -763,13 +763,13 @@ CWeapon::FireMelee(CEntity *shooter, CVector &fireSource)
 		}
 		if (m_eWeaponType == WEAPONTYPE_CHAINSAW)
 		{
-			nearCar->VehicleDamage(info->m_nDamage * (0.00075f * nearCar->pHandling->fMass), gaTempSphereColPoints[0].pieceB);
+			nearCar->VehicleDamage(info->m_nDamage * (0.00075f * nearCar->m_pHandlingData->m_fMass), gaTempSphereColPoints[0].pieceB);
 
 			CParticle::AddParticle(PARTICLE_HEATHAZE, gaTempSphereColPoints[0].point, CVector(0.0f, 0.0f, 0.0f), 0, 0.0f, 0, 0, 0, 0);
 		}
 		else
 		{
-			nearCar->VehicleDamage(info->m_nDamage* (0.01f * nearCar->pHandling->fMass), gaTempSphereColPoints[0].pieceB);
+			nearCar->VehicleDamage(info->m_nDamage* (0.01f * nearCar->m_pHandlingData->m_fMass), gaTempSphereColPoints[0].pieceB);
 		}
 		if (nearCar->m_fHealth < oldHealth)
 		{

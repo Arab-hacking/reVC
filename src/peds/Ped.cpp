@@ -12,7 +12,7 @@
 #include "DMAudio.h"
 #include "General.h"
 #include "VisibilityPlugins.h"
-#include "HandlingMgr.h"
+#include "cHandlingDataMgr.h"
 #include "Replay.h"
 #include "Radar.h"
 #include "PedPlacement.h"
@@ -1346,9 +1346,9 @@ CPed::ScanForInterestingStuff(void)
 
 				if (veh->VehicleCreatedBy != MISSION_VEHICLE) {
 					if (veh->m_vecMoveSpeed.Magnitude() <= 0.1f && veh->IsVehicleNormal()
-						&& veh->IsCar() && bestMonetaryValue < veh->pHandling->nMonetaryValue) {
+						&& veh->IsCar() && bestMonetaryValue < veh->m_pHandlingData->m_nMonetaryValue) {
 						mostExpensiveVehAround = i;
-						bestMonetaryValue = veh->pHandling->nMonetaryValue;
+						bestMonetaryValue = veh->m_pHandlingData->m_nMonetaryValue;
 					}
 				}
 			}
@@ -7956,9 +7956,9 @@ CPed::LookForSexyCars(void)
 
 		for (int vehId = 0; vehId < lastVehicle; vehId++) {
 			veh = (CVehicle*)vehicles[vehId];
-			if (veh != m_pMyVehicle && bestPriceYet < veh->pHandling->nMonetaryValue) {
+			if (veh != m_pMyVehicle && bestPriceYet < veh->m_pHandlingData->m_nMonetaryValue) {
 				foundVehId = vehId;
-				bestPriceYet = veh->pHandling->nMonetaryValue;
+				bestPriceYet = veh->m_pHandlingData->m_nMonetaryValue;
 			}
 		}
 		if (lastVehicle > 0 && bestPriceYet > 40000)

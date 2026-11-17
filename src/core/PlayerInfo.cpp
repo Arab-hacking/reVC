@@ -12,7 +12,7 @@
 #include "Fire.h"
 #include "Frontend.h"
 #include "General.h"
-#include "HandlingMgr.h"
+#include "cHandlingDataMgr.h"
 #include "Messages.h"
 #include "Pad.h"
 #include "PathFind.h"

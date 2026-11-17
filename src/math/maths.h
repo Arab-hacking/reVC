@@ -31,5 +31,7 @@ inline float RecipSqrt(float x) { return RecipSqrt(1.0f, x); }
 inline float Pow(float x, float y) { return powf(x, y); }
 inline float Floor(float x) { return floorf(x); }
 inline float Ceil(float x) { return ceilf(x); }
+inline bool IsFinite(float x) { return isfinite(x) != 0; }
+inline bool IsFinite(double x) { return isfinite(x) != 0; }
 
 #endif // __GTA_MATHS_H__

@@ -25,7 +25,7 @@
 #include "TimeModelInfo.h"
 #include "PedType.h"
 #include "AnimManager.h"
-#include "HandlingMgr.h"
+#include "cHandlingDataMgr.h"
 #include "FileLoader.h"
 #include "TxdStore.h"
 #include "TempColModels.h"
@@ -388,16 +388,18 @@ int VehicleType(const std::string &s)
 
 bool HandlingMatches(int type, int id)
 {
-    if(id < 0 || id >= NUMHANDLINGS) return false;
+    if(id < 0 || id >= NUM_HANDLINGS) return false;
+    const tHandlingData *h = mod_HandlingManager.GetVehiclePointer((uint32)id);
+    const bool isBike  = h->m_bIsBike;
+    const bool isBoat  = h->m_bIsBoat;
+    const bool isHeli  = h->m_bIsHeli;
+    const bool isPlane = h->m_bIsPlane;
     if(type == VEHICLE_TYPE_CAR)
-        return id < HANDLING_BIKE && !(mod_HandlingManager.GetHandlingData((tVehicleType)id)->Flags &
-            (HANDLING_IS_BIKE | HANDLING_IS_BOAT | HANDLING_IS_HELI | HANDLING_IS_PLANE));
-    if(type == VEHICLE_TYPE_BIKE) return id >= HANDLING_BIKE && id <= HANDLING_FREEWAY;
-    if(type == VEHICLE_TYPE_BOAT) return id >= HANDLING_PREDATOR && id <= HANDLING_CUPBOAT;
-    if(type == VEHICLE_TYPE_HELI)
-        return id >= HANDLING_SPARROW && id <= HANDLING_RCCOPTER && id != HANDLING_RCBARON;
-    if(type == VEHICLE_TYPE_PLANE)
-        return id == HANDLING_SEAPLANE || id == HANDLING_RCBARON;
+        return !(isBike || isBoat || isHeli || isPlane);
+    if(type == VEHICLE_TYPE_BIKE) return isBike;
+    if(type == VEHICLE_TYPE_BOAT) return isBoat;
+    if(type == VEHICLE_TYPE_HELI) return isHeli;
+    if(type == VEHICLE_TYPE_PLANE) return isPlane;
     return false;
 }
 

@@ -20,7 +20,7 @@
 #ifdef MISSION_REPLAY
 #include "GenericGameStorage.h"
 #endif
-#include "HandlingMgr.h"
+#include "cHandlingDataMgr.h"
 #include "Heli.h"
 #include "Hud.h"
 #include "Lines.h"
@@ -2537,7 +2537,7 @@ int8 CRunningScript::ProcessCommands100To199(int32 command)
 		CollectParameters(&m_nIp, 2);
 		CVehicle* car = CPools::GetVehiclePool()->GetAt(ScriptParams[0]);
 		script_assert(car);
-		car->AutoPilot.m_nCruiseSpeed = Min(*(float*)&ScriptParams[1], 60.0f * car->pHandling->Transmission.fMaxCruiseVelocity);
+		car->AutoPilot.m_nCruiseSpeed = Min(*(float*)&ScriptParams[1], 60.0f * car->m_pHandlingData->m_Transmission.m_fMaxCruiseVelocity);
 		return 0;
 	}
 	case COMMAND_SET_CAR_DRIVING_STYLE:

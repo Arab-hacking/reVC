@@ -1487,13 +1487,13 @@ int8 CRunningScript::ProcessCommands400To499(int32 command)
 		script_assert(pVehicle);
 		if (ScriptParams[1] != 0) {
 			pVehicle->bIsHeavy = true;
-			pVehicle->m_fMass = 3.0f * pVehicle->pHandling->fMass;
-			pVehicle->m_fTurnMass = 5.0f * pVehicle->pHandling->fTurnMass;
+			pVehicle->m_fMass = 3.0f * pVehicle->m_pHandlingData->m_fMass;
+			pVehicle->m_fTurnMass = 5.0f * pVehicle->m_pHandlingData->m_fTurnMass;
 		}
 		else {
 			pVehicle->bIsHeavy = false;
-			pVehicle->m_fMass = pVehicle->pHandling->fMass;
-			pVehicle->m_fTurnMass = pVehicle->pHandling->fTurnMass;
+			pVehicle->m_fMass = pVehicle->m_pHandlingData->m_fMass;
+			pVehicle->m_fTurnMass = pVehicle->m_pHandlingData->m_fTurnMass;
 		}
 		return 0;
 	}

@@ -10,7 +10,7 @@
 #include "TempColModels.h"
 #include "VisibilityPlugins.h"
 #include "FileMgr.h"
-#include "HandlingMgr.h"
+#include "cHandlingDataMgr.h"
 #include "CarCtrl.h"
 #include "PedType.h"
 #include "AnimManager.h"

@@ -32,7 +32,7 @@
 #include "World.h"
 #include "SurfaceTable.h"
 #include "Weather.h"
-#include "HandlingMgr.h"
+#include "cHandlingDataMgr.h"
 #include "Record.h"
 #include "Remote.h"
 #include "Population.h"
@@ -107,18 +107,18 @@ CAutomobile::CAutomobile(int32 id, uint8 CreatedBy)
 		break;
 	}
 
-	pHandling = mod_HandlingManager.GetHandlingData((tVehicleType)mi->m_handlingId);
-	pFlyingHandling =  mod_HandlingManager.GetFlyingPointer((tVehicleType)mi->m_handlingId);
+	m_pHandlingData = mod_HandlingManager.GetVehiclePointer((uint32)mi->m_handlingId);
+	m_pFlyingHandlingData =  mod_HandlingManager.GetFlyingPointer((uint32)mi->m_handlingId);
 
 	m_auto_unused1 = 20.0f;
 	m_auto_unused2 = 0;
 
 	mi->ChooseVehicleColour(m_currentColour1, m_currentColour2);
 
-	bIsVan = !!(pHandling->Flags & HANDLING_IS_VAN);
-	bIsBig = !!(pHandling->Flags & HANDLING_IS_BIG);
-	bIsBus = !!(pHandling->Flags & HANDLING_IS_BUS);
-	bLowVehicle = !!(pHandling->Flags & HANDLING_IS_LOW);
+	bIsVan = !!(m_pHandlingData->m_nModelFlags & VEHICLE_HANDLING_MODEL_IS_VAN);
+	bIsBig = !!(m_pHandlingData->m_nModelFlags & VEHICLE_HANDLING_MODEL_IS_BIG);
+	bIsBus = !!(m_pHandlingData->m_nModelFlags & VEHICLE_HANDLING_MODEL_IS_BUS);
+	bLowVehicle = !!(m_pHandlingData->m_nModelFlags & VEHICLE_HANDLING_MODEL_IS_LOW);
 
 	// Doors
 	if(bIsBus){
@@ -135,17 +135,17 @@ CAutomobile::CAutomobile(int32 id, uint8 CreatedBy)
 		Doors[DOOR_REAR_LEFT].Init(-PI*0.4f, 0.0f, 0, 2);
 		Doors[DOOR_REAR_RIGHT].Init(0.0f, PI*0.4f, 1, 2);
 	}
-	if(pHandling->Flags & HANDLING_REV_BONNET)
+	if(m_pHandlingData->m_nModelFlags & VEHICLE_HANDLING_MODEL_REVERSE_BONNET)
 		Doors[DOOR_BONNET].Init(-PI*0.3f, 0.0f, 1, 0);
 	else
 		Doors[DOOR_BONNET].Init(0.0f, PI*0.3f, 1, 0);
-	if(pHandling->Flags & HANDLING_HANGING_BOOT)
+	if(m_pHandlingData->m_nModelFlags & VEHICLE_HANDLING_MODEL_HANGING_BOOT)
 		Doors[DOOR_BOOT].Init(-PI*0.4f, 0.0f, 0, 0);
-	else if(pHandling->Flags & HANDLING_TAILGATE_BOOT)
+	else if(m_pHandlingData->m_nModelFlags & VEHICLE_HANDLING_MODEL_TAILGATE_BOOT)
 		Doors[DOOR_BOOT].Init(0.0, HALFPI, 1, 0);
 	else
 		Doors[DOOR_BOOT].Init(-PI*0.3f, 0.0f, 1, 0);
-	if(pHandling->Flags & HANDLING_NO_DOORS){
+	if(m_pHandlingData->m_nModelFlags & VEHICLE_HANDLING_MODEL_NO_DOORS){
 		Damage.SetDoorStatus(DOOR_FRONT_LEFT, DOOR_STATUS_MISSING);
 		Damage.SetDoorStatus(DOOR_FRONT_RIGHT, DOOR_STATUS_MISSING);
 		Damage.SetDoorStatus(DOOR_REAR_LEFT, DOOR_STATUS_MISSING);
@@ -155,12 +155,12 @@ CAutomobile::CAutomobile(int32 id, uint8 CreatedBy)
 	for(i = 0; i < 6; i++)
 		m_randomValues[i] = CGeneral::GetRandomNumberInRange(-0.15f, 0.15f);
 
-	m_fMass = pHandling->fMass;
-	m_fTurnMass = pHandling->fTurnMass;
-	m_vecCentreOfMass = pHandling->CentreOfMass;
-	m_fAirResistance = pHandling->Dimension.x*pHandling->Dimension.z/m_fMass;
+	m_fMass = m_pHandlingData->m_fMass;
+	m_fTurnMass = m_pHandlingData->m_fTurnMass;
+	m_vecCentreOfMass = m_pHandlingData->m_vecCentreOfMass;
+	m_fAirResistance = (float)mi->GetColModel()->boundingBox.max.x * (float)mi->GetColModel()->boundingBox.max.z / m_fMass;
 	m_fElasticity = 0.05f;
-	m_fBuoyancy = pHandling->fBuoyancy;
+	m_fBuoyancy = m_pHandlingData->m_fBuoyancyConstant;
 
 	m_fOrientation = m_fPlaneSteer = 0.0f;
 
@@ -358,10 +358,10 @@ CAutomobile::ProcessControl(void)
 	// Set Center of Mass to make car more stable
 	if(strongGrip1 || bCheat3)
 		m_vecCentreOfMass.z = 0.3f*m_aSuspensionSpringLength[0] + -1.0f*m_fHeightAboveRoad;
-	else if(pHandling->Flags & HANDLING_NONPLAYER_STABILISER && GetStatus() == STATUS_PHYSICS)
-		m_vecCentreOfMass.z = pHandling->CentreOfMass.z - 0.2f*pHandling->Dimension.z;
+	else if(m_pHandlingData->m_nHandlingFlags & VEHICLE_HANDLING_NPC_ANTI_ROLL && GetStatus() == STATUS_PHYSICS)
+		m_vecCentreOfMass.z = m_pHandlingData->m_vecCentreOfMass.z - 0.2f*(float)CModelInfo::GetModelInfo(GetModelIndex())->GetColModel()->boundingBox.max.z;
 	else
-		m_vecCentreOfMass = pHandling->CentreOfMass;
+		m_vecCentreOfMass = m_pHandlingData->m_vecCentreOfMass;
 
 	// Park car
 	if(bCanPark && !bParking && VehicleCreatedBy != MISSION_VEHICLE && AutoPilot.m_nCarMission == MISSION_CRUISE &&
@@ -420,12 +420,12 @@ CAutomobile::ProcessControl(void)
 					// positive when on left wheels, negative on right wheels
 					if(GetRight().z <= 0.0f)
 						tweak *= -1.0f;
-					m_vecCentreOfMass.z = pHandling->CentreOfMass.z +
+					m_vecCentreOfMass.z = m_pHandlingData->m_vecCentreOfMass.z +
 						CPad::GetPad(0)->GetSteeringLeftRight()/128.0f *
 						CAR_BALANCE_MULT * tweak * colModel->boundingBox.max.z;
 				}
 			}else
-				m_vecCentreOfMass.z = pHandling->CentreOfMass.z;
+				m_vecCentreOfMass.z = m_pHandlingData->m_vecCentreOfMass.z;
 
 			if(bHoverCheat)
 				DoHoverSuspensionRatios();
@@ -446,7 +446,7 @@ CAutomobile::ProcessControl(void)
 						bStuckInSand = true;
 						slowdown = SAND_SLOWDOWN;
 					}
-					if(pHandling->Flags & HANDLING_GOOD_INSAND)
+					if(m_pHandlingData->m_nHandlingFlags & VEHICLE_HANDLING_OFFROAD_ABILITY)
 						slowdown *= 0.5f;
 					if(CWeather::WetRoads > 0.2f)
 						slowdown *= (1.2f - CWeather::WetRoads);
@@ -475,7 +475,7 @@ CAutomobile::ProcessControl(void)
 		m_nDriveWheelsOnGroundPrev = m_nDriveWheelsOnGround;
 		m_nDriveWheelsOnGround = 4;
 
-		pHandling->Transmission.CalculateGearForSimpleCar(AutoPilot.m_fMaxTrafficSpeed/50.0f, m_nCurrentGear);
+		m_pHandlingData->m_Transmission.CalculateGearForSimpleCar(AutoPilot.m_fMaxTrafficSpeed/50.0f, m_nCurrentGear);
 
 		wheelRot = ProcessWheelRotation(WHEEL_STATE_NORMAL, GetForward(), m_vecMoveSpeed, 0.35f);
 		for(i = 0; i < 4; i++)
@@ -782,11 +782,11 @@ CAutomobile::ProcessControl(void)
 		// Make springs push up vehicle
 		for(i = 0; i < 4; i++){
 			if(m_aSuspensionSpringRatio[i] < 1.0f){
-				float bias = pHandling->fSuspensionBias;
+				float bias = m_pHandlingData->m_fSuspensionBiasBetweenFrontAndRear;
 				if(i == CARWHEEL_REAR_LEFT || i == CARWHEEL_REAR_RIGHT)
 					bias = 1.0f - bias;
 
-				ApplySpringCollisionAlt(pHandling->fSuspensionForceLevel,
+				ApplySpringCollisionAlt(m_pHandlingData->m_fSuspensionForceLevel,
 					springDirections[i], contactPoints[i],
 					m_aSuspensionSpringRatio[i], bias, m_aWheelColPoints[i].normal);
 
@@ -823,7 +823,7 @@ CAutomobile::ProcessControl(void)
 		// dampen springs
 		for(i = 0; i < 4; i++)
 			if(m_aSuspensionSpringRatio[i] < 0.99999f)
-				ApplySpringDampening(pHandling->fSuspensionDampingLevel,
+				ApplySpringDampening(m_pHandlingData->m_fSuspensionDampingLevel,
 					springDirections[i], contactPoints[i], contactSpeeds[i]);
 
 		// Get speed at contact points again
@@ -842,16 +842,16 @@ CAutomobile::ProcessControl(void)
 			gripCheat = false;
 		float acceleration = 0.0f;
 		if(bEngineOn && !IsRealHeli() && !IsRealPlane()){
-			acceleration = pHandling->Transmission.CalculateDriveAcceleration(m_fGasPedal, m_nCurrentGear, m_fChangeGearTime, fwdSpeed,
+			acceleration = m_pHandlingData->m_Transmission.CalculateDriveAcceleration(m_fGasPedal, m_nCurrentGear, m_fChangeGearTime, fwdSpeed,
 				&m_fTransmissionInertiaRatio, &m_fTransmissionInertiaSmoothing,
 				m_nDriveWheelsOnGround != 0,
-				gripCheat ? TRANSMISSION_CHEAT_PERFECT : TRANSMISSION_CHEAT_NONE);
+				gripCheat ? CHEAT_HANDLING_PERFECT : CHEAT_HANDLING_NONE);
 			acceleration /= m_fForceMultiplier;
 		}
 
 		if(bAudioChangingGear && m_fGasPedal > 0.4f && m_fBrakePedal < 0.1f && fwdSpeed > 0.15f &&
 		   this == FindPlayerVehicle() && TheCamera.Cams[TheCamera.ActiveCam].Mode != CCam::MODE_1STPERSON){
-			if(GetStatus() == STATUS_PLAYER && !(pHandling->Flags & HANDLING_IS_BUS)){
+			if(GetStatus() == STATUS_PLAYER && !(m_pHandlingData->m_nModelFlags & VEHICLE_HANDLING_MODEL_IS_BUS)){
 				if(m_nBusDoorTimerEnd == 0)
 					m_nBusDoorTimerEnd = 1000;
 				else {
@@ -868,11 +868,11 @@ CAutomobile::ProcessControl(void)
 				ApplyTurnForce(-GRAVITY*Min(m_fTurnMass, 2500.0f)*GetUp(), -1.0f*GetForward());
 		}
 
-		brake = m_fBrakePedal * pHandling->fBrakeDeceleration * CTimer::GetTimeStep();
-		bool neutralHandling = GetStatus() != STATUS_PLAYER && GetStatus() != STATUS_PLAYER_REMOTE && (pHandling->Flags & HANDLING_NEUTRALHANDLING);
-		float brakeBiasFront = neutralHandling ? 1.0f : 2.0f*pHandling->fBrakeBias;
-		float brakeBiasRear  = neutralHandling ? 1.0f : 2.0f-pHandling->fBrakeBias;	// looks like a bug, but it was correct in III...
-		float tractionBiasFront = neutralHandling ? 1.0f : 2.0f*pHandling->fTractionBias;
+		brake = m_fBrakePedal * m_pHandlingData->m_fBrakeDeceleration * CTimer::GetTimeStep();
+		bool neutralHandling = GetStatus() != STATUS_PLAYER && GetStatus() != STATUS_PLAYER_REMOTE && (m_pHandlingData->m_nHandlingFlags & VEHICLE_HANDLING_NPC_NEUTRAL_HANDL);
+		float brakeBiasFront = neutralHandling ? 1.0f : 2.0f*m_pHandlingData->m_fBrakeBias;
+		float brakeBiasRear  = neutralHandling ? 1.0f : 2.0f-m_pHandlingData->m_fBrakeBias;	// looks like a bug, but it was correct in III...
+		float tractionBiasFront = neutralHandling ? 1.0f : 2.0f*m_pHandlingData->m_fTractionBias;
 		float tractionBiasRear  = neutralHandling ? 1.0f : 2.0f-tractionBiasFront;
 
 		// Count how many wheels are touching the ground
@@ -889,7 +889,7 @@ CAutomobile::ProcessControl(void)
 
 			if(m_aWheelTimer[i] > 0.0f){
 				m_nWheelsOnGround++;
-				switch(pHandling->Transmission.nDriveType){
+				switch(m_pHandlingData->m_Transmission.m_nDriveType){
 				case '4':
 					m_nDriveWheelsOnGround++;
 					break;
@@ -926,7 +926,7 @@ CAutomobile::ProcessControl(void)
 			traction = 0.004f * m_fTraction;
 		else
 			traction = 0.004f;
-		traction *= pHandling->fTractionMultiplier / 4.0f;
+		traction *= m_pHandlingData->m_fTractionMultiplier / 4.0f;
 		traction /= m_fForceMultiplier;
 		if(CVehicle::bCheat3)
 			traction *= 4.0f;
@@ -943,7 +943,7 @@ CAutomobile::ProcessControl(void)
 		static float fThrust;
 		static tWheelState WheelState[4];
 
-		bool rearWheelsFirst = !!(pHandling->Flags & HANDLING_REARWHEEL_1ST);
+		bool rearWheelsFirst = !!(m_pHandlingData->m_nHandlingFlags & VEHICLE_HANDLING_PROC_REARWHEEL_1ST);
 
 		// Process front wheels on ground - first try
 
@@ -955,7 +955,7 @@ CAutomobile::ProcessControl(void)
 			CVector wheelFwd, wheelRight, tmp;
 
 			if(m_aWheelTimer[CARWHEEL_FRONT_LEFT] > 0.0f){
-				if(mod_HandlingManager.HasFrontWheelDrive(pHandling->nIdentifier))
+				if(mod_HandlingManager.HasFrontWheelDrive(m_pHandlingData->m_nVehicleId))
 					fThrust = acceleration;
 				else
 					fThrust = 0.0f;
@@ -998,7 +998,7 @@ CAutomobile::ProcessControl(void)
 			}
 
 			if(m_aWheelTimer[CARWHEEL_FRONT_RIGHT] > 0.0f){
-				if(mod_HandlingManager.HasFrontWheelDrive(pHandling->nIdentifier))
+				if(mod_HandlingManager.HasFrontWheelDrive(m_pHandlingData->m_nVehicleId))
 					fThrust = acceleration;
 				else
 					fThrust = 0.0f;
@@ -1045,7 +1045,7 @@ CAutomobile::ProcessControl(void)
 
 		if(!IsRealHeli()){
 			if(m_aWheelTimer[CARWHEEL_FRONT_LEFT] <= 0.0f){
-				if(mod_HandlingManager.HasFrontWheelDrive(pHandling->nIdentifier) && acceleration != 0.0f){
+				if(mod_HandlingManager.HasFrontWheelDrive(m_pHandlingData->m_nVehicleId) && acceleration != 0.0f){
 					if(acceleration > 0.0f){
 						if(m_aWheelSpeed[CARWHEEL_FRONT_LEFT] < 2.0f)
 							m_aWheelSpeed[CARWHEEL_FRONT_LEFT] -= 0.2f;
@@ -1059,7 +1059,7 @@ CAutomobile::ProcessControl(void)
 				m_aWheelRotation[CARWHEEL_FRONT_LEFT] += m_aWheelSpeed[CARWHEEL_FRONT_LEFT];
 			}
 			if(m_aWheelTimer[CARWHEEL_FRONT_RIGHT] <= 0.0f){
-				if(mod_HandlingManager.HasFrontWheelDrive(pHandling->nIdentifier) && acceleration != 0.0f){
+				if(mod_HandlingManager.HasFrontWheelDrive(m_pHandlingData->m_nVehicleId) && acceleration != 0.0f){
 					if(acceleration > 0.0f){
 						if(m_aWheelSpeed[CARWHEEL_FRONT_RIGHT] < 2.0f)
 							m_aWheelSpeed[CARWHEEL_FRONT_RIGHT] -= 0.2f;
@@ -1090,12 +1090,12 @@ CAutomobile::ProcessControl(void)
 #else
 				rearBrake = 20000.0f;
 #endif
-				if(fwdSpeed > 0.1f && pHandling->Flags & HANDLING_HANDBRAKE_TYRE){
+				if(fwdSpeed > 0.1f && m_pHandlingData->m_nHandlingFlags & VEHICLE_HANDLING_NO_HANDBRAKE){
 					m_fTireTemperature += 0.005*CTimer::GetTimeStep();
 					if(m_fTireTemperature > 2.0f)
 						m_fTireTemperature = 2.0f;
 				}
-			}else if(m_doingBurnout && mod_HandlingManager.HasRearWheelDrive(pHandling->nIdentifier)){
+			}else if(m_doingBurnout && mod_HandlingManager.HasRearWheelDrive(m_pHandlingData->m_nVehicleId)){
 				rearBrake = 0.0f;
 				rearTraction = 0.0f;
 				// BUG: missing timestep
@@ -1105,7 +1105,7 @@ CAutomobile::ProcessControl(void)
 			}
 
 			if(m_aWheelTimer[CARWHEEL_REAR_LEFT] > 0.0f){
-				if(mod_HandlingManager.HasRearWheelDrive(pHandling->nIdentifier))
+				if(mod_HandlingManager.HasRearWheelDrive(m_pHandlingData->m_nVehicleId))
 					fThrust = acceleration;
 				else
 					fThrust = 0.0f;
@@ -1150,7 +1150,7 @@ CAutomobile::ProcessControl(void)
 #endif
 
 			if(m_aWheelTimer[CARWHEEL_REAR_RIGHT] > 0.0f){
-				if(mod_HandlingManager.HasRearWheelDrive(pHandling->nIdentifier))
+				if(mod_HandlingManager.HasRearWheelDrive(m_pHandlingData->m_nVehicleId))
 					fThrust = acceleration;
 				else
 					fThrust = 0.0f;
@@ -1189,7 +1189,7 @@ CAutomobile::ProcessControl(void)
 			}
 		}
 
-		if(m_doingBurnout && mod_HandlingManager.HasRearWheelDrive(pHandling->nIdentifier) &&
+		if(m_doingBurnout && mod_HandlingManager.HasRearWheelDrive(m_pHandlingData->m_nVehicleId) &&
 	           (m_aWheelState[CARWHEEL_REAR_LEFT] == WHEEL_STATE_SPINNING || m_aWheelState[CARWHEEL_REAR_RIGHT] == WHEEL_STATE_SPINNING)){
 			m_fTireTemperature += 0.001f*CTimer::GetTimeStep();
 			if(m_fTireTemperature > 3.0f)
@@ -1204,7 +1204,7 @@ CAutomobile::ProcessControl(void)
 			if(m_aWheelTimer[CARWHEEL_REAR_LEFT] <= 0.0f){
 				if(bIsHandbrakeOn)
 					m_aWheelSpeed[CARWHEEL_REAR_LEFT] = 0.0f;
-				else if(mod_HandlingManager.HasRearWheelDrive(pHandling->nIdentifier) && acceleration != 0.0f){
+				else if(mod_HandlingManager.HasRearWheelDrive(m_pHandlingData->m_nVehicleId) && acceleration != 0.0f){
 					if(acceleration > 0.0f){
 						if(m_aWheelSpeed[CARWHEEL_REAR_LEFT] < 2.0f)
 							m_aWheelSpeed[CARWHEEL_REAR_LEFT] -= 0.2f;
@@ -1220,7 +1220,7 @@ CAutomobile::ProcessControl(void)
 			if(m_aWheelTimer[CARWHEEL_REAR_RIGHT] <= 0.0f){
 				if(bIsHandbrakeOn)
 					m_aWheelSpeed[CARWHEEL_REAR_RIGHT] = 0.0f;
-				else if(mod_HandlingManager.HasRearWheelDrive(pHandling->nIdentifier) && acceleration != 0.0f){
+				else if(mod_HandlingManager.HasRearWheelDrive(m_pHandlingData->m_nVehicleId) && acceleration != 0.0f){
 					if(acceleration > 0.0f){
 						if(m_aWheelSpeed[CARWHEEL_REAR_RIGHT] < 2.0f)
 							m_aWheelSpeed[CARWHEEL_REAR_RIGHT] -= 0.2f;
@@ -1245,7 +1245,7 @@ CAutomobile::ProcessControl(void)
 			CVector wheelFwd, wheelRight, tmp;
 
 			if(m_aWheelTimer[CARWHEEL_FRONT_LEFT] > 0.0f){
-				if(mod_HandlingManager.HasFrontWheelDrive(pHandling->nIdentifier))
+				if(mod_HandlingManager.HasFrontWheelDrive(m_pHandlingData->m_nVehicleId))
 					fThrust = acceleration;
 				else
 					fThrust = 0.0f;
@@ -1288,7 +1288,7 @@ CAutomobile::ProcessControl(void)
 			}
 
 			if(m_aWheelTimer[CARWHEEL_FRONT_RIGHT] > 0.0f){
-				if(mod_HandlingManager.HasFrontWheelDrive(pHandling->nIdentifier))
+				if(mod_HandlingManager.HasFrontWheelDrive(m_pHandlingData->m_nVehicleId))
 					fThrust = acceleration;
 				else
 					fThrust = 0.0f;
@@ -1335,7 +1335,7 @@ CAutomobile::ProcessControl(void)
 
 		if (!IsRealHeli()) {
 			if(m_aWheelTimer[CARWHEEL_FRONT_LEFT] <= 0.0f){
-				if(mod_HandlingManager.HasFrontWheelDrive(pHandling->nIdentifier) && acceleration != 0.0f){
+				if(mod_HandlingManager.HasFrontWheelDrive(m_pHandlingData->m_nVehicleId) && acceleration != 0.0f){
 					if(acceleration > 0.0f){
 						if(m_aWheelSpeed[CARWHEEL_FRONT_LEFT] < 2.0f)
 							m_aWheelSpeed[CARWHEEL_FRONT_LEFT] -= 0.2f;
@@ -1349,7 +1349,7 @@ CAutomobile::ProcessControl(void)
 				m_aWheelRotation[CARWHEEL_FRONT_LEFT] += m_aWheelSpeed[CARWHEEL_FRONT_LEFT];
 			}
 			if(m_aWheelTimer[CARWHEEL_FRONT_RIGHT] <= 0.0f){
-				if(mod_HandlingManager.HasFrontWheelDrive(pHandling->nIdentifier) && acceleration != 0.0f){
+				if(mod_HandlingManager.HasFrontWheelDrive(m_pHandlingData->m_nVehicleId) && acceleration != 0.0f){
 					if(acceleration > 0.0f){
 						if(m_aWheelSpeed[CARWHEEL_FRONT_RIGHT] < 2.0f)
 							m_aWheelSpeed[CARWHEEL_FRONT_RIGHT] -= 0.2f;
@@ -1975,7 +1975,7 @@ CAutomobile::PreRender(void)
 	AddDamagedVehicleParticles();
 
 	// Exhaust smoke
-	if(bEngineOn && !(pHandling->Flags & HANDLING_NO_EXHAUST) && fwdSpeed < 130.0f){
+	if(bEngineOn && !(m_pHandlingData->m_nModelFlags & VEHICLE_HANDLING_MODEL_NO_EXHAUST) && fwdSpeed < 130.0f){
 		CVector exhaustPos = mi->m_positions[CAR_POS_EXHAUST];
 		CVector pos1, pos2, dir1, dir2;
 
@@ -1994,7 +1994,7 @@ CAutomobile::PreRender(void)
 			}
 
 			pos1 = GetMatrix() * exhaustPos;
-			if(pHandling->Flags & HANDLING_DBL_EXHAUST){
+			if(m_pHandlingData->m_nModelFlags & VEHICLE_HANDLING_MODEL_DOUBLE_EXHAUST){
 				pos2 = exhaustPos;
 				pos2.x = -pos2.x;
 				pos2 = GetMatrix() * pos2;
@@ -2005,14 +2005,14 @@ CAutomobile::PreRender(void)
 			if(CGeneral::GetRandomNumberInRange(1.0f, 3.0f)*(m_fGasPedal+1.1f) > fumesLimit)
 				for(i = 0; i < 4;){
 					CParticle::AddParticle(PARTICLE_EXHAUST_FUMES, pos1, dir1);
-					if(pHandling->Flags & HANDLING_DBL_EXHAUST)
+					if(m_pHandlingData->m_nModelFlags & VEHICLE_HANDLING_MODEL_DOUBLE_EXHAUST)
 						CParticle::AddParticle(PARTICLE_EXHAUST_FUMES, pos2, dir2);
 
 					static float extraFumesLimit = 0.5f;
 					if(m_fGasPedal > extraFumesLimit && m_nCurrentGear < 3){
 						if(CGeneral::GetRandomNumber() & 1)
 							CParticle::AddParticle(PARTICLE_EXHAUST_FUMES, pos1, dir1);
-						else if(pHandling->Flags & HANDLING_DBL_EXHAUST)
+						else if(m_pHandlingData->m_nModelFlags & VEHICLE_HANDLING_MODEL_DOUBLE_EXHAUST)
 							CParticle::AddParticle(PARTICLE_EXHAUST_FUMES, pos2, dir2);
 					}
 
@@ -2036,11 +2036,11 @@ CAutomobile::PreRender(void)
 						   TheCamera.GetLookDirection() == LOOKING_LEFT ||
 						   TheCamera.GetLookDirection() == LOOKING_RIGHT){
 							CParticle::AddParticle(PARTICLE_HEATHAZE, pos1, CVector(0.0f, 0.0f, 0.0f));
-							if(pHandling->Flags & HANDLING_DBL_EXHAUST)
+							if(m_pHandlingData->m_nModelFlags & VEHICLE_HANDLING_MODEL_DOUBLE_EXHAUST)
 								CParticle::AddParticle(PARTICLE_HEATHAZE, pos2, CVector(0.0f, 0.0f, 0.0f));
 
 							CParticle::AddParticle(PARTICLE_HEATHAZE, pos1, CVector(0.0f, 0.0f, 0.0f));
-							if(pHandling->Flags & HANDLING_DBL_EXHAUST)
+							if(m_pHandlingData->m_nModelFlags & VEHICLE_HANDLING_MODEL_DOUBLE_EXHAUST)
 								CParticle::AddParticle(PARTICLE_HEATHAZE, pos2, CVector(0.0f, 0.0f, 0.0f));
 						}
 					}
@@ -2272,7 +2272,7 @@ CAutomobile::PreRender(void)
 
 			if(behindness < -0.97f && camDist < 30.0f * Max(1.0f, CRenderer::ms_fLightDistScale)){
 				// Directly in front and not too far away
-				if(pHandling->Flags & HANDLING_HALOGEN_LIGHTS){
+				if(m_pHandlingData->m_nHandlingFlags & VEHICLE_HANDLING_HALOGEN_LIGHTS){
 					if(Damage.GetLightStatus(VEHLIGHT_FRONT_LEFT) == LIGHT_STATUS_OK)
 						CCoronas::RegisterCorona((uintptr)this + 6, 150, 150, 195, 255,
 							lightL, 1.2f, 65.0f*vehLightMult,
@@ -2309,7 +2309,7 @@ CAutomobile::PreRender(void)
 						CCoronas::TYPE_STREAK, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
 						CCoronas::LOSCHECK_OFF, CCoronas::STREAK_ON, angle);
 			}else{
-				if(pHandling->Flags & HANDLING_HALOGEN_LIGHTS){
+				if(m_pHandlingData->m_nHandlingFlags & VEHICLE_HANDLING_HALOGEN_LIGHTS){
 					if(Damage.GetLightStatus(VEHLIGHT_FRONT_LEFT) == LIGHT_STATUS_OK)
 						CCoronas::RegisterCorona((uintptr)this, 190*intensity, 190*intensity, 255*intensity, 255,
 							lightL, size, 80.0f*vehLightMult,
@@ -2343,9 +2343,9 @@ CAutomobile::PreRender(void)
 
 		// bright lights
 		if(Damage.GetLightStatus(VEHLIGHT_FRONT_LEFT) == LIGHT_STATUS_OK && !bNoBrightHeadLights)
-			CBrightLights::RegisterOne(lightL, GetUp(), GetRight(), GetForward(), pHandling->FrontLights + BRIGHTLIGHT_FRONT);
+			CBrightLights::RegisterOne(lightL, GetUp(), GetRight(), GetForward(), m_pHandlingData->m_nFrontLights + BRIGHTLIGHT_FRONT);
 		if(Damage.GetLightStatus(VEHLIGHT_FRONT_RIGHT) == LIGHT_STATUS_OK && !bNoBrightHeadLights)
-			CBrightLights::RegisterOne(lightR, GetUp(), GetRight(), GetForward(), pHandling->FrontLights + BRIGHTLIGHT_FRONT);
+			CBrightLights::RegisterOne(lightR, GetUp(), GetRight(), GetForward(), m_pHandlingData->m_nFrontLights + BRIGHTLIGHT_FRONT);
 
 		// Taillights
 
@@ -2414,9 +2414,9 @@ CAutomobile::PreRender(void)
 
 		// bright lights
 		if(Damage.GetLightStatus(VEHLIGHT_REAR_LEFT) == LIGHT_STATUS_OK)
-			CBrightLights::RegisterOne(lightL, GetUp(), GetRight(), GetForward(), pHandling->RearLights + BRIGHTLIGHT_REAR);
+			CBrightLights::RegisterOne(lightL, GetUp(), GetRight(), GetForward(), m_pHandlingData->m_nRearLights + BRIGHTLIGHT_REAR);
 		if(Damage.GetLightStatus(VEHLIGHT_REAR_RIGHT) == LIGHT_STATUS_OK)
-			CBrightLights::RegisterOne(lightR, GetUp(), GetRight(), GetForward(), pHandling->RearLights + BRIGHTLIGHT_REAR);
+			CBrightLights::RegisterOne(lightR, GetUp(), GetRight(), GetForward(), m_pHandlingData->m_nRearLights + BRIGHTLIGHT_REAR);
 
 		// Light shadows
 		if(!alarmOff){
@@ -2485,9 +2485,9 @@ CAutomobile::PreRender(void)
 							CCoronas::TYPE_STAR, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
 							CCoronas::LOSCHECK_OFF, CCoronas::STREAK_ON, 0.0f);
 					if(Damage.GetLightStatus(VEHLIGHT_REAR_LEFT) == LIGHT_STATUS_OK)
-						CBrightLights::RegisterOne(lightL, GetUp(), GetRight(), GetForward(), pHandling->RearLights + BRIGHTLIGHT_FRONT);
+						CBrightLights::RegisterOne(lightL, GetUp(), GetRight(), GetForward(), m_pHandlingData->m_nRearLights + BRIGHTLIGHT_FRONT);
 					if(Damage.GetLightStatus(VEHLIGHT_REAR_RIGHT) == LIGHT_STATUS_OK)
-						CBrightLights::RegisterOne(lightR, GetUp(), GetRight(), GetForward(), pHandling->RearLights + BRIGHTLIGHT_FRONT);
+						CBrightLights::RegisterOne(lightR, GetUp(), GetRight(), GetForward(), m_pHandlingData->m_nRearLights + BRIGHTLIGHT_FRONT);
 				}else{
 					// braking
 					if(Damage.GetLightStatus(VEHLIGHT_REAR_LEFT) == LIGHT_STATUS_OK)
@@ -2501,9 +2501,9 @@ CAutomobile::PreRender(void)
 							CCoronas::TYPE_STAR, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
 							CCoronas::LOSCHECK_OFF, CCoronas::STREAK_ON, 0.0f);
 					if(Damage.GetLightStatus(VEHLIGHT_REAR_LEFT) == LIGHT_STATUS_OK)
-						CBrightLights::RegisterOne(lightL, GetUp(), GetRight(), GetForward(), pHandling->RearLights + BRIGHTLIGHT_REAR);
+						CBrightLights::RegisterOne(lightL, GetUp(), GetRight(), GetForward(), m_pHandlingData->m_nRearLights + BRIGHTLIGHT_REAR);
 					if(Damage.GetLightStatus(VEHLIGHT_REAR_RIGHT) == LIGHT_STATUS_OK)
-						CBrightLights::RegisterOne(lightR, GetUp(), GetRight(), GetForward(), pHandling->RearLights + BRIGHTLIGHT_REAR);
+						CBrightLights::RegisterOne(lightR, GetUp(), GetRight(), GetForward(), m_pHandlingData->m_nRearLights + BRIGHTLIGHT_REAR);
 				}
 			}else{
 				if(Damage.GetLightStatus(VEHLIGHT_REAR_LEFT) == LIGHT_STATUS_OK)
@@ -2617,7 +2617,7 @@ CAutomobile::PreRender(void)
 			mat.RotateY(Asin(Clamp(-groundOffset, -1.0f, 1.0f)));
 		}
 	}
-	if(pHandling->Flags & HANDLING_FAT_REARW)
+	if(m_pHandlingData->m_nHandlingFlags & VEHICLE_HANDLING_WHEEL_R_WIDE)
 		mat.Scale(1.15f*wheelRenderScale, wheelRenderScale, wheelRenderScale);
 	else
 		mat.Scale(wheelRenderScale);
@@ -2658,7 +2658,7 @@ CAutomobile::PreRender(void)
 			mat.RotateY(Asin(Clamp(groundOffset, -1.0f, 1.0f)));
 		}
 	}
-	if(pHandling->Flags & HANDLING_FAT_REARW)
+	if(m_pHandlingData->m_nHandlingFlags & VEHICLE_HANDLING_WHEEL_R_WIDE)
 		mat.Scale(1.15f*wheelRenderScale, wheelRenderScale, wheelRenderScale);
 	else
 		mat.Scale(wheelRenderScale);
@@ -2691,7 +2691,7 @@ CAutomobile::PreRender(void)
 				mat.RotateY(Asin(Clamp(-groundOffset, -1.0f, 1.0f)));
 			}
 		}
-		if(pHandling->Flags & HANDLING_FAT_REARW)
+		if(m_pHandlingData->m_nHandlingFlags & VEHICLE_HANDLING_WHEEL_R_WIDE)
 			mat.Scale(1.15f*wheelRenderScale, wheelRenderScale, wheelRenderScale);
 		else
 			mat.Scale(wheelRenderScale);
@@ -2725,7 +2725,7 @@ CAutomobile::PreRender(void)
 				mat.RotateY(Asin(Clamp(groundOffset, -1.0f, 1.0f)));
 			}
 		}
-		if(pHandling->Flags & HANDLING_FAT_REARW)
+		if(m_pHandlingData->m_nHandlingFlags & VEHICLE_HANDLING_WHEEL_R_WIDE)
 			mat.Scale(1.15f*wheelRenderScale, wheelRenderScale, wheelRenderScale);
 		else
 			mat.Scale(wheelRenderScale);
@@ -2859,7 +2859,7 @@ CAutomobile::PreRender(void)
 				mat.RotateY(Asin(Clamp(-groundOffset, -1.0f, 1.0f)));
 			}
 		}
-		if(pHandling->Flags & HANDLING_NARROW_FRONTW)
+		if(m_pHandlingData->m_nHandlingFlags & VEHICLE_HANDLING_WHEEL_F_NARROW)
 			mat.Scale(0.7f*wheelRenderScale, wheelRenderScale, wheelRenderScale);
 		else
 			mat.Scale(wheelRenderScale);
@@ -2900,7 +2900,7 @@ CAutomobile::PreRender(void)
 				mat.RotateY(Asin(Clamp(groundOffset, -1.0f, 1.0f)));
 			}
 		}
-		if(pHandling->Flags & HANDLING_NARROW_FRONTW)
+		if(m_pHandlingData->m_nHandlingFlags & VEHICLE_HANDLING_WHEEL_F_NARROW)
 			mat.Scale(0.7f*wheelRenderScale, wheelRenderScale, wheelRenderScale);
 		else
 			mat.Scale(wheelRenderScale);
@@ -3182,7 +3182,7 @@ CAutomobile::ProcessControlInputs(uint8 pad)
 		fValue = -sq(m_fSteerInput);
 	else
 		fValue = sq(m_fSteerInput);
-	m_fSteerAngle = DEGTORAD(pHandling->fSteeringLock) * fValue;
+	m_fSteerAngle = DEGTORAD(m_pHandlingData->m_fSteeringLock) * fValue;
 
 	if(bComedyControls){
 		int rnd = CGeneral::GetRandomNumber() % 10;
@@ -3413,7 +3413,7 @@ CAutomobile::HydraulicControl(void)
 			for(i = 0; i < 4; i++)
 				wheelPositions[i] = specialColModel->lines[i].p0.z - m_aSuspensionSpringRatio[i]*m_aSuspensionLineLength[i];
 		for(i = 0; i < 4; i++){
-			m_aSuspensionSpringLength[i] = pHandling->fSuspensionUpperLimit - pHandling->fSuspensionLowerLimit;
+			m_aSuspensionSpringLength[i] = m_pHandlingData->m_fSuspensionUpperLimit - m_pHandlingData->m_fSuspensionLowerLimit;
 			m_aSuspensionLineLength[i] = normalColModel->lines[i].p0.z - normalColModel->lines[i].p1.z;
 			m_aSuspensionSpringRatio[i] = (normalColModel->lines[i].p0.z - wheelPositions[i]) / m_aSuspensionLineLength[i];
 			if(m_aSuspensionSpringRatio[i] > 1.0f)
@@ -3434,8 +3434,8 @@ CAutomobile::HydraulicControl(void)
 
 	// Player car
 
-	float normalUpperLimit = pHandling->fSuspensionUpperLimit;
-	float normalLowerLimit = pHandling->fSuspensionLowerLimit;
+	float normalUpperLimit = m_pHandlingData->m_fSuspensionUpperLimit;
+	float normalLowerLimit = m_pHandlingData->m_fSuspensionLowerLimit;
 	float normalSpringLength = normalUpperLimit - normalLowerLimit;
 	float extendedUpperLimit = normalUpperLimit - 0.2f;
 	float extendedLowerLimit = normalLowerLimit - 0.2f;
@@ -4154,14 +4154,14 @@ CAutomobile::VehicleDamage(float impulse, uint16 damagedPiece)
 			case CAR_PIECE_BUMP_FRONT:
 				GetComponentWorldPosition(CAR_BUMP_FRONT, pos);
 				dmgDrawCarCollidingParticles(pos, impulse*damageMultiplier);
-				if(Damage.ApplyDamage(COMPONENT_BUMPER_FRONT, impulse*impulseMult, pHandling->fCollisionDamageMultiplier))
+				if(Damage.ApplyDamage(COMPONENT_BUMPER_FRONT, impulse*impulseMult, m_pHandlingData->m_fCollisionDamageMultiplier))
 					SetBumperDamage(CAR_BUMP_FRONT, VEHBUMPER_FRONT);
 				if(m_aCarNodes[CAR_BONNET] && Damage.GetPanelStatus(VEHBUMPER_FRONT) == PANEL_STATUS_MISSING){
 			case CAR_PIECE_BONNET:
 					GetComponentWorldPosition(CAR_BONNET, pos);
 					dmgDrawCarCollidingParticles(pos, impulse*damageMultiplier);
 					if(GetModelIndex() != MI_DODO)
-					if(Damage.ApplyDamage(COMPONENT_DOOR_BONNET, impulse*impulseMult, pHandling->fCollisionDamageMultiplier))
+					if(Damage.ApplyDamage(COMPONENT_DOOR_BONNET, impulse*impulseMult, m_pHandlingData->m_fCollisionDamageMultiplier))
 						SetDoorDamage(CAR_BONNET, DOOR_BONNET);
 				}
 				break;
@@ -4169,13 +4169,13 @@ CAutomobile::VehicleDamage(float impulse, uint16 damagedPiece)
 			case CAR_PIECE_BUMP_REAR:
 				GetComponentWorldPosition(CAR_BUMP_REAR, pos);
 				dmgDrawCarCollidingParticles(pos, impulse*damageMultiplier);
-				if(Damage.ApplyDamage(COMPONENT_BUMPER_REAR, impulse*impulseMult, pHandling->fCollisionDamageMultiplier))
+				if(Damage.ApplyDamage(COMPONENT_BUMPER_REAR, impulse*impulseMult, m_pHandlingData->m_fCollisionDamageMultiplier))
 					SetBumperDamage(CAR_BUMP_REAR, VEHBUMPER_REAR);
 				if(m_aCarNodes[CAR_BOOT] && Damage.GetPanelStatus(VEHBUMPER_REAR) == PANEL_STATUS_MISSING){
 			case CAR_PIECE_BOOT:
 					GetComponentWorldPosition(CAR_BOOT, pos);
 					dmgDrawCarCollidingParticles(pos, impulse*damageMultiplier);
-					if(Damage.ApplyDamage(COMPONENT_DOOR_BOOT, impulse*impulseMult, pHandling->fCollisionDamageMultiplier))
+					if(Damage.ApplyDamage(COMPONENT_DOOR_BOOT, impulse*impulseMult, m_pHandlingData->m_fCollisionDamageMultiplier))
 						SetDoorDamage(CAR_BOOT, DOOR_BOOT);
 				}
 				break;
@@ -4183,50 +4183,50 @@ CAutomobile::VehicleDamage(float impulse, uint16 damagedPiece)
 			case CAR_PIECE_DOOR_LF:
 				GetComponentWorldPosition(CAR_DOOR_LF, pos);
 				dmgDrawCarCollidingParticles(pos, impulse*damageMultiplier);
-				if(Damage.ApplyDamage(COMPONENT_DOOR_FRONT_LEFT, impulse*impulseMult, pHandling->fCollisionDamageMultiplier))
+				if(Damage.ApplyDamage(COMPONENT_DOOR_FRONT_LEFT, impulse*impulseMult, m_pHandlingData->m_fCollisionDamageMultiplier))
 					SetDoorDamage(CAR_DOOR_LF, DOOR_FRONT_LEFT);
 				break;
 			case CAR_PIECE_DOOR_RF:
 				GetComponentWorldPosition(CAR_DOOR_RF, pos);
 				dmgDrawCarCollidingParticles(pos, impulse*damageMultiplier);
-				if(Damage.ApplyDamage(COMPONENT_DOOR_FRONT_RIGHT, impulse*impulseMult, pHandling->fCollisionDamageMultiplier))
+				if(Damage.ApplyDamage(COMPONENT_DOOR_FRONT_RIGHT, impulse*impulseMult, m_pHandlingData->m_fCollisionDamageMultiplier))
 					SetDoorDamage(CAR_DOOR_RF, DOOR_FRONT_RIGHT);
 				break;
 			case CAR_PIECE_DOOR_LR:
 				GetComponentWorldPosition(CAR_DOOR_LR, pos);
 				dmgDrawCarCollidingParticles(pos, impulse*damageMultiplier);
-				if(Damage.ApplyDamage(COMPONENT_DOOR_REAR_LEFT, impulse*impulseMult, pHandling->fCollisionDamageMultiplier))
+				if(Damage.ApplyDamage(COMPONENT_DOOR_REAR_LEFT, impulse*impulseMult, m_pHandlingData->m_fCollisionDamageMultiplier))
 					SetDoorDamage(CAR_DOOR_LR, DOOR_REAR_LEFT);
 				break;
 			case CAR_PIECE_DOOR_RR:
 				GetComponentWorldPosition(CAR_DOOR_RR, pos);
 				dmgDrawCarCollidingParticles(pos, impulse*damageMultiplier);
-				if(Damage.ApplyDamage(COMPONENT_DOOR_REAR_RIGHT, impulse*impulseMult, pHandling->fCollisionDamageMultiplier))
+				if(Damage.ApplyDamage(COMPONENT_DOOR_REAR_RIGHT, impulse*impulseMult, m_pHandlingData->m_fCollisionDamageMultiplier))
 					SetDoorDamage(CAR_DOOR_RR, DOOR_REAR_RIGHT);
 				break;
 
 			case CAR_PIECE_WING_LF:
 				GetComponentWorldPosition(CAR_WING_LF, pos);
 				dmgDrawCarCollidingParticles(pos, impulse*damageMultiplier);
-				if(Damage.ApplyDamage(COMPONENT_PANEL_FRONT_LEFT, impulse*impulseMult, pHandling->fCollisionDamageMultiplier))
+				if(Damage.ApplyDamage(COMPONENT_PANEL_FRONT_LEFT, impulse*impulseMult, m_pHandlingData->m_fCollisionDamageMultiplier))
 					SetPanelDamage(CAR_WING_LF, VEHPANEL_FRONT_LEFT);
 				break;
 			case CAR_PIECE_WING_RF:
 				GetComponentWorldPosition(CAR_WING_RF, pos);
 				dmgDrawCarCollidingParticles(pos, impulse*damageMultiplier);
-				if(Damage.ApplyDamage(COMPONENT_PANEL_FRONT_RIGHT, impulse*impulseMult, pHandling->fCollisionDamageMultiplier))
+				if(Damage.ApplyDamage(COMPONENT_PANEL_FRONT_RIGHT, impulse*impulseMult, m_pHandlingData->m_fCollisionDamageMultiplier))
 					SetPanelDamage(CAR_WING_RF, VEHPANEL_FRONT_RIGHT);
 				break;
 			case CAR_PIECE_WING_LR:
 				GetComponentWorldPosition(CAR_WING_LR, pos);
 				dmgDrawCarCollidingParticles(pos, impulse*damageMultiplier);
-				if(Damage.ApplyDamage(COMPONENT_PANEL_REAR_LEFT, impulse*impulseMult, pHandling->fCollisionDamageMultiplier))
+				if(Damage.ApplyDamage(COMPONENT_PANEL_REAR_LEFT, impulse*impulseMult, m_pHandlingData->m_fCollisionDamageMultiplier))
 					SetPanelDamage(CAR_WING_LR, VEHPANEL_REAR_LEFT);
 				break;
 			case CAR_PIECE_WING_RR:
 				GetComponentWorldPosition(CAR_WING_RR, pos);
 				dmgDrawCarCollidingParticles(pos, impulse*damageMultiplier);
-				if(Damage.ApplyDamage(COMPONENT_PANEL_REAR_RIGHT, impulse*impulseMult, pHandling->fCollisionDamageMultiplier))
+				if(Damage.ApplyDamage(COMPONENT_PANEL_REAR_RIGHT, impulse*impulseMult, m_pHandlingData->m_fCollisionDamageMultiplier))
 					SetPanelDamage(CAR_WING_RR, VEHPANEL_REAR_RIGHT);
 				break;
 
@@ -4237,7 +4237,7 @@ CAutomobile::VehicleDamage(float impulse, uint16 damagedPiece)
 				break;
 
 			case CAR_PIECE_WINDSCREEN:
-				if(Damage.ApplyDamage(COMPONENT_PANEL_WINDSCREEN, impulse*impulseMult, pHandling->fCollisionDamageMultiplier)){
+				if(Damage.ApplyDamage(COMPONENT_PANEL_WINDSCREEN, impulse*impulseMult, m_pHandlingData->m_fCollisionDamageMultiplier)){
 					uint8 oldStatus = Damage.GetPanelStatus(VEHPANEL_WINDSCREEN);
 					SetPanelDamage(CAR_WINDSCREEN, VEHPANEL_WINDSCREEN);
 					if(oldStatus != Damage.GetPanelStatus(VEHPANEL_WINDSCREEN)){
@@ -4248,7 +4248,7 @@ CAutomobile::VehicleDamage(float impulse, uint16 damagedPiece)
 			}
 		}
 
-		float damage = (impulse-minImpulse)*pHandling->fCollisionDamageMultiplier*0.6f*damageMultiplier;
+		float damage = (impulse-minImpulse)*m_pHandlingData->m_fCollisionDamageMultiplier*0.6f*damageMultiplier;
 
 		if(GetModelIndex() == MI_SECURICA && m_pDamageEntity && m_pDamageEntity->GetStatus() == STATUS_PLAYER)
 			damage *= 7.0f;
@@ -4399,7 +4399,7 @@ CAutomobile::AddDamagedVehicleParticles(void)
 	damagePos = GetMatrix()*damagePos;
 	damagePos.z += 0.15f;
 
-	bool electric = pHandling->Transmission.nEngineType == 'E';
+	bool electric = m_pHandlingData->m_Transmission.m_nEngineType == 'E';
 
 	if(electric && m_fHealth < 320.0f && m_fHealth > 1.0f){
 		direction = 0.85f*m_vecMoveSpeed;
@@ -5055,12 +5055,12 @@ CAutomobile::SetupSuspensionLines(void)
 	// minus the sag, exactly like a VC model whose dummy sits at "tyre bottom +
 	// radius". Then m_fHeightAboveRoad = tyreRadius - dummyZ, i.e. exactly the
 	// height at which the SA model stands on its own wheels.
-	float suspUpperLimit = pHandling->fSuspensionUpperLimit;
+	float suspUpperLimit = m_pHandlingData->m_fSuspensionUpperLimit;
 	float suspSag = 0.0f;
 	if(mi->HasOwnWheelMeshes()){
-		suspSag = (pHandling->fSuspensionUpperLimit - pHandling->fSuspensionLowerLimit)/
-			(4.0f*pHandling->fSuspensionForceLevel);
-		suspUpperLimit = (pHandling->fSuspensionUpperLimit - pHandling->fSuspensionLowerLimit) - suspSag;
+		suspSag = (m_pHandlingData->m_fSuspensionUpperLimit - m_pHandlingData->m_fSuspensionLowerLimit)/
+			(4.0f*m_pHandlingData->m_fSuspensionForceLevel);
+		suspUpperLimit = (m_pHandlingData->m_fSuspensionUpperLimit - m_pHandlingData->m_fSuspensionLowerLimit) - suspSag;
 	}
 
 	// Each suspension line starts at the uppermost wheel position
@@ -5078,26 +5078,26 @@ CAutomobile::SetupSuspensionLines(void)
 			posn.z = m_aWheelPosition[i] - mi->m_wheelScale*0.5f - suspSag;
 		}else{
 			// lowermost wheel position
-			posn.z += pHandling->fSuspensionLowerLimit - suspUpperLimit;
+			posn.z += m_pHandlingData->m_fSuspensionLowerLimit - suspUpperLimit;
 			// lowest point on tyre
 			posn.z -= mi->m_wheelScale*0.5f;
 		}
 		colModel->lines[i].p1 = posn;
 
 		// this is length of the spring at rest
-		m_aSuspensionSpringLength[i] = pHandling->fSuspensionUpperLimit - pHandling->fSuspensionLowerLimit;
+		m_aSuspensionSpringLength[i] = m_pHandlingData->m_fSuspensionUpperLimit - m_pHandlingData->m_fSuspensionLowerLimit;
 		m_aSuspensionLineLength[i] = colModel->lines[i].p0.z - colModel->lines[i].p1.z;
 	}
 
 	// Compress spring somewhat to get normal height on road
-	m_fHeightAboveRoad = m_aSuspensionSpringLength[0]*(1.0f - 1.0f/(4.0f*pHandling->fSuspensionForceLevel))
+	m_fHeightAboveRoad = m_aSuspensionSpringLength[0]*(1.0f - 1.0f/(4.0f*m_pHandlingData->m_fSuspensionForceLevel))
 			- colModel->lines[0].p0.z + mi->m_wheelScale*0.5f;
 	for(i = 0; i < 4; i++)
 		m_aWheelPosition[i] = mi->m_wheelScale*0.5f - m_fHeightAboveRoad;
 
 	SAVEH_LOG("[SAVEH] suspension model %d saMesh %d scale %.4f r %.4f dummyZ %.4f upper %.4f lower %.4f force %.4f sag %.4f | p0 %.4f p1 %.4f lineLen %.4f springLen %.4f h %.4f | col sph %d box %d tri %d lines %d bboxz %.4f..%.4f embedded %d\n",
 		GetModelIndex(), mi->HasOwnWheelMeshes(), mi->m_wheelScale, mi->m_wheelScale*0.5f, m_aWheelPosition[0],
-		pHandling->fSuspensionUpperLimit, pHandling->fSuspensionLowerLimit, pHandling->fSuspensionForceLevel, suspSag,
+		m_pHandlingData->m_fSuspensionUpperLimit, m_pHandlingData->m_fSuspensionLowerLimit, m_pHandlingData->m_fSuspensionForceLevel, suspSag,
 		colModel->lines[0].p0.z, colModel->lines[0].p1.z, m_aSuspensionLineLength[0], m_aSuspensionSpringLength[0],
 		m_fHeightAboveRoad,
 		colModel->numSpheres, colModel->numBoxes, colModel->numTriangles, colModel->numLines,
@@ -5405,7 +5405,7 @@ CAutomobile::Fix(void)
 
 	Damage.ResetDamageStatus();
 
-	if(pHandling->Flags & HANDLING_NO_DOORS){
+	if(m_pHandlingData->m_nModelFlags & VEHICLE_HANDLING_MODEL_NO_DOORS){
 		Damage.SetDoorStatus(DOOR_FRONT_LEFT, DOOR_STATUS_MISSING);
 		Damage.SetDoorStatus(DOOR_FRONT_RIGHT, DOOR_STATUS_MISSING);
 		Damage.SetDoorStatus(DOOR_REAR_LEFT, DOOR_STATUS_MISSING);
@@ -5690,7 +5690,7 @@ CAutomobile::SetDoorDamage(int32 component, eDoors door, bool noFlyingComponents
 		status = DOOR_STATUS_SMASHED;
 	}
 
-	if(door == DOOR_BOOT && status == DOOR_STATUS_SWINGING && pHandling->Flags & HANDLING_NOSWING_BOOT){
+	if(door == DOOR_BOOT && status == DOOR_STATUS_SWINGING && m_pHandlingData->m_nModelFlags & VEHICLE_HANDLING_MODEL_NOSWING_BOOT){
 		Damage.SetDoorStatus(DOOR_BOOT, DOOR_STATUS_MISSING);
 		status = DOOR_STATUS_MISSING;
 	}

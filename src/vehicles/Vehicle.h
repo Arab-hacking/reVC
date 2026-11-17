@@ -7,7 +7,7 @@
 #include "AnimationId.h"
 #include "WeaponType.h"
 #include "Collision.h"
-#include "HandlingMgr.h"
+#include "cHandlingDataMgr.h"
 
 class CPed;
 class CPlayerPed;
@@ -175,8 +175,8 @@ enum
 class CVehicle : public CPhysical
 {
 public:
-	tHandlingData *pHandling;
-	tFlyingHandlingData *pFlyingHandling;
+	tHandlingData *m_pHandlingData;
+	tFlyingHandlingData *m_pFlyingHandlingData;
 	CAutoPilot AutoPilot;
 	uint8 m_currentColour1;
 	uint8 m_currentColour2;
@@ -390,8 +390,8 @@ public:
 	CVehicleModelInfo* GetModelInfo() { return (CVehicleModelInfo*)CModelInfo::GetModelInfo(GetModelIndex()); }
 	bool IsTaxi(void) { return GetModelIndex() == MI_TAXI || GetModelIndex() == MI_CABBIE || GetModelIndex() == MI_ZEBRA || GetModelIndex() == MI_KAUFMAN; }
 	bool IsLimo(void) { return GetModelIndex() == MI_STRETCH || GetModelIndex() == MI_LOVEFIST; }
-	bool IsRealHeli(void) { return !!(pHandling->Flags & HANDLING_IS_HELI); }
-	bool IsRealPlane(void) { return !!(pHandling->Flags & HANDLING_IS_PLANE); }
+	bool IsRealHeli(void) { return !!(m_pHandlingData->m_nModelFlags & VEHICLE_HANDLING_MODEL_IS_HELI); }
+	bool IsRealPlane(void) { return !!(m_pHandlingData->m_nModelFlags & VEHICLE_HANDLING_MODEL_IS_PLANE); }
 
 	static bool bWheelsOnlyCheat;
 	static bool bAllDodosCheat;

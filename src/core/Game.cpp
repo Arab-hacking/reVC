@@ -37,7 +37,7 @@
 #include "Garages.h"
 #include "GenericGameStorage.h"
 #include "Glass.h"
-#include "HandlingMgr.h"
+#include "cHandlingDataMgr.h"
 #include "Heli.h"
 #include "Hud.h"
 #include "IniFile.h"

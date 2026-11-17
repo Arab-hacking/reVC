@@ -114,41 +114,41 @@ void SpecialCarCheats()
 		((CVehicleModelInfo*)CModelInfo::GetModelInfo(MI_CHEETAH))->m_wheelScale *= 1.3f;
 		((CVehicleModelInfo*)CModelInfo::GetModelInfo(MI_PHEONIX))->m_wheelScale *= 1.3f;
 		((CVehicleModelInfo*)CModelInfo::GetModelInfo(MI_DELUXO))->m_wheelScale *= 1.3f;
-		mod_HandlingManager.GetHandlingData(HANDLING_LANDSTAL)->Transmission.fEngineAcceleration *= 2.0f;
-		mod_HandlingManager.GetHandlingData(HANDLING_PATRIOT)->Transmission.fEngineAcceleration *= 2.0f;
-		mod_HandlingManager.GetHandlingData(HANDLING_BOBCAT)->Transmission.fEngineAcceleration *= 2.0f;
-		mod_HandlingManager.GetHandlingData(HANDLING_BFINJECT)->Transmission.fEngineAcceleration *= 2.0f;
-		mod_HandlingManager.GetHandlingData(HANDLING_RANCHER)->Transmission.fEngineAcceleration *= 2.0f;
-		mod_HandlingManager.GetHandlingData(HANDLING_DESPERAD)->Transmission.fEngineAcceleration *= 2.0f;
-		mod_HandlingManager.GetHandlingData(HANDLING_DELUXO)->Transmission.fEngineAcceleration *= 2.0f;
+		mod_HandlingManager.GetVehiclePointer(HANDLING_LANDSTAL)->m_Transmission.m_fEngineAcceleration *= 2.0f;
+		mod_HandlingManager.GetVehiclePointer(HANDLING_PATRIOT)->m_Transmission.m_fEngineAcceleration *= 2.0f;
+		mod_HandlingManager.GetVehiclePointer(HANDLING_BOBCAT)->m_Transmission.m_fEngineAcceleration *= 2.0f;
+		mod_HandlingManager.GetVehiclePointer(HANDLING_BFINJECT)->m_Transmission.m_fEngineAcceleration *= 2.0f;
+		mod_HandlingManager.GetVehiclePointer(HANDLING_RANCHER)->m_Transmission.m_fEngineAcceleration *= 2.0f;
+		mod_HandlingManager.GetVehiclePointer(HANDLING_SADLER)->m_Transmission.m_fEngineAcceleration *= 2.0f;
+		mod_HandlingManager.GetVehiclePointer(HANDLING_COMET)->m_Transmission.m_fEngineAcceleration *= 2.0f;
 
-		mod_HandlingManager.GetHandlingData(HANDLING_BAGGAGE)->Transmission.fEngineAcceleration *= 2.0f;
-		mod_HandlingManager.GetHandlingData(HANDLING_BAGGAGE)->Transmission.fMaxVelocity *= 2.0f;
-		mod_HandlingManager.GetHandlingData(HANDLING_BAGGAGE)->Transmission.InitGearRatios();
+		mod_HandlingManager.GetVehiclePointer(HANDLING_BAGGAGE)->m_Transmission.m_fEngineAcceleration *= 2.0f;
+		mod_HandlingManager.GetVehiclePointer(HANDLING_BAGGAGE)->m_Transmission.m_fMaxVelocity *= 2.0f;
+		mod_HandlingManager.GetVehiclePointer(HANDLING_BAGGAGE)->m_Transmission.InitGearRatios();
 
-		mod_HandlingManager.GetHandlingData(HANDLING_GOLFCART)->Transmission.fEngineAcceleration *= 2.0f;
-		mod_HandlingManager.GetHandlingData(HANDLING_GOLFCART)->Transmission.fMaxVelocity *= 2.0f;
-		mod_HandlingManager.GetHandlingData(HANDLING_GOLFCART)->Transmission.InitGearRatios();
+		mod_HandlingManager.GetVehiclePointer(HANDLING_GOLFCART)->m_Transmission.m_fEngineAcceleration *= 2.0f;
+		mod_HandlingManager.GetVehiclePointer(HANDLING_GOLFCART)->m_Transmission.m_fMaxVelocity *= 2.0f;
+		mod_HandlingManager.GetVehiclePointer(HANDLING_GOLFCART)->m_Transmission.InitGearRatios();
 
-		mod_HandlingManager.GetHandlingData(HANDLING_STINGER)->fCollisionDamageMultiplier *= 0.25f;
-		mod_HandlingManager.GetHandlingData(HANDLING_STINGER)->fMass *= 2.5f;
-		mod_HandlingManager.GetHandlingData(HANDLING_STINGER)->fTurnMass *= 4.0f;
+		mod_HandlingManager.GetVehiclePointer(HANDLING_BUFFALO)->m_fCollisionDamageMultiplier *= 0.25f;
+		mod_HandlingManager.GetVehiclePointer(HANDLING_BUFFALO)->m_fMass *= 2.5f;
+		mod_HandlingManager.GetVehiclePointer(HANDLING_BUFFALO)->m_fTurnMass *= 4.0f;
 
-		mod_HandlingManager.GetHandlingData(HANDLING_BANSHEE)->fCollisionDamageMultiplier *= 0.25f;
-		mod_HandlingManager.GetHandlingData(HANDLING_BANSHEE)->fMass *= 2.5f;
-		mod_HandlingManager.GetHandlingData(HANDLING_BANSHEE)->fTurnMass *= 4.0f;
+		mod_HandlingManager.GetVehiclePointer(HANDLING_BANSHEE)->m_fCollisionDamageMultiplier *= 0.25f;
+		mod_HandlingManager.GetVehiclePointer(HANDLING_BANSHEE)->m_fMass *= 2.5f;
+		mod_HandlingManager.GetVehiclePointer(HANDLING_BANSHEE)->m_fTurnMass *= 4.0f;
 
-		mod_HandlingManager.GetHandlingData(HANDLING_SABRETUR)->fCollisionDamageMultiplier *= 0.25f;
-		mod_HandlingManager.GetHandlingData(HANDLING_SABRETUR)->fMass *= 2.5f;
-		mod_HandlingManager.GetHandlingData(HANDLING_SABRETUR)->fTurnMass *= 4.0f;
+		mod_HandlingManager.GetVehiclePointer(HANDLING_SULTAN)->m_fCollisionDamageMultiplier *= 0.25f;
+		mod_HandlingManager.GetVehiclePointer(HANDLING_SULTAN)->m_fMass *= 2.5f;
+		mod_HandlingManager.GetVehiclePointer(HANDLING_SULTAN)->m_fTurnMass *= 4.0f;
 
-		mod_HandlingManager.GetHandlingData(HANDLING_COMET)->fCollisionDamageMultiplier *= 0.25f;
-		mod_HandlingManager.GetHandlingData(HANDLING_COMET)->fMass *= 2.5f;
-		mod_HandlingManager.GetHandlingData(HANDLING_COMET)->fTurnMass *= 4.0f;
+		mod_HandlingManager.GetVehiclePointer(HANDLING_COMET)->m_fCollisionDamageMultiplier *= 0.25f;
+		mod_HandlingManager.GetVehiclePointer(HANDLING_COMET)->m_fMass *= 2.5f;
+		mod_HandlingManager.GetVehiclePointer(HANDLING_COMET)->m_fTurnMass *= 4.0f;
 
-		mod_HandlingManager.GetHandlingData(HANDLING_DELUXO)->fCollisionDamageMultiplier *= 0.25f;
-		mod_HandlingManager.GetHandlingData(HANDLING_DELUXO)->fMass *= 2.5f;
-		mod_HandlingManager.GetHandlingData(HANDLING_DELUXO)->fTurnMass *= 4.0f;
+		mod_HandlingManager.GetVehiclePointer(HANDLING_COMET)->m_fCollisionDamageMultiplier *= 0.25f;
+		mod_HandlingManager.GetVehiclePointer(HANDLING_COMET)->m_fMass *= 2.5f;
+		mod_HandlingManager.GetVehiclePointer(HANDLING_COMET)->m_fTurnMass *= 4.0f;
 		CHud::SetHelpMessage(TheText.Get("CHEAT1"), true);
 		CVehicle::bCheat9 = true;
 		CPad::bHasPlayerCheated = true;

@@ -10,7 +10,7 @@
 #include "Bones.h"
 #include "DMAudio.h"
 #include "General.h"
-#include "HandlingMgr.h"
+#include "cHandlingDataMgr.h"
 #include "Replay.h"
 #include "Camera.h"
 #include "PedPlacement.h"
@@ -913,10 +913,10 @@ CPed::ProcessObjective(void)
 								m_pMyVehicle->SetStatus(STATUS_PHYSICS);
 								m_pMyVehicle->AutoPilot.m_nPrevRouteNode = 0;
 								if (m_nPedType == PEDTYPE_COP) {
-									m_pMyVehicle->AutoPilot.m_nCruiseSpeed = (FindPlayerPed()->m_pWanted->GetWantedLevel() * 0.1f + 0.6f) * (GAME_SPEED_TO_CARAI_SPEED * m_pMyVehicle->pHandling->Transmission.fMaxCruiseVelocity);
+									m_pMyVehicle->AutoPilot.m_nCruiseSpeed = (FindPlayerPed()->m_pWanted->GetWantedLevel() * 0.1f + 0.6f) * (GAME_SPEED_TO_CARAI_SPEED * m_pMyVehicle->m_pHandlingData->m_Transmission.m_fMaxCruiseVelocity);
 									m_pMyVehicle->AutoPilot.m_nCarMission = CCarAI::FindPoliceCarMissionForWantedLevel();
 								} else {
-									m_pMyVehicle->AutoPilot.m_nCruiseSpeed = GAME_SPEED_TO_CARAI_SPEED * m_pMyVehicle->pHandling->Transmission.fMaxCruiseVelocity * 0.8f;
+									m_pMyVehicle->AutoPilot.m_nCruiseSpeed = GAME_SPEED_TO_CARAI_SPEED * m_pMyVehicle->m_pHandlingData->m_Transmission.m_fMaxCruiseVelocity * 0.8f;
 									m_pMyVehicle->AutoPilot.m_nCarMission = MISSION_RAMPLAYER_FARAWAY;
 								}
 								m_pMyVehicle->AutoPilot.m_nDrivingStyle = DRIVINGSTYLE_AVOID_CARS;
@@ -1910,7 +1910,7 @@ CPed::ProcessObjective(void)
 						ClearObjective();
 						CCarCtrl::SwitchVehicleToRealPhysics(m_pMyVehicle);
 						m_pMyVehicle->AutoPilot.m_nDrivingStyle = DRIVINGSTYLE_AVOID_CARS;
-						m_pMyVehicle->AutoPilot.m_nCruiseSpeed = GAME_SPEED_TO_CARAI_SPEED * m_pMyVehicle->pHandling->Transmission.fMaxCruiseVelocity;
+						m_pMyVehicle->AutoPilot.m_nCruiseSpeed = GAME_SPEED_TO_CARAI_SPEED * m_pMyVehicle->m_pHandlingData->m_Transmission.m_fMaxCruiseVelocity;
 						m_pMyVehicle->SetStatus(STATUS_PHYSICS);
 					} else {
 						SetObjective(OBJECTIVE_LEAVE_CAR, m_pMyVehicle);
@@ -2251,7 +2251,7 @@ CPed::ReactToAttack(CEntity *attacker)
 
 			CCarCtrl::SwitchVehicleToRealPhysics(m_pMyVehicle);
 			m_pMyVehicle->AutoPilot.m_nDrivingStyle = DRIVINGSTYLE_AVOID_CARS;
-			m_pMyVehicle->AutoPilot.m_nCruiseSpeed = GAME_SPEED_TO_CARAI_SPEED * m_pMyVehicle->pHandling->Transmission.fMaxCruiseVelocity;
+			m_pMyVehicle->AutoPilot.m_nCruiseSpeed = GAME_SPEED_TO_CARAI_SPEED * m_pMyVehicle->m_pHandlingData->m_Transmission.m_fMaxCruiseVelocity;
 			m_pMyVehicle->SetStatus(STATUS_PHYSICS);
 		}
 
@@ -4049,7 +4049,7 @@ CPed::SetEnterCar_AllClear(CVehicle *car, uint32 doorNode, uint32 doorFlag)
 	m_nPedStateTimer = CTimer::GetTimeInMilliseconds() + 600;
 
 	if (car->IsBoat()) {
-		if (car->pHandling->Flags & HANDLING_SIT_IN_BOAT)
+		if (car->m_pHandlingData->m_nModelFlags & VEHICLE_HANDLING_MODEL_SIT_IN_BOAT)
 			m_pVehicleAnim = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_CAR_SIT, 100.0f);
 		else
 			m_pVehicleAnim = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_BOAT_DRIVE, 100.0f);
@@ -4736,7 +4736,7 @@ CPed::GetPositionToOpenCarDoor(CVehicle *veh, uint32 component, CPed *ped)
 			seatOffset = 0.0f;
 			vehDoorOffset = GetPedAnimationOffset(ped, ASSOCGRP_VAN, ANIM_STD_VAN_GET_IN_REAR_LHS, vecPedVanRearDoorAnimOffset);
 		} else {
-			seatOffset = veh->pHandling->fSeatOffsetDistance;
+			seatOffset = veh->m_pHandlingData->m_fSeatOffsetDistance;
 			if (veh->bLowVehicle) {
 				vehDoorOffset = GetPedAnimationOffset(ped, ASSOCGRP_STD, ANIM_STD_CAR_GET_IN_LO_LHS, vecPedCarDoorLoAnimOffset);
 			} else {
@@ -5515,7 +5515,7 @@ CPed::RegisterThreatWithGangPeds(CEntity *attacker)
 					if (nearVehDriver && nearVehDriver != this && nearVehDriver->m_nPedType == m_nPedType && nearVehDriver->CharCreatedBy == RANDOM_CHAR) {
 
 						if (nearVeh->IsVehicleNormal() && nearVeh->IsCar()) {
-							nearVeh->AutoPilot.m_nCruiseSpeed = GAME_SPEED_TO_CARAI_SPEED * nearVeh->pHandling->Transmission.fMaxCruiseVelocity * 0.8f;
+							nearVeh->AutoPilot.m_nCruiseSpeed = GAME_SPEED_TO_CARAI_SPEED * nearVeh->m_pHandlingData->m_Transmission.m_fMaxCruiseVelocity * 0.8f;
 							nearVeh->AutoPilot.m_nCarMission = MISSION_RAMPLAYER_FARAWAY;
 							nearVeh->SetStatus(STATUS_PHYSICS);
 							nearVeh->AutoPilot.m_nTempAction = TEMPACT_NONE;
@@ -5820,7 +5820,7 @@ CPed::GetPositionToOpenCarDoor(CVehicle *veh, uint32 component, float offset, CP
 				vehDoorOffset = GetPedAnimationOffset(ped, ASSOCGRP_BIKE_STANDARD, ANIM_BIKE_JUMPON_LHS, vecPedStdBikeJumpRhsAnimOffset);
 				break;
 			}
-			vehDoorOffset.x += offset * bike->pHandling->fSeatOffsetDistance;
+			vehDoorOffset.x += offset * bike->m_pHandlingData->m_fSeatOffsetDistance;
 			if (component == CAR_DOOR_LR || component == CAR_DOOR_RR) {
 				doorPos = vehModel->m_positions[CAR_POS_BACKSEAT];
 			}
@@ -5870,7 +5870,7 @@ CPed::GetLocalPositionToOpenCarDoor(CVehicle *veh, uint32 component, float seatP
 					vehDoorOffset = GetPedAnimationOffset(ped, ASSOCGRP_BIKE_STANDARD, ANIM_BIKE_JUMPON_LHS, vecPedStdBikeJumpRhsAnimOffset);
 					break;
 			}
-			float xOffsetFromAnim = vehDoorOffset.x + seatPosMult * bike->pHandling->fSeatOffsetDistance;
+			float xOffsetFromAnim = vehDoorOffset.x + seatPosMult * bike->m_pHandlingData->m_fSeatOffsetDistance;
 			if (component == CAR_DOOR_LR || component == CAR_DOOR_RR) {
 				vehDoorPos = vehModel->m_positions[CAR_POS_BACKSEAT];
 			}
@@ -5885,7 +5885,7 @@ CPed::GetLocalPositionToOpenCarDoor(CVehicle *veh, uint32 component, float seatP
 			seatOffset = 0.0f;
 			vehDoorOffset = GetPedAnimationOffset(ped, ASSOCGRP_VAN, ANIM_STD_VAN_GET_IN_REAR_LHS, vecPedVanRearDoorAnimOffset);
 		} else {
-			seatOffset = veh->pHandling->fSeatOffsetDistance * seatPosMult;
+			seatOffset = veh->m_pHandlingData->m_fSeatOffsetDistance * seatPosMult;
 			if (veh->bLowVehicle) {
 				vehDoorOffset = GetPedAnimationOffset(ped, ASSOCGRP_STD, ANIM_STD_CAR_GET_IN_LO_LHS, vecPedCarDoorLoAnimOffset);
 			} else {
@@ -6119,7 +6119,7 @@ void
 CPed::AddInCarAnims(CVehicle* car, bool isDriver)
 {
 	if (car->IsBoat()) {
-		if (car->pHandling->Flags & HANDLING_SIT_IN_BOAT) {
+		if (car->m_pHandlingData->m_nModelFlags & VEHICLE_HANDLING_MODEL_SIT_IN_BOAT) {
 			m_pVehicleAnim = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_CAR_SIT, 100.0f);
 		} else {
 			m_pVehicleAnim = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_BOAT_DRIVE, 100.0f);
@@ -6157,7 +6157,7 @@ CPed::RemoveDrivebyAnims()
 	AnimationId LeftAnim = ANIM_STD_CAR_DRIVEBY_LEFT;
 	AnimationId RightAnim = ANIM_STD_CAR_DRIVEBY_RIGHT;
 
-	if (m_pMyVehicle->pHandling->Flags & HANDLING_IS_BIKE) {
+	if (m_pMyVehicle->m_pHandlingData->m_nModelFlags & VEHICLE_HANDLING_MODEL_IS_BIKE) {
 		LeftAnim = ANIM_BIKE_DRIVEBY_RHS;
 		RightAnim = ANIM_BIKE_DRIVEBY_LHS;
 	} else if (m_pMyVehicle->bLowVehicle) {

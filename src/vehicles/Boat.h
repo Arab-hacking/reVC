@@ -24,7 +24,7 @@ public:
 	int32 m_boat_unused1;
 	RwFrame *m_aBoatNodes[NUM_BOAT_NODES];
 	CDoor m_boom;
-	tBoatHandlingData *pBoatHandling;
+	tBoatHandlingData *m_pBoatHandlingData;
 	uint8 bBoatInWater : 1;
 	uint8 bPropellerInWater : 1;
 	bool m_bIsAnchored;
