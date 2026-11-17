@@ -323,7 +323,7 @@ CBoat::ProcessControl(void)
 
 	CVector buoyanceImpulse(0.0f, 0.0f, 0.0f);
 	CVector buoyancePoint(0.0f, 0.0f, 0.0f);
-	if(mod_Buoyancy.ProcessBuoyancyBoat(this, m_pHandlingData->m_fBuoyancyConstant, &buoyancePoint, &buoyanceImpulse, bSeparateTurnForce)){
+	if(mod_Buoyancy.ProcessBuoyancyBoat(this, m_fBuoyancyConstant, &buoyancePoint, &buoyanceImpulse, bSeparateTurnForce)){
 		// Process boat in water
 		if(0.1f * m_fMass * GRAVITY*CTimer::GetTimeStep() < buoyanceImpulse.z){
 			bBoatInWater = true;
