@@ -33,6 +33,195 @@ struct AnimAssocDesc
 	int32 animId;
 	int32 flags;
 };
+static const char *aSHUFFLEAnimations[] = {
+	"WALK_shuffle",
+	"run_civi",
+	"sprint_panic",
+	"IDLE_stance",
+	"roadcross",
+	"WALK_start",
+};
+
+static const char *aOLDMANAnimations[] = {
+	"WALK_old",
+	"run_old",
+	"sprint_panic",
+	"idlestance_old",
+	"roadcross",
+	"WALK_start",
+};
+
+static const char *aGANG1Animations[] = {
+	"WALK_gang1",
+	"run_gang1",
+	"sprint_panic",
+	"Idle_Gang1",
+	"roadcross_gang",
+	"WALK_start",
+};
+
+static const char *aGANG2Animations[] = {
+	"WALK_gang2",
+	"run_gang1",
+	"sprint_panic",
+	"Idle_Gang1",
+	"roadcross_gang",
+	"WALK_start",
+};
+
+static const char *aOLDFATMANAnimations[] = {
+	"WALK_fatold",
+	"run_fatold",
+	"woman_runpanic",
+	"IDLE_stance",
+	"roadcross",
+	"WALK_start",
+};
+
+static const char *aJOGGERAnimations[] = {
+	"JOG_maleA",
+	"run_civi",
+	"sprint_panic",
+	"IDLE_stance",
+	"roadcross",
+	"WALK_start",
+};
+
+static const char *aDRUNKMANAnimations[] = {
+	"WALK_drunk",
+	"run_civi",
+	"sprint_panic",
+	"IDLE_stance",
+	"roadcross",
+	"WALK_start",
+};
+
+static const char *aBLINDMANAnimations[] = {
+	"WALK_civi",
+	"run_civi",
+	"sprint_panic",
+	"IDLE_stance",
+	"roadcross",
+	"WALK_start",
+};
+
+static const char *aSWATAnimations[] = {
+	"swat_run",
+	"run_civi",
+	"sprint_panic",
+	"IDLE_stance",
+	"roadcross",
+	"WALK_start",
+};
+
+static const char *aWOMANAnimations[] = {
+	"WOMAN_walknorm",
+	"woman_run",
+	"woman_runpanic",
+	"woman_idlestance",
+	"roadcross",
+	"WALK_start",
+};
+
+static const char *aSHOPPINGAnimations[] = {
+	"WOMAN_walkshop",
+	"woman_run",
+	"woman_runpanic",
+	"woman_idlestance",
+	"roadcross",
+	"WALK_start",
+};
+
+static const char *aBUSYWOMANAnimations[] = {
+	"WOMAN_walkbusy",
+	"woman_run",
+	"woman_runpanic",
+	"woman_idlestance",
+	"roadcross",
+	"WALK_start",
+};
+
+static const char *aSEXYWOMANAnimations[] = {
+	"WOMAN_walksexy",
+	"woman_run",
+	"woman_runpanic",
+	"woman_idlestance",
+	"roadcross",
+	"WALK_start",
+};
+
+static const char *aPROAnimations[] = {
+	"WOMAN_walkpro",
+	"woman_run",
+	"woman_runpanic",
+	"woman_idlestance",
+	"roadcross",
+	"WALK_start",
+};
+
+static const char *aOLDWOMANAnimations[] = {
+	"WOMAN_walkold",
+	"woman_run",
+	"woman_runpanic",
+	"woman_idlestance",
+	"roadcross",
+	"WALK_start",
+};
+
+static const char *aFATWOMANAnimations[] = {
+	"WOMAN_walkfatold",
+	"woman_run",
+	"woman_runpanic",
+	"woman_idlestance",
+	"roadcross",
+	"WALK_start",
+};
+
+static const char *aJOGWOMANAnimations[] = {
+	"JOG_femaleA",
+	"woman_run",
+	"woman_runpanic",
+	"woman_idlestance",
+	"roadcross",
+	"WALK_start",
+};
+
+static const char *aOLDFATWOMANAnimations[] = {
+	"WOMAN_walkfatold",
+	"WOMAN_runfatold",
+	"woman_runpanic",
+	"woman_idlestance",
+	"roadcross",
+	"WALK_start",
+};
+
+static const char *aSKATEAnimations[] = {
+	"skate_run",
+	"skate_sprint",
+	"skate_sprint",
+	"skate_idle",
+	"skate_idle",
+	"skate_idle",
+};
+
+static const char *aPANICCHUNKYAnimations[] = {
+	"WOMAN_runfatold",
+	"woman_runpanic",
+	"woman_runpanic",
+	"IDLE_stance",
+	"roadcross",
+	"WALK_start",
+};
+
+static const char *aUNARMEDAnimations[] = {
+	"FightA_1",
+	"FightA_3",
+	"FightA_M",
+	"FIGHTIDLE",
+	"FightA_2",
+	"WALK_start",
+};
+
 static const char *aStdAnimations[] = {
 	"Walk_civi",
 	"run_civi",
@@ -741,21 +930,21 @@ static const char *aPlayerAnimations[] = {
 };
 
 static const char *aFatAnimations[] = {
-	"fatwalk",
-	"fatrun",
-	"fatsprint",
-	"fatidle",
-	"fatidle",
-	"fatwalkstart",
+	"WALK_fat",
+	"run_fat",
+	"sprint_panic",
+	"Idlestance_fat",
+	"Idlestance_fat",
+	"WALK_start",
 };
 
 static const char *aMuscularAnimations[] = {
-	"musclewalk",
-	"musclerun",
-	"musclesprint",
-	"muscleidle",
-	"muscleidle",
-	"musclewalkstart",
+	"WALK_civi",
+	"run_civi",
+	"sprint_panic",
+	"idle_stance",
+	"idle_stance",
+	"WALK_start",
 };
 
 static const char *aPlayerRocketAnimations[] = {
