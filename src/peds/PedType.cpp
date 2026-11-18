@@ -4,6 +4,9 @@
 #include "FileMgr.h"
 #include "PedType.h"
 #include "SaveBuf.h"
+#ifdef CUSTOM_MODELS
+#include "CustomModels.h"
+#endif
 
 CPedType *CPedType::ms_apPedType[NUM_PEDTYPES];
 CPedStats *CPedStats::ms_apPedStats[NUM_PEDSTATS];
@@ -256,9 +259,24 @@ CPedStats::LoadPedStats(void)
 	type = 0;
 	buf = new char[16 * 1024];
 
-	CFileMgr::SetDir("DATA");
-	buflen = CFileMgr::LoadFile("PEDSTATS.DAT", (uint8*)buf, 16 * 1024, "r");
-	CFileMgr::SetDir("");
+	// The ped stat table ships in the game's data archive; only a build without
+	// the archive falls back to the file in DATA.
+	buflen = 0;
+#ifdef CUSTOM_MODELS
+	{
+		std::vector<uint8> archived;
+		if(CCustomModels::ReadCommonDataFile("data/pedstats.dat", archived) &&
+		   archived.size() < 16 * 1024){
+			memcpy(buf, archived.data(), archived.size());
+			buflen = (ssize_t)archived.size();
+		}
+	}
+#endif
+	if(buflen <= 0){
+		CFileMgr::SetDir("DATA");
+		buflen = CFileMgr::LoadFile("PEDSTATS.DAT", (uint8*)buf, 16 * 1024, "r");
+		CFileMgr::SetDir("");
+	}
 
 	for(bp = 0; bp < buflen; ){
 		// read file line by line

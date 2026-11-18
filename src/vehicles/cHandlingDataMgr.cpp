@@ -3,6 +3,9 @@
 
 #include "cHandlingDataMgr.h"
 #include "FileMgr.h"
+#ifdef CUSTOM_MODELS
+#include "CustomModels.h"
+#endif
 
 cHandlingDataMgr mod_HandlingManager;
 
@@ -695,9 +698,25 @@ cHandlingDataMgr::LoadHandlingData(void)
 {
 	static uint8 fileData[HANDLING_LINES_MAX * HANDLING_LINE_SIZE];
 
-	CFileMgr::SetDir("DATA");
-	ssize_t size = CFileMgr::LoadFile("HANDLING.CFG", fileData, sizeof(fileData), "rb");
-	CFileMgr::SetDir("");
+		// The handling table ships inside the game's own data archive, and that is
+	// the table the game is meant to run on: the Vice City file on disk has no
+	// turnMass column and names vehicles the SA name table does not know.
+	ssize_t size = 0;
+#ifdef CUSTOM_MODELS
+	{
+		std::vector<uint8> archived;
+		if(CCustomModels::ReadCommonDataFile("data/handling.cfg", archived) &&
+		   archived.size() <= sizeof(fileData)){
+			memcpy(fileData, archived.data(), archived.size());
+			size = (ssize_t)archived.size();
+		}
+	}
+#endif
+	if(size <= 0){
+		CFileMgr::SetDir("DATA");
+		size = CFileMgr::LoadFile("HANDLING.CFG", fileData, sizeof(fileData), "rb");
+		CFileMgr::SetDir("");
+	}
 
 	if(size <= 0){
 		// No silent fall back to a different data set: without handling the

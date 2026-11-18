@@ -46,6 +46,13 @@ public:
 	// Palette is an explicit row-major 16x16 RGBA table, not a guessed four-colour layout.
 	static RwTexture *CreateVehiclePaletteTexture(const RwRGBA *entries, size_t count);
 	static RwTexture *CreateVehicleTonerTexture(const RwRGBA &colour);
+	// Reads a file that lives in common.bpc (or the loose custom/ tree as a
+	// fallback). The archive is the game's own data set, so a caller that can
+	// name the file gets the same bytes the client itself would use.
+	static bool ReadCommonDataFile(const char *path, std::vector<uint8> &out);
+	// True when the path is one this game is prepared to take from the archive
+	// rather than from the Vice City directory.
+	static bool IsReadableCommonDataFile(const char *path);
 	// BR carmods.dat metadata; call after IDE registration. No eager loading of all mods.
 	static bool LoadVehicleUpgrades(void);
 	static void GetVehicleUpgrades(int32 vehicle, std::vector<brvehicle::Upgrade> &out);

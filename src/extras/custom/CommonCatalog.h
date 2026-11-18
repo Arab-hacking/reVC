@@ -88,8 +88,17 @@ inline Catalog Parse(const unsigned char *bytes, size_t size)
 // just because they are present in a user-supplied common/ directory.
 inline bool CanReadData(const std::string &path)
 {
-    return path == "data/config.dat" || path == "data/timecyc.json" ||
-           path == "data/water.dat" || path == "data/carcols.dat";
+    if(path == "data/config.dat" || path == "data/timecyc.json" ||
+       path == "data/water.dat" || path == "data/carcols.dat")
+        return true;
+    // The archive carries the game's own data set, not a Vice City one. These
+    // are the tables this game reads from disk today; taking them from the
+    // archive is what makes an SA install behave like an SA install.
+    return path == "data/handling.cfg" || path == "data/pedstats.dat" ||
+           path == "data/weapon.dat" || path == "data/melee.dat" ||
+           path == "data/surface.dat" || path == "data/ped.dat" ||
+           path == "data/object.dat" || path == "data/vehicles.ide" ||
+           path == "data/peds.ide" || path == "data/weapons.ide";
 }
 
 } // namespace commoncatalog

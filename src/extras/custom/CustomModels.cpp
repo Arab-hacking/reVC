@@ -760,6 +760,7 @@ ScanBpcSystem(void)
 				                 key == "data/timecyc.json" || key == "data/colorcycle.dat" ||
 				                 key == "data/water.dat" ||
 				                 key == "data/carcols.dat" || key == "data/carmods.dat" || key == "data/lods.info" ||
+				                 commoncatalog::CanReadData(key) ||
 				                 key == "models/generic/vehicle.txd" || key == "models/vehicle.txd")){
 					commonZipDataFiles[key] = src;
 					continue;
@@ -4751,6 +4752,55 @@ CCustomModels::LoadAnimFileFromCustom(const char *filename, std::vector<uint8> &
 	}
 	CUSTOM_LOG("animation %s: read %s from %s (%u bytes)\n",
 		filename, src->fname, source, (unsigned)out.size());
+	return true;
+}
+
+bool
+CCustomModels::IsReadableCommonDataFile(const char *path)
+{
+	if(path == nil || path[0] == '\0')
+		return false;
+	EnsureInitialised();
+	if(!customActive)
+		return false;
+	return commoncatalog::CanReadData(commoncatalog::Path(path));
+}
+
+bool
+CCustomModels::ReadCommonDataFile(const char *path, std::vector<uint8> &out)
+{
+	out.clear();
+	if(path == nil || path[0] == '\0')
+		return false;
+	EnsureInitialised();
+	if(!customActive)
+		return false;
+
+	const std::string key = commoncatalog::Path(path);
+	if(!commoncatalog::CanReadData(key))
+		return false;
+
+	std::map<std::string, CustomSource>::const_iterator it = commonZipDataFiles.find(key);
+	if(it != commonZipDataFiles.end() && ReadSource(it->second, out) && !out.empty()){
+		CUSTOM_LOG("common.bpc %s: read %s (%u bytes)\n",
+			key.c_str(), it->second.fname, (unsigned)out.size());
+		return true;
+	}
+
+	// The loose custom/ tree is a development convenience, not a second data
+	// set: it only stands in when the archive does not carry the file.
+	std::vector<std::string> cands;
+	cands.push_back(customFolderPath + "/zip/" + key);
+	cands.push_back(customFolderPath + "/" + key);
+	const std::string loosePath = ResolveFirstCandidatePath(cands);
+	if(loosePath.empty())
+		return false;
+	CustomSource src = MakeSource(FileTime(loosePath.c_str()), loosePath.c_str(), key.c_str());
+	if(!ReadSource(src, out) || out.empty()){
+		out.clear();
+		return false;
+	}
+	CUSTOM_LOG("%s: read loose %s (%u bytes)\n", key.c_str(), loosePath.c_str(), (unsigned)out.size());
 	return true;
 }
 
