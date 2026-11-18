@@ -499,6 +499,10 @@ bool CGame::Initialise(const char* datFile)
 #endif
 	CdStreamAddImage("MODELS\\GTA3.IMG");
 
+	// An IDE names a ped's animation group by string, so every group has to
+	// have its name before the level files are read.
+	CAnimManager::ReadAnimAssociationDefinitions();
+
 	CFileLoader::LoadLevel("DATA\\DEFAULT.DAT");
 	CFileLoader::LoadLevel(datFile);
 #ifdef CUSTOM_MODELS

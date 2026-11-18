@@ -127,7 +127,8 @@ CAnimViewer::Initialise(void) {
 			sscanf(gString, "%s %s", modelName, animGroup);
 			int groupId;
 			for (groupId = 0; groupId < NUM_ANIM_ASSOC_GROUPS; groupId++) {
-				if (!strcmp(animGroup, CAnimManager::GetAnimGroupName((AssocGroupId)groupId)))
+				const char *groupName = CAnimManager::GetAnimGroupName((AssocGroupId)groupId);
+				if (groupName && !strcmp(animGroup, groupName))
 					break;
 			}
 

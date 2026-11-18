@@ -1756,10 +1756,15 @@ CFileLoader::LoadPedObject(const char *line)
 	mi->SetColModel(&CTempColModels::ms_colModelPed1);
 	mi->m_pedType = CPedType::FindPedType(pedType);
 	mi->m_pedStatType = CPedStats::GetPedStatType(pedStats);
-	for(animGroupId = 0; animGroupId < NUM_ANIM_ASSOC_GROUPS; animGroupId++)
-		if(strcmp(animGroup, CAnimManager::GetAnimGroupName((AssocGroupId)animGroupId)) == 0)
+	for(animGroupId = 0; animGroupId < NUM_ANIM_ASSOC_GROUPS; animGroupId++){
+		const char *groupName = CAnimManager::GetAnimGroupName((AssocGroupId)animGroupId);
+		if(groupName && strcmp(animGroup, groupName) == 0)
 			break;
-	assert(animGroupId < NUM_ANIM_ASSOC_GROUPS);
+	}
+	// An IDE naming a group the tables do not define falls back to the
+	// standard set rather than pointing at an out-of-range id.
+	if(animGroupId >= NUM_ANIM_ASSOC_GROUPS)
+		animGroupId = ASSOCGRP_DEFAULT;
 	mi->m_animGroup = animGroupId;
 	mi->m_carsCanDrive = carsCanDrive;
 	mi->radio1 = radio1;

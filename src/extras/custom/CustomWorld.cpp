@@ -455,9 +455,11 @@ ePedType SafePedType(const std::string &s)
 AssocGroupId SafePedAnimGroup(const std::string &s)
 {
     std::string group = customworld::Lower(s);
-    for(int id = 0; id < NUM_ANIM_ASSOC_GROUPS; id++)
-        if(group == customworld::Lower(CAnimManager::GetAnimGroupName((AssocGroupId)id)))
+    for(int id = 0; id < NUM_ANIM_ASSOC_GROUPS; id++){
+        const char *groupName = CAnimManager::GetAnimGroupName((AssocGroupId)id);
+        if(groupName && group == customworld::Lower(groupName))
             return (AssocGroupId)id;
+    }
     if(group == "man" || group == "default") return ASSOCGRP_DEFAULT;
     if(group == "fatman") return ASSOCGRP_FATMAN;
     if(group == "oldman") return ASSOCGRP_OLDMAN;

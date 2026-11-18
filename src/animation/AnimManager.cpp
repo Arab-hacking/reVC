@@ -148,6 +148,7 @@ AnimAssocDefinition CAnimManager::ms_aAnimAssocDefinitions[NUM_ANIM_ASSOC_GROUPS
 	{ "nvadaplaneanims", "nevada", MI_MALE01, awc(aNevadaPlaneAnimations), aCarAnimDescs1 },
 };
 int32 CAnimManager::ms_numAnimAssocDefinitions = ARRAY_SIZE(ms_aAnimAssocDefinitions);
+
 // Group names in definition order, matching the AssocGroupId values. The
 // group table is indexed by the same number, so data/animgrp.dat can fill
 // the entries that SA does not compile into the game.
@@ -287,6 +288,21 @@ static const char *aAnimGroupNames[NUM_ANIM_ASSOC_GROUPS] = {
 	"oldfatwoman",
 	"skate",
 };
+
+
+// The compiled table covers 118 groups. The rest of the enum - the civilian
+// styles and the driver variants - get their definition from data/animgrp.dat
+// at startup, but they still need a name: an IDE names a group by string, and
+// it may be read before the file is.
+void
+CAnimManager::NameReservedAnimGroups(void)
+{
+	for(int i = 0; i < NUM_ANIM_ASSOC_GROUPS; i++){
+		AnimAssocDefinition *def = &ms_aAnimAssocDefinitions[i];
+		if(def->name == nil)
+			def->name = aAnimGroupNames[i];
+	}
+}
 #undef awc
 
 void
@@ -538,7 +554,13 @@ CAnimManager::GetAnimation(const char *name, CAnimBlock *animBlock)
 const char*
 CAnimManager::GetAnimGroupName(AssocGroupId groupId)
 {
-	return ms_aAnimAssocDefinitions[groupId].name;
+	if(groupId < 0 || groupId >= NUM_ANIM_ASSOC_GROUPS)
+		return aAnimGroupNames[0];
+	// A group that only data/animgrp.dat can define still has a name: the
+	// enum already fixes one per id, and callers compare against it before
+	// the file is read.
+	const char *name = ms_aAnimAssocDefinitions[groupId].name;
+	return name ? name : aAnimGroupNames[groupId];
 }
 
 const char*
@@ -647,7 +669,7 @@ CAnimManager::GetAnimHierarchyForOffset(RpClump *clump, AssocGroupId groupId, An
 	if(clump && (data == nil || !RpAnimBlendClumpIsInitialized(clump)))
 		return nil;
 	(void)data;
-	{
+	if(def->blockName){
 		char name[MAX_ANIMBLOCK_NAME];
 		snprintf(name, sizeof(name), "sa_%s", def->blockName);
 		CAnimBlock *block = GetAnimationBlock(name);
@@ -1220,6 +1242,7 @@ SAFlagsToAssocFlags(int32 saFlags)
 void
 CAnimManager::ReadAnimAssociationDefinitions(void)
 {
+	NameReservedAnimGroups();
 #ifdef CUSTOM_MODELS
 	std::vector<uint8> bytes;
 	if(!CCustomModels::ReadDataFile("data/animgrp.dat", bytes) || bytes.empty())
@@ -1305,12 +1328,14 @@ CAnimManager::LoadAnimFiles(void)
 	// path, so loading the native VC ped.ifp would just create an unused block.
 	LoadAnimFile("ANIM\\PED.IFP");
 #ifdef CUSTOM_MODELS
+	// The group definitions that live in data/animgrp.dat have to be in place
+	// before the banks are named against them.
+	ReadAnimAssociationDefinitions();
 	// SA splits fighting, weapon, style, car and bike clips across many IFP
 	// banks and an SA installation ships all of them in custom/zip/mesh/*.bpc.
 	// Load what the archives actually contain: a fixed file list silently
 	// drops every bank it does not name.
 	CCustomModels::ForEachAnimBank(LoadAnimBankFromCustom, nil);
-	ReadAnimAssociationDefinitions();
 #endif
 	ms_aAnimAssocGroups = new CAnimBlendAssocGroup[NUM_ANIM_ASSOC_GROUPS];
 	CreateAnimAssocGroups();
@@ -1372,6 +1397,8 @@ CAnimManager::CreateAnimAssocGroups(int preferredModelIndex)
 
 		if(clump == nil)
 			break;
+		if(def->blockName == nil)
+			continue;
 		snprintf(blockName, sizeof(blockName), "sa_%s", def->blockName);
 		block = GetAnimationBlock(blockName);
 		if(block == nil || !block->isLoaded)

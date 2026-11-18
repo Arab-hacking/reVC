@@ -236,7 +236,12 @@ public:
 	static void LoadAnimFile_ANP23(RwStream *stream, const char *ident, bool compress,
 		const char *blockName, uint32 numAnims, const char *blockNameOverride = nil);
 	static void CreateAnimAssocGroups(int preferredModelIndex = -1);
+public:
+	// Called before the level files, which name ped groups by string.
 	static void ReadAnimAssociationDefinitions(void);
+private:
+	static void NameReservedAnimGroups(void);
+public:
 	static void RemoveLastAnimFile(void);
 	static CAnimBlendAssocGroup* GetAnimAssocGroups(void) { return ms_aAnimAssocGroups; }
 };

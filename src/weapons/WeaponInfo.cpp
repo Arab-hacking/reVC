@@ -256,7 +256,8 @@ CWeaponInfo::LoadWeaponData(void)
 			((CWeaponModelInfo*)CModelInfo::GetModelInfo(modelId))->SetWeaponInfo(weaponType);
 
 		for (int i = 0; i < NUM_ANIM_ASSOC_GROUPS; i++) {
-			if (!strcmp(animToPlay, CAnimManager::GetAnimGroupName((AssocGroupId)i))) {
+			const char *groupName = CAnimManager::GetAnimGroupName((AssocGroupId)i);
+			if (groupName && !strcmp(animToPlay, groupName)) {
 				aWeaponInfo[weaponType].m_AnimToPlay = (AssocGroupId)i;
 				break;
 			}
