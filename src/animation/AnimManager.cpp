@@ -2503,10 +2503,15 @@ CAnimManager::LoadAnimFile_ANP23(RwStream *stream, const char *ident, bool compr
 #else
 		hier->compressed = false;
 #endif
-		if(!hier->compressed){
-			hier->RemoveQuaternionFlips();
+		// Quaternion signs must be aligned before the times are turned into
+		// interval deltas, otherwise the interpolator takes the long way round.
+		// Both steps run for whichever array is live: a compressed dictionary
+		// used to skip them entirely and ended up with a zero length.
+		hier->RemoveQuaternionFlips();
+		if(hier->compressed)
+			hier->CalcTotalTimeCompressed();
+		else
 			hier->CalcTotalTime();
-		}
 	}
 	if(animIndex > ms_numAnimations)
 		ms_numAnimations = animIndex;
