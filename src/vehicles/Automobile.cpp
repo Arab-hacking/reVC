@@ -209,6 +209,9 @@ m_nVehicleSubType = VEHICLE_TYPE_AUTOMOBILE;
 		m_aWheelSkidmarkBloody[i] = false;
 	}
 
+	for(i = 0; i < 6; i++)
+		m_bDoorBaseRotValid[i] = false;
+
 	m_nWheelsOnGround = 0;
 	m_nDriveWheelsOnGround = 0;
 	m_nDriveWheelsOnGroundPrev = 0;
@@ -5560,8 +5563,21 @@ CAutomobile::ProcessSwingingDoor(int32 component, eDoors door)
 
 	Doors[door].Process(this);
 	axes[Doors[door].m_nAxis] = Doors[door].m_fAngle;
-	mat.SetRotate(axes[0], axes[1], axes[2]);
-	mat.Translate(pos);
+	// SetRotate replaces the whole orientation, which assumes the untouched node
+	// is axis aligned. Converted cars carry a rest orientation baked into the
+	// door frame, so they used to spin the part away instead of swinging it.
+	// Remember the frame's original rotation once and rebuild the matrix from
+	// it every frame, so only the door angle is applied on top.
+	if(!m_bDoorBaseRotValid[door]){
+		m_aDoorBaseRot[door] = mat;
+		m_aDoorBaseRot[door].GetPosition() = CVector(0.0f, 0.0f, 0.0f);
+		m_bDoorBaseRotValid[door] = true;
+	}
+	CMatrix rot(mat);
+	rot.SetRotate(axes[0], axes[1], axes[2]);
+	mat = m_aDoorBaseRot[door];
+	mat *= rot;
+	mat.GetPosition() = pos;
 	mat.UpdateRW();
 
 	// make wind rip off bonnet
@@ -5935,6 +5951,10 @@ CAutomobile::SetupModelNodes(void)
 	for(i = 0; i < NUM_CAR_NODES; i++)
 		m_aCarNodes[i] = nil;
 	CClumpModelInfo::FillFrameArray(GetClump(), m_aCarNodes);
+	// The frames may have been rebuilt, so the cached door rest poses no
+	// longer describe them.
+	for(i = 0; i < 6; i++)
+		m_bDoorBaseRotValid[i] = false;
 }
 
 void

@@ -21,6 +21,12 @@ class CAutomobile : public CVehicle
 public:
 	CDamageManager Damage;
 	CDoor Doors[6];
+	// Rest orientation of each swinging door node. Vanilla cars model their
+	// doors axis aligned, but converted models bake a rotation into the frame,
+	// so the door angle has to be applied on top of this instead of replacing
+	// it. Captured the first time the door swings.
+	CMatrix m_aDoorBaseRot[6];
+	bool m_bDoorBaseRotValid[6];
 	RwFrame *m_aCarNodes[NUM_CAR_NODES];
 	CColPoint m_aWheelColPoints[4];
 	float m_aSuspensionSpringRatio[4];
