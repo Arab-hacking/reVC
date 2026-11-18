@@ -41,7 +41,30 @@ when the VC code path it replaces is deleted, not disabled.
   canonical member names (`m_fMass`, `m_fMassRecip`, `m_vecCentreOfMass`,
   `m_Transmission`, `m_nModelFlags`, `m_nHandlingFlags`, …).
 
-Tests: `tests/TransmissionTests.cpp`, `tests/HandlingDataMgrTests.cpp`.
+### Vice City data set
+
+The runtime data is still the Vice City one, so `ParseHandlingFile` also accepts
+the VC table and the two are told apart per record:
+
+| | SA | VC |
+| --- | --- | --- |
+| vehicle columns | 36 | 33 |
+| turn mass | column | derived from the collision box: `(x² + y²)·mass/12`, `×5` below 10 |
+| drag | column | solved against the collision box instead |
+| engine inertia | column | not stored; the VC path supplies a default |
+| auxiliary lines | bike 15, boat 14, flying 21 | bike 15, boat 13, flying 18 |
+
+- 27 VC names are not in `VehicleNames[]` (`IDAHO`, `STINGER`, `KURUMA`,
+  `FBICAR`, `POLICE`, `TRAIN`, `HELI`, `SEAPLANE`, `SEASPAR`, `POLMAV`,
+  `RCCOPTER`, …). `VCNameRemap` maps them onto the closest SA handling record.
+- `ConvertVCDataToGameUnits` applies the VC maths: the drag/engine intersection
+  for the true top speed, `×1.2` for the player limit, the fixed `-0.2`
+  (`-0.05` for two wheelers) reverse allowance, and VC's pre-scaled engine
+  acceleration.
+- Both paths validate into a copy and publish only after the whole line parsed.
+
+Tests: `tests/TransmissionTests.cpp`, `tests/HandlingDataMgrTests.cpp` (SA and
+VC records, VC-only names, short auxiliary lines, rejected records).
 
 ## Stage 2 — vehicle identity and class hierarchy (done)
 
