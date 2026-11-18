@@ -371,9 +371,9 @@ static const char *aGangsAnimations[] = {
 };
 
 static const char *aAttractorsAnimations[] = {
-	"Stepsit_in",
-	"Stepsit_out",
-	"Stepsit_loop",
+	"ParkSit_M_in",
+	"ParkSit_M_out",
+	"ParkSit_M_IdleA",
 };
 
 static const char *aBike_dbzAnimations[] = {
@@ -597,42 +597,42 @@ static const char *aMelee_1Animations[] = {
 };
 
 static const char *aMelee_2Animations[] = {
-	"FightB_1",
-	"FightB_2",
-	"FightB_3",
-	"FightB_G",
-	"FightB_M",
-	"HitB_1",
-	"HitB_2",
-	"HitB_3",
-	"FightB_Block",
-	"FightB_Idle",
+	"HitA_1",
+	"HitA_2",
+	"HitA_3",
+	"HitA_1",
+	"HitA_2",
+	"HitA_1",
+	"HitA_2",
+	"HitA_3",
+	"HitA_3",
+	"FightA_1",
 };
 
 static const char *aMelee_3Animations[] = {
-	"FightC_1",
-	"FightC_2",
-	"FightC_3",
-	"FightC_G",
-	"FightC_M",
-	"HitC_1",
-	"HitC_2",
-	"HitC_3",
-	"FightC_Block",
-	"FightC_Idle",
+	"HitA_1",
+	"HitA_2",
+	"HitA_3",
+	"HitA_1",
+	"HitA_2",
+	"HitA_1",
+	"HitA_2",
+	"HitA_3",
+	"HitA_3",
+	"FightA_2",
 };
 
 static const char *aMelee_4Animations[] = {
-	"FightD_1",
-	"FightD_2",
-	"FightD_3",
-	"FightD_G",
-	"FightD_M",
-	"HitD_1",
-	"HitD_2",
-	"HitD_3",
-	"FightD_Block",
-	"FightD_Idle",
+	"HitA_1",
+	"HitA_2",
+	"HitA_3",
+	"HitA_1",
+	"HitA_2",
+	"HitA_1",
+	"HitA_2",
+	"HitA_3",
+	"HitA_3",
+	"FightA_3",
 };
 
 static const char *aBbbat_1Animations[] = {
@@ -712,13 +712,13 @@ static const char *aCsaw_1Animations[] = {
 };
 
 static const char *aKick_stdAnimations[] = {
-	"FIGHTkick",
-	"FIGHTkick_B",
-	"FIGHTkick",
-	"FIGHTkick",
-	"FIGHTkick",
-	"HIT_FightKick",
-	"Hit_FightKick_B",
+	"FightA_G",
+	"FightA_G",
+	"FightA_G",
+	"FightA_G",
+	"FightA_G",
+	"HitA_1",
+	"HitA_1",
 };
 
 static const char *aPistlwhpAnimations[] = {
@@ -2581,9 +2581,9 @@ static AnimAssocDesc aGangsAnimDescs[] = {
 };
 
 static AnimAssocDesc aAttractorsAnimDescs[] = {
-	{ ANIM_ID_STEPSIT_IN, ANIMATION_IS_BLEND_AUTO_REMOVE | ANIMATION_IS_FINISH_AUTO_REMOVE | ANIMATION_IS_PARTIAL },
-	{ ANIM_ID_STEPSIT_OUT, ANIMATION_IS_BLEND_AUTO_REMOVE | ANIMATION_IS_FINISH_AUTO_REMOVE | ANIMATION_IS_PARTIAL },
-	{ ANIM_ID_STEPSIT_LOOP, ANIMATION_IS_LOOPED | ANIMATION_IS_BLEND_AUTO_REMOVE | ANIMATION_IS_FINISH_AUTO_REMOVE | ANIMATION_IS_PARTIAL },
+	{ ANIM_ID_PARKSIT_M_IN, ANIMATION_IS_BLEND_AUTO_REMOVE | ANIMATION_IS_FINISH_AUTO_REMOVE | ANIMATION_IS_PARTIAL },
+	{ ANIM_ID_PARKSIT_M_OUT, ANIMATION_IS_BLEND_AUTO_REMOVE | ANIMATION_IS_FINISH_AUTO_REMOVE | ANIMATION_IS_PARTIAL },
+	{ ANIM_ID_PARKSIT_M_IDLEA, ANIMATION_IS_LOOPED | ANIMATION_IS_BLEND_AUTO_REMOVE | ANIMATION_IS_FINISH_AUTO_REMOVE | ANIMATION_IS_PARTIAL },
 };
 
 static AnimAssocDesc aSwimAnimDescs[] = {

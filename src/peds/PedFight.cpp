@@ -22,6 +22,10 @@
 #include "Automobile.h"
 #include "WaterLevel.h"
 #include "World.h"
+#ifdef CUSTOM_MODELS
+#include "CustomModels.h"
+#endif
+#include <vector>
 
 // The parallel SA bank can be missing a particular reaction. Resolve on the
 // target clump so the fallback remains in its own skeleton's animation bank.
@@ -2424,6 +2428,7 @@ void
 CPed::LoadFightData(void)
 {
 	float startFireTime, endFireTime, comboFollowOnTime, strikeRadius, extendReachMultiplier;
+	float animLoop = 0.0f, animChain = 0.0f;
 	int damage, flags;
 	char line[256], moveName[32], animName[32], hitLevel;
 	int moveId = 0;
@@ -2433,7 +2438,24 @@ CPed::LoadFightData(void)
 	size_t bp, buflen;
 	int lp, linelen;
 
-	buflen = CFileMgr::LoadFile("DATA\\fistfite.dat", work_buff, sizeof(work_buff), "r");
+	// San Andreas keeps the melee table in data/melee.dat and ships it in the
+	// game archive; Vice City called the same table fistfite.dat and read it
+	// from DATA. Take the SA table from the archive first so the move list
+	// matches the clip set that is actually loaded, and keep the loose VC file
+	// as the fallback for a build without the archive.
+	buflen = 0;
+#ifdef CUSTOM_MODELS
+	{
+		std::vector<uint8> archived;
+		if(CCustomModels::ReadCommonDataFile("data/melee.dat", archived) &&
+		   archived.size() > 0 && archived.size() <= sizeof(work_buff)){
+			memcpy(work_buff, archived.data(), archived.size());
+			buflen = archived.size();
+		}
+	}
+#endif
+	if(buflen == 0)
+		buflen = CFileMgr::LoadFile("DATA\\fistfite.dat", work_buff, sizeof(work_buff), "r");
 
 	for (bp = 0; bp < buflen; ) {
 		// read file line by line
@@ -2452,7 +2474,7 @@ CPed::LoadFightData(void)
 
 		sscanf(
 			&line[lp],
-			"%s %f %f %f %f %f %c %s %d %d",
+			"%s %f %f %f %f %f %c %s %d %d %f %f",
 			moveName,
 			&startFireTime,
 			&endFireTime,
@@ -2462,7 +2484,9 @@ CPed::LoadFightData(void)
 			&hitLevel,
 			animName,
 			&damage,
-			&flags);
+			&flags,
+			&animLoop,
+			&animChain);
 
 		if (strncmp(moveName, "ENDWEAPONDATA", 13) == 0)
 			return;
