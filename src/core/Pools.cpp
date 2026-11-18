@@ -184,14 +184,21 @@ INITSAVEBUF
 		ReadSaveBuf(&slot, buf);
 		CVehicle* pVehicle;
 #ifdef COMPATIBLE_SAVES
+		// The file was checked by CheckSavedVehiclePool() before we got here, so a
+		// type outside this set means the validator and the loader disagree. Say
+		// so instead of failing on a bare assert.
 		if (vehicleType == VEHICLE_TYPE_BOAT)
 			pVehicle = new(slot) CBoat(model, RANDOM_VEHICLE);
 		else if (vehicleType == VEHICLE_TYPE_AUTOMOBILE)
 			pVehicle = new(slot) CAutomobile(model, RANDOM_VEHICLE);
 		else if (vehicleType == VEHICLE_TYPE_BIKE)
 			pVehicle = new(slot) CBike(model, RANDOM_VEHICLE);
-		else
+		else {
+			REVC_LOG_ERROR("vehicle pool: save entry %d has type %u, which this build cannot rebuild",
+				i, (unsigned)type);
 			assert(0);
+			break;
+		}
 		--CCarCtrl::NumRandomCars;
 		pVehicle->Load(buf);
 		CWorld::Add(pVehicle);
@@ -286,6 +293,32 @@ SaveVehicleType(eVehicleType type)
 	}
 }
 
+// The load side only rebuilds the three classes that have their own Save()
+// payload; a record of any other kind would fall through to the assert in
+// LoadVehiclePool. Every class the record writer emits must therefore be one of
+// these three, and this predicate is the single place that decides.
+//
+// The classes the engine implements as a CAutomobile (monster truck, quad, bmx,
+// trailer, fake heli) carry a CAutomobile payload, so they are written as the
+// automobile they are - the same way SaveVehicleType() collapses them.
+static bool
+IsSaveableVehicle(CVehicle *veh)
+{
+	return veh->IsAutomobile() || veh->IsBoat() || veh->IsBike() ||
+		veh->IsMonsterTruck() || veh->IsQuad() || veh->IsBMX() || veh->IsTrailer();
+}
+
+// The legacy type a saveable vehicle is written as. Anything IsSaveableVehicle
+// accepts maps to a type the loader can rebuild.
+static uint32
+SaveableVehicleType(CVehicle *veh)
+{
+	if(veh->IsBoat())  return 1;
+	if(veh->IsBike())  return 5;
+	// CAutomobile-backed classes, including the plain automobile.
+	return 0;
+}
+
 void CPools::SaveVehiclePool(uint8* buf, uint32* size)
 {
 INITSAVEBUF
@@ -309,20 +342,24 @@ INITSAVEBUF
 #else
 		if (!pVehicle->pDriver && !bHasPassenger) {
 #endif
-			if (pVehicle->IsAutomobile() && (pVehicle->VehicleCreatedBy == MISSION_VEHICLE || bForceSaving))
-				++nNumCars;
-			if (pVehicle->IsBoat() && (pVehicle->VehicleCreatedBy == MISSION_VEHICLE || bForceSaving))
-				++nNumBoats;
-			if (pVehicle->IsBike() && (pVehicle->VehicleCreatedBy == MISSION_VEHICLE || bForceSaving))
-				++nNumBikes;
+			if (IsSaveableVehicle(pVehicle) && (pVehicle->VehicleCreatedBy == MISSION_VEHICLE || bForceSaving)) {
+				if (pVehicle->IsBoat())
+					++nNumBoats;
+				else if (pVehicle->IsBike())
+					++nNumBikes;
+				else
+					++nNumCars;
+			}
 #else
 		if (!pVehicle->pDriver && !bHasPassenger) {
-			if (pVehicle->IsAutomobile() && pVehicle->VehicleCreatedBy == MISSION_VEHICLE)
-				++nNumCars;
-			if (pVehicle->IsBoat() && pVehicle->VehicleCreatedBy == MISSION_VEHICLE)
-				++nNumBoats;
-			if (pVehicle->IsBike() && pVehicle->VehicleCreatedBy == MISSION_VEHICLE)
-				++nNumBikes;
+			if (IsSaveableVehicle(pVehicle) && pVehicle->VehicleCreatedBy == MISSION_VEHICLE) {
+				if (pVehicle->IsBoat())
+					++nNumBoats;
+				else if (pVehicle->IsBike())
+					++nNumBikes;
+				else
+					++nNumCars;
+			}
 #endif
 		}
 	}
@@ -352,11 +389,11 @@ INITSAVEBUF
 #endif
 #ifdef COMPATIBLE_SAVES
 #ifdef MISSION_REPLAY
-			if ((pVehicle->IsAutomobile() || pVehicle->IsBoat() || pVehicle->IsBike()) && (pVehicle->VehicleCreatedBy == MISSION_VEHICLE || bForceSaving)) {
+			if (IsSaveableVehicle(pVehicle) && (pVehicle->VehicleCreatedBy == MISSION_VEHICLE || bForceSaving)) {
 #else
-			if ((pVehicle->IsAutomobile() || pVehicle->IsBoat() || pVehicle->IsBike()) && pVehicle->VehicleCreatedBy == MISSION_VEHICLE) {
+			if (IsSaveableVehicle(pVehicle) && pVehicle->VehicleCreatedBy == MISSION_VEHICLE) {
 #endif
-				WriteSaveBuf(buf, SaveVehicleType(pVehicle->m_nVehicleType));
+				WriteSaveBuf(buf, SaveableVehicleType(pVehicle));
 				WriteSaveBuf(buf, pVehicle->GetModelIndex());
 				WriteSaveBuf(buf, GetVehicleRef(pVehicle));
 				pVehicle->Save(buf);

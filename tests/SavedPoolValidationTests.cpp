@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <cstdlib>
 #include <vector>
 
 template<typename T>
@@ -34,6 +35,55 @@ static bool ObjectModel(int16_t id) { return id == 1234; }
 static SavedPoolCheck Objects(const std::vector<uint8_t> &b)
 {
     return ValidateSavedObjectPool(b.data(), b.size(), 88, ObjectModel);
+}
+
+// The record writer collapses every vehicle class onto one of the three legacy
+// types the loader can rebuild (car, boat, bike). If it ever emits another one,
+// the loader's type switch has no branch for it and the pool cannot be read
+// back. Keep the two sets aligned, and derive the expected mapping from the
+// same rule the writer uses: the boat and bike keep their type, everything the
+// engine implements as a CAutomobile is written as a car.
+static void TestWritableTypesAreLoadable()
+{
+    // Types the loader rebuilds: 0 car, 1 boat, 5 bike.
+    const uint32_t loadable[3] = { 0, 1, 5 };
+
+    struct Class { const char *name; bool boat; bool bike; uint32_t written; };
+    const Class classes[] = {
+        { "automobile", false, false, 0 },
+        { "monster truck", false, false, 0 }, // built as a CAutomobile
+        { "quad", false, false, 0 },
+        { "bmx", false, false, 0 },
+        { "trailer", false, false, 0 },
+        { "fake heli", false, false, 0 },
+        { "boat", true, false, 1 },
+        { "bike", false, true, 5 },
+    };
+
+    for (const Class &c : classes) {
+        uint32_t written = c.boat ? 1 : (c.bike ? 5 : 0);
+        assert(written == c.written);
+        bool loadableType = false;
+        for (uint32_t t : loadable)
+            if (t == written)
+                loadableType = true;
+        if (!loadableType) {
+            std::fprintf(stderr, "class %s is written as type %u, which the loader cannot rebuild\n",
+                         c.name, written);
+            std::abort();
+        }
+    }
+
+    // A file naming a train, heli or plane record is rejected by the preflight
+    // rather than reaching the loader's switch, which has no branch for it.
+    for (uint32_t rejected : { 2u, 3u, 4u }) {
+        std::vector<uint8_t> vehicles;
+        Append<int32_t>(vehicles, 1);
+        Append<int32_t>(vehicles, 0);
+        Append<int32_t>(vehicles, 0);
+        AddVehicle(vehicles, rejected, 104, 0x100, 1500);
+        assert(Vehicles(vehicles).error == SavedPoolError::InvalidVehicleType);
+    }
 }
 
 int main()
@@ -109,5 +159,6 @@ int main()
     Append<int32_t>(empty, 0);
     assert(Vehicles(empty).ok());
 
+    TestWritableTypesAreLoadable();
     std::puts("Saved vehicle/object pool preflight: valid, missing models, truncated and malformed passed");
 }

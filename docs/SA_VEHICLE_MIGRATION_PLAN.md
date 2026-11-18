@@ -165,6 +165,12 @@ executable's behaviour around the parts that are reversed, not line by line.
 
 - `CVehicleSaveStructure` replaces the VC per-class Save/Load bodies; `Pools.cpp`
   and `save/GenericGameStorage.cpp` follow the new pool type.
+- The record writer and the loader now agree on which classes can be stored:
+  `IsSaveableVehicle` is the single decision, and `SaveableVehicleType` collapses
+  every class the engine implements as a `CAutomobile` (monster truck, quad, bmx,
+  trailer, fake heli) onto the car record instead of dropping it. Records of the
+  three classes with no payload of their own (train, heli, plane) are refused by
+  the save preflight rather than reaching the loader's type switch.
 - Doors, occupants and `CPed` entry/exit tasks; `CWorld`/`CStreaming`
   registration; `CModelInfo` queries.
 - AI (`CCarAI`, autopilot), audio (`cAudioManager` vehicle params), weapons,

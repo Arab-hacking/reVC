@@ -1390,12 +1390,17 @@ CBoat::RenderWakePoints(void)
 	const float boatToCamDist2D = (CVector2D(TheCamera.GetPosition()) - CVector2D(GetPosition())).Magnitude();
 	auto alpha = [&](uint16 ptIdx) -> float {
 		float a = (1.0f - (float)ptIdx / (float)m_NumWakeCoords) * 160.0f;
-		// The first three points ramp the ribbon in, so it does not start with
-		// a hard edge at the stern. This is the shipped ramp, not the fixed one
-		// the reference keeps behind FIX_BUGS: the first point comes out
-		// transparent there and the trail fades in over the next two.
-		if(ptIdx < 3)
+		// Ramp the first three points in so the ribbon does not start with a hard
+		// edge at the stern. FIX_BUGS uses (ptIdx + 1); the shipped code would
+		// give the first point zero alpha, which is visibly wrong now that it is
+		// the point nearest the hull.
+		if(ptIdx < 3){
+#ifdef FIX_BUGS
+			a *= (float)(ptIdx + 1) / 3.0f;
+#else
 			a *= (float)ptIdx / 3.0f;
+#endif
+		}
 		a *= (float)m_WakeBoatSpeed[ptIdx] / 100.0f + 0.15f;
 		if(boatToCamDist2D > MAX_WAKE_LENGTH)
 			a *= (MAX_WAKE_LENGTH + 30.0f - boatToCamDist2D) / 30.0f;
