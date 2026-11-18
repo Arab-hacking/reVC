@@ -97,7 +97,6 @@ float fWave2InvLength         = 0.03f;
 float fWave2NormScale         = 0.5f;
 float fWave2Ampl              = 0.1f;
 uint8 nWaterAlpha             = 192;
-uint8 nWakeAlpha              = 192;
 float fUnder1                 = 4.0;
 float fUnder2                 = 2.5;
 float fUnder3                 = 1.5;
@@ -2849,6 +2848,10 @@ CWaterLevel::PreCalcWavyMask(float fX, float fY, float fZ,
 }
 #endif
 
+// The trail itself is CBoat's: the ribbon geometry, its width and alpha all
+// come from the boat's own wake data, so the per-boat pass lives there. What
+// stays here is the shared state it draws with - the wake texture and the
+// blending setup - plus the render buffer, which belongs to the water renderer.
 void
 CWaterLevel::RenderBoatWakes(void)
 {
@@ -2863,108 +2866,8 @@ CWaterLevel::RenderBoatWakes(void)
 	// TODO save and restore rwRENDERSTATESRCBLEND rwRENDERSTATEDESTBLEND
 #endif
 
-	CBoat::FillBoatList();
-	
-	float fWakeZ = 5.97f;
-	float fWakeLifeTimeMult = 0.01f / CBoat::WAKE_LIFETIME;
-	
-	for ( int32 idx = 0; idx < ARRAY_SIZE(CBoat::apFrameWakeGeneratingBoats); idx++ )
-	{
-		CBoat *pBoat = CBoat::apFrameWakeGeneratingBoats[idx];
+	CBoat::RenderAllWakePointBoats();
 
-		if ( pBoat == nil )
-			break;
-
-		CVector2D vecDistA(pBoat->GetForward().x, pBoat->GetForward().y);
-
-
-		float fSize = pBoat->GetColModel()->boundingBox.max.z
-				* 0.65f;
-		
-		if ( pBoat->GetModelIndex() == MI_SKIMMER)
-			fSize *= 0.4f;
-		
-		float fAplhaA = 255.0f;
-		float fSizeA = fSize;
-		float fAplhaB;
-		float fSizeB;
-		
-		for ( int32 wake = 1; wake < pBoat->m_NumWakeCoords; wake++ )
-		{
-			bool bRender = true;
-			
-			float fTimeleft = CBoat::WAKE_LIFETIME - pBoat->m_WakePtCounters[wake];
-
-			float fWakeSizeB = ((float)wake * 0.19f) + fSize - fWakeLifeTimeMult * Max(fTimeleft, 0.0f);
-			
-			fSizeB = fWakeSizeB / CBoat::MIN_WAKE_INTERVAL;
-			if ( fSizeB < 0.0f )
-				fSizeB = 1.0f;
-			
-			if ( wake == pBoat->m_NumWakeCoords - 1 )
-			{
-				// set alpha to 0 if it's last point
-				fAplhaB = 0.0f;
-			}
-			else
-			{
-				// clip (-100, 500), less lifetime - less val
-				float val = 500.0f - (CBoat::WAKE_LIFETIME - pBoat->m_WakePtCounters[wake])
-						* 600.0f / CBoat::WAKE_LIFETIME;
-						
-				fAplhaB = Clamp(val, 0.0f, 255.0f);
-			}
-
-			CVector2D vecDistB = pBoat->m_WakeCoords[wake - 1] - pBoat->m_WakeCoords[wake];
-
-			float fScal = vecDistB.MagnitudeSqr();
-			
-			// normalize if distance between points is greater than 3
-
-			if ( fScal > SQR(3.0f) )
-			{				
-				float fNorm = 1.0f / sqrt(fScal);
-				
-				vecDistB.x *= fNorm;
-				vecDistB.y *= fNorm;
-				
-				// disable render if distance between points too big
-				
-				if ( sqrt(fScal) > 13.0f )
-					bRender = false;
-			}
-			
-			CVector2D vecAA
-			(
-				pBoat->m_WakeCoords[wake - 1].x - (fSizeA * vecDistA.y),
-				pBoat->m_WakeCoords[wake - 1].y + (fSizeA * vecDistA.x)
-			);
-			CVector2D vecAB
-			(
-				pBoat->m_WakeCoords[wake - 1].x + (fSizeA * vecDistA.y),
-				pBoat->m_WakeCoords[wake - 1].y - (fSizeA * vecDistA.x)
-			);
-			CVector2D vecBA
-			(
-				pBoat->m_WakeCoords[wake].x     + (fSizeB * vecDistB.y),
-				pBoat->m_WakeCoords[wake].y     - (fSizeB * vecDistB.x)
-			);                                                                            
-			CVector2D vecBB                         
-			(                                       
-				pBoat->m_WakeCoords[wake].x     - (fSizeB * vecDistB.y),
-				pBoat->m_WakeCoords[wake].y     + (fSizeB * vecDistB.x)
-			);
-			
-			if ( bRender )
-				RenderWakeSegment(vecAA, vecAB, vecBA, vecBB, fSizeA, fSizeB, fAplhaA, fAplhaB, fWakeZ);
-			
-			vecDistA = vecDistB;
-			fSizeA = fSizeB;
-			
-			fAplhaB = fAplhaA;
-		}
-	}
-	
 	RenderAndEmptyRenderBuffer();
 }
 

@@ -142,10 +142,10 @@ executable's behaviour around the parts that are reversed, not line by line.
    `m_fBuoyancyConstant`, which also renames `CPhysical::m_fBuoyancy` to the
    reference name and floats the hull on its own copy; the wake trail with a
    per-point hull speed (`m_WakeCoords`, `m_WakeBoatSpeed`, `m_WakePtCounters`)
-   and the reference append rules.
-   Open: the wake is still drawn by `CWaterLevel`; the reference moved it to
-   `CBoat::RenderWakePoints` with a camera-distance fade, which belongs with
-   the renderer work.
+   and the reference append rules; `CBoat::RenderWakePoints`, which builds the
+   ribbon from that data (per-point width and alpha from the hull speed, plus
+   the camera-distance fade), with `CWaterLevel` keeping only the shared wake
+   texture, the blend state and the trail buffer it calls into.
 3. `CHeli` and `CPlane`, then `CFlyingHandlingData` aerodynamics for both.
 4. `CTrain` — track, bogies, `VEHICLE_TYPE_TRAIN` only; the `GTA_TRAIN`
    switch goes away with it. Blocked: the audio tables still lack the train

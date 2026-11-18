@@ -67,6 +67,8 @@ public:
 	void SetupModelNodes();
 	void PruneWakeTrail(void);
 	void AddWakePoint(CVector point);
+	void RenderWakePoints(void);
+	static void RenderAllWakePointBoats(void);
 	void DoDriveByShootings(void);
 
 	static CBoat *apFrameWakeGeneratingBoats[4];

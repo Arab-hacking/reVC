@@ -1359,6 +1359,116 @@ CBoat::FillBoatList()
 	}
 }
 
+// The wake is a ribbon the boat leaves behind: one quad per pair of trail
+// points, its width and alpha derived from how fast the boat was going when
+// that point was laid down (m_WakeBoatSpeed) and how much of its lifetime is
+// left. Both graders fade the ribbon out as the boat gets away from the camera,
+// so distant boats stop drawing long trails across the water.
+void
+CBoat::RenderWakePoints(void)
+{
+	if(m_NumWakeCoords <= 1)
+		return;
+
+	// A boat without collision has no hull height to size the ribbon from.
+	CColModel *colModel = GetColModel();
+	if(colModel == nil)
+		return;
+	float maxWidth = colModel->boundingBox.max.z * 0.65f;
+	if(GetModelIndex() == MI_SKIMMER)
+		maxWidth *= 0.4f;
+
+	// A fast point spreads out over time: the trail widens as it ages.
+	auto width = [&](uint16 ptIdx) -> float {
+		float t = (WAKE_LIFETIME - m_WakePtCounters[ptIdx]) *
+			((m_WakeBoatSpeed[ptIdx] / 25.0f + 0.5f) / WAKE_LIFETIME);
+		return maxWidth + maxWidth * t;
+	};
+
+	// Fade with age, and again with distance from the camera so a boat that is
+	// far away stops painting a trail across the whole screen.
+	const float boatToCamDist2D = (CVector2D(TheCamera.GetPosition()) - CVector2D(GetPosition())).Magnitude();
+	auto alpha = [&](uint16 ptIdx) -> float {
+		float a = (1.0f - (float)ptIdx / (float)m_NumWakeCoords) * 160.0f;
+		// The first three points ramp the ribbon in, so it does not start with
+		// a hard edge at the stern. This is the shipped ramp, not the fixed one
+		// the reference keeps behind FIX_BUGS: the first point comes out
+		// transparent there and the trail fades in over the next two.
+		if(ptIdx < 3)
+			a *= (float)ptIdx / 3.0f;
+		a *= (float)m_WakeBoatSpeed[ptIdx] / 100.0f + 0.15f;
+		if(boatToCamDist2D > MAX_WAKE_LENGTH)
+			a *= (MAX_WAKE_LENGTH + 30.0f - boatToCamDist2D) / 30.0f;
+		return a;
+	};
+
+	// The reference draws the ribbon 3 cm below the water surface, which it can
+	// hardcode because San Andreas has sea level at Z = 0. This data set is the
+	// Vice City map, where the water sits at 5.97, so ask the water for the
+	// height of the surface the boat is floating on and offset from that.
+	float wakeZ = -0.03f;
+	float waterZ;
+	if(CWaterLevel::GetWaterLevelNoWaves(GetPosition().x, GetPosition().y, GetPosition().z, &waterZ))
+		wakeZ = waterZ - 0.03f;
+
+	float prevWidth = width(0);
+	float prevAlpha = alpha(0);
+	// Direction from the point before the previous one to the previous one;
+	// the first segment has no such direction yet, so it starts along the hull.
+	CVector2D prevDir = CVector2D(GetForward().x, GetForward().y);
+
+	for(uint16 i = 1; i < m_NumWakeCoords; i++){
+		const CVector2D &currPos = m_WakeCoords[i];
+		const CVector2D &prevPos = m_WakeCoords[i - 1];
+
+		CVector2D currToPrevDir = prevPos - currPos;
+		float distToPrevSq = currToPrevDir.MagnitudeSqr();
+		if(distToPrevSq >= SQR(3.0f)){
+			float invLen = 1.0f / Sqrt(distToPrevSq);
+			currToPrevDir.x *= invLen;
+			currToPrevDir.y *= invLen;
+		}
+
+		float currAlpha = alpha(i);
+		float currWidth = width(i);
+
+		// A gap in the trail means the boat teleported or was out of the water;
+		// drawing across it would paint a stripe over the whole scene.
+		if(distToPrevSq <= SQR(13.0f)){
+			// Right-hand perpendicular of each direction, scaled to width.
+			CVector2D prevPerp(prevDir.y, -prevDir.x);
+			CVector2D currPerp(currToPrevDir.y, -currToPrevDir.x);
+
+			CVector2D prevA = prevPos - prevPerp * prevWidth;
+			CVector2D prevB = prevPos + prevPerp * prevWidth;
+			CVector2D currA = currPos - currPerp * currWidth;
+			CVector2D currB = currPos + currPerp * currWidth;
+
+			CWaterLevel::RenderWakeSegment(prevA, prevB, currB, currA,
+				prevWidth, currWidth, prevAlpha, currAlpha, wakeZ);
+		}
+
+		prevWidth = currWidth;
+		prevAlpha = currAlpha;
+		prevDir = currToPrevDir;
+	}
+}
+
+// Draws every boat trail for this frame. The water renderer owns the wake
+// texture and the trail buffer, so the pass lives there; this is the entry
+// point that keeps the per-boat work in CBoat.
+void
+CBoat::RenderAllWakePointBoats(void)
+{
+	FillBoatList();
+	for(int32 i = 0; i < ARRAY_SIZE(apFrameWakeGeneratingBoats); i++){
+		CBoat *boat = apFrameWakeGeneratingBoats[i];
+		if(boat == nil)
+			break;
+		boat->RenderWakePoints();
+	}
+}
+
 void
 CBoat::PruneWakeTrail(void)
 {
