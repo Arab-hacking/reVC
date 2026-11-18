@@ -26,126 +26,127 @@ int32 CAnimManager::ms_numAnimations;
 CAnimBlendAssocGroup *CAnimManager::ms_aAnimAssocGroups;
 CLinkList<CAnimBlendHierarchy*> CAnimManager::ms_animCache;
 
+// numAnims, clip names, descriptor count, descriptors
 #define awc(a) ARRAY_SIZE(a), a
 AnimAssocDefinition CAnimManager::ms_aAnimAssocDefinitions[NUM_ANIM_ASSOC_GROUPS] = {
-	{ "default", "ped", MI_MALE01, awc(aStdAnimations), aStdAnimDescs },
-	{ "door", "ped", -1, awc(aDoorAnimations), aDoorDescs },
-	{ "bikes", "bikes", MI_MALE01, awc(aBikesAnimations), aBikesDescs },
-	{ "bikev", "bikev", MI_MALE01, awc(aBikevAnimations), aBikesDescs },
-	{ "bikeh", "bikeh", MI_MALE01, awc(aBikehAnimations), aBikesDescs },
-	{ "biked", "biked", MI_MALE01, awc(aBikedAnimations), aBikesDescs },
-	{ "wayfarer", "wayfarer", MI_MALE01, awc(aWayfarerAnimations), aBikesDescs },
-	{ "bmx", "bmx", MI_MALE01, awc(aBmxAnimations), aBikesDescs },
-	{ "mtb", "mtb", MI_MALE01, awc(aMtbAnimations), aBikesDescs },
-	{ "choppa", "choppa", MI_MALE01, awc(aChoppaAnimations), aBikesDescs },
-	{ "quad", "quad", MI_MALE01, awc(aQuadAnimations), aQuadDescs },
-	{ "python", "python", MI_MALE01, awc(aPythonAnimations), aWeaponDescs },
-	{ "pythonbad", "python", MI_MALE01, awc(aPythonbadAnimations), aWeaponDescs1 },
-	{ "colt45", "colt45", MI_MALE01, awc(aColt45Animations), aWeaponDescs },
-	{ "colt_cop", "colt45", MI_MALE01, awc(aColt_copAnimations), aWeaponDescs },
-	{ "colt45pro", "colt45", MI_MALE01, awc(aColt45proAnimations), aWeaponDescs },
-	{ "sawnoff", "colt45", MI_MALE01, awc(aSawnoffAnimations), aWeaponDescs },
-	{ "sawnoffpro", "colt45", MI_MALE01, awc(aSawnoffproAnimations), aWeaponDescs },
-	{ "silenced", "silenced", MI_MALE01, awc(aSilencedAnimations), aWeaponDescs },
-	{ "shotgun", "shotgun", MI_MALE01, awc(aShotgunAnimations), aWeaponDescs },
-	{ "shotgunbad", "shotgun", MI_MALE01, awc(aShotgunbadAnimations), aWeaponDescs1 },
-	{ "buddy", "buddy", MI_MALE01, awc(aBuddyAnimations), aWeaponDescs },
-	{ "buddybad", "buddy", MI_MALE01, awc(aBuddybadAnimations), aWeaponDescs1 },
-	{ "uzi", "uzi", MI_MALE01, awc(aUziAnimations), aWeaponDescs },
-	{ "uzibad", "uzi", MI_MALE01, awc(aUzibadAnimations), aWeaponDescs2 },
-	{ "rifle", "rifle", MI_MALE01, awc(aRifleAnimations), aWeaponDescs },
-	{ "riflebad", "rifle", MI_MALE01, awc(aRiflebadAnimations), aWeaponDescs2 },
-	{ "sniper", "rifle", MI_MALE01, awc(aRifleAnimations), aWeaponDescs },
-	{ "grenade", "grenade", MI_MALE01, awc(aGrenadeAnimations), aWeaponDescs3 },
-	{ "flame", "flame", MI_MALE01, awc(aFlameAnimations), aWeaponDescs },
-	{ "rocket", "rocket", MI_MALE01, awc(aRocketAnimations), aWeaponDescs },
-	{ "spraycan", "spraycan", MI_MALE01, awc(aSpraycanAnimations), aWeaponDescs },
-	{ "goggles", "goggles", MI_MALE01, awc(aGogglesAnimations), aWeaponDescs },
-	{ "melee_1", "ped", MI_MALE01, awc(aMelee_1Animations), aWeaponDescs4 },
-	{ "melee_2", "fight_b", MI_MALE01, awc(aMelee_2Animations), aWeaponDescs4 },
-	{ "melee_3", "fight_c", MI_MALE01, awc(aMelee_3Animations), aWeaponDescs5 },
-	{ "melee_4", "fight_d", MI_MALE01, awc(aMelee_4Animations), aWeaponDescs4 },
-	{ "bbbat_1", "baseball", MI_MALE01, awc(aBbbat_1Animations), aWeaponDescs4 },
-	{ "gclub_1", "baseball", MI_MALE01, awc(aBbbat_1Animations), aWeaponDescs4 },
-	{ "knife_1", "knife", MI_MALE01, awc(aKnife_1Animations), aWeaponDescs4 },
-	{ "sword_1", "sword", MI_MALE01, awc(aSword_1Animations), aWeaponDescs4 },
-	{ "dildo_1", "dildo", MI_MALE01, awc(aDildo_1Animations), aWeaponDescs4 },
-	{ "flowers_1", "flowers", MI_MALE01, awc(aFlowers_1Animations), aWeaponDescs4 },
-	{ "csaw_1", "chainsaw", MI_MALE01, awc(aCsaw_1Animations), aWeaponDescs4 },
-	{ "kick_std", "fight_e", MI_MALE01, awc(aKick_stdAnimations), aWeaponDescs4 },
-	{ "pistlwhp", "ped", MI_MALE01, awc(aPistlwhpAnimations), aWeaponDescs4 },
-	{ "medic", "medic", MI_MALE01, awc(aMedicAnimations), aMedicAnimDescs },
-	{ "beach", "beach", MI_MALE01, awc(aBeachAnimations), aBeachAnimDescs },
-	{ "sunbathe", "sunbathe", MI_MALE01, awc(aSunbatheAnimations), aSunbatheAnimDescs },
-	{ "playidles", "playidles", MI_MALE01, awc(aPlayIdlesAnimations), aPlayerIdleAnimDescs },
-	{ "riot", "riot", MI_MALE01, awc(aRiotAnimations), aRiotAnimDescs },
-	{ "strip", "strip", MI_MALE01, awc(aStripAnimations), aStripAnimDescs },
-	{ "gangs", "gangs", MI_MALE01, awc(aGangsAnimations), aGangsAnimDescs },
-	{ "attractors", "attractors", MI_MALE01, awc(aAttractorsAnimations), aAttractorsAnimDescs },
-	{ "player", "ped", MI_MALE01, awc(aPlayerAnimations), aStdAnimDescs },
-	{ "fat", "fat", MI_MALE01, awc(aFatAnimations), aStdAnimDescs },
-	{ "muscular", "muscular", MI_MALE01, awc(aMuscularAnimations), aStdAnimDescs },
-	{ "playerrocket", "ped", MI_MALE01, awc(aPlayerRocketAnimations), aStdAnimDescs },
-	{ "playerrocketf", "fat", MI_MALE01, awc(aPlayerRocketfAnimations), aStdAnimDescs },
-	{ "playerrocketm", "muscular", MI_MALE01, awc(aPlayerRocketmAnimations), aStdAnimDescs },
-	{ "player2armed", "ped", MI_MALE01, awc(aPlayer2ArmedAnimations), aStdAnimDescs },
-	{ "player2armedf", "fat", MI_MALE01, awc(aPlayer2ArmedfAnimations), aStdAnimDescs },
-	{ "player2armedm", "muscular", MI_MALE01, awc(aPlayer2ArmedmAnimations), aStdAnimDescs },
-	{ "playerBBBat", "ped", MI_MALE01, awc(aPlayerBBBatAnimations), aStdAnimDescs },
-	{ "playerBBBatf", "fat", MI_MALE01, awc(aPlayerBBBatfAnimations), aStdAnimDescs },
-	{ "playerBBBatm", "muscular", MI_MALE01, awc(aPlayerBBBatmAnimations), aStdAnimDescs },
-	{ "playercsaw", "ped", MI_MALE01, awc(aPlayerCsawAnimations), aStdAnimDescs },
-	{ "playercsawf", "fat", MI_MALE01, awc(aPlayerCsawfAnimations), aStdAnimDescs },
-	{ "playercsawm", "muscular", MI_MALE01, awc(aPlayerCsawmAnimations), aStdAnimDescs },
-	{ "playersneak", "ped", MI_MALE01, awc(aPlayerSneakAnimations), aStdAnimDescs },
-	{ "playerjetpack", "ped", MI_MALE01, awc(aPlayerJetpackAnimations), aStdAnimDescs },
-	{ "swim", "swim", MI_MALE01, awc(aSwimAnimations), aSwimAnimDescs },
-	{ "drivebys", "drivebys", MI_MALE01, awc(aDrivebysAnimations), aDbzAnimDescs },
-	{ "bike_dbz", "bike_dbz", MI_MALE01, awc(aBike_dbzAnimations), aDbzAnimDescs },
-	{ "cop_dbz", "cop_dvbyz", MI_MALE01, awc(aCop_dbzAnimations), aDbzAnimDescs },
-	{ "quad_dbz", "quad_dbz", MI_MALE01, awc(aQuad_dbzAnimations), aDbzAnimDescs },
-	{ "fat_tired", "fat", MI_MALE01, awc(aFatTiredAnimations), aFatTiredAnimDescs },
-	{ "handsignal", "ghands", MI_MALE01, awc(aHandsignalAnimations), aHandSignalAnimDescs },
-	{ "handsignalL", "ghands", MI_MALE01, awc(aHandsignalLAnimations), aHandSignalLAnimDescs },
-	{ "lhand", "ghands", MI_MALE01, awc(aLhandAnimations), aHandAnimDescs },
-	{ "rhand", "ghands", MI_MALE01, awc(aRhandAnimations), aHandAnimDescs },
-	{ "carry", "carry", MI_MALE01, awc(aCarryAnimations), aCarryDescs },
-	{ "carry05", "carry", MI_MALE01, awc(aCarry05Animations), aCarryDescs },
-	{ "carry105", "carry", MI_MALE01, awc(aCarry105Animations), aCarryDescs },
-	{ "int_house", "int_house", MI_MALE01, awc(aIntHouseAnimations), aIntHouseAnimDescs },
-	{ "int_office", "int_office", MI_MALE01, awc(aIntOfficeAnimations), aIntOfficeAnimDescs },
-	{ "int_shop", "int_shop", MI_MALE01, awc(aIntShopAnimations), aIntShopAnimDescs },
-	{ "stealth_kn", "knife", MI_MALE01, awc(aStealth_knAnimations), aStealthDescs },
-	{ "stdcaramims", "ped", MI_MALE01, awc(aStdCarAnimations), aCarAnimDescs2 },
-	{ "lowcaramims", "ped", MI_MALE01, awc(aLowCarAnimations), aLowCarAnimDiscs },
-	{ "trkcaranims", "truck", MI_MALE01, awc(aTrkCarAnimations), aTruckAnimDescs },
-	{ "stdbikeanims", "ped", MI_MALE01, awc(aStdBikeAnimations), aStdBikeAnimDescs },
-	{ "sportbikeanims", "bikes", MI_MALE01, awc(aSportBikeAnimations), aStdBikeAnimDescs },
-	{ "vespabikeanims", "bikev", MI_MALE01, awc(aVespaBikeAnimations), aStdBikeAnimDescs },
-	{ "harleybikeanims", "bikeh", MI_MALE01, awc(aHarleyBikeAnimations), aStdBikeAnimDescs },
-	{ "dirtbikeanims", "biked", MI_MALE01, awc(aDirtBikeAnimations), aStdBikeAnimDescs },
-	{ "wayfbikeanims", "wayfarer", MI_MALE01, awc(aWayfBikeAnimations), aStdBikeAnimDescs },
-	{ "bmxbikeanims", "bmx", MI_MALE01, awc(aBmxBikeAnimations), aStdBikeAnimDescs },
-	{ "mtbbikeanims", "mtb", MI_MALE01, awc(aMtbBikeAnimations), aStdBikeAnimDescs },
-	{ "choppabikeanims", "choppa", MI_MALE01, awc(aChoppaBikeAnimations), aStdBikeAnimDescs },
-	{ "quadbikeanims", "quad", MI_MALE01, awc(aQuadBikeAnimations), aStdBikeAnimDescs },
-	{ "vancaranims", "van", MI_MALE01, awc(aVanCarAnimations), aCarAnimDescs1 },
-	{ "rustplaneanims", "rustler", MI_MALE01, awc(aRustplaneAnimations), aCarAnimDescs1 },
-	{ "coachcaranims", "coach", MI_MALE01, awc(aCoachCarAnimations), aCarAnimDescs2 },
-	{ "buscaranims", "bus", MI_MALE01, awc(aBusCarAnimations), aCarAnimDescs2 },
-	{ "dozercaranims", "dozer", MI_MALE01, awc(aDozerCarAnimations), aCarAnimDescs2 },
-	{ "kartcaranims", "kart", MI_MALE01, awc(aKartCarAnimations), aCarAnimDescs2 },
-	{ "convcaranims", "ped", MI_MALE01, awc(aConvCarAnimations), aCarAnimDescs2 },
-	{ "mtrkcaranims", "truck", MI_MALE01, awc(aTrkCarAnimations), aTruckAnimDescs },
-	{ "traincarranims", "coach", MI_MALE01, awc(aCoachCarAnimations), aCarAnimDescs2 },
-	{ "stdtallcaramims", "ped", MI_MALE01, awc(aStdCarAnimations), aCarAnimDescs2 },
-	{ "hovercaranims", "vortex", MI_MALE01, awc(aHoverCarAnimations), aCarAnimDescs2 },
-	{ "tankcaranims", "tank", MI_MALE01, awc(aTankCarAnimations), aCarAnimDescs2 },
-	{ "bfinjcaramims", "BF_injection", MI_MALE01, awc(aBfinjCarAnimations), aCarAnimDescs2 },
-	{ "learplaneanims", "shamal", MI_MALE01, awc(aLearPlaneAnimations), aCarAnimDescs1 },
-	{ "harrplaneanims", "rustler", MI_MALE01, awc(aHarrPlaneAnimations), aCarAnimDescs1 },
-	{ "stdcarupright", "ped", MI_MALE01, awc(aStdCarAnimations), aCarAnimDescs2 },
-	{ "nvadaplaneanims", "nevada", MI_MALE01, awc(aNevadaPlaneAnimations), aCarAnimDescs1 },
+	{ "default", "ped", MI_MALE01, ARRAY_SIZE(aStdAnimations), 191, aStdAnimations, aStdAnimDescs },
+	{ "door", "ped", -1, ARRAY_SIZE(aDoorAnimations), 2, aDoorAnimations, aDoorDescs },
+	{ "bikes", "bikes", MI_MALE01, ARRAY_SIZE(aBikesAnimations), 12, aBikesAnimations, aBikesDescs },
+	{ "bikev", "bikev", MI_MALE01, ARRAY_SIZE(aBikevAnimations), 12, aBikevAnimations, aBikesDescs },
+	{ "bikeh", "bikeh", MI_MALE01, ARRAY_SIZE(aBikehAnimations), 12, aBikehAnimations, aBikesDescs },
+	{ "biked", "biked", MI_MALE01, ARRAY_SIZE(aBikedAnimations), 12, aBikedAnimations, aBikesDescs },
+	{ "wayfarer", "wayfarer", MI_MALE01, ARRAY_SIZE(aWayfarerAnimations), 12, aWayfarerAnimations, aBikesDescs },
+	{ "bmx", "bmx", MI_MALE01, ARRAY_SIZE(aBmxAnimations), 12, aBmxAnimations, aBikesDescs },
+	{ "mtb", "mtb", MI_MALE01, ARRAY_SIZE(aMtbAnimations), 12, aMtbAnimations, aBikesDescs },
+	{ "choppa", "choppa", MI_MALE01, ARRAY_SIZE(aChoppaAnimations), 12, aChoppaAnimations, aBikesDescs },
+	{ "quad", "quad", MI_MALE01, ARRAY_SIZE(aQuadAnimations), 12, aQuadAnimations, aQuadDescs },
+	{ "python", "python", MI_MALE01, ARRAY_SIZE(aPythonAnimations), 4, aPythonAnimations, aWeaponDescs },
+	{ "pythonbad", "python", MI_MALE01, ARRAY_SIZE(aPythonbadAnimations), 4, aPythonbadAnimations, aWeaponDescs1 },
+	{ "colt45", "colt45", MI_MALE01, ARRAY_SIZE(aColt45Animations), 4, aColt45Animations, aWeaponDescs },
+	{ "colt_cop", "colt45", MI_MALE01, ARRAY_SIZE(aColt_copAnimations), 4, aColt_copAnimations, aWeaponDescs },
+	{ "colt45pro", "colt45", MI_MALE01, ARRAY_SIZE(aColt45proAnimations), 4, aColt45proAnimations, aWeaponDescs },
+	{ "sawnoff", "colt45", MI_MALE01, ARRAY_SIZE(aSawnoffAnimations), 4, aSawnoffAnimations, aWeaponDescs },
+	{ "sawnoffpro", "colt45", MI_MALE01, ARRAY_SIZE(aSawnoffproAnimations), 4, aSawnoffproAnimations, aWeaponDescs },
+	{ "silenced", "silenced", MI_MALE01, ARRAY_SIZE(aSilencedAnimations), 4, aSilencedAnimations, aWeaponDescs },
+	{ "shotgun", "shotgun", MI_MALE01, ARRAY_SIZE(aShotgunAnimations), 4, aShotgunAnimations, aWeaponDescs },
+	{ "shotgunbad", "shotgun", MI_MALE01, ARRAY_SIZE(aShotgunbadAnimations), 4, aShotgunbadAnimations, aWeaponDescs1 },
+	{ "buddy", "buddy", MI_MALE01, ARRAY_SIZE(aBuddyAnimations), 4, aBuddyAnimations, aWeaponDescs },
+	{ "buddybad", "buddy", MI_MALE01, ARRAY_SIZE(aBuddybadAnimations), 4, aBuddybadAnimations, aWeaponDescs1 },
+	{ "uzi", "uzi", MI_MALE01, ARRAY_SIZE(aUziAnimations), 4, aUziAnimations, aWeaponDescs },
+	{ "uzibad", "uzi", MI_MALE01, ARRAY_SIZE(aUzibadAnimations), 4, aUzibadAnimations, aWeaponDescs2 },
+	{ "rifle", "rifle", MI_MALE01, ARRAY_SIZE(aRifleAnimations), 4, aRifleAnimations, aWeaponDescs },
+	{ "riflebad", "rifle", MI_MALE01, ARRAY_SIZE(aRiflebadAnimations), 4, aRiflebadAnimations, aWeaponDescs2 },
+	{ "sniper", "rifle", MI_MALE01, ARRAY_SIZE(aRifleAnimations), 4, aRifleAnimations, aWeaponDescs },
+	{ "grenade", "grenade", MI_MALE01, ARRAY_SIZE(aGrenadeAnimations), 3, aGrenadeAnimations, aWeaponDescs3 },
+	{ "flame", "flame", MI_MALE01, ARRAY_SIZE(aFlameAnimations), 4, aFlameAnimations, aWeaponDescs },
+	{ "rocket", "rocket", MI_MALE01, ARRAY_SIZE(aRocketAnimations), 4, aRocketAnimations, aWeaponDescs },
+	{ "spraycan", "spraycan", MI_MALE01, ARRAY_SIZE(aSpraycanAnimations), 4, aSpraycanAnimations, aWeaponDescs },
+	{ "goggles", "goggles", MI_MALE01, ARRAY_SIZE(aGogglesAnimations), 4, aGogglesAnimations, aWeaponDescs },
+	{ "melee_1", "ped", MI_MALE01, ARRAY_SIZE(aMelee_1Animations), 10, aMelee_1Animations, aWeaponDescs4 },
+	{ "melee_2", "fight_b", MI_MALE01, ARRAY_SIZE(aMelee_2Animations), 10, aMelee_2Animations, aWeaponDescs4 },
+	{ "melee_3", "fight_c", MI_MALE01, ARRAY_SIZE(aMelee_3Animations), 10, aMelee_3Animations, aWeaponDescs5 },
+	{ "melee_4", "fight_d", MI_MALE01, ARRAY_SIZE(aMelee_4Animations), 10, aMelee_4Animations, aWeaponDescs4 },
+	{ "bbbat_1", "baseball", MI_MALE01, ARRAY_SIZE(aBbbat_1Animations), 10, aBbbat_1Animations, aWeaponDescs4 },
+	{ "gclub_1", "baseball", MI_MALE01, ARRAY_SIZE(aBbbat_1Animations), 10, aBbbat_1Animations, aWeaponDescs4 },
+	{ "knife_1", "knife", MI_MALE01, ARRAY_SIZE(aKnife_1Animations), 10, aKnife_1Animations, aWeaponDescs4 },
+	{ "sword_1", "sword", MI_MALE01, ARRAY_SIZE(aSword_1Animations), 10, aSword_1Animations, aWeaponDescs4 },
+	{ "dildo_1", "dildo", MI_MALE01, ARRAY_SIZE(aDildo_1Animations), 10, aDildo_1Animations, aWeaponDescs4 },
+	{ "flowers_1", "flowers", MI_MALE01, ARRAY_SIZE(aFlowers_1Animations), 10, aFlowers_1Animations, aWeaponDescs4 },
+	{ "csaw_1", "chainsaw", MI_MALE01, ARRAY_SIZE(aCsaw_1Animations), 10, aCsaw_1Animations, aWeaponDescs4 },
+	{ "kick_std", "fight_e", MI_MALE01, ARRAY_SIZE(aKick_stdAnimations), 10, aKick_stdAnimations, aWeaponDescs4 },
+	{ "pistlwhp", "ped", MI_MALE01, ARRAY_SIZE(aPistlwhpAnimations), 10, aPistlwhpAnimations, aWeaponDescs4 },
+	{ "medic", "medic", MI_MALE01, ARRAY_SIZE(aMedicAnimations), 1, aMedicAnimations, aMedicAnimDescs },
+	{ "beach", "beach", MI_MALE01, ARRAY_SIZE(aBeachAnimations), 5, aBeachAnimations, aBeachAnimDescs },
+	{ "sunbathe", "sunbathe", MI_MALE01, ARRAY_SIZE(aSunbatheAnimations), 16, aSunbatheAnimations, aSunbatheAnimDescs },
+	{ "playidles", "playidles", MI_MALE01, ARRAY_SIZE(aPlayIdlesAnimations), 4, aPlayIdlesAnimations, aPlayerIdleAnimDescs },
+	{ "riot", "riot", MI_MALE01, ARRAY_SIZE(aRiotAnimations), 7, aRiotAnimations, aRiotAnimDescs },
+	{ "strip", "strip", MI_MALE01, ARRAY_SIZE(aStripAnimations), 7, aStripAnimations, aStripAnimDescs },
+	{ "gangs", "gangs", MI_MALE01, ARRAY_SIZE(aGangsAnimations), 29, aGangsAnimations, aGangsAnimDescs },
+	{ "attractors", "attractors", MI_MALE01, ARRAY_SIZE(aAttractorsAnimations), 3, aAttractorsAnimations, aAttractorsAnimDescs },
+	{ "player", "ped", MI_MALE01, ARRAY_SIZE(aPlayerAnimations), 191, aPlayerAnimations, aStdAnimDescs },
+	{ "fat", "fat", MI_MALE01, ARRAY_SIZE(aFatAnimations), 191, aFatAnimations, aStdAnimDescs },
+	{ "muscular", "muscular", MI_MALE01, ARRAY_SIZE(aMuscularAnimations), 191, aMuscularAnimations, aStdAnimDescs },
+	{ "playerrocket", "ped", MI_MALE01, ARRAY_SIZE(aPlayerRocketAnimations), 191, aPlayerRocketAnimations, aStdAnimDescs },
+	{ "playerrocketf", "fat", MI_MALE01, ARRAY_SIZE(aPlayerRocketfAnimations), 191, aPlayerRocketfAnimations, aStdAnimDescs },
+	{ "playerrocketm", "muscular", MI_MALE01, ARRAY_SIZE(aPlayerRocketmAnimations), 191, aPlayerRocketmAnimations, aStdAnimDescs },
+	{ "player2armed", "ped", MI_MALE01, ARRAY_SIZE(aPlayer2ArmedAnimations), 191, aPlayer2ArmedAnimations, aStdAnimDescs },
+	{ "player2armedf", "fat", MI_MALE01, ARRAY_SIZE(aPlayer2ArmedfAnimations), 191, aPlayer2ArmedfAnimations, aStdAnimDescs },
+	{ "player2armedm", "muscular", MI_MALE01, ARRAY_SIZE(aPlayer2ArmedmAnimations), 191, aPlayer2ArmedmAnimations, aStdAnimDescs },
+	{ "playerBBBat", "ped", MI_MALE01, ARRAY_SIZE(aPlayerBBBatAnimations), 191, aPlayerBBBatAnimations, aStdAnimDescs },
+	{ "playerBBBatf", "fat", MI_MALE01, ARRAY_SIZE(aPlayerBBBatfAnimations), 191, aPlayerBBBatfAnimations, aStdAnimDescs },
+	{ "playerBBBatm", "muscular", MI_MALE01, ARRAY_SIZE(aPlayerBBBatmAnimations), 191, aPlayerBBBatmAnimations, aStdAnimDescs },
+	{ "playercsaw", "ped", MI_MALE01, ARRAY_SIZE(aPlayerCsawAnimations), 191, aPlayerCsawAnimations, aStdAnimDescs },
+	{ "playercsawf", "fat", MI_MALE01, ARRAY_SIZE(aPlayerCsawfAnimations), 191, aPlayerCsawfAnimations, aStdAnimDescs },
+	{ "playercsawm", "muscular", MI_MALE01, ARRAY_SIZE(aPlayerCsawmAnimations), 191, aPlayerCsawmAnimations, aStdAnimDescs },
+	{ "playersneak", "ped", MI_MALE01, ARRAY_SIZE(aPlayerSneakAnimations), 191, aPlayerSneakAnimations, aStdAnimDescs },
+	{ "playerjetpack", "ped", MI_MALE01, ARRAY_SIZE(aPlayerJetpackAnimations), 191, aPlayerJetpackAnimations, aStdAnimDescs },
+	{ "swim", "swim", MI_MALE01, ARRAY_SIZE(aSwimAnimations), 6, aSwimAnimations, aSwimAnimDescs },
+	{ "drivebys", "drivebys", MI_MALE01, ARRAY_SIZE(aDrivebysAnimations), 8, aDrivebysAnimations, aDbzAnimDescs },
+	{ "bike_dbz", "bike_dbz", MI_MALE01, ARRAY_SIZE(aBike_dbzAnimations), 8, aBike_dbzAnimations, aDbzAnimDescs },
+	{ "cop_dbz", "cop_dvbyz", MI_MALE01, ARRAY_SIZE(aCop_dbzAnimations), 8, aCop_dbzAnimations, aDbzAnimDescs },
+	{ "quad_dbz", "quad_dbz", MI_MALE01, ARRAY_SIZE(aQuad_dbzAnimations), 8, aQuad_dbzAnimations, aDbzAnimDescs },
+	{ "fat_tired", "fat", MI_MALE01, ARRAY_SIZE(aFatTiredAnimations), 1, aFatTiredAnimations, aFatTiredAnimDescs },
+	{ "handsignal", "ghands", MI_MALE01, ARRAY_SIZE(aHandsignalAnimations), 5, aHandsignalAnimations, aHandSignalAnimDescs },
+	{ "handsignalL", "ghands", MI_MALE01, ARRAY_SIZE(aHandsignalLAnimations), 5, aHandsignalLAnimations, aHandSignalLAnimDescs },
+	{ "lhand", "ghands", MI_MALE01, ARRAY_SIZE(aLhandAnimations), 5, aLhandAnimations, aHandAnimDescs },
+	{ "rhand", "ghands", MI_MALE01, ARRAY_SIZE(aRhandAnimations), 5, aRhandAnimations, aHandAnimDescs },
+	{ "carry", "carry", MI_MALE01, ARRAY_SIZE(aCarryAnimations), 3, aCarryAnimations, aCarryDescs },
+	{ "carry05", "carry", MI_MALE01, ARRAY_SIZE(aCarry05Animations), 3, aCarry05Animations, aCarryDescs },
+	{ "carry105", "carry", MI_MALE01, ARRAY_SIZE(aCarry105Animations), 3, aCarry105Animations, aCarryDescs },
+	{ "int_house", "int_house", MI_MALE01, ARRAY_SIZE(aIntHouseAnimations), 10, aIntHouseAnimations, aIntHouseAnimDescs },
+	{ "int_office", "int_office", MI_MALE01, ARRAY_SIZE(aIntOfficeAnimations), 9, aIntOfficeAnimations, aIntOfficeAnimDescs },
+	{ "int_shop", "int_shop", MI_MALE01, ARRAY_SIZE(aIntShopAnimations), 3, aIntShopAnimations, aIntShopAnimDescs },
+	{ "stealth_kn", "knife", MI_MALE01, ARRAY_SIZE(aStealth_knAnimations), 4, aStealth_knAnimations, aStealthDescs },
+	{ "stdcaramims", "ped", MI_MALE01, ARRAY_SIZE(aStdCarAnimations), 40, aStdCarAnimations, aCarAnimDescs2 },
+	{ "lowcaramims", "ped", MI_MALE01, ARRAY_SIZE(aLowCarAnimations), 40, aLowCarAnimations, aLowCarAnimDiscs },
+	{ "trkcaranims", "truck", MI_MALE01, ARRAY_SIZE(aTrkCarAnimations), 40, aTrkCarAnimations, aTruckAnimDescs },
+	{ "stdbikeanims", "ped", MI_MALE01, ARRAY_SIZE(aStdBikeAnimations), 40, aStdBikeAnimations, aStdBikeAnimDescs },
+	{ "sportbikeanims", "bikes", MI_MALE01, ARRAY_SIZE(aSportBikeAnimations), 40, aSportBikeAnimations, aStdBikeAnimDescs },
+	{ "vespabikeanims", "bikev", MI_MALE01, ARRAY_SIZE(aVespaBikeAnimations), 40, aVespaBikeAnimations, aStdBikeAnimDescs },
+	{ "harleybikeanims", "bikeh", MI_MALE01, ARRAY_SIZE(aHarleyBikeAnimations), 40, aHarleyBikeAnimations, aStdBikeAnimDescs },
+	{ "dirtbikeanims", "biked", MI_MALE01, ARRAY_SIZE(aDirtBikeAnimations), 40, aDirtBikeAnimations, aStdBikeAnimDescs },
+	{ "wayfbikeanims", "wayfarer", MI_MALE01, ARRAY_SIZE(aWayfBikeAnimations), 40, aWayfBikeAnimations, aStdBikeAnimDescs },
+	{ "bmxbikeanims", "bmx", MI_MALE01, ARRAY_SIZE(aBmxBikeAnimations), 40, aBmxBikeAnimations, aStdBikeAnimDescs },
+	{ "mtbbikeanims", "mtb", MI_MALE01, ARRAY_SIZE(aMtbBikeAnimations), 40, aMtbBikeAnimations, aStdBikeAnimDescs },
+	{ "choppabikeanims", "choppa", MI_MALE01, ARRAY_SIZE(aChoppaBikeAnimations), 40, aChoppaBikeAnimations, aStdBikeAnimDescs },
+	{ "quadbikeanims", "quad", MI_MALE01, ARRAY_SIZE(aQuadBikeAnimations), 40, aQuadBikeAnimations, aStdBikeAnimDescs },
+	{ "vancaranims", "van", MI_MALE01, ARRAY_SIZE(aVanCarAnimations), 40, aVanCarAnimations, aCarAnimDescs1 },
+	{ "rustplaneanims", "rustler", MI_MALE01, ARRAY_SIZE(aRustplaneAnimations), 40, aRustplaneAnimations, aCarAnimDescs1 },
+	{ "coachcaranims", "coach", MI_MALE01, ARRAY_SIZE(aCoachCarAnimations), 40, aCoachCarAnimations, aCarAnimDescs2 },
+	{ "buscaranims", "bus", MI_MALE01, ARRAY_SIZE(aBusCarAnimations), 40, aBusCarAnimations, aCarAnimDescs2 },
+	{ "dozercaranims", "dozer", MI_MALE01, ARRAY_SIZE(aDozerCarAnimations), 40, aDozerCarAnimations, aCarAnimDescs2 },
+	{ "kartcaranims", "kart", MI_MALE01, ARRAY_SIZE(aKartCarAnimations), 40, aKartCarAnimations, aCarAnimDescs2 },
+	{ "convcaranims", "ped", MI_MALE01, ARRAY_SIZE(aConvCarAnimations), 40, aConvCarAnimations, aCarAnimDescs2 },
+	{ "mtrkcaranims", "truck", MI_MALE01, ARRAY_SIZE(aTrkCarAnimations), 40, aTrkCarAnimations, aTruckAnimDescs },
+	{ "traincarranims", "coach", MI_MALE01, ARRAY_SIZE(aCoachCarAnimations), 40, aCoachCarAnimations, aCarAnimDescs2 },
+	{ "stdtallcaramims", "ped", MI_MALE01, ARRAY_SIZE(aStdCarAnimations), 40, aStdCarAnimations, aCarAnimDescs2 },
+	{ "hovercaranims", "vortex", MI_MALE01, ARRAY_SIZE(aHoverCarAnimations), 40, aHoverCarAnimations, aCarAnimDescs2 },
+	{ "tankcaranims", "tank", MI_MALE01, ARRAY_SIZE(aTankCarAnimations), 40, aTankCarAnimations, aCarAnimDescs2 },
+	{ "bfinjcaramims", "BF_injection", MI_MALE01, ARRAY_SIZE(aBfinjCarAnimations), 40, aBfinjCarAnimations, aCarAnimDescs2 },
+	{ "learplaneanims", "shamal", MI_MALE01, ARRAY_SIZE(aLearPlaneAnimations), 40, aLearPlaneAnimations, aCarAnimDescs1 },
+	{ "harrplaneanims", "rustler", MI_MALE01, ARRAY_SIZE(aHarrPlaneAnimations), 40, aHarrPlaneAnimations, aCarAnimDescs1 },
+	{ "stdcarupright", "ped", MI_MALE01, ARRAY_SIZE(aStdCarAnimations), 40, aStdCarAnimations, aCarAnimDescs2 },
+	{ "nvadaplaneanims", "nevada", MI_MALE01, ARRAY_SIZE(aNevadaPlaneAnimations), 40, aNevadaPlaneAnimations, aCarAnimDescs1 },
 };
 int32 CAnimManager::ms_numAnimAssocDefinitions = ARRAY_SIZE(ms_aAnimAssocDefinitions);
 
@@ -350,6 +351,7 @@ CAnimManager::Shutdown(void)
 		def->animDescs = nil;
 		def->blockName = nil;
 		def->numAnims = 0;
+		def->numDescs = 0;
 		s_dataDefinedGroup[i] = false;
 	}
 }
@@ -594,8 +596,10 @@ CAnimManager::GetAnimName(AssocGroupId groupId, AnimationId animId)
 	const AnimAssocDefinition *def = &ms_aAnimAssocDefinitions[groupId];
 	if(def->numAnims <= 0)
 		return nil;
+	if(def->numDescs <= 0)
+		return nil;
 	int index = animId - def->animDescs[0].animId;
-	if(index < 0 || index >= def->numAnims || def->animDescs[index].animId != animId)
+	if(index < 0 || index >= def->numDescs || def->animDescs[index].animId != animId)
 		return nil;
 	return def->animNames[index];
 }
@@ -678,8 +682,10 @@ CAnimManager::GetAnimHierarchyForOffset(RpClump *clump, AssocGroupId groupId, An
 	const AnimAssocDefinition *def = &ms_aAnimAssocDefinitions[groupId];
 	if(def->numAnims <= 0)
 		return nil;
+	if(def->numDescs <= 0)
+		return nil;
 	int index = animId - def->animDescs[0].animId;
-	if(index < 0 || index >= def->numAnims || def->animDescs[index].animId != animId)
+	if(index < 0 || index >= def->numDescs || def->animDescs[index].animId != animId)
 		return nil;
 
 	CAnimBlendAssociation *assoc = clump ? GetAnimAssociation(clump, groupId, animId) :
@@ -1329,6 +1335,7 @@ CAnimManager::ReadAnimAssociationDefinitions(void)
 		def->blockName = strdup(block);
 		def->modelIndex = MI_MALE01;
 		def->numAnims = count;
+		def->numDescs = count;
 		def->animNames = (char const**)RwCalloc(count, sizeof(char*));
 		def->animDescs = (AnimAssocDesc*)RwCalloc(count, sizeof(AnimAssocDesc));
 		if(def->blockName == nil || def->animNames == nil || def->animDescs == nil){
@@ -1440,13 +1447,15 @@ CAnimManager::CreateAnimAssocGroups(int preferredModelIndex)
 		for(j = 0; j < def->numAnims; j++)
 			hierarchies[j] = FindSAAnimationHierarchy(i, def->animNames[j], block);
 		group->groupId = i;
-		group->firstAnimId = def->animDescs[0].animId;
+		group->firstAnimId = def->numDescs > 0 ? def->animDescs[0].animId : ANIM_ID_UNDEFINED;
 #ifdef CUSTOM_MODELS
 		CUSTOM_LOG("animation groups: building %s from %s (%d slots)\n",
 			def->name, block->name, def->numAnims);
 #endif
 		group->CreateAssociations(block->name, clump, hierarchies, def->numAnims);
-		for(j = 0; j < group->numAssociations; j++){
+		// A group may name more clips than the descriptor table describes, so
+		// the flags stop where the descriptors do.
+		for(j = 0; j < group->numAssociations && j < def->numDescs; j++){
 			CAnimBlendAssociation *assoc = group->GetAnimation(def->animDescs[j].animId);
 			if(assoc && assoc->hierarchy)
 				assoc->flags |= SAFlagsToAssocFlags(def->animDescs[j].flags);

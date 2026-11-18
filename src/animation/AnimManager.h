@@ -169,6 +169,10 @@ struct AnimAssocDefinition
 	char const *blockName;
 	int32 modelIndex;
 	int32 numAnims;
+	// A few San Andreas groups list more clip names than descriptors: the
+	// extra slots take the flags of their neighbour but have no id of their
+	// own, so the descriptor count is tracked separately.
+	int32 numDescs;
 	char const **animNames;
 	AnimAssocDesc *animDescs;
 };

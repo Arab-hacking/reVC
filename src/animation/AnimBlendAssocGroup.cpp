@@ -249,14 +249,19 @@ CAnimBlendAssocGroup::CreateAssociations(const char *blockName, RpClump *clump,
 
 	for(i = 0; i < numAssocs; i++){
 		CAnimBlendHierarchy *hier = hierarchies[i];
+		// A clip the block does not carry keeps its slot and is marked
+		// undefined: the array is indexed by position in the group, so the
+		// following clips must not shift down into the hole.
 		if(hier == nil){
 #ifdef CUSTOM_MODELS
-			CUSTOM_LOG("anim assoc: SA group %d has no SA hierarchy for animation id %d; association skipped\n",
+			CUSTOM_LOG("anim assoc: SA group %d has no SA hierarchy for animation id %d\n",
 				groupId, firstAnimId + i);
 #else
-			debug("anim assoc: SA group %d has no SA hierarchy for animation id %d; association skipped\n",
+			debug("anim assoc: SA group %d has no SA hierarchy for animation id %d\n",
 				groupId, firstAnimId + i);
 #endif
+			assocList[i].animId = ANIM_ID_UNDEFINED;
+			assocList[i].groupId = groupId;
 			continue;
 		}
 		assocList[i].Init(clump, hier);
