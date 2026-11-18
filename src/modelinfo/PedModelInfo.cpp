@@ -140,7 +140,10 @@ CPedModelInfo::FindSAReplacementModel(int32 modelId)
 		if(baseInfo == nil || baseInfo->GetModelType() != MITYPE_PED || i == modelId)
 			continue;
 		info = (CPedModelInfo*)baseInfo;
-		if(!info->UsesSAAnimations())
+		// The skeleton is only classified once the clump is resident, so an
+		// unloaded model cannot be judged and must not be offered as a
+		// replacement. Callers load the chosen model and re-check it.
+		if(info->GetRwObject() == nil || !info->UsesSAAnimations())
 			continue;
 		if(info->m_animGroup == wantGroup)
 			return i;

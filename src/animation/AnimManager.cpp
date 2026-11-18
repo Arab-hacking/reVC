@@ -1158,9 +1158,9 @@ CAnimManager::RemoveAnimBlock(int32 block)
 	numAnims = animblock->numAnims;
 	validAnimationRange = firstAnim >= 0 && firstAnim <= NUMANIMATIONS &&
 		numAnims >= 0 && numAnims <= NUMANIMATIONS - firstAnim;
-	// Parallel SA banks are loaded alongside their VC block but are not a
-	// separate streaming request. Release them with the VC source block so
-	// custom dictionaries do not accumulate in the fixed animation table.
+	// A custom SA bank may be registered next to a native block of the same
+	// name. Release it together with that block so custom dictionaries do not
+	// accumulate in the fixed animation table.
 	if(strncasecmp(animblock->name, "sa_", 3) != 0){
 		char saBlockName[MAX_ANIMBLOCK_NAME];
 		CAnimBlock *saBlock;

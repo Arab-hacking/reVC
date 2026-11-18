@@ -454,15 +454,26 @@ CPed::SetModelIndex(uint32 mi)
 	}
 	CPedModelInfo *modelInfo = (CPedModelInfo *)CModelInfo::GetModelInfo(GetModelIndex());
 	// The ped animation set is SA only, so a VC skeleton would never animate.
-	// Swap such a ped for an SA model of the same animation group first.
-	if(modelInfo && !modelInfo->UsesSAAnimations()){
-		int32 saModel = CPedModelInfo::FindSAReplacementModel(mi);
-		if(saModel >= 0 && (uint32)saModel != mi){
-			REVC_LOG_INFO("Ped model %s has a VC skeleton and no VC animation path; using SA model %d instead",
-				modelInfo->GetModelName(), saModel);
-			CEntity::SetModelIndex(saModel);
-			modelInfo = (CPedModelInfo *)CModelInfo::GetModelInfo(GetModelIndex());
-		}
+	// Swap such a ped for an SA model instead of leaving it frozen. A candidate
+	// can only be judged once its clump is resident, so each one is loaded
+	// before it is accepted.
+	int32 modelIndexTried = -1;
+	for(int32 attempt = 0; modelInfo && !modelInfo->UsesSAAnimations() && attempt < 4; attempt++){
+		int32 saModel = CPedModelInfo::FindSAReplacementModel(GetModelIndex());
+		if(saModel < 0 || (uint32)saModel == GetModelIndex() || saModel == modelIndexTried)
+			break;
+		modelIndexTried = saModel;
+		CStreaming::RequestModel(saModel, STREAMFLAGS_PRIORITY | STREAMFLAGS_KEEP_IN_MEMORY);
+		CStreaming::LoadAllRequestedModels(true);
+		if(!CStreaming::HasModelLoaded(saModel))
+			continue;
+		CPedModelInfo *saInfo = (CPedModelInfo *)CModelInfo::GetModelInfo(saModel);
+		if(saInfo == nil || saInfo->GetRwObject() == nil || !saInfo->UsesSAAnimations())
+			continue;
+		REVC_LOG_INFO("Ped model %s has a VC skeleton and no VC animation path; using SA model %s instead",
+			modelInfo->GetModelName(), saInfo->GetModelName());
+		CEntity::SetModelIndex(saModel);
+		modelInfo = saInfo;
 	}
 	if(modelInfo){
 		SetPedStats(modelInfo->m_pedStatType);

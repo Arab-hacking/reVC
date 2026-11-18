@@ -133,11 +133,11 @@ public:
 	static void RemoveAnimBlock(int32 block);
 	static CAnimBlendHierarchy *GetAnimation(const char *name, CAnimBlock *animBlock);
 	static CAnimBlendHierarchy *GetAnimation(int32 n) { return n >= 0 && n < NUMANIMATIONS ? &ms_aAnimations[n] : nil; }
-	// A hierarchy may only be used with a clump from the same animation bank.
-	// A null clump denotes an explicitly native-VC-only lookup.
+	// Only hierarchies from an SA dictionary can drive a ped. A null clump
+	// skips the skeleton checks and only validates the bank.
 	static bool IsAnimationCompatibleWithClump(RpClump *clump, CAnimBlendHierarchy *hierarchy);
-	// Vehicle approach offsets must come from the ped's own bank. The native
-	// lookup also works without a VC reference clump.
+	// Vehicle approach offsets must come from the ped's own SA bank. The
+	// lookup also works without a reference clump.
 	static CAnimBlendHierarchy *GetAnimHierarchyForOffset(AssocGroupId groupId, AnimationId animId);
 	static CAnimBlendHierarchy *GetAnimHierarchyForOffset(RpClump *clump, AssocGroupId groupId, AnimationId animId);
 	static const char *GetAnimGroupName(AssocGroupId groupId);
