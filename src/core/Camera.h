@@ -334,6 +334,9 @@ public:
 	bool m_bcutsceneFinished;
 	bool m_bCullZoneChecksOn;
 	bool m_bFirstPersonBeingUsed;
+	// Sticky 1st person view for the player pedestrian, toggled by the player
+	// instead of the vanilla "hold look-around" behaviour.
+	bool m_bPlayerFirstPersonView;
 	bool m_bJustJumpedOutOf1stPersonBecauseOfTarget;
 	bool m_bIdleOn;
 	bool m_bInATunnelAndABigVehicle;

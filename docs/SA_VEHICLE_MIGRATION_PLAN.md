@@ -200,3 +200,16 @@ are skipped because they cannot stand on a road here. The walk starts from the
 car the player is in, or from the previous spawn when he is on foot, and skips
 models whose assets are not registered, so a half-populated `vehicles.ide`
 cannot stall the cycle. The search lives in `src/control/VehicleSpawnKey.h`.
+
+`I` toggles the pedestrian camera between the third person view and a sticky
+first person view. Vanilla only peeked into first person while the player held
+the look-around axis, and on PC that path is unreachable at all: it requires
+`!Using3rdPersonMouseCam()`, which is true in `MODE_FOLLOWPED` whenever the
+mouse third person cam is on. The sticky variant therefore ignores the
+look-around trigger and the `2850` ms timeout and keeps the player controls
+alive, because `PLAYERCONTROL_CAMERA` makes every `CPad` getter return 0 and
+would freeze walking. It drops on its own when the camera leaves the player,
+the ped loses control, a cutscene or a script takes the camera, or the player
+enters a vehicle, which keeps its own view cycling on `V`. Pedestrian mouse
+look uses the raw mouse delta, which the `MODE_1STPERSON` ped branch did not
+read before. The rules live in `src/core/CameraViewToggle.h`.

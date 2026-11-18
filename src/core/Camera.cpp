@@ -1,4 +1,5 @@
 #include "common.h"
+#include "CameraViewToggle.h"
 
 #include "main.h"
 #include "Draw.h"
@@ -737,6 +738,10 @@ CCamera::CamControl(void)
 				if(((CVehicle*)pTargetEntity)->IsBoat() && pTargetEntity->GetModelIndex() != MI_SKIMMER)
 					boatTarget = true;
 
+				// The sticky pedestrian view must not leak into a vehicle, which
+				// has its own view cycling.
+				m_bPlayerFirstPersonView = false;
+
 				// Change user selected mode
 				if(CPad::GetPad(0)->CycleCameraModeUpJustDown() && !CReplay::IsPlayingBack() &&
 				   (m_bLookingAtPlayer || WhoIsInControlOfTheCamera == CAMCONTROL_OBBE) &&
@@ -1016,38 +1021,70 @@ CCamera::CamControl(void)
 
 			ReqMode = CCam::MODE_FOLLOWPED;
 
+			// Sticky first person view toggled by the player: no look-around
+			// trigger, no movement/key timeout. Cleared when the camera leaves
+			// the player, when the ped loses control, or when a cutscene or a
+			// script-driven camera takes over.
+			if(m_bPlayerFirstPersonView){
+#ifdef FREE_CAM
+				const bool freeCamActive = CCamera::bFreeCam;
+#else
+				const bool freeCamActive = false;
+#endif
+				if(!KeepPedestrianFirstPersonView(m_bLookingAtPlayer,
+				                                  m_bEnable1rstPersonCamCntrlsScript,
+				                                  pTargetEntity->IsPed(),
+				                                  m_WideScreenOn,
+				                                  freeCamActive,
+				                                  FindPlayerPed() != nil &&
+				                                  FindPlayerPed()->IsPedInControl()))
+					m_bPlayerFirstPersonView = false;
+			}
+
 			// Check 1st person mode
 			if((m_bLookingAtPlayer || m_bEnable1rstPersonCamCntrlsScript) && pTargetEntity->IsPed() &&
-			   (!m_WideScreenOn || m_bEnable1rstPersonCamCntrlsScript) && !Cams[0].Using3rdPersonMouseCam()
+			   (!m_WideScreenOn || m_bEnable1rstPersonCamCntrlsScript) &&
+			   (!Cams[0].Using3rdPersonMouseCam() || m_bPlayerFirstPersonView)
 #ifdef FREE_CAM
 			   && (!CCamera::bFreeCam || m_bEnable1rstPersonCamCntrlsScript)
 #endif
 			   ){
-				// See if we want to enter first person mode
-				if(CPad::GetPad(0)->LookAroundLeftRight() || CPad::GetPad(0)->LookAroundUpDown()){
-					m_uiFirstPersonCamLastInputTime = CTimer::GetTimeInMilliseconds();
+				if(m_bPlayerFirstPersonView){
 					m_bFirstPersonBeingUsed = true;
-				}
-				if(m_bFirstPersonBeingUsed){
-					// Or if we want to go back to 3rd person
-					if(CPad::GetPad(0)->GetPedWalkLeftRight() || CPad::GetPad(0)->GetPedWalkUpDown() ||
-					   CPad::GetPad(0)->GetSquare() || CPad::GetPad(0)->GetTriangle() ||
-					   CPad::GetPad(0)->GetCross() || CPad::GetPad(0)->GetCircle() ||
-					   CTimer::GetTimeInMilliseconds() - m_uiFirstPersonCamLastInputTime > 2850.0f){
-						m_bFirstPersonBeingUsed = false;
-					}else if(CPad::GetPad(0)->TargetJustDown()){
-						m_bFirstPersonBeingUsed = false;
-						m_bJustJumpedOutOf1stPersonBecauseOfTarget = true;
+					m_uiFirstPersonCamLastInputTime = CTimer::GetTimeInMilliseconds();
+				}else{
+					// See if we want to enter first person mode
+					if(CPad::GetPad(0)->LookAroundLeftRight() || CPad::GetPad(0)->LookAroundUpDown()){
+						m_uiFirstPersonCamLastInputTime = CTimer::GetTimeInMilliseconds();
+						m_bFirstPersonBeingUsed = true;
+					}
+					if(m_bFirstPersonBeingUsed){
+						// Or if we want to go back to 3rd person
+						if(CPad::GetPad(0)->GetPedWalkLeftRight() || CPad::GetPad(0)->GetPedWalkUpDown() ||
+						   CPad::GetPad(0)->GetSquare() || CPad::GetPad(0)->GetTriangle() ||
+						   CPad::GetPad(0)->GetCross() || CPad::GetPad(0)->GetCircle() ||
+						   CTimer::GetTimeInMilliseconds() - m_uiFirstPersonCamLastInputTime > 2850.0f){
+							m_bFirstPersonBeingUsed = false;
+						}else if(CPad::GetPad(0)->TargetJustDown()){
+							m_bFirstPersonBeingUsed = false;
+							m_bJustJumpedOutOf1stPersonBecauseOfTarget = true;
+						}
 					}
 				}
 			}else
 				m_bFirstPersonBeingUsed = false;
 
-			if(!FindPlayerPed()->IsPedInControl() || FindPlayerPed()->m_fMoveSpeed > 0.0f)
+			if(!FindPlayerPed()->IsPedInControl() ||
+			   (FindPlayerPed()->m_fMoveSpeed > 0.0f && !m_bPlayerFirstPersonView))
 				m_bFirstPersonBeingUsed = false;
 			if(m_bFirstPersonBeingUsed){
 				ReqMode = CCam::MODE_1STPERSON;
-				CPad::GetPad(0)->DisablePlayerControls |= PLAYERCONTROL_CAMERA;
+				// PLAYERCONTROL_CAMERA makes every CPad getter return 0, walk
+				// input included, so it would freeze the ped in place. It only
+				// makes sense for the vanilla look-around peek, which is not
+				// supposed to move. The sticky view keeps the controls alive.
+				if(!m_bPlayerFirstPersonView)
+					CPad::GetPad(0)->DisablePlayerControls |= PLAYERCONTROL_CAMERA;
 			}
 
 			// Zoom value
@@ -2178,6 +2215,9 @@ CCamera::Restore(void)
 
 	m_bEnable1rstPersonCamCntrlsScript = false;
 	m_bAllow1rstPersonWeaponsCamera = false;
+	// A cutscene or a script that took the camera away always drops the sticky
+	// pedestrian first person view, so gameplay never resumes inside a head.
+	m_bPlayerFirstPersonView = false;
 	m_bUseScriptZoomValuePed = false;
 	m_bUseScriptZoomValueCar = false;
 	m_bStartInterScript = true;
@@ -2201,6 +2241,7 @@ CCamera::RestoreWithJumpCut(void)
 	m_bCameraJustRestored = true;
 	m_bEnable1rstPersonCamCntrlsScript = false;
 	m_bAllow1rstPersonWeaponsCamera = false;
+	m_bPlayerFirstPersonView = false;
 
 	if(FindPlayerVehicle()){
 		m_iModeToGoTo = CCam::MODE_CAM_ON_A_STRING;

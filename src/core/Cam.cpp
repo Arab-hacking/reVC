@@ -2592,12 +2592,35 @@ CCam::Process_1stPerson(const CVector &CameraTarget, float TargetOrientation, fl
 		}
 
 		float LookLeftRight, LookUpDown;
-		LookLeftRight = -CPad::GetPad(0)->LookAroundLeftRight();
-		LookUpDown = CPad::GetPad(0)->LookAroundUpDown();
-		float xdir = LookLeftRight < 0.0f ? -1.0f : 1.0f;
-		float ydir = LookUpDown < 0.0f ? -1.0f : 1.0f;
-		Beta += SQR(LookLeftRight/100.0f)*xdir*0.8f/14.0f * FOV/80.0f * CTimer::GetTimeStep();
-		Alpha += SQR(LookUpDown/150.0f)*ydir*1.0f/14.0f * FOV/80.0f * CTimer::GetTimeStep();
+#ifdef GTA_PC_CONTROLS
+		// The ped first person cam used to read the right stick only, which
+		// leaves the mouse dead on PC. Follow Process_1rstPersonPedOnPC and
+		// prefer the raw mouse delta when the mouse actually moved.
+		bool UseMouse = false;
+		float MouseX = CPad::GetPad(0)->GetMouseX();
+		float MouseY = CPad::GetPad(0)->GetMouseY();
+		if(MouseX != 0.0f || MouseY != 0.0f){
+			UseMouse = true;
+			LookLeftRight = -3.0f*MouseX;
+			LookUpDown = 4.0f*MouseY;
+		}else
+#endif
+		{
+			LookLeftRight = -CPad::GetPad(0)->LookAroundLeftRight();
+			LookUpDown = CPad::GetPad(0)->LookAroundUpDown();
+		}
+#ifdef GTA_PC_CONTROLS
+		if(UseMouse){
+			Beta += TheCamera.m_fMouseAccelHorzntl * LookLeftRight * FOV/80.0f;
+			Alpha += TheCamera.m_fMouseAccelVertical * LookUpDown * FOV/80.0f;
+		}else
+#endif
+		{
+			float xdir = LookLeftRight < 0.0f ? -1.0f : 1.0f;
+			float ydir = LookUpDown < 0.0f ? -1.0f : 1.0f;
+			Beta += SQR(LookLeftRight/100.0f)*xdir*0.8f/14.0f * FOV/80.0f * CTimer::GetTimeStep();
+			Alpha += SQR(LookUpDown/150.0f)*ydir*1.0f/14.0f * FOV/80.0f * CTimer::GetTimeStep();
+		}
 		while(Beta >= PI) Beta -= 2*PI;
 		while(Beta < -PI) Beta += 2*PI;
 		if(Alpha > DEGTORAD(60.0f)) Alpha = DEGTORAD(60.0f);

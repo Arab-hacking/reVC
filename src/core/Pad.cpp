@@ -33,6 +33,7 @@
 #include "AnimManager.h"
 #include "WeaponInfo.h"
 #include "PlayerModelCycle.h"
+#include "CameraViewToggle.h"
 #include "VehicleSpawnKey.h"
 #include "Clock.h"
 #include "Timecycle.h"
@@ -634,6 +635,42 @@ CPad::ProcessVehicleSpawnKeys(void)
 			modelId, info->GetModelName());
 		return;
 	}
+#endif
+}
+
+// Vanilla only enters the pedestrian first person cam while the player holds
+// the look-around axis, and on PC that entry is unreachable anyway: it requires
+// !Using3rdPersonMouseCam(), which is true in MODE_FOLLOWPED whenever the mouse
+// third person cam is enabled. This binds a real toggle instead, so the player
+// can stay in first person and keep mouse look while walking.
+#define CAMERA_VIEW_TOGGLE_KEY 'I'
+void
+CPad::ProcessCameraViewKey(void)
+{
+#ifdef GTA_PC_CONTROLS
+	CPad *pad = GetPad(PAD1);
+	CCamera &camera = TheCamera;
+	// The script-driven first person cam sets PLAYERCONTROL_CAMERA itself, so
+	// that single bit must be ignored here, otherwise the toggle could never
+	// switch the view back.
+	const bool scriptControlsCamera =
+		(pad->DisablePlayerControls & ~PLAYERCONTROL_CAMERA) != PLAYERCONTROL_ENABLED;
+	if(!CanTogglePedestrianCameraView(FindPlayerPed() != nil,
+	                                  FindPlayerVehicle() != nil,
+	                                  camera.m_bLookingAtPlayer,
+	                                  FrontEndMenuManager.m_bMenuActive != 0,
+	                                  CCutsceneMgr::IsRunning() != 0,
+	                                  CReplay::IsPlayingBack() != 0,
+	                                  scriptControlsCamera))
+		return;
+	if(!pad->GetCharJustDown(CAMERA_VIEW_TOGGLE_KEY))
+		return;
+
+	camera.m_bPlayerFirstPersonView = !camera.m_bPlayerFirstPersonView;
+	if(camera.m_bPlayerFirstPersonView)
+		camera.m_uiFirstPersonCamLastInputTime = CTimer::GetTimeInMilliseconds();
+	REVC_LOG_INFO("Pedestrian camera view switched to %s person",
+		camera.m_bPlayerFirstPersonView ? "first" : "third");
 #endif
 }
 

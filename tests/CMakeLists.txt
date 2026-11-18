@@ -50,6 +50,10 @@ add_executable(player_model_cycle_tests PlayerModelCycleTests.cpp)
 set_target_properties(player_model_cycle_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
 add_test(NAME player_model_cycle_tests COMMAND player_model_cycle_tests)
 
+add_executable(camera_view_toggle_tests CameraViewToggleTests.cpp)
+set_target_properties(camera_view_toggle_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+add_test(NAME camera_view_toggle_tests COMMAND camera_view_toggle_tests)
+
 add_executable(world_sector_math_tests WorldSectorMathTests.cpp)
 set_target_properties(world_sector_math_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
 add_test(NAME world_sector_math_tests COMMAND world_sector_math_tests)

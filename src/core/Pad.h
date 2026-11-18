@@ -231,6 +231,9 @@ public:
 	// PC: Shift + 7 / 8 cycles registered vehicle models and spawns one.
 	static void ProcessVehicleSpawnKeys(void);
 	static void ProcessTimeOfDayKeys(void);
+	// PC: cycles the player pedestrian camera between the vanilla third
+	// person view and a sticky first person view.
+	static void ProcessCameraViewKey(void);
 	
 	static void StopPadsShaking(void);
 	void StopShaking(int16 pad);

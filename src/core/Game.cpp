@@ -974,6 +974,7 @@ void CGame::Process(void)
 		CPad::ProcessPlayerModelKeys();
 		CPad::ProcessVehicleSpawnKeys();
 		CPad::ProcessTimeOfDayKeys();
+		CPad::ProcessCameraViewKey();
 		CNoClip::ProcessInput();
 		CClock::Update();
 		CWeather::Update();
