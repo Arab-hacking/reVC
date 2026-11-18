@@ -20,27 +20,45 @@ static void TestToggleOnlyOnFoot()
     assert(!CanTogglePedestrianCameraView(true, false, true, false, false, false, true));
 }
 
-// The sticky view must not survive a context change. Movement is deliberately
-// absent from the rules, otherwise first person walking would be impossible.
-static void TestStickyViewSurvivesWalking()
+// Whether the stored preference may be applied this frame. Walking is
+// deliberately not part of the rules, otherwise first person walking would be
+// impossible, which is exactly what the vanilla peek suffered from.
+static void TestApplicationSurvivesWalking()
 {
-    assert(KeepPedestrianFirstPersonView(true, false, true, false, false, true));
+    assert(CanApplyPedestrianFirstPersonView(true, false, true, false, false, true));
     // A script may keep the first person cam alive without looking at the player.
-    assert(KeepPedestrianFirstPersonView(false, true, true, false, false, true));
-    assert(!KeepPedestrianFirstPersonView(false, false, true, false, false, true));
-    // Leaving the pedestrian target drops the view.
-    assert(!KeepPedestrianFirstPersonView(true, false, false, false, false, true));
-    assert(!KeepPedestrianFirstPersonView(true, false, true, true, false, true));
-    assert(!KeepPedestrianFirstPersonView(true, false, true, false, true, true));
+    assert(CanApplyPedestrianFirstPersonView(false, true, true, false, false, true));
+    assert(!CanApplyPedestrianFirstPersonView(false, false, true, false, false, true));
+    // Leaving the pedestrian target blocks the view.
+    assert(!CanApplyPedestrianFirstPersonView(true, false, false, false, false, true));
+    assert(!CanApplyPedestrianFirstPersonView(true, false, true, true, false, true));
+    assert(!CanApplyPedestrianFirstPersonView(true, false, true, false, true, true));
     // A dead or otherwise out of control ped must not stay in first person.
-    assert(!KeepPedestrianFirstPersonView(true, false, true, false, false, false));
+    assert(!CanApplyPedestrianFirstPersonView(true, false, true, false, false, false));
     // The script escape hatches override the widescreen and free cam refusals.
-    assert(KeepPedestrianFirstPersonView(true, true, true, true, true, true));
+    assert(CanApplyPedestrianFirstPersonView(true, true, true, true, true, true));
+}
+
+// The preference is what the player asked for, the effective view is that
+// preference ANDed with the per-frame guards. A single blocked frame must not
+// erase the choice, otherwise the toggle needs a key press per frame.
+static void TestPreferenceOutlivesBlockedFrames()
+{
+    bool preference = true;
+    // Blocked frame, for example the ped briefly airborne in noclip.
+    bool effective = preference && CanApplyPedestrianFirstPersonView(true, false, true, false, false, false);
+    assert(!effective);
+    // Once the ped is controllable again the preference applies on its own,
+    // with no second key press.
+    assert(preference);
+    effective = preference && CanApplyPedestrianFirstPersonView(true, false, true, false, false, true);
+    assert(effective);
 }
 
 int main()
 {
     TestToggleOnlyOnFoot();
-    TestStickyViewSurvivesWalking();
+    TestApplicationSurvivesWalking();
+    TestPreferenceOutlivesBlockedFrames();
     return 0;
 }

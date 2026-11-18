@@ -7,6 +7,18 @@
 // third person cam is enabled. The sticky view below is the toggled variant,
 // so the player can stay in first person while walking.
 //
+// The rules are split on purpose:
+//
+//   * the *preference* is what the player asked for. It only flips on a real
+//     key press and on an explicit context change (getting into a vehicle),
+//     so a single frame where a condition happens to be false cannot silently
+//     turn the mode back off.
+//   * the *effective* view is the preference ANDed with the per-frame
+//     conditions. Those conditions legitimately flicker (a script grabs the
+//     camera for one frame, the ped is briefly airborne, a cutscene rail comes
+//     up), and computing them every frame keeps the mode consistent without
+//     losing the player's choice.
+//
 // The rules are kept free of engine types so they can be unit tested.
 
 // A toggle request only makes sense for an on-foot player whose camera is
@@ -29,14 +41,14 @@ inline bool CanTogglePedestrianCameraView(bool hasPlayerPed, bool inVehicle,
     return true;
 }
 
-// The sticky view survives movement and has no input timeout, but must drop
-// as soon as the camera stops following the player, the target stops being a
-// pedestrian, the widescreen/cutscene rail takes over or the ped loses control.
-inline bool KeepPedestrianFirstPersonView(bool cameraLookingAtPlayer,
-                                          bool scriptFirstPersonEnabled,
-                                          bool targetIsPed, bool wideScreenOn,
-                                          bool freeCamActive,
-                                          bool pedInControl)
+// Whether the player's first person preference may be applied this frame.
+// Note that walking is deliberately absent: the sticky view must survive
+// movement, unlike the vanilla look-around peek.
+inline bool CanApplyPedestrianFirstPersonView(bool cameraLookingAtPlayer,
+                                              bool scriptFirstPersonEnabled,
+                                              bool targetIsPed, bool wideScreenOn,
+                                              bool freeCamActive,
+                                              bool pedInControl)
 {
     if(!cameraLookingAtPlayer && !scriptFirstPersonEnabled)
         return false;

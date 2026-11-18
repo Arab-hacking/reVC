@@ -1021,35 +1021,54 @@ CCamera::CamControl(void)
 
 			ReqMode = CCam::MODE_FOLLOWPED;
 
-			// Sticky first person view toggled by the player: no look-around
-			// trigger, no movement/key timeout. Cleared when the camera leaves
-			// the player, when the ped loses control, or when a cutscene or a
-			// script-driven camera takes over.
-			if(m_bPlayerFirstPersonView){
+			// The sticky first person preference is the player's choice and is
+			// only cleared on a real context change, never because one of the
+			// per-frame checks below happened to be false for a single frame.
+			// It survives walking, the look-around timeout and target presses.
 #ifdef FREE_CAM
-				const bool freeCamActive = CCamera::bFreeCam;
+			const bool freeCamActive = CCamera::bFreeCam;
 #else
-				const bool freeCamActive = false;
+			const bool freeCamActive = false;
 #endif
-				if(!KeepPedestrianFirstPersonView(m_bLookingAtPlayer,
+			const bool canApplySticky =
+				CanApplyPedestrianFirstPersonView(m_bLookingAtPlayer,
 				                                  m_bEnable1rstPersonCamCntrlsScript,
 				                                  pTargetEntity->IsPed(),
 				                                  m_WideScreenOn,
 				                                  freeCamActive,
 				                                  FindPlayerPed() != nil &&
-				                                  FindPlayerPed()->IsPedInControl()))
-					m_bPlayerFirstPersonView = false;
+				                                  FindPlayerPed()->IsPedInControl());
+			const bool stickyFirstPerson = m_bPlayerFirstPersonView && canApplySticky;
+
+			// Log only when the blocking reason changes, so a normal run stays
+			// quiet but the first frame that cannot honour the preference says
+			// exactly which guard is responsible.
+			if(m_bPlayerFirstPersonView != stickyFirstPerson){
+				static const char *lastBlock = "";
+				const char *block = !m_bPlayerFirstPersonView ? "" :
+					(m_bLookingAtPlayer || m_bEnable1rstPersonCamCntrlsScript) ? (
+					!pTargetEntity->IsPed() ? "target not ped" :
+					(m_WideScreenOn && !m_bEnable1rstPersonCamCntrlsScript) ? "widescreen" :
+					(freeCamActive && !m_bEnable1rstPersonCamCntrlsScript) ? "freecam" :
+					"ped not in control") : "camera not on player";
+				if(block != lastBlock && *block){
+					REVC_LOG_INFO("First person view blocked: %s (state=%d air=%d speed=%.2f)",
+						block, FindPlayerPed() ? FindPlayerPed()->m_nPedState : -1,
+						FindPlayerPed() ? FindPlayerPed()->bIsInTheAir : -1,
+						FindPlayerPed() ? FindPlayerPed()->m_fMoveSpeed : 0.0f);
+					lastBlock = block;
+				}
 			}
 
 			// Check 1st person mode
 			if((m_bLookingAtPlayer || m_bEnable1rstPersonCamCntrlsScript) && pTargetEntity->IsPed() &&
 			   (!m_WideScreenOn || m_bEnable1rstPersonCamCntrlsScript) &&
-			   (!Cams[0].Using3rdPersonMouseCam() || m_bPlayerFirstPersonView)
+			   (!Cams[0].Using3rdPersonMouseCam() || stickyFirstPerson)
 #ifdef FREE_CAM
 			   && (!CCamera::bFreeCam || m_bEnable1rstPersonCamCntrlsScript)
 #endif
 			   ){
-				if(m_bPlayerFirstPersonView){
+				if(stickyFirstPerson){
 					m_bFirstPersonBeingUsed = true;
 					m_uiFirstPersonCamLastInputTime = CTimer::GetTimeInMilliseconds();
 				}else{
@@ -1075,7 +1094,7 @@ CCamera::CamControl(void)
 				m_bFirstPersonBeingUsed = false;
 
 			if(!FindPlayerPed()->IsPedInControl() ||
-			   (FindPlayerPed()->m_fMoveSpeed > 0.0f && !m_bPlayerFirstPersonView))
+			   (FindPlayerPed()->m_fMoveSpeed > 0.0f && !stickyFirstPerson))
 				m_bFirstPersonBeingUsed = false;
 			if(m_bFirstPersonBeingUsed){
 				ReqMode = CCam::MODE_1STPERSON;
@@ -1083,7 +1102,7 @@ CCamera::CamControl(void)
 				// input included, so it would freeze the ped in place. It only
 				// makes sense for the vanilla look-around peek, which is not
 				// supposed to move. The sticky view keeps the controls alive.
-				if(!m_bPlayerFirstPersonView)
+				if(!stickyFirstPerson)
 					CPad::GetPad(0)->DisablePlayerControls |= PLAYERCONTROL_CAMERA;
 			}
 

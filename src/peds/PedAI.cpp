@@ -2299,17 +2299,27 @@ CPed::ReactToAttack(CEntity *attacker)
 	}
 }
 
-// A parallel SA dictionary can omit individual car clips. Never leave the
-// pedestrian in PED_ENTER_CAR with an unset callback or dereference a missing
-// association: restore the vehicle/door flags and name the failed stage.
+// A parallel SA dictionary can omit individual car clips. Never dereference a
+// missing association, and never strand the pedestrian in PED_ENTER_CAR just
+// because the clip is absent: when the whole entry sequence cannot be animated,
+// put him straight into the seat instead. That keeps cars usable with a partial
+// SA animation set, which previously only let bikes work.
 static bool
 ContinueVehicleEntryWithAnimation(CPed *ped, void (*finish)(CAnimBlendAssociation*, void*), const char *stage)
 {
 	CAnimBlendAssociation *anim = ped->m_pVehicleAnim;
 	if(anim == nil){
+		CVehicle *veh = ped->m_pMyVehicle;
 		if(ped->IsPlayer())
-			REVC_LOG_WARNING("Vehicle entry: missing %s animation (ped model=%d, vehicle model=%d, door=%d)",
-				stage, ped->GetModelIndex(), ped->m_pMyVehicle ? ped->m_pMyVehicle->GetModelIndex() : -1, ped->m_vehDoor);
+			REVC_LOG_WARNING("Vehicle entry: missing %s animation (ped model=%d, vehicle model=%d, door=%d), seating directly",
+				stage, ped->GetModelIndex(), veh ? veh->GetModelIndex() : -1, ped->m_vehDoor);
+		if(veh && !veh->IsBike() && veh->IsAutomobile() && ped->m_fHealth > 0.0f){
+			// PedSetInCarCB ignores its association argument, so it can drive the
+			// seat transition without any clip playing.
+			ped->m_pVehicleAnim = nil;
+			ped->PedSetInCarCB(nil, ped);
+			return false;
+		}
 		ped->QuitEnteringCar();
 		return false;
 	}
