@@ -1701,7 +1701,22 @@ CFileLoader::LoadVehicleObject(const char *line)
 	}else
 		assert(0);
 
+	// A model whose handling line this build does not name would otherwise fall
+	// on the zeroed record and drive with no mass, no grip and no engine. Give
+	// it the handling of its class instead, the same way a custom model does.
 	mi->m_handlingId = mod_HandlingManager.GetHandlingId(handlingId);
+	if(mi->m_handlingId < 0){
+		switch(mi->m_nVehicleType){
+		case VEHICLE_TYPE_BIKE:
+		case VEHICLE_TYPE_BMX:    mi->m_handlingId = HANDLING_BIKE; break;
+		case VEHICLE_TYPE_BOAT:   mi->m_handlingId = HANDLING_PREDATOR; break;
+		case VEHICLE_TYPE_HELI:   mi->m_handlingId = HANDLING_MAVERICK; break;
+		case VEHICLE_TYPE_PLANE:  mi->m_handlingId = HANDLING_SEAPLANE; break;
+		default:                  mi->m_handlingId = HANDLING_LANDSTAL; break;
+		}
+		REVC_LOG_INFO("vehicles.ide: %s has no handling line, using the %s default",
+			handlingId, mi->m_nVehicleType == VEHICLE_TYPE_BIKE ? "bike" : "car");
+	}
 
 	if(strcmp(vehclass, "normal") == 0)
 		mi->m_vehicleClass = CCarCtrl::NORMAL;
