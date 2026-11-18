@@ -1520,6 +1520,16 @@ GetSAAnimationAlias(int groupId, const char *name, const char **sourceBlock)
 	if(name == nil)
 		return nil;
 
+	// Trucks reuse the van entry animations, so a clip asked for by the van
+	// group is the right answer for the truck slots too.
+	if(name == nil)
+		return nil;
+	if(strncasecmp(name, "TRUCK_", 6) == 0){
+		static char vanName[32];
+		snprintf(vanName, sizeof(vanName), "VAN_%s", name + 6);
+		if(sourceBlock) *sourceBlock = nil;
+		return vanName;
+	}
 	if(groupId == ASSOCGRP_FAT){
 		if(sourceBlock) *sourceBlock = "sa_fat";
 		if(strcasecmp(name, "walk_fat") == 0) return "fatwalk";
