@@ -634,7 +634,11 @@ CCarCtrl::GenerateOneRandomCar()
 		int32 passengers = 0;
 		for (int i = 0; i < pVehicle->m_nNumMaxPassengers; i++)
 			passengers += (CGeneral::GetRandomNumberInRange(0.0f, 1.0f) < PROBABILITY_OF_PASSENGER_IN_VEHICLE) ? 1 : 0;
-		if (CModelInfo::IsCarModel(carModel) && (CModelInfo::GetModelInfo(carModel)->GetAnimFileIndex() == CAnimManager::GetAnimationBlockIndex("van") && passengers >= 1))
+		// A van has one row of seats behind the cab, so it never carries more
+		// than one passenger. The body type is what says so; the animation
+		// block index names a bank, and an SA install has no "van" bank.
+		if (CModelInfo::IsCarModel(carModel) && passengers >= 1 &&
+		   ((CVehicleModelInfo*)CModelInfo::GetModelInfo(carModel))->GetAnimGroup() == ASSOCGRP_VANCARANIMS)
 			passengers = 1;
 		for (int i = 0; i < passengers; i++) {
 			CPed* pPassenger = pVehicle->SetupPassenger(i);

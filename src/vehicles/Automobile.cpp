@@ -128,6 +128,22 @@ m_nVehicleSubType = VEHICLE_TYPE_AUTOMOBILE;
 	bIsBus = !!(m_pHandlingData->m_nModelFlags & VEHICLE_HANDLING_MODEL_IS_BUS);
 	bLowVehicle = !!(m_pHandlingData->m_nModelFlags & VEHICLE_HANDLING_MODEL_IS_LOW);
 
+	// Occupants get in and out through the set that matches the body: a bus
+	// has its own step, a van its own, a lowrider sits lower than a saloon and
+	// a big car reaches further. Everything else is the standard saloon.
+	if(mi){
+		if(bIsBus)
+			mi->m_animGroup = ASSOCGRP_BUSCARANIMS;
+		else if(bIsVan)
+			mi->m_animGroup = ASSOCGRP_VANCARANIMS;
+		else if(bLowVehicle)
+			mi->m_animGroup = ASSOCGRP_LOWCARANIMS;
+		else if(bIsBig)
+			mi->m_animGroup = ASSOCGRP_TRKCARANIMS;
+		else
+			mi->m_animGroup = ASSOCGRP_STDCARANIMS;
+	}
+
 	// Doors
 	if(bIsBus){
 		Doors[DOOR_FRONT_LEFT].Init(-HALFPI, 0.0f, 0, 2);

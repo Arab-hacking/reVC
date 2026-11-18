@@ -670,10 +670,26 @@ CAnimManager::CreateAnimAssociation(RpClump *clump, AssocGroupId groupId, Animat
 AssocGroupId
 CAnimManager::GetAnimGroupForAnimation(AnimationId animId)
 {
-	// Clips are numbered from the first descriptor of their group, and the
-	// groups do not overlap, so the last group whose range starts at or before
-	// the id is the one that owns it.
-	for(int i = NUM_ANIM_ASSOC_GROUPS - 1; i >= 0; i--){
+	// Groups do share clip ids: every car set carries the same seat and door
+	// clips, so thirty groups declare CAR_GETIN_LHS_0 and choosing between them
+	// by range alone would hand a saloon the animation set of a plane. Prefer
+	// the group that is the natural home of the clip - the standard saloon set
+	// for the common car clips, the melee sets for fighting - and fall back to
+	// the first group that declares the id.
+	static const AssocGroupId preferred[] = {
+		ASSOCGRP_STDCARANIMS, ASSOCGRP_MELEE_1, ASSOCGRP_KICK_STD,
+		ASSOCGRP_COLT45, ASSOCGRP_UZI, ASSOCGRP_RIFLE, ASSOCGRP_SHOTGUNBAD,
+		ASSOCGRP_BIKEV, ASSOCGRP_BIKES, ASSOCGRP_BUDDY, ASSOCGRP_VANCARANIMS,
+	};
+	for(int p = 0; p < (int)ARRAY_SIZE(preferred); p++){
+		const AnimAssocDefinition *def = &ms_aAnimAssocDefinitions[preferred[p]];
+		if(def->numDescs <= 0 || def->animDescs == nil)
+			continue;
+		int index = animId - def->animDescs[0].animId;
+		if(index >= 0 && index < def->numDescs && def->animDescs[index].animId == animId)
+			return preferred[p];
+	}
+	for(int i = 0; i < NUM_ANIM_ASSOC_GROUPS; i++){
 		const AnimAssocDefinition *def = &ms_aAnimAssocDefinitions[i];
 		if(def->numDescs <= 0 || def->animDescs == nil)
 			continue;
@@ -1399,9 +1415,6 @@ CAnimManager::ReadAnimAssociationDefinitions(void)
 void
 CAnimManager::LoadAnimFiles(void)
 {
-	// Only the SA dictionaries are used now: the ped animation set has no VC
-	// path, so loading the native VC ped.ifp would just create an unused block.
-	LoadAnimFile("ANIM\\PED.IFP");
 #ifdef CUSTOM_MODELS
 	// The group definitions that live in data/animgrp.dat have to be in place
 	// before the banks are named against them.

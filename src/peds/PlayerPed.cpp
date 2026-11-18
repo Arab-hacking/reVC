@@ -1812,10 +1812,11 @@ CPlayerPed::ProcessControl(void)
 
 					} else {
 						m_pMyVehicle->m_nGettingOutFlags |= CAR_DOOR_FLAG_LF;
-						if (m_pMyVehicle->bLowVehicle)
-							rollDoorAssoc = CAnimManager::AddAnimation(GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_CAR_ROLLDOOR);
-						else
-							rollDoorAssoc = CAnimManager::AddAnimation(GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_CAR_ROLLDOOR);
+						{
+							CVehicleModelInfo *rollModel = (CVehicleModelInfo*)CModelInfo::GetModelInfo(m_pMyVehicle->GetModelIndex());
+							AssocGroupId rollGroup = rollModel ? rollModel->GetAnimGroup() : ASSOCGRP_STDCARANIMS;
+							rollDoorAssoc = CAnimManager::AddAnimation(GetClump(), rollGroup, ANIM_ID_CAR_ROLLDOOR);
+						}
 
 						if (rollDoorAssoc)
 							rollDoorAssoc->SetFinishCallback(PedAnimDoorCloseRollingCB, this);

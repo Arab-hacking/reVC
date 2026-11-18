@@ -4311,7 +4311,10 @@ CPed::DriveVehicle(void)
 			if (m_pMyVehicle->IsBoat() && !(m_pMyVehicle->m_pHandlingData->m_nModelFlags & VEHICLE_HANDLING_MODEL_SIT_IN_BOAT))
 				CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_DRIVE_BOAT_BACK, 4.0f);
 			else
-				CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_CAR_LB, 4.0f);
+			{
+				CVehicleModelInfo *lbModel = (CVehicleModelInfo*)CModelInfo::GetModelInfo(m_pMyVehicle->GetModelIndex());
+				CAnimManager::BlendAnimation(GetClump(), lbModel ? lbModel->GetAnimGroup() : ASSOCGRP_STDCARANIMS, ANIM_ID_CAR_LB, 4.0f);
+			}
 		}
 	}
 }

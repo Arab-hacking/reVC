@@ -32,6 +32,19 @@
 #include "GameLogic.h"
 #include "Streaming.h"
 
+// The set a vehicle's occupants animate through, taken from its model so the
+// entry, the exit and the door work all agree on it.
+static AssocGroupId
+GetVehicleAnimGroup(CVehicle *veh)
+{
+	if(veh == nil)
+		return ASSOCGRP_STDCARANIMS;
+	CVehicleModelInfo *mi = (CVehicleModelInfo*)CModelInfo::GetModelInfo(veh->GetModelIndex());
+	if(mi == nil)
+		return ASSOCGRP_STDCARANIMS;
+	return mi->GetAnimGroup();
+}
+
 CVector vecPedCarDoorAnimOffset;
 CVector vecPedCarDoorLoAnimOffset;
 CVector vecPedVanRearDoorAnimOffset;
@@ -2498,24 +2511,21 @@ CPed::PedAnimAlignCB(CAnimBlendAssociation *animAssoc, void *arg)
 			ped->PedAnimDoorOpenCB(nil, ped);
 			return;
 		}
+		// The body of the car decides which set the occupant climbs through: a
+		// bus and a van have their own step, a lowrider sits lower than a
+		// saloon. Everything comes from the model so the entry and the exit of
+		// the same car agree.
+		CVehicleModelInfo *carModel = (CVehicleModelInfo*)CModelInfo::GetModelInfo(veh->GetModelIndex());
+		AssocGroupId carAnimGroup = carModel ? carModel->GetAnimGroup() : ASSOCGRP_STDCARANIMS;
 		if (enterDoor != DOOR_FRONT_LEFT && enterDoor != DOOR_REAR_LEFT) {
-			if (itsVan) {
+			if (itsVan)
 				ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), ASSOCGRP_VANCARANIMS, ANIM_ID_CAR_GETIN_RHS_1);
-			} else if (itsBus) {
-				ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), ASSOCGRP_COACHCARANIMS, ANIM_ID_CAR_GETIN_LHS_0);
-			} else if (itsLow) {
-				ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_CAR_GETIN_RHS_0);
-			} else {
-				ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_CAR_GETIN_RHS_0);
-			}
+			else
+				ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), carAnimGroup, ANIM_ID_CAR_GETIN_RHS_0);
 		} else if (itsVan) {
 			ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), ASSOCGRP_VANCARANIMS, ANIM_ID_CAR_GETIN_LHS_1);
-		} else if (itsBus) {
-			ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), ASSOCGRP_COACHCARANIMS, ANIM_ID_CAR_GETIN_LHS_0);
-		} else if (itsLow) {
-			ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_CAR_GETIN_LHS_0);
 		} else {
-			ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_CAR_GETIN_LHS_0);
+			ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), carAnimGroup, ANIM_ID_CAR_GETIN_LHS_0);
 		}
 		if(!ContinueVehicleEntryWithAnimation(ped, PedAnimGetInCB, "get in"))
 			return;
@@ -2529,7 +2539,7 @@ CPed::PedAnimAlignCB(CAnimBlendAssociation *animAssoc, void *arg)
 			} else if (itsBus) {
 				ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), ASSOCGRP_COACHCARANIMS, ANIM_ID_CAR_OPEN_LHS);
 			} else {
-				ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_CAR_OPEN_RHS);
+				ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), GetVehicleAnimGroup(veh), ANIM_ID_CAR_OPEN_RHS);
 			}
 		} else if (itsVan) {
 			ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), ASSOCGRP_VANCARANIMS, ANIM_ID_CAR_OPEN_LHS_1);
@@ -2543,7 +2553,7 @@ CPed::PedAnimAlignCB(CAnimBlendAssociation *animAssoc, void *arg)
 					&& veh->pDriver->CharCreatedBy != MISSION_CHAR
 					&& veh->pDriver->m_nPedState == PED_DRIVING) {
 
-					ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_CAR_OPEN_LHS);
+					ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), GetVehicleAnimGroup(veh), ANIM_ID_CAR_OPEN_LHS);
 					if(!ContinueVehicleEntryWithAnimation(ped, PedAnimGetInCB, "get in"))
 						return;
 
@@ -2564,21 +2574,21 @@ CPed::PedAnimAlignCB(CAnimBlendAssociation *animAssoc, void *arg)
 				}
 			}
 			if (veh->IsOpenTopCar() && !veh->pDriver && ped->m_objective == OBJECTIVE_ENTER_CAR_AS_DRIVER) {
-				ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_CAR_GETIN_LHS_0);
+				ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), GetVehicleAnimGroup(veh), ANIM_ID_CAR_GETIN_LHS_0);
 				if(!ContinueVehicleEntryWithAnimation(ped, PedAnimGetInCB, "get in"))
 					return;
 				return;
 			}
-			ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_CAR_OPEN_LHS);
+			ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), GetVehicleAnimGroup(veh), ANIM_ID_CAR_OPEN_LHS);
 		}
 		if(!ContinueVehicleEntryWithAnimation(ped, PedAnimDoorOpenCB, "open door"))
 			return;
 
 	} else {
 		if (enterDoor != DOOR_FRONT_LEFT && enterDoor != DOOR_REAR_LEFT)
-			ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_CAR_DOORLOCKED_RHS);
+			ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), GetVehicleAnimGroup(veh), ANIM_ID_CAR_DOORLOCKED_RHS);
 		else
-			ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_CAR_DOORLOCKED_LHS);
+			ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), GetVehicleAnimGroup(veh), ANIM_ID_CAR_DOORLOCKED_LHS);
 
 		ped->bCancelEnteringCar = true;
 		if(!ContinueVehicleEntryWithAnimation(ped, PedAnimDoorOpenCB, "open door"))
@@ -2688,9 +2698,9 @@ CPed::PedAnimDoorOpenCB(CAnimBlendAssociation* animAssoc, void* arg)
 			} else if (isBus) {
 				ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), ASSOCGRP_COACHCARANIMS, ANIM_ID_CAR_GETIN_LHS_0);
 			} else if (isLow) {
-				ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_CAR_GETIN_LHS_0);
+				ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), GetVehicleAnimGroup(veh), ANIM_ID_CAR_GETIN_LHS_0);
 			} else {
-				ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_CAR_GETIN_LHS_0);
+				ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), GetVehicleAnimGroup(veh), ANIM_ID_CAR_GETIN_LHS_0);
 			}
 		} else {
 			if (veh->IsBike()) {
@@ -2700,9 +2710,9 @@ CPed::PedAnimDoorOpenCB(CAnimBlendAssociation* animAssoc, void* arg)
 			} else if (isBus) {
 				ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), ASSOCGRP_COACHCARANIMS, ANIM_ID_CAR_GETIN_LHS_0);
 			} else if (isLow) {
-				ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_CAR_GETIN_RHS_0);
+				ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), GetVehicleAnimGroup(veh), ANIM_ID_CAR_GETIN_RHS_0);
 			} else {
-				ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_CAR_GETIN_RHS_0);
+				ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), GetVehicleAnimGroup(veh), ANIM_ID_CAR_GETIN_RHS_0);
 			}
 
 			if (ped->m_vehDoor == CAR_DOOR_RF && pedInSeat && veh->IsAutomobile())
@@ -2735,9 +2745,9 @@ CPed::PedAnimDoorOpenCB(CAnimBlendAssociation* animAssoc, void* arg)
 					pedToDragOut = nil;
 				} else {
 					if (isLow)
-						ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_CAR_PULLOUT_RHS);
+						ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), GetVehicleAnimGroup(veh), ANIM_ID_CAR_PULLOUT_RHS);
 					else
-						ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_CAR_PULLOUT_RHS);
+						ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), GetVehicleAnimGroup(veh), ANIM_ID_CAR_PULLOUT_RHS);
 
 					if(!ContinueVehicleEntryWithAnimation(ped, PedAnimPullPedOutCB, "pull occupant out"))
 						return;
@@ -2759,9 +2769,9 @@ CPed::PedAnimDoorOpenCB(CAnimBlendAssociation* animAssoc, void* arg)
 				}
 			} else {
 				if (isLow)
-					ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_CAR_GETIN_RHS_0);
+					ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), GetVehicleAnimGroup(veh), ANIM_ID_CAR_GETIN_RHS_0);
 				else
-					ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_CAR_GETIN_RHS_0);
+					ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), GetVehicleAnimGroup(veh), ANIM_ID_CAR_GETIN_RHS_0);
 
 				if(!ContinueVehicleEntryWithAnimation(ped, PedAnimGetInCB, "get in"))
 					return;
@@ -2773,18 +2783,18 @@ CPed::PedAnimDoorOpenCB(CAnimBlendAssociation* animAssoc, void* arg)
 				pedToDragOut = nil;
 			} else {
 				if (isLow)
-					ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_CAR_PULLOUT_LHS);
+					ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), GetVehicleAnimGroup(veh), ANIM_ID_CAR_PULLOUT_LHS);
 				else
-					ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_CAR_PULLOUT_LHS);
+					ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), GetVehicleAnimGroup(veh), ANIM_ID_CAR_PULLOUT_LHS);
 					
 				if(!ContinueVehicleEntryWithAnimation(ped, PedAnimPullPedOutCB, "pull occupant out"))
 					return;
 			}
 		} else {
 			if (isLow)
-				ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_CAR_GETIN_LHS_0);
+				ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), GetVehicleAnimGroup(veh), ANIM_ID_CAR_GETIN_LHS_0);
 			else
-				ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_CAR_GETIN_LHS_0);
+				ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), GetVehicleAnimGroup(veh), ANIM_ID_CAR_GETIN_LHS_0);
 
 			if(!ContinueVehicleEntryWithAnimation(ped, PedAnimGetInCB, "get in"))
 				return;
@@ -2875,16 +2885,16 @@ CPed::PedAnimPullPedOutCB(CAnimBlendAssociation* animAssoc, void* arg)
 				if (veh->IsBike())
 					ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), ((CBike*)veh)->m_bikeAnimType, ANIM_ID_CAR_GETIN_LHS_0);
 				else if (isLow)
-					ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_CAR_GETIN_LHS_0);
+					ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), GetVehicleAnimGroup(veh), ANIM_ID_CAR_GETIN_LHS_0);
 				else
-					ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_CAR_GETIN_LHS_0);
+					ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), GetVehicleAnimGroup(veh), ANIM_ID_CAR_GETIN_LHS_0);
 			} else {
 				if (veh->IsBike())
 					ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), ((CBike*)veh)->m_bikeAnimType, ANIM_ID_CAR_GETIN_RHS_0);
 				else if (isLow)
-					ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_CAR_GETIN_RHS_0);
+					ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), GetVehicleAnimGroup(veh), ANIM_ID_CAR_GETIN_RHS_0);
 				else
-					ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_CAR_GETIN_RHS_0);
+					ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), GetVehicleAnimGroup(veh), ANIM_ID_CAR_GETIN_RHS_0);
 			}
 			if(!ContinueVehicleEntryWithAnimation(ped, PedAnimGetInCB, "get in"))
 				return;
@@ -3030,16 +3040,16 @@ CPed::PedAnimGetInCB(CAnimBlendAssociation *animAssoc, void *arg)
 			if (isVan) {
 				ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), ASSOCGRP_VANCARANIMS, ANIM_ID_CAR_CLOSEDOOR_RHS_1);
 			} else if (isLow) {
-				ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_CAR_CLOSEDOOR_RHS_0);
+				ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), GetVehicleAnimGroup(veh), ANIM_ID_CAR_CLOSEDOOR_RHS_0);
 			} else {
-				ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_CAR_CLOSEDOOR_RHS_0);
+				ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), GetVehicleAnimGroup(veh), ANIM_ID_CAR_CLOSEDOOR_RHS_0);
 			}
 		} else if (isVan) {
 			ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), ASSOCGRP_VANCARANIMS, ANIM_ID_CAR_CLOSEDOOR_LHS_1);
 		} else if (isLow) {
-			ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_CAR_CLOSEDOOR_LHS_0);
+			ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), GetVehicleAnimGroup(veh), ANIM_ID_CAR_CLOSEDOOR_LHS_0);
 		} else {
-			ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_CAR_CLOSEDOOR_LHS_0);
+			ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), GetVehicleAnimGroup(veh), ANIM_ID_CAR_CLOSEDOOR_LHS_0);
 		}
 		if(!ContinueVehicleEntryWithAnimation(ped, PedAnimDoorCloseCB, "close door"))
 			return;
@@ -3122,9 +3132,9 @@ CPed::PedAnimDoorCloseCB(CAnimBlendAssociation *animAssoc, void *arg)
 				animAssoc->blendDelta = -1000.0f;
 
 			if (isLow)
-				ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_CAR_SHUFFLE_RHS_0);
+				ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), GetVehicleAnimGroup(veh), ANIM_ID_CAR_SHUFFLE_RHS_0);
 			else
-				ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_CAR_SHUFFLE_RHS_0);
+				ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), GetVehicleAnimGroup(veh), ANIM_ID_CAR_SHUFFLE_RHS_0);
 
 			if(!ContinueVehicleEntryWithAnimation(ped, PedSetInCarCB, "seat"))
 				return;
@@ -3334,16 +3344,16 @@ CPed::PedAnimStepOutCarCB(CAnimBlendAssociation* animAssoc, void* arg)
 	} else {
 		switch (door) {
 			case DOOR_FRONT_LEFT:
-				ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_CAR_CLOSE_LHS_0);
+				ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), GetVehicleAnimGroup(veh), ANIM_ID_CAR_CLOSE_LHS_0);
 				break;
 			case DOOR_FRONT_RIGHT:
-				ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_CAR_CLOSE_RHS_0);
+				ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), GetVehicleAnimGroup(veh), ANIM_ID_CAR_CLOSE_RHS_0);
 				break;
 			case DOOR_REAR_LEFT:
-				ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_CAR_CLOSE_LHS_0);
+				ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), GetVehicleAnimGroup(veh), ANIM_ID_CAR_CLOSE_LHS_0);
 				break;
 			case DOOR_REAR_RIGHT:
-				ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_CAR_CLOSE_RHS_0);
+				ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), GetVehicleAnimGroup(veh), ANIM_ID_CAR_CLOSE_RHS_0);
 				break;
 			default:
 				break;
@@ -4041,7 +4051,7 @@ CPed::SetEnterCar_AllClear(CVehicle *car, uint32 doorNode, uint32 doorFlag)
 
 	if (car->IsBoat()) {
 		if (car->m_pHandlingData->m_nModelFlags & VEHICLE_HANDLING_MODEL_SIT_IN_BOAT)
-			m_pVehicleAnim = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_CAR_SIT, 100.0f);
+			m_pVehicleAnim = CAnimManager::BlendAnimation(GetClump(), GetVehicleAnimGroup(m_pMyVehicle), ANIM_ID_CAR_SIT, 100.0f);
 		else
 			m_pVehicleAnim = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_DRIVE_BOAT, 100.0f);
 
@@ -4532,13 +4542,13 @@ CPed::SetExitCar(CVehicle *veh, uint32 wantedDoorNode)
 					case CAR_DOOR_RF:
 						if (canJumpOut) {
 							m_pVehicleAnim = CAnimManager::AddAnimation(GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_DEFAULT_CAR_ROLLOUT_LHS);
-						} else if (veh->bIsBus) {
-							m_pVehicleAnim = CAnimManager::AddAnimation(GetClump(), ASSOCGRP_COACHCARANIMS, ANIM_ID_CAR_GETOUT_LHS_0);
 						} else {
-							if (isLow)
-								m_pVehicleAnim = CAnimManager::AddAnimation(GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_CAR_GETOUT_RHS_0);
-							else
-								m_pVehicleAnim = CAnimManager::AddAnimation(GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_CAR_GETOUT_RHS_0);
+							// The model carries the set its occupants use, so a
+							// light car steps out the way a light car should and
+							// only a real coach uses the coach set.
+							CVehicleModelInfo *carModel = (CVehicleModelInfo*)CModelInfo::GetModelInfo(veh->GetModelIndex());
+							AssocGroupId exitGroup = carModel ? carModel->GetAnimGroup() : ASSOCGRP_STDCARANIMS;
+							m_pVehicleAnim = CAnimManager::AddAnimation(GetClump(), exitGroup, ANIM_ID_CAR_GETOUT_RHS_0);
 						}
 						break;
 					case CAR_DOOR_RR:
@@ -4547,9 +4557,9 @@ CPed::SetExitCar(CVehicle *veh, uint32 wantedDoorNode)
 						} else if (veh->bIsVan) {
 							m_pVehicleAnim = CAnimManager::AddAnimation(GetClump(), ASSOCGRP_VANCARANIMS, ANIM_ID_CAR_GETOUT_RHS_1);
 						} else if (isLow) {
-							m_pVehicleAnim = CAnimManager::AddAnimation(GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_CAR_GETOUT_RHS_0);
+							m_pVehicleAnim = CAnimManager::AddAnimation(GetClump(), GetVehicleAnimGroup(veh), ANIM_ID_CAR_GETOUT_RHS_0);
 						} else {
-							m_pVehicleAnim = CAnimManager::AddAnimation(GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_CAR_GETOUT_RHS_0);
+							m_pVehicleAnim = CAnimManager::AddAnimation(GetClump(), GetVehicleAnimGroup(veh), ANIM_ID_CAR_GETOUT_RHS_0);
 						}
 						break;
 					case CAR_DOOR_LF:
@@ -4559,9 +4569,9 @@ CPed::SetExitCar(CVehicle *veh, uint32 wantedDoorNode)
 							m_pVehicleAnim = CAnimManager::AddAnimation(GetClump(), ASSOCGRP_COACHCARANIMS, ANIM_ID_CAR_GETOUT_LHS_0);
 						} else {
 							if (isLow)
-								m_pVehicleAnim = CAnimManager::AddAnimation(GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_CAR_GETOUT_LHS_0);
+								m_pVehicleAnim = CAnimManager::AddAnimation(GetClump(), GetVehicleAnimGroup(veh), ANIM_ID_CAR_GETOUT_LHS_0);
 							else
-								m_pVehicleAnim = CAnimManager::AddAnimation(GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_CAR_GETOUT_LHS_0);
+								m_pVehicleAnim = CAnimManager::AddAnimation(GetClump(), GetVehicleAnimGroup(veh), ANIM_ID_CAR_GETOUT_LHS_0);
 						}
 						break;
 					case CAR_DOOR_LR:
@@ -4570,9 +4580,9 @@ CPed::SetExitCar(CVehicle *veh, uint32 wantedDoorNode)
 						} else if (veh->bIsVan) {
 							m_pVehicleAnim = CAnimManager::AddAnimation(GetClump(), ASSOCGRP_VANCARANIMS, ANIM_ID_CAR_GETOUT_LHS_1);
 						} else if (isLow) {
-							m_pVehicleAnim = CAnimManager::AddAnimation(GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_CAR_GETOUT_LHS_0);
+							m_pVehicleAnim = CAnimManager::AddAnimation(GetClump(), GetVehicleAnimGroup(veh), ANIM_ID_CAR_GETOUT_LHS_0);
 						} else {
-							m_pVehicleAnim = CAnimManager::AddAnimation(GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_CAR_GETOUT_LHS_0);
+							m_pVehicleAnim = CAnimManager::AddAnimation(GetClump(), GetVehicleAnimGroup(veh), ANIM_ID_CAR_GETOUT_LHS_0);
 						}
 						break;
 					default:
@@ -4729,9 +4739,9 @@ CPed::GetPositionToOpenCarDoor(CVehicle *veh, uint32 component, CPed *ped)
 		} else {
 			seatOffset = veh->m_pHandlingData->m_fSeatOffsetDistance;
 			if (veh->bLowVehicle) {
-				vehDoorOffset = GetPedAnimationOffset(ped, ASSOCGRP_DEFAULT, ANIM_ID_CAR_GETIN_LHS_0, vecPedCarDoorLoAnimOffset);
+				vehDoorOffset = GetPedAnimationOffset(ped, ASSOCGRP_LOWCARANIMS, ANIM_ID_CAR_GETIN_LHS_0, vecPedCarDoorLoAnimOffset);
 			} else {
-				vehDoorOffset = GetPedAnimationOffset(ped, ASSOCGRP_DEFAULT, ANIM_ID_CAR_GETIN_LHS_0, vecPedCarDoorAnimOffset);
+				vehDoorOffset = GetPedAnimationOffset(ped, ASSOCGRP_STDCARANIMS, ANIM_ID_CAR_GETIN_LHS_0, vecPedCarDoorAnimOffset);
 			}
 		}
 
@@ -4943,7 +4953,7 @@ void CPed::PedSetGetInCarPositionCB(CAnimBlendAssociation* assoc, void* arg)
 	bool rearVanDoor = pVehicle->bIsVan && (pPed->m_vehDoor == CAR_DOOR_RR || pPed->m_vehDoor == CAR_DOOR_LR);
 	CVector offset = rearVanDoor ?
 		GetPedAnimationOffset(pPed, ASSOCGRP_VANCARANIMS, ANIM_ID_CAR_GETIN_LHS_1, vecPedVanRearDoorAnimOffset) :
-		GetPedAnimationOffset(pPed, ASSOCGRP_DEFAULT, ANIM_ID_CAR_GETIN_LHS_0, vecPedCarDoorAnimOffset);
+		GetPedAnimationOffset(pPed, ASSOCGRP_STDCARANIMS, ANIM_ID_CAR_GETIN_LHS_0, vecPedCarDoorAnimOffset);
 	CVector position = Multiply3x3(mat, offset) + pPed->GetPosition();
 	CPedPlacement::FindZCoorForPed(&position);
 	pPed->SetMoveSpeed(0.0f, 0.0f, 0.0f);
@@ -5006,22 +5016,26 @@ CPed::SetAnimOffsetForEnterOrExitVehicle(void)
 		if(animBlocks[i] >= 0)
 			CAnimManager::AddAnimBlockRef(animBlocks[i]);
 
-	vecPedDraggedOutCarAnimOffset = GetAnimationLastTranslation(ASSOCGRP_DEFAULT, ANIM_ID_CAR_JACKEDLHS);
-	vecPedCarDoorAnimOffset = GetAnimationLastTranslation(ASSOCGRP_DEFAULT, ANIM_ID_CAR_GETIN_LHS_0);
-	vecPedCarDoorLoAnimOffset = GetAnimationLastTranslation(ASSOCGRP_DEFAULT, ANIM_ID_CAR_GETIN_LHS_0);
-	vecPedQuickDraggedOutCarAnimOffset = GetAnimationLastTranslation(ASSOCGRP_DEFAULT, ANIM_ID_CAR_CLOSEDOOR_LHS_0);
+	// These offsets come from the root translation of the car clips, so they
+	// have to be read out of a car set. The standard group does not declare
+	// CAR_GETIN_LHS_0 at all, which used to leave every offset at zero and put
+	// the ped at the wrong place when getting in or out.
+	vecPedDraggedOutCarAnimOffset = GetAnimationLastTranslation(ASSOCGRP_STDCARANIMS, ANIM_ID_CAR_JACKEDLHS);
+	vecPedCarDoorAnimOffset = GetAnimationLastTranslation(ASSOCGRP_STDCARANIMS, ANIM_ID_CAR_GETIN_LHS_0);
+	vecPedCarDoorLoAnimOffset = GetAnimationLastTranslation(ASSOCGRP_LOWCARANIMS, ANIM_ID_CAR_GETIN_LHS_0);
+	vecPedQuickDraggedOutCarAnimOffset = GetAnimationLastTranslation(ASSOCGRP_STDCARANIMS, ANIM_ID_CAR_CLOSEDOOR_LHS_0);
 	vecPedVanRearDoorAnimOffset = GetAnimationLastTranslation(ASSOCGRP_VANCARANIMS, ANIM_ID_CAR_GETIN_LHS_1);
-	vecPedTrainDoorAnimOffset = GetAnimationLastTranslation(ASSOCGRP_DEFAULT, ANIM_ID_IDLE);
-	vecPedStdBikeJumpRhsAnimOffset = GetAnimationLastTranslation(ASSOCGRP_STDBIKEANIMS, ANIM_ID_CAR_GETIN_LHS_0);
-	vecPedVespaBikeJumpRhsAnimOffset = GetAnimationLastTranslation(ASSOCGRP_VESPABIKEANIMS, ANIM_ID_CAR_GETIN_LHS_0);
-	vecPedHarleyBikeJumpRhsAnimOffset = GetAnimationLastTranslation(ASSOCGRP_HARLEYBIKEANIMS, ANIM_ID_CAR_GETIN_LHS_0);
-	vecPedDirtBikeJumpRhsAnimOffset = GetAnimationLastTranslation(ASSOCGRP_DIRTBIKEANIMS, ANIM_ID_CAR_GETIN_LHS_0);
+	vecPedTrainDoorAnimOffset = GetAnimationLastTranslation(ASSOCGRP_TRAINCARRANIMS, ANIM_ID_IDLE);
+	vecPedStdBikeJumpRhsAnimOffset = GetAnimationLastTranslation(ASSOCGRP_STDBIKEANIMS, ANIM_ID_CAR_GETIN_BIKE_FRONT);
+	vecPedVespaBikeJumpRhsAnimOffset = GetAnimationLastTranslation(ASSOCGRP_VESPABIKEANIMS, ANIM_ID_CAR_GETIN_BIKE_FRONT);
+	vecPedHarleyBikeJumpRhsAnimOffset = GetAnimationLastTranslation(ASSOCGRP_HARLEYBIKEANIMS, ANIM_ID_CAR_GETIN_BIKE_FRONT);
+	vecPedDirtBikeJumpRhsAnimOffset = GetAnimationLastTranslation(ASSOCGRP_DIRTBIKEANIMS, ANIM_ID_CAR_GETIN_BIKE_FRONT);
 	vecPedBikeKickAnimOffset = GetAnimationLastTranslation(ASSOCGRP_HARLEYBIKEANIMS, ANIM_ID_CAR_GETIN_BIKE_FRONT);
 
 	REVC_LOG_INFO("Car approach offsets: normal=(%.3f, %.3f, %.3f) low=(%.3f, %.3f, %.3f); VC group=%d",
 		vecPedCarDoorAnimOffset.x, vecPedCarDoorAnimOffset.y, vecPedCarDoorAnimOffset.z,
 		vecPedCarDoorLoAnimOffset.x, vecPedCarDoorLoAnimOffset.y, vecPedCarDoorLoAnimOffset.z,
-		CAnimManager::GetAnimAssociation(ASSOCGRP_DEFAULT, ANIM_ID_CAR_GETIN_LHS_0) != nil);
+		CAnimManager::GetAnimAssociation(ASSOCGRP_STDCARANIMS, ANIM_ID_CAR_GETIN_LHS_0) != nil);
 	if(vecPedCarDoorAnimOffset.MagnitudeSqr() < 0.01f)
 		REVC_LOG_WARNING("CAR_getin_LHS has no root translation: door reachability may fail");
 
@@ -5876,9 +5890,9 @@ CPed::GetLocalPositionToOpenCarDoor(CVehicle *veh, uint32 component, float seatP
 		} else {
 			seatOffset = veh->m_pHandlingData->m_fSeatOffsetDistance * seatPosMult;
 			if (veh->bLowVehicle) {
-				vehDoorOffset = GetPedAnimationOffset(ped, ASSOCGRP_DEFAULT, ANIM_ID_CAR_GETIN_LHS_0, vecPedCarDoorLoAnimOffset);
+				vehDoorOffset = GetPedAnimationOffset(ped, ASSOCGRP_LOWCARANIMS, ANIM_ID_CAR_GETIN_LHS_0, vecPedCarDoorLoAnimOffset);
 			} else {
-				vehDoorOffset = GetPedAnimationOffset(ped, ASSOCGRP_DEFAULT, ANIM_ID_CAR_GETIN_LHS_0, vecPedCarDoorAnimOffset);
+				vehDoorOffset = GetPedAnimationOffset(ped, ASSOCGRP_STDCARANIMS, ANIM_ID_CAR_GETIN_LHS_0, vecPedCarDoorAnimOffset);
 			}
 		}
 
@@ -6109,7 +6123,7 @@ CPed::AddInCarAnims(CVehicle* car, bool isDriver)
 {
 	if (car->IsBoat()) {
 		if (car->m_pHandlingData->m_nModelFlags & VEHICLE_HANDLING_MODEL_SIT_IN_BOAT) {
-			m_pVehicleAnim = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_CAR_SIT, 100.0f);
+			m_pVehicleAnim = CAnimManager::BlendAnimation(GetClump(), GetVehicleAnimGroup(m_pMyVehicle), ANIM_ID_CAR_SIT, 100.0f);
 		} else {
 			m_pVehicleAnim = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_DRIVE_BOAT, 100.0f);
 		}
@@ -6120,18 +6134,15 @@ CPed::AddInCarAnims(CVehicle* car, bool isDriver)
 			m_pVehicleAnim = CAnimManager::BlendAnimation(GetClump(), ((CBike*)car)->m_bikeAnimType, ANIM_ID_BIKE_PASSENGER, 100.0f);
 		}
 	} else {
+		// The seat pose comes from the car's own set: a lowrider has a lower
+		// one than a saloon, and the weak/pro poses are variants inside it.
+		AssocGroupId seatGroup = GetVehicleAnimGroup(car);
 		if (isDriver) {
-			if (car->bLowVehicle) {
-				m_pVehicleAnim = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_CAR_LSIT, 100.0f);
-			} else {
-				m_pVehicleAnim = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_CAR_SIT, 100.0f);
-			}
+			m_pVehicleAnim = CAnimManager::BlendAnimation(GetClump(), seatGroup,
+				car->bLowVehicle ? ANIM_ID_CAR_LSIT : ANIM_ID_CAR_SIT, 100.0f);
 		} else {
-			if (car->bLowVehicle) {
-				m_pVehicleAnim = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_CAR_SIT_PRO, 100.0f);
-			} else {
-				m_pVehicleAnim = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_CAR_SIT_WEAK, 100.0f);
-			}
+			m_pVehicleAnim = CAnimManager::BlendAnimation(GetClump(), seatGroup,
+				car->bLowVehicle ? ANIM_ID_CAR_SIT_PRO : ANIM_ID_CAR_SIT_WEAK, 100.0f);
 		}
 	}
 

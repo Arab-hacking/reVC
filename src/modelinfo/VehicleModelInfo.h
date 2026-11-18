@@ -3,6 +3,7 @@
 
 #include "ClumpModelInfo.h"
 #include "eVehicleType.h"
+#include "animation/AnimManager.h"
 
 enum {
 #ifdef SA_VEHICLE_MODELS
@@ -106,6 +107,9 @@ public:
 		int32 m_animFileIndex;
 		char *m_animFileName;
 	};
+	// The animation set this model's occupants play through. SA keeps one set
+	// per body type, so a limousine shares the truck set and a lowrider its own.
+	AssocGroupId m_animGroup;
 #ifdef SA_VEHICLE_MODELS
 	// set when the collision of this model came from inside the DFF (SA style);
 	// such a model must not get its collision replaced by the VC .col entry of
@@ -141,6 +145,11 @@ public:
 	void SetClump(RpClump *);
 	void SetAnimFile(const char *file);
 	void ConvertAnimFileIndex(void);
+	// The car animation sets differ by body type: a limousine uses the truck
+	// set, a lowrider its own, a bus the bus set. The set is a property of the
+	// model, worked out once from the model's own data, and every ped entering
+	// or leaving the car plays through it.
+	AssocGroupId GetAnimGroup(void) const { return m_animGroup; }
 	int GetAnimFileIndex(void) { return m_animFileIndex; }
 
 	static RwFrame *CollapseFramesCB(RwFrame *frame, void *data);

@@ -9031,8 +9031,11 @@ CPed::SetSolicit(uint32 time)
 		if (Abs(m_fRotationDest - m_fRotationCur) < HALFPI) {
 			m_chatTimer = CTimer::GetTimeInMilliseconds() + time;
 
-			if(!m_carInObjective->bIsVan && !m_carInObjective->bIsBus)
-				m_pVehicleAnim = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_CAR_HOOKERTALK, 4.0f);
+			if(!m_carInObjective->bIsVan && !m_carInObjective->bIsBus){
+				CVehicleModelInfo *talkModel = (CVehicleModelInfo*)CModelInfo::GetModelInfo(m_carInObjective->GetModelIndex());
+				m_pVehicleAnim = CAnimManager::BlendAnimation(GetClump(),
+					talkModel ? talkModel->GetAnimGroup() : ASSOCGRP_STDCARANIMS, ANIM_ID_CAR_HOOKERTALK, 4.0f);
+			}
 
 			SetPedState(PED_SOLICIT);
 		}

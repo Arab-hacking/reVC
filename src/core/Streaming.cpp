@@ -1059,11 +1059,16 @@ CStreaming::ConvertBufferToObject(int8 *buf, int32 streamId)
 				CAnimManager::LoadSAAnimFileFromCustom(customAnimFile);
 			}
 #endif
-			// Load the streamed data into the SA dictionary unless the custom
-			// bank already provided it.
+			// Never pour the streamed Vice City dictionary into the SA block:
+			// its clips are the old set, and mixing them in is what used to
+			// make a ped fall back to a VC animation once a block was paged
+			// in mid-game. An SA bank only ever comes from the custom archives.
 			CAnimBlock *saBlock = blockName[0] ? CAnimManager::GetAnimationBlock(blockName) : nil;
-			if(saBlock == nil || !saBlock->isLoaded)
-				CAnimManager::LoadAnimFile(stream, true, nil, blockName[0] ? blockName : nil);
+			if(saBlock == nil || !saBlock->isLoaded){
+				POP_MEMID();
+				RwStreamClose(stream, &mem);
+				return false;
+			}
 #ifdef CUSTOM_MODELS
 			CUSTOM_LOG("stream animation %d: SA block %s ready; building groups\n",
 				streamId - STREAM_OFFSET_ANIM, blockName[0] ? blockName : "(unnamed)");
