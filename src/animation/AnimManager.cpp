@@ -1198,6 +1198,25 @@ LoadAnimBankFromCustom(const char *bankName, void *context)
 // civilian styles such as woman, shopping and the gangs - in data/animgrp.dat.
 // Each block names the group and lists one clip per line until "end"; the
 // descriptor flags come from the shared table SA uses for every group.
+// The descriptor tables carry the San Andreas flag bits; the association
+// keeps the internal ones. Translating here is what lets the tables be used
+// verbatim, instead of every reader reinterpreting the bit layout.
+static int16
+SAFlagsToAssocFlags(int32 saFlags)
+{
+	int16 flags = 0;
+	if(saFlags & ANIMATION_IS_LOOPED)            flags |= ASSOC_REPEAT;
+	if(saFlags & ANIMATION_IS_BLEND_AUTO_REMOVE) flags |= ASSOC_DELETEFADEDOUT;
+	if(saFlags & ANIMATION_IS_FINISH_AUTO_REMOVE)flags |= ASSOC_FADEOUTWHENDONE;
+	if(saFlags & ANIMATION_IS_PARTIAL)           flags |= ASSOC_PARTIAL;
+	if(saFlags & ANIMATION_CAN_EXTRACT_VELOCITY) flags |= ASSOC_MOVEMENT | ASSOC_HAS_TRANSLATION;
+	if(saFlags & ANIMATION_CAN_EXTRACT_X_VELOCITY)flags |= ASSOC_HAS_X_TRANSLATION;
+	if(saFlags & ANIMATION_WALK)                 flags |= ASSOC_WALK;
+	if(saFlags & ANIMATION_DONT_ADD_TO_PARTIAL_BLEND) flags |= ASSOC_IDLE;
+	if(saFlags & ANIMATION_IS_FRONT)             flags |= ASSOC_FRONTAL;
+	return flags;
+}
+
 void
 CAnimManager::ReadAnimAssociationDefinitions(void)
 {
@@ -1375,7 +1394,7 @@ CAnimManager::CreateAnimAssocGroups(int preferredModelIndex)
 		for(j = 0; j < group->numAssociations; j++){
 			CAnimBlendAssociation *assoc = group->GetAnimation(def->animDescs[j].animId);
 			if(assoc && assoc->hierarchy)
-				assoc->flags |= def->animDescs[j].flags;
+				assoc->flags |= SAFlagsToAssocFlags(def->animDescs[j].flags);
 		}
 #ifdef CUSTOM_MODELS
 		CUSTOM_LOG("animation groups: flags applied to %s\n", def->name);
