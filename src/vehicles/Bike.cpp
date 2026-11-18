@@ -2583,7 +2583,7 @@ CBike::PlayCarHorn(void)
 void
 CBike::KnockOffRider(eWeaponType weapon, uint8 direction, CPed *ped, bool bGetBackOn)
 {
-	AnimationId anim = ANIM_ID_IDLE_TAXI;
+	AnimationId anim = ANIM_ID_KO_SHOT_FRONT_0;
 	if(ped == nil)
 		return;
 
@@ -2642,7 +2642,7 @@ CBike::KnockOffRider(eWeaponType weapon, uint8 direction, CPed *ped, bool bGetBa
 	default:
 		switch(direction){
 		case 0:
-			anim = ANIM_ID_EV_STEP;
+			anim = ANIM_ID_BIKE_FALLR;
 			ped->m_vecMoveSpeed = CVector(0.0f, 0.0f, 0.1f);
 			if(m_vecMoveSpeed.MagnitudeSqr() < SQR(0.3f))
 				ped->ApplyMoveForce(5.0f*GetUp() - 6.0f*GetForward());
@@ -2651,11 +2651,11 @@ CBike::KnockOffRider(eWeaponType weapon, uint8 direction, CPed *ped, bool bGetBa
 		case 1:
 		case 2:
 			if(m_vecMoveSpeed.MagnitudeSqr() > SQR(0.3f)){
-				anim = ANIM_ID_KO_SKID_BACK;
+				anim = ANIM_ID_KO_SPIN_R;
 				ped->m_vecMoveSpeed = 0.3f*m_vecMoveSpeed;
 				ped->ApplyMoveForce(5.0f*GetUp() + 6.0f*GetRight());
 			}else{
-				anim = ANIM_ID_KD_RIGHT;
+				anim = ANIM_ID_KD_LEFT;
 				ped->m_vecMoveSpeed = m_vecMoveSpeed;
 				ped->ApplyMoveForce(4.0f*GetUp() + 8.0f*GetRight());
 			}
@@ -2664,11 +2664,11 @@ CBike::KnockOffRider(eWeaponType weapon, uint8 direction, CPed *ped, bool bGetBa
 			break;
 		case 3:
 			if(m_vecMoveSpeed.MagnitudeSqr() > SQR(0.3f)){
-				anim = ANIM_ID_SHOT_PARTIAL;
+				anim = ANIM_ID_KO_SPIN_L;
 				ped->m_vecMoveSpeed = 0.3f*m_vecMoveSpeed;
 				ped->ApplyMoveForce(5.0f*GetUp() - 6.0f*GetRight());
 			}else{
-				anim = ANIM_ID_KO_SKID_FRONT;
+				anim = ANIM_ID_KD_RIGHT;
 				ped->m_vecMoveSpeed = m_vecMoveSpeed;
 				ped->ApplyMoveForce(4.0f*GetUp() - 8.0f*GetRight());
 			}
@@ -2680,7 +2680,7 @@ CBike::KnockOffRider(eWeaponType weapon, uint8 direction, CPed *ped, bool bGetBa
 
 	case WEAPONTYPE_DROWNING:{
 		RwRGBA color;
-		anim = ANIM_ID_FUCKU;
+		anim = ANIM_ID_FALL_FALL;
 		ped->m_vecMoveSpeed = m_vecMoveSpeed*0.2f;
 		ped->m_vecMoveSpeed.z = 0.0f;
 		ped->m_pCollidingEntity = this;
@@ -2705,10 +2705,10 @@ CBike::KnockOffRider(eWeaponType weapon, uint8 direction, CPed *ped, bool bGetBa
 			CGeneral::GetRandomNumberInRange(3.0f, 7.0f));
 		ped->m_pCollidingEntity = this;
 		switch(direction){
-		case 0: anim = ANIM_ID_KO_SPIN_L; break;
-		case 1: anim = ANIM_ID_KO_SKID_FRONT; break;
-		case 2: anim = ANIM_ID_EV_STEP; break;
-		case 3: anim = ANIM_ID_KD_RIGHT; break;
+		case 0: anim = ANIM_ID_KO_SKID_BACK; break;
+		case 1: anim = ANIM_ID_KD_RIGHT; break;
+		case 2: anim = ANIM_ID_BIKE_FALLR; break;
+		case 3: anim = ANIM_ID_KD_LEFT; break;
 		}
 		if(m_nWheelsOnGround == 0)
 			ped->bKnockedOffBike = true;
@@ -2724,10 +2724,10 @@ CBike::KnockOffRider(eWeaponType weapon, uint8 direction, CPed *ped, bool bGetBa
 			CGeneral::GetRandomNumberInRange(minForceZ, maxForceZ));
 		ped->m_pCollidingEntity = this;
 		switch(direction){
-		case 0: anim = ANIM_ID_KO_SPIN_L; break;
-		case 1: anim = ANIM_ID_KO_SKID_FRONT; break;
-		case 2: anim = ANIM_ID_KO_SPIN_R; break;
-		case 3: anim = ANIM_ID_KD_RIGHT; break;
+		case 0: anim = ANIM_ID_KO_SKID_BACK; break;
+		case 1: anim = ANIM_ID_KD_RIGHT; break;
+		case 2: anim = ANIM_ID_KO_SKID_FRONT; break;
+		case 3: anim = ANIM_ID_KD_LEFT; break;
 		}
 		ped->bKnockedOffBike = true;
 		if(ped->IsPlayer())
@@ -2742,7 +2742,7 @@ CBike::KnockOffRider(eWeaponType weapon, uint8 direction, CPed *ped, bool bGetBa
 		ped->bIsInTheAir = true;
 		ped->bIsInWater = true;
 		ped->bTouchingWater = true;
-		CAnimManager::BlendAnimation(ped->GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_FUCKU, 4.0f);
+		CAnimManager::BlendAnimation(ped->GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_FALL_FALL, 4.0f);
 	}else if(weapon != WEAPONTYPE_UNARMED){
 		if(ped->m_fHealth > 0.0f)
 			ped->SetFall(1000, anim, 0);

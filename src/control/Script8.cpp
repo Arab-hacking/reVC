@@ -346,7 +346,7 @@ int8 CRunningScript::ProcessCommands1400To1499(int32 command)
 		CollectParameters(&m_nIp, 1);
 		CPed* pPed = CPools::GetPedPool()->GetAt(ScriptParams[0]);
 		script_assert(pPed);
-		UpdateCompareFlag(RpAnimBlendClumpGetAssociation(pPed->GetClump(), ANIM_ID_FACANGER_0) != nil);
+		UpdateCompareFlag(RpAnimBlendClumpGetAssociation(pPed->GetClump(), ANIM_ID_DUCK_COWER) != nil);
 		return 0;
 	}
 	case COMMAND_CREATE_DUST_EFFECT_FOR_CUTSCENE_HELI:

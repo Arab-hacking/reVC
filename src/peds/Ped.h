@@ -680,7 +680,7 @@ public:
 	void SetLookFlag(CEntity* target, bool keepTryingToLook, bool cancelPrevious = false);
 	void SetLookFlag(float direction, bool keepTryingToLook, bool cancelPrevious = false);
 	void SetLookTimer(int time);
-	void SetDie(AnimationId anim = ANIM_ID_IDLE_TAXI, float arg1 = 4.0f, float arg2 = 0.0f);
+	void SetDie(AnimationId anim = ANIM_ID_KO_SHOT_FRONT_0, float arg1 = 4.0f, float arg2 = 0.0f);
 	void SetDead(void);
 	void ApplyHeadShot(eWeaponType weaponType, CVector pos, bool evenOnPlayer);
 	void RemoveBodyPart(PedNode nodeId, int8 direction);
@@ -1031,14 +1031,14 @@ public:
 		else if (weapon->IsFlagSet(WEAPONFLAG_GROUND_3RD))
 			return ANIM_ID_FIRE;
 		else if (kickFloorIfNone)
-			return ANIM_ID_CAR_SIT_PRO;
+			return ANIM_ID_FIGHT_1;
 		else
 			return (AnimationId)0;
 	}
 
 	static AnimationId GetPrimaryFireAnim(CWeaponInfo* weapon) {
 		if (weapon->IsFlagSet(WEAPONFLAG_ANIMDETONATE))
-			return ANIM_ID_CAR_SITP;
+			return ANIM_ID_BOMBER;
 		else
 			return ANIM_ID_FIRE;
 	}
