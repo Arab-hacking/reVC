@@ -222,6 +222,9 @@ public:
 	static const char *GetAnimName(AssocGroupId groupId, AnimationId animId);
 	static CAnimBlendAssociation *CreateAnimAssociation(AssocGroupId groupId, AnimationId animId);
 	static CAnimBlendAssociation *CreateAnimAssociation(RpClump *clump, AssocGroupId groupId, AnimationId animId);
+	// The group that owns a clip. A clip id is only meaningful inside its own
+	// group, so callers that hold an id and no group ask here.
+	static AssocGroupId GetAnimGroupForAnimation(AnimationId animId);
 	static CAnimBlendAssociation *GetAnimAssociation(AssocGroupId groupId, AnimationId animId);
 	static CAnimBlendAssociation *GetAnimAssociation(AssocGroupId groupId, const char *name);
 	static CAnimBlendAssociation *GetAnimAssociation(RpClump *clump, AssocGroupId groupId, AnimationId animId);

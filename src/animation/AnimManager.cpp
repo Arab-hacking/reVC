@@ -654,7 +654,34 @@ CAnimManager::CreateAnimAssociation(RpClump *clump, AssocGroupId groupId, Animat
 	if(clump == nil)
 		return nil;
 	CAnimBlendAssocGroup *group = GetAnimAssocGroup(clump, groupId);
-	return group ? group->CopyAnimation(animId, clump) : nil;
+	CAnimBlendAssociation *assoc = group ? group->CopyAnimation(animId, clump) : nil;
+	if(assoc == nil){
+		// Same rule as BlendAnimation: the id decides the group when the one
+		// the caller named does not declare the clip.
+		AssocGroupId owner = GetAnimGroupForAnimation(animId);
+		if(owner != groupId){
+			group = GetAnimAssocGroup(clump, owner);
+			assoc = group ? group->CopyAnimation(animId, clump) : nil;
+		}
+	}
+	return assoc;
+}
+
+AssocGroupId
+CAnimManager::GetAnimGroupForAnimation(AnimationId animId)
+{
+	// Clips are numbered from the first descriptor of their group, and the
+	// groups do not overlap, so the last group whose range starts at or before
+	// the id is the one that owns it.
+	for(int i = NUM_ANIM_ASSOC_GROUPS - 1; i >= 0; i--){
+		const AnimAssocDefinition *def = &ms_aAnimAssocDefinitions[i];
+		if(def->numDescs <= 0 || def->animDescs == nil)
+			continue;
+		int index = animId - def->animDescs[0].animId;
+		if(index >= 0 && index < def->numDescs && def->animDescs[index].animId == animId)
+			return (AssocGroupId)i;
+	}
+	return ASSOCGRP_DEFAULT;
 }
 
 CAnimBlendAssociation*
@@ -708,6 +735,7 @@ CAnimManager::GetAnimHierarchyForOffset(RpClump *clump, AssocGroupId groupId, An
 			FindSAAnimationHierarchy(groupId, def->animNames[index], block) : nil;
 		return IsAnimationCompatibleWithClump(clump, hier) ? hier : nil;
 	}
+	return nil;
 }
 
 CAnimBlendAssociation*
@@ -789,8 +817,20 @@ CAnimManager::BlendAnimation(RpClump *clump, AssocGroupId groupId, AnimationId a
 	if(clumpData == nil)
 		return nil;
 	CAnimBlendAssociation *requested = GetAnimAssociation(clump, groupId, animId);
-	if(requested == nil)
-		return nil;
+	if(requested == nil){
+		// Game logic asks for clips by id and usually names the standard group,
+		// but a clip only exists in the group that declares it: car door, melee
+		// and bike clips are all outside the standard range. Ask the group that
+		// owns the id before giving up, and keep that group for the new
+		// association so it is found again next time.
+		AssocGroupId owner = GetAnimGroupForAnimation(animId);
+		if(owner == groupId)
+			return nil;
+		requested = GetAnimAssociation(clump, owner, animId);
+		if(requested == nil)
+			return nil;
+		groupId = owner;
+	}
 	bool isMovement = requested->IsMovement();
 	bool isPartial = requested->IsPartial();
 	CAnimBlendLink *link, *next;
@@ -1856,6 +1896,9 @@ CAnimManager::LoadAnimFile_ANP23(RwStream *stream, const char *ident, bool compr
 		RwStreamRead(stream, aname, sizeof(aname));
 		aname[23] = '\0';
 		hier->SetName(aname);
+#ifdef CUSTOM_MODELS
+		CUSTOM_LOG("ANP%c %s: clip %d is %s\n", ident[3], animBlock->name, j, aname);
+#endif
 
 		uint32 numSeq;
 		RwStreamRead(stream, &numSeq, sizeof(numSeq));

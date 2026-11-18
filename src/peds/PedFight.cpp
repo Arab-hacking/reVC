@@ -1209,7 +1209,7 @@ CPed::StartFightAttack(uint8 buttonPressure)
 	m_fightButtonPressure = 0;
 
 	if (m_curFightMove > FIGHTMOVE_NULL && m_curFightMove != FIGHTMOVE_IDLE) {
-		animAssoc = CAnimManager::BlendAnimation(GetClump(), m_curFightMove < FIGHTMOVE_MELEE1 ? ASSOCGRP_DEFAULT : weaponInfo->m_AnimToPlay,
+		animAssoc = CAnimManager::BlendAnimation(GetClump(), m_curFightMove < FIGHTMOVE_MELEE1 ? tFightMoves[m_curFightMove].animGroup : weaponInfo->m_AnimToPlay,
 			tFightMoves[m_curFightMove].animId, 8.0f);
 		if(!animAssoc){ EndFight(ENDFIGHT_FAST); return; }
 
@@ -1622,7 +1622,7 @@ CPed::Fight(void)
 
 					m_lastFightMove = m_curFightMove;
 					// Notice that it increases fight move index, because we're in combo!
-					animAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_DEFAULT, tFightMoves[++m_curFightMove].animId, 8.0f);
+					animAssoc = CAnimManager::BlendAnimation(GetClump(), tFightMoves[m_curFightMove + 1].animGroup, tFightMoves[++m_curFightMove].animId, 8.0f);
 					if(!animAssoc){ EndFight(ENDFIGHT_FAST); return; }
 					animAssoc->SetFinishCallback(FinishFightMoveCB, this);
 					animAssoc->SetCurrentTime(0.1f * animAssoc->hierarchy->totalLength);
@@ -1647,7 +1647,7 @@ CPed::Fight(void)
 
 		if (m_curFightMove != FIGHTMOVE_IDLE) {
 
-			animAssoc = CAnimManager::BlendAnimation(GetClump(), m_curFightMove < FIGHTMOVE_MELEE1 ? ASSOCGRP_DEFAULT : weaponInfo->m_AnimToPlay,
+			animAssoc = CAnimManager::BlendAnimation(GetClump(), m_curFightMove < FIGHTMOVE_MELEE1 ? tFightMoves[m_curFightMove].animGroup : weaponInfo->m_AnimToPlay,
 				tFightMoves[m_curFightMove].animId, 8.0f);
 			if(!animAssoc){ EndFight(ENDFIGHT_FAST); return; }
 
@@ -1703,7 +1703,7 @@ CPed::Fight(void)
 			animAssoc->blendDelta = 4.0f;
 			animAssoc->SetRun();
 			} else {
-				animAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_DEFAULT, tFightMoves[m_curFightMove].animId, 32.0f);
+				animAssoc = CAnimManager::BlendAnimation(GetClump(), tFightMoves[m_curFightMove].animGroup, tFightMoves[m_curFightMove].animId, 32.0f);
 			}
 			if(!animAssoc){ EndFight(ENDFIGHT_FAST); return; }
 			animAssoc->SetFinishCallback(FinishFightMoveCB, this);
@@ -2474,6 +2474,10 @@ CPed::LoadFightData(void)
 		tFightMoves[moveId].extendReachMultiplier = extendReachMultiplier;
 		tFightMoves[moveId].damage = damage;
 		tFightMoves[moveId].flags = flags;
+		// The built-in table names San Andreas ids, so the group that owns the
+		// id is the one to play through; the lookup below overrides it when the
+		// data file names a clip of its own.
+		tFightMoves[moveId].animGroup = CAnimManager::GetAnimGroupForAnimation(tFightMoves[moveId].animId);
 
 		switch (hitLevel) {
 			case 'G':
@@ -2497,11 +2501,27 @@ CPed::LoadFightData(void)
 
 		if (strcmp(animName, "default") != 0) {
 			if (strcmp(animName, "null") != 0) {
-				animAssoc = CAnimManager::GetAnimAssociation(ASSOCGRP_DEFAULT, animName);
-				if(animAssoc)
+				// fistfite.dat names Vice City clips. The San Andreas melee
+				// clips only exist in the melee groups, so look there first and
+				// keep the group that owns the clip.
+				static const AssocGroupId meleeGroups[] = {
+					ASSOCGRP_MELEE_1, ASSOCGRP_MELEE_2, ASSOCGRP_MELEE_3,
+					ASSOCGRP_MELEE_4, ASSOCGRP_KICK_STD
+				};
+				animAssoc = nil;
+				for (int g = 0; g < (int)ARRAY_SIZE(meleeGroups) && animAssoc == nil; g++)
+					animAssoc = CAnimManager::GetAnimAssociation(meleeGroups[g], animName);
+				if (animAssoc) {
 					tFightMoves[moveId].animId = (AnimationId)animAssoc->animId;
-				else
-					debug("Fight data: missing standard animation %s; keeping the built-in move mapping\n", animName);
+					tFightMoves[moveId].animGroup = (AssocGroupId)animAssoc->groupId;
+				} else {
+					animAssoc = CAnimManager::GetAnimAssociation(ASSOCGRP_DEFAULT, animName);
+					if (animAssoc) {
+						tFightMoves[moveId].animId = (AnimationId)animAssoc->animId;
+						tFightMoves[moveId].animGroup = ASSOCGRP_DEFAULT;
+					} else
+						debug("Fight data: missing standard animation %s; keeping the built-in move mapping\n", animName);
+				}
 			} else {
 				tFightMoves[moveId].animId = ANIM_ID_WALK;
 			}

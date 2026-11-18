@@ -94,6 +94,10 @@ struct FightMove
 	uint8 hitLevel; // FightMoveHitLevel
 	uint8 damage;
 	uint8 flags;
+	// The SA melee clips live in their own groups (melee_1..4, kick_std), not
+	// in the standard ped set, so the group a clip was found in travels with
+	// the move and is the one used to play it.
+	AssocGroupId animGroup;
 };
 
 // TODO: This is eFightState on mobile.
