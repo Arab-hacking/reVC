@@ -21,7 +21,7 @@ struct tHandlingData
 
 	float m_fMass;				// 1.0 to 50000.0
 	float m_fMassRecip;			// 1.0 / m_fMass, derived
-	float m_fTurnMass;
+	float m_fTurnMass;	// SA column, or derived from the VC collision box
 	float m_fDragMult;
 	CVector m_vecCentreOfMass;	// 1.0 to 50000.0
 	uint8 m_nPercentSubmerged;	// 10 to 120, above 100 the vehicle sinks
@@ -131,6 +131,11 @@ struct tHandlingData
 	eVehicleLightsSize m_nFrontLights;
 	eVehicleLightsSize m_nRearLights;
 	uint8 m_nAnimGroup;
+
+	// Vice City records carry the collision box instead of a drag multiplier
+	// and a turn mass. It is kept so ConvertVCDataToGameUnits() can solve the
+	// VC drag curve; SA loads leave it at zero.
+	CVector m_vecVCDimension;
 
 };
 

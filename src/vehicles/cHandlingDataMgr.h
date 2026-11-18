@@ -30,6 +30,7 @@ public:
 	void LoadHandlingData(void);
 	int32 FindExactWord(const char *word, const char *names, uint32 entrySize, uint32 numEntries);
 	void ConvertDataToGameUnits(tHandlingData *handling);
+	void ConvertVCDataToGameUnits(tHandlingData *handling);
 	void ConvertBikeDataToGameUnits(tBikeHandlingData *handling);
 	int32 GetHandlingId(const char *name);
 	bool HasRearWheelDrive(uint32 handlingId) { return GetVehiclePointer(handlingId)->m_Transmission.m_nDriveType != 'F'; }
