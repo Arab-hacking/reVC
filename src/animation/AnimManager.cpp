@@ -1869,6 +1869,16 @@ HasNewSAAnimation(CAnimBlendAssocGroup *saGroup, int groupId, const AnimAssocDef
 	return false;
 }
 
+#ifdef CUSTOM_MODELS
+static void
+LoadAnimBankFromCustom(const char *bankName, void *context)
+{
+	char filename[64];
+	snprintf(filename, sizeof(filename), "ANIM\\%s.IFP", bankName);
+	CAnimManager::LoadSAAnimFileFromCustom(filename);
+}
+#endif
+
 void
 CAnimManager::LoadAnimFiles(void)
 {
@@ -1876,47 +1886,11 @@ CAnimManager::LoadAnimFiles(void)
 	// path, so loading the native VC ped.ifp would just create an unused block.
 	LoadAnimFile("ANIM\\PED.IFP");
 #ifdef CUSTOM_MODELS
-	// SA splits fighting, weapon, style, car and bike clips across IFP banks.
-	// Load optional banks so peds never need to borrow hierarchies from a VC
-	// skeleton.
-	static const char *saSupportAnimFiles[] = {
-		"ANIM\\MELEE_1.IFP",
-		"ANIM\\FIGHT_E.IFP",
-		"ANIM\\BBBAT_1.IFP",
-		"ANIM\\GCLUB_1.IFP",
-		"ANIM\\KNIFE_1.IFP",
-		"ANIM\\CSAW_1.IFP",
-		"ANIM\\CHAINSAW.IFP",
-		// VC's weapon groups (including python and buddy) have matching
-		// compact SA dictionaries. Merely loading ped.ifp cannot fill them.
-		"ANIM\\PYTHON.IFP",
-		"ANIM\\COLT45.IFP",
-		"ANIM\\SHOTGUN.IFP",
-		"ANIM\\BUDDY.IFP",
-		"ANIM\\TEC.IFP",
-		"ANIM\\UZI.IFP",
-		"ANIM\\RIFLE.IFP",
-		"ANIM\\M60.IFP",
-		"ANIM\\SNIPER.IFP",
-		"ANIM\\GRENADE.IFP",
-		"ANIM\\FLAME.IFP",
-		"ANIM\\SUNBATHE.IFP",
-		"ANIM\\FAT.IFP",
-		"ANIM\\STDCARAMIMS.IFP",
-		"ANIM\\LOWCARAMIMS.IFP",
-		"ANIM\\VANCARANIMS.IFP",
-		"ANIM\\COACHCARANIMS.IFP",
-		"ANIM\\SPORTBIKEANIMS.IFP",
-		"ANIM\\VESPABIKEANIMS.IFP",
-		"ANIM\\HARLEYBIKEANIMS.IFP",
-		"ANIM\\DIRTBIKEANIMS.IFP",
-		"ANIM\\BIKES.IFP",
-		"ANIM\\BIKEV.IFP",
-		"ANIM\\BIKEH.IFP",
-		"ANIM\\BIKED.IFP"
-	};
-	for(int i = 0; i < ARRAY_SIZE(saSupportAnimFiles); i++)
-		LoadSAAnimFileFromCustom(saSupportAnimFiles[i]);
+	// SA splits fighting, weapon, style, car and bike clips across many IFP
+	// banks and an SA installation ships all of them in custom/zip/mesh/*.bpc.
+	// Load what the archives actually contain: a fixed file list silently
+	// drops every bank it does not name.
+	CCustomModels::ForEachAnimBank(LoadAnimBankFromCustom, nil);
 #endif
 	ms_aAnimAssocGroups = new CAnimBlendAssocGroup[NUM_ANIM_ASSOC_GROUPS];
 	CreateAnimAssocGroups();

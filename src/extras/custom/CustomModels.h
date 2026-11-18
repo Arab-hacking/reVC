@@ -115,6 +115,13 @@ public:
 	// Serve an .ifp from custom/anim/; VC banks still use native assets.
 	static bool LoadAnimFileFromCustom(const char *filename, std::vector<uint8> &out);
 
+	// Every animation bank the custom archives provide, in index order. An SA
+	// installation keeps its whole movement set in custom/zip/mesh/*.bpc, so
+	// the dictionary has to be built from what is actually there rather than
+	// from a fixed list of file names.
+	typedef void (*AnimBankCallback)(const char *bankName, void *context);
+	static void ForEachAnimBank(AnimBankCallback callback, void *context);
+
 	// Loose world files are only scanned under custom/data/maps/. The one
 	// permitted ZIP also supplies data/peds.ide, data/vehicles.ide and
 	// data/weapons.ide. The optional active_ipl.txt selects IPLs; IDEs are

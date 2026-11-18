@@ -4754,6 +4754,19 @@ CCustomModels::LoadAnimFileFromCustom(const char *filename, std::vector<uint8> &
 	return true;
 }
 
+void
+CCustomModels::ForEachAnimBank(AnimBankCallback callback, void *context)
+{
+	if(callback == nil)
+		return;
+	EnsureInitialised();
+	if(!customActive || customAnims.empty())
+		return;
+	for(std::map<std::string, CustomSource>::const_iterator it = customAnims.begin();
+	    it != customAnims.end(); ++it)
+		callback(it->first.c_str(), context);
+}
+
 static RwTexture*
 CreateProceduralVehicleFallbackTex(const char *name, bool specDot)
 {
