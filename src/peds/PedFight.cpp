@@ -1197,10 +1197,10 @@ CPed::StartFightAttack(uint8 buttonPressure)
 			fightIdleAssoc = CAnimManager::BlendAnimation(GetClump(), weaponInfo->m_AnimToPlay, GetFightIdleWithMeleeAnim(weaponInfo), 1000.0f);
 			fightWithWeapon = true;
 		} else {
-			fightIdleAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_FIGHT_IDLE, 1000.0f);
+			fightIdleAssoc = CAnimManager::BlendAnimation(GetClump(), CAnimManager::GetAnimGroupForAnimation(ANIM_ID_FIGHT_IDLE), ANIM_ID_FIGHT_IDLE, 1000.0f);
 		}
 	} else {
-		fightIdleAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_FIGHT_IDLE, 1000.0f);
+		fightIdleAssoc = CAnimManager::BlendAnimation(GetClump(), CAnimManager::GetAnimGroupForAnimation(ANIM_ID_FIGHT_IDLE), ANIM_ID_FIGHT_IDLE, 1000.0f);
 	}
 	m_lastFightMove = FIGHTMOVE_IDLE;
 	m_curFightMove = IsPlayer() ? ChooseAttackPlayer(buttonPressure, fightWithWeapon) : ChooseAttackAI(buttonPressure, fightWithWeapon);
@@ -1478,10 +1478,10 @@ CPed::StartFightDefend(uint8 direction, uint8 hitLevel, uint8 unk)
 					if (GetFightIdleWithMeleeAnim(weaponInfo)) {
 						fightIdleAssoc = CAnimManager::AddAnimation(GetClump(), weaponInfo->m_AnimToPlay, GetFightIdleWithMeleeAnim(weaponInfo));
 					} else {
-						fightIdleAssoc = CAnimManager::AddAnimation(GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_FIGHT_IDLE);
+						fightIdleAssoc = CAnimManager::AddAnimation(GetClump(), CAnimManager::GetAnimGroupForAnimation(ANIM_ID_FIGHT_IDLE), ANIM_ID_FIGHT_IDLE);
 					}
 				} else {
-					fightIdleAssoc = CAnimManager::AddAnimation(GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_FIGHT_IDLE);
+					fightIdleAssoc = CAnimManager::AddAnimation(GetClump(), CAnimManager::GetAnimGroupForAnimation(ANIM_ID_FIGHT_IDLE), ANIM_ID_FIGHT_IDLE);
 				}
 				if(fightIdleAssoc)
 					fightIdleAssoc->blendAmount = 1.0f;
@@ -3645,7 +3645,7 @@ CPed::CollideWithPed(CPed *collideWith)
 							} else {
 								SetLookFlag(collideWith, false);
 								TurnBody();
-								animAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_FIGHT_1, 8.0f);
+								animAssoc = CAnimManager::BlendAnimation(GetClump(), CAnimManager::GetAnimGroupForAnimation(ANIM_ID_FIGHT_1), ANIM_ID_FIGHT_1, 8.0f);
 								if (animAssoc)
 									animAssoc->flags |= ASSOC_FADEOUTWHENDONE;
 								m_nPedStateTimer = CTimer::GetTimeInMilliseconds() + 2000;

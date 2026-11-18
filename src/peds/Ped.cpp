@@ -8478,7 +8478,7 @@ CPed::SetWaitState(eWaitState state, void *time)
 			break;
 		}
 		case WAITSTATE_LANCESITTING:
-			CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_PARKSIT_M_IN, 4.0f);
+			CAnimManager::BlendAnimation(GetClump(), CAnimManager::GetAnimGroupForAnimation(ANIM_ID_PARKSIT_M_IN), ANIM_ID_PARKSIT_M_IN, 4.0f);
 			break;
 		case WAITSTATE_PLAYANIM_HANDSUP_SIMPLE:
 			animAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_HANDSUP, 4.0f);

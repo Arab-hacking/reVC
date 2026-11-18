@@ -1588,7 +1588,7 @@ CPed::ProcessObjective(void)
 							if (reloadAssoc || !m_pedInObjective->IsPedShootable()) {
 								if (reloadAssoc &&
 									(!reloadAssoc->IsRunning() || reloadAssoc->GetProgress() > 0.8f)) {
-									CAnimBlendAssociation *punchAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_FIGHT_1, 8.0f);
+									CAnimBlendAssociation *punchAssoc = CAnimManager::BlendAnimation(GetClump(), CAnimManager::GetAnimGroupForAnimation(ANIM_ID_FIGHT_1), ANIM_ID_FIGHT_1, 8.0f);
 									if (punchAssoc)
 										punchAssoc->flags |= ASSOC_DELETEFADEDOUT | ASSOC_FADEOUTWHENDONE;
 									CVector2D offset(distWithTarget.x, distWithTarget.y);
@@ -3062,7 +3062,7 @@ CPed::PedShuffle(void)
 	if (m_pMyVehicle->pPassengers[0] == this) {
 		CPed *driver = m_pMyVehicle->pDriver;
 		if (!driver || driver->m_objective == OBJECTIVE_LEAVE_CAR) {
-			m_pVehicleAnim = CAnimManager::AddAnimation(GetClump(), ASSOCGRP_DEFAULT, m_pMyVehicle->bLowVehicle ? ANIM_ID_CAR_SHUFFLE_RHS_0 : ANIM_ID_CAR_SHUFFLE_RHS_0);
+			m_pVehicleAnim = CAnimManager::AddAnimation(GetClump(), GetVehicleAnimGroup(m_pMyVehicle), ANIM_ID_CAR_SHUFFLE_RHS_0);
 			if(!m_pVehicleAnim){
 				if(IsPlayer())
 					REVC_LOG_WARNING("Vehicle entry: missing passenger-to-driver shuffle animation (ped model=%d, vehicle model=%d)",
@@ -3798,9 +3798,9 @@ CPed::SetCarJack_AllClear(CVehicle* car, uint32 doorNode, uint32 doorFlag)
 		bUsesCollision = false;
 
 		if (m_vehDoor == CAR_DOOR_LF || m_vehDoor == CAR_DOOR_LR)
-			m_pVehicleAnim = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_DEFAULT, zDiff > 4.4f ? ANIM_ID_CAR_ALIGNHI_LHS : ANIM_ID_CAR_ALIGN_LHS, 4.0f);
+			m_pVehicleAnim = CAnimManager::BlendAnimation(GetClump(), GetVehicleAnimGroup(m_pMyVehicle), zDiff > 4.4f ? ANIM_ID_CAR_ALIGNHI_LHS : ANIM_ID_CAR_ALIGN_LHS, 4.0f);
 		else
-			m_pVehicleAnim = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_DEFAULT, zDiff > 4.4f ? ANIM_ID_CAR_ALIGNHI_RHS : ANIM_ID_CAR_ALIGN_RHS, 4.0f);
+			m_pVehicleAnim = CAnimManager::BlendAnimation(GetClump(), GetVehicleAnimGroup(m_pMyVehicle), zDiff > 4.4f ? ANIM_ID_CAR_ALIGNHI_RHS : ANIM_ID_CAR_ALIGN_RHS, 4.0f);
 
 		if(m_pVehicleAnim)
 			m_pVehicleAnim->SetFinishCallback(PedAnimAlignCB, this);
@@ -4064,9 +4064,9 @@ CPed::SetEnterCar_AllClear(CVehicle *car, uint32 doorNode, uint32 doorFlag)
 
 	} else {
 		if (m_vehDoor == CAR_DOOR_LF || m_vehDoor == CAR_DOOR_LR)
-			m_pVehicleAnim = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_DEFAULT, zDiff > 4.4f ? ANIM_ID_CAR_ALIGNHI_RHS : ANIM_ID_CAR_ALIGN_RHS, 4.0f);
+			m_pVehicleAnim = CAnimManager::BlendAnimation(GetClump(), GetVehicleAnimGroup(m_pMyVehicle), zDiff > 4.4f ? ANIM_ID_CAR_ALIGNHI_RHS : ANIM_ID_CAR_ALIGN_RHS, 4.0f);
 		else
-			m_pVehicleAnim = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_DEFAULT, zDiff > 4.4f ? ANIM_ID_CAR_ALIGNHI_LHS : ANIM_ID_CAR_ALIGN_LHS, 4.0f);
+			m_pVehicleAnim = CAnimManager::BlendAnimation(GetClump(), GetVehicleAnimGroup(m_pMyVehicle), zDiff > 4.4f ? ANIM_ID_CAR_ALIGNHI_LHS : ANIM_ID_CAR_ALIGN_LHS, 4.0f);
 		if(!ContinueVehicleEntryWithAnimation(this, PedAnimAlignCB, "align"))
 			return;
 	}
