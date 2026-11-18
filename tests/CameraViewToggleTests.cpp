@@ -25,18 +25,17 @@ static void TestToggleOnlyOnFoot()
 // impossible, which is exactly what the vanilla peek suffered from.
 static void TestApplicationSurvivesWalking()
 {
-    assert(CanApplyPedestrianFirstPersonView(true, false, true, false, false, true));
+    assert(CanApplyPedestrianFirstPersonView(true, false, true, false, true));
     // A script may keep the first person cam alive without looking at the player.
-    assert(CanApplyPedestrianFirstPersonView(false, true, true, false, false, true));
-    assert(!CanApplyPedestrianFirstPersonView(false, false, true, false, false, true));
+    assert(CanApplyPedestrianFirstPersonView(false, true, true, false, true));
+    assert(!CanApplyPedestrianFirstPersonView(false, false, true, false, true));
     // Leaving the pedestrian target blocks the view.
-    assert(!CanApplyPedestrianFirstPersonView(true, false, false, false, false, true));
-    assert(!CanApplyPedestrianFirstPersonView(true, false, true, true, false, true));
-    assert(!CanApplyPedestrianFirstPersonView(true, false, true, false, true, true));
+    assert(!CanApplyPedestrianFirstPersonView(true, false, false, false, true));
+    assert(!CanApplyPedestrianFirstPersonView(true, false, true, true, true));
     // A dead or otherwise out of control ped must not stay in first person.
-    assert(!CanApplyPedestrianFirstPersonView(true, false, true, false, false, false));
-    // The script escape hatches override the widescreen and free cam refusals.
-    assert(CanApplyPedestrianFirstPersonView(true, true, true, true, true, true));
+    assert(!CanApplyPedestrianFirstPersonView(true, false, true, false, false));
+    // The script escape hatch overrides the widescreen refusal.
+    assert(CanApplyPedestrianFirstPersonView(true, true, true, true, true));
 }
 
 // The preference is what the player asked for, the effective view is that
@@ -46,12 +45,12 @@ static void TestPreferenceOutlivesBlockedFrames()
 {
     bool preference = true;
     // Blocked frame, for example the ped briefly airborne in noclip.
-    bool effective = preference && CanApplyPedestrianFirstPersonView(true, false, true, false, false, false);
+    bool effective = preference && CanApplyPedestrianFirstPersonView(true, false, true, false, false);
     assert(!effective);
     // Once the ped is controllable again the preference applies on its own,
     // with no second key press.
     assert(preference);
-    effective = preference && CanApplyPedestrianFirstPersonView(true, false, true, false, false, true);
+    effective = preference && CanApplyPedestrianFirstPersonView(true, false, true, false, true);
     assert(effective);
 }
 

@@ -88,11 +88,28 @@ CAnimBlendAssocGroup::CopyAnimation(uint32 id, RpClump *clump)
 	if(anim == nil || clump == nil || !RpAnimBlendClumpIsInitialized(clump))
 		return nil;
 	if(!CAnimManager::IsAnimationCompatibleWithClump(clump, anim->hierarchy)){
+		// A partial SA animation set may not ship the car banks at all, in which
+		// case the group holds clips borrowed from the native VC ped.ifp. Accept
+		// those as a last resort instead of refusing the animation outright,
+		// which used to make car entry animations impossible. The association is
+		// rebound to the target skeleton below, so the reference bank may differ.
+		bool borrowedFromVCBank = false;
 #ifdef CUSTOM_MODELS
-		CUSTOM_LOG("anim assoc: rejecting group %d anim %d: wrong animation bank for target skeleton\n",
+		int blockIndex = CAnimManager::GetAnimationBlockForHierarchy(anim->hierarchy);
+		borrowedFromVCBank = blockIndex >= 0 &&
+			!CAnimManager::IsSAAnimationBlock(CAnimManager::GetAnimationBlock(blockIndex));
+#endif
+		if(!borrowedFromVCBank){
+#ifdef CUSTOM_MODELS
+			CUSTOM_LOG("anim assoc: rejecting group %d anim %d: wrong animation bank for target skeleton\n",
+				groupId, id);
+#endif
+			return nil;
+		}
+#ifdef CUSTOM_MODELS
+		CUSTOM_LOG("anim assoc: group %d anim %d borrowed from the VC bank for an SA skeleton\n",
 			groupId, id);
 #endif
-		return nil;
 	}
 #ifdef CUSTOM_MODELS
 	CAnimBlendClumpData *clumpData = *RPANIMBLENDCLUMPDATA(clump);

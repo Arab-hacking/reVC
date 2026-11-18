@@ -1025,17 +1025,11 @@ CCamera::CamControl(void)
 			// only cleared on a real context change, never because one of the
 			// per-frame checks below happened to be false for a single frame.
 			// It survives walking, the look-around timeout and target presses.
-#ifdef FREE_CAM
-			const bool freeCamActive = CCamera::bFreeCam;
-#else
-			const bool freeCamActive = false;
-#endif
 			const bool canApplySticky =
 				CanApplyPedestrianFirstPersonView(m_bLookingAtPlayer,
 				                                  m_bEnable1rstPersonCamCntrlsScript,
 				                                  pTargetEntity->IsPed(),
 				                                  m_WideScreenOn,
-				                                  freeCamActive,
 				                                  FindPlayerPed() != nil &&
 				                                  FindPlayerPed()->IsPedInControl());
 			const bool stickyFirstPerson = m_bPlayerFirstPersonView && canApplySticky;
@@ -1049,7 +1043,6 @@ CCamera::CamControl(void)
 					(m_bLookingAtPlayer || m_bEnable1rstPersonCamCntrlsScript) ? (
 					!pTargetEntity->IsPed() ? "target not ped" :
 					(m_WideScreenOn && !m_bEnable1rstPersonCamCntrlsScript) ? "widescreen" :
-					(freeCamActive && !m_bEnable1rstPersonCamCntrlsScript) ? "freecam" :
 					"ped not in control") : "camera not on player";
 				if(block != lastBlock && *block){
 					REVC_LOG_INFO("First person view blocked: %s (state=%d air=%d speed=%.2f)",
@@ -1065,7 +1058,7 @@ CCamera::CamControl(void)
 			   (!m_WideScreenOn || m_bEnable1rstPersonCamCntrlsScript) &&
 			   (!Cams[0].Using3rdPersonMouseCam() || stickyFirstPerson)
 #ifdef FREE_CAM
-			   && (!CCamera::bFreeCam || m_bEnable1rstPersonCamCntrlsScript)
+			   && (!CCamera::bFreeCam || m_bEnable1rstPersonCamCntrlsScript || stickyFirstPerson)
 #endif
 			   ){
 				if(stickyFirstPerson){

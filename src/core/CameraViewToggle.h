@@ -42,12 +42,18 @@ inline bool CanTogglePedestrianCameraView(bool hasPlayerPed, bool inVehicle,
 }
 
 // Whether the player's first person preference may be applied this frame.
-// Note that walking is deliberately absent: the sticky view must survive
-// movement, unlike the vanilla look-around peek.
+// Note what is deliberately absent:
+//
+//   * walking, because the sticky view must survive movement, unlike the
+//     vanilla look-around peek;
+//   * the free cam toggle, because that is the "mouse look" preference the
+//     player picked in the menu and it is on by default for many setups.
+//     Refusing first person because of it made the toggle look broken, since
+//     the vanilla check reads the same flag only to keep the *look-around peek*
+//     from fighting the mouse camera.
 inline bool CanApplyPedestrianFirstPersonView(bool cameraLookingAtPlayer,
                                               bool scriptFirstPersonEnabled,
                                               bool targetIsPed, bool wideScreenOn,
-                                              bool freeCamActive,
                                               bool pedInControl)
 {
     if(!cameraLookingAtPlayer && !scriptFirstPersonEnabled)
@@ -55,8 +61,6 @@ inline bool CanApplyPedestrianFirstPersonView(bool cameraLookingAtPlayer,
     if(!targetIsPed)
         return false;
     if(wideScreenOn && !scriptFirstPersonEnabled)
-        return false;
-    if(freeCamActive && !scriptFirstPersonEnabled)
         return false;
     if(!pedInControl)
         return false;

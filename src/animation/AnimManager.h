@@ -141,6 +141,8 @@ public:
 	// A hierarchy may only be used with a clump from the same animation bank.
 	// A null clump denotes an explicitly native-VC-only lookup.
 	static bool IsAnimationCompatibleWithClump(RpClump *clump, CAnimBlendHierarchy *hierarchy);
+	// True when the block is one of the parallel "sa_" dictionaries.
+	static bool IsSAAnimationBlock(const CAnimBlock *block);
 	// Vehicle approach offsets must come from the ped's own bank. The native
 	// lookup also works without a VC reference clump.
 	static CAnimBlendHierarchy *GetAnimHierarchyForOffset(AssocGroupId groupId, AnimationId animId);

@@ -1263,8 +1263,8 @@ CAnimManager::GetAnimName(AssocGroupId groupId, AnimationId animId)
 	return def->animNames[index];
 }
 
-static bool
-IsSAAnimationBlock(const CAnimBlock *block)
+bool
+CAnimManager::IsSAAnimationBlock(const CAnimBlock *block)
 {
 	return block && block->isLoaded && strncasecmp(block->name, "sa_", 3) == 0;
 }
@@ -1879,6 +1879,18 @@ FindSAAnimationHierarchy(int groupId, const char *name, CAnimBlock *primaryBlock
 	const char *styleFallback = GetSAStyleFallbackName(groupId, name);
 	if(styleFallback && primaryBlock && primaryBlock->isLoaded){
 		hier = CAnimManager::GetAnimation(styleFallback, primaryBlock);
+		if(hier)
+			return hier;
+	}
+	// SA splits the car clips out of ped.ifp into STDCARAMIMS / LOWCARAMIMS /
+	// VANCARANIMS / COACHCARANIMS. A partial SA animation set may ship none of
+	// them, which left every car entry animation unresolvable while the native
+	// VC ped.ifp still carries those clips. Fall back to the VC bank for this
+	// one lookup; the association binds to the target skeleton afterwards, so a
+	// mismatched reference bank is fine here.
+	CAnimBlock *vcBlock = CAnimManager::GetAnimationBlock("ped");
+	if(vcBlock && vcBlock->isLoaded && vcBlock != primaryBlock){
+		hier = CAnimManager::GetAnimation(name, vcBlock);
 		if(hier)
 			return hier;
 	}
