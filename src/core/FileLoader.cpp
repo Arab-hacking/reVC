@@ -1756,9 +1756,24 @@ CFileLoader::LoadPedObject(const char *line)
 	mi->SetColModel(&CTempColModels::ms_colModelPed1);
 	mi->m_pedType = CPedType::FindPedType(pedType);
 	mi->m_pedStatType = CPedStats::GetPedStatType(pedStats);
+	// Vice City IDEs name a few groups after the VC table; the San Andreas
+	// table calls the same group something else.
+	static const struct { const char *vc, *sa; } groupAliases[] = {
+		{ "man", "default" },
+		{ "van", "vancaranims" },
+		{ "coach", "coachcaranims" },
+		{ "bikes", "bikes" },
+	};
+	const char *wantedGroup = animGroup;
+	for(int i = 0; i < (int)ARRAY_SIZE(groupAliases); i++){
+		if(strcasecmp(animGroup, groupAliases[i].vc) == 0){
+			wantedGroup = groupAliases[i].sa;
+			break;
+		}
+	}
 	for(animGroupId = 0; animGroupId < NUM_ANIM_ASSOC_GROUPS; animGroupId++){
 		const char *groupName = CAnimManager::GetAnimGroupName((AssocGroupId)animGroupId);
-		if(groupName && strcmp(animGroup, groupName) == 0)
+		if(groupName && strcasecmp(wantedGroup, groupName) == 0)
 			break;
 	}
 	// An IDE naming a group the tables do not define falls back to the
