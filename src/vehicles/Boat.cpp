@@ -1563,19 +1563,19 @@ CBoat::DoDriveByShootings(void)
 
 	if(lookingLeft || lookingRight){
 		if(lookingLeft){
-			anim = RpAnimBlendClumpGetAssociation(pDriver->GetClump(), ANIM_STD_CAR_DRIVEBY_RIGHT);
+			anim = RpAnimBlendClumpGetAssociation(pDriver->GetClump(), ANIM_ID_DEFAULT_CAR_ROLLOUT_RHS);
 			if(anim)
 				anim->blendDelta = -1000.0f;
-			anim = RpAnimBlendClumpGetAssociation(pDriver->GetClump(), ANIM_STD_CAR_DRIVEBY_LEFT);
+			anim = RpAnimBlendClumpGetAssociation(pDriver->GetClump(), ANIM_ID_DEFAULT_CAR_ROLLOUT_LHS);
 			if(anim == nil || anim->blendDelta < 0.0f)
-				anim = CAnimManager::AddAnimation(pDriver->GetClump(), ASSOCGRP_STD, ANIM_STD_CAR_DRIVEBY_LEFT);
+				anim = CAnimManager::AddAnimation(pDriver->GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_DEFAULT_CAR_ROLLOUT_LHS);
 		}else if(pDriver->m_pMyVehicle->pPassengers[0] == nil || TheCamera.Cams[TheCamera.ActiveCam].Mode == CCam::MODE_1STPERSON){
-			anim = RpAnimBlendClumpGetAssociation(pDriver->GetClump(), ANIM_STD_CAR_DRIVEBY_LEFT);
+			anim = RpAnimBlendClumpGetAssociation(pDriver->GetClump(), ANIM_ID_DEFAULT_CAR_ROLLOUT_LHS);
 			if(anim)
 				anim->blendDelta = -1000.0f;
-			anim = RpAnimBlendClumpGetAssociation(pDriver->GetClump(), ANIM_STD_CAR_DRIVEBY_RIGHT);
+			anim = RpAnimBlendClumpGetAssociation(pDriver->GetClump(), ANIM_ID_DEFAULT_CAR_ROLLOUT_RHS);
 			if(anim == nil || anim->blendDelta < 0.0f)
-				anim = CAnimManager::AddAnimation(pDriver->GetClump(), ASSOCGRP_STD, ANIM_STD_CAR_DRIVEBY_RIGHT);
+				anim = CAnimManager::AddAnimation(pDriver->GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_DEFAULT_CAR_ROLLOUT_RHS);
 		}
 
 		if (!anim || !anim->IsRunning()) {
@@ -1586,10 +1586,10 @@ CBoat::DoDriveByShootings(void)
 		}
 	}else{
 		weapon->Reload();
-		anim = RpAnimBlendClumpGetAssociation(pDriver->GetClump(), ANIM_STD_CAR_DRIVEBY_LEFT);
+		anim = RpAnimBlendClumpGetAssociation(pDriver->GetClump(), ANIM_ID_DEFAULT_CAR_ROLLOUT_LHS);
 		if(anim)
 			anim->blendDelta = -1000.0f;
-		anim = RpAnimBlendClumpGetAssociation(pDriver->GetClump(), ANIM_STD_CAR_DRIVEBY_RIGHT);
+		anim = RpAnimBlendClumpGetAssociation(pDriver->GetClump(), ANIM_ID_DEFAULT_CAR_ROLLOUT_RHS);
 		if(anim)
 			anim->blendDelta = -1000.0f;
 	}

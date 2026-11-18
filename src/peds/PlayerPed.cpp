@@ -250,7 +250,7 @@ CPlayerPed::MakeChangesForNewWeapon(int32 slot)
 void
 CPlayerPed::ReApplyMoveAnims(void)
 {
-	static AnimationId moveAnims[] = { ANIM_STD_WALK, ANIM_STD_RUN, ANIM_STD_RUNFAST, ANIM_STD_IDLE, ANIM_STD_STARTWALK };
+	static AnimationId moveAnims[] = { ANIM_ID_WALK, ANIM_ID_RUN, ANIM_ID_SPRINT, ANIM_ID_IDLE, ANIM_ID_ROADCROSS };
 
 	for(int i = 0; i < ARRAY_SIZE(moveAnims); i++) {
 		CAnimBlendAssociation *curMoveAssoc = RpAnimBlendClumpGetAssociation(GetClump(), moveAnims[i]);
@@ -321,13 +321,13 @@ CPlayerPed::SetRealMoveAnim(void)
 	// A custom style can omit movement clips. Fall back to the *same*
 	// skeleton's standard group, never to the other skeleton's dictionary.
 	AssocGroupId moveGroup = m_animGroup;
-	if(!CAnimManager::GetAnimAssociation(GetClump(), moveGroup, ANIM_STD_WALK) ||
-	   !CAnimManager::GetAnimAssociation(GetClump(), moveGroup, ANIM_STD_RUN) ||
-	   !CAnimManager::GetAnimAssociation(GetClump(), moveGroup, ANIM_STD_IDLE))
-		moveGroup = ASSOCGRP_STD;
-	if(!CAnimManager::GetAnimAssociation(GetClump(), moveGroup, ANIM_STD_WALK) ||
-	   !CAnimManager::GetAnimAssociation(GetClump(), moveGroup, ANIM_STD_RUN) ||
-	   !CAnimManager::GetAnimAssociation(GetClump(), moveGroup, ANIM_STD_IDLE)){
+	if(!CAnimManager::GetAnimAssociation(GetClump(), moveGroup, ANIM_ID_WALK) ||
+	   !CAnimManager::GetAnimAssociation(GetClump(), moveGroup, ANIM_ID_RUN) ||
+	   !CAnimManager::GetAnimAssociation(GetClump(), moveGroup, ANIM_ID_IDLE))
+		moveGroup = ASSOCGRP_DEFAULT;
+	if(!CAnimManager::GetAnimAssociation(GetClump(), moveGroup, ANIM_ID_WALK) ||
+	   !CAnimManager::GetAnimAssociation(GetClump(), moveGroup, ANIM_ID_RUN) ||
+	   !CAnimManager::GetAnimAssociation(GetClump(), moveGroup, ANIM_ID_IDLE)){
 		static int lastMissingModel = -1;
 		static int lastMissingGroup = -1;
 		if(lastMissingModel != GetModelIndex() || lastMissingGroup != moveGroup){
@@ -339,16 +339,16 @@ CPlayerPed::SetRealMoveAnim(void)
 		return;
 	}
 	if(m_nMoveState == PEDMOVE_SPRINT &&
-	   !CAnimManager::GetAnimAssociation(GetClump(), moveGroup, ANIM_STD_RUNFAST))
+	   !CAnimManager::GetAnimAssociation(GetClump(), moveGroup, ANIM_ID_SPRINT))
 		m_nMoveState = PEDMOVE_RUN;
 
-	CAnimBlendAssociation *curWalkAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_WALK);
-	CAnimBlendAssociation *curRunAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_RUN);
-	CAnimBlendAssociation *curSprintAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_RUNFAST);
-	CAnimBlendAssociation *curWalkStartAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_STARTWALK);
-	CAnimBlendAssociation *curIdleAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_IDLE);
-	CAnimBlendAssociation *curRunStopAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_RUNSTOP1);
-	CAnimBlendAssociation *curRunStopRAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_RUNSTOP2);
+	CAnimBlendAssociation *curWalkAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_ID_WALK);
+	CAnimBlendAssociation *curRunAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_ID_RUN);
+	CAnimBlendAssociation *curSprintAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_ID_SPRINT);
+	CAnimBlendAssociation *curWalkStartAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_ID_ROADCROSS);
+	CAnimBlendAssociation *curIdleAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_ID_IDLE);
+	CAnimBlendAssociation *curRunStopAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_ID_WALK_START);
+	CAnimBlendAssociation *curRunStopRAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_ID_RUN_STOP);
 	if (bResetWalkAnims) {
 		if (curWalkAssoc)
 			curWalkAssoc->SetCurrentTime(0.0f);
@@ -360,11 +360,11 @@ CPlayerPed::SetRealMoveAnim(void)
 	}
 
 	if (!curIdleAssoc)
-		curIdleAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_IDLE_TIRED);
+		curIdleAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_ID_IDLE_HBHB_1);
 	if (!curIdleAssoc)
-		curIdleAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_FIGHT_IDLE);
+		curIdleAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_ID_FIGHTSHF);
 	if (!curIdleAssoc)
-		curIdleAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_MELEE_IDLE_FIGHTMODE);
+		curIdleAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_ID_FIGHT_IDLE);
 
 	if (!((curRunStopAssoc && curRunStopAssoc->IsRunning()) || (curRunStopRAssoc && curRunStopRAssoc->IsRunning()))) {
 
@@ -383,13 +383,13 @@ CPlayerPed::SetRealMoveAnim(void)
 			if (!curIdleAssoc) {
 				if (m_fCurrentStamina < 0.0f && !bIsAimingGun && !CWorld::TestSphereAgainstWorld(GetPosition(), 0.5f,
 						nil, true, false, false, false, false, false)) {
-					curIdleAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_IDLE_TIRED, 8.0f);
+					curIdleAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_IDLE_HBHB_1, 8.0f);
 
 				} else {
-					curIdleAssoc = CAnimManager::BlendAnimation(GetClump(), moveGroup, ANIM_STD_IDLE, 8.0f);
+					curIdleAssoc = CAnimManager::BlendAnimation(GetClump(), moveGroup, ANIM_ID_IDLE, 8.0f);
 				}
 				if(!curIdleAssoc)
-					curIdleAssoc = CAnimManager::BlendAnimation(GetClump(), moveGroup, ANIM_STD_IDLE, 8.0f);
+					curIdleAssoc = CAnimManager::BlendAnimation(GetClump(), moveGroup, ANIM_ID_IDLE, 8.0f);
 				if(!curIdleAssoc)
 					return;
 				m_nWaitTimer = CTimer::GetTimeInMilliseconds() + CGeneral::GetRandomNumberInRange(2500, 4000);
@@ -401,29 +401,29 @@ CPlayerPed::SetRealMoveAnim(void)
 			if (!curIdleAssoc) {
 				if (m_fCurrentStamina < 0.0f && !bIsAimingGun && !CWorld::TestSphereAgainstWorld(GetPosition(), 0.5f,
 						nil, true, false, false, false, false, false)) {
-					curIdleAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_IDLE_TIRED, 4.0f);
+					curIdleAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_IDLE_HBHB_1, 4.0f);
 					
 				} else {
-					curIdleAssoc = CAnimManager::BlendAnimation(GetClump(), moveGroup, ANIM_STD_IDLE, 4.0f);
+					curIdleAssoc = CAnimManager::BlendAnimation(GetClump(), moveGroup, ANIM_ID_IDLE, 4.0f);
 				}
 				if(!curIdleAssoc)
-					curIdleAssoc = CAnimManager::BlendAnimation(GetClump(), moveGroup, ANIM_STD_IDLE, 4.0f);
+					curIdleAssoc = CAnimManager::BlendAnimation(GetClump(), moveGroup, ANIM_ID_IDLE, 4.0f);
 				if(!curIdleAssoc)
 					return;
 
 				m_nWaitTimer = CTimer::GetTimeInMilliseconds() + CGeneral::GetRandomNumberInRange(2500, 4000);
 			}
 
-			if ((m_fCurrentStamina > 0.0f || bIsAimingGun) && curIdleAssoc->animId == ANIM_STD_IDLE_TIRED) {
-				CAnimManager::BlendAnimation(GetClump(), moveGroup, ANIM_STD_IDLE, 4.0f);
+			if ((m_fCurrentStamina > 0.0f || bIsAimingGun) && curIdleAssoc->animId == ANIM_ID_IDLE_HBHB_1) {
+				CAnimManager::BlendAnimation(GetClump(), moveGroup, ANIM_ID_IDLE, 4.0f);
 
 			} else if (m_nPedState != PED_FIGHT) {
-				if (m_fCurrentStamina < 0.0f && !bIsAimingGun && curIdleAssoc->animId != ANIM_STD_IDLE_TIRED
+				if (m_fCurrentStamina < 0.0f && !bIsAimingGun && curIdleAssoc->animId != ANIM_ID_IDLE_HBHB_1
 					&& !CWorld::TestSphereAgainstWorld(GetPosition(), 0.5f, nil, true, false, false, false, false, false)) {
-					CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_IDLE_TIRED, 4.0f);
+					CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_IDLE_HBHB_1, 4.0f);
 
-				} else if (curIdleAssoc->animId != ANIM_STD_IDLE) {
-					CAnimManager::BlendAnimation(GetClump(), moveGroup, ANIM_STD_IDLE, 4.0f);
+				} else if (curIdleAssoc->animId != ANIM_ID_IDLE) {
+					CAnimManager::BlendAnimation(GetClump(), moveGroup, ANIM_ID_IDLE, 4.0f);
 				}
 			}
 			m_nMoveState = PEDMOVE_STILL;
@@ -434,7 +434,7 @@ CPlayerPed::SetRealMoveAnim(void)
 					curWalkStartAssoc->blendAmount = 1.0f;
 					curWalkStartAssoc->blendDelta = 0.0f;
 				} else {
-					curWalkStartAssoc = CAnimManager::AddAnimation(GetClump(), moveGroup, ANIM_STD_STARTWALK);
+					curWalkStartAssoc = CAnimManager::AddAnimation(GetClump(), moveGroup, ANIM_ID_ROADCROSS);
 				}
 				if (curWalkAssoc)
 					curWalkAssoc->SetCurrentTime(0.0f);
@@ -442,10 +442,10 @@ CPlayerPed::SetRealMoveAnim(void)
 					curRunAssoc->SetCurrentTime(0.0f);
 
 				delete curIdleAssoc;
-				delete RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_IDLE_TIRED);
-				CAnimBlendAssociation *fightIdleAnim = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_FIGHT_IDLE);
+				delete RpAnimBlendClumpGetAssociation(GetClump(), ANIM_ID_IDLE_HBHB_1);
+				CAnimBlendAssociation *fightIdleAnim = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_ID_FIGHTSHF);
 				if (!fightIdleAnim)
-					fightIdleAnim = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_MELEE_IDLE_FIGHTMODE);
+					fightIdleAnim = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_ID_FIGHT_IDLE);
 				delete fightIdleAnim;
 				delete curSprintAssoc;
 
@@ -461,13 +461,13 @@ CPlayerPed::SetRealMoveAnim(void)
 				RestoreHeadingRate();
 			}
 			if (!curWalkAssoc) {
-				curWalkAssoc = CAnimManager::AddAnimation(GetClump(), moveGroup, ANIM_STD_WALK);
+				curWalkAssoc = CAnimManager::AddAnimation(GetClump(), moveGroup, ANIM_ID_WALK);
 				if(!curWalkAssoc)
 					return;
 				curWalkAssoc->blendAmount = 0.0f;
 			}
 			if (!curRunAssoc) {
-				curRunAssoc = CAnimManager::AddAnimation(GetClump(), moveGroup, ANIM_STD_RUN);
+				curRunAssoc = CAnimManager::AddAnimation(GetClump(), moveGroup, ANIM_ID_RUN);
 				if(!curRunAssoc)
 					return;
 				curRunAssoc->blendAmount = 0.0f;
@@ -496,10 +496,10 @@ CPlayerPed::SetRealMoveAnim(void)
 					if (m_fMoveSpeed < 0.4f) {
 						AnimationId runStopAnim;
 						if (curSprintAssoc->GetProgress() < 0.5) // double
-							runStopAnim = ANIM_STD_RUNSTOP1;
+							runStopAnim = ANIM_ID_WALK_START;
 						else
-							runStopAnim = ANIM_STD_RUNSTOP2;
-						CAnimBlendAssociation* newRunStopAssoc = CAnimManager::AddAnimation(GetClump(), ASSOCGRP_STD, runStopAnim);
+							runStopAnim = ANIM_ID_RUN_STOP;
+						CAnimBlendAssociation* newRunStopAssoc = CAnimManager::AddAnimation(GetClump(), ASSOCGRP_DEFAULT, runStopAnim);
 						if(newRunStopAssoc){
 							newRunStopAssoc->blendAmount = 1.0f;
 							newRunStopAssoc->SetDeleteCallback(RestoreHeadingRateCB, this);
@@ -543,7 +543,7 @@ CPlayerPed::SetRealMoveAnim(void)
 					// Transition between run-sprint
 					curWalkAssoc->blendAmount = 0.0f;
 					curRunAssoc->blendAmount = 1.0f;
-					curSprintAssoc = CAnimManager::BlendAnimation(GetClump(), moveGroup, ANIM_STD_RUNFAST, 2.0f);
+					curSprintAssoc = CAnimManager::BlendAnimation(GetClump(), moveGroup, ANIM_ID_SPRINT, 2.0f);
 				}
 				UseSprintEnergy();
 			} else {
@@ -678,14 +678,14 @@ CPlayerPed::DoesTargetHaveToBeBroken(CVector target, CWeapon *weaponUsed)
 void
 CPlayerPed::RunningLand(CPad *padUsed)
 {
-	CAnimBlendAssociation *landAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_FALL_LAND);
+	CAnimBlendAssociation *landAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_ID_PHONE_OUT);
 	if (landAssoc && landAssoc->currentTime == 0.0f && m_fMoveSpeed > 1.5f
 		&& padUsed && (padUsed->GetPedWalkLeftRight() != 0.0f || padUsed->GetPedWalkUpDown() != 0.0f)) {
 
 		landAssoc->blendDelta = -1000.0f;
 		landAssoc->flags |= ASSOC_DELETEFADEDOUT;
 
-		if (CAnimBlendAssociation *jump = CAnimManager::AddAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_JUMP_LAND))
+		if (CAnimBlendAssociation *jump = CAnimManager::AddAnimation(GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_HANDSCOWER))
 			jump->SetFinishCallback(FinishJumpCB, this);
 
 		if (m_nPedState == PED_JUMP)
@@ -1208,32 +1208,32 @@ CPlayerPed::ProcessAnimGroups(void)
 		if (m_fWalkAngle >= -DEGTORAD(130.0f) && m_fWalkAngle <= DEGTORAD(130.0f)) {
 			if (m_fWalkAngle > 0.0f) {
 				if (GetWeapon()->m_eWeaponType == WEAPONTYPE_ROCKETLAUNCHER)
-					groupToSet = ASSOCGRP_ROCKETLEFT;
+					groupToSet = ASSOCGRP_PLAYERROCKET;
 				else if (GetWeapon()->m_eWeaponType == WEAPONTYPE_CHAINSAW ||
 					GetWeapon()->m_eWeaponType == WEAPONTYPE_FLAMETHROWER ||
 					GetWeapon()->m_eWeaponType == WEAPONTYPE_MINIGUN)
-					groupToSet = ASSOCGRP_CHAINSAWLEFT;
+					groupToSet = ASSOCGRP_PLAYERCSAW;
 				else
-					groupToSet = ASSOCGRP_PLAYERLEFT;
+					groupToSet = ASSOCGRP_PLAYER;
 			} else {
 				if (GetWeapon()->m_eWeaponType == WEAPONTYPE_ROCKETLAUNCHER)
-					groupToSet = ASSOCGRP_ROCKETRIGHT;
+					groupToSet = ASSOCGRP_PLAYERROCKET;
 				else if (GetWeapon()->m_eWeaponType == WEAPONTYPE_CHAINSAW ||
 					GetWeapon()->m_eWeaponType == WEAPONTYPE_FLAMETHROWER ||
 					GetWeapon()->m_eWeaponType == WEAPONTYPE_MINIGUN)
-					groupToSet = ASSOCGRP_CHAINSAWRIGHT;
+					groupToSet = ASSOCGRP_PLAYERCSAW;
 				else
-					groupToSet = ASSOCGRP_PLAYERRIGHT;
+					groupToSet = ASSOCGRP_PLAYER;
 			}
 		} else {
 			if (GetWeapon()->m_eWeaponType == WEAPONTYPE_ROCKETLAUNCHER)
-				groupToSet = ASSOCGRP_ROCKETBACK;
+				groupToSet = ASSOCGRP_PLAYERROCKET;
 			else if (GetWeapon()->m_eWeaponType == WEAPONTYPE_CHAINSAW ||
 				GetWeapon()->m_eWeaponType == WEAPONTYPE_FLAMETHROWER ||
 				GetWeapon()->m_eWeaponType == WEAPONTYPE_MINIGUN)
-				groupToSet = ASSOCGRP_CHAINSAWBACK;
+				groupToSet = ASSOCGRP_PLAYERCSAW;
 			else
-				groupToSet = ASSOCGRP_PLAYERBACK;
+				groupToSet = ASSOCGRP_PLAYER;
 		}
 	} else
 #endif
@@ -1247,7 +1247,7 @@ CPlayerPed::ProcessAnimGroups(void)
 			else if (GetWeapon()->m_eWeaponType == WEAPONTYPE_CHAINSAW ||
 				GetWeapon()->m_eWeaponType == WEAPONTYPE_FLAMETHROWER ||
 				GetWeapon()->m_eWeaponType == WEAPONTYPE_MINIGUN)
-				groupToSet = ASSOCGRP_PLAYERCHAINSAW;
+				groupToSet = ASSOCGRP_PLAYERCSAW;
 			else if (GetWeapon()->m_eWeaponType != WEAPONTYPE_COLT45 && GetWeapon()->m_eWeaponType != WEAPONTYPE_UZI
 				// I hope this is an inlined function...
 				&& GetWeapon()->m_eWeaponType != WEAPONTYPE_PYTHON && GetWeapon()->m_eWeaponType != WEAPONTYPE_TEC9
@@ -1260,7 +1260,7 @@ CPlayerPed::ProcessAnimGroups(void)
 					groupToSet = ASSOCGRP_PLAYER2ARMED;
 				}
 			} else {
-				groupToSet = ASSOCGRP_PLAYER1ARMED;
+				groupToSet = ASSOCGRP_PLAYER;
 			}
 		}
 	}
@@ -1330,7 +1330,7 @@ CPlayerPed::ProcessPlayerWeapon(CPad *padUsed)
 					TheCamera.SetNewPlayerWeaponMode(CCam::MODE_M16_1STPERSON, 0, 0);
 
 				m_fMoveSpeed = 0.0f;
-				CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_IDLE, 1000.0f);
+				CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_IDLE, 1000.0f);
 				SetPedState(PED_SNIPER_MODE);
 				return;
 			}
@@ -1798,24 +1798,24 @@ CPlayerPed::ProcessControl(void)
 	if (m_nPedState == PED_DRIVING && m_objective != OBJECTIVE_LEAVE_CAR) {
 		if (!CReplay::IsPlayingBack() || m_pMyVehicle) {
 			if (m_pMyVehicle->IsAutomobile() && ((CAutomobile*)m_pMyVehicle)->Damage.GetDoorStatus(DOOR_FRONT_LEFT) == DOOR_STATUS_SWINGING) {
-				CAnimBlendAssociation *rollDoorAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_CAR_CLOSE_DOOR_ROLLING_LHS);
+				CAnimBlendAssociation *rollDoorAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_ID_DRIVE_BOAT_BACK);
 
-				if (m_pMyVehicle->m_nGettingOutFlags & CAR_DOOR_FLAG_LF || rollDoorAssoc || (rollDoorAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_CAR_CLOSE_DOOR_ROLLING_LO_LHS))) {
+				if (m_pMyVehicle->m_nGettingOutFlags & CAR_DOOR_FLAG_LF || rollDoorAssoc || (rollDoorAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_ID_DRIVE_L_SLOW))) {
 					if (rollDoorAssoc)
-						m_pMyVehicle->ProcessOpenDoor(CAR_DOOR_LF, ANIM_STD_CAR_CLOSE_DOOR_ROLLING_LHS, rollDoorAssoc->currentTime);
+						m_pMyVehicle->ProcessOpenDoor(CAR_DOOR_LF, ANIM_ID_DRIVE_BOAT_BACK, rollDoorAssoc->currentTime);
 
 				} else {
 					// These comparisons are wrong, they return uint16
 					if (padUsed && (padUsed->GetAccelerate() != 0.0f || padUsed->GetSteeringLeftRight() != 0.0f || padUsed->GetBrake() != 0.0f)) {
 						if (rollDoorAssoc)
-							m_pMyVehicle->ProcessOpenDoor(CAR_DOOR_LF, ANIM_STD_CAR_CLOSE_DOOR_ROLLING_LHS, rollDoorAssoc->currentTime);
+							m_pMyVehicle->ProcessOpenDoor(CAR_DOOR_LF, ANIM_ID_DRIVE_BOAT_BACK, rollDoorAssoc->currentTime);
 
 					} else {
 						m_pMyVehicle->m_nGettingOutFlags |= CAR_DOOR_FLAG_LF;
 						if (m_pMyVehicle->bLowVehicle)
-							rollDoorAssoc = CAnimManager::AddAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_CAR_CLOSE_DOOR_ROLLING_LO_LHS);
+							rollDoorAssoc = CAnimManager::AddAnimation(GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_DRIVE_L_SLOW);
 						else
-							rollDoorAssoc = CAnimManager::AddAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_CAR_CLOSE_DOOR_ROLLING_LHS);
+							rollDoorAssoc = CAnimManager::AddAnimation(GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_DRIVE_BOAT_BACK);
 
 						if (rollDoorAssoc)
 							rollDoorAssoc->SetFinishCallback(PedAnimDoorCloseRollingCB, this);
@@ -2048,11 +2048,11 @@ CPlayerPed::PlayIdleAnimations(CPad *padUsed)
 	};
 
 	const animAndGroup idleAnims[] = {
-		{ANIM_PLAYER_IDLE1, ASSOCGRP_PLAYER_IDLE},
-		{ANIM_PLAYER_IDLE2, ASSOCGRP_PLAYER_IDLE},
-		{ANIM_PLAYER_IDLE3, ASSOCGRP_PLAYER_IDLE},
-		{ANIM_PLAYER_IDLE4, ASSOCGRP_PLAYER_IDLE},
-		{ANIM_STD_XPRESS_SCRATCH, ASSOCGRP_STD},
+		{ANIM_ID_STRETCH, ASSOCGRP_PLAYIDLES},
+		{ANIM_ID_TIME, ASSOCGRP_PLAYIDLES},
+		{ANIM_ID_SHLDR, ASSOCGRP_PLAYIDLES},
+		{ANIM_ID_STRLEG, ASSOCGRP_PLAYIDLES},
+		{ANIM_ID_ABSEIL, ASSOCGRP_DEFAULT},
 	};
 
 	static int32 lastTime = 0;

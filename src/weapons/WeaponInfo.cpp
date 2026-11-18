@@ -121,7 +121,7 @@ CWeaponInfo::Initialise(void)
 		aWeaponInfo[i].m_fLifespan = 0.0f;
 		aWeaponInfo[i].m_fSpread = 0.0f;
 		aWeaponInfo[i].m_vecFireOffset = CVector(0.0f, 0.0f, 0.0f);
-		aWeaponInfo[i].m_AnimToPlay = ASSOCGRP_UNARMED;
+		aWeaponInfo[i].m_AnimToPlay = ASSOCGRP_MELEE_1;
 		aWeaponInfo[i].m_fAnimLoopStart = 0.0f;
 		aWeaponInfo[i].m_fAnimLoopEnd = 0.0f;
 		aWeaponInfo[i].m_fAnimFrameFire = 0.0f;

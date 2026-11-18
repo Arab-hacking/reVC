@@ -757,6 +757,7 @@ ScanBpcSystem(void)
 				snprintf(src.fname, sizeof(src.fname), "%s:%s", commonPath.c_str(), ent->name);
 
 				if(pass == 0 && (key == "data/config.dat" || key == "data/texdb.dat" ||
+				                 key == "data/animgrp.dat" ||
 				                 key == "data/timecyc.json" || key == "data/colorcycle.dat" ||
 				                 key == "data/water.dat" ||
 				                 key == "data/carcols.dat" || key == "data/carmods.dat" || key == "data/lods.info" ||
@@ -5127,6 +5128,7 @@ CCustomModels::ReadDataFile(const char *relpath, std::vector<uint8> &out,
 	                       strcmp(relpath, "data/water.dat") != 0 &&
 	                       strcmp(relpath, "data/carcols.dat") != 0 &&
 	                       strcmp(relpath, "data/carmods.dat") != 0 &&
+	                       strcmp(relpath, "data/animgrp.dat") != 0 &&
 #ifdef ANDROID
 	                       strcmp(relpath, "data/colorcycle.dat") != 0 &&
 #endif

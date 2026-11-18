@@ -458,13 +458,13 @@ AssocGroupId SafePedAnimGroup(const std::string &s)
     for(int id = 0; id < NUM_ANIM_ASSOC_GROUPS; id++)
         if(group == customworld::Lower(CAnimManager::GetAnimGroupName((AssocGroupId)id)))
             return (AssocGroupId)id;
-    if(group == "man" || group == "default") return ASSOCGRP_STD;
-    if(group == "fatman") return ASSOCGRP_FAT;
-    if(group == "oldman") return ASSOCGRP_OLD;
+    if(group == "man" || group == "default") return ASSOCGRP_DEFAULT;
+    if(group == "fatman") return ASSOCGRP_FATMAN;
+    if(group == "oldman") return ASSOCGRP_OLDMAN;
     if(group == "fatwoman") return ASSOCGRP_FATWOMAN;
     if(group == "jogger" || group == "jogman") return ASSOCGRP_JOGGER;
     if(group == "skater") return ASSOCGRP_SKATE;
-    return ASSOCGRP_STD;
+    return ASSOCGRP_DEFAULT;
 }
 
 bool CanAddModel(ModelInfoType type)

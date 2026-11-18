@@ -104,7 +104,7 @@ CStinger::Deploy(CPed *pPed)
 {
 	// So total number of stingers allowed at the same time is 2, each by different CCopPed.
 	if (NumOfStingerSegments < NUM_STINGER_SEGMENTS*2 && !pPed->bInVehicle && pPed->IsPedInControl()) {
-		if (!bIsDeployed && RpAnimBlendClumpGetAssociation(pPed->GetClump(), ANIM_STD_THROW_UNDER) == nil) {
+		if (!bIsDeployed && RpAnimBlendClumpGetAssociation(pPed->GetClump(), ANIM_ID_DRIVE_L) == nil) {
 			Init(pPed);
 #ifdef FIX_BUGS
 			// Above call won't set it to true no more when object pool is full
@@ -112,7 +112,7 @@ CStinger::Deploy(CPed *pPed)
 				return;
 #endif
 			pPed->SetPedState(PED_DEPLOY_STINGER);
-			CAnimManager::AddAnimation(pPed->GetClump(), ASSOCGRP_STD, ANIM_STD_THROW_UNDER);
+			CAnimManager::AddAnimation(pPed->GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_DRIVE_L);
 		}
 	}
 }
@@ -194,7 +194,7 @@ CStinger::Process()
 			&& !pOwner->bInVehicle
 			&& pOwner->GetPedState() == PED_DEPLOY_STINGER)
 		{
-			CAnimBlendAssociation *throwAnim = RpAnimBlendClumpGetAssociation(pOwner->GetClump(), ANIM_STD_THROW_UNDER);
+			CAnimBlendAssociation *throwAnim = RpAnimBlendClumpGetAssociation(pOwner->GetClump(), ANIM_ID_DRIVE_L);
 			// A custom SA bank may lack the throw clip. Deploy without waiting
 			// for a nonexistent animation instead of dereferencing it.
 			if (throwAnim && throwAnim->currentTime <= 0.39f)

@@ -152,7 +152,7 @@ static void Chunk(std::vector<uint8> &v, const char *tag, const std::vector<uint
 }
 
 static std::vector<uint8>
-MobileANI(uint32 groupVal, bool compressed, bool mixed = false, const char *clipName = "CAR_getin_LHS")
+MobileANI(uint32 groupVal, bool compressed, bool mixed = false, const char *clipName = "CAR_LB_PRO")
 {
 	std::vector<uint8> v;
 	v.insert(v.end(), "ANP3", "ANP3" + 4);
@@ -195,7 +195,7 @@ NativeANPK(void)
 	U32(info, 1); Name(info, "ped", 4);
 	Chunk(body, "INFO", info);
 	std::vector<uint8> clipName;
-	Name(clipName, "CAR_getin_LHS", 16);
+	Name(clipName, "CAR_LB_PRO", 16);
 	Chunk(body, "NAME", clipName);
 	std::vector<uint8> seqInfo;
 	U32(seqInfo, 1);
@@ -229,7 +229,7 @@ main(void)
 	CAnimManager::LoadAnimFile(&mobile, true, nil, "sa_ped");
 	CAnimBlock *sa = CAnimManager::GetAnimationBlock("sa_ped");
 	Check(sa && sa->isLoaded && sa->numAnims == 1, "mobile header with groupVal=1 loads exactly one clip");
-	CAnimBlendHierarchy *saClip = CAnimManager::GetAnimation("CAR_getin_LHS", sa);
+	CAnimBlendHierarchy *saClip = CAnimManager::GetAnimation("CAR_LB_PRO", sa);
 	Check(saClip && saClip->numSequences == 1 && saClip->sequences[0].boneTag == 0,
 		"SA bone ID and car clip name preserved");
 #ifdef ANIM_COMPRESSION
@@ -245,7 +245,7 @@ main(void)
 	TestStream floating(floatFile);
 	CAnimManager::LoadAnimFile(&floating, true, nil, "sa_ped_float");
 	CAnimBlock *saFloat = CAnimManager::GetAnimationBlock("sa_ped_float");
-	CAnimBlendHierarchy *floatClip = CAnimManager::GetAnimation("CAR_getin_LHS", saFloat);
+	CAnimBlendHierarchy *floatClip = CAnimManager::GetAnimation("CAR_LB_PRO", saFloat);
 	Check(floatClip, "ANP3 float clip loaded");
 #ifdef ANIM_COMPRESSION
 	Check(floatClip->compressed, "float frameType 2 is compressed when requested, even with exporter word 1");
@@ -259,7 +259,7 @@ main(void)
 	TestStream mixed(mixFile);
 	CAnimManager::LoadAnimFile(&mixed, true, nil, "sa_mixed");
 	CAnimBlock *saMixed = CAnimManager::GetAnimationBlock("sa_mixed");
-	CAnimBlendHierarchy *mixedClip = CAnimManager::GetAnimation("CAR_getin_LHS", saMixed);
+	CAnimBlendHierarchy *mixedClip = CAnimManager::GetAnimation("CAR_LB_PRO", saMixed);
 	Check(mixedClip && mixedClip->numSequences == 2, "mixed i16/fp32 ANP3 has two sequences");
 #ifdef ANIM_COMPRESSION
 	Check(mixedClip->compressed, "mixed ANP3 hierarchy has a consistent compressed state");
@@ -272,7 +272,7 @@ main(void)
 	TestStream uncompressed(mixFile);
 	CAnimManager::LoadAnimFile(&uncompressed, false, nil, "sa_mixed_plain");
 	CAnimBlock *plain = CAnimManager::GetAnimationBlock("sa_mixed_plain");
-	CAnimBlendHierarchy *plainClip = CAnimManager::GetAnimation("CAR_getin_LHS", plain);
+	CAnimBlendHierarchy *plainClip = CAnimManager::GetAnimation("CAR_LB_PRO", plain);
 	Check(plainClip && !plainClip->compressed &&
 		((KeyFrameTrans*)plainClip->sequences[0].GetKeyFrame(1))->translation.x == 0.5f &&
 		plainClip->sequences[1].GetKeyFrame(1)->rotation.x == 0.5f,
@@ -285,7 +285,7 @@ main(void)
 	TestStream pc(pcFile);
 	CAnimManager::LoadAnimFile(&pc, false, nil, "sa_pc");
 	CAnimBlock *pcBlock = CAnimManager::GetAnimationBlock("sa_pc");
-	CAnimBlendHierarchy *pcClip = CAnimManager::GetAnimation("CAR_getin_LHS", pcBlock);
+	CAnimBlendHierarchy *pcClip = CAnimManager::GetAnimation("CAR_LB_PRO", pcBlock);
 	Check(pcClip && ((KeyFrameTrans*)pcClip->sequences[0].GetKeyFrame(1))->translation.x == 0.5f,
 		"PC ANP3 root-size header uses its own count and reads the same frames");
 
@@ -295,7 +295,7 @@ main(void)
 	TestStream anp2(anp2File);
 	CAnimManager::LoadAnimFile(&anp2, false, nil, "sa_anp2");
 	CAnimBlock *anp2Block = CAnimManager::GetAnimationBlock("sa_anp2");
-	CAnimBlendHierarchy *anp2Clip = CAnimManager::GetAnimation("CAR_getin_LHS", anp2Block);
+	CAnimBlendHierarchy *anp2Clip = CAnimManager::GetAnimation("CAR_LB_PRO", anp2Block);
 	Check(anp2Clip && !anp2Clip->compressed &&
 		((KeyFrameTrans*)anp2Clip->sequences[0].GetKeyFrame(1))->translation.x == 0.5f,
 		"ANP2 omits ANP3 per-animation words but keeps compressed frame type 4");
@@ -304,7 +304,7 @@ main(void)
 	TestStream native(vcFile);
 	CAnimManager::LoadAnimFile(&native, true);
 	CAnimBlock *vc = CAnimManager::GetAnimationBlock("ped");
-	CAnimBlendHierarchy *nativeClip = CAnimManager::GetAnimation("CAR_getin_LHS", vc);
+	CAnimBlendHierarchy *nativeClip = CAnimManager::GetAnimation("CAR_LB_PRO", vc);
 	Check(nativeClip, "native VC clip loaded");
 #ifdef ANIM_COMPRESSION
 	nativeClip->Uncompress();
@@ -315,7 +315,7 @@ main(void)
 	// against the SA bank, never the native VC dictionary loaded above.
 	// The offset lookup resolves the standard group through sa_ped, which was
 	// loaded earlier, and must never fall through to the native VC dictionary.
-	CAnimBlendHierarchy *offsetClip = CAnimManager::GetAnimHierarchyForOffset(ASSOCGRP_STD, ANIM_STD_CAR_GET_IN_LHS);
+	CAnimBlendHierarchy *offsetClip = CAnimManager::GetAnimHierarchyForOffset(ASSOCGRP_DEFAULT, ANIM_ID_CAR_LB_PRO);
 	Check(offsetClip == saClip && offsetClip != nativeClip &&
 		((KeyFrameTrans*)offsetClip->sequences[0].GetKeyFrame(1))->translation.x == 0.5f,
 		"car-door offset reads the SA bank and ignores the native VC dictionary");
@@ -326,23 +326,23 @@ main(void)
 	Check(CAnimManager::IsAnimationCompatibleWithClump(saPed.Get(), saClip) &&
 		!CAnimManager::IsAnimationCompatibleWithClump(saPed.Get(), nativeClip),
 		"only SA bank animations are accepted");
-	Check(CAnimManager::GetAnimHierarchyForOffset(saPed.Get(), ASSOCGRP_STD, ANIM_STD_CAR_GET_IN_LHS) == saClip &&
-		CAnimManager::GetAnimHierarchyForOffset(saPed.Get(), ASSOCGRP_STD, ANIM_STD_CAR_GET_IN_LHS) != nativeClip,
+	Check(CAnimManager::GetAnimHierarchyForOffset(saPed.Get(), ASSOCGRP_DEFAULT, ANIM_ID_CAR_LB_PRO) == saClip &&
+		CAnimManager::GetAnimHierarchyForOffset(saPed.Get(), ASSOCGRP_DEFAULT, ANIM_ID_CAR_LB_PRO) != nativeClip,
 		"car-door offsets come only from the SA IFP");
 	sa->isLoaded = false;
-	Check(CAnimManager::GetAnimHierarchyForOffset(saPed.Get(), ASSOCGRP_STD, ANIM_STD_CAR_GET_IN_LHS) == nil,
+	Check(CAnimManager::GetAnimHierarchyForOffset(saPed.Get(), ASSOCGRP_DEFAULT, ANIM_ID_CAR_LB_PRO) == nil,
 		"missing SA bank never borrows native VC animation");
 	sa->isLoaded = true;
 
 	customFile = NativeANPK();
 	CAnimManager::LoadAnimFile("ANIM\\PED.IFP");
-	Check(customStreamsOpened == 0 && CAnimManager::GetAnimation("CAR_getin_LHS", vc) == nativeClip,
+	Check(customStreamsOpened == 0 && CAnimManager::GetAnimation("CAR_LB_PRO", vc) == nativeClip,
 		"a custom ANPK bank never replaces the previously loaded VC dictionary");
 	customFile = MobileANI(1, true);
 	CAnimManager::LoadSAAnimFileFromCustom("ANIM\\BIKES.IFP");
 	CAnimBlock *saBikes = CAnimManager::GetAnimationBlock("sa_bikes");
 	Check(customStreamsOpened == 1 && saBikes && saBikes->isLoaded &&
-		CAnimManager::GetAnimation("CAR_getin_LHS", saBikes) &&
+		CAnimManager::GetAnimation("CAR_LB_PRO", saBikes) &&
 		CAnimManager::GetAnimationBlock("bikes") == nil,
 		"custom ANP3 only enters the SA bank");
 
@@ -354,10 +354,10 @@ main(void)
 		AnimationId anim;
 		const char *name;
 	} weaponClips[] = {
-		{ "ANIM\\PYTHON.IFP", ASSOCGRP_PYTHON, ANIM_WEAPON_FIRE, "python_fire" },
-		{ "ANIM\\BUDDY.IFP", ASSOCGRP_BUDDY, ANIM_WEAPON_FIRE, "buddy_fire" },
-		{ "ANIM\\UZI.IFP", ASSOCGRP_UZI, ANIM_WEAPON_FIRE, "UZI_fire" },
-		{ "ANIM\\CHAINSAW.IFP", ASSOCGRP_CHAINSAW, ANIM_MELEE_ATTACK_START, "CSAW_PART" }
+		{ "ANIM\\PYTHON.IFP", ASSOCGRP_PYTHON, ANIM_ID_FIRE, "python_fire" },
+		{ "ANIM\\BUDDY.IFP", ASSOCGRP_BUDDY, ANIM_ID_FIRE, "buddy_fire" },
+		{ "ANIM\\UZI.IFP", ASSOCGRP_UZI, ANIM_ID_FIRE, "UZI_fire" },
+		{ "ANIM\\CHAINSAW.IFP", ASSOCGRP_CSAW_1, ANIM_ID_FIGHT_3, "CSaw_3" }
 	};
 	for(const WeaponClip &test : weaponClips){
 		Check(CAnimManager::GetAnimName(test.group, test.anim) != nil,
@@ -370,7 +370,9 @@ main(void)
 		Check(clip && !strcasecmp(clip->name, test.name),
 			"separate SA weapon clip resolves for the ped");
 	}
-	Check(CAnimManager::GetAnimName(ASSOCGRP_BUDDY, ANIM_WEAPON_RELOAD) == nil,
+	// An id that the group does not list must not resolve to a clip name; the
+	// buddy bank carries the four fire/reload slots only.
+	Check(CAnimManager::GetAnimName(ASSOCGRP_BUDDY, ANIM_ID_GRENADE_WEAPON_THROW) == nil,
 		"unavailable weapon slots are not mistaken for valid clip names");
 
 	// ANP3 with a numSeq == 0 placeholder clip (like ped.ani's empty stub) must

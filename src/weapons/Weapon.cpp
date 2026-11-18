@@ -677,7 +677,7 @@ CWeapon::FireMelee(CEntity *shooter, CVector &fireSource)
 										CRGBA(0, 0, 0, 0), 0, 0, CGeneral::GetRandomNumber() & 1, 0);
 
 								}
-								if (info->m_AnimToPlay == ASSOCGRP_KNIFE)
+								if (info->m_AnimToPlay == ASSOCGRP_KNIFE_1)
 								{
 									dir += 0.1f * shooterPed->GetUp() + 0.05f * shooterPed->GetRight();
 									CParticle::AddParticle(PARTICLE_BLOOD_SPURT, bloodPos, dir);
@@ -700,9 +700,9 @@ CWeapon::FireMelee(CEntity *shooter, CVector &fireSource)
 										victimPed->ApplyMoveForce(posOffset.x*-5.0f, posOffset.y*-5.0f, 3.0f);
 
 									if ( isHeavy && victimPed->IsPlayer() )
-										victimPed->SetFall(3000, AnimationId(ANIM_STD_HIGHIMPACT_FRONT + localDir), false);
+										victimPed->SetFall(3000, AnimationId(ANIM_ID_KO_SPIN_R + localDir), false);
 									else
-										victimPed->SetFall(1500, AnimationId(ANIM_STD_HIGHIMPACT_FRONT + localDir), false);
+										victimPed->SetFall(1500, AnimationId(ANIM_ID_KO_SPIN_R + localDir), false);
 
 									shooterPed->m_pSeekTarget = victimPed;
 									shooterPed->m_pSeekTarget->RegisterReference(&shooterPed->m_pSeekTarget);
@@ -1411,7 +1411,7 @@ CWeapon::DoBulletImpact(CEntity *shooter, CEntity *victim,
 						victimPed->bIsStanding = false;
 
 						victimPed->ApplyMoveForce(posOffset.x*-5.0f, posOffset.y*-5.0f, 5.0f);
-						victimPed->SetFall(1500, AnimationId(ANIM_STD_HIGHIMPACT_FRONT + localDir), false);
+						victimPed->SetFall(1500, AnimationId(ANIM_ID_KO_SPIN_R + localDir), false);
 
 						victimPed->InflictDamage(shooter, m_eWeaponType, info->m_nDamage, (ePedPieceTypes)point->pieceB, localDir);
 					}
@@ -1424,7 +1424,7 @@ CWeapon::DoBulletImpact(CEntity *shooter, CEntity *victim,
 							{
 								victimPed->ClearAttackByRemovingAnim();
 
-								CAnimBlendAssociation *asoc = CAnimManager::AddAnimation(victimPed->GetClump(), ASSOCGRP_STD, AnimationId(ANIM_STD_HITBYGUN_FRONT + localDir));
+								CAnimBlendAssociation *asoc = CAnimManager::AddAnimation(victimPed->GetClump(), ASSOCGRP_DEFAULT, AnimationId(ANIM_ID_SHOT_LEFTP + localDir));
 								ASSERT(asoc!=nil);
 
 								asoc->blendAmount = 0.0f;
@@ -1440,7 +1440,7 @@ CWeapon::DoBulletImpact(CEntity *shooter, CEntity *victim,
 						{
 							victimPed->ClearAttackByRemovingAnim();
 
-							CAnimBlendAssociation *asoc = CAnimManager::AddAnimation(victimPed->GetClump(), ASSOCGRP_STD, AnimationId(ANIM_STD_HITBYGUN_FRONT + localDir));
+							CAnimBlendAssociation *asoc = CAnimManager::AddAnimation(victimPed->GetClump(), ASSOCGRP_DEFAULT, AnimationId(ANIM_ID_SHOT_LEFTP + localDir));
 							ASSERT(asoc!=nil);
 
 							asoc->blendAmount = 0.0f;
@@ -1496,9 +1496,9 @@ CWeapon::DoBulletImpact(CEntity *shooter, CEntity *victim,
 					{
 						CAnimBlendAssociation *asoc;
 						if ( RpAnimBlendClumpGetFirstAssociation(victimPed->GetClump(), ASSOC_FRONTAL) )
-							asoc = CAnimManager::BlendAnimation(victimPed->GetClump(), ASSOCGRP_STD, ANIM_STD_HIT_FLOOR_FRONT, 8.0f);
+							asoc = CAnimManager::BlendAnimation(victimPed->GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_FIGHTSH_BWD, 8.0f);
 						else
-							asoc = CAnimManager::BlendAnimation(victimPed->GetClump(), ASSOCGRP_STD, ANIM_STD_HIT_FLOOR,   8.0f);
+							asoc = CAnimManager::BlendAnimation(victimPed->GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_HIT_WALK,   8.0f);
 
 						if ( asoc )
 						{
@@ -1878,7 +1878,7 @@ CWeapon::FireShotgun(CEntity *shooter, CVector *fireSource)
 						victimPed->ApplyMoveForce(posOffset.x*-2.0f, posOffset.y*-2.0f, 0.0f);
 
 					if ( cantStandup )
-						victimPed->SetFall(1500, AnimationId(ANIM_STD_HIGHIMPACT_FRONT + localDir), false);
+						victimPed->SetFall(1500, AnimationId(ANIM_ID_KO_SPIN_R + localDir), false);
 
 					victimPed->InflictDamage(shooter, m_eWeaponType, info->m_nDamage, (ePedPieceTypes)point.pieceB, localDir);
 
@@ -1918,11 +1918,11 @@ CWeapon::FireShotgun(CEntity *shooter, CVector *fireSource)
 							CAnimBlendAssociation *hitAssoc;
 							if (RpAnimBlendClumpGetFirstAssociation(victimPed->GetClump(), ASSOC_FRONTAL))
 							{
-								hitAssoc = CAnimManager::BlendAnimation(victimPed->GetClump(), ASSOCGRP_STD, ANIM_STD_HIT_FLOOR_FRONT, 8.0f);
+								hitAssoc = CAnimManager::BlendAnimation(victimPed->GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_FIGHTSH_BWD, 8.0f);
 							}
 							else
 							{
-								hitAssoc = CAnimManager::BlendAnimation(victimPed->GetClump(), ASSOCGRP_STD, ANIM_STD_HIT_FLOOR, 8.0f);
+								hitAssoc = CAnimManager::BlendAnimation(victimPed->GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_HIT_WALK, 8.0f);
 							}
 							if (hitAssoc)
 							{
@@ -2613,7 +2613,7 @@ CWeapon::FireInstantHitFromCar(CVehicle *shooter, bool left, bool right)
 				victimPed->ReactToAttack(FindPlayerPed());
 				victimPed->ClearAttackByRemovingAnim();
 
-				CAnimBlendAssociation *asoc = CAnimManager::AddAnimation(victimPed->GetClump(), ASSOCGRP_STD, AnimationId(ANIM_STD_HITBYGUN_FRONT + localDir));
+				CAnimBlendAssociation *asoc = CAnimManager::AddAnimation(victimPed->GetClump(), ASSOCGRP_DEFAULT, AnimationId(ANIM_ID_SHOT_LEFTP + localDir));
 				ASSERT(asoc!=nil);
 				asoc->blendAmount = 0.0f;
 				asoc->blendDelta  = 8.0f;
@@ -2974,8 +2974,7 @@ CWeapon::Update(int32 audioEntity, CPed *pedToAdjustSound)
 						case ASSOCGRP_PYTHON:
 							soundStart = fReloadAnimSampleFraction[0];
 							break;
-						case ASSOCGRP_COLT:
-						case ASSOCGRP_TEC:
+						case ASSOCGRP_COLT45:
 							soundStart = fReloadAnimSampleFraction[1];
 							break;
 						case ASSOCGRP_UZI:
@@ -2983,9 +2982,6 @@ CWeapon::Update(int32 audioEntity, CPed *pedToAdjustSound)
 							break;
 						case ASSOCGRP_RIFLE:
 							soundStart = fReloadAnimSampleFraction[3];
-							break;
-						case ASSOCGRP_M60:
-							soundStart = fReloadAnimSampleFraction[4];
 							break;
 						default:
 							break;
@@ -3046,7 +3042,7 @@ FireOneInstantHitRound(CVector *source, CVector *target, int32 damage)
 
 				victimPed->ClearAttackByRemovingAnim();
 
-				CAnimBlendAssociation *asoc = CAnimManager::AddAnimation(victimPed->GetClump(), ASSOCGRP_STD, AnimationId(ANIM_STD_HITBYGUN_FRONT + localDir));
+				CAnimBlendAssociation *asoc = CAnimManager::AddAnimation(victimPed->GetClump(), ASSOCGRP_DEFAULT, AnimationId(ANIM_ID_SHOT_LEFTP + localDir));
 				ASSERT(asoc!=nil);
 				asoc->blendAmount = 0.0f;
 				asoc->blendDelta  = 8.0f;
