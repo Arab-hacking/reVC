@@ -149,6 +149,10 @@ AnimAssocDefinition CAnimManager::ms_aAnimAssocDefinitions[NUM_ANIM_ASSOC_GROUPS
 };
 int32 CAnimManager::ms_numAnimAssocDefinitions = ARRAY_SIZE(ms_aAnimAssocDefinitions);
 
+// Groups whose definition came from data/animgrp.dat own their name array,
+// their clip blocks and their block name, so they are the ones to release.
+static bool s_dataDefinedGroup[NUM_ANIM_ASSOC_GROUPS];
+
 // Group names in definition order, matching the AssocGroupId values. The
 // group table is indexed by the same number, so data/animgrp.dat can fill
 // the entries that SA does not compile into the game.
@@ -329,6 +333,25 @@ CAnimManager::Shutdown(void)
 
 	delete[] ms_aAnimAssocGroups;
 	ms_aAnimAssocGroups = nil;
+
+	// The group definitions read from data/animgrp.dat were allocated here and
+	// are handed back with everything else, so a restart starts from the
+	// compiled table again.
+	for(i = 0; i < NUM_ANIM_ASSOC_GROUPS; i++){
+		if(!s_dataDefinedGroup[i])
+			continue;
+		AnimAssocDefinition *def = &ms_aAnimAssocDefinitions[i];
+		for(int j = 0; j < def->numAnims; j++)
+			RwFree((void*)def->animNames[j]);
+		RwFree((void*)def->animNames);
+		RwFree(def->animDescs);
+		free((void*)def->blockName);
+		def->animNames = nil;
+		def->animDescs = nil;
+		def->blockName = nil;
+		def->numAnims = 0;
+		s_dataDefinedGroup[i] = false;
+	}
 }
 
 void
@@ -1299,22 +1322,27 @@ CAnimManager::ReadAnimAssociationDefinitions(void)
 		AnimAssocDefinition *def = &ms_aAnimAssocDefinitions[slot];
 		if(def->numAnims > 0)
 			continue; // already defined in code
+		// A group cannot name more clips than the shared table describes, and
+		// the count has to be settled before anything is allocated from it.
+		if(count > (int)ARRAY_SIZE(aStdAnimDescs))
+			count = ARRAY_SIZE(aStdAnimDescs);
 		def->blockName = strdup(block);
 		def->modelIndex = MI_MALE01;
 		def->numAnims = count;
 		def->animNames = (char const**)RwCalloc(count, sizeof(char*));
 		def->animDescs = (AnimAssocDesc*)RwCalloc(count, sizeof(AnimAssocDesc));
-		// A data-defined group fills in the shared clip table: the block lists
-		// its clips in id order and the flags are the standard locomotion set,
-		// which is what SA passes to every group it reads from this file.
-		if(count > (int)ARRAY_SIZE(aStdAnimDescs))
-			count = ARRAY_SIZE(aStdAnimDescs);
-		def->numAnims = count;
+		if(def->blockName == nil || def->animNames == nil || def->animDescs == nil){
+			REVC_LOG_ERROR("animgrp %s: out of memory for %d slots\n", group, count);
+			def->numAnims = 0;
+			continue;
+		}
+		// The block lists its clips in id order and the flags are the standard
+		// locomotion set, which is what SA passes to every group it reads.
 		for(int i = 0; i < count; i++){
-			char *name = (char*)RwCalloc(1, 24);
-			def->animNames[i] = name;
+			def->animNames[i] = (char const*)RwCalloc(1, 24);
 			def->animDescs[i] = aStdAnimDescs[i];
 		}
+		s_dataDefinedGroup[slot] = true;
 		cur = slot;
 		CUSTOM_LOG("animgrp %s: %d slots declared in block %s\n", group, count, block);
 	}
