@@ -203,6 +203,10 @@ bool CCarGenerator::CheckForBlockage(int32 mi)
 	int16 entities;
 	CEntity* pEntities[8];
 	CColModel* pColModel = CModelInfo::GetColModel(mi);
+	// Without collision there is nothing to test against; treat the spot as
+	// free so a generator whose model lost its COL3 block still works.
+	if(pColModel == nil)
+		return false;
 	CWorld::FindObjectsKindaColliding(CVector(m_vecPos), pColModel->boundingSphere.radius, 1, &entities, 8, pEntities, false, true, true, false, false);
 	for (int i = 0; i < entities; i++) {
 		if (m_vecPos.z + pColModel->boundingBox.min.z < pEntities[i]->GetPosition().z + pEntities[i]->GetColModel()->boundingBox.max.z + 1.0f &&

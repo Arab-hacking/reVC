@@ -784,6 +784,8 @@ int32
 CCarCtrl::ChooseCarModel(int32 vehclass)
 {
 	int32 model = -1;
+	if(!IsValidRating(vehclass))
+		return -1;
 	++NumRequestsOfCarRating[vehclass];
 	if (NumOfLoadedCarsOfRating[vehclass] == 0)
 		return -1;
@@ -798,6 +800,9 @@ CCarCtrl::ChooseCarModel(int32 vehclass)
 void
 CCarCtrl::AddToLoadedVehicleArray(int32 mi, int32 rating, int32 freq)
 {
+	if(!IsValidRating(rating))
+		return;
+	assert(NumOfLoadedCarsOfRating[rating] < MAX_CAR_MODELS_IN_ARRAY);
 	LoadedCarsArray[rating][NumOfLoadedCarsOfRating[rating]] = mi;
 	assert(mi >= 130);
 	CarFreqArrays[rating][NumOfLoadedCarsOfRating[rating]] = freq;
@@ -809,6 +814,8 @@ CCarCtrl::AddToLoadedVehicleArray(int32 mi, int32 rating, int32 freq)
 void
 CCarCtrl::RemoveFromLoadedVehicleArray(int mi, int32 rating)
 {
+	if(!IsValidRating(rating))
+		return;
 	int index = 0;
 	while (LoadedCarsArray[rating][index] != -1) {
 		if (LoadedCarsArray[rating][index] == mi)
@@ -891,6 +898,11 @@ CCarCtrl::ChooseGangCarModel(int32 gang)
 void
 CCarCtrl::AddToCarArray(int32 id, int32 vehclass)
 {
+	// The class comes from the model info, so "ignore" (-1) or garbage reaches
+	// here for models that never declared one; such a model is simply not
+	// offered to traffic.
+	if(!IsValidRating(vehclass))
+		return;
 	assert(TotalNumOfCarsOfRating[vehclass] < MAX_CAR_MODELS_IN_ARRAY);
 	CarArrays[vehclass][TotalNumOfCarsOfRating[vehclass]++] = id;
 }

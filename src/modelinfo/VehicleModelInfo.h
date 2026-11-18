@@ -125,6 +125,16 @@ public:
 	static RwTexture *ms_colourTextureTable[256];
 	static RwObjectNameIdAssocation *ms_vehicleDescs[NUM_VEHICLE_TYPES];
 
+	// m_nVehicleType is a model-info field, so a corrupt or not-yet-initialised
+	// entry can hold VEHICLE_TYPE_IGNORE (-1) or anything else. Both hierarchy
+	// users go through here instead of indexing the table raw.
+	static RwObjectNameIdAssocation *GetVehicleDesc(eVehicleType type)
+	{
+		if(type < 0 || type >= NUM_VEHICLE_TYPES)
+			return ms_vehicleDescs[VEHICLE_TYPE_AUTOMOBILE];
+		return ms_vehicleDescs[type];
+	}
+
 	CVehicleModelInfo(void);
 	void DeleteRwObject(void);
 	RwObject *CreateInstance(void);

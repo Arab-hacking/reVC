@@ -166,7 +166,16 @@ m_nVehicleSubType = VEHICLE_TYPE_AUTOMOBILE;
 	m_fMass = m_pHandlingData->m_fMass;
 	m_fTurnMass = m_pHandlingData->m_fTurnMass;
 	m_vecCentreOfMass = m_pHandlingData->m_vecCentreOfMass;
-	m_fAirResistance = (float)mi->GetColModel()->boundingBox.max.x * (float)mi->GetColModel()->boundingBox.max.z / m_fMass;
+	// A vehicle whose dff carries no COL3 block and whose class has no separate
+	// collision has no colmodel at all; fall back to a neutral air resistance
+	// instead of dereferencing nil.
+	if(mi->GetColModel()){
+		m_fAirResistance = (float)mi->GetColModel()->boundingBox.max.x *
+			(float)mi->GetColModel()->boundingBox.max.z / m_fMass;
+	}else{
+		REVC_LOG_WARNING("%s: no collision model, using neutral air resistance", mi->GetModelName());
+		m_fAirResistance = 0.0f;
+	}
 	m_fElasticity = 0.05f;
 	m_fBuoyancyConstant = m_pHandlingData->m_fBuoyancyConstant;
 
@@ -208,7 +217,11 @@ m_nVehicleSubType = VEHICLE_TYPE_AUTOMOBILE;
 	m_fTireTemperature = 1.0f;
 
 	CColModel *colModel = mi->GetColModel();
-	if(colModel->lines == nil){
+	if(colModel == nil){
+		// Nothing to hang suspension lines on. The vehicle still drives, it just
+		// has no collision geometry, so skip the line setup.
+		REVC_LOG_WARNING("%s: no collision model, suspension lines not set up", mi->GetModelName());
+	}else if(colModel->lines == nil){
 		// The Rhino carries eight extra suspension lines spread over its
 		// tracks, see CAutomobile::SetupSuspensionLines.
 		int numLines = GetModelIndex() == MI_RHINO ? NUM_RHINO_SUSP_LINES : NUM_AUTOMOBILE_SUSP_LINES;
@@ -5192,6 +5205,18 @@ CAutomobile::SetupSuspensionLines(void)
 	CVector posn;
 	CVehicleModelInfo *mi = (CVehicleModelInfo*)CModelInfo::GetModelInfo(GetModelIndex());
 	CColModel *colModel = mi->GetColModel();
+	if(colModel == nil){
+		// No collision model means no suspension lines to build. Give the wheels
+		// their rest pose so the vehicle still renders in the right place.
+		for(i = 0; i < 4; i++){
+			m_aWheelPosition[i] = mi->m_wheelScale*0.5f;
+			m_aSuspensionSpringLength[i] = m_pHandlingData->m_fSuspensionUpperLimit -
+				m_pHandlingData->m_fSuspensionLowerLimit;
+			m_aSuspensionLineLength[i] = m_aSuspensionSpringLength[i];
+		}
+		m_fHeightAboveRoad = 0.0f;
+		return;
+	}
 	// Top of the wheel travel the suspension line starts from, and the sag the
 	// springs have at rest. ApplySpringCollisionAlt presses the car down with
 	// GRAVITY*mass*springForceLevel*compression*bias*2 per wheel, i.e. the springs

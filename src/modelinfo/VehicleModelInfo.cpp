@@ -541,7 +541,7 @@ CVehicleModelInfo::SetClump(RpClump *clump)
 	gVehicleIsSAHierarchy = m_nVehicleType == VEHICLE_TYPE_AUTOMOBILE || IsSAHierarchy(clump);
 #endif
 	SetAtomicRenderCallbacks();
-	SetFrameIds(ms_vehicleDescs[m_nVehicleType]);
+	SetFrameIds(GetVehicleDesc(m_nVehicleType));
 	PreprocessHierarchy();
 	FindEditableMaterialList();
 	SetEnvironmentMap();
@@ -846,7 +846,7 @@ GetOkAndDamagedAtomicCB(RwObject *object, void *data)
 void
 CVehicleModelInfo::PreprocessSACarHierarchy(void)
 {
-	RwObjectNameIdAssocation *desc = ms_vehicleDescs[VEHICLE_TYPE_AUTOMOBILE];
+	RwObjectNameIdAssocation *desc = GetVehicleDesc(VEHICLE_TYPE_AUTOMOBILE);
 	m_numDoors = 0;
 	m_numComps = 0;
 	m_bSAWheelMesh = false;
@@ -935,7 +935,7 @@ CVehicleModelInfo::PreprocessHierarchy(void)
 	RpAtomic *atomic;
 	RwV3d *rwvec;
 
-	desc = ms_vehicleDescs[m_nVehicleType];
+	desc = GetVehicleDesc(m_nVehicleType);
 	m_numDoors = 0;
 	m_numComps = 0;
 #ifdef SA_VEHICLE_MODELS

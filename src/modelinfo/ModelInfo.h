@@ -55,7 +55,13 @@ public:
 		return ms_modelInfoPtrs[id];
 	}
 	static CBaseModelInfo *GetModelInfo(const char *name, int minIndex, int maxIndex);
+	// A model slot may be empty (not every id in the range is used) and a
+	// vehicle may carry no collision at all - the SA vehicle loader logs
+	// exactly that for models whose dff has no COL3 block. Callers must handle
+	// nil rather than assume the pointer.
 	static CColModel *GetColModel(int id){
+		if(id < 0 || id >= MODELINFOSIZE || ms_modelInfoPtrs[id] == nil)
+			return nil;
 		return ms_modelInfoPtrs[id]->GetColModel();
 	}
 

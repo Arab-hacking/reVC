@@ -63,6 +63,14 @@ public:
 		TOTAL_CUSTOM_CLASSES = NUM_CAR_CLASSES + NUM_BOAT_CLASSES
 	};
 
+	// Every per-class array in this class is indexed by a vehicle class id that
+	// comes from a model-info field, so a corrupt or "ignore" class (-1) would
+	// index out of bounds. Callers validate through here first.
+	static bool IsValidRating(int32 rating)
+	{
+		return rating >= 0 && rating < TOTAL_CUSTOM_CLASSES;
+	}
+
 	// Instantiates the class a model declares. Every spawn site goes through it,
 	// so a model always becomes the class its type word names.
 	static CVehicle *GetNewVehicleDependingOnCarModel(int32 modelId, uint8 createdBy);
