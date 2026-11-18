@@ -177,31 +177,26 @@ CheckForPedsOnGroundToAttack(CPed *attacker, CPed **pedOnGround)
 static void
 ReportUnavailableWeaponAnim(CPed *ped, AnimationId animId, AssocGroupId groupId = NUM_ANIM_ASSOC_GROUPS)
 {
-	RpClump *clump = ped->GetClump();
-	CAnimBlendClumpData *data = clump && RpAnimBlendClumpIsInitialized(clump) ?
-		*RPANIMBLENDCLUMPDATA(clump) : nil;
-	int bank = data && data->usesSAAnimations ? 1 : 0;
 	int weapon = ped->GetWeapon()->m_eWeaponType;
 	int group = groupId == NUM_ANIM_ASSOC_GROUPS ?
 		CWeaponInfo::GetWeaponInfo(ped->GetWeapon()->m_eWeaponType)->m_AnimToPlay : groupId;
 	int anim = animId;
-	static bool warned[2][NUM_ANIM_ASSOC_GROUPS][ANIM_STRIP_G + 1] = {};
+	static bool warned[NUM_ANIM_ASSOC_GROUPS][ANIM_STRIP_G + 1] = {};
 	if(group >= 0 && group < NUM_ANIM_ASSOC_GROUPS && anim >= 0 && anim <= ANIM_STRIP_G){
-		if(warned[bank][group][anim])
+		if(warned[group][anim])
 			return;
-		warned[bank][group][anim] = true;
+		warned[group][anim] = true;
 	}
 	const char *groupName = group >= 0 && group < NUM_ANIM_ASSOC_GROUPS ?
 		CAnimManager::GetAnimGroupName((AssocGroupId)group) : nil;
 	const char *clipName = groupName ? CAnimManager::GetAnimName((AssocGroupId)group, animId) : nil;
-	if(bank && groupName && clipName){
-		REVC_LOG_WARNING("Weapon animation unavailable: ped=%d, SA skeleton=1, weapon=%d, group=%d (%s), anim=%d (%s); check custom/%s.ifp or .ani (ANP2/ANP3) for this clip and compatible SA bones",
+	if(groupName && clipName){
+		REVC_LOG_WARNING("Weapon animation unavailable: ped=%d, weapon=%d, group=%d (%s), anim=%d (%s); check custom/%s.ifp or .ani (ANP2/ANP3) for this clip and compatible SA bones",
 			ped->GetModelIndex(), weapon, group, groupName, anim, clipName, groupName);
 		return;
 	}
-	REVC_LOG_WARNING("Weapon animation unavailable: ped=%d, SA skeleton=%d, weapon=%d, group=%d, anim=%d; %s",
-		ped->GetModelIndex(), bank, weapon, group, anim,
-		bank ? "check the matching SA IFP/ANI in custom" : "check the native VC animation bank");
+	REVC_LOG_WARNING("Weapon animation unavailable: ped=%d, weapon=%d, group=%d, anim=%d; check the matching SA IFP/ANI in custom",
+		ped->GetModelIndex(), weapon, group, anim);
 }
 
 void

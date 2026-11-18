@@ -113,17 +113,12 @@ class CAnimManager
 	static int32 ms_numAnimBlocks;
 	static int32 ms_numAnimations;
 	static CAnimBlendAssocGroup *ms_aAnimAssocGroups;
-	static CAnimBlendAssocGroup *ms_aSAAnimAssocGroups;	// per-clump SA associations; VC groups remain native
-	static RpClump *ms_pVCPedAnimationReference;	// owned native VC skeleton for custom-model startup
 	static CLinkList<CAnimBlendHierarchy*> ms_animCache;
 	static CAnimBlendAssocGroup *GetAnimAssocGroup(RpClump *clump, AssocGroupId groupId);
 public:
 
 	static void Initialise(void);
 	static void Shutdown(void);
-	// Takes ownership of a temporary native VC ped clump used only as an
-	// association-building reference when all loaded peds are SA models.
-	static void SetVCPedAnimationReference(RpClump *clump);
 	static void UncompressAnimation(CAnimBlendHierarchy *anim);
 	static void RemoveFromUncompressedCache(CAnimBlendHierarchy *hier);
 	static CAnimBlock *GetAnimationBlock(int32 block) { return &ms_aAnimBlocks[block]; }
@@ -141,8 +136,6 @@ public:
 	// A hierarchy may only be used with a clump from the same animation bank.
 	// A null clump denotes an explicitly native-VC-only lookup.
 	static bool IsAnimationCompatibleWithClump(RpClump *clump, CAnimBlendHierarchy *hierarchy);
-	// True when the block is one of the parallel "sa_" dictionaries.
-	static bool IsSAAnimationBlock(const CAnimBlock *block);
 	// Vehicle approach offsets must come from the ped's own bank. The native
 	// lookup also works without a VC reference clump.
 	static CAnimBlendHierarchy *GetAnimHierarchyForOffset(AssocGroupId groupId, AnimationId animId);

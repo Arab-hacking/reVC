@@ -180,7 +180,6 @@ public:
 	static void SetModelTxdIsDeletable(int32 id);
 	static void SetMissionDoesntRequireModel(int32 id);
 #ifdef CUSTOM_MODELS
-	static void LoadVCPedAnimationReference(void);
 #endif
 	static void LoadInitialPeds(void);
 	static void LoadInitialWeapons(void);

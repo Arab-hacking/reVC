@@ -51,7 +51,7 @@ void CAnimManager::AddAnimBlockRef(int32) { abort(); }
 void CAnimManager::RemoveAnimBlockRefWithoutDelete(int32) { abort(); }
 
 CAnimBlendClumpData::CAnimBlendClumpData(void)
-  : numFrames(0), velocity2d(nil), usesSAAnimations(false), frames(nil)
+  : numFrames(0), velocity2d(nil), frames(nil)
 {
 	link.Init();
 }

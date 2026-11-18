@@ -38,7 +38,7 @@ void DebugLogPrintf(const char*, ...) {}
 
 RwInt32 ClumpOffset = 0;
 CAnimBlendClumpData::CAnimBlendClumpData(void)
-  : numFrames(0), velocity2d(nil), usesSAAnimations(false), frames(nil)
+  : numFrames(0), velocity2d(nil), frames(nil)
 {
 	link.Init();
 }
@@ -53,10 +53,9 @@ struct FakeClump
 	CAnimBlendClumpData *plugin;
 	CAnimBlendClumpData data;
 	AnimBlendFrameData frame;
-	explicit FakeClump(bool sa) : plugin(&data) {
+	explicit FakeClump(bool) : plugin(&data) {
 		data.frames = &frame;
 		data.numFrames = 1;
-		data.usesSAAnimations = sa;
 	}
 	RpClump *Get(void) { return (RpClump*)&plugin; }
 };
@@ -312,38 +311,40 @@ main(void)
 #endif
 	Check(nativeClip->sequences[0].GetKeyFrame(1)->rotation.x == -0.25f,
 		"native ANPK quaternion still inverts its x/y/z components");
+	// The ped animation set is SA only now: the offset lookup must resolve
+	// against the SA bank, never the native VC dictionary loaded above.
+	// The offset lookup resolves the standard group through sa_ped, which was
+	// loaded earlier, and must never fall through to the native VC dictionary.
 	CAnimBlendHierarchy *offsetClip = CAnimManager::GetAnimHierarchyForOffset(ASSOCGRP_STD, ANIM_STD_CAR_GET_IN_LHS);
-	Check(offsetClip == nativeClip &&
-		((KeyFrameTrans*)offsetClip->sequences[0].GetKeyFrame(1))->translation.x == 1.75f,
-		"car-door offset reads the native IFP even with no VC skeleton reference");
+	Check(offsetClip == saClip && offsetClip != nativeClip &&
+		((KeyFrameTrans*)offsetClip->sequences[0].GetKeyFrame(1))->translation.x == 0.5f,
+		"car-door offset reads the SA bank and ignores the native VC dictionary");
 
-	FakeClump vcPed(false), saPed(true);
-	Check(CAnimManager::IsAnimationCompatibleWithClump(vcPed.Get(), nativeClip) &&
-		!CAnimManager::IsAnimationCompatibleWithClump(vcPed.Get(), saClip) &&
-		CAnimManager::IsAnimationCompatibleWithClump(saPed.Get(), saClip) &&
+	// There is no VC animation path any more: only SA dictionaries are
+	// accepted, whatever skeleton asks for them.
+	FakeClump saPed(true);
+	Check(CAnimManager::IsAnimationCompatibleWithClump(saPed.Get(), saClip) &&
 		!CAnimManager::IsAnimationCompatibleWithClump(saPed.Get(), nativeClip),
-		"VC and SA skeletons reject animations from the other bank");
-	Check(CAnimManager::GetAnimHierarchyForOffset(vcPed.Get(), ASSOCGRP_STD, ANIM_STD_CAR_GET_IN_LHS) == nativeClip &&
-		CAnimManager::GetAnimHierarchyForOffset(saPed.Get(), ASSOCGRP_STD, ANIM_STD_CAR_GET_IN_LHS) == saClip,
-		"VC and SA car-door offsets come only from the corresponding IFP");
+		"only SA bank animations are accepted");
+	Check(CAnimManager::GetAnimHierarchyForOffset(saPed.Get(), ASSOCGRP_STD, ANIM_STD_CAR_GET_IN_LHS) == saClip &&
+		CAnimManager::GetAnimHierarchyForOffset(saPed.Get(), ASSOCGRP_STD, ANIM_STD_CAR_GET_IN_LHS) != nativeClip,
+		"car-door offsets come only from the SA IFP");
 	sa->isLoaded = false;
-	Check(CAnimManager::GetAnimHierarchyForOffset(saPed.Get(), ASSOCGRP_STD, ANIM_STD_CAR_GET_IN_LHS) == nil &&
-		CAnimManager::GetAnimHierarchyForOffset(vcPed.Get(), ASSOCGRP_STD, ANIM_STD_CAR_GET_IN_LHS) == nativeClip,
+	Check(CAnimManager::GetAnimHierarchyForOffset(saPed.Get(), ASSOCGRP_STD, ANIM_STD_CAR_GET_IN_LHS) == nil,
 		"missing SA bank never borrows native VC animation");
 	sa->isLoaded = true;
 
 	customFile = NativeANPK();
 	CAnimManager::LoadAnimFile("ANIM\\PED.IFP");
-	Check(customStreamsOpened == 0 && nativeStreamsOpened == 1 &&
-		CAnimManager::GetAnimation("CAR_getin_LHS", vc) == nativeClip,
-		"custom ANPK never replaces the native VC bank: native game file is read");
+	Check(customStreamsOpened == 0 && CAnimManager::GetAnimation("CAR_getin_LHS", vc) == nativeClip,
+		"a custom ANPK bank never replaces the previously loaded VC dictionary");
 	customFile = MobileANI(1, true);
 	CAnimManager::LoadSAAnimFileFromCustom("ANIM\\BIKES.IFP");
 	CAnimBlock *saBikes = CAnimManager::GetAnimationBlock("sa_bikes");
 	Check(customStreamsOpened == 1 && saBikes && saBikes->isLoaded &&
 		CAnimManager::GetAnimation("CAR_getin_LHS", saBikes) &&
 		CAnimManager::GetAnimationBlock("bikes") == nil,
-		"custom ANP3 only enters the parallel SA bank");
+		"custom ANP3 only enters the SA bank");
 
 	// VC's weapon group IDs should resolve real SA clip names from separately
 	// provided, compact IFP banks. ped.ifp alone cannot supply these clips.
@@ -366,9 +367,8 @@ main(void)
 		customFile = MobileANI(1, true, false, test.name);
 		CAnimManager::LoadSAAnimFileFromCustom(test.filename);
 		CAnimBlendHierarchy *clip = CAnimManager::GetAnimHierarchyForOffset(saPed.Get(), test.group, test.anim);
-		Check(clip && !strcasecmp(clip->name, test.name) &&
-			!CAnimManager::IsAnimationCompatibleWithClump(vcPed.Get(), clip),
-			"separate SA weapon clip resolves for SA ped but not VC ped");
+		Check(clip && !strcasecmp(clip->name, test.name),
+			"separate SA weapon clip resolves for the ped");
 	}
 	Check(CAnimManager::GetAnimName(ASSOCGRP_BUDDY, ANIM_WEAPON_RELOAD) == nil,
 		"unavailable weapon slots are not mistaken for valid clip names");

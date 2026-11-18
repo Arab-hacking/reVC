@@ -49,6 +49,9 @@ public:
 	void SetClump(RpClump *);
 	void SetClumpStreamVersion(uint32 version) { m_clumpStreamVersion = version; }
 	bool UsesSAAnimations(void) const { return m_bSAAnimationModel; }
+	// The ped animation set is SA only, so a VC skeleton cannot be animated.
+	// Replacement is decided by the caller keeping the same animation group.
+	static int32 FindSAReplacementModel(int32 modelId);
 	static bool DetectSAAnimationClump(RpClump *clump, uint32 clumpStreamVersion = 0);
 
 	void CreateHitColModelSkinned(RpClump *clump);

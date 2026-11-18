@@ -461,8 +461,7 @@ ApplyPlayerSkinModel(int32 modelId)
 	}
 #endif
 	ped->DeleteRwObject();
-	// CPed::SetModelIndex binds VC skeletons strictly to native VC anim groups
-	// and SA skeletons strictly to custom SA anim groups (usesSAAnimations).
+	// CPed::SetModelIndex binds the ped to the custom SA animation groups.
 	ped->SetModelIndex(modelId);
 	CWorld::Add(ped);
 

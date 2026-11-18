@@ -8,6 +8,7 @@
 #include "NodeName.h"
 #include "VisibilityPlugins.h"
 #include "ModelInfo.h"
+#include "ModelIndices.h"
 #include "custompipes.h"
 
 void
@@ -114,6 +115,39 @@ CPedModelInfo::DetectSAAnimationClump(RpClump *clump, uint32 clumpStreamVersion)
 	if(RpClumpGetFrame(clump))
 		RwFrameForAllChildren(RpClumpGetFrame(clump), FindSAFrameMarkerCB, &foundSAFrameName);
 	return foundSAFrameName;
+}
+
+// A ped whose skeleton has no SA bones cannot be driven by the SA animation
+// set, so look for a loaded SA ped that keeps the same animation group. This
+// keeps clothing and stats sensible instead of leaving the ped frozen.
+int32
+CPedModelInfo::FindSAReplacementModel(int32 modelId)
+{
+	CBaseModelInfo *baseInfo;
+	CPedModelInfo *info;
+	uint32 wantGroup = 0;
+	int32 fallback = -1;
+	int32 i;
+
+	if(modelId >= 0 && modelId < MODELINFOSIZE){
+		baseInfo = CModelInfo::GetModelInfo(modelId);
+		if(baseInfo && baseInfo->GetModelType() == MITYPE_PED)
+			wantGroup = ((CPedModelInfo*)baseInfo)->m_animGroup;
+	}
+
+	for(i = MI_PLAYER; i <= MI_LAST_PED; i++){
+		baseInfo = CModelInfo::GetModelInfo(i);
+		if(baseInfo == nil || baseInfo->GetModelType() != MITYPE_PED || i == modelId)
+			continue;
+		info = (CPedModelInfo*)baseInfo;
+		if(!info->UsesSAAnimations())
+			continue;
+		if(info->m_animGroup == wantGroup)
+			return i;
+		if(fallback < 0)
+			fallback = i;
+	}
+	return fallback;
 }
 
 // leftover...

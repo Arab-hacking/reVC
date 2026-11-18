@@ -5001,10 +5001,8 @@ GetAnimationLastTranslation(AssocGroupId groupId, AnimationId animId, RpClump *c
 static CVector
 GetPedAnimationOffset(CPed *ped, AssocGroupId groupId, AnimationId animId, const CVector &nativeOffset)
 {
-	if(ped && ped->m_rwObject && RpAnimBlendClumpIsInitialized(ped->GetClump()) &&
-	   (*RPANIMBLENDCLUMPDATA(ped->GetClump()))->usesSAAnimations)
-		return GetAnimationLastTranslation(groupId, animId, ped->GetClump());
-	return nativeOffset;
+	(void)nativeOffset;
+	return GetAnimationLastTranslation(groupId, animId, ped ? ped->GetClump() : nil);
 }
 
 void

@@ -453,6 +453,17 @@ CPed::SetModelIndex(uint32 mi)
 		CEntity::SetModelIndex(mi);
 	}
 	CPedModelInfo *modelInfo = (CPedModelInfo *)CModelInfo::GetModelInfo(GetModelIndex());
+	// The ped animation set is SA only, so a VC skeleton would never animate.
+	// Swap such a ped for an SA model of the same animation group first.
+	if(modelInfo && !modelInfo->UsesSAAnimations()){
+		int32 saModel = CPedModelInfo::FindSAReplacementModel(mi);
+		if(saModel >= 0 && (uint32)saModel != mi){
+			REVC_LOG_INFO("Ped model %s has a VC skeleton and no VC animation path; using SA model %d instead",
+				modelInfo->GetModelName(), saModel);
+			CEntity::SetModelIndex(saModel);
+			modelInfo = (CPedModelInfo *)CModelInfo::GetModelInfo(GetModelIndex());
+		}
+	}
 	if(modelInfo){
 		SetPedStats(modelInfo->m_pedStatType);
 		if(m_pedStats)
@@ -466,7 +477,6 @@ CPed::SetModelIndex(uint32 mi)
 	}
 	RpAnimBlendClumpInit(GetClump());
 	RpAnimBlendClumpFillFrameArray(GetClump(), m_pFrames);
-	(*RPANIMBLENDCLUMPDATA(GetClump()))->usesSAAnimations = modelInfo->UsesSAAnimations();
 	// Associations are built against a skeleton-specific reference clump. This
 	// call also retries groups that had no native/SA reference during startup.
 	CAnimManager::CreateAnimAssocGroups(GetModelIndex());
@@ -7134,12 +7144,11 @@ CPed::SetDie(AnimationId animId, float delta, float speed)
 			}
 		} else {
 			bIsPedDieAnimPlaying = false;
-			static bool warned[2] = {false, false};
-			int bank = (*RPANIMBLENDCLUMPDATA(GetClump()))->usesSAAnimations ? 1 : 0;
-			if(!warned[bank]){
-				REVC_LOG_WARNING("Death animation missing in %s bank (model=%d, anim=%d)",
-					bank ? "SA" : "VC", GetModelIndex(), animId);
-				warned[bank] = true;
+			static bool warned = false;
+			if(!warned){
+				REVC_LOG_WARNING("Death animation missing in the ped bank (model=%d, anim=%d)",
+					GetModelIndex(), animId);
+				warned = true;
 			}
 		}
 	}

@@ -469,15 +469,15 @@ CPad::ProcessPlayerModelKeys(void)
 		CWorld::Remove(ped);
 		ped->RemoveWeaponModel(-1);
 		ped->DeleteRwObject();
-		ped->SetModelIndex(modelId); // chooses VC/SA association bank from the model
+		ped->SetModelIndex(modelId); // binds the model to the SA animation bank
 		CWorld::Add(ped);
 		int weaponId = CWeaponInfo::GetWeaponInfo(ped->GetWeapon()->m_eWeaponType)->m_nModelId;
 		if(weaponId >= 0 && CStreaming::HasModelLoaded(weaponId))
 			ped->AddWeaponModel(weaponId);
 		if(!(previousFlags & STREAMFLAGS_DONT_REMOVE))
 			CStreaming::SetModelIsDeletable(modelId);
-		REVC_LOG_INFO("Player model changed: %d -> %d (%s, %s animations)",
-			oldId, modelId, info->GetModelName(), info->UsesSAAnimations() ? "SA" : "VC");
+		REVC_LOG_INFO("Player model changed: %d -> %d (%s, SA=%d)",
+			oldId, modelId, info->GetModelName(), info->UsesSAAnimations());
 		return;
 	}
 #endif

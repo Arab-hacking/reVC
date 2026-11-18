@@ -536,7 +536,6 @@ bool CGame::Initialise(const char* datFile)
 	// Index loose custom/anim and custom/data/maps plus selected common.zip
 	// paths. Model/TXD streaming from custom/img mounted earlier in LoadLevel.
 	CCustomModels::Initialise();
-	CStreaming::LoadVCPedAnimationReference();
 #endif
 	REVC_LOG_INFO("STARTUP LoadInitialVehicles BEGIN");
 	CStreaming::LoadInitialVehicles();

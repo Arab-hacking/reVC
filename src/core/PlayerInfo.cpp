@@ -384,11 +384,8 @@ CPlayerInfo::Process(void)
 					REVC_LOG_INFO("Vehicle entry: key pressed, no vehicle in range (ped model=%d, state=%d)",
 						m_pPed->GetModelIndex(), m_pPed->m_nPedState);
 				if (carBelow && !weAreOnBoat) {
-					bool usesSA = m_pPed->m_rwObject &&
-						RpAnimBlendClumpIsInitialized(m_pPed->GetClump()) &&
-						(*RPANIMBLENDCLUMPDATA(m_pPed->GetClump()))->usesSAAnimations;
-					REVC_LOG_INFO("Vehicle entry: key pressed, ped model=%d, SA skeleton=%d, vehicle model=%d, distance=%.2f",
-						m_pPed->GetModelIndex(), usesSA, carBelow->GetModelIndex(),
+					REVC_LOG_INFO("Vehicle entry: key pressed, ped model=%d, vehicle model=%d, distance=%.2f",
+						m_pPed->GetModelIndex(), carBelow->GetModelIndex(),
 						(carBelow->GetPosition() - m_pPed->GetPosition()).Magnitude2D());
 					if (carBelow->GetStatus() == STATUS_TRAIN_NOT_MOVING) {
 						m_pPed->SetObjective(OBJECTIVE_ENTER_CAR_AS_PASSENGER, carBelow);

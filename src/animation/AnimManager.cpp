@@ -24,8 +24,6 @@ CAnimBlendHierarchy CAnimManager::ms_aAnimations[NUMANIMATIONS];
 int32 CAnimManager::ms_numAnimBlocks;
 int32 CAnimManager::ms_numAnimations;
 CAnimBlendAssocGroup *CAnimManager::ms_aAnimAssocGroups;
-CAnimBlendAssocGroup *CAnimManager::ms_aSAAnimAssocGroups;
-RpClump *CAnimManager::ms_pVCPedAnimationReference;
 CLinkList<CAnimBlendHierarchy*> CAnimManager::ms_animCache;
 
 AnimAssocDesc aStdAnimDescs[] = {
@@ -977,23 +975,11 @@ const AnimAssocDefinition CAnimManager::ms_aAnimAssocDefinitions[NUM_ANIM_ASSOC_
 #undef awc
 
 void
-CAnimManager::SetVCPedAnimationReference(RpClump *clump)
-{
-	if(ms_pVCPedAnimationReference == clump)
-		return;
-	if(ms_pVCPedAnimationReference)
-		RpClumpDestroy(ms_pVCPedAnimationReference);
-	ms_pVCPedAnimationReference = clump;
-}
-
-void
 CAnimManager::Initialise(void)
 {
 	ms_numAnimations = 0;
 	ms_numAnimBlocks = 0;
 	ms_aAnimAssocGroups = nil;
-	ms_aSAAnimAssocGroups = nil;
-	SetVCPedAnimationReference(nil);
 	ms_animCache.Init(25);
 }
 
@@ -1012,9 +998,6 @@ CAnimManager::Shutdown(void)
 
 	delete[] ms_aAnimAssocGroups;
 	ms_aAnimAssocGroups = nil;
-	delete[] ms_aSAAnimAssocGroups;
-	ms_aSAAnimAssocGroups = nil;
-	SetVCPedAnimationReference(nil);
 }
 
 void
@@ -1192,26 +1175,20 @@ CAnimManager::RemoveAnimBlock(int32 block)
 	}
 	debug("Removing ANIMS %s\n", animblock->name);
 	for(i = 0; i < NUM_ANIM_ASSOC_GROUPS; i++){
-		CAnimBlendAssocGroup *groups[2] = {
-			ms_aAnimAssocGroups ? &ms_aAnimAssocGroups[i] : nil,
-			ms_aSAAnimAssocGroups ? &ms_aSAAnimAssocGroups[i] : nil
-		};
-		for(int g = 0; g < ARRAY_SIZE(groups); g++){
-			CAnimBlendAssocGroup *group = groups[g];
-			bool usesBlock = group && group->animBlock == animblock;
-			if(group && !usesBlock && group->assocList){
-				for(int j = 0; j < group->numAssociations; j++){
-					CAnimBlendHierarchy *hier = group->assocList[j].hierarchy;
-					if(validAnimationRange && hier && hier >= &ms_aAnimations[firstAnim] &&
-					   hier < &ms_aAnimations[firstAnim + numAnims]){
-						usesBlock = true;
-						break;
-					}
+		CAnimBlendAssocGroup *group = ms_aAnimAssocGroups ? &ms_aAnimAssocGroups[i] : nil;
+		bool usesBlock = group && group->animBlock == animblock;
+		if(group && !usesBlock && group->assocList){
+			for(int j = 0; j < group->numAssociations; j++){
+				CAnimBlendHierarchy *hier = group->assocList[j].hierarchy;
+				if(validAnimationRange && hier && hier >= &ms_aAnimations[firstAnim] &&
+				   hier < &ms_aAnimations[firstAnim + numAnims]){
+					usesBlock = true;
+					break;
 				}
 			}
-			if(usesBlock)
-				group->DestroyAssociations();
 		}
+		if(usesBlock)
+			group->DestroyAssociations();
 	}
 	if(validAnimationRange){
 		for(i = 0; i < numAnims; i++)
@@ -1263,8 +1240,8 @@ CAnimManager::GetAnimName(AssocGroupId groupId, AnimationId animId)
 	return def->animNames[index];
 }
 
-bool
-CAnimManager::IsSAAnimationBlock(const CAnimBlock *block)
+static bool
+IsSAAnimationBlock(const CAnimBlock *block)
 {
 	return block && block->isLoaded && strncasecmp(block->name, "sa_", 3) == 0;
 }
@@ -1281,7 +1258,7 @@ CAnimManager::IsAnimationCompatibleWithClump(RpClump *clump, CAnimBlendHierarchy
 	if(blockIndex < 0)
 		return false;
 	CAnimBlock *block = GetAnimationBlock(blockIndex);
-	return block->isLoaded && (clump && data->usesSAAnimations) == IsSAAnimationBlock(block);
+	return block->isLoaded && IsSAAnimationBlock(block);
 }
 
 CAnimBlendAssocGroup*
@@ -1290,14 +1267,12 @@ CAnimManager::GetAnimAssocGroup(RpClump *clump, AssocGroupId groupId)
 	if(clump == nil || !RpAnimBlendClumpIsInitialized(clump) ||
 	   groupId < 0 || groupId >= NUM_ANIM_ASSOC_GROUPS)
 		return nil;
-	CAnimBlendClumpData *clumpData = *RPANIMBLENDCLUMPDATA(clump);
-	CAnimBlendAssocGroup *groups = clumpData->usesSAAnimations ? ms_aSAAnimAssocGroups : ms_aAnimAssocGroups;
-	if(groups == nil)
+	if(ms_aAnimAssocGroups == nil)
 		return nil;
-	CAnimBlendAssocGroup *group = &groups[groupId];
+	CAnimBlendAssocGroup *group = &ms_aAnimAssocGroups[groupId];
 	if(group->assocList == nil || group->numAssociations <= 0 ||
 	   group->animBlock == nil || !group->animBlock->isLoaded ||
-	   clumpData->usesSAAnimations != IsSAAnimationBlock(group->animBlock))
+	   !IsSAAnimationBlock(group->animBlock))
 		return nil;
 	return group;
 }
@@ -1356,7 +1331,8 @@ CAnimManager::GetAnimHierarchyForOffset(RpClump *clump, AssocGroupId groupId, An
 	CAnimBlendClumpData *data = clump ? *RPANIMBLENDCLUMPDATA(clump) : nil;
 	if(clump && (data == nil || !RpAnimBlendClumpIsInitialized(clump)))
 		return nil;
-	if(data && data->usesSAAnimations){
+	(void)data;
+	{
 		char name[MAX_ANIMBLOCK_NAME];
 		snprintf(name, sizeof(name), "sa_%s", def->blockName);
 		CAnimBlock *block = GetAnimationBlock(name);
@@ -1366,10 +1342,6 @@ CAnimManager::GetAnimHierarchyForOffset(RpClump *clump, AssocGroupId groupId, An
 			FindSAAnimationHierarchy(groupId, def->animNames[index], block) : nil;
 		return IsAnimationCompatibleWithClump(clump, hier) ? hier : nil;
 	}
-	CAnimBlock *block = GetAnimationBlock(def->blockName);
-	CAnimBlendHierarchy *hier = block && block->isLoaded && !IsSAAnimationBlock(block) ?
-		GetAnimation(def->animNames[index], block) : nil;
-	return IsAnimationCompatibleWithClump(clump, hier) ? hier : nil;
 }
 
 CAnimBlendAssociation*
@@ -1462,9 +1434,8 @@ CAnimManager::BlendAnimation(RpClump *clump, AssocGroupId groupId, AnimationId a
 		CAnimBlendAssociation *anim = CAnimBlendAssociation::FromLink(link);
 		if(!IsAnimationCompatibleWithClump(clump, anim->hierarchy)){
 #ifdef CUSTOM_MODELS
-			CUSTOM_LOG("anim assoc: discarding incompatible %s animation on %s clump\n",
-				anim->hierarchy ? anim->hierarchy->name : "(null)",
-				clumpData->usesSAAnimations ? "SA" : "VC");
+			CUSTOM_LOG("anim assoc: discarding incompatible %s animation on ped clump\n",
+				anim->hierarchy ? anim->hierarchy->name : "(null)");
 #endif
 			delete anim;
 			continue;
@@ -1513,30 +1484,19 @@ IsAnimAssocGroupReady(CAnimBlendAssocGroup *group)
 }
 
 static CPedModelInfo *
-FindPedAnimationReference(int preferredModelIndex, bool wantSA)
+FindPedAnimationReference(int preferredModelIndex)
 {
 	CBaseModelInfo *baseInfo;
 	CPedModelInfo *pedInfo;
 	int i;
 
-	// Keep the native VC groups anchored to the same cop skeleton the original
-	// game uses. For SA groups, prefer the model currently being set up, then
-	// search any other loaded SA ped for the reference hierarchy.
-	if(!wantSA){
-		baseInfo = CModelInfo::GetModelInfo(MI_COP);
-		if(baseInfo && baseInfo->GetModelType() == MITYPE_PED && baseInfo->GetRwObject()){
-			pedInfo = (CPedModelInfo*)baseInfo;
-			if(!pedInfo->UsesSAAnimations())
-				return pedInfo;
-		}
-	}
-	// Custom IDE ped models can be remapped well beyond the VC ped range.
-	// Prefer their actual skeleton instead of searching only vanilla IDs.
+	// Only SA skeletons can drive the animation set now. Prefer the model
+	// currently being set up, then any other loaded SA ped.
 	if(preferredModelIndex >= 0 && preferredModelIndex < MODELINFOSIZE){
 		baseInfo = CModelInfo::GetModelInfo(preferredModelIndex);
 		if(baseInfo && baseInfo->GetModelType() == MITYPE_PED && baseInfo->GetRwObject()){
 			pedInfo = (CPedModelInfo*)baseInfo;
-			if(pedInfo->UsesSAAnimations() == wantSA)
+			if(pedInfo->UsesSAAnimations())
 				return pedInfo;
 		}
 	}
@@ -1546,7 +1506,7 @@ FindPedAnimationReference(int preferredModelIndex, bool wantSA)
 		if(baseInfo == nil || baseInfo->GetModelType() != MITYPE_PED || baseInfo->GetRwObject() == nil)
 			continue;
 		pedInfo = (CPedModelInfo*)baseInfo;
-		if(pedInfo->UsesSAAnimations() == wantSA)
+		if(pedInfo->UsesSAAnimations())
 			return pedInfo;
 	}
 	return nil;
@@ -1882,18 +1842,6 @@ FindSAAnimationHierarchy(int groupId, const char *name, CAnimBlock *primaryBlock
 		if(hier)
 			return hier;
 	}
-	// SA splits the car clips out of ped.ifp into STDCARAMIMS / LOWCARAMIMS /
-	// VANCARANIMS / COACHCARANIMS. A partial SA animation set may ship none of
-	// them, which left every car entry animation unresolvable while the native
-	// VC ped.ifp still carries those clips. Fall back to the VC bank for this
-	// one lookup; the association binds to the target skeleton afterwards, so a
-	// mismatched reference bank is fine here.
-	CAnimBlock *vcBlock = CAnimManager::GetAnimationBlock("ped");
-	if(vcBlock && vcBlock->isLoaded && vcBlock != primaryBlock){
-		hier = CAnimManager::GetAnimation(name, vcBlock);
-		if(hier)
-			return hier;
-	}
 	return nil;
 }
 
@@ -1914,11 +1862,13 @@ HasNewSAAnimation(CAnimBlendAssocGroup *saGroup, int groupId, const AnimAssocDef
 void
 CAnimManager::LoadAnimFiles(void)
 {
+	// Only the SA dictionaries are used now: the ped animation set has no VC
+	// path, so loading the native VC ped.ifp would just create an unused block.
 	LoadAnimFile("ANIM\\PED.IFP");
 #ifdef CUSTOM_MODELS
 	// SA splits fighting, weapon, style, car and bike clips across IFP banks.
-	// Load optional banks used by VC's association slots so SA peds never need
-	// to borrow hierarchies from a VC skeleton.
+	// Load optional banks so peds never need to borrow hierarchies from a VC
+	// skeleton.
 	static const char *saSupportAnimFiles[] = {
 		"ANIM\\MELEE_1.IFP",
 		"ANIM\\FIGHT_E.IFP",
@@ -1959,7 +1909,6 @@ CAnimManager::LoadAnimFiles(void)
 		LoadSAAnimFileFromCustom(saSupportAnimFiles[i]);
 #endif
 	ms_aAnimAssocGroups = new CAnimBlendAssocGroup[NUM_ANIM_ASSOC_GROUPS];
-	ms_aSAAnimAssocGroups = new CAnimBlendAssocGroup[NUM_ANIM_ASSOC_GROUPS];
 	CreateAnimAssocGroups();
 }
 
@@ -1973,126 +1922,86 @@ CAnimManager::CreateAnimAssocGroups(int preferredModelIndex)
 		if(baseInfo && baseInfo->GetModelType() == MITYPE_PED){
 			CPedModelInfo *pedInfo = (CPedModelInfo*)baseInfo;
 			int groupId = (int)pedInfo->m_animGroup;
-			if(groupId >= 0 && groupId < NUM_ANIM_ASSOC_GROUPS){
-				bool usesSA = pedInfo->UsesSAAnimations() && ms_aSAAnimAssocGroups;
-				CAnimBlendAssocGroup *group = usesSA ?
-					&ms_aSAAnimAssocGroups[groupId] : &ms_aAnimAssocGroups[groupId];
-				// A partial SA group may gain aliases when another SA bank loads.
-				if(!usesSA && IsAnimAssocGroupReady(group))
-					return;
-			}
+			// A partial SA group may gain aliases when another SA bank loads,
+			// so keep rebuilding until it resolves completely.
+			if(groupId >= 0 && groupId < NUM_ANIM_ASSOC_GROUPS &&
+			   IsAnimAssocGroupReady(&ms_aAnimAssocGroups[groupId]))
+				return;
 		}
 	}
 
 	int i, j;
-	bool needVCClump = false;
-	bool needSAClump = false;
+	bool needClump = false;
 	for(i = 0; i < NUM_ANIM_ASSOC_GROUPS; i++){
 		const AnimAssocDefinition *def = &ms_aAnimAssocDefinitions[i];
-		CAnimBlock *vcBlock = GetAnimationBlock(def->blockName);
-		if(vcBlock && vcBlock->isLoaded && !IsAnimAssocGroupReady(&ms_aAnimAssocGroups[i]))
-			needVCClump = true;
-		if(ms_aSAAnimAssocGroups){
-			char saBlockName[MAX_ANIMBLOCK_NAME];
-			CAnimBlock *saBlock;
-			snprintf(saBlockName, sizeof(saBlockName), "sa_%s", def->blockName);
-			saBlock = GetAnimationBlock(saBlockName);
-			if(saBlock == nil || !saBlock->isLoaded)
-				saBlock = GetAnimationBlock("sa_ped");
-			if(saBlock && saBlock->isLoaded &&
-			   (!IsAnimAssocGroupReady(&ms_aSAAnimAssocGroups[i]) ||
-			    ms_aSAAnimAssocGroups[i].animBlock != saBlock ||
-			    HasNewSAAnimation(&ms_aSAAnimAssocGroups[i], i, def, saBlock)))
-				needSAClump = true;
-		}
+		char blockName[MAX_ANIMBLOCK_NAME];
+		CAnimBlock *block;
+		snprintf(blockName, sizeof(blockName), "sa_%s", def->blockName);
+		block = GetAnimationBlock(blockName);
+		if(block == nil || !block->isLoaded)
+			block = GetAnimationBlock("sa_ped");
+		if(block && block->isLoaded &&
+		   (!IsAnimAssocGroupReady(&ms_aAnimAssocGroups[i]) ||
+		    ms_aAnimAssocGroups[i].animBlock != block ||
+		    HasNewSAAnimation(&ms_aAnimAssocGroups[i], i, def, block)))
+			needClump = true;
 	}
-	CPedModelInfo *vcReference = needVCClump ? FindPedAnimationReference(preferredModelIndex, false) : nil;
-	CPedModelInfo *saReference = needSAClump ? FindPedAnimationReference(preferredModelIndex, true) : nil;
-	RpClump *vcClump = vcReference ? (RpClump*)vcReference->CreateInstance() : nil;
-	RpClump *saClump = saReference ? (RpClump*)saReference->CreateInstance() : nil;
-	bool usingStoredVCReference = false;
-	if(vcClump == nil && needVCClump && ms_pVCPedAnimationReference){
-		vcClump = RpClumpClone(ms_pVCPedAnimationReference);
-		usingStoredVCReference = vcClump != nil;
-	}
+	CPedModelInfo *reference = needClump ? FindPedAnimationReference(preferredModelIndex) : nil;
+	RpClump *clump = reference ? (RpClump*)reference->CreateInstance() : nil;
 #ifdef CUSTOM_MODELS
-	CUSTOM_LOG("animation groups: references VC=%s SA=%s\n",
-		vcReference ? vcReference->GetModelName() : usingStoredVCReference ? "stored native cop" : "none",
-		saReference ? saReference->GetModelName() : "none");
+	CUSTOM_LOG("animation groups: reference %s\n",
+		reference ? reference->GetModelName() : "none");
 #endif
-	if(vcClump)
-		RpAnimBlendClumpInit(vcClump);
-	if(saClump){
-		RpAnimBlendClumpInit(saClump);
-		(*RPANIMBLENDCLUMPDATA(saClump))->usesSAAnimations = true;
-	}
+	if(clump)
+		RpAnimBlendClumpInit(clump);
 
 	for(i = 0; i < NUM_ANIM_ASSOC_GROUPS; i++){
 		const AnimAssocDefinition *def = &ms_aAnimAssocDefinitions[i];
-		CAnimBlendAssocGroup *vcGroup = &ms_aAnimAssocGroups[i];
-		CAnimBlendAssocGroup *saGroup = ms_aSAAnimAssocGroups ? &ms_aSAAnimAssocGroups[i] : nil;
-		CAnimBlock *vcBlock = GetAnimationBlock(def->blockName);
+		CAnimBlendAssocGroup *group = &ms_aAnimAssocGroups[i];
+		char blockName[MAX_ANIMBLOCK_NAME];
+		CAnimBlock *block;
+		CAnimBlendHierarchy *hierarchies[256];
 
-		if(vcClump && vcBlock && vcBlock->isLoaded && !IsAnimAssocGroupReady(vcGroup)){
-			vcGroup->groupId = i;
-			vcGroup->firstAnimId = def->animDescs[0].animId;
-			vcGroup->CreateAssociations(def->blockName, vcClump, def->animNames, def->numAnims);
-			for(j = 0; j < vcGroup->numAssociations; j++){
-				CAnimBlendAssociation *assoc = vcGroup->GetAnimation(def->animDescs[j].animId);
-				if(assoc && assoc->hierarchy)
-					assoc->flags |= def->animDescs[j].flags;
-			}
-		}
+		if(clump == nil)
+			break;
+		snprintf(blockName, sizeof(blockName), "sa_%s", def->blockName);
+		block = GetAnimationBlock(blockName);
+		if(block == nil || !block->isLoaded)
+			block = GetAnimationBlock("sa_ped");
+		if(block == nil || !block->isLoaded || def->numAnims > ARRAY_SIZE(hierarchies))
+			continue;
+		if(IsAnimAssocGroupReady(group) && group->animBlock == block &&
+		   !HasNewSAAnimation(group, i, def, block))
+			continue;
 
-		if(saGroup && saClump){
-			char saBlockName[MAX_ANIMBLOCK_NAME];
-			CAnimBlock *saBlock;
-			CAnimBlendHierarchy *saHierarchies[256];
-			snprintf(saBlockName, sizeof(saBlockName), "sa_%s", def->blockName);
-			saBlock = GetAnimationBlock(saBlockName);
-			if(saBlock == nil || !saBlock->isLoaded)
-				saBlock = GetAnimationBlock("sa_ped");
-			if(saBlock && saBlock->isLoaded && def->numAnims <= ARRAY_SIZE(saHierarchies) &&
-			   (!IsAnimAssocGroupReady(saGroup) || saGroup->animBlock != saBlock ||
-			    HasNewSAAnimation(saGroup, i, def, saBlock))){
-				for(j = 0; j < def->numAnims; j++)
-					saHierarchies[j] = FindSAAnimationHierarchy(i, def->animNames[j], saBlock);
-				saGroup->groupId = i;
-				saGroup->firstAnimId = def->animDescs[0].animId;
+		for(j = 0; j < def->numAnims; j++)
+			hierarchies[j] = FindSAAnimationHierarchy(i, def->animNames[j], block);
+		group->groupId = i;
+		group->firstAnimId = def->animDescs[0].animId;
 #ifdef CUSTOM_MODELS
-				CUSTOM_LOG("animation groups: building SA %s from %s (%d slots)\n",
-					def->name, saBlock->name, def->numAnims);
+		CUSTOM_LOG("animation groups: building %s from %s (%d slots)\n",
+			def->name, block->name, def->numAnims);
 #endif
-				saGroup->CreateAssociations(saBlock->name, saClump, saHierarchies, def->numAnims);
-#ifdef CUSTOM_MODELS
-				CUSTOM_LOG("animation groups: created SA %s; applying flags\n", def->name);
-#endif
-				for(j = 0; j < saGroup->numAssociations; j++){
-					CAnimBlendAssociation *assoc = saGroup->GetAnimation(def->animDescs[j].animId);
-					if(assoc && assoc->hierarchy)
-						assoc->flags |= def->animDescs[j].flags;
-				}
-#ifdef CUSTOM_MODELS
-				CUSTOM_LOG("animation groups: flags applied to SA %s\n", def->name);
-#endif
-			}
+		group->CreateAssociations(block->name, clump, hierarchies, def->numAnims);
+		for(j = 0; j < group->numAssociations; j++){
+			CAnimBlendAssociation *assoc = group->GetAnimation(def->animDescs[j].animId);
+			if(assoc && assoc->hierarchy)
+				assoc->flags |= def->animDescs[j].flags;
 		}
+#ifdef CUSTOM_MODELS
+		CUSTOM_LOG("animation groups: flags applied to %s\n", def->name);
+#endif
 	}
 
-	if(vcClump){
-		if(IsClumpSkinned(vcClump))
-			RpClumpForAllAtomics(vcClump, AtomicRemoveAnimFromSkinCB, nil);
-		RpClumpDestroy(vcClump);
-	}
-	if(saClump){
+	if(clump){
 #ifdef CUSTOM_MODELS
-		CUSTOM_LOG("animation groups: cleaning SA reference clump\n");
+		CUSTOM_LOG("animation groups: cleaning reference clump\n");
 #endif
-		if(IsClumpSkinned(saClump))
-			RpClumpForAllAtomics(saClump, AtomicRemoveAnimFromSkinCB, nil);
-		RpClumpDestroy(saClump);
+		if(IsClumpSkinned(clump))
+			RpClumpForAllAtomics(clump, AtomicRemoveAnimFromSkinCB, nil);
+		RpClumpDestroy(clump);
 #ifdef CUSTOM_MODELS
-		CUSTOM_LOG("animation groups: SA reference clump destroyed\n");
+		CUSTOM_LOG("animation groups: reference clump destroyed\n");
 #endif
 	}
 #ifdef CUSTOM_MODELS
@@ -2131,9 +2040,8 @@ IsCompactAnimFile(const uint8 *data, size_t size)
 }
 
 #ifdef CUSTOM_MODELS
-// Called for both files read directly by path and streamed IFP blocks. Custom
-// ANP2/ANP3 belongs to SA clumps only; native VC ANPK is ALWAYS read from the
-// game. A custom ANPK must not silently replace the VC skeleton's dictionary.
+// Called for both files read directly by path and streamed IFP blocks. The
+// ped animation set is SA only, so a custom ANP2/ANP3 bank is the only source.
 void
 CAnimManager::LoadSAAnimFileFromCustom(const char *filename)
 {
@@ -2143,12 +2051,12 @@ CAnimManager::LoadSAAnimFileFromCustom(const char *filename)
 #ifdef ANDROID
 	if(!IsCompactAnimFile(customBuf.data(), customBuf.size()) &&
 	   !(customBuf.size() >= 4 && memcmp(customBuf.data(), "ANPK", 4) == 0)){
-		CUSTOM_LOG("animation %s: unrecognized custom anim header; VC uses native IFP\n", filename);
+		CUSTOM_LOG("animation %s: unrecognized custom anim header; bank skipped\n", filename);
 		return;
 	}
 #else
 	if(!IsCompactAnimFile(customBuf.data(), customBuf.size())){
-		CUSTOM_LOG("animation %s: custom ANPK ignored; VC uses the native game IFP\n", filename);
+		CUSTOM_LOG("animation %s: unrecognized SA animation header; bank skipped\n", filename);
 		return;
 	}
 #endif
@@ -2164,7 +2072,7 @@ CAnimManager::LoadSAAnimFileFromCustom(const char *filename)
 	}
 #endif
 	if(!validSniff){
-		CUSTOM_LOG("animation %s: invalid SA IFP structure, using game file\n", filename);
+		CUSTOM_LOG("animation %s: invalid SA IFP structure; bank skipped\n", filename);
 		return;
 	}
 	char blockName[MAX_ANIMBLOCK_NAME];
@@ -2177,7 +2085,7 @@ CAnimManager::LoadSAAnimFileFromCustom(const char *filename)
 	if((loadedBlock == nil && ms_numAnimBlocks >= NUMANIMBLOCKS) ||
 	   ((!loadedBlock || loadedBlock->numAnims != numNames) &&
 	    numNames > NUMANIMATIONS - ms_numAnimations)){
-		CUSTOM_LOG("animation %s: no room for the SA dictionary (%d clips); VC file unchanged\n",
+		CUSTOM_LOG("animation %s: no room for the SA dictionary (%d clips)\n",
 			filename, numNames);
 		return;
 	}
@@ -2190,7 +2098,7 @@ CAnimManager::LoadSAAnimFileFromCustom(const char *filename)
 		RwStreamClose(stream, nil);
 		loadedBlock = GetAnimationBlock(blockName);
 	}
-	CUSTOM_LOG("animation %s: %s in parallel bank %s; native VC dictionary kept\n",
+	CUSTOM_LOG("animation %s: %s in bank %s\n",
 		filename, loadedBlock && loadedBlock->isLoaded ? "loaded" : "FAILED to load",
 		blockName);
 }
@@ -2199,16 +2107,13 @@ CAnimManager::LoadSAAnimFileFromCustom(const char *filename)
 void
 CAnimManager::LoadAnimFile(const char *filename)
 {
+	// No VC animations are loaded any more; the file is only read through the
+	// custom SA bank loader.
 #ifdef CUSTOM_MODELS
 	LoadSAAnimFileFromCustom(filename);
+#else
+	REVC_LOG_ERROR("animation %s: the ped animation set requires custom SA banks", filename);
 #endif
-	RwStream *stream = RwStreamOpen(rwSTREAMFILENAME, rwSTREAMREAD, filename);
-	if(stream == nil){
-		REVC_LOG_ERROR("animation %s: cannot open game IFP", filename);
-		return;
-	}
-	LoadAnimFile(stream, true);
-	RwStreamClose(stream, nil);
 }
 
 void
