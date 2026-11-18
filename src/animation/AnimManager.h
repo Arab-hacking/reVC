@@ -136,6 +136,8 @@ public:
 	// Only hierarchies from an SA dictionary can drive a ped. A null clump
 	// skips the skeleton checks and only validates the bank.
 	static bool IsAnimationCompatibleWithClump(RpClump *clump, CAnimBlendHierarchy *hierarchy);
+	// Maps a file name or dictionary name to its "sa_" block name.
+	static void MakeSAAnimBlockName(const char *filename, char *blockName, size_t blockNameSize);
 	// Vehicle approach offsets must come from the ped's own SA bank. The
 	// lookup also works without a reference clump.
 	static CAnimBlendHierarchy *GetAnimHierarchyForOffset(AssocGroupId groupId, AnimationId animId);

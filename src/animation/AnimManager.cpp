@@ -2009,8 +2009,8 @@ CAnimManager::CreateAnimAssocGroups(int preferredModelIndex)
 #endif
 }
 
-static void
-MakeSAAnimBlockName(const char *filename, char *blockName, size_t blockNameSize)
+void
+CAnimManager::MakeSAAnimBlockName(const char *filename, char *blockName, size_t blockNameSize)
 {
 	const char *base = filename;
 	const char *p;
@@ -2076,7 +2076,7 @@ CAnimManager::LoadSAAnimFileFromCustom(const char *filename)
 		return;
 	}
 	char blockName[MAX_ANIMBLOCK_NAME];
-	MakeSAAnimBlockName(filename, blockName, sizeof(blockName));
+	CAnimManager::MakeSAAnimBlockName(filename, blockName, sizeof(blockName));
 	CAnimBlock *loadedBlock = GetAnimationBlock(blockName);
 	if(loadedBlock && loadedBlock->isLoaded){
 		loadedBlock->unloadPending = false;

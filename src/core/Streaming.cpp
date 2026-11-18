@@ -1043,19 +1043,32 @@ CStreaming::ConvertBufferToObject(int8 *buf, int32 streamId)
 			return false;
 		}
 		PUSH_MEMID(MEMID_STREAM_ANIMATION);
+		// The ped animation set is SA only, so a streamed animation block is
+		// mapped onto its "sa_" dictionary instead of filling a VC one. The
+		// custom bank is preferred and the streamed data is the fallback.
+		{
+			CAnimBlock *nativeBlock = CAnimManager::GetAnimationBlock(streamId - STREAM_OFFSET_ANIM);
+			char blockName[MAX_ANIMBLOCK_NAME];
+			blockName[0] = '\0';
+			if(nativeBlock && nativeBlock->name[0])
+				CAnimManager::MakeSAAnimBlockName(nativeBlock->name, blockName, sizeof(blockName));
 #ifdef CUSTOM_MODELS
-		CAnimBlock *animBlock = CAnimManager::GetAnimationBlock(streamId - STREAM_OFFSET_ANIM);
-		if(animBlock){
-			char customAnimFile[64];
-			snprintf(customAnimFile, sizeof(customAnimFile), "ANIM\\%s.IFP", animBlock->name);
-			CAnimManager::LoadSAAnimFileFromCustom(customAnimFile);
+			if(blockName[0]){
+				char customAnimFile[64];
+				snprintf(customAnimFile, sizeof(customAnimFile), "ANIM\\%s.IFP", nativeBlock->name);
+				CAnimManager::LoadSAAnimFileFromCustom(customAnimFile);
+			}
+#endif
+			// Load the streamed data into the SA dictionary unless the custom
+			// bank already provided it.
+			CAnimBlock *saBlock = blockName[0] ? CAnimManager::GetAnimationBlock(blockName) : nil;
+			if(saBlock == nil || !saBlock->isLoaded)
+				CAnimManager::LoadAnimFile(stream, true, nil, blockName[0] ? blockName : nil);
+#ifdef CUSTOM_MODELS
+			CUSTOM_LOG("stream animation %d: SA block %s ready; building groups\n",
+				streamId - STREAM_OFFSET_ANIM, blockName[0] ? blockName : "(unnamed)");
+#endif
 		}
-#endif
-		CAnimManager::LoadAnimFile(stream, true, nil);
-#ifdef CUSTOM_MODELS
-		CUSTOM_LOG("stream animation %d: native VC block loaded; building groups\n",
-			streamId - STREAM_OFFSET_ANIM);
-#endif
 		CAnimManager::CreateAnimAssocGroups();
 #ifdef CUSTOM_MODELS
 		CUSTOM_LOG("stream animation %d: groups returned\n", streamId - STREAM_OFFSET_ANIM);
@@ -1069,7 +1082,7 @@ CStreaming::ConvertBufferToObject(int8 *buf, int32 streamId)
 	RwStreamClose(stream, &mem);
 #ifdef CUSTOM_MODELS
 	if(streamId >= STREAM_OFFSET_ANIM)
-		CUSTOM_LOG("stream animation %d: native stream closed\n", streamId - STREAM_OFFSET_ANIM);
+		CUSTOM_LOG("stream animation %d: stream closed\n", streamId - STREAM_OFFSET_ANIM);
 #endif
 
 	if(streamId < STREAM_OFFSET_TXD){
