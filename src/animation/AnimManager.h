@@ -148,7 +148,9 @@ enum AssocGroupId
 class CAnimBlendAssociation;
 class CAnimBlendAssocGroup;
 
-#define MAX_ANIMBLOCK_NAME 20
+// SA names its dictionaries after the IFP that supplied them, and the banks
+// run well past the VC 20-byte limit: sa_sportbikeanims is 18 on its own.
+#define MAX_ANIMBLOCK_NAME 40
 
 // A block of hierarchies
 struct CAnimBlock

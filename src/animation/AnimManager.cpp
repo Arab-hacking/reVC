@@ -1458,8 +1458,10 @@ CAnimManager::MakeSAAnimBlockName(const char *filename, char *blockName, size_t 
 			base = p + 1;
 	dot = strrchr(base, '.');
 	length = dot ? (size_t)(dot - base) : strlen(base);
-	if(length > sizeof(stem) - 4)
-		length = sizeof(stem) - 4;
+	// Leave room for the "sa_" prefix and the terminator: truncating the stem
+	// here would hand two different banks the same block name.
+	if(length > MAX_ANIMBLOCK_NAME - 4)
+		length = MAX_ANIMBLOCK_NAME - 4;
 	for(i = 0; i < length; i++)
 		stem[i] = (char)tolower((unsigned char)base[i]);
 	stem[length] = '\0';
