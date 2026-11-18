@@ -754,12 +754,22 @@ CAnimManager::GetAnimHierarchyForOffset(RpClump *clump, AssocGroupId groupId, An
 	return nil;
 }
 
+static const char *GetSAAnimationAlias(int groupId, const char *name, const char **sourceBlock);
+
 CAnimBlendAssociation*
 CAnimManager::GetAnimAssociation(AssocGroupId groupId, const char *name)
 {
-	if(ms_aAnimAssocGroups == nil || groupId < 0 || groupId >= NUM_ANIM_ASSOC_GROUPS)
+	if(ms_aAnimAssocGroups == nil || groupId < 0 || groupId >= NUM_ANIM_ASSOC_GROUPS || name == nil)
 		return nil;
 	CAnimBlendAssociation *assoc = ms_aAnimAssocGroups[groupId].GetAnimation(name);
+	if(assoc == nil){
+		// Data files name clips the Vice City way - fistfite.dat asks for
+		// FIGHTjab and HIT_head. Those names are not in the SA set; the same
+		// translation the groups are built with says which clip is meant.
+		const char *alias = GetSAAnimationAlias(groupId, name, nil);
+		if(alias && strcasecmp(alias, name) != 0)
+			assoc = ms_aAnimAssocGroups[groupId].GetAnimation(alias);
+	}
 	return assoc && IsAnimationCompatibleWithClump(nil, assoc->hierarchy) ? assoc : nil;
 }
 
