@@ -148,6 +148,145 @@ AnimAssocDefinition CAnimManager::ms_aAnimAssocDefinitions[NUM_ANIM_ASSOC_GROUPS
 	{ "nvadaplaneanims", "nevada", MI_MALE01, awc(aNevadaPlaneAnimations), aCarAnimDescs1 },
 };
 int32 CAnimManager::ms_numAnimAssocDefinitions = ARRAY_SIZE(ms_aAnimAssocDefinitions);
+// Group names in definition order, matching the AssocGroupId values. The
+// group table is indexed by the same number, so data/animgrp.dat can fill
+// the entries that SA does not compile into the game.
+static const char *aAnimGroupNames[NUM_ANIM_ASSOC_GROUPS] = {
+	"default",
+	"door",
+	"bikes",
+	"bikev",
+	"bikeh",
+	"biked",
+	"wayfarer",
+	"bmx",
+	"mtb",
+	"choppa",
+	"quad",
+	"python",
+	"pythonbad",
+	"colt45",
+	"colt_cop",
+	"colt45pro",
+	"sawnoff",
+	"sawnoffpro",
+	"silenced",
+	"shotgunbad",
+	"buddy",
+	"buddybad",
+	"uzi",
+	"uzibad",
+	"rifle",
+	"riflebad",
+	"grenade",
+	"flame",
+	"rocket",
+	"spraycan",
+	"goggles",
+	"melee_1",
+	"melee_2",
+	"melee_3",
+	"melee_4",
+	"bbbat_1",
+	"gclub_1",
+	"knife_1",
+	"sword_1",
+	"dildo_1",
+	"flowers_1",
+	"csaw_1",
+	"kick_std",
+	"pistlwhp",
+	"medic",
+	"beach",
+	"sunbathe",
+	"playidles",
+	"riot",
+	"strip",
+	"gangs",
+	"attractors",
+	"player",
+	"fatman",
+	"muscular",
+	"playerrocket",
+	"playerrocketf",
+	"playerrocketm",
+	"player2armed",
+	"player2armedf",
+	"player2armedm",
+	"playerbbbat",
+	"playerbbbatf",
+	"playerbbbatm",
+	"playercsaw",
+	"playercsawf",
+	"playercsawm",
+	"playersneak",
+	"playerjetpack",
+	"swim",
+	"drivebys",
+	"bike_dbz",
+	"cop_dbz",
+	"quad_dbz",
+	"fat_tired",
+	"handsignal",
+	"handsignall",
+	"lhand",
+	"rhand",
+	"carry",
+	"carry05",
+	"carry105",
+	"int_house",
+	"int_office",
+	"int_shop",
+	"stealth_kn",
+	"lowcaramims",
+	"trkcaranims",
+	"stdbikeanims",
+	"sportbikeanims",
+	"vespabikeanims",
+	"harleybikeanims",
+	"dirtbikeanims",
+	"wayfbikeanims",
+	"bmxbikeanims",
+	"mtbbikeanims",
+	"choppabikeanims",
+	"quadbikeanims",
+	"vancaranims",
+	"rustplaneanims",
+	"coachcaranims",
+	"buscaranims",
+	"dozercaranims",
+	"kartcaranims",
+	"convcaranims",
+	"mtrkcaranims",
+	"traincarranims",
+	"stdtallcaramims",
+	"hovercaranims",
+	"tankcaranims",
+	"bfinjcaramims",
+	"learplaneanims",
+	"harrplaneanims",
+	"stdcarupright",
+	"nvadaplaneanims",
+	"shuffle",
+	"oldman",
+	"gang1",
+	"gang2",
+	"oldfatman",
+	"jogger",
+	"drunkman",
+	"blindman",
+	"swat",
+	"woman",
+	"shopping",
+	"busywoman",
+	"sexywoman",
+	"pro",
+	"oldwoman",
+	"fatwoman",
+	"jogwoman",
+	"oldfatwoman",
+	"skate",
+};
 #undef awc
 
 void
@@ -1055,6 +1194,91 @@ LoadAnimBankFromCustom(const char *bankName, void *context)
 }
 #endif
 
+// SA keeps the group definitions it does not compile into the game - the
+// civilian styles such as woman, shopping and the gangs - in data/animgrp.dat.
+// Each block names the group and lists one clip per line until "end"; the
+// descriptor flags come from the shared table SA uses for every group.
+void
+CAnimManager::ReadAnimAssociationDefinitions(void)
+{
+#ifdef CUSTOM_MODELS
+	std::vector<uint8> bytes;
+	if(!CCustomModels::ReadDataFile("data/animgrp.dat", bytes) || bytes.empty())
+		return;
+
+	std::string text((const char*)bytes.data(), bytes.size());
+	int cur = -1;
+	size_t pos = 0;
+	while(pos < text.size()){
+		size_t eol = text.find('\n', pos);
+		if(eol == std::string::npos) eol = text.size();
+		std::string raw = text.substr(pos, eol - pos);
+		pos = eol + 1;
+
+		size_t first = raw.find_first_not_of(" \t\r");
+		if(first == std::string::npos || raw[first] == '#')
+			continue;
+		std::string line = raw.substr(first);
+
+		if(cur >= 0){
+			// A clip line ends the block when it reads "end".
+			AnimAssocDefinition *def = &ms_aAnimAssocDefinitions[cur];
+			int slot = 0;
+			while(slot < def->numAnims && def->animNames[slot] &&
+			      def->animNames[slot][0])
+				slot++;
+			if(strncasecmp(line.c_str(), "end", 3) == 0 || slot >= def->numAnims){
+				cur = -1;
+				if(strncasecmp(line.c_str(), "end", 3) == 0)
+					continue;
+			}else{
+				snprintf((char*)def->animNames[slot], 24, "%s", line.c_str());
+				continue;
+			}
+		}
+
+		char group[32], block[32], type[32];
+		int count = 0;
+		if(sscanf(line.c_str(), "%31s %31s %31s %d", group, block, type, &count) != 4)
+			continue;
+		if(count <= 0)
+			continue;
+		int slot = -1;
+		for(int i = 0; i < NUM_ANIM_ASSOC_GROUPS; i++){
+			if(strcasecmp(aAnimGroupNames[i], group) == 0){
+				slot = i;
+				break;
+			}
+		}
+		if(slot < 0){
+			REVC_LOG_WARNING("animgrp %s: no slot for this group\n", group);
+			continue;
+		}
+		AnimAssocDefinition *def = &ms_aAnimAssocDefinitions[slot];
+		if(def->numAnims > 0)
+			continue; // already defined in code
+		def->blockName = strdup(block);
+		def->modelIndex = MI_MALE01;
+		def->numAnims = count;
+		def->animNames = (char const**)RwCalloc(count, sizeof(char*));
+		def->animDescs = (AnimAssocDesc*)RwCalloc(count, sizeof(AnimAssocDesc));
+		// A data-defined group fills in the shared clip table: the block lists
+		// its clips in id order and the flags are the standard locomotion set,
+		// which is what SA passes to every group it reads from this file.
+		if(count > (int)ARRAY_SIZE(aStdAnimDescs))
+			count = ARRAY_SIZE(aStdAnimDescs);
+		def->numAnims = count;
+		for(int i = 0; i < count; i++){
+			char *name = (char*)RwCalloc(1, 24);
+			def->animNames[i] = name;
+			def->animDescs[i] = aStdAnimDescs[i];
+		}
+		cur = slot;
+		CUSTOM_LOG("animgrp %s: %d slots declared in block %s\n", group, count, block);
+	}
+#endif
+}
+
 void
 CAnimManager::LoadAnimFiles(void)
 {
@@ -1067,6 +1291,7 @@ CAnimManager::LoadAnimFiles(void)
 	// Load what the archives actually contain: a fixed file list silently
 	// drops every bank it does not name.
 	CCustomModels::ForEachAnimBank(LoadAnimBankFromCustom, nil);
+	ReadAnimAssociationDefinitions();
 #endif
 	ms_aAnimAssocGroups = new CAnimBlendAssocGroup[NUM_ANIM_ASSOC_GROUPS];
 	CreateAnimAssocGroups();
@@ -1096,6 +1321,10 @@ CAnimManager::CreateAnimAssocGroups(int preferredModelIndex)
 		const AnimAssocDefinition *def = &ms_aAnimAssocDefinitions[i];
 		char blockName[MAX_ANIMBLOCK_NAME];
 		CAnimBlock *block;
+		// Groups the compiled table and data/animgrp.dat both leave empty have
+		// no block to bind to.
+		if(def->blockName == nil)
+			continue;
 		snprintf(blockName, sizeof(blockName), "sa_%s", def->blockName);
 		block = GetAnimationBlock(blockName);
 		if(block == nil || !block->isLoaded)
