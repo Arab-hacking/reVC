@@ -1545,10 +1545,15 @@ CPed::CalculateNewVelocity(void)
 			newUpperLegs.pitch = 0.1f;
 			RwV3d Xaxis = { 1.0f, 0.0f, 0.0f };
 			RwV3d Zaxis = { 0.0f, 0.0f, 1.0f };
-			RtQuatRotate(&m_pFrames[PED_UPPERLEGL]->hanimFrame->q, &Zaxis, RADTODEG(newUpperLegs.pitch), rwCOMBINEPOSTCONCAT);
-			RtQuatRotate(&m_pFrames[PED_UPPERLEGL]->hanimFrame->q, &Xaxis, RADTODEG(newUpperLegs.yaw), rwCOMBINEPOSTCONCAT);
-			RtQuatRotate(&m_pFrames[PED_UPPERLEGR]->hanimFrame->q, &Zaxis, RADTODEG(newUpperLegs.pitch), rwCOMBINEPOSTCONCAT);
-			RtQuatRotate(&m_pFrames[PED_UPPERLEGR]->hanimFrame->q, &Xaxis, RADTODEG(newUpperLegs.yaw), rwCOMBINEPOSTCONCAT);
+			// The leg bones only exist on a skeleton that carries them.
+			RtQuat *legL = FrameQuat(PED_UPPERLEGL);
+			RtQuat *legR = FrameQuat(PED_UPPERLEGR);
+			if (legL && legR) {
+				RtQuatRotate(legL, &Zaxis, RADTODEG(newUpperLegs.pitch), rwCOMBINEPOSTCONCAT);
+				RtQuatRotate(legL, &Xaxis, RADTODEG(newUpperLegs.yaw), rwCOMBINEPOSTCONCAT);
+				RtQuatRotate(legR, &Zaxis, RADTODEG(newUpperLegs.pitch), rwCOMBINEPOSTCONCAT);
+				RtQuatRotate(legR, &Xaxis, RADTODEG(newUpperLegs.yaw), rwCOMBINEPOSTCONCAT);
+			}
 			bDontAcceptIKLookAts = true;
 		}
 	}
@@ -4603,6 +4608,17 @@ GetBoneMatrixSafe(RpHAnimHierarchy *hier, int32 idx)
 	if(mats == nil)
 		return nil;
 	return &mats[idx];
+}
+
+// A frame the clump does not name stays empty in m_pFrames, and the animated
+// frame behind it is what the IK rotations are written into.
+RtQuat *
+CPed::FrameQuat(int32 node) const
+{
+	if(node < 0 || node >= PED_NODE_MAX || m_pFrames[node] == nil ||
+	   m_pFrames[node]->hanimFrame == nil)
+		return nil;
+	return &m_pFrames[node]->hanimFrame->q;
 }
 
 // A ped keeps only the model id it was created with; the model behind that id

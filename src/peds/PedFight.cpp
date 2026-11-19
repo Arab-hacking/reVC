@@ -4303,8 +4303,12 @@ CPed::DriveVehicle(void)
 		if (velocityFwdDotProd > 0.3f) {
 			RwV3d Xaxis = { 1.0f, 0.0f, 0.0f };
 			RwV3d Yaxis = { 0.0f, 1.0f, 0.0f };
-			RtQuatRotate(&m_pFrames[PED_HEAD]->hanimFrame->q, &Xaxis, CGeneral::GetRandomNumberInRange(-6.0f * velocityFwdDotProd, 6.0f * velocityFwdDotProd), rwCOMBINEPOSTCONCAT);
-			RtQuatRotate(&m_pFrames[PED_HEAD]->hanimFrame->q, &Yaxis, CGeneral::GetRandomNumberInRange(-6.0f * velocityFwdDotProd, 6.0f * velocityFwdDotProd), rwCOMBINEPOSTCONCAT);
+			// The head bone is missing on a skeleton that does not carry it.
+			RtQuat *head = FrameQuat(PED_HEAD);
+			if (head) {
+				RtQuatRotate(head, &Xaxis, CGeneral::GetRandomNumberInRange(-6.0f * velocityFwdDotProd, 6.0f * velocityFwdDotProd), rwCOMBINEPOSTCONCAT);
+				RtQuatRotate(head, &Yaxis, CGeneral::GetRandomNumberInRange(-6.0f * velocityFwdDotProd, 6.0f * velocityFwdDotProd), rwCOMBINEPOSTCONCAT);
+			}
 			bDontAcceptIKLookAts = true;
 		}
 		return;

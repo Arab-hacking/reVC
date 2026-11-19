@@ -377,6 +377,9 @@ public:
 	// The model a ped was created from may not be in the loaded data set, so
 	// every field read goes through a lookup that can answer nil.
 	CPedModelInfo *PedModelInfo(void) const;
+	// Answer the quaternion of a node's animated frame, or nil when the model
+	// has no such node.
+	RtQuat *FrameQuat(int32 node) const;
 #ifdef USE_CUTSCENE_SHADOW_FOR_PED
 	class CCutsceneShadow *m_pRTShadow;
 #endif

@@ -58,12 +58,34 @@ GetComponentMatrix(CPed *ped, int32 node)
 	return GetBoneMatrix(ped, ped->m_pFrames[node]->nodeID);
 }
 
+inline void
+RotateQuatIfPresent(RtQuat *q, const RwV3d *axis, float angle, RwOpCombineType mode)
+{
+	if(q == nil)
+		return;
+	RtQuatRotate(q, axis, angle, mode);
+}
+
+// A ped's frame table is filled from the frame names the clump carries, so a
+// node the model does not have stays empty; the IK code writes the rotation
+// straight into the animated frame.
+inline RtQuat*
+GetFrameQuat(CPed *ped, int32 node)
+{
+	if(ped == nil || node < 0 || node >= PED_NODE_MAX)
+		return nil;
+	AnimBlendFrameData *frame = ped->m_pFrames[node];
+	if(frame == nil || frame->hanimFrame == nil)
+		return nil;
+	return &frame->hanimFrame->q;
+}
+
 void
 CPedIK::RotateTorso(AnimBlendFrameData *node, LimbOrientation *limb, bool changeRoll)
 {
 	RtQuat *q = &node->hanimFrame->q;
-	RtQuatRotate(q, &XaxisIK, RADTODEG(limb->yaw), rwCOMBINEREPLACE);
-	RtQuatRotate(q, &ZaxisIK, RADTODEG(limb->pitch), rwCOMBINEPRECONCAT);
+	RotateQuatIfPresent(q, &XaxisIK, RADTODEG(limb->yaw), rwCOMBINEREPLACE);
+	RotateQuatIfPresent(q, &ZaxisIK, RADTODEG(limb->pitch), rwCOMBINEPRECONCAT);
 	m_ped->bDontAcceptIKLookAts = true;
 }
 
@@ -164,9 +186,9 @@ CPedIK::LookInDirection(float targetYaw, float targetPitch)
 			success = true;
 
 	// This was RotateHead
-	RtQuat *q = &m_ped->m_pFrames[PED_HEAD]->hanimFrame->q;
-	RtQuatRotate(q, &ZaxisIK, RADTODEG(m_headOrient.pitch), rwCOMBINEREPLACE);
-	RtQuatRotate(q, &XaxisIK, RADTODEG(m_headOrient.yaw), rwCOMBINEPRECONCAT);
+	RtQuat *q = GetFrameQuat(m_ped, PED_HEAD);
+	RotateQuatIfPresent(q, &ZaxisIK, RADTODEG(m_headOrient.pitch), rwCOMBINEREPLACE);
+	RotateQuatIfPresent(q, &XaxisIK, RADTODEG(m_headOrient.yaw), rwCOMBINEPRECONCAT);
 	m_ped->bDontAcceptIKLookAts = true;
 
 	if (!(m_flags & LOOKAROUND_HEAD_ONLY))
@@ -251,9 +273,9 @@ CPedIK::PointGunInDirection(float targetYaw, float targetPitch)
 	axis.z = Cos(axisangle);
 
 	// this was RotateTorso
-	RtQuat *q = &m_ped->m_pFrames[PED_MID]->hanimFrame->q;
-	RtQuatRotate(q, &axis, RADTODEG(m_torsoOrient.pitch), rwCOMBINEPOSTCONCAT);
-	RtQuatRotate(q, &XaxisIK, RADTODEG(m_torsoOrient.yaw), rwCOMBINEPOSTCONCAT);
+	RtQuat *q = GetFrameQuat(m_ped, PED_MID);
+	RotateQuatIfPresent(q, &axis, RADTODEG(m_torsoOrient.pitch), rwCOMBINEPOSTCONCAT);
+	RotateQuatIfPresent(q, &XaxisIK, RADTODEG(m_torsoOrient.yaw), rwCOMBINEPOSTCONCAT);
 	m_ped->bDontAcceptIKLookAts = true;
 
 	return result;
@@ -310,20 +332,20 @@ CPedIK::PointGunInDirectionUsingArm(float targetYaw, float targetPitch)
 		}
 
 		// game does this stupidly by going through the clump extension...
-		RtQuat *q = &m_ped->m_pFrames[PED_FOREARMR]->hanimFrame->q;
-		RtQuatRotate(q, &ZaxisIK, -RADTODEG(m_lowerArmOrient.yaw), rwCOMBINEREPLACE);
-		RtQuatRotate(q, &XaxisIK, -RADTODEG(m_lowerArmOrient.pitch), rwCOMBINEPOSTCONCAT);
+		RtQuat *q = GetFrameQuat(m_ped, PED_FOREARMR);
+		RotateQuatIfPresent(q, &ZaxisIK, -RADTODEG(m_lowerArmOrient.yaw), rwCOMBINEREPLACE);
+		RotateQuatIfPresent(q, &XaxisIK, -RADTODEG(m_lowerArmOrient.pitch), rwCOMBINEPOSTCONCAT);
 		m_ped->bDontAcceptIKLookAts = true;
 	}
 
-	RtQuat *q = &m_ped->m_pFrames[PED_UPPERARMR]->hanimFrame->q;
-	RtQuatRotate(q, &XaxisIK, uaRoll, rwCOMBINEREPLACE);
-	RtQuatRotate(q, &YaxisIK, -RADTODEG(m_upperArmOrient.pitch), rwCOMBINEPOSTCONCAT);
-	RtQuatRotate(q, &ZaxisIK, -RADTODEG(m_upperArmOrient.yaw+HALFPI), rwCOMBINEPOSTCONCAT);
+	RtQuat *q = GetFrameQuat(m_ped, PED_UPPERARMR);
+	RotateQuatIfPresent(q, &XaxisIK, uaRoll, rwCOMBINEREPLACE);
+	RotateQuatIfPresent(q, &YaxisIK, -RADTODEG(m_upperArmOrient.pitch), rwCOMBINEPOSTCONCAT);
+	RotateQuatIfPresent(q, &ZaxisIK, -RADTODEG(m_upperArmOrient.yaw+HALFPI), rwCOMBINEPOSTCONCAT);
 	m_ped->bDontAcceptIKLookAts = true;
 
-	q = &m_ped->m_pFrames[PED_HANDR]->hanimFrame->q;
-	RtQuatRotate(q, &XaxisIK, handRoll, rwCOMBINEPRECONCAT);
+	q = GetFrameQuat(m_ped, PED_HANDR);
+	RotateQuatIfPresent(q, &XaxisIK, handRoll, rwCOMBINEPRECONCAT);
 
 	return result;
 }
@@ -362,9 +384,9 @@ CPedIK::RestoreLookAt(void)
 	}
 
 	// This was RotateHead
-	RtQuat *q = &m_ped->m_pFrames[PED_HEAD]->hanimFrame->q;
-	RtQuatRotate(q, &XaxisIK, RADTODEG(m_headOrient.yaw), rwCOMBINEREPLACE);
-	RtQuatRotate(q, &ZaxisIK, RADTODEG(m_headOrient.pitch), rwCOMBINEPRECONCAT);
+	RtQuat *q = GetFrameQuat(m_ped, PED_HEAD);
+	RotateQuatIfPresent(q, &XaxisIK, RADTODEG(m_headOrient.yaw), rwCOMBINEREPLACE);
+	RotateQuatIfPresent(q, &ZaxisIK, RADTODEG(m_headOrient.pitch), rwCOMBINEPRECONCAT);
 	m_ped->bDontAcceptIKLookAts = true;
 
 	if (!(m_flags & LOOKAROUND_HEAD_ONLY))
