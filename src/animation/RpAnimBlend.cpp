@@ -562,7 +562,11 @@ RpAnimBlendClumpUpdateAnimations(RpClump *clump, float timeDelta, bool doRender)
 			RpHAnimHierarchyUpdateMatrices(hier);
 	}
 
-	for(link = clumpData->link.next; link; link = link->next){
+	// UpdateTime runs the finish callback of a clip that just ended, and that
+	// callback is free to delete the association it was given. Take the next
+	// link before calling in, or the walk continues from freed memory.
+	for(link = clumpData->link.next; link; link = next){
+		next = link->next;
 		assoc = CAnimBlendAssociation::FromLink(link);
 		assoc->UpdateTime(timeDelta, totalLength == 0.0f ? 1.0f : totalBlend/totalLength);
 	}

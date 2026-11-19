@@ -2481,9 +2481,6 @@ CPed::LoadFightData(void)
 	int damage, flags;
 	char line[256], moveName[32], animName[32], hitLevel;
 	int moveId = 0;
-	// Position of the row in the file, used only for a move name this build
-	// cannot place.
-	int rowId = 0;
 
 	CAnimBlendAssociation *animAssoc;
 
@@ -2558,14 +2555,16 @@ CPed::LoadFightData(void)
 		// file order, so an unfamiliar table keeps the old behaviour.
 		moveId = FightMoveFromName(moveName);
 		if (moveId < 0){
-			if(rowId < 0 || rowId >= NUM_FIGHTMOVES){
-				REVC_LOG_WARNING("melee table: unknown move %s and no free slot, row ignored", moveName);
-				continue;
-			}
-			REVC_LOG_WARNING("melee table: unknown move %s, taking row %d", moveName, rowId);
-			moveId = rowId;
+			// This table carries rows that are not moves of this build at all
+			// (Attack1/Attack2/Attack3 name clips the unarmed style does not
+			// use). Giving such a row the slot its file position happens to
+			// reach overwrote the real moves that follow it - GroundKick lost
+			// its reach and radius, RoundHouseKick its timing - which is what
+			// made the punches land short and feel weak. A row for a move we
+			// have no id for is skipped outright.
+			REVC_LOG_WARNING("melee table: unknown move %s, row ignored", moveName);
+			continue;
 		}
-		rowId++;
 
 		tFightMoves[moveId].startFireTime = startFireTime / 30.0f;
 		tFightMoves[moveId].endFireTime = endFireTime / 30.0f;

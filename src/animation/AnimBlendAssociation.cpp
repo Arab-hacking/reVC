@@ -209,7 +209,18 @@ CAnimBlendAssociation::SyncAnimation(CAnimBlendAssociation *other)
 		SetCurrentTime(0.0f);
 		return;
 	}
-	SetCurrentTime(other->currentTime/other->hierarchy->totalLength * hierarchy->totalLength);
+	// A clip that ran to its end without repeating sits exactly on its length.
+	// Copying that ratio hands the new clip a time of its own length, and
+	// UpdateTime clears ASSOC_RUNNING for such a clip on the next frame without
+	// running its finish callback: the association is still in the list, never
+	// advances and never reports that it is done. Pedestrians jumped and then
+	// stayed in PED_JUMP forever, unable to turn, because JUMP_launch syncs to
+	// the movement clip and that clip was already finished. Synchronise to the
+	// start instead - the source is not playing, so there is nothing to match.
+	float time = other->currentTime/other->hierarchy->totalLength * hierarchy->totalLength;
+	if(!other->IsRunning() || time >= hierarchy->totalLength)
+		time = 0.0f;
+	SetCurrentTime(time);
 }
 
 void
@@ -232,7 +243,16 @@ CAnimBlendAssociation::UpdateTime(float timeDelta, float relSpeed)
 	if(!IsRunning())
 		return true;
 	if(currentTime >= hierarchy->totalLength){
+		// Reached the end on a previous frame, so the work of finishing is
+		// outstanding. Marking the clip not running here used to drop the
+		// finish callback on the floor: the association stayed in the clump
+		// list, never advanced, and the owner waited for a callback that could
+		// not arrive. Run it now.
 		flags &= ~ASSOC_RUNNING;
+		if(callbackType == CB_FINISH && !IsRepeating()){
+			callbackType = CB_NONE;
+			callback(this, callbackArg);
+		}
 		return true;
 	}
 
