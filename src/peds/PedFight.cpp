@@ -3458,6 +3458,8 @@ CPed::RemoveBodyPart(PedNode nodeId, int8 direction)
 	RwFrame *frame;
 	CVector pos;
 
+	if(nodeId < 0 || nodeId >= PED_NODE_MAX || m_pFrames[nodeId] == nil)
+		return;
 	frame = m_pFrames[nodeId]->frame;
 	if (frame) {
 		if (CGame::nastyGame) {

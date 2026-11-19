@@ -377,13 +377,22 @@ RpAnimBlendClumpFillFrameArraySkin(RpClump *clump, AnimBlendFrameData **frames)
 	CAnimBlendClumpData *clumpData = *RPANIMBLENDCLUMPDATA(clump);
 	RpHAnimHierarchy *hier = GetAnimHierarchyFromSkinClump(clump);
 	int missingBones = 0;
+	// PED_TORSO is the VC "torso" node that has no bone of its own; the game
+	// used the root for it, and the array must still be filled so a reader
+	// never dereferences an uninitialised slot.
+	frames[PED_TORSO] = &clumpData->frames[0];
 	for(i = PED_MID; i < PED_NODE_MAX; i++){
-		int index = RpHAnimIDGetIndex(hier, ConvertPedNode2BoneTag(i));
+		int bone = ConvertPedNode2BoneTag(i);
+		int index = bone < 0 ? -1 : RpHAnimIDGetIndex(hier, bone);
 		// SA/BR rigs can omit a VC bone. Do not make an out-of-bounds
-		// pointer; use the root for attachment/IK queries on missing nodes.
+		// pointer; use the root for attachment/IK queries on missing nodes,
+		// but remember that the node really has no bone: the weapon attach
+		// below must not hang a gun off the root.
 		if(index < 0 || index >= clumpData->numFrames){
 			index = 0;
 			missingBones++;
+			frames[i] = nil;
+			continue;
 		}
 		frames[i] = &clumpData->frames[index];
 	}
@@ -540,6 +549,17 @@ RpAnimBlendClumpUpdateAnimations(RpClump *clump, float timeDelta, bool doRender)
 	}else{
 		clumpData->ForAllFrames(FrameUpdateCallBackOffscreen, &updateData);
 		clumpData->frames[0].flag |= AnimBlendFrameData::UPDATE_KEYFRAMES;
+	}
+
+	// The callbacks above write the interpolated rotation and translation into
+	// the hierarchy's keyframes; nothing turns those into bone matrices. Without
+	// this the modelling matrices keep the pose the clump was loaded with, so a
+	// weapon attached to the hand bone, the IK rotations and every node
+	// position read the rest pose instead of the animated one.
+	if(IsClumpSkinned(clump)){
+		RpHAnimHierarchy *hier = GetAnimHierarchyFromSkinClump(clump);
+		if(hier)
+			RpHAnimHierarchyUpdateMatrices(hier);
 	}
 
 	for(link = clumpData->link.next; link; link = link->next){

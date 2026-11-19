@@ -796,6 +796,20 @@ CAnimManager::GetAnimAssociation(AssocGroupId groupId, const char *name)
 		if(alias && strcasecmp(alias, name) != 0)
 			assoc = ms_aAnimAssocGroups[groupId].GetAnimation(alias);
 	}
+	if(assoc == nil){
+		// SA puts the reaction and knockdown clips in the style group, not in
+		// every group that plays them: fistfite names HIT_front, FIGHT2IDLE and
+		// FightShF, which only the standard set declares. Look the name up
+		// everywhere before reporting it missing, so a melee table row gets the
+		// clip it names instead of no clip at all.
+		for(int g = 0; g < NUM_ANIM_ASSOC_GROUPS && assoc == nil; g++){
+			if(g == groupId)
+				continue;
+			CAnimBlendAssociation *found = ms_aAnimAssocGroups[g].GetAnimation(name);
+			if(found && IsAnimationCompatibleWithClump(nil, found->hierarchy))
+				assoc = found;
+		}
+	}
 	return assoc && IsAnimationCompatibleWithClump(nil, assoc->hierarchy) ? assoc : nil;
 }
 

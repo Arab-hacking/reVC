@@ -1147,17 +1147,36 @@ public:
 	CVector GetNodePosition(int32 node)
 	{
 		RwV3d pos = { 0.0f, 0.0f, 0.0f };
+		// A node the skeleton does not carry has no frame and no bone; the
+		// caller gets the entity origin rather than a matrix read from a
+		// negative index.
+		if(node < 0 || node >= PED_NODE_MAX || m_pFrames[node] == nil)
+			return GetPosition();
 		RpHAnimHierarchy *hier = GetAnimHierarchyFromSkinClump(GetClump());
+		if(hier == nil)
+			return GetPosition();
 		int32 idx = RpHAnimIDGetIndex(hier, m_pFrames[node]->nodeID);
+		if(idx < 0)
+			return GetPosition();
 		RwMatrix *mats = RpHAnimHierarchyGetMatrixArray(hier);
+		if(mats == nil)
+			return GetPosition();
 		pos = mats[idx].pos;
 		return pos;
 	}
 	void TransformToNode(CVector &pos, int32 node)
 	{
+		if(node < 0 || node >= PED_NODE_MAX || m_pFrames[node] == nil)
+			return;
 		RpHAnimHierarchy *hier = GetAnimHierarchyFromSkinClump(GetClump());
+		if(hier == nil)
+			return;
 		int32 idx = RpHAnimIDGetIndex(hier, m_pFrames[node]->nodeID);
+		if(idx < 0)
+			return;
 		RwMatrix *mats = RpHAnimHierarchyGetMatrixArray(hier);
+		if(mats == nil)
+			return;
 		RwV3dTransformPoints(&pos, &pos, 1, &mats[idx]);
 	}
 

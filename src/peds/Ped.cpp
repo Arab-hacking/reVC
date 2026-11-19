@@ -4647,7 +4647,14 @@ CPed::AddWeaponModel(int id)
 			return;
 		}
 
+		// CreateInstance answers nil when the model has no atomics loaded yet;
+		// an empty hand is the right result then, not a nil render below.
 		m_pWeaponModel = (RpAtomic*)weaponModel->CreateInstance();
+		if (m_pWeaponModel == nil){
+			REVC_LOG_WARNING("ped: weapon model %d has no atomics, no model attached", id);
+			m_wepModelID = -1;
+			return;
+		}
 		weaponModel->AddRef();
 		m_wepModelID = id;
 
