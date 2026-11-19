@@ -18,7 +18,10 @@ class CRunningScript;
 
 extern int32 ScriptParams[32];
 
-void FlushLog();
+// script_assert used to flush the opcode trace log before aborting. The trace
+// is gone with the interpreter, so there is nothing to flush; it stays inline
+// because MSVC otherwise emits a reference to a symbol that no longer exists.
+inline void FlushLog() {}
 #define script_assert(_Expression) FlushLog(); assert(_Expression);
 
 #define PICKUP_PLACEMENT_OFFSET (0.5f)
@@ -324,45 +327,13 @@ public:
 
 	int8 ProcessOneCommand();
 	int8 ProcessWeatherCommands(int32 command);
-	void DoDeatharrestCheck();
 	void UpdateCompareFlag(bool);
-	int16 GetPadState(uint16, uint16);
 
 
-	void LocatePlayerCommand(int32, uint32*);
-	void LocatePlayerCharCommand(int32, uint32*);
-	void LocatePlayerCarCommand(int32, uint32*);
-	void LocateCharCommand(int32, uint32*);
-	void LocateCharCharCommand(int32, uint32*);
-	void LocateCharCarCommand(int32, uint32*);
-	void LocateCharObjectCommand(int32, uint32*);
-	void LocateCarCommand(int32, uint32*);
-	void LocateSniperBulletCommand(int32, uint32*);
-	void PlayerInAreaCheckCommand(int32, uint32*);
-	void PlayerInAngledAreaCheckCommand(int32, uint32*);
-	void CharInAreaCheckCommand(int32, uint32*);
-	void CarInAreaCheckCommand(int32, uint32*);
-	void LocateObjectCommand(int32, uint32*);
-	void ObjectInAreaCheckCommand(int32, uint32*);
-
-#ifdef USE_ADVANCED_SCRIPT_DEBUG_OUTPUT
-	int CollectParameterForDebug(char* buf, bool& var);
-	void GetStoredParameterForDebug(char* buf);
-	void LogOnStartProcessing();
-	void LogBeforeProcessingCommand(int32 command);
-	void LogAfterProcessingCommand(int32 command);
-
-	static char commandInfo[];
-	static uint32 storedIp;
-
-#endif
 
 	float LimitAngleOnCircle(float angle) { return angle < 0.0f ? angle + 360.0f : angle; }
 
-	bool ThisIsAValidRandomCop(uint32 mi, int cop, int swat, int fbi, int army, int miami);
-	bool ThisIsAValidRandomPed(uint32 pedtype, int civ, int gang, int criminal);
 
-	bool CheckDamagedWeaponType(int32 actual, int32 type);
 	
 };
 
@@ -479,7 +450,6 @@ public:
 
 
 
-	static void PrintListSizes();
 
 
 	static void RemoveScriptTextureDictionary();
@@ -488,9 +458,6 @@ public:
 	static void CleanUpThisObject(CObject* pObject);
 
 	static uint32& GetLastMissionPassedTime() { return LastMissionPassedTime; }
-#ifdef MISSION_SWITCHER
-	static void SwitchToMission(int32 mission);
-#endif
 
 
 #ifdef USE_DEBUG_SCRIPT_LOADER
