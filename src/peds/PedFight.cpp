@@ -2424,6 +2424,55 @@ CPed::FinishFightMoveCB(CAnimBlendAssociation *animAssoc, void *arg)
 	}
 }
 
+// The engine never keys the move table on the order of the rows: it looks a
+// move up by the name in the first column, so a data file may list the moves in
+// any order and may leave one out without shifting every move after it. The
+// built-in table is ordered by the PedFightMoves enum, so the name is what ties
+// a row to its slot.
+static const struct { const char *name; int move; } s_fightMoveNames[] = {
+	{ "Null",           FIGHTMOVE_NULL },
+	{ "StdPunch",       FIGHTMOVE_STDPUNCH },
+	{ "Idle",           FIGHTMOVE_IDLE },
+	{ "Shuffle_f",      FIGHTMOVE_SHUFFLE_F },
+	{ "Knee",           FIGHTMOVE_KNEE },
+	{ "PunchHook",      FIGHTMOVE_PUNCHHOOK },
+	{ "Jab",            FIGHTMOVE_PUNCHJAB },
+	{ "Punch",          FIGHTMOVE_PUNCH },
+	{ "LongKick",       FIGHTMOVE_LONGKICK },
+	{ "RoundHouseKick", FIGHTMOVE_ROUNDHOUSE },
+	{ "FwdLeft",        FIGHTMOVE_FWDLEFT },
+	{ "FwdRight",       FIGHTMOVE_FWDRIGHT },
+	{ "BackKick",       FIGHTMOVE_BACKKICK },
+	{ "BackFlip",       FIGHTMOVE_BACKFLIP },
+	{ "BackLeft",       FIGHTMOVE_BACKLEFT },
+	{ "BackRight",      FIGHTMOVE_BACKRIGHT },
+	{ "RightSweep",     FIGHTMOVE_RIGHTSWEEP },
+	{ "GroundKick",     FIGHTMOVE_GROUNDKICK },
+	{ "HitFront",       FIGHTMOVE_HITFRONT },
+	{ "HitBack",        FIGHTMOVE_HITBACK },
+	{ "HitRight",       FIGHTMOVE_HITRIGHT },
+	{ "HitLeft",        FIGHTMOVE_HITLEFT },
+	{ "HitBody",        FIGHTMOVE_HITBODY },
+	{ "HitChest",       FIGHTMOVE_HITCHEST },
+	{ "HitHead",        FIGHTMOVE_HITHEAD },
+	{ "HitBigStep",     FIGHTMOVE_HITBIGSTEP },
+	{ "HitOnFloor",     FIGHTMOVE_HITONFLOOR },
+	{ "HitBehind",      FIGHTMOVE_HITBEHIND },
+	{ "Melee1",         FIGHTMOVE_MELEE1 },
+	{ "Melee2",         FIGHTMOVE_MELEE2 },
+	{ "Melee3",         FIGHTMOVE_MELEE3 },
+	{ "Idle2Norm",      FIGHTMOVE_IDLE2NORM },
+};
+
+static int
+FightMoveFromName(const char *name)
+{
+	for(int i = 0; i < (int)ARRAY_SIZE(s_fightMoveNames); i++)
+		if(strcasecmp(name, s_fightMoveNames[i].name) == 0)
+			return s_fightMoveNames[i].move;
+	return -1;
+}
+
 void
 CPed::LoadFightData(void)
 {
@@ -2432,6 +2481,9 @@ CPed::LoadFightData(void)
 	int damage, flags;
 	char line[256], moveName[32], animName[32], hitLevel;
 	int moveId = 0;
+	// Position of the row in the file, used only for a move name this build
+	// cannot place.
+	int rowId = 0;
 
 	CAnimBlendAssociation *animAssoc;
 
@@ -2499,12 +2551,21 @@ CPed::LoadFightData(void)
 
 		if (strncmp(moveName, "ENDWEAPONDATA", 13) == 0)
 			return;
-		// The table is fixed size; a data file with more rows than moves must
-		// not walk off the end of it.
-		if (moveId < 0 || moveId >= NUM_FIGHTMOVES){
-			REVC_LOG_WARNING("melee table: more than %d moves, ignoring the rest", NUM_FIGHTMOVES);
-			return;
+		// A row belongs to the move it names, not to the row's position: the
+		// data file is free to reorder its rows or omit one, and indexing by
+		// position would then hand every later move the parameters of its
+		// neighbour. A name this build does not know still gets its row, in
+		// file order, so an unfamiliar table keeps the old behaviour.
+		moveId = FightMoveFromName(moveName);
+		if (moveId < 0){
+			if(rowId < 0 || rowId >= NUM_FIGHTMOVES){
+				REVC_LOG_WARNING("melee table: unknown move %s and no free slot, row ignored", moveName);
+				continue;
+			}
+			REVC_LOG_WARNING("melee table: unknown move %s, taking row %d", moveName, rowId);
+			moveId = rowId;
 		}
+		rowId++;
 
 		tFightMoves[moveId].startFireTime = startFireTime / 30.0f;
 		tFightMoves[moveId].endFireTime = endFireTime / 30.0f;
@@ -2565,7 +2626,6 @@ CPed::LoadFightData(void)
 				tFightMoves[moveId].animId = ANIM_ID_WALK;
 			}
 		}
-		moveId++;
 	}
 }
 
