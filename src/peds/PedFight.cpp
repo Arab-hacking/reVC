@@ -1236,10 +1236,15 @@ CPed::StartFightAttack(uint8 buttonPressure)
 					break;
 			}
 		} else {
+			// The strikes play slower than the clip was authored because the
+			// wind-up is what the player has to read to time a block. That
+			// makes the whole move arrive late, though, and the punch lands
+			// after the arm has already started to come back. Keep the read
+			// time but bring the strike itself forward.
 			if (m_curFightMove == FIGHTMOVE_BACKKICK)
 				animAssoc->speed = 1.15f;
 			else
-				animAssoc->speed = 0.8f;
+				animAssoc->speed = 0.95f;
 		}
 		if (IsPlayer())
 			animAssoc->SetCurrentTime(0.08f);
@@ -1615,10 +1620,17 @@ CPed::Fight(void)
 
 		if (curMove.hitLevel != HITLEVEL_NULL) {
 			if (animTime > curMove.endFireTime && weaponInfo->m_AnimToPlay != ASSOCGRP_KNIFE_1) {
+				// The swing is over: the hand has passed the target and what is
+				// left of the clip is the arm drifting back down. Played at the
+				// speed the move was started with, that tail keeps the fist out
+				// for a moment after the blow, which reads as a limp, slow
+				// punch. Run the recovery out quickly instead, so the move ends
+				// on the strike and the next one can follow. The callback still
+				// fires on its own, the clip just gets there sooner.
 				if (IsPlayer())
-					currentAssoc->speed = 1.0f;
+					currentAssoc->speed = 1.6f;
 				else
-					currentAssoc->speed = 0.8f;
+					currentAssoc->speed = 1.15f;
 			}
 
 			if (IsPlayer() && !nPlayerInComboMove && !fightWithWeapon) {
