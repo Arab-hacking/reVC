@@ -72,6 +72,12 @@ CPed::CPed(uint32 pedType) : m_pedIK(this)
 	m_fHealth = 100.0f;
 	m_fArmour = 0.0f;
 	m_nPedType = pedType;
+	// A ped is asked for its stats before its model is set, and 48 places read
+	// them without a test. Start on the standard stat entry rather than on
+	// whatever a fresh allocation held.
+	m_pedStats = CPedStats::ms_apPedStats[PEDSTAT_STD_MISSION];
+	if(m_pedStats == nil)
+		m_pedStats = CPedStats::ms_apPedStats[0];
 	m_lastSoundStart = 0;
 	m_soundStart = 0;
 	m_lastQueuedSound = SOUND_NO_SOUND;
