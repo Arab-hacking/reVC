@@ -4584,6 +4584,15 @@ CPed::CanBeDeletedEvenInVehicle(void)
 	}
 }
 
+// A ped keeps only the model id it was created with; the model behind that id
+// can be absent from the loaded data set, and the skate, stat and animation
+// code all read fields from it.
+CPedModelInfo *
+CPed::PedModelInfo(void) const
+{
+	return (CPedModelInfo*)CModelInfo::GetModelInfo(m_modelIndex);
+}
+
 void
 CPed::AddWeaponModel(int id)
 {
@@ -4591,12 +4600,25 @@ CPed::AddWeaponModel(int id)
 		if (m_pWeaponModel)
 			RemoveWeaponModel(-1);
 
-		m_pWeaponModel = (RpAtomic*)CModelInfo::GetModelInfo(id)->CreateInstance();
-		CModelInfo::GetModelInfo(id)->AddRef();
+		// A weapon id comes from the weapon table and need not name a model the
+		// loaded data set carries; an absent one leaves the hand empty rather
+		// than dereferencing nothing.
+		CBaseModelInfo *weaponModel = CModelInfo::GetModelInfo(id);
+		if (weaponModel == nil){
+			REVC_LOG_WARNING("ped: weapon model %d is not loaded, no model attached", id);
+			m_wepModelID = -1;
+			return;
+		}
+
+		m_pWeaponModel = (RpAtomic*)weaponModel->CreateInstance();
+		weaponModel->AddRef();
 		m_wepModelID = id;
 
-		if (IsPlayer() && id == MI_MINIGUN)
-			((CPlayerPed*)this)->m_pMinigunTopAtomic = (RpAtomic*)CModelInfo::GetModelInfo(MI_MINIGUN2)->CreateInstance();
+		if (IsPlayer() && id == MI_MINIGUN){
+			CBaseModelInfo *minigunTop = CModelInfo::GetModelInfo(MI_MINIGUN2);
+			if (minigunTop)
+				((CPlayerPed*)this)->m_pMinigunTopAtomic = (RpAtomic*)minigunTop->CreateInstance();
+		}
 	}
 }
 
@@ -6201,7 +6223,7 @@ CPed::WanderPath(void)
 	ThePaths.FindNextNodeWandering(PATH_PED, GetPosition(), &m_pLastPathNode, &m_pNextPathNode,
 		m_nPathDir, &dirToSet);
 
-	if (((CPedModelInfo*)CModelInfo::GetModelInfo(m_modelIndex))->m_pedStatType == PEDSTAT_SKATER) {
+	if (PedModelInfo() && PedModelInfo()->m_pedStatType == PEDSTAT_SKATER) {
 		if (m_pNextPathNode) {
 			CVector unpacked(m_pNextPathNode->GetPosition() / 8.f);
 			if (!CPopulation::IsSkateable(unpacked))
@@ -6235,7 +6257,7 @@ CPed::WanderPath(void)
 					m_pNextPathNode = nil;
 				}
 			}
-			if (((CPedModelInfo*)CModelInfo::GetModelInfo(m_modelIndex))->m_pedStatType == PEDSTAT_SKATER) {
+			if (PedModelInfo() && PedModelInfo()->m_pedStatType == PEDSTAT_SKATER) {
 				if (m_pNextPathNode) {
 					CVector unpacked(m_pNextPathNode->GetPosition() / 8.f);
 					if (!CPopulation::IsSkateable(unpacked))

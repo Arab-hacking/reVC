@@ -369,9 +369,14 @@ extern float gfTommyFatness;
 
 class CVehicle;
 
+class CPedModelInfo;
+
 class CPed : public CPhysical
 {
 public:
+	// The model a ped was created from may not be in the loaded data set, so
+	// every field read goes through a lookup that can answer nil.
+	CPedModelInfo *PedModelInfo(void) const;
 #ifdef USE_CUTSCENE_SHADOW_FOR_PED
 	class CCutsceneShadow *m_pRTShadow;
 #endif

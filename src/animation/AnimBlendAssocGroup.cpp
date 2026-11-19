@@ -154,9 +154,13 @@ GetModelFromName(const char *name)
 	CBaseModelInfo *mi;
 	char playername[32];
 
-	if(strncasecmp(name, "CSplay", 6) == 0 &&
-	   strncasecmp(CModelInfo::GetModelInfo(MI_PLAYER)->GetModelName(), "ig", 2) == 0){
-		strcpy(playername, CModelInfo::GetModelInfo(MI_PLAYER)->GetModelName());
+	// The player model is whatever the loaded data set calls it, and a set
+	// without one leaves nothing to rename against.
+	CBaseModelInfo *playerModel = CModelInfo::GetModelInfo(MI_PLAYER);
+	if(playerModel && strncasecmp(name, "CSplay", 6) == 0 &&
+	   strncasecmp(playerModel->GetModelName(), "ig", 2) == 0){
+		strncpy(playername, playerModel->GetModelName(), sizeof(playername) - 1);
+		playername[sizeof(playername) - 1] = '\0';
 		playername[0] = 'C';
 		playername[1] = 'S';
 		name = playername;

@@ -165,6 +165,19 @@ CPopulation::ChoosePolicePedOccupation()
 	return COP_STREET;
 }
 
+// A model id in the ped group files need not name a model the loaded data set
+// carries, and every reader of the group table asks the model for a field.
+// Answering nil for an absent or non-ped model keeps those readers from
+// dereferencing nothing.
+static CPedModelInfo *
+SafePedModelInfo(int32 modelId)
+{
+	CBaseModelInfo *mi = CModelInfo::GetModelInfo(modelId);
+	if(mi == nil || mi->GetModelType() != MITYPE_PED)
+		return nil;
+	return (CPedModelInfo*)mi;
+}
+
 void
 CPopulation::LoadPedGroups()
 {
@@ -597,13 +610,19 @@ CPopulation::AddToPopulation(float minDist, float maxDist, float minDistOffScree
 
 					if (modelToAdd == -1)
 						return;
-					pedTypeToAdd = ((CPedModelInfo*)CModelInfo::GetModelInfo(modelToAdd))->m_pedType;
+					CPedModelInfo *chosenPair = SafePedModelInfo(modelToAdd);
+				if (chosenPair == nil)
+					return;
+				pedTypeToAdd = chosenPair->m_pedType;
 
 				} else {
 					ChooseCivilianCoupleOccupations(zoneInfo.pedGroup, man, woman);
 					if (man == -1 || woman == -1)
 						return;
-					pedTypeToAdd = ((CPedModelInfo*)CModelInfo::GetModelInfo(woman))->m_pedType;
+					CPedModelInfo *chosenWoman = SafePedModelInfo(woman);
+					if (chosenWoman == nil)
+						return;
+					pedTypeToAdd = chosenWoman->m_pedType;
 				}
 			} else {
 				pedTypeToAdd = PEDTYPE_GANG1 + i;
@@ -614,7 +633,10 @@ CPopulation::AddToPopulation(float minDist, float maxDist, float minDistOffScree
 
 					if (modelToAdd == -1)
 						return;
-					pedTypeToAdd = ((CPedModelInfo*)CModelInfo::GetModelInfo(modelToAdd))->m_pedType;
+					CPedModelInfo *chosenPair = SafePedModelInfo(modelToAdd);
+				if (chosenPair == nil)
+					return;
+				pedTypeToAdd = chosenPair->m_pedType;
 
 				}
 			}
@@ -724,7 +746,8 @@ CPopulation::AddToPopulation(float minDist, float maxDist, float minDistOffScree
 			}
 
 			// Place skaters if only they're on tarmac.
-			if (((CPedModelInfo*)CModelInfo::GetModelInfo(modelToAdd))->m_pedStatType == PEDSTAT_SKATER) {
+			if (SafePedModelInfo(modelToAdd) &&
+			   SafePedModelInfo(modelToAdd)->m_pedStatType == PEDSTAT_SKATER) {
 				CEntity* foundEnt = nil;
 				CColPoint foundCol;
 				CWorld::ProcessVerticalLine(generatedCoors + CVector(0.f, 0.f, 2.f), generatedCoors.z - 2.0f, foundCol, foundEnt, true, false, false, false, false, false, nil);
@@ -741,6 +764,10 @@ CPopulation::AddToPopulation(float minDist, float maxDist, float minDistOffScree
 			if (!surfaceAndDistIsOk)
 				break;
 			CPed *newPed = AddPed((ePedType)pedTypeToAdd, modelToAdd, generatedCoors);
+			// The pool can refuse a ped, and the code below drives the one it
+			// returned.
+			if (newPed == nil)
+				break;
 			if (forceAddingCop && newPed->m_nPedType == PEDTYPE_COP)
 				((CCopPed*)newPed)->m_bThrowsSpikeTrap = true;
 
@@ -883,7 +910,8 @@ CPopulation::AddPedInCar(CVehicle* car, bool isDriver)
 
 					if (pedModel->GetRwObject()) {
 						if (!car->IsPassenger(preferredModel) && !car->IsDriver(preferredModel)) {
-							if (((CPedModelInfo*)CModelInfo::GetModelInfo(preferredModel))->m_carsCanDrive & (1 << carModel->m_vehicleClass))
+							if (SafePedModelInfo(preferredModel) &&
+							   SafePedModelInfo(preferredModel)->m_carsCanDrive & (1 << carModel->m_vehicleClass))
 								break;
 						}
 					}
@@ -893,16 +921,34 @@ CPopulation::AddPedInCar(CVehicle* car, bool isDriver)
 				if (i == -1)
 					preferredModel = defaultModel;
 
-				pedType = ((CPedModelInfo*)CModelInfo::GetModelInfo(preferredModel))->m_pedType;
+				CPedModelInfo *chosen = (CPedModelInfo*)CModelInfo::GetModelInfo(preferredModel);
+				if (chosen == nil || chosen->GetModelType() != MITYPE_PED){
+					preferredModel = defaultModel;
+					chosen = (CPedModelInfo*)CModelInfo::GetModelInfo(defaultModel);
+					if (chosen == nil)
+						return nil;
+				}
+				pedType = chosen->m_pedType;
 			}
 			break;
 	}
-	if (!imSureThatModelIsLoaded && !((CPedModelInfo*)CModelInfo::GetModelInfo(preferredModel))->GetRwObject()) {
+	// The occupant has to be a ped that is actually loaded, so a model the
+	// group table named but the data set does not carry falls back too.
+	CPedModelInfo *chosenPed = (CPedModelInfo*)CModelInfo::GetModelInfo(preferredModel);
+	if (chosenPed == nil || chosenPed->GetModelType() != MITYPE_PED ||
+	   (!imSureThatModelIsLoaded && !chosenPed->GetRwObject())) {
+		chosenPed = (CPedModelInfo*)CModelInfo::GetModelInfo(defaultModel);
+		if (chosenPed == nil || chosenPed->GetModelType() != MITYPE_PED)
+			return nil;
 		preferredModel = defaultModel;
-		pedType = ((CPedModelInfo*)CModelInfo::GetModelInfo(defaultModel))->m_pedType;
+		pedType = chosenPed->m_pedType;
 	}
 
 	CPed *newPed = CPopulation::AddPed((ePedType)pedType, preferredModel, car->GetPosition(), miamiViceIndex);
+	// A type the pool or the switch above cannot place leaves no occupant to
+	// finish setting up.
+	if (newPed == nil)
+		return nil;
 	newPed->bUsesCollision = false;
 
 	if (newPed->GetWeapon()->m_eWeaponType != WEAPONTYPE_UNARMED) {
@@ -1171,9 +1217,12 @@ CPopulation::AddDeadPedInFrontOfCar(const CVector& pos, CVehicle* pCulprit)
 	if (!found)
 		return nil;
 	z = Max(z, pos.z);
-	if (!CModelInfo::GetModelInfo(MI_MALE01)->GetRwObject())
+	CBaseModelInfo *deadPedModel = CModelInfo::GetModelInfo(MI_MALE01);
+	if (deadPedModel == nil || !deadPedModel->GetRwObject())
 		return nil;
 	CPed* pPed = CPopulation::AddPed(PEDTYPE_CIVMALE, MI_MALE01, pos);
+	if (pPed == nil)
+		return nil;
 	pPed->SetDie();
 	pPed->m_nPedMoney = 0;
 	pPed->bDeadPedInFrontOfCar = true;
@@ -1392,7 +1441,8 @@ CPopulation::ChooseCivilianCoupleOccupations(int32 group, int32& man, int32& wom
 			break;
 
 		int32 model = ms_pPedGroups[group].models[CGeneral::GetRandomNumberInRange(0, NUMMODELSPERPEDGROUP)];
-		if (man == -1 && IsMale(model) && ((CPedModelInfo*)CModelInfo::GetModelInfo(model))->m_pedType == PEDTYPE_CIVMALE) {
+		if (man == -1 && IsMale(model) && SafePedModelInfo(model) &&
+		   SafePedModelInfo(model)->m_pedType == PEDTYPE_CIVMALE) {
 			man = model;
 		}
 	}
@@ -1445,7 +1495,7 @@ CPopulation::PlaceGangMembersInFormation(ePedType pedType, int pedAmount, CVecto
 			if (leaderFoundGround) {
 				float finalZ = coors.z > leaderGroundZ ? coors.z : leaderGroundZ;
 				int leaderModel = ChooseGangOccupation(pedType - PEDTYPE_GANG1);
-				if (((CPedModelInfo*)CModelInfo::GetModelInfo(leaderModel))->GetRwObject()) {
+				if (SafePedModelInfo(leaderModel) && SafePedModelInfo(leaderModel)->GetRwObject()) {
 					CPed *leader = AddPed(pedType, leaderModel, CVector(coors.x, coors.y, finalZ));
 					if (leader) {
 						leader->SetObjective(OBJECTIVE_NONE);
@@ -1458,7 +1508,8 @@ CPopulation::PlaceGangMembersInFormation(ePedType pedType, int pedAmount, CVecto
 						createdPeds[0] = leader;
 						for (int i = 1; i < pedAmount; ++i) {
 							int memberModel = ChooseGangOccupation(pedType - PEDTYPE_GANG1);
-							if (!((CPedModelInfo*)CModelInfo::GetModelInfo(memberModel))->GetRwObject())
+							if (SafePedModelInfo(memberModel) == nil ||
+							   !SafePedModelInfo(memberModel)->GetRwObject())
 								continue;
 
 							CPed* memberPed = AddPed(pedType, memberModel, CVector(coors.x, coors.y, finalZ));
@@ -1542,7 +1593,7 @@ CPopulation::PlaceGangMembersInCircle(ePedType pedType, int pedAmount, CVector c
 						leaderPos = finalPos;
 
 					int gangModel = ChooseGangOccupation(pedType - PEDTYPE_GANG1);
-					if (((CPedModelInfo*)CModelInfo::GetModelInfo(gangModel))->GetRwObject()) {
+					if (SafePedModelInfo(gangModel) && SafePedModelInfo(gangModel)->GetRwObject()) {
 						CEntity* obstacles[6] = { nil, nil, nil, nil, nil, nil };
 						CPedPlacement::IsPositionClearForPed(finalPos, CModelInfo::GetColModel(gangModel)->boundingSphere.radius, ARRAY_SIZE(obstacles), obstacles);
 						bool foundObstacle = false;
@@ -1634,7 +1685,7 @@ CPopulation::PlaceCouple(ePedType manType, int32 manModel, ePedType womanType, i
 			if (manFoundGround) {
 				CVector correctedManPos = coors;
 				correctedManPos.z = Max(coors.z, manGroundZ);
-				if (((CPedModelInfo*)CModelInfo::GetModelInfo(manModel))->GetRwObject()) {
+				if (SafePedModelInfo(manModel) && SafePedModelInfo(manModel)->GetRwObject()) {
 					CPed *man = AddPed(PEDTYPE_CIVMALE, manModel, correctedManPos);
 					if (man) {
 						man->SetObjective(OBJECTIVE_NONE);
@@ -1642,7 +1693,7 @@ CPopulation::PlaceCouple(ePedType manType, int32 manModel, ePedType womanType, i
 						man->bIsLeader = true;
 						CVisibilityPlugins::SetClumpAlpha(man->GetClump(), 0);
 
-						if (((CPedModelInfo*)CModelInfo::GetModelInfo(womanModel))->GetRwObject()) {
+						if (SafePedModelInfo(womanModel) && SafePedModelInfo(womanModel)->GetRwObject()) {
 							CPed* woman = AddPed(PEDTYPE_CIVFEMALE, womanModel, correctedManPos); // will set the correct position later
 							if (woman) {
 								woman->SetObjective(OBJECTIVE_FOLLOW_CHAR_IN_FORMATION, man);

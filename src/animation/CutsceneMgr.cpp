@@ -394,7 +394,10 @@ CCutsceneMgr::CreateCutsceneObject(int modelId)
 	CCutsceneObject *pCutsceneObject;
 
 	CStreaming::ImGonnaUseStreamingMemory();
-	debug("Created cutscene object %s\n", CModelInfo::GetModelInfo(modelId)->GetModelName());
+	{
+		CBaseModelInfo *cutInfo = CModelInfo::GetModelInfo(modelId);
+		debug("Created cutscene object %s\n", cutInfo ? cutInfo->GetModelName() : "(no model)");
+	}
 	if (modelId >= MI_CUTOBJ01 && modelId <= MI_CUTOBJ05) {
 		pModelInfo = CModelInfo::GetModelInfo(modelId);
 		pColModel = &CTempColModels::ms_colModelCutObj[modelId - MI_CUTOBJ01];
