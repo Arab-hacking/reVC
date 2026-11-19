@@ -4590,6 +4590,21 @@ CPed::CanBeDeletedEvenInVehicle(void)
 	}
 }
 
+// RpHAnimIDGetIndex answers -1 for a bone the skeleton does not carry, and a
+// Vice City skeleton has no SA spine or clavicle; the matrix array cannot be
+// indexed with it. The wind and body-damage code scales a bone it names, so an
+// absent bone simply has nothing to scale.
+static RwMatrix *
+GetBoneMatrixSafe(RpHAnimHierarchy *hier, int32 idx)
+{
+	if(hier == nil || idx < 0)
+		return nil;
+	RwMatrix *mats = RpHAnimHierarchyGetMatrixArray(hier);
+	if(mats == nil)
+		return nil;
+	return &mats[idx];
+}
+
 // A ped keeps only the model id it was created with; the model behind that id
 // can be absent from the loaded data set, and the skate, stat and animation
 // code all read fields from it.
@@ -4905,8 +4920,9 @@ CPed::PreRender(void)
 		scale.z = CGeneral::GetRandomNumberInRange(1.0f - fScaleOffset, 1.0f + fScaleOffset);
 
 		idx = RpHAnimIDGetIndex(hier, ConvertPedNode2BoneTag(PED_NECK));
-		RwMatrix* neck = &RpHAnimHierarchyGetMatrixArray(hier)[idx];
-		RwMatrixScale(neck, &scale, rwCOMBINEPRECONCAT);
+		RwMatrix* neck = GetBoneMatrixSafe(hier, idx);
+		if (neck)
+			RwMatrixScale(neck, &scale, rwCOMBINEPRECONCAT);
 
 		fScaleOffset = fWindMult * 0.1f;
 		scale.x = CGeneral::GetRandomNumberInRange(1.0f - fScaleOffset, 1.0f + fScaleOffset);
@@ -4914,16 +4930,19 @@ CPed::PreRender(void)
 		scale.z = CGeneral::GetRandomNumberInRange(1.0f - fScaleOffset, 1.0f + fScaleOffset);
 
 		idx = RpHAnimIDGetIndex(hier, ConvertPedNode2BoneTag(PED_CLAVICLEL));
-		RwMatrix* clavicleL = &RpHAnimHierarchyGetMatrixArray(hier)[idx];
-		RwMatrixScale(clavicleL, &scale, rwCOMBINEPRECONCAT);
+		RwMatrix* clavicleL = GetBoneMatrixSafe(hier, idx);
+		if (clavicleL)
+			RwMatrixScale(clavicleL, &scale, rwCOMBINEPRECONCAT);
 		
 		idx = RpHAnimIDGetIndex(hier, ConvertPedNode2BoneTag(PED_CLAVICLER));
-		RwMatrix* clavicleR = &RpHAnimHierarchyGetMatrixArray(hier)[idx];
-		RwMatrixScale(clavicleR, &scale, rwCOMBINEPRECONCAT);
+		RwMatrix* clavicleR = GetBoneMatrixSafe(hier, idx);
+		if (clavicleR)
+			RwMatrixScale(clavicleR, &scale, rwCOMBINEPRECONCAT);
 
 		idx = RpHAnimIDGetIndex(hier, ConvertPedNode2BoneTag(PED_MID));
-		RwMatrix* mid = &RpHAnimHierarchyGetMatrixArray(hier)[idx];
-		RwMatrixScale(mid, &scale, rwCOMBINEPRECONCAT);
+		RwMatrix* mid = GetBoneMatrixSafe(hier, idx);
+		if (mid)
+			RwMatrixScale(mid, &scale, rwCOMBINEPRECONCAT);
 
 		fScaleOffset = fWindMult * 0.2f;
 		scale.x = CGeneral::GetRandomNumberInRange(1.0f - fScaleOffset, 1.0f + fScaleOffset);
@@ -4931,21 +4950,24 @@ CPed::PreRender(void)
 		scale.z = CGeneral::GetRandomNumberInRange(1.0f - fScaleOffset, 1.0f + fScaleOffset);
 
 		idx = RpHAnimIDGetIndex(hier, ConvertPedNode2BoneTag(PED_UPPERARML));
-		RwMatrix* upperArmL = &RpHAnimHierarchyGetMatrixArray(hier)[idx];
-		RwMatrixScale(upperArmL, &scale, rwCOMBINEPRECONCAT);
+		RwMatrix* upperArmL = GetBoneMatrixSafe(hier, idx);
+		if (upperArmL)
+			RwMatrixScale(upperArmL, &scale, rwCOMBINEPRECONCAT);
 
 		idx = RpHAnimIDGetIndex(hier, ConvertPedNode2BoneTag(PED_UPPERARMR));
-		RwMatrix* upperArmR = &RpHAnimHierarchyGetMatrixArray(hier)[idx];
-		RwMatrixScale(upperArmR, &scale, rwCOMBINEPRECONCAT);
+		RwMatrix* upperArmR = GetBoneMatrixSafe(hier, idx);
+		if (upperArmR)
+			RwMatrixScale(upperArmR, &scale, rwCOMBINEPRECONCAT);
 	}
 
 	if (bBodyPartJustCameOff && m_bodyPartBleeding == PED_HEAD) {
 		// scale head to 0 if shot off
 		RpHAnimHierarchy* hier = GetAnimHierarchyFromSkinClump(GetClump());
 		int32 idx = RpHAnimIDGetIndex(hier, ConvertPedNode2BoneTag(PED_HEAD));
-		RwMatrix* head = &RpHAnimHierarchyGetMatrixArray(hier)[idx];
+		RwMatrix* head = GetBoneMatrixSafe(hier, idx);
 		RwV3d zero = { 0.0f, 0.0f, 0.0f };
-		RwMatrixScale(head, &zero, rwCOMBINEPRECONCAT);
+		if (head)
+			RwMatrixScale(head, &zero, rwCOMBINEPRECONCAT);
 	}
 
 	if (IsPlayer() && gfTommyFatness != 1.0f) {
@@ -4957,68 +4979,81 @@ CPed::PreRender(void)
 		scale.y = 1.0f + gfTommyFatness * 0.7f;
 		scale.z = 1.0f + gfTommyFatness * 0.7f;
 		idx = RpHAnimIDGetIndex(hier, ConvertPedNode2BoneTag(PED_HEAD));
-		RwMatrix* head = &RpHAnimHierarchyGetMatrixArray(hier)[idx];
-		RwMatrixScale(head, &scale, rwCOMBINEPRECONCAT);
+		RwMatrix* head = GetBoneMatrixSafe(hier, idx);
+		if (head)
+			RwMatrixScale(head, &scale, rwCOMBINEPRECONCAT);
 
 		scale.y = 1.0f + gfTommyFatness * 0.2f;
 		scale.z = 1.0f + gfTommyFatness * 0.2f;
 		idx = RpHAnimIDGetIndex(hier, ConvertPedNode2BoneTag(PED_NECK));
-		RwMatrix* neck = &RpHAnimHierarchyGetMatrixArray(hier)[idx];
-		RwMatrixScale(neck, &scale, rwCOMBINEPRECONCAT);
+		RwMatrix* neck = GetBoneMatrixSafe(hier, idx);
+		if (neck)
+			RwMatrixScale(neck, &scale, rwCOMBINEPRECONCAT);
 
 		scale.y = 1.0f + gfTommyFatness * 0.5f;
 		scale.z = 1.0f + gfTommyFatness * 0.5f;
 		idx = RpHAnimIDGetIndex(hier, ConvertPedNode2BoneTag(PED_MID));
-		RwMatrix* mid = &RpHAnimHierarchyGetMatrixArray(hier)[idx];
-		RwMatrixScale(mid, &scale, rwCOMBINEPRECONCAT);
+		RwMatrix* mid = GetBoneMatrixSafe(hier, idx);
+		if (mid)
+			RwMatrixScale(mid, &scale, rwCOMBINEPRECONCAT);
 
 		scale.y = 1.0f + gfTommyFatness;
 		scale.z = 1.0f + gfTommyFatness;
 		idx = RpHAnimIDGetIndex(hier, ConvertPedNode2BoneTag(PED_UPPERLEGL));
-		RwMatrix* upperLegL = &RpHAnimHierarchyGetMatrixArray(hier)[idx];
-		RwMatrixScale(upperLegL, &scale, rwCOMBINEPRECONCAT);
+		RwMatrix* upperLegL = GetBoneMatrixSafe(hier, idx);
+		if (upperLegL)
+			RwMatrixScale(upperLegL, &scale, rwCOMBINEPRECONCAT);
 
 		idx = RpHAnimIDGetIndex(hier, ConvertPedNode2BoneTag(PED_UPPERLEGR));
-		RwMatrix* upperLegR = &RpHAnimHierarchyGetMatrixArray(hier)[idx];
-		RwMatrixScale(upperLegR, &scale, rwCOMBINEPRECONCAT);
+		RwMatrix* upperLegR = GetBoneMatrixSafe(hier, idx);
+		if (upperLegR)
+			RwMatrixScale(upperLegR, &scale, rwCOMBINEPRECONCAT);
 
 		scale.y = 1.0f + gfTommyFatness * 0.5f;
 		scale.z = 1.0f + gfTommyFatness * 0.5f;
 		idx = RpHAnimIDGetIndex(hier, ConvertPedNode2BoneTag(PED_LOWERLEGR));
-		RwMatrix* lowerLegR = &RpHAnimHierarchyGetMatrixArray(hier)[idx];
-		RwMatrixScale(lowerLegR, &scale, rwCOMBINEPRECONCAT);
+		RwMatrix* lowerLegR = GetBoneMatrixSafe(hier, idx);
+		if (lowerLegR)
+			RwMatrixScale(lowerLegR, &scale, rwCOMBINEPRECONCAT);
 
 		idx = RpHAnimIDGetIndex(hier, ConvertPedNode2BoneTag(PED_LOWERLEGL));
-		RwMatrix* lowerLegL = &RpHAnimHierarchyGetMatrixArray(hier)[idx];
-		RwMatrixScale(lowerLegL, &scale, rwCOMBINEPRECONCAT);
+		RwMatrix* lowerLegL = GetBoneMatrixSafe(hier, idx);
+		if (lowerLegL)
+			RwMatrixScale(lowerLegL, &scale, rwCOMBINEPRECONCAT);
 
 		scale.y = 1.0f + gfTommyFatness * 0.23f;
 		scale.z = 1.0f + gfTommyFatness * 0.23f;
 		idx = RpHAnimIDGetIndex(hier, ConvertPedNode2BoneTag(PED_FOOTL));
-		RwMatrix* footL = &RpHAnimHierarchyGetMatrixArray(hier)[idx];
-		RwMatrixScale(footL, &scale, rwCOMBINEPRECONCAT);
+		RwMatrix* footL = GetBoneMatrixSafe(hier, idx);
+		if (footL)
+			RwMatrixScale(footL, &scale, rwCOMBINEPRECONCAT);
 
 		idx = RpHAnimIDGetIndex(hier, ConvertPedNode2BoneTag(PED_FOOTR));
-		RwMatrix* footR = &RpHAnimHierarchyGetMatrixArray(hier)[idx];
-		RwMatrixScale(footR, &scale, rwCOMBINEPRECONCAT);
+		RwMatrix* footR = GetBoneMatrixSafe(hier, idx);
+		if (footR)
+			RwMatrixScale(footR, &scale, rwCOMBINEPRECONCAT);
 
 		idx = RpHAnimIDGetIndex(hier, ConvertPedNode2BoneTag(PED_UPPERARML));
-		RwMatrix* upperArmL = &RpHAnimHierarchyGetMatrixArray(hier)[idx];
-		RwMatrixScale(upperArmL, &scale, rwCOMBINEPRECONCAT);
+		RwMatrix* upperArmL = GetBoneMatrixSafe(hier, idx);
+		if (upperArmL)
+			RwMatrixScale(upperArmL, &scale, rwCOMBINEPRECONCAT);
 
 		idx = RpHAnimIDGetIndex(hier, ConvertPedNode2BoneTag(PED_UPPERARMR));
-		RwMatrix* upperArmR = &RpHAnimHierarchyGetMatrixArray(hier)[idx];
-		RwMatrixScale(upperArmR, &scale, rwCOMBINEPRECONCAT);
+		RwMatrix* upperArmR = GetBoneMatrixSafe(hier, idx);
+		if (upperArmR)
+			RwMatrixScale(upperArmR, &scale, rwCOMBINEPRECONCAT);
 
 		scale.y = 1.0f + gfTommyFatness * 0.2f;
 		scale.z = 1.0f + gfTommyFatness * 0.2f;
 		idx = RpHAnimIDGetIndex(hier, ConvertPedNode2BoneTag(PED_FOREARML));
-		RwMatrix* foreArmL = &RpHAnimHierarchyGetMatrixArray(hier)[idx];
-		RwMatrixScale(foreArmL, &scale, rwCOMBINEPRECONCAT);
+		RwMatrix* foreArmL = GetBoneMatrixSafe(hier, idx);
+		if (foreArmL)
+			RwMatrixScale(foreArmL, &scale, rwCOMBINEPRECONCAT);
 
 		idx = RpHAnimIDGetIndex(hier, ConvertPedNode2BoneTag(PED_FOREARMR));
-		RwMatrix* foreArmR = &RpHAnimHierarchyGetMatrixArray(hier)[idx];
-		RwMatrixScale(foreArmR, &scale, rwCOMBINEPRECONCAT);
+		RwMatrix* foreArmR = GetBoneMatrixSafe(hier, idx);
+		if (foreArmR)
+			RwMatrixScale(foreArmR, &scale, rwCOMBINEPRECONCAT);
 	}
 
 	if (bBodyPartJustCameOff && bIsPedDieAnimPlaying && m_bodyPartBleeding != -1 && (CTimer::GetFrameCounter() & 7) > 3) {
@@ -5109,10 +5144,20 @@ CPed::Render(void)
 	CEntity::Render();
 
 	if(m_pWeaponModel){
+		// The weapon hangs off the right hand bone; a skeleton without it, or a
+		// clump that is not skinned, leaves no matrix to hang it from.
+		if(m_pFrames[PED_HANDR] == nil)
+			return;
 		RpHAnimHierarchy *hier = GetAnimHierarchyFromSkinClump(GetClump());
+		if(hier == nil)
+			return;
 		int idx = RpHAnimIDGetIndex(hier, m_pFrames[PED_HANDR]->nodeID);
-		RwMatrix *mat = &RpHAnimHierarchyGetMatrixArray(hier)[idx];
+		RwMatrix *mat = GetBoneMatrixSafe(hier, idx);
+		if(mat == nil)
+			return;
 		RwFrame *frame = RpAtomicGetFrame(m_pWeaponModel);
+		if(frame == nil)
+			return;
 		*RwFrameGetMatrix(frame) = *mat;
 		RwFrameUpdateObjects(frame);
 		RpAtomicRender(m_pWeaponModel);

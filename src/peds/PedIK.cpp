@@ -31,17 +31,30 @@ CPedIK::CPedIK(CPed *ped) : m_ped(ped)
 	m_lowerArmOrient.pitch = 0.0f;
 }
 
+// A skeleton need not carry the bone an IK request names: a Vice City ped has
+// no SA spine or clavicle, and a clump that is not skinned has no hierarchy at
+// all. RpHAnimIDGetIndex answers -1 for a bone that is not there, and indexing
+// the matrix array with it reads before the array, so the callers below get
+// nothing to aim from instead.
 inline RwMatrix*
 GetBoneMatrix(CPed *ped, int32 bone)
 {
 	RpHAnimHierarchy *hier = GetAnimHierarchyFromSkinClump(ped->GetClump());
+	if(hier == nil)
+		return nil;
 	int idx = RpHAnimIDGetIndex(hier, bone);
+	if(idx < 0)
+		return nil;
 	RwMatrix *mats = RpHAnimHierarchyGetMatrixArray(hier);
+	if(mats == nil)
+		return nil;
 	return &mats[idx];
 }
 inline RwMatrix*
 GetComponentMatrix(CPed *ped, int32 node)
 {
+	if(node < 0 || node >= PED_NODE_MAX || ped->m_pFrames[node] == nil)
+		return nil;
 	return GetBoneMatrix(ped, ped->m_pFrames[node]->nodeID);
 }
 
@@ -57,7 +70,9 @@ CPedIK::RotateTorso(AnimBlendFrameData *node, LimbOrientation *limb, bool change
 void
 CPedIK::GetComponentPosition(RwV3d &pos, uint32 node)
 {
-	pos = GetComponentMatrix(m_ped, node)->pos;
+	RwMatrix *m = GetComponentMatrix(m_ped, node);
+	if (m)
+		pos = m->pos;
 }
 
 LimbMoveStatus
@@ -116,9 +131,13 @@ CPedIK::LookInDirection(float targetYaw, float targetPitch)
 {
 	bool success = true;
 	float yaw, pitch;
+	if (m_ped->m_pFrames[PED_HEAD] == nil)
+		return false;
 	if (!(m_ped->m_pFrames[PED_HEAD]->flag & AnimBlendFrameData::IGNORE_ROTATION)) {
 		m_ped->m_pFrames[PED_HEAD]->flag |= AnimBlendFrameData::IGNORE_ROTATION;
 		RwMatrix *m = GetComponentMatrix(m_ped, PED_NECK);
+		if (m == nil)
+			return false;
 		m_headOrient.yaw = Atan2(-m->at.y, -m->at.x);
 		m_headOrient.yaw -= m_ped->m_fRotationCur;
 		m_headOrient.yaw = CGeneral::LimitRadianAngle(m_headOrient.yaw);
@@ -128,6 +147,8 @@ CPedIK::LookInDirection(float targetYaw, float targetPitch)
 
 	// parent of head is neck
 	RwMatrix *m = GetComponentMatrix(m_ped, PED_NECK);
+	if (m == nil)
+		return false;
 	yaw = CGeneral::LimitRadianAngle(Atan2(-m->at.y, -m->at.x));
 	float up = Clamp(m->up.z, -1.0f, 1.0f);
 	pitch = Atan2(-up, Sqrt(1.0f - SQR(-up)));
@@ -156,7 +177,10 @@ CPedIK::LookInDirection(float targetYaw, float targetPitch)
 bool
 CPedIK::LookAtPosition(CVector const &pos)
 {
-	RwV3d *pedpos = &GetComponentMatrix(m_ped, PED_MID)->pos;
+	RwMatrix *midMatrix = GetComponentMatrix(m_ped, PED_MID);
+	if (midMatrix == nil)
+		return false;
+	RwV3d *pedpos = &midMatrix->pos;
 	float yawToFace = CGeneral::GetRadianAngleBetweenPoints(
 		pos.x, pos.y,
 		pedpos->x, pedpos->y);
@@ -189,7 +213,12 @@ CPedIK::PointGunInDirection(float targetYaw, float targetPitch)
 		RwMatrix *matrix;
 		float yaw, pitch;
 		matrix = RwMatrixCreate();
-		*matrix = *GetComponentMatrix(m_ped, PED_CLAVICLER);
+		RwMatrix *clavicle = GetComponentMatrix(m_ped, PED_CLAVICLER);
+		if (clavicle == nil){
+			RwMatrixDestroy(matrix);
+			return false;
+		}
+		*matrix = *clavicle;
 		ExtractYawAndPitchWorld(matrix, &yaw, &pitch);
 		RwMatrixDestroy(matrix);
 
@@ -209,6 +238,8 @@ CPedIK::PointGunInDirection(float targetYaw, float targetPitch)
 	// Game uses index 2 directly, which happens to be identical to BONE_spine
 #ifdef FIX_BUGS
 	RwMatrix *m = GetBoneMatrix(m_ped, BONE_spine);
+	if (m == nil)
+		return false;
 #else
 	RpHAnimHierarchy* hier = GetAnimHierarchyFromSkinClump(m_ped->GetClump());
 	RwMatrix *mats = RpHAnimHierarchyGetMatrixArray(hier);
@@ -239,6 +270,8 @@ CPedIK::PointGunInDirectionUsingArm(float targetYaw, float targetPitch)
 	float handRoll = 30.0f;
 
 	matrix = GetComponentMatrix(m_ped, PED_CLAVICLER);
+	if (matrix == nil)
+		return false;
 	yaw = CGeneral::LimitRadianAngle(Atan2(matrix->right.y, matrix->right.x) - m_ped->m_fRotationCur);
 	pitch = Atan2(matrix->up.z, Sqrt(1.0f - SQR(matrix->up.z)));
 
