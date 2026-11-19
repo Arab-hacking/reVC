@@ -462,10 +462,33 @@ AssocGroupId SafePedAnimGroup(const std::string &s)
     }
     // The walking sets are in the table under the names the group table uses,
     // so only the spellings that differ are left here: SA's peds.ide calls the
-    // standard set "man", and the client calls the skater set "skater".
-    if(group == "man") return ASSOCGRP_DEFAULT;
-    if(group == "jogman") return ASSOCGRP_JOGGER;
-    if(group == "skater") return ASSOCGRP_SKATE;
+    // standard set "man", the client calls the skater set "skater", and the
+    // joggers "jogman". Everything else has to resolve to its own set - a
+    // female ped that lands on the male default walks like a man.
+    struct { const char *ide; AssocGroupId group; } aliases[] = {
+        { "man", ASSOCGRP_DEFAULT },
+        { "jogman", ASSOCGRP_JOGGER },
+        { "skater", ASSOCGRP_SKATE },
+        { "woman", ASSOCGRP_WOMAN },
+        { "fatwoman", ASSOCGRP_FATWOMAN },
+        { "oldwoman", ASSOCGRP_OLDWOMAN },
+        { "jogwoman", ASSOCGRP_JOGWOMAN },
+        { "sexywoman", ASSOCGRP_SEXYWOMAN },
+        { "busywoman", ASSOCGRP_BUSYWOMAN },
+        { "oldfatwoman", ASSOCGRP_OLDFATWOMAN },
+        { "shopping", ASSOCGRP_SHOPPING },
+        { "pro", ASSOCGRP_PRO },
+        { "fatman", ASSOCGRP_FATMAN },
+        { "oldman", ASSOCGRP_OLDMAN },
+        { "swat", ASSOCGRP_SWAT },
+        { "player", ASSOCGRP_PLAYER },
+        { "gang1", ASSOCGRP_GANG1 },
+        { "gang2", ASSOCGRP_GANG2 },
+        { "jogger", ASSOCGRP_JOGGER },
+        { "unarmed", ASSOCGRP_UNARMED },
+    };
+    for(int i = 0; i < (int)(sizeof(aliases)/sizeof(aliases[0])); i++)
+        if(group == aliases[i].ide) return aliases[i].group;
     return ASSOCGRP_DEFAULT;
 }
 
@@ -541,6 +564,23 @@ void CCustomWorld::LoadIde(void)
             if(mi->GetModelType() != type ||
                (type == MITYPE_VEHICLE && ((CVehicleModelInfo *)mi)->m_nVehicleType != vehicleType)) {
                 incompatible++;
+                continue;
+            }
+            // The DFF, collision and script identity stay native, but a ped's
+            // animation set comes from the IDE row that names the model. The SA
+            // peds.ide gives HFYRI the "woman" set while the Vice City default
+            // gives it no usable group, and reusing the native row whole left
+            // such peds animating like the standard male set. Take the actor
+            // fields from the archive row, keep everything else native.
+            if(type == MITYPE_PED) {
+                CPedModelInfo *ped = (CPedModelInfo *)mi;
+                ped->m_animGroup = SafePedAnimGroup(m.animGroup);
+                std::string stat = m.pedStats;
+                for(char &c : stat) c = (char)std::toupper((unsigned char)c);
+                ped->m_pedStatType = CPedStats::GetPedStatType(&stat[0]);
+                if(ped->m_pedStatType == NUM_PEDSTATS) ped->m_pedStatType = PEDSTAT_STD_MISSION;
+                reusedNative++;
+                nameSlots[key] = old->second;
                 continue;
             }
             nameSlots[key] = old->second;

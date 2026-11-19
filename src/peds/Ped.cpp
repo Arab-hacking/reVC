@@ -4647,10 +4647,19 @@ CPed::AddWeaponModel(int id)
 			return;
 		}
 
-		// CreateInstance answers nil when the model has no atomics loaded yet;
-		// an empty hand is the right result then, not a nil render below.
+		// CreateInstance answers nil when the model has no atomics loaded yet.
+		// A weapon chosen while its DFF is still streaming was dropped here and
+		// nothing ever tried again, so the hand stayed empty even though the
+		// model finished loading a moment later - only weapons already resident
+		// (the ones the game had warmed up) ever appeared. Ask for the model and
+		// remember it, so the attachment happens once it is there.
 		m_pWeaponModel = (RpAtomic*)weaponModel->CreateInstance();
 		if (m_pWeaponModel == nil){
+			if (!CStreaming::HasModelLoaded(id)){
+				CStreaming::RequestModel(id, STREAMFLAGS_DEPENDENCY);
+				m_wepModelID = id; // retried by RequestDelayedWeapon
+				return;
+			}
 			REVC_LOG_WARNING("ped: weapon model %d has no atomics, no model attached", id);
 			m_wepModelID = -1;
 			return;
@@ -4707,6 +4716,14 @@ CPed::RemoveWeaponModel(int modelId)
 void
 CPed::RequestDelayedWeapon()
 {
+	// AddWeaponModel gave up on a weapon whose DFF was still streaming and
+	// left its id here. Attach it as soon as the model is resident, or the hand
+	// stays empty for a weapon the game did eventually load.
+	if (m_pWeaponModel == nil && m_wepModelID != -1 && CStreaming::HasModelLoaded(m_wepModelID)) {
+		int pending = m_wepModelID;
+		m_wepModelID = -1;
+		AddWeaponModel(pending);
+	}
 	if (m_delayedWeapon != WEAPONTYPE_UNIDENTIFIED) {
 		int modelId1 = CWeaponInfo::GetWeaponInfo(m_delayedWeapon)->m_nModelId;
 		int modelId2 = CWeaponInfo::GetWeaponInfo(m_delayedWeapon)->m_nModel2Id;

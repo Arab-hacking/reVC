@@ -1641,8 +1641,12 @@ CPed::Fight(void)
 					animAssoc = CAnimManager::BlendAnimation(GetClump(), tFightMoves[m_curFightMove + 1].animGroup, tFightMoves[++m_curFightMove].animId, 8.0f);
 					if(!animAssoc){ EndFight(ENDFIGHT_FAST); return; }
 					animAssoc->SetFinishCallback(FinishFightMoveCB, this);
+					// The follow-up is the middle of a thrown combination, not a
+					// fresh wind-up. Starting it at 0.8 speed from ten percent in
+					// made every punch of a combo as slow as the first, which is
+					// what kept the whole sequence feeling sluggish.
 					animAssoc->SetCurrentTime(0.1f * animAssoc->hierarchy->totalLength);
-					animAssoc->speed = 0.8f;
+					animAssoc->speed = tFightMoves[m_curFightMove].hitLevel == HITLEVEL_NULL ? 0.8f : 1.1f;
 					m_fightButtonPressure = 0;
 					nPlayerInComboMove = 1;
 				}
