@@ -202,7 +202,20 @@ CCutsceneMgr::LoadCutsceneData(const char *szCutsceneName)
 
 	RwStream *stream;
 	stream = RwStreamOpen(rwSTREAMFILENAME, rwSTREAMREAD, "ANIM\\CUTS.IMG");
-	assert(stream);
+	// The cutscene pak is a Vice City file, and a set without it would abort the
+	// game on the assert that used to stand here. Nothing is playable without
+	// the pak, so the cutscene ends before it starts.
+	if(stream == nil){
+		REVC_LOG_WARNING("cutscene %s: ANIM\\CUTS.IMG is missing, cutscene skipped", szCutsceneName);
+		// Leave the game in the state it was in: the flag that holds the world
+		// in cutscene mode and the suspended clock both have to be cleared, or
+		// the game never comes back out.
+		ms_animLoaded = false;
+		bCamLoaded = false;
+		ms_cutsceneProcessing = false;
+		CTimer::Resume();
+		return;
+	}
 
 	// Load animations
 	sprintf(gString, "%s.IFP", szCutsceneName);
