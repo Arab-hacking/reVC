@@ -7,7 +7,6 @@
 #include "CarCtrl.h"
 #include "Cranes.h"
 #include "Credits.h"
-#include "CutsceneMgr.h"
 #include "DMAudio.h"
 #include "FileMgr.h"
 #include "Fire.h"
@@ -128,7 +127,6 @@ int8 CRunningScript::ProcessCommands1000To1099(int32 command)
 		CPlayerInfo* pPlayerInfo = &CWorld::Players[ScriptParams[0]];
 		CPad::GetPad(ScriptParams[0])->SetDisablePlayerControls(PLAYERCONTROL_CUTSCENE);
 		pPlayerInfo->MakePlayerSafe(true);
-		CCutsceneMgr::StartCutsceneProcessing();
 		return 0;
 	}
 	case COMMAND_USE_TEXT_COMMANDS:

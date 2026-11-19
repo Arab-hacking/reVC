@@ -17,7 +17,6 @@
 #include "Frontend.h"
 #include "Camera.h"
 #include "Game.h"
-#include "CutsceneMgr.h"
 #include "Font.h"
 #include "Hud.h"
 #include "Text.h"
@@ -414,7 +413,7 @@ CPad::ProcessPlayerModelKeys(void)
 {
 #ifdef GTA_PC_CONTROLS
 	CPad *pad = GetPad(PAD1);
-	if(FrontEndMenuManager.m_bMenuActive || CCutsceneMgr::IsRunning() ||
+	if(FrontEndMenuManager.m_bMenuActive ||
 	   CReplay::IsPlayingBack() || pad->ArePlayerControlsDisabled())
 		return;
 	const bool minus = pad->GetCharJustDown('-') || pad->GetMinusJustDown();
@@ -488,8 +487,7 @@ CPad::ProcessTimeOfDayKeys(void)
 {
 #ifdef GTA_PC_CONTROLS
 	CPad *pad = GetPad(PAD1);
-	if(FrontEndMenuManager.m_bMenuActive || CCutsceneMgr::IsRunning() ||
-	   CReplay::IsPlayingBack())
+	if(FrontEndMenuManager.m_bMenuActive || CReplay::IsPlayingBack())
 		return;
 
 	const bool shiftHeld = pad->GetShift() || pad->GetLeftShift() || pad->GetRightShift();
@@ -529,7 +527,7 @@ CPad::ProcessVehicleSpawnKeys(void)
 {
 #ifdef GTA_PC_CONTROLS
 	CPad *pad = GetPad(PAD1);
-	if(FrontEndMenuManager.m_bMenuActive || CCutsceneMgr::IsRunning() ||
+	if(FrontEndMenuManager.m_bMenuActive ||
 	   CReplay::IsPlayingBack() || pad->ArePlayerControlsDisabled())
 		return;
 
@@ -659,7 +657,7 @@ CPad::ProcessCameraViewKey(void)
 	                                  FindPlayerVehicle() != nil,
 	                                  camera.m_bLookingAtPlayer,
 	                                  FrontEndMenuManager.m_bMenuActive != 0,
-	                                  CCutsceneMgr::IsRunning() != 0,
+	                                  false,
 	                                  CReplay::IsPlayingBack() != 0,
 	                                  scriptControlsCamera))
 		return;
@@ -1337,7 +1335,7 @@ void CPad::StartShake(int16 nDur, uint8 nFreq)
 	if ( !FrontEndMenuManager.m_PrefsUseVibration )
 		return;
 
-	if ( CCutsceneMgr::IsRunning() || CGame::playingIntro )
+	if ( CGame::playingIntro )
 		return;
 
 	if ( nFreq == 0 )
@@ -1359,7 +1357,7 @@ void CPad::StartShake_Distance(int16 nDur, uint8 nFreq, float fX, float fY, floa
 	if ( !FrontEndMenuManager.m_PrefsUseVibration )
 		return;
 
-	if ( CCutsceneMgr::IsRunning() || CGame::playingIntro )
+	if ( CGame::playingIntro )
 		return;
 
 	float fDist = ( TheCamera.GetPosition() - CVector(fX, fY, fZ) ).Magnitude();
@@ -1386,7 +1384,7 @@ void CPad::StartShake_Train(float fX, float fY)
 	if ( !FrontEndMenuManager.m_PrefsUseVibration )
 		return;
 
-	if ( CCutsceneMgr::IsRunning() || CGame::playingIntro )
+	if ( CGame::playingIntro )
 		return;
 
 	if (FindPlayerVehicle() != nil && FindPlayerVehicle()->IsTrain() )

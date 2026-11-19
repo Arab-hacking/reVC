@@ -21,7 +21,6 @@
 #include "Coronas.h"
 #include "Cranes.h"
 #include "Credits.h"
-#include "CutsceneMgr.h"
 #include "DMAudio.h"
 #include "Darkel.h"
 #include "Debug.h"
@@ -481,7 +480,6 @@ bool CGame::Initialise(const char* datFile)
 
 	PUSH_MEMID(MEMID_ANIMATION);
 	CAnimManager::Initialise();
-	CCutsceneMgr::Initialise();
 	POP_MEMID();
 
 	PUSH_MEMID(MEMID_CARS);
@@ -701,7 +699,6 @@ bool CGame::ShutDown(void)
 	DMAudio.DestroyAllGameCreatedEntities();
 	CModelInfo::ShutDown();
 	CAnimManager::Shutdown();
-	CCutsceneMgr::Shutdown();
 	CVehicleModelInfo::DeleteVehicleColourTextures();
 	CVehicleModelInfo::ShutdownEnvironmentMaps();
 	CRadar::Shutdown();
@@ -942,9 +939,7 @@ void CGame::Process(void)
 #ifdef DEBUGMENU
 	DebugMenuProcess();
 #endif
-	CCutsceneMgr::Update();
-
-	if (!CCutsceneMgr::IsCutsceneProcessing() && !CTimer::GetIsCodePaused())
+	if (!CTimer::GetIsCodePaused())
 		FrontEndMenuManager.Process();
 
 	CTheZones::Update();
@@ -1016,8 +1011,7 @@ void CGame::Process(void)
 			processTime = CTimer::GetCurrentTimeInCycles() / CTimer::GetCyclesPerMillisecond() - startTime;
 		}
 		CWeapon::UpdateWeapons();
-		if (!CCutsceneMgr::IsRunning())
-			CTheCarGenerators::Process();
+		CTheCarGenerators::Process();
 		if (!CReplay::IsPlayingBack())
 			CCranes::UpdateCranes();
 		CClouds::Update();

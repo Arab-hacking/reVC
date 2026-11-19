@@ -1,7 +1,6 @@
 #include "common.h"
 
 #include "main.h"
-#include "CutsceneMgr.h"
 #include "Lights.h"
 #include "Camera.h"
 #include "Weather.h"
@@ -177,9 +176,6 @@ CPointLights::RenderFogEffect(void)
 	int16 xi, yi;
 	CVector spriteCoors;
 	float spritew, spriteh;
-
-	if(CCutsceneMgr::IsRunning())
-		return;
 
 	PUSH_RENDERGROUP("CPointLights::RenderFogEffect");
 

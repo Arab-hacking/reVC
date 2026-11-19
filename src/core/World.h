@@ -71,7 +71,6 @@ public:
 	static bool bNoMoreCollisionTorque;
 	static bool bSecondShift;
 	static bool bForceProcessControl;
-	static bool bProcessCutsceneOnly;
 	static bool bDoingCarCollisions;
 	static bool bIncludeCarTyres;
 	static bool bIncludeBikers;

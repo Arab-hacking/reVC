@@ -8,7 +8,6 @@
 #include "Clock.h"
 #include "Coronas.h"
 #include "Cranes.h"
-#include "CutsceneMgr.h"
 #include "Darkel.h"
 #include "Explosion.h"
 #include "Fire.h"
@@ -734,8 +733,8 @@ int8 CRunningScript::ProcessCommands500To599(int32 command)
 		return 0;
 	}
 	case COMMAND_SET_CUTSCENE_OFFSET:
+		// Cutscene cameras are gone; the offset has nowhere to go.
 		CollectParameters(&m_nIp, 3);
-		CCutsceneMgr::SetCutsceneOffset(*(CVector*)&ScriptParams[0]);
 		return 0;
 	case COMMAND_SET_ANIM_GROUP_FOR_CHAR:
 	{
@@ -1963,14 +1962,13 @@ int8 CRunningScript::ProcessCommands700To799(int32 command)
 		char name[KEY_LENGTH_IN_SCRIPT];
 		strncpy(name, (const char*)&CTheScripts::ScriptSpace[m_nIp], KEY_LENGTH_IN_SCRIPT);
 		m_nIp += KEY_LENGTH_IN_SCRIPT;
-		CCutsceneMgr::LoadCutsceneData(name);
 		return 0;
 	}
 	case COMMAND_CREATE_CUTSCENE_OBJECT:
 	{
+		// Cutscene props are ordinary objects now, and none are created.
 		CollectParameters(&m_nIp, 1);
-		CCutsceneObject* pCutObj = CCutsceneMgr::CreateCutsceneObject(ScriptParams[0]);
-		ScriptParams[0] = CPools::GetObjectPool()->GetIndex(pCutObj);
+		ScriptParams[0] = -1;
 		StoreParameters(&m_nIp, 1);
 		return 0;
 	}
@@ -1978,25 +1976,23 @@ int8 CRunningScript::ProcessCommands700To799(int32 command)
 	{
 		CollectParameters(&m_nIp, 1);
 		char name[KEY_LENGTH_IN_SCRIPT];
-		CObject* pObject = CPools::GetObjectPool()->GetAt(ScriptParams[0]);
-		script_assert(pObject);
 		strncpy(name, (const char*)&CTheScripts::ScriptSpace[m_nIp], KEY_LENGTH_IN_SCRIPT);
 		m_nIp += KEY_LENGTH_IN_SCRIPT;
-		CCutsceneMgr::SetCutsceneAnim(name, pObject);
 		return 0;
 	}
+	// The cutscene manager is gone. A script that still asks for a cutscene is
+	// told it finished instantly, so mission code that waits for the movie
+	// moves straight on instead of hanging.
 	case COMMAND_START_CUTSCENE:
-		CCutsceneMgr::ms_cutsceneLoadStatus = 1;
 		return 0;
 	case COMMAND_GET_CUTSCENE_TIME:
-		ScriptParams[0] = CCutsceneMgr::GetCutsceneTimeInMilleseconds();
+		ScriptParams[0] = 0;
 		StoreParameters(&m_nIp, 1);
 		return 0;
 	case COMMAND_HAS_CUTSCENE_FINISHED:
-		UpdateCompareFlag(CCutsceneMgr::HasCutsceneFinished());
+		UpdateCompareFlag(true);
 		return 0;
 	case COMMAND_CLEAR_CUTSCENE:
-		CCutsceneMgr::DeleteCutsceneData();
 		return 0;
 	case COMMAND_RESTORE_CAMERA_JUMPCUT:
 		TheCamera.RestoreWithJumpCut();

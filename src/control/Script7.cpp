@@ -6,7 +6,6 @@
 #include "CarCtrl.h"
 #include "ColStore.h"
 #include "Coronas.h"
-#include "CutsceneMgr.h"
 #include "DMAudio.h"
 #include "Explosion.h"
 #include "GameLogic.h"
@@ -138,10 +137,9 @@ int8 CRunningScript::ProcessCommands1200To1299(int32 command)
 		return 0;
 	case COMMAND_SET_CUTSCENE_ANIM_TO_LOOP:
 	{
-		char key[KEY_LENGTH_IN_SCRIPT];
-		CTheScripts::ReadTextLabelFromScript(&m_nIp, key);
+		// Cutscene clips no longer exist; the label still has to be consumed
+		// from the script stream so the following opcode is read correctly.
 		m_nIp += KEY_LENGTH_IN_SCRIPT;
-		CCutsceneMgr::SetCutsceneAnimToLoop(key);
 		return 0;
 	}
 	case COMMAND_MARK_CAR_AS_CONVOY_CAR:
@@ -828,10 +826,8 @@ int8 CRunningScript::ProcessCommands1300To1399(int32 command)
 		return 0;
 	}
 	case COMMAND_DISABLE_CUTSCENE_SHADOWS:
-	{
-		CCutsceneMgr::DisableCutsceneShadows();
+		// Cutscenes are gone; there are no cutscene shadows to turn off.
 		return 0;
-	}
 	case COMMAND_HAS_GLASS_BEEN_SHATTERED_NEARBY:
 	{
 		CollectParameters(&m_nIp, 3);
@@ -846,7 +842,7 @@ int8 CRunningScript::ProcessCommands1300To1399(int32 command)
 	case COMMAND_ATTACH_CUTSCENE_OBJECT_TO_BONE:
 	{
 		CollectParameters(&m_nIp, 3);
-		CCutsceneMgr::AttachObjectToBone(CPools::GetObjectPool()->GetAt(ScriptParams[0]), CPools::GetObjectPool()->GetAt(ScriptParams[1]), ScriptParams[2]);
+		// Cutscene attachment is gone; objects are left where they are.
 		return 0;
 	}
 	case COMMAND_ATTACH_CUTSCENE_OBJECT_TO_COMPONENT:
@@ -859,7 +855,6 @@ int8 CRunningScript::ProcessCommands1300To1399(int32 command)
 		CTheScripts::ReadTextLabelFromScript(&m_nIp, key);
 		m_nIp += KEY_LENGTH_IN_SCRIPT;
 
-		CCutsceneMgr::AttachObjectToFrame(obj1, obj2, key);
 		return 0;
 	}
 	case COMMAND_SET_CHAR_STAY_IN_CAR_WHEN_JACKED:
@@ -1014,7 +1009,6 @@ int8 CRunningScript::ProcessCommands1300To1399(int32 command)
 		return 0;
 	case COMMAND_REMOVE_EVERYTHING_FOR_HUGE_CUTSCENE:
 	{
-		CCutsceneMgr::RemoveEverythingFromTheWorldForTheBiggestFuckoffCutsceneEver();
 		return 0;
 	}
 	case COMMAND_IS_PLAYER_TOUCHING_VEHICLE:
@@ -1071,7 +1065,7 @@ int8 CRunningScript::ProcessCommands1300To1399(int32 command)
 	case COMMAND_ATTACH_CUTSCENE_OBJECT_TO_VEHICLE:
 	{
 		CollectParameters(&m_nIp, 2);
-		CCutsceneMgr::AttachObjectToParent(CPools::GetObjectPool()->GetAt(ScriptParams[0]), CPools::GetVehiclePool()->GetAt(ScriptParams[1]));
+		// Cutscene attachment is gone; the object keeps its own parent.
 		return 0;
 	}
 	case COMMAND_LOAD_MISSION_TEXT:
@@ -1299,12 +1293,12 @@ int8 CRunningScript::ProcessCommands1300To1399(int32 command)
 		char key[KEY_LENGTH_IN_SCRIPT];
 		CTheScripts::ReadTextLabelFromScript(&m_nIp, key);
 		m_nIp += KEY_LENGTH_IN_SCRIPT;
-		CCutsceneMgr::LoadAnimationUncompressed(key);
 		return 0;
 	}
 	case COMMAND_WAS_CUTSCENE_SKIPPED:
 	{
-		UpdateCompareFlag(CCutsceneMgr::WasCutsceneSkipped());
+		// No cutscene can run, so it can never be skipped.
+		UpdateCompareFlag(false);
 		return 0;
 	}
 	case COMMAND_SET_CHAR_CROUCH_WHEN_THREATENED:

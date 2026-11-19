@@ -330,8 +330,6 @@ void __fastcall OS_ApplicationEvent(OSEventType type, void *data)
             CTimer::StartUserPause();
             if ( !CPad::GetPad(0)->DisablePlayerControls
                  && !gMobileMenu.screenStack.numEntries
-                 && !CCutsceneMgr::IntroTextIsActiveHack
-                 && !CCutsceneMgr::ms_running
                  && !gMobileMenu.pendingScreen
                  && !CTouchInterface::AnyWidgetsUsingAltBack() )
             {

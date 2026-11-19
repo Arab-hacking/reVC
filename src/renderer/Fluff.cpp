@@ -18,7 +18,6 @@
 #include "Stats.h"
 #include "maths.h"
 #include "Frontend.h"
-#include "CutsceneMgr.h"
 #include "PlayerPed.h"
 #include "Bones.h"
 #include "World.h"
@@ -896,7 +895,7 @@ void
 CSmokeTrails::Update(void) {
 
 	if (!CSmokeTrails::CigOn || TheCamera.Using1stPersonWeaponMode() || !FindPlayerPed() ||
-		FindPlayerVehicle() || CCutsceneMgr::IsRunning() || !FindPlayerPed()->GetClump())
+		FindPlayerVehicle() || !FindPlayerPed()->GetClump())
 		return;
 
 	RwV3d startPos = { 0.026f, 0.15f, 0.02f };

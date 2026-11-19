@@ -20,7 +20,6 @@
 #include "TxdStore.h"
 #include "User.h"
 #include "World.h"
-#include "CutsceneMgr.h"
 #include "Stats.h"
 #include "main.h"
 #include "General.h"
@@ -1238,7 +1237,7 @@ void CHud::Draw()
 			if (TheCamera.m_WideScreenOn) {
 				onceItWasWidescreen = true;
 				
-				if (FrontEndMenuManager.m_PrefsShowSubtitles || !CCutsceneMgr::IsRunning()) {
+				if (FrontEndMenuManager.m_PrefsShowSubtitles) {
 					CFont::SetCentreSize(SCREEN_WIDTH - SCREEN_SCALE_X(60.0f));
 					CFont::SetScale(SCREEN_SCALE_X(0.58f), SCREEN_SCALE_Y(1.2f));
 					CFont::PrintString(SCREEN_WIDTH / 2.f, SCREEN_SCALE_FROM_BOTTOM(80.0f), m_Message);

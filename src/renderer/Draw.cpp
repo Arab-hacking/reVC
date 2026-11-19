@@ -3,7 +3,6 @@
 #include "Draw.h"
 #include "Frontend.h"
 #include "Camera.h"
-#include "CutsceneMgr.h"
 
 float CDraw::ms_fAspectRatio = DEFAULT_ASPECT_RATIO;
 #ifdef ASPECT_RATIO_SCALE
@@ -97,10 +96,7 @@ void
 CDraw::SetFOV(float fov)
 {
 #ifdef ASPECT_RATIO_SCALE
-	if (!CCutsceneMgr::IsRunning())
-		ms_fScaledFOV = ConvertFOV(fov);
-	else
-		ms_fScaledFOV = fov;
+	ms_fScaledFOV = ConvertFOV(fov);
 #endif
 	ms_fFOV = fov;
 }

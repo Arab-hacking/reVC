@@ -5,7 +5,6 @@
 #include "Timer.h"
 #include "Camera.h"
 #include "Timecycle.h"
-#include "CutsceneMgr.h"
 #include "Automobile.h"
 #include "Bike.h"
 #include "Ped.h"
@@ -25,7 +24,6 @@
 #include "ShadowTriWinding.h"
 #include "SunShadowMap.h"
 #include "GL3Atmosphere.h"
-#include "CutsceneObject.h"
 #include "CutsceneShadow.h"
 #include "Clock.h"
 #include "VarConsole.h"
@@ -498,9 +496,6 @@ CShadows::StoreShadowForVehicle(CVehicle *pCar, VEH_SHD_TYPE type)
 		CVector CarPos = pCar->GetPosition();
 		float fDistToCamSqr = (CarPos - TheCamera.GetPosition()).MagnitudeSqr2D();
 
-		if ( CCutsceneMgr::IsRunning() )
-			fDistToCamSqr /= SQR(TheCamera.LODDistMultiplier) * 4.0f;
-
 		float fDrawDistance;
 		switch ( type )
 		{
@@ -738,8 +733,7 @@ CShadows::StoreCarLightShadow(CVehicle *pCar, int32 nID, RwTexture *pTexture, CV
 	float fDistToCamSqr = (*pPosn - TheCamera.GetPosition()).MagnitudeSqr2D();
 
 	bool bSpecialCam =     TheCamera.Cams[TheCamera.ActiveCam].Mode == CCam::MODE_TOPDOWN
-						|| TheCamera.Cams[TheCamera.ActiveCam].Mode == CCam::MODE_TOP_DOWN_PED
-						|| CCutsceneMgr::IsRunning();
+						|| TheCamera.Cams[TheCamera.ActiveCam].Mode == CCam::MODE_TOP_DOWN_PED;
 
 	float fDrawDistance = 27.0f;
 
@@ -933,78 +927,6 @@ CShadows::StoreShadowForPedObject(CEntity *pPedObject, float fDisplacementX, flo
 	}
 }
 
-
-void
-CShadows::StoreShadowForCutscenePedObject(CCutsceneObject *pObject, float fDisplacementX, float fDisplacementY,
-								float fFrontX, float fFrontY, float fSideX, float fSideY)
-{
-#ifdef DISABLE_CUTSCENE_SHADOWS
-	return;
-#endif
-	ASSERT(pObject != nil);
-	
-	CCutsceneShadow *shadow = pObject->m_pShadow;
-	
-	if ( shadow == nil )
-		return;
-	
-	if ( !shadow->IsInitialized() )
-		return;
-	
-	CVector pos = pObject->GetPosition();
-	
-	float fDistToCamSqr = (pos - TheCamera.GetPosition()).MagnitudeSqr2D();
-	
-	float fDrawDistance = 100.0f;
-	
-	if ( fDistToCamSqr < SQR(fDrawDistance*0.5f) )
-	{
-		if ( (CEntity*)pObject == FindPlayerPed() || TheCamera.IsSphereVisible(pos, 2.0f) )
-		{
-			float fDistToCam = Sqrt(fDistToCamSqr);
-			
-			float fMult = 1.0f - (4.0f / fDrawDistance) * (fDistToCam - (fDrawDistance*(1.0f/4.0f)));
-			int32 nColorStrength;
-
-			if ( fDistToCam >= (fDrawDistance*(1.0f/4.0f)) )
-				nColorStrength = (int32)(CTimeCycle::GetShadowStrength() * fMult);
-			else
-				nColorStrength = CTimeCycle::GetShadowStrength();
-
-			int32 color = int32(nColorStrength * 0.8f);
-			
-			pos.x += fDisplacementX;
-			pos.y += fDisplacementY;
-			
-			RwTexture *texture = shadow->GetShadowRwTexture();
-			ASSERT(texture);
-			RwRGBA bordercolor = {0, 0, 0, 0};
-			shadow->DrawBorderAroundTexture(bordercolor);
-			
-			pos.x -= fDisplacementX;
-			pos.y -= fDisplacementY;
-			
-			float angleY = 360.0f - RADTODEG((CClock::ms_nGameClockMinutes+60*
-					CClock::ms_nGameClockHours+CClock::ms_nGameClockSeconds/60)*(HALFPI/360.0f));
-			 
-			RwFrame *frame = shadow->SetLightProperties(angleY, -85.0f, true);
-			ASSERT(frame);
-			CVector at(RwFrameGetMatrix(frame)->at);
-			at.Normalise();
-			
-			CalcPedShadowValues(at, &fFrontX, &fFrontY, &fSideX, &fSideY, &fDisplacementX, &fDisplacementY);
-			
-			pos.x -= 2.5f * fDisplacementX;
-			pos.y -= 2.5f * fDisplacementY;
-			
-			StoreShadowToBeRendered(SHADOWTYPE_INVCOLOR, texture, &pos,
-				fFrontX * 1.5f, fFrontY * 1.5f,
-				fSideX  * 1.5f, fSideY  * 1.5f,
-				color, color, color, color,
-				4.0f, false, 1.0f, shadow, false);
-		}
-	}
-}
 
 void
 CShadows::StoreShadowForTree(CEntity *pTree)

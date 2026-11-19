@@ -21,7 +21,6 @@
 #include "World.h"
 #include "Garages.h"
 #include "Replay.h"
-#include "CutsceneMgr.h"
 #include "Renderer.h"
 #include "Timecycle.h"
 #include "MBlur.h"
@@ -617,7 +616,7 @@ CCamera::Process(void)
 		DistanceToWater = CWaterLevel::CalcDistanceToWater(GetPosition().x, GetPosition().y);
 
 	// LOD dist
-	if(!CCutsceneMgr::IsRunning() || CCutsceneMgr::UseLodMultiplier()){
+	{
 		LODDistMultiplier = 70.0f/CDraw::GetFOV();
 
 		if(GetPosition().z > 55.0f && FindPlayerVehicle() && FindPlayerVehicle()->m_pHandlingData->m_nModelFlags & (VEHICLE_HANDLING_MODEL_IS_HELI|VEHICLE_HANDLING_MODEL_IS_PLANE) ||
@@ -628,8 +627,7 @@ CCamera::Process(void)
 				RwCameraSetNearClipPlane(Scene.camera, NewNear);
 		}
 		if(LODDistMultiplier > 2.2f) LODDistMultiplier = 2.2f;
-	}else
-		LODDistMultiplier = 1.0f;
+	}
 	GenerationDistMultiplier = LODDistMultiplier;
 	LODDistMultiplier *= CRenderer::ms_lodDistScale;
 

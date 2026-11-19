@@ -1677,8 +1677,9 @@ int8 CRunningScript::ProcessCommands900To999(int32 command)
 		return 0;
 	}
 	case COMMAND_SWITCH_WORLD_PROCESSING:
+		// The cutscene-only world pass is gone, so the world always processes
+		// normally. The parameter is still consumed to keep the stream aligned.
 		CollectParameters(&m_nIp, 1);
-		CWorld::bProcessCutsceneOnly = ScriptParams[0] == 0;
 		return 0;
 	case COMMAND_REMOVE_ALL_PLAYER_WEAPONS:
 	{

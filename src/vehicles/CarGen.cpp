@@ -7,7 +7,6 @@
 #include "Boat.h"
 #include "Camera.h"
 #include "CarCtrl.h"
-#include "CutsceneMgr.h"
 #include "General.h"
 #include "Pools.h"
 #include "Streaming.h"
@@ -242,7 +241,7 @@ bool CCarGenerator::CheckIfWithinRangeOfAnyPlayers()
 
 void CTheCarGenerators::Process()
 {
-	if (FindPlayerTrain() || CCutsceneMgr::IsCutsceneProcessing())
+	if (FindPlayerTrain())
 		return;
 	if (++CTheCarGenerators::ProcessCounter == 4)
 		CTheCarGenerators::ProcessCounter = 0;

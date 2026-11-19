@@ -4,7 +4,6 @@
 
 #include "Camera.h"
 #include "Clock.h"
-#include "CutsceneMgr.h"
 #include "DMAudio.h"
 #include "General.h"
 #include "Pad.h"
@@ -301,7 +300,7 @@ void CWeather::Update(void)
 	AddRain();
 
 	if ((NewWeatherType == WEATHER_SUNNY || NewWeatherType == WEATHER_EXTRA_SUNNY) &&
-		!CGame::IsInInterior() && !CCutsceneMgr::IsRunning() && (CTimer::GetFrameCounter() & 7) == 0) {
+		!CGame::IsInInterior() && (CTimer::GetFrameCounter() & 7) == 0) {
 #ifdef FIX_BUGS
 		if (FindPlayerPed() && (!FindPlayerPed()->CheckIfInTheAir() || FindPlayerPed()->CheckIfInTheAir() && FindPlayerPed()->GetPosition().z < 7.5f &&
 			CClock::GetHours() > 6 && CClock::GetHours() < 18))
@@ -312,7 +311,7 @@ void CWeather::Update(void)
 			AddHeatHaze();
 	}
 
-	if ((NewWeatherType == WEATHER_SUNNY || NewWeatherType == WEATHER_EXTRA_SUNNY) && !CGame::IsInInterior() && !CCutsceneMgr::IsRunning())
+	if ((NewWeatherType == WEATHER_SUNNY || NewWeatherType == WEATHER_EXTRA_SUNNY) && !CGame::IsInInterior())
 		AddBeastie();
 }
 
@@ -605,12 +604,8 @@ void CWeather::RenderRainStreaks(void)
 			// 1/16 probability
 			Streaks[i].direction = CVector(0.0f, 0.0f, -12.0f);
 			Streaks[i].position = 6.0f * TheCamera.GetForward() + TheCamera.GetPosition() + CVector(-1.8f * Streaks[i].direction.x, -1.8f * Streaks[i].direction.y, 8.0f);
-			if (!CCutsceneMgr::IsRunning()) {
-				Streaks[i].position.x += 2.0f * FindPlayerSpeed().x * 60.0f;
-				Streaks[i].position.y += 2.0f * FindPlayerSpeed().y * 60.0f;
-			}
-			else
-				Streaks[i].position += (TheCamera.GetPosition() - TheCamera.m_RealPreviousCameraPosition) * 20.0f;
+			Streaks[i].position.x += 2.0f * FindPlayerSpeed().x * 60.0f;
+			Streaks[i].position.y += 2.0f * FindPlayerSpeed().y * 60.0f;
 			Streaks[i].position.x += ((CGeneral::GetRandomNumber() & 255) - 128) * 0.04f;
 			Streaks[i].position.y += ((CGeneral::GetRandomNumber() & 255) - 128) * 0.04f;
 			Streaks[i].timer = CTimer::GetTimeInMilliseconds();

@@ -6,7 +6,6 @@
 #include "Pickups.h"
 #include "Timer.h"
 #include "Streaming.h"
-#include "CutsceneMgr.h"
 #include "World.h"
 #include "PlayerPed.h"
 #include "Wanted.h"
@@ -111,7 +110,6 @@ CGameLogic::Update()
 	}
 #endif
 
-	if (CCutsceneMgr::IsCutsceneProcessing()) return;
 
 	UpdateShortCut();
 	CPlayerInfo &pPlayerInfo = CWorld::Players[CWorld::PlayerInFocus];

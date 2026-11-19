@@ -10,7 +10,6 @@
 #include "CarGen.h"
 #include "Cranes.h"
 #include "Curves.h"
-#include "CutsceneMgr.h"
 #include "Gangs.h"
 #include "Game.h"
 #include "Garages.h"
@@ -112,10 +111,6 @@ uint32 aCarsToKeepTime[MAX_CARS_TO_KEEP];
 void
 CCarCtrl::GenerateRandomCars()
 {
-	if (CCutsceneMgr::IsRunning()) {
-		CountDownToCarsAtStart = 2;
-		return;
-	}
 	if (NumRandomCars < 30){
 		if (CountDownToCarsAtStart == 0)
 			GenerateOneRandomCar();

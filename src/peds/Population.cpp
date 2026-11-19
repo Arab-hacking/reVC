@@ -14,7 +14,6 @@
 #include "EmergencyPed.h"
 #include "Replay.h"
 #include "Camera.h"
-#include "CutsceneMgr.h"
 #include "CarCtrl.h"
 #include "IniFile.h"
 #include "VisibilityPlugins.h"
@@ -398,7 +397,7 @@ CPopulation::Update(bool addPeds)
 			ms_nTotalPeds = ms_nNumDummy + ms_nNumEmergency + ms_nNumCop
 				+ ms_nTotalGangPeds + ms_nNumCivFemale + ms_nNumCivMale;
 			ms_nTotalPeds -= ms_nTotalCarPassengerPeds;
-			if (!CCutsceneMgr::IsRunning() && addPeds) {
+			if (addPeds) {
 				float pcdm = PedCreationDistMultiplier();
 				AddToPopulation(pcdm * (MIN_CREATION_DIST * TheCamera.GenerationDistMultiplier),
 					pcdm * ((MIN_CREATION_DIST + CREATION_RANGE) * TheCamera.GenerationDistMultiplier),

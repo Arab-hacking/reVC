@@ -283,7 +283,7 @@ private:
 	static uint8* pBuf2;
 	static CPlayerPed* pBuf3;
 	static uint8* pBuf4;
-	static CCutsceneObject* pBuf5;
+	static CObject* pBuf5;
 	static uint8* pBuf6;
 	static CPtrNode* pBuf7;
 	static uint8* pBuf8;

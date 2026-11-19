@@ -16,7 +16,6 @@
 #include "Population.h"
 #include "FileLoader.h"
 #include "Replay.h"
-#include "CutsceneMgr.h"
 #include "RenderBuffer.h"
 #include "SurfaceTable.h"
 #include "Lines.h"

@@ -14,7 +14,6 @@ class CAutomobile;
 class CVehicle;
 class CPed;
 class CCutsceneShadow;
-class CCutsceneObject;
 
 enum eShadowType
 {
@@ -163,7 +162,6 @@ public:
 	static void StoreCarLightShadow            (CVehicle *pCar, int32 nID, RwTexture *pTexture, CVector *pPosn, float fFrontX, float fFrontY, float fSideX, float fSideY,                   uint8 nRed, uint8 nGreen, uint8 nBlue, float fMaxViewAngle);
 	static void StoreShadowForPed              (CPed        *pPed,     float fDisplacementX, float fDisplacementY, float fFrontX, float fFrontY, float fSideX, float fSideY);
 	static void StoreShadowForPedObject        (CEntity *pPedObject,   float fDisplacementX, float fDisplacementY, float fFrontX, float fFrontY, float fSideX, float fSideY);
-	static void StoreShadowForCutscenePedObject(CCutsceneObject *pObject, float fDisplacementX, float fDisplacementY, float fFrontX, float fFrontY, float fSideX, float fSideY);
 	static void StoreShadowForTree             (CEntity *pTree);
 	static void StoreShadowForPole             (CEntity *pPole, float fOffsetX, float fOffsetY, float fOffsetZ, float fPoleHeight, float fPoleWidth, uint32 nID);
 	static void SetRenderModeForShadowType     (uint8 ShadowType);

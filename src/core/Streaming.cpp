@@ -26,7 +26,6 @@
 #include "CarCtrl.h"
 #include "Population.h"
 #include "Gangs.h"
-#include "CutsceneMgr.h"
 #include "CdStream.h"
 #include "Streaming.h"
 #ifdef CUSTOM_MODELS
@@ -564,7 +563,6 @@ CStreaming::Update(void)
 	DeleteFarAwayRwObjects(TheCamera.GetPosition());
 
 	if(!ms_disableStreaming &&
-	   !CCutsceneMgr::IsCutsceneProcessing() &&
 	   ms_numModelsRequested < 5 &&
 	   !CRenderer::m_loadingPriority &&
 	   CGame::currArea == AREA_MAIN_MAP &&
@@ -2456,9 +2454,6 @@ void
 CStreaming::LoadBigBuildingsWhenNeeded(void)
 {
 	// Very much like CCollision::Update and CCollision::LoadCollisionWhenINeedIt
-	if(CCutsceneMgr::IsCutsceneProcessing())
-		return;
-
 	if(CTheZones::m_CurrLevel == LEVEL_GENERIC || 
 	   CTheZones::m_CurrLevel == CGame::currLevel)
 		return;
@@ -2589,8 +2584,7 @@ CStreaming::GetNextFileOnCd(int32 lastPosn, bool priority)
 				ReRequestAnim(animId);
 				continue;
 			}
-		}else if(streamId >= STREAM_OFFSET_ANIM && CCutsceneMgr::IsCutsceneProcessing())
-			continue;
+		}
 
 #ifdef CUSTOM_MODELS
 		// Keep the request (and the usual TXD-before-model ordering) alive

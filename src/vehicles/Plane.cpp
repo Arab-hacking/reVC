@@ -2,7 +2,6 @@
 #include "main.h"
 
 #include "General.h"
-#include "CutsceneMgr.h"
 #include "ModelIndices.h"
 #include "FileMgr.h"
 #include "Streaming.h"
@@ -672,8 +671,7 @@ CPlane::PreRender(void)
 void
 CPlane::Render(void)
 {
-	if(!CCutsceneMgr::IsRunning())
-		CEntity::Render();
+			CEntity::Render();
 }
 
 #define CRUISE_SPEED (50.0f)

@@ -3,7 +3,6 @@
 #include "NoClip.h"
 #include "NoClipMovement.h"
 #include "Camera.h"
-#include "CutsceneMgr.h"
 #include "Frontend.h"
 #include "Pad.h"
 #include "Physical.h"
@@ -81,12 +80,10 @@ CNoClip::ProcessInput(void)
 	// The control bit must be cleared as well or the new player cannot move.
 	if(!noclipEntity && pad->IsPlayerControlsDisabledBy(PLAYERCONTROL_NOCLIP))
 		Reset();
-	if(noclipEntity && (noclipEntity != FindNoClipTarget() ||
-	                    CCutsceneMgr::IsRunning() || CReplay::IsPlayingBack()))
+	if(noclipEntity && (noclipEntity != FindNoClipTarget() || CReplay::IsPlayingBack()))
 		Reset();
 
-	if(FrontEndMenuManager.m_bMenuActive || CReplay::IsPlayingBack() ||
-	   CCutsceneMgr::IsRunning())
+	if(FrontEndMenuManager.m_bMenuActive || CReplay::IsPlayingBack())
 		return;
 
 	if(pad->GetFJustDown(9)){
@@ -118,8 +115,7 @@ CNoClip::Move(void)
 #ifdef GTA_PC_CONTROLS
 	if(!noclipEntity)
 		return;
-	if(noclipEntity != FindNoClipTarget() || CCutsceneMgr::IsRunning() ||
-	   CReplay::IsPlayingBack()){
+	if(noclipEntity != FindNoClipTarget() || CReplay::IsPlayingBack()){
 		Reset();
 		return;
 	}

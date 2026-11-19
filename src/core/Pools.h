@@ -5,7 +5,6 @@
 #include "Lists.h"
 #include "Treadable.h"
 #include "Object.h"
-#include "CutsceneObject.h"
 #include "PlayerPed.h"
 #include "Automobile.h"
 #include "DummyPed.h"
@@ -21,7 +20,7 @@ typedef CPool<CPed,CPlayerPed> CPedPool;
 typedef CPool<CVehicle,CAutomobile> CVehiclePool;
 typedef CPool<CBuilding> CBuildingPool;
 typedef CPool<CTreadable> CTreadablePool;
-typedef CPool<CObject, CCutsceneObject> CObjectPool;
+typedef CPool<CObject> CObjectPool;
 typedef CPool<CDummy, CDummyPed> CDummyPool;
 typedef CPool<cAudioScriptObject> CAudioScriptObjectPool;
 typedef CPool<CColModel> CColModelPool;

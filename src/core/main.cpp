@@ -50,7 +50,6 @@
 #include "VisibilityPlugins.h"
 #include "NodeName.h"
 #include "DMAudio.h"
-#include "CutsceneMgr.h"
 #include "Lights.h"
 #include "Credits.h"
 #include "ZoneCull.h"
@@ -1598,7 +1597,7 @@ Idle(void *arg)
 	DMAudio.Service();
 	tbEndTimer("DMAudio.Service");
 
-	if(CGame::bDemoMode && CTimer::GetTimeInMilliseconds() > (3*60 + 30)*1000 && !CCutsceneMgr::IsCutsceneProcessing()){
+	if(CGame::bDemoMode && CTimer::GetTimeInMilliseconds() > (3*60 + 30)*1000){
 		WANT_TO_LOAD = false;
 		FrontEndMenuManager.m_bWantToRestart = true;
 		return;
@@ -2027,7 +2026,7 @@ void TheGame(void)
 
 			DMAudio.Service();
 
-			if (CGame::bDemoMode && CTimer::GetTimeInMilliseconds() > (3*60 + 30)*1000 && !CCutsceneMgr::IsCutsceneProcessing())
+			if (CGame::bDemoMode && CTimer::GetTimeInMilliseconds() > (3*60 + 30)*1000)
 			{
 				WANT_TO_LOAD = false;
 				FrontEndMenuManager.m_bWantToRestart = true;

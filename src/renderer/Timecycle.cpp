@@ -2,11 +2,11 @@
 
 #include "main.h"
 #include "Clock.h"
+#include "Timer.h"
 #include "Weather.h"
 #include "Camera.h"
 #include "Shadows.h"
 #include "ZoneCull.h"
-#include "CutsceneMgr.h"
 #include "FileMgr.h"
 #include "Game.h"
 #include "Timecycle.h"
@@ -524,7 +524,7 @@ CTimeCycle::Update(void)
 		&m_fShadowDisplacementX[m_CurrentStoredValue], &m_fShadowDisplacementY[m_CurrentStoredValue]);
 
 	if(TheCamera.GetForward().z < -0.9f ||
-	   !CWeather::bScriptsForceRain && (CCullZones::PlayerNoRain() || CCullZones::CamNoRain() || CCutsceneMgr::IsRunning()))
+	   !CWeather::bScriptsForceRain && (CCullZones::PlayerNoRain() || CCullZones::CamNoRain()))
 		m_FogReduction = Min(m_FogReduction+1, 64);
 	else
 		m_FogReduction = Max(m_FogReduction-1, 0);

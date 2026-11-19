@@ -38,7 +38,6 @@
 #include "Pools.h"
 #include "RpAnimBlend.h"
 #include "RwHelper.h"
-#include "CutsceneMgr.h"
 #include "Skidmarks.h"
 #include "Stinger.h"
 #include "Streaming.h"
@@ -61,7 +60,7 @@ CAutomobile *CReplay::pBuf1;
 uint8 *CReplay::pBuf2;
 CPlayerPed *CReplay::pBuf3;
 uint8 *CReplay::pBuf4;
-CCutsceneObject *CReplay::pBuf5;
+CObject *CReplay::pBuf5;
 uint8 *CReplay::pBuf6;
 CPtrNode *CReplay::pBuf7;
 uint8 *CReplay::pBuf8;
@@ -271,7 +270,7 @@ void CReplay::EnableReplays(void)
 void PlayReplayFromHD(void);
 void CReplay::Update(void)
 {
-	if (CCutsceneMgr::IsCutsceneProcessing() || CPad::GetPad(0)->ArePlayerControlsDisabled() || CScriptPaths::IsOneActive() || FrontEndMenuManager.GetIsMenuActive()) {
+	if (CPad::GetPad(0)->ArePlayerControlsDisabled() || CScriptPaths::IsOneActive() || FrontEndMenuManager.GetIsMenuActive()) {
 		Init();
 		return;
 	}

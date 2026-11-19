@@ -11,7 +11,6 @@
 #include "Camera.h"
 #include "Clock.h"
 #include "CustomModels.h"
-#include "CutsceneMgr.h"
 #include "DMAudio.h"
 #include "DebugLog.h"
 #include "Font.h"
@@ -990,7 +989,7 @@ IsGameplayTouchHudActive(void)
 		return false;
 	if (FrontEndMenuManager.m_bMenuActive)
 		return false;
-	if (CReplay::IsPlayingBack() || CCutsceneMgr::IsRunning() || TheCamera.m_WideScreenOn)
+	if (CReplay::IsPlayingBack() || TheCamera.m_WideScreenOn)
 		return false;
 	return CHud::m_Wants_To_Draw_Hud;
 }
@@ -2637,7 +2636,7 @@ CMobileTouchControls::OnFingerDown(int64 fingerId, float normX, float normY)
 	if (gGameState != GS_PLAYING_GAME)
 		return;
 
-	if (CCutsceneMgr::IsRunning() || TheCamera.m_WideScreenOn) {
+	if (TheCamera.m_WideScreenOn) {
 		s_pulseSkipCutscene = true;
 		return;
 	}

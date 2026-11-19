@@ -2,7 +2,6 @@
 #include "Camera.h"
 #include "CarCtrl.h"
 #include "CopPed.h"
-#include "CutsceneMgr.h"
 #include "DMAudio.h"
 #include "EventList.h"
 #include "Explosion.h"
@@ -60,7 +59,6 @@ CEntity *CWorld::pIgnoreEntity;
 bool CWorld::bIncludeDeadPeds;
 bool CWorld::bSecondShift;
 bool CWorld::bForceProcessControl;
-bool CWorld::bProcessCutsceneOnly;
 
 bool CWorld::bDoingCarCollisions;
 bool CWorld::bIncludeCarTyres;
@@ -75,7 +73,6 @@ CWorld::Initialise()
 	bDoingCarCollisions = false;
 	bSecondShift = false;
 	bNoMoreCollisionTorque = false;
-	bProcessCutsceneOnly = false;
 	bIncludeDeadPeds = false;
 	bForceProcessControl = false;
 	bIncludeCarTyres = false;
@@ -1707,7 +1704,6 @@ CWorld::ShutDown(void)
 void
 CWorld::ClearForRestart(void)
 {
-	if(CCutsceneMgr::HasLoaded()) CCutsceneMgr::DeleteCutsceneData();
 	CProjectileInfo::RemoveAllProjectiles();
 	CObject::DeleteAllTempObjects();
 	CObject::DeleteAllMissionObjects();
@@ -1875,29 +1871,7 @@ CWorld::Process(void)
 {
 	if(!(CTimer::GetFrameCounter() & 63)) CReferences::PruneAllReferencesInWorld();
 
-	if(bProcessCutsceneOnly) {
-		for(int i = 0; i < NUMCUTSCENEOBJECTS; i++) {
-			CCutsceneObject *csObj = CCutsceneMgr::GetCutsceneObject(i);
-			if(csObj && csObj->m_entryInfoList.first) {
-				if(csObj->m_rwObject && RwObjectGetType(csObj->m_rwObject) == rpCLUMP &&
-				   RpAnimBlendClumpGetFirstAssociation(csObj->GetClump())) {
-					if (csObj->IsObject())
-						RpAnimBlendClumpUpdateAnimations(csObj->GetClump(), CTimer::GetTimeStepNonClippedInSeconds());
-					else {
-						if (!csObj->bOffscreen)
-							csObj->bOffscreen = !csObj->GetIsOnScreen();
-						RpAnimBlendClumpUpdateAnimations(csObj->GetClump(), CTimer::GetTimeStepInSeconds(), !csObj->bOffscreen);
-					}
-				}
-				csObj->ProcessControl();
-				csObj->ProcessCollision();
-				csObj->GetMatrix().UpdateRW();
-				csObj->UpdateRwFrame();
-			}
-		}
-		CRecordDataForChase::ProcessControlCars();
-		CRecordDataForChase::SaveOrRetrieveCarPositions();
-	} else {
+	{
 		for(CPtrNode *node = ms_listMovingEntityPtrs.first; node; node = node->next) {
 			CEntity *movingEnt = (CEntity *)node->item;
 			if(!movingEnt->bRemoveFromWorld && movingEnt->m_rwObject && RwObjectGetType(movingEnt->m_rwObject) == rpCLUMP &&
