@@ -205,13 +205,23 @@ CPopulation::LoadPedGroups()
 				break;
 			
 			// read until next whitespace
-			strncpy(modelName, &line[cursor], nextWhitespace - cursor);
-			modelName[nextWhitespace - cursor] = '\0';
+			int nameLen = nextWhitespace - cursor;
+			if (nameLen > (int)sizeof(modelName) - 1)
+				nameLen = sizeof(modelName) - 1;
+			memcpy(modelName, &line[cursor], nameLen);
+			modelName[nameLen] = '\0';
 			CModelInfo::GetModelInfo(modelName, &ms_pPedGroups[nextPedGroup].models[i]);
 			cursor = nextWhitespace;
 		}
-		if (i == NUMMODELSPERPEDGROUP)
+		// The zone table indexes groups by number, and ms_pPedGroups is fixed
+		// size; a file with more groups than the build has must stop here.
+		if (i == NUMMODELSPERPEDGROUP){
+			if (nextPedGroup + 1 >= NUMPEDGROUPS){
+				REVC_LOG_WARNING("ped groups: more than %d groups, ignoring the rest", NUMPEDGROUPS);
+				break;
+			}
 			nextPedGroup++;
+		}
 	}
 	CFileMgr::CloseFile(fd);
 }

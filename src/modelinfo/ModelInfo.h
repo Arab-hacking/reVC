@@ -52,6 +52,11 @@ public:
 
 	static CBaseModelInfo *GetModelInfo(const char *name, int *id);
 	static CBaseModelInfo *GetModelInfo(int id){
+		// -1 is the "no model" marker in ped group and IDE tables, and other
+		// loaders hand over an id straight from a file; an out of range id must
+		// read as "no model" instead of indexing before or past the array.
+		if(id < 0 || id >= MODELINFOSIZE)
+			return nil;
 		return ms_modelInfoPtrs[id];
 	}
 	static CBaseModelInfo *GetModelInfo(const char *name, int minIndex, int maxIndex);

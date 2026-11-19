@@ -484,10 +484,16 @@ CTheZones::GetZoneInfoForTimeOfDay(const CVector *pos, CZoneInfo *info)
 			info->gangPedThreshold[i] = night->gangPedThreshold[i] * d + night->gangPedThreshold[i] * n;
 #endif
 	}
+	// The zone file names a ped group per zone, and every consumer of this
+	// field indexes CPopulation::ms_pPedGroups with it. A zone table from a
+	// different data set can name a group this build has no entry for, so the
+	// value is clamped to the array once, here, instead of at each reader.
 	if(CClock::GetIsTimeInRange(5, 19))
 		info->pedGroup = day->pedGroup;
 	else
 		info->pedGroup = night->pedGroup;
+	if(info->pedGroup >= NUMPEDGROUPS)
+		info->pedGroup = 0;
 }
 
 void
