@@ -1729,6 +1729,12 @@ CAnimManager::LoadAnimFile(RwStream *stream, bool compress, char (*uncompressedA
 			animBlock->firstIndex = ms_numAnimations;
 		}
 	}else{
+		// The block table is fixed size and ReadANPK may name a new block for
+		// every stream it sees.
+		if(ms_numAnimBlocks >= NUMANIMBLOCKS){
+			REVC_LOG_WARNING("ANIMS %s: no free block slot, block skipped", targetBlockName);
+			return;
+		}
 		animBlock = &ms_aAnimBlocks[ms_numAnimBlocks++];
 		strncpy(animBlock->name, targetBlockName, MAX_ANIMBLOCK_NAME);
 		animBlock->name[MAX_ANIMBLOCK_NAME - 1] = '\0';
@@ -1740,6 +1746,19 @@ CAnimManager::LoadAnimFile(RwStream *stream, bool compress, char (*uncompressedA
 
 	debug("Loading ANIMS %s\n", animBlock->name);
 	animBlock->isLoaded = true;
+
+	// The clip count comes from the file and is used to index the animation
+	// store, which is a fixed array; a block that does not fit is skipped here
+	// rather than tripping the assert inside the loop.
+	if(animBlock->numAnims <= 0 || animBlock->numAnims > NUMANIMATIONS ||
+	   animBlock->firstIndex < 0 ||
+	   animBlock->numAnims > NUMANIMATIONS - animBlock->firstIndex){
+		REVC_LOG_WARNING("ANIMS %s: %d clips from index %d do not fit the animation store, block skipped",
+			animBlock->name, animBlock->numAnims, animBlock->firstIndex);
+		animBlock->numAnims = 0;
+		animBlock->isLoaded = false;
+		return;
+	}
 
 	int animIndex = animBlock->firstIndex;
 	for(j = 0; j < animBlock->numAnims; j++){
