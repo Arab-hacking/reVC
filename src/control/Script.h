@@ -323,25 +323,11 @@ public:
 	void StoreParameters(uint32*, int16);
 
 	int8 ProcessOneCommand();
+	int8 ProcessWeatherCommands(int32 command);
 	void DoDeatharrestCheck();
 	void UpdateCompareFlag(bool);
 	int16 GetPadState(uint16, uint16);
 
-	int8 ProcessCommands0To99(int32);
-	int8 ProcessCommands100To199(int32);
-	int8 ProcessCommands200To299(int32);
-	int8 ProcessCommands300To399(int32);
-	int8 ProcessCommands400To499(int32);
-	int8 ProcessCommands500To599(int32);
-	int8 ProcessCommands600To699(int32);
-	int8 ProcessCommands700To799(int32);
-	int8 ProcessCommands800To899(int32);
-	int8 ProcessCommands900To999(int32);
-	int8 ProcessCommands1000To1099(int32);
-	int8 ProcessCommands1100To1199(int32);
-	int8 ProcessCommands1200To1299(int32);
-	int8 ProcessCommands1300To1399(int32);
-	int8 ProcessCommands1400To1499(int32);
 
 	void LocatePlayerCommand(int32, uint32*);
 	void LocatePlayerCharCommand(int32, uint32*);
@@ -358,18 +344,6 @@ public:
 	void CarInAreaCheckCommand(int32, uint32*);
 	void LocateObjectCommand(int32, uint32*);
 	void ObjectInAreaCheckCommand(int32, uint32*);
-
-#ifdef GTA_SCRIPT_COLLECTIVE
-	void LocateCollectiveCommand(int32, uint32*);
-	void LocateCollectiveCharCommand(int32, uint32*);
-	void LocateCollectiveCarCommand(int32, uint32*);
-	void LocateCollectivePlayerCommand(int32, uint32*);
-	void CollectiveInAreaCheckCommand(int32, uint32*);
-#endif
-
-#ifdef MISSION_REPLAY
-	bool CanAllowMissionReplay();
-#endif
 
 #ifdef USE_ADVANCED_SCRIPT_DEBUG_OUTPUT
 	int CollectParameterForDebug(char* buf, bool& var);
@@ -431,45 +405,20 @@ public:
 	static CSprite2d ScriptSprites[MAX_NUM_SCRIPT_SRPITES];
 	static script_sphere_struct ScriptSphereArray[MAX_NUM_SCRIPT_SPHERES];
 	static tUsedObject UsedObjectArray[MAX_NUM_USED_OBJECTS];
-	static int32 MultiScriptArray[MAX_NUM_MISSION_SCRIPTS];
-	static tBuildingSwap BuildingSwapArray[MAX_NUM_BUILDING_SWAPS];
-	static CEntity* InvisibilitySettingArray[MAX_NUM_INVISIBILITY_SETTINGS];
 	static CStoredLine aStoredLines[MAX_NUM_STORED_LINES];
 	static bool DbgFlag;
 	static uint32 OnAMissionFlag;
 	static CMissionCleanup MissionCleanUp;
 	static CStuckCarCheck StuckCars;
 	static CUpsideDownCarCheck UpsideDownCars;
-	static int32 StoreVehicleIndex;
-	static bool StoreVehicleWasRandom;
 	static CRunningScript *pIdleScripts;
 	static CRunningScript *pActiveScripts;
-	static int32 NextFreeCollectiveIndex;
-	static int32 LastRandomPedId;
-	static uint16 NumberOfUsedObjects;
 	static bool bAlreadyRunningAMissionScript;
 	static bool bUsingAMultiScriptFile;
-	static uint16 NumberOfMissionScripts;
-	static uint32 LargestMissionScriptSize;
-	static uint32 MainScriptSize;
-	static uint8 FailCurrentMission;
-	static uint16 NumScriptDebugLines;
 	static uint16 NumberOfIntroRectanglesThisFrame;
 	static uint16 NumberOfIntroTextLinesThisFrame;
-	static uint8 UseTextCommands;
-	static uint16 CommandsExecuted;
-	static uint16 ScriptsUpdated;
 	static uint32 LastMissionPassedTime;
-	static uint16 NumberOfExclusiveMissionScripts;
-#if (defined GTA_PC && !defined GTAVC_JP_PATCH || defined GTA_XBOX || defined SUPPORT_XBOX_SCRIPT || defined GTA_MOBILE || defined SUPPORT_MOBILE_SCRIPT)
-#define CARDS_IN_SUIT (13)
-#define NUM_SUITS (4)
-#define MAX_DECKS (6)
-#define CARDS_IN_DECK (CARDS_IN_SUIT * NUM_SUITS)
-#define CARDS_IN_STACK (CARDS_IN_DECK * MAX_DECKS)
-	static int16 CardStack[CARDS_IN_STACK];
-	static int16 CardStackPosition;
-#endif
+	static uint16 NumScriptDebugLines;
 	static bool bPlayerIsInTheStatium;
 	static uint8 RiotIntensity;
 	static bool bPlayerHasMetDebbieHarry;
@@ -477,13 +426,12 @@ public:
 	static void Init();
 	static void Process();
 
-	static CRunningScript* StartTestScript();
 	static bool IsPlayerOnAMission();
 	static void ClearSpaceForMissionEntity(const CVector&, CEntity*);
 
-	static void UndoBuildingSwaps();
-	static void UndoEntityInvisibilitySettings();
 
+	// Not script debugging any more: the radar draws its markers through this
+	// small line buffer, so it stays.
 	static void ScriptDebugLine3D(float x1, float y1, float z1, float x2, float y2, float z2, uint32 col, uint32 col2);
 	static void RenderTheScriptDebugLines();
 
@@ -529,115 +477,28 @@ public:
 
 	static CRunningScript* StartNewScript(uint32);
 
-	static void CleanUpThisVehicle(CVehicle*);
-	static void CleanUpThisPed(CPed*);
-	static void CleanUpThisObject(CObject*);
 
-	static bool IsPedStopped(CPed*);
-	static bool IsPlayerStopped(CPlayerInfo*);
-	static bool IsVehicleStopped(CVehicle*);
 
 	static void PrintListSizes();
-	static void ReadObjectNamesFromScript();
-	static void UpdateObjectIndices();
-	static void ReadMultiScriptFileOffsetsFromScript();
-	static void DrawScriptSpheres();
-	static void HighlightImportantArea(uint32, float, float, float, float, float);
-	static void HighlightImportantAngledArea(uint32, float, float, float, float, float, float, float, float, float);
-	static void DrawDebugSquare(float, float, float, float);
-	static void DrawDebugAngledSquare(float, float, float, float, float, float, float, float);
-	static void DrawDebugCube(float, float, float, float, float, float);
-	static void DrawDebugAngledCube(float, float, float, float, float, float, float, float, float, float);
 
-	static void AddToInvisibilitySwapArray(CEntity*, bool);
-	static void AddToBuildingSwapArray(CBuilding*, int32, int32);
 
-	static int32 GetActualScriptSphereIndex(int32 index);
-	static int32 AddScriptSphere(int32 id, CVector pos, float radius);
-	static int32 GetNewUniqueScriptSphereIndex(int32 index);
-	static void RemoveScriptSphere(int32 index);
 	static void RemoveScriptTextureDictionary();
 public:
 	static void RemoveThisPed(CPed* pPed);
+	static void CleanUpThisObject(CObject* pObject);
 
 	static uint32& GetLastMissionPassedTime() { return LastMissionPassedTime; }
 #ifdef MISSION_SWITCHER
 	static void SwitchToMission(int32 mission);
 #endif
 
-#ifdef GTA_SCRIPT_COLLECTIVE
-	static void AdvanceCollectiveIndex()
-	{
-		if (NextFreeCollectiveIndex == INT32_MAX)
-			NextFreeCollectiveIndex = 0;
-		else
-			NextFreeCollectiveIndex++;
-	}
-
-	static int AddPedsInVehicleToCollective(int);
-	static int AddPedsInAreaToCollective(float, float, float, float);
-	static int FindFreeSlotInCollectiveArray();
-	static void SetObjectiveForAllPedsInCollective(int, eObjective, int16, int16);
-	static void SetObjectiveForAllPedsInCollective(int, eObjective, CVector, float);
-	static void SetObjectiveForAllPedsInCollective(int, eObjective, CVector);
-	static void SetObjectiveForAllPedsInCollective(int, eObjective, void*);
-	static void SetObjectiveForAllPedsInCollective(int, eObjective);
-#endif
-
-#ifdef USE_MISSION_REPLAY_OVERRIDE_FOR_NON_MOBILE_SCRIPT
-	static bool MissionSupportsMissionReplay(int index)
-	{
-		return index >= 3 && index <= 35 || index >= 51 && index <= 65 || index >= 67 && index <= 74 || index >= 83 && index <= 87;
-	}
-#endif
 
 #ifdef USE_DEBUG_SCRIPT_LOADER
 	static int ScriptToLoad;
 	static int OpenScript();
 #endif
 
-#ifdef USE_ADVANCED_SCRIPT_DEBUG_OUTPUT
-	static void LogAfterScriptInitializing();
-	static void LogBeforeScriptProcessing();
-	static void LogAfterScriptProcessing();
-#endif
 };
 
-#ifdef MISSION_REPLAY
-extern int AllowMissionReplay;
-extern uint32 WaitForMissionActivate;
-extern uint32 WaitForSave;
-extern uint32 MissionStartTime;
-extern int missionRetryScriptIndex;
-extern bool doingMissionRetry;
-extern bool gbTryingPorn4Again;
-extern int IsInAmmunation;
-extern int MissionSkipLevel;
-
-#ifdef USE_MISSION_REPLAY_OVERRIDE_FOR_NON_MOBILE_SCRIPT
-extern bool UsingMobileScript;
-extern bool AlreadySavedGame;
-#endif
-
-uint32 AddExtraDeathDelay();
-void RetryMission(int, int unk = 0);
-
-enum {
-	MISSION_RETRY_TYPE_SUGGEST_TO_PLAYER = 0,
-	MISSION_RETRY_TYPE_1,
-	MISSION_RETRY_TYPE_BEGIN_RESTARTING
-};
-
-enum {
-	MISSION_RETRY_STAGE_NORMAL = 0,
-	MISSION_RETRY_STAGE_WAIT_FOR_SCRIPT_TO_TERMINATE,
-	MISSION_RETRY_STAGE_START_PROCESSING,
-	MISSION_RETRY_STAGE_WAIT_FOR_DELAY,
-	MISSION_RETRY_STAGE_WAIT_FOR_MENU,
-	MISSION_RETRY_STAGE_WAIT_FOR_USER,
-	MISSION_RETRY_STAGE_START_RESTARTING,
-	MISSION_RETRY_STAGE_WAIT_FOR_TIMER_AFTER_RESTART,
-};
-#endif
 
 #endif // __GTA_SCRIPT_H__

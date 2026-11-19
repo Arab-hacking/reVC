@@ -519,11 +519,6 @@ GenericLoad()
 	ReadDataFromBufferPointer(buf, CTimeCycle::m_ExtraColourInter);
 	ReadDataFromBufferPointer(buf, RadioStationPosition);
 	assert(buf - work_buff == SIZE_OF_SIMPLEVARS);
-#ifdef MISSION_REPLAY
-	WaitForSave = 0;
-	if (FrontEndMenuManager.m_nCurrSaveSlot == PAUSE_SAVE_SLOT && qs == 3)
-		WaitForMissionActivate = CTimer::GetTimeInMilliseconds() + 2000;
-#endif
 	debug("Loading Scripts \n");
 	{
 		const uint32 simpleAndScriptsBytes = size;
@@ -1410,22 +1405,12 @@ void DisplaySaveResult(int unk, char* name)
 
 bool SaveGameForPause(int type)
 {
-	if (AllowMissionReplay != MISSION_RETRY_STAGE_NORMAL && AllowMissionReplay != MISSION_RETRY_STAGE_WAIT_FOR_TIMER_AFTER_RESTART) {
-		debug("SaveGameForPause failed during AllowMissionReplay %d", AllowMissionReplay);
-		return false;
-	}
-	if (type != SAVE_TYPE_QUICKSAVE_FOR_MISSION_REPLAY && WaitForSave > CTimer::GetTimeInMilliseconds()) {
-		debug("SaveGameForPause failed WaitForSave");
-		return false;
-	}
-	WaitForSave = 0;
 	if (gGameState != GS_PLAYING_GAME || (CTheScripts::bAlreadyRunningAMissionScript && type != SAVE_TYPE_QUICKSAVE_FOR_SCRIPT_ON_A_MISSION)) {
 		DisplaySaveResult(3, CStats::LastMissionPassedName);
 		return false;
 	}
 	debug("SaveGameForPause ******************************** %s doSave %d", CStats::LastMissionPassedName, !CTheScripts::bAlreadyRunningAMissionScript);
 	IsQuickSave = type;
-	MissionStartTime = 0;
 	int res = PcSaveHelper.SaveSlot(PAUSE_SAVE_SLOT);
 	PcSaveHelper.PopulateSlotInfo();
 	IsQuickSave = 0;

@@ -5002,18 +5002,6 @@ CMenuManager::ProcessUserInput(uint8 goDown, uint8 goUp, uint8 optionSelected, u
 					OutputDebugString("STARTED PLAYING FRONTEND AUDIO TRACK");
 				}
 				break;
-#ifdef MISSION_REPLAY
-			case MENUACTION_REJECT_RETRY:
-				doingMissionRetry = false;
-				AllowMissionReplay = MISSION_RETRY_STAGE_NORMAL;
-				RequestFrontEndShutDown();
-				break;
-			case MENUACTION_UNK114:
-				doingMissionRetry = false;
-				RequestFrontEndShutDown();
-				RetryMission(MISSION_RETRY_TYPE_BEGIN_RESTARTING);
-				return;
-#endif
 			case MENUACTION_SAVEGAME:
 			{
 				int saveSlot = aScreens[m_nCurrScreen].m_aEntries[m_nCurrOption].m_SaveSlot;
@@ -5667,19 +5655,6 @@ CMenuManager::ProcessFileActions()
 {
 	switch (m_nCurrScreen) {
 		case MENUPAGE_LOADING_IN_PROGRESS:
-#ifdef MISSION_REPLAY
-			if (MissionSkipLevel) {
-				if (gGameState != GS_PLAYING_GAME)
-					DoSettingsBeforeStartingAGame();
-				RequestFrontEndShutDown();
-				break;
-			}
-			if (doingMissionRetry) {
-				RetryMission(MISSION_RETRY_TYPE_BEGIN_RESTARTING);
-				m_nCurrSaveSlot = SLOT_COUNT;
-				doingMissionRetry = false;
-			}
-#endif
 			if (CheckSlotDataValid(m_nCurrSaveSlot)) {
 #if defined(USE_DEBUG_SCRIPT_LOADER) && !defined(ANDROID)
 				CTheScripts::ScriptToLoad = 0;

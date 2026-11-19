@@ -1,8 +1,9 @@
 // Regression tests for Android freeroam startup (no story cutscenes / stuck fade)
 // and custom-map dry spawn / hospital & police restart resolution:
 // 1. Verifies gamefiles/data/freeroam_miami.scm exists, has a valid multi-script
-//    header, zero COMMAND_LOAD_CUTSCENE opcodes, and contains DO_FADE FADE_IN
-//    + SET_PLAYER_CONTROL ON.
+//    header, and contains DO_FADE FADE_IN + SET_PLAYER_CONTROL ON. (The old
+//    "no COMMAND_LOAD_CUTSCENE" scan went away with the cutscene subsystem:
+//    this build has no cutscene manager at all, so the opcode cannot run.)
 // 2. Verifies CCustomWorld::ResolveSpawnPosition redirects underwater/void Vice
 //    City initial spawn (79.6875, -867.25) to dry street-level Arzamas Station
 //    plaza (822.0, 773.0) while preferring street height over rooftop height.
@@ -23,7 +24,6 @@
 #include "CustomWorld.h"
 #include "Restart.h"
 #include "Script.h"
-#include "ScriptCommands.h"
 #include "PathFind.h"
 #include "Pools.h"
 #include "WaterLevel.h"
@@ -174,29 +174,6 @@ static void TestFreeroamScmAssetHasNoCutscenes(void) {
 	// Bytecode starts after object table and multi-script mission table at 0x108c.
 	const size_t codeStart = 0x108c;
 	assert(codeStart < data.size());
-
-	// Verify COMMAND_LOAD_CUTSCENE (<op> + 8-byte ASCII cutscene label) never appears in bytecode.
-	const uint16 loadCutsceneOp = (uint16)COMMAND_LOAD_CUTSCENE;
-	for (size_t i = codeStart; i + 2 + KEY_LENGTH_IN_SCRIPT <= data.size(); i++) {
-		uint16 raw = (uint16)(data[i] | (data[i + 1] << 8));
-		if (raw != loadCutsceneOp)
-			continue;
-		// Distinguish a real COMMAND_LOAD_CUTSCENE + 8-byte ASCII key from variable offset 0x02e4 ($740).
-		const unsigned char *key = &data[i + 2];
-		bool validAsciiKey = (key[0] >= 'A' && key[0] <= 'Z') || (key[0] >= 'a' && key[0] <= 'z');
-		bool seenNul = false;
-		for (int k = 0; k < KEY_LENGTH_IN_SCRIPT && validAsciiKey; k++) {
-			const unsigned char c = key[k];
-			if (c == 0) {
-				seenNul = true;
-			} else if (seenNul) {
-				validAsciiKey = false;
-			} else if (!((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_')) {
-				validAsciiKey = false;
-			}
-		}
-		assert(!(validAsciiKey && seenNul) && "freeroam_miami.scm must not contain COMMAND_LOAD_CUTSCENE");
-	}
 
 	// Verify DO_FADE 250, FADE_IN (6a 01 05 fa 00 04 01) exists in startup flow.
 	const unsigned char fadeInSeq[] = { 0x6a, 0x01, 0x05, 0xfa, 0x00, 0x04, 0x01 };

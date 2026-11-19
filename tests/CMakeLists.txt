@@ -317,7 +317,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Cla
 
     add_executable(script_save_validation_tests
         ScriptSaveValidationTests.cpp
-        ../src/control/Script5.cpp)
+        ../src/control/Script.cpp)
     target_compile_definitions(script_save_validation_tests PRIVATE
         LIBRW RW_GL3 LIBRW_SDL2 CMAKE_BUILD USE_OUR_VERSIONING AUDIO_OAL)
     target_include_directories(script_save_validation_tests PRIVATE

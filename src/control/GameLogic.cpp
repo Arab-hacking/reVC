@@ -101,15 +101,6 @@ CGameLogic::Update()
 	CVector vecRestartPos;
 	float fRestartFloat;
 
-#ifdef MISSION_REPLAY
-	// what a place to check!
-	if (gbTryingPorn4Again) {
-		CRunningScript* pScript = CTheScripts::pActiveScripts;
-		if (pScript && !CGeneral::faststricmp(pScript->m_abScriptName, "porno4"))
-			gbTryingPorn4Again = false;
-	}
-#endif
-
 
 	UpdateShortCut();
 	CPlayerInfo &pPlayerInfo = CWorld::Players[CWorld::PlayerInFocus];
@@ -126,20 +117,12 @@ CGameLogic::Update()
 		}
 		break;
 	case WBSTATE_WASTED:
-#ifdef MISSION_REPLAY
-		if ((CTimer::GetTimeInMilliseconds() - pPlayerInfo.m_nWBTime > AddExtraDeathDelay() + 0x800) && (CTimer::GetPreviousTimeInMilliseconds() - pPlayerInfo.m_nWBTime <= AddExtraDeathDelay() + 0x800)) {
-#else
 		if ((CTimer::GetTimeInMilliseconds() - pPlayerInfo.m_nWBTime > 0x800) && (CTimer::GetPreviousTimeInMilliseconds() - pPlayerInfo.m_nWBTime <= 0x800)) {
-#endif
 			TheCamera.SetFadeColour(200, 200, 200);
 			TheCamera.Fade(2.0f, FADE_OUT);
 		}
 
-#ifdef MISSION_REPLAY
-		if (CTimer::GetTimeInMilliseconds() - pPlayerInfo.m_nWBTime >= AddExtraDeathDelay() + 0x1000) {
-#else
 		if (CTimer::GetTimeInMilliseconds() - pPlayerInfo.m_nWBTime >= 0x1000) {
-#endif
 			pPlayerInfo.m_WBState = WBSTATE_PLAYING;
 			if (pPlayerInfo.m_bGetOutOfHospitalFree) {
 				pPlayerInfo.m_bGetOutOfHospitalFree = false;
@@ -188,11 +171,7 @@ CGameLogic::Update()
 		}
 		break;
 	case WBSTATE_BUSTED:
-#ifdef MISSION_REPLAY
-		if ((CTimer::GetTimeInMilliseconds() - pPlayerInfo.m_nWBTime > AddExtraDeathDelay() + 0x800) && (CTimer::GetPreviousTimeInMilliseconds() - pPlayerInfo.m_nWBTime <= AddExtraDeathDelay() + 0x800)) {
-#else
 		if ((CTimer::GetTimeInMilliseconds() - pPlayerInfo.m_nWBTime > 0x800) && (CTimer::GetPreviousTimeInMilliseconds() - pPlayerInfo.m_nWBTime <= 0x800)) {
-#endif
 			TheCamera.SetFadeColour(0, 0, 0);
 			TheCamera.Fade(2.0f, FADE_OUT);
 		}
@@ -217,11 +196,7 @@ CGameLogic::Update()
 			pPlayerInfo.m_nBustedAudioStatus = BUSTEDAUDIO_DONE;
 		}
 		
-#ifdef MISSION_REPLAY
-		if (CTimer::GetTimeInMilliseconds() - pPlayerInfo.m_nWBTime >= AddExtraDeathDelay() + 0x1000) {
-#else
 		if (CTimer::GetTimeInMilliseconds() - pPlayerInfo.m_nWBTime >= 0x1000) {
-#endif
 #ifdef FIX_BUGS
 			pPlayerInfo.m_nBustedAudioStatus = BUSTEDAUDIO_NONE;
 #endif
@@ -298,19 +273,11 @@ CGameLogic::Update()
 		}
 		break;
 	case WBSTATE_FAILED_CRITICAL_MISSION:
-#ifdef MISSION_REPLAY
-		if ((CTimer::GetTimeInMilliseconds() - pPlayerInfo.m_nWBTime > AddExtraDeathDelay() + 0x800) && (CTimer::GetPreviousTimeInMilliseconds() - pPlayerInfo.m_nWBTime <= AddExtraDeathDelay() + 0x800)) {
-#else
 		if ((CTimer::GetTimeInMilliseconds() - pPlayerInfo.m_nWBTime > 0x800) && (CTimer::GetPreviousTimeInMilliseconds() - pPlayerInfo.m_nWBTime <= 0x800)) {
-#endif
 			TheCamera.SetFadeColour(0, 0, 0);
 			TheCamera.Fade(2.0f, FADE_OUT);
 		}
-#ifdef MISSION_REPLAY
-		if (CTimer::GetTimeInMilliseconds() - pPlayerInfo.m_nWBTime >= AddExtraDeathDelay() + 0x1000) {
-#else
 		if (CTimer::GetTimeInMilliseconds() - pPlayerInfo.m_nWBTime >= 0x1000) {
-#endif
 			pPlayerInfo.m_WBState = WBSTATE_PLAYING;
 			if (pPlayerInfo.m_pPed->bInVehicle) {
 				CVehicle *pVehicle = pPlayerInfo.m_pPed->m_pMyVehicle;

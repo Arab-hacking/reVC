@@ -631,7 +631,6 @@ bool CGame::Initialise(const char* datFile)
 	if ( !TheMemoryCard.m_bWantToLoad )
 #endif
 	{
-		CTheScripts::StartTestScript();
 		CTheScripts::Process();
 		TheCamera.Process();
 	}
@@ -806,7 +805,6 @@ void CGame::ReInitGameObjectVariables(void)
 #endif
 	{
 		CCranes::InitCranes();
-		CTheScripts::StartTestScript();
 		CTheScripts::Process();
 		TheCamera.Process();
 		CTrain::InitTrains();
@@ -837,8 +835,6 @@ void CGame::ShutDownForRestart(void)
 		CWorld::Players[i].Clear();
 
 	CGarages::SetAllDoorsBackToOriginalHeight();
-	CTheScripts::UndoBuildingSwaps();
-	CTheScripts::UndoEntityInvisibilitySettings();
 	CWorld::ClearForRestart();
 	CGameLogic::ClearShortCut();
 	CTimer::Shutdown();
