@@ -153,8 +153,8 @@ AnimAssocDefinition CAnimManager::ms_aAnimAssocDefinitions[NUM_ANIM_ASSOC_GROUPS
 	{ "oldfatman", "ped", MI_MALE01, ARRAY_SIZE(aOLDFATMANAnimations), 191, aOLDFATMANAnimations, aStdAnimDescs },
 	{ "jogger", "ped", MI_MALE01, ARRAY_SIZE(aJOGGERAnimations), 191, aJOGGERAnimations, aStdAnimDescs },
 	{ "drunkman", "ped", MI_MALE01, ARRAY_SIZE(aDRUNKMANAnimations), 191, aDRUNKMANAnimations, aStdAnimDescs },
-	{ "blindman", "ped", MI_MALE01, ARRAY_SIZE(aBLINDMANAnimations), 191, aBLINDMANAnimations, aStdAnimDescs },
-	{ "swat", "ped", MI_MALE01, ARRAY_SIZE(aSWATAnimations), 191, aSWATAnimations, aStdAnimDescs },
+	{ "blindman", "ped", MI_MALE01, ARRAY_SIZE(aCivilWalkAnimations), 191, aCivilWalkAnimations, aStdAnimDescs },
+	{ "swat", "ped", MI_MALE01, ARRAY_SIZE(aCivilWalkAnimations), 191, aCivilWalkAnimations, aStdAnimDescs },
 	{ "woman", "ped", MI_MALE01, ARRAY_SIZE(aWOMANAnimations), 191, aWOMANAnimations, aStdAnimDescs },
 	{ "shopping", "ped", MI_MALE01, ARRAY_SIZE(aSHOPPINGAnimations), 191, aSHOPPINGAnimations, aStdAnimDescs },
 	{ "busywoman", "ped", MI_MALE01, ARRAY_SIZE(aBUSYWOMANAnimations), 191, aBUSYWOMANAnimations, aStdAnimDescs },
@@ -166,7 +166,7 @@ AnimAssocDefinition CAnimManager::ms_aAnimAssocDefinitions[NUM_ANIM_ASSOC_GROUPS
 	{ "oldfatwoman", "ped", MI_MALE01, ARRAY_SIZE(aOLDFATWOMANAnimations), 191, aOLDFATWOMANAnimations, aStdAnimDescs },
 	{ "skate", "skate", MI_MALE01, ARRAY_SIZE(aSKATEAnimations), 191, aSKATEAnimations, aStdAnimDescs },
 	{ "panicchunky", "ped", MI_MALE01, ARRAY_SIZE(aPANICCHUNKYAnimations), 191, aPANICCHUNKYAnimations, aStdAnimDescs },
-	{ "unarmed", "ped", MI_MALE01, ARRAY_SIZE(aUNARMEDAnimations), 191, aUNARMEDAnimations, aStdAnimDescs },
+	{ "unarmed", "ped", MI_MALE01, ARRAY_SIZE(aCivilWalkAnimations), 191, aCivilWalkAnimations, aStdAnimDescs },
 
 };
 int32 CAnimManager::ms_numAnimAssocDefinitions = ARRAY_SIZE(ms_aAnimAssocDefinitions);

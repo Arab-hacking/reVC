@@ -58,13 +58,39 @@ CPedType::LoadPedData(void)
 	type = NUM_PEDTYPES;
 	buf = new char[16 * 1024];
 
-	CFileMgr::SetDir("DATA");
-	buflen = CFileMgr::LoadFile("PED.DAT", (uint8*)buf, 16 * 1024, "r");
-	CFileMgr::SetDir("");
+	// data/ped.dat comes from the game archive like every other SA data table.
+	// Threat and Avoid are the relations between ped types, so reading a VC file
+	// from DATA while the SA set is loaded would describe the wrong population.
+	buflen = 0;
+#ifdef CUSTOM_MODELS
+	{
+		std::vector<uint8> archived;
+		if(CCustomModels::ReadCommonDataFile("data/ped.dat", archived) &&
+		   archived.size() > 0 && archived.size() < 16 * 1024){
+			memcpy(buf, archived.data(), archived.size());
+			buflen = (ssize_t)archived.size();
+		}
+	}
+#endif
+	if(buflen <= 0){
+		// A build without the archive still reads the loose table, exactly as a
+		// plain San Andreas install lays it out.
+		CFileMgr::SetDir("DATA");
+		buflen = CFileMgr::LoadFile("PED.DAT", (uint8*)buf, 16 * 1024, "r");
+		CFileMgr::SetDir("");
+	}
+	if(buflen <= 0){
+		REVC_LOG_WARNING("ped types: no type table in the archive or in DATA; ped relations stay empty");
+		delete[] buf;
+		return;
+	}
 
 	for(bp = 0; bp < buflen; ){
 		// read file line by line
 		for(linelen = 0; buf[bp] != '\n' && bp < buflen; bp++){
+			// drop the excess instead of overrunning line[]
+			if(linelen >= (int)sizeof(line) - 1)
+				continue;
 			if(buf[bp] == '\r' || buf[bp] == ',' || buf[bp] == '\t')
 				line[linelen++] = ' ';
 			else
@@ -81,12 +107,12 @@ CPedType::LoadPedData(void)
 			continue;
 
 		// Game uses just "line" here since sscanf already trims whitespace, but this is safer
-		sscanf(&line[lp], "%s", word);
+		sscanf(&line[lp], "%31s", word);
 
 		if(strcmp(word, "Threat") == 0){
 			flags = 0;
 			lp += 7;
-			while(sscanf(&line[lp], "%s", word) == 1 && lp <= linelen){
+			while(sscanf(&line[lp], "%31s", word) == 1 && lp <= linelen){
 				flags |= FindPedFlag(word);
 				// skip word
 				while(line[lp] != ' ' && line[lp] != '\n' && line[lp] != '\0')
@@ -99,7 +125,7 @@ CPedType::LoadPedData(void)
 		}else if(strcmp(word, "Avoid") == 0){
 			flags = 0;
 			lp += 6;
-			while(sscanf(&line[lp], "%s", word) == 1 && lp <= linelen){
+			while(sscanf(&line[lp], "%31s", word) == 1 && lp <= linelen){
 				flags |= FindPedFlag(word);
 				// skip word
 				while(line[lp] != ' ' && line[lp] != '\n' && line[lp] != '\0')
@@ -110,8 +136,12 @@ CPedType::LoadPedData(void)
 			}
 			ms_apPedType[type]->m_avoid = flags;
 		}else{
-			sscanf(line, "%s %f %f %f %f %f", word, &f1, &f2, &f3, &f4, &f5);
+			sscanf(line, "%31s %f %f %f %f %f", word, &f1, &f2, &f3, &f4, &f5);
 			type = FindPedType(word);
+			// A type line this build has no type for leaves nothing to fill in;
+			// its Threat/Avoid lines are skipped by the same test.
+			if(type >= NUM_PEDTYPES || type < 0)
+				continue;
 			ms_apPedType[type]->m_flag = FindPedFlag(word);
 			// unknown values
 			ms_apPedType[type]->unknown1 = f1 / 50.0f;
@@ -150,7 +180,9 @@ CPedType::FindPedType(char *type)
 	if(strcmp(type, "CRIMINAL") == 0) return PEDTYPE_CRIMINAL;
 	if(strcmp(type, "SPECIAL") == 0) return PEDTYPE_SPECIAL;
 	if(strcmp(type, "PROSTITUTE") == 0) return PEDTYPE_PROSTITUTE;
-	Error("Unknown ped type, Pedtype.cpp");
+	// An SA type table carries names this build has no type for; an unknown one
+	// must not take the whole game down, so the caller gets a value it can test.
+	REVC_LOG_WARNING("ped type %s is not a known type; using CIVMALE", type);
 	return NUM_PEDTYPES;
 }
 
@@ -218,7 +250,9 @@ CPedStats::Initialise(void)
 	for(i = 0; i < NUM_PEDSTATS; i++){
 		ms_apPedStats[i] = new CPedStats;
 		ms_apPedStats[i]->m_type = PEDSTAT_PLAYER;
-		ms_apPedStats[i]->m_name[8] = 'R';	// WHAT?
+		// GetPedStatType looks a table entry up by name, so the default has to
+		// be a real, empty name rather than whatever the fresh allocation held.
+		ms_apPedStats[i]->m_name[0] = '\0';
 		ms_apPedStats[i]->m_fleeDistance = 20.0f;
 		ms_apPedStats[i]->m_headingChangeRate = 15.0f;
 		ms_apPedStats[i]->m_fear = 50;
@@ -259,8 +293,10 @@ CPedStats::LoadPedStats(void)
 	type = 0;
 	buf = new char[16 * 1024];
 
-	// The ped stat table ships in the game's data archive; only a build without
-	// the archive falls back to the file in DATA.
+	// The stat table is data/pedstats.dat when the game archive carries one.
+	// The archive shipped with this build does not, so the loose DATA file stays
+	// as the source until it does; Initialise() has already filled the array
+	// with defaults, and the loop below only overrides what it reads.
 	buflen = 0;
 #ifdef CUSTOM_MODELS
 	{
@@ -277,10 +313,18 @@ CPedStats::LoadPedStats(void)
 		buflen = CFileMgr::LoadFile("PEDSTATS.DAT", (uint8*)buf, 16 * 1024, "r");
 		CFileMgr::SetDir("");
 	}
+	if(buflen <= 0){
+		REVC_LOG_WARNING("ped stats: no stat table in the archive or in DATA; keeping the default stats");
+		delete[] buf;
+		return;
+	}
 
 	for(bp = 0; bp < buflen; ){
 		// read file line by line
 		for(linelen = 0; buf[bp] != '\n' && bp < buflen; bp++){
+			// drop the excess instead of overrunning line[]
+			if(linelen >= (int)sizeof(line) - 1)
+				continue;
 			if(buf[bp] == '\r' || buf[bp] == ',' || buf[bp] == '\t')
 				line[linelen++] = ' ';
 			else
@@ -296,7 +340,7 @@ CPedStats::LoadPedStats(void)
 		   line[lp] == '#')
 			continue;
 
-		sscanf(&line[lp], "%s %f %f %d %d %d %d %f %f %d",
+		sscanf(&line[lp], "%31s %f %f %d %d %d %d %f %f %d",
 			name,
 			&fleeDist,
 			&headingChangeRate,
@@ -308,7 +352,11 @@ CPedStats::LoadPedStats(void)
 			&defendWeakness,
 			&flags);
 		ms_apPedStats[type]->m_type = (ePedStats)type;
-		strncpy(ms_apPedStats[type]->m_name, name, 24);	// FIX: game uses strcpy
+		// Leave room for the terminator: GetPedStatType compares this field with
+		// a whole-string comparison, so a full-width copy that fills all 24
+		// bytes would run past the array.
+		strncpy(ms_apPedStats[type]->m_name, name, sizeof(ms_apPedStats[type]->m_name) - 1);
+		ms_apPedStats[type]->m_name[sizeof(ms_apPedStats[type]->m_name) - 1] = '\0';
 		ms_apPedStats[type]->m_fleeDistance = fleeDist;
 		ms_apPedStats[type]->m_headingChangeRate = headingChangeRate;
 		ms_apPedStats[type]->m_fear = fear;
@@ -318,7 +366,12 @@ CPedStats::LoadPedStats(void)
 		ms_apPedStats[type]->m_attackStrength = attackStrength;
 		ms_apPedStats[type]->m_defendWeakness = defendWeakness;
 		ms_apPedStats[type]->m_flags = flags;
-		type++;
+		// The array is indexed by type; a table with more rows than stats must
+		// stop rather than write past the end.
+		if(++type >= NUM_PEDSTATS){
+			REVC_LOG_WARNING("ped stats: table has more than %d entries, ignoring the rest", NUM_PEDSTATS);
+			break;
+		}
 	}
 
 	delete[] buf;

@@ -460,11 +460,11 @@ AssocGroupId SafePedAnimGroup(const std::string &s)
         if(groupName && group == customworld::Lower(groupName))
             return (AssocGroupId)id;
     }
-    if(group == "man" || group == "default") return ASSOCGRP_DEFAULT;
-    if(group == "fatman") return ASSOCGRP_FATMAN;
-    if(group == "oldman") return ASSOCGRP_OLDMAN;
-    if(group == "fatwoman") return ASSOCGRP_FATWOMAN;
-    if(group == "jogger" || group == "jogman") return ASSOCGRP_JOGGER;
+    // The walking sets are in the table under the names the group table uses,
+    // so only the spellings that differ are left here: SA's peds.ide calls the
+    // standard set "man", and the client calls the skater set "skater".
+    if(group == "man") return ASSOCGRP_DEFAULT;
+    if(group == "jogman") return ASSOCGRP_JOGGER;
     if(group == "skater") return ASSOCGRP_SKATE;
     return ASSOCGRP_DEFAULT;
 }

@@ -96,17 +96,8 @@ static const char *aDRUNKMANAnimations[] = {
 	"WALK_start",
 };
 
-static const char *aBLINDMANAnimations[] = {
+static const char *aCivilWalkAnimations[] = {
 	"WALK_civi",
-	"run_civi",
-	"sprint_panic",
-	"IDLE_stance",
-	"roadcross",
-	"WALK_start",
-};
-
-static const char *aSWATAnimations[] = {
-	"swat_run",
 	"run_civi",
 	"sprint_panic",
 	"IDLE_stance",
@@ -210,15 +201,6 @@ static const char *aPANICCHUNKYAnimations[] = {
 	"woman_runpanic",
 	"IDLE_stance",
 	"roadcross",
-	"WALK_start",
-};
-
-static const char *aUNARMEDAnimations[] = {
-	"FightA_1",
-	"FightA_3",
-	"FightA_M",
-	"FIGHTIDLE",
-	"FightA_2",
 	"WALK_start",
 };
 

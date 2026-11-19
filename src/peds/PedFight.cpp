@@ -5,10 +5,10 @@
 #include "AnimBlendClumpData.h"
 #include "AnimBlendAssociation.h"
 #include "Camera.h"
+#include "FileMgr.h"
 #include "CarCtrl.h"
 #include "Darkel.h"
 #include "DMAudio.h"
-#include "FileMgr.h"
 #include "General.h"
 #include "Object.h"
 #include "Pad.h"
@@ -2438,11 +2438,10 @@ CPed::LoadFightData(void)
 	size_t bp, buflen;
 	int lp, linelen;
 
-	// San Andreas keeps the melee table in data/melee.dat and ships it in the
-	// game archive; Vice City called the same table fistfite.dat and read it
-	// from DATA. Take the SA table from the archive first so the move list
-	// matches the clip set that is actually loaded, and keep the loose VC file
-	// as the fallback for a build without the archive.
+	// The melee table is data/melee.dat and lives in the game archive. Vice City
+	// kept the same table in DATA as fistfite.dat; that name is gone because the
+	// move list has to describe the SA clips that are actually loaded. A build
+	// without the archive reads the loose SA file.
 	buflen = 0;
 #ifdef CUSTOM_MODELS
 	{
@@ -2454,13 +2453,23 @@ CPed::LoadFightData(void)
 		}
 	}
 #endif
-	if(buflen == 0)
-		buflen = CFileMgr::LoadFile("DATA\\fistfite.dat", work_buff, sizeof(work_buff), "r");
+	if(buflen == 0){
+		CFileMgr::SetDir("DATA");
+		buflen = CFileMgr::LoadFile("MELEE.DAT", work_buff, sizeof(work_buff), "r");
+		CFileMgr::SetDir("");
+	}
+	if(buflen == 0){
+		REVC_LOG_ERROR("melee table: no MELEE.DAT in the archive or in DATA; keeping the built-in move table");
+		return;
+	}
 
 	for (bp = 0; bp < buflen; ) {
 		// read file line by line
 		for (linelen = 0; work_buff[bp] != '\n' && bp < buflen; bp++) {
-			line[linelen++] = work_buff[bp];
+			// melee.dat lines are short, but the buffer must never be overrun by
+			// a malformed or truncated file.
+			if (linelen < (int)sizeof(line) - 1)
+				line[linelen++] = work_buff[bp];
 		}
 		bp++;
 		line[linelen] = '\0';
@@ -2474,7 +2483,7 @@ CPed::LoadFightData(void)
 
 		sscanf(
 			&line[lp],
-			"%s %f %f %f %f %f %c %s %d %d %f %f",
+			"%31s %f %f %f %f %f %c %31s %d %d %f %f",
 			moveName,
 			&startFireTime,
 			&endFireTime,
@@ -2490,6 +2499,12 @@ CPed::LoadFightData(void)
 
 		if (strncmp(moveName, "ENDWEAPONDATA", 13) == 0)
 			return;
+		// The table is fixed size; a data file with more rows than moves must
+		// not walk off the end of it.
+		if (moveId < 0 || moveId >= NUM_FIGHTMOVES){
+			REVC_LOG_WARNING("melee table: more than %d moves, ignoring the rest", NUM_FIGHTMOVES);
+			return;
+		}
 
 		tFightMoves[moveId].startFireTime = startFireTime / 30.0f;
 		tFightMoves[moveId].endFireTime = endFireTime / 30.0f;

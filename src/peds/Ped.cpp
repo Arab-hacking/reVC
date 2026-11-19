@@ -515,6 +515,11 @@ CPed::SetModelIndex(uint32 mi)
 void
 CPed::SetPedStats(ePedStats pedStat)
 {
+	// A model whose IDE names a stat the table does not carry, or an SA stat id
+	// with no Vice City counterpart, must not index past the array: every
+	// caller dereferences m_pedStats unconditionally.
+	if(pedStat < 0 || pedStat >= NUM_PEDSTATS)
+		pedStat = PEDSTAT_STD_MISSION;
 	m_pedStats = CPedStats::ms_apPedStats[pedStat];
 }
 

@@ -1770,19 +1770,28 @@ CFileLoader::LoadPedObject(const char *line)
 	mi->SetAnimFile(animFile);
 	mi->SetColModel(&CTempColModels::ms_colModelPed1);
 	mi->m_pedType = CPedType::FindPedType(pedType);
+	// SA type tables carry names with no Vice City counterpart; such a ped is a
+	// civilian rather than an entry pointing past the type array.
+	if(mi->m_pedType >= NUM_PEDTYPES)
+		mi->m_pedType = PEDTYPE_CIVMALE;
+	// GetPedStatType returns NUM_PEDSTATS when the name is not in the table.
+	// The stats array is indexed by this value later, so an unknown name has to
+	// fall back to a real entry instead of running off the end of it.
 	mi->m_pedStatType = CPedStats::GetPedStatType(pedStats);
-	// Vice City IDEs name a few groups after the VC table; the San Andreas
-	// table calls the same group something else.
-	static const struct { const char *vc, *sa; } groupAliases[] = {
+	if(mi->m_pedStatType == NUM_PEDSTATS)
+		mi->m_pedStatType = PEDSTAT_STD_MISSION;
+	// A handful of group names in peds.ide differ from the names the animation
+	// table uses for the same set: SA calls the standard set "man" and names
+	// the van and coach sets without the car-animation suffix.
+	static const struct { const char *ide, *table; } groupAliases[] = {
 		{ "man", "default" },
 		{ "van", "vancaranims" },
 		{ "coach", "coachcaranims" },
-		{ "bikes", "bikes" },
 	};
 	const char *wantedGroup = animGroup;
 	for(int i = 0; i < (int)ARRAY_SIZE(groupAliases); i++){
-		if(strcasecmp(animGroup, groupAliases[i].vc) == 0){
-			wantedGroup = groupAliases[i].sa;
+		if(strcasecmp(animGroup, groupAliases[i].ide) == 0){
+			wantedGroup = groupAliases[i].table;
 			break;
 		}
 	}
