@@ -660,6 +660,7 @@ void CCustomWorld::LoadIde(void)
             ped->m_carsCanDrive = 0; // SA vehicle-category mask != VC mask
             ped->radio1 = ped->radio2 = -1;
             ped->SetColModel(&CTempColModels::ms_colModelPed1);
+            CPedModelInfo::NoteSlot(slot);
             mi = ped;
         } else if(type == MITYPE_VEHICLE) {
             CVehicleModelInfo *vehicle = CModelInfo::AddVehicleModel(slot);

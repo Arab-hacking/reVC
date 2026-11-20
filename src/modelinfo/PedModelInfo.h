@@ -48,6 +48,14 @@ public:
 
 	static RwObjectNameIdAssocation m_pPedIds[PED_NODE_MAX];
 
+	// One past the highest slot that currently holds a ped model. The archive's
+	// actors land above the native 0..129 block, so a replacement scan bounded
+	// by MI_LAST_PED would never see them; bounding it by the whole 32768-entry
+	// model-info array instead would be far too slow. This is maintained by
+	// CPedModelInfo::NoteSlot and reset on a restart.
+	static int32 ms_lastPedSlot;
+	static void NoteSlot(int32 slot) { if(slot >= ms_lastPedSlot) ms_lastPedSlot = slot + 1; }
+
 	CPedModelInfo(void) : CClumpModelInfo(MITYPE_PED) { m_hitColModel = nil; m_bSAAnimationModel = false; m_clumpStreamVersion = 0; m_saReplacementModel = -1; }
 	~CPedModelInfo(void) { delete m_hitColModel; }
 	void DeleteRwObject(void);

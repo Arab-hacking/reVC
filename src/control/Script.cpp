@@ -232,18 +232,51 @@ int8 CRunningScript::ProcessOneCommand()
 // first, exactly as the opcode did, and a position with no ground below it
 // falls back to the street-level landmark rather than dropping the player into
 // the void.
+// The archive carries no player.dff, so slot 0 (MI_PLAYER) is never filled.
+// Serve the player from a real SA actor instead: the first registered ped with
+// an SA skeleton, preferring the standard male build. Returns -1 when the
+// archive supplied no actor at all, in which case the caller keeps the
+// hard-coded slot and the engine reports the missing model.
+static int32
+LookUpPlayerModel(void)
+{
+	int32 anySa = -1;
+	for (int32 id = 0; id < CPedModelInfo::ms_lastPedSlot; id++) {
+		CPedModelInfo *mi = (CPedModelInfo *)CModelInfo::GetModelInfo(id);
+		if (mi == nil || mi->GetModelType() != MITYPE_PED)
+			continue;
+		if (id == MI_PLAYER && mi->GetRwObject() != nil)
+			return id; // a real player.dff was supplied
+		if (!mi->m_bSAAnimationModel)
+			continue;
+		if (mi->m_animGroup == ASSOCGRP_PLAYER || mi->m_animGroup == ASSOCGRP_DEFAULT)
+			return id;
+		if (anySa < 0)
+			anySa = id;
+	}
+	return anySa;
+}
+
 void CTheScripts::SpawnInitialPlayer()
 {
 	const int32 index = 0;
 	if (CWorld::Players[index].m_pPed)
 		return;
 
+	// MI_PLAYER is the hard-coded slot 0 and its row came from DEFAULT.IDE. The
+	// archive ships no player.dff, so that slot stays empty by design and
+	// asking for it only digs through the IMG directories to no effect. An SA
+	// actor body is used instead: CPed::SetModelIndex swaps a VC skeleton for a
+	// resident SA model, and LookUpPlayerModel picks the slot to ask for.
 	if (!CStreaming::HasModelLoaded(MI_PLAYER)) {
-		CStreaming::RequestSpecialModel(MI_PLAYER, "player",
-			STREAMFLAGS_PRIORITY | STREAMFLAGS_DONT_REMOVE | STREAMFLAGS_DEPENDENCY);
-		CStreaming::LoadAllRequestedModels(true);
-		if (!CStreaming::HasModelLoaded(MI_PLAYER))
-			CStreaming::LoadAllRequestedModels(false);
+		const int32 playerModel = LookUpPlayerModel();
+		if (playerModel >= 0) {
+			CStreaming::RequestModel(playerModel,
+				STREAMFLAGS_PRIORITY | STREAMFLAGS_DONT_REMOVE | STREAMFLAGS_DEPENDENCY);
+			CStreaming::LoadAllRequestedModels(true);
+			if (!CStreaming::HasModelLoaded(playerModel))
+				CStreaming::LoadAllRequestedModels(false);
+		}
 	}
 
 	CPlayerPed::SetupPlayerPed(index);

@@ -174,8 +174,12 @@ CPedModelInfo::FindSAReplacementModel(int32 modelId)
 	// Two passes: a replacement of the same sex and build is worth far more
 	// than "the first SA clump that happened to be resident", which is how
 	// every VC pedestrian used to become male01.
+	// The scan cannot stop at MI_LAST_PED. The native ped block (0..129) was
+	// filled by DEFAULT.IDE, which is no longer read; the archive's own actors
+	// live above FIRST_BR_SLOT, so a scan of the native range alone would never
+	// find the SA bodies this build actually has.
 	for(int32 pass = 0; pass < 2; pass++){
-		for(i = MI_PLAYER; i <= MI_LAST_PED; i++){
+		for(i = 0; i < CPedModelInfo::ms_lastPedSlot; i++){
 			baseInfo = CModelInfo::GetModelInfo(i);
 			if(baseInfo == nil || baseInfo->GetModelType() != MITYPE_PED || i == modelId)
 				continue;
@@ -198,6 +202,8 @@ CPedModelInfo::FindSAReplacementModel(int32 modelId)
 }
 
 // leftover...
+int32 CPedModelInfo::ms_lastPedSlot = MI_LAST_PED + 1;
+
 RwObjectNameIdAssocation CPedModelInfo::m_pPedIds[PED_NODE_MAX] = {
 	{ "Smid",	PED_MID, 0, },	// that is strange...
 	{ "Shead",	PED_HEAD, 0, },

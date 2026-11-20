@@ -37,6 +37,9 @@ CModelInfo::Initialise(void)
 	ms_weaponModelStore.Clear();
 	ms_clumpModelStore.Clear();
 	ms_pedModelStore.Clear();
+	// The replacement scan is bounded by this; a restart clears the stores, so
+	// the bound has to fall back to the native ped block as well.
+	CPedModelInfo::ms_lastPedSlot = MI_LAST_PED + 1;
 	ms_vehicleModelStore.Clear();
 
 	m = AddSimpleModel(MI_CAR_DOOR);

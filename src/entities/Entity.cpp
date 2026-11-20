@@ -630,7 +630,13 @@ CEntity::Remove(void)
 float
 CEntity::GetDistanceFromCentreOfMassToBaseOfModel(void)
 {
-	return -CModelInfo::GetColModel(m_modelIndex)->boundingBox.min.z;
+	// The model may not be registered at all - MI_PLAYER is a hard-coded 0 and
+	// its row came from DEFAULT.IDE - and even a registered model can still be
+	// without collision. Either way there is no bounding box to read.
+	CColModel *col = CModelInfo::GetColModel(m_modelIndex);
+	if(col == nil)
+		return 0.0f;
+	return -col->boundingBox.min.z;
 }
 
 void

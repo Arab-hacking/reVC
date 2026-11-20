@@ -55,7 +55,21 @@ CPlayerPed::~CPlayerPed()
 CPlayerPed::CPlayerPed(void) : CPed(PEDTYPE_PLAYER1)
 {
 	m_fMoveSpeed = 0.0f;
-	SetModelIndex(MI_PLAYER);
+	// Slot 0 (MI_PLAYER) is only filled when the installation supplies a
+	// player.dff; the archive does not. Fall back to a registered SA actor so
+	// the ped is never built against an empty slot - SetModelIndex would have
+	// no clump to attach and the ped would be posable but invisible.
+	int32 model = MI_PLAYER;
+	if (CModelInfo::GetModelInfo(model) == nil) {
+		for (int32 id = 0; id < CPedModelInfo::ms_lastPedSlot; id++) {
+			CPedModelInfo *mi = (CPedModelInfo *)CModelInfo::GetModelInfo(id);
+			if (mi && mi->GetModelType() == MITYPE_PED && mi->m_bSAAnimationModel) {
+				model = id;
+				break;
+			}
+		}
+	}
+	SetModelIndex(model);
 #ifdef FIX_BUGS
 	m_fCurrentStamina = m_fMaxStamina = 150.0f;
 #endif
