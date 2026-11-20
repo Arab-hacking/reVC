@@ -61,9 +61,12 @@ CPlayerPed::CPlayerPed(void) : CPed(PEDTYPE_PLAYER1)
 	// no clump to attach and the ped would be posable but invisible.
 	int32 model = MI_PLAYER;
 	if (CModelInfo::GetModelInfo(model) == nil) {
+		// Any registered ped will do. Whether it has an SA skeleton cannot be
+		// known before its clump is resident, so it is not checked here;
+		// SetModelIndex loads the body and swaps a VC skeleton afterwards.
 		for (int32 id = 0; id < CPedModelInfo::ms_lastPedSlot; id++) {
 			CPedModelInfo *mi = (CPedModelInfo *)CModelInfo::GetModelInfo(id);
-			if (mi && mi->GetModelType() == MITYPE_PED && mi->m_bSAAnimationModel) {
+			if (mi && mi->GetModelType() == MITYPE_PED) {
 				model = id;
 				break;
 			}

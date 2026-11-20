@@ -218,6 +218,12 @@ CEntity::GetBoundRect(void)
 	CVector v;
 	CColModel *col = CModelInfo::GetColModel(m_modelIndex);
 
+	if(col == nil){
+		// An empty slot has no box; report the point the entity stands on.
+		rect.ContainPoint(GetMatrix().GetPosition());
+		return rect;
+	}
+
 	rect.ContainPoint(GetMatrix() * col->boundingBox.min);
 	rect.ContainPoint(GetMatrix() * col->boundingBox.max);
 
@@ -235,7 +241,10 @@ CEntity::GetBoundRect(void)
 CVector
 CEntity::GetBoundCentre(void)
 {
-	return GetMatrix() * CModelInfo::GetColModel(m_modelIndex)->boundingSphere.center;
+	CColModel *col = CModelInfo::GetColModel(m_modelIndex);
+	if(col == nil)
+		return GetMatrix().GetPosition();
+	return GetMatrix() * col->boundingSphere.center;
 }
 
 #ifdef GTA_PS2
@@ -248,14 +257,24 @@ CEntity::GetBoundCentre(CVuVector &out)
 void
 CEntity::GetBoundCentre(CVector &out)
 {
-	out = GetMatrix() * CModelInfo::GetColModel(m_modelIndex)->boundingSphere.center;
+	CColModel *col = CModelInfo::GetColModel(m_modelIndex);
+	if(col == nil){
+		out = GetMatrix().GetPosition();
+		return;
+	}
+	out = GetMatrix() * col->boundingSphere.center;
 }
 #endif
 
 float
 CEntity::GetBoundRadius(void)
 {
-	return CModelInfo::GetColModel(m_modelIndex)->boundingSphere.radius;
+	CColModel *col = CModelInfo::GetColModel(m_modelIndex);
+	// Nothing registered the model, so there is no sphere to measure. Zero
+	// keeps the entity from claiming space it does not occupy.
+	if(col == nil)
+		return 0.0f;
+	return col->boundingSphere.radius;
 }
 
 void

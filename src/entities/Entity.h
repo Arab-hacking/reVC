@@ -104,7 +104,12 @@ public:
 	void SetType(uint8 type) { m_type = type; }
 	uint8 GetStatus() const { return m_status; }
 	void SetStatus(uint8 status) { m_status = status; }
-	CColModel *GetColModel(void) { return CModelInfo::GetModelInfo(m_modelIndex)->GetColModel(); }
+	// A model slot can be empty - MI_PLAYER is a hard-coded 0 whose row came
+	// from DEFAULT.IDE, which is not read - so GetModelInfo may legitimately
+	// return nil here. Calling GetColModel() on that nil would read a vtable
+	// through address 0, which is exactly how a player built on an empty slot
+	// used to crash. Route through the guarded accessor instead.
+	CColModel *GetColModel(void) { return CModelInfo::GetColModel(m_modelIndex); }
 	bool GetIsStatic(void) const { return bIsStatic || bIsStaticWaitingForCollision; }
 	void SetIsStatic(bool state) { bIsStatic = state; }
 #ifdef COMPATIBLE_SAVES

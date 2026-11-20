@@ -240,21 +240,25 @@ int8 CRunningScript::ProcessOneCommand()
 static int32
 LookUpPlayerModel(void)
 {
-	int32 anySa = -1;
+	// Registration is all that can be asked of a candidate here. The SA
+	// skeleton is only recognised once the clump is resident, and at start-up
+	// nothing is resident yet, so testing m_bSAAnimationModel would reject
+	// every model and leave the player on the empty slot 0. The body is judged
+	// later by CPed::SetModelIndex, which loads it and swaps it if it turns out
+	// to be a VC skeleton.
+	int32 anyPed = -1;
 	for (int32 id = 0; id < CPedModelInfo::ms_lastPedSlot; id++) {
 		CPedModelInfo *mi = (CPedModelInfo *)CModelInfo::GetModelInfo(id);
 		if (mi == nil || mi->GetModelType() != MITYPE_PED)
 			continue;
-		if (id == MI_PLAYER && mi->GetRwObject() != nil)
+		if (id == MI_PLAYER)
 			return id; // a real player.dff was supplied
-		if (!mi->m_bSAAnimationModel)
-			continue;
 		if (mi->m_animGroup == ASSOCGRP_PLAYER || mi->m_animGroup == ASSOCGRP_DEFAULT)
 			return id;
-		if (anySa < 0)
-			anySa = id;
+		if (anyPed < 0)
+			anyPed = id;
 	}
-	return anySa;
+	return anyPed;
 }
 
 void CTheScripts::SpawnInitialPlayer()
@@ -758,6 +762,12 @@ void CRunningScript::Init()
 
 void CTheScripts::ClearSpaceForMissionEntity(const CVector& pos, CEntity* pEntity)
 {
+	// A model that nothing registered has no collision to test against, so
+	// there is nothing to clear space for. Without this the routine reads the
+	// col model of an empty slot below.
+	if (pEntity == nil || pEntity->GetColModel() == nil)
+		return;
+
 	static CColPoint aTempColPoints[MAX_COLLISION_POINTS];
 	int16 entities = 0;
 	CEntity* aEntities[16];
