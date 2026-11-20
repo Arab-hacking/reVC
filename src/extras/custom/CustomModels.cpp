@@ -3709,12 +3709,11 @@ ReadActiveIpls(std::set<std::string> &active)
 bool
 CCustomModels::ReplacesNativeWorldMap(void)
 {
-#ifdef ANDROID
+	// This is not an Android-only concern: the archive ships its own map, so
+	// whenever it carries IPLs the native Vice City island is the wrong world
+	// and its IDEs must stay unread. The check is the same on every platform.
 	EnsureInitialised();
 	return !commonZipConfig.ipl.empty() && !customIplFiles.empty();
-#else
-	return false;
-#endif
 }
 
 void
@@ -5177,9 +5176,8 @@ CCustomModels::ReadDataFile(const char *relpath, std::vector<uint8> &out,
 	                       strcmp(relpath, "data/water.dat") != 0 &&
 	                       strcmp(relpath, "data/carcols.dat") != 0 &&
 	                       strcmp(relpath, "data/carmods.dat") != 0 &&
-#ifdef ANDROID
 	                       strcmp(relpath, "data/colorcycle.dat") != 0 &&
-#endif
+	                       strcmp(relpath, "data/animgrp.dat") != 0 &&
 	                       strcmp(relpath, "data/lods.info") != 0))
 		return false; // no arbitrary data, other ZIPs, or game-root common/ files
 	EnsureInitialised();

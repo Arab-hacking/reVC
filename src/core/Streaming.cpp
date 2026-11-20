@@ -2458,7 +2458,7 @@ CStreaming::LoadBigBuildingsWhenNeeded(void)
 	   CTheZones::m_CurrLevel == CGame::currLevel)
 		return;
 
-#if defined(ANDROID) && defined(CUSTOM_MODELS)
+#ifdef CUSTOM_MODELS
 	if(CCustomModels::ReplacesNativeWorldMap()){
 		CGame::currLevel = CTheZones::m_CurrLevel;
 		return;

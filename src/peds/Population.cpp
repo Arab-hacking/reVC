@@ -27,6 +27,10 @@
 #include "Streaming.h"
 #include "Clock.h"
 #include "WaterLevel.h"
+#ifdef CUSTOM_MODELS
+#include <vector>
+#include "CustomModels.h"
+#endif
 
 #define MIN_CREATION_DIST		40.0f // not for start of the game (look at the GeneratePedsAtStartOfGame)
 #define CREATION_RANGE			10.0f // added over the MIN_CREATION_DIST.
@@ -177,6 +181,59 @@ SafePedModelInfo(int32 modelId)
 	return (CPedModelInfo*)mi;
 }
 
+// Parses one ped-group line into ms_pPedGroups. Shared by the archive copy and
+// the DATA fallback so both sources go through exactly the same reader.
+static bool
+ParsePedGroupLine(char *line, int *nextPedGroup, char *modelName)
+{
+	int end;
+	// find end of line
+	for (end = 0; ; end++) {
+		if (line[end] == '\n')
+			break;
+		if (line[end] == ',' || line[end] == '\r')
+			line[end] = ' ';
+	}
+	line[end] = '\0';
+	int cursor = 0;
+	int i;
+	for (i = 0; i < NUMMODELSPERPEDGROUP; i++) {
+		while (line[cursor] <= ' ' && line[cursor] != '\0')
+			++cursor;
+
+		if (line[cursor] == '#')
+			break;
+
+		// find next whitespace
+		int nextWhitespace;
+		for (nextWhitespace = cursor; line[nextWhitespace] > ' '; ++nextWhitespace)
+			;
+
+		if (cursor == nextWhitespace)
+			break;
+
+		// read until next whitespace
+		int nameLen = nextWhitespace - cursor;
+		if (nameLen > (int)sizeof(modelName) - 1)
+			nameLen = sizeof(modelName) - 1;
+		memcpy(modelName, &line[cursor], nameLen);
+		modelName[nameLen] = '\0';
+		// modelName is a 256-byte buffer handed in by the caller.
+		CModelInfo::GetModelInfo(modelName, &CPopulation::ms_pPedGroups[*nextPedGroup].models[i]);
+		cursor = nextWhitespace;
+	}
+	// The zone table indexes groups by number, and ms_pPedGroups is fixed
+	// size; a file with more groups than the build has must stop here.
+	if (i == NUMMODELSPERPEDGROUP){
+		if (*nextPedGroup + 1 >= NUMPEDGROUPS){
+			REVC_LOG_WARNING("ped groups: more than %d groups, ignoring the rest", NUMPEDGROUPS);
+			return false;
+		}
+		(*nextPedGroup)++;
+	}
+	return true;
+}
+
 void
 CPopulation::LoadPedGroups()
 {
@@ -186,54 +243,44 @@ CPopulation::LoadPedGroups()
 	// char unused[16]; // non-existence of that in mobile kinda verifies that
 	char modelName[256];
 
+	// The archive carries its own ped group table; the Vice City one lists
+	// group names the SA population does not have. Read the archive copy first
+	// and only fall back to DATA when it is absent, like every other table.
+#ifdef CUSTOM_MODELS
+	{
+		std::vector<uint8> archived;
+		if(CCustomModels::ReadCommonDataFile("data/pedgrp.dat", archived) && archived.size() > 0){
+			archived.push_back('\0');
+			const char *q = (const char*)archived.data();
+			const char *limit = q + archived.size() - 1;
+			while(q < limit){
+				int len = 0;
+				while(q[len] && q[len] != '\n' && len < (int)sizeof(line) - 1){
+					line[len] = q[len];
+					len++;
+				}
+				if(q[len] == '\n')
+					len++;
+				line[len] = '\0';
+				q += len;
+				if(line[0] == '#' || line[0] == '\0')
+					continue;
+				if(!ParsePedGroupLine(line, &nextPedGroup, modelName))
+					break;
+			}
+			REVC_LOG_INFO("common.bpc data/pedgrp.dat: %d ped groups read", nextPedGroup);
+			return;
+		}
+	}
+#endif
 	CFileMgr::ChangeDir("\\DATA\\");
 	fd = CFileMgr::OpenFile("PEDGRP.DAT", "r");
 	CFileMgr::ChangeDir("\\");
 	while (CFileMgr::ReadLine(fd, line, sizeof(line))) {
-		int end;
-		// find end of line
-		for (end = 0; ; end++) {
-			if (line[end] == '\n')
-				break;
-			if (line[end] == ',' || line[end] == '\r')
-				line[end] = ' ';
-		}
-		line[end] = '\0';
-		int cursor = 0;
-		int i;
-		for (i = 0; i < NUMMODELSPERPEDGROUP; i++) {
-			while (line[cursor] <= ' ' && line[cursor] != '\0')
-				++cursor;
-
-			if (line[cursor] == '#')
-				break;
-
-			// find next whitespace
-			int nextWhitespace;
-			for (nextWhitespace = cursor; line[nextWhitespace] > ' '; ++nextWhitespace)
-				;
-
-			if (cursor == nextWhitespace)
-				break;
-			
-			// read until next whitespace
-			int nameLen = nextWhitespace - cursor;
-			if (nameLen > (int)sizeof(modelName) - 1)
-				nameLen = sizeof(modelName) - 1;
-			memcpy(modelName, &line[cursor], nameLen);
-			modelName[nameLen] = '\0';
-			CModelInfo::GetModelInfo(modelName, &ms_pPedGroups[nextPedGroup].models[i]);
-			cursor = nextWhitespace;
-		}
-		// The zone table indexes groups by number, and ms_pPedGroups is fixed
-		// size; a file with more groups than the build has must stop here.
-		if (i == NUMMODELSPERPEDGROUP){
-			if (nextPedGroup + 1 >= NUMPEDGROUPS){
-				REVC_LOG_WARNING("ped groups: more than %d groups, ignoring the rest", NUMPEDGROUPS);
-				break;
-			}
-			nextPedGroup++;
-		}
+		if(line[0] == '#' || line[0] == '\0')
+			continue;
+		if(!ParsePedGroupLine(line, &nextPedGroup, modelName))
+			break;
 	}
 	CFileMgr::CloseFile(fd);
 }

@@ -24,7 +24,7 @@
 #include "Replay.h"
 #include "Coronas.h"
 #include "SaveBuf.h"
-#if defined(ANDROID) && defined(CUSTOM_MODELS)
+#ifdef CUSTOM_MODELS
 #include "CustomModels.h"
 #endif
 
@@ -1070,7 +1070,7 @@ CEscalators::Init(void) {
 		REVC_LOG_INFO("Skipping native VC escalators (LoadViceCityMap=0, Esc_step id=%d)", MI_ESCALATORSTEP);
 		return;
 	}
-#if defined(ANDROID) && defined(CUSTOM_MODELS)
+#ifdef CUSTOM_MODELS
 	if (CCustomModels::ReplacesNativeWorldMap()) {
 		REVC_LOG_INFO("Skipping native VC escalators (custom world IPLs active)");
 		return;

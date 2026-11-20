@@ -52,6 +52,9 @@
 #include "Population.h"
 #include "IniFile.h"
 #include "Zones.h"
+#ifdef CUSTOM_MODELS
+#include "CustomModels.h"
+#endif
 
 #include "crossplatform.h"
 
@@ -529,9 +532,19 @@ void SaveINIControllerSettings()
 
 bool LoadINISettings()
 {
+	// The archive ships its own world, so the Vice City island is only the
+	// default when nothing replaces it. Without this the vanilla DATA folder
+	// was always loaded first: reVC.ini is generated after the first run, and
+	// a missing ini used to hard-reset the flag to true.
+#ifdef CUSTOM_MODELS
+	CGame::bLoadViceCityMap = !CCustomModels::ReplacesNativeWorldMap();
+#else
 	CGame::bLoadViceCityMap = true;
+#endif
 	if (!ini.read(cfg)){
 		REVC_LOG_WARNING("Could not read reVC.ini; using default settings");
+		REVC_LOG_INFO("World: native Vice City map %s",
+			CGame::bLoadViceCityMap ? "enabled" : "disabled (the archive carries its own)");
 		return false;
 	}
 	REVC_LOG_INFO("Loaded settings from reVC.ini");

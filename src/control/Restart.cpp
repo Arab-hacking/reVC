@@ -124,7 +124,7 @@ CRestart::FindClosestHospitalRestartPoint(const CVector &pos, CVector *outPos, f
 		*outPos = HospitalRestartPoints[closestPoint];
 		*outHeading = HospitalRestartHeadings[closestPoint];
 	}
-#if defined(ANDROID) && defined(CUSTOM_MODELS)
+#ifdef CUSTOM_MODELS
 	if (CCustomModels::ReplacesNativeWorldMap())
 		CCustomWorld::ResolveRestartPosition(pos, *outPos, outHeading);
 #endif
@@ -179,7 +179,7 @@ CRestart::FindClosestPoliceRestartPoint(const CVector &pos, CVector *outPos, flo
 		*outPos = PoliceRestartPoints[closestPoint];
 		*outHeading = PoliceRestartHeadings[closestPoint];
 	}
-#if defined(ANDROID) && defined(CUSTOM_MODELS)
+#ifdef CUSTOM_MODELS
 	if (CCustomModels::ReplacesNativeWorldMap())
 		CCustomWorld::ResolveRestartPosition(pos, *outPos, outHeading);
 #endif

@@ -86,14 +86,20 @@ inline Catalog Parse(const unsigned char *bytes, size_t size)
 
 // Do not accidentally enable audio, features, handling.cfg or physics.json
 // just because they are present in a user-supplied common/ directory.
+//
+// The archive carries the game's own data set, not a Vice City one. Everything
+// this build still opens from the DATA folder is listed here, so the archive
+// wins for each of them and the VC folder is only ever a fallback. gameParams
+// and the zone table are part of the same set: the archive ships its own map,
+// so its zone list and gameplay tunables describe that map, not Vice City.
 inline bool CanReadData(const std::string &path)
 {
     if(path == "data/config.dat" || path == "data/timecyc.json" ||
-       path == "data/water.dat" || path == "data/carcols.dat")
+       path == "data/water.dat" || path == "data/carcols.dat" ||
+       path == "data/carmods.dat" || path == "data/lods.info" ||
+       path == "data/map.zon" || path == "data/navig.zon" ||
+       path == "data/animgrp.dat" || path == "data/pedgrp.dat")
         return true;
-    // The archive carries the game's own data set, not a Vice City one. These
-    // are the tables this game reads from disk today; taking them from the
-    // archive is what makes an SA install behave like an SA install.
     return path == "data/handling.cfg" || path == "data/pedstats.dat" ||
            path == "data/weapon.dat" || path == "data/melee.dat" ||
            path == "data/surface.dat" || path == "data/ped.dat" ||

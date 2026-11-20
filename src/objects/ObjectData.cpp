@@ -5,6 +5,10 @@
 #include "Object.h"
 #include "FileMgr.h"
 #include "ObjectData.h"
+#ifdef CUSTOM_MODELS
+#include <vector>
+#include "CustomModels.h"
+#endif
 
 CObjectInfo CObjectData::ms_aObjectInfo[NUMOBJECTINFO];
 
@@ -12,13 +16,6 @@ CObjectInfo CObjectData::ms_aObjectInfo[NUMOBJECTINFO];
 void
 CObjectData::Initialise(const char *filename)
 {
-	char *p, *lp;
-	char line[1024], name[256];
-	int id;
-	float percentSubmerged;
-	int damageEffect, responseCase, camAvoid;
-	CBaseModelInfo *mi;
-	
 	ms_aObjectInfo[0].m_fMass = 99999.0f;
 	ms_aObjectInfo[0].m_fTurnMass = 99999.0f;
 	ms_aObjectInfo[0].m_fAirResistance = 0.99f;
@@ -64,10 +61,37 @@ CObjectData::Initialise(const char *filename)
 	ms_aObjectInfo[3].m_bCameraToAvoidThisObject = true;
 
 	CFileMgr::SetDir("");
+#ifdef CUSTOM_MODELS
+	// The archive carries the game's own object table. It is far larger than
+	// work_buff once the whole SA object list is present, so it is read into
+	// its own buffer and parsed in place; DATA\OBJECT.DAT stays the fallback
+	// for a build without the archive.
+	{
+		std::vector<uint8> archived;
+		if(CCustomModels::ReadCommonDataFile("data/object.dat", archived) && archived.size() > 0){
+			archived.push_back('\0');
+			ParseObjectData((const char*)archived.data());
+			return;
+		}
+	}
+#endif
 	CFileMgr::LoadFile(filename, work_buff, sizeof(work_buff), "r");
+	ParseObjectData((const char*)work_buff);
+}
+
+void
+CObjectData::ParseObjectData(const char *data)
+{
+	const char *p;
+	char *lp;
+	char line[1024], name[256];
+	int id;
+	float percentSubmerged;
+	int damageEffect, responseCase, camAvoid;
+	CBaseModelInfo *mi;
 
 	id = 4;
-	p = (char*)work_buff;
+	p = (const char*)data;
 	while(*p != '*'){
 		// skip over white space and comments
 		while(*p == ' ' || *p == '\n' || *p == '\r' || *p == ';')

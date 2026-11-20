@@ -13,7 +13,7 @@
 #include "ColStore.h"
 #include "VarConsole.h"
 #include "Pools.h"
-#if defined(ANDROID) && defined(CUSTOM_MODELS)
+#ifdef CUSTOM_MODELS
 #include "CustomModels.h"
 #endif
 
@@ -185,7 +185,7 @@ CColStore::LoadCollision(const CVector2D &pos)
 
 	if(CStreaming::ms_disableStreaming)
 		return;
-#if defined(ANDROID) && defined(CUSTOM_MODELS)
+#ifdef CUSTOM_MODELS
 	if(CCustomModels::ReplacesNativeWorldMap()){
 		bLoadAtSecondPosition = false;
 		return;
@@ -235,7 +235,7 @@ void
 CColStore::RequestCollision(const CVector2D &pos)
 {
 	int i;
-#if defined(ANDROID) && defined(CUSTOM_MODELS)
+#ifdef CUSTOM_MODELS
 	if(CCustomModels::ReplacesNativeWorldMap())
 		return;
 #endif
@@ -252,7 +252,7 @@ CColStore::EnsureCollisionIsInMemory(const CVector2D &pos)
 
 	if(CStreaming::ms_disableStreaming)
 		return;
-#if defined(ANDROID) && defined(CUSTOM_MODELS)
+#ifdef CUSTOM_MODELS
 	if(CCustomModels::ReplacesNativeWorldMap())
 		return;
 #endif
@@ -273,7 +273,7 @@ bool
 CColStore::HasCollisionLoaded(const CVector2D &pos)
 {
 	int i;
-#if defined(ANDROID) && defined(CUSTOM_MODELS)
+#ifdef CUSTOM_MODELS
 	if(CCustomModels::ReplacesNativeWorldMap())
 		return true;
 #endif

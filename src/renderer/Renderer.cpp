@@ -1337,7 +1337,7 @@ CRenderer::ScanWorld(void)
 				ScanSectorPoly(poly, 3, ScanSectorList);
 			}
 			
-#if defined(ANDROID) && defined(CUSTOM_MODELS)
+#ifdef CUSTOM_MODELS
 			if (CCustomModels::ReplacesNativeWorldMap()) {
 				ScanBigBuildingList(CWorld::GetBigBuildingList(LEVEL_BEACH));
 				ScanBigBuildingList(CWorld::GetBigBuildingList(LEVEL_MAINLAND));

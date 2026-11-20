@@ -22,6 +22,9 @@ VALIDATE_SIZE(CObjectInfo, 0x20);
 class CObjectData
 {
 	static CObjectInfo ms_aObjectInfo[NUMOBJECTINFO];
+	// The table itself is parsed from memory: the archive copy is larger than
+	// the shared work buffer, so both sources feed this one routine.
+	static void ParseObjectData(const char *data);
 public:
 	static void Initialise(const char *filename);
 	static void SetObjectData(int32 modelId, CObject &object);

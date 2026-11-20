@@ -150,7 +150,7 @@ CFileLoader::LoadLevel(const char *filename)
 			// disabled: the custom IDEs, streaming and collisions need it.
 			if(!CGame::bLoadViceCityMap && IsNativeVCMapFile(line + 4))
 				continue;
-#if defined(ANDROID) && defined(CUSTOM_MODELS)
+#ifdef CUSTOM_MODELS
 			if(CCustomModels::ReplacesNativeWorldMap()){
 				const char *iplPath = line + 4;
 				while(*iplPath == ' ' || *iplPath == '\t') iplPath++;
@@ -2079,7 +2079,9 @@ CFileLoader::LoadObjectInstance(const char *line)
 			entity = new CBuilding;
 		entity->SetModelIndexNoCreate(id);
 		entity->GetMatrix() = CMatrix(xform);
-#if defined(ANDROID) && defined(CUSTOM_MODELS)
+#ifdef CUSTOM_MODELS
+		// The archive's map replaces the island, so its entities are not part
+		// of any Vice City level; streaming must treat them as generic.
 		entity->m_level = CCustomModels::ReplacesNativeWorldMap()
 			? LEVEL_GENERIC
 			: CTheZones::GetLevelFromPosition(&entity->GetPosition());
@@ -2113,7 +2115,9 @@ CFileLoader::LoadObjectInstance(const char *line)
 		CWorld::Add(entity);
 		if(IsGlass(entity->GetModelIndex()) && !mi->m_isArtistGlass)
 			entity->bIsVisible = false;
-#if defined(ANDROID) && defined(CUSTOM_MODELS)
+#ifdef CUSTOM_MODELS
+		// The archive's map replaces the island, so its entities are not part
+		// of any Vice City level; streaming must treat them as generic.
 		entity->m_level = CCustomModels::ReplacesNativeWorldMap()
 			? LEVEL_GENERIC
 			: CTheZones::GetLevelFromPosition(&entity->GetPosition());
