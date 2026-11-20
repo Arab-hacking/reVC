@@ -120,6 +120,35 @@ CPedModelInfo::DetectSAAnimationClump(RpClump *clump, uint32 clumpStreamVersion)
 // A ped whose skeleton has no SA bones cannot be driven by the SA animation
 // set, so look for a loaded SA ped that keeps the same animation group. This
 // keeps clothing and stats sensible instead of leaving the ped frozen.
+// The set of animation groups that belong to female pedestrians. A VC woman
+// replaced by the first SA ped the loop found became a man, which is why the
+// female models came back with the wrong walk and the wrong build.
+static bool
+IsFemaleAnimGroup(uint32 group)
+{
+	switch(group){
+	case ASSOCGRP_WOMAN:
+	case ASSOCGRP_SHOPPING:
+	case ASSOCGRP_BUSYWOMAN:
+	case ASSOCGRP_SEXYWOMAN:
+	case ASSOCGRP_OLDWOMAN:
+	case ASSOCGRP_FATWOMAN:
+	case ASSOCGRP_JOGWOMAN:
+		return true;
+	default:
+		return false;
+	}
+}
+
+// A heavy ped - the fatman/fatwoman styles - keeps its bulk only if the
+// replacement is sized the same way.
+static bool
+IsHeavyAnimGroup(uint32 group)
+{
+	return group == ASSOCGRP_FATMAN || group == ASSOCGRP_FATWOMAN ||
+		group == ASSOCGRP_OLDFATMAN || group == ASSOCGRP_OLDMAN;
+}
+
 int32
 CPedModelInfo::FindSAReplacementModel(int32 modelId)
 {
@@ -131,24 +160,39 @@ CPedModelInfo::FindSAReplacementModel(int32 modelId)
 
 	if(modelId >= 0 && modelId < MODELINFOSIZE){
 		baseInfo = CModelInfo::GetModelInfo(modelId);
-		if(baseInfo && baseInfo->GetModelType() == MITYPE_PED)
+		if(baseInfo && baseInfo->GetModelType() == MITYPE_PED){
 			wantGroup = ((CPedModelInfo*)baseInfo)->m_animGroup;
+			// A slot is expected to keep the body it was given the first time.
+			int32 chosen = ((CPedModelInfo*)baseInfo)->m_saReplacementModel;
+			if(chosen >= 0 && chosen < MODELINFOSIZE)
+				return chosen;
+		}
 	}
+	const bool wantFemale = IsFemaleAnimGroup(wantGroup);
+	const bool wantHeavy = IsHeavyAnimGroup(wantGroup);
 
-	for(i = MI_PLAYER; i <= MI_LAST_PED; i++){
-		baseInfo = CModelInfo::GetModelInfo(i);
-		if(baseInfo == nil || baseInfo->GetModelType() != MITYPE_PED || i == modelId)
-			continue;
-		info = (CPedModelInfo*)baseInfo;
-		// The skeleton is only classified once the clump is resident, so an
-		// unloaded model cannot be judged and must not be offered as a
-		// replacement. Callers load the chosen model and re-check it.
-		if(info->GetRwObject() == nil || !info->UsesSAAnimations())
-			continue;
-		if(info->m_animGroup == wantGroup)
-			return i;
-		if(fallback < 0)
-			fallback = i;
+	// Two passes: a replacement of the same sex and build is worth far more
+	// than "the first SA clump that happened to be resident", which is how
+	// every VC pedestrian used to become male01.
+	for(int32 pass = 0; pass < 2; pass++){
+		for(i = MI_PLAYER; i <= MI_LAST_PED; i++){
+			baseInfo = CModelInfo::GetModelInfo(i);
+			if(baseInfo == nil || baseInfo->GetModelType() != MITYPE_PED || i == modelId)
+				continue;
+			info = (CPedModelInfo*)baseInfo;
+			// The skeleton is only classified once the clump is resident, so an
+			// unloaded model cannot be judged and must not be offered as a
+			// replacement. Callers load the chosen model and re-check it.
+			if(info->GetRwObject() == nil || !info->UsesSAAnimations())
+				continue;
+			if(pass == 0 && (IsFemaleAnimGroup(info->m_animGroup) != wantFemale ||
+			                 IsHeavyAnimGroup(info->m_animGroup) != wantHeavy))
+				continue;
+			if(info->m_animGroup == wantGroup)
+				return i;
+			if(fallback < 0)
+				fallback = i;
+		}
 	}
 	return fallback;
 }

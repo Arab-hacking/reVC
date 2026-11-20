@@ -950,7 +950,9 @@ CPlayerPed::PlayerControl1stPersonRunAround(CPad *padUsed)
 	if (!CWeaponInfo::GetWeaponInfo(GetWeapon()->m_eWeaponType)->IsFlagSet(WEAPONFLAG_HEAVY) && padUsed->GetSprint()) {
 		m_nMoveState = PEDMOVE_SPRINT;
 	}
-	if (m_nPedState != PED_FIGHT)
+	// Same as the third-person path: the air clips own the body, so do not
+	// rebuild the ground movement blend while the ped is off its feet.
+	if (m_nPedState != PED_FIGHT && !bIsInTheAir && m_nPedState != PED_JUMP)
 		SetRealMoveAnim();
 
 	if (!bIsInTheAir && !(CWeaponInfo::GetWeaponInfo(GetWeapon()->m_eWeaponType)->IsFlagSet(WEAPONFLAG_HEAVY)) &&
@@ -1602,7 +1604,12 @@ CPlayerPed::PlayerControlZelda(CPad *padUsed)
 			m_nMoveState = PEDMOVE_SPRINT;
 	}
 
-	if (m_nPedState != PED_FIGHT)
+	// A ped that has left the ground runs the launch/glide clips, which own the
+	// whole body. Rebuilding the walk/run/idle blend from the on-ground move
+	// speed kept the run cycle alive under the jump - the legs kept running and
+	// the ped slid forward through the air. Keep the movement set only while
+	// the ped is actually on its feet.
+	if (m_nPedState != PED_FIGHT && !bIsInTheAir && m_nPedState != PED_JUMP)
 		SetRealMoveAnim();
 
 	if (!bIsInTheAir && !CWeaponInfo::GetWeaponInfo(GetWeapon()->m_eWeaponType)->IsFlagSet(WEAPONFLAG_HEAVY)

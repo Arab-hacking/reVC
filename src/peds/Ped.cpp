@@ -478,6 +478,10 @@ CPed::SetModelIndex(uint32 mi)
 			continue;
 		REVC_LOG_INFO("Ped model %s has a VC skeleton and no VC animation path; using SA model %s instead",
 			modelInfo->GetModelName(), saInfo->GetModelName());
+		// Remember the choice on the VC slot: the replacement is then fixed for
+		// the lifetime of the game instead of being searched again, and every
+		// instance of this model keeps one body.
+		modelInfo->m_saReplacementModel = saModel;
 		CEntity::SetModelIndex(saModel);
 		modelInfo = saInfo;
 	}
@@ -9419,14 +9423,74 @@ CPed::SetJump(void)
 
 		SetStoredState();
 		SetPedState(PED_JUMP);
+		// The launch force belongs to the moment the button is pressed, not to
+		// the end of the launch clip. Applying it from the clip's finish
+		// callback meant the ped spent the whole 0.2s of JUMP_launch still
+		// grounded: it kept the run clip and the run speed, so it slid forward
+		// and only then hopped. gta-reversed does the same thing in
+		// CTaskSimpleJump::ProcessPed -> Launch: the clip starts, and the force
+		// that leaves the ground is applied at once.
 		CAnimBlendAssociation *jumpAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_JUMP_LAUNCH, 8.0f);
 		if (!jumpAssoc) {
 			RestorePreviousState(); // no launch clip => no finish callback
 			return;
 		}
+		ApplyLaunchForce();
 		jumpAssoc->SetFinishCallback(FinishLaunchCB, this);
 		m_fRotationDest = m_fRotationCur;
 	}
+}
+
+// The velocity that leaves the ground. Called the instant the jump starts:
+// the launch clip is only 0.2s of anticipation, so waiting for its finish
+// callback meant the ped kept run speed and its run clip all the way through
+// it - it slid, then hopped. The numbers are the SA ones from
+// CTaskSimpleJump::Launch, which this port already used for the force itself.
+void
+CPed::ApplyLaunchForce(void)
+{
+	float horizontalSpeed = 0.1f;
+	CAnimBlendAssociation *sprintAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_ID_SPRINT);
+
+	if (sprintAssoc) {
+		horizontalSpeed = 0.05f * sprintAssoc->blendAmount + 0.17f;
+	} else {
+		CAnimBlendAssociation *runAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_ID_RUN);
+		if (runAssoc)
+			horizontalSpeed = 0.07f * runAssoc->blendAmount + 0.1f;
+	}
+
+	if (IsPlayer() || m_pedInObjective && m_pedInObjective->IsPlayer())
+		ApplyMoveForce(0.0f, 0.0f, 8.5f);
+	else
+		ApplyMoveForce(0.0f, 0.0f, 4.5f);
+
+	// Only take over the horizontal speed when the ped is slower than the
+	// jump suggests. Keeping a faster run speed is what used to carry the ped
+	// forward under the launch clip.
+	if (sq(horizontalSpeed) > m_vecMoveSpeed.MagnitudeSqr2D() || m_pCurrentPhysSurface) {
+
+#ifdef FREE_CAM
+		if (TheCamera.Cams[0].Using3rdPersonMouseCam() && !CCamera::bFreeCam) {
+#else
+		if (TheCamera.Cams[0].Using3rdPersonMouseCam()) {
+#endif
+			float fpsAngle = WorkOutHeadingForMovingFirstPerson(m_fRotationCur);
+			m_vecMoveSpeed.x = -horizontalSpeed * Sin(fpsAngle);
+			m_vecMoveSpeed.y = horizontalSpeed * Cos(fpsAngle);
+		} else {
+			m_vecMoveSpeed.x = -horizontalSpeed * Sin(m_fRotationCur);
+			m_vecMoveSpeed.y = horizontalSpeed * Cos(m_fRotationCur);
+		}
+
+		if (m_pCurrentPhysSurface) {
+			m_vecMoveSpeed.x += m_pCurrentPhysSurface->m_vecMoveSpeed.x;
+			m_vecMoveSpeed.y += m_pCurrentPhysSurface->m_vecMoveSpeed.y;
+		}
+	}
+
+	bIsStanding = false;
+	bIsInTheAir = true;
 }
 
 void
@@ -9462,44 +9526,6 @@ CPed::FinishLaunchCB(CAnimBlendAssociation *animAssoc, void *arg)
 		handsCoverAssoc->SetFinishCallback(FinishHitHeadCB, ped);
 		ped->bIsLanding = true;
 		return;
-	}
-
-	float velocityFromAnim = 0.1f;
-	CAnimBlendAssociation *sprintAssoc = RpAnimBlendClumpGetAssociation(ped->GetClump(), ANIM_ID_SPRINT);
-
-	if (sprintAssoc) {
-		velocityFromAnim = 0.05f * sprintAssoc->blendAmount + 0.17f;
-	} else {
-		CAnimBlendAssociation *runAssoc = RpAnimBlendClumpGetAssociation(ped->GetClump(), ANIM_ID_RUN);
-		if (runAssoc) {
-			velocityFromAnim = 0.07f * runAssoc->blendAmount + 0.1f;
-		}
-	}
-
-	if (ped->IsPlayer() || ped->m_pedInObjective && ped->m_pedInObjective->IsPlayer())
-		ped->ApplyMoveForce(0.0f, 0.0f, 8.5f);
-	else
-		ped->ApplyMoveForce(0.0f, 0.0f, 4.5f);
-	
-	if (sq(velocityFromAnim) > ped->m_vecMoveSpeed.MagnitudeSqr2D() || ped->m_pCurrentPhysSurface) {
-
-#ifdef FREE_CAM
-		if (TheCamera.Cams[0].Using3rdPersonMouseCam() && !CCamera::bFreeCam) {
-#else
-		if (TheCamera.Cams[0].Using3rdPersonMouseCam()) {
-#endif
-			float fpsAngle = ped->WorkOutHeadingForMovingFirstPerson(ped->m_fRotationCur);
-			ped->m_vecMoveSpeed.x = -velocityFromAnim * Sin(fpsAngle);
-			ped->m_vecMoveSpeed.y = velocityFromAnim * Cos(fpsAngle);
-		} else {
-			ped->m_vecMoveSpeed.x = -velocityFromAnim * Sin(ped->m_fRotationCur);
-			ped->m_vecMoveSpeed.y = velocityFromAnim * Cos(ped->m_fRotationCur);
-		}
-
-		if (ped->m_pCurrentPhysSurface) {
-			ped->m_vecMoveSpeed.x += ped->m_pCurrentPhysSurface->m_vecMoveSpeed.x;
-			ped->m_vecMoveSpeed.y += ped->m_pCurrentPhysSurface->m_vecMoveSpeed.y;
-		}
 	}
 
 	ped->bIsStanding = false;

@@ -40,10 +40,15 @@ public:
 	int8 radio1, radio2;
 	bool m_bSAAnimationModel;
 	uint32 m_clumpStreamVersion;
+	// Set once a VC-skeleton ped has been stood in for by an SA model, so every
+	// later instance of this slot gets the same body instead of resolving the
+	// replacement again, and a ped that is hidden mid-game does not come back
+	// as a different person.
+	int32 m_saReplacementModel;
 
 	static RwObjectNameIdAssocation m_pPedIds[PED_NODE_MAX];
 
-	CPedModelInfo(void) : CClumpModelInfo(MITYPE_PED) { m_hitColModel = nil; m_bSAAnimationModel = false; m_clumpStreamVersion = 0; }
+	CPedModelInfo(void) : CClumpModelInfo(MITYPE_PED) { m_hitColModel = nil; m_bSAAnimationModel = false; m_clumpStreamVersion = 0; m_saReplacementModel = -1; }
 	~CPedModelInfo(void) { delete m_hitColModel; }
 	void DeleteRwObject(void);
 	void SetClump(RpClump *);
