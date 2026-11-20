@@ -396,6 +396,7 @@ public:
 
 	static void Init();
 	static void Process();
+	static void SpawnInitialPlayer();
 
 	static bool IsPlayerOnAMission();
 	static void ClearSpaceForMissionEntity(const CVector&, CEntity*);

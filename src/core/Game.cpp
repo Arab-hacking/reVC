@@ -631,6 +631,7 @@ bool CGame::Initialise(const char* datFile)
 	if ( !TheMemoryCard.m_bWantToLoad )
 #endif
 	{
+		CTheScripts::SpawnInitialPlayer();
 		CTheScripts::Process();
 		TheCamera.Process();
 	}
@@ -805,6 +806,7 @@ void CGame::ReInitGameObjectVariables(void)
 #endif
 	{
 		CCranes::InitCranes();
+		CTheScripts::SpawnInitialPlayer();
 		CTheScripts::Process();
 		TheCamera.Process();
 		CTrain::InitTrains();

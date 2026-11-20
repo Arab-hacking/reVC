@@ -3,6 +3,8 @@
 #include "Script.h"
 
 #include "Camera.h"
+#include "Game.h"
+#include "PlayerPed.h"
 #include "CarCtrl.h"
 #include "Clock.h"
 #include "ColStore.h"
@@ -17,6 +19,8 @@
 #include "Weather.h"
 #include "SaveBuf.h"
 #include "main.h"
+#include "custom/CustomModels.h"
+#include "custom/CustomWorld.h"
 
 int32 ScriptParams[32];
 
@@ -217,6 +221,68 @@ int8 CRunningScript::ProcessOneCommand()
 		return -1;
 	}
 	return retval;
+}
+
+// In Vice City the player is not created by the engine - data/main.scm does it
+// with the CREATE_PLAYER opcode. With the interpreter gone, nothing did, so
+// FindPlayerPed() stayed nil and the first camera update dereferenced it.
+// This reproduces what that opcode did, minus the script plumbing.
+//
+// Where to spawn still comes from the world: the custom-map redirect is tried
+// first, exactly as the opcode did, and a position with no ground below it
+// falls back to the street-level landmark rather than dropping the player into
+// the void.
+void CTheScripts::SpawnInitialPlayer()
+{
+	const int32 index = 0;
+	if (CWorld::Players[index].m_pPed)
+		return;
+
+	if (!CStreaming::HasModelLoaded(MI_PLAYER)) {
+		CStreaming::RequestSpecialModel(MI_PLAYER, "player",
+			STREAMFLAGS_PRIORITY | STREAMFLAGS_DONT_REMOVE | STREAMFLAGS_DEPENDENCY);
+		CStreaming::LoadAllRequestedModels(true);
+		if (!CStreaming::HasModelLoaded(MI_PLAYER))
+			CStreaming::LoadAllRequestedModels(false);
+	}
+
+	CPlayerPed::SetupPlayerPed(index);
+	CPlayerPed *pPlayer = CWorld::Players[index].m_pPed;
+	pPlayer->CharCreatedBy = MISSION_CHAR;
+	// Built off-world, then placed and added back, so it is not processed
+	// between construction and the position being final.
+	CPlayerPed::DeactivatePlayerPed(index);
+
+	// The vanilla start of main.scm put the player on the beach at Ocean
+	// Beach; that is where a freeroam build wants him when nothing else says.
+	CVector pos(79.6875f, -867.25f, MAP_Z_LOW_LIMIT);
+	float heading = 0.0f;
+	bool redirected = CCustomWorld::ResolveSpawnPosition(pos, &heading);
+	if (!redirected) {
+		heading = 180.0f;
+	}
+
+	if (pos.z <= MAP_Z_LOW_LIMIT)
+		pos.z = CWorld::FindGroundZForCoord(pos.x, pos.y);
+	pos.z += pPlayer->GetDistanceFromCentreOfMassToBaseOfModel();
+	pPlayer->SetPosition(pos);
+	ClearSpaceForMissionEntity(pos, pPlayer);
+	CPlayerPed::ReactivatePlayerPed(index);
+
+	if (redirected) {
+		pPlayer->m_fRotationCur = DEGTORAD(heading);
+		pPlayer->m_fRotationDest = DEGTORAD(heading);
+		pPlayer->SetHeading(DEGTORAD(heading));
+	}
+
+	// The camera was handed back by the mission clean-up pass that used to run
+	// when a script finished. Nothing runs it now, so point the camera at the
+	// player here or the first frame is spent looking wherever the intro left
+	// it - and with no player there to look at, that was the crash.
+	TheCamera.RestoreWithJumpCut();
+
+	REVC_LOG_INFO("Spawned player 0 at (%.1f, %.1f, %.1f) heading %.0f%s",
+		pos.x, pos.y, pos.z, heading, redirected ? " (custom map)" : "");
 }
 
 void CTheScripts::Process()
