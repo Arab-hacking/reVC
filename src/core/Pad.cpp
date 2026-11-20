@@ -112,10 +112,12 @@ void SpecialCarCheats()
 {
 	if ( !CVehicle::bCheat9 )
 	{
-		((CVehicleModelInfo*)CModelInfo::GetModelInfo(MI_INFERNUS))->m_wheelScale *= 1.3f;
-		((CVehicleModelInfo*)CModelInfo::GetModelInfo(MI_CHEETAH))->m_wheelScale *= 1.3f;
-		((CVehicleModelInfo*)CModelInfo::GetModelInfo(MI_PHEONIX))->m_wheelScale *= 1.3f;
-		((CVehicleModelInfo*)CModelInfo::GetModelInfo(MI_DELUXO))->m_wheelScale *= 1.3f;
+		// These four cheat cars come from the native VC vehicle IDEs, which are
+		// no longer read; a missing model info must not crash the cheat.
+		int cheatCars[] = { MI_INFERNUS, MI_CHEETAH, MI_PHEONIX, MI_DELUXO };
+		for(int i = 0; i < (int)ARRAY_SIZE(cheatCars); i++)
+			if(CVehicleModelInfo *car = (CVehicleModelInfo*)CModelInfo::GetModelInfo(cheatCars[i]))
+				car->m_wheelScale *= 1.3f;
 		mod_HandlingManager.GetVehiclePointer(HANDLING_LANDSTAL)->m_Transmission.m_fEngineAcceleration *= 2.0f;
 		mod_HandlingManager.GetVehiclePointer(HANDLING_PATRIOT)->m_Transmission.m_fEngineAcceleration *= 2.0f;
 		mod_HandlingManager.GetVehiclePointer(HANDLING_BOBCAT)->m_Transmission.m_fEngineAcceleration *= 2.0f;

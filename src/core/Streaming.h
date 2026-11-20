@@ -129,11 +129,20 @@ public:
 	static void LoadCustomFile(int32 streamId);
 #endif
 	static bool FinishLoadingLargeFile(int8 *buf, int32 streamId);
-	static bool HasModelLoaded(int32 id) { return ms_aInfoForModel[id].m_loadState == STREAMSTATE_LOADED; }
-	static bool HasTxdLoaded(int32 id) { return HasModelLoaded(id+STREAM_OFFSET_TXD); }
-	static bool HasColLoaded(int32 id) { return HasModelLoaded(id+STREAM_OFFSET_COL); }
-	static bool HasAnimLoaded(int32 id) { return HasModelLoaded(id+STREAM_OFFSET_ANIM); }
-	static bool CanRemoveModel(int32 id) { return (ms_aInfoForModel[id].m_flags & STREAMFLAGS_CANT_REMOVE) == 0; }
+	// A model index is -1 whenever the IDE that would define it was never read,
+	// which is the normal case for the native VC models now that the level DATs
+	// are gone. These used to index ms_aInfoForModel before the array.
+	static bool HasModelLoaded(int32 id) {
+		if(id < 0 || id >= NUMSTREAMINFO) return false;
+		return ms_aInfoForModel[id].m_loadState == STREAMSTATE_LOADED;
+	}
+	static bool HasTxdLoaded(int32 id) { return id < 0 ? false : HasModelLoaded(id+STREAM_OFFSET_TXD); }
+	static bool HasColLoaded(int32 id) { return id < 0 ? false : HasModelLoaded(id+STREAM_OFFSET_COL); }
+	static bool HasAnimLoaded(int32 id) { return id < 0 ? false : HasModelLoaded(id+STREAM_OFFSET_ANIM); }
+	static bool CanRemoveModel(int32 id) {
+		if(id < 0 || id >= NUMSTREAMINFO) return false;
+		return (ms_aInfoForModel[id].m_flags & STREAMFLAGS_CANT_REMOVE) == 0;
+	}
 	static bool CanRemoveTxd(int32 id) { return CanRemoveModel(id+STREAM_OFFSET_TXD); }
 	static bool CanRemoveCol(int32 id) { return CanRemoveModel(id+STREAM_OFFSET_COL); }
 	static bool CanRemoveAnim(int32 id) { return CanRemoveModel(id+STREAM_OFFSET_ANIM); }

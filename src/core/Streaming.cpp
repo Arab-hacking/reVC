@@ -1221,6 +1221,15 @@ CStreaming::RequestModel(int32 id, int32 flags)
 {
 	CSimpleModelInfo *mi;
 
+	// A request may name a model nobody registered: the native VC IDEs are no
+	// longer read, so built-in ids such as MI_POLICE have no model info while
+	// the engine still starts traffic and wanted-level preloads. Queueing such
+	// an id would dereference nil below (mi->GetTxdSlot).
+	if(id < 0 || id >= NUMSTREAMINFO)
+		return;
+	if(id < STREAM_OFFSET_TXD && CModelInfo::GetModelInfo(id) == nil)
+		return;
+
 	if(id >= STREAM_OFFSET_ANIM && id < NUMSTREAMINFO){
 		CAnimBlock *animBlock = CAnimManager::GetAnimationBlock(id - STREAM_OFFSET_ANIM);
 		if(animBlock)

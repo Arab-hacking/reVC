@@ -1467,17 +1467,28 @@ CVehicleModelInfo::LoadVehicleColours(void)
 	char name[64];
 	int colors[16];
 	int n;
+	int skipped = 0;
 
+#ifdef CUSTOM_MODELS
+	// CARCOLS.DAT on disk is a Vice City file: its `car` section names 100+ VC
+	// vehicles. Without GTA_VC.DAT those IDEs are never read, so none of those
+	// names resolves and the per-car loop below would walk a nil model info.
+	// The archive ships the palette only, so the file is not opened at all.
+	fd = -1;
+	CUSTOM_LOG("data/carcols.dat: palette comes from the archive; native CARCOLS.DAT not read\n");
+#else
 	CFileMgr::ChangeDir("\\DATA\\");
 	fd = CFileMgr::OpenFile("CARCOLS.DAT", "r");
 	CFileMgr::ChangeDir("\\");
+#endif
 
 	for(i = 0; i < 256; i++)
 		ms_colourTextureTable[i] = nil;
 
 	section = 0;
 	numCols = 0;
-	while(CFileMgr::ReadLine(fd, line, sizeof(line))){
+	// fd == -1 means nothing to read: ReadLine is skipped entirely.
+	while(fd >= 0 && CFileMgr::ReadLine(fd, line, sizeof(line))){
 		// find first valid character in line
 		for(start = 0; ; start++)
 			if(line[start] > ' ' || line[start] == '\0' || line[start] == '\n')
@@ -1523,8 +1534,16 @@ CVehicleModelInfo::LoadVehicleColours(void)
 				&colors[12], &colors[13],
 				&colors[14], &colors[15]);
 			CVehicleModelInfo *mi = (CVehicleModelInfo*)CModelInfo::GetModelInfo(name, nil);
-			assert(mi);
-			mi->m_numColours = (n-1)/2;
+			// A carcols entry may name a vehicle whose IDE was never read (the
+			// native map IDEs are gone). Skip it: one stale line must not abort
+			// startup, and the model keeps the colours its IDE assigned.
+			if(mi == nil || mi->GetModelType() != MITYPE_VEHICLE){
+				skipped++;
+				continue;
+			}
+			// A line with only a name parses once; (n-1)/2 then yields 0, which
+			// would leave a car with no colours at all. Never go negative either.
+			mi->m_numColours = n > 1 ? (n-1)/2 : 0;
 			for(i = 0; i < mi->m_numColours; i++){
 				mi->m_colours1[i] = colors[i*2 + 0];
 				mi->m_colours2[i] = colors[i*2 + 1];
@@ -1532,13 +1551,16 @@ CVehicleModelInfo::LoadVehicleColours(void)
 		}
 	}
 
-	CFileMgr::CloseFile(fd);
+	if(fd >= 0)
+		CFileMgr::CloseFile(fd);
+	if(skipped)
+		REVC_LOG_INFO("LoadVehicleColours: %d carcols entry/entries named a vehicle with no model info", skipped);
 
 #ifdef CUSTOM_MODELS
 	// The SA table in common.zip only supplies RGB palette entries (no VC
-	// `car` section). Apply it after the native VC file so its vehicle colour
-	// combinations remain intact. A malformed archive must not change any
-	// palette entry or prevent loading the game's stock colours.
+	// `car` section): every car keeps the colour pair its own IDE gave it.
+	// A malformed archive must not change any palette entry or prevent
+	// loading the game's stock colours.
 	std::vector<uint8> bytes;
 	if(CCustomModels::ReadDataFile("data/carcols.dat", bytes)) {
 		std::vector<commoncarcols::RGB> palette;
@@ -1549,10 +1571,10 @@ CVehicleModelInfo::LoadVehicleColours(void)
 				ms_vehicleColourTable[n].blue = palette[n].b;
 				ms_vehicleColourTable[n].alpha = 0xFF;
 			}
-			CUSTOM_LOG("common.zip data/carcols.dat: applied %u RGB colours; native VC car combinations retained\n",
+			CUSTOM_LOG("common.zip data/carcols.dat: applied %u RGB colours; per-car IDE combinations untouched\n",
 				(unsigned)palette.size());
 		} else
-			CUSTOM_LOG("common.zip data/carcols.dat: invalid palette; native VC colours retained\n");
+			CUSTOM_LOG("common.zip data/carcols.dat: invalid palette; IDE colour defaults retained\n");
 	}
 #endif
 }

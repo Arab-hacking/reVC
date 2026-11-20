@@ -757,7 +757,11 @@ CHeli::InitHelis(void)
 	for(i = 0; i < NUM_HELIS; i++)
 		pHelis[i] = nil;
 
-	((CVehicleModelInfo*)CModelInfo::GetModelInfo(MI_CHOPPER))->SetColModel(&CTempColModels::ms_colModelPed1);
+	// MI_CHOPPER belongs to the native VC vehicle IDEs, which are no longer
+	// read, so the model info can be missing at start-up.
+	CVehicleModelInfo *chopper = (CVehicleModelInfo*)CModelInfo::GetModelInfo(MI_CHOPPER);
+	if(chopper)
+		chopper->SetColModel(&CTempColModels::ms_colModelPed1);
 }
 
 CHeli*
