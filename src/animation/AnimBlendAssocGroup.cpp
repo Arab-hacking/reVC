@@ -257,12 +257,17 @@ CAnimBlendAssocGroup::CreateAssociations(const char *blockName, RpClump *clump,
 		// undefined: the array is indexed by position in the group, so the
 		// following clips must not shift down into the hole.
 		if(hier == nil){
+			// Name the group and the block, not just the numbers: the
+			// interesting question is always whether the clip is missing from
+			// the archive or the archive simply has no such bank.
 #ifdef CUSTOM_MODELS
-			CUSTOM_LOG("anim assoc: SA group %d has no SA hierarchy for animation id %d\n",
-				groupId, firstAnimId + i);
+			CUSTOM_LOG("anim assoc: group %s (%s) has no clip for slot %d (anim id %d)\n",
+				CAnimManager::GetAnimGroupName((AssocGroupId)groupId), blockName,
+				i, firstAnimId + i);
 #else
-			debug("anim assoc: SA group %d has no SA hierarchy for animation id %d\n",
-				groupId, firstAnimId + i);
+			debug("anim assoc: group %s (%s) has no clip for slot %d (anim id %d)\n",
+				CAnimManager::GetAnimGroupName((AssocGroupId)groupId), blockName,
+				i, firstAnimId + i);
 #endif
 			assocList[i].animId = ANIM_ID_UNDEFINED;
 			assocList[i].groupId = groupId;
