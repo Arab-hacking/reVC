@@ -1194,23 +1194,22 @@ GetSAAnimationAlias(int groupId, const char *name, const char **sourceBlock)
 		*sourceBlock = "sa_harleybikeanims";
 	if(groupId == ASSOCGRP_DIRTBIKEANIMS && sourceBlock)
 		*sourceBlock = "sa_dirtbikeanims";
-	if(groupId == ASSOCGRP_MELEE_1 || groupId == ASSOCGRP_MELEE_1){
-		if(strcasecmp(name, "punchR") == 0){
-			if(sourceBlock) *sourceBlock = "sa_melee_1";
+	// Every unarmed set is bound to the ped bank in this build; the sa_melee_*
+	// and sa_fight_e blocks this table used to point at were never loaded, so
+	// the alias resolved to nothing and the clip lookup fell through. Leaving
+	// sourceBlock alone keeps the group's own primary block (sa_ped), which is
+	// where these clips actually live.
+	if(groupId == ASSOCGRP_MELEE_1 || groupId == ASSOCGRP_MELEE_2 ||
+	   groupId == ASSOCGRP_MELEE_3 || groupId == ASSOCGRP_MELEE_4){
+		if(strcasecmp(name, "punchR") == 0)
 			return "FightA_1";
-		}
-		if(strcasecmp(name, "FIGHTbodyblow") == 0 || strcasecmp(name, "FIGHTppunch") == 0){
-			if(sourceBlock) *sourceBlock = "sa_melee_1";
+		if(strcasecmp(name, "FIGHTbodyblow") == 0 || strcasecmp(name, "FIGHTppunch") == 0)
 			return "FightA_1";
-		}
-		if(strcasecmp(name, "FIGHTIDLE") == 0){
-			if(sourceBlock) *sourceBlock = "sa_melee_1";
+		if(strcasecmp(name, "FIGHTIDLE") == 0)
 			return "FIGHTIDLE";
-		}
-		if(strcasecmp(name, "KICK_floor") == 0){
-			if(sourceBlock) *sourceBlock = "sa_fight_e";
-			return "FIGHTkick_B";
-		}
+		// The ground kick is FightA_G; there is no FIGHTkick_B clip in the bank.
+		if(strcasecmp(name, "KICK_floor") == 0)
+			return "FightA_G";
 	}
 	if(groupId == ASSOCGRP_BBBAT_1 || groupId == ASSOCGRP_GCLUB_1){
 		if(sourceBlock)
@@ -1249,20 +1248,17 @@ GetSAStyleFallbackName(int groupId, const char *name)
 		if(strcasecmp(name, "skate_idle") == 0) return "idle_stance";
 	}
 #ifdef PC_PLAYER_CONTROLS
-	if(groupId == ASSOCGRP_PLAYER || groupId == ASSOCGRP_PLAYER ||
-	   groupId == ASSOCGRP_PLAYER){
+	if(groupId == ASSOCGRP_PLAYER){
 		if(strncasecmp(name, "walk_start", 10) == 0) return "walk_start";
 		if(strncasecmp(name, "walk_", 5) == 0) return "walk_player";
 		if(strncasecmp(name, "run_", 4) == 0) return "run_player";
 	}
-	if(groupId == ASSOCGRP_PLAYERROCKET || groupId == ASSOCGRP_PLAYERROCKET ||
-	   groupId == ASSOCGRP_PLAYERROCKET){
+	if(groupId == ASSOCGRP_PLAYERROCKET){
 		if(strncasecmp(name, "walkst_rocket", 13) == 0) return "walk_start_rocket";
 		if(strncasecmp(name, "walk_rocket", 11) == 0) return "walk_rocket";
 		if(strncasecmp(name, "run_rocket", 10) == 0) return "run_rocket";
 	}
-	if(groupId == ASSOCGRP_PLAYERCSAW || groupId == ASSOCGRP_PLAYERCSAW ||
-	   groupId == ASSOCGRP_PLAYERCSAW){
+	if(groupId == ASSOCGRP_PLAYERCSAW){
 		if(strncasecmp(name, "walkst_csaw", 11) == 0) return "walk_start_csaw";
 		if(strncasecmp(name, "walk_csaw", 9) == 0) return "walk_csaw";
 		if(strncasecmp(name, "run_csaw", 8) == 0) return "run_csaw";
@@ -1274,8 +1270,7 @@ GetSAStyleFallbackName(int groupId, const char *name)
 	   groupId != ASSOCGRP_JOGGER && groupId != ASSOCGRP_WOMAN &&
 	   groupId != ASSOCGRP_SHOPPING && groupId != ASSOCGRP_BUSYWOMAN &&
 	   groupId != ASSOCGRP_SEXYWOMAN && groupId != ASSOCGRP_FATWOMAN &&
-	   groupId != ASSOCGRP_OLDWOMAN && groupId != ASSOCGRP_JOGWOMAN &&
-	   groupId != ASSOCGRP_FATMAN)
+	   groupId != ASSOCGRP_OLDWOMAN && groupId != ASSOCGRP_JOGWOMAN)
 		return nil;
 	if(strncasecmp(name, "walk_start", 10) == 0)
 		return "walk_start";

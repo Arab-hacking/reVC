@@ -767,43 +767,51 @@ static const char *aMelee_1Animations[] = {
 	"FIGHTIDLE",
 };
 
+// Vice City keeps four unarmed sets (fight_a..fight_d) and the bank we load
+// only ships one of them. The slot order is fixed by aWeaponDescs4/5:
+// FIGHT_1, FIGHT_2, FIGHT_3, FIGHT_G, FIGHT_M, HIT_1, HIT_2, HIT_3, BLOCK, IDLE.
+// Slots 0..2 must be punches and 5..7 reactions to a hit; the sets used to be
+// filled with HitA_* everywhere but the last slot, so the first punch played a
+// flinch and the strikes looked broken.
 static const char *aMelee_2Animations[] = {
-	"HitA_1",
-	"HitA_2",
-	"HitA_3",
-	"HitA_1",
-	"HitA_2",
-	"HitA_1",
-	"HitA_2",
-	"HitA_3",
-	"HitA_3",
 	"FightA_1",
+	"FightA_2",
+	"FightA_3",
+	"FightA_G",
+	"FightA_M",
+	"HitA_1",
+	"HitA_2",
+	"HitA_3",
+	"FightA_Block",
+	"FIGHTIDLE",
 };
 
+// Variants differ only by which punch the style opens with, the way the VC
+// fight_b/c/d sets differed by their lead strike.
 static const char *aMelee_3Animations[] = {
-	"HitA_1",
-	"HitA_2",
-	"HitA_3",
-	"HitA_1",
-	"HitA_2",
-	"HitA_1",
-	"HitA_2",
-	"HitA_3",
-	"HitA_3",
 	"FightA_2",
+	"FightA_3",
+	"FightA_1",
+	"FightA_G",
+	"FightA_M",
+	"HitA_1",
+	"HitA_2",
+	"HitA_3",
+	"FightA_Block",
+	"FIGHTIDLE",
 };
 
 static const char *aMelee_4Animations[] = {
-	"HitA_1",
-	"HitA_2",
-	"HitA_3",
-	"HitA_1",
-	"HitA_2",
-	"HitA_1",
-	"HitA_2",
-	"HitA_3",
-	"HitA_3",
 	"FightA_3",
+	"FightA_1",
+	"FightA_2",
+	"FightA_G",
+	"FightA_M",
+	"HitA_1",
+	"HitA_2",
+	"HitA_3",
+	"FightA_Block",
+	"FIGHTIDLE",
 };
 
 static const char *aBbbat_1Animations[] = {

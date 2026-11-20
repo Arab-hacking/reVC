@@ -58,9 +58,13 @@ MatchAnimBoneNames(const char *s, const char *t)
 		if(*prefix == '\0' && (*q == ' ' || *q == '\t'))
 			*p = q;
 	}
+	// Compare ignoring every space, tab and underscore, not just the ones at a
+	// token boundary: the same bank spells one bone "Spine 1" in FightA_1 and
+	// "Spine1" in FightA_block, and a clip whose sequences carry bone ID -1
+	// would otherwise leave those bones unbound and bend the ped.
 	for(;;){
-		while(*s == ' ' || *s == '\t') s++;
-		while(*t == ' ' || *t == '\t') t++;
+		while(*s == ' ' || *s == '\t' || *s == '_') s++;
+		while(*t == ' ' || *t == '\t' || *t == '_') t++;
 		char a = *s++, b = *t++;
 		if(a >= 'A' && a <= 'Z') a += 'a' - 'A';
 		if(b >= 'A' && b <= 'Z') b += 'a' - 'A';
