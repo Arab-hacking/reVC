@@ -111,8 +111,6 @@ bool CGame::frenchGame;
 bool CGame::germanGame;
 bool CGame::noProstitutes;
 bool CGame::playingIntro;
-bool CGame::bLoadViceCityMap = true;
-char CGame::aDatFile[32];
 #ifdef MORE_LANGUAGES
 bool CGame::russianGame = false;
 bool CGame::japaneseGame = false;
@@ -398,11 +396,10 @@ CGame::FinalShutdown(void)
 	REVC_LOG_INFO("Game systems stopped");
 }
 
-bool CGame::Initialise(const char* datFile)
+bool CGame::Initialise(void)
 {
-	REVC_LOG_INFO("Initializing game from %s", datFile);
+	REVC_LOG_INFO("Initializing game world");
 	ResetLoadingScreenBar();
-	strcpy(aDatFile, datFile);
 	CCustomSky::Shutdown();
 #ifdef CUSTOM_MODELS
 	CCustomWorld::Shutdown(); // fresh BR ID mapping on a game restart
@@ -498,14 +495,17 @@ bool CGame::Initialise(const char* datFile)
 	CdStreamAddImage("MODELS\\GTA3.IMG");
 
 	// An IDE names a ped's animation group by string, so every group has to
-	// have its name before the level files are read.
+	// have its name before the world files are read.
 	CAnimManager::ReadAnimAssociationDefinitions();
 
-	CFileLoader::LoadLevel("DATA\\DEFAULT.DAT");
-	CFileLoader::LoadLevel(datFile);
+	// There is no level DAT to read any more: the Vice City island lists
+	// (DEFAULT.DAT, GTA_VC.DAT) are gone, and the archive supplies the world.
+	// The setup those lists used to trigger on their first IPL line is called
+	// explicitly instead.
+	CFileLoader::InitialiseWorld();
 #ifdef CUSTOM_MODELS
-	// After native IPLs: IDEs and model streaming are already initialized,
-	// and CED2 collisions are attached before the new entities are created.
+	// Model types and streaming are ready, and CED2 collisions are attached
+	// before the new entities are created.
 	REVC_LOG_INFO("STARTUP custom IPL BEGIN");
 	CCustomWorld::LoadIpl();
 	REVC_LOG_INFO("STARTUP custom IPL END");
@@ -528,7 +528,9 @@ bool CGame::Initialise(const char* datFile)
 	TestModelIndices();
 
 	LoadingScreen("Loading the Game", "Setup water", nil);
-	CWaterLevel::Initialise(bLoadViceCityMap ? "DATA\\WATER.DAT" : nil);
+	// WATER.DAT/WATERPRO.DAT were listed by GTA_VC.DAT; the archive supplies
+	// its own water, so the file is no longer read.
+	CWaterLevel::Initialise(nil);
 	TheConsole.Init();
 	CDraw::SetFOV(120.0f);
 	CDraw::ms_fLODDistance = 500.0f;

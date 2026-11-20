@@ -1849,7 +1849,7 @@ main(int argc, char *argv[])
                     case GS_INIT_PLAYING_GAME:
                     {
 #ifdef PS2_MENU
-                        CGame::Initialise("DATA\\GTA3.DAT");
+                        CGame::Initialise();
 
 						//LoadingScreen("Starting Game", NULL, GetRandomSplashScreen());
 

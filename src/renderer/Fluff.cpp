@@ -1063,13 +1063,10 @@ void
 CEscalators::Init(void) {
 	Shutdown();
 
-	// These locations and their moving steps belong to the native VC island.
-	// With DATA/MAPS IDEs disabled, Esc_step has no model info; the unchecked
-	// GetColModel in AddThisOne would read through a null model pointer.
-	if (!CGame::bLoadViceCityMap) {
-		REVC_LOG_INFO("Skipping native VC escalators (LoadViceCityMap=0, Esc_step id=%d)", MI_ESCALATORSTEP);
-		return;
-	}
+	// These locations and their moving steps belong to the native VC island,
+	// which is no longer loaded: GTA_VC.DAT is gone, so Esc_step usually has no
+	// model info and the unchecked GetColModel in AddThisOne would read through
+	// a null model pointer.
 #ifdef CUSTOM_MODELS
 	if (CCustomModels::ReplacesNativeWorldMap()) {
 		REVC_LOG_INFO("Skipping native VC escalators (custom world IPLs active)");

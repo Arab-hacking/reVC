@@ -481,9 +481,9 @@ void TestModelIndices(void);
 inline bool
 IsGlass(int16 id)
 {
-	// A saved entity may refer to an IDE model that was present when it was
-	// saved but is absent when LoadViceCityMap=0. Do not index [-1] or read
-	// m_type at +0x1D through a null model-info pointer.
+	// A saved entity may refer to an IDE model that is absent from the loaded
+	// world. Do not index [-1] or read m_type at +0x1D through a null
+	// model-info pointer.
 	if (id < 0 || id >= MODELINFOSIZE)
 		return false;
 	CBaseModelInfo *modelInfo = CModelInfo::GetModelInfo(id);

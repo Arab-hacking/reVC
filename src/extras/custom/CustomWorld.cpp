@@ -525,7 +525,9 @@ void LogUnresolved(const char *reason, const std::map<std::string, unsigned> &co
 
 void CCustomWorld::LoadIde(void)
 {
-    if(ideLoaded) return; // DEFAULT.DAT and the level DAT each have an IPL boundary
+    // The world IDEs are registered once per game start; a restart clears the
+    // flag in CCustomWorld::Shutdown.
+    if(ideLoaded) return;
     ideLoaded = true;
     modelSlots.clear();
     nameSlots.clear();

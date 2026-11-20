@@ -42,10 +42,6 @@ target_include_directories(br_archive_parity_tests PRIVATE ../src/extras/custom)
 set_target_properties(br_archive_parity_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
 add_test(NAME br_archive_parity_tests COMMAND br_archive_parity_tests)
 
-add_executable(native_map_options_tests NativeMapOptionsTests.cpp)
-set_target_properties(native_map_options_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
-add_test(NAME native_map_options_tests COMMAND native_map_options_tests)
-
 add_executable(player_model_cycle_tests PlayerModelCycleTests.cpp)
 set_target_properties(player_model_cycle_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
 add_test(NAME player_model_cycle_tests COMMAND player_model_cycle_tests)

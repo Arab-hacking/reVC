@@ -1780,7 +1780,7 @@ void
 InitialiseGame(void)
 {
 	LoadingScreen(nil, nil, "loadsc0");
-	CGame::Initialise("DATA\\GTA_VC.DAT");
+	CGame::Initialise();
 }
 
 #ifndef __MWERKS__
@@ -1973,7 +1973,7 @@ void TheGame(void)
 
 	CTimer::Initialise();
 
-	CGame::Initialise("DATA\\GTA3.DAT");
+	CGame::Initialise();
 
 	Const char *splash = GetRandomSplashScreen(); // inlined here
 
@@ -2341,13 +2341,7 @@ void GameInit(bool onlyRW)
 			"\\DATA\\PEDSTATS.DAT;1",
 			"\\DATA\\TIMECYC.DAT;1",
 			"\\DATA\\PARTICLE.CFG;1",
-			"\\DATA\\DEFAULT.DAT;1",
-			"\\DATA\\DEFAULT.IDE;1",
-			"\\DATA\\GTA_VC.DAT;1",
 			"\\DATA\\OBJECT.DAT;1",
-			"\\DATA\\MAP.ZON;1",
-			"\\DATA\\NAVIG.ZON;1",
-			"\\DATA\\INFO.ZON;1",
 			"\\DATA\\WATERPRO.DAT;1",
 			"\\DATA\\MAIN.SCM;1",
 			"\\DATA\\CARCOLS.DAT;1",
@@ -2416,8 +2410,6 @@ void GameInit(bool onlyRW)
 			"\\DATA\\MAPS\\CONCERTH\\CONCERTH.IPL;1",
 			"\\DATA\\MAPS\\MANSION\\MANSION.IPL;1",
 			"\\DATA\\MAPS\\GENERIC.IDE;1",
-			"\\DATA\\OCCLU.IPL;1",
-			"\\DATA\\MAPS\\PATHS.IPL;1",
 			"\\TXD\\LOADSC0.TXD;1",
 			"\\TXD\\LOADSC1.TXD;1",
 			"\\TXD\\LOADSC2.TXD;1",

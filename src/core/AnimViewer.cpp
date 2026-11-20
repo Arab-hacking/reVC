@@ -89,8 +89,9 @@ CAnimViewer::Initialise(void) {
 	CPedStats::Initialise();
 	CMessages::Init();
 	CdStreamAddImage("MODELS\\GTA3.IMG");
-	CFileLoader::LoadLevel("DATA\\DEFAULT.DAT");
-	CFileLoader::LoadLevel("DATA\\ANIMVIEWER.DAT");
+	// The viewer used to read DEFAULT.DAT and its own level DAT for the model
+	// list. Those lists are gone; the archive supplies the world, so only the
+	// explicit per-model initialisation is needed here.
 	CStreaming::Init();
 	for(int i = 0; i < MODELINFOSIZE; i++)
 		if(CModelInfo::GetModelInfo(i))

@@ -62,21 +62,21 @@ CObjectData::Initialise(const char *filename)
 
 	CFileMgr::SetDir("");
 #ifdef CUSTOM_MODELS
-	// The archive carries the game's own object table. It is far larger than
-	// work_buff once the whole SA object list is present, so it is read into
-	// its own buffer and parsed in place; DATA\OBJECT.DAT stays the fallback
-	// for a build without the archive.
-	{
-		std::vector<uint8> archived;
-		if(CCustomModels::ReadCommonDataFile("data/object.dat", archived) && archived.size() > 0){
-			archived.push_back('\0');
-			ParseObjectData((const char*)archived.data());
-			return;
-		}
+	// The object table comes from the archive only; there is no DATA fallback.
+	// It is far larger than work_buff once the whole SA object list is
+	// present, so it is read into its own buffer and parsed in place.
+	std::vector<uint8> archived;
+	if(CCustomModels::ReadCommonDataFile("data/object.dat", archived) && archived.size() > 0){
+		archived.push_back('\0');
+		ParseObjectData((const char*)archived.data());
+		return;
 	}
-#endif
+	REVC_LOG_WARNING("object data: data/object.dat missing from the archive; "
+	                "every object keeps the default physics");
+#else
 	CFileMgr::LoadFile(filename, work_buff, sizeof(work_buff), "r");
 	ParseObjectData((const char*)work_buff);
+#endif
 }
 
 void

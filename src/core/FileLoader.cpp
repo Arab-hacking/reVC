@@ -15,7 +15,6 @@
 #include "PedType.h"
 #include "AnimManager.h"
 #include "Game.h"
-#include "NativeMapOptions.h"
 #include "RwHelper.h"
 #include "NodeName.h"
 #include "TxdStore.h"
@@ -66,131 +65,53 @@ LoadingScreenLoadingFile(const char *filename)
 	LoadingScreen("Loading the Game", gString, nil);
 }
 
+// One-time world setup that used to run on the first IPL line of the level
+// DAT. The list of level files is gone, so the ordering it provided is now
+// explicit: model types, streaming, collision and the animation-file index
+// must all be ready before anything is put in the world.
 void
-CFileLoader::LoadLevel(const char *filename)
+CFileLoader::InitialiseWorld(void)
 {
-	REVC_LOG_INFO("LOADLEVEL BEGIN: %s", filename);
-	int fd;
-	RwTexDictionary *savedTxd;
-	bool objectsLoaded;
-	char *line;
-	char txdname[64];
-
-	savedTxd = RwTexDictionaryGetCurrent();
-	objectsLoaded = false;
-	if(savedTxd == nil){
-		savedTxd = RwTexDictionaryCreate();
-		RwTexDictionarySetCurrent(savedTxd);
-	}
-	fd = CFileMgr::OpenFile(filename, "r");
-	assert(fd > 0);
-
-	for(line = LoadLine(fd); line; line = LoadLine(fd)){
-		if(*line == '#')
-			continue;
-
-		if(strncmp(line, "EXIT", 4) == 0)
-			break;
-
-		if(strncmp(line, "IMAGEPATH", 9) == 0){
-			RwImageSetPath(line + 10);
-		}else if(strncmp(line, "TEXDICTION", 10) == 0){
-			PUSH_MEMID(MEMID_TEXTURES);
-			strcpy(txdname, line+11);
-			LoadingScreenLoadingFile(txdname);
-			RwTexDictionary *txd = LoadTexDictionary(txdname);
-			AddTexDictionaries(savedTxd, txd);
-			RwTexDictionaryDestroy(txd);
-			POP_MEMID();
-		}else if(strncmp(line, "COLFILE", 7) == 0){
-			LoadingScreenLoadingFile(line+10);
-			LoadCollisionFile(line+10, 0);
-		}else if(strncmp(line, "MODELFILE", 9) == 0){
-			LoadingScreenLoadingFile(line + 10);
-			LoadModelFile(line + 10);
-		}else if(strncmp(line, "HIERFILE", 8) == 0){
-			LoadingScreenLoadingFile(line + 9);
-			LoadClumpFile(line + 9);
-		}else if(strncmp(line, "IDE", 3) == 0){
-			if(!CGame::bLoadViceCityMap && IsNativeVCMapFile(line + 4))
-				continue;
-			LoadingScreenLoadingFile(line + 4);
-			LoadObjectTypes(line + 4);
-		}else if(strncmp(line, "IPL", 3) == 0){
-			if(!objectsLoaded){
 #ifdef CUSTOM_MODELS
-				// Stock IDEs/CDIMAGE records have been read. Mount the user's
-				// custom/img/*.img now (including collision-only IMGs), before
-				// native directory indexing; loose and common.zip IDEs follow.
-				CCustomModels::MountImages();
-				CCustomWorld::LoadIde();
+	// Model types/CDIMAGE records are read. Mount the user's custom/img/*.img
+	// now (including collision-only IMGs), before directory indexing; loose
+	// and archive IDEs follow.
+	CCustomModels::MountImages();
+	CCustomWorld::LoadIde();
 #endif
-				CCustomSky::RegisterModels();
-				LoadingScreenLoadingFile("Collision");
-				PUSH_MEMID(MEMID_WORLD);
-				CObjectData::Initialise("DATA\\OBJECT.DAT");
-				CStreaming::Init();
+	CCustomSky::RegisterModels();
+	LoadingScreenLoadingFile("Collision");
+	PUSH_MEMID(MEMID_WORLD);
+	CObjectData::Initialise(nil);
+	CStreaming::Init();
 #ifdef CUSTOM_MODELS
-				CCustomModels::EnsureVehicleTxdLoaded();
+	CCustomModels::EnsureVehicleTxdLoaded();
 #endif
-				CCustomSky::InitAfterStreaming();
-				POP_MEMID();
-				PUSH_MEMID(MEMID_COLLISION);
-				CColStore::LoadAllCollision();
+	CCustomSky::InitAfterStreaming();
+	POP_MEMID();
+	PUSH_MEMID(MEMID_COLLISION);
+	CColStore::LoadAllCollision();
 #ifdef CUSTOM_MODELS
-				CCustomWorld::LoadCollisions();
+	CCustomWorld::LoadCollisions();
 #endif
-				POP_MEMID();
-				for(int i = 0; i < MODELINFOSIZE; i++)
-					if(CModelInfo::GetModelInfo(i))
-						CModelInfo::GetModelInfo(i)->ConvertAnimFileIndex();
-				objectsLoaded = true;
-			}
-			// Keep the first-IPL initialization above even when the island is
-			// disabled: the custom IDEs, streaming and collisions need it.
-			if(!CGame::bLoadViceCityMap && IsNativeVCMapFile(line + 4))
-				continue;
-#ifdef CUSTOM_MODELS
-			if(CCustomModels::ReplacesNativeWorldMap()){
-				const char *iplPath = line + 4;
-				while(*iplPath == ' ' || *iplPath == '\t') iplPath++;
-				if(IsNativeVCMapFile(iplPath) ||
-				   CGeneral::faststricmp(iplPath, "DATA\\occlu.ipl") == 0 ||
-				   CGeneral::faststricmp(iplPath, "DATA/occlu.ipl") == 0)
-					continue;
-			}
-#endif
-			PUSH_MEMID(MEMID_WORLD);
-			LoadingScreenLoadingFile(line + 4);
-			LoadScene(line + 4);
-			POP_MEMID();
-		}else if(strncmp(line, "SPLASH", 6) == 0){
-#ifndef DISABLE_LOADING_SCREEN
-			LoadSplash(GetRandomSplashScreen());
-#endif
-#ifndef GTA_PS2
-		}else if(strncmp(line, "CDIMAGE", 7) == 0){
-			if(!CdStreamAddImage(line + 8))
-				REVC_LOG_ERROR("CDIMAGE could not be mounted: %s", line + 8);
-#endif
-		}
-	}
+	POP_MEMID();
+	for(int i = 0; i < MODELINFOSIZE; i++)
+		if(CModelInfo::GetModelInfo(i))
+			CModelInfo::GetModelInfo(i)->ConvertAnimFileIndex();
 
-	CFileMgr::CloseFile(fd);
-	RwTexDictionarySetCurrent(savedTxd);
-
-	REVC_LOG_INFO("LOADLEVEL %s: grow collision bounds BEGIN", filename);
-	int i;
-	for(i = 1; i < COLSTORESIZE; i++)
+	// The tail of the old level loader: collision bounds grow, the dynamic
+	// objects that hang off the map are repositioned and collision is paged
+	// out until it is needed.
+	REVC_LOG_INFO("InitialiseWorld: grow collision bounds BEGIN");
+	for(int i = 1; i < COLSTORESIZE; i++)
 		if(CColStore::GetSlot(i))
 			CColStore::GetBoundingBox(i).Grow(120.0f);
-	REVC_LOG_INFO("LOADLEVEL %s: RepositionCertainDynamicObjects BEGIN", filename);
+	REVC_LOG_INFO("InitialiseWorld: RepositionCertainDynamicObjects BEGIN");
 	CWorld::RepositionCertainDynamicObjects();
-	REVC_LOG_INFO("LOADLEVEL %s: RepositionCertainDynamicObjects END", filename);
-	REVC_LOG_INFO("LOADLEVEL %s: RemoveAllCollision BEGIN", filename);
+	REVC_LOG_INFO("InitialiseWorld: RepositionCertainDynamicObjects END");
+	REVC_LOG_INFO("InitialiseWorld: RemoveAllCollision BEGIN");
 	CColStore::RemoveAllCollision();
-	REVC_LOG_INFO("LOADLEVEL %s: RemoveAllCollision END", filename);
-	REVC_LOG_INFO("LOADLEVEL END: %s", filename);
+	REVC_LOG_INFO("InitialiseWorld: RemoveAllCollision END");
 }
 
 char*
@@ -1376,21 +1297,18 @@ CFileLoader::LoadObjectTypes(const char *filename)
 		HIER,
 		CARS,
 		PEDS,
-		PATH,
 		TWODFX,
 		TXDP
 	};
 	char *line;
 	int fd;
 	int section;
-	int pathIndex;
-	int id, pathType;
+	int id;
 	int minID, maxID;
 
 	section = NONE;
 	minID = INT32_MAX;
 	maxID = -1;
-	pathIndex = -1;
 	debug("Loading object types from %s...\n", filename);
 
 	fd = CFileMgr::OpenFile(filename, "rb");
@@ -1406,7 +1324,6 @@ CFileLoader::LoadObjectTypes(const char *filename)
 			else if(isLine4(line, 'h','i','e','r')) section = HIER;
 			else if(isLine4(line, 'c','a','r','s')) section = CARS;
 			else if(isLine4(line, 'p','e','d','s')) section = PEDS;
-			else if(isLine4(line, 'p','a','t','h')) section = PATH;
 			else if(isLine4(line, '2','d','f','x')) section = TWODFX;
 			else if(isLine4(line, 't','x','d','p')) section = TXDP;
 		}else if(isLine3(line, 'e','n','d')){
@@ -1433,22 +1350,6 @@ CFileLoader::LoadObjectTypes(const char *filename)
 			break;
 		case PEDS:
 			LoadPedObject(line);
-			break;
-		case PATH:
-			if(pathIndex == -1){
-				id = LoadPathHeader(line, pathType);
-				pathIndex = 0;
-			}else{
-				if(pathType == 0)
-					LoadPedPathNode(line, id, pathIndex);
-				else if (pathType == 1)
-					LoadCarPathNode(line, id, pathIndex, false);
-				else if (pathType == 2)
-					LoadCarPathNode(line, id, pathIndex, true);
-				pathIndex++;
-				if(pathIndex == 12)
-					pathIndex = -1;
-			}
 			break;
 		case TWODFX:
 			Load2dEffect(line);
@@ -1810,55 +1711,6 @@ CFileLoader::LoadPedObject(const char *line)
 	mi->radio2 = radio2;
 }
 
-int
-CFileLoader::LoadPathHeader(const char *line, int &type)
-{
-	int id;
-	char modelname[32];
-
-	sscanf(line, "%d %d %s", &type, &id, modelname);
-	return id;
-}
-
-void
-CFileLoader::LoadPedPathNode(const char *line, int id, int node)
-{
-	int type, next, cross, numLeft, numRight, speed, flags;
-	float x, y, z, width, spawnRate;
-
-	if(sscanf(line, "%d %d %d %f %f %f %f %d %d %d %d %f",
-			&type, &next, &cross, &x, &y, &z, &width, &numLeft, &numRight,
-			&speed, &flags, &spawnRate) != 12)
-		spawnRate = 1.0f;
-
-	if(id == -1)
-		ThePaths.StoreDetachedNodeInfoPed(node, type, next, x, y, z,
-			width, !!cross, !!(flags&1), !!(flags&4), spawnRate*15.0f);
-	else
-		ThePaths.StoreNodeInfoPed(id, node, type, next, x, y, z,
-			width, !!cross, spawnRate*15.0f);
-}
-
-void
-CFileLoader::LoadCarPathNode(const char *line, int id, int node, bool waterPath)
-{
-	int type, next, cross, numLeft, numRight, speed, flags;
-	float x, y, z, width, spawnRate;
-
-	if(sscanf(line, "%d %d %d %f %f %f %f %d %d %d %d %f",
-			&type, &next, &cross, &x, &y, &z, &width, &numLeft, &numRight,
-			&speed, &flags, &spawnRate) != 12)
-		spawnRate = 1.0f;
-
-	if(id == -1)
-		ThePaths.StoreDetachedNodeInfoCar(node, type, next, x, y, z, width, numLeft, numRight,
-			!!(flags&1), !!(flags&4), speed, !!(flags&2), waterPath, spawnRate * 15, false);
-	else
-		ThePaths.StoreNodeInfoCar(id, node, type, next, x, y, z, 0, numLeft, numRight,
-			!!(flags&1), !!(flags&4), speed, !!(flags&2), waterPath, spawnRate * 15);
-}
-
-
 void
 CFileLoader::Load2dEffect(const char *line)
 {
@@ -1959,22 +1811,18 @@ CFileLoader::Load2dEffect(const char *line)
 void
 CFileLoader::LoadScene(const char *filename)
 {
+	// ZONE, CULL, OCCL, PICK and PATH sections came from the level DAT list -
+	// navig.zon, info.zon, cull.ipl, occlu.ipl and paths.ipl. None of those
+	// files is read any more, so only instances remain.
 	enum {
 		NONE,
 		INST,
-		ZONE,
-		CULL,
-		OCCL,
-		PICK,
-		PATH,
 	};
 	char *line;
 	int fd;
 	int section;
-	int pathType, pathIndex;
 
 	section = NONE;
-	pathIndex = -1;
 	debug("Creating objects from %s...\n", filename);
 
 	fd = CFileMgr::OpenFile(filename, "rb");
@@ -1985,45 +1833,11 @@ CFileLoader::LoadScene(const char *filename)
 
 		if(section == NONE){
 			if(isLine4(line, 'i','n','s','t')) section = INST;
-			else if(isLine4(line, 'z','o','n','e')) section = ZONE;
-			else if(isLine4(line, 'c','u','l','l')) section = CULL;
-			else if(isLine4(line, 'p','i','c','k')) section = PICK;
-			else if(isLine4(line, 'p','a','t','h')) section = PATH;
-			else if(isLine4(line, 'o','c','c','l')) section = OCCL;
 		}else if(isLine3(line, 'e','n','d')){
 			section = NONE;
 		}else switch(section){
 		case INST:
 			LoadObjectInstance(line);
-			break;
-		case ZONE:
-			LoadZone(line);
-			break;
-		case CULL:
-			LoadCullZone(line);
-			break;
-		case OCCL:
-			LoadOcclusionVolume(line);
-			break;
-		case PICK:
-			// unused
-			LoadPickup(line);
-			break;
-		case PATH:
-			if(pathIndex == -1){
-				LoadPathHeader(line, pathType);
-				pathIndex = 0;
-			}else{
-				if(pathType == 0)
-					LoadPedPathNode(line, -1, pathIndex);
-				else if (pathType == 1)
-					LoadCarPathNode(line, -1, pathIndex, false);
-				else if (pathType == 2)
-					LoadCarPathNode(line, -1, pathIndex, true);
-				pathIndex++;
-				if(pathIndex == 12)
-					pathIndex = -1;
-			}
 			break;
 		}
 	}
@@ -2128,112 +1942,6 @@ CFileLoader::LoadObjectInstance(const char *line)
 	}
 
 	RwMatrixDestroy(xform);
-}
-
-void
-CFileLoader::LoadZone(const char *line)
-{
-	char name[24];
-	int type, level;
-	float minx, miny, minz;
-	float maxx, maxy, maxz;
-
-	if(sscanf(line, "%s %d %f %f %f %f %f %f %d", name, &type, &minx, &miny, &minz, &maxx, &maxy, &maxz, &level) == 9)
-		CTheZones::CreateZone(name, (eZoneType)type, minx, miny, minz, maxx, maxy, maxz, (eLevelName)level);
-}
-
-void
-CFileLoader::LoadCullZone(const char *line)
-{
-	CVector pos;
-	float minx, miny, minz;
-	float maxx, maxy, maxz;
-	int flags;
-	int wantedLevelDrop = 0;
-
-	sscanf(line, "%f %f %f %f %f %f %f %f %f %d %d",
-		&pos.x, &pos.y, &pos.z,
-		&minx, &miny, &minz,
-		&maxx, &maxy, &maxz,
-		&flags, &wantedLevelDrop);
-	CCullZones::AddCullZone(pos, minx, maxx, miny, maxy, minz, maxz, flags, wantedLevelDrop);
-}
-
-// unused
-void
-CFileLoader::LoadPickup(const char *line)
-{
-	int id;
-	float x, y, z;
-
-	sscanf(line, "%d %f %f %f", &id, &x, &y, &z);
-}
-
-void
-CFileLoader::LoadOcclusionVolume(const char *line)
-{
-	float x, y, z;
-	float width, length, height;
-	float angle;
-
-	sscanf(line, "%f %f %f %f %f %f %f",
-		&x, &y, &z,
-		&width, &length, &height,
-		&angle);
-	COcclusion::AddOne(x, y, z + height/2.0f, width, length, height, angle);
-}
-
-
-// unused
-void
-CFileLoader::ReloadPaths(const char *filename)
-{
-	enum {
-		NONE,
-		PATH,
-	};
-	char *line;
-	int section = NONE;
-	int id, pathType, pathIndex = -1;
-	debug("Reloading paths from %s...\n", filename);
-
-	int fd = CFileMgr::OpenFile(filename, "r");
-	assert(fd > 0);
-	for (line = CFileLoader::LoadLine(fd); line; line = CFileLoader::LoadLine(fd)) {
-		if (*line == '\0' || *line == '#')
-			continue;
-
-		if (section == NONE) {
-			if (isLine4(line, 'p','a','t','h')) {
-				section = PATH;
-				ThePaths.AllocatePathFindInfoMem(4500);
-			}
-		} else if (isLine3(line, 'e','n','d')) {
-			section = NONE;
-		} else {
-			switch (section) {
-				case PATH:
-					if (pathIndex == -1) {
-						id = LoadPathHeader(line, pathType);
-						pathIndex = 0;
-					} else {
-						if(pathType == 0)
-							LoadPedPathNode(line, id, pathIndex);
-						else if (pathType == 1)
-							LoadCarPathNode(line, id, pathIndex, false);
-						else if (pathType == 2)
-							LoadCarPathNode(line, id, pathIndex, true);
-						pathIndex++;
-						if (pathIndex == 12)
-							pathIndex = -1;
-					}
-					break;
-				default:
-					break;
-			}
-		}
-	}
-	CFileMgr::CloseFile(fd);
 }
 
 void

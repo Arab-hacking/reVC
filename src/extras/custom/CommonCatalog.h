@@ -97,7 +97,6 @@ inline bool CanReadData(const std::string &path)
     if(path == "data/config.dat" || path == "data/timecyc.json" ||
        path == "data/water.dat" || path == "data/carcols.dat" ||
        path == "data/carmods.dat" || path == "data/lods.info" ||
-       path == "data/map.zon" || path == "data/navig.zon" ||
        path == "data/animgrp.dat" || path == "data/pedgrp.dat")
         return true;
     return path == "data/handling.cfg" || path == "data/pedstats.dat" ||

@@ -85,8 +85,10 @@ static bool
 SetGameRoot(const char *root, char *path, size_t pathSize)
 {
 	char realRoot[FILEMGR_PATH_SIZE];
+	// GTA_VC.DAT used to be the marker of a game folder. It is not read any
+	// more, so probing for it only rejected every install that dropped the
+	// vanilla data folder. The model archive is the one file still required.
 	if(realpath(root, realRoot) == nil ||
-	   !GameFileExists(realRoot, "data/gta_vc.dat") ||
 	   !GameFileExists(realRoot, "models/gta3.img"))
 		return false;
 

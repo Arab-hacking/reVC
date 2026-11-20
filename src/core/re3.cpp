@@ -532,19 +532,11 @@ void SaveINIControllerSettings()
 
 bool LoadINISettings()
 {
-	// The archive ships its own world, so the Vice City island is only the
-	// default when nothing replaces it. Without this the vanilla DATA folder
-	// was always loaded first: reVC.ini is generated after the first run, and
-	// a missing ini used to hard-reset the flag to true.
-#ifdef CUSTOM_MODELS
-	CGame::bLoadViceCityMap = !CCustomModels::ReplacesNativeWorldMap();
-#else
-	CGame::bLoadViceCityMap = true;
-#endif
+	// The native Vice City map is gone: GTA_VC.DAT/DEFAULT.DAT are no longer
+	// read, so the archive is the only world source. There is nothing left for
+	// a LoadViceCityMap switch to turn on or off.
 	if (!ini.read(cfg)){
 		REVC_LOG_WARNING("Could not read reVC.ini; using default settings");
-		REVC_LOG_INFO("World: native Vice City map %s",
-			CGame::bLoadViceCityMap ? "enabled" : "disabled (the archive carries its own)");
 		return false;
 	}
 	REVC_LOG_INFO("Loaded settings from reVC.ini");
@@ -592,7 +584,6 @@ bool LoadINISettings()
 	ReadIniIfExists("Graphics", "Trails", &CMBlur::BlurOn);
 #endif
 	ReadIniIfExists("General", "SkinFile", FrontEndMenuManager.m_PrefsSkinFile, 256);
-	ReadIniIfExists("World", "LoadViceCityMap", &CGame::bLoadViceCityMap);
 #ifdef RW_GL3
 	ReadIniIfExists("Rendering", "GL3Atmosphere", &GL3Atmosphere::Enabled);
 #endif
@@ -727,7 +718,6 @@ void SaveINISettings()
 #endif
 	StoreIni("Graphics", "FrameLimiter", FrontEndMenuManager.m_PrefsFrameLimiter);
 	StoreIni("General", "SkinFile", FrontEndMenuManager.m_PrefsSkinFile, 256);
-	StoreIni("World", "LoadViceCityMap", (uint8)CGame::bLoadViceCityMap);
 #ifdef RW_GL3
 	StoreIni("Rendering", "GL3Atmosphere", (uint8)GL3Atmosphere::Enabled);
 #endif
