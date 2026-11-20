@@ -235,12 +235,16 @@ CAnimBlendNode::CalcDeltasCompressed(void)
 	CQuaternion rotA, rotB;
 	kfA->GetRotation(&rotA);
 	kfB->GetRotation(&rotB);
+	// SA stores the flipped rotation back into the keyframe and then derives
+	// theta from the cosine it measured *before* flipping, so theta may exceed
+	// a right angle and Slerp has to travel the long way round. Measuring again
+	// after the flip (as this used to) hands Slerp a short angle while it reads
+	// the unflipped keyframe, and the two disagree.
 	float cos = DotProduct(rotA, rotB);
 	if(cos < 0.0f){
 		rotB = -rotB;
-		kfB->SetRotation(-rotB);
+		kfB->SetRotation(rotB);
 	}
-	cos = DotProduct(rotA, rotB);
 	if(cos > 1.0f)
 		cos = 1.0f;
 	theta = Acos(cos);
