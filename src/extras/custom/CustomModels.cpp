@@ -108,6 +108,11 @@ static int32 s_bpcImmediateTexDepth = 0;
 // The legacy converters below have no external .mod/.btx/.dff/.txd inputs.
 static std::map<std::string, CustomSource> customMods;
 static std::map<std::string, CustomSource> customBtx;
+// Every .btx whose name a model actually asked for. The archives hold far
+// more than the models reference; a texture that is never named here is
+// indexed but never prepared, which is what "lies around unused" means.
+static std::set<std::string> customBtxRequested;
+static std::set<std::string> customBtxMissing;
 static std::map<std::string, CustomSource> customCls;
 static std::map<std::string, CustomSource> customAnims;
 // Legacy model/texture maps have no entries in the IMG-only layout.
@@ -1673,13 +1678,22 @@ GetTxdPlan(const std::string &key)
 		// the name of a texture is the name of its .btx file; a model texture
 		// that is a terrain composite is named after its mask
 		ModelTextureNames(plan.modelKey, plan.names, plan.recipes, plan.uv2DualNames);
-		for(size_t i = 0; i < plan.names.size(); i++)
-			if(customBtx.find(ToLower(plan.names[i])) != customBtx.end()){
+		for(size_t i = 0; i < plan.names.size(); i++){
+			const std::string want = ToLower(plan.names[i]);
+			if(want.empty())
+				continue;
+			if(customBtx.find(want) != customBtx.end()){
 				// Never turn a native IMG TXD into an incomplete custom TXD.
 				// Native IMG diffuse textures keep their normal streaming path.
+				customBtxRequested.insert(want);
 				plan.serve = true;
-				break;
+			}else{
+				// The model names a texture the archives do not hold. Record it:
+				// a short list here is the difference between an archive that is
+				// missing files and a model that names them wrongly.
+				customBtxMissing.insert(want);
 			}
+		}
 	}else if(plan.haveBtx)
 		plan.serve = true;
 	// a whole .txd in the archives serves the dictionary as well, as the
@@ -3528,6 +3542,24 @@ CCustomModels::Initialise(void)
 #endif
 }
 
+// Which of the indexed .btx a model actually names, and which names nothing
+// can satisfy. Called from the console and at shutdown; the numbers answer the
+// "are the unused textures ever read" question without guessing.
+void
+CCustomModels::LogTextureUsage(void)
+{
+#ifdef CUSTOM_BPC_ARCHIVES
+	CUSTOM_LOG("bpc textures: %zu .btx indexed, %zu named by a model, %zu named but absent\n",
+		customBtx.size(), customBtxRequested.size(), customBtxMissing.size());
+	size_t shown = 0;
+	for(std::set<std::string>::const_iterator it = customBtxMissing.begin();
+	    it != customBtxMissing.end() && shown < 24; ++it, ++shown)
+		CUSTOM_LOG("bpc textures: %s is named by a model but is not in the archives\n", it->c_str());
+	if(customBtxMissing.size() > shown)
+		CUSTOM_LOG("bpc textures: %zu more such name(s)\n", customBtxMissing.size() - shown);
+#endif
+}
+
 void
 CCustomModels::SetNativeModelOverride(int32 modelId, bool enabled)
 {
@@ -5160,6 +5192,20 @@ CCustomModels::PrintStats(void)
 #ifdef CUSTOM_BPC_ARCHIVES
 	CUSTOM_LOG("bpc archives: %zu open, %zu models, %zu textures, %zu previews\n",
 		customBpcArchives.size(), customMods.size() + customDff.size(), customBtx.size(), customTmbBtx.size());
+	// How much of the indexed texture set the models actually reach for. The
+	// rest is prepared lazily and, if nothing ever names it, stays compressed:
+	// that is the expected behaviour, not a fault, but the numbers make it
+	// checkable instead of a guess.
+	CUSTOM_LOG("bpc textures used: %zu of %zu .btx named by a model, %zu named but absent\n",
+		customBtxRequested.size(), customBtx.size(), customBtxMissing.size());
+	if(!customBtxMissing.empty()){
+		size_t shown = 0;
+		for(std::set<std::string>::const_iterator it = customBtxMissing.begin();
+		    it != customBtxMissing.end() && shown < 24; ++it, ++shown)
+			CUSTOM_LOG("bpc textures used: %s is named by a model but is not in the archives\n", it->c_str());
+		if(customBtxMissing.size() > shown)
+			CUSTOM_LOG("bpc textures used: %zu more such name(s)\n", customBtxMissing.size() - shown);
+	}
 #endif
 #ifdef CUSTOM_BPC_TEXDB
 	CUSTOM_LOG("bpc runtime: %zu open archives, %zu .mod, %zu .btx (%zu .tmb), TexDB CPU cache %zu hit / %zu miss / %zu KiB, live GPU TexDB %zu tex (%zu KiB, %zu shared hits, %zu evicted), %zu GPU KTX uploads (%zu live upgrades), %zu TexDB pending\n",

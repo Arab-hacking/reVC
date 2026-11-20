@@ -169,6 +169,9 @@ public:
 
 	// diagnostics (written to the always-on debug.log, see DebugLog.h)
 	static void PrintStats(void);
+	// Reports how many of the indexed .btx a model names and which names the
+	// archives cannot satisfy. Safe to call at any time after indexing.
+	static void LogTextureUsage(void);
 };
 
 #endif // __GTA_CUSTOMMODELS_H__

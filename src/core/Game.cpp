@@ -649,6 +649,11 @@ bool CGame::Initialise(void)
 
 #ifndef MASTER
 	PlayerCoords = FindPlayerCoors();
+#ifdef CUSTOM_MODELS
+	// Press-to-run entry: prints which .btx the models name, so the health of
+	// the texture archive can be checked without quitting the game.
+	VarConsole.Add("Log custom texture usage", &CCustomModels::LogTextureUsage);
+#endif
 	VarConsole.Add("X PLAYER COORD", &PlayerCoords.x, 10.0f, -10000.0f, 10000.0f, true);
 	VarConsole.Add("Y PLAYER COORD", &PlayerCoords.y, 10.0f, -10000.0f, 10000.0f, true);
 	VarConsole.Add("Z PLAYER COORD", &PlayerCoords.z, 10.0f, -10000.0f, 10000.0f, true);
