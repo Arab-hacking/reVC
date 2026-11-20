@@ -151,6 +151,7 @@ CWeaponInfo::LoadWeaponData(void)
 
 	size_t bp, buflen;
 	int lp, linelen;
+	int missingWeaponModels = 0;
 		
 	CFileMgr::SetDir("DATA");
 	buflen = CFileMgr::LoadFile("WEAPON.DAT", work_buff, sizeof(work_buff), "r");
@@ -214,8 +215,11 @@ CWeaponInfo::LoadWeaponData(void)
 			&flags,
 			&weaponSlot);
 
-		if (strncmp(weaponName, "ENDWEAPONDATA", 13) == 0)
+		if (strncmp(weaponName, "ENDWEAPONDATA", 13) == 0) {
+			if (missingWeaponModels)
+				REVC_LOG_INFO("LoadWeaponData: %d weapon model id(s) have no model info", missingWeaponModels);
 			return;
+		}
 
 		weaponType = FindWeaponType(weaponName);
 
@@ -252,8 +256,18 @@ CWeaponInfo::LoadWeaponData(void)
 		else if (weaponType == WEAPONTYPE_DETONATOR_GRENADE)
 			modelId = MI_BOMB;
 
-		if (modelId != -1)
-			((CWeaponModelInfo*)CModelInfo::GetModelInfo(modelId))->SetWeaponInfo(weaponType);
+		// WEAPON.DAT is the VC table: its model ids are the native WEAPONS.IDE
+		// ids, and that IDE is not read any more. GetModelInfo then returns nil
+		// and SetWeaponInfo writes m_atomics[2] at offset 0x40 through it, which
+		// is the observed 0xC0000005 write to 0x40. Only stamp the ids that
+		// actually resolved to a weapon model.
+		if (modelId != -1) {
+			CBaseModelInfo *wmi = CModelInfo::GetModelInfo(modelId);
+			if (wmi && wmi->GetModelType() == MITYPE_WEAPON)
+				((CWeaponModelInfo*)wmi)->SetWeaponInfo(weaponType);
+			else
+				missingWeaponModels++;
+		}
 
 		for (int i = 0; i < NUM_ANIM_ASSOC_GROUPS; i++) {
 			const char *groupName = CAnimManager::GetAnimGroupName((AssocGroupId)i);
