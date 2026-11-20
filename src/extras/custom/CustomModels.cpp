@@ -5130,12 +5130,24 @@ CCustomModels::EnsureVehicleTxdLoaded(void)
 		for(size_t i = 0; i < sizeof(names)/sizeof(names[0]); ++i){
 			RwTexture *texture = ResolveBpcTexDbOnly(names[i]);
 			if(!texture){
-				// Not fatal, but not silent either: these are the shared
-				// vehicle lightmaps and remaps. Without vehiclelights128 a car's
-				// lamps fall back to whatever the materials carry, which shows
-				// up as headlight lenses lit in the wrong colour.
-				CUSTOM_LOG("vehicle textures: %s is not in the archive; lamps use "
-				           "the material colours\n", names[i]);
+				// Three different failures look the same from here, so say which
+				// one it is. "not indexed" means the name never reached the
+				// archive index (wrong archive, entry filtered, or a spelling
+				// mismatch); "indexed but not decodable" means we found the
+				// entry and the BTX payload was rejected. Without the
+				// distinction a texture that is demonstrably inside a mounted
+				// archive still looks absent.
+				const std::string lowName = ToLower(names[i]);
+				const CustomSource *src = FindSource(customBtx, lowName);
+				const CustomSource *tmb = src ? nil : FindSource(customTmbBtx, lowName);
+				if(src || tmb){
+					CUSTOM_LOG("vehicle textures: %s is indexed (%s) but could not be "
+					           "decoded; lamps use the material colours\n",
+					           names[i], (src ? src : tmb)->fname);
+				}else{
+					CUSTOM_LOG("vehicle textures: %s is not in the archive index; "
+					           "lamps use the material colours\n", names[i]);
+				}
 				continue;
 			}
 			RwTexture *old = RwTexDictionaryFindNamedTexture(def->texDict, names[i]);
