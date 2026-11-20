@@ -5170,13 +5170,26 @@ CCustomModels::EnsureVehicleTxdLoaded(void)
 			"vehicleenvmap64"
 		};
 		for(size_t i = 0; i < sizeof(envNames)/sizeof(envNames[0]); i++){
-			if(RwTexDictionaryFindNamedTexture(def->texDict, envNames[i]) == nil){
-				RwTexture *fallback = CreateProceduralVehicleFallbackTex(envNames[i], false);
-				if(fallback)
-					RwTexDictionaryAddTexture(def->texDict, fallback);
-			}
+			// The dictionary is not the only place a texture can come from: the
+			// .btx archives are consulted through rw::Texture::findCB, after this
+			// function has run. Checking only the dictionary therefore put a
+			// procedural sky into it even when the archive carried the real
+			// reflection map, and that drawing - a blue-to-grey gradient with a
+			// yellow sun spot - is what ended up covering the parts that use it.
+			const bool inArchive = (FindSource(customBtx, ToLower(envNames[i])) != nil) ||
+			                       (FindSource(customTmbBtx, ToLower(envNames[i])) != nil);
+			if(inArchive || RwTexDictionaryFindNamedTexture(def->texDict, envNames[i]) != nil)
+				continue;
+			CUSTOM_LOG("vehicle envmap: %s is in no archive and not in the dictionary; "
+			           "using the procedural sky fallback\n", envNames[i]);
+			RwTexture *fallback = CreateProceduralVehicleFallbackTex(envNames[i], false);
+			if(fallback)
+				RwTexDictionaryAddTexture(def->texDict, fallback);
 		}
-		if(RwTexDictionaryFindNamedTexture(def->texDict, "vehiclespecdot64") == nil){
+		// Same reasoning as the reflection maps above.
+		const bool specInArchive = (FindSource(customBtx, "vehiclespecdot64") != nil) ||
+		                           (FindSource(customTmbBtx, "vehiclespecdot64") != nil);
+		if(!specInArchive && RwTexDictionaryFindNamedTexture(def->texDict, "vehiclespecdot64") == nil){
 			RwTexture *specFallback = CreateProceduralVehicleFallbackTex("vehiclespecdot64", true);
 			if(specFallback)
 				RwTexDictionaryAddTexture(def->texDict, specFallback);
