@@ -578,10 +578,13 @@ void CCustomWorld::LoadIde(void)
         return a->id != b->id ? a->id < b->id : customworld::Lower(a->name) < customworld::Lower(b->name);
     });
     unsigned reusedNative = 0, incompatible = 0, unsupported = 0, noAsset = 0, fallbackHandling = 0;
+    unsigned pedsSeen = 0, pedsInstalled = 0, pedsNoAsset = 0;
+    unsigned noAssetPed = 0;
     for(const customworld::Model *item : ordered) {
         const customworld::Model &m = *item;
         const std::string key = customworld::Lower(m.name);
         const ModelInfoType type = ModelType(m.kind);
+        if(type == MITYPE_PED) pedsSeen++;
         const int vehicleType = type == MITYPE_VEHICLE ? (int)VehicleType(m.subtype) : (int)VEHICLE_TYPE_IGNORE;
         if(type == MITYPE_VEHICLE && vehicleType < 0) { unsupported++; continue; }
         std::unordered_map<std::string, int>::const_iterator old = existing.find(key);
@@ -616,7 +619,15 @@ void CCustomWorld::LoadIde(void)
         // The manifest has more names than the archive has actual assets.
         // An orphan definition would exhaust model/TXD slots without ever
         // appearing. Native models above can still reuse their stock DFFs.
-        if(!CCustomModels::HasModelFile(m.name.c_str())) { noAsset++; continue; }
+        if(!CCustomModels::HasModelFile(m.name.c_str())) {
+            noAsset++;
+            if(type == MITYPE_PED) {
+                pedsNoAsset++;
+                if(noAssetPed++ < 5)
+                    CUSTOM_LOG("BR IDE ped %s: no model file (dff/mod) in any mounted archive\n", m.name.c_str());
+            }
+            continue;
+        }
         // A same-name TXD in any user IMG takes precedence over the IDE TXD,
         // even if the DFF lives in another mounted IMG.
         bool hasPair = CCustomModels::PairedImageTxd(m.name.c_str()) >= 0;
@@ -661,6 +672,7 @@ void CCustomWorld::LoadIde(void)
             ped->radio1 = ped->radio2 = -1;
             ped->SetColModel(&CTempColModels::ms_colModelPed1);
             CPedModelInfo::NoteSlot(slot);
+            pedsInstalled++;
             mi = ped;
         } else if(type == MITYPE_VEHICLE) {
             CVehicleModelInfo *vehicle = CModelInfo::AddVehicleModel(slot);
@@ -930,6 +942,8 @@ void CCustomWorld::LoadIde(void)
         }
     }
 
+    CUSTOM_LOG("BR IDE peds: %u record(s), %u installed, %u without DFF; ped slot bound %d\n",
+        pedsSeen, pedsInstalled, pedsNoAsset, (int)CPedModelInfo::ms_lastPedSlot);
     CUSTOM_LOG("BR IDE: %u file(s), %u record(s), %u invalid, %u long, %u source ID conflicts, %u installed, %u native reused, %u incompatible, %u unsupported vehicle types, %u without DFF, %u over capacity, %u handling fallbacks, %u paired IMG TXDs, %u txdp links, %u LOD chains, %u long-range landmarks\n",
         ctx.files, ctx.parsed, ctx.bad, ctx.overlong, ctx.conflicts, installed,
         reusedNative, incompatible, unsupported, noAsset, full, fallbackHandling, paired, txdParentsLinked,

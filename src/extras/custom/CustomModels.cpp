@@ -756,6 +756,16 @@ ScanBpcSystem(void)
 				src.bpcAddr = bpcpipeline::MakeBpcAddr(commonArchId, (uint32)n);
 				snprintf(src.fname, sizeof(src.fname), "%s:%s", commonPath.c_str(), ent->name);
 
+				// The three actor IDEs are also listed by CanReadData, which
+				// claims a file as a plain data table. They must be claimed as
+				// IDE definitions first: routed to the data table they are read
+				// as text and then never parsed, so no ped or vehicle row is
+				// ever registered and the engine is left without them.
+				if(pass == 0 && (key == "data/peds.ide" || key == "data/vehicles.ide" ||
+				                 key == "data/weapons.ide")){
+					commonZipIdeFiles[key] = src;
+					continue;
+				}
 				if(pass == 0 && (key == "data/config.dat" || key == "data/texdb.dat" ||
 				                 key == "data/timecyc.json" || key == "data/colorcycle.dat" ||
 				                 key == "data/water.dat" ||
@@ -763,11 +773,6 @@ ScanBpcSystem(void)
 				                 commoncatalog::CanReadData(key) ||
 				                 key == "models/generic/vehicle.txd" || key == "models/vehicle.txd")){
 					commonZipDataFiles[key] = src;
-					continue;
-				}
-				if(pass == 0 && (key == "data/peds.ide" || key == "data/vehicles.ide" ||
-				                 key == "data/weapons.ide")){
-					commonZipIdeFiles[key] = src;
 					continue;
 				}
 				if(pass == 0 ? key.compare(0, 10, "data/maps/") != 0 :

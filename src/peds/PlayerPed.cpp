@@ -327,7 +327,11 @@ CPlayerPed::SetInitialState(void)
 	bIsPedDieAnimPlaying = false;
 	SetRealMoveAnim();
 	m_bCanBeDamaged = true;
-	m_pedStats->m_temper = 50;
+	// pedstats.dat is not part of the archive, so no stat entries may exist and
+	// the constructor is left with nil. Writing through it would fault while the
+	// player is still being built, before anything can report a missing table.
+	if (m_pedStats)
+		m_pedStats->m_temper = 50;
 	m_fWalkAngle = 0.0f;
 	if (m_attachedTo && !bUsesCollision)
 		bUsesCollision = true;

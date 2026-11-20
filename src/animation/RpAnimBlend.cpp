@@ -100,6 +100,13 @@ RpAnimBlendClumpRemoveAllAssociations(RpClump *clump)
 void
 RpAnimBlendClumpRemoveAssociations(RpClump *clump, uint32 mask)
 {
+	// A ped whose model slot nothing registered has no clump, and this is
+	// called unconditionally while such a ped initialises its state.
+	// RPANIMBLENDCLUMPDATA reads the plugin field at a fixed offset from the
+	// clump pointer, so a nil clump turns into a load at that offset (0x68)
+	// rather than an obvious null dereference.
+	if(clump == nil)
+		return;
 	CAnimBlendClumpData *clumpData = *RPANIMBLENDCLUMPDATA(clump);
 	CAnimBlendLink *next;
 	for(CAnimBlendLink *link = clumpData->link.next; link; link = next){
@@ -208,6 +215,8 @@ RpAnimBlendClumpInitNotSkinned(RpClump *clump)
 void
 RpAnimBlendClumpInit(RpClump *clump)
 {
+	if(clump == nil)
+		return;
 	if(IsClumpSkinned(clump))
 		RpAnimBlendClumpInitSkinned(clump);
 	else
@@ -217,6 +226,8 @@ RpAnimBlendClumpInit(RpClump *clump)
 bool
 RpAnimBlendClumpIsInitialized(RpClump *clump)
 {
+	if(clump == nil)
+		return false;
 	CAnimBlendClumpData *clumpData = *RPANIMBLENDCLUMPDATA(clump);
 	return clumpData && clumpData->numFrames != 0;
 }
@@ -408,6 +419,8 @@ RpAnimBlendClumpFillFrameArraySkin(RpClump *clump, AnimBlendFrameData **frames)
 void
 RpAnimBlendClumpFillFrameArray(RpClump *clump, AnimBlendFrameData **frames)
 {
+	if(clump == nil)
+		return;
 	if(IsClumpSkinned(clump))
 		RpAnimBlendClumpFillFrameArraySkin(clump, frames);
 	else
