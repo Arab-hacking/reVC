@@ -115,7 +115,6 @@ public:
 	static int32 NumEscalators;
 	static void Init(void);
 	static void Update(void);
-	static void AddOne(CVector pos0, CVector pos1, CVector pos2, CVector pos3, bool b_isMovingDown);
 	static void Shutdown(void);
 	static const CEscalator& GetEscalator(int ind) { return aEscalators[ind]; };
 };

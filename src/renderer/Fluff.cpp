@@ -938,6 +938,9 @@ CEscalator::CEscalator() {
 	}
 }
 
+// This used to be called once per hard-coded native VC site. That list is gone
+// with the native map, so nothing registers an escalator any more; the routine
+// is kept for its geometry setup.
 void
 CEscalator::AddThisOne(CVector pos0, CVector pos1, CVector pos2, CVector pos3, bool b_isMovingDown) {
 	m_pos0 = pos0;
@@ -1055,104 +1058,16 @@ CEscalator::SwitchOff(void) {
 }
 
 void
-CEscalators::AddOne(CVector pos0, CVector pos1, CVector pos2, CVector pos3, bool b_isMovingDown) {
-	aEscalators[NumEscalators++].AddThisOne(pos0, pos1, pos2, pos3, b_isMovingDown);
-}
-
-void
 CEscalators::Init(void) {
 	Shutdown();
 
-	// These locations and their moving steps belong to the native VC island,
-	// which is no longer loaded: GTA_VC.DAT is gone, so Esc_step usually has no
-	// model info and the unchecked GetColModel in AddThisOne would read through
-	// a null model pointer.
-#ifdef CUSTOM_MODELS
-	if (CCustomModels::ReplacesNativeWorldMap()) {
-		REVC_LOG_INFO("Skipping native VC escalators (custom world IPLs active)");
-		return;
-	}
-#endif
-	if (MI_ESCALATORSTEP < 0 || MI_ESCALATORSTEP >= MODELINFOSIZE) {
-		REVC_LOG_WARNING("Skipping native VC escalators: Esc_step model index missing (%d)", MI_ESCALATORSTEP);
-		return;
-	}
-	CBaseModelInfo *stepInfo = CModelInfo::GetModelInfo(MI_ESCALATORSTEP);
-	if (!stepInfo || (stepInfo->GetModelType() != MITYPE_SIMPLE && stepInfo->GetModelType() != MITYPE_TIME)
-	    || !stepInfo->GetColModel()) {
-		REVC_LOG_WARNING("Skipping native VC escalators: Esc_step static model/collision missing (id %d)", MI_ESCALATORSTEP);
-		return;
-	}
-
-	AddOne(CVector(-9.82999f, -938.04498f, 9.4219f), CVector(-8.573f, -938.04498f, 9.4219f),
-		CVector(-0.747f, -938.045f, 15.065f), CVector(0.88f, -938.045f, 15.065f), TRUE);
-
-	AddOne(CVector(-9.83f, -939.966f, 9.422f), CVector(-8.573f, -939.966f, 9.422f),
-		CVector(-0.747f, -939.966f, 15.065f), CVector(0.880f, -939.966f, 15.065f), FALSE);
-
-	AddOne(CVector(408.116f, 1058.36f, 18.261f), CVector(408.094f, 1057.04f, 18.261f),
-		CVector(408.116f, 1048.0f, 24.765f), CVector(408.094f, 1046.57f, 24.799f), TRUE);
-
-	AddOne(CVector(406.195f, 1058.36f, 18.261f), CVector(406.173f, 1057.04f, 18.261f),
-		CVector(406.195f, 1048.0f, 24.729f), CVector(406.173f, 1046.57f, 24.79f), FALSE);
-
-	AddOne(CVector(421.729f, 1058.3789f, 18.075f), CVector(421.707f, 1057.052f, 18.099f),
-		CVector(421.729f, 1048.016f, 24.604f), CVector(421.707f, 1046.589f, 24.637f), TRUE);
-
-	AddOne(CVector(419.808f, 1058.378f, 18.099f), CVector(419.786f, 1057.052f, 18.099f),
-		CVector(419.808f, 1048.016f, 24.568f), CVector(419.786f, 1046.589f, 24.637f), FALSE);
-
-	AddOne(CVector(412.69901f, 1102.729f, 17.569f), CVector(412.72198f, 1104.057f, 17.57f),
-		CVector(412.69901f, 1113.092f, 24.073f), CVector(412.72198f, 1114.3201f, 24.108f), TRUE);
-
-	AddOne(CVector(414.62f, 1102.729f, 17.569f), CVector(414.64301f, 1104.057f, 17.57f),
-		CVector(414.62f, 1113.092f, 24.037001f), CVector(414.64301f, 1114.3201f, 24.099001f), FALSE);
-
-	AddOne(CVector(414.64301f, 1145.589f, 17.57f), CVector(414.62f, 1144.261f, 17.569f),
-		CVector(414.64301f, 1135.226f, 24.073999f), CVector(414.62f, 1133.798f, 24.107f), TRUE);
-
-	AddOne(CVector(412.72198f, 1145.589f, 17.57f), CVector(412.69901f, 1144.261f, 17.569f),
-		CVector(412.72198f, 1135.226f, 24.038f), CVector(412.69901f, 1133.798f, 24.098f), FALSE);
-
-	AddOne(CVector(406.05099f, 1193.4771f, 18.016001f), CVector(406.07401f, 1194.8051f, 18.017f),
-		CVector(406.05099f, 1203.84f, 24.52f), CVector(406.07401f, 1205.2679f, 24.555f), TRUE);
-
-	AddOne(CVector(407.97198f, 1193.4771f, 18.016001f), CVector(407.995f, 1194.8051f, 18.017f),
-		CVector(407.97198f, 1203.84f, 24.483999f), CVector(407.995f, 1205.2679f, 24.546f), FALSE);
-
-	AddOne(CVector(419.659f, 1193.479f, 17.979f), CVector(419.68201f, 1194.807f, 17.98f),
-		CVector(419.659f, 1203.842f, 24.483f), CVector(419.68201f, 1205.27f, 24.518f), TRUE);
-
-	AddOne(CVector(421.57999f, 1193.479f, 17.979f), CVector(421.603f, 1194.807f, 17.98f),
-		CVector(421.57999f, 1203.842f, 24.447001f), CVector(421.603f, 1205.27f, 24.509001f), FALSE);
-
-	AddOne(CVector(406.23199f, 1022.857f, 17.917f), CVector(406.23199f, 1024.1851f, 17.917f),
-		CVector(406.23199f, 1033.22f, 24.521f), CVector(406.23199f, 1034.647f, 24.555f), TRUE);
-
-	AddOne(CVector(408.15302f, 1022.857f, 17.917f), CVector(408.15302f, 1024.1851f, 17.916f),
-		CVector(408.15302f, 1033.22f, 24.486f), CVector(408.15302f, 1034.647f, 24.52f), FALSE);
-
-	AddOne(CVector(-1506.39f, -813.13f, 13.834f), CVector(-1506.177f, -814.51703f, 13.834f),
-		CVector(-1504.566f, -823.20898f, 19.836f), CVector(-1504.329f, -824.48499f, 19.837f), FALSE);
-
-	AddOne(CVector(-1481.951f, -859.05402f, 13.834f), CVector(-1482.7791f, -858.22498f, 13.834f),
-		CVector(-1489.03f, -851.974f, 19.836f), CVector(-1489.948f, -851.05701f, 19.837f), TRUE);
-
-	AddOne(CVector(-1461.743f, -871.35901f, 13.834f), CVector(-1460.62f, -871.69202f, 13.834f),
-		CVector(-1452.144f, -874.20203f, 19.836f), CVector(-1450.9f, -874.57098f, 19.837f), FALSE);
-
-	AddOne(CVector(-1409.889f, -871.41498f, 13.834f), CVector(-1411.0129f, -871.74701f, 13.834f),
-		CVector(-1419.489f, -874.258f, 19.836f), CVector(-1420.733f, -874.62701f, 19.837f), TRUE);
-
-	AddOne(CVector(-1389.577f, -858.89301f, 13.834f), CVector(-1388.7271f, -858.08698f, 13.834f),
-		CVector(-1382.314f, -852.00201f, 19.836f), CVector(-1381.373f, -851.10797f, 19.837f), FALSE);
-
-	AddOne(CVector(-1364.981f, -813.13f, 13.834f), CVector(-1365.204f, -814.28003f, 13.834f),
-		CVector(-1366.891f, -822.95801f, 19.83f), CVector(-1367.139f, -824.23199f, 19.837f), TRUE);
-
-	for (int i = 0; i < NUM_ESCALATORS; i++) {
-		aEscalators[i].SwitchOff();
-	}
+	// The 22 escalators below used to be a hard-coded list of native Vice City
+	// coordinates, and Esc_step only existed because DATA/MAPS IDEs were read.
+	// Neither the island nor its IDE is loaded any more, so the list would place
+	// moving steps in empty space over a map the archive does not contain.
+	// Nothing is registered; the model-info guards that used to protect this
+	// path are gone with the data they tested.
+	REVC_LOG_INFO("Skipping native VC escalators (the native map is no longer loaded)");
 }
 
 void

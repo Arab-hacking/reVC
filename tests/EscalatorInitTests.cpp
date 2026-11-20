@@ -1,11 +1,12 @@
-// Link the real VC escalator initializer without game assets. In the
-// LoadViceCityMap=0 case Esc_step is absent from native DATA/MAPS IDEs; the
-// old AddThisOne -> GetColModel path dereferenced its missing model info.
+// Link the real VC escalator initializer without game assets. The native map
+// is no longer loaded at all, so Esc_step is normally absent; the old
+// AddThisOne -> GetColModel path dereferenced its missing model info.
 #include "common.h"
 #include "Fluff.h"
 #include "Game.h"
 #include "ModelIndices.h"
 #include "ColModel.h"
+#include "CustomModels.h"
 #include "World.h"
 
 #include <cassert>
@@ -18,9 +19,12 @@ void re3_log(const char *, const char *, unsigned int, const char *, const char 
 void CWorld::Remove(CEntity *) { std::abort(); }
 RwBool RwMatrixDestroy(RwMatrix *) { std::abort(); return false; }
 CColModel::CColModel(void) {}
+// The real check lives in CustomModels.cpp; the test has no archive. The native
+// map is never loaded now, so the escalators are only reachable through this
+// guard - report "replaced" to keep the hard-coded VC sites out.
+bool CCustomModels::ReplacesNativeWorldMap(void) { return true; }
 CColModel::~CColModel(void) {}
 
-bool CGame::bLoadViceCityMap = true;
 int16 MI_ESCALATORSTEP = -1;
 CBaseModelInfo *CModelInfo::ms_modelInfoPtrs[MODELINFOSIZE] = {};
 static CBaseModelInfo *testStepModel;
@@ -41,8 +45,7 @@ public:
 
 int main()
 {
-    // No native map and no Esc_step name: nothing is registered or updated.
-    CGame::bLoadViceCityMap = false;
+    // No Esc_step name at all: nothing is registered or updated.
     MI_ESCALATORSTEP = -1;
     CEscalators::Init();
     assert(CEscalators::NumEscalators == 0);
@@ -57,7 +60,6 @@ int main()
 
     // A broken VC installation must not read ms_modelInfoPtrs[-1] or
     // dereference a model that has no collision volume.
-    CGame::bLoadViceCityMap = true;
     MI_ESCALATORSTEP = -1;
     CEscalators::Init();
     assert(CEscalators::NumEscalators == 0);
@@ -68,8 +70,8 @@ int main()
     CEscalators::Init();
     assert(CEscalators::NumEscalators == 0);
 
-    // With native map and valid step collision the original 22 VC sites
-    // are registered. The fake model is not streamed or rendered.
+    // The 22 hard-coded sites were part of the native island, which is gone.
+    // Even a perfectly valid Esc_step must not rebuild them.
     CColModel col;
     col.boundingBox.max.z = 0.5f;
     StepModel wrongType(MITYPE_PED);
@@ -83,12 +85,11 @@ int main()
     testStepModel = &step;
     CModelInfo::Initialise();
     CEscalators::Init();
-    assert(CEscalators::NumEscalators == NUM_ESCALATORS);
-    assert(CEscalators::GetEscalator(0).GetPosition().z > 0.0f);
+    assert(CEscalators::NumEscalators == 0);
 
-    // Simulate a restart with the map disabled: registered VC sites disappear.
-    CGame::bLoadViceCityMap = false;
+    // Simulate a restart with the step model gone: registered VC sites disappear.
+    MI_ESCALATORSTEP = -1;
     CEscalators::Init();
     assert(CEscalators::NumEscalators == 0);
-    std::puts("VC escalators: no-map, missing model/col, wrong type and native cases passed");
+    std::puts("VC escalators: never rebuilt from the native island");
 }

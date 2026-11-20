@@ -17,8 +17,8 @@ void re3_log(const char *, const char *, unsigned int, const char *, const char 
 int main()
 {
     CDirectory extra(EXTRADIRSIZE);
-    // With [World] LoadViceCityMap=0 the native IMG contains many DFFs
-    // without a registered IDE, but scripts can still request them by name.
+    // The native IMG contains many DFFs without a registered IDE, but
+    // scripts can still request them by name.
     for(int i = 0; i < 1400; i++){
         CDirectory::DirectoryInfo entry = {};
         std::snprintf(entry.name, sizeof(entry.name), "native%04d", i);
