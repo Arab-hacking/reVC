@@ -145,11 +145,22 @@ public:
 	bool IsObject(void) { return m_type == ENTITY_TYPE_OBJECT; }
 	bool IsDummy(void) { return m_type == ENTITY_TYPE_DUMMY; }
 
+	// The type test reads m_rwObject, so it must not run before the pointer is
+	// known to be non-nil: RwObjectGetType(nil) is a load through address 0.
+	// A ped built on a model slot that nothing registered has no Rw object yet,
+	// and CPed::SetModelIndex asks for the clump immediately after setting the
+	// model index - that load, inside the assertion, is the access fault at
+	// target 0x0. The assertions stay, but only once there is something to
+	// inspect.
 	RpAtomic *GetAtomic(void) {
+		if(m_rwObject == nil)
+			return nil;
 		assert(RwObjectGetType(m_rwObject) == rpATOMIC);
 		return (RpAtomic*)m_rwObject;
 	}
 	RpClump *GetClump(void) {
+		if(m_rwObject == nil)
+			return nil;
 		assert(RwObjectGetType(m_rwObject) == rpCLUMP);
 		return (RpClump*)m_rwObject;
 	}

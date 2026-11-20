@@ -247,10 +247,12 @@ LookUpPlayerModel(void)
 	// later by CPed::SetModelIndex, which loads it and swaps it if it turns out
 	// to be a VC skeleton.
 	int32 anyPed = -1;
+	int32 pedCount = 0;
 	for (int32 id = 0; id < CPedModelInfo::ms_lastPedSlot; id++) {
 		CPedModelInfo *mi = (CPedModelInfo *)CModelInfo::GetModelInfo(id);
 		if (mi == nil || mi->GetModelType() != MITYPE_PED)
 			continue;
+		pedCount++;
 		if (id == MI_PLAYER)
 			return id; // a real player.dff was supplied
 		if (mi->m_animGroup == ASSOCGRP_PLAYER || mi->m_animGroup == ASSOCGRP_DEFAULT)
@@ -258,6 +260,7 @@ LookUpPlayerModel(void)
 		if (anyPed < 0)
 			anyPed = id;
 	}
+	REVC_LOG_INFO("[spawn] ped models registered below slot %d: %d", CPedModelInfo::ms_lastPedSlot, pedCount);
 	return anyPed;
 }
 
