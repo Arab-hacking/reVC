@@ -121,6 +121,14 @@ CEntity::CreateRwObject(void)
 
 	mi = CModelInfo::GetModelInfo(m_modelIndex);
 
+	// A model index can name a slot nothing ever registered: MI_PLAYER is the
+	// literal 0 and the ped models used to come from DEFAULT.IDE, which is no
+	// longer read. Entity construction then reached mi->CreateInstance through
+	// a nil pointer. Treat a missing model as "no Rw object", the same state as
+	// a model whose clump has not been streamed yet.
+	if(mi == nil)
+		return;
+
 	PUSH_MEMID(MEMID_WORLD);
 	m_rwObject = mi->CreateInstance();
 	POP_MEMID();

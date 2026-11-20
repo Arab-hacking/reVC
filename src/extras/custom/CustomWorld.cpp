@@ -1,5 +1,6 @@
 #include "common.h"
 #include "CustomWorld.h"
+#include "ModelIndices.h"
 
 #ifdef CUSTOM_MODELS
 
@@ -523,6 +524,29 @@ void LogUnresolved(const char *reason, const std::map<std::string, unsigned> &co
 
 } // namespace
 
+// A few model slots are hard-coded numbers in the engine rather than names
+// looked up through CModelInfo: MI_PLAYER is 0, then MI_COP..MI_MALE01. The
+// rows that used to fill them lived in DEFAULT.IDE, which is no longer read,
+// so the archive rows take those slots over by name. Anything else keeps
+// getting an ordinary free slot above the native range.
+static int
+PinnedSlot(const std::string &key)
+{
+    static const struct { const char *name; int slot; } kPinned[] = {
+        { "player",   MI_PLAYER },
+        { "cop",      MI_COP },
+        { "swat",     MI_SWAT },
+        { "fbi",      MI_FBI },
+        { "army",     MI_ARMY },
+        { "medic",    MI_MEDIC },
+        { "fireman",  MI_FIREMAN },
+        { "male01",   MI_MALE01 },
+    };
+    for(size_t i = 0; i < sizeof(kPinned)/sizeof(kPinned[0]); i++)
+        if(key == kPinned[i].name) return kPinned[i].slot;
+    return -1;
+}
+
 void CCustomWorld::LoadIde(void)
 {
     // The world IDEs are registered once per game start; a restart clears the
@@ -597,7 +621,19 @@ void CCustomWorld::LoadIde(void)
         // even if the DFF lives in another mounted IMG.
         bool hasPair = CCustomModels::PairedImageTxd(m.name.c_str()) >= 0;
         const char *txdName = hasPair ? m.name.c_str() : m.txd.c_str();
-        while(next < MODELINFOSIZE && CModelInfo::GetModelInfo(next) != nil) next++;
+        // The engine does not look a few models up by name: MI_PLAYER is the
+        // literal 0 and MI_COP..MI_MALE01 follow it, so a ped named "player"
+        // must occupy slot 0. Those slots used to be filled by the DEFAULT.IDE
+        // rows; that IDE is gone, so the archive row is pinned here instead.
+        // Without this CPlayerPed::SetModelIndex(0) finds no model info and
+        // dereferences nil once the first frame is rendered.
+        int slot = PinnedSlot(key);
+        if(slot < 0 || CModelInfo::GetModelInfo(slot) != nil){
+            while(next < MODELINFOSIZE && CModelInfo::GetModelInfo(next) != nil) next++;
+            slot = next;
+        }
+        if(slot >= MODELINFOSIZE) { full++; continue; }
+        if(slot >= next) next = slot + 1;
         if(next == MODELINFOSIZE || !CanAddModel(type) ||
            (CTxdStore::FindTxdSlot(txdName) == -1 && !CTxdStore::HasFreeCustomSlot())) {
             full++;
@@ -605,13 +641,13 @@ void CCustomWorld::LoadIde(void)
         }
         CBaseModelInfo *mi = nil;
         if(type == MITYPE_TIME) {
-            CTimeModelInfo *time = CModelInfo::AddTimeModel(next);
+            CTimeModelInfo *time = CModelInfo::AddTimeModel(slot);
             time->SetTimes(m.timeOn, m.timeOff);
             mi = time;
         } else if(type == MITYPE_SIMPLE) {
-            mi = CModelInfo::AddSimpleModel(next);
+            mi = CModelInfo::AddSimpleModel(slot);
         } else if(type == MITYPE_PED) {
-            CPedModelInfo *ped = CModelInfo::AddPedModel(next);
+            CPedModelInfo *ped = CModelInfo::AddPedModel(slot);
             ped->m_pedType = SafePedType(m.subtype);
             // SA skeletons select the separate custom animation bank when
             // their DFF is loaded; VC skeletons keep the VC bank. No raw SA
@@ -626,7 +662,7 @@ void CCustomWorld::LoadIde(void)
             ped->SetColModel(&CTempColModels::ms_colModelPed1);
             mi = ped;
         } else if(type == MITYPE_VEHICLE) {
-            CVehicleModelInfo *vehicle = CModelInfo::AddVehicleModel(next);
+            CVehicleModelInfo *vehicle = CModelInfo::AddVehicleModel(slot);
             bool fallback = false;
             vehicle->m_nVehicleType = (eVehicleType)vehicleType;
             vehicle->m_handlingId = BuiltinHandling((eVehicleType)vehicleType, m.handling, fallback);
@@ -658,7 +694,7 @@ void CCustomWorld::LoadIde(void)
             vehicle->SetColModel(&CTempColModels::ms_colModelBBox);
             mi = vehicle;
         } else {
-            CWeaponModelInfo *weapon = CModelInfo::AddWeaponModel(next);
+            CWeaponModelInfo *weapon = CModelInfo::AddWeaponModel(slot);
             weapon->SetNumAtomics(1);
             weapon->m_lodDistances[0] = m.distance;
             weapon->SetColModel(&CTempColModels::ms_colModelWeapon);
@@ -701,10 +737,15 @@ void CCustomWorld::LoadIde(void)
             object->m_noShadows = !!(m.flags & 0x80);
             object->SetColModel(&CTempColModels::ms_colModelBBox);
         }
-        existing.emplace(key, next);
-        nameSlots[key] = next;
-        brSlots[next] = true;
-        next++;
+        // The native IDE reader bound the well-known MI_* names to slots while
+        // it walked DATA/*.IDE. That reader is gone with the level DATs and
+        // nothing called MatchModelString any more, so every MI_* stayed -1 -
+        // MatchModelString compares case-sensitively against lower-case table
+        // entries, hence the already-lowered key.
+        MatchModelString(key.c_str(), slot);
+        existing.emplace(key, slot);
+        nameSlots[key] = slot;
+        brSlots[slot] = true;
         installed++;
     }
     for(std::map<int, std::string>::const_iterator it = ctx.lastNameForId.begin();
