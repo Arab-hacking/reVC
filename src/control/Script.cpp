@@ -264,6 +264,7 @@ LookUpPlayerModel(void)
 void CTheScripts::SpawnInitialPlayer()
 {
 	const int32 index = 0;
+	REVC_LOG_INFO("[spawn] SpawnInitialPlayer enter");
 	if (CWorld::Players[index].m_pPed)
 		return;
 
@@ -283,8 +284,11 @@ void CTheScripts::SpawnInitialPlayer()
 		}
 	}
 
+	REVC_LOG_INFO("[spawn] requesting player model, chosen=%d", LookUpPlayerModel());
 	CPlayerPed::SetupPlayerPed(index);
+	REVC_LOG_INFO("[spawn] SetupPlayerPed returned");
 	CPlayerPed *pPlayer = CWorld::Players[index].m_pPed;
+	REVC_LOG_INFO("[spawn] player ped=%p model=%d", (void*)pPlayer, pPlayer ? (int)pPlayer->GetModelIndex() : -1);
 	pPlayer->CharCreatedBy = MISSION_CHAR;
 	// Built off-world, then placed and added back, so it is not processed
 	// between construction and the position being final.
@@ -292,6 +296,7 @@ void CTheScripts::SpawnInitialPlayer()
 
 	// The vanilla start of main.scm put the player on the beach at Ocean
 	// Beach; that is where a freeroam build wants him when nothing else says.
+	REVC_LOG_INFO("[spawn] resolving spawn position");
 	CVector pos(79.6875f, -867.25f, MAP_Z_LOW_LIMIT);
 	float heading = 0.0f;
 	bool redirected = CCustomWorld::ResolveSpawnPosition(pos, &heading);
@@ -299,11 +304,18 @@ void CTheScripts::SpawnInitialPlayer()
 		heading = 180.0f;
 	}
 
-	if (pos.z <= MAP_Z_LOW_LIMIT)
+	if (pos.z <= MAP_Z_LOW_LIMIT) {
+		REVC_LOG_INFO("[spawn] finding ground z");
 		pos.z = CWorld::FindGroundZForCoord(pos.x, pos.y);
+		REVC_LOG_INFO("[spawn] ground z=%.2f", pos.z);
+	}
+	REVC_LOG_INFO("[spawn] centre-of-mass offset");
 	pos.z += pPlayer->GetDistanceFromCentreOfMassToBaseOfModel();
+	REVC_LOG_INFO("[spawn] SetPosition");
 	pPlayer->SetPosition(pos);
+	REVC_LOG_INFO("[spawn] ClearSpaceForMissionEntity");
 	ClearSpaceForMissionEntity(pos, pPlayer);
+	REVC_LOG_INFO("[spawn] ReactivatePlayerPed");
 	CPlayerPed::ReactivatePlayerPed(index);
 
 	if (redirected) {
@@ -316,7 +328,9 @@ void CTheScripts::SpawnInitialPlayer()
 	// when a script finished. Nothing runs it now, so point the camera at the
 	// player here or the first frame is spent looking wherever the intro left
 	// it - and with no player there to look at, that was the crash.
+	REVC_LOG_INFO("[spawn] RestoreWithJumpCut");
 	TheCamera.RestoreWithJumpCut();
+	REVC_LOG_INFO("[spawn] done");
 
 	REVC_LOG_INFO("Spawned player 0 at (%.1f, %.1f, %.1f) heading %.0f%s",
 		pos.x, pos.y, pos.z, heading, redirected ? " (custom map)" : "");

@@ -188,7 +188,9 @@ CPlayerPed::GetPlayerInfoForThisPlayerPed()
 void
 CPlayerPed::SetupPlayerPed(int32 index)
 {
+	REVC_LOG_INFO("[spawn] constructing CPlayerPed");
 	CPlayerPed *player = new CPlayerPed();
+	REVC_LOG_INFO("[spawn] CPlayerPed constructed");
 	CWorld::Players[index].m_pPed = player;
 #ifdef FIX_BUGS
 	player->RegisterReference((CEntity**)&CWorld::Players[index].m_pPed);
@@ -196,7 +198,9 @@ CPlayerPed::SetupPlayerPed(int32 index)
 
 	player->SetOrientation(0.0f, 0.0f, 0.0f);
 
+	REVC_LOG_INFO("[spawn] CWorld::Add(player)");
 	CWorld::Add(player);
+	REVC_LOG_INFO("[spawn] CWorld::Add done");
 	player->m_wepAccuracy = 100;
 
 #ifndef MASTER

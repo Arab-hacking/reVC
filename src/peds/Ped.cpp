@@ -450,7 +450,10 @@ CPed::Initialise(void)
 void
 CPed::SetModelIndex(uint32 mi)
 {
+	REVC_LOG_INFO("[spawn] CPed::SetModelIndex(%u) enter, registered=%d", mi,
+		CModelInfo::GetModelInfo((int)mi) != nil);
 	CEntity::SetModelIndex(mi);
+	REVC_LOG_INFO("[spawn] CPed::SetModelIndex after CEntity, clump=%p", (void*)GetClump());
 	if(GetClump() == nil){
 		CStreaming::RequestModel(mi, STREAMFLAGS_PRIORITY | STREAMFLAGS_KEEP_IN_MEMORY);
 		CStreaming::LoadAllRequestedModels(true);
