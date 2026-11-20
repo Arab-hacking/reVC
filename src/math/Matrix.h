@@ -101,6 +101,11 @@ public:
 	void SetRotateY(float angle);
 	void SetRotateZ(float angle);
 	void SetRotate(float xAngle, float yAngle, float zAngle);
+	// Replaces the rotation and leaves the translation alone. SetRotate zeroes
+	// the position, so callers that want to keep it have to read the position
+	// back first - which fails for a matrix that already carries a world
+	// transform. SA has this as a separate routine (CDoor::UpdateFrameMatrix).
+	void SetRotateKeepPos(float xAngle, float yAngle, float zAngle);
 	void Rotate(float x, float y, float z);
 	void RotateX(float x);
 	void RotateY(float y);

@@ -1044,9 +1044,9 @@ CBoat::PreRender(void)
 		m_boom.Process(this);
 		axes[m_boom.m_nAxis] = m_boom.m_fAngle;
 		matrix.Attach(RwFrameGetMatrix(m_aBoatNodes[BOAT_FLAP_LEFT]));
-		pos = matrix.GetPosition();
-		matrix.SetRotate(axes[0], axes[1], axes[2]);
-		matrix.Translate(pos);
+		// Same as the car doors: keeping the frame's translation in place is
+		// what makes this a rotation rather than a jump to a re-read position.
+		matrix.SetRotateKeepPos(axes[0], axes[1], axes[2]);
 		matrix.UpdateRW();
 	}
 

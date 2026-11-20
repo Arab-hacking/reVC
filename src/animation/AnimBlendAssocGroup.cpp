@@ -257,18 +257,14 @@ CAnimBlendAssocGroup::CreateAssociations(const char *blockName, RpClump *clump,
 		// undefined: the array is indexed by position in the group, so the
 		// following clips must not shift down into the hole.
 		if(hier == nil){
-			// Name the group and the block, not just the numbers: the
-			// interesting question is always whether the clip is missing from
-			// the archive or the archive simply has no such bank.
-#ifdef CUSTOM_MODELS
-			CUSTOM_LOG("anim assoc: group %s (%s) has no clip for slot %d (anim id %d)\n",
-				CAnimManager::GetAnimGroupName((AssocGroupId)groupId), blockName,
-				i, firstAnimId + i);
-#else
-			debug("anim assoc: group %s (%s) has no clip for slot %d (anim id %d)\n",
-				CAnimManager::GetAnimGroupName((AssocGroupId)groupId), blockName,
-				i, firstAnimId + i);
-#endif
+			// SA leaves these slots undefined and says nothing: its tables are
+			// 40 entries wide and a car set fills only the handful it uses, so
+			// the empties are the normal case, not a fault. The VC tables here
+			// are the same shape (an empty name is a slot the group never had)
+			// and reporting each one buried the entries that do matter.
+			// A name that is present but whose clip is missing from the loaded
+			// bank is a real gap and is reported by the caller, which still has
+			// the name; this overload only sees the resolved pointers.
 			assocList[i].animId = ANIM_ID_UNDEFINED;
 			assocList[i].groupId = groupId;
 			continue;

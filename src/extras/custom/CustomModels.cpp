@@ -5097,7 +5097,15 @@ CCustomModels::EnsureVehicleTxdLoaded(void)
 		ScopedBlockingLoad blocking;
 		for(size_t i = 0; i < sizeof(names)/sizeof(names[0]); ++i){
 			RwTexture *texture = ResolveBpcTexDbOnly(names[i]);
-			if(!texture) continue; // missing/unsupported BTX is not a fatal error
+			if(!texture){
+				// Not fatal, but not silent either: these are the shared
+				// vehicle lightmaps and remaps. Without vehiclelights128 a car's
+				// lamps fall back to whatever the materials carry, which shows
+				// up as headlight lenses lit in the wrong colour.
+				CUSTOM_LOG("vehicle textures: %s is not in the archive; lamps use "
+				           "the material colours\n", names[i]);
+				continue;
+			}
 			RwTexture *old = RwTexDictionaryFindNamedTexture(def->texDict, names[i]);
 			if(old == texture) continue;
 			RwTextureAddRef(texture); // dictionary owns a ref independent of TexDB

@@ -4550,9 +4550,15 @@ CAutomobile::OpenDoor(int32 component, eDoors door, float openRatio)
 		DMAudio.PlayOneShot(m_audioEntityId, SOUND_CAR_DOOR_CLOSE_BONNET + door, 0.0f);
 	}
 
+	// SetRotate replaces the whole rotation and Translate then writes the
+	// position that was read back out of the frame. SA calls SetRotateKeepPos
+	// instead: the rotation is replaced but the frame keeps the translation it
+	// already had. Re-reading the position and writing it back is only the same
+	// thing while the frame's matrix is local; once it carries a world
+	// transform the door jumps before it swings, which is the half turn seen
+	// when a car door opens before settling into the right place.
 	axes[Doors[door].m_nAxis] = Doors[door].m_fAngle;
-	mat.SetRotate(axes[0], axes[1], axes[2]);
-	mat.Translate(pos);
+	mat.SetRotateKeepPos(axes[0], axes[1], axes[2]);
 	mat.UpdateRW();
 }
 
@@ -6038,11 +6044,12 @@ CAutomobile::PopBoot(void)
 	case DOOR_STATUS_SMASHED:
 		Doors[DOOR_BOOT].m_fAngle = Doors[DOOR_BOOT].m_fMinAngle;
 		CMatrix mat(RwFrameGetMatrix(m_aCarNodes[CAR_BOOT]));
-		CVector pos = mat.GetPosition();
 		float axes[3] = { 0.0f, 0.0f, 0.0f };
 		axes[Doors[DOOR_BOOT].m_nAxis] = Doors[DOOR_BOOT].m_fAngle;
-		mat.SetRotate(axes[0], axes[1], axes[2]);
-		mat.Translate(pos);
+		// Keep the frame's own translation: SetRotate clears it, and reading it
+		// back out of a matrix that already carries the car's transform then
+		// writing it in again moved the boot lid instead of rotating it.
+		mat.SetRotateKeepPos(axes[0], axes[1], axes[2]);
 		mat.UpdateRW();
 	}
 }

@@ -287,6 +287,20 @@ CMatrix::SetRotate(float xAngle, float yAngle, float zAngle)
 }
 
 void
+CMatrix::SetRotateKeepPos(float xAngle, float yAngle, float zAngle)
+{
+	const float keepX = px;
+	const float keepY = py;
+	const float keepZ = pz;
+
+	SetRotate(xAngle, yAngle, zAngle);
+
+	px = keepX;
+	py = keepY;
+	pz = keepZ;
+}
+
+void
 CMatrix::RotateX(float x)
 {
 	float c = Cos(x);
