@@ -845,6 +845,16 @@ CPed::SetStoredState(void)
 		m_nLastPedState = m_nPedState;
 		if (m_nMoveState >= m_nPrevMoveState)
 			m_nPrevMoveState = m_nMoveState;
+	} else if (m_nMoveState == PEDMOVE_WALK || m_nMoveState == PEDMOVE_RUN ||
+	          m_nMoveState == PEDMOVE_SPRINT) {
+		// A ped that runs or sprints is in PED_IDLE: the movement lives in
+		// m_nMoveState, and the state machine only says "on foot, standing".
+		// Skipping the save for PED_IDLE dropped the run entirely, so landing
+		// from a jump went through RestorePreviousState -> SetIdle ->
+		// SetMoveState(PEDMOVE_STILL), which is why a run turned into an
+		// instant stop. Keep the move state even when the ped state is idle.
+		if (m_nMoveState >= m_nPrevMoveState)
+			m_nPrevMoveState = m_nMoveState;
 	}
 }
 
@@ -866,7 +876,21 @@ CPed::RestorePreviousState(void)
 				if (SetWanderPath(CGeneral::GetRandomNumber() & 7) != 0)
 					return;
 			}
+			// SetIdle settles the ped into PEDMOVE_STILL. A player who jumped
+			// while running was running under PED_IDLE, so its move state was
+			// saved by SetStoredState but its ped state was not; putting the
+			// move state back is what keeps the run after the landing rather
+			// than snapping to a standstill.
+			const int32 savedMove = m_nPrevMoveState;
 			SetIdle();
+			if (savedMove == PEDMOVE_WALK || savedMove == PEDMOVE_RUN || savedMove == PEDMOVE_SPRINT) {
+				SetMoveState((eMoveState)savedMove);
+				m_nPrevMoveState = (eMoveState)savedMove;
+				// SetMoveAnim refuses to do anything while the stored state
+				// already matches the wanted one, so clear it and let the run
+				// clip be picked up again on the next frame.
+				m_nStoredMoveState = PEDMOVE_NONE;
+			}
 			return;
 		}
 
@@ -892,6 +916,9 @@ CPed::RestorePreviousState(void)
 			default:
 				SetPedState(m_nLastPedState);
 				SetMoveState((eMoveState) m_nPrevMoveState);
+				// Same reason: the stored state still names the clip that was
+				// playing before the jump, so SetMoveAnim would skip the rebuild.
+				m_nStoredMoveState = PEDMOVE_NONE;
 				break;
 		}
 		m_nLastPedState = PED_NONE;
@@ -9433,7 +9460,27 @@ CPed::SetJump(void)
 		// and only then hopped. gta-reversed does the same thing in
 		// CTaskSimpleJump::ProcessPed -> Launch: the clip starts, and the force
 		// that leaves the ground is applied at once.
-		CAnimBlendAssociation *jumpAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_JUMP_LAUNCH, 8.0f);
+		// SA picks the launch clip by where the run cycle happens to be:
+		// CTaskSimpleJump::StartLaunchAnim adds 0.367 to the move clip's progress
+		// and takes JUMP_launch_R once that passes half a cycle, so the feet
+		// leave the ground in the right phase. Always taking JUMP_launch made a
+		// running jump restart the walk cycle from a planted foot, which reads
+		// as a jump with no animation at all.
+		float moveBlendAmount = 0.0f;
+		CAnimBlendAssociation *moveAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_ID_SPRINT);
+		if (!moveAssoc || moveAssoc->blendAmount < 0.3f)
+			moveAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_ID_RUN);
+		if (!moveAssoc || moveAssoc->blendAmount < 0.3f)
+			moveAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_ID_WALK);
+		if (moveAssoc && moveAssoc->blendAmount > 0.3f && moveAssoc->hierarchy &&
+		   moveAssoc->hierarchy->totalLength > 0.0f) {
+			moveBlendAmount = moveAssoc->currentTime / moveAssoc->hierarchy->totalLength + 0.367f;
+			if (moveBlendAmount > 1.0f)
+				moveBlendAmount -= 1.0f;
+		}
+
+		CAnimBlendAssociation *jumpAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_DEFAULT,
+			moveBlendAmount >= 0.5f ? ANIM_ID_JUMP_LAUNCH_R : ANIM_ID_JUMP_LAUNCH, 8.0f);
 		if (!jumpAssoc) {
 			RestorePreviousState(); // no launch clip => no finish callback
 			return;
@@ -9455,12 +9502,14 @@ CPed::ApplyLaunchForce(void)
 	float horizontalSpeed = 0.1f;
 	CAnimBlendAssociation *sprintAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_ID_SPRINT);
 
+	// SA: CTaskSimpleJump::Launch interpolates 0.17 -> 0.22 for a sprint and
+	// 0.1 -> 0.17 for a run, which is what these two lines already are.
 	if (sprintAssoc) {
 		horizontalSpeed = 0.05f * sprintAssoc->blendAmount + 0.17f;
 	} else {
 		CAnimBlendAssociation *runAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_ID_RUN);
 		if (runAssoc)
-			horizontalSpeed = 0.07f * runAssoc->blendAmount + 0.1f;
+			horizontalSpeed = 0.07f * runAssoc->blendAmount + 0.10f;
 	}
 
 	if (IsPlayer() || m_pedInObjective && m_pedInObjective->IsPlayer())

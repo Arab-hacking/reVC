@@ -490,6 +490,12 @@ AssocGroupId SafePedAnimGroup(const std::string &s)
     };
     for(int i = 0; i < (int)(sizeof(aliases)/sizeof(aliases[0])); i++)
         if(group == aliases[i].ide) return aliases[i].group;
+    // A row naming a set the table does not have used to become the standard
+    // male set without a word, which is exactly what a female ped animating
+    // like a man looks like. Say which name was dropped so the gap can be
+    // filled instead of guessed at.
+    CUSTOM_LOG("BR IDE: ped animation group '%s' is not in the animation table; "
+               "falling back to default\n", s.c_str());
     return ASSOCGRP_DEFAULT;
 }
 
