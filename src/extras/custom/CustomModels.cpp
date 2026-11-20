@@ -5180,11 +5180,40 @@ CCustomModels::EnsureVehicleTxdLoaded(void)
 			                       (FindSource(customTmbBtx, ToLower(envNames[i])) != nil);
 			if(inArchive || RwTexDictionaryFindNamedTexture(def->texDict, envNames[i]) != nil)
 				continue;
-			CUSTOM_LOG("vehicle envmap: %s is in no archive and not in the dictionary; "
-			           "using the procedural sky fallback\n", envNames[i]);
-			RwTexture *fallback = CreateProceduralVehicleFallbackTex(envNames[i], false);
-			if(fallback)
-				RwTexDictionaryAddTexture(def->texDict, fallback);
+			// The real reflection maps are in the archive, so build one of them
+			// again under the missing name instead of drawing a sky. A drawn
+			// sky is a picture: its gradient and its sun spot land on different
+			// mirrors depending on where each one points, so the same lamp read
+			// blue on one side and yellow on the other.
+			RwTexture *borrowed = nil;
+			for(const char *alt : {"vehicleenvmap128", "xvehicleenv128"}){
+				const std::string altLow = ToLower(alt);
+				const CustomSource *altSrc = FindSource(customBtx, altLow);
+				if(altSrc == nil)
+					altSrc = FindSource(customTmbBtx, altLow);
+				if(altSrc == nil)
+					continue;
+				std::shared_ptr<const PreparedRawBtx> raw = GetOrLoadPreparedRawBtx(*altSrc, altLow);
+				if(raw == nil)
+					continue;
+				borrowed = BuildDirectGlTextureFromRawBtx(*raw, envNames[i]);
+				if(borrowed){
+					CUSTOM_LOG("vehicle envmap: %s is absent; rebuilt it from the "
+					           "real %s in %s instead of drawing a sky\n",
+					           envNames[i], alt, altSrc->fname);
+					break;
+				}
+			}
+			if(borrowed){
+				RwTexDictionaryAddTexture(def->texDict, borrowed);
+			}else{
+				CUSTOM_LOG("vehicle envmap: %s is in no archive and no other "
+				           "reflection map could be reused; drawing the sky "
+				           "fallback\n", envNames[i]);
+				RwTexture *fallback = CreateProceduralVehicleFallbackTex(envNames[i], false);
+				if(fallback)
+					RwTexDictionaryAddTexture(def->texDict, fallback);
+			}
 		}
 		// Same reasoning as the reflection maps above.
 		const bool specInArchive = (FindSource(customBtx, "vehiclespecdot64") != nil) ||
