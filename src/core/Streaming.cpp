@@ -981,7 +981,8 @@ CStreaming::ConvertBufferToObject(int8 *buf, int32 streamId)
 		}
 
 		if(!success){
-			debug("Failed to load %s\n", CModelInfo::GetModelInfo(streamId)->GetModelName());
+			CBaseModelInfo *failedInfo = CModelInfo::GetModelInfo(streamId);
+			debug("Failed to load %s\n", failedInfo ? failedInfo->GetModelName() : "unknown");
 			RemoveModel(streamId);
 			ReRequestModel(streamId);
 			RwStreamClose(stream, &mem);
@@ -1153,8 +1154,11 @@ CStreaming::FinishLoadingLargeFile(int8 *buf, int32 streamId)
 	startTime = CTimer::GetCurrentTimeInCycles() / CTimer::GetCyclesPerMillisecond();
 
 	if(ms_aInfoForModel[streamId].m_loadState != STREAMSTATE_STARTED){
-		if(streamId < STREAM_OFFSET_TXD)
-			CModelInfo::GetModelInfo(streamId)->RemoveRef();
+		if(streamId < STREAM_OFFSET_TXD){
+			CBaseModelInfo *aborted = CModelInfo::GetModelInfo(streamId);
+			if(aborted)
+				aborted->RemoveRef();
+		}
 		return false;
 	}
 
@@ -1626,8 +1630,11 @@ CStreaming::RemoveModel(int32 id)
 	CCustomModels::CancelStreamPrefetch(id);
 #endif
 	if(ms_aInfoForModel[id].m_loadState == STREAMSTATE_LOADED){
-		if(id < STREAM_OFFSET_TXD)
-			CModelInfo::GetModelInfo(id)->DeleteRwObject();
+		if(id < STREAM_OFFSET_TXD){
+			CBaseModelInfo *loadedInfo = CModelInfo::GetModelInfo(id);
+			if(loadedInfo)
+				loadedInfo->DeleteRwObject();
+		}
 		else if(id >= STREAM_OFFSET_TXD && id < STREAM_OFFSET_COL){
 #ifdef CUSTOM_MODELS
 			// Custom TXDs are already GPU-ready. Keep a bounded number of
@@ -1886,7 +1893,8 @@ CStreaming::RemoveLoadedVehicle(void)
 		if(ms_lastVehicleDeleted == MAXVEHICLESLOADED)
 			ms_lastVehicleDeleted = 0;
 		id = ms_vehiclesLoaded[ms_lastVehicleDeleted];
-		if(id != -1 && CanRemoveModel(id) && CModelInfo::GetModelInfo(id)->GetNumRefs() == 0 &&
+		if(id != -1 && CModelInfo::GetModelInfo(id) != nil && CanRemoveModel(id) &&
+		   CModelInfo::GetModelInfo(id)->GetNumRefs() == 0 &&
 		   ms_aInfoForModel[id].m_loadState == STREAMSTATE_LOADED)
 			goto found;
 	}
@@ -1912,7 +1920,8 @@ CStreaming::RemoveLeastUsedModel(uint32 excludeMask)
 			continue;
 		streamId = si - ms_aInfoForModel;
 		if(streamId < STREAM_OFFSET_TXD){
-			if (CModelInfo::GetModelInfo(streamId)->GetNumRefs() == 0) {
+			CBaseModelInfo *loadedInfo = CModelInfo::GetModelInfo(streamId);
+			if (loadedInfo == nil || loadedInfo->GetNumRefs() == 0) {
 				RemoveModel(streamId);
 				return true;
 			}
@@ -1944,6 +1953,7 @@ CStreaming::RemoveAllUnusedModels(void)
 
 	for(i = NUM_DEFAULT_MODELS; i < MODELINFOSIZE; i++){
 		if(ms_aInfoForModel[i].m_loadState == STREAMSTATE_LOADED &&
+		    CModelInfo::GetModelInfo(i) != nil &&
 		    CModelInfo::GetModelInfo(i)->GetNumRefs() == 0) {
 			RemoveModel(i);
 			ms_aInfoForModel[i].m_loadState = STREAMSTATE_NOTLOADED;
@@ -1967,7 +1977,8 @@ CStreaming::RemoveLoadedZoneModel(void)
 
 	for(i = 0; i < NUMMODELSPERPEDGROUP; i++){
 		int mi = CPopulation::ms_pPedGroups[ms_currentPedGrp].models[i];
-		if(mi != -1 && ms_bIsPedFromPedGroupLoaded[i] &&
+		if(mi != -1 && CModelInfo::GetModelInfo(mi) != nil &&
+		   ms_bIsPedFromPedGroupLoaded[i] &&
 		   HasModelLoaded(mi) &&  CanRemoveModel(mi) &&
 		   CModelInfo::GetModelInfo(mi)->GetNumRefs() == 0){
 			RemoveModel(CPopulation::ms_pPedGroups[ms_currentPedGrp].models[i]);
@@ -2030,20 +2041,26 @@ CStreaming::AreAnimsUsedByRequestedModels(int32 animId)
 
 	for(si = ms_startRequestedList.m_next; si != &ms_endRequestedList; si = si->m_next){
 		streamId = si - ms_aInfoForModel;
-		if(streamId < STREAM_OFFSET_TXD &&
-		   CModelInfo::GetModelInfo(streamId)->GetAnimFileIndex() == animId)
-			return true;
+		if(streamId < STREAM_OFFSET_TXD){
+			CBaseModelInfo *reqInfo = CModelInfo::GetModelInfo(streamId);
+			if(reqInfo && reqInfo->GetAnimFileIndex() == animId)
+				return true;
+		}
 	}
 
 	for(i = 0; i < 4; i++){
 		streamId = ms_channel[0].streamIds[i];
-		if(streamId != -1 && streamId < STREAM_OFFSET_TXD &&
-		   CModelInfo::GetModelInfo(streamId)->GetAnimFileIndex() == animId)
-			return true;
+		if(streamId != -1 && streamId < STREAM_OFFSET_TXD){
+			CBaseModelInfo *ch0Info = CModelInfo::GetModelInfo(streamId);
+			if(ch0Info && ch0Info->GetAnimFileIndex() == animId)
+				return true;
+		}
 		streamId = ms_channel[1].streamIds[i];
-		if(streamId != -1 && streamId < STREAM_OFFSET_TXD &&
-		   CModelInfo::GetModelInfo(streamId)->GetAnimFileIndex() == animId)
-			return true;
+		if(streamId != -1 && streamId < STREAM_OFFSET_TXD){
+			CBaseModelInfo *ch1Info = CModelInfo::GetModelInfo(streamId);
+			if(ch1Info && ch1Info->GetAnimFileIndex() == animId)
+				return true;
+		}
 	}
 
 	return false;
@@ -2080,7 +2097,7 @@ CStreaming::AddToLoadedVehiclesList(int32 modelId)
 		// find vehicle we can remove
 		for(i = 0; i < MAXVEHICLESLOADED; i++){
 			id = ms_vehiclesLoaded[ms_lastVehicleDeleted];
-			if(id != -1 && CanRemoveModel(id) &&
+			if(id != -1 && CModelInfo::GetModelInfo(id) != nil && CanRemoveModel(id) &&
 			   CModelInfo::GetModelInfo(id)->GetNumRefs() == 0)
 				goto found;
 			ms_lastVehicleDeleted++;
@@ -2126,7 +2143,8 @@ void
 CStreaming::SetModelIsDeletable(int32 id)
 {
 	ms_aInfoForModel[id].m_flags &= ~STREAMFLAGS_DONT_REMOVE;
-	if ((id >= STREAM_OFFSET_TXD && id < STREAM_OFFSET_COL || CModelInfo::GetModelInfo(id)->GetModelType() != MITYPE_VEHICLE) &&
+	if ((id >= STREAM_OFFSET_TXD && id < STREAM_OFFSET_COL || CModelInfo::GetModelInfo(id) == nil ||
+	    CModelInfo::GetModelInfo(id)->GetModelType() != MITYPE_VEHICLE) &&
 	   (ms_aInfoForModel[id].m_flags & STREAMFLAGS_SCRIPTOWNED) == 0){
 		if(ms_aInfoForModel[id].m_loadState != STREAMSTATE_LOADED)
 			RemoveModel(id);
@@ -2138,14 +2156,18 @@ CStreaming::SetModelIsDeletable(int32 id)
 void
 CStreaming::SetModelTxdIsDeletable(int32 id)
 {
-	SetModelIsDeletable(CModelInfo::GetModelInfo(id)->GetTxdSlot() + STREAM_OFFSET_TXD);
+	CBaseModelInfo *txdOwner = CModelInfo::GetModelInfo(id);
+	if(txdOwner == nil)
+		return;
+	SetModelIsDeletable(txdOwner->GetTxdSlot() + STREAM_OFFSET_TXD);
 }
 
 void
 CStreaming::SetMissionDoesntRequireModel(int32 id)
 {
 	ms_aInfoForModel[id].m_flags &= ~STREAMFLAGS_SCRIPTOWNED;
-	if ((id >= STREAM_OFFSET_TXD || CModelInfo::GetModelInfo(id)->GetModelType() != MITYPE_VEHICLE) &&
+	if ((id >= STREAM_OFFSET_TXD || CModelInfo::GetModelInfo(id) == nil ||
+	    CModelInfo::GetModelInfo(id)->GetModelType() != MITYPE_VEHICLE) &&
 	   (ms_aInfoForModel[id].m_flags & STREAMFLAGS_DONT_REMOVE) == 0){
 		if(ms_aInfoForModel[id].m_loadState != STREAMSTATE_LOADED)
 			RemoveModel(id);
@@ -2583,6 +2605,10 @@ CStreaming::GetNextFileOnCd(int32 lastPosn, bool priority)
 
 		// request Txds or anims if necessary
 		if(streamId < STREAM_OFFSET_TXD){
+			if(CModelInfo::GetModelInfo(streamId) == nil){
+				// Queued but never registered; there is nothing to make ready.
+				continue;
+			}
 			int txdId = CModelInfo::GetModelInfo(streamId)->GetTxdSlot();
 			if(TxdNotLoaded(txdId)){
 				ReRequestTxd(txdId);
@@ -2730,6 +2756,13 @@ CStreaming::RequestModelStream(int32 ch)
 
 		// Can't load certain combinations of files together
 		if(streamId < STREAM_OFFSET_TXD){
+			// A request can name an id nothing registered; the native IDEs are
+			// gone, so engine-side preloads still ask for ids no IDE row fills.
+			// GetModelType reads a field at a fixed offset from the pointer, so
+			// a nil model faults at that offset rather than reading as "not a
+			// ped". Leave such an id out of the transfer.
+			if(CModelInfo::GetModelInfo(streamId) == nil)
+				break;
 			if (havePed && CModelInfo::GetModelInfo(streamId)->GetModelType() == MITYPE_PED ||
 			    haveBigFile && CModelInfo::GetModelInfo(streamId)->GetModelType() == MITYPE_VEHICLE ||
 			    TxdNotLoaded(CModelInfo::GetModelInfo(streamId)->GetTxdSlot()) ||
@@ -2812,6 +2845,13 @@ CStreaming::LoadCustomFile(int32 streamId)
 	if(streamId < STREAM_OFFSET_TXD){
 		// Model
 		mi = CModelInfo::GetModelInfo(streamId);
+		// CanServe only says the archive holds the file; the slot itself may
+		// still be empty, because a model is registered by an IDE row and the
+		// native IDEs are no longer read.
+		if(mi == nil){
+			RemoveModel(streamId);
+			return;
+		}
 		animId = mi->GetAnimFileIndex();
 
 		// Txd (including any streamable txdp parent chain) and anim have to be loaded
@@ -2966,7 +3006,19 @@ CStreaming::ProcessLoadingChannel(int32 ch)
 				continue;
 
 			cdsize = ms_aInfoForModel[id].GetCdSize();
-			if(id < STREAM_OFFSET_TXD && CModelInfo::GetModelInfo(id)->GetModelType() == MITYPE_VEHICLE &&
+			// A queued id can name a model nothing registered - the native VC
+			// IDEs are gone, so built-in ids the engine still asks for have no
+			// model info. GetModelType reads a field at a fixed offset from the
+			// pointer, so a nil here faults at that offset instead of standing
+			// out as a null dereference.
+			if(id < STREAM_OFFSET_TXD && CModelInfo::GetModelInfo(id) == nil){
+				// Nothing to convert into; drop the request instead of
+				// dereferencing the missing model below.
+				ms_channel[ch].streamIds[i] = -1;
+				continue;
+			}
+			CBaseModelInfo *channelModel = id < STREAM_OFFSET_TXD ? CModelInfo::GetModelInfo(id) : nil;
+			if(id < STREAM_OFFSET_TXD && channelModel->GetModelType() == MITYPE_VEHICLE &&
 			   ms_numVehiclesLoaded >= desiredNumVehiclesLoaded &&
 			   !RemoveLoadedVehicle() &&
 			   (CanRemoveModel(id) || GetAvailableVehicleSlot() == -1)){
@@ -3829,7 +3881,8 @@ CStreaming::DeleteRwObjectsBehindCamera(size_t mem)
 			if(!CCustomWorld::OwnsModelSlot(id) || !e->bStreamBIGBuilding ||
 			   !e->m_rwObject || e->bImBeingRendered || e->GetIsOnScreen()) continue;
 			e->DeleteRwObject();
-			if(CModelInfo::GetModelInfo(id)->GetNumRefs() == 0 &&
+			CBaseModelInfo *lodInfo = CModelInfo::GetModelInfo(id);
+			if(lodInfo && lodInfo->GetNumRefs() == 0 &&
 			   CanRemoveModel(id) && ms_aInfoForModel[id].m_loadState == STREAMSTATE_LOADED)
 				RemoveModel(id);
 			if(ms_memoryUsed < mem) return;
