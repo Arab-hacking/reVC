@@ -538,7 +538,8 @@ bool CGame::Initialise(void)
 	LoadingScreen("Loading the Game", "Setup streaming", nil);
 #ifdef CUSTOM_MODELS
 	// Index loose custom/anim and custom/data/maps plus selected common.zip
-	// paths. Model/TXD streaming from custom/img mounted earlier in LoadLevel.
+	// paths. Model/TXD streaming from custom/img mounted earlier in
+	// CFileLoader::InitialiseWorld.
 	CCustomModels::Initialise();
 #endif
 	REVC_LOG_INFO("STARTUP LoadInitialVehicles BEGIN");
