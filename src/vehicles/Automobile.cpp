@@ -2323,6 +2323,29 @@ CAutomobile::PreRender(void)
 						false, 0.5f);
 					m_renderLights.m_bRightFront = 1;
 				}
+
+				// SA RenderLights() repeats both calls for eVehicleLightId::SECONDARY,
+				// i.e. the "headlights2" dummy. Models without that dummy leave the
+				// position at zero and the second pass registers nothing (SA returns
+				// early on a zero dummy), so cars with two lamp quads get four lit
+				// lenses and cars with one are unchanged.
+				CVector secondaryPos = mi->m_avDummyPos[DUMMY_LIGHT_FRONT_SECONDARY];
+				if(secondaryPos.x != 0.0f || secondaryPos.y != 0.0f || secondaryPos.z != 0.0f){
+					CVector lightR2 = GetMatrix() * secondaryPos;
+					CVector lightL2 = lightR2;
+					lightL2 -= GetRight()*2.0f*secondaryPos.x;
+
+					if(Damage.GetLightStatus(VEHLIGHT_FRONT_LEFT) == LIGHT_STATUS_OK)
+						CCoronas::RegisterCorona((uintptr)this + 2*(int32)1 + 0, lightColorR, lightColorR, lightColorG, 128,
+							lightL2, size, 150.0f*vehLightMult,
+							CCoronas::TYPE_HEADLIGHT, CCoronas::FLARE_NONE, CCoronas::REFLECTION_SIMPLE,
+							CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, normAngle, false, 0.5f);
+					if(Damage.GetLightStatus(VEHLIGHT_FRONT_RIGHT) == LIGHT_STATUS_OK)
+						CCoronas::RegisterCorona((uintptr)this + 2*(int32)1 + 1, lightColorR, lightColorR, lightColorG, 128,
+							lightR2, size, 150.0f*vehLightMult,
+							CCoronas::TYPE_HEADLIGHT, CCoronas::FLARE_NONE, CCoronas::REFLECTION_SIMPLE,
+							CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, normAngle, false, 0.5f);
+				}
 			}
 		}else{
 			// Behind car
@@ -2347,25 +2370,33 @@ CAutomobile::PreRender(void)
 		lightL -= GetRight()*2.0f*tailLightPos.x;
 
 		// Taillight coronas
+		//
+		// SA CVehicle::DoLightEffectImpl with isFront=false:
+		//   size      = (1 - distToCam/150) * angle * REAR_SIZE_ROT_MULT(0.2)
+		//   intensity = angle * 0.5f + 0.2f        (angle, not sqrt, for tail)
+		//   brake     -> RegisterCorona(..., 128*intensity, 0, 0, 128, ...)
+		//   emission  -> RegisterCorona(..., 96*intensity, 0, 0, 128, ...)
+		// VC used (behindness + 1) * 0.5 for size and 255 alpha, and lit both
+		// sides white while reversing.
 		if(DotProduct(lightR-TheCamera.GetPosition(), GetForward()) > 0.0f){
 			// Behind car
-			float intensity = (behindness + 1.0f)*0.4f;
-			float size = (behindness + 1.0f)*0.5f;
+			float intensity = angle*0.5f + 0.2f;
+			float size = (1.0f - camDist*(1.0f/150.0f)) * angle * 0.2f;
 
 			if(m_fGasPedal < 0.0f){
 				// reversing
 				intensity += 0.4f;
 				size += 0.3f;
 				if(Damage.GetLightStatus(VEHLIGHT_REAR_LEFT) == LIGHT_STATUS_OK)
-					CCoronas::RegisterCorona((uintptr)this + 14, 128*intensity, 128*intensity, 128*intensity, 255,
-						lightL, size, 80.0f*vehLightMult,
-						CCoronas::TYPE_STREAK, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
-						CCoronas::LOSCHECK_OFF, CCoronas::STREAK_ON, angle);
+					CCoronas::RegisterCorona((uintptr)this + 14, (uint8)(128*intensity), 0, 0, 128,
+						lightL, size, 150.0f*vehLightMult,
+						CCoronas::TYPE_HEADLIGHT, CCoronas::FLARE_NONE, CCoronas::REFLECTION_SIMPLE,
+						CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, angle);
 				if(Damage.GetLightStatus(VEHLIGHT_REAR_RIGHT) == LIGHT_STATUS_OK)
-					CCoronas::RegisterCorona((uintptr)this + 15, 128*intensity, 128*intensity, 128*intensity, 255,
-						lightR, size, 80.0f*vehLightMult,
-						CCoronas::TYPE_STREAK, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
-						CCoronas::LOSCHECK_OFF, CCoronas::STREAK_ON, angle);
+					CCoronas::RegisterCorona((uintptr)this + 15, (uint8)(128*intensity), 0, 0, 128,
+						lightR, size, 150.0f*vehLightMult,
+						CCoronas::TYPE_HEADLIGHT, CCoronas::FLARE_NONE, CCoronas::REFLECTION_SIMPLE,
+						CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, angle);
 			}else{
 				if(m_fBrakePedal > 0.0f){
 					intensity += 0.4f;
@@ -2385,15 +2416,15 @@ CAutomobile::PreRender(void)
 							CCoronas::LOSCHECK_OFF, CCoronas::STREAK_ON, angle);
 				}else{
 					if(Damage.GetLightStatus(VEHLIGHT_REAR_LEFT) == LIGHT_STATUS_OK)
-						CCoronas::RegisterCorona((uintptr)this + 14, 128*intensity, 0, 0, 255,
-							lightL, size, 80.0f*vehLightMult,
-							CCoronas::TYPE_STREAK, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
-							CCoronas::LOSCHECK_OFF, CCoronas::STREAK_ON, angle);
+						CCoronas::RegisterCorona((uintptr)this + 14, (uint8)(128*intensity), 0, 0, 128,
+							lightL, size, 150.0f*vehLightMult,
+							CCoronas::TYPE_HEADLIGHT, CCoronas::FLARE_NONE, CCoronas::REFLECTION_SIMPLE,
+							CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, angle);
 					if(Damage.GetLightStatus(VEHLIGHT_REAR_RIGHT) == LIGHT_STATUS_OK)
-						CCoronas::RegisterCorona((uintptr)this + 15, 128*intensity, 0, 0, 255,
-							lightR, size, 80.0f*vehLightMult,
-							CCoronas::TYPE_STREAK, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
-							CCoronas::LOSCHECK_OFF, CCoronas::STREAK_ON, angle);
+						CCoronas::RegisterCorona((uintptr)this + 15, (uint8)(128*intensity), 0, 0, 128,
+							lightR, size, 150.0f*vehLightMult,
+							CCoronas::TYPE_HEADLIGHT, CCoronas::FLARE_NONE, CCoronas::REFLECTION_SIMPLE,
+							CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, angle);
 				}
 			}
 		}else{
@@ -2428,25 +2459,25 @@ CAutomobile::PreRender(void)
 					3.0f, 0.0f, 0.0f, -3.0f, 35, 0, 0, 4.0f);
 		}
 
-		if(this == FindPlayerVehicle() && !alarmOff){
-			if(Damage.GetLightStatus(VEHLIGHT_FRONT_LEFT) == LIGHT_STATUS_OK ||
-			   Damage.GetLightStatus(VEHLIGHT_FRONT_RIGHT) == LIGHT_STATUS_OK)
-				CPointLights::AddLight(CPointLights::LIGHT_DIRECTIONAL, GetPosition(), GetForward(),
-					20.0f, 1.0f, 1.0f, 1.0f,
-					FindPlayerVehicle()->m_vecMoveSpeed.MagnitudeSqr2D() < sq(0.45f) ? CPointLights::FOG_NORMAL : CPointLights::FOG_NONE,
-					false);
-			CVector pos = GetPosition() - 4.0f*GetForward();
-			if(Damage.GetLightStatus(VEHLIGHT_REAR_LEFT) == LIGHT_STATUS_OK ||
-			   Damage.GetLightStatus(VEHLIGHT_REAR_RIGHT) == LIGHT_STATUS_OK) {
-				if(m_fBrakePedal > 0.0f)
-					CPointLights::AddLight(CPointLights::LIGHT_POINT, pos, CVector(0.0f, 0.0f, 0.0f),
-						10.0f, 1.0f, 0.0f, 0.0f,
-						CPointLights::FOG_NONE, false);
-				else
-					CPointLights::AddLight(CPointLights::LIGHT_POINT, pos, CVector(0.0f, 0.0f, 0.0f),
-						7.0f, 0.6f, 0.0f, 0.0f,
-						CPointLights::FOG_NONE, false);
-			}
+		// SA CVehicle::DoVehicleLights: the directional headlight light is an
+		// effect of every lit car, not only the player's, and the brake light at
+		// the rear is added only when the driver is actually on the brakes with
+		// the handbrake off. Ranges and colours are the SA constants (20 / 1,1,1
+		// for the headlights, 10 with 0.1/0.02/0.02 for the brakes).
+		if(Damage.GetLightStatus(VEHLIGHT_FRONT_LEFT) == LIGHT_STATUS_OK ||
+		   Damage.GetLightStatus(VEHLIGHT_FRONT_RIGHT) == LIGHT_STATUS_OK)
+			CPointLights::AddLight(CPointLights::LIGHT_DIRECTIONAL, GetMatrix().GetPosition(), GetForward(),
+				20.0f, 1.0f, 1.0f, 1.0f,
+				m_vecMoveSpeed.MagnitudeSqr2D() < sq(0.45f) ? CPointLights::FOG_NORMAL : CPointLights::FOG_NONE,
+				false);
+
+		if((Damage.GetLightStatus(VEHLIGHT_REAR_LEFT) == LIGHT_STATUS_OK ||
+		    Damage.GetLightStatus(VEHLIGHT_REAR_RIGHT) == LIGHT_STATUS_OK) &&
+		   m_fBrakePedal > 0.0f && !bIsHandbrakeOn && pDriver){
+			CPointLights::AddLight(CPointLights::LIGHT_DIRECTIONAL,
+				GetPosition() + -4.0f*GetForward(), -GetForward(),
+				10.0f, 0.1f, 0.02f, 0.02f,
+				CPointLights::FOG_NONE, false);
 		}
 	}else if(GetStatus() != STATUS_ABANDONED && GetStatus() != STATUS_WRECKED){
 		// Lights off
