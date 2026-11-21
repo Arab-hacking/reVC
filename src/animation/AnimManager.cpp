@@ -899,6 +899,10 @@ CAnimManager::BlendAnimation(RpClump *clump, AssocGroupId groupId, AnimationId a
 	}
 	bool isMovement = requested->IsMovement();
 	bool isPartial = requested->IsPartial();
+	// gta-reversed also keeps facial clips apart from the ones they replace:
+	// toBlendIsIndestructible. Without it a switching facial clip cancels an
+	// ordinary one that shares its partial-ness.
+	bool isFacial = requested->IsFacial();
 	CAnimBlendLink *link, *next;
 	CAnimBlendAssociation *found = nil, *movementAnim = nil;
 	for(link = clumpData->link.next; link; link = next){
@@ -917,11 +921,14 @@ CAnimManager::BlendAnimation(RpClump *clump, AssocGroupId groupId, AnimationId a
 		if(anim->animId == animId && anim->groupId == groupId &&
 		   anim->hierarchy == requested->hierarchy)
 			found = anim;
-		else if(isPartial == anim->IsPartial()){
+		else if(isPartial == anim->IsPartial() && isFacial == anim->IsFacial()){
 			if(anim->blendAmount > 0.0f){
+				// gta-reversed: a->m_BlendDelta = std::min(-0.05f, bd) - the
+				// fade is never slower than 0.05 per second, otherwise a clip
+				// that was almost gone lingered and two poses stayed mixed.
 				float blendDelta = -delta*anim->blendAmount;
 				if(blendDelta < anim->blendDelta || !isPartial)
-					anim->blendDelta = blendDelta;
+					anim->blendDelta = blendDelta < -0.05f ? blendDelta : -0.05f;
 			}else{
 				anim->blendDelta = -1.0f;
 			}

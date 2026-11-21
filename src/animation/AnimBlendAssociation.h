@@ -20,6 +20,7 @@ enum {
 	ASSOC_BLOCK = 0x800,	// unused in assoc description, blocks other anims from being played
 	ASSOC_FRONTAL = 0x1000, // anims that we fall to front
 	ASSOC_DRIVING = 0x2000,	// new in VC
+	ASSOC_FACIAL = 0x8000,	// SA: ANIMATION_FACIAL - the animation is never destroyed if this flag is set
 };
 
 // Anim hierarchy associated with a clump
@@ -58,6 +59,7 @@ public:
 	bool IsRepeating(void) { return !!(flags & ASSOC_REPEAT); }
 	bool IsPartial(void) { return !!(flags & ASSOC_PARTIAL); }
 	bool IsMovement(void) { return !!(flags & ASSOC_MOVEMENT); }
+	bool IsFacial(void) { return !!(flags & ASSOC_FACIAL); }
 	bool HasTranslation(void) { return !!(flags & ASSOC_HAS_TRANSLATION); }
 	bool HasXTranslation(void) { return !!(flags & ASSOC_HAS_X_TRANSLATION); }
 
