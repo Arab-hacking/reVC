@@ -12,6 +12,7 @@
 #include "FileMgr.h"
 #include "cHandlingDataMgr.h"
 #include "CarCtrl.h"
+#include "CarGen.h"
 #include "PedType.h"
 #include "AnimManager.h"
 #include "Game.h"
@@ -1817,6 +1818,7 @@ CFileLoader::LoadScene(const char *filename)
 	enum {
 		NONE,
 		INST,
+		CARS,
 	};
 	char *line;
 	int fd;
@@ -1833,17 +1835,55 @@ CFileLoader::LoadScene(const char *filename)
 
 		if(section == NONE){
 			if(isLine4(line, 'i','n','s','t')) section = INST;
+			else if(isLine4(line, 'c','a','r','s')) section = CARS;
 		}else if(isLine3(line, 'e','n','d')){
 			section = NONE;
 		}else switch(section){
 		case INST:
 			LoadObjectInstance(line);
 			break;
+		case CARS:
+			LoadCarGenerator(line, 0);
+			break;
 		}
 	}
 	CFileMgr::CloseFile(fd);
 
 	debug("Finished loading IPL\n");
+}
+
+// SA CFileLoader::LoadCarGenerator (0x5B4740) / (0x537990).
+//
+// An IPL "cars" line is: x y z angle modelId colour1 colour2 flags alarm lock
+// minDelay maxDelay. The flags word is a bitfield: bit 0 forces the spawn, bit 1
+// lifts the population limit.
+void
+CFileLoader::LoadCarGenerator(const char *line, int32 iplId)
+{
+	CFileCarGenerator carGen;
+	int32 flags;
+	memset(&carGen, 0, sizeof(carGen));
+
+	if(sscanf(line, "%f %f %f %f %d %d %d %d %d %d %d %d",
+	          &carGen.m_vecPosn.x, &carGen.m_vecPosn.y, &carGen.m_vecPosn.z,
+	          &carGen.m_fAngle,
+	          &carGen.m_nModelId,
+	          &carGen.m_nPrimaryColor,
+	          &carGen.m_nSecondaryColor,
+	          &flags,
+	          &carGen.m_nAlarmChance,
+	          &carGen.m_nDoorLockChance,
+	          &carGen.m_nMinDelay,
+	          &carGen.m_nMaxDelay) != 12)
+		return;
+	carGen.m_nFlags = (uint32)flags;
+
+	int32 index = CTheCarGenerators::CreateCarGenerator(carGen.m_vecPosn, carGen.m_fAngle,
+		carGen.m_nModelId, carGen.m_nPrimaryColor, carGen.m_nSecondaryColor,
+		carGen.m_bForceSpawn, carGen.m_nAlarmChance, carGen.m_nDoorLockChance,
+		carGen.m_nMinDelay, carGen.m_nMaxDelay, iplId, carGen.m_bIgnorePopulationLimit);
+	if(index >= 0)
+		CTheCarGenerators::Get(index)->SwitchOn();
 }
 
 void

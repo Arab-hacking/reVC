@@ -38,6 +38,7 @@ public:
 	static void Load2dEffect(const char *line);
 
 	static void LoadScene(const char *filename);
+	static void LoadCarGenerator(const char *line, int32 iplId);
 	static void LoadObjectInstance(const char *line);
 
 	static void ReloadObjectTypes(const char *filename);
