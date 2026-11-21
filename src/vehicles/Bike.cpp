@@ -100,7 +100,7 @@ m_nVehicleSubType = VEHICLE_TYPE_BIKE;
 	m_bike_unused1 = 20.0f;
 	m_bike_unused2 = 0;
 
-	mi->ChooseVehicleColour(m_currentColour1, m_currentColour2);
+	mi->ChooseVehicleColour(m_currentColour1, m_currentColour2, m_currentColour3, m_currentColour4, 1);
 
 	m_fRearForkLength = 0.0f;
 	m_fFrontForkY = 0.0;
@@ -1766,8 +1766,14 @@ CBike::Render(void)
 	CVehicleModelInfo *mi = (CVehicleModelInfo*)CModelInfo::GetModelInfo(GetModelIndex());
 
 	m_nSetPieceExtendedRangeTime = CTimer::GetTimeInMilliseconds() + 3000;
-	mi->SetVehicleColour(m_currentColour1, m_currentColour2);
+	// A bike wears a paintjob and four colours the same way a car does.
+	ApplyRemapTexture();
+	mi->SetVehicleColour(m_currentColour1, m_currentColour2, m_currentColour3, m_currentColour4);
+	if(m_pRemapTexture)
+		mi->SetEditableMaterials();
 	CEntity::Render();
+	if(m_pRemapTexture)
+		mi->RestoreEditableMaterials();
 
 	// SA CBike::Render (0x6BDE20): the headlight cone hangs off the *lean*
 	// matrix, so it tilts with the bike. This is the only place in SA that calls

@@ -25,6 +25,33 @@ enum ModelInfoType
 
 class C2dEffect;
 
+// SA eVehicleMod (BaseModelInfo.h). Which kind of vehicle part a model is,
+// used as the CarMod field of a bought part: it tells the fitting code which
+// panel the part belongs to and which panel it repairs when bought.
+enum eVehicleMod
+{
+	VEHICLE_MOD_UPGRADE_BONNET            = 0,
+	VEHICLE_MOD_UPGRADE_BONNET_LEFT_RIGHT = 1,
+	VEHICLE_MOD_UPGRADE_SPOILER           = 2,
+	VEHICLE_MOD_UPGRADE_WING              = 3,
+	VEHICLE_MOD_UPGRADE_FRONT_BULLBAR     = 4,
+	VEHICLE_MOD_UPGRADE_REAR_BULLBAR      = 5,
+	VEHICLE_MOD_UPGRADE_FRONT_LIGHTS      = 6,
+	VEHICLE_MOD_UPGRADE_ROOF              = 7,
+	VEHICLE_MOD_UPGRADE_NITRO             = 8,
+	VEHICLE_MOD_UPGRADE_HYDRAULICS        = 9,
+	VEHICLE_MOD_UPGRADE_STEREO            = 10,
+
+	VEHICLE_MOD_REPLACEMENT_CHASSIS       = 11,
+	VEHICLE_MOD_REPLACEMENT_WHEEL         = 12,
+	VEHICLE_MOD_REPLACEMENT_EXHAUST       = 13,
+	VEHICLE_MOD_REPLACEMENT_FRONT_BUMPER  = 14,
+	VEHICLE_MOD_REPLACEMENT_REAR_BUMPER   = 15,
+	VEHICLE_MOD_REPLACEMENT_MISC          = 16,
+
+	VEHICLE_MOD_NONE                      = 0xFF
+};
+
 class CBaseModelInfo
 {
 protected:
@@ -37,6 +64,15 @@ protected:
 	int16        m_objectId;
 	uint16       m_refCount;
 	int16        m_txdSlot;
+
+public:
+	// SA CBaseModelInfo::bUseCommonVehicleDictionary / CarMod / bUsesVehDummy.
+	// A model that is a vehicle part rather than a world object: which kind of
+	// part it is (eVehicleMod) and whether it hangs on the dummy of a node
+	// instead of on the chassis slot it names. Set by
+	// SetupVehicleUpgradeFlags from the model's name, exactly as SA does.
+	uint8        m_nVehicleMod;
+	bool         m_bUsesVehDummy;
 
 public:
 	CBaseModelInfo(ModelInfoType type);
@@ -71,6 +107,11 @@ public:
 	void SetTexDictionary(const char *name);
 	void AddTexDictionaryRef(void);
 	void RemoveTexDictionaryRef(void);
+	// SA CAtomicModelInfo::SetupVehicleUpgradeFlags (0x4C54C0). Classifies a
+	// vehicle part model from its name: which eVehicleMod it is and whether it
+	// hangs on a node dummy. Called by CVehicleModelInfo::LoadVehicleUpgrades
+	// for every name carmods.dat lists.
+	void SetupVehicleUpgradeFlags(const char *name);
 	void Init2dEffects(void);
 	void Add2dEffect(C2dEffect *fx);
 	C2dEffect *Get2dEffect(int n);

@@ -523,6 +523,9 @@ bool CGame::Initialise(void)
 	LoadingScreen("Loading the Game", "Add Particles", nil);
 	CWorld::AddParticles();
 	CVehicleModelInfo::LoadVehicleColours();
+	// The tuning table names parts by model name, so it is read after the IDE
+	// files have created every model. SA does the same in CFileLoader.
+	CVehicleModelInfo::LoadVehicleUpgrades();
 	CVehicleModelInfo::LoadEnvironmentMaps();
 	CTheZones::PostZoneCreation();
 	POP_MEMID();
@@ -550,6 +553,9 @@ bool CGame::Initialise(void)
 	// paths. Model/TXD streaming from custom/img mounted earlier in
 	// CFileLoader::InitialiseWorld.
 	CCustomModels::Initialise();
+	// The archive's own carmods.dat fills the tuning slots the game's table left
+	// empty, so a car that only exists in an archive can be tuned as well.
+	CCustomModels::ApplyVehicleUpgradesToModels();
 #endif
 	REVC_LOG_INFO("STARTUP LoadInitialVehicles BEGIN");
 	CStreaming::LoadInitialVehicles();

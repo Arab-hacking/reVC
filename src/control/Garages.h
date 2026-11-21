@@ -92,6 +92,12 @@ public:
 
 	// Number of upgrade slots SA stores per car. A car never has more than this
 	// many parts fitted, and the array is written to the save file verbatim.
+	//
+	// CVehicle::m_anUpgrades is 18 entries wide because it is indexed by
+	// eVehicleMod, which also covers the replacement parts. The fifteen slots
+	// the save format has hold eVehicleMod 0..14 - every part a shop can sell,
+	// hydraulics, nitrous and stereo included - so nothing buyable is lost by
+	// keeping the file's own width.
 	enum { NUM_CAR_MODS = 15 };
 
 	CVector m_vPosn;

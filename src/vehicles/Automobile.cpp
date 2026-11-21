@@ -122,7 +122,7 @@ m_nVehicleSubType = VEHICLE_TYPE_AUTOMOBILE;
 	m_auto_unused1 = 20.0f;
 	m_auto_unused2 = 0;
 
-	mi->ChooseVehicleColour(m_currentColour1, m_currentColour2);
+	mi->ChooseVehicleColour(m_currentColour1, m_currentColour2, m_currentColour3, m_currentColour4, 1);
 
 	bIsVan = !!(m_pHandlingData->m_nModelFlags & VEHICLE_HANDLING_MODEL_IS_VAN);
 	bIsBig = !!(m_pHandlingData->m_nModelFlags & VEHICLE_HANDLING_MODEL_IS_BIG);
@@ -246,6 +246,16 @@ m_nVehicleSubType = VEHICLE_TYPE_AUTOMOBILE;
 	m_fHeightAboveRoad = 0.0f;
 	m_fTraction = 1.0f;
 	m_fTireTemperature = 1.0f;
+
+	// SA CAutomobile::CAutomobile (0x6A3470): a car whose handling record is
+	// flagged as having hydraulics gets them fitted at birth. That flag is what
+	// a lowrider's line in handling.cfg sets, and it is the only way a car
+	// starts out with a working hydraulic system without a shop visit. SA does
+	// the same by calling AddVehicleUpgrade(MI_HYDRAULICS); the flag is set
+	// directly here so the model lookup a missing upgrade model would need is
+	// not in the constructor path.
+	if(m_pHandlingData && (m_pHandlingData->m_nHandlingFlags & VEHICLE_HANDLING_HYDRAULIC_INST))
+		bHydraulicInst = true;
 
 	CColModel *colModel = mi->GetColModel();
 	if(colModel == nil){
@@ -687,6 +697,13 @@ CAutomobile::ProcessControl(void)
 
 	VehicleDamage(0.0f, 0);
 
+	// SA CAutomobile::ProcessControl (0x6A30F0) runs the nitro state machine
+	// every frame a car with a fitted bottle is being driven. The call sits
+	// before the special controls because the bottle can also be vented by a
+	// script while the car is not a player car.
+	if(bNosInst && GetStatus() == STATUS_PLAYER)
+		NitrousControl(0);
+
 	// special control
 	switch(GetModelIndex()){
 	case MI_FIRETRUCK:
@@ -697,9 +714,14 @@ CAutomobile::ProcessControl(void)
 		BlowUpCarsInPath();
 		break;
 	case MI_VOODOO:
+		// SA gates the hydraulics on the fitted part, not on the model: a
+		// Voodoo without them has no control, and any car with them does.
+		// The MI_VOODOO entry stays because the stock car always has them.
 		HydraulicControl();
 		break;
 	default:
+		if(bHydraulicInst)
+			HydraulicControl();
 		if(CVehicle::bCheat3 || carHasNitro){
 			// Make vehicle jump when horn is sounded
 			if(GetStatus() == STATUS_PLAYER && m_vecMoveSpeed.MagnitudeSqr() > sq(0.2f) &&
@@ -2946,7 +2968,18 @@ CAutomobile::Render(void)
 {
 	CVehicleModelInfo *mi = (CVehicleModelInfo*)CModelInfo::GetModelInfo(GetModelIndex());
 
-	mi->SetVehicleColour(m_currentColour1, m_currentColour2);
+	// The car's paintjob goes onto the model's editable materials for this
+	// frame only: ApplyRemapTexture publishes the texture the model's material
+	// path swaps in, and the model restores the material's own texture after the
+	// clump has been drawn. The four colours are applied together because SA
+	// paints four material lists, not two.
+	ApplyRemapTexture();
+	mi->SetVehicleColour(m_currentColour1, m_currentColour2, m_currentColour3, m_currentColour4);
+	// Swap the body texture for the paintjob. The model is shared by every car
+	// of this model, so this is bracketed: the materials are put back right
+	// after the clump has been drawn, at the end of this function.
+	if(m_pRemapTexture)
+		mi->SetEditableMaterials();
 
 	if(IsRealHeli()){
 		RpAtomic *atomic = nil;
@@ -2995,6 +3028,11 @@ CAutomobile::Render(void)
 			RpAtomicRender((RpAtomic*)GetFirstObject(m_aCarNodes[CAR_WHEEL_LM]));
 	}else
 		CEntity::Render();
+
+	// The clump is drawn; give the shared model its own textures back so the
+	// next car of the same model does not inherit this one's paintjob.
+	if(m_pRemapTexture)
+		mi->RestoreEditableMaterials();
 }
 
 int32
@@ -6303,3 +6341,138 @@ CAutomobile::Load(uint8*& buf)
 	SetupDamageAfterLoad();
 }
 #endif
+
+// ---------------------------------------------------------------------------
+// SA nitrous (CAutomobile::NitrousControl / DoNitroEffect / StopNitroEffect)
+// ---------------------------------------------------------------------------
+//
+// The nitro upgrade is not geometry: fitting it sets bNosInst and fills the
+// bottle. While the bottle has charge and the driver holds the fire key the car
+// gets an extra push along its forward axis and a flame out of the exhaust
+// dummies. The bottle counts down and refills when the key is released, which is
+// how SA's m_nNitroBoosts behaves: 101 is full, 0 is empty and the upgrade is
+// then dropped.
+
+// SA CAutomobile::DoNitroEffect (0x6A3E60).
+void
+CAutomobile::DoNitroEffect(float power)
+{
+	if(power <= 0.0f)
+		return;
+
+	CVehicleModelInfo *mi = (CVehicleModelInfo*)CModelInfo::GetModelInfo(GetModelIndex());
+	if(mi == nil)
+		return;
+
+	// Two exhaust flames, one per exhaust dummy, thrown backwards out of the
+	// car. The dummies are the same ones the exhaust smoke uses, so a car with
+	// only one exhaust gets one flame.
+	for(int32 i = 0; i < 2; i++){
+		CVector dummy = mi->m_positions[CAR_POS_EXHAUST];
+		if(i == 1 && !mi->m_vehicleStruct.IsDummyActive(DUMMY_EXHAUST_SECONDARY))
+			break;
+		if(i == 1)
+			dummy = mi->m_vehicleStruct.m_avDummyPos[DUMMY_EXHAUST_SECONDARY];
+		if(dummy == CVector(0.0f, 0.0f, 0.0f))
+			continue;
+
+		CVector pos = GetMatrix() * dummy;
+		// The flame is pushed out along the car's own forward axis and inherits
+		// the car's speed so it trails behind at high speed.
+		CVector vel = -GetForward() * (2.0f + 4.0f * power) + m_vecMoveSpeed;
+		CParticle::AddParticle(PARTICLE_CARFLAME, pos, vel, nil, power);
+	}
+}
+
+// SA CAutomobile::StopNitroEffect (0x6A3EE0).
+//
+// No particle system is kept alive between frames here: the flame is spawned
+// anew every frame the bottle is open, so stopping is only a matter of not
+// spawning any more. The function stays because the control code calls it in
+// the places SA does, and it is where a future trail system would be shut down.
+void
+CAutomobile::StopNitroEffect(void)
+{
+}
+
+// SA CAutomobile::NitrousControl (0x6A3EA0).
+void
+CAutomobile::NitrousControl(int8 boost)
+{
+	// SA asks the driver's own pad. reVC's pad object is per player slot and
+	// the vehicle knows which slot its driver uses, so the lookup goes through
+	// the world's player list the same way the rest of the fork does.
+	CPad *pad = nil;
+	if(GetStatus() == STATUS_PLAYER && pDriver && pDriver->IsPlayer())
+		pad = CPad::GetPad(CWorld::PlayerInFocus);
+
+	if(boost > 0){
+		// Bought a bottle: fill it and open the valve.
+		bNosInst = true;
+		m_fTireTemperature = 1.0f;
+		m_nNitroBoosts = (uint8)boost;
+		StopNitroEffect();
+		return;
+	}
+
+	if(boost < 0){
+		// Bottle removed or the upgrade taken off.
+		bNosInst = false;
+		m_fTireTemperature = 1.0f;
+		m_nNitroBoosts = 0;
+		StopNitroEffect();
+		return;
+	}
+
+	// boost == 0: the per-frame update.
+	//
+	// m_fTireTemperature is SA's own reuse of the tyre heat field as the nitro
+	// state machine: 1.0 means "idle, bottle full", a small negative value means
+	// "firing", and it climbs back to 1.0 once the key is released.
+	if(m_fTireTemperature == 1.0f && m_nNitroBoosts > 0){
+		if(GetStatus() != STATUS_PHYSICS){
+			if(pad == nil || !pad->GetCarGunFired() || pad->GetLookLeft() ||
+			   pad->GetLookRight() || pad->GetLookBehindForCar()){
+				StopNitroEffect();
+				return;
+			}
+		}
+
+		m_fTireTemperature = -0.000001f;
+
+		if(m_nNitroBoosts >= 101){
+			// Full bottle: vent it rather than fire, which is what SA does so a
+			// freshly bought bottle does not instantly burn.
+			StopNitroEffect();
+			return;
+		}
+
+		m_nNitroBoosts -= 1;
+		StopNitroEffect();
+		return;
+	}
+
+	if(m_fTireTemperature >= 0.0f){
+		// Refilling. The less throttle is applied the faster it refills, and
+		// the flame shrinks as the bottle comes back up.
+		float a = Max(0.25f, 1.0f - m_fGasPedal);
+		float b = a * (CTimer::GetTimeStep() / 100.0f) + m_fTireTemperature;
+		m_fTireTemperature = Min(1.0f, b);
+		float power = (1.0f - m_fTireTemperature) / 2.0f;
+		DoNitroEffect(power);
+		return;
+	}
+
+	// Firing: the bottle drains, and when it runs dry the upgrade comes off,
+	// which is what makes a nitro bottle a consumable in SA.
+	m_fTireTemperature -= CTimer::GetTimeStep() / 1000.0f;
+	if(m_fTireTemperature < -1.0f){
+		m_fTireTemperature = 0.000001f;
+		if(m_nNitroBoosts == 0){
+			bNosInst = false;
+			RemoveUpgrade(NUM_VEHICLE_UPGRADES - 1);	// SA's UPGRADE_NITRO slot
+			m_fTireTemperature = 1.0f;
+		}
+	}
+	DoNitroEffect(m_fGasPedal <= 0.0f ? 0.5f : Abs(m_fGasPedal) / 2.0f + 0.5f);
+}

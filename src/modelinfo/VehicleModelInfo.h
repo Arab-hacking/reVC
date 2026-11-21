@@ -20,6 +20,32 @@ enum {
 	NUM_VEHICLE_COLOURS = 8,
 };
 
+// SA eVehicleUpgradePosn (VehicleModelInfo.h). The index of an attach slot of
+// a vehicle model: the slot tells CVehicle·where a bought part hangs and what
+// it is replaced with when the panel it sits on takes damage. The order is
+// SA's and is baked into the model data, so it is not renumbered here.
+enum eVehicleUpgradePosn
+{
+	UPGRADE_BONNET,
+	UPGRADE_BONNET_LEFT,
+	UPGRADE_BONNET_RIGHT,
+	UPGRADE_BONNET_DAM,
+	UPGRADE_BONNET_LEFT_DAM,
+	UPGRADE_BONNET_RIGHT_DAM,
+	UPGRADE_SPOILER,
+	UPGRADE_SPOILER_DAM,
+	UPGRADE_WING_LEFT,
+	UPGRADE_WING_RIGHT,
+	UPGRADE_FRONTBULLBAR,
+	UPGRADE_BACKBULLBAR,
+	UPGRADE_LIGHTS,
+	UPGRADE_LIGHTS_DAM,
+	UPGRADE_ROOF,
+	UPGRADE_NITRO,
+
+	NUM_UPGRADE_POSNS
+};
+
 enum {
 	ATOMIC_FLAG_NONE	= 0x0,
 	ATOMIC_FLAG_OK		= 0x1,
@@ -34,6 +60,10 @@ enum {
 	ATOMIC_FLAG_REARDOOR	= 0x200,
 	ATOMIC_FLAG_FRONTDOOR	= 0x400,
 	ATOMIC_FLAG_NOCULL	= 0x800,
+	// An atomic that is part of a bought upgrade. Set on the model info of the
+	// part when carmods.dat names it, so the fitting code can tell a fitted
+	// part from the car's own geometry when it walks the clump.
+	ATOMIC_FLAG_UPGRADE	= 0x1000,
 };
 
 // SA eVehicleDummy (VehicleModelInfo.h). The clump model loader fills
@@ -121,10 +151,16 @@ public:
 
 	// One entry of the upgrade table: where the part of that slot attaches and
 	// how far it may be displaced when it is damaged.
+	//
+	// m_nParentComponentId is SA's field - the eCarNodes the part hangs off,
+	// or -1 when this model has no such slot. m_nodeIndex/m_vecOffset are the
+	// reVC view of the same thing: the fitting code needs the node id and the
+	// offset from it, and the two are filled from the model's own frames.
 	struct UpgradePosnDesc
 	{
-		int32 m_nodeIndex;   // eCarNodes the part hangs off, or CAR_NODE_NONE
-		CVector m_vecOffset; // offset from that node in model space
+		int32 m_nodeIndex;         // eCarNodes the part hangs off, or CAR_NODE_NONE
+		CVector m_vecOffset;       // offset from that node in model space
+		int32 m_nParentComponentId; // SA name for the same node, -1 = no slot
 	};
 
 public:
@@ -139,10 +175,26 @@ public:
 	// SA helpers.
 	bool IsDummyActive(int32 dummy) const { return m_avDummyPos[dummy].x != 0.0f || m_avDummyPos[dummy].y != 0.0f || m_avDummyPos[dummy].z != 0.0f; }
 	bool IsComponentDamageable(int32 nodeIndex) const { return m_nMaskComponentsDamagable & (1 << nodeIndex); }
+	bool IsUpgradeSlotUsed(eVehicleUpgradePosn slot) const
+	{
+		return slot >= 0 && slot < NUM_UPGRADES && m_aUpgrades[slot].m_nParentComponentId >= 0;
+	}
 };
 
 // SA's plate texts are at most eight characters (see CCustomCarPlateMgr).
 enum { MAX_PLATE_TEXT = 8 };
+
+// Sizes of the per-model tuning tables, SA's own numbers.
+enum {
+	NUM_MODEL_UPGRADES = 18, // 15 buyable slots + hydraulics + stereo + spare
+	// carmods.dat lists up to fifteen parts per vehicle; hydraulics and stereo
+	// follow them at fixed slots, which is what SA's loader does.
+	NUM_VEHICLE_UPGRADE_SLOTS = 15,
+	NUM_MODEL_REMAPS   = 4,  // a model wears at most four paintjobs
+	NUM_CURRENT_COLORS = 4,  // SA renders cars with four colour slots
+	NUM_WHEELS         = 4,  // SA numbers wheel sets, not individual wheels
+	NUM_WHEEL_UPGRADES = 15  // wheel models per set (one per rim design)
+};
 
 class CVehicleModelInfo : public CClumpModelInfo
 {
@@ -182,6 +234,12 @@ public:
 	uint8 m_lastColorVariation;
 	uint8 m_currentColour1;
 	uint8 m_currentColour2;
+	// SA CVehicleModelInfo::m_nCurrentTertiaryColor / QuaternaryColor. The
+	// third and fourth material slots the four-colour carcols scheme paints;
+	// -1 means "this model has no such slot", the same "not applied yet"
+	// marker the first two use.
+	uint8 m_currentColour3;
+	uint8 m_currentColour4;
 	RpAtomic *m_comps[6];
 	// This is stupid, CClumpModelInfo already has it!
 	union {
@@ -217,11 +275,64 @@ public:
 	// not scale it again.
 	bool m_bSAWheelMesh;
 
+	// SA CVehicleModelInfo::m_anUpgrades. The parts this model accepts, one
+	// model id per slot of the carmods.dat `mods` list, in file order. The
+	// first fifteen entries are the buyable slots (bonnet, bumper, exhaust,
+	// ...), then hydraulics and stereo are appended for every car, exactly as
+	// the SA loader does. -1 means "the model has nothing in this slot".
+	int16 m_anUpgrades[NUM_MODEL_UPGRADES];
+	// SA CVehicleModelInfo::m_anRemapTxds. The paintjob texture dictionaries
+	// this model can wear, in the order remap files were assigned to it. -1
+	// terminates the list, so the vehicle's remap index is a position here.
+	int16 m_anRemapTxds[NUM_MODEL_REMAPS];
+	// How many of m_anUpgrades were actually filled from the file. hydraulics
+	// and stereo are always the last two, but they only count when the model
+	// exists in the model table at all.
+	int32 m_nNumUpgrades;
+
 	static int8 ms_compsToUse[2];
 	static int8 ms_compsUsed[2];
 	static RwRGBA ms_vehicleColourTable[256];
 	static RwTexture *ms_colourTextureTable[256];
 	static RwObjectNameIdAssocation *ms_vehicleDescs[NUM_VEHICLE_TYPES];
+
+	// SA CVehicleModelInfo::CLinkedUpgradeList. Two upgrade models that have to
+	// be streamed together because the car cannot show one without the other:
+	// a left wing panel and its right twin, a bumper and the matching exhaust.
+	// The list is built from the `link` section of carmods.dat.
+	class CLinkedUpgradeList
+	{
+	public:
+		static constexpr int32 NUM_LINKS = 30;
+
+		int16 m_anUpgrade1[NUM_LINKS];
+		int16 m_anUpgrade2[NUM_LINKS];
+		uint32 m_nLinksCount;
+
+		CLinkedUpgradeList(void) : m_nLinksCount(0)
+		{
+			for(int32 i = 0; i < NUM_LINKS; i++){
+				m_anUpgrade1[i] = -1;
+				m_anUpgrade2[i] = -1;
+			}
+		}
+		// SA CVehicleModelInfo::CLinkedUpgradeList::AddUpgradeLink (0x4C74B0).
+		void AddUpgradeLink(int16 upgrade1, int16 upgrade2);
+		// SA ...::FindOtherUpgrade (0x4C74D0). The other end of a link, or -1.
+		// Searched back to front: a later line overrides an earlier one.
+		int16 FindOtherUpgrade(int16 upgrade) const;
+	};
+
+	static CLinkedUpgradeList ms_linkedUpgrades;
+
+	// SA CVehicleModelInfo state used while a vehicle is being drawn: the four
+	// colour slots of the material lists, the paintjob texture currently being
+	// applied, and the wheel upgrade / frame tables the wheel code reads back.
+	static uint8 ms_currentCol[NUM_CURRENT_COLORS];
+	static RwTexture *ms_pRemapTexture;
+	static int16 ms_numWheelUpgrades[NUM_WHEELS];
+	static int16 ms_upgradeWheels[NUM_WHEELS][NUM_WHEEL_UPGRADES];
+	static int32 ms_wheelFrameIDs[NUM_WHEELS];
 
 	// m_nVehicleType is a model-info field, so a corrupt or not-yet-initialised
 	// entry can hold VEHICLE_TYPE_IGNORE (-1) or anything else. Both hierarchy
@@ -259,6 +370,58 @@ public:
 	uint16 GetRefCount(void) const { return m_refCount; }
 	int GetAnimFileIndex(void) { return m_animFileIndex; }
 
+	// ---- Tuning (SA CVehicleModelInfo upgrade API) ----------------------
+	//
+	// SA CVehicleModelInfo::IsUpgradeAvailable (0x4C8200). True when this
+	// model has geometry for the given upgrade slot, i.e. the slot was seen in
+	// the model's own hierarchy and the parent node is known.
+	bool IsUpgradeAvailable(eVehicleUpgradePosn upgrade) const
+	{
+		return m_vehicleStruct.IsUpgradeSlotUsed(upgrade);
+	}
+
+	// SA CVehicleModelInfo::AddWheelUpgrade (0x4C8700). One wheel model is
+	// appended to the set carmods.dat assigns it to. There is no bound check
+	// in SA either, but the table is 15 entries per set and the shipped file
+	// never exceeds it, so an over-long line is dropped instead of overrunning.
+	static void AddWheelUpgrade(int32 wheelSetNumber, int32 modelId);
+	// SA CVehicleModelInfo::GetWheelUpgrade (0x4C8750).
+	static int32 GetWheelUpgrade(int32 wheelSetNumber, int32 wheelUpgradeNumber);
+	// SA CVehicleModelInfo::GetNumWheelUpgrades (0x4C8740).
+	static int32 GetNumWheelUpgrades(int32 wheelSetNumber);
+
+	// SA CVehicleModelInfo::GetNumRemaps (0x4C86B0): how many paintjobs the
+	// model can wear, counted up to the first -1 entry.
+	int32 GetNumRemaps(void) const;
+	// SA CVehicleModelInfo::AddRemap (0x4C86D0): remember a remap texture
+	// dictionary slot for this model.
+	void AddRemap(int32 txd);
+	// SA CVehicleModelInfo::AssignRemapTxd (0x4C9360). A file called
+	// `remap<name><n>.txd` belongs to the vehicle whose model name is
+	// `<name>`; the trailing digits are the paintjob number.
+	static void AssignRemapTxd(const char *name, int16 txdSlot);
+
+	// SA CVehicleModelInfo::LoadVehicleUpgrades (0x5B65A0). Reads
+	// DATA\CARMODS.DAT: the `mods` section fills m_anUpgrades, `wheel` fills
+	// the wheel sets, `link` fills ms_linkedUpgrades. Called once, after the
+	// IDE files have created every model, because it resolves model names to
+	// ids.
+	static void LoadVehicleUpgrades(void);
+
+	// SA CVehicleModelInfo::SetVehicleColour (0x4C84B0) publishes the colour
+	// of the car being drawn into ms_currentCol, which the material callback
+	// reads. This overload only does the publishing half; the material
+	// recolour half is the two/four-argument version below.
+	static void SetCurrentColours(uint8 c1, uint8 c2, uint8 c3, uint8 c4);
+
+	// The four-colour equivalents of the two-colour list. A model that never
+	// had third/fourth slots keeps them empty, so these are safe on VC data.
+	void GetCurrentColours(uint8 &c1, uint8 &c2, uint8 &c3, uint8 &c4) const
+	{
+		c1 = m_currentColour1; c2 = m_currentColour2;
+		c3 = m_currentColour3; c4 = m_currentColour4;
+	}
+
 	static RwFrame *CollapseFramesCB(RwFrame *frame, void *data);
 	// instantiates the separate VC wheel model on a wheel dummy frame
 	// (used by VC models and by SA models that carry no wheel mesh at all)
@@ -268,6 +431,12 @@ public:
 	// mesh of such models onto all four wheel dummies
 	void CloneSAWheelMeshes(RwFrame **wheelFrames, int32 numWheels);
 	void PreprocessSACarHierarchy(void);
+	// SA CVehicleModelInfo::PreprocessHierarchy (0x4C8E60), upgrade half: for
+	// every eVehicleUpgradePosn this model has a frame for, remember the node
+	// the part hangs on and the offset from it. Called once per model from
+	// PreprocessSACarHierarchy, so the fitting code has somewhere to attach a
+	// bought part without walking the clump again.
+	void SetupUpgradeSlots(void);
 	// radius of a wheel mesh around its own origin (SA wheels are modelled at
 	// their real size, so this is the radius the physics has to use)
 	static float GetWheelMeshRadius(RpAtomic *atomic);
@@ -307,9 +476,45 @@ public:
 	static RpMaterial *GetEditableMaterialListCB(RpMaterial *material, void *data);
 	static RpAtomic *GetEditableMaterialListCB(RpAtomic *atomic, void *data);
 	void FindEditableMaterialList(void);
+
+	// Paintjob support. While a car with a remap texture is being drawn, its
+	// body materials are pointed at ms_pRemapTexture and put back afterwards;
+	// SA does exactly this with SetEditableMaterials/RestoreEditableMaterials
+	// and keeps the restore entries on the stack. reVC keeps the list of
+	// swapped materials in the model, because a Render is not always bracketed
+	// by the same call (the sorted alpha list may draw a car later).
+	//
+	// A body material is one whose texture name starts with '#' - SA's marker
+	// for "this material wears the car's paintjob, not a fixed image".
+	void SetEditableMaterials(void);
+	void RestoreEditableMaterials(void);
+	static RpMaterial *SetEditableMaterialsCB(RpMaterial *material, void *data);
+	static RpAtomic *SetEditableMaterialsAtomicCB(RpAtomic *atomic, void *data);
+
+	// SA CVehicleModelInfo::SetRenderPipelines (0x4C8900). The environment-map
+	// pipeline caches the material's texture, so a remap swap has to re-setup
+	// the pipeline or the car keeps the old skin.
+	void SetRenderPipelines(void);
+
+	// The materials whose texture this model swapped for a paintjob, and the
+	// texture each of them had. A fixed array rather than a vector: a car has a
+	// bounded number of body materials and this is walked every frame.
+	struct RemapEntry
+	{
+		RpMaterial *material;
+		RwTexture *texture;
+	};
+	enum { NUM_REMAP_ENTRIES = 48 };
+	RemapEntry m_aRemapEntries[NUM_REMAP_ENTRIES];
+	int32 m_nNumRemapEntries;
 	void SetVehicleColour(uint8 c1, uint8 c2);
 	void SetVehicleColour(uint8 c1, uint8 c2, uint8 c3, uint8 c4);
 	void ChooseVehicleColour(uint8 &col1, uint8 &col2);
+	// SA CVehicleModelInfo::ChooseVehicleColour (0x4C8500) takes four channels
+	// and a variation shift. carcols.dat lines for SA cars carry two pairs per
+	// line; a car whose line has only one pair repeats it, which is why the
+	// third and fourth fall back to the first two instead of staying black.
+	void ChooseVehicleColour(uint8 &col1, uint8 &col2, uint8 &col3, uint8 &col4, int32 variationShift);
 	void AvoidSameVehicleColour(uint8 *col1, uint8 *col2);
 	static void LoadVehicleColours(void);
 	static void DeleteVehicleColourTextures(void);

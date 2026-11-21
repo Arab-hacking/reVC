@@ -63,6 +63,21 @@ enum eCarNodes
 	NUM_CAR_NODES = 25
 };
 
+// SA CVehicle::NUM_VEHICLE_UPGRADES. The buyable slots a car can wear: bonnet,
+// bumper, exhaust, spoiler, the four wheel sets, hydraulics, nitro, stereo and
+// the rest of the carmods.dat list. ms_upgradeWheels has one model per rim
+// design and CVehicle::m_anUpgrades stores the model fitted to each slot.
+//
+// SA numbers slots by eVehicleMod, which has seventeen values (the eleven
+// upgrades plus six replacement parts), and m_anUpgrades is 15 entries wide
+// because hydraulics and stereo arrive as flags rather than as model ids. This
+// fork fits every part by model id, so the array is 18 entries - the same width
+// as the per-model table CVehicleModelInfo keeps - and the two extra slots hold
+// hydraulics and stereo.
+enum {
+	NUM_VEHICLE_UPGRADES = 18
+};
+
 enum {
 	CAR_DOOR_FLAG_UNKNOWN = 0x0,
 	CAR_DOOR_FLAG_LF = 0x1,
@@ -188,6 +203,12 @@ public:
 	CAutoPilot AutoPilot;
 	uint8 m_currentColour1;
 	uint8 m_currentColour2;
+	// SA CVehicle::m_nTertiaryColor / m_nQuaternaryColor. The third and fourth
+	// paint channels carcols.dat can give a car; a car whose line names only two
+	// colours repeats the first pair, so the extra material slots stay in step
+	// with the two the model has always painted.
+	uint8 m_currentColour3;
+	uint8 m_currentColour4;
 	int8 m_aExtras[2];
 	int16 m_nAlarmState;
 	int16 m_nRouteSeed;
@@ -376,6 +397,93 @@ public:
 	// shares its model's plate texture. Owned by the vehicle and destroyed with
 	// it, because a generated plate is per-vehicle while the model is shared.
 	RwTexture *m_pCustomCarPlate;
+
+	// ---- Tuning (SA CVehicle upgrade API) --------------------------------
+	//
+	// SA CVehicle::m_anUpgrades. One model id per slot NUM_VEHICLE_UPGRADES,
+	// -1 when the slot is empty. Written by AddVehicleUpgrade and by the
+	// garage when a stored car is put back together; SetupUpgradesAfterLoad
+	// replays it after a save is loaded, because the atomics themselves are
+	// not saved.
+	int16 m_anUpgrades[NUM_VEHICLE_UPGRADES];
+	// SA CVehicle::m_nNitroBoosts. Nitro bottles left, counting down from 101
+	// (SA's "full" marker) as the bottle is used; 0 means the tank is empty.
+	uint8 m_nNitroBoosts;
+	// SA CVehicle::vehicleFlags.bHydraulicInst / bNosInst / bUpgradedStereo.
+	// The functional half of the three upgrades that are not geometry: they
+	// stay set when the part is fitted and are what the driving code checks.
+	uint8 bHydraulicInst : 1;
+	uint8 bNosInst : 1;
+	uint8 bUpgradedStereo : 1;
+	// SA CVehicle::m_nRemapTxd / m_nPreviousRemapTxd. The paintjob texture
+	// dictionary asked for and the one currently applied. They differ for the
+	// one frame a swap takes, which is why both exist.
+	int16 m_nRemapTxd;
+	int16 m_nPreviousRemapTxd;
+	// SA CVehicle::m_pRemapTexture. The first texture of the applied paintjob
+	// dictionary, published to CVehicleModelInfo::ms_pRemapTexture while this
+	// vehicle is drawn.
+	RwTexture *m_pRemapTexture;
+
+	// SA CVehicle::AddUpgrade replaces a wheel's mesh rather than adding a
+	// second rim: the car's own wheel atomics are taken out of the clump (which
+	// stops them being drawn but keeps them alive) and put back when the rims
+	// come off. One entry per wheel node.
+	enum { NUM_WHEEL_SLOTS = 4 };
+	RpAtomic *m_apHiddenWheelAtomics[NUM_WHEEL_SLOTS];
+
+	// The atomic of a fitted part for the given eVehicleMod slot, or nil.
+	// SA keeps the same information in CVisibilityPlugins::GetModelInfo on the
+	// atomic; reVC stamps the slot and model into the atomic id instead.
+	RpAtomic *FindUpgradeAtomic(int32 slot);
+
+	// SA CVehicle::AddVehicleUpgrade (0x6E3290). Fit a bought part by model id.
+	void AddVehicleUpgrade(int32 modelId);
+	// SA CVehicle::RemoveVehicleUpgrade (0x6DF930). Take the part of the same
+	// slot off again.
+	void RemoveVehicleUpgrade(int32 upgradeModelIndex);
+	// SA CVehicle::AddUpgrade (0x6DFA20). Attach one fitment of a part: the
+	// model to instantiate and the eVehicleMod slot it belongs to.
+	void AddUpgrade(int32 modelIndex, int32 upgradeIndex);
+	// SA CVehicle::RemoveUpgrade (0x6D3630). Remove every atomic carrying the
+	// given upgrade id.
+	void RemoveUpgrade(int32 upgradeId);
+	// SA CVehicle::RemoveAllUpgrades (0x6D3AB0).
+	void RemoveAllUpgrades(void);
+	// SA CVehicle::GetUpgrade (0x6D3650). The model id fitted to a slot, or -1.
+	// The three functional upgrades report the model SA reports for them,
+	// because their geometry is a placeholder the driving code never looks at.
+	int32 GetUpgrade(int32 upgradeId);
+	// SA CVehicle::AddReplacementUpgrade (0x6D3830). Swap one of the car's own
+	// parts for a bought one that replaces it (bumper, exhaust, chassis).
+	void AddReplacementUpgrade(int32 modelIndex, int32 nodeId);
+	// SA CVehicle::RemoveReplacementUpgrade (0x6D39E0). Put the car's own part
+	// back.
+	void RemoveReplacementUpgrade(int32 frameId);
+	// SA CVehicle::GetReplacementUpgrade (0x6D3A50).
+	int32 GetReplacementUpgrade(int32 nodeId);
+	// SA CVehicle::SetupUpgradesAfterLoad (0x6E3400). Replay m_anUpgrades; the
+	// slots are consumed as they are fitted.
+	void SetupUpgradesAfterLoad(void);
+	// True when this vehicle has the functional hydraulics upgrade - SA reaches
+	// the same answer through m_aUpgrades, this fork keeps a flag as well
+	// because the driving code asks once per frame.
+	bool HasHydraulics(void) const { return bHydraulicInst; }
+	// True when this vehicle can be driven on its nitro bottles.
+	bool HasNitro(void) const { return bNosInst; }
+
+	// SA CVehicle::GetRemapIndex (0x6D0B70). Position of the applied paintjob
+	// in the model's remap list, or -1.
+	int32 GetRemapIndex(void);
+	// SA CVehicle::SetRemapTexDictionary (0x6D0BC0).
+	void SetRemapTexDictionary(int32 txdId);
+	// SA CVehicle::SetRemap (0x6D0C00). Paintjob by index into the model's list;
+	// -1 removes the paintjob.
+	void SetRemap(int32 remapIndex);
+	// Applies the pending remap texture to the model's editable materials and
+	// hands it to the model for the duration of one Render. Called by the
+	// automobile render path, and again when the texture was swapped.
+	void ApplyRemapTexture(void);
 
 	// SA CVehicle::CustomCarPlate_TextureCreate (0x6D10E0). Build this
 	// vehicle's own plate texture if its model is carrying a pending plate

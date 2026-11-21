@@ -71,7 +71,7 @@ m_nVehicleSubType = VEHICLE_TYPE_BOAT;
 	m_pHandlingData = mod_HandlingManager.GetVehiclePointer((uint32)minfo->m_handlingId);
 	m_pFlyingHandlingData = mod_HandlingManager.GetFlyingPointer((uint32)minfo->m_handlingId);
 	m_pBoatHandlingData = mod_HandlingManager.GetBoatPointer((uint32)minfo->m_handlingId);
-	minfo->ChooseVehicleColour(m_currentColour1, m_currentColour2);
+	minfo->ChooseVehicleColour(m_currentColour1, m_currentColour2, m_currentColour3, m_currentColour4, 1);
 
 	m_fMass = m_pHandlingData->m_fMass;
 	m_fTurnMass = m_pHandlingData->m_fTurnMass / 2.0f;

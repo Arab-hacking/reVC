@@ -126,6 +126,16 @@ public:
 	void FireTruckControl(void);
 	void TankControl(void);
 	void HydraulicControl(void);
+	// SA CAutomobile::NitrousControl (0x6A3EA0). Runs the nitro bottle: reads
+	// the fire key while the car is driving, spends the bottle, and pushes the
+	// car. boost > 0 fills the bottle, boost < 0 empties it, 0 is the per-frame
+	// update the control loop calls.
+	void NitrousControl(int8 boost);
+	// SA CAutomobile::DoNitroEffect (0x6A3E60). The visual half: an exhaust
+	// flame out of the two exhaust dummy positions, scaled by power.
+	void DoNitroEffect(float power);
+	// SA CAutomobile::StopNitroEffect (0x6A3E60). Ends the flame.
+	void StopNitroEffect(void);
 	void VehicleDamage(float impulse, uint16 damagedPiece);
 	void ProcessBuoyancy(void);
 	void DoDriveByShootings(void);

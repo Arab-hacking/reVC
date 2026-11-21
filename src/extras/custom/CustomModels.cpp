@@ -5043,6 +5043,55 @@ CCustomModels::ReleaseVehicleUpgradeInstance(RwObject *object)
 	vehicleUpgradeInstances.erase(it);
 }
 
+// Fills CVehicleModelInfo::m_anUpgrades from the archive's carmods.dat.
+//
+// The BR table's `slot` column is the eVehicleUpgradePosn a part belongs to and
+// `model` is the part's own model id, which is exactly what the SA table stores
+// per vehicle. A part the game's own DATA\CARMODS.DAT already put in that slot
+// is left alone - the game's table wins - so an archive can add cars and rims
+// without silently repainting the stock catalogue.
+void
+CCustomModels::ApplyVehicleUpgradesToModels(void)
+{
+	if(!vehicleUpgradesRead && !LoadVehicleUpgrades())
+		return;
+
+	int32 applied = 0, skipped = 0;
+	for(size_t i = 0; i < vehicleUpgrades.size(); i++){
+		const brvehicle::Upgrade &u = vehicleUpgrades[i];
+		if(u.vehicle < 0 || u.vehicle >= MODELINFOSIZE)
+			continue;
+		if(u.model < 0 || u.model >= MODELINFOSIZE)
+			continue;
+
+		CBaseModelInfo *base = CModelInfo::GetModelInfo(u.vehicle);
+		if(base == nil || base->GetModelType() != MITYPE_VEHICLE)
+			continue;
+		CVehicleModelInfo *mi = (CVehicleModelInfo*)base;
+
+		// The dummy column is the part's name, so the part's own model info is
+		// classified the same way the SA reader classifies the names it reads.
+		CBaseModelInfo *part = CModelInfo::GetModelInfo(u.model);
+		if(part && !u.dummy.empty())
+			part->SetupVehicleUpgradeFlags(u.dummy.c_str());
+
+		if(u.slot < 0 || u.slot >= NUM_VEHICLE_UPGRADE_SLOTS){
+			skipped++;
+			continue;
+		}
+		if(mi->m_anUpgrades[u.slot] != -1){
+			skipped++;
+			continue;
+		}
+		mi->m_anUpgrades[u.slot] = (int16)u.model;
+		if(mi->m_nNumUpgrades < NUM_VEHICLE_UPGRADE_SLOTS + 2)
+			mi->m_nNumUpgrades = NUM_VEHICLE_UPGRADE_SLOTS + 2;
+		applied++;
+	}
+	CUSTOM_LOG("BR carmods.dat: %d upgrade slots applied to models, %d skipped\n",
+		applied, skipped);
+}
+
 void
 CCustomModels::EnsureVehicleTxdLoaded(void)
 {

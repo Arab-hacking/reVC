@@ -55,6 +55,15 @@ public:
 	static bool IsReadableCommonDataFile(const char *path);
 	// BR carmods.dat metadata; call after IDE registration. No eager loading of all mods.
 	static bool LoadVehicleUpgrades(void);
+	// SA CVehicleModelInfo::LoadVehicleUpgrades, archive half. The custom
+	// archives carry their own carmods.dat in the BR column layout (id, vehicle,
+	// slot, dummy name, model, stock parts). The SA reader in VehicleModelInfo
+	// fills the same per-model tables from the game's DATA\CARMODS.DAT; this
+	// walks the archive's table once and fills the slots the SA table left
+	// empty, so a car defined only in an archive can still be tuned. Both paths
+	// write CVehicleModelInfo::m_anUpgrades, which is the single table the
+	// fitting code reads.
+	static void ApplyVehicleUpgradesToModels(void);
 	static void GetVehicleUpgrades(int32 vehicle, std::vector<brvehicle::Upgrade> &out);
 	static bool RequestVehicleUpgrade(int32 vehicle, int32 uniqueId);
 	// Nonblocking. Returns a cloned RW object and pins its model until Release.

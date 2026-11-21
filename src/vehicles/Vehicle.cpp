@@ -36,6 +36,8 @@
 #include "Weather.h"
 #include "Coronas.h"
 #include "SaveBuf.h"
+#include "TxdStore.h"
+#include "RwHelper.h"
 
 bool CVehicle::bWheelsOnlyCheat;
 bool CVehicle::bCheat3;
@@ -163,6 +165,23 @@ CVehicle::CVehicle(uint8 CreatedBy)
 	// SetModelIndex creates the plate once the model is known; until then the
 	// vehicle owns nothing.
 	m_pCustomCarPlate = nil;
+	// A new car has no parts fitted and wears no paintjob. -1 in every slot is
+	// SA's "empty"; the functional flags stay clear until a part is fitted.
+	for(int32 s = 0; s < NUM_VEHICLE_UPGRADES; s++)
+		m_anUpgrades[s] = -1;
+	bHydraulicInst = false;
+	bNosInst = false;
+	bUpgradedStereo = false;
+	m_nNitroBoosts = 0;
+	m_nRemapTxd = -1;
+	m_nPreviousRemapTxd = -1;
+	m_pRemapTexture = nil;
+	// Until carcols gives the car four channels, the third and fourth hold the
+	// same pair as the first two, which is what SA does for a two-colour line.
+	m_currentColour3 = 0;
+	m_currentColour4 = 0;
+	for(int32 w = 0; w < NUM_WHEEL_SLOTS; w++)
+		m_apHiddenWheelAtomics[w] = nil;
 	m_fMapObjectHeightAhead = m_fMapObjectHeightBehind = 0.0f;
 	m_audioEntityId = DMAudio.CreateEntity(AUDIOTYPE_PHYSICAL, this);
 	if(m_audioEntityId >= 0)
@@ -201,12 +220,45 @@ CVehicle::CVehicle(uint8 CreatedBy)
 	AutoPilot.m_nSwitchDistance = 20;
 }
 
+static RpAtomic *ReleaseUpgradeRefsCB(RpAtomic *atomic, void *data);
+
 CVehicle::~CVehicle()
 {
 	// The plate texture belongs to this vehicle, not to the model, so it goes
 	// with the vehicle - otherwise a car with a scripted plate that is deleted
 	// leaks its texture for the rest of the session.
 	CustomCarPlate_TextureDestroy();
+
+	// A fitted paintjob holds a reference on its texture dictionary. Dropping it
+	// here is what lets the streaming code free that dictionary once the last
+	// car wearing it is gone; leaving it would keep every paintjob ever applied
+	// in memory for the rest of the session.
+	if(m_nPreviousRemapTxd != -1){
+		CTxdStore::RemoveRef(m_nPreviousRemapTxd);
+		m_nPreviousRemapTxd = -1;
+		m_nRemapTxd = -1;
+		m_pRemapTexture = nil;
+	}
+
+	// The fitted parts are atomics of this vehicle's clump, which the entity
+	// destructor destroys. What has to be undone here is the reference the
+	// fitting code took on each part's model - one per atomic, and a wheel
+	// upgrade is four atomics - otherwise the models of every part ever fitted
+	// stay pinned in memory after the car is gone.
+	if(GetClump()){
+		// Wheel meshes that were hidden by a rim upgrade are put back first, so
+		// the clump destructor disposes of them together with the rest of the
+		// car instead of leaving them orphaned.
+		for(int32 w = 0; w < NUM_WHEEL_SLOTS; w++){
+			if(m_apHiddenWheelAtomics[w] == nil)
+				continue;
+			RpClumpAddAtomic(GetClump(), m_apHiddenWheelAtomics[w]);
+			m_apHiddenWheelAtomics[w] = nil;
+		}
+		RpClumpForAllAtomics(GetClump(), ReleaseUpgradeRefsCB, nil);
+	}
+	for(int32 i = 0; i < NUM_VEHICLE_UPGRADES; i++)
+		m_anUpgrades[i] = -1;
 
 	m_nAlarmState = 0;
 	if (m_audioEntityId >= 0){
@@ -2553,4 +2605,727 @@ CVehicleAnimGroup &
 CVehicle::GetAnimGroup(void) const
 {
 	return CVehicleAnimGroupData::GetVehicleAnimGroup(GetAnimGroupId());
+}
+
+// ---------------------------------------------------------------------------
+// SA vehicle tuning: fitting and removing bought parts
+// ---------------------------------------------------------------------------
+//
+// A car that has been tuned keeps its parts as extra atomics in its clump,
+// hanging off the node the part belongs to. The car's own geometry is never
+// modified: a bought bumper is a second mesh on the bumper node, and taking it
+// off again removes exactly that mesh.
+//
+// SA identifies a fitted part by the model-info pointer cached on its atomic
+// (CVisibilityPlugins::GetModelInfo), so finding and removing one is an atomic
+// walk. reVC has no such cache for atomics it creates itself, so the same
+// information is carried in two places that are already there: the atomic id
+// holds the eVehicleMod slot the part was fitted to, and the model info the
+// atomic came from is the one its geometry belongs to. That is enough to tell
+// a fitted part from the car's own meshes and from a different part in the
+// same slot.
+
+// How a fitted part is tagged. Both fit in the atomic id word, and the render
+// callbacks only look at the flag bits.
+static inline uint32
+UpgradeAtomicTag(int32 modelIndex, int32 slot)
+{
+	return ((uint32)(modelIndex & 0xFFFF) << 16) | (uint32)(slot & 0xFFFF);
+}
+
+static inline int32
+UpgradeTaggedSlot(int32 atomicId)
+{
+	return atomicId & 0xFFFF;
+}
+
+static inline int32
+UpgradeTaggedModel(int32 atomicId)
+{
+	return ((uint32)atomicId >> 16) & 0xFFFF;
+}
+
+// SA CVehicle::GetReplacementUpgrade's own callback: the first atomic on the
+// node that the fitting code stamped is the bought part standing in for the
+// car's own mesh.
+static RwObject *
+FindReplacementUpgradeCB(RwObject *object, void *data)
+{
+	int32 *found = (int32*)data;
+	if(RwObjectGetType(object) != rpATOMIC)
+		return object;
+	int32 id = CVisibilityPlugins::GetAtomicId((RpAtomic*)object);
+	if((id & ATOMIC_FLAG_UPGRADE) == 0)
+		return object;
+	*found = UpgradeTaggedModel(id);
+	return nil;
+}
+
+// SA CVehicle::GetUpgrade (0x6D3650) needs to know which model an atomic of the
+// clump came from. reVC's clump model infos are reachable, but a part's atomic
+// does not point back at its model info, so the fitting code stamps the slot on
+// the atomic and remembers the model alongside it in the atomic's id word:
+// the low 16 bits are the slot, the high 16 bits the model. Both fit, and the
+// render callbacks only look at the flag bits.
+
+// A fitted part is any atomic of the clump whose id was stamped by the fitting
+// code. ATOMIC_FLAG_UPGRADE marks it; the tag rides along in the same word, so
+// the two tests below also have to ignore the flag bits.
+#define ATOMIC_UPGRADE_SLOT_MASK 0xFFFF
+#define ATOMIC_UPGRADE_MODEL_MASK 0xFFFF0000u
+
+struct tUpgradeSearch
+{
+	int32 slot;
+	RpAtomic *found;
+};
+
+static RpAtomic *
+FindUpgradeAtomicCB(RpAtomic *atomic, void *data)
+{
+	tUpgradeSearch *search = (tUpgradeSearch*)data;
+	if(CVisibilityPlugins::GetAtomicId(atomic) & ATOMIC_FLAG_UPGRADE){
+		if(UpgradeTaggedSlot(CVisibilityPlugins::GetAtomicId(atomic)) == search->slot){
+			search->found = atomic;
+			return nil;
+		}
+	}
+	return atomic;
+}
+
+RpAtomic *
+CVehicle::FindUpgradeAtomic(int32 slot)
+{
+	if(GetClump() == nil)
+		return nil;
+	tUpgradeSearch search;
+	search.slot = slot;
+	search.found = nil;
+	RpClumpForAllAtomics(GetClump(), FindUpgradeAtomicCB, &search);
+	return search.found;
+}
+
+struct tRemoveUpgradeData
+{
+	int32 slot;
+	bool removed;
+};
+
+static RpAtomic *
+RemoveUpgradeAtomicCB(RpAtomic *atomic, void *data)
+{
+	tRemoveUpgradeData *remove = (tRemoveUpgradeData*)data;
+	if((CVisibilityPlugins::GetAtomicId(atomic) & ATOMIC_FLAG_UPGRADE) == 0)
+		return atomic;
+	if(UpgradeTaggedSlot(CVisibilityPlugins::GetAtomicId(atomic)) != remove->slot)
+		return atomic;
+
+	// The reference the fitting code took on the part's model goes with the
+	// atomic, otherwise the model of a part that has been taken off never
+	// unloads.
+	CBaseModelInfo *partModel = CModelInfo::GetModelInfo(
+		UpgradeTaggedModel(CVisibilityPlugins::GetAtomicId(atomic)));
+	if(partModel)
+		partModel->RemoveRef();
+
+	// The frame is destroyed with the atomic when the atomic still owns it;
+	// a fitted part keeps its own frame because the part's model created it.
+	RwFrame *frame = RpAtomicGetFrame(atomic);
+	RpClumpRemoveAtomic(RpAtomicGetClump(atomic), atomic);
+	RpAtomicDestroy(atomic);
+	if(frame)
+		RwFrameDestroy(frame);
+	remove->removed = true;
+	return atomic;
+}
+
+// Destructor helper: drop the model reference every fitted part's atomic holds.
+static RpAtomic *
+ReleaseUpgradeRefsCB(RpAtomic *atomic, void *data)
+{
+	(void)data;
+	int32 id = CVisibilityPlugins::GetAtomicId(atomic);
+	if((id & ATOMIC_FLAG_UPGRADE) == 0)
+		return atomic;
+	CBaseModelInfo *mi = CModelInfo::GetModelInfo(UpgradeTaggedModel(id));
+	if(mi && mi->GetNumRefs() > 0)
+		mi->RemoveRef();
+	return atomic;
+}
+
+static RpAtomic *
+RemoveAllUpgradesAtomicCB(RpAtomic *atomic, void *data)
+{
+	bool *removed = (bool*)data;
+	int32 id = CVisibilityPlugins::GetAtomicId(atomic);
+	if((id & ATOMIC_FLAG_UPGRADE) == 0)
+		return atomic;
+	// The fitting code took a reference on the part's model for this atomic;
+	// destroying the atomic without dropping it would pin the model forever.
+	CBaseModelInfo *partModel = CModelInfo::GetModelInfo(UpgradeTaggedModel(id));
+	if(partModel)
+		partModel->RemoveRef();
+	RwFrame *frame = RpAtomicGetFrame(atomic);
+	RpClumpRemoveAtomic(RpAtomicGetClump(atomic), atomic);
+	RpAtomicDestroy(atomic);
+	if(frame)
+		RwFrameDestroy(frame);
+	*removed = true;
+	return atomic;
+}
+
+// The eVehicleMod kind of a part, or VEHICLE_MOD_NONE when the model is not a
+// part at all. Slots are the shop's numbering (eVehicleMod), not the slot in
+// the car's own m_anUpgrades table, so a part that fits several slots works.
+static int32
+GetUpgradeModKind(int32 modelId)
+{
+	CBaseModelInfo *mi = CModelInfo::GetModelInfo(modelId);
+	if(mi == nil || mi->m_nVehicleMod == VEHICLE_MOD_NONE)
+		return -1;
+	return mi->m_nVehicleMod;
+}
+
+// Which node of the car a part hangs on. The model info knows where each
+// eVehicleUpgradePosn attaches; a part that carries its own dummy (a wing panel
+// hangs on its own node) names the node by its eVehicleMod value instead.
+static int32
+GetUpgradeParentNode(CVehicleModelInfo *carModel, int32 modKind)
+{
+	// eVehicleMod -> the eVehicleUpgradePosn whose slot describes the same
+	// place on the car. Several eVehicleMod values share a slot: the two halves
+	// of a split bonnet both sit on the bonnet, and a wing panel sits on the
+	// wing node the slot names.
+	switch(modKind){
+	case VEHICLE_MOD_UPGRADE_BONNET:
+	case VEHICLE_MOD_UPGRADE_BONNET_LEFT_RIGHT:
+		return carModel->m_vehicleStruct.m_aUpgrades[UPGRADE_BONNET].m_nodeIndex;
+	case VEHICLE_MOD_UPGRADE_SPOILER:
+		return carModel->m_vehicleStruct.m_aUpgrades[UPGRADE_SPOILER].m_nodeIndex;
+	case VEHICLE_MOD_UPGRADE_FRONT_BULLBAR:
+		return carModel->m_vehicleStruct.m_aUpgrades[UPGRADE_FRONTBULLBAR].m_nodeIndex;
+	case VEHICLE_MOD_UPGRADE_REAR_BULLBAR:
+		return carModel->m_vehicleStruct.m_aUpgrades[UPGRADE_BACKBULLBAR].m_nodeIndex;
+	case VEHICLE_MOD_UPGRADE_FRONT_LIGHTS:
+		return carModel->m_vehicleStruct.m_aUpgrades[UPGRADE_LIGHTS].m_nodeIndex;
+	case VEHICLE_MOD_UPGRADE_ROOF:
+		return carModel->m_vehicleStruct.m_aUpgrades[UPGRADE_ROOF].m_nodeIndex;
+	case VEHICLE_MOD_UPGRADE_NITRO:
+		return carModel->m_vehicleStruct.m_aUpgrades[UPGRADE_NITRO].m_nodeIndex;
+	case VEHICLE_MOD_UPGRADE_STEREO:
+	case VEHICLE_MOD_UPGRADE_HYDRAULICS:
+		// Neither is geometry on the outside of the car: the stereo lives
+		// inside, hydraulics are under the body. They hang on the chassis.
+		return CAR_CHASSIS;
+	case VEHICLE_MOD_REPLACEMENT_CHASSIS:
+		return CAR_CHASSIS;
+	case VEHICLE_MOD_REPLACEMENT_WHEEL:
+		return CAR_WHEEL_RF;
+	case VEHICLE_MOD_REPLACEMENT_EXHAUST:
+		return CAR_EXHAUST;
+	case VEHICLE_MOD_REPLACEMENT_FRONT_BUMPER:
+		return CAR_BUMP_FRONT;
+	case VEHICLE_MOD_REPLACEMENT_REAR_BUMPER:
+		return CAR_BUMP_REAR;
+	case VEHICLE_MOD_REPLACEMENT_MISC:
+		return CAR_MISC_A;
+	default:
+		return CAR_NODE_NONE;
+	}
+}
+
+// The slot of the car's m_anUpgrades table a part fills. The slot is the
+// eVehicleMod value the shop uses, which is what SA's AddVehicleUpgrade maps a
+// bought part to as well.
+static int32
+GetUpgradeSlotForModKind(int32 modKind)
+{
+	return modKind;
+}
+
+// SA CVehicle::AddUpgrade (0x6DFA20).
+//
+// Instantiate one model and hang it on the node its kind names. SA keeps a
+// table of the two-atomics-per-part cases (a wing panel is one part with a left
+// and a right half both in the same model); reVC's part models are single
+// atomics, so one atomic per part is what gets attached.
+void
+CVehicle::AddUpgrade(int32 modelIndex, int32 upgradeIndex)
+{
+	CBaseModelInfo *mi = CModelInfo::GetModelInfo(modelIndex);
+	if(mi == nil){
+		REVC_LOG_WARNING("%s: upgrade model %d does not exist", GetModelInfo()->GetModelName(), modelIndex);
+		return;
+	}
+
+	CStreaming::RequestVehicleUpgrade(modelIndex, STREAMFLAGS_DEPENDENCY);
+	if(!CStreaming::HasVehicleUpgradeLoaded(modelIndex)){
+		// Keep the slot: the part is recorded and gets fitted the next time the
+		// car is set up, exactly like SA does when a part is still streaming.
+		REVC_LOG_INFO("%s: upgrade model %d is not loaded yet", GetModelInfo()->GetModelName(), modelIndex);
+		return;
+	}
+
+	RwObject *object = mi->CreateInstance();
+	if(object == nil || RwObjectGetType(object) != rpATOMIC){
+		REVC_LOG_WARNING("%s: upgrade model %d is not an atomic", GetModelInfo()->GetModelName(), modelIndex);
+		return;
+	}
+	RpAtomic *atomic = (RpAtomic*)object;
+	mi->AddRef();
+
+	int32 node = GetUpgradeParentNode((CVehicleModelInfo*)GetModelInfo(), upgradeIndex);
+	if(IsAutomobile() && upgradeIndex == VEHICLE_MOD_REPLACEMENT_WHEEL){
+		// A wheel upgrade is one rim model worn by all four wheels: SA clones
+		// it onto every wheel node the car has, so a car with a damaged or
+		// missing fourth wheel still gets the three that exist.
+		static const int32 wheelNodes[NUM_WHEEL_SLOTS] = { CAR_WHEEL_RF, CAR_WHEEL_RM, CAR_WHEEL_RB, CAR_WHEEL_LF };
+		for(int32 w = 0; w < NUM_WHEEL_SLOTS; w++){
+			RwFrame *wheelFrame = ((CAutomobile*)this)->m_aCarNodes[wheelNodes[w]];
+			if(wheelFrame == nil)
+				continue;
+			// SA swaps the mesh: the car's own wheel atomic leaves the clump so
+			// the rim is what gets drawn, and comes back when the rims come off.
+			// The atomic is not destroyed, because it belongs to the model.
+			if(m_apHiddenWheelAtomics[w] == nil){
+				RwObject *stockObject = GetFirstObject(wheelFrame);
+				if(stockObject && RwObjectGetType(stockObject) == rpATOMIC){
+					m_apHiddenWheelAtomics[w] = (RpAtomic*)stockObject;
+					RpClumpRemoveAtomic(GetClump(), (RpAtomic*)stockObject);
+				}
+			}
+			RwObject *wheelObject = mi->CreateInstance();
+			if(wheelObject == nil || RwObjectGetType(wheelObject) != rpATOMIC)
+				continue;
+			RpAtomic *wheelAtomic = (RpAtomic*)wheelObject;
+			mi->AddRef();
+			RwFrame *wheelChild = RpAtomicGetFrame(wheelAtomic);
+			RpClumpAddAtomic(GetClump(), wheelAtomic);
+			if(wheelChild){
+				RwFrameRemoveChild(wheelChild);
+				RwFrameAddChild(wheelFrame, wheelChild);
+				RwFrameUpdateObjects(wheelChild);
+			}
+			CVisibilityPlugins::SetAtomicId(wheelAtomic,
+				(int)UpgradeAtomicTag(modelIndex, GetUpgradeSlotForModKind(upgradeIndex)) | ATOMIC_FLAG_UPGRADE);
+			// The rim is a wheel mesh, so it is drawn through the SA wheel
+			// callback that applies the model's wheel scale and spin.
+			CVisibilityPlugins::SetAtomicRenderCallback(wheelAtomic, CVisibilityPlugins::RenderSAWheelAtomicCB);
+		}
+		return;
+	}
+
+	RwFrame *parentFrame = nil;
+	if(IsAutomobile() && node > CAR_NODE_NONE && node < NUM_CAR_NODES)
+		parentFrame = ((CAutomobile*)this)->m_aCarNodes[node];
+	if(parentFrame == nil)
+		parentFrame = RpClumpGetFrame(GetClump());
+
+	// The atomic keeps its own frame - the part was modelled in model space and
+	// the frame carries that transform - and the frame is re-parented onto the
+	// node, so moving the node moves the part.
+	RwFrame *frame = RpAtomicGetFrame(atomic);
+	RpClumpAddAtomic(GetClump(), atomic);
+	if(frame){
+		RwFrameRemoveChild(frame);
+		RwFrameAddChild(parentFrame, frame);
+		RwFrameUpdateObjects(frame);
+	}
+
+	CVisibilityPlugins::SetAtomicId(atomic,
+		(int)(UpgradeAtomicTag(modelIndex, GetUpgradeSlotForModKind(upgradeIndex))) | ATOMIC_FLAG_UPGRADE);
+	// A part is drawn like a high-detail component; alpha materials need the
+	// sorted path so the windows of a fitted part blend with the car's own.
+	bool hasAlpha = false;
+	RpGeometryForAllMaterials(RpAtomicGetGeometry(atomic), CVehicleModelInfo::HasAlphaMaterialCB, &hasAlpha);
+	if(hasAlpha){
+		CVisibilityPlugins::SetAtomicRenderCallback(atomic, CVisibilityPlugins::RenderVehicleHiDetailAlphaCB);
+		CVisibilityPlugins::SetAtomicFlag(atomic, ATOMIC_FLAG_DRAWLAST);
+	}else{
+		CVisibilityPlugins::SetAtomicRenderCallback(atomic, CVisibilityPlugins::RenderVehicleHiDetailCB);
+	}
+}
+
+// SA CVehicle::AddVehicleUpgrade (0x6E3290).
+//
+// The public entry point: the shop, the garage and the script all call this
+// with a model id. Which slot the part fills comes from the part's own model
+// info; the three functional upgrades also set their flag and, for nitro, the
+// bottle count.
+void
+CVehicle::AddVehicleUpgrade(int32 modelId)
+{
+	CBaseModelInfo *mi = CModelInfo::GetModelInfo(modelId);
+	if(mi == nil){
+		REVC_LOG_WARNING("%s: no model info for upgrade %d", GetModelInfo()->GetModelName(), modelId);
+		return;
+	}
+
+	int32 modKind = GetUpgradeModKind(modelId);
+	if(modKind < 0){
+		REVC_LOG_WARNING("%s: model %d is not a vehicle upgrade part",
+			GetModelInfo()->GetModelName(), modelId);
+		return;
+	}
+
+	int32 slot = GetUpgradeSlotForModKind(modKind);
+	if(slot < 0 || slot >= NUM_VEHICLE_UPGRADES){
+		REVC_LOG_WARNING("%s: upgrade model %d has no slot", GetModelInfo()->GetModelName(), modelId);
+		return;
+	}
+
+	// Fitting a part into an occupied slot swaps it: the old one goes first, so
+	// the car never carries two spoilers.
+	if(m_anUpgrades[slot] != -1 && m_anUpgrades[slot] != modelId)
+		RemoveVehicleUpgrade(m_anUpgrades[slot]);
+
+	// A part the car does not accept (its model has no such node) is refused
+	// rather than hung on the chassis: the shop already hides those slots, but
+	// a script can ask for anything.
+	CVehicleModelInfo *carModel = (CVehicleModelInfo*)GetModelInfo();
+	int32 node = GetUpgradeParentNode(carModel, modKind);
+	if(carModel && node > CAR_NODE_NONE && node < NUM_CAR_NODES){
+		if(IsAutomobile() && ((CAutomobile*)this)->m_aCarNodes[node] == nil){
+			REVC_LOG_WARNING("%s: accepts no part for slot %d", carModel->GetModelName(), slot);
+			return;
+		}
+	}
+
+	m_anUpgrades[slot] = (int16)modelId;
+
+	switch(modKind){
+	case VEHICLE_MOD_UPGRADE_HYDRAULICS:
+		// SA sets the handling flag and lets the vehicle shake itself; the
+		// geometry is a placeholder inside the body.
+		bHydraulicInst = true;
+		break;
+	case VEHICLE_MOD_UPGRADE_NITRO:
+		bNosInst = true;
+		// SA fills the bottle when the upgrade is bought. 101 is its "full"
+		// marker: the counter counts down and refills to it.
+		if(m_nNitroBoosts == 0)
+			m_nNitroBoosts = 101;
+		break;
+	case VEHICLE_MOD_UPGRADE_STEREO:
+		bUpgradedStereo = true;
+		break;
+	default:
+		break;
+	}
+
+	AddUpgrade(modelId, modKind);
+}
+
+// SA CVehicle::RemoveVehicleUpgrade (0x6DF930).
+void
+CVehicle::RemoveVehicleUpgrade(int32 upgradeModelIndex)
+{
+	CBaseModelInfo *mi = CModelInfo::GetModelInfo(upgradeModelIndex);
+	if(mi == nil)
+		return;
+
+	int32 modKind = GetUpgradeModKind(upgradeModelIndex);
+	if(modKind < 0)
+		return;
+
+	int32 slot = GetUpgradeSlotForModKind(modKind);
+	if(slot < 0 || slot >= NUM_VEHICLE_UPGRADES)
+		return;
+
+	tRemoveUpgradeData remove;
+	remove.slot = slot;
+	remove.removed = false;
+	RpClumpForAllAtomics(GetClump(), RemoveUpgradeAtomicCB, &remove);
+
+	if(m_anUpgrades[slot] == (int16)upgradeModelIndex || remove.removed)
+		m_anUpgrades[slot] = -1;
+
+	if(modKind == VEHICLE_MOD_REPLACEMENT_WHEEL){
+		// Put the car's own wheel meshes back before the rims go away,
+		// otherwise the car would be left rolling on nothing.
+		for(int32 w = 0; w < NUM_WHEEL_SLOTS; w++){
+			if(m_apHiddenWheelAtomics[w] == nil)
+				continue;
+			RpClumpAddAtomic(GetClump(), m_apHiddenWheelAtomics[w]);
+			m_apHiddenWheelAtomics[w] = nil;
+		}
+	}
+
+	switch(modKind){
+	case VEHICLE_MOD_UPGRADE_HYDRAULICS:
+		bHydraulicInst = false;
+		break;
+	case VEHICLE_MOD_UPGRADE_NITRO:
+		bNosInst = false;
+		m_nNitroBoosts = 0;
+		break;
+	case VEHICLE_MOD_UPGRADE_STEREO:
+		bUpgradedStereo = false;
+		break;
+	default:
+		break;
+	}
+}
+
+// SA CVehicle::RemoveUpgrade (0x6D3630). Every atomic carrying the slot goes,
+// whether or not it is the one m_anUpgrades names.
+void
+CVehicle::RemoveUpgrade(int32 upgradeId)
+{
+	if(GetClump() == nil)
+		return;
+	tRemoveUpgradeData remove;
+	remove.slot = upgradeId;
+	remove.removed = false;
+	RpClumpForAllAtomics(GetClump(), RemoveUpgradeAtomicCB, &remove);
+	if(upgradeId >= 0 && upgradeId < NUM_VEHICLE_UPGRADES)
+		m_anUpgrades[upgradeId] = -1;
+}
+
+// SA CVehicle::RemoveAllUpgrades (0x6D3AB0).
+void
+CVehicle::RemoveAllUpgrades(void)
+{
+	if(GetClump()){
+		bool removed = false;
+		RpClumpForAllAtomics(GetClump(), RemoveAllUpgradesAtomicCB, &removed);
+		// The atomics are gone, so the references the fitting code took on their
+		// models have to go too - but the wheels that were hidden for a rim
+		// upgrade are not upgrades, and stay hidden until they are restored.
+	}
+	for(int32 w = 0; w < NUM_WHEEL_SLOTS; w++){
+		if(m_apHiddenWheelAtomics[w] == nil)
+			continue;
+		RpClumpAddAtomic(GetClump(), m_apHiddenWheelAtomics[w]);
+		m_apHiddenWheelAtomics[w] = nil;
+	}
+	for(int32 i = 0; i < NUM_VEHICLE_UPGRADES; i++)
+		m_anUpgrades[i] = -1;
+	bHydraulicInst = false;
+	bNosInst = false;
+	bUpgradedStereo = false;
+	m_nNitroBoosts = 0;
+}
+
+// SA CVehicle::GetUpgrade (0x6D3650).
+int32
+CVehicle::GetUpgrade(int32 upgradeId)
+{
+	if(upgradeId < 0 || upgradeId >= NUM_VEHICLE_UPGRADES)
+		return -1;
+
+	RpAtomic *atomic = FindUpgradeAtomic(upgradeId);
+	if(atomic)
+		return UpgradeTaggedModel(CVisibilityPlugins::GetAtomicId(atomic));
+
+	return m_anUpgrades[upgradeId];
+}
+
+// SA CVehicle::SetupUpgradesAfterLoad (0x6E3400). A save only carries model
+// ids; the clump of a freshly created car has no parts on it, so every recorded
+// slot is fitted now and then cleared.
+void
+CVehicle::SetupUpgradesAfterLoad(void)
+{
+	for(int32 i = 0; i < NUM_VEHICLE_UPGRADES; i++){
+		if(m_anUpgrades[i] == -1)
+			continue;
+		int32 model = m_anUpgrades[i];
+		m_anUpgrades[i] = -1;
+		AddVehicleUpgrade(model);
+	}
+}
+
+// SA CVehicle::AddReplacementUpgrade (0x6D3830). A bought part that replaces
+// one of the car's own meshes instead of hanging next to it: the old atomic is
+// removed from the node and the new one is hung in its place.
+void
+CVehicle::AddReplacementUpgrade(int32 modelIndex, int32 nodeId)
+{
+	CBaseModelInfo *mi = CModelInfo::GetModelInfo(modelIndex);
+	if(mi == nil)
+		return;
+	if(!IsAutomobile())
+		return;
+	CAutomobile *car = (CAutomobile*)this;
+	if(nodeId <= CAR_NODE_NONE || nodeId >= NUM_CAR_NODES || car->m_aCarNodes[nodeId] == nil)
+		return;
+
+	CStreaming::RequestVehicleUpgrade(modelIndex, STREAMFLAGS_DEPENDENCY);
+	if(!CStreaming::HasVehicleUpgradeLoaded(modelIndex))
+		return;
+
+	RwObject *object = mi->CreateInstance();
+	if(object == nil || RwObjectGetType(object) != rpATOMIC)
+		return;
+	RpAtomic *atomic = (RpAtomic*)object;
+	mi->AddRef();
+
+	RwFrame *frame = RpAtomicGetFrame(atomic);
+	RpClumpAddAtomic(GetClump(), atomic);
+	if(frame){
+		RwFrameRemoveChild(frame);
+		RwFrameAddChild(car->m_aCarNodes[nodeId], frame);
+		RwFrameUpdateObjects(frame);
+	}
+	CVisibilityPlugins::SetAtomicId(atomic,
+		(int)(UpgradeAtomicTag(modelIndex, mi->m_nVehicleMod)) | ATOMIC_FLAG_UPGRADE);
+	CVisibilityPlugins::SetAtomicRenderCallback(atomic, CVisibilityPlugins::RenderVehicleHiDetailCB);
+}
+
+// SA CVehicle::RemoveReplacementUpgrade (0x6D39E0). The car's own part is not
+// re-created from the model: the model's clump still holds it, so it is cloned
+// back onto the node the bought part was hanging on.
+void
+CVehicle::RemoveReplacementUpgrade(int32 frameId)
+{
+	if(!IsAutomobile())
+		return;
+	CAutomobile *car = (CAutomobile*)this;
+	if(frameId <= CAR_NODE_NONE || frameId >= NUM_CAR_NODES || car->m_aCarNodes[frameId] == nil)
+		return;
+
+	bool removed = false;
+	RpClumpForAllAtomics(GetClump(), RemoveAllUpgradesAtomicCB, &removed);
+
+	CVehicleModelInfo *mi = (CVehicleModelInfo*)GetModelInfo();
+	if(mi == nil || mi->m_clump == nil)
+		return;
+
+	// Copy the original meshes of that node back out of the model's clump. The
+	// model is shared, so its own atomics are cloned rather than moved.
+	RwObjectIdAssociation assoc;
+	assoc.frame = nil;
+	assoc.id = frameId;
+	RwFrameForAllChildren(RpClumpGetFrame(mi->m_clump), CClumpModelInfo::FindFrameFromIdCB, &assoc);
+	if(assoc.frame == nil)
+		return;
+
+	RwFrame *source = assoc.frame;
+	RwObject *sourceObject = GetFirstObject(source);
+	if(sourceObject && RwObjectGetType(sourceObject) == rpATOMIC){
+		RpAtomic *clone = RpAtomicClone((RpAtomic*)sourceObject);
+		RpAtomicSetFrame(clone, car->m_aCarNodes[frameId]);
+		RpClumpAddAtomic(GetClump(), clone);
+	}
+}
+
+// SA CVehicle::GetReplacementUpgrade (0x6D3A50). The model of the part fitted
+// to a node, or -1 when the node still carries the car's own mesh.
+int32
+CVehicle::GetReplacementUpgrade(int32 nodeId)
+{
+	if(nodeId <= CAR_NODE_NONE || nodeId >= NUM_CAR_NODES)
+		return -1;
+
+	if(!IsAutomobile())
+		return -1;
+
+	RwFrame *node = ((CAutomobile*)this)->m_aCarNodes[nodeId];
+	if(node == nil)
+		return -1;
+
+	int32 found = -1;
+	RwFrameForAllObjects(node, FindReplacementUpgradeCB, &found);
+	return found;
+}
+
+// ---------------------------------------------------------------------------
+// SA vehicle paintjobs (remap textures)
+// ---------------------------------------------------------------------------
+
+// SA CVehicle::GetRemapIndex (0x6D0B70).
+int32
+CVehicle::GetRemapIndex(void)
+{
+	CVehicleModelInfo *mi = (CVehicleModelInfo*)GetModelInfo();
+	if(mi == nil)
+		return -1;
+	int32 numRemaps = mi->GetNumRemaps();
+	if(numRemaps <= 0)
+		return -1;
+	for(int32 i = 0; i < numRemaps; i++)
+		if(mi->m_anRemapTxds[i] == m_nPreviousRemapTxd)
+			return i;
+	return -1;
+}
+
+// SA CVehicle::SetRemapTexDictionary (0x6D0BC0).
+//
+// Taking a paintjob off (-1) drops the reference on the dictionary that is
+// currently applied and forgets its texture. Setting one only records the slot;
+// the texture is fetched once the dictionary is loaded, which ApplyRemapTexture
+// does before the car is drawn.
+void
+CVehicle::SetRemapTexDictionary(int32 txdId)
+{
+	if(txdId == m_nPreviousRemapTxd)
+		return;
+
+	if(txdId == -1){
+		m_pRemapTexture = nil;
+		if(m_nPreviousRemapTxd != -1)
+			CTxdStore::RemoveRef(m_nPreviousRemapTxd);
+		m_nPreviousRemapTxd = -1;
+		m_nRemapTxd = -1;
+		return;
+	}
+	m_nRemapTxd = (int16)txdId;
+}
+
+// SA CVehicle::SetRemap (0x6D0C00).
+void
+CVehicle::SetRemap(int32 remapIndex)
+{
+	if(remapIndex == -1){
+		SetRemapTexDictionary(-1);
+		return;
+	}
+	CVehicleModelInfo *mi = (CVehicleModelInfo*)GetModelInfo();
+	if(mi == nil || remapIndex < 0 || remapIndex >= mi->GetNumRemaps())
+		return;
+	SetRemapTexDictionary(mi->m_anRemapTxds[remapIndex]);
+}
+
+// Stream in the paintjob dictionary, take the first texture of it and publish
+// it to the model for this frame. SA does exactly this in its render setup: the
+// model's editable materials are pointed at ms_pRemapTexture and restored after
+// the draw, which is why the texture is a static and not a per-material field.
+void
+CVehicle::ApplyRemapTexture(void)
+{
+	CVehicleModelInfo *mi = (CVehicleModelInfo*)GetModelInfo();
+	if(mi == nil)
+		return;
+
+	if(m_nRemapTxd == -1){
+		CVehicleModelInfo::ms_pRemapTexture = nil;
+		return;
+	}
+
+	if(m_nRemapTxd != m_nPreviousRemapTxd){
+		CStreaming::RequestTxd(m_nRemapTxd, STREAMFLAGS_KEEP_IN_MEMORY);
+		if(!CStreaming::HasTxdLoaded(m_nRemapTxd))
+			return;
+
+		TxdDef *def = CTxdStore::GetSlot(m_nRemapTxd);
+		if(def == nil || def->texDict == nil)
+			return;
+
+		// The paintjob is the first texture of the dictionary: a remap txd
+		// carries one texture, the body skin.
+		RwTexture *texture = GetFirstTexture(def->texDict);
+		if(texture == nil)
+			return;
+
+		// The old dictionary loses its reference only when the new one is in
+		// hand, so a car never ends up with no paintjob at all in between.
+		if(m_nPreviousRemapTxd != -1 && m_nPreviousRemapTxd != m_nRemapTxd)
+			CTxdStore::RemoveRef(m_nPreviousRemapTxd);
+		CTxdStore::AddRef(m_nRemapTxd);
+		m_pRemapTexture = texture;
+		m_nPreviousRemapTxd = m_nRemapTxd;
+	}
+
+	CVehicleModelInfo::ms_pRemapTexture = m_pRemapTexture;
 }

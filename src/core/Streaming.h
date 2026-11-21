@@ -160,6 +160,13 @@ public:
 	static void InstanceLoadedModelsInSectorList(CPtrList &list);
 	static void InstanceLoadedModels(const CVector &pos);
 	static void RequestIslands(eLevelName level);
+	// SA CStreaming::RequestVehicleUpgrade (0x408C70). A part and its linked
+	// partner are always streamed together: the car cannot show a left wing
+	// panel without the right one, so asking for one asks for both.
+	static void RequestVehicleUpgrade(int32 modelId, int32 streamingFlags);
+	// SA CStreaming::HasVehicleUpgradeLoaded (0x407820). Both halves of a link
+	// have to be in memory before a part counts as ready.
+	static bool HasVehicleUpgradeLoaded(int32 modelId);
 	static void RequestSpecialModel(int32 modelId, const char *modelName, int32 flags);
 	static void RequestSpecialChar(int32 charId, const char *modelName, int32 flags);
 	static bool HasSpecialCharLoaded(int32 id);

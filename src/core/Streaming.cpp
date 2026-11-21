@@ -1486,6 +1486,26 @@ static char *CSnames[] = {
 	""
 };
 
+// SA CStreaming::RequestVehicleUpgrade (0x408C70).
+void
+CStreaming::RequestVehicleUpgrade(int32 modelId, int32 streamingFlags)
+{
+	RequestModel(modelId, streamingFlags);
+	int16 other = CVehicleModelInfo::ms_linkedUpgrades.FindOtherUpgrade((int16)modelId);
+	if(other != -1)
+		RequestModel(other, streamingFlags);
+}
+
+// SA CStreaming::HasVehicleUpgradeLoaded (0x407820).
+bool
+CStreaming::HasVehicleUpgradeLoaded(int32 modelId)
+{
+	if(!HasModelLoaded(modelId))
+		return false;
+	int16 other = CVehicleModelInfo::ms_linkedUpgrades.FindOtherUpgrade((int16)modelId);
+	return other == -1 || HasModelLoaded(other);
+}
+
 void
 CStreaming::RequestSpecialModel(int32 modelId, const char *modelName, int32 flags)
 {

@@ -1852,12 +1852,13 @@ void CStoredCar::StoreCar(CVehicle* pVehicle)
 	m_nPackedForwardZ = (uint8)(int8)(fwd.z * 127.0f);
 
 	m_wModelIndex = (uint16)pVehicle->GetModelIndex();
+	// All four paint channels: a car tuned with a four-colour scheme has to
+	// come back painted the way it was left, not with its third and fourth
+	// material slots reset.
 	m_nPrimaryColor = pVehicle->m_currentColour1;
 	m_nSecondaryColor = pVehicle->m_currentColour2;
-	// VC vehicles paint two material slots; the two extra slots SA stores stay
-	// at "no colour" so a car read back from this save keeps its two-tone.
-	m_nTertiaryColor = 0;
-	m_nQuaternaryColor = 0;
+	m_nTertiaryColor = pVehicle->m_currentColour3;
+	m_nQuaternaryColor = pVehicle->m_currentColour4;
 	m_nRadiostation = pVehicle->m_nRadioStation;
 	m_anCompsToUse[0] = (uint8)pVehicle->m_aExtras[0];
 	m_anCompsToUse[1] = (uint8)pVehicle->m_aExtras[1];
@@ -1882,12 +1883,19 @@ void CStoredCar::StoreCar(CVehicle* pVehicle)
 	// when it was parked - a script can change them at runtime.
 	m_nHandlingFlags = pVehicle->m_pHandlingData ? (uint32)pVehicle->m_pHandlingData->m_nHandlingFlags : 0;
 
-	// No upgrades in this fork: the slots are cleared rather than left with
-	// whatever the previous occupant of the slot had in them.
+	// The parts fitted to the car. SA stores the same table in the same shape:
+	// one model id per upgrade slot, -1 for an empty slot. The vehicle keeps the
+	// two functional ones (hydraulics, stereo) as flags rather than as model
+	// ids in some cases, so those are written from the flags.
 	for (int32 i = 0; i < NUM_CAR_MODS; i++)
-		m_awCarMods[i] = -1;
-	m_nPaintJob = 0;
-	m_nNitroBoosts = 0;
+		m_awCarMods[i] = pVehicle->m_anUpgrades[i];
+
+	// The paintjob is stored as its index in the model's remap list, which is
+	// what a save written by SA holds; -1 (no paintjob) becomes 0xFF so it fits
+	// the byte and reads back as a value no real index can take.
+	int32 remap = pVehicle->GetRemapIndex();
+	m_nPaintJob = remap < 0 ? 0xFF : (uint8)remap;
+	m_nNitroBoosts = pVehicle->m_nNitroBoosts;
 }
 
 // SA CStoredCar::RestoreCar (0x447E40).
@@ -1928,6 +1936,24 @@ CVehicle* CStoredCar::RestoreCar()
 	pVehicle->pDriver = nil;
 	pVehicle->m_currentColour1 = m_nPrimaryColor;
 	pVehicle->m_currentColour2 = m_nSecondaryColor;
+	pVehicle->m_currentColour3 = m_nTertiaryColor;
+	pVehicle->m_currentColour4 = m_nQuaternaryColor;
+
+	// Put the parts back on. The car was built above, so its clump exists and
+	// the parts can be fitted right away; a part whose model is still streaming
+	// stays in the slot and is fitted by SetupUpgradesAfterLoad the next time
+	// the car is set up.
+	pVehicle->RemoveAllUpgrades();
+	for (int32 i = 0; i < NUM_CAR_MODS; i++) {
+		if (m_awCarMods[i] == -1)
+			continue;
+		pVehicle->m_anUpgrades[i] = m_awCarMods[i];
+	}
+	pVehicle->SetupUpgradesAfterLoad();
+
+	if (m_nPaintJob != 0xFF)
+		pVehicle->SetRemap(m_nPaintJob);
+	pVehicle->m_nNitroBoosts = m_nNitroBoosts;
 	pVehicle->m_nRadioStation = m_nRadiostation;
 	pVehicle->bFreebies = false;
 
@@ -2635,12 +2661,12 @@ CVehicleSaveStructure::Construct(CVehicle *v)
 	m_matrix = v->GetMatrix();
 	field_48 = 0;
 
+	// All four paint channels, as SA stores them: a car with a four-colour
+	// scheme has to come back the same colour.
 	m_nPrimaryColor = v->m_currentColour1;
 	m_nSecondaryColor = v->m_currentColour2;
-	// This fork paints two material slots; the two extra slots SA has stay at
-	// "no colour" so a car read back keeps its two-tone paint.
-	m_nTertiaryColor = 0;
-	m_nQuaternaryColor = 0;
+	m_nTertiaryColor = v->m_currentColour3;
+	m_nQuaternaryColor = v->m_currentColour4;
 
 	m_nAlarmState = v->m_nAlarmState;
 	m_nMaxPassengers = v->m_nNumMaxPassengers;
@@ -2687,6 +2713,8 @@ CVehicleSaveStructure::Extract(CVehicle *v)
 
 	v->m_currentColour1 = m_nPrimaryColor;
 	v->m_currentColour2 = m_nSecondaryColor;
+	v->m_currentColour3 = m_nTertiaryColor;
+	v->m_currentColour4 = m_nQuaternaryColor;
 
 	v->m_nAlarmState = m_nAlarmState;
 	v->m_nNumMaxPassengers = m_nMaxPassengers;
