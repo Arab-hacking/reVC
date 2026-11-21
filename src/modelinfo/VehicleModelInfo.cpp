@@ -917,11 +917,9 @@ CVehicleModelInfo::SetAtomicRendererCB_RealHeli(RpAtomic *atomic, void *data)
 void
 CVehicleModelInfo::SetAtomicRenderCallbacks(void)
 {
-#ifdef GTA_TRAIN
 	if(m_nVehicleType == VEHICLE_TYPE_TRAIN)
 		RpClumpForAllAtomics(m_clump, SetAtomicRendererCB_Train, nil);
 	else
-#endif
 	if(m_nVehicleType == VEHICLE_TYPE_HELI || m_nVehicleType == VEHICLE_TYPE_FHELI)
 		RpClumpForAllAtomics(m_clump, SetAtomicRendererCB_Heli, nil);
 	else if(m_nVehicleType == VEHICLE_TYPE_PLANE || m_nVehicleType == VEHICLE_TYPE_FPLANE)

@@ -1,6 +1,7 @@
 #include "common.h"
 
 #include "CarCtrl.h"
+#include "Train.h"
 
 #include "Accident.h"
 #include "Automobile.h"
@@ -120,6 +121,8 @@ CCarCtrl::GenerateRandomCars()
 			CTheCarGenerators::GenerateEvenIfPlayerIsCloseCounter = 20;
 		}
 	}
+	CTrain::DoTrainGenerationAndRemoval();
+
 	/* Approximately once per 4 seconds. */
 	if ((CTimer::GetTimeInMilliseconds() & 0xFFFFF000) != (CTimer::GetPreviousTimeInMilliseconds() & 0xFFFFF000))
 		GenerateEmergencyServicesCar();

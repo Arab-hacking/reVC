@@ -423,9 +423,6 @@ public:
 	bool8 ProcessEngineDamage(cVehicleParams &params);
 	bool8 ProcessCarBombTick(cVehicleParams &params);
 	void ProcessVehicleOneShots(cVehicleParams &params);
-#ifdef GTA_TRAIN
-	bool8 ProcessTrainNoise(cVehicleParams &params);
-#endif
 	bool8 ProcessBoatEngine(cVehicleParams &params);
 	bool8 ProcessBoatMovingOverWater(cVehicleParams &params);
 	void ProcessPlane(cVehicleParams &params);

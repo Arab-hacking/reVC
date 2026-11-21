@@ -1278,7 +1278,6 @@ CRenderer::ScanWorld(void)
 			for(int y = y1; y <= y2; y++)
 				ScanSectorList(CWorld::GetSector(x1, y)->m_lists);
 	}else{
-#ifdef GTA_TRAIN
 		CVehicle *train = FindPlayerTrain();
 		if(train && train->GetPosition().z < 0.0f){
 			poly[0].x = CWorld::GetSectorX(vectors[CORNER_CAM].x);
@@ -1289,7 +1288,6 @@ CRenderer::ScanWorld(void)
 			poly[2].y = CWorld::GetSectorY(vectors[CORNER_LOD_RIGHT].y);
 			ScanSectorPoly(poly, 3, ScanSectorList_Subway);
 		}else
-#endif
 		{
 			if(f > scanLodDist){
 #ifdef ANDROID
@@ -1783,7 +1781,6 @@ CRenderer::ScanSectorList_Priority(CPtrList *lists)
 	}
 }
 
-#ifdef GTA_TRAIN
 void
 CRenderer::ScanSectorList_Subway(CPtrList *lists)
 {
@@ -1816,7 +1813,6 @@ CRenderer::ScanSectorList_Subway(CPtrList *lists)
 		}
 	}
 }
-#endif
 
 void
 CRenderer::ScanSectorList_RequestModels(CPtrList *lists)

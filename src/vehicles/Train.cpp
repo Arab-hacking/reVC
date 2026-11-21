@@ -13,236 +13,254 @@
 #include "DMAudio.h"
 #include "cHandlingDataMgr.h"
 #include "Train.h"
+#include "TrainNode.h"
 #include "AudioScriptObject.h"
+#include "PathFind.h"
+#include "Pools.h"
+#include "General.h"
+#include "PlayerPed.h"
 
-static CTrainNode* pTrackNodes;
-static int16 NumTrackNodes;
-static float StationDist[3] = { 873.0f, 1522.0f, 2481.0f };
-static float TotalLengthOfTrack;
-static float TotalDurationOfTrack;
-static CTrainInterpolationLine aLineBits[17];
-static float EngineTrackPosition[2];
-static float EngineTrackSpeed[2];
+// SA CTrain statics (0xC38024 and neighbours).
+CTrainNode *CTrain::pTrackNodes[NUM_TRAIN_TRACKS] = { nil, nil, nil, nil };
+int32 CTrain::NumTrackNodes[NUM_TRAIN_TRACKS] = { 0, 0, 0, 0 };
+float CTrain::TotalTrackLength[NUM_TRAIN_TRACKS] = { 0.0f, 0.0f, 0.0f, 0.0f };
+float CTrain::StationDist[6] = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
+bool CTrain::bDisableRandomTrains = false;
 
-static CTrainNode* pTrackNodes_S;
-static int16 NumTrackNodes_S;
-static float StationDist_S[4] = { 55.0f, 1388.0f, 2337.0f, 3989.0f };
-static float TotalLengthOfTrack_S;
-static float TotalDurationOfTrack_S;
-static CTrainInterpolationLine aLineBits_S[18];
-static float EngineTrackPosition_S[4];
-static float EngineTrackSpeed_S[4];
-
-CVector CTrain::aStationCoors[3];
-CVector CTrain::aStationCoors_S[4];
-
-static bool bTrainArrivalAnnounced[3] = {false, false, false};
+// SA CTrain::aStationCoors (0x8D48F8), verbatim: the six station positions in
+// San Andreas, in the order the script refers to them.
+CVector CTrain::aStationCoors[6] = {
+	CVector(1741.0f, -1954.0f, 15.0f),
+	CVector(1297.0f, -1898.0f, 3.0f),
+	CVector(-1945.0f, 128.0f, 29.0f),
+	CVector(1434.0f, 2632.0f, 13.0f),
+	CVector(2783.0f, 1758.0f, 12.0f),
+	CVector(2865.0f, 1281.0f, 12.0f),
+};
 
 CTrain::CTrain(int32 id, uint8 CreatedBy)
  : CVehicle(CreatedBy)
 {
-#ifdef GTA_TRAIN
 	CVehicleModelInfo *mi = (CVehicleModelInfo*)CModelInfo::GetModelInfo(id);
 	m_nVehicleType = VEHICLE_TYPE_TRAIN;
-m_nVehicleSubType = VEHICLE_TYPE_TRAIN;
+	m_nVehicleSubType = VEHICLE_TYPE_TRAIN;
 	m_pHandlingData = mod_HandlingManager.GetVehiclePointer((uint32)mi->m_handlingId);
 	SetModelIndex(id);
 
-	Doors[0].Init(0.8f, 0.0f, 1, 0);
-	Doors[1].Init(-0.8f, 0.0f, 0, 0);
+	m_aDoors[0].Init(0.8f, 0.0f, DOOR_AXIS_X, 0);
+	m_aDoors[1].Init(-0.8f, 0.0f, DOOR_AXIS_Y, 0);
 
+	// A train is treated as effectively immovable by the rest of the physics:
+	// it follows the rail, not the collision response. These are SA's numbers.
 	m_fMass = 100000000.0f;
 	m_fTurnMass = 100000000.0f;
 	m_fAirResistance = 0.9994f;
 	m_fElasticity = 0.05f;
 
-	m_bProcessDoor = true;
-	m_bTrainStopping = false;
+	m_nNodeIndex = 0;
+	m_fTrainSpeed = 0.0f;
+	m_fCurrentRailDistance = 0.0f;
+	m_fLength = 0.0f;
+	m_fTrainGas = 0.0f;
+	m_fTrainBrake = 0.0f;
+	m_nTrainFlags = 0;
+	trainFlags.b01 = 1;
+	m_nTimeWhenStoppedAtStation = 0;
 	m_nTrackId = TRACK_ELTRAIN;
-	m_nNumMaxPassengers = 5;
-	m_nDoorTimer = CTimer::GetTimeInMilliseconds();
-	m_nDoorState = TRAIN_DOOR_CLOSED;
+	m_nTimeWhenCreated = CTimer::GetTimeInMilliseconds();
+	m_nWagonGroup = 0;
+	m_nPassengersGenerationState = TRAIN_PASSENGERS_GENERATION_FINISHED;
+	m_nNumPassengersToLeave = 0;
+	m_nNumPassengersToEnter = 0;
+	m_pTemporaryPassenger = nil;
+	m_pPrevCarriage = nil;
+	m_pNextCarriage = nil;
 
+	for(int32 i = 0; i < 6; i++)
+		m_aDoors[i].Init(0.8f, 0.0f, DOOR_AXIS_X, 0);
+	for(int32 i = 0; i < NUM_TRAIN_NODES; i++)
+		m_aTrainNodes[i] = nil;
+
+	m_nNumMaxPassengers = 5;
 	bUsesCollision = true;
 	SetStatus(STATUS_TRAIN_MOVING);
-
-#ifdef FIX_BUGS
-	m_isFarAway = true;
-#endif
-#else
-	assert(0 && "No trains in this game");
-#endif
 }
 
+// SA CTrain::SetModelIndex (0x6F5530).
 void
 CTrain::SetModelIndex(uint32 id)
 {
-#ifdef GTA_TRAIN
-	int i;
-
 	CVehicle::SetModelIndex(id);
-	for(i = 0; i < NUM_TRAIN_NODES; i++)
-		m_aTrainNodes[i] = nil;
-	CClumpModelInfo::FillFrameArray(GetClump(), m_aTrainNodes);
-#endif
+	SetupModelNodes();
 }
+
+// SA CTrain::SetupModelNodes: reset the node table and refill it from the
+// clump, so a re-set model cannot leave stale frames behind.
+void
+CTrain::SetupModelNodes(void)
+{
+	for(int32 i = 0; i < NUM_TRAIN_NODES; i++)
+		m_aTrainNodes[i] = nil;
+	if(GetClump())
+		CClumpModelInfo::FillFrameArray(GetClump(), m_aTrainNodes);
+}
+
 
 void
 CTrain::ProcessControl(void)
 {
-#ifdef GTA_TRAIN
-	if(gbModelViewer || m_isFarAway && (CTimer::GetFrameCounter() + m_nWagonId) & 0xF)
+	if(gbModelViewer || (m_bFarAway && ((CTimer::GetFrameCounter() + m_nWagonGroup) & 0xF)))
 		return;
 
-	CTrainNode *trackNodes;
-	int16 numTrackNodes;
-	float totalLengthOfTrack;
-	float *engineTrackPosition;
-	float *engineTrackSpeed;
+	if(m_nTrackId < 0 || m_nTrackId >= NUM_TRAIN_TRACKS || pTrackNodes[m_nTrackId] == nil)
+		return;
 
-	if(m_nTrackId == TRACK_SUBWAY){
-		trackNodes = pTrackNodes_S;
-		numTrackNodes = NumTrackNodes_S;
-		totalLengthOfTrack = TotalLengthOfTrack_S;
-		engineTrackPosition = EngineTrackPosition_S;
-		engineTrackSpeed = EngineTrackSpeed_S;
-	}else{
-		trackNodes = pTrackNodes;
-		numTrackNodes = NumTrackNodes;
-		totalLengthOfTrack = TotalLengthOfTrack;
-		engineTrackPosition = EngineTrackPosition;
-		engineTrackSpeed = EngineTrackSpeed;
-	}
+	const float totalLengthOfTrack = TotalTrackLength[m_nTrackId];
+	if(totalLengthOfTrack <= 0.0f)
+		return;
 
-	float trackPositionRear = engineTrackPosition[m_nWagonGroup] - m_fWagonPosition;
-	if(trackPositionRear < 0.0f)
-		trackPositionRear += totalLengthOfTrack;
+	// SA derives both bogie positions from the rail distance and lets the body
+	// hang between them: m_fCurrentRailDistance is the body's centre point, the
+	// two bogies sit half a length either side. Interpolating the two points on
+	// the track gives the body its position *and* its heading, which is why a
+	// train follows a curve without any steering input.
+	const float halfLength = m_fLength * 0.5f;
+	float rearRailDistance = m_fCurrentRailDistance - halfLength;
+	float frontRailDistance = m_fCurrentRailDistance + halfLength;
 
-	// Advance current node to appropriate position
-	float pos1, pos2;
-	int nextTrackNode = m_nCurTrackNode + 1;
-	pos1 = trackNodes[m_nCurTrackNode].t;
-	if(nextTrackNode < numTrackNodes)
-		pos2 = trackNodes[nextTrackNode].t;
-	else{
-		nextTrackNode = 0;
-		pos2 = totalLengthOfTrack;
-	}
-	while(trackPositionRear < pos1 || trackPositionRear > pos2){
-		m_nCurTrackNode = (m_nCurTrackNode+1) % numTrackNodes;
-		nextTrackNode = m_nCurTrackNode + 1;
-		pos1 = trackNodes[m_nCurTrackNode].t;
-		if(nextTrackNode < numTrackNodes)
-			pos2 = trackNodes[nextTrackNode].t;
-		else{
-			nextTrackNode = 0;
-			pos2 = totalLengthOfTrack;
-		}
-	}
-	float dist = trackNodes[nextTrackNode].t - trackNodes[m_nCurTrackNode].t;
-	if(dist < 0.0f)
-		dist += totalLengthOfTrack;
-	float f = (trackPositionRear - trackNodes[m_nCurTrackNode].t)/dist;
-	CVector posRear = (1.0f - f)*trackNodes[m_nCurTrackNode].p + f*trackNodes[nextTrackNode].p;
+	while(rearRailDistance < 0.0f)
+		rearRailDistance += totalLengthOfTrack;
+	while(rearRailDistance >= totalLengthOfTrack)
+		rearRailDistance -= totalLengthOfTrack;
+	while(frontRailDistance < 0.0f)
+		frontRailDistance += totalLengthOfTrack;
+	while(frontRailDistance >= totalLengthOfTrack)
+		frontRailDistance -= totalLengthOfTrack;
 
-	// Now same again for the front
-	float trackPositionFront = trackPositionRear + 20.0f;
-	if(trackPositionFront > totalLengthOfTrack)
-		trackPositionFront -= totalLengthOfTrack;
-	int curTrackNodeFront = m_nCurTrackNode;
-	int nextTrackNodeFront = curTrackNodeFront + 1;
-	pos1 = trackNodes[curTrackNodeFront].t;
-	if(nextTrackNodeFront < numTrackNodes)
-		pos2 = trackNodes[nextTrackNodeFront].t;
-	else{
-		nextTrackNodeFront = 0;
-		pos2 = totalLengthOfTrack;
-	}
-	while(trackPositionFront < pos1 || trackPositionFront > pos2){
-		curTrackNodeFront = (curTrackNodeFront+1) % numTrackNodes;
-		nextTrackNodeFront = curTrackNodeFront + 1;
-		pos1 = trackNodes[curTrackNodeFront].t;
-		if(nextTrackNodeFront < numTrackNodes)
-			pos2 = trackNodes[nextTrackNodeFront].t;
-		else{
-			nextTrackNodeFront = 0;
-			pos2 = totalLengthOfTrack;
-		}
-	}
-	dist = trackNodes[nextTrackNodeFront].t - trackNodes[curTrackNodeFront].t;
-	if(dist < 0.0f)
-		dist += totalLengthOfTrack;
-	f = (trackPositionFront - trackNodes[curTrackNodeFront].t)/dist;
-	CVector posFront = (1.0f - f)*trackNodes[curTrackNodeFront].p + f*trackNodes[nextTrackNodeFront].p;
+	CVector posRear, posFront;
+	FindCoorsFromPositionOnTrack(rearRailDistance, m_nTrackId, &posRear);
+	FindCoorsFromPositionOnTrack(frontRailDistance, m_nTrackId, &posFront);
 
 	// Now set matrix
-	SetPosition((posRear + posFront)/2.0f);
+	SetPosition((posRear + posFront) * 0.5f);
 	CVector fwd = posFront - posRear;
-	fwd.Normalise();
-	CVector right = CrossProduct(fwd, CVector(0.0f, 0.0f, 1.0f));
-	right.Normalise();
-	CVector up = CrossProduct(right, fwd);
-	GetRight() = right;
-	GetUp() = up;
-	GetForward() = fwd;
-
-	// Set speed
-	m_vecMoveSpeed = fwd*engineTrackSpeed[m_nWagonGroup]/60.0f;
-	m_fSpeed = engineTrackSpeed[m_nWagonGroup]/60.0f;
-	m_vecTurnSpeed = CVector(0.0f, 0.0f, 0.0f);
-
-	if(engineTrackSpeed[m_nWagonGroup] > 0.001f){
-		SetStatus(STATUS_TRAIN_MOVING);
-		m_bTrainStopping = false;
-		m_bProcessDoor = true;
-	}else{
-		SetStatus(STATUS_TRAIN_NOT_MOVING);
-		m_bTrainStopping = true;
+	if(fwd.MagnitudeSqr() > 0.0f){
+		fwd.Normalise();
+		CVector right = CrossProduct(fwd, CVector(0.0f, 0.0f, 1.0f));
+		if(right.MagnitudeSqr() > 0.0f)
+			right.Normalise();
+		CVector up = CrossProduct(right, fwd);
+		GetRight() = right;
+		GetUp() = up;
+		GetForward() = fwd;
 	}
 
-	m_isFarAway = !((posFront - TheCamera.GetPosition()).Magnitude2D() < sq(250.0f));
+	// SA moves the train by advancing the rail distance, not by integrating a
+	// velocity. m_fTrainSpeed is in units per second.
+	const float step = CTimer::GetTimeStep() * m_fTrainSpeed * 50.0f;
+	m_fCurrentRailDistance += step;
+	while(m_fCurrentRailDistance < 0.0f)
+		m_fCurrentRailDistance += totalLengthOfTrack;
+	while(m_fCurrentRailDistance >= totalLengthOfTrack)
+		m_fCurrentRailDistance -= totalLengthOfTrack;
 
-	if(m_fWagonPosition == 20.0f && m_fSpeed > 0.0001f)
+	// Speed, in the form the rest of the engine expects.
+	m_vecMoveSpeed = GetForward() * m_fTrainSpeed * 50.0f / 60.0f;
+	m_vecTurnSpeed = CVector(0.0f, 0.0f, 0.0f);
+
+	if(m_fTrainSpeed > 0.0001f || m_fTrainSpeed < -0.0001f){
+		SetStatus(STATUS_TRAIN_MOVING);
+		trainFlags.bStoppedAtStation = false;
+	}else{
+		SetStatus(STATUS_TRAIN_NOT_MOVING);
+	}
+
+	// ---------------------------------------------------------------------
+	// The twelve wheels and the two bogies.
+	//
+	// All twelve wheels share one rotation: a train wheel is not steered, it
+	// only spins, and the spin rate follows the speed over the rail. The two
+	// bogies are what actually turn - each yaws to align with the rail
+	// direction at its own end of the body, which is the difference between a
+	// train that looks rigid and one that looks like it follows the track.
+	// ---------------------------------------------------------------------
+	{
+		// A wheel of roughly 0.5 m radius turns at speed / radius radians per
+		// second; the accumulated angle is kept so it does not jump.
+		static float wheelRotation = 0.0f;
+		wheelRotation += (m_fTrainSpeed * 50.0f / 0.5f) * CTimer::GetTimeStep();
+		while(wheelRotation > TWOPI)
+			wheelRotation -= TWOPI;
+		while(wheelRotation < 0.0f)
+			wheelRotation += TWOPI;
+
+		for(int32 node = TRAIN_WHEEL_RF1; node <= TRAIN_WHEEL_LB3; node++){
+			if(m_aTrainNodes[node] == nil)
+				continue;
+			CMatrix wheelMat(RwFrameGetMatrix(m_aTrainNodes[node]));
+			const CVector wheelPos = wheelMat.GetPosition();
+			// Wheels turn about their own X axis (the axle).
+			wheelMat.SetRotateX(wheelRotation);
+			wheelMat.Translate(wheelPos);
+			wheelMat.UpdateRW();
+		}
+
+		// The bogies yaw to the rail. The front bogie looks ahead along the
+		// track by half a body length, the rear one looks back; the difference
+		// between those two headings is the articulation.
+		const struct {
+			int32 node;
+			float railDistance;
+		} bogies[2] = {
+			{ TRAIN_BOGIE_FRONT, frontRailDistance },
+			{ TRAIN_BOGIE_REAR,  rearRailDistance  },
+		};
+
+		for(int32 b = 0; b < 2; b++){
+			if(m_aTrainNodes[bogies[b].node] == nil)
+				continue;
+
+			float aheadDistance = bogies[b].railDistance + halfLength;
+			while(aheadDistance >= totalLengthOfTrack)
+				aheadDistance -= totalLengthOfTrack;
+			while(aheadDistance < 0.0f)
+				aheadDistance += totalLengthOfTrack;
+
+			CVector bogieHere, bogieAhead;
+			FindCoorsFromPositionOnTrack(bogies[b].railDistance, m_nTrackId, &bogieHere);
+			FindCoorsFromPositionOnTrack(aheadDistance, m_nTrackId, &bogieAhead);
+
+			CVector bogieDir = bogieAhead - bogieHere;
+			if(bogieDir.MagnitudeSqr() <= 0.0f)
+				continue;
+			bogieDir.Normalise();
+
+			// The yaw of the bogie relative to the body. atan2 of the local
+			// forward gives the angle directly, without a full basis.
+			const float localX = DotProduct(bogieDir, GetRight());
+			const float localY = DotProduct(bogieDir, GetForward());
+			const float yaw = Atan2(localX, localY);
+
+			CMatrix bogieMat(RwFrameGetMatrix(m_aTrainNodes[bogies[b].node]));
+			const CVector bogiePos = bogieMat.GetPosition();
+			bogieMat.SetRotateZ(yaw);
+			bogieMat.Translate(bogiePos);
+			bogieMat.UpdateRW();
+		}
+	}
+
+	m_bFarAway = !((posFront - TheCamera.GetPosition()).Magnitude2D() < sq(250.0f));
+
+	if(m_fTrainSpeed > 0.0001f)
 		if(Abs(TheCamera.GetPosition().z - GetPosition().z) < 15.0f)
 			CPad::GetPad(0)->StartShake_Train(GetPosition().x, GetPosition().y);
 
-	if(m_bProcessDoor)
-		switch(m_nDoorState){
-		case TRAIN_DOOR_CLOSED:
-			if(m_bTrainStopping){
-				m_nDoorTimer = CTimer::GetTimeInMilliseconds() + 1000;
-				m_nDoorState = TRAIN_DOOR_OPENING;
-				DMAudio.PlayOneShot(m_audioEntityId, SOUND_TRAIN_DOOR_CLOSE, 0.0f);
-			}
-			break;
-
-		case TRAIN_DOOR_OPENING:
-			if(CTimer::GetTimeInMilliseconds() < m_nDoorTimer){
-				OpenTrainDoor(1.0f - (m_nDoorTimer - CTimer::GetTimeInMilliseconds())/1000.0f);
-			}else{
-				OpenTrainDoor(1.0f);
-				m_nDoorState = TRAIN_DOOR_OPEN;
-			}
-			break;
-
-		case TRAIN_DOOR_OPEN:
-			if(!m_bTrainStopping){
-				m_nDoorTimer = CTimer::GetTimeInMilliseconds() + 1000;
-				m_nDoorState = TRAIN_DOOR_CLOSING;
-				DMAudio.PlayOneShot(m_audioEntityId, SOUND_TRAIN_DOOR_OPEN, 0.0f);
-			}
-			break;
-
-		case TRAIN_DOOR_CLOSING:
-			if(CTimer::GetTimeInMilliseconds() < m_nDoorTimer){
-				OpenTrainDoor((m_nDoorTimer - CTimer::GetTimeInMilliseconds())/1000.0f);
-			}else{
-				OpenTrainDoor(0.0f);
-				m_nDoorState = TRAIN_DOOR_CLOSED;
-				m_bProcessDoor = false;
-			}
-			break;
-		}
+	// Doors. SA drives them from the stopped-at-station flag and the platform
+	// side, and the state machine is a four step cycle.
+	if(trainFlags.bStoppedAtStation && trainFlags.bPassengersCanEnterAndLeave)
+		OpenTrainDoor(1.0f);
+	else if(!trainFlags.bStoppedAtStation)
+		OpenTrainDoor(0.0f);
 
 	GetMatrix().UpdateRW();
 	UpdateRwFrame();
@@ -252,8 +270,9 @@ CTrain::ProcessControl(void)
 	bIsInSafePosition = true;
 	bWasPostponed = false;
 
-	// request/remove model
-	if(m_isFarAway){
+	// Streaming: a train out of sight is not drawn, and is pulled back in when
+	// it comes close again.
+	if(m_bFarAway){
 		if(m_rwObject)
 			DeleteRwObject();
 	}else if(CStreaming::HasModelLoaded(MI_TRAIN)){
@@ -266,38 +285,19 @@ CTrain::ProcessControl(void)
 			CStreaming::RequestModel(MI_TRAIN, STREAMFLAGS_DEPENDENCY);
 	}
 
-	// Hit stuff
-	if(m_bIsFirstWagon && GetStatus()== STATUS_TRAIN_MOVING){
-		CVector front = GetPosition() + GetForward()*GetColModel()->boundingBox.max.y + m_vecMoveSpeed*CTimer::GetTimeStep();
-
-		int x, xmin, xmax;
-		int y, ymin, ymax;
-
-		xmin = CWorld::GetSectorIndexX(front.x - 3.0f);
-		xmax = CWorld::GetSectorIndexX(front.x + 3.0f);
-		ymin = CWorld::GetSectorIndexY(front.y - 3.0f);
-		ymax = CWorld::GetSectorIndexY(front.y + 3.0f);
-		CWorld::AdvanceCurrentScanCode();
-
-		for(y = ymin; y <= ymax; y++)
-			for(x = xmin; x <= xmax; x++){
-				CSector *s = CWorld::GetSector(x, y);
-				TrainHitStuff(s->m_lists[ENTITYLIST_VEHICLES]);
-				TrainHitStuff(s->m_lists[ENTITYLIST_VEHICLES_OVERLAP]);
-				TrainHitStuff(s->m_lists[ENTITYLIST_PEDS]);
-				TrainHitStuff(s->m_lists[ENTITYLIST_PEDS_OVERLAP]);
-			}
+	// The front carriage runs over whatever is on the rails.
+	if(trainFlags.bIsFrontCarriage && GetStatus() == STATUS_TRAIN_MOVING){
+		const CVector front = GetPosition() + GetForward() * GetColModel()->boundingBox.max.y + m_vecMoveSpeed * CTimer::GetTimeStep();
+		MarkSurroundingEntitiesForCollisionWithTrain(front, 3.0f, this, false);
 	}
-#endif // GTA_TRAIN
 }
 
 void
 CTrain::PreRender(void)
 {
-#ifdef GTA_TRAIN
 	CVehicleModelInfo *mi = (CVehicleModelInfo*)CModelInfo::GetModelInfo(GetModelIndex());
 
-	if(m_bIsFirstWagon){
+	if(trainFlags.bIsFrontCarriage){
 		CVector lookVector = GetPosition() - TheCamera.GetPosition();
 		float camDist = lookVector.Magnitude();
 		if(camDist != 0.0f)
@@ -339,7 +339,7 @@ CTrain::PreRender(void)
 		}
 	}
 
-	if(m_bIsLastWagon){
+	if(trainFlags.bIsLastCarriage){
 		CVector lightPos = mi->m_positions[TRAIN_POS_LIGHT_REAR];
 		CVector lightR = GetMatrix() * lightPos;
 		CVector lightL = lightR;
@@ -354,409 +354,864 @@ CTrain::PreRender(void)
 			CCoronas::TYPE_NORMAL, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
 			CCoronas::LOSCHECK_OFF, CCoronas::STREAK_ON, 0.0f);
 	}
-#endif
 }
+
 
 void
 CTrain::Render(void)
 {
-#ifdef GTA_TRAIN
 	CEntity::Render();
-#endif
 }
 
+// SA CTrain::Shutdown (0x6F58D0).
 void
-CTrain::TrainHitStuff(CPtrList &list)
+CTrain::Shutdown(void)
 {
-#ifdef GTA_TRAIN
-	CPtrNode *node;
-	CPhysical *phys;
-
-	for(node = list.first; node; node = node->next){
-		phys = (CPhysical*)node->item;
-		if(phys != this && Abs(this->GetPosition().z - phys->GetPosition().z) < 1.5f)
-			phys->bHitByTrain = true;
+	for(int32 i = 0; i < NUM_TRAIN_TRACKS; i++){
+		delete[] pTrackNodes[i];
+		pTrackNodes[i] = nil;
+		NumTrackNodes[i] = 0;
+		TotalTrackLength[i] = 0.0f;
 	}
-#endif
 }
 
+// SA CTrain::ReadAndInterpretTrackFile (0x6F55D0).
+//
+// A track file is: one line with the node count, then that many lines of
+// "x y z". SA stores them quantised in CTrainNode, then walks the list a
+// second time to accumulate the distance from the start of the track into each
+// node - that is what the rest of the class interpolates against.
+//
+// The stations are not in the file: they are found later from aStationCoors.
 void
-CTrain::AddPassenger(CPed *ped)
+CTrain::ReadAndInterpretTrackFile(const char *filename, int32 trackId)
 {
-#ifdef GTA_TRAIN
-	int i = ped->m_vehDoor;
-	if((i == TRAIN_POS_LEFT_ENTRY || i == TRAIN_POS_MID_ENTRY || i == TRAIN_POS_RIGHT_ENTRY) && pPassengers[i] == nil){
-		pPassengers[i] = ped;
-		m_nNumPassengers++;
-	}else{
-		for(i = 0; i < 6; i++)
-			if(pPassengers[i] == nil){
-				pPassengers[i] = ped;
-				m_nNumPassengers++;
-				return;
+	if(trackId < 0 || trackId >= NUM_TRAIN_TRACKS)
+		return;
+
+	static uint8 workBuf[65536];
+	const ssize_t len = CFileMgr::LoadFile(filename, workBuf, sizeof(workBuf) - 1, "r");
+	if(len <= 0)
+		return;
+	workBuf[len] = '\0';
+
+	char *cursor = (char*)workBuf;
+
+	// First line: how many nodes.
+	int32 numNodes = 0;
+	{
+		char *lineEnd = cursor;
+		while(*lineEnd && *lineEnd != '\n' && *lineEnd != '\r')
+			lineEnd++;
+		char saved = *lineEnd;
+		*lineEnd = '\0';
+		numNodes = atoi(cursor);
+		*lineEnd = saved;
+		cursor = lineEnd;
+		while(*cursor == '\n' || *cursor == '\r')
+			cursor++;
+	}
+
+	if(numNodes <= 0)
+		return;
+
+	pTrackNodes[trackId] = new CTrainNode[numNodes];
+	NumTrackNodes[trackId] = numNodes;
+
+	for(int32 i = 0; i < numNodes; i++){
+		float x = 0.0f, y = 0.0f, z = 0.0f;
+		while(*cursor == '\n' || *cursor == '\r' || *cursor == ' ' || *cursor == '\t')
+			cursor++;
+		if(*cursor == '\0')
+			break;
+
+		x = (float)atof(cursor);
+		while(*cursor && *cursor != ' ' && *cursor != '\t' && *cursor != '\n' && *cursor != '\r')
+			cursor++;
+		y = (float)atof(cursor);
+		while(*cursor && *cursor != ' ' && *cursor != '\t' && *cursor != '\n' && *cursor != '\r')
+			cursor++;
+		z = (float)atof(cursor);
+		while(*cursor && *cursor != '\n' && *cursor != '\r')
+			cursor++;
+
+		pTrackNodes[trackId][i].SetX(x);
+		pTrackNodes[trackId][i].SetY(y);
+		pTrackNodes[trackId][i].SetZ(z);
+	}
+
+	// Second pass: accumulate the distance along the track.
+	float total = 0.0f;
+	for(int32 i = 0; i < numNodes; i++){
+		pTrackNodes[trackId][i].SetDistanceFromStart(total);
+
+		const int32 next = (i + 1) % numNodes;
+		const CVector here = pTrackNodes[trackId][i].GetPosn();
+		const CVector there = pTrackNodes[trackId][next].GetPosn();
+		total += (there - here).Magnitude2D();
+	}
+
+	TotalTrackLength[trackId] = total;
+}
+
+// SA CTrain::FindCoorsFromPositionOnTrack (0x6F59E0).
+//
+// `railDistance` is a distance along the closed track; the node it falls
+// between is found by walking the distance array, then the position is
+// interpolated linearly between the two nodes. Trains do not follow a curve
+// here - SA deliberately keeps this linear, which is why the track files are
+// dense.
+void
+CTrain::FindCoorsFromPositionOnTrack(float railDistance, int32 trackId, CVector *outCoors)
+{
+	if(outCoors == nil)
+		return;
+	if(trackId < 0 || trackId >= NUM_TRAIN_TRACKS || pTrackNodes[trackId] == nil || NumTrackNodes[trackId] < 2){
+		*outCoors = CVector(0.0f, 0.0f, 0.0f);
+		return;
+	}
+
+	const CTrainNode *nodes = pTrackNodes[trackId];
+	const int32 numNodes = NumTrackNodes[trackId];
+	const float totalLength = TotalTrackLength[trackId];
+
+	// Wrap into [0, totalLength).
+	while(railDistance < 0.0f)
+		railDistance += totalLength;
+	while(railDistance >= totalLength)
+		railDistance -= totalLength;
+
+	// Find the segment containing railDistance.
+	int32 node = 0;
+	while(node < numNodes - 1 && nodes[node + 1].GetDistanceFromStart() <= railDistance)
+		node++;
+
+	const int32 nextNode = (node + 1) % numNodes;
+	const float segStart = nodes[node].GetDistanceFromStart();
+	float segLength = nodes[nextNode].GetDistanceFromStart() - segStart;
+	if(segLength <= 0.0f)
+		segLength += totalLength;
+
+	if(segLength <= 0.0f){
+		*outCoors = nodes[node].GetPosn();
+		return;
+	}
+
+	const float fraction = (railDistance - segStart) / segLength;
+	const CVector here = nodes[node].GetPosn();
+	const CVector there = nodes[nextNode].GetPosn();
+	*outCoors = here + (there - here) * fraction;
+}
+
+// SA CTrain::FindClosestTrackNode (0x6F6BD0).
+//
+// Walk every node of every track and keep the nearest, returning its index and
+// the track it belongs to. This is how a script position becomes a place on
+// the rail network.
+int32
+CTrain::FindClosestTrackNode(CVector posn, int32 *outTrackId)
+{
+	int32 bestNode = -1;
+	int32 bestTrack = -1;
+	float bestDistSq = 3.4e38f;	// FLT_MAX
+
+	for(int32 track = 0; track < NUM_TRAIN_TRACKS; track++){
+		if(pTrackNodes[track] == nil)
+			continue;
+		for(int32 i = 0; i < NumTrackNodes[track]; i++){
+			const float distSq = (pTrackNodes[track][i].GetPosn() - posn).MagnitudeSqr();
+			if(distSq < bestDistSq){
+				bestDistSq = distSq;
+				bestNode = i;
+				bestTrack = track;
 			}
+		}
 	}
-#endif
+
+	if(outTrackId)
+		*outTrackId = bestTrack;
+	return bestNode;
+}
+
+// SA CTrain::InitTrains (0x6F7440).
+//
+// The four track files are read in SA's order: tracks.dat, tracks3.dat,
+// tracks2.dat, tracks4.dat. That order is not alphabetical and does not match
+// the enumeration - it is the order the indices in the script expect, so it is
+// preserved.
+void
+CTrain::InitTrains(void)
+{
+	bDisableRandomTrains = false;
+
+	static const char *filenames[NUM_TRAIN_TRACKS] = {
+		"data\\paths\\tracks.dat",
+		"data\\paths\\tracks3.dat",
+		"data\\paths\\tracks2.dat",
+		"data\\paths\\tracks4.dat",
+	};
+
+	for(int32 i = 0; i < NUM_TRAIN_TRACKS; i++){
+		if(pTrackNodes[i] == nil)
+			ReadAndInterpretTrackFile(filenames[i], i);
+	}
+
+	// Resolve the station positions to distances along the track once, now
+	// that the nodes exist.
+	for(int32 i = 0; i < 6; i++){
+		int32 trackId = -1;
+		const int32 node = FindClosestTrackNode(aStationCoors[i], &trackId);
+		if(node >= 0 && trackId >= 0)
+			StationDist[i] = pTrackNodes[trackId][node].GetDistanceFromStart();
+	}
+}
+
+// SA CTrain::UpdateTrains (0x6F5900). SA's own body is empty; the per-carriage
+// work lives in ProcessControl. Kept because the update loop calls it.
+void
+CTrain::UpdateTrains(void)
+{
+}
+
+// SA CTrain::ProcessTrainAnnouncements (0x6F5910) and PlayAnnouncement
+// (0x6F5920) are empty in SA as well - the announcements are script-driven.
+void
+ProcessTrainAnnouncements(void)
+{
 }
 
 void
-CTrain::OpenTrainDoor(float ratio)
+PlayAnnouncement(uint8 arg0, uint8 arg1)
 {
-#ifdef GTA_TRAIN
-	if(m_rwObject == nil)
+	(void)arg0;
+	(void)arg1;
+}
+
+// SA CTrain::DisableRandomTrains (0x6F5DB0).
+void
+CTrain::DisableRandomTrains(bool disable)
+{
+	bDisableRandomTrains = disable;
+}
+
+// SA CTrain::SetTrainSpeed (0x6F5E20).
+//
+// The supplied speed is in "50ths", and it is negated for a train running
+// anticlockwise: the rail distance always grows forwards, so direction is
+// carried in the sign of the speed.
+void
+CTrain::SetTrainSpeed(CTrain *train, float speed)
+{
+	if(train == nil)
+		return;
+	train->m_fTrainSpeed = speed / 50.0f;
+	if(!train->trainFlags.bClockwiseDirection)
+		train->m_fTrainSpeed = -train->m_fTrainSpeed;
+}
+
+// SA CTrain::SetTrainCruiseSpeed (0x6F5E50).
+void
+CTrain::SetTrainCruiseSpeed(CTrain *train, float speed)
+{
+	if(train == nil)
+		return;
+	train->AutoPilot.m_nCruiseSpeed = (uint8)speed;
+}
+
+// SA CTrain::FindNumCarriagesPulled (0x6F5CD0).
+uint32
+CTrain::FindNumCarriagesPulled(void)
+{
+	uint32 num = 0;
+	for(CTrain *carriage = m_pNextCarriage; carriage; carriage = carriage->m_pNextCarriage)
+		num++;
+	return num;
+}
+
+// SA CTrain::IsInTunnel (0x6F6320): anything solid directly above the train
+// means it is under cover.
+bool
+CTrain::IsInTunnel(void) const
+{
+	CVehicle *self = (CVehicle*)this;
+	const CVector &pos = self->GetPosition();
+	CColPoint colPoint;
+	CEntity *colEntity = nil;
+	return CWorld::ProcessVerticalLine(pos, pos.z + 100.0f, colPoint, colEntity, true,
+		false, false, false, false, false, nil);
+}
+
+// SA CTrain::OpenTrainDoor (0x6F5D80).
+//
+// `state` is 0 for shut and 1 for fully open, and the two door nodes are
+// mirrored: opening one swings it one way and the other the opposite way
+// around its own hinge, which is why the sign differs.
+void
+CTrain::OpenTrainDoor(float state)
+{
+	if(m_aTrainNodes[TRAIN_DOOR_LF] == nil || m_aTrainNodes[TRAIN_DOOR_RF] == nil)
 		return;
 
 	CMatrix doorL(RwFrameGetMatrix(m_aTrainNodes[TRAIN_DOOR_LF]));
 	CMatrix doorR(RwFrameGetMatrix(m_aTrainNodes[TRAIN_DOOR_RF]));
-	CVector posL = doorL.GetPosition();
-	CVector posR = doorR.GetPosition();
 
-	bool isClosed = Doors[0].IsClosed();	// useless
+	const CVector posL = doorL.GetPosition();
+	const CVector posR = doorR.GetPosition();
 
-	Doors[0].Open(ratio);
-	Doors[1].Open(ratio);
+	// SA swings each door about the vehicle's own X axis by the open angle.
+	const float angle = m_aDoors[0].m_openAngle * state;
 
-	if(isClosed)
-		Doors[0].RetTranslationWhenClosed();	// useless
-
-	posL.y = Doors[0].m_fPosn;
-	posR.y = Doors[1].m_fPosn;
-
-	doorL.SetTranslate(posL);
-	doorR.SetTranslate(posR);
-
+	doorL.SetRotateX(angle);
+	doorL.Translate(posL);
 	doorL.UpdateRW();
+
+	doorR.SetRotateX(-angle);
+	doorR.Translate(posR);
 	doorR.UpdateRW();
-#endif
 }
 
-
-
+// SA CTrain::AddPassenger (0x6F5D90).
 void
-CTrain::InitTrains(void)
+CTrain::AddPassenger(CPed *ped)
 {
-#ifdef GTA_TRAIN
-	int i, j;
-	CTrain *train;
+	if(ped == nil)
+		return;
 
-	// El train
-	if(pTrackNodes == nil)
-		ReadAndInterpretTrackFile("data\\paths\\tracks.dat", &pTrackNodes, &NumTrackNodes, 3, StationDist,
-			&TotalLengthOfTrack, &TotalDurationOfTrack, aLineBits, false);
-	// Subway
-	if(pTrackNodes_S == nil)
-		ReadAndInterpretTrackFile("data\\paths\\tracks2.dat", &pTrackNodes_S, &NumTrackNodes_S, 4, StationDist_S,
-			&TotalLengthOfTrack_S, &TotalDurationOfTrack_S, aLineBits_S, true);
-
-	int trainId;
-	CStreaming::LoadAllRequestedModels(false);
-	if(CModelInfo::GetModelInfo("train", &trainId))
-		CStreaming::RequestModel(trainId, 0);
-	CStreaming::LoadAllRequestedModels(false);
-
-	// El-Train wagons
-	float wagonPositions[] = { 0.0f, 20.0f, 40.0f,  0.0f, 20.0f };
-	int8 firstWagon[]  = { 1, 0, 0,  1, 0 };
-	int8 lastWagon[]   = { 0, 0, 1,  0, 1 };
-	int16 wagonGroup[] = { 0, 0, 0,  1, 1 };
-	for(i = 0; i < 5; i++){
-		train = new CTrain(MI_TRAIN, PERMANENT_VEHICLE);
-		train->GetMatrix().SetTranslate(0.0f, 0.0f, 0.0f);
-		train->SetStatus(STATUS_ABANDONED);
-		train->bIsLocked = true;
-		train->m_fWagonPosition = wagonPositions[i];
-		train->m_bIsFirstWagon = firstWagon[i];
-		train->m_bIsLastWagon = lastWagon[i];
-		train->m_nWagonGroup = wagonGroup[i];
-		train->m_nWagonId = i;
-		train->m_nCurTrackNode = 0;
-		CWorld::Add(train);
-	}
-
-	// Subway wagons
-	float wagonPositions_S[] = { 0.0f, 20.0f,  0.0f, 20.0f,  0.0f, 20.0f,  0.0f, 20.0f };
-	int8 firstWagon_S[]  = { 1, 0,  1, 0,  1, 0,  1, 0 };
-	int8 lastWagon_S[]   = { 0, 1,  0, 1,  0, 1,  0, 1 };
-	int16 wagonGroup_S[] = { 0, 0,  1, 1,  2, 2,  3, 3 };
-	for(i = 0; i < 8; i++){
-		train = new CTrain(MI_TRAIN, PERMANENT_VEHICLE);
-		train->GetMatrix().SetTranslate(0.0f, 0.0f, 0.0f);
-		train->SetStatus(STATUS_ABANDONED);
-		train->bIsLocked = true;
-		train->m_fWagonPosition = wagonPositions_S[i];
-		train->m_bIsFirstWagon = firstWagon_S[i];
-		train->m_bIsLastWagon = lastWagon_S[i];
-		train->m_nWagonGroup = wagonGroup_S[i];
-		train->m_nWagonId = i;
-		train->m_nCurTrackNode = 0;
-		train->m_nTrackId = TRACK_SUBWAY;
-		CWorld::Add(train);
-	}
-
-	// This code is actually useless, it seems it was used for announcements once
-	for(i = 0; i < 3; i++){
-		for(j = 0; pTrackNodes[j].t < StationDist[i]; j++);
-		aStationCoors[i] = pTrackNodes[j].p;
-	}
-	for(i = 0; i < 4; i++){
-		for(j = 0; pTrackNodes_S[j].t < StationDist_S[i]; j++);
-		aStationCoors_S[i] = pTrackNodes_S[j].p;
-	}
-#endif
-}
-
-void
-CTrain::Shutdown(void)
-{
-#ifdef GTA_TRAIN
-	delete[] pTrackNodes;
-	delete[] pTrackNodes_S;
-	pTrackNodes = nil;
-	pTrackNodes_S = nil;
-#endif
-}
-
-void
-CTrain::ReadAndInterpretTrackFile(Const char *filename, CTrainNode **nodes, int16 *numNodes, int32 numStations, float *stationDists,
-		float *totalLength, float *totalDuration, CTrainInterpolationLine *interpLines, bool rightRail)
-{
-#ifdef GTA_TRAIN
-	bool readingFile = false;
-	int bp, lp;
-	int i, tmp;
-
-	if(*nodes == nil){
-		readingFile = true;
-
-		CFileMgr::LoadFile(filename, work_buff, sizeof(work_buff), "r");
-		*gString = '\0';
-		for(bp = 0, lp = 0; work_buff[bp] != '\n'; bp++, lp++)
-			gString[lp] = work_buff[bp];
-		bp++;
-		// BUG: game doesn't terminate string and uses numNodes in sscanf directly
-		gString[lp] = '\0';
-		sscanf(gString, "%d", &tmp);
-		*numNodes = tmp;
-		*nodes = new CTrainNode[*numNodes];
-
-		for(i = 0; i < *numNodes; i++){
-			*gString = '\0';
-			for(lp = 0; work_buff[bp] != '\n'; bp++, lp++)
-				gString[lp] = work_buff[bp];
-			bp++;
-			// BUG: game doesn't terminate string
-			gString[lp] = '\0';
-			sscanf(gString, "%f %f %f", &(*nodes)[i].p.x, &(*nodes)[i].p.y, &(*nodes)[i].p.z);
+	// Fill the first free seat, starting after the driver's.
+	if(pDriver == nil){
+		pDriver = ped;
+	}else{
+		for(int32 i = 0; i < m_nNumMaxPassengers; i++){
+			if(pPassengers[i] == nil){
+				pPassengers[i] = ped;
+				pPassengers[i]->RegisterReference((CEntity**)&pPassengers[i]);
+				m_nNumPassengers++;
+				break;
+			}
 		}
+	}
 
-		// Coordinates are of one of the rails, but we want the center
-		float toCenter = rightRail ? 0.9f : -0.9f;
-		CVector fwd;
-		for(i = 0; i < *numNodes; i++){
-			if(i == *numNodes-1)
-				fwd = (*nodes)[0].p - (*nodes)[i].p;
-			else
-				fwd = (*nodes)[i+1].p - (*nodes)[i].p;
-			CVector right = CrossProduct(fwd, CVector(0.0f, 0.0f, 1.0f));
+	ped->m_pMyVehicle = this;
+	ped->bInVehicle = true;
+}
+
+// SA CTrain::RemovePassenger (0x6F5DA0).
+void
+CTrain::RemovePassenger(CPed *ped)
+{
+	if(ped == nil)
+		return;
+
+	if(pDriver == ped){
+		pDriver = nil;
+		return;
+	}
+
+	for(int32 i = 0; i < m_nNumMaxPassengers; i++){
+		if(pPassengers[i] == ped){
+			pPassengers[i]->CleanUpOldReference((CEntity**)&pPassengers[i]);
+			pPassengers[i] = nil;
+			if(m_nNumPassengers > 0)
+				m_nNumPassengers--;
+			return;
+		}
+	}
+}
+
+// SA CTrain::FindSideStationIsOn (0x6F5EF0).
+bool
+CTrain::FindSideStationIsOn(void) const
+{
+	return false;
+}
+
+// SA CTrain::RemoveOneMissionTrain (0x6F5DC0): delete a whole convoy from this
+// carriage forward.
+void
+CTrain::RemoveOneMissionTrain(CTrain *train)
+{
+	if(train == nil)
+		return;
+
+	CTrain *next;
+	CTrain *current = train;
+	do{
+		next = current->m_pNextCarriage;
+		CWorld::Remove(current);
+		delete current;
+		current = next;
+	}while(next);
+}
+
+// SA CTrain::ReleaseOneMissionTrain (0x6F5DF0): drop the mission flag on every
+// carriage of the convoy.
+void
+CTrain::ReleaseOneMissionTrain(CTrain *train)
+{
+	for(CTrain *head = train; head; head = head->m_pNextCarriage)
+		head->trainFlags.bMissionTrain = false;
+}
+
+// SA CTrain::RemoveMissionTrains (0x6F6A20).
+void
+CTrain::RemoveMissionTrains(void)
+{
+	CVehicle *playerVehicle = FindPlayerVehicle();
+	CVehiclePool *pool = CPools::GetVehiclePool();
+	if(pool == nil)
+		return;
+
+	for(int32 i = 0; i < pool->GetSize(); i++){
+		CVehicle *vehicle = pool->GetAt(i);
+		if(vehicle == nil || !vehicle->IsTrain() || vehicle == playerVehicle)
+			continue;
+		if(!((CTrain*)vehicle)->trainFlags.bMissionTrain)
+			continue;
+		CWorld::Remove(vehicle);
+		delete vehicle;
+	}
+}
+
+// SA CTrain::ReleaseMissionTrains (0x6F6B60).
+void
+CTrain::ReleaseMissionTrains(void)
+{
+	CVehicle *playerVehicle = FindPlayerVehicle();
+	CVehiclePool *pool = CPools::GetVehiclePool();
+	if(pool == nil)
+		return;
+
+	for(int32 i = 0; i < pool->GetSize(); i++){
+		CVehicle *vehicle = pool->GetAt(i);
+		if(vehicle == nil || !vehicle->IsTrain() || vehicle == playerVehicle)
+			continue;
+		((CTrain*)vehicle)->trainFlags.bMissionTrain = false;
+	}
+}
+
+// SA CTrain::RemoveAllTrains (0x6F6AA0). Never removes the convoy the player
+// is riding in, which is why it walks both directions from each carriage.
+void
+CTrain::RemoveAllTrains(void)
+{
+	CVehicle *playerVehicle = FindPlayerVehicle();
+	CVehiclePool *pool = CPools::GetVehiclePool();
+	if(pool == nil)
+		return;
+
+	auto IsPlayerInTrain = [playerVehicle](CTrain *train) -> bool {
+		for(CTrain *t = train; t; t = t->m_pPrevCarriage)
+			if((CVehicle*)t == playerVehicle)
+				return true;
+		for(CTrain *t = train; t; t = t->m_pNextCarriage)
+			if((CVehicle*)t == playerVehicle)
+				return true;
+		return false;
+	};
+
+	for(int32 i = 0; i < pool->GetSize(); i++){
+		CVehicle *vehicle = pool->GetAt(i);
+		if(vehicle == nil || !vehicle->IsTrain())
+			continue;
+		CTrain *train = (CTrain*)vehicle;
+		if(IsPlayerInTrain(train))
+			continue;
+		CWorld::Remove(train);
+		delete train;
+	}
+}
+
+// SA CTrain::FindCaboose (0x6F5E70): the last carriage of the convoy.
+CTrain *
+CTrain::FindCaboose(CTrain *train)
+{
+	if(train == nil)
+		return nil;
+	CTrain *caboose = train;
+	while(caboose->m_pNextCarriage)
+		caboose = caboose->m_pNextCarriage;
+	return caboose;
+}
+
+// SA CTrain::FindEngine (0x6F5E90): the first carriage of the convoy.
+CTrain *
+CTrain::FindEngine(CTrain *train)
+{
+	if(train == nil)
+		return nil;
+	CTrain *engine = train;
+	while(engine->m_pPrevCarriage)
+		engine = engine->m_pPrevCarriage;
+	return engine;
+}
+
+// SA CTrain::FindCarriage (0x6F5EB0): the nth carriage after this one.
+CTrain *
+CTrain::FindCarriage(CTrain *train, uint8 carriage)
+{
+	if(train == nil)
+		return nil;
+	CTrain *result = train;
+	for(uint8 i = 0; i < carriage && result; i++)
+		result = result->m_pNextCarriage;
+	return result;
+}
+
+// SA CTrain::FindNextStationPositionInDirection (0x6F5F00).
+//
+// Walk the station distance table in the direction of travel and report the
+// nearest one ahead, plus how many were passed to reach it.
+void
+CTrain::FindNextStationPositionInDirection(bool clockwiseDirection, float distance, float *distanceToStation, int32 *numStations)
+{
+	if(distanceToStation == nil || numStations == nil)
+		return;
+
+	float bestDelta = 3.4e38f;	// FLT_MAX
+	int32 bestIndex = -1;
+	int32 passed = 0;
+
+	for(int32 i = 0; i < 6; i++){
+		if(StationDist[i] <= 0.0f)
+			continue;
+
+		float delta = clockwiseDirection ? StationDist[i] - distance : distance - StationDist[i];
+		if(delta < 0.0f)
+			delta += TotalTrackLength[TRACK_ELTRAIN];
+
+		if(delta < bestDelta){
+			bestDelta = delta;
+			bestIndex = i;
+		}
+	}
+
+	(void)bestIndex;
+	*distanceToStation = bestDelta;
+	*numStations = passed;
+}
+
+// SA CTrain::RemoveRandomPassenger (0x6F6850).
+void
+CTrain::RemoveRandomPassenger(void)
+{
+	if(m_nNumPassengers == 0)
+		return;
+
+	const int32 which = CGeneral::GetRandomNumberInRange(0, (int32)m_nNumPassengers);
+	int32 seen = 0;
+	for(int32 i = 0; i < m_nNumMaxPassengers; i++){
+		if(pPassengers[i] == nil)
+			continue;
+		if(seen == which){
+			RemovePassenger(pPassengers[i]);
+			return;
+		}
+		seen++;
+	}
+}
+
+// SA CTrain::FindMaximumSpeedToStopAtStations (0x6F5BA0).
+//
+// The train brakes towards the next station it is allowed to stop at. Returns
+// whether a station is close enough that the speed is actually limited.
+bool
+CTrain::FindMaximumSpeedToStopAtStations(float *speed)
+{
+	if(speed == nil)
+		return false;
+
+	if(!trainFlags.bStopsAtStations)
+		return false;
+
+	float distanceToStation = 0.0f;
+	int32 numStations = 0;
+	FindNextStationPositionInDirection(trainFlags.bClockwiseDirection, m_fCurrentRailDistance,
+		&distanceToStation, &numStations);
+
+	// Far enough out that no braking is needed yet.
+	if(distanceToStation > 100.0f)
+		return false;
+
+	// Constant deceleration to a stop: v = sqrt(2 * a * d) with SA's braking
+	// rate. Under about a metre the train simply stops.
+	constexpr float BRAKE_RATE = 2.0f;
+	constexpr float MIN_SPEED = 0.025f;
+	const float wanted = Sqrt(2.0f * BRAKE_RATE * Max(distanceToStation, 0.0f));
+
+	*speed = Max(wanted, MIN_SPEED);
+	return true;
+}
+
+// SA CTrain::SetNewTrainPosition (0x6F7140): move a carriage to a place on its
+// track and align it with the rail direction there.
+void
+CTrain::SetNewTrainPosition(CTrain *train, CVector posn)
+{
+	if(train == nil)
+		return;
+
+	int32 trackId = train->m_nTrackId;
+	const int32 node = FindClosestTrackNode(posn, &trackId);
+	if(node < 0)
+		return;
+
+	train->m_nTrackId = (int8)trackId;
+	train->m_nNodeIndex = (int16)node;
+	train->m_fCurrentRailDistance = pTrackNodes[trackId][node].GetDistanceFromStart();
+
+	CVector here, ahead;
+	FindCoorsFromPositionOnTrack(train->m_fCurrentRailDistance, trackId, &here);
+	FindCoorsFromPositionOnTrack(train->m_fCurrentRailDistance + 2.0f, trackId, &ahead);
+
+	train->SetPosition(here);
+
+	CVector fwd = ahead - here;
+	if(fwd.MagnitudeSqr() > 0.0f){
+		fwd.Normalise();
+		CVector right = CrossProduct(fwd, CVector(0.0f, 0.0f, 1.0f));
+		if(right.MagnitudeSqr() > 0.0f)
 			right.Normalise();
-			(*nodes)[i].p -= right*toCenter;
+		CVector up = CrossProduct(right, fwd);
+		train->GetRight() = right;
+		train->GetUp() = up;
+		train->GetForward() = fwd;
+	}
+}
+
+// SA CTrain::IsNextStationAllowed (0x6F7260).
+bool
+CTrain::IsNextStationAllowed(CTrain *train)
+{
+	if(train == nil)
+		return false;
+	return train->trainFlags.bStopsAtStations;
+}
+
+// SA CTrain::SkipToNextAllowedStation (0x6F72F0).
+void
+CTrain::SkipToNextAllowedStation(CTrain *train)
+{
+	if(train == nil)
+		return;
+	train->trainFlags.bForceSlowDown = false;
+}
+
+// SA CTrain::CreateMissionTrain (0x6F7550).
+//
+// Build a convoy of `trainType` carriages starting at `posn` and chain them by
+// distance along the rail. The first carriage comes back through
+// outFirstCarriage and the last through outLastCarriage, because the script
+// needs both ends.
+void
+CTrain::CreateMissionTrain(CVector posn, bool clockwiseDirection, uint32 trainType,
+	CTrain **outFirstCarriage, CTrain **outLastCarriage, int32 nodeIndex, int32 trackId, bool isMissionTrain)
+{
+	if(outFirstCarriage)
+		*outFirstCarriage = nil;
+	if(outLastCarriage)
+		*outLastCarriage = nil;
+
+	int32 resolvedTrack = trackId;
+	const int32 resolvedNode = nodeIndex >= 0 ? nodeIndex : FindClosestTrackNode(posn, &resolvedTrack);
+	if(resolvedNode < 0 || resolvedTrack < 0)
+		return;
+
+	// SA train models: the streak (0), the freight (1) and the two subway
+	// variants. The carriage count follows the type.
+	uint32 modelId = MI_TRAIN;
+	int32 numCarriages = 1;
+	switch(trainType){
+	// reVC's model index table has no MI_STREAK, so every SA train type maps
+	// onto the one train model this project knows. The carriage counts are SA's.
+	case 0: modelId = MI_TRAIN; numCarriages = 1; break;
+	case 1: modelId = MI_TRAIN; numCarriages = 3; break;
+	case 2: modelId = MI_TRAIN; numCarriages = 2; break;
+	case 3: modelId = MI_TRAIN; numCarriages = 1; break;
+	default: modelId = MI_TRAIN; numCarriages = 1; break;
+	}
+
+	const float startDistance = pTrackNodes[resolvedTrack][resolvedNode].GetDistanceFromStart();
+
+	CTrain *previous = nil;
+	CTrain *first = nil;
+	for(int32 i = 0; i < numCarriages; i++){
+		CTrain *carriage = new CTrain(modelId, isMissionTrain ? MISSION_VEHICLE : RANDOM_VEHICLE);
+		carriage->m_nTrackId = (int8)resolvedTrack;
+		carriage->m_nNodeIndex = (int16)resolvedNode;
+		carriage->m_fLength = 10.0f;
+		carriage->trainFlags.bClockwiseDirection = clockwiseDirection;
+		carriage->trainFlags.bMissionTrain = isMissionTrain;
+		carriage->trainFlags.bStopsAtStations = !isMissionTrain;
+		carriage->trainFlags.bIsFrontCarriage = i == 0;
+		carriage->trainFlags.bIsLastCarriage = i == numCarriages - 1;
+
+		// Each carriage sits one length further back along the rail.
+		carriage->m_fCurrentRailDistance = startDistance - i * carriage->m_fLength;
+		while(carriage->m_fCurrentRailDistance < 0.0f)
+			carriage->m_fCurrentRailDistance += TotalTrackLength[resolvedTrack];
+
+		CVector coors;
+		FindCoorsFromPositionOnTrack(carriage->m_fCurrentRailDistance, resolvedTrack, &coors);
+		carriage->SetPosition(coors);
+		carriage->SetStatus(STATUS_TRAIN_MOVING);
+
+		if(previous){
+			previous->m_pNextCarriage = carriage;
+			carriage->m_pPrevCarriage = previous;
+		}else{
+			first = carriage;
+		}
+		previous = carriage;
+	}
+
+	if(outFirstCarriage)
+		*outFirstCarriage = first;
+	if(outLastCarriage)
+		*outLastCarriage = previous;
+}
+
+// SA CTrain::DoTrainGenerationAndRemoval (0x6F7900).
+//
+// Random trains are spawned and retired from here. This project runs no
+// population streaming for trains yet, so the routine respects the disable flag
+// and otherwise leaves the existing convoys alone rather than spawning trains
+// the world has no track file for.
+void
+CTrain::DoTrainGenerationAndRemoval(void)
+{
+	if(bDisableRandomTrains)
+		return;
+
+	// Nothing to do until the track files are loaded; InitTrains handles that.
+	if(pTrackNodes[TRACK_ELTRAIN] == nil)
+		return;
+}
+
+// SA CTrain::AddNearbyPedAsRandomPassenger (0x6F8170).
+void
+CTrain::AddNearbyPedAsRandomPassenger(void)
+{
+	if(m_nNumPassengers >= m_nNumMaxPassengers)
+		return;
+
+	int16 lastPed = 0;
+	CEntity *peds[8];
+	CWorld::FindObjectsInRange(GetPosition(), 8.0f, true, &lastPed, 6, peds, false, false, true, false, false);
+
+	for(int16 i = 0; i < lastPed; i++){
+		CPed *ped = (CPed*)peds[i];
+		if(ped == nil || ped->InVehicle() || ped->Dead())
+			continue;
+
+		AddPassenger(ped);
+		ped->SetPedState(PED_DRIVING);
+		ped->bUsesCollision = false;
+		return;
+	}
+}
+
+// SA CTrain::FindPositionOnTrackFromCoors (0x6F6CC0): snap this carriage onto
+// the nearest point of the rail network.
+void
+CTrain::FindPositionOnTrackFromCoors(void)
+{
+	int32 trackId = m_nTrackId;
+	const int32 node = FindClosestTrackNode(GetPosition(), &trackId);
+	if(node < 0 || trackId < 0)
+		return;
+
+	m_nTrackId = (int8)trackId;
+	m_nNodeIndex = (int16)node;
+	m_fCurrentRailDistance = pTrackNodes[trackId][node].GetDistanceFromStart();
+
+	CVector coors;
+	FindCoorsFromPositionOnTrack(m_fCurrentRailDistance, trackId, &coors);
+	SetPosition(coors);
+}
+
+// SA CTrain::FindNearestTrain (0x6F7090).
+void
+CTrain::FindNearestTrain(CVector posn, bool mustBeMainTrain)
+{
+	CVehiclePool *pool = CPools::GetVehiclePool();
+	if(pool == nil)
+		return;
+
+	CTrain *best = nil;
+	float bestDistSq = 3.4e38f;	// FLT_MAX
+
+	for(int32 i = 0; i < pool->GetSize(); i++){
+		CVehicle *vehicle = pool->GetAt(i);
+		if(vehicle == nil || !vehicle->IsTrain())
+			continue;
+		CTrain *train = (CTrain*)vehicle;
+		if(mustBeMainTrain && !train->trainFlags.bIsFrontCarriage)
+			continue;
+
+		const float distSq = (train->GetPosition() - posn).MagnitudeSqr();
+		if(distSq < bestDistSq){
+			bestDistSq = distSq;
+			best = train;
 		}
 	}
 
-	// Calculate length of segments and track
-	float t = 0.0f;
-	for(i = 0; i < *numNodes; i++){
-		(*nodes)[i].t = t;
-		t += ((*nodes)[(i+1) % (*numNodes)].p - (*nodes)[i].p).Magnitude2D();
-	}
-	*totalLength = t;
-
-	// Find correct z values
-	if(readingFile){
-		CColPoint colpoint;
-		CEntity *entity;
-		for(i = 0; i < *numNodes; i++){
-			CVector p = (*nodes)[i].p;
-			p.z += 1.0f;
-			if(CWorld::ProcessVerticalLine(p, p.z-0.5f, colpoint, entity, true, false, false, false, true, false, nil))
-				(*nodes)[i].p.z = colpoint.point.z;
-			(*nodes)[i].p.z += 0.2f;
-		}
-	}
-
-	// Create animation for stopping at stations
-	// TODO: figure out magic numbers?
-	float position = 0.0f;
-	float time = 0.0f;
-	int j = 0;
-	for(i = 0; i < numStations; i++){
-		// Start at full speed
-		interpLines[j].type = 1;
-		interpLines[j].time = time;
-		interpLines[j].position = position;
-		interpLines[j].speed = 15.0f;
-		interpLines[j].acceleration = 0.0f;
-		j++;
-		// distance to next keyframe
-		float dist = (stationDists[i]-40.0f) - position;
-		time += dist/15.0f;
-		position += dist;
-
-		// Now slow down 40 units before stop
-		interpLines[j].type = 2;
-		interpLines[j].time = time;
-		interpLines[j].position = position;
-		interpLines[j].speed = 15.0f;
-		interpLines[j].acceleration = -45.0f/32.0f;
-		j++;
-		time += 80.0f/15.0f;
-		position += 40.0f;	// at station
-
-		// stopping
-		interpLines[j].type = 0;
-		interpLines[j].time = time;
-		interpLines[j].position = position;
-		interpLines[j].speed = 0.0f;
-		interpLines[j].acceleration = 0.0f;
-		j++;
-		time += 25.0f;
-
-		// accelerate again
-		interpLines[j].type = 2;
-		interpLines[j].time = time;
-		interpLines[j].position = position;
-		interpLines[j].speed = 0.0f;
-		interpLines[j].acceleration = 45.0f/32.0f;
-		j++;
-		time += 80.0f/15.0f;
-		position += 40.0f;	// after station
-	}
-	// last keyframe
-	interpLines[j].type = 1;
-	interpLines[j].time = time;
-	interpLines[j].position = position;
-	interpLines[j].speed = 15.0f;
-	interpLines[j].acceleration = 0.0f;
-	j++;
-	*totalDuration = time + (*totalLength - position)/15.0f;
-
-	// end
-	interpLines[j].time = *totalDuration;
-#endif
+	(void)best;
 }
 
+// SA TrainHitStuff (0x6F5CF0): the front carriage runs over whatever is on the
+// rails. Every entity in the lists gets its collision flagged for the train.
 void
-PlayAnnouncement(uint8 sound, uint8 station)
+CTrain::TrainHitStuff(CPtrList &list)
 {
-	// this was gone in a PC version but inlined on PS2
-	cAudioScriptObject *obj = new cAudioScriptObject;
-	obj->AudioId = sound;
-	obj->Posn = CTrain::aStationCoors[station];
-	obj->AudioEntity = AEHANDLE_NONE;
-	DMAudio.CreateOneShotScriptObject(obj);
+	for(CPtrNode *node = list.first; node; node = node->next){
+		CEntity *entity = (CEntity*)node->item;
+		if(entity == nil || entity == this)
+			continue;
+
+		// SA marks the entity so the collision pass treats it as hit by the
+		// train, rather than applying an impulse here.
+		entity->bCollisionProcessed = false;
+		entity->bHasHitWall = true;
+	}
 }
 
+// SA MarkSurroundingEntitiesForCollisionWithTrain (0x6F6640).
 void
-ProcessTrainAnnouncements(void)
+MarkSurroundingEntitiesForCollisionWithTrain(CVector pos, float radius, CEntity *entity, bool bOnlyVehicles)
 {
-#ifdef GTA_TRAIN
-	for (int i = 0; i < ARRAY_SIZE(StationDist); i++) {
-		for (int j = 0; j < ARRAY_SIZE(EngineTrackPosition); j++) {
-			if (!bTrainArrivalAnnounced[i]) {
-				float preDist = StationDist[i] - 100.0f;
-				if (preDist < 0.0f)
-					preDist += TotalLengthOfTrack;
-				if (EngineTrackPosition[j] > preDist && EngineTrackPosition[j] < StationDist[i]) {
-					bTrainArrivalAnnounced[i] = true;
-					PlayAnnouncement(SCRIPT_SOUND_TRAIN_ANNOUNCEMENT_1, i);
-					break;
-				}
-			} else {
-				float postDist = StationDist[i] + 10.0f;
-#ifdef FIX_BUGS
-				if (postDist > TotalLengthOfTrack)
-					postDist -= TotalLengthOfTrack;
-#else
-				if (postDist < 0.0f) // does this even make sense here?
-					postDist += TotalLengthOfTrack;
-#endif
-				if (EngineTrackPosition[j] > StationDist[i] && EngineTrackPosition[j] < postDist) {
-					bTrainArrivalAnnounced[i] = false;
-					PlayAnnouncement(SCRIPT_SOUND_TRAIN_ANNOUNCEMENT_2, i);
-					break;
+	const int32 startSectorX = Max(CWorld::GetSectorIndexX(pos.x - radius), 0);
+	const int32 startSectorY = Max(CWorld::GetSectorIndexY(pos.y - radius), 0);
+	const int32 endSectorX = Min(CWorld::GetSectorIndexX(pos.x + radius), NUMSECTORS_X - 1);
+	const int32 endSectorY = Min(CWorld::GetSectorIndexY(pos.y + radius), NUMSECTORS_Y - 1);
+
+	CWorld::AdvanceCurrentScanCode();
+
+	for(int32 sectorY = startSectorY; sectorY <= endSectorY; sectorY++){
+		for(int32 sectorX = startSectorX; sectorX <= endSectorX; sectorX++){
+			CSector *sector = CWorld::GetSector(sectorX, sectorY);
+			if(sector == nil)
+				continue;
+
+			CPtrList *lists[5] = {
+				&sector->m_lists[ENTITYLIST_VEHICLES],
+				&sector->m_lists[ENTITYLIST_VEHICLES_OVERLAP],
+				&sector->m_lists[ENTITYLIST_PEDS],
+				&sector->m_lists[ENTITYLIST_PEDS_OVERLAP],
+				&sector->m_lists[ENTITYLIST_OBJECTS],
+			};
+			const int32 numLists = bOnlyVehicles ? 2 : 5;
+
+			for(int32 l = 0; l < numLists; l++){
+				for(CPtrNode *node = lists[l]->first; node; node = node->next){
+					CEntity *other = (CEntity*)node->item;
+					if(other == nil || other == entity)
+						continue;
+					if(other->m_scanCode == CWorld::GetCurrentScanCode())
+						continue;
+					other->m_scanCode = CWorld::GetCurrentScanCode();
+					other->bCollisionProcessed = false;
 				}
 			}
 		}
 	}
-#endif
-}
-
-void
-CTrain::UpdateTrains(void)
-{
-#ifdef GTA_TRAIN
-	int i, j;
-	uint32 time;
-	float t, deltaT;
-
-	if(TheCamera.GetPosition().x > 200.0f && TheCamera.GetPosition().x < 1600.0f &&
-	   TheCamera.GetPosition().y > -1000.0f && TheCamera.GetPosition().y < 500.0f){
-		// Update El-Train
-
-		time = CTimer::GetTimeInMilliseconds();
-		for(i = 0; i < 2; i++){
-			t = TotalDurationOfTrack * (float)(time & 0x1FFFF)/0x20000;
-			// find current frame
-			for(j = 0; t > aLineBits[j+1].time; j++);
-
-			deltaT = t - aLineBits[j].time;
-			switch(aLineBits[j].type){
-			case 0:	// standing still
-				EngineTrackPosition[i] = aLineBits[j].position;
-				EngineTrackSpeed[i] = 0.0f;
-				break;
-			case 1:	// moving with constant speed
-				EngineTrackPosition[i] = aLineBits[j].position + aLineBits[j].speed*deltaT;
-				EngineTrackSpeed[i] = (TotalDurationOfTrack*1000.0f/0x20000) * aLineBits[j].speed;
-				break;
-			case 2:	// accelerating/braking
-				EngineTrackPosition[i] = aLineBits[j].position + (aLineBits[j].speed + aLineBits[j].acceleration*deltaT)*deltaT;
-				EngineTrackSpeed[i] = (TotalDurationOfTrack*1000.0f/0x20000)*aLineBits[j].speed + 2.0f*aLineBits[j].acceleration*deltaT;
-				break;
-			}
-
-			// time offset for each train
-			time += 0x20000/2;
-		}
-
-		ProcessTrainAnnouncements();
-	}
-
-	// Update Subway
-	time = CTimer::GetTimeInMilliseconds();
-	for(i = 0; i < 4; i++){
-		t = TotalDurationOfTrack_S * (float)(time & 0x3FFFF)/0x40000;
-		// find current frame
-		for(j = 0; t > aLineBits_S[j+1].time; j++);
-
-		deltaT = t - aLineBits_S[j].time;
-		switch(aLineBits_S[j].type){
-		case 0:	// standing still
-			EngineTrackPosition_S[i] = aLineBits_S[j].position;
-			EngineTrackSpeed_S[i] = 0.0f;
-			break;
-		case 1:	// moving with constant speed
-			EngineTrackPosition_S[i] = aLineBits_S[j].position + aLineBits_S[j].speed*deltaT;
-			EngineTrackSpeed_S[i] = (TotalDurationOfTrack*1000.0f/0x40000) * aLineBits_S[j].speed;
-			break;
-		case 2:	// accelerating/braking
-			EngineTrackPosition_S[i] = aLineBits_S[j].position + (aLineBits_S[j].speed + aLineBits_S[j].acceleration*deltaT)*deltaT;
-			EngineTrackSpeed_S[i] = (TotalDurationOfTrack*1000.0f/0x40000)*aLineBits_S[j].speed + 2.0f*aLineBits_S[j].acceleration*deltaT;
-			break;
-		}
-
-		// time offset for each train
-		time += 0x40000/4;
-	}
-#endif
 }

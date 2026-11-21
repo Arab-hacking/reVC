@@ -3641,7 +3641,6 @@ cAudioManager::ProcessVehicleOneShots(cVehicleParams& params)
 			}
 			}
 			break;
-#ifdef GTA_TRAIN
 		case SOUND_TRAIN_DOOR_CLOSE:
 		case SOUND_TRAIN_DOOR_OPEN:
 			m_sQueueSample.m_nSampleIndex = SFX_AIR_BRAKES;
@@ -3654,7 +3653,6 @@ cAudioManager::ProcessVehicleOneShots(cVehicleParams& params)
 			maxDist = SQR(VEHICLE_ONE_SHOT_TRAIN_DOOR_MAX_DIST);
 			Vol = m_anRandomTable[1] % 20 + VEHICLE_ONE_SHOT_TRAIN_DOOR_VOLUME;
 			break;
-#endif
 		case SOUND_SPLATTER:
 		{
 			static uint8 CrunchOffset = 0;
@@ -3757,68 +3755,11 @@ cAudioManager::ProcessVehicleOneShots(cVehicleParams& params)
 	}
 }
 
-#ifdef GTA_TRAIN
-bool8
-cAudioManager::ProcessTrainNoise(cVehicleParams& params)
-{
-	CTrain *train;
-	uint8 Vol;
-	float speedMultipler;
-
-	if (params.m_fDistance < SQR(TRAIN_NOISE_FAR_MAX_DIST)){
-		if (params.m_fVelocityChange > 0.0f) {
-			CalculateDistance(params.m_bDistanceCalculated, params.m_fDistance);
-			train = (CTrain *)params.m_pVehicle;
-			speedMultipler = Min(1.0f, train->m_fSpeed * 250.0f / 51.0f);
-			Vol = (TRAIN_NOISE_VOLUME * speedMultipler);
-			if (train->m_fWagonPosition == 0.0f) {
-				m_sQueueSample.m_nVolume = ComputeVolume(Vol, TRAIN_NOISE_FAR_MAX_DIST, m_sQueueSample.m_fDistance);
-				if (m_sQueueSample.m_nVolume > 0) {
-					m_sQueueSample.m_nCounter = 32;
-					m_sQueueSample.m_nSampleIndex = SFX_TRAIN_FAR;
-					m_sQueueSample.m_nBankIndex = SFX_BANK_0;
-					m_sQueueSample.m_bIs2D = FALSE;
-					m_sQueueSample.m_nPriority = 2;
-					m_sQueueSample.m_nFrequency = SampleManager.GetSampleBaseFrequency(SFX_TRAIN_FAR);
-					m_sQueueSample.m_nLoopCount = 0;
-					SET_EMITTING_VOLUME(Vol);
-					SET_LOOP_OFFSETS(m_sQueueSample.m_nSampleIndex)
-					m_sQueueSample.m_fSpeedMultiplier = 3.0f;
-					m_sQueueSample.m_MaxDistance = TRAIN_NOISE_FAR_MAX_DIST;
-					m_sQueueSample.m_bStatic = FALSE;
-					m_sQueueSample.m_nFramesToPlay = 3;
-					SET_SOUND_REVERB(TRUE);
-					SET_SOUND_REFLECTION(FALSE);
-					AddSampleToRequestedQueue();
-				}
-			}
-			if (params.m_fDistance < SQR(TRAIN_NOISE_NEAR_MAX_DIST)) {
-				m_sQueueSample.m_nVolume = ComputeVolume(Vol, TRAIN_NOISE_NEAR_MAX_DIST, m_sQueueSample.m_fDistance);
-				if (m_sQueueSample.m_nVolume > 0) {
-					m_sQueueSample.m_nCounter = 33;
-					m_sQueueSample.m_nSampleIndex = SFX_TRAIN_NEAR;
-					m_sQueueSample.m_nBankIndex = SFX_BANK_0;
-					m_sQueueSample.m_bIs2D = FALSE;
-					m_sQueueSample.m_nPriority = 5;
-					m_sQueueSample.m_nFrequency = SampleManager.GetSampleBaseFrequency(SFX_TRAIN_NEAR) + 100 * m_sQueueSample.m_nEntityIndex % 987;
-					m_sQueueSample.m_nLoopCount = 0;
-					SET_EMITTING_VOLUME(Vol);
-					SET_LOOP_OFFSETS(m_sQueueSample.m_nSampleIndex)
-					m_sQueueSample.m_fSpeedMultiplier = 6.0f;
-					m_sQueueSample.m_MaxDistance = TRAIN_NOISE_NEAR_MAX_DIST;
-					m_sQueueSample.m_bStatic = FALSE;
-					m_sQueueSample.m_nFramesToPlay = 3;
-					SET_SOUND_REVERB(TRUE);
-					SET_SOUND_REFLECTION(FALSE);
-					AddSampleToRequestedQueue();
-				}
-			}
-		}
-		return TRUE;
-	}
-	return FALSE;
-}
-#endif
+// NOTE: the VC-era ProcessTrainNoise() has been removed. It referenced
+// SFX_TRAIN_FAR / SFX_TRAIN_NEAR and CTrain::m_fSpeed / m_fWagonPosition,
+// none of which exist in the SA audio bank or in the SA CTrain, and it had
+// no caller left. SA train audio is a Block 4 item (SFX ids + the train
+// engine loop bank) and will be written against the SA sample list then.
 bool8
 cAudioManager::ProcessBoatEngine(cVehicleParams& params)
 {

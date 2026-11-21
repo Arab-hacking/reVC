@@ -723,7 +723,6 @@ CCamera::CamControl(void)
 
 		// Vehicle target
 		if(pTargetEntity->IsVehicle()){
-#ifdef GTA_TRAIN
 			if(((CVehicle*)pTargetEntity)->IsTrain()){
 				if(!m_bTargetJustBeenOnTrain){
 					m_bInitialNodeFound = false;
@@ -731,7 +730,6 @@ CCamera::CamControl(void)
 				}
 				Process_Train_Camera_Control();
 			}else
-#endif
 			{
 				if(((CVehicle*)pTargetEntity)->IsBoat() && pTargetEntity->GetModelIndex() != MI_SKIMMER)
 					boatTarget = true;
@@ -3454,7 +3452,6 @@ CCamera::DontProcessObbeCinemaCamera(void)
 	bDidWeProcessAnyCinemaCam = false;
 }
 
-#ifdef GTA_TRAIN
 void
 CCamera::LoadTrainCamNodes(char const *name)
 {
@@ -3619,7 +3616,7 @@ CCamera::Process_Train_Camera_Control(void)
 		SetWideScreenOn();
 		if(DotProduct(((CTrain*)pTargetEntity)->GetMoveSpeed(), pTargetEntity->GetForward()) < 0.001f){
 			TakeControl(FindPlayerPed(), CCam::MODE_FOLLOWPED, JUMP_CUT, CAMCONTROL_SCRIPT);
-			if(target->Doors[0].IsFullyOpen())
+			if(target->m_aDoors[0].IsFullyOpen())
 				SetWideScreenOff();
 		}else{
 			SetCamPositionForFixedMode(m_arrTrainCamNode[m_iCurrentTrainCamNode].m_cvecCamPosition, CVector(0.0f, 0.0f, 0.0f));
@@ -3634,12 +3631,11 @@ CCamera::Process_Train_Camera_Control(void)
 	}else{
 		if(DotProduct(((CTrain*)pTargetEntity)->GetMoveSpeed(), pTargetEntity->GetForward()) < 0.001f){
 			TakeControl(FindPlayerPed(), CCam::MODE_FOLLOWPED, JUMP_CUT, CAMCONTROL_SCRIPT);
-			if(target->Doors[0].IsFullyOpen())
+			if(target->m_aDoors[0].IsFullyOpen())
 				SetWideScreenOff();
 		}
 	}
 }
-#endif
 
 
 void

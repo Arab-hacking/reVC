@@ -1874,11 +1874,9 @@ CPed::ProcessObjective(void)
 							&& (m_nPedType != PEDTYPE_COP
 								|| m_pMyVehicle->IsBoat()
 								|| m_pMyVehicle->m_vecMoveSpeed.MagnitudeSqr2D() < sq(0.005f))) {
-#ifdef GTA_TRAIN
 							if (m_pMyVehicle->IsTrain())
 								SetExitTrain(m_pMyVehicle);
 							else
-#endif
 							if (m_pMyVehicle->IsBoat())
 								SetExitBoat(m_pMyVehicle);
 							else
@@ -5148,11 +5146,10 @@ CPed::PedSetInTrainCB(CAnimBlendAssociation* animAssoc, void* arg)
 	veh->AddPassenger(ped);
 }
 
-#ifdef GTA_TRAIN
 void
 CPed::SetEnterTrain(CVehicle *train, uint32 unused)
 {
-	if (m_nPedState == PED_ENTER_TRAIN || !((CTrain*)train)->Doors[0].IsFullyOpen())
+	if (m_nPedState == PED_ENTER_TRAIN || !((CTrain*)train)->m_aDoors[0].IsFullyOpen())
 		return;
 
 	/*
@@ -5238,7 +5235,7 @@ CPed::LineUpPedWithTrain(void)
 void
 CPed::SetExitTrain(CVehicle* train)
 {
-	if (m_nPedState == PED_EXIT_TRAIN || train->GetStatus() != STATUS_TRAIN_NOT_MOVING || !((CTrain*)train)->Doors[0].IsFullyOpen())
+	if (m_nPedState == PED_EXIT_TRAIN || train->GetStatus() != STATUS_TRAIN_NOT_MOVING || !((CTrain*)train)->m_aDoors[0].IsFullyOpen())
 		return;
 
 	/*
@@ -5295,7 +5292,6 @@ CPed::PedSetOutTrainCB(CAnimBlendAssociation *animAssoc, void *arg)
 	ped->SetHeading(ped->m_fRotationCur);
 	veh->RemovePassenger(ped);
 }
-#endif
 
 void
 CPed::RegisterThreatWithGangPeds(CEntity *attacker)
