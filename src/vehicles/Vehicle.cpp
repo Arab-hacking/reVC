@@ -2661,6 +2661,21 @@ FindReplacementUpgradeCB(RwObject *object, void *data)
 	return nil;
 }
 
+// The first fitted part hanging directly on a node. Used when a replacement
+// part has to be taken off a single node without touching the rest of the car.
+static RwObject *
+FindUpgradeAtomicOnNodeCB(RwObject *object, void *data)
+{
+	RpAtomic **found = (RpAtomic**)data;
+	if(RwObjectGetType(object) != rpATOMIC)
+		return object;
+	int32 id = CVisibilityPlugins::GetAtomicId((RpAtomic*)object);
+	if((id & ATOMIC_FLAG_UPGRADE) == 0)
+		return object;
+	*found = (RpAtomic*)object;
+	return nil;
+}
+
 // SA CVehicle::GetUpgrade (0x6D3650) needs to know which model an atomic of the
 // clump came from. reVC's clump model infos are reachable, but a part's atomic
 // does not point back at its model info, so the fitting code stamps the slot on
@@ -3185,8 +3200,24 @@ CVehicle::RemoveReplacementUpgrade(int32 frameId)
 	if(frameId <= CAR_NODE_NONE || frameId >= NUM_CAR_NODES || car->m_aCarNodes[frameId] == nil)
 		return;
 
-	bool removed = false;
-	RpClumpForAllAtomics(GetClump(), RemoveAllUpgradesAtomicCB, &removed);
+		// Remove only the part standing on this node: its atomic hangs directly on
+	// the node frame, and the node's own mesh was never touched by the fitting
+	// code. Removing every upgrade of the car would be wrong here - the other
+	// parts are on other nodes and have nothing to do with this one.
+	RwFrame *node = car->m_aCarNodes[frameId];
+	RpAtomic *stuck = nil;
+	RwFrameForAllObjects(node, FindUpgradeAtomicOnNodeCB, &stuck);
+	if(stuck){
+		int32 id = CVisibilityPlugins::GetAtomicId(stuck);
+		CBaseModelInfo *partModel = CModelInfo::GetModelInfo(UpgradeTaggedModel(id));
+		if(partModel)
+			partModel->RemoveRef();
+		RwFrame *partFrame = RpAtomicGetFrame(stuck);
+		RpClumpRemoveAtomic(GetClump(), stuck);
+		RpAtomicDestroy(stuck);
+		if(partFrame)
+			RwFrameDestroy(partFrame);
+	}
 
 	CVehicleModelInfo *mi = (CVehicleModelInfo*)GetModelInfo();
 	if(mi == nil || mi->m_clump == nil)
