@@ -1,6 +1,8 @@
 #ifndef __GTA_SCRIPT_H__
 #define __GTA_SCRIPT_H__
 #include "Font.h"
+#include "UpsideDownCarCheck.h"
+#include "StuckCarCheck.h"
 #include "Ped.h"
 #include "PedType.h"
 #include "Text.h"
@@ -28,10 +30,8 @@ inline void FlushLog() {}
 #define PED_FIND_Z_OFFSET (5.0f)
 #define COP_PED_FIND_Z_OFFSET (10.0f)
 
-#define UPSIDEDOWN_UP_THRESHOLD (-0.97f)
-#define UPSIDEDOWN_MOVE_SPEED_THRESHOLD (0.01f)
-#define UPSIDEDOWN_TURN_SPEED_THRESHOLD (0.02f)
-#define UPSIDEDOWN_TIMER_THRESHOLD (1000)
+// The upside-down thresholds belong to CUpsideDownCarCheck itself now; SA tests
+// the contact-wheel count, not a move/turn speed tolerance.
 
 #define SPHERE_MARKER_R (252)
 #define SPHERE_MARKER_G (138)
@@ -152,9 +152,7 @@ struct cleanup_entity_struct
 };
 
 enum {
-	MAX_CLEANUP = 50,
-	MAX_UPSIDEDOWN_CAR_CHECKS = 6,
-	MAX_STUCK_CAR_CHECKS = 16
+	MAX_CLEANUP = 50
 };
 
 class CMissionCleanup
@@ -173,51 +171,9 @@ public:
 	void CheckIfCollisionHasLoadedForMissionObjects();
 };
 
-struct upsidedown_car_data
-{
-	int32 m_nVehicleIndex;
-	uint32 m_nUpsideDownTimer;
-};
-
-class CUpsideDownCarCheck
-{
-	upsidedown_car_data m_sCars[MAX_UPSIDEDOWN_CAR_CHECKS];
-
-public:
-	void Init();
-	bool IsCarUpsideDown(int32);
-	bool IsCarUpsideDown(CVehicle*);
-	void UpdateTimers();
-	bool AreAnyCarsUpsideDown();
-	void AddCarToCheck(int32);
-	void RemoveCarFromCheck(int32);
-	bool HasCarBeenUpsideDownForAWhile(int32);
-};
-
-struct stuck_car_data
-{
-	int32 m_nVehicleIndex;
-	CVector m_vecPos;
-	int32 m_nLastCheck;
-	float m_fRadius;
-	uint32 m_nStuckTime;
-	bool m_bStuck;
-
-	stuck_car_data() { }
-	void Reset();
-};
-
-class CStuckCarCheck
-{
-	stuck_car_data m_sCars[MAX_STUCK_CAR_CHECKS];
-
-public:
-	void Init();
-	void Process();
-	void AddCarToCheck(int32, float, uint32);
-	void RemoveCarFromCheck(int32);
-	bool HasCarBeenStuckForAWhile(int32);
-};
+// CUpsideDownCarCheck and CStuckCarCheck used to live here as Vice City
+// structures; they are San Andreas classes of their own now, in
+// vehicles/UpsideDownCarCheck.h and vehicles/StuckCarCheck.h.
 
 enum {
 	ARGUMENT_END = 0,
