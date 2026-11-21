@@ -286,7 +286,7 @@ CDamageManager::SetPanelStatus(int32 panel, uint32 status)
 }
 
 int32
-CDamageManager::GetPanelStatus(int32 panel)
+CDamageManager::GetPanelStatus(int32 panel) const
 {
 	return ldb(panel*4, 4, m_panelStatus);
 }
@@ -308,7 +308,7 @@ CDamageManager::SetLightStatus(eLights light, uint32 status)
 }
 
 int32
-CDamageManager::GetLightStatus(eLights light)
+CDamageManager::GetLightStatus(eLights light) const
 {
 	return ldb(light*2, 2, m_lightStatus);
 }
@@ -320,7 +320,7 @@ CDamageManager::SetWheelStatus(int32 wheel, uint32 status)
 }
 
 int32
-CDamageManager::GetWheelStatus(int32 wheel)
+CDamageManager::GetWheelStatus(int32 wheel) const
 {
 	return m_wheelStatus[wheel];
 }
@@ -345,7 +345,7 @@ CDamageManager::SetEngineStatus(uint32 status)
 }
 
 int32
-CDamageManager::GetEngineStatus(void)
+CDamageManager::GetEngineStatus(void) const
 {
 	return m_engineStatus;
 }

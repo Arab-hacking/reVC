@@ -135,7 +135,6 @@ CCarCtrl::GenerateRandomCars()
 void
 CCarCtrl::GenerateOneRandomCar()
 {
-	static int32 unk = 0;
 	bool bTopDownCamera = false;
 	CPlayerInfo* pPlayer = &CWorld::Players[CWorld::PlayerInFocus];
 	CVector vecTargetPos = FindPlayerCentreOfWorld(CWorld::PlayerInFocus);

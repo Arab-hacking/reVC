@@ -46,8 +46,6 @@
 CPed *gapTempPedList[50];
 uint16 gnNumTempPedList;
 
-static CColPoint aTempPedColPts[MAX_COLLISION_POINTS];
-
 uint16 CPed::nThreatReactionRangeMultiplier = 1;
 uint16 CPed::nEnterCarRangeMultiplier = 1;
 
@@ -72,6 +70,8 @@ CPed::CPed(uint32 pedType) : m_pedIK(this)
 	m_vecAnimMoveDelta.y = 0.0f;
 	m_fHealth = 100.0f;
 	m_fArmour = 0.0f;
+	m_nWaterCirclesTime = 0;
+	m_nRaindropsTime = 0;
 	m_nPedType = pedType;
 	// A ped is asked for its stats before its model is set, and 48 places read
 	// them without a test. Start on the standard stat entry rather than on
@@ -1789,8 +1789,8 @@ void
 CPed::ProcessBuoyancy(void)
 {
 	float buoyancyLevel = 1.1f;
-	static uint32 nGenerateRaindrops = 0;
-	static uint32 nGenerateWaterCircles = 0;
+	// Per ped; see m_nWaterCirclesTime. These used to be statics, so every ped
+	// in the water shared one pair of timers.
 	CRGBA color;
 
 	if (bInVehicle)
@@ -1868,18 +1868,18 @@ CPed::ProcessBuoyancy(void)
 					aBitForward.z = level;
 
 				CParticleObject::AddObject(POBJECT_PED_WATER_SPLASH, aBitForward, CVector(0.0f, 0.0f, 0.1f), 0.0f, 200, color, true);
-				nGenerateRaindrops = CTimer::GetTimeInMilliseconds() + 80;
-				nGenerateWaterCircles = CTimer::GetTimeInMilliseconds() + 100;
+				m_nRaindropsTime = CTimer::GetTimeInMilliseconds() + 80;
+				m_nWaterCirclesTime = CTimer::GetTimeInMilliseconds() + 100;
 			}
 		}
-		if (nGenerateWaterCircles && CTimer::GetTimeInMilliseconds() >= nGenerateWaterCircles) {
+		if (m_nWaterCirclesTime && CTimer::GetTimeInMilliseconds() >= m_nWaterCirclesTime) {
 			CVector pos = GetPosition();
 			float level = 0.0f;
 			if (CWaterLevel::GetWaterLevel(pos, &level, false))
 				pos.z = level;
 
 			if (pos.z != 0.0f) {
-				nGenerateWaterCircles = 0;
+				m_nWaterCirclesTime = 0;
 				for(int i = 0; i < 4; i++) {
 					pos.x += CGeneral::GetRandomNumberInRange(-0.75f, 0.75f);
 					pos.y += CGeneral::GetRandomNumberInRange(-0.75f, 0.75f);
@@ -1887,7 +1887,7 @@ CPed::ProcessBuoyancy(void)
 				}
 			}
 		}
-		if (nGenerateRaindrops && CTimer::GetTimeInMilliseconds() >= nGenerateRaindrops) {
+		if (m_nRaindropsTime && CTimer::GetTimeInMilliseconds() >= m_nRaindropsTime) {
 			CVector pos = GetPosition();
 			float level = 0.0f;
 			if (CWaterLevel::GetWaterLevel(pos, &level, false))
@@ -1895,7 +1895,7 @@ CPed::ProcessBuoyancy(void)
 
 			if (pos.z >= 0.0f) {
 				pos.z += 0.25f;
-				nGenerateRaindrops = 0;
+				m_nRaindropsTime = 0;
 				CParticleObject::AddObject(POBJECT_SPLASHES_AROUND, pos, CVector(0.0f, 0.0f, 0.0f), 4.5f, 1500, CRGBA(0,0,0,0), true);
 			}
 		}
@@ -5800,6 +5800,10 @@ CPed::SetGetUp(void)
 			SetStoredState();
 			SetPedState(PED_GETUP);
 		}
+
+		// Collision scratch. A file static in the reference; it is filled and
+		// read inside this one expression, so a local is both safer and free.
+		CColPoint aTempPedColPts[MAX_COLLISION_POINTS];
 
 		CVehicle *collidingVeh = (CVehicle*)m_pCollidingEntity;
 		CVehicle *veh = (CVehicle*)CPedPlacement::IsPositionClearOfCars(&GetPosition());

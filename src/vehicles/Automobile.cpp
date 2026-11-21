@@ -246,6 +246,9 @@ m_nVehicleSubType = VEHICLE_TYPE_AUTOMOBILE;
 	m_fHeightAboveRoad = 0.0f;
 	m_fTraction = 1.0f;
 	m_fTireTemperature = 1.0f;
+	m_fNitroState = 1.0f;
+	m_nWaterCirclesTime = 0;
+	m_nRaindropsTime = 0;
 
 	// SA CAutomobile::CAutomobile (0x6A3470): a car whose handling record is
 	// flagged as having hydraulics gets them fitted at birth. That flag is what
@@ -2023,14 +2026,14 @@ CAutomobile::PreRender(void)
 				dir2 = dir1;
 			}
 
-			static float fumesLimit = 2.0f;
+			const float fumesLimit = 2.0f;
 			if(CGeneral::GetRandomNumberInRange(1.0f, 3.0f)*(m_fGasPedal+1.1f) > fumesLimit)
 				for(i = 0; i < 4;){
 					CParticle::AddParticle(PARTICLE_EXHAUST_FUMES, pos1, dir1);
 					if(m_pHandlingData->m_nModelFlags & VEHICLE_HANDLING_MODEL_DOUBLE_EXHAUST)
 						CParticle::AddParticle(PARTICLE_EXHAUST_FUMES, pos2, dir2);
 
-					static float extraFumesLimit = 0.5f;
+					const float extraFumesLimit = 0.5f;
 					if(m_fGasPedal > extraFumesLimit && m_nCurrentGear < 3){
 						if(CGeneral::GetRandomNumber() & 1)
 							CParticle::AddParticle(PARTICLE_EXHAUST_FUMES, pos1, dir1);
@@ -3134,10 +3137,12 @@ CAutomobile::ProcessEntityCollision(CEntity *ent, CColPoint *colpoints)
 	return numCollisions;
 }
 
-static int16 nLastControlInput;
-static float fMouseCentreRange = 0.35f;
-static float fMouseSteerSens = -0.0035f;
-static float fMouseCentreMult = 0.975f;
+// Mouse-steering tuning. These are read-only constants, so they can stay
+// shared; the "last input source" flag they used to sit next to is per-vehicle
+// state now (CVehicle::m_nLastSteerInput) and no longer shared between cars.
+static const float fMouseCentreRange = 0.35f;
+static const float fMouseSteerSens = -0.0035f;
+static const float fMouseCentreMult = 0.975f;
 
 void
 CAutomobile::ProcessControlInputs(uint8 pad)
@@ -3156,21 +3161,21 @@ CAutomobile::ProcessControlInputs(uint8 pad)
 	if(CCamera::m_bUseMouse3rdPerson && !CVehicle::m_bDisableMouseSteering){
 		if(CPad::GetPad(pad)->GetMouseX() != 0.0f){
 			m_fSteerInput += fMouseSteerSens*CPad::GetPad(pad)->GetMouseX();
-			nLastControlInput = 2;
+			m_nLastSteerInput = 2;
 			if(Abs(m_fSteerInput) < fMouseCentreRange)
 				m_fSteerInput *= Pow(fMouseCentreMult, CTimer::GetTimeStep());
-		}else if(CPad::GetPad(pad)->GetSteeringLeftRight() || nLastControlInput != 2){
+		}else if(CPad::GetPad(pad)->GetSteeringLeftRight() || m_nLastSteerInput != 2){
 			// mouse hasn't move, steer with pad like below
 			m_fSteerInput += (-CPad::GetPad(pad)->GetSteeringLeftRight()/128.0f - m_fSteerInput)*
 				0.2f*CTimer::GetTimeStep();
-			nLastControlInput = 0;
+			m_nLastSteerInput = 0;
 		}
 	}else
 #endif
 	{
 		m_fSteerInput += (-CPad::GetPad(pad)->GetSteeringLeftRight()/128.0f - m_fSteerInput)*
 			0.2f*CTimer::GetTimeStep();
-		nLastControlInput = 0;
+		m_nLastSteerInput = 0;
 	}
 	m_fSteerInput = Clamp(m_fSteerInput, -1.0f, 1.0f);
 
@@ -3799,8 +3804,7 @@ CAutomobile::ProcessBuoyancy(void)
 			bIsDrowning = false;
 		}
 
-		static uint32 nGenerateRaindrops = 0;
-		static uint32 nGenerateWaterCircles = 0;
+		// Per vehicle state, not statics: see m_nWaterCirclesTime.
 
 		if(initialSpeed.z < -0.1f && impulse.z > 0.3f || heliHitWaterHard){
 			RwRGBA color;
@@ -3812,8 +3816,8 @@ CAutomobile::ProcessBuoyancy(void)
 			CParticleObject::AddObject(POBJECT_CAR_WATER_SPLASH, GetPosition(),
 				target, 0.0f, 75, color, true);
 
-			nGenerateRaindrops = CTimer::GetTimeInMilliseconds() + 300;
-			nGenerateWaterCircles = CTimer::GetTimeInMilliseconds() + 60;
+			m_nRaindropsTime = CTimer::GetTimeInMilliseconds() + 300;
+			m_nWaterCirclesTime = CTimer::GetTimeInMilliseconds() + 60;
 
 			if(heliHitWaterHard){
 				CVector right = CrossProduct(GetForward(), CVector(0.0f, 0.0f, 1.0f));
@@ -3828,14 +3832,14 @@ CAutomobile::ProcessBuoyancy(void)
 			DMAudio.PlayOneShot(m_audioEntityId, SOUND_WATER_FALL, 0.0f);
 		}
 
-		if(nGenerateWaterCircles > 0 && nGenerateWaterCircles <= CTimer::GetTimeInMilliseconds()){
+		if(m_nWaterCirclesTime > 0 && m_nWaterCirclesTime <= CTimer::GetTimeInMilliseconds()){
 			CVector pos = GetPosition();
 			float waterLevel = 0.0f;
 			if(CWaterLevel::GetWaterLevel(pos.x, pos.y, pos.z, &waterLevel, false))
 				pos.z = waterLevel;
-			static RwRGBA black;
+			const RwRGBA black = { 0, 0, 0, 0 };
 			if(pos.z != 0.0f){
-				nGenerateWaterCircles = 0;
+				m_nWaterCirclesTime = 0;
 				pos.z += 1.0f;
 				for(i = 0; i < 4; i++){
 					CVector p = pos;
@@ -3848,14 +3852,14 @@ CAutomobile::ProcessBuoyancy(void)
 			}
 		}
 
-		if(nGenerateRaindrops > 0 && nGenerateRaindrops <= CTimer::GetTimeInMilliseconds()){
+		if(m_nRaindropsTime > 0 && m_nRaindropsTime <= CTimer::GetTimeInMilliseconds()){
 			CVector pos = GetPosition();
 			float waterLevel = 0.0f;
 			if(CWaterLevel::GetWaterLevel(pos.x, pos.y, pos.z, &waterLevel, false))
 				pos.z = waterLevel;
-			static RwRGBA black;
+			const RwRGBA black = { 0, 0, 0, 0 };
 			if(pos.z >= 0.0f){
-				nGenerateRaindrops = 0;
+				m_nRaindropsTime = 0;
 				pos.z += 0.5f;
 				CParticleObject::AddObject(POBJECT_SPLASHES_AROUND,
 					pos, CVector(0.0f, 0.0f, 0.0f), 6.5f, 2500, black, true);
@@ -3866,8 +3870,8 @@ CAutomobile::ProcessBuoyancy(void)
 		bIsDrowning = false;
 		bTouchingWater = false;
 
-		static RwRGBA splashCol = {155, 155, 185, 196};
-		static RwRGBA smokeCol = {255, 255, 255, 255};
+		static const RwRGBA splashCol = {155, 155, 185, 196};
+		static const RwRGBA smokeCol = {255, 255, 255, 255};
 
 		for(i = 0; i < 4; i++){
 			if(m_aSuspensionSpringRatio[i] < 1.0f && m_aWheelColPoints[i].surfaceB == SURFACE_WATER){
@@ -4042,7 +4046,9 @@ CAutomobile::RcbanditCheckHitWheels(void)
 int32
 CAutomobile::RcbanditCheck1CarWheels(CPtrList &list)
 {
-	static CMatrix matW2B;
+	// Was a static shared by every call; the inverse only depends on this car,
+	// so compute it once here instead of once per candidate.
+	const CMatrix matW2B = Invert(GetMatrix());
 	int i;
 	CPtrNode *node;
 	CAutomobile *car;
@@ -4064,7 +4070,6 @@ CAutomobile::RcbanditCheck1CarWheels(CPtrList &list)
 						CVector wheelPos;
 						CColSphere sph;
 						mi->GetWheelPosn(i, wheelPos);
-						matW2B = Invert(GetMatrix());
 						sph.center = matW2B * (car->GetMatrix() * wheelPos);
 						sph.radius = mi->m_wheelScale*0.25f;
 						if(CCollision::TestSphereBox(sph, colModel->boundingBox))
@@ -4505,11 +4510,11 @@ CAutomobile::AddWheelDirtAndWater(CColPoint *colpoint, uint32 belowEffectSpeed)
 {
 	int i;
 	CVector dir;
-	static RwRGBA grassCol = { 8, 24, 8, 255 };
-	static RwRGBA gravelCol = { 64, 64, 64, 255 };
-	static RwRGBA mudCol = { 64, 32, 16, 255 };
-	static RwRGBA sandCol = { 170, 165, 140, 255 };
-	static RwRGBA waterCol = { 48, 48, 64, 0 };
+	static const RwRGBA grassCol = { 8, 24, 8, 255 };
+	static const RwRGBA gravelCol = { 64, 64, 64, 255 };
+	static const RwRGBA mudCol = { 64, 32, 16, 255 };
+	static const RwRGBA sandCol = { 170, 165, 140, 255 };
+	static const RwRGBA waterCol = { 48, 48, 64, 0 };
 
 	if(!belowEffectSpeed &&
 	   colpoint->surfaceB != SURFACE_SAND && colpoint->surfaceB != SURFACE_SAND_BEACH)
@@ -6034,7 +6039,13 @@ CAutomobile::SetPanelDamage(int32 component, ePanels panel, bool noFlyingCompone
 	int status = Damage.GetPanelStatus(panel);
 	if(m_aCarNodes[component] == nil)
 		return;
-	if(status == PANEL_STATUS_SMASHED1){
+	if(status == PANEL_STATUS_OK){
+		// Restoring a panel is what the repair path does (Fix, the garage); the
+		// collision code never needs it because damage only ever increases. A
+		// controller applying a full state does need it, or a part that was
+		// smashed stays smashed after the state says otherwise.
+		SetComponentVisibility(m_aCarNodes[component], ATOMIC_FLAG_OK);
+	}else if(status == PANEL_STATUS_SMASHED1){
 		if(panel == VEHPANEL_WINDSCREEN)
 			DMAudio.PlayOneShot(m_audioEntityId, SOUND_CAR_WINDSHIELD_CRACK, 0.0f);
 		// show damaged part
@@ -6058,7 +6069,11 @@ CAutomobile::SetBumperDamage(int32 component, ePanels panel, bool noFlyingCompon
 			component, CModelInfo::GetModelInfo(GetModelIndex())->GetModelName());
 		return;
 	}
-	if(status == PANEL_STATUS_SMASHED1){
+	if(status == PANEL_STATUS_OK){
+		// See SetPanelDamage: restoring is a no-op for the collision path and
+		// required by the state path.
+		SetComponentVisibility(m_aCarNodes[component], ATOMIC_FLAG_OK);
+	}else if(status == PANEL_STATUS_SMASHED1){
 		// show damaged part
 		SetComponentVisibility(m_aCarNodes[component], ATOMIC_FLAG_DAM);
 	}else if(status == PANEL_STATUS_MISSING){
@@ -6090,6 +6105,11 @@ CAutomobile::SetDoorDamage(int32 component, eDoors door, bool noFlyingComponents
 	}
 
 	switch(status){
+	case DOOR_STATUS_OK:
+		// Same as the panels above: a door that the state says is intact has to
+		// be shown intact again.
+		SetComponentVisibility(m_aCarNodes[component], ATOMIC_FLAG_OK);
+		break;
 	case DOOR_STATUS_SMASHED:
 		// show damaged part
 		SetComponentVisibility(m_aCarNodes[component], ATOMIC_FLAG_DAM);
@@ -6396,6 +6416,10 @@ CAutomobile::StopNitroEffect(void)
 }
 
 // SA CAutomobile::NitrousControl (0x6A3EA0).
+//
+// boost > 0 fills the bottle, boost < 0 empties it, 0 is the per-frame update
+// the control loop calls. The bottle state used to live in m_fTireTemperature,
+// which SA reuses for it; see m_fNitroState for why that is split here.
 void
 CAutomobile::NitrousControl(int8 boost)
 {
@@ -6409,7 +6433,7 @@ CAutomobile::NitrousControl(int8 boost)
 	if(boost > 0){
 		// Bought a bottle: fill it and open the valve.
 		bNosInst = true;
-		m_fTireTemperature = 1.0f;
+		m_fNitroState = 1.0f;
 		m_nNitroBoosts = (uint8)boost;
 		StopNitroEffect();
 		return;
@@ -6418,7 +6442,7 @@ CAutomobile::NitrousControl(int8 boost)
 	if(boost < 0){
 		// Bottle removed or the upgrade taken off.
 		bNosInst = false;
-		m_fTireTemperature = 1.0f;
+		m_fNitroState = 1.0f;
 		m_nNitroBoosts = 0;
 		StopNitroEffect();
 		return;
@@ -6426,10 +6450,10 @@ CAutomobile::NitrousControl(int8 boost)
 
 	// boost == 0: the per-frame update.
 	//
-	// m_fTireTemperature is SA's own reuse of the tyre heat field as the nitro
-	// state machine: 1.0 means "idle, bottle full", a small negative value means
-	// "firing", and it climbs back to 1.0 once the key is released.
-	if(m_fTireTemperature == 1.0f && m_nNitroBoosts > 0){
+	// m_fNitroState is the bottle state machine: 1.0 means "idle, bottle full",
+	// a small negative value means "firing", and it climbs back to 1.0 once the
+	// key is released.
+	if(m_fNitroState == 1.0f && m_nNitroBoosts > 0){
 		if(GetStatus() != STATUS_PHYSICS){
 			if(pad == nil || !pad->GetCarGunFired() || pad->GetLookLeft() ||
 			   pad->GetLookRight() || pad->GetLookBehindForCar()){
@@ -6438,7 +6462,7 @@ CAutomobile::NitrousControl(int8 boost)
 			}
 		}
 
-		m_fTireTemperature = -0.000001f;
+		m_fNitroState = -0.000001f;
 
 		if(m_nNitroBoosts >= 101){
 			// Full bottle: vent it rather than fire, which is what SA does so a
@@ -6452,27 +6476,170 @@ CAutomobile::NitrousControl(int8 boost)
 		return;
 	}
 
-	if(m_fTireTemperature >= 0.0f){
+	if(m_fNitroState >= 0.0f){
 		// Refilling. The less throttle is applied the faster it refills, and
 		// the flame shrinks as the bottle comes back up.
 		float a = Max(0.25f, 1.0f - m_fGasPedal);
-		float b = a * (CTimer::GetTimeStep() / 100.0f) + m_fTireTemperature;
-		m_fTireTemperature = Min(1.0f, b);
-		float power = (1.0f - m_fTireTemperature) / 2.0f;
+		float b = a * (CTimer::GetTimeStep() / 100.0f) + m_fNitroState;
+		m_fNitroState = Min(1.0f, b);
+		float power = (1.0f - m_fNitroState) / 2.0f;
 		DoNitroEffect(power);
 		return;
 	}
 
 	// Firing: the bottle drains, and when it runs dry the upgrade comes off,
 	// which is what makes a nitro bottle a consumable in SA.
-	m_fTireTemperature -= CTimer::GetTimeStep() / 1000.0f;
-	if(m_fTireTemperature < -1.0f){
-		m_fTireTemperature = 0.000001f;
+	m_fNitroState -= CTimer::GetTimeStep() / 1000.0f;
+	if(m_fNitroState < -1.0f){
+		m_fNitroState = 0.000001f;
 		if(m_nNitroBoosts == 0){
 			bNosInst = false;
 			RemoveUpgrade(NUM_VEHICLE_UPGRADES - 1);	// SA's UPGRADE_NITRO slot
-			m_fTireTemperature = 1.0f;
+			m_fNitroState = 1.0f;
 		}
 	}
 	DoNitroEffect(m_fGasPedal <= 0.0f ? 0.5f : Abs(m_fGasPedal) / 2.0f + 0.5f);
+}
+
+// True while the bottle is open: the state machine sits below zero exactly while
+// the flame is on (see NitrousControl).
+bool
+CAutomobile::IsNitroActive(void) const
+{
+	return bNosInst && m_fNitroState < 0.0f && m_fNitroState > -1.0f;
+}
+
+// Outside control of the valve. Opening a bottle that is not fitted is a no-op
+// rather than an error: a peer may report the flag a frame before the fitment.
+void
+CAutomobile::SetNitroActive(bool active)
+{
+	if(!bNosInst)
+		return;
+	if(active){
+		if(m_fNitroState >= 0.0f)
+			m_fNitroState = -0.000001f;
+	}else{
+		m_fNitroState = 1.0f;
+		StopNitroEffect();
+	}
+}
+
+// ---- Damage state API (see the header) ----------------------------------
+
+// The windscreen is one part with two layers: VEHPANEL_WINDSCREEN in the panel
+// mask and VEHLIGHT_FRONT_* in the light mask. The collision code writes both
+// when glass takes a hit (see CDamageManager::ApplyDamage), so a controller
+// setting the part has to write both as well or the headlight coronas stay on
+// with the glass gone.
+void
+CAutomobile::SetWindscreenStatus(uint32 status)
+{
+	Damage.SetPanelStatus(VEHPANEL_WINDSCREEN, status);
+	// SA lights the two front lamps through the windscreen entry; the same two
+	// indices therefore follow the glass.
+	Damage.SetLightStatus(VEHLIGHT_FRONT_LEFT, status);
+	Damage.SetLightStatus(VEHLIGHT_FRONT_RIGHT, status);
+
+	if(status != PANEL_STATUS_OK && m_aCarNodes[CAR_WINDSCREEN])
+		SetComponentVisibility(m_aCarNodes[CAR_WINDSCREEN],
+			status == PANEL_STATUS_MISSING ? ATOMIC_FLAG_NONE : ATOMIC_FLAG_DAM);
+}
+
+// A wheel's status is only a number in the damage manager: SA models the wheels
+// as their own objects, not as damageable component nodes, so there is no
+// geometry to swap and no CAR_WHEEL_* entry to swap it on. The suspension reads
+// Damage.GetWheelStatus, which is why writing the status is enough to make a
+// remote car limp. BurstTyre stays the way to burst a tyre for real - it also
+// plays the sound, counts the stat and can apply the blowout force.
+void
+CAutomobile::SetWheelStatus(int32 wheel, uint32 status)
+{
+	if(wheel < 0 || wheel >= 4)
+		return;
+
+	Damage.SetWheelStatus(wheel, status);
+
+	// A car that was a static dummy has to come back to real physics for the
+	// burst tyre to actually do anything, exactly as BurstTyre arranges.
+	if(status != WHEEL_STATUS_OK && GetStatus() == STATUS_SIMPLE){
+		SetStatus(STATUS_PHYSICS);
+		CCarCtrl::SwitchVehicleToRealPhysics(this);
+	}
+}
+
+// The whole damage state, in the order a peer would send it. Reading is a pure
+// copy of what the manager already holds, so two calls in a row agree.
+void
+CAutomobile::GetDamageState(DamageState &out) const
+{
+	int32 i;
+	for(i = 0; i < MAX_DOORS; i++)
+		out.doors[i] = (uint8)Damage.GetDoorStatus((eDoors)i);
+	for(i = 0; i < 7; i++)
+		out.panels[i] = (uint8)Damage.GetPanelStatus(i);
+	for(i = 0; i < 4; i++)
+		out.lights[i] = (uint8)Damage.GetLightStatus((eLights)i);
+	for(i = 0; i < 4; i++)
+		out.wheels[i] = (uint8)Damage.GetWheelStatus(i);
+	out.engine = (uint8)Damage.GetEngineStatus();
+}
+
+// Applying a state is deliberately not symmetric with getting it: the parts go
+// through the same Set*Damage entry points the collisions use, so the model
+// shows what the state says. Doors and panels that went from intact to damaged
+// get their geometry swapped; parts that are unchanged are left alone, which
+// keeps a repeated packet from re-hiding components every frame.
+void
+CAutomobile::SetDamageState(const DamageState &in)
+{
+	int32 i;
+
+	for(i = 0; i < MAX_DOORS; i++){
+		eDoors door = (eDoors)i;
+		if(Damage.GetDoorStatus(door) == (eDoorStatus)in.doors[i])
+			continue;
+		Damage.SetDoorStatus(door, (eDoorStatus)in.doors[i]);
+		SetDoorDamage(CDamageManager::GetCarNodeIndexFromDoor(door), door, true);
+	}
+
+	// SA models two wing nodes, not four: VEHPANEL_REAR_LEFT and
+	// VEHPANEL_REAR_RIGHT exist in the damage mask but have no geometry, which
+	// is why the collision code has an empty case for the rear wings. The table
+	// says so instead of pointing two panels at the front nodes.
+	static const eCarNodes wingNode[4] = {
+		CAR_WING_LF, CAR_WING_RF,
+		CAR_NODE_NONE, CAR_NODE_NONE,	// rear wings: no node, status only
+	};
+	for(i = 0; i < 4; i++){
+		ePanels panel = (ePanels)i;
+		if(Damage.GetPanelStatus(panel) == (int32)in.panels[i])
+			continue;
+		Damage.SetPanelStatus(panel, in.panels[i]);
+		if(wingNode[i] != CAR_NODE_NONE)
+			SetPanelDamage(wingNode[i], panel, true);
+	}
+
+	// The windscreen goes through its own setter because it also owns the two
+	// front lights. The loop above stops at the four wings, so this is its only
+	// writer.
+	if(Damage.GetPanelStatus(VEHPANEL_WINDSCREEN) != (int32)in.panels[VEHPANEL_WINDSCREEN]){
+		Damage.SetPanelStatus(VEHPANEL_WINDSCREEN, in.panels[VEHPANEL_WINDSCREEN]);
+		SetWindscreenStatus(in.panels[VEHPANEL_WINDSCREEN]);
+	}
+
+	if(Damage.GetPanelStatus(VEHBUMPER_FRONT) != (int32)in.panels[VEHBUMPER_FRONT])
+		SetBumperDamage(CAR_BUMP_FRONT, VEHBUMPER_FRONT, true);
+	if(Damage.GetPanelStatus(VEHBUMPER_REAR) != (int32)in.panels[VEHBUMPER_REAR])
+		SetBumperDamage(CAR_BUMP_REAR, VEHBUMPER_REAR, true);
+
+	for(i = 0; i < 4; i++)
+		if(Damage.GetLightStatus((eLights)i) != (int32)in.lights[i])
+			Damage.SetLightStatus((eLights)i, in.lights[i]);
+
+	for(i = 0; i < 4; i++)
+		if(Damage.GetWheelStatus(i) != (int32)in.wheels[i])
+			SetWheelStatus(i, in.wheels[i]);
+
+	Damage.SetEngineStatus(in.engine);
 }

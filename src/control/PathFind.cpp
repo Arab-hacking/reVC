@@ -601,7 +601,10 @@ void
 CPathFind::PreparePathDataForType(uint8 type, CTempNode *tempnodes, CPathInfoForObject *objectpathinfo,
 	float maxdist, CPathInfoForObject *detachednodes, int numDetached)
 {
-	static CVector CoorsXFormed;
+	// Scratch for one node's position. A file static in the reference; it is
+	// written and read inside this function only, so a local keeps the values of
+	// two intersecting loads from meeting.
+	CVector CoorsXFormed;
 	int i, j, k;
 	int l1, l2;
 	int start;

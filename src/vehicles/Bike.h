@@ -139,6 +139,35 @@ public:
 	void SetupModelNodes(void);
 	void ReduceHornCounter(void);
 
+	// ---- State API (see the block in Vehicle.h) -------------------------
+	//
+	// A bike has no doors or wings, so the whole of its damage state is the two
+	// tyre statuses. Everything else it shares with CVehicle.
+	// 0 is WHEEL_STATUS_OK; DamageManager.h is not visible from here, and the
+	// status values are the protocol's, not this header's, so the literal stays.
+	uint8 GetWheelStatus(int32 wheel) const
+	{
+		return wheel >= 0 && wheel < 2 ? m_wheelStatus[wheel] : (uint8)0;
+	}
+	// Writes the tyre status only. BurstTyre remains the way to burst a tyre for
+	// real, because it also plays the sound, counts the stat and can knock the
+	// rider off.
+	void SetWheelStatus(int32 wheel, uint8 status)
+	{
+		if(wheel >= 0 && wheel < 2)
+			m_wheelStatus[wheel] = status;
+	}
+	// Lean: the roll angle the bike is holding, in radians, and the normalised
+	// input it was driven by. The lean is what makes a bike read as steering to
+	// another client; it is derived from the input, so a peer can send either,
+	// and this is the state the two are held in.
+	float GetLeanAngle(void) const { return m_fLeanLRAngle; }
+	void SetLeanAngle(float angle) { m_fLeanLRAngle = angle; }
+	float GetLeanInput(void) const { return m_fLeanInput; }
+	void SetLeanInput(float input) { m_fLeanInput = Clamp(input, -1.0f, 1.0f); }
+	// The rider's own lean relative to the bike, which the ped animation uses.
+	float GetRiderLeanAmount(void) const { return m_fPedLeanAmountLR; }
+
 #ifdef COMPATIBLE_SAVES
 	virtual void Save(uint8*& buf);
 	virtual void Load(uint8*& buf);

@@ -64,6 +64,19 @@ public:
 	float m_fHeightAboveRoad;
 	float m_fTraction;
 	float m_fTireTemperature;
+	// Nitro state machine, 1.0 = idle with a full bottle, a small negative value
+	// = firing, climbing back to 1.0 while the bottle refills. SA reuses
+	// m_fTireTemperature for this, which makes one value mean two things: tyre
+	// heat (read by the traction code) and bottle state (read by the nitro code).
+	// Splitting them keeps the tyre model readable from a snapshot and lets a
+	// remote car report its bottle without lying about its tyres.
+	float m_fNitroState;
+	// When the water-splash particle bursts of a car standing in water are due,
+	// as absolute CTimer::GetTimeInMilliseconds values; 0 means "not scheduled".
+	// Both were statics in ProcessBuoyancy, so a second car in the water reset
+	// the first one's timers.
+	uint32 m_nWaterCirclesTime;
+	uint32 m_nRaindropsTime;
 	float m_fOrientation;	// for heli and plane go-to
 	float m_fPlaneSteer;	// related to the above
 	float m_fVelocityChangeForAudio;
@@ -131,6 +144,12 @@ public:
 	// car. boost > 0 fills the bottle, boost < 0 empties it, 0 is the per-frame
 	// update the control loop calls.
 	void NitrousControl(int8 boost);
+	// True while the bottle is open. Reads the state machine above, so a
+	// controller can show the flame without touching the tyre field.
+	bool IsNitroActive(void) const;
+	// Opens or closes the bottle from outside (a peer, a script, the debug UI).
+	// opening fills the state machine to "firing"; closing resets it to idle.
+	void SetNitroActive(bool active);
 	// SA CAutomobile::DoNitroEffect (0x6A3E60). The visual half: an exhaust
 	// flame out of the two exhaust dummy positions, scaled by power.
 	void DoNitroEffect(float power);
@@ -172,6 +191,67 @@ public:
 	void SetPanelDamage(int32 component, ePanels panel, bool noFlyingComponents = false);
 	void SetBumperDamage(int32 component, ePanels panel, bool noFlyingComponents = false);
 	void SetDoorDamage(int32 component, eDoors door, bool noFlyingComponents = false);
+
+	// ---- Damage state API (see the block in Vehicle.h) ------------------
+	//
+	// The damage model has two layers: the parts (door, panel, bumper, light,
+	// wheel, engine) and the geometry flags that make the model show them. The
+	// game writes both from the collision code; a controller sending a state
+	// needs to write both too, which is why Set*Damage below are the same
+	// functions the collisions call rather than a shortcut that only moves the
+	// bits.
+
+	CDamageManager &GetDamageManager(void) { return Damage; }
+	const CDamageManager &GetDamageManager(void) const { return Damage; }
+
+	// Per-part setters. Each takes the part's own status, so a peer sends the
+	// same values GetPartStatus reports back.
+	void SetDoorStatus(eDoors door, eDoorStatus status) { Damage.SetDoorStatus(door, status); }
+	eDoorStatus GetDoorStatus(eDoors door) const { return Damage.GetDoorStatus(door); }
+	void SetPanelStatus(ePanels panel, uint32 status) { Damage.SetPanelStatus(panel, status); }
+	int32 GetPanelStatus(ePanels panel) const { return Damage.GetPanelStatus(panel); }
+	// The windscreen is a panel in the damage model (VEHPANEL_WINDSCREEN) and a
+	// light at the same time - the collision code sets both. This pair keeps the
+	// two writes together so a snapshot cannot carry one without the other.
+	void SetWindscreenStatus(uint32 status);
+	int32 GetWindscreenStatus(void) const { return Damage.GetPanelStatus(VEHPANEL_WINDSCREEN); }
+	void SetLightStatus(eLights light, uint32 status) { Damage.SetLightStatus(light, status); }
+	int32 GetLightStatus(eLights light) const { return Damage.GetLightStatus(light); }
+	void SetWheelStatus(int32 wheel, uint32 status);
+	int32 GetWheelStatus(int32 wheel) const { return Damage.GetWheelStatus(wheel); }
+	void SetEngineStatus(uint32 status) { Damage.SetEngineStatus(status); }
+	int32 GetEngineStatus(void) const { return Damage.GetEngineStatus(); }
+
+	// Hydraulics. m_hydraulicState is the pump's target height, 0 (down) to 100
+	// (up), and the four spring ratios are what the suspension does about it.
+	// The pump itself is driven by the pad in HydraulicControl, which is why the
+	// height is per instance state and the input is not stored here.
+	uint16 GetHydraulicState(void) const { return m_hydraulicState; }
+	void SetHydraulicState(uint16 state) { m_hydraulicState = state > 100 ? 100 : state; }
+	float GetSuspensionRatio(int32 wheel) const
+	{
+		return wheel >= 0 && wheel < 4 ? m_aSuspensionSpringRatio[wheel] : 0.0f;
+	}
+	// Writes the four ratios. The suspension reads them next step, so this is
+	// how a peer shows a remote car that is riding low without simulating it.
+	void SetSuspensionRatio(int32 wheel, float ratio)
+	{
+		if(wheel >= 0 && wheel < 4)
+			m_aSuspensionSpringRatio[wheel] = Clamp(ratio, 0.0f, 1.0f);
+	}
+
+	// The whole damage state in one go: the six door statuses, the seven panel
+	// statuses, the four lights, the four wheels and the engine. This is what a
+	// peer transmits; applying it is idempotent, so a late packet is harmless.
+	struct DamageState {
+		uint8 doors[MAX_DOORS];
+		uint8 panels[7];	// ePanels: four wings, windscreen, two bumpers
+		uint8 lights[4];	// eLights
+		uint8 wheels[4];
+		uint8 engine;
+	};
+	void GetDamageState(DamageState &out) const;
+	void SetDamageState(const DamageState &in);
 
 	void TellHeliToGoToCoors(float x, float y, float z, uint8 speed);
 	void TellPlaneToGoToCoors(float x, float y, float z, uint8 speed);

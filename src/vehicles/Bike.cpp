@@ -1305,7 +1305,7 @@ CBike::PreRender(void)
 
 	if(m_aWheelState[BIKEWHEEL_REAR] != WHEEL_STATE_NORMAL &&
 	   m_aWheelColPoints[BIKESUSP_R2].surfaceB != SURFACE_WATER && m_aWheelTimer[BIKESUSP_R2] > 0.0f){
-		static float smokeSize = 0.2f;
+		const float smokeSize = 0.2f;
 		CVector groundPos = m_aWheelColPoints[BIKESUSP_R2].point;
 		if(m_aSuspensionSpringRatioPrev[BIKESUSP_R1] < 1.0f)
 			groundPos = (groundPos + m_aWheelColPoints[BIKESUSP_R1].point)/2.0f;
@@ -1559,7 +1559,7 @@ CBike::PreRender(void)
 		if(i == BIKEWHEEL_REAR)
 			susp = BIKESUSP_R1;
 
-		static float speedSq;
+		float speedSq;
 		// Sparks for friction of burst wheels
 		if(m_wheelStatus[i] == WHEEL_STATUS_BURST && m_aSuspensionSpringRatioPrev[susp] < 1.0f &&
 		   (speedSq = m_vecMoveSpeed.MagnitudeSqr(), speedSq > SQR(0.1f)) &&
@@ -1733,7 +1733,7 @@ CBike::PreRender(void)
 				pos2 = GetMatrix() * pos2;
 			}
 
-			static float fumesLimit = 2.0f;
+			const float fumesLimit = 2.0f;
 			if(CGeneral::GetRandomNumberInRange(1.0f, 3.0f)*(m_fGasPedal+1.1f) > fumesLimit){
 				CParticle::AddParticle(PARTICLE_EXHAUST_FUMES, pos1, dir);
 				if(dblExhaust)
@@ -1848,10 +1848,12 @@ CBike::ProcessEntityCollision(CEntity *ent, CColPoint *colpoints)
 	return numCollisions;
 }
 
-static int16 nLastControlInput;
-static float fMouseCentreRange = 0.35f;
-static float fMouseSteerSens = -0.0035f;
-static float fMouseCentreMult = 0.975f;
+// Mouse-steering tuning. These are read-only constants, so they can stay
+// shared; the "last input source" flag they used to sit next to is per-vehicle
+// state now (CVehicle::m_nLastSteerInput) and no longer shared between cars.
+static const float fMouseCentreRange = 0.35f;
+static const float fMouseSteerSens = -0.0035f;
+static const float fMouseCentreMult = 0.975f;
 
 void
 CBike::ProcessControlInputs(uint8 pad)
@@ -1868,21 +1870,21 @@ CBike::ProcessControlInputs(uint8 pad)
 	if(CCamera::m_bUseMouse3rdPerson && !CVehicle::m_bDisableMouseSteering){
 		if(CPad::GetPad(pad)->GetMouseX() != 0.0f){
 			m_fSteerInput += fMouseSteerSens*CPad::GetPad(pad)->GetMouseX();
-			nLastControlInput = 2;
+			m_nLastSteerInput = 2;
 			if(Abs(m_fSteerInput) < fMouseCentreRange)
 				m_fSteerInput *= Pow(fMouseCentreMult, CTimer::GetTimeStep());
-		}else if(CPad::GetPad(pad)->GetSteeringLeftRight() || nLastControlInput != 2){
+		}else if(CPad::GetPad(pad)->GetSteeringLeftRight() || m_nLastSteerInput != 2){
 			// mouse hasn't move, steer with pad like below
 			m_fSteerInput += (-CPad::GetPad(pad)->GetSteeringLeftRight()/128.0f - m_fSteerInput)*
 				0.2f*CTimer::GetTimeStep();
-			nLastControlInput = 0;
+			m_nLastSteerInput = 0;
 		}
 	}else
 #endif
 	{
 		m_fSteerInput += (-CPad::GetPad(pad)->GetSteeringLeftRight()/128.0f - m_fSteerInput)*
 			0.2f*CTimer::GetTimeStep();
-		nLastControlInput = 0;
+		m_nLastSteerInput = 0;
 	}
 	m_fSteerInput = Clamp(m_fSteerInput, -1.0f, 1.0f);
 
@@ -1947,8 +1949,9 @@ CBike::ProcessControlInputs(uint8 pad)
 #endif
 	}
 
-	// Actually turn wheels
-	static float fValue;	// why static?
+	// Actually turn wheels. This used to be a static, so the sign of the squaring
+	// carried over from whichever bike was processed last.
+	float fValue;
 	if(m_fSteerInput < 0.0f)
 		fValue = -sq(m_fSteerInput);
 	else
@@ -2282,13 +2285,13 @@ CBike::AddWheelDirtAndWater(CColPoint *colpoint, uint32 belowEffectSpeed)
 {
 	int i;
 	CVector dir;
-	static float minSize = 0.02f;
-	static float maxSize = 0.04f;
-	static RwRGBA grassCol = { 8, 24, 8, 255 };
-	static RwRGBA gravelCol = { 64, 64, 64, 255 };
-	static RwRGBA mudCol = { 64, 32, 16, 255 };
-	static RwRGBA sandCol = { 170, 165, 140, 255 };
-	static RwRGBA waterCol = { 48, 48, 64, 0 };
+	static constexpr float minSize = 0.02f;
+	static constexpr float maxSize = 0.04f;
+	static const RwRGBA grassCol = { 8, 24, 8, 255 };
+	static const RwRGBA gravelCol = { 64, 64, 64, 255 };
+	static const RwRGBA mudCol = { 64, 32, 16, 255 };
+	static const RwRGBA sandCol = { 170, 165, 140, 255 };
+	static const RwRGBA waterCol = { 48, 48, 64, 0 };
 
 	if(!belowEffectSpeed &&
 	   colpoint->surfaceB != SURFACE_SAND && colpoint->surfaceB != SURFACE_SAND_BEACH)
@@ -2750,8 +2753,8 @@ CBike::KnockOffRider(eWeaponType weapon, uint8 direction, CPed *ped, bool bGetBa
 
 	case WEAPONTYPE_RAMMEDBYCAR: {
 		ped->m_vecMoveSpeed = ped->m_pMyVehicle->m_vecMoveSpeed;
-		static float minForceZ = 8.0f;
-		static float maxForceZ = 15.0f;
+		const float minForceZ = 8.0f;
+		const float maxForceZ = 15.0f;
 		float forceXY = -0.6*m_fDamageImpulse * ped->m_fMass / m_fMass;
 		ped->ApplyMoveForce(m_vecDamageNormal.x*forceXY, m_vecDamageNormal.y*forceXY,
 			CGeneral::GetRandomNumberInRange(minForceZ, maxForceZ));

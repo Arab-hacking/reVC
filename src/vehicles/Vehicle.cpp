@@ -82,6 +82,9 @@ CVehicle::CVehicle(uint8 CreatedBy)
 	m_fTransmissionInertiaRatio = 0.0f;
 	m_fTransmissionInertiaSmoothing = 0.0f;
 	m_fSteerInput = 0.0f;
+	m_fRawSteerAngle = 0.0f;
+	m_nLastSteerInput = 0;
+	m_szOwnPlateText[0] = '\0';
 	m_type = ENTITY_TYPE_VEHICLE;
 	// The derived constructor overwrites this with its own class; IGNORE marks
 	// an instance whose class has not been chosen yet.
@@ -317,6 +320,12 @@ CVehicle::CustomCarPlate_TextureCreate(CVehicleModelInfo *model)
 
 	char *text = model->GetCustomCarPlateText();
 	if(text){
+		// Keep the text: the model's copy is one-shot and is cleared two lines
+		// down, after which nothing would be able to say what this plate reads.
+		uint32 i = 0;
+		for(; text[i] != '\0' && i < ARRAY_SIZE(m_szOwnPlateText) - 1; i++)
+			m_szOwnPlateText[i] = text[i];
+		m_szOwnPlateText[i] = '\0';
 		m_pCustomCarPlate = CCustomCarPlateMgr::CreatePlateTexture(text, model->m_nPlateType);
 		// The text is one-shot: SA clears it and marks the plate type as
 		// already used, so a second car does not inherit the script's plate.
@@ -339,6 +348,8 @@ CVehicle::CustomCarPlate_TextureDestroy(void)
 		RwTextureDestroy(m_pCustomCarPlate);
 		m_pCustomCarPlate = nil;
 	}
+	// The text belongs to the texture that showed it.
+	m_szOwnPlateText[0] = '\0';
 }
 
 bool
@@ -385,18 +396,23 @@ CVehicle::GetHeightAboveRoad(void)
 	return -1.0f * GetColModel()->boundingBox.min.z;
 }
 
-static CColModel rotorColModel;
-static CColSphere rotorColSphere;
-float ROTOR_SEMI_THICKNESS = 0.05f;
-float ROTOR_TURN_SPEED = 0.2f;
-float ROTOR_DISGUARD_MULT = 0.3f;
-float ROTOR_COL_ELASTICITY = 1.0f;
-float ROTOR_COL_TURNMULT = -0.001f;
-float ROTOR_DEFAULT_DAMAGE = 100.0f;
+// Rotor geometry constants. These were non-const globals with external linkage;
+// nothing ever wrote to them, and the collision model they feed was a file
+// static shared by every call, so two helicopters being tested in the same
+// frame could see each other's box. Both are per-call values again.
+static const float ROTOR_SEMI_THICKNESS = 0.05f;
+static const float ROTOR_TURN_SPEED = 0.2f;
+static const float ROTOR_DISGUARD_MULT = 0.3f;
+static const float ROTOR_COL_ELASTICITY = 1.0f;
+static const float ROTOR_COL_TURNMULT = -0.001f;
+static const float ROTOR_DEFAULT_DAMAGE = 100.0f;
 
 bool
 CVehicle::DoBladeCollision(CVector pos, CMatrix &matrix, int16 rotorType, float radius, float damageMult)
 {
+	CColModel rotorColModel;
+	CColSphere rotorColSphere;
+
 	// "min"/"max" would collide with the min/max macros windows.h leaves
 	// behind on some platform configurations.
 	CVector boxMax(radius, radius, radius);
@@ -3359,4 +3375,81 @@ CVehicle::ApplyRemapTexture(void)
 	}
 
 	CVehicleModelInfo::ms_pRemapTexture = m_pRemapTexture;
+}
+
+// ---- State API for an external controller -------------------------------
+//
+// See the block in Vehicle.h for the contract. These are the parts that cannot
+// live in the header: they either touch the model or need a real curve.
+
+// Steering from the normalised [-1, 1] input the pad produces. The squared
+// response curve and the handling record's lock are the same ones
+// CAutomobile::ProcessControlInputs and CBike::ProcessControlInputs apply, so a
+// peer that sends the input lands on the same wheel angle the local car has.
+void
+CVehicle::SetSteerInput(float input)
+{
+	input = Clamp(input, -1.0f, 1.0f);
+	m_fSteerInput = input;
+	float curve = input < 0.0f ? -SQR(input) : SQR(input);
+	float lock = m_pHandlingData ? m_pHandlingData->m_fSteeringLock : 0.0f;
+	m_fSteerAngle = DEGTORAD(lock) * curve;
+	// The input came from outside, so the smoothed mouse state must not keep
+	// pulling towards the last pad reading.
+	m_nLastSteerInput = 0;
+}
+
+// Builds a plate texture of this vehicle's own from `text`. Returns false when
+// the model has no plate material to work from, which is the normal case for
+// bikes, boats and aircraft.
+bool
+CVehicle::SetPlateText(const char *text)
+{
+	CVehicleModelInfo *model = GetModelInfo();
+	if(model == nil || model->m_pPlateMaterial == nil)
+		return false;
+
+	// Whatever the vehicle wore - its own texture or a reference on the model's
+	// shared one - has to go before a new one is made, or the old one leaks.
+	CustomCarPlate_TextureDestroy();
+
+	m_szOwnPlateText[0] = '\0';
+
+	if(text == nil || text[0] == '\0'){
+		// Back to the model's shared plate.
+		RwTexture *shared = RpMaterialGetTexture(model->m_pPlateMaterial);
+		if(shared){
+			m_pCustomCarPlate = shared;
+			RwTextureAddRef(m_pCustomCarPlate);
+		}
+		return true;
+	}
+
+	// The plate type is the model's: a car in San Fierro keeps the San Fierro
+	// background, because the type is decided per model and not per text.
+	uint8 plateType = model->m_nPlateType;
+	if(plateType == (uint8)-1)
+		plateType = 0;	// CARPLATE_DEFAULT: the model has already spent its type
+	m_pCustomCarPlate = CCustomCarPlateMgr::CreatePlateTexture(text, plateType);
+	if(m_pCustomCarPlate != nil){
+		uint32 i = 0;
+		for(; text[i] != '\0' && i < ARRAY_SIZE(m_szOwnPlateText) - 1; i++)
+			m_szOwnPlateText[i] = text[i];
+		m_szOwnPlateText[i] = '\0';
+	}
+	return m_pCustomCarPlate != nil;
+}
+
+// Nitro is a CAutomobile system; the base class reports "no bottle" so a
+// generic controller can ask every vehicle without a type test first.
+bool
+CVehicle::IsNitroActive(void) const
+{
+	return false;
+}
+
+void
+CVehicle::SetNitroActive(bool active)
+{
+	(void)active;
 }

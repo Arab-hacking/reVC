@@ -72,6 +72,13 @@ public:
 	void ScanForTowLink(void);
 
 	int32 ProcessEntityCollision(CEntity *entity, CColPoint *colpoint);
+
+	// ---- State API (see the block in Vehicle.h) -------------------------
+	//
+	// A trailer's own state is the support legs: how far down they are, which
+	// is what tells a viewer whether it is parked or being towed.
+	float GetTowedRatio(void) const { return m_fTrailerTowedRatio; }
+	void SetTowedRatio(float ratio) { m_fTrailerTowedRatio = ratio; }
 };
 
 // A luggage trailer has no supports to speak of: SA marks it with a ratio

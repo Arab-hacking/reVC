@@ -19,6 +19,13 @@
 
 #ifdef SA_VEHICLE_MODELS
 
+// This header is included by files that do not pull in common.h first, so `nil`
+// is not guaranteed to be defined here. It is the project's spelling of the null
+// pointer; fall back to the standard one rather than depending on include order.
+#ifndef nil
+#define nil nullptr
+#endif
+
 static inline FILE *SavehLogFile(void)
 {
 	static FILE *f = nil;

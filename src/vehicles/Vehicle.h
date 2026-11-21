@@ -344,6 +344,10 @@ public:
 	CStoredCollPoly m_aCollPolys[2];     // poly which is under front/rear part of car
 	float m_fSteerInput;
 	float m_fRawSteerAngle;
+	// Which source last drove m_fSteerInput: 2 = the mouse, 0 = the pad. This
+	// was a file static in ProcessControlInputs, i.e. shared by every car in the
+	// world; it belongs to the vehicle whose steering it tracks.
+	int16 m_nLastSteerInput;
 	eVehicleType m_nVehicleType;
 	eVehicleType m_nVehicleSubType;	// differs from the type only for vehicles that behave as two classes, e.g. the vortex
 
@@ -397,6 +401,10 @@ public:
 	// shares its model's plate texture. Owned by the vehicle and destroyed with
 	// it, because a generated plate is per-vehicle while the model is shared.
 	RwTexture *m_pCustomCarPlate;
+	// The text m_pCustomCarPlate was baked from, when the vehicle has a plate of
+	// its own; empty when it shares the model's. Eight characters plus the
+	// terminator, the same limit SA puts on a plate.
+	char m_szOwnPlateText[9];
 
 	// ---- Tuning (SA CVehicle upgrade API) --------------------------------
 	//
@@ -484,6 +492,171 @@ public:
 	// hands it to the model for the duration of one Render. Called by the
 	// automobile render path, and again when the texture was swapped.
 	void ApplyRemapTexture(void);
+
+	// ---- State API for an external controller ---------------------------
+	//
+	// Everything above is what the game itself calls. The accessors below are
+	// the surface a second driver - a network peer, a replay player, a test
+	// harness - needs in order to read and write a vehicle without reaching
+	// into its fields and without going through CPad. Two rules keep them honest:
+	//
+	//  * a setter writes only the state it names. It does not read the pad, does
+	//    not play a sound and does not spawn a particle. A remote vehicle must be
+	//    able to hold a steering angle without a pad existing for it;
+	//  * a getter is const and returns the state the physics actually uses, so
+	//    a snapshot taken after ProcessControl is what the next frame integrates.
+	//
+	// The game keeps writing the same fields directly from ProcessControlInputs;
+	// these are a second door onto the same state, not a parallel copy of it.
+
+	// Transform. CPlaceable already has GetMatrix/SetMatrix/GetPosition/
+	// SetPosition/GetHeading; these add the two operations a snapshot needs and
+	// that had no entry point: writing a full pose in one step and reading it
+	// back without an aliasing reference.
+	CVector GetMoveSpeedState(void) const { return m_vecMoveSpeed; }
+	void SetMoveSpeedState(const CVector &speed) { m_vecMoveSpeed = speed; }
+	CVector GetTurnSpeedState(void) const { return m_vecTurnSpeed; }
+	void SetTurnSpeedState(const CVector &speed) { m_vecTurnSpeed = speed; }
+	// Position, orientation (about the world axes, radians) and both velocities
+	// in one call. This is the whole of a vehicle's pose, and the only thing a
+	// peer has to send for a vehicle it does not simulate.
+	void SetPose(const CVector &pos, const CVector &orientation,
+		const CVector &moveSpeed, const CVector &turnSpeed)
+	{
+		SetPosition(pos);
+		SetOrientation(orientation.x, orientation.y, orientation.z);
+		m_vecMoveSpeed = moveSpeed;
+		m_vecTurnSpeed = turnSpeed;
+	}
+
+	// Controls. Getters first: they report what the last ProcessControlInputs
+	// left behind, which is what the physics and the audio both read.
+	float GetGasPedal(void) const { return m_fGasPedal; }
+	float GetBrakePedal(void) const { return m_fBrakePedal; }
+	// The pedal that is actually being pressed: gas and brake are separate
+	// fields but only ever one of them is live (see ProcessControlInputs), so
+	// this is the value a remote peer should be shown.
+	float GetActivePedal(void) const { return m_fBrakePedal > m_fGasPedal ? m_fBrakePedal : m_fGasPedal; }
+	float GetSteerAngle(void) const { return m_fSteerAngle; }
+	// The normalised [-1, 1] steering input the angle is derived from. Kept
+	// separately because the angle also carries the handling record's lock and
+	// the squared response curve, neither of which a peer should have to undo.
+	float GetSteerInput(void) const { return m_fSteerInput; }
+	bool IsHandbrakeOn(void) const { return bIsHandbrakeOn; }
+
+	void SetGasPedal(float gas) { m_fGasPedal = gas; }
+	void SetBrakePedal(float brake) { m_fBrakePedal = brake; }
+	// Gas and brake together, clamped to [0, 1] as the pad path does. This is
+	// the setter a remote peer needs: it is exactly the pair the drivetrain
+	// consumes, and nothing else.
+	void SetPedals(float gas, float brake)
+	{
+		m_fGasPedal = Clamp(gas, 0.0f, 1.0f);
+		m_fBrakePedal = Clamp(brake, 0.0f, 1.0f);
+	}
+	// Steering from the normalised input. The response curve (cubed, signed)
+	// and the handling record's lock are applied here so a peer sends the same
+	// [-1, 1] the pad produces and the wheels end up where the local car's do.
+	void SetSteerInput(float input);
+	void SetHandbrakeOn(bool on) { bIsHandbrakeOn = on; }
+	// Sets the wheel angle directly, bypassing the response curve. For replaying
+	// a recorded state, where the angle - not the input - is what was stored.
+	void SetSteerAngleDirect(float angle) { m_fSteerAngle = angle; }
+
+	// Body. m_fHealth is the one number the damage model is built on; the
+	// individual parts live in CDamageManager (see CAutomobile::GetDamageManager
+	// and the per-part helpers it exposes).
+	float GetHealth(void) const { return m_fHealth; }
+	void SetHealth(float health) { m_fHealth = health; }
+	// Fuel is not simulated in this fork (SA does not simulate it either); the
+	// vehicle it belongs to is described by its health and its engine state.
+
+	// On-board systems.
+	bool IsEngineOn(void) const { return bEngineOn; }
+	void SetEngineOn(bool on) { bEngineOn = on; }
+	bool AreLightsOn(void) const { return bLightsOn; }
+	void SetLightsOn(bool on) { bLightsOn = on; }
+	bool IsSirenOrAlarmOn(void) const { return m_bSirenOrAlarm; }
+	void SetSirenOrAlarm(bool on) { m_bSirenOrAlarm = on; }
+	// How long the horn has been sounding, in milliseconds; 0 means silent.
+	uint32 GetHornTimer(void) const { return m_nCarHornTimer; }
+	void SetHornTimer(uint32 timer) { m_nCarHornTimer = timer; }
+	uint8 GetHornPattern(void) const { return m_nCarHornPattern; }
+	void SetHornPattern(uint8 pattern) { m_nCarHornPattern = pattern; }
+	// The radio station is a byte index into the audio system's station table;
+	// RADIO_OFF silences it. Stored on the vehicle so it survives a change of
+	// driver, which is what lets a peer hear the same station the owner chose.
+	uint8 GetRadioStation(void) const { return m_nRadioStation; }
+	void SetRadioStation(uint8 station) { m_nRadioStation = station; }
+	// Nitro: bottles left (0 = empty) and whether the bottle is installed at
+	// all. Setting the count on a car without the fitment does nothing, because
+	// the driving code only looks at it when bNosInst is set.
+	uint8 GetNitroBoosts(void) const { return m_nNitroBoosts; }
+	void SetNitroBoosts(uint8 bottles) { m_nNitroBoosts = bottles; }
+	// Nitro is implemented by CAutomobile; the base answers "no bottle fitted",
+	// so a controller can ask any vehicle without a type test.
+	virtual bool IsNitroActive(void) const;
+	virtual void SetNitroActive(bool active);
+	// Hydraulics: fitted or not, and the height the suspension is being pumped
+	// to. The fitted flag is what the driving code gates on.
+	bool AreHydraulicsInstalled(void) const { return bHydraulicInst; }
+	void SetHydraulicsInstalled(bool installed) { bHydraulicInst = installed; }
+	// The pump state the handling drives. CAutomobile owns the suspension that
+	// consumes it, so the height itself is set there; this is the flag half that
+	// every vehicle type shares.
+	bool IsUpgradedStereoInstalled(void) const { return bUpgradedStereo; }
+
+	// Customisation: the four paint channels in carcols.dat order, the paintjob,
+	// and the plate.
+	uint8 GetPrimaryColour(void) const { return m_currentColour1; }
+	uint8 GetSecondaryColour(void) const { return m_currentColour2; }
+	uint8 GetTertiaryColour(void) const { return m_currentColour3; }
+	uint8 GetQuaternaryColour(void) const { return m_currentColour4; }
+	void GetColours(uint8 &c1, uint8 &c2, uint8 &c3, uint8 &c4) const
+	{
+		c1 = m_currentColour1;
+		c2 = m_currentColour2;
+		c3 = m_currentColour3;
+		c4 = m_currentColour4;
+	}
+	// Writes the four channels without touching the model. The caller is
+	// responsible for making the model show them (SetVehicleColour on the model
+	// info) - a remote car repaints itself from its own snapshot, not from this
+	// instance's material state.
+	void SetColours(uint8 c1, uint8 c2, uint8 c3, uint8 c4)
+	{
+		m_currentColour1 = c1;
+		m_currentColour2 = c2;
+		m_currentColour3 = c3;
+		m_currentColour4 = c4;
+	}
+	// Paintjob by index into the model's remap list, -1 for none.
+	int32 GetPaintjob(void) { return GetRemapIndex(); }
+	void SetPaintjob(int32 remapIndex) { SetRemap(remapIndex); }
+	// Plate text. The vehicle's own plate texture wins when it exists (it was
+	// baked from a script text); otherwise the text comes from the model, which
+	// is shared. Writing here builds this vehicle a texture of its own, so a
+	// custom plate stays with the car it was set on.
+	bool SetPlateText(const char *text);
+	// The plate text this vehicle currently shows, or nil. The model's pending
+	// text is one-shot (it is consumed by the first vehicle built on the model),
+	// so a vehicle that was given a custom plate keeps its own copy here; a
+	// vehicle without one reports the generated text the model baked in, which
+	// is not recoverable as a string and therefore reported as nil.
+	const char *GetPlateText(void) const { return m_szOwnPlateText[0] ? m_szOwnPlateText : nil; }
+
+	// Towing. A tractor and its trailer point at each other; m_pTowingVehicle is
+	// the car in front, m_pVehicleBeingTowed the one behind.
+	CVehicle *GetTowingVehicle(void) const { return m_pTowingVehicle; }
+	CVehicle *GetVehicleBeingTowed(void) const { return m_pVehicleBeingTowed; }
+	// Links the two halves without moving anything. The physics link is set up
+	// by SetTowLink/UpdateTrailerLink; this only records the relationship, which
+	// is what a peer has to transmit before either side steps.
+	void SetTowPointers(CVehicle *towing, CVehicle *towed)
+	{
+		m_pTowingVehicle = towing;
+		m_pVehicleBeingTowed = towed;
+	}
 
 	// SA CVehicle::CustomCarPlate_TextureCreate (0x6D10E0). Build this
 	// vehicle's own plate texture if its model is carrying a pending plate

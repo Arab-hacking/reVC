@@ -67,6 +67,10 @@ public:
 	int8 m_nHeliId;
 	int8 m_heliType;
 	int8 m_pathState;
+	// Which waypoint of the current path m_pathState selects. This was a file
+	// static in Heli.cpp, i.e. one cursor shared by every helicopter in the
+	// world - two scripted helis would walk each other's paths.
+	int8 m_pathPoint;
 	int8 m_numSwat;
 	uint8 m_aSwatState[4];
 	float m_aSearchLightHistoryX[6];
@@ -105,6 +109,27 @@ public:
 	CObject *SpawnFlyingComponent(int32 component);
 	CVector FindSwatPositionRelativeToHeli(int n);
 	bool SendDownSwat(void);
+
+	// ---- State API (see the block in Vehicle.h) -------------------------
+	//
+	// The rotor is the helicopter's whole visible state: its angle and speed are
+	// what a peer needs to show a helicopter hovering without running its
+	// physics. The searchlight is the other moving part and is aimed by a
+	// direction, not an angle, so both components are exposed.
+	float GetRotorAngle(void) const { return m_fRotorRotation; }
+	void SetRotorAngle(float angle) { m_fRotorRotation = angle; }
+	float GetRotorSpeed(void) const { return m_fRotorSpeed; }
+	void SetRotorSpeed(float speed) { m_fRotorSpeed = speed; }
+	float GetSearchLightIntensity(void) const { return m_fSearchLightIntensity; }
+	void SetSearchLightIntensity(float intensity) { m_fSearchLightIntensity = intensity; }
+	float GetSearchLightDirX(void) const { return m_fSearchLightX; }
+	float GetSearchLightDirY(void) const { return m_fSearchLightY; }
+	void SetSearchLightDir(float x, float y) { m_fSearchLightX = x; m_fSearchLightY = y; }
+	// Which of the game's helicopter slots this one occupies, or -1 for a heli
+	// that is not one of them. A scripted heli has to keep its slot on every
+	// client, so the slot travels with the state.
+	int8 GetHeliId(void) const { return m_nHeliId; }
+	void SetHeliId(int8 id) { m_nHeliId = id; }
 
 	static void InitHelis(void);
 	static CHeli *GenerateHeli(bool catalina); // out of class in III PC and later because of SecuROM

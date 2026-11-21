@@ -563,6 +563,11 @@ public:
 	eMoveState m_followPathMoveState;
 	float m_fHealth;
 	float m_fArmour;
+	// When this ped's water-splash particle bursts are due, as absolute
+	// CTimer::GetTimeInMilliseconds values; 0 means "not scheduled". File statics
+	// in ProcessBuoyancy, so one ped in the water reset another's timers.
+	uint32 m_nWaterCirclesTime;
+	uint32 m_nRaindropsTime;
 	uint32 m_nExtendedRangeTimer;
 	int16 m_routeLastPoint;
 	uint16 m_routeStartPoint;

@@ -25,7 +25,8 @@ float DOOR_SPEED_MAX_CAPPED_FIRETRUCK = 0.05f;
 float DOOR_SPRING_RATE_FIRETRUCK = 0.01f;
 float DOOR_SLAM_SHUT_SPEED = 0.1f;
 
-float CDoor::DOOR_SPEED_MAX_CAPPED = 0.5f;
+// Swing speed limit. Never written after initialisation.
+const float CDoor::DOOR_SPEED_MAX_CAPPED = 0.5f;
 
 CDoor::CDoor(void)
 {

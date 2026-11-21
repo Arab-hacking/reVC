@@ -6,12 +6,12 @@
 #include "cTransmission.h"
 #include "Timer.h"
 
-// The reference keeps the last acceleration and its intermediate products in
-// engine-wide static slots. Keeping them file-local makes the re-entrancy
-// explicit without changing the arithmetic.
-static float driveAcceleration;
-static float cheatMultiplier;
-static float currentVelocity;
+// The reference keeps the per-frame acceleration and its intermediate products
+// in engine-wide static slots. That is safe in SA only because the game drives
+// one car at a time through this code; it is not safe here, where a remote
+// vehicle may be stepped between two frames of a local one. Every value that
+// is only read and written inside one call is a local below - the arithmetic is
+// unchanged, only the lifetime is.
 
 namespace {
 
@@ -95,6 +95,13 @@ cTransmission::CalculateDriveAcceleration(const float &gasPedal, uint8 &gear, fl
 
 	if(!IsUsable(*this) || !IsFinite(gasPedal) || !IsFinite(velocity) || !IsFinite(CTimer::GetTimeStep()))
 		return 0.0f;
+
+	// Per-call state. These were file statics; nothing outside this function
+	// reads them, so making them locals changes no arithmetic and makes two
+	// vehicles stepped in the same frame independent of each other.
+	float driveAcceleration;
+	float cheatMultiplier;
+	float currentVelocity;
 
 	if(velocity < m_fMaxReverseVelocity || velocity > m_fMaxVelocity)
 		return 0.0f;

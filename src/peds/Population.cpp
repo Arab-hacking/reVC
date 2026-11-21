@@ -1093,7 +1093,10 @@ CPopulation::TestSafeForRealObject(CDummyObject *dummy)
 	CVUVECTOR colCentre;
 	dummy->GetBoundCentre(colCentre);
 
-	static CColPoint aTempColPoints[MAX_COLLISION_POINTS];
+	// Collision scratch, ~4 KB. A static in the reference; it does not outlive
+	// the call, so keeping it on the stack means two spawn points being checked
+	// in the same frame cannot interleave their results.
+	CColPoint aTempColPoints[MAX_COLLISION_POINTS];
 
 	for (int curY = minY; curY <= maxY; curY++) {
 		for (int curX = minX; curX <= maxX; curX++) {

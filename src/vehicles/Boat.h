@@ -42,6 +42,11 @@ public:
 	// has its own.
 	float m_EngineSpeed;
 	float m_PropellerAngle;
+	// Smoothed up/down deflection of the rear flaps, from the pad's vertical
+	// steering. A file static in the reference, i.e. shared by every boat;
+	// going per instance keeps one boat's flaps from being driven by another's
+	// input.
+	float m_fRearFlapSteering;
 	void ProcessBoatNodeRendering(eBoatNodes node, float rotation, uint8 alpha);
 	tBoatHandlingData *m_pBoatHandlingData;
 	uint8 bBoatInWater : 1;
@@ -65,9 +70,9 @@ public:
 	uint8 m_WakeBoatSpeed[32];
 	float m_WakePtCounters[32];
 
-	static float MAX_WAKE_LENGTH;
-	static float MIN_WAKE_INTERVAL;
-	static float WAKE_LIFETIME;
+	static const float MAX_WAKE_LENGTH;
+	static const float MIN_WAKE_INTERVAL;
+	static const float WAKE_LIFETIME;
 
 	CBoat(int, uint8);
 
@@ -101,6 +106,29 @@ public:
 	virtual void Load(uint8*& buf);
 #endif
 	static const uint32 nSaveStructSize;
+
+	// ---- State API (see the block in Vehicle.h) -------------------------
+	//
+	// A boat has no wheels, doors or wings; its damage state is the hull value
+	// and the engine. The buoyancy and propeller state below is what a peer
+	// needs to show a boat that is bobbing without simulating the hull.
+	bool IsInWater(void) const { return bBoatInWater; }
+	void SetInWater(bool in) { bBoatInWater = in; }
+	float GetEngineSpeed(void) const { return m_EngineSpeed; }
+	void SetEngineSpeed(float speed) { m_EngineSpeed = speed; }
+	float GetPropellerAngle(void) const { return m_PropellerAngle; }
+	void SetPropellerAngle(float angle) { m_PropellerAngle = angle; }
+	// How far the hull is under the surface, and where the buoyant force acts.
+	float GetVolumeUnderWater(void) const { return m_fVolumeUnderWater; }
+	void SetVolumeUnderWater(float v) { m_fVolumeUnderWater = v; }
+	CVector GetBuoyancyPoint(void) const { return m_vecBuoyancePoint; }
+	void SetBuoyancyPoint(const CVector &p) { m_vecBuoyancePoint = p; }
+	// Hull damage, separate from the vehicle's m_fHealth: it is what the boat
+	// takes from hitting the water hard, and it is what makes it sink.
+	float GetHullDamage(void) const { return m_fDamage; }
+	void SetHullDamage(float damage) { m_fDamage = damage; }
+	bool IsAnchored(void) const { return m_bIsAnchored; }
+	void SetAnchored(bool anchored) { m_bIsAnchored = anchored; }
 
 };
 

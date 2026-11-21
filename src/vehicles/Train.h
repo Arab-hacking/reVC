@@ -160,6 +160,30 @@ public:
 		CTrain **outFirstCarriage, CTrain **outLastCarriage, int32 nodeIndex, int32 trackId, bool isMissionTrain);
 	static void DoTrainGenerationAndRemoval(void);
 
+	// ---- State API (see the block in Vehicle.h) -------------------------
+	//
+	// A train is fully described by where it is on its track: the track id and
+	// the rail distance are the pose, and the speed is the only dynamics. A peer
+	// therefore sends those three and the coupling, and everything else follows
+	// from FindCoorsFromPositionOnTrack.
+	float GetRailDistance(void) const { return m_fCurrentRailDistance; }
+	void SetRailDistance(float distance) { m_fCurrentRailDistance = distance; }
+	int8 GetTrackId(void) const { return m_nTrackId; }
+	void SetTrackId(int8 id) { m_nTrackId = id; }
+	// Signs follow SetTrainSpeed: positive runs with the rail distance, negative
+	// against it.
+	float GetTrainSpeed(void) const { return m_fTrainSpeed; }
+	void SetTrainSpeedDirect(float speed) { m_fTrainSpeed = speed; }
+	CTrain *GetNextCarriage(void) const { return m_pNextCarriage; }
+	CTrain *GetPrevCarriage(void) const { return m_pPrevCarriage; }
+	// Coupling, without moving either carriage. The physical arrangement is set
+	// by the train's own path logic.
+	void SetCarriages(CTrain *prev, CTrain *next)
+	{
+		m_pPrevCarriage = prev;
+		m_pNextCarriage = next;
+	}
+
 private:
 	void TrainHitStuff(CPtrList &list);
 };

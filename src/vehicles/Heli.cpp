@@ -112,20 +112,18 @@ CHeli::SetModelIndex(uint32 id)
 	CClumpModelInfo::FillFrameArray(GetClump(), m_aHeliNodes);
 }
 
-static float CatalinaTargetX[7] = { -478.0, -677.0, -907.0, -1095.0, -1152.0, -1161.0, -1161.0 };
-static float CatalinaTargetY[7] = { 227.0, 206.0, 210.0, 242.0, 278.0, 341.0, 341.0 };
-static float CatalinaTargetZ[7] = { 77.0, 66.0, 60.0, 53.0, 51.0, 46.0, 30.0 };
-static float DamPathX[6] = { -1191.0, -1176.0, -1128.0, -1072.0, -1007.0, -971.0 };
-static float DamPathY[6] = { 350.0, 388.0, 429.0, 447.0, 449.0, 416.0 };
-static float DamPathZ[6] = { 42.0, 37.0, 28.0, 28.0, 31.0, 33.0 };
-static float ShortPathX[4] = { -974.0, -1036.0, -1112.0, -1173.0 };
-static float ShortPathY[4] = { 340.0, 312.0, 317.0, 294.0 };
-static float ShortPathZ[4] = { 41.0, 38.0, 32.0, 39.0 };
-static float LongPathX[7] = { -934.0, -905.0, -906.0, -1063.0, -1204.0, -1233.0, -1207.0 };
-static float LongPathY[7] = { 371.0, 362.0, 488.0, 548.0, 451.0, 346.0, 308.0 };
-static float LongPathZ[7] = { 57.0, 90.0, 105.0, 100.0, 81.0, 79.0, 70.0 };
-
-static int PathPoint;
+static const float CatalinaTargetX[7] = { -478.0, -677.0, -907.0, -1095.0, -1152.0, -1161.0, -1161.0 };
+static const float CatalinaTargetY[7] = { 227.0, 206.0, 210.0, 242.0, 278.0, 341.0, 341.0 };
+static const float CatalinaTargetZ[7] = { 77.0, 66.0, 60.0, 53.0, 51.0, 46.0, 30.0 };
+static const float DamPathX[6] = { -1191.0, -1176.0, -1128.0, -1072.0, -1007.0, -971.0 };
+static const float DamPathY[6] = { 350.0, 388.0, 429.0, 447.0, 449.0, 416.0 };
+static const float DamPathZ[6] = { 42.0, 37.0, 28.0, 28.0, 31.0, 33.0 };
+static const float ShortPathX[4] = { -974.0, -1036.0, -1112.0, -1173.0 };
+static const float ShortPathY[4] = { 340.0, 312.0, 317.0, 294.0 };
+static const float ShortPathZ[4] = { 41.0, 38.0, 32.0, 39.0 };
+static const float LongPathX[7] = { -934.0, -905.0, -906.0, -1063.0, -1204.0, -1233.0, -1207.0 };
+static const float LongPathY[7] = { 371.0, 362.0, 488.0, 548.0, 451.0, 346.0, 308.0 };
+static const float LongPathZ[7] = { 57.0, 90.0, 105.0, 100.0, 81.0, 79.0, 70.0 };
 
 void
 CHeli::ProcessControl(void)
@@ -177,44 +175,44 @@ CHeli::ProcessControl(void)
 			target.z = 74.0f;
 			if(GetPosition().z < 40.0f)
 				break;
-			PathPoint = 2;
+			m_pathPoint = 2;
 			m_pathState = 9;
 			break;
 		// Circle around dam
 		case 9:
-			target.x = DamPathX[PathPoint];
-			target.y = DamPathY[PathPoint];
-			target.z = DamPathZ[PathPoint];
+			target.x = DamPathX[m_pathPoint];
+			target.y = DamPathY[m_pathPoint];
+			target.z = DamPathZ[m_pathPoint];
 			if((target - GetPosition()).Magnitude() < 9.0f){
-				PathPoint++;
-				if(PathPoint >= 6){
+				m_pathPoint++;
+				if(m_pathPoint >= 6){
 					m_pathState = 10;
-					PathPoint = 0;
+					m_pathPoint = 0;
 				}
 			}
 			break;
 		case 10:
-			target.x = ShortPathX[PathPoint];
-			target.y = ShortPathY[PathPoint];
-			target.z = ShortPathZ[PathPoint];
+			target.x = ShortPathX[m_pathPoint];
+			target.y = ShortPathY[m_pathPoint];
+			target.z = ShortPathZ[m_pathPoint];
 			if((target - GetPosition()).Magnitude() < 9.0f){
-				PathPoint++;
-				if(PathPoint >= 3){
+				m_pathPoint++;
+				if(m_pathPoint >= 3){
 					m_pathState = 9;
-					PathPoint = 1;
+					m_pathPoint = 1;
 				}
 			}
 			break;
 		// how do we get here?
 		case 11:
-			target.x = LongPathX[PathPoint];
-			target.y = LongPathY[PathPoint];
-			target.z = LongPathZ[PathPoint];
+			target.x = LongPathX[m_pathPoint];
+			target.y = LongPathY[m_pathPoint];
+			target.z = LongPathZ[m_pathPoint];
 			if((target - GetPosition()).Magnitude() < 9.0f){
-				PathPoint++;
-				if(PathPoint >= 7){
+				m_pathPoint++;
+				if(m_pathPoint >= 7){
 					m_pathState = 9;
-					PathPoint = 0;
+					m_pathPoint = 0;
 				}
 			}
 			break;
@@ -930,7 +928,7 @@ CHeli::UpdateHelis(void)
 	for(i = 0; i < NUM_HELIS; i++){
 		if(pHelis[i] && pHelis[i]->m_heliStatus == HELI_STATUS_SHOT_DOWN && CTimer::GetTimeInMilliseconds() > pHelis[i]->m_nExplosionTimer){
 			// Second part of explosion
-			static int nFrameGen;
+			int nFrameGen = 0;	// per burst, not shared between vehicles
 			CRGBA colors[8];
 
 			TheCamera.CamShake(0.7f, pHelis[i]->GetPosition().x, pHelis[i]->GetPosition().y, pHelis[i]->GetPosition().z);

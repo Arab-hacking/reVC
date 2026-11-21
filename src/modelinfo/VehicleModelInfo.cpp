@@ -52,10 +52,20 @@ RwTexture *gpWhiteTexture;
 static RwTexture *gpFallbackEnvTexture;
 RwFrame *pMatFxIdentityFrame;
 
-// true while the currently processed vehicle model uses the GTA:San Andreas
-// node naming convention (see "GTA:San Andreas vehicle support" below).
-// Always false unless SA_VEHICLE_MODELS is defined.
-static bool gVehicleIsSAHierarchy;
+// Whether the model being processed uses the GTA:San Andreas node naming
+// convention (see "GTA:San Andreas vehicle support" below) used to live in a
+// file static that SetClump wrote and every renderer callback read. It is now
+// an argument of the callbacks (CVehicleModelInfo::AtomicRendererCBData), so
+// the answer always belongs to the model being walked.
+
+// Pulls the caller's payload out of the RpClumpForAllAtomics data pointer.
+// Callers that have nothing to say pass nil.
+static inline bool
+IsSAHierarchyFromCBData(void *data)
+{
+	CVehicleModelInfo::AtomicRendererCBData *cbdata = (CVehicleModelInfo::AtomicRendererCBData*)data;
+	return cbdata != nil && cbdata->saHierarchy;
+}
 
 enum {
 	VEHICLE_FLAG_COLLAPSE	= 0x2,
@@ -364,6 +374,7 @@ CVehicleModelInfo::CVehicleModelInfo(void)
 	m_bHasEmbeddedColModel = false;
 #endif
 	m_bSAWheelMesh = false;
+	m_bSAHierarchy = false;
 	// SA starts every slot empty. -1 rather than 0 because model id 0 is a
 	// valid model, so "no part here" needs its own value.
 	for(i = 0; i < NUM_MODEL_UPGRADES; i++)
@@ -706,11 +717,11 @@ CVehicleModelInfo::SetClump(RpClump *clump)
 	CClumpModelInfo::SetClump(clump);
 #ifdef SA_VEHICLE_MODELS
 	// must be known before the render callbacks are chosen
-	gVehicleIsSAHierarchy = m_nVehicleType == VEHICLE_TYPE_AUTOMOBILE || IsSAHierarchy(clump);
+	m_bSAHierarchy = m_nVehicleType == VEHICLE_TYPE_AUTOMOBILE || IsSAHierarchy(clump);
 #endif
 	SetAtomicRenderCallbacks();
 	SetFrameIds(GetVehicleDesc(m_nVehicleType));
-	PreprocessHierarchy();
+	PreprocessHierarchy(m_bSAHierarchy);
 	FindEditableMaterialList();
 	SetEnvironmentMap();
 	// SA calls this from SetClump: the clump is the only place the plate
@@ -860,6 +871,7 @@ CVehicleModelInfo::SetAtomicRendererCB_BigVehicle(RpAtomic *atomic, void *data)
 {
 	char *name;
 	bool alpha;
+	const bool saHierarchy = IsSAHierarchyFromCBData(data);
 
 	name = GetFrameNodeName(RpAtomicGetFrame(atomic));
 	alpha = false;
@@ -876,7 +888,7 @@ CVehicleModelInfo::SetAtomicRendererCB_BigVehicle(RpAtomic *atomic, void *data)
 			CVisibilityPlugins::SetAtomicRenderCallback(atomic, CVisibilityPlugins::RenderVehicleLowDetailCB_BigVehicle);
 	}else if(strstr(name, "_vlo"))
 		CVisibilityPlugins::SetAtomicRenderCallback(atomic, CVisibilityPlugins::RenderVehicleReallyLowDetailCB_BigVehicle);
-	else if(gVehicleIsSAHierarchy){
+	else if(saHierarchy){
 		if(alpha)
 			CVisibilityPlugins::SetAtomicRenderCallback(atomic, CVisibilityPlugins::RenderVehicleHiDetailAlphaCB_BigVehicle);
 		else
@@ -892,6 +904,7 @@ CVehicleModelInfo::SetAtomicRendererCB_Train(RpAtomic *atomic, void *data)
 {
 	char *name;
 	bool alpha;
+	const bool saHierarchy = IsSAHierarchyFromCBData(data);
 
 	name = GetFrameNodeName(RpAtomicGetFrame(atomic));
 	alpha = false;
@@ -903,7 +916,7 @@ CVehicleModelInfo::SetAtomicRendererCB_Train(RpAtomic *atomic, void *data)
 			CVisibilityPlugins::SetAtomicRenderCallback(atomic, CVisibilityPlugins::RenderTrainHiDetailCB);
 	}else if(strstr(name, "_vlo"))
 		CVisibilityPlugins::SetAtomicRenderCallback(atomic, CVisibilityPlugins::RenderVehicleReallyLowDetailCB_BigVehicle);
-	else if(gVehicleIsSAHierarchy){
+	else if(saHierarchy){
 		if(alpha)
 			CVisibilityPlugins::SetAtomicRenderCallback(atomic, CVisibilityPlugins::RenderTrainHiDetailAlphaCB);
 		else
@@ -920,8 +933,9 @@ CVehicleModelInfo::SetAtomicRendererCB_Boat(RpAtomic *atomic, void *data)
 	RpClump *clump;
 	char *name;
 	bool alpha;
+	const bool saHierarchy = IsSAHierarchyFromCBData(data);
 
-	clump = (RpClump*)data;
+	clump = ((CVehicleModelInfo::AtomicRendererCBData*)data)->clump;
 	name = GetFrameNodeName(RpAtomicGetFrame(atomic));
 	alpha = false;
 	RpGeometryForAllMaterials(RpAtomicGetGeometry(atomic), HasAlphaMaterialCB, &alpha);
@@ -938,7 +952,7 @@ CVehicleModelInfo::SetAtomicRendererCB_Boat(RpAtomic *atomic, void *data)
 		return atomic;		// BUG: not done by gta
 	}else if(strstr(name, "_vlo"))
 		CVisibilityPlugins::SetAtomicRenderCallback(atomic, CVisibilityPlugins::RenderVehicleLoDetailCB_Boat);
-	else if(gVehicleIsSAHierarchy){
+	else if(saHierarchy){
 		if(alpha)
 			CVisibilityPlugins::SetAtomicRenderCallback(atomic, CVisibilityPlugins::RenderVehicleHiDetailAlphaCB_Boat);
 		else
@@ -974,8 +988,9 @@ CVehicleModelInfo::SetAtomicRendererCB_RealHeli(RpAtomic *atomic, void *data)
 	RpClump *clump;
 	char *name;
 	bool alpha;
+	const bool saHierarchy = IsSAHierarchyFromCBData(data);
 
-	clump = (RpClump*)data;
+	clump = ((CVehicleModelInfo::AtomicRendererCBData*)data)->clump;
 	name = GetFrameNodeName(RpAtomicGetFrame(atomic));
 	alpha = false;
 	RpGeometryForAllMaterials(RpAtomicGetGeometry(atomic), HasAlphaMaterialCB, &alpha);
@@ -990,7 +1005,7 @@ CVehicleModelInfo::SetAtomicRendererCB_RealHeli(RpAtomic *atomic, void *data)
 			CVisibilityPlugins::SetAtomicRenderCallback(atomic, CVisibilityPlugins::RenderVehicleHiDetailCB);
 	}else if(strstr(name, "_vlo"))
 		CVisibilityPlugins::SetAtomicRenderCallback(atomic, CVisibilityPlugins::RenderVehicleReallyLowDetailCB);
-	else if(gVehicleIsSAHierarchy){
+	else if(saHierarchy){
 		// SA hierarchy: no VC LOD markers at all, so everything that is not a
 		// LOD or damage part is drawn in hi detail
 		if(alpha)
@@ -1010,19 +1025,27 @@ CVehicleModelInfo::SetAtomicRendererCB_RealHeli(RpAtomic *atomic, void *data)
 void
 CVehicleModelInfo::SetAtomicRenderCallbacks(void)
 {
+	// One payload, built from this model only, handed to whichever callback the
+	// vehicle type selects. The callbacks used to reach the same two values
+	// through a file static and a bare cast of m_clump; the payload makes the
+	// ownership obvious and lets a future loader walk models concurrently.
+	AtomicRendererCBData cbdata;
+	cbdata.clump = m_clump;
+	cbdata.saHierarchy = m_bSAHierarchy;
+
 	if(m_nVehicleType == VEHICLE_TYPE_TRAIN)
-		RpClumpForAllAtomics(m_clump, SetAtomicRendererCB_Train, nil);
+		RpClumpForAllAtomics(m_clump, SetAtomicRendererCB_Train, &cbdata);
 	else
 	if(m_nVehicleType == VEHICLE_TYPE_HELI || m_nVehicleType == VEHICLE_TYPE_FHELI)
-		RpClumpForAllAtomics(m_clump, SetAtomicRendererCB_Heli, nil);
+		RpClumpForAllAtomics(m_clump, SetAtomicRendererCB_Heli, &cbdata);
 	else if(m_nVehicleType == VEHICLE_TYPE_PLANE || m_nVehicleType == VEHICLE_TYPE_FPLANE)
-		RpClumpForAllAtomics(m_clump, SetAtomicRendererCB_BigVehicle, nil);
+		RpClumpForAllAtomics(m_clump, SetAtomicRendererCB_BigVehicle, &cbdata);
 	else if(m_nVehicleType == VEHICLE_TYPE_BOAT)
-		RpClumpForAllAtomics(m_clump, SetAtomicRendererCB_Boat, m_clump);
+		RpClumpForAllAtomics(m_clump, SetAtomicRendererCB_Boat, &cbdata);
 	else if(mod_HandlingManager.GetVehiclePointer((uint32)m_handlingId)->m_bIsHeli)
-		RpClumpForAllAtomics(m_clump, SetAtomicRendererCB_RealHeli, m_clump);
+		RpClumpForAllAtomics(m_clump, SetAtomicRendererCB_RealHeli, &cbdata);
 	else
-		RpClumpForAllAtomics(m_clump, SetAtomicRendererCB, m_clump);
+		RpClumpForAllAtomics(m_clump, SetAtomicRendererCB, &cbdata);
 }
 
 RwObject*
@@ -1143,7 +1166,7 @@ CVehicleModelInfo::PreprocessSACarHierarchy(void)
 #endif
 
 void
-CVehicleModelInfo::PreprocessHierarchy(void)
+CVehicleModelInfo::PreprocessHierarchy(bool saHierarchy)
 {
 #ifdef SA_VEHICLE_MODELS
 	if(m_nVehicleType == VEHICLE_TYPE_AUTOMOBILE){
@@ -1241,7 +1264,7 @@ CVehicleModelInfo::PreprocessHierarchy(void)
 
 		if(desc[i].flags & VEHICLE_FLAG_ADD_WHEEL){
 #ifdef SA_VEHICLE_MODELS
-			if(gVehicleIsSAHierarchy){
+			if(saHierarchy){
 				// SA models bring their own wheel meshes. Just collect the dummies
 				// here; what to do with them is decided after the loop, because we
 				// have to know whether the model has a wheel mesh at all before
@@ -1270,16 +1293,9 @@ CVehicleModelInfo::PreprocessHierarchy(void)
 		else	// no wheel mesh in the model: use the VC wheel model as before
 			for(i = 0; i < wheelFramesFound; i++)
 				AddGenericWheelModel(wheelFrames[i]);
-	}
-#endif
-#ifdef SA_VEHICLE_MODELS
-	{
-		bool own = false;
-		for(i = 0; i < wheelFramesFound; i++)
-			if(FrameHasObject(wheelFrames[i])) own = true;
 		SAVEH_LOG("[SAVEH] load %s type %d saHierarchy %d wheelId %d wheelFrames %d ownWheelMesh %d saMesh %d radius %.4f wheelScale %.4f\n",
-			GetModelName(), m_nVehicleType, gVehicleIsSAHierarchy, m_wheelId, wheelFramesFound,
-			own, m_bSAWheelMesh, 0.5f*m_wheelScale, m_wheelScale);
+			GetModelName(), m_nVehicleType, saHierarchy, m_wheelId, wheelFramesFound,
+			hasOwnWheels, m_bSAWheelMesh, 0.5f*m_wheelScale, m_wheelScale);
 	}
 #endif
 	// Bikes, boats, planes and trains accept tuning parts too - a bike has a
@@ -1516,9 +1532,6 @@ CVehicleModelInfo::GetEditableMaterialListCB(RpAtomic *atomic, void *data)
 	return atomic;
 }
 
-static int maxFirstMaterials;
-static int maxSecondMaterials;
-
 void
 CVehicleModelInfo::FindEditableMaterialList(void)
 {
@@ -1536,8 +1549,6 @@ CVehicleModelInfo::FindEditableMaterialList(void)
 	m_materials2[cbdata.numMats2] = nil;
 	m_materials3[cbdata.numMats3] = nil;
 	m_materials4[cbdata.numMats4] = nil;
-	maxFirstMaterials = Max(maxFirstMaterials, cbdata.numMats1);
-	maxSecondMaterials = Max(maxSecondMaterials, cbdata.numMats2);
 	m_currentColour1 = -1;
 	m_currentColour2 = -1;
 }

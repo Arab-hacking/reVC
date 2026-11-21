@@ -102,6 +102,22 @@ public:
 	void Render(void);
 	void FlagToDestroyWhenNextProcessed() { bRemoveFromWorld = true; }
 
+	// ---- State API (see the block in Vehicle.h) -------------------------
+	//
+	// The control surfaces and the gear are the plane's visible state: a peer
+	// needs them to show a plane banking or lowering its gear without running
+	// the flight model. The propeller follows from the engine speed.
+	float GetPropellerAngle(void) const { return m_fRotorRotation; }
+	void SetPropellerAngle(float angle) { m_fRotorRotation = angle; }
+	float GetLandingGear(void) const { return m_fLandingGearStatus; }
+	void SetLandingGear(float gear) { m_fLandingGearStatus = Clamp(gear, 0.0f, 1.0f); }
+	float GetAileronAngle(void) const { return m_fAileronAngle; }
+	void SetAileronAngle(float angle) { m_fAileronAngle = angle; }
+	float GetElevatorAngle(void) const { return m_fElevatorAngle; }
+	void SetElevatorAngle(float angle) { m_fElevatorAngle = angle; }
+	float GetRudderAngle(void) const { return m_fRudderAngle; }
+	void SetRudderAngle(float angle) { m_fRudderAngle = angle; }
+
 	static void InitPlanes(void);
 	static void Shutdown(void);
 	static CPlaneNode *LoadPath(char const *filename, int32 &numNodes, float &totalLength, bool loop);

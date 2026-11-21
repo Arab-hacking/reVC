@@ -239,10 +239,13 @@ cBuoyancy::SimpleCalcBuoyancy(void)
 float
 cBuoyancy::SimpleSumBuoyancyData(CVector &waterLevel, tWaterLevel waterPosition)
 {
-	static float fThisVolume;
-	static CVector AverageOfWaterLevel;
-	static float fFraction;
-	static float fRemainingSlice;
+	// These four were file statics in the reference. Nothing outside this call
+	// reads them, and keeping them here means a boat and a floating car stepped
+	// in the same frame can no longer share one scratch volume.
+	float fThisVolume;
+	CVector AverageOfWaterLevel;
+	float fFraction;
+	float fRemainingSlice;
 
 	float submerged = Abs(waterLevel.z - m_dimMin.z);
 	// subtract empty space from submerged volume

@@ -121,17 +121,19 @@ public:
 	void SetDoorClosed(eDoors door);
 	static eCarNodes GetCarNodeIndexFromDoor(eDoors door);
 	void SetPanelStatus(int32 panel, uint32 status);
-	int32 GetPanelStatus(int32 panel);
+	// const overload of the accessor above: taking a damage snapshot must not
+	// need a non-const manager.
+	int32 GetPanelStatus(int32 panel) const;
 	bool ProgressPanelDamage(uint8 panel);
 	// needed for CReplay
 	static int32 GetPanelStatus(uint32 panelstatus, int32 panel) { return ldb(panel*4, 4, panelstatus); }
 	void SetLightStatus(eLights light, uint32 status);
-	int32 GetLightStatus(eLights light);
+	int32 GetLightStatus(eLights light) const;
 	void SetWheelStatus(int32 wheel, uint32 status);
-	int32 GetWheelStatus(int32 wheel);
+	int32 GetWheelStatus(int32 wheel) const;
 	bool ProgressWheelDamage(uint8 wheel);
 	void SetEngineStatus(uint32 status);
-	int32 GetEngineStatus(void);
+	int32 GetEngineStatus(void) const;
 	bool ProgressEngineDamage(void);
 };
 VALIDATE_SIZE(CDamageManager, 0x1C);

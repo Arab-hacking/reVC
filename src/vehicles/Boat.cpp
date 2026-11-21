@@ -33,9 +33,11 @@
 
 #define INVALID_ORIENTATION (-9999.99f)
 
-float CBoat::MAX_WAKE_LENGTH = 50.0f;
-float CBoat::MIN_WAKE_INTERVAL = 2.0f;
-float CBoat::WAKE_LIFETIME = 150.0f;
+// Wake tuning. Never written after initialisation; const so that a stale write
+// cannot make one client's wakes behave differently from another's.
+const float CBoat::MAX_WAKE_LENGTH = 50.0f;
+const float CBoat::MIN_WAKE_INTERVAL = 2.0f;
+const float CBoat::WAKE_LIFETIME = 150.0f;
 
 float fShapeLength = 0.4f;
 float fShapeTime = 0.05f;
@@ -645,8 +647,8 @@ CBoat::ProcessControl(void)
 			if(splashSize > 0.75f) splashSize = 0.75f;
 			if(AutoPilot.m_nCarMission == MISSION_CRUISE)
 				splashDir *= 1.5f;
-			static float lifeMult = 1000.0f;
-			static float lifeBase = 300.0f;
+			const float lifeMult = 1000.0f;
+			const float lifeBase = 300.0f;
 			splashDir.z += 0.0003f*m_nDeltaVolumeUnderWater;
 			CWaterLevel::GetWaterLevel(splashPos, &waterLevel, true);
 			if(splashPos.z-waterLevel < 3.0f &&
@@ -1021,25 +1023,28 @@ CBoat::PreRender(void)
 			}
 			// FIX: Planes can also be controlled with GetCarGunUpDown
 #ifdef FIX_BUGS
-			static float steeringUpDown = 0.0f;
+			// Smoothed per boat; the smoothing state used to be a static shared
+			// by every boat in the world, so one boat's flaps followed another's
+			// input whenever both were on screen.
 			if(!CCamera::bFreeCam || (CCamera::bFreeCam && !CPad::IsAffectedByController))
-				steeringUpDown += ((Abs(CPad::GetPad(0)->GetCarGunUpDown()) > 1.0f ? (-CPad::GetPad(0)->GetCarGunUpDown()/128.0f) : (-CPad::GetPad(0)->GetSteeringUpDown()/128.0f)) - steeringUpDown) * Min(1.f, CTimer::GetTimeStep()/5.f);
+				m_fRearFlapSteering += ((Abs(CPad::GetPad(0)->GetCarGunUpDown()) > 1.0f ? (-CPad::GetPad(0)->GetCarGunUpDown()/128.0f) : (-CPad::GetPad(0)->GetSteeringUpDown()/128.0f)) - m_fRearFlapSteering) * Min(1.f, CTimer::GetTimeStep()/5.f);
 			else
-				steeringUpDown = -CPad::GetPad(0)->GetSteeringUpDown()/128.0f;
+				m_fRearFlapSteering = -CPad::GetPad(0)->GetSteeringUpDown()/128.0f;
+			const float rearFlapSteering = m_fRearFlapSteering;
 #else
-			float steeringUpDown = -CPad::GetPad(0)->GetSteeringUpDown()/128.0f;
+			const float rearFlapSteering = -CPad::GetPad(0)->GetSteeringUpDown()/128.0f;
 #endif
 			if(m_aBoatNodes[BOAT_REARFLAP_LEFT]){
 				matrix.Attach(RwFrameGetMatrix(m_aBoatNodes[BOAT_REARFLAP_LEFT]));
 				pos = matrix.GetPosition();
-				matrix.SetRotateX(steeringUpDown);
+				matrix.SetRotateX(rearFlapSteering);
 				matrix.Translate(pos);
 				matrix.UpdateRW();
 			}
 			if(m_aBoatNodes[BOAT_REARFLAP_RIGHT]){
 				matrix.Attach(RwFrameGetMatrix(m_aBoatNodes[BOAT_REARFLAP_RIGHT]));
 				pos = matrix.GetPosition();
-				matrix.SetRotateX(steeringUpDown);
+				matrix.SetRotateX(rearFlapSteering);
 				matrix.Translate(pos);
 				matrix.UpdateRW();
 			}

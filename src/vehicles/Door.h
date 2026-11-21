@@ -74,7 +74,7 @@ public:
 	float m_fPrevAngle;
 	float m_fAngVel;    // angular velocity
 
-	static float DOOR_SPEED_MAX_CAPPED;
+	static const float DOOR_SPEED_MAX_CAPPED;
 
 	CDoor(void);
 	// SA CDoor::Init(openAngle, closedAngle, dirn, axis, flags). The VC signature

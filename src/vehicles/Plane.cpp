@@ -153,7 +153,7 @@ CPlane::ProcessControl(void)
 		if(GetModelIndex() == MI_AIRTRAIN){
 			int frm = CTimer::GetFrameCounter() - m_nFrameWhenHit;
 			if(frm == 20){
-				static int nFrameGen;
+				int nFrameGen = 0;	// per burst, not shared between vehicles
 				CRGBA colors[8];
 
 				CExplosion::AddExplosion(nil, FindPlayerPed(), EXPLOSION_HELI, GetMatrix() * CVector(0.0f, 0.0f, 0.0f), 0);
@@ -207,7 +207,7 @@ CPlane::ProcessControl(void)
 		}else{
 			int frm = CTimer::GetFrameCounter() - m_nFrameWhenHit;
 			if(frm == 20){
-				static int nFrameGen;
+				int nFrameGen = 0;	// per burst, not shared between vehicles
 				CRGBA colors[8];
 
 				CExplosion::AddExplosion(nil, FindPlayerPed(), EXPLOSION_HELI, GetMatrix() * CVector(0.0f, 0.0f, 0.0f), 0);

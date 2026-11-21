@@ -274,6 +274,11 @@ public:
 	// and m_wheelScale is set to the true diameter (2*radius), so rendering must
 	// not scale it again.
 	bool m_bSAWheelMesh;
+	// Whether this model uses the SA node naming convention. Computed once in
+	// SetClump and read by the renderer-callback selection and by the hierarchy
+	// preprocessor. It is per model, so it belongs to the model info instance
+	// (and to the callbacks that this instance invokes), not to the file.
+	bool m_bSAHierarchy;
 
 	// SA CVehicleModelInfo::m_anUpgrades. The parts this model accepts, one
 	// model id per slot of the carmods.dat `mods` list, in file order. The
@@ -455,6 +460,15 @@ public:
 	static RpAtomic *HideAllComponentsAtomicCB(RpAtomic *atomic, void *data);
 	static RpMaterial *HasAlphaMaterialCB(RpMaterial *material, void *data);
 
+	// Passed to the atomic renderer callbacks below. `clump` is the clump the
+	// atomics are being walked in, `saHierarchy` says whether this model uses the
+	// SA node naming convention. Both used to be reachable from the callbacks
+	// only through a file static and a cast of the data pointer; carrying them
+	// explicitly means loading one model can never observe another's state.
+	struct AtomicRendererCBData {
+		RpClump *clump;
+		bool saHierarchy;
+	};
 	static RpAtomic *SetAtomicRendererCB(RpAtomic *atomic, void *data);
 	static RpAtomic *SetAtomicRendererCB_BigVehicle(RpAtomic *atomic, void *data);
 	static RpAtomic *SetAtomicRendererCB_Train(RpAtomic *atomic, void *data);
@@ -466,7 +480,10 @@ public:
 	static RwObject *SetAtomicFlagCB(RwObject *object, void *data);
 	static RwObject *ClearAtomicFlagCB(RwObject *atomic, void *data);
 	void SetVehicleComponentFlags(RwFrame *frame, uint32 flags);
-	void PreprocessHierarchy(void);
+	// `saHierarchy` is this model's naming convention; it is passed in rather
+	// than read from the instance so the two callers (SetClump and the SA car
+	// path) stay explicit about which hierarchy they are walking.
+	void PreprocessHierarchy(bool saHierarchy);
 	void GetWheelPosn(int32 n, CVector &pos);
 	const CVector &GetFrontSeatPosn(void) { return m_nVehicleType == VEHICLE_TYPE_BOAT ? m_positions[BOAT_POS_FRONTSEAT] : m_positions[CAR_POS_FRONTSEAT]; }
 
