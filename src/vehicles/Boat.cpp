@@ -81,6 +81,8 @@ m_nVehicleSubType = VEHICLE_TYPE_BOAT;
 	m_fBuoyancyConstant = m_pHandlingData->m_fBuoyancyConstant;
 	m_fSteerAngle = 0.0f;
 	m_fGasPedal = 0.0f;
+	m_EngineSpeed = 0.0f;
+	m_PropellerAngle = 0.0f;
 	m_fBrakePedal = 0.0f;
 
 	m_boat_unused3 = false;
@@ -237,6 +239,32 @@ CBoat::ProcessControl(void)
 		}
 		break;
 	default: break;
+	}
+
+	// SA CBoat::ProcessControl (0x6F1D2C): drive the propeller speed towards the
+	// engine band. The Skimmer idles at the standard speed; a boat under throttle
+	// closes the gap five times faster, so the propeller spins up sharply and
+	// coasts down slowly, which is what the eye expects.
+	if(GetStatus() == STATUS_PLAYER || GetStatus() == STATUS_PLAYER_REMOTE || GetStatus() == STATUS_PHYSICS){
+		float fSTDPropSpeed = 0.0f;
+		float fROCPropSpeed = CPlane::PLANE_ROC_PROP_SPEED;
+		if(GetModelIndex() == MI_SKIMMER){
+			fSTDPropSpeed = CPlane::PLANE_STD_PROP_SPEED;
+		}else if(m_fGasPedal != 0.0f){
+			fROCPropSpeed *= 5.0f;
+		}
+
+		if(m_fGasPedal == 0.0f){
+			m_EngineSpeed += (fSTDPropSpeed - m_EngineSpeed) * CTimer::GetTimeStep() * fROCPropSpeed;
+		}else if(m_fGasPedal < 0.0f){
+			fSTDPropSpeed = (CPlane::PLANE_STD_PROP_SPEED - 0.05f) * m_fGasPedal + CPlane::PLANE_STD_PROP_SPEED;
+			m_EngineSpeed += (fSTDPropSpeed - m_EngineSpeed) * CTimer::GetTimeStep() * fROCPropSpeed;
+		}else{
+			fSTDPropSpeed = (CPlane::PLANE_MAX_PROP_SPEED - CPlane::PLANE_STD_PROP_SPEED) * m_fGasPedal + CPlane::PLANE_STD_PROP_SPEED;
+			m_EngineSpeed += (fSTDPropSpeed - m_EngineSpeed) * CTimer::GetTimeStep() * fROCPropSpeed;
+		}
+	}else if(m_EngineSpeed > 0.0f){
+		m_EngineSpeed *= 0.95f;
 	}
 
 	float collisionDamage = m_pHandlingData->m_fCollisionDamageMultiplier * m_fDamageImpulse;
@@ -934,6 +962,28 @@ CBoat::BlowUpCar(CEntity *culprit)
 		RpAtomicSetFlags(atomic, 0);
 }
 
+// SA CBoat::ProcessBoatNodeRendering (inlined at 0x6F1180). Turns one propeller
+// node about its Y axis and sets the blade texture alpha, so a slow propeller is
+// drawn as distinct blades and a fast one blurs into a disc.
+void
+CBoat::ProcessBoatNodeRendering(eBoatNodes node, float rotation, uint8 alpha)
+{
+	RwFrame *frame = m_aBoatNodes[node];
+	if(frame == nil)
+		return;
+
+	CMatrix mat(RwFrameGetMatrix(frame));
+	CVector pos = mat.GetPosition();
+	mat.SetRotateY(rotation);
+	mat.Translate(pos);
+	mat.UpdateRW();
+
+	RpAtomic *atomic = nil;
+	RwFrameForAllObjects(frame, GetBoatAtomicObjectCB, &atomic);
+	if(atomic)
+		SetComponentAtomicAlpha(atomic, alpha);
+}
+
 void
 CBoat::PreRender(void)
 {
@@ -1042,6 +1092,29 @@ CBoat::PreRender(void)
 			matrix.Translate(pos);
 			matrix.UpdateRW();
 		}
+	}
+
+	// SA CBoat::PreRender (0x6F1180): the propellers. m_EngineSpeed is a rad/s
+	// figure that ProcessControl() drives towards the PLANE_*_PROP_SPEED band;
+	// the static pair spins twice as fast as the engine and the moving pair at
+	// engine speed in the opposite directions, which is what makes the two
+	// blades on each shaft look like they are geared differently. The alpha
+	// trick blurs the blades into a disc at speed: a slow propeller gets a
+	// transparent texture so the individual blades stay visible.
+	{
+		const float fPropSpeed = Min(1.0f, m_EngineSpeed * (32.0f / TWOPI));
+		uint8 ucTransparency = (uint8)((1.0f - fPropSpeed) * 255.0f);
+
+		m_PropellerAngle += m_EngineSpeed * CTimer::GetTimeStep();
+		while(m_PropellerAngle > TWOPI)
+			m_PropellerAngle -= TWOPI;
+
+		ProcessBoatNodeRendering(BOAT_STATIC_PROP,   m_PropellerAngle * 2.0f,  ucTransparency);
+		ProcessBoatNodeRendering(BOAT_STATIC_PROP_2, m_PropellerAngle * -2.0f, ucTransparency);
+
+		ucTransparency = (ucTransparency >= 150 ? 0 : 150 - ucTransparency);
+		ProcessBoatNodeRendering(BOAT_MOVING_PROP,   -m_PropellerAngle, ucTransparency);
+		ProcessBoatNodeRendering(BOAT_MOVING_PROP_2,  m_PropellerAngle, ucTransparency);
 	}
 
 	// SA CBoat::ProcessControl (0x6F1D2C): the swinging flap is MARQUIS only.

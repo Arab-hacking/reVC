@@ -36,6 +36,13 @@ public:
 	// acceleration at the hinge, which is what actually swings the flap.
 	CVector m_OldMoveSpeed;
 	CVector m_OldTurnSpeed;
+	// SA CBoat::m_EngineSpeed is the propeller speed in radians per second and
+	// m_PropellerAngle the accumulated rotation PreRender feeds the propeller
+	// nodes. Both live on the vehicle, not in a static: every boat in the world
+	// has its own.
+	float m_EngineSpeed;
+	float m_PropellerAngle;
+	void ProcessBoatNodeRendering(eBoatNodes node, float rotation, uint8 alpha);
 	tBoatHandlingData *m_pBoatHandlingData;
 	uint8 bBoatInWater : 1;
 	uint8 bPropellerInWater : 1;

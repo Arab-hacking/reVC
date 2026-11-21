@@ -60,6 +60,14 @@ class CPlane : public CVehicle
 public:
 	RwFrame *m_aPlaneNodes[NUM_PLANE_NODES];
 	float m_fRotorRotation;
+	// SA's propeller speed constants (0x8D33CC..0x8D33D8). Boats use the same
+	// pair for their propellers; the rocket-propelled case is what makes a
+	// boat's propeller spin fast when gas is applied.
+	static constexpr float PLANE_MIN_PROP_SPEED = 1.0f;
+	static constexpr float PLANE_STD_PROP_SPEED = 2.0f;
+	static constexpr float PLANE_MAX_PROP_SPEED = 32.0f;
+	static constexpr float PLANE_ROC_PROP_SPEED = 1.5f;
+
 	int16 m_nPlaneId;
 	int16 m_isFarAway;
 	int16 m_nCurPathNode;

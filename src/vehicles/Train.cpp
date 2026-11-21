@@ -178,21 +178,28 @@ CTrain::ProcessControl(void)
 	// ---------------------------------------------------------------------
 	// The twelve wheels and the two bogies.
 	//
+	// NOTE: SA itself does not animate these from code - the reference's
+	// CTrain::ProcessControl touches neither m_aTrainNodes[] nor a bogie, and
+	// the model's own hierarchy carries the wagon. This block is therefore an
+	// addition on top of the SA body, kept because the project asked for the
+	// wheels to turn and the bogies to articulate.
+	//
 	// All twelve wheels share one rotation: a train wheel is not steered, it
-	// only spins, and the spin rate follows the speed over the rail. The two
-	// bogies are what actually turn - each yaws to align with the rail
+	// only spins, and the spin rate follows the distance rolled over the rail.
+	// The two bogies are what actually turn - each yaws to align with the rail
 	// direction at its own end of the body, which is the difference between a
 	// train that looks rigid and one that looks like it follows the track.
 	// ---------------------------------------------------------------------
 	{
-		// A wheel of roughly 0.5 m radius turns at speed / radius radians per
-		// second; the accumulated angle is kept so it does not jump.
-		static float wheelRotation = 0.0f;
-		wheelRotation += (m_fTrainSpeed * 50.0f / 0.5f) * CTimer::GetTimeStep();
+		// A wheel turns by the distance it rolled divided by its radius. Deriving
+		// the angle from the rail distance instead of accumulating it per frame
+		// keeps it exact and stateless: an accumulator would drift with the time
+		// step and, kept in a static, would be shared by every train in the
+		// world.
+		const float WHEEL_RADIUS = 0.5f;
+		float wheelRotation = m_fCurrentRailDistance / WHEEL_RADIUS;
 		while(wheelRotation > TWOPI)
 			wheelRotation -= TWOPI;
-		while(wheelRotation < 0.0f)
-			wheelRotation += TWOPI;
 
 		for(int32 node = TRAIN_WHEEL_RF1; node <= TRAIN_WHEEL_LB3; node++){
 			if(m_aTrainNodes[node] == nil)
