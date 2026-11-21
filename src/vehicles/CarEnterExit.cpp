@@ -1,5 +1,7 @@
 #include "common.h"
 
+#include "VehicleAnimGroupData.h"
+
 #include "CarEnterExit.h"
 #include "Vehicle.h"
 #include "Automobile.h"
@@ -48,17 +50,23 @@ CCarEnterExit::Initialise(void)
 	ms_vecPedQuickDraggedOutCarAnimOffset = CVector(0.0f, 0.0f, 0.0f);
 }
 
-// The animation set the occupants of a vehicle play through. SA reads it from
-// the handling block; reVC keeps it on the model info's animation file.
+// The animation set the occupants of a vehicle play through, resolved the way
+// SA resolves it: the model names one of the 30 vehicle animation groups, and
+// that group picks between its two candidate AssocGroupIds per animation using
+// the eighteen flags of its `^` line. Resolving per clip matters here because
+// the bike ride pose and the bike passenger pose can come from different
+// candidates of the same group.
 static AssocGroupId
-GetVehicleAnimGroupFor(const CVehicle *veh)
+GetVehicleAnimGroupFor(const CVehicle *veh, AnimationId animId)
 {
 	if(veh == nil)
 		return ASSOCGRP_STDCARANIMS;
-	CVehicleModelInfo *mi = (CVehicleModelInfo*)CModelInfo::GetModelInfo(veh->GetModelIndex());
-	if(mi == nil)
+	// The group index comes from the handling record (see handling.cfg's `^`
+	// lines), which is what SA reads here as well.
+	const int32 groupId = veh->GetAnimGroupId();
+	if(groupId >= CVehicleAnimGroupData::NUM_VEH_ANIM_GROUPS)
 		return ASSOCGRP_STDCARANIMS;
-	return mi->GetAnimGroup();
+	return CVehicleAnimGroupData::GetGroupForAnim((AssocGroupId)groupId, animId);
 }
 
 // SA CCarEnterExit::AddInCarAnim (0x64F720), verbatim. Note the inverted
@@ -72,8 +80,8 @@ CCarEnterExit::AddInCarAnim(const CVehicle *vehicle, CPed *ped, bool bAsDriver)
 
 	if(bAsDriver){
 		if(vehicle->IsBike()){
-			grpId = GetVehicleAnimGroupFor(vehicle);
 			animId = ANIM_ID_BIKE_RIDE;
+			grpId = GetVehicleAnimGroupFor(vehicle, animId);
 		}else if(vehicle->IsBoat() && vehicle->m_pHandlingData && vehicle->m_pHandlingData->m_bSitInBoat){
 			grpId = ASSOCGRP_DEFAULT;
 			animId = ANIM_ID_DRIVE_BOAT;
@@ -86,8 +94,8 @@ CCarEnterExit::AddInCarAnim(const CVehicle *vehicle, CPed *ped, bool bAsDriver)
 		}
 	}else{
 		if(vehicle->IsBike()){
-			grpId = GetVehicleAnimGroupFor(vehicle);
 			animId = ANIM_ID_BIKE_RIDE;
+			grpId = GetVehicleAnimGroupFor(vehicle, animId);
 		}else if(vehicle->bLowVehicle){
 			grpId = ASSOCGRP_DEFAULT;
 			animId = ANIM_ID_CAR_SITPLO;

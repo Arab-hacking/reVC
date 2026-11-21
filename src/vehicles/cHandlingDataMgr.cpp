@@ -3,6 +3,7 @@
 
 #include "cHandlingDataMgr.h"
 #include "FileMgr.h"
+#include "VehicleAnimGroupData.h"
 #ifdef CUSTOM_MODELS
 #include "CustomModels.h"
 #endif
@@ -376,8 +377,9 @@ ParseHandlingFile(const uint8 *data, uint32 size)
 		if(line[0] == ';')
 			continue;
 		if(line[0] == '^'){
-			// Vehicle animation group lines belong to CWeaponModelInfo-era code
-			// that this repository does not have yet; ignore rather than fail.
+			// Vehicle animation group lines fill CVehicleAnimGroupData, the table
+			// the get-in/get-out code asks for a clip's animation group.
+			CVehicleAnimGroupData::LoadAGroupFromData(line);
 			continue;
 		}
 

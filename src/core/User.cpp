@@ -2,6 +2,7 @@
 
 #include "GameLogic.h"
 #include "Hud.h"
+#include "PlayerInfo.h"
 #include "PlayerPed.h"
 #include "Replay.h"
 #include "Text.h"
@@ -93,22 +94,33 @@ CCurrentVehicle::Init()
 	m_pCurrentVehicle = nil;
 }
 
+// SA CCurrentVehicle::Process (0x572040).
+//
+// SA asks FindPlayerVehicle(), which already accounts for "the player is in a
+// vehicle" - the ped pointer this used to go through can be in the middle of a
+// get-in and already point at the vehicle while the door animation is still
+// running, which is exactly when the name should not appear yet.
 void
 CCurrentVehicle::Process()
 {
-	if (CWorld::Players[CWorld::PlayerInFocus].m_pPed->InVehicle())
-		m_pCurrentVehicle = CWorld::Players[CWorld::PlayerInFocus].m_pPed->m_pMyVehicle;
-	else
-		m_pCurrentVehicle = nil;
+	m_pCurrentVehicle = FindPlayerVehicle();
 	Display();
 }
 
+// SA CCurrentVehicle::Display (0x571EA0).
+//
+// The short-cut taxi is the instantly-warped cab from a mission failure: it is
+// a real vehicle in the world but not one the player is driving, so SA hides
+// its name rather than claiming the player is in a taxi.
 void
 CCurrentVehicle::Display()
 {
 	wchar *text = nil;
-	if (m_pCurrentVehicle != nil && m_pCurrentVehicle != CGameLogic::pShortCutTaxi)
-		text = TheText.Get(((CVehicleModelInfo*)CModelInfo::GetModelInfo(m_pCurrentVehicle->GetModelIndex()))->m_gameName);
+	if (m_pCurrentVehicle != nil && m_pCurrentVehicle != CGameLogic::pShortCutTaxi){
+		CVehicleModelInfo *mi = m_pCurrentVehicle->GetModelInfo();
+		if (mi)
+			text = TheText.Get(mi->m_gameName);
+	}
 	CHud::SetVehicleName(text);
 }
 

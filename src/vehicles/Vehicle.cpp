@@ -5,6 +5,7 @@
 #include "Timer.h"
 #include "Pad.h"
 #include "Vehicle.h"
+#include "VehicleAnimGroupData.h"
 #include "ControllerConfig.h"
 #include "Bike.h"
 #include "Automobile.h"
@@ -2484,4 +2485,16 @@ void
 CVehicle::UpdateTractorLink(bool applyFullVelocityAtHookUp, bool applyDistToSpeed)
 {
 	UpdateVehicleLinkImpl(this, true, applyFullVelocityAtHookUp, applyDistToSpeed);
+}
+
+// SA CVehicle::GetAnimGroup (inlined into the door and entry code, 0x6D0AC0).
+//
+// The index into the 30-group in-car animation table is a field of the
+// handling record, so two vehicles sharing a model but not a handling line can
+// animate differently, and a vehicle whose handling line names a group the
+// table does not have falls back to group 0 rather than reading past the end.
+CVehicleAnimGroup &
+CVehicle::GetAnimGroup(void) const
+{
+	return CVehicleAnimGroupData::GetVehicleAnimGroup(GetAnimGroupId());
 }

@@ -9,6 +9,8 @@
 #include "Collision.h"
 #include "cHandlingDataMgr.h"
 
+class CVehicleAnimGroup;
+
 class CPed;
 class CPlayerPed;
 class CCopPed;
@@ -369,6 +371,11 @@ public:
 	// override this; the base reports "not handled" so the caller falls back to
 	// the generic path.
 	virtual bool ProcessAI(uint32 &extraHandlingFlags) { return false; }
+	// SA CVehicle::GetAnimGroup (0x6D0AC0). The vehicle's entry in the 30-group
+	// in-car animation table. The index comes from the handling record, not from
+	// the model: handling.cfg carries it as the last field of each vehicle line.
+	CVehicleAnimGroup &GetAnimGroup(void) const;
+
 	// SA CVehicle::SetTransmissionRotation (0x6DBBB0). Tilts a live axle so its
 	// two ends follow the wheels: the average of the two wheel travels sets the
 	// pitch against the wheel line, the difference the roll. Used by the

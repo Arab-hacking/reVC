@@ -49,6 +49,7 @@
 #include "PlayerPed.h"
 #include "Object.h"
 #include "Automobile.h"
+#include "VehicleAnimGroupData.h"
 #include "VehicleNodeAtomic.h"
 #include "Bike.h"
 #include "Wanted.h"
@@ -4661,44 +4662,56 @@ CAutomobile::ProcessOpenDoor(uint32 component, uint32 anim, float time)
 	if(IsDoorMissing(door))
 		return;
 
+	// Where in the clip the door actually starts and stops swinging is data, not
+	// code: it comes from the vehicle's `^` line in handling.cfg, the same line
+	// that names its animation groups. SA CCarEnterExit reads it through
+	// CVehicleAnimGroupData::GetInOutTimings (0x645630) exactly like this, which
+	// is why a bus door and a saloon door swing at different points of what look
+	// like the same animations.
+	const AssocGroupId group = (AssocGroupId)GetAnimGroupId();
+	float animStart = 0.0f, animEnd = 0.0f;
+
 	switch(anim){
 	case ANIM_ID_CAR_OPEN_LHS:
 	case ANIM_ID_CAR_OPEN_RHS:
-		ProcessDoorOpenAnimation(this, component, door, time, 0.41f, 0.89f);
+		CVehicleAnimGroupData::GetInOutTimings(group, OPEN_START, &animStart, &animEnd);
+		ProcessDoorOpenAnimation(this, component, door, time, animStart, animEnd);
 		break;
 	case ANIM_ID_CAR_CLOSEDOOR_LHS_0:
 	case ANIM_ID_CAR_CLOSEDOOR_RHS_0:
-		ProcessDoorCloseAnimation(this, component, door, time, 0.2f, 0.45f);
+		CVehicleAnimGroupData::GetInOutTimings(group, OPEN_STOP, &animStart, &animEnd);
+		ProcessDoorCloseAnimation(this, component, door, time, animStart, animEnd);
 		break;
 	case ANIM_ID_CAR_ROLLDOOR:
 		ProcessDoorOpenCloseAnimation(this, component, door, time, 0.1f, 0.6f, 0.95f);
 		break;
 	case ANIM_ID_CAR_GETOUT_LHS_0:
 	case ANIM_ID_CAR_GETOUT_RHS_0:
-		ProcessDoorOpenAnimation(this, component, door, time, 0.06f, 0.43f);
+		CVehicleAnimGroupData::GetInOutTimings(group, CLOST_START, &animStart, &animEnd);
+		ProcessDoorOpenAnimation(this, component, door, time, animStart, animEnd);
 		break;
 	case ANIM_ID_CAR_CLOSE_LHS_0:
 	case ANIM_ID_CAR_CLOSE_RHS_0:
-		ProcessDoorCloseAnimation(this, component, door, time, 0.1f, 0.23f);
+		CVehicleAnimGroupData::GetInOutTimings(group, CLOSE_STOP, &animStart, &animEnd);
+		ProcessDoorCloseAnimation(this, component, door, time, animStart, animEnd);
 		break;
 	case ANIM_ID_CAR_PULLOUT_RHS:
 		OpenDoor(component, door, 1.0f);
 		break;
-		ProcessDoorOpenAnimation(this, component, door, time, 0.66f, 0.8f);
-		break;
-		ProcessDoorOpenAnimation(this, component, door, time, 0.0f, 0.3f);
-		break;
 	case ANIM_ID_CAR_OPEN_LHS_1:
 	case ANIM_ID_CAR_OPEN_RHS_1:
-		ProcessDoorOpenAnimation(this, component, door, time, 0.37f, 0.55f);
+		CVehicleAnimGroupData::GetInOutTimings(group, OPEN_START, &animStart, &animEnd);
+		ProcessDoorOpenAnimation(this, component, door, time, animStart, animEnd);
 		break;
 	case ANIM_ID_CAR_CLOSEDOOR_LHS_1:
 	case ANIM_ID_CAR_CLOSEDOOR_RHS_1:
-		ProcessDoorCloseAnimation(this, component, door, time, 0.5f, 0.8f);
+		CVehicleAnimGroupData::GetInOutTimings(group, OPEN_STOP, &animStart, &animEnd);
+		ProcessDoorCloseAnimation(this, component, door, time, animStart, animEnd);
 		break;
 	case ANIM_ID_CAR_GETOUT_LHS_1:
 	case ANIM_ID_CAR_GETOUT_RHS_1:
-		ProcessDoorOpenAnimation(this, component, door, time, 0.5f, 0.6f);
+		CVehicleAnimGroupData::GetInOutTimings(group, CLOST_START, &animStart, &animEnd);
+		ProcessDoorOpenAnimation(this, component, door, time, animStart, animEnd);
 		break;
 	default:
 		OpenDoor(component, door, time);

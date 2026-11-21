@@ -1845,8 +1845,9 @@ CPlayerPed::ProcessControl(void)
 					} else {
 						m_pMyVehicle->m_nGettingOutFlags |= CAR_DOOR_FLAG_LF;
 						{
-							CVehicleModelInfo *rollModel = (CVehicleModelInfo*)CModelInfo::GetModelInfo(m_pMyVehicle->GetModelIndex());
-							AssocGroupId rollGroup = rollModel ? rollModel->GetAnimGroup() : ASSOCGRP_STDCARANIMS;
+							// The rolling-door clip belongs to the vehicle's
+							// animation group, which the handling line names.
+							AssocGroupId rollGroup = (AssocGroupId)m_pMyVehicle->GetAnimGroupId();
 							rollDoorAssoc = CAnimManager::AddAnimation(GetClump(), rollGroup, ANIM_ID_CAR_ROLLDOOR);
 						}
 

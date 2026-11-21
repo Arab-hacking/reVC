@@ -159,6 +159,10 @@ public:
 	int8 m_level;
 	int8 m_numComps;
 	int16 m_frequency;
+	// SA CVehicleModelInfo::m_nTimesUsed. How many times the population code has
+	// spawned this model; CLoadedCarGroup sorts on it and picks the least used.
+	// Reset when the model is added to the loaded-vehicles list.
+	uint8 m_nTimesUsed;
 	CVector m_positions[NUM_VEHICLE_POSITIONS];
 	// SA CVehicleModelInfo::m_pVehicleStruct. The dummy positions the light,
 	// seat and exhaust code reads live in here, as they do in SA.
@@ -224,6 +228,10 @@ public:
 	// model, worked out once from the model's own data, and every ped entering
 	// or leaving the car plays through it.
 	AssocGroupId GetAnimGroup(void) const { return m_animGroup; }
+	// SA CVehicleModelInfo::m_nRefCount. Same field CBaseModelInfo keeps as
+	// m_refCount - how many instances of this model are in the world - exposed
+	// under SA's name for the population code.
+	uint16 GetRefCount(void) const { return m_refCount; }
 	int GetAnimFileIndex(void) { return m_animFileIndex; }
 
 	static RwFrame *CollapseFramesCB(RwFrame *frame, void *data);

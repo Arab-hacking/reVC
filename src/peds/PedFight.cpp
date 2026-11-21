@@ -4432,8 +4432,9 @@ CPed::DriveVehicle(void)
 				CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_DRIVE_BOAT_BACK, 4.0f);
 			else
 			{
-				CVehicleModelInfo *lbModel = (CVehicleModelInfo*)CModelInfo::GetModelInfo(m_pMyVehicle->GetModelIndex());
-				CAnimManager::BlendAnimation(GetClump(), lbModel ? lbModel->GetAnimGroup() : ASSOCGRP_STDCARANIMS, ANIM_ID_CAR_LB, 4.0f);
+				// Lean-out is part of the vehicle's own driving set, keyed by
+				// the handling line's animation group.
+				CAnimManager::BlendAnimation(GetClump(), (AssocGroupId)m_pMyVehicle->GetAnimGroupId(), ANIM_ID_CAR_LB, 4.0f);
 			}
 		}
 	}

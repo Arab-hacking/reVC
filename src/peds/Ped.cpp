@@ -9376,9 +9376,11 @@ CPed::SetSolicit(uint32 time)
 			m_chatTimer = CTimer::GetTimeInMilliseconds() + time;
 
 			if(!m_carInObjective->bIsVan && !m_carInObjective->bIsBus){
-				CVehicleModelInfo *talkModel = (CVehicleModelInfo*)CModelInfo::GetModelInfo(m_carInObjective->GetModelIndex());
+				// The group comes from the vehicle's handling line, not its
+				// model: two cars sharing a model but not a handling entry can
+				// animate from different sets.
 				m_pVehicleAnim = CAnimManager::BlendAnimation(GetClump(),
-					talkModel ? talkModel->GetAnimGroup() : ASSOCGRP_STDCARANIMS, ANIM_ID_CAR_HOOKERTALK, 4.0f);
+					(AssocGroupId)m_carInObjective->GetAnimGroupId(), ANIM_ID_CAR_HOOKERTALK, 4.0f);
 			}
 
 			SetPedState(PED_SOLICIT);

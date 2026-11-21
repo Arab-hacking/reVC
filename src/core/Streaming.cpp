@@ -2127,6 +2127,11 @@ found:
 	if(ms_lastVehicleDeleted == MAXVEHICLESLOADED)
 		ms_lastVehicleDeleted = 0;
 	CVehicleModelInfo* pVehicleInfo = (CVehicleModelInfo*)CModelInfo::GetModelInfo(modelId);
+	// SA CStreaming::AddToLoadedVehiclesList (0x408000) starts the usage counter
+	// of a freshly loaded vehicle at zero: the group sorting and the
+	// least-used pick both read it, so a model that has just come in must not
+	// inherit the count of the model it replaced.
+	pVehicleInfo->m_nTimesUsed = 0;
 	if (pVehicleInfo->m_vehicleClass != -1)
 		CCarCtrl::AddToLoadedVehicleArray(modelId, pVehicleInfo->m_vehicleClass, pVehicleInfo->m_frequency);
 	return true;

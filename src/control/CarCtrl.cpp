@@ -783,6 +783,12 @@ CCarCtrl::ChooseModel(CZoneInfo* pZone, int* pClass) {
 	}
 	if (i == 0)
 		return -1;
+	// SA counts every pick against the model: CLoadedCarGroup::SortBasedOnUsage
+	// and PickLeastUsedModel both read m_nTimesUsed, so the counter has to move
+	// where the choice is actually made.
+	CVehicleModelInfo *pickedInfo = (CVehicleModelInfo*)CModelInfo::GetModelInfo(model);
+	if (pickedInfo && pickedInfo->m_nTimesUsed < 255)
+		pickedInfo->m_nTimesUsed++;
 	return model;
 }
 
