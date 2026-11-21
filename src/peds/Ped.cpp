@@ -4947,9 +4947,26 @@ CPed::ReplaceWeaponWhenExitingVehicle(void)
 	}
 }
 
+// SA CPed::PreRenderAfterTest (0x5E65A0). Runs before the bone matrices are
+// rebuilt, so anything written here lands in the pose that is actually drawn.
+void
+CPed::PreRenderAfterTest(void)
+{
+	// SA also lets the swimming and jetpack tasks lay the body over and veto
+	// the slope lean for the frame. Those tasks do not exist in this fork, so
+	// there is nothing to veto yet.
+	if(m_pedIK.m_flags & CPedIK::SLOPE_PITCH)
+		m_pedIK.PitchForSlope();
+
+	UpdateRpHAnim();
+}
+
 void
 CPed::PreRender(void)
 {
+	if(m_nPedState != PED_DRIVING)
+		PreRenderAfterTest();
+
 	CShadows::StoreShadowForPed(this,
 		CTimeCycle::m_fShadowDisplacementX[CTimeCycle::m_CurrentStoredValue], CTimeCycle::m_fShadowDisplacementY[CTimeCycle::m_CurrentStoredValue],
 		CTimeCycle::m_fShadowFrontX[CTimeCycle::m_CurrentStoredValue], CTimeCycle::m_fShadowFrontY[CTimeCycle::m_CurrentStoredValue],

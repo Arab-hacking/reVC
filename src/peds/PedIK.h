@@ -33,11 +33,24 @@ public:
 		GUN_POINTED_SUCCESSFULLY = 1,
 		LOOKAROUND_HEAD_ONLY = 2,
 		AIMS_WITH_ARM = 4,
+		// SA CPedIK::bSlopePitch - asks for the slope lean to be applied on the
+		// next PreRender, and is cleared once PitchForSlope has run.
+		SLOPE_PITCH = 8,
 	};
 
 	CPed *Const m_ped;
 	LimbOrientation m_headOrient;
 	LimbOrientation m_torsoOrient;
+
+	// SA CPedIK carries the slope-lean state that VC did not have. PitchForSlope
+	// reads and damps all four every frame, right before the bone matrices are
+	// built, so a ped on a slope tilts the torso and the legs instead of
+	// standing bolt upright.
+	float m_fSlopePitch;
+	float m_fSlopePitchLimitMult;
+	float m_fSlopeRoll;
+	float m_fBodyRoll;
+
 	LimbOrientation m_upperArmOrient;
 	LimbOrientation m_lowerArmOrient;
 	int32 m_flags;
@@ -62,6 +75,9 @@ public:
 	bool LookInDirection(float targetYaw, float targetPitch);
 	bool LookAtPosition(CVector const& pos);
 	bool RestoreLookAt(void);
+	// SA: tilts the torso and legs to match the surface the ped stands on.
+	// Called from CPed::PreRenderAfterTest every frame.
+	void PitchForSlope(void);
 };
 
 VALIDATE_SIZE(CPedIK, 0x28);

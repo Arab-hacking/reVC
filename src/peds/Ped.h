@@ -676,6 +676,10 @@ public:
 	void ProcessControl(void);
 	void Teleport(CVector);
 	void PreRender(void);
+	// SA runs the IK slope lean here, every frame, immediately before the bone
+	// matrices are built. Called from PreRender, and by a vehicle for its
+	// seated occupants.
+	void PreRenderAfterTest(void);
 	void Render(void);
 	bool SetupLighting(void);
 	void RemoveLighting(bool);

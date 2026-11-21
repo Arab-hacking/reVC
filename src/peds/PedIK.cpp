@@ -6,6 +6,7 @@
 #include "Ped.h"
 #include "General.h"
 #include "RwHelper.h"
+#include "RpAnimBlend.h"
 
 LimbMovementInfo CPedIK::ms_torsoInfo = { DEGTORAD(50.0f), DEGTORAD(-50.0f), DEGTORAD(8.0f), DEGTORAD(45.0f), DEGTORAD(-45.0f), DEGTORAD(5.0f) };
 LimbMovementInfo CPedIK::ms_headInfo = { DEGTORAD(90.0f), DEGTORAD(-90.0f), DEGTORAD(15.0f), DEGTORAD(45.0f), DEGTORAD(-45.0f), DEGTORAD(8.0f) };
@@ -29,6 +30,11 @@ CPedIK::CPedIK(CPed *ped) : m_ped(ped)
 	m_upperArmOrient.pitch = 0.0f;
 	m_lowerArmOrient.yaw = 0.0f;
 	m_lowerArmOrient.pitch = 0.0f;
+	// SA CPedIK constructor zeroes the slope-lean state as well.
+	m_fSlopePitch = 0.0f;
+	m_fSlopePitchLimitMult = 0.0f;
+	m_fSlopeRoll = 0.0f;
+	m_fBodyRoll = 0.0f;
 }
 
 // A skeleton need not carry the bone an IK request names: a Vice City ped has
@@ -87,6 +93,125 @@ CPedIK::RotateTorso(AnimBlendFrameData *node, LimbOrientation *limb, bool change
 	RotateQuatIfPresent(q, &XaxisIK, RADTODEG(limb->yaw), rwCOMBINEREPLACE);
 	RotateQuatIfPresent(q, &ZaxisIK, RADTODEG(limb->pitch), rwCOMBINEPRECONCAT);
 	m_ped->bDontAcceptIKLookAts = true;
+}
+
+// Ported from gta-reversed CPedIK::PitchForSlope (0x5FD...). SA leans the body
+// on a slope: the spine is pitched back by part of the slope angle, both legs
+// are re-pitched so the feet stay planted, and the whole ped is shifted along
+// the ground normal. Without it a ped on a hill stands bolt upright, which is
+// what made the skeleton look unlike SA.
+void
+CPedIK::PitchForSlope(void)
+{
+	const float CLAMP_EPS = 0.01f;
+	CAnimBlendClumpData *clumpData = *RPANIMBLENDCLUMPDATA(m_ped->GetClump());
+
+	if(fabsf(m_fBodyRoll) > CLAMP_EPS){
+		if(m_fBodyRoll < -DEGTORAD(30.0f)) m_fBodyRoll = -DEGTORAD(30.0f);
+		if(m_fBodyRoll >  DEGTORAD(30.0f)) m_fBodyRoll =  DEGTORAD(30.0f);
+	}
+
+	if(!m_ped->DyingOrDead()){
+		if(fabsf(m_fSlopePitch) > CLAMP_EPS){
+			// A walking ped leans a little less than one that is standing.
+			float offset = (m_ped->m_nMoveState != PEDMOVE_WALK) ? 0.1f : 0.085f;
+			m_fSlopePitchLimitMult = (m_fSlopePitchLimitMult * 0.9f) + offset;
+
+			float lowBound  = m_fSlopePitchLimitMult * DEGTORAD(-35.0f);
+			float highBound = m_fSlopePitchLimitMult * DEGTORAD(30.0f);
+			if(m_fSlopePitch < lowBound)  m_fSlopePitch = lowBound;
+			if(m_fSlopePitch > highBound) m_fSlopePitch = highBound;
+		}
+
+		if(fabsf(m_fSlopeRoll) > CLAMP_EPS){
+			if(m_fSlopeRoll < -DEGTORAD(45.0f)) m_fSlopeRoll = -DEGTORAD(45.0f);
+			if(m_fSlopeRoll >  DEGTORAD(45.0f)) m_fSlopeRoll =  DEGTORAD(45.0f);
+		}
+
+		// Rotation goes into the animated key frame of the named node, the same
+		// place RotateTorso writes to.
+		struct BoneRotator {
+			CAnimBlendClumpData *data;
+			CPed *ped;
+			void operator()(int32 node, float degrees, const RwV3d &axis) const {
+				if(node < 0 || node >= PED_NODE_MAX || ped->m_pFrames[node] == nil)
+					return;
+				RotateQuatIfPresent(&data->frames[ped->m_pFrames[node]->nodeID].hanimFrame->q,
+					&axis, degrees, rwCOMBINEPRECONCAT);
+			}
+			void operator()(int32 node, float degrees) const {
+				static const RwV3d zAxis = { 0.0f, 0.0f, 1.0f };
+				(*this)(node, degrees, zAxis);
+			}
+		};
+		BoneRotator rotate = { clumpData, m_ped };
+
+		// Up vector of a node, as the reference implementation reads it.
+		struct UpZ {
+			CPed *ped;
+			float operator()(int32 node) const {
+				RwMatrix *m = GetComponentMatrix(ped, node);
+				return m ? m->up.z : 0.0f;
+			}
+		};
+		UpZ upZ = { m_ped };
+
+		if(fabsf(m_fSlopePitch) > CLAMP_EPS){
+			rotate(PED_MID, RADTODEG(-m_fSlopePitch) * 0.75f);
+
+			// Re-pitch the legs so the feet follow the ground instead of
+			// sinking into it. The sign of the thigh up-vector decides which
+			// way each joint has to bend.
+			rotate(PED_UPPERLEGR, asinf(upZ(PED_UPPERLEGR)) * 30.0f * m_fSlopePitch);
+			rotate(PED_LOWERLEGR, Max(-asinf(upZ(PED_UPPERLEGR)), 0.0f) * -30.0f * m_fSlopePitch);
+			rotate(PED_FOOTR,     Max( asinf(upZ(PED_FOOTR)),     0.0f) * -30.0f * m_fSlopePitch);
+			rotate(PED_UPPERLEGL, asinf(upZ(PED_UPPERLEGL)) * 30.0f * m_fSlopePitch);
+			rotate(PED_LOWERLEGL, Max(-asinf(upZ(PED_UPPERLEGL)), 0.0f) * -30.0f * m_fSlopePitch);
+			rotate(PED_FOOTL,     Max(-asinf(upZ(PED_FOOTL)),     0.0f) * -30.0f * m_fSlopePitch);
+
+			// Shift the ped so the tilted body still meets the ground.
+			CMatrix result(m_ped->GetMatrix());
+			CMatrix translate;
+			translate.SetTranslate(CVector(0.0f, 0.0f, 0.0f));
+			translate.RotateX(-m_fSlopePitch / 2.0f);
+			result *= translate;
+
+			result.GetPosition() += m_ped->GetForward() * 0.75f * sinf(m_fSlopePitch);
+			result.GetPosition().z += 0.3f / cosf(m_fSlopeRoll) - 0.3f;
+			result.UpdateRW();
+			m_ped->UpdateRwFrame();
+		}else{
+			m_fSlopePitch = 0.0f;
+		}
+
+		if(fabsf(m_fSlopeRoll) > CLAMP_EPS){
+			// Roll each foot around the axis it is actually pointing along.
+			for(int32 side = 0; side < 2; side++){
+				int32 node = side ? PED_FOOTR : PED_FOOTL;
+				RwMatrix *hm = GetComponentMatrix(m_ped, node);
+				if(hm == nil)
+					continue;
+				float angle = CGeneral::LimitRadianAngle(atan2f(hm->at.y, hm->at.x) - m_ped->m_fRotationCur);
+				RwV3d axis = { 0.0f, Cos(angle), Sin(angle) };
+				rotate(node, RADTODEG(m_fSlopeRoll), axis);
+			}
+		}else{
+			m_fSlopeRoll = 0.0f;
+		}
+	}else{
+		// Dying or dead: lay the whole body over instead of posing bones.
+		CMatrix result(m_ped->GetMatrix());
+		CMatrix translate;
+		translate.SetTranslate(ZaxisIK);
+		translate.RotateX(-m_fSlopePitch);
+		translate.RotateY(m_fSlopeRoll);
+		result *= translate;
+		result.GetPosition().z -= 1.0f;
+		result.UpdateRW();
+		m_ped->UpdateRwFrame();
+	}
+
+	m_flags &= ~SLOPE_PITCH;
 }
 
 void
