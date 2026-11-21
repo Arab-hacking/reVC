@@ -250,6 +250,18 @@ public:
 	CEntity* m_pBombRigger;
 #endif
 	uint32 m_nSetPieceExtendedRangeTime;
+	// SA CVehicle::m_nRenderLightsFlags: which lamps actually registered a
+	// corona this frame. CBike::Render reads m_bRightFront to decide whether to
+	// draw the headlight cone, so this has to be filled during light processing.
+	union {
+		uint8 m_nRenderLightsFlags;
+		struct {
+			uint8 m_bRightFront : 1;
+			uint8 m_bLeftFront  : 1;
+			uint8 m_bRightRear  : 1;
+			uint8 m_bLeftRear   : 1;
+		} m_renderLights;
+	};
 	uint32 m_nGunFiringTime;    // last time when gun on vehicle was fired (used on boats)
 	uint32 m_nTimeOfDeath;
 	uint16 m_nTimeBlocked;
@@ -315,6 +327,16 @@ public:
 #endif
 
 	eVehicleAppearance GetVehicleAppearance(void);
+
+	// SA CVehicle::DoHeadLightBeam (0x6E0E20). A five-vertex additive cone
+	// anchored at the headlight dummy and aimed along the bonnet. In SA only
+	// CBike::Render calls it; cars get the corona and the point light and
+	// nothing else, so this is not wired into CAutomobile.
+	void DoHeadLightBeam(CMatrix &vehicleMatrix, bool isRight);
+
+	// SA helper: the light dummy in model space. DUMMY_LIGHT_FRONT_MAIN for the
+	// primary lamp pair, DUMMY_LIGHT_FRONT_SECONDARY for the second one.
+	CVector GetDummyPositionObjSpace(int32 dummy) const;
 
 	bool IsVehicleTypeValid(void) { return m_nVehicleType != VEHICLE_TYPE_IGNORE; }
 	bool IsAutomobile(void) { return m_nVehicleType == VEHICLE_TYPE_AUTOMOBILE; }

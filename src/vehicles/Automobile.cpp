@@ -2226,6 +2226,9 @@ CAutomobile::PreRender(void)
 
 		// Headlights
 		const float vehLightMult = Max(TheCamera.LODDistMultiplier, CRenderer::ms_fLightDistScale);
+		// SA CVehicle::RenderLights resets this each pass and sets a bit as each
+		// lamp registers a corona.
+		m_nRenderLightsFlags = 0;
 
 		CVector headLightPos = mi->m_positions[CAR_POS_HEADLIGHTS];
 		CVector lightR = GetMatrix() * headLightPos;
@@ -2312,12 +2315,14 @@ CAutomobile::PreRender(void)
 						CCoronas::TYPE_HEADLIGHT, CCoronas::FLARE_NONE, CCoronas::REFLECTION_SIMPLE,
 						CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, normAngle,
 						false, 0.5f);
-				if(Damage.GetLightStatus(VEHLIGHT_FRONT_RIGHT) == LIGHT_STATUS_OK)
+				if(Damage.GetLightStatus(VEHLIGHT_FRONT_RIGHT) == LIGHT_STATUS_OK){
 					CCoronas::RegisterCorona((uintptr)this + 2*(int32)0 + 1, lightColorR, lightColorR, lightColorG, 128,
 						lightR, size, 150.0f*vehLightMult,
 						CCoronas::TYPE_HEADLIGHT, CCoronas::FLARE_NONE, CCoronas::REFLECTION_SIMPLE,
 						CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, normAngle,
 						false, 0.5f);
+					m_renderLights.m_bRightFront = 1;
+				}
 			}
 		}else{
 			// Behind car

@@ -36,6 +36,34 @@ enum {
 	ATOMIC_FLAG_NOCULL	= 0x800,
 };
 
+// SA eVehicleDummy (VehicleModelInfo.h). The clump model loader fills
+// m_avDummyPos from frames named "headlights", "headlights2", "taillights",
+// "taillights2" and so on; the light code reads the positions back through
+// these indices. reVC only had the five eCarPositions entries, which is why
+// there was nowhere to look up a second set of light dummies from.
+enum eVehicleDummy
+{
+	DUMMY_LIGHT_FRONT_MAIN      = 0,
+	DUMMY_LIGHT_REAR_MAIN       = 1,
+
+	DUMMY_LIGHT_FRONT_SECONDARY = 2,
+	DUMMY_LIGHT_REAR_SECONDARY  = 3,
+
+	DUMMY_SEAT_FRONT            = 4,
+	DUMMY_SEAT_REAR             = 5,
+
+	DUMMY_EXHAUST               = 6,
+	DUMMY_ENGINE                = 7,
+	DUMMY_GAS_CAP               = 8,
+	DUMMY_TRAILER_ATTACH        = 9,
+	DUMMY_HAND_REST             = 10,
+	DUMMY_EXHAUST_SECONDARY     = 11,
+	DUMMY_WING_AIR_TRAIL        = 12,
+	DUMMY_VEHICLE_GUN           = 13,
+
+	MAX_VEHICLE_DUMMIES
+};
+
 enum eCarPositions
 {
 	CAR_POS_HEADLIGHTS,
@@ -70,6 +98,14 @@ enum {
 	NUM_VEHICLE_POSITIONS = 5
 };
 
+// The positions the light code needs, in eVehicleDummy terms. Kept as a table
+// entry field so the same ms_pCTModelNameTable drives both m_positions (VC
+// layout) and m_avDummyPos (SA layout) without duplicating names.
+enum eVehicleDummyId
+{
+	VEHICLE_DUMMY_ID_NONE = 0xFF,
+};
+
 class CVehicleModelInfo : public CClumpModelInfo
 {
 public:
@@ -89,6 +125,11 @@ public:
 	int8 m_numComps;
 	int16 m_frequency;
 	CVector m_positions[NUM_VEHICLE_POSITIONS];
+	// SA CVehicleModelInfo::m_pVehicleStruct->m_avDummyPos. reVC has no
+	// separate CVehicleStructure, so the dummy positions live on the model info
+	// directly. Populated by the clump loader from the frames listed in
+	// ms_pCTModelNameTable (headlights, headlights2, taillights, taillights2).
+	CVector m_avDummyPos[MAX_VEHICLE_DUMMIES];
 	uint32 m_compRules;
 	float m_bikeSteerAngle;
 	RpMaterial *m_materials1[NUM_FIRST_MATERIALS];

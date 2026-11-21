@@ -2191,6 +2191,94 @@ CVehicle::Load(uint8*& buf)
 }
 #endif
 
+// SA CVehicle::GetDummyPositionObjSpace (0x6E1970), verbatim: the dummy
+// position in model space, straight out of the model's dummy table.
+CVector
+CVehicle::GetDummyPositionObjSpace(int32 dummy) const
+{
+	return ((CVehicleModelInfo*)CModelInfo::GetModelInfo(GetModelIndex()))->m_avDummyPos[dummy];
+}
+
+// SA CVehicle::DoHeadLightBeam (0x6E0E20), verbatim.
+//
+// A single additive cone: two narrow base vertices at the lamp, two wide ones
+// three units ahead along the light normal, and an apex point 0.2 units along
+// it. Alpha fades as the camera moves off the beam axis, so the cone is only
+// visible when you are looking roughly into the light.
+void
+CVehicle::DoHeadLightBeam(CMatrix &vehicleMatrix, bool isRight)
+{
+	// MAIN lamp pair only; SA looks up DUMMY_LIGHT_FRONT_MAIN here.
+	CVector pointModelSpace = GetDummyPositionObjSpace(DUMMY_LIGHT_FRONT_MAIN);
+
+	if(pointModelSpace.x == 0.0f && pointModelSpace.y == 0.0f && pointModelSpace.z == 0.0f)
+		return;
+
+	CVector point = vehicleMatrix.GetPosition() + Multiply3x3(pointModelSpace, vehicleMatrix);
+	if(!isRight)
+		point -= 2.0f * pointModelSpace.x * vehicleMatrix.GetRight();
+
+	CVector pointToCamDir = TheCamera.GetPosition() - point;
+	pointToCamDir.Normalise();
+	const uint8 alpha = (uint8)((1.0f - Abs(DotProduct(pointToCamDir, vehicleMatrix.GetForward()))) * 32.0f);
+
+	RwRenderStateSet(rwRENDERSTATEZWRITEENABLE, (void*)FALSE);
+	RwRenderStateSet(rwRENDERSTATEZTESTENABLE, (void*)TRUE);
+	RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)TRUE);
+	RwRenderStateSet(rwRENDERSTATESRCBLEND, (void*)rwBLENDSRCALPHA);
+	RwRenderStateSet(rwRENDERSTATEDESTBLEND, (void*)rwBLENDONE);
+	RwRenderStateSet(rwRENDERSTATESHADEMODE, (void*)rwSHADEMODEGOURAUD);
+	RwRenderStateSet(rwRENDERSTATETEXTURERASTER, nil);
+	RwRenderStateSet(rwRENDERSTATECULLMODE, (void*)rwCULLMODECULLNONE);
+#ifdef LIBRW
+	// librw owns the alpha tests behind its own enum; the rwALPHATESTFUNCTION*
+	// spellings are RenderWare 3.7 only. rwALPHATESTFUNCTIONGREATER with ref 0
+	// is what SA sets here, i.e. "reject a zero alpha pixel".
+	rw::SetRenderState(rw::ALPHATESTFUNC, rw::ALPHAGREATEREQUAL);
+	rw::SetRenderState(rw::ALPHATESTREF, 1);
+#endif
+
+	// SA asks ModelIndices::IsForklift, which VC has no model id for (there is
+	// no forklift in the VC vehicle list), so the ordinary 0.15 tilt applies.
+	const float angleMult = 0.15f;
+	CVector lightNormal = vehicleMatrix.GetForward() - vehicleMatrix.GetUp() * angleMult;
+	lightNormal.Normalise();
+	CVector lightRight = CrossProduct(lightNormal, pointToCamDir);
+	lightRight.Normalise();
+	const CVector lightPos = point - vehicleMatrix.GetForward() * 0.1f;
+
+	CVector posn[5];
+	posn[0] = lightPos - lightRight * 0.05f;
+	posn[1] = lightPos + lightRight * 0.05f;
+	posn[2] = lightPos + lightNormal * 3.0f - lightRight * 0.5f;
+	posn[3] = lightPos + lightNormal * 3.0f + lightRight * 0.5f;
+	posn[4] = lightPos + lightNormal * 0.2f;
+
+	// Base vertices carry the fade, the two far ones are transparent so the cone
+	// tapers, the apex is opaque again.
+	const uint8 beamAlphas[5] = { alpha, alpha, 0, 0, alpha };
+
+	RwIm3DVertex vertices[5];
+	for(int i = 0; i < 5; i++){
+		RwIm3DVertexSetRGBA(&vertices[i], 255, 255, 255, beamAlphas[i]);
+		RwIm3DVertexSetPos(&vertices[i], posn[i].x, posn[i].y, posn[i].z);
+	}
+
+	if(RwIm3DTransform(vertices, 5, nil, rwIM3D_VERTEXRGBA | rwIM3D_VERTEXXYZ)){
+		RwImVertexIndex indices[12] = { 0, 1, 4, 1, 3, 4, 2, 3, 4, 0, 2, 4 };
+		RwIm3DRenderIndexedPrimitive(rwPRIMTYPETRILIST, indices, 12);
+		RwIm3DEnd();
+	}
+
+	RwRenderStateSet(rwRENDERSTATETEXTURERASTER, (void*)FALSE);
+	RwRenderStateSet(rwRENDERSTATEZWRITEENABLE, (void*)TRUE);
+	RwRenderStateSet(rwRENDERSTATEZTESTENABLE, (void*)TRUE);
+	RwRenderStateSet(rwRENDERSTATESRCBLEND, (void*)rwBLENDSRCALPHA);
+	RwRenderStateSet(rwRENDERSTATEDESTBLEND, (void*)rwBLENDINVSRCALPHA);
+	RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)FALSE);
+	RwRenderStateSet(rwRENDERSTATECULLMODE, (void*)rwCULLMODECULLBACK);
+}
+
 eVehicleAppearance
 CVehicle::GetVehicleAppearance(void)
 {

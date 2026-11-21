@@ -1384,24 +1384,33 @@ CBike::PreRender(void)
 		}else
 			mat = m_leanMatrix;
 		const float bikeLightMult = Max(TheCamera.LODDistMultiplier, CRenderer::ms_fLightDistScale);
+		// SA RenderLights() sets this as each light registers; CBike::Render
+		// consumes it for the headlight cone.
+		m_nRenderLightsFlags = 0;
 		CVector light = mat * headLightPos;
+		// SA CVehicle::DoLightEffectImpl (0x6E1780) drives both intensity and size
+		// from normAngle = sqrt(cos angle):
+		//   intensity = normAngle * 0.5f + 0.3f
+		//   size      = (1 - distToCam/150) * normAngle * FRONT_SIZE_ROT_MULT(0.4)
+		// VC uses the raw cosine and a linear size, hence the different falloff.
+		const float normAngle = Sqrt(angle);
 		if(behindness < 0.0f){
 			// In front of bike
-			float intensity = -0.5f*behindness + 0.3f;
-			float size = 1.0f - behindness;
+			float intensity = normAngle*0.5f + 0.3f;
+			float size = (1.0f - camDist*(1.0f/150.0f)) * normAngle * 0.4f;
 
-			if(behindness < -0.97f && camDist < 30.0f * Max(1.0f, CRenderer::ms_fLightDistScale)){
+			if(behindness < -0.97f && camDist < 40.0f * Max(1.0f, CRenderer::ms_fLightDistScale)){
 				// Directly in front and not too far away
 				if(m_pHandlingData->m_nHandlingFlags & VEHICLE_HANDLING_HALOGEN_LIGHTS){
 					CCoronas::RegisterCorona((uintptr)this + 6, 150, 150, 195, 255,
-						light, 1.2f, 65.0f*bikeLightMult,
-						CCoronas::TYPE_HEADLIGHT, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
-						CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, angle);
+						light, 0.075f, 150.0f*bikeLightMult,
+						CCoronas::TYPE_HEADLIGHT, CCoronas::FLARE_NONE, CCoronas::REFLECTION_SIMPLE,
+						CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, normAngle, false, 0.3f);
 				}else{
 					CCoronas::RegisterCorona((uintptr)this + 6, 160, 160, 140, 255,
-						light, 1.2f, 65.0f*bikeLightMult,
-						CCoronas::TYPE_HEADLIGHT, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
-						CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, angle);
+						light, 0.075f, 150.0f*bikeLightMult,
+						CCoronas::TYPE_HEADLIGHT, CCoronas::FLARE_NONE, CCoronas::REFLECTION_SIMPLE,
+						CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, normAngle, false, 0.3f);
 				}
 			}
 
@@ -1411,17 +1420,23 @@ CBike::PreRender(void)
 					CCoronas::TYPE_STREAK, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
 					CCoronas::LOSCHECK_OFF, CCoronas::STREAK_ON, angle);
 			}else{
+				// SA: colour triple is (lightColorR, lightColorR, lightColorG) with
+				// alpha 128. VC passes (r, r, b) with alpha 255 - the third channel
+				// is the *blue* multiplier, which tints the lens.
+				uint8 lightColorR, lightColorG;
 				if(m_pHandlingData->m_nHandlingFlags & VEHICLE_HANDLING_HALOGEN_LIGHTS){
-					CCoronas::RegisterCorona((uintptr)this + 1, 190*intensity, 190*intensity, 255*intensity, 255,
-						light, size, 80.0f*bikeLightMult,
-						CCoronas::TYPE_STREAK, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
-						CCoronas::LOSCHECK_OFF, CCoronas::STREAK_ON, angle);
+					lightColorR = (uint8)(190.0f*intensity);
+					lightColorG = (uint8)(intensity*255.0f);
 				}else{
-					CCoronas::RegisterCorona((uintptr)this + 1, 210*intensity, 210*intensity, 195*intensity, 255,
-						light, size, 80.0f*bikeLightMult,
-						CCoronas::TYPE_STREAK, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
-						CCoronas::LOSCHECK_OFF, CCoronas::STREAK_ON, angle);
+					lightColorR = (uint8)(210.0f*intensity);
+					lightColorG = (uint8)(intensity*195.0f);
 				}
+				CCoronas::RegisterCorona((uintptr)this + 1, lightColorR, lightColorR, lightColorG, 128,
+					light, size, 150.0f*bikeLightMult,
+					CCoronas::TYPE_HEADLIGHT, CCoronas::FLARE_NONE, CCoronas::REFLECTION_SIMPLE,
+					CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, normAngle, false, 0.5f);
+				// A bike has a single headlight; SA records it as the right one.
+				m_renderLights.m_bRightFront = 1;
 			}
 		}else{
 			CCoronas::UpdateCoronaCoors((uintptr)this, light, 80.0f*bikeLightMult, angle);
@@ -1748,6 +1763,15 @@ CBike::Render(void)
 	m_nSetPieceExtendedRangeTime = CTimer::GetTimeInMilliseconds() + 3000;
 	mi->SetVehicleColour(m_currentColour1, m_currentColour2);
 	CEntity::Render();
+
+	// SA CBike::Render (0x6BDE20): the headlight cone hangs off the *lean*
+	// matrix, so it tilts with the bike. This is the only place in SA that calls
+	// DoHeadLightBeam - cars never draw a beam, which is why adding it there
+	// would not be a port.
+	if(m_renderLights.m_bRightFront) {
+		CalculateLeanMatrix();
+		DoHeadLightBeam(m_leanMatrix, true);
+	}
 }
 
 int32

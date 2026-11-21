@@ -53,6 +53,10 @@ enum {
 	VEHICLE_FLAG_COMP	= 0x200,
 	VEHICLE_FLAG_DRAWLAST	= 0x400,
 	VEHICLE_FLAG_WINDSCREEN	= 0x800,
+	// SA dummy position, stored in the upper bits of flags as
+	// (eVehicleDummy + 1) << VEHICLE_FLAG_DUMMY_SHIFT. 0 means "not a dummy".
+	VEHICLE_FLAG_DUMMY	= 0x1000,
+	VEHICLE_FLAG_DUMMY_SHIFT = 16,
 	VEHICLE_FLAG_ANGLECULL	= 0x1000,
 	VEHICLE_FLAG_REARDOOR	= 0x2000,
 	VEHICLE_FLAG_FRONTDOOR	= 0x4000,
@@ -81,8 +85,13 @@ RwObjectNameIdAssocation carIds[] = {
 
 	{ "ped_frontseat",	CAR_POS_FRONTSEAT,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
 	{ "ped_backseat",	CAR_POS_BACKSEAT,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
-	{ "headlights",		CAR_POS_HEADLIGHTS,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
-	{ "taillights",		CAR_POS_TAILLIGHTS,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
+	{ "headlights",		CAR_POS_HEADLIGHTS,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID | VEHICLE_FLAG_DUMMY | ((DUMMY_LIGHT_FRONT_MAIN + 1) << VEHICLE_FLAG_DUMMY_SHIFT) },
+	{ "taillights",		CAR_POS_TAILLIGHTS,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID | VEHICLE_FLAG_DUMMY | ((DUMMY_LIGHT_REAR_MAIN + 1) << VEHICLE_FLAG_DUMMY_SHIFT) },
+	// SA second lamp quad (one corona per entry of this kind, so a car with
+	// four lamp dummies gets four lit lenses). Models without them leave the
+	// position at zero and the SA code skips it.
+	{ "headlights2",	0,	VEHICLE_FLAG_DUMMY | ((DUMMY_LIGHT_FRONT_SECONDARY + 1) << VEHICLE_FLAG_DUMMY_SHIFT) },
+	{ "taillights2",	0,	VEHICLE_FLAG_DUMMY | ((DUMMY_LIGHT_REAR_SECONDARY + 1) << VEHICLE_FLAG_DUMMY_SHIFT) },
 	{ "exhaust",		CAR_POS_EXHAUST,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
 #ifdef SA_VEHICLE_MODELS
 	// GTA:SA and many converted/modded models name these frames without a
@@ -167,8 +176,13 @@ RwObjectNameIdAssocation bikeIds[] = {
 	{ "handlebars",		BIKE_HANDLEBARS,	0 },
 	{ "ped_frontseat",	CAR_POS_FRONTSEAT,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
 	{ "ped_backseat",	CAR_POS_BACKSEAT,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
-	{ "headlights",		CAR_POS_HEADLIGHTS,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
-	{ "taillights",		CAR_POS_TAILLIGHTS,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
+	{ "headlights",		CAR_POS_HEADLIGHTS,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID | VEHICLE_FLAG_DUMMY | ((DUMMY_LIGHT_FRONT_MAIN + 1) << VEHICLE_FLAG_DUMMY_SHIFT) },
+	{ "taillights",		CAR_POS_TAILLIGHTS,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID | VEHICLE_FLAG_DUMMY | ((DUMMY_LIGHT_REAR_MAIN + 1) << VEHICLE_FLAG_DUMMY_SHIFT) },
+	// SA second lamp quad (one corona per entry of this kind, so a car with
+	// four lamp dummies gets four lit lenses). Models without them leave the
+	// position at zero and the SA code skips it.
+	{ "headlights2",	0,	VEHICLE_FLAG_DUMMY | ((DUMMY_LIGHT_FRONT_SECONDARY + 1) << VEHICLE_FLAG_DUMMY_SHIFT) },
+	{ "taillights2",	0,	VEHICLE_FLAG_DUMMY | ((DUMMY_LIGHT_REAR_SECONDARY + 1) << VEHICLE_FLAG_DUMMY_SHIFT) },
 	{ "exhaust",		CAR_POS_EXHAUST,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
 	{ "extra1",		0,	VEHICLE_FLAG_DRAWLAST | VEHICLE_FLAG_COMP | CLUMP_FLAG_NO_HIERID },
 	{ "extra2",		0,	VEHICLE_FLAG_DRAWLAST | VEHICLE_FLAG_COMP | CLUMP_FLAG_NO_HIERID },
@@ -857,13 +871,20 @@ CVehicleModelInfo::PreprocessSACarHierarchy(void)
 		assoc.frame = nil; assoc.name = desc[i].name;
 		RwFrameForAllChildren(RpClumpGetFrame(m_clump), FindFrameFromNameWithoutIdCB, &assoc);
 		if(!assoc.frame) continue;
-		if(desc[i].flags & VEHICLE_FLAG_POS){
-			RwV3d *pos = &m_positions[desc[i].hierId];
+		if(desc[i].flags & (VEHICLE_FLAG_POS|VEHICLE_FLAG_DUMMY)){
+			// The light dummies and the seat/exhaust positions share the same
+			// frame; m_avDummyPos is the SA indexing the light code reads.
+			RwV3d *pos = (desc[i].flags & VEHICLE_FLAG_POS)
+				? &m_positions[desc[i].hierId]
+				: &m_avDummyPos[(desc[i].flags >> VEHICLE_FLAG_DUMMY_SHIFT) - 1];
 			*pos = *RwMatrixGetPos(RwFrameGetMatrix(assoc.frame));
 			RwFrame *parent = RwFrameGetParent(assoc.frame);
 			while(parent && RwFrameGetParent(parent)){
 				RwV3dTransformPoints(pos, pos, 1, RwFrameGetMatrix(parent));
 				parent = RwFrameGetParent(parent);
+			}
+			if(desc[i].flags & VEHICLE_FLAG_DUMMY){
+				m_avDummyPos[(desc[i].flags >> VEHICLE_FLAG_DUMMY_SHIFT) - 1] = *pos;
 			}
 			RwFrameDestroy(assoc.frame);
 		}else{
@@ -959,12 +980,19 @@ CVehicleModelInfo::PreprocessHierarchy(void)
 		if(desc[i].flags & VEHICLE_FLAG_DOOR)
 			m_numDoors++;
 
-		if(desc[i].flags & VEHICLE_FLAG_POS){
+		if(desc[i].flags & (VEHICLE_FLAG_POS|VEHICLE_FLAG_DUMMY)){
 			f = assoc.frame;
-			rwvec = &m_positions[desc[i].hierId];
+			rwvec = (desc[i].flags & VEHICLE_FLAG_POS)
+				? &m_positions[desc[i].hierId]
+				: &m_avDummyPos[(desc[i].flags >> VEHICLE_FLAG_DUMMY_SHIFT) - 1];
 			*rwvec = *RwMatrixGetPos(RwFrameGetMatrix(f));
 			for(f = RwFrameGetParent(f); f; f = RwFrameGetParent(f))
 				RwV3dTransformPoints(rwvec, rwvec, 1, RwFrameGetMatrix(f));
+			// The light dummies are also mirrored into the SA-indexed array, so
+			// DoHeadLightBeam can look up "the second headlight quad" the way SA
+			// does regardless of which loader path ran.
+			if(desc[i].flags & VEHICLE_FLAG_DUMMY)
+				m_avDummyPos[(desc[i].flags >> VEHICLE_FLAG_DUMMY_SHIFT) - 1] = *rwvec;
 			RwFrameDestroy(assoc.frame);
 		}else{
 			atomic = (RpAtomic*)GetFirstObject(assoc.frame);
