@@ -371,6 +371,19 @@ public:
 	// override this; the base reports "not handled" so the caller falls back to
 	// the generic path.
 	virtual bool ProcessAI(uint32 &extraHandlingFlags) { return false; }
+	// SA CVehicle::m_pCustomCarPlate. The plate texture this vehicle owns when
+	// its model carries a scripted plate text; nil when the vehicle simply
+	// shares its model's plate texture. Owned by the vehicle and destroyed with
+	// it, because a generated plate is per-vehicle while the model is shared.
+	RwTexture *m_pCustomCarPlate;
+
+	// SA CVehicle::CustomCarPlate_TextureCreate (0x6D10E0). Build this
+	// vehicle's own plate texture if its model is carrying a pending plate
+	// text, otherwise take a reference on the model's shared one.
+	bool CustomCarPlate_TextureCreate(CVehicleModelInfo *model);
+	// SA CVehicle::CustomCarPlate_TextureDestroy (0x6D1150).
+	void CustomCarPlate_TextureDestroy(void);
+
 	// SA CVehicle::GetAnimGroup (0x6D0AC0). The vehicle's entry in the 30-group
 	// in-car animation table. The index comes from the handling record, not from
 	// the model: handling.cfg carries it as the last field of each vehicle line.

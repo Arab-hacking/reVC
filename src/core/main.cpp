@@ -1379,6 +1379,11 @@ if(gbRenderFadingInEntities)
 	// CWeather::AddSnow
 	CWaterCannons::Render();
 	CAntennas::Render();
+	// Contrails and the banner streamers behind the planes. They are drawn here,
+	// with the other additive effects, because they are transparent lines that
+	// have to go after everything solid.
+	CPlaneTrails::Render();
+	CPlaneBanners::Render();
 	CSpecialFX::Render();
 	CRopes::Render();
 	CCoronas::Render();

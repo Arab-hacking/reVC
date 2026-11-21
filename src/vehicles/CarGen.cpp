@@ -260,6 +260,15 @@ CCarGenerator::DoInternalProcessing()
 		// it up by this generator's index before the car is even constructed.
 		memset(plateText, 0, sizeof(plateText));
 		CTheCarGenerators::m_SpecialPlateHandler.Find(CTheCarGenerators::GetIndex(this), plateText);
+		// A scripted plate is pushed into the model before the car is built, so
+		// that CVehicle::SetModelIndex finds it and bakes it into the vehicle's
+		// own plate texture. Doing it afterwards would be too late: by then the
+		// vehicle has already taken a reference on the model's shared plate.
+		if(plateText[0]){
+			CVehicleModelInfo *plateMI = (CVehicleModelInfo*)CModelInfo::GetModelInfo(actualModelId);
+			if(plateMI && plateMI->m_pPlateMaterial)
+				plateMI->SetCustomCarPlateText(plateText);
+		}
 
 		switch(((CVehicleModelInfo*)CModelInfo::GetModelInfo(actualModelId))->m_nVehicleType){
 		case VEHICLE_TYPE_MTRUCK:

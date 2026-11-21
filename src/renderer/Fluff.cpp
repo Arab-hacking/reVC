@@ -44,140 +44,160 @@ RwImVertexIndex TrailIndices[32] = {
 	10, 10, 11, 11, 12, 12, 13, 13, 14, 14, 15, 15, 16
 };
 
+// SA CPlaneTrail::Init (0x717160).
 void
 CPlaneTrail::Init(void)
 {
-	int i;
-	for(i = 0; i < ARRAY_SIZE(m_time); i++)
-		m_time[i] = 0;
+	for(int32 i = 0; i < PLANE_TRAIL_BUF_SIZE; i++)
+		m_Timepoints[i] = 0;
 }
 
+// SA CPlaneTrail::Render (0x717180).
+//
+// Walk the buffer and draw every point that has not expired, newest first, as a
+// line list. A point fades as it ages: full alpha for the first ten seconds of
+// its thirty, then down to nothing.
 void
-CPlaneTrail::Render(float visibility)
+CPlaneTrail::Render(float intensity)
 {
-	int i;
-	int numVerts = 0;
-	if(!TheCamera.IsSphereVisible(m_pos[0], 1000.0f))
+	const int32 maxAlpha = (int32)(intensity * 110.0f);
+	if(maxAlpha == 0)
 		return;
 
-	int alpha = visibility*110.0f;
-	if(alpha == 0)
-		return;
+	RwIm3DVertex vertBuf[PLANE_TRAIL_BUF_SIZE];
+	uint32 numVerts = 0;
 
-	for(i = 0; i < ARRAY_SIZE(m_pos); i++){
-		int32 time = CTimer::GetTimeInMilliseconds() - m_time[i];
-		if(time > 30000)
-			m_time[i] = 0;
-		if(m_time[i] != 0){
-			float fade = (30000.0f - time) / 10000.0f;
-			fade = Min(fade, 1.0f);
-			RwIm3DVertexSetRGBA(&TempBufferRenderVertices[numVerts], 255, 255, 255, (int)(alpha*fade));
-			RwIm3DVertexSetPos(&TempBufferRenderVertices[numVerts], m_pos[i].x, m_pos[i].y, m_pos[i].z);
+	for(uint32 i = 0; i < PLANE_TRAIL_BUF_SIZE; i++){
+		const uint32 timeDelta = CTimer::GetTimeInMilliseconds() - m_Timepoints[i];
+		if(IsPointInUse(i) && timeDelta <= POINT_EXPIRATION_TIME){
+			RwIm3DVertex *vert = &vertBuf[numVerts];
+
+			// The tail of the contrail fades: the last ten seconds of a point's
+			// life take it from full alpha to none.
+			const float alphaMult = Min(1.0f, ((float)POINT_EXPIRATION_TIME - (float)timeDelta) / 10000.0f);
+			RwIm3DVertexSetRGBA(vert, 255, 255, 255, (uint8)((float)maxAlpha * alphaMult));
+			RwIm3DVertexSetPos(vert, m_Positions[i].x, m_Positions[i].y, m_Positions[i].z);
 			numVerts++;
+		}else{
+			// Expired or never used: drop the point so the buffer slot is free.
+			m_Timepoints[i] = 0;
 		}
 	}
-	if(numVerts > 1){
-		RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)TRUE);
-		RwRenderStateSet(rwRENDERSTATESRCBLEND, (void*)rwBLENDSRCALPHA);
-		RwRenderStateSet(rwRENDERSTATEDESTBLEND, (void*)rwBLENDINVSRCALPHA);
-		RwRenderStateSet(rwRENDERSTATETEXTURERASTER, nil);
 
-		if(RwIm3DTransform(TempBufferRenderVertices, numVerts, nil, rwIM3D_VERTEXXYZ|rwIM3D_VERTEXRGBA)){
-			RwIm3DRenderIndexedPrimitive(rwPRIMTYPELINELIST, TrailIndices, (numVerts-1)*2);
-			RwIm3DEnd();
-		}
+	if(numVerts <= 1)
+		return;
+
+	RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)TRUE);
+	RwRenderStateSet(rwRENDERSTATESRCBLEND, (void*)rwBLENDSRCALPHA);
+	RwRenderStateSet(rwRENDERSTATEDESTBLEND, (void*)rwBLENDINVSRCALPHA);
+	RwRenderStateSet(rwRENDERSTATETEXTURERASTER, nil);
+
+	if(RwIm3DTransform(vertBuf, numVerts, nil, rwIM3D_VERTEXXYZ | rwIM3D_VERTEXRGBA)){
+		RwIm3DRenderIndexedPrimitive(rwPRIMTYPELINELIST, TrailIndices, (numVerts - 1) * 2);
+		RwIm3DEnd();
 	}
 }
 
+// SA CPlaneTrail::RegisterPoint (0x7172D0).
+//
+// A point is only added every two seconds. Until then the newest slot is
+// overwritten with the new position, which is what makes the front of the
+// contrail follow the plane continuously while the tail stays put.
 void
 CPlaneTrail::RegisterPoint(CVector pos)
 {
-	int i;
-	bool bNewPoint = false;
-	if(m_time[0] != 0 && CTimer::GetTimeInMilliseconds() - m_time[0] > 2000){
-		bNewPoint = true;
-		for(i = ARRAY_SIZE(m_pos)-1; i > 0; i--){
-			m_pos[i] = m_pos[i-1];
-			m_time[i] = m_time[i-1];
+	const uint32 lastUpdate = m_Timepoints[0];
+	const bool doShift = lastUpdate != 0 && CTimer::GetTimeInMilliseconds() - lastUpdate > 2000;
+
+	if(doShift){
+		for(int32 i = PLANE_TRAIL_BUF_SIZE - 1; i > 0; i--){
+			m_Timepoints[i] = m_Timepoints[i - 1];
+			m_Positions[i] = m_Positions[i - 1];
 		}
 	}
-	m_pos[0] = pos;
-	if(bNewPoint || m_time[0] == 0)
-		m_time[0] = CTimer::GetTimeInMilliseconds();
+
+	m_Positions[0] = pos;
+	if(doShift || !IsPointInUse(0))
+		m_Timepoints[0] = CTimer::GetTimeInMilliseconds();
 }
 
+// SA CPlaneTrail::Update, inlined into CPlaneTrails::Update (0x7174F0).
+//
+// The plane flies a circle; the position handed in is a corner of its bounding
+// box scaled by sin/cos of the elapsed time, which is how SA turns a fixed
+// radius into a moving point. The navigation light is only registered at night,
+// and blinks by testing a bit of the clock.
+void
+CPlaneTrail::Update(CVector pos, const CRGBA &color, uint32 coronaIdx, uint32 timeModifierMs,
+                    uint8 afterHour, uint8 beforeHour)
+{
+	const float timeProg = (float)(CTimer::GetTimeInMilliseconds() & 0x1FFFF) / 0x20000 * TWOPI;
+	const CVector currPos = CVector(pos.x * Sin(timeProg), pos.y * Cos(timeProg), pos.z);
+
+	RegisterPoint(currPos);
+
+	if(CClock::GetHours() <= afterHour || CClock::GetHours() >= beforeHour)
+		return;
+
+	if((CTimer::GetTimeInMilliseconds() + timeModifierMs) & 0x200){
+		CCoronas::RegisterCorona(coronaIdx,
+			color.r, color.g, color.b, color.a,
+			currPos, 5.0f, 2000.0f,
+			CCoronas::TYPE_NORMAL, CCoronas::FLARE_NONE, CCoronas::REFLECTION_OFF,
+			CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, 0.0f);
+	}else{
+		CCoronas::UpdateCoronaCoors(coronaIdx, currPos, 2000.0f, 0.0f);
+	}
+}
+
+// SA CPlaneTrails::Init (0x717370).
 void
 CPlaneTrails::Init(void)
 {
-	int i;
-	for(i = 0; i < ARRAY_SIZE(aArray); i++)
+	for(int32 i = 0; i < ARRAY_SIZE(aArray); i++)
 		aArray[i].Init();
 }
 
+// SA CPlaneTrails::Update (0x7174F0).
+//
+// Three planes, each on its own circle, each with its own navigation light
+// colour and blink offset so they do not all flash together.
 void
 CPlaneTrails::Update(void)
 {
-	CVector planePos;
-
-	planePos.x = 1590.0f * Sin((float)(CTimer::GetTimeInMilliseconds() & 0x1FFFF)/0x20000 * TWOPI);
-	planePos.y = 1200.0f * Cos((float)(CTimer::GetTimeInMilliseconds() & 0x1FFFF)/0x20000 * TWOPI);
-	planePos.z = 550.0f;
-	RegisterPoint(planePos, 3);
-	if(CClock::GetHours() > 22 || CClock::GetHours() < 7){
-		if(CTimer::GetTimeInMilliseconds() & 0x200)
-			CCoronas::RegisterCorona(101, 255, 0, 0, 255, planePos, 5.0f, 2000.0f,
-				CCoronas::TYPE_NORMAL, CCoronas::FLARE_NONE, CCoronas::REFLECTION_OFF,
-				CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, 0.0f);
-		else
-			CCoronas::UpdateCoronaCoors(101, planePos, 2000.0f, 0.0f);
-	}
-
-	planePos.x = 1000.0f * Sin((float)(CTimer::GetTimeInMilliseconds() & 0x1FFFF)/0x20000 * TWOPI);
-	planePos.y = -1600.0f * Cos((float)(CTimer::GetTimeInMilliseconds() & 0x1FFFF)/0x20000 * TWOPI);
-	planePos.z = 500.0f;
-	RegisterPoint(planePos, 4);
-	if(CClock::GetHours() > 22 || CClock::GetHours() < 7){
-		if(CTimer::GetTimeInMilliseconds() & 0x200)
-			CCoronas::RegisterCorona(102, 255, 0, 0, 255, planePos, 5.0f, 2000.0f,
-				CCoronas::TYPE_NORMAL, CCoronas::FLARE_NONE, CCoronas::REFLECTION_OFF,
-				CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, 0.0f);
-		else
-			CCoronas::UpdateCoronaCoors(102, planePos, 2000.0f, 0.0f);
-	}
-
-	planePos.x = 1100.0f * Cos((float)(CTimer::GetTimeInMilliseconds() & 0x1FFFF)/0x20000 * TWOPI);
-	planePos.y = 700.0f * Sin((float)(CTimer::GetTimeInMilliseconds() & 0x1FFFF)/0x20000 * TWOPI);
-	planePos.z = 600.0f;
-	RegisterPoint(planePos, 5);
-	if(CClock::GetHours() > 22 || CClock::GetHours() < 7){
-		if(CTimer::GetTimeInMilliseconds() & 0x200)
-			CCoronas::RegisterCorona(103, 255, 0, 0, 255, planePos, 5.0f, 2000.0f,
-				CCoronas::TYPE_NORMAL, CCoronas::FLARE_NONE, CCoronas::REFLECTION_OFF,
-				CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, 0.0f);
-		else
-			CCoronas::UpdateCoronaCoors(103, planePos, 2000.0f, 0.0f);
-	}
+	// Coronas 101..103 are the reservation SA makes for these three lights.
+	aArray[0].Update(CVector(2590.0f, 2200.0f, 550.0f), CRGBA(255, 0, 0, 255), 101, 0, 22, 7);
+	aArray[1].Update(CVector(2000.0f, -2600.0f, 500.0f), CRGBA(255, 255, 128, 255), 102, 350, 21, 7);
+	aArray[2].Update(CVector(2100.0f, 1300.0f, 600.0f), CRGBA(255, 255, 255, 255), 103, 200, 20, 6);
 }
 
+// SA CPlaneTrails::Render (0x7173A0).
+//
+// A contrail is only visible against a clear sky: it is white, so it disappears
+// into cloud, fog and rain, and it is lit by the sky colour, so it darkens at
+// night. Both are folded into one intensity value here.
 void
 CPlaneTrails::Render(void)
 {
-	int i;
-	float visibility = Min(1.0f-CWeather::Foggyness, 1.0f-CWeather::CloudCoverage);
-	visibility = Min(visibility, 1.0f-CWeather::Rain);
-	visibility = Min(Max(Max(CTimeCycle::GetSkyTopRed(), CTimeCycle::GetSkyTopGreen()), CTimeCycle::GetSkyTopBlue())/256.0f, visibility);
-	if(visibility > 0.0001f)
-		for(i = 0; i < ARRAY_SIZE(aArray); i++)
-			aArray[i].Render(visibility);
+	const float maxColorComponent = Max(Max(CTimeCycle::GetSkyBottomRed(), CTimeCycle::GetSkyBottomGreen()),
+	                                    CTimeCycle::GetSkyBottomBlue()) / 255.0f;
+	float visibility = Min(1.0f - CWeather::CloudCoverage, 1.0f - CWeather::Foggyness);
+	visibility = Min(visibility, 1.0f - CWeather::Rain);
+	const float intensity = Min(maxColorComponent, visibility);
+
+	if(intensity > 0.0001f)
+		for(int32 i = 0; i < ARRAY_SIZE(aArray); i++)
+			aArray[i].Render(intensity);
 }
 
+// SA CPlaneTrails::RegisterPoint (0x7174C0).
 void
 CPlaneTrails::RegisterPoint(CVector pos, uint32 id)
 {
+	if(id >= ARRAY_SIZE(aArray))
+		return;
 	aArray[id].RegisterPoint(pos);
 }
-
-
 
 CPlaneBanner CPlaneBanners::aArray[5];
 
@@ -309,6 +329,10 @@ CPlaneBanners::Render(void)
 void
 CPlaneBanners::RegisterPoint(CVector pos, uint32 id)
 {
+	// The banner array is indexed by the plane's own id, which a save or a
+	// scripted plane can put past the end of it.
+	if(id >= ARRAY_SIZE(aArray))
+		return;
 	aArray[id].RegisterPoint(pos);
 }
 

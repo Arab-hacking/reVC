@@ -1834,69 +1834,126 @@ bool CGarages::HasCarBeenCrushed(int32 handle)
 	return CrushedCarId == handle;
 }
 
+// SA CStoredCar::StoreCar (0x449760).
+//
+// Everything a parked car has to come back as the same car. The heading is
+// packed into three bytes because SA stores it that way: a car yaws, so one
+// byte per axis is enough to rebuild the forward vector, and the vector itself
+// would have been three floats the save file does not have room for.
 void CStoredCar::StoreCar(CVehicle* pVehicle)
 {
-	m_nModelIndex = pVehicle->GetModelIndex();
-	m_vecPos = pVehicle->GetPosition();
-	m_vecAngle = pVehicle->GetForward();
+	m_vPosn = pVehicle->GetPosition();
+
+	// The forward vector packed to one byte per axis. SA scales by 127 rather
+	// than 255: the vector is signed and a full turn has to fit in [-1, 1].
+	const CVector &fwd = pVehicle->GetForward();
+	m_nPackedForwardX = (uint8)(int8)(fwd.x * 127.0f);
+	m_nPackedForwardY = (uint8)(int8)(fwd.y * 127.0f);
+	m_nPackedForwardZ = (uint8)(int8)(fwd.z * 127.0f);
+
+	m_wModelIndex = (uint16)pVehicle->GetModelIndex();
 	m_nPrimaryColor = pVehicle->m_currentColour1;
 	m_nSecondaryColor = pVehicle->m_currentColour2;
-	m_nRadioStation = pVehicle->m_nRadioStation;
-	m_nVariationA = pVehicle->m_aExtras[0];
-	m_nVariationB = pVehicle->m_aExtras[1];
-	m_nFlags = 0;
-	if (pVehicle->bBulletProof) m_nFlags |= FLAG_BULLETPROOF;
-	if (pVehicle->bFireProof) m_nFlags |= FLAG_FIREPROOF;
-	if (pVehicle->bExplosionProof) m_nFlags |= FLAG_EXPLOSIONPROOF;
-	if (pVehicle->bCollisionProof) m_nFlags |= FLAG_COLLISIONPROOF;
-	if (pVehicle->bMeleeProof) m_nFlags |= FLAG_MELEEPROOF;
-	if (pVehicle->IsAutomobile() || pVehicle->IsBike())
-		m_nCarBombType = ((CAutomobile*)pVehicle)->m_bombType; // NB: cast to CAutomobile is original behaviour
+	// VC vehicles paint two material slots; the two extra slots SA stores stay
+	// at "no colour" so a car read back from this save keeps its two-tone.
+	m_nTertiaryColor = 0;
+	m_nQuaternaryColor = 0;
+	m_nRadiostation = pVehicle->m_nRadioStation;
+	m_anCompsToUse[0] = (uint8)pVehicle->m_aExtras[0];
+	m_anCompsToUse[1] = (uint8)pVehicle->m_aExtras[1];
+
+	m_nStoredCarFlags = 0;
+	if (pVehicle->bBulletProof) m_nStoredCarFlags |= FLAG_BULLETPROOF;
+	if (pVehicle->bFireProof) m_nStoredCarFlags |= FLAG_FIREPROOF;
+	if (pVehicle->bExplosionProof) m_nStoredCarFlags |= FLAG_EXPLOSIONPROOF;
+	if (pVehicle->bCollisionProof) m_nStoredCarFlags |= FLAG_COLLISIONPROOF;
+	if (pVehicle->bMeleeProof) m_nStoredCarFlags |= FLAG_MELEEPROOF;
+
+	// A garage remembers the bomb: a car stored with one has to come back with
+	// it still ticking, which is the whole point of storing a rigged car.
+	m_nBombType = CARBOMB_NONE;
+	if (pVehicle->IsAutomobile() || pVehicle->IsBike()){
+		m_nBombType = ((CAutomobile*)pVehicle)->m_bombType; // NB: cast to CAutomobile is original behaviour
+		if (m_nBombType != CARBOMB_NONE)
+			m_nStoredCarFlags |= FLAG_HAS_BOMB;
+	}
+
+	// The handling flags go along so that a stored car drives the way it did
+	// when it was parked - a script can change them at runtime.
+	m_nHandlingFlags = pVehicle->m_pHandlingData ? (uint32)pVehicle->m_pHandlingData->m_nHandlingFlags : 0;
+
+	// No upgrades in this fork: the slots are cleared rather than left with
+	// whatever the previous occupant of the slot had in them.
+	for (int32 i = 0; i < NUM_CAR_MODS; i++)
+		m_awCarMods[i] = -1;
+	m_nPaintJob = 0;
+	m_nNitroBoosts = 0;
 }
 
+// SA CStoredCar::RestoreCar (0x447E40).
 CVehicle* CStoredCar::RestoreCar()
 {
-	CStreaming::RequestModel(m_nModelIndex, STREAMFLAGS_DEPENDENCY);
-	if (!CStreaming::HasModelLoaded(m_nModelIndex))
+	const int32 model = m_wModelIndex;
+	CStreaming::RequestModel(model, STREAMFLAGS_DEPENDENCY);
+	if (!CStreaming::HasModelLoaded(model))
 		return nil;
 #ifdef FIX_BUGS
-	CVehicleModelInfo* pModelInfo = (CVehicleModelInfo*)CModelInfo::GetModelInfo(m_nModelIndex);
+	CVehicleModelInfo* pModelInfo = (CVehicleModelInfo*)CModelInfo::GetModelInfo(model);
 	assert(pModelInfo);
 	if (pModelInfo->m_numComps != 0)
 #endif
 	{
-		CVehicleModelInfo::SetComponentsToUse(m_nVariationA, m_nVariationB);
+		CVehicleModelInfo::SetComponentsToUse(m_anCompsToUse[0], m_anCompsToUse[1]);
 	}
-	CVehicle* pVehicle = CCarCtrl::GetNewVehicleDependingOnCarModel(m_nModelIndex, RANDOM_VEHICLE);
+	CVehicle* pVehicle = CCarCtrl::GetNewVehicleDependingOnCarModel(model, RANDOM_VEHICLE);
 	if (pVehicle == nil)
 		return nil;
 	if (pVehicle->IsBike())
 		((CBike*)pVehicle)->bIsStanding = true;
-	pVehicle->SetPosition(m_vecPos);
+	pVehicle->SetPosition(m_vPosn);
 	pVehicle->SetStatus(STATUS_ABANDONED);
-	pVehicle->GetForward() = m_vecAngle;
-	pVehicle->GetRight() = CVector(m_vecAngle.y, -m_vecAngle.x, 0.0f);
+
+	// Unpack the heading. The stored bytes are signed, so a car that was facing
+	// -Y comes back facing -Y rather than having been mirrored.
+	CVector fwd((float)(int8)m_nPackedForwardX / 127.0f,
+	            (float)(int8)m_nPackedForwardY / 127.0f,
+	            (float)(int8)m_nPackedForwardZ / 127.0f);
+	if (fwd.MagnitudeSqr() < 0.0001f)
+		fwd = CVector(0.0f, 1.0f, 0.0f);	// a zero vector would make an invalid matrix
+	fwd.Normalise();
+	pVehicle->GetForward() = fwd;
+	pVehicle->GetRight() = CVector(fwd.y, -fwd.x, 0.0f);
 	pVehicle->GetUp() = CVector(0.0f, 0.0f, 1.0f);
+
 	pVehicle->pDriver = nil;
 	pVehicle->m_currentColour1 = m_nPrimaryColor;
 	pVehicle->m_currentColour2 = m_nSecondaryColor;
-	pVehicle->m_nRadioStation = m_nRadioStation;
+	pVehicle->m_nRadioStation = m_nRadiostation;
 	pVehicle->bFreebies = false;
-	if (pVehicle->IsAutomobile())
+
+	// The handling flags are per vehicle instance in this fork, so they are
+	// restored only when the handling record is a private copy - writing a
+	// stored record back into the shared one would change every car of that
+	// model in the world.
+	if (pVehicle->m_pHandlingData && m_nHandlingFlags != 0)
+		pVehicle->m_pHandlingData->m_nHandlingFlags = (eVehicleHandlingFlags)m_nHandlingFlags;
+
+	if (pVehicle->IsAutomobile() || pVehicle->IsBike())
 	{
-		((CAutomobile*)pVehicle)->m_bombType = m_nCarBombType;
+		((CAutomobile*)pVehicle)->m_bombType = m_nBombType;
 #ifdef FIX_BUGS
-		if (m_nCarBombType != CARBOMB_NONE)
+		if (m_nBombType != CARBOMB_NONE)
 			((CAutomobile*)pVehicle)->m_pBombRigger = FindPlayerPed();
 #endif
 	}
 	pVehicle->bHasBeenOwnedByPlayer = true;
 	pVehicle->m_nDoorLock = CARLOCK_UNLOCKED;
-	if (m_nFlags & FLAG_BULLETPROOF) pVehicle->bBulletProof = true;
-	if (m_nFlags & FLAG_FIREPROOF) pVehicle->bFireProof = true;
-	if (m_nFlags & FLAG_EXPLOSIONPROOF) pVehicle->bExplosionProof = true;
-	if (m_nFlags & FLAG_COLLISIONPROOF) pVehicle->bCollisionProof = true;
-	if (m_nFlags & FLAG_MELEEPROOF) pVehicle->bMeleeProof = true;
+	if (m_nStoredCarFlags & FLAG_BULLETPROOF) pVehicle->bBulletProof = true;
+	if (m_nStoredCarFlags & FLAG_FIREPROOF) pVehicle->bFireProof = true;
+	if (m_nStoredCarFlags & FLAG_EXPLOSIONPROOF) pVehicle->bExplosionProof = true;
+	if (m_nStoredCarFlags & FLAG_COLLISIONPROOF) pVehicle->bCollisionProof = true;
+	if (m_nStoredCarFlags & FLAG_MELEEPROOF) pVehicle->bMeleeProof = true;
+	pVehicle->bCanBeDamaged = true;
 	return pVehicle;
 }
 
@@ -2255,6 +2312,80 @@ void CGarages::SetAllDoorsBackToOriginalHeight()
 	}
 }
 
+// SA writes a stored car into the save file as a 40-byte record, in the order
+// the structure's fields had in 2004. Two of those fields do not map onto this
+// fork's structure one to one: the position is a vector here, and the heading
+// is stored packed. The record is therefore written and read field by field
+// rather than as a structure copy - a memcpy would silently change the file
+// format whenever the structure grows.
+void
+CStoredCar::WriteSaveRecord(uint8 *&buf) const
+{
+	// m_vPosn: three floats.
+	const float px = m_vPosn.x, py = m_vPosn.y, pz = m_vPosn.z;
+	WriteSaveBuf(buf, px);
+	WriteSaveBuf(buf, py);
+	WriteSaveBuf(buf, pz);
+
+	WriteSaveBuf(buf, m_nHandlingFlags);
+	WriteSaveBuf(buf, m_nStoredCarFlags);
+	WriteSaveBuf(buf, _pad0);
+	WriteSaveBuf(buf, m_wModelIndex);
+
+	for(int32 i = 0; i < NUM_CAR_MODS; i++){
+		int16 mod = m_awCarMods[i];
+		WriteSaveBuf(buf, mod);
+	}
+
+	WriteSaveBuf(buf, m_nPrimaryColor);
+	WriteSaveBuf(buf, m_nSecondaryColor);
+	WriteSaveBuf(buf, m_nTertiaryColor);
+	WriteSaveBuf(buf, m_nQuaternaryColor);
+	WriteSaveBuf(buf, m_nRadiostation);
+	WriteSaveBuf(buf, m_anCompsToUse[0]);
+	WriteSaveBuf(buf, m_anCompsToUse[1]);
+	WriteSaveBuf(buf, m_nBombType);
+	WriteSaveBuf(buf, m_nPaintJob);
+	WriteSaveBuf(buf, m_nNitroBoosts);
+	WriteSaveBuf(buf, m_nPackedForwardX);
+	WriteSaveBuf(buf, m_nPackedForwardY);
+	WriteSaveBuf(buf, m_nPackedForwardZ);
+	WriteSaveBuf(buf, _pad1);
+}
+
+void
+CStoredCar::ReadSaveRecord(uint8 *&buf)
+{
+	float px, py, pz;
+	ReadSaveBuf(&px, buf);
+	ReadSaveBuf(&py, buf);
+	ReadSaveBuf(&pz, buf);
+	m_vPosn = CVector(px, py, pz);
+
+	ReadSaveBuf(&m_nHandlingFlags, buf);
+	ReadSaveBuf(&m_nStoredCarFlags, buf);
+	ReadSaveBuf(&_pad0, buf);
+	ReadSaveBuf(&m_wModelIndex, buf);
+
+	for(int32 i = 0; i < NUM_CAR_MODS; i++)
+		ReadSaveBuf(&m_awCarMods[i], buf);
+
+	ReadSaveBuf(&m_nPrimaryColor, buf);
+	ReadSaveBuf(&m_nSecondaryColor, buf);
+	ReadSaveBuf(&m_nTertiaryColor, buf);
+	ReadSaveBuf(&m_nQuaternaryColor, buf);
+	ReadSaveBuf(&m_nRadiostation, buf);
+	ReadSaveBuf(&m_anCompsToUse[0], buf);
+	ReadSaveBuf(&m_anCompsToUse[1], buf);
+	ReadSaveBuf(&m_nBombType, buf);
+	ReadSaveBuf(&m_nPaintJob, buf);
+	ReadSaveBuf(&m_nNitroBoosts, buf);
+	ReadSaveBuf(&m_nPackedForwardX, buf);
+	ReadSaveBuf(&m_nPackedForwardY, buf);
+	ReadSaveBuf(&m_nPackedForwardZ, buf);
+	ReadSaveBuf(&_pad1, buf);
+}
+
 void CGarages::Save(uint8 * buf, uint32 * size)
 {
 //INITSAVEBUF
@@ -2275,7 +2406,7 @@ void CGarages::Save(uint8 * buf, uint32 * size)
 	WriteSaveBuf(buf, LastTimeHelpMessage);
 	for (int i = 0; i < NUM_GARAGE_STORED_CARS; i++) {
 		for (int j = 0; j < TOTAL_HIDEOUT_GARAGES; j++) {
-			WriteSaveBuf(buf, aCarsInSafeHouses[j][i]);
+			aCarsInSafeHouses[j][i].WriteSaveRecord(buf);
 		}
 	}
 	for (int i = 0; i < NUM_GARAGES; i++) {
@@ -2330,16 +2461,10 @@ void CGarages::Save(uint8 * buf, uint32 * size)
 
 const CStoredCar &CStoredCar::operator=(const CStoredCar & other)
 {
-	m_nModelIndex = other.m_nModelIndex;
-	m_vecPos = other.m_vecPos;
-	m_vecAngle = other.m_vecAngle;
-	m_nFlags = other.m_nFlags;
-	m_nPrimaryColor = other.m_nPrimaryColor;
-	m_nSecondaryColor = other.m_nSecondaryColor;
-	m_nRadioStation = other.m_nRadioStation;
-	m_nVariationA = other.m_nVariationA;
-	m_nVariationB = other.m_nVariationB;
-	m_nCarBombType = other.m_nCarBombType;
+	// Whole-structure copy: the record is plain data with no pointers in it, so
+	// there is nothing to deep-copy and listing the fields one by one is how
+	// a field gets forgotten when the structure grows.
+	memcpy(this, &other, sizeof(*this));
 	return *this;
 }
 
@@ -2363,7 +2488,7 @@ void CGarages::Load(uint8* buf, uint32 size)
 	ReadSaveBuf(&LastTimeHelpMessage, buf);
 	for (int i = 0; i < NUM_GARAGE_STORED_CARS; i++) {
 		for (int j = 0; j < TOTAL_HIDEOUT_GARAGES; j++) {
-			ReadSaveBuf(&aCarsInSafeHouses[j][i], buf);
+			aCarsInSafeHouses[j][i].ReadSaveRecord(buf);
 		}
 	}
 	for (int i = 0; i < NUM_GARAGES; i++) {
@@ -2493,4 +2618,99 @@ void CGarage::MarkThisCarAsCollectedFor60Seconds(int mi)
 bool CGarage::IsPlayerEntirelyInsideGarage()
 {
 	return IsEntityEntirelyInside3D(FindPlayerVehicle() ? (CEntity*)FindPlayerVehicle() : (CEntity*)FindPlayerPed(), 0.0f);
+}
+
+// SA CVehicleSaveStructure::Construct (0x5D2330).
+//
+// Copy a live vehicle into the structure that goes into a save. Only the parts
+// a save needs are taken: where the car is, what it looks like, what the driver
+// was doing with the controls and the two words of flags. Damage, occupants and
+// anything else is rebuilt from scratch on load.
+void
+CVehicleSaveStructure::Construct(CVehicle *v)
+{
+	if(v == nil)
+		return;
+
+	m_matrix = v->GetMatrix();
+	field_48 = 0;
+
+	m_nPrimaryColor = v->m_currentColour1;
+	m_nSecondaryColor = v->m_currentColour2;
+	// This fork paints two material slots; the two extra slots SA has stay at
+	// "no colour" so a car read back keeps its two-tone paint.
+	m_nTertiaryColor = 0;
+	m_nQuaternaryColor = 0;
+
+	m_nAlarmState = v->m_nAlarmState;
+	m_nMaxPassengers = v->m_nNumMaxPassengers;
+	m_fSteerAngle = v->m_fSteerAngle;
+	m_fGasPedal = v->m_fGasPedal;
+	m_fBrakePedal = v->m_fBrakePedal;
+
+	// SA's two flag words are its vehicleFlags/m_b... bitfields. This fork keeps
+	// the same information in named members, so the words are assembled here
+	// rather than copied - the layout of the bitfields is not the save format.
+	m_nVehicleUpperFlags = 0;
+	m_nVehicleLowerFlags = 0;
+	if(v->bIsLawEnforcer)		m_nVehicleUpperFlags |= BIT(0);
+	if(v->bIsLocked)		m_nVehicleUpperFlags |= BIT(1);
+	if(v->bEngineOn)		m_nVehicleUpperFlags |= BIT(2);
+	if(v->bIsHandbrakeOn)		m_nVehicleUpperFlags |= BIT(3);
+	if(v->bLightsOn)		m_nVehicleUpperFlags |= BIT(4);
+	if(v->bFreebies)		m_nVehicleUpperFlags |= BIT(5);
+	if(v->bIsVan)			m_nVehicleUpperFlags |= BIT(6);
+	if(v->bIsBus)			m_nVehicleUpperFlags |= BIT(7);
+
+	if(v->bBulletProof)		m_nVehicleLowerFlags |= BIT(0);
+	if(v->bFireProof)		m_nVehicleLowerFlags |= BIT(1);
+	if(v->bExplosionProof)		m_nVehicleLowerFlags |= BIT(2);
+	if(v->bCollisionProof)		m_nVehicleLowerFlags |= BIT(3);
+	if(v->bMeleeProof)		m_nVehicleLowerFlags |= BIT(4);
+	if(v->bIsDamaged)		m_nVehicleLowerFlags |= BIT(5);
+	if(v->bHasBeenOwnedByPlayer)	m_nVehicleLowerFlags |= BIT(6);
+	if(v->bCanBeDamaged)		m_nVehicleLowerFlags |= BIT(7);
+}
+
+// SA CVehicleSaveStructure::Extract (0x5D23B0).
+//
+// Push a stored structure back onto a vehicle. The matrix goes through
+// SetMatrix so the render object follows it; everything else is a plain copy
+// into the corresponding member.
+void
+CVehicleSaveStructure::Extract(CVehicle *v)
+{
+	if(v == nil)
+		return;
+
+	v->GetMatrix() = m_matrix;
+
+	v->m_currentColour1 = m_nPrimaryColor;
+	v->m_currentColour2 = m_nSecondaryColor;
+
+	v->m_nAlarmState = m_nAlarmState;
+	v->m_nNumMaxPassengers = m_nMaxPassengers;
+	v->m_fSteerAngle = m_fSteerAngle;
+	v->m_fGasPedal = m_fGasPedal;
+	v->m_fBrakePedal = m_fBrakePedal;
+
+	const uint32 upper = m_nVehicleUpperFlags;
+	v->bIsLawEnforcer	= !!(upper & BIT(0));
+	v->bIsLocked		= !!(upper & BIT(1));
+	v->bEngineOn		= !!(upper & BIT(2));
+	v->bIsHandbrakeOn	= !!(upper & BIT(3));
+	v->bLightsOn		= !!(upper & BIT(4));
+	v->bFreebies		= !!(upper & BIT(5));
+	v->bIsVan		= !!(upper & BIT(6));
+	v->bIsBus		= !!(upper & BIT(7));
+
+	const uint32 lower = m_nVehicleLowerFlags;
+	v->bBulletProof			= !!(lower & BIT(0));
+	v->bFireProof			= !!(lower & BIT(1));
+	v->bExplosionProof		= !!(lower & BIT(2));
+	v->bCollisionProof		= !!(lower & BIT(3));
+	v->bMeleeProof			= !!(lower & BIT(4));
+	v->bIsDamaged			= !!(lower & BIT(5));
+	v->bHasBeenOwnedByPlayer	= !!(lower & BIT(6));
+	v->bCanBeDamaged		= !!(lower & BIT(7));
 }

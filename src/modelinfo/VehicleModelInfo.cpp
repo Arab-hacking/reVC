@@ -20,6 +20,7 @@
 #include "Bike.h"
 #include "ModelIndices.h"
 #include "ModelInfo.h"
+#include "CustomCarPlateMgr.h"
 #include "custompipes.h"
 #include "VehicleMaterialClassify.h"
 #ifdef CUSTOM_MODELS
@@ -334,6 +335,11 @@ CVehicleModelInfo::CVehicleModelInfo(void)
 	}
 	m_numColours = 0;
 	m_animFileIndex = -1;
+	// A model starts with no plate of its own: it wears whatever the map region
+	// gives it, and it has no material remembered until its clump is walked.
+	m_nPlateType = 0;	// CARPLATE_SF; see CCustomCarPlateMgr
+	m_szPlateText[0] = '\0';
+	m_pPlateMaterial = nil;
 #ifdef SA_VEHICLE_MODELS
 	m_bHasEmbeddedColModel = false;
 #endif
@@ -668,6 +674,54 @@ CVehicleModelInfo::SetClump(RpClump *clump)
 	PreprocessHierarchy();
 	FindEditableMaterialList();
 	SetEnvironmentMap();
+	// SA calls this from SetClump: the clump is the only place the plate
+	// material exists, so the model can only find and remember it here. It
+	// bakes a random plate into the model's shared texture, which is what every
+	// vehicle on the street then references.
+	SetCarCustomPlate();
+}
+
+// SA CVehicleModelInfo::SetCustomCarPlateText (0x4C8980).
+//
+// SA truncates to eight characters; this fork would rather the over-long text
+// be caught here than show up as a plate with the tail cut off, so the copy
+// stops at the buffer and the text is otherwise taken as given.
+void
+CVehicleModelInfo::SetCustomCarPlateText(const char *text)
+{
+	if(text == nil){
+		m_szPlateText[0] = '\0';
+		return;
+	}
+
+	uint32 i = 0;
+	for(; text[i] != '\0' && i < MAX_PLATE_TEXT; i++)
+		m_szPlateText[i] = text[i];
+	m_szPlateText[i] = '\0';
+}
+
+// SA CVehicleModelInfo::SetCarCustomPlate (0x4C9450).
+//
+// Called after a clump is set up: find the plate material, remember it, and
+// bake a random plate into it. The plate type stays DEFAULT so that a car
+// respawned in another city gets that city's background.
+void
+CVehicleModelInfo::SetCarCustomPlate(void)
+{
+	m_pPlateMaterial = nil;
+	SetCustomCarPlateText(nil);
+
+	m_nPlateType = 0;	// CARPLATE_DEFAULT; see CCustomCarPlateMgr
+	char plateBuffer[MAX_PLATE_TEXT + 1];
+	memcpy(plateBuffer, "DEFAULT", 8);
+	plateBuffer[MAX_PLATE_TEXT] = '\0';
+
+	CCustomCarPlateMgr::GeneratePlateText(plateBuffer, MAX_PLATE_TEXT);
+	if(m_clump){
+		RpMaterial *material = CCustomCarPlateMgr::SetupClump(m_clump, plateBuffer, m_nPlateType);
+		if(material)
+			m_pPlateMaterial = material;
+	}
 }
 
 void

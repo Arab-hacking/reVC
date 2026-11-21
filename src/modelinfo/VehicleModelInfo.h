@@ -141,6 +141,9 @@ public:
 	bool IsComponentDamageable(int32 nodeIndex) const { return m_nMaskComponentsDamagable & (1 << nodeIndex); }
 };
 
+// SA's plate texts are at most eight characters (see CCustomCarPlateMgr).
+enum { MAX_PLATE_TEXT = 8 };
+
 class CVehicleModelInfo : public CClumpModelInfo
 {
 public:
@@ -188,6 +191,19 @@ public:
 	// The animation set this model's occupants play through. SA keeps one set
 	// per body type, so a limousine shares the truck set and a lowrider its own.
 	AssocGroupId m_animGroup;
+	// SA CVehicleModelInfo::m_nPlateType. Which of the three plate backgrounds
+	// this model wears, or CARPLATE_DEFAULT to decide from the map region when
+	// the plate is generated. Set by the model's own data; SA clears it to -1
+	// on the shared model once a custom plate has been baked in.
+	uint8 m_nPlateType;
+	// SA CVehicleModelInfo::m_szPlateText. A script-supplied plate text for the
+	// next vehicle built on this model: the car generator writes it before the
+	// car is constructed, and the constructor consumes it.
+	char m_szPlateText[MAX_PLATE_TEXT + 1];
+	// SA CVehicleModelInfo::m_pPlateMaterial. The material named "carplate" in
+	// this model's clump, remembered so a plate can be regenerated without
+	// walking the clump again.
+	RpMaterial *m_pPlateMaterial;
 #ifdef SA_VEHICLE_MODELS
 	// set when the collision of this model came from inside the DFF (SA style);
 	// such a model must not get its collision replaced by the VC .col entry of
@@ -221,6 +237,15 @@ public:
 	void DeleteRwObject(void);
 	RwObject *CreateInstance(void);
 	void SetClump(RpClump *);
+
+	// SA CVehicleModelInfo::GetCustomCarPlateText (0x4C8970): the pending plate
+	// text, or nil when this model has none.
+	char *GetCustomCarPlateText(void) { return m_szPlateText[0] ? m_szPlateText : nil; }
+	// SA CVehicleModelInfo::SetCustomCarPlateText (0x4C8980).
+	void SetCustomCarPlateText(const char *text);
+	// SA CVehicleModelInfo::SetCarCustomPlate (0x4C9450): find the model's plate
+	// material and give it a freshly generated text.
+	void SetCarCustomPlate(void);
 	void SetAnimFile(const char *file);
 	void ConvertAnimFileIndex(void);
 	// The car animation sets differ by body type: a limousine uses the truck

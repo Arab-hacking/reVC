@@ -2549,6 +2549,17 @@ void CCarCtrl::SteerAICarWithPhysics_OnlyMission(CVehicle* pVehicle, float* pSwe
 	case MISSION_BLOCKPLAYER_FORWARDANDBACK:
 		SteerAICarBlockingPlayerForwardAndBack(pVehicle, pSwerve, pAccel, pBrake, pHandbrake);
 		return;
+	case MISSION_FOLLOW_RECORDED_PATH:
+		// A recorded car in AI mode is steered like any other car heading for a
+		// point; the point happens to come from the recording (it is written
+		// into the autopilot's destination by the recording code) rather than
+		// from a script. Reusing the plain steering here is what SA does: the
+		// difference between the modes is where the destination comes from, not
+		// how the car is driven to it.
+		SteerAICarWithPhysicsHeadingForTarget(pVehicle, nil,
+			pVehicle->AutoPilot.m_vecDestinationCoors.x, pVehicle->AutoPilot.m_vecDestinationCoors.y,
+			pSwerve, pAccel, pBrake, pHandbrake);
+		return;
 	default:
 		assert(0);
 		return;

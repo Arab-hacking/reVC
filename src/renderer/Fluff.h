@@ -44,19 +44,47 @@ public:
 	static void Load_ForReplay();
 };
 
+// SA CPlaneTrail (PlaneTrail.h, 0x100 bytes), ported from gta-reversed.
+//
+// A contrail: sixteen points, one taken every two seconds, each fading out over
+// thirty. Rendering joins them with a line-list, which is all a contrail needs -
+// it never faces the camera and never has width.
 class CPlaneTrail
 {
-	CVector m_pos[16];
-	int32 m_time[16];
+public:
+	enum { PLANE_TRAIL_BUF_SIZE = 16 };
+	// A point older than this is dropped: SA deletes a contrail point from the
+	// sky thirty seconds after it was laid down.
+	enum { POINT_EXPIRATION_TIME = 30000 };
+
+private:
+	// Newest point first. The buffer shifts right when a point is added, so
+	// index 0 is always the most recent one.
+	CVector m_Positions[PLANE_TRAIL_BUF_SIZE];
+	// Zero means "not in use": either never set or expired.
+	uint32 m_Timepoints[PLANE_TRAIL_BUF_SIZE];
+
 public:
 	void Init(void);
-	void Render(float visibility);
-	void RegisterPoint(CVector pos);
+	void Render(float intensity);
+	void RegisterPoint(CVector point);
+
+	// SA CPlaneTrail::Update, inlined into CPlaneTrails::Update. Lays a point
+	// down and keeps a navigation light lit on it - a plane flying at night is
+	// otherwise only visible as a pair of contrails.
+	void Update(CVector pos, const CRGBA &color, uint32 coronaIdx, uint32 timeModifierMs,
+	            uint8 afterHour, uint8 beforeHour);
+
+	bool IsPointInUse(uint32 pt) const { return m_Timepoints[pt] != 0; }
 };
 
 class CPlaneTrails
 {
-	static CPlaneTrail aArray[6];	// NB: 3 CPlanes and 3 hardcoded far away ones
+public:
+	// SA has three contrails: the three planes that circle the map on fixed
+	// paths. This fork's plane code indexes this array by the plane's own id,
+	// which runs up to five, so the array keeps VC's six slots.
+	static CPlaneTrail aArray[6];
 public:
 	static void Init(void);
 	static void Update(void);

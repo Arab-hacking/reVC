@@ -6,6 +6,7 @@
 #include "Pad.h"
 #include "Vehicle.h"
 #include "VehicleAnimGroupData.h"
+#include "CustomCarPlateMgr.h"
 #include "ControllerConfig.h"
 #include "Bike.h"
 #include "Automobile.h"
@@ -159,6 +160,9 @@ CVehicle::CVehicle(uint8 CreatedBy)
 	m_pLastDamageEntity = nil;
 	m_pTowingVehicle = nil;
 	m_pVehicleBeingTowed = nil;
+	// SetModelIndex creates the plate once the model is known; until then the
+	// vehicle owns nothing.
+	m_pCustomCarPlate = nil;
 	m_fMapObjectHeightAhead = m_fMapObjectHeightBehind = 0.0f;
 	m_audioEntityId = DMAudio.CreateEntity(AUDIOTYPE_PHYSICAL, this);
 	if(m_audioEntityId >= 0)
@@ -199,6 +203,11 @@ CVehicle::CVehicle(uint8 CreatedBy)
 
 CVehicle::~CVehicle()
 {
+	// The plate texture belongs to this vehicle, not to the model, so it goes
+	// with the vehicle - otherwise a car with a scripted plate that is deleted
+	// leaks its texture for the rest of the session.
+	CustomCarPlate_TextureDestroy();
+
 	m_nAlarmState = 0;
 	if (m_audioEntityId >= 0){
 		DMAudio.DestroyEntity(m_audioEntityId);
@@ -231,6 +240,53 @@ CVehicle::SetModelIndex(uint32 id)
 	m_aExtras[0] = CVehicleModelInfo::ms_compsUsed[0];
 	m_aExtras[1] = CVehicleModelInfo::ms_compsUsed[1];
 	m_nNumMaxPassengers = CVehicleModelInfo::GetMaximumNumberOfPassengersFromNumberOfDoors(id);
+
+	// The plate is per vehicle, the texture it is generated into belongs to the
+	// model, so a vehicle that is given a new model has to drop its own plate
+	// first or it will keep showing the previous model's text.
+	CustomCarPlate_TextureDestroy();
+	CustomCarPlate_TextureCreate(GetModelInfo());
+}
+
+// SA CVehicle::CustomCarPlate_TextureCreate (0x6D10E0).
+//
+// Two cases. If the model is carrying a scripted plate text, this vehicle gets
+// a texture of its own - the text is baked in and the model's pending text and
+// plate type are consumed, so the next car built on the model gets a normal
+// plate. Otherwise the vehicle just references the model's shared plate
+// texture, which is what keeps a street full of cars down to one texture.
+bool
+CVehicle::CustomCarPlate_TextureCreate(CVehicleModelInfo *model)
+{
+	m_pCustomCarPlate = nil;
+
+	if(model == nil || model->m_pPlateMaterial == nil)
+		return false;
+
+	char *text = model->GetCustomCarPlateText();
+	if(text){
+		m_pCustomCarPlate = CCustomCarPlateMgr::CreatePlateTexture(text, model->m_nPlateType);
+		// The text is one-shot: SA clears it and marks the plate type as
+		// already used, so a second car does not inherit the script's plate.
+		model->SetCustomCarPlateText(nil);
+		model->m_nPlateType = (uint8)-1;
+	}else{
+		m_pCustomCarPlate = RpMaterialGetTexture(model->m_pPlateMaterial);
+		if(m_pCustomCarPlate)
+			RwTextureAddRef(m_pCustomCarPlate);
+	}
+
+	return true;
+}
+
+// SA CVehicle::CustomCarPlate_TextureDestroy (0x6D1150).
+void
+CVehicle::CustomCarPlate_TextureDestroy(void)
+{
+	if(m_pCustomCarPlate){
+		RwTextureDestroy(m_pCustomCarPlate);
+		m_pCustomCarPlate = nil;
+	}
 }
 
 bool

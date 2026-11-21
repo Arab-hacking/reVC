@@ -33,7 +33,11 @@ enum eCarMission
 	MISSION_HELI_LAND,
 	MISSION_SLOWLY_DRIVE_TOWARDS_PLAYER_1,
 	MISSION_SLOWLY_DRIVE_TOWARDS_PLAYER_2,
-	MISSION_BLOCKPLAYER_FORWARDANDBACK
+	MISSION_BLOCKPLAYER_FORWARDANDBACK,
+	// SA MISSION_FOLLOW_RECORDED_PATH. A recorded car driven by the AI: instead
+	// of being moved frame by frame it is told to drive to a point on its own
+	// recording, which lets it react to traffic and geometry.
+	MISSION_FOLLOW_RECORDED_PATH
 };
 
 enum eCarTempAction
@@ -95,6 +99,10 @@ public:
 	CPathNode *m_aPathFindNodesInfo[NUM_PATH_NODES_IN_AUTOPILOT];
 	int16 m_nPathFindNodesCount;
 	CVehicle *m_pTargetCar;
+	// SA CAutoPilot::m_vehicleRecordingId. Which playback slot this car is
+	// driving, or -1. The autopilot needs it because the recorded path is what
+	// MISSION_FOLLOW_RECORDED_PATH steers along, not a path node.
+	int32 m_vehicleRecordingId;
 
 	CAutoPilot(void) {
 		m_nPrevRouteNode = 0;
@@ -117,6 +125,7 @@ public:
 		m_bSlowedDownBecauseOfCars = false;
 		m_nPathFindNodesCount = 0;
 		m_pTargetCar = 0;
+		m_vehicleRecordingId = -1;
 		m_nTimeToStartMission = CTimer::GetTimeInMilliseconds();
 		m_nAntiReverseTimer = m_nTimeToStartMission;
 		m_bStayInFastLane = false;

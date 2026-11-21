@@ -61,6 +61,8 @@
 #include "References.h"
 #include "Renderer.h"
 #include "Replay.h"
+#include "VehicleRecording.h"
+#include "CustomCarPlateMgr.h"
 #include "Restart.h"
 #include "RoadBlocks.h"
 #include "SceneEdit.h"
@@ -308,6 +310,10 @@ void CGame::ShutdownRenderWare(void)
 #ifdef EXTENDED_PIPELINES
 	CustomPipes::CustomPipeShutdown();
 #endif
+
+	// The plate textures belong to the vehicle TXD; drop them while the TXD
+	// store is still alive, or their rasters are freed twice.
+	CCustomCarPlateMgr::Shutdown();
 
 	DestroySplashScreen();
 	CHud::Shutdown();
@@ -557,6 +563,13 @@ bool CGame::Initialise(void)
 	REVC_LOG_INFO("STARTUP LoadAllRequestedModels END");
 	CStreaming::RemoveIslandsNotUsed(currLevel);
 	printf("Streaming uses %zuK of its memory", CStreaming::ms_memoryUsed / 1024); // original modifier was %d
+
+	// The number plate charset and the three city backgrounds live in the
+	// vehicle TXD, which has just been streamed in. Every vehicle built after
+	// this point gets its plate from here; a failure is not fatal - the models
+	// simply keep whatever texture the plate material already had.
+	if(!CCustomCarPlateMgr::Initialise())
+		REVC_LOG_ERROR("vehicle plates: charset could not be read, plates will not be generated");
 
 	LoadingScreen("Loading the Game", "Load animations", GetRandomSplashScreen());
 	PUSH_MEMID(MEMID_ANIMATION);
@@ -992,8 +1005,17 @@ void CGame::Process(void)
 
 		CCollision::Update();
 		CScriptPaths::Update();
+		// SA calls this once per frame, before the world is processed: every
+		// recorded car is moved onto its next frame here, so that the rest of
+		// the frame sees it in the position it is meant to occupy.
+		CVehicleRecording::SaveOrRetrieveDataForThisFrame();
 		CTrain::UpdateTrains();
 		CPlane::UpdatePlanes();
+		// The three contrails and the banner streamers move on their own paths,
+		// independent of the flyable planes: they are scenery that circles the
+		// map. They still have to be stepped before the world is drawn.
+		CPlaneTrails::Update();
+		CPlaneBanners::Update();
 		CHeli::UpdateHelis();
 		CDarkel::Update();
 		CSkidmarks::Update();

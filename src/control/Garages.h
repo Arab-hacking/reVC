@@ -4,6 +4,7 @@
 #include "Camera.h"
 #include "config.h"
 #include "Lists.h"
+#include "Matrix.h"
 
 class CVehicle;
 
@@ -62,35 +63,106 @@ enum
 	TOTAL_COLLECTCARS_CARS = 6
 };
 
+// SA CStoredCar (Garage.h, 0x40 bytes), ported from gta-reversed.
+//
+// One car as a garage remembers it while the player is away. SA keeps the
+// model, where it was, and everything that makes the car what it is: the
+// colours (four of them, since SA paints four material slots), the upgrades
+// fitted to it, the paintjob, the nitrous level, the extras it was built with
+// and the bomb. The heading is stored as three packed bytes rather than as a
+// vector, because a car only ever yaws and one byte per axis is all SA kept.
+//
+// StoreCar/RestoreCar are the only things that touch a vehicle; everything else
+// is plain data, which is what lets the whole array be written into a save
+// file as-is.
 class CStoredCar
 {
+public:
 	enum {
 		FLAG_BULLETPROOF = 0x1,
 		FLAG_FIREPROOF = 0x2,
 		FLAG_EXPLOSIONPROOF = 0x4,
 		FLAG_COLLISIONPROOF = 0x8,
 		FLAG_MELEEPROOF = 0x10,
+		// SA keeps the proofing flags in their own word and puts the extras in
+		// this one: whether the car keeps its bombs, and which doors it has.
+		FLAG_HAS_BOMB = 0x20,
+		FLAG_NO_DOORS = 0x40,
 	};
-	int32 m_nModelIndex;
-	CVector m_vecPos;
-	CVector m_vecAngle;
-	int32 m_nFlags;
-	int8 m_nPrimaryColor;
-	int8 m_nSecondaryColor;
-	int8 m_nRadioStation;
-	int8 m_nVariationA;
-	int8 m_nVariationB;
-	int8 m_nCarBombType;
-public:
-	void Init() { m_nModelIndex = 0; }
-	void Clear() { m_nModelIndex = 0; }
-	bool HasCar() { return m_nModelIndex != 0; }
+
+	// Number of upgrade slots SA stores per car. A car never has more than this
+	// many parts fitted, and the array is written to the save file verbatim.
+	enum { NUM_CAR_MODS = 15 };
+
+	CVector m_vPosn;
+	uint32 m_nHandlingFlags;
+	uint8 m_nStoredCarFlags;
+	uint8 _pad0;
+	uint16 m_wModelIndex;
+	int16 m_awCarMods[NUM_CAR_MODS];
+	uint8 m_nPrimaryColor;
+	uint8 m_nSecondaryColor;
+	uint8 m_nTertiaryColor;
+	uint8 m_nQuaternaryColor;
+	uint8 m_nRadiostation;
+	uint8 m_anCompsToUse[2];
+	uint8 m_nBombType;
+	uint8 m_nPaintJob;
+	uint8 m_nNitroBoosts;
+	uint8 m_nPackedForwardX;
+	uint8 m_nPackedForwardY;
+	uint8 m_nPackedForwardZ;
+	uint8 _pad1;
+
+	void Init(void) { m_wModelIndex = 0; }
+	void Clear(void) { m_wModelIndex = 0; }
+	bool HasCar(void) const { return m_wModelIndex != 0; }
 	const CStoredCar &operator=(const CStoredCar& other);
 	void StoreCar(CVehicle*);
 	CVehicle* RestoreCar();
+
+	// The save file stores a car as a fixed 40-byte record, field by field. It
+	// is not a memcpy of this structure: the record was written by the original
+	// game, so its layout is a file format and cannot follow the structure when
+	// the structure changes.
+	enum { SAVE_RECORD_SIZE = 0x40 };
+	void WriteSaveRecord(uint8 *&buf) const;
+	void ReadSaveRecord(uint8 *&buf);
 };
 
-VALIDATE_SIZE(CStoredCar, 0x28);
+VALIDATE_SIZE(CStoredCar, 0x40);
+
+// SA CVehicleSaveStructure (0x68 bytes), ported from gta-reversed
+// (source/game_sa/VehicleSaveStructure.{h,cpp}).
+//
+// The part of a vehicle SA writes into a save: where it is and how it is
+// pointing, its four colours, the alarm, how many seats it has, what the driver
+// was doing with the pedals, and the two words of vehicle flags. Construct
+// copies a live vehicle into the structure, Extract pushes it back; that pair
+// is the whole class, and the save code does the serialising.
+class CVehicleSaveStructure
+{
+public:
+	CMatrix m_matrix;
+	uint8 field_48;
+	uint8 m_nPrimaryColor;
+	uint8 m_nSecondaryColor;
+	uint8 m_nTertiaryColor;
+	uint8 m_nQuaternaryColor;
+	uint16 m_nAlarmState;
+	uint8 m_nMaxPassengers;
+	float m_fSteerAngle;
+	float m_fGasPedal;
+	float m_fBrakePedal;
+	uint32 m_nVehicleUpperFlags;
+	uint32 m_nVehicleLowerFlags;
+
+	// SA CVehicleSaveStructure::Construct (0x5D2330).
+	void Construct(CVehicle *v);
+	// SA CVehicleSaveStructure::Extract (0x5D23B0).
+	void Extract(CVehicle *v);
+};
+VALIDATE_SIZE(CVehicleSaveStructure, 0x68);
 
 #define SWITCH_GARAGE_DISTANCE_CLOSE 40.0f
 

@@ -28,6 +28,7 @@
 #include "Gangs.h"
 #include "CdStream.h"
 #include "Streaming.h"
+#include "VehicleRecording.h"
 #ifdef CUSTOM_MODELS
 #include "CustomModels.h"
 #include "CustomWorld.h"
@@ -200,6 +201,10 @@ CStreaming::Init2(void)
 	ms_memoryUsed = 0;
 	ms_bLoadingBigModel = false;
 
+	// Recorded car paths are streamed through this system, so their tables are
+	// cleared with it - a stale playback buffer would point into a freed page.
+	CVehicleRecording::Init();
+
 	// init channels
 
 	ms_channel[0].state = CHANNELSTATE_IDLE;
@@ -338,6 +343,10 @@ CStreaming::ReInit(void)
 void
 CStreaming::Shutdown(void)
 {
+	// Recordings are owned by their own system, but streamed through this one,
+	// so they are released here while the streaming buffers are still alive.
+	CVehicleRecording::ShutDown();
+
 	RwFreeAlign(ms_pStreamingBuffer[0]);
 	ms_streamingBufferSize = 0;
 	if(ms_pExtraObjectsDir) {
