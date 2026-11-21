@@ -24,6 +24,11 @@ public:
 	int32 m_boat_unused1;
 	RwFrame *m_aBoatNodes[NUM_BOAT_NODES];
 	CDoor m_boom;
+	// SA CBoat::m_OldMoveSpeed / m_OldTurnSpeed: the chassis motion from before
+	// this frame's step. CDoor::Process needs the difference to work out the
+	// acceleration at the hinge, which is what actually swings the flap.
+	CVector m_OldMoveSpeed;
+	CVector m_OldTurnSpeed;
 	tBoatHandlingData *m_pBoatHandlingData;
 	uint8 bBoatInWater : 1;
 	uint8 bPropellerInWater : 1;

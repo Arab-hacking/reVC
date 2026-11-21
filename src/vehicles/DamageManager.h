@@ -13,12 +13,24 @@ enum eEngineStatus
 	ENGINE_STATUS_ON_FIRE = 225
 };
 
-enum eDoorStatus
+// SA eDoorStatus (DamageManager.h, 0x6C2320 family). The VC enum only had four
+// values and conflated "closed but bashed" with "held shut" and "open" with
+// "swinging free"; the SA damage flow needs all four combinations of
+// open/closed x ok/damaged, so the numbering below is SA's and the VC spellings
+// are aliases onto it. DOOR_STATUS_SWINGING in VC meant "open and swinging
+// loose", which is SA's DAMSTATE_OPENED_DAMAGED, not DAMSTATE_OPENED.
+enum eDoorStatus : uint8
 {
-	DOOR_STATUS_OK,
-	DOOR_STATUS_SMASHED,
-	DOOR_STATUS_SWINGING,
-	DOOR_STATUS_MISSING
+	DAMSTATE_OK             = 0, // closed, DT_DOOR_INTACT
+	DAMSTATE_OPENED         = 1, // open,   DT_DOOR_SWINGING_FREE
+	DAMSTATE_DAMAGED        = 2, // closed, DT_DOOR_BASHED
+	DAMSTATE_OPENED_DAMAGED = 3, // open,   DT_DOOR_BASHED_AND_SWINGING_FREE
+	DAMSTATE_NOTPRESENT     = 4, // missing, DT_DOOR_MISSING
+
+	DOOR_STATUS_OK       = DAMSTATE_OK,
+	DOOR_STATUS_SMASHED  = DAMSTATE_DAMAGED,
+	DOOR_STATUS_SWINGING = DAMSTATE_OPENED_DAMAGED,
+	DOOR_STATUS_MISSING  = DAMSTATE_NOTPRESENT,
 };
 
 enum ePanelStatus
@@ -96,9 +108,18 @@ public:
 	bool ApplyDamage(tComponent component, float damage, float unused);
 	bool GetComponentGroup(tComponent component, tComponentGroup *componentGroup, uint8 *foo);
 
-	void SetDoorStatus(int32 door, uint32 status);
-	int32 GetDoorStatus(int32 door);
-	bool ProgressDoorDamage(uint8 door);
+	void SetDoorStatus(eDoors door, eDoorStatus status);
+	eDoorStatus GetDoorStatus(eDoors door) const;
+	bool ProgressDoorDamage(eDoors door);
+	// SA CDamageManager (Damagemanager.cpp 0x6C26xx): the flag helpers the door
+	// spring model and CAutomobile::ProcessSwingingDoor drive the flow with.
+	bool IsDoorOpen(eDoors door) const;
+	bool IsDoorClosed(eDoors door) const;
+	bool IsDoorPresent(eDoors door) const;
+	bool IsDoorDamaged(eDoors door) const;
+	void SetDoorOpen(eDoors door);
+	void SetDoorClosed(eDoors door);
+	static eCarNodes GetCarNodeIndexFromDoor(eDoors door);
 	void SetPanelStatus(int32 panel, uint32 status);
 	int32 GetPanelStatus(int32 panel);
 	bool ProgressPanelDamage(uint8 panel);

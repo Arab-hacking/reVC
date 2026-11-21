@@ -784,7 +784,7 @@ void CReplay::StoreCarUpdate(CVehicle *vehicle, int id)
 		vp->door_angles[1] = 127.0f / PI * car->Doors[3].m_fAngle;
 		vp->door_status = 0;
 		for (int i = 0; i < 6; i++){
-			if (car->Damage.GetDoorStatus(i) == DOOR_STATUS_MISSING)
+			if (car->Damage.GetDoorStatus((eDoors)i) == DOOR_STATUS_MISSING)
 				vp->door_status |= BIT(i);
 		}
 	}

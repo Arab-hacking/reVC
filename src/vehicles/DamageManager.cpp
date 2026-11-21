@@ -72,12 +72,12 @@ CDamageManager::ApplyDamage(tComponent component, float damage, float unused)
 			break;
 		case COMPGROUP_DOOR:
 		case COMPGROUP_BOOT:
-			ProgressDoorDamage(subComp);
+			ProgressDoorDamage((eDoors)subComp);
 			break;
 		case COMPGROUP_BONNET:
 			if(damage > 220.0f)
 				ProgressEngineDamage();
-			ProgressDoorDamage(subComp);
+			ProgressDoorDamage((eDoors)subComp);
 			break;
 		case COMPGROUP_PANEL:
 			// so windscreen is a light?
@@ -133,24 +133,149 @@ CDamageManager::GetComponentGroup(tComponent component, tComponentGroup *compone
 }
 
 void
-CDamageManager::SetDoorStatus(int32 door, uint32 status)
+CDamageManager::SetDoorStatus(eDoors door, eDoorStatus status)
 {
+	if((uint32)door >= (uint32)MAX_DOORS)
+		return;
 	m_doorStatus[door] = status;
 }
 
-int32
-CDamageManager::GetDoorStatus(int32 door)
+// SA CDamageManager::GetDoorStatus (0x6C26B0), verbatim: anything outside the
+// six door indices reads as missing rather than indexing past the array.
+eDoorStatus
+CDamageManager::GetDoorStatus(eDoors door) const
 {
-	return m_doorStatus[door];
+	switch(door){
+	case DOOR_BONNET:
+	case DOOR_BOOT:
+	case DOOR_FRONT_LEFT:
+	case DOOR_FRONT_RIGHT:
+	case DOOR_REAR_LEFT:
+	case DOOR_REAR_RIGHT:
+		return (eDoorStatus)m_doorStatus[(uint32)door];
+	default:
+		return DAMSTATE_NOTPRESENT;
+	}
+}
+
+// SA CDamageManager::GetCarNodeIndexFromDoor (0x6C26F0), verbatim.
+eCarNodes
+CDamageManager::GetCarNodeIndexFromDoor(eDoors door)
+{
+	switch(door){
+	case DOOR_BONNET:      return CAR_BONNET;
+	case DOOR_BOOT:        return CAR_BOOT;
+	case DOOR_FRONT_LEFT:  return CAR_DOOR_LF;
+	case DOOR_FRONT_RIGHT: return CAR_DOOR_RF;
+	case DOOR_REAR_LEFT:   return CAR_DOOR_LR;
+	case DOOR_REAR_RIGHT:  return CAR_DOOR_RR;
+	default:               return CAR_BONNET;
+	}
+}
+
+// SA CDamageManager::IsDoorOpen (0x6C27xx), verbatim.
+bool
+CDamageManager::IsDoorOpen(eDoors door) const
+{
+	switch(GetDoorStatus(door)){
+	case DAMSTATE_OPENED:
+	case DAMSTATE_OPENED_DAMAGED:
+		return true;
+	case DAMSTATE_NOTPRESENT:
+		// SA asserts here too; the assert is a debug-only note that
+		// !IsDoorOpen() == IsDoorClosed() does not hold for a missing door.
+		return false;
+	}
+	return false;
+}
+
+// SA CDamageManager::IsDoorClosed, verbatim.
+bool
+CDamageManager::IsDoorClosed(eDoors door) const
+{
+	switch(GetDoorStatus(door)){
+	case DAMSTATE_OK:
+	case DAMSTATE_DAMAGED:
+		return true;
+	case DAMSTATE_NOTPRESENT:
+		return false;
+	}
+	return false;
 }
 
 bool
-CDamageManager::ProgressDoorDamage(uint8 door)
+CDamageManager::IsDoorPresent(eDoors door) const
 {
-	int status = GetDoorStatus(door);
-	if(status == PANEL_STATUS_MISSING)
+	return GetDoorStatus(door) != DAMSTATE_NOTPRESENT;
+}
+
+bool
+CDamageManager::IsDoorDamaged(eDoors door) const
+{
+	switch(GetDoorStatus(door)){
+	case DAMSTATE_OK:
+	case DAMSTATE_OPENED:
 		return false;
-	SetDoorStatus(door, status+1);
+	default:
+		return true;
+	}
+}
+
+void
+CDamageManager::SetDoorOpen(eDoors door)
+{
+	switch(GetDoorStatus(door)){
+	case DAMSTATE_OK:
+		SetDoorStatus(door, DAMSTATE_OPENED);
+		break;
+	case DAMSTATE_DAMAGED:
+		SetDoorStatus(door, DAMSTATE_OPENED_DAMAGED);
+		break;
+	case DAMSTATE_NOTPRESENT:
+		break; /* do nothing */
+	}
+}
+
+void
+CDamageManager::SetDoorClosed(eDoors door)
+{
+	switch(GetDoorStatus(door)){
+	case DAMSTATE_OPENED:
+		SetDoorStatus(door, DAMSTATE_OK);
+		break;
+	case DAMSTATE_OPENED_DAMAGED:
+		SetDoorStatus(door, DAMSTATE_DAMAGED);
+		break;
+	case DAMSTATE_NOTPRESENT:
+		break; /* do nothing */
+	}
+}
+
+// SA CDamageManager::ProgressDoorDamage (0x6C2320), verbatim. The VC version
+// just walked DOOR_STATUS_OK..MISSING in order, which with SA's numbering would
+// turn a bashed-but-shut door straight into an open one.
+bool
+CDamageManager::ProgressDoorDamage(eDoors door)
+{
+	if((uint32)door >= (uint32)MAX_DOORS)
+		return false;
+
+	switch(GetDoorStatus(door)){
+	case DAMSTATE_OK:
+	case DAMSTATE_OPENED:
+		SetDoorStatus(door, DAMSTATE_DAMAGED);
+		break;
+	case DAMSTATE_DAMAGED:
+		SetDoorStatus(door, DAMSTATE_OPENED_DAMAGED);
+		break;
+	case DAMSTATE_OPENED_DAMAGED:
+		if(CGeneral::GetRandomNumberInRange(0, 8))
+			return false;
+		SetDoorStatus(door, DAMSTATE_NOTPRESENT);
+		break;
+	case DAMSTATE_NOTPRESENT:
+		return false;
+	}
 	return true;
 }
 

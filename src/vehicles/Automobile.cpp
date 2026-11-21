@@ -144,31 +144,42 @@ m_nVehicleSubType = VEHICLE_TYPE_AUTOMOBILE;
 			mi->m_animGroup = ASSOCGRP_STDCARANIMS;
 	}
 
-	// Doors
+	// SA CAutomobile::SetupModelNodes (0x6B0C70..0x6B0E4B), verbatim. Every door
+	// gets its hinge axis and (for the bonnet) the low-gravity flag, which the
+	// spring model in CDoor::Process reads back out of m_dirn.
+	// Deal with front doors
 	if(bIsBus){
-		Doors[DOOR_FRONT_LEFT].Init(-HALFPI, 0.0f, 0, 2);
-		Doors[DOOR_FRONT_RIGHT].Init(0.0f, HALFPI, 1, 2);
+		Doors[DOOR_FRONT_LEFT].Init(-HALFPI, 0.0f, DOOR_AXIS_NEG_Y, DOOR_AXIS_Z, DOOR_EXTRA_BASED);
+		Doors[DOOR_FRONT_RIGHT].Init(HALFPI, 0.0f, DOOR_AXIS_NEG_Y, DOOR_AXIS_Z, DOOR_EXTRA_BASED);
 	}else{
-		Doors[DOOR_FRONT_LEFT].Init(-PI*0.4f, 0.0f, 0, 2);
-		Doors[DOOR_FRONT_RIGHT].Init(0.0f, PI*0.4f, 1, 2);
+		Doors[DOOR_FRONT_LEFT].Init(-0.4f*PI, 0.0f, DOOR_AXIS_NEG_Y, DOOR_AXIS_Z, DOOR_EXTRA_BASED);
+		Doors[DOOR_FRONT_RIGHT].Init(0.4f*PI, 0.0f, DOOR_AXIS_NEG_Y, DOOR_AXIS_Z, DOOR_EXTRA_BASED);
 	}
-	if(bIsVan){
-		Doors[DOOR_REAR_LEFT].Init(-HALFPI, 0.0f, 1, 2);
-		Doors[DOOR_REAR_RIGHT].Init(0.0f, HALFPI, 0, 2);
+	// Deal with rear doors
+	if(GetModelIndex() == MI_RHINO){ // For Rhino just hide it
+		Doors[DOOR_REAR_LEFT].SetExtraWheelPositions(1.f, 1.f, 1.f, 1.f);
+		Doors[DOOR_REAR_RIGHT].SetExtraWheelPositions(1.f, 1.f, 1.f, 1.f);
+		if(m_aCarNodes[CAR_WHEEL_LM]) RpAtomicSetFlags((RpAtomic*)GetFirstObject(m_aCarNodes[CAR_WHEEL_LM]), 0);
+		if(m_aCarNodes[CAR_WHEEL_RM]) RpAtomicSetFlags((RpAtomic*)GetFirstObject(m_aCarNodes[CAR_WHEEL_RM]), 0);
+	}else if(bIsVan){
+		Doors[DOOR_REAR_LEFT].Init(-HALFPI, 0.0f, DOOR_AXIS_X, DOOR_AXIS_Z, DOOR_EXTRA_BASED);
+		Doors[DOOR_REAR_RIGHT].Init(HALFPI, 0.0f, DOOR_AXIS_NEG_X, DOOR_AXIS_Z, DOOR_EXTRA_BASED);
 	}else{
-		Doors[DOOR_REAR_LEFT].Init(-PI*0.4f, 0.0f, 0, 2);
-		Doors[DOOR_REAR_RIGHT].Init(0.0f, PI*0.4f, 1, 2);
+		Doors[DOOR_REAR_LEFT].Init(-0.4f*PI, 0.0f, DOOR_AXIS_NEG_Y, DOOR_AXIS_Z, DOOR_EXTRA_BASED);
+		Doors[DOOR_REAR_RIGHT].Init(0.4f*PI, 0.0f, DOOR_AXIS_NEG_Y, DOOR_AXIS_Z, DOOR_EXTRA_BASED);
 	}
+	// Bonnet
 	if(m_pHandlingData->m_nModelFlags & VEHICLE_HANDLING_MODEL_REVERSE_BONNET)
-		Doors[DOOR_BONNET].Init(-PI*0.3f, 0.0f, 1, 0);
+		Doors[DOOR_BONNET].Init(-0.3f*PI, 0.0f, DOOR_AXIS_NEG_Y, DOOR_AXIS_X, DOOR_EXTRA_LOW_GRAVITY);
 	else
-		Doors[DOOR_BONNET].Init(0.0f, PI*0.3f, 1, 0);
+		Doors[DOOR_BONNET].Init(0.3f*PI, 0.0f, DOOR_AXIS_Y, DOOR_AXIS_X, DOOR_EXTRA_LOW_GRAVITY);
+	// Boot(y)
 	if(m_pHandlingData->m_nModelFlags & VEHICLE_HANDLING_MODEL_HANGING_BOOT)
-		Doors[DOOR_BOOT].Init(-PI*0.4f, 0.0f, 0, 0);
+		Doors[DOOR_BOOT].Init(-0.4f*PI, 0.0f, DOOR_AXIS_NEG_Z, DOOR_AXIS_X, DOOR_EXTRA_BASED);
 	else if(m_pHandlingData->m_nModelFlags & VEHICLE_HANDLING_MODEL_TAILGATE_BOOT)
-		Doors[DOOR_BOOT].Init(0.0, HALFPI, 1, 0);
+		Doors[DOOR_BOOT].Init(0.5f*PI, 0.0f, DOOR_AXIS_Z, DOOR_AXIS_X, DOOR_EXTRA_BASED);
 	else
-		Doors[DOOR_BOOT].Init(-PI*0.3f, 0.0f, 1, 0);
+		Doors[DOOR_BOOT].Init(-0.3f*PI, 0.0f, DOOR_AXIS_NEG_Y, DOOR_AXIS_X, DOOR_EXTRA_BASED);
 	if(m_pHandlingData->m_nModelFlags & VEHICLE_HANDLING_MODEL_NO_DOORS){
 		Damage.SetDoorStatus(DOOR_FRONT_LEFT, DOOR_STATUS_MISSING);
 		Damage.SetDoorStatus(DOOR_FRONT_RIGHT, DOOR_STATUS_MISSING);
@@ -4557,7 +4568,7 @@ CAutomobile::OpenDoor(int32 component, eDoors door, float openRatio)
 	// thing while the frame's matrix is local; once it carries a world
 	// transform the door jumps before it swings, which is the half turn seen
 	// when a car door opens before settling into the right place.
-	axes[Doors[door].m_nAxis] = Doors[door].m_fAngle;
+	axes[Doors[door].m_axis] = Doors[door].m_fAngle;
 	mat.SetRotateKeepPos(axes[0], axes[1], axes[2]);
 	mat.UpdateRW();
 }
@@ -5560,56 +5571,107 @@ CAutomobile::ProcessAutoBusDoors(void)
 	}
 }
 
+// SA CAutomobile::ProcessSwingingDoor (0x6A9D70), verbatim.
+//
+// Name mapping to reVC:
+//   m_damageManager.IsDoorPresent/IsDoorClosed/IsDoorOpen/SetDoorOpen/
+//   SetDoorClosed  -> CDamageManager methods of the same name (added with this
+//                     port; the SA door-state values are the canonical ones now)
+//   m_fDamageIntensity -> m_fDamageImpulse (the impact strength the collision
+//                     code records on CPhysical)
+//   m_moveForce / m_turnForce -> m_vecMoveFriction / m_vecTurnFriction (SA keeps
+//                     the accumulated force separately from the resulting
+//                     speed, VC does not; the friction accumulator is the
+//                     closest thing that is also reset per frame)
+//   m_matrix->TransformVector(p) -> Multiply3x3(p, GetMatrix())
+//   door.m_doorState == DAMSTATE_OPENED -> Doors[door].m_nDoorState == DOOR_HIT_MAX_END;
+//                     SA compares a door *state* against a *damage* enumerator
+//                     here, which is only ever equal to DAMSTATE_OPENED (1) ==
+//                     DOOR_HIT_MAX_END (1) by coincidence of numbering. Kept as
+//                     the same numeric comparison, spelled with the door enum.
+//   m_vehicleAudio.AddAudioEvent(AE_CAR_BONNET_CLOSE + door, 0.f)
+//                   -> DMAudio.PlayOneShot(m_audioEntityId,
+//                      SOUND_CAR_DOOR_CLOSE_BONNET + door, 0.0f), the VC audio
+//                     call used for the same event at line 4553.
 void
-CAutomobile::ProcessSwingingDoor(int32 component, eDoors door)
+CAutomobile::ProcessSwingingDoor(int32 nodeIdx, eDoors doorIdx)
 {
-	if(Damage.GetDoorStatus(door) != DOOR_STATUS_SWINGING)
+	constexpr float BONNET_SWING_RADIUS = 0.05f;
+
+	RwFrame *frame = m_aCarNodes[nodeIdx];
+	if(frame == nil)
 		return;
 
-	if (m_aCarNodes[component] == nil)
+	if(!Damage.IsDoorPresent(doorIdx))
 		return;
 
-	CMatrix mat(RwFrameGetMatrix(m_aCarNodes[component]));
-	CVector pos = mat.GetPosition();
-	float axes[3] = { 0.0f, 0.0f, 0.0f };
+	if(Damage.IsDoorClosed(doorIdx)){
+		if(m_fDamageImpulse <= 100.0f || doorIdx == DOOR_BONNET)
+			return;
 
-	Doors[door].Process(this);
-	axes[Doors[door].m_nAxis] = Doors[door].m_fAngle;
-	// SetRotate replaces the whole orientation, which assumes the untouched node
-	// is axis aligned. Converted cars carry a rest orientation baked into the
-	// door frame, so they used to spin the part away instead of swinging it.
-	// Remember the frame's original rotation once and rebuild the matrix from
-	// it every frame, so only the door angle is applied on top.
-	if(!m_bDoorBaseRotValid[door]){
-		m_aDoorBaseRot[door] = mat;
-		m_aDoorBaseRot[door].GetPosition() = CVector(0.0f, 0.0f, 0.0f);
-		m_bDoorBaseRotValid[door] = true;
+		switch(GetStatus()){
+		case STATUS_PLAYER:
+		case STATUS_PHYSICS:
+			break;
+		default:
+			return;
+		}
 	}
-	CMatrix rot(mat);
-	rot.SetRotate(axes[0], axes[1], axes[2]);
-	mat = m_aDoorBaseRot[door];
-	mat *= rot;
-	mat.GetPosition() = pos;
-	mat.UpdateRW();
 
-	// make wind rip off bonnet
-	if(door == DOOR_BONNET && Doors[door].m_nDoorState == DOORST_OPEN &&
-	   DotProduct(m_vecMoveSpeed, GetForward()) > 0.4f){
-#ifdef FIX_BUGS
-		CObject *comp = SpawnFlyingComponent(CAR_BONNET, COMPGROUP_BONNET);
-#else
-		CObject *comp = SpawnFlyingComponent(CAR_BONNET, COMPGROUP_DOOR);
-#endif
-		// make both doors invisible on car
-		SetComponentVisibility(m_aCarNodes[CAR_BONNET], ATOMIC_FLAG_NONE);
-		Damage.SetDoorStatus(DOOR_BONNET, DOOR_STATUS_MISSING);
+	CMatrix frameMatrix(RwFrameGetMatrix(frame));
 
-		if(comp){
-			if(CGeneral::GetRandomNumber() & 1)
-				comp->m_vecMoveSpeed = 0.4f*m_vecMoveSpeed + 0.1f*GetRight() + 0.5f*GetUp();
-			else
-				comp->m_vecMoveSpeed = 0.4f*m_vecMoveSpeed - 0.1f*GetRight() + 0.5f*GetUp();
-			comp->ApplyTurnForce(10.0f*GetUp(), GetForward());
+	CDoor &door = Doors[doorIdx];
+
+	if(Damage.IsDoorClosed(doorIdx) && CanDoorsBeDamaged()){
+		if(door.ProcessImpact(this, m_vecMoveFriction, m_vecTurnFriction,
+		                      Multiply3x3(frameMatrix.GetPosition(), GetMatrix()))){
+			Damage.SetDoorOpen(doorIdx);
+		}
+	}
+
+	// Try opening the door (if it's not open already).
+	if(!Damage.IsDoorOpen(doorIdx))
+		return;
+
+	// 0x6A9F02
+	// If it's the bonnet, we possibly apply some angle velocity based on our
+	// current speed.
+	if(doorIdx == DOOR_BONNET){
+		CDoor &bonnet = Doors[DOOR_BONNET];
+		if((bonnet.m_dirn & DOOR_EXTRA_DIRN_MASK) == DOOR_AXIS_Y){
+			bonnet.m_fAngVel += (Sin(bonnet.m_fAngle + 0.1f) * BONNET_SWING_RADIUS)
+			                    * DotProduct(GetForward(), m_vecMoveSpeed);
+		}
+	}
+
+	// 0x6A9F91
+	// Now process it; if it succeeded, close it and play the sound.
+	if(door.Process(this, m_vecMoveFriction, m_vecTurnFriction,
+	                Multiply3x3(frameMatrix.GetPosition(), GetMatrix()))){
+		Damage.SetDoorClosed(doorIdx);
+		DMAudio.PlayOneShot(m_audioEntityId, SOUND_CAR_DOOR_CLOSE_BONNET + (int32)doorIdx, 0.0f);
+	}
+
+	// 0x6A9FCE
+	door.UpdateFrameMatrix(frameMatrix);
+
+	// Possibly detach the bonnet and let it fly.
+	if(doorIdx == DOOR_BONNET){
+		if(door.m_nDoorState == (eDoorState)DAMSTATE_OPENED &&
+		   DotProduct(m_vecMoveSpeed, GetForward()) > 0.4f){
+			CObject *comp = SpawnFlyingComponent(CAR_BONNET, COMPGROUP_BONNET);
+			// make both doors invisible on the car
+			SetComponentVisibility(m_aCarNodes[CAR_BONNET], ATOMIC_FLAG_NONE);
+			Damage.SetDoorStatus(DOOR_BONNET, DAMSTATE_NOTPRESENT);
+
+			if(comp){
+				comp->m_vecMoveSpeed = 0.4f*m_vecMoveSpeed + 0.1f*GetRight();
+				if(CGeneral::GetRandomNumber() % 2)
+					comp->m_vecMoveSpeed += 0.5f*GetUp();
+				else
+					comp->m_vecMoveSpeed -= 0.5f*GetUp();
+				comp->ApplyTurnForce(10.0f*GetUp(), GetForward());
+			}
 		}
 	}
 }
@@ -6062,10 +6124,10 @@ CAutomobile::PopBoot(void)
 	switch(Damage.GetDoorStatus(DOOR_BOOT)){
 	case DOOR_STATUS_OK:
 	case DOOR_STATUS_SMASHED:
-		Doors[DOOR_BOOT].m_fAngle = Doors[DOOR_BOOT].m_fMinAngle;
+		Doors[DOOR_BOOT].m_fAngle = Doors[DOOR_BOOT].m_closedAngle;
 		CMatrix mat(RwFrameGetMatrix(m_aCarNodes[CAR_BOOT]));
 		float axes[3] = { 0.0f, 0.0f, 0.0f };
-		axes[Doors[DOOR_BOOT].m_nAxis] = Doors[DOOR_BOOT].m_fAngle;
+		axes[Doors[DOOR_BOOT].m_axis] = Doors[DOOR_BOOT].m_fAngle;
 		// Keep the frame's own translation: SetRotate clears it, and reading it
 		// back out of a matrix that already carries the car's transform then
 		// writing it in again moved the boot lid instead of rotating it.

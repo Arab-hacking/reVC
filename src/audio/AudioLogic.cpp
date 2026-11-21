@@ -3047,9 +3047,13 @@ cAudioManager::ProcessVehicleDoors(cVehicleParams& params)
 		automobile = (CAutomobile *)params.m_pVehicle;
 		CalculateDistance(params.m_bDistanceCalculated, params.m_fDistance);
 		for (uint8 i = 0; i < ARRAY_SIZE(automobile->Doors); i++) {
-			if (automobile->Damage.GetDoorStatus(i) == DOOR_STATUS_SWINGING) {
+			if (automobile->Damage.GetDoorStatus((eDoors)i) == DOOR_STATUS_SWINGING) {
 				doorState = automobile->Doors[i].m_nDoorState;
-				if (doorState == DOORST_OPEN || doorState == DOORST_CLOSED) {
+				// VC DOORST_OPEN/DOORST_CLOSED meant "resting at the max/min
+				// limit", which is exactly SA's DOOR_HIT_MAX_END/DOOR_HIT_MIN_END
+				// (same numbering). A creak only makes sense when the door is
+				// parked against a stop.
+				if (doorState == DOOR_HIT_MAX_END || doorState == DOOR_HIT_MIN_END) {
 					velocity = Min(0.3f, Abs(automobile->Doors[i].m_fAngVel));
 					if (velocity > 0.0035f) {
 						Vol = (VEHICLE_DOORS_VOLUME * velocity / 0.3f);

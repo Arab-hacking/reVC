@@ -109,10 +109,15 @@ m_nVehicleSubType = VEHICLE_TYPE_BOAT;
 
 	m_nAmmoInClip = 20;
 
+	// SA CBoat::CBoat (0x6EFF30), verbatim. Note the argument order: SA passes
+	// the open angle first and the closed angle second, so MARQUIS gets
+	// (+PI/10, -PI/10) - the flap hangs at the negative limit.
+	m_OldMoveSpeed = CVector(0.0f, 0.0f, 0.0f);
+	m_OldTurnSpeed = CVector(0.0f, 0.0f, 0.0f);
 	if(GetModelIndex() == MI_MARQUIS)
-		m_boom.Init(-PI/10.0f, PI/10.0f, 0, 2);
+		m_boom.Init(PI/10.0f, -PI/10.0f, DOOR_AXIS_NEG_Y, DOOR_AXIS_Y, DOOR_EXTRA_NONE);
 	else
-		m_boom.Init(-PI/5.0f, PI/5.0f, 0, 2);
+		m_boom.Init(TWOPI/10.0f, -TWOPI/10.0f, DOOR_AXIS_NEG_X, DOOR_AXIS_Y, DOOR_EXTRA_NONE);
 }
 
 void
@@ -1039,15 +1044,20 @@ CBoat::PreRender(void)
 		}
 	}
 
-	if(GetModelIndex() == MI_RIO || GetModelIndex() == MI_MARQUIS){
-		float axes[3] = { 0.0f, 0.0f, 0.0f };
-		m_boom.Process(this);
-		axes[m_boom.m_nAxis] = m_boom.m_fAngle;
-		matrix.Attach(RwFrameGetMatrix(m_aBoatNodes[BOAT_FLAP_LEFT]));
-		// Same as the car doors: keeping the frame's translation in place is
-		// what makes this a rotation rather than a jump to a re-read position.
-		matrix.SetRotateKeepPos(axes[0], axes[1], axes[2]);
-		matrix.UpdateRW();
+	// SA CBoat::ProcessControl (0x6F1D2C): the swinging flap is MARQUIS only.
+	if(GetModelIndex() == MI_MARQUIS){
+		if(m_aBoatNodes[BOAT_FLAP_LEFT]){
+			matrix.Attach(RwFrameGetMatrix(m_aBoatNodes[BOAT_FLAP_LEFT]));
+			CVector posCopy = matrix.GetPosition();
+			// The hinge position in world space, which is what the acceleration
+			// at the hinge has to be measured against.
+			CVector vecTransformed = Multiply3x3(posCopy, GetMatrix());
+
+			m_boom.Process(this, m_OldMoveSpeed, m_OldTurnSpeed, vecTransformed);
+			CVector rot = m_boom.GetRotation();
+			matrix.SetRotateKeepPos(rot.x, rot.y, rot.z);
+			matrix.UpdateRW();
+		}
 	}
 
 	if(GetModelIndex() == MI_RIO){
@@ -1096,6 +1106,12 @@ CBoat::PreRender(void)
 		}
 		m_fMovingRotation += 0.02f * CTimer::GetTimeStep();
 	}
+
+	// SA CBoat::ProcessControl (0x6F1D8F): snapshot the chassis motion for the
+	// next frame's door spring. m_vecMoveFriction/m_vecTurnFriction are reVC's
+	// names for SA's m_vecFrictionMoveSpeed/m_vecFrictionTurnSpeed.
+	m_OldMoveSpeed = m_vecMoveSpeed + m_vecMoveFriction;
+	m_OldTurnSpeed = m_vecTurnSpeed + m_vecTurnFriction;
 }
 
 RwIm3DVertex KeepWaterOutVertices[4];
