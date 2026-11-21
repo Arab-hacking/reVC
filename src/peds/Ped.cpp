@@ -1122,11 +1122,16 @@ CPed::CheckThreatValidity(void)
 bool
 CPed::CanUseTorsoWhenLooking(void)
 {
-	if (m_nPedState != PED_DRIVING && m_nPedState != PED_DRAG_FROM_CAR && !bIsDucking) {
-		if (m_animGroup != ASSOCGRP_SEXYWOMAN && m_animGroup != ASSOCGRP_WOMAN)
-			return true;
-	}
-	return false;
+	// gta-reversed CPed::CanUseTorsoWhenLooking vetoes the torso turn only while
+	// driving or being dragged out of a car, and while ducking. reVC also
+	// vetoed it for every female animation group, which is why women never
+	// turned their torso to look at something - the head swung on its own and
+	// the body stayed square to the direction of travel.
+	if(m_nPedState == PED_DRIVING || m_nPedState == PED_DRAG_FROM_CAR)
+		return false;
+	if(bIsDucking)
+		return false;
+	return true;
 }
 
 void
@@ -3983,8 +3988,45 @@ CPed::UseGroundColModel(void)
 bool
 CPed::CanPedReturnToState(void)
 {
-	return m_nPedState <= PED_STATES_NO_AI && m_nPedState != PED_AIM_GUN && m_nPedState != PED_ATTACK &&
-		m_nPedState != PED_FIGHT && m_nPedState != PED_STEP_AWAY && m_nPedState != PED_SNIPER_MODE && m_nPedState != PED_LOOK_ENTITY;
+	// SA (gta-reversed CPed::CanPedReturnToState) asks for an explicit list of
+	// states, not for "anything below PED_STATES_NO_AI minus a few". The
+	// difference is not academic: the range test also accepted PED_ANSWER_MOBILE,
+	// PED_JOG and PED_UNKNOWN, so a ped that was answering a phone or jogging
+	// counted as returnable and RestorePreviousState could cut those states
+	// short.
+	switch(m_nPedState){
+	case PED_NONE:
+	case PED_IDLE:
+	case PED_LOOK_HEADING:
+	case PED_WANDER_RANGE:
+	case PED_WANDER_PATH:
+	case PED_SEEK_POS:
+	case PED_SEEK_ENTITY:
+	case PED_FLEE_POS:
+	case PED_FLEE_ENTITY:
+	case PED_PURSUE:
+	case PED_FOLLOW_PATH:
+	case PED_ROCKET_MODE:
+	case PED_DUMMY:
+	case PED_PAUSE:
+	case PED_FACE_PHONE:
+	case PED_MAKE_CALL:
+	case PED_CHAT:
+	case PED_MUG:
+	case PED_AI_CONTROL:
+	case PED_SEEK_CAR:
+	case PED_SEEK_IN_BOAT:
+	case PED_FOLLOW_ROUTE:
+	case PED_CPR:
+	case PED_SOLICIT:
+	case PED_BUY_ICECREAM:
+	case PED_INVESTIGATE:
+	case PED_ON_FIRE:
+	case PED_SUN_BATHE:
+	case PED_FLASH:
+		return true;
+	}
+	return false;
 }
 
 bool
