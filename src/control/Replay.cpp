@@ -56,7 +56,7 @@ uint8 CReplay::Mode;
 CAddressInReplayBuffer CReplay::Record;
 CAddressInReplayBuffer CReplay::Playback;
 uint8 *CReplay::pBuf0;
-CAutomobile *CReplay::pBuf1;
+CTrailer *CReplay::pBuf1;
 uint8 *CReplay::pBuf2;
 CPlayerPed *CReplay::pBuf3;
 uint8 *CReplay::pBuf4;

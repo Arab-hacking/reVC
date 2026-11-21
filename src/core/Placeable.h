@@ -26,6 +26,8 @@ public:
 	void SetMatrix(CMatrix &newMatrix) { m_matrix = newMatrix; }
 	void SetTransform(RwMatrix *m) { m_matrix = CMatrix(m, false); }
 	void SetHeading(float angle);
+	// SA CPlaceable::GetHeading (0x41BD90): the yaw of the forward axis.
+	float GetHeading(void) { return Atan2(-GetMatrix().GetForward().x, GetMatrix().GetForward().y); }
 	void SetOrientation(float x, float y, float z){
 		CVector pos = m_matrix.GetPosition();
 		m_matrix.SetRotate(x, y, z);

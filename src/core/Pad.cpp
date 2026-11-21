@@ -340,9 +340,9 @@ void VehicleCheat(int model)
 		if (node < 0) return;
 
 #ifdef FIX_BUGS
-		CAutomobile* vehicle = new CAutomobile(model, RANDOM_VEHICLE);
+		CVehicle* vehicle = CCarCtrl::GetNewVehicleDependingOnCarModel(model, RANDOM_VEHICLE);
 #else
-		CAutomobile* vehicle = new CAutomobile(model, MISSION_VEHICLE);
+		CVehicle* vehicle = CCarCtrl::GetNewVehicleDependingOnCarModel(model, MISSION_VEHICLE);
 #endif
 		if (vehicle != nil) {
 			CVector pos = ThePaths.m_pathNodes[node].GetPosition();

@@ -1,4 +1,6 @@
 #include "common.h"
+
+#include "CarCtrl.h"
 #include "crossplatform.h"
 #include "platform.h"
 #include "MobileTouchControls.h"
@@ -544,19 +546,13 @@ SpawnVehicleByModel(int32 modelId)
 		basePos.x, basePos.y, basePos.z, fwd.x, fwd.y, distAhead,
 		&sx, &sy, &sz, &rx, &ry);
 
-	CVehicle *spawned = nil;
-	if (vmi->m_nVehicleType == VEHICLE_TYPE_BOAT) {
-		CBoat *boat = new CBoat(modelId, RANDOM_VEHICLE);
-		spawned = boat;
-	} else if (vmi->m_nVehicleType == VEHICLE_TYPE_BIKE) {
-		CBike *bike = new CBike(modelId, RANDOM_VEHICLE);
-		if (bike)
-			bike->bIsStanding = true;
-		spawned = bike;
-	} else {
-		CAutomobile *car = new CAutomobile(modelId, RANDOM_VEHICLE);
-		spawned = car;
-	}
+	// One factory for every class, as in SA.
+	CVehicle *spawned = CCarCtrl::GetNewVehicleDependingOnCarModel(modelId, RANDOM_VEHICLE);
+	// A bike placed standing sinks through its own suspension otherwise. This
+	// fork has no AsBike() cast helper, so the downcast is explicit and is only
+	// reached for the two model classes that really are CBike instances.
+	if (spawned && (spawned->IsBike() || spawned->IsBMX()))
+		((CBike*)spawned)->bIsStanding = true;
 
 	if (!spawned) {
 		if (!(previousFlags & STREAMFLAGS_DONT_REMOVE))

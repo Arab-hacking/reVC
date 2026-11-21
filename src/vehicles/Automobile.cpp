@@ -1659,6 +1659,37 @@ CAutomobile::ProcessControl(void)
 		}
 	}
 
+	// The tow coupling, as in SA CVehicle::ProcessControl: a towed vehicle pulls
+	// itself onto its tractor's bar, and the tractor answers with its own
+	// half of the solver so that neither end wins the tug of war.
+	if(m_pTowingVehicle){
+		if(GetStatus() == STATUS_IS_TOWED){
+			bool updateTractorLink = false;
+			if(m_pTowingVehicle->m_vecMoveSpeed != CVector(0.0f, 0.0f, 0.0f) ||
+			   m_vecMoveSpeed.MagnitudeSqr() > 0.01f){
+				updateTractorLink = true;
+				m_pTowingVehicle->UpdateTractorLink(false, false);
+			}
+			UpdateTrailerLink(false, false);
+			if(m_pTowingVehicle && GetStatus() == STATUS_IS_TOWED){
+				if(updateTractorLink)
+					m_pTowingVehicle->UpdateTractorLink(false, true);
+				UpdateTrailerLink(false, true);
+			}
+		}else{
+			BreakTowLink();
+		}
+	}else if(m_pVehicleBeingTowed){
+		if(m_pVehicleBeingTowed->GetStatus() == STATUS_IS_TOWED){
+			if(m_pVehicleBeingTowed->m_pTowingVehicle == this){
+				RemoveFromMovingList();
+				AddToMovingList();
+			}
+		}else{
+			m_pVehicleBeingTowed = nil;
+		}
+	}
+
 	if(IsRealHeli() && bHeliDestroyed && !bRenderScorched){
 		ApplyMoveForce(0.0f, 0.0f, -2.0f*CTimer::GetTimeStep());
 		m_vecTurnSpeed.z += -0.002f*CTimer::GetTimeStep();
@@ -4779,6 +4810,13 @@ CAutomobile::RemoveRefsToVehicle(CEntity *ent)
 	for(i = 0; i < 4; i++)
 		if(m_aGroundPhysical[i] == ent)
 			m_aGroundPhysical[i] = nil;
+
+	// A coupling touches two vehicles. If the other end is going away, the link
+	// has to be dropped here or it would keep pointing at freed memory.
+	if(m_pTowingVehicle == ent)
+		m_pTowingVehicle = nil;
+	if(m_pVehicleBeingTowed == ent)
+		m_pVehicleBeingTowed = nil;
 }
 
 void

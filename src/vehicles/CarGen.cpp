@@ -4,7 +4,11 @@
 
 #include "Automobile.h"
 #include "Bike.h"
+#include "Bmx.h"
 #include "Boat.h"
+#include "MonsterTruck.h"
+#include "QuadBike.h"
+#include "Trailer.h"
 #include "Camera.h"
 #include "CarCtrl.h"
 #include "Clock.h"
@@ -259,12 +263,13 @@ CCarGenerator::DoInternalProcessing()
 
 		switch(((CVehicleModelInfo*)CModelInfo::GetModelInfo(actualModelId))->m_nVehicleType){
 		case VEHICLE_TYPE_MTRUCK:
+			vehicle = new CMonsterTruck(actualModelId, PARKED_VEHICLE);
+			break;
 		case VEHICLE_TYPE_QUAD:
+			vehicle = new CQuadBike(actualModelId, PARKED_VEHICLE);
+			break;
 		case VEHICLE_TYPE_TRAILER:
-			// CMonsterTruck / CQuadBike / CTrailer are Block 2 classes; until
-			// they exist SA spawns them through the same automobile path, and
-			// the handling data is what makes them behave differently.
-			vehicle = new CAutomobile(actualModelId, PARKED_VEHICLE);
+			vehicle = new CTrailer(actualModelId, PARKED_VEHICLE);
 			break;
 		case VEHICLE_TYPE_HELI:
 			vehicle = new CHeli(actualModelId, PARKED_VEHICLE);
@@ -276,10 +281,15 @@ CCarGenerator::DoInternalProcessing()
 			vehicle = new CTrain(actualModelId, PARKED_VEHICLE);
 			break;
 		case VEHICLE_TYPE_BIKE:
-		case VEHICLE_TYPE_BMX:
 			vehicle = new CBike(actualModelId, PARKED_VEHICLE);
 			// Parked bikes rest on their side stand, as in SA.
 			((CBike*)vehicle)->bIsStanding = true;
+			break;
+		case VEHICLE_TYPE_BMX:
+			// A BMX is not a CBike in SA: the pedals, the chainset and the
+			// bunny hop live on CBmx.
+			vehicle = new CBmx(actualModelId, PARKED_VEHICLE);
+			((CBmx*)vehicle)->bIsStanding = true;
 			break;
 		default:
 			vehicle = new CAutomobile(actualModelId, PARKED_VEHICLE);

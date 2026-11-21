@@ -7,17 +7,27 @@
 #include "Object.h"
 #include "PlayerPed.h"
 #include "Automobile.h"
+#include "MonsterTruck.h"
+#include "QuadBike.h"
+#include "Trailer.h"
 #include "DummyPed.h"
 #include "AudioScriptObject.h"
 
 typedef CPool<CPtrNode> CCPtrNodePool;
 typedef CPool<CEntryInfoNode> CEntryInfoNodePool;
 typedef CPool<CPed,CPlayerPed> CPedPool;
-// A slot is one fixed block, so the entry type must be the largest vehicle the
-// engine can construct. CAutomobile is bigger than CBike, CBoat, CHeli, CPlane
-// and CTrain, so it sizes the slot; every class is placed into these blocks by
+// A slot is one fixed block, so the entry type must be large enough for the
+// largest vehicle the engine can construct. CTrailer is the biggest of them
+// (2384 bytes on x86-64: CAutomobile plus the two support legs and their
+// collision points), then CQuadBike and CMonsterTruck; CAutomobile itself is
+// only 2288. Sizing the slot by CAutomobile would let those three classes
+// write past the end of their block and into the next slot, so the pool is
+// sized by CTrailer instead. Every class is still placed into these blocks by
 // CVehicle::operator new and keeps its real dynamic type.
-typedef CPool<CVehicle,CAutomobile> CVehiclePool;
+static_assert(sizeof(CTrailer) >= sizeof(CAutomobile), "CTrailer must size the vehicle pool slot");
+static_assert(sizeof(CTrailer) >= sizeof(CQuadBike), "CTrailer must size the vehicle pool slot");
+static_assert(sizeof(CTrailer) >= sizeof(CMonsterTruck), "CTrailer must size the vehicle pool slot");
+typedef CPool<CVehicle,CTrailer> CVehiclePool;
 typedef CPool<CBuilding> CBuildingPool;
 typedef CPool<CTreadable> CTreadablePool;
 typedef CPool<CObject> CObjectPool;

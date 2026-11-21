@@ -198,6 +198,20 @@ public:
 	uint8 m_nNumMaxPassengers;
 	float field_1D0[4];
 	CEntity *m_pCurGroundEntity;
+	// SA CVehicle::m_wMiscComponentAngle. The tipping angle of the one moving
+	// part a vehicle drives through its handling data - the Dumper's bed, the
+	// Packer's ramp. SA stores it as a halfword and the readers compare it frame
+	// to frame to detect a new target angle.
+	int16 m_wMiscComponentAngle;
+	int16 m_wMiscComponentAnglePrev;
+	// SA CVehicle::m_fPropRotate. The angle of the one continuously spinning
+	// part a vehicle carries - the harvester trailer's reel, the RC bandit's
+	// propeller. SA rotates it by the vehicle's own forward speed.
+	float m_fPropRotate;
+	// SA CPhysical::m_nFakePhysics, carried on the vehicle in SA. Counts the
+	// frames a vehicle has been held still by its controller; the trailer uses
+	// it to keep its supports animating while it settles.
+	uint32 m_nFakePhysics;
 	CFire *m_pCarFire;
 	float m_fSteerAngle;
 	float m_fGasPedal;
@@ -343,10 +357,40 @@ public:
 	virtual void BlowUpCar(CEntity *ent) {}
 	virtual bool SetUpWheelColModel(CColModel *colModel) { return false; }
 	virtual void BurstTyre(uint8 tyre, bool applyForces) {}
+	// SA CVehicle::FindWheelWidth (0x6D0E00 for cars, overridden by the bike
+	// family). The wheel geometry is per class, so the base returns the car
+	// default and CBike/CBmx override it.
+	virtual float FindWheelWidth(bool bRear) { return bRear ? 0.825f : 0.73f; }
+	// SA CVehicle::ProcessDrivingAnims (0x6D3D00). Drives the driver's in-car
+	// animation set; CAutomobile and CBike override it, CBmx adds the bunny hop
+	// on top.
+	virtual void ProcessDrivingAnims(CPed *driver, bool blend) {}
+	// SA CVehicle::ProcessAI (0x6D31A0). Vehicles that want their own AI hook
+	// override this; the base reports "not handled" so the caller falls back to
+	// the generic path.
+	virtual bool ProcessAI(uint32 &extraHandlingFlags) { return false; }
+	// SA CVehicle::SetTransmissionRotation (0x6DBBB0). Tilts a live axle so its
+	// two ends follow the wheels: the average of the two wheel travels sets the
+	// pitch against the wheel line, the difference the roll. Used by the
+	// MonsterTruck's two exposed driveshafts and the Quadbike's chain.
+	void SetTransmissionRotation(RwFrame *component, float angleL, float angleR, CVector wheelPos, bool isFront);
 	virtual bool IsRoomForPedToLeaveCar(uint32 component, CVector *forcedDoorPos) { return false; }
 	virtual bool IsClearToDriveAway(void);
 	virtual float GetHeightAboveRoad(void);
 	virtual void PlayCarHorn(void) {}
+	// SA CVehicle towing interface (0x6DFBA0 / 0x6DFBE0 / 0x6DD070 / 0x6DD0C0).
+	// Every vehicle has both halves of a coupling: the bar at its rear and the
+	// hitch at its front. Only the classes that can be towed or tow override
+	// them; the base answers "no such point", which is what makes a normal car
+	// uncoupleable.
+	virtual bool GetTowHitchPos(CVector &outPos, bool checkModelInfo, CVehicle *vehicle);
+	virtual bool GetTowBarPos(CVector &outPos, bool checkModelInfo, CVehicle *vehicle);
+	virtual bool SetTowLink(CVehicle *tractor, bool setMyPosToTowBar) { return false; }
+	virtual bool BreakTowLink(void) { return false; }
+	// SA CVehicle::UpdateTractorLink / UpdateTrailerLink (0x6E0050 / 0x6DFC50),
+	// both thin wrappers over the same solver.
+	void UpdateTractorLink(bool applyFullVelocityAtHookUp, bool applyDistToSpeed);
+	void UpdateTrailerLink(bool applyFullVelocityAtHookUp, bool applyDistToSpeed);
 #ifdef COMPATIBLE_SAVES
 	virtual void Save(uint8*& buf);
 	virtual void Load(uint8*& buf);

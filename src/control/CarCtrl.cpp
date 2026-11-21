@@ -6,6 +6,10 @@
 #include "Accident.h"
 #include "Automobile.h"
 #include "Bike.h"
+#include "Bmx.h"
+#include "MonsterTruck.h"
+#include "QuadBike.h"
+#include "Trailer.h"
 #include "Camera.h"
 #include "CarAI.h"
 #include "CarGen.h"
@@ -3090,9 +3094,13 @@ CVehicle *CCarCtrl::GetNewVehicleDependingOnCarModel(int32 modelId, uint8 create
 	case VEHICLE_TYPE_BIKE:
 		return new CBike(modelId, createdBy);
 	case VEHICLE_TYPE_BMX:
+		return new CBmx(modelId, createdBy);
 	case VEHICLE_TYPE_QUAD:
+		return new CQuadBike(modelId, createdBy);
 	case VEHICLE_TYPE_MTRUCK:
+		return new CMonsterTruck(modelId, createdBy);
 	case VEHICLE_TYPE_TRAILER:
+		return new CTrailer(modelId, createdBy);
 	case VEHICLE_TYPE_FHELI:
 	case VEHICLE_TYPE_AUTOMOBILE:
 		return new CAutomobile(modelId, createdBy);

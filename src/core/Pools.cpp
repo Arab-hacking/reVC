@@ -3,7 +3,12 @@
 #include "Pools.h"
 
 #include "Bike.h"
+#include "Bmx.h"
 #include "Boat.h"
+#include "MonsterTruck.h"
+#include "QuadBike.h"
+#include "Trailer.h"
+#include "VehicleModelInfo.h"
 #include "CarCtrl.h"
 #ifdef MISSION_REPLAY
 #include "GenericGameStorage.h"
@@ -187,12 +192,25 @@ INITSAVEBUF
 		// The file was checked by CheckSavedVehiclePool() before we got here, so a
 		// type outside this set means the validator and the loader disagree. Say
 		// so instead of failing on a bare assert.
+		// The legacy save format only knows cars, boats and bikes, so the exact
+		// class has to come back from the model: a save holding a BMX has to
+		// reload it as a CBmx, not as a CBike with no pedals.
+		CVehicleModelInfo *vmi = (CVehicleModelInfo*)CModelInfo::GetModelInfo(model);
+		const eVehicleType modelType = vmi ? vmi->m_nVehicleType : vehicleType;
 		if (vehicleType == VEHICLE_TYPE_BOAT)
 			pVehicle = new(slot) CBoat(model, RANDOM_VEHICLE);
-		else if (vehicleType == VEHICLE_TYPE_AUTOMOBILE)
-			pVehicle = new(slot) CAutomobile(model, RANDOM_VEHICLE);
-		else if (vehicleType == VEHICLE_TYPE_BIKE)
+		else if (modelType == VEHICLE_TYPE_BMX)
+			pVehicle = new(slot) CBmx(model, RANDOM_VEHICLE);
+		else if (modelType == VEHICLE_TYPE_QUAD)
+			pVehicle = new(slot) CQuadBike(model, RANDOM_VEHICLE);
+		else if (modelType == VEHICLE_TYPE_MTRUCK)
+			pVehicle = new(slot) CMonsterTruck(model, RANDOM_VEHICLE);
+		else if (modelType == VEHICLE_TYPE_TRAILER)
+			pVehicle = new(slot) CTrailer(model, RANDOM_VEHICLE);
+		else if (modelType == VEHICLE_TYPE_BIKE)
 			pVehicle = new(slot) CBike(model, RANDOM_VEHICLE);
+		else if (modelType == VEHICLE_TYPE_AUTOMOBILE)
+			pVehicle = new(slot) CAutomobile(model, RANDOM_VEHICLE);
 		else {
 			REVC_LOG_ERROR("vehicle pool: save entry %d has type %u, which this build cannot rebuild",
 				i, (unsigned)type);

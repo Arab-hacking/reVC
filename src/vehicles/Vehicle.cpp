@@ -2344,3 +2344,144 @@ IsVehiclePointerValid(CVehicle* pVehicle)
 	// every other vehicle has to be in the world to be handed out.
 	return pVehicle->m_nVehicleType == VEHICLE_TYPE_FPLANE || pVehicle->m_entryInfoList.first;
 }
+
+// SA CVehicle::SetTransmissionRotation (0x6DBBB0).
+//
+// A live axle is a straight bar between two wheels, so its pose is fully
+// determined by where its ends are: the pitch is the angle between the axle
+// and the line joining the two wheel bottoms, and the roll is how far the two
+// ends differ. The MonsterTruck shows two of these - one drive shaft per axle -
+// and the Quadbike one, so this is the shared implementation SA keeps on the
+// base class.
+void
+CVehicle::SetTransmissionRotation(RwFrame *component, float angleL, float angleR, CVector wheelPos, bool isFront)
+{
+	if(component == nil)
+		return;
+
+	CMatrix mat(RwFrameGetMatrix(component));
+	CVector savedPos = mat.GetPosition();
+
+	float angleX = -Atan2((angleL + angleR)/2.0f - wheelPos.z, mat.GetPosition().y - wheelPos.y);
+	if(isFront)
+		angleX += PI;
+
+	mat.SetRotateX(angleX);
+	mat.RotateY(Atan2(angleL - angleR, Abs(wheelPos.x) + Abs(wheelPos.x)));
+	mat.GetPosition() += savedPos;
+	mat.UpdateRW();
+}
+
+// SA CVehicle::GetTowHitchPos (0x6DFBA0), the base fallback.
+//
+// A car that carries no trailer-attach dummy still has a usable hitch: the
+// point one metre past the front of its collision box, on the centre line.
+bool
+CVehicle::GetTowHitchPos(CVector &outPos, bool checkModelInfo, CVehicle *vehicle)
+{
+	if(!checkModelInfo)
+		return false;
+
+	CColModel *colModel = GetColModel();
+	if(colModel == nil)
+		return false;
+
+	outPos = CVector(0.0f, colModel->boundingBox.max.y + 1.0f, 0.0f);
+	outPos = Multiply3x3(GetMatrix(), outPos) + GetPosition();
+	return true;
+}
+
+// SA CVehicle::GetTowBarPos (0x6DFBE0), the base fallback: one metre behind the
+// rear of the collision box.
+bool
+CVehicle::GetTowBarPos(CVector &outPos, bool checkModelInfo, CVehicle *vehicle)
+{
+	if(!checkModelInfo)
+		return false;
+
+	CColModel *colModel = GetColModel();
+	if(colModel == nil)
+		return false;
+
+	outPos = CVector(0.0f, colModel->boundingBox.min.y - 1.0f, 0.0f);
+	outPos = Multiply3x3(GetMatrix(), outPos) + GetPosition();
+	return true;
+}
+
+// SA CVehicle::UpdateVehicleLinkImpl (0x6DFD00), reached through the two
+// wrappers below.
+//
+// The coupling is a constraint, not a weld: each frame the solver measures how
+// far the bar and the hitch have drifted apart and turns that into a force
+// applied at the joint, which is what lets a trailer swing wide in a corner
+// instead of tracking exactly behind. The check before it decides whether the
+// link is still valid at all - too far apart, or folded back on itself, and the
+// trailer has come unhitched.
+static void
+UpdateVehicleLinkImpl(CVehicle *self, bool isTowing, bool applyFullVelocityAtHookUp, bool applyDistToSpeed)
+{
+	CVehicle *towingVeh = isTowing ? self : self->m_pTowingVehicle;
+	CVehicle *beingTowedVeh = isTowing ? self->m_pVehicleBeingTowed : self;
+
+	CVector towedHitchPos, towingBarPos;
+
+	if(towingVeh && beingTowedVeh &&
+	   (isTowing || self->GetStatus() == STATUS_IS_TOWED || self->GetStatus() == STATUS_IS_SIMPLE_TOWED) &&
+	   beingTowedVeh->GetTowHitchPos(towedHitchPos, true, towingVeh) &&
+	   towingVeh->GetTowBarPos(towingBarPos, true, beingTowedVeh))
+	{
+		CVector linkDir = towingBarPos - towedHitchPos;
+		if(isTowing)
+			linkDir = -linkDir;
+
+		if(isTowing ||
+		   (1.0f*(CTimer::GetTimeStep() <= 0.7f ? 0.7f : CTimer::GetTimeStep()) >= linkDir.Magnitude() &&
+		    DotProduct(towingVeh->GetForward(), self->GetForward()) >= -0.3f &&
+		    DotProduct(towingVeh->GetUp(), self->GetUp()) >= 0.0f))
+		{
+			CVector towedHitchPosWorld = towedHitchPos - beingTowedVeh->GetPosition();
+			CVector towingBarPosWorld = towingBarPos - towingVeh->GetPosition();
+			CVector towedHitchPosSpeed = beingTowedVeh->GetSpeed(towedHitchPosWorld);
+			CVector towingBarPosSpeed = towingVeh->GetSpeed(towingBarPosWorld);
+			CVector speedDiffVec = towingBarPosSpeed - towedHitchPosSpeed;
+			if(isTowing)
+				speedDiffVec = -speedDiffVec;
+
+			if(!applyFullVelocityAtHookUp){
+				if(applyDistToSpeed)
+					speedDiffVec = (isTowing ? 0.1f : 0.3f)*Max(1.0f, CTimer::GetTimeStep())*linkDir;
+				else if(isTowing)
+					speedDiffVec *= (1.0f - self->m_fMass/(beingTowedVeh->m_fMass + self->m_fMass))*0.5f;
+			}
+
+			CVector thisLinkPosWorld = isTowing ? towingBarPosWorld : towedHitchPosWorld;
+			CVector thisComDir = thisLinkPosWorld - Multiply3x3(self->GetMatrix(), self->m_vecCentreOfMass);
+			CVector speedDiffDir = speedDiffVec;
+			speedDiffDir.Normalise();
+			CVector turnForce = self->GetMass(thisComDir, speedDiffDir)*speedDiffVec;
+
+			self->ApplyMoveForce(turnForce);
+			self->ApplyTurnForce(turnForce, thisLinkPosWorld);
+		}else if(!isTowing){
+			self->BreakTowLink();
+		}
+	}else if(!isTowing){
+		self->BreakTowLink();
+	}
+}
+
+// SA CVehicle::UpdateTrailerLink (0x6DFC50). Called on the trailer: it pulls
+// itself towards its tractor's bar.
+void
+CVehicle::UpdateTrailerLink(bool applyFullVelocityAtHookUp, bool applyDistToSpeed)
+{
+	UpdateVehicleLinkImpl(this, false, applyFullVelocityAtHookUp, applyDistToSpeed);
+}
+
+// SA CVehicle::UpdateTractorLink (0x6E0050). Called on the tractor: it pushes
+// its bar towards the trailer's hitch.
+void
+CVehicle::UpdateTractorLink(bool applyFullVelocityAtHookUp, bool applyDistToSpeed)
+{
+	UpdateVehicleLinkImpl(this, true, applyFullVelocityAtHookUp, applyDistToSpeed);
+}

@@ -279,7 +279,10 @@ private:
 	static CAddressInReplayBuffer Record;
 	static CAddressInReplayBuffer Playback;
 	static uint8* pBuf0;
-	static CAutomobile* pBuf1;
+	// The vehicle pool's entry type is CTrailer (it is the biggest vehicle the
+	// engine constructs), so the replay buffer that mirrors the pool has to
+	// use the same type or it would truncate a trailer.
+	static CTrailer* pBuf1;
 	static uint8* pBuf2;
 	static CPlayerPed* pBuf3;
 	static uint8* pBuf4;

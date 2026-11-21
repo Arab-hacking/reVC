@@ -31,7 +31,16 @@ enum eEntityStatus
 	STATUS_PLANE,
 	STATUS_PLAYER_REMOTE,
 	STATUS_PLAYER_DISABLED,
-	STATUS_GHOST
+	STATUS_GHOST,
+	// SA eEntityStatus reaches further than VC did: a trailer in SA is its own
+	// status because it is driven by its tractor rather than by the physics,
+	// and a remote-controlled vehicle has to be distinguishable from a plain
+	// abandoned one so that it keeps taking input. Appended at the end so that
+	// no existing value changes meaning.
+	STATUS_REMOTE_CONTROLLED,
+	STATUS_FORCED_STOP,
+	STATUS_IS_TOWED,
+	STATUS_IS_SIMPLE_TOWED
 };
 
 class CEntity : public CPlaceable
