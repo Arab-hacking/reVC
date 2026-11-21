@@ -1463,7 +1463,19 @@ CPed::ScanForInterestingStuff(void)
 			CVector pos = GetPosition();
 			int16 lastVehicle;
 			CEntity *vehicles[8];
-			CWorld::FindObjectsInRange(pos, 10.0f, true, &lastVehicle, 6, vehicles, false, true, false, false, false);
+
+			// SA asks the ped's vehicle scanner for the cars around it rather
+			// than doing an ad-hoc range query, so the scan is rate-limited and
+			// already sorted closest-first. The scanner is a per-ped member (see
+			// CPed::m_vehicleScanner) and survives between calls; filling a local
+			// array from it keeps the rest of this function unchanged.
+			m_vehicleScanner.ScanForVehiclesInRange(*this);
+			lastVehicle = 0;
+			for(int32 i = 0; i < CEntityScanner::MAX_NUM_ENTITIES && i < 8; i++){
+				if(m_vehicleScanner.m_apEntities[i] == nil)
+					continue;
+				vehicles[lastVehicle++] = m_vehicleScanner.m_apEntities[i];
+			}
 
 			for (int i = 0; i < lastVehicle; i++) {
 				CVehicle* veh = (CVehicle*)vehicles[i];

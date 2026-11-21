@@ -6,6 +6,7 @@
 #include "Crime.h"
 #include "EventList.h"
 #include "PedIK.h"
+#include "VehicleScanner.h"
 #include "PedType.h"
 #include "Physical.h"
 #include "Weapon.h"
@@ -581,6 +582,11 @@ public:
 	CEntity *m_pSeekTarget;
 	CVehicle *m_pMyVehicle;
 	bool bInVehicle;
+	// SA keeps the scanners on CPedIntelligence (m_vehicleScanner, m_pedScanner,
+	// m_objectScanner). reVC has no intelligence object, so the one scanner the
+	// ped code actually uses sits here directly. It is stateful - it holds the
+	// tick counter and the entity references - so it cannot be a local.
+	CVehicleScanner m_vehicleScanner;
 	float m_distanceToCountSeekDone;
 	float m_acceptableHeadingOffset;
 	CVehicle* m_vehicleInAccident;
