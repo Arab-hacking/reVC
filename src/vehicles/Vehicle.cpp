@@ -1419,13 +1419,49 @@ CVehicle::CanPedExitCar(bool jumpExit)
 	}
 }
 
+// SA CVehicle::CanPedJumpOutCar (0x6BFC30), ported as far as the VC class
+// allows. Three differences from what was here, all of them visible:
+//
+// 1. reVC measured m_vecMoveSpeed.MagnitudeSqr(), i.e. INCLUDING the vertical
+//    component. A car on a slope, or one that had just been dropped, has a
+//    large z speed while standing still horizontally, so the ped either could
+//    not bail out of a parked car on a hill or bailed out of a rocket. SA
+//    measures SquaredMagnitude2D - horizontal speed only.
+//
+// 2. The bike branch was missing entirely, which is why bikes were being run
+//    through the car test and the driver could not step off a moving bike at
+//    the speed SA allows.
+//
+// 3. SA's "pause the vehicle while the ped steps out" tail (the 0.9 turn speed
+//    damping and the sqrt-based move-speed decay) needs CVehicle::CanPedStepOutCar,
+//    which VC does not have; that part is left out rather than approximated.
+bool
+CVehicle::CanPedJumpOutCar(CPed *ped)
+{
+	if (IsBike()) {
+		// SA lets the rider off only when there is no other passenger in the
+		// way, and only above 0.07 squared horizontal speed.
+		if (!pPassengers[0] || ped == pPassengers[0])
+			return m_vecMoveSpeed.MagnitudeSqr2D() >= 0.07f;
+		return false;
+	}
+
+	float horSpeedSqr = m_vecMoveSpeed.MagnitudeSqr2D();
+
+	// SA: only a flat-land car that is upright, or one that has not hit
+	// anything in the last second, is held to the narrow 0.1..0.5 band. Planes,
+	// helis and a tipped-over car get out at any speed above 0.1.
+	if (!IsSubPlane() && !IsSubHeli() &&
+	    (!IsAutomobile() || GetUp().z >= 0.3f))
+		return horSpeedSqr >= 0.1f && horSpeedSqr <= 0.5f;
+
+	return horSpeedSqr >= 0.1f;
+}
+
 bool
 CVehicle::CanPedJumpOutCar(void)
 {
-	if(GetUp().z < 0.3f)
-		return false;
-	float speed = m_vecMoveSpeed.MagnitudeSqr();
-	return speed < 0.1f || speed > 0.5f ? false : true;
+	return CanPedJumpOutCar(nil);
 }
 
 bool

@@ -4231,7 +4231,7 @@ CPed::SetExitCar(CVehicle *veh, uint32 wantedDoorNode)
 	bool canJumpOut = false;
 	if (!veh->CanPedExitCar(false) && !bBusJacked) {
 		if (IsPlayer()) {
-			canJumpOut = veh->IsBike() ? veh->CanPedJumpOffBike() : veh->CanPedJumpOutCar();
+			canJumpOut = veh->IsBike() ? veh->CanPedJumpOffBike() : veh->CanPedJumpOutCar(this);
 		}
 		if (!canJumpOut) {
 			if (veh->pDriver) {

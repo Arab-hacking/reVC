@@ -376,6 +376,7 @@ public:
 	bool CanPedEnterCar(void);
 	bool CanPedExitCar(bool jumpExit);
 	bool CanPedJumpOutCar(void);
+	bool CanPedJumpOutCar(CPed *ped);
 	bool CanPedJumpOffBike(void);
 	// do these two actually return something?
 	CPed *SetUpDriver(void);

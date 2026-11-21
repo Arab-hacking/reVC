@@ -5915,10 +5915,30 @@ CAutomobile::SetDoorDamage(int32 component, eDoors door, bool noFlyingComponents
 	case DOOR_STATUS_SMASHED:
 		// show damaged part
 		SetComponentVisibility(m_aCarNodes[component], ATOMIC_FLAG_DAM);
+		// SA CAutomobile::SetDoorDamage (0x6B16E5): a freshly damaged door is
+		// slammed shut - the angle, the previous angle and the angular velocity
+		// all go to zero and the frame matrix loses its rotation. reVC only
+		// swapped the visible atomic, so a door that was mid-swing when it got
+		// damaged kept the angle it happened to be at, and stayed there: the
+		// body kept driving with a door frozen half open, sometimes rotated all
+		// the way round.
+		if(Doors[door].m_fPrevAngle != 0.0f){
+			Doors[door].m_fAngle = 0.0f;
+			Doors[door].m_fPrevAngle = 0.0f;
+			Doors[door].m_fAngVel = 0.0f;
+
+			CMatrix frameMatrix(RwFrameGetMatrix(m_aCarNodes[component]));
+			frameMatrix.SetRotate(0.0f, 0.0f, 0.0f);
+			frameMatrix.UpdateRW();
+		}
 		break;
 	case DOOR_STATUS_SWINGING:
 		// turn off angle cull for swinging doors
 		RwFrameForAllObjects(m_aCarNodes[component], CVehicleModelInfo::SetAtomicFlagCB, (void*)ATOMIC_FLAG_NOCULL);
+		// SA: a swinging bonnet also gets a small angular velocity so it flaps
+		// instead of hanging rigid.
+		if(door == DOOR_BONNET)
+			Doors[door].m_fAngVel = 0.2f;
 		break;
 	case DOOR_STATUS_MISSING:
 		if(!noFlyingComponents){
