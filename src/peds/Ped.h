@@ -854,7 +854,9 @@ public:
 	void ProcessBuoyancy(void);
 	void ServiceTalking(void);
 	void SetJump(void);
+	void SetJump(bool highJump, bool climbJump = false);
 	void ApplyLaunchForce(void);
+	void ApplyLaunchForce(bool highJump, bool climbJump = false);
 	void WanderPath(void);
 	void ReactToPointGun(CEntity*);
 	void SeekCar(void);

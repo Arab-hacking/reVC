@@ -403,6 +403,24 @@ int32 CStats::FindCriminalRatingNumber()
 	return rating;
 }
 
+// SA CStats::GetFatAndMuscleModifier (0x559AF0).
+//
+// NOT a port: gta-reversed has this as a bare plugin::CallAndReturn to
+// 0x559AF0, so the body is not reversed anywhere and the formula is unknown.
+// reVC also has none of SA's 305-entry stat array, so there is nothing to read
+// even if the formula were known.
+//
+// Returns the neutral 1.0f, which is what SA gives a player at default fat and
+// muscle, and keeps every call site (jump force, jump clip speed, max health,
+// lung capacity) structurally identical to SA. Deliberately not guessed: an
+// invented curve would silently change jump height, and the user asked for
+// SA's numbers, not plausible ones.
+float
+CStats::GetFatAndMuscleModifier(eStatModAbilities statMod)
+{
+	return 1.0f;
+}
+
 float CStats::GetPercentageProgress()
 {
 	float percentCompleted = (TotalProgressInGame == 0.f ? 0.f :

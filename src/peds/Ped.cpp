@@ -11,6 +11,7 @@
 #include "Fire.h"
 #include "DMAudio.h"
 #include "General.h"
+#include "Stats.h"
 #include "VisibilityPlugins.h"
 #include "cHandlingDataMgr.h"
 #include "Replay.h"
@@ -9628,8 +9629,23 @@ CPed::CanPedJumpThis(CEntity *unused, CVector *damageNormal)
 	return CWorld::GetIsLineOfSightClear(pos, forwardPos, true, false, false, true, false, false, false);
 }
 
+// SA CTaskComplexJump::CreateSubTask (0x67D980) passes m_bHighJump = true when
+// the jump comes from a scripted launch or the ped is in the player's group.
+// That flag is the only thing that separates an 8.5 from a 4.5 launch: a
+// pedestrian hops low, the player and his followers clear obstacles. reVC had
+// the 8.5/4.5 split hard-wired to "is it the player", so a recruited gang
+// member behind you could not clear the same wall you just did.
 void
 CPed::SetJump(void)
+{
+	SetJump(IsPlayer() || (m_leader && m_leader->IsPlayer()));
+}
+
+// SA CTaskSimpleJump carries m_bClimbJump alongside m_bHighJump: a jump taken
+// while hanging on a wall does not get any horizontal launch, it kicks the ped
+// off the surface straight up with the CLIMB_JUMP clip.
+void
+CPed::SetJump(bool highJump, bool climbJump)
 {
 	if (!bInVehicle && m_nPedState != PED_JUMP && !RpAnimBlendClumpGetAssociation(GetClump(), ANIM_ID_JUMP_LAUNCH) &&
 		(m_nSurfaceTouched != SURFACE_STEEP_CLIFF || DotProduct(GetForward(), m_vecDamageNormal) >= 0.0f)) {
@@ -9668,7 +9684,14 @@ CPed::SetJump(void)
 			RestorePreviousState(); // no launch clip => no finish callback
 			return;
 		}
-		ApplyLaunchForce();
+		ApplyLaunchForce(highJump, climbJump);
+		// SA CTaskSimpleJump::Launch blends JUMP_GLIDE right after the force is
+		// applied, so the ped is already in the airborne pose while the launch
+		// clip plays. Without it the body keeps the run pose through the
+		// anticipation and only changes once the launch clip ends, which is the
+		// "hop with no jump animation" users see.
+		CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_DEFAULT,
+			climbJump ? ANIM_ID_CLIMB_JUMP : ANIM_ID_JUMP_GLIDE, 8.0f);
 		jumpAssoc->SetFinishCallback(FinishLaunchCB, this);
 		m_fRotationDest = m_fRotationCur;
 	}
@@ -9681,6 +9704,12 @@ CPed::SetJump(void)
 // CTaskSimpleJump::Launch, which this port already used for the force itself.
 void
 CPed::ApplyLaunchForce(void)
+{
+	ApplyLaunchForce(IsPlayer() || (m_leader && m_leader->IsPlayer()));
+}
+
+void
+CPed::ApplyLaunchForce(bool highJump, bool climbJump)
 {
 	float horizontalSpeed = 0.1f;
 	CAnimBlendAssociation *sprintAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_ID_SPRINT);
@@ -9695,15 +9724,29 @@ CPed::ApplyLaunchForce(void)
 			horizontalSpeed = 0.07f * runAssoc->blendAmount + 0.10f;
 	}
 
-	if (IsPlayer() || m_pedInObjective && m_pedInObjective->IsPlayer())
-		ApplyMoveForce(0.0f, 0.0f, 8.5f);
-	else
-		ApplyMoveForce(0.0f, 0.0f, 4.5f);
+	// SA CTaskSimpleJump::Launch: fJumpForce = (ped->IsPlayer() || m_bHighJump)
+	// ? 8.5F : 4.5F. m_bHighJump is passed in by the caller, not derived here.
+	float jumpForce = (IsPlayer() || highJump) ? 8.5f : 4.5f;
 
-	// Only take over the horizontal speed when the ped is slower than the
-	// jump suggests. Keeping a faster run speed is what used to carry the ped
-	// forward under the launch clip.
-	if (sq(horizontalSpeed) > m_vecMoveSpeed.MagnitudeSqr2D() || m_pCurrentPhysSurface) {
+	// SA then scales BOTH the horizontal speed and the vertical force by the
+	// player's fat/muscle modifier. See CStats::GetFatAndMuscleModifier for why
+	// that multiplier is 1.0f here instead of SA's curve.
+	// reVC keeps no CPed->player-data pointer; IsPlayer() is the same test SA's
+	// ped->GetPlayerData() performs, since only the player ped has one.
+	if (IsPlayer()) {
+		float modifier = CStats::GetFatAndMuscleModifier(CStats::STAT_MOD_2);
+		horizontalSpeed *= modifier;
+		jumpForce *= modifier;
+	}
+
+	ApplyMoveForce(0.0f, 0.0f, jumpForce);
+
+	// SA CTaskSimpleJump::Launch: a climb jump kills the horizontal speed
+	// outright - the ped kicks off the wall, it does not run off it.
+	if (climbJump) {
+		m_vecMoveSpeed.x = 0.0f;
+		m_vecMoveSpeed.y = 0.0f;
+	} else if (sq(horizontalSpeed) > m_vecMoveSpeed.MagnitudeSqr2D() || m_pCurrentPhysSurface) {
 
 #ifdef FREE_CAM
 		if (TheCamera.Cams[0].Using3rdPersonMouseCam() && !CCamera::bFreeCam) {

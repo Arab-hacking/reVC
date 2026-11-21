@@ -150,6 +150,35 @@ public:
 	static float GetFavoriteRadioStationList(int32);
 	static void BuildStatLine(Const char *, void *, int, void *, int);
 	static int ConstructStatLine(int);
+
+	// SA eStatModAbilities (Enums/eStatModAbilities.h). Only the three selectors
+	// SA uses for movement come across here; the rest need the SA stat array
+	// (305 entries) which this fork does not have.
+	enum eStatModAbilities {
+		STAT_MOD_0 = 0,
+		STAT_MOD_1 = 1,
+		STAT_MOD_2 = 2,
+		STAT_MOD_MAX_HEALTH = 9,
+		STAT_MOD_AIR_IN_LUNG = 8,
+		STAT_MOD_TIME_CAN_RUN = 7,
+	};
+
+	// SA CStats::GetFatAndMuscleModifier (0x559AF0).
+	//
+	// HONEST WARNING: this function is NOT reversed in gta-reversed. The
+	// reference is a bare plugin::CallAndReturn to 0x559AF0, so the real formula
+	// is unknown, and it cannot be derived from the callers - they only show it
+	// scaling a jump force, a max health and a lung capacity by whatever the
+	// player's fat and muscle stats happen to be.
+	//
+	// This fork has none of SA's stat array, so the formula cannot be
+	// reproduced here at all. The function returns 1.0f - the neutral multiplier,
+	// i.e. the value SA returns for a player with default fat and muscle - and
+	// says so. That keeps the call sites structurally identical to SA without
+	// inventing numbers: the jump, health and lung-scaling code paths are wired
+	// the way SA wires them, and the day the 0x559AF0 body is reversed the only
+	// thing that has to change is this function.
+	static float GetFatAndMuscleModifier(eStatModAbilities statMod);
 };
 
 #endif // __GTA_STATS_H__
