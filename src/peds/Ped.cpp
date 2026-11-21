@@ -1385,6 +1385,21 @@ CPed::AimGun(void)
 		// CPedIK::bGunReachedTarget, which VC carries as GUN_POINTED_SUCCESSFULLY.
 		m_pedIK.PointGunAtPosition(vector, GetAimAnimBlendAmount());
 		bCanPointGunAtTarget = (m_pedIK.m_flags & CPedIK::GUN_POINTED_SUCCESSFULLY) != 0;
+
+		// VC aims some weapons with the arm chain rather than the torso. SA moves
+		// that into CTaskSimpleUseGun's IK chain manager, which reVC has no
+		// equivalent of, so the arm pass stays here - otherwise AIMS_WITH_ARM
+		// would be set and never acted on, and the arm would hang at the side
+		// while the torso swung round.
+		if (m_pedIK.m_flags & CPedIK::AIMS_WITH_ARM) {
+			float aimYaw = CGeneral::GetRadianAngleBetweenPoints(vector.x, vector.y, GetPosition().x, GetPosition().y);
+			float aimPitch = CGeneral::GetRadianAngleBetweenPoints(
+				vector.z, Distance2D(GetPosition(), vector), GetPosition().z, 0.0f);
+			if (m_pedIK.PointGunInDirectionUsingArm(aimYaw, aimPitch)) {
+				m_pedIK.RotateTorsoForArm(vector);
+				bCanPointGunAtTarget = true;
+			}
+		}
 		if (m_pLookTarget != m_pSeekTarget) {
 			SetLookFlag(m_pSeekTarget, true, true);
 		}
