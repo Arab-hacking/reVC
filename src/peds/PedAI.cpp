@@ -31,6 +31,7 @@
 #include "Weather.h"
 #include "GameLogic.h"
 #include "Streaming.h"
+#include "CarEnterExit.h"
 
 // The set a vehicle's occupants animate through, taken from its model so the
 // entry, the exit and the door work all agree on it.
@@ -3940,68 +3941,16 @@ CPed::SetEnterCar(CVehicle *car, uint32 unused)
 		RestorePreviousState();
 		RestorePreviousObjective();
 	} else {
-		uint8 doorFlag;
-		eDoors door;
-		if (car->IsBike()) {
-			switch (m_vehDoor) {
-				case CAR_DOOR_RF:
-					doorFlag = CAR_DOOR_FLAG_RF | CAR_DOOR_FLAG_LF;
-					door = DOOR_FRONT_RIGHT;
-					break;
-				case CAR_DOOR_RR:
-					doorFlag = CAR_DOOR_FLAG_RR | CAR_DOOR_FLAG_LR;
-					door = DOOR_REAR_RIGHT;
-					break;
-				case CAR_WING_LF:
-				case CAR_BONNET:
-				case CAR_BOOT:
-					doorFlag = CAR_DOOR_FLAG_UNKNOWN;
-					break;
-				case CAR_DOOR_LF:
-				case CAR_WINDSCREEN:
-					doorFlag = CAR_DOOR_FLAG_RF | CAR_DOOR_FLAG_LF;
-					door = DOOR_FRONT_LEFT;
-					break;
-				case CAR_DOOR_LR:
-					doorFlag = CAR_DOOR_FLAG_RR | CAR_DOOR_FLAG_LR;
-					door = DOOR_REAR_LEFT;
-					break;
-			}
-		} else {
-			switch (m_vehDoor) {
-				case CAR_DOOR_RF:
-					doorFlag = CAR_DOOR_FLAG_RF;
-					door = DOOR_FRONT_RIGHT;
-					break;
-				case CAR_DOOR_RR:
-					doorFlag = CAR_DOOR_FLAG_RR;
-					door = DOOR_REAR_RIGHT;
-					break;
-				case CAR_DOOR_LF:
-					if(car->m_nNumMaxPassengers != 0)
-						doorFlag = CAR_DOOR_FLAG_LF;
-					else
-						doorFlag = CAR_DOOR_FLAG_LF | CAR_DOOR_FLAG_LR;
-
-					door = DOOR_FRONT_LEFT;
-					break;
-				case CAR_DOOR_LR:
-					if (car->m_nNumMaxPassengers != 0)
-						doorFlag = CAR_DOOR_FLAG_LR;
-					else
-						doorFlag = CAR_DOOR_FLAG_LF | CAR_DOOR_FLAG_LR;
-
-					door = DOOR_REAR_LEFT;
-					break;
-				default:
-					doorFlag = CAR_DOOR_FLAG_UNKNOWN;
-					break;
-			}
-		}
+		// The door flag and the "is this door usable" test both come from
+		// CCarEnterExit now, so the bike/car difference is stated once instead
+		// of being spelled out inline. The old switch also left `door`
+		// uninitialised on the CAR_DOOR_FLAG_UNKNOWN paths, which made the
+		// IsDoorReady test below read an indeterminate value.
+		const uint8 doorFlag = (uint8)CCarEnterExit::ComputeDoorFlag(car, m_vehDoor, true);
 		if (!IsPedInControl() || m_fHealth <= 0.0f
 			|| doorFlag & car->m_nGettingInFlags || doorFlag & car->m_nGettingOutFlags
 			|| car->bIsBeingCarJacked || m_pVehicleAnim
-			|| doorFlag && !car->IsDoorReady(door) && !car->IsDoorFullyOpen(door)){
+			|| (doorFlag && !CCarEnterExit::IsCarDoorReady(car, m_vehDoor))){
 			if(IsPlayer()){
 				static uint32 lastRefusalLog;
 				uint32 now = CTimer::GetTimeInMilliseconds();
@@ -4127,7 +4076,8 @@ CPed::QuitEnteringCar(void)
 		CAnimManager::BlendAnimation(GetClump(), m_animGroup, ANIM_ID_IDLE, 100.0f);
 	
 	if (veh) {
-		if (m_objective == OBJECTIVE_ENTER_CAR_AS_DRIVER || m_nPedState == PED_CARJACK)
+		const bool wasJacking = m_objective == OBJECTIVE_ENTER_CAR_AS_DRIVER || m_nPedState == PED_CARJACK;
+		if (wasJacking)
 			veh->bIsBeingCarJacked = false;
 
 		if (veh->m_nNumGettingIn != 0)
@@ -4136,11 +4086,14 @@ CPed::QuitEnteringCar(void)
 		if (m_objective == OBJECTIVE_ENTER_CAR_AS_DRIVER || m_objective == OBJECTIVE_ENTER_CAR_AS_PASSENGER)
 			RestorePreviousObjective();
 
+		// Clearing the getting-in flag for this door is CCarEnterExit's job in
+		// SA: it knows the bike/tandem flag widening that a four-door car does
+		// not need.
 		if (veh->IsBike()) {
 			veh->m_nGettingInFlags &= ~GetBikeDoorFlag(m_vehDoor);
 			((CBike*)veh)->bIsBeingPickedUp = false;
 		} else
-			veh->m_nGettingInFlags &= ~GetEnterCarDoorFlag(m_vehDoor, veh->m_nNumMaxPassengers);
+			veh->m_nGettingInFlags &= ~(uint8)CCarEnterExit::ComputeDoorFlag(veh, m_vehDoor, true);
 	}
 
 	bUsesCollision = true;
@@ -4786,152 +4739,29 @@ CPed::GetPositionToOpenCarDoor(CVehicle *veh, uint32 component, CPed *ped)
 void
 CPed::GetNearestDoor(CVehicle *veh, CVector &posToOpen)
 {
-	CVector *enterOffset = nil;
-	if (veh->IsBike()) {
-		if (m_objective != OBJECTIVE_ENTER_CAR_AS_PASSENGER) {
+	// SA has no CPed::GetNearestDoor: the task asks CCarEnterExit for the door
+	// it should walk to, and that one function covers the bike jump-on side,
+	// the towed-vehicle blocked side and the driver-dragged-out offsets that
+	// reVC used to spell out here. Delegate, and always leave a usable
+	// position behind - the callers seek to it unconditionally.
+	posToOpen = GetPositionToOpenCarDoor(veh, CAR_DOOR_RF, this);
 
-			// If bike didn't fall to ground
-			if (Abs(veh->GetRight().z) < 0.1f) {
-				float angleDiff = (GetPosition() - veh->GetPosition()).Heading() - veh->GetForward().Heading();
-
-				if (angleDiff > PI)
-					angleDiff -= TWOPI;
-				else if (angleDiff < -PI)
-					angleDiff += TWOPI;
-
-				if (Abs(angleDiff) < DEGTORAD(30.f)
-					&& (IsPlayer() && ((CPlayerPed*)this)->m_fMoveSpeed > 1.5f && !m_vehDoor ||
-						!IsPlayer() && m_nPedType != PEDTYPE_COP && m_nMoveState == PEDMOVE_RUN
-						&& m_pedStats->m_temper > 65
-						&& !m_vehDoor || m_vehDoor == CAR_WINDSCREEN)) {
-					m_vehDoor = CAR_WINDSCREEN;
-					posToOpen = GetPositionToOpenCarDoor(veh, CAR_WINDSCREEN, this);
-					return;
-				}
-			}
-		}
-	} else if (m_vehDoor == CAR_DOOR_LF && veh->pDriver && !veh->bLowVehicle && !veh->bIsBus) {
-		enterOffset = &vecPedQuickDraggedOutCarAnimOffset;
-	}
-
-	CVector lfPos = GetPositionToOpenCarDoor(veh, CAR_DOOR_LF, this);
-	CVector rfPos = GetPositionToOpenCarDoor(veh, CAR_DOOR_RF, this);
-
-	// Left front door is closer
-	if ((lfPos - GetPosition()).MagnitudeSqr2D() < (rfPos - GetPosition()).MagnitudeSqr2D()) {
-
-		if (veh->IsRoomForPedToLeaveCar(CAR_DOOR_LF, enterOffset)) {
-			m_vehDoor = CAR_DOOR_LF;
-			posToOpen = lfPos;
-		} else if (veh->IsRoomForPedToLeaveCar(CAR_DOOR_RF, enterOffset)) {
-			m_vehDoor = CAR_DOOR_RF;
-			posToOpen = rfPos;
-		}
-	} else {
-
-		if (veh->IsRoomForPedToLeaveCar(CAR_DOOR_RF, enterOffset)) {
-
-			CPed *rfPassenger = veh->pPassengers[0];
-			if (rfPassenger && !veh->IsBike()
-					&& (rfPassenger->m_leader == this || rfPassenger->bDontDragMeOutCar ||
-						veh->VehicleCreatedBy == MISSION_VEHICLE && m_objective == OBJECTIVE_ENTER_CAR_AS_DRIVER)
-					&& veh->IsRoomForPedToLeaveCar(CAR_DOOR_LF, enterOffset)
-				|| (veh->m_nGettingInFlags & CAR_DOOR_FLAG_RF) && veh->IsRoomForPedToLeaveCar(CAR_DOOR_LF, enterOffset)) {
-
-				m_vehDoor = CAR_DOOR_LF;
-				posToOpen = lfPos;
-			} else {
-				m_vehDoor = CAR_DOOR_RF;
-				posToOpen = rfPos;
-			}
-		} else if (veh->IsRoomForPedToLeaveCar(CAR_DOOR_LF, enterOffset)) {
-			m_vehDoor = CAR_DOOR_LF;
-			posToOpen = lfPos;
-		}
-	}
+	int32 doorId = CAR_NODE_NONE;
+	if(CCarEnterExit::GetNearestCarDoor(this, veh, posToOpen, doorId) && doorId > 0)
+		m_vehDoor = (uint16)doorId;
 }
 
 bool
 CPed::GetNearestPassengerDoor(CVehicle *veh, CVector &posToOpen)
 {
-	CVector rfPos, lrPos, rrPos;
-	bool canEnter = false;
-
-	CVehicleModelInfo *vehModel = (CVehicleModelInfo *)CModelInfo::GetModelInfo(veh->GetModelIndex());
-
-	switch (veh->GetModelIndex()) {
-		case MI_BUS:
-			m_vehDoor = CAR_DOOR_RF;
-			posToOpen = GetPositionToOpenCarDoor(veh, CAR_DOOR_RF, this);
-			return true;
-		case MI_RHINO:
-		default:
-			break;
-	}
-
-	CVector2D rfPosDist(999.0f, 999.0f);
-	CVector2D lrPosDist(999.0f, 999.0f);
-	CVector2D rrPosDist(999.0f, 999.0f);
-
-	if (veh->IsBike()) {
-		if (!veh->pPassengers[0]
-			&& !(veh->m_nGettingInFlags & CAR_DOOR_FLAG_LR)
-			&& veh->IsRoomForPedToLeaveCar(CAR_DOOR_LR, nil)) {
-			lrPos = GetPositionToOpenCarDoor(veh, CAR_DOOR_LR, this);
-			canEnter = true;
-			lrPosDist = lrPos - GetPosition();
-		}
-		if (!veh->pPassengers[0]
-			&& !(veh->m_nGettingInFlags & CAR_DOOR_FLAG_RR)
-			&& veh->IsRoomForPedToLeaveCar(CAR_DOOR_RR, nil)) {
-			rrPos = GetPositionToOpenCarDoor(veh, CAR_DOOR_RR, this);
-			canEnter = true;
-			rrPosDist = rrPos - GetPosition();
-		}
-	} else if (!veh->pPassengers[0]
-		&& !(veh->m_nGettingInFlags & CAR_DOOR_FLAG_RF)
-		&& veh->IsRoomForPedToLeaveCar(CAR_DOOR_RF, nil)) {
-
-		rfPos = GetPositionToOpenCarDoor(veh, CAR_DOOR_RF, this);
-		canEnter = true;
-		rfPosDist = rfPos - GetPosition();
-	}
-
-	if (vehModel->m_numDoors == 4) {
-		if (!veh->pPassengers[1]
-			&& !(veh->m_nGettingInFlags & CAR_DOOR_FLAG_LR)
-			&& veh->IsRoomForPedToLeaveCar(CAR_DOOR_LR, nil)) {
-			lrPos = GetPositionToOpenCarDoor(veh, CAR_DOOR_LR, this);
-			canEnter = true;
-			lrPosDist = lrPos - GetPosition();
-		}
-		if (!veh->pPassengers[2]
-			&& !(veh->m_nGettingInFlags & CAR_DOOR_FLAG_RR)
-			&& veh->IsRoomForPedToLeaveCar(CAR_DOOR_RR, nil)) {
-			rrPos = GetPositionToOpenCarDoor(veh, CAR_DOOR_RR, this);
-			canEnter = true;
-			rrPosDist = rrPos - GetPosition();
-		}
-
-		// When the door we should enter is blocked by some object.
-		if (!canEnter)
-			veh->ShufflePassengersToMakeSpace();
-	}
-
-	CVector2D nextToCompare = rfPosDist;
-	posToOpen = rfPos;
-	m_vehDoor = CAR_DOOR_RF;
-	if (lrPosDist.MagnitudeSqr() < nextToCompare.MagnitudeSqr()) {
-		m_vehDoor = CAR_DOOR_LR;
-		posToOpen = lrPos;
-		nextToCompare = lrPosDist;
-	}
-
-	if (rrPosDist.MagnitudeSqr() < nextToCompare.MagnitudeSqr()) {
-		m_vehDoor = CAR_DOOR_RR;
-		posToOpen = rrPos;
-	}
-	return canEnter;
+	// SA asks CCarEnterExit for this; the door choice, the tandem-seat test and
+	// the "is there room" test all live there now. The caller here wants the
+	// door to be enterable and the space next to it free.
+	int32 doorId = CAR_NODE_NONE;
+	const bool ok = CCarEnterExit::GetNearestCarPassengerDoor(this, veh, &posToOpen, &doorId, true, true, true);
+	if(ok && doorId > 0)
+		m_vehDoor = (uint16)doorId;
+	return ok;
 }
 
 void

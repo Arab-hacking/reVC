@@ -12,6 +12,7 @@
 #include "Antennas.h"
 #include "Bridge.h"
 #include "CarCtrl.h"
+#include "CarEnterExit.h"
 #include "CarGen.h"
 #include "CdStream.h"
 #include "Clock.h"
@@ -481,6 +482,8 @@ bool CGame::Initialise(void)
 
 	PUSH_MEMID(MEMID_CARS);
 	CCarCtrl::Init();
+	// SA initialises the car enter/exit constants alongside the car control.
+	CCarEnterExit::Initialise();
 	POP_MEMID();
 
 	PUSH_MEMID(MEMID_DEF_MODELS);

@@ -156,6 +156,8 @@ CVehicle::CVehicle(uint8 CreatedBy)
 	m_nDoorLock = CARLOCK_UNLOCKED;
 	m_nLastWeaponDamage = -1;
 	m_pLastDamageEntity = nil;
+	m_pTowingVehicle = nil;
+	m_pVehicleBeingTowed = nil;
 	m_fMapObjectHeightAhead = m_fMapObjectHeightBehind = 0.0f;
 	m_audioEntityId = DMAudio.CreateEntity(AUDIOTYPE_PHYSICAL, this);
 	if(m_audioEntityId >= 0)
@@ -2197,6 +2199,26 @@ CVector
 CVehicle::GetDummyPositionObjSpace(int32 dummy) const
 {
 	return ((CVehicleModelInfo*)CModelInfo::GetModelInfo(GetModelIndex()))->m_vehicleStruct.m_avDummyPos[dummy];
+}
+
+// SA CVehicle::GetDriverSeatDummyPositionOS (NOTSA in gta-reversed): a boat has
+// no seat dummy, so its "driver seat" is the front light dummy.
+CVector
+CVehicle::GetDriverSeatDummyPositionOS(void) const
+{
+	return GetDummyPositionObjSpace(IsBoat() ? DUMMY_LIGHT_FRONT_MAIN : DUMMY_SEAT_FRONT);
+}
+
+// SA CVehicle::CanBeDriven (0x6D42E0): a trailer, a train that is on a track,
+// and an RC vehicle cannot be driven by a ped. Everything else can, as long as
+// the model actually has a front seat dummy to put the ped in.
+bool
+CVehicle::CanBeDriven(void) const
+{
+	if(IsSubTrailer() || (IsSubTrain() && ((const CTrain*)this)->m_nTrackId != 0) || bIsRCVehicle)
+		return false;
+
+	return GetDriverSeatDummyPositionOS().MagnitudeSqr() > 0.0f;
 }
 
 // SA CVehicle::DoHeadLightBeam (0x6E0E20), verbatim.

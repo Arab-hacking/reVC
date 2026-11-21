@@ -116,6 +116,7 @@ public:
 	// through address 0, which is exactly how a player built on an empty slot
 	// used to crash. Route through the guarded accessor instead.
 	CColModel *GetColModel(void) { return CModelInfo::GetColModel(m_modelIndex); }
+	const CColModel *GetColModel(void) const { return CModelInfo::GetColModel(m_modelIndex); }
 	bool GetIsStatic(void) const { return bIsStatic || bIsStaticWaitingForCollision; }
 	void SetIsStatic(bool state) { bIsStatic = state; }
 #ifdef COMPATIBLE_SAVES

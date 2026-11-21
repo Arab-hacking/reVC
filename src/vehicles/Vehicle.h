@@ -251,6 +251,9 @@ public:
 	uint8 m_bombType : 3;
 #endif
 	uint8 bDriverLastFrame : 1;
+	// SA CVehicle::vehicleFlags.bIsRCVehicle. Needed by CanBeDriven, which is
+	// what decides whether a ped may take the wheel.
+	uint8 bIsRCVehicle : 1;
 
 	int8 m_numPedsUseItAsCover;
 	uint8 m_nAmmoInClip;    // Used to make the guns on boat do a reload (20 by default)
@@ -288,6 +291,11 @@ public:
 	eCarLock m_nDoorLock;
 	int8 m_nLastWeaponDamage; // see eWeaponType, -1 if no damage
 	CEntity *m_pLastDamageEntity;
+	// SA CVehicle::m_pTowingVehicle / m_pVehicleBeingTowed. A tractor points at
+	// its trailer and the trailer back at the tractor, so both ends can answer
+	// "am I attached, and to what".
+	CVehicle *m_pTowingVehicle;
+	CVehicle *m_pVehicleBeingTowed;
 	uint8 m_nRadioStation;
 	uint8 m_bRainAudioCounter;
 	uint8 m_bRainSamplesCounter;
@@ -328,6 +336,8 @@ public:
 	virtual bool IsDoorMissing(eDoors door) { return false; }
 	virtual bool IsDoorReady(uint32 door) { return false; }
 	virtual bool IsDoorMissing(uint32 door) { return false; }
+	virtual bool IsDoorClosed(uint32 door) { return false; }
+	virtual bool IsDoorFullyOpen(uint32 door) { return false; }
 	virtual bool IsOpenTopCar(void) { return false; }
 	virtual void RemoveRefsToVehicle(CEntity *ent) {}
 	virtual void BlowUpCar(CEntity *ent) {}
@@ -354,39 +364,39 @@ public:
 	// primary lamp pair, DUMMY_LIGHT_FRONT_SECONDARY for the second one.
 	CVector GetDummyPositionObjSpace(int32 dummy) const;
 
-	bool IsVehicleTypeValid(void) { return m_nVehicleType != VEHICLE_TYPE_IGNORE; }
-	bool IsAutomobile(void) { return m_nVehicleType == VEHICLE_TYPE_AUTOMOBILE; }
-	bool IsMonsterTruck(void) { return m_nVehicleType == VEHICLE_TYPE_MTRUCK; }
-	bool IsQuad(void) { return m_nVehicleType == VEHICLE_TYPE_QUAD; }
-	bool IsHeli(void) { return m_nVehicleType == VEHICLE_TYPE_HELI; }
-	bool IsPlane(void) { return m_nVehicleType == VEHICLE_TYPE_PLANE; }
-	bool IsBoat(void) { return m_nVehicleType == VEHICLE_TYPE_BOAT; }
-	bool IsTrain(void) { return m_nVehicleType == VEHICLE_TYPE_TRAIN; }
-	bool IsFakeAircraft(void) { return m_nVehicleType == VEHICLE_TYPE_FHELI || m_nVehicleType == VEHICLE_TYPE_FPLANE; }
-	bool IsBike(void) { return m_nVehicleType == VEHICLE_TYPE_BIKE; }
-	bool IsBMX(void) { return m_nVehicleType == VEHICLE_TYPE_BMX; }
-	bool IsTrailer(void) { return m_nVehicleType == VEHICLE_TYPE_TRAILER; }
+	bool IsVehicleTypeValid(void) const { return m_nVehicleType != VEHICLE_TYPE_IGNORE; }
+	bool IsAutomobile(void) const { return m_nVehicleType == VEHICLE_TYPE_AUTOMOBILE; }
+	bool IsMonsterTruck(void) const { return m_nVehicleType == VEHICLE_TYPE_MTRUCK; }
+	bool IsQuad(void) const { return m_nVehicleType == VEHICLE_TYPE_QUAD; }
+	bool IsHeli(void) const { return m_nVehicleType == VEHICLE_TYPE_HELI; }
+	bool IsPlane(void) const { return m_nVehicleType == VEHICLE_TYPE_PLANE; }
+	bool IsBoat(void) const { return m_nVehicleType == VEHICLE_TYPE_BOAT; }
+	bool IsTrain(void) const { return m_nVehicleType == VEHICLE_TYPE_TRAIN; }
+	bool IsFakeAircraft(void) const { return m_nVehicleType == VEHICLE_TYPE_FHELI || m_nVehicleType == VEHICLE_TYPE_FPLANE; }
+	bool IsBike(void) const { return m_nVehicleType == VEHICLE_TYPE_BIKE; }
+	bool IsBMX(void) const { return m_nVehicleType == VEHICLE_TYPE_BMX; }
+	bool IsTrailer(void) const { return m_nVehicleType == VEHICLE_TYPE_TRAILER; }
 
-	bool IsSubVehicleTypeValid(void) { return m_nVehicleSubType != VEHICLE_TYPE_IGNORE; }
-	bool IsSubAutomobile(void) { return m_nVehicleSubType == VEHICLE_TYPE_AUTOMOBILE; }
-	bool IsSubMonsterTruck(void) { return m_nVehicleSubType == VEHICLE_TYPE_MTRUCK; }
-	bool IsSubQuad(void) { return m_nVehicleSubType == VEHICLE_TYPE_QUAD; }
-	bool IsSubHeli(void) { return m_nVehicleSubType == VEHICLE_TYPE_HELI; }
-	bool IsSubPlane(void) { return m_nVehicleSubType == VEHICLE_TYPE_PLANE; }
-	bool IsSubBoat(void) { return m_nVehicleSubType == VEHICLE_TYPE_BOAT; }
-	bool IsSubTrain(void) { return m_nVehicleSubType == VEHICLE_TYPE_TRAIN; }
-	bool IsSubFakeAircraft(void) { return m_nVehicleSubType == VEHICLE_TYPE_FHELI || m_nVehicleSubType == VEHICLE_TYPE_FPLANE; }
-	bool IsSubBike(void) { return m_nVehicleSubType == VEHICLE_TYPE_BIKE; }
-	bool IsSubBMX(void) { return m_nVehicleSubType == VEHICLE_TYPE_BMX; }
-	bool IsSubTrailer(void) { return m_nVehicleSubType == VEHICLE_TYPE_TRAILER; }
+	bool IsSubVehicleTypeValid(void) const { return m_nVehicleSubType != VEHICLE_TYPE_IGNORE; }
+	bool IsSubAutomobile(void) const { return m_nVehicleSubType == VEHICLE_TYPE_AUTOMOBILE; }
+	bool IsSubMonsterTruck(void) const { return m_nVehicleSubType == VEHICLE_TYPE_MTRUCK; }
+	bool IsSubQuad(void) const { return m_nVehicleSubType == VEHICLE_TYPE_QUAD; }
+	bool IsSubHeli(void) const { return m_nVehicleSubType == VEHICLE_TYPE_HELI; }
+	bool IsSubPlane(void) const { return m_nVehicleSubType == VEHICLE_TYPE_PLANE; }
+	bool IsSubBoat(void) const { return m_nVehicleSubType == VEHICLE_TYPE_BOAT; }
+	bool IsSubTrain(void) const { return m_nVehicleSubType == VEHICLE_TYPE_TRAIN; }
+	bool IsSubFakeAircraft(void) const { return m_nVehicleSubType == VEHICLE_TYPE_FHELI || m_nVehicleSubType == VEHICLE_TYPE_FPLANE; }
+	bool IsSubBike(void) const { return m_nVehicleSubType == VEHICLE_TYPE_BIKE; }
+	bool IsSubBMX(void) const { return m_nVehicleSubType == VEHICLE_TYPE_BMX; }
+	bool IsSubTrailer(void) const { return m_nVehicleSubType == VEHICLE_TYPE_TRAILER; }
 
 	// The handling record carries the real class of the physics, which can be
 	// narrower than the runtime type (an "RC bandit" is an automobile that the
 	// handling line marks as a bike-like body).
-	bool IsRealBike(void) { return m_pHandlingData->m_bIsBike; }
-	bool IsRealHeli(void) { return m_pHandlingData->m_bIsHeli; }
-	bool IsRealPlane(void) { return m_pHandlingData->m_bIsPlane; }
-	bool IsRealBoat(void) { return m_pHandlingData->m_bIsBoat; }
+	bool IsRealBike(void) const { return m_pHandlingData->m_bIsBike; }
+	bool IsRealHeli(void) const { return m_pHandlingData->m_bIsHeli; }
+	bool IsRealPlane(void) const { return m_pHandlingData->m_bIsPlane; }
+	bool IsRealBoat(void) const { return m_pHandlingData->m_bIsBoat; }
 
 	bool DoBladeCollision(CVector pos, CMatrix &matrix, int16 rotorType, float radius, float damageMult);
 	bool BladeColSectorList(CPtrList &list, CColModel &rotorColModel, CMatrix &matrix, int16 rotorType, float damageMult);
@@ -410,6 +420,31 @@ public:
 	bool IsUpsideDown(void);
 	bool IsOnItsSide(void);
 	bool CanBeDeleted(void);
+	// SA CVehicle helpers the car-enter/exit code is written against. reVC
+	// stores the seats as pDriver/pPassengers/m_nNumMaxPassengers, so these are
+	// thin wrappers over that layout, not reimplementations.
+	bool HasDriver(void) const { return pDriver != nil; }
+	bool HasPassengerAtSeat(int32 seat) const { return pPassengers[seat] != nil; }
+	CPed *GetPassenger(int32 seat) const { return pPassengers[seat]; }
+	int32 GetMaxPassengerSeats(void) const { return m_nNumMaxPassengers; }
+	// SA CVehicle::GetAnimGroupId: the anim group comes from the handling data,
+	// not from the ped, so a bike and a car in the same block differ.
+	uint8 GetAnimGroupId(void) const { return m_pHandlingData ? m_pHandlingData->m_nAnimGroup : 0; }
+	// SA CVehicle::CanBeDriven: a trailer, a train on a track, or an RC car
+	// cannot be driven by a ped; everything else can, provided the model has a
+	// driver seat dummy.
+	bool CanBeDriven(void) const;
+	// SA CVehicle::GetDriverSeatDummyPositionOS (0x6D42B0): model-space position
+	// of the driver's seat. A boat has no seat dummy, so SA uses its front light
+	// dummy there.
+	CVector GetDriverSeatDummyPositionOS(void) const;
+	// SA CVehicle::IsMissionVehicle.
+	bool IsMissionVehicle(void) const { return VehicleCreatedBy == MISSION_VEHICLE; }
+	// SA CVehicle::SetGettingInFlags/SetGettingOutFlags (0x6D30F0/0x6D3020) are
+	// OR-merges, not assignments - which is why QuitEnteringCar can add a flag
+	// without clearing the others.
+	void SetGettingInFlags(uint8 doorFlag) { m_nGettingInFlags |= doorFlag; }
+	void SetGettingOutFlags(uint8 doorFlag) { m_nGettingOutFlags |= doorFlag; }
 	bool CanPedOpenLocks(CPed *ped);
 	bool CanDoorsBeDamaged(void);
 	bool CanPedEnterCar(void);

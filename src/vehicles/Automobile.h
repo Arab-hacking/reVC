@@ -112,6 +112,8 @@ public:
 	bool IsDoorMissing(eDoors door);
 	bool IsDoorReady(uint32 door);
 	bool IsDoorMissing(uint32 door);
+	bool IsDoorClosed(uint32 door);
+	bool IsDoorFullyOpen(uint32 door);
 	bool IsOpenTopCar(void);
 	void RemoveRefsToVehicle(CEntity *ent);
 	void BlowUpCar(CEntity *ent);

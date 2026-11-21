@@ -11,7 +11,7 @@ public:
 	static void *operator new(size_t);
 
 	CPlaceable(void);
-	const CVector &GetPosition(void) { return m_matrix.GetPosition(); }
+	const CVector &GetPosition(void) const { return m_matrix.GetPosition(); }
 	void SetPosition(float x, float y, float z) {
 		m_matrix.GetPosition().x = x;
 		m_matrix.GetPosition().y = y;
@@ -22,6 +22,7 @@ public:
 	CVector &GetForward(void) { return m_matrix.GetForward(); }
 	CVector &GetUp(void) { return m_matrix.GetUp(); }
 	CMatrix &GetMatrix(void) { return m_matrix; }
+	const CMatrix &GetMatrix(void) const { return m_matrix; }
 	void SetMatrix(CMatrix &newMatrix) { m_matrix = newMatrix; }
 	void SetTransform(RwMatrix *m) { m_matrix = CMatrix(m, false); }
 	void SetHeading(float angle);

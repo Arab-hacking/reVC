@@ -4736,6 +4736,34 @@ CAutomobile::IsDoorMissing(uint32 door)
 	}
 }
 
+// SA's car code addresses doors by car node, so the two remaining queries need
+// the same node->eDoors bridge the two above already had.
+bool
+CAutomobile::IsDoorClosed(uint32 door)
+{
+	switch(door){
+	case CAR_DOOR_RF: return IsDoorClosed(DOOR_FRONT_RIGHT);
+	case CAR_DOOR_RR: return IsDoorClosed(DOOR_REAR_RIGHT);
+	case CAR_DOOR_LF: return IsDoorClosed(DOOR_FRONT_LEFT);
+	case CAR_DOOR_LR: return IsDoorClosed(DOOR_REAR_LEFT);
+	default:
+		return false;
+	}
+}
+
+bool
+CAutomobile::IsDoorFullyOpen(uint32 door)
+{
+	switch(door){
+	case CAR_DOOR_RF: return IsDoorFullyOpen(DOOR_FRONT_RIGHT);
+	case CAR_DOOR_RR: return IsDoorFullyOpen(DOOR_REAR_RIGHT);
+	case CAR_DOOR_LF: return IsDoorFullyOpen(DOOR_FRONT_LEFT);
+	case CAR_DOOR_LR: return IsDoorFullyOpen(DOOR_REAR_LEFT);
+	default:
+		return false;
+	}
+}
+
 bool
 CAutomobile::IsOpenTopCar(void)
 {
