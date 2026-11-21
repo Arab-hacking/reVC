@@ -1029,7 +1029,13 @@ CBrightLights::Render(void)
 		if(TempBufferIndicesStored > TEMPBUFFERINDEXSIZE-40 || TempBufferVerticesStored > TEMPBUFFERVERTSIZE-40)
 			RenderOutGeometryBuffer();
 
-		int r, g, b, a;
+		// SA has no default arm on this switch; VC's build initialises them to
+		// zero and the FIX_BUGS default below returns early. Without an
+		// initialiser, a m_type outside the enumerated range leaves r, g and b
+		// holding whatever was on the stack, and the light is drawn in that
+		// colour - which is exactly how a headlight ends up green or yellow
+		// instead of white.
+		int r = 255, g = 255, b = 255, a = 255;
 		float flicker = (CGeneral::GetRandomNumber()&0xFF) * 0.2f;
 		switch(aBrightLights[i].m_type){
 		case BRIGHTLIGHT_TRAFFIC_GREEN:
