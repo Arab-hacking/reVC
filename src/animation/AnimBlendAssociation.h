@@ -59,6 +59,10 @@ public:
 	bool IsRepeating(void) { return !!(flags & ASSOC_REPEAT); }
 	bool IsPartial(void) { return !!(flags & ASSOC_PARTIAL); }
 	bool IsMovement(void) { return !!(flags & ASSOC_MOVEMENT); }
+	// Same bit as gta-reversed' ANIMATION_IS_SYNCRONISED (1 << 5). SA tests it
+	// in UpdateTimeStep to decide whether a clip follows the clump-wide
+	// rhythm; the movement meaning is a separate, local reading of the bit.
+	bool IsSyncronised(void) { return !!(flags & ASSOC_MOVEMENT); }
 	bool IsFacial(void) { return !!(flags & ASSOC_FACIAL); }
 	bool HasTranslation(void) { return !!(flags & ASSOC_HAS_TRANSLATION); }
 	bool HasXTranslation(void) { return !!(flags & ASSOC_HAS_X_TRANSLATION); }

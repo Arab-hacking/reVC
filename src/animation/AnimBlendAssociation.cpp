@@ -233,8 +233,18 @@ CAnimBlendAssociation::Start(float time)
 void
 CAnimBlendAssociation::UpdateTimeStep(float timeDelta, float relSpeed)
 {
+	// gta-reversed: CAnimBlendAssociation::UpdateTimeStep (0x4D13A0)
+	//   m_TimeStep = IsSyncronised()
+	//       ? m_BlendHier->m_fTotalTime * totalTimeRecp
+	//       : m_Speed;
+	//   m_TimeStep *= timeStep;
+	// The synchronised flag is what carries the shared rhythm, not the
+	// movement flag: a movement clip that is not synchronised keeps its own
+	// speed. Testing ASSOC_MOVEMENT here pushed every moving clip onto the
+	// clump-wide ratio (relSpeed * totalLength), so clips played at the wrong
+	// rate and drifted apart from the ones they should share phase with.
 	if(IsRunning())
-		timeStep = (flags & ASSOC_MOVEMENT ? relSpeed*hierarchy->totalLength : speed) * timeDelta;
+		timeStep = (IsSyncronised() ? hierarchy->totalLength*relSpeed : speed) * timeDelta;
 }
 
 bool

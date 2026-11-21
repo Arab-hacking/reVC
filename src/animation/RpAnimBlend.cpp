@@ -483,7 +483,13 @@ RpAnimBlendNodeUpdateKeyframes(AnimBlendFrameData *frames, AnimBlendFrameUpdateD
 			if((frames[i].flag & AnimBlendFrameData::VELOCITY_EXTRACTION) == 0 ||
 			   gpAnimBlendClump->velocity2d == nil){
 				if((*node)[i].sequence)
-					(*node)[i].FindKeyFrame(a->currentTime - a->timeStep);
+					// gta-reversed 0x4D1570: node->FindKeyFrame(assoc->GetCurrentTime()).
+					// Subtracting timeStep here sampled the pose one step
+					// behind the clock the association is actually at, so the
+					// skeleton lagged the animation by a whole tick - visible
+					// as feet and hands arriving late, and it never caught up
+					// because the error is re-introduced every frame.
+					(*node)[i].FindKeyFrame(a->currentTime);
 			}
 	}
 }
@@ -526,7 +532,10 @@ RpAnimBlendClumpUpdateAnimations(RpClump *clump, float timeDelta, bool doRender)
 				}
 				if(i < 11)
 					updateData.nodes[i++] = assoc->GetNode(0);
-				if(assoc->flags & ASSOC_MOVEMENT){
+				// gta-reversed: if (a->IsSyncronised()) - only the synchronised
+				// clips contribute to the shared rhythm, everything else just
+				// marks the clump as holding a partial/non-sync clip.
+				if(assoc->IsSyncronised()){
 					totalLength += assoc->hierarchy->totalLength/assoc->speed * assoc->blendAmount;
 					totalBlend += assoc->blendAmount;
 				}else
