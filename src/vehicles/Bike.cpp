@@ -1427,8 +1427,9 @@ CBike::PreRender(void)
 			CCoronas::UpdateCoronaCoors((uintptr)this, light, 80.0f*bikeLightMult, angle);
 		}
 
-		// bright light
-		CBrightLights::RegisterOne(light, GetUp(), GetRight(), GetForward(), m_pHandlingData->m_nFrontLights + BRIGHTLIGHT_FRONT);
+
+		// SA draws no bright-light geometry on bikes either; the coronas above
+		// are the entire effect.
 
 		// Taillight
 
@@ -1466,8 +1467,6 @@ CBike::PreRender(void)
 			CCoronas::UpdateCoronaCoors((uintptr)this + 14, light, 80.0f*bikeLightMult, angle);
 		}
 
-		// bright light
-		CBrightLights::RegisterOne(light, GetUp(), GetRight(), GetForward(), m_pHandlingData->m_nRearLights + BRIGHTLIGHT_REAR);
 
 		// Light shadows
 		if(!alarmOff){
@@ -1521,7 +1520,6 @@ CBike::PreRender(void)
 						light, 1.2f, 50.0f*TheCamera.LODDistMultiplier,
 						CCoronas::TYPE_STAR, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
 						CCoronas::LOSCHECK_OFF, CCoronas::STREAK_ON, 0.0f);
-					CBrightLights::RegisterOne(light, GetUp(), GetRight(), GetForward(), m_pHandlingData->m_nRearLights + BRIGHTLIGHT_REAR);
 				}
 			}else{
 				CCoronas::UpdateCoronaCoors((uintptr)this + 14, light, 50.0f*TheCamera.LODDistMultiplier, 0.0f);

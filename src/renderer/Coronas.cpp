@@ -550,9 +550,13 @@ CCoronas::RenderReflections(void)
 		RwRenderStateSet(rwRENDERSTATETEXTURERASTER, RwTextureGetRaster(gpCoronaTexture[3]));
 
 		for(i = 0; i < NUMCORONAS; i++){
+			// REFLECTION_SIMPLE (SA CORREFL_SIMPLE, what a headlight lens uses) is
+			// not "no reflection" - it is a reflection that skips the road-height
+			// probe. Testing `== 0` here dropped the lens reflection entirely once
+			// the SA value was introduced.
 			if(aCoronas[i].id == 0 ||
 			   aCoronas[i].fadeAlpha == 0 && aCoronas[i].alpha == 0 ||
-			   aCoronas[i].reflection == 0)
+			   aCoronas[i].reflection == REFLECTION_OFF)
 				continue;
 
 			// check if we want a reflection on this corona

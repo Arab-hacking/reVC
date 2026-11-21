@@ -127,29 +127,25 @@ public:
 	static RpClump* m_pRpClumpArray[NUMMARKERTYPES];
 };
 
-enum
+// SA eBrightLightColor (BrightLights.h). This class draws *only* traffic
+// lights and sirens in SA - CBrightLights::RegisterOne has exactly one caller
+// there, CTrafficLights. The VC build reused it for car head/tail lights and
+// grew four extra "the light is a cube" cases on top, which is where the boxes
+// standing in for lenses come from. Car lights in SA go through CCoronas in
+// CVehicle::DoLightEffectImpl instead, which is also the only path that gets
+// the lens colour right (see that function).
+enum eBrightLightColor
 {
-	BRIGHTLIGHT_INVALID,
-	BRIGHTLIGHT_TRAFFIC_GREEN,
-	BRIGHTLIGHT_TRAFFIC_YELLOW,
-	BRIGHTLIGHT_TRAFFIC_RED,
+	BRIGHTLIGHT_NONE = 0,
 
-	// white
-	BRIGHTLIGHT_FRONT_LONG,
-	BRIGHTLIGHT_FRONT_SMALL,
-	BRIGHTLIGHT_FRONT_BIG,
-	BRIGHTLIGHT_FRONT_TALL,
-
-	// red
-	BRIGHTLIGHT_REAR_LONG,
-	BRIGHTLIGHT_REAR_SMALL,
-	BRIGHTLIGHT_REAR_BIG,
-	BRIGHTLIGHT_REAR_TALL,
-
-	BRIGHTLIGHT_SIREN,	// unused
-
-	BRIGHTLIGHT_FRONT = BRIGHTLIGHT_FRONT_LONG,
-	BRIGHTLIGHT_REAR = BRIGHTLIGHT_REAR_LONG,
+	// The three traffic-light colours, each in a big and a small size. Big ones
+	// are drawn at half alpha.
+	BRIGHTLIGHT_GREEN_BIG,
+	BRIGHTLIGHT_YELLOW_BIG,
+	BRIGHTLIGHT_RED_BIG,
+	BRIGHTLIGHT_GREEN_SMALL,
+	BRIGHTLIGHT_YELLOW_SMALL,
+	BRIGHTLIGHT_RED_SMALL,
 };
 
 
@@ -165,6 +161,10 @@ public:
 	uint8 m_red;
 	uint8 m_green;
 	uint8 m_blue;
+
+	// SA tBrightLight::GetColorRGBA / Render are inlined into the header there.
+	CRGBA GetColorRGBA(void) const;
+	void Render(void) const;
 };
 
 

@@ -961,58 +961,159 @@ CBrightLights::Init(void)
 	NumBrightLights = 0;
 }
 
+// SA CBrightLights::RegisterOne (0x724770), verbatim. Distances are divided by
+// the camera LOD multiplier and the cut-off is 60, not BRIGHTLIGHTS_MAX_DIST.
 void
 CBrightLights::RegisterOne(CVector pos, CVector up, CVector side, CVector front,
 	uint8 type, uint8 red, uint8 green, uint8 blue)
 {
+	if(type == BRIGHTLIGHT_NONE)
+		return;
+
 	if(NumBrightLights >= NUMBRIGHTLIGHTS)
 		return;
 
-	aBrightLights[NumBrightLights].m_camDist = (pos - TheCamera.GetPosition()).Magnitude();
-	if(aBrightLights[NumBrightLights].m_camDist > BRIGHTLIGHTS_MAX_DIST)
+	const float distToCam = (TheCamera.GetPosition() - pos).Magnitude() / TheCamera.LODDistMultiplier;
+	if(distToCam > 60.0f)
 		return;
 
-	aBrightLights[NumBrightLights].m_pos = pos;
-	aBrightLights[NumBrightLights].m_up = up;
-	aBrightLights[NumBrightLights].m_side = side;
-	aBrightLights[NumBrightLights].m_front = front;
-	aBrightLights[NumBrightLights].m_type = type;
-	aBrightLights[NumBrightLights].m_red = red;
-	aBrightLights[NumBrightLights].m_green = green;
-	aBrightLights[NumBrightLights].m_blue = blue;
+	CBrightLight &light = aBrightLights[NumBrightLights];
+
+	light.m_pos = pos;
+	light.m_up = up;
+	light.m_side = side;
+	light.m_front = front;
+	light.m_camDist = distToCam;
+	light.m_type = type;
+	light.m_red = red;
+	light.m_green = green;
+	light.m_blue = blue;
 
 	NumBrightLights++;
 }
 
-static float TrafficLightsSide[6] = { -0.09f, 0.09f, 0.162f, 0.09f, -0.09f, -0.162f };
-static float TrafficLightsUp[6] = { 0.162f, 0.162f, 0.0f, -0.162f, -0.162f, 0.0f };
-static float LongCarHeadLightsSide[8] = { -0.2f, 0.2f, -0.2f, 0.2f, -0.2f, 0.2f, -0.2f, 0.2f };
-static float LongCarHeadLightsFront[8] = { 0.1f, 0.1f, -0.1f, -0.1f, 0.1f, 0.1f, -0.1f, -0.1f };
-static float LongCarHeadLightsUp[8] = { 0.1f, 0.1f, 0.1f, 0.1f, -0.1f, -0.1f, -0.1f, -0.1f };
-static float SmallCarHeadLightsSide[8] = { -0.08f, 0.08f, -0.08f, 0.08f, -0.08f, 0.08f, -0.08f, 0.08f };
-static float SmallCarHeadLightsFront[8] = { 0.08f, 0.08f, -0.08f, -0.08f, 0.08f, 0.08f, -0.08f, -0.08f };
-static float SmallCarHeadLightsUp[8] = { 0.08f, 0.08f, 0.08f, 0.08f, -0.08f, -0.08f, -0.08f, -0.08f };
-static float BigCarHeadLightsSide[8] = { -0.15f, 0.15f, -0.15f, 0.15f, -0.15f, 0.15f, -0.15f, 0.15f };
-static float BigCarHeadLightsFront[8] = { 0.15f, 0.15f, -0.15f, -0.15f, 0.15f, 0.15f, -0.15f, -0.15f };
-static float BigCarHeadLightsUp[8] = { 0.15f, 0.15f, 0.15f, 0.15f, -0.15f, -0.15f, -0.15f, -0.15f };
-static float TallCarHeadLightsSide[8] = { -0.08f, 0.08f, -0.08f, 0.08f, -0.08f, 0.08f, -0.08f, 0.08f };
-static float TallCarHeadLightsFront[8] = { 0.08f, 0.08f, -0.08f, -0.08f, 0.08f, 0.08f, -0.08f, -0.08f };
-static float TallCarHeadLightsUp[8] = { 0.2f, 0.2f, 0.2f, 0.2f, -0.2f, -0.2f, -0.2f, -0.2f };
-static float SirenLightsSide[6] = { -0.04f, 0.04f, 0.06f, 0.04f, -0.04f, -0.06f };
-static float SirenLightsUp[6] = { 0.06f, 0.06f, 0.0f, -0.06f, -0.06f, 0.0f };
-static RwImVertexIndex TrafficLightIndices[4*3] = { 0, 1, 5,  1, 2, 3,  1, 3, 4,  1, 4, 5 };
-static RwImVertexIndex CubeIndices[12*3] = {
-	0, 2, 1,  1, 2, 3,  3, 5, 1,  3, 7, 5,
-	2, 7, 3,  2, 6, 7,  4, 0, 1,  4, 1, 5,
-	6, 0, 4,  6, 2, 0,  6, 5, 7,  6, 4, 5
-};
+// SA tBrightLight::GetColorRGBA (inlined). Note what this does and does not do:
+// the RGBA is derived purely from the colour enum, so a headlight cube could
+// never be white here even if it wanted to. That is precisely why car lights
+// do not use this class in SA.
+CRGBA
+CBrightLight::GetColorRGBA(void) const
+{
+	// _BIG has at most 127 alpha, while _SMALL has 255.
+	auto GetAlpha = [this]() -> uint8 {
+		if(m_camDist >= 45.0f)
+			return (uint8)((1.0f - (m_camDist - 45.0f) / (60.0f - 45.0f)) * 255.0f);
+		return 255;
+	};
 
+	auto UnadjAlpha = GetAlpha;
+
+	uint8 alpha;
+	switch(m_type){
+	case BRIGHTLIGHT_GREEN_BIG:
+	case BRIGHTLIGHT_YELLOW_BIG:
+	case BRIGHTLIGHT_RED_BIG:
+		alpha = UnadjAlpha() / 2;
+		break;
+	case BRIGHTLIGHT_GREEN_SMALL:
+	case BRIGHTLIGHT_YELLOW_SMALL:
+	case BRIGHTLIGHT_RED_SMALL:
+		alpha = UnadjAlpha();
+		break;
+	default:
+		return CRGBA(255, 255, 255, 255);
+	}
+
+	// R* used (uint8)((float)(uint8)CGeneral::GetRandomNumber() / 5.0f).
+	const uint8 rnd = (uint8)CGeneral::GetRandomNumberInRange(0, 255 / 5);
+	switch(m_type){
+	case BRIGHTLIGHT_GREEN_BIG:
+	case BRIGHTLIGHT_GREEN_SMALL:
+		return CRGBA(rnd, 255, rnd, alpha);
+	case BRIGHTLIGHT_YELLOW_BIG:
+	case BRIGHTLIGHT_YELLOW_SMALL:
+		return CRGBA(255, 128, rnd, alpha);
+	case BRIGHTLIGHT_RED_BIG:
+	case BRIGHTLIGHT_RED_SMALL:
+		return CRGBA(255, rnd, rnd, alpha);
+	default:
+		return CRGBA(255, 255, 255, 255);
+	}
+}
+
+// SA tBrightLight::Render (inlined), verbatim. Traffic lights are a six-vertex
+// fan; the "small" ones are an eight-segment disc, NOT a cube. VC replaced that
+// disc with an axis-aligned box, which is the box you see standing where a lens
+// should be.
+void
+CBrightLight::Render(void) const
+{
+	auto GetVertexRealIdx = [](unsigned i) {
+		return (unsigned)TempBufferVerticesStored + i;
+	};
+	auto GetVertex = [=](unsigned i) {
+		return &TempBufferRenderVertices[GetVertexRealIdx(i)];
+	};
+	auto PushVertexIndex = [=, idx = 0](unsigned vertIdx) mutable {
+		TempBufferRenderIndexList[(unsigned)TempBufferIndicesStored + idx++] = GetVertexRealIdx(vertIdx);
+	};
+
+	const CRGBA color = GetColorRGBA();
+
+	switch(m_type){
+	case BRIGHTLIGHT_GREEN_BIG:
+	case BRIGHTLIGHT_YELLOW_BIG:
+	case BRIGHTLIGHT_RED_BIG: {
+		static const float TrafficLightsUp[]   = { 0.162f, 0.162f, 0.0f, -0.162f, -0.162f, 0.0f };
+		static const float TrafficLightsSide[] = { -0.09f, 0.09f, 0.162f, 0.09f, -0.09f, -0.162f };
+
+		for(unsigned i = 0; i < 6; i++){
+			RwIm3DVertexSetRGBA(GetVertex(i), color.r, color.g, color.b, color.a);
+			CVector pos = m_pos + m_up * TrafficLightsUp[i] + m_side * TrafficLightsSide[i];
+			RwIm3DVertexSetPos(GetVertex(i), pos.x, pos.y, pos.z);
+		}
+
+		static const RwImVertexIndex TrafficLightIndices[] = { 0, 1, 5, 1, 2, 3, 1, 3, 4, 1, 4, 5 };
+		for(auto &index : TrafficLightIndices)
+			PushVertexIndex(index);
+
+		TempBufferIndicesStored += ARRAY_SIZE(TrafficLightIndices);
+		TempBufferVerticesStored += 6;
+		break;
+	}
+	case BRIGHTLIGHT_GREEN_SMALL:
+	case BRIGHTLIGHT_YELLOW_SMALL:
+	case BRIGHTLIGHT_RED_SMALL: {
+		constexpr unsigned segCount = 8;
+		constexpr float segAngleStep = 2.0f * PI / (float)segCount;
+		constexpr float segSize = 0.1f;
+
+		for(unsigned i = 0; i < segCount; i++){
+			RwIm3DVertexSetRGBA(GetVertex(i), color.r, color.g, color.b, color.a);
+			const float angle = segAngleStep * (float)i;
+			CVector pos = m_pos + m_up * Cos(angle) * segSize + m_side * Sin(angle) * segSize;
+			RwIm3DVertexSetPos(GetVertex(i), pos.x, pos.y, pos.z);
+		}
+
+		for(unsigned i = 1; i <= 6; i++){
+			PushVertexIndex(0);
+			PushVertexIndex(i);
+			PushVertexIndex(i + 1);
+		}
+
+		TempBufferIndicesStored += 18;
+		TempBufferVerticesStored += segCount;
+		break;
+	}
+	default:
+		break;
+	}
+}
+
+// SA CBrightLights::Render (0x7241C0), verbatim.
 void
 CBrightLights::Render(void)
 {
-	int i, j;
-	CVector pos;
-
 	if(NumBrightLights == 0)
 		return;
 
@@ -1021,170 +1122,22 @@ CBrightLights::Render(void)
 	RwRenderStateSet(rwRENDERSTATESRCBLEND, (void*)rwBLENDSRCALPHA);
 	RwRenderStateSet(rwRENDERSTATEDESTBLEND, (void*)rwBLENDINVSRCALPHA);
 	RwRenderStateSet(rwRENDERSTATETEXTURERASTER, nil);
+	RwRenderStateSet(rwRENDERSTATECULLMODE, (void*)rwCULLMODECULLNONE);
 
 	TempBufferVerticesStored = 0;
 	TempBufferIndicesStored = 0;
 
-	for(i = 0; i < NumBrightLights; i++){
+	for(int i = 0; i < NumBrightLights; i++){
 		if(TempBufferIndicesStored > TEMPBUFFERINDEXSIZE-40 || TempBufferVerticesStored > TEMPBUFFERVERTSIZE-40)
 			RenderOutGeometryBuffer();
 
-		// SA has no default arm on this switch; VC's build initialises them to
-		// zero and the FIX_BUGS default below returns early. Without an
-		// initialiser, a m_type outside the enumerated range leaves r, g and b
-		// holding whatever was on the stack, and the light is drawn in that
-		// colour - which is exactly how a headlight ends up green or yellow
-		// instead of white.
-		int r = 255, g = 255, b = 255, a = 255;
-		float flicker = (CGeneral::GetRandomNumber()&0xFF) * 0.2f;
-		switch(aBrightLights[i].m_type){
-		case BRIGHTLIGHT_TRAFFIC_GREEN:
-			r = flicker; g = 255; b = flicker;
-			break;
-		case BRIGHTLIGHT_TRAFFIC_YELLOW:
-			r = 255; g = 128; b = flicker;
-			break;
-		case BRIGHTLIGHT_TRAFFIC_RED:
-			r = 255; g = flicker; b = flicker;
-			break;
-
-		case BRIGHTLIGHT_FRONT_LONG:
-		case BRIGHTLIGHT_FRONT_SMALL:
-		case BRIGHTLIGHT_FRONT_BIG:
-		case BRIGHTLIGHT_FRONT_TALL:
-			r = 255; g = 255; b = 255;
-			break;
-
-		case BRIGHTLIGHT_REAR_LONG:
-		case BRIGHTLIGHT_REAR_SMALL:
-		case BRIGHTLIGHT_REAR_BIG:
-		case BRIGHTLIGHT_REAR_TALL:
-			r = 255; g = flicker; b = flicker;
-			break;
-
-		case BRIGHTLIGHT_SIREN:
-			r = aBrightLights[i].m_red;
-			g = aBrightLights[i].m_green;
-			b = aBrightLights[i].m_blue;
-			break;
-#ifdef FIX_BUGS  //just to make sure that color never will be undefined
-		default:
-			return;
-#endif
-		}
-
-		if(aBrightLights[i].m_camDist < BRIGHTLIGHTS_FADE_DIST)
-			a = 255;
-		else
-			a = 255*(1.0f - (aBrightLights[i].m_camDist-BRIGHTLIGHTS_FADE_DIST)/(BRIGHTLIGHTS_MAX_DIST-BRIGHTLIGHTS_FADE_DIST));
-		// fade car lights down to 31 as they come near
-		if(aBrightLights[i].m_type >= BRIGHTLIGHT_FRONT_LONG && aBrightLights[i].m_type <= BRIGHTLIGHT_REAR_TALL){
-			if(aBrightLights[i].m_camDist < CARLIGHTS_FADE_DIST)
-				a = 31;
-			else if(aBrightLights[i].m_camDist < CARLIGHTS_MAX_DIST)
-				a = 31 + (255-31)*((aBrightLights[i].m_camDist-CARLIGHTS_FADE_DIST)/(CARLIGHTS_MAX_DIST-CARLIGHTS_FADE_DIST));
-		}
-
-		switch(aBrightLights[i].m_type){
-		case BRIGHTLIGHT_TRAFFIC_GREEN:
-		case BRIGHTLIGHT_TRAFFIC_YELLOW:
-		case BRIGHTLIGHT_TRAFFIC_RED:
-			for(j = 0; j < 6; j++){
-				pos = TrafficLightsSide[j]*aBrightLights[i].m_side +
-					TrafficLightsUp[j]*aBrightLights[i].m_up +
-					aBrightLights[i].m_pos;
-				RwIm3DVertexSetRGBA(&TempBufferRenderVertices[TempBufferVerticesStored+j], r, g, b, a);
-				RwIm3DVertexSetPos(&TempBufferRenderVertices[TempBufferVerticesStored+j], pos.x, pos.y, pos.z);
-			}
-			for(j = 0; j < 4*3; j++)
-				TempBufferRenderIndexList[TempBufferIndicesStored+j] = TrafficLightIndices[j] + TempBufferVerticesStored;
-			TempBufferVerticesStored += 6;
-			TempBufferIndicesStored += 4*3;
-			break;
-
-		case BRIGHTLIGHT_FRONT_LONG:
-		case BRIGHTLIGHT_REAR_LONG:
-			for(j = 0; j < 8; j++){
-				pos = LongCarHeadLightsSide[j]*aBrightLights[i].m_side +
-					LongCarHeadLightsUp[j]*aBrightLights[i].m_up +
-					LongCarHeadLightsFront[j]*aBrightLights[i].m_front +
-					aBrightLights[i].m_pos;
-				RwIm3DVertexSetRGBA(&TempBufferRenderVertices[TempBufferVerticesStored+j], r, g, b, a);
-				RwIm3DVertexSetPos(&TempBufferRenderVertices[TempBufferVerticesStored+j], pos.x, pos.y, pos.z);
-			}
-			for(j = 0; j < 12*3; j++)
-				TempBufferRenderIndexList[TempBufferIndicesStored+j] = CubeIndices[j] + TempBufferVerticesStored;
-			TempBufferVerticesStored += 8;
-			TempBufferIndicesStored += 12*3;
-			break;
-
-		case BRIGHTLIGHT_FRONT_SMALL:
-		case BRIGHTLIGHT_REAR_SMALL:
-			for(j = 0; j < 8; j++){
-				pos = SmallCarHeadLightsSide[j]*aBrightLights[i].m_side +
-					SmallCarHeadLightsUp[j]*aBrightLights[i].m_up +
-					SmallCarHeadLightsFront[j]*aBrightLights[i].m_front +
-					aBrightLights[i].m_pos;
-				RwIm3DVertexSetRGBA(&TempBufferRenderVertices[TempBufferVerticesStored+j], r, g, b, a);
-				RwIm3DVertexSetPos(&TempBufferRenderVertices[TempBufferVerticesStored+j], pos.x, pos.y, pos.z);
-			}
-			for(j = 0; j < 12*3; j++)
-				TempBufferRenderIndexList[TempBufferIndicesStored+j] = CubeIndices[j] + TempBufferVerticesStored;
-			TempBufferVerticesStored += 8;
-			TempBufferIndicesStored += 12*3;
-			break;
-
-		case BRIGHTLIGHT_FRONT_BIG:
-		case BRIGHTLIGHT_REAR_BIG:
-			for (j = 0; j < 8; j++) {
-				pos = BigCarHeadLightsSide[j] * aBrightLights[i].m_side +
-					BigCarHeadLightsUp[j] * aBrightLights[i].m_up +
-					BigCarHeadLightsFront[j] * aBrightLights[i].m_front +
-					aBrightLights[i].m_pos;
-				RwIm3DVertexSetRGBA(&TempBufferRenderVertices[TempBufferVerticesStored + j], r, g, b, a);
-				RwIm3DVertexSetPos(&TempBufferRenderVertices[TempBufferVerticesStored + j], pos.x, pos.y, pos.z);
-			}
-			for (j = 0; j < 12 * 3; j++)
-				TempBufferRenderIndexList[TempBufferIndicesStored + j] = CubeIndices[j] + TempBufferVerticesStored;
-			TempBufferVerticesStored += 8;
-			TempBufferIndicesStored += 12 * 3;
-			break;
-
-		case BRIGHTLIGHT_FRONT_TALL:
-		case BRIGHTLIGHT_REAR_TALL:
-			for(j = 0; j < 8; j++){
-				pos = TallCarHeadLightsSide[j]*aBrightLights[i].m_side +
-					TallCarHeadLightsUp[j]*aBrightLights[i].m_up +
-					TallCarHeadLightsFront[j]*aBrightLights[i].m_front +
-					aBrightLights[i].m_pos;
-				RwIm3DVertexSetRGBA(&TempBufferRenderVertices[TempBufferVerticesStored+j], r, g, b, a);
-				RwIm3DVertexSetPos(&TempBufferRenderVertices[TempBufferVerticesStored+j], pos.x, pos.y, pos.z);
-			}
-			for(j = 0; j < 12*3; j++)
-				TempBufferRenderIndexList[TempBufferIndicesStored+j] = CubeIndices[j] + TempBufferVerticesStored;
-			TempBufferVerticesStored += 8;
-			TempBufferIndicesStored += 12*3;
-			break;
-
-		case BRIGHTLIGHT_SIREN:
-			for(j = 0; j < 6; j++){
-				pos = SirenLightsSide[j] * TheCamera.GetRight() +
-					SirenLightsUp[j] * TheCamera.GetUp() +
-					aBrightLights[i].m_pos;
-				RwIm3DVertexSetRGBA(&TempBufferRenderVertices[TempBufferVerticesStored+j], r, g, b, a);
-				RwIm3DVertexSetPos(&TempBufferRenderVertices[TempBufferVerticesStored+j], pos.x, pos.y, pos.z);
-			}
-			for(j = 0; j < 4*3; j++)
-				TempBufferRenderIndexList[TempBufferIndicesStored+j] = TrafficLightIndices[j] + TempBufferVerticesStored;
-			TempBufferVerticesStored += 6;
-			TempBufferIndicesStored += 4*3;
-			break;
-
-		}
+		aBrightLights[i].Render();
 	}
 
 	RenderOutGeometryBuffer();
+
 	RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)FALSE);
+
 	NumBrightLights = 0;
 }
 

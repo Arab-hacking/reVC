@@ -2233,36 +2233,45 @@ CAutomobile::PreRender(void)
 		lightL -= GetRight()*2.0f*headLightPos.x;
 
 		// Headlight coronas
+		//
+		// SA CVehicle::DoLightEffectImpl (0x6E1780) derives both intensity and
+		// size from normAngle = sqrt(cos angle), not from the cosine itself:
+		//   intensity = normAngle * 0.5f + 0.3f
+		//   size      = (1 - distToCam/150) * normAngle * FRONT_SIZE_ROT_MULT(0.4)
+		// The VC build uses -0.5*behindness + 0.3 and (1 - behindness) instead, so
+		// the falloff is linear rather than square-rooted and the size is far too
+		// large near the car. That is why the lens glow does not look like SA.
+		const float normAngle = Sqrt(angle);
 		if(DotProduct(lightR-TheCamera.GetPosition(), GetForward()) < 0.0f &&
 		   (TheCamera.Cams[TheCamera.ActiveCam].Mode != CCam::MODE_1STPERSON || this != FindPlayerVehicle())){
 			// In front of car
-			float intensity = -0.5f*behindness + 0.3f;
-			float size = 1.0f - behindness;
+			float intensity = normAngle*0.5f + 0.3f;
+			float size = (1.0f - camDist*(1.0f/150.0f)) * normAngle * 0.4f;
 
-			if(behindness < -0.97f && camDist < 30.0f * Max(1.0f, CRenderer::ms_fLightDistScale)){
+			if(behindness < -0.97f && camDist < 40.0f * Max(1.0f, CRenderer::ms_fLightDistScale)){
 				// Directly in front and not too far away
 				if(m_pHandlingData->m_nHandlingFlags & VEHICLE_HANDLING_HALOGEN_LIGHTS){
 					if(Damage.GetLightStatus(VEHLIGHT_FRONT_LEFT) == LIGHT_STATUS_OK)
 						CCoronas::RegisterCorona((uintptr)this + 6, 150, 150, 195, 255,
-							lightL, 1.2f, 65.0f*vehLightMult,
-							CCoronas::TYPE_HEADLIGHT, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
-							CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, angle);
+							lightL, 0.075f, 150.0f*vehLightMult,
+							CCoronas::TYPE_HEADLIGHT, CCoronas::FLARE_NONE, CCoronas::REFLECTION_SIMPLE,
+							CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, normAngle, false, 0.3f);
 					if(Damage.GetLightStatus(VEHLIGHT_FRONT_RIGHT) == LIGHT_STATUS_OK)
 						CCoronas::RegisterCorona((uintptr)this + 7, 150, 150, 195, 255,
-							lightR, 1.2f, 65.0f*vehLightMult,
-							CCoronas::TYPE_HEADLIGHT, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
-							CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, angle);
+							lightR, 0.075f, 150.0f*vehLightMult,
+							CCoronas::TYPE_HEADLIGHT, CCoronas::FLARE_NONE, CCoronas::REFLECTION_SIMPLE,
+							CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, normAngle, false, 0.3f);
 				}else{
 					if(Damage.GetLightStatus(VEHLIGHT_FRONT_LEFT) == LIGHT_STATUS_OK)
 						CCoronas::RegisterCorona((uintptr)this + 6, 160, 160, 140, 255,
-							lightL, 1.2f, 65.0f*vehLightMult,
-							CCoronas::TYPE_HEADLIGHT, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
-							CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, angle);
+							lightL, 0.075f, 150.0f*vehLightMult,
+							CCoronas::TYPE_HEADLIGHT, CCoronas::FLARE_NONE, CCoronas::REFLECTION_SIMPLE,
+							CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, normAngle, false, 0.3f);
 					if(Damage.GetLightStatus(VEHLIGHT_FRONT_RIGHT) == LIGHT_STATUS_OK)
 						CCoronas::RegisterCorona((uintptr)this + 7, 160, 160, 140, 255,
-							lightR, 1.2f, 65.0f*vehLightMult,
-							CCoronas::TYPE_HEADLIGHT, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
-							CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, angle);
+							lightR, 0.075f, 150.0f*vehLightMult,
+							CCoronas::TYPE_HEADLIGHT, CCoronas::FLARE_NONE, CCoronas::REFLECTION_SIMPLE,
+							CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, normAngle, false, 0.3f);
 				}
 			}
 
@@ -2278,29 +2287,37 @@ CAutomobile::PreRender(void)
 						CCoronas::TYPE_STREAK, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
 						CCoronas::LOSCHECK_OFF, CCoronas::STREAK_ON, angle);
 			}else{
+				// SA CVehicle::DoLightEffectImpl, headlight branch, verbatim:
+				//   halogen: r = 190*intensity, g = intensity*255
+				//   normal : r = 210*intensity, g = intensity*195
+				//   then RegisterCorona(..., r, r, g, 128, ...)
+				// The VC build registers (r, r, b) instead of (r, r, g) and passes
+				// alpha 255. Two consequences: the lens comes out blue because the
+				// third channel is the *blue* multiplier, and the cornea is twice as
+				// opaque as SA's. This is the "one lens blue, one yellow" looking
+				// wrong even when both are computed identically.
+				uint8 lightColorR, lightColorG;
 				if(m_pHandlingData->m_nHandlingFlags & VEHICLE_HANDLING_HALOGEN_LIGHTS){
-					if(Damage.GetLightStatus(VEHLIGHT_FRONT_LEFT) == LIGHT_STATUS_OK)
-						CCoronas::RegisterCorona((uintptr)this, 190*intensity, 190*intensity, 255*intensity, 255,
-							lightL, size, 80.0f*vehLightMult,
-							CCoronas::TYPE_STREAK, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
-							CCoronas::LOSCHECK_OFF, CCoronas::STREAK_ON, angle);
-					if(Damage.GetLightStatus(VEHLIGHT_FRONT_RIGHT) == LIGHT_STATUS_OK)
-						CCoronas::RegisterCorona((uintptr)this + 1, 190*intensity, 190*intensity, 255*intensity, 255,
-							lightR, size, 80.0f*vehLightMult,
-							CCoronas::TYPE_STREAK, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
-							CCoronas::LOSCHECK_OFF, CCoronas::STREAK_ON, angle);
+					lightColorR = (uint8)(190.0f*intensity);
+					lightColorG = (uint8)(intensity*255.0f);
 				}else{
-					if(Damage.GetLightStatus(VEHLIGHT_FRONT_LEFT) == LIGHT_STATUS_OK)
-						CCoronas::RegisterCorona((uintptr)this, 210*intensity, 210*intensity, 195*intensity, 255,
-							lightL, size, 80.0f*vehLightMult,
-							CCoronas::TYPE_STREAK, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
-							CCoronas::LOSCHECK_OFF, CCoronas::STREAK_ON, angle);
-					if(Damage.GetLightStatus(VEHLIGHT_FRONT_RIGHT) == LIGHT_STATUS_OK)
-						CCoronas::RegisterCorona((uintptr)this + 1, 210*intensity, 210*intensity, 195*intensity, 255,
-							lightR, size, 80.0f*vehLightMult,
-							CCoronas::TYPE_STREAK, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
-							CCoronas::LOSCHECK_OFF, CCoronas::STREAK_ON, angle);
+					lightColorR = (uint8)(210.0f*intensity);
+					lightColorG = (uint8)(intensity*195.0f);
 				}
+				// SA registers one corona per side through this lambda, with the
+				// colour triple being (lightColorR, lightColorR, lightColorG).
+				if(Damage.GetLightStatus(VEHLIGHT_FRONT_LEFT) == LIGHT_STATUS_OK)
+					CCoronas::RegisterCorona((uintptr)this + 2*(int32)0 + 0, lightColorR, lightColorR, lightColorG, 128,
+						lightL, size, 150.0f*vehLightMult,
+						CCoronas::TYPE_HEADLIGHT, CCoronas::FLARE_NONE, CCoronas::REFLECTION_SIMPLE,
+						CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, normAngle,
+						false, 0.5f);
+				if(Damage.GetLightStatus(VEHLIGHT_FRONT_RIGHT) == LIGHT_STATUS_OK)
+					CCoronas::RegisterCorona((uintptr)this + 2*(int32)0 + 1, lightColorR, lightColorR, lightColorG, 128,
+						lightR, size, 150.0f*vehLightMult,
+						CCoronas::TYPE_HEADLIGHT, CCoronas::FLARE_NONE, CCoronas::REFLECTION_SIMPLE,
+						CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, normAngle,
+						false, 0.5f);
 			}
 		}else{
 			// Behind car
@@ -2310,11 +2327,12 @@ CAutomobile::PreRender(void)
 				CCoronas::UpdateCoronaCoors((uintptr)this + 1, lightR, 80.0f*vehLightMult, angle);
 		}
 
-		// bright lights
-		if(Damage.GetLightStatus(VEHLIGHT_FRONT_LEFT) == LIGHT_STATUS_OK && !bNoBrightHeadLights)
-			CBrightLights::RegisterOne(lightL, GetUp(), GetRight(), GetForward(), m_pHandlingData->m_nFrontLights + BRIGHTLIGHT_FRONT);
-		if(Damage.GetLightStatus(VEHLIGHT_FRONT_RIGHT) == LIGHT_STATUS_OK && !bNoBrightHeadLights)
-			CBrightLights::RegisterOne(lightR, GetUp(), GetRight(), GetForward(), m_pHandlingData->m_nFrontLights + BRIGHTLIGHT_FRONT);
+		// SA has no bright-light cubes on cars. CBrightLights there only ever
+		// draws traffic lights (its sole caller is CTrafficLights), and a car's
+		// headlight is the corona registered above plus the point light in
+		// CVehicle::DoVehicleLights. The cubes VC registered here were a
+		// different, box-shaped effect standing in for the lens, which is why
+		// they read as "boxes" rather than light. Removed to match SA.
 
 		// Taillights
 
@@ -2381,11 +2399,8 @@ CAutomobile::PreRender(void)
 				CCoronas::UpdateCoronaCoors((uintptr)this + 15, lightR, 80.0f*vehLightMult, angle);
 		}
 
-		// bright lights
-		if(Damage.GetLightStatus(VEHLIGHT_REAR_LEFT) == LIGHT_STATUS_OK)
-			CBrightLights::RegisterOne(lightL, GetUp(), GetRight(), GetForward(), m_pHandlingData->m_nRearLights + BRIGHTLIGHT_REAR);
-		if(Damage.GetLightStatus(VEHLIGHT_REAR_RIGHT) == LIGHT_STATUS_OK)
-			CBrightLights::RegisterOne(lightR, GetUp(), GetRight(), GetForward(), m_pHandlingData->m_nRearLights + BRIGHTLIGHT_REAR);
+		// SA registers no bright-light geometry for tail lights either; the
+		// corona above is the whole effect.
 
 		// Light shadows
 		if(!alarmOff){
@@ -2453,10 +2468,6 @@ CAutomobile::PreRender(void)
 							lightR, 1.2f, 50.0f*TheCamera.LODDistMultiplier,
 							CCoronas::TYPE_STAR, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
 							CCoronas::LOSCHECK_OFF, CCoronas::STREAK_ON, 0.0f);
-					if(Damage.GetLightStatus(VEHLIGHT_REAR_LEFT) == LIGHT_STATUS_OK)
-						CBrightLights::RegisterOne(lightL, GetUp(), GetRight(), GetForward(), m_pHandlingData->m_nRearLights + BRIGHTLIGHT_FRONT);
-					if(Damage.GetLightStatus(VEHLIGHT_REAR_RIGHT) == LIGHT_STATUS_OK)
-						CBrightLights::RegisterOne(lightR, GetUp(), GetRight(), GetForward(), m_pHandlingData->m_nRearLights + BRIGHTLIGHT_FRONT);
 				}else{
 					// braking
 					if(Damage.GetLightStatus(VEHLIGHT_REAR_LEFT) == LIGHT_STATUS_OK)
@@ -2469,10 +2480,6 @@ CAutomobile::PreRender(void)
 							lightR, 1.2f, 50.0f*TheCamera.LODDistMultiplier,
 							CCoronas::TYPE_STAR, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
 							CCoronas::LOSCHECK_OFF, CCoronas::STREAK_ON, 0.0f);
-					if(Damage.GetLightStatus(VEHLIGHT_REAR_LEFT) == LIGHT_STATUS_OK)
-						CBrightLights::RegisterOne(lightL, GetUp(), GetRight(), GetForward(), m_pHandlingData->m_nRearLights + BRIGHTLIGHT_REAR);
-					if(Damage.GetLightStatus(VEHLIGHT_REAR_RIGHT) == LIGHT_STATUS_OK)
-						CBrightLights::RegisterOne(lightR, GetUp(), GetRight(), GetForward(), m_pHandlingData->m_nRearLights + BRIGHTLIGHT_REAR);
 				}
 			}else{
 				if(Damage.GetLightStatus(VEHLIGHT_REAR_LEFT) == LIGHT_STATUS_OK)

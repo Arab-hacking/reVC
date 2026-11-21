@@ -67,9 +67,14 @@ public:
 		FLARE_SUN,
 		FLARE_HEADLIGHTS
 	};
+	// SA eCoronaReflType: the headlight lens uses CORREFL_SIMPLE, the road
+	// reflection pass uses CORREFL_DYNAMIC. VC only had off/on, so the "simple"
+	// reflection - which is what a headlight corona is drawn with in SA - had no
+	// spelling. Keeping the VC numbering intact and adding the third value.
 	enum {
-		REFLECTION_OFF,
-		REFLECTION_ON,
+		REFLECTION_OFF = 0,
+		REFLECTION_ON = 1,
+		REFLECTION_SIMPLE = 2,
 	};
 	enum {
 		LOSCHECK_OFF,

@@ -112,8 +112,15 @@ CTrafficLights::DisplayActualLight(CEntity *ent)
 				CCoronas::TYPE_STAR, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
 				CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, 0.0f);
 
-		CBrightLights::RegisterOne(pos1, ent->GetUp(), ent->GetRight(), CVector(0.0f, 0.0f, 0.0f), id + BRIGHTLIGHT_TRAFFIC_GREEN);
-		CBrightLights::RegisterOne(pos2, ent->GetUp(), -ent->GetRight(), CVector(0.0f, 0.0f, 0.0f), id + BRIGHTLIGHT_TRAFFIC_GREEN);
+		// SA CTrafficLights::DisplayActualLight guards this with
+		// `iLightState < eTrafficLightsState::LIGHT_OFF`: an off light must not be
+		// drawn at all. Without the guard id 3 walks past the traffic-light
+		// colours into whatever comes next in the enum. The base colour is also
+		// the *small* variant for these short lights, as in SA.
+		if (id >= 0) {
+			CBrightLights::RegisterOne(pos1, ent->GetUp(), ent->GetRight(), CVector(0.0f, 0.0f, 0.0f), id + BRIGHTLIGHT_GREEN_SMALL);
+			CBrightLights::RegisterOne(pos2, ent->GetUp(), -ent->GetRight(), CVector(0.0f, 0.0f, 0.0f), id + BRIGHTLIGHT_GREEN_SMALL);
+		}
 	}
 	else if (MI_TRAFFICLIGHTS_VERTICAL == m) {
 		CBaseModelInfo* mi = CModelInfo::GetModelInfo(ent->GetModelIndex());
@@ -160,7 +167,8 @@ CTrafficLights::DisplayActualLight(CEntity *ent)
 			break;
 		}
 
-		CBrightLights::RegisterOne(pos1, ent->GetUp(), ent->GetRight(), CVector(0.0f, 0.0f, 0.0f), id + BRIGHTLIGHT_TRAFFIC_GREEN);
+		if (id >= 0)
+			CBrightLights::RegisterOne(pos1, ent->GetUp(), ent->GetRight(), CVector(0.0f, 0.0f, 0.0f), id + BRIGHTLIGHT_GREEN_SMALL);
 
 		if (CWeather::TrafficLightBrightness > 0.5f)
 			CPointLights::AddLight(CPointLights::LIGHT_POINT,
@@ -258,8 +266,10 @@ CTrafficLights::DisplayActualLight(CEntity *ent)
 
 		CVector pos = (pos1 + pos2) / 2;
 		if (id >= 0) {
-			CBrightLights::RegisterOne(pos1, ent->GetUp(), ent->GetRight(), CVector(0.0f, 0.0f, 0.0f), id + BRIGHTLIGHT_TRAFFIC_GREEN);
-			CBrightLights::RegisterOne(pos2, ent->GetUp(), ent->GetRight(), CVector(0.0f, 0.0f, 0.0f), id + BRIGHTLIGHT_TRAFFIC_GREEN);
+			if (id >= 0)
+			CBrightLights::RegisterOne(pos1, ent->GetUp(), ent->GetRight(), CVector(0.0f, 0.0f, 0.0f), id + BRIGHTLIGHT_GREEN_SMALL);
+			if (id >= 0)
+				CBrightLights::RegisterOne(pos2, ent->GetUp(), ent->GetRight(), CVector(0.0f, 0.0f, 0.0f), id + BRIGHTLIGHT_GREEN_SMALL);
 		}
 
 		if (CWeather::TrafficLightBrightness > 0.5f)
