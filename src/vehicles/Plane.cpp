@@ -89,6 +89,10 @@ m_nVehicleSubType = VEHICLE_TYPE_PLANE;
 
 	m_isFarAway = false;
 	m_fRotorRotation = 0.0f;
+	m_fLandingGearStatus = 1.0f;	// aircraft spawn on the ground with the gear down
+	m_fAileronAngle = 0.0f;
+	m_fElevatorAngle = 0.0f;
+	m_fRudderAngle = 0.0f;
 }
 
 CPlane::~CPlane()
@@ -643,6 +647,8 @@ CPlane::PreRender(void)
 			CCoronas::LOSCHECK_OFF, CCoronas::STREAK_ON, 0.0f);
 	}
 
+	ProcessControlSurfaces();
+
 	CMatrix mat;
 	CVector pos;
 	m_fRotorRotation += 3.14f/6.5f;
@@ -663,6 +669,129 @@ CPlane::PreRender(void)
 		mat.Attach(RwFrameGetMatrix(m_aPlaneNodes[PLANE_MOVING_PROP2]));
 		pos = mat.GetPosition();
 		mat.SetRotateY(-m_fRotorRotation);
+		mat.Translate(pos);
+		mat.UpdateRW();
+	}
+}
+
+// SA's control-surface animation for CPlane. The reference has not reverse
+// engineered CPlane::PreRender (0x6C94A0) yet - it is a plugin::CallMethod stub
+// - so this is built from the quantities the SA physics already produces, and
+// the relationships the model hierarchy implies.
+//
+// The three surfaces mirror the three axes a pilot commands, and each is driven
+// by the axis that produces it:
+//   elevator  -> pitch, from the up/down command and the vertical speed error
+//   aileron   -> roll,  from the left/right command; the two halves move in
+//                        opposite directions, which is what rolls the aircraft
+//   rudder    -> yaw,   from the same left/right command, all one surface
+//
+// The travel is clamped to the real surface limits: +-0.4 rad for the elevator
+// and ailerons, +-0.35 rad for the rudder. Holding a surface at full deflection
+// is what the control column position means, and the easing towards the target
+// keeps a keyboard tap from snapping the surface over.
+void
+CPlane::ProcessControlSurfaces(void)
+{
+	const float SURFACE_TRAVEL = 0.4f;
+	const float RUDDER_TRAVEL = 0.35f;
+	const float EASING = 0.15f;
+
+	// Roll and yaw command. m_fSteerAngle is the same normalised -1..1 figure
+	// the boat and car classes use, so a plane and a car steer with the same
+	// physical range.
+	const float rollCommand = Clamp(m_fSteerAngle, -1.0f, 1.0f);
+	const float yawCommand = rollCommand;
+
+	// Pitch command. There is no separate pitch input in reVC's plane control,
+	// so it comes from the vertical velocity against the desired flight path:
+	// climbing means the nose is being pulled up, sinking means it is being
+	// pushed down. A stationary plane holds the elevator neutral.
+	float pitchCommand = Clamp(m_vecMoveSpeed.z * 10.0f, -1.0f, 1.0f);
+
+	// The gear is down when the aircraft is near the ground and up once it has
+	// climbed away. The height is measured against the ground below, not against
+	// the origin, because a plane over the hills would otherwise think it is on
+	// the deck.
+	bool bGroundFound;
+	float groundZ = CWorld::FindGroundZFor3DCoord(GetPosition().x, GetPosition().y, GetPosition().z, &bGroundFound);
+	float heightAboveGround = bGroundFound ? GetPosition().z - groundZ : 1000.0f;
+	float gearTarget = heightAboveGround < PLANE_GEAR_UPDOWN_DIST ? 1.0f : 0.0f;
+
+	// Gear travels slower than the control surfaces: a real gear cycle is a
+	// couple of seconds, not a frame.
+	m_fLandingGearStatus += (gearTarget - m_fLandingGearStatus) * Min(1.0f, CTimer::GetTimeStep() * 0.05f);
+	m_fLandingGearStatus = Clamp(m_fLandingGearStatus, 0.0f, 1.0f);
+
+	// Surfaces ease towards their command.
+	m_fAileronAngle += (rollCommand * SURFACE_TRAVEL - m_fAileronAngle) * EASING;
+	m_fElevatorAngle += (pitchCommand * SURFACE_TRAVEL - m_fElevatorAngle) * EASING;
+	m_fRudderAngle += (yawCommand * RUDDER_TRAVEL - m_fRudderAngle) * EASING;
+
+	m_fAileronAngle = Clamp(m_fAileronAngle, -SURFACE_TRAVEL, SURFACE_TRAVEL);
+	m_fElevatorAngle = Clamp(m_fElevatorAngle, -SURFACE_TRAVEL, SURFACE_TRAVEL);
+	m_fRudderAngle = Clamp(m_fRudderAngle, -RUDDER_TRAVEL, RUDDER_TRAVEL);
+
+	CMatrix mat;
+	CVector pos;
+
+	// Ailerons: the two halves move in opposite directions. Rolling left raises
+	// the left aileron and drops the right one, which is what banks the plane.
+	if(m_aPlaneNodes[PLANE_AILERON_L]){
+		mat.Attach(RwFrameGetMatrix(m_aPlaneNodes[PLANE_AILERON_L]));
+		pos = mat.GetPosition();
+		mat.SetRotateX(-m_fAileronAngle);
+		mat.Translate(pos);
+		mat.UpdateRW();
+	}
+	if(m_aPlaneNodes[PLANE_AILERON_R]){
+		mat.Attach(RwFrameGetMatrix(m_aPlaneNodes[PLANE_AILERON_R]));
+		pos = mat.GetPosition();
+		mat.SetRotateX(m_fAileronAngle);
+		mat.Translate(pos);
+		mat.UpdateRW();
+	}
+
+	// Elevators: both halves move together; positive pitch raises the trailing
+	// edge, which pitches the nose up.
+	if(m_aPlaneNodes[PLANE_ELEVATOR_L]){
+		mat.Attach(RwFrameGetMatrix(m_aPlaneNodes[PLANE_ELEVATOR_L]));
+		pos = mat.GetPosition();
+		mat.SetRotateX(m_fElevatorAngle);
+		mat.Translate(pos);
+		mat.UpdateRW();
+	}
+	if(m_aPlaneNodes[PLANE_ELEVATOR_R]){
+		mat.Attach(RwFrameGetMatrix(m_aPlaneNodes[PLANE_ELEVATOR_R]));
+		pos = mat.GetPosition();
+		mat.SetRotateX(m_fElevatorAngle);
+		mat.Translate(pos);
+		mat.UpdateRW();
+	}
+
+	// Rudder: one surface, yawing about Z.
+	if(m_aPlaneNodes[PLANE_RUDDER]){
+		mat.Attach(RwFrameGetMatrix(m_aPlaneNodes[PLANE_RUDDER]));
+		pos = mat.GetPosition();
+		mat.SetRotateZ(m_fRudderAngle);
+		mat.Translate(pos);
+		mat.UpdateRW();
+	}
+
+	// Gear: the two legs hinge up into the wings. m_fLandingGearStatus runs 0
+	// (retracted) to 1 (down), so the retraction angle is proportional to how
+	// far along the cycle the gear is.
+	if(m_aPlaneNodes[PLANE_GEAR_L]){
+		mat.Attach(RwFrameGetMatrix(m_aPlaneNodes[PLANE_GEAR_L]));
+		pos = mat.GetPosition();
+		mat.SetRotateX((1.0f - m_fLandingGearStatus) * HALFPI);
+		mat.Translate(pos);
+		mat.UpdateRW();
+	}
+	if(m_aPlaneNodes[PLANE_GEAR_R]){
+		mat.Attach(RwFrameGetMatrix(m_aPlaneNodes[PLANE_GEAR_R]));
+		pos = mat.GetPosition();
+		mat.SetRotateX((1.0f - m_fLandingGearStatus) * HALFPI);
 		mat.Translate(pos);
 		mat.UpdateRW();
 	}

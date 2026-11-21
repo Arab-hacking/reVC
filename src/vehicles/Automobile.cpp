@@ -1844,8 +1844,7 @@ CAutomobile::PreRender(void)
 
 				// Sparks for friction of burst wheels
 				if(Damage.GetWheelStatus(i) == WHEEL_STATUS_BURST && m_aSuspensionSpringRatioPrev[i] < 1.0f){
-					static float speedSq;
-					speedSq = m_vecMoveSpeed.MagnitudeSqr();
+					float speedSq = m_vecMoveSpeed.MagnitudeSqr();
 					if(speedSq > SQR(0.1f) &&
 					   m_aWheelColPoints[i].surfaceB != SURFACE_GRASS &&
 					   m_aWheelColPoints[i].surfaceB != SURFACE_MUD_DRY &&
@@ -3159,7 +3158,7 @@ CAutomobile::ProcessControlInputs(uint8 pad)
 	}
 
 	// Actually turn wheels
-	static float fValue;	// why static?
+	float fValue;
 	if(m_fSteerInput < 0.0f)
 		fValue = -sq(m_fSteerInput);
 	else

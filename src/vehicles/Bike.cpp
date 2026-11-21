@@ -817,8 +817,13 @@ CBike::ProcessControl(void)
 		}else if(m_fWheelAngle < DEGTORAD(20.0f))
 			m_fWheelAngle += DEGTORAD(1.5f)*CTimer::GetTimeStep();
 
-		static float fThrust;
-		static tWheelState WheelState[2];
+		// These were statics in the original, which made the wheel state of one
+		// bike leak into the next: WheelState was only written for wheels that
+		// touched the ground and read for those that did not, so a bike in the
+		// air inherited the skid state of whichever bike was processed last.
+		// The reference keeps them per vehicle (m_WheelStates, m_fThrust).
+		float fThrust;
+		tWheelState *WheelState = m_aWheelState;
 		CVector initialMoveSpeed = m_vecMoveSpeed;
 		bool rearWheelsFirst = !!(m_pHandlingData->m_nHandlingFlags & VEHICLE_HANDLING_PROC_REARWHEEL_1ST);
 

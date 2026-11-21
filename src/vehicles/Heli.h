@@ -75,7 +75,12 @@ public:
 	uint32 m_nShootTimer;
 	uint32 m_nLastShotTime;
 	uint32 m_nBulletDamage;
+	// SA keeps the rotor speed in CAutomobile's m_fHeliRotorSpeed union member.
+	// CHeli here derives from CVehicle, not CAutomobile, so the value lives on
+	// this class instead: m_fRotorSpeed is radians per second, m_fRotorRotation
+	// the accumulated angle the moving rotor is drawn at.
 	float m_fRotorRotation;
+	float m_fRotorSpeed;
 	float m_fHeliDustZ[8];
 	uint32 m_nPoliceShoutTimer;
 	float m_fTargetOffset;

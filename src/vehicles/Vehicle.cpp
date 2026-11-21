@@ -605,15 +605,15 @@ void
 CVehicle::ProcessBikeWheel(CVector &wheelFwd, CVector &wheelRight, CVector &wheelContactSpeed, CVector &wheelContactPoint,
 	int32 wheelsOnGround, float thrust, float brake, float adhesion, float destabTraction, int8 wheelId, float *wheelSpeed, tWheelState *wheelState, eBikeWheelSpecial special, uint16 wheelStatus)
 {
-	// BUG: using statics here is probably a bad idea
-	static bool bAlreadySkidding = false;	// this is never reset
-	static bool bBraking;
-	static bool bDriving;
-	static bool bReversing;
-
-#ifdef FIX_SIGNIFICANT_BUGS
-	bAlreadySkidding = false;
-#endif
+	// These were statics in the original: bAlreadySkidding was never reset, so
+	// once any bike had skidded every wheel on every vehicle lost traction for
+	// the rest of the session. The reference made them locals (see
+	// CVehicle::ProcessBikeWheel in gta-reversed); bDriving and bReversing are
+	// also correctly gated on "not braking", which the statics version was not.
+	bool bAlreadySkidding = false;
+	bool bBraking;
+	bool bDriving;
+	bool bReversing;
 
 	// how much force we want to apply in these axes
 	float fwd = 0.0f;
@@ -622,8 +622,8 @@ CVehicle::ProcessBikeWheel(CVector &wheelFwd, CVector &wheelRight, CVector &whee
 	bBraking = brake != 0.0f;
 	if(bBraking)
 		thrust = 0.0f;
-	bDriving = thrust != 0.0f;
-	bReversing = thrust < 0.0f;
+	bDriving = !bBraking && thrust != 0.0f;
+	bReversing = !bBraking && thrust < 0.0f;
 
 	float contactSpeedFwd = DotProduct(wheelContactSpeed, wheelFwd);
 	float contactSpeedRight;

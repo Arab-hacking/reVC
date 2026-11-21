@@ -68,6 +68,18 @@ public:
 	static constexpr float PLANE_MAX_PROP_SPEED = 32.0f;
 	static constexpr float PLANE_ROC_PROP_SPEED = 1.5f;
 
+	// SA CPlane carries the animated control state on the vehicle. The
+	// reference's own names are used where they are known
+	// (m_fLandingGearStatus is the gear extension, 0 retracted .. 1 down).
+	float m_fLandingGearStatus;
+	float m_fAileronAngle;
+	float m_fElevatorAngle;
+	float m_fRudderAngle;
+	// Gear is retracted above this height above ground; below it the gear comes
+	// down. SA uses 8 units, which is the point where the wheels would start to
+	// matter for a landing.
+	static constexpr float PLANE_GEAR_UPDOWN_DIST = 8.0f;
+
 	int16 m_nPlaneId;
 	int16 m_isFarAway;
 	int16 m_nCurPathNode;
@@ -86,6 +98,7 @@ public:
 	void DeleteRwObject(void);
 	void ProcessControl(void);
 	void PreRender(void);
+	void ProcessControlSurfaces(void);
 	void Render(void);
 	void FlagToDestroyWhenNextProcessed() { bRemoveFromWorld = true; }
 

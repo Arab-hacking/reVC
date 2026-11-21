@@ -73,6 +73,7 @@ m_nVehicleSubType = VEHICLE_TYPE_HELI;
 
 	m_nHeliId = 0;
 	m_fRotorRotation = 0.0f;
+	m_fRotorSpeed = 0.0f;
 	m_nBulletDamage = 0;
 	m_fAngularSpeed = 0.0f;
 	m_fRotation = 0.0f;
@@ -564,36 +565,85 @@ CHeli::PreRender(void)
 	CShadows::StoreShadowForVehicle(this, VEH_SHD_TYPE_HELI);
 }
 
+// SA CHeli::Render (0x6C4400) with the rotor animation restored.
+//
+// Each rotor is a *pair* of frames: the static one holds the crisp blade
+// geometry, the moving one the blurred disc. Which of the two you see is the
+// whole point - at rest the blades must be readable, at speed the disc is what
+// the eye expects - so the alpha of both is driven by how fast the rotor is
+// actually turning, and both members of the pair are rotated together.
+//
+// Block 0 lost the rotation when the node names changed from VC's
+// HELI_TOPROTOR/HELI_BACKROTOR to SA's static/moving pairs: m_fRotorRotation was
+// still being initialised but never advanced, so the rotors stood still. The
+// rotation and the alpha crossfade are restored together here.
 void
 CHeli::Render(void)
 {
 	CMatrix mat;
 	CVector pos;
 
-	// SA CHeli::Render (0x6C4400): each rotor is a *pair* of frames - the static
-	// one holds the still geometry and is drawn opaque, the moving one holds the
-	// blurred disc and is drawn fully transparent. VC had a single frame per
-	// rotor and rotated it directly, which is why a converted SA heli showed its
-	// rotor neither still nor blurred.
+	// Rotor speed rises while the engine runs and decays when it does not. The
+	// main rotor and the tail rotor turn at the same rate; SA's tail rotor is
+	// geared but the gear ratio is part of the model, not of the angle.
+	const float ROTOR_SPIN_UP = 3.0f;
+	const float ROTOR_MAX_SPEED = 30.0f;
+
+	if(bEngineOn && !bIsDrowning){
+		m_fRotorSpeed += ROTOR_SPIN_UP * CTimer::GetTimeStep();
+		if(m_fRotorSpeed > ROTOR_MAX_SPEED)
+			m_fRotorSpeed = ROTOR_MAX_SPEED;
+	}else{
+		m_fRotorSpeed -= ROTOR_SPIN_UP * CTimer::GetTimeStep();
+		if(m_fRotorSpeed < 0.0f)
+			m_fRotorSpeed = 0.0f;
+	}
+
+	m_fRotorRotation += m_fRotorSpeed * CTimer::GetTimeStep();
+	while(m_fRotorRotation > TWOPI)
+		m_fRotorRotation -= TWOPI;
+
+	// Crossfade: below a quarter of the maximum the blades are drawn crisp and
+	// the disc is invisible; by half speed the disc takes over completely.
+	const float discBlend = Min(1.0f, m_fRotorSpeed / (ROTOR_MAX_SPEED * 0.5f));
+	const int32 staticAlpha = int32((1.0f - discBlend) * 255.0f);
+	const int32 movingAlpha = int32(discBlend * 255.0f);
+
 	if(m_aHeliNodes[HELI_STATIC_ROTOR]){
 		RpAtomic *data = nil;
 		RwFrameForAllObjects(m_aHeliNodes[HELI_STATIC_ROTOR], GetCurrentAtomicObjectCB, &data);
-		if(data) SetComponentAtomicAlpha(data, 255);
+		if(data) SetComponentAtomicAlpha(data, staticAlpha);
 	}
 	if(m_aHeliNodes[HELI_STATIC_ROTOR2]){
 		RpAtomic *data = nil;
 		RwFrameForAllObjects(m_aHeliNodes[HELI_STATIC_ROTOR2], GetCurrentAtomicObjectCB, &data);
-		if(data) SetComponentAtomicAlpha(data, 255);
+		if(data) SetComponentAtomicAlpha(data, staticAlpha);
 	}
 	if(m_aHeliNodes[HELI_MOVING_ROTOR]){
 		RpAtomic *data = nil;
 		RwFrameForAllObjects(m_aHeliNodes[HELI_MOVING_ROTOR], GetCurrentAtomicObjectCB, &data);
-		if(data) SetComponentAtomicAlpha(data, 0);
+		if(data) SetComponentAtomicAlpha(data, movingAlpha);
 	}
 	if(m_aHeliNodes[HELI_MOVING_ROTOR2]){
 		RpAtomic *data = nil;
 		RwFrameForAllObjects(m_aHeliNodes[HELI_MOVING_ROTOR2], GetCurrentAtomicObjectCB, &data);
-		if(data) SetComponentAtomicAlpha(data, 0);
+		if(data) SetComponentAtomicAlpha(data, movingAlpha);
+	}
+
+	// Main rotor spins about the mast (Z), the tail rotor about its shaft (X).
+	if(m_aHeliNodes[HELI_MOVING_ROTOR]){
+		mat.Attach(RwFrameGetMatrix(m_aHeliNodes[HELI_MOVING_ROTOR]));
+		pos = mat.GetPosition();
+		mat.SetRotateZ(m_fRotorRotation);
+		mat.Translate(pos);
+		mat.UpdateRW();
+	}
+	if(m_aHeliNodes[HELI_MOVING_ROTOR2]){
+		mat.Attach(RwFrameGetMatrix(m_aHeliNodes[HELI_MOVING_ROTOR2]));
+		pos = mat.GetPosition();
+		mat.SetRotateX(-m_fRotorRotation);
+		mat.Translate(pos);
+		mat.UpdateRW();
 	}
 
 	CEntity::Render();
