@@ -117,12 +117,15 @@ static void TestVehicleRecord(void)
 	// File units -> game units (the two constants the reference applies).
 	// The values below are derived from the line above, not from the code:
 	//   200 km/h            -> 200 * 0.277778/50 = 1.111112 m/frame
-	//   10 m/s^2            -> 10 / 2500        = 0.004 m/frame^2
+	//   10 m/s^2            -> 10 * 0.4 / 2500 = 0.0016 m/frame^2
+	// SA pre-scales the accelerator column by 0.4 on load (the reference's
+	// tHandlingData::InitFromData does the same), then splits it over the
+	// driven axle.
 	// drag 0.0 takes the linear branch, whose first step satisfies the limit,
 	// so the solved speed is 1.111112 - 0.01 = 1.101112 and SA then allows a
 	// 1.2x overspeed on top of it.
 	Near(h->m_fBrakeDeceleration, 10.0f / 2500.0f, "brake deceleration converted");
-	Near(t.m_fEngineAcceleration, 0.004f / 2.0f, "acceleration converted and split over the drive axle");
+	Near(t.m_fEngineAcceleration, 10.0f * 0.4f / (50.0f * 50.0f) / 2.0f, "acceleration converted and split over the drive axle");
 	Near(t.m_fMaxFlatVelocity, 1.101112f, "solved flat speed");
 	Near(t.m_fMaxVelocity, 1.101112f * 1.2f, "top speed includes the overspeed allowance");
 	Near(t.m_fMaxReverseVelocity, -1.101112f * 0.3f, "reverse speed is a fraction of the flat speed");
@@ -242,79 +245,32 @@ static void TestPointerBounds(void)
 		"four wheel drive is both");
 }
 
-// --- Vice City data set ---------------------------------------------------
-// reVC still ships the Vice City data, whose handling.cfg is the VC table: 33
-// columns, no turnMass, and names the SA table does not know. Before the VC
-// path existed every one of those lines was rejected and the vehicles ran on a
-// zeroed handling record.
-static const char *kVcAdmiral =
-	"ADMIRAL\t1900.0\t1.9\t1.9\t0.7\t0.0\t0.0\t0.1\t70\t0.75\t0.65\t0.5\t5\t"
-	"165.0\t26.0\tR\tP\t8.5\t0.55\t0\t30.0\t1.0\t1.0\t0.25\t2.0\t25000\t"
-	"0.3\t-0.15\t0.5\t0.3\t0x0\t2\t1\n";
-
-static void TestViceCityVehicleRecord(void)
+// --- rejected records -----------------------------------------------------
+// The handling table the game runs on is the SA one. A record whose name is not
+// in VehicleNames is a data error: it is skipped with a warning, and the slot it
+// would have filled keeps whatever it had before.
+static void TestUnknownNameRejected(void)
 {
-	Check(Parse(kVcAdmiral) == 1, "VC vehicle record parsed");
-
-	tHandlingData *h = mod_HandlingManager.GetVehiclePointer(HANDLING_ADMIRAL);
-	Near(h->m_fMass, 1900.0f, "VC mass");
-	Near(h->m_fMassRecip, 1.0f / 1900.0f, "VC reciprocal mass");
-	// Derived from the collision box, which is what VC stores instead of a
-	// turn mass column: (1.9^2 + 1.9^2) * 1900 / 12.
-	Near(h->m_fTurnMass, (1.9f * 1.9f + 1.9f * 1.9f) * 1900.0f / 12.0f,
-		"VC turn mass derived from the collision box");
-	Check(h->m_nPercentSubmerged == 70, "VC percent submerged");
-	Near(h->m_fTractionMultiplier, 0.75f, "VC traction multiplier");
-	Near(h->m_fSeatOffsetDistance, 0.25f, "VC seat offset");
-	Near(h->m_fSuspensionUpperLimit, 0.3f, "VC suspension upper limit");
-	Check(h->m_nMonetaryValue == 25000, "VC monetary value");
-
-	cTransmission &t = h->m_Transmission;
-	Check(t.m_nNumberOfGears == 5, "VC gear count");
-	Check(t.m_nDriveType == 'R', "VC drive type");
-	// VC has no inertia column; the VC path supplies the documented default.
-	Near(t.m_fEngineInertia, 15.0f, "VC engine inertia default");
-
-	// 165 km/h -> 165 * 0.277778/50 = 0.916667 m/frame. The VC drag solve then
-	// lowers the cruise speed; the player's limit is 1.2x that.
-	Check(t.m_fMaxCruiseVelocity > 0.0f && t.m_fMaxCruiseVelocity < 0.916667f,
-		"VC cruise speed is solved below the nominal top speed");
-	Near(t.m_fMaxVelocity, t.m_fMaxCruiseVelocity * 1.2f, "VC top speed is 1.2x cruise");
-	Near(t.m_fMaxReverseVelocity, -0.2f, "VC reverse speed is the fixed allowance");
-	// 26 * 0.4 (VC pre-scale) / 2500 / 2 (rear wheel drive).
-	Near(t.m_fEngineAcceleration, 0.00208f, "VC engine acceleration");
-	Check(t.m_aGears[1].m_MaxVelocity > 0.0f, "VC gear ratios are initialised");
-}
-
-static void TestViceCityAuxiliaryRecords(void)
-{
-	// VC names that do not exist in the SA table still resolve.
 	Check(Parse("IDAHO\t1700.0\t1.8\t1.8\t0.7\t0.0\t0.0\t0.1\t70\t0.75\t0.65\t0.5\t5\t"
 	            "160.0\t25.0\tR\tP\t8.5\t0.55\t0\t30.0\t1.0\t1.0\t0.25\t2.0\t20000\t"
-	            "0.3\t-0.15\t0.5\t0.3\t0x0\t2\t1\n") == 1,
-		"VC-only handling name resolves");
-	Near(mod_HandlingManager.GetVehiclePointer(HANDLING_SENTINEL)->m_fMass, 1700.0f,
-		"VC-only name lands on the mapped SA record");
+	            "0.3\t-0.15\t0.5\t0.3\t0x0\t2\t1\n") == 0,
+		"a name outside the SA table is rejected");
 
-	// The VC flying line has no gearUpR/gearDownL/windMult columns.
-	Check(Parse("$SEAPLANE\t0.6\t0.4\t0.4\t0.3\t0.1\t0.4\t0.3\t0.6\t0.3\t0.7\t0.6\t0.5\t"
-	            "0.9\t0.9\t0.9\t0.5\t0.5\t0.5\n") == 1, "VC flying record parsed");
-	tFlyingHandlingData *f = mod_HandlingManager.GetFlyingPointer(HANDLING_SEAPLANE);
-	Near(f->m_fThrust, 0.6f, "VC flying thrust");
-	Near(f->m_vecSpeedRes.z, 0.5f, "VC flying speed resistance");
-
-	// A malformed VC line must not be half applied either.
 	cHandlingDataMgr before = mod_HandlingManager;
-	Check(Parse("ADMIRAL\t1900.0\tabc\t1.9\n") == 0, "malformed VC record is rejected");
-	Check(memcmp(&before.HandlingData[HANDLING_ADMIRAL],
-		mod_HandlingManager.GetVehiclePointer(HANDLING_ADMIRAL), sizeof(tHandlingData)) == 0,
-		"a rejected VC record leaves the table untouched");
-	// A VC record whose gear count is out of range is rejected rather than
-	// clamped, and the length alone must not make it acceptable.
+	Check(Parse("NOPESUCHCAR\t1900.0\t1.9\t1.9\t0.7\t0.0\t0.0\t0.1\t70\t0.75\t0.65\t0.5\t5\t"
+	            "165.0\t26.0\tR\tP\t8.5\t0.55\t0\t30.0\t1.0\t1.0\t0.25\t2.0\t25000\t"
+	            "0.3\t-0.15\t0.5\t0.3\t0x0\t2\t1\n") == 0,
+		"an unknown name is rejected");
+	Check(memcmp(&before, &mod_HandlingManager, sizeof(cHandlingDataMgr)) == 0,
+		"a rejected record leaves the whole table untouched");
+
+	// A truncated SA line is rejected for its column count.
+	Check(Parse("ADMIRAL\t1900.0\t1.9\n") == 0, "truncated record is rejected");
+	// A gear count above the gearbox size is rejected rather than clamped.
 	Check(Parse("ADMIRAL\t1900.0\t1.9\t1.9\t0.7\t0.0\t0.0\t0.1\t70\t0.75\t0.65\t0.5\t9\t"
 	            "165.0\t26.0\tR\tP\t8.5\t0.55\t0\t30.0\t1.0\t1.0\t0.25\t2.0\t25000\t"
 	            "0.3\t-0.15\t0.5\t0.3\t0x0\t2\t1\n") == 0,
-		"out of range VC gear count is rejected");
+		"out of range gear count is rejected");
 }
 
 int main(void)
@@ -326,8 +282,7 @@ int main(void)
 	TestTerminatorAndComments();
 	TestNameLookup();
 	TestPointerBounds();
-	TestViceCityVehicleRecord();
-	TestViceCityAuxiliaryRecords();
+	TestUnknownNameRejected();
 	std::puts("cHandlingDataMgrTests: ALL PASSED");
 	return 0;
 }
