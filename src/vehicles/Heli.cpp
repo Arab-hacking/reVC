@@ -30,6 +30,11 @@
 #include "Heli.h"
 #ifdef FIX_BUGS
 #include "Replay.h"
+
+
+// SA helper, same as the one CAutomobile::Render uses: pull the drawable atomic
+// out of a frame.
+RwObject *GetCurrentAtomicObjectCB(RwObject *object, void *data);
 #endif
 
 enum
@@ -565,21 +570,31 @@ CHeli::Render(void)
 	CMatrix mat;
 	CVector pos;
 
-	mat.Attach(RwFrameGetMatrix(m_aHeliNodes[HELI_TOPROTOR]));
-	pos = mat.GetPosition();
-	mat.SetRotateZ(m_fRotorRotation);
-	mat.Translate(pos);
-	mat.UpdateRW();
-
-	m_fRotorRotation += 3.14f/6.5f;
-	if(m_fRotorRotation > 6.28f)
-		m_fRotorRotation -= 6.28f;
-
-	mat.Attach(RwFrameGetMatrix(m_aHeliNodes[HELI_BACKROTOR]));
-	pos = mat.GetPosition();
-	mat.SetRotateX(m_fRotorRotation);
-	mat.Translate(pos);
-	mat.UpdateRW();
+	// SA CHeli::Render (0x6C4400): each rotor is a *pair* of frames - the static
+	// one holds the still geometry and is drawn opaque, the moving one holds the
+	// blurred disc and is drawn fully transparent. VC had a single frame per
+	// rotor and rotated it directly, which is why a converted SA heli showed its
+	// rotor neither still nor blurred.
+	if(m_aHeliNodes[HELI_STATIC_ROTOR]){
+		RpAtomic *data = nil;
+		RwFrameForAllObjects(m_aHeliNodes[HELI_STATIC_ROTOR], GetCurrentAtomicObjectCB, &data);
+		if(data) SetComponentAtomicAlpha(data, 255);
+	}
+	if(m_aHeliNodes[HELI_STATIC_ROTOR2]){
+		RpAtomic *data = nil;
+		RwFrameForAllObjects(m_aHeliNodes[HELI_STATIC_ROTOR2], GetCurrentAtomicObjectCB, &data);
+		if(data) SetComponentAtomicAlpha(data, 255);
+	}
+	if(m_aHeliNodes[HELI_MOVING_ROTOR]){
+		RpAtomic *data = nil;
+		RwFrameForAllObjects(m_aHeliNodes[HELI_MOVING_ROTOR], GetCurrentAtomicObjectCB, &data);
+		if(data) SetComponentAtomicAlpha(data, 0);
+	}
+	if(m_aHeliNodes[HELI_MOVING_ROTOR2]){
+		RpAtomic *data = nil;
+		RwFrameForAllObjects(m_aHeliNodes[HELI_MOVING_ROTOR2], GetCurrentAtomicObjectCB, &data);
+		if(data) SetComponentAtomicAlpha(data, 0);
+	}
 
 	CEntity::Render();
 }
@@ -675,7 +690,7 @@ CHeli::SpawnFlyingComponent(int32 component)
 
 	// life time
 	CObject::nNoTempObjects++;
-	if(component == HELI_TOPROTOR)
+	if(component == HELI_MOVING_ROTOR)
 		obj->m_nEndOfLifeTime = CTimer::GetTimeInMilliseconds() + 1000;
 	else
 		obj->m_nEndOfLifeTime = CTimer::GetTimeInMilliseconds() + 3000;
@@ -688,9 +703,9 @@ CHeli::SpawnFlyingComponent(int32 component)
 
 	obj->m_vecTurnSpeed = m_vecTurnSpeed*2.0f;
 
-	if(component == HELI_BACKROTOR)
+	if(component == HELI_MOVING_ROTOR2)
 		obj->m_vecTurnSpeed.x = 0.5f;
-	else if(component == HELI_TOPROTOR || component == HELI_TOPKNOT)
+	else if(component == HELI_MOVING_ROTOR || component == HELI_RUDDER)
 		obj->m_vecTurnSpeed.z = 0.5f;
 	else
 		obj->m_vecTurnSpeed.y = 0.5f;
@@ -896,9 +911,9 @@ CHeli::UpdateHelis(void)
 
 			CExplosion::AddExplosion(nil, nil, EXPLOSION_HELI, pos, 0);
 
-			pHelis[i]->SpawnFlyingComponent(HELI_SKID_LEFT);
-			pHelis[i]->SpawnFlyingComponent(HELI_SKID_RIGHT);
-			pHelis[i]->SpawnFlyingComponent(HELI_TOPROTOR);
+			pHelis[i]->SpawnFlyingComponent(HELI_MISC_A);
+			pHelis[i]->SpawnFlyingComponent(HELI_MISC_B);
+			pHelis[i]->SpawnFlyingComponent(HELI_MOVING_ROTOR);
 
 			CDarkel::RegisterCarBlownUpByPlayer(pHelis[i]);
 			CWorld::Remove(pHelis[i]);
@@ -920,8 +935,8 @@ CHeli::UpdateHelis(void)
 		}else if(pHelis[i] && pHelis[i]->m_heliStatus == HELI_STATUS_SHOT_DOWN && CTimer::GetTimeInMilliseconds()+7000 > pHelis[i]->m_nExplosionTimer){
 			// First part of explosion
 			if(CTimer::GetPreviousTimeInMilliseconds()+7000 < pHelis[i]->m_nExplosionTimer){
-				pHelis[i]->SpawnFlyingComponent(HELI_BACKROTOR);
-				pHelis[i]->SpawnFlyingComponent(HELI_TAIL);
+				pHelis[i]->SpawnFlyingComponent(HELI_MOVING_ROTOR2);
+				pHelis[i]->SpawnFlyingComponent(HELI_RUDDER);
 				pHelis[i]->m_fAngularSpeed *= -2.5f;
 				pHelis[i]->bRenderScorched = true;
 

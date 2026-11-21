@@ -21,28 +21,44 @@ enum {
 	PERMANENT_VEHICLE = 4,
 };
 
+// SA eCarNodes (Enums/eCarNodes.h), verbatim.
+//
+// The index of an entry here is the *frame's position in the DFF hierarchy*,
+// handed out by CVehicleModelInfo::SetFrameIds in table order, so this enum and
+// the name table in VehicleModelInfo.cpp have to agree exactly. SA starts at
+// CAR_NODE_NONE = 0 (the clump root, which is never a component) and reserves
+// index 1 for the chassis, shifting everything else by one relative to the VC
+// layout. There is deliberately no VC ordering left behind: the project's
+// models are San Andreas ones now.
 enum eCarNodes
 {
-	CAR_WHEEL_RF = 1,
-	CAR_WHEEL_RM,
-	CAR_WHEEL_RB,
-	CAR_WHEEL_LF,
-	CAR_WHEEL_LM,
-	CAR_WHEEL_LB,
-	CAR_BUMP_FRONT,
-	CAR_BUMP_REAR,
-	CAR_WING_RF,
-	CAR_WING_RR,
-	CAR_DOOR_RF,
-	CAR_DOOR_RR,
-	CAR_WING_LF,
-	CAR_WING_LR,
-	CAR_DOOR_LF,
-	CAR_DOOR_LR,
-	CAR_BONNET,
-	CAR_BOOT,
-	CAR_WINDSCREEN,
-	NUM_CAR_NODES,
+	CAR_NODE_NONE  = 0,
+	CAR_CHASSIS    = 1,
+	CAR_WHEEL_RF   = 2,
+	CAR_WHEEL_RM   = 3,
+	CAR_WHEEL_RB   = 4,
+	CAR_WHEEL_LF   = 5,
+	CAR_WHEEL_LM   = 6,
+	CAR_WHEEL_LB   = 7,
+	CAR_DOOR_RF    = 8,
+	CAR_DOOR_RR    = 9,
+	CAR_DOOR_LF    = 10,
+	CAR_DOOR_LR    = 11,
+	CAR_BUMP_FRONT = 12,
+	CAR_BUMP_REAR  = 13,
+	CAR_WING_RF    = 14,
+	CAR_WING_LF    = 15,
+	CAR_BONNET     = 16,
+	CAR_BOOT       = 17,
+	CAR_WINDSCREEN = 18,
+	CAR_EXHAUST    = 19,
+	CAR_MISC_A     = 20,
+	CAR_MISC_B     = 21,
+	CAR_MISC_C     = 22,
+	CAR_MISC_D     = 23,
+	CAR_MISC_E     = 24,
+
+	NUM_CAR_NODES = 25
 };
 
 enum {

@@ -423,7 +423,9 @@ CExplosion::Update()
 					if (explosion.m_pVictimEntity != nil) {
 						if ((CGeneral::GetRandomNumber() & 0xF) == 0 && !explosion.m_bIsBoat) {
 							CVehicle *veh = (CVehicle*)explosion.m_pVictimEntity;
-							uint8 component = CAR_WING_LR;
+							// SA's car layout has only the front wing pair; the rear
+							// "wing" is not a node any more.
+							uint8 component = CAR_WING_LF;
 
 							// miami leftover
 							if (veh->IsBike())

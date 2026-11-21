@@ -406,8 +406,8 @@ CTrain::OpenTrainDoor(float ratio)
 	if(m_rwObject == nil)
 		return;
 
-	CMatrix doorL(RwFrameGetMatrix(m_aTrainNodes[TRAIN_DOOR_LHS]));
-	CMatrix doorR(RwFrameGetMatrix(m_aTrainNodes[TRAIN_DOOR_RHS]));
+	CMatrix doorL(RwFrameGetMatrix(m_aTrainNodes[TRAIN_DOOR_LF]));
+	CMatrix doorR(RwFrameGetMatrix(m_aTrainNodes[TRAIN_DOOR_RF]));
 	CVector posL = doorL.GetPosition();
 	CVector posR = doorR.GetPosition();
 

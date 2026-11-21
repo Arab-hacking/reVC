@@ -4,15 +4,22 @@
 #include "Vehicle.h"
 #include "Door.h"
 
+// SA eBoatNodes (Boat.h), verbatim. SA adds the two propeller pairs.
 enum eBoatNodes
 {
-	BOAT_MOVING = 1,
-	BOAT_WINDSCREEN,
-	BOAT_RUDDER,
-	BOAT_FLAP_LEFT,
-	BOAT_FLAP_RIGHT,
-	BOAT_REARFLAP_LEFT,
-	BOAT_REARFLAP_RIGHT,
+	BOAT_NODE_NONE      = 0,
+	BOAT_MOVING         = 1,
+	BOAT_WINDSCREEN     = 2,
+	BOAT_RUDDER         = 3,
+	BOAT_FLAP_LEFT      = 4,
+	BOAT_FLAP_RIGHT     = 5,
+	BOAT_REARFLAP_LEFT  = 6,
+	BOAT_REARFLAP_RIGHT = 7,
+	BOAT_STATIC_PROP    = 8,
+	BOAT_MOVING_PROP    = 9,
+	BOAT_STATIC_PROP_2  = 10,
+	BOAT_MOVING_PROP_2  = 11,
+
 	NUM_BOAT_NODES
 };
 

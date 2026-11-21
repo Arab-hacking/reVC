@@ -2329,7 +2329,7 @@ CAutomobile::PreRender(void)
 				// position at zero and the second pass registers nothing (SA returns
 				// early on a zero dummy), so cars with two lamp quads get four lit
 				// lenses and cars with one are unchanged.
-				CVector secondaryPos = mi->m_avDummyPos[DUMMY_LIGHT_FRONT_SECONDARY];
+				CVector secondaryPos = mi->m_vehicleStruct.m_avDummyPos[DUMMY_LIGHT_FRONT_SECONDARY];
 				if(secondaryPos.x != 0.0f || secondaryPos.y != 0.0f || secondaryPos.z != 0.0f){
 					CVector lightR2 = GetMatrix() * secondaryPos;
 					CVector lightL2 = lightR2;
@@ -2903,47 +2903,11 @@ CAutomobile::PreRender(void)
 		ProcessSwingingDoor(CAR_BOOT, DOOR_BOOT);
 	}
 
-	if((GetModelIndex() == MI_PHEONIX || GetModelIndex() == MI_BFINJECT) &&
-	   GetStatus() == STATUS_PLAYER && m_aCarNodes[CAR_WING_LR]){
-		float rotation = 0.0f;
+	// The VC-era PHEONIX/BFINJECT propeller-wing animation lived on CAR_WING_LR,
+	// a node that does not exist in SA's car layout (SA has CAR_WING_LF and
+	// CAR_WING_RF only, front pair; the rear "wings" are panels the model does
+	// not expose). Neither model exists in the SA set, so the animation goes.
 
-		if(GetModelIndex() == MI_BFINJECT)
-			if(m_fPropellerRotation > TWOPI) m_fPropellerRotation -= TWOPI;
-
-		if(Abs(m_fGasPedal) > 0.0f){
-			if(GetModelIndex() == MI_BFINJECT){
-				m_fPropellerRotation += 0.2f*CTimer::GetTimeStep();
-				rotation = m_fPropellerRotation;
-			}else{
-				if(m_fPropellerRotation < 1.3f){
-					m_fPropellerRotation = Min(m_fPropellerRotation+0.1f*CTimer::GetTimeStep(), 1.3f);
-					rotation = m_fPropellerRotation;
-				}else{
-					float wave = Sin((CTimer::GetTimeInMilliseconds()%10000)/70.0f);
-					rotation = m_fPropellerRotation + 0.13*wave;
-				}
-			}
-		}else{
-			if(GetModelIndex() == MI_BFINJECT){
-				m_fPropellerRotation += 0.1f*CTimer::GetTimeStep();
-				rotation = m_fPropellerRotation;
-			}else{
-				if(m_fPropellerRotation > 0.0f){
-					m_fPropellerRotation = Max(m_fPropellerRotation-0.05f*CTimer::GetTimeStep(), 0.0f);
-					rotation = m_fPropellerRotation;
-				}
-			}
-		}
-
-		mat.Attach(RwFrameGetMatrix(m_aCarNodes[CAR_WING_LR]));
-		pos = mat.GetPosition();
-		if(GetModelIndex() == MI_BFINJECT)
-			mat.SetRotateY(rotation);
-		else
-			mat.SetRotateX(rotation);
-		mat.Translate(pos);
-		mat.UpdateRW();
-	}
 }
 
 void
@@ -4232,16 +4196,12 @@ CAutomobile::VehicleDamage(float impulse, uint16 damagedPiece)
 					SetPanelDamage(CAR_WING_RF, VEHPANEL_FRONT_RIGHT);
 				break;
 			case CAR_PIECE_WING_LR:
-				GetComponentWorldPosition(CAR_WING_LR, pos);
-				dmgDrawCarCollidingParticles(pos, impulse*damageMultiplier);
-				if(Damage.ApplyDamage(COMPONENT_PANEL_REAR_LEFT, impulse*impulseMult, m_pHandlingData->m_fCollisionDamageMultiplier))
-					SetPanelDamage(CAR_WING_LR, VEHPANEL_REAR_LEFT);
-				break;
 			case CAR_PIECE_WING_RR:
-				GetComponentWorldPosition(CAR_WING_RR, pos);
-				dmgDrawCarCollidingParticles(pos, impulse*damageMultiplier);
-				if(Damage.ApplyDamage(COMPONENT_PANEL_REAR_RIGHT, impulse*impulseMult, m_pHandlingData->m_fCollisionDamageMultiplier))
-					SetPanelDamage(CAR_WING_RR, VEHPANEL_REAR_RIGHT);
+				// SA CDamageManager::GetCarNodeIndexFromPanel maps WINDSCREEN and
+				// the two bumpers in addition to the front wings, and returns
+				// CAR_NODE_NONE for REAR_LEFT_PANEL/REAR_RIGHT_PANEL: a car has no
+				// rear wing component in SA. The VC build treated the rear wings
+				// as damageable panels; there is no node to attach that to now.
 				break;
 
 			case CAR_PIECE_WHEEL_LF:
@@ -5781,10 +5741,7 @@ CAutomobile::SetupDamageAfterLoad(void)
 		SetPanelDamage(CAR_WING_LF, VEHPANEL_FRONT_LEFT);
 	if(m_aCarNodes[CAR_WING_RF])
 		SetPanelDamage(CAR_WING_RF, VEHPANEL_FRONT_RIGHT);
-	if(m_aCarNodes[CAR_WING_LR])
-		SetPanelDamage(CAR_WING_LR, VEHPANEL_REAR_LEFT);
-	if(m_aCarNodes[CAR_WING_RR])
-		SetPanelDamage(CAR_WING_RR, VEHPANEL_REAR_RIGHT);
+	// No rear wing nodes in SA - see the note in ProcessEntityCollision.
 }
 
 RwObject*

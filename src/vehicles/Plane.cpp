@@ -105,12 +105,9 @@ CPlane::SetModelIndex(uint32 id)
 		m_aPlaneNodes[i] = nil;
 	if(GetModelIndex() == MI_CHOPPER){
 		// This is surprisingly annoying...
-		RwFrame *heliNodes[NUM_HELI_NODES];
-		for(i = 0; i < NUM_HELI_NODES; i++)
-			heliNodes[i] = nil;
-		CClumpModelInfo::FillFrameArray(GetClump(), heliNodes);
-		m_aPlaneNodes[PLANE_TOPROTOR] = heliNodes[HELI_TOPROTOR];
-		m_aPlaneNodes[PLANE_BACKROTOR] = heliNodes[HELI_BACKROTOR];
+		// SA aircraft share one node layout (ePlaneNodes), so there is no
+		// separate helicopter table to borrow rotor frames from any more.
+		CClumpModelInfo::FillFrameArray(GetClump(), m_aPlaneNodes);
 	}else
 		CClumpModelInfo::FillFrameArray(GetClump(), m_aPlaneNodes);
 }
@@ -652,17 +649,20 @@ CPlane::PreRender(void)
 	if(m_fRotorRotation > 6.28f)
 		m_fRotorRotation -= 6.28f;
 
-	if(m_aPlaneNodes[PLANE_TOPROTOR]){
-		mat.Attach(RwFrameGetMatrix(m_aPlaneNodes[PLANE_TOPROTOR]));
+	// SA spins the propellers, not helicopter rotors: PLANE_STATIC_PROP/
+	// MOVING_PROP plus the second pair. The VC names (TOPROTOR/BACKROTOR) were
+	// borrowed from the helicopter class and have no SA counterpart.
+	if(m_aPlaneNodes[PLANE_MOVING_PROP]){
+		mat.Attach(RwFrameGetMatrix(m_aPlaneNodes[PLANE_MOVING_PROP]));
 		pos = mat.GetPosition();
-		mat.SetRotateZ(m_fRotorRotation);
+		mat.SetRotateY(m_fRotorRotation);
 		mat.Translate(pos);
 		mat.UpdateRW();
 	}
-	if(m_aPlaneNodes[PLANE_BACKROTOR]){
-		mat.Attach(RwFrameGetMatrix(m_aPlaneNodes[PLANE_BACKROTOR]));
+	if(m_aPlaneNodes[PLANE_MOVING_PROP2]){
+		mat.Attach(RwFrameGetMatrix(m_aPlaneNodes[PLANE_MOVING_PROP2]));
 		pos = mat.GetPosition();
-		mat.SetRotateX(m_fRotorRotation);
+		mat.SetRotateY(-m_fRotorRotation);
 		mat.Translate(pos);
 		mat.UpdateRW();
 	}

@@ -106,6 +106,41 @@ enum eVehicleDummyId
 	VEHICLE_DUMMY_ID_NONE = 0xFF,
 };
 
+// SA CVehicleModelInfo::CVehicleStructure. The per-model data that is not
+// colour or geometry: the dummy positions the light/seat code looks up, the
+// per-slot upgrade attach points, the extra atomics and the mask of nodes that
+// may take damage. SA keeps it behind a pool pointer; reVC keeps the same
+// members inline, but the layout and the names are SA's so the tuning and
+// damage code can be ported against it directly.
+class CVehicleStructure
+{
+public:
+	static constexpr int32 NUM_DUMMIES = 15;
+	static constexpr int32 NUM_UPGRADES = 18;
+	static constexpr int32 NUM_EXTRAS = 6;
+
+	// One entry of the upgrade table: where the part of that slot attaches and
+	// how far it may be displaced when it is damaged.
+	struct UpgradePosnDesc
+	{
+		int32 m_nodeIndex;   // eCarNodes the part hangs off, or CAR_NODE_NONE
+		CVector m_vecOffset; // offset from that node in model space
+	};
+
+public:
+	CVector m_avDummyPos[NUM_DUMMIES];
+	UpgradePosnDesc m_aUpgrades[NUM_UPGRADES];
+	RpAtomic *m_apExtras[NUM_EXTRAS];
+	uint8 m_nNumExtras;
+	uint32 m_nMaskComponentsDamagable;
+
+	CVehicleStructure(void);
+
+	// SA helpers.
+	bool IsDummyActive(int32 dummy) const { return m_avDummyPos[dummy].x != 0.0f || m_avDummyPos[dummy].y != 0.0f || m_avDummyPos[dummy].z != 0.0f; }
+	bool IsComponentDamageable(int32 nodeIndex) const { return m_nMaskComponentsDamagable & (1 << nodeIndex); }
+};
+
 class CVehicleModelInfo : public CClumpModelInfo
 {
 public:
@@ -125,11 +160,9 @@ public:
 	int8 m_numComps;
 	int16 m_frequency;
 	CVector m_positions[NUM_VEHICLE_POSITIONS];
-	// SA CVehicleModelInfo::m_pVehicleStruct->m_avDummyPos. reVC has no
-	// separate CVehicleStructure, so the dummy positions live on the model info
-	// directly. Populated by the clump loader from the frames listed in
-	// ms_pCTModelNameTable (headlights, headlights2, taillights, taillights2).
-	CVector m_avDummyPos[MAX_VEHICLE_DUMMIES];
+	// SA CVehicleModelInfo::m_pVehicleStruct. The dummy positions the light,
+	// seat and exhaust code reads live in here, as they do in SA.
+	CVehicleStructure m_vehicleStruct;
 	uint32 m_compRules;
 	float m_bikeSteerAngle;
 	RpMaterial *m_materials1[NUM_FIRST_MATERIALS];

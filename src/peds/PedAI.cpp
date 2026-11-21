@@ -3953,7 +3953,6 @@ CPed::SetEnterCar(CVehicle *car, uint32 unused)
 					door = DOOR_REAR_RIGHT;
 					break;
 				case CAR_WING_LF:
-				case CAR_WING_LR:
 				case CAR_BONNET:
 				case CAR_BOOT:
 					doorFlag = CAR_DOOR_FLAG_UNKNOWN;

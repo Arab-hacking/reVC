@@ -63,47 +63,67 @@ enum {
 };
 
 RwObjectNameIdAssocation carIds[] = {
+	// SA CVehicleModelInfo name table, in eCarNodes order. The order matters:
+	// SetFrameIds walks this table and assigns hierarchy ids in sequence, so the
+	// nth entry lands on frame id n. That is why CAR_CHASSIS sits at index 1 and
+	// every component follows it by one.
+	{ "chassis_dummy",	CAR_CHASSIS,	VEHICLE_FLAG_COLLAPSE },
 	{ "wheel_rf_dummy",	CAR_WHEEL_RF,	VEHICLE_FLAG_RIGHT | VEHICLE_FLAG_ADD_WHEEL },
 	{ "wheel_rm_dummy",	CAR_WHEEL_RM,	VEHICLE_FLAG_RIGHT | VEHICLE_FLAG_ADD_WHEEL },
 	{ "wheel_rb_dummy",	CAR_WHEEL_RB,	VEHICLE_FLAG_RIGHT | VEHICLE_FLAG_ADD_WHEEL },
 	{ "wheel_lf_dummy",	CAR_WHEEL_LF,	VEHICLE_FLAG_LEFT | VEHICLE_FLAG_ADD_WHEEL },
 	{ "wheel_lm_dummy",	CAR_WHEEL_LM,	VEHICLE_FLAG_LEFT | VEHICLE_FLAG_ADD_WHEEL },
 	{ "wheel_lb_dummy",	CAR_WHEEL_LB,	VEHICLE_FLAG_LEFT | VEHICLE_FLAG_ADD_WHEEL },
-	{ "bump_front_dummy",	CAR_BUMP_FRONT,	VEHICLE_FLAG_FRONT | VEHICLE_FLAG_COLLAPSE },
-	{ "bonnet_dummy",	CAR_BONNET,	VEHICLE_FLAG_COLLAPSE },
-	{ "wing_rf_dummy",	CAR_WING_RF,	VEHICLE_FLAG_COLLAPSE },
-	{ "wing_rr_dummy",	CAR_WING_RR,	VEHICLE_FLAG_RIGHT | VEHICLE_FLAG_COLLAPSE },
 	{ "door_rf_dummy",	CAR_DOOR_RF,	VEHICLE_FLAG_FRONTDOOR | VEHICLE_FLAG_ANGLECULL | VEHICLE_FLAG_RIGHT | VEHICLE_FLAG_DOOR | VEHICLE_FLAG_COLLAPSE },
 	{ "door_rr_dummy",	CAR_DOOR_RR,	VEHICLE_FLAG_REARDOOR | VEHICLE_FLAG_ANGLECULL | VEHICLE_FLAG_REAR | VEHICLE_FLAG_RIGHT | VEHICLE_FLAG_DOOR | VEHICLE_FLAG_COLLAPSE },
-	{ "wing_lf_dummy",	CAR_WING_LF,	VEHICLE_FLAG_COLLAPSE },
-	{ "wing_lr_dummy",	CAR_WING_LR,	VEHICLE_FLAG_LEFT | VEHICLE_FLAG_COLLAPSE },
 	{ "door_lf_dummy",	CAR_DOOR_LF,	VEHICLE_FLAG_FRONTDOOR | VEHICLE_FLAG_ANGLECULL | VEHICLE_FLAG_LEFT | VEHICLE_FLAG_DOOR | VEHICLE_FLAG_COLLAPSE },
 	{ "door_lr_dummy",	CAR_DOOR_LR,	VEHICLE_FLAG_REARDOOR | VEHICLE_FLAG_ANGLECULL | VEHICLE_FLAG_REAR | VEHICLE_FLAG_LEFT | VEHICLE_FLAG_DOOR | VEHICLE_FLAG_COLLAPSE },
-	{ "boot_dummy",		CAR_BOOT,	VEHICLE_FLAG_REAR | VEHICLE_FLAG_COLLAPSE },
+	{ "bump_front_dummy",	CAR_BUMP_FRONT,	VEHICLE_FLAG_FRONT | VEHICLE_FLAG_COLLAPSE },
 	{ "bump_rear_dummy",	CAR_BUMP_REAR,	VEHICLE_FLAG_REAR | VEHICLE_FLAG_COLLAPSE },
+	{ "wing_rf_dummy",	CAR_WING_RF,	VEHICLE_FLAG_COLLAPSE },
+	{ "wing_lf_dummy",	CAR_WING_LF,	VEHICLE_FLAG_COLLAPSE },
+	{ "bonnet_dummy",	CAR_BONNET,	VEHICLE_FLAG_COLLAPSE },
+	{ "boot_dummy",		CAR_BOOT,	VEHICLE_FLAG_REAR | VEHICLE_FLAG_COLLAPSE },
 	{ "windscreen_dummy",	CAR_WINDSCREEN,	VEHICLE_FLAG_WINDSCREEN | VEHICLE_FLAG_DRAWLAST | VEHICLE_FLAG_FRONT | VEHICLE_FLAG_COLLAPSE },
+	{ "exhaust_ok",		CAR_EXHAUST,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
+	// The five misc slots exist as nodes in SA (CAR_MISC_A..E). They carry
+	// aftermarket parts, so they are components rather than positions.
+	{ "misc_a",		CAR_MISC_A,	VEHICLE_FLAG_DRAWLAST | VEHICLE_FLAG_COMP | CLUMP_FLAG_NO_HIERID },
+	{ "misc_b",		CAR_MISC_B,	VEHICLE_FLAG_DRAWLAST | VEHICLE_FLAG_COMP | CLUMP_FLAG_NO_HIERID },
+	{ "misc_c",		CAR_MISC_C,	VEHICLE_FLAG_DRAWLAST | VEHICLE_FLAG_COMP | CLUMP_FLAG_NO_HIERID },
+	{ "misc_d",		CAR_MISC_D,	VEHICLE_FLAG_DRAWLAST | VEHICLE_FLAG_COMP | CLUMP_FLAG_NO_HIERID },
+	{ "misc_e",		CAR_MISC_E,	VEHICLE_FLAG_DRAWLAST | VEHICLE_FLAG_COMP | CLUMP_FLAG_NO_HIERID },
 
+	// Dummy positions the light, seat and exhaust code reads. These are not
+	// nodes; they live in m_positions/m_avDummyPos.
 	{ "ped_frontseat",	CAR_POS_FRONTSEAT,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
 	{ "ped_backseat",	CAR_POS_BACKSEAT,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
 	{ "headlights",		CAR_POS_HEADLIGHTS,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID | VEHICLE_FLAG_DUMMY | ((DUMMY_LIGHT_FRONT_MAIN + 1) << VEHICLE_FLAG_DUMMY_SHIFT) },
 	{ "taillights",		CAR_POS_TAILLIGHTS,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID | VEHICLE_FLAG_DUMMY | ((DUMMY_LIGHT_REAR_MAIN + 1) << VEHICLE_FLAG_DUMMY_SHIFT) },
-	// SA second lamp quad (one corona per entry of this kind, so a car with
-	// four lamp dummies gets four lit lenses). Models without them leave the
-	// position at zero and the SA code skips it.
 	{ "headlights2",	0,	VEHICLE_FLAG_DUMMY | ((DUMMY_LIGHT_FRONT_SECONDARY + 1) << VEHICLE_FLAG_DUMMY_SHIFT) },
-	{ "taillights2",	0,	VEHICLE_FLAG_DUMMY | ((DUMMY_LIGHT_REAR_SECONDARY + 1) << VEHICLE_FLAG_DUMMY_SHIFT) },
+	{ "taillights2",		0,	VEHICLE_FLAG_DUMMY | ((DUMMY_LIGHT_REAR_SECONDARY + 1) << VEHICLE_FLAG_DUMMY_SHIFT) },
 	{ "exhaust",		CAR_POS_EXHAUST,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
-#ifdef SA_VEHICLE_MODELS
-	// GTA:SA and many converted/modded models name these frames without a
-	// "_dummy" suffix. They are only accepted if the canonical name above was
-	// not found, because CClumpModelInfo::SetFrameIds ignores frames that
-	// already carry a hierarchy id.
+
+	// SA also ships vehicles whose frames are named without the "_dummy"
+	// suffix. They are accepted only if the canonical name above was not
+	// found, because SetFrameIds ignores frames that already carry an id.
+	{ "wheel_rf",		CAR_WHEEL_RF,	VEHICLE_FLAG_RIGHT | VEHICLE_FLAG_ADD_WHEEL },
+	{ "wheel_rm",		CAR_WHEEL_RM,	VEHICLE_FLAG_RIGHT | VEHICLE_FLAG_ADD_WHEEL },
+	{ "wheel_rb",		CAR_WHEEL_RB,	VEHICLE_FLAG_RIGHT | VEHICLE_FLAG_ADD_WHEEL },
+	{ "wheel_lf",		CAR_WHEEL_LF,	VEHICLE_FLAG_LEFT | VEHICLE_FLAG_ADD_WHEEL },
+	{ "wheel_lm",		CAR_WHEEL_LM,	VEHICLE_FLAG_LEFT | VEHICLE_FLAG_ADD_WHEEL },
+	{ "wheel_lb",		CAR_WHEEL_LB,	VEHICLE_FLAG_LEFT | VEHICLE_FLAG_ADD_WHEEL },
+	{ "door_rf",		CAR_DOOR_RF,	VEHICLE_FLAG_FRONTDOOR | VEHICLE_FLAG_ANGLECULL | VEHICLE_FLAG_RIGHT | VEHICLE_FLAG_DOOR | VEHICLE_FLAG_COLLAPSE },
+	{ "door_rr",		CAR_DOOR_RR,	VEHICLE_FLAG_REARDOOR | VEHICLE_FLAG_ANGLECULL | VEHICLE_FLAG_REAR | VEHICLE_FLAG_RIGHT | VEHICLE_FLAG_DOOR | VEHICLE_FLAG_COLLAPSE },
+	{ "door_lf",		CAR_DOOR_LF,	VEHICLE_FLAG_FRONTDOOR | VEHICLE_FLAG_ANGLECULL | VEHICLE_FLAG_LEFT | VEHICLE_FLAG_DOOR | VEHICLE_FLAG_COLLAPSE },
+	{ "door_lr",		CAR_DOOR_LR,	VEHICLE_FLAG_REARDOOR | VEHICLE_FLAG_ANGLECULL | VEHICLE_FLAG_REAR | VEHICLE_FLAG_LEFT | VEHICLE_FLAG_DOOR | VEHICLE_FLAG_COLLAPSE },
 	{ "bump_front",		CAR_BUMP_FRONT,	VEHICLE_FLAG_FRONT | VEHICLE_FLAG_COLLAPSE },
 	{ "bump_rear",		CAR_BUMP_REAR,	VEHICLE_FLAG_REAR | VEHICLE_FLAG_COLLAPSE },
 	{ "bonnet",		CAR_BONNET,	VEHICLE_FLAG_COLLAPSE },
 	{ "boot",		CAR_BOOT,	VEHICLE_FLAG_REAR | VEHICLE_FLAG_COLLAPSE },
 	{ "windscreen",		CAR_WINDSCREEN,	VEHICLE_FLAG_WINDSCREEN | VEHICLE_FLAG_DRAWLAST | VEHICLE_FLAG_FRONT | VEHICLE_FLAG_COLLAPSE },
-#endif
+
+	// Generic leftovers. VC called these extra1..extra6; SA numbers them misc.
 	{ "extra1",		0, VEHICLE_FLAG_DRAWLAST | VEHICLE_FLAG_COMP | CLUMP_FLAG_NO_HIERID },
 	{ "extra2",		0, VEHICLE_FLAG_DRAWLAST | VEHICLE_FLAG_COMP | CLUMP_FLAG_NO_HIERID },
 	{ "extra3",		0, VEHICLE_FLAG_DRAWLAST | VEHICLE_FLAG_COMP | CLUMP_FLAG_NO_HIERID },
@@ -136,8 +156,26 @@ RwObjectNameIdAssocation boatIds[] = {
 };
 
 RwObjectNameIdAssocation trainIds[] = {
-	{ "door_lhs_dummy",	TRAIN_DOOR_LHS,	VEHICLE_FLAG_LEFT | VEHICLE_FLAG_COLLAPSE },
-	{ "door_rhs_dummy",	TRAIN_DOOR_RHS,	VEHICLE_FLAG_LEFT | VEHICLE_FLAG_COLLAPSE },
+	// SA train frames. Two doors plus twelve wheel nodes and two bogies, in
+	// eTrainNodes order.
+	{ "door_lf_dummy",	TRAIN_DOOR_LF,	VEHICLE_FLAG_LEFT | VEHICLE_FLAG_COLLAPSE },
+	{ "door_rf_dummy",	TRAIN_DOOR_RF,	VEHICLE_FLAG_RIGHT | VEHICLE_FLAG_COLLAPSE },
+	{ "wheel_rf1_dummy",	TRAIN_WHEEL_RF1,	VEHICLE_FLAG_RIGHT },
+	{ "wheel_rf2_dummy",	TRAIN_WHEEL_RF2,	VEHICLE_FLAG_RIGHT },
+	{ "wheel_rf3_dummy",	TRAIN_WHEEL_RF3,	VEHICLE_FLAG_RIGHT },
+	{ "wheel_rb1_dummy",	TRAIN_WHEEL_RB1,	VEHICLE_FLAG_RIGHT },
+	{ "wheel_rb2_dummy",	TRAIN_WHEEL_RB2,	VEHICLE_FLAG_RIGHT },
+	{ "wheel_rb3_dummy",	TRAIN_WHEEL_RB3,	VEHICLE_FLAG_RIGHT },
+	{ "wheel_lf1_dummy",	TRAIN_WHEEL_LF1,	VEHICLE_FLAG_LEFT },
+	{ "wheel_lf2_dummy",	TRAIN_WHEEL_LF2,	VEHICLE_FLAG_LEFT },
+	{ "wheel_lf3_dummy",	TRAIN_WHEEL_LF3,	VEHICLE_FLAG_LEFT },
+	{ "wheel_lb1_dummy",	TRAIN_WHEEL_LB1,	VEHICLE_FLAG_LEFT },
+	{ "wheel_lb2_dummy",	TRAIN_WHEEL_LB2,	VEHICLE_FLAG_LEFT },
+	{ "wheel_lb3_dummy",	TRAIN_WHEEL_LB3,	VEHICLE_FLAG_LEFT },
+	{ "bogie_front",	TRAIN_BOGIE_FRONT,	0 },
+	{ "bogie_rear",		TRAIN_BOGIE_REAR,	0 },
+
+	// Dummy positions.
 	{ "light_front",	TRAIN_POS_LIGHT_FRONT,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
 	{ "light_rear",		TRAIN_POS_LIGHT_REAR,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
 	{ "ped_left_entry",	TRAIN_POS_LEFT_ENTRY,	VEHICLE_FLAG_DOOR | VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
@@ -147,19 +185,70 @@ RwObjectNameIdAssocation trainIds[] = {
 };
 
 RwObjectNameIdAssocation heliIds[] = {
+	// SA heli frames, in eHeliNodes order: chassis, the full wheel and door set,
+	// two rotor pairs, rudder and elevators, then four misc slots.
 	{ "chassis_dummy",	HELI_CHASSIS,	VEHICLE_FLAG_COLLAPSE },
-	{ "toprotor",		HELI_TOPROTOR,	0 },
-	{ "backrotor",		HELI_BACKROTOR,	0 },
-	{ "tail",		HELI_TAIL,	0 },
-	{ "topknot",		HELI_TOPKNOT,	0 },
-	{ "skid_left",		HELI_SKID_LEFT,	0 },
-	{ "skid_right",		HELI_SKID_RIGHT,	0 },
+	{ "wheel_rf_dummy",	HELI_WHEEL_RF,	VEHICLE_FLAG_RIGHT },
+	{ "wheel_rm_dummy",	HELI_WHEEL_RM,	VEHICLE_FLAG_RIGHT },
+	{ "wheel_rb_dummy",	HELI_WHEEL_RB,	VEHICLE_FLAG_RIGHT },
+	{ "wheel_lf_dummy",	HELI_WHEEL_LF,	VEHICLE_FLAG_LEFT },
+	{ "wheel_lm_dummy",	HELI_WHEEL_LM,	VEHICLE_FLAG_LEFT },
+	{ "wheel_lb_dummy",	HELI_WHEEL_LB,	VEHICLE_FLAG_LEFT },
+	{ "door_rf_dummy",	HELI_DOOR_RF,	VEHICLE_FLAG_FRONTDOOR | VEHICLE_FLAG_RIGHT | VEHICLE_FLAG_DOOR | VEHICLE_FLAG_COLLAPSE },
+	{ "door_rr_dummy",	HELI_DOOR_RR,	VEHICLE_FLAG_REARDOOR | VEHICLE_FLAG_REAR | VEHICLE_FLAG_RIGHT | VEHICLE_FLAG_DOOR | VEHICLE_FLAG_COLLAPSE },
+	{ "door_lf_dummy",	HELI_DOOR_LF,	VEHICLE_FLAG_FRONTDOOR | VEHICLE_FLAG_LEFT | VEHICLE_FLAG_DOOR | VEHICLE_FLAG_COLLAPSE },
+	{ "door_lr_dummy",	HELI_DOOR_LR,	VEHICLE_FLAG_REARDOOR | VEHICLE_FLAG_REAR | VEHICLE_FLAG_LEFT | VEHICLE_FLAG_DOOR | VEHICLE_FLAG_COLLAPSE },
+	{ "static_rotor",	HELI_STATIC_ROTOR,	0 },
+	{ "moving_rotor",	HELI_MOVING_ROTOR,	0 },
+	{ "static_rotor2",	HELI_STATIC_ROTOR2,	0 },
+	{ "moving_rotor2",	HELI_MOVING_ROTOR2,	0 },
+	{ "rudder",		HELI_RUDDER,	0 },
+	{ "elevators",		HELI_ELEVATORS,	0 },
+	{ "misc_a",		HELI_MISC_A,	VEHICLE_FLAG_COMP | CLUMP_FLAG_NO_HIERID },
+	{ "misc_b",		HELI_MISC_B,	VEHICLE_FLAG_COMP | CLUMP_FLAG_NO_HIERID },
+	{ "misc_c",		HELI_MISC_C,	VEHICLE_FLAG_COMP | CLUMP_FLAG_NO_HIERID },
+	{ "misc_d",		HELI_MISC_D,	VEHICLE_FLAG_COMP | CLUMP_FLAG_NO_HIERID },
+
+	// Dummy positions the rotor/light code reads.
+	{ "ped_frontseat",	CAR_POS_FRONTSEAT,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
+	{ "ped_backseat",	CAR_POS_BACKSEAT,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
+	{ "headlights",		CAR_POS_HEADLIGHTS,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID | VEHICLE_FLAG_DUMMY | ((DUMMY_LIGHT_FRONT_MAIN + 1) << VEHICLE_FLAG_DUMMY_SHIFT) },
+	{ "taillights",		CAR_POS_TAILLIGHTS,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID | VEHICLE_FLAG_DUMMY | ((DUMMY_LIGHT_REAR_MAIN + 1) << VEHICLE_FLAG_DUMMY_SHIFT) },
+	{ "exhaust",		CAR_POS_EXHAUST,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
 	{ nil, 0, 0 }
 };
 
 RwObjectNameIdAssocation planeIds[] = {
-	{ "wheel_front_dummy",	PLANE_WHEEL_FRONT,	0 },
-	{ "wheel_rear_dummy",	PLANE_WHEEL_READ,	0 },
+	// SA plane frames, in ePlaneNodes order.
+	{ "chassis_dummy",	PLANE_CHASSIS,	VEHICLE_FLAG_COLLAPSE },
+	{ "wheel_rf_dummy",	PLANE_WHEEL_RF,	VEHICLE_FLAG_RIGHT },
+	{ "wheel_rm_dummy",	PLANE_WHEEL_RM,	VEHICLE_FLAG_RIGHT },
+	{ "wheel_rb_dummy",	PLANE_WHEEL_RB,	VEHICLE_FLAG_RIGHT },
+	{ "wheel_lf_dummy",	PLANE_WHEEL_LF,	VEHICLE_FLAG_LEFT },
+	{ "wheel_lm_dummy",	PLANE_WHEEL_LM,	VEHICLE_FLAG_LEFT },
+	{ "wheel_lb_dummy",	PLANE_WHEEL_LB,	VEHICLE_FLAG_LEFT },
+	{ "door_rf_dummy",	PLANE_DOOR_RF,	VEHICLE_FLAG_FRONTDOOR | VEHICLE_FLAG_RIGHT | VEHICLE_FLAG_DOOR | VEHICLE_FLAG_COLLAPSE },
+	{ "door_rr_dummy",	PLANE_DOOR_RR,	VEHICLE_FLAG_REARDOOR | VEHICLE_FLAG_REAR | VEHICLE_FLAG_RIGHT | VEHICLE_FLAG_DOOR | VEHICLE_FLAG_COLLAPSE },
+	{ "door_lf_dummy",	PLANE_DOOR_LF,	VEHICLE_FLAG_FRONTDOOR | VEHICLE_FLAG_LEFT | VEHICLE_FLAG_DOOR | VEHICLE_FLAG_COLLAPSE },
+	{ "door_lr_dummy",	PLANE_DOOR_LR,	VEHICLE_FLAG_REARDOOR | VEHICLE_FLAG_REAR | VEHICLE_FLAG_LEFT | VEHICLE_FLAG_DOOR | VEHICLE_FLAG_COLLAPSE },
+	{ "static_prop",	PLANE_STATIC_PROP,	0 },
+	{ "moving_prop",	PLANE_MOVING_PROP,	0 },
+	{ "static_prop2",	PLANE_STATIC_PROP2,	0 },
+	{ "moving_prop2",	PLANE_MOVING_PROP2,	0 },
+	{ "rudder",		PLANE_RUDDER,	0 },
+	{ "elevator_l",		PLANE_ELEVATOR_L,	0 },
+	{ "elevator_r",		PLANE_ELEVATOR_R,	0 },
+	{ "aileron_l",		PLANE_AILERON_L,	0 },
+	{ "aileron_r",		PLANE_AILERON_R,	0 },
+	{ "gear_l",		PLANE_GEAR_L,	0 },
+	{ "gear_r",		PLANE_GEAR_R,	0 },
+	{ "misc_a",		PLANE_MISC_A,	VEHICLE_FLAG_COMP | CLUMP_FLAG_NO_HIERID },
+	{ "misc_b",		PLANE_MISC_B,	VEHICLE_FLAG_COMP | CLUMP_FLAG_NO_HIERID },
+	{ "misc_c",		PLANE_MISC_C,	VEHICLE_FLAG_COMP | CLUMP_FLAG_NO_HIERID },
+
+	// Dummy positions.
+	{ "ped_frontseat",	CAR_POS_FRONTSEAT,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
+	{ "ped_backseat",	CAR_POS_BACKSEAT,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
 	{ "light_tailplane",	PLANE_POS_LIGHT_TAIL,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
 	{ "light_left",		PLANE_POS_LIGHT_LEFT,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
 	{ "light_right",	PLANE_POS_LIGHT_RIGHT,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
@@ -213,6 +302,26 @@ RwObjectNameIdAssocation *CVehicleModelInfo::ms_vehicleDescs[NUM_VEHICLE_TYPES] 
 
 bool gbBlackCars;
 bool gbPinkCars;
+
+// SA CVehicleStructure::CVehicleStructure (0x6D5BF0). Everything starts zeroed:
+// a dummy that is not in the model reads as inactive, an upgrade slot with no
+// node reads as CAR_NODE_NONE, and the damageable mask starts empty.
+CVehicleStructure::CVehicleStructure(void)
+{
+	for(int32 i = 0; i < NUM_DUMMIES; i++)
+		m_avDummyPos[i] = CVector(0.0f, 0.0f, 0.0f);
+
+	for(int32 i = 0; i < NUM_UPGRADES; i++){
+		m_aUpgrades[i].m_nodeIndex = 0;
+		m_aUpgrades[i].m_vecOffset = CVector(0.0f, 0.0f, 0.0f);
+	}
+
+	for(int32 i = 0; i < NUM_EXTRAS; i++)
+		m_apExtras[i] = nil;
+
+	m_nNumExtras = 0;
+	m_nMaskComponentsDamagable = 0;
+}
 
 CVehicleModelInfo::CVehicleModelInfo(void)
  : CClumpModelInfo(MITYPE_VEHICLE)
@@ -876,7 +985,7 @@ CVehicleModelInfo::PreprocessSACarHierarchy(void)
 			// frame; m_avDummyPos is the SA indexing the light code reads.
 			RwV3d *pos = (desc[i].flags & VEHICLE_FLAG_POS)
 				? &m_positions[desc[i].hierId]
-				: &m_avDummyPos[(desc[i].flags >> VEHICLE_FLAG_DUMMY_SHIFT) - 1];
+				: &m_vehicleStruct.m_avDummyPos[(desc[i].flags >> VEHICLE_FLAG_DUMMY_SHIFT) - 1];
 			*pos = *RwMatrixGetPos(RwFrameGetMatrix(assoc.frame));
 			RwFrame *parent = RwFrameGetParent(assoc.frame);
 			while(parent && RwFrameGetParent(parent)){
@@ -884,7 +993,7 @@ CVehicleModelInfo::PreprocessSACarHierarchy(void)
 				parent = RwFrameGetParent(parent);
 			}
 			if(desc[i].flags & VEHICLE_FLAG_DUMMY){
-				m_avDummyPos[(desc[i].flags >> VEHICLE_FLAG_DUMMY_SHIFT) - 1] = *pos;
+				m_vehicleStruct.m_avDummyPos[(desc[i].flags >> VEHICLE_FLAG_DUMMY_SHIFT) - 1] = *pos;
 			}
 			RwFrameDestroy(assoc.frame);
 		}else{
@@ -984,7 +1093,7 @@ CVehicleModelInfo::PreprocessHierarchy(void)
 			f = assoc.frame;
 			rwvec = (desc[i].flags & VEHICLE_FLAG_POS)
 				? &m_positions[desc[i].hierId]
-				: &m_avDummyPos[(desc[i].flags >> VEHICLE_FLAG_DUMMY_SHIFT) - 1];
+				: &m_vehicleStruct.m_avDummyPos[(desc[i].flags >> VEHICLE_FLAG_DUMMY_SHIFT) - 1];
 			*rwvec = *RwMatrixGetPos(RwFrameGetMatrix(f));
 			for(f = RwFrameGetParent(f); f; f = RwFrameGetParent(f))
 				RwV3dTransformPoints(rwvec, rwvec, 1, RwFrameGetMatrix(f));
@@ -992,7 +1101,7 @@ CVehicleModelInfo::PreprocessHierarchy(void)
 			// DoHeadLightBeam can look up "the second headlight quad" the way SA
 			// does regardless of which loader path ran.
 			if(desc[i].flags & VEHICLE_FLAG_DUMMY)
-				m_avDummyPos[(desc[i].flags >> VEHICLE_FLAG_DUMMY_SHIFT) - 1] = *rwvec;
+				m_vehicleStruct.m_avDummyPos[(desc[i].flags >> VEHICLE_FLAG_DUMMY_SHIFT) - 1] = *rwvec;
 			RwFrameDestroy(assoc.frame);
 		}else{
 			atomic = (RpAtomic*)GetFirstObject(assoc.frame);

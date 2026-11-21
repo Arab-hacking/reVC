@@ -2196,7 +2196,7 @@ CVehicle::Load(uint8*& buf)
 CVector
 CVehicle::GetDummyPositionObjSpace(int32 dummy) const
 {
-	return ((CVehicleModelInfo*)CModelInfo::GetModelInfo(GetModelIndex()))->m_avDummyPos[dummy];
+	return ((CVehicleModelInfo*)CModelInfo::GetModelInfo(GetModelIndex()))->m_vehicleStruct.m_avDummyPos[dummy];
 }
 
 // SA CVehicle::DoHeadLightBeam (0x6E0E20), verbatim.
