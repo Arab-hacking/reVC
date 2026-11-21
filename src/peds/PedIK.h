@@ -55,6 +55,11 @@ public:
 	LimbOrientation m_lowerArmOrient;
 	int32 m_flags;
 
+	// SA has this as a standalone global (0x8D2354) that the Android build does
+	// not compile the neck branch for. It stays true here so a ped turns the neck
+	// along with the chest, as on PC.
+	static bool bRotateWithNeck;
+
 	static LimbMovementInfo ms_torsoInfo;
 	static LimbMovementInfo ms_headInfo;
 	static LimbMovementInfo ms_headRestoreInfo;
@@ -62,15 +67,21 @@ public:
 	static LimbMovementInfo ms_lowerArmInfo;
 
 	CPedIK(CPed *ped);
-	bool PointGunInDirection(float targetYaw, float targetPitch);
+	void RotateTorsoForArm(const CVector &direction);
+	bool PointGunInDirection(float zAngle, float distance, bool flag, float normalize);
 	bool PointGunInDirectionUsingArm(float targetYaw, float targetPitch);
-	bool PointGunAtPosition(CVector const& position);
+	void PointGunAtPosition(const CVector &aimAt, float normalize);
 	void GetComponentPosition(RwV3d &pos, uint32 node);
 	void RotateTorso(AnimBlendFrameData* animBlend, LimbOrientation* limb, bool changeRoll);
 	void ExtractYawAndPitchLocal(RwMatrix *mat, float *yaw, float *pitch);
 	void ExtractYawAndPitchLocalSkinned(AnimBlendFrameData *node, float *yaw, float *pitch);
 	void ExtractYawAndPitchWorld(RwMatrix *mat, float *yaw, float *pitch);
 	LimbMoveStatus MoveLimb(LimbOrientation &limb, float targetYaw, float targetPitch, LimbMovementInfo &moveInfo);
+	// SA CPedIK::MoveLimb overload (0x5FDB60): sets the angles straight to
+	// normalize * target instead of stepping towards them. TaskSimpleUseGun
+	// uses it so the torso turn fades in with the shooting animation blend
+	// rather than snapping.
+	LimbMoveStatus MoveLimb(LimbOrientation &limb, float targetYaw, float targetPitch, LimbMovementInfo &moveInfo, float normalize);
 	bool RestoreGunPosn(void);
 	bool LookInDirection(float targetYaw, float targetPitch);
 	bool LookAtPosition(CVector const& pos);

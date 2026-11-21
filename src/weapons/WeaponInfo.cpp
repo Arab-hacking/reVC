@@ -58,6 +58,10 @@ int32 CWeaponInfo::ms_aMaxAmmoForWeapon[WEAPONTYPE_TOTALWEAPONS] =
 };
 
 CWeaponInfo aWeaponInfo[WEAPONTYPE_TOTALWEAPONS];
+// SA CWeaponInfo::ms_WeaponAimOffsets (0xC8A8A8). Zero-initialised here and
+// filled from the '%' lines of weapon.dat by LoadWeaponData, exactly as SA does.
+CWeaponInfo::tAnimAimOffsets CWeaponInfo::ms_WeaponAimOffsets[ASSOCGRP_SPRAYCAN + 1 - ASSOCGRP_PYTHON];
+
 char CWeaponInfo::ms_aWeaponNames[WEAPONTYPE_TOTALWEAPONS][32] =
 {
 	"Unarmed",
@@ -131,7 +135,23 @@ CWeaponInfo::Initialise(void)
 		aWeaponInfo[i].m_fAnimBreakout = 0.0f;
 		aWeaponInfo[i].m_Flags = WEAPONFLAG_USE_GRAVITY | WEAPONFLAG_SLOWS_DOWN | WEAPONFLAG_RAND_SPEED | WEAPONFLAG_EXPANDS | WEAPONFLAG_EXPLODES;
 		aWeaponInfo[i].m_nWeaponSlot = WEAPONSLOT_UNARMED;
+		aWeaponInfo[i].m_nAimOffsetIndex = 0;
 	}
+
+	// SA zeroes the whole aim-offset table in CWeaponInfo::Initialise before
+	// weapon.dat is read, so a weapon that never gets a '%' row aims from the
+	// ped's origin rather than from garbage.
+	for (int i = 0; i < ARRAY_SIZE(ms_WeaponAimOffsets); i++) {
+		ms_WeaponAimOffsets[i].AimX = 0.0f;
+		ms_WeaponAimOffsets[i].AimZ = 0.0f;
+		ms_WeaponAimOffsets[i].DuckX = 0.0f;
+		ms_WeaponAimOffsets[i].DuckZ = 0.0f;
+		ms_WeaponAimOffsets[i].RLoadA = 0;
+		ms_WeaponAimOffsets[i].RLoadB = 0;
+		ms_WeaponAimOffsets[i].CrouchRLoadA = 0;
+		ms_WeaponAimOffsets[i].CrouchRLoadB = 0;
+	}
+
 	debug("Loading weapon data...\n");
 	LoadWeaponData();
 	debug("CWeaponInfo ready\n");

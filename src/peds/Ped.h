@@ -687,9 +687,11 @@ public:
 	int32 ProcessEntityCollision(CEntity*, CColPoint*);
 
 	virtual void SetMoveAnim(void);
+	void SetMoveAnimSpeed(CAnimBlendAssociation *assoc);
 
 	void AddWeaponModel(int id);
 	void AimGun(void);
+	float GetAimAnimBlendAmount(void);
 	void KillPedWithCar(CVehicle *veh, float impulse);
 	void Say(uint16 audio);
 	void Say(uint16 audio, int32 time);

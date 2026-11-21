@@ -34,6 +34,26 @@ enum
 class CWeaponInfo {
 	static char ms_aWeaponNames[WEAPONTYPE_TOTALWEAPONS][32];
 public:
+	// SA CWeaponInfo::tAnimAimOffsets (0xC8A8A8). Where the muzzle sits relative
+	// to the ped's origin when aiming, in the ped's right/up axes, separately for
+	// standing and ducking. PointGunAtPosition fires from this point instead of
+	// from the upper arm, which is what makes the shot leave along the barrel.
+	// SA fills the table from the '%' entries of weapon.dat and keys it by
+	// animation group; VC's weapon.dat has no such entries, so the values stay
+	// zero until a SA-format weapon.dat is supplied - the same zeroes an
+	// untouched SA install has before weapon.dat is read.
+	struct tAnimAimOffsets {
+		float AimX;
+		float AimZ;
+		float DuckX;
+		float DuckZ;
+		uint16 RLoadA;
+		uint16 RLoadB;
+		uint16 CrouchRLoadA;
+		uint16 CrouchRLoadB;
+	};
+	static tAnimAimOffsets ms_WeaponAimOffsets[ASSOCGRP_SPRAYCAN + 1 - ASSOCGRP_PYTHON];
+
 	static uint16 ms_aReloadSampleTime[WEAPONTYPE_TOTALWEAPONS];
 	static int32 ms_aMaxAmmoForWeapon[WEAPONTYPE_TOTALWEAPONS];
 
@@ -61,6 +81,11 @@ public:
 	uint32 m_Flags;
 
 	uint32 m_nWeaponSlot;
+	// SA m_nAimOffsetIndex: which row of ms_WeaponAimOffsets this weapon aims
+	// with. Every weapon defaults to 0, as in SA's CWeaponInfo::Initialise.
+	uint16 m_nAimOffsetIndex;
+
+	const tAnimAimOffsets &GetAimingOffset(void) const { return ms_WeaponAimOffsets[m_nAimOffsetIndex]; }
 
 	static void Initialise(void);
 	static void LoadWeaponData(void);

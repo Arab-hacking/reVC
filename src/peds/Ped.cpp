@@ -695,6 +695,22 @@ CPed::SetMoveState(eMoveState state)
 	m_nMoveState = state;
 }
 
+// SA CPed::SetMoveAnimSpeed (0x5DEC10). Walk, jog, run and sprint are all
+// authored at one stride rate, so SA scales each ped's playback speed by a
+// per-ped random factor (mission peds always 1.0) to break the lock-step, and
+// by the slope pitch so a ped climbing a hill keeps the same cadence. reVC had
+// this expression inlined twice inside SetMoveAnim and dropped the slope term,
+// because there was no CPedIK slope state to read.
+void
+CPed::SetMoveAnimSpeed(CAnimBlendAssociation *assoc)
+{
+	float pitchFactor = Clamp(m_pedIK.m_fSlopePitch, -0.3f, 0.3f);
+	if (CharCreatedBy == MISSION_CHAR)
+		assoc->speed = pitchFactor + 1.0f;
+	else
+		assoc->speed = pitchFactor + 1.2f - m_randomSeed * (1.0f / MYRAND_MAX) * 0.4f;
+}
+
 void
 CPed::SetMoveAnim(void)
 {
@@ -792,17 +808,10 @@ CPed::SetMoveAnim(void)
 				if (walkAssoc) {
 					animAssoc->speed = walkAssoc->speed;
 				} else {
-					if (CharCreatedBy == MISSION_CHAR)
-						animAssoc->speed = 1.0f;
-					else
-						animAssoc->speed = 1.2f - m_randomSeed * 0.4f / MYRAND_MAX;
-							
+					SetMoveAnimSpeed(animAssoc);
 				}
 			} else {
-				if (CharCreatedBy == MISSION_CHAR)
-					animAssoc->speed = 1.0f;
-				else
-					animAssoc->speed = 1.2f - m_randomSeed * 0.4f / MYRAND_MAX;
+				SetMoveAnimSpeed(animAssoc);
 			}
 		}
 	}
@@ -1332,6 +1341,24 @@ CPed::ClearAimFlag(void)
 	}
 }
 
+// SA passes the blend amount of the weapon's fire animation as `normalize` to
+// CPedIK::PointGunInDirection / PointGunAtPosition. VC had no such argument, so
+// reVC has to look the association up the same way SetPointGunAt picks it.
+float
+CPed::GetAimAnimBlendAmount(void)
+{
+	CWeaponInfo *curWeapon = CWeaponInfo::GetWeaponInfo(GetWeapon()->m_eWeaponType);
+	CAnimBlendAssociation *aimAssoc = nil;
+	if (bCrouchWhenShooting && bIsDucking && GetCrouchFireAnim(curWeapon))
+		aimAssoc = RpAnimBlendClumpGetAssociation(GetClump(), GetCrouchFireAnim(curWeapon));
+	else
+		aimAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_ID_FIRE);
+
+	// -1 means "no blend", which makes MoveLimb step towards the target the way
+	// SA does when the fire animation is not playing yet.
+	return aimAssoc ? aimAssoc->blendAmount : -1.0f;
+}
+
 void
 CPed::AimGun(void)
 {
@@ -1350,17 +1377,27 @@ CPed::AimGun(void)
 		if (!IsPlayer())
 			Say(SOUND_PED_ATTACK);
 
-		bCanPointGunAtTarget = m_pedIK.PointGunAtPosition(vector);
+		// SA resolves the aim against the weapon's fire animation blend, so the
+		// torso turn fades in with the clip instead of snapping to full on the
+		// first frame. Without an association the blend is 0, the plain stepwise
+		// MoveLimb path, which is what VC always used.
+		// SA's PointGunAtPosition returns void and reports success through
+		// CPedIK::bGunReachedTarget, which VC carries as GUN_POINTED_SUCCESSFULLY.
+		m_pedIK.PointGunAtPosition(vector, GetAimAnimBlendAmount());
+		bCanPointGunAtTarget = (m_pedIK.m_flags & CPedIK::GUN_POINTED_SUCCESSFULLY) != 0;
 		if (m_pLookTarget != m_pSeekTarget) {
 			SetLookFlag(m_pSeekTarget, true, true);
 		}
 
 	} else {
-		if (IsPlayer()) {
-			bCanPointGunAtTarget = m_pedIK.PointGunInDirection(m_fLookDirection, ((CPlayerPed*)this)->m_fFPSMoveHeading);
-		} else {
-			bCanPointGunAtTarget = m_pedIK.PointGunInDirection(m_fLookDirection, 0.0f);
-		}
+		// Same shape as CTaskSimpleUseGun: aim straight ahead, using the player's
+		// look pitch as the vertical distance and -1 for "no blend" so MoveLimb
+		// takes its stepping path.
+		bCanPointGunAtTarget = m_pedIK.PointGunInDirection(
+			m_fLookDirection,
+			IsPlayer() ? ((CPlayerPed*)this)->m_fFPSMoveHeading : 0.0f,
+			false,
+			GetAimAnimBlendAmount());
 	}
 }
 

@@ -37,6 +37,8 @@ CPedIK::CPedIK(CPed *ped) : m_ped(ped)
 	m_fBodyRoll = 0.0f;
 }
 
+bool CPedIK::bRotateWithNeck = true;
+
 // A skeleton need not carry the bone an IK request names: a Vice City ped has
 // no SA spine or clavicle, and a clump that is not skinned has no hierarchy at
 // all. RpHAnimIDGetIndex answers -1 for a bone that is not there, and indexing
@@ -265,6 +267,30 @@ CPedIK::MoveLimb(LimbOrientation &limb, float targetYaw, float targetPitch, Limb
 	return result;
 }
 
+// SA CPedIK::MoveLimb overload (0x5FDB60). Verbatim from gta-reversed.
+LimbMoveStatus
+CPedIK::MoveLimb(LimbOrientation &limb, float targetYaw, float targetPitch, LimbMovementInfo &moveInfo, float normalize)
+{
+	LimbMoveStatus result = ONE_ANGLE_COULDNT_BE_SET_EXACTLY;
+
+	limb.yaw = normalize * targetYaw;
+	limb.pitch = normalize * targetPitch;
+
+	if (limb.yaw > moveInfo.maxYaw || limb.yaw < moveInfo.minYaw) {
+		limb.yaw = Clamp(limb.yaw, moveInfo.minYaw, moveInfo.maxYaw);
+		result = ANGLES_SET_TO_MAX;
+	}
+
+	if (limb.pitch > moveInfo.maxPitch || limb.pitch < moveInfo.minPitch) {
+		limb.pitch = Clamp(limb.pitch, moveInfo.minPitch, moveInfo.maxPitch);
+		result = ANGLES_SET_TO_MAX;
+	} else if (normalize > 0.9f && result == ONE_ANGLE_COULDNT_BE_SET_EXACTLY) {
+		result = ANGLES_SET_EXACTLY;
+	}
+
+	return result;
+}
+
 bool
 CPedIK::RestoreGunPosn(void)
 {
@@ -340,70 +366,88 @@ CPedIK::LookAtPosition(CVector const &pos)
 	return LookInDirection(yawToFace, pitchToFace);
 }
 
-bool
-CPedIK::PointGunInDirection(float targetYaw, float targetPitch)
+// SA CPedIK::RotateTorsoForArm (0x5FDF90), verbatim from gta-reversed.
+// When the arm IK chain is pointing the arm, the torso still has to follow the
+// target or the shoulder tears away from the spine. SA clamps the twist to a
+// 45..90 degree band, gives up beyond -60 degrees, and folds anything past -80
+// back to a fixed -20, then splits the result between the neck and the upper
+// torso so a person turns their head first and their chest second.
+void
+CPedIK::RotateTorsoForArm(const CVector &direction)
 {
-	bool result = true;
-	bool armPointedToGun = false;
-	targetYaw = CGeneral::LimitRadianAngle(targetYaw - m_ped->GetForward().Heading());
-	m_flags &= ~GUN_POINTED_SUCCESSFULLY;
-	m_flags |= LOOKAROUND_HEAD_ONLY;
-	if (m_flags & AIMS_WITH_ARM) {
-		armPointedToGun = PointGunInDirectionUsingArm(targetYaw, targetPitch);
-		targetYaw = CGeneral::LimitRadianAngle(targetYaw - (m_upperArmOrient.yaw + m_lowerArmOrient.yaw));
-	}
-	if (armPointedToGun) {
-		if (m_flags & AIMS_WITH_ARM && m_torsoOrient.yaw * m_upperArmOrient.yaw < 0.0f)
-			MoveLimb(m_torsoOrient, 0.0f, m_torsoOrient.pitch, ms_torsoInfo);
+	float destRotation = CVector2D(direction - m_ped->GetPosition()).Heading();
+
+	if (m_ped->m_fRotationCur + DEGTORAD(180.0f) < destRotation)
+		destRotation -= DEGTORAD(360.0f);
+	else if (m_ped->m_fRotationCur - DEGTORAD(180.0f) > destRotation)
+		destRotation += DEGTORAD(360.0f);
+
+	float difAngle = destRotation - m_ped->m_fRotationCur;
+	float resultAngle = DEGTORAD(45.0f);
+
+	if (difAngle > DEGTORAD(45.0f) && difAngle <= DEGTORAD(90.0f)) {
+		resultAngle = difAngle - DEGTORAD(45.0f);
 	} else {
-		// Unused code
-		RwMatrix *matrix;
-		float yaw, pitch;
-		matrix = RwMatrixCreate();
-		RwMatrix *clavicle = GetComponentMatrix(m_ped, PED_CLAVICLER);
-		if (clavicle == nil){
-			RwMatrixDestroy(matrix);
-			return false;
-		}
-		*matrix = *clavicle;
-		ExtractYawAndPitchWorld(matrix, &yaw, &pitch);
-		RwMatrixDestroy(matrix);
+		if (difAngle >= DEGTORAD(-60.0f))
+			return;
 
-		if(m_flags & AIMS_WITH_ARM){
-			if(targetPitch > 0.0f)
-				targetPitch = Max(targetPitch - Abs(targetYaw), 0.0f);
-			else
-				targetPitch = Min(targetPitch + Abs(targetYaw), 0.0f);
-		}
-		LimbMoveStatus status = MoveLimb(m_torsoOrient, targetYaw, targetPitch, ms_torsoInfo);
-		if (status == ANGLES_SET_TO_MAX)
-			result = false;
-		else if (status == ANGLES_SET_EXACTLY)
-			m_flags |= GUN_POINTED_SUCCESSFULLY;
+		resultAngle = difAngle + DEGTORAD(60.0f);
+
+		if (difAngle < DEGTORAD(-80.0f))
+			resultAngle = DEGTORAD(-20.0f);
 	}
 
-	// Game uses index 2 directly, which happens to be identical to BONE_spine
-#ifdef FIX_BUGS
-	RwMatrix *m = GetBoneMatrix(m_ped, BONE_spine);
-	if (m == nil)
-		return false;
-#else
-	RpHAnimHierarchy* hier = GetAnimHierarchyFromSkinClump(m_ped->GetClump());
-	RwMatrix *mats = RpHAnimHierarchyGetMatrixArray(hier);
-	RwMatrix *m = &mats[2];
-#endif
-	RwV3d axis = { 0.0f, 0.0f, 0.0f };
-	float axisangle = -CGeneral::LimitRadianAngle(Atan2(-m->at.y, -m->at.x) - m_ped->m_fRotationCur);
-	axis.y = -Sin(axisangle);
-	axis.z = Cos(axisangle);
+	if (resultAngle != DEGTORAD(0.0f)) {
+		float degreesHalf = RADTODEG(resultAngle / 2.0f);
+		if (bRotateWithNeck)
+			RotateQuatIfPresent(GetFrameQuat(m_ped, PED_NECK), &XaxisIK, degreesHalf, rwCOMBINEPOSTCONCAT);
+		RotateQuatIfPresent(GetFrameQuat(m_ped, PED_MID), &XaxisIK, degreesHalf, rwCOMBINEPOSTCONCAT);
+	}
+}
 
-	// this was RotateTorso
-	RtQuat *q = GetFrameQuat(m_ped, PED_MID);
-	RotateQuatIfPresent(q, &axis, RADTODEG(m_torsoOrient.pitch), rwCOMBINEPOSTCONCAT);
-	RotateQuatIfPresent(q, &XaxisIK, RADTODEG(m_torsoOrient.yaw), rwCOMBINEPOSTCONCAT);
+bool
+CPedIK::PointGunInDirection(float zAngle, float distance, bool flag, float normalize)
+{
+	// SA CPedIK::PointGunInDirection (0x5FDC00), verbatim from gta-reversed.
+	// Where VC had a two-argument variant that aimed the torso and let the arm
+	// follow, SA takes the already-resolved z-angle and pitch distance plus the
+	// animation blend, turns the torso by the part of that angle it can reach,
+	// and rotates the upper torso about the head's own axis. The 'flag' bit
+	// selects whether that axis is built from sin/cos or from -sin/cos, which is
+	// what keeps the torso roll consistent on either side of the target.
+	m_flags &= ~GUN_POINTED_SUCCESSFULLY;
+	m_flags |= AIMS_WITH_ARM;    // SA bTorsoUsed = true, kept in VC's flag layout
+
+	float angle = CGeneral::LimitRadianAngle(zAngle - m_ped->m_fRotationCur);
+	RpHAnimHierarchy *hier = GetAnimHierarchyFromSkinClump(m_ped->GetClump());
+
+	LimbMoveStatus limbResult;
+	if (normalize < 0.0f)
+		limbResult = MoveLimb(m_torsoOrient, angle, distance, ms_torsoInfo);
+	else
+		limbResult = MoveLimb(m_torsoOrient, angle, distance, ms_torsoInfo, normalize);
+
+	bool canReach = true;
+	if (limbResult == ANGLES_SET_TO_MAX)
+		canReach = false;
+	else if (limbResult == ANGLES_SET_EXACTLY)
+		m_flags |= GUN_POINTED_SUCCESSFULLY;
+
+	RwMatrix *head = &RpHAnimHierarchyGetMatrixArray(hier)[PED_HEAD];
+	float headAngle = -CGeneral::LimitRadianAngle(Atan2(-head->at.y, -head->at.x) - m_ped->m_fRotationCur);
+
+	RwV3d axis;
+	axis.x = 0.0f;
+	axis.y = flag ? Cos(headAngle) : -Sin(headAngle);
+	axis.z = flag ? Sin(headAngle) :  Cos(headAngle);
+
+	RtQuat *torsoQ = GetFrameQuat(m_ped, PED_MID);
+	RotateQuatIfPresent(torsoQ, &axis, RADTODEG(m_torsoOrient.pitch), rwCOMBINEPOSTCONCAT);
+	RotateQuatIfPresent(torsoQ, &XaxisIK, RADTODEG(m_torsoOrient.yaw), rwCOMBINEPOSTCONCAT);
+
 	m_ped->bDontAcceptIKLookAts = true;
 
-	return result;
+	return canReach;
 }
 
 bool
@@ -475,23 +519,25 @@ CPedIK::PointGunInDirectionUsingArm(float targetYaw, float targetPitch)
 	return result;
 }
 
-bool
-CPedIK::PointGunAtPosition(CVector const& position)
+void
+CPedIK::PointGunAtPosition(const CVector &aimAt, float normalize)
 {
-	CVector startPoint;
-	if (m_ped->GetWeapon()->m_eWeaponType == WEAPONTYPE_SPAS12_SHOTGUN || m_ped->GetWeapon()->m_eWeaponType == WEAPONTYPE_STUBBY_SHOTGUN)
-		startPoint = m_ped->GetPosition();
-	else {
-		RwV3d armPos;
-		GetComponentPosition(armPos, PED_UPPERARMR);
-		startPoint.x = m_ped->GetPosition().x;
-		startPoint.y = m_ped->GetPosition().y;
-		startPoint.z = armPos.z;
-	}
+	// SA CPedIK::PointGunAtPosition (0x5FDE20), verbatim from gta-reversed.
+	// The muzzle is not at the ped's origin: SA offsets it along the ped's right
+	// and up axes by the per-weapon aim offset, using the ducking row while
+	// crouched, and aiming is computed from that point. VC fired the whole
+	// calculation from the upper arm's height, which threw the vertical angle
+	// off whenever the weapon sat lower than the shoulder.
+	const CWeaponInfo::tAnimAimOffsets &offset = CWeaponInfo::GetWeaponInfo(m_ped->GetWeapon()->m_eWeaponType)->GetAimingOffset();
+	CVector aimFrom = m_ped->GetPosition()
+		+ (m_ped->bIsDucking ? offset.DuckX : offset.AimX) * m_ped->GetRight()
+		+ (m_ped->bIsDucking ? offset.DuckZ : offset.AimZ) * m_ped->GetUp();
 
-	return PointGunInDirection(
-		CGeneral::GetRadianAngleBetweenPoints(position.x, position.y, startPoint.x, startPoint.y),
-		CGeneral::GetRadianAngleBetweenPoints(position.z, Distance2D(m_ped->GetPosition(), position.x, position.y), startPoint.z, 0.0f));
+	PointGunInDirection(
+		CGeneral::GetRadianAngleBetweenPoints(aimAt.x, aimAt.y, aimFrom.x, aimFrom.y),
+		CGeneral::GetRadianAngleBetweenPoints(aimAt.z, Distance2D(aimFrom, aimAt), aimFrom.z, 0.0f),
+		false,
+		normalize);
 }
 
 bool
