@@ -66,6 +66,139 @@ CMatrix::Update(void)
 	GetPosition() = m_attachment->pos;
 }
 
+// SA CMatrix::ConvertToEulerAngles (Core/Matrix.cpp), ported verbatim. The SA
+// class exposes m_right/m_forward/m_up, reVC keeps the rows in the f[4][4]
+// union, so the three rows are read through f[0..2] instead.
+void
+CMatrix::ConvertToEulerAngles(float *pX, float *pY, float *pZ, uint32 uiFlags)
+{
+	const float EPSILON = scalbnf(1.0f, -19);
+
+	float fArr[3][3];
+
+	fArr[0][0] = f[0][0];
+	fArr[0][1] = f[0][1];
+	fArr[0][2] = f[0][2];
+
+	fArr[1][0] = f[1][0];
+	fArr[1][1] = f[1][1];
+	fArr[1][2] = f[1][2];
+
+	fArr[2][0] = f[2][0];
+	fArr[2][1] = f[2][1];
+	fArr[2][2] = f[2][2];
+
+	int8 iInd1 = 0, iInd2 = 1, iInd3 = 2;
+	switch (uiFlags & eMatrixEulerFlags::_ORDER_MASK) {
+	case ORDER_XYZ: iInd1 = 0, iInd2 = 1, iInd3 = 2; break;
+	case ORDER_XZY: iInd1 = 0, iInd2 = 2, iInd3 = 1; break;
+	case ORDER_YZX: iInd1 = 1, iInd2 = 2, iInd3 = 0; break;
+	case ORDER_YXZ: iInd1 = 1, iInd2 = 0, iInd3 = 2; break;
+	case ORDER_ZXY: iInd1 = 2, iInd2 = 0, iInd3 = 1; break;
+	case ORDER_ZYX: iInd1 = 2, iInd2 = 1, iInd3 = 0; break;
+	}
+
+	if (uiFlags & eMatrixEulerFlags::EULER_ANGLES) {
+		auto r13 = fArr[iInd1][iInd3];
+		auto r12 = fArr[iInd1][iInd2];
+		auto cy = sqrtf(r12 * r12 + r13 * r13);
+		if (cy > EPSILON) {
+			*pX = Atan2(r12, r13);
+			*pY = Atan2(cy, fArr[iInd1][iInd1]);
+			*pZ = Atan2(fArr[iInd2][iInd1], -fArr[iInd3][iInd1]);
+		} else {
+			*pX = Atan2(-fArr[iInd2][iInd3], fArr[iInd2][iInd2]);
+			*pY = Atan2(cy, fArr[iInd1][iInd1]);
+			*pZ = 0.0f;
+		}
+	} else {
+		auto r21 = fArr[iInd2][iInd1];
+		auto r11 = fArr[iInd1][iInd1];
+		auto cy = sqrtf(r11 * r11 + r21 * r21);
+		if (cy > EPSILON) {
+			*pX = Atan2(fArr[iInd3][iInd2], fArr[iInd3][iInd3]);
+			*pY = Atan2(-fArr[iInd3][iInd1], cy);
+			*pZ = Atan2(r21, r11);
+		} else {
+			*pX = Atan2(-fArr[iInd2][iInd3], fArr[iInd2][iInd2]);
+			*pY = Atan2(-fArr[iInd3][iInd1], cy);
+			*pZ = 0.0f;
+		}
+	}
+
+	if (uiFlags & eMatrixEulerFlags::SWAP_XZ)
+		{ float tmp = *pX; *pX = *pZ; *pZ = tmp; }
+
+	if (uiFlags & eMatrixEulerFlags::_ORDER_NEEDS_SWAP) {
+		*pX = -*pX;
+		*pY = -*pY;
+		*pZ = -*pZ;
+	}
+}
+
+// SA CMatrix::ConvertFromEulerAngles (Core/Matrix.cpp), ported verbatim.
+void
+CMatrix::ConvertFromEulerAngles(float x, float y, float z, uint32 uiFlags)
+{
+	int8 iInd1 = 0, iInd2 = 1, iInd3 = 2;
+	switch (uiFlags & eMatrixEulerFlags::_ORDER_MASK) {
+	case ORDER_XYZ: iInd1 = 0, iInd2 = 1, iInd3 = 2; break;
+	case ORDER_XZY: iInd1 = 0, iInd2 = 2, iInd3 = 1; break;
+	case ORDER_YZX: iInd1 = 1, iInd2 = 2, iInd3 = 0; break;
+	case ORDER_YXZ: iInd1 = 1, iInd2 = 0, iInd3 = 2; break;
+	case ORDER_ZXY: iInd1 = 2, iInd2 = 0, iInd3 = 1; break;
+	case ORDER_ZYX: iInd1 = 2, iInd2 = 1, iInd3 = 0; break;
+	}
+
+	float fArr[3][3];
+
+	if (uiFlags & eMatrixEulerFlags::SWAP_XZ)
+		{ float tmp = x; x = z; z = tmp; }
+
+	if (uiFlags & eMatrixEulerFlags::_ORDER_NEEDS_SWAP) {
+		x = -x;
+		y = -y;
+		z = -z;
+	}
+
+	auto fSinX = Sin(x);
+	auto fCosX = Cos(x);
+	auto fSinY = Sin(y);
+	auto fCosY = Cos(y);
+	auto fSinZ = Sin(z);
+	auto fCosZ = Cos(z);
+
+	if (uiFlags & eMatrixEulerFlags::EULER_ANGLES) {
+		fArr[iInd1][iInd1] = fCosY;
+		fArr[iInd1][iInd2] = fSinX * fSinY;
+		fArr[iInd1][iInd3] = fCosX * fSinY;
+
+		fArr[iInd2][iInd1] =  fSinY * fSinZ;
+		fArr[iInd2][iInd2] =  fCosX * fCosY - fCosY * fSinX * fSinZ;
+		fArr[iInd2][iInd3] = -(fSinX * fCosZ) - (fCosX * fCosY * fSinZ);
+
+		fArr[iInd3][iInd1] = -(fCosZ * fSinY);
+		fArr[iInd3][iInd2] =  fCosX * fSinZ + fCosY * fCosZ * fSinX;
+		fArr[iInd3][iInd3] = -(fSinX * fSinZ) + fCosX * fCosY * fCosZ;
+	} else { // Tait-Bryan angles
+		fArr[iInd1][iInd1] =  fCosY * fCosZ;
+		fArr[iInd1][iInd2] = -(fCosX * fSinZ) + fCosZ * fSinX * fSinY;
+		fArr[iInd1][iInd3] =  fSinX * fSinZ + fCosX * fCosZ * fSinY;
+
+		fArr[iInd2][iInd1] =  fCosY * fSinZ;
+		fArr[iInd2][iInd2] =  fCosX * fCosZ + fSinX * fSinY * fSinZ;
+		fArr[iInd2][iInd3] = -(fCosZ * fSinX) + fCosX * fSinY * fSinZ;
+
+		fArr[iInd3][iInd1] = -fSinY;
+		fArr[iInd3][iInd2] =  fCosY * fSinX;
+		fArr[iInd3][iInd3] =  fCosX * fCosY;
+	}
+
+	f[0][0] = fArr[0][0]; f[0][1] = fArr[0][1]; f[0][2] = fArr[0][2];
+	f[1][0] = fArr[1][0]; f[1][1] = fArr[1][1]; f[1][2] = fArr[1][2];
+	f[2][0] = fArr[2][0]; f[2][1] = fArr[2][1]; f[2][2] = fArr[2][2];
+}
+
 void
 CMatrix::UpdateRW(void)
 {

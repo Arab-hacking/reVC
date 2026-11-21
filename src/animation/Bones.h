@@ -29,6 +29,11 @@ enum BoneTag
 	BONE_r_calf = 52,
 	BONE_r_foot = 53,
 	BONE_r_toe = 54,
+	// SA has separate breast bones that follow the upper arm so the chest does
+	// not tear open when the arm raises. They sit outside the 0..54 range and are
+	// addressed by ID through RpHAnimIDGetIndex, not by array position.
+	BONE_r_breast = 301,
+	BONE_l_breast = 302,
 };
 
 int ConvertPedNode2BoneTag(int node);

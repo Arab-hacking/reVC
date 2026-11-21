@@ -287,7 +287,9 @@ CEntity::UpdateRwFrame(void)
 void
 CEntity::UpdateRpHAnim(void)
 {
-	if(IsClumpSkinned(GetClump())){
+	// SA CEntity::UpdateRpHAnim (0x532B20) skips the update when this frame's
+	// pose was built by hand.
+	if(IsClumpSkinned(GetClump()) && !bDontUpdateHierarchy){
 		RpHAnimHierarchy *hier = GetAnimHierarchyFromSkinClump(GetClump());
 		RpHAnimHierarchyUpdateMatrices(hier);
 #if 0

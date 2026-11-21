@@ -1,6 +1,28 @@
 #ifndef __GTA_MATRIX_H__
 #define __GTA_MATRIX_H__
 
+// SA eMatrixEulerFlags (Core/Matrix.h). The order bits select which of the
+// three axes plays the role of each Euler index; SWAP_XZ and EULER_ANGLES pick
+// the convention. Needed by CMatrix::ConvertToEulerAngles, which in turn is
+// needed by CPed::ShoulderBoneRotation.
+enum eMatrixEulerFlags : uint32 {
+	SWAP_XZ = 0x01,
+
+	TAIT_BRYAN_ANGLES = 0x0,
+	EULER_ANGLES = 0x2,
+
+	ORDER_XYZ = 0x00,
+	ORDER_XZY = 0x04,
+	ORDER_YZX = 0x08,
+	ORDER_YXZ = 0x0C,
+	ORDER_ZXY = 0x10,
+	ORDER_ZYX = 0x14,
+
+	// Special combined masks, do not use
+	_ORDER_MASK = ORDER_XYZ | ORDER_XZY | ORDER_YZX | ORDER_YXZ | ORDER_ZXY | ORDER_ZYX,
+	_ORDER_NEEDS_SWAP = 0x4
+};
+
 #ifdef GTA_PS2
 class TYPEALIGN(16) CMatrix
 #else
@@ -53,6 +75,11 @@ public:
 	void Detach(void);
 	void Update(void);
 	void UpdateRW(void);
+	// SA CMatrix::ConvertToEulerAngles / ConvertFromEulerAngles (Core/Matrix.cpp),
+	// ported verbatim - index selection, the EPSILON guard on the gimbal case,
+	// the SWAP_XZ and _ORDER_NEEDS_SWAP handling are all SA's.
+	void ConvertToEulerAngles(float *pX, float *pY, float *pZ, uint32 uiFlags);
+	void ConvertFromEulerAngles(float x, float y, float z, uint32 uiFlags);
 	CMatrix &operator=(CMatrix const &rhs);
 	CMatrix &operator+=(CMatrix const &rhs);
 	CMatrix &operator*=(CMatrix const &rhs);

@@ -63,6 +63,12 @@ public:
 	uint32 bIsBIGBuilding : 1;			// Set if this entity is a big building
 	uint32 bStreamBIGBuilding : 1;	// set when draw dist <= 2000
 
+	// SA CEntity::m_bDontUpdateHierarchy. Set for one frame by the code that
+	// poses the skeleton by hand (the player's shoulder bones, hand-held
+	// objects, cutscene peds), so CeEntity::UpdateRpHAnim leaves the matrices
+	// alone and does not overwrite the hand-made pose.
+	uint32 bDontUpdateHierarchy : 1;
+
 	// flagsC
 	uint32 bRenderDamaged : 1;			// use damaged LOD models for objects with applicable damage
 	uint32 bBulletProof : 1;

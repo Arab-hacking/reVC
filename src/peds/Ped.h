@@ -680,6 +680,8 @@ public:
 	// matrices are built. Called from PreRender, and by a vehicle for its
 	// seated occupants.
 	void PreRenderAfterTest(void);
+	// SA: keeps the player's chest bones half-rotated with the arms.
+	void ShoulderBoneRotation(RpClump *clump);
 	void Render(void);
 	bool SetupLighting(void);
 	void RemoveLighting(bool);

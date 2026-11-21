@@ -4727,6 +4727,69 @@ CPed::CanBeDeletedEvenInVehicle(void)
 // Vice City skeleton has no SA spine or clavicle; the matrix array cannot be
 // indexed with it. The wind and body-damage code scales a bone it names, so an
 // absent bone simply has nothing to scale.
+// SA CPed::ShoulderBoneRotation (0x5DF560), ported verbatim. The player model
+// carries separate breast bones for each side. They have to copy the matching
+// upper arm's matrix and then keep only half of the X rotation relative to the
+// clavicle - otherwise the chest skin tears away from the shoulder whenever the
+// arm raises past the horizontal, which is exactly what the player does every
+// time he aims. SA runs this for MODEL_PLAYER only, from PreRender.
+//
+// SA reads the bone matrix with RpHAnimHierarchyGetNodeMatrix; reVC has no such
+// helper and indexes the matrix array by RpHAnimIDGetIndex, so an absent bone
+// (a Vice City skeleton has no breast bones at all) is skipped instead of
+// reading before the array.
+void
+CPed::ShoulderBoneRotation(RpClump *clump)
+{
+	RpHAnimHierarchy *hier = GetAnimHierarchyFromClump(clump);
+	if(hier == nil)
+		return;
+
+	RwMatrix *rwMats = RpHAnimHierarchyGetMatrixArray(hier);
+	if(rwMats == nil)
+		return;
+
+	// SA lambda GetMatrixOf: bone tag -> its matrix, nil when absent.
+	auto GetMatrixOf = [&](int32 bone) -> RwMatrix* {
+		int32 idx = RpHAnimIDGetIndex(hier, bone);
+		if(idx < 0)
+			return nil;
+		return &rwMats[idx];
+	};
+
+	auto DoUpdate = [&](int32 breastBone, int32 upperArmBone, int32 clavicleBone) {
+		RwMatrix *breastRwMat = GetMatrixOf(breastBone);
+		RwMatrix *upperArmMat = GetMatrixOf(upperArmBone);
+		RwMatrix *clavicleRwMat = GetMatrixOf(clavicleBone);
+		if(breastRwMat == nil || upperArmMat == nil || clavicleRwMat == nil)
+			return;
+
+		// Make the breast's matrix same as the upper arm's
+		RwMatrixCopy(breastRwMat, upperArmMat);
+
+		CMatrix breastMat(breastRwMat);
+		CMatrix clavicleMat(clavicleRwMat);
+
+		// Calculate breast to clavicle transformation matrix (and store it in breastMat)
+		breastMat = Invert(clavicleMat) * breastMat;
+
+		// Half its X rotation
+		float rx, ry, rz;
+		breastMat.ConvertToEulerAngles(&rx, &ry, &rz, ORDER_ZYX | SWAP_XZ);
+		rx /= 2.0f;
+		breastMat.ConvertFromEulerAngles(rx, ry, rz, ORDER_ZYX | SWAP_XZ);
+
+		// Transform it back into its own space
+		breastMat = clavicleMat * breastMat;
+
+		// Finally, update its RW associated matrix
+		breastMat.UpdateRW();
+	};
+
+	DoUpdate(BONE_l_breast, BONE_l_upperarm, BONE_l_clavicle);
+	DoUpdate(BONE_r_breast, BONE_r_upperarm, BONE_r_clavicle);
+}
+
 static RwMatrix *
 GetBoneMatrixSafe(RpHAnimHierarchy *hier, int32 idx)
 {
@@ -5065,6 +5128,15 @@ CPed::PreRender(void)
 		CTimeCycle::m_fShadowDisplacementX[CTimeCycle::m_CurrentStoredValue], CTimeCycle::m_fShadowDisplacementY[CTimeCycle::m_CurrentStoredValue],
 		CTimeCycle::m_fShadowFrontX[CTimeCycle::m_CurrentStoredValue], CTimeCycle::m_fShadowFrontY[CTimeCycle::m_CurrentStoredValue],
 		CTimeCycle::m_fShadowSideX[CTimeCycle::m_CurrentStoredValue], CTimeCycle::m_fShadowSideY[CTimeCycle::m_CurrentStoredValue]);
+
+	// SA CPed::PreRender (0x5E65A0) poses the player's chest bones by hand and
+	// then vetoes the hierarchy update for the frame, so the half-rotation it
+	// just wrote into the breast bones survives. Without this the player's chest
+	// tears away from the shoulder whenever the arm goes past horizontal.
+	if (GetModelIndex() == MI_PLAYER) {
+		ShoulderBoneRotation(GetClump());
+		bDontUpdateHierarchy = true;
+	}
 
 	UpdateRpHAnim();
 
