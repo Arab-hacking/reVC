@@ -42,6 +42,7 @@ RwTexture *gpShadowBikeTex;
 RwTexture *gpShadowBaronTex;
 RwTexture *gpShadowExplosionTex;
 RwTexture *gpShadowHeadLightsTex;
+RwTexture *gpShadowHeadLightsTex2;
 RwTexture *gpOutline1Tex;
 RwTexture *gpOutline2Tex;
 RwTexture *gpOutline3Tex;
@@ -78,6 +79,7 @@ CShadows::Init(void)
 	gpShadowBaronTex      = RwTextureRead("shad_rcbaron", nil);
 	gpShadowExplosionTex  = RwTextureRead("shad_exp",     nil);
 	gpShadowHeadLightsTex = RwTextureRead("headlight",    nil);
+	gpShadowHeadLightsTex2 = RwTextureRead("headlight1",   nil);
 	gpOutline1Tex         = RwTextureRead("outline_64",   nil);
 	gpOutline2Tex         = RwTextureRead("outline2_64",  nil);
 	gpOutline3Tex         = RwTextureRead("outline3_64",  nil);
@@ -96,6 +98,10 @@ CShadows::Init(void)
 	ASSERT(gpShadowBaronTex != nil);
 	ASSERT(gpShadowExplosionTex != nil);
 	ASSERT(gpShadowHeadLightsTex != nil);
+	// A Vice City install ships only the one "headlight" texture; the twin pool
+	// then falls back to it instead of failing the whole shadow system.
+	if(gpShadowHeadLightsTex2 == nil && gpShadowHeadLightsTex)
+		gpShadowHeadLightsTex2 = gpShadowHeadLightsTex;
 	ASSERT(gpOutline1Tex != nil);
 	ASSERT(gpOutline2Tex != nil);
 	ASSERT(gpOutline3Tex != nil);
@@ -191,6 +197,8 @@ CShadows::Shutdown(void)
 	RwTextureDestroy(gpShadowBaronTex);
 	RwTextureDestroy(gpShadowExplosionTex);
 	RwTextureDestroy(gpShadowHeadLightsTex);
+	if(gpShadowHeadLightsTex2 && gpShadowHeadLightsTex2 != gpShadowHeadLightsTex)
+		RwTextureDestroy(gpShadowHeadLightsTex2);
 	RwTextureDestroy(gpOutline1Tex);
 	RwTextureDestroy(gpOutline2Tex);
 	RwTextureDestroy(gpOutline3Tex);

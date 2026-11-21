@@ -5163,6 +5163,14 @@ CCustomModels::EnsureVehicleTxdLoaded(void)
 				CUSTOM_LOG("vehicle.txd: loaded from models/generic/vehicle.txd\n");
 		}
 	}
+
+	// SA CVehicleModelInfo::SetupCommonData (0x4C75E0) resolves the two lamp
+	// sheets the moment the dictionary is in hand, because the material pass
+	// compares texture pointers against them. The dictionary here may have come
+	// from a zip, a loose folder, an archive or the IMG, and the BR resources
+	// below can add the sheets to it afterwards, so the lookup is repeated at
+	// the end of this function (see below) as well.
+	CVehicleModelInfo::LoadLightTextures();
 	if(def->texDict == nil)
 		CTxdStore::Create(slot);
 	if(def->refCount == 0)
@@ -5273,6 +5281,12 @@ CCustomModels::EnsureVehicleTxdLoaded(void)
 				RwTexDictionaryAddTexture(def->texDict, specFallback);
 		}
 	}
+
+	// The BR lamp resources were added to the dictionary above, and a texture
+	// that was not in it the first time can only be found now. Resolving again
+	// costs two dictionary lookups and is what makes the lamp sheet swap work on
+	// a BR install that keeps vehiclelights128 in a standalone archive.
+	CVehicleModelInfo::LoadLightTextures();
 }
 
 void

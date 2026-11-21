@@ -107,11 +107,16 @@ RenderShadowEntity(CEntity *ent)
 			}
 		}
 
+		// The same bracket CRenderer::RenderOneNonRoad puts around a vehicle:
+		// the shadow pass draws the same materials, and a material left
+		// swapped by this pass would be visible in the main one.
+		veh->SetupRender();
 		veh->Render();
 		veh->bImBeingRendered = true;
 		CVisibilityPlugins::RenderAlphaAtomics();
 		CVisibilityPlugins::RenderBoatAlphaAtomics();
 		veh->bImBeingRendered = false;
+		veh->ResetAfterRender();
 		return;
 	}
 

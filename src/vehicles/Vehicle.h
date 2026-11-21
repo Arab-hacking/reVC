@@ -137,6 +137,16 @@ enum eLights
 	VEHLIGHT_REAR_RIGHT,
 };
 
+// SA eVehicleOverrideLightsState (Vehicle.h). A script's standing order for a
+// vehicle's lamps: it wins over the time of day, and it is also what makes a
+// car show its lamps at noon or keep them off at night.
+enum eVehicleOverrideLightsState : uint8
+{
+	NO_CAR_LIGHT_OVERRIDE = 0,
+	FORCE_CAR_LIGHTS_OFF  = 1,
+	FORCE_CAR_LIGHTS_ON   = 2,
+};
+
 enum
 {
 	CAR_PIECE_BONNET = 1,
@@ -248,7 +258,11 @@ public:
 	uint8 bIsLocked: 1; // Is this guy locked by the script (cannot be removed)
 	uint8 bEngineOn: 1; // For sound purposes. Parked cars have their engines switched off (so do destroyed cars)
 	uint8 bIsHandbrakeOn: 1; // How's the handbrake doing ?
-	uint8 bLightsOn: 1; // Are the lights switched on ?
+	// SA CVehicle::vehicleFlags.bLightsOn. What the lamp pass last decided:
+	// the lamps are on, so the lamp sheets swap to the lit one. Written by
+	// CVehicle::DoVehicleLights from GetVehicleLightsStatus, overridden by a
+	// script forcing them on or off.
+	uint8 bLightsOn: 1;
 	uint8 bFreebies: 1; // Any freebies left in this vehicle ?
 
 	uint8 bIsVan: 1; // Is this vehicle a van (doors at back of vehicle)
@@ -318,6 +332,10 @@ public:
 			uint8 m_bLeftRear   : 1;
 		} m_renderLights;
 	};
+	uint8 m_nOverrideLights;   // eVehicleOverrideLightsState
+	// SA CVehicle::ms_forceVehicleLightsOff. With it set no vehicle draws a
+	// lamp at all, whatever its own state says - the cutscene code uses it.
+	static bool bForceVehicleLightsOff;
 	uint32 m_nGunFiringTime;    // last time when gun on vehicle was fired (used on boats)
 	uint32 m_nTimeOfDeath;
 	uint16 m_nTimeBlocked;
@@ -489,9 +507,22 @@ public:
 	// -1 removes the paintjob.
 	void SetRemap(int32 remapIndex);
 	// Applies the pending remap texture to the model's editable materials and
-	// hands it to the model for the duration of one Render. Called by the
-	// automobile render path, and again when the texture was swapped.
+	// hands it to the model for the duration of one Render. Called by
+	// SetupRender, and again when the texture was swapped.
 	void ApplyRemapTexture(void);
+
+	// SA CVehicle::SetupRender (0x6D64F0) and CVehicle::ResetAfterRender
+	// (0x6D0E20). The pair brackets the drawing of one vehicle: SetupRender
+	// paints the model with this car's four colours, publishes its paintjob,
+	// copies its lamp flags out and swaps the materials that carry state;
+	// ResetAfterRender puts every one of them back. SA calls them from
+	// CRenderer::RenderOneNonRoad, around the entity's own Render and the
+	// alpha pass, which is why they live here and not inside a vehicle's
+	// Render: the sorted alpha list draws atomics of the same vehicle after
+	// Render has returned, and those atomics must still wear the swapped
+	// materials.
+	void SetupRender(void);
+	void ResetAfterRender(void);
 
 	// ---- State API for an external controller ---------------------------
 	//
@@ -576,6 +607,18 @@ public:
 	void SetEngineOn(bool on) { bEngineOn = on; }
 	bool AreLightsOn(void) const { return bLightsOn; }
 	void SetLightsOn(bool on) { bLightsOn = on; }
+	// A script's standing order on the lamps, in SA's three states. Note that
+	// AreLightsOn is the *result* of the last lamp pass, not the order: with
+	// FORCE_CAR_LIGHTS_OFF the pass turns the lamps off on the next frame,
+	// while the order itself stays until it is cleared.
+	eVehicleOverrideLightsState GetOverrideLights(void) const
+	{
+		return (eVehicleOverrideLightsState)m_nOverrideLights;
+	}
+	void SetOverrideLights(eVehicleOverrideLightsState state)
+	{
+		m_nOverrideLights = (uint8)state;
+	}
 	bool IsSirenOrAlarmOn(void) const { return m_bSirenOrAlarm; }
 	void SetSirenOrAlarm(bool on) { m_bSirenOrAlarm = on; }
 	// How long the horn has been sounding, in milliseconds; 0 means silent.
@@ -699,11 +742,85 @@ public:
 
 	eVehicleAppearance GetVehicleAppearance(void);
 
+	// ---- Optical lights (SA CVehicle::DoVehicleLights family) -----------
+	//
+	// SA draws a car's lamps in one place, CVehicle::DoVehicleLights
+	// (0x6E1A60), and keeps the answer - which of the four lamps actually lit
+	// - in m_renderLights. That answer is read twice: by the render setup to
+	// swap the lamp sheets (CVehicleModelInfo::SetupLightFlags) and by
+	// CBike::Render to decide on the headlight beam. The functions below are
+	// that one place, split the way SA splits it, so what gets drawn and what
+	// the material pass does cannot disagree.
+	//
+	// SA eVehicleLightsFlags (Vehicle.h). The flags say how the lamp pass is
+	// to be run for the vehicle, not what state the vehicle is in.
+	enum eVehicleLightsFlags
+	{
+		VEHICLE_LIGHTS_NONE          = 0,
+		VEHICLE_LIGHTS_TWIN          = 1,  // both sides of a lamp pair lit
+		VEHICLE_LIGHTS_IGNORE_DAMAGE = 4,  // draw even a smashed lamp
+		VEHICLE_LIGHTS_DISABLE_FRONT = 16, // no front lamps this pass
+		VEHICLE_LIGHTS_DISABLE_REAR  = 32, // no rear lamps this pass
+	};
+
+	// SA eVehicleLightId (Vehicle.h): the first and the second lamp dummy of
+	// a pair, i.e. "headlights"/"headlights2" and "taillights"/"taillights2".
+	enum eVehicleLightId
+	{
+		VEHICLE_LIGHT_MAIN      = 0,
+		VEHICLE_LIGHT_SECONDARY = 1,
+	};
+
+	// SA CVehicle::DoVehicleLights (0x6E1A60). Decides whether the lamps are
+	// on, draws the coronas, the light shadows and the point lights, and fills
+	// m_renderLights with what was actually lit. This replaces the VC family
+	// (separate headlight and taillight blocks inside CAutomobile::PreRender),
+	// which differed in colour, size, damage handling, the second lamp dummy
+	// and the reversing lights.
+	void DoVehicleLights(CMatrix &vehicleMatrix, eVehicleLightsFlags flags);
+	// The flags DoVehicleLights is called with for this vehicle on an ordinary
+	// frame: twin lamps for a car whose two sides have separate geometry, plus
+	// the two disables for a vehicle that has no lamps at its front or rear.
+	eVehicleLightsFlags GetVehicleLightsFlags(void) const;
+	// SA CVehicle::GetVehicleLightsStatus (0x6D55C0). Whether the car's lamps
+	// *should* be on: night, poor weather, or the shadows the cull zone puts on
+	// the road. The result is cached in bLightsOn by DoVehicleLights.
+	bool GetVehicleLightsStatus(void) const;
+
+	// SA CVehicle::DoLightEffectImpl (0x6E1780): one lamp of one pair. Returns true when the lamp registered a corona, which
+	// is what the caller stores in m_renderLights.
+	bool DoLightEffect(eVehicleLightId lightId, bool isFront, CMatrix &vehicleMatrix,
+		bool isRight, bool disabledOrAlarm, bool staticEmission);
+	// SA CVehicle::DoHeadLightEffect (0x6E0A50) / DoTailLightEffect (0x6E1780).
+	bool DoHeadLightEffect(eVehicleLightId lightId, CMatrix &vehicleMatrix, bool isRight,
+		bool disabledOrAlarm);
+	bool DoTailLightEffect(eVehicleLightId lightId, CMatrix &vehicleMatrix, bool isRight,
+		bool disabledOrAlarm, bool staticEmission);
+	// SA CVehicle::DoReverseLightEffect. The white reversing lamps, drawn only
+	// when the car is in reverse and its lamps are off: with the lamps on the
+	// reversing quad is already in the lit sheet.
+	void DoReverseLightEffect(CMatrix &vehicleMatrix);
+	// SA CVehicle::DoHeadLightReflection (0x6E1720) and its two entry points.
+	void DoHeadLightReflection(CMatrix &vehicleMatrix, eVehicleLightsFlags flags,
+		bool includeLeft, bool includeRight);
+
+	// The lamp dummy of a light id in model space: DUMMY_LIGHT_FRONT_MAIN /
+	// DUMMY_LIGHT_FRONT_SECONDARY / DUMMY_LIGHT_REAR_MAIN /
+	// DUMMY_LIGHT_REAR_SECONDARY.
+	static int32 GetDummyFromLightId(eVehicleLightId lightId, bool isFront);
+
+	// SA CDamageManager::GetLightStatus needs a damage manager, and only an
+	// automobile has one. The lamp pass asks through here so a bike's lamp -
+	// which is part of its bodywork and cannot be smashed separately - is
+	// treated as intact instead of dereferencing nothing.
+	virtual class CDamageManager *GetDamageManager(void) { return nil; }
+	virtual const class CDamageManager *GetDamageManager(void) const { return nil; }
+
 	// SA CVehicle::DoHeadLightBeam (0x6E0E20). A five-vertex additive cone
-	// anchored at the headlight dummy and aimed along the bonnet. In SA only
-	// CBike::Render calls it; cars get the corona and the point light and
-	// nothing else, so this is not wired into CAutomobile.
-	void DoHeadLightBeam(CMatrix &vehicleMatrix, bool isRight);
+	// anchored at one of the two headlight dummies and aimed along the bonnet.
+	// In SA only CBike::Render calls it; cars get the corona and the point
+	// light and nothing else, so this is not wired into CAutomobile.
+	void DoHeadLightBeam(eVehicleLightId lightId, CMatrix &vehicleMatrix, bool isRight);
 
 	// SA helper: the light dummy in model space. DUMMY_LIGHT_FRONT_MAIN for the
 	// primary lamp pair, DUMMY_LIGHT_FRONT_SECONDARY for the second one.

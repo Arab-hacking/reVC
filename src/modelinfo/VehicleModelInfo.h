@@ -192,9 +192,12 @@ enum {
 	NUM_VEHICLE_UPGRADE_SLOTS = 15,
 	NUM_MODEL_REMAPS   = 4,  // a model wears at most four paintjobs
 	NUM_CURRENT_COLORS = 4,  // SA renders cars with four colour slots
+	NUM_LIGHTS         = 4,  // SA ms_lightsOn: LF, RF, LR, RR
 	NUM_WHEELS         = 4,  // SA numbers wheel sets, not individual wheels
 	NUM_WHEEL_UPGRADES = 15  // wheel models per set (one per rim design)
 };
+
+class CVehicle;
 
 class CVehicleModelInfo : public CClumpModelInfo
 {
@@ -335,6 +338,21 @@ public:
 	// applied, and the wheel upgrade / frame tables the wheel code reads back.
 	static uint8 ms_currentCol[NUM_CURRENT_COLORS];
 	static RwTexture *ms_pRemapTexture;
+	// SA CVehicleModelInfo::ms_pLightsTexture / ms_pLightsOnTexture
+	// (0xB4E68C / 0xB4E690). The two lamp sheets of vehicle.txd: the dark one
+	// every car model paints its lamps with, and the lit one a lamp material is
+	// swapped to while that lamp is on. Both are resolved once, when
+	// vehicle.txd has been loaded, and stay nil when the dictionary has no such
+	// texture - the swap is then skipped and the lamps keep their material
+	// colour, which is what a VC-era car without lamp textures wants.
+	static RwTexture *ms_pLightsTexture;
+	static RwTexture *ms_pLightsOnTexture;
+	// SA CVehicleModelInfo::ms_lightsOn[4] (0xB4E3E8). Which of the four lamp
+	// slots of the car being drawn are lit: 0 left front, 1 right front,
+	// 2 left rear, 3 right rear. CVehicle::SetupLightFlags fills this from the
+	// vehicle's m_renderLights before the clump is drawn, and
+	// SetEditableMaterials reads it per material.
+	static uint8 ms_lightsOn[NUM_LIGHTS];
 	static int16 ms_numWheelUpgrades[NUM_WHEELS];
 	static int16 ms_upgradeWheels[NUM_WHEELS][NUM_WHEEL_UPGRADES];
 	static int32 ms_wheelFrameIDs[NUM_WHEELS];
@@ -494,34 +512,85 @@ public:
 	static RpAtomic *GetEditableMaterialListCB(RpAtomic *atomic, void *data);
 	void FindEditableMaterialList(void);
 
-	// Paintjob support. While a car with a remap texture is being drawn, its
-	// body materials are pointed at ms_pRemapTexture and put back afterwards;
-	// SA does exactly this with SetEditableMaterials/RestoreEditableMaterials
-	// and keeps the restore entries on the stack. reVC keeps the list of
-	// swapped materials in the model, because a Render is not always bracketed
-	// by the same call (the sorted alpha list may draw a car later).
+	// ---- Editable materials: paintjob and lamps -------------------------
 	//
-	// A body material is one whose texture name starts with '#' - SA's marker
-	// for "this material wears the car's paintjob, not a fixed image".
+	// SA CVehicleModelInfo::SetEditableMaterials (0x4C8430) walks the clump
+	// once per drawn vehicle and rewrites the materials that carry state which
+	// is not in the model:
+	//
+	//   * a body material (its texture name starts with '#') is pointed at the
+	//     paintjob texture of the car being drawn;
+	//   * a lamp material (its texture is one of the two lamp sheets) has its
+	//     RGBA reset to white, so the four marker colours used by the modeller
+	//     to say "this is the left front lamp" do not tint the sheet, and is
+	//     then swapped to the lit sheet when that particular lamp is on.
+	//
+	// Everything that was written is recorded so that
+	// ResetEditableMaterials (0x4C8460) can put the model back: the model is
+	// shared by every vehicle of that model, and one car's headlights must not
+	// stay on its next owner's.
+	//
+	// SA keeps the restore list on the stack (gRestoreEntries) and reuses it
+	// for everything the callbacks changed, the body colour included. reVC
+	// keeps a list per model instead, because a Render is not always bracketed
+	// by the same call: the sorted alpha list can draw a vehicle later.
 	void SetEditableMaterials(void);
 	void RestoreEditableMaterials(void);
 	static RpMaterial *SetEditableMaterialsCB(RpMaterial *material, void *data);
 	static RpAtomic *SetEditableMaterialsAtomicCB(RpAtomic *atomic, void *data);
 
+	// SA CVehicleModelInfo::SetupLightFlags (0x4C8C90). Copies the four lamp
+	// flags of the vehicle being drawn into ms_lightsOn, which is the only
+	// thing SetEditableMaterialsCB consults. Called from the vehicle's render
+	// setup, before the clump is drawn.
+	static void SetupLightFlags(CVehicle *vehicle);
+
+	// Resolves ms_pLightsTexture / ms_pLightsOnTexture from vehicle.txd. SA
+	// does this once in SetupCommonData (0x4C75E0, right after the dictionary
+	// itself is loaded); reVC calls it from CCustomModels after the dictionary
+	// has been created, and again whenever the dictionary is rebuilt.
+	static void LoadLightTextures(void);
+	// SA CVehicleModelInfo::ShutdownLightTexture (0x4C7470).
+	static void ShutdownLightTexture(void);
+
+	// The material is one of the two lamp sheets: SA decides by texture
+	// pointer, the name is checked as well so that a car carrying its own copy
+	// of the sheet inside its own TXD is still recognised.
+	static bool IsLightsMaterial(RpMaterial *material);
+
+	// The lit/unlit surface properties of a lamp. SA keeps these in one
+	// RwSurfaceProperties at 0x8A645C and copies it over the material's own
+	// while the lamp is lit; the ambient term is what makes the lit sheet read
+	// as a lamp rather than as a bright sticker under a street light.
+	static const RwSurfaceProperties &GetLightsSurfaceProperties(void);
+
 	// SA CVehicleModelInfo::SetRenderPipelines (0x4C8900). The environment-map
-	// pipeline caches the material's texture, so a remap swap has to re-setup
-	// the pipeline or the car keeps the old skin.
+	// pipeline caches the material's texture, so a remap or lamp swap has to
+	// re-setup the pipeline or the car keeps the old skin.
 	void SetRenderPipelines(void);
 
-	// The materials whose texture this model swapped for a paintjob, and the
-	// texture each of them had. A fixed array rather than a vector: a car has a
-	// bounded number of body materials and this is walked every frame.
+	// One restored material field. SA's tRestoreEntry stores the *address* of
+	// the field and the value it had, so one entry per written field; the enum
+	// below is what this fork stores instead, because the fields a vehicle
+	// material has are few and known, and a tagged entry keeps the list
+	// readable in a debugger.
 	struct RemapEntry
 	{
 		RpMaterial *material;
+		// Texture the material had before the swap (paintjob or lit sheet).
 		RwTexture *texture;
+		// Colour the material had before it was reset to white. Only written
+		// when the colour was changed.
+		RwRGBA colour;
+		// Surface properties the material had before the lit-sheet swap.
+		RwSurfaceProperties surfaceProps;
+		uint8 swappedTexture : 1;
+		uint8 changedColour : 1;
+		uint8 changedSurfaceProps : 1;
 	};
-	enum { NUM_REMAP_ENTRIES = 48 };
+	// SA's gRestoreEntries is 256 entries; a car has one entry per body
+	// material and one per lit lamp, so the same ceiling is kept here.
+	enum { NUM_REMAP_ENTRIES = 256 };
 	RemapEntry m_aRemapEntries[NUM_REMAP_ENTRIES];
 	int32 m_nNumRemapEntries;
 	void SetVehicleColour(uint8 c1, uint8 c2);

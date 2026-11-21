@@ -42,6 +42,9 @@ RwTexture *CVehicleModelInfo::ms_colourTextureTable[256];
 CVehicleModelInfo::CLinkedUpgradeList CVehicleModelInfo::ms_linkedUpgrades;
 uint8 CVehicleModelInfo::ms_currentCol[NUM_CURRENT_COLORS] = { 0, 0, 0, 0 };
 RwTexture *CVehicleModelInfo::ms_pRemapTexture;
+RwTexture *CVehicleModelInfo::ms_pLightsTexture;
+RwTexture *CVehicleModelInfo::ms_pLightsOnTexture;
+uint8 CVehicleModelInfo::ms_lightsOn[NUM_LIGHTS] = { 0, 0, 0, 0 };
 int16 CVehicleModelInfo::ms_numWheelUpgrades[NUM_WHEELS];
 int16 CVehicleModelInfo::ms_upgradeWheels[NUM_WHEELS][NUM_WHEEL_UPGRADES];
 int32 CVehicleModelInfo::ms_wheelFrameIDs[NUM_WHEELS] = {
@@ -2557,31 +2560,165 @@ CVehicleModelInfo::ChooseVehicleColour(uint8 &col1, uint8 &col2, uint8 &col3, ui
 }
 
 // ---------------------------------------------------------------------------
-// SA paintjobs: swapping the body texture for a frame
+// Editable materials: the paintjob and the lamps
 // ---------------------------------------------------------------------------
-
-// SA CVehicleModelInfo::SetEditableMaterialsCB (0x4C8AB0).
 //
-// A car's body texture is named with a leading '#': the game does not use the
-// image the material points at, it replaces it with the paintjob of the vehicle
-// being drawn. Anything else - glass, the plate, the lights - keeps its own
-// texture.
+// SA CVehicleModelInfo::SetEditableMaterialsCB (0x4C8220).
+//
+// One callback, two jobs, in this order:
+//
+//  1. A body material - its texture name starts with '#' - is the car's skin.
+//     The image is not in the model, it is the paintjob dictionary of the car
+//     being drawn, so the material is pointed at it.
+//  2. A lamp material - it wears one of the two lamp sheets - carries state,
+//     not paint: its RGBA is a marker that says which of the four lamps this
+//     quad is, and the game has to answer with the lit sheet or the dark one.
+//     The marker colour is never meant to be seen, so it is reset to white and
+//     the sheet itself provides the colour.
+//
+// Anything else - glass, the plate, interior - is left alone.
+//
+// Every write is recorded in the model's restore list. The two jobs share the
+// list because they share the material: a bumper with a lamp quad on it is both
+// a body material and a lamp material, which is exactly what SA does too (it
+// checks the paintjob condition first and falls through to the lamp condition
+// afterwards, so such a material gets both writes).
+
+// The three surface properties SA copies over a lit lamp material
+// (gLightSurfProps at 0x8A645C). Full ambient: a lamp is a light source of its
+// own and must not be shaded by the scene, so the material keeps its sheet at
+// full brightness. No specular: a lamp lens is not a mirror, and letting the
+// sun reflect off it is what makes an unlit car look wet. Full diffuse, so the
+// last-listed lighting component does not dim the sheet either.
+//
+// SA keeps a single instance of this structure and copies it wholesale; the
+// exact numbers are not recoverable from the binary beyond "the lamp stays at
+// its sheet brightness", which is what the three values below produce.
+const RwSurfaceProperties &
+CVehicleModelInfo::GetLightsSurfaceProperties(void)
+{
+	static const RwSurfaceProperties props = { 1.0f, 0.0f, 1.0f };
+	return props;
+}
+
+bool
+CVehicleModelInfo::IsLightsMaterial(RpMaterial *material)
+{
+	RwTexture *texture = RpMaterialGetTexture(material);
+	if(texture == nil)
+		return false;
+	// SA compares the texture pointer against the one it resolved from
+	// vehicle.txd. A converted car can carry its own copy of the sheet inside
+	// its own TXD, so the name is checked as well.
+	if(ms_pLightsTexture && texture == ms_pLightsTexture)
+		return true;
+	if(ms_pLightsOnTexture && texture == ms_pLightsOnTexture)
+		return true;
+	return customveh::IsVehicleLightsTextureName(RwTextureGetName(texture));
+}
+
 RpMaterial *
 CVehicleModelInfo::SetEditableMaterialsCB(RpMaterial *material, void *data)
 {
 	CVehicleModelInfo *mi = (CVehicleModelInfo*)data;
-	RwTexture *texture = RpMaterialGetTexture(material);
-	if(texture == nil || RwTextureGetName(texture) == nil || RwTextureGetName(texture)[0] != '#')
-		return material;
-	if(ms_pRemapTexture == nil)
-		return material;
-	if(mi->m_nNumRemapEntries >= NUM_REMAP_ENTRIES)
+	if(material == nil || mi == nil)
 		return material;
 
-	mi->m_aRemapEntries[mi->m_nNumRemapEntries].material = material;
-	mi->m_aRemapEntries[mi->m_nNumRemapEntries].texture = texture;
-	mi->m_nNumRemapEntries++;
-	RpMaterialSetTexture(material, ms_pRemapTexture);
+	const RwRGBA *color = RpMaterialGetColor(material);
+	RwTexture *texture = RpMaterialGetTexture(material);
+
+	// 1. The paintjob. SA tests the '#' before anything else, and does not
+	// make the swap conditional on the material not being a lamp: a '#'
+	// texture is a skin, and a skin is never a lamp sheet.
+	if(ms_pRemapTexture && texture && RwTextureGetName(texture) &&
+	   RwTextureGetName(texture)[0] == '#'){
+		if(mi->m_nNumRemapEntries < NUM_REMAP_ENTRIES){
+			RemapEntry &entry = mi->m_aRemapEntries[mi->m_nNumRemapEntries++];
+			entry.material = material;
+			entry.texture = texture;
+			entry.swappedTexture = 1;
+			entry.changedColour = 0;
+			entry.changedSurfaceProps = 0;
+			RpMaterialSetTexture(material, ms_pRemapTexture);
+		}
+		// Re-read: the swap above already changed what the material wears,
+		// and the lamp job below must look at the *new* texture, as SA does.
+		texture = RpMaterialGetTexture(material);
+	}
+
+	// 2. The lamps.
+	if(IsLightsMaterial(material)){
+		int lightIndex = -1;
+		const bool isMarker = customveh::IsVehicleLightMarker(color->red, color->green,
+			color->blue, lightIndex);
+
+		// The marker colour is a label for the modeller, not the lamp colour:
+		// it is cleared to white for every lamp material, marker or not, so
+		// that a model which painted its lamp quads with an arbitrary colour
+		// still gets an untinted sheet. A marker is additionally what chooses
+		// the lamp slot whose flag decides whether the sheet is lit.
+		if(color->red != 255 || color->green != 255 || color->blue != 255){
+			if(mi->m_nNumRemapEntries < NUM_REMAP_ENTRIES){
+				RemapEntry &entry = mi->m_aRemapEntries[mi->m_nNumRemapEntries++];
+				entry.material = material;
+				entry.colour = *color;
+				entry.changedColour = 1;
+				entry.swappedTexture = 0;
+				entry.changedSurfaceProps = 0;
+			}
+			RwRGBA white = { 255, 255, 255, color->alpha };
+			RpMaterialSetColor(material, &white);
+		}
+
+		// Only a marker names a lamp of the car, so only a marker can be lit.
+		// A lamp sheet used for something that is not one of the four lamps
+		// (an indicator strip painted on the same sheet, a taxi sign) stays
+		// dark, which is what SA does by leaving iLightIndex at -1.
+		if(isMarker && lightIndex >= 0 && lightIndex < NUM_LIGHTS &&
+		   ms_lightsOn[lightIndex] && ms_pLightsOnTexture){
+			// Two fields may need restoring - the sheet and the surface
+			// properties - so the room for both is checked together: a
+			// half-swapped lamp would stay lit after the car is done.
+			if(mi->m_nNumRemapEntries + 2 > NUM_REMAP_ENTRIES)
+				return material;
+
+			RwTexture *currentTexture = RpMaterialGetTexture(material);
+			const RwSurfaceProperties &props = GetLightsSurfaceProperties();
+			const RwSurfaceProperties *oldProps = RpMaterialGetSurfaceProperties(material);
+			const bool propsDiffer = oldProps == nil ||
+				oldProps->ambient != props.ambient ||
+				oldProps->specular != props.specular ||
+				oldProps->diffuse != props.diffuse;
+
+			if(currentTexture != ms_pLightsOnTexture){
+				RemapEntry &entry = mi->m_aRemapEntries[mi->m_nNumRemapEntries++];
+				entry.material = material;
+				entry.texture = currentTexture;
+				entry.swappedTexture = 1;
+				entry.changedColour = 0;
+				entry.changedSurfaceProps = 0;
+				RpMaterialSetTexture(material, ms_pLightsOnTexture);
+			}
+			if(propsDiffer){
+				RemapEntry &entry = mi->m_aRemapEntries[mi->m_nNumRemapEntries++];
+				entry.material = material;
+				entry.surfaceProps = *oldProps;
+				entry.changedSurfaceProps = 1;
+				entry.swappedTexture = 0;
+				entry.changedColour = 0;
+				RpMaterialSetSurfaceProperties(material, &props);
+			}
+		}
+		return material;
+	}
+
+	// 3. Not a lamp, so it can only be one of the four body colour markers.
+	// The marker was already turned white by FindEditableMaterialList, which is
+	// what keeps the colour of a material that is later repainted from being
+	// lost; SA instead resolves the colour here, through ms_currentCol, and
+	// does it for every material it walks rather than for a list built when the
+	// model was loaded. Both end up painting every body marker with the colour
+	// of the slot it names, which is why reVC keeps its own path.
 	return material;
 }
 
@@ -2589,11 +2726,17 @@ RpAtomic *
 CVehicleModelInfo::SetEditableMaterialsAtomicCB(RpAtomic *atomic, void *data)
 {
 	CVehicleModelInfo *mi = (CVehicleModelInfo*)data;
+	if(atomic == nil || RpAtomicGetGeometry(atomic) == nil)
+		return atomic;
+	// SA skips an atomic that is not being drawn: its materials are not on
+	// screen and swapping them would only be undone again.
+	if((RpAtomicGetFlags(atomic) & rpATOMICRENDER) == 0)
+		return atomic;
 	RpGeometryForAllMaterials(RpAtomicGetGeometry(atomic), SetEditableMaterialsCB, mi);
 	return atomic;
 }
 
-// SA CVehicleModelInfo::SetEditableMaterials (0x4C8B60).
+// SA CVehicleModelInfo::SetEditableMaterials (0x4C8430).
 void
 CVehicleModelInfo::SetEditableMaterials(void)
 {
@@ -2603,15 +2746,85 @@ CVehicleModelInfo::SetEditableMaterials(void)
 	RpClumpForAllAtomics(m_clump, SetEditableMaterialsAtomicCB, this);
 }
 
-// The other half: put every swapped material's own texture back. Called once
-// the car has been drawn, so the model - which is shared by every car of this
-// model - is left exactly as it was found.
+// SA CVehicleModelInfo::ResetEditableMaterials (0x4C8460). The other half:
+// every field the callbacks wrote goes back, in reverse order, so that a
+// material touched twice (paintjob then lamp, colour then surface properties)
+// ends up exactly as it was found. The model is shared by every vehicle of that
+// model, so this is what stops one car's paintjob and lit lamps from being
+// inherited by the next.
 void
 CVehicleModelInfo::RestoreEditableMaterials(void)
 {
-	for(int32 i = 0; i < m_nNumRemapEntries; i++)
-		RpMaterialSetTexture(m_aRemapEntries[i].material, m_aRemapEntries[i].texture);
+	for(int32 i = m_nNumRemapEntries - 1; i >= 0; i--){
+		RemapEntry &entry = m_aRemapEntries[i];
+		if(entry.material == nil)
+			continue;
+		if(entry.swappedTexture)
+			RpMaterialSetTexture(entry.material, entry.texture);
+		if(entry.changedColour)
+			RpMaterialSetColor(entry.material, &entry.colour);
+		if(entry.changedSurfaceProps)
+			RpMaterialSetSurfaceProperties(entry.material, &entry.surfaceProps);
+	}
 	m_nNumRemapEntries = 0;
+	// The static lamp flags belong to the vehicle that was just drawn, not to
+	// the model: clear them so a second Render of the same model - the alpha
+	// pass, a mirror - does not light lamps the vehicle no longer has on.
+	for(int32 i = 0; i < NUM_LIGHTS; i++)
+		ms_lightsOn[i] = 0;
+}
+
+// SA CVehicleModelInfo::SetupLightFlags (0x4C8C90). The four flags are read by
+// SetEditableMaterialsCB through ms_lightsOn, which is why they are copied out
+// of the vehicle instead of being handed to the callback: SA's callback takes
+// only the material and a restore-list pointer.
+void
+CVehicleModelInfo::SetupLightFlags(CVehicle *vehicle)
+{
+	if(vehicle == nil){
+		for(int32 i = 0; i < NUM_LIGHTS; i++)
+			ms_lightsOn[i] = 0;
+		return;
+	}
+	ms_lightsOn[0] = vehicle->m_renderLights.m_bLeftFront;
+	ms_lightsOn[1] = vehicle->m_renderLights.m_bRightFront;
+	ms_lightsOn[2] = vehicle->m_renderLights.m_bLeftRear;
+	ms_lightsOn[3] = vehicle->m_renderLights.m_bRightRear;
+}
+
+// SA resolves both lamp sheets once, from vehicle.txd, in SetupCommonData
+// (0x4C75E0). reVC's dictionary is built by CCustomModels, so the lookup is
+// repeated whenever that code has finished with it: a dictionary that carried
+// no lamp sheets the first time (BR ships them as standalone archives) must not
+// leave the swap permanently off.
+void
+CVehicleModelInfo::LoadLightTextures(void)
+{
+	int slot = CTxdStore::GetVehicleTxdSlot();
+	if(slot < 0)
+		slot = CTxdStore::FindTxdSlot("vehicle");
+	if(slot < 0)
+		return;
+	TxdDef *def = CTxdStore::GetSlot(slot);
+	if(def == nil || def->texDict == nil)
+		return;
+
+	ms_pLightsTexture = RwTexDictionaryFindNamedTexture(def->texDict, "vehiclelights128");
+	ms_pLightsOnTexture = RwTexDictionaryFindNamedTexture(def->texDict, "vehiclelightson128");
+}
+
+// SA CVehicleModelInfo::ShutdownLightTexture (0x4C7470).
+void
+CVehicleModelInfo::ShutdownLightTexture(void)
+{
+	if(ms_pLightsTexture){
+		RwTextureDestroy(ms_pLightsTexture);
+		ms_pLightsTexture = nil;
+	}
+	if(ms_pLightsOnTexture){
+		RwTextureDestroy(ms_pLightsOnTexture);
+		ms_pLightsOnTexture = nil;
+	}
 }
 
 // SA CVehicleModelInfo::SetRenderPipelines (0x4C8900).

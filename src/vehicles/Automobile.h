@@ -201,8 +201,12 @@ public:
 	// functions the collisions call rather than a shortcut that only moves the
 	// bits.
 
-	CDamageManager &GetDamageManager(void) { return Damage; }
-	const CDamageManager &GetDamageManager(void) const { return Damage; }
+	virtual CDamageManager *GetDamageManager(void) { return &Damage; }
+	virtual const CDamageManager *GetDamageManager(void) const { return &Damage; }
+	// The typed reference is what the car's own code uses; the pair above is
+	// the CVehicle interface the lamp pass goes through.
+	CDamageManager &GetDamage(void) { return Damage; }
+	const CDamageManager &GetDamage(void) const { return Damage; }
 
 	// Per-part setters. Each takes the part's own status, so a peer sends the
 	// same values GetPartStatus reports back.

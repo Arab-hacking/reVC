@@ -65,12 +65,62 @@ inline bool IsBRBodyRemap(const char *name)
 	       std::strncmp(name, "remaptoner", 10) != 0;
 }
 
+// SA CVehicleModelInfo::SetEditableMaterialsCB (0x4C8220) recognises a lamp
+// material by its texture - "vehiclelights128" - and then by one of exactly
+// four RGBA colours, one per lamp of the car, in this order:
+//
+//   slot 0  (255, 175,   0)  left  front lamp   (headlights)
+//   slot 1  (  0, 255, 200)  right front lamp   (headlights)
+//   slot 2  (185, 255,   0)  left  rear  lamp   (taillights)
+//   slot 3  (255,  60,   0)  right rear  lamp   (taillights)
+//
+// These four numbers are the whole SA lamp vocabulary: brake lights, position
+// lights and reversing lights are not separate materials in SA, they are extra
+// lit quads inside the same four lamp textures (a car model paints the brake
+// quad with the same taillight colour, and the game lights it by switching the
+// whole material to vehiclelightson128 and switching the *corona* instead).
+// A model with two lamps per side therefore repeats the same four colours in
+// its second lamp quad, which is what the "headlights2"/"taillights2" dummies
+// are for - the geometry is separate, the material identity is not.
+//
+// The `slot` output is the index into CVehicleModelInfo::ms_lightsOn[]:
+// 0 left front, 1 right front, 2 left rear, 3 right rear.
+inline bool IsVehicleLightMarker(uint8_t r, uint8_t g, uint8_t b, int &outSlot)
+{
+	if(r == 255 && g == 175 && b == 0){ outSlot = 0; return true; }
+	if(r == 0 && g == 255 && b == 200){ outSlot = 1; return true; }
+	if(r == 185 && g == 255 && b == 0){ outSlot = 2; return true; }
+	if(r == 255 && g == 60 && b == 0){ outSlot = 3; return true; }
+	outSlot = -1;
+	return false;
+}
+
 inline bool IsVehicleLightMarker(uint8_t r, uint8_t g, uint8_t b)
 {
-	return (r == 255 && g == 175 && b == 0) ||
-	       (r == 0 && g == 255 && b == 200) ||
-	       (r == 185 && g == 255 && b == 0) ||
-	       (r == 255 && g == 60 && b == 0);
+	int slot;
+	return IsVehicleLightMarker(r, g, b, slot);
+}
+
+// A material belongs to the lamp sheet when it wears one of the two lamp
+// textures. SA compares the texture pointer against ms_pLightsTexture; the name
+// is checked as well because a converted model can carry its own copy of
+// "vehiclelights128" inside the car's TXD instead of pointing at the one in
+// vehicle.txd, and that copy is still a lamp sheet.
+inline bool IsVehicleLightsTextureName(const char *texName)
+{
+	if(!texName || !*texName)
+		return false;
+	static const char *lampSheets[] = { "vehiclelights128", "vehiclelightson128" };
+	for(const char *name : lampSheets){
+		size_t n = std::strlen(name);
+		size_t i = 0;
+		while(i < n && texName[i] &&
+		      std::tolower((unsigned char)texName[i]) == std::tolower((unsigned char)name[i]))
+			i++;
+		if(i == n && texName[i] == '\0')
+			return true;
+	}
+	return false;
 }
 
 inline bool IsTireMaterial(const char *frameName, const char *texName)

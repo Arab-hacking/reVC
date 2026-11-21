@@ -198,6 +198,10 @@ extern RwTexture *gpShadowBikeTex;
 extern RwTexture *gpShadowBaronTex;
 extern RwTexture *gpShadowExplosionTex;
 extern RwTexture *gpShadowHeadLightsTex;
+// SA gpShadowHeadLightsTex2: the second headlight pool texture, the one a
+// vehicle with a single lamp (a bike, the quad) throws on the road;
+// gpShadowHeadLightsTex above is the two-lamp pool of a car.
+extern RwTexture *gpShadowHeadLightsTex2;
 extern RwTexture *gpOutline1Tex;
 extern RwTexture *gpOutline2Tex;
 extern RwTexture *gpOutline3Tex;

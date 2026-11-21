@@ -1336,219 +1336,20 @@ CBike::PreRender(void)
 	}
 
 	// Process lights
-
-	// Turn lights on/off
-	bool shouldLightsBeOn = 
-		CClock::GetHours() > 20 ||
-		CClock::GetHours() > 19 && CClock::GetMinutes() > (m_randomSeed & 0x3F) ||
-		CClock::GetHours() < 7 ||
-		CClock::GetHours() < 8 && CClock::GetMinutes() < (m_randomSeed & 0x3F) ||
-		m_randomSeed/50000.0f < CWeather::Foggyness ||
-		m_randomSeed/50000.0f < CWeather::WetRoads;
-	if(shouldLightsBeOn != bLightsOn && GetStatus() != STATUS_WRECKED){
-		if(GetStatus() == STATUS_ABANDONED){
-			// Turn off lights on abandoned vehicles only when we they're far away
-			if(bLightsOn &&
-			   Abs(TheCamera.GetPosition().x - GetPosition().x) + Abs(TheCamera.GetPosition().y - GetPosition().y) > 100.0f)
-				bLightsOn = false;
-		}else
-			bLightsOn = shouldLightsBeOn;
-	}
-
-	// Actually render the lights
-	bool alarmOn = false;
-	bool alarmOff = false;
-	if(IsAlarmOn()){
-		if(CTimer::GetTimeInMilliseconds() & 0x100)
-			alarmOn = true;
-		else
-			alarmOff = true;
-	}
-	if(bEngineOn && bLightsOn || alarmOn || alarmOff){
-		CalculateLeanMatrix();
-		CVector lookVector = GetPosition() - TheCamera.GetPosition();
-		float camDist = lookVector.Magnitude();
-		if(camDist != 0.0f)
-			lookVector *= 1.0f/camDist;
-		else
-			lookVector = CVector(1.0f, 0.0f, 0.0f);
-
-		// 1.0 if directly behind car, -1.0 if in front
-		float behindness = DotProduct(lookVector, GetForward());
-		// 0.0 if behind car, PI if in front
-		float angle = Abs(Acos(Abs(behindness)));
-
-		// Headlight
-
-		CMatrix mat;
-		CVector headLightPos = mi->m_positions[CAR_POS_HEADLIGHTS];
-		if(GetModelIndex() == 152){	// this is the bobcat in VC, but we don't want that effect anyway
-			mat.SetUnity();
-			mat.RotateZ(m_fWheelAngle);
-			mat = m_leanMatrix * mat;
-		}else
-			mat = m_leanMatrix;
-		const float bikeLightMult = Max(TheCamera.LODDistMultiplier, CRenderer::ms_fLightDistScale);
-		// SA RenderLights() sets this as each light registers; CBike::Render
-		// consumes it for the headlight cone.
-		m_nRenderLightsFlags = 0;
-		CVector light = mat * headLightPos;
-		// SA CVehicle::DoLightEffectImpl (0x6E1780) drives both intensity and size
-		// from normAngle = sqrt(cos angle):
-		//   intensity = normAngle * 0.5f + 0.3f
-		//   size      = (1 - distToCam/150) * normAngle * FRONT_SIZE_ROT_MULT(0.4)
-		// VC uses the raw cosine and a linear size, hence the different falloff.
-		const float normAngle = Sqrt(angle);
-		if(behindness < 0.0f){
-			// In front of bike
-			float intensity = normAngle*0.5f + 0.3f;
-			float size = (1.0f - camDist*(1.0f/150.0f)) * normAngle * 0.4f;
-
-			if(behindness < -0.97f && camDist < 40.0f * Max(1.0f, CRenderer::ms_fLightDistScale)){
-				// Directly in front and not too far away
-				if(m_pHandlingData->m_nHandlingFlags & VEHICLE_HANDLING_HALOGEN_LIGHTS){
-					CCoronas::RegisterCorona((uintptr)this + 6, 150, 150, 195, 255,
-						light, 0.075f, 150.0f*bikeLightMult,
-						CCoronas::TYPE_HEADLIGHT, CCoronas::FLARE_NONE, CCoronas::REFLECTION_SIMPLE,
-						CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, normAngle, false, 0.3f);
-				}else{
-					CCoronas::RegisterCorona((uintptr)this + 6, 160, 160, 140, 255,
-						light, 0.075f, 150.0f*bikeLightMult,
-						CCoronas::TYPE_HEADLIGHT, CCoronas::FLARE_NONE, CCoronas::REFLECTION_SIMPLE,
-						CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, normAngle, false, 0.3f);
-				}
-			}
-
-			if(alarmOff){
-				CCoronas::RegisterCorona((uintptr)this, 0, 0, 0, 0,
-					light, size, 0.0f,
-					CCoronas::TYPE_STREAK, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
-					CCoronas::LOSCHECK_OFF, CCoronas::STREAK_ON, angle);
-			}else{
-				// SA: colour triple is (lightColorR, lightColorR, lightColorG) with
-				// alpha 128. VC passes (r, r, b) with alpha 255 - the third channel
-				// is the *blue* multiplier, which tints the lens.
-				uint8 lightColorR, lightColorG;
-				if(m_pHandlingData->m_nHandlingFlags & VEHICLE_HANDLING_HALOGEN_LIGHTS){
-					lightColorR = (uint8)(190.0f*intensity);
-					lightColorG = (uint8)(intensity*255.0f);
-				}else{
-					lightColorR = (uint8)(210.0f*intensity);
-					lightColorG = (uint8)(intensity*195.0f);
-				}
-				CCoronas::RegisterCorona((uintptr)this + 1, lightColorR, lightColorR, lightColorG, 128,
-					light, size, 150.0f*bikeLightMult,
-					CCoronas::TYPE_HEADLIGHT, CCoronas::FLARE_NONE, CCoronas::REFLECTION_SIMPLE,
-					CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, normAngle, false, 0.5f);
-				// A bike has a single headlight; SA records it as the right one.
-				m_renderLights.m_bRightFront = 1;
-			}
-		}else{
-			CCoronas::UpdateCoronaCoors((uintptr)this, light, 80.0f*bikeLightMult, angle);
-		}
-
-
-		// SA draws no bright-light geometry on bikes either; the coronas above
-		// are the entire effect.
-
-		// Taillight
-
-		CVector tailLightPos = mi->m_positions[CAR_POS_TAILLIGHTS];
-		light = m_leanMatrix * tailLightPos;
-
-		// Taillight corona
-		if(behindness > 0.0f){
-			// Behind car
-			float intensity = 0.4f*behindness + 0.4f;
-			float size = (behindness + 1.0f)/2.0f;
-
-			if(m_fGasPedal < 0.0f){
-				// reversing
-				// no lights in this case
-			}else{
-				if(m_fBrakePedal > 0.0f){
-					intensity += 0.4f;
-					size += 0.3f;
-				}
-
-				if(alarmOff){
-					CCoronas::RegisterCorona((uintptr)this + 14, 0, 0, 0, 0,
-						light, size, 0.0f,
-						CCoronas::TYPE_STREAK, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
-						CCoronas::LOSCHECK_OFF, CCoronas::STREAK_ON, angle);
-				}else{
-					CCoronas::RegisterCorona((uintptr)this + 14, 128*intensity, 0, 0, 255,
-						light, size, 80.0f*bikeLightMult,
-						CCoronas::TYPE_STREAK, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
-						CCoronas::LOSCHECK_OFF, CCoronas::STREAK_ON, angle);
-				}
-			}
-		}else{
-			CCoronas::UpdateCoronaCoors((uintptr)this + 14, light, 80.0f*bikeLightMult, angle);
-		}
-
-
-		// Light shadows
-		if(!alarmOff){
-			CVector pos = GetPosition();
-			CVector2D fwd(GetForward());
-			fwd.Normalise();
-			float f = headLightPos.y + 6.0f;
-			pos += CVector(f*fwd.x, f*fwd.y, 2.0f);
-			CShadows::StoreCarLightShadow(this, (uintptr)this + 22, gpShadowExplosionTex, &pos,
-				7.0f*fwd.x, 7.0f*fwd.y, 3.5f*fwd.y, -3.5f*fwd.x, 45, 45, 45, 7.0f);
-
-			f = (tailLightPos.y - 2.5f) - (headLightPos.y + 6.0f);
-			pos += CVector(f*fwd.x, f*fwd.y, 0.0f);
-			CShadows::StoreCarLightShadow(this, (uintptr)this + 25, gpShadowExplosionTex, &pos,
-				3.0f, 0.0f, 0.0f, -3.0f, 35, 0, 0, 4.0f);
-		}
-
-		if(this == FindPlayerVehicle() && !alarmOff){
-			CPointLights::AddLight(CPointLights::LIGHT_DIRECTIONAL, GetPosition(), GetForward(),
-				20.0f, 1.0f, 1.0f, 1.0f,
-				FindPlayerVehicle()->m_vecMoveSpeed.MagnitudeSqr2D() < sq(0.45f) ? CPointLights::FOG_NORMAL : CPointLights::FOG_NONE,
-				false);
-			CVector pos = GetPosition() - 4.0f*GetForward();
-			if(m_fBrakePedal > 0.0f)
-				CPointLights::AddLight(CPointLights::LIGHT_POINT, pos, CVector(0.0f, 0.0f, 0.0f),
-					10.0f, 1.0f, 0.0f, 0.0f,
-					CPointLights::FOG_NONE, false);
-			else
-				CPointLights::AddLight(CPointLights::LIGHT_POINT, pos, CVector(0.0f, 0.0f, 0.0f),
-					7.0f, 0.6f, 0.0f, 0.0f,
-					CPointLights::FOG_NONE, false);
-		}
-	}else if(GetStatus() != STATUS_ABANDONED && GetStatus() != STATUS_WRECKED){
-		// Lights off
-		CalculateLeanMatrix();
-
-		CVector tailLightPos = mi->m_positions[CAR_POS_TAILLIGHTS];
-		CVector light = m_leanMatrix * tailLightPos;
-
-		if(m_fBrakePedal > 0.0f || m_fGasPedal < 0.0f){
-			CVector lookVector = GetPosition() - TheCamera.GetPosition();
-			lookVector.Normalise();
-			float behindness = DotProduct(lookVector, GetForward());
-			if(behindness > 0.0f){
-				if(m_fGasPedal < 0.0f){
-					// reversing
-					// no lights in this case
-				}else{
-					// braking
-					CCoronas::RegisterCorona((uintptr)this + 14, 120, 0, 0, 255,
-						light, 1.2f, 50.0f*TheCamera.LODDistMultiplier,
-						CCoronas::TYPE_STAR, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
-						CCoronas::LOSCHECK_OFF, CCoronas::STREAK_ON, 0.0f);
-				}
-			}else{
-				CCoronas::UpdateCoronaCoors((uintptr)this + 14, light, 50.0f*TheCamera.LODDistMultiplier, 0.0f);
-			}
-		}else{
-			CCoronas::UpdateCoronaCoors((uintptr)this + 14, light, 50.0f*TheCamera.LODDistMultiplier, 0.0f);
-		}
-	}
-
+	//
+	// SA CBike::PreRender (0x6BD090) runs the same CVehicle::DoVehicleLights a
+	// car does, with the bike's own matrix, so a bike's lamps obey the time of
+	// day, the weather, the circuit of the alarm and the script override in
+	// exactly the same way, and m_renderLights is filled the same way, which is
+	// what CBike::Render reads to decide on the headlight cone. The VC code
+	// this replaces kept a second copy of the light logic with its own colours,
+	// its own damage rules and no reversing lights at all.
+	//
+	// The lean matrix is what a bike's lamps hang off: the whole fork tilts with
+	// the bike, so a corona placed from the upright matrix would float beside
+	// the headlight in a corner.
+	CalculateLeanMatrix();
+	DoVehicleLights(m_leanMatrix, GetVehicleLightsFlags());
 
 	// Wheel particles
 
@@ -1763,25 +1564,19 @@ CBike::PreRender(void)
 void
 CBike::Render(void)
 {
-	CVehicleModelInfo *mi = (CVehicleModelInfo*)CModelInfo::GetModelInfo(GetModelIndex());
-
 	m_nSetPieceExtendedRangeTime = CTimer::GetTimeInMilliseconds() + 3000;
-	// A bike wears a paintjob and four colours the same way a car does.
-	ApplyRemapTexture();
-	mi->SetVehicleColour(m_currentColour1, m_currentColour2, m_currentColour3, m_currentColour4);
-	if(m_pRemapTexture)
-		mi->SetEditableMaterials();
+	// A bike wears a paintjob, four colours and lamp sheets the same way a car
+	// does, and CVehicle::SetupRender/ResetAfterRender bracket the draw with
+	// them exactly as for a car. Render must not touch them.
 	CEntity::Render();
-	if(m_pRemapTexture)
-		mi->RestoreEditableMaterials();
 
 	// SA CBike::Render (0x6BDE20): the headlight cone hangs off the *lean*
 	// matrix, so it tilts with the bike. This is the only place in SA that calls
 	// DoHeadLightBeam - cars never draw a beam, which is why adding it there
 	// would not be a port.
-	if(m_renderLights.m_bRightFront) {
+	if(m_renderLights.m_bRightFront){
 		CalculateLeanMatrix();
-		DoHeadLightBeam(m_leanMatrix, true);
+		DoHeadLightBeam(VEHICLE_LIGHT_MAIN, m_leanMatrix, true);
 	}
 }
 

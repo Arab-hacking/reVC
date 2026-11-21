@@ -5,6 +5,7 @@
 #include "Streaming.h"
 #include "RwHelper.h"
 #include "TxdStore.h"
+#include "VehicleModelInfo.h"
 #include <string>
 #include <unordered_map>
 #include <set>
@@ -18,6 +19,9 @@ int CTxdStore::ms_currentTxdSlot = -1;
 int CTxdStore::ms_storedTxdSlot = -1;
 int CTxdStore::ms_vehicleTxdSlot = -1;
 static_assert(TXDSTORESIZE <= 32768, "CBaseModelInfo stores TXD slot in signed int16");
+// Defined next to RemoveTxd: drops the lamp sheets CVehicleModelInfo caches when
+// the vehicle dictionary they live in is destroyed.
+static void ForgetCachedLightTextures(int slot);
 
 namespace {
 // The pool may hold tens of thousands of BR TXDs. A linear name lookup or
@@ -131,6 +135,7 @@ CTxdStore::RemoveTxdSlot(int slot)
 		it->second.erase(slot);
 		if(it->second.empty()) txdSlotsByName.erase(it);
 	}
+	ForgetCachedLightTextures(slot);
 	if(def->texDict)
 		RwTexDictionaryDestroy(def->texDict);
 	ms_pTxdPool->Delete(def);
@@ -341,12 +346,27 @@ CTxdStore::FinishLoadTxd(int slot, RwStream *stream)
 	return def->texDict != nil;
 }
 
+// The lamp sheets CVehicleModelInfo caches are textures of the vehicle
+// dictionary. When that dictionary is destroyed or replaced - a game restart, a
+// custom vehicle.txd being swapped in, a BR archive being remounted - the cached
+// pointers would point into freed memory, so they are dropped with it. The
+// model-info code resolves them again the next time the dictionary is loaded.
+static void
+ForgetCachedLightTextures(int slot)
+{
+	if(slot < 0 || slot != CTxdStore::GetVehicleTxdSlot())
+		return;
+	CVehicleModelInfo::ms_pLightsTexture = nil;
+	CVehicleModelInfo::ms_pLightsOnTexture = nil;
+}
+
 void
 CTxdStore::RemoveTxd(int slot)
 {
 #ifdef CUSTOM_MODELS
 	CCustomModels::ForgetTxdSlot(slot);
 #endif
+	ForgetCachedLightTextures(slot);
 	TxdDef *def = GetSlot(slot);
 	if(def->texDict)
 		RwTexDictionaryDestroy(def->texDict);

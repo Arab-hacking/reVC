@@ -316,7 +316,11 @@ CRenderer::RenderOneNonRoad(CEntity *e)
 		CVisibilityPlugins::InitAlphaAtomicList();
 	}
 
-	// Render Peds in vehicle before vehicle itself
+	// SA CRenderer::RenderOneNonRoad (0x553260) brackets the whole draw of a
+	// vehicle with SetupRender and ResetAfterRender: the paintjob, the four
+	// colours and the lamp sheets belong to this car for as long as anything of
+	// it is being drawn, and the sorted alpha atomics below are drawn after
+	// Render has returned, so the swaps have to outlive it.
 	if(e->IsVehicle()){
 		veh = (CVehicle*)e;
 		if(veh->pDriver && veh->pDriver->m_nPedState == PED_DRIVING)
@@ -325,14 +329,17 @@ CRenderer::RenderOneNonRoad(CEntity *e)
 			if(veh->pPassengers[i] && veh->pPassengers[i]->m_nPedState == PED_DRIVING)
 				veh->pPassengers[i]->Render();
 		SetCullMode(rwCULLMODECULLNONE);
+		veh->SetupRender();
 	}
 	e->Render();
 
 	if(e->IsVehicle()){
+		veh = (CVehicle*)e;
 		e->bImBeingRendered = true;
 		CVisibilityPlugins::RenderAlphaAtomics();
 		e->bImBeingRendered = false;
 		SetCullMode(rwCULLMODECULLBACK);
+		veh->ResetAfterRender();
 	}
 
 	e->RemoveLighting(resetLights);

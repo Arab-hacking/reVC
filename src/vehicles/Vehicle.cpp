@@ -33,6 +33,9 @@
 #include "Particle.h"
 #include "WaterLevel.h"
 #include "Timecycle.h"
+#include "Clock.h"
+#include "ZoneCull.h"
+#include "Shadows.h"
 #include "Weather.h"
 #include "Coronas.h"
 #include "SaveBuf.h"
@@ -49,6 +52,9 @@ bool CVehicle::bCheat10;
 bool CVehicle::bHoverCheat;
 bool CVehicle::bAllTaxisHaveNitro;
 bool CVehicle::m_bDisableMouseSteering = true;
+// SA CVehicle::ms_forceVehicleLightsOff: the cutscene flag that suppresses every
+// lamp. Read by DoVehicleLights, which is the only thing that draws them.
+bool CVehicle::bForceVehicleLightsOff = false;
 int32 CVehicle::m_nLastControlInput = KEYBOARD;
 bool CVehicle::bDisableRemoteDetonation;
 bool CVehicle::bDisableRemoteDetonationOnContact;
@@ -132,6 +138,7 @@ CVehicle::CVehicle(uint8 CreatedBy)
 	m_nGunFiringTime = 0;
 	m_nTimeBlocked = 0;
 	bLightsOn = false;
+	m_nOverrideLights = NO_CAR_LIGHT_OVERRIDE;
 	bVehicleColProcessed = false;
 	m_numPedsUseItAsCover = 0;
 	bIsCarParkVehicle = false;
@@ -2353,12 +2360,14 @@ CVehicle::CanBeDriven(void) const
 // it. Alpha fades as the camera moves off the beam axis, so the cone is only
 // visible when you are looking roughly into the light.
 void
-CVehicle::DoHeadLightBeam(CMatrix &vehicleMatrix, bool isRight)
+CVehicle::DoHeadLightBeam(eVehicleLightId lightId, CMatrix &vehicleMatrix, bool isRight)
 {
-	// MAIN lamp pair only; SA looks up DUMMY_LIGHT_FRONT_MAIN here.
-	CVector pointModelSpace = GetDummyPositionObjSpace(DUMMY_LIGHT_FRONT_MAIN);
+	CVector pointModelSpace = GetDummyPositionObjSpace(GetDummyFromLightId(lightId, true));
 
-	if(pointModelSpace.x == 0.0f && pointModelSpace.y == 0.0f && pointModelSpace.z == 0.0f)
+	// A model that has no second lamp quad gets no second beam either.
+	if(lightId == VEHICLE_LIGHT_SECONDARY && pointModelSpace.IsZero())
+		return;
+	if(pointModelSpace.IsZero())
 		return;
 
 	CVector point = vehicleMatrix.GetPosition() + Multiply3x3(pointModelSpace, vehicleMatrix);
@@ -2424,6 +2433,517 @@ CVehicle::DoHeadLightBeam(CMatrix &vehicleMatrix, bool isRight)
 	RwRenderStateSet(rwRENDERSTATEDESTBLEND, (void*)rwBLENDINVSRCALPHA);
 	RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)FALSE);
 	RwRenderStateSet(rwRENDERSTATECULLMODE, (void*)rwCULLMODECULLBACK);
+}
+
+// ---------------------------------------------------------------------------
+// Optical lights: SA CVehicle::DoVehicleLights and the functions under it
+// ---------------------------------------------------------------------------
+//
+// This is the SA lamp pass, ported whole. The reference draws a vehicle's lamps
+// in one place and keeps the answer in m_renderLights; every consumer - the
+// material pass that swaps the lamp sheets, the beam a bike draws, a second
+// driver reading the state - looks at that answer. The VC code this replaces
+// had two independent blocks inside PreRender, each with its own idea of the
+// colours and the damage rules, and neither of them recorded anything, so:
+//
+//   * the lamp sheet swap could not know which lamps were lit;
+//   * CBike::Render's m_renderLights.m_bRightFront test could never be true;
+//   * the second lamp dummy ("headlights2"/"taillights2") was never used;
+//   * a brake light while the lamps were off and the reversing lights were
+//     drawn as the rear lamp's own red corona rather than as their own effect.
+
+int32
+CVehicle::GetDummyFromLightId(eVehicleLightId lightId, bool isFront)
+{
+	if(lightId == VEHICLE_LIGHT_SECONDARY)
+		return isFront ? DUMMY_LIGHT_FRONT_SECONDARY : DUMMY_LIGHT_REAR_SECONDARY;
+	return isFront ? DUMMY_LIGHT_FRONT_MAIN : DUMMY_LIGHT_REAR_MAIN;
+}
+
+// SA CVehicle::GetVehicleLightsStatus (0x6D55C0).
+//
+// The car's lamps should be on at night, in the hour before and after it, and
+// whenever the weather is bad enough for the random seed of this particular car
+// to be under the foggyness or wetness of the map. A gang member is the one
+// driver who does not bother; SA additionally requires the zone to be gang
+// territory, which VC's population model has no notion of, so the ped type and
+// the seed are the whole test here.
+bool
+CVehicle::GetVehicleLightsStatus(void) const
+{
+	if(pDriver && pDriver->m_nPedType >= PEDTYPE_GANG1 && pDriver->m_nPedType <= PEDTYPE_GANG9 &&
+	   pDriver->m_randomSeed % 2)
+		return false;
+
+	if(CClock::GetIsTimeInRange(21, 6))
+		return true;
+	// SA splits the two boundary hours by the vehicle's own random seed, so
+	// that the cars of a street do not all switch on in the same frame.
+	if(CClock::GetHours() == 20 && CClock::GetMinutes() > (m_randomSeed % 64))
+		return true;
+	if(CClock::GetHours() == 6 && CClock::GetMinutes() < (m_randomSeed % 64))
+		return true;
+
+	const float threshold = (float)m_randomSeed / 50000.0f;
+	if(CWeather::Foggyness > threshold || CWeather::WetRoads > threshold)
+		return true;
+
+	// SA's last clause is "the car stands on a surface darker than five percent
+	// and the cull zone it is in keeps the rain out", i.e. it is in a tunnel or
+	// under a bridge where nothing else would prompt it to switch on. reVC has
+	// no per-vehicle collision lighting sample (SA keeps four, one per corner,
+	// and averages them in CalculateLightingFromCollision), so the brightness
+	// half is approximated from the ambient the time cycle gives the current
+	// hour and weather: that is the light that reaches a surface with nothing
+	// else shining on it, and it falls below the same five percent threshold in
+	// exactly the situations SA's collision sample reports as dark.
+	if(!CCullZones::CamNoRain())
+		return false;
+	const float ambient = (CTimeCycle::GetAmbientRed() + CTimeCycle::GetAmbientGreen() +
+		CTimeCycle::GetAmbientBlue()) * (1.0f / 3.0f);
+	// The time cycle stores 0..255 as a float already scaled to 0..1 in the
+	// current-ambient accessors; five percent of full white is the threshold.
+	return ambient < 0.05f;
+}
+
+// SA CVehicle::DoLightEffectImpl (0x6E1780).
+//
+// One lamp of one pair, on one side. The geometry comes from the dummy the
+// light id names, so a model with one lamp per side lights two quads and a
+// model with two lights four, without any code knowing which it has: the
+// SECONDARY dummy of a model that does not carry one is the zero vector and
+// the lamp returns before it registers anything.
+bool
+CVehicle::DoLightEffect(eVehicleLightId lightId, bool isFront, CMatrix &vehicleMatrix,
+	bool isRight, bool disabledOrAlarm, bool staticEmission)
+{
+	// SA's own constants (0x8D3684 / 0x8D3688): how far the lamp glow spreads
+	// relative to the angle the camera sees it from.
+	const float FRONT_SIZE_ROT_MULT = 0.4f;
+	const float REAR_SIZE_ROT_MULT = 0.2f;
+
+	if(disabledOrAlarm)
+		return false;
+
+	const CDamageManager *damage = GetDamageManager();
+	if(!isFront && damage && (GetModelIndex() == MI_STALLION || GetModelIndex() == MI_SABRE) &&
+	   damage->GetPanelStatus(VEHBUMPER_REAR))
+		// These two models have lamp textures mapped onto their rear bumper;
+		// with the bumper gone there is nothing to light.
+		return false;
+
+	CVector dummyPosObjSpace = GetDummyPositionObjSpace(GetDummyFromLightId(lightId, isFront));
+
+	// The second lamp of a pair exists only on models that model it.
+	if(lightId == VEHICLE_LIGHT_SECONDARY && dummyPosObjSpace.IsZero())
+		return false;
+
+	// Front lamps sit five centimetres ahead of their dummy: a lamp is a
+	// surface, and the coronas must not be swallowed by the glass in front of
+	// it at grazing angles.
+	CVector tweakedDummy = dummyPosObjSpace;
+	if(isFront)
+		tweakedDummy = 0.05f * GetForward() + dummyPosObjSpace;
+
+	// The left lamp of a pair is the right dummy mirrored about the car's
+	// centre line, which is what SA does instead of storing a dummy per lamp.
+	if(!isRight)
+		tweakedDummy.x -= 2.0f * dummyPosObjSpace.x;
+
+	const CVector dummyPosWorldSpace = vehicleMatrix * tweakedDummy;
+
+	CVector dirToCam = TheCamera.GetPosition() - dummyPosWorldSpace;
+	const float distToCam = dirToCam.Magnitude();
+	if(distToCam != 0.0f)
+		dirToCam *= 1.0f / distToCam;
+
+	CVector forward = isFront ? vehicleMatrix.GetForward() : -vehicleMatrix.GetForward();
+	const float angle = DotProduct(dirToCam, forward);
+	const float normAngle = Sqrt(Max(angle, 0.0f));
+
+	const bool isFullsizeTrain = IsSubTrain();
+
+	float intensity, coronaSize;
+	if(isFront){
+		intensity = normAngle * 0.5f + 0.3f;
+		coronaSize = (1.0f - distToCam * (1.0f / 150.0f)) * normAngle * FRONT_SIZE_ROT_MULT;
+	}else{
+		intensity = angle * 0.5f + 0.2f;
+		coronaSize = (1.0f - distToCam * (1.0f / 150.0f)) * angle * REAR_SIZE_ROT_MULT;
+	}
+	if(isFullsizeTrain){
+		const float trainMult = isFront ? 2.0f : 3.0f;
+		intensity = Min(trainMult * intensity, 1.0f);
+		coronaSize = 4.0f * coronaSize;
+	}
+
+	const float lightDistMult = 150.0f * TheCamera.LODDistMultiplier;
+	// The corona id is per lamp, not per car: two cars close together must not
+	// steal each other's coronas, and the four lamps of one car must not steal
+	// each other's either. SA derives it from the vehicle pointer and the lamp
+	// ordinal; the same scheme is used here.
+	const uint32 baseId = (uint32)(uintptr)this;
+	const uint32 lampId = (uint32)lightId * 2 + (isRight ? 1 : 0);
+
+	bool isBraking = false;
+
+	if(angle > 0.0f &&
+	   (TheCamera.Cams[TheCamera.ActiveCam].Mode != CCam::MODE_1STPERSON || this != FindPlayerVehicle())){
+		if(isFront){
+			// A headlight seen almost straight on also draws a thin line of
+			// light, which is what makes it read as a lamp and not a dot.
+			const float fieldAngle = isFullsizeTrain ? 0.85f : 0.9f;
+			if(normAngle > fieldAngle && distToCam < 40.0f){
+				uint8 lineR = 160, lineG = 160, lineB = 140;
+				if(m_pHandlingData->m_nHandlingFlags & VEHICLE_HANDLING_HALOGEN_LIGHTS){
+					lineR = 150;
+					lineG = 150;
+					lineB = 195;
+				}
+				CCoronas::RegisterCorona(baseId + lampId + 4, lineR, lineG, lineB, 255,
+					dummyPosWorldSpace, isFullsizeTrain ? 0.3f : 0.075f, lightDistMult,
+					CCoronas::TYPE_HEADLIGHT, CCoronas::FLARE_NONE, CCoronas::REFLECTION_OFF,
+					CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, normAngle, true, 0.3f);
+			}
+
+			uint8 lightColorR, lightColorG;
+			if(m_pHandlingData->m_nHandlingFlags & VEHICLE_HANDLING_HALOGEN_LIGHTS){
+				lightColorR = (uint8)(190.0f * intensity);
+				lightColorG = (uint8)(intensity * 255.0f);
+			}else{
+				lightColorR = (uint8)(210.0f * intensity);
+				lightColorG = (uint8)(intensity * 195.0f);
+			}
+			// SA passes (r, r, g): the two first channels are the same red
+			// multiplier, the third is the green one, which is what gives the
+			// warm white of a headlight.
+			CCoronas::RegisterCorona(baseId + lampId, lightColorR, lightColorR, lightColorG, 128,
+				dummyPosWorldSpace, coronaSize, lightDistMult,
+				CCoronas::TYPE_HEADLIGHT, CCoronas::FLARE_NONE, CCoronas::REFLECTION_SIMPLE,
+				CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, normAngle, false, 0.5f);
+		}else{
+			uint8 redIntensity = 0;
+			if(pDriver && m_fBrakePedal > 0.0f && !bIsHandbrakeOn){
+				// The driver is on the brakes: the lamp is at its bright
+				// state, and that is what the caller records as "braking".
+				redIntensity = (uint8)(128.0f * intensity);
+				isBraking = true;
+			}else if(staticEmission){
+				// The lamps are on but nobody is braking: the tail lamp still
+				// burns, dimmer. This is the "static part" SA mentions.
+				redIntensity = (uint8)(96.0f * intensity);
+				isBraking = true;
+			}
+			CCoronas::RegisterCorona(baseId + lampId + 8, redIntensity, 0, 0, 128,
+				dummyPosWorldSpace, coronaSize, lightDistMult,
+				CCoronas::TYPE_HEADLIGHT, CCoronas::FLARE_NONE, CCoronas::REFLECTION_SIMPLE,
+				CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, normAngle, false, 0.5f);
+		}
+	}
+
+	// A front lamp is always considered lit (it is the headlight that the
+	// caller is drawing); a rear lamp only when it showed something.
+	return isFront || isBraking;
+}
+
+bool
+CVehicle::DoHeadLightEffect(eVehicleLightId lightId, CMatrix &vehicleMatrix, bool isRight,
+	bool disabledOrAlarm)
+{
+	return DoLightEffect(lightId, true, vehicleMatrix, isRight, disabledOrAlarm, false);
+}
+
+bool
+CVehicle::DoTailLightEffect(eVehicleLightId lightId, CMatrix &vehicleMatrix, bool isRight,
+	bool disabledOrAlarm, bool staticEmission)
+{
+	return DoLightEffect(lightId, false, vehicleMatrix, isRight, disabledOrAlarm, staticEmission);
+}
+
+// SA CVehicle::DoHeadLightReflection (0x6E1720).
+//
+// The pool of light a car throws on the road in front of it. Twin when both
+// sides of the pair are lit, a single one when only one is: the shape is the
+// same road quad, mirrored to the lit side and half as wide.
+void
+CVehicle::DoHeadLightReflection(CMatrix &vehicleMatrix, eVehicleLightsFlags flags,
+	bool includeLeft, bool includeRight)
+{
+	const bool doTwin = (flags & VEHICLE_LIGHTS_TWIN) ? (includeLeft && includeRight) : false;
+	const bool doSingle = !doTwin && (includeLeft || includeRight);
+
+	if(!doTwin && !doSingle)
+		return;
+
+	CVector vehOffset = GetDummyPositionObjSpace(DUMMY_LIGHT_FRONT_MAIN);
+	if(doSingle && includeLeft)
+		vehOffset.x *= -1.0f;
+
+	CVector2D lightFwd2D(vehicleMatrix.GetForward());
+	lightFwd2D.Normalise();
+	// A bike and the quad have their lamp in the middle of the body, so the
+	// pool is one wide quad; a car has two, one per lamp. SA names the quad by
+	// model id (MODEL_QUAD); the SA vehicle set reVC carries has no such model,
+	// so the sub-type - which is what the handling record says - is the test.
+	const bool singleLampBody = IsSubBike() || IsSubQuad() || IsBMX();
+	const float lightSize = (doSingle && singleLampBody)
+		? 1.25f
+		: (doTwin ? vehOffset.x : Abs(vehOffset.x)) * 4.0f;
+	if(lightSize <= 0.0f)
+		return;
+
+	const float offsetDistance = lightSize * 2.0f + 1.0f + vehOffset.y;
+	const CVector2D shdwFront = lightFwd2D * (lightSize * 2.0f);
+	const CVector2D shdwSide = CVector2D(lightFwd2D.y, -lightFwd2D.x) * lightSize;
+	CVector2D lightPos2D = lightFwd2D * offsetDistance;
+	if(doSingle){
+		CVector2D lightRight2D(vehicleMatrix.GetRight());
+		lightRight2D.Normalise();
+		lightPos2D += lightRight2D * vehOffset.x;
+	}
+
+	CVector shadowPos = GetPosition() + CVector(lightPos2D.x, lightPos2D.y, 2.0f);
+	// SA keeps two pool textures: gpShadowHeadLightsTex for the two-lamp pool
+	// of a car and gpShadowHeadLightsTex2 for the single pool of a vehicle with
+	// one lamp, which is why the choice follows doTwin.
+	CShadows::StoreCarLightShadow(this, (int32)((uintptr)this + 2),
+		doTwin ? gpShadowHeadLightsTex : gpShadowHeadLightsTex2,
+		&shadowPos, shdwFront.x, shdwFront.y, shdwSide.x, shdwSide.y,
+		45, 45, 45, 7.0f);
+}
+
+// SA CVehicle::DoReverseLightEffect. The white reversing lamps. They are only
+// drawn with the lamps *off*: with the lamps on the reversing quads are part of
+// the lit sheet, and drawing a corona on top of them would double the light.
+void
+CVehicle::DoReverseLightEffect(CMatrix &vehicleMatrix)
+{
+	if(!(m_fGasPedal < 0.0f || m_nCurrentGear == 0))
+		return;
+
+	CVector lookVector = GetPosition() - TheCamera.GetPosition();
+	lookVector.Normalise();
+	if(DotProduct(lookVector, GetForward()) <= 0.0f)
+		return;	// the camera is in front of the car, nothing to see
+
+	const CVector dummyPos = GetDummyPositionObjSpace(DUMMY_LIGHT_REAR_MAIN);
+	CVector lightR = vehicleMatrix * dummyPos;
+	CVector lightL = lightR;
+	lightL -= GetRight() * 2.0f * dummyPos.x;
+
+	const CDamageManager *damage = GetDamageManager();
+	const float distMult = 50.0f * TheCamera.LODDistMultiplier;
+	if(damage == nil || damage->GetLightStatus(VEHLIGHT_REAR_LEFT) == LIGHT_STATUS_OK)
+		CCoronas::RegisterCorona((uint32)((uintptr)this + 16), 120, 120, 120, 255,
+			lightL, 1.2f, distMult,
+			CCoronas::TYPE_STAR, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
+			CCoronas::LOSCHECK_OFF, CCoronas::STREAK_ON, 0.0f);
+	if(damage == nil || damage->GetLightStatus(VEHLIGHT_REAR_RIGHT) == LIGHT_STATUS_OK)
+		CCoronas::RegisterCorona((uint32)((uintptr)this + 17), 120, 120, 120, 255,
+			lightR, 1.2f, distMult,
+			CCoronas::TYPE_STAR, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
+			CCoronas::LOSCHECK_OFF, CCoronas::STREAK_ON, 0.0f);
+}
+
+// Which lamps this vehicle has at all, and whether the two sides of a lamp pair
+// are separate geometry. SA passes the twin flag from the handling record; reVC
+// asks the model instead, because a converted model can carry a second lamp
+// quad that the handling line knows nothing about, and because a model with a
+// single quad per pair must not have its left lamp sheet lit for a lamp that
+// has no geometry.
+CVehicle::eVehicleLightsFlags
+CVehicle::GetVehicleLightsFlags(void) const
+{
+	eVehicleLightsFlags flags = VEHICLE_LIGHTS_NONE;
+	const CVehicleModelInfo *mi = (const CVehicleModelInfo*)CModelInfo::GetModelInfo(GetModelIndex());
+	if(mi == nil)
+		return flags;
+
+	// A bike has one headlight in the middle of the fork, so there is no left
+	// half to light separately; SA records the lamp as the right-hand one and
+	// never sets the twin flag for a two-wheeler.
+	if(!IsBike() && !IsBMX() && mi->m_vehicleStruct.IsDummyActive(DUMMY_LIGHT_FRONT_MAIN))
+		flags = (eVehicleLightsFlags)(flags | VEHICLE_LIGHTS_TWIN);
+
+	return flags;
+}
+
+// SA CVehicle::DoVehicleLights (0x6E1A60).
+void
+CVehicle::DoVehicleLights(CMatrix &vehicleMatrix, eVehicleLightsFlags flags)
+{
+	if(bForceVehicleLightsOff)
+		return;
+
+	// 1. Should the lamps be on?
+	const bool lightsStatus = GetVehicleLightsStatus();
+	if(lightsStatus != bLightsOn && GetStatus() != STATUS_WRECKED){
+		if(GetStatus() != STATUS_ABANDONED || IsSubTrain()){
+			bLightsOn = lightsStatus;
+		}else if(bLightsOn){
+			// An abandoned car keeps its lamps on only while the player can
+			// see them: once it is far away there is nothing to light.
+			const CVector &camPos = TheCamera.GetPosition();
+			if(Abs(camPos.x - GetPosition().x) + Abs(camPos.y - GetPosition().y) > 100.0f)
+				bLightsOn = false;
+		}
+	}
+
+	bool forceOn = false;
+	bool forceOff = false;
+
+	// 2. A script's standing order wins over the time of day.
+	if(m_nOverrideLights == FORCE_CAR_LIGHTS_OFF)
+		bLightsOn = false;
+	else if(m_nOverrideLights == FORCE_CAR_LIGHTS_ON)
+		forceOn = true;
+
+	// 3. An alarm blinks the lamps, whatever the time of day.
+	if(IsAlarmOn()){
+		if(CTimer::GetTimeInMilliseconds() & 0x100)
+			forceOn = true;
+		else
+			forceOff = true;
+	}
+
+	// A car with its engine off has no lamps: the battery is the engine.
+	if(!bEngineOn){
+		m_nRenderLightsFlags = 0;
+		return;
+	}
+
+	// 4. The one model whose lamps have to physically come up first.
+	if(GetModelIndex() == MI_INFERNUS && GetStatus() != STATUS_WRECKED){
+		// SA's ZR350 pop-up headlights (0.69813174f = 40 degrees). The model
+		// reVC maps to that slot is the same shape; while the pods are still
+		// coming up the lamps stay dark.
+		const float popUpTarget = 0.69813174f;
+		if(bLightsOn || forceOn || IsAlarmOn()){
+			m_fPropRotate = Min(m_fPropRotate + CTimer::GetTimeStep() * 0.01f, popUpTarget);
+			if(m_fPropRotate < popUpTarget){
+				m_nRenderLightsFlags = 0;
+				return;
+			}
+		}else{
+			m_fPropRotate = Max(m_fPropRotate - CTimer::GetTimeStep() * 0.01f, 0.0f);
+		}
+	}
+
+	// 5. A smashed lamp draws nothing. VEHICLE_LIGHTS_IGNORE_DAMAGE is for the
+	// passes that must show the vehicle as it is (a mirror, a shadow map).
+	struct LightOkFn {
+		CVehicle *self;
+		eVehicleLightsFlags flags;
+		bool operator()(eVehicleLightsFlags disabledFlag, eLights light) const
+		{
+			if(flags & disabledFlag)
+				return false;
+			if(flags & VEHICLE_LIGHTS_IGNORE_DAMAGE)
+				return true;
+			// A lamp can only be smashed on a vehicle that carries a damage
+			// manager; a bike's lamp is part of its bodywork.
+			const CDamageManager *damage = self->GetDamageManager();
+			if(damage == nil)
+				return true;
+			return damage->GetLightStatus(light) == LIGHT_STATUS_OK;
+		}
+	} isLightOk = { this, flags };
+
+	const bool lightOkFR = isLightOk(VEHICLE_LIGHTS_DISABLE_FRONT, VEHLIGHT_FRONT_RIGHT);
+	const bool lightOkFL = isLightOk(VEHICLE_LIGHTS_DISABLE_FRONT, VEHLIGHT_FRONT_LEFT);
+	const bool lightOkRR = isLightOk(VEHICLE_LIGHTS_DISABLE_REAR, VEHLIGHT_REAR_RIGHT);
+	const bool lightOkRL = isLightOk(VEHICLE_LIGHTS_DISABLE_REAR, VEHLIGHT_REAR_LEFT);
+
+	// 6. Draw one pair on both sides, then the second dummy of the pair.
+	// This is the whole fault of the VC code: only the right-hand lamp was
+	// ever drawn, the left was a mirror of its position, and the second dummy
+	// was never consulted, so m_renderLights could not describe a car.
+	struct RenderLightsFn {
+		CVehicle *self;
+		CMatrix &vehicleMatrix;
+		eVehicleLightsFlags flags;
+		void operator()(bool isFrontLight, bool disabledOrAlarmR, bool disabledOrAlarmL,
+			bool staticEmission)
+		{
+			bool active = isFrontLight
+				? self->DoHeadLightEffect(VEHICLE_LIGHT_MAIN, vehicleMatrix, true, disabledOrAlarmR)
+				: self->DoTailLightEffect(VEHICLE_LIGHT_MAIN, vehicleMatrix, true, disabledOrAlarmR, staticEmission);
+			if(isFrontLight)
+				self->m_renderLights.m_bRightFront = active;
+			else
+				self->m_renderLights.m_bRightRear = active;
+			// The second lamp of the pair is drawn whenever the first one
+			// drew something; DoLightEffect itself returns early for a model
+			// that has no such dummy.
+			if(active){
+				if(isFrontLight)
+					self->DoHeadLightEffect(VEHICLE_LIGHT_SECONDARY, vehicleMatrix, true, disabledOrAlarmR);
+				else
+					self->DoTailLightEffect(VEHICLE_LIGHT_SECONDARY, vehicleMatrix, true, disabledOrAlarmR, staticEmission);
+			}
+
+			if(flags & VEHICLE_LIGHTS_TWIN){
+				active = isFrontLight
+					? self->DoHeadLightEffect(VEHICLE_LIGHT_MAIN, vehicleMatrix, false, disabledOrAlarmL)
+					: self->DoTailLightEffect(VEHICLE_LIGHT_MAIN, vehicleMatrix, false, disabledOrAlarmL, staticEmission);
+				if(isFrontLight)
+					self->m_renderLights.m_bLeftFront = active;
+				else
+					self->m_renderLights.m_bLeftRear = active;
+				if(active){
+					if(isFrontLight)
+						self->DoHeadLightEffect(VEHICLE_LIGHT_SECONDARY, vehicleMatrix, false, disabledOrAlarmL);
+					else
+						self->DoTailLightEffect(VEHICLE_LIGHT_SECONDARY, vehicleMatrix, false, disabledOrAlarmL, staticEmission);
+				}
+			}else{
+				// A single-sided model has no left lamp of its own: the right
+				// one is the whole lamp, so it is recorded for the left too.
+				// Without this a model with one quad per pair would leave the
+				// left lamp sheet dark while its corona burns.
+				if(isFrontLight)
+					self->m_renderLights.m_bLeftFront = self->m_renderLights.m_bRightFront;
+				else
+					self->m_renderLights.m_bLeftRear = self->m_renderLights.m_bRightRear;
+			}
+		}
+	} RenderLights = { this, vehicleMatrix, flags };
+
+	if(forceOff){
+		m_nRenderLightsFlags = 0;
+		return;
+	}
+
+	if(!bLightsOn && !forceOn){
+		// Lamps off. Only the dynamic half of the tail lamp is processed: a
+		// brake light and the reversing lights work without the lamps, which
+		// is the whole point of them.
+		RenderLights(false, !lightOkRR, !lightOkRL, false);
+		DoReverseLightEffect(vehicleMatrix);
+		return;
+	}
+
+	// Lamps on.
+	RenderLights(true, !lightOkFR, !lightOkFL, false);
+	RenderLights(false, !lightOkRR, !lightOkRL, true);
+
+	const bool isSubTrain = IsSubTrain();
+	if(!isSubTrain)
+		DoHeadLightReflection(vehicleMatrix, flags, lightOkFL, lightOkFR);
+
+	// 7. The light a lamp throws on the road. SA adds one directional light
+	// for the headlights of every lit car, and one at the back only while the
+	// driver is actually braking with the handbrake off.
+	if(lightOkFR || lightOkFL)
+		CPointLights::AddLight(CPointLights::LIGHT_DIRECTIONAL, vehicleMatrix.GetPosition(),
+			vehicleMatrix.GetForward(), 20.0f, 1.0f, 1.0f, 1.0f,
+			m_vecMoveSpeed.MagnitudeSqr2D() < SQR(0.45f) ? CPointLights::FOG_NORMAL : CPointLights::FOG_NONE,
+			false);
+
+	if((lightOkRR || lightOkRL) && m_fBrakePedal > 0.0f && !bIsHandbrakeOn && pDriver)
+		CPointLights::AddLight(CPointLights::LIGHT_DIRECTIONAL,
+			GetPosition() + -4.0f * GetForward(), -vehicleMatrix.GetForward(),
+			10.0f, 0.1f, 0.02f, 0.02f, CPointLights::FOG_NONE, false);
 }
 
 eVehicleAppearance
@@ -3375,6 +3895,55 @@ CVehicle::ApplyRemapTexture(void)
 	}
 
 	CVehicleModelInfo::ms_pRemapTexture = m_pRemapTexture;
+}
+
+// SA CVehicle::SetupRender (0x6D64F0).
+//
+// Everything a vehicle puts onto its shared model for the duration of one draw,
+// in SA's order:
+//
+//  1. the four paint channels of this car, so the body markers resolve to its
+//     colours and not to the last car of the same model;
+//  2. the lamp flags of this car, which the material pass reads to decide which
+//     lamp sheets are lit;
+//  3. the paintjob texture of this car;
+//  4. the walk itself, which does the swaps.
+//
+// reVC used to do 1, 3 and 4 inside each vehicle's own Render and never did 2 at
+// all, which is why the lamps could not light. The split also matters for the
+// alpha pass: CRenderer draws the sorted alpha atomics of a vehicle after its
+// Render has returned, so the swaps must be made here, outside Render, and only
+// be undone by ResetAfterRender.
+void
+CVehicle::SetupRender(void)
+{
+	CVehicleModelInfo *mi = (CVehicleModelInfo*)GetModelInfo();
+	if(mi == nil)
+		return;
+
+	// The lamps first: the material callback consults ms_lightsOn for every
+	// material it walks, and a stale set would light the wrong lamps.
+	CVehicleModelInfo::SetupLightFlags(this);
+
+	// Then the colours and the paintjob the body markers are resolved against.
+	mi->SetVehicleColour(m_currentColour1, m_currentColour2, m_currentColour3, m_currentColour4);
+	ApplyRemapTexture();
+
+	// And the walk. It is unconditional, unlike the old paintjob-only call: a
+	// car with no paintjob can still have lamps to swap.
+	mi->SetEditableMaterials();
+}
+
+// SA CVehicle::ResetAfterRender (0x6D0E20). Undo everything SetupRender did to
+// the shared model. Called once the entity and its alpha atomics have been
+// drawn; without it the next car of the same model inherits this one's paintjob
+// and lit lamps.
+void
+CVehicle::ResetAfterRender(void)
+{
+	CVehicleModelInfo *mi = (CVehicleModelInfo*)GetModelInfo();
+	if(mi)
+		mi->RestoreEditableMaterials();
 }
 
 // ---- State API for an external controller -------------------------------

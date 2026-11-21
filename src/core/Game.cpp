@@ -731,6 +731,10 @@ bool CGame::ShutDown(void)
 	CAnimManager::Shutdown();
 	CVehicleModelInfo::DeleteVehicleColourTextures();
 	CVehicleModelInfo::ShutdownEnvironmentMaps();
+	// The lamp sheets are textures of the vehicle dictionary, which
+	// CTxdStore::GameShutdown below tears down; SA destroys them in the same
+	// place (CVehicleModelInfo::ShutdownLightTexture).
+	CVehicleModelInfo::ShutdownLightTexture();
 	CRadar::Shutdown();
 	CStreaming::Shutdown();
 #ifdef CUSTOM_MODELS
