@@ -791,6 +791,12 @@ public:
 	void SetStoredState(void);
 	void StopNonPartialAnims(void);
 	bool InflictDamage(CEntity*, eWeaponType, float, ePedPieceTypes, uint8);
+	// SA CPedDamageResponseCalculator::ComputeWillForceDeath (0x4AD610): the hit
+	// is lethal by rule rather than by arithmetic - a headshot from a gun, a
+	// katana combo, an explosion on a ped that is nearly dead.
+	bool WillForceDeathFrom(eWeaponType, ePedPieceTypes, CEntity *damager, float damage);
+	// The health multiplier a hit carries for the body part it landed on.
+	static float GetBodyPartDamageMult(ePedPieceTypes);
 	void ClearFlee(void);
 	void ClearFall(void);
 	void SetGetUp(void);

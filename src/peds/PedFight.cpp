@@ -2896,6 +2896,100 @@ CPed::ClearInvestigateEvent(void)
 		SetMoveState(PEDMOVE_WALK);
 }
 
+// SA CPedDamageResponseCalculator::ComputeWillForceDeath (0x4AD610).
+//
+// SA decides lethality in two steps: a calculator applies the stats, the armour
+// and a "should this hit kill outright" rule, and only then does the ped react.
+// reVC's InflictDamage carried the second half only, so a headshot with a pistol
+// did exactly the same damage as a shot in the hip - the part that was hit
+// changed only which death animation played.
+//
+// The rule is deliberately narrow, the way SA's is: it applies to the guns that
+// can actually do it, it spares the player, peds flagged bNoCriticalHits and the
+// rifle headshots that SA lets a ped survive seven times out of eight, and a ped
+// sitting in a car dies from a head hit with anything.
+bool
+CPed::WillForceDeathFrom(eWeaponType method, ePedPieceTypes piece, CEntity *damager, float damage)
+{
+	if(bNoCriticalHits)
+		return false;
+
+	CPed *damagerPed = damager && damager->IsPed() ? (CPed*)damager : nil;
+
+	switch(method){
+	case WEAPONTYPE_KATANA:
+		// SA gates the katana on the attacker being the player mid-sword-combo.
+		// There is no melee combo state in this fork yet, so the random third of
+		// the decision stands on its own.
+		if(damagerPed == nil || !damagerPed->IsPlayer())
+			return false;
+		return CGeneral::GetRandomNumber() % 8 == 0;
+
+	case WEAPONTYPE_COLT45:
+	case WEAPONTYPE_PYTHON:
+	case WEAPONTYPE_SHOTGUN:
+	case WEAPONTYPE_STUBBY_SHOTGUN:
+	case WEAPONTYPE_SPAS12_SHOTGUN:
+	case WEAPONTYPE_TEC9:
+	case WEAPONTYPE_UZI:
+	case WEAPONTYPE_SILENCED_INGRAM:
+	case WEAPONTYPE_MP5:
+	case WEAPONTYPE_M4:
+	case WEAPONTYPE_RUGER:
+	case WEAPONTYPE_SNIPERRIFLE:
+	case WEAPONTYPE_LASERSCOPE:
+	case WEAPONTYPE_M60:
+	case WEAPONTYPE_MINIGUN:
+	case WEAPONTYPE_UZI_DRIVEBY:
+		if(bInVehicle && !IsPlayer())
+			return piece == PED_PIECE_HEAD;
+
+		if(!IsPlayer() && damagerPed && damagerPed->IsPlayer()){
+			// A player aiming at the head with free aim lands a lethal one.
+			CPlayerPedData *playerData = damagerPed->IsPlayer() ? ((CPlayerPed*)damagerPed)->GetPlayerData() : nil;
+			if(playerData && (playerData->m_nTargetBone == BONE_HEAD || playerData->m_bFreeAiming))
+				return piece == PED_PIECE_HEAD;
+		}
+
+		if(IsPlayer())
+			return false;
+		// A rifle headshot is a kill; everything else only sometimes.
+		if(method == WEAPONTYPE_SNIPERRIFLE || method == WEAPONTYPE_LASERSCOPE)
+			return piece == PED_PIECE_HEAD;
+		return piece == PED_PIECE_HEAD && CGeneral::GetRandomNumber() % 8 != 0;
+
+	case WEAPONTYPE_GRENADE:
+	case WEAPONTYPE_DETONATOR_GRENADE:
+	case WEAPONTYPE_ROCKET:
+	case WEAPONTYPE_ROCKETLAUNCHER:
+	case WEAPONTYPE_EXPLOSION:
+		return !IsPlayer() && !bInVehicle && damage + 1.0f > m_fHealth;
+
+	default:
+		return false;
+	}
+}
+
+// SA has no per-part multiplier of its own - the calculator's damage is flat and
+// the part decides the lethality rule above - but the ped's hit-collision model
+// already splits the body into ten pieces and nothing was reading that split.
+// These factors are the ones the SA melee and gun tables imply: a head is worth
+// four times a torso hit and a limb a little less.
+float
+CPed::GetBodyPartDamageMult(ePedPieceTypes piece)
+{
+	switch(piece){
+	case PED_PIECE_HEAD:		return 4.0f;
+	case PED_PIECE_TORSO:		return 1.0f;
+	case PED_PIECE_ASS:			return 0.9f;
+	case PED_PIECE_LEFT_ARM:
+	case PED_PIECE_RIGHT_ARM:	return 0.6f;
+	case PED_PIECE_LEFT_LEG:
+	case PED_PIECE_RIGHT_LEG:	return 0.55f;
+	default:					return 1.0f;
+	}
+}
+
 bool
 CPed::InflictDamage(CEntity *damagedBy, eWeaponType method, float damage, ePedPieceTypes pedPiece, uint8 direction)
 {
@@ -2936,11 +3030,27 @@ CPed::InflictDamage(CEntity *damagedBy, eWeaponType method, float damage, ePedPi
 		method != WEAPONTYPE_DROWNING && method != WEAPONTYPE_EXPLOSION)
 		return false;
 
+	// SA decides lethality before the arithmetic (CPedDamageResponseCalculator),
+	// so a gun headshot is not "more damage" but a kill by rule, and DROWNING and
+	// FALL keep their flat, part-independent arithmetic.
+	bool forcedDeath = false;
+	if(method != WEAPONTYPE_DROWNING && method != WEAPONTYPE_FALL)
+		forcedDeath = WillForceDeathFrom(method, pedPiece, damagedBy, damage);
+
 	float healthImpact;
 	if (IsPlayer())
 		healthImpact = damage * 0.33f;
 	else
 		healthImpact = damage * m_pedStats->m_fDefendWeakness;
+
+	// The part that was hit scales the damage, unless a rule already decided the
+	// outcome. Before this the piece only chose the death animation, so a shot
+	// to the head and a shot to the hip cost the same health.
+	if(!forcedDeath && method != WEAPONTYPE_DROWNING && method != WEAPONTYPE_FALL)
+		healthImpact *= GetBodyPartDamageMult(pedPiece);
+
+	if(forcedDeath)
+		healthImpact = m_fArmour + m_fHealth + 1.0f;
 
 	if (!IsPlayer() &&
 		(method == WEAPONTYPE_SCREWDRIVER || method == WEAPONTYPE_KNIFE || (method >= WEAPONTYPE_CLEAVER && method <= WEAPONTYPE_CHAINSAW)))
