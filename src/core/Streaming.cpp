@@ -2888,14 +2888,19 @@ CStreaming::LoadCustomFile(int32 streamId)
 		}
 		animId = mi->GetAnimFileIndex();
 
-		// Txd (including any streamable txdp parent chain) and anim have to be loaded
-		bool txdReady = CTxdStore::GetSlot(mi->GetTxdSlot())->texDict != nil;
+		// Txd (including any streamable txdp parent chain) and anim have to be loaded.
+		// GetSlot reports a slot that was never registered as nil, so a missing
+		// dictionary has to be checked for rather than assumed away: it means
+		// "not loaded yet", which is what makes this wait instead of faulting.
+		TxdDef *ownTxd = CTxdStore::GetSlot(mi->GetTxdSlot());
+		bool txdReady = ownTxd && ownTxd->texDict != nil;
 		if(txdReady){
 			for(int p = CTxdStore::GetParentTxdSlot(mi->GetTxdSlot()), depth = 0;
 			    p >= 0 && depth < 8; p = CTxdStore::GetParentTxdSlot(p), depth++){
 				bool streamable = ms_aInfoForModel[p + STREAM_OFFSET_TXD].GetCdSize() > 0 ||
 				                  CCustomModels::CanServe(p + STREAM_OFFSET_TXD);
-				if(streamable && CTxdStore::GetSlot(p)->texDict == nil){
+				TxdDef *parentTxd = CTxdStore::GetSlot(p);
+				if(streamable && parentTxd && parentTxd->texDict == nil){
 					RequestTxd(p, ms_aInfoForModel[streamId].m_flags & STREAMFLAGS_PRIORITY);
 					txdReady = false;
 				}
@@ -3431,9 +3436,12 @@ CStreaming::LoadAllRequestedModels(bool priority)
 			FinishLoadingLargeFile(ms_pStreamingBuffer[nextChannel], streamIds[nextChannel]);
 
 		if(streamIds[nextChannel] < STREAM_OFFSET_TXD){
-			CSimpleModelInfo *mi = (CSimpleModelInfo*)CModelInfo::GetModelInfo(streamIds[nextChannel]);
-			if(mi->IsSimple())
-				mi->m_alpha = 255;
+			// A slot without a model info is dropped before it gets here and by
+			// ConvertBufferToObject after it, so this is normally non-nil; the
+			// test keeps the unusual case from turning into a nil dereference.
+			CBaseModelInfo *info = CModelInfo::GetModelInfo(streamIds[nextChannel]);
+			if(info && info->IsSimple())
+				((CSimpleModelInfo*)info)->m_alpha = 255;
 		}
 		streamIds[nextChannel] = -1;
 		readOrder[processI] = -1;
@@ -3550,9 +3558,9 @@ CStreaming::LoadAllRequestedModels(bool priority)
 				FinishLoadingLargeFile(ms_pStreamingBuffer[0], streamId);
 
 			if(streamId < STREAM_OFFSET_TXD){
-				CSimpleModelInfo *mi = (CSimpleModelInfo*)CModelInfo::GetModelInfo(streamId);
-				if(mi->IsSimple())
-					mi->m_alpha = 255;
+				CBaseModelInfo *info = CModelInfo::GetModelInfo(streamId);
+				if(info && info->IsSimple())
+					((CSimpleModelInfo*)info)->m_alpha = 255;
 			}
 		}else{
 			// empty

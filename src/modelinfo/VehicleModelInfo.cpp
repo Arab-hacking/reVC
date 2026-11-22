@@ -528,9 +528,22 @@ CVehicleModelInfo::AddGenericWheelModel(RwFrame *frame)
 		RwFrameDestroy(frame);
 		return;
 	}
-	atomic = (RpAtomic*)CModelInfo::GetModelInfo(m_wheelId)->CreateInstance();
-	RwFrameDestroy(RpAtomicGetFrame(atomic));
+	// The wheel is a separate model, so it may be absent from the model table
+	// or not streamed in yet; there is nothing to clone in either case, and
+	// a nil instance used to be dereferenced through RpAtomicGetFrame.
+	CBaseModelInfo *wheelInfo = CModelInfo::GetModelInfo(m_wheelId);
+	atomic = wheelInfo ? (RpAtomic*)wheelInfo->CreateInstance() : nil;
+	if(atomic == nil){
+		RwFrameDestroy(frame);
+		return;
+	}
+	// The instance comes with its own frame; the wheel is re-parented onto the
+	// dummy's frame, so that one has to go first. It may already be absent for
+	// an instance whose model had no clump frame.
+	RwFrame *instanceFrame = RpAtomicGetFrame(atomic);
 	RpAtomicSetFrame(atomic, frame);
+	if(instanceFrame)
+		RwFrameDestroy(instanceFrame);
 	RpClumpAddAtomic(m_clump, atomic);
 	CVisibilityPlugins::SetAtomicRenderCallback(atomic,
 		CVisibilityPlugins::RenderWheelAtomicCB);
@@ -812,6 +825,28 @@ CVehicleModelInfo::MoveObjectsCB(RwObject *object, void *data)
 {
 	RpAtomicSetFrame((RpAtomic*)object, (RwFrame*)data);
 	return object;
+}
+
+// A frame that is about to be removed may still carry geometry: a converted
+// model can hang a mesh on a node that is also a dummy (the light dummies and
+// an exhaust are the usual ones), and the frame is what keeps that mesh in the
+// clump. RwFrameDestroy nils the frame of every object on it, so an atomic left
+// there stays in the clump with no frame - and the first clone of the model
+// then reads its frame's hierarchy root at a nil pointer. Move any such object
+// onto the clump's root first, which is where VC expects loose atomics to live.
+static void
+EvictFrameObjects(RwFrame *frame, RwFrame *root)
+{
+	if(frame == nil || root == nil || frame == root)
+		return;
+	RwFrameForAllObjects(frame, [](RwObject *object, void *root) -> RwObject* {
+		// Same effect as CVehicleModelInfo::MoveObjectsCB, which is private to
+		// the model info and cannot be named from here. Only atomics are moved:
+		// a light or a camera on a vehicle dummy has no frame slot to carry it.
+		if(object && RwObjectGetType(object) == rpATOMIC)
+			RpAtomicSetFrame((RpAtomic*)object, (RwFrame*)root);
+		return object;
+	}, root);
 }
 
 RpAtomic*
@@ -1112,6 +1147,9 @@ CVehicleModelInfo::PreprocessSACarHierarchy(void)
 			if(desc[i].flags & VEHICLE_FLAG_DUMMY){
 				m_vehicleStruct.m_avDummyPos[(desc[i].flags >> VEHICLE_FLAG_DUMMY_SHIFT) - 1] = *pos;
 			}
+			// The dummy is only a position; anything modelled on it has to
+			// survive the removal (see EvictFrameObjects).
+			EvictFrameObjects(assoc.frame, RpClumpGetFrame(m_clump));
 			RwFrameDestroy(assoc.frame);
 		}else{
 			RpAtomic *extra = (RpAtomic*)GetFirstObject(assoc.frame);
@@ -1220,6 +1258,9 @@ CVehicleModelInfo::PreprocessHierarchy(bool saHierarchy)
 			// does regardless of which loader path ran.
 			if(desc[i].flags & VEHICLE_FLAG_DUMMY)
 				m_vehicleStruct.m_avDummyPos[(desc[i].flags >> VEHICLE_FLAG_DUMMY_SHIFT) - 1] = *rwvec;
+			// Same reason as in the SA path above: a dummy frame must not take
+			// the geometry that hangs on it into the destroy.
+			EvictFrameObjects(assoc.frame, RpClumpGetFrame(m_clump));
 			RwFrameDestroy(assoc.frame);
 		}else{
 			atomic = (RpAtomic*)GetFirstObject(assoc.frame);
