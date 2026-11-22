@@ -20,10 +20,25 @@ uint32 projectileInUse;
 CProjectileInfo gaProjectileInfo[NUM_PROJECTILES];
 CProjectile *CProjectileInfo::ms_apProjectile[NUM_PROJECTILES];
 
-#define PROJECTILE_BOUNDARY_MIN_X -2390.0f
-#define PROJECTILE_BOUNDARY_MAX_X 1590.0f
-#define PROJECTILE_BOUNDARY_MIN_Y -1990.0f
-#define PROJECTILE_BOUNDARY_MAX_Y 1990.0f
+// Keep the slot and the live-object array in sync on every removal path.
+static void
+DestroyProjectileAt(int32 index)
+{
+	CProjectileInfo &info = gaProjectileInfo[index];
+	CProjectile *projectile = CProjectileInfo::ms_apProjectile[index];
+	if (!info.m_bInUse)
+		return;
+#ifdef SQUEEZE_PERFORMANCE
+	--projectileInUse;
+#endif
+	info.m_bInUse = false;
+	info.m_pSource = nil;
+	CProjectileInfo::ms_apProjectile[index] = nil;
+	if (projectile) {
+		CWorld::Remove(projectile);
+		delete projectile;
+	}
+}
 
 void
 CProjectileInfo::Initialise()
@@ -61,6 +76,9 @@ CProjectileInfo::GetProjectileInfo(int32 id)
 bool
 CProjectileInfo::AddProjectile(CEntity *entity, eWeaponType weapon, CVector pos, float speed)
 {
+	if (!entity)
+		return false;
+
 	int8 SpecialCollisionResponseCase = COLLRESPONSE_NONE;
 	bool gravity = true;
 	CMatrix matrix;
@@ -215,7 +233,6 @@ CProjectileInfo::AddProjectile(CEntity *entity, eWeaponType weapon, CVector pos,
 void
 CProjectileInfo::RemoveProjectile(CProjectileInfo *info, CProjectile *projectile)
 {
-	// TODO(Miami): New parameter: 1
 	switch (info->m_eWeaponType) {
 		case WEAPONTYPE_GRENADE:
 			CExplosion::AddExplosion(nil, info->m_pSource, EXPLOSION_GRENADE, projectile->GetPosition(), 0);
@@ -224,22 +241,15 @@ CProjectileInfo::RemoveProjectile(CProjectileInfo *info, CProjectile *projectile
 			CExplosion::AddExplosion(nil, info->m_pSource, EXPLOSION_MOLOTOV, projectile->GetPosition(), 0);
 			break;
 		case WEAPONTYPE_ROCKET:
-			CExplosion::AddExplosion(nil, info->m_pSource->IsVehicle() ? ((CVehicle*)info->m_pSource)->pDriver : info->m_pSource, EXPLOSION_ROCKET, projectile->GetPosition(), 0);
+			CExplosion::AddExplosion(nil, info->m_pSource && info->m_pSource->IsVehicle() ? ((CVehicle*)info->m_pSource)->pDriver : info->m_pSource, EXPLOSION_ROCKET, projectile->GetPosition(), 0);
 			break;
 	}
-#ifdef SQUEEZE_PERFORMANCE
-	projectileInUse--;
-#endif
-
-	info->m_bInUse = false;
-	CWorld::Remove(projectile);
-	delete projectile;
+	DestroyProjectileAt((int32)(info - gaProjectileInfo));
 }
 
 void
 CProjectileInfo::RemoveNotAdd(CEntity *entity, eWeaponType weaponType, CVector pos)
 {
-	// TODO(Miami): New parameter: 1
 	switch (weaponType) {
 		case WEAPONTYPE_GRENADE:
 			CExplosion::AddExplosion(nil, entity, EXPLOSION_GRENADE, pos, 0);
@@ -271,11 +281,7 @@ CProjectileInfo::Update()
 			gaProjectileInfo[i].m_pSource = nil;
 
 		if (ms_apProjectile[i] == nil) {
-#ifdef SQUEEZE_PERFORMANCE
-			projectileInUse--;
-#endif
-
-			gaProjectileInfo[i].m_bInUse = false;
+			DestroyProjectileAt(i);
 			continue;
 		}
 		if ( (gaProjectileInfo[i].m_eWeaponType == WEAPONTYPE_DETONATOR_GRENADE || gaProjectileInfo[i].m_eWeaponType == WEAPONTYPE_TEARGAS) && ms_apProjectile[i]->m_fElasticity > 0.1f ) {
@@ -286,12 +292,10 @@ CProjectileInfo::Update()
 		const CVector &projectilePos = ms_apProjectile[i]->GetPosition();
 		CVector nextPos = CTimer::GetTimeStep() * ms_apProjectile[i]->m_vecMoveSpeed + projectilePos;
 
-		if ( nextPos.x <= PROJECTILE_BOUNDARY_MIN_X || nextPos.x >= PROJECTILE_BOUNDARY_MAX_X || nextPos.y <= PROJECTILE_BOUNDARY_MIN_Y || nextPos.y >= PROJECTILE_BOUNDARY_MAX_Y ) {
+		if ( nextPos.x <= WORLD_MIN_X || nextPos.x >= WORLD_MAX_X || nextPos.y <= WORLD_MIN_Y || nextPos.y >= WORLD_MAX_Y ) {
 			// Not RemoveProjectile, because we don't want no explosion
-			gaProjectileInfo[i].m_bInUse = false;
-			CWorld::Remove(ms_apProjectile[i]);
-			delete ms_apProjectile[i];
-        	continue;
+			DestroyProjectileAt(i);
+			continue;
 		}
 		if ( gaProjectileInfo[i].m_eWeaponType == WEAPONTYPE_TEARGAS && CTimer::GetTimeInMilliseconds() > gaProjectileInfo[i].m_nExplosionTime - 19500 ) {
 			CParticle::AddParticle(PARTICLE_TEARGAS, projectilePos, CVector(0.2f, tearGasOffset, 0.0f), 0, 0.0f, 0, 0, 0, 0);
@@ -313,7 +317,9 @@ CProjectileInfo::Update()
 				if (ms_apProjectile[i]->bHasCollided
 					|| !CWorld::GetIsLineOfSightClear(gaProjectileInfo[i].m_vecPos, pos, true, true, true, true, false, false)
 					|| CHeli::TestRocketCollision(&pos) || CPlane::TestRocketCollision(&pos)) {
+					CWorld::pIgnoreEntity = nil;
 					RemoveProjectile(&gaProjectileInfo[i], ms_apProjectile[i]);
+					continue;
 				}
 				CWorld::pIgnoreEntity = nil;
 				ms_apProjectile[i]->m_vecMoveSpeed *= 1.07f;
@@ -327,7 +333,9 @@ CProjectileInfo::Update()
 				{
 					if (ms_apProjectile[i]->bHasCollided
 						|| !CWorld::GetIsLineOfSightClear(gaProjectileInfo[i].m_vecPos, pos, true, true, true, true, false, false)) {
+						CWorld::pIgnoreEntity = nil;
 						RemoveProjectile(&gaProjectileInfo[i], ms_apProjectile[i]);
+						continue;
 					}
 				}
 				CWorld::pIgnoreEntity = nil;
@@ -335,7 +343,7 @@ CProjectileInfo::Update()
 		} else {
 			if (gaProjectileInfo[i].m_eWeaponType == WEAPONTYPE_DETONATOR_GRENADE) {
 				CEntity *ent = gaProjectileInfo[i].m_pSource;
-				if (ent->IsPed() && ((CPed*)ped)->IsPlayer()) {
+				if (ent && ent->IsPed() && ((CPed*)ent)->IsPlayer()) {
 					CPed *ped = (CPed*)ent;
 					if (ped->GetWeapon(ped->GetWeaponSlot(WEAPONTYPE_DETONATOR)).m_eWeaponType != WEAPONTYPE_DETONATOR
 						|| ped->GetWeapon(ped->GetWeaponSlot(WEAPONTYPE_DETONATOR)).m_nAmmoTotal == 0) {
@@ -344,6 +352,7 @@ CProjectileInfo::Update()
 				}
 			} else {
 				RemoveProjectile(&gaProjectileInfo[i], ms_apProjectile[i]);
+				continue;
 			}
 		}
 
@@ -356,19 +365,13 @@ CProjectileInfo::IsProjectileInRange(float x1, float x2, float y1, float y2, flo
 {
 	bool result = false;
 	for (int i = 0; i < ARRAY_SIZE(ms_apProjectile); i++) {
-		if (gaProjectileInfo[i].m_bInUse) {
+		if (gaProjectileInfo[i].m_bInUse && ms_apProjectile[i]) {
 			if (gaProjectileInfo[i].m_eWeaponType == WEAPONTYPE_ROCKET || gaProjectileInfo[i].m_eWeaponType == WEAPONTYPE_MOLOTOV || gaProjectileInfo[i].m_eWeaponType == WEAPONTYPE_GRENADE) {
 				const CVector &pos = ms_apProjectile[i]->GetPosition();
 				if (pos.x >= x1 && pos.x <= x2 && pos.y >= y1 && pos.y <= y2 && pos.z >= z1 && pos.z <= z2) {
 					result = true;
 					if (remove) {
-#ifdef SQUEEZE_PERFORMANCE
-						projectileInUse--;
-#endif
-
-						gaProjectileInfo[i].m_bInUse = false;
-						CWorld::Remove(ms_apProjectile[i]);
-						delete ms_apProjectile[i];
+						DestroyProjectileAt(i);
 					}
 				}
 			}
@@ -382,10 +385,8 @@ CProjectileInfo::RemoveDetonatorProjectiles()
 {
 	for (int i = 0; i < ARRAY_SIZE(ms_apProjectile); i++) {
 		if (gaProjectileInfo[i].m_bInUse && gaProjectileInfo[i].m_eWeaponType == WEAPONTYPE_DETONATOR_GRENADE) {
-			CExplosion::AddExplosion(nil, gaProjectileInfo[i].m_pSource, EXPLOSION_GRENADE, gaProjectileInfo[i].m_vecPos, 0); // TODO(Miami): New parameter: 1
-			gaProjectileInfo[i].m_bInUse = false;
-			CWorld::Remove(ms_apProjectile[i]);
-			delete ms_apProjectile[i];
+			CExplosion::AddExplosion(nil, gaProjectileInfo[i].m_pSource, EXPLOSION_GRENADE, gaProjectileInfo[i].m_vecPos, 0);
+			DestroyProjectileAt(i);
 		}
 	}
 }
@@ -400,13 +401,7 @@ CProjectileInfo::RemoveAllProjectiles()
 
 	for (int i = 0; i < ARRAY_SIZE(ms_apProjectile); i++) {
 		if (gaProjectileInfo[i].m_bInUse) {
-#ifdef SQUEEZE_PERFORMANCE
-			projectileInUse--;
-#endif
-
-			gaProjectileInfo[i].m_bInUse = false;
-			CWorld::Remove(ms_apProjectile[i]);
-			delete ms_apProjectile[i];
+			DestroyProjectileAt(i);
 		}
 	}
 }
@@ -419,19 +414,11 @@ CProjectileInfo::RemoveIfThisIsAProjectile(CObject *object)
 		return false;
 #endif
 
-	int i = 0;
-	while (ms_apProjectile[i++] != object) {
-		if (i >= ARRAY_SIZE(ms_apProjectile))
-			return false;
+	for (int i = 0; i < ARRAY_SIZE(ms_apProjectile); ++i) {
+		if (gaProjectileInfo[i].m_bInUse && ms_apProjectile[i] == object) {
+			DestroyProjectileAt(i);
+			return true;
+		}
 	}
-
-#ifdef SQUEEZE_PERFORMANCE
-	projectileInUse--;
-#endif
-
-	gaProjectileInfo[i].m_bInUse = false;
-	CWorld::Remove(ms_apProjectile[i]);
-	delete ms_apProjectile[i];
-	ms_apProjectile[i] = nil;
-	return true;
+	return false;
 }
