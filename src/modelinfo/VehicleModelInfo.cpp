@@ -871,26 +871,61 @@ CVehicleModelInfo::MoveObjectsCB(RwObject *object, void *data)
 	return object;
 }
 
+// A component is detached from the model hierarchy so that it can be cloned
+// independently of the clump. Its frame only carries a local matrix, though, and
+// CreateInstance rebuilds the part from RwFrameGetMatrix - so once the frame is
+// no longer attached, that local matrix is all the placement the clone gets. The
+// part then appears wherever its frame sat relative to its parent, not where the
+// part was in the model: doors and bumpers end up inside or beside the car.
+// Baking the parent chain into the frame's own matrix before the detach keeps
+// the geometry where the model put it.
+static void
+CaptureComponentTransform(RwFrame *frame)
+{
+	if(frame == nil)
+		return;
+	// Already detached: nothing above it can still contribute.
+	RwFrame *parent = RwFrameGetParent(frame);
+	if(parent == nil)
+		return;
+	RwFrameTransform(frame, RwFrameGetLTM(parent), rwCOMBINEPRECONCAT);
+}
+
 // A frame that is about to be removed may still carry geometry: a converted
 // model can hang a mesh on a node that is also a dummy (the light dummies and
 // an exhaust are the usual ones), and the frame is what keeps that mesh in the
 // clump. RwFrameDestroy nils the frame of every object on it, so an atomic left
 // there stays in the clump with no frame - and the first clone of the model
 // then reads its frame's hierarchy root at a nil pointer. Move any such object
-// onto the clump's root first, which is where VC expects loose atomics to live.
+// onto a node of its own, placed where that geometry was.
 static void
 EvictFrameObjects(RwFrame *frame, RwFrame *root)
 {
 	if(frame == nil || root == nil || frame == root)
 		return;
-	RwFrameForAllObjects(frame, [](RwObject *object, void *root) -> RwObject* {
-		// Same effect as CVehicleModelInfo::MoveObjectsCB, which is private to
-		// the model info and cannot be named from here. Only atomics are moved:
-		// a light or a camera on a vehicle dummy has no frame slot to carry it.
+
+	// The dummy's own transform is what put its geometry where it is, and the
+	// object only carries a frame while it is attached to the node. Leaving it
+	// on the bare root frame would draw it at the model origin, which is why the
+	// geometry keeps its position: the node's full transform is baked into the
+	// frame the object moves onto.
+	bool hasObject = false;
+	RwFrameForAllObjects(frame, FrameHasObjectCB, &hasObject);
+	if(!hasObject)
+		return;
+
+	RwFrame *nodeFrame = RwFrameCreate();
+	if(nodeFrame == nil)
+		return;
+	RwFrameTransform(nodeFrame, RwFrameGetLTM(frame), rwCOMBINEREPLACE);
+	RwFrameForAllObjects(frame, [](RwObject *object, void *node) -> RwObject* {
+		// Only atomics are moved: a light or a camera on a vehicle dummy has no
+		// frame slot of its own to carry it onto the new node.
 		if(object && RwObjectGetType(object) == rpATOMIC)
-			RpAtomicSetFrame((RpAtomic*)object, (RwFrame*)root);
+			RpAtomicSetFrame((RpAtomic*)object, (RwFrame*)node);
 		return object;
-	}, root);
+	}, nodeFrame);
+	RwFrameAddChild(root, nodeFrame);
 }
 
 RpAtomic*
@@ -1198,6 +1233,7 @@ CVehicleModelInfo::PreprocessSACarHierarchy(void)
 		}else{
 			RpAtomic *extra = (RpAtomic*)GetFirstObject(assoc.frame);
 			if(!extra || m_numComps >= (int)(sizeof(m_comps)/sizeof(m_comps[0]))) continue;
+			CaptureComponentTransform(assoc.frame);
 			RpClumpRemoveAtomic(m_clump, extra);
 			RwFrameRemoveChild(assoc.frame);
 			SetVehicleComponentFlags(assoc.frame, desc[i].flags);
@@ -1317,6 +1353,7 @@ CVehicleModelInfo::PreprocessHierarchy(bool saHierarchy)
 				SetVehicleComponentFlags(assoc.frame, desc[i].flags);
 				continue;
 			}
+			CaptureComponentTransform(assoc.frame);
 			RpClumpRemoveAtomic(m_clump, atomic);
 			RwFrameRemoveChild(assoc.frame);
 			SetVehicleComponentFlags(assoc.frame, desc[i].flags);
