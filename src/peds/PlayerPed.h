@@ -8,6 +8,16 @@ class CPad;
 class CCopPed;
 class CWanted;
 
+// SA eSprintType. The button-speed table has one row per mode; the swim task
+// reads WATER and UNDERWATER, the player's own running reads GROUND and BMX.
+enum eSprintType {
+	SPRINT_GROUND = 0,
+	SPRINT_BMX = 1,
+	SPRINT_WATER = 2,
+	SPRINT_UNDERWATER = 3,
+	NUM_SPRINT_TYPES
+};
+
 class CPlayerPed : public CPed
 {
 public:
@@ -119,6 +129,21 @@ public:
 	// The budget is m_fTimeCanRun; the old name is kept as a thin caller.
 	void ResetSprintEnergy(void);
 	bool HandleSprintEnergy(bool sprint, float adrenalineConsumedPerTimeStep);
+
+	// SA CPlayerPed::ControlButtonSprint (0x60A610) and
+	// GetButtonSprintResults (0x60A820). The sprint button is stateful: the
+	// pressure built up while it is held survives the release and decays over
+	// time, and the speed the ped runs at is what that pressure is worth.
+	// SA CPlayerPed::ResetPlayerBreath (0x60A8B0): fill the lung. Called when
+	// the ped is created and whenever the lung-capacity stat changes, because
+	// the meter is not retro-scaled.
+	void ResetPlayerBreath(void);
+	float ControlButtonSprint(eSprintType sprintType);
+	float GetButtonSprintResults(eSprintType sprintType);
+	float m_fButtonSprintSpeed;
+	// SA passes PLAYER_SPRINT_THRESHOLD, the speed above which the result
+	// starts scaling.
+	static constexpr float PLAYER_SPRINT_THRESHOLD = 5.0f;
 	void UseSprintEnergy(void);
 	class CPlayerInfo *GetPlayerInfoForThisPlayerPed();
 	void SetRealMoveAnim(void);

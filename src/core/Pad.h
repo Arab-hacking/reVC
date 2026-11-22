@@ -277,7 +277,15 @@ public:
 	bool DuckJustDown(void);
 	bool CollectPickupJustDown(void);
 	bool JumpJustDown(void);
+	// SA CPad::GetJump: is the jump button held. The distinction from
+	// JumpJustDown matters on a climb, where SA asks for the held state so that
+	// keeping the button down carries the ped up the wall.
+	bool GetJump(void);
 	bool GetSprint(void);
+	// SA CPad::SprintJustDown (0x5407F0): the sprint button went down this
+	// frame. The button sprint code needs the edge as well as the held state -
+	// the pressure builds on the press and decays while it is held.
+	bool SprintJustDown(void);
 	bool ShiftTargetLeftJustDown(void);
 	bool ShiftTargetRightJustDown(void);
 	bool GetAnaloguePadUp(void);

@@ -3346,6 +3346,36 @@ bool CPad::JumpJustDown(void)
 	return !!(NewState.Square && !OldState.Square);
 }
 
+// SA CPad::GetJump (0x540BF0): the jump button, held rather than pressed.
+bool CPad::GetJump(void)
+{
+	if ( ArePlayerControlsDisabled() )
+		return false;
+
+	return !!NewState.Square;
+}
+
+// SA CPad::SprintJustDown (0x5407F0).
+bool CPad::SprintJustDown(void)
+{
+	if ( ArePlayerControlsDisabled() )
+		return false;
+
+	// The sprint button is Cross or Circle depending on the control mode, so
+	// the edge has to be taken from the same field GetSprint reads.
+	switch (CURMODE)
+	{
+		case 0:
+		case 1:
+		case 3:
+			return NewState.Cross && !OldState.Cross;
+		case 2:
+			return NewState.Circle && !OldState.Circle;
+	}
+
+	return false;
+}
+
 bool CPad::GetSprint(void)
 {
 	if ( ArePlayerControlsDisabled() )

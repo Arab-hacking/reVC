@@ -7,6 +7,8 @@
 #include "AnimBlendClumpData.h"
 #include "Bones.h"
 #include "Ped.h"
+#include "TaskSimpleSwim.h"
+#include "TaskSimpleClimb.h"
 #include "AnimBlendAssociation.h"
 #include "Fire.h"
 #include "DMAudio.h"
@@ -75,6 +77,10 @@ CPed::CPed(uint32 pedType) : m_pedIK(this)
 	m_fArmour = 0.0f;
 	m_nWaterCirclesTime = 0;
 	m_nRaindropsTime = 0;
+	m_nSwimmingMoveState = PEDMOVE_STILL;
+	m_pClimbTask = nil;
+	m_pSwimTask = nil;
+	m_fSwimStopTime = 0.0f;
 	m_nPedType = pedType;
 	// A ped is asked for its stats before its model is set, and 48 places read
 	// them without a test. Start on the standard stat entry rather than on
@@ -385,6 +391,13 @@ CPed::~CPed(void)
 #ifdef USE_CUTSCENE_SHADOW_FOR_PED
 	if ( m_pRTShadow ) delete m_pRTShadow;
 #endif
+	// The ped owns both tasks outright, so they have to die with it - a ped
+	// deleted mid-stroke would otherwise leave the swim holding a clump that
+	// the pool has already handed to the next ped.
+	delete m_pSwimTask;
+	m_pSwimTask = nil;
+	delete m_pClimbTask;
+	m_pClimbTask = nil;
 	CWorld::Remove(this);
 	if (m_attractor)
 		GetPedAttractorManager()->DeRegisterPed(this, m_attractor);
@@ -719,6 +732,13 @@ void
 CPed::SetMoveAnim(void)
 {
 	if (m_nStoredMoveState == m_nMoveState || !IsPedInControl() || m_attachedTo)
+		return;
+
+	// A swimmer's legs belong to the stroke and a climber's to the climb. The
+	// ground blend would override both: the walk cycle does not exist in
+	// ASSOCGRP_SWIM, so asking for it mid-stroke replaced the stroke with a
+	// standing ped's idle and the swimmer appeared to walk on the water.
+	if (m_pSwimTask || m_pClimbTask)
 		return;
 
 	if (m_nMoveState == PEDMOVE_NONE) {
@@ -1788,6 +1808,112 @@ CPed::ClearAll(void)
 	m_pCollidingEntity = nil;
 }
 
+// SA CPed::ProcessBuoyancy creates CTaskComplexInWater as soon as the ped's
+// origin is 0.6 under the surface, and CPed::ProcessControl destroys it once
+// the ped can stand again. reVC has no task manager, so the same state lives
+// in m_pSwimTask and is stepped from here.
+void
+CPed::UpdateSwim(void)
+{
+	if (bInVehicle) {
+		if (m_pSwimTask) {
+			delete m_pSwimTask;
+			m_pSwimTask = nil;
+		}
+		return;
+	}
+
+	float waterLevel = 0.0f;
+	bool hasWater = CWaterLevel::GetWaterLevel(GetPosition(), &waterLevel, false);
+
+	// A ped in the air, an arrested ped and a corpse never swim: SA creates the
+	// task from the buoyancy pass, which those states skip.
+	bool canSwim = hasWater && !DyingOrDead() && m_nPedState != PED_ARRESTED
+	               && m_nPedState != PED_JUMP && m_nPedState != PED_FALL;
+
+	if (m_pSwimTask == nil) {
+		if (canSwim && GetPosition().z + 1.0f + 0.6f < waterLevel) {
+			m_pSwimTask = new CTaskSimpleSwim;
+			// Straight into the underwater stroke when the drop was deep enough
+			// that the ped never broke the surface on the way in.
+			m_nSwimmingMoveState = PEDMOVE_STILL;
+			SetPedState(PED_IDLE);
+			m_vecMoveSpeed.z = 0.0f;
+		}
+		return;
+	}
+
+	// The strand exit: no water at all, or standing on the bed with the origin
+	// above the swim line. SA gives a ped standing in the shallows 15 steps to
+	// find deeper water before it drops the task.
+	if (!hasWater) {
+		delete m_pSwimTask;
+		m_pSwimTask = nil;
+		m_nSwimmingMoveState = PEDMOVE_STILL;
+		return;
+	}
+
+	if (bIsStanding && !(GetPosition().z + 1.0f + 0.6f < waterLevel)) {
+		// SA's SWIM_STOP_TIME is 15 frames, which CTimer's frame-scaled step
+		// measures directly.
+		m_fSwimStopTime += CTimer::GetTimeStep();
+		if (m_fSwimStopTime > 15.0f) {
+			delete m_pSwimTask;
+			m_pSwimTask = nil;
+			m_nSwimmingMoveState = PEDMOVE_STILL;
+			SetMoveAnim();
+			return;
+		}
+	} else {
+		m_fSwimStopTime = 0.0f;
+	}
+
+	if (DyingOrDead()) {
+		delete m_pSwimTask;
+		m_pSwimTask = nil;
+		m_nSwimmingMoveState = PEDMOVE_STILL;
+		return;
+	}
+
+	// While swimming, the ped stays in PED_IDLE: the stroke is an animation,
+	// not a state, so the rest of the ped code keeps working - a swimmer can
+	// still be shot at, drown and die without the water code fighting it.
+	if (!DyingOrDead() && m_nPedState != PED_ARRESTED)
+		m_pSwimTask->ProcessPed(this);
+}
+
+// SA's climb entry, as CPed::ProcessControl does it: on the frame the player
+// presses jump against a wall, ask the collision scan whether there is a ledge
+// to grab, cancel the jump if there is, and hand the ped to the climb task.
+bool
+CPed::TryToClimb(void)
+{
+	if (m_pClimbTask)
+		return true;
+
+	if (!IsPedInControl() || bInVehicle || bIsInWater || bIsInTheAir || bIsLanding)
+		return false;
+
+	CVector climbPos;
+	float climbHeading = 0.0f;
+	eSurfaceType surface = SURFACE_DEFAULT;
+
+	CEntity *entity = CTaskSimpleClimb::TestForClimb(this, climbPos, climbHeading, surface, false);
+	if (entity == nil)
+		return false;
+
+	m_pClimbTask = new CTaskSimpleClimb(entity, climbPos, climbHeading, surface, CLIMB_GRAB, true);
+	if (m_pClimbTask == nil)
+		return false;
+
+	m_nPedState = PED_IDLE;
+	bIsStanding = false;
+	bIsInTheAir = false;
+	bIsLanding = false;
+	m_vecMoveSpeed = CVector(0.0f, 0.0f, 0.0f);
+	return true;
+}
+
 void
 CPed::ProcessBuoyancy(void)
 {
@@ -1850,8 +1976,15 @@ CPed::ProcessBuoyancy(void)
 			m_vecMoveSpeed.y *= speedMult;
 			m_vecMoveSpeed.z *= speedMult;
 			bIsStanding = false;
-			bIsDrowning = true;
-			InflictDamage(nil, WEAPONTYPE_DROWNING, 3.0f * CTimer::GetTimeStep(), PED_PIECE_TORSO, 0);
+			// SA drowns a ped from the swim task's breath meter, not from the
+			// buoyancy pass: a ped merely bobbing with his head under for one
+			// frame is not drowning. The ped is left to CTaskSimpleSwim, which
+			// knows whether the player is actually out of air, and to the AI
+			// peds, which do not hold their breath at all.
+			if (m_pSwimTask == nil && !IsPlayer()) {
+				bIsDrowning = true;
+				InflictDamage(nil, WEAPONTYPE_DROWNING, 3.0f * CTimer::GetTimeStep(), PED_PIECE_TORSO, 0);
+			}
 		}
 		if (buoyancyImpulse.z / m_fMass > GRAVITY * 0.25f * CTimer::GetTimeStep()) {
 			if (speedMult == 0.0f) {
@@ -1935,6 +2068,19 @@ CPed::ProcessControl(void)
 	bIsInWater = false;
 	bIsDrowning = false;
 	ProcessBuoyancy();
+	UpdateSwim();
+
+	// A climb owns the ped until it finishes: the world and the ped's own state
+	// machine both have to stay out of the way, exactly as they do while the
+	// ped is in a vehicle.
+	if (m_pClimbTask) {
+		if (m_pClimbTask->ProcessPed(this)) {
+			delete m_pClimbTask;
+			m_pClimbTask = nil;
+		}
+		CPhysical::ProcessControl();
+		return;
+	}
 
 	if (m_nPedState != PED_ARRESTED) {
 		if (m_nPedState == PED_DEAD) {

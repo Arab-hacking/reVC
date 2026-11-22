@@ -27,6 +27,8 @@ class CFire;
 struct AnimBlendFrameData;
 class CAnimBlendAssociation;
 class CPedAttractor;
+class CTaskSimpleClimb;
+class CTaskSimpleSwim;
 
 struct PedAudioData
 {
@@ -557,6 +559,20 @@ public:
 	// in ProcessBuoyancy, so one ped in the water reset another's timers.
 	uint32 m_nWaterCirclesTime;
 	uint32 m_nRaindropsTime;
+	// SA CPed::m_nSwimmingMoveState: the swim clip the ped is currently in. It
+	// is a move state rather than a ped state, because swimming does not stop
+	// the ped from fighting or dying; SA keeps the two apart and so does this.
+	eMoveState m_nSwimmingMoveState;
+	// The active climb, if any. reVC has no task manager, so the climb is an
+	// object the ped owns and steps from ProcessControl; SA keeps the same
+	// state inside CTaskSimpleClimb and reaches it through the task.
+	CTaskSimpleClimb *m_pClimbTask;
+	// The active swim, if any. Created on the frame the ped's origin drops far
+	// enough under water and destroyed when it gets out; see CPed::UpdateSwim.
+	CTaskSimpleSwim *m_pSwimTask;
+	// SA CPed::m_fSwimStopTime, in frames: how long a ped standing in the
+	// shallows keeps the swim task before it gives up and walks out.
+	float m_fSwimStopTime;
 	uint32 m_nExtendedRangeTimer;
 	int16 m_routeLastPoint;
 	uint16 m_routeStartPoint;
@@ -857,6 +873,14 @@ public:
 	void MoveHeadToLook(void);
 	void Pause(void);
 	void ProcessBuoyancy(void);
+	// SA CPed::ProcessBuoyancy's in-water half: enter the swim when the origin
+	// goes under, step the swim task while it lasts, and leave it when the ped
+	// can stand again. Split out so that ProcessControl can call it right after
+	// the buoyancy pass, which is where SA does it.
+	void UpdateSwim(void);
+	// SA CTaskSimpleClimb's entry point as CPed uses it: try to grab a ledge in
+	// front of the ped and, on success, take over the ped for the climb.
+	bool TryToClimb(void);
 	void ServiceTalking(void);
 	void SetJump(void);
 	void SetJump(bool highJump, bool climbJump = false);

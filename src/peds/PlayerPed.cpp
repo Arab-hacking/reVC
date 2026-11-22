@@ -71,6 +71,12 @@ CPlayerPed::CPlayerPed(void) : CPed(PEDTYPE_PLAYER1)
 {
 	// Before anything else: nothing may touch the aliases until they are bound.
 	BindPlayerData(&CWorld::Players[CWorld::PlayerInFocus].m_PlayerData);
+	// SA initialises the sprint button pressure to the top of its range, so the
+	// player can sprint the moment the game starts rather than having to hold
+	// the button for half a second to build it up. CPlayerPedData::Load
+	// overrides this when a save carries a value.
+	m_fButtonSprintSpeed = 10.0f;
+	ResetPlayerBreath();
 	MoveSpeed() = 0.0f;
 	// Slot 0 (MI_PLAYER) is only filled when the installation supplies a
 	// player.dff; the archive does not. Fall back to a registered SA actor so
@@ -270,6 +276,103 @@ CPlayerPed::HandleSprintEnergy(bool sprint, float adrenalineConsumedPerTimeStep)
 			TimeCanRun() += CTimer::GetTimeStep() * adrenalineConsumedPerTimeStep / 2.0f;
 	}
 	return false;
+}
+
+// SA CPlayerPed::ResetPlayerBreath (0x60A8B0): a full lung is whatever the
+// lung-capacity stat is worth, not a constant. Training stamina therefore
+// lengthens every dive retroactively only from this call onwards, which is
+// why SA calls it whenever the stat changes.
+void
+CPlayerPed::ResetPlayerBreath(void)
+{
+	Breath() = CStats::GetFatAndMuscleModifier(CStats::STAT_MOD_AIR_IN_LUNG);
+}
+
+// SA PLAYER_SPRINT_SET (0x8D2460), one row per eSprintType:
+//   press boost, held decay, released decay, threshold, max, base cost,
+//   boosted cost, result curve.
+//
+// The numbers are the ones the SA executable carries; they are what makes a
+// sprint taper off instead of switching, and what makes the swim stroke speed
+// in water and underwater differ. The captured iOS build has the identical
+// table at 0x100651264, which is where the values below were read from.
+namespace {
+struct tPlayerSprintSet {
+	float pressBoost;
+	float heldDecay;
+	float releasedDecay;
+	float threshold;
+	float max;
+	float baseCost;
+	float boostedCost;
+	float resultCurve;
+};
+
+const tPlayerSprintSet PlayerSprintSet[NUM_SPRINT_TYPES] = {
+	{ 4.0f, 0.7f, 0.2f, 5.0f, 10.0f, 1.0f, 0.5f, 0.3f }, // SPRINT_GROUND
+	{ 4.0f, 0.7f, 0.2f, 5.0f, 10.0f, 0.0f, 0.4f, 1.0f }, // SPRINT_BMX
+	{ 4.0f, 0.7f, 0.2f, 5.0f, 10.0f, 1.0f, 0.3f, 0.3f }, // SPRINT_WATER
+	{ 4.0f, 0.7f, 0.2f, 5.0f, 10.0f, 0.0f, 0.0f, 1.0f }, // SPRINT_UNDERWATER
+};
+} // namespace
+
+// SA CPlayerPed::ControlButtonSprint (0x60A610).
+//
+// The button pressure is a value of its own, not a bool: holding the button
+// adds 4 per press up to 10, holding it decays at 0.7/s and letting go at
+// 0.2/s. The ped's speed then reads off that pressure, and a sprint that runs
+// out of energy zeroes the pressure rather than the speed - which is why the
+// player coasts to a stop instead of snapping to a walk.
+float
+CPlayerPed::ControlButtonSprint(eSprintType sprintType)
+{
+	const tPlayerSprintSet &set = PlayerSprintSet[sprintType];
+	CPad *pad = CPad::GetPad(0);
+	if(pad == nil)
+		return 0.0f;
+
+	bool sprintDisabled = GetPlayerData()->m_bPlayerSprintDisabled;
+	bool processButtons = (!sprintDisabled && m_fButtonSprintSpeed > 0.0f) || TimeCanRun() > 0.0f;
+
+	if(processButtons && pad->GetSprint() && !pad->SprintJustDown()) {
+		// Held.
+		m_fButtonSprintSpeed = Max(1.0f, m_fButtonSprintSpeed - set.heldDecay * CTimer::GetTimeStep());
+	} else if(processButtons && pad->SprintJustDown()) {
+		m_fButtonSprintSpeed = Min(set.max, m_fButtonSprintSpeed + set.pressBoost);
+	} else if(m_fButtonSprintSpeed > 0.0f) {
+		m_fButtonSprintSpeed = Max(0.0f, m_fButtonSprintSpeed - set.releasedDecay * CTimer::GetTimeStep());
+	}
+
+	float ratio = 0.0f;
+	float cost = 1.0f;
+	if(m_fButtonSprintSpeed > set.threshold){
+		ratio = m_fButtonSprintSpeed / set.threshold;
+		cost = set.boostedCost;
+	}else if(m_fButtonSprintSpeed > 0.0f && processButtons){
+		ratio = 1.0f;
+		cost = set.baseCost;
+	}
+
+	if(!(bInVehicle || MoveSpeed() > 0.0f) || ratio <= 0.0f)
+		return 0.0f;
+
+	if(!HandleSprintEnergy(true, cost)){
+		m_fButtonSprintSpeed = 0.0f;
+		return 0.0f;
+	}
+
+	return 1.0f + Max(0.0f, ratio - 1.0f) * set.resultCurve;
+}
+
+// SA CPlayerPed::GetButtonSprintResults (0x60A820).
+float
+CPlayerPed::GetButtonSprintResults(eSprintType sprintType)
+{
+	if(MoveSpeed() <= PLAYER_SPRINT_THRESHOLD)
+		return MoveSpeed() <= 0.0f ? 0.0f : 1.0f;
+
+	float progress = Max(0.0f, MoveSpeed() / PLAYER_SPRINT_THRESHOLD - 1.0f);
+	return PlayerSprintSet[sprintType].resultCurve * progress + 1.0f;
 }
 
 // The old single-argument form: the player spends a full multiplier per frame.
@@ -1030,7 +1133,10 @@ CPlayerPed::PlayerControl1stPersonRunAround(CPad *padUsed)
 			SetEvasiveDive((CPhysical*)m_pEvadingFrom, 1);
 			m_nEvadeAmount = 0;
 			m_pEvadingFrom = nil;
-		} else {
+		} else if (!TryToClimb()) {
+			// SA tries the climb first: a jump pressed against a wall the ped
+			// can grab becomes a climb instead of a jump, and the jump only
+			// happens when the scan found nothing.
 			SetJump();
 		}
 	}
@@ -1686,7 +1792,7 @@ CPlayerPed::PlayerControlZelda(CPad *padUsed)
 			SetEvasiveDive((CPhysical*)m_pEvadingFrom, 1);
 			m_nEvadeAmount = 0;
 			m_pEvadingFrom = nil;
-		} else {
+		} else if (!TryToClimb()) {
 			SetJump();
 		}
 	}
@@ -1902,6 +2008,17 @@ CPlayerPed::ProcessControl(void)
 		}
 		return;
 	}
+	// SA gives the swim task the whole control path while the player is in
+	// water: no jump, no weapon, no state machine. Handling the swim here keeps
+	// the on-foot control below from overwriting the stroke's speed and heading
+	// with a walking ped's, which is what used to make the player sink and
+	// crawl along the bottom.
+	if (m_pSwimTask) {
+		if (padUsed && IsPedInControl())
+			ProcessPlayerWeapon(padUsed);
+		return;
+	}
+
 	if (m_objective == OBJECTIVE_NONE)
 		m_nMoveState = PEDMOVE_STILL;
 	if (bIsLanding)
