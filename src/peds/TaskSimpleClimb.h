@@ -99,8 +99,8 @@ public:
 	// The point the camera should look at while the climb plays.
 	void GetCameraTargetPos(CPed *ped, CVector &vecTarget) const;
 
-	auto GetHeightForPos() const { return m_HeightForPos; }
-	auto GetIsInvalidClimb() const { return m_IsInvalidClimb; }
+	eClimbHeights GetHeightForPos() const { return m_HeightForPos; }
+	bool GetIsInvalidClimb() const { return m_IsInvalidClimb; }
 
 private:
 	static CVector GetClimbOffset3D(CVector2D offset, float angle);

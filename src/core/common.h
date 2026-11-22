@@ -295,6 +295,10 @@ public:
 #if (defined(_MSC_VER))
 extern int strcasecmp(const char *str1, const char *str2);
 extern int strncasecmp(const char *str1, const char *str2, size_t len);
+// MSVC has no POSIX strtok_r. Annex K's strtok_s takes the same three
+// arguments in the same order and keeps the same state across the calls, so
+// it is the same function under a different name.
+#define strtok_r strtok_s
 #endif
 
 extern wchar *AllocUnicode(const char*src);
