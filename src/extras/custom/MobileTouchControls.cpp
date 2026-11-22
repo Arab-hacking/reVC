@@ -935,7 +935,7 @@ CheckNearbyInteractPickup(CPlayerPed *player, MobileTexId *outTex)
 {
 	if (!player)
 		return false;
-	if (player->m_nPedState == PED_MAKE_CALL) {
+	if (player->m_nPedState == PED_MAKE_PHONECALL) {
 		if (outTex) *outTex = MTEX_CELLPHONE;
 		return true;
 	}

@@ -1647,7 +1647,7 @@ CMemoryCard::SaveGame(void)
 	
 	CGameLogic::PassTime(360);
 	CPlayerPed *ped = FindPlayerPed();
-	ped->m_fCurrentStamina = ped->m_fMaxStamina;
+	ped->ResetSprintEnergy();
 	CGame::TidyUpMemory(true, false);
 	
 	saveSize = SAVE_FILE_SIZE;

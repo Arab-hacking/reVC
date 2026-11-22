@@ -85,7 +85,7 @@ void CSetPiece::Update(void)
 	switch (m_nType) {
 	case SETPIECE_TWOCOPCARSINALLEY:
 	{
-		if (FindPlayerPed()->m_pWanted->GetWantedLevel() < 1 || FindPlayerVehicle())
+		if (FindPlayerPed()->Wanted()->GetWantedLevel() < 1 || FindPlayerVehicle())
 			return;
 		CVehicle* pVehicle1 = TryToGenerateCopCar(m_vSpawn1, m_vTarget1);
 		if (!pVehicle1)
@@ -119,7 +119,7 @@ void CSetPiece::Update(void)
 	}
 	case SETPIECE_CARBLOCKINGPLAYERFROMSIDE:
 	{
-		if (FindPlayerPed()->m_pWanted->GetWantedLevel() < 2)
+		if (FindPlayerPed()->Wanted()->GetWantedLevel() < 2)
 			return;
 		if (!FindPlayerVehicle())
 			return;
@@ -142,7 +142,7 @@ void CSetPiece::Update(void)
 	}
 	case SETPIECE_CARRAMMINGPLAYERFROMSIDE:
 	{
-		if (FindPlayerPed()->m_pWanted->GetWantedLevel() < 2)
+		if (FindPlayerPed()->Wanted()->GetWantedLevel() < 2)
 			return;
 		if (!FindPlayerVehicle())
 			return;
@@ -165,7 +165,7 @@ void CSetPiece::Update(void)
 	}
 	case SETPIECE_CREATECOPPERONFOOT:
 	{
-		if (FindPlayerPed()->m_pWanted->GetWantedLevel() < 1 || FindPlayerVehicle())
+		if (FindPlayerPed()->Wanted()->GetWantedLevel() < 1 || FindPlayerVehicle())
 			return;
 		CCopPed* pCop = TryToGenerateCopPed(m_vSpawn1);
 		if (!pCop)
@@ -179,7 +179,7 @@ void CSetPiece::Update(void)
 	}
 	case SETPIECE_CREATETWOCOPPERSONFOOT:
 	{
-		if (FindPlayerPed()->m_pWanted->GetWantedLevel() < 1 || FindPlayerVehicle())
+		if (FindPlayerPed()->Wanted()->GetWantedLevel() < 1 || FindPlayerVehicle())
 			return;
 		CCopPed* pCop = TryToGenerateCopPed(m_vSpawn1);
 		if (!pCop)
@@ -203,7 +203,7 @@ void CSetPiece::Update(void)
 	}
 	case SETPIECE_TWOCARSBLOCKINGPLAYERFROMSIDE:
 	{
-		if (FindPlayerPed()->m_pWanted->GetWantedLevel() < 2)
+		if (FindPlayerPed()->Wanted()->GetWantedLevel() < 2)
 			return;
 		if (!FindPlayerVehicle())
 			return;
@@ -241,7 +241,7 @@ void CSetPiece::Update(void)
 	}
 	case SETPIECE_TWOCARSRAMMINGPLAYERFROMSIDE:
 	{
-		if (FindPlayerPed()->m_pWanted->GetWantedLevel() < 2)
+		if (FindPlayerPed()->Wanted()->GetWantedLevel() < 2)
 			return;
 		if (!FindPlayerVehicle())
 			return;

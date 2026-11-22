@@ -146,7 +146,7 @@ CCarCtrl::GenerateOneRandomCar()
 		return;
 	if (NumFiretrucksOnDuty + NumAmbulancesOnDuty + NumParkedCars + NumMissionCars + NumLawEnforcerCars + NumRandomCars >= MaxNumberOfCarsInUse)
 		return;
-	CWanted* pWanted = pPlayer->m_pPed->m_pWanted;
+	CWanted* pWanted = pPlayer->m_pPed->Wanted();
 	int carClass;
 	int carModel;
 	if (pWanted->GetWantedLevel() > 1 && NumLawEnforcerCars < pWanted->m_MaximumLawEnforcerVehicles &&
@@ -353,7 +353,7 @@ CCarCtrl::GenerateOneRandomCar()
 	switch (carClass) {
 	case COPS:
 		pVehicle->AutoPilot.m_nTempAction = TEMPACT_NONE;
-		if (CWorld::Players[CWorld::PlayerInFocus].m_pPed->m_pWanted->GetWantedLevel() != 0){
+		if (CWorld::Players[CWorld::PlayerInFocus].m_pPed->Wanted()->GetWantedLevel() != 0){
 			pVehicle->AutoPilot.m_nCruiseSpeed = CCarAI::FindPoliceCarSpeedForWantedLevel(pVehicle);
 			pVehicle->AutoPilot.m_fMaxTrafficSpeed = pVehicle->AutoPilot.m_nCruiseSpeed / 2;
 			pVehicle->AutoPilot.m_nCarMission = CCarAI::FindPoliceCarMissionForWantedLevel();
@@ -854,7 +854,7 @@ CCarCtrl::ChooseCarModelToLoad(int rating)
 int32
 CCarCtrl::ChoosePoliceCarModel(void)
 {
-	if (FindPlayerPed()->m_pWanted->AreMiamiViceRequired() &&
+	if (FindPlayerPed()->Wanted()->AreMiamiViceRequired() &&
 #ifdef FIX_BUGS
 		(CTimer::GetTimeInMilliseconds() > LastTimeMiamiViceGenerated + 120000 || LastTimeMiamiViceGenerated == 0) &&
 #else
@@ -882,15 +882,15 @@ CCarCtrl::ChoosePoliceCarModel(void)
 			break;
 		}
 	}
-	if (FindPlayerPed()->m_pWanted->AreSwatRequired() &&
+	if (FindPlayerPed()->Wanted()->AreSwatRequired() &&
 		CStreaming::HasModelLoaded(MI_ENFORCER) &&
 		CStreaming::HasModelLoaded(MI_POLICE))
 		return ((CGeneral::GetRandomNumber() & 0xF) == 0) ? MI_ENFORCER : MI_POLICE;
-	if (FindPlayerPed()->m_pWanted->AreFbiRequired() &&
+	if (FindPlayerPed()->Wanted()->AreFbiRequired() &&
 		CStreaming::HasModelLoaded(MI_FBIRANCH) &&
 		CStreaming::HasModelLoaded(MI_FBI))
 		return MI_FBIRANCH;
-	if (FindPlayerPed()->m_pWanted->AreArmyRequired() &&
+	if (FindPlayerPed()->Wanted()->AreArmyRequired() &&
 		CStreaming::HasModelLoaded(MI_RHINO) &&
 		CStreaming::HasModelLoaded(MI_BARRACKS) &&
 		CStreaming::HasModelLoaded(MI_ARMY))
@@ -1250,7 +1250,7 @@ void CCarCtrl::SlowCarDownForPedsSectorList(CPtrList& lst, CVehicle* pVehicle, f
 			/* If car is far enough taking side into account, don't care */
 			continue;
 		if (pPed->IsPed()){ /* ...how can it not be? */
-			if (pPed->GetPedState() != PED_STEP_AWAY && pPed->GetPedState() != PED_DIVE_AWAY){
+			if (pPed->GetPedState() != PED_EVADE_STEP && pPed->GetPedState() != PED_EVADE_DIVE){
 				if (distanceUntilHit < movementTowardsPedPerSecond){
 					/* Very close. Time to evade. */
 					if (pVehicle->GetModelIndex() == MI_RCBANDIT){
@@ -1291,7 +1291,7 @@ void CCarCtrl::SlowCarDownForPedsSectorList(CPtrList& lst, CVehicle* pVehicle, f
 						CPlayerPed* pPlayerPed = (CPlayerPed*)pPed;
 						if (pPlayerPed->IsPlayer() && dotDirection < frontSafe &&
 						  pPlayerPed->IsPedInControl() &&
-						  pPlayerPed->m_fMoveSpeed < 1.0f && !pPlayerPed->bIsLooking &&
+						  pPlayerPed->MoveSpeed() < 1.0f && !pPlayerPed->bIsLooking &&
 						  CTimer::GetTimeInMilliseconds() > pPlayerPed->m_lookTimer) {
 							pPlayerPed->AnnoyPlayerPed(false);
 							pPlayerPed->SetLookFlag(pVehicle, true);
@@ -3233,7 +3233,7 @@ void CCarCtrl::FindLinksToGoWithTheseNodes(CVehicle* pVehicle)
 
 void CCarCtrl::GenerateEmergencyServicesCar(void)
 {
-	if (FindPlayerPed()->m_pWanted->GetWantedLevel() > 3)
+	if (FindPlayerPed()->Wanted()->GetWantedLevel() > 3)
 		return;
 	if (CGame::IsInInterior())
 		return;

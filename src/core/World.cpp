@@ -1992,10 +1992,10 @@ CWorld::Process(void)
 							switch(movingPed->m_nPedState) {
 							case PED_ENTER_CAR:
 							case PED_CARJACK: movingPed->EnterCar(); break;
-							case PED_DRAG_FROM_CAR: movingPed->BeingDraggedFromCar(); break;
+							case PED_DRAGGED_FROM_CAR: movingPed->BeingDraggedFromCar(); break;
 							case PED_EXIT_CAR: movingPed->ExitCar(); break;
 							case PED_ARRESTED:
-								if(movingPed->m_nLastPedState == PED_DRAG_FROM_CAR) {
+								if(movingPed->m_nLastPedState == PED_DRAGGED_FROM_CAR) {
 									movingPed->BeingDraggedFromCar();
 									break;
 								}

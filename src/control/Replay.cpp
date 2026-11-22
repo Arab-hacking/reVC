@@ -1373,7 +1373,7 @@ void CReplay::StoreStuffInMem(void)
 	memcpy(pStoredCam, &TheCamera, sizeof(CCamera));
 	pRadarBlips = new uint8[sizeof(sRadarTrace) * NUMRADARBLIPS];
 	memcpy(pRadarBlips, CRadar::ms_RadarTrace, NUMRADARBLIPS * sizeof(sRadarTrace));
-	PlayerWanted = *FindPlayerPed()->m_pWanted;
+	PlayerWanted = *FindPlayerPed()->Wanted();
 	PlayerInfo = CWorld::Players[0];
 	Time1 = CTimer::GetTimeInMilliseconds();
 	Time2 = CTimer::GetTimeInMillisecondsNonClipped();
@@ -1463,7 +1463,7 @@ void CReplay::RestoreStuffFromMem(void)
 		pPlayerPed->RegisterReference((CEntity**)&CWorld::Players[i].m_pPed);
 	}
 #endif
-	FindPlayerPed()->m_pWanted = new CWanted(PlayerWanted);
+	FindPlayerPed()->Wanted() = new CWanted(PlayerWanted);
 	CWorld::Players[0] = PlayerInfo;
 	int i = CPools::GetPedPool()->GetSize();
 	while (--i >= 0) {

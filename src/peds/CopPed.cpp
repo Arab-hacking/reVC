@@ -122,17 +122,17 @@ CCopPed::SetArrestPlayer(CPed *player)
 		player->bGonnaKillTheCarJacker = true;
 
 		// Genius
-		FindPlayerPed()->m_bCanBeDamaged = false;
-		((CPlayerPed*)player)->m_pArrestingCop = this;
-		this->RegisterReference((CEntity**) &((CPlayerPed*)player)->m_pArrestingCop);
+		FindPlayerPed()->CanBeDamaged() = false;
+		((CPlayerPed*)player)->ArrestingCop() = this;
+		this->RegisterReference((CEntity**) &((CPlayerPed*)player)->ArrestingCop());
 
 	} else if (player->m_nPedState != PED_DIE && player->m_nPedState != PED_DEAD && player->m_nPedState != PED_ARRESTED) {
 		player->m_nLastPedState = player->m_nPedState;
 		player->SetPedState(PED_ARRESTED);
 
-		FindPlayerPed()->m_bCanBeDamaged = false;
-		((CPlayerPed*)player)->m_pArrestingCop = this;
-		this->RegisterReference((CEntity**) &((CPlayerPed*)player)->m_pArrestingCop);
+		FindPlayerPed()->CanBeDamaged() = false;
+		((CPlayerPed*)player)->ArrestingCop() = this;
+		this->RegisterReference((CEntity**) &((CPlayerPed*)player)->ArrestingCop());
 	}
 
 	SetPedState(PED_ARREST_PLAYER);
@@ -159,7 +159,7 @@ CCopPed::ClearPursuit(void)
 	if (!player)
 		return;
 
-	CWanted *wanted = player->m_pWanted;
+	CWanted *wanted = player->Wanted();
 	int ourCopId = 0;
 	bool foundMyself = false;
 	int biggestCopId = 0;
@@ -215,7 +215,7 @@ CCopPed::SetPursuit(bool ignoreCopLimit)
 	if (CTimer::GetTimeInMilliseconds() < field_61C)
 		return;
 
-	CWanted *wanted = FindPlayerPed()->m_pWanted;
+	CWanted *wanted = FindPlayerPed()->Wanted();
 	if (m_bIsInPursuit || !IsPedInControl())
 		return;
 
@@ -293,7 +293,7 @@ CCopPed::ScanForCrimes(void)
 	if (!m_bIsInPursuit) {
 		CPlayerPed *player = FindPlayerPed();
 		if ((m_objective == OBJECTIVE_ENTER_CAR_AS_DRIVER || m_objective == OBJECTIVE_ENTER_CAR_AS_PASSENGER)
-			&& player->m_pWanted->GetWantedLevel() == 0) {
+			&& player->Wanted()->GetWantedLevel() == 0) {
 
 			if (player->m_pMyVehicle
 #ifdef FIX_BUGS
@@ -308,7 +308,7 @@ CCopPed::ScanForCrimes(void)
 void
 CCopPed::CopAI(void)
 {
-	CWanted *wanted = FindPlayerPed()->m_pWanted;
+	CWanted *wanted = FindPlayerPed()->Wanted();
 	int wantedLevel = wanted->GetWantedLevel();
 	CPhysical *playerOrHisVeh = FindPlayerVehicle() ? (CPhysical*)FindPlayerVehicle() : (CPhysical*)FindPlayerPed();
 
@@ -500,7 +500,7 @@ CCopPed::CopAI(void)
 		}
 	} else {
 		if (!m_bIsDisabledCop || m_bZoneDisabled) {
-			if (m_nPedState != PED_AIM_GUN) {
+			if (m_nPedState != PED_AIMGUN) {
 				if (m_bIsInPursuit)
 					ClearPursuit();
 
@@ -571,7 +571,7 @@ CCopPed::CopAI(void)
 				}
 			}
 		} else {
-			if (m_bIsInPursuit && m_nPedState != PED_AIM_GUN)
+			if (m_bIsInPursuit && m_nPedState != PED_AIMGUN)
 				ClearPursuit();
 
 			m_bIsDisabledCop = false;
@@ -638,7 +638,7 @@ CCopPed::ProcessControl(void)
 
 	if (m_bIsInPursuit) {
 		if (player->m_nPedState != PED_ARRESTED && !player->DyingOrDead()) {
-			if (player->m_pWanted->m_CurrentCops == 1) {
+			if (player->Wanted()->m_CurrentCops == 1) {
 				Say(SOUND_PED_COP_ALONE);
 			} else {
 				int numCopsNear = 0;
@@ -653,7 +653,7 @@ CCopPed::ProcessControl(void)
 						CVector distToPlayer = player->GetPosition() - GetPosition();
 						if (distToPlayer.MagnitudeSqr() < sq(20.0f)) {
 							player->Say(SOUND_PED_PLAYER_FARFROMCOPS);
-							if (player->m_nPedState != PED_ATTACK && player->m_nPedState != PED_AIM_GUN) {
+							if (player->m_nPedState != PED_ATTACK && player->m_nPedState != PED_AIMGUN) {
 								player->SetLookFlag(this, false);
 								player->SetLookTimer(1000);
 							}
@@ -703,7 +703,7 @@ CCopPed::ProcessControl(void)
 			SetArrestPlayer(player);
 		}
 	} else {
-		if (m_nPedState == PED_SEEK_POS) {
+		if (m_nPedState == PED_SEEK_POSITION) {
 			if (player->m_nPedState == PED_ARRESTED) {
 				SetIdle();
 				SetLookFlag(player, false);
@@ -811,7 +811,7 @@ void
 CCopPed::ProcessHeliSwat(void)
 {
 	CVector bestPos = GetPosition();
-	SetPedState(PED_ABSEIL);
+	SetPedState(PED_ABSEIL_FROM_HELI);
 	CPedPlacement::FindZCoorForPed(&bestPos);
 	if (GetPosition().z - 2.0f >= bestPos.z && m_pRopeEntity) {
 		m_fAbseilPos += 0.003f * CTimer::GetTimeStep();

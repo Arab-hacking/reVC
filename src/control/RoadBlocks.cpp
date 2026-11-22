@@ -116,7 +116,7 @@ CRoadBlocks::GenerateRoadBlocks(void)
 	CMatrix tmp1, tmp2;
 	static int16 unk;
 #ifdef SQUEEZE_PERFORMANCE
-	if (FindPlayerPed()->m_pWanted->m_RoadblockDensity == 0)
+	if (FindPlayerPed()->Wanted()->m_RoadblockDensity == 0)
 		return;
 #endif
 	uint32 frame = CTimer::GetFrameCounter() & 0xF;
@@ -130,7 +130,7 @@ CRoadBlocks::GenerateRoadBlocks(void)
 			vecDistance.Magnitude() < ROADBLOCKDIST) {
 			if (!InOrOut[nRoadblockNode]) {
 				InOrOut[nRoadblockNode] = true;
-				if (FindPlayerVehicle() && (CGeneral::GetRandomNumber() & 0x7F) < FindPlayerPed()->m_pWanted->m_RoadblockDensity) {
+				if (FindPlayerVehicle() && (CGeneral::GetRandomNumber() & 0x7F) < FindPlayerPed()->Wanted()->m_RoadblockDensity) {
 					CCarPathLink* pLink1 = &ThePaths.m_carPathLinks[ThePaths.m_carPathConnections[ThePaths.m_pathNodes[node].firstLink]];
 					CCarPathLink* pLink2 = &ThePaths.m_carPathLinks[ThePaths.m_carPathConnections[ThePaths.m_pathNodes[node].firstLink + 1]];
 					int lanes = Min(pLink1->numRightLanes + pLink1->numLeftLanes, pLink2->numLeftLanes + pLink2->numRightLanes);
@@ -209,11 +209,11 @@ CRoadBlocks::CreateRoadBlockBetween2Points(CVector point1, CVector point2)
 		right *= -1.0f;
 	}
 	int32 vehicleId = MI_POLICE;
-	if (FindPlayerPed()->m_pWanted->AreArmyRequired())
+	if (FindPlayerPed()->Wanted()->AreArmyRequired())
 		vehicleId = MI_BARRACKS;
-	else if (FindPlayerPed()->m_pWanted->AreFbiRequired())
+	else if (FindPlayerPed()->Wanted()->AreFbiRequired())
 		vehicleId = MI_FBICAR;
-	else if (FindPlayerPed()->m_pWanted->AreSwatRequired())
+	else if (FindPlayerPed()->Wanted()->AreSwatRequired())
 		vehicleId = MI_ENFORCER;
 	if (!CStreaming::HasModelLoaded(vehicleId))
 		vehicleId = MI_POLICE;

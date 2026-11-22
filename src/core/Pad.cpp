@@ -734,13 +734,13 @@ void ArmourCheat()
 void WantedLevelUpCheat()
 {
 	CHud::SetHelpMessage(TheText.Get("CHEAT5"), true);
-	FindPlayerPed()->m_pWanted->CheatWantedLevel(Min(FindPlayerPed()->m_pWanted->GetWantedLevel() + 2, 6));
+	FindPlayerPed()->Wanted()->CheatWantedLevel(Min(FindPlayerPed()->Wanted()->GetWantedLevel() + 2, 6));
 }
 
 void WantedLevelDownCheat()
 {
 	CHud::SetHelpMessage(TheText.Get("CHEAT5"), true);
-	FindPlayerPed()->m_pWanted->CheatWantedLevel(0);
+	FindPlayerPed()->Wanted()->CheatWantedLevel(0);
 }
 
 void SunnyWeatherCheat()

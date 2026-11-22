@@ -2250,7 +2250,7 @@ CStreaming::StreamVehiclesAndPeds(void)
 		)
 		return;
 
-	if(FindPlayerPed()->m_pWanted->AreSwatRequired()){
+	if(FindPlayerPed()->Wanted()->AreSwatRequired()){
 		RequestModel(MI_ENFORCER, STREAMFLAGS_DONT_REMOVE);
 		RequestModel(MI_SWAT, STREAMFLAGS_DONT_REMOVE);
 	}else{
@@ -2259,7 +2259,7 @@ CStreaming::StreamVehiclesAndPeds(void)
 			SetModelIsDeletable(MI_SWAT);
 	}
 
-	if(FindPlayerPed()->m_pWanted->AreFbiRequired()){
+	if(FindPlayerPed()->Wanted()->AreFbiRequired()){
 		RequestModel(MI_FBIRANCH, STREAMFLAGS_DONT_REMOVE);
 		RequestModel(MI_FBI, STREAMFLAGS_DONT_REMOVE);
 	}else{
@@ -2268,7 +2268,7 @@ CStreaming::StreamVehiclesAndPeds(void)
 			SetModelIsDeletable(MI_FBI);
 	}
 
-	if(FindPlayerPed()->m_pWanted->AreArmyRequired()){
+	if(FindPlayerPed()->Wanted()->AreArmyRequired()){
 		RequestModel(MI_RHINO, STREAMFLAGS_DONT_REMOVE);
 		RequestModel(MI_BARRACKS, STREAMFLAGS_DONT_REMOVE);
 		RequestModel(MI_ARMY, STREAMFLAGS_DONT_REMOVE);
@@ -2279,12 +2279,12 @@ CStreaming::StreamVehiclesAndPeds(void)
 			SetModelIsDeletable(MI_ARMY);
 	}
 
-	if(FindPlayerPed()->m_pWanted->NumOfHelisRequired() > 0)
+	if(FindPlayerPed()->Wanted()->NumOfHelisRequired() > 0)
 		RequestModel(MI_CHOPPER, STREAMFLAGS_DONT_REMOVE);
 	else
 		SetModelIsDeletable(MI_CHOPPER);
 
-	if (FindPlayerPed()->m_pWanted->AreMiamiViceRequired()) {
+	if (FindPlayerPed()->Wanted()->AreMiamiViceRequired()) {
 		SetModelIsDeletable(MI_VICE1);
 		SetModelIsDeletable(MI_VICE2);
 		SetModelIsDeletable(MI_VICE3);

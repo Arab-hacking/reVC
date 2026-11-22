@@ -1044,7 +1044,7 @@ CCamera::CamControl(void)
 					REVC_LOG_INFO("First person view blocked: %s (state=%d air=%d speed=%.2f)",
 						block, FindPlayerPed() ? FindPlayerPed()->m_nPedState : -1,
 						FindPlayerPed() ? FindPlayerPed()->bIsInTheAir : -1,
-						FindPlayerPed() ? FindPlayerPed()->m_fMoveSpeed : 0.0f);
+						FindPlayerPed() ? FindPlayerPed()->MoveSpeed() : 0.0f);
 					lastBlock = block;
 				}
 			}
@@ -1083,7 +1083,7 @@ CCamera::CamControl(void)
 				m_bFirstPersonBeingUsed = false;
 
 			if(!FindPlayerPed()->IsPedInControl() ||
-			   (FindPlayerPed()->m_fMoveSpeed > 0.0f && !stickyFirstPerson))
+			   (FindPlayerPed()->MoveSpeed() > 0.0f && !stickyFirstPerson))
 				m_bFirstPersonBeingUsed = false;
 			if(m_bFirstPersonBeingUsed){
 				ReqMode = CCam::MODE_1STPERSON;
@@ -1891,7 +1891,7 @@ CCamera::UpdateTargetEntity(void)
 
 		if(PLAYER->GetPedState() == PED_EXIT_CAR)
 			pTargetEntity = FindPlayerPed();
-		if(PLAYER->GetPedState() == PED_DRAG_FROM_CAR)
+		if(PLAYER->GetPedState() == PED_DRAGGED_FROM_CAR)
 			pTargetEntity = FindPlayerPed();
 		if(pTargetEntity->IsVehicle() && CarZoomIndicator == CAM_ZOOM_1STPRS && FindPlayerPed()->GetPedState() == PED_ARRESTED)
 			pTargetEntity = FindPlayerPed();
@@ -3016,7 +3016,7 @@ CCamera::TryToStartNewCamMode(int obbeMode)
 		if (CReplay::IsPlayingBack())
 			return false;
 #endif
-		if(FindPlayerPed()->m_pWanted->GetWantedLevel() < 1)
+		if(FindPlayerPed()->Wanted()->GetWantedLevel() < 1)
 			return false;
 		if(FindPlayerVehicle() == nil)
 			return false;
@@ -3044,7 +3044,7 @@ CCamera::TryToStartNewCamMode(int obbeMode)
 		if (CReplay::IsPlayingBack())
 			return false;
 #endif
-		if(FindPlayerPed()->m_pWanted->GetWantedLevel() < 1)
+		if(FindPlayerPed()->Wanted()->GetWantedLevel() < 1)
 			return false;
 		if(FindPlayerVehicle() == nil)
 			return false;

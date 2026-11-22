@@ -5303,9 +5303,9 @@ cAudioManager::ProcessPlayerMood()
 	if (!playerPed)
 		return;
 
-	if (playerPed->m_pWanted->GetWantedLevel() > 3)
+	if (playerPed->Wanted()->GetWantedLevel() > 3)
 		m_nPlayerMood = PLAYER_MOOD_ANGRY;
-	else if (playerPed->m_pWanted->GetWantedLevel() > 1)
+	else if (playerPed->Wanted()->GetWantedLevel() > 1)
 		m_nPlayerMood = PLAYER_MOOD_PISSED_OFF;
 	else if (CTheScripts::GetLastMissionPassedTime() != -1) {
 		if (curTime >= CTheScripts::GetLastMissionPassedTime()) {
@@ -5851,7 +5851,7 @@ cAudioManager::GetCopTalkSfx(CPed *ped, uint16 sound)
 	case SOUND_PED_CRASH_CAR: GetPhrase(sfx, ped->m_lastComment, SFX_COP_VOICE_1_CAR_CRASH_1, 4); break;
 #endif
 	case SOUND_PED_PED_COLLISION:
-		if(FindPlayerPed()->m_pWanted->GetWantedLevel() > 0)
+		if(FindPlayerPed()->Wanted()->GetWantedLevel() > 0)
 			GetPhrase(sfx, ped->m_lastComment, SFX_COP_VOICE_1_BUMP_1, 5);
 		else
 			return NO_SAMPLE;

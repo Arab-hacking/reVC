@@ -642,11 +642,11 @@ void CHud::Draw()
 		/*
 			DrawWantedLevel
 		*/
-		if (m_LastWanted == playerPed->m_pWanted->GetWantedLevel()) {
+		if (m_LastWanted == playerPed->Wanted()->GetWantedLevel()) {
 			alpha = DrawFadeState(HUD_WANTED_FADING, 0);
 		} else {
 			alpha = DrawFadeState(HUD_WANTED_FADING, 1);
-			m_LastWanted = playerPed->m_pWanted->GetWantedLevel();
+			m_LastWanted = playerPed->Wanted()->GetWantedLevel();
 		}
 
 		if (m_WantedState != FADED_OUT) {
@@ -662,20 +662,20 @@ void CHud::Draw()
 
 			for (int i = 0; i < 6; i++) {
 				if (FrontEndMenuManager.m_PrefsShowHud) {
-					if (playerPed->m_pWanted->GetWantedLevel() > i
-						&& (CTimer::GetTimeInMilliseconds() > playerPed->m_pWanted->m_nLastWantedLevelChange
+					if (playerPed->Wanted()->GetWantedLevel() > i
+						&& (CTimer::GetTimeInMilliseconds() > playerPed->Wanted()->m_nLastWantedLevelChange
 							+ 2000 || FRAMECOUNTER & 4)) {
 
 						WANTED_COLOR.a = alpha;
 						CFont::SetColor(WANTED_COLOR);
 						CFont::PrintString(SCREEN_SCALE_FROM_RIGHT(110.0f + 23.0f * i), SCREEN_SCALE_Y(87.0f), sPrintIcon);
 
-					} else if (playerPed->m_pWanted->m_nMinWantedLevel > i && FRAMECOUNTER & 4) {
+					} else if (playerPed->Wanted()->m_nMinWantedLevel > i && FRAMECOUNTER & 4) {
 						WANTED_COLOR_FLASH.a = alpha;
 						CFont::SetColor(WANTED_COLOR_FLASH);
 						CFont::PrintString(SCREEN_SCALE_FROM_RIGHT(110.0f + 23.0f * i), SCREEN_SCALE_Y(87.0f), sPrintIcon);
 
-					} else if (playerPed->m_pWanted->GetWantedLevel() <= i) {
+					} else if (playerPed->Wanted()->GetWantedLevel() <= i) {
 						NOTWANTED_COLOR.a = alpha;
 						CFont::SetColor(NOTWANTED_COLOR);
 						CFont::PrintString(SCREEN_SCALE_FROM_RIGHT(110.0f + 23.0f * i), SCREEN_SCALE_Y(87.0f), sPrintIcon);

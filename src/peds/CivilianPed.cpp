@@ -122,7 +122,7 @@ CCivilianPed::CivilianAI(void)
 			} else if (threatPed->IsPlayer() && IsGangMember() && bCanAttackPlayerWithCops) {
 				SetObjective(OBJECTIVE_KILL_CHAR_ON_FOOT, m_threatEntity);
 
-			} else if (threatPed->IsPlayer() && FindPlayerPed()->m_pWanted->m_CurrentCops != 0)  {
+			} else if (threatPed->IsPlayer() && FindPlayerPed()->Wanted()->m_CurrentCops != 0)  {
 				SetFindPathAndFlee(m_threatEntity, 5000);
 				if (threatDistSqr < sq(30.0f)) {
 					SetMoveState(PEDMOVE_RUN);
@@ -208,7 +208,7 @@ CCivilianPed::CivilianAI(void)
 					if (threatPed->IsPlayer() && IsGangMember() && bCanAttackPlayerWithCops) {
 						SetObjective(OBJECTIVE_KILL_CHAR_ON_FOOT, m_threatEntity);
 
-					} else if (threatPed->IsPlayer() && FindPlayerPed()->m_pWanted->m_CurrentCops != 0) {
+					} else if (threatPed->IsPlayer() && FindPlayerPed()->Wanted()->m_CurrentCops != 0) {
 						if (m_objective == OBJECTIVE_KILL_CHAR_ON_FOOT || m_objective == OBJECTIVE_KILL_CHAR_ANY_MEANS) {
 							SetFindPathAndFlee(m_threatEntity, 10000);
 						}
@@ -252,7 +252,7 @@ CCivilianPed::ProcessControl(void)
 			m_vecSeekPos = m_pSeekTarget->GetPosition();
 
 			// fall through
-		case PED_SEEK_POS:
+		case PED_SEEK_POSITION:
 			if (Seek()) {
 				if ((m_objective == OBJECTIVE_GOTO_AREA_ON_FOOT || m_objective == OBJECTIVE_RUN_TO_AREA || m_objective == OBJECTIVE_SPRINT_TO_AREA ||
 					IsUseAttractorObjective(m_objective)) && m_pNextPathNode) {
@@ -286,9 +286,9 @@ CCivilianPed::ProcessControl(void)
 			break;
 		case PED_FACE_PHONE:
 			if (FacePhone())
-				SetPedState(PED_MAKE_CALL);
+				SetPedState(PED_MAKE_PHONECALL);
 			break;
-		case PED_MAKE_CALL:
+		case PED_MAKE_PHONECALL:
 			if (MakePhonecall())
 				SetWanderPath(CGeneral::GetRandomNumber() & 7);
 			break;
@@ -298,13 +298,13 @@ CCivilianPed::ProcessControl(void)
 		case PED_SOLICIT:
 			Solicit();
 			break;
-		case PED_UNKNOWN:
+		case PED_HANG_OUT:
 		{
 			int pedsInSameState = 0;
 			Idle();
 			for (int i = 0; i < m_numNearPeds; ++i) {
 				CPed *nearPed = m_nearPeds[i];
-				if (nearPed->m_nPedType == m_nPedType && nearPed->m_nPedState == PED_UNKNOWN) {
+				if (nearPed->m_nPedType == m_nPedType && nearPed->m_nPedState == PED_HANG_OUT) {
 					++pedsInSameState;
 				}
 			}
@@ -312,7 +312,7 @@ CCivilianPed::ProcessControl(void)
 				for (int j = 0; j < m_numNearPeds; ++j) {
 					CPed *nearPed = m_nearPeds[j];
 					if (nearPed->m_nPedType == m_nPedType && nearPed->m_nPedState == PED_WANDER_PATH) {
-						nearPed->SetPedState(PED_UNKNOWN);
+						nearPed->SetPedState(PED_HANG_OUT);
 					}
 				}
 			}
@@ -422,7 +422,7 @@ bool
 CPed::RunToReportCrime(eCrimeType crimeToReport)
 {
 	// They changed true into false to make this function unusable. So running to phone actually starts but first frame after that cancels it.
-	if (m_nPedState == PED_SEEK_POS)
+	if (m_nPedState == PED_SEEK_POSITION)
 		return false;
 
 	CVector pos = GetPosition();

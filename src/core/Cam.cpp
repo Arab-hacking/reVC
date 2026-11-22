@@ -4400,8 +4400,8 @@ CCam::ProcessArrestCamOne(void)
 		nUsingWhichCamera = 0;
 		if(TheCamera.pTargetEntity->IsPed()){
 			((CPed*)TheCamera.pTargetEntity)->m_pedIK.GetComponentPosition(TargetPos, PED_NODE_UPPER_TORSO);
-			if(FindPlayerPed() && FindPlayerPed()->m_pArrestingCop)
-				cop = FindPlayerPed()->m_pArrestingCop;
+			if(FindPlayerPed() && FindPlayerPed()->ArrestingCop())
+				cop = FindPlayerPed()->ArrestingCop();
 			if(cop && CGeneral::GetRandomNumberInRange(0.0f, 1.0f) > 0.5f){
 				ArrestModes[0] = ARRESTCAM_OVERSHOULDER;
 				ArrestModes[1] = ARRESTCAM_ALONGGROUND;
@@ -4422,8 +4422,8 @@ CCam::ProcessArrestCamOne(void)
 				TargetPos = targetVehicle->GetPosition();
 			}
 
-			if(FindPlayerPed() && FindPlayerPed()->m_pArrestingCop)
-				cop = FindPlayerPed()->m_pArrestingCop;
+			if(FindPlayerPed() && FindPlayerPed()->ArrestingCop())
+				cop = FindPlayerPed()->ArrestingCop();
 			if(cop && CGeneral::GetRandomNumberInRange(0.0f, 1.0f) > 0.65f){
 				ArrestModes[0] = ARRESTCAM_OVERSHOULDER;
 				ArrestModes[1] = ARRESTCAM_LAMPPOST;

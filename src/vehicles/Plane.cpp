@@ -1139,7 +1139,7 @@ CPlane::TestRocketCollision(CVector *rocketPos)
 		   !plane->m_bHasBeenHit && (*rocketPos - plane->GetPosition()).Magnitude() < 25.0f){
 			plane->m_nFrameWhenHit = CTimer::GetFrameCounter();
 			plane->m_bHasBeenHit = true;
-			CWorld::Players[CWorld::PlayerInFocus].m_pPed->m_pWanted->RegisterCrime_Immediately(CRIME_DESTROYED_CESSNA,
+			CWorld::Players[CWorld::PlayerInFocus].m_pPed->Wanted()->RegisterCrime_Immediately(CRIME_DESTROYED_CESSNA,
 				plane->GetPosition(), i+1983, false);
 			return true;
 		}

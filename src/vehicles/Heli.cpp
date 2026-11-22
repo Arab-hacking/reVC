@@ -483,7 +483,7 @@ CHeli::ProcessControl(void)
 			// Shoot
 			int shootTimeout;
 			if (m_heliType == HELI_TYPE_RANDOM) {
-				switch (FindPlayerPed()->m_pWanted->GetWantedLevel()) {
+				switch (FindPlayerPed()->Wanted()->GetWantedLevel()) {
 				case 0:
 				case 1:
 				case 2: shootTimeout = 999999; break;
@@ -498,7 +498,7 @@ CHeli::ProcessControl(void)
 			else
 				shootTimeout = 1500;
 
-			if (FindPlayerPed()->m_pWanted->IsIgnored())
+			if (FindPlayerPed()->Wanted()->IsIgnored())
 				m_nShootTimer = CTimer::GetTimeInMilliseconds();
 			else {
 				// Check if line of sight is clear
@@ -883,7 +883,7 @@ CHeli::UpdateHelis(void)
 #ifdef FIX_BUGS
 		CReplay::IsPlayingBack() ? 0 :
 #endif
-		FindPlayerPed()->m_pWanted->NumOfHelisRequired();
+		FindPlayerPed()->Wanted()->NumOfHelisRequired();
 	if(CCullZones::PlayerNoRain() || CGame::IsInInterior())
 		numHelisRequired = 0;
 	if(CStreaming::HasModelLoaded(MI_CHOPPER) && CTimer::GetTimeInMilliseconds() > TestForNewRandomHelisTimer){
@@ -976,7 +976,7 @@ CHeli::UpdateHelis(void)
 			CStats::PedsKilledOfThisType[PEDTYPE_COP] += 2;
 			CWorld::Players[CWorld::PlayerInFocus].m_nMoney += 250;
 			pos = CWorld::Players[CWorld::PlayerInFocus].m_pPed->GetPosition();
-			CWorld::Players[CWorld::PlayerInFocus].m_pPed->m_pWanted->RegisterCrime_Immediately(CRIME_SHOOT_HELI,
+			CWorld::Players[CWorld::PlayerInFocus].m_pPed->Wanted()->RegisterCrime_Immediately(CRIME_SHOOT_HELI,
 				pos, i + 19843, false);
 
 			TestForNewRandomHelisTimer = CTimer::GetTimeInMilliseconds() + 50000;

@@ -20,6 +20,9 @@
 #define FEET_IN_METER 3.33f
 #endif
 
+float CStats::StatTypesFloat[CStats::NUM_FLOAT_STATS];
+int32 CStats::StatTypesInt[CStats::NUM_INT_STATS];
+
 int32 CStats::SeagullsKilled;
 int32 CStats::BoatsExploded;
 int32 CStats::WantedStarsAttained;
@@ -192,6 +195,18 @@ void CStats::Init()
 	PropertyDestroyed = 0;
 	HighestChaseValue = 0.0f;
 	CheatedCount = 0;
+
+	// SA CStats::Init (0x55C0C0): the whole float and integer arrays start at
+	// zero, then the two stats a fresh player is not at zero in are set. The
+	// stamina entry is what GetFatAndMuscleModifier(STAT_MOD_TIME_CAN_RUN)
+	// turns into the sprint budget, and zero lung capacity is what makes
+	// STAT_MOD_AIR_IN_LUNG start at SA's 1150 for an unmodified body.
+	for(int i = 0; i < NUM_FLOAT_STATS; i++)
+		StatTypesFloat[i] = 0.0f;
+	for(int i = 0; i < NUM_INT_STATS; i++)
+		StatTypesInt[i] = 0;
+	StatTypesFloat[STAT_MAX_HEALTH] = 569.0f;
+	StatTypesFloat[STAT_STAMINA] = 100.0f;
 
 	for (int i = 0; i < TOTAL_FASTEST_TIMES; i++)
 		FastestTimes[i] = 0;
@@ -403,22 +418,94 @@ int32 CStats::FindCriminalRatingNumber()
 	return rating;
 }
 
-// SA CStats::GetFatAndMuscleModifier (0x559AF0).
+// SA CStats::GetStatValue / SetStatValue (0x558E40 / 0x55A070).
+// A stat below FIRST_INT_STAT is a float entry addressed directly; everything
+// else is an integer entry addressed as stat - FIRST_INT_STAT. Both callers in
+// SA assert on the same split, so a stat passed to the wrong one is a bug, not
+// a value to coerce.
+float
+CStats::GetStatValue(eStats stat)
+{
+	if(!IsStatFloat(stat))
+		return (float)StatTypesInt[stat - FIRST_INT_STAT];
+	return StatTypesFloat[stat];
+}
+
+void
+CStats::SetStatValue(eStats stat, float value)
+{
+	if(IsStatFloat(stat))
+		StatTypesFloat[stat] = value;
+	else
+		StatTypesInt[stat - FIRST_INT_STAT] = (int32)value;
+}
+
+// SA CStats::IncrementStat / DecrementStat (0x559FA0 and its rising sibling).
+// Both floor the result at zero: no SA stat may go negative through play.
+void
+CStats::IncrementStat(eStats stat, float value)
+{
+	if(value <= 0.0f)
+		return;
+	SetStatValue(stat, Max(GetStatValue(stat) + value, 0.0f));
+}
+
+void
+CStats::DecrementStat(eStats stat, float value)
+{
+	if(value <= 0.0f)
+		return;
+	SetStatValue(stat, Max(GetStatValue(stat) - value, 0.0f));
+}
+
+// SA CStats::GetFatAndMuscleModifier (0x559AF0), all sixteen modes.
 //
-// NOT a port: gta-reversed has this as a bare plugin::CallAndReturn to
-// 0x559AF0, so the body is not reversed anywhere and the formula is unknown.
-// reVC also has none of SA's 305-entry stat array, so there is nothing to read
-// even if the formula were known.
+// The PC body of 0x559AF0 is not reversed upstream - gta-reversed keeps it as a
+// bare delegate - so the arithmetic below is taken from the same function in
+// the iOS build, iOS 0x100266300, which dispatches on the mode through a jump
+// table. The community capture of that routine (Sir-Teo/web-gta,
+// docs/research/PLAYER_LUNG_CAPACITY.md, PLAYER_JUMP_BODY_STATS.md,
+// PLAYER_SPRINT_ENERGY.md) gives the modes this fork needs, and its emulation
+// fixture pins every float operation:
 //
-// Returns the neutral 1.0f, which is what SA gives a player at default fat and
-// muscle, and keeps every call site (jump force, jump clip speed, max health,
-// lung capacity) structurally identical to SA. Deliberately not guessed: an
-// invented curve would silently change jump height, and the user asked for
-// SA's numbers, not plausible ones.
+//   mode 2  (jump force, movement): float stats 21 (fat) and 23 (muscle)
+//           fatPart    = max(0, (fat - 200) / 800) * -0.2
+//           musclePart = ((muscle - 50) * -0.1) / 950
+//           result     = max(0.8, 1 + fatPart + musclePart)
+//   mode 7  (time can run):         float stat 22 (stamina)
+//           result     = stamina / 1000 * 3000 + 150
+//   mode 8  (air in lung):          int stat 225 + float stat 22
+//           result     = (lung + stamina) / 2000 * 3000 + 1000
+//
+// Every intermediate is rounded to float, as the captured instructions do; a
+// double-precision evaluation differs in the last bit and these values scale a
+// jump force and an oxygen budget. Negative inputs are not clamped except where
+// the capture does: mode 2 clamps its fat term and its result, modes 7 and 8
+// clamp nothing.
+//
+// The remaining modes are declared by SA eStatModAbilities but no reversed
+// caller in SA uses them with a known formula, and the capture covers only the
+// three above. They return the neutral 1.0f, the value a default body produces,
+// and say so here rather than inventing a curve.
 float
 CStats::GetFatAndMuscleModifier(eStatModAbilities statMod)
 {
-	return 1.0f;
+	switch(statMod){
+	case STAT_MOD_2: {
+		float fat = StatTypesFloat[STAT_FAT];
+		float muscle = StatTypesFloat[STAT_MUSCLE];
+		float fatPart = Max(0.0f, (fat - 200.0f) / 800.0f) * -0.2f;
+		float musclePart = (muscle - 50.0f) * -0.1f / 950.0f;
+		return Max(0.8f, 1.0f + fatPart + musclePart);
+	}
+	case STAT_MOD_TIME_CAN_RUN:
+		return StatTypesFloat[STAT_STAMINA] / 1000.0f * 3000.0f + 150.0f;
+	case STAT_MOD_AIR_IN_LUNG:
+		return ((float)StatTypesInt[STAT_LUNG_CAPACITY - FIRST_INT_STAT]
+			+ StatTypesFloat[STAT_STAMINA]) / 2000.0f * 3000.0f + 1000.0f;
+	default:
+		return 1.0f;
+	}
 }
 
 float CStats::GetPercentageProgress()
@@ -599,6 +686,8 @@ void CStats::SaveStats(uint8 *buf, uint32 *size)
 		sizeof(TotalLegitimateKills) +
 		sizeof(LastMissionPassedName) +
 		sizeof(CheatedCount) +
+		sizeof(StatTypesFloat) +
+		sizeof(StatTypesInt) +
 		sizeof(FavoriteRadioStationList);
 
 #define CopyToBuf(buf, data) memcpy(buf, &data, sizeof(data)); buf += sizeof(data);
@@ -691,6 +780,11 @@ void CStats::SaveStats(uint8 *buf, uint32 *size)
 	CopyToBuf(buf, CheatedCount);
 	PopulateFavoriteRadioStationList();
 	CopyToBuf(buf, FavoriteRadioStationList);
+	// The SA stat arrays. Every float stat and every integer stat a player can
+	// earn has to survive a save, and the breath capacity and the sprint budget
+	// are computed from them, so they cannot be derived again on load.
+	CopyToBuf(buf, StatTypesFloat);
+	CopyToBuf(buf, StatTypesInt);
 
 	assert(buf - buf_start == *size);
 #undef CopyToBuf
@@ -790,6 +884,8 @@ void CStats::LoadStats(uint8 *buf, uint32 size)
 	CopyFromBuf(buf, LastMissionPassedName);
 	CopyFromBuf(buf, CheatedCount);
 	CopyFromBuf(buf, FavoriteRadioStationList);
+	CopyFromBuf(buf, StatTypesFloat);
+	CopyFromBuf(buf, StatTypesInt);
 
 	assert(buf - buf_start == size);
 #undef CopyFromBuf

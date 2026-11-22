@@ -241,7 +241,7 @@ CBike::ProcessControl(void)
 	case STATUS_PLAYER:
 		bBalancedByRider = true;
 		bIsBeingPickedUp = false;
-		if(FindPlayerPed()->GetPedState() != PED_EXIT_CAR && FindPlayerPed()->GetPedState() != PED_DRAG_FROM_CAR){
+		if(FindPlayerPed()->GetPedState() != PED_EXIT_CAR && FindPlayerPed()->GetPedState() != PED_DRAGGED_FROM_CAR){
 			ProcessControlInputs(0);
 
 			if(m_fLeanInput < 0.0f){

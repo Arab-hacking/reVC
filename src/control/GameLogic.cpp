@@ -203,7 +203,7 @@ CGameLogic::Update()
 			pPlayerInfo.m_WBState = WBSTATE_PLAYING;
 			int takeMoney;
 
-			switch (pPlayerInfo.m_pPed->m_pWanted->GetWantedLevel()) {
+			switch (pPlayerInfo.m_pPed->Wanted()->GetWantedLevel()) {
 			case 0:
 			case 1:
 				takeMoney = 100;
@@ -328,18 +328,20 @@ CGameLogic::RestorePlayerStuffDuringResurrection(CPlayerPed *pPlayerPed, CVector
 	pPlayerPed->bIsVisible = true;
 	pPlayerPed->m_bloodyFootprintCountOrDeathTime = 0;
 	pPlayerPed->bDoBloodyFootprints = false;
-	pPlayerPed->m_nDrunkenness = 0;
-	pPlayerPed->m_nFadeDrunkenness = 0;
+	pPlayerPed->Drunkenness() = 0;
+	pPlayerPed->FadeDrunkenness() = 0;
 	CMBlur::ClearDrunkBlur();
 	pPlayerPed->m_nDrunkCountdown = 0;
 	pPlayerPed->ClearAdrenaline();
-	pPlayerPed->m_fCurrentStamina = pPlayerPed->m_fMaxStamina;
+	// SA CGameLogic::ClearPlayerWantedLevelAndResetPlayer restores the sprint
+	// budget from the stamina stat rather than to a fixed value.
+	pPlayerPed->ResetSprintEnergy();
 	if (pPlayerPed->m_pFire)
 		pPlayerPed->m_pFire->Extinguish();
 	pPlayerPed->bInVehicle = false;
 	pPlayerPed->m_pMyVehicle = nil;
 	pPlayerPed->m_pVehicleAnim = nil;
-	pPlayerPed->m_pWanted->Reset();
+	pPlayerPed->Wanted()->Reset();
 	pPlayerPed->bCancelEnteringCar = false;
 	pPlayerPed->RestartNonPartialAnims();
 	pPlayerInfo->MakePlayerSafe(false);
@@ -403,7 +405,7 @@ CGameLogic::AbandonShortCutIfTaxiHasBeenMessedWith()
 		return;
 	if (pShortCutTaxi->pDriver == nil ||
 		pShortCutTaxi->pDriver->DyingOrDead() ||
-		pShortCutTaxi->pDriver->GetPedState() == PED_DRAG_FROM_CAR ||
+		pShortCutTaxi->pDriver->GetPedState() == PED_DRAGGED_FROM_CAR ||
 		pShortCutTaxi->pDriver->GetPedState() == PED_ON_FIRE ||
 		pShortCutTaxi->pDriver->m_objective == OBJECTIVE_LEAVE_CAR_AND_DIE ||
 		pShortCutTaxi->m_fHealth < 250.0f ||

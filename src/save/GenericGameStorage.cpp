@@ -45,11 +45,17 @@
 #include "Timecycle.h"
 #include "Fluff.h"
 #include "SaveBlockBounds.h"
+#include "SaveVersion.h"
 #include "SavedPoolValidation.h"
 #include <vector>
 
 #define BLOCK_COUNT 22
-#define SIZE_OF_SIMPLEVARS 0xE4
+// The simple-vars payload the Vice City format carries, followed by this
+// build's version marker. Everything up to and including RadioStationPosition
+// keeps the original offsets, so a reader that knows the VC layout still finds
+// every field where it was; the marker is what it trips over.
+#define SIZE_OF_SIMPLEVARS_VC 0xE4
+#define SIZE_OF_SIMPLEVARS (SIZE_OF_SIMPLEVARS_VC + SAVE_VERSION_SIZE)
 
 const uint32 SIZE_OF_ONE_GAME_IN_BYTES = 201729;
 
@@ -357,6 +363,8 @@ GenericSave(int file)
 	WriteDataToBufferPointer(buf, CTimeCycle::m_ExtraColourInter);
 	PopulateRadioStationPositionList();
 	WriteDataToBufferPointer(buf, RadioStationPosition);
+	assert(buf - work_buff == SIZE_OF_SIMPLEVARS_VC);
+	WriteSaveVersion(buf);
 	assert(buf - work_buff == SIZE_OF_SIMPLEVARS);
 
 	// Save scripts, block is nested within the same block as simple vars for some reason
@@ -518,6 +526,22 @@ GenericLoad()
 	ReadDataFromBufferPointer(buf, CTimeCycle::m_bExtraColourOn);
 	ReadDataFromBufferPointer(buf, CTimeCycle::m_ExtraColourInter);
 	ReadDataFromBufferPointer(buf, RadioStationPosition);
+	assert(buf - work_buff == SIZE_OF_SIMPLEVARS_VC);
+	{
+		// A save this build did not write stops here, before a single pool
+		// record is reconstructed: the per-type arrays and the ped state
+		// numbering changed, so the blocks past this point mean something
+		// else in an older file.
+		uint32 found = 0;
+		if(!ReadSaveVersion(buf, &found)){
+			PcSaveHelper.nErrorCode = SAVESTATUS_ERR_DATA_INVALID;
+			REVC_LOG_ERROR("Cannot load %s: the file was written by an incompatible build "
+			               "(save format version %u, this build reads %u). Start a new game.",
+			               LoadFileName, found, (uint32)SAVE_VERSION);
+			CloseFile(file);
+			return false;
+		}
+	}
 	assert(buf - work_buff == SIZE_OF_SIMPLEVARS);
 	debug("Loading Scripts \n");
 	{
@@ -693,7 +717,9 @@ DoGameSpecificStuffBeforeSave()
 {
 	CGameLogic::PassTime(360);
 	CPlayerPed *ped = FindPlayerPed();
-	ped->m_fCurrentStamina = ped->m_fMaxStamina;
+	// A save is taken with a rested player, so the budget written out is the
+	// full one the stamina stat is worth.
+	ped->ResetSprintEnergy();
 	CGame::TidyUpMemory(true, false);
 }
 
@@ -879,6 +905,9 @@ enum
 	SAVE_TYPE_MSVC = 4,
 	SAVE_TYPE_GCC = 8,
 	SAVE_TYPE_STEAM = 16,
+	// Written by this build. Such a file is already in this build's layout, so
+	// none of the Vice City fixups apply to it.
+	SAVE_TYPE_CURRENT = 32,
 };
 
 uint8
@@ -892,6 +921,17 @@ GetSaveType(char *savename)
 
 	uint8 *buf = work_buff;
 	CFileMgr::Read(file, (char *)work_buff, size); // simple vars + scripts
+
+	// This build's own saves carry their version marker right after the Vice
+	// City simple vars; a file that has it needs no fixing at all.
+	if(size >= SIZE_OF_SIMPLEVARS){
+		uint32 magic = 0;
+		memcpy(&magic, work_buff + SIZE_OF_SIMPLEVARS_VC, sizeof(uint32));
+		if(magic == SAVE_VERSION_MAGIC){
+			CFileMgr::CloseFile(file);
+			return SAVE_TYPE_CURRENT;
+		}
+	}
 
 	buf += 0x40 + sizeof(int32) + sizeof(int32) + sizeof(float) * 3;
 
@@ -1235,6 +1275,8 @@ FixScriptPaths(uint8 save_type, uint8 *buf, uint8 *buf2, uint32 *size)
 bool
 FixSave(int32 slot, uint8 save_type)
 {
+	if (save_type & SAVE_TYPE_CURRENT)
+		return true;
 	if (save_type & SAVE_TYPE_32_BIT && save_type & SAVE_TYPE_MSVC && !(save_type & SAVE_TYPE_STEAM))
 		return true;
 

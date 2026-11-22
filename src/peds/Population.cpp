@@ -617,7 +617,7 @@ CPopulation::AddToPopulation(float minDist, float maxDist, float minDistOffScree
 	CPlayerInfo *playerInfo = &CWorld::Players[CWorld::PlayerInFocus];
 	CVector playerCentreOfWorld = FindPlayerCentreOfWorld(CWorld::PlayerInFocus);
 	CTheZones::GetZoneInfoForTimeOfDay(&playerCentreOfWorld, &zoneInfo);
-	CWanted *wantedInfo = playerInfo->m_pPed->m_pWanted;
+	CWanted *wantedInfo = playerInfo->m_pPed->Wanted();
 
 	if (wantedInfo->GetWantedLevel() > 2) {
 		if (!CGame::IsInInterior() && (CGeneral::GetRandomNumber() % 32 == 0) && FindPlayerVehicle())
@@ -877,8 +877,8 @@ CPopulation::AddToPopulation(float minDist, float maxDist, float minDistOffScree
 				// Gang member
 				newPed->SetLeader(gangLeader);
 
-				newPed->SetPedState(PED_UNKNOWN);
-				gangLeader->SetPedState(PED_UNKNOWN);
+				newPed->SetPedState(PED_HANG_OUT);
+				gangLeader->SetPedState(PED_HANG_OUT);
 
 			} else {
 				gangLeader = newPed;
@@ -1712,14 +1712,14 @@ CPopulation::PlaceGangMembersInCircle(ePedType pedType, int pedAmount, CVector c
 					createdPeds[pedIdx - 1 - j]->SetChat(createdPeds[j], 100000);
 				}
 
-				// Make that extra guy in the middle stand there(PED_UNKNOWN locks him) and do nothing :lmao:
+				// Make that extra guy in the middle stand there(PED_HANG_OUT locks him) and do nothing :lmao:
 				if (pedIdx % 2 != 0) {
 					CPed *tmim = createdPeds[(pedIdx - 1) / 2];
 					float angle = CGeneral::GetRadianAngleBetweenPoints(
 						tmim->GetPosition().x, tmim->GetPosition().y,
 						createdPeds[0]->GetPosition().x, createdPeds[0]->GetPosition().y);
 					tmim->SetHeading(angle);
-					tmim->SetPedState(PED_UNKNOWN);
+					tmim->SetPedState(PED_HANG_OUT);
 				}
 				createdPeds[0]->bIsLeader = true;
 
@@ -1904,14 +1904,14 @@ CPopulation::PlaceMallPedsAsStationaryGroup(CVector const& coors, int32 group)
 					createdPeds[pedIdx - 1 - j]->SetChat(createdPeds[j], 100000);
 				}
 
-				// Make that extra guy in the middle stand there(PED_UNKNOWN locks him) and do nothing :lmao:
+				// Make that extra guy in the middle stand there(PED_HANG_OUT locks him) and do nothing :lmao:
 				if (pedIdx % 2 != 0) {
 					CPed *tmim = createdPeds[(pedIdx - 1) / 2];
 					float angle = CGeneral::GetRadianAngleBetweenPoints(
 						tmim->GetPosition().x, tmim->GetPosition().y,
 						createdPeds[0]->GetPosition().x, createdPeds[0]->GetPosition().y);
 					tmim->SetHeading(angle);
-					tmim->SetPedState(PED_UNKNOWN);
+					tmim->SetPedState(PED_HANG_OUT);
 				}
 				createdPeds[0]->bIsLeader = true;
 

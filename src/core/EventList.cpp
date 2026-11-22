@@ -218,7 +218,7 @@ CEventList::ReportCrimeForEvent(eEventType type, intptr crimeId, bool copsDontCa
 	default: crime = CRIME_NONE; break;
 	}
 	
-	if (crime == CRIME_HIT_PED && IsPedPointerValid((CPed*)crimeId) && FindPlayerPed()->m_pWanted->GetWantedLevel() == 0 && ((CPed*)crimeId)->bBeingChasedByPolice) {
+	if (crime == CRIME_HIT_PED && IsPedPointerValid((CPed*)crimeId) && FindPlayerPed()->Wanted()->GetWantedLevel() == 0 && ((CPed*)crimeId)->bBeingChasedByPolice) {
 		if (!((CPed*)crimeId)->DyingOrDead()) {
 			CMessages::AddBigMessage(TheText.Get("GOODBOY"), 5000, 0);
 			CWorld::Players[CWorld::PlayerInFocus].m_nMoney += 50;
@@ -238,10 +238,10 @@ CEventList::ReportCrimeForEvent(eEventType type, intptr crimeId, bool copsDontCa
 
 	if(CWanted::WorkOutPolicePresence(playerCoors, 14.0f) != 0 ||
 		CGame::germanGame && (crime == CRIME_SHOOT_PED || crime == CRIME_SHOOT_COP || crime == CRIME_COP_BURNED || crime == CRIME_VEHICLE_BURNED)){
-		FindPlayerPed()->m_pWanted->RegisterCrime_Immediately(crime, playerPedCoors, (uint32)crimeId, copsDontCare);
-		FindPlayerPed()->m_pWanted->SetWantedLevelNoDrop(1);
+		FindPlayerPed()->Wanted()->RegisterCrime_Immediately(crime, playerPedCoors, (uint32)crimeId, copsDontCare);
+		FindPlayerPed()->Wanted()->SetWantedLevelNoDrop(1);
 	}else
-		FindPlayerPed()->m_pWanted->RegisterCrime(crime, playerPedCoors, (uint32)crimeId, copsDontCare);
+		FindPlayerPed()->Wanted()->RegisterCrime(crime, playerPedCoors, (uint32)crimeId, copsDontCare);
 
 	if(type == EVENT_ASSAULT_POLICE)
 		FindPlayerPed()->SetWantedLevelNoDrop(1);

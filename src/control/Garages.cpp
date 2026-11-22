@@ -394,7 +394,7 @@ void CGarage::Update()
 					if (CWorld::Players[CWorld::PlayerInFocus].m_nMoney >= RESPRAY_PRICE || CGarages::RespraysAreFree) {
 						m_eGarageState = GS_CLOSING;
 						CPad::GetPad(0)->SetDisablePlayerControls(PLAYERCONTROL_GARAGE);
-						FindPlayerPed()->m_pWanted->m_bIgnoredByCops = true;
+						FindPlayerPed()->Wanted()->m_bIgnoredByCops = true;
 					}
 					else {
 						CGarages::TriggerMessage("GA_3", -1, 4000, -1); // No more freebies. $100 to respray!
@@ -445,12 +445,12 @@ void CGarage::Update()
 				m_eGarageState = GS_OPENING;
 				DMAudio.PlayFrontEndSound(SOUND_GARAGE_OPENING, 1);
 				bool bTakeMoney = false;
-				if (FindPlayerPed()->m_pWanted->GetWantedLevel() != 0) {
+				if (FindPlayerPed()->Wanted()->GetWantedLevel() != 0) {
 					bTakeMoney = true;
-					FindPlayerPed()->m_pWanted->Suspend();
+					FindPlayerPed()->Wanted()->Suspend();
 				}
 				CPad::GetPad(0)->SetEnablePlayerControls(PLAYERCONTROL_GARAGE);
-				FindPlayerPed()->m_pWanted->m_bIgnoredByCops = false;
+				FindPlayerPed()->Wanted()->m_bIgnoredByCops = false;
 #ifdef FIX_BUGS
 				bool bChangedColour = false;
 #else
@@ -562,7 +562,7 @@ void CGarage::Update()
 				}
 				m_eGarageState = GS_CLOSING;
 				CPad::GetPad(0)->SetDisablePlayerControls(PLAYERCONTROL_GARAGE);
-				FindPlayerPed()->m_pWanted->m_bIgnoredByCops = true;
+				FindPlayerPed()->Wanted()->m_bIgnoredByCops = true;
 				}
 			break;
 		case GS_CLOSING:
@@ -636,7 +636,7 @@ void CGarage::Update()
 						break;
 					}
 					CPad::GetPad(0)->SetEnablePlayerControls(PLAYERCONTROL_GARAGE);
-					FindPlayerPed()->m_pWanted->m_bIgnoredByCops = false;
+					FindPlayerPed()->Wanted()->m_bIgnoredByCops = false;
 				}
 				else {
 					CStreaming::RequestModel(MI_BOMB, STREAMFLAGS_DONT_REMOVE);
@@ -677,7 +677,7 @@ void CGarage::Update()
 			else if (!FindPlayerVehicle() && m_pTarget && IsEntityEntirelyInside3D(m_pTarget, 0.0f) &&
 				IsEntityEntirelyOutside(FindPlayerVehicle() ? (CEntity*)FindPlayerVehicle() : (CEntity*)FindPlayerPed(), 2.0f)) {
 				CPad::GetPad(0)->SetDisablePlayerControls(PLAYERCONTROL_GARAGE);
-				FindPlayerPed()->m_pWanted->m_bIgnoredByCops = true;
+				FindPlayerPed()->Wanted()->m_bIgnoredByCops = true;
 				m_eGarageState = GS_CLOSING;
 				m_bClosingWithoutTargetCar = false;
 			}
@@ -700,7 +700,7 @@ void CGarage::Update()
 						m_eGarageState = GS_FULLYCLOSED;
 					}
 					CPad::GetPad(0)->SetEnablePlayerControls(PLAYERCONTROL_GARAGE);
-					FindPlayerPed()->m_pWanted->m_bIgnoredByCops = false;
+					FindPlayerPed()->Wanted()->m_bIgnoredByCops = false;
 				}
 			}
 			UpdateDoorsHeight();
@@ -757,7 +757,7 @@ void CGarage::Update()
 #endif
 					if (m_pTarget->GetStatus() != STATUS_WRECKED) {
 						CPad::GetPad(0)->SetDisablePlayerControls(PLAYERCONTROL_GARAGE);
-						FindPlayerPed()->m_pWanted->m_bIgnoredByCops = true;
+						FindPlayerPed()->Wanted()->m_bIgnoredByCops = true;
 						m_eGarageState = GS_CLOSING;
 						TheCamera.SetCameraDirectlyBehindForFollowPed_CamOnAString();
 					}
@@ -776,7 +776,7 @@ void CGarage::Update()
 					DestroyVehicleAndDriverAndPassengers(m_pTarget);
 					m_pTarget = nil;
 					CPad::GetPad(0)->SetEnablePlayerControls(PLAYERCONTROL_GARAGE);
-					FindPlayerPed()->m_pWanted->m_bIgnoredByCops = false;
+					FindPlayerPed()->Wanted()->m_bIgnoredByCops = false;
 				}
 			}
 			UpdateDoorsHeight();
@@ -866,7 +866,7 @@ void CGarage::Update()
 			}
 			else if (m_pTarget && m_pTarget == FindPlayerVehicle() && IsStaticPlayerCarEntirelyInside() && !IsAnyCarBlockingDoor()) {
 				CPad::GetPad(0)->SetDisablePlayerControls(PLAYERCONTROL_GARAGE);
-				FindPlayerPed()->m_pWanted->m_bIgnoredByCops = true;
+				FindPlayerPed()->Wanted()->m_bIgnoredByCops = true;
 				m_eGarageState = GS_CLOSING;
 				m_bClosingWithoutTargetCar = false;
 			}
@@ -888,7 +888,7 @@ void CGarage::Update()
 					else
 						m_eGarageState = GS_FULLYCLOSED;
 					CPad::GetPad(0)->SetEnablePlayerControls(PLAYERCONTROL_GARAGE);
-					FindPlayerPed()->m_pWanted->m_bIgnoredByCops = false;
+					FindPlayerPed()->Wanted()->m_bIgnoredByCops = false;
 				}
 			}
 			UpdateDoorsHeight();

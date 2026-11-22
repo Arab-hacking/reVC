@@ -55,7 +55,7 @@ CEmergencyPed::ProcessControl(void)
 			Avoid();
 
 		switch (m_nPedState) {
-			case PED_SEEK_POS:
+			case PED_SEEK_POSITION:
 				Seek();
 				break;
 			case PED_SEEK_ENTITY:
@@ -261,7 +261,7 @@ CEmergencyPed::MedicAI(void)
 			case EMERGENCY_PED_DETERMINE_NEXT_STATE:
 				nearestAccident = gAccidentManager.FindNearestAccident(GetPosition(), &distToEmergency);
 				if (nearestAccident) {
-					if (nearestAccident != m_pAttendedAccident || m_nPedState != PED_SEEK_POS) {
+					if (nearestAccident != m_pAttendedAccident || m_nPedState != PED_SEEK_POSITION) {
 						m_pRevivedPed = nearestAccident->m_pVictim;
 						m_pRevivedPed->RegisterReference((CEntity**)&m_pRevivedPed);
 						if (!InRange(m_pRevivedPed)) {

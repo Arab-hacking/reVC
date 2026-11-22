@@ -310,7 +310,7 @@ CPlayerInfo::Process(void)
 	else
 		enterOrExitVeh = CPad::GetPad(0)->GetExitVehicle();
 
-	if (enterOrExitVeh && m_pPed->m_nPedState != PED_ANSWER_MOBILE && m_pPed->m_nPedState != PED_SNIPER_MODE && m_pPed->m_nPedState != PED_ROCKET_MODE) {
+	if (enterOrExitVeh && m_pPed->m_nPedState != PED_ANSWER_MOBILE && m_pPed->m_nPedState != PED_SNIPER_MODE && m_pPed->m_nPedState != PED_ROCKETLAUNCHER_MODE) {
 		if (m_pPed->bInVehicle) {
 			if (!m_pRemoteVehicle) {
 				CEntity *surfaceBelowVeh = m_pPed->m_pMyVehicle->m_pCurGroundEntity;
@@ -482,7 +482,7 @@ CPlayerInfo::Process(void)
 		CStats::DistanceTravelledOnFoot += FindPlayerPed()->m_fDistanceTravelled;
 	}
 
-	if (m_pPed->m_pWanted->GetWantedLevel() && !CTheScripts::IsPlayerOnAMission()) {
+	if (m_pPed->Wanted()->GetWantedLevel() && !CTheScripts::IsPlayerOnAMission()) {
 		float maxDelta = 0.0f;
 		static bool movedSignificantly = true;
 		static bool thereIsACarPathNear = true;
@@ -494,7 +494,7 @@ CPlayerInfo::Process(void)
 			lastPlayerPos = FindPlayerCoors();
 			thereIsACarPathNear = ThePaths.FindNodeClosestToCoors(FindPlayerCoors(), PATH_CAR, 60.0f, true, false, false, false) != 0;
 		}
-		switch (m_pPed->m_pWanted->GetWantedLevel()) {
+		switch (m_pPed->Wanted()->GetWantedLevel()) {
 			case 1:
 				maxDelta = 31.f;
 				break;
@@ -810,7 +810,7 @@ void
 CPlayerInfo::MakePlayerSafe(bool toggle)
 {
 	if (toggle) {
-		m_pPed->m_pWanted->m_bIgnoredByEveryone = true;
+		m_pPed->Wanted()->m_bIgnoredByEveryone = true;
 		CWorld::StopAllLawEnforcersInTheirTracks();
 		CPad::GetPad(0)->SetDisablePlayerControls(PLAYERCONTROL_PLAYERINFO);
 		CPad::StopPadsShaking();
@@ -820,7 +820,7 @@ CPlayerInfo::MakePlayerSafe(bool toggle)
 		m_pPed->bMeleeProof = true;
 		m_pPed->bOnlyDamagedByPlayer = true;
 		m_pPed->bExplosionProof = true;
-		m_pPed->m_bCanBeDamaged = false;
+		m_pPed->CanBeDamaged() = false;
 		((CPlayerPed*)m_pPed)->ClearAdrenaline();
 		CancelPlayerEnteringCars(nil);
 		gFireManager.ExtinguishPoint(GetPos(), 4000.0f);
@@ -831,7 +831,7 @@ CPlayerInfo::MakePlayerSafe(bool toggle)
 		CReplay::DisableReplays();
 
 	} else {
-		m_pPed->m_pWanted->m_bIgnoredByEveryone = false;
+		m_pPed->Wanted()->m_bIgnoredByEveryone = false;
 		CPad::GetPad(0)->SetEnablePlayerControls(PLAYERCONTROL_PLAYERINFO);
 		m_pPed->bBulletProof = false;
 		m_pPed->bFireProof = false;
@@ -839,7 +839,7 @@ CPlayerInfo::MakePlayerSafe(bool toggle)
 		m_pPed->bMeleeProof = false;
 		m_pPed->bOnlyDamagedByPlayer = false;
 		m_pPed->bExplosionProof = false;
-		m_pPed->m_bCanBeDamaged = true;
+		m_pPed->CanBeDamaged() = true;
 		CWorld::SetAllCarsCanBeDamaged(true);
 		CReplay::EnableReplays();
 	}

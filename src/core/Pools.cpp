@@ -710,7 +710,7 @@ INITSAVEBUF
 			CPlayerPed* pPlayerPed = new(ref) CPlayerPed();
 			for (int i = 0; i < ARRAY_SIZE(pPlayerPed->m_nTargettableObjects); i++)
 				pPlayerPed->m_nTargettableObjects[i] = pBufferPlayer->m_nTargettableObjects[i];
-			pPlayerPed->m_fMaxStamina = pBufferPlayer->m_fMaxStamina;
+			pPlayerPed->TimeCanRun() = pBufferPlayer->TimeCanRun();
 			pPed = pPlayerPed;
 		}
 		pPed->SetPosition(pBufferPlayer->GetPosition());

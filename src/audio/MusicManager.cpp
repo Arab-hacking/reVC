@@ -1233,7 +1233,7 @@ cMusicManager::PlayerInCar()
 	if (vehicle) {
 		PedState State = FindPlayerPed()->m_nPedState;
 
-		if(State == PED_DRAG_FROM_CAR || State == PED_EXIT_CAR || State == PED_ARRESTED)
+		if(State == PED_DRAGGED_FROM_CAR || State == PED_EXIT_CAR || State == PED_ARRESTED)
 			return FALSE;
 
 		if (vehicle->GetStatus() == STATUS_WRECKED)

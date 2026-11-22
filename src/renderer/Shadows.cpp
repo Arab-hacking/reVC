@@ -866,7 +866,7 @@ CShadows::StoreShadowForPed(CPed *pPed, float fDisplacementX, float fDisplacemen
 
 	if ( pPed->bIsVisible )
 	{
-		if ( !(pPed->bInVehicle && pPed->m_nPedState != PED_DRAG_FROM_CAR && pPed->m_nPedState != PED_EXIT_CAR) )
+		if ( !(pPed->bInVehicle && pPed->m_nPedState != PED_DRAGGED_FROM_CAR && pPed->m_nPedState != PED_EXIT_CAR) )
 		{
 			if ( CTimeCycle::GetShadowStrength() != 0 )
 			{

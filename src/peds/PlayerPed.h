@@ -2,6 +2,7 @@
 #define __GTA_PLAYERPED_H__
 
 #include "Ped.h"
+#include "PlayerPedData.h"
 
 class CPad;
 class CCopPed;
@@ -10,28 +11,21 @@ class CWanted;
 class CPlayerPed : public CPed
 {
 public:
-	CWanted *m_pWanted;
-	CCopPed *m_pArrestingCop;
-	float m_fMoveSpeed;
-	float m_fCurrentStamina;
-	float m_fMaxStamina;
-	float m_fStaminaProgress;
+	// SA keeps the player-wide block in CPlayerInfo and the ped only points at
+	// it, so that a ped respawn or a replay does not carry a second copy. This
+	// fork used to flatten the fields into the ped; the accessors below keep
+	// every existing Wanted() / Breath() spelling working and resolve them to
+	// the one owner.
+	CPlayerPedData *m_pPlayerData;
+
 	int8 m_nSelectedWepSlot;
 	bool m_bSpeedTimerFlag;
 	uint8 m_nEvadeAmount;
 	uint32 m_nSpeedTimer; // m_nStandStillTimer?
-	uint32 m_nHitAnimDelayTimer; // m_nShotDelay?
-	float m_fAttackButtonCounter;
-	bool m_bHaveTargetSelected;	// may have better name
 	CEntity *m_pEvadingFrom;	// is this CPhysical?
 	int32 m_nTargettableObjects[4];
-	uint32 m_nAdrenalineTime;
-	uint8 m_nDrunkenness;             // Needed to work out whether we lost target this frame
-	uint8 m_nFadeDrunkenness;
 	uint8 m_nDrunkCountdown; //countdown in frames when the drunk effect ends
-	bool m_bAdrenalineActive;
 	bool m_bHasLockOnTarget;
-	bool m_bCanBeDamaged;
 	bool m_bNoPosForMeleeAttack;
 	bool unk1;
 	CVector m_vecSafePos[6]; // safe places from the player, for example behind a tree
@@ -39,12 +33,61 @@ public:
 	CPed *m_pMeleeList[6]; // reachable peds at each direction(6)
 	int16 m_nAttackDirToCheck;
 	float m_fWalkAngle; //angle between heading and walking direction
-	float m_fFPSMoveHeading;
 	RpAtomic* m_pMinigunTopAtomic; //atomic for the spinning part of the minigun model
-	float m_fGunSpinSpeed; // for minigun
-	float m_fGunSpinAngle;
-	unsigned int m_nPadDownPressedInMilliseconds;
 	unsigned int m_nLastBusFareCollected;
+
+	// The player's own block. Bound in the constructor; every accessor below
+	// resolves through it.
+	void BindPlayerData(CPlayerPedData *data);
+	void UnbindPlayerData() { m_pPlayerData = nil; }
+
+	// SA CPlayerPed::GetPlayerData.
+	CPlayerPedData *GetPlayerData() const { return m_pPlayerData; }
+
+	// The fields that used to live on the ped and now live in CPlayerPedData.
+	// Each one is a member function that returns the field itself, so the old
+	// `player->m_fMoveSpeed` spelling becomes `player->MoveSpeed()` without
+	// changing any of the arithmetic around them.
+	CWanted *&Wanted() const { return m_pPlayerData->m_pWanted; }
+	CCopPed *&ArrestingCop() const { return m_pPlayerData->m_pArrestingCop; }
+	float &MoveBlendRatio() const { return m_pPlayerData->m_fMoveBlendRatio; }
+	float &TimeCanRun() const { return m_pPlayerData->m_fTimeCanRun; }
+	float &MoveSpeed() const { return m_pPlayerData->m_fMoveSpeed; }
+	float &Breath() const { return m_pPlayerData->m_fBreath; }
+	uint32 &PlayerFlags() const { return m_pPlayerData->m_nPlayerFlags; }
+	uint32 &AdrenalineEndTime() const { return m_pPlayerData->m_nAdrenalineEndTime; }
+	uint8 &Drunkenness() const { return m_pPlayerData->m_nDrunkenness; }
+	uint8 &FadeDrunkenness() const { return m_pPlayerData->m_nFadeDrunkenness; }
+	uint32 &HitAnimDelayTimer() const { return m_pPlayerData->m_nHitAnimDelayTimer; }
+	float &AttackButtonCounter() const { return m_pPlayerData->m_fAttackButtonCounter; }
+	float &FPSMoveHeading() const { return m_pPlayerData->m_fFPSMoveHeading; }
+	float &GunSpinSpeed() const { return m_pPlayerData->m_fGunSpinSpeed; }
+	float &GunSpinAngle() const { return m_pPlayerData->m_fGunSpinAngle; }
+	uint16 &PadDownPressedInMilliseconds() const { return m_pPlayerData->m_nPadDownPressedInMilliseconds; }
+
+	// The three flags below live in CPlayerPedData's bitfield, which is where SA
+	// keeps them: one bit each in PlayerFlags(). A reference cannot name a
+	// bitfield member, so the old spellings go through a one-bit proxy that
+	// reads and writes the bit in place. That keeps `player->CanBeDamaged()` a
+	// valid lvalue exactly as `player->m_bCanBeDamaged` used to be.
+	struct FlagsProxy {
+		uint32 *word;
+		uint32 mask;
+		FlagsProxy(uint32 *w, uint32 m) : word(w), mask(m) { }
+		operator bool() const { return (*word & mask) != 0; }
+		bool operator!() const { return (*word & mask) == 0; }
+		FlagsProxy &operator=(bool value)
+		{
+			if(value)
+				*word |= mask;
+			else
+				*word &= ~mask;
+			return *this;
+		}
+	};
+	FlagsProxy AdrenalineActive() const { return FlagsProxy(&m_pPlayerData->m_nPlayerFlags, 0x2); }
+	FlagsProxy HaveTargetSelected() const { return FlagsProxy(&m_pPlayerData->m_nPlayerFlags, 0x4); }
+	FlagsProxy CanBeDamaged() const { return FlagsProxy(&m_pPlayerData->m_nPlayerFlags, 0x10); }
 #ifdef FREE_CAM
 	bool m_bFreeAimActive;
 	CVector m_cachedCamSource;
@@ -72,6 +115,10 @@ public:
 	void SetInitialState(void);
 	void ProcessControl(void);
 	void ClearAdrenaline(void);
+	// SA CPlayerPed::ResetSprintEnergy / HandleSprintEnergy (0x60A530/0x60A550).
+	// The budget is m_fTimeCanRun; the old name is kept as a thin caller.
+	void ResetSprintEnergy(void);
+	bool HandleSprintEnergy(bool sprint, float adrenalineConsumedPerTimeStep);
 	void UseSprintEnergy(void);
 	class CPlayerInfo *GetPlayerInfoForThisPlayerPed();
 	void SetRealMoveAnim(void);

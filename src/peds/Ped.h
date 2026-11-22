@@ -274,6 +274,13 @@ enum PointBlankNecessity {
 	POINT_BLANK_FOR_SOMEONE_ELSE
 };
 
+// ePedState, 65 values, numbered exactly as San Andreas numbers them. The
+// order is part of the save format: CPed::m_nPedState is written raw, so an
+// entry inserted anywhere but the end changes the meaning of every value
+// stored after it. PED_DIE_BY_STEALTH is the entry Vice City does not have -
+// it sits between PED_DEAD and PED_CARJACK and pushes the last seven states
+// up by one - and SAVE_VERSION below is what keeps an old save readable
+// through that shift.
 enum PedState
 {
 	PED_NONE,
@@ -282,51 +289,51 @@ enum PedState
 	PED_LOOK_HEADING,
 	PED_WANDER_RANGE,
 	PED_WANDER_PATH,
-	PED_SEEK_POS,
+	PED_SEEK_POSITION,
 	PED_SEEK_ENTITY,
-	PED_FLEE_POS,
+	PED_FLEE_POSITION,
 	PED_FLEE_ENTITY,
 	PED_PURSUE,
 	PED_FOLLOW_PATH,
 	PED_SNIPER_MODE,
-	PED_ROCKET_MODE,
+	PED_ROCKETLAUNCHER_MODE,
 	PED_DUMMY,
 	PED_PAUSE,
 	PED_ATTACK,
 	PED_FIGHT,
 	PED_FACE_PHONE,
-	PED_MAKE_CALL,
+	PED_MAKE_PHONECALL,
 	PED_CHAT,
 	PED_MUG,
-	PED_AIM_GUN,
+	PED_AIMGUN,
 	PED_AI_CONTROL,
 	PED_SEEK_CAR,
-	PED_SEEK_IN_BOAT,
+	PED_SEEK_BOAT_POSITION,
 	PED_FOLLOW_ROUTE,
 	PED_CPR,
 	PED_SOLICIT,
-	PED_BUY_ICECREAM,
-	PED_INVESTIGATE,
-	PED_STEP_AWAY,
+	PED_BUY_ICE_CREAM,
+	PED_INVESTIGATE_EVENT,
+	PED_EVADE_STEP,
 	PED_ON_FIRE,
-	PED_SUN_BATHE,
+	PED_SUNBATHE,
 	PED_FLASH,
 	PED_JOG,
 	PED_ANSWER_MOBILE,
 
-	PED_UNKNOWN,	// Same with IDLE, but also infects up to 5 peds with same pedType and WANDER_PATH, so they become stone too. HANG_OUT in Fire_Head's idb
+	PED_HANG_OUT,	// Same with IDLE, but also infects up to 5 peds with same pedType and WANDER_PATH, so they become stone too. HANG_OUT in Fire_Head's idb
 
 	PED_STATES_NO_AI,
 
-	PED_ABSEIL,
+	PED_ABSEIL_FROM_HELI,
 	PED_SIT,
 	PED_JUMP,
 	PED_FALL,
 	PED_GETUP,
 	PED_STAGGER,
-	PED_DIVE_AWAY,
+	PED_EVADE_DIVE,
 
-	PED_STATES_NO_ST,
+	PED_STATES_CAN_SHOOT,
 	PED_ENTER_TRAIN,
 	PED_EXIT_TRAIN,
 	PED_ARREST_PLAYER,
@@ -337,8 +344,9 @@ enum PedState
 	PED_OPEN_DOOR,
 	PED_DIE,
 	PED_DEAD,
+	PED_DIE_BY_STEALTH,
 	PED_CARJACK,
-	PED_DRAG_FROM_CAR,
+	PED_DRAGGED_FROM_CAR,
 	PED_ENTER_CAR,
 	PED_STEAL_CAR,
 	PED_EXIT_CAR,
@@ -1003,10 +1011,13 @@ public:
 			ClearFollowPath();
 		m_nPedState = state;
 	}
-	bool Dead(void) { return m_nPedState == PED_DEAD; }
-	bool Dying(void) { return m_nPedState == PED_DIE; }
-	bool DyingOrDead(void) { return m_nPedState == PED_DIE || m_nPedState == PED_DEAD; }
-	bool OnGround(void) { return m_nPedState == PED_FALL || m_nPedState == PED_DIE || m_nPedState == PED_DEAD; }
+	// A stealth kill is a third way to be dead, so every "is this ped dead"
+	// question has to admit PED_DIE_BY_STEALTH. SA keeps the same set in
+	// CPed::IsStateDeadForScript and in the script opcode that asks it.
+	bool Dead(void) { return m_nPedState == PED_DEAD || m_nPedState == PED_DIE_BY_STEALTH; }
+	bool Dying(void) { return m_nPedState == PED_DIE || m_nPedState == PED_DIE_BY_STEALTH; }
+	bool DyingOrDead(void) { return m_nPedState == PED_DIE || m_nPedState == PED_DEAD || m_nPedState == PED_DIE_BY_STEALTH; }
+	bool OnGround(void) { return m_nPedState == PED_FALL || m_nPedState == PED_DIE || m_nPedState == PED_DEAD || m_nPedState == PED_DIE_BY_STEALTH; }
 	bool OnGroundOrGettingUp(void) { return OnGround() || m_nPedState == PED_GETUP; }
 	
 	bool Driving(void) { return m_nPedState == PED_DRIVING; }

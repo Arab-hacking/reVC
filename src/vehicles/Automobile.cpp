@@ -365,7 +365,7 @@ CAutomobile::ProcessControl(void)
 	// Improve grip of vehicles in certain cases
 	bool strongGrip1 = false;
 	bool strongGrip2 = false;
-	if(FindPlayerVehicle() && this != FindPlayerVehicle() && FindPlayerPed()->m_pWanted->GetWantedLevel() > 3 &&
+	if(FindPlayerVehicle() && this != FindPlayerVehicle() && FindPlayerPed()->Wanted()->GetWantedLevel() > 3 &&
 	   (AutoPilot.m_nCarMission == MISSION_RAMPLAYER_FARAWAY || AutoPilot.m_nCarMission == MISSION_RAMPLAYER_CLOSE ||
 	    AutoPilot.m_nCarMission == MISSION_BLOCKPLAYER_FARAWAY || AutoPilot.m_nCarMission == MISSION_BLOCKPLAYER_CLOSE) &&
 		FindPlayerSpeed().Magnitude() > 0.3f){
@@ -471,7 +471,7 @@ CAutomobile::ProcessControl(void)
 		// fall through
 	case STATUS_PLAYER:
 		if(playerRemote ||
-		   pDriver && pDriver->GetPedState() != PED_EXIT_CAR && pDriver->GetPedState() != PED_DRAG_FROM_CAR && pDriver->GetPedState() != PED_ARRESTED){
+		   pDriver && pDriver->GetPedState() != PED_EXIT_CAR && pDriver->GetPedState() != PED_DRAGGED_FROM_CAR && pDriver->GetPedState() != PED_ARRESTED){
 			// process control input if controlled by player
 			if(playerRemote || pDriver->m_nPedType == PEDTYPE_PLAYER1)
 				ProcessControlInputs(0);
@@ -525,7 +525,7 @@ CAutomobile::ProcessControl(void)
 			}
 		}else if(pDriver && pDriver->IsPlayer() &&
 		         (pDriver->GetPedState() == PED_ARRESTED ||
-		          pDriver->GetPedState() == PED_DRAG_FROM_CAR ||
+		          pDriver->GetPedState() == PED_DRAGGED_FROM_CAR ||
 		          (pDriver->GetPedState() == PED_EXIT_CAR || pDriver->m_objective == OBJECTIVE_LEAVE_CAR) && !CanPedJumpOutCar())){
 			bIsHandbrakeOn = true;
 			m_fBrakePedal = 1.0f;
@@ -615,7 +615,7 @@ CAutomobile::ProcessControl(void)
 		if(m_vecMoveSpeed.MagnitudeSqr() < SQR(0.1f) ||
 		   (pDriver && pDriver->IsPlayer() &&
 		    (pDriver->GetPedState() == PED_ARRESTED ||
-		     pDriver->GetPedState() == PED_DRAG_FROM_CAR ||
+		     pDriver->GetPedState() == PED_DRAGGED_FROM_CAR ||
 		     (pDriver->GetPedState() == PED_EXIT_CAR || pDriver->m_objective == OBJECTIVE_LEAVE_CAR) && !CanPedJumpOutCar()))){
 			bIsHandbrakeOn = true;
 			m_fBrakePedal = 1.0f;

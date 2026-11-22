@@ -152,9 +152,9 @@ CBoat::ProcessControl(void)
 		m_fBuoyancyConstant -= m_fMass*0.001f*0.008f;
 
 #ifdef FIX_BUGS
-	if(FindPlayerPed() && FindPlayerPed()->m_pWanted->GetWantedLevel() > 0 && GetModelIndex() == MI_PREDATOR && pDriver && IsPolicePedModel(pDriver->GetModelIndex())) {
+	if(FindPlayerPed() && FindPlayerPed()->Wanted()->GetWantedLevel() > 0 && GetModelIndex() == MI_PREDATOR && pDriver && IsPolicePedModel(pDriver->GetModelIndex())) {
 #else
-	if(FindPlayerPed()->m_pWanted->GetWantedLevel() > 0 && GetModelIndex() == MI_PREDATOR){
+	if(FindPlayerPed()->Wanted()->GetWantedLevel() > 0 && GetModelIndex() == MI_PREDATOR){
 #endif
 		CVehicle *playerVeh = FindPlayerVehicle();
 		if(playerVeh && playerVeh->GetVehicleAppearance() == VEHICLE_APPEARANCE_BOAT &&

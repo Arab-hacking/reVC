@@ -292,7 +292,7 @@ CPickup::CanBePickedUp(CPlayerPed *player, int playerId)
 	bool cannotBePickedUp =
 		(m_pObject->GetModelIndex() == MI_PICKUP_BODYARMOUR && player->m_fArmour > CWorld::Players[playerId].m_nMaxArmour - 0.2f)
 		|| (m_pObject->GetModelIndex() == MI_PICKUP_HEALTH && player->m_fHealth > CWorld::Players[playerId].m_nMaxHealth - 0.2f)
-		|| (m_pObject->GetModelIndex() == MI_PICKUP_BRIBE && player->m_pWanted->GetWantedLevel() == 0)
+		|| (m_pObject->GetModelIndex() == MI_PICKUP_BRIBE && player->Wanted()->GetWantedLevel() == 0)
 		|| (m_pObject->GetModelIndex() == MI_PICKUP_KILLFRENZY && (CTheScripts::IsPlayerOnAMission() || CDarkel::FrenzyOnGoing() || !CGame::nastyGame))
 		|| (m_eType == PICKUP_ASSET_REVENUE && m_fRevenue < 10.0f);
 	return !cannotBePickedUp;
@@ -395,7 +395,7 @@ CPickup::Update(CPlayerPed *player, CVehicle *vehicle, int playerId)
 				if (plrWeaponSlot != weaponType) {
 					if (CStreaming::ms_aInfoForModel[m_pObject->GetModelIndex()].m_loadState == STREAMSTATE_LOADED) {
 						if (plrWeaponSlot == WEAPONTYPE_UNARMED || (FindPlayerPed()->GetWeapon(slot).m_nAmmoTotal == 0 && !CWeaponInfo::IsWeaponSlotAmmoMergeable(slot))) {
-							if (CTimer::GetTimeInMilliseconds() - FindPlayerPed()->m_nPadDownPressedInMilliseconds < 1500) {
+							if (CTimer::GetTimeInMilliseconds() - FindPlayerPed()->PadDownPressedInMilliseconds() < 1500) {
 								CPickups::PlayerOnWeaponPickup = 6;
 								isPickupTouched = false;
 							}
@@ -427,7 +427,7 @@ CPickup::Update(CPlayerPed *player, CVehicle *vehicle, int playerId)
 							}
 							if (CollectPickupBuffer == 0)
 								isPickupTouched = false;
-							if (CTimer::GetTimeInMilliseconds() - FindPlayerPed()->m_nPadDownPressedInMilliseconds < 1500)
+							if (CTimer::GetTimeInMilliseconds() - FindPlayerPed()->PadDownPressedInMilliseconds() < 1500)
 								isPickupTouched = false;
 						}
 					} else
@@ -790,9 +790,12 @@ CPickups::GivePlayerGoodiesWithPickUpMI(int16 modelIndex, int playerIndex)
 	else player = CWorld::Players[playerIndex].m_pPed;
 
 	if (modelIndex == MI_PICKUP_ADRENALINE) {
-		player->m_bAdrenalineActive = true;
-		player->m_nAdrenalineTime = CTimer::GetTimeInMilliseconds() + 20000;
-		player->m_fCurrentStamina = player->m_fMaxStamina;
+		// SA CPickups::GivePlayerGoodiesWithPickupMI: the adrenaline pickup tops
+		// the sprint budget back up to the full stat-derived value, which is
+		// what ResetSprintEnergy does.
+		player->AdrenalineActive() = true;
+		player->AdrenalineEndTime() = CTimer::GetTimeInMilliseconds() + 20000;
+		player->ResetSprintEnergy();
 		DMAudio.PlayFrontEndSound(SOUND_PICKUP_ADRENALINE, 0);
 		return true;
 	} else if (modelIndex == MI_PICKUP_BODYARMOUR) {
@@ -810,7 +813,7 @@ CPickups::GivePlayerGoodiesWithPickUpMI(int16 modelIndex, int playerIndex)
 		DMAudio.PlayFrontEndSound(SOUND_PICKUP_BONUS, 0);
 		return true;
 	} else if (modelIndex == MI_PICKUP_BRIBE) {
-		int32 level = Max(FindPlayerPed()->m_pWanted->GetWantedLevel() - 1, 0);
+		int32 level = Max(FindPlayerPed()->Wanted()->GetWantedLevel() - 1, 0);
 		player->SetWantedLevel(level);
 		DMAudio.PlayFrontEndSound(SOUND_PICKUP_BONUS, 0);
 		return true;

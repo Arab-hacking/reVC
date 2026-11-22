@@ -270,7 +270,7 @@ CWeapon::Fire(CEntity *shooter, CVector *fireSource)
 			{
 				if ( shooter == FindPlayerPed() )
 				{
-					fired = FireProjectile(shooter, source, ((CPlayerPed*)shooter)->m_fAttackButtonCounter*0.0375f);
+					fired = FireProjectile(shooter, source, ((CPlayerPed*)shooter)->AttackButtonCounter()*0.0375f);
 				}
 				else if ( shooter->IsPed() && ((CPed*)shooter)->m_pSeekTarget != nil )
 				{
@@ -622,7 +622,7 @@ CWeapon::FireMelee(CEntity *shooter, CVector &fireSource)
 							{
 								if ( shooterPed->IsPlayer() && isHeavy && anim2Playing )
 									victimPed->InflictDamage(shooterPed, m_eWeaponType, 100.0f, PED_PIECE_TORSO, localDir);
-								else if ( shooterPed->IsPlayer() && ((CPlayerPed*)shooterPed)->m_bAdrenalineActive )
+								else if ( shooterPed->IsPlayer() && ((CPlayerPed*)shooterPed)->AdrenalineActive() )
 									victimPed->InflictDamage(shooterPed, m_eWeaponType, 3.5f*info->m_nDamage, PED_PIECE_TORSO, localDir);
 								else
 								{
@@ -914,14 +914,14 @@ CWeapon::FireInstantHit(CEntity *shooter, CVector *fireSource)
 
 			if (shooter == FindPlayerPed() && inaccuracy != 0.f)
 			{
-				float newInaccuracy = fPlayerAimScale * FindPlayerPed()->m_fAttackButtonCounter * (inaccuracy * Min(1.f, fPlayerAimScaleDist / distToTarget));
+				float newInaccuracy = fPlayerAimScale * FindPlayerPed()->AttackButtonCounter() * (inaccuracy * Min(1.f, fPlayerAimScaleDist / distToTarget));
 				if (FindPlayerPed()->bIsDucking)
 					newInaccuracy *= 0.4f;
 
 				target.x += CGeneral::GetRandomNumberInRange(-0.15f, 0.15f) * newInaccuracy;
 				target.y += CGeneral::GetRandomNumberInRange(-0.15f, 0.15f) * newInaccuracy;
 				target.z += CGeneral::GetRandomNumberInRange(-0.2f, 0.2f) * newInaccuracy;
-				FindPlayerPed()->m_fAttackButtonCounter += info->m_nDamage * 0.04f;
+				FindPlayerPed()->AttackButtonCounter() += info->m_nDamage * 0.04f;
 			}
 			else if (inaccuracy > 0.f)
 			{
@@ -1420,7 +1420,7 @@ CWeapon::DoBulletImpact(CEntity *shooter, CEntity *victim,
 						if ( victimPed->IsPlayer() )
 						{
 							CPlayerPed *victimPlayer = (CPlayerPed *)victimPed;
-							if ( victimPlayer->m_nHitAnimDelayTimer < CTimer::GetTimeInMilliseconds() && victimPed->m_nPedState != PED_DRIVING )
+							if ( victimPlayer->HitAnimDelayTimer() < CTimer::GetTimeInMilliseconds() && victimPed->m_nPedState != PED_DRIVING )
 							{
 								victimPed->ClearAttackByRemovingAnim();
 
@@ -1431,9 +1431,9 @@ CWeapon::DoBulletImpact(CEntity *shooter, CEntity *victim,
 								asoc->blendDelta  = 8.0f;
 
 								if ( m_eWeaponType == WEAPONTYPE_M4 )
-									victimPlayer->m_nHitAnimDelayTimer = CTimer::GetTimeInMilliseconds() + 2500;
+									victimPlayer->HitAnimDelayTimer() = CTimer::GetTimeInMilliseconds() + 2500;
 								else
-									victimPlayer->m_nHitAnimDelayTimer = CTimer::GetTimeInMilliseconds() + 1000;
+									victimPlayer->HitAnimDelayTimer() = CTimer::GetTimeInMilliseconds() + 1000;
 							}
 						}
 						else

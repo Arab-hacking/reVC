@@ -388,7 +388,7 @@ CDarkel::Update()
 
 		TimeOfFrenzyStart = CTimer::GetTimeInMilliseconds();
 
-		FindPlayerPed()->m_pWanted->SetWantedLevel(0);
+		FindPlayerPed()->Wanted()->SetWantedLevel(0);
 
 		DealWithWeaponChangeAtEndOfFrenzy();
 

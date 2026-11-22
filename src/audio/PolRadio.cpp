@@ -127,12 +127,12 @@ cAudioManager::ServicePoliceRadio()
 	if(!m_bIsPaused) {
 		bool8 crimeReport = SetupCrimeReport();
 #ifdef FIX_BUGS // Crash at 0x5fe6ef
-		if(CReplay::IsPlayingBack() || !FindPlayerPed() || !FindPlayerPed()->m_pWanted)
+		if(CReplay::IsPlayingBack() || !FindPlayerPed() || !FindPlayerPed()->Wanted())
 			return;
 #endif
 		CPlayerPed *playerPed = FindPlayerPed();
 		if (playerPed) {
-			wantedLevel = playerPed->m_pWanted->GetWantedLevel();
+			wantedLevel = playerPed->Wanted()->GetWantedLevel();
 			if (!crimeReport) {
 				if (wantedLevel != 0) {
 					if (nLastSeen != 0)
@@ -657,7 +657,7 @@ void
 cAudioManager::ReportCrime(eCrimeType type, const CVector &pos)
 {
 	int32 lastCrime = ARRAY_SIZE(m_aCrimes);
-	if (m_bIsInitialised && MusicManager.m_nMusicMode != MUSICMODE_CUTSCENE && FindPlayerPed()->m_pWanted->GetWantedLevel() > 0 &&
+	if (m_bIsInitialised && MusicManager.m_nMusicMode != MUSICMODE_CUTSCENE && FindPlayerPed()->Wanted()->GetWantedLevel() > 0 &&
 		(type > CRIME_NONE || type < NUM_CRIME_TYPES) && m_FrameCounter >= gMinTimeToNextReport[type]) {
 		for (int32 i = 0; i < ARRAY_SIZE(m_aCrimes); i++) {
 			if (m_aCrimes[i].type != CRIME_NONE) {

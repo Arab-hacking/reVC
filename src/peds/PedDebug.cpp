@@ -331,7 +331,7 @@ CPed::DebugRenderOnePedText(void)
 			CFont::PrintString(screenCoords.x, screenCoords.y + 2 * lineHeight, gUString);
 			AsciiToUnicode(WaitStateText[m_nWaitState], gUString);
 			CFont::PrintString(screenCoords.x, screenCoords.y + 3 * lineHeight, gUString);
-			if (m_nPedState == PED_SEEK_POS || m_nPedState == PED_SEEK_ENTITY) {
+			if (m_nPedState == PED_SEEK_POSITION || m_nPedState == PED_SEEK_ENTITY) {
 				sprintf(gString, "Safe distance to target: %.2f", m_distanceToCountSeekDone);
 				AsciiToUnicode(gString, gUString);
 				CFont::PrintString(screenCoords.x, screenCoords.y + 4 * lineHeight, gUString);

@@ -19,6 +19,7 @@
 #include "MBlur.h"
 #include "Streaming.h"
 #include "Population.h"
+#include "Stats.h"
 #include "Script.h"
 #include "Replay.h"
 #include "PedPlacement.h"
@@ -49,12 +50,28 @@ GetPadFromPlayer(CPlayerPed*)
 
 CPlayerPed::~CPlayerPed()
 {
-	delete m_pWanted;
+}
+
+// SA CPlayerPed::CPlayerPed binds m_pPlayerData to the player's own block; the
+// reference members are bound to the fields of that block, so every existing
+// spelling of Wanted(), MoveSpeed(), TimeCanRun() and ArrestingCop() keeps
+// resolving - now to the single owner instead of to a private copy.
+void
+CPlayerPed::BindPlayerData(CPlayerPedData *data)
+{
+	m_pPlayerData = data;
+	if(data){
+		data->m_bHaveTargetSelected = false;
+		data->m_bCanBeDamaged = true;
+		data->m_bAdrenaline = false;
+	}
 }
 
 CPlayerPed::CPlayerPed(void) : CPed(PEDTYPE_PLAYER1)
 {
-	m_fMoveSpeed = 0.0f;
+	// Before anything else: nothing may touch the aliases until they are bound.
+	BindPlayerData(&CWorld::Players[CWorld::PlayerInFocus].m_PlayerData);
+	MoveSpeed() = 0.0f;
 	// Slot 0 (MI_PLAYER) is only filled when the installation supplies a
 	// player.dff; the archive does not. Fall back to a registered SA actor so
 	// the ped is never built against an empty slot - SetModelIndex would have
@@ -73,38 +90,34 @@ CPlayerPed::CPlayerPed(void) : CPed(PEDTYPE_PLAYER1)
 		}
 	}
 	SetModelIndex(model);
-#ifdef FIX_BUGS
-	m_fCurrentStamina = m_fMaxStamina = 150.0f;
-#endif
 	SetInitialState();
 
-	m_pWanted = new CWanted();
-	m_pWanted->Initialise();
-	m_pArrestingCop = nil;
+	Wanted() = new CWanted();
+	Wanted()->Initialise();
+	ArrestingCop() = nil;
 	m_currentWeapon = WEAPONTYPE_UNARMED;
 	m_nSelectedWepSlot = WEAPONSLOT_UNARMED;
 	m_nSpeedTimer = 0;
 	m_bSpeedTimerFlag = false;
 	SetWeaponLockOnTarget(nil);
 	SetPedState(PED_IDLE);
-#ifndef FIX_BUGS
-	m_fCurrentStamina = m_fMaxStamina = 150.0f;
-#endif
-	m_fStaminaProgress = 0.0f;
+	// SA CPlayerPed::CPlayerPed stores GetFatAndMuscleModifier(STAT_MOD_TIME_CAN_RUN)
+	// into TimeCanRun(); ResetSprintEnergy does the same at the start of a life.
+	ResetSprintEnergy();
 	m_nEvadeAmount = 0;
 	m_pEvadingFrom = nil;
-	m_nHitAnimDelayTimer = 0;
-	m_fAttackButtonCounter = 0.0f;
-	m_bHaveTargetSelected = false;
+	HitAnimDelayTimer() = 0;
+	AttackButtonCounter() = 0.0f;
+	m_pPlayerData->m_bHaveTargetSelected = false;
 	m_bHasLockOnTarget = false;
-	m_bCanBeDamaged = true;
+	m_pPlayerData->m_bCanBeDamaged = true;
 	m_bNoPosForMeleeAttack = false;
 	m_fWalkAngle = 0.0f;
-	m_fFPSMoveHeading = 0.0f;
+	FPSMoveHeading() = 0.0f;
 	m_pMinigunTopAtomic = nil;
-	m_fGunSpinSpeed = 0.0;
-	m_fGunSpinAngle = 0.0;
-	m_nPadDownPressedInMilliseconds = 0;
+	GunSpinSpeed() = 0.0;
+	GunSpinAngle() = 0.0;
+	PadDownPressedInMilliseconds() = 0;
 	m_nTargettableObjects[0] = m_nTargettableObjects[1] = m_nTargettableObjects[2] = m_nTargettableObjects[3] = -1;
 	unk1 = false;
 	for (int i = 0; i < 6; i++) {
@@ -134,13 +147,13 @@ CPlayerPed::ClearWeaponTarget()
 void
 CPlayerPed::SetWantedLevel(int32 level)
 {
-	m_pWanted->SetWantedLevel(level);
+	Wanted()->SetWantedLevel(level);
 }
 
 void
 CPlayerPed::SetWantedLevelNoDrop(int32 level)
 {
-	m_pWanted->SetWantedLevelNoDrop(level);
+	Wanted()->SetWantedLevelNoDrop(level);
 }
 
 void
@@ -170,8 +183,8 @@ CPlayerPed::AnnoyPlayerPed(bool annoyedByPassingEntity)
 void
 CPlayerPed::ClearAdrenaline(void)
 {
-	if (m_bAdrenalineActive && m_nAdrenalineTime != 0) {
-		m_nAdrenalineTime = 0;
+	if (AdrenalineActive() && AdrenalineEndTime() != 0) {
+		AdrenalineEndTime() = 0;
 		CTimer::SetTimeScale(1.0f);
 	}
 }
@@ -221,20 +234,49 @@ CPlayerPed::ReactivatePlayerPed(int32 index)
 	CWorld::Add(CWorld::Players[index].m_pPed);
 }
 
+// SA CPlayerPed::ResetSprintEnergy (0x60A530): the budget is whatever the
+// player's stamina stat is worth right now, recomputed rather than carried.
+void
+CPlayerPed::ResetSprintEnergy(void)
+{
+	TimeCanRun() = CStats::GetFatAndMuscleModifier(CStats::STAT_MOD_TIME_CAN_RUN);
+}
+
+// SA CPlayerPed::HandleSprintEnergy (0x60A550).
+//
+// sprinting costs adrenalineConsumedPerTimeStep per frame down to -150, the
+// point at which the player cannot start another sprint; not sprinting
+// recovers at half that rate. The recumbent caller passes a multiplier below 1
+// while walking, which is why the parameter exists at all.
+//
+// The two early-out cases are SA's: a player who does not get tired (the
+// mission flag) and an adrenaline pickup both let the sprint continue without
+// touching the budget.
+bool
+CPlayerPed::HandleSprintEnergy(bool sprint, float adrenalineConsumedPerTimeStep)
+{
+	if (sprint) {
+		if (CWorld::Players[CWorld::PlayerInFocus].m_bInfiniteSprint)
+			return true;
+		if (AdrenalineActive() || adrenalineConsumedPerTimeStep == 0.0f)
+			return true;
+
+		if (TimeCanRun() > -150.0f) {
+			TimeCanRun() = Max(-150.0f, TimeCanRun() - CTimer::GetTimeStep() * adrenalineConsumedPerTimeStep);
+			return true;
+		}
+	} else {
+		if (CStats::GetFatAndMuscleModifier(CStats::STAT_MOD_TIME_CAN_RUN) > TimeCanRun())
+			TimeCanRun() += CTimer::GetTimeStep() * adrenalineConsumedPerTimeStep / 2.0f;
+	}
+	return false;
+}
+
+// The old single-argument form: the player spends a full multiplier per frame.
 void
 CPlayerPed::UseSprintEnergy(void)
 {
-	if (m_fCurrentStamina > -150.0f && !CWorld::Players[CWorld::PlayerInFocus].m_bInfiniteSprint
-		&& !m_bAdrenalineActive) {
-		m_fCurrentStamina = m_fCurrentStamina - CTimer::GetTimeStep();
-		m_fStaminaProgress = m_fStaminaProgress + CTimer::GetTimeStep();
-	}
-
-	if (m_fStaminaProgress >= 500.0f) {
-		m_fStaminaProgress = 0;
-		if (m_fMaxStamina < 1000.0f)
-			m_fMaxStamina += 10.0f;
-	}
+	HandleSprintEnergy(true, 1.0f);
 }
 
 void
@@ -293,12 +335,12 @@ CPlayerPed::ReApplyMoveAnims(void)
 void
 CPlayerPed::SetInitialState(void)
 {
-	m_nDrunkenness = 0;
-	m_nFadeDrunkenness = 0;
+	Drunkenness() = 0;
+	FadeDrunkenness() = 0;
 	CMBlur::ClearDrunkBlur();
 	m_nDrunkCountdown = 0;
-	m_bAdrenalineActive = false;
-	m_nAdrenalineTime = 0;
+	AdrenalineActive() = false;
+	AdrenalineEndTime() = 0;
 	CTimer::SetTimeScale(1.0f);
 	m_pSeekTarget = nil;
 	m_vecSeekPos = CVector(0.0f, 0.0f, 0.0f);
@@ -320,13 +362,13 @@ CPlayerPed::SetInitialState(void)
 	SetMoveState(PEDMOVE_STILL);
 	m_nLastPedState = PED_NONE;
 	m_animGroup = ASSOCGRP_PLAYER;
-	m_fMoveSpeed = 0.0f;
+	MoveSpeed() = 0.0f;
 	m_nSelectedWepSlot = WEAPONSLOT_UNARMED;
 	m_nEvadeAmount = 0;
 	m_pEvadingFrom = nil;
 	bIsPedDieAnimPlaying = false;
 	SetRealMoveAnim();
-	m_bCanBeDamaged = true;
+	m_pPlayerData->m_bCanBeDamaged = true;
 	// pedstats.dat is not part of the archive, so no stat entries may exist and
 	// the constructor is left with nil. Writing through it would fault while the
 	// player is still being built, before anything can report a missing table.
@@ -406,7 +448,7 @@ CPlayerPed::SetRealMoveAnim(void)
 			
 			RestoreHeadingRate();
 			if (!curIdleAssoc) {
-				if (m_fCurrentStamina < 0.0f && !bIsAimingGun && !CWorld::TestSphereAgainstWorld(GetPosition(), 0.5f,
+				if (TimeCanRun() < 0.0f && !bIsAimingGun && !CWorld::TestSphereAgainstWorld(GetPosition(), 0.5f,
 						nil, true, false, false, false, false, false)) {
 					curIdleAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_IDLE_TIRED, 8.0f);
 
@@ -422,9 +464,9 @@ CPlayerPed::SetRealMoveAnim(void)
 			curIdleAssoc->blendAmount = 0.0f;
 			curIdleAssoc->blendDelta = 8.0f;
 
-		} else if (m_fMoveSpeed == 0.0f && !curSprintAssoc) {
+		} else if (MoveSpeed() == 0.0f && !curSprintAssoc) {
 			if (!curIdleAssoc) {
-				if (m_fCurrentStamina < 0.0f && !bIsAimingGun && !CWorld::TestSphereAgainstWorld(GetPosition(), 0.5f,
+				if (TimeCanRun() < 0.0f && !bIsAimingGun && !CWorld::TestSphereAgainstWorld(GetPosition(), 0.5f,
 						nil, true, false, false, false, false, false)) {
 					curIdleAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_IDLE_TIRED, 4.0f);
 					
@@ -439,11 +481,11 @@ CPlayerPed::SetRealMoveAnim(void)
 				m_nWaitTimer = CTimer::GetTimeInMilliseconds() + CGeneral::GetRandomNumberInRange(2500, 4000);
 			}
 
-			if ((m_fCurrentStamina > 0.0f || bIsAimingGun) && curIdleAssoc->animId == ANIM_ID_IDLE_TIRED) {
+			if ((TimeCanRun() > 0.0f || bIsAimingGun) && curIdleAssoc->animId == ANIM_ID_IDLE_TIRED) {
 				CAnimManager::BlendAnimation(GetClump(), moveGroup, ANIM_ID_IDLE, 4.0f);
 
 			} else if (m_nPedState != PED_FIGHT) {
-				if (m_fCurrentStamina < 0.0f && !bIsAimingGun && curIdleAssoc->animId != ANIM_ID_IDLE_TIRED
+				if (TimeCanRun() < 0.0f && !bIsAimingGun && curIdleAssoc->animId != ANIM_ID_IDLE_TIRED
 					&& !CWorld::TestSphereAgainstWorld(GetPosition(), 0.5f, nil, true, false, false, false, false, false)) {
 					CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_IDLE_TIRED, 4.0f);
 
@@ -504,21 +546,21 @@ CPlayerPed::SetRealMoveAnim(void)
 				curRunAssoc->SetRun();
 			}
 			if (m_nMoveState == PEDMOVE_SPRINT) {
-				if (m_fCurrentStamina < 0.0f && (m_fCurrentStamina <= -150.0f || !curSprintAssoc || curSprintAssoc->blendDelta < 0.0f))
+				if (TimeCanRun() < 0.0f && (TimeCanRun() <= -150.0f || !curSprintAssoc || curSprintAssoc->blendDelta < 0.0f))
 					m_nMoveState = PEDMOVE_STILL;
 
 				if (curWalkStartAssoc)
 					m_nMoveState = PEDMOVE_STILL;
 			}
 
-			if (curSprintAssoc && (m_nMoveState != PEDMOVE_SPRINT || m_fMoveSpeed < 0.4f)) {
+			if (curSprintAssoc && (m_nMoveState != PEDMOVE_SPRINT || MoveSpeed() < 0.4f)) {
 				// Stop sprinting in various conditions
 				if (curSprintAssoc->blendAmount == 0.0f) {
 					curSprintAssoc->blendDelta = -1000.0f;
 					curSprintAssoc->flags |= ASSOC_DELETEFADEDOUT;
 
 				} else if (curSprintAssoc->blendDelta >= 0.0f || curSprintAssoc->blendAmount >= 0.8f) {
-					if (m_fMoveSpeed < 0.4f) {
+					if (MoveSpeed() < 0.4f) {
 						AnimationId runStopAnim;
 						if (curSprintAssoc->GetProgress() < 0.5) // double
 							runStopAnim = ANIM_ID_RUN_STOP;
@@ -545,7 +587,7 @@ CPlayerPed::SetRealMoveAnim(void)
 						curSprintAssoc->blendDelta = -1.0f;
 						curRunAssoc->blendDelta = 1.0f;
 					}
-				} else if (m_fMoveSpeed < 1.0f) {
+				} else if (MoveSpeed() < 1.0f) {
 					curSprintAssoc->blendDelta = -8.0f;
 					curRunAssoc->blendDelta = 8.0f;
 				}
@@ -572,13 +614,13 @@ CPlayerPed::SetRealMoveAnim(void)
 				}
 				UseSprintEnergy();
 			} else {
-				if (m_fMoveSpeed < 1.0f) {
+				if (MoveSpeed() < 1.0f) {
 					curWalkAssoc->blendAmount = 1.0f;
 					curRunAssoc->blendAmount = 0.0f;
 					m_nMoveState = PEDMOVE_WALK;
-				} else if (m_fMoveSpeed < 2.0f) {
-					curWalkAssoc->blendAmount = 2.0f - m_fMoveSpeed;
-					curRunAssoc->blendAmount = m_fMoveSpeed - 1.0f;
+				} else if (MoveSpeed() < 2.0f) {
+					curWalkAssoc->blendAmount = 2.0f - MoveSpeed();
+					curRunAssoc->blendAmount = MoveSpeed() - 1.0f;
 					m_nMoveState = PEDMOVE_RUN;
 				} else {
 					curWalkAssoc->blendAmount = 0.0f;
@@ -590,9 +632,9 @@ CPlayerPed::SetRealMoveAnim(void)
 			}
 		}
 	}
-	if (m_bAdrenalineActive) {
-		if (CTimer::GetTimeInMilliseconds() > m_nAdrenalineTime) {
-			m_bAdrenalineActive = false;
+	if (AdrenalineActive()) {
+		if (CTimer::GetTimeInMilliseconds() > AdrenalineEndTime()) {
+			AdrenalineActive() = false;
 			CTimer::SetTimeScale(1.0f);
 			if (curWalkStartAssoc)
 				curWalkStartAssoc->speed = 1.0f;
@@ -624,8 +666,7 @@ CPlayerPed::SetRealMoveAnim(void)
 void
 CPlayerPed::RestoreSprintEnergy(float restoreSpeed)
 {
-	if (m_fCurrentStamina < m_fMaxStamina)
-		m_fCurrentStamina += restoreSpeed * CTimer::GetTimeStep() * 0.5f;
+	HandleSprintEnergy(false, restoreSpeed);
 }
 
 float
@@ -704,7 +745,7 @@ void
 CPlayerPed::RunningLand(CPad *padUsed)
 {
 	CAnimBlendAssociation *landAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_ID_FALL_LAND);
-	if (landAssoc && landAssoc->currentTime == 0.0f && m_fMoveSpeed > 1.5f
+	if (landAssoc && landAssoc->currentTime == 0.0f && MoveSpeed() > 1.5f
 		&& padUsed && (padUsed->GetPedWalkLeftRight() != 0.0f || padUsed->GetPedWalkUpDown() != 0.0f)) {
 
 		landAssoc->blendDelta = -1000.0f;
@@ -737,14 +778,14 @@ CPlayerPed::IsThisPedAnAimingPriority(CPed *suspect)
 		default:
 			break;
 	}
-	return suspect->m_nPedState == PED_ABSEIL;
+	return suspect->m_nPedState == PED_ABSEIL_FROM_HELI;
 }
 
 void
 CPlayerPed::PlayerControlSniper(CPad *padUsed)
 {
 	ProcessWeaponSwitch(padUsed);
-	TheCamera.PlayerExhaustion = (1.0f - (m_fCurrentStamina - -150.0f) / 300.0f) * 0.9f + 0.1f;
+	TheCamera.PlayerExhaustion = (1.0f - (TimeCanRun() - -150.0f) / 300.0f) * 0.9f + 0.1f;
 
 	if (padUsed->DuckJustDown() && !bIsDucking && m_nMoveState != PEDMOVE_SPRINT) {
 		bCrouchWhenShooting = true;
@@ -765,9 +806,9 @@ CPlayerPed::PlayerControlSniper(CPad *padUsed)
 		CVector firePos(0.0f, 0.0f, 0.6f);
 		firePos = GetMatrix() * firePos;
 		GetWeapon()->Fire(this, &firePos);
-		m_nPadDownPressedInMilliseconds = CTimer::GetTimeInMilliseconds();
-	} else if (CTimer::GetTimeInMilliseconds() > m_nPadDownPressedInMilliseconds + firingRate &&
-		CTimer::GetTimeInMilliseconds() - CTimer::GetTimeStepInMilliseconds() < m_nPadDownPressedInMilliseconds + firingRate && padUsed->GetWeapon()) {
+		PadDownPressedInMilliseconds() = CTimer::GetTimeInMilliseconds();
+	} else if (CTimer::GetTimeInMilliseconds() > PadDownPressedInMilliseconds() + firingRate &&
+		CTimer::GetTimeInMilliseconds() - CTimer::GetTimeStepInMilliseconds() < PadDownPressedInMilliseconds() + firingRate && padUsed->GetWeapon()) {
 		
 		if (GetWeapon()->m_nAmmoTotal > 0) {
 			DMAudio.PlayFrontEndSound(SOUND_WEAPON_AK47_BULLET_ECHO, GetWeapon()->m_eWeaponType);
@@ -871,7 +912,7 @@ spentAmmoCheck:
 
 switchDetectDone:
 	if (m_nSelectedWepSlot != m_currentWeapon) {
-		if (m_nPedState != PED_ATTACK && m_nPedState != PED_AIM_GUN && m_nPedState != PED_FIGHT) {
+		if (m_nPedState != PED_ATTACK && m_nPedState != PED_AIMGUN && m_nPedState != PED_FIGHT) {
 			RemoveWeaponAnims(m_currentWeapon, -1000.0f);
 			MakeChangesForNewWeapon(m_nSelectedWepSlot);
 		}
@@ -882,7 +923,7 @@ void
 CPlayerPed::PlayerControlM16(CPad *padUsed)
 {
 	ProcessWeaponSwitch(padUsed);
-	TheCamera.PlayerExhaustion = (1.0f - (m_fCurrentStamina - -150.0f) / 300.0f) * 0.9f + 0.1f;
+	TheCamera.PlayerExhaustion = (1.0f - (TimeCanRun() - -150.0f) / 300.0f) * 0.9f + 0.1f;
 
 	if (padUsed->DuckJustDown() && !bIsDucking && m_nMoveState != PEDMOVE_SPRINT) {
 		bCrouchWhenShooting = true;
@@ -905,7 +946,7 @@ CPlayerPed::PlayerControlM16(CPad *padUsed)
 			CVector firePos(0.0f, 0.0f, 0.6f);
 			firePos = GetMatrix() * firePos;
 			GetWeapon()->Fire(this, &firePos);
-			m_nPadDownPressedInMilliseconds = CTimer::GetTimeInMilliseconds();
+			PadDownPressedInMilliseconds() = CTimer::GetTimeInMilliseconds();
 		}
 	} else if (CTimer::GetTimeInMilliseconds() > GetWeapon()->m_nTimer &&
 		CTimer::GetTimeInMilliseconds() - CTimer::GetTimeStepInMilliseconds() < GetWeapon()->m_nTimer && GetWeapon()->m_eWeaponState != WEAPONSTATE_OUT_OF_AMMO) {
@@ -948,9 +989,9 @@ CPlayerPed::PlayerControl1stPersonRunAround(CPad *padUsed)
 	float padMoveInGameUnit = padMove / PAD_MOVE_TO_GAME_WORLD_MOVE;
 	if (padMoveInGameUnit > 0.0f) {
 		m_fRotationDest = CGeneral::LimitRadianAngle(TheCamera.Orientation);
-		m_fMoveSpeed = Min(padMoveInGameUnit, 0.07f * CTimer::GetTimeStep() + m_fMoveSpeed);
+		MoveSpeed() = Min(padMoveInGameUnit, 0.07f * CTimer::GetTimeStep() + MoveSpeed());
 	} else {
-		m_fMoveSpeed = 0.0f;
+		MoveSpeed() = 0.0f;
 	}
 
 	if (m_nPedState == PED_JUMP) {
@@ -963,7 +1004,7 @@ CPlayerPed::PlayerControl1stPersonRunAround(CPad *padUsed)
 				ApplyMoveForce(-angleSin * 3.0f, 3.0f * angleCos, 0.05f);
 			}
 		} else if (bIsLanding) {
-			m_fMoveSpeed = 0.0f;
+			MoveSpeed() = 0.0f;
 		}
 	}
 
@@ -1356,7 +1397,7 @@ CPlayerPed::ProcessPlayerWeapon(CPad *padUsed)
 				else
 					TheCamera.SetNewPlayerWeaponMode(CCam::MODE_M16_1STPERSON, 0, 0);
 
-				m_fMoveSpeed = 0.0f;
+				MoveSpeed() = 0.0f;
 				CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_IDLE, 1000.0f);
 				SetPedState(PED_SNIPER_MODE);
 				return;
@@ -1371,21 +1412,21 @@ CPlayerPed::ProcessPlayerWeapon(CPad *padUsed)
 		if (m_nSelectedWepSlot == m_currentWeapon) {
 			if (m_pPointGunAt) {
 				if (m_nPedState == PED_ATTACK) {
-					m_fAttackButtonCounter *= Pow(0.94f, CTimer::GetTimeStep());
+					AttackButtonCounter() *= Pow(0.94f, CTimer::GetTimeStep());
 				} else {
-					m_fAttackButtonCounter = 0.0f;
+					AttackButtonCounter() = 0.0f;
 				}
 				SetAttack(m_pPointGunAt);
 			} else {
 				if (m_nPedState == PED_ATTACK) {
 					if (padUsed->WeaponJustDown()) {
-						m_bHaveTargetSelected = true;
-					} else if (!m_bHaveTargetSelected) {
-						m_fAttackButtonCounter += CTimer::GetTimeStepNonClipped();
+						HaveTargetSelected() = true;
+					} else if (!HaveTargetSelected()) {
+						AttackButtonCounter() += CTimer::GetTimeStepNonClipped();
 					}
 				} else {
-					m_fAttackButtonCounter = 0.0f;
-					m_bHaveTargetSelected = false;
+					AttackButtonCounter() = 0.0f;
+					HaveTargetSelected() = false;
 				}
 				if (GetWeapon()->m_eWeaponType != WEAPONTYPE_UNARMED && GetWeapon()->m_eWeaponType != WEAPONTYPE_BRASSKNUCKLE &&
 					!weaponInfo->IsFlagSet(WEAPONFLAG_FIGHTMODE)) {
@@ -1395,7 +1436,7 @@ CPlayerPed::ProcessPlayerWeapon(CPad *padUsed)
 						SetAttack(nil);
 
 				} else if (padUsed->WeaponJustDown()) {
-					if (m_fMoveSpeed < 1.0f || m_nPedState == PED_FIGHT)
+					if (MoveSpeed() < 1.0f || m_nPedState == PED_FIGHT)
 						StartFightAttack(padUsed->GetWeapon());
 					else
 						SetAttack(nil);
@@ -1405,7 +1446,7 @@ CPlayerPed::ProcessPlayerWeapon(CPad *padUsed)
 	} else {
 		m_pedIK.m_flags &= ~CPedIK::LOOKAROUND_HEAD_ONLY;
 		if (m_nPedState == PED_ATTACK) {
-			m_bHaveTargetSelected = true;
+			HaveTargetSelected() = true;
 			bIsAttacking = false;
 		}
 	}
@@ -1437,8 +1478,8 @@ CPlayerPed::ProcessPlayerWeapon(CPad *padUsed)
 					SetLookFlag(limitedCam, true, true);
 					SetAimFlag(limitedCam);
 					SetLookTimer(INT32_MAX);
-					((CPlayerPed*)this)->m_fFPSMoveHeading = TheCamera.Find3rdPersonQuickAimPitch();
-					if (m_nPedState != PED_ATTACK && m_nPedState != PED_AIM_GUN && m_nPedState != PED_FIGHT) {
+					((CPlayerPed*)this)->FPSMoveHeading() = TheCamera.Find3rdPersonQuickAimPitch();
+					if (m_nPedState != PED_ATTACK && m_nPedState != PED_AIMGUN && m_nPedState != PED_FIGHT) {
 						// This is a seperate ped state just for pointing gun. Used for target button
 						SetPointGunAt(nil);
 					}
@@ -1475,7 +1516,7 @@ CPlayerPed::ProcessPlayerWeapon(CPad *padUsed)
 				float limitedCam = CGeneral::LimitRadianAngle(-TheCamera.Orientation);
 
 				SetAimFlag(limitedCam);
-				((CPlayerPed*)this)->m_fFPSMoveHeading = TheCamera.Find3rdPersonQuickAimPitch();
+				((CPlayerPed*)this)->FPSMoveHeading() = TheCamera.Find3rdPersonQuickAimPitch();
 				m_bFreeAimActive = true;
 			}
 		} else {
@@ -1599,10 +1640,10 @@ CPlayerPed::PlayerControlZelda(CPad *padUsed)
 		}
 
 		float maxAcc = 0.07f * CTimer::GetTimeStep();
-		m_fMoveSpeed = Min(padMoveInGameUnit, m_fMoveSpeed + maxAcc);
+		MoveSpeed() = Min(padMoveInGameUnit, MoveSpeed() + maxAcc);
 
 	} else {
-		m_fMoveSpeed = 0.0f;
+		MoveSpeed() = 0.0f;
 	}
 
 	if (m_nPedState == PED_JUMP) {
@@ -1615,7 +1656,7 @@ CPlayerPed::PlayerControlZelda(CPad *padUsed)
 				ApplyMoveForce(-angleSin * 3.0f, 3.0f * angleCos, 0.05f);
 			}
 		} else if (bIsLanding) {
-			m_fMoveSpeed = 0.0f;
+			MoveSpeed() = 0.0f;
 		}
 	}
 
@@ -1749,7 +1790,7 @@ CPlayerPed::ProcessControl(void)
 	if (m_nEvadeAmount == 0)
 		m_pEvadingFrom = nil;
 
-	if (m_pWanted->GetWantedLevel() > 0)
+	if (Wanted()->GetWantedLevel() > 0)
 		FindNewAttackPoints();
 	
 	UpdateMeleeAttackers();
@@ -1765,17 +1806,17 @@ CPlayerPed::ProcessControl(void)
 			bTryingToReachDryLand = false;
 	}
 
-	if (m_nFadeDrunkenness) {
-		if (m_nDrunkenness - 1 > 0) {
-			--m_nDrunkenness;
+	if (FadeDrunkenness()) {
+		if (Drunkenness() - 1 > 0) {
+			--Drunkenness();
 		} else {
-			m_nDrunkenness = 0;
+			Drunkenness() = 0;
 			CMBlur::ClearDrunkBlur();
-			m_nFadeDrunkenness = 0;
+			FadeDrunkenness() = 0;
 		}
 	}
-	if (m_nDrunkenness != 0) {
-		CMBlur::SetDrunkBlur(m_nDrunkenness / 255.f);
+	if (Drunkenness() != 0) {
+		CMBlur::SetDrunkBlur(Drunkenness() / 255.f);
 	}
 	CPed::ProcessControl();
 	SetNearbyPedsToInteractWithPlayer();
@@ -1783,28 +1824,28 @@ CPlayerPed::ProcessControl(void)
 		return;
 
 	CPad *padUsed = GetPadFromPlayer(this);
-	m_pWanted->Update();
+	Wanted()->Update();
 	PruneReferences();
 
 	if (GetWeapon()->m_eWeaponType == WEAPONTYPE_MINIGUN) {
 		CWeaponInfo *weaponInfo = CWeaponInfo::GetWeaponInfo(GetWeapon()->m_eWeaponType);
 		CAnimBlendAssociation *fireAnim = RpAnimBlendClumpGetAssociation(GetClump(), GetPrimaryFireAnim(weaponInfo));
 		if (fireAnim && fireAnim->currentTime - fireAnim->timeStep < weaponInfo->m_fAnimLoopEnd && m_nPedState == PED_ATTACK) {
-			if (m_fGunSpinSpeed < 0.45f) {
-				m_fGunSpinSpeed = Min(0.45f, m_fGunSpinSpeed + CTimer::GetTimeStep() * 0.013f);
+			if (GunSpinSpeed() < 0.45f) {
+				GunSpinSpeed() = Min(0.45f, GunSpinSpeed() + CTimer::GetTimeStep() * 0.013f);
 			}
 
 			if (padUsed->GetWeapon() && GetWeapon()->m_nAmmoTotal > 0 && fireAnim->currentTime >= weaponInfo->m_fAnimLoopStart) {
 				DMAudio.PlayOneShot(m_audioEntityId, SOUND_WEAPON_MINIGUN_ATTACK, 0.0f);
 			} else {
-				DMAudio.PlayOneShot(m_audioEntityId, SOUND_WEAPON_MINIGUN_2, m_fGunSpinSpeed * (20.f / 9));
+				DMAudio.PlayOneShot(m_audioEntityId, SOUND_WEAPON_MINIGUN_2, GunSpinSpeed() * (20.f / 9));
 			}
 		} else {
-			if (m_fGunSpinSpeed > 0.0f) {
-				if (m_fGunSpinSpeed >= 0.45f) {
+			if (GunSpinSpeed() > 0.0f) {
+				if (GunSpinSpeed() >= 0.45f) {
 					DMAudio.PlayOneShot(m_audioEntityId, SOUND_WEAPON_MINIGUN_3,  0.0f);
 				}
-				m_fGunSpinSpeed = Max(0.0f, m_fGunSpinSpeed - CTimer::GetTimeStep() * 0.003f);
+				GunSpinSpeed() = Max(0.0f, GunSpinSpeed() - CTimer::GetTimeStep() * 0.003f);
 			}
 		}
 	}
@@ -1879,11 +1920,11 @@ CPlayerPed::ProcessControl(void)
 	switch (m_nPedState) {
 		case PED_NONE:
 		case PED_IDLE:
-		case PED_FLEE_POS:
+		case PED_FLEE_POSITION:
 		case PED_FLEE_ENTITY:
 		case PED_ATTACK:
 		case PED_FIGHT:
-		case PED_AIM_GUN:
+		case PED_AIMGUN:
 		case PED_ANSWER_MOBILE:
 			if (!RpAnimBlendClumpGetFirstAssociation(GetClump(), ASSOC_BLOCK) && !m_attachedTo) {
 				if (TheCamera.Using1stPersonWeaponMode()) {
@@ -1913,19 +1954,19 @@ CPlayerPed::ProcessControl(void)
 			m_vecSeekPos = m_pSeekTarget->GetPosition();
 
 			// fall through
-		case PED_SEEK_POS:
+		case PED_SEEK_POSITION:
 			switch (m_nMoveState) {
 				case PEDMOVE_WALK:
-					m_fMoveSpeed = 1.0f;
+					MoveSpeed() = 1.0f;
 					break;
 				case PEDMOVE_RUN:
-					m_fMoveSpeed = 1.8f;
+					MoveSpeed() = 1.8f;
 					break;
 				case PEDMOVE_SPRINT:
-					m_fMoveSpeed = 2.5f;
+					MoveSpeed() = 2.5f;
 					break;
 				default:
-					m_fMoveSpeed = 0.0f;
+					MoveSpeed() = 0.0f;
 					break;
 			}
 			SetRealMoveAnim();
@@ -1944,11 +1985,11 @@ CPlayerPed::ProcessControl(void)
 			}
 			break;
 		case PED_SEEK_CAR:
-		case PED_SEEK_IN_BOAT:
+		case PED_SEEK_BOAT_POSITION:
 			if (bVehEnterDoorIsBlocked || bKindaStayInSamePlace) {
-				m_fMoveSpeed = 0.0f;
+				MoveSpeed() = 0.0f;
 			} else {
-				m_fMoveSpeed = Min(2.0f, 2.0f * (m_vecSeekPos - GetPosition()).Magnitude2D());
+				MoveSpeed() = Min(2.0f, 2.0f * (m_vecSeekPos - GetPosition()).Magnitude2D());
 			}
 			if (padUsed && !padUsed->ArePlayerControlsDisabled()) {
 				if (padUsed->GetTarget() || padUsed->GetLeftStickXJustDown() || padUsed->GetLeftStickYJustDown() ||
@@ -1978,14 +2019,14 @@ CPlayerPed::ProcessControl(void)
 		case PED_ENTER_TRAIN:
 		case PED_EXIT_TRAIN:
 		case PED_CARJACK:
-		case PED_DRAG_FROM_CAR:
+		case PED_DRAGGED_FROM_CAR:
 		case PED_ENTER_CAR:
 		case PED_STEAL_CAR:
 		case PED_EXIT_CAR:
 			ClearWeaponTarget();
 			break;
 		case PED_ARRESTED:
-			if (m_nLastPedState == PED_DRAG_FROM_CAR && m_pVehicleAnim)
+			if (m_nLastPedState == PED_DRAGGED_FROM_CAR && m_pVehicleAnim)
 				BeingDraggedFromCar();
 			break;
 		default:
@@ -2046,7 +2087,7 @@ CPlayerPed::ProcessControl(void)
 	}
 
 	if (m_nPedState != PED_SNIPER_MODE && (GetWeapon()->m_eWeaponState == WEAPONSTATE_FIRING || m_nPedState == PED_ATTACK))
-		m_nPadDownPressedInMilliseconds = CTimer::GetTimeInMilliseconds();
+		PadDownPressedInMilliseconds() = CTimer::GetTimeInMilliseconds();
 
 	if (!bIsVisible)
 		UpdateRpHAnim();
@@ -2065,7 +2106,7 @@ CPlayerPed::DoesPlayerWantNewWeapon(eWeaponType weapon, bool onlyIfSlotIsEmpty)
 		return false;
 
 	// Check if he's using that slot right now.
-	return m_nPedState != PED_ATTACK && m_nPedState != PED_AIM_GUN || slot != m_currentWeapon;
+	return m_nPedState != PED_ATTACK && m_nPedState != PED_AIMGUN || slot != m_currentWeapon;
 }
 
 void
@@ -2323,18 +2364,28 @@ CPlayerPed::FindMeleeAttackPoint(CPed *victim, CVector &dist, uint32 &endOfAttac
 #ifdef COMPATIBLE_SAVES
 #define CopyFromBuf(buf, data) memcpy(&data, buf, sizeof(data)); SkipSaveBuf(buf, sizeof(data));
 #define CopyToBuf(buf, data) memcpy(buf, &data, sizeof(data)); SkipSaveBuf(buf, sizeof(data));
+// SA CPlayerPed::Save writes the ped body and then its own player block:
+// the target table, the fields the ped's CPlayerPedData owns, and the ped-side
+// extras this fork keeps (the safe positions and the melee list). The rest of
+// the Vice City layout is zero-filled padding, so the size the pool is told
+// about (nSaveStructSize) stays exactly what it was.
 void
 CPlayerPed::Save(uint8*& buf)
 {
 	CPed::Save(buf);
 	ZeroSaveBuf(buf, 16);
-	CopyToBuf(buf, m_fMaxStamina);
+	CopyToBuf(buf, TimeCanRun());
 	ZeroSaveBuf(buf, 28);
-	CopyToBuf(buf, m_nTargettableObjects[0]);
-	CopyToBuf(buf, m_nTargettableObjects[1]);
-	CopyToBuf(buf, m_nTargettableObjects[2]);
-	CopyToBuf(buf, m_nTargettableObjects[3]);
-	ZeroSaveBuf(buf, 164);
+	for (int i = 0; i < 4; i++)
+		{ int32 v = m_nTargettableObjects[i]; memcpy(buf, &v, sizeof(v)); SkipSaveBuf(buf, sizeof(v)); }
+	// The player block proper: everything CPlayerPedData carries that a load
+	// has to restore. It sits in the padding Vice City had after the target
+	// table, which is why the total size does not change.
+	uint8 data[CPlayerPedData::SAVE_SIZE];
+	m_pPlayerData->Save(data);
+	memcpy(buf, data, sizeof(data));
+	SkipSaveBuf(buf, sizeof(data));
+	ZeroSaveBuf(buf, 164 - sizeof(data));
 }
 
 void
@@ -2342,13 +2393,20 @@ CPlayerPed::Load(uint8*& buf)
 {
 	CPed::Load(buf);
 	SkipSaveBuf(buf, 16);
-	CopyFromBuf(buf, m_fMaxStamina);
+	CopyFromBuf(buf, TimeCanRun());
 	SkipSaveBuf(buf, 28);
-	CopyFromBuf(buf, m_nTargettableObjects[0]);
-	CopyFromBuf(buf, m_nTargettableObjects[1]);
-	CopyFromBuf(buf, m_nTargettableObjects[2]);
-	CopyFromBuf(buf, m_nTargettableObjects[3]);
-	SkipSaveBuf(buf, 164);
+	for (int i = 0; i < 4; i++)
+		{ int32 v; memcpy(&v, buf, sizeof(v)); SkipSaveBuf(buf, sizeof(v)); m_nTargettableObjects[i] = v; }
+	uint8 data[CPlayerPedData::SAVE_SIZE];
+	memcpy(data, buf, sizeof(data));
+	SkipSaveBuf(buf, sizeof(data));
+	m_pPlayerData->Load(data);
+	SkipSaveBuf(buf, 164 - sizeof(data));
+	// The pointer fields inside the block are addresses from the file that just
+	// went away; Load() clears them, and the code that needs them re-acquires
+	// them. The wanted level and the arresting cop belong to their own blocks.
+	m_pPlayerData->m_pWanted = Wanted();
+	m_pPlayerData->m_pArrestingCop = ArrestingCop();
 }
 #undef CopyFromBuf
 #undef CopyToBuf

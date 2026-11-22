@@ -3,6 +3,7 @@
 
 #include "ColModel.h"
 #include "Lists.h"
+#include "PlayerPedData.h"
 
 enum eWastedBustedState
 {
@@ -86,6 +87,8 @@ public:
 	bool m_bDriveByAllowed;
 	uint8 m_nBustedAudioStatus;
 	int16 m_nCurrentBustedAudio;
+	// SA CPlayerInfo::m_PlayerData. The ped points at it; it is not a copy.
+	CPlayerPedData m_PlayerData;
 #ifdef GTA_PC
 	char m_aSkinName[32];
 	RwTexture *m_pSkinTexture;

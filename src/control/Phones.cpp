@@ -62,7 +62,7 @@ CPhoneInfo::Update(void)
 			endAssoc->SetFinishCallback(PhonePutDownCB, player);
 		} else {
 			CPad::GetPad(0)->SetEnablePlayerControls(PLAYERCONTROL_PHONE);
-			if (player->m_nPedState == PED_MAKE_CALL)
+			if (player->m_nPedState == PED_MAKE_PHONECALL)
 				player->SetPedState(PED_IDLE);
 		}
 	}
@@ -115,7 +115,7 @@ CPhoneInfo::Update(void)
 								player->m_fRotationCur = angleToFace;
 								player->m_fRotationDest = angleToFace;
 								player->SetHeading(angleToFace);
-								player->SetPedState(PED_MAKE_CALL);
+								player->SetPedState(PED_MAKE_PHONECALL);
 								CPad::GetPad(0)->SetDisablePlayerControls(PLAYERCONTROL_PHONE);
 								TheCamera.SetWideScreenOn();
 								playerInfo->MakePlayerSafe(true);
@@ -402,7 +402,7 @@ PhonePutDownCB(CAnimBlendAssociation *assoc, void *arg)
 	if (assoc->blendAmount > 0.5f)
 		ped->bUpdateAnimHeading = true;
 
-	if (ped->m_nPedState == PED_MAKE_CALL)
+	if (ped->m_nPedState == PED_MAKE_PHONECALL)
 		ped->SetPedState(PED_IDLE);
 }
 
