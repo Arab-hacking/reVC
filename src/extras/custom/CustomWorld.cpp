@@ -25,6 +25,7 @@
 #include "ModelInfo.h"
 #include "TimeModelInfo.h"
 #include "PedType.h"
+#include "Population.h"
 #include "AnimManager.h"
 #include "cHandlingDataMgr.h"
 #include "FileLoader.h"
@@ -439,11 +440,11 @@ ePedType SafePedType(const std::string &s)
     std::string type = customworld::Lower(s);
     if(type == "player1" || type == "player") return PEDTYPE_PLAYER1;
     if(type == "player2") return PEDTYPE_PLAYER2;
-    if(type == "player3") return PEDTYPE_PLAYER3;
-    if(type == "player4") return PEDTYPE_PLAYER4;
+    if(type == "player3") return PEDTYPE_PLAYER_NETWORK;
+    if(type == "player4") return PEDTYPE_PLAYER_UNUSED;
     if(type == "civfemale") return PEDTYPE_CIVFEMALE;
     if(type == "cop") return PEDTYPE_COP;
-    if(type == "emergency" || type == "medic") return PEDTYPE_EMERGENCY;
+    if(type == "emergency" || type == "medic") return PEDTYPE_MEDIC;
     if(type == "fireman") return PEDTYPE_FIREMAN;
     if(type == "criminal") return PEDTYPE_CRIMINAL;
     if(type == "prostitute") return PEDTYPE_PROSTITUTE;
@@ -455,38 +456,23 @@ ePedType SafePedType(const std::string &s)
 
 AssocGroupId SafePedAnimGroup(const std::string &s)
 {
+    // The group table is indexed by the names SA's peds.ide writes, so a row is
+    // resolved by looking its own spelling up, exactly as CFileLoader's
+    // LoadPedObject does for a stock ped row. No index is ever trusted from the
+    // archive; the name is the only thing carried over.
     std::string group = customworld::Lower(s);
     for(int id = 0; id < NUM_ANIM_ASSOC_GROUPS; id++){
         const char *groupName = CAnimManager::GetAnimGroupName((AssocGroupId)id);
         if(groupName && group == customworld::Lower(groupName))
             return (AssocGroupId)id;
     }
-    // The walking sets are in the table under the names the group table uses,
-    // so only the spellings that differ are left here: SA's peds.ide calls the
-    // standard set "man", the client calls the skater set "skater", and the
-    // joggers "jogman". Everything else has to resolve to its own set - a
-    // female ped that lands on the male default walks like a man.
+    // Only the spellings that differ from the table's are bridged here: the
+    // client tags the skater set "skater" where the table says "skate", and
+    // older archives still carry VC's "unarmed", which is SA's standard set.
     struct { const char *ide; AssocGroupId group; } aliases[] = {
-        { "man", ASSOCGRP_DEFAULT },
-        { "jogman", ASSOCGRP_JOGGER },
         { "skater", ASSOCGRP_SKATE },
-        { "woman", ASSOCGRP_WOMAN },
-        { "fatwoman", ASSOCGRP_FATWOMAN },
-        { "oldwoman", ASSOCGRP_OLDWOMAN },
-        { "jogwoman", ASSOCGRP_JOGWOMAN },
-        { "sexywoman", ASSOCGRP_SEXYWOMAN },
-        { "busywoman", ASSOCGRP_BUSYWOMAN },
-        { "oldfatwoman", ASSOCGRP_OLDFATWOMAN },
-        { "shopping", ASSOCGRP_SHOPPING },
-        { "pro", ASSOCGRP_PRO },
-        { "fatman", ASSOCGRP_FATMAN },
-        { "oldman", ASSOCGRP_OLDMAN },
-        { "swat", ASSOCGRP_SWAT },
-        { "player", ASSOCGRP_PLAYER },
-        { "gang1", ASSOCGRP_GANG1 },
-        { "gang2", ASSOCGRP_GANG2 },
-        { "jogger", ASSOCGRP_JOGGER },
-        { "unarmed", ASSOCGRP_UNARMED },
+        { "jogman", ASSOCGRP_JOGGER },
+        { "unarmed", ASSOCGRP_MAN },
     };
     for(int i = 0; i < (int)(sizeof(aliases)/sizeof(aliases[0])); i++)
         if(group == aliases[i].ide) return aliases[i].group;
@@ -613,7 +599,7 @@ void CCustomWorld::LoadIde(void)
                 std::string stat = m.pedStats;
                 for(char &c : stat) c = (char)std::toupper((unsigned char)c);
                 ped->m_pedStatType = CPedStats::GetPedStatType(&stat[0]);
-                if(ped->m_pedStatType == NUM_PEDSTATS) ped->m_pedStatType = PEDSTAT_STD_MISSION;
+                if(ped->m_pedStatType == PEDSTAT_NONE) ped->m_pedStatType = PEDSTAT_STD_MISSION;
                 reusedNative++;
                 nameSlots[key] = old->second;
                 continue;
@@ -672,10 +658,14 @@ void CCustomWorld::LoadIde(void)
             std::string stat = m.pedStats;
             for(char &c : stat) c = (char)std::toupper((unsigned char)c);
             ped->m_pedStatType = CPedStats::GetPedStatType(&stat[0]);
-            if(ped->m_pedStatType == NUM_PEDSTATS) ped->m_pedStatType = PEDSTAT_STD_MISSION;
+            if(ped->m_pedStatType == PEDSTAT_NONE) ped->m_pedStatType = PEDSTAT_STD_MISSION;
             ped->m_animGroup = SafePedAnimGroup(m.animGroup);
             ped->m_carsCanDrive = 0; // SA vehicle-category mask != VC mask
             ped->radio1 = ped->radio2 = -1;
+            // Race drives the voice set the ped picks, and SA derives it from
+            // the model name, so an archive row gets the same treatment as an
+            // ide row instead of staying on RACE_DEFAULT.
+            ped->m_nRace = (uint8)CPopulation::FindPedRaceFromName(m.name.c_str());
             ped->SetColModel(&CTempColModels::ms_colModelPed1);
             CPedModelInfo::NoteSlot(slot);
             pedsInstalled++;

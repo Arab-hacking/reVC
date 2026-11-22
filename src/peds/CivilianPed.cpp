@@ -69,14 +69,14 @@ CCivilianPed::CivilianAI(void)
 		uint32 closestThreatFlag = m_threatFlags;
 		m_threatFlags = 0;
 		m_threatCheckTimer = 0;
-		if (closestThreatFlag == PED_FLAG_EXPLOSION) {
+		if (closestThreatFlag == PED_THREAT_EXPLOSION) {
 			float angleToFace = CGeneral::GetRadianAngleBetweenPoints(
 				m_eventOrThreat.x,  m_eventOrThreat.y,
 				GetPosition().x, GetPosition().y);
 			SetLookFlag(angleToFace, true);
 			SetLookTimer(500);
 
-		} else if (closestThreatFlag == PED_FLAG_GUN) {
+		} else if (closestThreatFlag == PED_THREAT_GUN) {
 			SetLookFlag(m_threatEntity, true);
 			SetLookTimer(500);
 		}
@@ -89,7 +89,7 @@ CCivilianPed::CivilianAI(void)
 	uint32 closestThreatFlag = m_threatFlags;
 	m_threatFlags = 0;
 	m_threatCheckTimer = 0;
-	if (closestThreatFlag == PED_FLAG_GUN) {
+	if (closestThreatFlag == PED_THREAT_GUN) {
 		if (!m_threatEntity || !m_threatEntity->IsPed())
 			return;
 
@@ -101,8 +101,8 @@ CCivilianPed::CivilianAI(void)
 			SetLookTimer(500);
 			return;
 		}
-		if (m_pedStats->m_fear <= m_pedStats->m_lawfulness) {
-			if (m_pedStats->m_temper <= m_pedStats->m_fear) {
+		if (m_pedStats->m_nFear <= m_pedStats->m_nLawfulness) {
+			if (m_pedStats->m_nTemper <= m_pedStats->m_nFear) {
 				if (!threatPed->IsPlayer() || !RunToReportCrime(CRIME_POSSESSION_GUN)) {
 					if (threatDistSqr < sq(30.0f)) {
 						bMakeFleeScream = true;
@@ -145,7 +145,7 @@ CCivilianPed::CivilianAI(void)
 		}
 		SetLookFlag(m_threatEntity, false);
 		SetLookTimer(500);
-	} else if (closestThreatFlag == PED_FLAG_DEADPEDS) {
+	} else if (closestThreatFlag == PED_THREAT_DEADPEDS) {
 		float eventDistSqr = (m_pEventEntity->GetPosition() - GetPosition()).MagnitudeSqr2D();
 		if (CharCreatedBy == MISSION_CHAR && bCrouchWhenScared && eventDistSqr < sq(5.0f)) {
 			SetDuck(10000, true);
@@ -172,7 +172,7 @@ CCivilianPed::CivilianAI(void)
 			SetFindPathAndFlee(m_pEventEntity, 5000);
 			SetMoveState(PEDMOVE_RUN);
 		}
-	} else if (closestThreatFlag == PED_FLAG_EXPLOSION) {
+	} else if (closestThreatFlag == PED_THREAT_EXPLOSION) {
 		CVector2D eventDistVec = m_eventOrThreat - GetPosition();
 		float eventDistSqr = eventDistVec.MagnitudeSqr();
 		if (CharCreatedBy == MISSION_CHAR && bCrouchWhenScared && eventDistSqr < sq(20.0f)) {
@@ -203,7 +203,7 @@ CCivilianPed::CivilianAI(void)
 	} else {
 		if (m_threatEntity && m_threatEntity->IsPed()) {
 			CPed *threatPed = (CPed*)m_threatEntity;
-			if (m_pedStats->m_fear <= 100 - threatPed->m_pedStats->m_temper && threatPed->m_nPedType != PEDTYPE_COP) {
+			if (m_pedStats->m_nFear <= 100 - threatPed->m_pedStats->m_nTemper && threatPed->m_nPedType != PEDTYPE_COP) {
 				if (threatPed->GetWeapon()->IsTypeMelee() || !GetWeapon()->IsTypeMelee()) {
 					if (threatPed->IsPlayer() && IsGangMember() && bCanAttackPlayerWithCops) {
 						SetObjective(OBJECTIVE_KILL_CHAR_ON_FOOT, m_threatEntity);

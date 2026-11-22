@@ -678,11 +678,11 @@ void MayhemCheat()
 {
 	CHud::SetHelpMessage(TheText.Get("CHEAT1"), true);
 	for (int i = PEDTYPE_CIVMALE; i < PEDTYPE_SPECIAL; i++)
-		CPedType::SetThreats(i, PED_FLAG_PLAYER1 | PED_FLAG_PLAYER2 | PED_FLAG_PLAYER3 | PED_FLAG_PLAYER4 |
+		CPedType::SetThreats(i, PED_FLAG_PLAYER1 | PED_FLAG_PLAYER2 | PED_FLAG_PLAYER_NETWORK | PED_FLAG_PLAYER_UNUSED |
 			PED_FLAG_CIVMALE | PED_FLAG_CIVFEMALE | PED_FLAG_COP | PED_FLAG_GANG1 |
 			PED_FLAG_GANG2 | PED_FLAG_GANG3 | PED_FLAG_GANG4 | PED_FLAG_GANG5 |
 			PED_FLAG_GANG6 | PED_FLAG_GANG7 | PED_FLAG_GANG8 | PED_FLAG_GANG9 |
-			PED_FLAG_EMERGENCY | PED_FLAG_PROSTITUTE | PED_FLAG_CRIMINAL | PED_FLAG_SPECIAL );
+			PED_FLAG_MEDIC | PED_FLAG_PROSTITUTE | PED_FLAG_CRIMINAL | PED_FLAG_SPECIAL );
 	CStats::CheatedCount += 1000;
 	CPad::bHasPlayerCheated = true;
 }
@@ -850,7 +850,7 @@ void BackToTheFuture(void)
 
 void SuicideCheat(void) {
 	CHud::SetHelpMessage(TheText.Get("CHEAT1"), true);
-	FindPlayerPed()->InflictDamage(nil, WEAPONTYPE_UNARMED, 1000.0f, PEDPIECE_TORSO, 0);
+	FindPlayerPed()->InflictDamage(nil, WEAPONTYPE_UNARMED, 1000.0f, PED_PIECE_TORSO, 0);
 }
 
 void DoChicksWithGunsCheat(void) {

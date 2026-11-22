@@ -138,11 +138,11 @@ m_nVehicleSubType = VEHICLE_TYPE_AUTOMOBILE;
 		else if(bIsVan)
 			mi->m_animGroup = ASSOCGRP_VANCARANIMS;
 		else if(bLowVehicle)
-			mi->m_animGroup = ASSOCGRP_LOWCARANIMS;
+			mi->m_animGroup = ASSOCGRP_LOWCARAMIMS;
 		else if(bIsBig)
 			mi->m_animGroup = ASSOCGRP_TRKCARANIMS;
 		else
-			mi->m_animGroup = ASSOCGRP_STDCARANIMS;
+			mi->m_animGroup = ASSOCGRP_STDCARAMIMS;
 	}
 
 	// SA CAutomobile::SetupModelNodes (0x6B0C70..0x6B0E4B), verbatim. Every door
@@ -3440,13 +3440,13 @@ CAutomobile::ProcessBuoyancy(void)
 			if(pDriver){
 				pDriver->bIsInWater = true;
 				if(pDriver->IsPlayer() || !bWaterTight)
-					pDriver->InflictDamage(nil, WEAPONTYPE_DROWNING, CTimer::GetTimeStep(), PEDPIECE_TORSO, 0);
+					pDriver->InflictDamage(nil, WEAPONTYPE_DROWNING, CTimer::GetTimeStep(), PED_PIECE_TORSO, 0);
 			}
 			for(i = 0; i < m_nNumMaxPassengers; i++)
 				if(pPassengers[i]){
 					pPassengers[i]->bIsInWater = true;
 					if(pPassengers[i]->IsPlayer() || !bWaterTight)
-						pPassengers[i]->InflictDamage(nil, WEAPONTYPE_DROWNING, CTimer::GetTimeStep(), PEDPIECE_TORSO, 0);
+						pPassengers[i]->InflictDamage(nil, WEAPONTYPE_DROWNING, CTimer::GetTimeStep(), PED_PIECE_TORSO, 0);
 				}
 		}else{
 			bIsInWater = false;

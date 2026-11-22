@@ -367,7 +367,7 @@ CBoat::ProcessControl(void)
 				bIsDrowning = true;
 				if (pDriver){
 					pDriver->bTouchingWater = true;
-					pDriver->InflictDamage(nil, WEAPONTYPE_DROWNING, CTimer::GetTimeStep(), PEDPIECE_TORSO, 0);
+					pDriver->InflictDamage(nil, WEAPONTYPE_DROWNING, CTimer::GetTimeStep(), PED_PIECE_TORSO, 0);
 				}
 			}
 			else

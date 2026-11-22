@@ -1825,9 +1825,9 @@ CWorld::SetPedsChoking(float x, float y, float z, float radius, CEntity* reason)
 				if (!pPed->IsPlayer())
 					pPed->SetFlee(CVector2D(x, y), 10000);
 #ifdef FIX_BUGS
-				pPed->InflictDamage(reason, WEAPONTYPE_TEARGAS, 1.0f, PEDPIECE_TORSO, 0);
+				pPed->InflictDamage(reason, WEAPONTYPE_TEARGAS, 1.0f, PED_PIECE_TORSO, 0);
 #else
-				pPed->InflictDamage(nil, WEAPONTYPE_TEARGAS, 1.0f, PEDPIECE_TORSO, 0);
+				pPed->InflictDamage(nil, WEAPONTYPE_TEARGAS, 1.0f, PED_PIECE_TORSO, 0);
 #endif
 			}
 		}
@@ -2138,7 +2138,7 @@ CWorld::TriggerExplosionSectorList(CPtrList &list, const CVector &position, floa
 						pPed->ApplyMoveForce(0.0, 0.0, 2.0f);
 						float fDamage = 250.0f * fDamageMultiplier;
 						pPed->InflictDamage(pCreator, WEAPONTYPE_EXPLOSION, fDamage,
-						                    PEDPIECE_TORSO, direction);
+						                    PED_PIECE_TORSO, direction);
 						if(pPed->m_nPedState != PED_DIE)
 							pPed->SetFall(2000,
 							              (AnimationId)(direction + ANIM_ID_KO_SKID_FRONT), 0);

@@ -388,12 +388,12 @@ RpAnimBlendClumpFillFrameArraySkin(RpClump *clump, AnimBlendFrameData **frames)
 	CAnimBlendClumpData *clumpData = *RPANIMBLENDCLUMPDATA(clump);
 	RpHAnimHierarchy *hier = GetAnimHierarchyFromSkinClump(clump);
 	int missingBones = 0;
-	// PED_TORSO is the VC "torso" node that has no bone of its own; the game
+	// PED_NODE_NULL is the VC "torso" node that has no bone of its own; the game
 	// used the root for it, and the array must still be filled so a reader
 	// never dereferences an uninitialised slot.
-	frames[PED_TORSO] = &clumpData->frames[0];
-	for(i = PED_MID; i < PED_NODE_MAX; i++){
-		int bone = ConvertPedNode2BoneTag(i);
+	frames[PED_NODE_NULL] = &clumpData->frames[0];
+	for(i = PED_NODE_UPPER_TORSO; i < TOTAL_PED_NODES; i++){
+		int bone = ConvertPedNode2BoneTag((ePedNode)i);
 		int index = bone < 0 ? -1 : RpHAnimIDGetIndex(hier, bone);
 		// SA/BR rigs can omit a VC bone. Do not make an out-of-bounds
 		// pointer; use the root for attachment/IK queries on missing nodes,

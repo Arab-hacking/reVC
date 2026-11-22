@@ -313,8 +313,8 @@ CVehicleAnimGroup::InitFromData(const char *line)
 	// The group numbers on the line are offsets into the car animation block.
 	CVehicleAnimGroup grp;
 	grp.InitAnimGroup(
-		(uint8)(firstGroup + (int32)ASSOCGRP_STDCARANIMS),
-		(uint8)(secondGroup + (int32)ASSOCGRP_STDCARANIMS),
+		(uint8)(firstGroup + (int32)ASSOCGRP_STDCARAMIMS),
+		(uint8)(secondGroup + (int32)ASSOCGRP_STDCARAMIMS),
 		animFlags, animSpecialFlags,
 		&generalTiming,
 		&startTiming, &stopTiming

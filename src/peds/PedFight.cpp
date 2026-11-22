@@ -935,7 +935,7 @@ CPed::Attack(void)
 
 			if(ourWeapon->m_AnimToPlay != ASSOCGRP_BBBAT_1 && ourWeapon->m_AnimToPlay != ASSOCGRP_GCLUB_1) {
 				if (ourWeapon->m_eWeaponFire != WEAPON_FIRE_MELEE) {
-					TransformToNode(firePos, (weaponAnimAssoc->animId == ANIM_ID_FIGHT_2 && ourWeapon->m_AnimToPlay == ASSOCGRP_MELEE_1) ? PED_FOOTR : PED_HANDR);
+					TransformToNode(firePos, (weaponAnimAssoc->animId == ANIM_ID_FIGHT_2 && ourWeapon->m_AnimToPlay == ASSOCGRP_MELEE_1) ? PED_NODE_RIGHT_FOOT : PED_NODE_RIGHT_HAND);
 				} else {
 					firePos = GetMatrix() * firePos;
 				}
@@ -1014,7 +1014,7 @@ CPed::Attack(void)
 
 		if (weaponAnimTime > 1.0f && weaponAnimTime - weaponAnimAssoc->timeStep <= 1.0f && weaponAnimAssoc->IsRunning()) {
 			firePos = ourWeapon->m_vecFireOffset;
-			TransformToNode(firePos, PED_HANDR);
+			TransformToNode(firePos, PED_NODE_RIGHT_HAND);
 
 			CVector gunshellPos(
 				firePos.x - 0.6f * GetForward().x,
@@ -1281,7 +1281,7 @@ CPed::StartFightDefend(uint8 direction, uint8 hitLevel, uint8 unk)
 				}
 			}
 			if (CGame::nastyGame) {
-				CVector headPos = GetNodePosition(PED_HEAD);
+				CVector headPos = GetNodePosition(PED_NODE_HEAD);
 				for(int i = 0; i < 4; ++i) {
 					CVector bloodDir(0.0f, 0.0f, 0.1f);
 					CVector bloodPos = headPos - 0.2f * GetForward();
@@ -1585,31 +1585,31 @@ CPed::Fight(void)
 
 			switch (m_curFightMove) {
 				case FIGHTMOVE_KNEE:
-					TransformToNode(touchingNodePos, PED_LOWERLEGR);
+					TransformToNode(touchingNodePos, PED_NODE_RIGHT_LOWER_LEG);
 					break;
 				case FIGHTMOVE_PUNCHHOOK:
 				case FIGHTMOVE_PUNCHJAB:
-					TransformToNode(touchingNodePos, PED_HANDL);
+					TransformToNode(touchingNodePos, PED_NODE_LEFT_HAND);
 					break;
 				case FIGHTMOVE_LONGKICK:
 				case FIGHTMOVE_ROUNDHOUSE:
 				case FIGHTMOVE_FWDLEFT:
 				case FIGHTMOVE_BACKRIGHT:
 				case FIGHTMOVE_GROUNDKICK:
-					TransformToNode(touchingNodePos, PED_FOOTR);
+					TransformToNode(touchingNodePos, PED_NODE_RIGHT_FOOT);
 					break;
 				case FIGHTMOVE_FWDRIGHT:
-					TransformToNode(touchingNodePos, PED_HEAD);
+					TransformToNode(touchingNodePos, PED_NODE_HEAD);
 					break;
 				case FIGHTMOVE_BACKKICK:
 				case FIGHTMOVE_BACKFLIP:
-					TransformToNode(touchingNodePos, PED_FOOTL);
+					TransformToNode(touchingNodePos, PED_NODE_LEFT_FOOT);
 					break;
 				case FIGHTMOVE_BACKLEFT:
-					TransformToNode(touchingNodePos, PED_UPPERARML);
+					TransformToNode(touchingNodePos, PED_NODE_LEFT_ARM);
 					break;
 				default:
-					TransformToNode(touchingNodePos, PED_HANDR);
+					TransformToNode(touchingNodePos, PED_NODE_RIGHT_HAND);
 					break;
 			}
 
@@ -2302,7 +2302,7 @@ CPed::FightHitPed(CPed *victim, CVector &touchPoint, CVector &dir, int16 piece)
 		if (((CPlayerPed*)this)->m_bAdrenalineActive)
 			damageMult = 20;
 	} else if (!fightingWithWeapon) {
-		damageMult *= m_pedStats->m_attackStrength;
+		damageMult *= m_pedStats->m_fAttackStrength;
 	}
 
 	float oldVictimHealth = victim->m_fHealth;
@@ -2940,7 +2940,7 @@ CPed::InflictDamage(CEntity *damagedBy, eWeaponType method, float damage, ePedPi
 	if (IsPlayer())
 		healthImpact = damage * 0.33f;
 	else
-		healthImpact = damage * m_pedStats->m_defendWeakness;
+		healthImpact = damage * m_pedStats->m_fDefendWeakness;
 
 	if (!IsPlayer() &&
 		(method == WEAPONTYPE_SCREWDRIVER || method == WEAPONTYPE_KNIFE || (method >= WEAPONTYPE_CLEAVER && method <= WEAPONTYPE_CHAINSAW)))
@@ -3069,7 +3069,7 @@ CPed::InflictDamage(CEntity *damagedBy, eWeaponType method, float damage, ePedPi
 					}
 				} else {
 					dieAnim = ANIM_ID_KO_SHOT_FACE;
-					RemoveBodyPart(PED_HEAD, direction);
+					RemoveBodyPart(PED_NODE_HEAD, direction);
 					headShot = true;
 					willLinger = true;
 				}
@@ -3129,37 +3129,37 @@ CPed::InflictDamage(CEntity *damagedBy, eWeaponType method, float damage, ePedPi
 					willLinger = false;
 				} else {
 					switch (pedPiece) {
-						case PEDPIECE_TORSO:
+						case PED_PIECE_TORSO:
 							willLinger = false;
 							dieAnim = ANIM_ID_KO_SHOT_FRONT_0;
 							break;
-						case PEDPIECE_MID:
+						case PED_PIECE_ASS:
 							willLinger = false;
 							dieAnim = ANIM_ID_KO_SHOT_STOM;
 							break;
-						case PEDPIECE_LEFTARM:
+						case PED_PIECE_LEFT_ARM:
 							dieAnim = ANIM_ID_KO_SHOT_FRONT_0;
-							RemoveBodyPart(PED_UPPERARML, direction);
+							RemoveBodyPart(PED_NODE_LEFT_ARM, direction);
 							willLinger = true;
 							break;
-						case PEDPIECE_RIGHTARM:
+						case PED_PIECE_RIGHT_ARM:
 							dieAnim = ANIM_ID_KO_SHOT_FRONT_0;
-							RemoveBodyPart(PED_UPPERARMR, direction);
+							RemoveBodyPart(PED_NODE_RIGHT_ARM, direction);
 							willLinger = true;
 							break;
-						case PEDPIECE_LEFTLEG:
+						case PED_PIECE_LEFT_LEG:
 							dieAnim = ANIM_ID_KO_SHOT_FRONT_0;
-							RemoveBodyPart(PED_UPPERLEGL, direction);
+							RemoveBodyPart(PED_NODE_LEFT_LEG, direction);
 							willLinger = true;
 							break;
-						case PEDPIECE_RIGHTLEG:
+						case PED_PIECE_RIGHT_LEG:
 							dieAnim = ANIM_ID_KO_SHOT_FRONT_0;
-							RemoveBodyPart(PED_UPPERLEGR, direction);
+							RemoveBodyPart(PED_NODE_RIGHT_LEG, direction);
 							willLinger = true;
 							break;
-						case PEDPIECE_HEAD:
+						case PED_PIECE_HEAD:
 							dieAnim = ANIM_ID_KO_SHOT_FACE;
-							RemoveBodyPart(PED_HEAD, direction);
+							RemoveBodyPart(PED_NODE_HEAD, direction);
 							headShot = true;
 							willLinger = true;
 							break;
@@ -3179,15 +3179,15 @@ CPed::InflictDamage(CEntity *damagedBy, eWeaponType method, float damage, ePedPi
 
 					random = CGeneral::GetRandomNumber();
 					if (random & 1)
-						RemoveBodyPart(PED_UPPERARML, direction);
+						RemoveBodyPart(PED_NODE_LEFT_ARM, direction);
 					if (random & 2)
-						RemoveBodyPart(PED_UPPERLEGR, direction);
+						RemoveBodyPart(PED_NODE_RIGHT_LEG, direction);
 					if (random & 4)
-						RemoveBodyPart(PED_HEAD, direction);
+						RemoveBodyPart(PED_NODE_HEAD, direction);
 					if (random & 8)
-						RemoveBodyPart(PED_UPPERARMR, direction);
+						RemoveBodyPart(PED_NODE_RIGHT_ARM, direction);
 					if (random & 0x10)
-						RemoveBodyPart(PED_UPPERLEGL, direction);
+						RemoveBodyPart(PED_NODE_LEFT_LEG, direction);
 					if (bBodyPartJustCameOff)
 						willLinger = true;
 				}
@@ -3227,10 +3227,10 @@ CPed::InflictDamage(CEntity *damagedBy, eWeaponType method, float damage, ePedPi
 				random = CGeneral::GetRandomNumber() & 3;
 				switch (random) {
 					case 0:
-						if ((pedPiece != PEDPIECE_LEFTARM || random <= 1)
-							&& (pedPiece != PEDPIECE_MID || random != 1)) {
-							if (pedPiece == PEDPIECE_RIGHTARM && random > 1
-								|| pedPiece == PEDPIECE_MID && random == 2)
+						if ((pedPiece != PED_PIECE_LEFT_ARM || random <= 1)
+							&& (pedPiece != PED_PIECE_ASS || random != 1)) {
+							if (pedPiece == PED_PIECE_RIGHT_ARM && random > 1
+								|| pedPiece == PED_PIECE_ASS && random == 2)
 						
 								dieAnim = ANIM_ID_KO_SPIN_L;
 							else
@@ -3246,10 +3246,10 @@ CPed::InflictDamage(CEntity *damagedBy, eWeaponType method, float damage, ePedPi
 							dieAnim = ANIM_ID_KO_SPIN_R;
 						break;
 					case 2:
-						if ((pedPiece != PEDPIECE_LEFTARM || random <= 1)
-							&& (pedPiece != PEDPIECE_MID || random != 1)) {
-							if ((pedPiece != PEDPIECE_RIGHTARM || random <= 1)
-								&& (pedPiece != PEDPIECE_MID || random != 2)) {
+						if ((pedPiece != PED_PIECE_LEFT_ARM || random <= 1)
+							&& (pedPiece != PED_PIECE_ASS || random != 1)) {
+							if ((pedPiece != PED_PIECE_RIGHT_ARM || random <= 1)
+								&& (pedPiece != PED_PIECE_ASS || random != 2)) {
 								dieAnim = ANIM_ID_KO_SKID_BACK;
 							} else {
 								dieAnim = ANIM_ID_KD_RIGHT;
@@ -3266,7 +3266,7 @@ CPed::InflictDamage(CEntity *damagedBy, eWeaponType method, float damage, ePedPi
 					default:
 						break;
 				}
-				if (damagedBy && pedPiece != PEDPIECE_TORSO) {
+				if (damagedBy && pedPiece != PED_PIECE_TORSO) {
 					CVehicle *vehicle = (CVehicle*)damagedBy;
 					if (method == WEAPONTYPE_RAMMEDBYCAR) {
 						float vehSpeed = vehicle->m_vecMoveSpeed.Magnitude();
@@ -3468,12 +3468,12 @@ RecurseFrameChildrenToCloneCB(RwFrame *frame, void *data)
 }
 
 void
-CPed::RemoveBodyPart(PedNode nodeId, int8 direction)
+CPed::RemoveBodyPart(ePedNode nodeId, int8 direction)
 {
 	RwFrame *frame;
 	CVector pos;
 
-	if(nodeId < 0 || nodeId >= PED_NODE_MAX || m_pFrames[nodeId] == nil)
+	if(nodeId < 0 || nodeId >= TOTAL_PED_NODES || m_pFrames[nodeId] == nil)
 		return;
 	frame = m_pFrames[nodeId]->frame;
 	if (frame) {
@@ -3527,7 +3527,7 @@ CPed::ApplyHeadShot(eWeaponType weaponType, CVector pos, bool evenOnPlayer)
 		bBodyPartJustCameOff = true;
 		m_nPedStateTimer = CTimer::GetTimeInMilliseconds() + 150;
 
-		RemoveBodyPart(PED_HEAD, 0);
+		RemoveBodyPart(PED_NODE_HEAD, 0);
 		CParticle::AddParticle(PARTICLE_TEST, pos2,
 			CVector(0.0f, 0.0f, 0.0f), nil, 0.2f, 0, 0, 0, 0);
 
@@ -3551,7 +3551,7 @@ CPed::ApplyHeadShot(eWeaponType weaponType, CVector pos, bool evenOnPlayer)
 bool
 CPed::IsPedHeadAbovePos(float zOffset)
 {
-	return zOffset + GetPosition().z < GetNodePosition(PED_HEAD).z;
+	return zOffset + GetPosition().z < GetNodePosition(PED_NODE_HEAD).z;
 }
 
 bool
@@ -3667,7 +3667,7 @@ CPed::CollideWithPed(CPed *collideWith)
 									|| m_objective != OBJECTIVE_KILL_CHAR_ANY_MEANS && m_objective != OBJECTIVE_KILL_CHAR_ON_FOOT
 									|| collideWith == m_pedInObjective) {
 
-									if (weAreMissionChar || m_pedStats->m_fear <= 100 - collideWith->m_pedStats->m_temper
+									if (weAreMissionChar || m_pedStats->m_nFear <= 100 - collideWith->m_pedStats->m_nTemper
 										|| (collideWith->IsPlayer() || collideWith->m_nMoveState == PEDMOVE_NONE || collideWith->m_nMoveState == PEDMOVE_STILL) &&
 										(!collideWith->IsPlayer() || ((CPlayerPed*)collideWith)->m_fMoveSpeed <= 1.0f)) {
 										SetDirectionToWalkAroundObject(collideWith);
@@ -3715,7 +3715,7 @@ CPed::CollideWithPed(CPed *collideWith)
 								}
 							}
 						} else {
-							if (m_pedStats->m_temper <= m_pedStats->m_fear
+							if (m_pedStats->m_nTemper <= m_pedStats->m_nFear
 								|| GetWeapon()->m_eWeaponType != WEAPONTYPE_UNARMED
 								|| weAreMissionChar
 								|| collideWith->m_nPedType == PEDTYPE_CIVFEMALE
@@ -3742,7 +3742,7 @@ CPed::CollideWithPed(CPed *collideWith)
 
 						if (m_pedStats != collideWith->m_pedStats) {
 
-							if (collideWith->m_pedStats->m_fear <= 100 - m_pedStats->m_temper || collideWith->IsPlayer()
+							if (collideWith->m_pedStats->m_nFear <= 100 - m_pedStats->m_nTemper || collideWith->IsPlayer()
 								|| CTimer::GetTimeInMilliseconds() < m_nPedStateTimer) {
 
 								if (collideWith->IsPlayer()) {
@@ -3774,8 +3774,8 @@ CPed::CollideWithPed(CPed *collideWith)
 						}
 					}
 				}
-			} else if (collideWith->m_pedStats->m_defendWeakness <= 1.5f || heIsMissionChar ||
-				m_pedStats->m_defendWeakness <= collideWith->m_pedStats->m_defendWeakness) {
+			} else if (collideWith->m_pedStats->m_fDefendWeakness <= 1.5f || heIsMissionChar ||
+				m_pedStats->m_fDefendWeakness <= collideWith->m_pedStats->m_fDefendWeakness) {
 
 				// He looks us and we're not at his right side
 				if (heLooksToUs && DotProduct(posDiff,collideWith->GetRight()) > 0.0f) {
@@ -3843,7 +3843,7 @@ CPed::CollideWithPed(CPed *collideWith)
 
 			if (m_nPedType != collideWith->m_nPedType || m_nPedType == PEDTYPE_CIVMALE || m_nPedType == PEDTYPE_CIVFEMALE) {
 
-				if (!weAreMissionChar && heLooksToUs && m_pedStats->m_fear > 100 - collideWith->m_pedStats->m_temper) {
+				if (!weAreMissionChar && heLooksToUs && m_pedStats->m_nFear > 100 - collideWith->m_pedStats->m_nTemper) {
 
 					if (CGeneral::GetRandomNumber() & 1 && CTimer::GetTimeInMilliseconds() < m_nPedStateTimer){
 						SetEvasiveStep(collideWith, 2);
@@ -3879,7 +3879,7 @@ CPed::KillPedWithCar(CVehicle *car, float impulse)
 	CVehicleModelInfo *vehModel;
 	CColModel *vehColModel;
 	uint8 damageDir;
-	PedNode nodeToDamage;
+	ePedNode nodeToDamage;
 	eWeaponType killMethod;
 
 	if (m_nPedState == PED_FALL || m_nPedState == PED_DIE) {
@@ -3899,7 +3899,7 @@ CPed::KillPedWithCar(CVehicle *car, float impulse)
 	CVector distVec = GetPosition() - car->GetPosition();
 
 	if ((impulse > 12.0f || car->GetModelIndex() == MI_TRAIN) && !IsPlayer()) {
-		nodeToDamage = PED_TORSO;
+		nodeToDamage = PED_NODE_NULL;
 		killMethod = WEAPONTYPE_RAMMEDBYCAR;
 		uint8 randVal = CGeneral::GetRandomNumber() & 3;
 
@@ -3921,7 +3921,7 @@ CPed::KillPedWithCar(CVehicle *car, float impulse)
 
 		if (car->GetModelIndex() == MI_TRAIN) {
 			killMethod = WEAPONTYPE_RUNOVERBYCAR;
-			nodeToDamage = PED_HEAD;
+			nodeToDamage = PED_NODE_HEAD;
 			m_vecMoveSpeed = 0.9f * car->m_vecMoveSpeed;
 			m_vecMoveSpeed.z = 0.0f;
 			if (damageDir == 1 || damageDir == 3)
@@ -3936,9 +3936,9 @@ CPed::KillPedWithCar(CVehicle *car, float impulse)
 
 				// We're at the right of the car
 				if (carRightAndDistDotProd <= 0.0f)
-					nodeToDamage = PED_UPPERARML;
+					nodeToDamage = PED_NODE_LEFT_ARM;
 				else
-					nodeToDamage = PED_UPPERARMR;
+					nodeToDamage = PED_NODE_RIGHT_ARM;
 
 				if (Abs(DotProduct(distVec, car->GetForward())) < 0.85f * vehColModel->boundingBox.max.y) {
 					killMethod = WEAPONTYPE_RUNOVERBYCAR;
@@ -3956,7 +3956,7 @@ CPed::KillPedWithCar(CVehicle *car, float impulse)
 				// carFrontAndDistDotProd <= 0.0 car looks to us
 				if ((carFrontAndDistDotProd <= 0.1 || randVal <= 1) && randVal != 0) {
 					killMethod = WEAPONTYPE_RUNOVERBYCAR;
-					nodeToDamage = PED_HEAD;
+					nodeToDamage = PED_NODE_HEAD;
 					m_vecMoveSpeed = 0.9f * car->m_vecMoveSpeed;
 					m_vecMoveSpeed.z = 0.0f;
 					if (damageDir == 1 || damageDir == 3)
@@ -3966,7 +3966,7 @@ CPed::KillPedWithCar(CVehicle *car, float impulse)
 						DMAudio.PlayOneShot(m_audioEntityId, SOUND_SPLATTER, 0.0f);
 
 				} else {
-					nodeToDamage = PED_MID;
+					nodeToDamage = PED_NODE_UPPER_TORSO;
 					float vehColMaxY = vehColModel->boundingBox.max.y;
 					float vehColMinY = vehColModel->boundingBox.min.y;
 					float vehColMaxZ = vehColModel->boundingBox.max.z;
@@ -4037,17 +4037,17 @@ CPed::KillPedWithCar(CVehicle *car, float impulse)
 
 		ePedPieceTypes pieceToDamage;
 		switch (nodeToDamage) {
-			case PED_HEAD:
-				pieceToDamage = PEDPIECE_HEAD;
+			case PED_NODE_HEAD:
+				pieceToDamage = PED_PIECE_HEAD;
 				break;
-			case PED_UPPERARML:
-				pieceToDamage = PEDPIECE_LEFTARM;
+			case PED_NODE_LEFT_ARM:
+				pieceToDamage = PED_PIECE_LEFT_ARM;
 				break;
-			case PED_UPPERARMR:
-				pieceToDamage = PEDPIECE_RIGHTARM;
+			case PED_NODE_RIGHT_ARM:
+				pieceToDamage = PED_PIECE_RIGHT_ARM;
 				break;
 			default:
-				pieceToDamage = PEDPIECE_MID;
+				pieceToDamage = PED_PIECE_ASS;
 				break;
 		}
 		InflictDamage(car, killMethod, 1000.0f, pieceToDamage, damageDir);
@@ -4056,7 +4056,7 @@ CPed::KillPedWithCar(CVehicle *car, float impulse)
 			&& bIsPedDieAnimPlaying && !m_pCollidingEntity) {
 			m_pCollidingEntity = car;
 		}
-		if (nodeToDamage == PED_MID)
+		if (nodeToDamage == PED_NODE_UPPER_TORSO)
 			bKnockedUpIntoAir = true;
 		else
 			bKnockedUpIntoAir = false;
@@ -4078,7 +4078,7 @@ CPed::KillPedWithCar(CVehicle *car, float impulse)
 		else
 			damage = 30.0f;
 	
-		InflictDamage(car, WEAPONTYPE_RAMMEDBYCAR, damage, PEDPIECE_TORSO, fallDirection);
+		InflictDamage(car, WEAPONTYPE_RAMMEDBYCAR, damage, PED_PIECE_TORSO, fallDirection);
 		SetFall(1000, (AnimationId)(fallDirection + ANIM_ID_KO_SKID_FRONT), true);
 
 		if (OnGround() && !m_pCollidingEntity &&
@@ -4321,7 +4321,7 @@ CPed::DriveVehicle(void)
 			RwV3d Xaxis = { 1.0f, 0.0f, 0.0f };
 			RwV3d Yaxis = { 0.0f, 1.0f, 0.0f };
 			// The head bone is missing on a skeleton that does not carry it.
-			RtQuat *head = FrameQuat(PED_HEAD);
+			RtQuat *head = FrameQuat(PED_NODE_HEAD);
 			if (head) {
 				RtQuatRotate(head, &Xaxis, CGeneral::GetRandomNumberInRange(-6.0f * velocityFwdDotProd, 6.0f * velocityFwdDotProd), rwCOMBINEPOSTCONCAT);
 				RtQuatRotate(head, &Yaxis, CGeneral::GetRandomNumberInRange(-6.0f * velocityFwdDotProd, 6.0f * velocityFwdDotProd), rwCOMBINEPOSTCONCAT);

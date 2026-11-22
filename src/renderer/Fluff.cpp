@@ -926,7 +926,7 @@ CSmokeTrails::Update(void) {
 	RwV3d endPos = { 0.026f, 0.05f, 0.02f };
 
 	RpHAnimHierarchy *hier = GetAnimHierarchyFromSkinClump(FindPlayerPed()->GetClump());
-	int32 idx = RpHAnimIDGetIndex(hier, ConvertPedNode2BoneTag(PED_HEAD));
+	int32 idx = RpHAnimIDGetIndex(hier, ConvertPedNode2BoneTag(PED_NODE_HEAD));
 	RwMatrix *head = &RpHAnimHierarchyGetMatrixArray(hier)[idx];
 	RwV3dTransformPoints(&startPos, &startPos, 1, head);
 	RwV3dTransformPoints(&endPos, &endPos, 1, head);

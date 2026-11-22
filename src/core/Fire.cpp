@@ -78,13 +78,13 @@ CFire::ProcessFire(void)
 
 				((CPlayerPed *)m_pEntity)->InflictDamage(
 					(CPlayerPed *)m_pSource, WEAPONTYPE_FLAMETHROWER,
-						fDamagePlayer, PEDPIECE_TORSO, 0);
+						fDamagePlayer, PED_PIECE_TORSO, 0);
 			} else {
 				fDamagePeds = 1.2f * CTimer::GetTimeStep();
 
 				if (((CPlayerPed *)m_pEntity)->InflictDamage(
 					(CPlayerPed *)m_pSource, WEAPONTYPE_FLAMETHROWER,
-					fDamagePeds, PEDPIECE_TORSO, 0)) {
+					fDamagePeds, PED_PIECE_TORSO, 0)) {
 					m_pEntity->bRenderScorched = true;
 				}
 			}

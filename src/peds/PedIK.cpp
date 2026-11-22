@@ -61,7 +61,7 @@ GetBoneMatrix(CPed *ped, int32 bone)
 inline RwMatrix*
 GetComponentMatrix(CPed *ped, int32 node)
 {
-	if(node < 0 || node >= PED_NODE_MAX || ped->m_pFrames[node] == nil)
+	if(node < 0 || node >= TOTAL_PED_NODES || ped->m_pFrames[node] == nil)
 		return nil;
 	return GetBoneMatrix(ped, ped->m_pFrames[node]->nodeID);
 }
@@ -80,7 +80,7 @@ RotateQuatIfPresent(RtQuat *q, const RwV3d *axis, float angle, RwOpCombineType m
 inline RtQuat*
 GetFrameQuat(CPed *ped, int32 node)
 {
-	if(ped == nil || node < 0 || node >= PED_NODE_MAX)
+	if(ped == nil || node < 0 || node >= TOTAL_PED_NODES)
 		return nil;
 	AnimBlendFrameData *frame = ped->m_pFrames[node];
 	if(frame == nil || frame->hanimFrame == nil)
@@ -136,7 +136,7 @@ CPedIK::PitchForSlope(void)
 			CAnimBlendClumpData *data;
 			CPed *ped;
 			void operator()(int32 node, float degrees, const RwV3d &axis) const {
-				if(node < 0 || node >= PED_NODE_MAX || ped->m_pFrames[node] == nil)
+				if(node < 0 || node >= TOTAL_PED_NODES || ped->m_pFrames[node] == nil)
 					return;
 				RotateQuatIfPresent(&data->frames[ped->m_pFrames[node]->nodeID].hanimFrame->q,
 					&axis, degrees, rwCOMBINEPRECONCAT);
@@ -159,17 +159,17 @@ CPedIK::PitchForSlope(void)
 		UpZ upZ = { m_ped };
 
 		if(fabsf(m_fSlopePitch) > CLAMP_EPS){
-			rotate(PED_MID, RADTODEG(-m_fSlopePitch) * 0.75f);
+			rotate(PED_NODE_UPPER_TORSO, RADTODEG(-m_fSlopePitch) * 0.75f);
 
 			// Re-pitch the legs so the feet follow the ground instead of
 			// sinking into it. The sign of the thigh up-vector decides which
 			// way each joint has to bend.
-			rotate(PED_UPPERLEGR, asinf(upZ(PED_UPPERLEGR)) * 30.0f * m_fSlopePitch);
-			rotate(PED_LOWERLEGR, Max(-asinf(upZ(PED_UPPERLEGR)), 0.0f) * -30.0f * m_fSlopePitch);
-			rotate(PED_FOOTR,     Max( asinf(upZ(PED_FOOTR)),     0.0f) * -30.0f * m_fSlopePitch);
-			rotate(PED_UPPERLEGL, asinf(upZ(PED_UPPERLEGL)) * 30.0f * m_fSlopePitch);
-			rotate(PED_LOWERLEGL, Max(-asinf(upZ(PED_UPPERLEGL)), 0.0f) * -30.0f * m_fSlopePitch);
-			rotate(PED_FOOTL,     Max(-asinf(upZ(PED_FOOTL)),     0.0f) * -30.0f * m_fSlopePitch);
+			rotate(PED_NODE_RIGHT_LEG, asinf(upZ(PED_NODE_RIGHT_LEG)) * 30.0f * m_fSlopePitch);
+			rotate(PED_NODE_RIGHT_LOWER_LEG, Max(-asinf(upZ(PED_NODE_RIGHT_LEG)), 0.0f) * -30.0f * m_fSlopePitch);
+			rotate(PED_NODE_RIGHT_FOOT,     Max( asinf(upZ(PED_NODE_RIGHT_FOOT)),     0.0f) * -30.0f * m_fSlopePitch);
+			rotate(PED_NODE_LEFT_LEG, asinf(upZ(PED_NODE_LEFT_LEG)) * 30.0f * m_fSlopePitch);
+			rotate(PED_NODE_LEFT_LOWER_LEG, Max(-asinf(upZ(PED_NODE_LEFT_LEG)), 0.0f) * -30.0f * m_fSlopePitch);
+			rotate(PED_NODE_LEFT_FOOT,     Max(-asinf(upZ(PED_NODE_LEFT_FOOT)),     0.0f) * -30.0f * m_fSlopePitch);
 
 			// Shift the ped so the tilted body still meets the ground.
 			CMatrix result(m_ped->GetMatrix());
@@ -189,7 +189,7 @@ CPedIK::PitchForSlope(void)
 		if(fabsf(m_fSlopeRoll) > CLAMP_EPS){
 			// Roll each foot around the axis it is actually pointing along.
 			for(int32 side = 0; side < 2; side++){
-				int32 node = side ? PED_FOOTR : PED_FOOTL;
+				int32 node = side ? PED_NODE_RIGHT_FOOT : PED_NODE_LEFT_FOOT;
 				RwMatrix *hm = GetComponentMatrix(m_ped, node);
 				if(hm == nil)
 					continue;
@@ -295,7 +295,7 @@ bool
 CPedIK::RestoreGunPosn(void)
 {
 	LimbMoveStatus limbStatus = MoveLimb(m_torsoOrient, 0.0f, 0.0f, ms_torsoInfo);
-	RotateTorso(m_ped->m_pFrames[PED_MID], &m_torsoOrient, false);
+	RotateTorso(m_ped->m_pFrames[PED_NODE_UPPER_TORSO], &m_torsoOrient, false);
 	return limbStatus == ANGLES_SET_EXACTLY;
 }
 
@@ -304,11 +304,11 @@ CPedIK::LookInDirection(float targetYaw, float targetPitch)
 {
 	bool success = true;
 	float yaw, pitch;
-	if (m_ped->m_pFrames[PED_HEAD] == nil)
+	if (m_ped->m_pFrames[PED_NODE_HEAD] == nil)
 		return false;
-	if (!(m_ped->m_pFrames[PED_HEAD]->flag & AnimBlendFrameData::IGNORE_ROTATION)) {
-		m_ped->m_pFrames[PED_HEAD]->flag |= AnimBlendFrameData::IGNORE_ROTATION;
-		RwMatrix *m = GetComponentMatrix(m_ped, PED_NECK);
+	if (!(m_ped->m_pFrames[PED_NODE_HEAD]->flag & AnimBlendFrameData::IGNORE_ROTATION)) {
+		m_ped->m_pFrames[PED_NODE_HEAD]->flag |= AnimBlendFrameData::IGNORE_ROTATION;
+		RwMatrix *m = GetComponentMatrix(m_ped, PED_NODE_NECK);
 		if (m == nil)
 			return false;
 		m_headOrient.yaw = Atan2(-m->at.y, -m->at.x);
@@ -319,7 +319,7 @@ CPedIK::LookInDirection(float targetYaw, float targetPitch)
 	}
 
 	// parent of head is neck
-	RwMatrix *m = GetComponentMatrix(m_ped, PED_NECK);
+	RwMatrix *m = GetComponentMatrix(m_ped, PED_NODE_NECK);
 	if (m == nil)
 		return false;
 	yaw = CGeneral::LimitRadianAngle(Atan2(-m->at.y, -m->at.x));
@@ -337,20 +337,20 @@ CPedIK::LookInDirection(float targetYaw, float targetPitch)
 			success = true;
 
 	// This was RotateHead
-	RtQuat *q = GetFrameQuat(m_ped, PED_HEAD);
+	RtQuat *q = GetFrameQuat(m_ped, PED_NODE_HEAD);
 	RotateQuatIfPresent(q, &ZaxisIK, RADTODEG(m_headOrient.pitch), rwCOMBINEREPLACE);
 	RotateQuatIfPresent(q, &XaxisIK, RADTODEG(m_headOrient.yaw), rwCOMBINEPRECONCAT);
 	m_ped->bDontAcceptIKLookAts = true;
 
 	if (!(m_flags & LOOKAROUND_HEAD_ONLY))
-		RotateTorso(m_ped->m_pFrames[PED_MID], &m_torsoOrient, false);
+		RotateTorso(m_ped->m_pFrames[PED_NODE_UPPER_TORSO], &m_torsoOrient, false);
 	return success;
 }
 
 bool
 CPedIK::LookAtPosition(CVector const &pos)
 {
-	RwMatrix *midMatrix = GetComponentMatrix(m_ped, PED_MID);
+	RwMatrix *midMatrix = GetComponentMatrix(m_ped, PED_NODE_UPPER_TORSO);
 	if (midMatrix == nil)
 		return false;
 	RwV3d *pedpos = &midMatrix->pos;
@@ -400,8 +400,8 @@ CPedIK::RotateTorsoForArm(const CVector &direction)
 	if (resultAngle != DEGTORAD(0.0f)) {
 		float degreesHalf = RADTODEG(resultAngle / 2.0f);
 		if (bRotateWithNeck)
-			RotateQuatIfPresent(GetFrameQuat(m_ped, PED_NECK), &XaxisIK, degreesHalf, rwCOMBINEPOSTCONCAT);
-		RotateQuatIfPresent(GetFrameQuat(m_ped, PED_MID), &XaxisIK, degreesHalf, rwCOMBINEPOSTCONCAT);
+			RotateQuatIfPresent(GetFrameQuat(m_ped, PED_NODE_NECK), &XaxisIK, degreesHalf, rwCOMBINEPOSTCONCAT);
+		RotateQuatIfPresent(GetFrameQuat(m_ped, PED_NODE_UPPER_TORSO), &XaxisIK, degreesHalf, rwCOMBINEPOSTCONCAT);
 	}
 }
 
@@ -433,7 +433,7 @@ CPedIK::PointGunInDirection(float zAngle, float distance, bool flag, float norma
 	else if (limbResult == ANGLES_SET_EXACTLY)
 		m_flags |= GUN_POINTED_SUCCESSFULLY;
 
-	RwMatrix *head = &RpHAnimHierarchyGetMatrixArray(hier)[PED_HEAD];
+	RwMatrix *head = &RpHAnimHierarchyGetMatrixArray(hier)[PED_NODE_HEAD];
 	float headAngle = -CGeneral::LimitRadianAngle(Atan2(-head->at.y, -head->at.x) - m_ped->m_fRotationCur);
 
 	RwV3d axis;
@@ -441,7 +441,7 @@ CPedIK::PointGunInDirection(float zAngle, float distance, bool flag, float norma
 	axis.y = flag ? Cos(headAngle) : -Sin(headAngle);
 	axis.z = flag ? Sin(headAngle) :  Cos(headAngle);
 
-	RtQuat *torsoQ = GetFrameQuat(m_ped, PED_MID);
+	RtQuat *torsoQ = GetFrameQuat(m_ped, PED_NODE_UPPER_TORSO);
 	RotateQuatIfPresent(torsoQ, &axis, RADTODEG(m_torsoOrient.pitch), rwCOMBINEPOSTCONCAT);
 	RotateQuatIfPresent(torsoQ, &XaxisIK, RADTODEG(m_torsoOrient.yaw), rwCOMBINEPOSTCONCAT);
 
@@ -460,7 +460,7 @@ CPedIK::PointGunInDirectionUsingArm(float targetYaw, float targetPitch)
 	float uaRoll = 45.0f;
 	float handRoll = 30.0f;
 
-	matrix = GetComponentMatrix(m_ped, PED_CLAVICLER);
+	matrix = GetComponentMatrix(m_ped, PED_NODE_RIGHT_CLAVICLE);
 	if (matrix == nil)
 		return false;
 	yaw = CGeneral::LimitRadianAngle(Atan2(matrix->right.y, matrix->right.x) - m_ped->m_fRotationCur);
@@ -501,19 +501,19 @@ CPedIK::PointGunInDirectionUsingArm(float targetYaw, float targetPitch)
 		}
 
 		// game does this stupidly by going through the clump extension...
-		RtQuat *q = GetFrameQuat(m_ped, PED_FOREARMR);
+		RtQuat *q = GetFrameQuat(m_ped, PED_NODE_RIGHT_LOWER_ARM);
 		RotateQuatIfPresent(q, &ZaxisIK, -RADTODEG(m_lowerArmOrient.yaw), rwCOMBINEREPLACE);
 		RotateQuatIfPresent(q, &XaxisIK, -RADTODEG(m_lowerArmOrient.pitch), rwCOMBINEPOSTCONCAT);
 		m_ped->bDontAcceptIKLookAts = true;
 	}
 
-	RtQuat *q = GetFrameQuat(m_ped, PED_UPPERARMR);
+	RtQuat *q = GetFrameQuat(m_ped, PED_NODE_RIGHT_ARM);
 	RotateQuatIfPresent(q, &XaxisIK, uaRoll, rwCOMBINEREPLACE);
 	RotateQuatIfPresent(q, &YaxisIK, -RADTODEG(m_upperArmOrient.pitch), rwCOMBINEPOSTCONCAT);
 	RotateQuatIfPresent(q, &ZaxisIK, -RADTODEG(m_upperArmOrient.yaw+HALFPI), rwCOMBINEPOSTCONCAT);
 	m_ped->bDontAcceptIKLookAts = true;
 
-	q = GetFrameQuat(m_ped, PED_HANDR);
+	q = GetFrameQuat(m_ped, PED_NODE_RIGHT_HAND);
 	RotateQuatIfPresent(q, &XaxisIK, handRoll, rwCOMBINEPRECONCAT);
 
 	return result;
@@ -546,16 +546,16 @@ CPedIK::RestoreLookAt(void)
 	bool result = false;
 	float yaw, pitch;
 
-	if (m_ped->m_pFrames[PED_HEAD]->flag & AnimBlendFrameData::IGNORE_ROTATION) {
-		m_ped->m_pFrames[PED_HEAD]->flag &= (~AnimBlendFrameData::IGNORE_ROTATION);
+	if (m_ped->m_pFrames[PED_NODE_HEAD]->flag & AnimBlendFrameData::IGNORE_ROTATION) {
+		m_ped->m_pFrames[PED_NODE_HEAD]->flag &= (~AnimBlendFrameData::IGNORE_ROTATION);
 	} else {
-		ExtractYawAndPitchLocalSkinned(m_ped->m_pFrames[PED_HEAD], &yaw, &pitch);
+		ExtractYawAndPitchLocalSkinned(m_ped->m_pFrames[PED_NODE_HEAD], &yaw, &pitch);
 		if (MoveLimb(m_headOrient, yaw, pitch, ms_headRestoreInfo) == ANGLES_SET_EXACTLY)
 			result = true;
 	}
 
 	// This was RotateHead
-	RtQuat *q = GetFrameQuat(m_ped, PED_HEAD);
+	RtQuat *q = GetFrameQuat(m_ped, PED_NODE_HEAD);
 	RotateQuatIfPresent(q, &XaxisIK, RADTODEG(m_headOrient.yaw), rwCOMBINEREPLACE);
 	RotateQuatIfPresent(q, &ZaxisIK, RADTODEG(m_headOrient.pitch), rwCOMBINEPRECONCAT);
 	m_ped->bDontAcceptIKLookAts = true;
@@ -563,7 +563,7 @@ CPedIK::RestoreLookAt(void)
 	if (!(m_flags & LOOKAROUND_HEAD_ONLY))
 		MoveLimb(m_torsoOrient, 0.0f, 0.0f, ms_torsoInfo);
 	if (!(m_flags & LOOKAROUND_HEAD_ONLY))
-		RotateTorso(m_ped->m_pFrames[PED_MID], &m_torsoOrient, false);
+		RotateTorso(m_ped->m_pFrames[PED_NODE_UPPER_TORSO], &m_torsoOrient, false);
 	return result;
 }
 

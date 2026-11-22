@@ -134,7 +134,7 @@ CAnimViewer::Initialise(void) {
 			}
 
 			if (groupId != NUM_ANIM_ASSOC_GROUPS)
-				((CPedModelInfo*)CModelInfo::GetModelInfo(MI_SPECIAL01 + lineId))->m_animGroup = groupId;
+				((CPedModelInfo*)CModelInfo::GetModelInfo(MI_SPECIAL01 + lineId))->m_animGroup = (AssocGroupId)groupId;
 
 			CStreaming::RequestSpecialChar(lineId, modelName, STREAMFLAGS_DONT_REMOVE);
 		}

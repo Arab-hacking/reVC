@@ -84,11 +84,11 @@ CPedModelInfo::DetectSAAnimationClump(RpClump *clump, uint32 clumpStreamVersion)
 	// markers: RW 3.6+ DFF version, SA-only facial/torso bone tags, or SA
 	// 3ds Max Bip01/Normal bone frame names.
 	static const int requiredBones[] = {
-		BONE_root, BONE_pelvis, BONE_spine1, BONE_neck, BONE_head,
-		BONE_l_clavicle, BONE_l_upperarm, BONE_l_forearm, BONE_l_hand,
-		BONE_l_finger, BONE_r_clavicle, BONE_r_upperarm, BONE_r_forearm,
-		BONE_r_hand, BONE_r_finger, BONE_l_thigh, BONE_l_calf, BONE_l_foot,
-		BONE_r_thigh, BONE_r_calf, BONE_r_foot
+		BONE_ROOT, BONE_PELVIS, BONE_SPINE1, BONE_NECK, BONE_HEAD,
+		BONE_L_CLAVICLE, BONE_L_UPPER_ARM, BONE_L_FORE_ARM, BONE_L_HAND,
+		BONE_L_FINGER, BONE_R_CLAVICLE, BONE_R_UPPER_ARM, BONE_R_FORE_ARM,
+		BONE_R_HAND, BONE_R_FINGER, BONE_L_THIGH, BONE_L_CALF, BONE_L_FOOT,
+		BONE_R_THIGH, BONE_R_CALF, BONE_R_FOOT
 	};
 	// SA-exclusive eBoneTag IDs: BONE_L_BROW(6), BONE_R_BROW(7), BONE_JAW(8),
 	// BONE_BELLY(201), BONE_R_BREAST(301), BONE_L_BREAST(302).
@@ -204,19 +204,20 @@ CPedModelInfo::FindSAReplacementModel(int32 modelId)
 // leftover...
 int32 CPedModelInfo::ms_lastPedSlot = MI_LAST_PED + 1;
 
-RwObjectNameIdAssocation CPedModelInfo::m_pPedIds[PED_NODE_MAX] = {
-	{ "Smid",	PED_MID, 0, },	// that is strange...
-	{ "Shead",	PED_HEAD, 0, },
-	{ "Supperarml",	PED_UPPERARML, 0, },
-	{ "Supperarmr",	PED_UPPERARMR, 0, },
-	{ "SLhand",	PED_HANDL, 0, },
-	{ "SRhand",	PED_HANDR, 0, },
-	{ "Supperlegl",	PED_UPPERLEGL, 0, },
-	{ "Supperlegr",	PED_UPPERLEGR, 0, },
-	{ "Sfootl",	PED_FOOTL, 0, },
-	{ "Sfootr",	PED_FOOTR, 0, },
-	{ "Slowerlegr",	PED_LOWERLEGR, 0, },
-	{ nil,	0, 0, },
+RwObjectNameIdAssocation CPedModelInfo::m_pPedIds[NUM_PED_NAME_ID_ASSOC] = {
+	{ "Smid",		PED_NODE_UPPER_TORSO, 0, },
+	{ "Shead",		PED_NODE_HEAD, 0, },
+	{ "Supperarml",	PED_NODE_LEFT_ARM, 0, },
+	{ "Supperarmr",	PED_NODE_RIGHT_ARM, 0, },
+	{ "SLhand",		PED_NODE_LEFT_HAND, 0, },
+	{ "SRhand",		PED_NODE_RIGHT_HAND, 0, },
+	{ "Supperlegl",	PED_NODE_LEFT_LEG, 0, },
+	{ "Supperlegr",	PED_NODE_RIGHT_LEG, 0, },
+	{ "Sfootl",		PED_NODE_LEFT_FOOT, 0, },
+	{ "Sfootr",		PED_NODE_RIGHT_FOOT, 0, },
+	{ "Slowerlegl",	PED_NODE_LEFT_LOWER_LEG, 0, },
+	{ "Slowerlegr",	PED_NODE_RIGHT_LOWER_LEG, 0, },
+	{ nil,			0, 0, },
 };
 
 void
@@ -235,27 +236,23 @@ CPedModelInfo::SetClump(RpClump *clump)
 		RpClumpForAllAtomics(m_clump, SetAtomicRendererCB, (void*)CVisibilityPlugins::RenderPlayerCB);
 }
 
-struct ColNodeInfo
-{
-	Const char *name;
-	int pedNode;
-	int pieceType;
-	float x, z;
-	float radius;
-};
-
-#define NUMPEDINFONODES 10
-ColNodeInfo m_pColNodeInfos[NUMPEDINFONODES] = {
-	{ nil, PED_HEAD,	PEDPIECE_HEAD,	0.0f,   0.05f, 0.15f },
-	{ nil, PED_MID,		PEDPIECE_TORSO,	0.0f,   0.15f, 0.2f },
-	{ nil, PED_MID,		PEDPIECE_TORSO,	0.0f,  -0.05f, 0.25f },
-	{ nil, PED_MID,		PEDPIECE_MID,	0.0f,  -0.25f, 0.25f },
-	{ nil, PED_UPPERARML,	PEDPIECE_LEFTARM,	0.03f, -0.05f,  0.16f },
-	{ nil, PED_UPPERARMR,	PEDPIECE_RIGHTARM,	-0.03f, -0.05f,  0.16f },
-	{ nil, PED_LOWERLEGL,	PEDPIECE_LEFTLEG,	0.0f,   0.15f, 0.2f },
-	{ nil, PED_LOWERLEGR,	PEDPIECE_RIGHTLEG,	0.0f,   0.15f, 0.2f },
-	{ nil, PED_FOOTL,	PEDPIECE_LEFTLEG,	0.0f,   0.15f, 0.15f },
-	{ nil, PED_FOOTR,	PEDPIECE_RIGHTLEG,	0.0f,   0.15f, 0.15f },
+// One hit-collision sphere per entry, in the order San Andreas lays them out
+// (CPedModelInfo::m_pColNodeInfos, 0x8A6308). The bone ids are real eBoneTag
+// values, not ped nodes: SA stores the bone directly, and the offsets are in
+// that bone's space. The piece is what the sphere reports to damage code.
+tPedColNodeInfo CPedModelInfo::m_pColNodeInfos[NUM_PED_COLMODEL_NODES] = {
+	{ {}, BONE_HEAD,			PED_PIECE_HEAD,			CVector( 0.05f, 0.0f, 0.0f), 0.15f },
+	{ {}, BONE_SPINE1,			PED_PIECE_TORSO,		CVector( 0.20f, 0.0f, 0.0f), 0.20f },
+	{ {}, BONE_SPINE1,			PED_PIECE_TORSO,		CVector( 0.0f,  0.0f, 0.0f), 0.20f },
+	{ {}, BONE_SPINE,			PED_PIECE_ASS,			CVector(-0.10f, 0.0f, 0.0f), 0.20f },
+	{ {}, BONE_L_UPPER_ARM,		PED_PIECE_LEFT_ARM,		CVector( 0.06f, 0.0f, 0.0f), 0.14f },
+	{ {}, BONE_R_UPPER_ARM,		PED_PIECE_RIGHT_ARM,	CVector( 0.06f, 0.0f, 0.0f), 0.14f },
+	{ {}, BONE_L_FORE_ARM,		PED_PIECE_LEFT_ARM,		CVector( 0.05f, 0.0f, 0.0f), 0.14f },
+	{ {}, BONE_R_FORE_ARM,		PED_PIECE_RIGHT_ARM,	CVector( 0.05f, 0.0f, 0.0f), 0.14f },
+	{ {}, BONE_L_CALF,			PED_PIECE_LEFT_LEG,		CVector(-0.10f, 0.0f, 0.0f), 0.18f },
+	{ {}, BONE_R_CALF,			PED_PIECE_RIGHT_LEG,	CVector(-0.10f, 0.0f, 0.0f), 0.18f },
+	{ {}, BONE_L_FOOT,			PED_PIECE_LEFT_LEG,		CVector(-0.18f, 0.0f, 0.0f), 0.16f },
+	{ {}, BONE_R_FOOT,			PED_PIECE_RIGHT_LEG,	CVector(-0.18f, 0.0f, 0.0f), 0.16f },
 };
 
 void
@@ -263,38 +260,34 @@ CPedModelInfo::CreateHitColModelSkinned(RpClump *clump)
 {
 	RpHAnimHierarchy *hier = GetAnimHierarchyFromSkinClump(clump);
 	CColModel *colmodel = new CColModel;
-	CColSphere *spheres = (CColSphere*)RwMalloc(NUMPEDINFONODES*sizeof(CColSphere));
-	RwFrame *root = RpClumpGetFrame(m_clump);
+	CColSphere *spheres = (CColSphere*)RwMalloc(NUM_PED_COLMODEL_NODES*sizeof(CColSphere));
 	RwMatrix *invmat = RwMatrixCreate();
 	RwMatrix *mat = RwMatrixCreate();
 	RwMatrixInvert(invmat, RwFrameGetMatrix(RpClumpGetFrame(clump)));
 
-	for(int i = 0; i < NUMPEDINFONODES; i++){
-		*mat = *invmat;
+	for(int i = 0; i < NUM_PED_COLMODEL_NODES; i++){
+		const tPedColNodeInfo &node = m_pColNodeInfos[i];
+		int idx = RpHAnimIDGetIndex(hier, node.m_nBoneID);
+		CVector center = node.m_vecCenter;
 
-		// From LCS. Otherwise gives FPE
-#ifdef FIX_BUGS
-		spheres[i].center = CVector(0.0f, 0.0f, 0.0f);
-#else
-		int id = ConvertPedNode2BoneTag(m_pColNodeInfos[i].pedNode);	// this is wrong, wtf R* ???
-		int idx = RpHAnimIDGetIndex(hier, id);
-
-		// This doesn't really work as the positions are not initialized yet
-		RwMatrixTransform(mat, &RpHAnimHierarchyGetMatrixArray(hier)[idx], rwCOMBINEPRECONCAT);
-		RwV3d pos = { 0.0f, 0.0f, 0.0f };
-		RwV3dTransformPoints(&pos, &pos, 1, mat);
-
-		spheres[i].center = pos + CVector(m_pColNodeInfos[i].x, 0.0f, m_pColNodeInfos[i].z);
-#endif
-		spheres[i].radius = m_pColNodeInfos[i].radius;
+		// A model without the bone gets the sphere where the table puts it.
+		if(idx >= 0 && idx < hier->numNodes){
+			*mat = *invmat;
+			RwMatrixTransform(mat, &RpHAnimHierarchyGetMatrixArray(hier)[idx], rwCOMBINEPRECONCAT);
+			RwV3d pos = { center.x, center.y, center.z };
+			RwV3dTransformPoints(&pos, &pos, 1, mat);
+			center = CVector(pos);
+		}
+		spheres[i].center = center;
+		spheres[i].radius = node.m_fRadius;
 		spheres[i].surface = SURFACE_PED;
-		spheres[i].material = m_pColNodeInfos[i].pieceType;
+		spheres[i].material = node.m_nFlags;
 	}
 	RwMatrixDestroy(invmat);
 	RwMatrixDestroy(mat);
 	colmodel->spheres = spheres;
-	colmodel->numSpheres = NUMPEDINFONODES;
-	colmodel->boundingSphere.Set(2.0f, CVector(0.0f, 0.0f, 0.0f));
+	colmodel->numSpheres = NUM_PED_COLMODEL_NODES;
+	colmodel->boundingSphere.Set(1.5f, CVector(0.0f, 0.0f, 0.0f));
 	colmodel->boundingBox.Set(CVector(-0.5f, -0.5f, -1.2f), CVector(0.5f, 0.5f, 1.2f));
 	colmodel->level = LEVEL_GENERIC;
 	m_hitColModel = colmodel;
@@ -316,23 +309,36 @@ CPedModelInfo::AnimatePedColModelSkinned(RpClump *clump)
 	mat = RwMatrixCreate();
 	RwMatrixInvert(invmat, RwFrameGetMatrix(RpClumpGetFrame(clump)));
 
-	for(int i = 0; i < NUMPEDINFONODES; i++){
-		*mat = *invmat;
-		int id = ConvertPedNode2BoneTag(m_pColNodeInfos[i].pedNode);
-		int idx = RpHAnimIDGetIndex(hier, id);
+	for(int i = 0; i < NUM_PED_COLMODEL_NODES; i++){
+		const tPedColNodeInfo &node = m_pColNodeInfos[i];
+		int idx = RpHAnimIDGetIndex(hier, node.m_nBoneID);
 		if(idx < 0 || idx >= hier->numNodes){
-			spheres[i].center = CVector(m_pColNodeInfos[i].x, 0.0f, m_pColNodeInfos[i].z);
+			spheres[i].center = node.m_vecCenter;
 			continue;
 		}
-
+		*mat = *invmat;
 		RwMatrixTransform(mat, &RpHAnimHierarchyGetMatrixArray(hier)[idx], rwCOMBINEPRECONCAT);
-		RwV3d pos = { 0.0f, 0.0f, 0.0f };
+		RwV3d pos = { node.m_vecCenter.x, node.m_vecCenter.y, node.m_vecCenter.z };
 		RwV3dTransformPoints(&pos, &pos, 1, mat);
-
-		spheres[i].center = pos + CVector(m_pColNodeInfos[i].x, 0.0f, m_pColNodeInfos[i].z);
+		spheres[i].center = CVector(pos);
 	}
 	RwMatrixDestroy(invmat);
 	RwMatrixDestroy(mat);
+
+	// The bound volume follows the chest bone, so a ped lying down does not
+	// keep an upright box around itself.
+	CVector boundCenter(0.0f, 0.0f, 0.0f);
+	int spineIdx = RpHAnimIDGetIndex(hier, BONE_SPINE1);
+	if(spineIdx >= 0 && spineIdx < hier->numNodes){
+		*mat = *invmat;
+		RwMatrixTransform(mat, &RpHAnimHierarchyGetMatrixArray(hier)[spineIdx], rwCOMBINEPRECONCAT);
+		RwV3d pos = { 0.0f, 0.0f, 0.0f };
+		RwV3dTransformPoints(&pos, &pos, 1, mat);
+		boundCenter = CVector(pos);
+	}
+	m_hitColModel->boundingSphere.Set(1.5f, boundCenter);
+	m_hitColModel->boundingBox.Set(boundCenter - CVector(1.2f, 1.2f, 1.2f),
+	                               boundCenter + CVector(1.2f, 1.2f, 1.2f));
 	return m_hitColModel;
 }
 
@@ -347,20 +353,19 @@ CPedModelInfo::AnimatePedColModelSkinnedWorld(RpClump *clump)
 		return m_hitColModel;
 	RwMatrix *mat;
 
-	for(int i = 0; i < NUMPEDINFONODES; i++){
-		int id = ConvertPedNode2BoneTag(m_pColNodeInfos[i].pedNode);
-		int idx = RpHAnimIDGetIndex(hier, id);
+	for(int i = 0; i < NUM_PED_COLMODEL_NODES; i++){
+		const tPedColNodeInfo &node = m_pColNodeInfos[i];
+		int idx = RpHAnimIDGetIndex(hier, node.m_nBoneID);
+		CVector center = node.m_vecCenter;
 		if(idx < 0 || idx >= hier->numNodes){
 			RwMatrix *rootLtm = RwFrameGetLTM(RpClumpGetFrame(clump));
-			spheres[i].center = CVector(rootLtm->pos) + CVector(m_pColNodeInfos[i].x, 0.0f, m_pColNodeInfos[i].z);
+			spheres[i].center = CVector(rootLtm->pos) + center;
 			continue;
 		}
-
 		mat = &RpHAnimHierarchyGetMatrixArray(hier)[idx];
-		RwV3d pos = { 0.0f, 0.0f, 0.0f };
+		RwV3d pos = { center.x, center.y, center.z };
 		RwV3dTransformPoints(&pos, &pos, 1, mat);
-
-		spheres[i].center = pos + CVector(m_pColNodeInfos[i].x, 0.0f, m_pColNodeInfos[i].z);
+		spheres[i].center = CVector(pos);
 	}
 	return m_hitColModel;
 }

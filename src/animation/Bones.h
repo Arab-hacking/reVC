@@ -1,42 +1,62 @@
 #ifndef __GTA_BONES_H__
 #define __GTA_BONES_H__
 
-enum BoneTag
+#include "PedNode.h"
+
+// San Andreas bone tags (eBoneTag, 0x4D56F0 / 0x4D58A0). The tag is a 16-bit
+// index into the hierarchy: RpHAnimIDGetIndex takes it as is and the valid
+// range runs to BONE_MAX_ID, not to the last named bone. The named tags are
+// the ones an IFP keyframe can carry; the rest of the range is runtime-only.
+enum eBoneTag
 {
-	BONE_root = 0,
-	BONE_pelvis = 1,
-	BONE_spine = 2,
-	BONE_spine1 = 3,
-	BONE_neck = 4,
-	BONE_head = 5,
-	BONE_l_clavicle = 31,
-	BONE_l_upperarm = 32,
-	BONE_l_forearm = 33,
-	BONE_l_hand = 34,
-	BONE_l_finger = 35,
-	BONE_l_finger01 = 36,
-	BONE_r_clavicle = 21,
-	BONE_r_upperarm = 22,
-	BONE_r_forearm = 23,
-	BONE_r_hand = 24,
-	BONE_r_finger = 25,
-	BONE_r_finger01 = 26,
-	BONE_l_thigh = 41,
-	BONE_l_calf = 42,
-	BONE_l_foot = 43,
-	BONE_l_toe = 44,
-	BONE_r_thigh = 51,
-	BONE_r_calf = 52,
-	BONE_r_foot = 53,
-	BONE_r_toe = 54,
-	// SA has separate breast bones that follow the upper arm so the chest does
-	// not tear open when the arm raises. They sit outside the 0..54 range and are
-	// addressed by ID through RpHAnimIDGetIndex, not by array position.
-	BONE_r_breast = 301,
-	BONE_l_breast = 302,
+	BONE_UNKNOWN = -1,
+
+	BONE_ROOT = 0,		// called "Normal" in some exporters
+	BONE_PELVIS = 1,
+	BONE_SPINE = 2,
+	BONE_SPINE1 = 3,
+	BONE_NECK = 4,
+	BONE_HEAD = 5,
+	BONE_L_BROW = 6,
+	BONE_R_BROW = 7,
+	BONE_JAW = 8,
+
+	BONE_R_CLAVICLE = 21,
+	BONE_R_UPPER_ARM = 22,
+	BONE_R_FORE_ARM = 23,
+	BONE_R_HAND = 24,
+	BONE_R_FINGER = 25,
+	BONE_R_FINGER_01 = 26,
+
+	BONE_L_CLAVICLE = 31,
+	BONE_L_UPPER_ARM = 32,
+	BONE_L_FORE_ARM = 33,
+	BONE_L_HAND = 34,
+	BONE_L_FINGER = 35,
+	BONE_L_FINGER_01 = 36,
+
+	BONE_L_THIGH = 41,
+	BONE_L_CALF = 42,
+	BONE_L_FOOT = 43,
+	BONE_L_TOE_0 = 44,
+
+	BONE_R_THIGH = 51,
+	BONE_R_CALF = 52,
+	BONE_R_FOOT = 53,
+	BONE_R_TOE_0 = 54,
+
+	// The body-shape bones sit far outside the skeleton range. They are
+	// addressed by their ID like every other tag, never by array position.
+	BONE_BELLY = 201,
+
+	BONE_R_BREAST = 301,
+	BONE_L_BREAST = 302,
+
+	BONE_MAX_ID = 303,
+	MAX_BONE_NUM = 32
 };
 
-int ConvertPedNode2BoneTag(int node);
+int ConvertPedNode2BoneTag(ePedNode node);
 const char *ConvertBoneTag2BoneName(int tag);
 
 // Some SA IFP clips (including CAR_alignHI) mark every bone ID as -1.

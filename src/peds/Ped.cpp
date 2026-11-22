@@ -66,6 +66,9 @@ CPed::CPed(uint32 pedType) : m_pedIK(this)
 #ifdef USE_CUTSCENE_SHADOW_FOR_PED
 	m_pRTShadow = nil;
 #endif
+	// Until the first PreRender poses this ped, bone queries answer from the
+	// standard table rather than from an unposed hierarchy.
+	bCalledPreRender = false;
 	m_vecAnimMoveDelta.x = 0.0f;
 	m_vecAnimMoveDelta.y = 0.0f;
 	m_fHealth = 100.0f;
@@ -492,7 +495,7 @@ CPed::SetModelIndex(uint32 mi)
 	if(modelInfo){
 		SetPedStats(modelInfo->m_pedStatType);
 		if(m_pedStats)
-			m_headingRate = m_pedStats->m_headingChangeRate;
+			m_headingRate = m_pedStats->m_fHeadingChangeRate;
 		m_animGroup = (AssocGroupId) modelInfo->m_animGroup;
 	}
 	if(GetClump() == nil){
@@ -942,18 +945,18 @@ CPed::ScanForThreats(void)
 	CVector ourPos = GetPosition();
 	float closestPedDist = 60.0f;
 	CVector2D explosionPos = GetPosition();
-	if (fearFlags & PED_FLAG_EXPLOSION && CheckForExplosions(explosionPos)) {
+	if (fearFlags & PED_THREAT_EXPLOSION && CheckForExplosions(explosionPos)) {
 		m_eventOrThreat = explosionPos;
-		return PED_FLAG_EXPLOSION;
+		return PED_THREAT_EXPLOSION;
 	}
 	
-	if (fearFlags & PED_FLAG_GUN) {
+	if (fearFlags & PED_THREAT_GUN) {
 		CPed *shooter = CheckForGunShots();
 		if (shooter && (m_nPedType != shooter->m_nPedType || m_nPedType == PEDTYPE_CIVMALE || m_nPedType == PEDTYPE_CIVFEMALE)) {
 			if (!IsGangMember()) {
 				m_threatEntity = shooter;
 				m_threatEntity->RegisterReference((CEntity**)&m_threatEntity);
-				return PED_FLAG_GUN;
+				return PED_THREAT_GUN;
 			}
 
 			if (CPedType::GetFlag(shooter->m_nPedType) & fearFlags || m_nPedType == PEDTYPE_GANG5) {
@@ -967,7 +970,7 @@ CPed::ScanForThreats(void)
 	}
 
 	CPed *deadPed;
-	if (fearFlags & PED_FLAG_DEADPEDS && CharCreatedBy != MISSION_CHAR
+	if (fearFlags & PED_THREAT_DEADPEDS && CharCreatedBy != MISSION_CHAR
 		&& (deadPed = CheckForDeadPeds()) != nil && (deadPed->GetPosition() - ourPos).MagnitudeSqr() < sq(20.0f)
 #ifdef FIX_BUGS
 		&& !deadPed->bIsInWater
@@ -975,7 +978,7 @@ CPed::ScanForThreats(void)
 		) {
 		m_pEventEntity = deadPed;
 		m_pEventEntity->RegisterReference((CEntity **) &m_pEventEntity);
-		return PED_FLAG_DEADPEDS;
+		return PED_THREAT_DEADPEDS;
 	} else {
 		uint32 flagsOfNearPed = 0;
 
@@ -1213,7 +1216,7 @@ CPed::MoveHeadToLook(void)
 
 	if (m_pLookTarget) {
 		if (m_pLookTarget->IsPed()) {
-			((CPed*)m_pLookTarget)->m_pedIK.GetComponentPosition(lookPos, PED_MID);
+			((CPed*)m_pLookTarget)->m_pedIK.GetComponentPosition(lookPos, PED_NODE_UPPER_TORSO);
 		} else {
 			lookPos = m_pLookTarget->GetPosition();
 		}
@@ -1244,15 +1247,15 @@ CPed::MoveHeadToLook(void)
 
 			if (m_pLookTarget->IsPed()) {
 #ifdef FIX_BUGS
-				if (m_pedStats->m_temper > 49 || ((CPed*)m_pLookTarget)->m_nPedType == PEDTYPE_COP)
+				if (m_pedStats->m_nTemper > 49 || ((CPed*)m_pLookTarget)->m_nPedType == PEDTYPE_COP)
 #else
-				if (m_pedStats->m_temper < 49 || ((CPed*)m_pLookTarget)->m_nPedType == PEDTYPE_COP)
+				if (m_pedStats->m_nTemper < 49 || ((CPed*)m_pLookTarget)->m_nPedType == PEDTYPE_COP)
 #endif
 					animToPlay = ANIM_ID_FUCKU;
-				else if(m_pedStats->m_temper < 47)
+				else if(m_pedStats->m_nTemper < 47)
 					animToPlay = ANIM_ID_FIGHT_1;
 			} else {
-				if (m_pedStats->m_temper > 49 || m_pLookTarget->GetModelIndex() == MI_POLICE)
+				if (m_pedStats->m_nTemper > 49 || m_pLookTarget->GetModelIndex() == MI_POLICE)
 					animToPlay = ANIM_ID_FUCKU;
 			}
 		} else if (handFreeToMove && (CGeneral::GetRandomNumber() & 1)) {
@@ -1370,7 +1373,7 @@ CPed::AimGun(void)
 
 	if (m_pSeekTarget) {
 		if (m_pSeekTarget->IsPed()) {
-			((CPed*)m_pSeekTarget)->m_pedIK.GetComponentPosition(vector, PED_MID);
+			((CPed*)m_pSeekTarget)->m_pedIK.GetComponentPosition(vector, PED_NODE_UPPER_TORSO);
 		} else {
 			vector = m_pSeekTarget->GetPosition();
 		}
@@ -1503,7 +1506,7 @@ CPed::ScanForInterestingStuff(void)
 					break;
 
 				if ((nearPed->m_nPedType == PEDTYPE_CIVFEMALE || nearPed->m_nPedType == PEDTYPE_CIVMALE
-					|| nearPed->m_nPedType == PEDTYPE_CRIMINAL || nearPed->m_nPedType == PEDTYPE_UNUSED1
+					|| nearPed->m_nPedType == PEDTYPE_CRIMINAL || nearPed->m_nPedType == PEDTYPE_BUM
 					|| nearPed->m_nPedType == PEDTYPE_PROSTITUTE)
 					&& nearPed->CharCreatedBy != MISSION_CHAR
 					&& nearPed->IsPedShootable()
@@ -1650,8 +1653,8 @@ CPed::CalculateNewVelocity(void)
 			RwV3d Xaxis = { 1.0f, 0.0f, 0.0f };
 			RwV3d Zaxis = { 0.0f, 0.0f, 1.0f };
 			// The leg bones only exist on a skeleton that carries them.
-			RtQuat *legL = FrameQuat(PED_UPPERLEGL);
-			RtQuat *legR = FrameQuat(PED_UPPERLEGR);
+			RtQuat *legL = FrameQuat(PED_NODE_LEFT_LEG);
+			RtQuat *legR = FrameQuat(PED_NODE_RIGHT_LEG);
 			if (legL && legR) {
 				RtQuatRotate(legL, &Zaxis, RADTODEG(newUpperLegs.pitch), rwCOMBINEPOSTCONCAT);
 				RtQuatRotate(legL, &Xaxis, RADTODEG(newUpperLegs.yaw), rwCOMBINEPOSTCONCAT);
@@ -1824,7 +1827,7 @@ CPed::ProcessBuoyancy(void)
 					CVector pos = GetPosition();
 					if (PlacePedOnDryLand()) {
 						if (m_fHealth > 20.0f)
-							InflictDamage(nil, WEAPONTYPE_DROWNING, 15.0f, PEDPIECE_TORSO, false);
+							InflictDamage(nil, WEAPONTYPE_DROWNING, 15.0f, PED_PIECE_TORSO, false);
 
 						if (bIsInTheAir) {
 							RpAnimBlendClumpSetBlendDeltas(GetClump(), ASSOC_PARTIAL, -1000.0f);
@@ -1848,7 +1851,7 @@ CPed::ProcessBuoyancy(void)
 			m_vecMoveSpeed.z *= speedMult;
 			bIsStanding = false;
 			bIsDrowning = true;
-			InflictDamage(nil, WEAPONTYPE_DROWNING, 3.0f * CTimer::GetTimeStep(), PEDPIECE_TORSO, 0);
+			InflictDamage(nil, WEAPONTYPE_DROWNING, 3.0f * CTimer::GetTimeStep(), PED_PIECE_TORSO, 0);
 		}
 		if (buoyancyImpulse.z / m_fMass > GRAVITY * 0.25f * CTimer::GetTimeStep()) {
 			if (speedMult == 0.0f) {
@@ -2216,10 +2219,10 @@ CPed::ProcessControl(void)
 
 										if (neededTurn <= PI) {
 											angleToFace = 0.5f * neededTurn + m_fRotationCur;
-											m_fRotationCur += DEGTORAD(m_pedStats->m_headingChangeRate) * 2.0f;
+											m_fRotationCur += DEGTORAD(m_pedStats->m_fHeadingChangeRate) * 2.0f;
 										} else {
 											angleToFace = m_fRotationCur - (TWOPI - neededTurn) * 0.5f;
-											m_fRotationCur -= DEGTORAD(m_pedStats->m_headingChangeRate) * 2.0f;
+											m_fRotationCur -= DEGTORAD(m_pedStats->m_fHeadingChangeRate) * 2.0f;
 										}
 
 										m_nPedStateTimer = CTimer::GetTimeInMilliseconds() + 200;
@@ -2434,7 +2437,7 @@ CPed::ProcessControl(void)
 									damage = 20.0f;
 								}
 
-								InflictDamage(collidingVeh, WEAPONTYPE_RAMMEDBYCAR, damage, PEDPIECE_TORSO, dir);
+								InflictDamage(collidingVeh, WEAPONTYPE_RAMMEDBYCAR, damage, PED_PIECE_TORSO, dir);
 								Say(SOUND_PED_DAMAGE);
 							}
 						} else {
@@ -3035,7 +3038,7 @@ CPed::ProcessControl(void)
 			}
 
 			if (bFannyMagnetCheat && m_nPedType == PEDTYPE_CIVFEMALE
-				&& m_pedStats->m_sexiness > 40 && !m_leader) {
+				&& m_pedStats->m_nSexiness > 40 && !m_leader) {
 				SetLeader(FindPlayerPed());
 			}
 
@@ -3200,12 +3203,12 @@ CPed::ProcessEntityCollision(CEntity *collidingEnt, CColPoint *collidingPoints)
 							if (CSurfaceTable::IsSoftLanding(intersectionPoint.surfaceB))
 								damage *= 0.5f;
 
-							InflictDamage(collidingEnt, WEAPONTYPE_FALL, damage, PEDPIECE_TORSO, dir);
+							InflictDamage(collidingEnt, WEAPONTYPE_FALL, damage, PED_PIECE_TORSO, dir);
 							if (IsPlayer() && damage2 > 5.0f)
 								Say(SOUND_PED_LAND);
 
 						} else if (!bWasStanding && fallAnim && -0.016f * CTimer::GetTimeStep() > m_vecMoveSpeed.z) {
-							InflictDamage(collidingEnt, WEAPONTYPE_FALL, 15.0f, PEDPIECE_TORSO, 2);
+							InflictDamage(collidingEnt, WEAPONTYPE_FALL, 15.0f, PED_PIECE_TORSO, 2);
 						}
 						m_vecMoveSpeed.z = 0.0f;
 						bIsStanding = true;
@@ -3392,12 +3395,12 @@ CPed::PlayFootSteps(void)
 				CVector adjustedFootPos;
 				if (stepPart == 1) {
 					DMAudio.PlayOneShot(m_audioEntityId, SOUND_STEP_START, 1.0f);
-					TransformToNode(footPosL, PED_FOOTL);
+					TransformToNode(footPosL, PED_NODE_LEFT_FOOT);
 					footPosLok = true;
 					adjustedFootPos = footPosL;
 				} else {
 					DMAudio.PlayOneShot(m_audioEntityId, SOUND_STEP_END, 1.0f);
-					TransformToNode(footPosR, PED_FOOTR);
+					TransformToNode(footPosR, PED_NODE_RIGHT_FOOT);
 					footPosRok = true;
 					adjustedFootPos = footPosR;
 				}
@@ -3445,7 +3448,7 @@ CPed::PlayFootSteps(void)
 
 	if (IsPlayer() && !walkRunAssoc && bIsLanding) {
 		if (!footPosLok)
-			TransformToNode(footPosL, PED_FOOTL);
+			TransformToNode(footPosL, PED_NODE_LEFT_FOOT);
 
 		CVector forward = GetForward();
 
@@ -3481,7 +3484,7 @@ CPed::PlayFootSteps(void)
 			}
 		}
 		if(!footPosRok)
-			TransformToNode(footPosR, PED_FOOTR);
+			TransformToNode(footPosR, PED_NODE_RIGHT_FOOT);
 
 		CVector adjustedFootPosR = footPosR;
 		adjustedFootPosR.z -= 0.1f;
@@ -4225,7 +4228,7 @@ CPed::PedSetOutCarCB(CAnimBlendAssociation *animAssoc, void *arg)
 			ped->SetFlee(veh->GetPosition(), 12000);
 			ped->bUsePedNodeSeek = true;
 			ped->m_pNextPathNode = nil;
-			if (CGeneral::GetRandomNumber() & 1 || ped->m_pedStats->m_fear > 70) {
+			if (CGeneral::GetRandomNumber() & 1 || ped->m_pedStats->m_nFear > 70) {
 				ped->SetMoveState(PEDMOVE_SPRINT);
 				ped->Say(SOUND_PED_FLEE_SPRINT);
 			} else {
@@ -4587,7 +4590,7 @@ CPed::PedSetInCarCB(CAnimBlendAssociation *animAssoc, void *arg)
 			DMAudio.PlayOneShot(veh->m_audioEntityId, SOUND_CAR_ENGINE_START, 1.0f);
 		}
 		if (ped->m_objective == OBJECTIVE_ENTER_CAR_AS_DRIVER && ped->CharCreatedBy == RANDOM_CHAR
-			&& ped != FindPlayerPed() && ped->m_nPedType != PEDTYPE_EMERGENCY) {
+			&& ped != FindPlayerPed() && ped->m_nPedType != PEDTYPE_MEDIC) {
 
 			CCarCtrl::JoinCarWithRoadSystem(veh);
 			veh->AutoPilot.m_nCarMission = MISSION_CRUISE;
@@ -4797,8 +4800,8 @@ CPed::ShoulderBoneRotation(RpClump *clump)
 		breastMat.UpdateRW();
 	};
 
-	DoUpdate(BONE_l_breast, BONE_l_upperarm, BONE_l_clavicle);
-	DoUpdate(BONE_r_breast, BONE_r_upperarm, BONE_r_clavicle);
+	DoUpdate(BONE_L_BREAST, BONE_L_UPPER_ARM, BONE_L_CLAVICLE);
+	DoUpdate(BONE_R_BREAST, BONE_R_UPPER_ARM, BONE_R_CLAVICLE);
 }
 
 static RwMatrix *
@@ -4817,7 +4820,7 @@ GetBoneMatrixSafe(RpHAnimHierarchy *hier, int32 idx)
 RtQuat *
 CPed::FrameQuat(int32 node) const
 {
-	if(node < 0 || node >= PED_NODE_MAX || m_pFrames[node] == nil ||
+	if(node < 0 || node >= TOTAL_PED_NODES || m_pFrames[node] == nil ||
 	   m_pFrames[node]->hanimFrame == nil)
 		return nil;
 	return &m_pFrames[node]->hanimFrame->q;
@@ -5127,11 +5130,15 @@ CPed::PreRenderAfterTest(void)
 		m_pedIK.PitchForSlope();
 
 	UpdateRpHAnim();
+	bCalledPreRender = true;
 }
 
 void
 CPed::PreRender(void)
 {
+	// The skin is rebuilt below, so the bone queries of this frame have a
+	// hierarchy to read from here on.
+	bCalledPreRender = false;
 	if(m_nPedState != PED_DRIVING)
 		PreRenderAfterTest();
 
@@ -5187,7 +5194,7 @@ CPed::PreRender(void)
 		scale.y = CGeneral::GetRandomNumberInRange(1.0f - fScaleOffset, 1.0f + fScaleOffset);
 		scale.z = CGeneral::GetRandomNumberInRange(1.0f - fScaleOffset, 1.0f + fScaleOffset);
 
-		idx = RpHAnimIDGetIndex(hier, ConvertPedNode2BoneTag(PED_NECK));
+		idx = RpHAnimIDGetIndex(hier, ConvertPedNode2BoneTag(PED_NODE_NECK));
 		RwMatrix* neck = GetBoneMatrixSafe(hier, idx);
 		if (neck)
 			RwMatrixScale(neck, &scale, rwCOMBINEPRECONCAT);
@@ -5197,17 +5204,17 @@ CPed::PreRender(void)
 		scale.y = CGeneral::GetRandomNumberInRange(1.0f - fScaleOffset, 1.0f + fScaleOffset);
 		scale.z = CGeneral::GetRandomNumberInRange(1.0f - fScaleOffset, 1.0f + fScaleOffset);
 
-		idx = RpHAnimIDGetIndex(hier, ConvertPedNode2BoneTag(PED_CLAVICLEL));
+		idx = RpHAnimIDGetIndex(hier, ConvertPedNode2BoneTag(PED_NODE_LEFT_CLAVICLE));
 		RwMatrix* clavicleL = GetBoneMatrixSafe(hier, idx);
 		if (clavicleL)
 			RwMatrixScale(clavicleL, &scale, rwCOMBINEPRECONCAT);
 		
-		idx = RpHAnimIDGetIndex(hier, ConvertPedNode2BoneTag(PED_CLAVICLER));
+		idx = RpHAnimIDGetIndex(hier, ConvertPedNode2BoneTag(PED_NODE_RIGHT_CLAVICLE));
 		RwMatrix* clavicleR = GetBoneMatrixSafe(hier, idx);
 		if (clavicleR)
 			RwMatrixScale(clavicleR, &scale, rwCOMBINEPRECONCAT);
 
-		idx = RpHAnimIDGetIndex(hier, ConvertPedNode2BoneTag(PED_MID));
+		idx = RpHAnimIDGetIndex(hier, ConvertPedNode2BoneTag(PED_NODE_UPPER_TORSO));
 		RwMatrix* mid = GetBoneMatrixSafe(hier, idx);
 		if (mid)
 			RwMatrixScale(mid, &scale, rwCOMBINEPRECONCAT);
@@ -5217,21 +5224,21 @@ CPed::PreRender(void)
 		scale.y = CGeneral::GetRandomNumberInRange(1.0f - fScaleOffset, 1.0f + fScaleOffset);
 		scale.z = CGeneral::GetRandomNumberInRange(1.0f - fScaleOffset, 1.0f + fScaleOffset);
 
-		idx = RpHAnimIDGetIndex(hier, ConvertPedNode2BoneTag(PED_UPPERARML));
+		idx = RpHAnimIDGetIndex(hier, ConvertPedNode2BoneTag(PED_NODE_LEFT_ARM));
 		RwMatrix* upperArmL = GetBoneMatrixSafe(hier, idx);
 		if (upperArmL)
 			RwMatrixScale(upperArmL, &scale, rwCOMBINEPRECONCAT);
 
-		idx = RpHAnimIDGetIndex(hier, ConvertPedNode2BoneTag(PED_UPPERARMR));
+		idx = RpHAnimIDGetIndex(hier, ConvertPedNode2BoneTag(PED_NODE_RIGHT_ARM));
 		RwMatrix* upperArmR = GetBoneMatrixSafe(hier, idx);
 		if (upperArmR)
 			RwMatrixScale(upperArmR, &scale, rwCOMBINEPRECONCAT);
 	}
 
-	if (bBodyPartJustCameOff && m_bodyPartBleeding == PED_HEAD) {
+	if (bBodyPartJustCameOff && m_bodyPartBleeding == PED_NODE_HEAD) {
 		// scale head to 0 if shot off
 		RpHAnimHierarchy* hier = GetAnimHierarchyFromSkinClump(GetClump());
-		int32 idx = RpHAnimIDGetIndex(hier, ConvertPedNode2BoneTag(PED_HEAD));
+		int32 idx = RpHAnimIDGetIndex(hier, ConvertPedNode2BoneTag(PED_NODE_HEAD));
 		RwMatrix* head = GetBoneMatrixSafe(hier, idx);
 		RwV3d zero = { 0.0f, 0.0f, 0.0f };
 		if (head)
@@ -5246,79 +5253,79 @@ CPed::PreRender(void)
 		scale.x = 1.0f;
 		scale.y = 1.0f + gfTommyFatness * 0.7f;
 		scale.z = 1.0f + gfTommyFatness * 0.7f;
-		idx = RpHAnimIDGetIndex(hier, ConvertPedNode2BoneTag(PED_HEAD));
+		idx = RpHAnimIDGetIndex(hier, ConvertPedNode2BoneTag(PED_NODE_HEAD));
 		RwMatrix* head = GetBoneMatrixSafe(hier, idx);
 		if (head)
 			RwMatrixScale(head, &scale, rwCOMBINEPRECONCAT);
 
 		scale.y = 1.0f + gfTommyFatness * 0.2f;
 		scale.z = 1.0f + gfTommyFatness * 0.2f;
-		idx = RpHAnimIDGetIndex(hier, ConvertPedNode2BoneTag(PED_NECK));
+		idx = RpHAnimIDGetIndex(hier, ConvertPedNode2BoneTag(PED_NODE_NECK));
 		RwMatrix* neck = GetBoneMatrixSafe(hier, idx);
 		if (neck)
 			RwMatrixScale(neck, &scale, rwCOMBINEPRECONCAT);
 
 		scale.y = 1.0f + gfTommyFatness * 0.5f;
 		scale.z = 1.0f + gfTommyFatness * 0.5f;
-		idx = RpHAnimIDGetIndex(hier, ConvertPedNode2BoneTag(PED_MID));
+		idx = RpHAnimIDGetIndex(hier, ConvertPedNode2BoneTag(PED_NODE_UPPER_TORSO));
 		RwMatrix* mid = GetBoneMatrixSafe(hier, idx);
 		if (mid)
 			RwMatrixScale(mid, &scale, rwCOMBINEPRECONCAT);
 
 		scale.y = 1.0f + gfTommyFatness;
 		scale.z = 1.0f + gfTommyFatness;
-		idx = RpHAnimIDGetIndex(hier, ConvertPedNode2BoneTag(PED_UPPERLEGL));
+		idx = RpHAnimIDGetIndex(hier, ConvertPedNode2BoneTag(PED_NODE_LEFT_LEG));
 		RwMatrix* upperLegL = GetBoneMatrixSafe(hier, idx);
 		if (upperLegL)
 			RwMatrixScale(upperLegL, &scale, rwCOMBINEPRECONCAT);
 
-		idx = RpHAnimIDGetIndex(hier, ConvertPedNode2BoneTag(PED_UPPERLEGR));
+		idx = RpHAnimIDGetIndex(hier, ConvertPedNode2BoneTag(PED_NODE_RIGHT_LEG));
 		RwMatrix* upperLegR = GetBoneMatrixSafe(hier, idx);
 		if (upperLegR)
 			RwMatrixScale(upperLegR, &scale, rwCOMBINEPRECONCAT);
 
 		scale.y = 1.0f + gfTommyFatness * 0.5f;
 		scale.z = 1.0f + gfTommyFatness * 0.5f;
-		idx = RpHAnimIDGetIndex(hier, ConvertPedNode2BoneTag(PED_LOWERLEGR));
+		idx = RpHAnimIDGetIndex(hier, ConvertPedNode2BoneTag(PED_NODE_RIGHT_LOWER_LEG));
 		RwMatrix* lowerLegR = GetBoneMatrixSafe(hier, idx);
 		if (lowerLegR)
 			RwMatrixScale(lowerLegR, &scale, rwCOMBINEPRECONCAT);
 
-		idx = RpHAnimIDGetIndex(hier, ConvertPedNode2BoneTag(PED_LOWERLEGL));
+		idx = RpHAnimIDGetIndex(hier, ConvertPedNode2BoneTag(PED_NODE_LEFT_LOWER_LEG));
 		RwMatrix* lowerLegL = GetBoneMatrixSafe(hier, idx);
 		if (lowerLegL)
 			RwMatrixScale(lowerLegL, &scale, rwCOMBINEPRECONCAT);
 
 		scale.y = 1.0f + gfTommyFatness * 0.23f;
 		scale.z = 1.0f + gfTommyFatness * 0.23f;
-		idx = RpHAnimIDGetIndex(hier, ConvertPedNode2BoneTag(PED_FOOTL));
+		idx = RpHAnimIDGetIndex(hier, ConvertPedNode2BoneTag(PED_NODE_LEFT_FOOT));
 		RwMatrix* footL = GetBoneMatrixSafe(hier, idx);
 		if (footL)
 			RwMatrixScale(footL, &scale, rwCOMBINEPRECONCAT);
 
-		idx = RpHAnimIDGetIndex(hier, ConvertPedNode2BoneTag(PED_FOOTR));
+		idx = RpHAnimIDGetIndex(hier, ConvertPedNode2BoneTag(PED_NODE_RIGHT_FOOT));
 		RwMatrix* footR = GetBoneMatrixSafe(hier, idx);
 		if (footR)
 			RwMatrixScale(footR, &scale, rwCOMBINEPRECONCAT);
 
-		idx = RpHAnimIDGetIndex(hier, ConvertPedNode2BoneTag(PED_UPPERARML));
+		idx = RpHAnimIDGetIndex(hier, ConvertPedNode2BoneTag(PED_NODE_LEFT_ARM));
 		RwMatrix* upperArmL = GetBoneMatrixSafe(hier, idx);
 		if (upperArmL)
 			RwMatrixScale(upperArmL, &scale, rwCOMBINEPRECONCAT);
 
-		idx = RpHAnimIDGetIndex(hier, ConvertPedNode2BoneTag(PED_UPPERARMR));
+		idx = RpHAnimIDGetIndex(hier, ConvertPedNode2BoneTag(PED_NODE_RIGHT_ARM));
 		RwMatrix* upperArmR = GetBoneMatrixSafe(hier, idx);
 		if (upperArmR)
 			RwMatrixScale(upperArmR, &scale, rwCOMBINEPRECONCAT);
 
 		scale.y = 1.0f + gfTommyFatness * 0.2f;
 		scale.z = 1.0f + gfTommyFatness * 0.2f;
-		idx = RpHAnimIDGetIndex(hier, ConvertPedNode2BoneTag(PED_FOREARML));
+		idx = RpHAnimIDGetIndex(hier, ConvertPedNode2BoneTag(PED_NODE_LEFT_LOWER_ARM));
 		RwMatrix* foreArmL = GetBoneMatrixSafe(hier, idx);
 		if (foreArmL)
 			RwMatrixScale(foreArmL, &scale, rwCOMBINEPRECONCAT);
 
-		idx = RpHAnimIDGetIndex(hier, ConvertPedNode2BoneTag(PED_FOREARMR));
+		idx = RpHAnimIDGetIndex(hier, ConvertPedNode2BoneTag(PED_NODE_RIGHT_LOWER_ARM));
 		RwMatrix* foreArmR = GetBoneMatrixSafe(hier, idx);
 		if (foreArmR)
 			RwMatrixScale(foreArmR, &scale, rwCOMBINEPRECONCAT);
@@ -5331,19 +5338,19 @@ CPed::PreRender(void)
 		TransformToNode(bloodPos, m_bodyPartBleeding);
 
 		switch (m_bodyPartBleeding) {
-			case PED_HEAD:
+			case PED_NODE_HEAD:
 				bloodDir = 0.1f * GetUp();
 				break;
-			case PED_UPPERARML:
+			case PED_NODE_LEFT_ARM:
 				bloodDir = 0.04f * GetUp() - 0.04f * GetRight();
 				break;
-			case PED_UPPERARMR:
+			case PED_NODE_RIGHT_ARM:
 				bloodDir = 0.04f * GetUp() - 0.04f * GetRight();
 				break;
-			case PED_UPPERLEGL:
+			case PED_NODE_LEFT_LEG:
 				bloodDir = 0.04f * GetUp() + 0.05f * GetForward();
 				break;
-			case PED_UPPERLEGR:
+			case PED_NODE_RIGHT_LEG:
 				bloodDir = 0.04f * GetUp() + 0.05f * GetForward();
 				break;
 			default:
@@ -5375,9 +5382,9 @@ CPed::PreRender(void)
 					CColSphere *sphere = &ourCol->spheres[i];
 					CVector splashPos;
 					switch (sphere->material) {
-						case PEDPIECE_LEFTARM:
-						case PEDPIECE_RIGHTARM:
-						case PEDPIECE_HEAD:
+						case PED_PIECE_LEFT_ARM:
+						case PED_PIECE_RIGHT_ARM:
+						case PED_PIECE_HEAD:
 							splashPos = GetMatrix() * ourCol->spheres[i].center;
 							splashPos.z += 0.7f * sphere->radius;
 							splashPos.x += CGeneral::GetRandomNumberInRange(-0.15f, 0.15f);
@@ -5414,12 +5421,12 @@ CPed::Render(void)
 	if(m_pWeaponModel){
 		// The weapon hangs off the right hand bone; a skeleton without it, or a
 		// clump that is not skinned, leaves no matrix to hang it from.
-		if(m_pFrames[PED_HANDR] == nil)
+		if(m_pFrames[PED_NODE_RIGHT_HAND] == nil)
 			return;
 		RpHAnimHierarchy *hier = GetAnimHierarchyFromSkinClump(GetClump());
 		if(hier == nil)
 			return;
-		int idx = RpHAnimIDGetIndex(hier, m_pFrames[PED_HANDR]->nodeID);
+		int idx = RpHAnimIDGetIndex(hier, m_pFrames[PED_NODE_RIGHT_HAND]->nodeID);
 		RwMatrix *mat = GetBoneMatrixSafe(hier, idx);
 		if(mat == nil)
 			return;
@@ -5815,9 +5822,9 @@ CPed::SetGetUp(void)
 
 			bGetUpAnimStarted = false;
 			if (IsPlayer())
-				InflictDamage(nil, WEAPONTYPE_RUNOVERBYCAR, CTimer::GetTimeStep(), PEDPIECE_TORSO, 0);
+				InflictDamage(nil, WEAPONTYPE_RUNOVERBYCAR, CTimer::GetTimeStep(), PED_PIECE_TORSO, 0);
 			else if(CPad::GetPad(0)->ArePlayerControlsDisabled())
-				InflictDamage(nil, WEAPONTYPE_RUNOVERBYCAR, 1000.0f, PEDPIECE_TORSO, 0);
+				InflictDamage(nil, WEAPONTYPE_RUNOVERBYCAR, 1000.0f, PED_PIECE_TORSO, 0);
 			return;
 		}
 		bGetUpAnimStarted = true;
@@ -6609,7 +6616,7 @@ CPed::Avoid(void)
 {
 	CPed *nearestPed;
 
-	if(m_pedStats->m_temper > m_pedStats->m_fear && m_pedStats->m_temper > 50)
+	if(m_pedStats->m_nTemper > m_pedStats->m_nFear && m_pedStats->m_nTemper > 50)
 		return;
 
 	if (CTimer::GetTimeInMilliseconds() > m_nPedStateTimer) {
@@ -8136,7 +8143,7 @@ CPed::IsPlayer(void) const
 #else
 	// We still have those in enum, so let's also check for them.
 	return m_nPedType == PEDTYPE_PLAYER1 || m_nPedType == PEDTYPE_PLAYER2 ||
-		m_nPedType == PEDTYPE_PLAYER3 || m_nPedType == PEDTYPE_PLAYER4;
+		m_nPedType == PEDTYPE_PLAYER_NETWORK || m_nPedType == PEDTYPE_PLAYER_UNUSED;
 #endif
 }
 
@@ -8285,7 +8292,7 @@ CPed::LookForSexyPeds(void)
 		if (CanSeeEntity(m_nearPeds[i])) {
 			if ((GetPosition() - m_nearPeds[i]->GetPosition()).Magnitude() < 10.0f) {
 				CPed *nearPed = m_nearPeds[i];
-				if((nearPed->m_pedStats->m_sexiness > m_pedStats->m_sexiness)
+				if((nearPed->m_pedStats->m_nSexiness > m_pedStats->m_nSexiness)
 #ifdef FIX_BUGS
 				   && ((IsFemale() && !nearPed->IsFemale()) || (!IsFemale() && nearPed->IsFemale()))) {
 #else
@@ -9053,7 +9060,7 @@ CPed::Wait(void)
 								SetDuck(10000, true);
 							}
 
-						} else if (m_pedStats->m_fear <= 100 - pedWeLook->m_pedStats->m_temper) {
+						} else if (m_pedStats->m_nFear <= 100 - pedWeLook->m_pedStats->m_nTemper) {
 							if (GetWeapon()->IsTypeMelee()) {
 								if(m_pedStats->m_flags & STAT_GUN_PANIC) {
 									SetObjective(OBJECTIVE_FLEE_CHAR_ON_FOOT_TILL_SAFE, m_pLookTarget);
@@ -9191,7 +9198,7 @@ CPed::Wait(void)
 					SetWaitState(WAITSTATE_SIT_UP, 0);
 				} else {
 					uint32 threatFlag = ScanForThreats();
-					if (threatFlag == PED_FLAG_GUN || threatFlag == PED_FLAG_EXPLOSION || threatFlag == PED_FLAG_DEADPEDS) {
+					if (threatFlag == PED_THREAT_GUN || threatFlag == PED_THREAT_EXPLOSION || threatFlag == PED_THREAT_DEADPEDS) {
 						m_pNextPathNode = nil;
 						m_threatEx = m_threatEntity;
 						bFleeWhenStanding = true;
@@ -9218,7 +9225,7 @@ CPed::Wait(void)
 			} else if (CWeather::Rain <= 0.1f) {
 				if (CClock::GetHours() <= 18 || CGeneral::GetRandomNumberInRange(0.f, 1.0f) < 0.005f) {
 					uint32 threatFlag = ScanForThreats();
-					if (threatFlag == PED_FLAG_GUN || threatFlag == PED_FLAG_EXPLOSION || threatFlag == PED_FLAG_DEADPEDS) {
+					if (threatFlag == PED_THREAT_GUN || threatFlag == PED_THREAT_EXPLOSION || threatFlag == PED_THREAT_DEADPEDS) {
 						// Get up in case of danger
 						m_pNextPathNode = nil;
 						m_threatEx = m_threatEntity;
@@ -9330,7 +9337,7 @@ CPed::FinishedWaitCB(CAnimBlendAssociation *animAssoc, void *arg)
 void
 CPed::RestoreHeadingRate(void)
 {
-	m_headingRate = m_pedStats->m_headingChangeRate;
+	m_headingRate = m_pedStats->m_fHeadingChangeRate;
 }
 
 void
@@ -9827,7 +9834,7 @@ CPed::FinishLaunchCB(CAnimBlendAssociation *animAssoc, void *arg)
 
 	if (ped->bDoBloodyFootprints) {
 		CVector bloodPos(0.0f, 0.0f, 0.0f);
-		ped->TransformToNode(bloodPos, PED_FOOTL);
+		ped->TransformToNode(bloodPos, PED_NODE_LEFT_FOOT);
 
 		bloodPos.z -= 0.1f;
 		bloodPos += 0.2f * ped->GetForward();
@@ -9840,7 +9847,7 @@ CPed::FinishLaunchCB(CAnimBlendAssociation *animAssoc, void *arg)
 			255, 255, 0, 0, 4.0f, 3000, 1.0f);
 
 		bloodPos = CVector(0.0f, 0.0f, 0.0f);
-		ped->TransformToNode(bloodPos, PED_FOOTR);
+		ped->TransformToNode(bloodPos, PED_NODE_RIGHT_FOOT);
 
 		bloodPos.z -= 0.1f;
 		bloodPos += 0.2f * ped->GetForward();

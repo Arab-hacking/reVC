@@ -2,62 +2,73 @@
 #include "PedModelInfo.h"
 #include "Bones.h"
 
+// CPedModelInfo::ConvertPedNode2BoneTag, 0x4D58A0.
+// Every node the model names has a bone; only the whole-body node (slot 0) and
+// an out-of-range index have none, and those answer BONE_UNKNOWN.
 int
-ConvertPedNode2BoneTag(int node)
+ConvertPedNode2BoneTag(ePedNode node)
 {
 	switch(node){
-	case PED_MID:	return BONE_spine1;
-	case PED_HEAD:	return BONE_head;
-	case PED_UPPERARML:	return BONE_l_upperarm;
-	case PED_UPPERARMR:	return BONE_r_upperarm;
-	case PED_HANDL:	return BONE_l_hand;
-	case PED_HANDR:	return BONE_r_hand;
-	case PED_UPPERLEGL:	return BONE_l_thigh;
-	case PED_UPPERLEGR:	return BONE_r_thigh;
-	case PED_FOOTL:	return BONE_l_foot;
-	case PED_FOOTR:	return BONE_r_foot;
-	case PED_LOWERLEGR:	return BONE_r_calf;
-	case PED_LOWERLEGL:	return BONE_l_calf;
-	case PED_FOREARML:	return BONE_l_forearm;
-	case PED_FOREARMR:	return BONE_r_forearm;
-	case PED_CLAVICLEL:	return BONE_l_clavicle;
-	case PED_CLAVICLER:	return BONE_r_clavicle;
-	case PED_NECK:	return BONE_neck;
+	case PED_NODE_UPPER_TORSO:		return BONE_SPINE1;
+	case PED_NODE_HEAD:				return BONE_HEAD;
+	case PED_NODE_LEFT_ARM:			return BONE_L_UPPER_ARM;
+	case PED_NODE_RIGHT_ARM:		return BONE_R_UPPER_ARM;
+	case PED_NODE_LEFT_HAND:		return BONE_L_HAND;
+	case PED_NODE_RIGHT_HAND:		return BONE_R_HAND;
+	case PED_NODE_LEFT_LEG:			return BONE_L_THIGH;
+	case PED_NODE_RIGHT_LEG:		return BONE_R_THIGH;
+	case PED_NODE_LEFT_FOOT:		return BONE_L_FOOT;
+	case PED_NODE_RIGHT_FOOT:		return BONE_R_FOOT;
+	case PED_NODE_RIGHT_LOWER_LEG:	return BONE_R_CALF;
+	case PED_NODE_LEFT_LOWER_LEG:	return BONE_L_CALF;
+	case PED_NODE_LEFT_LOWER_ARM:	return BONE_L_FORE_ARM;
+	case PED_NODE_RIGHT_LOWER_ARM:	return BONE_R_FORE_ARM;
+	case PED_NODE_LEFT_CLAVICLE:	return BONE_L_CLAVICLE;
+	case PED_NODE_RIGHT_CLAVICLE:	return BONE_R_CLAVICLE;
+	case PED_NODE_NECK:				return BONE_NECK;
+	case PED_NODE_JAW:				return BONE_JAW;
+	default:						return BONE_UNKNOWN;
 	}
-	assert(0 && "this node has no bone");
-	return -1;
 }
 
+// ConvertBoneTag2BoneName, 0x4D56F0. The names are the ones the San Andreas
+// skeletons carry; a tag with no named bone answers nil.
 const char*
 ConvertBoneTag2BoneName(int tag)
 {
 	switch(tag){
-	case BONE_root:	return "Root";
-	case BONE_pelvis:	return "Pelvis";
-	case BONE_spine:	return "Spine";
-	case BONE_spine1:	return "Spine1";
-	case BONE_neck:	return "Neck";
-	case BONE_head:	return "Head";
-	case BONE_r_clavicle:	return "Bip01 R Clavicle";
-	case BONE_r_upperarm:	return "R UpperArm";
-	case BONE_r_forearm:	return "R Forearm";
-	case BONE_r_hand:	return "R Hand";
-	case BONE_r_finger:	return "R Fingers";
-	case BONE_r_finger01:	return "R Finger01";
-	case BONE_l_clavicle:	return "Bip01 L Clavicle";
-	case BONE_l_upperarm:	return "L UpperArm";
-	case BONE_l_forearm:	return "L Forearm";
-	case BONE_l_hand:	return "L Hand";
-	case BONE_l_finger:	return "L Fingers";
-	case BONE_l_finger01:	return "L Finger01";
-	case BONE_l_thigh:	return "L Thigh";
-	case BONE_l_calf:	return "L Calf";
-	case BONE_l_foot:	return "L Foot";
-	case BONE_l_toe:	return "L Toe0";
-	case BONE_r_thigh:	return "R Thigh";
-	case BONE_r_calf:	return "R Calf";
-	case BONE_r_foot:	return "R Foot";
-	case BONE_r_toe:	return "R Toe0";
+	case BONE_R_BREAST:		return "R Breast";
+	case BONE_L_BREAST:		return "L Breast";
+	case BONE_BELLY:		return "Belly";
+	case BONE_ROOT:			return "Root";
+	case BONE_PELVIS:		return "Pelvis";
+	case BONE_SPINE:		return "Spine";
+	case BONE_SPINE1:		return "Spine1";
+	case BONE_NECK:			return "Neck";
+	case BONE_HEAD:			return "Head";
+	case BONE_L_BROW:		return "L Brow";
+	case BONE_R_BROW:		return "R Brow";
+	case BONE_JAW:			return "Jaw";
+	case BONE_R_CLAVICLE:	return "Bip01 R Clavicle";
+	case BONE_R_UPPER_ARM:	return "R UpperArm";
+	case BONE_R_FORE_ARM:	return "R Forearm";
+	case BONE_R_HAND:		return "R Hand";
+	case BONE_R_FINGER:		return "R Fingers";
+	case BONE_R_FINGER_01:	return "R Finger01";
+	case BONE_L_CLAVICLE:	return "Bip01 L Clavicle";
+	case BONE_L_UPPER_ARM:	return "L UpperArm";
+	case BONE_L_FORE_ARM:	return "L Forearm";
+	case BONE_L_HAND:		return "L Hand";
+	case BONE_L_FINGER:		return "L Fingers";
+	case BONE_L_FINGER_01:	return "L Finger01";
+	case BONE_L_THIGH:		return "L Thigh";
+	case BONE_L_CALF:		return "L Calf";
+	case BONE_L_FOOT:		return "L Foot";
+	case BONE_L_TOE_0:		return "L Toe0";
+	case BONE_R_THIGH:		return "R Thigh";
+	case BONE_R_CALF:		return "R Calf";
+	case BONE_R_FOOT:		return "R Foot";
+	case BONE_R_TOE_0:		return "R Toe0";
 	}
 	return nil;
 }

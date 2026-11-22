@@ -73,7 +73,7 @@ CPed::ServiceTalkingWhenDead(void)
 void
 CPed::ServiceTalking(void)
 {
-	if (bBodyPartJustCameOff && m_bodyPartBleeding == PED_HEAD)
+	if (bBodyPartJustCameOff && m_bodyPartBleeding == PED_NODE_HEAD)
 		return;
 
 	if (!CGame::germanGame && m_pFire)

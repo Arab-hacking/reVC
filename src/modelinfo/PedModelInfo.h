@@ -3,41 +3,25 @@
 
 #include "ClumpModelInfo.h"
 #include "ColModel.h"
+#include "AnimManager.h"
 #include "PedType.h"
-
-enum PedNode {
-	PED_TORSO = 0,	// has no bone!
-	PED_MID,
-	PED_HEAD,
-	PED_UPPERARML,
-	PED_UPPERARMR,
-	PED_HANDL,
-	PED_HANDR,
-	PED_UPPERLEGL,
-	PED_UPPERLEGR,
-	PED_FOOTL,
-	PED_FOOTR,
-	PED_LOWERLEGR,
-	PED_LOWERLEGL,
-
-	PED_FOREARML,
-	PED_FOREARMR,
-	PED_CLAVICLEL,
-	PED_CLAVICLER,
-	PED_NECK,
-
-	PED_NODE_MAX
-};
+#include "Bones.h"
 
 class CPedModelInfo : public CClumpModelInfo
 {
 public:
-	uint32 m_animGroup;
+	AssocGroupId m_animGroup;
 	ePedType m_pedType;
 	ePedStats m_pedStatType;
-	uint32 m_carsCanDrive;
+	uint16 m_carsCanDrive;
+	uint16 m_nPedFlags;
 	CColModel *m_hitColModel;
 	int8 radio1, radio2;
+	uint8 m_nRace;
+	int16 m_nPedAudioType;
+	int16 m_nVoiceMin;
+	int16 m_nVoiceMax;
+	int16 m_nVoiceId;
 	bool m_bSAAnimationModel;
 	uint32 m_clumpStreamVersion;
 	// Set once a VC-skeleton ped has been stood in for by an SA model, so every
@@ -46,7 +30,11 @@ public:
 	// as a different person.
 	int32 m_saReplacementModel;
 
-	static RwObjectNameIdAssocation m_pPedIds[PED_NODE_MAX];
+	static const int32 NUM_PED_NAME_ID_ASSOC = 13;
+	static const int32 NUM_PED_COLMODEL_NODES = 12;
+
+	static RwObjectNameIdAssocation m_pPedIds[NUM_PED_NAME_ID_ASSOC];
+	static tPedColNodeInfo m_pColNodeInfos[NUM_PED_COLMODEL_NODES];
 
 	// One past the highest slot that currently holds a ped model. The archive's
 	// actors land above the native 0..129 block, so a replacement scan bounded
@@ -56,7 +44,25 @@ public:
 	static int32 ms_lastPedSlot;
 	static void NoteSlot(int32 slot) { if(slot >= ms_lastPedSlot) ms_lastPedSlot = slot + 1; }
 
-	CPedModelInfo(void) : CClumpModelInfo(MITYPE_PED) { m_hitColModel = nil; m_bSAAnimationModel = false; m_clumpStreamVersion = 0; m_saReplacementModel = -1; }
+	CPedModelInfo(void) : CClumpModelInfo(MITYPE_PED)
+	{
+		m_animGroup = ASSOCGRP_DEFAULT;
+		m_pedType = PEDTYPE_CIVMALE;
+		m_pedStatType = PEDSTAT_STD_MISSION;
+		m_carsCanDrive = 0;
+		m_nPedFlags = 0;
+		m_hitColModel = nil;
+		radio1 = -1;
+		radio2 = -1;
+		m_nRace = RACE_DEFAULT;
+		m_nPedAudioType = -1;
+		m_nVoiceMin = -1;
+		m_nVoiceMax = -1;
+		m_nVoiceId = -1;
+		m_bSAAnimationModel = false;
+		m_clumpStreamVersion = 0;
+		m_saReplacementModel = -1;
+	}
 	~CPedModelInfo(void) { delete m_hitColModel; }
 	void DeleteRwObject(void);
 	void SetClump(RpClump *);

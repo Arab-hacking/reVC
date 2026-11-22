@@ -621,15 +621,15 @@ CWeapon::FireMelee(CEntity *shooter, CVector &fireSource)
 							if ( !victimPed->DyingOrDead() )
 							{
 								if ( shooterPed->IsPlayer() && isHeavy && anim2Playing )
-									victimPed->InflictDamage(shooterPed, m_eWeaponType, 100.0f, PEDPIECE_TORSO, localDir);
+									victimPed->InflictDamage(shooterPed, m_eWeaponType, 100.0f, PED_PIECE_TORSO, localDir);
 								else if ( shooterPed->IsPlayer() && ((CPlayerPed*)shooterPed)->m_bAdrenalineActive )
-									victimPed->InflictDamage(shooterPed, m_eWeaponType, 3.5f*info->m_nDamage, PEDPIECE_TORSO, localDir);
+									victimPed->InflictDamage(shooterPed, m_eWeaponType, 3.5f*info->m_nDamage, PED_PIECE_TORSO, localDir);
 								else
 								{
 									if ( victimPed->IsPlayer() && isHeavy ) // wtf, it's not fair
-										victimPed->InflictDamage(shooterPed, m_eWeaponType, 2.0f*info->m_nDamage, PEDPIECE_TORSO, localDir);
+										victimPed->InflictDamage(shooterPed, m_eWeaponType, 2.0f*info->m_nDamage, PED_PIECE_TORSO, localDir);
 									else
-										victimPed->InflictDamage(shooterPed, m_eWeaponType,      info->m_nDamage, PEDPIECE_TORSO, localDir);
+										victimPed->InflictDamage(shooterPed, m_eWeaponType,      info->m_nDamage, PED_PIECE_TORSO, localDir);
 								}
 							}
 
@@ -791,7 +791,7 @@ CWeapon::FireMelee(CEntity *shooter, CVector &fireSource)
 				CPed *driver = nearCar->pDriver;
 				if (driver && driver->CharCreatedBy != MISSION_CHAR)
 				{
-					if (driver->m_pedStats->m_temper <= driver->m_pedStats->m_fear)
+					if (driver->m_pedStats->m_nTemper <= driver->m_pedStats->m_nFear)
 					{
 						driver->SetObjective(OBJECTIVE_FLEE_ON_FOOT_TILL_SAFE);
 					}
@@ -901,7 +901,7 @@ CWeapon::FireInstantHit(CEntity *shooter, CVector *fireSource)
 			CPed *threatAttack = (CPed*)shooterPed->m_pPointGunAt;
 			if ( threatAttack->IsPed() )
 			{
-				threatAttack->m_pedIK.GetComponentPosition(target, PED_MID);
+				threatAttack->m_pedIK.GetComponentPosition(target, PED_NODE_UPPER_TORSO);
 				threatAttack->ReactToPointGun(shooter);
 			}
 			else
@@ -949,7 +949,7 @@ CWeapon::FireInstantHit(CEntity *shooter, CVector *fireSource)
 			target.y = 0.0f;
 			target.z = 0.0f;
 
-			shooterPed->TransformToNode(target, PED_HANDR);
+			shooterPed->TransformToNode(target, PED_NODE_RIGHT_HAND);
 
 			CWorld::bIncludeBikers = true;
 			ProcessLineOfSight(*fireSource, target, point, victim, m_eWeaponType, shooter, true, true, true, true, true, false, false);
@@ -976,7 +976,7 @@ CWeapon::FireInstantHit(CEntity *shooter, CVector *fireSource)
 				target.y = 0.0f;
 				target.z = 0.0f;
 
-				shooterPed->TransformToNode(target, PED_HANDR);
+				shooterPed->TransformToNode(target, PED_NODE_RIGHT_HAND);
 			}
 		} else
 #endif
@@ -1776,7 +1776,7 @@ CWeapon::FireShotgun(CEntity *shooter, CVector *fireSource)
 				{
 					CVector pos;
 					if (shooterPed->m_pPointGunAt->IsPed()) {
-						((CPed*)shooterPed->m_pPointGunAt)->m_pedIK.GetComponentPosition(pos, PED_MID);
+						((CPed*)shooterPed->m_pPointGunAt)->m_pedIK.GetComponentPosition(pos, PED_NODE_UPPER_TORSO);
 					} else {
 						pos = ((CPed*)shooterPed->m_pPointGunAt)->GetPosition();
 					}
@@ -2494,7 +2494,7 @@ CWeapon::FireInstantHitFromCar(CVehicle *shooter, bool left, bool right)
 		{
 			source = info->m_vecFireOffset;
 			
-			shooter->pDriver->TransformToNode(source, PED_HANDR);
+			shooter->pDriver->TransformToNode(source, PED_NODE_RIGHT_HAND);
 			source += CTimer::GetTimeStep() * shooter->m_vecMoveSpeed;
 			
 			if ( left )
@@ -2550,7 +2550,7 @@ CWeapon::FireInstantHitFromCar(CVehicle *shooter, bool left, bool right)
 			source.z -= 0.1f;
 		}
 		
-		shooter->pDriver->TransformToNode(source, PED_HANDR);
+		shooter->pDriver->TransformToNode(source, PED_NODE_RIGHT_HAND);
 		source += CTimer::GetTimeStep() * shooter->m_vecMoveSpeed;
 		
 		if ( left )
@@ -3288,8 +3288,8 @@ CWeapon::CheckForShootingVehicleOccupant(CEntity **victim, CColPoint *point, eWe
 
 	if (veh->pDriver && veh->pDriver->bCanBeShotInVehicle) {
 		CVector pos(0.f, 0.f, 0.f);
-		veh->pDriver->TransformToNode(pos, PED_HEAD);
-		headSphere.Set(0.2f, pos + CVector(0.f, 0.f, 0.1f), 0, PEDPIECE_HEAD);
+		veh->pDriver->TransformToNode(pos, PED_NODE_HEAD);
+		headSphere.Set(0.2f, pos + CVector(0.f, 0.f, 0.1f), 0, PED_PIECE_HEAD);
 		if (CCollision::ProcessLineSphere(shootLine, headSphere, *point, radius)) {
 			*victim = veh->pDriver;
 			found = true;
@@ -3300,8 +3300,8 @@ CWeapon::CheckForShootingVehicleOccupant(CEntity **victim, CColPoint *point, eWe
 		CPed *passenger = veh->pPassengers[i];
 		if (passenger && passenger->bCanBeShotInVehicle) {
 			CVector pos(0.f, 0.f, 0.f);
-			passenger->TransformToNode(pos, PED_HEAD);
-			headSphere.Set(0.2f, pos + CVector(0.f, 0.f, 0.1f), 0, PEDPIECE_HEAD);
+			passenger->TransformToNode(pos, PED_NODE_HEAD);
+			headSphere.Set(0.2f, pos + CVector(0.f, 0.f, 0.1f), 0, PED_PIECE_HEAD);
 			if (CCollision::ProcessLineSphere(shootLine, headSphere, *point, radius)) {
 				*victim = passenger;
 				found = true;

@@ -63,9 +63,9 @@ AnimAssocDefinition CAnimManager::ms_aAnimAssocDefinitions[NUM_ANIM_ASSOC_GROUPS
 	{ "spraycan", "spraycan", MI_MALE01, ARRAY_SIZE(aSpraycanAnimations), 1, aSpraycanAnimations, aWeaponDescs },
 	{ "goggles", "goggles", MI_MALE01, ARRAY_SIZE(aGogglesAnimations), 1, aGogglesAnimations, aWeaponDescs },
 	{ "melee_1", "ped", MI_MALE01, ARRAY_SIZE(aMelee_1Animations), 10, aMelee_1Animations, aWeaponDescs4 },
-	{ "melee_2", "ped", MI_MALE01, ARRAY_SIZE(aMelee_2Animations), 10, aMelee_2Animations, aWeaponDescs4 },
-	{ "melee_3", "ped", MI_MALE01, ARRAY_SIZE(aMelee_3Animations), 10, aMelee_3Animations, aWeaponDescs5 },
-	{ "melee_4", "ped", MI_MALE01, ARRAY_SIZE(aMelee_4Animations), 10, aMelee_4Animations, aWeaponDescs4 },
+	{ "melee_2", "fight_b", MI_MALE01, ARRAY_SIZE(aMelee_2Animations), 10, aMelee_2Animations, aWeaponDescs4 },
+	{ "melee_3", "fight_c", MI_MALE01, ARRAY_SIZE(aMelee_3Animations), 10, aMelee_3Animations, aWeaponDescs5 },
+	{ "melee_4", "fight_d", MI_MALE01, ARRAY_SIZE(aMelee_4Animations), 10, aMelee_4Animations, aWeaponDescs4 },
 	{ "bbbat_1", "baseball", MI_MALE01, ARRAY_SIZE(aBbbat_1Animations), 10, aBbbat_1Animations, aWeaponDescs4 },
 	{ "gclub_1", "baseball", MI_MALE01, ARRAY_SIZE(aBbbat_1Animations), 10, aBbbat_1Animations, aWeaponDescs4 },
 	{ "knife_1", "knife", MI_MALE01, ARRAY_SIZE(aKnife_1Animations), 10, aKnife_1Animations, aWeaponDescs4 },
@@ -73,7 +73,7 @@ AnimAssocDefinition CAnimManager::ms_aAnimAssocDefinitions[NUM_ANIM_ASSOC_GROUPS
 	{ "dildo_1", "dildo", MI_MALE01, ARRAY_SIZE(aDildo_1Animations), 10, aDildo_1Animations, aWeaponDescs4 },
 	{ "flowers_1", "flowers", MI_MALE01, ARRAY_SIZE(aFlowers_1Animations), 8, aFlowers_1Animations, aWeaponDescs4 },
 	{ "csaw_1", "chainsaw", MI_MALE01, ARRAY_SIZE(aCsaw_1Animations), 10, aCsaw_1Animations, aWeaponDescs4 },
-	{ "kick_std", "ped", MI_MALE01, ARRAY_SIZE(aKick_stdAnimations), 7, aKick_stdAnimations, aWeaponDescs4 },
+	{ "kick_std", "fight_e", MI_MALE01, ARRAY_SIZE(aKick_stdAnimations), 7, aKick_stdAnimations, aWeaponDescs4 },
 	{ "pistlwhp", "ped", MI_MALE01, ARRAY_SIZE(aPistlwhpAnimations), 7, aPistlwhpAnimations, aWeaponDescs4 },
 	{ "medic", "medic", MI_MALE01, ARRAY_SIZE(aMedicAnimations), 1, aMedicAnimations, aMedicAnimDescs },
 	{ "beach", "beach", MI_MALE01, ARRAY_SIZE(aBeachAnimations), 5, aBeachAnimations, aBeachAnimDescs },
@@ -82,9 +82,9 @@ AnimAssocDefinition CAnimManager::ms_aAnimAssocDefinitions[NUM_ANIM_ASSOC_GROUPS
 	{ "riot", "riot", MI_MALE01, ARRAY_SIZE(aRiotAnimations), 7, aRiotAnimations, aRiotAnimDescs },
 	{ "strip", "strip", MI_MALE01, ARRAY_SIZE(aStripAnimations), 7, aStripAnimations, aStripAnimDescs },
 	{ "gangs", "gangs", MI_MALE01, ARRAY_SIZE(aGangsAnimations), 29, aGangsAnimations, aGangsAnimDescs },
-	{ "attractors", "sunbathe", MI_MALE01, ARRAY_SIZE(aAttractorsAnimations), 3, aAttractorsAnimations, aAttractorsAnimDescs },
+	{ "attractors", "attractors", MI_MALE01, ARRAY_SIZE(aAttractorsAnimations), 3, aAttractorsAnimations, aAttractorsAnimDescs },
 	{ "player", "ped", MI_MALE01, ARRAY_SIZE(aPlayerAnimations), 6, aPlayerAnimations, aStdAnimDescs },
-	{ "fatman", "ped", MI_MALE01, ARRAY_SIZE(aFatAnimations), 6, aFatAnimations, aStdAnimDescs },
+	{ "fat", "fat", MI_MALE01, ARRAY_SIZE(aFatAnimations), 6, aFatAnimations, aStdAnimDescs },
 	{ "muscular", "muscular", MI_MALE01, ARRAY_SIZE(aMuscularAnimations), 6, aMuscularAnimations, aStdAnimDescs },
 	{ "playerrocket", "ped", MI_MALE01, ARRAY_SIZE(aPlayerRocketAnimations), 6, aPlayerRocketAnimations, aStdAnimDescs },
 	{ "playerrocketf", "fat", MI_MALE01, ARRAY_SIZE(aPlayerRocketfAnimations), 6, aPlayerRocketfAnimations, aStdAnimDescs },
@@ -146,28 +146,12 @@ AnimAssocDefinition CAnimManager::ms_aAnimAssocDefinitions[NUM_ANIM_ASSOC_GROUPS
 	{ "learplaneanims", "shamal", MI_MALE01, ARRAY_SIZE(aLearPlaneAnimations), 39, aLearPlaneAnimations, aCarAnimDescs1 },
 	{ "harrplaneanims", "rustler", MI_MALE01, ARRAY_SIZE(aHarrPlaneAnimations), 39, aHarrPlaneAnimations, aCarAnimDescs1 },
 	{ "stdcarupright", "ped", MI_MALE01, ARRAY_SIZE(aStdCarAnimations), 39, aStdCarAnimations, aCarAnimDescs2 },
-	{ "nvadaplaneanims", "nevada", MI_MALE01, ARRAY_SIZE(aNevadaPlaneAnimations), 39, aNevadaPlaneAnimations, aCarAnimDescs1 },	{ "shuffle", "ped", MI_MALE01, ARRAY_SIZE(aSHUFFLEAnimations), 6, aSHUFFLEAnimations, aStdAnimDescs },
-	{ "oldman", "ped", MI_MALE01, ARRAY_SIZE(aOLDMANAnimations), 6, aOLDMANAnimations, aStdAnimDescs },
-	{ "gang1", "ped", MI_MALE01, ARRAY_SIZE(aGANG1Animations), 6, aGANG1Animations, aStdAnimDescs },
-	{ "gang2", "ped", MI_MALE01, ARRAY_SIZE(aGANG2Animations), 6, aGANG2Animations, aStdAnimDescs },
-	{ "oldfatman", "ped", MI_MALE01, ARRAY_SIZE(aOLDFATMANAnimations), 6, aOLDFATMANAnimations, aStdAnimDescs },
-	{ "jogger", "ped", MI_MALE01, ARRAY_SIZE(aJOGGERAnimations), 6, aJOGGERAnimations, aStdAnimDescs },
-	{ "drunkman", "ped", MI_MALE01, ARRAY_SIZE(aDRUNKMANAnimations), 6, aDRUNKMANAnimations, aStdAnimDescs },
-	{ "blindman", "ped", MI_MALE01, ARRAY_SIZE(aCivilWalkAnimations), 6, aCivilWalkAnimations, aStdAnimDescs },
-	{ "swat", "ped", MI_MALE01, ARRAY_SIZE(aCivilWalkAnimations), 6, aCivilWalkAnimations, aStdAnimDescs },
-	{ "woman", "ped", MI_MALE01, ARRAY_SIZE(aWOMANAnimations), 6, aWOMANAnimations, aStdAnimDescs },
-	{ "shopping", "ped", MI_MALE01, ARRAY_SIZE(aSHOPPINGAnimations), 6, aSHOPPINGAnimations, aStdAnimDescs },
-	{ "busywoman", "ped", MI_MALE01, ARRAY_SIZE(aBUSYWOMANAnimations), 6, aBUSYWOMANAnimations, aStdAnimDescs },
-	{ "sexywoman", "ped", MI_MALE01, ARRAY_SIZE(aSEXYWOMANAnimations), 6, aSEXYWOMANAnimations, aStdAnimDescs },
-	{ "pro", "ped", MI_MALE01, ARRAY_SIZE(aPROAnimations), 6, aPROAnimations, aStdAnimDescs },
-	{ "oldwoman", "ped", MI_MALE01, ARRAY_SIZE(aOLDWOMANAnimations), 6, aOLDWOMANAnimations, aStdAnimDescs },
-	{ "fatwoman", "ped", MI_MALE01, ARRAY_SIZE(aFATWOMANAnimations), 6, aFATWOMANAnimations, aStdAnimDescs },
-	{ "jogwoman", "ped", MI_MALE01, ARRAY_SIZE(aJOGWOMANAnimations), 6, aJOGWOMANAnimations, aStdAnimDescs },
-	{ "oldfatwoman", "ped", MI_MALE01, ARRAY_SIZE(aOLDFATWOMANAnimations), 6, aOLDFATWOMANAnimations, aStdAnimDescs },
-	{ "skate", "skate", MI_MALE01, ARRAY_SIZE(aSKATEAnimations), 6, aSKATEAnimations, aStdAnimDescs },
-	{ "panicchunky", "ped", MI_MALE01, ARRAY_SIZE(aPANICCHUNKYAnimations), 6, aPANICCHUNKYAnimations, aStdAnimDescs },
-	{ "unarmed", "ped", MI_MALE01, ARRAY_SIZE(aCivilWalkAnimations), 6, aCivilWalkAnimations, aStdAnimDescs },
+	{ "nvadaplaneanims", "nevada", MI_MALE01, ARRAY_SIZE(aNevadaPlaneAnimations), 39, aNevadaPlaneAnimations, aCarAnimDescs1 },
 
+	// SA compiles only the first 118 groups into the game; the ped styles from
+	// index 118 on are named by data/animgrp.dat at startup, so their slots
+	// start empty and NameReservedAnimGroups gives them a name to be found by.
+	// ASSOCGRP_MAN and the 19 sets after it are filled from that file.
 };
 int32 CAnimManager::ms_numAnimAssocDefinitions = ARRAY_SIZE(ms_aAnimAssocDefinitions);
 
@@ -234,7 +218,7 @@ static const char *aAnimGroupNames[NUM_ANIM_ASSOC_GROUPS] = {
 	"gangs",
 	"attractors",
 	"player",
-	"fatman",
+	"fat",
 	"muscular",
 	"playerrocket",
 	"playerrocketf",
@@ -267,8 +251,8 @@ static const char *aAnimGroupNames[NUM_ANIM_ASSOC_GROUPS] = {
 	"int_office",
 	"int_shop",
 	"stealth_kn",
-	"stdcaranims",
-	"lowcaranims",
+	"stdcaramims",
+	"lowcaramims",
 	"trkcaranims",
 	"stdbikeanims",
 	"sportbikeanims",
@@ -297,11 +281,13 @@ static const char *aAnimGroupNames[NUM_ANIM_ASSOC_GROUPS] = {
 	"harrplaneanims",
 	"stdcarupright",
 	"nvadaplaneanims",
+	"man",
 	"shuffle",
 	"oldman",
 	"gang1",
 	"gang2",
 	"oldfatman",
+	"fatman",
 	"jogger",
 	"drunkman",
 	"blindman",
@@ -316,8 +302,6 @@ static const char *aAnimGroupNames[NUM_ANIM_ASSOC_GROUPS] = {
 	"jogwoman",
 	"oldfatwoman",
 	"skate",
-	"panicchunky",
-	"unarmed",
 };
 
 
@@ -703,7 +687,7 @@ CAnimManager::GetAnimGroupForAnimation(AnimationId animId)
 	// for the common car clips, the melee sets for fighting - and fall back to
 	// the first group that declares the id.
 	static const AssocGroupId preferred[] = {
-		ASSOCGRP_STDCARANIMS, ASSOCGRP_MELEE_1, ASSOCGRP_KICK_STD,
+		ASSOCGRP_STDCARAMIMS, ASSOCGRP_MELEE_1, ASSOCGRP_KICK_STD,
 		ASSOCGRP_COLT45, ASSOCGRP_UZI, ASSOCGRP_RIFLE, ASSOCGRP_SHOTGUNBAD,
 		ASSOCGRP_BIKEV, ASSOCGRP_BIKES, ASSOCGRP_BUDDY, ASSOCGRP_VANCARANIMS,
 	};
@@ -1277,7 +1261,10 @@ GetSAStyleFallbackName(int groupId, const char *name)
 	   groupId != ASSOCGRP_JOGGER && groupId != ASSOCGRP_WOMAN &&
 	   groupId != ASSOCGRP_SHOPPING && groupId != ASSOCGRP_BUSYWOMAN &&
 	   groupId != ASSOCGRP_SEXYWOMAN && groupId != ASSOCGRP_FATWOMAN &&
-	   groupId != ASSOCGRP_OLDWOMAN && groupId != ASSOCGRP_JOGWOMAN)
+	   groupId != ASSOCGRP_OLDWOMAN && groupId != ASSOCGRP_JOGWOMAN &&
+	   groupId != ASSOCGRP_DRUNKMAN && groupId != ASSOCGRP_BLINDMAN &&
+	   groupId != ASSOCGRP_SWAT && groupId != ASSOCGRP_PRO &&
+	   groupId != ASSOCGRP_OLDFATWOMAN)
 		return nil;
 	if(strncasecmp(name, "walk_start", 10) == 0)
 		return "walk_start";

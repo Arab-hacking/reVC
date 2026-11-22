@@ -128,7 +128,7 @@ int CReplay::ms_nNumGang6_Stored;
 int CReplay::ms_nNumGang7_Stored;
 int CReplay::ms_nNumGang8_Stored;
 int CReplay::ms_nNumGang9_Stored;
-int CReplay::ms_nNumDummy_Stored;
+int CReplay::ms_nNumGang10_Stored;
 int CReplay::ms_nTotalCarPassengerPeds_Stored;
 int CReplay::ms_nTotalCivPeds_Stored;
 int CReplay::ms_nTotalGangPeds_Stored;
@@ -1402,7 +1402,7 @@ void CReplay::StoreStuffInMem(void)
 	ms_nNumGang7_Stored = CPopulation::ms_nNumGang7;
 	ms_nNumGang8_Stored = CPopulation::ms_nNumGang8;
 	ms_nNumGang9_Stored = CPopulation::ms_nNumGang9;
-	ms_nNumDummy_Stored = CPopulation::ms_nNumDummy;
+	ms_nNumGang10_Stored = CPopulation::ms_nNumGang10;
 	ms_nTotalCivPeds_Stored = CPopulation::ms_nTotalCivPeds;
 	ms_nTotalGangPeds_Stored = CPopulation::ms_nTotalGangPeds;
 	ms_nTotalPeds_Stored = CPopulation::ms_nTotalPeds;
@@ -1619,7 +1619,7 @@ void CReplay::RestoreStuffFromMem(void)
 	CPopulation::ms_nNumGang7 = ms_nNumGang7_Stored;
 	CPopulation::ms_nNumGang8 = ms_nNumGang8_Stored;
 	CPopulation::ms_nNumGang9 = ms_nNumGang9_Stored;
-	CPopulation::ms_nNumDummy = ms_nNumDummy_Stored;
+	CPopulation::ms_nNumGang10 = ms_nNumGang10_Stored;
 	CPopulation::ms_nTotalCivPeds = ms_nTotalCivPeds_Stored;
 	CPopulation::ms_nTotalGangPeds = ms_nTotalGangPeds_Stored;
 	CPopulation::ms_nTotalPeds = ms_nTotalPeds_Stored;

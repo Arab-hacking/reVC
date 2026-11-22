@@ -1,42 +1,65 @@
 #ifndef __GTA_PEDTYPE_H__
 #define __GTA_PEDTYPE_H__
 
-// Index into the PedType array
+#include "Bones.h"
+#include "PedNode.h"
+
+// Index into the PedType array. The San Andreas set differs from the Vice City
+// one from the third slot on: the two extra players become the network player
+// and an unused slot, and the tail carries dealers, medics, bums and the eight
+// mission types. This is the numbering `ped.dat` uses, and the bit of value N
+// here is what `CPedType::GetPedFlag` returns.
 enum ePedType
 {
-	PEDTYPE_PLAYER1,
+	PEDTYPE_PLAYER1 = 0,
 	PEDTYPE_PLAYER2,
-	PEDTYPE_PLAYER3,
-	PEDTYPE_PLAYER4,
+	PEDTYPE_PLAYER_NETWORK,
+	PEDTYPE_PLAYER_UNUSED,
 	PEDTYPE_CIVMALE,
 	PEDTYPE_CIVFEMALE,
+
 	PEDTYPE_COP,
-	PEDTYPE_GANG1,
-	PEDTYPE_GANG2,
-	PEDTYPE_GANG3,
-	PEDTYPE_GANG4,
-	PEDTYPE_GANG5, // Security - hardcoded
-	PEDTYPE_GANG6,
-	PEDTYPE_GANG7, // Vercetti gang - hardcoded
-	PEDTYPE_GANG8,
-	PEDTYPE_GANG9,
-	PEDTYPE_EMERGENCY,
+
+	PEDTYPE_GANG1,		// Ballas
+	PEDTYPE_GANG2,		// Grove Street Families
+	PEDTYPE_GANG3,		// Los Santos Vagos
+	PEDTYPE_GANG4,		// San Fierro Rifa
+	PEDTYPE_GANG5,		// Da Nang Boys
+	PEDTYPE_GANG6,		// Mafia
+	PEDTYPE_GANG7,		// Mountain Cloud Triad
+	PEDTYPE_GANG8,		// Varrio Los Aztecas
+	PEDTYPE_GANG9,		// Russian Mafia
+	PEDTYPE_GANG10,		// Bikers
+
+	PEDTYPE_DEALER,
+	PEDTYPE_MEDIC,
 	PEDTYPE_FIREMAN,
 	PEDTYPE_CRIMINAL,
-	PEDTYPE_UNUSED1,
+	PEDTYPE_BUM,
 	PEDTYPE_PROSTITUTE,
 	PEDTYPE_SPECIAL,
-	PEDTYPE_UNUSED2,
+	PEDTYPE_MISSION1,
+	PEDTYPE_MISSION2,
+	PEDTYPE_MISSION3,
+	PEDTYPE_MISSION4,
+	PEDTYPE_MISSION5,
+	PEDTYPE_MISSION6,
+	PEDTYPE_MISSION7,
+	PEDTYPE_MISSION8,
 
-	NUM_PEDTYPES
+	NUM_PEDTYPES		// 32
 };
+
+// A ped type flag is the bit of its index, and the threat and avoid masks are
+// 32 bits wide, which is exactly how many types San Andreas defines.
+static_assert(NUM_PEDTYPES == 32, "ped type flags are 32 bits wide");
 
 enum
 {
 	PED_FLAG_PLAYER1 = 1 << 0,
 	PED_FLAG_PLAYER2 = 1 << 1,
-	PED_FLAG_PLAYER3 = 1 << 2,
-	PED_FLAG_PLAYER4 = 1 << 3,
+	PED_FLAG_PLAYER_NETWORK = 1 << 2,
+	PED_FLAG_PLAYER_UNUSED = 1 << 3,
 	PED_FLAG_CIVMALE = 1 << 4,
 	PED_FLAG_CIVFEMALE = 1 << 5,
 	PED_FLAG_COP = 1 << 6,
@@ -49,16 +72,44 @@ enum
 	PED_FLAG_GANG7 = 1 << 13,
 	PED_FLAG_GANG8 = 1 << 14,
 	PED_FLAG_GANG9 = 1 << 15,
-	PED_FLAG_EMERGENCY = 1 << 16,
-	PED_FLAG_PROSTITUTE = 1 << 17,
-	PED_FLAG_CRIMINAL = 1 << 18,
-	PED_FLAG_SPECIAL = 1 << 19,
-	PED_FLAG_GUN = 1 << 20,
-	PED_FLAG_COP_CAR = 1 << 21,
-	PED_FLAG_FAST_CAR = 1 << 22,
-	PED_FLAG_EXPLOSION = 1 << 23,
-	PED_FLAG_FIREMAN = 1 << 24,
-	PED_FLAG_DEADPEDS = 1 << 25,
+	PED_FLAG_GANG10 = 1 << 16,
+	PED_FLAG_DEALER = 1 << 17,
+	PED_FLAG_MEDIC = 1 << 18,
+	PED_FLAG_FIREMAN = 1 << 19,
+	PED_FLAG_CRIMINAL = 1 << 20,
+	PED_FLAG_BUM = 1 << 21,
+	PED_FLAG_PROSTITUTE = 1 << 22,
+	PED_FLAG_SPECIAL = 1 << 23,
+	PED_FLAG_MISSION1 = 1 << 24,
+	PED_FLAG_MISSION2 = 1 << 25,
+	PED_FLAG_MISSION3 = 1 << 26,
+	PED_FLAG_MISSION4 = 1 << 27,
+	PED_FLAG_MISSION5 = 1 << 28,
+	PED_FLAG_MISSION6 = 1 << 29,
+	PED_FLAG_MISSION7 = 1 << 30,
+	PED_FLAG_MISSION8 = (int32)1 << 31,
+};
+
+// What a ped is afraid of. These are not ped type flags: they are the names
+// `ped.dat` uses on a Threat line, and the bit of each is the value a threat
+// scan returns.
+enum ePedThreatFlags
+{
+	PED_THREAT_GUN = 1 << 0,
+	PED_THREAT_COP_CAR = 1 << 1,
+	PED_THREAT_FAST_CAR = 1 << 2,
+	PED_THREAT_EXPLOSION = 1 << 3,
+	PED_THREAT_DEADPEDS = 1 << 4,
+};
+
+// The race a ped is spawned as, derived from the first letter of its model.
+enum ePedRace
+{
+	RACE_DEFAULT = 0,
+	RACE_BLACK = 1,		// 'B'
+	RACE_WHITE = 2,		// 'W'
+	RACE_ORIENTAL = 3,	// 'O', 'I'
+	RACE_HISPANIC = 4,	// 'H'
 };
 
 class CPedType
@@ -78,8 +129,10 @@ public:
 	static void Initialise(void);
 	static void Shutdown(void);
 	static void LoadPedData(void);
-	static ePedType FindPedType(char *type);
-	static uint32 FindPedFlag(char *type);
+	static ePedType FindPedType(const char *type);
+	static uint32 FindPedFlag(const char *type);
+	// The flag of a type is the bit of its index; used by the relation lists.
+	static uint32 GetPedFlag(ePedType type);
 	static void Save(uint8 *buf, uint32 *size);
 	static void Load(uint8 *buf, uint32 size);
 
@@ -94,8 +147,14 @@ public:
 
 VALIDATE_SIZE(CPedType, 0x20);
 
+// San Andreas stats, in the order `pedstats.dat` lists them. The set is the
+// Vice City one with the three extra gang types inserted after GANG7, which
+// pushes every entry from GANG8 on down by three.
 enum ePedStats
 {
+	// Never the value of a real row: a model whose stat name is unknown gets
+	// this, so a reader can tell "no personality" from PEDSTAT_PLAYER.
+	PEDSTAT_NONE = -1,
 	PEDSTAT_PLAYER,
 	PEDSTAT_COP,
 	PEDSTAT_MEDIC,
@@ -107,6 +166,9 @@ enum ePedStats
 	PEDSTAT_GANG5,
 	PEDSTAT_GANG6,
 	PEDSTAT_GANG7,
+	PEDSTAT_GANG8,
+	PEDSTAT_GANG9,
+	PEDSTAT_GANG10,
 	PEDSTAT_STREET_GUY,
 	PEDSTAT_SUIT_GUY,
 	PEDSTAT_SENSIBLE_GUY,
@@ -153,29 +215,53 @@ enum
 	STAT_GUN_PANIC = 0x80
 };
 
+// A row of pedstats.dat. The layout and the field names are San Andreas':
+// the file grew an eleventh column at the end (the default decision maker),
+// and the id of the row is stored rather than implied, so a reader can tell
+// which type the row landed in.
+struct CPedStat
+{
+	uint32 m_nId;
+	char m_acName[24];
+	float m_fFleeDistance;
+	float m_fHeadingChangeRate;
+	uint8 m_nFear;
+	uint8 m_nTemper;
+	uint8 m_nLawfulness;
+	uint8 m_nSexiness;
+	float m_fAttackStrength;
+	float m_fDefendWeakness;
+	uint16 m_flags;
+	int8 m_nDefaultDecisionMaker;
+};
+
+VALIDATE_SIZE(CPedStat, 0x34);
+
 class CPedStats
 {
 public:
-	ePedStats m_type;
-	char m_name[24];
-	float m_fleeDistance;
-	float m_headingChangeRate;
-	int8 m_fear;
-	int8 m_temper;
-	int8 m_lawfulness;
-	int8 m_sexiness;
-	float m_attackStrength;
-	float m_defendWeakness;
-	int16 m_flags;
-
-	static CPedStats *ms_apPedStats[NUM_PEDSTATS];
+	static CPedStat *ms_apPedStats[NUM_PEDSTATS];
 
 	static void Initialise(void);
 	static void Shutdown(void);
 	static void LoadPedStats(void);
-	static ePedStats GetPedStatType(char *name);
+	static ePedStats GetPedStatType(const char *name);
+	// The row itself, for callers that need the stats and not an index. Both
+	// return nil when the name is not in the table.
+	static CPedStat *GetPedStatInfo(const char *name);
+	static CPedStat *GetPedStatByArrayIndex(uint32 statIndex);
 };
 
-VALIDATE_SIZE(CPedStats, 0x34);
+enum eMoveState
+{
+	PEDMOVE_NONE = 0,
+	PEDMOVE_STILL,
+	PEDMOVE_TURN_L,
+	PEDMOVE_TURN_R,
+	PEDMOVE_WALK,
+	PEDMOVE_JOG,
+	PEDMOVE_RUN,
+	PEDMOVE_SPRINT
+};
 
 #endif // __GTA_PEDTYPE_H__

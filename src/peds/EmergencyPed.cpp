@@ -12,7 +12,7 @@
 CEmergencyPed::CEmergencyPed(uint32 type) : CPed(type)
 {
 	switch (type){
-		case PEDTYPE_EMERGENCY:
+		case PEDTYPE_MEDIC:
 			SetModelIndex(MI_MEDIC);
 			m_pRevivedPed = nil;
 			field_1360 = 0;
@@ -71,7 +71,7 @@ CEmergencyPed::ProcessControl(void)
 		}
 
 		switch (m_nPedType) {
-			case PEDTYPE_EMERGENCY:
+			case PEDTYPE_MEDIC:
 				if (IsPedInControl() || m_nPedState == PED_DRIVING)
 					MedicAI();
 				break;
@@ -195,7 +195,7 @@ CEmergencyPed::MedicAI(void)
 				bool waitUntilMedicEntersCar = false;
 				for (int i = 0; i < m_numNearPeds; ++i) {
 					CPed *nearPed = m_nearPeds[i];
-					if (nearPed->m_nPedType == PEDTYPE_EMERGENCY) {
+					if (nearPed->m_nPedType == PEDTYPE_MEDIC) {
 						if ((nearPed->m_nPedState == PED_SEEK_CAR || nearPed->m_nPedState == PED_ENTER_CAR)
 							&& nearPed->m_pMyVehicle == m_pMyVehicle) {
 							waitUntilMedicEntersCar = true;
@@ -228,8 +228,8 @@ CEmergencyPed::MedicAI(void)
 				if (nearestAccident) {
 					m_pRevivedPed = nearestAccident->m_pVictim;
 					m_pRevivedPed->RegisterReference((CEntity**)&m_pRevivedPed);
-					m_pRevivedPed->m_pedIK.GetComponentPosition(midPos, PED_MID);
-					m_pRevivedPed->m_pedIK.GetComponentPosition(headPos, PED_HEAD);
+					m_pRevivedPed->m_pedIK.GetComponentPosition(midPos, PED_NODE_UPPER_TORSO);
+					m_pRevivedPed->m_pedIK.GetComponentPosition(headPos, PED_NODE_HEAD);
 					SetObjective(OBJECTIVE_GOTO_AREA_ON_FOOT, CVector((headPos + midPos) * 0.5f));
 					bIsRunning = true;
 					m_nEmergencyPedState = EMERGENCY_PED_DETERMINE_NEXT_STATE;
@@ -241,7 +241,7 @@ CEmergencyPed::MedicAI(void)
 							if (m_objective == OBJECTIVE_ENTER_CAR_AS_DRIVER || m_pMyVehicle->pDriver || m_pMyVehicle->m_nGettingInFlags) {
 
 								CPed* driver = m_pMyVehicle->pDriver;
-								if (driver && driver->m_nPedType != PEDTYPE_EMERGENCY && m_objective != OBJECTIVE_KILL_CHAR_ON_FOOT) {
+								if (driver && driver->m_nPedType != PEDTYPE_MEDIC && m_objective != OBJECTIVE_KILL_CHAR_ON_FOOT) {
 									SetObjective(OBJECTIVE_KILL_CHAR_ON_FOOT, driver);
 
 								} else if (m_objective != OBJECTIVE_ENTER_CAR_AS_DRIVER
@@ -268,8 +268,8 @@ CEmergencyPed::MedicAI(void)
 							m_nEmergencyPedState = EMERGENCY_PED_STOP;
 							break;
 						}
-						m_pRevivedPed->m_pedIK.GetComponentPosition(midPos, PED_MID);
-						m_pRevivedPed->m_pedIK.GetComponentPosition(headPos, PED_HEAD);
+						m_pRevivedPed->m_pedIK.GetComponentPosition(midPos, PED_NODE_UPPER_TORSO);
+						m_pRevivedPed->m_pedIK.GetComponentPosition(headPos, PED_NODE_HEAD);
 						SetObjective(OBJECTIVE_GOTO_AREA_ON_FOOT, CVector((headPos + midPos) * 0.5f));
 						bIsRunning = true;
 						--m_pAttendedAccident->m_nMedicsAttending;
@@ -322,8 +322,8 @@ CEmergencyPed::MedicAI(void)
 				if (!m_pRevivedPed || m_pRevivedPed->m_fHealth > 0.0f)
 					m_nEmergencyPedState = EMERGENCY_PED_DETERMINE_NEXT_STATE;
 				else {
-					m_pRevivedPed->m_pedIK.GetComponentPosition(midPos, PED_MID);
-					m_pRevivedPed->m_pedIK.GetComponentPosition(headPos, PED_HEAD);
+					m_pRevivedPed->m_pedIK.GetComponentPosition(midPos, PED_NODE_UPPER_TORSO);
+					m_pRevivedPed->m_pedIK.GetComponentPosition(headPos, PED_NODE_HEAD);
 					midPos = (headPos + midPos) * 0.5f;
 					m_fRotationDest = CGeneral::GetRadianAngleBetweenPoints(
 						midPos.x, midPos.y,
@@ -344,8 +344,8 @@ CEmergencyPed::MedicAI(void)
 					m_nEmergencyPedState = EMERGENCY_PED_DETERMINE_NEXT_STATE;
 					break;
 				}
-				m_pRevivedPed->m_pedIK.GetComponentPosition(midPos, PED_MID);
-				m_pRevivedPed->m_pedIK.GetComponentPosition(headPos, PED_HEAD);
+				m_pRevivedPed->m_pedIK.GetComponentPosition(midPos, PED_NODE_UPPER_TORSO);
+				m_pRevivedPed->m_pedIK.GetComponentPosition(headPos, PED_NODE_HEAD);
 				midPos = (headPos + midPos) * 0.5f;
 				m_fRotationDest = CGeneral::GetRadianAngleBetweenPoints(
 					midPos.x, midPos.y,

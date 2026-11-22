@@ -60,12 +60,12 @@ static AssocGroupId
 GetVehicleAnimGroupFor(const CVehicle *veh, AnimationId animId)
 {
 	if(veh == nil)
-		return ASSOCGRP_STDCARANIMS;
+		return ASSOCGRP_STDCARAMIMS;
 	// The group index comes from the handling record (see handling.cfg's `^`
 	// lines), which is what SA reads here as well.
 	const int32 groupId = veh->GetAnimGroupId();
 	if(groupId >= CVehicleAnimGroupData::NUM_VEH_ANIM_GROUPS)
-		return ASSOCGRP_STDCARANIMS;
+		return ASSOCGRP_STDCARAMIMS;
 	return CVehicleAnimGroupData::GetGroupForAnim((AssocGroupId)groupId, animId);
 }
 

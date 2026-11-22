@@ -632,7 +632,7 @@ CCam::LookBehind(void)
 			float FrontDist = 1.1f;
 			if(((CVehicle*)CamTargetEntity)->pDriver){
 				CVector ExtraFwd(0.0f, 0.0f, 0.0f);
-				((CVehicle*)CamTargetEntity)->pDriver->m_pedIK.GetComponentPosition(ExtraFwd, PED_HEAD);
+				((CVehicle*)CamTargetEntity)->pDriver->m_pedIK.GetComponentPosition(ExtraFwd, PED_NODE_HEAD);
 				ExtraFwd += ((CVehicle*)CamTargetEntity)->m_vecMoveSpeed*CTimer::GetTimeStep() - CamTargetEntity->GetPosition();
 				FrontDist += 0.2f + Max(DotProduct(ExtraFwd, CamTargetEntity->GetForward()), 0.0f);
 			}
@@ -715,7 +715,7 @@ CCam::LookLeft(void)
 				driver->GetMatrix().UpdateRW();
 				driver->UpdateRwFrame();
 				driver->UpdateRpHAnim();
-				driver->m_pedIK.GetComponentPosition(neck, PED_NECK);
+				driver->m_pedIK.GetComponentPosition(neck, PED_NODE_NECK);
 				Source = neck +
 					BOAT_1STPERSON_L_OFFSETX*CamTargetEntity->GetRight() +
 					BOAT_1STPERSON_LR_OFFSETZ*CamTargetEntity->GetUp();
@@ -787,7 +787,7 @@ CCam::LookRight(void)
 				driver->GetMatrix().UpdateRW();
 				driver->UpdateRwFrame();
 				driver->UpdateRpHAnim();
-				driver->m_pedIK.GetComponentPosition(neck, PED_NECK);
+				driver->m_pedIK.GetComponentPosition(neck, PED_NODE_NECK);
 				Source = neck +
 					BOAT_1STPERSON_R_OFFSETX*CamTargetEntity->GetRight() +
 					BOAT_1STPERSON_LR_OFFSETZ*CamTargetEntity->GetUp();
@@ -2253,7 +2253,7 @@ CCam::Process_Rocket(const CVector &CameraTarget, float, float, float)
 	CamTargetEntity->GetMatrix().UpdateRW();
 	CamTargetEntity->UpdateRwFrame();
 	CamTargetEntity->UpdateRpHAnim();
-	((CPed*)CamTargetEntity)->m_pedIK.GetComponentPosition(HeadPos, PED_HEAD);
+	((CPed*)CamTargetEntity)->m_pedIK.GetComponentPosition(HeadPos, PED_NODE_HEAD);
 	Source = HeadPos;
 	Source.z += 0.1f;
 	Source.x -= BackOffset*Cos(m_fInitialPlayerOrientation);
@@ -2420,7 +2420,7 @@ CCam::Process_M16_1stPerson(const CVector &CameraTarget, float, float, float)
 		HeadPos.x = 0.0f;
 		HeadPos.y = 0.0f;
 		HeadPos.z = 0.0f;
-		TargetPed->m_pedIK.GetComponentPosition(HeadPos, PED_HEAD);
+		TargetPed->m_pedIK.GetComponentPosition(HeadPos, PED_NODE_HEAD);
 		Source = HeadPos;
 		Source += 0.1f*CamTargetEntity->GetUp();
 		Source -= BackOffset*CamTargetEntity->GetForward();
@@ -2474,7 +2474,7 @@ CCam::Process_M16_1stPerson(const CVector &CameraTarget, float, float, float)
 		HeadPos.x = 0.0f;
 		HeadPos.y = 0.0f;
 		HeadPos.z = 0.0f;
-		((CPed*)CamTargetEntity)->m_pedIK.GetComponentPosition(HeadPos, PED_HEAD);
+		((CPed*)CamTargetEntity)->m_pedIK.GetComponentPosition(HeadPos, PED_NODE_HEAD);
 		Source = HeadPos;
 		Source.z += 0.1f;
 		if(((CPed*)CamTargetEntity)->bIsDucking){
@@ -2578,7 +2578,7 @@ CCam::Process_1stPerson(const CVector &CameraTarget, float TargetOrientation, fl
 		CamTargetEntity->UpdateRwFrame();
 		CamTargetEntity->UpdateRpHAnim();
 
-		((CPed*)CamTargetEntity)->m_pedIK.GetComponentPosition(HeadPos, PED_HEAD);
+		((CPed*)CamTargetEntity)->m_pedIK.GetComponentPosition(HeadPos, PED_NODE_HEAD);
 		Source = HeadPos;
 		Source.z += 0.1f;
 		if(((CPed*)CamTargetEntity)->bIsDucking){
@@ -2706,7 +2706,7 @@ CCam::Process_1stPerson(const CVector &CameraTarget, float TargetOrientation, fl
 			Source.z += 0.5f;
 		else if(((CVehicle*)CamTargetEntity)->IsBike() && ((CVehicle*)CamTargetEntity)->pDriver){
 			CVector Neck(0.0f, 0.0f, 0.0f);
-			((CVehicle*)CamTargetEntity)->pDriver->m_pedIK.GetComponentPosition(Neck, PED_NECK);
+			((CVehicle*)CamTargetEntity)->pDriver->m_pedIK.GetComponentPosition(Neck, PED_NODE_NECK);
 			Neck += ((CVehicle*)CamTargetEntity)->m_vecMoveSpeed * CTimer::GetTimeStep();
 			Source.z = Neck.z + fBike1stPersonOffsetZ;
 		}
@@ -2759,9 +2759,9 @@ CCam::Process_1rstPersonPedOnPC(const CVector&, float TargetOrientation, float, 
 		CVector HeadPos = vecHeadCamOffset;
 		CVector TargetCoors;
 
-		((CPed*)CamTargetEntity)->TransformToNode(HeadPos, PED_HEAD);
+		((CPed*)CamTargetEntity)->TransformToNode(HeadPos, PED_NODE_HEAD);
 		RpHAnimHierarchy *hier = GetAnimHierarchyFromSkinClump(CamTargetEntity->GetClump());
-		int32 idx = RpHAnimIDGetIndex(hier, ConvertPedNode2BoneTag(PED_HEAD));
+		int32 idx = RpHAnimIDGetIndex(hier, ConvertPedNode2BoneTag(PED_NODE_HEAD));
 		RwMatrix *mats = RpHAnimHierarchyGetMatrixArray(hier);
 		RwV3dTransformPoints(&HeadPos, &HeadPos, 1, &mats[idx]);
 		RwV3d scl = { 0.0f, 0.0f, 0.0f };
@@ -2804,7 +2804,7 @@ CCam::Process_1rstPersonPedOnPC(const CVector&, float TargetOrientation, float, 
 		Source = HeadPos;
 
 		// unused:
-		// ((CPed*)CamTargetEntity)->m_pedIK.GetComponentPosition(MidPos, PED_MID);
+		// ((CPed*)CamTargetEntity)->m_pedIK.GetComponentPosition(MidPos, PED_NODE_UPPER_TORSO);
 		// Source - MidPos;
 
 		// Look around
@@ -2939,7 +2939,7 @@ CCam::Process_Sniper(const CVector &CameraTarget, float TargetOrientation, float
 	CamTargetEntity->GetMatrix().UpdateRW();
 	CamTargetEntity->UpdateRwFrame();
 	CamTargetEntity->UpdateRpHAnim();
-	((CPed*)CamTargetEntity)->m_pedIK.GetComponentPosition(HeadPos, PED_HEAD);
+	((CPed*)CamTargetEntity)->m_pedIK.GetComponentPosition(HeadPos, PED_NODE_HEAD);
 	Source = HeadPos;
 	Source.z += 0.1f;
 	if(((CPed*)CamTargetEntity)->bIsDucking){
@@ -3724,7 +3724,7 @@ CCam::Process_WheelCam(const CVector&, float, float, float)
 
 		CVector BoatCamPos(0.0f, 0.0f, 0.0f);
 		if(((CVehicle*)CamTargetEntity)->pDriver){
-			((CVehicle*)CamTargetEntity)->pDriver->m_pedIK.GetComponentPosition(BoatCamPos, PED_HEAD);
+			((CVehicle*)CamTargetEntity)->pDriver->m_pedIK.GetComponentPosition(BoatCamPos, PED_NODE_HEAD);
 			BoatCamPos += ((CVehicle*)CamTargetEntity)->m_vecMoveSpeed * CTimer::GetTimeStep();
 			BoatCamPos += vecWheelCamBoatOffset.x * Right;
 			BoatCamPos += vecWheelCamBoatOffset.y * CamTargetEntity->GetForward();
@@ -4221,7 +4221,7 @@ CCam::ProcessPedsDeadBaby(void)
 	CVector CamPos;
 
 	if(TheCamera.pTargetEntity->IsPed())
-		((CPed*)TheCamera.pTargetEntity)->m_pedIK.GetComponentPosition(TargetCoors, PED_MID);
+		((CPed*)TheCamera.pTargetEntity)->m_pedIK.GetComponentPosition(TargetCoors, PED_NODE_UPPER_TORSO);
 	else if(TheCamera.pTargetEntity->IsVehicle()){
 		TargetCoors = TheCamera.pTargetEntity->GetPosition();
 		TargetCoors.z += TheCamera.pTargetEntity->GetColModel()->boundingBox.max.z;
@@ -4399,7 +4399,7 @@ CCam::ProcessArrestCamOne(void)
 		CPed *targetPed = (CPed*)TheCamera.pTargetEntity;
 		nUsingWhichCamera = 0;
 		if(TheCamera.pTargetEntity->IsPed()){
-			((CPed*)TheCamera.pTargetEntity)->m_pedIK.GetComponentPosition(TargetPos, PED_MID);
+			((CPed*)TheCamera.pTargetEntity)->m_pedIK.GetComponentPosition(TargetPos, PED_NODE_UPPER_TORSO);
 			if(FindPlayerPed() && FindPlayerPed()->m_pArrestingCop)
 				cop = FindPlayerPed()->m_pArrestingCop;
 			if(cop && CGeneral::GetRandomNumberInRange(0.0f, 1.0f) > 0.5f){
@@ -4416,7 +4416,7 @@ CCam::ProcessArrestCamOne(void)
 			CVehicle *targetVehicle = (CVehicle*)TheCamera.pTargetEntity;
 			if(targetVehicle->pDriver && targetVehicle->pDriver->IsPlayer()){
 				targetPed = targetVehicle->pDriver;
-				targetPed->m_pedIK.GetComponentPosition(TargetPos, PED_MID);
+				targetPed->m_pedIK.GetComponentPosition(TargetPos, PED_NODE_UPPER_TORSO);
 			}else{
 				targetPed = nil;
 				TargetPos = targetVehicle->GetPosition();
@@ -4509,11 +4509,11 @@ CCam::ProcessArrestCamOne(void)
 	}
 
 	if(TheCamera.pTargetEntity->IsPed()){
-		((CPed*)TheCamera.pTargetEntity)->m_pedIK.GetComponentPosition(TargetPos, PED_MID);
+		((CPed*)TheCamera.pTargetEntity)->m_pedIK.GetComponentPosition(TargetPos, PED_NODE_UPPER_TORSO);
 	}else if(TheCamera.pTargetEntity->IsVehicle()){
 		CPed *driver = ((CVehicle*)TheCamera.pTargetEntity)->pDriver;
 		if(driver && driver->IsPlayer())
-			driver->m_pedIK.GetComponentPosition(TargetPos, PED_MID);
+			driver->m_pedIK.GetComponentPosition(TargetPos, PED_NODE_UPPER_TORSO);
 		else
 			TargetPos = TheCamera.pTargetEntity->GetPosition();
 	}else

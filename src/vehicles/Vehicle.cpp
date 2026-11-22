@@ -555,7 +555,7 @@ CVehicle::BladeColSectorList(CPtrList &list, CColModel &rotorColModel, CMatrix &
 				ped->bIsStanding = false;
 				ped->ApplyMoveForce(-5.0f*dirToRotor.x, -5.0f*dirToRotor.y, 5.0f);
 			}
-			ped->InflictDamage(this, WEAPONTYPE_RUNOVERBYCAR, 1000.0f, PEDPIECE_TORSO, localDir);
+			ped->InflictDamage(this, WEAPONTYPE_RUNOVERBYCAR, 1000.0f, PED_PIECE_TORSO, localDir);
 
 			if(CGame::nastyGame && ped->GetIsOnScreen()){
 				for(i = 0; i < 16; i++)

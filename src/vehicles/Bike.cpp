@@ -1815,7 +1815,7 @@ CBike::ProcessBuoyancy(void)
 					   m_aSuspensionSpringRatio[1] < 1.0f ||
 					   m_aSuspensionSpringRatio[2] < 1.0f ||
 					   m_aSuspensionSpringRatio[3] < 1.0f)
-						pDriver->InflictDamage(nil, WEAPONTYPE_DROWNING, CTimer::GetTimeStep(), PEDPIECE_TORSO, 0);
+						pDriver->InflictDamage(nil, WEAPONTYPE_DROWNING, CTimer::GetTimeStep(), PED_PIECE_TORSO, 0);
 					else
 						KnockOffRider(WEAPONTYPE_DROWNING, 0, pDriver, false);
 				}
@@ -1828,7 +1828,7 @@ CBike::ProcessBuoyancy(void)
 						   m_aSuspensionSpringRatio[1] < 1.0f ||
 						   m_aSuspensionSpringRatio[2] < 1.0f ||
 						   m_aSuspensionSpringRatio[3] < 1.0f)
-							pPassengers[i]->InflictDamage(nil, WEAPONTYPE_DROWNING, CTimer::GetTimeStep(), PEDPIECE_TORSO, 0);
+							pPassengers[i]->InflictDamage(nil, WEAPONTYPE_DROWNING, CTimer::GetTimeStep(), PED_PIECE_TORSO, 0);
 						else
 							KnockOffRider(WEAPONTYPE_DROWNING, 0, pPassengers[i], false);
 					}
@@ -1974,14 +1974,14 @@ CBike::VehicleDamage(void)
 			if(pDriver){
 				dir = pDriver->GetLocalDirection(-m_vecDamageNormal);
 				if(pDriver->m_fHealth > 0.0f)
-					pDriver->InflictDamage(m_pDamageEntity, WEAPONTYPE_RAMMEDBYCAR, 0.05f*damage, PEDPIECE_TORSO, dir);
+					pDriver->InflictDamage(m_pDamageEntity, WEAPONTYPE_RAMMEDBYCAR, 0.05f*damage, PED_PIECE_TORSO, dir);
 				if(pDriver && pDriver->GetPedState() == PED_DRIVING)
 					KnockOffRider(WEAPONTYPE_RAMMEDBYCAR, dir, pDriver, false);
 			}
 			if(pPassengers[0]){
 				dir = pPassengers[0]->GetLocalDirection(-m_vecDamageNormal);
 				if(pPassengers[0]->m_fHealth > 0.0f)
-					pPassengers[0]->InflictDamage(m_pDamageEntity, WEAPONTYPE_RAMMEDBYCAR, 0.05f*damage, PEDPIECE_TORSO, dir);
+					pPassengers[0]->InflictDamage(m_pDamageEntity, WEAPONTYPE_RAMMEDBYCAR, 0.05f*damage, PED_PIECE_TORSO, dir);
 				if(pPassengers[0] && pPassengers[0]->GetPedState() == PED_DRIVING)
 					KnockOffRider(WEAPONTYPE_RAMMEDBYCAR, dir, pPassengers[0], false);
 			}
@@ -2420,16 +2420,16 @@ CBike::KnockOffRider(eWeaponType weapon, uint8 direction, CPed *ped, bool bGetBa
 
 	if(!ped->IsPlayer()){
 		if(bGetBackOn){
-			if(ped->m_pedStats->m_temper > ped->m_pedStats->m_fear &&
+			if(ped->m_pedStats->m_nTemper > ped->m_pedStats->m_nFear &&
 			   ped->CharCreatedBy != MISSION_CHAR && ped->m_pMyVehicle->VehicleCreatedBy != MISSION_VEHICLE &&
 			   FindPlayerPed()->m_carInObjective == ped->m_pMyVehicle &&
 			   !CTheScripts::IsPlayerOnAMission())
 				ped->SetObjective(OBJECTIVE_ENTER_CAR_AS_DRIVER, ped->m_pMyVehicle);
-			else if(ped->m_pedStats->m_temper > ped->m_pedStats->m_fear &&
+			else if(ped->m_pedStats->m_nTemper > ped->m_pedStats->m_nFear &&
 			   ped->CharCreatedBy != MISSION_CHAR && ped->m_pMyVehicle->VehicleCreatedBy != MISSION_VEHICLE &&
 			   !CTheScripts::IsPlayerOnAMission())
 				ped->SetObjective(OBJECTIVE_ENTER_CAR_AS_DRIVER, ped->m_pMyVehicle);
-			else if(ped->m_pedStats->m_temper <= ped->m_pedStats->m_fear &&
+			else if(ped->m_pedStats->m_nTemper <= ped->m_pedStats->m_nFear &&
 			   ped->CharCreatedBy != MISSION_CHAR && ped->m_pMyVehicle->VehicleCreatedBy != MISSION_VEHICLE &&
 			   !CTheScripts::IsPlayerOnAMission()){
 				ped->SetObjective(OBJECTIVE_WANDER, ped->m_pMyVehicle);

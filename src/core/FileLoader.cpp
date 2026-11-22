@@ -14,7 +14,9 @@
 #include "CarCtrl.h"
 #include "CarGen.h"
 #include "PedType.h"
+#include "Population.h"
 #include "AnimManager.h"
+#include "PedVoice.h"
 #include "Game.h"
 #include "RwHelper.h"
 #include "NodeName.h"
@@ -1650,21 +1652,27 @@ CFileLoader::LoadVehicleObject(const char *line)
 	mi->m_frequency = frequency;
 }
 
+// CFileLoader::LoadPedObject, 0x5B7420. The ide row carries fourteen fields;
+// the last three name the voice set, and the two radio stations are stored
+// one past what the file says because -1 means "none".
 void
 CFileLoader::LoadPedObject(const char *line)
 {
 	int id;
 	char model[24], txd[24];
 	char pedType[24], pedStats[24], animGroup[24], animFile[16];
-	int carsCanDrive;
+	char pedVoiceType[16], voiceMin[56], voiceMax[60];
+	int32 carsCanDrive, pedFlags;
+	int32 radio1, radio2;
 	CPedModelInfo *mi;
-	int animGroupId;
-	int radio1, radio2;
 
-	sscanf(line, "%d %s %s %s %s %s %x %s %d %d",
+	// SA writes the masks as hex and without a sign, so they are read as one.
+	if(sscanf(line, "%d %23s %23s %23s %23s %23s %x %x %15s %d %d %15s %55s %59s",
 	          &id, model, txd,
-	          pedType, pedStats, animGroup, &carsCanDrive,
-		  animFile, &radio1, &radio2);
+	          pedType, pedStats, animGroup, &carsCanDrive, &pedFlags,
+	          animFile, &radio1, &radio2,
+	          pedVoiceType, voiceMin, voiceMax) != 14)
+		return;
 
 	mi = CModelInfo::AddPedModel(id);
 	mi->SetModelName(model);
@@ -1672,44 +1680,49 @@ CFileLoader::LoadPedObject(const char *line)
 	mi->SetAnimFile(animFile);
 	mi->SetColModel(&CTempColModels::ms_colModelPed1);
 	mi->m_pedType = CPedType::FindPedType(pedType);
-	// SA type tables carry names with no Vice City counterpart; such a ped is a
-	// civilian rather than an entry pointing past the type array.
-	if(mi->m_pedType >= NUM_PEDTYPES)
-		mi->m_pedType = PEDTYPE_CIVMALE;
-	// GetPedStatType returns NUM_PEDSTATS when the name is not in the table.
 	// The stats array is indexed by this value later, so an unknown name has to
 	// fall back to a real entry instead of running off the end of it.
 	mi->m_pedStatType = CPedStats::GetPedStatType(pedStats);
-	if(mi->m_pedStatType == NUM_PEDSTATS)
+	if(mi->m_pedStatType == PEDSTAT_NONE)
 		mi->m_pedStatType = PEDSTAT_STD_MISSION;
-	// A handful of group names in peds.ide differ from the names the animation
-	// table uses for the same set: SA calls the standard set "man" and names
-	// the van and coach sets without the car-animation suffix.
-	static const struct { const char *ide, *table; } groupAliases[] = {
-		{ "man", "default" },
-		{ "van", "vancaranims" },
-		{ "coach", "coachcaranims" },
-	};
-	const char *wantedGroup = animGroup;
-	for(int i = 0; i < (int)ARRAY_SIZE(groupAliases); i++){
-		if(strcasecmp(animGroup, groupAliases[i].ide) == 0){
-			wantedGroup = groupAliases[i].table;
-			break;
-		}
-	}
+	// Every style san Andreas names in peds.ide is a group id in its own right,
+	// including MAN, VAN and COACH: the table carries those spellings, so the
+	// name is looked up as written.
+	int32 animGroupId;
 	for(animGroupId = 0; animGroupId < NUM_ANIM_ASSOC_GROUPS; animGroupId++){
 		const char *groupName = CAnimManager::GetAnimGroupName((AssocGroupId)animGroupId);
-		if(groupName && strcasecmp(wantedGroup, groupName) == 0)
+		if(groupName && strcasecmp(animGroup, groupName) == 0)
 			break;
 	}
 	// An IDE naming a group the tables do not define falls back to the
 	// standard set rather than pointing at an out-of-range id.
 	if(animGroupId >= NUM_ANIM_ASSOC_GROUPS)
 		animGroupId = ASSOCGRP_DEFAULT;
-	mi->m_animGroup = animGroupId;
-	mi->m_carsCanDrive = carsCanDrive;
-	mi->radio1 = radio1;
-	mi->radio2 = radio2;
+	mi->m_animGroup = (AssocGroupId)animGroupId;
+	mi->m_carsCanDrive = (uint16)carsCanDrive;
+	mi->m_nPedFlags = (uint16)pedFlags;
+	// The race comes from the first letter of the model name, not from the row.
+	mi->m_nRace = (uint8)CPopulation::FindPedRaceFromName(model);
+	// SA stores `radio + 1` because its eRadioID starts at zero for the first
+	// station and -1 means "none". The station numbering this fork still uses
+	// is Vice City's, so the offset is applied when the radio layer is
+	// converted; until then the raw ide value is kept so nothing shifts by one.
+	mi->radio1 = (int8)radio1;
+	mi->radio2 = (int8)radio2;
+	// The two remaining fields are the voice set and the range of voices in it.
+	// A row from an older ide can leave them off; sscanf then returns short and
+	// the ped keeps the defaults its constructor set.
+	mi->m_nPedAudioType = -1;
+	mi->m_nVoiceMin = -1;
+	mi->m_nVoiceMax = -1;
+	mi->m_nVoiceId = -1;
+	if(pedVoiceType[0]){
+		eAudioPedType audioType = CPedVoice::GetAudioPedType(pedVoiceType);
+		mi->m_nPedAudioType = (int16)audioType;
+		mi->m_nVoiceMin = CPedVoice::GetVoice(voiceMin, audioType);
+		mi->m_nVoiceMax = CPedVoice::GetVoice(voiceMax, audioType);
+		mi->m_nVoiceId = mi->m_nVoiceMin;
+	}
 }
 
 void

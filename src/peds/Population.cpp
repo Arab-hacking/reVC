@@ -59,7 +59,7 @@ uint32 CPopulation::ms_nTotalGangPeds;
 uint32 CPopulation::ms_nNumGang4;
 uint32 CPopulation::ms_nTotalCivPeds;
 uint32 CPopulation::ms_nNumGang5;
-uint32 CPopulation::ms_nNumDummy;
+uint32 CPopulation::ms_nNumGang10;
 uint32 CPopulation::ms_nNumGang6;
 uint32 CPopulation::ms_nNumGang9;
 uint32 CPopulation::ms_nNumGang7;
@@ -90,7 +90,7 @@ CPopulation::Initialise()
 	ms_nNumGang7 = 0;
 	ms_nNumGang8 = 0;
 	ms_nNumGang9 = 0;
-	ms_nNumDummy = 0;
+	ms_nNumGang10 = 0;
 
 	ms_nTotalCarPassengerPeds = 0;
 	ms_nTotalCivPeds = 0;
@@ -234,6 +234,28 @@ ParsePedGroupLine(char *line, int *nextPedGroup, char *modelName)
 	return true;
 }
 
+// CPopulation::FindPedRaceFromName, 0x5B6D40. A ped's race is read off the
+// first two letters of its model name: the San Andreas model set is named so
+// that the first letter says black, hispanic, oriental or white. A name that
+// does not carry one of those letters has no race of its own.
+ePedRace
+CPopulation::FindPedRaceFromName(const char *modelName)
+{
+	if(modelName == nil)
+		return RACE_DEFAULT;
+	for(int i = 0; i < 2; i++){
+		switch(toupper((unsigned char)modelName[i])){
+		case 0:		return RACE_DEFAULT;	// a short name says nothing
+		case 'B':	return RACE_BLACK;
+		case 'H':	return RACE_HISPANIC;
+		case 'O':
+		case 'I':	return RACE_ORIENTAL;
+		case 'W':	return RACE_WHITE;
+		}
+	}
+	return RACE_DEFAULT;
+}
+
 void
 CPopulation::LoadPedGroups()
 {
@@ -288,63 +310,58 @@ CPopulation::LoadPedGroups()
 void
 CPopulation::UpdatePedCount(ePedType pedType, bool decrease)
 {
+	// SA CPopulation::UpdatePedCount (0x611570). The counters are per ped type,
+	// and the three aggregates the spawner reads are recomputed from them when
+	// the ped leaves or enters, so no caller has to keep the books in step.
 	if (decrease) {
 		switch (pedType) {
 			case PEDTYPE_PLAYER1:
 			case PEDTYPE_PLAYER2:
-			case PEDTYPE_PLAYER3:
-			case PEDTYPE_PLAYER4:
-			case PEDTYPE_UNUSED1:
+			case PEDTYPE_PLAYER_NETWORK:
+			case PEDTYPE_PLAYER_UNUSED:
+			case PEDTYPE_BUM:
 			case PEDTYPE_SPECIAL:
 				return;
 			case PEDTYPE_CIVMALE:
+			case PEDTYPE_CRIMINAL:
 				--ms_nNumCivMale;
 				break;
 			case PEDTYPE_CIVFEMALE:
+			case PEDTYPE_PROSTITUTE:
 				--ms_nNumCivFemale;
 				break;
 			case PEDTYPE_COP:
 				--ms_nNumCop;
 				break;
 			case PEDTYPE_GANG1:
-				--ms_nNumGang1;
-				break;
 			case PEDTYPE_GANG2:
-				--ms_nNumGang2;
-				break;
 			case PEDTYPE_GANG3:
-				--ms_nNumGang3;
-				break;
 			case PEDTYPE_GANG4:
-				--ms_nNumGang4;
-				break;
 			case PEDTYPE_GANG5:
-				--ms_nNumGang5;
-				break;
 			case PEDTYPE_GANG6:
-				--ms_nNumGang6;
-				break;
 			case PEDTYPE_GANG7:
-				--ms_nNumGang7;
-				break;
 			case PEDTYPE_GANG8:
-				--ms_nNumGang8;
-				break;
 			case PEDTYPE_GANG9:
-				--ms_nNumGang9;
+			case PEDTYPE_GANG10:
+				switch (pedType) {
+					case PEDTYPE_GANG1: --ms_nNumGang1; break;
+					case PEDTYPE_GANG2: --ms_nNumGang2; break;
+					case PEDTYPE_GANG3: --ms_nNumGang3; break;
+					case PEDTYPE_GANG4: --ms_nNumGang4; break;
+					case PEDTYPE_GANG5: --ms_nNumGang5; break;
+					case PEDTYPE_GANG6: --ms_nNumGang6; break;
+					case PEDTYPE_GANG7: --ms_nNumGang7; break;
+					case PEDTYPE_GANG8: --ms_nNumGang8; break;
+					case PEDTYPE_GANG9: --ms_nNumGang9; break;
+					default: --ms_nNumGang10; break;
+				}
 				break;
-			case PEDTYPE_EMERGENCY:
+			case PEDTYPE_MEDIC:
 			case PEDTYPE_FIREMAN:
 				--ms_nNumEmergency;
 				break;
-			case PEDTYPE_CRIMINAL:
-				--ms_nNumCivMale;
-				break;
-			case PEDTYPE_PROSTITUTE:
-				--ms_nNumCivFemale;
-				break;
-			case PEDTYPE_UNUSED2:
-				--ms_nNumDummy;
+			case PEDTYPE_MISSION8:
+				--ms_nTotalMissionPeds;
 				break;
 			default:
 				Error("Unknown ped type, UpdatePedCount, Population.cpp");
@@ -354,65 +371,73 @@ CPopulation::UpdatePedCount(ePedType pedType, bool decrease)
 		switch (pedType) {
 			case PEDTYPE_PLAYER1:
 			case PEDTYPE_PLAYER2:
-			case PEDTYPE_PLAYER3:
-			case PEDTYPE_PLAYER4:
-			case PEDTYPE_UNUSED1:
+			case PEDTYPE_PLAYER_NETWORK:
+			case PEDTYPE_PLAYER_UNUSED:
+			case PEDTYPE_BUM:
 			case PEDTYPE_SPECIAL:
 				return;
 			case PEDTYPE_CIVMALE:
+			case PEDTYPE_CRIMINAL:
 				++ms_nNumCivMale;
 				break;
 			case PEDTYPE_CIVFEMALE:
+			case PEDTYPE_PROSTITUTE:
 				++ms_nNumCivFemale;
 				break;
 			case PEDTYPE_COP:
 				++ms_nNumCop;
 				break;
 			case PEDTYPE_GANG1:
-				++ms_nNumGang1;
-				break;
 			case PEDTYPE_GANG2:
-				++ms_nNumGang2;
-				break;
 			case PEDTYPE_GANG3:
-				++ms_nNumGang3;
-				break;
 			case PEDTYPE_GANG4:
-				++ms_nNumGang4;
-				break;
 			case PEDTYPE_GANG5:
-				++ms_nNumGang5;
-				break;
 			case PEDTYPE_GANG6:
-				++ms_nNumGang6;
-				break;
 			case PEDTYPE_GANG7:
-				++ms_nNumGang7;
-				break;
 			case PEDTYPE_GANG8:
-				++ms_nNumGang8;
-				break;
 			case PEDTYPE_GANG9:
-				++ms_nNumGang9;
+			case PEDTYPE_GANG10:
+				switch (pedType) {
+					case PEDTYPE_GANG1: ++ms_nNumGang1; break;
+					case PEDTYPE_GANG2: ++ms_nNumGang2; break;
+					case PEDTYPE_GANG3: ++ms_nNumGang3; break;
+					case PEDTYPE_GANG4: ++ms_nNumGang4; break;
+					case PEDTYPE_GANG5: ++ms_nNumGang5; break;
+					case PEDTYPE_GANG6: ++ms_nNumGang6; break;
+					case PEDTYPE_GANG7: ++ms_nNumGang7; break;
+					case PEDTYPE_GANG8: ++ms_nNumGang8; break;
+					case PEDTYPE_GANG9: ++ms_nNumGang9; break;
+					default: ++ms_nNumGang10; break;
+				}
 				break;
-			case PEDTYPE_EMERGENCY:
+			case PEDTYPE_MEDIC:
 			case PEDTYPE_FIREMAN:
 				++ms_nNumEmergency;
 				break;
-			case PEDTYPE_CRIMINAL:
-				++ms_nNumCivMale;
-				break;
-			case PEDTYPE_PROSTITUTE:
-				++ms_nNumCivFemale;
-				break;
-			case PEDTYPE_UNUSED2:
-				++ms_nNumDummy;
+			case PEDTYPE_MISSION8:
+				++ms_nTotalMissionPeds;
 				break;
 			default:
 				Error("Unknown ped type, UpdatePedCount, Population.cpp");
 				break;
 		}
 	}
+	UpdatePedCounts();
+}
+
+uint32
+CPopulation::CalculateTotalNumGangPeds()
+{
+	return ms_nNumGang1 + ms_nNumGang2 + ms_nNumGang3 + ms_nNumGang4 + ms_nNumGang5
+		+ ms_nNumGang6 + ms_nNumGang7 + ms_nNumGang8 + ms_nNumGang9 + ms_nNumGang10;
+}
+
+void
+CPopulation::UpdatePedCounts()
+{
+	ms_nTotalGangPeds = CalculateTotalNumGangPeds();
+	ms_nTotalCivPeds = ms_nNumCivMale + ms_nNumCivFemale;
+	ms_nTotalPeds = ms_nTotalCivPeds + ms_nTotalGangPeds + ms_nNumCop + ms_nNumEmergency;
 }
 
 int
@@ -437,12 +462,7 @@ CPopulation::Update(bool addPeds)
 			if (--m_CountDownToPedsAtStart == 0)
 				GeneratePedsAtStartOfGame();
 		} else {
-			ms_nTotalCivPeds = ms_nNumCivFemale + ms_nNumCivMale;
-			ms_nTotalGangPeds = ms_nNumGang9 + ms_nNumGang8 + ms_nNumGang7
-				+ ms_nNumGang6 + ms_nNumGang5 + ms_nNumGang4 + ms_nNumGang3
-				+ ms_nNumGang2 + ms_nNumGang1;
-			ms_nTotalPeds = ms_nNumDummy + ms_nNumEmergency + ms_nNumCop
-				+ ms_nTotalGangPeds + ms_nNumCivFemale + ms_nNumCivMale;
+			UpdatePedCounts();
 			ms_nTotalPeds -= ms_nTotalCarPassengerPeds;
 			if (addPeds) {
 				float pcdm = PedCreationDistMultiplier();
@@ -459,12 +479,7 @@ void
 CPopulation::GeneratePedsAtStartOfGame()
 {
 	for (int i = 0; i < 100; i++) {
-		ms_nTotalCivPeds = ms_nNumCivFemale + ms_nNumCivMale;
-		ms_nTotalGangPeds = ms_nNumGang9 + ms_nNumGang8 + ms_nNumGang7
-			+ ms_nNumGang6 + ms_nNumGang5 + ms_nNumGang4
-			+ ms_nNumGang3 + ms_nNumGang2 + ms_nNumGang1;
-		ms_nTotalPeds = ms_nNumDummy + ms_nNumEmergency + ms_nNumCop
-			+ ms_nTotalGangPeds + ms_nNumCivFemale + ms_nNumCivMale;
+		UpdatePedCounts();
 		ms_nTotalPeds -= ms_nTotalCarPassengerPeds;
 
 		// Min dist is 10.0f only for start of the game (naturally)
@@ -555,9 +570,9 @@ CPopulation::AddPed(ePedType pedType, uint32 miOrCopType, CVector const &coors, 
 			ped->SetCurrentWeapon(CWeaponInfo::GetWeaponInfo(weapon)->m_nWeaponSlot);
 			return ped;
 		}
-		case PEDTYPE_EMERGENCY:
+		case PEDTYPE_MEDIC:
 		{
-			CEmergencyPed *ped = new CEmergencyPed(PEDTYPE_EMERGENCY);
+			CEmergencyPed *ped = new CEmergencyPed(PEDTYPE_MEDIC);
 		    ped->SetPosition(coors);
 			ped->SetOrientation(0.0f, 0.0f, 0.0f);
 			CWorld::Add(ped);
@@ -900,7 +915,7 @@ CPopulation::AddPedInCar(CVehicle* car, bool isDriver)
 			break;
 		case MI_AMBULAN:
 			preferredModel = 0;
-			pedType = PEDTYPE_EMERGENCY;
+			pedType = PEDTYPE_MEDIC;
 			break;
 		case MI_POLICE:
 		case MI_PREDATOR:

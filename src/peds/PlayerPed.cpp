@@ -158,12 +158,12 @@ CPlayerPed::MakeObjectTargettable(int32 handle)
 void
 CPlayerPed::AnnoyPlayerPed(bool annoyedByPassingEntity)
 {
-	if (m_pedStats->m_temper < 52) {
-		m_pedStats->m_temper++;
-	} else if (annoyedByPassingEntity && m_pedStats->m_temper < 55) {
-		m_pedStats->m_temper++;
+	if (m_pedStats->m_nTemper < 52) {
+		m_pedStats->m_nTemper++;
+	} else if (annoyedByPassingEntity && m_pedStats->m_nTemper < 55) {
+		m_pedStats->m_nTemper++;
 	} else if (annoyedByPassingEntity) {
-		m_pedStats->m_temper = 46;
+		m_pedStats->m_nTemper = 46;
 	}
 }
 
@@ -331,7 +331,7 @@ CPlayerPed::SetInitialState(void)
 	// the constructor is left with nil. Writing through it would fault while the
 	// player is still being built, before anything can report a missing table.
 	if (m_pedStats)
-		m_pedStats->m_temper = 50;
+		m_pedStats->m_nTemper = 50;
 	m_fWalkAngle = 0.0f;
 	if (m_attachedTo && !bUsesCollision)
 		bUsesCollision = true;
@@ -1541,7 +1541,7 @@ CPlayerPed::ProcessPlayerWeapon(CPad *padUsed)
 	if (m_pPointGunAt) {
 		CVector markPos;
 		if (m_pPointGunAt->IsPed()) {
-			((CPed*)m_pPointGunAt)->m_pedIK.GetComponentPosition(markPos, PED_MID);
+			((CPed*)m_pPointGunAt)->m_pedIK.GetComponentPosition(markPos, PED_NODE_UPPER_TORSO);
 		} else {
 			markPos = m_pPointGunAt->GetPosition();
 		}

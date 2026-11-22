@@ -262,7 +262,7 @@ CCopPed::ArrestPlayer(void)
 				CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_ARRESTGUN, 4.0f);
 
 			CVector suspMidPos;
-			suspect->m_pedIK.GetComponentPosition(suspMidPos, PED_MID);
+			suspect->m_pedIK.GetComponentPosition(suspMidPos, PED_NODE_UPPER_TORSO);
 			m_fRotationDest = CGeneral::GetRadianAngleBetweenPoints(suspMidPos.x, suspMidPos.y,
 				GetPosition().x, GetPosition().y);
 
@@ -481,7 +481,7 @@ CCopPed::CopAI(void)
 			} else {
 				if (m_fDistanceToTarget < weaponRange) {
 					CVector gunPos = weaponInfo->m_vecFireOffset;
-					TransformToNode(gunPos, PED_HANDR);
+					TransformToNode(gunPos, PED_NODE_RIGHT_HAND);
 
 					CColPoint foundCol;
 					CEntity *foundEnt;

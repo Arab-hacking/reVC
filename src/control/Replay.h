@@ -354,7 +354,7 @@ private:
 	static int ms_nNumGang7_Stored;
 	static int ms_nNumGang8_Stored;
 	static int ms_nNumGang9_Stored;
-	static int ms_nNumDummy_Stored;
+	static int ms_nNumGang10_Stored;
 	static int ms_nTotalCarPassengerPeds_Stored;
 	static int ms_nTotalCivPeds_Stored;
 	static int ms_nTotalGangPeds_Stored;

@@ -327,7 +327,7 @@ CPed::DebugRenderOnePedText(void)
 			CFont::PrintString(screenCoords.x, screenCoords.y, gUString);
 			AsciiToUnicode(ObjectiveText[m_objective], gUString);
 			CFont::PrintString(screenCoords.x, screenCoords.y + lineHeight, gUString);
-			AsciiToUnicode(PersonalityTypeText[m_pedStats->m_type], gUString);
+			AsciiToUnicode(PersonalityTypeText[m_pedStats->m_nId], gUString);
 			CFont::PrintString(screenCoords.x, screenCoords.y + 2 * lineHeight, gUString);
 			AsciiToUnicode(WaitStateText[m_nWaitState], gUString);
 			CFont::PrintString(screenCoords.x, screenCoords.y + 3 * lineHeight, gUString);

@@ -33,25 +33,17 @@ struct AnimAssocDesc
 	int32 animId;
 	int32 flags;
 };
-static const char *aSHUFFLEAnimations[] = {
-	"WALK_shuffle",
-	"run_civi",
-	"sprint_panic",
-	"IDLE_stance",
-	"roadcross",
-	"WALK_start",
-};
 
-static const char *aOLDMANAnimations[] = {
+static const char *aOldmanAnimations[] = {
 	"WALK_old",
 	"run_old",
 	"sprint_panic",
 	"idlestance_old",
-	"roadcross",
+	"roadcross_old",
 	"WALK_start",
 };
 
-static const char *aGANG1Animations[] = {
+static const char *aGang1Animations[] = {
 	"WALK_gang1",
 	"run_gang1",
 	"sprint_panic",
@@ -60,7 +52,7 @@ static const char *aGANG1Animations[] = {
 	"WALK_start",
 };
 
-static const char *aGANG2Animations[] = {
+static const char *aGang2Animations[] = {
 	"WALK_gang2",
 	"run_gang1",
 	"sprint_panic",
@@ -69,7 +61,7 @@ static const char *aGANG2Animations[] = {
 	"WALK_start",
 };
 
-static const char *aOLDFATMANAnimations[] = {
+static const char *aOldfatmanAnimations[] = {
 	"WALK_fatold",
 	"run_fatold",
 	"woman_runpanic",
@@ -78,7 +70,16 @@ static const char *aOLDFATMANAnimations[] = {
 	"WALK_start",
 };
 
-static const char *aJOGGERAnimations[] = {
+static const char *aBlindmanAnimations[] = {
+	"WALK_wuzi",
+	"run_wuzi",
+	"sprint_wuzi",
+	"IDLE_stance",
+	"roadcross",
+	"WALK_start",
+};
+
+static const char *aJoggerAnimations[] = {
 	"JOG_maleA",
 	"run_civi",
 	"sprint_panic",
@@ -87,7 +88,7 @@ static const char *aJOGGERAnimations[] = {
 	"WALK_start",
 };
 
-static const char *aDRUNKMANAnimations[] = {
+static const char *aDrunkmanAnimations[] = {
 	"WALK_drunk",
 	"run_civi",
 	"sprint_panic",
@@ -96,97 +97,106 @@ static const char *aDRUNKMANAnimations[] = {
 	"WALK_start",
 };
 
-static const char *aCivilWalkAnimations[] = {
-	"WALK_civi",
+static const char *aManAnimations[] = {
+	"Walk_civi",
 	"run_civi",
+	"sprint_panic",
+	"IDLE_stance",
+	"roadcross",
+	"walk_start",
+};
+
+static const char *aSwatAnimations[] = {
+	"WALK_civi",
+	"SWAT_run",
 	"sprint_panic",
 	"IDLE_stance",
 	"roadcross",
 	"WALK_start",
 };
 
-static const char *aWOMANAnimations[] = {
+static const char *aWomanAnimations[] = {
 	"WOMAN_walknorm",
 	"woman_run",
 	"woman_runpanic",
 	"woman_idlestance",
-	"roadcross",
+	"roadcross_female",
 	"WALK_start",
 };
 
-static const char *aSHOPPINGAnimations[] = {
+static const char *aShoppingAnimations[] = {
 	"WOMAN_walkshop",
 	"woman_run",
 	"woman_runpanic",
 	"woman_idlestance",
-	"roadcross",
+	"roadcross_female",
 	"WALK_start",
 };
 
-static const char *aBUSYWOMANAnimations[] = {
+static const char *aBusywomanAnimations[] = {
 	"WOMAN_walkbusy",
-	"woman_run",
+	"WOMAN_runbusy",
 	"woman_runpanic",
 	"woman_idlestance",
-	"roadcross",
+	"roadcross_female",
 	"WALK_start",
 };
 
-static const char *aSEXYWOMANAnimations[] = {
+static const char *aSexywomanAnimations[] = {
 	"WOMAN_walksexy",
-	"woman_run",
+	"WOMAN_runsexy",
 	"woman_runpanic",
 	"woman_idlestance",
-	"roadcross",
+	"roadcross_female",
 	"WALK_start",
 };
 
-static const char *aPROAnimations[] = {
+static const char *aProAnimations[] = {
 	"WOMAN_walkpro",
-	"woman_run",
+	"WOMAN_runsexy",
 	"woman_runpanic",
 	"woman_idlestance",
-	"roadcross",
+	"roadcross_female",
 	"WALK_start",
 };
 
-static const char *aOLDWOMANAnimations[] = {
+static const char *aOldwomanAnimations[] = {
 	"WOMAN_walkold",
 	"woman_run",
 	"woman_runpanic",
 	"woman_idlestance",
-	"roadcross",
+	"roadcross_female",
 	"WALK_start",
 };
 
-static const char *aFATWOMANAnimations[] = {
-	"WOMAN_walkfatold",
+static const char *aFatwomanAnimations[] = {
+	"WALK_fat",
 	"woman_run",
 	"woman_runpanic",
 	"woman_idlestance",
-	"roadcross",
+	"roadcross_female",
 	"WALK_start",
 };
 
-static const char *aJOGWOMANAnimations[] = {
+static const char *aJogwomanAnimations[] = {
 	"JOG_femaleA",
 	"woman_run",
 	"woman_runpanic",
 	"woman_idlestance",
-	"roadcross",
+	"roadcross_female",
 	"WALK_start",
 };
 
-static const char *aOLDFATWOMANAnimations[] = {
+static const char *aOldfatwomanAnimations[] = {
 	"WOMAN_walkfatold",
 	"WOMAN_runfatold",
 	"woman_runpanic",
 	"woman_idlestance",
-	"roadcross",
+	"roadcross_female",
 	"WALK_start",
 };
 
-static const char *aSKATEAnimations[] = {
+static const char *aSkateAnimations[] = {
 	"skate_run",
 	"skate_sprint",
 	"skate_sprint",
@@ -195,14 +205,6 @@ static const char *aSKATEAnimations[] = {
 	"skate_idle",
 };
 
-static const char *aPANICCHUNKYAnimations[] = {
-	"WOMAN_runfatold",
-	"woman_runpanic",
-	"woman_runpanic",
-	"IDLE_stance",
-	"roadcross",
-	"WALK_start",
-};
 
 static const char *aStdAnimations[] = {
 	"Walk_civi",
@@ -542,9 +544,9 @@ static const char *aGangsAnimations[] = {
 };
 
 static const char *aAttractorsAnimations[] = {
-	"ParkSit_M_in",
-	"ParkSit_M_out",
-	"ParkSit_M_IdleA",
+	"StepSit_In",
+	"StepSit_Out",
+	"StepSit_Loop",
 };
 
 static const char *aBike_dbzAnimations[] = {
@@ -774,44 +776,42 @@ static const char *aMelee_1Animations[] = {
 // filled with HitA_* everywhere but the last slot, so the first punch played a
 // flinch and the strikes looked broken.
 static const char *aMelee_2Animations[] = {
-	"FightA_1",
-	"FightA_2",
-	"FightA_3",
-	"FightA_G",
-	"FightA_M",
-	"HitA_1",
-	"HitA_2",
-	"HitA_3",
-	"FightA_Block",
-	"FIGHTIDLE",
+	"FightB_1",
+	"FightB_2",
+	"FightB_3",
+	"FightB_G",
+	"FightB_M",
+	"HitB_1",
+	"HitB_2",
+	"HitB_3",
+	"FightB_Block",
+	"FIGHTB_idle",
 };
 
-// Variants differ only by which punch the style opens with, the way the VC
-// fight_b/c/d sets differed by their lead strike.
 static const char *aMelee_3Animations[] = {
-	"FightA_2",
-	"FightA_3",
-	"FightA_1",
-	"FightA_G",
-	"FightA_M",
-	"HitA_1",
-	"HitA_2",
-	"HitA_3",
-	"FightA_Block",
-	"FIGHTIDLE",
+	"FightC_1",
+	"FightC_2",
+	"FightC_3",
+	"FightC_G",
+	"FightC_M",
+	"HitC_1",
+	"HitC_2",
+	"HitC_3",
+	"FightC_Block",
+	"FIGHTC_idle",
 };
 
 static const char *aMelee_4Animations[] = {
-	"FightA_3",
-	"FightA_1",
-	"FightA_2",
-	"FightA_G",
-	"FightA_M",
-	"HitA_1",
-	"HitA_2",
-	"HitA_3",
-	"FightA_Block",
-	"FIGHTIDLE",
+	"FightD_1",
+	"FightD_2",
+	"FightD_3",
+	"FightD_G",
+	"FightD_M",
+	"HitD_1",
+	"HitD_2",
+	"HitD_3",
+	"FightD_Block",
+	"FIGHTD_idle",
 };
 
 static const char *aBbbat_1Animations[] = {
@@ -891,13 +891,13 @@ static const char *aCsaw_1Animations[] = {
 };
 
 static const char *aKick_stdAnimations[] = {
-	"FightA_G",
-	"FightA_G",
-	"FightA_G",
-	"FightA_G",
-	"FightA_G",
-	"HitA_1",
-	"HitA_1",
+	"FIGHTkick",
+	"FIGHTkick_B",
+	"FIGHTkick",
+	"FIGHTkick",
+	"FIGHTkick",
+	"HIT_FIGHTKICK",
+	"HIT_FIGHTKICK_B",
 };
 
 static const char *aPistlwhpAnimations[] = {
@@ -920,21 +920,21 @@ static const char *aPlayerAnimations[] = {
 };
 
 static const char *aFatAnimations[] = {
-	"WALK_fat",
-	"run_fat",
-	"sprint_panic",
-	"Idlestance_fat",
-	"Idlestance_fat",
-	"WALK_start",
+	"fatwalk",
+	"fatrun",
+	"fatsprint",
+	"fatidle",
+	"fatidle",
+	"fatwalkstart",
 };
 
 static const char *aMuscularAnimations[] = {
-	"WALK_civi",
-	"run_civi",
-	"sprint_panic",
-	"idle_stance",
-	"idle_stance",
-	"WALK_start",
+	"musclewalk",
+	"musclerun",
+	"musclesprint",
+	"muscleidle",
+	"muscleidle",
+	"musclewalkstart",
 };
 
 static const char *aPlayerRocketAnimations[] = {

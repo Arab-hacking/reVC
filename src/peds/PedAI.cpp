@@ -45,13 +45,13 @@ static AssocGroupId
 GetVehicleAnimGroup(CVehicle *veh, AnimationId animId)
 {
 	if(veh == nil)
-		return ASSOCGRP_STDCARANIMS;
+		return ASSOCGRP_STDCARAMIMS;
 	// The index into the 30-group table lives in the handling record, not in
 	// the model: handling.cfg names the group on the vehicle's own line, so a
 	// car and a van built on the same model animate from different banks.
 	const int32 groupId = veh->GetAnimGroupId();
 	if(groupId >= CVehicleAnimGroupData::NUM_VEH_ANIM_GROUPS)
-		return ASSOCGRP_STDCARANIMS;
+		return ASSOCGRP_STDCARAMIMS;
 	return CVehicleAnimGroupData::GetGroupForAnim((AssocGroupId)groupId, animId);
 }
 
@@ -901,7 +901,7 @@ CPed::ProcessObjective(void)
 						SetLookTimer(CGeneral::GetRandomNumberInRange(500, 1500));
 
 						// Second condition is pointless and isn't there in Mobile.
-						if (threatType == PED_FLAG_GUN || (threatType == PED_FLAG_EXPLOSION && m_threatEntity) || m_threatEntity) {
+						if (threatType == PED_THREAT_GUN || (threatType == PED_THREAT_EXPLOSION && m_threatEntity) || m_threatEntity) {
 							if (m_threatEntity->IsPed())
 								SetObjective(OBJECTIVE_KILL_CHAR_ON_FOOT, m_threatEntity);
 						}
@@ -2198,7 +2198,7 @@ CPed::ReactToPointGun(CEntity *entWithGun)
 		SetMoveState(PEDMOVE_NONE);
 
 	} else if (m_nPedType != pedWithGun->m_nPedType) {
-		if (IsGangMember() || m_nPedType == PEDTYPE_EMERGENCY || m_nPedType == PEDTYPE_FIREMAN) {
+		if (IsGangMember() || m_nPedType == PEDTYPE_MEDIC || m_nPedType == PEDTYPE_FIREMAN) {
 			RegisterThreatWithGangPeds(pedWithGun);
 		}
 
@@ -2296,9 +2296,9 @@ CPed::ReactToAttack(CEntity *attacker)
 				SetObjectiveTimer(20000);
 
 			} else {
-				if (m_pedStats->m_fear <= 100 - attackerPed->m_pedStats->m_temper) {
+				if (m_pedStats->m_nFear <= 100 - attackerPed->m_pedStats->m_nTemper) {
 					if (m_pedStats != attackerPed->m_pedStats) {
-						if (IsGangMember() || m_nPedType == PEDTYPE_EMERGENCY || m_nPedType == PEDTYPE_FIREMAN) {
+						if (IsGangMember() || m_nPedType == PEDTYPE_MEDIC || m_nPedType == PEDTYPE_FIREMAN) {
 							RegisterThreatWithGangPeds(attackerPed);
 						}
 						if (!attackerPed->GetWeapon()->IsTypeMelee() && GetWeapon()->IsTypeMelee()) {
@@ -2866,10 +2866,10 @@ CPed::PedAnimPullPedOutCB(CAnimBlendAssociation* animAssoc, void* arg)
 				case PEDTYPE_PLAYER2:
 					padNo = 1;
 					break;
-				case PEDTYPE_PLAYER3:
+				case PEDTYPE_PLAYER_NETWORK:
 					padNo = 2;
 					break;
-				case PEDTYPE_PLAYER4:
+				case PEDTYPE_PLAYER_UNUSED:
 					padNo = 3;
 					break;
 			}
@@ -3018,7 +3018,7 @@ CPed::PedAnimGetInCB(CAnimBlendAssociation *animAssoc, void *arg)
 			if (!driver->IsPlayer()) {
 				driver->bUsePedNodeSeek = true;
 				driver->m_pLastPathNode = nil;
-				if (driver->m_pedStats->m_temper <= driver->m_pedStats->m_fear
+				if (driver->m_pedStats->m_nTemper <= driver->m_pedStats->m_nFear
 					|| driver->CharCreatedBy == MISSION_CHAR
 					|| veh->VehicleCreatedBy == MISSION_VEHICLE) {
 					driver->bFleeAfterExitingCar = true;
@@ -3031,7 +3031,7 @@ CPed::PedAnimGetInCB(CAnimBlendAssociation *animAssoc, void *arg)
 					}
 				}
 			}
-			if ((ped->m_nPedType != PEDTYPE_EMERGENCY || veh->pDriver->m_nPedType != PEDTYPE_EMERGENCY)
+			if ((ped->m_nPedType != PEDTYPE_MEDIC || veh->pDriver->m_nPedType != PEDTYPE_MEDIC)
 				&& (ped->m_nPedType != PEDTYPE_COP || veh->pDriver->m_nPedType != PEDTYPE_COP)) {
 				veh->pDriver->SetObjective(OBJECTIVE_LEAVE_CAR, veh);
 				veh->pDriver->Say(SOUND_PED_CAR_JACKED);
@@ -3307,10 +3307,10 @@ CPed::PedAnimStepOutCarCB(CAnimBlendAssociation* animAssoc, void* arg)
 			case PEDTYPE_PLAYER2:
 				padNo = 1;
 				break;
-			case PEDTYPE_PLAYER3:
+			case PEDTYPE_PLAYER_NETWORK:
 				padNo = 2;
 				break;
-			case PEDTYPE_PLAYER4:
+			case PEDTYPE_PLAYER_UNUSED:
 				padNo = 3;
 				break;
 		}
@@ -4700,9 +4700,9 @@ CPed::GetPositionToOpenCarDoor(CVehicle *veh, uint32 component, CPed *ped)
 		} else {
 			seatOffset = veh->m_pHandlingData->m_fSeatOffsetDistance;
 			if (veh->bLowVehicle) {
-				vehDoorOffset = GetPedAnimationOffset(ped, ASSOCGRP_LOWCARANIMS, ANIM_ID_CAR_GETIN_LHS_0, vecPedCarDoorLoAnimOffset);
+				vehDoorOffset = GetPedAnimationOffset(ped, ASSOCGRP_LOWCARAMIMS, ANIM_ID_CAR_GETIN_LHS_0, vecPedCarDoorLoAnimOffset);
 			} else {
-				vehDoorOffset = GetPedAnimationOffset(ped, ASSOCGRP_STDCARANIMS, ANIM_ID_CAR_GETIN_LHS_0, vecPedCarDoorAnimOffset);
+				vehDoorOffset = GetPedAnimationOffset(ped, ASSOCGRP_STDCARAMIMS, ANIM_ID_CAR_GETIN_LHS_0, vecPedCarDoorAnimOffset);
 			}
 		}
 
@@ -4791,7 +4791,7 @@ void CPed::PedSetGetInCarPositionCB(CAnimBlendAssociation* assoc, void* arg)
 	bool rearVanDoor = pVehicle->bIsVan && (pPed->m_vehDoor == CAR_DOOR_RR || pPed->m_vehDoor == CAR_DOOR_LR);
 	CVector offset = rearVanDoor ?
 		GetPedAnimationOffset(pPed, ASSOCGRP_VANCARANIMS, ANIM_ID_CAR_GETIN_LHS_1, vecPedVanRearDoorAnimOffset) :
-		GetPedAnimationOffset(pPed, ASSOCGRP_STDCARANIMS, ANIM_ID_CAR_GETIN_LHS_0, vecPedCarDoorAnimOffset);
+		GetPedAnimationOffset(pPed, ASSOCGRP_STDCARAMIMS, ANIM_ID_CAR_GETIN_LHS_0, vecPedCarDoorAnimOffset);
 	CVector position = Multiply3x3(mat, offset) + pPed->GetPosition();
 	CPedPlacement::FindZCoorForPed(&position);
 	pPed->SetMoveSpeed(0.0f, 0.0f, 0.0f);
@@ -4814,7 +4814,7 @@ GetAnimationLastTranslation(AssocGroupId groupId, AnimationId animId, RpClump *c
 		CAnimBlendSequence *seq = &hier->sequences[i];
 		const char *name = seq->name;
 		while(*name == ' ') name++;
-		if(seq->boneTag == BONE_root || strncasecmp(name, "Root", 4) == 0){
+		if(seq->boneTag == BONE_ROOT || strncasecmp(name, "Root", 4) == 0){
 			root = seq;
 			break;
 		}
@@ -4858,10 +4858,10 @@ CPed::SetAnimOffsetForEnterOrExitVehicle(void)
 	// have to be read out of a car set. The standard group does not declare
 	// CAR_GETIN_LHS_0 at all, which used to leave every offset at zero and put
 	// the ped at the wrong place when getting in or out.
-	vecPedDraggedOutCarAnimOffset = GetAnimationLastTranslation(ASSOCGRP_STDCARANIMS, ANIM_ID_CAR_JACKEDLHS);
-	vecPedCarDoorAnimOffset = GetAnimationLastTranslation(ASSOCGRP_STDCARANIMS, ANIM_ID_CAR_GETIN_LHS_0);
-	vecPedCarDoorLoAnimOffset = GetAnimationLastTranslation(ASSOCGRP_LOWCARANIMS, ANIM_ID_CAR_GETIN_LHS_0);
-	vecPedQuickDraggedOutCarAnimOffset = GetAnimationLastTranslation(ASSOCGRP_STDCARANIMS, ANIM_ID_CAR_CLOSEDOOR_LHS_0);
+	vecPedDraggedOutCarAnimOffset = GetAnimationLastTranslation(ASSOCGRP_STDCARAMIMS, ANIM_ID_CAR_JACKEDLHS);
+	vecPedCarDoorAnimOffset = GetAnimationLastTranslation(ASSOCGRP_STDCARAMIMS, ANIM_ID_CAR_GETIN_LHS_0);
+	vecPedCarDoorLoAnimOffset = GetAnimationLastTranslation(ASSOCGRP_LOWCARAMIMS, ANIM_ID_CAR_GETIN_LHS_0);
+	vecPedQuickDraggedOutCarAnimOffset = GetAnimationLastTranslation(ASSOCGRP_STDCARAMIMS, ANIM_ID_CAR_CLOSEDOOR_LHS_0);
 	vecPedVanRearDoorAnimOffset = GetAnimationLastTranslation(ASSOCGRP_VANCARANIMS, ANIM_ID_CAR_GETIN_LHS_1);
 	vecPedTrainDoorAnimOffset = GetAnimationLastTranslation(ASSOCGRP_TRAINCARRANIMS, ANIM_ID_IDLE);
 	vecPedStdBikeJumpRhsAnimOffset = GetAnimationLastTranslation(ASSOCGRP_STDBIKEANIMS, ANIM_ID_CAR_GETIN_BIKE_FRONT);
@@ -4873,7 +4873,7 @@ CPed::SetAnimOffsetForEnterOrExitVehicle(void)
 	REVC_LOG_INFO("Car approach offsets: normal=(%.3f, %.3f, %.3f) low=(%.3f, %.3f, %.3f); VC group=%d",
 		vecPedCarDoorAnimOffset.x, vecPedCarDoorAnimOffset.y, vecPedCarDoorAnimOffset.z,
 		vecPedCarDoorLoAnimOffset.x, vecPedCarDoorLoAnimOffset.y, vecPedCarDoorLoAnimOffset.z,
-		CAnimManager::GetAnimAssociation(ASSOCGRP_STDCARANIMS, ANIM_ID_CAR_GETIN_LHS_0) != nil);
+		CAnimManager::GetAnimAssociation(ASSOCGRP_STDCARAMIMS, ANIM_ID_CAR_GETIN_LHS_0) != nil);
 	if(vecPedCarDoorAnimOffset.MagnitudeSqr() < 0.01f)
 		REVC_LOG_WARNING("CAR_getin_LHS has no root translation: door reachability may fail");
 
@@ -4944,13 +4944,13 @@ CPed::PedSetQuickDraggedOutCarPositionCB(CAnimBlendAssociation *animAssoc, void 
 				ped->m_pNextPathNode = nil;
 				ped->Say(SOUND_PED_FLEE_RUN);
 			}
-		} else if (ped->m_pedStats->m_temper > ped->m_pedStats->m_fear
+		} else if (ped->m_pedStats->m_nTemper > ped->m_pedStats->m_nFear
 			&& ped->CharCreatedBy != MISSION_CHAR && veh->VehicleCreatedBy != MISSION_VEHICLE
 			&& veh->pDriver && veh->pDriver->IsPlayer()
 			&& !CTheScripts::IsPlayerOnAMission()) {
 			ped->SetObjective(OBJECTIVE_ENTER_CAR_AS_DRIVER, veh);
 
-		} else if (ped->m_pedStats->m_temper > ped->m_pedStats->m_fear
+		} else if (ped->m_pedStats->m_nTemper > ped->m_pedStats->m_nFear
 			&& ped->CharCreatedBy != MISSION_CHAR && veh->VehicleCreatedBy != MISSION_VEHICLE
 			&& !veh->pDriver && FindPlayerPed()->m_carInObjective == veh
 			&& !CTheScripts::IsPlayerOnAMission()) {
@@ -4958,7 +4958,7 @@ CPed::PedSetQuickDraggedOutCarPositionCB(CAnimBlendAssociation *animAssoc, void 
 
 		} else {
 			ped->SetFindPathAndFlee(veh->GetPosition(), 10000);
-			if (CGeneral::GetRandomNumber() & 1 || ped->m_pedStats->m_fear > 70) {
+			if (CGeneral::GetRandomNumber() & 1 || ped->m_pedStats->m_nFear > 70) {
 				ped->SetMoveState(PEDMOVE_SPRINT);
 				ped->Say(SOUND_PED_FLEE_SPRINT);
 			} else {
@@ -5062,12 +5062,12 @@ CPed::PedSetDraggedOutCarPositionCB(CAnimBlendAssociation* animAssoc, void* arg)
 			}
 		}
 
-	} else if (ped->m_pedStats->m_temper > ped->m_pedStats->m_fear && ped->CharCreatedBy != MISSION_CHAR
+	} else if (ped->m_pedStats->m_nTemper > ped->m_pedStats->m_nFear && ped->CharCreatedBy != MISSION_CHAR
 		&& ped->m_pMyVehicle->VehicleCreatedBy != MISSION_VEHICLE && driver
 		&& driver->IsPlayer() && !CTheScripts::IsPlayerOnAMission()) {
 		ped->SetObjective(OBJECTIVE_ENTER_CAR_AS_DRIVER, ped->m_pMyVehicle);
 
-	} else if (ped->m_pedStats->m_temper > ped->m_pedStats->m_fear && ped->CharCreatedBy != MISSION_CHAR
+	} else if (ped->m_pedStats->m_nTemper > ped->m_pedStats->m_nFear && ped->CharCreatedBy != MISSION_CHAR
 		&& ped->m_pMyVehicle->VehicleCreatedBy != MISSION_VEHICLE && !driver
 		&& FindPlayerPed()->m_carInObjective == ped->m_pMyVehicle && !CTheScripts::IsPlayerOnAMission())
 		ped->SetObjective(OBJECTIVE_ENTER_CAR_AS_DRIVER, ped->m_pMyVehicle);
@@ -5739,9 +5739,9 @@ CPed::GetLocalPositionToOpenCarDoor(CVehicle *veh, uint32 component, float seatP
 		} else {
 			seatOffset = veh->m_pHandlingData->m_fSeatOffsetDistance * seatPosMult;
 			if (veh->bLowVehicle) {
-				vehDoorOffset = GetPedAnimationOffset(ped, ASSOCGRP_LOWCARANIMS, ANIM_ID_CAR_GETIN_LHS_0, vecPedCarDoorLoAnimOffset);
+				vehDoorOffset = GetPedAnimationOffset(ped, ASSOCGRP_LOWCARAMIMS, ANIM_ID_CAR_GETIN_LHS_0, vecPedCarDoorLoAnimOffset);
 			} else {
-				vehDoorOffset = GetPedAnimationOffset(ped, ASSOCGRP_STDCARANIMS, ANIM_ID_CAR_GETIN_LHS_0, vecPedCarDoorAnimOffset);
+				vehDoorOffset = GetPedAnimationOffset(ped, ASSOCGRP_STDCARAMIMS, ANIM_ID_CAR_GETIN_LHS_0, vecPedCarDoorAnimOffset);
 			}
 		}
 
@@ -5878,7 +5878,7 @@ CPed::InformMyGangOfAttack(CEntity *attacker)
 		CPed *nearPed = m_nearPeds[i];
 		if (nearPed && nearPed != this) {
 			CPed *leader = nearPed->m_leader;
-			if (leader && leader == this && nearPed->m_pedStats->m_fear < nearPed->m_pedStats->m_temper) {
+			if (leader && leader == this && nearPed->m_pedStats->m_nFear < nearPed->m_pedStats->m_nTemper) {
 				nearPed->SetObjective(OBJECTIVE_KILL_CHAR_ON_FOOT, attackerPed);
 				nearPed->SetObjectiveTimer(30000);
 			}

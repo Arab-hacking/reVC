@@ -38,11 +38,11 @@ public:
 	static uint32 ms_nNumGang4;
 	static uint32 ms_nTotalCivPeds;
 	static uint32 ms_nNumGang5;
-	static uint32 ms_nNumDummy;
 	static uint32 ms_nNumGang6;
 	static uint32 ms_nNumGang9;
 	static uint32 ms_nNumGang7;
 	static uint32 ms_nNumGang8;
+	static uint32 ms_nNumGang10;
 
 	static uint32 ms_nTotalCarPassengerPeds;
 	static uint32 NumMiamiViceCops;
@@ -50,6 +50,12 @@ public:
 	static void Initialise();
 	static void Update(bool);
 	static void LoadPedGroups();
+	// The three totals every spawn decision reads. Recomputed from the per-type
+	// counters instead of being kept in step by hand.
+	static void UpdatePedCounts();
+	static uint32 CalculateTotalNumGangPeds();
+	// CPopulation::FindPedRaceFromName, 0x5B6D40.
+	static ePedRace FindPedRaceFromName(const char *modelName);
 	static void UpdatePedCount(ePedType, bool);
 	static void DealWithZoneChange(eLevelName oldLevel, eLevelName newLevel, bool);
 	static CPed *AddPedInCar(CVehicle *car, bool isDriver);

@@ -8,6 +8,8 @@
 #include "PedIK.h"
 #include "VehicleScanner.h"
 #include "PedType.h"
+#include "PedModelInfo.h"
+#include "PedStdBonePositions.h"
 #include "Physical.h"
 #include "Weapon.h"
 #include "WeaponInfo.h"
@@ -141,17 +143,6 @@ enum PedFightMoves
 	FIGHTMOVE_MELEE3,
 	FIGHTMOVE_IDLE2NORM,
 	NUM_FIGHTMOVES
-};
-
-enum ePedPieceTypes
-{
-	PEDPIECE_TORSO,
-	PEDPIECE_MID,
-	PEDPIECE_LEFTARM,
-	PEDPIECE_RIGHTARM,
-	PEDPIECE_LEFTLEG,
-	PEDPIECE_RIGHTLEG,
-	PEDPIECE_HEAD,
 };
 
 enum eWaitState {
@@ -356,16 +347,6 @@ enum PedState
 	PED_DEPLOY_STINGER
 };
 
-enum eMoveState {
-	PEDMOVE_NONE,
-	PEDMOVE_STILL,
-	PEDMOVE_WALK,
-	PEDMOVE_JOG,
-	PEDMOVE_RUN,
-	PEDMOVE_SPRINT,
-	PEDMOVE_THROWN
-};
-
 extern float gfTommyFatness;
 
 class CVehicle;
@@ -530,7 +511,7 @@ public:
 	uint32 m_eventType;
 	CEntity* m_pEventEntity;
 	float m_fAngleToEvent;
-	AnimBlendFrameData *m_pFrames[PED_NODE_MAX];
+	AnimBlendFrameData *m_pFrames[TOTAL_PED_NODES];
 	RpAtomic *m_pWeaponModel;
 	AssocGroupId m_animGroup;
 	CAnimBlendAssociation *m_pVehicleAnim;
@@ -603,7 +584,7 @@ public:
 	uint32 m_phoneTalkTimer;
 	CAccident *m_lastAccident;
 	uint32 m_nPedType;
-	CPedStats *m_pedStats;
+	CPedStat *m_pedStats;
 	CVector2D m_fleeFromPos;
 	CEntity *m_fleeFrom;
 	uint32 m_fleeTimer;
@@ -691,6 +672,11 @@ public:
 	// matrices are built. Called from PreRender, and by a vehicle for its
 	// seated occupants.
 	void PreRenderAfterTest(void);
+	// Set once the skin of this frame has been posed. GetBonePosition and
+	// GetTransformedBonePosition fall back to the standard bone table while it
+	// is still clear, because a hierarchy that has not been updated answers
+	// with last frame's matrices.
+	bool bCalledPreRender;
 	// SA: keeps the player's chest bones half-rotated with the arms.
 	void ShoulderBoneRotation(RpClump *clump);
 	void Render(void);
@@ -714,7 +700,7 @@ public:
 	void SetDie(AnimationId anim = ANIM_ID_KO_SHOT_FRONT_0, float arg1 = 4.0f, float arg2 = 0.0f);
 	void SetDead(void);
 	void ApplyHeadShot(eWeaponType weaponType, CVector pos, bool evenOnPlayer);
-	void RemoveBodyPart(PedNode nodeId, int8 direction);
+	void RemoveBodyPart(ePedNode nodeId, int8 direction);
 	bool OurPedCanSeeThisOne(CEntity *target, bool shootablesDoBlock = false);
 	void Avoid(void);
 	void Attack(void);
@@ -1161,6 +1147,66 @@ public:
 			((CEntity*)target)->RegisterReference(&m_pPointGunAt);
 	}
 
+	// CPed::GetBonePosition, 0x5E4280. Until the hierarchy of this frame has
+	// been posed, a bone still has to have a position; the standard table
+	// answers where it sits on the reference skeleton. Once the skin is
+	// updated the real matrix is read instead.
+	CVector GetBonePosition(eBoneTag bone, bool updateSkinBones = true)
+	{
+		if(!bCalledPreRender){
+			if(!updateSkinBones)
+				{
+				CVector p = GetPedBoneStdPosition(bone);
+				GetMatrix().Update();
+				RwV3d temp;
+				RwV3dTransformPoints(&temp, &p, 1, GetMatrix().m_attachment);
+				return CVector(temp);
+			}
+			UpdateRpHAnim();
+			bCalledPreRender = true;
+		}
+		RwMatrix *m = GetBoneMatrix(bone);
+		if(m)
+			return m->pos;
+		return GetPosition();
+	}
+
+	RwMatrix *GetBoneMatrix(eBoneTag bone)
+	{
+		if(GetClump() == nil || !IsClumpSkinned(GetClump()))
+			return nil;
+		RpHAnimHierarchy *hier = GetAnimHierarchyFromSkinClump(GetClump());
+		if(hier == nil)
+			return nil;
+		int32 idx = RpHAnimIDGetIndex(hier, bone);
+		if(idx < 0 || idx >= hier->numNodes)
+			return nil;
+		return &RpHAnimHierarchyGetMatrixArray(hier)[idx];
+	}
+
+	// CPed::GetTransformedBonePosition, 0x5E01C0. Same rule as GetBonePosition,
+	// but the caller hands in the point to carry into bone space.
+	void GetTransformedBonePosition(CVector &inOutPos, eBoneTag bone, bool updateSkinBones = true)
+	{
+		if(updateSkinBones){
+			if(!bCalledPreRender){
+				UpdateRpHAnim();
+				bCalledPreRender = true;
+			}
+		}else if(!bCalledPreRender){
+			CVector p = GetPedBoneStdPosition(bone);
+			GetMatrix().Update();
+			RwV3d temp;
+			RwV3dTransformPoints(&temp, &p, 1, GetMatrix().m_attachment);
+			inOutPos = CVector(temp);
+			return;
+		}
+		RwMatrix *m = GetBoneMatrix(bone);
+		if(m == nil)
+			return;
+		RwV3dTransformPoints(&inOutPos, &inOutPos, 1, m);
+	}
+
 	// Using this to abstract nodes of skinned and non-skinned meshes
 	CVector GetNodePosition(int32 node)
 	{
@@ -1168,7 +1214,7 @@ public:
 		// A node the skeleton does not carry has no frame and no bone; the
 		// caller gets the entity origin rather than a matrix read from a
 		// negative index.
-		if(node < 0 || node >= PED_NODE_MAX || m_pFrames[node] == nil)
+		if(node < 0 || node >= TOTAL_PED_NODES || m_pFrames[node] == nil)
 			return GetPosition();
 		RpHAnimHierarchy *hier = GetAnimHierarchyFromSkinClump(GetClump());
 		if(hier == nil)
@@ -1184,7 +1230,7 @@ public:
 	}
 	void TransformToNode(CVector &pos, int32 node)
 	{
-		if(node < 0 || node >= PED_NODE_MAX || m_pFrames[node] == nil)
+		if(node < 0 || node >= TOTAL_PED_NODES || m_pFrames[node] == nil)
 			return;
 		RpHAnimHierarchy *hier = GetAnimHierarchyFromSkinClump(GetClump());
 		if(hier == nil)
