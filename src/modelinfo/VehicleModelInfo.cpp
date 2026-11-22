@@ -896,11 +896,13 @@ CVehicleModelInfo::CollapseFramesCB(RwFrame *frame, void *data)
 	// attached to the objects before they move: an object carries no matrix of
 	// its own, so the node it ends up on is its whole placement.
 	if(frame != target){
-		RwMatrix rel;
+		// RwMatrixMultiply is declared but not defined in the librw build, so
+		// combine through rw::Matrix::transform, which is the same product:
+		// inverse(target) * frame is the child's transform relative to target.
+		rw::Matrix rel;
 		RwMatrixInvert(&rel, RwFrameGetLTM(target));
-		RwMatrix relChild;
-		RwMatrixMultiply(&relChild, &rel, RwFrameGetLTM(frame));
-		RwFrameTransform(frame, &relChild, rwCOMBINEREPLACE);
+		rel.transform(RwFrameGetLTM(frame));
+		RwFrameTransform(frame, &rel, rwCOMBINEREPLACE);
 	}
 	RwFrameForAllObjects(frame, MoveObjectsCB, target);
 	RwFrameDestroy(frame);
