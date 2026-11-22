@@ -860,27 +860,30 @@ CVehicleModelInfo::ConvertAnimFileIndex(void)
 	}
 }
 
-// SA CVehicleModelInfo::CollapseFramesCB (0x4C8E30), rewritten around the two
-// things the original gets wrong for converted models.
+// SA CVehicleModelInfo::CollapseFramesCB (0x4C8E30), rewritten around the one
+// assumption the original makes and converted models do not.
 //
 // The collapse flattens a component's sub-hierarchy: SA's car code addresses a
-// door, a bumper or a wheel through a single frame, and the ok/damaged pairing
-// reads the atomics on that frame, so everything modelled under it has to end up
-// on it. The reference walks the children, moves their objects onto the target
-// with MoveObjectsCB and destroys the child frames.
+// door, a bumper or a wheel through a single frame, so the reference walks the
+// children, moves their objects onto the target with MoveObjectsCB and destroys
+// the child frames.
 //
-// What it does not do is carry the placement along. An object has no matrix of
-// its own - the frame it sits on is its whole transform - so a mesh modelled
-// under a sub-node landed at the target's origin instead of where the model put
-// it. Headlights, taillights and other parts modelled on a child node therefore
-// appeared somewhere else on the car, or off it entirely.
+// That is only safe when the child frames are decorative, i.e. when their
+// transform is the identity and the mesh was authored in the component's space.
+// SA's own exporter does exactly that. A converted model does not: it puts the
+// headlights under the bonnet or under a container of its own, with a real
+// offset on each node. Moving those objects onto the target leaves them with the
+// target's transform - the child's offset is simply gone, which is why the lamps
+// of the fourth spawned car hovered off its nose and tail.
 //
-// The flatten is now done bottom up with each node's transform folded into the
-// target, so every mesh keeps the position the model file drew it at. Frames
-// that carry a hierarchy id are real car nodes and are left alone, and because
-// every frame in the collapsed subtree is folded in and then destroyed, no frame
-// is ever destroyed while a child of it survives - which is what used to leave
-// parentless frames behind and crash librw's LTM sync.
+// An object cannot carry a matrix of its own here (an RpAtomic is placed by the
+// frame it hangs on), so the placement is kept by keeping the frame: a child that
+// has geometry of its own is re-parented straight onto the target with its
+// transform re-expressed relative to it, and only a frame that carries nothing -
+// no objects and no children - is destroyed. Everything under a component still
+// moves with the component when the door opens or the bonnet bends, because it is
+// now a child of the component's frame, and every mesh keeps the position the
+// model file drew it at.
 RwFrame*
 CVehicleModelInfo::CollapseFramesCB(RwFrame *frame, void *data)
 {
@@ -894,32 +897,28 @@ CVehicleModelInfo::CollapseFramesCB(RwFrame *frame, void *data)
 	if(frame != target && CVisibilityPlugins::GetFrameHierarchyId(frame) != 0)
 		return frame;
 
-	// Depth first: the children are folded into the target and destroyed before
-	// this frame is handled, so their transforms are still live when read.
+	// Depth first: every child is settled before this frame is, so a child that
+	// stays keeps a live parent for the whole pass.
 	RwFrameForAllChildren(frame, CollapseFramesCB, data);
 
-	// A frame that still has children after the recursion is carrying nodes the
-	// collapse deliberately kept - a door, a wheel, a bumper that sat one level
-	// deeper than the model's exporter would normally put it. Destroying it here
-	// would strand them: librw's Frame::destroy sets parent = nil on every child
-	// without unlinking it, so they end up reachable from nowhere, the car code
-	// finds no node for them, and librw's LTM sync dereferences the nil parent.
-	if(frame != target && frame->child != nil)
+	if(frame == target)
 		return frame;
 
-	if(frame != target && GetFirstObject(frame) != nil){
-		// The target's frame places the objects from here on, so the node's
-		// placement has to travel with them.
-		rw::Matrix rel;
-		RwMatrixInvert(&rel, RwFrameGetLTM(target));
-		rel.transform(RwFrameGetLTM(frame));
-		RwFrameTransform(frame, &rel, rwCOMBINEREPLACE);
-		RwFrameForAllObjects(frame, MoveObjectsCB, target);
+	// Nothing on it and nothing under it: this is the anonymous nesting the
+	// collapse exists to remove.
+	if(GetFirstObject(frame) == nil && frame->child == nil){
+		RwFrameDestroy(frame);
+		return frame;
 	}
 
-	// Safe here: the recursion above left this frame with no children.
-	if(frame != target)
-		RwFrameDestroy(frame);
+	// It carries geometry, so it stays - moved up to the target, keeping its
+	// placement relative to the frame it is being moved onto.
+	rw::Matrix rel;
+	RwMatrixInvert(&rel, RwFrameGetLTM(target));
+	rel.transform(RwFrameGetLTM(frame));
+	RwFrameRemoveChild(frame);
+	RwFrameAddChild(target, frame);
+	RwFrameTransform(frame, &rel, rwCOMBINEREPLACE);
 	return frame;
 }
 

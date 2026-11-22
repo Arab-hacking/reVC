@@ -397,6 +397,8 @@ CPlayerInfo::Process(void)
 					} else {
 						m_pPed->SetObjective(OBJECTIVE_ENTER_CAR_AS_DRIVER, carBelow);
 					}
+					REVC_LOG_INFO("Vehicle entry objective: state=%d objective=%d targetMatches=%d",
+						m_pPed->m_nPedState, m_pPed->m_objective, m_pPed->m_carInObjective == carBelow);
 				}
 			}
 		}

@@ -8106,6 +8106,7 @@ CPed::SeekCar(void)
 			return;
 		}
 	}
+	CVector doorDest = dest;
 	bool foundBetterPosToSeek = PossiblyFindBetterPosToSeekCar(&dest, vehToSeek);
 	m_vecSeekPos = dest;
 	float distToDestSqr = (m_vecSeekPos - GetPosition()).MagnitudeSqr();
@@ -8126,8 +8127,16 @@ CPed::SeekCar(void)
 	else
 		bVehEnterDoorIsBlocked = false;
 
+	// Sample player approaches without flooding the log on every frame.
+	bool arrived = Seek();
+	if (IsPlayer() && (CTimer::GetFrameCounter() & 31) == 0)
+		REVC_LOG_INFO("Vehicle entry seek: model=%d door=%d dist2d=%.2f dz=%.2f radius=%.2f arrived=%d detour=%d blocked=%d canEnter=%d doorPos=(%.2f,%.2f,%.2f) seekPos=(%.2f,%.2f,%.2f) pedPos=(%.2f,%.2f,%.2f)",
+			vehToSeek->GetModelIndex(), m_vehDoor, (dest - GetPosition()).Magnitude2D(), dest.z - GetPosition().z,
+			m_distanceToCountSeekDone, arrived, foundBetterPosToSeek, bVehEnterDoorIsBlocked, vehToSeek->CanPedEnterCar(),
+			doorDest.x, doorDest.y, doorDest.z, dest.x, dest.y, dest.z, GetPosition().x, GetPosition().y, GetPosition().z);
+
 	// Arrived to the car
-	if (Seek()) {
+	if (arrived) {
 		if (!foundBetterPosToSeek) {
 			if (1.6f + GetPosition().z > dest.z && GetPosition().z - 0.5f < dest.z) {
 				if (vehToSeek->IsTrain()) {
