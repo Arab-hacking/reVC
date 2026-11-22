@@ -855,11 +855,54 @@ CVehicleModelInfo::ConvertAnimFileIndex(void)
 	}
 }
 
+// SA CVehicleModelInfo::CollapseFramesCB (0x4C8E30), with one difference that
+// matters: the object keeps its own placement.
+//
+// The function flattens a component's sub-hierarchy, because SA's car code
+// addresses a door, a bumper or a wheel through a single frame and everything
+// modelled under it has to end up on that frame. The reference moves the objects
+// with MoveObjectsCB and destroys the child frames plainly, which throws away the
+// transform those frames carried: a door mesh modelled under a child node lands
+// at the door frame's origin, not where it was modelled - the part then floats
+// inside or next to the car. The child's full transform is folded into the
+// frame it lands on instead, so the flattened clump draws exactly what the model
+// file drew.
 RwFrame*
 CVehicleModelInfo::CollapseFramesCB(RwFrame *frame, void *data)
 {
+	RwFrame *target = (RwFrame*)data;
+
+	// A frame that carries a hierarchy id is a real car node - a door, a bumper,
+	// a wheel - not an anonymous container. The collapse exists to flatten the
+	// model's own nesting, and the chassis is flagged for it, so without this
+	// test every part hanging off the chassis is destroyed here: the nodes the
+	// car code looks up by id disappear (m_aCarNodes[CAR_DOOR_RF] stays nil, and
+	// opening that door reads a frame that is no longer there), and all of the
+	// body's geometry is dumped onto the chassis frame, which is why doors and
+	// bumpers are drawn inside the car instead of on it.
+	if(frame != target && CVisibilityPlugins::GetFrameHierarchyId(frame) != 0)
+		return frame;
+
 	RwFrameForAllChildren(frame, CollapseFramesCB, data);
-	RwFrameForAllObjects(frame, MoveObjectsCB, data);
+
+	// A frame that has nothing on it contributes nothing; destroying it is what
+	// the hierarchy collapse is for.
+	if(GetFirstObject(frame) == nil){
+		RwFrameDestroy(frame);
+		return frame;
+	}
+
+	// The child's own transform, expressed relative to the target frame, is
+	// attached to the objects before they move: an object carries no matrix of
+	// its own, so the node it ends up on is its whole placement.
+	if(frame != target){
+		RwMatrix rel;
+		RwMatrixInvert(&rel, RwFrameGetLTM(target));
+		RwMatrix relChild;
+		RwMatrixMultiply(&relChild, &rel, RwFrameGetLTM(frame));
+		RwFrameTransform(frame, &relChild, rwCOMBINEREPLACE);
+	}
+	RwFrameForAllObjects(frame, MoveObjectsCB, target);
 	RwFrameDestroy(frame);
 	return frame;
 }

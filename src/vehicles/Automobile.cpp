@@ -4245,6 +4245,8 @@ CAutomobile::IsComponentPresent(int32 comp)
 void
 CAutomobile::SetComponentRotation(int32 component, CVector rotation)
 {
+	if(component < 0 || component >= NUM_CAR_NODES || m_aCarNodes[component] == nil)
+		return;
 	CMatrix mat(RwFrameGetMatrix(m_aCarNodes[component]));
 	CVector pos = mat.GetPosition();
 	// BUG: all these set the whole matrix
@@ -4258,6 +4260,14 @@ CAutomobile::SetComponentRotation(int32 component, CVector rotation)
 void
 CAutomobile::OpenDoor(int32 component, eDoors door, float openRatio)
 {
+	// A converted model need not carry the node the door animation addresses.
+	// m_aCarNodes is filled from the clump, so a missing node is nil here, and
+	// this used to read RwFrameGetMatrix through it. The door then simply does
+	// not swing: there is nothing to swing.
+	if(component < 0 || component >= NUM_CAR_NODES || m_aCarNodes[component] == nil){
+		Doors[door].Open(openRatio);
+		return;
+	}
 	CMatrix mat(RwFrameGetMatrix(m_aCarNodes[component]));
 	CVector pos = mat.GetPosition();
 	float axes[3] = { 0.0f, 0.0f, 0.0f };
@@ -4348,7 +4358,11 @@ CAutomobile::ProcessOpenDoor(uint32 component, uint32 anim, float time)
 	case CAR_DOOR_RR: door = DOOR_REAR_RIGHT; break;
 	case CAR_DOOR_LF: door = DOOR_FRONT_LEFT; break;
 	case CAR_DOOR_LR: door = DOOR_REAR_LEFT; break;
-	default: assert(0);
+	default:
+		// Not a car door node: the assert only fires in a debug build, and the
+		// release build would carry an uninitialised `door` into Doors[] below.
+		assert(0);
+		return;
 	}
 
 	if(IsDoorMissing(door))
