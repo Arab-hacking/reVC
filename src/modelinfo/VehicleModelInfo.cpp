@@ -30,6 +30,10 @@
 #include "CommonCarcols.h"
 #endif
 
+// Defined below SetClump; declared here because SetClump is the only caller and
+// the check has to run on the model before any instance clones it.
+static void RepairFrameTree(RpClump *clump, const char *model);
+
 int8 CVehicleModelInfo::ms_compsToUse[2] = { -2, -2 };
 int8 CVehicleModelInfo::ms_compsUsed[2];
 RwRGBA CVehicleModelInfo::ms_vehicleColourTable[256];
@@ -782,6 +786,7 @@ CVehicleModelInfo::SetClump(RpClump *clump)
 	// integrity check happens after it, on the hierarchy that will be cloned
 	// for every instance.
 	RepairFramelessAtomics(clump, GetModelName());
+	RepairFrameTree(clump, GetModelName());
 	FindEditableMaterialList();
 	SetEnvironmentMap();
 	// SA calls this from SetClump: the clump is the only place the plate
@@ -855,57 +860,66 @@ CVehicleModelInfo::ConvertAnimFileIndex(void)
 	}
 }
 
-// SA CVehicleModelInfo::CollapseFramesCB (0x4C8E30), with one difference that
-// matters: the object keeps its own placement.
+// SA CVehicleModelInfo::CollapseFramesCB (0x4C8E30), rewritten around the two
+// things the original gets wrong for converted models.
 //
-// The function flattens a component's sub-hierarchy, because SA's car code
-// addresses a door, a bumper or a wheel through a single frame and everything
-// modelled under it has to end up on that frame. The reference moves the objects
-// with MoveObjectsCB and destroys the child frames plainly, which throws away the
-// transform those frames carried: a door mesh modelled under a child node lands
-// at the door frame's origin, not where it was modelled - the part then floats
-// inside or next to the car. The child's full transform is folded into the
-// frame it lands on instead, so the flattened clump draws exactly what the model
-// file drew.
+// The collapse flattens a component's sub-hierarchy: SA's car code addresses a
+// door, a bumper or a wheel through a single frame, and the ok/damaged pairing
+// reads the atomics on that frame, so everything modelled under it has to end up
+// on it. The reference walks the children, moves their objects onto the target
+// with MoveObjectsCB and destroys the child frames.
+//
+// What it does not do is carry the placement along. An object has no matrix of
+// its own - the frame it sits on is its whole transform - so a mesh modelled
+// under a sub-node landed at the target's origin instead of where the model put
+// it. Headlights, taillights and other parts modelled on a child node therefore
+// appeared somewhere else on the car, or off it entirely.
+//
+// The flatten is now done bottom up with each node's transform folded into the
+// target, so every mesh keeps the position the model file drew it at. Frames
+// that carry a hierarchy id are real car nodes and are left alone, and because
+// every frame in the collapsed subtree is folded in and then destroyed, no frame
+// is ever destroyed while a child of it survives - which is what used to leave
+// parentless frames behind and crash librw's LTM sync.
 RwFrame*
 CVehicleModelInfo::CollapseFramesCB(RwFrame *frame, void *data)
 {
 	RwFrame *target = (RwFrame*)data;
 
 	// A frame that carries a hierarchy id is a real car node - a door, a bumper,
-	// a wheel - not an anonymous container. The collapse exists to flatten the
-	// model's own nesting, and the chassis is flagged for it, so without this
-	// test every part hanging off the chassis is destroyed here: the nodes the
-	// car code looks up by id disappear (m_aCarNodes[CAR_DOOR_RF] stays nil, and
-	// opening that door reads a frame that is no longer there), and all of the
-	// body's geometry is dumped onto the chassis frame, which is why doors and
-	// bumpers are drawn inside the car instead of on it.
+	// a wheel - not anonymous nesting. The chassis is flagged for a collapse and
+	// the whole body hangs off it, so without this test the nodes the car code
+	// looks up by id would be destroyed here (m_aCarNodes[CAR_DOOR_RF] stays nil
+	// and opening that door reads a frame that is no longer there).
 	if(frame != target && CVisibilityPlugins::GetFrameHierarchyId(frame) != 0)
 		return frame;
 
+	// Depth first: the children are folded into the target and destroyed before
+	// this frame is handled, so their transforms are still live when read.
 	RwFrameForAllChildren(frame, CollapseFramesCB, data);
 
-	// A frame that has nothing on it contributes nothing; destroying it is what
-	// the hierarchy collapse is for.
-	if(GetFirstObject(frame) == nil){
-		RwFrameDestroy(frame);
+	// A frame that still has children after the recursion is carrying nodes the
+	// collapse deliberately kept - a door, a wheel, a bumper that sat one level
+	// deeper than the model's exporter would normally put it. Destroying it here
+	// would strand them: librw's Frame::destroy sets parent = nil on every child
+	// without unlinking it, so they end up reachable from nowhere, the car code
+	// finds no node for them, and librw's LTM sync dereferences the nil parent.
+	if(frame != target && frame->child != nil)
 		return frame;
-	}
 
-	// The child's own transform, expressed relative to the target frame, is
-	// attached to the objects before they move: an object carries no matrix of
-	// its own, so the node it ends up on is its whole placement.
-	if(frame != target){
-		// RwMatrixMultiply is declared but not defined in the librw build, so
-		// combine through rw::Matrix::transform, which is the same product:
-		// inverse(target) * frame is the child's transform relative to target.
+	if(frame != target && GetFirstObject(frame) != nil){
+		// The target's frame places the objects from here on, so the node's
+		// placement has to travel with them.
 		rw::Matrix rel;
 		RwMatrixInvert(&rel, RwFrameGetLTM(target));
 		rel.transform(RwFrameGetLTM(frame));
 		RwFrameTransform(frame, &rel, rwCOMBINEREPLACE);
+		RwFrameForAllObjects(frame, MoveObjectsCB, target);
 	}
-	RwFrameForAllObjects(frame, MoveObjectsCB, target);
-	RwFrameDestroy(frame);
+
+	// Safe here: the recursion above left this frame with no children.
+	if(frame != target)
+		RwFrameDestroy(frame);
 	return frame;
 }
 
@@ -934,6 +948,147 @@ CaptureComponentTransform(RwFrame *frame)
 	if(parent == nil)
 		return;
 	RwFrameTransform(frame, RwFrameGetLTM(parent), rwCOMBINEPRECONCAT);
+}
+
+// Remove one frame from the hierarchy without losing what hangs under it.
+//
+// librw's Frame::destroy sets parent = nil on every child and then frees the
+// frame, but it never unlinks those children from the freed frame's child list.
+// Their parent pointer is nil, the list they sit in is gone, so they are reachable
+// from nowhere and nothing can repair them afterwards. Anything that removes a
+// node which may carry a subtree has to lift the subtree first - each child keeps
+// its world transform, expressed relative to the node that adopts it.
+static void
+DestroyFrameKeepingChildren(RwFrame *frame)
+{
+	if(frame == nil)
+		return;
+	RwFrame *parent = RwFrameGetParent(frame);
+
+	// Collect first: attaching a child mutates the list we are walking.
+	RwFrame *children[64];
+	int numChildren = 0;
+	for(RwFrame *child = frame->child; child && numChildren < 64; child = child->next)
+		children[numChildren++] = child;
+
+	for(int i = 0; i < numChildren; i++){
+		RwFrame *child = children[i];
+		if(parent){
+			// The child's placement is the product of the whole chain above it;
+			// after the adoption the chain starts one node higher.
+			rw::Matrix rel;
+			RwMatrixInvert(&rel, RwFrameGetLTM(parent));
+			rel.transform(RwFrameGetLTM(child));
+			RwFrameAddChild(parent, child);
+			RwFrameTransform(child, &rel, rwCOMBINEREPLACE);
+		}else{
+			// No parent to adopt: the child becomes a root of its own and keeps
+			// the transform it already accumulated.
+			RwFrameRemoveChild(child);
+		}
+	}
+	RwFrameDestroy(frame);
+}
+
+// A frame that is in the clump but not in the clump's frame tree breaks librw,
+// and it breaks it with a nil dereference rather than with an error.
+//
+// Frame::syncLTMRecurse multiplies every dirty frame by getParent()->ltm with no
+// nil test, so a frame whose parent pointer is nil - but which is still reached
+// by the traversal - turns the next render into a read at
+// 0 + offsetof(Frame, ltm) + offsetof(Matrix, flags) = 0x7C. That is exactly the
+// address the log reports for stretch: rw::Matrix::mult called from
+// rw::Frame::getLTM, out of the vehicle render callback.
+//
+// CollapseFramesCB used to produce that state directly: Frame::destroy gives
+// every surviving child parent = nil without ever unlinking it from the
+// destroyed frame's child list, so the children stay reachable while pointing at
+// nothing. The check below runs on the finished model and repairs whatever the
+// preprocess left behind, so a clump that is about to be cloned N times is known
+// to be sound rather than assumed to be.
+struct FrameTreeCheck {
+	RwFrame *root;
+	int reparented;
+	int movedAtomics;
+};
+
+static bool
+IsInFrameTree(RwFrame *frame, RwFrame *root)
+{
+	for(RwFrame *f = frame; f; f = RwFrameGetParent(f))
+		if(f == root)
+			return true;
+	return false;
+}
+
+// The highest ancestor of `frame` that has no parent: attaching that one to the
+// root keeps the whole subtree intact instead of flattening it.
+static RwFrame*
+TopmostOrphan(RwFrame *frame, RwFrame *root)
+{
+	RwFrame *top = nil;
+	for(RwFrame *f = frame; f; f = RwFrameGetParent(f)){
+		if(f == root)
+			return nil;
+		if(RwFrameGetParent(f) == nil)
+			top = f;
+	}
+	return top;
+}
+
+static RpAtomic*
+CheckAtomicFrameCB(RpAtomic *atomic, void *data)
+{
+	FrameTreeCheck *check = (FrameTreeCheck*)data;
+	RwFrame *frame = RpAtomicGetFrame(atomic);
+	if(frame == nil)
+		return atomic;
+	if(IsInFrameTree(frame, check->root))
+		return atomic;
+
+	RwFrame *orphan = TopmostOrphan(frame, check->root);
+	if(orphan == nil){
+		// The chain does not lead anywhere sane; the geometry is still better on
+		// the root than on a frame no traversal will ever reach.
+		RpAtomicSetFrame(atomic, check->root);
+	}else{
+		RwFrameRemoveChild(orphan);
+		RwFrameAddChild(check->root, orphan);
+		check->reparented++;
+	}
+	check->movedAtomics++;
+	return atomic;
+}
+
+static void
+RepairFrameTree(RpClump *clump, const char *model)
+{
+	if(clump == nil)
+		return;
+	FrameTreeCheck check = { RpClumpGetFrame(clump), 0, 0 };
+	if(check.root == nil)
+		return;
+
+	// Frames that lost their parent but are still listed under a live node are
+	// reachable, so the tree walk can find them; the atomic walk finds the rest.
+	RwFrame *root = check.root;
+	struct Local {
+		static RwFrame *Reparent(RwFrame *frame, void *data){
+			RwFrame *root = (RwFrame*)data;
+			if(frame != root && RwFrameGetParent(frame) == nil){
+				RwFrameRemoveChild(frame);
+				RwFrameAddChild(root, frame);
+			}
+			RwFrameForAllChildren(frame, Reparent, data);
+			return frame;
+		}
+	};
+	RwFrameForAllChildren(root, Local::Reparent, root);
+
+	RpClumpForAllAtomics(clump, CheckAtomicFrameCB, &check);
+	if(check.reparented || check.movedAtomics)
+		REVC_LOG_WARNING("Vehicle model %s: %d orphaned frame(s) re-attached, %d atomic(s) moved to the clump root",
+			model ? model : "unknown", check.reparented, check.movedAtomics);
 }
 
 // A frame that is about to be removed may still carry geometry: a converted
@@ -1262,6 +1417,14 @@ CVehicleModelInfo::PreprocessSACarHierarchy(void)
 			RwV3d *pos = (desc[i].flags & VEHICLE_FLAG_POS)
 				? &m_positions[desc[i].hierId]
 				: &m_vehicleStruct.m_avDummyPos[(desc[i].flags >> VEHICLE_FLAG_DUMMY_SHIFT) - 1];
+			// The dummy's own matrix only says where it sits relative to its
+			// parent, and an SA-style model hangs the lights under whichever part
+			// they belong to - the headlights under the bonnet, the tail lights
+			// under the boot. Reading the local matrix alone put both in the car's
+			// frame of reference at the parent's offset, so the light cones of the
+			// fourth spawned car pointed at the wrong end of it. The whole chain
+			// up to (but not including) the clump root is applied instead, which
+			// is what SA's own loop over the parents does.
 			*pos = *RwMatrixGetPos(RwFrameGetMatrix(assoc.frame));
 			RwFrame *parent = RwFrameGetParent(assoc.frame);
 			while(parent && RwFrameGetParent(parent)){
@@ -1272,9 +1435,11 @@ CVehicleModelInfo::PreprocessSACarHierarchy(void)
 				m_vehicleStruct.m_avDummyPos[(desc[i].flags >> VEHICLE_FLAG_DUMMY_SHIFT) - 1] = *pos;
 			}
 			// The dummy is only a position; anything modelled on it has to
-			// survive the removal (see EvictFrameObjects).
+			// survive the removal (see EvictFrameObjects), and anything hanging
+			// below it has to survive with a parent (see
+			// DestroyFrameKeepingChildren).
 			EvictFrameObjects(assoc.frame, RpClumpGetFrame(m_clump));
-			RwFrameDestroy(assoc.frame);
+			DestroyFrameKeepingChildren(assoc.frame);
 		}else{
 			RpAtomic *extra = (RpAtomic*)GetFirstObject(assoc.frame);
 			if(!extra || m_numComps >= (int)(sizeof(m_comps)/sizeof(m_comps[0]))) continue;

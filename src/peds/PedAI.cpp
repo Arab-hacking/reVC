@@ -3957,6 +3957,18 @@ CPed::SetEnterCar(CVehicle *car, uint32 unused)
 		// uninitialised on the CAR_DOOR_FLAG_UNKNOWN paths, which made the
 		// IsDoorReady test below read an indeterminate value.
 		const uint8 doorFlag = (uint8)CCarEnterExit::ComputeDoorFlag(car, m_vehDoor, true);
+		if(IsPlayer()){
+			static uint32 lastEnterLog;
+			uint32 now = CTimer::GetTimeInMilliseconds();
+			if(now - lastEnterLog >= 500){
+				bool doorReady = doorFlag ? CCarEnterExit::IsCarDoorReady(car, m_vehDoor) : true;
+				REVC_LOG_INFO("Vehicle entry: SetEnterCar(door=%d flag=%d) control=%d health=%.0f in=%d out=%d jacked=%d anim=%d ready=%d model=%d",
+					m_vehDoor, doorFlag, IsPedInControl(), m_fHealth,
+					car->m_nGettingInFlags, car->m_nGettingOutFlags,
+					car->bIsBeingCarJacked, m_pVehicleAnim != nil, doorReady, car->GetModelIndex());
+				lastEnterLog = now;
+			}
+		}
 		if (!IsPedInControl() || m_fHealth <= 0.0f
 			|| doorFlag & car->m_nGettingInFlags || doorFlag & car->m_nGettingOutFlags
 			|| car->bIsBeingCarJacked || m_pVehicleAnim
