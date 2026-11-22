@@ -4,6 +4,7 @@
 #include "Particle.h"
 #include "RpAnimBlend.h"
 #include "Ped.h"
+#include "PlayerPed.h"
 #include "Wanted.h"
 #include "AnimBlendAssociation.h"
 #include "AnimBlendClumpData.h"
@@ -5804,6 +5805,8 @@ CPed::SetDuck(uint32 time, bool sth)
 		if (!duckAssoc) return; // stay upright if this SA bank has no crouch clip
 		duckAssoc->flags &= ~ASSOC_FADEOUTWHENDONE;
 		bIsDucking = true;
+		if (IsPlayer() && ((CPlayerPed*)this)->GetPlayerData())
+			((CPlayerPed*)this)->GetPlayerData()->m_vecFightMovement = CVector2D(0.0f, 0.0f);
 		m_duckTimer = CTimer::GetTimeInMilliseconds() + time;
 	} else {
 		duckAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_ID_DUCK_COWER);
@@ -5832,8 +5835,10 @@ CPed::Duck(void)
 			if(GetCrouchReloadAnim(weapon))
 				crouchAnim = RpAnimBlendClumpGetAssociation(GetClump(), GetCrouchReloadAnim(weapon));
 		}
+		if (!crouchAnim && IsPlayer() && IsPedInControl())
+			crouchAnim = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_WEAPON_CROUCH, 4.0f);
 		if (!crouchAnim) {
-			bIsDucking = false;
+			ClearDuck(false);
 #if defined FIX_BUGS || defined FREE_CAM
 			if (IsPlayer())
 				bCrouchWhenShooting = false;
@@ -5845,19 +5850,26 @@ CPed::Duck(void)
 void
 CPed::ClearDuck(bool clearTimer)
 {
-	CAnimBlendAssociation *animAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_ID_DUCK_COWER);
-	if (!animAssoc) {
-		animAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_ID_DUCK_COWER);
+	// Both poses can be present during a transition. Fade each one rather than
+	// leaving the weapon crouch active when the cower association also exists.
+	const AnimationId duckAnims[] = {
+		ANIM_ID_DUCK_COWER, ANIM_ID_WEAPON_CROUCH, ANIM_ID_GUNCROUCHFWD,
+		ANIM_ID_GUNCROUCHBWD, ANIM_ID_CROUCH_ROLL_L, ANIM_ID_CROUCH_ROLL_R
+	};
+	for (int i = 0; i < ARRAY_SIZE(duckAnims); ++i) {
+		CAnimBlendAssociation *animAssoc = RpAnimBlendClumpGetAssociation(GetClump(), duckAnims[i]);
+		if (animAssoc) {
+			if (duckAnims[i] == ANIM_ID_CROUCH_ROLL_L || duckAnims[i] == ANIM_ID_CROUCH_ROLL_R)
+				animAssoc->callbackType = CAnimBlendAssociation::CB_NONE;
+			animAssoc->flags |= ASSOC_DELETEFADEDOUT;
+			animAssoc->blendDelta = -4.0f;
+		}
 	}
-	if (!animAssoc) {
-		animAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_ID_WEAPON_CROUCH);
-	}
-
-	if (animAssoc) {
-		animAssoc->flags |= ASSOC_DELETEFADEDOUT;
-		animAssoc->blendDelta = -4.0f;
-	}
+	if (IsPlayer() && ((CPlayerPed*)this)->GetPlayerData())
+		((CPlayerPed*)this)->GetPlayerData()->m_vecFightMovement = CVector2D(0.0f, 0.0f);
 	bIsDucking = false;
+	if (IsPlayer() && m_nPedState == PED_AIMGUN)
+		CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_GUN_STAND, 4.0f);
 
 	if (clearTimer) {
 		m_duckTimer = 0;

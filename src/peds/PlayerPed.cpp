@@ -2,6 +2,7 @@
 
 #include "RwHelper.h"
 #include "PlayerPed.h"
+#include "DuckMovement.h"
 #include "Wanted.h"
 #include "Fire.h"
 #include "DMAudio.h"
@@ -466,6 +467,7 @@ CPlayerPed::SetInitialState(void)
 	m_nLastPedState = PED_NONE;
 	m_animGroup = ASSOCGRP_PLAYER;
 	MoveSpeed() = 0.0f;
+	m_pPlayerData->m_vecFightMovement = CVector2D(0.0f, 0.0f);
 	m_nSelectedWepSlot = WEAPONSLOT_UNARMED;
 	m_nEvadeAmount = 0;
 	m_pEvadingFrom = nil;
@@ -488,6 +490,9 @@ CPlayerPed::SetInitialState(void)
 void
 CPlayerPed::SetRealMoveAnim(void)
 {
+	if (bIsDucking && bCrouchWhenShooting)
+		return;
+
 	// A custom style can omit movement clips. Fall back to the *same*
 	// skeleton's standard group, never to the other skeleton's dictionary.
 	AssocGroupId moveGroup = m_animGroup;
@@ -1707,6 +1712,114 @@ CPlayerPed::MovementDisabledBecauseOfTargeting(void)
 	return m_pPointGunAt && !CWeaponInfo::GetWeaponInfo(GetWeapon()->m_eWeaponType)->IsFlagSet(WEAPONFLAG_CANAIM_WITHARM);
 }
 
+// The command lives in player data rather than CPed: it is transient, and
+// changing the raw-saved ped layout would invalidate older saves.
+static void
+DuckRollFinished(CAnimBlendAssociation *, void *data)
+{
+	CPlayerPedData *playerData = (CPlayerPedData*)data;
+	playerData->m_vecFightMovement.x = 0.0f;
+}
+
+static void
+SetDuckMoveAnimSpeed(CAnimBlendAssociation *anim, float moveCommand)
+{
+	anim->speed = Max(0.6f, Abs(moveCommand));
+}
+
+void
+CPlayerPed::PlayerControlDucked(CPad *padUsed)
+{
+	CVector2D &cmd = m_pPlayerData->m_vecFightMovement;
+	// The player-controlled crouch lasts until cancelled, not for 60 seconds.
+	m_duckTimer = CTimer::GetTimeInMilliseconds() + 60000;
+	MoveSpeed() = 0.0f;
+	m_nMoveState = PEDMOVE_STILL;
+
+	// A lateral command remains latched through the whole roll. It is cleared
+	// by the finish callback, including when the association is removed early.
+	if (cmd.x != 0.0f) {
+		AnimationId rollId = cmd.x < 0.0f ? ANIM_ID_CROUCH_ROLL_L : ANIM_ID_CROUCH_ROLL_R;
+		CAnimBlendAssociation *roll = RpAnimBlendClumpGetAssociation(GetClump(), rollId);
+		if (roll && roll->IsRunning() && roll->blendDelta >= 0.0f)
+			return;
+		cmd.x = 0.0f;
+	}
+
+	CAnimBlendAssociation *crouch = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_ID_WEAPON_CROUCH);
+	if (!crouch || crouch->blendAmount < 0.99f)
+		return;
+
+	float x = Clamp(padUsed->GetPedWalkLeftRight() / 128.0f, -1.0f, 1.0f);
+	float y = Clamp(padUsed->GetPedWalkUpDown() / 128.0f, -1.0f, 1.0f);
+	float magnitude = Min(1.0f, CVector2D(x, y).Magnitude());
+	CWeaponInfo *weapon = CWeaponInfo::GetWeaponInfo(GetWeapon()->m_eWeaponType);
+	if (!padUsed->GetTarget() || weapon->m_eWeaponFire == WEAPON_FIRE_MELEE) {
+		if (magnitude > 0.0f)
+			m_fRotationDest = CGeneral::LimitRadianAngle(
+				CGeneral::GetRadianAngleBetweenPoints(0.0f, 0.0f, -x, y) - TheCamera.Orientation);
+		x = 0.0f;
+		y = -magnitude;
+	}
+
+	UpdateDuckMoveCommand(cmd.x, cmd.y, x, y, CTimer::GetTimeStep());
+
+	// Fire and reload use partial associations too. Let them finish instead of
+	// continually blending them out with the leg animation on every tick.
+	AnimationId fire = GetCrouchFireAnim(weapon);
+	AnimationId reload = GetCrouchReloadAnim(weapon);
+	if (m_nPedState == PED_ATTACK || m_nPedState == PED_FIGHT ||
+		(fire && RpAnimBlendClumpGetAssociation(GetClump(), fire)) ||
+		(reload && RpAnimBlendClumpGetAssociation(GetClump(), reload))) {
+		cmd = CVector2D(0.0f, 0.0f);
+		const AnimationId walks[] = { ANIM_ID_GUNCROUCHFWD, ANIM_ID_GUNCROUCHBWD };
+		for (int i = 0; i < ARRAY_SIZE(walks); ++i) {
+			CAnimBlendAssociation *walk = RpAnimBlendClumpGetAssociation(GetClump(), walks[i]);
+			if (walk) {
+				walk->flags |= ASSOC_DELETEFADEDOUT;
+				walk->blendDelta = -4.0f;
+			}
+		}
+		return;
+	}
+
+	if (cmd.x != 0.0f) {
+		AnimationId rollId = cmd.x < 0.0f ? ANIM_ID_CROUCH_ROLL_L : ANIM_ID_CROUCH_ROLL_R;
+		CAnimBlendAssociation *roll = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_DEFAULT, rollId, 8.0f);
+		if (roll) {
+			// The SA roll is not synchronised with the standing walk cycle.
+			roll->flags &= ~ASSOC_MOVEMENT;
+			roll->Start(0.0f);
+			roll->SetFinishCallback(DuckRollFinished, m_pPlayerData);
+		} else {
+			cmd.x = 0.0f;
+		}
+		return;
+	}
+
+	const AnimationId walkIds[] = { ANIM_ID_GUNCROUCHFWD, ANIM_ID_GUNCROUCHBWD };
+	AnimationId wanted = cmd.y < 0.0f ? ANIM_ID_GUNCROUCHFWD : ANIM_ID_GUNCROUCHBWD;
+	for (int i = 0; i < ARRAY_SIZE(walkIds); ++i) {
+		CAnimBlendAssociation *walk = RpAnimBlendClumpGetAssociation(GetClump(), walkIds[i]);
+		if (walk && (cmd.y == 0.0f || walkIds[i] != wanted)) {
+			walk->flags |= ASSOC_DELETEFADEDOUT;
+			walk->blendDelta = -4.0f;
+		}
+	}
+	if (cmd.y != 0.0f) {
+		CAnimBlendAssociation *walk = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_DEFAULT, wanted, 8.0f);
+		if (walk) {
+			// Velocity-extraction and synchronisation are distinct SA flags;
+			// this adapter conflates them in ASSOC_MOVEMENT. Keep extraction
+			// but let UpdateTimeStep use the requested playback speed.
+			walk->flags &= ~ASSOC_MOVEMENT;
+			walk->SetRun();
+			SetDuckMoveAnimSpeed(walk, cmd.y);
+			m_nMoveState = PEDMOVE_WALK;
+		}
+	}
+}
+
 void
 CPlayerPed::PlayerControlZelda(CPad *padUsed)
 {
@@ -2044,7 +2157,9 @@ CPlayerPed::ProcessControl(void)
 		case PED_AIMGUN:
 		case PED_ANSWER_MOBILE:
 			if (!RpAnimBlendClumpGetFirstAssociation(GetClump(), ASSOC_BLOCK) && !m_attachedTo) {
-				if (TheCamera.Using1stPersonWeaponMode()) {
+				if (bIsDucking && bCrouchWhenShooting && padUsed && !TheCamera.Using1stPersonWeaponMode()) {
+					PlayerControlDucked(padUsed);
+				} else if (TheCamera.Using1stPersonWeaponMode()) {
 					if (padUsed)
 						PlayerControlSniper(padUsed);
 
@@ -2064,7 +2179,8 @@ CPlayerPed::ProcessControl(void)
 					PlayerControlZelda(padUsed);
 				}
 			}
-			if (IsPedInControl() && m_nPedState != PED_ANSWER_MOBILE && padUsed)
+			if (IsPedInControl() && m_nPedState != PED_ANSWER_MOBILE && padUsed &&
+				(!bIsDucking || m_pPlayerData->m_vecFightMovement.x == 0.0f))
 				ProcessPlayerWeapon(padUsed);
 			break;
 		case PED_SEEK_ENTITY:
@@ -2150,7 +2266,8 @@ CPlayerPed::ProcessControl(void)
 			break;
 	}
 	if (padUsed && IsPedShootable() && m_nPedState != PED_ANSWER_MOBILE && m_nLastPedState != PED_ANSWER_MOBILE) {
-		ProcessWeaponSwitch(padUsed);
+		if (!bIsDucking || m_pPlayerData->m_vecFightMovement.x == 0.0f)
+			ProcessWeaponSwitch(padUsed);
 		GetWeapon()->Update(m_audioEntityId, this);
 	}
 	ProcessAnimGroups();

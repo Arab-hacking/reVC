@@ -166,6 +166,7 @@ public:
 	void ProcessAnimGroups(void);
 	void ProcessPlayerWeapon(CPad*);
 	void PlayerControlZelda(CPad*);
+	void PlayerControlDucked(CPad*);
 	bool DoesPlayerWantNewWeapon(eWeaponType, bool);
 	void PlayIdleAnimations(CPad*);
 	void RemovePedFromMeleeList(CPed*);

@@ -486,3 +486,7 @@ if(TARGET custom_archive_integration_tests)
         add_test(NAME ${handling_target} COMMAND ${handling_target})
     endforeach()
 endif()
+
+add_executable(duck_movement_tests DuckMovementTests.cpp)
+set_target_properties(duck_movement_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+add_test(NAME duck_movement_tests COMMAND duck_movement_tests)

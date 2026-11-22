@@ -738,7 +738,7 @@ CPed::SetMoveAnim(void)
 	// ground blend would override both: the walk cycle does not exist in
 	// ASSOCGRP_SWIM, so asking for it mid-stroke replaced the stroke with a
 	// standing ped's idle and the swimmer appeared to walk on the water.
-	if (m_pSwimTask || m_pClimbTask)
+	if (m_pSwimTask || m_pClimbTask || (bIsDucking && bCrouchWhenShooting))
 		return;
 
 	if (m_nMoveState == PEDMOVE_NONE) {
@@ -1625,6 +1625,12 @@ CPed::CalculateNewVelocity(void)
 	} else {
 		m_moved = m_moved * (1 / 100.0f);
 	}
+
+	// Crouch clips extract signed local movement, including lateral roll motion.
+	// The standing mouse-strafe adjustment below would rotate that displacement
+	// a second time and make backwards movement and rolls slide.
+	if (bIsDucking && bCrouchWhenShooting)
+		return;
 
 	if ((!TheCamera.Cams[TheCamera.ActiveCam].GetWeaponFirstPersonOn() && !TheCamera.Cams[0].Using3rdPersonMouseCam())
 		|| FindPlayerPed() != this || !CanStrafeOrMouseControl()) {

@@ -55,6 +55,7 @@ public:
 
 	CWanted *m_pWanted;
 	CCopPed *m_pArrestingCop;
+	// Transient on-foot input: fight and duck controls are mutually exclusive.
 	CVector2D m_vecFightMovement;
 	float m_fMoveBlendRatio;
 	// SA's sprint budget. It starts at GetFatAndMuscleModifier(STAT_MOD_TIME_CAN_RUN)
