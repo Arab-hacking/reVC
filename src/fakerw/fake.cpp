@@ -216,7 +216,10 @@ RwRaster    *RwRasterCreate(RwInt32 width, RwInt32 height, RwInt32 depth, RwInt3
 RwBool       RwRasterDestroy(RwRaster * raster) { raster->destroy(); return true; }
 RwInt32      RwRasterGetWidth(const RwRaster *raster) { return raster->width; }
 RwInt32      RwRasterGetHeight(const RwRaster *raster) { return raster->height; }
-RwInt32      RwRasterGetStride(const RwRaster *raster);
+// RwRasterGetStride has no equivalent entry point in librw - the field is
+// simply public - so this is the whole of it. It was declared and never
+// defined, which only showed up at link time on the Windows build.
+RwInt32      RwRasterGetStride(const RwRaster *raster) { return raster->stride; }
 RwInt32      RwRasterGetDepth(const RwRaster *raster) { return raster->depth; }
 RwInt32      RwRasterGetFormat(const RwRaster *raster);
 RwInt32      RwRasterGetType(const RwRaster *raster);
