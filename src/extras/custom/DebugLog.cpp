@@ -78,6 +78,160 @@ typedef BOOL (WINAPI *WriteDumpFn)(HANDLE, DWORD, HANDLE, MINIDUMP_TYPE,
     PMINIDUMP_CALLBACK_INFORMATION);
 static WriteDumpFn writeDump;
 static char dumpPath[MAX_PATH];
+
+// ---- stack walking -------------------------------------------------------
+//
+// A raw exe RVA in the log is not actionable: the address only means something
+// once it is matched against the PDB of the exact build that produced the log,
+// and that PDB is usually not at hand when the log is being read. The handlers
+// therefore resolve the crashing stack here, through the same DbgHelp that
+// writes the dump, and print module!function+offset [file:line] for every
+// frame. Everything is loaded through GetProcAddress in DebugLogInit: a crash
+// handler must not depend on an import directory the linker may have pruned.
+typedef BOOL (WINAPI *SymInitializeFn)(HANDLE, PCSTR, BOOL);
+typedef DWORD (WINAPI *SymSetOptionsFn)(DWORD);
+typedef BOOL (WINAPI *SymFromAddrFn)(HANDLE, DWORD64, PDWORD64, PSYMBOL_INFO);
+typedef BOOL (WINAPI *SymGetLineFromAddr64Fn)(HANDLE, DWORD64, PDWORD, PIMAGEHLP_LINE64);
+typedef BOOL (WINAPI *SymGetModuleInfo64Fn)(HANDLE, DWORD64, PIMAGEHLP_MODULE64);
+typedef BOOL (WINAPI *StackWalk64Fn)(DWORD, HANDLE, HANDLE, LPSTACKFRAME64, PVOID,
+    PREAD_PROCESS_MEMORY_ROUTINE64, PFUNCTION_TABLE_ACCESS_ROUTINE64,
+    PGET_MODULE_BASE_ROUTINE64, PTRANSLATE_ADDRESS_ROUTINE64);
+typedef PVOID (WINAPI *SymFunctionTableAccess64Fn)(HANDLE, DWORD64);
+typedef DWORD64 (WINAPI *SymGetModuleBase64Fn)(HANDLE, DWORD64);
+typedef BOOL (WINAPI *SymSetSearchPathFn)(HANDLE, PCSTR);
+typedef DWORD (WINAPI *SymGetOptionsFn)(void);
+
+static SymInitializeFn symInitialize;
+static SymSetOptionsFn symSetOptions;
+static SymFromAddrFn symFromAddr;
+static SymGetLineFromAddr64Fn symGetLineFromAddr64;
+static SymGetModuleInfo64Fn symGetModuleInfo64;
+static StackWalk64Fn stackWalk64;
+static SymFunctionTableAccess64Fn symFunctionTableAccess64;
+static SymGetModuleBase64Fn symGetModuleBase64;
+static SymSetSearchPathFn symSetSearchPath;
+static SymGetOptionsFn symGetOptions;
+static bool symbolsReady;
+static volatile LONG stackLogCount;
+
+// A static buffer for the symbol: the handler runs while the heap may already
+// be corrupt, so it must not allocate.
+static char symbolBuffer[sizeof(SYMBOL_INFO) + MAX_SYM_NAME * sizeof(TCHAR) + 64];
+
+static const char *
+DebugLogBaseName(const char *path)
+{
+    const char *leaf = path;
+    if(path == nil)
+        return "?";
+    for(const char *p = path; *p; p++)
+        if(*p == '\\' || *p == '/')
+            leaf = p + 1;
+    return leaf;
+}
+
+// Prints the frames of a crash. `context` is the state at the fault, so frame 0
+// is the instruction that faulted - the one whose address used to be the only
+// thing the log had.
+static void
+DebugLogWindowsStack(HANDLE thread, CONTEXT *context)
+{
+    if(!symbolsReady || context == nil || thread == nil)
+        return;
+    // A first-chance fault that something else handles (a probe, a guard
+    // hit inside a library) is not the crash, so the walk is not one-shot:
+    // it gives up after a few so that a fault loop cannot fill the log, and
+    // the frames of the fault that actually kills the process are in it.
+    if(InterlockedIncrement(&stackLogCount) > 4)
+        return;
+
+    // StackWalk64 advances the context it is given, so it gets a copy: the
+    // real one has to stay untouched for the handler chain and the dump.
+    CONTEXT walkContext = *context;
+    context = &walkContext;
+
+    STACKFRAME64 frame = {};
+    DWORD machine;
+#if defined(_M_X64) || defined(__x86_64__)
+    machine = IMAGE_FILE_MACHINE_AMD64;
+    frame.AddrPC.Offset = context->Rip;
+    frame.AddrPC.Mode = AddrModeFlat;
+    frame.AddrFrame.Offset = context->Rbp;
+    frame.AddrFrame.Mode = AddrModeFlat;
+    frame.AddrStack.Offset = context->Rsp;
+    frame.AddrStack.Mode = AddrModeFlat;
+#elif defined(_M_IX86) || defined(__i386__)
+    machine = IMAGE_FILE_MACHINE_I386;
+    frame.AddrPC.Offset = context->Eip;
+    frame.AddrPC.Mode = AddrModeFlat;
+    frame.AddrFrame.Offset = context->Ebp;
+    frame.AddrFrame.Mode = AddrModeFlat;
+    frame.AddrStack.Offset = context->Esp;
+    frame.AddrStack.Mode = AddrModeFlat;
+#else
+    return;
+#endif
+
+    DebugLogCrashLine("STACK:");
+    for(int depth = 0; depth < 24; depth++){
+        if(!stackWalk64(machine, GetCurrentProcess(), thread, &frame, context,
+		        nil, symFunctionTableAccess64, symGetModuleBase64, nil))
+            break;
+        if(frame.AddrPC.Offset == 0)
+            break;
+
+        // The module the frame is in: an image address is resolved to its own
+        // module, so a fault inside the renderer or a vendor DLL says so
+        // instead of looking like (or not looking like) an offset in reVC.exe.
+        char module[64];
+        module[0] = '\0';
+        IMAGEHLP_MODULE64 moduleInfo = {};
+        moduleInfo.SizeOfStruct = sizeof(moduleInfo);
+        if(symGetModuleInfo64(GetCurrentProcess(), frame.AddrPC.Offset, &moduleInfo)){
+            snprintf(module, sizeof(module), "%s", DebugLogBaseName(moduleInfo.ImageName));
+        }else{
+            HMODULE owner = nil;
+            if(GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+			        GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+			        (LPCSTR)(uintptr_t)frame.AddrPC.Offset, &owner) && owner){
+                char full[MAX_PATH] = {};
+                if(GetModuleFileNameA(owner, full, sizeof(full)))
+                    snprintf(module, sizeof(module), "%s", DebugLogBaseName(full));
+            }
+        }
+
+        // Symbol and line. A build without a PDB still yields the exported
+        // names DbgHelp can see, and the plain address when it has nothing.
+        char name[MAX_SYM_NAME + 1] = {};
+        DWORD64 displacement = 0;
+        SYMBOL_INFO *symbol = (SYMBOL_INFO*)symbolBuffer;
+        memset(symbol, 0, sizeof(symbolBuffer));
+        symbol->SizeOfStruct = sizeof(SYMBOL_INFO);
+        symbol->MaxNameLen = MAX_SYM_NAME;
+        if(symFromAddr(GetCurrentProcess(), frame.AddrPC.Offset, &displacement, symbol))
+            snprintf(name, sizeof(name), "%s", symbol->Name);
+
+        char where[160] = {};
+        DWORD lineDisplacement = 0;
+        IMAGEHLP_LINE64 line = {};
+        line.SizeOfStruct = sizeof(line);
+        if(symGetLineFromAddr64(GetCurrentProcess(), frame.AddrPC.Offset, &lineDisplacement, &line) && line.FileName)
+            snprintf(where, sizeof(where), " [%s:%lu]", DebugLogBaseName(line.FileName), (unsigned long)line.LineNumber);
+
+        char text[512];
+        if(name[0])
+            snprintf(text, sizeof(text), "  #%02d %s!%s+0x%llX%s (pc=%p)",
+			    depth, module[0] ? module : "?", name,
+			    (unsigned long long)displacement, where, (void*)(uintptr_t)frame.AddrPC.Offset);
+        else
+            snprintf(text, sizeof(text), "  #%02d %s+0x%llX%s (pc=%p)",
+			    depth, module[0] ? module : "?", (unsigned long long)frame.AddrPC.Offset,
+			    where, (void*)(uintptr_t)frame.AddrPC.Offset);
+        DebugLogCrashLine(text);
+        if(frame.AddrPC.Offset == frame.RetAddr.Offset)
+            break;
+    }
+}
 static volatile LONG reportingCrash;
 
 static void
@@ -196,6 +350,13 @@ DebugLogVectoredException(EXCEPTION_POINTERS *info)
 			operation, (void*)(uintptr_t)record->ExceptionInformation[1]);
 		DebugLogCrashLine(line);
 	}
+	// The faulting stack, symbolised. A fault that Windows recovers from only
+	// reaches the unhandled filter if nothing handles it, so the walk happens
+	// here, at the moment the fault is real; the one-shot guard keeps it to the
+	// first one, which is the one that matters.
+	if(record->ExceptionCode == EXCEPTION_ACCESS_VIOLATION ||
+	   record->ExceptionCode == EXCEPTION_IN_PAGE_ERROR)
+		DebugLogWindowsStack(GetCurrentThread(), context);
 	// Heap termination may bypass the unhandled filter. Record these when
 	// Windows delivers them to VEH; true fast-fail can still bypass all handlers.
 	if(record->ExceptionCode == 0xC0000374UL || record->ExceptionCode == 0xC0000409UL){
@@ -234,6 +395,12 @@ DebugLogUnhandledException(EXCEPTION_POINTERS *info)
 		info->ExceptionRecord->ExceptionAddress);
 	DebugLogCrashLine(line);
 	DebugLogWindowsContext(info);
+	// The vectored handler walks the stack for the faults it recognises. One
+	// that only reaches the unhandled filter - an abort raised as an exception,
+	// or a fault the filter sees after a handler declined it - still gets a
+	// stack here. The walk is bounded, so this cannot flood the log.
+	if(info->ContextRecord)
+		DebugLogWindowsStack(GetCurrentThread(), info->ContextRecord);
 	DebugLogSaveDump(info);
 	DebugLogCrashLine("---- session ended abnormally ----");
 	return EXCEPTION_CONTINUE_SEARCH;
@@ -518,6 +685,45 @@ DebugLogInit(void)
 	if(pathLength == 0 || pathLength >= sizeof(dumpPath)) dumpPath[0] = '\0';
 	HMODULE dbghelp = LoadLibraryA("dbghelp.dll");
 	if(dbghelp) writeDump = (WriteDumpFn)GetProcAddress(dbghelp, "MiniDumpWriteDump");
+	// Symbolising the crash stack needs the same DLL. Everything is resolved
+	// now, at startup: a crash handler must not call GetProcAddress or load a
+	// DLL while the process is in an unknown state.
+	if(dbghelp){
+		symInitialize = (SymInitializeFn)GetProcAddress(dbghelp, "SymInitialize");
+		symSetOptions = (SymSetOptionsFn)GetProcAddress(dbghelp, "SymSetOptions");
+		symGetOptions = (SymGetOptionsFn)GetProcAddress(dbghelp, "SymGetOptions");
+		symFromAddr = (SymFromAddrFn)GetProcAddress(dbghelp, "SymFromAddr");
+		symGetLineFromAddr64 = (SymGetLineFromAddr64Fn)GetProcAddress(dbghelp, "SymGetLineFromAddr64");
+		symGetModuleInfo64 = (SymGetModuleInfo64Fn)GetProcAddress(dbghelp, "SymGetModuleInfo64");
+		stackWalk64 = (StackWalk64Fn)GetProcAddress(dbghelp, "StackWalk64");
+		symFunctionTableAccess64 = (SymFunctionTableAccess64Fn)GetProcAddress(dbghelp, "SymFunctionTableAccess64");
+		symGetModuleBase64 = (SymGetModuleBase64Fn)GetProcAddress(dbghelp, "SymGetModuleBase64");
+		symSetSearchPath = (SymSetSearchPathFn)GetProcAddress(dbghelp, "SymSetSearchPath");
+		if(symInitialize && symSetOptions && symFromAddr && symGetLineFromAddr64 &&
+		   symGetModuleInfo64 && stackWalk64 && symFunctionTableAccess64 && symGetModuleBase64){
+			// UNDNAME so the frames read as C++ names. The PDB is searched next
+			// to the EXE, which is where the build puts it; a run without one
+			// still resolves exports and module+offset.
+			symSetOptions((symGetOptions ? symGetOptions() : 0) |
+				SYMOPT_UNDNAME | SYMOPT_DEFERRED_LOADS | SYMOPT_LOAD_LINES);
+			// The working directory changes during startup, so the search path is
+			// pinned to the executable's own folder at init time.
+			char exePath[MAX_PATH] = {};
+			DWORD exeLen = GetModuleFileNameA(nil, exePath, sizeof(exePath));
+			if(exeLen > 0 && exeLen < sizeof(exePath)){
+				char *slash = strrchr(exePath, '\\');
+				if(slash)
+					slash[1] = '\0';
+				else
+					exePath[0] = '\0';
+				if(symSetSearchPath)
+					symSetSearchPath(GetCurrentProcess(), exePath);
+			}
+			symbolsReady = symInitialize(GetCurrentProcess(), nil, TRUE) != FALSE;
+			DebugLog::Write("INFO", nil, 0, nil, "Crash stacks: %s",
+				symbolsReady ? "symbolised (keep the matching PDB next to the EXE)" : "not symbolised");
+		}
+	}
 	DebugLog::Write("INFO", nil, 0, nil, "Crash dump %s: %s (keep matching EXE/PDB)",
 		writeDump ? "enabled" : "unavailable", dumpPath);
 	ULONG stackReserve = 64 * 1024;

@@ -5243,6 +5243,11 @@ CCustomModels::EnsureVehicleTxdLoaded(void)
 			// mirrors depending on where each one points, so the same lamp read
 			// blue on one side and yellow on the other.
 			RwTexture *borrowed = nil;
+#ifdef CUSTOM_BPC_TEXDB
+			// Only the TexDB path holds the .btx payloads in a form that can be
+			// handed to the GPU directly, so a non-TexDB build (D3D9) has no
+			// PreparedRawBtx and no way to rebuild a missing map: it draws the
+			// sky instead, which is what it did before this borrowing existed.
 			for(const char *alt : {"vehicleenvmap128", "xvehicleenv128"}){
 				const std::string altLow = ToLower(alt);
 				const CustomSource *altSrc = FindSource(customBtx, altLow);
@@ -5261,6 +5266,7 @@ CCustomModels::EnsureVehicleTxdLoaded(void)
 					break;
 				}
 			}
+#endif
 			if(borrowed){
 				RwTexDictionaryAddTexture(def->texDict, borrowed);
 			}else{
