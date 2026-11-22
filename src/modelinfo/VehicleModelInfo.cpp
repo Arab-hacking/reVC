@@ -727,6 +727,46 @@ CVehicleModelInfo::CloneSAWheelMeshes(RwFrame **wheelFrames, int32 numWheels)
 }
 #endif // SA_VEHICLE_MODELS
 
+// Any atomic without a frame is a clump that will crash on its first clone:
+// librw reads the frame of every atomic to re-parent it into the clone. The
+// hierarchy preprocess keeps model geometry attached to the clump root rather
+// than leaving it on a frame that is about to be destroyed, but a converted
+// model can reach the same state through a path this code does not know about,
+// so the finished clump is checked once here. An atomic that is still
+// frame-less is put on the root so the model is usable, and saying so in the
+// log is what turns a silent frame leak into something that can be fixed.
+struct FramelessAtomicCheck {
+	RpClump *clump;
+	const char *model;
+	int repaired;
+};
+
+static RpAtomic*
+RepairFramelessAtomicCB(RpAtomic *atomic, void *data)
+{
+	FramelessAtomicCheck *check = (FramelessAtomicCheck*)data;
+	if(atomic == nil || RpAtomicGetFrame(atomic) != nil)
+		return atomic;
+	RwFrame *root = RpClumpGetFrame(check->clump);
+	if(root == nil)
+		return atomic;
+	RpAtomicSetFrame(atomic, root);
+	check->repaired++;
+	return atomic;
+}
+
+static void
+RepairFramelessAtomics(RpClump *clump, const char *model)
+{
+	if(clump == nil)
+		return;
+	FramelessAtomicCheck check = { clump, model, 0 };
+	RpClumpForAllAtomics(clump, RepairFramelessAtomicCB, &check);
+	if(check.repaired)
+		REVC_LOG_WARNING("Vehicle model %s: %d atomic(s) had lost their frame; re-attached to the clump root",
+			model ? model : "unknown", check.repaired);
+}
+
 void
 CVehicleModelInfo::SetClump(RpClump *clump)
 {
@@ -738,6 +778,10 @@ CVehicleModelInfo::SetClump(RpClump *clump)
 	SetAtomicRenderCallbacks();
 	SetFrameIds(GetVehicleDesc(m_nVehicleType));
 	PreprocessHierarchy(m_bSAHierarchy);
+	// PreprocessHierarchy may clone wheel meshes and removes frames, so the
+	// integrity check happens after it, on the hierarchy that will be cloned
+	// for every instance.
+	RepairFramelessAtomics(clump, GetModelName());
 	FindEditableMaterialList();
 	SetEnvironmentMap();
 	// SA calls this from SetClump: the clump is the only place the plate
