@@ -228,7 +228,9 @@ DebugLogWindowsStack(HANDLE thread, CONTEXT *context)
 			    depth, module[0] ? module : "?", (unsigned long long)frame.AddrPC.Offset,
 			    where, (void*)(uintptr_t)frame.AddrPC.Offset);
         DebugLogCrashLine(text);
-        if(frame.AddrPC.Offset == frame.RetAddr.Offset)
+        // Repeating addresses mean the walker is stuck (a corrupt frame chain);
+        // stop rather than print the same frame until the depth limit.
+        if(frame.AddrPC.Offset == frame.AddrReturn.Offset)
             break;
     }
 }
