@@ -269,7 +269,11 @@ CVehicleAnimGroup::InitFromData(const char *line)
 	int32 flags[18] = { 0 };
 
 	const int32 n = sscanf(line,
-		"%*s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d"
+		// 3 fields (id, first group, second group) + the 18 per-animation flags.
+		// This used to carry a 22nd %d: one conversion more than there are
+		// arguments, so sscanf ran off the end of the varargs list on every ^
+		// line and wrote through whatever it found there.
+		"%*s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d"
 		"\t%f\t%f\t%f\t%f\t%f"
 		"\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f"
 		"\t%d",
