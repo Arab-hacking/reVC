@@ -90,7 +90,7 @@ RwFrame *RwFrameTransform(RwFrame * frame, const RwMatrix * m, RwOpCombineType c
 RwFrame *RwFrameOrthoNormalize(RwFrame * frame) { return frame; }
 RwFrame *RwFrameSetIdentity(RwFrame * frame) { frame->matrix.setIdentity(); frame->updateObjects(); return frame; }
 //RwFrame *RwFrameCloneHierarchy(RwFrame * root);
-//RwBool RwFrameDestroyHierarchy(RwFrame * frame);
+RwBool RwFrameDestroyHierarchy(RwFrame *frame) { frame->destroyHierarchy(); return true; }
 RwFrame *RwFrameForAllChildren(RwFrame * frame, RwFrameCallBack callBack, void *data)
 	{ return frame->forAllChildren(callBack, data); }
 RwFrame *RwFrameRemoveChild(RwFrame * child) { child->removeChild(); return child; }
