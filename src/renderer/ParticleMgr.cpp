@@ -3,6 +3,10 @@
 #include "main.h"
 #include "FileMgr.h"
 #include "ParticleMgr.h"
+#ifdef CUSTOM_MODELS
+#include <vector>
+#include "CustomModels.h"
+#endif
 
 cParticleSystemMgr mod_ParticleSystemManager;
 
@@ -21,27 +25,62 @@ void cParticleSystemMgr::Initialise()
 		m_aParticles[i].m_pParticles = nil;
 }
 
+// SA cParticleSystemMgr::LoadParticleData (0x5BE070).
+//
+// The table is a fixed set of tab separated columns per particle type, read in
+// order, so the parser is positional rather than keyed. It used to index
+// straight into work_buff without ever checking that the file had been read:
+// the archive supplies data/particle.cfg and the VC folder does not have to
+// have a DATA\PARTICLE.CFG at all, so a missing file left work_buff full of
+// zeroes and this loop walked off the end of it looking for a newline. Hence
+// the assertion at lineLength < 500 instead of a particle table.
 void cParticleSystemMgr::LoadParticleData()
 {
-	CFileMgr::SetDir("DATA");
-	CFileMgr::LoadFile(ParticleFilename, work_buff, ARRAY_SIZE(work_buff), "r");
-	CFileMgr::SetDir("");
-	
+	// Same two sources, in the same order, as every other data table in this
+	// build: the archive first, the loose folder as the fallback.
+	char *data = nil;
+	int32 size = 0;
+
+#ifdef CUSTOM_MODELS
+	std::vector<uint8> archived;
+	if(CCustomModels::ReadCommonDataFile("data/particle.cfg", archived) && !archived.empty()){
+		archived.push_back('\0');
+		data = (char *)archived.data();
+		size = (int32)archived.size() - 1;
+	}
+#endif
+
+	if(data == nil){
+		CFileMgr::SetDir("DATA");
+		ssize_t loaded = CFileMgr::LoadFile(ParticleFilename, work_buff, ARRAY_SIZE(work_buff) - 1, "r");
+		CFileMgr::SetDir("");
+
+		if(loaded <= 0){
+			REVC_LOG_ERROR("particle data: %s is missing; every particle keeps the defaults",
+			               ParticleFilename);
+			return;
+		}
+		work_buff[loaded] = '\0';
+		data = (char *)work_buff;
+		size = (int32)loaded;
+	}
+
 	tParticleSystemData *entry = nil;
 	int32 type = PARTICLE_FIRST;
-	
-	char *lineStart = (char *)work_buff;
-	char *lineEnd = lineStart + 1;
+
+	char *lineStart = data;
+	char *end = data + size;
 	
 	char line[500];
 	char delims[4];
 
-	while ( true )
+	// One pass per line. The terminator is the newline, the end of the data, or
+	// the terminator byte LoadFile wrote - whichever comes first, so a file
+	// without a trailing newline does not run past its own buffer.
+	while ( lineStart < end )
 	{
-		ASSERT(lineStart != nil);
-		ASSERT(lineEnd != nil);
-		
-		while ( *lineEnd != '\n' )
+		char *lineEnd = lineStart;
+		while ( lineEnd < end && *lineEnd != '\n' )
 			++lineEnd;
 		
 		int32 lineLength = lineEnd - lineStart;
@@ -49,8 +88,18 @@ void cParticleSystemMgr::LoadParticleData()
 		// CRs are left untouched. we assume every line ends in one
 		lineLength--;
 #endif
-		
-		ASSERT(lineLength < 500);
+
+		if(lineLength >= (int32)sizeof(line)){
+			REVC_LOG_WARNING("particle data: line longer than %d characters, skipped",
+			                 (int32)sizeof(line) - 1);
+			lineStart = lineEnd + 1;
+			continue;
+		}
+
+		// Files checked out on Windows carry CRLF, and the terminator check
+		// below is an exact compare, so the CR has to go before it.
+		while ( lineLength > 0 && (lineStart[lineLength - 1] == '\r' || lineStart[lineLength - 1] == ' ') )
+			lineLength--;
 
 		strncpy(line, lineStart, lineLength);
 		
@@ -71,14 +120,26 @@ void cParticleSystemMgr::LoadParticleData()
 			
 			do
 			{	
+				// A line that does not start with a particle name has nothing
+				// to attach to. SA indexes m_aParticles blindly because its
+				// file always starts each line with a name; this build reads a
+				// table it did not ship, so it checks.
+				if ( entry == nil && param != CFG_PARAM_PARTICLE_TYPE_NAME )
+					break;
+
 				switch ( param )
 				{
 					case CFG_PARAM_PARTICLE_TYPE_NAME:
-						ASSERT(type < MAX_PARTICLES);
+						if(type >= MAX_PARTICLES){
+							REVC_LOG_WARNING("particle data: more than %d particle types, the rest is ignored",
+							                 (int32)MAX_PARTICLES);
+							return;
+						}
 						entry = &m_aParticles[type];
 						ASSERT(entry != nil);
 						entry->m_Type = (tParticleType)type++;
-						strcpy(entry->m_aName, value);
+						strncpy(entry->m_aName, value, sizeof(entry->m_aName) - 1);
+						entry->m_aName[sizeof(entry->m_aName) - 1] = '\0';
 						break;
 
 					case CFG_PARAM_RENDER_COLOURING_R:
@@ -252,8 +313,7 @@ void cParticleSystemMgr::LoadParticleData()
 			} while ( value != nil );
 		}
 		
-		lineEnd++;
-		lineStart = lineEnd;
-		lineEnd++;
+		// Next line. A file whose last line has no newline simply ends here.
+		lineStart = lineEnd < end ? lineEnd + 1 : end;
 	}
 }

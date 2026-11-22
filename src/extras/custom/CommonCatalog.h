@@ -103,7 +103,11 @@ inline bool CanReadData(const std::string &path)
            path == "data/weapon.dat" || path == "data/melee.dat" ||
            path == "data/surface.dat" || path == "data/ped.dat" ||
            path == "data/object.dat" || path == "data/vehicles.ide" ||
-           path == "data/peds.ide" || path == "data/weapons.ide";
+           path == "data/peds.ide" || path == "data/weapons.ide" ||
+           // The archive ships the SA particle table. Without it the loader
+           // has nothing to read and the renderer falls back to defaults for
+           // every effect, which is what left smoke and fire invisible.
+           path == "data/particle.cfg";
 }
 
 } // namespace commoncatalog
