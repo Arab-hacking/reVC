@@ -1494,15 +1494,9 @@ static bool
 ShouldShowMenuBackOverlay(int32 screen)
 {
 	return screen != MENUPAGE_START_MENU &&
-	       screen != MENUPAGE_SAVING_IN_PROGRESS &&
-	       screen != MENUPAGE_DELETING_IN_PROGRESS &&
 	       screen != MENUPAGE_OUTRO &&
-	       screen != MENUPAGE_LOAD_SLOT_CONFIRM &&
-	       screen != MENUPAGE_DELETE_SLOT_CONFIRM &&
-	       screen != MENUPAGE_SAVE_OVERWRITE_CONFIRM &&
 	       screen != MENUPAGE_NEW_GAME_RELOAD &&
-	       screen != MENUPAGE_EXIT &&
-	       screen != MENUPAGE_SAVE_CHEAT_WARNING;
+	       screen != MENUPAGE_EXIT;
 }
 
 static void

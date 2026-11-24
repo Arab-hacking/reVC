@@ -137,27 +137,6 @@ struct sRadarTrace
 	uint16 m_eRadarSprite; // eRadarSprite
 };
 
-// Either that was a thing while saving/loading blips, or they added sizes of each field one by one. I want to do the former.
-#pragma pack(push,1)
-struct sRadarTraceSave
-{
-	uint32 m_nColor;
-	float m_Radius;
-	uint32 m_eBlipType; // eBlipType
-	int32 m_nEntityHandle;
-	CVector2D m_vec2DPos;
-	CVector m_vecPos;
-	uint16 m_BlipIndex;
-	bool m_bDim;
-	bool m_bInUse;
-	bool m_bShortRange;
-	bool m_unused;
-	int16 m_wScale;
-	uint16 m_eBlipDisplay; // eBlipDisplay
-	uint16 m_eRadarSprite; // eRadarSprite
-};
-#pragma pack(pop)
-
 // Values for screen space
 #define RADAR_LEFT (40.0f)
 #define RADAR_BOTTOM (40.0f)
@@ -269,10 +248,8 @@ public:
 	static uint32 GetRadarTraceColour(uint32 color, bool bright);
 	static void Initialise();
 	static float LimitRadarPoint(CVector2D &point);
-	static void LoadAllRadarBlips(uint8 *buf, uint32 size);
 	static void LoadTextures();
 	static void RemoveRadarSections();
-	static void SaveAllRadarBlips(uint8*, uint32*);
 	static void SetBlipSprite(int32 i, int32 icon);
 	static int32 SetCoordBlip(eBlipType type, CVector pos, uint32, eBlipDisplay);
 	static int32 SetEntityBlip(eBlipType type, int32, uint32, eBlipDisplay);

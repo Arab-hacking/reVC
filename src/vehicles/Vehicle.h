@@ -723,11 +723,6 @@ public:
 	// both thin wrappers over the same solver.
 	void UpdateTractorLink(bool applyFullVelocityAtHookUp, bool applyDistToSpeed);
 	void UpdateTrailerLink(bool applyFullVelocityAtHookUp, bool applyDistToSpeed);
-#ifdef COMPATIBLE_SAVES
-	virtual void Save(uint8*& buf);
-	virtual void Load(uint8*& buf);
-#endif
-
 	eVehicleAppearance GetVehicleAppearance(void);
 
 	// ---- Optical lights (SA CVehicle::DoVehicleLights family) -----------

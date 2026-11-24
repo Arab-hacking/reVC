@@ -280,7 +280,6 @@ enum Config {
 
 #define FIX_BUGS		// fixes bugs that we've came across during reversing. You can undefine this only on release builds.
 #define MORE_LANGUAGES		// Add more translations to the game
-#define COMPATIBLE_SAVES // this allows changing structs while keeping saves compatible, and keeps saves compatible between platforms
 #define LOAD_INI_SETTINGS // as the name suggests. fundamental for CUSTOM_FRONTEND_OPTIONS
 
 #define NO_MOVIES	// add option to disable intro videos
@@ -386,7 +385,6 @@ enum Config {
 #undef PC_WATER
 #define WATER_CHEATS
 
-//#define USE_CUTSCENE_SHADOW_FOR_PED // requires COMPATIBLE_SAVES
 //#define DISABLE_CUTSCENE_SHADOWS
 
 // Pad
@@ -492,11 +490,6 @@ enum Config {
 	#undef NO_ISLAND_LOADING
 	#undef PS2_AUDIO_CHANNELS
 	#undef EXTENDED_OFFSCREEN_DESPAWN_RANGE
-#endif
-
-// if these defines are enabled saves are not vanilla compatible without COMPATIBLE_SAVES
-#ifndef COMPATIBLE_SAVES
-#undef USE_CUTSCENE_SHADOW_FOR_PED
 #endif
 
 #ifdef GTA_HANDHELD

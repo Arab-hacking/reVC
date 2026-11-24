@@ -129,7 +129,7 @@ const char *GetMacOSUserFilesFolder();
 #ifndef _WIN32
 #define DeleteFile unlink
 
-// Needed for save games
+// Windows-compatible date/time structure used by platform date formatting.
 struct SYSTEMTIME {
     RwUInt16 wYear;
     RwUInt16 wMonth;

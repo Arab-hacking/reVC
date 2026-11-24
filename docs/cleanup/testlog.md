@@ -2,17 +2,19 @@
 
 ## 0. Условия проверки
 
-Сборка в этом окружении невозможна: CMake/premake не настраиваются (нет системных
-dev-пакетов OpenAL, mpg123, GL, X11). Поэтому gate — два скрипта:
+Полная сборка приложения в этом окружении не выполняется: отсутствуют системные dev-пакеты
+OpenAL, mpg123, GL и X11. Для статической проверки используются скрипты `.harness/`:
 
 | Скрипт | Что делает | Результат |
 |---|---|---|
-| `/tmp/check.sh` | компилирует каждый `.cpp` из `src/` в отдельный TU (`g++ -c -O0 -w -std=c++11 -DRW_GL3 -DLIBRW -DCMAKE_NO_AUTOLINK -DUSE_OUR_VERSIONING -DNDEBUG -DAUDIO_OAL`, все `src/**` в `-I`) | **OK: 225 FAIL: 0** (этап E) |
-| `/tmp/linkcheck.sh` | собирает undefined-символы всех TU и вычитает определённые в TU и в libc/libstdc++ | только внутренние символы librw/libc (не входят в harness), reVC-символов нет |
-| `/tmp/wallcheck.sh` (с этапа E) | те же TU с `-Wall -Wno-unused-parameter …`, оставляет только `unused variable` / `set but not used`; сравнивается с прогоном по `git archive HEAD` | новых warning'ов относительно предыдущего этапа нет |
+| `.harness/check.sh` | компилирует каждый `.cpp` из `src/` в отдельный TU (`g++ -c -O0 -w -std=c++11 -DRW_GL3 -DLIBRW -DCMAKE_NO_AUTOLINK -DUSE_OUR_VERSIONING -DNDEBUG -DAUDIO_OAL`, все `src/**` в `-I`) | **OK: 217 FAIL: 0** после F, шаг 3b |
+| `.harness/linkcheck.sh` | собирает undefined-символы TU и вычитает определения и libc/libstdc++ | **0 reVC-looking** после F, шаг 3b |
+| `.harness/dangling.py src` | сканирует dangling `if`/`for`/`while` после удаления тел | **0** после F, шаг 3b |
+| `.harness/wallcheck.sh` | выдаёт unused-variable warnings по указанным TU | 33 изменённых `.cpp` прогнаны; warning-only результат не сравнивался с базовой ревизией |
+| `cmake -S tests -B …` | настройка standalone C++ test suite | не запущено: в окружении нет исполняемого `cmake` (`command not found`) |
 
-Оба скрипта живут в `/tmp` и в репозиторий не попадают. Для приёмки нужна настоящая
-сборка обеими системами (premake + MSVC, CMake + GCC/Clang) — см. §6.1 задания.
+Harness не заменяет приёмку настоящей сборкой обеими системами (premake + MSVC,
+CMake + GCC/Clang) — см. §6.1 задания. Скрипты harness не входят в git.
 
 Прогон по этапам:
 
@@ -285,7 +287,7 @@ NPC-ветви, добить линковку (`linkcheck.sh` → 0 пропущ
 
 | Система | Где вычищалось | Что осталось |
 |---|---|---|
-| `CCarAI` (миссии `MISSION_*`, `DRIVINGSTYLE_*`, `SteerAI*`, `Add*Occupants`, `TellOccupantsToLeaveCar`, `FindPoliceCar*`) | `AutoPilot.{h,cpp}` (`eCarMission` и поля остались как данные сейва), `Vehicle.cpp`, `Automobile.cpp`, `Boat.cpp`, `Bike.cpp`, `Weapon.cpp` (разгон `PLOUGH_THROUGH`), `Streaming.cpp` (`StreamVehiclesAndPeds` лишился цикла по моделям), `AudioLogic.cpp` (`STATUS_SIMPLE` ×4) | `AutoPilot` как структура — только `Vehicle::Save/Load` |
+| `CCarAI` (миссии `MISSION_*`, `DRIVINGSTYLE_*`, `SteerAI*`, `Add*Occupants`, `TellOccupantsToLeaveCar`, `FindPoliceCar*`) | `AutoPilot.{h,cpp}` (`eCarMission` и поля остались данными; `AutoPilot.cpp` удалён на F-3b как сериализационный), `Vehicle.cpp`, `Automobile.cpp`, `Boat.cpp`, `Bike.cpp`, `Weapon.cpp` (разгон `PLOUGH_THROUGH`), `Streaming.cpp` (`StreamVehiclesAndPeds` лишился цикла по моделям), `AudioLogic.cpp` (`STATUS_SIMPLE` ×4) | `AutoPilot.h` хранит структуру до F-8: конструктор транспорта и сброс мёртвого водителя в `PedFight.cpp` используют её поля |
 | `CTheCarGenerators` / `CPathFind` / `ThePaths` | `Game.cpp` (`Init`, `Process`, `ReInit`, `Shutdown`, `LoadPathFindData`), `re3.cpp` (дебаг-переменные), `Zones.{h,cpp}` (`CZoneInfo`, `ZoneInfoArray`, `TotalNumberOfZoneInfos`, `zoneinfoDay/Night`), `FileLoader.cpp` (`LoadPathFindData`, секции ZONE/CULL/OCCL/PICK/PATH в `LoadScene`), `Streaming.cpp` (`LoadAllRequestedModels`-независимые статики `ms_currentPedGrp` и т.п.), `Zones.cpp`, `Renderer.cpp`, `main.cpp` (список `paths.ipl`/`navig.zon`/`info.zpl`), `Pad.cpp` (`gbShowPedPaths/CarPaths/CarPathsLinks`), `World.cpp` (`RemoveFallenCars` → удаление), `Ped.cpp` (`PositionPedOutOfCollision` без `FindNodeClosestToCoors`), `GenericGameStorage.cpp`/`MemoryCard.cpp` (блоки `CTheZones::Save/Load` без path-данных) | ничего |
 | Random heli/plane (`CHeli`, `CPlane`, `ProcessJumbo*`, `AIRTRAIN`, `CPlaneTrails`, `CPlaneBanners`, `SpecialHeliPreRender`, `InitHelis/Planes`, `UpdateHelis/Planes`) | `Game.cpp`, `Renderer.cpp`, `Weapon.cpp` (4 × `TestBulletCollision`), `ProjectileInfo.cpp`, `BulletInfo.cpp`, `main.cpp`, `AudioLogic.cpp` + `AudioManager.h`, `Fluff.{h,cpp}`, `Vehicle.cpp` (`IsVehiclePointerValid`), `re3.cpp`, `Streaming.cpp` (запрос `MI_CHOPPER` по розыску), `Boat.cpp` (`Predator`-блок), `Automobile.cpp` | `eHeliNodes`/`ePlaneNodes` в `VehicleModelInfo.h`, `m_bIsHeli`/`m_bIsPlane`, `IsRealHeli()`-физика в `Automobile.cpp`, `CSmokeTrails`/`CEscalators` в `Fluff.cpp` (читаются `Pad.cpp` и аудио), `CEscalator`-тесты в `tests/CMakeLists.txt` |
 | `SpecialPlateHandler` | `Boat.{cpp,h}` (`m_nPoliceShoutTimer`), `Vehicle.cpp` | ничего |
@@ -316,8 +318,9 @@ NPC-ветви, добить линковку (`linkcheck.sh` → 0 пропущ
 - **Упавшие сущности.** `CWorld::RemoveFallenCars`/`RemoveFallenPeds`: пустая (без водителя-игрока) машина или пед ниже
   `MAP_Z_LOW_LIMIT` удаляются (`Remove` + `delete`); машина игрока не трогается. Раньше телепорт на ближайший узел
   пути (`WorldRecovery.h`) — путей нет, см. `decisions.md` §3.3.
-- **`VehicleCreatedBy`** (`RANDOM/MISSION/PARKED/PERMANENT`) остаётся как данные: читается в `Pools.cpp`, `World.cpp`,
-  `Ped.cpp`, `Automobile.cpp`, `Bike.cpp`, `Boat.cpp`, `CarEnterExit.cpp`, `Vehicle.cpp` (сейв).
+- **`VehicleCreatedBy`** (`RANDOM/MISSION/PARKED/PERMANENT`) остаётся как runtime-данные: читается в `World.cpp`,
+  `Ped.cpp`, `Automobile.cpp`, `Bike.cpp`, `Boat.cpp` и `Vehicle.cpp`; сериализация, которая его читала/писала,
+  удалена на F-3b.
 - **Константы винта лодки** `PLANE_MIN/STD/MAX_PROP_SPEED` в `Boat.cpp` переименованы в `STD/MAX_PROP_SPEED`
   (минимальная не использовалась — удалена).
 - **RC-режим** (`CRemote`, `m_pRemoteVehicle`, `m_bInRemoteMode`, `BlowUpRCBuggy`) оставлен по §3.10;
@@ -356,8 +359,8 @@ NPC-ветви, добить линковку (`linkcheck.sh` → 0 пропущ
   SWAT/FBI/армии по `CWanted::Are*Required` — уходит на этапе F вместе с `Wanted.cpp`.
 - `Wanted.cpp::CountPolice`-подсчёт машин по `IsPoliceVehicleModel` — F.
 - `Cam.cpp` `pStoredCopPed`/`ARRESTCAM_*` — камера ареста, F.
-- Раскладка сейва: бит 0 флагов машины свободен, битовые поля `CPed`/`CVehicle` сжаты — сам сейв удаляется на F,
-  `SAVE_VERSION` не поднимался.
+- Раскладка сейва: бит 0 флагов машины свободен, битовые поля `CPed`/`CVehicle` были сжаты на E; весь сейв
+  удалён на F-3b, вместе с `SAVE_VERSION`.
 - `codewarrior/reVC.mcp.xml` (CodeWarrior-проект) всё ещё перечисляет файлы, удалённые на B–E (`Script.cpp`,
   `Population.cpp`, `CarAI.cpp`, `Heli.cpp`…). Это не одна из систем сборки §6.1 (premake/CMake), файлы там
   перечислены списком — почистить на H вместе с `main.cpp`-списком `PEDSTATS.DAT`/`PEDGRP.DAT`.
@@ -391,3 +394,68 @@ NPC-ветви, добить линковку (`linkcheck.sh` → 0 пропущ
 | `peds/PedFight.cpp:3086` | `if (GetVehicleAppearance() == AUTOMOBILE) { }` — пустой блок: на D-5 вместе с `CCarCtrl::SwitchVehicleToRealPhysics` ушёл и сброс автопилота умирающего водителя | `if (… == AUTOMOBILE && pDriver == this) { AutoPilot.m_nCarMission = MISSION_NONE; m_nCruiseSpeed = 0; m_nTempAction = TEMPACT_HANDBRAKESTRAIGHT; m_nTimeTempAction = now + 2000; }` — без `STATUS_SIMPLE`/`SwitchVehicleToRealPhysics` (их больше нет). На F блок уходит вместе с `CAutoPilot` (§2.4 патча) — тогда зафиксировать поведение машины с мёртвым водителем |
 
 `check.sh` для обоих файлов — OK 2 / FAIL 0.
+
+### 7.9. Этап F, §5 шаг 3 — удаление подсистемы сейвов (3a + 3b)
+
+#### Удалённые `.cpp` — число исходных строк до удаления
+
+| Файл | Строк |
+|---|---:|
+| `save/MemoryCard.cpp` (3a, PS2) | 3 070 |
+| `core/Frontend_PS2.cpp` (3a) | 3 019 |
+| `control/AutoPilot.cpp` | 93 |
+| `peds/PlayerPedData.cpp` | 152 |
+| `save/Date.cpp` | 91 |
+| `save/GenericGameStorage.cpp` | 827 |
+| `save/PCSave.cpp` | 218 |
+| `core/MenuScreens.cpp` (неиспользуемая legacy-таблица без CFO) | 355 |
+| **Итого** | **7 825** |
+
+3a также удалил `FrontendTriggers.h`, `Frontend_PS2.h`, `MemoryCard.h`; в семи оставшихся
+исходниках было удалено 544 строки PS2-веток. 3b удалил семь оставшихся файлов заголовков
+сейв-подсистемы: `Date.h`, `GenericGameStorage.h`, `PCSave.h`, `SaveBlockBounds.h`,
+`SaveBuf.h`, `SaveVersion.h`, `SavedPoolValidation.h`.
+
+#### Что удалено и что осталось
+
+- Удалены все `Save`/`Load`-методы мира, зон, радарных блипов, стриминга, пулов, pickup-ов,
+  частиц, педов/игрока, транспорта и оружия; удалены `SavePlayerInfo`/`LoadPlayerInfo`,
+  `Timer` friend-объявления `GenericSave`/`GenericLoad`, `nSaveStructSize`, save-only
+  `PlayerPedData.cpp`, и `SetupDamageAfterLoad` (единственный вызов был в `CAutomobile::Load`).
+  `CTheZones`, `CRadar`, `CParticleObject`, `CPools` и `CStreaming` сохранены как подсистемы,
+  их игровые методы не менялись.
+- Удалены `GenericGameStorage`, `PCSave`, `Date`, весь PS2 MemoryCard-фронтенд и его
+  fade/load state; в `Game.cpp` сохранён `InitialiseWhenRestarting`, но без загрузочной
+  ветки. `ReInitGameObjectVariables` по-прежнему создаёт игрока и обрабатывает камеру.
+- Удалены frontend-страницы выбора/подтверждения save/load/delete, действия для слотов,
+  рисование информации о слотах, `ProcessFileActions`, save-zone activation, `Slots[]` и
+  `PcSaveHelper`. Страница `STATS` и её пункт меню не тронуты (F, §5 шаг 7). Для mission
+  replay сохранён отдельный пустой переход `MENUPAGE_MISSION_REPLAY_TRANSITION`; он заменил
+  прежний общий экран «loading» и не содержит save/load-функций. `MENUACTION_YES/NO` оставлены
+  только для подтверждения нового старта игры.
+- Удалён неиспользуемый `MenuScreens.cpp`: проект настроен на `CUSTOM_FRONTEND_OPTIONS`,
+  рабочая таблица — `MenuScreensCustom.cpp`.
+- `TopLineEmptyFile` — sentinel файла пользовательских настроек `gta_vc.set`, а не символ
+  сейвов. Его определение перемещено в `FileMgr.cpp/.h`; оба settings-валидатора сравнивают
+  длину через `strlen`, не включая завершающий NUL.
+- Удалены 5 связанных тестов (`AndroidFreeroamSpawnTests`, `PhoneInfoNoMapCrashTests`,
+  `SaveBlockBoundsTests`, `SavedPoolValidationTests`, `ScriptSaveValidationTests`) вместе
+  с их целями CMake; `premake5.lua` больше не перечисляет `src/save/`.
+- `CZONE_SAVE_SIZE`, неиспользуемый бит 0 vehicle save flags, все `COMPATIBLE_SAVES` /
+  `SAVE_VERSION` и заголовки wire-format удалены вместе с сериализацией. Позиционные
+  игровые enum-ы не уплотнялись на этом шаге.
+
+#### Проверки и гейты после шага 3b
+
+| Проверка | До 3b (после 3a) | После 3b |
+|---|---:|---:|
+| `bash .harness/check.sh` | 223 / 0 ошибок | **217 / 0 ошибок** |
+| `bash .harness/linkcheck.sh` | 0 пропущенных reVC-символов | **0 пропущенных reVC-символов**; 217 объектных файлов, 0 ошибок компиляции |
+| `python3 .harness/dangling.py src` | 0 | **0** |
+| Ссылки на save subsystem / `SaveBuf` / `COMPATIBLE_SAVES` / `SAVE_VERSION` / `SavePlayerInfo` / `LoadPlayerInfo` в `src/` | были | **0** |
+| save/load/delete frontend actions/pages и `SAVESLOT_` | были | **0** (кроме нового старта игры и отдельного mission-replay перехода) |
+
+Поведенческие проверки §7.5 и §7.9 не выполнялись: для них нужен работающий игровой
+бинарник. В игре остаётся проверить старт нового мира, pause/options, отсутствие save/load/stats
+экрана в меню (stats screen уходит на шаг 7), mission replay если он включён, а также смерть/
+респавн/деньги/машину с мёртвым водителем; статус — **pending**, не выдаётся за подтверждённый.

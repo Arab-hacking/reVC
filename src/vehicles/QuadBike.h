@@ -53,7 +53,6 @@ public:
 	void ProcessDrivingAnims(CPed *driver, bool blend);
 	void ProcessSuspension(void);
 	void ResetSuspension(void);
-	void SetupDamageAfterLoad(void);
 	void SetupSuspensionLines(void);
 };
 

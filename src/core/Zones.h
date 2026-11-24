@@ -68,14 +68,8 @@ public:
 	static int16 FindZoneByLabelAndReturnIndex(char *name, eZoneType type);
 	static int16 FindNextZoneByLabelAndReturnIndex(char *name, eZoneType type);
 	static int16 FindAudioZone(CVector *pos);
-	static CZone *GetPointerForNavigationZoneIndex(ssize_t i) { return i == -1 ? nil : &NavigationZoneArray[i]; }
-	static ssize_t GetIndexForNavigationZonePointer(CZone *zone) { return zone == nil ? -1 : zone - NavigationZoneArray; }
 	static void AddZoneToAudioZoneArray(CZone *zone);
 	static void InitialiseAudioZoneArray(void);
-	static void SaveAllZones(uint8 *buffer, uint32 *length);
-	static void SaveOneZone(CZone *zone, uint8 **buffer, uint32 *length, eZoneType zoneType);
-	static void LoadAllZones(uint8 *buffer, uint32 length);
-	static void LoadOneZone(CZone *zone, uint8 **buffer, uint32 *length, eZoneType zoneType);
 };
 
 #endif // __GTA_ZONES_H__

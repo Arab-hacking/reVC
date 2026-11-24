@@ -133,11 +133,6 @@ public:
 		m_fCruiseSpeedMultiplier = 1.0f;
 	}
 
-#ifdef COMPATIBLE_SAVES
-	void Save(uint8*& buf);
-	void Load(uint8*& buf);
-#endif
-
 	float GetCruiseSpeed(void) { return m_nCruiseSpeed * m_fCruiseSpeedMultiplier; }
 
 };

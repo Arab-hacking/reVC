@@ -60,7 +60,6 @@
 #include "Debug.h"
 #include "Console.h"
 #include "timebars.h"
-#include "GenericGameStorage.h"
 #include "MemoryHeap.h"
 #include "debugmenu.h"
 #include "Clock.h"
@@ -243,24 +242,6 @@ DoFade(void)
 {
 	if(CTimer::GetIsPaused())
 		return;
-
-	if(JustLoadedDontFadeInYet){
-		JustLoadedDontFadeInYet = false;
-		TimeStartedCountingForFade = CTimer::GetTimeInMilliseconds();
-	}
-
-	if(StillToFadeOut){
-		if(CTimer::GetTimeInMilliseconds() - TimeStartedCountingForFade > TimeToStayFadedBeforeFadeOut){
-			StillToFadeOut = false;
-			TheCamera.Fade(3.0f, FADE_IN);
-			TheCamera.ProcessFade();
-			TheCamera.ProcessMusicFade();
-		}else{
-			TheCamera.SetFadeColour(0, 0, 0);
-			TheCamera.Fade(0.0f, FADE_OUT);
-			TheCamera.ProcessFade();
-		}
-	}
 
 	if(CDraw::FadeValue != 0 || FrontEndMenuManager.m_PrefsBrightness < 256){
 		CSprite2d *splash = LoadSplash(nil);
@@ -1673,9 +1654,6 @@ Idle(void *arg)
 	tbStartTimer(0, "Render2dStuff-Fade");
 	Render2dStuffAfterFade();
 	tbEndTimer("Render2dStuff-Fade");
-#ifdef XBOX_MESSAGE_SCREEN
-	FrontEndMenuManager.DrawOverlays();
-#endif
 
 	if (gbShowTimebars)
 		tbDisplay();
@@ -1713,9 +1691,6 @@ FrontendIdle(void)
 
 	DefinedState(); // seems redundant, but breaks resolution change.
 	RenderMenus();
-#ifdef XBOX_MESSAGE_SCREEN
-	FrontEndMenuManager.DrawOverlays();
-#endif
 	DoFade();
 	Render2dStuffAfterFade();
 	CFont::DrawFonts();

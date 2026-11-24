@@ -3,6 +3,10 @@
 
 #define FILEMGR_PATH_SIZE 1024
 
+// Header the original game wrote into a settings file it had not filled in
+// yet; a file that starts with it is not a valid settings file.
+extern const char TopLineEmptyFile[];
+
 class CFileMgr
 {
 	static char ms_rootDirName[FILEMGR_PATH_SIZE];

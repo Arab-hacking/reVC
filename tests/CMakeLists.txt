@@ -66,16 +66,6 @@ add_executable(audio_entity_slots_tests AudioEntitySlotsTests.cpp)
 set_target_properties(audio_entity_slots_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
 add_test(NAME audio_entity_slots_tests COMMAND audio_entity_slots_tests)
 
-add_executable(save_block_bounds_tests SaveBlockBoundsTests.cpp)
-set_target_properties(save_block_bounds_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
-add_test(NAME save_block_bounds_tests COMMAND save_block_bounds_tests)
-
-# Validate the actual VC save-pool wire framing before loading entities with
-# model IDs from an IDE configuration different from the current map.
-add_executable(saved_pool_validation_tests SavedPoolValidationTests.cpp)
-set_target_properties(saved_pool_validation_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
-add_test(NAME saved_pool_validation_tests COMMAND saved_pool_validation_tests)
-
 add_executable(custom_asset_cache_tests
     CustomAssetCacheTests.cpp ../src/extras/custom/br/third_party/astc_decomp.cpp)
 target_include_directories(custom_asset_cache_tests PRIVATE ../src/extras/custom ../src/extras/custom/br)
@@ -163,7 +153,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Cla
         ../src/control ../src/core ../src/entities ../src/extras
         ../src/extras/custom ../src/extras/custom/br ../src/fakerw ../src/math
         ../src/modelinfo ../src/objects ../src/peds ../src/renderer ../src/rw
-        ../src/save ../src/skel ../src/text ../src/vehicles ../src/weapons)
+ ../src/skel ../src/text ../src/vehicles ../src/weapons)
     target_compile_options(txd_store_capacity_tests PRIVATE -ffunction-sections -fdata-sections)
     target_link_options(txd_store_capacity_tests PRIVATE -Wl,--gc-sections)
     set_target_properties(txd_store_capacity_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
@@ -179,7 +169,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Cla
         ../src/control ../src/core ../src/entities ../src/extras
         ../src/extras/custom ../src/extras/custom/br ../src/fakerw ../src/math
         ../src/modelinfo ../src/objects ../src/peds ../src/renderer ../src/rw
-        ../src/save ../src/skel ../src/text ../src/vehicles ../src/weapons)
+ ../src/skel ../src/text ../src/vehicles ../src/weapons)
     target_compile_options(sky_vehicle_txd_tests PRIVATE -ffunction-sections -fdata-sections)
     target_link_options(sky_vehicle_txd_tests PRIVATE -Wl,--gc-sections)
     target_link_libraries(sky_vehicle_txd_tests PRIVATE librw::librw)
@@ -199,7 +189,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Cla
         ../src/control ../src/core ../src/entities ../src/extras
         ../src/extras/custom ../src/extras/custom/br ../src/fakerw ../src/math
         ../src/modelinfo ../src/objects ../src/peds ../src/renderer ../src/rw
-        ../src/save ../src/skel ../src/text ../src/vehicles ../src/weapons)
+ ../src/skel ../src/text ../src/vehicles ../src/weapons)
     target_compile_options(escalator_init_tests PRIVATE -ffunction-sections -fdata-sections)
     target_link_options(escalator_init_tests PRIVATE -Wl,--gc-sections)
     set_target_properties(escalator_init_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
@@ -218,7 +208,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Cla
         ../src/control ../src/core ../src/entities ../src/extras
         ../src/extras/custom ../src/extras/custom/br ../src/fakerw ../src/math
         ../src/modelinfo ../src/objects ../src/peds ../src/renderer ../src/rw
-        ../src/save ../src/skel ../src/text ../src/vehicles ../src/weapons)
+ ../src/skel ../src/text ../src/vehicles ../src/weapons)
     target_compile_options(pickup_missing_model_tests PRIVATE -ffunction-sections -fdata-sections)
     target_link_options(pickup_missing_model_tests PRIVATE -Wl,--gc-sections)
     set_target_properties(pickup_missing_model_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
@@ -236,7 +226,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Cla
         ../src/control ../src/core ../src/entities ../src/extras
         ../src/extras/custom ../src/extras/custom/br ../src/fakerw ../src/math
         ../src/modelinfo ../src/objects ../src/peds ../src/renderer ../src/rw
-        ../src/save ../src/skel ../src/text ../src/vehicles ../src/weapons)
+ ../src/skel ../src/text ../src/vehicles ../src/weapons)
     target_compile_options(directory_growth_tests PRIVATE -ffunction-sections -fdata-sections)
     target_link_options(directory_growth_tests PRIVATE -Wl,--gc-sections)
     set_target_properties(directory_growth_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
@@ -258,7 +248,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Cla
         ../src/control ../src/core ../src/entities ../src/extras
         ../src/extras/custom ../src/extras/custom/br ../src/fakerw ../src/math
         ../src/modelinfo ../src/objects ../src/peds ../src/renderer ../src/rw
-        ../src/save ../src/skel ../src/text ../src/vehicles ../src/weapons)
+ ../src/skel ../src/text ../src/vehicles ../src/weapons)
     target_compile_options(custom_archive_integration_tests PRIVATE
         -ffunction-sections -fdata-sections -Wno-write-strings -Wno-multichar)
     target_link_options(custom_archive_integration_tests PRIVATE -Wl,--gc-sections)
@@ -299,30 +289,13 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Cla
         ../src/control ../src/core ../src/entities ../src/extras
         ../src/extras/custom ../src/extras/custom/br ../src/fakerw ../src/math
         ../src/modelinfo ../src/objects ../src/peds ../src/renderer ../src/rw
-        ../src/save ../src/skel ../src/text ../src/vehicles ../src/weapons)
+ ../src/skel ../src/text ../src/vehicles ../src/weapons)
     target_compile_options(android_bpc_archive_integration_tests PRIVATE
         -ffunction-sections -fdata-sections -Wno-write-strings -Wno-multichar)
     target_link_options(android_bpc_archive_integration_tests PRIVATE -Wl,--gc-sections)
     target_link_libraries(android_bpc_archive_integration_tests PRIVATE Threads::Threads)
     set_target_properties(android_bpc_archive_integration_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
     add_test(NAME android_bpc_archive_integration_tests COMMAND android_bpc_archive_integration_tests)
-
-    add_executable(script_save_validation_tests
-        ScriptSaveValidationTests.cpp
-        ../src/control/Script.cpp)
-    target_compile_definitions(script_save_validation_tests PRIVATE
-        LIBRW RW_GL3 LIBRW_SDL2 CMAKE_BUILD USE_OUR_VERSIONING AUDIO_OAL)
-    target_include_directories(script_save_validation_tests PRIVATE
-        ../vendor/librw ../vendor/librw/src/gl ../vendor/sdl2/include
-        ../src ../src/animation ../src/audio ../src/buildings ../src/collision
-        ../src/control ../src/core ../src/entities ../src/extras
-        ../src/extras/custom ../src/extras/custom/br ../src/fakerw ../src/math
-        ../src/modelinfo ../src/objects ../src/peds ../src/renderer ../src/rw
-        ../src/save ../src/skel ../src/text ../src/vehicles ../src/weapons)
-    target_compile_options(script_save_validation_tests PRIVATE -ffunction-sections -fdata-sections -Wno-write-strings -Wno-multichar)
-    target_link_options(script_save_validation_tests PRIVATE -Wl,--gc-sections)
-    set_target_properties(script_save_validation_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
-    add_test(NAME script_save_validation_tests COMMAND script_save_validation_tests)
 
     add_executable(ped_skeleton_classification_tests
         PedSkeletonClassificationTests.cpp
@@ -335,7 +308,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Cla
         ../src/control ../src/core ../src/entities ../src/extras
         ../src/extras/custom ../src/extras/custom/br ../src/fakerw ../src/math
         ../src/modelinfo ../src/objects ../src/peds ../src/renderer ../src/rw
-        ../src/save ../src/skel ../src/text ../src/vehicles ../src/weapons)
+ ../src/skel ../src/text ../src/vehicles ../src/weapons)
     target_compile_options(ped_skeleton_classification_tests PRIVATE -ffunction-sections -fdata-sections -Wno-write-strings)
     target_link_options(ped_skeleton_classification_tests PRIVATE -Wl,--gc-sections)
     set_target_properties(ped_skeleton_classification_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
@@ -376,7 +349,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Cla
         ../src/control ../src/core ../src/entities ../src/extras
         ../src/extras/custom ../src/extras/custom/br ../src/fakerw ../src/math
         ../src/modelinfo ../src/objects ../src/peds ../src/renderer ../src/rw
-        ../src/save ../src/skel ../src/text ../src/vehicles ../src/weapons)
+ ../src/skel ../src/text ../src/vehicles ../src/weapons)
     target_compile_options(${reader_test} PRIVATE -ffunction-sections -fdata-sections)
     target_link_options(${reader_test} PRIVATE -Wl,--gc-sections)
     set_target_properties(${reader_test} PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)

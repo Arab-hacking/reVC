@@ -85,8 +85,6 @@ public:
 	void UpdateClose(void);
 	void UpdateFar(void);
 	
-	static bool SaveParticle(uint8 *buffer, uint32 *length);
-	static bool LoadParticle(uint8 *buffer, uint32  length);
 	
 	static void RemoveAllExpireableParticleObjects(void);
 	static void RemoveAllParticleObjects(void);

@@ -29,7 +29,6 @@
 #include "Frontend.h"
 #include "frontendoption.h"
 #include "GameLogic.h"
-#include "GenericGameStorage.h"
 #include "Glass.h"
 #include "cHandlingDataMgr.h"
 #include "Hud.h"
@@ -796,11 +795,8 @@ void CGame::ReInitGameObjectVariables(void)
 	CWaterCannons::Init();
 	CParticle::ReloadConfig();
 
-	if ( !FrontEndMenuManager.m_bWantToLoad )
-	{
-		CreatePlayer();
-		TheCamera.Process();
-	}
+	CreatePlayer();
+	TheCamera.Process();
 	
 	for (int32 i = 0; i < MAX_PADS; i++)
 		CPad::GetPad(i)->Clear(true);
@@ -833,71 +829,12 @@ void CGame::ShutDownForRestart(void)
 
 void CGame::InitialiseWhenRestarting(void)
 {
-	CRect rect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
-	CRGBA color(255, 255, 255, 255);
-	
 	CTimer::Initialise();
 	CSprite2d::SetRecipNearClip();
 
-	if (b_FoundRecentSavedGameWantToLoad || FrontEndMenuManager.m_bWantToLoad)
-	{
-		LoadSplash("splash1");
-#ifndef XBOX_MESSAGE_SCREEN
-		if (FrontEndMenuManager.m_bWantToLoad)
-			FrontEndMenuManager.MessageScreen("FELD_WR", true);
-#endif
-	}
-
-	b_FoundRecentSavedGameWantToLoad = false;
-	
 	TheCamera.Init();
 	
-	if ( FrontEndMenuManager.m_bWantToLoad == true )
-	{
-#ifdef XBOX_MESSAGE_SCREEN
-		FrontEndMenuManager.SetDialogTimer(1000);
-		DoRWStuffStartOfFrame(0, 0, 0, 0, 0, 0, 0);
-		CSprite2d::InitPerFrame();
-		CFont::InitPerFrame();
-		FrontEndMenuManager.DrawOverlays();
-		DoRWStuffEndOfFrame();
-#endif
-		RestoreForStartLoad();
-	}
-	
 	ReInitGameObjectVariables();
-	
-	if ( FrontEndMenuManager.m_bWantToLoad == true )
-	{
-		FrontEndMenuManager.m_bWantToLoad = false;
-		InitRadioStationPositionList();
-		if ( GenericLoad() == true )
-		{
-			DMAudio.ResetTimers(CTimer::GetTimeInMilliseconds());
-		}
-		else
-		{
-			REVC_LOG_ERROR("Saved game could not be loaded (error=%d); restarting", PcSaveHelper.nErrorCode);
-			for ( int32 i = 0; i < 50; i++ )
-			{
-				HandleExit();
-				FrontEndMenuManager.MessageScreen("FED_LFL", true); // Loading save game has failed. The game will restart now. 
-			}
-			
-			TheCamera.SetFadeColour(0, 0, 0);
-			ShutDownForRestart();
-			CTimer::Stop();
-			CTimer::Initialise();
-			FrontEndMenuManager.m_bWantToLoad = false;
-			currLevel = LEVEL_GENERIC;
-			TheCamera.Init();
-			ReInitGameObjectVariables();
-			CCollision::SortOutCollisionAfterLoad();
-		}
-#ifdef XBOX_MESSAGE_SCREEN
-		FrontEndMenuManager.ProcessDialogTimer();
-#endif
-	}
 	
 	CTimer::Update();
 	

@@ -77,7 +77,6 @@ static const RwChar *AppClassName = RWSTRING("Grand theft auto 3");
 
 static psGlobalType PsGlobal;
 
-
 #define PSGLOBAL(var) (((psGlobalType *)(RsGlobal.ps))->var)
 
 #undef MAKEPOINTS
@@ -96,7 +95,6 @@ static psGlobalType PsGlobal;
 #include "ControllerConfig.h"
 #include "Frontend.h"
 #include "Game.h"
-#include "PCSave.h"
 #include "AnimViewer.h"
 #include "MemoryMgr.h"
 
@@ -149,7 +147,6 @@ void CJoySticks::ClearJoyInfo(int joyID)
 	m_aJoys[joyID].m_bHasAxisZ = false;
 	m_aJoys[joyID].m_bHasAxisR = false;
 }
-
 
 
 /*
@@ -248,7 +245,6 @@ psCameraShowRaster(RwCamera *camera)
 	return;
 }
 
-
 /*
  *****************************************************************************
  */
@@ -336,7 +332,6 @@ psInstallFileSystem(void)
 	return (TRUE);
 }
 
-
 /*
  *****************************************************************************
  */
@@ -402,7 +397,6 @@ void _GetVideoMemInfo(LPDWORD total, LPDWORD avaible)
  */
 typedef HRESULT(WINAPI * DIRECTDRAWCREATEEX)( GUID*, VOID**, REFIID, IUnknown* );
 
-
 //-----------------------------------------------------------------------------
 // Name: GetDXVersion()
 // Desc: This function returns the DirectX version number as follows:
@@ -436,7 +430,6 @@ DWORD GetDXVersion()
 		OutputDebugString( "Couldn't LoadLibrary DDraw\r\n" );
 		return dwDXVersion;
 	}
-
 
 	//-------------------------------------------------------------------------
 	// DirectX 7.0 Checks
@@ -492,7 +485,6 @@ DWORD GetDXVersion()
 	// D3D8.dll exists. We must be at least DX8.0
 	dwDXVersion = 0x800;
 
-
 	//-------------------------------------------------------------------------
 	// DirectX 8.1 Checks
 	//-------------------------------------------------------------------------
@@ -508,7 +500,6 @@ DWORD GetDXVersion()
 
 	// dpnhpast.dll exists. We must be at least DX8.1
 	dwDXVersion = 0x801;
-
 
 	//-------------------------------------------------------------------------
 	// End of checking for versions of DirectX 
@@ -634,8 +625,6 @@ psInitialize(void)
 
 	CFileMgr::Initialise();
 
-	C_PcSave::SetSaveDirectory(_psGetUserFilesFolder());
-	
 	InitialiseLanguage();
 	
 	gGameState = GS_START_UP;
@@ -742,7 +731,6 @@ psInitialize(void)
 
 	return TRUE;
 }
-
 
 /*
  *****************************************************************************
@@ -1311,7 +1299,6 @@ InitApplication(HANDLE instance)
 
 	return RegisterClass(&windowClass);
 }
-
 
 /*
  *****************************************************************************
@@ -2027,7 +2014,6 @@ WinMain(HINSTANCE instance,
 	 */
 	argv = CommandLineToArgv(cmdLine, &argc);
 
-
 	/* 
 	 * Parse command line parameters (except program name) one at 
 	 * a time BEFORE RenderWare initialization...
@@ -2348,18 +2334,10 @@ WinMain(HINSTANCE instance,
 						if (wp.showCmd != SW_SHOWMINIMIZED)
 							RsEventHandler(rsFRONTENDIDLE, nil);
 
-						if ( !FrontEndMenuManager.m_bMenuActive || FrontEndMenuManager.m_bWantToLoad )
+						if ( !FrontEndMenuManager.m_bMenuActive )
 						{
 							gGameState = GS_INIT_PLAYING_GAME;
 							TRACE("gGameState = GS_INIT_PLAYING_GAME;");
-						}
-
-						if ( FrontEndMenuManager.m_bWantToLoad )
-						{
-							InitialiseGame();
-							FrontEndMenuManager.m_bGameNotLoaded = false;
-							gGameState = GS_PLAYING_GAME;
-							TRACE("gGameState = GS_PLAYING_GAME;");
 						}
 						break;
 					}
@@ -2416,36 +2394,25 @@ WinMain(HINSTANCE instance,
 		
 		CTimer::Stop();
 		
-		if ( FrontEndMenuManager.m_bWantToLoad )
+#ifndef MASTER
+		if ( gbModelViewer )
+			CAnimViewer::Shutdown();
+		else
+#endif
+		if ( gGameState == GS_PLAYING_GAME )
+			CGame::ShutDown();
+
+		CTimer::Stop();
+
+		if ( FrontEndMenuManager.m_bFirstTime == true )
 		{
-			CGame::ShutDownForRestart();
-			CGame::InitialiseWhenRestarting();
-			DMAudio.ChangeMusicMode(MUSICMODE_GAME);
-			LoadSplash(GetLevelSplashScreen(CGame::currLevel));
-			FrontEndMenuManager.m_bWantToLoad = false;
+			gGameState = GS_INIT_FRONTEND;
+			TRACE("gGameState = GS_INIT_FRONTEND;");
 		}
 		else
 		{
-#ifndef MASTER
-			if ( gbModelViewer )
-				CAnimViewer::Shutdown();
-			else
-#endif
-			if ( gGameState == GS_PLAYING_GAME )
-				CGame::ShutDown();
-
-			CTimer::Stop();
-			
-			if ( FrontEndMenuManager.m_bFirstTime == true )
-			{
-				gGameState = GS_INIT_FRONTEND;
-				TRACE("gGameState = GS_INIT_FRONTEND;");
-			}
-			else
-			{
-				gGameState = GS_INIT_PLAYING_GAME;
-				TRACE("gGameState = GS_INIT_PLAYING_GAME;");
-			}
+			gGameState = GS_INIT_PLAYING_GAME;
+			TRACE("gGameState = GS_INIT_PLAYING_GAME;");
 		}
 		
 		FrontEndMenuManager.m_bFirstTime = false;
@@ -2464,7 +2431,6 @@ WinMain(HINSTANCE instance,
 	DMAudio.Terminate();
 	
 	_psFreeVideoModeList();
-
 
 	/*
 	 * Tidy up the 3D (RenderWare) components of the application...
@@ -2504,7 +2470,6 @@ WinMain(HINSTANCE instance,
 
 #define DEVICE_AXIS_MIN -2000
 #define DEVICE_AXIS_MAX 2000
-
 
 HRESULT _InputInitialise()
 {

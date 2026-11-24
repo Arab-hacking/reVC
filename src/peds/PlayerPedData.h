@@ -159,17 +159,6 @@ public:
 		m_bLastHSMissileLOS = 0;
 		m_pCurrentProstitutePed = nil;
 	}
-
-	// Writes and reads every field a save has to carry. The wanted level, the
-	// clothes and the arresting cop are not here: they are serialized by the
-	// blocks that own them (CWanted, CPedClothesDesc, the cop pool).
-	// Size of the block, in bytes. Fixed: the save is a byte stream, so a field
-	// added here has to be taken out of the CPlayerPed::Save padding budget
-	// (164 bytes were reserved for exactly this) and the number below moves
-	// with it. The writer asserts the two agree.
-	static constexpr uint32 SAVE_SIZE = 137;
-	void Save(uint8 *buf) const;
-	void Load(const uint8 *buf);
 };
 
 #endif // __GTA_PLAYERPEDDATA_H__

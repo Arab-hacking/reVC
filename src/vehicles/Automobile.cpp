@@ -45,7 +45,6 @@
 #include "VehicleNodeAtomic.h"
 #include "Bike.h"
 #include "Wanted.h"
-#include "SaveBuf.h"
 
 #if defined ANDROID
 int16 g_usLastProcessedModelIndexAutomobile = 0;
@@ -64,13 +63,6 @@ RwObject *GetCurrentAtomicObjectCB(RwObject *object, void *data);
 #define ROLL_ONTO_WHEELS_FORCE (0.0025f)
 
 bool CAutomobile::m_sAllTaxiLights;
-
-const uint32 CAutomobile::nSaveStructSize =
-#ifdef COMPATIBLE_SAVES
-	1500;
-#else
-	sizeof(CAutomobile);
-#endif
 
 CAutomobile::CAutomobile(int32 id, uint8 CreatedBy)
  : CVehicle(CreatedBy)
@@ -5296,32 +5288,6 @@ CAutomobile::Fix(void)
 	}
 }
 
-void
-CAutomobile::SetupDamageAfterLoad(void)
-{
-	if(m_aCarNodes[CAR_BUMP_FRONT])
-		SetBumperDamage(CAR_BUMP_FRONT, VEHBUMPER_FRONT);
-	if(m_aCarNodes[CAR_BONNET])
-		SetDoorDamage(CAR_BONNET, DOOR_BONNET);
-	if(m_aCarNodes[CAR_BUMP_REAR])
-		SetBumperDamage(CAR_BUMP_REAR, VEHBUMPER_REAR);
-	if(m_aCarNodes[CAR_BOOT])
-		SetDoorDamage(CAR_BOOT, DOOR_BOOT);
-	if(m_aCarNodes[CAR_DOOR_LF])
-		SetDoorDamage(CAR_DOOR_LF, DOOR_FRONT_LEFT);
-	if(m_aCarNodes[CAR_DOOR_RF])
-		SetDoorDamage(CAR_DOOR_RF, DOOR_FRONT_RIGHT);
-	if(m_aCarNodes[CAR_DOOR_LR])
-		SetDoorDamage(CAR_DOOR_LR, DOOR_REAR_LEFT);
-	if(m_aCarNodes[CAR_DOOR_RR])
-		SetDoorDamage(CAR_DOOR_RR, DOOR_REAR_RIGHT);
-	if(m_aCarNodes[CAR_WING_LF])
-		SetPanelDamage(CAR_WING_LF, VEHPANEL_FRONT_LEFT);
-	if(m_aCarNodes[CAR_WING_RF])
-		SetPanelDamage(CAR_WING_RF, VEHPANEL_FRONT_RIGHT);
-	// No rear wing nodes in SA - see the note in ProcessEntityCollision.
-}
-
 RwObject*
 GetCurrentAtomicObjectCB(RwObject *object, void *data)
 {
@@ -5769,25 +5735,6 @@ CAutomobile::KnockPedOutCar(eWeaponType weapon, uint16 door, CPed *ped)
 	ped->m_pMyVehicle = nil;
 	return ped;
 }
-
-#ifdef COMPATIBLE_SAVES
-void
-CAutomobile::Save(uint8*& buf)
-{
-	CVehicle::Save(buf);
-	WriteSaveBuf(buf, Damage);
-	ZeroSaveBuf(buf, 1500 - 672 - sizeof(CDamageManager));
-}
-
-void
-CAutomobile::Load(uint8*& buf)
-{
-	CVehicle::Load(buf);
-	ReadSaveBuf(&Damage, buf);
-	SkipSaveBuf(buf, 1500 - 672 - sizeof(CDamageManager));
-	SetupDamageAfterLoad();
-}
-#endif
 
 // ---------------------------------------------------------------------------
 // SA nitrous (CAutomobile::NitrousControl / DoNitroEffect / StopNitroEffect)

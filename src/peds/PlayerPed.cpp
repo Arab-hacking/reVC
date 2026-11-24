@@ -19,20 +19,12 @@
 #include "Streaming.h"
 #include "Stats.h"
 #include "VarConsole.h"
-#include "SaveBuf.h"
 
 #define PAD_MOVE_TO_GAME_WORLD_MOVE 60.0f
 
 bool CPlayerPed::bDontAllowWeaponChange;
 #ifndef MASTER
 bool CPlayerPed::bDebugPlayerInfo;
-#endif
-
-const uint32 CPlayerPed::nSaveStructSize =
-#ifdef COMPATIBLE_SAVES
-	1752;
-#else
-	sizeof(CPlayerPed);
 #endif
 
 int32 idleAnimBlockIndex;
@@ -2194,53 +2186,3 @@ CPlayerPed::PlayIdleAnimations(CPad *padUsed)
 		}
 	}
 }
-
-#ifdef COMPATIBLE_SAVES
-#define CopyFromBuf(buf, data) memcpy(&data, buf, sizeof(data)); SkipSaveBuf(buf, sizeof(data));
-#define CopyToBuf(buf, data) memcpy(buf, &data, sizeof(data)); SkipSaveBuf(buf, sizeof(data));
-// SA CPlayerPed::Save writes the ped body and then its own player block:
-// the target table, the fields the ped's CPlayerPedData owns, and the ped-side
-// extras this fork keeps (the safe positions and the melee list). The rest of
-// the Vice City layout is zero-filled padding, so the size the pool is told
-// about (nSaveStructSize) stays exactly what it was.
-void
-CPlayerPed::Save(uint8*& buf)
-{
-	CPed::Save(buf);
-	ZeroSaveBuf(buf, 16);
-	CopyToBuf(buf, TimeCanRun());
-	ZeroSaveBuf(buf, 28);
-	for (int i = 0; i < 4; i++)
-		{ int32 v = m_nTargettableObjects[i]; memcpy(buf, &v, sizeof(v)); SkipSaveBuf(buf, sizeof(v)); }
-	// The player block proper: everything CPlayerPedData carries that a load
-	// has to restore. It sits in the padding Vice City had after the target
-	// table, which is why the total size does not change.
-	uint8 data[CPlayerPedData::SAVE_SIZE];
-	m_pPlayerData->Save(data);
-	memcpy(buf, data, sizeof(data));
-	SkipSaveBuf(buf, sizeof(data));
-	ZeroSaveBuf(buf, 164 - sizeof(data));
-}
-
-void
-CPlayerPed::Load(uint8*& buf)
-{
-	CPed::Load(buf);
-	SkipSaveBuf(buf, 16);
-	CopyFromBuf(buf, TimeCanRun());
-	SkipSaveBuf(buf, 28);
-	for (int i = 0; i < 4; i++)
-		{ int32 v; memcpy(&v, buf, sizeof(v)); SkipSaveBuf(buf, sizeof(v)); m_nTargettableObjects[i] = v; }
-	uint8 data[CPlayerPedData::SAVE_SIZE];
-	memcpy(data, buf, sizeof(data));
-	SkipSaveBuf(buf, sizeof(data));
-	m_pPlayerData->Load(data);
-	SkipSaveBuf(buf, 164 - sizeof(data));
-	// The pointer fields inside the block are addresses from the file that just
-	// went away; Load() clears them, and the code that needs them re-acquires
-	// them. The wanted level and the arresting cop belong to their own blocks.
-	m_pPlayerData->m_pWanted = Wanted();
-}
-#undef CopyFromBuf
-#undef CopyToBuf
-#endif

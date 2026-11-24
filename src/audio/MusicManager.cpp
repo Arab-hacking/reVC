@@ -19,7 +19,6 @@
 #include "ZoneCull.h"
 #include "Weather.h"
 #include "DMAudio.h"
-#include "GenericGameStorage.h"
 
 #ifdef GTA_PS2
 #include <libcdvd.h>
@@ -132,18 +131,8 @@ cMusicManager::ResetMusicAfterReload()
 
 	if (!bRadioWasEverListened) return;
 
-	for (int i = 0; i < NUM_RADIOS; i++) {
+	for (int i = 0; i < NUM_RADIOS; i++)
 		aListenTimeArray[i] = afRadioTime[i];
-		int32 trackPos = GetSavedRadioStationPosition(i);
-		if (trackPos != -1) {
-			if (m_aTracks[i].m_nLength > 0 && trackPos > (int32)m_aTracks[i].m_nLength) {
-				debug("Radio Track %d saved position is %d, Length is only %d\n", i, trackPos, m_aTracks[i].m_nLength);
-				trackPos %= m_aTracks[i].m_nLength;
-			}
-			m_aTracks[i].m_nPosition = trackPos;
-			m_aTracks[i].m_nLastPosCheckTimer = CTimer::GetTimeInMillisecondsPauseMode();
-		}
-	}
 }
 
 void

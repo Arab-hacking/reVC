@@ -181,7 +181,6 @@ public:
 	void SetBusDoorTimer(uint32 timer, uint8 type);
 	void ProcessAutoBusDoors(void);
 	void ProcessSwingingDoor(int32 component, eDoors door);
-	void SetupDamageAfterLoad(void);
 	CObject *SpawnFlyingComponent(int32 component, uint32 type);
 	CObject *RemoveBonnetInPedCollision(void);
 	void SetPanelDamage(int32 component, ePanels panel, bool noFlyingComponents = false);
@@ -269,12 +268,6 @@ public:
 	void PopBootUsingPhysics(void);
 	void CloseAllDoors(void);
 	CPed *KnockPedOutCar(eWeaponType weapon, uint16 door, CPed *ped);
-
-#ifdef COMPATIBLE_SAVES
-	virtual void Save(uint8*& buf);
-	virtual void Load(uint8*& buf);
-#endif
-	static const uint32 nSaveStructSize;
 
 	static void SetAllTaxiLights(bool set);
 };

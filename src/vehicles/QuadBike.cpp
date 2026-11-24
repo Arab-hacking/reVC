@@ -309,18 +309,6 @@ CQuadBike::ResetSuspension(void)
 	CAutomobile::ResetSuspension();
 }
 
-// SA CQuadBike::SetupDamageAfterLoad (0x6CE340).
-void
-CQuadBike::SetupDamageAfterLoad(void)
-{
-	// A quad has no bumpers or bonnet: the front body panel stands in for the
-	// bumper and the rear one for the boot.
-	if(m_aCarNodes[QUAD_BODY_FRONT])
-		CAutomobile::SetBumperDamage(CAR_BUMP_FRONT, VEHPANEL_FRONT_LEFT, false);
-	if(m_aCarNodes[QUAD_BODY_REAR])
-		CAutomobile::SetDoorDamage(CAR_BOOT, DOOR_BOOT, false);
-}
-
 // SA CQuadBike::SetupSuspensionLines (0x6CDCA0).
 void
 CQuadBike::SetupSuspensionLines(void)

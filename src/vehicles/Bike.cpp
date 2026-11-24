@@ -30,14 +30,6 @@
 #include "Automobile.h"
 #include "Bike.h"
 #include "Debug.h"
-#include "SaveBuf.h"
-
-const uint32 CBike::nSaveStructSize =
-#ifdef COMPATIBLE_SAVES
-	1260;
-#else
-	sizeof(CBoat);
-#endif
 
 
 // TODO: maybe put this somewhere else
@@ -2680,19 +2672,3 @@ CBike::ReduceHornCounter(void)
 	if(m_nCarHornTimer != 0)
 		m_nCarHornTimer--;
 }
-
-#ifdef COMPATIBLE_SAVES
-void
-CBike::Save(uint8*& buf)
-{
-	CVehicle::Save(buf);
-	ZeroSaveBuf(buf, 1260 - 672);
-}
-
-void
-CBike::Load(uint8*& buf)
-{
-	CVehicle::Load(buf);
-	SkipSaveBuf(buf, 1260 - 672);
-}
-#endif

@@ -164,13 +164,9 @@ enum PointBlankNecessity {
 	POINT_BLANK_FOR_SOMEONE_ELSE
 };
 
-// ePedState, 65 values, numbered exactly as San Andreas numbers them. The
-// order is part of the save format: CPed::m_nPedState is written raw, so an
-// entry inserted anywhere but the end changes the meaning of every value
-// stored after it. PED_DIE_BY_STEALTH is the entry Vice City does not have -
-// it sits between PED_DEAD and PED_CARJACK and pushes the last seven states
-// up by one - and SAVE_VERSION below is what keeps an old save readable
-// through that shift.
+// ePedState follows San Andreas numbering for shared states. Keep the order
+// stable because engine and data code rely on these numeric IDs. Vice City
+// does not have PED_DIE_BY_STEALTH, so its later states are offset by one.
 enum PedState
 {
 	PED_NONE,
@@ -1034,10 +1030,6 @@ public:
 
 	static bool bNastyLimbsCheat;
 
-#ifdef COMPATIBLE_SAVES
-	virtual void Save(uint8*& buf);
-	virtual void Load(uint8*& buf);
-#endif
 };
 
 void FinishTalkingOnMobileCB(CAnimBlendAssociation* assoc, void* arg);

@@ -55,8 +55,8 @@
 - **`CReplay::IsPlayingBack()`** — 71 guard в 23 файлах снят; поведение — как при обычной игре.
 - **`ClearSpaceForMissionEntity`** — удалён: callers не осталось.
 - **`bPlayerIsInTheStatium`** — удалён (сюжетный флаг).
-- **Блок сохранения скриптов** в `GenericGameStorage` пишется нулевой длины, чтобы layout сейва
-  остался прежним. Сам сейв-модуль уходит целиком на этапе F.
+- **Блок сохранения скриптов** в `GenericGameStorage` до этапа F писался нулевой длины,
+  чтобы layout сейва оставался прежним. На F удалён весь сейв-модуль, включая этот блок.
 - **`SPHERE_MARKER_*`** переехали в `SpecialFX.h` (остались только мировые маркеры).
 - **`ShowRadarMarker`** удалён (`CRadar` больше не рисует скриптовые маркеры).
 - **`CZoneInfo`**: пороги банд (`gangPedThreshold`-массив) и `SetZone*Info`/`SetCarDensity`/
@@ -118,11 +118,11 @@
 - **Flee-ветки игрока**: blend `PEDMOVE_RUN` при бегстве всегда 1.0; в `ProcessCollision` условие
   сведено к `IsPlayer() || m_fCollisionSpeed >= 1.0f`. Guard `SetIdle` (`!= PED_MUG && != PED_FLEE_ENTITY`)
   и ветка `PED_FLEE_POSITION` в `SetExitCar` сведены к ветке игрока — эти состояния больше никто не ставит.
-- **`ePedState` не сжимается**: нумерация позиционная и попадает в сейв (`SaveVersion.h`), поэтому мёртвые
-  значения `PED_WANDER_*`, `PED_FLEE_*`, `PED_CHAT`, `PED_MUG`, `PED_SOLICIT`, `PED_BUY_ICE_CREAM`,
-  `PED_SUNBATHE`, `PED_FLASH`, `PED_FOLLOW_ROUTE` остаются в enum и в списках `CanPedReturnToState` /
-  `CanStrafeOrMouseControl` как метки; кода, который их ставит, нет. `PED_ENTER_TRAIN`/`PED_EXIT_TRAIN`
-  удалены — их уже нельзя оставить, так как их читатели (`World.cpp`, `NoClip.cpp`) переписаны.
+- **`ePedState` не сжимается**: на D значения `PED_WANDER_*`, `PED_FLEE_*`, `PED_CHAT`, `PED_MUG`,
+  `PED_SOLICIT`, `PED_BUY_ICE_CREAM`, `PED_SUNBATHE`, `PED_FLASH`, `PED_FOLLOW_ROUTE` оставлены как
+  позиционные метки в enum и в списках `CanPedReturnToState` / `CanStrafeOrMouseControl`; кода, который их
+  ставит, нет. Сериализация удалена на F, но в этом шаге порядок состояний не менялся. `PED_ENTER_TRAIN`/
+  `PED_EXIT_TRAIN` удалены — их читатели (`World.cpp`, `NoClip.cpp`) переписаны.
 - **`PedType.{h,cpp}` удалены раньше срока E** (в §1 значилось «этап D» — сделано): `CPedType`/`CPedStats`
   читали только `ped.dat`/`pedstats.dat` и писали сейв-блок; после D-1 читателей `GetPedFlag`/`GetPedStat` нет.
   `ePedType` и `eMoveState` перенесены в `Ped.h` (их читают `Stats`, `IsFemale`, 13 файлов `PEDMOVE_*`).
@@ -144,12 +144,13 @@
   (`WorldRecovery.h`) — больше невыполнимо: графа путей нет. Теперь `CWorld::RemoveFallenCars`/`RemoveFallenPeds`
   просто удаляют пустую машину/педа ниже `MAP_Z_LOW_LIMIT` (`Remove` + `delete`); машина игрока (и пед в машине) не
   трогается — на карте ниже −100 это решает сервер/игрок. `WorldRecovery.h` и его тест удалены.
-- **`VehicleCreatedBy`** остаётся как данные (читается в `Pools.cpp`, `World.cpp`, `Ped.cpp`, `Automobile.cpp`,
-  `Bike.cpp`, `Boat.cpp`, `CarEnterExit.cpp`, `Vehicle.cpp::Save/Load`); `RANDOM_VEHICLE`/`PARKED_VEHICLE`/
-  `PERMANENT_VEHICLE` больше никем не ставятся. Уходит вместе с сейвом на F.
-- **`CAutoPilot`** остаётся структурой: поля пишутся/читаются только в `Vehicle::Save/Load`, `m_nCarMission`
-  инициализируется `MISSION_NONE` в конструкторе. Позиционные `eCarMission`/`eCarDrivingStyle` не сжимаются до F.
-- **`STATUS_SIMPLE`** остаётся в `eEntityStatus` (позиционное перечисление, попадает в сейв), кода с ним нет.
+- **`VehicleCreatedBy`** остаётся как runtime-данные: читается в `World.cpp`, `Ped.cpp`, `Automobile.cpp`,
+  `Bike.cpp`, `Boat.cpp` и `Vehicle.cpp`; `RANDOM_VEHICLE`/`PARKED_VEHICLE`/`PERMANENT_VEHICLE`
+  больше никем не ставятся. Поле также использовалось сериализатором, но сериализация удалена на F.
+- **`CAutoPilot`** остаётся структурой до шага F-8: конструктор `CVehicle` и блок сброса автопилота
+  мёртвого водителя в `PedFight.cpp` используют её поля. `AutoPilot.cpp` содержал только сериализацию
+  и удалён на F-3b. `eCarMission`/`eCarDrivingStyle` на F-3 не сжимались.
+- **`STATUS_SIMPLE`** остаётся в `eEntityStatus` как зарезервированное позиционное значение; кода с ним нет.
 - **`m_pVehicleEx` переименован в `m_pSpecialColModelVehicle`.** В §6.2 он описан как «машина по соседству» для
   AI-подбора, но в этом дереве поле — указатель на машину, которая использует гидравлическую коллизию игрока
   (`CPlayerInfo::m_ColModel`, `CAutomobile::ProcessHydraulics`): ставится при инициализации спец-модели и читается,
@@ -162,7 +163,7 @@
   `CWorld::StopAllLawEnforcersInTheirTracks`, `CWorld::SetAllCarsCanBeDamaged`, `CPlayerInfo::MakePlayerSafe`
   (единственный вызов — `false` при респавне, отменял сценарный `true`), `HIGHSPEED_ELASTICITY_MULT_COPCAR` в
   `Physical.cpp` и режимы кинематографической камеры `OBBE_COPCAR`/`OBBE_COPCAR_WHEEL` в `Camera.cpp`.
-  Бит 0 флагов машины в `Vehicle::Save/Load` теперь всегда 0 (позиции остальных битов не сдвинуты).
+  Бит 0 ранее всегда сериализовался как 0; сериализация флагов удалена на F-3b, биты runtime-поля не перенумеровывались.
 - **`bWaterTight`** (`CAutomobile`/`CBike`) удалён: писался только `false` (в VC ставил скрипт), поэтому утопление
   экипажа теперь не зависит от `IsPlayer()`.
 - **`cTransmission::CalculateGearForSimpleCar`** удалён вместе с тестом `TestSimpleTrafficShift`: обслуживал
@@ -247,3 +248,25 @@
 - Никаких `#if 0`, `g_EnableX`, `MP_`/`NoStory`/`Cleanup`/`Legacy`/`Old`/`Temp`/`Hack` тегов.
 - Пробелы в именах не появляются: всё, что обязано остаться, переименовано по смыслу. Переименования:
   `CPlayerInfo::m_pVehicleEx` → `m_pSpecialColModelVehicle` (E), `Boat.cpp` `PLANE_*_PROP_SPEED` → `*_PROP_SPEED` (E).
+
+### 3.4 Этап F, §5 шаг 3 — сейвы и legacy frontend
+
+- **Сохранения удалены полностью, без заглушек.** В рамках 3a сняты `PS2_MENU`-ветви и
+  memory-card frontend; в 3b удалены все runtime-сериализаторы, `GenericGameStorage`, `PCSave`,
+  date/slot metadata и save/load/delete-экраны. Условие «игра ещё не загружена» у фронтенда
+  (`m_bGameNotLoaded`) остаётся состоянием запуска/работающей игры, не флагом загрузки сейва.
+- **`TopLineEmptyFile` не удаляется:** это заголовок пустого settings-файла `gta_vc.set`,
+  который проверяют `Frontend` и `ControllerConfig`. Символ переехал в `FileMgr`, чтобы
+  settings-валидаторы больше не зависели от удалённого save-модуля.
+- **`SetupDamageAfterLoad` удалён вместе с сериализацией автомобиля:** единственный caller
+  находился в `CAutomobile::Load`; другого этапа, которому нужна была бы эта постобработка,
+  нет.
+- **Рестарт игры сохранён.** `CGame::InitialiseWhenRestarting` оставлен и выполняет общий
+  reset/timer/camera/audio/texture-pool путь без веток splash/load. `ReInitGameObjectVariables`
+  по-прежнему пересоздаёт игрока и обрабатывает камеру; этот путь не является загрузкой сейва.
+- **`MENUPAGE_MISSION_REPLAY_TRANSITION`** заменяет старый пустой `MENUPAGE_LOADING_IN_PROGRESS`
+  в mission-replay таблице. Это переход при рестарте mission replay, не экран загрузки сейва;
+  остальные page IDs перенумерованы без сохранения мёртвых save/load/delete слотов.
+- **Три обязательные записи решения для отчёта:** таблица `CarEnterExit` дана в `testlog.md` §7.7;
+  пятистрочная таблица stat→constant и формулировка инварианта `ePedState` будут добавлены
+  вместе с шагом F-4, когда завершится чистка `CStats` (они ещё не выполнены).

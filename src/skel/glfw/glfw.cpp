@@ -45,7 +45,6 @@ long _dwOperatingSystemVersion;
 #include "ControllerConfig.h"
 #include "Frontend.h"
 #include "Game.h"
-#include "PCSave.h"
 #include "Sprite2d.h"
 #include "AnimViewer.h"
 #include "Font.h"
@@ -90,7 +89,6 @@ static RwInt32 bestWndMode = -1;
 #endif
 
 static psGlobalType PsGlobal;
-
 
 #define PSGLOBAL(var) (((psGlobalType *)(RsGlobal.ps))->var)
 
@@ -271,7 +269,6 @@ psTimer(void)
 }
 #endif       
 
-
 /*
  *****************************************************************************
  */
@@ -320,7 +317,6 @@ psInstallFileSystem(void)
 {
 	return (TRUE);
 }
-
 
 /*
  *****************************************************************************
@@ -397,7 +393,6 @@ static void _psHandleVibration()
 			pad->ShakeDur -= CTimer::GetTimeStepInMilliseconds();
 		if (pad->ShakeDur == 0) pad->ShakeFreq = 0;
 
-
 		if(target_device == 1 && R_SUCCEEDED(HidInitializationGCResult)) {
 			// gamecube rumble
 			hidSendVibrationGcErmCommand(SwitchVibrationDeviceGC, pad->ShakeFreq > 0 ? HidVibrationGcErmCommand_Start : HidVibrationGcErmCommand_Stop);
@@ -432,10 +427,7 @@ psInitialize(void)
 
 	CFileMgr::Initialise();
 	
-	C_PcSave::SetSaveDirectory(_psGetUserFilesFolder());
-	
 	InitialiseLanguage();
-
 
 	_psInitializeVibration();
 	
@@ -486,7 +478,6 @@ psInitialize(void)
 
 	
 	FrontEndMenuManager.LoadSettings();
-
 
 #ifdef _WIN32
 	MEMORYSTATUS memstats;
@@ -540,7 +531,6 @@ psInitialize(void)
 
 	return TRUE;
 }
-
 
 /*
  *****************************************************************************
@@ -1923,7 +1913,6 @@ main(int argc, char *argv[])
 	 */
 	argv = CommandLineToArgv(cmdLine, &argc);
 
-
 	/* 
 	 * Parse command line parameters (except program name) one at 
 	 * a time BEFORE RenderWare initialization...
@@ -2206,18 +2195,10 @@ main(int argc, char *argv[])
 						if(!WindowIconified)
 							RsEventHandler(rsFRONTENDIDLE, nil);
 
-						if ( !FrontEndMenuManager.m_bMenuActive || FrontEndMenuManager.m_bWantToLoad )
+						if ( !FrontEndMenuManager.m_bMenuActive )
 						{
 							gGameState = GS_INIT_PLAYING_GAME;
 							TRACE("gGameState = GS_INIT_PLAYING_GAME;");
-						}
-
-						if ( FrontEndMenuManager.m_bWantToLoad )
-						{
-							InitialiseGame();
-							FrontEndMenuManager.m_bGameNotLoaded = false;
-							gGameState = GS_PLAYING_GAME;
-							TRACE("gGameState = GS_PLAYING_GAME;");
 						}
 						break;
 					}
@@ -2274,36 +2255,25 @@ main(int argc, char *argv[])
 		
 		CTimer::Stop();
 		
-		if ( FrontEndMenuManager.m_bWantToLoad )
+#ifndef MASTER
+		if ( gbModelViewer )
+			CAnimViewer::Shutdown();
+		else
+#endif
+		if ( gGameState == GS_PLAYING_GAME )
+			CGame::ShutDown();
+
+		CTimer::Stop();
+
+		if ( FrontEndMenuManager.m_bFirstTime == true )
 		{
-			CGame::ShutDownForRestart();
-			CGame::InitialiseWhenRestarting();
-			DMAudio.ChangeMusicMode(MUSICMODE_GAME);
-			LoadSplash(GetLevelSplashScreen(CGame::currLevel));
-			FrontEndMenuManager.m_bWantToLoad = false;
+			gGameState = GS_INIT_FRONTEND;
+			TRACE("gGameState = GS_INIT_FRONTEND;");
 		}
 		else
 		{
-#ifndef MASTER
-			if ( gbModelViewer )
-				CAnimViewer::Shutdown();
-			else
-#endif
-			if ( gGameState == GS_PLAYING_GAME )
-				CGame::ShutDown();
-			
-			CTimer::Stop();
-			
-			if ( FrontEndMenuManager.m_bFirstTime == true )
-			{
-				gGameState = GS_INIT_FRONTEND;
-				TRACE("gGameState = GS_INIT_FRONTEND;");
-			}
-			else
-			{
-				gGameState = GS_INIT_PLAYING_GAME;
-				TRACE("gGameState = GS_INIT_PLAYING_GAME;");
-			}
+			gGameState = GS_INIT_PLAYING_GAME;
+			TRACE("gGameState = GS_INIT_PLAYING_GAME;");
 		}
 		
 		FrontEndMenuManager.m_bFirstTime = false;
@@ -2321,7 +2291,6 @@ main(int argc, char *argv[])
 	DMAudio.Terminate();
 	
 	_psFreeVideoModeList();
-
 
 	/*
 	 * Tidy up the 3D (RenderWare) components of the application...

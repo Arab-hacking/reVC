@@ -16,11 +16,9 @@
 #include "Pools.h"
 #include "TxdStore.h"
 #include "World.h"
-#include "SaveBuf.h"
 #include "Streaming.h"
 #include "SpecialFX.h"
 #include "Font.h"
-#include "SaveBuf.h"
 #include "MobileTouchControls.h"
 
 float CRadar::m_radarRange;
@@ -959,78 +957,6 @@ float CRadar::LimitRadarPoint(CVector2D &point)
 		point.y *= invdist;
 	}
 	return dist;
-}
-
-void CRadar::LoadAllRadarBlips(uint8 *buf, uint32 size)
-{
-	Initialise();
-INITSAVEBUF
-	CheckSaveHeader(buf, 'R', 'D', 'R', '\0', size - SAVE_HEADER_SIZE);
-
-	for (int i = 0; i < NUMRADARBLIPS; i++) {
-		ReadSaveBuf(&ms_RadarTrace[i].m_nColor, buf);
-		ReadSaveBuf(&ms_RadarTrace[i].m_Radius, buf);
-		ReadSaveBuf(&ms_RadarTrace[i].m_eBlipType, buf);
-		ReadSaveBuf(&ms_RadarTrace[i].m_nEntityHandle, buf);
-		ReadSaveBuf(&ms_RadarTrace[i].m_vec2DPos.x, buf);
-		ReadSaveBuf(&ms_RadarTrace[i].m_vec2DPos.y, buf);
-		ReadSaveBuf(&ms_RadarTrace[i].m_vecPos, buf);
-		ReadSaveBuf(&ms_RadarTrace[i].m_BlipIndex, buf);
-		ReadSaveBuf(&ms_RadarTrace[i].m_bDim, buf);
-		ReadSaveBuf(&ms_RadarTrace[i].m_bInUse, buf);
-		ReadSaveBuf(&ms_RadarTrace[i].m_bShortRange, buf);
-		ReadSaveBuf(&ms_RadarTrace[i].m_unused, buf);
-		ReadSaveBuf(&ms_RadarTrace[i].m_wScale, buf);
-		ReadSaveBuf(&ms_RadarTrace[i].m_eBlipDisplay, buf);
-		ReadSaveBuf(&ms_RadarTrace[i].m_eRadarSprite, buf);
-	}
-
-VALIDATESAVEBUF(size);
-}
-
-void CRadar::SaveAllRadarBlips(uint8 *buf, uint32 *size)
-{
-	*size = SAVE_HEADER_SIZE + NUMRADARBLIPS * sizeof(sRadarTraceSave);
-
-INITSAVEBUF
-	WriteSaveHeader(buf, 'R', 'D', 'R', '\0', *size - SAVE_HEADER_SIZE);
-
-#ifdef MAP_ENHANCEMENTS
-	bool bWaypointDeleted = false;
-	if (TargetMarkerId != -1) {
-		ClearBlip(TargetMarkerId);
-		TargetMarkerId = -1;
-		bWaypointDeleted = true;
-	}
-#endif
-
-	for (int i = 0; i < NUMRADARBLIPS; i++) {
-		sRadarTraceSave *saveStruct = (sRadarTraceSave*) buf;
-
-		saveStruct->m_nColor = ms_RadarTrace[i].m_nColor;
-		saveStruct->m_Radius = ms_RadarTrace[i].m_Radius;
-		saveStruct->m_eBlipType = ms_RadarTrace[i].m_eBlipType;
-		saveStruct->m_nEntityHandle = ms_RadarTrace[i].m_nEntityHandle;
-		saveStruct->m_vec2DPos = ms_RadarTrace[i].m_vec2DPos;
-		saveStruct->m_vecPos = ms_RadarTrace[i].m_vecPos;
-		saveStruct->m_BlipIndex = ms_RadarTrace[i].m_BlipIndex;
-		saveStruct->m_bDim = ms_RadarTrace[i].m_bDim;
-		saveStruct->m_bInUse = ms_RadarTrace[i].m_bInUse;
-		saveStruct->m_bShortRange = ms_RadarTrace[i].m_bShortRange;
-		saveStruct->m_unused = ms_RadarTrace[i].m_unused;
-		saveStruct->m_wScale = ms_RadarTrace[i].m_wScale;
-		saveStruct->m_eBlipDisplay = ms_RadarTrace[i].m_eBlipDisplay;
-		saveStruct->m_eRadarSprite = ms_RadarTrace[i].m_eRadarSprite;
-
-		SkipSaveBuf(buf, sizeof(sRadarTraceSave));
-	}
-
-#ifdef MAP_ENHANCEMENTS
-	if(bWaypointDeleted)
-		ToggleTargetMarker(TargetMarkerPos.x, TargetMarkerPos.y);
-#endif
-
-VALIDATESAVEBUF(*size);
 }
 
 void

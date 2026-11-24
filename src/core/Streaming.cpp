@@ -3764,31 +3764,6 @@ CStreaming::LoadSceneCollision(const CVector &pos)
 }
 
 void
-CStreaming::MemoryCardSave(uint8 *buf, uint32 *size)
-{
-	int i;
-
-	*size = NUM_DEFAULT_MODELS;
-	for(i = 0; i < NUM_DEFAULT_MODELS; i++)
-		if(ms_aInfoForModel[i].m_loadState == STREAMSTATE_LOADED)
-			buf[i] = ms_aInfoForModel[i].m_flags;
-		else
-			buf[i] = 0xFF;
-}
-
-void 
-CStreaming::MemoryCardLoad(uint8 *buf, uint32 size)
-{
-	uint32 i;
-
-	assert(size == NUM_DEFAULT_MODELS);
-	for(i = 0; i < size; i++)
-		if(ms_aInfoForModel[i].m_loadState == STREAMSTATE_LOADED)
-			if(buf[i] != 0xFF)
-				ms_aInfoForModel[i].m_flags = buf[i];
-}
-
-void
 CStreaming::UpdateForAnimViewer(void)
 {
 	if (CStreaming::ms_channelError == -1) {

@@ -229,8 +229,6 @@ public:
 	static void LoadScene(const CVector &pos);
 	static void LoadSceneCollision(const CVector &pos);
 
-	static void MemoryCardSave(uint8 *buffer, uint32 *length);
-	static void MemoryCardLoad(uint8 *buffer, uint32 length);
 
 	static void UpdateForAnimViewer(void);
 

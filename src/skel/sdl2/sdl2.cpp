@@ -25,7 +25,6 @@ long _dwOperatingSystemVersion;
 #include "ControllerConfig.h"
 #include "Frontend.h"
 #include "Game.h"
-#include "PCSave.h"
 #include "Sprite2d.h"
 #include "AnimViewer.h"
 #include "Font.h"
@@ -284,10 +283,7 @@ psInitialize(void)
 
     CFileMgr::Initialise();
 
-    C_PcSave::SetSaveDirectory(_psGetUserFilesFolder());
-
     InitialiseLanguage();
-
 
     _psInitializeVibration();
 
@@ -331,7 +327,6 @@ psInitialize(void)
 
     return TRUE;
 }
-
 
 /*
  *****************************************************************************
@@ -843,7 +838,6 @@ RwBool _psSetVideoMode(RwInt32 subSystem, RwInt32 videoMode)
 
     return TRUE;
 }
-
 
 /*
  *****************************************************************************
@@ -1558,7 +1552,6 @@ main(int argc, char *argv[])
 #endif
     }
 
-
     while ( TRUE )
     {
         RwInitialised = TRUE;
@@ -1714,18 +1707,10 @@ main(int argc, char *argv[])
                         if(!WindowIconified)
                             RsEventHandler(rsFRONTENDIDLE, nil);
 
-                        if ( !FrontEndMenuManager.m_bMenuActive || FrontEndMenuManager.m_bWantToLoad )
+                        if ( !FrontEndMenuManager.m_bMenuActive )
                         {
                             gGameState = GS_INIT_PLAYING_GAME;
                             TRACE("gGameState = GS_INIT_PLAYING_GAME;");
-                        }
-
-                        if ( FrontEndMenuManager.m_bWantToLoad )
-                        {
-                            InitialiseGame();
-                            FrontEndMenuManager.m_bGameNotLoaded = false;
-                            gGameState = GS_PLAYING_GAME;
-                            TRACE("gGameState = GS_PLAYING_GAME;");
                         }
                         break;
                     }
@@ -1771,7 +1756,6 @@ main(int argc, char *argv[])
             }
         }
 
-
         /*
         * About to shut down - block resize events again...
         */
@@ -1786,45 +1770,32 @@ main(int argc, char *argv[])
 
         DMAudio.ChangeMusicMode(MUSICMODE_DISABLE);
 
+        CTimer::Stop();
+
+#ifndef MASTER
+        if ( gbModelViewer )
+            CAnimViewer::Shutdown();
+        else
+#endif
+        if ( gGameState == GS_PLAYING_GAME )
+            CGame::ShutDown();
 
         CTimer::Stop();
 
-        if ( FrontEndMenuManager.m_bWantToLoad )
+        if ( FrontEndMenuManager.m_bFirstTime == true )
         {
-            CGame::ShutDownForRestart();
-            CGame::InitialiseWhenRestarting();
-            DMAudio.ChangeMusicMode(MUSICMODE_GAME);
-            LoadSplash(GetLevelSplashScreen(CGame::currLevel));
-            FrontEndMenuManager.m_bWantToLoad = false;
+            gGameState = GS_INIT_FRONTEND;
+            TRACE("gGameState = GS_INIT_FRONTEND;");
         }
         else
         {
-#ifndef MASTER
-            if ( gbModelViewer )
-                CAnimViewer::Shutdown();
-            else
-#endif
-            if ( gGameState == GS_PLAYING_GAME )
-                CGame::ShutDown();
-
-            CTimer::Stop();
-
-            if ( FrontEndMenuManager.m_bFirstTime == true )
-            {
-                gGameState = GS_INIT_FRONTEND;
-                TRACE("gGameState = GS_INIT_FRONTEND;");
-            }
-            else
-            {
-                gGameState = GS_INIT_PLAYING_GAME;
-                TRACE("gGameState = GS_INIT_PLAYING_GAME;");
-            }
+            gGameState = GS_INIT_PLAYING_GAME;
+            TRACE("gGameState = GS_INIT_PLAYING_GAME;");
         }
 
         FrontEndMenuManager.m_bFirstTime = false;
         FrontEndMenuManager.m_bWantToRestart = false;
     }
-
 
 #ifndef MASTER
     if ( gbModelViewer )
@@ -1837,7 +1808,6 @@ main(int argc, char *argv[])
     DMAudio.Terminate();
 
     _psFreeVideoModeList();
-
 
     /*
      * Tidy up the 3D (RenderWare) components of the application...
