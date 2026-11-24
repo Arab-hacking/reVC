@@ -175,6 +175,10 @@
 - **Константы винта** в `Boat.cpp`: `PLANE_MIN/STD/MAX_PROP_SPEED` → `STD/MAX_PROP_SPEED` (минимальная не читалась).
 - **`codewarrior/reVC.mcp.xml`** не правился: CodeWarrior-проект не входит в §6.1, файлы там перечислены списком;
   чистится на H.
+- **`CarEnterExit` урезан до 10 методов** (E-доп): 22 метода без вызывающих (SA-таск-API), статик-хелпер и 9 статических полей
+  удалены; `Initialise` стал пустым и удалён. Offset drag-out (`ms_vecPedQuickDraggedOutCarAnimOffset`) всегда был
+  `(0,0,0)` — единственный писатель значений был мёртвым; параметр удалён вместе с писателем, `nil` в
+  `CVehicle::IsRoomForPedToLeaveCar` даёт то же поведение, что нулевой вектор.
 
 ## 4. Читы (§3.12)
 

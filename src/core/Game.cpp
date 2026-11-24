@@ -14,7 +14,6 @@
 #include "main.h"
 #include "RwHelper.h"
 #include "Antennas.h"
-#include "CarEnterExit.h"
 #include "CdStream.h"
 #include "Clock.h"
 #include "Clouds.h"
@@ -445,7 +444,6 @@ bool CGame::Initialise(void)
 	CAnimManager::Initialise();
 	POP_MEMID();
 
-	CCarEnterExit::Initialise();
 
 	PUSH_MEMID(MEMID_DEF_MODELS);
 	InitModelIndices();

@@ -361,3 +361,20 @@ NPC-ветви, добить линковку (`linkcheck.sh` → 0 пропущ
 - `codewarrior/reVC.mcp.xml` (CodeWarrior-проект) всё ещё перечисляет файлы, удалённые на B–E (`Script.cpp`,
   `Population.cpp`, `CarAI.cpp`, `Heli.cpp`…). Это не одна из систем сборки §6.1 (premake/CMake), файлы там
   перечислены списком — почистить на H вместе с `main.cpp`-списком `PEDSTATS.DAT`/`PEDGRP.DAT`.
+
+### 7.7. E-доп: `CarEnterExit` урезан (`vehicles/CarEnterExit.{cpp,h}`)
+
+Модуль — SA-класс `CCarEnterExit`, в этом дереве у 22 из 33 методов не было вызывающих
+(в SA их зовёт таск-система, которой здесь нет; поток игрока идёт через `CPed`-стейт-машину).
+
+| Поле | Значение |
+|---|---|
+| строки `.cpp` до / после | 983 → 399 (−584: 22 метода, статик-хелпер `GetVehicleAnimGroupFor`, 9 статических полей, `Initialise`) |
+| методов до / после | 33 → 10 (`Initialise` стал пустым и удалён вместе с вызовом из `Game.cpp:448`) |
+| живые точки входа | `Ped.cpp:8217` `ComputeDoorFlag`, `:8222`/`:8233` `IsCarDoorReady`, `:8374` `ComputeDoorFlag`, `:9002` `GetNearestCarDoor`, `:9013` `GetNearestCarPassengerDoor` |
+| публичный API в `.h` | `CarHasOpenableDoor`, `IsCarDoorReady`, `ComputeDoorFlag`, `ComputeSlowJackedPed`, `GetNearestCarDoor`, `GetNearestCarPassengerDoor`, `GetPositionToOpenCarDoor` ×2, `IsPathToDoorBlockedByVehicleCollisionModel`, `IsRoomForPedToLeaveCar` |
+| удалены (22) | `AddInCarAnim`, `CarHasDoorToClose`, `CarHasDoorToOpen`, `CarHasPartiallyOpenDoor`, `ComputeOppositeDoorFlag`, `ComputePassengerIndexFromCarDoor`, `ComputeTargetDoorToEnterAsPassenger`, `ComputeTargetDoorToExit`, `IsCarDoorInUse`, `IsCarQuickJackPossible`, `IsCarSlowJackRequired`, `IsClearToDriveAway`, `IsPedHealthy`, `IsVehicleHealthy`, `IsVehicleStealable`, `MakeUndraggedDriverPedLeaveCar`, `MakeUndraggedPassengerPedsLeaveCar`, `QuitEnteringCar` (статический; `CPed::QuitEnteringCar` жив), `RemoveCarSitAnim`, `RemoveGetInAnims`, `SetAnimOffsetForEnterOrExitVehicle` (статический; `CPed::SetAnimOffsetForEnterOrExitVehicle` жив), `SetPedInCarDirect` |
+| статические поля | `ms_fMaxSpeed_CanDragPedOut`, `ms_fMaxSpeed_PlayerCanDragPedOut`, `ms_bPedOffsetsCalculated`, `ms_vecPedGetUpAnimOffset`, `ms_vecPedBedL/RAnimOffset`, `ms_vecPedDeskAnimOffset`, `ms_vecPedChairAnimOffset`, `ms_vecPedQuickDraggedOutCarAnimOffset` — удалены: писатель значимых offset'ов был мёртвым, speed-константы не читались |
+| `GetNearestCarDoor` | указатели `driverDraggedOutOffset`/`psgrDraggedOutOffset` и 9 передач третьего аргумента в `IsRoomForPedToLeaveCar` убраны; ветка `else if(bIsBus \|\| bLowVehicle)`, состоявшая только из обнуления указателей, удалена; `CCarEnterExit::IsRoomForPedToLeaveCar(vehicle, door)` передаёт в `CVehicle::IsRoomForPedToLeaveCar` `nil` — то же поведение, что и раньше (указатель всегда ссылался на нулевой вектор) |
+| `#include` | оставлены `common.h`, `CarEnterExit.h`, `Vehicle.h`, `Automobile.h`, `Ped.h`, `ModelInfo.h`, `VehicleModelInfo.h`, `World.h`, `Collision.h`, `Timer.h`; остальные сняты — компилятор их не требует |
+| проверки | `check.sh` для `Ped.cpp`, `CarEnterExit.cpp`, `Game.cpp` — OK 3 / FAIL 0; `-Wall` по `CarEnterExit.cpp` — 0 unused (165 оставшихся — статические таблицы `AnimAssocTables.h`, приходящие транзитивно через `VehicleModelInfo.h`, были и до правки); метод §2.6 (повисшие `if`) — 1 (`PlayerPed.cpp:1832`, чинится следующим шагом) |
