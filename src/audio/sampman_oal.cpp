@@ -381,6 +381,18 @@ cSampleManager::AutoDetect3DProviders()
 	return -1;
 }
 
+void
+cSampleManager::ReleaseDigitalHandle(void)
+{
+	// TODO? alcSuspendContext
+}
+
+void
+cSampleManager::ReacquireDigitalHandle(void)
+{
+	// TODO? alcProcessContext
+}
+
 bool8
 cSampleManager::Initialise(void)
 {

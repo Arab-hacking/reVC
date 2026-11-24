@@ -564,7 +564,6 @@ public:
 	int8 GetMissionScriptPoliceAudioPlayingStatus();
 	bool8 SetupCrimeReport();
 	void SetupSuspectLastSeenReport();
-	void PlaySuspectLastSeen(float x, float y, float z);
 	void AgeCrimes(); // inlined in vc
 		
 	// collision stuff

@@ -209,12 +209,6 @@ cDMAudio::CreateOneShotScriptObject(cAudioScriptObject *scriptObject)
 }
 
 void
-cDMAudio::PlaySuspectLastSeen(float x, float y, float z)
-{
-	AudioManager.PlaySuspectLastSeen(x, y, z);
-}
-
-void
 cDMAudio::ReportCollision(CEntity *entityA, CEntity *entityB, uint8 surfaceTypeA, uint8 surfaceTypeB, float collisionPower, float velocity)
 {
 	AudioManager.ReportCollision(entityA, entityB, surfaceTypeA, surfaceTypeB, collisionPower, velocity);

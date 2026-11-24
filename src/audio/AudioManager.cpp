@@ -493,6 +493,18 @@ cAudioManager::SetSpeakerConfig(int32 conf)
 }
 
 void
+cAudioManager::SetMissionScriptPoliceAudio(uint32)
+{
+	// This build has no police-radio mission-audio channel.
+}
+
+int8
+cAudioManager::GetMissionScriptPoliceAudioPlayingStatus()
+{
+	return PLAY_STATUS_FINISHED;
+}
+
+void
 cAudioManager::ReleaseDigitalHandle()
 {
 	if (m_bIsInitialised)

@@ -63,8 +63,6 @@ public:
 	void DestroyLoopingScriptObject(int32 audioEntity);
 	void CreateOneShotScriptObject(cAudioScriptObject *scriptObject);
 	
-	void PlaySuspectLastSeen(float x, float y, float z);
-	
 	void ReportCollision(CEntity *entityA, CEntity *entityB, uint8 surfaceTypeA, uint8 surfaceTypeB, float collisionPower, float velocity);
 	
 	void PlayFrontEndSound(uint16 frontend, uint32 volume);
