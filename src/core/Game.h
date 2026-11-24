@@ -77,6 +77,8 @@ public:
 	static void InitAfterFocusLoss(void);
 
 	static bool IsInInterior(void) { return currArea != AREA_MAIN_MAP; }
+	static bool8 InCutscene(void);
+	static void SetInCutscene(bool8 active);
 	static bool CanSeeWaterFromCurrArea(void);
 	static bool CanSeeOutSideFromCurrArea(void);
 	

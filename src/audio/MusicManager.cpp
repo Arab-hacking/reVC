@@ -14,6 +14,7 @@
 #include "Text.h"
 #include "Timer.h"
 #include "World.h"
+#include "Game.h"
 #include "sampman.h"
 #include "Stats.h"
 #include "ZoneCull.h"
@@ -320,6 +321,7 @@ cMusicManager::SetRadioInCar(tTrack station)
 void
 cMusicManager::ChangeMusicMode(uint8 mode)
 {
+	CGame::SetInCutscene(mode == MUSICMODE_CUTSCENE);
 	if (m_bIsInitialised) {
 		switch (mode)
 		{

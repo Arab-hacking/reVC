@@ -89,6 +89,7 @@ bool CGame::nastyGame = true;
 bool CGame::frenchGame;
 bool CGame::germanGame;
 bool CGame::playingIntro;
+static bool8 gInCutscene;
 #ifdef MORE_LANGUAGES
 bool CGame::russianGame = false;
 bool CGame::japaneseGame = false;
@@ -617,6 +618,16 @@ CGame::SpawnVehicle(uint32 model, CVector pos, float heading)
 	v->m_nDoorLock = CARLOCK_UNLOCKED;
 	CWorld::Add(v);
 	return v;
+}
+
+bool8 CGame::InCutscene(void)
+{
+	return gInCutscene;
+}
+
+void CGame::SetInCutscene(bool8 active)
+{
+	gInCutscene = active;
 }
 
 void CGame::CreatePlayer(void)

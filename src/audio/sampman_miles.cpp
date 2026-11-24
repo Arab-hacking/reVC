@@ -1,5 +1,6 @@
 #define WITHWINDOWS
 #include "common.h"
+#include "Game.h"
 
 #ifdef AUDIO_MSS
 #include <shlobj.h>
@@ -1584,7 +1585,7 @@ cSampleManager::LoadSampleBank(uint8 nBank)
 		return FALSE;
 	
 	if ( MusicManager.IsInitialised()
-		&& MusicManager.GetMusicMode() == MUSICMODE_CUTSCENE
+		&& CGame::InCutscene()
 		&& nBank != SFX_BANK_0 )
 	{
 		return FALSE;
@@ -1685,18 +1686,8 @@ cSampleManager::LoadPedComment(uint32 nComment)
 		return FALSE;
 	
 	// no talking peds during cutsenes or the game end
-	if ( MusicManager.IsInitialised() )
-	{
-		switch ( MusicManager.GetMusicMode() )
-		{
-			case MUSICMODE_CUTSCENE:
-			{
-				return FALSE;
-
-				break;
-			}
-		}
-	}
+	if (MusicManager.IsInitialised() && CGame::InCutscene())
+		return FALSE;
 	
 	if ( fseek(fpSampleDataHandle, m_aSamples[nComment].nOffset, SEEK_SET) != 0 )
 		return FALSE;
@@ -1938,7 +1929,7 @@ cSampleManager::SetChannelEmittingVolume(uint32 nChannel, uint32 nVolume)
 	nChannelVolume[nChannel] = vol;
 	
 	// increase the volume for JB.MP3 and S4_BDBD.MP3
-	if (MusicManager.GetMusicMode() == MUSICMODE_CUTSCENE ) {
+	if (CGame::InCutscene() ) {
 		if (MusicManager.GetCurrentTrack() == STREAMED_SOUND_CUTSCENE_FINALE)
 			nChannelVolume[nChannel] = 0;
 		else
@@ -1980,7 +1971,7 @@ cSampleManager::SetChannelVolume(uint32 nChannel, uint32 nVolume)
 			nChannelVolume[nChannel] = vol;
 			
 			// increase the volume for JB.MP3 and S4_BDBD.MP3
-			if (   MusicManager.GetMusicMode()    == MUSICMODE_CUTSCENE
+			if (CGame::InCutscene()
 				&& MusicManager.GetCurrentTrack() != STREAMED_SOUND_CUTSCENE_FINALE )
 			{
 				nChannelVolume[nChannel] >>= 2;

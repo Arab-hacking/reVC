@@ -1,4 +1,5 @@
 #include "common.h"
+#include "Game.h"
 
 #ifdef AUDIO_OAL
 
@@ -1040,7 +1041,7 @@ void
 CStream::BuffersShouldBeFilled()
 {
 #ifdef MULTITHREADED_AUDIO
-	if (MusicManager.m_nMusicMode != MUSICMODE_CUTSCENE) {
+	if (!CGame::InCutscene()) {
 		std::queue<std::pair<ALuint, ALuint>> tempQueue;
 		for(int i = 0; i < NUM_STREAMBUFFERS / 2; i++) {
 			tempQueue.push(std::pair<ALuint, ALuint>(m_alBuffers[i * 2], m_alBuffers[i * 2 + 1]));
@@ -1065,7 +1066,7 @@ bool
 CStream::BufferShouldBeFilledAndQueued(std::pair<ALuint, ALuint>* bufs)
 {
 #ifdef MULTITHREADED_AUDIO
-	if (MusicManager.m_nMusicMode != MUSICMODE_CUTSCENE)
+	if (!CGame::InCutscene())
 		m_fillBuffers.push(*bufs);
 	else
 #endif
@@ -1084,7 +1085,7 @@ CStream::BufferShouldBeFilledAndQueued(std::pair<ALuint, ALuint>* bufs)
 void
 CStream::FlagAsToBeProcessed(bool close)
 {
-	if (!close && MusicManager.m_nMusicMode == MUSICMODE_CUTSCENE)
+	if (!close && CGame::InCutscene())
 		return;
 
 	gAudioThreadQueueMutex.lock();
@@ -1474,7 +1475,7 @@ void CStream::SetPosMS(uint32 nPos)
 	std::queue<std::pair<ALuint, ALuint>>().swap(m_fillBuffers);
 	tsQueue<std::pair<ALuint, ALuint>>().swapNts(m_queueBuffers); // TSness not required, second thread always access it when stream mutex acquired
 
-	if (MusicManager.m_nMusicMode != MUSICMODE_CUTSCENE) {
+	if (!CGame::InCutscene()) {
 		m_bDoSeek = true;
 		m_SeekPos = nPos;
 	} else
@@ -1604,7 +1605,7 @@ bool CStream::Setup(bool imSureQueueIsEmpty, bool lock)
 			ClearBuffers();
 		}
 #ifdef MULTITHREADED_AUDIO
-		if (MusicManager.m_nMusicMode == MUSICMODE_CUTSCENE) {
+		if (CGame::InCutscene()) {
 			m_pSoundFile->Seek(0);
 		} else {
 			m_bDoSeek = true;

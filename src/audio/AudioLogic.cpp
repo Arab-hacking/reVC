@@ -1,4 +1,5 @@
 #include "common.h"
+#include "Game.h"
 #include "World.h"
 
 #include "AudioManager.h"
@@ -7996,7 +7997,7 @@ cAudioManager::ProcessWaterCannon(int32 id)
 void
 cAudioManager::ProcessScriptObject(int32 id)
 {
-	if (MusicManager.m_nMusicMode == MUSICMODE_GAME) {
+	if (!CGame::InCutscene() && MusicManager.m_nMusicMode == MUSICMODE_GAME) {
 		cAudioScriptObject *entity = (cAudioScriptObject*)m_asAudioEntities[id].m_pEntity;
 		if (entity != nil) {
 			m_sQueueSample.m_vecPos = entity->Posn;
