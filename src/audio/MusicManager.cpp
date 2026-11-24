@@ -593,27 +593,6 @@ cMusicManager::ServiceGameMode()
 						RadioStaticCounter = 0;
 					}
 				}
-#ifdef RADIO_SCROLL_TO_PREV_STATION
-				else if(!CPad::GetPad(0)->ArePlayerControlsDisabled() && (CPad::GetPad(0)->GetMouseWheelDownJustDown() || CPad::GetPad(0)->GetMouseWheelUpJustDown()) && vehicle) {
-					if(!UsesPoliceRadio(vehicle) && !UsesTaxiRadio(vehicle)) {
-						int scrollNext = ControlsManager.GetControllerKeyAssociatedWithAction(VEHICLE_CHANGE_RADIO_STATION, MOUSE);
-						int scrollPrev = scrollNext == rsMOUSEWHEELUPBUTTON ? rsMOUSEWHEELDOWNBUTTON
-																			: scrollNext == rsMOUSEWHEELDOWNBUTTON ? rsMOUSEWHEELUPBUTTON : -1;
-
-						if(scrollPrev != -1 && !ControlsManager.IsAnyVehicleActionAssignedToMouseKey(scrollPrev)) {
-							gNumRetunePresses--;
-							gRetuneCounter = RETUNE_TIME;
-							RadioStaticCounter = 0;
-							int track = gNumRetunePresses + vehicle->m_nRadioStation;
-							while(track < 0) track += NUM_RADIOS + 1;
-							while(track >= NUM_RADIOS + 1) track -= NUM_RADIOS + 1;
-#ifdef GTA_PC
-							if(!DMAudio.IsMP3RadioChannelAvailable() && track == USERTRACK) gNumRetunePresses--;
-#endif
-						}
-					}
-				}
-#endif
 			}
 		}
 	} else {

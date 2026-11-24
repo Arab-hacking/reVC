@@ -501,3 +501,22 @@ ReportCrime}` и связь преступления с отправкой со�
 `AudioSamples.h`, а также police/taxi streamed tracks в MusicManager и backendах. Они
 обрабатываются следующим radio/music pass; слот канала не сжимать до проверки backend
 индексации.
+
+### 8.2 Шаг 1.3 — удаление радио UI и привязок
+
+Удалены radio-station/MP3 boost пункты sound options, карусель радио-превью и связанные поля
+`CMenuManager`; radio/MP3 параметры убраны из `re3.ini`-моста и из бинарного settings read/write.
+Удалены radio-specific controller action и default bindings, мобильный слот/жест radio, а также
+иконки станций в радаре и их отображение в HUD. Громкость «Music» сохранена: она по-прежнему
+управляет streamed ambience.
+
+| Проверка | Результат |
+|---|---|
+| Полный `.harness/check.sh` | **OK: 216 FAIL: 0** |
+| `.harness/linkcheck.sh` | 216 объектов, 0 ошибок компиляции, **0** пропущенных reVC-символов (exit 1 — пустой `grep`) |
+| `.harness/dangling.py src` | **0 кандидатов** |
+| `git diff --check` | чисто |
+| Проверка удалённых UI identifiers (`MENUACTION_RADIO/LOADRADIO/MP3VOLUMEBOOST`, radio sprites, `VEHICLE_CHANGE_RADIO_STATION`, `m_PrefsRadioStation`, `m_PrefsMP3BoostVolume`) | **0 совпадений в `src/`** |
+
+В `MusicManager`, `Vehicle`, sample-manager и Stats ещё остаются радио-механизмы и enum-ы;
+они будут убраны в следующих проходах шага 1 после сохранения ambient selection/playback.

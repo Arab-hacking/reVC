@@ -250,8 +250,6 @@ void CControllerConfigManager::InitDefaultControlConfiguration()
 	SetControllerKeyAssociatedWithAction    (VEHICLE_ACCELERATE,                  rsUP,       KEYBOARD);
 	SetControllerKeyAssociatedWithAction    (VEHICLE_ACCELERATE,                  'W',        OPTIONAL_EXTRA);
 																		          
-	SetControllerKeyAssociatedWithAction    (VEHICLE_CHANGE_RADIO_STATION,        rsINS,      KEYBOARD);
-	SetControllerKeyAssociatedWithAction    (VEHICLE_CHANGE_RADIO_STATION,        'R',        OPTIONAL_EXTRA);
 																		          
 	SetControllerKeyAssociatedWithAction    (VEHICLE_BRAKE,                       rsDOWN,     KEYBOARD);
 	SetControllerKeyAssociatedWithAction    (VEHICLE_BRAKE,                       'S',        OPTIONAL_EXTRA);
@@ -378,7 +376,6 @@ void CControllerConfigManager::InitDefaultControlConfigMouse(CMouseControllerSta
 
 		SetMouseButtonAssociatedWithAction(PED_CYCLE_WEAPON_RIGHT,       5);
 
-		SetMouseButtonAssociatedWithAction(VEHICLE_CHANGE_RADIO_STATION, 4);
 
 		SetMouseButtonAssociatedWithAction(PED_SNIPER_ZOOM_IN, 4);
 
@@ -453,7 +450,6 @@ void CControllerConfigManager::InitDefaultControlConfigJoyPad(uint32 buttons)
 			SetControllerKeyAssociatedWithAction(PED_LOCK_TARGET,                    8, JOYSTICK);
 		IF_BTN_IN_RANGE(7)
 			SetControllerKeyAssociatedWithAction(PED_ANSWER_PHONE,                   7, JOYSTICK);
-			SetControllerKeyAssociatedWithAction(VEHICLE_CHANGE_RADIO_STATION,       7, JOYSTICK);
 		IF_BTN_IN_RANGE(6)
 			SetControllerKeyAssociatedWithAction(PED_CYCLE_WEAPON_RIGHT,             6, JOYSTICK);
 			SetControllerKeyAssociatedWithAction(VEHICLE_LOOKRIGHT,                  6, JOYSTICK);
@@ -505,7 +501,6 @@ void CControllerConfigManager::InitDefaultControlConfigJoyPad(uint32 buttons)
 			SetControllerKeyAssociatedWithAction(PED_LOCK_TARGET,                    8, JOYSTICK);
 		IF_BTN_IN_RANGE(7)
 			SetControllerKeyAssociatedWithAction(PED_ANSWER_PHONE,                   7, JOYSTICK);
-			SetControllerKeyAssociatedWithAction(VEHICLE_CHANGE_RADIO_STATION,       7, JOYSTICK);
 		IF_BTN_IN_RANGE(6)
 			SetControllerKeyAssociatedWithAction(PED_CYCLE_WEAPON_RIGHT,             6, JOYSTICK);
 			SetControllerKeyAssociatedWithAction(VEHICLE_LOOKRIGHT,                  6, JOYSTICK);
@@ -558,7 +553,6 @@ void CControllerConfigManager::InitialiseControllerActionNameArray()
 	SETACTIONNAME(VEHICLE_HANDBRAKE);
 	SETACTIONNAME(VEHICLE_ACCELERATE);
 	SETACTIONNAME(VEHICLE_BRAKE);
-	SETACTIONNAME(VEHICLE_CHANGE_RADIO_STATION);
 	SETACTIONNAME(TOGGLE_SUBMISSIONS);
 	SETACTIONNAME(PED_SNIPER_ZOOM_IN);
 	SETACTIONNAME(PED_SNIPER_ZOOM_OUT);
@@ -793,7 +787,6 @@ void CControllerConfigManager::AffectControllerStateOn_ButtonDown_Driving(int32 
 		state.RightShoulder1 = 255;
 	if (button == GetControllerKeyAssociatedWithAction(VEHICLE_ACCELERATE, type))
 		state.Cross = 255;
-	if (button == GetControllerKeyAssociatedWithAction(VEHICLE_CHANGE_RADIO_STATION, type))
 		state.LeftShoulder1 = 255;
 	if (button == GetControllerKeyAssociatedWithAction(VEHICLE_BRAKE, type))
 		state.Square = 255;
@@ -1769,7 +1762,6 @@ void CControllerConfigManager::DeleteMatchingVehicleControls(e_ControllerAction 
 #endif
 		CLEAR_ACTION_IF_NEEDED(VEHICLE_ACCELERATE);
 		CLEAR_ACTION_IF_NEEDED(VEHICLE_BRAKE);
-		CLEAR_ACTION_IF_NEEDED(VEHICLE_CHANGE_RADIO_STATION);
 		CLEAR_ACTION_IF_NEEDED(VEHICLE_HORN);
 		CLEAR_ACTION_IF_NEEDED(TOGGLE_SUBMISSIONS);
 		CLEAR_ACTION_IF_NEEDED(VEHICLE_HANDBRAKE);
@@ -1801,51 +1793,6 @@ void CControllerConfigManager::DeleteMatching1rstPersonControls(e_ControllerActi
 }
 
 #undef CLEAR_ACTION_IF_NEEDED
-
-#ifdef RADIO_SCROLL_TO_PREV_STATION
-#define CHECK_ACTION(action) \
-if (key == GetControllerKeyAssociatedWithAction(action, type))\
-	return true;
-
-bool CControllerConfigManager::IsAnyVehicleActionAssignedToMouseKey(int32 key)
-{
-	const eControllerType type = MOUSE;
-	if (!GetIsKeyBlank(key, type))
-	{
-#ifdef BIND_VEHICLE_FIREWEAPON
-		CHECK_ACTION(VEHICLE_FIREWEAPON);
-#endif
-		CHECK_ACTION(VEHICLE_LOOKBEHIND);
-		CHECK_ACTION(VEHICLE_LOOKLEFT);
-		CHECK_ACTION(VEHICLE_LOOKRIGHT);
-		CHECK_ACTION(VEHICLE_HORN);
-		CHECK_ACTION(VEHICLE_HANDBRAKE);
-		CHECK_ACTION(VEHICLE_ACCELERATE);
-		CHECK_ACTION(VEHICLE_BRAKE);
-		CHECK_ACTION(VEHICLE_CHANGE_RADIO_STATION);
-		CHECK_ACTION(TOGGLE_SUBMISSIONS);
-		CHECK_ACTION(VEHICLE_TURRETLEFT);
-		CHECK_ACTION(VEHICLE_TURRETRIGHT);
-		CHECK_ACTION(VEHICLE_TURRETUP);
-		CHECK_ACTION(VEHICLE_TURRETDOWN);
-		CHECK_ACTION(VEHICLE_ENTER_EXIT);
-		CHECK_ACTION(CAMERA_CHANGE_VIEW_ALL_SITUATIONS);
-#ifndef BIND_VEHICLE_FIREWEAPON
-		CHECK_ACTION(PED_FIREWEAPON);
-#endif
-		CHECK_ACTION(GO_LEFT);
-		CHECK_ACTION(GO_RIGHT);
-		CHECK_ACTION(NETWORK_TALK);
-		CHECK_ACTION(SWITCH_DEBUG_CAM_ON);
-		CHECK_ACTION(TOGGLE_DPAD);
-		CHECK_ACTION(TAKE_SCREEN_SHOT);
-		CHECK_ACTION(SHOW_MOUSE_POINTER_TOGGLE);
-	}
-	return false;
-}
-
-#undef CHECK_ACTION
-#endif
 
 void CControllerConfigManager::DeleteMatchingActionInitiators(e_ControllerAction action, int32 key, eControllerType type)
 {
@@ -1956,7 +1903,6 @@ e_ControllerActionType CControllerConfigManager::GetActionType(e_ControllerActio
 #endif
 	case VEHICLE_ACCELERATE:
 	case VEHICLE_BRAKE:
-	case VEHICLE_CHANGE_RADIO_STATION:
 	case VEHICLE_HORN:
 	case TOGGLE_SUBMISSIONS:
 	case VEHICLE_HANDBRAKE:
@@ -2474,7 +2420,6 @@ int32 CControllerConfigManager::GetNumOfSettingsForAction(e_ControllerAction act
 	     VFB(O)  /* VEHICLE_FIREWEAPON */                                                                                                                      \
 	     X,      /* VEHICLE_ACCELERATE */                                                                                                                      \
 	     Q,      /* VEHICLE_BRAKE */                                                                                                                           \
-	     L1,     /* VEHICLE_CHANGE_RADIO_STATION */                                                                                                            \
 	     L3,     /* VEHICLE_HORN */                                                                                                                            \
 	     R3,     /* TOGGLE_SUBMISSIONS */                                                                                                                      \
 	     R1,     /* VEHICLE_HANDBRAKE */                                                                                                                       \
@@ -2521,7 +2466,6 @@ int32 CControllerConfigManager::GetNumOfSettingsForAction(e_ControllerAction act
 	     VFB(O)  /* VEHICLE_FIREWEAPON */                                                                                                                      \
 	     X,      /* VEHICLE_ACCELERATE */                                                                                                                      \
 	     Q,      /* VEHICLE_BRAKE */                                                                                                                           \
-	     SELECT, /* VEHICLE_CHANGE_RADIO_STATION */                                                                                                            \
 	     L1,     /* VEHICLE_HORN */                                                                                                                            \
 	     R3,     /* TOGGLE_SUBMISSIONS */                                                                                                                      \
 	     R1,     /* VEHICLE_HANDBRAKE */                                                                                                                       \
@@ -2568,7 +2512,6 @@ int32 CControllerConfigManager::GetNumOfSettingsForAction(e_ControllerAction act
 	     VFB(O)  /* VEHICLE_FIREWEAPON */                                                                                                                      \
 	     X,      /* VEHICLE_ACCELERATE */                                                                                                                      \
 	     Q,      /* VEHICLE_BRAKE */                                                                                                                           \
-	     L3,     /* VEHICLE_CHANGE_RADIO_STATION */                                                                                                            \
 	     R1,     /* VEHICLE_HORN */                                                                                                                            \
 	     R3,     /* TOGGLE_SUBMISSIONS */                                                                                                                      \
 	     T,      /* VEHICLE_HANDBRAKE */                                                                                                                       \
@@ -2615,7 +2558,6 @@ int32 CControllerConfigManager::GetNumOfSettingsForAction(e_ControllerAction act
 	     VFB(R1) /* VEHICLE_FIREWEAPON */                                                                                                                      \
 	     RSU,    /* VEHICLE_ACCELERATE */                                                                                                                      \
 	     RSD,    /* VEHICLE_BRAKE */                                                                                                                           \
-	     O,      /* VEHICLE_CHANGE_RADIO_STATION */                                                                                                            \
 	     L3,     /* VEHICLE_HORN */                                                                                                                            \
 	     Q,      /* TOGGLE_SUBMISSIONS */                                                                                                                      \
 	     L1,     /* VEHICLE_HANDBRAKE */                                                                                                                       \

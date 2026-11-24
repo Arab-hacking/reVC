@@ -47,8 +47,6 @@ const CRGBA SLIDERON_COLOR(97, 194, 247, 255);
 const CRGBA SLIDEROFF_COLOR(27, 89, 130, 255);
 const CRGBA LIST_BACKGROUND_COLOR(49, 101, 148, 130);
 const CRGBA LIST_OPTION_COLOR(155, 155, 155, 255);
-const CRGBA RADIO_SELECTOR_COLOR = SLIDEROFF_COLOR;
-const CRGBA INACTIVE_RADIO_COLOR(100, 100, 255, 100);
 const CRGBA SCROLLBAR_COLOR = LABEL_COLOR;
 
 #define MAP_MIN_SIZE 162.f
@@ -148,16 +146,6 @@ const char* FrontendFilenames[][2] = {
 	{"mapBot01", "mapBot01A"},
 	{"mapBot02", "mapBot02A"},
 	{"mapBot03", "mapBot03A"},
-	{"wildstyle", "wildstyleA"},
-	{"flash", "flashA"},
-	{"kchat", "kchatA"},
-	{"fever", "feverA"},
-	{"vrock", "vrockA"},
-	{"vcpr", "vcprA"},
-	{"espantoso", "espantosoA"},
-	{"emotion", "emotionA"},
-	{"wave103", "wave103A"},
-	{"mp3", "mp3A"},
 	{"downOff", "buttonA"},
 	{"downOn", "buttonA"},
 	{"upOff", "buttonA"},
@@ -193,7 +181,6 @@ const char* FrontendFilenames[][2] = {
 #define MENU_SLIDER_WIDTH MENU_X(MENUSLIDER_UNK)
 #endif
 
-#define MENU_RADIO_X(x) (MENU_X_LEFT_ALIGNED(320.0f) + MENU_X((x) - 320.0f))
 
 #ifdef ANDROID
 static inline float
@@ -493,13 +480,11 @@ CMenuManager::CMenuManager()
 	m_StatsScrollDirection = 1;
 	m_PrefsSfxVolume = 49;
 	m_PrefsMusicVolume = 49;
-	m_PrefsRadioStation = 0;
 	m_PrefsStereoMono = 1;
 	m_PrefsBrightness = 256;
 	m_PrefsLOD = CRenderer::ms_lodDistScale;
 	m_KeyPressedCode = -1;
 	m_bFrontEnd_ReloadObrTxtGxt = false;
-	m_PrefsMP3BoostVolume = 0;
 	m_PrefsShowSubtitles = 0;
 	m_PrefsShowLegends = 1;
 #ifdef ASPECT_RATIO_SCALE
@@ -551,7 +536,6 @@ CMenuManager::CMenuManager()
 	m_bShowMouse = true;
 	m_nHoverOption = HOVEROPTION_NOT_HOVERING;
 
-	DMAudio.SetMP3BoostVolume(m_PrefsMP3BoostVolume);
 	m_bMenuActive = false;
 	m_nMenuFadeAlpha = 0;
 	m_fMapSize = MENU_Y(162.0f); // Y because of HOR+
@@ -634,21 +618,6 @@ CMenuManager::Initialise(void)
 	DMAudio.Service();
 	DMAudio.SetMusicMasterVolume(m_PrefsMusicVolume);
 	DMAudio.SetEffectsMasterVolume(m_PrefsSfxVolume);
-#ifdef FIX_BUGS
-	static bool firstTime = true;
-	if (firstTime) {
-		DMAudio.SetRadioInCar(m_PrefsRadioStation);
-		firstTime = false;
-	} else
-#endif
-	m_PrefsRadioStation = DMAudio.GetRadioInCar();
-
-	DMAudio.SetMP3BoostVolume(m_PrefsMP3BoostVolume);
-	if (DMAudio.IsMP3RadioChannelAvailable()) {
-		if (m_PrefsRadioStation < WILDSTYLE || m_PrefsRadioStation > USERTRACK)
-			m_PrefsRadioStation = CGeneral::GetRandomNumber() % (USERTRACK + 1);
-	} else if (m_PrefsRadioStation < WILDSTYLE || m_PrefsRadioStation > WAVE)
-		m_PrefsRadioStation = CGeneral::GetRandomNumber() % (WAVE + 1);
 
 	CFileMgr::SetDir("");
 	//CFileMgr::SetDir("");
@@ -809,15 +778,6 @@ CMenuManager::CheckSliderMovement(int value)
 			DMAudio.SetEffectsMasterVolume(m_PrefsSfxVolume);
 		}
 		break;
-	case MENUACTION_MP3VOLUMEBOOST:
-		if (m_nPrefsAudio3DProviderIndex != NO_AUDIO_PROVIDER) {
-			if (DMAudio.IsMP3RadioChannelAvailable()) {
-				m_PrefsMP3BoostVolume += value * (64 / MENUSLIDER_LOGICAL_BARS);
-				m_PrefsMP3BoostVolume = Clamp(m_PrefsMP3BoostVolume, 0, 65);
-				DMAudio.SetMP3BoostVolume(m_PrefsMP3BoostVolume);
-			}
-		}
-		break;
 	case MENUACTION_MOUSESENS:
 		TheCamera.m_fMouseAccelHorzntl += value * 1.0f/200.0f/15.0f;	// probably because diving it to 15 instead of 16(MENUSLIDER_LOGICAL_BARS) had more accurate steps
 		TheCamera.m_fMouseAccelHorzntl = Clamp(TheCamera.m_fMouseAccelHorzntl, 1.0f/3200.0f, 1.0f/200.0f);
@@ -906,7 +866,6 @@ CMenuManager::DisplayHelperText(char *text)
 #ifdef ANDROID
 			if ((aScreens[m_nCurrScreen].m_aEntries[m_nCurrOption].m_Action == MENUACTION_MUSICVOLUME ||
 			     aScreens[m_nCurrScreen].m_aEntries[m_nCurrOption].m_Action == MENUACTION_SFXVOLUME ||
-			     aScreens[m_nCurrScreen].m_aEntries[m_nCurrOption].m_Action == MENUACTION_MP3VOLUMEBOOST ||
 			     aScreens[m_nCurrScreen].m_aEntries[m_nCurrOption].m_Action == MENUACTION_AUDIOHW ||
 			     aScreens[m_nCurrScreen].m_aEntries[m_nCurrOption].m_Action == MENUACTION_SPEAKERCONF) &&
 			    m_nPrefsAudio3DProviderIndex == NO_AUDIO_PROVIDER) {
@@ -941,12 +900,6 @@ CMenuManager::DisplayHelperText(char *text)
 
 			if (aScreens[m_nCurrScreen].m_aEntries[m_nCurrOption].m_Action == MENUACTION_RESTOREDEF)
 				return;
-
-			if (aScreens[m_nCurrScreen].m_aEntries[m_nCurrOption].m_Action == MENUACTION_MP3VOLUMEBOOST) {
-				CFont::PrintString(SCREEN_STRETCH_FROM_RIGHT(HELPER_TEXT_RIGHT_MARGIN), SCREEN_SCALE_FROM_BOTTOM(HELPER_TEXT_BOTTOM_MARGIN),
-					m_nPrefsAudio3DProviderIndex == NO_AUDIO_PROVIDER ? TheText.Get("FEH_NA") : TheText.Get("FET_MIG"));
-				return;
-			}
 
 			CFont::PrintString(SCREEN_STRETCH_FROM_RIGHT(HELPER_TEXT_RIGHT_MARGIN), SCREEN_SCALE_FROM_BOTTOM(HELPER_TEXT_BOTTOM_MARGIN),
 				m_nCurrScreen != MENUPAGE_STATS ? TheText.Get("FET_MIG") : TheText.Get("FEH_SSA"));
@@ -999,8 +952,6 @@ CMenuManager::DoSettingsBeforeStartingAGame()
 	m_bWantToRestart = true;
 	DMAudio.SetEffectsFadeVol(0);
 	DMAudio.SetMusicFadeVol(0);
-	for (int i = 0; i < NUM_RADIOS; i++)
-		CStats::FavoriteRadioStationList[i] = 0.0f;
 
 	SwitchMenuOnAndOff();
 	DMAudio.ResetTimers(CTimer::GetTimeInMilliseconds());
@@ -1040,7 +991,6 @@ CMenuManager::DrawStandardMenus(bool activeScreen)
 				MENU_X_LEFT_ALIGNED(605.0f), MENU_Y(330.0f), CRGBA(LIST_BACKGROUND_COLOR.r, LIST_BACKGROUND_COLOR.g, LIST_BACKGROUND_COLOR.b, FadeIn(LIST_BACKGROUND_COLOR.a)));
 			break;
 		case MENUPAGE_SOUND_SETTINGS:
-			PrintRadioSelector();
 			break;
 		case MENUPAGE_STATS:
 			PrintStats();
@@ -1263,40 +1213,6 @@ CMenuManager::DrawStandardMenus(bool activeScreen)
 						rightText = TheText.Get("FEA_NAH");
 
 					break;
-				case MENUACTION_RADIO:
-					switch (m_PrefsRadioStation) {
-						case WILDSTYLE:
-							rightText = TheText.Get("FEA_FM0");
-							break;
-						case FLASH_FM:
-							rightText = TheText.Get("FEA_FM1");
-							break;
-						case KCHAT:
-							rightText = TheText.Get("FEA_FM2");
-							break;
-						case FEVER:
-							rightText = TheText.Get("FEA_FM3");
-							break;
-						case V_ROCK:
-							rightText = TheText.Get("FEA_FM4");
-							break;
-						case VCPR:
-							rightText = TheText.Get("FEA_FM5");
-							break;
-						case RADIO_ESPANTOSO:
-							rightText = TheText.Get("FEA_FM6");
-							break;
-						case EMOTION:
-							rightText = TheText.Get("FEA_FM7");
-							break;
-						case WAVE:
-							rightText = TheText.Get("FEA_FM8");
-							break;
-						case USERTRACK:
-							rightText = TheText.Get("FEA_MP3");
-							break;
-					}
-					break;
 				case MENUACTION_LEGENDS:
 					rightText = TheText.Get(m_PrefsShowLegends ? "FEM_ON" : "FEM_OFF");
 					break;
@@ -1395,11 +1311,6 @@ CMenuManager::DrawStandardMenus(bool activeScreen)
 						CFont::SetColor(CRGBA(DARKMENUOPTION_COLOR.r, DARKMENUOPTION_COLOR.g, DARKMENUOPTION_COLOR.b, FadeIn(255)));
 					}
 					break;
-				case MENUACTION_MP3VOLUMEBOOST:
-					if (!DMAudio.IsMP3RadioChannelAvailable()) {
-						rightText = TheText.Get("FEA_NM3");
-					}
-					break;
 #ifdef CUSTOM_FRONTEND_OPTIONS
 				case MENUACTION_CFO_DYNAMIC:
 				case MENUACTION_CFO_SELECT:
@@ -1471,7 +1382,7 @@ CMenuManager::DrawStandardMenus(bool activeScreen)
 
 					int action = aScreens[m_nCurrScreen].m_aEntries[i].m_Action;
 					if (rightText || action == MENUACTION_DRAWDIST || action == MENUACTION_BRIGHTNESS || action == MENUACTION_MUSICVOLUME ||
-						action == MENUACTION_SFXVOLUME || action == MENUACTION_MP3VOLUMEBOOST || action == MENUACTION_MOUSESENS
+						action == MENUACTION_SFXVOLUME || action == MENUACTION_MOUSESENS
 #ifdef CUSTOM_FRONTEND_OPTIONS
 						|| action == MENUACTION_CFO_SLIDER
 #endif
@@ -1643,10 +1554,6 @@ CMenuManager::DrawStandardMenus(bool activeScreen)
 						case MENUACTION_MOUSESENS:
 							ProcessSlider(TheCamera.m_fMouseAccelHorzntl * 200.0f, SLIDER_Y(170.0f), HOVEROPTION_INCREASE_MOUSESENS, HOVEROPTION_DECREASE_MOUSESENS, SCREEN_WIDTH, false);
 							break;
-						case MENUACTION_MP3VOLUMEBOOST:
-							if(m_nPrefsAudio3DProviderIndex != NO_AUDIO_PROVIDER && DMAudio.IsMP3RadioChannelAvailable())
-								ProcessSlider(m_PrefsMP3BoostVolume / 64.f, SLIDER_Y(128.0f), HOVEROPTION_INCREASE_MP3BOOST, HOVEROPTION_DECREASE_MP3BOOST, SCREEN_WIDTH, true);
-							break;
 #ifdef CUSTOM_FRONTEND_OPTIONS
 						case MENUACTION_CFO_SLIDER:
 							CMenuScreenCustom::CMenuEntry &option = aScreens[m_nCurrScreen].m_aEntries[i];
@@ -1660,9 +1567,6 @@ CMenuManager::DrawStandardMenus(bool activeScreen)
 					nextYToUse += MENU_DEFAULT_LINE_HEIGHT * CFont::GetNumberLines(MENU_X_LEFT_ALIGNED(60.0f), MENU_Y(nextYToUse), leftText);
 #endif
 
-					if (aScreens[m_nCurrScreen].m_aEntries[i].m_Action == MENUACTION_RADIO) {
-						nextYToUse += MENURADIO_SELECTOR_HEIGHT + 5.f; // unused
-					}
 				}
 			}
 		}
@@ -1712,8 +1616,6 @@ CMenuManager::DrawStandardMenus(bool activeScreen)
 			DisplayHelperText(nil);
 			break;
 		case MENUPAGE_OPTIONS:
-			if (m_nPrefsAudio3DProviderIndex == NO_AUDIO_PROVIDER && aScreens[m_nCurrScreen].m_aEntries[m_nCurrOption].m_Action == MENUACTION_LOADRADIO)
-				DisplayHelperText("FEA_NAH");
 			break;
 #ifdef CUSTOM_FRONTEND_OPTIONS
 		default:
@@ -1916,7 +1818,6 @@ CMenuManager::DrawControllerBound(int32 yStart, int32 xStart, int32 unused, int8
 					controllerAction = VEHICLE_ENTER_EXIT;
 					break;
 				case 10:
-					controllerAction = VEHICLE_CHANGE_RADIO_STATION;
 					break;
 				case 11:
 					controllerAction = VEHICLE_HORN;
@@ -3089,7 +2990,6 @@ CMenuManager::LoadAllTextures()
 		return;
 
 	// First icon is hidden behind arrow
-	m_LeftMostRadioX = MENU_RADIO_X(MENURADIO_ICON_FIRST_X - MENURADIO_ICON_SIZE);
 	CTimer::Stop();
 
 	CStreaming::MakeSpaceFor(350 * CDSTREAM_SECTOR_SIZE); // twice of it in mobile
@@ -3209,8 +3109,6 @@ CMenuManager::LoadSettings()
 			CFileMgr::Read(fileHandle, (char*)&CVehicle::m_bDisableMouseSteering, 1);
 			CFileMgr::Read(fileHandle, (char*)&m_PrefsSfxVolume, 1);
 			CFileMgr::Read(fileHandle, (char*)&m_PrefsMusicVolume, 1);
-			CFileMgr::Read(fileHandle, (char*)&m_PrefsMP3BoostVolume, 1);
-			CFileMgr::Read(fileHandle, (char*)&m_PrefsRadioStation, 1);
 			CFileMgr::Read(fileHandle, (char*)&m_PrefsSpeakers, 1);
 			CFileMgr::Read(fileHandle, (char*)&m_nPrefsAudio3DProviderIndex, 1);
 			CFileMgr::Read(fileHandle, (char*)&m_PrefsDMA, 1);
@@ -3342,8 +3240,6 @@ CMenuManager::SaveSettings()
 		CFileMgr::Write(fileHandle, (char*)&CVehicle::m_bDisableMouseSteering, 1);
 		CFileMgr::Write(fileHandle, (char*)&m_PrefsSfxVolume, 1);
 		CFileMgr::Write(fileHandle, (char*)&m_PrefsMusicVolume, 1);
-		CFileMgr::Write(fileHandle, (char*)&m_PrefsMP3BoostVolume, 1);
-		CFileMgr::Write(fileHandle, (char*)&m_PrefsRadioStation, 1);
 		CFileMgr::Write(fileHandle, (char*)&m_PrefsSpeakers, 1);
 		CFileMgr::Write(fileHandle, (char*)&m_nPrefsAudio3DProviderIndex, 1);
 		CFileMgr::Write(fileHandle, (char*)&m_PrefsDMA, 1);
@@ -3781,15 +3677,6 @@ CMenuManager::AdditionalOptionInput(bool &goBack)
 			}
 			break;
 		}
-		case MENUPAGE_SOUND_SETTINGS:
-			if (CheckHover(MENU_X_LEFT_ALIGNED(177.f), MENU_X_LEFT_ALIGNED(238.f), MENU_Y(MENURADIO_SELECTOR_START_Y - 13.f), MENU_Y(MENURADIO_SELECTOR_START_Y + MENURADIO_SELECTOR_HEIGHT - 8.f))) {
-					m_nHoverOption = HOVEROPTION_PREV_RADIO;
-			}
-
-			if (CheckHover(MENU_X_LEFT_ALIGNED(422.f), MENU_X_LEFT_ALIGNED(491.f), MENU_Y(MENURADIO_SELECTOR_START_Y - 13.f), MENU_Y(MENURADIO_SELECTOR_START_Y + MENURADIO_SELECTOR_HEIGHT - 8.f))) {
-					m_nHoverOption = HOVEROPTION_NEXT_RADIO;
-			}
-			break;
 		case MENUPAGE_STATS:
 		{
 			if (CPad::GetPad(0)->GetMouseWheelUpJustDown() || CPad::GetPad(0)->GetMouseWheelUpJustUp() || CPad::GetPad(0)->GetUp() ||
@@ -3942,184 +3829,6 @@ CMenuManager::ExportStats()
 	}
 	fclose(htmlFile);
 	CFileMgr::SetDir("");
-}
-
-// Original name is unknown
-void
-CMenuManager::PrintRadioSelector(void)
-{
-	static uint32 lastRadioChange = 0;
-
-	CSprite2d::Draw2DPolygon(MENU_RADIO_X(418.f), MENU_Y(MENURADIO_SELECTOR_START_Y + MENURADIO_SELECTOR_HEIGHT),
-		MENU_RADIO_X(228.f), MENU_Y(MENURADIO_SELECTOR_START_Y + MENURADIO_SELECTOR_HEIGHT),
-		MENU_RADIO_X(428.f), MENU_Y(MENURADIO_SELECTOR_START_Y),
-		MENU_RADIO_X(238.f), MENU_Y(MENURADIO_SELECTOR_START_Y), CRGBA(RADIO_SELECTOR_COLOR.r, RADIO_SELECTOR_COLOR.g, RADIO_SELECTOR_COLOR.b, FadeIn(180)));
-
-	int rightMostSprite, rightMostStation;
-	if (DMAudio.IsMP3RadioChannelAvailable()) {
-		rightMostSprite = MENUSPRITE_MP3;
-		rightMostStation = USERTRACK;
-	} else {
-		rightMostSprite = MENUSPRITE_WAVE;
-		rightMostStation = WAVE;
-	}
- #ifdef THIS_IS_STUPID
-
-	// First radio
-	if (m_ScrollRadioBy == 1) {
-		if (m_PrefsRadioStation == 1) {
-			m_aFrontEndSprites[rightMostSprite].Draw(m_LeftMostRadioX, MENU_Y(MENURADIO_ICON_Y), MENU_X(MENURADIO_ICON_SIZE), MENU_Y(MENURADIO_ICON_SIZE),
-				CRGBA(INACTIVE_RADIO_COLOR.r, INACTIVE_RADIO_COLOR.g, INACTIVE_RADIO_COLOR.b, FadeIn(INACTIVE_RADIO_COLOR.a)));
-		} else if ( m_PrefsRadioStation == 0) {
-			m_aFrontEndSprites[rightMostSprite - 1].Draw(m_LeftMostRadioX, MENU_Y(MENURADIO_ICON_Y), MENU_X(MENURADIO_ICON_SIZE), MENU_Y(MENURADIO_ICON_SIZE),
-				CRGBA(INACTIVE_RADIO_COLOR.r, INACTIVE_RADIO_COLOR.g, INACTIVE_RADIO_COLOR.b, FadeIn(INACTIVE_RADIO_COLOR.a)));
-		} else {
-			m_aFrontEndSprites[m_PrefsRadioStation + MENUSPRITE_WILDSTYLE - 2].Draw(m_LeftMostRadioX, MENU_Y(MENURADIO_ICON_Y), MENU_X(MENURADIO_ICON_SIZE), MENU_Y(MENURADIO_ICON_SIZE),
-				CRGBA(INACTIVE_RADIO_COLOR.r, INACTIVE_RADIO_COLOR.g, INACTIVE_RADIO_COLOR.b, FadeIn(INACTIVE_RADIO_COLOR.a)));
-		}
-	}
-
-	// Second
-	if (m_PrefsRadioStation == 0) {
-		m_aFrontEndSprites[rightMostSprite].Draw(m_LeftMostRadioX + MENU_X(MENURADIO_ICON_SIZE), MENU_Y(MENURADIO_ICON_Y), MENU_X(MENURADIO_ICON_SIZE), MENU_Y(MENURADIO_ICON_SIZE),
-			CRGBA(INACTIVE_RADIO_COLOR.r, INACTIVE_RADIO_COLOR.g, INACTIVE_RADIO_COLOR.b, FadeIn(INACTIVE_RADIO_COLOR.a)));
-	} else {
-		m_aFrontEndSprites[m_PrefsRadioStation + MENUSPRITE_WILDSTYLE - 1].Draw(m_LeftMostRadioX + MENU_X(MENURADIO_ICON_SIZE), MENU_Y(MENURADIO_ICON_Y), MENU_X(MENURADIO_ICON_SIZE),
-			MENU_Y(MENURADIO_ICON_SIZE), CRGBA(INACTIVE_RADIO_COLOR.r, INACTIVE_RADIO_COLOR.g, INACTIVE_RADIO_COLOR.b, FadeIn(INACTIVE_RADIO_COLOR.a)));
-	}
-
-	// Third (middle)
-	int prevStation = m_PrefsRadioStation - 1;
-	if (prevStation == rightMostStation) {
-		m_aFrontEndSprites[MENUSPRITE_WILDSTYLE + 1].Draw(m_LeftMostRadioX + MENU_X(MENURADIO_ICON_SIZE * 3), MENU_Y(MENURADIO_ICON_Y), MENU_X(MENURADIO_ICON_SIZE), MENU_Y(MENURADIO_ICON_SIZE),
-			CRGBA(INACTIVE_RADIO_COLOR.r, INACTIVE_RADIO_COLOR.g, INACTIVE_RADIO_COLOR.b, FadeIn(INACTIVE_RADIO_COLOR.a)));
-	} else if ( prevStation == rightMostStation - 1) {
-		m_aFrontEndSprites[MENUSPRITE_WILDSTYLE].Draw(m_LeftMostRadioX + MENU_X(MENURADIO_ICON_SIZE * 3), MENU_Y(MENURADIO_ICON_Y), MENU_X(MENURADIO_ICON_SIZE), MENU_Y(MENURADIO_ICON_SIZE),
-			CRGBA(INACTIVE_RADIO_COLOR.r, INACTIVE_RADIO_COLOR.g, INACTIVE_RADIO_COLOR.b, FadeIn(INACTIVE_RADIO_COLOR.a)));
-	} else {
-		m_aFrontEndSprites[m_PrefsRadioStation + MENUSPRITE_WILDSTYLE + 1].Draw(m_LeftMostRadioX + MENU_X(MENURADIO_ICON_SIZE * 3), MENU_Y(MENURADIO_ICON_Y), MENU_X(MENURADIO_ICON_SIZE), MENU_Y(MENURADIO_ICON_SIZE),
-			CRGBA(INACTIVE_RADIO_COLOR.r, INACTIVE_RADIO_COLOR.g, INACTIVE_RADIO_COLOR.b, FadeIn(INACTIVE_RADIO_COLOR.a)));
-	}
-
-	// Fifth
-	if (m_ScrollRadioBy == -1) {
-		int prevStation = m_PrefsRadioStation - 1;
-		if (prevStation == rightMostStation) {
-			m_aFrontEndSprites[MENUSPRITE_WILDSTYLE + 4].Draw(m_LeftMostRadioX + MENU_X(MENURADIO_ICON_SIZE * 4), MENU_Y(MENURADIO_ICON_Y), MENU_X(MENURADIO_ICON_SIZE), MENU_Y(MENURADIO_ICON_SIZE),
-				CRGBA(INACTIVE_RADIO_COLOR.r, INACTIVE_RADIO_COLOR.g, INACTIVE_RADIO_COLOR.b, FadeIn(INACTIVE_RADIO_COLOR.a)));
-		} else if (prevStation == rightMostStation - 1) {
-			m_aFrontEndSprites[MENUSPRITE_WILDSTYLE + 1].Draw(m_LeftMostRadioX + MENU_X(MENURADIO_ICON_SIZE * 4), MENU_Y(MENURADIO_ICON_Y), MENU_X(MENURADIO_ICON_SIZE), MENU_Y(MENURADIO_ICON_SIZE),
-				CRGBA(INACTIVE_RADIO_COLOR.r, INACTIVE_RADIO_COLOR.g, INACTIVE_RADIO_COLOR.b, FadeIn(INACTIVE_RADIO_COLOR.a)));
-		} else if ( prevStation == rightMostStation - 2) {
-			m_aFrontEndSprites[MENUSPRITE_WILDSTYLE].Draw(m_LeftMostRadioX + MENU_X(MENURADIO_ICON_SIZE * 4), MENU_Y(MENURADIO_ICON_Y), MENU_X(MENURADIO_ICON_SIZE), MENU_Y(MENURADIO_ICON_SIZE),
-				CRGBA(INACTIVE_RADIO_COLOR.r, INACTIVE_RADIO_COLOR.g, INACTIVE_RADIO_COLOR.b, FadeIn(INACTIVE_RADIO_COLOR.a)));
-		} else {
-			m_aFrontEndSprites[m_PrefsRadioStation + MENUSPRITE_WILDSTYLE + 2].Draw(m_LeftMostRadioX + MENU_X(MENURADIO_ICON_SIZE * 4), MENU_Y(MENURADIO_ICON_Y), MENU_X(MENURADIO_ICON_SIZE), MENU_Y(MENURADIO_ICON_SIZE),
-				CRGBA(INACTIVE_RADIO_COLOR.r, INACTIVE_RADIO_COLOR.g, INACTIVE_RADIO_COLOR.b, FadeIn(INACTIVE_RADIO_COLOR.a)));
-		}
-	}
-
-	// Fourth
-	if (m_ScrollRadioBy == 0) {
-		m_aFrontEndSprites[m_PrefsRadioStation + MENUSPRITE_WILDSTYLE].Draw(m_LeftMostRadioX + MENU_X(MENURADIO_ICON_SIZE * 2 - 10.f), MENU_Y(MENURADIO_ICON_Y - 10.f), MENU_X(MENURADIO_ICON_SIZE) + MENU_X(20.f), MENU_Y(MENURADIO_ICON_SIZE) + MENU_Y(20.f),
-			CRGBA(255, 255, 255, FadeIn(255)));
-	} else {	
-		if (m_PrefsRadioStation - 1 == rightMostStation) {
-			m_aFrontEndSprites[MENUSPRITE_WILDSTYLE].Draw(m_LeftMostRadioX + MENU_X(MENURADIO_ICON_SIZE * 2), MENU_Y(MENURADIO_ICON_Y), MENU_X(MENURADIO_ICON_SIZE), MENU_Y(MENURADIO_ICON_SIZE),
-				CRGBA(INACTIVE_RADIO_COLOR.r, INACTIVE_RADIO_COLOR.g, INACTIVE_RADIO_COLOR.b, FadeIn(INACTIVE_RADIO_COLOR.a)));
-		} else {
-			m_aFrontEndSprites[m_PrefsRadioStation + MENUSPRITE_WILDSTYLE].Draw(m_LeftMostRadioX + MENU_X(MENURADIO_ICON_SIZE * 2), MENU_Y(MENURADIO_ICON_Y), MENU_X(MENURADIO_ICON_SIZE), MENU_Y(MENURADIO_ICON_SIZE),
-				CRGBA(INACTIVE_RADIO_COLOR.r, INACTIVE_RADIO_COLOR.g, INACTIVE_RADIO_COLOR.b, FadeIn(INACTIVE_RADIO_COLOR.a)));
-		}
-	}
-#else
-	int first = ((m_PrefsRadioStation - 2) + rightMostStation + 1) % (rightMostStation + 1);
-	int second = ((m_PrefsRadioStation - 1) + rightMostStation + 1) % (rightMostStation + 1);
-	int third = ((m_PrefsRadioStation) + rightMostStation + 1) % (rightMostStation + 1);
-	int fourth = ((m_PrefsRadioStation + 1) + rightMostStation + 1) % (rightMostStation + 1);
-	int fifth = ((m_PrefsRadioStation + 2) + rightMostStation + 1) % (rightMostStation + 1);
-
-	// First one is only drawn on transition to next
-	if (m_ScrollRadioBy == 1) {
-		m_aFrontEndSprites[first + MENUSPRITE_WILDSTYLE].Draw(m_LeftMostRadioX, MENU_Y(MENURADIO_ICON_Y), MENU_X(MENURADIO_ICON_SIZE), MENU_Y(MENURADIO_ICON_SIZE),
-			CRGBA(INACTIVE_RADIO_COLOR.r, INACTIVE_RADIO_COLOR.g, INACTIVE_RADIO_COLOR.b, FadeIn(INACTIVE_RADIO_COLOR.a)));
-	}
-
-	// Second
-	m_aFrontEndSprites[second + MENUSPRITE_WILDSTYLE].Draw(m_LeftMostRadioX + MENU_X(MENURADIO_ICON_SIZE), MENU_Y(MENURADIO_ICON_Y), MENU_X(MENURADIO_ICON_SIZE), MENU_Y(MENURADIO_ICON_SIZE),
-		CRGBA(INACTIVE_RADIO_COLOR.r, INACTIVE_RADIO_COLOR.g, INACTIVE_RADIO_COLOR.b, FadeIn(INACTIVE_RADIO_COLOR.a)));
-
-	// Fourth
-	m_aFrontEndSprites[fourth + MENUSPRITE_WILDSTYLE].Draw(m_LeftMostRadioX + MENU_X(MENURADIO_ICON_SIZE * 3), MENU_Y(MENURADIO_ICON_Y), MENU_X(MENURADIO_ICON_SIZE), MENU_Y(MENURADIO_ICON_SIZE),
-		CRGBA(INACTIVE_RADIO_COLOR.r, INACTIVE_RADIO_COLOR.g, INACTIVE_RADIO_COLOR.b, FadeIn(INACTIVE_RADIO_COLOR.a)));
-
-	// Fifth one is only drawn on transition to prev.
-	if (m_ScrollRadioBy == -1) {
-		m_aFrontEndSprites[fifth + MENUSPRITE_WILDSTYLE].Draw(m_LeftMostRadioX + MENU_X(MENURADIO_ICON_SIZE * 4), MENU_Y(MENURADIO_ICON_Y), MENU_X(MENURADIO_ICON_SIZE), MENU_Y(MENURADIO_ICON_SIZE),
-			CRGBA(INACTIVE_RADIO_COLOR.r, INACTIVE_RADIO_COLOR.g, INACTIVE_RADIO_COLOR.b, FadeIn(INACTIVE_RADIO_COLOR.a)));
-	}
-
-	// Middle one(third) is colored differently depending on if it's in transition.
-	// If not in transition then this icon indicates selected radio, and should be on top of all icons. thus drawn last
-	if (m_ScrollRadioBy != 0) {
-		m_aFrontEndSprites[third + MENUSPRITE_WILDSTYLE].Draw(m_LeftMostRadioX + MENU_X(MENURADIO_ICON_SIZE * 2), MENU_Y(MENURADIO_ICON_Y), MENU_X(MENURADIO_ICON_SIZE), MENU_Y(MENURADIO_ICON_SIZE),
-			CRGBA(INACTIVE_RADIO_COLOR.r, INACTIVE_RADIO_COLOR.g, INACTIVE_RADIO_COLOR.b, FadeIn(INACTIVE_RADIO_COLOR.a)));		
-	} else {
-		m_aFrontEndSprites[third + MENUSPRITE_WILDSTYLE].Draw(m_LeftMostRadioX + MENU_X(MENURADIO_ICON_SIZE * 2 - 10.f), MENU_Y(MENURADIO_ICON_Y - 10.f), MENU_X(MENURADIO_ICON_SIZE) + MENU_X(20.f), MENU_Y(MENURADIO_ICON_SIZE) + MENU_Y(20.f),
-			CRGBA(255, 255, 255, FadeIn(255)));
-	}
-#endif
-
-	static bool radioChangeRequested = false;
-	static uint32 lastScrollCheck = 0;
-	if (CTimer::GetTimeInMillisecondsPauseMode() - lastScrollCheck > 17) {
-		if (m_ScrollRadioBy == 1) {
-			if (m_LeftMostRadioX > MENU_RADIO_X(MENURADIO_ICON_FIRST_X - MENURADIO_ICON_SIZE)) {
-				m_LeftMostRadioX -= MENU_X(6.f);
-			} else {
-				m_ScrollRadioBy = 0;
-				lastRadioChange = CTimer::GetTimeInMillisecondsPauseMode();
-				radioChangeRequested = true;
-			}
-		}
-		if (m_ScrollRadioBy == -1) {
-			if (m_LeftMostRadioX < MENU_RADIO_X(MENURADIO_ICON_FIRST_X - MENURADIO_ICON_SIZE)) {
-				m_LeftMostRadioX += MENU_X(6.f);
-			} else {
-				m_ScrollRadioBy = 0;
-				lastRadioChange = CTimer::GetTimeInMillisecondsPauseMode();
-				radioChangeRequested = true;
-			}
-		}
-		lastScrollCheck = CTimer::GetTimeInMillisecondsPauseMode();
-	}
-	// Background behind arrows
-	CSprite2d::Draw2DPolygon(MENU_RADIO_X(228.f), MENU_Y(MENURADIO_SELECTOR_START_Y + MENURADIO_SELECTOR_HEIGHT),
-		MENU_RADIO_X(168.f), MENU_Y(MENURADIO_SELECTOR_START_Y + MENURADIO_SELECTOR_HEIGHT),
-		MENU_RADIO_X(238.f), MENU_Y(MENURADIO_SELECTOR_START_Y),
-		MENU_RADIO_X(178.f), MENU_Y(MENURADIO_SELECTOR_START_Y),
-		CRGBA(RADIO_SELECTOR_COLOR.r, RADIO_SELECTOR_COLOR.g, RADIO_SELECTOR_COLOR.b, FadeIn(255)));
-	
-	CSprite2d::Draw2DPolygon(MENU_RADIO_X(478.f), MENU_Y(MENURADIO_SELECTOR_START_Y + MENURADIO_SELECTOR_HEIGHT),
-		MENU_RADIO_X(418.f), MENU_Y(MENURADIO_SELECTOR_START_Y + MENURADIO_SELECTOR_HEIGHT),
-		MENU_RADIO_X(488.f), MENU_Y(MENURADIO_SELECTOR_START_Y),
-		MENU_RADIO_X(428.f), MENU_Y(MENURADIO_SELECTOR_START_Y),
-		CRGBA(RADIO_SELECTOR_COLOR.r, RADIO_SELECTOR_COLOR.g, RADIO_SELECTOR_COLOR.b, FadeIn(255)));
-	
-	// Arrows and their shadows
-	CSprite2d::Draw2DPolygon(MENU_RADIO_X(216.f), MENU_Y(MENURADIO_SELECTOR_START_Y + 48.f), MENU_RADIO_X(196.f), MENU_Y(MENURADIO_SELECTOR_START_Y + 36.f), MENU_RADIO_X(216.f), MENU_Y(MENURADIO_SELECTOR_START_Y + 22.f), MENU_RADIO_X(196.f), MENU_Y(MENURADIO_SELECTOR_START_Y + 36.f), CRGBA(0, 0, 0, FadeIn(255)));
-	CSprite2d::Draw2DPolygon(MENU_RADIO_X(213.f), MENU_Y(MENURADIO_SELECTOR_START_Y + 45.f), MENU_RADIO_X(193.f), MENU_Y(MENURADIO_SELECTOR_START_Y + 33.f), MENU_RADIO_X(213.f), MENU_Y(MENURADIO_SELECTOR_START_Y + 19.f), MENU_RADIO_X(193.f), MENU_Y(MENURADIO_SELECTOR_START_Y + 33.f), CRGBA(97, 194, 247, FadeIn(255)));
-	CSprite2d::Draw2DPolygon(MENU_RADIO_X(440.f), MENU_Y(MENURADIO_SELECTOR_START_Y + 48.f), MENU_RADIO_X(460.f), MENU_Y(MENURADIO_SELECTOR_START_Y + 36.f), MENU_RADIO_X(440.f), MENU_Y(MENURADIO_SELECTOR_START_Y + 22.f), MENU_RADIO_X(460.f), MENU_Y(MENURADIO_SELECTOR_START_Y + 36.f), CRGBA(0, 0, 0, FadeIn(255)));
-	CSprite2d::Draw2DPolygon(MENU_RADIO_X(443.f), MENU_Y(MENURADIO_SELECTOR_START_Y + 45.f), MENU_RADIO_X(463.f), MENU_Y(MENURADIO_SELECTOR_START_Y + 33.f), MENU_RADIO_X(443.f), MENU_Y(MENURADIO_SELECTOR_START_Y + 19.f), MENU_RADIO_X(463.f), MENU_Y(MENURADIO_SELECTOR_START_Y + 33.f), CRGBA(97, 194, 247, FadeIn(255)));
-	if (radioChangeRequested) {
-		if (CTimer::GetTimeInMillisecondsPauseMode() - lastRadioChange > 50) {
-			DMAudio.SetRadioInCar(m_PrefsRadioStation);
-			DMAudio.PlayFrontEndTrack(m_PrefsRadioStation, TRUE);
-			OutputDebugString("FRONTEND RADIO STATION CHANGED");
-			lastRadioChange = CTimer::GetTimeInMillisecondsPauseMode();
-			radioChangeRequested = false;
-		}
-	}
 }
 
 // Original name is unknown
@@ -4404,7 +4113,6 @@ CMenuManager::UserInput(void)
 
 			int action = aScreens[m_nCurrScreen].m_aEntries[rowToCheck].m_Action;
 			if (action != MENUACTION_BRIGHTNESS && action != MENUACTION_DRAWDIST && action != MENUACTION_MUSICVOLUME
-				&& action != MENUACTION_SFXVOLUME && action != MENUACTION_MOUSESENS && action != MENUACTION_MP3VOLUMEBOOST
 #ifdef CUSTOM_FRONTEND_OPTIONS
 				&& action != MENUACTION_CFO_SLIDER
 #endif
@@ -4471,19 +4179,10 @@ CMenuManager::UserInput(void)
 			}
 		}
 
-		if (CPad::GetPad(0)->GetLeftMouseJustUp() && m_nCurrScreen != MENUPAGE_MAP) {
-			if (m_nHoverOption == HOVEROPTION_RANDOM_ITEM)
-				optionSelected = true;
-			else if (m_nHoverOption == HOVEROPTION_NEXT_RADIO)
-				ChangeRadioStation(1);
-			else if (m_nHoverOption == HOVEROPTION_PREV_RADIO)
-				ChangeRadioStation(-1);
-		}
 
 		if (CPad::GetPad(0)->GetLeftMouse()) {
 			switch (m_nHoverOption) {
 			case HOVEROPTION_INCREASE_BRIGHTNESS:
-			case HOVEROPTION_INCREASE_MP3BOOST:
 			case HOVEROPTION_INCREASE_DRAWDIST:
 			case HOVEROPTION_INCREASE_MUSICVOLUME:
 			case HOVEROPTION_INCREASE_SFXVOLUME:
@@ -4499,7 +4198,6 @@ CMenuManager::UserInput(void)
 					CheckSliderMovement(1);
 					break;
 			case HOVEROPTION_DECREASE_BRIGHTNESS:
-			case HOVEROPTION_DECREASE_MP3BOOST:
 			case HOVEROPTION_DECREASE_DRAWDIST:
 			case HOVEROPTION_DECREASE_MUSICVOLUME:
 			case HOVEROPTION_DECREASE_SFXVOLUME:
@@ -4578,9 +4276,8 @@ CMenuManager::UserInput(void)
 		static uint32 lastSliderDecrease = 0;
 		if (CTimer::GetTimeInMillisecondsPauseMode() - lastSliderDecrease > 150) {
 			if (curAction == MENUACTION_BRIGHTNESS || curAction == MENUACTION_MUSICVOLUME ||
-				curAction == MENUACTION_SFXVOLUME || curAction == MENUACTION_RADIO ||
-				curAction == MENUACTION_DRAWDIST || curAction == MENUACTION_MOUSESENS ||
-				curAction == MENUACTION_MP3VOLUMEBOOST
+				curAction == MENUACTION_SFXVOLUME ||
+				curAction == MENUACTION_DRAWDIST || curAction == MENUACTION_MOUSESENS
 #ifdef CUSTOM_FRONTEND_OPTIONS
 				|| curAction == MENUACTION_CFO_SLIDER
 #endif
@@ -4593,9 +4290,8 @@ CMenuManager::UserInput(void)
 		static uint32 lastSliderIncrease = 0;
 		if (CTimer::GetTimeInMillisecondsPauseMode() - lastSliderIncrease > 150) {
 			if (curAction == MENUACTION_BRIGHTNESS || curAction == MENUACTION_MUSICVOLUME ||
-				curAction == MENUACTION_SFXVOLUME || curAction == MENUACTION_RADIO ||
-				curAction == MENUACTION_DRAWDIST || curAction == MENUACTION_MOUSESENS ||
-				curAction == MENUACTION_MP3VOLUMEBOOST
+				curAction == MENUACTION_SFXVOLUME ||
+				curAction == MENUACTION_DRAWDIST || curAction == MENUACTION_MOUSESENS
 #ifdef CUSTOM_FRONTEND_OPTIONS
 				|| curAction == MENUACTION_CFO_SLIDER
 #endif
@@ -4645,8 +4341,7 @@ CMenuManager::UserInput(void)
 			&& aScreens[m_nCurrScreen].m_aEntries[m_nCurrOption].m_Action != MENUACTION_GOBACK
 			&& aScreens[m_nCurrScreen].m_aEntries[m_nCurrOption].m_Action != MENUACTION_RESTOREDEF
 			&& aScreens[m_nCurrScreen].m_aEntries[m_nCurrOption].m_Action != MENUACTION_DRAWDIST
-			&& aScreens[m_nCurrScreen].m_aEntries[m_nCurrOption].m_Action != MENUACTION_MOUSESENS
-			&& aScreens[m_nCurrScreen].m_aEntries[m_nCurrOption].m_Action != MENUACTION_MP3VOLUMEBOOST) {
+			&& aScreens[m_nCurrScreen].m_aEntries[m_nCurrOption].m_Action != MENUACTION_MOUSESENS) {
 			DMAudio.PlayFrontEndSound(SOUND_FRONTEND_ENTER_OR_ADJUST, 0);
 		}
 	}
@@ -4810,9 +4505,6 @@ CMenuManager::ProcessUserInput(uint8 goDown, uint8 goUp, uint8 optionSelected, u
 			case MENUACTION_NO:
 				SwitchToNewScreen(aScreens[m_nCurrScreen].m_aEntries[m_nCurrOption].m_TargetMenu);
 				break;
-			case MENUACTION_RADIO:
-				ChangeRadioStation(1);
-				break;
 			case MENUACTION_LANG_ENG:
 				m_PrefsLanguage = LANGUAGE_AMERICAN;
 				m_bFrontEnd_ReloadObrTxtGxt = true;
@@ -4859,13 +4551,6 @@ CMenuManager::ProcessUserInput(uint8 goDown, uint8 goUp, uint8 optionSelected, u
 				CFileLoader::ReloadObjectTypes("GTA3.IDE");
 				break;
 #endif
-			case MENUACTION_LOADRADIO:
-				if (m_nPrefsAudio3DProviderIndex != NO_AUDIO_PROVIDER) {
-					SwitchToNewScreen(MENUPAGE_SOUND_SETTINGS);
-				        DMAudio.PlayFrontEndTrack(m_PrefsRadioStation, TRUE);
-					OutputDebugString("STARTED PLAYING FRONTEND AUDIO TRACK");
-				}
-				break;
 			case MENUACTION_RADARMODE:
 				if (++m_PrefsRadarMode > 2)
 					m_PrefsRadarMode = 0;
@@ -4948,15 +4633,10 @@ CMenuManager::ProcessUserInput(uint8 goDown, uint8 goUp, uint8 optionSelected, u
 					DMAudio.SetCurrent3DProvider(m_nPrefsAudio3DProviderIndex);
 					m_PrefsSfxVolume = 49;
 					m_PrefsMusicVolume = 49;
-					m_PrefsRadioStation = EMOTION;
-					m_PrefsMP3BoostVolume = 0;
 					m_PrefsStereoMono = 1;
 					m_PrefsSpeakers = 0;
-					DMAudio.SetMP3BoostVolume(m_PrefsMP3BoostVolume);
 					DMAudio.SetMusicMasterVolume(m_PrefsMusicVolume);
 					DMAudio.SetEffectsMasterVolume(m_PrefsSfxVolume);
-					DMAudio.SetRadioInCar(m_PrefsRadioStation);
-				        DMAudio.PlayFrontEndTrack(m_PrefsRadioStation, TRUE);
 					SaveSettings();
 				} else if (m_nCurrScreen == MENUPAGE_DISPLAY_SETTINGS) {
 					m_PrefsBrightness = 256;
@@ -5107,9 +4787,6 @@ CMenuManager::ProcessUserInput(uint8 goDown, uint8 goUp, uint8 optionSelected, u
 				SaveSettings();
 				break;
 #endif
-			case MENUACTION_RADIO:
-				ChangeRadioStation(changeAmount);
-				break;
 			case MENUACTION_RADARMODE:
 				m_PrefsRadarMode += changeAmount;
 				if (m_PrefsRadarMode < 0)
@@ -5699,37 +5376,6 @@ CMenuManager::PrintMap(void)
 	CFont::SetWrapx(MENU_X_RIGHT_ALIGNED(MENU_X_MARGIN));
 	CFont::SetRightJustifyWrap(MENU_X_LEFT_ALIGNED(MENU_X_MARGIN));
 	DisplayHelperText("FEH_MPH");
-}
-
-void
-CMenuManager::ChangeRadioStation(int8 increaseBy)
-{
-	if (m_ScrollRadioBy != 0)
-		return;
-
-	m_PrefsRadioStation += increaseBy;
-	m_ScrollRadioBy = increaseBy;
-	if (m_ScrollRadioBy == 1) {
-		DMAudio.PlayFrontEndSound(SOUND_FRONTEND_ENTER_OR_ADJUST, 0);
-		m_LeftMostRadioX = MENU_RADIO_X(MENURADIO_ICON_FIRST_X);
-	} else {
-		DMAudio.PlayFrontEndSound(SOUND_FRONTEND_ENTER_OR_ADJUST, 0);
-		m_LeftMostRadioX = MENU_RADIO_X(MENURADIO_ICON_FIRST_X - (2 * MENURADIO_ICON_SIZE));
-	}
-
-	if (DMAudio.IsMP3RadioChannelAvailable()) {
-		if (m_PrefsRadioStation < WILDSTYLE)
-			m_PrefsRadioStation = USERTRACK;
-		if (m_PrefsRadioStation > USERTRACK)
-			m_PrefsRadioStation = WILDSTYLE;
-	} else {
-		if (m_PrefsRadioStation < WILDSTYLE)
-			m_PrefsRadioStation = WAVE;
-		if (m_PrefsRadioStation > WAVE)
-			m_PrefsRadioStation = WILDSTYLE;
-	}
-	DMAudio.StopFrontEndTrack();
-	DMAudio.PlayFrontEndSound(SOUND_RADIO_CHANGE, 0);
 }
 
 #ifdef GAMEPAD_MENU

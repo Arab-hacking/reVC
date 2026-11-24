@@ -283,3 +283,9 @@
   `CWanted` продолжает вести crimes/chaos, но больше не отправляет `DMAudio.ReportCrime()`.
   Идентификаторы backend channel и SFX пока оставлены как неактивные позиционные слоты;
   их безопасное удаление/уплотнение требует отдельного прохода по sample-manager таблицам.
+
+- В sound settings оставлена только громкость Music/SFX; Music volume нельзя удалить вместе
+  с радио, потому что streamed ambient loops используют тот же music stream gain.
+- Radio-specific HUD/controller/mobile-touch UI удалён на этапе радио, а не оставлен вместе
+  со статистикой: поле избранной станции перестало иметь смысл. `eRadioStation` пока не
+  удалён до очистки оставшихся его читателей в MusicManager, Vehicle и Stats.

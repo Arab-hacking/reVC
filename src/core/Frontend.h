@@ -30,20 +30,6 @@
 
 #define RIGHT_ALIGNED_TEXT_RIGHT_MARGIN(xMargin) (xMargin + 30.0f)
 
-#define MENURADIO_ICON_FIRST_X 238.f
-#ifdef EXTERNAL_3D_SOUND
-#define MENURADIO_ICON_Y 288.0f
-#else
-#define MENURADIO_ICON_Y 248.0f
-#endif
-#define MENURADIO_ICON_SIZE 60.0f
-#ifdef EXTERNAL_3D_SOUND
-#define MENURADIO_SELECTOR_START_Y 285.f // other options should leave room on the screen
-#else
-#define MENURADIO_SELECTOR_START_Y 245.0f
-#endif
-#define MENURADIO_SELECTOR_HEIGHT 65.f
-
 #define MENUSLIDER_X 500.0f
 #define MENUSLIDER_UNK 100.0f
 #define MENUSLIDER_SMALLEST_BAR 8.0f
@@ -156,16 +142,6 @@ enum eMenuSprites
 	MENUSPRITE_MAPBOT01,
 	MENUSPRITE_MAPBOT02,
 	MENUSPRITE_MAPBOT03,
-	MENUSPRITE_WILDSTYLE,
-	MENUSPRITE_FLASH,
-	MENUSPRITE_KCHAT,
-	MENUSPRITE_FEVER,
-	MENUSPRITE_VROCK,
-	MENUSPRITE_VCPR,
-	MENUSPRITE_ESPANTOSO,
-	MENUSPRITE_EMOTION,
-	MENUSPRITE_WAVE,
-	MENUSPRITE_MP3,
 	MENUSPRITE_DOWNOFF,
 	MENUSPRITE_DOWNON,
 	MENUSPRITE_UPOFF,
@@ -252,7 +228,6 @@ enum eMenuAction
 	MENUACTION_BRIGHTNESS,
 	MENUACTION_MUSICVOLUME,
 	MENUACTION_SFXVOLUME,
-	MENUACTION_RADIO,
 	MENUACTION_LANG_ENG,
 	MENUACTION_LANG_FRE,
 	MENUACTION_LANG_GER,
@@ -263,7 +238,6 @@ enum eMenuAction
 #endif
 	MENUACTION_NEWGAME,
 	MENUACTION_RELOADIDE,
-	MENUACTION_LOADRADIO,
 	MENUACTION_SWITCHBIGWHITEDEBUGLIGHT,
 	MENUACTION_COLLISIONPOLYS,
 	MENUACTION_LEGENDS,
@@ -288,7 +262,6 @@ enum eMenuAction
 	MENUACTION_MOUSESTEER,
 	MENUACTION_DRAWDIST,
 	MENUACTION_MOUSESENS,
-	MENUACTION_MP3VOLUMEBOOST,
 #ifdef GAMEPAD_MENU
 	MENUACTION_CTRLVIBRATION,
 	MENUACTION_CTRLCONFIG,
@@ -329,8 +302,6 @@ enum eCheckHover
 	HOVEROPTION_LIST, // also layer in controller setup and skin menu
 	HOVEROPTION_SKIN,
 	HOVEROPTION_USESKIN, // also layer in controller setup and skin menu
-	HOVEROPTION_NEXT_RADIO,
-	HOVEROPTION_PREV_RADIO,
 	HOVEROPTION_INCREASE_BRIGHTNESS,
 	HOVEROPTION_DECREASE_BRIGHTNESS,
 	HOVEROPTION_INCREASE_DRAWDIST,
@@ -341,8 +312,6 @@ enum eCheckHover
 	HOVEROPTION_DECREASE_SFXVOLUME,
 	HOVEROPTION_INCREASE_MOUSESENS,
 	HOVEROPTION_DECREASE_MOUSESENS,
-	HOVEROPTION_INCREASE_MP3BOOST,
-	HOVEROPTION_DECREASE_MP3BOOST,
 #ifdef CUSTOM_FRONTEND_OPTIONS
 	HOVEROPTION_INCREASE_CFO_SLIDER,
 	HOVEROPTION_DECREASE_CFO_SLIDER,
@@ -621,7 +590,6 @@ public:
 	int8 m_PrefsDMA;
 	int8 m_PrefsSfxVolume;
 	int8 m_PrefsMusicVolume;
-	int8 m_PrefsRadioStation;
 	uint8 m_PrefsStereoMono; // unused except restore settings
 	int32 m_nCurrOption;
 	bool m_bQuitGameNoCD;
@@ -639,7 +607,6 @@ public:
 	int32 field_54;
 	int8 m_bLanguageLoaded;
 	uint8 m_PrefsAllowNastyGame;
-	int8 m_PrefsMP3BoostVolume;
 	int8 m_ControlMethod;
 	int32 m_nPrefsVideoMode;
 	int32 m_nDisplayVideoMode;
@@ -654,8 +621,6 @@ public:
 	int32 m_firstStartCounter;
 	CSprite2d m_aFrontEndSprites[NUM_MENU_SPRITES];
 	bool m_bSpritesLoaded;
-	int32 m_LeftMostRadioX;
-	int32 m_ScrollRadioBy;
 	int32 m_nCurrScreen;
 	int32 m_nPrevScreen;
 	uint32 m_LastScreenSwitch;
@@ -839,7 +804,6 @@ public:
 	void ProcessList(bool &optionSelected, bool &goBack);
 	void UserInput();
 	void ProcessUserInput(uint8, uint8, uint8, uint8, int8);
-	void ChangeRadioStation(int8);
 	void ProcessOnOffMenuOptions();
 	void RequestFrontEndShutDown();
 	void RequestFrontEndStartUp();
@@ -855,7 +819,6 @@ public:
 	void SwitchToNewScreen(int8);
 	void AdditionalOptionInput(bool &goBack);
 	void ExportStats(void);
-	void PrintRadioSelector(void);
 
 	// New (not in function or inlined in the game)
 	void ThingsToDoBeforeLeavingPage();

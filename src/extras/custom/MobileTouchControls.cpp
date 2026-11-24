@@ -100,7 +100,6 @@ enum MobileBtnId {
 	MBTN_PAUSE = 0,
 	MBTN_CAM,
 	MBTN_WEAPON_SLOT,
-	MBTN_RADIO_SLOT,
 	MBTN_DRIVE_MODE,
 	MBTN_ATTACK,
 	MBTN_SPRINT,
@@ -177,7 +176,6 @@ struct ActivePointer {
 	bool isLook;
 	MobileBtnId btn;
 	bool swipedWeapon;
-	bool swipedRadio;
 };
 
 enum MenuOverlayBtn {
@@ -253,7 +251,6 @@ static bool s_pulsePause = false;
 static bool s_pulseCam = false;
 static bool s_pulseWeaponNext = false;
 static bool s_pulseWeaponPrev = false;
-static bool s_pulseRadio = false;
 static bool s_pulseInteract = false;
 static bool s_pulseCrouch = false;
 static bool s_pulseSubmission = false;
@@ -1102,8 +1099,6 @@ UpdateGameplayLayout(void)
 		const bool useStick = isHeli || isPlane || s_vehicleStickMode;
 
 		SetCircleBtn(s_buttons[MBTN_DRIVE_MODE], camIconX - m.Dp(54.0f), topIconY, rTopIcon, MTEX_DRIVE_TOGGLE, GLYPH_STEER_MODE);
-		SetRectBtn(s_buttons[MBTN_RADIO_SLOT], W * 0.50f, m.marginTopPx + m.Dp(22.0f),
-			m.Dp(68.0f), m.Dp(24.0f), MTEX_COUNT, GLYPH_NONE, true);
 
 		if (SupportsVehicleSubmission(veh)) {
 			SetCircleBtn(s_buttons[MBTN_SUBMISSION], camIconX - m.Dp(108.0f), topIconY, rTopIcon, MTEX_SUBMISSION, GLYPH_TARGET);
@@ -1471,7 +1466,7 @@ IsSliderMenuAction(int32 action)
 {
 	return action == MENUACTION_BRIGHTNESS || action == MENUACTION_DRAWDIST ||
 	       action == MENUACTION_MUSICVOLUME || action == MENUACTION_SFXVOLUME ||
-	       action == MENUACTION_MOUSESENS || action == MENUACTION_MP3VOLUMEBOOST
+	       action == MENUACTION_MOUSESENS
 #ifdef CUSTOM_FRONTEND_OPTIONS
 	       || action == MENUACTION_CFO_SLIDER
 #endif
@@ -1483,7 +1478,7 @@ IsCycleChoiceAction(int32 action)
 {
 	return action == MENUACTION_WIDESCREEN || action == MENUACTION_SPEAKERCONF ||
 	       action == MENUACTION_AUDIOHW || action == MENUACTION_SCREENRES ||
-	       action == MENUACTION_CTRLMETHOD || action == MENUACTION_RADIO
+	       action == MENUACTION_CTRLMETHOD
 #ifdef GAMEPAD_MENU
 	       || action == MENUACTION_CTRLCONFIG
 #endif
@@ -1599,7 +1594,6 @@ ApplyDirectSliderValue(int32 screen, int32 row, float touchX, float deltaX, bool
 		case MENUACTION_DRAWDIST:       return Clamp((FrontEndMenuManager.m_PrefsLOD - DRAWDIST_MIN) / DRAWDIST_RANGE, 0.0f, 1.0f);
 		case MENUACTION_MUSICVOLUME:    return FrontEndMenuManager.m_PrefsMusicVolume / 64.0f;
 		case MENUACTION_SFXVOLUME:      return FrontEndMenuManager.m_PrefsSfxVolume / 64.0f;
-		case MENUACTION_MP3VOLUMEBOOST: return FrontEndMenuManager.m_PrefsMP3BoostVolume / 64.0f;
 		case MENUACTION_MOUSESENS:      return TheCamera.m_fMouseAccelHorzntl * 200.0f;
 #ifdef CUSTOM_FRONTEND_OPTIONS
 		case MENUACTION_CFO_SLIDER: {
@@ -1637,12 +1631,6 @@ ApplyDirectSliderValue(int32 screen, int32 row, float touchX, float deltaX, bool
 		if (FrontEndMenuManager.m_nPrefsAudio3DProviderIndex != NO_AUDIO_PROVIDER) {
 			FrontEndMenuManager.m_PrefsSfxVolume = (int8)Clamp(t * 64.0f + 0.5f, 0.0f, 64.0f);
 			DMAudio.SetEffectsMasterVolume(FrontEndMenuManager.m_PrefsSfxVolume);
-		}
-		break;
-	case MENUACTION_MP3VOLUMEBOOST:
-		if (FrontEndMenuManager.m_nPrefsAudio3DProviderIndex != NO_AUDIO_PROVIDER && DMAudio.IsMP3RadioChannelAvailable()) {
-			FrontEndMenuManager.m_PrefsMP3BoostVolume = (int8)Clamp(t * 64.0f + 0.5f, 0.0f, 64.0f);
-			DMAudio.SetMP3BoostVolume(FrontEndMenuManager.m_PrefsMP3BoostVolume);
 		}
 		break;
 	case MENUACTION_MOUSESENS:
@@ -1908,17 +1896,6 @@ OnMenuFingerMotion(int64 fingerId, float x, float y)
 		}
 	}
 
-	// 5. Sound Settings radio icon carousel horizontal swipe
-	if (screen == MENUPAGE_SOUND_SETTINGS &&
-	    p->startY >= MenuY(MENURADIO_SELECTOR_START_Y - 16.0f) &&
-	    p->startY <= MenuY(MENURADIO_SELECTOR_START_Y + MENURADIO_SELECTOR_HEIGHT + 12.0f)) {
-		if (!p->swipedHorizontal && Abs(totalDX) >= m.Dp(26.0f) && Abs(totalDX) > Abs(totalDY)) {
-			p->swipedHorizontal = true;
-			FrontEndMenuManager.ChangeRadioStation(totalDX < 0.0f ? 1 : -1);
-			return;
-		}
-	}
-
 	// 6. Vertical swipe scrolling on scrollable pages & native lists (Skin Select / Controls)
 	const int32 maxVis = MenuHasNativeList(screen) ? 15 : GetMenuMaxVisibleRows();
 	if (FrontEndMenuManager.m_nTotalListRow > maxVis || (screen == MENUPAGE_SKIN_SELECT && FrontEndMenuManager.m_nSkinsTotal > maxVis)) {
@@ -2034,13 +2011,6 @@ OnMenuFingerUp(int64 fingerId, float x, float y)
 					s_lastMapTapY = y;
 				}
 			}
-		} else if (screen == MENUPAGE_SOUND_SETTINGS &&
-		           y >= MenuY(MENURADIO_SELECTOR_START_Y - 14.0f) &&
-		           y <= MenuY(MENURADIO_SELECTOR_START_Y + MENURADIO_SELECTOR_HEIGHT - 4.0f)) {
-			if (x < MenuXLeft(320.0f))
-				FrontEndMenuManager.ChangeRadioStation(-1);
-			else
-				FrontEndMenuManager.ChangeRadioStation(1);
 		} else if (screen == MENUPAGE_SKIN_SELECT) {
 			if (x > MenuXLeft(PLAYERSETUP_LIST_LEFT) && x < MenuXRight(PLAYERSETUP_LIST_RIGHT) &&
 			    y > MenuY(PLAYERSETUP_LIST_BODY_TOP) && y < SCREEN_SCALE_FROM_BOTTOM(PLAYERSETUP_LIST_BOTTOM)) {
@@ -2559,15 +2529,6 @@ CMobileTouchControls::UpgradeRadarSprites(void)
 		{ RADAR_SPRITE_TSHIRT,          "hud_tshirt" },
 		{ RADAR_SPRITE_TOMMY,           "hud_tommy" },
 		{ RADAR_SPRITE_PHONE,           "hud_phone" },
-		{ RADAR_SPRITE_RADIO_WILDSTYLE, "hud_RWildstyle" },
-		{ RADAR_SPRITE_RADIO_FLASH,     "hud_RFlash" },
-		{ RADAR_SPRITE_RADIO_KCHAT,     "hud_RKchat" },
-		{ RADAR_SPRITE_RADIO_FEVER,     "hud_RFever" },
-		{ RADAR_SPRITE_RADIO_VROCK,     "hud_RVRock" },
-		{ RADAR_SPRITE_RADIO_VCPR,      "hud_RVCPR" },
-		{ RADAR_SPRITE_RADIO_ESPANTOSO, "hud_REspantoso" },
-		{ RADAR_SPRITE_RADIO_EMOTION,   "hud_REmotion" },
-		{ RADAR_SPRITE_RADIO_WAVE,      "hud_RWave" }
 	};
 
 	for (size_t i = 0; i < ARRAY_SIZE(kBlips); i++) {
@@ -2778,13 +2739,6 @@ CMobileTouchControls::OnFingerMotion(int64 fingerId, float normX, float normY, f
 		return;
 	}
 
-	// Horizontal swipe on top-center vehicle radio zone retunes station
-	if (p->btn == MBTN_RADIO_SLOT && !p->swipedRadio) {
-		if (Abs(p->x - p->startX) >= m.Dp(20.0f)) {
-			p->swipedRadio = true;
-			s_pulseRadio = true;
-		}
-	}
 #else
 	(void)fingerId; (void)normX; (void)normY; (void)normDX; (void)normDY;
 #endif
@@ -2861,8 +2815,6 @@ CMobileTouchControls::OnFingerUp(int64 fingerId, float normX, float normY)
 		s_stickKnobY = s_stickBaseY;
 	} else if (p->btn == MBTN_WEAPON_SLOT && !p->swipedWeapon) {
 		s_pulseWeaponNext = true;
-	} else if (p->btn == MBTN_RADIO_SLOT && !p->swipedRadio) {
-		s_pulseRadio = true;
 	}
 
 	p->active = false;
@@ -2980,7 +2932,6 @@ CMobileTouchControls::UpdatePad(CPad *pad)
 	if (s_pulseCam)        { st.Select = 255;         s_pulseCam = false; }
 	if (s_pulseWeaponNext) { st.RightShoulder2 = 255; s_pulseWeaponNext = false; }
 	if (s_pulseWeaponPrev) { st.LeftShoulder2 = 255;  s_pulseWeaponPrev = false; }
-	if (s_pulseRadio)      { st.LeftShoulder1 = 255;  s_pulseRadio = false; }
 	if (s_pulseInteract)   { st.LeftShoulder1 = 255;  s_pulseInteract = false; }
 	if (s_pulseCrouch)     { st.LeftShock = 255;      s_pulseCrouch = false; }
 	if (s_pulseSubmission) { st.RightShock = 255;     s_pulseSubmission = false; }

@@ -85,15 +85,6 @@ enum eRadarSprite
 	RADAR_SPRITE_TSHIRT,
 	RADAR_SPRITE_TOMMY,
 	RADAR_SPRITE_PHONE,
-	RADAR_SPRITE_RADIO_WILDSTYLE,
-	RADAR_SPRITE_RADIO_FLASH,
-	RADAR_SPRITE_RADIO_KCHAT,
-	RADAR_SPRITE_RADIO_FEVER,
-	RADAR_SPRITE_RADIO_VROCK,
-	RADAR_SPRITE_RADIO_VCPR,
-	RADAR_SPRITE_RADIO_ESPANTOSO,
-	RADAR_SPRITE_RADIO_EMOTION,
-	RADAR_SPRITE_RADIO_WAVE,
 #ifdef MAP_ENHANCEMENTS
 	RADAR_SPRITE_WAYPOINT,
 #endif
@@ -198,15 +189,6 @@ public:
 	static CSprite2d TShirtSprite;
 	static CSprite2d TommySprite;
 	static CSprite2d PhoneSprite;
-	static CSprite2d RadioWildstyleSprite;
-	static CSprite2d RadioFlashSprite;
-	static CSprite2d RadioKChatSprite;
-	static CSprite2d RadioFeverSprite;
-	static CSprite2d RadioVRockSprite;
-	static CSprite2d RadioVCPRSprite;
-	static CSprite2d RadioEspantosoSprite;
-	static CSprite2d RadioEmotionSprite;
-	static CSprite2d RadioWaveSprite;
 	static CSprite2d *RadarSprites[RADAR_SPRITE_COUNT];
 	static float cachedCos;
 	static float cachedSin;

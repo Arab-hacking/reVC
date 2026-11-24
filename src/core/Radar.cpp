@@ -56,15 +56,6 @@ CSprite2d CRadar::SpraySprite;
 CSprite2d CRadar::TShirtSprite;
 CSprite2d CRadar::TommySprite;
 CSprite2d CRadar::PhoneSprite;
-CSprite2d CRadar::RadioWildstyleSprite;
-CSprite2d CRadar::RadioFlashSprite;
-CSprite2d CRadar::RadioKChatSprite;
-CSprite2d CRadar::RadioFeverSprite;
-CSprite2d CRadar::RadioVRockSprite;
-CSprite2d CRadar::RadioVCPRSprite;
-CSprite2d CRadar::RadioEspantosoSprite;
-CSprite2d CRadar::RadioEmotionSprite;
-CSprite2d CRadar::RadioWaveSprite;
 #ifdef MAP_ENHANCEMENTS
 CSprite2d CRadar::WaypointSprite;
 #endif
@@ -101,15 +92,6 @@ CSprite2d *CRadar::RadarSprites[RADAR_SPRITE_COUNT] = {
 	&TShirtSprite,
 	&TommySprite,
 	&PhoneSprite,
-	&RadioWildstyleSprite,
-	&RadioFlashSprite,
-	&RadioKChatSprite,
-	&RadioFeverSprite,
-	&RadioVRockSprite,
-	&RadioVCPRSprite,
-	&RadioEspantosoSprite,
-	&RadioEmotionSprite,
-	&RadioWaveSprite,
 #ifdef MAP_ENHANCEMENTS
 	&WaypointSprite,
 #endif
@@ -994,15 +976,6 @@ CRadar::LoadTextures()
 	TShirtSprite.SetTexture("tshirt");
 	TommySprite.SetTexture("tommy");
 	PhoneSprite.SetTexture("phone");
-	RadioWildstyleSprite.SetTexture("RWildstyle");
-	RadioFlashSprite.SetTexture("RFlash");
-	RadioKChatSprite.SetTexture("RKchat");
-	RadioFeverSprite.SetTexture("RFever");
-	RadioVRockSprite.SetTexture("RVRock");
-	RadioVCPRSprite.SetTexture("RVCPR");
-	RadioEspantosoSprite.SetTexture("REspantoso");
-	RadioEmotionSprite.SetTexture("REmotion");
-	RadioWaveSprite.SetTexture("RWave");
 #ifdef MAP_ENHANCEMENTS
 	WaypointSprite.SetTexture("radar_waypoint");
 	if(!WaypointSprite.m_pTexture) {
@@ -1204,15 +1177,6 @@ void CRadar::Shutdown()
 	TShirtSprite.Delete();
 	TommySprite.Delete();
 	PhoneSprite.Delete();
-	RadioWildstyleSprite.Delete();
-	RadioFlashSprite.Delete();
-	RadioKChatSprite.Delete();
-	RadioFeverSprite.Delete();
-	RadioVRockSprite.Delete();
-	RadioVCPRSprite.Delete();
-	RadioEspantosoSprite.Delete();
-	RadioEmotionSprite.Delete();
-	RadioWaveSprite.Delete();
 #ifdef MAP_ENHANCEMENTS
 	WaypointSprite.Delete();
 #endif
@@ -1654,33 +1618,6 @@ CRadar::DrawLegend(int32 x, int32 y, int32 sprite)
 		break;
 		case RADAR_SPRITE_PHONE:
 			text = TheText.Get("LG_25");
-		break;
-		case RADAR_SPRITE_RADIO_WILDSTYLE:
-			text = TheText.Get("LG_26");
-		break;
-		case RADAR_SPRITE_RADIO_FLASH:
-			text = TheText.Get("LG_27");
-		break;
-		case RADAR_SPRITE_RADIO_KCHAT:
-			text = TheText.Get("LG_28");
-		break;
-		case RADAR_SPRITE_RADIO_FEVER:
-			text = TheText.Get("LG_29");
-		break;
-		case RADAR_SPRITE_RADIO_VROCK:
-			text = TheText.Get("LG_30");
-		break;
-		case RADAR_SPRITE_RADIO_VCPR:
-			text = TheText.Get("LG_31");
-		break;
-		case RADAR_SPRITE_RADIO_ESPANTOSO:
-			text = TheText.Get("LG_32");
-		break;
-		case RADAR_SPRITE_RADIO_EMOTION:
-			text = TheText.Get("LG_33");
-		break;
-		case RADAR_SPRITE_RADIO_WAVE:
-			text = TheText.Get("LG_34");
 		break;
 #ifdef MAP_ENHANCEMENTS
         case RADAR_SPRITE_WAYPOINT:

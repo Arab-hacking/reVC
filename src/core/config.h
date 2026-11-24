@@ -404,7 +404,6 @@ enum Config {
 // Hud, frontend and radar
 #define PC_MENU
 #define FIX_RADAR			// use radar size from early version before R* broke it
-#define RADIO_OFF_TEXT		// Won't work without FIX_BUGS
 
 #define MAP_ENHANCEMENTS			// Adding waypoint and better mouse support
 #if defined(XINPUT) || defined(GTA_HANDHELD)
@@ -454,7 +453,6 @@ enum Config {
                           // originally and making it work in 2d only requires more resource). Will not work on PS2
 #define AUDIO_REFLECTIONS // Enable audio reflections. This is enabled in all vanilla versions
 #define AUDIO_REVERB // Enable audio reverb. It was disabled in PS2 and mobile versions
-#define RADIO_SCROLL_TO_PREV_STATION // Won't work without FIX_BUGS
 #define AUDIO_CACHE // cache sound lengths to speed up the cold boot
 #define PS2_AUDIO_CHANNELS // increases the maximum number of audio channels to PS2 value of 43 (PC has 28 originally)
 #define PS2_AUDIO_PATHS // changes audio paths for cutscenes and radio to PS2 paths (needs vbdec on MSS builds)

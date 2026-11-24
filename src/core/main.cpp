@@ -1459,7 +1459,6 @@ Render2dStuff(void)
 		CSprite2d::DrawRect(CRect(SCREEN_WIDTH / 2 + SCREEN_SCALE_X(210), 0.0f, SCREEN_WIDTH, SCREEN_HEIGHT), black);
 	}
 
-	MusicManager.DisplayRadioStationName();
 	TheConsole.Display();
 	CHud::Draw();
 
