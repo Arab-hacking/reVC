@@ -3,7 +3,6 @@
 
 #include "audio_enums.h"
 #include "AudioCollision.h"
-#include "PolRadio.h"
 #include "VehicleModelInfo.h"
 #include "Vehicle.h"
 #ifdef AUDIO_OAL
@@ -268,9 +267,6 @@ public:
 	cPedComments m_sPedComments;
 	int32 m_nFireAudioEntity;
 	int32 m_nWaterCannonEntity;
-	int32 m_nPoliceChannelEntity;
-	cPoliceRadioQueue m_sPoliceRadioQueue;
-	cAMCrime m_aCrimes[10];
 	int32 m_nFrontEndEntity;
 	int32 m_nCollisionEntity;
 	cAudioCollisionManager m_sCollisionManager;
@@ -566,17 +562,10 @@ public:
 	void ProcessMissionAudio();
 
 	// police radio
-	void InitialisePoliceRadioZones();
-	void InitialisePoliceRadio();
-	void ResetPoliceRadio();
 	void SetMissionScriptPoliceAudio(uint32 sfx); // inlined and optimized
 	int8 GetMissionScriptPoliceAudioPlayingStatus();
-	void DoPoliceRadioCrackle();
-	void ServicePoliceRadio();
-	void ServicePoliceRadioChannel(uint8 wantedLevel);
 	bool8 SetupCrimeReport();
 	void SetupSuspectLastSeenReport();
-	void ReportCrime(eCrimeType crime, const CVector &pos);
 	void PlaySuspectLastSeen(float x, float y, float z);
 	void AgeCrimes(); // inlined in vc
 		

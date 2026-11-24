@@ -134,10 +134,6 @@ cAudioManager::PostInitialiseGameSpecificSetup()
 	if (m_nWaterCannonEntity >= 0)
 		SetEntityStatus(m_nWaterCannonEntity, TRUE);
 
-	m_nPoliceChannelEntity = CreateEntity(AUDIOTYPE_POLICERADIO, (void *)1);
-	if (m_nPoliceChannelEntity >= 0)
-		SetEntityStatus(m_nPoliceChannelEntity, TRUE);
-
 	m_nEscalatorEntity = CreateEntity(AUDIOTYPE_ESCALATOR, (void*)1);
 	if (m_nEscalatorEntity >= 0)
 		SetEntityStatus(m_nEscalatorEntity, TRUE);
@@ -174,10 +170,6 @@ cAudioManager::PreTerminateGameSpecificShutdown()
 	if (m_nExtraSoundsEntity >= 0) {
 		DestroyEntity(m_nExtraSoundsEntity);
 		m_nExtraSoundsEntity = AEHANDLE_NONE;
-	}
-	if (m_nPoliceChannelEntity >= 0) {
-		DestroyEntity(m_nPoliceChannelEntity);
-		m_nPoliceChannelEntity = AEHANDLE_NONE;
 	}
 	if (m_nWaterCannonEntity >= 0) {
 		DestroyEntity(m_nWaterCannonEntity);
@@ -221,7 +213,6 @@ cAudioManager::ResetAudioLogicTimers(uint32 timer)
 	}
 	ClearMissionAudio(0);
 	ClearMissionAudio(1);
-	SampleManager.StopChannel(CHANNEL_POLICE_RADIO);
 }
 
 void

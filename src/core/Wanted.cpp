@@ -294,7 +294,6 @@ CWanted::ReportCrimeNow(eCrimeType type, const CVector &coors, bool policeDoesnt
 		Error("Undefined crime type, RegisterCrime, Wanted.cpp");
 	}
 	m_nChaos = Max(m_nChaos, m_nMinChaos);
-	DMAudio.ReportCrime(type, coors);
 	UpdateWantedLevel();
 }
 

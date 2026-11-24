@@ -88,8 +88,6 @@ cAudioManager::Initialise()
 				m_nActiveSamples = NUM_CHANNELS_GENERIC;
 #endif
 				PostInitialiseGameSpecificSetup();
-				InitialisePoliceRadioZones();
-				InitialisePoliceRadio();
 				MusicManager.Initialise();
 			}
 		}
@@ -369,7 +367,6 @@ cAudioManager::ResetTimers(uint32 time)
 		ClearActiveSamples();
 		ClearMissionAudio(0);
 		ClearMissionAudio(1);
-		SampleManager.StopChannel(CHANNEL_POLICE_RADIO);
 		SampleManager.SetEffectsFadeVolume(0);
 		SampleManager.SetMusicFadeVolume(0);
 		MusicManager.ResetMusicAfterReload();
@@ -567,7 +564,6 @@ cAudioManager::ServiceSoundEffects()
 			for (uint32 i = 0; i < NUM_CHANNELS_DTS_GENERIC; i++)
 				SampleManager.StopChannel(i);
 
-			SampleManager.SetChannelFrequency(CHANNEL_DTS_POLICE_RADIO, 0);
 			SampleManager.SetChannelFrequency(CHANNEL_DTS_MISSION_AUDIO_1, 0);
 			SampleManager.SetChannelFrequency(CHANNEL_DTS_MISSION_AUDIO_2, 0);
 			SampleManager.SetChannelFrequency(CHANNEL_DTS_PLAYER_VEHICLE_ENGINE, 0);
@@ -575,7 +571,6 @@ cAudioManager::ServiceSoundEffects()
 			for (uint32 i = 0; i < NUM_CHANNELS_GENERIC; i++)
 				SampleManager.StopChannel(i);
 
-			SampleManager.SetChannelFrequency(CHANNEL_POLICE_RADIO, 0);
 			SampleManager.SetChannelFrequency(CHANNEL_MISSION_AUDIO_1, 0);
 			SampleManager.SetChannelFrequency(CHANNEL_MISSION_AUDIO_2, 0);
 			SampleManager.SetChannelFrequency(CHANNEL_PLAYER_VEHICLE_ENGINE, 0);
@@ -604,7 +599,6 @@ cAudioManager::ServiceSoundEffects()
 	ClearRequestedQueue();
 	InterrogateAudioEntities();
 	m_sPedComments.Process();
-	ServicePoliceRadio();
 	ServiceCollisions();
 	AddReleasingSounds();
 	ProcessMissionAudio();

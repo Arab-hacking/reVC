@@ -60,8 +60,6 @@ public:
 	char GetCDAudioDriveLetter(void);
 	bool8 IsAudioInitialised(void);
 
-	void ResetPoliceRadio();
-	void ReportCrime(eCrimeType crime, CVector const &pos);
 	
 	int32 CreateLoopingScriptObject(cAudioScriptObject *scriptObject);
 	void DestroyLoopingScriptObject(int32 audioEntity);

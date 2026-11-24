@@ -718,7 +718,6 @@ cMusicManager::ServiceGameMode()
 						if (station == 0 && gRetuneCounter == RETUNE_TIME-1) // Right after turning on the radio
 #endif
 							AudioManager.PlayOneShot(AudioManager.m_nFrontEndEntity, SOUND_FRONTEND_RADIO_TURN_ON, 0.0f);
-						AudioManager.DoPoliceRadioCrackle();
 					}
 				}
 				if (RadioStaticCounter < 2 && CTimer::GetTimeInMilliseconds() > RadioStaticTimer + 800) {
@@ -1081,7 +1080,6 @@ void
 cMusicManager::PreloadCutSceneMusic(tTrack track)
 {
 	if (m_bIsInitialised && !m_bDisabled && track < TOTAL_STREAMED_SOUNDS && m_nMusicMode == MUSICMODE_CUTSCENE) {
-		AudioManager.ResetPoliceRadio();
 		while (SampleManager.IsStreamPlaying()) {
 			SampleManager.StopStreamedFile();
 #ifdef GTA_PS2

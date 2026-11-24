@@ -194,18 +194,6 @@ cDMAudio::IsAudioInitialised(void)
 }
 #endif
 
-void
-cDMAudio::ResetPoliceRadio()
-{
-	AudioManager.ResetPoliceRadio();
-}
-
-void
-cDMAudio::ReportCrime(eCrimeType crime, const CVector &pos)
-{
-	AudioManager.ReportCrime(crime, pos);
-}
-
 int32
 cDMAudio::CreateLoopingScriptObject(cAudioScriptObject *scriptObject)
 {

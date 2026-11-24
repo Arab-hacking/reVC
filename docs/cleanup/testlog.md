@@ -467,7 +467,7 @@ NPC-ветви, добить линковку (`linkcheck.sh` → 0 пропущ
 входе в `MUSICMODE_CUTSCENE` и сбрасывает при любом другом режиме. Все 14 ранее найденных
 проверок в `AudioLogic.cpp`, OpenAL `stream.cpp`, `sampman_oal.cpp` и `sampman_miles.cpp`
 переведены на новый gate. Оставшиеся употребления `MUSICMODE_CUTSCENE` внутри MusicManager —
-его собственная логика режима; PolRadio пока не удалён и обрабатывается в радио-этапе.
+его собственная логика режима; реализация PolRadio удалена в шаге 1.2.
 
 | Проверка | Результат |
 |---|---|
@@ -480,3 +480,24 @@ NPC-ветви, добить линковку (`linkcheck.sh` → 0 пропущ
 вызовов `ChangeMusicMode(MUSICMODE_CUTSCENE)` уже нет (сценарные подсистемы удалены раньше);
 точка состояния всё же привязана к единому API смены режима, чтобы последующее удаление
 MusicManager не меняло gate при восстановлении/добавлении такого перехода.
+
+### 8.1 Шаг 1.2 — удаление диспетчера полицейской рации
+
+Удалены `PolRadio.cpp/.h`, очередь/криминальные записи из `cAudioManager`, police-radio
+entity и lifecycle hooks, вызов сервиса из аудиоменеджера, API `DMAudio::{ResetPoliceRadio,
+ReportCrime}` и связь преступления с отправкой сообщения по радио. `CWanted` по-прежнему
+обрабатывает сами crimes/wanted level; удалена только ненужная аудио-отправка.
+
+| Проверка | Результат |
+|---|---|
+| Изменённые TU | **OK: 5 FAIL: 0** |
+| Полный `.harness/check.sh` | **OK: 216 FAIL: 0** |
+| `.harness/linkcheck.sh` | 216 объектов, 0 compile errors, 0 пропущенных reVC-символов (script exit 1 из-за пустого `grep`, не из-за missing symbols) |
+| `.harness/dangling.py src` | **0 кандидатов** |
+| `git diff --check` | чисто |
+| Упоминания `PolRadio` в исходниках/build project | 0; сохранено только историческое упоминание в этом журнале |
+
+Пока остаются backend-слоты/ветви `CHANNEL_*POLICE_RADIO`, звуки-идентификаторы в
+`AudioSamples.h`, а также police/taxi streamed tracks в MusicManager и backendах. Они
+обрабатываются следующим radio/music pass; слот канала не сжимать до проверки backend
+индексации.
