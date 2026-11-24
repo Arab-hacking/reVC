@@ -2894,14 +2894,22 @@ bool CPad::CycleCameraModeUpJustDown(void)
 		case 2:
 		case 3:
 		{
-			return !!(NewState.Select && !OldState.Select);
+			bool pressed = !!(NewState.Select && !OldState.Select);
+			if(pressed)
+				REVC_LOG_INFO("Camera zoom-cycle input: Select (mode=%d controller=%d new=%d old=%d)",
+					Mode, IsAffectedByController, NewState.Select, OldState.Select);
+			return pressed;
 
 			break;
 		}
 
 		case 1:
 		{
-			return !!(NewState.DPadUp && !OldState.DPadUp);
+			bool pressed = !!(NewState.DPadUp && !OldState.DPadUp);
+			if(pressed)
+				REVC_LOG_INFO("Camera zoom-cycle input: DPadUp (mode=%d controller=%d new=%d old=%d)",
+					Mode, IsAffectedByController, NewState.DPadUp, OldState.DPadUp);
+			return pressed;
 
 			break;
 		}
@@ -2925,7 +2933,11 @@ bool CPad::CycleCameraModeDownJustDown(void)
 
 		case 1:
 		{
-			return !!(NewState.DPadDown && !OldState.DPadDown);
+			bool pressed = !!(NewState.DPadDown && !OldState.DPadDown);
+			if(pressed)
+				REVC_LOG_INFO("Camera zoom-cycle input: DPadDown (mode=%d controller=%d new=%d old=%d)",
+					Mode, IsAffectedByController, NewState.DPadDown, OldState.DPadDown);
+			return pressed;
 
 			break;
 		}
