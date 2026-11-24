@@ -459,3 +459,24 @@ NPC-ветви, добить линковку (`linkcheck.sh` → 0 пропущ
 бинарник. В игре остаётся проверить старт нового мира, pause/options, отсутствие save/load/stats
 экрана в меню (stats screen уходит на шаг 7), mission replay если он включён, а также смерть/
 респавн/деньги/машину с мёртвым водителем; статус — **pending**, не выдаётся за подтверждённый.
+
+## 8. Этап 1.1 — вынос cutscene gate из MusicManager
+
+Коммит `18046d3` (`Preserve cutscene audio gate outside music manager`). `CGame::InCutscene()`
+теперь хранит независимое состояние; `cMusicManager::ChangeMusicMode()` устанавливает его при
+входе в `MUSICMODE_CUTSCENE` и сбрасывает при любом другом режиме. Все 14 ранее найденных
+проверок в `AudioLogic.cpp`, OpenAL `stream.cpp`, `sampman_oal.cpp` и `sampman_miles.cpp`
+переведены на новый gate. Оставшиеся употребления `MUSICMODE_CUTSCENE` внутри MusicManager —
+его собственная логика режима; PolRadio пока не удалён и обрабатывается в радио-этапе.
+
+| Проверка | Результат |
+|---|---|
+| `bash .harness/check.sh` (все TU) | **OK: 217 FAIL: 0** |
+| `bash .harness/check.sh <6 изменённых TU>` | **OK: 6 FAIL: 0** |
+| `git diff --check` | чисто |
+| Число заменённых audio gate | 14/14 |
+
+Полная игра не собиралась и поведенческий тест катсцены не выполнялся. В текущем дереве
+вызовов `ChangeMusicMode(MUSICMODE_CUTSCENE)` уже нет (сценарные подсистемы удалены раньше);
+точка состояния всё же привязана к единому API смены режима, чтобы последующее удаление
+MusicManager не меняло gate при восстановлении/добавлении такого перехода.
