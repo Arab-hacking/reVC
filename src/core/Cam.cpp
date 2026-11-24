@@ -435,7 +435,11 @@ CCam::ProcessSpecialHeightRoutines(void)
 		if(Mode == MODE_FOLLOWPED || Mode == MODE_FIGHT_CAM || Mode == MODE_PILLOWS_PAPS){
 			// Find highest ped close to camera
 			CPed *nearPeds[10];
-			int16 numNearPeds = Player->FindNearPeds(TheCamera.GetGameCamPosition(), 2.1f, nearPeds, ARRAY_SIZE(nearPeds));
+			// Keep the old BuildPedLists search radius: this code predicts whether
+			// a nearby ped will cross the camera path before it reaches the 2.1m
+			// collision threshold. Querying only 2.1m made the height offset pop
+			// on and off as peds crossed that boundary.
+			int16 numNearPeds = Player->FindNearPeds(Player->GetPosition(), 30.0f, nearPeds, ARRAY_SIZE(nearPeds));
 			for(i = 0; i < numNearPeds; i++){
 				CPed *nearPed = nearPeds[i];
 				if(nearPed->GetPedState() != PED_DEAD){
