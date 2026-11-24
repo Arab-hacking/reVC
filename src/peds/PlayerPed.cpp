@@ -1829,9 +1829,6 @@ CPlayerPed::ProcessControl(void)
 	if (m_nEvadeAmount == 0)
 		m_pEvadingFrom = nil;
 
-	if (Wanted()->GetWantedLevel() > 0)
-	
-
 	if (m_pCurrentPhysSurface && m_pCurrentPhysSurface->IsVehicle() && ((CVehicle*)m_pCurrentPhysSurface)->IsBoat()) {
 		bTryingToReachDryLand = true;
 

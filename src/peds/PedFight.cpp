@@ -3084,7 +3084,11 @@ CPed::InflictDamage(CEntity *damagedBy, eWeaponType method, float damage, ePedPi
 					((CBike*)m_pMyVehicle)->KnockOffRider(method, direction, this, false);
 					bDone = true;
 				} else {
-					if (m_pMyVehicle->GetVehicleAppearance() == VEHICLE_APPEARANCE_AUTOMOBILE) {
+					if (m_pMyVehicle->GetVehicleAppearance() == VEHICLE_APPEARANCE_AUTOMOBILE && m_pMyVehicle->pDriver == this) {
+						m_pMyVehicle->AutoPilot.m_nCarMission = MISSION_NONE;
+						m_pMyVehicle->AutoPilot.m_nCruiseSpeed = 0;
+						m_pMyVehicle->AutoPilot.m_nTempAction = TEMPACT_HANDBRAKESTRAIGHT;
+						m_pMyVehicle->AutoPilot.m_nTimeTempAction = CTimer::GetTimeInMilliseconds() + 2000;
 					}
 					if (m_pMyVehicle->CanPedExitCar(true)) {
 						SetObjective(OBJECTIVE_LEAVE_CAR_AND_DIE, m_pMyVehicle);

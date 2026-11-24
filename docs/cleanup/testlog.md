@@ -378,3 +378,16 @@ NPC-ветви, добить линковку (`linkcheck.sh` → 0 пропущ
 | `GetNearestCarDoor` | указатели `driverDraggedOutOffset`/`psgrDraggedOutOffset` и 9 передач третьего аргумента в `IsRoomForPedToLeaveCar` убраны; ветка `else if(bIsBus \|\| bLowVehicle)`, состоявшая только из обнуления указателей, удалена; `CCarEnterExit::IsRoomForPedToLeaveCar(vehicle, door)` передаёт в `CVehicle::IsRoomForPedToLeaveCar` `nil` — то же поведение, что и раньше (указатель всегда ссылался на нулевой вектор) |
 | `#include` | оставлены `common.h`, `CarEnterExit.h`, `Vehicle.h`, `Automobile.h`, `Ped.h`, `ModelInfo.h`, `VehicleModelInfo.h`, `World.h`, `Collision.h`, `Timer.h`; остальные сняты — компилятор их не требует |
 | проверки | `check.sh` для `Ped.cpp`, `CarEnterExit.cpp`, `Game.cpp` — OK 3 / FAIL 0; `-Wall` по `CarEnterExit.cpp` — 0 unused (165 оставшихся — статические таблицы `AnimAssocTables.h`, приходящие транзитивно через `VehicleModelInfo.h`, были и до правки); метод §2.6 (повисшие `if`) — 1 (`PlayerPed.cpp:1832`, чинится следующим шагом) |
+
+### 7.8. Регрессы удаления (D-1/D-5) — исправлены
+
+Оба одного класса: при удалении тела метода оставалась управляющая строка. Метод проверки (`.harness/dangling.py`):
+по всем `.cpp` — строка `if/for/while/else if … )` без `{`, затем одна или несколько пустых строк, затем
+непустая строка с отступом не больше, чем у условия. До правки — ровно 1 хит, после — **0**.
+
+| Место | Было | Стало |
+|---|---|---|
+| `peds/PlayerPed.cpp:1832` | `if (Wanted()->GetWantedLevel() > 0)` с пустым телом (его тело `FindNewAttackPoints()`/`UpdateMeleeAttackers()` удалено на D-1) | условие удалено целиком |
+| `peds/PedFight.cpp:3086` | `if (GetVehicleAppearance() == AUTOMOBILE) { }` — пустой блок: на D-5 вместе с `CCarCtrl::SwitchVehicleToRealPhysics` ушёл и сброс автопилота умирающего водителя | `if (… == AUTOMOBILE && pDriver == this) { AutoPilot.m_nCarMission = MISSION_NONE; m_nCruiseSpeed = 0; m_nTempAction = TEMPACT_HANDBRAKESTRAIGHT; m_nTimeTempAction = now + 2000; }` — без `STATUS_SIMPLE`/`SwitchVehicleToRealPhysics` (их больше нет). На F блок уходит вместе с `CAutoPilot` (§2.4 патча) — тогда зафиксировать поведение машины с мёртвым водителем |
+
+`check.sh` для обоих файлов — OK 2 / FAIL 0.
