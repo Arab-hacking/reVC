@@ -100,10 +100,6 @@ static psGlobalType PsGlobal;
 #include "AnimViewer.h"
 #include "MemoryMgr.h"
 
-#ifdef PS2_MENU
-#include "MemoryCard.h"
-#include "Font.h"
-#endif
 	
 VALIDATE_SIZE(psGlobalType, 0x28);
 
@@ -638,45 +634,9 @@ psInitialize(void)
 
 	CFileMgr::Initialise();
 
-#ifdef PS2_MENU
-	CPad::Initialise();
-	CPad::GetPad(0)->Mode = 0;
-	
-	CGame::frenchGame = false;
-	CGame::germanGame = false;
-	CGame::nastyGame = true;
-	CMenuManager::m_PrefsAllowNastyGame = true;
-	
-	WORD lang	= PRIMARYLANGID(GetSystemDefaultLCID());
-	if ( lang  == LANG_ITALIAN )
-		CMenuManager::m_PrefsLanguage = CMenuManager::LANGUAGE_ITALIAN;
-	else if ( lang  == LANG_SPANISH )
-		CMenuManager::m_PrefsLanguage = CMenuManager::LANGUAGE_SPANISH;
-	else if ( lang  == LANG_GERMAN )
-	{
-		CGame::germanGame = true;
-		CGame::nastyGame = false;
-		CMenuManager::m_PrefsAllowNastyGame = false;
-		CMenuManager::m_PrefsLanguage = CMenuManager::LANGUAGE_GERMAN;
-	}
-	else if ( lang  == LANG_FRENCH )
-	{
-		CGame::frenchGame = true;
-		CGame::nastyGame = false;
-		CMenuManager::m_PrefsAllowNastyGame = false;
-		CMenuManager::m_PrefsLanguage = CMenuManager::LANGUAGE_FRENCH;
-	}
-	else
-		CMenuManager::m_PrefsLanguage = CMenuManager::LANGUAGE_AMERICAN;
-	
-	FrontEndMenuManager.InitialiseMenuContentsAfterLoadingGame();
-	
-	TheMemoryCard.Init();
-#else
 	C_PcSave::SetSaveDirectory(_psGetUserFilesFolder());
 	
 	InitialiseLanguage();
-#endif
 	
 	gGameState = GS_START_UP;
 	TRACE("gGameState = GS_START_UP");
@@ -722,9 +682,7 @@ psInitialize(void)
 		}
 	}
 
-#ifndef PS2_MENU
 	FrontEndMenuManager.LoadSettings();
-#endif
 
 	dwDXVersion = GetDXVersion();
 	debug("DirectX version 0x%x\n", dwDXVersion);
@@ -1571,10 +1529,8 @@ psSelectDevice()
 	FrontEndMenuManager.m_nPrefsDepth = vm.depth;
 #endif
 
-#ifndef PS2_MENU
 	if (!useDefault)
 		FrontEndMenuManager.m_nCurrOption = 0;
-#endif
 	
 	/* Set up the video mode and set the apps window
 	* dimensions to match */
@@ -2202,21 +2158,6 @@ WinMain(HINSTANCE instance,
 	SetErrorMode(SEM_FAILCRITICALERRORS);
 
 			
-#ifdef PS2_MENU
-	int32 r = TheMemoryCard.CheckCardStateAtGameStartUp(CARD_ONE);
-	if (   r == CMemoryCard::ERR_DIRNOENTRY  || r == CMemoryCard::ERR_NOFORMAT
-		&& r != CMemoryCard::ERR_OPENNOENTRY && r != CMemoryCard::ERR_NONE )
-	{
-		LoadingScreen(nil, nil, "loadsc0");
-		
-		TheText.Unload();
-		TheText.Load();
-		
-		CFont::Initialise();
-		
-		FrontEndMenuManager.DrawMemoryCardStartUpMenus();
-	}
-#endif
 
 #ifndef MASTER
 	if (gbModelViewer) {
@@ -2224,9 +2165,7 @@ WinMain(HINSTANCE instance,
 		LoadingScreen("Loading the ModelViewer", NULL, GetRandomSplashScreen());
 		CAnimViewer::Initialise();
 		CTimer::Update();
-#ifndef PS2_MENU
 		FrontEndMenuManager.m_bGameNotLoaded = false;
-#endif
 	}
 #endif
 
@@ -2248,18 +2187,7 @@ WinMain(HINSTANCE instance,
 		/*
 		* Enter the message processing loop...
 		*/
-#ifdef PS2_MENU
-		if (TheMemoryCard.m_bWantToLoad)
-			LoadSplash(GetLevelSplashScreen(CGame::currLevel));
-		
-		TheMemoryCard.m_bWantToLoad = false;
-		
-		CTimer::Update();
-		
-		while( !RsGlobal.quit && !(FrontEndMenuManager.m_bWantToRestart || TheMemoryCard.b_FoundRecentSavedGameWantToLoad) )
-#else
 		while( !RsGlobal.quit && !FrontEndMenuManager.m_bWantToRestart )
-#endif
 		{
 			if( PeekMessage(&message, nil, 0U, 0U, PM_REMOVE|PM_NOYIELD) )
 			{
@@ -2382,31 +2310,16 @@ WinMain(HINSTANCE instance,
 						RsCameraShowRaster(Scene.camera);
 #endif
 
-#ifdef PS2_MENU
-						extern char version_name[64];
-						if ( CGame::frenchGame || CGame::germanGame )
-							LoadingScreen(NULL, version_name, "loadsc24");
-						else
-							LoadingScreen(NULL, version_name, "loadsc0");
-						
-						printf("Into TheGame!!!\n");
-#else				
 						LoadingScreen(nil, nil, "loadsc0");
 						// LoadingScreen(nil, nil, "loadsc0"); // duplicate
-#endif
 						if ( !CGame::InitialiseOnceAfterRW() )
 							RsGlobal.quit = TRUE;
 				
-#ifdef PS2_MENU
-						gGameState = GS_INIT_PLAYING_GAME;
-#else
 						gGameState = GS_INIT_FRONTEND;
 						TRACE("gGameState = GS_INIT_FRONTEND;");
-#endif
 						break;
 					}
 					
-#ifndef PS2_MENU
 					case GS_INIT_FRONTEND:
 					{
 						LoadingScreen(nil, nil, "loadsc0");
@@ -2435,21 +2348,13 @@ WinMain(HINSTANCE instance,
 						if (wp.showCmd != SW_SHOWMINIMIZED)
 							RsEventHandler(rsFRONTENDIDLE, nil);
 
-#ifdef PS2_MENU
-						if ( !FrontEndMenuManager.m_bMenuActive || TheMemoryCard.m_bWantToLoad )
-#else
 						if ( !FrontEndMenuManager.m_bMenuActive || FrontEndMenuManager.m_bWantToLoad )
-#endif
 						{
 							gGameState = GS_INIT_PLAYING_GAME;
 							TRACE("gGameState = GS_INIT_PLAYING_GAME;");
 						}
 
-#ifdef PS2_MENU
-						if (TheMemoryCard.m_bWantToLoad )
-#else
 						if ( FrontEndMenuManager.m_bWantToLoad )
-#endif
 						{
 							InitialiseGame();
 							FrontEndMenuManager.m_bGameNotLoaded = false;
@@ -2458,37 +2363,12 @@ WinMain(HINSTANCE instance,
 						}
 						break;
 					}
-#endif
 					
 					case GS_INIT_PLAYING_GAME:
 					{
-#ifdef PS2_MENU
-						CGame::Initialise();
-						
-						//LoadingScreen("Starting Game", NULL, GetRandomSplashScreen());
-					
-						if (   TheMemoryCard.CheckCardInserted(CARD_ONE) == CMemoryCard::NO_ERR_SUCCESS
-							&& TheMemoryCard.ChangeDirectory(CARD_ONE, TheMemoryCard.Cards[CARD_ONE].dir)
-							&& TheMemoryCard.FindMostRecentFileName(CARD_ONE, TheMemoryCard.MostRecentFile) == true
-							&& TheMemoryCard.CheckDataNotCorrupt(TheMemoryCard.MostRecentFile))
-						{
-							strcpy(TheMemoryCard.LoadFileName, TheMemoryCard.MostRecentFile);
-							TheMemoryCard.b_FoundRecentSavedGameWantToLoad = true;
-					
-							if (CMenuManager::m_PrefsLanguage != TheMemoryCard.GetLanguageToLoad())
-							{
-								CMenuManager::m_PrefsLanguage = TheMemoryCard.GetLanguageToLoad();
-								TheText.Unload();
-								TheText.Load();
-							}
-					
-							CGame::currLevel = (eLevelName)TheMemoryCard.GetLevelToLoad();
-						}
-#else
 						InitialiseGame();
 
 						FrontEndMenuManager.m_bGameNotLoaded = false;
-#endif
 						gGameState = GS_PLAYING_GAME;
 						TRACE("gGameState = GS_PLAYING_GAME;");
 						break;
@@ -2526,45 +2406,16 @@ WinMain(HINSTANCE instance,
 		RwInitialised = FALSE;
 		
 		FrontEndMenuManager.UnloadTextures();
-#ifdef PS2_MENU	
-		if ( !(FrontEndMenuManager.m_bWantToRestart || TheMemoryCard.b_FoundRecentSavedGameWantToLoad))
-			break;
-#else
 		if ( !FrontEndMenuManager.m_bWantToRestart )
 			break;
-#endif
 		
 		CPad::ResetCheats();
 		CPad::StopPadsShaking();
 		
 		DMAudio.ChangeMusicMode(MUSICMODE_DISABLE);
 		
-#ifdef PS2_MENU
-		CGame::ShutDownForRestart();
-#endif
 		CTimer::Stop();
 		
-#ifdef PS2_MENU
-		if (FrontEndMenuManager.m_bWantToRestart || TheMemoryCard.b_FoundRecentSavedGameWantToLoad)
-		{
-			if (TheMemoryCard.b_FoundRecentSavedGameWantToLoad)
-			{
-				FrontEndMenuManager.m_bWantToRestart = true;
-				TheMemoryCard.m_bWantToLoad = true;
-			}
-
-			CGame::InitialiseWhenRestarting();
-			DMAudio.ChangeMusicMode(MUSICMODE_GAME);
-			FrontEndMenuManager.m_bWantToRestart = false;
-			
-			continue;
-		}
-		
-		CGame::ShutDown();	
-		CTimer::Stop();
-		
-		break;
-#else
 		if ( FrontEndMenuManager.m_bWantToLoad )
 		{
 			CGame::ShutDownForRestart();
@@ -2599,7 +2450,6 @@ WinMain(HINSTANCE instance,
 		
 		FrontEndMenuManager.m_bFirstTime = false;
 		FrontEndMenuManager.m_bWantToRestart = false;
-#endif
 	}
 	
 

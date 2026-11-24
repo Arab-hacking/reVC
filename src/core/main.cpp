@@ -61,7 +61,6 @@
 #include "Console.h"
 #include "timebars.h"
 #include "GenericGameStorage.h"
-#include "MemoryCard.h"
 #include "MemoryHeap.h"
 #include "debugmenu.h"
 #include "Clock.h"
@@ -124,14 +123,6 @@ void DebugMenuPopulate(void);
 
 #ifndef FINAL
 bool gbPrintMemoryUsage;
-#endif
-
-#ifdef GTA_PS2
-#define WANT_TO_LOAD TheMemoryCard.m_bWantToLoad
-#define FOUND_GAME_TO_LOAD TheMemoryCard.b_FoundRecentSavedGameWantToLoad
-#else
-#define WANT_TO_LOAD FrontEndMenuManager.m_bWantToLoad
-#define FOUND_GAME_TO_LOAD b_FoundRecentSavedGameWantToLoad
 #endif
 
 #ifdef NEW_RENDERER
@@ -253,27 +244,14 @@ DoFade(void)
 	if(CTimer::GetIsPaused())
 		return;
 
-#ifdef PS2_MENU
-	if(TheMemoryCard.JustLoadedDontFadeInYet){
-		TheMemoryCard.JustLoadedDontFadeInYet = false;
-		TheMemoryCard.TimeStartedCountingForFade = CTimer::GetTimeInMilliseconds();
-	}
-#else
 	if(JustLoadedDontFadeInYet){
 		JustLoadedDontFadeInYet = false;
 		TimeStartedCountingForFade = CTimer::GetTimeInMilliseconds();
 	}
-#endif
 
-#ifdef PS2_MENU
-	if(TheMemoryCard.StillToFadeOut){
-		if(CTimer::GetTimeInMilliseconds() - TheMemoryCard.TimeStartedCountingForFade > TheMemoryCard.TimeToStayFadedBeforeFadeOut){
-			TheMemoryCard.StillToFadeOut = false;
-#else
 	if(StillToFadeOut){
 		if(CTimer::GetTimeInMilliseconds() - TimeStartedCountingForFade > TimeToStayFadedBeforeFadeOut){
 			StillToFadeOut = false;
-#endif
 			TheCamera.Fade(3.0f, FADE_IN);
 			TheCamera.ProcessFade();
 			TheCamera.ProcessMusicFade();
@@ -1572,12 +1550,11 @@ Idle(void *arg)
 	tbEndTimer("DMAudio.Service");
 
 	if(CGame::bDemoMode && CTimer::GetTimeInMilliseconds() > (3*60 + 30)*1000){
-		WANT_TO_LOAD = false;
 		FrontEndMenuManager.m_bWantToRestart = true;
 		return;
 	}
 
-	if(FrontEndMenuManager.m_bWantToRestart || FOUND_GAME_TO_LOAD)
+	if(FrontEndMenuManager.m_bWantToRestart)
 	{
 		return;
 	}
@@ -1688,10 +1665,6 @@ Idle(void *arg)
 	RenderMenus();
 	tbEndTimer("RenderMenus");
 
-#ifdef PS2_MENU
-	if ( TheMemoryCard.m_bWantToLoad )
-		goto popret;
-#endif
 
 	tbStartTimer(0, "DoFade");
 	DoFade();
@@ -1952,42 +1925,11 @@ void TheGame(void)
 
 	LoadingScreen("Starting Game", NULL, splash);
 
-#ifdef GTA_PS2
-	// TODO(MIAMI): not checked yet
-	if (   TheMemoryCard.CheckCardInserted(CARD_ONE) == CMemoryCard::NO_ERR_SUCCESS
-		&& TheMemoryCard.ChangeDirectory(CARD_ONE, TheMemoryCard.Cards[CARD_ONE].dir)
-		&& TheMemoryCard.FindMostRecentFileName(CARD_ONE, TheMemoryCard.MostRecentFile) == true
-		&& TheMemoryCard.CheckDataNotCorrupt(TheMemoryCard.MostRecentFile))
-	{
-		strcpy(TheMemoryCard.LoadFileName, TheMemoryCard.MostRecentFile);
-		TheMemoryCard.b_FoundRecentSavedGameWantToLoad = true;
-
-		if (FrontEndMenuManager.m_PrefsLanguage != TheMemoryCard.GetLanguageToLoad())
-		{
-			FrontEndMenuManager.m_PrefsLanguage = TheMemoryCard.GetLanguageToLoad();
-			TheText.Unload();
-			TheText.Load();
-		}
-
-		CGame::currLevel = (eLevelName)TheMemoryCard.GetLevelToLoad();
-	}
-#else
-	//TODO
-#endif
-
 	while (true)
 	{
-		if (FOUND_GAME_TO_LOAD)
-		{
-			Const char *splash1 = GetLevelSplashScreen(CGame::currLevel);
-			LoadSplash(splash1);
-		}
-
-		WANT_TO_LOAD = false;
-
 		CTimer::Update();
 
-		while (!(FrontEndMenuManager.m_bWantToRestart || FOUND_GAME_TO_LOAD))
+		while (!FrontEndMenuManager.m_bWantToRestart)
 		{
 			CSprite2d::InitPerFrame();
 			CFont::InitPerFrame();
@@ -2001,12 +1943,11 @@ void TheGame(void)
 
 			if (CGame::bDemoMode && CTimer::GetTimeInMilliseconds() > (3*60 + 30)*1000)
 			{
-				WANT_TO_LOAD = false;
 				FrontEndMenuManager.m_bWantToRestart = true;
 				break;
 			}
 
-			if (FrontEndMenuManager.m_bWantToRestart || FOUND_GAME_TO_LOAD)
+			if (FrontEndMenuManager.m_bWantToRestart)
 				break;
 
 			SetLightsWithTimeOfDayColour(Scene.world);
@@ -2058,12 +1999,6 @@ void TheGame(void)
 
 			RenderMenus();
 
-			if (WANT_TO_LOAD)
-			{
-				POP_MEMID();	// MEMID_RENDER
-				break;
-			}
-
 			DoFade();
 			Render2dStuffAfterFade();
 		
@@ -2088,14 +2023,8 @@ void TheGame(void)
 		CGame::ShutDownForRestart();
 		CTimer::Stop();
 
-		if (FrontEndMenuManager.m_bWantToRestart || FOUND_GAME_TO_LOAD)
+		if (FrontEndMenuManager.m_bWantToRestart)
 		{
-			if (FOUND_GAME_TO_LOAD)
-			{
-				FrontEndMenuManager.m_bWantToRestart = true;
-				WANT_TO_LOAD = true;
-			}
-
 			CGame::InitialiseWhenRestarting();
 			DMAudio.ChangeMusicMode(MUSICMODE_GAME);
 			FrontEndMenuManager.m_bWantToRestart = false;
@@ -2236,9 +2165,6 @@ void SystemInit()
 	//
 #endif
 	
-#ifdef GTA_PS2
-	TheMemoryCard.Init();
-#endif
 }
 
 int VBlankCounter(int ca)
@@ -2490,25 +2416,6 @@ main(int argc, char *argv[])
 
 	if(RsEventHandler(rsINITIALIZE, nil) == rsEVENTERROR)
 		return 0;
-
-#ifdef GTA_PS2
-	int32 r = TheMemoryCard.CheckCardStateAtGameStartUp(CARD_ONE);
-		
-	if ( r == CMemoryCard::ERR_DIRNOENTRY  || r == CMemoryCard::ERR_NOFORMAT )
-	{
-		GameInit(true);
-		
-		TheText.Unload();
-		TheText.Load();
-		
-		CFont::Initialise();
-		
-		FrontEndMenuManager.DrawMemoryCardStartUpMenus();
-	}else if(r == CMemoryCard::ERR_OPENNOENTRY)
-		gMemoryStickLoadOK = false;
-	else if(r == CMemoryCard::ERR_NONE)
-		gMemoryStickLoadOK = true;
-#endif
 
 	PlayIntroMPEGs();
 

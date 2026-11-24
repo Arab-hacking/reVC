@@ -529,20 +529,6 @@ UnicodeToAsciiForSaveLoad(wchar *src)
 	return aStr;
 }
 
-char*
-UnicodeToAsciiForMemoryCard(wchar *src)
-{
-	static char aStr[256];
-	int len;
-	for(len = 0; *src != '\0' && len < 256; len++, src++)
-		if(*src < 256)
-			aStr[len] = *src;
-		else
-			aStr[len] = '#';
-	aStr[len] = '\0';
-	return aStr;
-}
-
 void
 TextCopy(wchar *dst, const wchar *src)
 {

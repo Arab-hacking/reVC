@@ -181,7 +181,6 @@ enum Config {
 #	define RANDOMSPLASH
 //#	define USE_CUSTOM_ALLOCATOR
 #	define VU_COLLISION
-#	define PS2_MENU
 #elif defined GTA_PC
 #	define EXTERNAL_3D_SOUND
 #	define AUDIO_REVERB
@@ -409,28 +408,22 @@ enum Config {
 #define FIX_RADAR			// use radar size from early version before R* broke it
 #define RADIO_OFF_TEXT		// Won't work without FIX_BUGS
 
-#ifndef PC_MENU
-#	define PS2_MENU
-//#	define PS2_MENU_USEALLPAGEICONS
-#else
-#	define MAP_ENHANCEMENTS			// Adding waypoint and better mouse support
-#	if defined(XINPUT) || defined(GTA_HANDHELD)
-#		define GAMEPAD_MENU		// Add gamepad menu
-#	endif
-#	define TRIANGLE_BACK_BUTTON
+#define MAP_ENHANCEMENTS			// Adding waypoint and better mouse support
+#if defined(XINPUT) || defined(GTA_HANDHELD)
+#	define GAMEPAD_MENU		// Add gamepad menu
+#endif
+#define TRIANGLE_BACK_BUTTON
 //#	define CIRCLE_BACK_BUTTON
 #define LEGACY_MENU_OPTIONS			// i.e. frame sync(vsync)
 #define MUCH_SHORTER_OUTRO_SCREEN
-// #define XBOX_MESSAGE_SCREEN			// Blue background, no "saved successfully press OK" screen etc.
 #define CUSTOM_FRONTEND_OPTIONS
 
-#	ifdef CUSTOM_FRONTEND_OPTIONS
-#		define GRAPHICS_MENU_OPTIONS // otherwise Display settings will be scrollable
-#		define NO_ISLAND_LOADING  // disable loadscreen between islands via loading all island data at once, consumes more memory and CPU
-#		define CUTSCENE_BORDERS_SWITCH
-#		define MULTISAMPLING		// adds MSAA option
-#		define INVERT_LOOK_FOR_PAD // enable the hidden option
-#	endif
+#ifdef CUSTOM_FRONTEND_OPTIONS
+#	define GRAPHICS_MENU_OPTIONS // otherwise Display settings will be scrollable
+#	define NO_ISLAND_LOADING  // disable loadscreen between islands via loading all island data at once, consumes more memory and CPU
+#	define CUTSCENE_BORDERS_SWITCH
+#	define MULTISAMPLING		// adds MSAA option
+#	define INVERT_LOOK_FOR_PAD // enable the hidden option
 #endif
 
 // Script
