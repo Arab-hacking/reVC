@@ -8,13 +8,13 @@
 | Точка | Файлов `.cpp/.h` | Строк | TU (`.cpp`) |
 |---|---|---|---|
 | База `8efb3bc` (ветка `arena/782fc865-revc`) | 612 | 316 624 | 271 |
-| B + C + мёртвые ветки + D-1 (коммит `COMMIT_B_E`, как и всё ниже) | 546 | 282 007 | 236 |
+| B + C + мёртвые ветки + D-1 (коммит `64bcef4`, как и всё ниже) | 546 | 282 007 | 236 |
 | D-2 (ядро целей транспорта) | 546 | 280 883 | 236 |
 | D-5/D-6 (`PlayerInfo`, `Ped.cpp`, `PedType`, поезд) | 540 | 277 808 | 233 |
 | E (трафик, AI-транспорт, вертолёты/самолёты) | 523 | 265 562 | 225 |
 
 Подсчёт: `find src -name '*.cpp' -o -name '*.h'` без `fakerw`, строки `xargs cat | wc -l`. Вся история
-этапов B–E в этой ветке — один коммит `COMMIT_B_E`: песочница была пересоздана, поэтапные коммиты
+этапов B–E в этой ветке — один коммит `64bcef4`: песочница была пересоздана, поэтапные коммиты
 (`680fc1d`, `771fdeb`, `01f7b47`, `b2709d2`; ранее также `c8acc16`, `88d6f55`, `742fd7e`) не сохранились,
 строки таблицы — из журналов на момент работы. Этапы A–E сняли 89 файлов, 51 062 строки и 46 единиц трансляции.
 
@@ -83,7 +83,7 @@
 
 ## 4. Удалённые файлы
 
-**Этап B** (`8efb3bc` → `COMMIT_B_E`): `control/OnscreenTimer.{cpp,h}`, `control/Script.{cpp,h}`,
+**Этап B** (`8efb3bc` → `64bcef4`): `control/OnscreenTimer.{cpp,h}`, `control/Script.{cpp,h}`,
 `control/ScriptWeather.cpp`, `vehicles/StuckCarCheck.{cpp,h}`, `vehicles/UpsideDownCarCheck.{cpp,h}`.
 
 **Этап C** (там же): `control/{Bridge,Darkel,Garages,Phones,Record,Replay,Restart,RoadBlocks,SceneEdit,SetPieces}.{cpp,h}`,
