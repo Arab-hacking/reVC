@@ -11,7 +11,6 @@
 #endif
 #include "RpAnimBlend.h"
 #include "Entity.h"
-#include "EventList.h"
 #include "Fire.h"
 #include "Glass.h"
 #include "Particle.h"
@@ -24,7 +23,6 @@
 #include "WeaponInfo.h"
 #include "World.h"
 #include "SurfaceTable.h"
-#include "Heli.h"
 
 #ifdef SQUEEZE_PERFORMANCE
 uint32 bulletInfoInUse;
@@ -135,7 +133,6 @@ void CBulletInfo::Update(void)
 						pAnim->SetBlend(0.0f, 8.0f);
 					}
 					pPed->InflictDamage(pBullet->m_pSource, pBullet->m_eWeaponType, pBullet->m_nDamage, (ePedPieceTypes)point.pieceB, pPed->GetLocalDirection(pPed->GetPosition() - point.point));
-					CEventList::RegisterEvent(pPed->m_nPedType == PEDTYPE_COP ? EVENT_SHOOT_COP : EVENT_SHOOT_PED, EVENT_ENTITY_PED, pPed, (CPed*)pBullet->m_pSource, 1000);
 					pBullet->m_bInUse = false;
 #ifdef SQUEEZE_PERFORMANCE
 					bulletInfoInUse--;
@@ -291,7 +288,6 @@ void CBulletInfo::Update(void)
 			PlayerSniperBulletEnd = vecNewPos;
 		}
 		pBullet->m_vecPosition = vecNewPos;
-		CHeli::TestSniperCollision(&PlayerSniperBulletStart, &PlayerSniperBulletEnd);
 	}
 }
 

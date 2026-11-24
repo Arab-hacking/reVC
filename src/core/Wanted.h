@@ -4,7 +4,6 @@
 #include "Crime.h"
 
 class CEntity;
-class CCopPed;
 
 class CWanted
 {
@@ -15,7 +14,6 @@ public:
 	uint32 m_nLastWantedLevelChange;
 	uint32 m_nLastTimeSuspended;
 	float m_fCrimeSensitivity;
-	uint8 m_CurrentCops;
 	uint8 m_MaxCops;
 	uint8 m_MaximumLawEnforcerVehicles;
 	uint8 m_CopsBeatingSuspect;
@@ -28,7 +26,6 @@ public:
 	int32 m_nWantedLevel;
 	int32 m_nMinWantedLevel;
 	CCrimeBeingQd m_aCrimes[16];
-	CCopPed *m_pCops[10];
 
 	static int32 MaximumWantedLevel;
 	static int32 nMaximumWantedLevel;
@@ -51,7 +48,6 @@ public:
 	void ReportCrimeNow(eCrimeType type, const CVector &coors, bool policeDoesntCare);
 	void UpdateWantedLevel();
 	void Reset();
-	void ResetPolicePursuit();
 	void UpdateCrimesQ();
 	void Update();
 

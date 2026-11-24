@@ -7,7 +7,6 @@
 #include "Pad.h"
 #include "Physical.h"
 #include "PlayerPed.h"
-#include "Replay.h"
 #include "Timer.h"
 #include "Vehicle.h"
 #include "World.h"
@@ -21,14 +20,13 @@ FindNoClipTarget(void)
 	CPlayerPed *ped = FindPlayerPed();
 	if(!ped || ped->DyingOrDead() || ped->m_fHealth <= 0.0f ||
 	   ped->EnteringCar() || ped->GetPedState() == PED_EXIT_CAR ||
-	   ped->GetPedState() == PED_DRAGGED_FROM_CAR ||
-	   ped->GetPedState() == PED_ENTER_TRAIN || ped->GetPedState() == PED_EXIT_TRAIN)
+	   ped->GetPedState() == PED_DRAGGED_FROM_CAR)
 		return nil;
 
 	if(ped->InVehicle()){
 		CVehicle *vehicle = ped->m_pMyVehicle;
-		// Do not take control of another driver's vehicle or a moving train.
-		return vehicle && vehicle->pDriver == ped && !vehicle->IsTrain() ? vehicle : nil;
+		// Do not take control of another driver's vehicle.
+		return vehicle && vehicle->pDriver == ped ? vehicle : nil;
 	}
 	return ped;
 }
@@ -80,10 +78,10 @@ CNoClip::ProcessInput(void)
 	// The control bit must be cleared as well or the new player cannot move.
 	if(!noclipEntity && pad->IsPlayerControlsDisabledBy(PLAYERCONTROL_NOCLIP))
 		Reset();
-	if(noclipEntity && (noclipEntity != FindNoClipTarget() || CReplay::IsPlayingBack()))
+	if(noclipEntity && (noclipEntity != FindNoClipTarget()))
 		Reset();
 
-	if(FrontEndMenuManager.m_bMenuActive || CReplay::IsPlayingBack())
+	if(FrontEndMenuManager.m_bMenuActive)
 		return;
 
 	if(pad->GetFJustDown(9)){
@@ -115,7 +113,7 @@ CNoClip::Move(void)
 #ifdef GTA_PC_CONTROLS
 	if(!noclipEntity)
 		return;
-	if(noclipEntity != FindNoClipTarget() || CReplay::IsPlayingBack()){
+	if(noclipEntity != FindNoClipTarget()){
 		Reset();
 		return;
 	}

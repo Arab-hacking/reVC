@@ -278,7 +278,6 @@ public:
 	static int32 SetEntityBlip(eBlipType type, int32, uint32, eBlipDisplay);
 	static int32 SetShortRangeCoordBlip(eBlipType type, CVector pos, uint32, eBlipDisplay);
 	static void SetRadarMarkerState(int32 i, bool flag);
-	static void ShowRadarMarker(CVector pos, uint32 color, float radius);
 	static void ShowRadarTrace(float x, float y, uint32 size, uint8 red, uint8 green, uint8 blue, uint8 alpha);
 	static void ShowRadarTraceWithHeight(float x, float y, uint32 size, uint8 red, uint8 green, uint8 blue, uint8 alpha, uint8 mode);
 	static void Shutdown();

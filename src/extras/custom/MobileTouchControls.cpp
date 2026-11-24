@@ -1,6 +1,5 @@
 #include "common.h"
 
-#include "CarCtrl.h"
 #include "crossplatform.h"
 #include "platform.h"
 #include "MobileTouchControls.h"
@@ -29,7 +28,6 @@
 #include "Pools.h"
 #include "Radar.h"
 #include "Renderer.h"
-#include "Replay.h"
 #include "RwHelper.h"
 #include "Shadows.h"
 #include "Sprite2d.h"
@@ -546,8 +544,23 @@ SpawnVehicleByModel(int32 modelId)
 		basePos.x, basePos.y, basePos.z, fwd.x, fwd.y, distAhead,
 		&sx, &sy, &sz, &rx, &ry);
 
-	// One factory for every class, as in SA.
-	CVehicle *spawned = CCarCtrl::GetNewVehicleDependingOnCarModel(modelId, RANDOM_VEHICLE);
+	bool groundFound = false;
+	float groundZ = CWorld::FindGroundZFor3DCoord(sx, sy, basePos.z + 5.0f, &groundFound);
+	if (!groundFound) {
+		CColPoint cp;
+		CEntity *hitEnt = nil;
+		if (CWorld::ProcessVerticalLine(CVector(sx, sy, basePos.z + 30.0f), basePos.z - 40.0f,
+		                                cp, hitEnt, true, false, false, false, false, false, nil)) {
+			groundZ = cp.point.z;
+			groundFound = true;
+		}
+	}
+	CColModel *col = CModelInfo::GetColModel(modelId);
+	const float baseOfModel = col ? -col->boundingBox.min.z : 0.0f;
+	CVector finalPos(sx, sy, (groundFound ? groundZ : basePos.z) + baseOfModel + 0.15f);
+	const float headingRad = std::atan2(-fwd.x, fwd.y);
+
+	CVehicle *spawned = CGame::SpawnVehicle(modelId, finalPos, headingRad);
 	// A bike placed standing sinks through its own suspension otherwise. This
 	// fork has no AsBike() cast helper, so the downcast is explicit and is only
 	// reached for the two model classes that really are CBike instances.
@@ -561,27 +574,9 @@ SpawnVehicleByModel(int32 modelId)
 		return false;
 	}
 
-	bool groundFound = false;
-	float groundZ = CWorld::FindGroundZFor3DCoord(sx, sy, basePos.z + 5.0f, &groundFound);
-	if (!groundFound) {
-		CColPoint cp;
-		CEntity *hitEnt = nil;
-		if (CWorld::ProcessVerticalLine(CVector(sx, sy, basePos.z + 30.0f), basePos.z - 40.0f,
-		                                cp, hitEnt, true, false, false, false, false, false, nil)) {
-			groundZ = cp.point.z;
-			groundFound = true;
-		}
-	}
-	CVector finalPos(sx, sy, (groundFound ? groundZ : basePos.z) + spawned->GetDistanceFromCentreOfMassToBaseOfModel() + 0.15f);
 	spawned->bIsStatic = false;
 	spawned->bEngineOn = false;
 	spawned->bLightsOn = false;
-	spawned->SetPosition(finalPos);
-	const float headingRad = std::atan2(-fwd.x, fwd.y);
-	spawned->SetOrientation(0.0f, 0.0f, headingRad);
-	spawned->SetStatus(STATUS_ABANDONED);
-	spawned->m_nDoorLock = CARLOCK_UNLOCKED;
-	CWorld::Add(spawned);
 
 	s_lastSpawnedVehRef = CPools::GetVehicleRef(spawned);
 	if (!(previousFlags & STREAMFLAGS_DONT_REMOVE)) {
@@ -935,10 +930,6 @@ CheckNearbyInteractPickup(CPlayerPed *player, MobileTexId *outTex)
 {
 	if (!player)
 		return false;
-	if (player->m_nPedState == PED_MAKE_PHONECALL) {
-		if (outTex) *outTex = MTEX_CELLPHONE;
-		return true;
-	}
 	if (CPickups::PlayerOnWeaponPickup > 0) {
 		if (outTex) *outTex = MTEX_SWAPGUN;
 		return true;
@@ -985,7 +976,7 @@ IsGameplayTouchHudActive(void)
 		return false;
 	if (FrontEndMenuManager.m_bMenuActive)
 		return false;
-	if (CReplay::IsPlayingBack() || TheCamera.m_WideScreenOn)
+	if (TheCamera.m_WideScreenOn)
 		return false;
 	return CHud::m_Wants_To_Draw_Hud;
 }

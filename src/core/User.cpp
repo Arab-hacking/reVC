@@ -4,7 +4,6 @@
 #include "Hud.h"
 #include "PlayerInfo.h"
 #include "PlayerPed.h"
-#include "Replay.h"
 #include "Text.h"
 #include "User.h"
 #include "Vehicle.h"
@@ -12,8 +11,6 @@
 #include "Zones.h"
 
 CPlaceName CUserDisplay::PlaceName;
-COnscreenTimer CUserDisplay::OnscnTimer;
-CPager CUserDisplay::Pager;
 CCurrentVehicle CUserDisplay::CurrentVehicle;
 
 CPlaceName::CPlaceName()
@@ -108,15 +105,11 @@ CCurrentVehicle::Process()
 }
 
 // SA CCurrentVehicle::Display (0x571EA0).
-//
-// The short-cut taxi is the instantly-warped cab from a mission failure: it is
-// a real vehicle in the world but not one the player is driving, so SA hides
-// its name rather than claiming the player is in a taxi.
 void
 CCurrentVehicle::Display()
 {
 	wchar *text = nil;
-	if (m_pCurrentVehicle != nil && m_pCurrentVehicle != CGameLogic::pShortCutTaxi){
+	if (m_pCurrentVehicle != nil){
 		CVehicleModelInfo *mi = m_pCurrentVehicle->GetModelInfo();
 		if (mi)
 			text = TheText.Get(mi->m_gameName);
@@ -128,8 +121,6 @@ void
 CUserDisplay::Init()
 {
 	PlaceName.Init();
-	OnscnTimer.Init();
-	Pager.Init();
 	CurrentVehicle.Init();
 }
 
@@ -137,11 +128,7 @@ void
 CUserDisplay::Process()
 {
 #ifdef FIX_BUGS
-	if (CReplay::IsPlayingBack())
-		return;
 #endif
 	PlaceName.Process();
-	OnscnTimer.Process();
-	Pager.Process();
 	CurrentVehicle.Process();
 }

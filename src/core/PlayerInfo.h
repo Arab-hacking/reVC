@@ -24,7 +24,6 @@ class CEntity;
 class CPed;
 class CVehicle;
 class CPlayerPed;
-class CCivilianPed;
 
 class CPlayerInfo
 {
@@ -32,19 +31,13 @@ public:
 	CPlayerPed *m_pPed;
 	CVehicle *m_pRemoteVehicle;
 	CColModel m_ColModel;
-	CVehicle *m_pVehicleEx;	// vehicle using the col model above
+	CVehicle *m_pSpecialColModelVehicle;	// vehicle using the col model above
 	char m_aPlayerName[70];
 	int32 m_nMoney;
 	int32 m_nVisibleMoney;
 	int32 m_nCollectedPackages;
 	int32 m_nTotalPackages;
 	uint32 m_nLastBumpPlayerCarTimer;
-	uint32 m_nUnusedTaxiTimer;
-	bool m_bUnusedTaxiThing;
-	uint32 m_nNextSexFrequencyUpdateTime;
-	uint32 m_nNextSexMoneyUpdateTime;
-	int32 m_nSexFrequency;
-	CCivilianPed *m_pHooker;
 	int8 m_WBState; // eWastedBustedState
 	uint32 m_nWBTime;
 	bool m_bInRemoteMode;
@@ -72,7 +65,6 @@ public:
 	float m_nLastDistanceTravelledOnStoppie;
 	int16 m_nTrafficMultiplier;
 	int16 field_12A;
-	float m_fRoadDensity;
 	uint32 m_nPreviousTimeRewardedForExplosion;
 	uint32 m_nExplosionsSinceLastReward;
 	uint32 m_nHavocLevel;
@@ -94,7 +86,6 @@ public:
 	RwTexture *m_pSkinTexture;
 #endif
 
-	void MakePlayerSafe(bool);
 	const CVector &GetPos();
 	void Process(void);
 	void KillPlayer(void);
@@ -120,7 +111,6 @@ public:
 
 CPlayerPed *FindPlayerPed(void);
 CVehicle *FindPlayerVehicle(void);
-CVehicle *FindPlayerTrain(void);
 CEntity *FindPlayerEntity(void);
 CVector FindPlayerCoors(void);
 const CVector &FindPlayerSpeed(void);

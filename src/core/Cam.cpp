@@ -9,7 +9,6 @@
 #include "Bones.h"
 #include "Ped.h"
 #include "PlayerPed.h"
-#include "CopPed.h"
 #include "RpAnimBlend.h"
 #include "ControllerConfig.h"
 #include "Pad.h"
@@ -24,7 +23,6 @@
 #include "SurfaceTable.h"
 #include "WaterLevel.h"
 #include "MBlur.h"
-#include "SceneEdit.h"
 #include "Debug.h"
 #include "Camera.h"
 #include "DMAudio.h"
@@ -264,10 +262,6 @@ CCam::Process(void)
 	case MODE_PLAYER_FALLEN_WATER:
 		Process_Player_Fallen_Water(CameraTarget, TargetOrientation, SpeedVar, TargetSpeedVar);
 		break;
-//	case MODE_CAM_ON_TRAIN_ROOF:
-//	case MODE_CAM_RUNNING_SIDE_TRAIN:
-//	case MODE_BLOOD_ON_THE_TRACKS:
-//	case MODE_IM_THE_PASSENGER_WOOWOO:
 	case MODE_SYPHON_CRIM_IN_FRONT:
 		Process_Syphon_Crim_In_Front(CameraTarget, TargetOrientation, SpeedVar, TargetSpeedVar);
 		break;
@@ -305,11 +299,6 @@ CCam::Process(void)
 	case MODE_FIGHT_CAM_RUNABOUT:
 		Process_1rstPersonPedOnPC(CameraTarget, TargetOrientation, SpeedVar, TargetSpeedVar);
 		break;
-#ifdef GTA_SCENE_EDIT
-	case MODE_EDITOR:
-		Process_Editor(CameraTarget, TargetOrientation, SpeedVar, TargetSpeedVar);
-		break;
-#endif
 	default:
 		Source = CVector(0.0f, 0.0f, 0.0f);
 		Front = CVector(0.0f, 1.0f, 0.0f);
@@ -429,7 +418,6 @@ CCam::ProcessSpecialHeightRoutines(void)
 	CamToTarget = TheCamera.pTargetEntity->GetPosition() - TheCamera.GetGameCamPosition();
 	DistOnGround = CamToTarget.Magnitude2D();
 	BetaAngle = CGeneral::GetATanOfXY(CamToTarget.x, CamToTarget.y);
-	m_bTheHeightFixerVehicleIsATrain = false;
 	// CGeneral::GetATanOfXY(TheCamera.GetForward().x, TheCamera.GetForward().y);
 	Player = CWorld::Players[CWorld::PlayerInFocus].m_pPed;
 
@@ -446,9 +434,11 @@ CCam::ProcessSpecialHeightRoutines(void)
 		// Move up the camera if there is a ped close to it
 		if(Mode == MODE_FOLLOWPED || Mode == MODE_FIGHT_CAM || Mode == MODE_PILLOWS_PAPS){
 			// Find highest ped close to camera
-			for(i = 0; i < Player->m_numNearPeds; i++){
-				CPed *nearPed = Player->m_nearPeds[i];
-				if(nearPed && nearPed->GetPedState() != PED_DEAD){
+			CPed *nearPeds[10];
+			int16 numNearPeds = Player->FindNearPeds(TheCamera.GetGameCamPosition(), 2.1f, nearPeds, ARRAY_SIZE(nearPeds));
+			for(i = 0; i < numNearPeds; i++){
+				CPed *nearPed = nearPeds[i];
+				if(nearPed->GetPedState() != PED_DEAD){
 					CamToPed = nearPed->GetPosition() - TheCamera.GetGameCamPosition();
 					if(Abs(CamToPed.z) < 1.0f){
 						float DistSq = CamToPed.MagnitudeSqr();
@@ -516,8 +506,6 @@ CCam::ProcessSpecialHeightRoutines(void)
 				float height = vehicle->GetColModel()->boundingBox.GetSize().z;
 				FoundCar = true;
 				HighestCar = height;
-				if(((CVehicle*)vehicle)->IsTrain())
-					m_bTheHeightFixerVehicleIsATrain = true;
 			}
 
 			TestPoint = TestBase - TestDist * CVector(Cos(BetaAngle+DEGTORAD(28.0f)), Sin(BetaAngle+DEGTORAD(28.0f)), 0.0f);
@@ -530,8 +518,6 @@ CCam::ProcessSpecialHeightRoutines(void)
 					FoundCar = true;
 					HighestCar = height;
 				}
-				if(((CVehicle*)vehicle)->IsTrain())
-					m_bTheHeightFixerVehicleIsATrain = true;
 			}
 
 			TestPoint = TestBase - TestDist * CVector(Cos(BetaAngle-DEGTORAD(28.0f)), Sin(BetaAngle-DEGTORAD(28.0f)), 0.0f);
@@ -544,8 +530,6 @@ CCam::ProcessSpecialHeightRoutines(void)
 					FoundCar = true;
 					HighestCar = height;
 				}
-				if(((CVehicle*)vehicle)->IsTrain())
-					m_bTheHeightFixerVehicleIsATrain = true;
 			}
 
 			if(FoundCar){
@@ -819,13 +803,15 @@ CCam::ClipIfPedInFrontOfPlayer(void)
 
 	FwdAngle = CGeneral::GetATanOfXY(TheCamera.GetForward().x, TheCamera.GetForward().y);
 	Player = CWorld::Players[CWorld::PlayerInFocus].m_pPed;
-	while(ped < Player->m_numNearPeds && !found)
-		if(Player->m_nearPeds[ped] && Player->m_nearPeds[ped]->GetPedState() != PED_DEAD)
+	CPed *nearPeds[10];
+	int16 numNearPeds = Player->FindNearPeds(TheCamera.GetGameCamPosition(), 1.25f, nearPeds, ARRAY_SIZE(nearPeds));
+	while(ped < numNearPeds && !found)
+		if(nearPeds[ped]->GetPedState() != PED_DEAD)
 			found = true;
 		else
 			ped++;
 	if(found){
-		vDist = Player->m_nearPeds[ped]->GetPosition() - TheCamera.GetGameCamPosition();
+		vDist = nearPeds[ped]->GetPosition() - TheCamera.GetGameCamPosition();
 		PedAngle = CGeneral::GetATanOfXY(vDist.x, vDist.y);
 		DeltaAngle = FwdAngle - PedAngle;
 		while(DeltaAngle >= PI) DeltaAngle -= 2*PI;
@@ -925,8 +911,7 @@ CCam::PrintMode(void)
 			"Syphon", "Circle", "Cheesy Zoom", "Wheel", "Fixed",
 			"1st Person", "Fly by", "on a String", "Reaction",
 			"Follow Ped with Bind", "Chris", "Behind Boat",
-			"Player fallen in Water", "Train Roof", "Train Side",
-			"Blood on the tracks", "Passenger", "Syphon Crim in Front",
+			"Player fallen in Water", "Syphon Crim in Front",
 			"Dead Baby", "Pillow Paps", "Look at Cars", "Arrest One",
 			"Arrest Two", "M16", "Special fixed for Syphon", "Fight",
 			"Top Down Ped", "Lighthouse",
@@ -1015,7 +1000,6 @@ CCam::Process_FollowPed(const CVector &CameraTarget, float TargetOrientation, fl
 	static bool PickedASide;
 	static float FixedTargetOrientation = 0.0f;
 	float AngleToGoTo = 0.0f;
-	bool StandingInTrain = false;
 	float ZoomGroundTarget = 0.0f;
 	float ZoomZTarget = 0.0f;
 	static int TimeIndicatedWantedToGoDown = 0;
@@ -1084,10 +1068,6 @@ CCam::Process_FollowPed(const CVector &CameraTarget, float TargetOrientation, fl
 		 m_bCollisionChecksOn = true;
 		 Beta = TargetOrientation + PI;
 	}
-
-	if(FindPlayerVehicle())
-		if(FindPlayerVehicle()->m_nVehicleType == VEHICLE_TYPE_TRAIN)
-			StandingInTrain = true;
 
 	if(TheCamera.m_bCamDirectlyInFront){
 		 m_bCollisionChecksOn = true;
@@ -1241,7 +1221,7 @@ CCam::Process_FollowPed(const CVector &CameraTarget, float TargetOrientation, fl
 
 
 	if(TheCamera.m_bCamDirectlyBehind || TheCamera.m_bCamDirectlyInFront ||
-	   StandingInTrain || Rotating ||
+	   Rotating ||
 	   TheCamera.m_bUseTransitionBeta && ResetStatics ||
 	   Abs(TheCamera.m_fAvoidTheGeometryProbsTimer) > fAvoidGeomThreshhold){
 		if(TheCamera.m_bUseTransitionBeta){
@@ -1258,22 +1238,6 @@ CCam::Process_FollowPed(const CVector &CameraTarget, float TargetOrientation, fl
 			Beta = TargetOrientation;
 			Source.x = TargetCoors.x + RotDistance * Cos(Beta);
 			Source.y = TargetCoors.y + RotDistance * Sin(Beta);
-		}
-		if(StandingInTrain){
-			Beta = TargetOrientation + PI;
-			Source.x = TargetCoors.x + RotDistance * Cos(Beta);
-			Source.y = TargetCoors.y + RotDistance * Sin(Beta);
-			m_fDimensionOfHighestNearCar = 0.0f;
-			m_fCamBufferedHeight = 0.0f;
-			m_fCamBufferedHeightSpeed = 0.0f;
-		}
-		if(StandingInTrain){
-			Beta = TargetOrientation + PI;
-			Source.x = TargetCoors.x + RotDistance * Cos(Beta);
-			Source.y = TargetCoors.y + RotDistance * Sin(Beta);
-			m_fDimensionOfHighestNearCar = 0.0f;
-			m_fCamBufferedHeight = 0.0f;
-			m_fCamBufferedHeightSpeed = 0.0f;
 		}
 
 		// Beta and Source already set in the rotation code
@@ -1381,8 +1345,6 @@ CCam::Process_FollowPedWithMouse(const CVector &CameraTarget, float TargetOrient
 		ResetStatics = false;
 	}
 
-	bool OnTrain = FindPlayerVehicle() && FindPlayerVehicle()->IsTrain();
-
 	TargetCoors = CameraTarget;
 	TargetCoors.z += fTranslateCamUp;
 
@@ -1458,9 +1420,6 @@ CCam::Process_FollowPedWithMouse(const CVector &CameraTarget, float TargetOrient
 		Beta = TheCamera.m_PedOrientForBehindOrInFront + PI;
 	if(TheCamera.m_bCamDirectlyInFront)
 		Beta = TheCamera.m_PedOrientForBehindOrInFront;
-	if(OnTrain)
-		Beta = TargetOrientation;
-
 	Front.x = Cos(Alpha) * -Cos(Beta);
 	Front.y = Cos(Alpha) * -Sin(Beta);
 	Front.z = Sin(Alpha);
@@ -3791,8 +3750,6 @@ CCam::Process_Fixed(const CVector &CameraTarget, float, float, float)
 	Up = CrossProduct(Right, Front);
 
 	FOV = DefaultFOV;
-	if(TheCamera.m_bUseSpecialFovTrain)
-		FOV = TheCamera.m_fFovForTrain;
 
 	float WaterZ = 0.0f;
 	if(CWaterLevel::GetWaterLevel(Source, &WaterZ, true) && Source.z < WaterZ){
@@ -3886,8 +3843,6 @@ CCam::Process_LightHouse(const CVector &CameraTarget, float, float, float)
 	Up = CrossProduct(Right, Front);
 
 	FOV = DefaultFOV;
-	if(TheCamera.m_bUseSpecialFovTrain)	// uh, sure...
-		FOV = TheCamera.m_fFovForTrain;
 }
 
 void
@@ -4100,84 +4055,6 @@ CCam::Process_Debug(const CVector&, float, float, float)
 }
 #endif
 
-#ifdef GTA_SCENE_EDIT
-void
-CCam::Process_Editor(const CVector&, float, float, float)
-{
-	static float Speed = 0.0f;
-	CVector TargetCoors;
-
-	if(ResetStatics){
-		Source = CVector(796.0f, -937.0, 40.0f);
-		CamTargetEntity = nil;
-	}
-	ResetStatics = false;
-
-	RwCameraSetNearClipPlane(Scene.camera, DEFAULT_NEAR);
-	FOV = DefaultFOV;
-	Alpha += DEGTORAD(CPad::GetPad(1)->GetLeftStickY()) / 50.0f;
-	Beta  += DEGTORAD(CPad::GetPad(1)->GetLeftStickX()*1.5f) / 19.0f;
-
-	if(CamTargetEntity && CSceneEdit::m_bCameraFollowActor){
-		TargetCoors = CamTargetEntity->GetPosition();
-	}else if(CSceneEdit::m_bRecording){
-		TargetCoors.x = Source.x + Cos(Alpha) * Sin(Beta) * 7.0f;
-		TargetCoors.y = Source.y + Cos(Alpha) * Cos(Beta) * 7.0f;
-		TargetCoors.z = Source.z + Sin(Alpha) * 7.0f;
-	}else
-		TargetCoors = CSceneEdit::m_vecCamHeading + Source;
-	CSceneEdit::m_vecCurrentPosition = TargetCoors;
-	CSceneEdit::m_vecCamHeading = TargetCoors - Source;
-
-	if(Alpha > DEGTORAD(89.5f)) Alpha = DEGTORAD(89.5f);
-	else if(Alpha < DEGTORAD(-89.5f)) Alpha = DEGTORAD(-89.5f);
-
-#ifdef GTA_PC_CONTROLS
-	if(CPad::GetPad(1)->GetSquare() || CPad::GetPad(1)->GetLeftMouse())
-		Speed += 0.1f;
-	else if(CPad::GetPad(1)->GetCross() || CPad::GetPad(1)->GetRightMouse())
-		Speed -= 0.1f;
-#else
-	if(CPad::GetPad(1)->GetSquare())
-		Speed += 0.1f;
-	else if(CPad::GetPad(1)->GetCross())
-		Speed -= 0.1f;
-#endif
-	else
-		Speed = 0.0f;
-	if(Speed > 70.0f) Speed = 70.0f;
-	if(Speed < -70.0f) Speed = -70.0f;
-
-	Front = TargetCoors - Source;
-	Front.Normalise();
-	Source = Source + Front*Speed;
-
-	if(Source.z < -450.0f)
-		Source.z = -450.0f;
-
-	if(CPad::GetPad(1)->GetRightShoulder2JustDown()){
-		if(FindPlayerVehicle())
-			FindPlayerVehicle()->Teleport(Source);
-		else
-			CWorld::Players[CWorld::PlayerInFocus].m_pPed->SetPosition(Source);
-			
-	}
-
-	GetVectorsReadyForRW();
-
-	if(CPad::GetPad(1)->GetLeftShockJustDown() && gbBigWhiteDebugLightSwitchedOn)
-		CShadows::StoreShadowToBeRendered(SHADOWTYPE_ADDITIVE, gpShadowExplosionTex, &Source,
-			12.0f, 0.0f, 0.0f, -12.0f,
-			128, 128, 128, 128, 1000.0f, false, 1.0f, nil, false);
-
-	if(CHud::m_Wants_To_Draw_Hud){
-		char str[256];
-		sprintf(str, "CamX: %f CamY: %f  CamZ:  %f", Source.x, Source.y, Source.z);
-		sprintf(str, "Frontx: %f, Fronty: %f, Frontz: %f ", Front.x, Front.y, Front.z);
-		sprintf(str, "Look@: %f, Look@: %f, Look@: %f ", Front.x + Source.x, Front.y + Source.y, Front.z + Source.z);
-	}
-}
-#endif
 
 void
 CCam::Process_ModelView(const CVector &CameraTarget, float, float, float)
@@ -4390,28 +4267,19 @@ CCam::ProcessArrestCamOne(void)
 {
 	CVector TargetPos;
 	CVector CamSource;
-	CPed *cop = nil;
+	CPed *targetPed = nil;
 	FOV = 45.0f;
 	bool foundPos = false;
 	int ArrestModes[5] = { -1, -1, -1, -1, -1 };
 
 	if(ResetStatics){
-		CPed *targetPed = (CPed*)TheCamera.pTargetEntity;
+		targetPed = (CPed*)TheCamera.pTargetEntity;
 		nUsingWhichCamera = 0;
 		if(TheCamera.pTargetEntity->IsPed()){
 			((CPed*)TheCamera.pTargetEntity)->m_pedIK.GetComponentPosition(TargetPos, PED_NODE_UPPER_TORSO);
-			if(FindPlayerPed() && FindPlayerPed()->ArrestingCop())
-				cop = FindPlayerPed()->ArrestingCop();
-			if(cop && CGeneral::GetRandomNumberInRange(0.0f, 1.0f) > 0.5f){
-				ArrestModes[0] = ARRESTCAM_OVERSHOULDER;
-				ArrestModes[1] = ARRESTCAM_ALONGGROUND;
-				ArrestModes[2] = ARRESTCAM_OVERSHOULDER;
-				ArrestModes[3] = ARRESTCAM_LAMPPOST;
-			}else{
-				ArrestModes[0] = ARRESTCAM_ALONGGROUND;
-				ArrestModes[1] = ARRESTCAM_OVERSHOULDER;
-				ArrestModes[2] = ARRESTCAM_LAMPPOST;
-			}
+			ArrestModes[0] = ARRESTCAM_ALONGGROUND;
+			ArrestModes[1] = ARRESTCAM_OVERSHOULDER;
+			ArrestModes[2] = ARRESTCAM_LAMPPOST;
 		}else if(TheCamera.pTargetEntity->IsVehicle()){
 			CVehicle *targetVehicle = (CVehicle*)TheCamera.pTargetEntity;
 			if(targetVehicle->pDriver && targetVehicle->pDriver->IsPlayer()){
@@ -4422,31 +4290,20 @@ CCam::ProcessArrestCamOne(void)
 				TargetPos = targetVehicle->GetPosition();
 			}
 
-			if(FindPlayerPed() && FindPlayerPed()->ArrestingCop())
-				cop = FindPlayerPed()->ArrestingCop();
-			if(cop && CGeneral::GetRandomNumberInRange(0.0f, 1.0f) > 0.65f){
-				ArrestModes[0] = ARRESTCAM_OVERSHOULDER;
-				ArrestModes[1] = ARRESTCAM_LAMPPOST;
-				ArrestModes[2] = ARRESTCAM_ALONGGROUND;
-				ArrestModes[3] = ARRESTCAM_OVERSHOULDER;
-			}else{
-				ArrestModes[0] = ARRESTCAM_LAMPPOST;
-				ArrestModes[1] = ARRESTCAM_ALONGGROUND;
+			ArrestModes[0] = ARRESTCAM_LAMPPOST;
+			ArrestModes[1] = ARRESTCAM_ALONGGROUND;
 				ArrestModes[2] = ARRESTCAM_OVERSHOULDER;
-			}
 		}else
 			return false;
 
 		for(int i = 0; nUsingWhichCamera == 0 && i < ARRAY_SIZE(ArrestModes) && ArrestModes[i] > 0; i++){
 			switch(ArrestModes[i]){
 			case ARRESTCAM_OVERSHOULDER:
-				if(cop){
-					foundPos = GetLookOverShoulderPos(TheCamera.pTargetEntity, cop, TargetPos, CamSource);
-					pStoredCopPed = cop;
-					cop = nil;
-				}else if(targetPed){
-					for(int j = 0; j < targetPed->m_numNearPeds; j++){
-						CPed *nearPed = targetPed->m_nearPeds[j];
+				if(targetPed){
+					CPed *nearPeds[10];
+					int16 numNearPeds = targetPed->FindNearPeds(targetPed->GetPosition(), 10.0f, nearPeds, ARRAY_SIZE(nearPeds));
+					for(int j = 0; j < numNearPeds; j++){
+						CPed *nearPed = nearPeds[j];
 						if(nearPed->GetPedState() == PED_ARREST_PLAYER)
 							foundPos = GetLookOverShoulderPos(TheCamera.pTargetEntity, nearPed, TargetPos, CamSource);
 						if(foundPos){
@@ -4457,13 +4314,11 @@ CCam::ProcessArrestCamOne(void)
 				}
 				break;
 			case ARRESTCAM_ALONGGROUND:
-				if(cop){
-					foundPos = GetLookAlongGroundPos(TheCamera.pTargetEntity, cop, TargetPos, CamSource);
-					pStoredCopPed = cop;
-					cop = nil;
-				}else if(targetPed){
-					for(int j = 0; j < targetPed->m_numNearPeds; j++){
-						CPed *nearPed = targetPed->m_nearPeds[j];
+				if(targetPed){
+					CPed *nearPeds[10];
+					int16 numNearPeds = targetPed->FindNearPeds(targetPed->GetPosition(), 10.0f, nearPeds, ARRAY_SIZE(nearPeds));
+					for(int j = 0; j < numNearPeds; j++){
+						CPed *nearPed = nearPeds[j];
 						if(nearPed->GetPedState() == PED_ARREST_PLAYER)
 							foundPos = GetLookAlongGroundPos(TheCamera.pTargetEntity, nearPed, TargetPos, CamSource);
 						if(foundPos){
@@ -4474,7 +4329,7 @@ CCam::ProcessArrestCamOne(void)
 				}
 				break;
 			case ARRESTCAM_LAMPPOST:
-				foundPos = GetLookFromLampPostPos(TheCamera.pTargetEntity, cop, TargetPos, CamSource);
+				foundPos = GetLookFromLampPostPos(TheCamera.pTargetEntity, nil, TargetPos, CamSource);
 				break;
 			}
 
@@ -4998,12 +4853,10 @@ CCam::Process_FollowCar_SA(const CVector& CameraTarget, float TargetOrientation,
 		Rotating = false;
 		m_bCollisionChecksOn = true;
 
-		if (!TheCamera.m_bJustCameOutOfGarage) {
-			Alpha = 0.0f;
-			Beta = car->GetForward().Heading() - HALFPI;
-			if (TheCamera.m_bCamDirectlyInFront) {
-				Beta += PI;
-			}
+		Alpha = 0.0f;
+		Beta = car->GetForward().Heading() - HALFPI;
+		if (TheCamera.m_bCamDirectlyInFront) {
+			Beta += PI;
 		}
 
 		BetaSpeed = 0.0;
@@ -5019,8 +4872,7 @@ CCam::Process_FollowCar_SA(const CVector& CameraTarget, float TargetOrientation,
 		m_aTargetHistoryPosTwo = TargetCoors - newDistance * Front;
 
 		m_nCurrentHistoryPoints = 0;
-		if (!TheCamera.m_bJustCameOutOfGarage)
-			Alpha = -zoomModeAlphaOffset;
+		Alpha = -zoomModeAlphaOffset;
 	}
 
 	Front = TargetCoors - m_aTargetHistoryPosOne;
@@ -5229,14 +5081,6 @@ CCam::Process_FollowCar_SA(const CVector& CameraTarget, float TargetOrientation,
 	else
 		betaChangePerFrame = CTimer::GetTimeStep() * BetaSpeed;
 	Beta = betaChangePerFrame + Beta;
-
-	if (TheCamera.m_bJustCameOutOfGarage) {
-		float invHeading = Atan2(Front.y, Front.x);
-		if (invHeading < 0.0f)
-			invHeading += TWOPI;
-
-		Beta = invHeading + PI;
-	}
 
 	Beta = CGeneral::LimitRadianAngle(Beta);
 	if (Beta < 0.0f)

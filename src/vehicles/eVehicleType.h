@@ -12,7 +12,6 @@ enum eVehicleType : int32 {
 	VEHICLE_TYPE_HELI,
 	VEHICLE_TYPE_PLANE,
 	VEHICLE_TYPE_BOAT,
-	VEHICLE_TYPE_TRAIN,
 	VEHICLE_TYPE_FHELI,		// fake heli, no rotor simulation
 	VEHICLE_TYPE_FPLANE,	// fake plane
 	VEHICLE_TYPE_BIKE,

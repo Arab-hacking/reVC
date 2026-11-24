@@ -1,4 +1,6 @@
 #include "common.h"
+#include "Ped.h"
+#include "PlayerPed.h"
 #include <time.h>
 #include "soundlist.h"
 #include "MusicManager.h"
@@ -8,14 +10,12 @@
 #include "Font.h"
 #include "Hud.h"
 #include "ModelIndices.h"
-#include "Replay.h"
 #include "Pad.h"
 #include "Text.h"
 #include "Timer.h"
 #include "World.h"
 #include "sampman.h"
 #include "Stats.h"
-#include "Script.h"
 #include "ZoneCull.h"
 #include "Weather.h"
 #include "DMAudio.h"
@@ -39,11 +39,6 @@ enum
 	MAX_WATER_DIST = 140,
 	WATER_DIST_STEP = 50,
 	MAX_AMBIENCE_VOLUME = 60,
-
-
-	MAX_RIOT_DIST = 100,
-	MID_RIOT_DIST = 65,
-	MIN_RIOT_DIST = 20,
 };
 
 cMusicManager MusicManager;
@@ -52,8 +47,6 @@ int32 gRetuneCounter;
 bool8 g_bAnnouncementReadPosAlready;
 uint8 RadioStaticCounter = 5;
 uint32 RadioStaticTimer;
-
-CVector vecRiotPosition(300.7f, -322.0f, 12.0f);
 
 uint32 NewGameRadioTimers[NUM_RADIOS] =
 {
@@ -296,11 +289,7 @@ cMusicManager::SetRadioChannelByScript(tTrack station, int32 pos)
 tTrack
 cMusicManager::GetRadioInCar(void)
 {
-#define RET_RADIO(radio) if (m_nRadioInCar != NO_TRACK) { \
-			if (CReplay::IsPlayingBack() && !AudioManager.m_bIsPaused) \
-				return radio; \
-			return m_nRadioInCar; \
-		} else { return radio; }
+#define RET_RADIO(radio) return m_nRadioInCar != NO_TRACK ? m_nRadioInCar : radio;
 
 	if (m_bIsInitialised) {
 		if (PlayerInCar()) {
@@ -800,9 +789,7 @@ cMusicManager::SetUpCorrectAmbienceTrack()
 	{
 	case AREA_MAIN_MAP:
 	case AREA_EVERYWHERE:
-		if (CTheScripts::RiotIntensity > 0 && ((TheCamera.GetPosition() - vecRiotPosition).MagnitudeSqr() < SQR(MID_RIOT_DIST)))
-			m_nFrontendTrack = STREAMED_SOUND_LAW4RIOT_AMBIENT;
-		else if (TheCamera.DistanceToWater > (MAX_WATER_DIST - WATER_DIST_STEP)) {
+		if (TheCamera.DistanceToWater > (MAX_WATER_DIST - WATER_DIST_STEP)) {
 			if ((CWeather::OldWeatherType == WEATHER_HURRICANE || CWeather::NewWeatherType == WEATHER_HURRICANE) && CWeather::Wind > 1.0f)
 				m_nFrontendTrack = STREAMED_SOUND_HAVANA_CITY_AMBIENT;
 			else
@@ -872,24 +859,6 @@ cMusicManager::ComputeAmbienceVol(bool8 reset, uint8 &outVolume)
 	static float fVol = 0.0f;
 
 	float fHeightScale = GetHeightScale();
-
-	if (CTheScripts::RiotIntensity > 0) {
-		float distToRiotSq = (TheCamera.GetPosition() - vecRiotPosition).MagnitudeSqr();
-		if (distToRiotSq < SQR(MAX_RIOT_DIST)) {
-			if (distToRiotSq < SQR(MID_RIOT_DIST)) {
-				if (distToRiotSq < SQR(MIN_RIOT_DIST)) {
-					outVolume = (CTheScripts::RiotIntensity * (MAX_VOLUME * fHeightScale)) / MAX_VOLUME;
-					return;
-				} else {
-					outVolume = (CTheScripts::RiotIntensity * (1.0f - (Sqrt(distToRiotSq) - MIN_RIOT_DIST) / (MID_RIOT_DIST-MIN_RIOT_DIST)) * (MAX_VOLUME * fHeightScale)) / MAX_VOLUME;
-					return;
-				}
-			} else {
-				outVolume = (Sqrt(distToRiotSq) - MID_RIOT_DIST) / (MAX_RIOT_DIST-MID_RIOT_DIST) * (MAX_VOLUME * fHeightScale);
-				return;
-			}
-		}
-	}
 
 	if (reset)
 		fVol = 0.0f;
@@ -1310,11 +1279,6 @@ cMusicManager::UsesPoliceRadio(CVehicle *veh)
 bool8
 cMusicManager::UsesTaxiRadio(CVehicle *veh)
 {
-	switch (veh->GetModelIndex())
-	{
-	case MI_KAUFMAN:
-		return CTheScripts::bPlayerHasMetDebbieHarry;
-	}
 	return FALSE;
 }
 
@@ -1421,7 +1385,6 @@ cMusicManager::DisplayRadioStationName()
 
 	if (CTimer::GetIsPaused() || TheCamera.m_WideScreenOn) return;
 	if (!PlayerInCar()) return;
-	if (CReplay::IsPlayingBack()) return;
 
 #ifdef FIX_BUGS
 	pCurrentStation = pOldCurrentStation;

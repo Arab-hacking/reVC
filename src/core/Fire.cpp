@@ -11,12 +11,10 @@
 #include "Automobile.h"
 #include "World.h"
 #include "General.h"
-#include "EventList.h"
 #include "DamageManager.h"
 #include "Ped.h"
 #include "Fire.h"
 #include "GameLogic.h"
-#include "CarAI.h"
 
 CFireManager gFireManager;
 
@@ -62,12 +60,6 @@ CFire::ProcessFire(void)
 				Extinguish();
 				return;
 			}
-#if defined GTAVC_JP_PATCH && !defined FIX_BUGS
-			if (m_pEntity == CGameLogic::pShortCutTaxi && CGameLogic::ShortCutState == CGameLogic::SHORTCUT_TRANSITION) {
-				Extinguish();
-				return;
-			}
-#endif
 			if (ped->m_nMoveState != PEDMOVE_RUN)
 				m_vecPos.z -= 1.0f;
 			if (ped->bInVehicle && ped->m_pMyVehicle) {
@@ -93,12 +85,6 @@ CFire::ProcessFire(void)
 				Extinguish();
 				return;
 			}
-#ifdef FIX_BUGS
-			if (m_pEntity == CGameLogic::pShortCutTaxi && CGameLogic::ShortCutState == CGameLogic::SHORTCUT_TRANSITION) {
-				Extinguish();
-				return;
-			}
-#endif
 			if (!m_bIsScriptFire) {
 				fDamageVehicle = 1.2f * CTimer::GetTimeStep();
 				veh->InflictDamage((CVehicle *)m_pSource, WEAPONTYPE_FLAMETHROWER, fDamageVehicle);
@@ -163,7 +149,6 @@ void
 CFire::ReportThisFire(void)
 {
 	gFireManager.m_nTotalFires++;
-	CEventList::RegisterEvent(EVENT_FIRE, m_vecPos, 1000);
 }
 
 void
@@ -182,13 +167,7 @@ CFire::Extinguish(void)
 				CPed *ped = (CPed*)m_pEntity;
 				if (ped->CanSetPedState()) {
 					if (ped->m_nPedState != PED_DRIVING && ped->m_nPedState != PED_FALL) {
-						if (ped->IsPlayer()) {
 							ped->SetIdle();
-						} else {
-							ped->m_nLastPedState = PED_NONE;
-							ped->SetWanderPath(0);
-							ped->SetWaitState(WAITSTATE_FINISH_FLEE, 0);
-						}
 					}
 				}
 				ped->m_pFire = nil;
@@ -245,38 +224,13 @@ CFireManager::StartFire(CEntity *entityOnFire, CEntity *fleeFrom, float strength
 		if (entityOnFire->IsPed()) {
 			ped->m_pFire = fire;
 			if (ped != FindPlayerPed()) {
-				if (fleeFrom) {
-					ped->SetFlee(fleeFrom, 10000);
-				} else {
-					CVector2D pos = entityOnFire->GetPosition();
-					ped->SetFlee(pos, 10000);
-					ped->m_fleeFrom = nil;
-				}
-				ped->m_fleeTimer = CTimer::GetTimeInMilliseconds() + 10000;
 				ped->bDrawLast = false;
-				ped->SetMoveState(PEDMOVE_SPRINT);
 				ped->SetMoveAnim();
 				ped->SetPedState(PED_ON_FIRE);
-			}
-			if (fleeFrom) {
-				if (ped->m_nPedType == PEDTYPE_COP) {
-					CEventList::RegisterEvent(EVENT_COP_SET_ON_FIRE, EVENT_ENTITY_PED,
-						entityOnFire, (CPed *)fleeFrom, 10000);
-				} else {
-					CEventList::RegisterEvent(EVENT_PED_SET_ON_FIRE, EVENT_ENTITY_PED,
-						entityOnFire, (CPed *)fleeFrom, 10000);
-				}
 			}
 		} else {
 			if (entityOnFire->IsVehicle()) {
 				veh->m_pCarFire = fire;
-				if (CModelInfo::IsBikeModel(veh->GetModelIndex()) || CModelInfo::IsCarModel(veh->GetModelIndex()))
-        				CCarAI::TellOccupantsToFleeCar(veh);
-
-				if (fleeFrom) {
-					CEventList::RegisterEvent(EVENT_CAR_SET_ON_FIRE, EVENT_ENTITY_VEHICLE,
-						entityOnFire, (CPed *)fleeFrom, 10000);
-				}
 			}
 		}
 
@@ -458,8 +412,6 @@ CFireManager::StartScriptFire(const CVector &pos, CEntity *target, float strengt
 		if (target->IsPed()) {
 			ped->m_pFire = fire;
 			if (target != FindPlayerPed()) {
-				CVector2D pos = target->GetPosition();
-				ped->SetFlee(pos, 10000);
 				ped->SetMoveAnim();
 				ped->SetPedState(PED_ON_FIRE);
 			}

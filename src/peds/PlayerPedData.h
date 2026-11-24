@@ -1,10 +1,8 @@
 #ifndef __GTA_PLAYERPEDDATA_H__
 #define __GTA_PLAYERPEDDATA_H__
 
-#include "PedType.h"
 
 class CWanted;
-class CCopPed;
 class CEntity;
 class CPed;
 
@@ -54,7 +52,6 @@ public:
 	};
 
 	CWanted *m_pWanted;
-	CCopPed *m_pArrestingCop;
 	// Transient on-foot input: fight and duck controls are mutually exclusive.
 	CVector2D m_vecFightMovement;
 	float m_fMoveBlendRatio;
@@ -116,7 +113,6 @@ public:
 	{
 		m_nPlayerFlags = 0;
 		m_pWanted = nil;
-		m_pArrestingCop = nil;
 		m_vecFightMovement = CVector2D(0.0f, 0.0f);
 		m_fMoveBlendRatio = 0.0f;
 		m_fTimeCanRun = 0.0f;

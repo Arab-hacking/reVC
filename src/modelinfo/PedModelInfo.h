@@ -4,20 +4,15 @@
 #include "ClumpModelInfo.h"
 #include "ColModel.h"
 #include "AnimManager.h"
-#include "PedType.h"
 #include "Bones.h"
 
 class CPedModelInfo : public CClumpModelInfo
 {
 public:
 	AssocGroupId m_animGroup;
-	ePedType m_pedType;
-	ePedStats m_pedStatType;
-	uint16 m_carsCanDrive;
 	uint16 m_nPedFlags;
 	CColModel *m_hitColModel;
 	int8 radio1, radio2;
-	uint8 m_nRace;
 	int16 m_nPedAudioType;
 	int16 m_nVoiceMin;
 	int16 m_nVoiceMax;
@@ -47,14 +42,10 @@ public:
 	CPedModelInfo(void) : CClumpModelInfo(MITYPE_PED)
 	{
 		m_animGroup = ASSOCGRP_DEFAULT;
-		m_pedType = PEDTYPE_CIVMALE;
-		m_pedStatType = PEDSTAT_STD_MISSION;
-		m_carsCanDrive = 0;
 		m_nPedFlags = 0;
 		m_hitColModel = nil;
 		radio1 = -1;
 		radio2 = -1;
-		m_nRace = RACE_DEFAULT;
 		m_nPedAudioType = -1;
 		m_nVoiceMin = -1;
 		m_nVoiceMax = -1;

@@ -4,7 +4,6 @@
 #include "Clock.h"
 #include "Coronas.h"
 #include "General.h"
-#include "PathFind.h"
 #include "PointLights.h"
 #include "Shadows.h"
 #include "SpecialFX.h"
@@ -309,159 +308,6 @@ CTrafficLights::DisplayActualLight(CEntity *ent)
 	}
 }
 
-bool DoesLineSegmentIntersect(float l1x1, float l1y1, float l1x2, float l1y2, float l2x1, float l2y1, float l2x2, float l2y2)
-{
-	return ((l2y2 - l1y1) * (l1x2 - l1x1) + (l1x1 - l2x2) * (l1y2 - l1y1)) *
-		((l2y1 - l1y1) * (l1x2 - l1x1) + (l1x1 - l2x1) * (l1y2 - l1y1)) <= 0.0f &&
-		((l1y2 - l2y1) * (l2x2 - l2x1) + (l2y2 - l2y1) * (l2x1 - l1x2)) *
-		((l1y1 - l2y1) * (l2x2 - l2x1) + (l2y2 - l2y1) * (l2x1 - l1x1)) <= 0.0f;
-}
-
-void
-CTrafficLights::ScanForLightsOnMap(void)
-{
-	int i, j, k, l;
-	CWorld::ForEachAllocatedSector([&](CSector *sector) {
-		CPtrList &list = sector->m_lists[ENTITYLIST_DUMMIES];
-		for(CPtrNode *node = list.first; node; node = node->next){
-			CEntity *light = (CEntity*)node->item;
-			if (!IsTrafficLight(light->GetModelIndex()))
-				continue;
-
-			CVector pos1 = light->GetMatrix() * CVector(17.0f, 0.0f, 0.0f);
-			CVector pos2 = light->GetMatrix() * CVector(-15.0f, 0.0f, 0.0f);
-
-			// Check cars
-			for(i = 0; i < ThePaths.m_numCarPathNodes; i++){
-				if ((ThePaths.m_pathNodes[i].GetPosition() - pos1).MagnitudeSqr() >= SQR(100.0f))
-					continue;
-				for (j = 0; j < ThePaths.m_pathNodes[i].numLinks; j++){
-					int con = ThePaths.ConnectedNode(ThePaths.m_pathNodes[i].firstLink + j);
-					if (i < con) {
-						CVector i_pos = ThePaths.m_pathNodes[i].GetPosition();
-						CVector con_pos = ThePaths.m_pathNodes[con].GetPosition();
-						if (Abs(pos1.z - (i_pos.z + con_pos.z) / 2) < 10.0f &&
-							DoesLineSegmentIntersect(pos1.x, pos1.y, pos2.x, pos2.y, i_pos.x, i_pos.y, con_pos.x, con_pos.y)) {
-							//debug("Setting up light: nodes %f %f %f - %f %f %f, light %f %f %f - %f %f %f\n", i_pos.x, i_pos.y, i_pos.z, con_pos.x, con_pos.y, con_pos.z, pos1.x, pos1.y, pos1.z, pos2.x, pos2.y, pos2.z);
-							int link = ThePaths.m_carPathConnections[ThePaths.m_pathNodes[i].firstLink + j];
-							ThePaths.m_carPathLinks[link].trafficLightType = FindTrafficLightType(light);
-							if (ThePaths.m_pathNodes[i].numLinks > ThePaths.m_pathNodes[con].numLinks)
-								con = i;
-							if (ThePaths.m_carPathLinks[link].pathNodeIndex != con)
-								ThePaths.m_carPathLinks[link].trafficLightDirection = true;
-						}
-					}
-				}
-			}
-
-			// Check peds
-			for(i = ThePaths.m_numCarPathNodes; i < ThePaths.m_numPathNodes; i++){
-				float dist1, dist2;
-				dist1 = Abs(ThePaths.m_pathNodes[i].GetX() - light->GetPosition().x) +
-					Abs(ThePaths.m_pathNodes[i].GetY() - light->GetPosition().y);
-				if(dist1 < 50.0f){
-					for(l = 0; l < ThePaths.m_pathNodes[i].numLinks; l++){
-						j = ThePaths.m_pathNodes[i].firstLink + l;
-						if(ThePaths.ConnectionCrossesRoad(j)){
-							k = ThePaths.ConnectedNode(j);
-							dist2 = Abs(ThePaths.m_pathNodes[k].GetX() - light->GetPosition().x) +
-								Abs(ThePaths.m_pathNodes[k].GetY() - light->GetPosition().y);
-							if(dist1 < 15.0f || dist2 < 15.0f)
-								ThePaths.ConnectionSetTrafficLight(j);
-						}
-					}
-				}
-			}
-		}
-	});
-}
-
-bool
-CTrafficLights::ShouldCarStopForLight(CVehicle *vehicle, bool alwaysStop)
-{
-	int node, type;
-	bool direction;
-
-	node = vehicle->AutoPilot.m_nNextPathNodeInfo;
-	type = ThePaths.m_carPathLinks[node].trafficLightType;
-	direction = ThePaths.m_carPathLinks[node].trafficLightDirection;
-
-	if(type){
-		if((direction || ThePaths.m_carPathLinks[node].pathNodeIndex == vehicle->AutoPilot.m_nNextRouteNode) &&
-		   (!direction || ThePaths.m_carPathLinks[node].pathNodeIndex != vehicle->AutoPilot.m_nNextRouteNode))
-			if(alwaysStop ||
-			   type == 1 && LightForCars1() != CAR_LIGHTS_GREEN ||
-			   type == 2 && LightForCars2() != CAR_LIGHTS_GREEN){
-				float dist = DotProduct2D(CVector2D(vehicle->GetPosition()) - ThePaths.m_carPathLinks[node].GetPosition(),
-						ThePaths.m_carPathLinks[node].GetDirection());
-				if(vehicle->AutoPilot.m_nNextDirection == -1){
-					if(dist > 0.0f && dist < 8.0f)
-						return true;
-				}else{
-					if(dist < 0.0f && dist > -8.0f)
-						return true;
-				}
-			}
-	}
-
-	node = vehicle->AutoPilot.m_nCurrentPathNodeInfo;
-	type = ThePaths.m_carPathLinks[node].trafficLightType;
-	direction = ThePaths.m_carPathLinks[node].trafficLightDirection;
-	if(type){
-		if((direction || ThePaths.m_carPathLinks[node].pathNodeIndex == vehicle->AutoPilot.m_nCurrentRouteNode) &&
-		   (!direction || ThePaths.m_carPathLinks[node].pathNodeIndex != vehicle->AutoPilot.m_nCurrentRouteNode))
-			if(alwaysStop ||
-			   type == 1 && LightForCars1() != CAR_LIGHTS_GREEN ||
-			   type == 2 && LightForCars2() != CAR_LIGHTS_GREEN){
-				float dist = DotProduct2D(CVector2D(vehicle->GetPosition()) - ThePaths.m_carPathLinks[node].GetPosition(),
-						ThePaths.m_carPathLinks[node].GetDirection());
-				if(vehicle->AutoPilot.m_nCurrentDirection == -1){
-					if(dist > 0.0f && dist < 8.0f)
-						return true;
-				}else{
-					if(dist < 0.0f && dist > -8.0f)
-						return true;
-				}
-			}
-	}
-
-	if(vehicle->GetStatus() == STATUS_PHYSICS){
-		node = vehicle->AutoPilot.m_nPreviousPathNodeInfo;
-		type = ThePaths.m_carPathLinks[node].trafficLightType;
-		direction = ThePaths.m_carPathLinks[node].trafficLightDirection;
-		if(type){
-			if((direction || ThePaths.m_carPathLinks[node].pathNodeIndex == vehicle->AutoPilot.m_nPrevRouteNode) &&
-			   (!direction || ThePaths.m_carPathLinks[node].pathNodeIndex != vehicle->AutoPilot.m_nPrevRouteNode))
-				if(alwaysStop ||
-				   type == 1 && LightForCars1() != CAR_LIGHTS_GREEN ||
-				   type == 2 && LightForCars2() != CAR_LIGHTS_GREEN){
-					float dist = DotProduct2D(CVector2D(vehicle->GetPosition()) - ThePaths.m_carPathLinks[node].GetPosition(),
-							ThePaths.m_carPathLinks[node].GetDirection());
-					if(vehicle->AutoPilot.m_nPreviousDirection == -1){
-						if(dist > 0.0f && dist < 6.0f)
-							return true;
-					}else{
-						if(dist < 0.0f && dist > -6.0f)
-							return true;
-					}
-				}
-		}
-	}
-
-	return false;
-}
-
-bool
-CTrafficLights::ShouldCarStopForBridge(CVehicle *vehicle)
-{
-#ifdef GTA_BRIDGE
-	return ThePaths.m_carPathLinks[vehicle->AutoPilot.m_nNextPathNodeInfo].bBridgeLights &&
-		!ThePaths.m_carPathLinks[vehicle->AutoPilot.m_nCurrentPathNodeInfo].bBridgeLights;
-#else
-	return false;
-#endif
-}
-
 int
 CTrafficLights::FindTrafficLightType(CEntity *light)
 {
@@ -470,19 +316,6 @@ CTrafficLights::FindTrafficLightType(CEntity *light)
 	   (orientation > 240.0f && orientation < 240.0f + 90.0f))
 		return 1;
 	return 2;
-}
-
-uint8
-CTrafficLights::LightForPeds(void)
-{
-	uint32 period = CTimer::GetTimeInMilliseconds() % 16384;
-
-	if(period < 12000)
-		return PED_LIGHTS_DONT_WALK;
-	else if(period < 16384 - 1000)
-		return PED_LIGHTS_WALK;
-	else
-		return PED_LIGHTS_WALK_BLINK;
 }
 
 uint8

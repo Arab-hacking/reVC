@@ -23,7 +23,6 @@
 #include "main.h"
 #include "ColStore.h"
 #include "Coronas.h"
-#include "Script.h"
 #include "DMAudio.h"
 
 RwIm3DVertex StreakVertices[4];

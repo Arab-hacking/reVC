@@ -1,4 +1,5 @@
 #include "common.h"
+#include "Pools.h"
 #include <stdlib.h>
 #include <time.h>
 #include "rpmatfx.h"
@@ -34,8 +35,6 @@
 #include "Pickups.h"
 #include "WeaponEffects.h"
 #include "PointLights.h"
-#include "Fluff.h"
-#include "Replay.h"
 #include "Camera.h"
 #include "World.h"
 #include "Ped.h"
@@ -44,14 +43,11 @@
 #include "Hud.h"
 #include "User.h"
 #include "Messages.h"
-#include "Darkel.h"
-#include "Garages.h"
 #include "MusicManager.h"
 #include "VisibilityPlugins.h"
 #include "NodeName.h"
 #include "DMAudio.h"
 #include "Lights.h"
-#include "Credits.h"
 #include "ZoneCull.h"
 #include "Timecycle.h"
 #include "TxdStore.h"
@@ -61,19 +57,15 @@
 #include "RpAnimBlend.h"
 #include "Frontend.h"
 #include "AnimViewer.h"
-#include "Script.h"
-#include "PathFind.h"
 #include "Debug.h"
 #include "Console.h"
 #include "timebars.h"
 #include "GenericGameStorage.h"
 #include "MemoryCard.h"
 #include "MemoryHeap.h"
-#include "SceneEdit.h"
 #include "debugmenu.h"
 #include "Clock.h"
 #include "Occlusion.h"
-#include "Ropes.h"
 #include "postfx.h"
 #include "custompipes.h"
 #include "CustomSky.h"
@@ -1379,19 +1371,11 @@ if(gbRenderFadingInEntities)
 	// CWeather::AddSnow
 	CWaterCannons::Render();
 	CAntennas::Render();
-	// Contrails and the banner streamers behind the planes. They are drawn here,
-	// with the other additive effects, because they are transparent lines that
-	// have to go after everything solid.
-	CPlaneTrails::Render();
-	CPlaneBanners::Render();
 	CSpecialFX::Render();
-	CRopes::Render();
 	CCoronas::Render();
 	CParticle::Render();
-	CPacManPickups::Render();
 	CWeaponEffects::Render();
 	CPointLights::RenderFogEffect();
-	CMovingThings::Render();
 	CRenderer::RenderFirstPersonVehicle();
 	POP_RENDERGROUP();
 }
@@ -1431,11 +1415,9 @@ void
 RenderDebugShit(void)
 {
 	PUSH_RENDERGROUP("RenderDebugShit");
-	CTheScripts::RenderTheScriptDebugLines();
 #ifndef FINAL
 	if(gbShowCollisionLines)
 		CRenderer::RenderCollisionLines();
-	ThePaths.DisplayPathData();
 	CDebug::DrawLines();
 	DefinedState();
 #endif
@@ -1455,17 +1437,14 @@ RenderEffects(void)
 	CGlass::Render();
 	CWaterCannons::Render();
 	CSpecialFX::Render();
-	CRopes::Render();
 	CShadows::RenderStaticShadows();
 	CShadows::RenderStoredShadows();
 	CSkidmarks::Render();
 	CAntennas::Render();
 	CCoronas::Render();
 	CParticle::Render();
-	CPacManPickups::Render();
 	CWeaponEffects::Render();
 	CPointLights::RenderFogEffect();
-	CMovingThings::Render();
 	CRenderer::RenderFirstPersonVehicle();
 	POP_RENDERGROUP();
 }
@@ -1481,7 +1460,6 @@ Render2dStuff(void)
 	RwRenderStateSet(rwRENDERSTATEDESTBLEND, (void*)rwBLENDINVSRCALPHA);
 	RwRenderStateSet(rwRENDERSTATECULLMODE, (void*)rwCULLMODECULLNONE);
 
-	CReplay::Display();
 	CPickups::RenderPickUpText();
 
 	if(TheCamera.m_WideScreenOn
@@ -1524,18 +1502,10 @@ Render2dStuff(void)
 
 	MusicManager.DisplayRadioStationName();
 	TheConsole.Display();
-#ifdef GTA_SCENE_EDIT
-	if(CSceneEdit::m_bEditOn)
-		CSceneEdit::Draw();
-	else
-#endif
-		CHud::Draw();
+	CHud::Draw();
 
 	CSpecialFX::Render2DFXs();
-	CUserDisplay::OnscnTimer.ProcessForDisplay();
 	CMessages::Display();
-	CDarkel::DrawMessages();
-	CGarages::PrintMessages();
 	CPad::PrintErrorMessage();
 	CFont::DrawFonts();
 #ifndef MASTER
@@ -1576,7 +1546,6 @@ Render2dStuffAfterFade(void)
 #endif
 	CHud::DrawAfterFade();
 	CFont::DrawFonts();
-	CCredits::Render();
 	POP_RENDERGROUP();
 }
 
@@ -1731,7 +1700,6 @@ Idle(void *arg)
 	tbStartTimer(0, "Render2dStuff-Fade");
 	Render2dStuffAfterFade();
 	tbEndTimer("Render2dStuff-Fade");
-	// CCredits::Render(); // They added it to function above and also forgot it here
 #ifdef XBOX_MESSAGE_SCREEN
 	FrontEndMenuManager.DrawOverlays();
 #endif
@@ -2098,8 +2066,7 @@ void TheGame(void)
 
 			DoFade();
 			Render2dStuffAfterFade();
-			CCredits::Render();
-
+		
 			DoRWStuffEndOfFrame();
 
 			while (frameCount < 2)
@@ -2554,17 +2521,6 @@ main(int argc, char *argv[])
 
 	TheGame();
 
-#if 0	// maybe ifndef FINAL or MASTER?
-	CGame::ShutDown();
-	
-	RwEngineStop();
-	RwEngineClose();
-	RwEngineTerm();
-	
-#ifdef __MWERKS__
-	mwExit(); // metrowerks shutdown
-#endif
-#endif
 	return 0;
 }
 #endif

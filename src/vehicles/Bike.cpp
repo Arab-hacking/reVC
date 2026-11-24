@@ -6,7 +6,6 @@
 #include "Timecycle.h"
 #include "ZoneCull.h"
 #include "Camera.h"
-#include "Darkel.h"
 #include "Explosion.h"
 #include "Particle.h"
 #include "ParticleObject.h"
@@ -20,12 +19,7 @@
 #include "World.h"
 #include "SurfaceTable.h"
 #include "Weather.h"
-#include "Record.h"
-#include "CarCtrl.h"
-#include "CarAI.h"
-#include "Script.h"
 #include "Stats.h"
-#include "Replay.h"
 #include "AnimManager.h"
 #include "RpAnimBlend.h"
 #include "AnimBlendAssociation.h"
@@ -128,7 +122,6 @@ m_nVehicleSubType = VEHICLE_TYPE_BIKE;
 	m_pBombRigger = nil;
 	m_fGasPedalAudio = 0.0f;
 	m_bike_flag02 = false;
-	bWaterTight = false;
 	bIsBeingPickedUp = false;
 	bIsStanding = false;
 	bExtraSpeed = false;
@@ -172,12 +165,8 @@ m_nVehicleSubType = VEHICLE_TYPE_BIKE;
 
 	SetupSuspensionLines();
 
-	AutoPilot.m_nCarMission = MISSION_NONE;
-	AutoPilot.m_nTempAction = TEMPACT_NONE;
-	AutoPilot.m_nTimeToStartMission = CTimer::GetTimeInMilliseconds();
-	AutoPilot.m_bStayInCurrentLevel = false;
 
-	SetStatus(STATUS_SIMPLE);
+	SetStatus(STATUS_ABANDONED);
 	bUseCollisionRecords = true;
 	m_nNumPassengers = 0;
 	bIsVan = false;
@@ -211,21 +200,17 @@ void
 CBike::ProcessControl(void)
 {
 	int i;
-	float wheelRot;
 	float acceleration = 0.0f;
 	bool bBalancedByRider = false;
 	bool bStuckInSand = false;
 	float brake = 0.0f;
 	CColModel *colModel = GetColModel();
 	float wheelScale = ((CVehicleModelInfo*)CModelInfo::GetModelInfo(GetModelIndex()))->m_wheelScale;
-	bWarnedPeds = false;
 	bLeanMatrixClean = false;
 	m_doingBurnout = 0;
 	bExtraSpeed = false;
 	bRestingOnPhysical = false;
 
-	if(CReplay::IsPlayingBack())
-		return;
 
 	ProcessCarAlarm();
 
@@ -234,8 +219,6 @@ CBike::ProcessControl(void)
 
 	UpdateClumpAlpha();
 
-	AutoPilot.m_bSlowedDownBecauseOfCars = false;
-	AutoPilot.m_bSlowedDownBecauseOfPeds = false;
 
 	switch(GetStatus()){
 	case STATUS_PLAYER:
@@ -280,7 +263,7 @@ CBike::ProcessControl(void)
 
 			PruneReferences();
 
-			if(GetStatus() == STATUS_PLAYER && !CRecordDataForChase::IsRecording())
+			if(GetStatus() == STATUS_PLAYER)
 				DoDriveByShootings();
 
 			if(m_aSuspensionSpringRatio[0] < 1.0f && CSurfaceTable::GetAdhesionGroup(m_aWheelColPoints[0].surfaceB) == ADHESIVE_SAND ||
@@ -304,34 +287,7 @@ CBike::ProcessControl(void)
 		bBalancedByRider = true;
 		break;
 
-	case STATUS_SIMPLE:
-		CCarAI::UpdateCarAI(this);
-		CPhysical::ProcessControl();
-		CCarCtrl::UpdateCarOnRails(this);
-
-		m_nWheelsOnGround = 2;
-		m_nDriveWheelsOnGroundPrev = m_nDriveWheelsOnGround;
-		m_nDriveWheelsOnGround = 2;
-
-		m_pHandlingData->m_Transmission.CalculateGearForSimpleCar(AutoPilot.m_fMaxTrafficSpeed/50.0f, m_nCurrentGear);
-
-		wheelRot = ProcessWheelRotation(WHEEL_STATE_NORMAL, GetForward(), m_vecMoveSpeed, 0.5f*wheelScale);
-		for(i = 0; i < 2; i++)
-			m_aWheelRotation[i] += wheelRot;
-
-		PlayHornIfNecessary();
-		ReduceHornCounter();
-		bVehicleColProcessed = false;
-		bAudioChangingGear = false;
-		bWheelieCam = false;
-		// that's all we do for simple vehicles
-		return;
-
 	case STATUS_PHYSICS:
-		CCarAI::UpdateCarAI(this);
-		CCarCtrl::SteerAICarWithPhysics(this);
-		PlayHornIfNecessary();
-
 		bBalancedByRider = true;
 		bWheelieCam = false;
 
@@ -481,16 +437,15 @@ CBike::ProcessControl(void)
 		   makeStatic){
 			m_nStaticFrames++;
 
-			if(m_nStaticFrames > 10 || makeStatic)
-				if(!CCarCtrl::MapCouldMoveInThisArea(GetPosition().x, GetPosition().y)){
-					if(!makeStatic || m_nStaticFrames > 10)
-						m_nStaticFrames = 10;
+			if(m_nStaticFrames > 10 || makeStatic){
+				if(!makeStatic || m_nStaticFrames > 10)
+					m_nStaticFrames = 10;
 
-					skipPhysics = true;
+				skipPhysics = true;
 
-					m_vecMoveSpeed = CVector(0.0f, 0.0f, 0.0f);
-					m_vecTurnSpeed = CVector(0.0f, 0.0f, 0.0f);
-				}
+				m_vecMoveSpeed = CVector(0.0f, 0.0f, 0.0f);
+				m_vecTurnSpeed = CVector(0.0f, 0.0f, 0.0f);
+			}
 		}else
 			m_nStaticFrames = 0;
 	}
@@ -1214,8 +1169,6 @@ CBike::ProcessControl(void)
 	bVehicleColProcessed = false;
 	bAudioChangingGear = false;
 
-	if(!bWarnedPeds)
-		CCarCtrl::ScanForPedDanger(this);
 
 	if(bInfiniteMass){
 		m_vecMoveSpeed = CVector(0.0f, 0.0f, 0.0f);
@@ -1586,8 +1539,7 @@ CBike::ProcessEntityCollision(CEntity *ent, CColPoint *colpoints)
 	int i;
 	CColModel *colModel;
 
-	if(GetStatus() != STATUS_SIMPLE)
-		bVehicleColProcessed = true;
+	bVehicleColProcessed = true;
 
 	colModel = GetColModel();
 
@@ -1772,8 +1724,6 @@ CBike::ProcessControlInputs(uint8 pad)
 		bIsHandbrakeOn = true;
 		m_fGasPedal = 0.0f;
 
-		FindPlayerPed()->KeepAreaAroundPlayerClear();
-
 		// slow down car immediately
 		speed = m_vecMoveSpeed.Magnitude();
 		if(speed > 0.28f)
@@ -1810,28 +1760,24 @@ CBike::ProcessBuoyancy(void)
 
 			if(pDriver){
 				pDriver->bIsInWater = true;
-				if(pDriver->IsPlayer() || !bWaterTight){
-					if(m_aSuspensionSpringRatio[0] < 1.0f ||
-					   m_aSuspensionSpringRatio[1] < 1.0f ||
-					   m_aSuspensionSpringRatio[2] < 1.0f ||
-					   m_aSuspensionSpringRatio[3] < 1.0f)
-						pDriver->InflictDamage(nil, WEAPONTYPE_DROWNING, CTimer::GetTimeStep(), PED_PIECE_TORSO, 0);
-					else
-						KnockOffRider(WEAPONTYPE_DROWNING, 0, pDriver, false);
-				}
+				if(m_aSuspensionSpringRatio[0] < 1.0f ||
+				   m_aSuspensionSpringRatio[1] < 1.0f ||
+				   m_aSuspensionSpringRatio[2] < 1.0f ||
+				   m_aSuspensionSpringRatio[3] < 1.0f)
+					pDriver->InflictDamage(nil, WEAPONTYPE_DROWNING, CTimer::GetTimeStep(), PED_PIECE_TORSO, 0);
+				else
+					KnockOffRider(WEAPONTYPE_DROWNING, 0, pDriver, false);
 			}
 			for(i = 0; i < m_nNumMaxPassengers; i++)
 				if(pPassengers[i]){
 					pPassengers[i]->bIsInWater = true;
-					if(pPassengers[i]->IsPlayer() || !bWaterTight){
-						if(m_aSuspensionSpringRatio[0] < 1.0f ||
-						   m_aSuspensionSpringRatio[1] < 1.0f ||
-						   m_aSuspensionSpringRatio[2] < 1.0f ||
-						   m_aSuspensionSpringRatio[3] < 1.0f)
-							pPassengers[i]->InflictDamage(nil, WEAPONTYPE_DROWNING, CTimer::GetTimeStep(), PED_PIECE_TORSO, 0);
-						else
-							KnockOffRider(WEAPONTYPE_DROWNING, 0, pPassengers[i], false);
-					}
+					if(m_aSuspensionSpringRatio[0] < 1.0f ||
+					   m_aSuspensionSpringRatio[1] < 1.0f ||
+					   m_aSuspensionSpringRatio[2] < 1.0f ||
+					   m_aSuspensionSpringRatio[3] < 1.0f)
+						pPassengers[i]->InflictDamage(nil, WEAPONTYPE_DROWNING, CTimer::GetTimeStep(), PED_PIECE_TORSO, 0);
+					else
+						KnockOffRider(WEAPONTYPE_DROWNING, 0, pPassengers[i], false);
 				}
 		}else{
 			bIsInWater = false;
@@ -2240,10 +2186,8 @@ CBike::BlowUpCar(CEntity *culprit)
 
 	bEngineOn = false;
 	bLightsOn = false;
-	ChangeLawEnforcerState(false);
 
 	CExplosion::AddExplosion(this, culprit, EXPLOSION_CAR, GetPosition(), 0);
-	CDarkel::RegisterCarBlownUpByPlayer(this);
 }
 
 bool
@@ -2288,11 +2232,6 @@ CBike::BurstTyre(uint8 wheel, bool applyForces)
 		CStats::TyresPopped++;
 #endif
 		DMAudio.PlayOneShot(m_audioEntityId, SOUND_CAR_TYRE_POP, 0.0f);
-
-		if(GetStatus() == STATUS_SIMPLE){
-			SetStatus(STATUS_PHYSICS);
-			CCarCtrl::SwitchVehicleToRealPhysics(this);
-		}
 
 		if(applyForces){
 			ApplyMoveForce(GetRight() * m_fMass * CGeneral::GetRandomNumberInRange(-0.02f, 0.02f));
@@ -2385,63 +2324,11 @@ CBike::GetHeightAboveRoad(void)
 }
 
 void
-CBike::PlayCarHorn(void)
-{
-	uint32 r;
-
-	if (IsAlarmOn() || m_nCarHornTimer != 0)
-		return;
-
-	if (m_nCarHornDelay) {
-		m_nCarHornDelay--;
-		return;
-	}
-
-	m_nCarHornDelay = (CGeneral::GetRandomNumber() & 0x7F) + 150;
-	r = m_nCarHornDelay & 7;
-	if(r < 2){
-		m_nCarHornTimer = 45;
-	}else if(r < 4){
-		if(pDriver)
-			pDriver->Say(SOUND_PED_ANNOYED_DRIVER);
-		m_nCarHornTimer = 45;
-	}else{
-		if(pDriver)
-			pDriver->Say(SOUND_PED_ANNOYED_DRIVER);
-	}
-}
-
-void
 CBike::KnockOffRider(eWeaponType weapon, uint8 direction, CPed *ped, bool bGetBackOn)
 {
 	AnimationId anim = ANIM_ID_KO_SHOT_FRONT_0;
 	if(ped == nil)
 		return;
-
-	if(!ped->IsPlayer()){
-		if(bGetBackOn){
-			if(ped->m_pedStats->m_nTemper > ped->m_pedStats->m_nFear &&
-			   ped->CharCreatedBy != MISSION_CHAR && ped->m_pMyVehicle->VehicleCreatedBy != MISSION_VEHICLE &&
-			   FindPlayerPed()->m_carInObjective == ped->m_pMyVehicle &&
-			   !CTheScripts::IsPlayerOnAMission())
-				ped->SetObjective(OBJECTIVE_ENTER_CAR_AS_DRIVER, ped->m_pMyVehicle);
-			else if(ped->m_pedStats->m_nTemper > ped->m_pedStats->m_nFear &&
-			   ped->CharCreatedBy != MISSION_CHAR && ped->m_pMyVehicle->VehicleCreatedBy != MISSION_VEHICLE &&
-			   !CTheScripts::IsPlayerOnAMission())
-				ped->SetObjective(OBJECTIVE_ENTER_CAR_AS_DRIVER, ped->m_pMyVehicle);
-			else if(ped->m_pedStats->m_nTemper <= ped->m_pedStats->m_nFear &&
-			   ped->CharCreatedBy != MISSION_CHAR && ped->m_pMyVehicle->VehicleCreatedBy != MISSION_VEHICLE &&
-			   !CTheScripts::IsPlayerOnAMission()){
-				ped->SetObjective(OBJECTIVE_WANDER, ped->m_pMyVehicle);
-				ped->m_nPathDir = CGeneral::GetRandomNumberInRange(0, 8);
-			}
-		}else if(ped->m_leader == nil){
-			if(pDriver == ped)
-				ped->SetObjective(OBJECTIVE_ENTER_CAR_AS_DRIVER, this);
-			else
-				ped->SetObjective(OBJECTIVE_ENTER_CAR_AS_PASSENGER, this);
-		}
-	}
 
 	if(ped->IsPed()){
 		CAnimBlendAssociation *assoc;
@@ -2609,14 +2496,6 @@ CBike::KnockOffRider(eWeaponType weapon, uint8 direction, CPed *ped, bool bGetBa
 			ped->GetMatrix().Translate(CVector(0.0f, 0.0f, 0.5f));
 	}
 	ped->m_pMyVehicle = nil;
-}
-
-void
-CBike::PlayHornIfNecessary(void)
-{
-	if(AutoPilot.m_bSlowedDownBecauseOfPeds ||
-	   AutoPilot.m_bSlowedDownBecauseOfCars)
-		PlayCarHorn();
 }
 
 void

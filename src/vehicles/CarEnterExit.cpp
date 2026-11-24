@@ -16,9 +16,7 @@
 #include "RpAnimBlend.h"
 #include "World.h"
 #include "Collision.h"
-#include "EventList.h"
 #include "Timer.h"
-#include "Script.h"
 #include "Fire.h"
 #include "Streaming.h"
 #include "Pools.h"
@@ -737,12 +735,6 @@ CCarEnterExit::IsVehicleStealable(const CVehicle *vehicle, const CPed *ped)
 			return false;
 		}
 	}
-
-	// SA reads the global check, the same one the script and the stuck-car
-	// timer drive. A temporary here would always answer "not upside down",
-	// because a fresh instance has no timers running.
-	if(CTheScripts::UpsideDownCars.IsCarUpsideDown((CVehicle*)vehicle))
-		return false;
 
 	if(!((CVehicle*)vehicle)->CanBeDriven())
 		return false;

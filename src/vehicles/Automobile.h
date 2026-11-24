@@ -46,7 +46,6 @@ public:
 	uint8 bTaxiLight : 1;
 	uint8 bFixedColour : 1;
 	uint8 bBigWheels : 1;
-	uint8 bWaterTight : 1;	// no damage for non-player peds
 	uint8 bNotDamagedUpsideDown : 1;
 	uint8 bMoreResistantToDamage : 1;
 	uint8 bTankDetonateCars : 1;
@@ -134,7 +133,6 @@ public:
 	void BurstTyre(uint8 tyre, bool applyForces);
 	bool IsRoomForPedToLeaveCar(uint32 component, CVector *doorOffset);
 	float GetHeightAboveRoad(void);
-	void PlayCarHorn(void);
 
 	void FireTruckControl(void);
 	void TankControl(void);
@@ -165,7 +163,6 @@ public:
 	void dmgDrawCarCollidingParticles(const CVector &pos, float amount);
 	void AddDamagedVehicleParticles(void);
 	int32 AddWheelDirtAndWater(CColPoint *colpoint, uint32 belowEffectSpeed);
-	void PlayHornIfNecessary(void);
 	// Applies the per-wheel suspension compression the damage model and the
 	// ground surface ask for: a missing wheel hangs, a burst one shakes with
 	// speed, sand and rail beds push the wheel up.
@@ -181,7 +178,6 @@ public:
 	void SetupSuspensionLines(void);
 	void ScanForCrimes(void);
 	void BlowUpCarsInPath(void);
-	bool HasCarStoppedBecauseOfLight(void);
 	void SetBusDoorTimer(uint32 timer, uint8 type);
 	void ProcessAutoBusDoors(void);
 	void ProcessSwingingDoor(int32 component, eDoors door);
@@ -257,8 +253,6 @@ public:
 	void GetDamageState(DamageState &out) const;
 	void SetDamageState(const DamageState &in);
 
-	void TellHeliToGoToCoors(float x, float y, float z, uint8 speed);
-	void TellPlaneToGoToCoors(float x, float y, float z, uint8 speed);
 	void SetHeliOrientation(float orient) { m_fHeliOrientation = orient; }
 	void ClearHeliOrientation(void) { m_fHeliOrientation = -1.0f; }
 

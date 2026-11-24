@@ -6,7 +6,6 @@
 #include "Coronas.h"
 #include "DMAudio.h"
 #include "Entity.h"
-#include "EventList.h"
 #include "Explosion.h"
 #include "General.h"
 #include "Fire.h"
@@ -164,7 +163,6 @@ CExplosion::AddExplosion(CEntity *explodingEntity, CEntity *culprit, eExplosionT
 		explosion.m_fPropagationRate = 0.5f;
 		posGround = pos;
 		posGround.z = CWorld::FindGroundZFor3DCoord(posGround.x, posGround.y, posGround.z + 3.0f, nil);
-		CEventList::RegisterEvent(EVENT_EXPLOSION, posGround, 250);
 		if (Distance(explosion.m_vecPosition, TheCamera.GetPosition()) < 40.0f) {
 			uint8 tmp = CGeneral::GetRandomNumberInRange(0, 64) - 64;
 			colorGrenade.green += tmp;
@@ -198,7 +196,6 @@ CExplosion::AddExplosion(CEntity *explodingEntity, CEntity *culprit, eExplosionT
 		explosion.m_fPower = 300.0f;
 		explosion.m_fStopTime = lifetime + CTimer::GetTimeInMilliseconds() + 750;
 		explosion.m_fPropagationRate = 0.5f;
-		CEventList::RegisterEvent(EVENT_EXPLOSION, pos, 250);
 		if (Distance(explosion.m_vecPosition, TheCamera.GetPosition()) < 40.0f)
 			CParticle::AddParticle(PARTICLE_EXPLOSION_LFAST, explosion.m_vecPosition, CVector(0.0f, 0.0f, 0.0f), nil, 5.5f, color);
 		break;
@@ -213,9 +210,7 @@ CExplosion::AddExplosion(CEntity *explodingEntity, CEntity *culprit, eExplosionT
 		if (explosion.m_pVictimEntity != nil) {
 			if (explosion.m_pVictimEntity->IsVehicle() && ((CVehicle*)explosion.m_pVictimEntity)->IsBoat())
 				explosion.m_bIsBoat = true;
-			CEventList::RegisterEvent(EVENT_EXPLOSION, EVENT_ENTITY_VEHICLE, explosion.m_pVictimEntity, nil, 1000);
 		} else {
-			CEventList::RegisterEvent(EVENT_EXPLOSION, pos, 1000);
 		}
 
 		if (explosion.m_pVictimEntity != nil && !explosion.m_bIsBoat) {
@@ -282,7 +277,6 @@ CExplosion::AddExplosion(CEntity *explodingEntity, CEntity *culprit, eExplosionT
 
 			CParticle::AddJetExplosion(randpos, 1.4f, 3.0f);
 		}
-		CEventList::RegisterEvent(EVENT_EXPLOSION, pos, 1000);
 		break;
 	case EXPLOSION_MINE:
 		explosion.m_fRadius = 10.0f;
@@ -292,7 +286,6 @@ CExplosion::AddExplosion(CEntity *explodingEntity, CEntity *culprit, eExplosionT
 		posGround = pos;
 		//posGround.z = 
 			CWorld::FindGroundZFor3DCoord(pos.x, pos.y, pos.z + 4.0f, nil); // BUG? result is unused
-		CEventList::RegisterEvent(EVENT_EXPLOSION, posGround, 250);
 		break;
 	case EXPLOSION_BARREL:
 		explosion.m_fRadius = 7.0f;
@@ -314,7 +307,6 @@ CExplosion::AddExplosion(CEntity *explodingEntity, CEntity *culprit, eExplosionT
 		posGround = pos;
 		//posGround.z = 
 			CWorld::FindGroundZFor3DCoord(pos.x, pos.y, pos.z + 4.0f, nil); // BUG? result is unused
-		CEventList::RegisterEvent(EVENT_EXPLOSION, posGround, 250);
 		break;
 	case EXPLOSION_TANK_GRENADE:
 		explosion.m_fRadius = 10.0f;
@@ -324,7 +316,6 @@ CExplosion::AddExplosion(CEntity *explodingEntity, CEntity *culprit, eExplosionT
 		posGround = pos;
 		//posGround.z = 
 			CWorld::FindGroundZFor3DCoord(pos.x, pos.y, pos.z + 4.0f, nil); // BUG? result is unused
-		CEventList::RegisterEvent(EVENT_EXPLOSION, posGround, 250);
 		break;
 	case EXPLOSION_HELI_BOMB:
 		explosion.m_fRadius = 8.0f;
@@ -334,7 +325,6 @@ CExplosion::AddExplosion(CEntity *explodingEntity, CEntity *culprit, eExplosionT
 		posGround = pos;
 		//posGround.z = 
 			CWorld::FindGroundZFor3DCoord(pos.x, pos.y, pos.z + 4.0f, nil); // BUG? result is unused
-		CEventList::RegisterEvent(EVENT_EXPLOSION, posGround, 250);
 		break;
 	default:
 		debug("Undefined explosion type, AddExplosion, Explosion.cpp");

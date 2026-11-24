@@ -53,7 +53,6 @@ public:
 	uint8 bPropellerInWater : 1;
 	bool m_bIsAnchored;
 	float m_fOrientation;
-	uint32 m_nPoliceShoutTimer;
 	int32 m_boat_unused2;
 	float m_fDamage;
 	CEntity *m_pSetOnFireEntity;

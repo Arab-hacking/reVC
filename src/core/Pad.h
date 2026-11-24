@@ -214,7 +214,6 @@ public:
 	CControllerState ReconcileTwoControllersInput(CControllerState const &State1, CControllerState const &State2);
 	void StartShake(int16 nDur, uint8 nFreq);
 	void StartShake_Distance(int16 nDur, uint8 nFreq, float fX, float fY, float fz);
-	void StartShake_Train(float fX, float fY);
 #ifdef GTA_PS2_STUFF
 	void AddToCheatString(char c);
 #endif

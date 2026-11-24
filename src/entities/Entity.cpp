@@ -6,7 +6,9 @@
 #include "ModelIndices.h"
 #include "Timer.h"
 #include "Entity.h"
+#include "Building.h"
 #include "Object.h"
+#include "Vehicle.h"
 #include "World.h"
 #include "Camera.h"
 #include "Glass.h"
@@ -292,34 +294,6 @@ CEntity::UpdateRpHAnim(void)
 	if(IsClumpSkinned(GetClump()) && !bDontUpdateHierarchy){
 		RpHAnimHierarchy *hier = GetAnimHierarchyFromSkinClump(GetClump());
 		RpHAnimHierarchyUpdateMatrices(hier);
-#if 0
-	int i;
-	char buf[256];
-	if(this == (CEntity*)FindPlayerPed())
-	for(i = 0; i < hier->numNodes; i++){
-		RpHAnimStdInterpFrame *kf = (RpHAnimStdInterpFrame*)rpHANIMHIERARCHYGETINTERPFRAME(hier, i);
-		sprintf(buf, "%6.3f %6.3f %6.3f %6.3f  %6.3f %6.3f %6.3f  %d %s",
-			kf->q.imag.x, kf->q.imag.y, kf->q.imag.z, kf->q.real,
-			kf->t.x, kf->t.y, kf->t.z,
-			HIERNODEID(hier, i),
-			ConvertBoneTag2BoneName(HIERNODEID(hier, i)));
-		CDebug::PrintAt(buf, 10, 1+i*3);
-
-		RwMatrix *m = &RpHAnimHierarchyGetMatrixArray(hier)[i];
-		sprintf(buf, "%6.3f %6.3f %6.3f %6.3f",
-			m->right.x, m->up.x, m->at.x, m->pos.x);
-		CDebug::PrintAt(buf, 80, 1+i*3+0);
-		sprintf(buf, "%6.3f %6.3f %6.3f %6.3f",
-			m->right.y, m->up.y, m->at.y, m->pos.y);
-		CDebug::PrintAt(buf, 80, 1+i*3+1);
-		sprintf(buf, "%6.3f %6.3f %6.3f %6.3f",
-			m->right.z, m->up.z, m->at.z, m->pos.z);
-		CDebug::PrintAt(buf, 80, 1+i*3+2);
-	}
-
-	void RenderSkeleton(RpHAnimHierarchy *hier);
-	RenderSkeleton(hier);
-#endif
 	}
 }
 

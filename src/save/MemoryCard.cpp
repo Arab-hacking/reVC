@@ -7,8 +7,6 @@
 #include "DMAudio.h"
 #include "AudioScriptObject.h"
 #include "Camera.h"
-#include "CarGen.h"
-#include "Cranes.h"
 #include "Clock.h"
 #include "MBlur.h"
 #include "Date.h"
@@ -16,22 +14,16 @@
 #include "FileMgr.h"
 #include "Game.h"
 #include "GameLogic.h"
-#include "Gangs.h"
-#include "Garages.h"
 #include "GenericGameStorage.h"
 #include "Pad.h"
 #include "Particle.h"
 #include "ParticleObject.h"
-#include "PathFind.h"
 #include "PCSave.h"
-#include "Phones.h"
 #include "Pickups.h"
 #include "PlayerPed.h"
 #include "ProjectileInfo.h"
 #include "Pools.h"
 #include "Radar.h"
-#include "Restart.h"
-#include "Script.h"
 #include "Stats.h"
 #include "Streaming.h"
 #include "Sprite2d.h"
@@ -455,7 +447,6 @@ CMemoryCard::LoadSavedGame(void)
 	ReadDataFromBlock(CPools::LoadObjectPool);
 	
 	printf("Loading Paths \n");
-	ReadDataFromBlock(ThePaths.Load);
 	
 	printf("Loading Cranes \n");
 	ReadDataFromBlock(CCranes::Load);
@@ -481,7 +472,6 @@ CMemoryCard::LoadSavedGame(void)
 	ReadDataFromBlock(CGangs::LoadAllGangData);
 	
 	printf("Loading Car Generators \n");
-	ReadDataFromBlock(CTheCarGenerators::LoadAllCarGenerators);
 	
 	printf("Loading Particles \n");
 	ReadDataFromBlock(CParticleObject::LoadParticle);
@@ -499,7 +489,6 @@ CMemoryCard::LoadSavedGame(void)
 	ReadDataFromBlock(CStreaming::MemoryCardLoad);
 	
 	printf("Loading PedType Stuff \n");
-	ReadDataFromBlock(CPedType::Load);
 	
 	#undef LoadSaveDataBlock
 	#undef ReadDataFromBlock
@@ -1798,7 +1787,6 @@ CMemoryCard::SaveGame(void)
 	WriteSaveDataBlock(CPools::SaveObjectPool);
 	printf("Object Save Size %d, \n", size);
 	
-	WriteSaveDataBlock(ThePaths.Save);
 	printf("The Paths Save Size %d, \n", size);
 	
 	WriteSaveDataBlock(CCranes::Save);
@@ -1831,7 +1819,6 @@ CMemoryCard::SaveGame(void)
 	WriteSaveDataBlock(CGangs::SaveAllGangData);
 	printf("Gangs Save Size %d, \n", size);
 	
-	WriteSaveDataBlock(CTheCarGenerators::SaveAllCarGenerators);
 	printf("Car Gens Save Size %d, \n", size);
 	
 	WriteSaveDataBlock(CParticleObject::SaveParticle);
@@ -1849,7 +1836,6 @@ CMemoryCard::SaveGame(void)
 	WriteSaveDataBlock(CStreaming::MemoryCardSave);
 	printf("Streaming Save Size %d, \n", size);
 	
-	WriteSaveDataBlock(CPedType::Save);
 	printf("PedType Save Size %d, \n", size);
 	
 	DoClassSaveRoutine(file, work_buff, buf - work_buff);

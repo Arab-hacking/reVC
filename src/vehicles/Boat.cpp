@@ -5,14 +5,11 @@
 #include "Timecycle.h"
 #include "Weather.h"
 #include "cHandlingDataMgr.h"
-#include "CarAI.h"
-#include "CarCtrl.h"
 #include "RwHelper.h"
 #include "ModelIndices.h"
 #include "VisibilityPlugins.h"
 #include "DMAudio.h"
 #include "Camera.h"
-#include "Darkel.h"
 #include "Explosion.h"
 #include "Particle.h"
 #include "ParticleObject.h"
@@ -25,7 +22,6 @@
 #include "Boat.h"
 #include "AnimBlendAssociation.h"
 #include "RpAnimBlend.h"
-#include "Record.h"
 #include "Shadows.h"
 #include "Wanted.h"
 #include "SaveBuf.h"
@@ -67,7 +63,6 @@ m_nVehicleSubType = VEHICLE_TYPE_BOAT;
 	m_fMovingRotation = 0.0f;
 	m_fMovingSpeed = 0.0f;
 	m_skimmerThingTimer = 0.0f;
-	m_nPoliceShoutTimer = CTimer::GetTimeInMilliseconds();
 	SetModelIndex(mi);
 
 	m_pHandlingData = mod_HandlingManager.GetVehiclePointer((uint32)minfo->m_handlingId);
@@ -151,24 +146,6 @@ CBoat::ProcessControl(void)
 	if(bRenderScorched && massCheck < m_fBuoyancyConstant)
 		m_fBuoyancyConstant -= m_fMass*0.001f*0.008f;
 
-#ifdef FIX_BUGS
-	if(FindPlayerPed() && FindPlayerPed()->Wanted()->GetWantedLevel() > 0 && GetModelIndex() == MI_PREDATOR && pDriver && IsPolicePedModel(pDriver->GetModelIndex())) {
-#else
-	if(FindPlayerPed()->Wanted()->GetWantedLevel() > 0 && GetModelIndex() == MI_PREDATOR){
-#endif
-		CVehicle *playerVeh = FindPlayerVehicle();
-		if(playerVeh && playerVeh->GetVehicleAppearance() == VEHICLE_APPEARANCE_BOAT &&
-		   (AutoPilot.m_nCarMission == MISSION_RAMPLAYER_FARAWAY || 
-		    AutoPilot.m_nCarMission == MISSION_RAMPLAYER_CLOSE || 
-		    AutoPilot.m_nCarMission == MISSION_BLOCKPLAYER_FARAWAY || 
-		    AutoPilot.m_nCarMission == MISSION_BLOCKPLAYER_CLOSE || 
-		    AutoPilot.m_nCarMission == MISSION_ATTACKPLAYER) &&
-		   CTimer::GetTimeInMilliseconds() > m_nPoliceShoutTimer){
-			DMAudio.PlayOneShot(m_audioEntityId, SOUND_PED_VCPA_PLAYER_FOUND, 0.0f);
-			m_nPoliceShoutTimer = CTimer::GetTimeInMilliseconds() + 4500 + (CGeneral::GetRandomNumber()&0xFFF);
-		}
-	}
-
 	int r, g, b;
 	RwRGBA dropColor = { 0, 0, 0, 0 };
 	RwRGBA splashColor, jetColor;
@@ -207,23 +184,11 @@ CBoat::ProcessControl(void)
 		if(GetModelIndex() == MI_PREDATOR)
 			DoFixedMachineGuns();
 
-		if (!CRecordDataForChase::IsRecording())
-			DoDriveByShootings();
+		DoDriveByShootings();
 		break;
-	case STATUS_SIMPLE:
-		m_bIsAnchored = false;
-		m_fOrientation = INVALID_ORIENTATION;
-		CCarAI::UpdateCarAI(this);
-		CPhysical::ProcessControl();
-		bBoatInWater = true;
-		bPropellerInWater = true;
-		bIsInWater = true;
-		return;
 	case STATUS_PHYSICS:
 		m_bIsAnchored = false;
 		m_fOrientation = INVALID_ORIENTATION;
-		CCarAI::UpdateCarAI(this);
-		CCarCtrl::SteerAICarWithPhysics(this);
 		break;
 	case STATUS_ABANDONED:
 	case STATUS_WRECKED:
@@ -249,9 +214,14 @@ CBoat::ProcessControl(void)
 	// coasts down slowly, which is what the eye expects.
 	if(GetStatus() == STATUS_PLAYER || GetStatus() == STATUS_PLAYER_REMOTE || GetStatus() == STATUS_PHYSICS){
 		float fSTDPropSpeed = 0.0f;
-		float fROCPropSpeed = CPlane::PLANE_ROC_PROP_SPEED;
+		// SA propeller speed constants (0x8D33CC..0x8D33D8): the standard cruise
+		// speed and the ceiling. The Skimmer idles at the standard speed, every
+		// other boat at zero.
+		const float STD_PROP_SPEED = 2.0f;
+		const float MAX_PROP_SPEED = 32.0f;
+		float fROCPropSpeed = 1.5f;
 		if(GetModelIndex() == MI_SKIMMER){
-			fSTDPropSpeed = CPlane::PLANE_STD_PROP_SPEED;
+			fSTDPropSpeed = STD_PROP_SPEED;
 		}else if(m_fGasPedal != 0.0f){
 			fROCPropSpeed *= 5.0f;
 		}
@@ -259,10 +229,10 @@ CBoat::ProcessControl(void)
 		if(m_fGasPedal == 0.0f){
 			m_EngineSpeed += (fSTDPropSpeed - m_EngineSpeed) * CTimer::GetTimeStep() * fROCPropSpeed;
 		}else if(m_fGasPedal < 0.0f){
-			fSTDPropSpeed = (CPlane::PLANE_STD_PROP_SPEED - 0.05f) * m_fGasPedal + CPlane::PLANE_STD_PROP_SPEED;
+			fSTDPropSpeed = (STD_PROP_SPEED - 0.05f) * m_fGasPedal + STD_PROP_SPEED;
 			m_EngineSpeed += (fSTDPropSpeed - m_EngineSpeed) * CTimer::GetTimeStep() * fROCPropSpeed;
 		}else{
-			fSTDPropSpeed = (CPlane::PLANE_MAX_PROP_SPEED - CPlane::PLANE_STD_PROP_SPEED) * m_fGasPedal + CPlane::PLANE_STD_PROP_SPEED;
+			fSTDPropSpeed = (MAX_PROP_SPEED - STD_PROP_SPEED) * m_fGasPedal + STD_PROP_SPEED;
 			m_EngineSpeed += (fSTDPropSpeed - m_EngineSpeed) * CTimer::GetTimeStep() * fROCPropSpeed;
 		}
 	}else if(m_EngineSpeed > 0.0f){
@@ -586,7 +556,7 @@ CBoat::ProcessControl(void)
 		// Splashes
 		float speed = m_vecMoveSpeed.Magnitude();
 		if(speed > 0.05f && GetUp().x > 0.0f && !TheCamera.GetLookingForwardFirstPerson() && IsVisible() &&
-		   (AutoPilot.m_nCarMission != MISSION_CRUISE || (CTimer::GetFrameCounter()&2) == 0)){
+		   (CTimer::GetFrameCounter()&2) == 0){
 			CVector splashPos, splashDir;
 			float splashSize, front, waterLevel;
 
@@ -645,8 +615,6 @@ CBoat::ProcessControl(void)
 				break;
 			}
 			if(splashSize > 0.75f) splashSize = 0.75f;
-			if(AutoPilot.m_nCarMission == MISSION_CRUISE)
-				splashDir *= 1.5f;
 			const float lifeMult = 1000.0f;
 			const float lifeBase = 300.0f;
 			splashDir.z += 0.0003f*m_nDeltaVolumeUnderWater;
@@ -704,8 +672,6 @@ CBoat::ProcessControl(void)
 				splashPos = GetPosition() + m_vecBuoyancePoint - 0.5f*GetRight() + front*GetForward();
 				break;
 			}
-			if(AutoPilot.m_nCarMission == MISSION_CRUISE)
-				splashDir *= 1.5f;
 			splashDir.z += 0.0003f*m_nDeltaVolumeUnderWater;
 			CWaterLevel::GetWaterLevel(splashPos, &waterLevel, true);
 			if(splashPos.z-waterLevel < 3.0f &&
@@ -893,10 +859,8 @@ CBoat::BlowUpCar(CEntity *culprit)
 
 	bEngineOn = false;
 	bLightsOn = false;
-	ChangeLawEnforcerState(false);
 
 	CExplosion::AddExplosion(this, culprit, EXPLOSION_BOAT, GetPosition(), 0);
-	CDarkel::RegisterCarBlownUpByPlayer(this);
 	if(m_aBoatNodes[BOAT_MOVING] == nil)
 		return;
 
@@ -1100,7 +1064,7 @@ CBoat::PreRender(void)
 	}
 
 	// SA CBoat::PreRender (0x6F1180): the propellers. m_EngineSpeed is a rad/s
-	// figure that ProcessControl() drives towards the PLANE_*_PROP_SPEED band;
+	// figure that ProcessControl() drives towards the MIN/STD/MAX_PROP_SPEED band;
 	// the static pair spins twice as fast as the engine and the moving pair at
 	// engine speed in the opposite directions, which is what makes the two
 	// blades on each shaft look like they are geared differently. The alpha

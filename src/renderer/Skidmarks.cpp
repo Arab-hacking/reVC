@@ -3,7 +3,6 @@
 #include "main.h"
 #include "TxdStore.h"
 #include "Timer.h"
-#include "Replay.h"
 #include "Skidmarks.h"
 
 CSkidmark CSkidmarks::aSkidmarks[NUMSKIDMARKS];
@@ -177,8 +176,6 @@ CSkidmarks::RegisterOne(uintptr id, const CVector &pos, float fwdX, float fwdY, 
 	int i;
 	CVector2D fwd(fwdX, fwdY);
 
-	if(CReplay::IsPlayingBack())
-		return;
 
 	// Find a skidmark to continue
 	for(i = 0; i < NUMSKIDMARKS; i++)

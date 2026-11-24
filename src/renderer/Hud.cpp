@@ -1,22 +1,21 @@
 #include "common.h"
+#include "PlayerPed.h"
+#include "WeaponType.h"
 
 #include "Camera.h"
 #include "DMAudio.h"
 #include "Clock.h"
-#include "Darkel.h"
 #include "Hud.h"
 #include "Messages.h"
 #include "Frontend.h"
 #include "Font.h"
 #include "Pad.h"
 #include "Radar.h"
-#include "Replay.h"
 #include "Wanted.h"
 #include "Sprite.h"
 #include "Sprite2d.h"
 #include "Text.h"
 #include "Timer.h"
-#include "Script.h"
 #include "TxdStore.h"
 #include "User.h"
 #include "World.h"
@@ -99,13 +98,9 @@ float CHud::BigMessageInUse[6];
 float CHud::BigMessageAlpha[6];
 float CHud::BigMessageX[6];
 float CHud::OddJob2OffTimer;
-bool CHud::CounterOnLastFrame[NUMONSCREENCOUNTERS];
 float CHud::OddJob2XOffset;
-uint16 CHud::CounterFlashTimer[NUMONSCREENCOUNTERS];
 uint16 CHud::OddJob2Timer;
-bool CHud::TimerOnLastFrame;
 int16 CHud::OddJob2On;
-uint16 CHud::TimerFlashTimer;
 int16 CHud::PagerSoundPlayed;
 int32 CHud::SpriteBrightness;
 float CHud::PagerXOffset;
@@ -226,8 +221,6 @@ void CHud::Draw()
 	if (CPad::GetPad(1)->GetStartJustDown())
 		m_Wants_To_Draw_Hud = !m_Wants_To_Draw_Hud;
 
-	if (CReplay::IsPlayingBack())
-		return;
 
 	if (m_Wants_To_Draw_Hud && !TheCamera.m_WideScreenOn) {
 		// unused statics in here
@@ -245,7 +238,7 @@ void CHud::Draw()
 
 		if (Mode == CCam::MODE_M16_1STPERSON_RUNABOUT || Mode == CCam::MODE_ROCKETLAUNCHER_RUNABOUT || Mode == CCam::MODE_SNIPER_RUNABOUT)
 			DrawCrossHairPC = true;
-		if (TheCamera.Cams[TheCamera.ActiveCam].Using3rdPersonMouseCam() && (!CPad::GetPad(0)->GetLookBehindForPed() || TheCamera.m_bPlayerIsInGarage)
+		if (TheCamera.Cams[TheCamera.ActiveCam].Using3rdPersonMouseCam() && (!CPad::GetPad(0)->GetLookBehindForPed())
 			|| Mode == CCam::MODE_1STPERSON_RUNABOUT) {
 			if (playerPed) {
 				if (playerPed->m_nPedState != PED_ENTER_CAR && playerPed->m_nPedState != PED_CARJACK) {
@@ -410,6 +403,7 @@ void CHud::Draw()
 			return;
 		}
 
+
 #ifdef ANDROID
 		#undef SCREEN_SCALE_X
 		#undef SCREEN_SCALE_Y
@@ -550,7 +544,7 @@ void CHud::Draw()
 				CFont::SetDropShadowPosition(0);
 				CFont::SetFontStyle(FONT_STANDARD);
 
-				if (Min(9999, TotalAmmo - AmmoInClip) != 9999 && !CDarkel::FrenzyOnGoing() && weaponInfo->m_nWeaponSlot > 1 && weapon->m_eWeaponType != WEAPONTYPE_DETONATOR) {
+				if (Min(9999, TotalAmmo - AmmoInClip) != 9999 && weaponInfo->m_nWeaponSlot > 1 && weapon->m_eWeaponType != WEAPONTYPE_DETONATOR) {
 					CFont::SetDropShadowPosition(2);
 					CFont::SetDropColor(CRGBA(0, 0, 0, alpha));
 					AMMO_COLOR.a = alpha;
@@ -684,52 +678,7 @@ void CHud::Draw()
 			}
 		}
 
-		static int32 nMediaLevelCounter = 0;
-		if (CStats::ShowChaseStatOnScreen != 0) {
-			float fCurAttentionLevel = CWorld::Players[CWorld::PlayerInFocus].m_fMediaAttention;
-			if (0.7f * CStats::HighestChaseValue > fCurAttentionLevel
-				|| fCurAttentionLevel <= 40.0f || CTheScripts::IsPlayerOnAMission()) {
-				nMediaLevelCounter = 0;
-			}
-			else {
-				if (fCurAttentionLevel == CStats::HighestChaseValue) {
-					sprintf(gString, "%s %d", UnicodeToAscii(TheText.Get("CHSE")), (int32)fCurAttentionLevel);
-				}
-				else {
-					sprintf(gString, "%s %d" "-%d-", UnicodeToAscii(TheText.Get("CHSE")), (int32)fCurAttentionLevel, (int32)CStats::HighestChaseValue);
-				}
-				AsciiToUnicode(gString, gUString);
-				CFont::SetBackgroundOff();
-				CFont::SetScale(SCREEN_SCALE_X(HUD_TEXT_SCALE_X), SCREEN_SCALE_Y(HUD_TEXT_SCALE_Y));
-				CFont::SetCentreOff();
-				CFont::SetRightJustifyOn();
-				CFont::SetRightJustifyWrap(0.0f);
-				CFont::SetBackGroundOnlyTextOff();
-				CFont::SetFontStyle(FONT_HEADING);
-				CFont::SetPropOff();
-				CFont::SetDropShadowPosition(2);
-				CFont::SetDropColor(CRGBA(0, 0, 0, 255));
 
-				CRGBA colour;
-				if (CTimer::GetTimeInMilliseconds() & 0x200)
-					colour = CRGBA(204, 0, 185, 180);
-				else
-					colour = CRGBA(178, 0, 162, 180);
-				CFont::SetColor(colour);
-				CFont::PrintString(SCREEN_SCALE_FROM_RIGHT(110.0f), SCREEN_SCALE_Y(113.0f), gUString);
-				
-				if (CStats::FindChaseString(fCurAttentionLevel) != prevChaseString) {
-					prevChaseString = CStats::FindChaseString(fCurAttentionLevel);
-					nMediaLevelCounter = 100;
-				}
-
-				if (nMediaLevelCounter != 0) {
-					nMediaLevelCounter--;
-					UnicodeMakeUpperCase(gUString, CStats::FindChaseString(fCurAttentionLevel));
-					CFont::PrintString(SCREEN_SCALE_FROM_RIGHT(110.0f), SCREEN_SCALE_Y(138.0f), gUString);
-				}
-			}
-		}
 
 		/*
 			DrawZoneName
@@ -823,8 +772,7 @@ void CHud::Draw()
 					CFont::SetFontStyle(FONT_BANK);
 					CFont::SetColor(CRGBA(ZONE_COLOR.r, ZONE_COLOR.g, ZONE_COLOR.b, fZoneAlpha));
 
-					if (!CTheScripts::bPlayerIsInTheStatium)
-						CFont::PrintStringFromBottom(SCREEN_SCALE_FROM_RIGHT(32.0f), SCREEN_SCALE_FROM_BOTTOM(128.0f), m_ZoneToPrint);
+					CFont::PrintStringFromBottom(SCREEN_SCALE_FROM_RIGHT(32.0f), SCREEN_SCALE_FROM_BOTTOM(128.0f), m_ZoneToPrint);
 
 					CFont::SetSlant(0.f);
 				} else {
@@ -960,120 +908,6 @@ void CHud::Draw()
 				CFont::PrintString(SCREEN_SCALE_FROM_RIGHT(111.0f), SCREEN_SCALE_Y(22.0f), sPrint);
 		}
 
-		/*
-			DrawOnScreenTimer
-		*/
-		
-		wchar sTimer[16];
-
-		if (!CUserDisplay::OnscnTimer.m_sClocks[0].m_bClockProcessed)
-			TimerOnLastFrame = false;
-
-		for(uint32 i = 0; i < NUMONSCREENCOUNTERS; i++) {
-			if (!CUserDisplay::OnscnTimer.m_sCounters[0].m_bCounterProcessed)
-				CounterOnLastFrame[i] = false;
-		}
-
-		if (CUserDisplay::OnscnTimer.m_bProcessed) {
-			if (CUserDisplay::OnscnTimer.m_sClocks[0].m_bClockProcessed) {
-				if (!TimerOnLastFrame)
-					TimerFlashTimer = 1;
-
-				TimerOnLastFrame = true;
-
-				if (TimerFlashTimer != 0) {
-					if (++TimerFlashTimer > 50)
-						TimerFlashTimer = 0;
-				}
-
-				if (FRAMECOUNTER & 4 || TimerFlashTimer == 0) {
-					AsciiToUnicode(CUserDisplay::OnscnTimer.m_sClocks[0].m_aClockBuffer, sTimer);
-					CFont::SetPropOn();
-					CFont::SetBackgroundOff();
-					CFont::SetScale(SCREEN_SCALE_X(HUD_TEXT_SCALE_X), SCREEN_SCALE_Y(HUD_TEXT_SCALE_Y));
-					CFont::SetRightJustifyOn();
-					CFont::SetRightJustifyWrap(0.0f);
-					CFont::SetFontStyle(FONT_LOCALE(FONT_HEADING));
-					CFont::SetPropOff();
-					CFont::SetBackGroundOnlyTextOn();
-					CFont::SetDropShadowPosition(2);
-					CFont::SetDropColor(CRGBA(0, 0, 0, 255));
-					CFont::SetScale(SCREEN_SCALE_X(HUD_TEXT_SCALE_X), SCREEN_SCALE_Y(HUD_TEXT_SCALE_Y));
-					CFont::SetColor(TIMER_COLOR);
-					CFont::PrintString(SCREEN_SCALE_FROM_RIGHT(37.0f), SCREEN_SCALE_Y(110.0f), sTimer);
-					CFont::SetPropOn();
-
-					if (CUserDisplay::OnscnTimer.m_sClocks[0].m_aClockText[0]) {
-						CFont::SetDropShadowPosition(2);
-						CFont::SetDropColor(CRGBA(0, 0, 0, 255));
-						CFont::SetColor(TIMER_COLOR);
-						CFont::PrintString(SCREEN_SCALE_FROM_RIGHT(37.0f) - SCREEN_SCALE_X(80.0f), SCREEN_SCALE_Y(110.0f), TheText.Get(CUserDisplay::OnscnTimer.m_sClocks[0].m_aClockText));
-					}
-				}
-			}
-
-			for(uint32 i = 0; i < NUMONSCREENCOUNTERS; i++) {
-				if (CUserDisplay::OnscnTimer.m_sCounters[i].m_bCounterProcessed) {
-					if (!CounterOnLastFrame[i])
-						CounterFlashTimer[i] = 1;
-
-					CounterOnLastFrame[i] = true;
-
-					if (CounterFlashTimer[i] != 0) {
-						if (++CounterFlashTimer[i] > 50)
-							CounterFlashTimer[i] = 0;
-					}
-
-					if (FRAMECOUNTER & 4 || CounterFlashTimer[i] == 0) {
-						if (CUserDisplay::OnscnTimer.m_sCounters[i].m_nType == COUNTER_DISPLAY_NUMBER) {
-							AsciiToUnicode(CUserDisplay::OnscnTimer.m_sCounters[i].m_aCounterBuffer, sTimer);
-							CFont::SetPropOn();
-							CFont::SetBackgroundOff();
-							CFont::SetScale(SCREEN_SCALE_X(HUD_TEXT_SCALE_X), SCREEN_SCALE_Y(HUD_TEXT_SCALE_Y));
-							CFont::SetCentreOff();
-							CFont::SetRightJustifyOn();
-							CFont::SetRightJustifyWrap(0.0f);
-							CFont::SetFontStyle(FONT_LOCALE(FONT_HEADING));
-							CFont::SetWrapx(SCREEN_STRETCH_X(DEFAULT_SCREEN_WIDTH));
-							CFont::SetPropOn();
-							CFont::SetBackGroundOnlyTextOn();
-							CFont::SetDropShadowPosition(2);
-							CFont::SetDropColor(CRGBA(0, 0, 0, 255));
-							CFont::SetColor(COUNTER_COLOR);
-							CFont::PrintString(SCREEN_SCALE_FROM_RIGHT(37.0f), SCREEN_SCALE_Y(HUD_TEXT_SCALE_Y * 20.f * i) + SCREEN_SCALE_Y(132.0f), sTimer);
-						} else {
-							int counter = atoi(CUserDisplay::OnscnTimer.m_sCounters[i].m_aCounterBuffer);
-
-							const float barWidth = SCREEN_SCALE_X(100.f / 2.f);
-							const float right = SCREEN_SCALE_FROM_RIGHT(37.0f);
-							const float left = right - barWidth;
-
-							const float barHeight = SCREEN_SCALE_Y(11.0f);
-							const float top = SCREEN_SCALE_Y(132.0f) + SCREEN_SCALE_Y(8.0f) + SCREEN_SCALE_Y(HUD_TEXT_SCALE_Y * 20.f * i);
-							const float bottom = top + barHeight;
-
-							// shadow
-							CSprite2d::DrawRect(CRect(left + SCREEN_SCALE_X(6.0f), top + SCREEN_SCALE_Y(2.0f), right + SCREEN_SCALE_X(6.0f), bottom + SCREEN_SCALE_Y(2.0f)), CRGBA(0, 0, 0, 255));
-							
-							CSprite2d::DrawRect(CRect(left + SCREEN_SCALE_X(4.0f), top, right + SCREEN_SCALE_X(4.0f), bottom), CRGBA(27, 89, 130, 255));
-							CSprite2d::DrawRect(CRect(left + SCREEN_SCALE_X(4.0f), top, left + SCREEN_SCALE_X(counter) / 2.0f + SCREEN_SCALE_X(4.0f), bottom), CRGBA(97, 194, 247, 255));
-						}
-
-						if (CUserDisplay::OnscnTimer.m_sCounters[i].m_aCounterText[0]) {
-							CFont::SetPropOn();
-							CFont::SetFontStyle(FONT_LOCALE(FONT_HEADING));
-							CFont::SetScale(SCREEN_SCALE_X(HUD_TEXT_SCALE_X), SCREEN_SCALE_Y(HUD_TEXT_SCALE_Y));
-							CFont::SetDropShadowPosition(2);
-							CFont::SetDropColor(CRGBA(0, 0, 0, 255));
-							CFont::SetColor(COUNTER_COLOR);
-							CFont::PrintString(SCREEN_SCALE_FROM_RIGHT(37.0f) - SCREEN_SCALE_X(61.0f), SCREEN_SCALE_Y(HUD_TEXT_SCALE_Y * 20.f * i) + SCREEN_SCALE_Y(132.0f), TheText.Get(CUserDisplay::OnscnTimer.m_sCounters[i].m_aCounterText));
-						}
-						// unused/leftover color. I wonder what was it for
-						CFont::SetColor(CRGBA(244, 225, 91, 255));
-					}
-				}
-			}
-		}
 
 #ifdef ANDROID
 		#undef SCREEN_SCALE_X
@@ -1133,81 +967,9 @@ void CHud::Draw()
 		CRadar::Draw3dMarkers();
 	}
 
-	/*
-		DrawScriptText
-	*/
 	if (!CTimer::GetIsUserPaused()) {
-		for (int i = 0; i < ARRAY_SIZE(CTheScripts::IntroTextLines); i++) {
-			if (CTheScripts::IntroTextLines[i].m_Text[0] && CTheScripts::IntroTextLines[i].m_bTextBeforeFade) {
-				CFont::SetScale(SCREEN_SCALE_X(CTheScripts::IntroTextLines[i].m_fScaleX), SCREEN_SCALE_Y(CTheScripts::IntroTextLines[i].m_fScaleY * 0.5f));
-				CFont::SetColor(CTheScripts::IntroTextLines[i].m_sColor);
 
-				if (CTheScripts::IntroTextLines[i].m_bJustify)
-					CFont::SetJustifyOn();
-				else
-					CFont::SetJustifyOff();
-
-				if (CTheScripts::IntroTextLines[i].m_bRightJustify)
-					CFont::SetRightJustifyOn();
-				else
-					CFont::SetRightJustifyOff();
-
-				if (CTheScripts::IntroTextLines[i].m_bCentered)
-					CFont::SetCentreOn();
-				else
-					CFont::SetCentreOff();
-
-				CFont::SetWrapx(SCALE_AND_CENTER_X(CTheScripts::IntroTextLines[i].m_fWrapX));
-				CFont::SetCentreSize(SCREEN_SCALE_X(CTheScripts::IntroTextLines[i].m_fCenterSize));
-
-				if (CTheScripts::IntroTextLines[i].m_bBackground)
-					CFont::SetBackgroundOn();
-				else
-					CFont::SetBackgroundOff();
-
-				CFont::SetBackgroundColor(CTheScripts::IntroTextLines[i].m_sBackgroundColor);
-
-				if (CTheScripts::IntroTextLines[i].m_bBackgroundOnly)
-					CFont::SetBackGroundOnlyTextOn();
-				else
-					CFont::SetBackGroundOnlyTextOff();
-
-				if (CTheScripts::IntroTextLines[i].m_bTextProportional)
-					CFont::SetPropOn();
-				else
-					CFont::SetPropOff();
-
-				CFont::SetFontStyle(FONT_LOCALE(CTheScripts::IntroTextLines[i].m_nFont));
-				CFont::PrintString(SCREEN_WIDTH - SCALE_AND_CENTER_X(DEFAULT_SCREEN_WIDTH - CTheScripts::IntroTextLines[i].m_fAtX), SCREEN_HEIGHT - SCREEN_SCALE_Y(DEFAULT_SCREEN_HEIGHT - CTheScripts::IntroTextLines[i].m_fAtY), CTheScripts::IntroTextLines[i].m_Text);
-			}
-		}
-		for (int i = 0; i < ARRAY_SIZE(CTheScripts::IntroRectangles); i++) {
-			intro_script_rectangle &IntroRect = CTheScripts::IntroRectangles[i];
-
-			// Yeah, top and bottom changed place. R* vision
-			if (IntroRect.m_bIsUsed && IntroRect.m_bBeforeFade) {
-				if (IntroRect.m_nTextureId >= 0) {
-					CRect rect (
-						IntroRect.m_sRect.left,
-						IntroRect.m_sRect.bottom,
-						IntroRect.m_sRect.right,
-						IntroRect.m_sRect.top );
-
-					CTheScripts::ScriptSprites[IntroRect.m_nTextureId].Draw(rect, IntroRect.m_sColor);
-				}
-				else {
-					CRect rect (
-						IntroRect.m_sRect.left,
-						IntroRect.m_sRect.bottom,
-						IntroRect.m_sRect.right,
-						IntroRect.m_sRect.top );
-
-					CSprite2d::DrawRect(rect, IntroRect.m_sColor);
-				}
-			}
-		}
-
-		/*
+	/*
 			DrawSubtitles
 		*/
 		if (m_Message[0] && !m_BigMessage[2][0]) {
@@ -1493,66 +1255,8 @@ void CHud::DrawAfterFade()
 	RwRenderStateSet(rwRENDERSTATETEXTUREADDRESS, (void*)rwTEXTUREADDRESSCLAMP);
 	RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)FALSE);
 
-	if (CTimer::GetIsUserPaused() || CReplay::IsPlayingBack())
+	if (CTimer::GetIsUserPaused())
 		return;
-
-	for (int i = 0; i < ARRAY_SIZE(CTheScripts::IntroTextLines); i++) {
-		intro_text_line &line = CTheScripts::IntroTextLines[i];
-		if (line.m_Text[0] != '\0' && !line.m_bTextBeforeFade) {
-			CFont::SetScale(SCREEN_SCALE_X(line.m_fScaleX), SCREEN_SCALE_Y(line.m_fScaleY) / 2);
-
-			CFont::SetColor(line.m_sColor);
-			if (line.m_bJustify)
-				CFont::SetJustifyOn();
-			else
-				CFont::SetJustifyOff();
-
-			if (line.m_bRightJustify)
-				CFont::SetRightJustifyOn();
-			else
-				CFont::SetRightJustifyOff();
-
-			if (line.m_bCentered)
-				CFont::SetCentreOn();
-			else
-				CFont::SetCentreOff();
-
-			CFont::SetWrapx(SCALE_AND_CENTER_X(line.m_fWrapX));
-			CFont::SetCentreSize(SCREEN_SCALE_X(line.m_fCenterSize));
-			if (line.m_bBackground)
-				CFont::SetBackgroundOn();
-			else
-				CFont::SetBackgroundOff();
-
-			CFont::SetBackgroundColor(line.m_sBackgroundColor);
-			if (line.m_bBackgroundOnly)
-				CFont::SetBackGroundOnlyTextOn();
-			else
-				CFont::SetBackGroundOnlyTextOff();
-
-			if (line.m_bTextProportional)
-				CFont::SetPropOn();
-			else
-				CFont::SetPropOff();
-
-			CFont::SetFontStyle(line.m_nFont);
-			CFont::PrintString(SCREEN_WIDTH - SCALE_AND_CENTER_X(DEFAULT_SCREEN_WIDTH - line.m_fAtX), SCREEN_HEIGHT - SCREEN_SCALE_Y(DEFAULT_SCREEN_HEIGHT - line.m_fAtY), line.m_Text);
-		}
-	}
-	for (int i = 0; i < ARRAY_SIZE(CTheScripts::IntroRectangles); i++) {
-		intro_script_rectangle &rectangle = CTheScripts::IntroRectangles[i];
-		if (rectangle.m_bIsUsed && !rectangle.m_bBeforeFade) {
-
-			// Yeah, top and bottom changed place. R* vision
-			if (rectangle.m_nTextureId >= 0) {
-				CTheScripts::ScriptSprites[rectangle.m_nTextureId].Draw(CRect(rectangle.m_sRect.left, rectangle.m_sRect.bottom,
-					rectangle.m_sRect.right, rectangle.m_sRect.top), rectangle.m_sColor);
-			} else {
-				CSprite2d::DrawRect(CRect(rectangle.m_sRect.left, rectangle.m_sRect.bottom,
-					rectangle.m_sRect.right, rectangle.m_sRect.top), rectangle.m_sColor);
-			}
-		}
-	}
 
 	/*
 		DrawBigMessage2
@@ -1792,20 +1496,12 @@ void CHud::Initialise()
 		gpViewFinderTex = RwTextureRead("viewfinder_128", "viewfinder_128m"); // unused
 
 	m_ClockState = 1;
-	CounterOnLastFrame[0] = false;
-	CounterOnLastFrame[1] = false;
-	CounterOnLastFrame[2] = false;
 	
 	m_ItemToFlash = ITEM_NONE;
 	OddJob2Timer = 0;
 	OddJob2OffTimer = 0.0f;
 	OddJob2On = 0;
 	OddJob2XOffset = 0.0f;
-	CounterFlashTimer[0] = 0;
-	CounterFlashTimer[1] = 0;
-	CounterFlashTimer[2] = 0;
-	TimerOnLastFrame = false;
-	TimerFlashTimer = 0;
 	SpriteBrightness = 0;
 	PagerOn = 0;
 	PagerTimer = 0;
@@ -1855,20 +1551,12 @@ void CHud::ReInitialise() {
 	GetRidOfAllHudMessages();
 	m_pLastVehicleName = nil;
 
-	CounterOnLastFrame[0] = false;
-	CounterOnLastFrame[1] = false;
-	CounterOnLastFrame[2] = false;
 	m_ItemToFlash = ITEM_NONE;
 	m_ClockState = 1;
 	OddJob2Timer = 0;
 	OddJob2OffTimer = 0.0f;
 	OddJob2On = 0;
 	OddJob2XOffset = 0.0f;
-	CounterFlashTimer[0] = 0;
-	CounterFlashTimer[1] = 0;
-	CounterFlashTimer[2] = 0;
-	TimerOnLastFrame = false;
-	TimerFlashTimer = 0;
 	SpriteBrightness = 0;
 	PagerOn = 0;
 	PagerTimer = 0;
@@ -1937,7 +1625,7 @@ void CHud::SetBigMessage(wchar *message, uint16 style)
 
 void CHud::SetHelpMessage(wchar *message, bool quick, bool displayForever)
 {
-	if (!CReplay::IsPlayingBack()) {
+	{
 		for (int i = 0; i < HELP_MSG_LENGTH; i++) {
 			m_HelpMessage[i] = 0;
 		}

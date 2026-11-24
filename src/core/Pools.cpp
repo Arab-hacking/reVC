@@ -9,11 +9,9 @@
 #include "QuadBike.h"
 #include "Trailer.h"
 #include "VehicleModelInfo.h"
-#include "CarCtrl.h"
 #ifdef MISSION_REPLAY
 #include "GenericGameStorage.h"
 #endif
-#include "Population.h"
 #include "ProjectileInfo.h"
 #include "SaveBuf.h"
 #include "Streaming.h"
@@ -137,11 +135,7 @@ CPools::MakeSureSlotInObjectPoolIsEmpty(int32 slot)
 		// relocate to another slot??
 		CObject *newObject = new CObject(object->GetModelIndex(), false);
 		CWorld::Remove(object);
-#if 0 // todo better
-		*newObject = *object;
-#else
 		memcpy(newObject, object, ms_pObjectPool->GetMaxEntrySize());
-#endif
 		CWorld::Add(newObject);
 		object->m_rwObject = nil;
 		delete object;
@@ -152,8 +146,8 @@ CPools::MakeSureSlotInObjectPoolIsEmpty(int32 slot)
 #define CopyFromBuf(buf, data) memcpy(&data, buf, sizeof(data)); SkipSaveBuf(buf, sizeof(data));
 #define CopyToBuf(buf, data) memcpy(buf, &data, sizeof(data)); SkipSaveBuf(buf, sizeof(data));
 
-// Types written by the legacy save format: 0 car, 1 boat, 2 train, 3 heli,
-// 4 plane, 5 bike. They are mapped onto eVehicleType on load instead of being
+// Types written by the legacy save format: 0 car, 1 boat, 2 train (no longer
+// produced), 3 heli, 4 plane, 5 bike. They are mapped onto eVehicleType on load instead of being
 // compared against it directly.
 static eVehicleType
 LegacySaveVehicleType(uint32 type)
@@ -161,7 +155,6 @@ LegacySaveVehicleType(uint32 type)
 	switch(type){
 	case 0: return VEHICLE_TYPE_AUTOMOBILE;
 	case 1: return VEHICLE_TYPE_BOAT;
-	case 2: return VEHICLE_TYPE_TRAIN;
 	case 3: return VEHICLE_TYPE_HELI;
 	case 4: return VEHICLE_TYPE_PLANE;
 	case 5: return VEHICLE_TYPE_BIKE;
@@ -217,7 +210,6 @@ INITSAVEBUF
 			assert(0);
 			break;
 		}
-		--CCarCtrl::NumRandomCars;
 		pVehicle->Load(buf);
 		CWorld::Add(pVehicle);
 #else
@@ -227,7 +219,6 @@ INITSAVEBUF
 			SkipSaveBuf(buf, sizeof(CBoat));
 			CBoat* pBoat = new(slot) CBoat(model, RANDOM_VEHICLE);
 			pVehicle = pBoat;
-			--CCarCtrl::NumRandomCars;
 		}
 		else if (vehicleType == VEHICLE_TYPE_AUTOMOBILE) {
 			memcpy(vbuf, buf, sizeof(CAutomobile));
@@ -236,7 +227,6 @@ INITSAVEBUF
 			CStreaming::LoadAllRequestedModels(false);
 			CAutomobile* pAutomobile = new(slot) CAutomobile(model, RANDOM_VEHICLE);
 			pVehicle = pAutomobile;
-			CCarCtrl::NumRandomCars--; // why?
 			pAutomobile->Damage = ((CAutomobile*)vbuf)->Damage;
 			pAutomobile->SetupDamageAfterLoad();
 		}
@@ -249,7 +239,6 @@ INITSAVEBUF
 			SkipSaveBuf(buf, sizeof(CBike));
 			CBike* pBike = new(slot) CBike(model, RANDOM_VEHICLE);
 			pVehicle = pBike;
-			--CCarCtrl::NumRandomCars;
 		}
 		else
 			assert(0);
@@ -267,7 +256,6 @@ INITSAVEBUF
 		pVehicle->m_fSteerAngle = pBufferVehicle->m_fSteerAngle;
 		pVehicle->m_fGasPedal = pBufferVehicle->m_fGasPedal;
 		pVehicle->m_fBrakePedal = pBufferVehicle->m_fBrakePedal;
-		pVehicle->bIsLawEnforcer = pBufferVehicle->bIsLawEnforcer;
 		pVehicle->bIsLocked = pBufferVehicle->bIsLocked;
 		pVehicle->bEngineOn = pBufferVehicle->bEngineOn;
 		pVehicle->bIsHandbrakeOn = pBufferVehicle->bIsHandbrakeOn;
@@ -288,7 +276,6 @@ INITSAVEBUF
 		(pVehicle->GetAddressOfEntityProperties())[0] = (pBufferVehicle->GetAddressOfEntityProperties())[0];
 		(pVehicle->GetAddressOfEntityProperties())[1] = (pBufferVehicle->GetAddressOfEntityProperties())[1];
 		pVehicle->AutoPilot = pBufferVehicle->AutoPilot;
-		CCarCtrl::UpdateCarCount(pVehicle, false);
 		CWorld::Add(pVehicle);
 		delete[] vbuf;
 #endif
@@ -303,7 +290,6 @@ SaveVehicleType(eVehicleType type)
 {
 	switch(type){
 	case VEHICLE_TYPE_BOAT:  return 1;
-	case VEHICLE_TYPE_TRAIN: return 2;
 	case VEHICLE_TYPE_HELI:  return 3;
 	case VEHICLE_TYPE_PLANE: return 4;
 	case VEHICLE_TYPE_BIKE:  return 5;
@@ -569,7 +555,7 @@ INITSAVEBUF
 		CopyFromBuf(buf, (pBufferObject->GetAddressOfEntityProperties())[1]);
 #endif
 		if (GetObjectPool()->GetSlot(ref >> 8))
-			CPopulation::ConvertToDummyObject(GetObjectPool()->GetSlot(ref >> 8));
+			CObject::ConvertToDummyObject(GetObjectPool()->GetSlot(ref >> 8));
 		CObject* pObject = new(ref) CObject(mi, false);
 		pObject->GetMatrix() = pBufferObject->GetMatrix();
 #ifdef COMPATIBLE_SAVES

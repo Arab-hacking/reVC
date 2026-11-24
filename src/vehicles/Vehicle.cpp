@@ -12,8 +12,6 @@
 #include "Automobile.h"
 #include "Pools.h"
 #include "cHandlingDataMgr.h"
-#include "CarCtrl.h"
-#include "Population.h"
 #include "ModelIndices.h"
 #include "World.h"
 #include "Lights.h"
@@ -23,11 +21,9 @@
 #include "DMAudio.h"
 #include "Radar.h"
 #include "Fire.h"
-#include "Darkel.h"
 #include "Streaming.h"
 #include "Camera.h"
 #include "Stats.h"
-#include "Garages.h"
 #include "Wanted.h"
 #include "SurfaceTable.h"
 #include "Particle.h"
@@ -67,14 +63,6 @@ void *CVehicle::operator new(size_t sz, int handle) throw() { return CPools::Get
 void CVehicle::operator delete(void *p, size_t sz) throw() { CPools::GetVehiclePool()->Delete((CVehicle*)p); }
 void CVehicle::operator delete(void *p, int handle) throw() { CPools::GetVehiclePool()->Delete((CVehicle*)p); }
 
-#ifdef FIX_BUGS
-// I think they meant that
-#define DAMAGE_FLEE_IN_CAR_PROBABILITY_VALUE (MYRAND_MAX * 35 / 100)
-#define DAMAGE_FLEE_ON_FOOT_PROBABILITY_VALUE (MYRAND_MAX * 70 / 100)
-#else
-#define DAMAGE_FLEE_IN_CAR_PROBABILITY_VALUE (35000)
-#define DAMAGE_FLEE_ON_FOOT_PROBABILITY_VALUE (70000)
-#endif
 #define DAMAGE_HEALTH_TO_FLEE_ALWAYS (200.0f)
 #define DAMAGE_HEALTH_TO_CATCH_FIRE (250.0f)
 
@@ -99,13 +87,9 @@ CVehicle::CVehicle(uint8 CreatedBy)
 	VehicleCreatedBy = CreatedBy;
 	m_nRouteSeed = 0;
 	bIsLocked = false;
-	bIsLawEnforcer = false;
-	bIsAmbulanceOnDuty = false;
-	bIsFireTruckOnDuty = false;
 #ifdef FIX_BUGS
 	bIsHandbrakeOn = false;
 #endif
-	CCarCtrl::UpdateCarCount(this, false);
 	m_fHealth = 1000.0f;
 	bEngineOn = true;
 	bFreebies = true;
@@ -119,7 +103,6 @@ CVehicle::CVehicle(uint8 CreatedBy)
 		pPassengers[i] = nil;
 	m_nBombTimer = 0;
 	m_pBlowUpEntity = nil;
-	m_nPacManPickupsCarried = 0;
 	bComedyControls = false;
 	bCraneMessageDone = false;
 	bExtendedRange = false;
@@ -133,7 +116,6 @@ CVehicle::CVehicle(uint8 CreatedBy)
 	bCreateRoadBlockPeds = false;
 	bCanBeDamaged = true;
 	bUsingSpecialColModel = false;
-	bOccupantsHaveBeenGenerated = false;
 	bGunSwitchedOff = false;
 	m_nGunFiringTime = 0;
 	m_nTimeBlocked = 0;
@@ -142,11 +124,9 @@ CVehicle::CVehicle(uint8 CreatedBy)
 	bVehicleColProcessed = false;
 	m_numPedsUseItAsCover = 0;
 	bIsCarParkVehicle = false;
-	bHasAlreadyBeenRecorded = false;
 	m_bSirenOrAlarm = false;
 	m_nCarHornTimer = 0;
 	m_nCarHornPattern = 0;
-	m_nCarHornDelay = 0;
 	bPartOfConvoy = false;
 	bHeliMinimumTilt = false;
 	bAudioChangingGear = false;
@@ -154,8 +134,6 @@ CVehicle::CVehicle(uint8 CreatedBy)
 	bTyresDontBurst = false;
 	bCreatedAsPoliceVehicle = false;
 	bRestingOnPhysical = false;
-	bParking = false;
-	bCanPark = CGeneral::GetRandomNumberInRange(0.0f, 1.0f) < 0.0f;	// never true. probably doesn't work very well
 	bIsVan = false;
 	bIsBus = false;
 	bIsBig = false;
@@ -284,15 +262,6 @@ CVehicle::~CVehicle()
 	}
 	if (m_pCarFire)
 		m_pCarFire->Extinguish();
-	CCarCtrl::UpdateCarCount(this, true);
-	if (bIsAmbulanceOnDuty){
-		CCarCtrl::NumAmbulancesOnDuty--;
-		bIsAmbulanceOnDuty = false;
-	}
-	if (bIsFireTruckOnDuty){
-		CCarCtrl::NumFiretrucksOnDuty--;
-		bIsFireTruckOnDuty = false;
-	}
 }
 
 void
@@ -1044,59 +1013,11 @@ CVehicle::InflictDamage(CEntity *damagedBy, eWeaponType weaponType, float damage
 	}
 
 	if (m_fHealth > 0.0f) {
-		if (VehicleCreatedBy == RANDOM_VEHICLE && pDriver &&
-			(GetStatus() == STATUS_SIMPLE || GetStatus() == STATUS_PHYSICS) &&
-			AutoPilot.m_nCarMission == MISSION_CRUISE) {
-			if (m_randomSeed < DAMAGE_FLEE_IN_CAR_PROBABILITY_VALUE) {
-				CCarCtrl::SwitchVehicleToRealPhysics(this);
-				AutoPilot.m_nDrivingStyle = DRIVINGSTYLE_AVOID_CARS;
-				AutoPilot.m_nCruiseSpeed = GAME_SPEED_TO_CARAI_SPEED * m_pHandlingData->m_Transmission.m_fMaxCruiseVelocity;
-				SetStatus(STATUS_PHYSICS);
-			}
-		}
 		m_nLastWeaponDamage = weaponType;
 		m_pLastDamageEntity = damagedBy;
 		float oldHealth = m_fHealth;
 		if (m_fHealth > damage) {
 			m_fHealth -= damage;
-			if (VehicleCreatedBy == RANDOM_VEHICLE && !IsBoat()){
-				switch (GetStatus()) {
-				case STATUS_SIMPLE:
-				case STATUS_PHYSICS:
-					if(AutoPilot.m_nDrivingStyle == DRIVINGSTYLE_PLOUGH_THROUGH ||
-					   CGeneral::GetRandomNumberInRange(0.0f, 1.0f) > 0.5f && AutoPilot.m_nCarMission == MISSION_CRUISE){
-						// Drive away like a maniac
-						if(pDriver && pDriver->m_objective != OBJECTIVE_LEAVE_CAR){
-							if(AutoPilot.m_nDrivingStyle != DRIVINGSTYLE_PLOUGH_THROUGH)
-								AutoPilot.m_nCruiseSpeed *= 1.5f;
-							AutoPilot.m_nDrivingStyle = DRIVINGSTYLE_PLOUGH_THROUGH;
-						}
-					}else{
-						// Leave vehicle
-						if (pDriver && pDriver->CharCreatedBy != MISSION_CHAR) {
-							SetStatus(STATUS_ABANDONED);
-							pDriver->bFleeAfterExitingCar = true;
-							pDriver->SetObjective(OBJECTIVE_LEAVE_CAR, this);
-							pDriver->Say(SOUND_PED_FLEE_SPRINT);
-						}
-						int time = 200;
-						for (int i = 0; i < m_nNumMaxPassengers; i++) {
-							if (pPassengers[i] &&
-							    pPassengers[i]->m_objective != OBJECTIVE_LEAVE_CAR &&
-							    pPassengers[i]->CharCreatedBy != MISSION_CHAR) {
-								pPassengers[i]->bFleeAfterExitingCar = true;
-								pPassengers[i]->SetObjective(OBJECTIVE_LEAVE_CAR, this);
-								pPassengers[i]->m_objectiveTimer = CTimer::GetTimeInMilliseconds() + time;
-								pPassengers[i]->Say(SOUND_PED_FLEE_SPRINT);
-								time += 200;
-							}
-						}
-					}
-					break;
-				default:
-					break;
-				}
-			}
 			if (oldHealth >= DAMAGE_HEALTH_TO_CATCH_FIRE && m_fHealth < DAMAGE_HEALTH_TO_CATCH_FIRE) {
 				if (IsAutomobile()) {
 					CAutomobile* pThisCar = (CAutomobile*)this;
@@ -1192,11 +1113,9 @@ CVehicle::ActivateBomb(void)
 		m_bombType = CARBOMB_TIMEDACTIVE;
 		m_nBombTimer = 7000;
 		m_pBlowUpEntity = FindPlayerPed();
-		CGarages::TriggerMessage("GA_12", -1, 3000, -1);
 		DMAudio.PlayOneShot(m_audioEntityId, SOUND_BOMB_TIMED_ACTIVATED, 1.0f);
 	}else if(m_bombType == CARBOMB_ONIGNITION){
 		m_bombType = CARBOMB_ONIGNITIONACTIVE;
-		CGarages::TriggerMessage("GA_12", -1, 3000, -1);
 		DMAudio.PlayOneShot(m_audioEntityId, SOUND_BOMB_ONIGNITION_ACTIVATED, 1.0f);
 	}
 }
@@ -1293,68 +1212,6 @@ CVehicle::ShufflePassengersToMakeSpace(void)
 }
 
 void
-CVehicle::MakeNonDraggedPedsLeaveVehicle(CPed *ped1, CPed *ped2, CPlayerPed *&player, CCopPed *&cop)
-{
-	int i;
-	player = nil;
-	cop = nil;
-
-	if(ped1->IsPlayer() && ped2->m_nPedType == PEDTYPE_COP &&
-	   ((CPlayerPed*)ped1)->Wanted()->GetWantedLevel() > 0 &&
-	   ped2->m_pedInObjective == ped1){
-		player = (CPlayerPed*)ped1;
-		cop = (CCopPed*)ped2;
-		return;
-	}
-
-	bool ped1IsDriver = ped1 == pDriver;
-
-	// Just what the hell is this weird code?
-	CPed *peds[9];
-	CPed *peds2[9];
-	int numPeds = 0;
-	int numPeds2 = 0;
-	for(i = 0; i < m_nNumMaxPassengers; i++){
-		CPed *p = pPassengers[i];
-		if(p && p != ped1 && !p->bStayInCarOnJack){
-			peds[numPeds++] = p;
-			// uhh what?
-			if(i > 0 || ped1IsDriver)
-				peds2[numPeds2++] = p;
-		}
-	}
-
-	// So we're copying this array for no reason...
-	CPed *peds3[9];
-	int numPeds3 = 0;
-	for(i = 0; i < numPeds; i++){
-		if(peds[i]->IsPlayer() && ped2->m_nPedType == PEDTYPE_COP &&
-		   ((CPlayerPed*)peds[i])->Wanted()->GetWantedLevel() > 0 &&
-		   ped2->m_pedInObjective == peds[i]){
-			player = (CPlayerPed*)peds[i];
-			cop = (CCopPed*)ped2;
-			return;
-		}
-		peds3[numPeds3++] = peds[i];
-	}
-
-	int time = 1800;
-	for(i = 0; i < numPeds3; i++){
-		peds3[i]->m_leaveCarTimer = CTimer::GetTimeInMilliseconds() + time;
-		peds3[i]->SetObjective(OBJECTIVE_LEAVE_CAR, this);
-		time += CGeneral::GetRandomNumberInRange(300.0f, 600.0f);
-	}
-
-	if(IsAutomobile() && numPeds2 > 0 && CGeneral::GetRandomTrueFalse())
-		for(i = 0; i < numPeds2; i++)
-			if(peds2[i]->IsFemale() || CGeneral::GetRandomTrueFalse()){
-				peds2[i]->m_leaveCarTimer = CTimer::GetTimeInMilliseconds() + 10000;
-				peds2[i]->bHeldHostageInCar = true;
-				peds2[i]->bFleeAfterExitingCar = true;
-			}
-}
-
-void
 CVehicle::ProcessDelayedExplosion(void)
 {
 	if(m_nBombTimer == 0)
@@ -1408,14 +1265,6 @@ CVehicle::UsesSiren(void)
 	default:
 		return false;
 	}
-}
-
-bool
-CVehicle::IsVehicleNormal(void)
-{
-	if (!pDriver || m_nNumPassengers != 0 || GetStatus() == STATUS_WRECKED)
-		return false;
-	return GetModelInfo()->m_vehicleClass != -1;
 }
 
 bool
@@ -1607,73 +1456,6 @@ CVehicle::CanPedJumpOffBike(void)
 }
 
 void
-CVehicle::ChangeLawEnforcerState(uint8 enable)
-{
-	if (enable) {
-		if (!bIsLawEnforcer) {
-			bIsLawEnforcer = true;
-			CCarCtrl::NumLawEnforcerCars++;
-		}
-	} else {
-		if (bIsLawEnforcer) {
-			bIsLawEnforcer = false;
-			CCarCtrl::NumLawEnforcerCars--;
-		}
-	}
-}
-
-CPed*
-CVehicle::SetUpDriver(void)
-{
-	if(pDriver)
-		return pDriver;
-	if(VehicleCreatedBy != RANDOM_VEHICLE)
-		return nil;
-
-	pDriver = CPopulation::AddPedInCar(this, true);
-	pDriver->m_pMyVehicle = this;
-	pDriver->m_pMyVehicle->RegisterReference((CEntity**)&pDriver->m_pMyVehicle);
-	pDriver->bInVehicle = true;
-	pDriver->SetPedState(PED_DRIVING);
-	if(bIsBus)
-		pDriver->bRenderPedInCar = false;
-	return pDriver;
-}
-
-CPed*
-CVehicle::SetupPassenger(int n)
-{
-	int i;
-
-	if(pPassengers[n])
-		return pPassengers[n];
-
-	if((IsTaxi() || IsLimo()) && n == 0)
-		pPassengers[0] = nil;
-	else{
-		CPed *passenger = CPopulation::AddPedInCar(this, false);
-		pPassengers[n] = passenger;
-		passenger->m_pMyVehicle = this;
-		passenger->m_pMyVehicle->RegisterReference((CEntity**)&pPassengers[n]->m_pMyVehicle);
-		passenger->bInVehicle = true;
-		passenger->SetPedState(PED_DRIVING);
-
-		if(passenger->m_nPedType == PEDTYPE_CIVMALE || passenger->m_nPedType == PEDTYPE_CIVFEMALE)
-			for(i = 0; i < n; i++)
-				if(pPassengers[i] && pPassengers[n] &&
-				   (pPassengers[i]->m_nPedType == PEDTYPE_CIVMALE || pPassengers[i]->m_nPedType == PEDTYPE_CIVFEMALE) &&
-				   passenger->GetModelIndex() == pPassengers[i]->GetModelIndex()){
-					pPassengers[n] = nil;
-					CPopulation::RemovePed(passenger);
-				}
-	}
-	if(bIsBus && pPassengers[n])
-		pPassengers[n]->bRenderPedInCar = false;
-	++m_nNumPassengers;
-	return pPassengers[n];
-}
-
-void
 CVehicle::SetDriver(CPed *driver)
 {
 	pDriver = driver;
@@ -1791,16 +1573,6 @@ CVehicle::RemoveDriver(void)
 void
 CVehicle::RemovePassenger(CPed *p)
 {
-	if (IsTrain()){
-		for (int i = 0; i < ARRAY_SIZE(pPassengers); i++){
-			if (pPassengers[i] == p) {
-				pPassengers[i] = nil;
-				m_nNumPassengers--;
-				return;
-			}
-		}
-		return;
-	}
 	for (int i = 0; i < m_nNumMaxPassengers; i++){
 		if (pPassengers[i] == p){
 			pPassengers[i] = nil;
@@ -2159,7 +1931,6 @@ CVehicle::KillPedsInVehicle(void)
 {
 	int i;
 	if(pDriver){
-		CDarkel::RegisterKillByPlayer(pDriver, WEAPONTYPE_EXPLOSION);
 		if(pDriver->GetPedState() == PED_DRIVING){
 			pDriver->SetDead();
 			if(!pDriver->IsPlayer())
@@ -2169,7 +1940,6 @@ CVehicle::KillPedsInVehicle(void)
 	}
 	for(i = 0; i < m_nNumMaxPassengers; i++){
 		if(pPassengers[i]){
-			CDarkel::RegisterKillByPlayer(pPassengers[i], WEAPONTYPE_EXPLOSION);
 			if(pPassengers[i]->GetPedState() == PED_DRIVING){
 				pPassengers[i]->SetDead();
 				if(!pPassengers[i]->IsPlayer())
@@ -2184,12 +1954,10 @@ void
 DestroyVehicleAndDriverAndPassengers(CVehicle* pVehicle)
 {
 	if (pVehicle->pDriver) {
-		CDarkel::RegisterKillByPlayer(pVehicle->pDriver, WEAPONTYPE_UNIDENTIFIED);
 		pVehicle->pDriver->FlagToDestroyWhenNextProcessed();
 	}
 	for (int i = 0; i < pVehicle->m_nNumMaxPassengers; i++) {
 		if (pVehicle->pPassengers[i]) {
-			CDarkel::RegisterKillByPlayer(pVehicle->pPassengers[i], WEAPONTYPE_UNIDENTIFIED);
 			pVehicle->pPassengers[i]->FlagToDestroyWhenNextProcessed();
 		}
 	}
@@ -2238,7 +2006,6 @@ CVehicle::Save(uint8*& buf)
 	WriteSaveBuf(buf, m_fBrakePedal);
 	WriteSaveBuf(buf, VehicleCreatedBy);
 	uint8 flags = 0;
-	if (bIsLawEnforcer) flags |= BIT(0);
 	if (bIsLocked) flags |= BIT(3);
 	if (bEngineOn) flags |= BIT(4);
 	if (bIsHandbrakeOn) flags |= BIT(5);
@@ -2302,7 +2069,6 @@ CVehicle::Load(uint8*& buf)
 	ReadSaveBuf(&VehicleCreatedBy, buf);
 	uint8 flags;
 	ReadSaveBuf(&flags, buf);
-	bIsLawEnforcer = !!(flags & BIT(0));
 	bIsLocked = !!(flags & BIT(3));
 	bEngineOn = !!(flags & BIT(4));
 	bIsHandbrakeOn = !!(flags & BIT(5));
@@ -2341,13 +2107,13 @@ CVehicle::GetDriverSeatDummyPositionOS(void) const
 	return GetDummyPositionObjSpace(IsBoat() ? DUMMY_LIGHT_FRONT_MAIN : DUMMY_SEAT_FRONT);
 }
 
-// SA CVehicle::CanBeDriven (0x6D42E0): a trailer, a train that is on a track,
-// and an RC vehicle cannot be driven by a ped. Everything else can, as long as
-// the model actually has a front seat dummy to put the ped in.
+// SA CVehicle::CanBeDriven (0x6D42E0): a trailer and an RC vehicle cannot be
+// driven by a ped. Everything else can, as long as the model actually has a
+// front seat dummy to put the ped in.
 bool
 CVehicle::CanBeDriven(void) const
 {
-	if(IsSubTrailer() || (IsSubTrain() && ((const CTrain*)this)->m_nTrackId != 0) || bIsRCVehicle)
+	if(IsSubTrailer() || bIsRCVehicle)
 		return false;
 
 	return GetDriverSeatDummyPositionOS().MagnitudeSqr() > 0.0f;
@@ -2561,8 +2327,6 @@ CVehicle::DoLightEffect(eVehicleLightId lightId, bool isFront, CMatrix &vehicleM
 	const float angle = DotProduct(dirToCam, forward);
 	const float normAngle = Sqrt(Max(angle, 0.0f));
 
-	const bool isFullsizeTrain = IsSubTrain();
-
 	float intensity, coronaSize;
 	if(isFront){
 		intensity = normAngle * 0.5f + 0.3f;
@@ -2570,11 +2334,6 @@ CVehicle::DoLightEffect(eVehicleLightId lightId, bool isFront, CMatrix &vehicleM
 	}else{
 		intensity = angle * 0.5f + 0.2f;
 		coronaSize = (1.0f - distToCam * (1.0f / 150.0f)) * angle * REAR_SIZE_ROT_MULT;
-	}
-	if(isFullsizeTrain){
-		const float trainMult = isFront ? 2.0f : 3.0f;
-		intensity = Min(trainMult * intensity, 1.0f);
-		coronaSize = 4.0f * coronaSize;
 	}
 
 	const float lightDistMult = 150.0f * TheCamera.LODDistMultiplier;
@@ -2592,7 +2351,7 @@ CVehicle::DoLightEffect(eVehicleLightId lightId, bool isFront, CMatrix &vehicleM
 		if(isFront){
 			// A headlight seen almost straight on also draws a thin line of
 			// light, which is what makes it read as a lamp and not a dot.
-			const float fieldAngle = isFullsizeTrain ? 0.85f : 0.9f;
+			const float fieldAngle = 0.9f;
 			if(normAngle > fieldAngle && distToCam < 40.0f){
 				uint8 lineR = 160, lineG = 160, lineB = 140;
 				if(m_pHandlingData->m_nHandlingFlags & VEHICLE_HANDLING_HALOGEN_LIGHTS){
@@ -2601,7 +2360,7 @@ CVehicle::DoLightEffect(eVehicleLightId lightId, bool isFront, CMatrix &vehicleM
 					lineB = 195;
 				}
 				CCoronas::RegisterCorona(baseId + lampId + 4, lineR, lineG, lineB, 255,
-					dummyPosWorldSpace, isFullsizeTrain ? 0.3f : 0.075f, lightDistMult,
+					dummyPosWorldSpace, 0.075f, lightDistMult,
 					CCoronas::TYPE_HEADLIGHT, CCoronas::FLARE_NONE, CCoronas::REFLECTION_OFF,
 					CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, normAngle, true, 0.3f);
 			}
@@ -2778,7 +2537,7 @@ CVehicle::DoVehicleLights(CMatrix &vehicleMatrix, eVehicleLightsFlags flags)
 	// 1. Should the lamps be on?
 	const bool lightsStatus = GetVehicleLightsStatus();
 	if(lightsStatus != bLightsOn && GetStatus() != STATUS_WRECKED){
-		if(GetStatus() != STATUS_ABANDONED || IsSubTrain()){
+		if(GetStatus() != STATUS_ABANDONED){
 			bLightsOn = lightsStatus;
 		}else if(bLightsOn){
 			// An abandoned car keeps its lamps on only while the player can
@@ -2927,9 +2686,7 @@ CVehicle::DoVehicleLights(CMatrix &vehicleMatrix, eVehicleLightsFlags flags)
 	RenderLights(true, !lightOkFR, !lightOkFL, false);
 	RenderLights(false, !lightOkRR, !lightOkRL, true);
 
-	const bool isSubTrain = IsSubTrain();
-	if(!isSubTrain)
-		DoHeadLightReflection(vehicleMatrix, flags, lightOkFL, lightOkFR);
+	DoHeadLightReflection(vehicleMatrix, flags, lightOkFL, lightOkFR);
 
 	// 7. The light a lamp throws on the road. SA adds one directional light
 	// for the headlights of every lit car, and one at the back only while the
@@ -2985,9 +2742,7 @@ IsVehiclePointerValid(CVehicle* pVehicle)
 	if (index < 0 || index > NUMVEHICLES)
 #endif
 		return false;
-	// Planes keep no collision list of their own, so they are always usable;
-	// every other vehicle has to be in the world to be handed out.
-	return pVehicle->m_nVehicleType == VEHICLE_TYPE_FPLANE || pVehicle->m_entryInfoList.first;
+	return pVehicle->m_entryInfoList.first != nil;
 }
 
 // SA CVehicle::SetTransmissionRotation (0x6DBBB0).

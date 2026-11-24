@@ -125,7 +125,6 @@ public:
 	// need a non-const manager.
 	int32 GetPanelStatus(int32 panel) const;
 	bool ProgressPanelDamage(uint8 panel);
-	// needed for CReplay
 	static int32 GetPanelStatus(uint32 panelstatus, int32 panel) { return ldb(panel*4, 4, panelstatus); }
 	void SetLightStatus(eLights light, uint32 status);
 	int32 GetLightStatus(eLights light) const;

@@ -1042,15 +1042,9 @@ void InitialiseLanguage()
         CGame::frenchGame = true;
     }
 
-    if (   subUserLCID	 == SUBLANG_ENGLISH_AUS
-           || subSystemLCID == SUBLANG_ENGLISH_AUS
-           || subLayout	 == SUBLANG_ENGLISH_AUS )
-        CGame::noProstitutes = true;
-
 #ifdef NASTY_GAME
     CGame::nastyGame = true;
     FrontEndMenuManager.m_PrefsAllowNastyGame = true;
-    CGame::noProstitutes = false;
 #endif
 
     int32 lang;

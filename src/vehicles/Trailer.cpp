@@ -363,8 +363,7 @@ CTrailer::ProcessEntityCollision(CEntity *entity, CColPoint *outColPoints)
 	if(m_fTrailerTowedRatio == BAGGAGE_TRAILER_TOWED_RATIO)
 		return CAutomobile::ProcessEntityCollision(entity, outColPoints);
 
-	if(GetStatus() != STATUS_SIMPLE)
-		bVehicleColProcessed = true;
+	bVehicleColProcessed = true;
 
 	CColModel *tcd = GetColModel();
 	CColModel *ocd = entity->GetColModel();

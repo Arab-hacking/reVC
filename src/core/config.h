@@ -62,12 +62,6 @@ enum Config {
 
 	NUMTEMPOBJECTS = 40,
 
-	// Path data
-	NUM_PATHNODES = 9650,
-	NUM_CARPATHLINKS = 3500,
-	NUM_MAPOBJECTS = 1250,
-	NUM_PATHCONNECTIONS = 20400,
-
 	// Link list lengths
 	NUMALPHALIST = 20,
 	NUMBOATALPHALIST = 20,
@@ -113,12 +107,9 @@ enum Config {
 	NUMSCRIPTEDPICKUPS = 16,
 	NUMPICKUPS = NUMGENERALPICKUPS + NUMSCRIPTEDPICKUPS,
 	NUMCOLLECTEDPICKUPS = 20,
-	NUMPACMANPICKUPS = 256,
-	NUMEVENTS = 64,
 
 	NUM_PATH_NODES_IN_AUTOPILOT = 8,
 
-	NUM_ACCIDENTS = 20,
 	NUM_FIRES = 40,
 	NUM_GARAGES = 32,
 	NUM_PROJECTILES = 32,
@@ -128,7 +119,6 @@ enum Config {
 	NUM_WATERCANNONS = 3,
 
 	NUMPEDROUTES = 200,
-	NUMPHONES = 50,
 	NUMPEDGROUPS = 67,
 	NUMMODELSPERPEDGROUP = 16,
 	MAXZONEPEDSLOADED = 8,
@@ -198,8 +188,6 @@ enum Config {
 #	ifndef GTA_HANDHELD
 #		define PC_PLAYER_CONTROLS	// mouse player/cam mode
 #	endif
-#	define GTA_REPLAY
-#	define GTA_SCENE_EDIT
 #	define PC_MENU
 #	define PC_WATER
 #	define GTA_PC_CONTROLS	// enables keyboard and mouse. currently GTA_PC and a few other defines will not work without this
@@ -239,7 +227,6 @@ enum Config {
 #define MASTER
 //#define USE_MY_DOCUMENTS
 #define THIS_IS_STUPID
-#define DONT_FIX_REPLAY_BUGS
 #define USE_TXD_CDIMAGE // generate and load textures from txd.img
 //#define USE_TEXTURE_POOL // not possible because R* used custom RW33
 #define AUDIO_REFLECTIONS
@@ -295,7 +282,6 @@ enum Config {
 #define FIX_BUGS		// fixes bugs that we've came across during reversing. You can undefine this only on release builds.
 #define MORE_LANGUAGES		// Add more translations to the game
 #define COMPATIBLE_SAVES // this allows changing structs while keeping saves compatible, and keeps saves compatible between platforms
-#define FIX_INCOMPATIBLE_SAVES // try to fix incompatible saves, requires COMPATIBLE_SAVES
 #define LOAD_INI_SETTINGS // as the name suggests. fundamental for CUSTOM_FRONTEND_OPTIONS
 
 #define NO_MOVIES	// add option to disable intro videos
@@ -444,54 +430,25 @@ enum Config {
 #		define CUTSCENE_BORDERS_SWITCH
 #		define MULTISAMPLING		// adds MSAA option
 #		define INVERT_LOOK_FOR_PAD // enable the hidden option
-#		define PED_CAR_DENSITY_SLIDERS
 #	endif
 #endif
 
 // Script
-#define USE_DEBUG_SCRIPT_LOADER	// Loads main.scm by default. Hold R for main_freeroam.scm and D for main_d.scm
 #define USE_MEASUREMENTS_IN_METERS // makes game use meters instead of feet in script
 #define USE_PRECISE_MEASUREMENT_CONVERTION // makes game convert feet to meeters more precisely
-#define SUPPORT_JAPANESE_SCRIPT
-//#define SUPPORT_XBOX_SCRIPT
-#define SUPPORT_MOBILE_SCRIPT
-#define SUPPORT_GINPUT_SCRIPT
-#if (defined SUPPORT_XBOX_SCRIPT && defined SUPPORT_MOBILE_SCRIPT)
-static_assert(false, "SUPPORT_XBOX_SCRIPT and SUPPORT_MOBILE_SCRIPT are mutually exclusive");
-#endif
 #ifdef PC_MENU
 #define MISSION_REPLAY // mobile feature
 //#define SIMPLER_MISSIONS // apply simplifications from mobile
 #define USE_MISSION_REPLAY_OVERRIDE_FOR_NON_MOBILE_SCRIPT
-#endif
-#define USE_ADVANCED_SCRIPT_DEBUG_OUTPUT
-#define SCRIPT_LOG_FILE_LEVEL 0 // 0 == no log, 1 == overwrite every frame, 2 == full log
-
-#if SCRIPT_LOG_FILE_LEVEL == 0
-#undef USE_ADVANCED_SCRIPT_DEBUG_OUTPUT
-#endif
-
-#ifndef USE_ADVANCED_SCRIPT_DEBUG_OUTPUT
-#define USE_BASIC_SCRIPT_DEBUG_OUTPUT
-#endif
-
-#ifdef MASTER
-#undef USE_ADVANCED_SCRIPT_DEBUG_OUTPUT
-#undef USE_BASIC_SCRIPT_DEBUG_OUTPUT
 #endif
 
 #ifndef MISSION_REPLAY
 #undef USE_MISSION_REPLAY_OVERRIDE_FOR_NON_MOBILE_SCRIPT
 #endif
 
-// Replay
-//#define DONT_FIX_REPLAY_BUGS // keeps various bugs in CReplay, some of which are fairly cool!
-//#define USE_BETA_REPLAY_MODE // adds another replay mode, a few seconds slomo (caution: buggy!)
-
 // Vehicles
 
 // Pickups
-//#define MONEY_MESSAGES
 #define CAMERA_PICKUP
 
 // Peds

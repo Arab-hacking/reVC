@@ -12,7 +12,6 @@
 #include "DMAudio.h"
 #include "Streaming.h"
 #include "Camera.h"
-#include "Credits.h"
 #include "General.h"
 #include "TxdStore.h"
 #include "FileMgr.h"
@@ -2105,7 +2104,7 @@ CMenuManager::WorkOutMenuState(uint8 bExit)
 #else
 	bool bIsStartPressed = CPad::GetPad(0)->GetStartJustDown();
 #endif
-	bool bIsCreditsOrDraw      = CCredits::AreCreditsDone() || m_bMenuActive;
+	bool bIsCreditsOrDraw      = m_bMenuActive;
 	bool bIsDemoOrDraw         = m_bMenuActive || CGame::bDemoMode;
 
 	if ( (bIsStartPressed && bIsCreditsOrDraw) || bExit || (!bIsDemoOrDraw && CPad::IsNoOrObsolete()) )

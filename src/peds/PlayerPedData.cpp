@@ -143,7 +143,6 @@ CPlayerPedData::Load(const uint8 *buf)
 	m_LastHSMissileTarget = nil;
 	m_pCurrentProstitutePed = nil;
 	m_pWanted = nil;
-	m_pArrestingCop = nil;
 	m_pSpecialAtomic = nil;
 
 	assert(buf - start == SAVE_SIZE);

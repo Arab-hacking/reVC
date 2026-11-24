@@ -2663,17 +2663,10 @@ const char *XboxButtons[][MAX_CONTROLLERACTIONS] = CONTROLLER_BUTTONS("~T~", "~O
 #endif
 
 
-#if 0 // set 1 for ps2 fonts
-#define PS2_TRIANGLE "\""
-#define PS2_CIRCLE "|"
-#define PS2_CROSS "/"
-#define PS2_SQUARE "^"
-#else
 #define PS2_TRIANGLE "TRIANGLE"
 #define PS2_CIRCLE "CIRCLE"
 #define PS2_CROSS "CROSS"
 #define PS2_SQUARE "SQUARE"
-#endif
 
 const char *PlayStationButtons_noIcons[][MAX_CONTROLLERACTIONS] =
     CONTROLLER_BUTTONS(PS2_TRIANGLE, PS2_CIRCLE, PS2_CROSS, PS2_SQUARE, "L1", "L2", "L3", "R1", "R2", "R3", "SELECT", "right stick up", "right stick down", "right stick left", "right stick right");

@@ -87,13 +87,9 @@ public:
 	static float BigMessageAlpha[6];
 	static float BigMessageX[6];
 	static float OddJob2OffTimer;
-	static bool CounterOnLastFrame[NUMONSCREENCOUNTERS];
 	static float OddJob2XOffset;
-	static uint16 CounterFlashTimer[NUMONSCREENCOUNTERS];
 	static uint16 OddJob2Timer;
-	static bool TimerOnLastFrame;
 	static int16 OddJob2On;
-	static uint16 TimerFlashTimer;
 	static int16 PagerSoundPlayed;
 	static int32 SpriteBrightness;
 	static float PagerXOffset;

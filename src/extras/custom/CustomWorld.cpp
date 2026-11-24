@@ -24,8 +24,6 @@
 #include "SavehDiag.h"
 #include "ModelInfo.h"
 #include "TimeModelInfo.h"
-#include "PedType.h"
-#include "Population.h"
 #include "AnimManager.h"
 #include "cHandlingDataMgr.h"
 #include "FileLoader.h"
@@ -376,8 +374,7 @@ ModelInfoType ModelType(customworld::Model::Kind kind)
 
 // Class named by a custom vehicle definition. The engine instantiates exactly
 // this class, so a definition must not claim a class that has no native
-// implementation: trains stay excluded because the BR track/path format is not
-// the one CTrain drives on.
+// implementation. There are no trains in this build.
 eVehicleType VehicleType(const std::string &s)
 {
     const std::string type = customworld::Lower(s);
@@ -390,7 +387,7 @@ eVehicleType VehicleType(const std::string &s)
     if(type == "heli" || type == "f_heli") return VEHICLE_TYPE_HELI;
     if(type == "plane") return VEHICLE_TYPE_PLANE;
     if(type == "trailer") return VEHICLE_TYPE_TRAILER;
-    return VEHICLE_TYPE_IGNORE; // also excludes trains: the BR track/path format is not VC's
+    return VEHICLE_TYPE_IGNORE;
 }
 
 
@@ -433,25 +430,6 @@ int BuiltinHandling(eVehicleType type, const std::string &name, bool &fallback)
     case VEHICLE_TYPE_PLANE: return HANDLING_SEAPLANE;
     default: return HANDLING_LANDSTAL;
     }
-}
-
-ePedType SafePedType(const std::string &s)
-{
-    std::string type = customworld::Lower(s);
-    if(type == "player1" || type == "player") return PEDTYPE_PLAYER1;
-    if(type == "player2") return PEDTYPE_PLAYER2;
-    if(type == "player3") return PEDTYPE_PLAYER_NETWORK;
-    if(type == "player4") return PEDTYPE_PLAYER_UNUSED;
-    if(type == "civfemale") return PEDTYPE_CIVFEMALE;
-    if(type == "cop") return PEDTYPE_COP;
-    if(type == "emergency" || type == "medic") return PEDTYPE_MEDIC;
-    if(type == "fireman") return PEDTYPE_FIREMAN;
-    if(type == "criminal") return PEDTYPE_CRIMINAL;
-    if(type == "prostitute") return PEDTYPE_PROSTITUTE;
-    if(type == "special") return PEDTYPE_SPECIAL;
-    if(type.size() == 5 && type.substr(0, 4) == "gang" && type[4] >= '1' && type[4] <= '9')
-        return (ePedType)(PEDTYPE_GANG1 + type[4] - '1');
-    return PEDTYPE_CIVMALE; // SA's numerous civilian/ped types have no VC counterpart
 }
 
 AssocGroupId SafePedAnimGroup(const std::string &s)
@@ -596,10 +574,6 @@ void CCustomWorld::LoadIde(void)
             if(type == MITYPE_PED) {
                 CPedModelInfo *ped = (CPedModelInfo *)mi;
                 ped->m_animGroup = SafePedAnimGroup(m.animGroup);
-                std::string stat = m.pedStats;
-                for(char &c : stat) c = (char)std::toupper((unsigned char)c);
-                ped->m_pedStatType = CPedStats::GetPedStatType(&stat[0]);
-                if(ped->m_pedStatType == PEDSTAT_NONE) ped->m_pedStatType = PEDSTAT_STD_MISSION;
                 reusedNative++;
                 nameSlots[key] = old->second;
                 continue;
@@ -651,21 +625,11 @@ void CCustomWorld::LoadIde(void)
             mi = CModelInfo::AddSimpleModel(slot);
         } else if(type == MITYPE_PED) {
             CPedModelInfo *ped = CModelInfo::AddPedModel(slot);
-            ped->m_pedType = SafePedType(m.subtype);
             // SA skeletons select the separate custom animation bank when
             // their DFF is loaded; VC skeletons keep the VC bank. No raw SA
             // stat/group/animation indices are passed to the engine.
-            std::string stat = m.pedStats;
-            for(char &c : stat) c = (char)std::toupper((unsigned char)c);
-            ped->m_pedStatType = CPedStats::GetPedStatType(&stat[0]);
-            if(ped->m_pedStatType == PEDSTAT_NONE) ped->m_pedStatType = PEDSTAT_STD_MISSION;
             ped->m_animGroup = SafePedAnimGroup(m.animGroup);
-            ped->m_carsCanDrive = 0; // SA vehicle-category mask != VC mask
             ped->radio1 = ped->radio2 = -1;
-            // Race drives the voice set the ped picks, and SA derives it from
-            // the model name, so an archive row gets the same treatment as an
-            // ide row instead of staying on RACE_DEFAULT.
-            ped->m_nRace = (uint8)CPopulation::FindPedRaceFromName(m.name.c_str());
             ped->SetColModel(&CTempColModels::ms_colModelPed1);
             CPedModelInfo::NoteSlot(slot);
             pedsInstalled++;
@@ -685,9 +649,7 @@ void CCustomWorld::LoadIde(void)
             vehicle->m_bikeSteerAngle =
                 vehicleType == VEHICLE_TYPE_BIKE || vehicleType == VEHICLE_TYPE_BMX ? 35.0f : 0.0f;
             vehicle->m_compRules = 0;
-            vehicle->m_vehicleClass = -1;
             vehicle->m_level = 0;
-            vehicle->m_frequency = 0;
             // SA/BR carcols.dat has no VC 'car' assignments; give custom cars
             // a varied default colour palette instead of spawning pure black.
             static const uint8 defaultColours[NUM_VEHICLE_COLOURS][2] = {

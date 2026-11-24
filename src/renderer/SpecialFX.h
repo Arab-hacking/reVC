@@ -112,6 +112,16 @@ public:
 };
 
 
+// Colour and pulse of the world markers the engine places itself (the
+// sphere that used to be drawn around a script position, the cylinder under
+// a highlighted entity).
+#define SPHERE_MARKER_R (252)
+#define SPHERE_MARKER_G (138)
+#define SPHERE_MARKER_B (242)
+#define SPHERE_MARKER_A (228)
+#define SPHERE_MARKER_PULSE_PERIOD 2048
+#define SPHERE_MARKER_PULSE_FRACTION 0.1f
+
 class C3dMarkers
 {
 public:

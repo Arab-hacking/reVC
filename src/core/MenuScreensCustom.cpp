@@ -27,9 +27,6 @@
 #include "Pad.h"
 #include "ControllerConfig.h"
 #include "DMAudio.h"
-#include "IniFile.h"
-#include "CarCtrl.h"
-#include "Population.h"
 
 // Menu screens array is at the bottom of the file.
 
@@ -67,14 +64,7 @@
 	#define DUALPASS_SELECTOR 
 #endif
 
-#ifdef PED_CAR_DENSITY_SLIDERS
-	// 0.2f - 3.4f makes it possible to have 1.0f somewhere inbetween
-	#define DENSITY_SLIDERS \
-		MENUACTION_CFO_SLIDER, "FEM_PED", { new CCFOSlider(&CIniFile::PedNumberMultiplier, "Display", "PedDensity", 0.2f, 3.4f, PedDensityChange) }, 0, 0, MENUALIGN_LEFT, \
-		MENUACTION_CFO_SLIDER, "FEM_CAR", { new CCFOSlider(&CIniFile::CarNumberMultiplier, "Display", "CarDensity", 0.2f, 3.4f, CarDensityChange) }, 0, 0, MENUALIGN_LEFT, 
-#else
-	#define DENSITY_SLIDERS 
-#endif
+#define DENSITY_SLIDERS
 
 #define LIGHT_DIST_SLIDER \
 	MENUACTION_CFO_SLIDER, "FEM_LGT", { new CCFOSlider(&CRenderer::ms_fLightDistScale, "Display", "LightDistance", LIGHTDIST_MIN, LIGHTDIST_MAX) }, 0, 0, MENUALIGN_LEFT,
@@ -186,9 +176,6 @@ void RestoreDefDisplay(int8 action) {
 			TheCamera.bFreeCam = false;
 		#endif
 	#endif
-	#ifdef PED_CAR_DENSITY_SLIDERS
-		CIniFile::LoadIniFile();
-	#endif
 	#ifdef GRAPHICS_MENU_OPTIONS // otherwise Frontend will handle those
 		FrontEndMenuManager.m_PrefsBrightness = 256;
 		FrontEndMenuManager.m_PrefsLOD = 1.2f;
@@ -233,17 +220,6 @@ void IslandLoadingAfterChange(int8 before, int8 after) {
 	}
 
 	FrontEndMenuManager.SetHelperText(0);
-}
-#endif
-
-#ifdef PED_CAR_DENSITY_SLIDERS
-void PedDensityChange(float before, float after) {
-	CPopulation::MaxNumberOfPedsInUse = DEFAULT_MAX_NUMBER_OF_PEDS * after;
-	CPopulation::MaxNumberOfPedsInUseInterior = DEFAULT_MAX_NUMBER_OF_PEDS_INTERIOR * after;
-}
-
-void CarDensityChange(float before, float after) {
-	CCarCtrl::MaxNumberOfCarsInUse = DEFAULT_MAX_NUMBER_OF_CARS * after;
 }
 #endif
 
@@ -841,7 +817,6 @@ CMenuScreenCustom aScreens[] = {
 	// MENUPAGE_DEBUG_MENU = 18
 	{ "FED_DBG", MENUPAGE_NONE, nil, nil,
 		MENUACTION_RELOADIDE,	"FED_RID", {nil, SAVESLOT_NONE, MENUPAGE_NONE}, 0, 0, 0,
-		MENUACTION_SETDBGFLAG,	"FED_DFL", {nil, SAVESLOT_NONE, MENUPAGE_NONE}, 0, 0, 0,
 		MENUACTION_SWITCHBIGWHITEDEBUGLIGHT,	"FED_DLS", {nil, SAVESLOT_NONE, MENUPAGE_NONE}, 0, 0, 0,
 		MENUACTION_COLLISIONPOLYS,	"FED_SCP", {nil, SAVESLOT_NONE, MENUPAGE_NONE}, 0, 0, 0,
 		MENUACTION_GOBACK,		"FEDS_TB", {nil, SAVESLOT_NONE, MENUPAGE_NONE}, 0, 0, 0,

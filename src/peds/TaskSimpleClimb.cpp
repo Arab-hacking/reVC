@@ -348,16 +348,7 @@ CTaskSimpleClimb::ProcessPed(CPed *ped)
 	if(m_ClimbEntity == nil)
 		return true;
 
-	// A carrier that is moving too fast (a train under power) cannot be
-	// climbed, and neither can an entity whose collision has just been
-	// switched off.
-	if(m_ClimbEntity->IsVehicle()){
-		CVehicle *vehicle = (CVehicle *)m_ClimbEntity;
-		if(vehicle->IsTrain() && vehicle->GetMoveSpeed().Magnitude() > 0.1f){
-			m_HasFinished = true;
-			return true;
-		}
-	}
+	// An entity whose collision has just been switched off cannot be climbed.
 
 	if(m_Anim == nil || m_HasToChangeAnimation){
 		StartAnim(ped);

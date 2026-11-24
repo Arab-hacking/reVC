@@ -152,11 +152,6 @@ public:
 	static void FindMissionEntitiesIntersectingCube(const CVector& vecStartPos, const CVector& vecEndPos, int16* nIntersecting, int16 maxEntitiesToFind, CEntity** aEntities, bool bVehicles, bool bPeds, bool bObjects);
 	static void FindMissionEntitiesIntersectingCubeSectorList(CPtrList& list, const CVector& vecStartPos, const CVector& vecEndPos, int16* nIntersecting, int16 maxEntitiesToFind, CEntity** aEntities, bool bIsVehicleList, bool bIsPedList);
 
-	static void ClearCarsFromArea(float x1, float y1, float z1, float x2, float y2, float z2);
-	static void ClearPedsFromArea(float x1, float y1, float z1, float x2, float y2, float z2);
-	static void CallOffChaseForArea(float x1, float y1, float x2, float y2);
-	static void CallOffChaseForAreaSectorListVehicles(CPtrList& list, float x1, float y1, float x2, float y2, float fStartX, float fStartY, float fEndX, float fEndY);
-	static void CallOffChaseForAreaSectorListPeds(CPtrList& list, float x1, float y1, float x2, float y2);
 
 	static bool IsWanderPathClear(CVector const&, CVector const&, float, int);
 
@@ -171,8 +166,6 @@ public:
 	static void RemoveFallenPeds();
 	static void RemoveFallenCars();
 
-	static void StopAllLawEnforcersInTheirTracks();
-	static void SetAllCarsCanBeDamaged(bool);
 	static void ExtinguishAllCarFiresInArea(CVector, float);
 	static void SetCarsOnFire(float x, float y, float z, float radius, CEntity* reason);
 	static void SetPedsChoking(float x, float y, float z, float radius, CEntity* reason);

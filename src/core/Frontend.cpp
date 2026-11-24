@@ -19,7 +19,6 @@
 #include "TxdStore.h"
 #include "General.h"
 #include "GenericGameStorage.h"
-#include "Script.h"
 #include "Camera.h"
 #include "ControllerConfig.h"
 #include "Vehicle.h"
@@ -1379,9 +1378,6 @@ CMenuManager::DrawStandardMenus(bool activeScreen)
 					rightText = TheText.Get(m_PrefsShowHud ? "FEM_ON" : "FEM_OFF");
 					break;
 #ifdef LEGACY_MENU_OPTIONS
-				case MENUACTION_SETDBGFLAG:
-					rightText = TheText.Get(CTheScripts::IsDebugOn() ? "FEM_ON" : "FEM_OFF");
-					break;
 				case MENUACTION_SWITCHBIGWHITEDEBUGLIGHT:
 					rightText = TheText.Get(gbBigWhiteDebugLightSwitchedOn ? "FEM_ON" : "FEM_OFF");
 					break;
@@ -3535,9 +3531,6 @@ CMenuManager::PrintBriefs()
 void
 CMenuManager::PrintStats()
 {
-#ifdef SECUROM
-	static uint8 statsPirateCheck = 0;
-#endif
 	static float scrollY = 0;
 
 	int rowNum = CStats::ConstructStatLine(99999);
@@ -3550,13 +3543,6 @@ CMenuManager::PrintStats()
 	CFont::SetPropOn();
 	CFont::SetDropShadowPosition(0);
 
-#ifdef SECUROM
-	if (statsPirateCheck == 0)
-		// if not pirated game
-		// statsPirateCheck = 46;
-		// else
-		statsPirateCheck = 45;
-#endif
 
 #ifdef ANDROID
 	if (m_PrefsLanguage == LANGUAGE_AMERICAN)
@@ -3591,10 +3577,6 @@ CMenuManager::PrintStats()
 		lastCheck = CTimer::GetTimeInMillisecondsPauseMode();
 	}
 
-#ifdef SECUROM
-	if (statsPirateCheck == 45)
-		return;
-#endif
 
 	float nextYChange, y, alpha;
 
@@ -4839,16 +4821,6 @@ CMenuManager::ProcessUserInput(uint8 goDown, uint8 goUp, uint8 optionSelected, u
 	if (pEditString || pControlEdit)
 		return;
 
-#ifdef USE_DEBUG_SCRIPT_LOADER
-	if (m_nCurrScreen == MENUPAGE_START_MENU || m_nCurrScreen == MENUPAGE_NEW_GAME || m_nCurrScreen == MENUPAGE_NEW_GAME_RELOAD) {
-		if (CPad::GetPad(0)->GetChar('R')) {
-			CTheScripts::ScriptToLoad = 1;
-			DoSettingsBeforeStartingAGame();
-			return;
-		}
-	}
-#endif
-
 	int oldOption = m_nCurrOption;
 	if (goDown) {
 		if (m_nCurrScreen != MENUPAGE_MAP)
@@ -5450,9 +5422,6 @@ CMenuManager::ProcessOnOffMenuOptions()
 		SaveSettings();
 		break;
 #ifdef LEGACY_MENU_OPTIONS
-	case MENUACTION_SETDBGFLAG:
-		CTheScripts::InvertDebugFlag();
-		break;
 	case MENUACTION_SWITCHBIGWHITEDEBUGLIGHT:
 		gbBigWhiteDebugLightSwitchedOn = !gbBigWhiteDebugLightSwitchedOn;
 		break;
@@ -5656,10 +5625,6 @@ CMenuManager::ProcessFileActions()
 	switch (m_nCurrScreen) {
 		case MENUPAGE_LOADING_IN_PROGRESS:
 			if (CheckSlotDataValid(m_nCurrSaveSlot)) {
-#if defined(USE_DEBUG_SCRIPT_LOADER) && !defined(ANDROID)
-				CTheScripts::ScriptToLoad = 0;
-#endif
-
 #ifdef XBOX_MESSAGE_SCREEN
 				SetDialogText("FELD_WR");
 				ToggleDialog(true);
@@ -5706,14 +5671,7 @@ CMenuManager::ProcessFileActions()
 				PcSaveHelper.PopulateSlotInfo();
 
 				// Original code, but we don't want redundant saving text if it doesn't
-#if 0
-				CTimer::Update(); // not on Xbox, who updates it?
-
-				// it compensates the lag to show saving text always one second... how cute
-				int dialogDur = Max(1, startTime - CTimer::GetTimeInMillisecondsPauseMode() + 1000);
-#else
 				int dialogDur = 1;
-#endif
 
 				if (SaveSlot) {
 					// error. PC code
@@ -6150,20 +6108,6 @@ CMenuManager::ChangeRadioStation(int8 increaseBy)
 	DMAudio.StopFrontEndTrack();
 	DMAudio.PlayFrontEndSound(SOUND_RADIO_CHANGE, 0);
 }
-
-#if 0
-uint8 CMenuManager::GetNumberOfMenuOptions()
-{
-	uint8 Rows = -1;
-	for (int i = 0; i < NUM_MENUROWS; i++) {
-		if (aScreens[m_nCurrScreen].m_aEntries[i].m_Action == MENUACTION_NOTHING)
-			break;
-
-		++Rows;
-	}
-	return Rows;
-}
-#endif
 
 #ifdef GAMEPAD_MENU
 const char* controllerTypesPaths[] = {

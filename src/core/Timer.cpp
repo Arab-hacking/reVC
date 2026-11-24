@@ -3,7 +3,6 @@
 #include "crossplatform.h"
 
 #include "DMAudio.h"
-#include "Record.h"
 #include "Timer.h"
 #include "SpecialFX.h"
 
@@ -157,20 +156,11 @@ void CTimer::Update(void)
 
 	ms_fTimeStepNonClipped = ms_fTimeStep;
 	
-	if ( !CRecordDataForGame::IsPlayingBack() )
-	{
-		ms_fTimeStep = Min(3.0f, ms_fTimeStep);
+	ms_fTimeStep = Min(3.0f, ms_fTimeStep);
 
-		if ( (m_snTimeInMilliseconds - m_snPreviousTimeInMilliseconds) > 60 )
-			m_snTimeInMilliseconds = m_snPreviousTimeInMilliseconds + 60;
-	}
-  
-	if ( CRecordDataForChase::IsRecording() )
-	{
-		ms_fTimeStep = 1.0f;
-		m_snTimeInMilliseconds = m_snPreviousTimeInMilliseconds + 16;
-	}
-  
+	if ( (m_snTimeInMilliseconds - m_snPreviousTimeInMilliseconds) > 60 )
+		m_snTimeInMilliseconds = m_snPreviousTimeInMilliseconds + 60;
+
 	m_FrameCounter++;
 }
 #else
@@ -231,20 +221,11 @@ void CTimer::Update(void)
 
 	ms_fTimeStepNonClipped = ms_fTimeStep;
 	
-	if ( !CRecordDataForGame::IsPlayingBack() )
-	{
-		ms_fTimeStep = Min(3.0f, ms_fTimeStep);
+	ms_fTimeStep = Min(3.0f, ms_fTimeStep);
 
-		if ( (m_snTimeInMilliseconds - m_snPreviousTimeInMilliseconds) > 60 )
-			m_snTimeInMilliseconds = m_snPreviousTimeInMilliseconds + 60;
-	}
-  
-	if ( CRecordDataForChase::IsRecording() )
-	{
-		ms_fTimeStep = 1.0f;
-		m_snTimeInMilliseconds = m_snPreviousTimeInMilliseconds + 16;
-	}
-  
+	if ( (m_snTimeInMilliseconds - m_snPreviousTimeInMilliseconds) > 60 )
+		m_snTimeInMilliseconds = m_snPreviousTimeInMilliseconds + 60;
+
 	m_FrameCounter++;
 }
 #endif

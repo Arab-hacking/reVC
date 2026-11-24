@@ -5,9 +5,7 @@
 #include "Timer.h"
 #include "World.h"
 #include "ZoneCull.h"
-#include "Darkel.h"
 #include "DMAudio.h"
-#include "CopPed.h"
 #include "Wanted.h"
 #include "General.h"
 #include "Stats.h"
@@ -23,7 +21,6 @@ CWanted::Initialise()
 	m_nLastUpdateTime = 0;
 	m_nLastWantedLevelChange = 0;
 	m_nLastTimeSuspended = 0;
-	m_CurrentCops = 0;
 	m_MaxCops = 0;
 	m_MaximumLawEnforcerVehicles = 0;
 	m_RoadblockDensity = 0;
@@ -36,9 +33,6 @@ CWanted::Initialise()
 	m_nWantedLevel = 0;
 	m_nMinWantedLevel = 0;
 	m_CopsBeatingSuspect = 0;
-
-	for (int i = 0; i < ARRAY_SIZE(m_pCops); i++)
-		m_pCops[i] = nil;
 
 	ClearQdCrimes();
 }
@@ -231,10 +225,7 @@ CWanted::ReportCrimeNow(eCrimeType type, const CVector &coors, bool policeDoesnt
 	float sensitivity, chaos;
 	int wantedLevelDrop;
 
-	if(CDarkel::FrenzyOnGoing())
-		sensitivity = m_fCrimeSensitivity*0.3f;
-	else
-		sensitivity = m_fCrimeSensitivity;
+	sensitivity = m_fCrimeSensitivity;
 
 	wantedLevelDrop = Min(CCullZones::GetWantedLevelDrop(), 100);
 
@@ -385,7 +376,6 @@ CWanted::WorkOutPolicePresence(CVector posn, float radius)
 	while(--i >= 0){
 		vehicle = CPools::GetVehiclePool()->GetSlot(i);
 		if(vehicle &&
-		   vehicle->bIsLawEnforcer &&
 		   IsPoliceVehicleModel(vehicle->GetModelIndex()) &&
 		   vehicle != FindPlayerVehicle() &&
 		   vehicle->GetStatus() != STATUS_ABANDONED && vehicle->GetStatus() != STATUS_WRECKED &&
@@ -416,67 +406,12 @@ CWanted::Update(void)
 			}
 		}
 		UpdateCrimesQ();
-		bool orderMessedUp = false;
-		int currCopNum = 0;
-		bool foundEmptySlot = false;
-		for (int i = 0; i < ARRAY_SIZE(m_pCops); i++) {
-			if (m_pCops[i]) {
-				++currCopNum;
-				if (foundEmptySlot)
-					orderMessedUp = true;
-			} else {
-				foundEmptySlot = true;
-			}
-		}
-		if (currCopNum != m_CurrentCops) {
-			printf("CopPursuit total messed up: re-setting\n");
-			m_CurrentCops = currCopNum;
-		}
-		if (orderMessedUp) {
-			printf("CopPursuit pointer list messed up: re-sorting\n");
-			bool fixed = true;
-			for (int i = 0; i < ARRAY_SIZE(m_pCops); i++) {
-				if (!m_pCops[i]) {
-					for (int j = i; j < ARRAY_SIZE(m_pCops); j++) {
-						if (m_pCops[j]) {
-							m_pCops[i] = m_pCops[j];
-							m_pCops[j] = nil;
-							fixed = false;
-							break;
-						}
-					}
-					if (fixed)
-						break;
-				}
-			}
-		}
 	}
-}
-
-void
-CWanted::ResetPolicePursuit(void)
-{
-	for(int i = 0; i < ARRAY_SIZE(m_pCops); i++) {
-		CCopPed *cop = m_pCops[i];
-		if (!cop)
-			continue;
-
-		cop->m_bIsInPursuit = false;
-		cop->m_objective = OBJECTIVE_NONE;
-		cop->m_prevObjective = OBJECTIVE_NONE;
-		cop->m_nLastPedState = PED_NONE;
-		if (!cop->DyingOrDead()) {
-			cop->SetWanderPath(CGeneral::GetRandomNumberInRange(0.0f, 8.0f));
-		}
-		m_pCops[i] = nil;
-	}
-	m_CurrentCops = 0;
 }
 
 void
 CWanted::Reset(void)
 {
-	ResetPolicePursuit();
 	Initialise();
 }
 
@@ -506,5 +441,4 @@ CWanted::Suspend(void)
 	m_nLastTimeSuspended = CTimer::GetTimeInMilliseconds();
 	m_nChaos = 0;
 	m_nWantedLevel = 0;
-	ResetPolicePursuit();
 }

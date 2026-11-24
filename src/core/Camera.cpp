@@ -5,7 +5,6 @@
 #include "Draw.h"
 #include "World.h"
 #include "Vehicle.h"
-#include "Train.h"
 #include "Automobile.h"
 #include "Ped.h"
 #include "PlayerPed.h"
@@ -19,8 +18,6 @@
 #include "Particle.h"
 #include "WaterLevel.h"
 #include "World.h"
-#include "Garages.h"
-#include "Replay.h"
 #include "Renderer.h"
 #include "Timecycle.h"
 #include "MBlur.h"
@@ -29,7 +26,6 @@
 #include "DMAudio.h"
 #include "FileMgr.h"
 #include "Frontend.h"
-#include "SceneEdit.h"
 #include "Pools.h"
 #include "Debug.h"
 #include "GenericGameStorage.h"
@@ -45,8 +41,6 @@ enum
 	OBBE_1STPERSON,	// unused
 	OBBE_5,
 	OBBE_ONSTRING,
-	OBBE_COPCAR,
-	OBBE_COPCAR_WHEEL,
 	// ped
 	OBBE_9,
 	OBBE_10,
@@ -161,15 +155,9 @@ CCamera::Init(void)
 	m_iModeObbeCamIsInForCar = OBBE_INVALID;
 	m_bIgnoreFadingStuffForMusic = false;
 	m_bWaitForInterpolToFinish = false;
-	pToGarageWeAreIn = nil;
-	pToGarageWeAreInForHackAvoidFirstPerson = nil;
-	m_bPlayerIsInGarage = false;
-	m_bJustCameOutOfGarage = false;
 	m_fNearClipScript = DEFAULT_NEAR;
 	m_bUseNearClipScript = false;
 	m_vecDoingSpecialInterPolation = false;
-	m_bAboveGroundTrainNodesLoaded = false;
-	m_bBelowGroundTrainNodesLoaded = false;
 	m_WideScreenOn = false;
 	m_fFOV_Wide_Screen = 0.0f;
 	m_bRestoreByJumpCut = false;
@@ -182,7 +170,6 @@ CCamera::Init(void)
 		pTargetEntity = FindPlayerVehicle();
 	else
 		pTargetEntity = CWorld::Players[CWorld::PlayerInFocus].m_pPed;
-	m_bInitialNodeFound = false;
 	m_ScreenReductionPercentage = 0.0f;
 	m_ScreenReductionSpeed = 0.0f;
 	m_WideScreenOn = false;
@@ -209,14 +196,10 @@ CCamera::Init(void)
 	m_bUseScriptZoomValueCar = false;
 	m_fPedZoomValueScript = 0.0f;
 	m_fCarZoomValueScript = 0.0f;
-	m_bUseSpecialFovTrain = false;
-	m_fFovForTrain = 70.0f;	// or DefaultFOV from Cam.cpp
 	m_iModeToGoTo = CCam::MODE_FOLLOWPED;
 	m_bJust_Switched = false;
 	m_bUseTransitionBeta = false;
 	GetMatrix().SetScale(1.0f);
-	m_bTargetJustBeenOnTrain = false;
-	m_bInitialNoNodeStaticsSet = false;
 	m_uiLongestTimeInMill = 5000;
 	m_uiTimeLastChange = 0;
 	m_uiTimeWeEnteredIdle = 0;
@@ -264,7 +247,7 @@ CCamera::Process(void)
 	m_RealPreviousCameraPosition = GetPosition();
 
 	// Update target entity
-	if(m_bLookingAtPlayer || m_bTargetJustBeenOnTrain || WhoIsInControlOfTheCamera == CAMCONTROL_OBBE)
+	if(m_bLookingAtPlayer || WhoIsInControlOfTheCamera == CAMCONTROL_OBBE)
 		UpdateTargetEntity();
 	if(pTargetEntity == nil)
 		pTargetEntity = FindPlayerPed();
@@ -505,7 +488,7 @@ CCamera::Process(void)
 	}
 
 	if(m_uiTransitionState != 0)
-		if(!m_bLookingAtVector && m_bLookingAtPlayer && !CCullZones::CamStairsForPlayer() && !m_bPlayerIsInGarage){
+		if(!m_bLookingAtVector && m_bLookingAtPlayer && !CCullZones::CamStairsForPlayer()){
 			CEntity *entity = nil;
 			CColPoint colPoint;
 			if(!CNoClip::IsActive() && CWorld::ProcessLineOfSight(pTargetEntity->GetPosition(), CamSource, colPoint, entity, true, false, false, true, false, true, true)){
@@ -678,16 +661,13 @@ CCamera::CamControl(void)
 	bool boatTarget = false;
 	int PrevMode = Cams[ActiveCam].Mode;
 	CVector targetPos;
-	CVector garageCenter, garageDoorPos1, garageDoorPos2;
+	CVector garageCenter, garageDoorPos1;
 	CVector garageCenterToDoor, garageCamPos;
 	int whichDoor;
 
 	m_bObbeCinematicPedCamOn = false;
 	m_bObbeCinematicCarCamOn = false;
 	m_bUseTransitionBeta = false;
-	m_bUseSpecialFovTrain = false;
-	m_bJustCameOutOfGarage = false;
-	m_bTargetJustCameOffTrain = false;
 	m_bInATunnelAndABigVehicle = false;
 	m_bJustJumpedOutOf1stPersonBecauseOfTarget = false;
 	bSwitchedToObbeCam = false;
@@ -711,282 +691,195 @@ CCamera::CamControl(void)
 		float CloseInCarHeightTarget = 0.0f;
 		float CloseInPedHeightTarget = 0.0f;
 
-		if(m_bTargetJustBeenOnTrain){
-			// Getting off train
-			if(!pTargetEntity->IsVehicle() || !((CVehicle*)pTargetEntity)->IsTrain()){
-				Restore();
-				m_bTargetJustCameOffTrain = true;
-				m_bTargetJustBeenOnTrain = false;
-				SetWideScreenOff();
-			}
-		}
-
 		// Vehicle target
 		if(pTargetEntity->IsVehicle()){
-			if(((CVehicle*)pTargetEntity)->IsTrain()){
-				if(!m_bTargetJustBeenOnTrain){
-					m_bInitialNodeFound = false;
-					m_bInitialNoNodeStaticsSet = false;
-				}
-				Process_Train_Camera_Control();
-			}else
-			{
-				if(((CVehicle*)pTargetEntity)->IsBoat() && pTargetEntity->GetModelIndex() != MI_SKIMMER)
-					boatTarget = true;
+			if(((CVehicle*)pTargetEntity)->IsBoat() && pTargetEntity->GetModelIndex() != MI_SKIMMER)
+				boatTarget = true;
 
-				// The sticky pedestrian view must not leak into a vehicle, which
-				// has its own view cycling.
-				m_bPlayerFirstPersonView = false;
+			// The sticky pedestrian view must not leak into a vehicle, which
+			// has its own view cycling.
+			m_bPlayerFirstPersonView = false;
 
-				// Change user selected mode
-				if(CPad::GetPad(0)->CycleCameraModeUpJustDown() && !CReplay::IsPlayingBack() &&
-				   (m_bLookingAtPlayer || WhoIsInControlOfTheCamera == CAMCONTROL_OBBE) &&
-				   !m_WideScreenOn){
+			// Change user selected mode
+			if(CPad::GetPad(0)->CycleCameraModeUpJustDown() &&
+			   (m_bLookingAtPlayer || WhoIsInControlOfTheCamera == CAMCONTROL_OBBE) &&
+			   !m_WideScreenOn){
+				CarZoomIndicator--;
+				// disable topdown here
+				if(CarZoomIndicator == CAM_ZOOM_TOPDOWN)
 					CarZoomIndicator--;
-					// disable topdown here
-					if(CarZoomIndicator == CAM_ZOOM_TOPDOWN)
-						CarZoomIndicator--;
-				}
-				if(CPad::GetPad(0)->CycleCameraModeDownJustDown() && !CReplay::IsPlayingBack() &&
-				   (m_bLookingAtPlayer || WhoIsInControlOfTheCamera == CAMCONTROL_OBBE) &&
-				   !m_WideScreenOn){
-					CarZoomIndicator++;
-					if(CarZoomIndicator == CAM_ZOOM_TOPDOWN)
-						CarZoomIndicator++;
-				}
-				if(!m_bFailedCullZoneTestPreviously){
-					if(CarZoomIndicator < CAM_ZOOM_1STPRS) CarZoomIndicator = CAM_ZOOM_CINEMATIC;
-					else if(CarZoomIndicator > CAM_ZOOM_CINEMATIC) CarZoomIndicator = CAM_ZOOM_1STPRS;
-				}
-
-				if(m_bFailedCullZoneTestPreviously)
-					if(CarZoomIndicator != CAM_ZOOM_1STPRS && CarZoomIndicator != CAM_ZOOM_TOPDOWN)
-						ReqMode = CCam::MODE_CAM_ON_A_STRING;
-
-				eVehicleType vehType = ((CVehicle*)pTargetEntity)->m_nVehicleType;
-				if(((CVehicle*)pTargetEntity)->IsBoat() && pTargetEntity->GetModelIndex() == MI_SKIMMER)
-					vehType = VEHICLE_TYPE_AUTOMOBILE;
-
-				switch(vehType){
-				case VEHICLE_TYPE_AUTOMOBILE:
-				case VEHICLE_TYPE_BIKE:{
-					CAttributeZone *stairsZone = nil;
-					if(vehType == VEHICLE_TYPE_BIKE && CCullZones::CamStairsForPlayer()){
-						stairsZone = CCullZones::FindZoneWithStairsAttributeForPlayer();
-						if(stairsZone)
-							stairs = true;
-					}
-					if(CGarages::IsPointInAGarageCameraZone(pTargetEntity->GetPosition()) || stairs){
-						if(!m_bGarageFixedCamPositionSet && m_bLookingAtPlayer ||
-						   WhoIsInControlOfTheCamera == CAMCONTROL_OBBE){
-							if(pToGarageWeAreIn || stairsZone){
-								float ground;
-								bool foundGround;
-
-								if(pToGarageWeAreIn){
-									// This is all very strange....
-									// targetPos = pTargetEntity->GetPosition();	// unused
-									if(pToGarageWeAreIn->m_pDoor1){
-										whichDoor = 1;
-										garageDoorPos1.x = pToGarageWeAreIn->m_fDoor1X;
-										garageDoorPos1.y = pToGarageWeAreIn->m_fDoor1Y;
-										garageDoorPos1.z = 0.0f;
-										// targetPos.z = 0.0f;	// unused
-										// (targetPos - doorPos1).Magnitude();	// unused
-									}else if(pToGarageWeAreIn->m_pDoor2){
-										whichDoor = 2;
-#ifdef FIX_BUGS
-										garageDoorPos2.x = pToGarageWeAreIn->m_fDoor2X;
-										garageDoorPos2.y = pToGarageWeAreIn->m_fDoor2Y;
-										garageDoorPos2.z = 0.0f;
-#endif
-									}else{
-										whichDoor = 1;
-										garageDoorPos1.x = pTargetEntity->GetPosition().x;
-										garageDoorPos1.y = pTargetEntity->GetPosition().y;
-#ifdef FIX_BUGS
-										garageDoorPos1.z = 0.0f;
-#else
-										garageDoorPos2.z = 0.0f;
-#endif
-									}
-								}else{
-									assert(stairsZone);
-									whichDoor = 1;
-									garageDoorPos1 = Cams[ActiveCam].Source;
-									garageCenter = CVector((stairsZone->minx+stairsZone->maxx)/2.0f, (stairsZone->miny+stairsZone->maxy)/2.0f, 0.0f);
-									if((garageCenter-garageDoorPos1).Magnitude() > 15.0f){
-										bool bClearViewOutside = true;
-										CVector dirOutside = pTargetEntity->GetPosition() - garageCenter;
-										dirOutside.z = 0.0f;
-										dirOutside.Normalise();
-										float zoneDim = stairsZone->maxx - stairsZone->minx;
-										if(zoneDim < stairsZone->maxy - stairsZone->miny)
-											zoneDim = stairsZone->maxy - stairsZone->miny;
-										zoneDim *= 2.0f;
-										CVector posOutside = pTargetEntity->GetPosition() + zoneDim*dirOutside;
-										if(!CWorld::GetIsLineOfSightClear(pTargetEntity->GetPosition(), posOutside, true, false, false, false, false, false, true)){
-											posOutside = pTargetEntity->GetPosition() - zoneDim*dirOutside;
-											if(!CWorld::GetIsLineOfSightClear(pTargetEntity->GetPosition(), posOutside, true, false, false, false, false, false, true))
-												bClearViewOutside = false;
-										}
-										if(bClearViewOutside)
-											garageDoorPos1 = posOutside;
-									}
-								}
-
-								if(pToGarageWeAreIn){
-									garageCenter.x = pToGarageWeAreIn->GetGarageCenterX();
-									garageCenter.y = pToGarageWeAreIn->GetGarageCenterY();
-									garageCenter.z = 0.0f;
-								}else{
-									garageDoorPos1.z = 0.0f;
-									if(stairsZone == nil)	// how can this be true?
-										garageCenter = CVector(pTargetEntity->GetPosition().x, pTargetEntity->GetPosition().y, 0.0f);
-								}
-
-								if(whichDoor == 1)
-									garageCenterToDoor = garageDoorPos1 - garageCenter;
-								else
-									garageCenterToDoor = garageDoorPos2 - garageCenter;
-								targetPos = pTargetEntity->GetPosition();
-								ground = CWorld::FindGroundZFor3DCoord(targetPos.x, targetPos.y, targetPos.z, &foundGround);
-								if(!foundGround)
-									ground = targetPos.z - 0.2f;
-								garageCenterToDoor.z = 0.0f;
-								garageCenterToDoor.Normalise();
-								if(whichDoor == 1){
-									if(pToGarageWeAreIn == nil && stairsZone){
-										float zoneDim = stairsZone->maxx - stairsZone->minx;
-										if(zoneDim < stairsZone->maxy - stairsZone->miny)
-											zoneDim = stairsZone->maxy - stairsZone->miny;
-										garageCamPos = garageCenter + (0.7f*zoneDim + 3.75f)*garageCenterToDoor;
-									}else
-										garageCamPos = garageDoorPos1 + 13.0f*garageCenterToDoor;
-								}else
-									garageCamPos = garageDoorPos2 + 13.0f*garageCenterToDoor;
-								garageCamPos.z = ground + 3.1f;
-								SetCamPositionForFixedMode(garageCamPos, CVector(0.0f, 0.0f, 0.0f));
-								m_bGarageFixedCamPositionSet = true;
-							}
-						}
-
-						if(CGarages::CameraShouldBeOutside() && m_bGarageFixedCamPositionSet &&
-						   (m_bLookingAtPlayer || WhoIsInControlOfTheCamera == CAMCONTROL_OBBE)){
-							if(pToGarageWeAreIn){
-								ReqMode = CCam::MODE_FIXED;
-								m_bPlayerIsInGarage = true;
-							}
-						}else{
-							if(m_bPlayerIsInGarage){
-								m_bJustCameOutOfGarage = true;
-								m_bPlayerIsInGarage = false;
-							}
-							ReqMode = CCam::MODE_CAM_ON_A_STRING;
-						}
-					}else{
-						if(m_bPlayerIsInGarage){
-							m_bJustCameOutOfGarage = true;
-							m_bPlayerIsInGarage = false;
-						}
-						m_bGarageFixedCamPositionSet = false;
-						ReqMode = CCam::MODE_CAM_ON_A_STRING;
-					}
-					break;
-				}
-				case VEHICLE_TYPE_BOAT:
-					ReqMode = CCam::MODE_BEHINDBOAT;
-					break;
-				default: break;
-				}
-
-				int vehApp = ((CVehicle*)pTargetEntity)->GetVehicleAppearance();
-				int vehArrPos = 0;
-				GetArrPosForVehicleType(vehApp, vehArrPos);
-
-				// Car zoom value
-				if (CarZoomIndicator == CAM_ZOOM_1STPRS && !m_bPlayerIsInGarage) {
-					CarZoomValue = 0.0f;
-					ReqMode = CCam::MODE_1STPERSON;
-				}
-#ifdef FREE_CAM
-				else if (bFreeCam) {
-					if (CarZoomIndicator == CAM_ZOOM_1)
-						CarZoomValue = LCS_ZOOM_ONE_DISTANCE[vehArrPos];
-					else if (CarZoomIndicator == CAM_ZOOM_2)
-						CarZoomValue = LCS_ZOOM_TWO_DISTANCE[vehArrPos];
-					else if (CarZoomIndicator == CAM_ZOOM_3)
-						CarZoomValue = LCS_ZOOM_THREE_DISTANCE[vehArrPos];
-				}
-#endif
-				else if (CarZoomIndicator == CAM_ZOOM_1)
-					CarZoomValue = ZOOM_ONE_DISTANCE[vehArrPos];
-				else if(CarZoomIndicator == CAM_ZOOM_2)
-					CarZoomValue = ZOOM_TWO_DISTANCE[vehArrPos];
-				else if(CarZoomIndicator == CAM_ZOOM_3)
-					CarZoomValue = ZOOM_THREE_DISTANCE[vehArrPos];
-
-				if(CarZoomIndicator == CAM_ZOOM_TOPDOWN && !m_bPlayerIsInGarage){
-					CarZoomValue = 1.0f;
-					ReqMode = CCam::MODE_TOPDOWN;
-				}
-
-				// Check if we have to go into first person
-				if(vehType == VEHICLE_TYPE_AUTOMOBILE && !m_bPlayerIsInGarage){
-					if(CCullZones::Cam1stPersonForPlayer() && 
-					   pTargetEntity->GetColModel()->boundingBox.GetSize().z >= 3.026f &&
-					   pToGarageWeAreInForHackAvoidFirstPerson == nil){
-						ReqMode = CCam::MODE_1STPERSON;
-						m_bInATunnelAndABigVehicle = true;
-					}
-				}
-				if(ReqMode == CCam::MODE_TOPDOWN &&
-				   (CCullZones::Cam1stPersonForPlayer() || CCullZones::CamNoRain() || CCullZones::PlayerNoRain()))
-					ReqMode = CCam::MODE_1STPERSON;
-
-				// Smooth zoom value - ugly code
-				if(m_bUseScriptZoomValueCar){
-					if(CarZoomValueSmooth < m_fCarZoomValueScript){
-						CarZoomValueSmooth += 0.12f * CTimer::GetTimeStep();
-						CarZoomValueSmooth = Min(CarZoomValueSmooth, m_fCarZoomValueScript);
-					}else{
-						CarZoomValueSmooth -= 0.12f * CTimer::GetTimeStep();
-						CarZoomValueSmooth = Max(CarZoomValueSmooth, m_fCarZoomValueScript);
-					}
-				}else if(m_bFailedCullZoneTestPreviously){
-					CloseInCarHeightTarget = 0.65f;
-					if(CarZoomValueSmooth < -0.65f){
-						CarZoomValueSmooth += 0.12f * CTimer::GetTimeStep();
-						CarZoomValueSmooth = Min(CarZoomValueSmooth, -0.65f);
-					}else{
-						CarZoomValueSmooth -= 0.12f * CTimer::GetTimeStep();
-						CarZoomValueSmooth = Max(CarZoomValueSmooth, -0.65f);
-					}
-				}else{
-					if(CarZoomValueSmooth < CarZoomValue){
-						CarZoomValueSmooth += 0.12f * CTimer::GetTimeStep();
-						CarZoomValueSmooth = Min(CarZoomValueSmooth, CarZoomValue);
-					}else{
-						CarZoomValueSmooth -= 0.12f * CTimer::GetTimeStep();
-						CarZoomValueSmooth = Max(CarZoomValueSmooth, CarZoomValue);
-					}
-				}
-
-				WellBufferMe(CloseInCarHeightTarget, &Cams[ActiveCam].m_fCloseInCarHeightOffset, &Cams[ActiveCam].m_fCloseInCarHeightOffsetSpeed, 0.1f, 0.25f, false);
-
-				// Fallen into water
-				if(Cams[ActiveCam].IsTargetInWater(Cams[ActiveCam].Source) && !boatTarget &&
-				   !Cams[ActiveCam].CamTargetEntity->IsPed() &&
-				   pTargetEntity->GetModelIndex() != MI_SKIMMER && pTargetEntity->GetModelIndex() != MI_SEASPAR)
-					ReqMode = CCam::MODE_PLAYER_FALLEN_WATER;
 			}
+			if(CPad::GetPad(0)->CycleCameraModeDownJustDown() &&
+			   (m_bLookingAtPlayer || WhoIsInControlOfTheCamera == CAMCONTROL_OBBE) &&
+			   !m_WideScreenOn){
+				CarZoomIndicator++;
+				if(CarZoomIndicator == CAM_ZOOM_TOPDOWN)
+					CarZoomIndicator++;
+			}
+			if(!m_bFailedCullZoneTestPreviously){
+				if(CarZoomIndicator < CAM_ZOOM_1STPRS) CarZoomIndicator = CAM_ZOOM_CINEMATIC;
+				else if(CarZoomIndicator > CAM_ZOOM_CINEMATIC) CarZoomIndicator = CAM_ZOOM_1STPRS;
+			}
+
+			if(m_bFailedCullZoneTestPreviously)
+				if(CarZoomIndicator != CAM_ZOOM_1STPRS && CarZoomIndicator != CAM_ZOOM_TOPDOWN)
+					ReqMode = CCam::MODE_CAM_ON_A_STRING;
+
+			eVehicleType vehType = ((CVehicle*)pTargetEntity)->m_nVehicleType;
+			if(((CVehicle*)pTargetEntity)->IsBoat() && pTargetEntity->GetModelIndex() == MI_SKIMMER)
+				vehType = VEHICLE_TYPE_AUTOMOBILE;
+
+			switch(vehType){
+			case VEHICLE_TYPE_AUTOMOBILE:
+			case VEHICLE_TYPE_BIKE:{
+				CAttributeZone *stairsZone = nil;
+				if(vehType == VEHICLE_TYPE_BIKE && CCullZones::CamStairsForPlayer()){
+					stairsZone = CCullZones::FindZoneWithStairsAttributeForPlayer();
+					if(stairsZone)
+						stairs = true;
+				}
+				if(stairs && stairsZone &&
+				   (!m_bGarageFixedCamPositionSet && m_bLookingAtPlayer ||
+				    WhoIsInControlOfTheCamera == CAMCONTROL_OBBE)){
+					// A bike on a stairs zone is filmed from outside the
+					// zone so the stairs do not block the view.
+					float ground;
+					bool foundGround;
+
+					whichDoor = 1;
+					garageDoorPos1 = Cams[ActiveCam].Source;
+					garageCenter = CVector((stairsZone->minx+stairsZone->maxx)/2.0f, (stairsZone->miny+stairsZone->maxy)/2.0f, 0.0f);
+					if((garageCenter-garageDoorPos1).Magnitude() > 15.0f){
+						bool bClearViewOutside = true;
+						CVector dirOutside = pTargetEntity->GetPosition() - garageCenter;
+						dirOutside.z = 0.0f;
+						dirOutside.Normalise();
+						float zoneDim = stairsZone->maxx - stairsZone->minx;
+						if(zoneDim < stairsZone->maxy - stairsZone->miny)
+							zoneDim = stairsZone->maxy - stairsZone->miny;
+						zoneDim *= 2.0f;
+						CVector posOutside = pTargetEntity->GetPosition() + zoneDim*dirOutside;
+						if(!CWorld::GetIsLineOfSightClear(pTargetEntity->GetPosition(), posOutside, true, false, false, false, false, false, true)){
+							posOutside = pTargetEntity->GetPosition() - zoneDim*dirOutside;
+							if(!CWorld::GetIsLineOfSightClear(pTargetEntity->GetPosition(), posOutside, true, false, false, false, false, false, true))
+								bClearViewOutside = false;
+						}
+						if(bClearViewOutside)
+							garageDoorPos1 = posOutside;
+					}
+					garageDoorPos1.z = 0.0f;
+					garageCenterToDoor = garageDoorPos1 - garageCenter;
+					targetPos = pTargetEntity->GetPosition();
+					ground = CWorld::FindGroundZFor3DCoord(targetPos.x, targetPos.y, targetPos.z, &foundGround);
+					if(!foundGround)
+						ground = targetPos.z - 0.2f;
+					garageCenterToDoor.z = 0.0f;
+					garageCenterToDoor.Normalise();
+					float zoneDim = stairsZone->maxx - stairsZone->minx;
+					if(zoneDim < stairsZone->maxy - stairsZone->miny)
+						zoneDim = stairsZone->maxy - stairsZone->miny;
+					garageCamPos = garageCenter + (0.7f*zoneDim + 3.75f)*garageCenterToDoor;
+					garageCamPos.z = ground + 3.1f;
+					SetCamPositionForFixedMode(garageCamPos, CVector(0.0f, 0.0f, 0.0f));
+					m_bGarageFixedCamPositionSet = true;
+					ReqMode = CCam::MODE_FIXED;
+				}else{
+					m_bGarageFixedCamPositionSet = false;
+					ReqMode = CCam::MODE_CAM_ON_A_STRING;
+				}
+				break;
+			}
+
+			case VEHICLE_TYPE_BOAT:
+				ReqMode = CCam::MODE_BEHINDBOAT;
+				break;
+			default: break;
+			}
+
+			int vehApp = ((CVehicle*)pTargetEntity)->GetVehicleAppearance();
+			int vehArrPos = 0;
+			GetArrPosForVehicleType(vehApp, vehArrPos);
+
+			// Car zoom value
+			if (CarZoomIndicator == CAM_ZOOM_1STPRS) {
+				CarZoomValue = 0.0f;
+				ReqMode = CCam::MODE_1STPERSON;
+			}
+#ifdef FREE_CAM
+			else if (bFreeCam) {
+				if (CarZoomIndicator == CAM_ZOOM_1)
+					CarZoomValue = LCS_ZOOM_ONE_DISTANCE[vehArrPos];
+				else if (CarZoomIndicator == CAM_ZOOM_2)
+					CarZoomValue = LCS_ZOOM_TWO_DISTANCE[vehArrPos];
+				else if (CarZoomIndicator == CAM_ZOOM_3)
+					CarZoomValue = LCS_ZOOM_THREE_DISTANCE[vehArrPos];
+			}
+#endif
+			else if (CarZoomIndicator == CAM_ZOOM_1)
+				CarZoomValue = ZOOM_ONE_DISTANCE[vehArrPos];
+			else if(CarZoomIndicator == CAM_ZOOM_2)
+				CarZoomValue = ZOOM_TWO_DISTANCE[vehArrPos];
+			else if(CarZoomIndicator == CAM_ZOOM_3)
+				CarZoomValue = ZOOM_THREE_DISTANCE[vehArrPos];
+
+			if(CarZoomIndicator == CAM_ZOOM_TOPDOWN){
+				CarZoomValue = 1.0f;
+				ReqMode = CCam::MODE_TOPDOWN;
+			}
+
+			// Check if we have to go into first person
+			if(vehType == VEHICLE_TYPE_AUTOMOBILE){
+				if(CCullZones::Cam1stPersonForPlayer() &&
+				   pTargetEntity->GetColModel()->boundingBox.GetSize().z >= 3.026f){
+					ReqMode = CCam::MODE_1STPERSON;
+					m_bInATunnelAndABigVehicle = true;
+				}
+			}
+			if(ReqMode == CCam::MODE_TOPDOWN &&
+			   (CCullZones::Cam1stPersonForPlayer() || CCullZones::CamNoRain() || CCullZones::PlayerNoRain()))
+				ReqMode = CCam::MODE_1STPERSON;
+
+			// Smooth zoom value - ugly code
+			if(m_bUseScriptZoomValueCar){
+				if(CarZoomValueSmooth < m_fCarZoomValueScript){
+					CarZoomValueSmooth += 0.12f * CTimer::GetTimeStep();
+					CarZoomValueSmooth = Min(CarZoomValueSmooth, m_fCarZoomValueScript);
+				}else{
+					CarZoomValueSmooth -= 0.12f * CTimer::GetTimeStep();
+					CarZoomValueSmooth = Max(CarZoomValueSmooth, m_fCarZoomValueScript);
+				}
+			}else if(m_bFailedCullZoneTestPreviously){
+				CloseInCarHeightTarget = 0.65f;
+				if(CarZoomValueSmooth < -0.65f){
+					CarZoomValueSmooth += 0.12f * CTimer::GetTimeStep();
+					CarZoomValueSmooth = Min(CarZoomValueSmooth, -0.65f);
+				}else{
+					CarZoomValueSmooth -= 0.12f * CTimer::GetTimeStep();
+					CarZoomValueSmooth = Max(CarZoomValueSmooth, -0.65f);
+				}
+			}else{
+				if(CarZoomValueSmooth < CarZoomValue){
+					CarZoomValueSmooth += 0.12f * CTimer::GetTimeStep();
+					CarZoomValueSmooth = Min(CarZoomValueSmooth, CarZoomValue);
+				}else{
+					CarZoomValueSmooth -= 0.12f * CTimer::GetTimeStep();
+					CarZoomValueSmooth = Max(CarZoomValueSmooth, CarZoomValue);
+				}
+			}
+
+			WellBufferMe(CloseInCarHeightTarget, &Cams[ActiveCam].m_fCloseInCarHeightOffset, &Cams[ActiveCam].m_fCloseInCarHeightOffsetSpeed, 0.1f, 0.25f, false);
+
+			// Fallen into water
+			if(Cams[ActiveCam].IsTargetInWater(Cams[ActiveCam].Source) && !boatTarget &&
+			   !Cams[ActiveCam].CamTargetEntity->IsPed() &&
+			   pTargetEntity->GetModelIndex() != MI_SKIMMER && pTargetEntity->GetModelIndex() != MI_SEASPAR)
+				ReqMode = CCam::MODE_PLAYER_FALLEN_WATER;
 		}
 
 		// Ped target
 		else if(pTargetEntity->IsPed()){
 			// Change user selected mode
-			if(CPad::GetPad(0)->CycleCameraModeUpJustDown() && !CReplay::IsPlayingBack() &&
-			   (m_bLookingAtPlayer || WhoIsInControlOfTheCamera == CAMCONTROL_OBBE) &&
+			if(CPad::GetPad(0)->CycleCameraModeUpJustDown() && 			   (m_bLookingAtPlayer || WhoIsInControlOfTheCamera == CAMCONTROL_OBBE) &&
 			   !m_WideScreenOn && !m_bFailedCullZoneTestPreviously && !m_bFirstPersonBeingUsed){
 #ifdef GTA_PC_CONTROLS
 				if(FrontEndMenuManager.m_ControlMethod == CONTROL_STANDARD){
@@ -998,8 +891,7 @@ CCamera::CamControl(void)
 #endif
 					PedZoomIndicator--;
 			}
-			if(CPad::GetPad(0)->CycleCameraModeDownJustDown() && !CReplay::IsPlayingBack() &&
-			   (m_bLookingAtPlayer || WhoIsInControlOfTheCamera == CAMCONTROL_OBBE) &&
+			if(CPad::GetPad(0)->CycleCameraModeDownJustDown() && 			   (m_bLookingAtPlayer || WhoIsInControlOfTheCamera == CAMCONTROL_OBBE) &&
 			   !m_WideScreenOn && !m_bFailedCullZoneTestPreviously && !m_bFirstPersonBeingUsed){
 #ifdef GTA_PC_CONTROLS
 				if(FrontEndMenuManager.m_ControlMethod == CONTROL_STANDARD){
@@ -1145,140 +1037,65 @@ CCamera::CamControl(void)
 					ReqMode = CCam::MODE_FIGHT_CAM;
 			}
 
-			// Garage cam
+			// Stairs zone cam
 			CAttributeZone *stairsZone = nil;
 			if(CCullZones::CamStairsForPlayer()){
 				stairsZone = CCullZones::FindZoneWithStairsAttributeForPlayer();
 				if(stairsZone)
 					stairs = true;
 			}
-			if(CGarages::IsPointInAGarageCameraZone(pTargetEntity->GetPosition()) && !m_bUseMouse3rdPerson || stairs){
-				if(!m_bGarageFixedCamPositionSet && m_bLookingAtPlayer){
-					if(pToGarageWeAreIn || stairs){
-						float ground;
-						bool foundGround;
+			if(stairs){
+				if(!m_bGarageFixedCamPositionSet && m_bLookingAtPlayer && stairsZone){
+					float ground;
+					bool foundGround;
 
-						if(pToGarageWeAreIn){
-							// targetPos = pTargetEntity->GetPosition();	// unused
-							if(pToGarageWeAreIn->m_pDoor1){
-								whichDoor = 1;
-								garageDoorPos1.x = pToGarageWeAreIn->m_fDoor1X;
-								garageDoorPos1.y = pToGarageWeAreIn->m_fDoor1Y;
-								garageDoorPos1.z = 0.0f;
-								// targetPos.z = 0.0f;	// unused
-								// (targetPos - doorPos1).Magnitude();	// unused
-							}else if(pToGarageWeAreIn->m_pDoor2){
-								whichDoor = 2;
-#ifdef FIX_BUGS
-								garageDoorPos2.x = pToGarageWeAreIn->m_fDoor2X;
-								garageDoorPos2.y = pToGarageWeAreIn->m_fDoor2Y;
-								garageDoorPos2.z = 0.0f;
-#endif
-							}else{
-								whichDoor = 1;
-								garageDoorPos1.x = pTargetEntity->GetPosition().x;
-								garageDoorPos1.y = pTargetEntity->GetPosition().y;
-#ifdef FIX_BUGS
-								garageDoorPos1.z = 0.0f;
-#else
-								garageDoorPos2.z = 0.0f;
-#endif
-							}
-						}else{
-							whichDoor = 1;
-							garageDoorPos1 = Cams[ActiveCam].Source;
-
-							if(stairsZone){	// always true
-								garageCenter = CVector((stairsZone->minx+stairsZone->maxx)/2, (stairsZone->miny+stairsZone->maxy)/2, 0.0f);
-								if(pTargetEntity->GetPosition().x > 376.0f && pTargetEntity->GetPosition().x < 383.0f &&
-								   pTargetEntity->GetPosition().y > -496.0f && pTargetEntity->GetPosition().y < -489.0f &&
-								   pTargetEntity->GetPosition().z > 11.6f && pTargetEntity->GetPosition().z < 13.6f){
-									garageDoorPos1 = CVector(382.6f, -489.6f, 13.1f);
-								}else{
-									bool bClearViewOutside = true;
-									CVector dirOutside = pTargetEntity->GetPosition() - garageCenter;
-									dirOutside.z = 0.0f;
-									dirOutside.Normalise();
-									float zoneDim = stairsZone->maxx - stairsZone->minx;
-									if(zoneDim < stairsZone->maxy - stairsZone->miny)
-										zoneDim = stairsZone->maxy - stairsZone->miny;
-									zoneDim *= 2.0f;
-									CVector posOutside = pTargetEntity->GetPosition() + zoneDim*dirOutside;
-									if(!CWorld::GetIsLineOfSightClear(pTargetEntity->GetPosition(), posOutside, true, false, false, false, false, false, true)){
-										posOutside = pTargetEntity->GetPosition() - zoneDim*dirOutside;
-										if(!CWorld::GetIsLineOfSightClear(pTargetEntity->GetPosition(), posOutside, true, false, false, false, false, false, true))
-											bClearViewOutside = false;
-									}
-									if(bClearViewOutside)
-										garageDoorPos1 = posOutside;
-								}
-							}
+					whichDoor = 1;
+					garageDoorPos1 = Cams[ActiveCam].Source;
+					garageCenter = CVector((stairsZone->minx+stairsZone->maxx)/2, (stairsZone->miny+stairsZone->maxy)/2, 0.0f);
+					if(pTargetEntity->GetPosition().x > 376.0f && pTargetEntity->GetPosition().x < 383.0f &&
+					   pTargetEntity->GetPosition().y > -496.0f && pTargetEntity->GetPosition().y < -489.0f &&
+					   pTargetEntity->GetPosition().z > 11.6f && pTargetEntity->GetPosition().z < 13.6f){
+						garageDoorPos1 = CVector(382.6f, -489.6f, 13.1f);
+					}else{
+						bool bClearViewOutside = true;
+						CVector dirOutside = pTargetEntity->GetPosition() - garageCenter;
+						dirOutside.z = 0.0f;
+						dirOutside.Normalise();
+						float zoneDim = stairsZone->maxx - stairsZone->minx;
+						if(zoneDim < stairsZone->maxy - stairsZone->miny)
+							zoneDim = stairsZone->maxy - stairsZone->miny;
+						zoneDim *= 2.0f;
+						CVector posOutside = pTargetEntity->GetPosition() + zoneDim*dirOutside;
+						if(!CWorld::GetIsLineOfSightClear(pTargetEntity->GetPosition(), posOutside, true, false, false, false, false, false, true)){
+							posOutside = pTargetEntity->GetPosition() - zoneDim*dirOutside;
+							if(!CWorld::GetIsLineOfSightClear(pTargetEntity->GetPosition(), posOutside, true, false, false, false, false, false, true))
+								bClearViewOutside = false;
 						}
-
-						if(pToGarageWeAreIn){
-							garageCenter.x = pToGarageWeAreIn->GetGarageCenterX();
-							garageCenter.y = pToGarageWeAreIn->GetGarageCenterY();
-							garageCenter.z = 0.0f;
-						}else{
-							garageDoorPos1.z = 0.0f;
-							if(!stairs)	// how can this be true?
-								garageCenter = CVector(pTargetEntity->GetPosition().x, pTargetEntity->GetPosition().y, 0.0f);
-						}
-						if(whichDoor == 1)
-							garageCenterToDoor = garageDoorPos1 - garageCenter;
-						else
-							garageCenterToDoor = garageDoorPos2 - garageCenter;
-						targetPos = pTargetEntity->GetPosition();
-						ground = CWorld::FindGroundZFor3DCoord(targetPos.x, targetPos.y, targetPos.z, &foundGround);
-						if(!foundGround)
-							ground = targetPos.z - 0.2f;
-						garageCenterToDoor.z = 0.0f;
-						garageCenterToDoor.Normalise();
-						if(whichDoor == 1){
-							if(pToGarageWeAreIn == nil && stairs){
-								if(stairsZone){
-									float zoneDim = stairsZone->maxx - stairsZone->minx;
-									if(zoneDim < stairsZone->maxy - stairsZone->miny)
-										zoneDim = stairsZone->maxy - stairsZone->miny;
-									garageCamPos = garageCenter + (0.7f*zoneDim + 3.75f)*garageCenterToDoor;
-								}else	// how can this be true?
-									garageCamPos = garageDoorPos1 + 3.75f*garageCenterToDoor;
-							}else
-								garageCamPos = garageDoorPos1 + 13.0f*garageCenterToDoor;
-						}else{
-							garageCamPos = garageDoorPos2 + 13.0f*garageCenterToDoor;
-						}
-						if(PedZoomIndicator == CAM_ZOOM_TOPDOWN && !stairs){
-							garageCamPos = garageCenter;
-							garageCamPos.z += FindPlayerPed()->GetPosition().z + 2.1f;
-							if(pToGarageWeAreIn && garageCamPos.z > pToGarageWeAreIn->m_fSupX)	// What?
-								garageCamPos.z = pToGarageWeAreIn->m_fSupX;
-						}else
-							garageCamPos.z = ground + 3.1f;
-						SetCamPositionForFixedMode(garageCamPos, CVector(0.0f, 0.0f, 0.0f));
-						m_bGarageFixedCamPositionSet = true;
+						if(bClearViewOutside)
+							garageDoorPos1 = posOutside;
 					}
+					garageDoorPos1.z = 0.0f;
+					garageCenterToDoor = garageDoorPos1 - garageCenter;
+					targetPos = pTargetEntity->GetPosition();
+					ground = CWorld::FindGroundZFor3DCoord(targetPos.x, targetPos.y, targetPos.z, &foundGround);
+					if(!foundGround)
+						ground = targetPos.z - 0.2f;
+					garageCenterToDoor.z = 0.0f;
+					garageCenterToDoor.Normalise();
+					float zoneDim = stairsZone->maxx - stairsZone->minx;
+					if(zoneDim < stairsZone->maxy - stairsZone->miny)
+						zoneDim = stairsZone->maxy - stairsZone->miny;
+					garageCamPos = garageCenter + (0.7f*zoneDim + 3.75f)*garageCenterToDoor;
+					garageCamPos.z = ground + 3.1f;
+					SetCamPositionForFixedMode(garageCamPos, CVector(0.0f, 0.0f, 0.0f));
+					m_bGarageFixedCamPositionSet = true;
 				}
-
-				if((CGarages::CameraShouldBeOutside() || stairs) && m_bLookingAtPlayer && m_bGarageFixedCamPositionSet){
-					if(pToGarageWeAreIn || stairs){
-						ReqMode = CCam::MODE_FIXED;
-						m_bPlayerIsInGarage = true;
-					}
-				}else{
-					if(m_bPlayerIsInGarage){
-						m_bJustCameOutOfGarage = true;
-						m_bPlayerIsInGarage = false;
-					}
+				if(m_bLookingAtPlayer && m_bGarageFixedCamPositionSet)
+					ReqMode = CCam::MODE_FIXED;
+				else
 					ReqMode = CCam::MODE_FOLLOWPED;
-				}
-			}else{
-				if(m_bPlayerIsInGarage){
-					m_bJustCameOutOfGarage = true;
-					m_bPlayerIsInGarage = false;
-				}
+			}else
 				m_bGarageFixedCamPositionSet = false;
-			}
 
 			// Lighthouse
 			if(!m_bFirstPersonBeingUsed && (pTargetEntity->GetPosition() - CVector(474.3f, -1717.6f, 0.0f)).Magnitude2D() < 6.0f)
@@ -1297,8 +1114,7 @@ CCamera::CamControl(void)
 			   !CCullZones::Cam1stPersonForPlayer() &&
 			   !CCullZones::CamNoRain() &&
 			   !CCullZones::PlayerNoRain() &&
-			   !m_bFirstPersonBeingUsed &&
-			   !m_bPlayerIsInGarage)
+			   !m_bFirstPersonBeingUsed)
 				ReqMode = CCam::MODE_TOP_DOWN_PED;
 
 			// Weapon mode
@@ -1428,9 +1244,11 @@ CCamera::CamControl(void)
 		else{
 			bool useArrestCam = false;
 			if(pTargetEntity->IsPed()){
-				for(int i = 0; i < ((CPed*)pTargetEntity)->m_numNearPeds; i++){
-					CPed *ped = ((CPed*)pTargetEntity)->m_nearPeds[i];
-					if(ped && ped->GetPedState() == PED_ARREST_PLAYER)
+				CPed *nearPeds[10];
+				int16 numNearPeds = ((CPed*)pTargetEntity)->FindNearPeds(pTargetEntity->GetPosition(), 4.0f, nearPeds, ARRAY_SIZE(nearPeds));
+				for(int i = 0; i < numNearPeds; i++){
+					CPed *ped = nearPeds[i];
+					if(ped->GetPedState() == PED_ARREST_PLAYER)
 						if((ped->GetPosition() - pTargetEntity->GetPosition()).Magnitude() < 4.0f){
 							ReqMode = CCam::MODE_ARRESTCAM_ONE;
 							Cams[ActiveCam].ResetStatics = true;
@@ -1495,16 +1313,14 @@ CCamera::CamControl(void)
 				m_bObbeCinematicPedCamOn = true;
 		}
 	}
-	if(m_bTargetJustBeenOnTrain ||
-	   ReqMode == CCam::MODE_SYPHON || ReqMode == CCam::MODE_SYPHON_CRIM_IN_FRONT || ReqMode == CCam::MODE_SPECIAL_FIXED_FOR_SYPHON ||
+	if(ReqMode == CCam::MODE_SYPHON || ReqMode == CCam::MODE_SYPHON_CRIM_IN_FRONT || ReqMode == CCam::MODE_SPECIAL_FIXED_FOR_SYPHON ||
 	   ReqMode == CCam::MODE_PED_DEAD_BABY || ReqMode == CCam::MODE_ARRESTCAM_ONE || ReqMode == CCam::MODE_ARRESTCAM_TWO ||
 	   ReqMode == CCam::MODE_FIGHT_CAM || ReqMode == CCam::MODE_PLAYER_FALLEN_WATER ||
 	   ReqMode == CCam::MODE_SNIPER || ReqMode == CCam::MODE_ROCKETLAUNCHER || ReqMode == CCam::MODE_M16_1STPERSON ||
 	   ReqMode == CCam::MODE_SNIPER_RUNABOUT || ReqMode == CCam::MODE_ROCKETLAUNCHER_RUNABOUT ||
 	   ReqMode == CCam::MODE_1STPERSON_RUNABOUT || ReqMode == CCam::MODE_M16_1STPERSON_RUNABOUT ||
 	   ReqMode == CCam::MODE_FIGHT_CAM_RUNABOUT || ReqMode == CCam::MODE_HELICANNON_1STPERSON || ReqMode == CCam::MODE_CAMERA ||
-	   WhoIsInControlOfTheCamera == CAMCONTROL_SCRIPT ||
-	   m_bJustCameOutOfGarage || m_bPlayerIsInGarage)
+	   WhoIsInControlOfTheCamera == CAMCONTROL_SCRIPT)
 		canUseObbeCam = false;
 
 	if(m_bObbeCinematicPedCamOn && canUseObbeCam)
@@ -1516,8 +1332,6 @@ CCamera::CamControl(void)
 		else
 			ProcessObbeCinemaCameraCar();
 	}else{
-		if(m_bPlayerIsInGarage && m_bObbeCinematicCarCamOn)
-			switchByJumpCut = true;
 		canUseObbeCam = false;
 		DontProcessObbeCinemaCamera();
 	}
@@ -1562,24 +1376,6 @@ CCamera::CamControl(void)
 			// Going into any 1st person mode is a jump cut
 			if(pTargetEntity->IsPed())
 				switchByJumpCut = true;
-		}else if(ReqMode == CCam::MODE_FIXED && m_bPlayerIsInGarage){
-			// Going from 1st peron mode into garage
-			if(Cams[ActiveCam].Mode == CCam::MODE_SNIPER ||
-			   Cams[ActiveCam].Mode == CCam::MODE_HELICANNON_1STPERSON ||
-			   Cams[ActiveCam].Mode == CCam::MODE_ROCKETLAUNCHER ||
-			   Cams[ActiveCam].Mode == CCam::MODE_M16_1STPERSON ||
-			   Cams[ActiveCam].Mode == CCam::MODE_TOP_DOWN_PED ||
-			   stairs ||
-			   Cams[ActiveCam].Mode == CCam::MODE_1STPERSON ||
-			   Cams[ActiveCam].Mode == CCam::MODE_SNIPER_RUNABOUT ||
-			   Cams[ActiveCam].Mode == CCam::MODE_ROCKETLAUNCHER_RUNABOUT ||
-			   Cams[ActiveCam].Mode == CCam::MODE_M16_1STPERSON_RUNABOUT ||
-			   Cams[ActiveCam].Mode == CCam::MODE_FIGHT_CAM_RUNABOUT ||
-			   Cams[ActiveCam].Mode == CCam::MODE_1STPERSON_RUNABOUT ||
-			   Cams[ActiveCam].Mode == CCam::MODE_CAMERA){
-				if(pTargetEntity && pTargetEntity->IsVehicle())
-					switchByJumpCut = true;
-			}
 		}else if(ReqMode == CCam::MODE_FOLLOWPED){
 			bool syphonJumpCut = false;
 			if(Cams[ActiveCam].Mode == CCam::MODE_SYPHON || Cams[ActiveCam].Mode == CCam::MODE_SYPHON_CRIM_IN_FRONT)
@@ -1603,7 +1399,7 @@ CCamera::CamControl(void)
 			   Cams[ActiveCam].Mode == CCam::MODE_TOPDOWN ||
 			   Cams[ActiveCam].Mode == CCam::MODE_TOP_DOWN_PED ||
 			   syphonJumpCut || stopArrestCam){
-				if(!m_bJustCameOutOfGarage){
+				{
 					if(Cams[ActiveCam].Mode == CCam::MODE_1STPERSON ||
 					   Cams[ActiveCam].Mode == CCam::MODE_SNIPER ||
 					   Cams[ActiveCam].Mode == CCam::MODE_ROCKETLAUNCHER ||
@@ -1651,51 +1447,37 @@ CCamera::CamControl(void)
 
 		if(ReqMode != Cams[ActiveCam].Mode && Cams[ActiveCam].CamTargetEntity == nil)
 			switchByJumpCut = true;
-		if(m_bPlayerIsInGarage && pToGarageWeAreIn){
-			if(pToGarageWeAreIn->m_eGarageType == GARAGE_BOMBSHOP1 ||
-			   pToGarageWeAreIn->m_eGarageType == GARAGE_BOMBSHOP2 ||
-			   pToGarageWeAreIn->m_eGarageType == GARAGE_BOMBSHOP3){
-				if(pTargetEntity->IsVehicle() && pTargetEntity->GetModelIndex() == MI_MRWHOOP &&
-				   ReqMode != Cams[ActiveCam].Mode)
-					switchByJumpCut = true;
-			}
-		}
-#ifdef GTA_SCENE_EDIT
-		if(CSceneEdit::m_bEditOn)
-			ReqMode = CCam::MODE_EDITOR;
-#endif
 
 		if((m_uiTransitionState == 0 || switchByJumpCut) && ReqMode != Cams[ActiveCam].Mode){
 			if(switchByJumpCut){
-				if(!m_bPlayerIsInGarage || m_bJustCameOutOfGarage){
-					if(ReqMode != CCam::MODE_FOLLOWPED &&
-					   ReqMode != CCam::MODE_M16_1STPERSON &&
-					   ReqMode != CCam::MODE_SNIPER &&
-					   ReqMode != CCam::MODE_ROCKETLAUNCHER &&
-					   !m_bUseMouse3rdPerson)
-						SetCameraDirectlyBehindForFollowPed_CamOnAString();
-				}
-				Cams[ActiveCam].Mode = ReqMode;
-				m_bJust_Switched = true;
-				Cams[ActiveCam].m_cvecCamFixedModeVector = m_vecFixedModeVector;
-				Cams[ActiveCam].CamTargetEntity = pTargetEntity;
-				Cams[ActiveCam].m_cvecCamFixedModeSource = m_vecFixedModeSource;
-				Cams[ActiveCam].m_cvecCamFixedModeUpOffSet = m_vecFixedModeUpOffSet;
-				Cams[ActiveCam].m_bCamLookingAtVector = m_bLookingAtVector;
-				Cams[ActiveCam].m_vecLastAboveWaterCamPosition = Cams[(ActiveCam+1)%2].m_vecLastAboveWaterCamPosition;
-				CarZoomValueSmooth = CarZoomValue;
-				m_fPedZoomValueSmooth = m_fPedZoomValue;
-				m_uiTransitionState = 0;
-				m_vecDoingSpecialInterPolation = false;
-				m_bStartInterScript = false;
-				Cams[ActiveCam].ResetStatics = true;
+				if(ReqMode != CCam::MODE_FOLLOWPED &&
+				   ReqMode != CCam::MODE_M16_1STPERSON &&
+				   ReqMode != CCam::MODE_SNIPER &&
+				   ReqMode != CCam::MODE_ROCKETLAUNCHER &&
+				   !m_bUseMouse3rdPerson)
+					SetCameraDirectlyBehindForFollowPed_CamOnAString();
+			}
+			Cams[ActiveCam].Mode = ReqMode;
+			m_bJust_Switched = true;
+			Cams[ActiveCam].m_cvecCamFixedModeVector = m_vecFixedModeVector;
+			Cams[ActiveCam].CamTargetEntity = pTargetEntity;
+			Cams[ActiveCam].m_cvecCamFixedModeSource = m_vecFixedModeSource;
+			Cams[ActiveCam].m_cvecCamFixedModeUpOffSet = m_vecFixedModeUpOffSet;
+			Cams[ActiveCam].m_bCamLookingAtVector = m_bLookingAtVector;
+			Cams[ActiveCam].m_vecLastAboveWaterCamPosition = Cams[(ActiveCam+1)%2].m_vecLastAboveWaterCamPosition;
+			CarZoomValueSmooth = CarZoomValue;
+			m_fPedZoomValueSmooth = m_fPedZoomValue;
+			m_uiTransitionState = 0;
+			m_vecDoingSpecialInterPolation = false;
+			m_bStartInterScript = false;
+			Cams[ActiveCam].ResetStatics = true;
 
-				pTargetEntity->RegisterReference(&pTargetEntity);
-				Cams[ActiveCam].CamTargetEntity->RegisterReference(&Cams[ActiveCam].CamTargetEntity);
-			}else if(!m_bWaitForInterpolToFinish){
-				StartTransition(ReqMode);
-				pTargetEntity->RegisterReference(&pTargetEntity);
-				Cams[ActiveCam].CamTargetEntity->RegisterReference(&Cams[ActiveCam].CamTargetEntity);
+			pTargetEntity->RegisterReference(&pTargetEntity);
+			Cams[ActiveCam].CamTargetEntity->RegisterReference(&Cams[ActiveCam].CamTargetEntity);
+		}else if(!m_bWaitForInterpolToFinish){
+			StartTransition(ReqMode);
+			pTargetEntity->RegisterReference(&pTargetEntity);
+			Cams[ActiveCam].CamTargetEntity->RegisterReference(&Cams[ActiveCam].CamTargetEntity);
 			}
 		}else if(m_uiTransitionState != 0 && ReqMode != Cams[ActiveCam].Mode){
 			bool startTransition = true;
@@ -1725,14 +1507,6 @@ CCamera::CamControl(void)
 				pTargetEntity->RegisterReference(&pTargetEntity);
 				Cams[ActiveCam].CamTargetEntity->RegisterReference(&Cams[ActiveCam].CamTargetEntity);
 			}
-		}else if(ReqMode == CCam::MODE_FIXED && pTargetEntity != Cams[ActiveCam].CamTargetEntity && m_bPlayerIsInGarage){
-			if(m_uiTransitionState != 0)
-				StartTransitionWhenNotFinishedInter(ReqMode);
-			else
-				StartTransition(ReqMode);
-			pTargetEntity->RegisterReference(&pTargetEntity);
-			Cams[ActiveCam].CamTargetEntity->RegisterReference(&Cams[ActiveCam].CamTargetEntity);
-		}
 	}else{
 		// not following player
 		bool useWeaponMode = false;
@@ -1814,8 +1588,7 @@ CCamera::CamControl(void)
 	if(PrevMode != Cams[ActiveCam].Mode || switchedFromObbe ||
 	   Cams[ActiveCam].Mode == CCam::MODE_FOLLOWPED || Cams[ActiveCam].Mode == CCam::MODE_CAM_ON_A_STRING)
 		if(CPad::GetPad(0)->CycleCameraModeJustDown() &&
-		   !CReplay::IsPlayingBack() &&
-		   (m_bLookingAtPlayer || WhoIsInControlOfTheCamera == CAMCONTROL_OBBE) &&
+		   		   (m_bLookingAtPlayer || WhoIsInControlOfTheCamera == CAMCONTROL_OBBE) &&
 		   !m_WideScreenOn &&
 		   (WhoIsInControlOfTheCamera != CAMCONTROL_OBBE || bSwitchedToObbeCam))
 			DMAudio.PlayFrontEndSound(SOUND_HUD, 0);
@@ -1834,17 +1607,10 @@ CCamera::UpdateTargetEntity(void)
 
 	if(WhoIsInControlOfTheCamera == CAMCONTROL_OBBE){
 		obbeCam = true;
-		if(m_iModeObbeCamIsInForCar == OBBE_COPCAR_WHEEL || m_iModeObbeCamIsInForCar == OBBE_COPCAR){
-			if(FindPlayerPed()->GetPedState() != PED_ARRESTED)
-				obbeCam = false;
-			if(FindPlayerVehicle() == nil)
-				pTargetEntity = FindPlayerPed();
-		}
 	}
 
 	if((m_bLookingAtPlayer || obbeCam) && m_uiTransitionState == 0 ||
-	   pTargetEntity == nil ||
-	   m_bTargetJustBeenOnTrain){
+	   pTargetEntity == nil){
 		if(FindPlayerVehicle())
 			pTargetEntity = FindPlayerVehicle();
 		else{
@@ -2384,15 +2150,6 @@ CCamera::StartTransition(int16 newMode)
 	case CCam::MODE_FOLLOWPED:
 		// Getting out of vehicle normally
 		betaOffset = DEGTORAD(55.0f);
-		if(m_bJustCameOutOfGarage){
-			m_bUseTransitionBeta = true;
-			if(Cams[ActiveCam].Front.x != 0.0f || Cams[ActiveCam].Front.y != 0.0f)
-				Cams[ActiveCam].m_fTransitionBeta = CGeneral::GetATanOfXY(Cams[ActiveCam].Front.x, Cams[ActiveCam].Front.y) + PI;
-			else
-				Cams[ActiveCam].m_fTransitionBeta = 0.0f;
-		}
-		if(m_bTargetJustCameOffTrain)
-			m_bCamDirectlyInFront = true;
 		if(Cams[ActiveCam].Mode != CCam::MODE_CAM_ON_A_STRING)
 			break;
 		m_bUseTransitionBeta = true;
@@ -2469,7 +2226,7 @@ CCamera::StartTransition(int16 newMode)
 	case CCam::MODE_CAM_ON_A_STRING:
 		// Get into vehicle
 		betaOffset = DEGTORAD(57.0f);
-		if(!m_bLookingAtPlayer || m_bJustCameOutOfGarage)
+		if(!m_bLookingAtPlayer)
 			break;
 		m_bUseTransitionBeta = true;
 		Cams[ActiveCam].m_fTransitionBeta = CGeneral::GetATanOfXY(Cams[ActiveCam].Front.x, Cams[ActiveCam].Front.y);
@@ -2732,18 +2489,6 @@ CCamera::IsItTimeForNewcam(int32 obbeMode, int32 time)
 		return false;
 	case OBBE_ONSTRING:
 		return CTimer::GetTimeInMilliseconds() > t+3000;
-	case OBBE_COPCAR:
-		return CTimer::GetTimeInMilliseconds() > t+2000 && !FindPlayerVehicle()->GetIsOnScreen();
-	case OBBE_COPCAR_WHEEL:
-		if(FindPlayerVehicle() && FindPlayerVehicle()->IsBoat())
-			return true;
-		if(!CWorld::GetIsLineOfSightClear(pTargetEntity->GetPosition(), Cams[ActiveCam].Source, true, false, false, false, false, false, false))
-			return true;
-		if(CTimer::GetTimeInMilliseconds() > t+1000)
-			return true;
-		SetNearClipScript(0.6f);
-		return false;
-
 	// Ped modes
 	case OBBE_9:
 		if(!CWorld::GetIsLineOfSightClear(FindPlayerCoors(), m_vecFixedModeSource, true, false, false, false, false, false, false))
@@ -2888,7 +2633,6 @@ CCamera::TryToStartNewCamMode(int obbeMode)
 	float angle;
 	float ground;
 	bool foundGround;
-	int i;
 
 	if(obbeMode < 0)
 		return true;
@@ -3011,67 +2755,6 @@ CCamera::TryToStartNewCamMode(int obbeMode)
 	case OBBE_ONSTRING:
 		TakeControl(FindPlayerEntity(), CCam::MODE_CAM_ON_A_STRING, JUMP_CUT, CAMCONTROL_OBBE);
 		return true;
-	case OBBE_COPCAR:
-#ifdef FIX_BUGS
-		if (CReplay::IsPlayingBack())
-			return false;
-#endif
-		if(FindPlayerPed()->Wanted()->GetWantedLevel() < 1)
-			return false;
-		if(FindPlayerVehicle() == nil)
-			return false;
-		if(FindPlayerVehicle() && FindPlayerVehicle()->IsBoat() && pTargetEntity->GetModelIndex() != MI_SKIMMER)
-			return false;
-		i = CPools::GetVehiclePool()->GetSize();
-		while(--i >= 0){
-			veh = CPools::GetVehiclePool()->GetSlot(i);
-			if(veh && veh->IsAutomobile() && veh != FindPlayerVehicle() && veh->bIsLawEnforcer){
-				float dx = veh->GetPosition().x - FindPlayerCoors().x;
-				float dy = veh->GetPosition().y - FindPlayerCoors().y;
-				float dist = (veh->GetPosition() - FindPlayerCoors()).Magnitude();
-				if(dist < 30.0f){
-					if(dx*FindPlayerVehicle()->GetForward().x + dy*FindPlayerVehicle()->GetForward().y < 0.0f &&
-					   veh->GetForward().x*FindPlayerVehicle()->GetForward().x + veh->GetForward().y*FindPlayerVehicle()->GetForward().y > 0.8f){
-						TakeControl(veh, CCam::MODE_CAM_ON_A_STRING, JUMP_CUT, CAMCONTROL_OBBE);
-						return true;
-					}
-				}
-			}
-		}
-		return false;
-	case OBBE_COPCAR_WHEEL:
-#ifdef FIX_BUGS
-		if (CReplay::IsPlayingBack())
-			return false;
-#endif
-		if(FindPlayerPed()->Wanted()->GetWantedLevel() < 1)
-			return false;
-		if(FindPlayerVehicle() == nil)
-			return false;
-		if(FindPlayerVehicle() && FindPlayerVehicle()->IsBoat() && pTargetEntity->GetModelIndex() != MI_SKIMMER)
-			return false;
-		i = CPools::GetVehiclePool()->GetSize();
-		while(--i >= 0){
-			veh = CPools::GetVehiclePool()->GetSlot(i);
-			if(veh && veh->IsAutomobile() && veh != FindPlayerVehicle() && veh->bIsLawEnforcer){
-				float dx = veh->GetPosition().x - FindPlayerCoors().x;
-				float dy = veh->GetPosition().y - FindPlayerCoors().y;
-				float dist = (veh->GetPosition() - FindPlayerCoors()).Magnitude();
-				if(dist < 30.0f){
-					if(dx*FindPlayerVehicle()->GetForward().x + dy*FindPlayerVehicle()->GetForward().y < 0.0f &&
-					   veh->GetForward().x*FindPlayerVehicle()->GetForward().x + veh->GetForward().y*FindPlayerVehicle()->GetForward().y > 0.8f){
-						target = Multiply3x3(veh->GetMatrix(), CVector(-1.4f, -2.3f, 0.3f));
-						target += veh->GetPosition();
-						if(!CWorld::GetIsLineOfSightClear(veh->GetPosition(), target, true, false, false, false, false, false, false))
-							return false;
-						TakeControl(veh, CCam::MODE_WHEELCAM, JUMP_CUT, CAMCONTROL_OBBE);
-						return true;
-					}
-				}
-			}
-		}
-		return false;
-
 	case OBBE_9:
 		camPos = FindPlayerCoors();
 		playerSpeed = FindPlayerSpeed();
@@ -3356,8 +3039,8 @@ CCamera::TryToStartNewCamMode(int obbeMode)
 }
 
 int32 SequenceOfCarCams[16] = {
-	OBBE_WHEEL, OBBE_COPCAR, OBBE_3, OBBE_1, OBBE_3, OBBE_COPCAR_WHEEL,
-	OBBE_2, OBBE_3, OBBE_COPCAR_WHEEL, OBBE_COPCAR, OBBE_2, OBBE_3,
+	OBBE_WHEEL, OBBE_3, OBBE_3, OBBE_1, OBBE_3, OBBE_5,
+	OBBE_2, OBBE_3, OBBE_1, OBBE_2, OBBE_2, OBBE_3,
 	OBBE_5, OBBE_3,
 	OBBE_ONSTRING	// actually unused...
 };
@@ -3452,190 +3135,7 @@ CCamera::DontProcessObbeCinemaCamera(void)
 	bDidWeProcessAnyCinemaCam = false;
 }
 
-void
-CCamera::LoadTrainCamNodes(char const *name)
-{
-	CFileMgr::SetDir("data");
 
-	char token[16] = { 0 };
-	char filename[16] = { 0 };
-	uint8 *buf;
-	ssize_t bufpos = 0;
-	int field = 0;
-	int tokpos = 0;
-	char c;
-	int i;
-	ssize_t len;
-
-	strcpy(filename, name);
-	len = (int)strlen(filename);
-	filename[len] = '.';
-	filename[len+1] = 'd';
-	filename[len+2] = 'a';
-	filename[len+3] = 't';
-
-	m_uiNumberOfTrainCamNodes = 0;
-
-	buf = new uint8[20000];
-	len = CFileMgr::LoadFile(filename, buf, 20000, "r");
-
-	for(i = 0; i < MAX_NUM_OF_NODES; i++){
-		m_arrTrainCamNode[i].m_cvecPointToLookAt = CVector(0.0f, 0.0f, 0.0f);
-		m_arrTrainCamNode[i].m_cvecMinPointInRange = CVector(0.0f, 0.0f, 0.0f);
-		m_arrTrainCamNode[i].m_cvecMaxPointInRange = CVector(0.0f, 0.0f, 0.0f);
-		m_arrTrainCamNode[i].m_fDesiredFOV = 0.0f;
-		m_arrTrainCamNode[i].m_fNearClip = 0.0f;
-	}
-
-	while(bufpos <= len){
-		c = buf[bufpos];
-		switch(c){
-		case '-':
-		case '.':
-		case '0': case '1': case '2': case '3': case '4':
-		case '5': case '6': case '7': case '8': case '9':
-//		case '10': case '11': case '12': case '13':	// ahem...
-			token[tokpos++] = c;
-			bufpos++;
-			break;
-
-		case ',':
-		case ';':	// game has the code for this duplicated but we handle both under the same case
-			switch((field+14)%14){
-			case 0:
-				m_arrTrainCamNode[m_uiNumberOfTrainCamNodes].m_cvecCamPosition.x = atof(token);
-				break;
-			case 1:
-				m_arrTrainCamNode[m_uiNumberOfTrainCamNodes].m_cvecCamPosition.y = atof(token);
-				break;
-			case 2:
-				m_arrTrainCamNode[m_uiNumberOfTrainCamNodes].m_cvecCamPosition.z = atof(token);
-				break;
-			case 3:
-				m_arrTrainCamNode[m_uiNumberOfTrainCamNodes].m_cvecPointToLookAt.x = atof(token);
-				break;
-			case 4:
-				m_arrTrainCamNode[m_uiNumberOfTrainCamNodes].m_cvecPointToLookAt.y = atof(token);
-				break;
-			case 5:
-				m_arrTrainCamNode[m_uiNumberOfTrainCamNodes].m_cvecPointToLookAt.z = atof(token);
-				break;
-			case 6:
-				m_arrTrainCamNode[m_uiNumberOfTrainCamNodes].m_cvecMinPointInRange.x = atof(token);
-				break;
-			case 7:
-				m_arrTrainCamNode[m_uiNumberOfTrainCamNodes].m_cvecMinPointInRange.y = atof(token);
-				break;
-			case 8:
-				m_arrTrainCamNode[m_uiNumberOfTrainCamNodes].m_cvecMinPointInRange.z = atof(token);
-				break;
-			case 9:
-				m_arrTrainCamNode[m_uiNumberOfTrainCamNodes].m_cvecMaxPointInRange.x = atof(token);
-				break;
-			case 10:
-				m_arrTrainCamNode[m_uiNumberOfTrainCamNodes].m_cvecMaxPointInRange.y = atof(token);
-				break;
-			case 11:
-				m_arrTrainCamNode[m_uiNumberOfTrainCamNodes].m_cvecMaxPointInRange.z = atof(token);
-				break;
-			case 12:
-				m_arrTrainCamNode[m_uiNumberOfTrainCamNodes].m_fDesiredFOV = atof(token);
-				break;
-			case 13:
-				m_arrTrainCamNode[m_uiNumberOfTrainCamNodes].m_fNearClip = atof(token);
-				m_uiNumberOfTrainCamNodes++;
-				break;
-			}
-			field++;
-			bufpos++;
-			memset(token, 0, sizeof(token));
-			tokpos = 0;
-			break;
-
-		default:
-			bufpos++;
-			break;
-		}
-	}
-
-	delete[] buf;
-	CFileMgr::SetDir("");
-}
-
-void
-CCamera::Process_Train_Camera_Control(void)
-{
-	bool found = false;
-	CTrain *target = (CTrain*)pTargetEntity;
-	m_bUseSpecialFovTrain = true;
-	static bool OKtoGoBackToNodeCam = true;	// only ever set to true
-	uint32 i;
-
-	if(target->m_nTrackId == TRACK_ELTRAIN && !m_bAboveGroundTrainNodesLoaded){
-		m_bAboveGroundTrainNodesLoaded = true;
-		m_bBelowGroundTrainNodesLoaded = false;
-		LoadTrainCamNodes("Train");
-		m_uiTimeLastChange = CTimer::GetTimeInMilliseconds();
-		OKtoGoBackToNodeCam = true;
-		m_iCurrentTrainCamNode = 0;
-	}
-	if(target->m_nTrackId == TRACK_SUBWAY && !m_bBelowGroundTrainNodesLoaded){
-		m_bBelowGroundTrainNodesLoaded = true;
-		m_bAboveGroundTrainNodesLoaded = false;
-		LoadTrainCamNodes("Train2");
-		m_uiTimeLastChange = CTimer::GetTimeInMilliseconds();
-		OKtoGoBackToNodeCam = true;
-		m_iCurrentTrainCamNode = 0;
-	}
-
-	m_bTargetJustBeenOnTrain = true;
-	uint32 node = m_iCurrentTrainCamNode;
-	for(i = 0; i < m_uiNumberOfTrainCamNodes && !found; i++){
-		if(target->IsWithinArea(m_arrTrainCamNode[node].m_cvecMinPointInRange.x,
-		                        m_arrTrainCamNode[node].m_cvecMinPointInRange.y,
-		                        m_arrTrainCamNode[node].m_cvecMinPointInRange.z,
-		                        m_arrTrainCamNode[node].m_cvecMaxPointInRange.x,
-		                        m_arrTrainCamNode[node].m_cvecMaxPointInRange.y,
-		                        m_arrTrainCamNode[node].m_cvecMaxPointInRange.z)){
-			m_iCurrentTrainCamNode = node;
-			found = true;
-		}
-		node++;
-		if(node >= m_uiNumberOfTrainCamNodes)
-			node = 0;
-	}
-#ifdef FIX_BUGS
-	// Not really a bug but be nice and respect the debug mode
-	if(DebugCamMode){
-		TakeControl(target, DebugCamMode, JUMP_CUT, CAMCONTROL_SCRIPT);
-		return;
-	}
-#endif
-
-	if(found){
-		SetWideScreenOn();
-		if(DotProduct(((CTrain*)pTargetEntity)->GetMoveSpeed(), pTargetEntity->GetForward()) < 0.001f){
-			TakeControl(FindPlayerPed(), CCam::MODE_FOLLOWPED, JUMP_CUT, CAMCONTROL_SCRIPT);
-			if(target->m_aDoors[0].IsFullyOpen())
-				SetWideScreenOff();
-		}else{
-			SetCamPositionForFixedMode(m_arrTrainCamNode[m_iCurrentTrainCamNode].m_cvecCamPosition, CVector(0.0f, 0.0f, 0.0f));
-			if(m_arrTrainCamNode[m_iCurrentTrainCamNode].m_cvecPointToLookAt.x == 999.0f &&
-			   m_arrTrainCamNode[m_iCurrentTrainCamNode].m_cvecPointToLookAt.y == 999.0f &&
-			   m_arrTrainCamNode[m_iCurrentTrainCamNode].m_cvecPointToLookAt.z == 999.0f)
-				TakeControl(target, CCam::MODE_FIXED, JUMP_CUT, CAMCONTROL_SCRIPT);
-			else
-				TakeControlNoEntity(m_arrTrainCamNode[m_iCurrentTrainCamNode].m_cvecPointToLookAt, JUMP_CUT, CAMCONTROL_SCRIPT);
-			RwCameraSetNearClipPlane(Scene.camera, m_arrTrainCamNode[m_iCurrentTrainCamNode].m_fNearClip);
-		}
-	}else{
-		if(DotProduct(((CTrain*)pTargetEntity)->GetMoveSpeed(), pTargetEntity->GetForward()) < 0.001f){
-			TakeControl(FindPlayerPed(), CCam::MODE_FOLLOWPED, JUMP_CUT, CAMCONTROL_SCRIPT);
-			if(target->m_aDoors[0].IsFullyOpen())
-				SetWideScreenOff();
-		}
-	}
-}
 
 
 void

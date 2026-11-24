@@ -349,14 +349,8 @@ void re3_usererror(const char *format, ...);
 
 #define DEBUGBREAK() __debugbreak();
 
-// Switch to enable development messages.
-#if 0
+// Development messages are compiled out.
 #define DEV(f, ...)
-#elif defined __MWERKS__
-#define DEV(f, ...) re3_debug("[DEV]: " f, ## __VA_ARGS__)
-#else
-#define DEV(f, ...) re3_log("DEV", __FILE__, __LINE__, __FUNCTION__, f, ## __VA_ARGS__)
-#endif
 
 #ifdef __MWERKS__
 void debug(char *f, ...);

@@ -95,7 +95,6 @@ int32 CStats::NumPropertyOwned;
 int32 CStats::PropertyDestroyed;
 float CStats::HighestChaseValue;
 int32 CStats::CheatedCount;
-int32 CStats::ShowChaseStatOnScreen;
 int32 CStats::PamphletMissionPassed;
 bool CStats::abSonyCDs[1];
 int32 CStats::BloodRingKills;
@@ -226,7 +225,6 @@ void CStats::Init()
 	SuburbanPassed = 0;
 	PamphletMissionPassed = 0;
 	NoMoreHurricanes = 0;
-	ShowChaseStatOnScreen = 0;
 	for (int i = 0; i < ARRAY_SIZE(abSonyCDs); i++)
 		abSonyCDs[i] = 0;
 	PopulateFavoriteRadioStationList();

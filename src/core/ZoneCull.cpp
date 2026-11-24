@@ -2,7 +2,6 @@
 
 #include "Building.h"
 #include "Treadable.h"
-#include "Train.h"
 #include "Pools.h"
 #include "Timer.h"
 #include "Camera.h"
@@ -126,7 +125,6 @@ CCullZones::MarkSubwayAsInvisible(bool visible)
 {
 	int i, n;
 	CEntity *e;
-	CVehicle *v;
 
 	n = CPools::GetBuildingPool()->GetSize()-1;
 	for(i = n; i >= 0; i--){
@@ -142,12 +140,6 @@ CCullZones::MarkSubwayAsInvisible(bool visible)
 			e->bIsVisible = visible;
 	}
 
-	n = CPools::GetVehiclePool()->GetSize()-1;
-	for(i = n; i >= 0; i--){
-		v = CPools::GetVehiclePool()->GetSlot(i);
-		if(v && v->IsTrain() && ((CTrain*)v)->m_nTrackId != TRACK_ELTRAIN)
-			v->bIsVisible = visible;
-	}
 }
 
 void

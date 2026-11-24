@@ -52,8 +52,7 @@ CMonsterTruck::~CMonsterTruck(void)
 int32
 CMonsterTruck::ProcessEntityCollision(CEntity *ent, CColPoint *colpoints)
 {
-	if(GetStatus() != STATUS_SIMPLE)
-		bVehicleColProcessed = true;
+	bVehicleColProcessed = true;
 
 	CColModel *colModel = GetColModel();
 

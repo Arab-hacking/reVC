@@ -5,7 +5,6 @@
 #include "ModelInfo.h"
 #include "Streaming.h"
 #include "FileLoader.h"
-#include "Script.h"
 #include "Timer.h"
 #include "Camera.h"
 #include "Frontend.h"
@@ -202,25 +201,6 @@ CColStore::LoadCollision(const CVector2D &pos)
 		   bLoadAtSecondPosition && GetBoundingBox(i).IsPointInside(secondPosition, -119.0f) ||
 		   strcmp(GetColName(i), "yacht") == 0){
 			wantThisOne = true;
-		}else{
-			for (int j = 0; j < MAX_CLEANUP; j++) {
-				CPhysical* pEntity = nil;
-				cleanup_entity_struct* pCleanup = &CTheScripts::MissionCleanUp.m_sEntities[j];
-				if (pCleanup->type == CLEANUP_CAR) {
-					pEntity = CPools::GetVehiclePool()->GetAt(pCleanup->id);
-					if (!pEntity || pEntity->GetStatus() == STATUS_WRECKED)
-						continue;
-				}
-				else if (pCleanup->type == CLEANUP_CHAR) {
-					pEntity = CPools::GetPedPool()->GetAt(pCleanup->id);
-					if (!pEntity || ((CPed*)pEntity)->DyingOrDead())
-						continue;
-				}
-				if (pEntity && !pEntity->bDontLoadCollision && !pEntity->bIsFrozen) {
-					if (GetBoundingBox(i).IsPointInside(pEntity->GetPosition(), -80.0f))
-						wantThisOne = true;
-				}
-			}
 		}
 
 		if(wantThisOne)

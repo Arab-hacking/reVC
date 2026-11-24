@@ -5,7 +5,6 @@
 #include "PlayerPedData.h"
 
 class CPad;
-class CCopPed;
 class CWanted;
 
 // SA eSprintType. The button-speed table has one row per mode; the swim task
@@ -36,12 +35,8 @@ public:
 	int32 m_nTargettableObjects[4];
 	uint8 m_nDrunkCountdown; //countdown in frames when the drunk effect ends
 	bool m_bHasLockOnTarget;
-	bool m_bNoPosForMeleeAttack;
 	bool unk1;
-	CVector m_vecSafePos[6]; // safe places from the player, for example behind a tree
 	CPed *m_pPedAtSafePos[6];
-	CPed *m_pMeleeList[6]; // reachable peds at each direction(6)
-	int16 m_nAttackDirToCheck;
 	float m_fWalkAngle; //angle between heading and walking direction
 	RpAtomic* m_pMinigunTopAtomic; //atomic for the spinning part of the minigun model
 	unsigned int m_nLastBusFareCollected;
@@ -59,7 +54,6 @@ public:
 	// `player->m_fMoveSpeed` spelling becomes `player->MoveSpeed()` without
 	// changing any of the arithmetic around them.
 	CWanted *&Wanted() const { return m_pPlayerData->m_pWanted; }
-	CCopPed *&ArrestingCop() const { return m_pPlayerData->m_pArrestingCop; }
 	float &MoveBlendRatio() const { return m_pPlayerData->m_fMoveBlendRatio; }
 	float &TimeCanRun() const { return m_pPlayerData->m_fTimeCanRun; }
 	float &MoveSpeed() const { return m_pPlayerData->m_fMoveSpeed; }
@@ -118,8 +112,6 @@ public:
 	void ClearWeaponTarget(void);
 	void SetWantedLevel(int32 level);
 	void SetWantedLevelNoDrop(int32 level);
-	void KeepAreaAroundPlayerClear(void);
-	void AnnoyPlayerPed(bool);
 	void MakeChangesForNewWeapon(int32);
 	void MakeChangesForNewWeapon(eWeaponType);
 	void SetInitialState(void);
@@ -169,15 +161,9 @@ public:
 	void PlayerControlDucked(CPad*);
 	bool DoesPlayerWantNewWeapon(eWeaponType, bool);
 	void PlayIdleAnimations(CPad*);
-	void RemovePedFromMeleeList(CPed*);
-	void GetMeleeAttackCoords(CVector&, int8, float);
-	int32 FindMeleeAttackPoint(CPed*, CVector&, uint32&);
 	bool CanIKReachThisTarget(CVector, CWeapon*, bool);
 	void RotatePlayerToTrackTarget(void);
 	bool MovementDisabledBecauseOfTargeting(void);
-	void FindNewAttackPoints(void);
-	void SetNearbyPedsToInteractWithPlayer(void);
-	void UpdateMeleeAttackers(void);
 
 	static void SetupPlayerPed(int32);
 	static void DeactivatePlayerPed(int32);

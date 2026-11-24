@@ -146,7 +146,6 @@ public:
 
 class cTransmission;
 class CEntity;
-class CPlane;
 class CVehicle;
 class CPed;
 
@@ -278,9 +277,6 @@ public:
 	int32 m_nProjectileEntity;
 	int32 m_nEscalatorEntity;
 	int32 m_nExtraSoundsEntity;
-#ifdef GTA_BRIDGE
-	int32 m_nBridgeEntity;
-#endif
 
 	// Mission audio stuff
 	// So instead of making an array of struct they've added [MISSION_AUDIO_SLOTS] to every field...
@@ -426,19 +422,6 @@ public:
 	bool8 ProcessBoatEngine(cVehicleParams &params);
 	bool8 ProcessBoatMovingOverWater(cVehicleParams &params);
 	void ProcessPlane(cVehicleParams &params);
-	void ProcessJumbo(cVehicleParams &params);
-	void ProcessJumboTaxi();
-	void ProcessJumboAccel(CPlane *plane);
-	void ProcessJumboTakeOff(CPlane *plane);
-	void ProcessJumboFlying();
-	void ProcessJumboLanding(CPlane *plane);
-	void ProcessJumboDecel(CPlane *plane);
-	bool8 SetupJumboTaxiSound(uint8 vol);
-	bool8 SetupJumboWhineSound(uint8 emittingVol, uint32 freq);
-	bool8 SetupJumboEngineSound(uint8 vol, uint32 freq);
-	bool8 SetupJumboFlySound(uint8 emittingVol);
-	bool8 SetupJumboRumbleSound(uint8 emittingVol);
-	int32 GetJumboTaxiFreq(); // inlined in vc
 
 	// peds
 	void ProcessPed(CPhysical *ped);
@@ -563,19 +546,10 @@ public:
 	// misc
 	void ProcessWeather(int32 id);
 	void ProcessFrontEnd();
-	//void ProcessCrane();
 	void ProcessProjectiles();
 	void ProcessEscalators();
 	void ProcessExtraSounds();
-	void ProcessGarages();
 	void ProcessFireHydrant();
-
-#ifdef GTA_BRIDGE
-	void ProcessBridge();
-	void ProcessBridgeWarning();
-	void ProcessBridgeMotor();
-	void ProcessBridgeOneShots();
-#endif
 
 	// mission audio
 	const char *GetMissionAudioLoadedLabel(uint8 slot);

@@ -1,14 +1,13 @@
 #include "common.h"
+#include "Text.h"
 
 #include "main.h"
 
 #include "Camera.h"
 #include "Coronas.h"
-#include "Darkel.h"
 #include "Entity.h"
 #include "Explosion.h"
 #include "Font.h"
-#include "Garages.h"
 #include "General.h"
 #include "ModelIndices.h"
 #include "Object.h"
@@ -22,10 +21,8 @@
 #include "PointLights.h"
 #include "Pools.h"
 #ifdef FIX_BUGS
-#include "Replay.h"
 #endif
 #include "SaveBuf.h"
-#include "Script.h"
 #include "Shadows.h"
 #include "SpecialFX.h"
 #include "Sprite.h"
@@ -293,7 +290,7 @@ CPickup::CanBePickedUp(CPlayerPed *player, int playerId)
 		(m_pObject->GetModelIndex() == MI_PICKUP_BODYARMOUR && player->m_fArmour > CWorld::Players[playerId].m_nMaxArmour - 0.2f)
 		|| (m_pObject->GetModelIndex() == MI_PICKUP_HEALTH && player->m_fHealth > CWorld::Players[playerId].m_nMaxHealth - 0.2f)
 		|| (m_pObject->GetModelIndex() == MI_PICKUP_BRIBE && player->Wanted()->GetWantedLevel() == 0)
-		|| (m_pObject->GetModelIndex() == MI_PICKUP_KILLFRENZY && (CTheScripts::IsPlayerOnAMission() || CDarkel::FrenzyOnGoing() || !CGame::nastyGame))
+		|| (m_pObject->GetModelIndex() == MI_PICKUP_KILLFRENZY && !CGame::nastyGame)
 		|| (m_eType == PICKUP_ASSET_REVENUE && m_fRevenue < 10.0f);
 	return !cannotBePickedUp;
 }
@@ -386,10 +383,7 @@ CPickup::Update(CPlayerPed *player, CVehicle *vehicle, int playerId)
 
 		if (isPickupTouched) {
 			eWeaponType weaponType = CPickups::WeaponForModel(m_pObject->GetModelIndex());
-			if (weaponType < WEAPONTYPE_TOTALWEAPONS && CDarkel::FrenzyOnGoing()) {
-				isPickupTouched = false;
-				m_bWasControlMessageShown = false;
-			} else if (weaponType < WEAPONTYPE_TOTALWEAPONS && weaponType != WEAPONTYPE_UNARMED) {
+			if (weaponType < WEAPONTYPE_TOTALWEAPONS && weaponType != WEAPONTYPE_UNARMED) {
 				uint32 slot = CWeaponInfo::GetWeaponInfo(weaponType)->m_nWeaponSlot;
 				eWeaponType plrWeaponSlot = FindPlayerPed()->GetWeapon(slot).m_eWeaponType;
 				if (plrWeaponSlot != weaponType) {
@@ -446,9 +440,7 @@ CPickup::Update(CPlayerPed *player, CVehicle *vehicle, int playerId)
 			switch (m_eType)
 			{
 			case PICKUP_IN_SHOP:
-				if (CWorld::Players[playerId].m_nMoney < CostOfWeapon[weaponType])
-					CGarages::TriggerMessage("PU_MONY", -1, 6000, -1);
-				else {
+				if (CWorld::Players[playerId].m_nMoney >= CostOfWeapon[weaponType]) {
 					CWorld::Players[playerId].m_nMoney -= CostOfWeapon[weaponType];
 					if (!CPickups::GivePlayerGoodiesWithPickUpMI(m_pObject->GetModelIndex(), playerId)) {
 						if (!player->DoesPlayerWantNewWeapon(weaponType, false))
@@ -520,10 +512,8 @@ CPickup::Update(CPlayerPed *player, CVehicle *vehicle, int playerId)
 
 				if (CWorld::Players[playerId].m_nCollectedPackages == CWorld::Players[playerId].m_nTotalPackages) {
 					printf("All collectables have been picked up\n");
-					CGarages::TriggerMessage("CO_ALL", -1, 5000, -1);
 					CWorld::Players[CWorld::PlayerInFocus].m_nMoney += 100000;
-				} else
-					CGarages::TriggerMessage("CO_ONE", CWorld::Players[CWorld::PlayerInFocus].m_nCollectedPackages, 5000, CWorld::Players[CWorld::PlayerInFocus].m_nTotalPackages);
+				}
 
 				result = true;
 				Remove();
@@ -532,9 +522,6 @@ CPickup::Update(CPlayerPed *player, CVehicle *vehicle, int playerId)
 			case PICKUP_MONEY:
 				CWorld::Players[playerId].m_nMoney += m_nQuantity;
 				sprintf(gString, "$%d", m_nQuantity);
-#ifdef MONEY_MESSAGES
-				CMoneyMessages::RegisterOne(m_vecPos + CVector(0.0f, 0.0f, 1.0f), gString, 0, 255, 0, 0.5f, 0.5f);
-#endif
 				result = true;
 				Remove();
 				DMAudio.PlayFrontEndSound(SOUND_PICKUP_MONEY, 0);
@@ -559,18 +546,14 @@ CPickup::Update(CPlayerPed *player, CVehicle *vehicle, int playerId)
 					CHud::SetHelpMessage(gUString, false);
 				if (CollectPickupBuffer == 0)
 					break;
-				if (CTheScripts::IsPlayerOnAMission())
-					CHud::SetHelpMessage(TheText.Get("PROP_2"), true);
-				else {
-					if (CWorld::Players[CWorld::PlayerInFocus].m_nMoney >= m_nQuantity) {
-						CWorld::Players[CWorld::PlayerInFocus].m_nMoney -= m_nQuantity;
-						CHud::SetHelpMessage(nil, true);
-						result = true;
-						Remove();
-						break;
-					}
-					CHud::SetHelpMessage(TheText.Get("PROP_1"), true);
+				if (CWorld::Players[CWorld::PlayerInFocus].m_nMoney >= m_nQuantity) {
+					CWorld::Players[CWorld::PlayerInFocus].m_nMoney -= m_nQuantity;
+					CHud::SetHelpMessage(nil, true);
+					result = true;
+					Remove();
+					break;
 				}
+				CHud::SetHelpMessage(TheText.Get("PROP_1"), true);
 				break;
 			default:
 				break;
@@ -976,8 +959,6 @@ void
 CPickups::Update()
 {
 #ifdef FIX_BUGS // RIP speedrunning (solution from SA)
-	if (CReplay::IsPlayingBack())
-		return;
 #endif
 #ifdef CAMERA_PICKUP
 	if ( bPickUpcamActivated ) // taken from PS2
@@ -1047,7 +1028,7 @@ CPickups::DoPickUpEffects(CEntity *entity)
 	CPickup *pickup = FindPickUpForThisObject(entity);
 
 	if (entity->GetModelIndex() == MI_PICKUP_KILLFRENZY)
-		entity->bDoNotRender = CTheScripts::IsPlayerOnAMission() || CDarkel::FrenzyOnGoing() || !CGame::nastyGame;
+		entity->bDoNotRender = !CGame::nastyGame;
 
 	if (!entity->bDoNotRender) {
 		float modifiedSin = 0.3f * (Sin((float)((CTimer::GetTimeInMilliseconds() + (uintptr)entity) & 0x7FF) * DEGTORAD(360.0f / 0x800)) + 1.0f);
@@ -1577,106 +1558,6 @@ INITSAVEBUF
 		WriteSaveBuf(buf, aPickUpsCollected[i]);
 
 VALIDATESAVEBUF(*size)
-}
-
-void
-CPacManPickup::Update()
-{
-}
-
-int32 CollectGameState;
-int16 ThingsToCollect;
-
-CPacManPickup CPacManPickups::aPMPickUps[NUMPACMANPICKUPS];
-CVector CPacManPickups::LastPickUpCoors;
-int32 CPacManPickups::PillsEatenInRace;
-bool CPacManPickups::bPMActive;
-
-void
-CPacManPickups::Init()
-{
-}
-
-void
-CPacManPickups::Update()
-{
-}
-
-void
-CPacManPickups::GeneratePMPickUps(CVector pos, float scrambleMult, int16 count, uint8 type)
-{
-}
-
-// diablo porn mission pickups
-static const CVector aRacePoints1[] = {
-	CVector(913.62219f, -155.13692f, 4.9699469f),
-	CVector(913.92401f, -124.12943f, 4.9692569f),
-	CVector(913.27899f, -93.524231f, 7.4325991f),
-	CVector(912.60852f, -63.15905f, 7.4533591f),
-	CVector(934.22144f, -42.049122f, 7.4511471f),
-	CVector(0.0f, 0.0f, 0.0f),
-};
-
-void
-CPacManPickups::GeneratePMPickUpsForRace(int32 race)
-{
-}
-
-void
-CPacManPickups::GenerateOnePMPickUp(CVector pos)
-{
-}
-
-void
-CPacManPickups::Render()
-{
-}
-
-void
-CPacManPickups::ClearPMPickUps()
-{
-}
-
-void
-CPacManPickups::StartPacManRace(int32 race)
-{
-}
-
-void
-CPacManPickups::StartPacManRecord()
-{
-}
-
-uint32
-CPacManPickups::QueryPowerPillsEatenInRace()
-{
-	return 0;
-}
-
-void
-CPacManPickups::ResetPowerPillsEatenInRace()
-{
-}
-
-void
-CPacManPickups::CleanUpPacManStuff()
-{
-}
-
-void
-CPacManPickups::StartPacManScramble(CVector pos, float scrambleMult, int16 count)
-{
-}
-
-uint32
-CPacManPickups::QueryPowerPillsCarriedByPlayer()
-{
-	return 0;
-}
-
-void
-CPacManPickups::ResetPowerPillsCarriedByPlayer()
-{
 }
 
 void

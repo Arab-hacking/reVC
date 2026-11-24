@@ -1,5 +1,6 @@
 #define WITHDINPUT
 #include "common.h"
+#include "Pools.h"
 #include "crossplatform.h"
 #include "platform.h"
 #ifdef XINPUT
@@ -21,7 +22,6 @@
 #include "Hud.h"
 #include "Text.h"
 #include "Timer.h"
-#include "Record.h"
 #include "World.h"
 #include "Vehicle.h"
 #include "Ped.h"
@@ -41,20 +41,14 @@
 #ifdef CUSTOM_MODELS
 #include "CustomModels.h"
 #endif
-#include "Population.h"
-#include "Record.h"
-#include "Replay.h"
 #include "Weather.h"
 #include "Streaming.h"
-#include "PathFind.h"
 #include "Wanted.h"
 #include "WaterLevel.h"
 #include "General.h"
 #include "Fluff.h"
-#include "Gangs.h"
 #include "platform.h"
 #include "Stats.h"
-#include "CarCtrl.h"
 #include "TrafficLights.h"
 
 #ifdef GTA_PS2
@@ -156,25 +150,6 @@ void SpecialCarCheats()
 		CHud::SetHelpMessage(TheText.Get("CHEAT1"), true);
 		CVehicle::bCheat9 = true;
 		CPad::bHasPlayerCheated = true;
-	}
-}
-
-void PickUpChicksCheat()
-{
-	if ( FindPlayerVehicle() && (FindPlayerVehicle()->IsAutomobile() || FindPlayerVehicle()->IsBike()) )
-	{
-		CVehicle *vehicle = FindPlayerVehicle();
-		if ( FindPlayerVehicle()->IsBike() )
-		{
-			if ( vehicle->pPassengers[0] )
-				vehicle->pPassengers[0]->SetObjective(OBJECTIVE_LEAVE_CAR, vehicle);
-		}
-		CPed* someoneElse = (CPed*)CWorld::TestSphereAgainstWorld(vehicle->GetPosition(), 6.0f, FindPlayerPed(), false, false, true, false, false, false);
-		if ( someoneElse && someoneElse->m_nPedState != PED_DRIVING )
-		{
-			CHud::SetHelpMessage(TheText.Get("CHEAT1"), true);
-			someoneElse->SetObjective(OBJECTIVE_ENTER_CAR_AS_PASSENGER, vehicle);
-		}
 	}
 }
 
@@ -336,26 +311,19 @@ void VehicleCheat(int model)
 			CStreaming::SetModelTxdIsDeletable(model);
 		}
 
-		int32 node = ThePaths.FindNodeClosestToCoors(FindPlayerCoors(), PATH_CAR, 100.0f);
-		if (node < 0) return;
-
-#ifdef FIX_BUGS
-		CVehicle* vehicle = CCarCtrl::GetNewVehicleDependingOnCarModel(model, RANDOM_VEHICLE);
-#else
-		CVehicle* vehicle = CCarCtrl::GetNewVehicleDependingOnCarModel(model, MISSION_VEHICLE);
-#endif
-		if (vehicle != nil) {
-			CVector pos = ThePaths.m_pathNodes[node].GetPosition();
-			pos.z += 4.0f;
-			vehicle->SetPosition(pos);
-			vehicle->SetOrientation(0.0f, 0.0f, DEGTORAD(200.0f));
-
-			vehicle->SetStatus(STATUS_ABANDONED);
-			vehicle->m_nDoorLock = CARLOCK_UNLOCKED;
-			CWorld::Add(vehicle);
+		// In front of the player, on the ground; boats go to the water.
+		CPed *player = FindPlayerPed();
+		CVector pos = player->GetPosition() + player->GetForward()*5.0f;
+		if(CModelInfo::IsBoatModel(model))
+			pos.z += 2.0f;
+		else {
+			bool foundGround;
+			float groundZ = CWorld::FindGroundZFor3DCoord(pos.x, pos.y, pos.z + 2.0f, &foundGround);
+			if(foundGround)
+				pos.z = groundZ + 1.0f;
 		}
+		CGame::SpawnVehicle(model, pos, DEGTORAD(200.0f));
 	}
-	CStats::CheatedCount += 1000;
 	CPad::bHasPlayerCheated = true;
 }
 
@@ -368,37 +336,6 @@ void BlowUpCarsCheat()
 	while (i-- > 0) {
 		if (CVehicle *veh = CPools::GetVehiclePool()->GetSlot(i))
 			veh->BlowUpCar(nil);
-	}
-}
-
-void ChangePlayerCheat()
-{
-	// I don't know wtf is going on in here...
-	int modelId, anotherModelId;
-
-	if (FindPlayerPed()->IsPedInControl() && CModelInfo::GetModelInfo("player", nil)) {
-		CHud::SetHelpMessage(TheText.Get("CHEAT1"), true);
-		CPlayerPed *ped = FindPlayerPed();
-		AssocGroupId AnimGrp = ped->m_animGroup;
-		do
-		{
-			do {
-				modelId = CGeneral::GetRandomNumberInRange(0, MI_PGA);
-				anotherModelId = modelId+1;
-			} while (!CModelInfo::GetModelInfo(anotherModelId));
-		} while (anotherModelId >= MI_SPECIAL01 && anotherModelId <= MI_SPECIAL04 || modelId == MI_TAXI_D);
-
-		uint8 flags = CStreaming::ms_aInfoForModel[anotherModelId].m_flags;
-		ped->DeleteRwObject();
-		CStreaming::RequestModel(anotherModelId, STREAMFLAGS_DEPENDENCY| STREAMFLAGS_DONT_REMOVE);
-		CStreaming::LoadAllRequestedModels(false);
-		ped->m_modelIndex = -1;
-		ped->SetModelIndex(anotherModelId);
-		ped->m_animGroup = AnimGrp;
-		if (modelId != -1) {
-			if (!(flags & STREAMFLAGS_DONT_REMOVE))
-				CStreaming::SetModelIsDeletable(anotherModelId);
-		}
 	}
 }
 
@@ -416,7 +353,7 @@ CPad::ProcessPlayerModelKeys(void)
 #ifdef GTA_PC_CONTROLS
 	CPad *pad = GetPad(PAD1);
 	if(FrontEndMenuManager.m_bMenuActive ||
-	   CReplay::IsPlayingBack() || pad->ArePlayerControlsDisabled())
+	   pad->ArePlayerControlsDisabled())
 		return;
 	const bool minus = pad->GetCharJustDown('-') || pad->GetMinusJustDown();
 	// On GLFW/SDL/Win32 the main keyboard '+' is Shift+Equal. The keypad
@@ -489,7 +426,7 @@ CPad::ProcessTimeOfDayKeys(void)
 {
 #ifdef GTA_PC_CONTROLS
 	CPad *pad = GetPad(PAD1);
-	if(FrontEndMenuManager.m_bMenuActive || CReplay::IsPlayingBack())
+	if(FrontEndMenuManager.m_bMenuActive)
 		return;
 
 	const bool shiftHeld = pad->GetShift() || pad->GetLeftShift() || pad->GetRightShift();
@@ -530,7 +467,7 @@ CPad::ProcessVehicleSpawnKeys(void)
 #ifdef GTA_PC_CONTROLS
 	CPad *pad = GetPad(PAD1);
 	if(FrontEndMenuManager.m_bMenuActive ||
-	   CReplay::IsPlayingBack() || pad->ArePlayerControlsDisabled())
+	   pad->ArePlayerControlsDisabled())
 		return;
 
 	// Shift+8 is '+' and Shift+7 is '-' on the main row, so the spawn does not
@@ -567,7 +504,7 @@ CPad::ProcessVehicleSpawnKeys(void)
 		case VEHICLE_TYPE_TRAILER:
 			break;
 		default:
-			// trains have no road to stand on here and the rest is not drivable
+			// the rest is not drivable
 			return false;
 		}
 		return CStreaming::HasModelLoaded(id) || CStreaming::ms_aInfoForModel[id].m_size != 0;
@@ -600,13 +537,6 @@ CPad::ProcessVehicleSpawnKeys(void)
 			continue;
 		}
 
-		CVehicle *vehicle = CCarCtrl::GetNewVehicleDependingOnCarModel(modelId, MISSION_VEHICLE);
-		if(!vehicle){
-			if(!(previousFlags & STREAMFLAGS_DONT_REMOVE))
-				CStreaming::SetModelIsDeletable(modelId);
-			continue;
-		}
-
 		// Drop it on the pavement in front of the player, nose towards him, and
 		// put him in the driver seat.
 		CVector pos = ped->GetPosition() + ped->GetForward()*3.0f;
@@ -614,11 +544,13 @@ CPad::ProcessVehicleSpawnKeys(void)
 		float groundZ = CWorld::FindGroundZFor3DCoord(pos.x, pos.y, pos.z + 1.0f, &foundGround);
 		if(foundGround)
 			pos.z = groundZ;
-		vehicle->SetPosition(pos);
-		vehicle->SetOrientation(0.0f, 0.0f, ped->GetForward().Heading() + PI);
-		vehicle->SetStatus(STATUS_ABANDONED);
-		vehicle->m_nDoorLock = CARLOCK_UNLOCKED;
-		CWorld::Add(vehicle);
+
+		CVehicle *vehicle = CGame::SpawnVehicle(modelId, pos, ped->GetForward().Heading() + PI);
+		if(!vehicle){
+			if(!(previousFlags & STREAMFLAGS_DONT_REMOVE))
+				CStreaming::SetModelIsDeletable(modelId);
+			continue;
+		}
 
 		// Ask him to get in; if he is driving, he first steps out of the car he
 		// is in and only then walks over to the new one.
@@ -660,7 +592,7 @@ CPad::ProcessCameraViewKey(void)
 	                                  camera.m_bLookingAtPlayer,
 	                                  FrontEndMenuManager.m_bMenuActive != 0,
 	                                  false,
-	                                  CReplay::IsPlayingBack() != 0,
+	                                  false,
 	                                  scriptControlsCamera))
 		return;
 	if(!pad->GetCharJustDown(CAMERA_VIEW_TOGGLE_KEY))
@@ -672,37 +604,6 @@ CPad::ProcessCameraViewKey(void)
 	REVC_LOG_INFO("Pedestrian camera view switched to %s person",
 		camera.m_bPlayerFirstPersonView ? "first" : "third");
 #endif
-}
-
-void MayhemCheat()
-{
-	CHud::SetHelpMessage(TheText.Get("CHEAT1"), true);
-	for (int i = PEDTYPE_CIVMALE; i < PEDTYPE_SPECIAL; i++)
-		CPedType::SetThreats(i, PED_FLAG_PLAYER1 | PED_FLAG_PLAYER2 | PED_FLAG_PLAYER_NETWORK | PED_FLAG_PLAYER_UNUSED |
-			PED_FLAG_CIVMALE | PED_FLAG_CIVFEMALE | PED_FLAG_COP | PED_FLAG_GANG1 |
-			PED_FLAG_GANG2 | PED_FLAG_GANG3 | PED_FLAG_GANG4 | PED_FLAG_GANG5 |
-			PED_FLAG_GANG6 | PED_FLAG_GANG7 | PED_FLAG_GANG8 | PED_FLAG_GANG9 |
-			PED_FLAG_MEDIC | PED_FLAG_PROSTITUTE | PED_FLAG_CRIMINAL | PED_FLAG_SPECIAL );
-	CStats::CheatedCount += 1000;
-	CPad::bHasPlayerCheated = true;
-}
-
-void EverybodyAttacksPlayerCheat()
-{
-	CHud::SetHelpMessage(TheText.Get("CHEAT1"), true);
-	for (int i = PEDTYPE_CIVMALE; i < PEDTYPE_SPECIAL; i++)
-		CPedType::AddThreat(i, PED_FLAG_PLAYER1);
-
-	CStats::CheatedCount += 1000;
-	CPad::bHasPlayerCheated = true;
-}
-
-void WeaponsForAllCheat()
-{
-	CHud::SetHelpMessage(TheText.Get("CHEAT1"), true);
-	CPopulation::ms_bGivePedsWeapons = !CPopulation::ms_bGivePedsWeapons;
-	CStats::CheatedCount += 1000;
-	CPad::bHasPlayerCheated = true;
 }
 
 void FastTimeCheat()
@@ -729,18 +630,6 @@ void ArmourCheat()
 {
 	CHud::SetHelpMessage(TheText.Get("CHEAT4"), true);
 	FindPlayerPed()->m_fArmour = CWorld::Players[0].m_nMaxArmour;
-}
-
-void WantedLevelUpCheat()
-{
-	CHud::SetHelpMessage(TheText.Get("CHEAT5"), true);
-	FindPlayerPed()->Wanted()->CheatWantedLevel(Min(FindPlayerPed()->Wanted()->GetWantedLevel() + 2, 6));
-}
-
-void WantedLevelDownCheat()
-{
-	CHud::SetHelpMessage(TheText.Get("CHEAT5"), true);
-	FindPlayerPed()->Wanted()->CheatWantedLevel(0);
 }
 
 void SunnyWeatherCheat()
@@ -783,7 +672,6 @@ void OnlyRenderWheelsCheat()
 {
 	CHud::SetHelpMessage(TheText.Get("CHEAT1"), true);
 	CVehicle::bWheelsOnlyCheat = !CVehicle::bWheelsOnlyCheat;
-	CStats::CheatedCount += 1000;
 	CPad::bHasPlayerCheated = true;
 }
 
@@ -791,14 +679,6 @@ void StrongGripCheat()
 {
 	CHud::SetHelpMessage(TheText.Get("CHEAT1"), true);
 	CVehicle::bCheat3 = !CVehicle::bCheat3;
-	CStats::CheatedCount += 1000;
-	CPad::bHasPlayerCheated = true;
-}
-
-void FannyMagnetCheat()
-{
-	CHud::SetHelpMessage(TheText.Get("CHEAT1"), true);
-	CPed::bFannyMagnetCheat = !CPed::bFannyMagnetCheat;
 	CPad::bHasPlayerCheated = true;
 }
 
@@ -820,12 +700,6 @@ void TrafficLightsCheat()
 {
 	CHud::SetHelpMessage(TheText.Get("CHEAT1"), true);
 	CTrafficLights::bGreenLightsCheat = true;
-}
-
-void MadCarsCheat()
-{
-	CHud::SetHelpMessage(TheText.Get("CHEAT1"), true);
-	CCarCtrl::bMadDriversCheat = true;
 }
 
 void NoSeaBedCheat(void)
@@ -853,18 +727,6 @@ void SuicideCheat(void) {
 	FindPlayerPed()->InflictDamage(nil, WEAPONTYPE_UNARMED, 1000.0f, PED_PIECE_TORSO, 0);
 }
 
-void DoChicksWithGunsCheat(void) {
-	CHud::SetHelpMessage(TheText.Get("CHEAT1"), true);
-	CStreaming::SetModelIsDeletable(CGangs::GetGangPedModel1(GANG_PLAYER));
-	CStreaming::SetModelIsDeletable(CGangs::GetGangPedModel2(GANG_PLAYER));
-	CStreaming::SetModelTxdIsDeletable(CGangs::GetGangPedModel1(GANG_PLAYER));
-	CStreaming::SetModelTxdIsDeletable(CGangs::GetGangPedModel2(GANG_PLAYER));
-	CStreaming::RemoveCurrentZonesModels();
-	CGangs::SetGangPedModels(GANG_PLAYER, MI_HFYBE, MI_WFYBE);
-	CGangs::SetGangWeapons(GANG_PLAYER, WEAPONTYPE_M4, WEAPONTYPE_M4);
-	CStats::CheatedCount += 1000;
-	CPad::bHasPlayerCheated = true;
-}
 
 //////////////////////////////////////////////////////////////////////////
 
@@ -911,11 +773,6 @@ void FlyingFishCheat(void)
 	CHud::SetHelpMessage(TheText.Get("CHEAT1"), true);
 	CVehicle::bCheat8 = !CVehicle::bCheat8;
 	CPad::bHasPlayerCheated = true;
-}
-
-void DoShowChaseStatCheat(void) {
-	CHud::SetHelpMessage(TheText.Get("CHEAT1"), true);
-	CStats::ShowChaseStatOnScreen = 1;
 }
 
 bool
@@ -1381,30 +1238,6 @@ void CPad::StartShake_Distance(int16 nDur, uint8 nFreq, float fX, float fY, floa
 	}
 }
 
-void CPad::StartShake_Train(float fX, float fY)
-{
-	if ( !FrontEndMenuManager.m_PrefsUseVibration )
-		return;
-
-	if ( CGame::playingIntro )
-		return;
-
-	if (FindPlayerVehicle() != nil && FindPlayerVehicle()->IsTrain() )
-		return;
-
-	float fDist = ( TheCamera.GetPosition() - CVector(fX, fY, 0.0f) ).Magnitude2D();
-
-	if ( fDist < 70.0f )
-	{
-		int32 freq = (int32)((70.0f - fDist) * 70.0f / 70.0f + 30.0f);
-
-		if ( ShakeDur < 100 )
-		{
-			ShakeDur = 100;
-			ShakeFreq = freq;
-		}
-	}
-}
 
 #ifdef GTA_PS2_STUFF
 void CPad::AddToCheatString(char c)
@@ -1430,14 +1263,6 @@ void CPad::AddToCheatString(char c)
 	// "4413LDRULDRU"	-	R2 R2 L1 R1 LEFT DOWN RIGHT UP LEFT DOWN RIGHT UP
 	else if ( !_CHEATCMP("URDLURDL3144") )
 		HealthCheat();
-
-	// "4414LRLRLR"		-	R2 R2 L1 R2 LEFT RIGHT LEFT RIGHT LEFT RIGHT
-	else if ( !_CHEATCMP("RLRLRL4144") )
-		WantedLevelUpCheat();
-
-	// "4414UDUDUD"		-	R2 R2 L1 R2 UP DOWN UP DOWN UP DOWN
-	else if ( !_CHEATCMP("DUDUDU4144") )
-		WantedLevelDownCheat();
 
 	// "1234432T"		-	L1 L2 R1 R2 R2 R1 L2 TRIANGLE
 	else if ( !_CHEATCMP("T2344321") )
@@ -1467,21 +1292,9 @@ void CPad::AddToCheatString(char c)
 	else if ( !_CHEATCMP("12TCST423142") )
 		BlowUpCarsCheat();
 
-	// "RDLU12ULDR"		-	RIGHT DOWN LEFT UP L1 L2 UP LEFT DOWN RIGHT
-	else if ( !_CHEATCMP("RDLU21ULDR") )
-		ChangePlayerCheat();
 
-	// "DULUX3421"		-	DOWN UP LEFT UP CROSS R1 R2 L2 L1
-	else if ( !_CHEATCMP("1243XULUD") )
-		MayhemCheat();
 
-	// "DULUX3412"		-	DOWN UP LEFT UP CROSS R1 R2 L1 L2
-	else if ( !_CHEATCMP("2143XULUD") )
-		EverybodyAttacksPlayerCheat();
 
-	// "43TX21UD"		-	R2 R1 TRIANGLE CROSS L2 L1 UP DOWN
-	else if ( !_CHEATCMP("DU12XT34") )
-		WeaponsForAllCheat();
 
 	// "TURDS12"		-	TRIANGLE UP RIGHT DOWN SQUARE L1 L2
 	else if ( !_CHEATCMP("21SDRUT") )
@@ -1583,16 +1396,6 @@ void CPad::AddToPCCheatString(char c)
 		KeyBoardCheatString[0] = ' ';
 		HealthCheat();
 	}
-	// "YOUWONTTAKEMEALIVE"
-	else if (!Cheat_strncmp(KeyBoardCheatString, "H[PMN`PLLLa\\Uod[kl")) {
-		KeyBoardCheatString[0] = ' ';
-		WantedLevelUpCheat();
-	}
-	// "LEAVEMEALONE"
-	else if (!Cheat_strncmp(KeyBoardCheatString, "HSVMN`PLWLRT")) {
-		KeyBoardCheatString[0] = ' ';
-		WantedLevelDownCheat();
-	}
 	// "APLEASANTDAY"
 	else if (!Cheat_strncmp(KeyBoardCheatString, "\\FKU[\\VHFW]I")) {
 		KeyBoardCheatString[0] = ' ';
@@ -1633,26 +1436,6 @@ void CPad::AddToPCCheatString(char c)
 		KeyBoardCheatString[0] = ' ';
 		BlowUpCarsCheat();
 	}
-	// "STILLLIKEDRESSINGUP"
-	else if (!Cheat_strncmp(KeyBoardCheatString, "SZNOVnVLSORSPlYReg]")) {
-		KeyBoardCheatString[0] = ' ';
-		ChangePlayerCheat();
-	}
-	// "FIGHTFIGHTFIGHT"
-	else if (!Cheat_strncmp(KeyBoardCheatString, "WMNJSoKNJQaPNiS")) {
-		KeyBoardCheatString[0] = ' ';
-		MayhemCheat();
-	}
-	// "NOBODYLIKESME"
-	else if (!Cheat_strncmp(KeyBoardCheatString, "HRZFXdO`EZOWU")) {
-		KeyBoardCheatString[0] = ' ';
-		EverybodyAttacksPlayerCheat();
-	}
-	// "OURGODGIVENRIGHTTOBEARARMS"
-	else if (!Cheat_strncmp(KeyBoardCheatString, "VRYB_\\HIP_aPNi_TaiSJGTNSbj")) {
-		KeyBoardCheatString[0] = ' ';
-		WeaponsForAllCheat();
-	}
 	// "ONSPEED"
 	else if (!Cheat_strncmp(KeyBoardCheatString, "GJLQ`iR")) {
 		KeyBoardCheatString[0] = ' ';
@@ -1673,16 +1456,6 @@ void CPad::AddToPCCheatString(char c)
 		KeyBoardCheatString[0] = ' ';
 		StrongGripCheat();
 	}
-	// "CHASESTAT"
-	else if (!Cheat_strncmp(KeyBoardCheatString, "WF[TRnDOD")) {
-		KeyBoardCheatString[0] = ' ';
-		DoShowChaseStatCheat();
-	}
-	// "CHICKSWITHGUNS"
-	else if (!Cheat_strncmp(KeyBoardCheatString, "VS\\HUoL^TVPQOc")) {
-		KeyBoardCheatString[0] = ' ';
-		DoChicksWithGunsCheat();
-	}
 	// "ICANTTAKEITANYMORE"
 	else if (!Cheat_strncmp(KeyBoardCheatString, "HWVNfiD[JPXI[t[G_\\")) {
 		KeyBoardCheatString[0] = ' ';
@@ -1692,11 +1465,6 @@ void CPad::AddToPCCheatString(char c)
 	else if (!Cheat_strncmp(KeyBoardCheatString, "WMNJYiHLSR")) {
 		KeyBoardCheatString[0] = ' ';
 		TrafficLightsCheat();
-	}
-	// "MIAMITRAFFIC"
-	else if (!Cheat_strncmp(KeyBoardCheatString, "FNMGNmWPNLVU")) {
-		KeyBoardCheatString[0] = ' ';
-		MadCarsCheat();
 	}
 	// "AHAIRDRESSERSCAR"
 	else if (!Cheat_strncmp(KeyBoardCheatString, "UFJT_`VZF]QZPaUG")) {
@@ -1823,11 +1591,6 @@ void CPad::AddToPCCheatString(char c)
 		KeyBoardCheatString[0] = ' ';
 		SpecialCarCheats();
 	}
-	// HOPINGIRL
-	else if (!Cheat_strncmp(KeyBoardCheatString, "OWPH[dSVI")) {
-		KeyBoardCheatString[0] = ' ';
-		PickUpChicksCheat();
-	}
 	//CERTAINDEATH
 	else if (!Cheat_strncmp(KeyBoardCheatString, "KYHFQiLHU]RK")) {
 		KeyBoardCheatString[0] = ' ';
@@ -1838,22 +1601,11 @@ void CPad::AddToPCCheatString(char c)
 		KeyBoardCheatString[0] = ' ';
 		FlyingFishCheat();
 	}
-	//FANNYMAGNET
-	else if (!Cheat_strncmp(KeyBoardCheatString, "WJUHNh\\UOLS")) {
-		KeyBoardCheatString[0] = ' ';
-		FannyMagnetCheat();
-	}
 
 #ifdef KANGAROO_CHEAT
 	// "KANGAROO"
 	if (!_CHEATCMP("OORAGNAK"))
 		KangarooCheat();
-#endif
-
-#ifndef MASTER
-	// "PEDDEBUG"
-	if (!_CHEATCMP("GUBEDDEP"))
-		CPed::SwitchDebugDisplay();
 #endif
 
 #ifdef WALLCLIMB_CHEAT
@@ -1993,9 +1745,6 @@ void CPad::UpdatePads(void)
 	if (IsAffectedByController && (GetPad(0)->PCTempKeyState.CheckForInput() || GetPad(0)->PCTempMouseState.CheckForInput()))
 		IsAffectedByController = false;
 #endif
-
-	if ( CReplay::IsPlayingBackFromFile() && !FrontEndMenuManager.m_bMenuActive )
-		bUpdate = false;
 
 	if ( bUpdate )
 		GetPad(0)->Update(0);
@@ -2201,7 +1950,6 @@ void CPad::Update(int16 pad)
 
 				if ( (rterm_id>>4) == 7 ) // DUALSHOCK
 				{
-					if (!CRecordDataForGame::IsPlayingBack() && !CRecordDataForChase::ShouldThisPadBeLeftAlone(pad))
 					{
 						#define CLAMP_AXIS(x) (((x) < 43 && (x) >= -42) ? 0 : (((x) > 0) ? (Max((x)-42, 0)*127/85) : Min((x)+42, 0)*127/85))
 						#define FIX_AXIS(x) CLAMP_AXIS((x)-128)
@@ -2322,9 +2070,6 @@ void CPad::Update(int16 pad)
 #endif
 
 #ifdef GTA_PC_CONTROLS
-#if (defined GTA_PS2 || defined FIX_BUGS)
-	if (!CRecordDataForGame::IsPlayingBack() && !CRecordDataForChase::ShouldThisPadBeLeftAlone(pad))
-#endif
 	{
 		NewState = ReconcileTwoControllersInput(PCTempKeyState, PCTempJoyState);
 		NewState = ReconcileTwoControllersInput(PCTempMouseState, NewState);
@@ -3773,7 +3518,6 @@ void CPad::ResetCheats(void)
 	CWeather::ReleaseWeather();
 
 	gbFastTime = false;
-	CPopulation::ms_bGivePedsWeapons = false;
 	CTimer::SetTimeScale(1.0f);
 
 	CVehicle::bWheelsOnlyCheat = false;
@@ -3788,12 +3532,8 @@ void CPad::ResetCheats(void)
 	gbBlackCars = false;
 	gbPinkCars = false;
 
-	CCarCtrl::bMadDriversCheat = false;
 	CTrafficLights::bGreenLightsCheat = false;
-	CStats::ShowChaseStatOnScreen = 0;
 	CPed::bNastyLimbsCheat = false;
-	CPed::bFannyMagnetCheat = false;
-	CPed::bPedCheat3 = false;
 
 }
 

@@ -393,7 +393,6 @@ cAudioManager::DestroyAllGameCreatedEntities()
 				case AUDIOTYPE_EXPLOSION:
 				case AUDIOTYPE_WEATHER:
 				//case AUDIOTYPE_CRANE:
-				case AUDIOTYPE_GARAGE:
 				case AUDIOTYPE_FIREHYDRANT:
 					DestroyEntity(i);
 					break;

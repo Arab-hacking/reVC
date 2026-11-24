@@ -8,7 +8,6 @@
 #include "MusicManager.h"
 #include "PlayerPed.h"
 #include "PolRadio.h"
-#include "Replay.h"
 #include "Vehicle.h"
 #include "World.h"
 #include "Zones.h"
@@ -127,7 +126,7 @@ cAudioManager::ServicePoliceRadio()
 	if(!m_bIsPaused) {
 		bool8 crimeReport = SetupCrimeReport();
 #ifdef FIX_BUGS // Crash at 0x5fe6ef
-		if(CReplay::IsPlayingBack() || !FindPlayerPed() || !FindPlayerPed()->Wanted())
+		if(!FindPlayerPed() || !FindPlayerPed()->Wanted())
 			return;
 #endif
 		CPlayerPed *playerPed = FindPlayerPed();

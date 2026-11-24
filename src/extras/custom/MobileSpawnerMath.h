@@ -63,7 +63,7 @@ IsExcludedStockVehicleId(int32_t id)
 	       id == 194 || id == 195 || id == 231;
 }
 
-// Compute spawn position in front of the player/camera without relying on CPathFind.
+// Compute a spawn position on the given base plane, forward of the player/camera.
 inline void
 ComputeVehicleSpawnTransform(float baseX, float baseY, float baseZ,
                              float fwdX, float fwdY, float forwardDist,

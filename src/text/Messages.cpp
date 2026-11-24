@@ -813,5 +813,4 @@ CMessages::ClearAllMessagesDisplayedByGame()
 		PreviousBriefs[i].m_pString = nil;
 	}
 	CHud::GetRidOfAllHudMessages();
-	CUserDisplay::Pager.ClearMessages();
 }
