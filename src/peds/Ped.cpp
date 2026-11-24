@@ -5855,13 +5855,12 @@ CPed::ApplyLaunchForce(bool highJump, bool climbJump)
 	// ? 8.5F : 4.5F. m_bHighJump is passed in by the caller, not derived here.
 	float jumpForce = (IsPlayer() || highJump) ? 8.5f : 4.5f;
 
-	// SA then scales BOTH the horizontal speed and the vertical force by the
-	// player's fat/muscle modifier. See CStats::GetFatAndMuscleModifier for why
-	// that multiplier is 1.0f here instead of SA's curve.
+	// SA scales horizontal speed and jump force by 1 + (fat - 50) * -0.1 / 950.
+	// With the default fat value of 0, the factor is 1.005263f.
 	// reVC keeps no CPed->player-data pointer; IsPlayer() is the same test SA's
 	// ped->GetPlayerData() performs, since only the player ped has one.
 	if (IsPlayer()) {
-		float modifier = CStats::GetFatAndMuscleModifier(CStats::STAT_MOD_2);
+		const float modifier = 1.005263f;
 		horizontalSpeed *= modifier;
 		jumpForce *= modifier;
 	}

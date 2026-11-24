@@ -93,8 +93,7 @@ CPlayerPed::CPlayerPed(void) : CPed(PEDTYPE_PLAYER1)
 	m_bSpeedTimerFlag = false;
 	SetWeaponLockOnTarget(nil);
 	SetPedState(PED_IDLE);
-	// SA CPlayerPed::CPlayerPed stores GetFatAndMuscleModifier(STAT_MOD_TIME_CAN_RUN)
-	// into TimeCanRun(); ResetSprintEnergy does the same at the start of a life.
+	// The default sprint budget is 450; ResetSprintEnergy applies it at the start of a life.
 	ResetSprintEnergy();
 	m_nEvadeAmount = 0;
 	m_pEvadingFrom = nil;
@@ -213,7 +212,7 @@ CPlayerPed::ReactivatePlayerPed(int32 index)
 void
 CPlayerPed::ResetSprintEnergy(void)
 {
-	TimeCanRun() = CStats::GetFatAndMuscleModifier(CStats::STAT_MOD_TIME_CAN_RUN);
+	TimeCanRun() = 450.0f;
 }
 
 // SA CPlayerPed::HandleSprintEnergy (0x60A550).
@@ -240,20 +239,17 @@ CPlayerPed::HandleSprintEnergy(bool sprint, float adrenalineConsumedPerTimeStep)
 			return true;
 		}
 	} else {
-		if (CStats::GetFatAndMuscleModifier(CStats::STAT_MOD_TIME_CAN_RUN) > TimeCanRun())
+		if (450.0f > TimeCanRun())
 			TimeCanRun() += CTimer::GetTimeStep() * adrenalineConsumedPerTimeStep / 2.0f;
 	}
 	return false;
 }
 
-// SA CPlayerPed::ResetPlayerBreath (0x60A8B0): a full lung is whatever the
-// lung-capacity stat is worth, not a constant. Training stamina therefore
-// lengthens every dive retroactively only from this call onwards, which is
-// why SA calls it whenever the stat changes.
+// SA CPlayerPed::ResetPlayerBreath (0x60A8B0): reset to the fixed default lung capacity.
 void
 CPlayerPed::ResetPlayerBreath(void)
 {
-	Breath() = CStats::GetFatAndMuscleModifier(CStats::STAT_MOD_AIR_IN_LUNG);
+	Breath() = 1150.0f;
 }
 
 // SA PLAYER_SPRINT_SET (0x8D2460), one row per eSprintType:

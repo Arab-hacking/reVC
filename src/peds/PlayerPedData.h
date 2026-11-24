@@ -55,7 +55,7 @@ public:
 	// Transient on-foot input: fight and duck controls are mutually exclusive.
 	CVector2D m_vecFightMovement;
 	float m_fMoveBlendRatio;
-	// SA's sprint budget. It starts at GetFatAndMuscleModifier(STAT_MOD_TIME_CAN_RUN)
+	// SA's sprint budget starts at the fixed default of 450.0f
 	// and drains to -150, which is the point where the player can no longer
 	// start a sprint. This replaces the Vice City m_fCurrentStamina/m_fMaxStamina
 	// pair: those were an authored 0..1000 meter that no stat fed into.
@@ -73,9 +73,7 @@ public:
 	uint8 m_nFadeDrunkenness;
 	uint8 m_nDrugLevel;
 	uint8 m_nScriptLimitToGangSize;
-	// The breath meter, in the same units as the lung capacity it was filled
-	// from: GetFatAndMuscleModifier(STAT_MOD_AIR_IN_LUNG), which is 1150 for a
-	// body with no lung stat and full stamina, and 4000 at the cap.
+	// The breath meter, filled to the fixed default lung capacity of 1150.0f.
 	float m_fBreath;
 	uint32 m_nMeleeWeaponAnimReferenced;
 	uint32 m_nMeleeWeaponAnimReferencedExtra;
