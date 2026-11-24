@@ -655,6 +655,8 @@ CCamera::CamControl(void)
 {
 	static bool PlaceForFixedWhenSniperFound = false;
 	static int16 ReqMode;
+	static int lastLoggedCloseIn = -1;
+	static int lastLoggedPedZoom = -1;
 	bool switchByJumpCut = false;
 	bool stairs = false;
 	bool boatTarget = false;
@@ -678,8 +680,14 @@ CCamera::CamControl(void)
 	if(m_iZoneCullFrameNumWereAt > m_iCheckCullZoneThisNumFrames)
 		m_iZoneCullFrameNumWereAt = 1;
 	m_bCullZoneChecksOn = m_iZoneCullFrameNumWereAt == m_iCheckCullZoneThisNumFrames;
-	if(m_bCullZoneChecksOn)
+	if(m_bCullZoneChecksOn){
 		m_bFailedCullZoneTestPreviously = CCullZones::CamCloseInForPlayer();
+		if(lastLoggedCloseIn != int(m_bFailedCullZoneTestPreviously)){
+			REVC_LOG_INFO("Ped camera close-in zone: %d (player state=%d)",
+				m_bFailedCullZoneTestPreviously, FindPlayerPed() ? FindPlayerPed()->m_nPedState : -1);
+			lastLoggedCloseIn = m_bFailedCullZoneTestPreviously;
+		}
+	}
 
 	if(m_bLookingAtPlayer){
 		CPad::GetPad(0)->DisablePlayerControls &= ~PLAYERCONTROL_CAMERA;
@@ -905,6 +913,11 @@ CCamera::CamControl(void)
 			// disabled top down and obbe's cam here
 			if(PedZoomIndicator < CAM_ZOOM_1) PedZoomIndicator = CAM_ZOOM_3;
 			else if(PedZoomIndicator > CAM_ZOOM_3) PedZoomIndicator = CAM_ZOOM_1;
+			if(lastLoggedPedZoom != PedZoomIndicator){
+				REVC_LOG_INFO("Ped camera zoom step: %d (close-in=%d)",
+					PedZoomIndicator, m_bFailedCullZoneTestPreviously);
+				lastLoggedPedZoom = PedZoomIndicator;
+			}
 
 			ReqMode = CCam::MODE_FOLLOWPED;
 
@@ -1583,6 +1596,12 @@ CCamera::CamControl(void)
 		switchedFromObbe = true;
 		SetCameraDirectlyBehindForFollowPed_CamOnAString();
 	}
+
+	if(pTargetEntity && pTargetEntity->IsPed() && PrevMode != Cams[ActiveCam].Mode)
+		REVC_LOG_INFO("Ped camera mode changed: %d -> %d (state=%d, close-in=%d, sticky-first-person=%d)",
+			PrevMode, Cams[ActiveCam].Mode,
+			FindPlayerPed() ? FindPlayerPed()->m_nPedState : -1,
+			m_bFailedCullZoneTestPreviously, m_bPlayerFirstPersonView);
 
 	if(PrevMode != Cams[ActiveCam].Mode || switchedFromObbe ||
 	   Cams[ActiveCam].Mode == CCam::MODE_FOLLOWPED || Cams[ActiveCam].Mode == CCam::MODE_CAM_ON_A_STRING)
