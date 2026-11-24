@@ -629,7 +629,6 @@ void CCustomWorld::LoadIde(void)
             // their DFF is loaded; VC skeletons keep the VC bank. No raw SA
             // stat/group/animation indices are passed to the engine.
             ped->m_animGroup = SafePedAnimGroup(m.animGroup);
-            ped->radio1 = ped->radio2 = -1;
             ped->SetColModel(&CTempColModels::ms_colModelPed1);
             CPedModelInfo::NoteSlot(slot);
             pedsInstalled++;

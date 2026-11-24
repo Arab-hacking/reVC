@@ -555,7 +555,6 @@ bool CGame::Initialise(void)
 #endif
 
 
-	DMAudio.SetStartingTrackPositions(TRUE);
 	DMAudio.ChangeMusicMode(MUSICMODE_GAME);
 	REVC_LOG_INFO("Game initialization complete (level=%d, area=%d)", currLevel, currArea);
 	return true;

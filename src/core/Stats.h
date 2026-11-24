@@ -422,7 +422,6 @@ public:
 	static bool abSonyCDs[1];
 	static int32 BloodRingKills;
 	static int32 BloodRingTime;
-	static float FavoriteRadioStationList[NUM_RADIOS];
 	static int32 Sprayings;
 	static float AutoPaintingBudget;
 	static int32 NoMoreHurricanes;
@@ -481,8 +480,6 @@ public:
 
 	static void LongestTimeInBloodRing(int32);
 	static void AddPropertyAsOwned(int32);
-	static void PopulateFavoriteRadioStationList();
-	static float GetFavoriteRadioStationList(int32);
 	static void BuildStatLine(Const char *, void *, int, void *, int);
 	static int ConstructStatLine(int);
 

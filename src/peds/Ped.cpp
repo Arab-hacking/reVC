@@ -6000,26 +6000,6 @@ CPed::FinishHitHeadCB(CAnimBlendAssociation *animAssoc, void *arg)
 }
 
 void
-CPed::SetRadioStation(void)
-{
-	CPedModelInfo* modelInfo = (CPedModelInfo*)CModelInfo::GetModelInfo(GetModelIndex());
-
-	if (IsPlayer() || !m_pMyVehicle || m_pMyVehicle->pDriver != this)
-		return;
-
-	if (GetModelIndex() != MI_PGA && GetModelIndex() != MI_PGB) {
-		if (m_pMyVehicle->m_nRadioStation != modelInfo->radio1 && m_pMyVehicle->m_nRadioStation != modelInfo->radio2) {
-			if (CGeneral::GetRandomTrueFalse())
-				m_pMyVehicle->m_nRadioStation = modelInfo->radio1;
-			else
-				m_pMyVehicle->m_nRadioStation = modelInfo->radio2;
-		}
-	} else {
-		m_pMyVehicle->m_nRadioStation = DMAudio.GetFavouriteRadioStation();
-	}
-}
-
-void
 CPed::WarpPedIntoCar(CVehicle *car)
 {
 	bInVehicle = true;
@@ -7336,7 +7316,6 @@ CPed::PedAnimGetInCB(CAnimBlendAssociation *animAssoc, void *arg)
 		if (driver != ped && ped->m_vehDoor != CAR_DOOR_LF) {
 			driver->SetObjective(OBJECTIVE_LEAVE_CAR, veh);
 			driver->Say(SOUND_PED_CAR_JACKED);
-			driver->SetRadioStation();
 			if (veh->m_nDoorLock == CARLOCK_UNLOCKED)
 				ped->Say(SOUND_PED_CAR_JACKING);
 		}
@@ -8063,7 +8042,6 @@ CPed::SetBeingDraggedFromCar(CVehicle *veh, uint32 vehEnterType, bool quickJack)
 	SetHeading(m_fRotationCur);
 
 	Say(SOUND_PED_CAR_JACKED);
-	SetRadioStation();
 
 	if(veh->IsBike())
 		veh->m_nGettingOutFlags |= GetBikeDoorFlagInclJumpInFromFront(m_vehDoor);
@@ -8752,7 +8730,6 @@ CPed::SetExitCar(CVehicle *veh, uint32 wantedDoorNode)
 		if (veh->bIsBus)
 			bRenderPedInCar = true;
 
-		SetRadioStation();
 		if (veh->pDriver == this) {
 			if (IsPlayer())
 				veh->SetStatus(STATUS_PLAYER_DISABLED);

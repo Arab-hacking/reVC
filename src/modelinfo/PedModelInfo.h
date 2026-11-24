@@ -12,7 +12,6 @@ public:
 	AssocGroupId m_animGroup;
 	uint16 m_nPedFlags;
 	CColModel *m_hitColModel;
-	int8 radio1, radio2;
 	int16 m_nPedAudioType;
 	int16 m_nVoiceMin;
 	int16 m_nVoiceMax;
@@ -44,8 +43,6 @@ public:
 		m_animGroup = ASSOCGRP_DEFAULT;
 		m_nPedFlags = 0;
 		m_hitColModel = nil;
-		radio1 = -1;
-		radio2 = -1;
 		m_nPedAudioType = -1;
 		m_nVoiceMin = -1;
 		m_nVoiceMax = -1;

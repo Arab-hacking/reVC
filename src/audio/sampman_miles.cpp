@@ -50,27 +50,10 @@ uint8 nChannelVolume[MAXCHANNELS+MAX2DCHANNELS];
 uint32 nStreamLength[TOTAL_STREAMED_SOUNDS];
 
 ///////////////////////////////////////////////////////////////
-struct tMP3Entry
-{
-	char aFilename[MAX_PATH];
-	
-	uint32 nTrackLength;
-	uint32 nTrackStreamPos;
-	
-	tMP3Entry *pNext;
-	char *pLinkPath;
-};
-
-uint32 nNumMP3s;
-tMP3Entry *_pMP3List;
-char _mp3DirectoryPath[MAX_PATH];
 HSTREAM mp3Stream [MAX_STREAMS];
 int8 nStreamPan   [MAX_STREAMS];
 int8 nStreamVolume[MAX_STREAMS];
 bool8 nStreamLoopedFlag[MAX_STREAMS];
-uint32 _CurMP3Index;
-int32 _CurMP3Pos;
-bool8 _bIsMp3Active;
 ///////////////////////////////////////////////////////////////
 
 
@@ -470,414 +453,6 @@ cSampleManager::AutoDetect3DProviders()
 	return -1;
 }
 #endif
-
-static bool8
-_ResolveLink(char const *path, char *out)
-{
-	IShellLink* psl;
-	WIN32_FIND_DATA fd;
-	char filepath[MAX_PATH];
-	
-	CoInitialize(NULL);
-									   
-	if (SUCCEEDED( CoCreateInstance(CLSID_ShellLink, NULL, CLSCTX_INPROC_SERVER, IID_IShellLink, (LPVOID*)&psl ) ))
-	{
-		IPersistFile *ppf;
-
-		if (SUCCEEDED(psl->QueryInterface(IID_IPersistFile, (LPVOID*)&ppf)))
-		{
-			WCHAR wpath[MAX_PATH];
-			
-			MultiByteToWideChar(CP_ACP, 0, path, -1, wpath, MAX_PATH);
-			
-			if (SUCCEEDED(ppf->Load(wpath, STGM_READ)))
-			{
-				/* Resolve the link */
-				if (SUCCEEDED(psl->Resolve(NULL, SLR_ANY_MATCH|SLR_NO_UI|SLR_NOSEARCH)))
-				{
-					strcpy(filepath, path);
-					
-					if (SUCCEEDED(psl->GetPath(filepath, MAX_PATH, &fd, SLGP_UNCPRIORITY)))
-					{
-						OutputDebugString(fd.cFileName);
-						
-						strcpy(out, filepath);
-						// FIX: Release the objects. Taken from SA.
-#ifdef FIX_BUGS
-						ppf->Release();
-						psl->Release();
-#endif
-						return TRUE;
-					}
-				}
-			}
-			
-			ppf->Release();
-		}
-		psl->Release();
-	}
-	
-	return FALSE;
-}
-
-static void
-_FindMP3s(void)
-{
-	tMP3Entry *pList;
-	bool8 bShortcut;	
-	bool8 bInitFirstEntry;	
-	HANDLE hFind;
-	char path[MAX_PATH];
-	char filepath[MAX_PATH*2];
-	S32 total_ms;
-	WIN32_FIND_DATA fd;
-	
-	
-	if ( GetCurrentDirectory(MAX_PATH, _mp3DirectoryPath) == 0 )
-	{
-		GetLastError();
-		return;
-	}
-	
-	OutputDebugString("Finding MP3s...");
-	strcpy(path, _mp3DirectoryPath);
-	strcat(path, "\\MP3\\");
-	
-	strcpy(_mp3DirectoryPath, path);
-	OutputDebugString(_mp3DirectoryPath);
-	
-	strcat(path, "*");
-	
-	hFind = FindFirstFile(path, &fd);
-	
-	if ( hFind == INVALID_HANDLE_VALUE ) 
-	{
-		GetLastError();
-		return;
-	}
-	
-	strcpy(filepath, _mp3DirectoryPath);
-	strcat(filepath, fd.cFileName);
-	
-	int32 filepathlen = strlen(filepath);
-	
-	if ( filepathlen <= 0)
-	{
-		FindClose(hFind);
-		return;
-	}
-
-	if ( filepathlen > 4 )
-	{
-		if ( !strcmp(&filepath[filepathlen - 4], ".lnk") )
-		{
-			if ( _ResolveLink(filepath, filepath) )
-			{
-				OutputDebugString("Resolving Link");
-				OutputDebugString(filepath);
-			}
-			
-			bShortcut = TRUE;
-		}
-		else
-			bShortcut = FALSE;
-	}
-	
-	mp3Stream[0] = AIL_open_stream(DIG, filepath, 0);
-	if ( mp3Stream[0] )
-	{
-		AIL_stream_ms_position(mp3Stream[0], &total_ms, NULL);
-		
-		AIL_close_stream(mp3Stream[0]);
-		mp3Stream[0] = NULL;
-		
-		OutputDebugString(fd.cFileName);
-		
-		_pMP3List = new tMP3Entry;
-		
-		if ( _pMP3List == NULL )
-		{
-			FindClose(hFind);
-			return;
-		}
-		
-		nNumMP3s = 1;
-		
-		strcpy(_pMP3List->aFilename, fd.cFileName);
-		
-		_pMP3List->nTrackLength = total_ms;
-		
-		_pMP3List->pNext = NULL;
-		
-		pList = _pMP3List;
-		
-		if ( bShortcut )
-		{
-			_pMP3List->pLinkPath = new char[MAX_PATH*2];
-			strcpy(_pMP3List->pLinkPath, filepath);
-		}
-		else
-		{
-			_pMP3List->pLinkPath = NULL;
-		}
-		bInitFirstEntry = FALSE;
-	}
-	else
-	{
-		strcat(filepath, " - NOT A VALID MP3");
-		
-		OutputDebugString(filepath);
-
-		bInitFirstEntry = TRUE;
-	}
-	
-	while ( TRUE )
-	{
-		if ( !FindNextFile(hFind, &fd) )
-			break;
-		
-		if ( bInitFirstEntry )
-		{
-			strcpy(filepath, _mp3DirectoryPath);
-			strcat(filepath, fd.cFileName);
-			
-			int32 filepathlen = strlen(filepath);
-			
-			if ( filepathlen > 0 )
-			{
-				if ( filepathlen > 4 )
-				{
-					if ( !strcmp(&filepath[filepathlen - 4], ".lnk") )
-					{
-						if ( _ResolveLink(filepath, filepath) )
-						{
-							OutputDebugString("Resolving Link");
-							OutputDebugString(filepath);
-						}
-						
-						bShortcut = TRUE;
-					}
-					else
-					{
-						bShortcut = FALSE;
-						
-						if ( filepathlen > MAX_PATH )
-						{
-							continue;
-						}
-					}
-				}
-				
-				mp3Stream[0] = AIL_open_stream(DIG, filepath, 0);
-				if ( mp3Stream[0] )
-				{
-					AIL_stream_ms_position(mp3Stream[0], &total_ms, NULL);
-					
-					AIL_close_stream(mp3Stream[0]);
-					mp3Stream[0] = NULL;
-					
-					OutputDebugString(fd.cFileName);
-					
-					_pMP3List = new tMP3Entry;
-					
-					if ( _pMP3List  == NULL)
-						break;
-					
-					nNumMP3s = 1;
-					
-					strcpy(_pMP3List->aFilename, fd.cFileName);
-					
-					_pMP3List->nTrackLength = total_ms;
-					_pMP3List->pNext = NULL;
-					
-					if ( bShortcut )
-					{
-						_pMP3List->pLinkPath = new char [MAX_PATH*2];
-						strcpy(_pMP3List->pLinkPath, filepath);
-					}
-					else
-					{
-						_pMP3List->pLinkPath = NULL;
-					}
-					
-					pList = _pMP3List;
-
-					bInitFirstEntry = FALSE;
-				}
-				else
-				{
-					strcat(filepath, " - NOT A VALID MP3");
-					OutputDebugString(filepath);
-				}
-			}
-		}
-		else
-		{
-			strcpy(filepath, _mp3DirectoryPath);
-			strcat(filepath, fd.cFileName);
-			
-			int32 filepathlen = strlen(filepath);
-			
-			if ( filepathlen > 0 )
-			{
-				if ( filepathlen > 4 )
-				{
-					if ( !strcmp(&filepath[filepathlen - 4], ".lnk") )
-					{
-						if ( _ResolveLink(filepath, filepath) )
-						{
-							OutputDebugString("Resolving Link");
-							OutputDebugString(filepath);
-						}
-						
-						bShortcut = TRUE;
-					}
-					else
-					{
-						bShortcut = FALSE;
-					}
-				}
-				
-				mp3Stream[0] = AIL_open_stream(DIG, filepath, 0);
-				if ( mp3Stream[0] )
-				{
-					AIL_stream_ms_position(mp3Stream[0], &total_ms, NULL);
-					
-					AIL_close_stream(mp3Stream[0]);
-					mp3Stream[0] = NULL;
-					
-					pList->pNext = new tMP3Entry;
-					
-					tMP3Entry *e = pList->pNext;
-					
-					if ( e == NULL )
-						break;
-					
-					pList = pList->pNext;
-					
-					strcpy(e->aFilename, fd.cFileName);
-					e->nTrackLength = total_ms;
-					e->pNext = NULL;
-					
-					if ( bShortcut )
-					{
-						e->pLinkPath = new char [MAX_PATH*2];
-						strcpy(e->pLinkPath, filepath);
-					}
-					else
-					{
-						e->pLinkPath = NULL;
-					}
-					
-					nNumMP3s++;
-					
-					OutputDebugString(fd.cFileName);
-				}
-				else
-				{
-					strcat(filepath, " - NOT A VALID MP3");
-					OutputDebugString(filepath);
-				}
-			}
-		}
-	}
-
-	FindClose(hFind);
-}
-
-static void
-_DeleteMP3Entries(void)
-{
-	tMP3Entry *e = _pMP3List;
-
-	while ( e != NULL )
-	{
-		tMP3Entry *next = e->pNext;
-		
-		if ( next == NULL )
-			next = NULL;
-		
-		if ( e->pLinkPath != NULL )
-		{
-#ifndef FIX_BUGS
-			delete   e->pLinkPath; // BUG: should be delete []
-#else
-			delete[] e->pLinkPath;
-#endif
-			e->pLinkPath = NULL;
-		}
-		
-		delete e;
-		
-		if ( next )
-			e = next;
-		else
-			e = NULL;
-		
-		nNumMP3s--;
-	}
-	
-	
-	if ( nNumMP3s != 0 )
-	{
-		OutputDebugString("Not all MP3 entries were deleted");
-		nNumMP3s = 0;
-	}
-	
-	_pMP3List = NULL;
-}
-
-static tMP3Entry *
-_GetMP3EntryByIndex(uint32 idx)
-{
-	uint32 n = ( idx < nNumMP3s ) ? idx : 0;
-	
-	if ( _pMP3List != NULL )
-	{
-		tMP3Entry *e = _pMP3List;
-		
-		for ( uint32 i = 0; i < n; i++ )
-			e = e->pNext;
-		
-		return e;
-			
-	}
-	
-	return NULL;
-}
-
-static inline bool8
-_GetMP3PosFromStreamPos(uint32 *pPosition, tMP3Entry **pEntry)
-{
-	_CurMP3Index = 0;
-	
-	for ( *pEntry = _pMP3List; *pEntry != NULL; *pEntry = (*pEntry)->pNext )
-	{
-		if (   *pPosition >= (*pEntry)->nTrackStreamPos
-			&& *pPosition <  (*pEntry)->nTrackLength + (*pEntry)->nTrackStreamPos )
-		{
-			*pPosition -= (*pEntry)->nTrackStreamPos;
-			_CurMP3Pos = *pPosition;
-			
-			return TRUE;
-		}
-		
-		_CurMP3Index++;
-	}
-				
-	*pPosition = 0;
-	*pEntry = _pMP3List;
-	_CurMP3Pos = 0;
-	_CurMP3Index = 0;
-	
-	return FALSE;
-}
-
-bool8
-cSampleManager::IsMP3RadioChannelAvailable(void)
-{
-	return nNumMP3s != 0;
-}
 
 void
 cSampleManager::ReleaseDigitalHandle(void)
@@ -1335,68 +910,6 @@ cSampleManager::Initialise(void)
 	
 	// mp3
 	TRACE("mp3");
-	{
-		nNumMP3s = 0;
-		
-		_pMP3List = NULL;
-		
-		_FindMP3s();
-		
-		if ( nNumMP3s != 0 )
-		{
-			nStreamLength[STREAMED_SOUND_RADIO_MP3_PLAYER] = 0;
-			
-			for ( tMP3Entry *e = _pMP3List; e != NULL; e = e->pNext )
-			{
-				e->nTrackStreamPos = nStreamLength[STREAMED_SOUND_RADIO_MP3_PLAYER];
-				nStreamLength[STREAMED_SOUND_RADIO_MP3_PLAYER] += e->nTrackLength;
-			}
-			
-			time_t t = time(NULL);
-			tm *localtm;
-			bool8 bUseRandomTable;
-			
-			if ( t == -1 )
-				bUseRandomTable = TRUE;
-			else
-			{
-				bUseRandomTable = FALSE;
-				localtm = localtime(&t);
-			}
-			
-			int32 randval;
-			if ( bUseRandomTable )
-				randval = AudioManager.m_anRandomTable[1];
-			else
-				randval = localtm->tm_sec * localtm->tm_min;
-			
-			_CurMP3Index = randval % nNumMP3s;
-			
-			tMP3Entry *randmp3 = _pMP3List;
-			for ( int32 i = randval % nNumMP3s; i > 0; --i)
-				randmp3 = randmp3->pNext;
-			
-			if ( bUseRandomTable )
-				_CurMP3Pos = AudioManager.m_anRandomTable[0]     % randmp3->nTrackLength;
-			else
-			{
-				if ( localtm->tm_sec > 0 )
-				{
-					int32 s = localtm->tm_sec;
-					_CurMP3Pos = s*s*s*s*s*s*s*s                 % randmp3->nTrackLength;
-				}
-				else
-					_CurMP3Pos = AudioManager.m_anRandomTable[0] % randmp3->nTrackLength;
-			}
-		}
-		else
-			_CurMP3Pos = 0;
-		
-		_bIsMp3Active = FALSE;
-	}
-	
-	TRACE("end");
-	
 	return TRUE;
 }
 
@@ -1426,7 +939,6 @@ cSampleManager::Terminate(void)
 	release_existing();
 #endif
 	
-	_DeleteMP3Entries();
 	
 	if ( nSampleBankMemoryStartAddress[SFX_BANK_0] != 0 )
 	{
@@ -1551,12 +1063,6 @@ void
 cSampleManager::SetMusicMasterVolume(uint8 nVolume)
 {
 	m_nMusicVolume = nVolume;
-}
-
-void
-cSampleManager::SetMP3BoostVolume(uint8 nVolume)
-{
-	m_nMP3BoostVolume = nVolume;
 }
 
 void
@@ -2267,142 +1773,20 @@ cSampleManager::StartPreloadedStreamedFile(uint8 nStream)
 bool8
 cSampleManager::StartStreamedFile(tTrack nFile, uint32 nPos, uint8 nStream)
 {
-	uint32 i = 0;
 	uint32 position = nPos;
 	char filename[MAX_PATH];
 	
 	if ( !m_bInitialised || nFile >= TOTAL_STREAMED_SOUNDS )
 		return FALSE;
+#ifndef GTA_PS2
+	if (nFile == STREAMED_SOUND_LEGACY_USERTRACK_SLOT)
+		return FALSE;
+#endif
 
 	if ( mp3Stream[nStream] )
 	{
 		AIL_pause_stream(mp3Stream[nStream], 1);
 		AIL_close_stream(mp3Stream[nStream]);
-	}
-	if ( nFile == STREAMED_SOUND_RADIO_MP3_PLAYER )
-	{
-		do
-		{
-			// Just switched to MP3 player
-			if ( !_bIsMp3Active && i == 0 )
-			{
-				if ( nPos > nStreamLength[STREAMED_SOUND_RADIO_MP3_PLAYER] )
-					position = 0;
-				tMP3Entry *e = _pMP3List;
-
-				// Try to continue from previous song, if already started
-				if(!_GetMP3PosFromStreamPos(&position, &e) && !e) {
-					nFile = 0;
-#ifdef PS2_AUDIO_PATHS
-					strcpy(filename, m_MiscomPath);
-					strcat(filename, PS2StreamedNameTable[nFile]);
-
-					mp3Stream[nStream] = AIL_open_stream(DIG, filename, 0);
-
-					if ( !mp3Stream[nStream] )
-#endif
-					{
-						strcpy(filename, m_MiscomPath);
-						strcat(filename, StreamedNameTable[nFile]);
-						mp3Stream[nStream] =
-						    AIL_open_stream(DIG, filename, 0);
-					}
-					if(mp3Stream[nStream]) {
-						AIL_set_stream_loop_count(mp3Stream[nStream], nStreamLoopedFlag[nStream] ? 0 : 1);
-						nStreamLoopedFlag[nStream] = TRUE;
-						AIL_set_stream_ms_position(mp3Stream[nStream], position);
-						AIL_pause_stream(mp3Stream[nStream], 0);
-						return TRUE;
-					}
-					return FALSE;
-
-				} else {
-					if ( e->pLinkPath != NULL )
-						mp3Stream[nStream] = AIL_open_stream(DIG, e->pLinkPath, 0);
-					else {
-						strcpy(filename, _mp3DirectoryPath);
-						strcat(filename, e->aFilename);
-					
-						mp3Stream[nStream] = AIL_open_stream(DIG, filename, 0);
-					}
-										
-					if ( mp3Stream[nStream] ) {
-						AIL_set_stream_loop_count(mp3Stream[nStream], 1);
-						AIL_set_stream_ms_position(mp3Stream[nStream], position);
-						AIL_pause_stream(mp3Stream[nStream], 0);
-						
-						_bIsMp3Active = TRUE;
-				
-						return TRUE;
-					}
-					// fall through, start playing from another song
-				}
-			} else {
-				if(++_CurMP3Index >= nNumMP3s) _CurMP3Index = 0;
-
-				_CurMP3Pos = 0;
-
-				tMP3Entry *mp3 = _GetMP3EntryByIndex(_CurMP3Index);
-				if ( !mp3 )
-				{
-					mp3 = _pMP3List;
-					if ( !_pMP3List )
-					{
-						nFile = 0;
-						_bIsMp3Active = FALSE;
-#ifdef PS2_AUDIO_PATHS
-						strcpy(filename, m_MiscomPath);
-						strcat(filename, PS2StreamedNameTable[nFile]);
-
-						mp3Stream[nStream] = AIL_open_stream(DIG, filename, 0);
-
-						if ( !mp3Stream[nStream] )
-#endif
-						{
-							strcpy(filename, m_MiscomPath);
-							strcat(filename, StreamedNameTable[nFile]);
-							mp3Stream[nStream] =
-							    AIL_open_stream(DIG, filename, 0);
-						}
-						if(mp3Stream[nStream]) {
-							AIL_set_stream_loop_count(
-							    mp3Stream[nStream], nStreamLoopedFlag[nStream] ? 0 : 1);
-							nStreamLoopedFlag[nStream] = TRUE;
-							AIL_set_stream_ms_position(
-							    mp3Stream[nStream], position);
-							AIL_pause_stream(mp3Stream[nStream],
-							                 0);
-							return TRUE;
-						}
-						return FALSE;
-					}
-				}
-				if(mp3->pLinkPath != NULL)
-					mp3Stream[nStream] = AIL_open_stream(DIG, mp3->pLinkPath, 0);
-				else {
-					strcpy(filename, _mp3DirectoryPath);
-					strcat(filename, mp3->aFilename);
-
-					mp3Stream[nStream] =
-					    AIL_open_stream(DIG, filename, 0);
-				}
-
-				if(mp3Stream[nStream]) {
-					AIL_set_stream_loop_count(mp3Stream[nStream], 1);
-					AIL_set_stream_ms_position(mp3Stream[nStream], 0);
-					AIL_pause_stream(mp3Stream[nStream], 0);
-#ifdef FIX_BUGS
-					_bIsMp3Active = TRUE;
-#endif
-					return TRUE;
-				}
-
-			}
-			_bIsMp3Active = FALSE;
-		}
-		while ( ++i < nNumMP3s );
-		position = 0;
-		nFile = 0;
 	}
 #ifdef PS2_AUDIO_PATHS
 	strcpy(filename, m_MiscomPath);
@@ -2441,8 +1825,6 @@ cSampleManager::StopStreamedFile(uint8 nStream)
 			AIL_close_stream(mp3Stream[nStream]);
 			mp3Stream[nStream] = NULL;
 			
-			if ( nStream == 0 )
-				_bIsMp3Active = FALSE;
 		}
 	}
 }
@@ -2456,23 +1838,8 @@ cSampleManager::GetStreamedFilePosition(uint8 nStream)
 	{
 		if ( mp3Stream[nStream] )
 		{
-			if ( _bIsMp3Active )
-			{
-				tMP3Entry *mp3 = _GetMP3EntryByIndex(_CurMP3Index);
-				
-				if ( mp3 != NULL )
-				{
-					AIL_stream_ms_position(mp3Stream[nStream], NULL, &currentms);
-					return currentms + mp3->nTrackStreamPos;
-				}
-				else
-					return 0;
-			}
-			else
-			{
-				AIL_stream_ms_position(mp3Stream[nStream], NULL, &currentms);
-				return currentms;
-			}
+			AIL_stream_ms_position(mp3Stream[nStream], NULL, &currentms);
+			return currentms;
 		}
 	}
 	
@@ -2483,14 +1850,9 @@ void
 cSampleManager::SetStreamedVolumeAndPan(uint8 nVolume, uint8 nPan, bool8 nEffectFlag, uint8 nStream)
 {
 	uint8 vol = nVolume;
-	float boostMult = 0.0f;
-	
 	if ( m_bInitialised )
 	{
 		if ( vol > MAX_VOLUME ) vol = MAX_VOLUME;
-		
-		if ( MusicManager.GetRadioInCar() == USERTRACK && !MusicManager.CheckForMusicInterruptions() )
-			boostMult = m_nMP3BoostVolume / 64.f;
 		
 		nStreamVolume[nStream] = vol;
 		nStreamPan[nStream]    = nPan;
@@ -2505,7 +1867,7 @@ cSampleManager::SetStreamedVolumeAndPan(uint8 nVolume, uint8 nPan, bool8 nEffect
 					AIL_set_stream_volume(mp3Stream[nStream], m_nEffectsFadeVolume*vol*m_nEffectsVolume >> 14);
 			}
 			else
-				AIL_set_stream_volume(mp3Stream[nStream], (m_nMusicFadeVolume*vol*(uint32)(m_nMusicVolume * boostMult + m_nMusicVolume)) >> 14);
+				AIL_set_stream_volume(mp3Stream[nStream], (m_nMusicFadeVolume*vol*(uint32)m_nMusicVolume) >> 14);
 			
 			AIL_set_stream_pan(mp3Stream[nStream], nPan);
 		}

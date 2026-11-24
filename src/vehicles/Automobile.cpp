@@ -81,23 +81,6 @@ m_nVehicleSubType = VEHICLE_TYPE_AUTOMOBILE;
 
 	SetModelIndex(id);
 
-	// Already done in CVehicle...
-	switch(GetModelIndex()){
-	case MI_HUNTER:
-	case MI_ANGEL:
-	case MI_FREEWAY:
-		m_nRadioStation = V_ROCK;
-		break;
-	case MI_RCBARON:
-	case MI_RCBANDIT:
-	case MI_RCRAIDER:
-	case MI_RCGOBLIN:
-	case MI_TOPFUN:
-	case MI_CADDY:
-	case MI_BAGGAGE:
-		m_nRadioStation = RADIO_OFF;
-		break;
-	}
 
 	m_pHandlingData = mod_HandlingManager.GetVehiclePointer((uint32)mi->m_handlingId);
 	m_pFlyingHandlingData =  mod_HandlingManager.GetFlyingPointer((uint32)mi->m_handlingId);

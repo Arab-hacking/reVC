@@ -333,8 +333,6 @@ CMenuManager::ThingsToDoBeforeLeavingPage()
 		if (m_nPrefsAudio3DProviderIndex != NO_AUDIO_PROVIDER)
 			m_nPrefsAudio3DProviderIndex = DMAudio.GetCurrent3DProviderIndex();
 
-		DMAudio.StopFrontEndTrack();
-		OutputDebugString("FRONTEND AUDIO TRACK STOPPED");
 
 	} else if (ScreenHasOption(m_nCurrScreen, "FED_RES")) {
 		m_nDisplayVideoMode = m_nPrefsVideoMode;
@@ -399,8 +397,6 @@ CMenuManager::ThingsToDoBeforeLeavingPage()
 			if (m_nPrefsAudio3DProviderIndex != NO_AUDIO_PROVIDER)
 				m_nPrefsAudio3DProviderIndex = DMAudio.GetCurrent3DProviderIndex();
 
-			DMAudio.StopFrontEndTrack();
-			OutputDebugString("FRONTEND AUDIO TRACK STOPPED");
 			break;
 		case MENUPAGE_DISPLAY_SETTINGS:
 			m_nDisplayVideoMode = m_nPrefsVideoMode;
@@ -5153,9 +5149,6 @@ CMenuManager::SwitchMenuOnAndOff()
 void
 CMenuManager::UnloadTextures()
 {
-	if (m_nCurrScreen == MENUPAGE_SOUND_SETTINGS)
-		DMAudio.StopFrontEndTrack();
-
 	DMAudio.PlayFrontEndSound(SOUND_FRONTEND_MENU_STARTING, 0);
 	DMAudio.ChangeMusicMode(MUSICMODE_GAME);
 	if (m_bSpritesLoaded) {

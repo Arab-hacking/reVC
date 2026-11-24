@@ -325,12 +325,6 @@ cAudioManager::SetMusicMasterVolume(uint8 volume)
 }
 
 void
-cAudioManager::SetMP3BoostVolume(uint8 volume)
-{
-	SampleManager.SetMP3BoostVolume(volume);
-}
-
-void
 cAudioManager::SetEffectsFadeVol(uint8 volume)
 {
 	SampleManager.SetEffectsFadeVolume(volume);
@@ -496,15 +490,6 @@ cAudioManager::SetSpeakerConfig(int32 conf)
 #ifdef EXTERNAL_3D_SOUND
 	SampleManager.SetSpeakerConfig(conf);
 #endif
-}
-
-bool8
-cAudioManager::IsMP3RadioChannelAvailable()
-{
-	if (m_bIsInitialised)
-		return SampleManager.IsMP3RadioChannelAvailable();
-
-	return FALSE;
 }
 
 void

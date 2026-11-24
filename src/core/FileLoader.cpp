@@ -1634,14 +1634,14 @@ CFileLoader::LoadPedObject(const char *line)
 	// reads none of them, so they land in scratch.
 	char scratch[24];
 	int32 scratchMask, pedFlags;
-	int32 radio1, radio2;
+	int32 unusedRadio1, unusedRadio2;
 	CPedModelInfo *mi;
 
 	// SA writes the masks as hex and without a sign, so they are read as one.
 	if(sscanf(line, "%d %23s %23s %23s %23s %23s %x %x %15s %d %d %15s %55s %59s",
 	          &id, model, txd,
 	          scratch, scratch, animGroup, &scratchMask, &pedFlags,
-	          animFile, &radio1, &radio2,
+	          animFile, &unusedRadio1, &unusedRadio2,
 	          pedVoiceType, voiceMin, voiceMax) != 14)
 		return;
 
@@ -1665,12 +1665,6 @@ CFileLoader::LoadPedObject(const char *line)
 		animGroupId = ASSOCGRP_DEFAULT;
 	mi->m_animGroup = (AssocGroupId)animGroupId;
 	mi->m_nPedFlags = (uint16)pedFlags;
-	// SA stores `radio + 1` because its eRadioID starts at zero for the first
-	// station and -1 means "none". The station numbering this fork still uses
-	// is Vice City's, so the offset is applied when the radio layer is
-	// converted; until then the raw ide value is kept so nothing shifts by one.
-	mi->radio1 = (int8)radio1;
-	mi->radio2 = (int8)radio2;
 	// The two remaining fields are the voice set and the range of voices in it.
 	// A row from an older ide can leave them off; sscanf then returns short and
 	// the ped keeps the defaults its constructor set.

@@ -99,7 +99,6 @@ int32 CStats::PamphletMissionPassed;
 bool CStats::abSonyCDs[1];
 int32 CStats::BloodRingKills;
 int32 CStats::BloodRingTime;
-float CStats::FavoriteRadioStationList[NUM_RADIOS];
 
 int32 CStats::Sprayings;
 float CStats::AutoPaintingBudget;
@@ -227,7 +226,6 @@ void CStats::Init()
 	NoMoreHurricanes = 0;
 	for (int i = 0; i < ARRAY_SIZE(abSonyCDs); i++)
 		abSonyCDs[i] = 0;
-	PopulateFavoriteRadioStationList();
 
 	NumPropertyOwned = 0;
 	for (int i = 0; i < TOTAL_PROPERTIES; i++)
@@ -588,11 +586,6 @@ void CStats::AddPropertyAsOwned(int32 id)
 	}
 }
 
-float CStats::GetFavoriteRadioStationList(int32 station)
-{
-	return FavoriteRadioStationList[station];
-}
-
 void CStats::SaveStats(uint8 *buf, uint32 *size)
 {
 	CheckPointReachedSuccessfully();
@@ -685,8 +678,7 @@ void CStats::SaveStats(uint8 *buf, uint32 *size)
 		sizeof(LastMissionPassedName) +
 		sizeof(CheatedCount) +
 		sizeof(StatTypesFloat) +
-		sizeof(StatTypesInt) +
-		sizeof(FavoriteRadioStationList);
+		sizeof(StatTypesInt);
 
 #define CopyToBuf(buf, data) memcpy(buf, &data, sizeof(data)); buf += sizeof(data);
 	CopyToBuf(buf, PeopleKilledByPlayer);
@@ -776,8 +768,6 @@ void CStats::SaveStats(uint8 *buf, uint32 *size)
 	CopyToBuf(buf, TotalLegitimateKills);
 	CopyToBuf(buf, LastMissionPassedName);
 	CopyToBuf(buf, CheatedCount);
-	PopulateFavoriteRadioStationList();
-	CopyToBuf(buf, FavoriteRadioStationList);
 	// The SA stat arrays. Every float stat and every integer stat a player can
 	// earn has to survive a save, and the breath capacity and the sprint budget
 	// are computed from them, so they cannot be derived again on load.
@@ -881,20 +871,11 @@ void CStats::LoadStats(uint8 *buf, uint32 size)
 	CopyFromBuf(buf, TotalLegitimateKills);
 	CopyFromBuf(buf, LastMissionPassedName);
 	CopyFromBuf(buf, CheatedCount);
-	CopyFromBuf(buf, FavoriteRadioStationList);
 	CopyFromBuf(buf, StatTypesFloat);
 	CopyFromBuf(buf, StatTypesInt);
 
 	assert(buf - buf_start == size);
 #undef CopyFromBuf
-}
-
-void
-CStats::PopulateFavoriteRadioStationList()
-{
-	float* pListenTimeArray = DMAudio.GetListenTimeArray();
-	for (int i = 0; i < NUM_RADIOS; i++)
-		FavoriteRadioStationList[i] = pListenTimeArray[i];
 }
 
 void
@@ -1407,116 +1388,6 @@ CStats::ConstructStatLine(int rowIdx)
 	if (SeagullsKilled > 0)
 		STAT_LINE_1(int, "SEAGULL", SeagullsKilled, 0);
 
-	bool playerHatesRadio = true;
-	float* pListenTimeArray = DMAudio.GetListenTimeArray();
-	for (int i = 0; i < NUM_RADIOS; i++) {
-		FavoriteRadioStationList[i] = pListenTimeArray[i];
-		if (FavoriteRadioStationList[i] != 0.0) // double
-			playerHatesRadio = false;
-	}
-
-	if (!playerHatesRadio) {
-		// Most listened
-		TEXT_ON_LEFT_GXT("FST_MFR");
-		float mostListenTime = FavoriteRadioStationList[0];
-		int mostListenedRadio = 0;
-		for (int i = 0; i < NUM_RADIOS; i++) {
-			if (FavoriteRadioStationList[i] > mostListenTime) {
-				mostListenTime = FavoriteRadioStationList[i];
-				mostListenedRadio = i;
-			}
-		}
-		switch (mostListenedRadio) {
-			case WILDSTYLE:
-				TEXT_ON_RIGHT(TheText.Get("FEA_FM0"));
-				break;
-			case FLASH_FM:
-				TEXT_ON_RIGHT(TheText.Get("FEA_FM1"));
-				break;
-			case KCHAT:
-				TEXT_ON_RIGHT(TheText.Get("FEA_FM2"));
-				break;
-			case FEVER:
-				TEXT_ON_RIGHT(TheText.Get("FEA_FM3"));
-				break;
-			case V_ROCK:
-				TEXT_ON_RIGHT(TheText.Get("FEA_FM4"));
-				break;
-			case VCPR:
-				TEXT_ON_RIGHT(TheText.Get("FEA_FM5"));
-				break;
-			case RADIO_ESPANTOSO:
-				TEXT_ON_RIGHT(TheText.Get("FEA_FM6"));
-				break;
-			case EMOTION:
-				TEXT_ON_RIGHT(TheText.Get("FEA_FM7"));
-				break;
-			case WAVE:
-				TEXT_ON_RIGHT(TheText.Get("FEA_FM8"));
-				break;
-			case USERTRACK:
-				TEXT_ON_RIGHT(TheText.Get("FEA_MP3"));
-				break;
-			default:
-				TEXT_ON_RIGHT(TheText.Get("FEA_FM8")); // heh
-				break;
-		}
-
-		// Least listened
-		TEXT_ON_LEFT_GXT("FST_LFR");
-		float leastListenTime = FavoriteRadioStationList[0];
-		int leastListenedRadio = 0;
-		for (int i = 0; i < NUM_RADIOS; i++) {
-#ifdef FIX_BUGS
-			if (!DMAudio.IsMP3RadioChannelAvailable() && i == USERTRACK)
-				continue;
-#endif
-			if (FavoriteRadioStationList[i] < leastListenTime) {
-				leastListenTime = FavoriteRadioStationList[i];
-				leastListenedRadio = i;
-			}
-		}
-#ifndef FIX_BUGS
-		if (!DMAudio.IsMP3RadioChannelAvailable() && leastListenedRadio == USERTRACK)
-			leastListenedRadio = WAVE;
-#endif
-
-		switch (leastListenedRadio) {
-			case WILDSTYLE:
-				TEXT_ON_RIGHT(TheText.Get("FEA_FM0"));
-				break;
-			case FLASH_FM:
-				TEXT_ON_RIGHT(TheText.Get("FEA_FM1"));
-				break;
-			case KCHAT:
-				TEXT_ON_RIGHT(TheText.Get("FEA_FM2"));
-				break;
-			case FEVER:
-				TEXT_ON_RIGHT(TheText.Get("FEA_FM3"));
-				break;
-			case V_ROCK:
-				TEXT_ON_RIGHT(TheText.Get("FEA_FM4"));
-				break;
-			case VCPR:
-				TEXT_ON_RIGHT(TheText.Get("FEA_FM5"));
-				break;
-			case RADIO_ESPANTOSO:
-				TEXT_ON_RIGHT(TheText.Get("FEA_FM6"));
-				break;
-			case EMOTION:
-				TEXT_ON_RIGHT(TheText.Get("FEA_FM7"));
-				break;
-			case WAVE:
-				TEXT_ON_RIGHT(TheText.Get("FEA_FM8"));
-				break;
-			case USERTRACK:
-				TEXT_ON_RIGHT(TheText.Get("FEA_MP3"));
-				break;
-			default:
-				TEXT_ON_RIGHT(TheText.Get("FEA_FM8")); // heh
-				break;
-		}
-	}
 	STAT_LINE_1(int, "SPRAYIN", Sprayings, 0);
 	STAT_LINE_1(float, "ST_WEAP", WeaponBudget, 3);
 	STAT_LINE_1(float, "ST_FASH", FashionBudget, 3);

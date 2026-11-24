@@ -7,7 +7,6 @@ cSampleManager SampleManager;
 bool8 _bSampmanInitialised = FALSE;
 
 uint32 BankStartOffset[MAX_SFX_BANKS];
-uint32     nNumMP3s;
 
 cSampleManager::cSampleManager(void)
 {
@@ -62,13 +61,6 @@ int8 cSampleManager::SetCurrent3DProvider(uint8 nProvider)
 }
 #endif
 
-bool8
-cSampleManager::IsMP3RadioChannelAvailable(void)
-{
-	return nNumMP3s != 0;
-}
-
-
 void cSampleManager::ReleaseDigitalHandle(void)
 {
 }
@@ -112,11 +104,6 @@ cSampleManager::SetEffectsMasterVolume(uint8 nVolume)
 
 void
 cSampleManager::SetMusicMasterVolume(uint8 nVolume)
-{
-}
-
-void
-cSampleManager::SetMP3BoostVolume(uint8 nVolume)
 {
 }
 

@@ -677,7 +677,6 @@ public:
 	void CreateDeadPedPickupCoors(float *x, float *y, float *z);
 	void SetAttackTimer(uint32);
 	void SetBeingDraggedFromCar(CVehicle*, uint32, bool);
-	void SetRadioStation(void);
 	void DeadPedMakesTyresBloody(void);
 	void MakeTyresMuddySectorList(CPtrList&);
 	void EndFight(uint8);

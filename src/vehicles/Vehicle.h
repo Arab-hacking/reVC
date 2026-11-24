@@ -341,7 +341,6 @@ public:
 	// "am I attached, and to what".
 	CVehicle *m_pTowingVehicle;
 	CVehicle *m_pVehicleBeingTowed;
-	uint8 m_nRadioStation;
 	uint8 m_bRainAudioCounter;
 	uint8 m_bRainSamplesCounter;
 	uint32 m_nCarHornTimer;
@@ -615,11 +614,6 @@ public:
 	void SetHornTimer(uint32 timer) { m_nCarHornTimer = timer; }
 	uint8 GetHornPattern(void) const { return m_nCarHornPattern; }
 	void SetHornPattern(uint8 pattern) { m_nCarHornPattern = pattern; }
-	// The radio station is a byte index into the audio system's station table;
-	// RADIO_OFF silences it. Stored on the vehicle so it survives a change of
-	// driver, which is what lets a peer hear the same station the owner chose.
-	uint8 GetRadioStation(void) const { return m_nRadioStation; }
-	void SetRadioStation(uint8 station) { m_nRadioStation = station; }
 	// Nitro: bottles left (0 = empty) and whether the bottle is installed at
 	// all. Setting the count on a car without the fitment does nothing, because
 	// the driving code only looks at it when bNosInst is set.

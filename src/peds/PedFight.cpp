@@ -3095,7 +3095,6 @@ CPed::InflictDamage(CEntity *damagedBy, eWeaponType method, float damage, ePedPi
 					} else {
 						m_fHealth = 0.0f;
 						if (m_pMyVehicle && m_pMyVehicle->pDriver == this) {
-							SetRadioStation();
 							m_pMyVehicle->SetStatus(STATUS_ABANDONED);
 						}
 						SetDie(dieAnim, dieDelta, dieSpeed);

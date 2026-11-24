@@ -316,7 +316,6 @@ public:
 	void PlayOneShot(int32 index, uint16 sound, float vol);
 	void SetEffectsMasterVolume(uint8 volume);
 	void SetMusicMasterVolume(uint8 volume);
-	void SetMP3BoostVolume(uint8 volume);
 	void SetEffectsFadeVol(uint8 volume);
 	void SetMusicFadeVol(uint8 volume);
 	void SetOutputMode(bool8 surround);
@@ -330,7 +329,6 @@ public:
 	int8 AutoDetect3DProviders();
 	int8 SetCurrent3DProvider(uint8 which);
 	void SetSpeakerConfig(int32 conf);
-	bool8 IsMP3RadioChannelAvailable();
 	void ReleaseDigitalHandle();
 	void ReacquireDigitalHandle();
 #ifdef AUDIO_REFLECTIONS
