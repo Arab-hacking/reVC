@@ -329,7 +329,9 @@ CBmx::LaunchBunnyHopCB(CAnimBlendAssociation *assoc, void *data)
 	   (bmx->m_aSuspensionSpringRatio[BIKESUSP_R1] > 0.0f || bmx->m_aSuspensionSpringRatio[BIKESUSP_R2] > 0.0f))
 	{
 		float power = Min(bmx->m_fControlJump / 25.0f, 1.0f) + 1.0f;
-		bmx->ApplyMoveForce(0.06f * bmx->m_fMass * power * bmx->GetUp());
-		bmx->ApplyTurnForce(0.01f * bmx->m_fTurnMass * power * bmx->GetUp(), bmx->GetForward());
+		if (bmx->GetStatus() == STATUS_PLAYER) {
+			bmx->ApplyMoveForce(0.06f * bmx->m_fMass * power * bmx->GetUp());
+			bmx->ApplyTurnForce(0.01f * bmx->m_fTurnMass * power * bmx->GetUp(), bmx->GetForward());
+		}
 	}
 }
