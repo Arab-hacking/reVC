@@ -8,6 +8,7 @@
 #include "Camera.h"
 #include "Coronas.h"
 #include "DMAudio.h"
+#include "EventDamage.h"
 #include "Explosion.h"
 #include "General.h"
 #include "Glass.h"
@@ -17,6 +18,7 @@
 #include "Pad.h"
 #include "Particle.h"
 #include "Ped.h"
+#include "PedIntelligence.h"
 #include "PointLights.h"
 #include "Pools.h"
 #include "ProjectileInfo.h"
@@ -110,6 +112,34 @@ CWeapon::ShutdownWeapons(void)
 	CExplosion::Shutdown();
 	CProjectileInfo::Shutdown();
 	CBulletInfo::Shutdown();
+}
+
+// SA CWeapon::GenerateDamageEvent (0x73A530), adapted: in SA this also
+// applies the damage through CPedDamageResponseCalculator and plays the
+// damage animation; here CPed::InflictDamage (called by the hit code
+// right after this) owns damage application and animations, so the
+// event's response is pre-marked as calculated with the raw incoming
+// damage and the event is only posted to the victim's event group,
+// where CEventHandler::ComputeDamageResponse picks the reaction.
+bool
+CWeapon::GenerateDamageEvent(CPed *victim, CEntity *creator, eWeaponType weaponType, int32 damageFactor, ePedPieceTypes pedPiece, uint8 direction)
+{
+	if(victim->m_fHealth <= 0.0f) // !victim->IsAlive()
+		return true;
+
+	if(!victim->GetIntelligence())
+		return false;
+
+	CEventDamage eventDamage(creator, CTimer::GetTimeInMilliseconds(), weaponType, pedPiece, direction, false, victim->bInVehicle);
+
+	if(!eventDamage.AffectsPed(victim))
+		return false;
+
+	eventDamage.m_damageResponse.m_fDamageHealth = (float)damageFactor;
+	eventDamage.m_damageResponse.SetDamageAsCalculated();
+
+	victim->GetIntelligence()->GetEventGroup().Add(&eventDamage, false);
+	return true;
 }
 
 void

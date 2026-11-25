@@ -1,15 +1,18 @@
 #include "common.h"
 
 #include "EventHandler.h"
+#include "EventDamage.h"
 #include "EventGroup.h"
 #include "EventPedToChase.h"
 #include "EventPedToFlee.h"
 #include "EventScriptCommand.h"
+#include "General.h"
 #include "Ped.h"
 #include "PedIntelligence.h"
 #include "TaskComplexSeekEntity.h"
 #include "TaskComplexSmartFleeEntity.h"
 #include "TaskManager.h"
+#include "TaskSimpleDuck.h"
 
 // SA CEventHandler::CEventHandler (0x4C3EE0).
 CEventHandler::CEventHandler(CPed *ped)
@@ -265,6 +268,114 @@ CEventHandler::ComputeEventResponseTask(CEvent *event, CTask *abortedTaskEventRe
 		break;
 	default:
 		(void)abortedTaskEventResponse;
+		break;
+	}
+}
+
+// SA CEventHandler::ComputeDamageResponse (0x4C0170), subset: the
+// physical-response half of SA's version (CTaskComplexDie,
+// CTaskSimpleBeHit, CTaskComplexFallAndGetUp, CTaskSimpleChoking, the
+// bike knock-off) is not ported yet - and locally CPed::InflictDamage
+// has already applied the damage, death included, before the event is
+// answered. What remains, and what is ported here, is SA's flow down to
+// the personality response: group-less damage goes straight there,
+// body-part removal runs for grouped damage, and a killing blow leaves
+// nothing to respond with.
+void
+CEventHandler::ComputeDamageResponse(CEventDamage *e, CTask *tactive, CTask *tsimplest, CTask *abortedTaskEventResponse)
+{
+	(void)tactive; (void)tsimplest; (void)abortedTaskEventResponse;
+
+	if(!e->m_bAddToEventGroup){
+		ComputeDamagePersonalityResponse(e);
+		return;
+	}
+
+	e->ProcessDamage(m_Ped);
+
+	if(e->HasKilledPed() || m_Ped->m_fHealth < 1.0f){
+		m_EventResponseTask = nil;
+		return;
+	}
+
+	if(!e->m_pSourceEntity){
+		m_EventResponseTask = nil;
+		return;
+	}
+
+	ComputeDamagePersonalityResponse(e);
+}
+
+// SA's DoComputeDamageAndResponseForPersonality inside
+// ComputeDamageResponse: answer the damager according to the ped's
+// personality (the decision maker's chosen task), unless the ped is
+// already answering this same damage or is already reacting to an
+// attack.
+void
+CEventHandler::ComputeDamagePersonalityResponse(CEventDamage *e)
+{
+	if(m_Ped->IsPlayer())
+		return;
+
+	CEntity *srcEntity = e->GetSourceEntity();
+	if(srcEntity == nil || !srcEntity->IsPed())
+		return;
+
+	CEvent *currentEvent = m_History.GetCurrentEvent();
+	if(currentEvent && currentEvent->GetEventType() == EVENT_DAMAGE
+	&& e->IsSameEventForAI(*(CEventDamage*)currentEvent))
+		return;
+
+	CTaskManager &taskMgr = m_Ped->m_pIntelligence->GetTaskManager();
+	if(taskMgr.FindTaskOfType(TASK_COMPLEX_REACT_TO_ATTACK, true))
+		return;
+
+	ComputePersonalityResponseToDamage(e, (CPed*)srcEntity);
+}
+
+// SA CEventHandler::ComputePersonalityResponseToDamage (0x4BFB60),
+// subset: the cases whose tasks are not ported yet (the kill tasks,
+// flee-any-means, the car-mission tasks, scripted attractors) fall back
+// to smart flee - SA's own fallback for the kill cases - and the speech
+// lines are skipped (the SA speech contexts are not ported yet).
+void
+CEventHandler::ComputePersonalityResponseToDamage(CEventDamage *e, CPed *src)
+{
+	m_EventResponseTask = nil;
+
+	if(src == nil)
+		return;
+
+	switch(e->GetTaskId()){
+	case TASK_COMPLEX_KILL_CRIMINAL:
+		if(src->IsPlayer())
+			break;
+		// CTaskComplexKillCriminal is not ported yet; SA flees when a
+		// kill task is not appropriate, and that is the branch we have.
+		m_EventResponseTask = new CTaskComplexSmartFleeEntity(src, false, 60.0f);
+		break;
+	case TASK_COMPLEX_KILL_PED_ON_FOOT:
+	case TASK_COMPLEX_FLEE_ANY_MEANS:
+	case TASK_COMPLEX_SMART_FLEE_ENTITY:
+	case TASK_COMPLEX_FLEE_ENTITY:
+		// The kill and flee-any-means tasks are not ported yet; smart
+		// flee is SA's fallback for the kill case and the direct answer
+		// for the flee cases.
+		m_EventResponseTask = new CTaskComplexSmartFleeEntity(src, false, 60.0f);
+		break;
+	case TASK_SIMPLE_DUCK_FOREVER:
+		m_EventResponseTask = new CTaskSimpleDuck(DUCK_STANDALONE, 57599, -1);
+		break;
+	case TASK_SIMPLE_DUCK:
+		if(CTaskSimpleDuck *duckTask = m_Ped->GetIntelligence()->GetTaskDuck())
+			m_EventResponseTask = duckTask;
+		else
+			m_EventResponseTask = new CTaskSimpleDuck(DUCK_STANDALONE, (uint16)CGeneral::GetRandomNumberInRange(2000, 5000));
+		break;
+	case TASK_COMPLEX_KILL_PED_ON_FOOT_STEALTH: // task not ported yet
+	case TASK_SIMPLE_BE_DAMAGED:
+	case TASK_NONE:
+	default:
 		break;
 	}
 }

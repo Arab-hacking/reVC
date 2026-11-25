@@ -130,6 +130,7 @@ public:
 	void ComputePedToChaseResponse(CEventPedToChase *e, CTask *tactive, CTask *tsimplest);
 	void ComputePedToFleeResponse(CEventPedToFlee *e, CTask *tactive, CTask *tsimplest);
 	void ComputePersonalityResponseToDamage(CEventDamage *e, CPed *src);
+	void ComputeDamagePersonalityResponse(CEventDamage *e);
 	void ComputePlayerCollisionWithPedResponse(CEventPlayerCollisionWithPed *e, CTask *tactive, CTask *tsimplest);
 	void ComputePlayerWantedLevelResponse(CEvent *e, CTask *tactive, CTask *tsimplest);
 	void ComputePotentialPedCollideResponse(CEventPotentialWalkIntoPed *e, CTask *tactive, CTask *tsimplest);

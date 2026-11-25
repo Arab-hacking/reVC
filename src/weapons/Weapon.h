@@ -2,6 +2,7 @@
 #define __GTA_WEAPON_H__
 
 #include "WeaponType.h"
+#include "PedNode.h"
 
 #define CAR_DRIVEBYAUTOAIMING_MAXDIST (2.5f)
 #define DOOMAUTOAIMING_MAXDIST    (9000.0f)
@@ -70,6 +71,12 @@ public:
 	bool IsType2Handed(void);
 	
 	static void MakePedsJumpAtShot(CPhysical *shooter, CVector *source, CVector *target);
+
+	// SA CWeapon::GenerateDamageEvent (0x73A530): inform the victim's
+	// intelligence about a hit via a CEventDamage. In this codebase the
+	// damage itself is applied by CPed::InflictDamage at the call sites;
+	// this only posts the event (see EventDamage.h).
+	static bool GenerateDamageEvent(CPed *victim, CEntity *creator, eWeaponType weaponType, int32 damageFactor, ePedPieceTypes pedPiece, uint8 direction);
 	
 	bool HitsGround(CEntity *holder, CVector *fireSource, CEntity *aimingTo);
 	static void BlowUpExplosiveThings(CEntity *thing);

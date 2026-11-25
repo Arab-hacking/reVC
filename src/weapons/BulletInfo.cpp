@@ -134,6 +134,7 @@ void CBulletInfo::Update(void)
 						CAnimBlendAssociation* pAnim = CAnimManager::AddAnimation(pPed->GetClump(), ANIM_GROUP_DEFAULT, ANIM_ID_SHOT_PARTIAL);
 						pAnim->SetBlend(0.0f, 8.0f);
 					}
+					CWeapon::GenerateDamageEvent(pPed, pBullet->m_pSource, pBullet->m_eWeaponType, pBullet->m_nDamage, (ePedPieceTypes)point.pieceB, pPed->GetLocalDirection(pPed->GetPosition() - point.point));
 					pPed->InflictDamage(pBullet->m_pSource, pBullet->m_eWeaponType, pBullet->m_nDamage, (ePedPieceTypes)point.pieceB, pPed->GetLocalDirection(pPed->GetPosition() - point.point));
 					CEventList::RegisterEvent(pPed->m_nPedType == PEDTYPE_COP ? SCRIPT_EVENT_SHOOT_COP : SCRIPT_EVENT_SHOOT_PED, EVENT_ENTITY_PED, pPed, (CPed*)pBullet->m_pSource, 1000);
 					pBullet->m_bInUse = false;
