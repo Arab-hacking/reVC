@@ -2,6 +2,7 @@
 
 #include "PedStuckChecker.h"
 #include "Ped.h"
+#include "PedIntelligence.h"
 #include "Task.h"
 
 // Not yet reversed in gta-reversed (0x602C00); reconstructed from the
@@ -15,13 +16,13 @@ bool
 CPedStuckChecker::TestPedStuck(CPed *ped, CEventGroup *eventGroup)
 {
 	CVector dist = ped->GetPosition() - m_lastNonStuckPoint;
-	if(dist.MagnitudeSquared() > (float)m_radius * (float)m_radius){
+	if(dist.MagnitudeSqr() > (float)m_radius * (float)m_radius){
 		m_lastNonStuckPoint = ped->GetPosition();
 		m_state = m_state == PED_STUCK_STATE_STUCK ? PED_STUCK_STATE_WAS_STUCK : PED_STUCK_STATE_NONE;
 		return false;
 	}
 
-	CTask *simplest = ped->GetIntelligence()->GetTaskManager().GetSimplestActiveTask();
+	CTask *simplest = ped->m_pIntelligence->GetTaskManager().GetSimplestActiveTask();
 	if(simplest && CTask::IsGoToTask(simplest)){
 		m_state = PED_STUCK_STATE_STUCK;
 		return true;

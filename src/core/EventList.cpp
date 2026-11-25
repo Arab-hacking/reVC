@@ -11,7 +11,7 @@
 #include "Accident.h"
 
 int32 CEventList::ms_nFirstFreeSlotIndex;
-CEvent gaEvent[NUMEVENTS];
+CScriptEvent gaEvent[NUMEVENTS];
 
 enum
 {
@@ -27,7 +27,7 @@ CEventList::Initialise(void)
 
 	debug("Initialising CEventList...");
 	for(i = 0; i < NUMEVENTS; i++){
-		gaEvent[i].type = EVENT_NULL;
+		gaEvent[i].type = SCRIPT_EVENT_NULL;
 		gaEvent[i].entityType = EVENT_ENTITY_NONE;
 		gaEvent[i].entityRef = 0;
 		gaEvent[i].posn.x = 0.0f;
@@ -46,10 +46,10 @@ CEventList::Update(void)
 
 	ms_nFirstFreeSlotIndex = 0;
 	for(i = 0; i < NUMEVENTS; i++){
-		if(gaEvent[i].type == EVENT_NULL)
+		if(gaEvent[i].type == SCRIPT_EVENT_NULL)
 			continue;
 		if(CTimer::GetTimeInMilliseconds() > gaEvent[i].timeout || gaEvent[i].state == EVENT_STATE_CANDELETE){
-			gaEvent[i].type = EVENT_NULL;
+			gaEvent[i].type = SCRIPT_EVENT_NULL;
 			gaEvent[i].state = EVENT_STATE_0;
 		}
 		if(gaEvent[i].state == EVENT_STATE_CLEAR)
@@ -58,14 +58,14 @@ CEventList::Update(void)
 }
 
 void
-CEventList::RegisterEvent(eEventType type, eEventEntity entityType, CEntity *ent, CPed *criminal, int32 timeout)
+CEventList::RegisterEvent(eScriptEventType type, eEventEntity entityType, CEntity *ent, CPed *criminal, int32 timeout)
 {
 	int i;
 	int ref;
 	bool copsDontCare;
 
 #ifdef SQUEEZE_PERFORMANCE
-	if (type == EVENT_INJURED_PED) {
+	if (type == SCRIPT_EVENT_INJURED_PED) {
 		gAccidentManager.ReportAccident((CPed*)ent);
 		return;
 	}
@@ -98,7 +98,7 @@ CEventList::RegisterEvent(eEventType type, eEventEntity entityType, CEntity *ent
 		}
 
 	for(i = ms_nFirstFreeSlotIndex; i < NUMEVENTS; i++)
-		if(gaEvent[i].type == EVENT_NULL){
+		if(gaEvent[i].type == SCRIPT_EVENT_NULL){
 			ms_nFirstFreeSlotIndex = i;
 			break;
 		}
@@ -111,7 +111,7 @@ CEventList::RegisterEvent(eEventType type, eEventEntity entityType, CEntity *ent
 		gaEvent[i].criminal = criminal;
 		if(gaEvent[i].criminal)
 			gaEvent[i].criminal->RegisterReference((CEntity**)&gaEvent[i].criminal);
-		if(type == EVENT_GUNSHOT)
+		if(type == SCRIPT_EVENT_GUNSHOT)
 			gaEvent[i].state = EVENT_STATE_CLEAR;
 		else
 			gaEvent[i].state = EVENT_STATE_0;
@@ -122,7 +122,7 @@ CEventList::RegisterEvent(eEventType type, eEventEntity entityType, CEntity *ent
 }
 
 void
-CEventList::RegisterEvent(eEventType type, CVector posn, int32 timeout)
+CEventList::RegisterEvent(eScriptEventType type, CVector posn, int32 timeout)
 {
 	int i;
 
@@ -138,7 +138,7 @@ CEventList::RegisterEvent(eEventType type, CVector posn, int32 timeout)
 		}
 
 	for(i = ms_nFirstFreeSlotIndex; i < NUMEVENTS; i++)
-		if(gaEvent[i].type == EVENT_NULL){
+		if(gaEvent[i].type == SCRIPT_EVENT_NULL){
 			ms_nFirstFreeSlotIndex = i;
 			break;
 		}
@@ -148,7 +148,7 @@ CEventList::RegisterEvent(eEventType type, CVector posn, int32 timeout)
 		gaEvent[i].timeout = CTimer::GetTimeInMilliseconds() + timeout;
 		gaEvent[i].posn = posn;
 		gaEvent[i].entityRef = 0;
-		if(type == EVENT_GUNSHOT)
+		if(type == SCRIPT_EVENT_GUNSHOT)
 			gaEvent[i].state = EVENT_STATE_CLEAR;
 		else
 			gaEvent[i].state = EVENT_STATE_0;
@@ -156,7 +156,7 @@ CEventList::RegisterEvent(eEventType type, CVector posn, int32 timeout)
 }
 
 bool
-CEventList::GetEvent(eEventType type, int32 *event)
+CEventList::GetEvent(eScriptEventType type, int32 *event)
 {
 	int i;
 	for(i = 0; i < NUMEVENTS; i++)
@@ -175,7 +175,7 @@ CEventList::ClearEvent(int32 event)
 }
 
 bool
-CEventList::FindClosestEvent(eEventType type, CVector posn, int32 *event)
+CEventList::FindClosestEvent(eScriptEventType type, CVector posn, int32 *event)
 {
 	int i;
 	float dist;
@@ -196,25 +196,25 @@ CEventList::FindClosestEvent(eEventType type, CVector posn, int32 *event)
 }
 
 void
-CEventList::ReportCrimeForEvent(eEventType type, intptr crimeId, bool copsDontCare)
+CEventList::ReportCrimeForEvent(eScriptEventType type, intptr crimeId, bool copsDontCare)
 {
 	eCrimeType crime;
 	switch(type){
-	case EVENT_ASSAULT: crime = CRIME_HIT_PED; break;
-	case EVENT_RUN_REDLIGHT: crime = CRIME_RUN_REDLIGHT; break;
-	case EVENT_ASSAULT_POLICE: crime = CRIME_HIT_COP; break;
-	case EVENT_GUNSHOT: crime = CRIME_POSSESSION_GUN; break;
-	case EVENT_STEAL_CAR: crime = CRIME_STEAL_CAR; break;
-	case EVENT_HIT_AND_RUN: crime = CRIME_RUNOVER_PED; break;
-	case EVENT_HIT_AND_RUN_COP: crime = CRIME_RUNOVER_COP; break;
-	case EVENT_SHOOT_PED: crime = CRIME_SHOOT_PED; break;
-	case EVENT_SHOOT_COP: crime = CRIME_SHOOT_COP; break;
-	case EVENT_EXPLOSION: crime = CRIME_EXPLOSION; break;
-	case EVENT_PED_SET_ON_FIRE: crime = CRIME_PED_BURNED; break;
-	case EVENT_COP_SET_ON_FIRE: crime = CRIME_COP_BURNED; break;
-	case EVENT_CAR_SET_ON_FIRE: crime = CRIME_VEHICLE_BURNED; break;
-	case EVENT_ASSAULT_NASTYWEAPON: crime = CRIME_HIT_PED_NASTYWEAPON; break;
-	case EVENT_ASSAULT_NASTYWEAPON_POLICE: crime = CRIME_HIT_COP_NASTYWEAPON; break;
+	case SCRIPT_EVENT_ASSAULT: crime = CRIME_HIT_PED; break;
+	case SCRIPT_EVENT_RUN_REDLIGHT: crime = CRIME_RUN_REDLIGHT; break;
+	case SCRIPT_EVENT_ASSAULT_POLICE: crime = CRIME_HIT_COP; break;
+	case SCRIPT_EVENT_GUNSHOT: crime = CRIME_POSSESSION_GUN; break;
+	case SCRIPT_EVENT_STEAL_CAR: crime = CRIME_STEAL_CAR; break;
+	case SCRIPT_EVENT_HIT_AND_RUN: crime = CRIME_RUNOVER_PED; break;
+	case SCRIPT_EVENT_HIT_AND_RUN_COP: crime = CRIME_RUNOVER_COP; break;
+	case SCRIPT_EVENT_SHOOT_PED: crime = CRIME_SHOOT_PED; break;
+	case SCRIPT_EVENT_SHOOT_COP: crime = CRIME_SHOOT_COP; break;
+	case SCRIPT_EVENT_EXPLOSION: crime = CRIME_EXPLOSION; break;
+	case SCRIPT_EVENT_PED_SET_ON_FIRE: crime = CRIME_PED_BURNED; break;
+	case SCRIPT_EVENT_COP_SET_ON_FIRE: crime = CRIME_COP_BURNED; break;
+	case SCRIPT_EVENT_CAR_SET_ON_FIRE: crime = CRIME_VEHICLE_BURNED; break;
+	case SCRIPT_EVENT_ASSAULT_NASTYWEAPON: crime = CRIME_HIT_PED_NASTYWEAPON; break;
+	case SCRIPT_EVENT_ASSAULT_NASTYWEAPON_POLICE: crime = CRIME_HIT_COP_NASTYWEAPON; break;
 	default: crime = CRIME_NONE; break;
 	}
 	
@@ -243,9 +243,9 @@ CEventList::ReportCrimeForEvent(eEventType type, intptr crimeId, bool copsDontCa
 	}else
 		FindPlayerPed()->Wanted()->RegisterCrime(crime, playerPedCoors, (uint32)crimeId, copsDontCare);
 
-	if(type == EVENT_ASSAULT_POLICE)
+	if(type == SCRIPT_EVENT_ASSAULT_POLICE)
 		FindPlayerPed()->SetWantedLevelNoDrop(1);
-	if(type == EVENT_SHOOT_COP || type == EVENT_ASSAULT_NASTYWEAPON_POLICE)
+	if(type == SCRIPT_EVENT_SHOOT_COP || type == SCRIPT_EVENT_ASSAULT_NASTYWEAPON_POLICE)
 		FindPlayerPed()->SetWantedLevelNoDrop(2);
 
 }

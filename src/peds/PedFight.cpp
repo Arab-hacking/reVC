@@ -2424,14 +2424,14 @@ CPed::FightHitPed(CPed *victim, CVector &touchPoint, CVector &dir, int16 piece)
 		&& weaponType != WEAPONTYPE_KATANA && weaponType != WEAPONTYPE_CHAINSAW) {
 
 		if (victim->m_nPedType == PEDTYPE_COP)
-			CEventList::RegisterEvent(EVENT_ASSAULT_POLICE, EVENT_ENTITY_PED, victim, this, 2000);
+			CEventList::RegisterEvent(SCRIPT_EVENT_ASSAULT_POLICE, EVENT_ENTITY_PED, victim, this, 2000);
 		else
-			CEventList::RegisterEvent(EVENT_ASSAULT, EVENT_ENTITY_PED, victim, this, 2000);
+			CEventList::RegisterEvent(SCRIPT_EVENT_ASSAULT, EVENT_ENTITY_PED, victim, this, 2000);
 	} else {
 		if (victim->m_nPedType == PEDTYPE_COP)
-			CEventList::RegisterEvent(EVENT_ASSAULT_NASTYWEAPON_POLICE, EVENT_ENTITY_PED, victim, this, 2000);
+			CEventList::RegisterEvent(SCRIPT_EVENT_ASSAULT_NASTYWEAPON_POLICE, EVENT_ENTITY_PED, victim, this, 2000);
 		else
-			CEventList::RegisterEvent(EVENT_ASSAULT_NASTYWEAPON, EVENT_ENTITY_PED, victim, this, 2000);
+			CEventList::RegisterEvent(SCRIPT_EVENT_ASSAULT_NASTYWEAPON, EVENT_ENTITY_PED, victim, this, 2000);
 	}
 }
 
@@ -2655,7 +2655,7 @@ CPed::LoadFightData(void)
 }
 
 void
-CPed::SetInvestigateEvent(eEventType event, CVector2D pos, float distanceToCountDone, uint16 time, float angle)
+CPed::SetInvestigateEvent(eScriptEventType event, CVector2D pos, float distanceToCountDone, uint16 time, float angle)
 {
 	if (!IsPedInControl() || CharCreatedBy == MISSION_CHAR)
 		return;
@@ -2669,7 +2669,7 @@ CPed::SetInvestigateEvent(eEventType event, CVector2D pos, float distanceToCount
 	m_distanceToCountSeekDone = distanceToCountDone;
 	m_fAngleToEvent = angle;
 
-	if (m_eventType >= EVENT_ICECREAM)
+	if (m_eventType >= SCRIPT_EVENT_ICECREAM)
 		m_lookTimer = 0;
 	else
 		CAnimManager::BlendAnimation(GetClump(), ANIM_GROUP_DEFAULT, ANIM_ID_HANDSCOWER, 4.0f);
@@ -2689,7 +2689,7 @@ CPed::InvestigateEvent(void)
 	if (CTimer::GetTimeInMilliseconds() > m_chatTimer) {
 
 		if (m_chatTimer) {
-			if (m_eventType < EVENT_UNK)
+			if (m_eventType < SCRIPT_EVENT_UNK)
 				SetWaitState(WAITSTATE_TURN180, nil);
 
 			m_chatTimer = 0;
@@ -2707,9 +2707,9 @@ CPed::InvestigateEvent(void)
 		SetMoveState(PEDMOVE_STILL);
 
 		switch (m_eventType) {
-			case EVENT_DEAD_PED:
-			case EVENT_HIT_AND_RUN:
-			case EVENT_HIT_AND_RUN_COP:
+			case SCRIPT_EVENT_DEAD_PED:
+			case SCRIPT_EVENT_HIT_AND_RUN:
+			case SCRIPT_EVENT_HIT_AND_RUN_COP:
 
 				if (CTimer::GetTimeInMilliseconds() > m_lookTimer) {
 					animAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_ID_ROADCROSS);
@@ -2734,8 +2734,8 @@ CPed::InvestigateEvent(void)
 					}
 				}
 				break;
-			case EVENT_FIRE:
-			case EVENT_EXPLOSION:
+			case SCRIPT_EVENT_FIRE:
+			case SCRIPT_EVENT_EXPLOSION:
 
 				if (bHasACamera && CTimer::GetTimeInMilliseconds() > m_lookTimer) {
 					animAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_ID_IDLE_HBHB_0);
@@ -2803,8 +2803,8 @@ CPed::InvestigateEvent(void)
 						Say(SOUND_PED_CHAT_EVENT);
 				}
 				break;
-			case EVENT_ICECREAM:
-			case EVENT_SHOPSTALL:
+			case SCRIPT_EVENT_ICECREAM:
+			case SCRIPT_EVENT_SHOPSTALL:
 
 				m_fRotationDest = m_fAngleToEvent;
 				if (CTimer::GetTimeInMilliseconds() > m_lookTimer) {
@@ -2815,7 +2815,7 @@ CPed::InvestigateEvent(void)
 						if (animAssoc) {
 							animAssoc->m_BlendDelta = -8.0f;
 							animAssoc->m_Flags |= ANIMATION_IS_BLEND_AUTO_REMOVE;
-							if (m_eventType == EVENT_ICECREAM)
+							if (m_eventType == SCRIPT_EVENT_ICECREAM)
 								animToPlay = ANIM_ID_IDLE_CHAT;
 							else
 								animToPlay = ANIM_ID_XPRESSSCRATCH;
@@ -2852,13 +2852,13 @@ CPed::InvestigateEvent(void)
 		m_vecSeekPos.z = GetPosition().z;
 		Seek();
 
-		if (m_eventType < EVENT_ICECREAM) {
+		if (m_eventType < SCRIPT_EVENT_ICECREAM) {
 			if (sq(5.0f + m_distanceToCountSeekDone) < distSqr) {
 				SetMoveState(PEDMOVE_RUN);
 				return;
 			}
 		}
-		if (m_eventType <= EVENT_EXPLOSION || m_eventType >= EVENT_SHOPSTALL) {
+		if (m_eventType <= SCRIPT_EVENT_EXPLOSION || m_eventType >= SCRIPT_EVENT_SHOPSTALL) {
 			SetMoveState(PEDMOVE_WALK);
 			return;
 		}
@@ -2895,7 +2895,7 @@ CPed::ClearInvestigateEvent(void)
 		animAssoc->m_BlendDelta = -8.0f;
 		animAssoc->m_Flags |= ANIMATION_IS_BLEND_AUTO_REMOVE;
 	}
-	if (m_eventType > EVENT_EXPLOSION)
+	if (m_eventType > SCRIPT_EVENT_EXPLOSION)
 		m_chatTimer = CTimer::GetTimeInMilliseconds() + 15000;
 
 	bGonnaInvestigateEvent = false;
@@ -4152,7 +4152,7 @@ CPed::KillPedWithCar(CVehicle *car, float impulse)
 		}
 
 		if (car->pDriver) {
-			CEventList::RegisterEvent((m_nPedType == PEDTYPE_COP ? EVENT_HIT_AND_RUN_COP : EVENT_HIT_AND_RUN), EVENT_ENTITY_PED, this, car->pDriver, 1000);
+			CEventList::RegisterEvent((m_nPedType == PEDTYPE_COP ? SCRIPT_EVENT_HIT_AND_RUN_COP : SCRIPT_EVENT_HIT_AND_RUN), EVENT_ENTITY_PED, this, car->pDriver, 1000);
 		}
 
 		ePedPieceTypes pieceToDamage;

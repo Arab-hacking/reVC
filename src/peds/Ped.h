@@ -506,6 +506,10 @@ public:
 	uint8 m_unused15D; // these 3 can't be padding but had to actually have been members ...
 	uint8 m_unused15E;
 	uint8 m_unused15F;
+	// SA CPed holds its intelligence at this point: task manager, event
+	// machinery, scanners. Initialised lazily by SetupIntelligence; nil while
+	// the ped runs on the remaining VC behaviour during the port.
+	class CPedIntelligence *m_pIntelligence;
 	uint8 CharCreatedBy;
 	eObjective m_objective;
 	eObjective m_prevObjective;
@@ -871,7 +875,7 @@ public:
 	void InvestigateEvent(void);
 	bool IsPedDoingDriveByShooting(void);
 	bool IsRoomToBeCarJacked(void);
-	void SetInvestigateEvent(eEventType, CVector2D, float, uint16, float);
+	void SetInvestigateEvent(eScriptEventType, CVector2D, float, uint16, float);
 	bool LookForInterestingNodes(void);
 	void LookForSexyCars(void);
 	void LookForSexyPeds(void);

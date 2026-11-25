@@ -509,7 +509,7 @@ CWeapon::FireMelee(CEntity *shooter, CVector &fireSource)
 			CGlass::BreakGlassPhysically(fireSource, info->m_fRadius);
 			
 			if (m_eWeaponType == WEAPONTYPE_CHAINSAW)
-				CEventList::RegisterEvent(EVENT_GUNSHOT, EVENT_ENTITY_PED, FindPlayerPed(), FindPlayerPed(), 1000);
+				CEventList::RegisterEvent(SCRIPT_EVENT_GUNSHOT, EVENT_ENTITY_PED, FindPlayerPed(), FindPlayerPed(), 1000);
 		}
 	}
 
@@ -724,14 +724,14 @@ CWeapon::FireMelee(CEntity *shooter, CVector &fireSource)
 								&& m_eWeaponType != WEAPONTYPE_KATANA && m_eWeaponType != WEAPONTYPE_CHAINSAW) {
 
 								if (victimPed->m_nPedType == PEDTYPE_COP)
-									CEventList::RegisterEvent(EVENT_ASSAULT_POLICE, EVENT_ENTITY_PED, victimPed, shooterPed, 2000);
+									CEventList::RegisterEvent(SCRIPT_EVENT_ASSAULT_POLICE, EVENT_ENTITY_PED, victimPed, shooterPed, 2000);
 								else
-									CEventList::RegisterEvent(EVENT_ASSAULT, EVENT_ENTITY_PED, victimPed, shooterPed, 2000);
+									CEventList::RegisterEvent(SCRIPT_EVENT_ASSAULT, EVENT_ENTITY_PED, victimPed, shooterPed, 2000);
 							} else {
 								if (victimPed->m_nPedType == PEDTYPE_COP)
-									CEventList::RegisterEvent(EVENT_ASSAULT_NASTYWEAPON_POLICE, EVENT_ENTITY_PED, victimPed, shooterPed, 2000);
+									CEventList::RegisterEvent(SCRIPT_EVENT_ASSAULT_NASTYWEAPON_POLICE, EVENT_ENTITY_PED, victimPed, shooterPed, 2000);
 								else
-									CEventList::RegisterEvent(EVENT_ASSAULT_NASTYWEAPON, EVENT_ENTITY_PED, victimPed, shooterPed, 2000);
+									CEventList::RegisterEvent(SCRIPT_EVENT_ASSAULT_NASTYWEAPON, EVENT_ENTITY_PED, victimPed, shooterPed, 2000);
 							}
 						}
 					}
@@ -750,7 +750,7 @@ CWeapon::FireMelee(CEntity *shooter, CVector &fireSource)
 			{
 				FindPlayerPed()->SetWantedLevelNoDrop(1);
 			}
-			CEventList::RegisterEvent(EVENT_ASSAULT, EVENT_ENTITY_VEHICLE, nearCar, shooterPed, 2000);
+			CEventList::RegisterEvent(SCRIPT_EVENT_ASSAULT, EVENT_ENTITY_VEHICLE, nearCar, shooterPed, 2000);
 		}
 		float oldHealth = nearCar->m_fHealth;
 		if (m_eWeaponType == WEAPONTYPE_CHAINSAW)
@@ -1100,9 +1100,9 @@ CWeapon::FireInstantHit(CEntity *shooter, CVector *fireSource)
 	}
 
 	if (shooter->IsPed())
-		CEventList::RegisterEvent(EVENT_GUNSHOT, EVENT_ENTITY_PED, shooter, (CPed*)shooter, 1000);
+		CEventList::RegisterEvent(SCRIPT_EVENT_GUNSHOT, EVENT_ENTITY_PED, shooter, (CPed*)shooter, 1000);
 	else if (shooter->IsVehicle() && ((CVehicle*)shooter)->pDriver)
-		CEventList::RegisterEvent(EVENT_GUNSHOT, EVENT_ENTITY_VEHICLE, shooter, ((CVehicle*)shooter)->pDriver, 1000);
+		CEventList::RegisterEvent(SCRIPT_EVENT_GUNSHOT, EVENT_ENTITY_VEHICLE, shooter, ((CVehicle*)shooter)->pDriver, 1000);
 
 	if ( shooter == FindPlayerPed() )
 	{
@@ -1452,9 +1452,9 @@ CWeapon::DoBulletImpact(CEntity *shooter, CEntity *victim,
 				}
 
 				if ( victimPed->m_nPedType == PEDTYPE_COP )
-					CEventList::RegisterEvent(EVENT_SHOOT_COP, EVENT_ENTITY_PED, victim, (CPed*)shooter, 10000);
+					CEventList::RegisterEvent(SCRIPT_EVENT_SHOOT_COP, EVENT_ENTITY_PED, victim, (CPed*)shooter, 10000);
 				else
-					CEventList::RegisterEvent(EVENT_SHOOT_PED, EVENT_ENTITY_PED, victim, (CPed*)shooter, 10000);
+					CEventList::RegisterEvent(SCRIPT_EVENT_SHOOT_PED, EVENT_ENTITY_PED, victim, (CPed*)shooter, 10000);
 
 				if ( CGame::nastyGame )
 				{
@@ -1681,7 +1681,7 @@ CWeapon::FireShotgun(CEntity *shooter, CVector *fireSource)
 	CParticle::AddParticle(PARTICLE_GUNSMOKE2, gunsmokePos, CVector(rotOffset.x*0.20f, rotOffset.y*0.20f, 0.0f), nil, 0.1f);
 	CParticle::AddParticle(PARTICLE_GUNSMOKE2, gunsmokePos, CVector(rotOffset.x*0.25f, rotOffset.y*0.25f, 0.0f), nil, 0.1f);
 
-	CEventList::RegisterEvent(EVENT_GUNSHOT, EVENT_ENTITY_PED, shooter, (CPed*)shooter, 1000);
+	CEventList::RegisterEvent(SCRIPT_EVENT_GUNSHOT, EVENT_ENTITY_PED, shooter, (CPed*)shooter, 1000);
 
 	CPointLights::AddLight(CPointLights::LIGHT_POINT, *fireSource, CVector(0.0, 0.0, 0.0), 5.0f,
 							1.0f, 0.8f, 0.0f, CPointLights::FOG_NONE, false);
@@ -1883,9 +1883,9 @@ CWeapon::FireShotgun(CEntity *shooter, CVector *fireSource)
 					victimPed->InflictDamage(shooter, m_eWeaponType, info->m_nDamage, (ePedPieceTypes)point.pieceB, localDir);
 
 					if ( victimPed->m_nPedType == PEDTYPE_COP )
-						CEventList::RegisterEvent(EVENT_SHOOT_COP, EVENT_ENTITY_PED, victim, (CPed*)shooter, 10000);
+						CEventList::RegisterEvent(SCRIPT_EVENT_SHOOT_COP, EVENT_ENTITY_PED, victim, (CPed*)shooter, 10000);
 					else
-						CEventList::RegisterEvent(EVENT_SHOOT_PED, EVENT_ENTITY_PED, victim, (CPed*)shooter, 10000);
+						CEventList::RegisterEvent(SCRIPT_EVENT_SHOOT_PED, EVENT_ENTITY_PED, victim, (CPed*)shooter, 10000);
 
 					if ( CGame::nastyGame )
 					{
@@ -2147,9 +2147,9 @@ CWeapon::FireProjectile(CEntity *shooter, CVector *fireSource, float power)
 	CWorld::pIgnoreEntity = nil;
 		
 	if ( shooter->IsPed() )
-		CEventList::RegisterEvent(EVENT_GUNSHOT, EVENT_ENTITY_PED,     shooter, (CPed *)shooter,                1000);
+		CEventList::RegisterEvent(SCRIPT_EVENT_GUNSHOT, EVENT_ENTITY_PED,     shooter, (CPed *)shooter,                1000);
 	else if ( shooter->IsVehicle() && ((CVehicle*)shooter)->pDriver )
-		CEventList::RegisterEvent(EVENT_GUNSHOT, EVENT_ENTITY_VEHICLE, shooter, ((CVehicle*)shooter)->pDriver,  1000);
+		CEventList::RegisterEvent(SCRIPT_EVENT_GUNSHOT, EVENT_ENTITY_VEHICLE, shooter, ((CVehicle*)shooter)->pDriver,  1000);
 
 	return true;
 }
@@ -2325,9 +2325,9 @@ CWeapon::FireSniper(CEntity *shooter)
 	}
 
 	if ( shooter->IsPed() )
-		CEventList::RegisterEvent(EVENT_GUNSHOT, EVENT_ENTITY_PED,     shooter, (CPed*)shooter,                1000);
+		CEventList::RegisterEvent(SCRIPT_EVENT_GUNSHOT, EVENT_ENTITY_PED,     shooter, (CPed*)shooter,                1000);
 	else if ( shooter->IsVehicle() && ((CVehicle*)shooter)->pDriver )
-		CEventList::RegisterEvent(EVENT_GUNSHOT, EVENT_ENTITY_VEHICLE, shooter, ((CVehicle*)shooter)->pDriver, 1000);
+		CEventList::RegisterEvent(SCRIPT_EVENT_GUNSHOT, EVENT_ENTITY_VEHICLE, shooter, ((CVehicle*)shooter)->pDriver, 1000);
 
 	return true;
 }
@@ -2565,7 +2565,7 @@ CWeapon::FireInstantHitFromCar(CVehicle *shooter, bool left, bool right)
 
 	DoDriveByAutoAiming(FindPlayerPed(), shooter, &source, &target);
 
-	CEventList::RegisterEvent(EVENT_GUNSHOT, EVENT_ENTITY_PED, FindPlayerPed(), FindPlayerPed(), 1000);
+	CEventList::RegisterEvent(SCRIPT_EVENT_GUNSHOT, EVENT_ENTITY_PED, FindPlayerPed(), FindPlayerPed(), 1000);
 
 	if ( !TheCamera.GetLookingLRBFirstPerson() )
 	{
@@ -2577,7 +2577,7 @@ CWeapon::FireInstantHitFromCar(CVehicle *shooter, bool left, bool right)
 	else
 		CParticle::AddParticle(PARTICLE_GUNFLASH_NOANIM, source, 1.6f*shooter->m_vecMoveSpeed, nil, 0.18f);
 
-	CEventList::RegisterEvent(EVENT_GUNSHOT, EVENT_ENTITY_VEHICLE, shooter, FindPlayerPed(), 1000);
+	CEventList::RegisterEvent(SCRIPT_EVENT_GUNSHOT, EVENT_ENTITY_VEHICLE, shooter, FindPlayerPed(), 1000);
 
 	CPointLights::AddLight(CPointLights::LIGHT_POINT, source, CVector(0.0f, 0.0f, 0.0f), 5.0f,
 		1.0f, 0.8f, 0.0f, CPointLights::FOG_NONE, false);
@@ -2639,9 +2639,9 @@ CWeapon::FireInstantHitFromCar(CVehicle *shooter, bool left, bool right)
 				}
 
 				if ( victimPed->m_nPedType == PEDTYPE_COP )
-					CEventList::RegisterEvent(EVENT_SHOOT_COP, EVENT_ENTITY_PED, victimPed, FindPlayerPed(), 10000);
+					CEventList::RegisterEvent(SCRIPT_EVENT_SHOOT_COP, EVENT_ENTITY_PED, victimPed, FindPlayerPed(), 10000);
 				else
-					CEventList::RegisterEvent(EVENT_SHOOT_PED, EVENT_ENTITY_PED, victimPed, FindPlayerPed(), 10000);
+					CEventList::RegisterEvent(SCRIPT_EVENT_SHOOT_PED, EVENT_ENTITY_PED, victimPed, FindPlayerPed(), 10000);
 			}
 		}
 		else if ( victim->IsVehicle() )

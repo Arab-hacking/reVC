@@ -58,7 +58,7 @@ CAccidentManager::Update()
 	return;
 #endif
 	int32 e;
-	if (CEventList::GetEvent(EVENT_INJURED_PED, &e)) {
+	if (CEventList::GetEvent(SCRIPT_EVENT_INJURED_PED, &e)) {
 		CPed *ped = CPools::GetPed(gaEvent[e].entityRef);
 		if (ped) {
 			ReportAccident(ped);

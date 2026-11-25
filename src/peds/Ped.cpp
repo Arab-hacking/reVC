@@ -70,6 +70,7 @@ CPed::CPed(uint32 pedType) : m_pedIK(this)
 #ifdef USE_CUTSCENE_SHADOW_FOR_PED
 	m_pRTShadow = nil;
 #endif
+	m_pIntelligence = nil;
 	// Until the first PreRender poses this ped, bone queries answer from the
 	// standard table rather than from an unposed hierarchy.
 	bCalledPreRender = false;
@@ -4851,7 +4852,7 @@ CPed::PedSetInCarCB(CAnimBlendAssociation *animAssoc, void *arg)
 		CCarCtrl::RegisterVehicleOfInterest(veh);
 
 		if (!veh->bHasBeenOwnedByPlayer && veh->VehicleCreatedBy != MISSION_VEHICLE)
-			CEventList::RegisterEvent(EVENT_STEAL_CAR, EVENT_ENTITY_VEHICLE, veh, ped, 1500);
+			CEventList::RegisterEvent(SCRIPT_EVENT_STEAL_CAR, EVENT_ENTITY_VEHICLE, veh, ped, 1500);
 
 		veh->bHasBeenOwnedByPlayer = true;
 	}
@@ -7718,7 +7719,7 @@ CPed::SetDead(void)
 	RemoveWeaponModel(weapon->m_nModelId);
 
 	m_currentWeapon = WEAPONTYPE_UNARMED;
-	CEventList::RegisterEvent(EVENT_INJURED_PED, EVENT_ENTITY_PED, this, nil, 250);
+	CEventList::RegisterEvent(SCRIPT_EVENT_INJURED_PED, EVENT_ENTITY_PED, this, nil, 250);
 	if (this != FindPlayerPed()) {
 		RemoveWeaponAnims(0, -1000.0f);
 		CreateDeadPedWeaponPickups();
@@ -7729,7 +7730,7 @@ CPed::SetDead(void)
 	m_deadBleeding = false;
 	bDoBloodyFootprints = false;
 	bVehExitWillBeInstant = false;
-	CEventList::RegisterEvent(EVENT_DEAD_PED, EVENT_ENTITY_PED, this, nil, 1000);
+	CEventList::RegisterEvent(SCRIPT_EVENT_DEAD_PED, EVENT_ENTITY_PED, this, nil, 1000);
 }
 
 void
@@ -8228,7 +8229,7 @@ bool
 CPed::CheckForExplosions(CVector2D &area)
 {
 	int event = 0;
-	if (CEventList::FindClosestEvent(EVENT_EXPLOSION, GetPosition(), &event)) {
+	if (CEventList::FindClosestEvent(SCRIPT_EVENT_EXPLOSION, GetPosition(), &event)) {
 		area.x = gaEvent[event].posn.x;
 		area.y = gaEvent[event].posn.y;
 		CEntity *actualEntity = nil;
@@ -8256,7 +8257,7 @@ CPed::CheckForExplosions(CVector2D &area)
 
 		CEventList::ClearEvent(event);
 		return true;
-	} else if (CEventList::FindClosestEvent(EVENT_FIRE, GetPosition(), &event)) {
+	} else if (CEventList::FindClosestEvent(SCRIPT_EVENT_FIRE, GetPosition(), &event)) {
 		area.x = gaEvent[event].posn.x;
 		area.y = gaEvent[event].posn.y;
 		CEventList::ClearEvent(event);
@@ -8272,7 +8273,7 @@ CPed *
 CPed::CheckForGunShots(void)
 {
 	int event;
-	if (CEventList::FindClosestEvent(EVENT_GUNSHOT, GetPosition(), &event)) {
+	if (CEventList::FindClosestEvent(SCRIPT_EVENT_GUNSHOT, GetPosition(), &event)) {
 		if (gaEvent[event].entityType == EVENT_ENTITY_PED) {
 			// Probably due to we don't want peds to go gunshot area? (same on VC)
 			bGonnaInvestigateEvent = false;
@@ -8287,7 +8288,7 @@ CPed *
 CPed::CheckForDeadPeds(void)
 {
 	int event;
-	if (CEventList::FindClosestEvent(EVENT_DEAD_PED, GetPosition(), &event)) {
+	if (CEventList::FindClosestEvent(SCRIPT_EVENT_DEAD_PED, GetPosition(), &event)) {
 		int pedHandle = gaEvent[event].entityRef;
 		if (pedHandle && gaEvent[event].entityType == EVENT_ENTITY_PED) {
 			bGonnaInvestigateEvent = true;
@@ -8622,10 +8623,10 @@ CPed::LookForInterestingNodes(void)
 	CVector2D effectPos = *objMat * effect->pos;
 	switch (effect->attractor.type) {
 		case ATTRACTORTYPE_ICECREAM:
-			SetInvestigateEvent(EVENT_ICECREAM, effectPos, 0.1f, 15000, angleToFace);
+			SetInvestigateEvent(SCRIPT_EVENT_ICECREAM, effectPos, 0.1f, 15000, angleToFace);
 			break;
 		case ATTRACTORTYPE_STARE:
-			SetInvestigateEvent(EVENT_SHOPSTALL, effectPos, 1.0f,
+			SetInvestigateEvent(SCRIPT_EVENT_SHOPSTALL, effectPos, 1.0f,
 								CGeneral::GetRandomNumberInRange(8000, 10 * effect->attractor.probability + 8500),
 								angleToFace);
 			break;

@@ -4,33 +4,33 @@
 class CEntity;
 class CPed;
 
-enum eEventType
+enum eScriptEventType
 {
-	EVENT_NULL,
-	EVENT_ASSAULT,
-	EVENT_RUN_REDLIGHT,
-	EVENT_ASSAULT_POLICE,
-	EVENT_GUNSHOT,
-	EVENT_INJURED_PED,
-	EVENT_DEAD_PED,
-	EVENT_FIRE,
-	EVENT_STEAL_CAR,
-	EVENT_HIT_AND_RUN,
-	EVENT_HIT_AND_RUN_COP,
-	EVENT_SHOOT_PED,
-	EVENT_SHOOT_COP,
-	EVENT_EXPLOSION,
-	EVENT_PED_SET_ON_FIRE,
-	EVENT_COP_SET_ON_FIRE,
-	EVENT_CAR_SET_ON_FIRE,
-	EVENT_ASSAULT_NASTYWEAPON,
-	EVENT_ASSAULT_NASTYWEAPON_POLICE,
-	EVENT_UNK, // Not on SA it seems
-	EVENT_ICECREAM,
-	EVENT_ATM,
-	EVENT_SHOPSTALL,
-	EVENT_SHOPWINDOW,
-	EVENT_LAST_EVENT
+	SCRIPT_EVENT_NULL,
+	SCRIPT_EVENT_ASSAULT,
+	SCRIPT_EVENT_RUN_REDLIGHT,
+	SCRIPT_EVENT_ASSAULT_POLICE,
+	SCRIPT_EVENT_GUNSHOT,
+	SCRIPT_EVENT_INJURED_PED,
+	SCRIPT_EVENT_DEAD_PED,
+	SCRIPT_EVENT_FIRE,
+	SCRIPT_EVENT_STEAL_CAR,
+	SCRIPT_EVENT_HIT_AND_RUN,
+	SCRIPT_EVENT_HIT_AND_RUN_COP,
+	SCRIPT_EVENT_SHOOT_PED,
+	SCRIPT_EVENT_SHOOT_COP,
+	SCRIPT_EVENT_EXPLOSION,
+	SCRIPT_EVENT_PED_SET_ON_FIRE,
+	SCRIPT_EVENT_COP_SET_ON_FIRE,
+	SCRIPT_EVENT_CAR_SET_ON_FIRE,
+	SCRIPT_EVENT_ASSAULT_NASTYWEAPON,
+	SCRIPT_EVENT_ASSAULT_NASTYWEAPON_POLICE,
+	SCRIPT_EVENT_UNK, // Not on SA it seems
+	SCRIPT_EVENT_ICECREAM,
+	SCRIPT_EVENT_ATM,
+	SCRIPT_EVENT_SHOPSTALL,
+	SCRIPT_EVENT_SHOPWINDOW,
+	SCRIPT_EVENT_LAST_EVENT
 };
 
 enum eEventEntity
@@ -41,9 +41,9 @@ enum eEventEntity
 	EVENT_ENTITY_OBJECT
 };
 
-struct CEvent
+struct CScriptEvent
 {
-	eEventType type;
+	eScriptEventType type;
 	eEventEntity entityType;
 	int32 entityRef;
 	CPed *criminal;
@@ -58,14 +58,14 @@ class CEventList
 public:
 	static void Initialise(void);
 	static void Update(void);
-	static void RegisterEvent(eEventType type, eEventEntity entityType, CEntity *ent, CPed *criminal, int32 timeout);
-	static void RegisterEvent(eEventType type, CVector posn, int32 timeout);
-	static bool GetEvent(eEventType type, int32 *event);
+	static void RegisterEvent(eScriptEventType type, eEventEntity entityType, CEntity *ent, CPed *criminal, int32 timeout);
+	static void RegisterEvent(eScriptEventType type, CVector posn, int32 timeout);
+	static bool GetEvent(eScriptEventType type, int32 *event);
 	static void ClearEvent(int32 event);
-	static bool FindClosestEvent(eEventType type, CVector posn, int32 *event);
-	static void ReportCrimeForEvent(eEventType type, intptr, bool);
+	static bool FindClosestEvent(eScriptEventType type, CVector posn, int32 *event);
+	static void ReportCrimeForEvent(eScriptEventType type, intptr, bool);
 };
 
-extern CEvent gaEvent[NUMEVENTS];
+extern CScriptEvent gaEvent[NUMEVENTS];
 
 #endif // __GTA_EVENTLIST_H__

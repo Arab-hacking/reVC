@@ -2131,8 +2131,8 @@ CWorld::TriggerExplosionSectorList(CPtrList &list, const CVector &position, floa
 							pPed->SetFall(2000,
 							              (AnimationId)(direction + ANIM_ID_KO_SKID_FRONT), 0);
 						if(pCreator && pCreator->IsPed()) {
-							eEventType eventType = EVENT_SHOOT_PED;
-							if(pPed->m_nPedType == PEDTYPE_COP) eventType = EVENT_SHOOT_COP;
+							eScriptEventType eventType = SCRIPT_EVENT_SHOOT_PED;
+							if(pPed->m_nPedType == PEDTYPE_COP) eventType = SCRIPT_EVENT_SHOOT_COP;
 							CEventList::RegisterEvent(eventType, EVENT_ENTITY_PED, pEntity,
 							                          (CPed *)pCreator, 10000);
 							pPed->RegisterThreatWithGangPeds(pCreator);

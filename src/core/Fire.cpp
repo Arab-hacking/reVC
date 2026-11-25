@@ -163,7 +163,7 @@ void
 CFire::ReportThisFire(void)
 {
 	gFireManager.m_nTotalFires++;
-	CEventList::RegisterEvent(EVENT_FIRE, m_vecPos, 1000);
+	CEventList::RegisterEvent(SCRIPT_EVENT_FIRE, m_vecPos, 1000);
 }
 
 void
@@ -260,10 +260,10 @@ CFireManager::StartFire(CEntity *entityOnFire, CEntity *fleeFrom, float strength
 			}
 			if (fleeFrom) {
 				if (ped->m_nPedType == PEDTYPE_COP) {
-					CEventList::RegisterEvent(EVENT_COP_SET_ON_FIRE, EVENT_ENTITY_PED,
+					CEventList::RegisterEvent(SCRIPT_EVENT_COP_SET_ON_FIRE, EVENT_ENTITY_PED,
 						entityOnFire, (CPed *)fleeFrom, 10000);
 				} else {
-					CEventList::RegisterEvent(EVENT_PED_SET_ON_FIRE, EVENT_ENTITY_PED,
+					CEventList::RegisterEvent(SCRIPT_EVENT_PED_SET_ON_FIRE, EVENT_ENTITY_PED,
 						entityOnFire, (CPed *)fleeFrom, 10000);
 				}
 			}
@@ -274,7 +274,7 @@ CFireManager::StartFire(CEntity *entityOnFire, CEntity *fleeFrom, float strength
         				CCarAI::TellOccupantsToFleeCar(veh);
 
 				if (fleeFrom) {
-					CEventList::RegisterEvent(EVENT_CAR_SET_ON_FIRE, EVENT_ENTITY_VEHICLE,
+					CEventList::RegisterEvent(SCRIPT_EVENT_CAR_SET_ON_FIRE, EVENT_ENTITY_VEHICLE,
 						entityOnFire, (CPed *)fleeFrom, 10000);
 				}
 			}

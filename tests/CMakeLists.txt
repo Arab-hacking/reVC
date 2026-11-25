@@ -360,6 +360,33 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Cla
     set_target_properties(task_manager_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
     add_test(NAME task_manager_tests COMMAND task_manager_tests)
 
+    add_executable(intelligence_tests
+        IntelligenceTests.cpp
+        ../src/peds/events/Event.cpp
+        ../src/peds/events/EventPool.cpp
+        ../src/peds/events/EventHandler.cpp
+        ../src/peds/events/EventHandlerHistory.cpp
+        ../src/peds/decisions/Decision.cpp
+        ../src/peds/decisions/DecisionMaker.cpp
+        ../src/peds/decisions/DecisionMakerTypes.cpp
+        ../src/peds/tasks/Task.cpp
+        ../src/peds/tasks/TaskPool.cpp)
+    target_compile_definitions(intelligence_tests PRIVATE
+        LIBRW RW_GL3 LIBRW_SDL2 CMAKE_BUILD USE_OUR_VERSIONING AUDIO_OAL)
+    target_include_directories(intelligence_tests PRIVATE
+        ../vendor/librw ../vendor/librw/src/gl ../vendor/sdl2/include
+        ../src ../src/animation ../src/audio ../src/buildings ../src/collision
+        ../src/control ../src/core ../src/entities ../src/extras
+        ../src/extras/custom ../src/extras/custom/br ../src/fakerw ../src/math
+        ../src/modelinfo ../src/objects ../src/peds ../src/peds/tasks
+        ../src/peds/events ../src/peds/decisions
+        ../src/renderer ../src/rw ../src/skel ../src/text ../src/vehicles
+        ../src/weapons)
+    target_compile_options(intelligence_tests PRIVATE -ffunction-sections -fdata-sections)
+    target_link_options(intelligence_tests PRIVATE -Wl,--gc-sections)
+    set_target_properties(intelligence_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+    add_test(NAME intelligence_tests COMMAND intelligence_tests)
+
     # Link the actual ANPK/ANP3 reader with a memory-stream shim. Section GC
     # keeps the unrelated game/renderer entry points out of this fixture.
     set(ANIM_FILE_READER_SOURCES
