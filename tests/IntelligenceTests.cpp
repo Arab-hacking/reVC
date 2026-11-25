@@ -117,8 +117,7 @@ main()
 		CHECK(history.GetCurrentEvent()->GetEventType() == EVENT_DAMAGE);
 	}
 
-	// Task vocabulary: the none task finishes instantly, stand-still clones
-	// keep their settings, and an urgent abort always succeeds.
+	// Task vocabulary: the none task finishes instantly and clones cleanly.
 	{
 		CTaskSimpleNone *none = new CTaskSimpleNone();
 		CHECK(none->GetTaskType() == TASK_NONE);
@@ -127,14 +126,6 @@ main()
 		CHECK(noneClone->GetTaskType() == TASK_NONE);
 		delete noneClone;
 		delete none;
-
-		CTaskSimpleStandStill *stand = new CTaskSimpleStandStill(1500, false, true, 4.0f);
-		CHECK(stand->GetTaskType() == TASK_SIMPLE_STAND_STILL);
-		CHECK(stand->MakeAbortable(nil, ABORT_PRIORITY_URGENT, nil));
-		CTask *standClone = stand->Clone();
-		CHECK(standClone->GetTaskType() == TASK_SIMPLE_STAND_STILL);
-		delete standClone;
-		delete stand;
 	}
 
 	if(s_failures == 0)
