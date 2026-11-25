@@ -3,6 +3,7 @@
 #include "CarCtrl.h"
 #include "CopPed.h"
 #include "DMAudio.h"
+#include "EventGlobalGroup.h"
 #include "EventList.h"
 #include "Explosion.h"
 #include "Fire.h"

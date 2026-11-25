@@ -3,12 +3,13 @@
 #include "TaskComplexSmartFleeEntity.h"
 
 #include "Entity.h"
+#include "EventGlobalGroup.h"
+#include "EventSeenPanickedPed.h"
 #include "Ped.h"
 #include "TaskComplexSmartFleePoint.h"
 
 // SA CTaskComplexSmartFleeEntity (0x65C430). The interesting-event
-// record, IK look-at and seen-panicked-ped global event are dropped
-// (those systems are not ported).
+// record and IK look-at are dropped (those systems are not ported).
 
 CTaskComplexSmartFleeEntity::CTaskComplexSmartFleeEntity(CEntity *fleeEntity, bool scream, float safeDistance, int32 fleeTime,
 	int32 posCheckPeriod, float posChangeTolerance, eMoveState moveState)
@@ -68,6 +69,19 @@ CTaskComplexSmartFleeEntity::ControlSubTask(CPed *ped)
 				if(dist.MagnitudeSqr() >= m_posChangeTolerance * m_posChangeTolerance){
 					m_pos = currPos;
 					fleePointTask->SetFleePosition(m_pos, m_safeDistance, m_pedScream);
+
+					switch(m_moveState){
+					case PEDMOVE_JOG:
+					case PEDMOVE_RUN:
+					case PEDMOVE_SPRINT: {
+						// SA: a running ped spreads panic to bystanders
+						CEventSeenPanickedPed seenPanicked(ped);
+						GetEventGlobalGroup()->Add(&seenPanicked, false);
+						break;
+					}
+					default:
+						break;
+					}
 				}
 			}
 		}

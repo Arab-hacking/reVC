@@ -1,6 +1,8 @@
 #include "TaskComplexFleeEntity.h"
 
 #include "Entity.h"
+#include "EventGlobalGroup.h"
+#include "EventSeenPanickedPed.h"
 #include "Ped.h"
 #include "TaskComplexFleePoint.h"
 #include "Timer.h"
@@ -83,6 +85,10 @@ CTaskComplexFleeEntity::ControlSubTask(CPed *ped)
 				if(dist.MagnitudeSqr() > m_posChangeTolerance * m_posChangeTolerance){
 					m_pos = newPos;
 					((CTaskComplexFleePoint*)m_pSubTask)->SetFleePosition(newPos, m_safeDistance, m_pedScream);
+
+					// SA: a fleeing ped spreads panic to bystanders
+					CEventSeenPanickedPed seenPanicked(ped);
+					GetEventGlobalGroup()->Add(&seenPanicked, false);
 				}
 			}
 		}

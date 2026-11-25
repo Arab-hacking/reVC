@@ -3,14 +3,19 @@
 #include "EventHandler.h"
 #include "EventDamage.h"
 #include "EventGroup.h"
+#include "EventGunShot.h"
+#include "EventGunShotWhizzedBy.h"
 #include "EventPedToChase.h"
 #include "EventPedToFlee.h"
 #include "EventScriptCommand.h"
+#include "EventSeenPanickedPed.h"
 #include "General.h"
 #include "Ped.h"
 #include "PedIntelligence.h"
+#include "TaskComplexFleeEntity.h"
 #include "TaskComplexSeekEntity.h"
 #include "TaskComplexSmartFleeEntity.h"
+#include "TaskComplexTurnToFaceEntityOrCoord.h"
 #include "TaskManager.h"
 #include "TaskSimpleDuck.h"
 
@@ -266,6 +271,15 @@ CEventHandler::ComputeEventResponseTask(CEvent *event, CTask *abortedTaskEventRe
 	case EVENT_PED_TO_FLEE:
 		ComputePedToFleeResponse((CEventPedToFlee*)event, activeTask, simplestTask);
 		break;
+	case EVENT_SEEN_PANICKED_PED:
+		ComputeSeenPanickedPedResponse((CEventSeenPanickedPed*)event, activeTask, simplestTask);
+		break;
+	case EVENT_SHOT_FIRED:
+		ComputeShotFiredResponse((CEventGunShot*)event, activeTask, simplestTask);
+		break;
+	case EVENT_SHOT_FIRED_WHIZZED_BY:
+		ComputeShotFiredWhizzedByResponse((CEventGunShotWhizzedBy*)event, activeTask, simplestTask);
+		break;
 	default:
 		(void)abortedTaskEventResponse;
 		break;
@@ -374,6 +388,121 @@ CEventHandler::ComputePersonalityResponseToDamage(CEventDamage *e, CPed *src)
 		break;
 	case TASK_COMPLEX_KILL_PED_ON_FOOT_STEALTH: // task not ported yet
 	case TASK_SIMPLE_BE_DAMAGED:
+	case TASK_NONE:
+	default:
+		break;
+	}
+}
+
+// SA CEventHandler::ComputeSeenPanickedPedResponse (0x4C35F0): duck, or
+// run from whatever the current event is about - SA reads the source
+// from this ped's own event history (the panicked ped's AffectsPed
+// already made sure there is one in the picture).
+void
+CEventHandler::ComputeSeenPanickedPedResponse(CEventSeenPanickedPed *e, CTask *tactive, CTask *tsimplest)
+{
+	(void)tactive; (void)tsimplest;
+	m_EventResponseTask = nil;
+
+	if(!e->GetSourceEntity())
+		return;
+	CEvent *currEvent = m_History.GetCurrentEvent();
+	if(!currEvent)
+		return;
+	CEntity *currEventSrc = currEvent->GetSourceEntity();
+	if(!currEventSrc)
+		return;
+
+	switch(e->GetTaskId()){
+	case TASK_SIMPLE_DUCK_FOREVER:
+		m_EventResponseTask = new CTaskSimpleDuck(DUCK_STANDALONE, 57599, -1);
+		break;
+	case TASK_COMPLEX_FLEE_ENTITY:
+		m_EventResponseTask = new CTaskComplexFleeEntity(currEventSrc, true, 45.0f);
+		break;
+	case TASK_COMPLEX_SMART_FLEE_ENTITY:
+		m_EventResponseTask = new CTaskComplexSmartFleeEntity(currEventSrc, false, 45.0f);
+		break;
+	default:
+		break;
+	}
+}
+
+// SA CEventHandler::ComputeShotFiredResponse (0x4BC710), subset: the
+// kill tasks (KillPedOnFoot/KillCriminal/stealth) and the car-mission
+// flee are not ported yet, so those answers fall back to smart flee -
+// SA's own fallback when a kill task is not appropriate.
+void
+CEventHandler::ComputeShotFiredResponse(CEventGunShot *e, CTask *tactive, CTask *tsimplest)
+{
+	(void)tactive; (void)tsimplest;
+	m_EventResponseTask = nil;
+
+	if(!e->m_firedBy)
+		return;
+	CPed *firedByPed = e->m_firedBy->IsPed() ? (CPed*)e->m_firedBy : nil;
+
+	switch(e->GetTaskId()){
+	case TASK_COMPLEX_TURN_TO_FACE_ENTITY:
+		m_EventResponseTask = new CTaskComplexTurnToFaceEntityOrCoord(e->m_firedBy, 0.5f);
+		break;
+	case TASK_COMPLEX_KILL_PED_ON_FOOT:
+		if(!firedByPed || firedByPed->m_nPedType == m_Ped->m_nPedType)
+			break;
+		m_EventResponseTask = new CTaskComplexSmartFleeEntity(e->m_firedBy, false, 60.0f);
+		break;
+	case TASK_COMPLEX_KILL_CRIMINAL:
+		if(!firedByPed || firedByPed->m_nPedType == m_Ped->m_nPedType || firedByPed->IsPlayer())
+			break;
+		m_EventResponseTask = new CTaskComplexSmartFleeEntity(e->m_firedBy, false, 60.0f);
+		break;
+	case TASK_COMPLEX_SMART_FLEE_ENTITY:
+		m_EventResponseTask = new CTaskComplexSmartFleeEntity(e->m_firedBy, true, 60.0f);
+		break;
+	case TASK_COMPLEX_CAR_DRIVE_MISSION_FLEE_SCENE: // task not ported yet
+		m_EventResponseTask = new CTaskComplexSmartFleeEntity(e->m_firedBy, false, 60.0f);
+		break;
+	case TASK_SIMPLE_DUCK_FOREVER:
+		m_EventResponseTask = new CTaskSimpleDuck(DUCK_STANDALONE, 0x967F, -1);
+		break;
+	case TASK_SIMPLE_DUCK:
+		if(m_Ped->GetIntelligence()->GetTaskDuck(true))
+			m_EventResponseTask = new CTaskSimpleDuck(DUCK_STANDALONE, 3000, -1);
+		break;
+	case TASK_COMPLEX_KILL_PED_ON_FOOT_STEALTH: // task not ported yet
+	case TASK_NONE:
+	default:
+		break;
+	}
+}
+
+// SA CEventHandler::ComputeShotFiredWhizzedByResponse (0x4BBE30): a
+// shot whizzed by - get (or stay) ducked while they keep coming.
+void
+CEventHandler::ComputeShotFiredWhizzedByResponse(CEventGunShotWhizzedBy *e, CTask *tactive, CTask *tsimplest)
+{
+	(void)tactive;
+	m_EventResponseTask = nil;
+
+	if(!e->GetSourceEntity())
+		return;
+
+	switch(e->GetTaskId()){
+	case TASK_SIMPLE_DUCK_WHILE_SHOTS_WHIZZING: {
+		if(tsimplest && tsimplest->GetTaskType() == TASK_SIMPLE_DUCK){
+			CTaskSimpleDuck *duckTask = (CTaskSimpleDuck*)tsimplest;
+			if(duckTask->m_ShotWhizzingCounter >= 0)
+				duckTask->RestartTask(m_Ped);
+			break;
+		}
+		if(CTaskSimpleDuck *duckTask = m_Ped->GetIntelligence()->GetTaskDuck()){
+			if(duckTask->m_ShotWhizzingCounter >= 0)
+				duckTask->RestartTask(m_Ped);
+			break;
+		}
+		m_EventResponseTask = new CTaskSimpleDuck(DUCK_STANDALONE_WEAPON_CROUCH, (uint16)CGeneral::GetRandomNumberInRange(3000, 5000), 1000);
+		break;
+	}
 	case TASK_NONE:
 	default:
 		break;

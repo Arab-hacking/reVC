@@ -9,6 +9,9 @@
 #include "Coronas.h"
 #include "DMAudio.h"
 #include "EventDamage.h"
+#include "EventGlobalGroup.h"
+#include "EventGunShot.h"
+#include "EventGunShotWhizzedBy.h"
 #include "Explosion.h"
 #include "General.h"
 #include "Glass.h"
@@ -898,6 +901,19 @@ CWeapon::FireInstantHit(CEntity *shooter, CVector *fireSource)
 	ASSERT(fireSource!=nil);
 
 	CWeaponInfo *info = GetInfo();
+
+	// SA posts every shot to the global event group (CWeapon::Fire /
+	// FireInstantHit in SA), so nearby peds hear it and feel it whizz
+	// by; approximated here with the shooter's forward and the weapon
+	// range - SA uses the camera's source/target for the player.
+	{
+		CVector targetPoint = *fireSource + shooter->GetForward() * info->m_fRange;
+		bool bHasNoSound = m_eWeaponType == WEAPONTYPE_SILENCED_INGRAM || m_eWeaponType == WEAPONTYPE_TEARGAS;
+		CEventGunShot gunShot(shooter, *fireSource, targetPoint, bHasNoSound);
+		GetEventGlobalGroup()->Add(&gunShot, false);
+		CEventGunShotWhizzedBy whizzedBy(shooter, *fireSource, targetPoint, bHasNoSound);
+		GetEventGlobalGroup()->Add(&whizzedBy, false);
+	}
 
 	CVector source, target;
 	CColPoint point;
