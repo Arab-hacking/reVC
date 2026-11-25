@@ -340,6 +340,26 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Cla
     set_target_properties(anim_association_nodes_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
     add_test(NAME anim_association_nodes_tests COMMAND anim_association_nodes_tests)
 
+    add_executable(task_manager_tests
+        TaskManagerTests.cpp
+        ../src/peds/tasks/Task.cpp
+        ../src/peds/tasks/TaskPool.cpp
+        ../src/peds/tasks/TaskManager.cpp)
+    target_compile_definitions(task_manager_tests PRIVATE
+        LIBRW RW_GL3 LIBRW_SDL2 CMAKE_BUILD USE_OUR_VERSIONING AUDIO_OAL)
+    target_include_directories(task_manager_tests PRIVATE
+        ../vendor/librw ../vendor/librw/src/gl ../vendor/sdl2/include
+        ../src ../src/animation ../src/audio ../src/buildings ../src/collision
+        ../src/control ../src/core ../src/entities ../src/extras
+        ../src/extras/custom ../src/extras/custom/br ../src/fakerw ../src/math
+        ../src/modelinfo ../src/objects ../src/peds ../src/peds/tasks
+        ../src/renderer ../src/rw ../src/skel ../src/text ../src/vehicles
+        ../src/weapons)
+    target_compile_options(task_manager_tests PRIVATE -ffunction-sections -fdata-sections)
+    target_link_options(task_manager_tests PRIVATE -Wl,--gc-sections)
+    set_target_properties(task_manager_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+    add_test(NAME task_manager_tests COMMAND task_manager_tests)
+
     # Link the actual ANPK/ANP3 reader with a memory-stream shim. Section GC
     # keeps the unrelated game/renderer entry points out of this fixture.
     set(ANIM_FILE_READER_SOURCES
