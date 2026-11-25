@@ -1873,6 +1873,16 @@ CWorld::Process(void)
 {
 	if(!(CTimer::GetFrameCounter() & 63)) CReferences::PruneAllReferencesInWorld();
 
+	// SA: hand the global group's events out to every moving ped,
+	// then clear the box (the group hand-out lands with the group
+	// intelligence's event machinery).
+	for(CPtrNode *node = ms_listMovingEntityPtrs.first; node; node = node->next){
+		CEntity *ent = (CEntity*)node->item;
+		if(ent->IsPed())
+			GetEventGlobalGroup()->AddEventsToPed((CPed*)ent);
+	}
+	GetEventGlobalGroup()->Flush();
+
 	CPedGroups::Process();
 
 	{
