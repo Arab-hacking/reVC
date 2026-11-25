@@ -4,8 +4,10 @@
 #include "AnimBlendAssociation.h"
 #include "AnimManager.h"
 #include "Ped.h"
+#include "PedIntelligence.h"
 #include "PlayerPed.h"
 #include "RpAnimBlend.h"
+#include "TaskSimpleDuck.h"
 #include "Timer.h"
 
 // SA CTaskSimpleStandStill::CTaskSimpleStandStill (0x635C60).
@@ -32,9 +34,7 @@ CTaskSimpleStandStill::MakeAbortable(CPed *ped, eAbortPriority priority, const C
 	return true;
 }
 
-// SA CTaskSimpleStandStill::ProcessPed (0x635D10). (SA also forwards duck
-// movement to CTaskSimpleDuck while ducking; that hook lands with the
-// duck task - a ducking ped simply keeps its duck pose here.)
+// SA CTaskSimpleStandStill::ProcessPed (0x635D10).
 bool
 CTaskSimpleStandStill::ProcessPed(CPed *ped)
 {
@@ -42,14 +42,18 @@ CTaskSimpleStandStill::ProcessPed(CPed *ped)
 		if(!ped->bInVehicle){
 			ped->SetMoveState(PEDMOVE_STILL);
 			ped->m_nSwimmingMoveState = PEDMOVE_STILL;
-			if(!ped->bIsDucking)
+			if(!ped->bIsDucking || !ped->GetIntelligence()->GetTaskDuck(false))
 				CAnimManager::BlendAnimation(ped->GetClump(), ped->m_animGroup, ANIM_ID_IDLE, m_fBlendData);
+			else
+				ped->GetIntelligence()->GetTaskDuck(false)->ControlDuckMove();
 			if(ped->IsPlayer())
 				((CPlayerPed*)ped)->GetPlayerData()->m_fMoveBlendRatio = 0.0f;
 		}
 	}
 
-	if(!ped->bIsDucking)
+	if(ped->bIsDucking && ped->GetIntelligence()->GetTaskDuck(false))
+		ped->GetIntelligence()->GetTaskDuck(false)->ControlDuckMove();
+	else
 		ped->SetMoveState(PEDMOVE_STILL);
 
 	if(m_bUseAnimIdleStance){

@@ -2,10 +2,12 @@
 
 #include "PedIntelligence.h"
 #include "Ped.h"
+#include "PlayerPed.h"
 #include "Vehicle.h"
 #include "EventScriptCommand.h"
 #include "DecisionMakerTypes.h"
 #include "TaskComplexWander.h"
+#include "TaskSimpleDuck.h"
 #include "TaskSimpleGoTo.h"
 #include "TaskSimpleStandStill.h"
 #include "Timer.h"
@@ -349,6 +351,38 @@ bool
 CPedIntelligence::GetUsingParachute()
 {
 	return false;
+}
+
+// SA CPedIntelligence::SetTaskDuckSecondary (0x601230): give the ped the
+// secondary duck task (unless a script already controls ducking) and run
+// one tick of it immediately so the pose starts this frame. (SA also
+// clears the use-gun task's anim here; not ported yet.)
+void
+CPedIntelligence::SetTaskDuckSecondary(uint16 nLengthOfDuck)
+{
+	CTaskSimpleDuck *duck = GetTaskDuck();
+	if(duck && duck->m_DuckControlType == DUCK_SCRIPT_CONTROLLED)
+		return;
+
+	m_TaskMgr.SetTaskSecondary(new CTaskSimpleDuck(DUCK_TASK_CONTROLLED, nLengthOfDuck), TASK_SECONDARY_DUCK);
+	((CTaskSimpleDuck*)m_TaskMgr.GetTaskSecondary(TASK_SECONDARY_DUCK))->ProcessPed(m_pPed);
+}
+
+// SA CPedIntelligence::ClearTaskDuckSecondary (0x601390).
+void
+CPedIntelligence::ClearTaskDuckSecondary()
+{
+	CTask *secondaryDuck = m_TaskMgr.GetTaskSecondary(TASK_SECONDARY_DUCK);
+	if(secondaryDuck == nil)
+		return;
+
+	secondaryDuck->MakeAbortable(m_pPed, ABORT_PRIORITY_LEISURE, nil);
+	if(m_pPed->IsPlayer())
+		((CPlayerPed*)m_pPed)->GetPlayerData()->m_fMoveBlendRatio = 0.0f;
+	else
+		m_pPed->SetMoveState(PEDMOVE_STILL);
+	// SA also clears the use-gun secondary attack task's anim here; not
+	// ported yet.
 }
 
 // SA CPedIntelligence::ClearTasks (0x600FB0 in SA numbering): park the
