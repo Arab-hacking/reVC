@@ -602,6 +602,9 @@ public:
 	bool bHasJustLeftCar;
 	bool bHasJustSoughtCover;
 	bool bIgnoreHeightCheckOnGotoPointTask;
+	// SA CPed::m_nRandomSeed: per-ped random offset so crowds do not all
+	// make the same wander/speech choices on the same frame.
+	uint16 m_nRandomSeed;
 	// SA keeps the scanners on CPedIntelligence (m_vehicleScanner, m_pedScanner,
 	// m_objectScanner). reVC has no intelligence object, so the one scanner the
 	// ped code actually uses sits here directly. It is stateful - it holds the

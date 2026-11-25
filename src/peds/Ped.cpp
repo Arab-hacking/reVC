@@ -75,6 +75,7 @@ CPed::CPed(uint32 pedType) : m_pedIK(this)
 	bHasJustLeftCar = false;
 	bHasJustSoughtCover = false;
 	bIgnoreHeightCheckOnGotoPointTask = false;
+	m_nRandomSeed = (uint16)CGeneral::GetRandomNumber();
 	// Until the first PreRender poses this ped, bone queries answer from the
 	// standard table rather than from an unposed hierarchy.
 	bCalledPreRender = false;
