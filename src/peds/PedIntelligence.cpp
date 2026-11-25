@@ -5,6 +5,9 @@
 #include "Vehicle.h"
 #include "EventScriptCommand.h"
 #include "DecisionMakerTypes.h"
+#include "TaskComplexWander.h"
+#include "TaskSimpleGoTo.h"
+#include "TaskSimpleStandStill.h"
 #include "Timer.h"
 
 // SA statics (0x8D2380..).
@@ -241,6 +244,7 @@ CPedIntelligence::IncrementAngerAtPlayer(uint8 anger)
 void
 CPedIntelligence::ProcessFirst()
 {
+	ProcessStaticCounter();
 	m_pedStuckChecker.TestPedStuck(m_pPed, &m_eventGroup);
 	m_collisionScanner.ScanForCollisionEvents(m_pPed, &m_eventGroup);
 }
@@ -260,13 +264,264 @@ CPedIntelligence::Process()
 	LookAtInterestingEntities();
 }
 
-// SA CPedIntelligence::FlushIntelligence (0x600F10 in part): drop every
-// queued event and the handler's memory of them.
+// SA CPedIntelligence::FlushIntelligence (0x601DA0): drop every task,
+// queued event, handler memory and scanner reference.
 void
 CPedIntelligence::FlushIntelligence()
 {
+	m_TaskMgr.Flush();
+	m_eventHandler.ResetHistory();
+	m_eventHandler.ResetResponse();
+	m_eventGroup.Flush(false);
+	m_vehicleScanner.Clear();
+	m_pedScanner.Clear();
+	m_eventScanner.Clear();
+}
+
+// Task accessors. SA versions dyn-cast the relevant slot; here the task
+// manager's type search does the same job (it only returns a task whose
+// type id matches, so the casts are as safe as SA's).
+CTaskSimpleFight*
+CPedIntelligence::GetTaskFighting()
+{
+	return (CTaskSimpleFight*)m_TaskMgr.FindTaskOfType(TASK_SIMPLE_FIGHT, true);
+}
+
+CTaskSimpleUseGun*
+CPedIntelligence::GetTaskUseGun()
+{
+	return (CTaskSimpleUseGun*)m_TaskMgr.FindTaskOfType(TASK_SIMPLE_USE_GUN, true);
+}
+
+CTaskSimpleThrowProjectile*
+CPedIntelligence::GetTaskThrow()
+{
+	return (CTaskSimpleThrowProjectile*)m_TaskMgr.FindTaskOfType(TASK_SIMPLE_THROW_PROJECTILE, true);
+}
+
+CTaskSimpleHoldEntity*
+CPedIntelligence::GetTaskHold(bool bIgnoreCheckingForSimplestActiveTask)
+{
+	(void)bIgnoreCheckingForSimplestActiveTask;
+	return (CTaskSimpleHoldEntity*)m_TaskMgr.FindTaskOfType(TASK_SIMPLE_HOLD_ENTITY, true);
+}
+
+CTaskSimpleSwim*
+CPedIntelligence::GetTaskSwim()
+{
+	return (CTaskSimpleSwim*)m_TaskMgr.FindTaskOfType(TASK_SIMPLE_SWIM, true);
+}
+
+CTaskSimpleDuck*
+CPedIntelligence::GetTaskDuck(bool bIgnoreCheckingForSimplestActiveTask)
+{
+	(void)bIgnoreCheckingForSimplestActiveTask;
+	return (CTaskSimpleDuck*)m_TaskMgr.FindTaskOfType(TASK_SIMPLE_DUCK, true);
+}
+
+CTaskSimpleJetPack*
+CPedIntelligence::GetTaskJetPack()
+{
+	return (CTaskSimpleJetPack*)m_TaskMgr.FindTaskOfType(TASK_SIMPLE_JETPACK, true);
+}
+
+CTaskSimpleInAir*
+CPedIntelligence::GetTaskInAir()
+{
+	return (CTaskSimpleInAir*)m_TaskMgr.FindTaskOfType(TASK_SIMPLE_IN_AIR, true);
+}
+
+CTaskSimpleClimb*
+CPedIntelligence::GetTaskClimb()
+{
+	return (CTaskSimpleClimb*)m_TaskMgr.FindTaskOfType(TASK_SIMPLE_CLIMB, true);
+}
+
+CTaskSimpleDuck*
+CPedIntelligence::GetTaskSecondaryDuck()
+{
+	CTask *task = m_TaskMgr.GetTaskSecondary(TASK_SECONDARY_DUCK);
+	return task && task->GetTaskType() == TASK_SIMPLE_DUCK ? (CTaskSimpleDuck*)task : nil;
+}
+
+// SA CPedIntelligence::GetUsingParachute: no parachute task exists yet.
+bool
+CPedIntelligence::GetUsingParachute()
+{
+	return false;
+}
+
+// SA CPedIntelligence::ClearTasks (0x600FB0 in SA numbering): park the
+// ped through a script command (stand still on foot; SA queues a car
+// drive task for a ped in a vehicle - the car tasks are not ported yet),
+// run the handler so the command lands, then abort the secondary tasks
+// (except the facial one, which SA always keeps).
+void
+CPedIntelligence::ClearTasks(bool bClearPrimaryTasks, bool bClearSecondaryTasks)
+{
+	if(bClearPrimaryTasks){
+		if(m_pPed->bInVehicle && m_pPed->m_pMyVehicle){
+			// SA queues CTaskSimpleCarDrive here; not ported yet.
+		}else if(!m_eventGroup.HasScriptCommandOfTaskType(TASK_SIMPLE_STAND_STILL)){
+			CTaskSimpleStandStill *standStill = new CTaskSimpleStandStill(0, false, false, 8.0f);
+			CEventScriptCommand eventScriptCommand(TASK_PRIMARY_PRIMARY, standStill, false);
+			m_eventGroup.Add(&eventScriptCommand, false);
+		}
+
+		m_eventHandler.HandleEvents();
+		m_TaskMgr.ManageTasks();
+		// SA also processes CPedScriptedTaskRecord here; not ported yet.
+	}
+
+	if(!bClearSecondaryTasks)
+		return;
+
+	for(int32 i = 0; i < TASK_SECONDARY_MAX; i++){
+		CTask *task = m_TaskMgr.GetTaskSecondary((eSecondaryTask)i);
+		if(task == nil)
+			continue;
+		if(i == TASK_SECONDARY_FACIAL_COMPLEX)
+			continue;
+		if(task->MakeAbortable(m_pPed))
+			m_TaskMgr.SetTaskSecondary(nil, (eSecondaryTask)i);
+		else
+			task->MakeAbortable(m_pPed, ABORT_PRIORITY_LEISURE, nil);
+	}
+}
+
+// SA CPedIntelligence::FlushImmediately (0x6010C0 in SA numbering). SA
+// additionally rescues the in-group, hold-entity and facial tasks across
+// the flush; those tasks are not ported yet, so here everything goes and
+// the ped is re-parked on its default task.
+void
+CPedIntelligence::FlushImmediately(bool bSetPrimaryDefaultTask)
+{
+	m_TaskMgr.FlushImmediately();
 	m_eventGroup.Flush();
-	m_eventHandler.GetHistory().Flush();
+
+	if(bSetPrimaryDefaultTask){
+		CTask *task;
+		if(m_pPed->IsPlayer() || m_pPed->CharCreatedBy == MISSION_CHAR)
+			task = new CTaskSimpleStandStill(0, true, false, 8.0f);
+		else
+			task = CTaskComplexWander::GetWanderTaskByPedType(m_pPed);
+		m_TaskMgr.SetTask(task, TASK_PRIMARY_DEFAULT);
+	}
+}
+
+// SA CPedIntelligence::ProcessEventHandler.
+void
+CPedIntelligence::ProcessEventHandler()
+{
+	m_eventHandler.HandleEvents();
+}
+
+// SA CPedIntelligence::IsInACarOrEnteringOne. The enter-car tasks are not
+// ported yet; being in a vehicle is the part that can already be true.
+bool
+CPedIntelligence::IsInACarOrEnteringOne()
+{
+	return m_pPed->bInVehicle;
+}
+
+// SA CPedIntelligence::IsPedGoingSomewhereOnFoot (0x601640).
+bool
+CPedIntelligence::IsPedGoingSomewhereOnFoot()
+{
+	CTask *simplest = m_TaskMgr.GetSimplestActiveTask();
+	return simplest && CTask::IsGoToTask(simplest);
+}
+
+// SA CPedIntelligence::GetMoveStateFromGoToTask (0x601D70).
+eMoveState
+CPedIntelligence::GetMoveStateFromGoToTask()
+{
+	CTask *simplest = m_TaskMgr.GetSimplestActiveTask();
+	return simplest && CTask::IsGoToTask(simplest)
+		? ((CTaskSimpleGoTo*)simplest)->m_moveState
+		: PEDMOVE_STILL;
+}
+
+// SA CPedIntelligence::ProcessStaticCounter (0x6020B0 in SA numbering):
+// watches whether a ped with a go-to task is actually getting anywhere.
+// m_AnotherStaticCounter is the "has been stuck for a while" signal the
+// wander task reacts to.
+void
+CPedIntelligence::ProcessStaticCounter()
+{
+	CTask *task = m_TaskMgr.GetSimplestActiveTask();
+	if(task == nil || !CTask::IsGoToTask(task)){
+		if(m_StaticCounter == -2)
+			m_StaticCounter = 4;
+		else
+			m_StaticCounter++;
+		m_AnotherStaticCounter = 0;
+		return;
+	}
+
+	int32 moveState = ((CTaskSimpleGoTo*)task)->m_moveState;
+	if(moveState != PEDMOVE_WALK && moveState != PEDMOVE_RUN && moveState != PEDMOVE_SPRINT){
+		if(m_StaticCounter == -2)
+			m_StaticCounter = 4;
+		else
+			m_StaticCounter++;
+		m_AnotherStaticCounter = 0;
+		return;
+	}
+
+	if(m_pPed->m_pDamageEntity){
+		if(m_StaticCounter > 4)
+			m_vecLastPedPosDuringDamageEntity = m_pPed->GetPosition();
+		m_StaticCounter = 0;
+	}else{
+		if(m_StaticCounter == -2)
+			m_StaticCounter = 4;
+		else
+			m_StaticCounter++;
+	}
+
+	if(m_StaticCounter > 4){
+		m_AnotherStaticCounter = 0;
+		return;
+	}
+
+	CVector dist = m_pPed->GetPosition() - m_vecLastPedPosDuringDamageEntity;
+	if(dist.MagnitudeSqr() < 1.0f / 16.0f){
+		m_AnotherStaticCounter++;
+	}else{
+		m_AnotherStaticCounter = 0;
+		m_vecLastPedPosDuringDamageEntity = m_pPed->GetPosition();
+	}
+}
+
+// SA CPedIntelligence::GetActivePrimaryTask (0x4ABEA0 is GetPedFOVRange;
+// this one sits next to it). SA's own loop re-checks the first slot three
+// times; the intended reading - first non-empty response slot - is used.
+CTask*
+CPedIntelligence::GetActivePrimaryTask() const
+{
+	static const ePrimaryTasks slots[] = {
+		TASK_PRIMARY_PHYSICAL_RESPONSE, TASK_PRIMARY_EVENT_RESPONSE_TEMP, TASK_PRIMARY_EVENT_RESPONSE_NONTEMP
+	};
+	for(int i = 0; i < 3; i++){
+		if(CTask *task = m_TaskMgr.GetTaskPrimary(slots[i]))
+			return task;
+	}
+	return nil;
+}
+
+// SA CPedIntelligence::GetPedFOVRange (0x4ABEA0).
+float
+CPedIntelligence::GetPedFOVRange() const
+{
+	return Max(m_fHearingRange, m_fSeeingRange);
+}
+
+// SA CPedIntelligence::IsUsingGun.
+bool
+CPedIntelligence::IsUsingGun()
+{
+	return GetTaskUseGun() != nil;
 }
 
 // SA CPedIntelligence::HasInterestingEntites (sic, SA spelling).

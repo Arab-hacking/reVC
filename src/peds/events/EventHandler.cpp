@@ -2,6 +2,7 @@
 
 #include "EventHandler.h"
 #include "EventGroup.h"
+#include "EventScriptCommand.h"
 #include "Ped.h"
 #include "PedIntelligence.h"
 
@@ -42,12 +43,24 @@ CEventHandler::IsTemporaryEvent(const CEvent &event)
 	}
 }
 
+// SA CEventHandler::ResetResponse: drop the response task built for the
+// previous event.
+void
+CEventHandler::ResetResponse()
+{
+	delete m_EventResponseTask;
+	m_EventResponseTask = nil;
+}
+
 // SA CEventHandler::HandleEvents (0x4C3F10). The full SA body walks the
 // ped's event group, picks the winning event against the history, and
 // dispatches to the per-event Compute*Response builders; those builders
-// land together with the task types they construct. Until then the handler
-// maintains the history and the queue exactly as SA does, and queued
-// events age out through the group's own validity rules.
+// land together with the task types they construct. Script commands -
+// the one event whose response is fully specified by the event itself -
+// are already dispatched for real below: the carried task is cloned into
+// the ped's task manager at the requested primary slot. Other events are
+// recorded into the history exactly as SA does, and queued events age
+// out through the group's own validity rules.
 void
 CEventHandler::HandleEvents()
 {
@@ -60,11 +73,28 @@ CEventHandler::HandleEvents()
 	group.TickEvents();
 
 	CEvent *event = group.GetHighestPriorityEvent();
-	if(event == nil)
+	if(event == nil){
+		group.RemoveInvalidEvents(false);
+		group.Reorganise();
 		return;
+	}
+
+	if(event->GetEventType() == EVENT_SCRIPT_COMMAND){
+		CEventScriptCommand *command = (CEventScriptCommand*)event;
+		if(command->m_task){
+			CTask *task = command->CloneScriptTask();
+			if(task)
+				m_Ped->m_pIntelligence->GetTaskManager().SetTask(task, (ePrimaryTasks)command->m_primaryTaskIndex);
+		}
+		group.Remove(event);
+		group.Reorganise();
+		return;
+	}
 
 	if(!m_History.TakesPriorityOverCurrentEvent(*event))
 		return;
 
 	m_History.RecordCurrentEvent(m_Ped, *event);
+	group.RemoveInvalidEvents(false);
+	group.Reorganise();
 }
