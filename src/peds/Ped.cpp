@@ -72,6 +72,9 @@ CPed::CPed(uint32 pedType) : m_pedIK(this)
 	m_pRTShadow = nil;
 #endif
 	m_pIntelligence = nil;
+	bHasJustLeftCar = false;
+	bHasJustSoughtCover = false;
+	bIgnoreHeightCheckOnGotoPointTask = false;
 	// Until the first PreRender poses this ped, bone queries answer from the
 	// standard table rather than from an unposed hierarchy.
 	bCalledPreRender = false;

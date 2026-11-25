@@ -597,6 +597,11 @@ public:
 	CEntity *m_pSeekTarget;
 	CVehicle *m_pMyVehicle;
 	bool bInVehicle;
+	// SA task-state flags: set by car/cover code and consumed once by the
+	// go-to tasks, and by walk-around-building logic respectively.
+	bool bHasJustLeftCar;
+	bool bHasJustSoughtCover;
+	bool bIgnoreHeightCheckOnGotoPointTask;
 	// SA keeps the scanners on CPedIntelligence (m_vehicleScanner, m_pedScanner,
 	// m_objectScanner). reVC has no intelligence object, so the one scanner the
 	// ped code actually uses sits here directly. It is stateful - it holds the
