@@ -8,6 +8,7 @@
 #include "eBoneTag.h"
 #include "PedNode.h"
 #include "Ped.h"
+#include "PedIntelligence.h"
 #include "TaskSimpleSwim.h"
 #include "TaskSimpleClimb.h"
 #include "AnimBlendAssociation.h"
@@ -85,6 +86,10 @@ CPed::CPed(uint32 pedType) : m_pedIK(this)
 	m_pSwimTask = nil;
 	m_fSwimStopTime = 0.0f;
 	m_nPedType = pedType;
+	// SA: every ped is born with its intelligence - task manager, event
+	// machinery and scanners. It is pool-allocated (140 slots); if that pool
+	// is exhausted this stays nil and the ped simply has no SA brain yet.
+	m_pIntelligence = new CPedIntelligence(this);
 	// A ped is asked for its stats before its model is set, and 48 places read
 	// them without a test. Start on the standard stat entry rather than on
 	// whatever a fresh allocation held.
@@ -401,6 +406,8 @@ CPed::~CPed(void)
 	m_pSwimTask = nil;
 	delete m_pClimbTask;
 	m_pClimbTask = nil;
+	delete m_pIntelligence;
+	m_pIntelligence = nil;
 	CWorld::Remove(this);
 	if (m_attractor)
 		GetPedAttractorManager()->DeRegisterPed(this, m_attractor);
@@ -2891,6 +2898,14 @@ CPed::ProcessControl(void)
 				posToCheck.z += 0.9f;
 				if (!CWorld::TestSphereAgainstWorld(posToCheck, 0.2f, this, true, true, false, true, false, false))
 					bHeadStuckInCollision = false;
+			}
+			// SA intelligence tick: scanners, events, tasks. The VC
+			// objective driver below still steers the ped until its
+			// removal slice; the intelligence runs alongside so its
+			// state (scanners, event history, mental state) is live.
+			if (m_pIntelligence) {
+				m_pIntelligence->ProcessFirst();
+				m_pIntelligence->Process();
 			}
 			ProcessObjective();
 			if (!bIsAimingGun) {

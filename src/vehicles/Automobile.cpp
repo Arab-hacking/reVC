@@ -5134,7 +5134,7 @@ CAutomobile::BlowUpCarsInPath(void)
 			   m_aCollisionRecords[i]->GetModelIndex() != MI_RHINO &&
 			   !m_aCollisionRecords[i]->bRenderScorched){
 				if(this == FindPlayerVehicle())
-					CEventList::RegisterEvent(EVENT_EXPLOSION, EVENT_ENTITY_VEHICLE, m_aCollisionRecords[i], FindPlayerPed(), 2000);
+					CEventList::RegisterEvent(SCRIPT_EVENT_EXPLOSION, EVENT_ENTITY_VEHICLE, m_aCollisionRecords[i], FindPlayerPed(), 2000);
 				((CVehicle*)m_aCollisionRecords[i])->BlowUpCar(this);
 			}
 }

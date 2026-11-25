@@ -166,7 +166,7 @@ CCivilianPed::CivilianAI(void)
 			}
 
 			if (investigateDeadPed)
-				SetInvestigateEvent(EVENT_DEAD_PED, CVector2D(m_pEventEntity->GetPosition()), 1.0f, 20000, 0.0f);
+				SetInvestigateEvent(SCRIPT_EVENT_DEAD_PED, CVector2D(m_pEventEntity->GetPosition()), 1.0f, 20000, 0.0f);
 
 		} else {
 			SetFindPathAndFlee(m_pEventEntity, 5000);
@@ -189,7 +189,7 @@ CCivilianPed::CivilianAI(void)
 		} else if (eventDistSqr < sq(40.0f)) {
 			if (bGonnaInvestigateEvent) {
 				if (CharCreatedBy != MISSION_CHAR && !IsGangMember())
-					SetInvestigateEvent(EVENT_EXPLOSION, m_eventOrThreat, 6.0f, 30000, 0.0f);
+					SetInvestigateEvent(SCRIPT_EVENT_EXPLOSION, m_eventOrThreat, 6.0f, 30000, 0.0f);
 
 			} else {
 				float eventHeading = CGeneral::GetRadianAngleBetweenPoints(eventDistVec.x, eventDistVec.y, 0.0f, 0.0f);

@@ -135,7 +135,7 @@ void CBulletInfo::Update(void)
 						pAnim->SetBlend(0.0f, 8.0f);
 					}
 					pPed->InflictDamage(pBullet->m_pSource, pBullet->m_eWeaponType, pBullet->m_nDamage, (ePedPieceTypes)point.pieceB, pPed->GetLocalDirection(pPed->GetPosition() - point.point));
-					CEventList::RegisterEvent(pPed->m_nPedType == PEDTYPE_COP ? EVENT_SHOOT_COP : EVENT_SHOOT_PED, EVENT_ENTITY_PED, pPed, (CPed*)pBullet->m_pSource, 1000);
+					CEventList::RegisterEvent(pPed->m_nPedType == PEDTYPE_COP ? SCRIPT_EVENT_SHOOT_COP : SCRIPT_EVENT_SHOOT_PED, EVENT_ENTITY_PED, pPed, (CPed*)pBullet->m_pSource, 1000);
 					pBullet->m_bInUse = false;
 #ifdef SQUEEZE_PERFORMANCE
 					bulletInfoInUse--;
