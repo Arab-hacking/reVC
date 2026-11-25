@@ -370,7 +370,8 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Cla
         ../src/peds/decisions/DecisionMaker.cpp
         ../src/peds/decisions/DecisionMakerTypes.cpp
         ../src/peds/tasks/Task.cpp
-        ../src/peds/tasks/TaskPool.cpp)
+        ../src/peds/tasks/TaskPool.cpp
+        ../src/peds/tasks/TaskTimer.cpp)
     target_compile_definitions(intelligence_tests PRIVATE
         LIBRW RW_GL3 LIBRW_SDL2 CMAKE_BUILD USE_OUR_VERSIONING AUDIO_OAL)
     target_include_directories(intelligence_tests PRIVATE

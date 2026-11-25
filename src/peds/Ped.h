@@ -510,6 +510,7 @@ public:
 	// machinery, scanners. Initialised lazily by SetupIntelligence; nil while
 	// the ped runs on the remaining VC behaviour during the port.
 	class CPedIntelligence *m_pIntelligence;
+	CPedIntelligence *GetIntelligence() const { return m_pIntelligence; }
 	uint8 CharCreatedBy;
 	eObjective m_objective;
 	eObjective m_prevObjective;
