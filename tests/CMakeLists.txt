@@ -50,6 +50,10 @@ add_executable(camera_view_toggle_tests CameraViewToggleTests.cpp)
 set_target_properties(camera_view_toggle_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
 add_test(NAME camera_view_toggle_tests COMMAND camera_view_toggle_tests)
 
+add_executable(mouse_controller_state_tests MouseControllerStateTests.cpp)
+set_target_properties(mouse_controller_state_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+add_test(NAME mouse_controller_state_tests COMMAND mouse_controller_state_tests)
+
 add_executable(world_sector_math_tests WorldSectorMathTests.cpp)
 set_target_properties(world_sector_math_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
 add_test(NAME world_sector_math_tests COMMAND world_sector_math_tests)

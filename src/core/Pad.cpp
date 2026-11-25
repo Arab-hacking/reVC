@@ -918,31 +918,6 @@ void CPad::ClearKeyBoardHistory()
 	TempKeyState.Clear();
 }
 
-CMouseControllerState::CMouseControllerState()
-{
-	LMB = 0;
-	RMB = 0;
-	MMB = 0;
-	WHEELUP = 0;
-	WHEELDN = 0;
-	MXB1 = 0;
-	MXB2 = 0;
-
-	x = 0.0f;
-	y = 0.0f;
-}
-
-void CMouseControllerState::Clear()
-{
-	LMB = 0;
-	RMB = 0;
-	MMB = 0;
-	WHEELUP = 0;
-	WHEELDN = 0;
-	MXB1 = 0;
-	MXB2 = 0;
-}
-
 CMouseControllerState CMousePointerStateHelper::GetMouseSetUp()
 {
 	CMouseControllerState state;
@@ -1012,6 +987,12 @@ int  _InputConsumeLatchedMouseButtons(void);
 
 void CPad::UpdateMouse()
 {
+	// Mouse motion is a per-frame delta. Start each update with no motion so a
+	// lost focus/cursor sample (or a GLFW/SDL early return) cannot replay the
+	// previous frame's delta into both pedestrian and vehicle cameras.
+	BeginMouseControllerFrame(OldMouseControllerState, NewMouseControllerState);
+	PCTempMouseControllerState.Clear();
+
 #if defined RW_D3D9 || defined RWLIBS
 	if ( IsForegroundApp() )
 	{
@@ -1048,7 +1029,6 @@ void CPad::UpdateMouse()
 			else if ( state.lZ < 0 )
 				PCTempMouseControllerState.WHEELDN = 1;
 
-			OldMouseControllerState = NewMouseControllerState;
 			NewMouseControllerState = PCTempMouseControllerState;
 		}
 	}
@@ -1120,7 +1100,6 @@ void CPad::UpdateMouse()
 		PSGLOBAL(lastMousePos.y) = ypos;
 		PSGLOBAL(mouseWheel) = 0.0f;
 
-		OldMouseControllerState = NewMouseControllerState;
 		NewMouseControllerState = PCTempMouseControllerState;
 	}
 #endif
