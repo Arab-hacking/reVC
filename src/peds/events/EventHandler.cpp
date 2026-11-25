@@ -7,6 +7,7 @@
 #include "EventScriptCommand.h"
 #include "Ped.h"
 #include "PedIntelligence.h"
+#include "TaskComplexSeekEntity.h"
 #include "TaskComplexSmartFleeEntity.h"
 #include "TaskManager.h"
 
@@ -291,14 +292,17 @@ CEventHandler::ComputeScriptCommandResponse(CEventScriptCommand *event, CTask *a
 	}
 }
 
-// SA CEventHandler::ComputePedToChaseResponse (0x4C1910). SA answers
-// with CTaskComplexSeekEntity; the seek task chain is not ported yet,
-// so a spotted criminal is noted by the history but not yet chased.
+// SA CEventHandler::ComputePedToChaseResponse (0x4C1910).
 void
 CEventHandler::ComputePedToChaseResponse(CEventPedToChase *event, CTask *activeTask, CTask *simplestTask)
 {
-	(void)event; (void)activeTask; (void)simplestTask;
-	m_EventResponseTask = nil;
+	(void)activeTask; (void)simplestTask;
+
+	if(event->GetPedToChase() == nil){
+		m_EventResponseTask = nil;
+		return;
+	}
+	m_EventResponseTask = new CTaskComplexSeekEntity(event->GetPedToChase(), 30000, 1000, 1.0f, 2.0f, 2.0f, true, true);
 }
 
 // SA CEventHandler::ComputePedToFleeResponse (0x4B9B50). (SA also makes
