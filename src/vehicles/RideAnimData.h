@@ -20,7 +20,7 @@ public:
 	float AnimLeanFwd;
 
 	CRideAnimData(void)
-	 : AnimGroup(ASSOCGRP_DEFAULT), BarSteerAngle(0.0f), LeanAngle(0.0f),
+	 : AnimGroup(ANIM_GROUP_DEFAULT), BarSteerAngle(0.0f), LeanAngle(0.0f),
 	   DesiredLeanAngle(0.0f), LeanFwd(0.0f), AnimLeanLeft(0.0f), AnimLeanFwd(0.0f)
 	{
 	}

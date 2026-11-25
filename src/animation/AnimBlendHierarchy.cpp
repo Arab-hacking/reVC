@@ -1,129 +1,174 @@
 #include "common.h"
 
-#include "AnimBlendSequence.h"
 #include "AnimBlendHierarchy.h"
 #include "AnimManager.h"
+#include "KeyGen.h"
+#include "MemoryMgr.h"
 
-CAnimBlendHierarchy::CAnimBlendHierarchy(void)
+// 0x4CF270
+CAnimBlendHierarchy::CAnimBlendHierarchy()
 {
-	sequences = nil;
-	numSequences = 0;
-	compressed = 0;
-	totalLength = 0.0f;
-	linkPtr = nil;
+	m_pSequences = nil;
+	m_nSeqCount = 0;
+	m_bIsCompressed = false;
+	m_bKeepCompressed = false;
+	m_nAnimBlockId = -1;
+	m_fTotalTime = 0.0f;
+	m_Link = nil;
+	m_hashKey = 0;
 }
 
-void
-CAnimBlendHierarchy::Shutdown(void)
+// 0x4CF970
+CAnimBlendHierarchy::~CAnimBlendHierarchy()
 {
-	CAnimManager::RemoveFromUncompressedCache(this);
 	RemoveAnimSequences();
-	totalLength = 0.0f;
-	compressed = 0;
 }
 
-void
-CAnimBlendHierarchy::SetName(char *name)
+// 0x4CF980
+void CAnimBlendHierarchy::Shutdown()
 {
-	strncpy(this->name, name, 24);
+	RemoveAnimSequences();
+	m_bIsCompressed = false;
 }
 
-void
-CAnimBlendHierarchy::CalcTotalTime(void)
+// 0x4CF8E0
+void CAnimBlendHierarchy::RemoveAnimSequences()
 {
-	int i, j;
+	void *oldFrameData = nil;
+	if (m_pSequences && m_pSequences->m_bUsingExternalMemory)
+		oldFrameData = m_pSequences->m_Frames;
+	CAnimManager::RemoveFromUncompressedCache(this);
+	delete[] m_pSequences;
+	m_pSequences = nil;
+	m_nSeqCount = 0;
+	m_fTotalTime = 0.0f;
+	if (oldFrameData)
+		MemoryMgrFree(oldFrameData);
+}
 
-	totalLength = 0.0f;
+// 0x4CF510
+uint8 *CAnimBlendHierarchy::AllocSequenceBlock(bool compressed) const
+{
+	size_t size = 0;
+	for (uint32 i = 0; i < m_nSeqCount; i++)
+		size += m_pSequences[i].GetDataSize(compressed);
+	return (uint8 *)MemoryMgrMalloc(size);
+}
 
-	for(i = 0; i < numSequences; i++){
-#ifdef FIX_BUGS
-		if(sequences[i].numFrames == 0)
-			continue;
-#endif
+// 0x4CF290
+CAnimBlendSequence *CAnimBlendHierarchy::FindSequence(const char *name) const
+{
+	if (!m_nSeqCount)
+		return nil;
 
-		totalLength = Max(totalLength, sequences[i].GetKeyFrame(sequences[i].numFrames-1)->deltaTime);
-		for(j = sequences[i].numFrames-1; j >= 1; j--){
-			KeyFrame *kf1 = sequences[i].GetKeyFrame(j);
-			KeyFrame *kf2 = sequences[i].GetKeyFrame(j-1);
-			kf1->deltaTime -= kf2->deltaTime;
-		}
+	const uint32 hash = CKeyGen::GetUppercaseKey(name);
+	for (uint32 i = 0; i < m_nSeqCount; i++) {
+		if (m_pSequences[i].GetNameHashKey() == hash)
+			return &m_pSequences[i];
 	}
+
+	return nil;
 }
 
-void
-CAnimBlendHierarchy::CalcTotalTimeCompressed(void)
+// 0x4CF2D0
+void CAnimBlendHierarchy::SetName(const char *name)
 {
-	int i, j;
+	m_hashKey = CKeyGen::GetUppercaseKey(name);
+}
 
-	totalLength = 0.0f;
+// 0x4CF4E0
+void CAnimBlendHierarchy::RemoveQuaternionFlips() const
+{
+	for (uint32 i = 0; i < m_nSeqCount; i++)
+		m_pSequences[i].RemoveQuaternionFlips();
+}
 
-	for(i = 0; i < numSequences; i++){
-#ifdef FIX_BUGS
-		if(sequences[i].numFrames == 0)
-			continue;
-#endif
+// 0x4CF560
+void *CAnimBlendHierarchy::GetSequenceBlock() const
+{
+	return m_pSequences->m_bUsingExternalMemory
+		? m_pSequences->m_Frames
+		: nil;
+}
 
-		totalLength = Max(totalLength, sequences[i].GetKeyFrameCompressed(sequences[i].numFrames-1)->GetDeltaTime());
-		for(j = sequences[i].numFrames-1; j >= 1; j--){
-			KeyFrameCompressed *kf1 = sequences[i].GetKeyFrameCompressed(j);
-			KeyFrameCompressed *kf2 = sequences[i].GetKeyFrameCompressed(j-1);
-			kf1->deltaTime -= kf2->deltaTime;
-		}
+// 0x4CF5F0
+void CAnimBlendHierarchy::Uncompress()
+{
+	assert(m_nSeqCount > 0);
+	assert(m_bIsCompressed);
+
+	void *cSeqData = GetSequenceBlock();
+
+	// Now uncompress sequence data
+	uint8 *uSeqData = AllocSequenceBlock(false);
+	for (uint32 i = 0; i < m_nSeqCount; i++) {
+		m_pSequences[i].Uncompress(uSeqData);
+		uSeqData += m_pSequences[i].GetDataSize(false);
 	}
-}
 
-void
-CAnimBlendHierarchy::RemoveQuaternionFlips(void)
-{
-	int i;
+	// Now we no longer need the old compressed data
+	if (cSeqData)
+		MemoryMgrFree(cSeqData);
 
-	for(i = 0; i < numSequences; i++)
-		sequences[i].RemoveQuaternionFlips();
-}
-
-void
-CAnimBlendHierarchy::RemoveAnimSequences(void)
-{
-	delete[] sequences;
-	sequences = nil;
-	numSequences = 0;
-}
-
-void
-CAnimBlendHierarchy::Uncompress(void)
-{
-#ifdef ANIM_COMPRESSION
-	int i;
-	assert(compressed);
-	for(i = 0; i < numSequences; i++)
-		sequences[i].Uncompress();
-#endif
-	compressed = 0;
-	if(totalLength == 0.0f){
+	m_bIsCompressed = false;
+	if (m_fTotalTime == 0.0f) {
 		RemoveQuaternionFlips();
 		CalcTotalTime();
 	}
 }
 
-void
-CAnimBlendHierarchy::RemoveUncompressedData(void)
+// 0x4CF6C0
+void CAnimBlendHierarchy::CompressKeyframes() const
 {
-#ifdef ANIM_COMPRESSION
-	int i;
-	assert(!compressed);
-	for(i = 0; i < numSequences; i++)
-		sequences[i].RemoveUncompressedData();
-#endif
-	compressed = 1;
+	assert(!m_bIsCompressed);
+
+	void *uSeqData = GetSequenceBlock();
+
+	// Compress current data
+	uint8 *cSeqData = AllocSequenceBlock(true);
+	for (uint32 i = 0; i < m_nSeqCount; i++) {
+		m_pSequences[i].CompressKeyframes(cSeqData);
+		cSeqData += m_pSequences[i].GetDataSize(true);
+	}
+
+	// Now we no longer need the old uncompressed data
+	if (uSeqData)
+		MemoryMgrFree(uSeqData);
 }
 
-#ifdef USE_CUSTOM_ALLOCATOR
-void
-CAnimBlendHierarchy::MoveMemory(bool onlyone)
+// 0x4CF760
+void CAnimBlendHierarchy::RemoveUncompressedData()
 {
-	int i;
-	for(i = 0; i < numSequences; i++)
-		if(sequences[i].MoveMemory() && onlyone)
-			return;
+	assert(m_nSeqCount > 0);
+	assert(!m_bIsCompressed);
+
+	CompressKeyframes();
+
+	m_bIsCompressed = true;
 }
-#endif
+
+// 0x4CF800
+void CAnimBlendHierarchy::MoveMemory()
+{
+	for (uint32 i = 0; i < m_nSeqCount; i++)
+		m_pSequences[i].MoveMemory();
+}
+
+// 0x4CF8A0
+void CAnimBlendHierarchy::Print()
+{
+	CAnimManager::UncompressAnimation(this);
+	for (uint32 i = 0; i < m_nSeqCount; i++)
+		m_pSequences[i].Print();
+}
+
+void CAnimBlendHierarchy::SetNumSequences(size_t n)
+{
+	m_nSeqCount = (uint16)n;
+	m_pSequences = new CAnimBlendSequence[n]; // Yes, they used `new`
+}
+
+uint32 CAnimBlendHierarchy::GetIndex() const
+{
+	return CAnimManager::GetAnimIndex(this);
+}

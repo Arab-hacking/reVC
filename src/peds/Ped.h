@@ -1260,7 +1260,7 @@ public:
 		RpHAnimHierarchy *hier = GetAnimHierarchyFromSkinClump(GetClump());
 		if(hier == nil)
 			return GetPosition();
-		int32 idx = RpHAnimIDGetIndex(hier, m_pFrames[node]->nodeID);
+		int32 idx = RpHAnimIDGetIndex(hier, m_pFrames[node]->BoneTag);
 		if(idx < 0)
 			return GetPosition();
 		RwMatrix *mats = RpHAnimHierarchyGetMatrixArray(hier);
@@ -1276,7 +1276,7 @@ public:
 		RpHAnimHierarchy *hier = GetAnimHierarchyFromSkinClump(GetClump());
 		if(hier == nil)
 			return;
-		int32 idx = RpHAnimIDGetIndex(hier, m_pFrames[node]->nodeID);
+		int32 idx = RpHAnimIDGetIndex(hier, m_pFrames[node]->BoneTag);
 		if(idx < 0)
 			return;
 		RwMatrix *mats = RpHAnimHierarchyGetMatrixArray(hier);

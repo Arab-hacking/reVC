@@ -13,6 +13,8 @@
 #include "VehicleAnimGroupData.h"
 
 #include "AnimBlendAssociation.h"
+#include "AnimBlendStaticAssociation.h"
+#include "AnimBlendHierarchy.h"
 #include "AnimBlendHierarchy.h"
 #include "AnimBlendSequence.h"
 
@@ -220,12 +222,12 @@ CVehicleAnimGroup::ComputeAnimDoorOffsets(eVehAnimDoorOffset doorId)
 	}
 
 	const AssocGroupId groupId = GetGroup(animId);
-	CAnimBlendAssociation *animAssoc = CAnimManager::GetAnimAssociation(groupId, animId);
-	if(animAssoc == nil || animAssoc->hierarchy == nil)
+	CAnimBlendStaticAssociation *animAssoc = CAnimManager::GetAnimAssociation(groupId, animId);
+	if(animAssoc == nil || animAssoc->m_BlendHier == nil)
 		return GetDoorOffset(doorId);
 
-	CAnimBlendHierarchy *hierarchy = animAssoc->hierarchy;
-	CAnimBlendSequence *sequences = hierarchy->sequences;
+	CAnimBlendHierarchy *hierarchy = animAssoc->m_BlendHier;
+	CAnimBlendSequence *sequences = hierarchy->m_pSequences;
 	if(sequences == nil)
 		return GetDoorOffset(doorId);
 
@@ -233,10 +235,8 @@ CVehicleAnimGroup::ComputeAnimDoorOffsets(eVehAnimDoorOffset doorId)
 
 	// The offset lives in the translation of the last key frame of the first
 	// sequence - the ped's root bone.
-	if(sequences->numFrames > 0 && sequences->HasTranslation()){
-		KeyFrameTrans *frame = (KeyFrameTrans*)sequences->GetKeyFrame(sequences->numFrames - 1);
-		GetDoorOffset(doorId) = frame->translation;
-	}
+	if(sequences->m_FramesNum > 0 && sequences->HasTranslation())
+		GetDoorOffset(doorId) = sequences->GetUKeyFrame(sequences->m_FramesNum - 1)->Trans;
 
 	return GetDoorOffset(doorId);
 }
@@ -317,8 +317,8 @@ CVehicleAnimGroup::InitFromData(const char *line)
 	// The group numbers on the line are offsets into the car animation block.
 	CVehicleAnimGroup grp;
 	grp.InitAnimGroup(
-		(uint8)(firstGroup + (int32)ASSOCGRP_STDCARAMIMS),
-		(uint8)(secondGroup + (int32)ASSOCGRP_STDCARAMIMS),
+		(uint8)(firstGroup + (int32)ANIM_GROUP_STDCARAMIMS),
+		(uint8)(secondGroup + (int32)ANIM_GROUP_STDCARAMIMS),
 		animFlags, animSpecialFlags,
 		&generalTiming,
 		&startTiming, &stopTiming

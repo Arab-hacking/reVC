@@ -225,12 +225,12 @@ PlayAnimation(RpClump *clump, AssocGroupId animGroup, AnimationId anim)
 	if (currentAssoc && currentAssoc->IsPartial())
 		delete currentAssoc;
 
-	RpAnimBlendClumpSetBlendDeltas(clump, ASSOC_PARTIAL, -8.0f);
+	RpAnimBlendClumpSetBlendDeltas(clump, ANIMATION_IS_PARTIAL, -8.0f);
 
 	CAnimBlendAssociation *animAssoc = CAnimManager::BlendAnimation(clump, animGroup, anim, 8.0f);
-	animAssoc->flags |= ASSOC_DELETEFADEDOUT;
+	animAssoc->m_Flags |= ANIMATION_IS_BLEND_AUTO_REMOVE;
 	animAssoc->SetCurrentTime(0.0f);
-	animAssoc->SetRun();
+	animAssoc->m_Flags |= ANIMATION_IS_PLAYING;
 }
 
 void
@@ -240,7 +240,7 @@ CAnimViewer::Update(void)
 	static int animId = 0;
 	static bool reloadIFP = false;
 
-	AssocGroupId animGroup = ASSOCGRP_DEFAULT;
+	AssocGroupId animGroup = ANIM_GROUP_DEFAULT;
 	int nextModelId = modelId;
 	CBaseModelInfo *modelInfo = CModelInfo::GetModelInfo(modelId);
 
@@ -248,7 +248,7 @@ CAnimViewer::Update(void)
 		int animGroup = ((CPedModelInfo*)modelInfo)->m_animGroup;
 
 		if (animId > ANIM_ID_IDLE)
-			animGroup = ASSOCGRP_DEFAULT;
+			animGroup = ANIM_GROUP_DEFAULT;
 
 		if (reloadIFP) {
 			if (pTarget) {
@@ -266,7 +266,7 @@ CAnimViewer::Update(void)
 			reloadIFP = false;
 		}
 	} else {
-		animGroup = ASSOCGRP_DEFAULT;
+		animGroup = ANIM_GROUP_DEFAULT;
 	}
 	CPad::UpdatePads();
 	CPad* pad = CPad::GetPad(0);
@@ -367,7 +367,7 @@ CAnimViewer::Update(void)
 			}
 
 			// From LCS
-			if (CAnimManager::GetAnimAssocGroups()[animGroup].numAssociations <= animId)
+			if (CAnimManager::GetAssocGroups()[animGroup].m_NumAnims <= animId)
 				animId = 0;
 
 		} else if (modelInfo->GetModelType() == MITYPE_VEHICLE) {

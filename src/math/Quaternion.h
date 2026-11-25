@@ -23,11 +23,16 @@ public:
 	CQuaternion &operator=(CQuaternion const &rhs);
 
 	const CQuaternion &operator+=(CQuaternion const &right);
+	const CQuaternion &operator*=(float s) { Scale(s); return *this; }
 	const CQuaternion &operator-=(CQuaternion const &right);
 
 	CQuaternion operator-() const {
 		return CQuaternion(-x, -y, -z, -w);
 	}
+
+	// Conjugate of a quat
+	void Conjugate(void) { x = -x; y = -y; z = -z; }
+	CQuaternion Conjugated(void) const { CQuaternion c = *this; c.Conjugate(); return c; }
 
 	void Slerp(const CQuaternion &q1, const CQuaternion &q2, float theta, float invSin, float t);
 	void Get(RwV3d *axis, float *angle);

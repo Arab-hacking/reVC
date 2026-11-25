@@ -50,9 +50,9 @@ CPhoneInfo::Update(void)
 		pPhoneDisplayingMessages = nil;
 		bDisplayingPhoneMessage = false;
 		CAnimBlendAssociation *talkAssoc = RpAnimBlendClumpGetAssociation(player->GetClump(), ANIM_ID_PHONE_TALK);
-		if (talkAssoc && talkAssoc->blendAmount > 0.5f) {
-			CAnimBlendAssociation *endAssoc = CAnimManager::BlendAnimation(player->GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_PHONE_OUT, 8.0f);
-			endAssoc->flags &= ~ASSOC_DELETEFADEDOUT;
+		if (talkAssoc && talkAssoc->m_BlendAmount > 0.5f) {
+			CAnimBlendAssociation *endAssoc = CAnimManager::BlendAnimation(player->GetClump(), ANIM_GROUP_DEFAULT, ANIM_ID_PHONE_OUT, 8.0f);
+			endAssoc->m_Flags &= ~ANIMATION_IS_BLEND_AUTO_REMOVE;
 			endAssoc->SetFinishCallback(PhonePutDownCB, player);
 		} else {
 			CPad::GetPad(0)->SetEnablePlayerControls(PLAYERCONTROL_PHONE);
@@ -113,7 +113,7 @@ CPhoneInfo::Update(void)
 								CPad::GetPad(0)->SetDisablePlayerControls(PLAYERCONTROL_PHONE);
 								TheCamera.SetWideScreenOn();
 								playerInfo->MakePlayerSafe(true);
-								CAnimBlendAssociation *phonePickAssoc = CAnimManager::BlendAnimation(player->GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_PHONE_IN, 4.0f);
+								CAnimBlendAssociation *phonePickAssoc = CAnimManager::BlendAnimation(player->GetClump(), ANIM_GROUP_DEFAULT, ANIM_ID_PHONE_IN, 4.0f);
 								phonePickAssoc->SetFinishCallback(PhonePickUpCB, &m_aPhones[phoneId]);
 								bPickingUpPhone = true;
 								pCallBackPed = player;
@@ -325,12 +325,12 @@ CPhoneInfo::Shutdown(void)
 void
 PhonePutDownCB(CAnimBlendAssociation *assoc, void *arg)
 {
-	assoc->flags |= ASSOC_DELETEFADEDOUT;
-	assoc->blendDelta = -1000.0f;
+	assoc->m_Flags |= ANIMATION_IS_BLEND_AUTO_REMOVE;
+	assoc->m_BlendDelta = -1000.0f;
 	CPad::GetPad(0)->SetEnablePlayerControls(PLAYERCONTROL_PHONE);
 	CPed *ped = (CPed*)arg;
 
-	if (assoc->blendAmount > 0.5f)
+	if (assoc->m_BlendAmount > 0.5f)
 		ped->bUpdateAnimHeading = true;
 
 	if (ped->m_nPedState == PED_MAKE_PHONECALL)
@@ -365,10 +365,10 @@ PhonePickUpCB(CAnimBlendAssociation *assoc, void *arg)
 
 	CPed *ped = CPhoneInfo::pCallBackPed;
 	ped->m_nMoveState = PEDMOVE_STILL;
-	CAnimManager::BlendAnimation(ped->GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_IDLE, 8.0f);
+	CAnimManager::BlendAnimation(ped->GetClump(), ANIM_GROUP_DEFAULT, ANIM_ID_IDLE, 8.0f);
 
-	if (assoc->blendAmount > 0.5f && ped)
-		CAnimManager::BlendAnimation(ped->GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_PHONE_TALK, 8.0f);
+	if (assoc->m_BlendAmount > 0.5f && ped)
+		CAnimManager::BlendAnimation(ped->GetClump(), ANIM_GROUP_DEFAULT, ANIM_ID_PHONE_TALK, 8.0f);
 
 	CPhoneInfo::pCallBackPed = nil;
 }

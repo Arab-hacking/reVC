@@ -1,7 +1,8 @@
 #ifndef __GTA_PEDTYPE_H__
 #define __GTA_PEDTYPE_H__
 
-#include "Bones.h"
+#include "eBoneTag.h"
+#include "PedNode.h"
 #include "PedNode.h"
 
 // Index into the PedType array. The San Andreas set differs from the Vice City

@@ -1,48 +1,31 @@
-#ifndef __GTA_ANIMBLENDCLUMPDATA_H__
-#define __GTA_ANIMBLENDCLUMPDATA_H__
+#pragma once
 
-#include "AnimBlendList.h"
-
-
-struct AnimBlendFrameData
-{
-	enum {
-		IGNORE_ROTATION = 2,
-		IGNORE_TRANSLATION = 4,
-		VELOCITY_EXTRACTION = 8,
-		VELOCITY_EXTRACTION_3D = 0x10,
-		UPDATE_KEYFRAMES = 0x20,
-		COMPRESSED = 0x40
-	};
-
-	uint8 flag;
-	RwV3d resetPos;
-	union {
-		RwFrame *frame;
-		RpHAnimStdInterpFrame *hanimFrame;
-	};
-	int32 nodeID;
-};
-VALIDATE_SIZE(AnimBlendFrameData, 0x18);
-
+#include "Vector.h"
+#include "AnimBlendFrameData.h"
+#include "AnimBlendAssociation.h"
 
 class CAnimBlendClumpData
 {
 public:
-	CAnimBlendLink link;
-	int32 numFrames;
+	CAnimBlendLink m_AnimList; //!< List of `CAnimBlendAssociation` - List of anims that are being played on this clump
 	union {
-		CVector2D *velocity2d;
-		CVector *velocity3d;
+		uint32 m_NumFrameData; // For skinned clumps
+		uint32 m_NumBones;     // For non-skinned clumps
 	};
-	// order of frames is determined by RW hierarchy
-	AnimBlendFrameData *frames;
+	CVector *m_PedPosition;
+	AnimBlendFrameData *m_FrameDatas; // There's always at least 1 frame present
 
-	CAnimBlendClumpData(void);
-	~CAnimBlendClumpData(void);
-	void SetNumberOfFrames(int n);
-	void SetNumberOfBones(int n) { SetNumberOfFrames(n); }
-	void ForAllFrames(void (*cb)(AnimBlendFrameData*, void*), void *arg);
+public:
+	CAnimBlendClumpData();
+	~CAnimBlendClumpData();
+
+	void ForAllFrames(void (*callback)(AnimBlendFrameData *, void *), void *data);
+
+	CAnimBlendLink &GetAnims() { return m_AnimList; }
+
+	AnimBlendFrameData &GetRootFrameData() const { assert(m_NumFrameData >= 1); return m_FrameDatas[0]; }
+	void SetNumberOfBones(uint32 numBones);
+	AnimBlendFrameData *GetFrames() { return m_FrameDatas; }
 };
 
-#endif // __GTA_ANIMBLENDCLUMPDATA_H__
+VALIDATE_SIZE(CAnimBlendClumpData, 0x14);

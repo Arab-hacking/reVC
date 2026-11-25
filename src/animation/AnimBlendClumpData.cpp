@@ -3,34 +3,34 @@
 #include "AnimBlendClumpData.h"
 #include "MemoryMgr.h"
 
-CAnimBlendClumpData::CAnimBlendClumpData(void)
+// 0x4CF0E0
+CAnimBlendClumpData::CAnimBlendClumpData()
 {
-	numFrames = 0;
-	velocity2d = nil;
-	frames = nil;
-	link.Init();
+	m_NumFrameData = 0;
+	m_PedPosition = nil;
+	m_FrameDatas = nil;
 }
 
-CAnimBlendClumpData::~CAnimBlendClumpData(void)
+// 0x4CF100
+CAnimBlendClumpData::~CAnimBlendClumpData()
 {
-	link.Remove();
-	if(frames)
-		RwFreeAlign(frames);
+	m_AnimList.Remove();
+	if (m_FrameDatas)
+		RwFreeAlign(m_FrameDatas);
 }
 
-void
-CAnimBlendClumpData::SetNumberOfFrames(int n)
+// 0x4CF140
+void CAnimBlendClumpData::SetNumberOfBones(uint32 numBones)
 {
-	if(frames)
-		RwFreeAlign(frames);
-	numFrames = n;
-	frames = (AnimBlendFrameData*)RwMallocAlign(numFrames * sizeof(AnimBlendFrameData), 64);
+	if (m_FrameDatas)
+		RwFreeAlign(m_FrameDatas);
+	m_NumFrameData = numBones;
+	m_FrameDatas = (AnimBlendFrameData *)RwMallocAlign(sizeof(AnimBlendFrameData) * numBones, 64);
 }
 
-void
-CAnimBlendClumpData::ForAllFrames(void (*cb)(AnimBlendFrameData*, void*), void *arg)
+// 0x4CF190
+void CAnimBlendClumpData::ForAllFrames(void (*callback)(AnimBlendFrameData *, void *), void *data)
 {
-	int i;
-	for(i = 0; i < numFrames; i++)
-		cb(&frames[i], arg);
+	for (uint32 i = 0; i < m_NumFrameData; i++)
+		callback(&m_FrameDatas[i], data);
 }

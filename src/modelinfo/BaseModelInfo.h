@@ -1,6 +1,8 @@
 #ifndef __GTA_BASEMODELINFO_H__
 #define __GTA_BASEMODELINFO_H__
 
+#include "KeyGen.h"
+
 struct CColModel;
 
 #ifdef ANDROID
@@ -56,6 +58,7 @@ class CBaseModelInfo
 {
 protected:
 	char         m_name[MAX_MODEL_NAME];
+	uint32       m_nKey;
 	uint8        m_type;
 	uint8        m_num2dEffects;
 	bool         m_bOwnsColModel;
@@ -92,7 +95,8 @@ public:
 	bool IsSimple(void) { return m_type == MITYPE_SIMPLE || m_type == MITYPE_TIME || m_type == MITYPE_WEAPON; }
 	bool IsClump(void) { return m_type == MITYPE_CLUMP || m_type == MITYPE_PED || m_type == MITYPE_VEHICLE;	}
 	char *GetModelName(void) { return m_name; }
-	void SetModelName(const char *name) { strncpy(m_name, name, MAX_MODEL_NAME - 1); m_name[MAX_MODEL_NAME - 1] = '\0'; }
+	uint32 GetModelNameHash(void) { return m_nKey; }
+	void SetModelName(const char *name) { strncpy(m_name, name, MAX_MODEL_NAME - 1); m_name[MAX_MODEL_NAME - 1] = '\0'; m_nKey = CKeyGen::GetUppercaseKey(m_name); }
 	void SetColModel(CColModel *col, bool owns = false){
 		m_colModel = col; m_bOwnsColModel = owns; }
 	CColModel *GetColModel(void) { return m_colModel; }

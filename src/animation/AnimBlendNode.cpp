@@ -1,318 +1,129 @@
 #include "common.h"
 
-#include "AnimBlendAssociation.h"
 #include "AnimBlendNode.h"
+#include "AnimBlendAssociation.h"
 
-void 
-CAnimBlendNode::Init(void)
+// 0x4CFB70
+void CAnimBlendNode::Init()
 {
-	frameA = -1;
-	frameB = -1;
-	remainingTime = 0.0f;
-	sequence = nil;
-	association = nil;
+	m_Theta = 0.0f;
+	m_InvSinTheta = 0.0f;
+	m_KFCurr = -1;
+	m_KFPrev = -1;
+	m_KFRemainingTime = 0.0f;
+	m_Seq = nil;
+	m_BlendAssoc = nil;
 }
 
-bool
-CAnimBlendNode::Update(CVector &trans, CQuaternion &rot, float weight)
+// 0x4D0240
+bool CAnimBlendNode::FindKeyFrame(float time)
 {
-	bool looped = false;
-
-	trans = CVector(0.0f, 0.0f, 0.0f);
-	rot = CQuaternion(0.0f, 0.0f, 0.0f, 0.0f);
-
-	if(association->IsRunning()){
-		remainingTime -= association->timeStep;
-		if(remainingTime <= 0.0f)
-			looped = NextKeyFrame();
-	}
-
-	float blend = association->GetBlendAmount(weight);
-	if(blend > 0.0f){
-		KeyFrameTrans *kfA = (KeyFrameTrans*)sequence->GetKeyFrame(frameA);
-		KeyFrameTrans *kfB = (KeyFrameTrans*)sequence->GetKeyFrame(frameB);
-		float t = kfA->deltaTime == 0.0f ? 0.0f : (kfA->deltaTime - remainingTime)/kfA->deltaTime;
-		if(sequence->type & CAnimBlendSequence::KF_TRANS){
-			trans = kfB->translation + t*(kfA->translation - kfB->translation);
-			trans *= blend;
-		}
-		if(sequence->type & CAnimBlendSequence::KF_ROT){
-			rot.Slerp(kfB->rotation, kfA->rotation, theta, invSin, t);
-			rot.Scale(blend);
-		}
-	}
-
-	return looped;
-}
-
-bool
-CAnimBlendNode::UpdateCompressed(CVector &trans, CQuaternion &rot, float weight)
-{
-	bool looped = false;
-
-	trans = CVector(0.0f, 0.0f, 0.0f);
-	rot = CQuaternion(0.0f, 0.0f, 0.0f, 0.0f);
-
-	if(association->IsRunning()){
-		remainingTime -= association->timeStep;
-		if(remainingTime <= 0.0f)
-			looped = NextKeyFrameCompressed();
-	}
-
-	float blend = association->GetBlendAmount(weight);
-	if(blend > 0.0f){
-		KeyFrameTransCompressed *kfA = (KeyFrameTransCompressed*)sequence->GetKeyFrameCompressed(frameA);
-		KeyFrameTransCompressed *kfB = (KeyFrameTransCompressed*)sequence->GetKeyFrameCompressed(frameB);
-		float t = kfA->deltaTime == 0 ? 0.0f : (kfA->GetDeltaTime() - remainingTime)/kfA->GetDeltaTime();
-		if(sequence->type & CAnimBlendSequence::KF_TRANS){
-			CVector transA, transB;
-			kfA->GetTranslation(&transA);
-			kfB->GetTranslation(&transB);
-			trans = transB + t*(transA - transB);
-			trans *= blend;
-		}
-		if(sequence->type & CAnimBlendSequence::KF_ROT){
-			CQuaternion rotA, rotB;
-			kfA->GetRotation(&rotA);
-			kfB->GetRotation(&rotB);
-			rot.Slerp(rotB, rotA, theta, invSin, t);
-			rot.Scale(blend);
-		}
-	}
-
-	return looped;
-}
-
-bool
-CAnimBlendNode::NextKeyFrame(void)
-{
-	bool looped;
-
-	if(sequence->numFrames <= 1)
+	if (m_Seq->m_FramesNum == 0)
 		return false;
 
-	looped = false;
-	frameB = frameA;
+	m_KFCurr = 0;
+	m_KFPrev = 0;
 
-	// Advance as long as we have to
-	while(remainingTime <= 0.0f){
-		frameA++;
+	if (m_Seq->m_FramesNum == 1) {
+		m_KFRemainingTime = 0.0f;
+	} else {
+		// Find kf that spans over the specified `time`
+		for (KeyFrameTrans *kf = m_Seq->GetUKeyFrame(++m_KFCurr); time > kf->DeltaTime; m_KFPrev = m_KFCurr++) {
+			time -= m_Seq->GetUKeyFrame(m_KFCurr)->DeltaTime;
 
-		if(frameA >= sequence->numFrames){
-			// reached end of animation
-			if(!association->IsRepeating()){
-				frameA--;
-				remainingTime = 0.0f;
-				return false;
-			}
-			looped = true;
-			frameA = 0;
-		}
-
-		remainingTime += sequence->GetKeyFrame(frameA)->deltaTime;
-	}
-
-	frameB = frameA - 1;
-	if(frameB < 0)
-		frameB += sequence->numFrames;
-
-	CalcDeltas();
-	return looped;
-}
-
-bool
-CAnimBlendNode::NextKeyFrameCompressed(void)
-{
-	bool looped;
-
-	if(sequence->numFrames <= 1)
-		return false;
-
-	looped = false;
-	frameB = frameA;
-
-	// Advance as long as we have to
-	while(remainingTime <= 0.0f){
-		frameA++;
-
-		if(frameA >= sequence->numFrames){
-			// reached end of animation
-			if(!association->IsRepeating()){
-				frameA--;
-				remainingTime = 0.0f;
-				return false;
-			}
-			looped = true;
-			frameA = 0;
-		}
-
-		remainingTime += sequence->GetKeyFrameCompressed(frameA)->GetDeltaTime();
-	}
-
-	frameB = frameA - 1;
-	if(frameB < 0)
-		frameB += sequence->numFrames;
-
-	CalcDeltasCompressed();
-	return looped;
-}
-
-// Set animation to time t
-bool
-CAnimBlendNode::FindKeyFrame(float t)
-{
-	if(sequence->numFrames < 1)
-		return false;
-
-	frameA = 0;
-	frameB = frameA;
-
-	if(sequence->numFrames == 1){
-		remainingTime = 0.0f;
-	}else{
-		// advance until t is between frameB and frameA
-		while (t > sequence->GetKeyFrame(++frameA)->deltaTime) {
-			t -= sequence->GetKeyFrame(frameA)->deltaTime;
-			if (frameA + 1 >= sequence->numFrames) {
+			if (m_KFCurr + 1 >= m_Seq->m_FramesNum) {
 				// reached end of animation
-				if (!association->IsRepeating()) {
+				if (!m_BlendAssoc->IsLooped()) {
 					CalcDeltas();
-					remainingTime = 0.0f;
+					m_KFRemainingTime = 0.0f;
 					return false;
 				}
-				frameA = 0;
+				m_KFCurr = 0;
 			}
-			frameB = frameA;
 		}
 
-		remainingTime = sequence->GetKeyFrame(frameA)->deltaTime - t;
+		// Now calculate how much we have remaining from this frame
+		m_KFRemainingTime = m_Seq->GetUKeyFrame(m_KFCurr)->DeltaTime - time;
 	}
 
 	CalcDeltas();
 	return true;
 }
 
-bool
-CAnimBlendNode::SetupKeyFrameCompressed(void)
+// 0x4D00E0
+void CAnimBlendNode::CalcTheta(float angleCos)
 {
-	if(sequence->numFrames < 1)
+	m_Theta = acosf(angleCos < 1.0f ? angleCos : 1.0f);
+	m_InvSinTheta = m_Theta == 0.0f
+		? 0.0f
+		: 1.0f / sinf(m_Theta);
+}
+
+// 0x4D0190
+void CAnimBlendNode::CalcDeltas()
+{
+	if (!m_Seq->m_bHasRotation)
+		return;
+
+	CalcTheta(
+		DotProduct(
+			m_Seq->GetUKeyFrame(m_KFCurr)->Rot,
+			m_Seq->GetUKeyFrame(m_KFPrev)->Rot
+		)
+	);
+}
+
+// 0x4D0350
+void CAnimBlendNode::CalcDeltasCompressed()
+{
+	if (!m_Seq->m_bHasRotation)
+		return;
+
+	KeyFrameTransCompressed *kfA = m_Seq->GetCKeyFrame(m_KFCurr);
+	KeyFrameTransCompressed *kfB = m_Seq->GetCKeyFrame(m_KFPrev);
+
+	CQuaternion rotA = kfA->Rot, rotB = kfB->Rot;
+	const float angleCos = DotProduct(rotA, rotB);
+	if (angleCos < 0.0f) {
+		rotB = -rotB;
+		kfB->Rot = rotB;
+	}
+	CalcTheta(angleCos);
+}
+
+// 0x4CFB90 - Unused
+bool CAnimBlendNode::NextKeyFrameNoCalc()
+{
+	return false;
+}
+
+// 0x4D0650
+bool CAnimBlendNode::SetupKeyFrameCompressed()
+{
+	if (m_Seq->m_FramesNum < 1)
 		return false;
 
-	frameA = 1;
-	frameB = 0;
+	m_KFCurr = 1;
+	m_KFPrev = 0;
 
-	if(sequence->numFrames == 1){
-		frameA = 0;
-		remainingTime = 0.0f;
-	}else
-		remainingTime = sequence->GetKeyFrameCompressed(frameA)->GetDeltaTime();
+	if (m_Seq->m_FramesNum == 1) {
+		m_KFCurr = 0;
+		m_KFRemainingTime = 0.0f;
+	} else {
+		m_KFRemainingTime = (float)m_Seq->GetCKeyFrame(m_KFCurr)->DeltaTime;
+	}
 
 	CalcDeltasCompressed();
 	return true;
 }
 
-void
-CAnimBlendNode::CalcDeltas(void)
+// 0x4D0160 - Unused
+bool CAnimBlendNode::UpdateTime()
 {
-	if((sequence->type & CAnimBlendSequence::KF_ROT) == 0)
-		return;
-	KeyFrame *kfA = sequence->GetKeyFrame(frameA);
-	KeyFrame *kfB = sequence->GetKeyFrame(frameB);
-	float cos = DotProduct(kfA->rotation, kfB->rotation);
-	if(cos > 1.0f)
-		cos = 1.0f;
-	theta = Acos(cos);
-	invSin = theta == 0.0f ?  0.0f : 1.0f/Sin(theta);
-}
-
-void
-CAnimBlendNode::CalcDeltasCompressed(void)
-{
-	if((sequence->type & CAnimBlendSequence::KF_ROT) == 0)
-		return;
-	KeyFrameCompressed *kfA = sequence->GetKeyFrameCompressed(frameA);
-	KeyFrameCompressed *kfB = sequence->GetKeyFrameCompressed(frameB);
-	CQuaternion rotA, rotB;
-	kfA->GetRotation(&rotA);
-	kfB->GetRotation(&rotB);
-	// SA stores the flipped rotation back into the keyframe and then derives
-	// theta from the cosine it measured *before* flipping, so theta may exceed
-	// a right angle and Slerp has to travel the long way round. Measuring again
-	// after the flip (as this used to) hands Slerp a short angle while it reads
-	// the unflipped keyframe, and the two disagree.
-	float cos = DotProduct(rotA, rotB);
-	if(cos < 0.0f){
-		rotB = -rotB;
-		kfB->SetRotation(rotB);
+	if (m_BlendAssoc->IsPlaying()) {
+		m_KFRemainingTime -= m_BlendAssoc->m_TimeStep;
+		if (m_KFRemainingTime <= 0.0f)
+			return NextKeyFrameNoCalc();
 	}
-	if(cos > 1.0f)
-		cos = 1.0f;
-	theta = Acos(cos);
-	invSin = theta == 0.0f ?  0.0f : 1.0f/Sin(theta);
-}
-
-void
-CAnimBlendNode::GetCurrentTranslation(CVector &trans, float weight)
-{
-	trans = CVector(0.0f, 0.0f, 0.0f);
-
-	float blend = association->GetBlendAmount(weight);
-	if(blend > 0.0f){
-		KeyFrameTrans *kfA = (KeyFrameTrans*)sequence->GetKeyFrame(frameA);
-		KeyFrameTrans *kfB = (KeyFrameTrans*)sequence->GetKeyFrame(frameB);
-		float t = kfA->deltaTime == 0.0f ? 0.0f : (kfA->deltaTime - remainingTime)/kfA->deltaTime;
-		if(sequence->type & CAnimBlendSequence::KF_TRANS){
-			trans = kfB->translation + t*(kfA->translation - kfB->translation);
-			trans *= blend;
-		}
-	}
-}
-
-void
-CAnimBlendNode::GetCurrentTranslationCompressed(CVector &trans, float weight)
-{
-	trans = CVector(0.0f, 0.0f, 0.0f);
-
-	float blend = association->GetBlendAmount(weight);
-	if(blend > 0.0f){
-		KeyFrameTransCompressed *kfA = (KeyFrameTransCompressed*)sequence->GetKeyFrameCompressed(frameA);
-		KeyFrameTransCompressed *kfB = (KeyFrameTransCompressed*)sequence->GetKeyFrameCompressed(frameB);
-		float t = kfA->deltaTime == 0 ? 0.0f : (kfA->GetDeltaTime() - remainingTime)/kfA->GetDeltaTime();
-		if(sequence->type & CAnimBlendSequence::KF_TRANS){
-			CVector transA, transB;
-			kfA->GetTranslation(&transA);
-			kfB->GetTranslation(&transB);
-			trans = transB + t*(transA - transB);
-			trans *= blend;
-		}
-	}
-}
-
-void
-CAnimBlendNode::GetEndTranslation(CVector &trans, float weight)
-{
-	trans = CVector(0.0f, 0.0f, 0.0f);
-
-	float blend = association->GetBlendAmount(weight);
-	if(blend > 0.0f){
-		KeyFrameTrans *kf = (KeyFrameTrans*)sequence->GetKeyFrame(sequence->numFrames-1);
-		if(sequence->type & CAnimBlendSequence::KF_TRANS)
-			trans = kf->translation * blend;
-	}
-}
-
-void
-CAnimBlendNode::GetEndTranslationCompressed(CVector &trans, float weight)
-{
-	trans = CVector(0.0f, 0.0f, 0.0f);
-
-	float blend = association->GetBlendAmount(weight);
-	if(blend > 0.0f){
-		KeyFrameTransCompressed *kf = (KeyFrameTransCompressed*)sequence->GetKeyFrameCompressed(sequence->numFrames-1);
-		if(sequence->type & CAnimBlendSequence::KF_TRANS){
-			CVector pos;
-			kf->GetTranslation(&pos);
-			trans = pos * blend;
-		}
-	}
+	return false;
 }

@@ -86,6 +86,7 @@
 #define HALFPX (0.0f)
 #endif
 
+#define rwVENDORID_DEVELOPER 0
 #define rwVENDORID_ROCKSTAR 0x0253F2
 
 #define Max(a,b) ((a) > (b) ? (a) : (b))

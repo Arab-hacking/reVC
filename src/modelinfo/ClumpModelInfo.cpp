@@ -1,4 +1,5 @@
 #include "common.h"
+#include "RpAnimBlend.h"
 
 #include "RwHelper.h"
 #include "General.h"
@@ -60,7 +61,7 @@ CClumpModelInfo::CreateInstance(void)
 		hier = GetAnimHierarchyFromClump(clone);
 		assert(hier);
 		RpClumpForAllAtomics(clone, SetHierarchyForSkinAtomic, hier);
-		anim = HAnimAnimationCreateForHierarchy(hier);
+		anim = RpAnimBlendCreateAnimationForHierarchy(hier);
 		RpHAnimHierarchySetCurrentAnim(hier, anim);
 		RpHAnimHierarchySetFlags(hier, (RpHAnimHierarchyFlag)(rpHANIMHIERARCHYUPDATEMODELLINGMATRICES|rpHANIMHIERARCHYUPDATELTMS));
 	}

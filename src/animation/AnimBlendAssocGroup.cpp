@@ -1,277 +1,196 @@
 #include "common.h"
 
-#if defined _WIN32 && !defined __MINGW32__
-#if defined __MWERKS__
-#include <wctype.h>
-#else
-#include "ctype.h"
-#endif
-#else
-#include <cwctype>
-#endif
-
-#include "General.h"
-#include "RwHelper.h"
-#include "ModelIndices.h"
-#include "ModelInfo.h"
-#include "AnimManager.h"
-#include "RpAnimBlend.h"
-#include "AnimBlendClumpData.h"
-#include "AnimBlendAssociation.h"
 #include "AnimBlendAssocGroup.h"
+#include "AnimBlendAssociation.h"
+#include "AnimBlendStaticAssociation.h"
+#include "AnimBlendHierarchy.h"
+#include "AnimBlock.h"
+#include "AnimManager.h"
+#include "RwHelper.h"
+#include "ModelInfo.h"
+#include "BaseModelInfo.h"
+#include "RpAnimBlend.h"
+#include "KeyGen.h"
 
-#ifdef CUSTOM_MODELS
-#include "SavehDiag.h"
-#endif
-
-CAnimBlendAssocGroup::CAnimBlendAssocGroup(void)
+// 0x4CE0B0
+CAnimBlendAssociation *CAnimBlendAssocGroup::CopyAnimation(const char *name)
 {
-	animBlock = nil;
-	assocList = nil;
-	numAssociations = 0;
-	firstAnimId = 0;
-	groupId = -1;
+	return CopyAnimation(GetAnimation(name));
 }
 
-CAnimBlendAssocGroup::~CAnimBlendAssocGroup(void)
+// 0x4CE130
+CAnimBlendAssociation *CAnimBlendAssocGroup::CopyAnimation(AnimationId id)
 {
-	DestroyAssociations();
+	return CopyAnimation(GetAnimation(id));
 }
 
-void
-CAnimBlendAssocGroup::DestroyAssociations(void)
+CAnimBlendAssociation *CAnimBlendAssocGroup::CopyAnimation(CAnimBlendStaticAssociation *anim)
 {
-	if(assocList){
-		delete[] assocList;
-		assocList = nil;
-		numAssociations = 0;
-	}
-}
-
-CAnimBlendAssociation*
-CAnimBlendAssocGroup::GetAnimation(uint32 id)
-{
-	int32 index = (int32)id - firstAnimId;
-	if(assocList == nil || index < 0 || index >= numAssociations || assocList[index].hierarchy == nil)
+	if (!anim)
 		return nil;
-	return &assocList[index];
-}
-
-CAnimBlendAssociation*
-CAnimBlendAssocGroup::GetAnimation(const char *name)
-{
-	int i;
-	if(assocList == nil || name == nil)
-		return nil;
-	for(i = 0; i < numAssociations; i++)
-		if(assocList[i].hierarchy && !CGeneral::faststricmp(assocList[i].hierarchy->name, name))
-			return &assocList[i];
-	debug("\n\nCan't find the animation %s\n\n\n", name);
-	return nil;
-}
-
-
-CAnimBlendAssociation*
-CAnimBlendAssocGroup::CopyAnimation(uint32 id)
-{
-	CAnimBlendAssociation *anim = GetAnimation(id);
-	if(anim == nil)
-		return nil;
-	CAnimManager::UncompressAnimation(anim->hierarchy);
+	CAnimManager::UncompressAnimation(anim->m_BlendHier);
 	return new CAnimBlendAssociation(*anim);
 }
 
-CAnimBlendAssociation*
-CAnimBlendAssocGroup::CopyAnimation(uint32 id, RpClump *clump)
+void CAnimBlendAssocGroup::CreateAssociation(CAnimBlendStaticAssociation *assoc, CAnimBlendHierarchy *anim, CBaseModelInfo *mi, size_t groupAnimId)
 {
-	CAnimBlendAssociation *anim = GetAnimation(id);
-	if(anim == nil || clump == nil || !RpAnimBlendClumpIsInitialized(clump))
-		return nil;
-	if(!CAnimManager::IsAnimationCompatibleWithClump(clump, anim->hierarchy)){
-#ifdef CUSTOM_MODELS
-		CUSTOM_LOG("anim assoc: rejecting group %d anim %d: wrong animation bank for target skeleton\n",
-			groupId, id);
-#endif
-		return nil;
-	}
-#ifdef CUSTOM_MODELS
-	CAnimBlendClumpData *clumpData = *RPANIMBLENDCLUMPDATA(clump);
-	if(anim->numNodes != clumpData->numFrames){
-		int blockIndex = CAnimManager::GetAnimationBlockForHierarchy(anim->hierarchy);
-		CUSTOM_LOG("anim assoc: bank (%s) group %d anim %d: reference=%d frames, target=%d; binding to target skeleton\n",
-			blockIndex >= 0 ? CAnimManager::GetAnimationBlock(blockIndex)->name : "unknown",
-			groupId, id, anim->numNodes, clumpData->numFrames);
-	}
-#endif
-	CAnimManager::UncompressAnimation(anim->hierarchy);
-	return new CAnimBlendAssociation(*anim, clump);
+	RpClump *clump = (RpClump *)mi->CreateInstance();
+	RpAnimBlendClumpInit(clump);
+	assoc->Init(clump, anim);
+	if (IsClumpSkinned(clump))
+		RpClumpForAllAtomics(clump, AtomicRemoveAnimFromSkinCB, nil);
+	RpClumpDestroy(clump);
+
+	assoc->m_AnimId = (int16)(m_IdOffset + groupAnimId);
+	assoc->m_AnimGroupId = (int16)m_GroupID;
 }
 
-CAnimBlendAssociation*
-CAnimBlendAssocGroup::CopyAnimation(const char *name)
+// 0x4CE220
+void CAnimBlendAssocGroup::CreateAssociations(const char *blockName)
 {
-	CAnimBlendAssociation *anim = GetAnimation(name);
-	if(anim == nil)
-		return nil;
-	CAnimManager::UncompressAnimation(anim->hierarchy);
-	return new CAnimBlendAssociation(*anim);
-}
+	CAnimBlock *ablock = AllocateForBlock(blockName, -1);
 
-bool
-strcmpIgnoringDigits(const char *s1, const char *s2)
-{
-	char c1, c2;
-
-	for(;;){
-		c1 = *s1;
-		c2 = *s2;
-		if(c1) s1++;
-		if(c2) s2++;
-		if(c1 == '\0' && c2 == '\0') return true;
-#ifndef ASCII_STRCMP
-		if(isdigit(c1) && isdigit(c2))
-#else
-		if(__ascii_isdigit(c1) && __ascii_isdigit(c2))
-#endif
+	for (size_t i = 0; i < ablock->NumAnims; i++) {
+		AnimationId id = (AnimationId)(ablock->FirstAnimIdx + i);
+		CAnimBlendHierarchy *anim = &CAnimManager::GetAnimation(id);
+		CAnimBlendStaticAssociation *assoc = &GetAssociations()[i];
+		CBaseModelInfo *mi = CModelInfo::GetModelInfoFromHashKey(anim->m_hashKey);
+		if (!mi) {
+			debug("ModelInfo (Key=%u) for animation (Block=%s; ID=%d) not found\n", anim->m_hashKey, blockName, (int)id);
 			continue;
-#ifndef ASCII_STRCMP
-		c1 = toupper(c1);
-		c2 = toupper(c2);
-#else
-		c1 = __ascii_toupper(c1);
-		c2 = __ascii_toupper(c2);
-#endif
-
-		if(c1 && c2 && c1 != c2)
-			return false;
+		}
+		CreateAssociation(assoc, anim, mi, i);
 	}
 }
 
-CBaseModelInfo*
-GetModelFromName(const char *name)
+// 0x4CE3B0
+void CAnimBlendAssocGroup::CreateAssociations(const char *blockName, const char *animNames, const char *modelNames, uint32 buffStride)
 {
-	int i;
-	CBaseModelInfo *mi;
-	char playername[32];
+	if (!modelNames)
+		return CreateAssociations(blockName);
 
-	// The player model is whatever the loaded data set calls it, and a set
-	// without one leaves nothing to rename against.
-	CBaseModelInfo *playerModel = CModelInfo::GetModelInfo(MI_PLAYER);
-	if(playerModel && strncasecmp(name, "CSplay", 6) == 0 &&
-	   strncasecmp(playerModel->GetModelName(), "ig", 2) == 0){
-		strncpy(playername, playerModel->GetModelName(), sizeof(playername) - 1);
-		playername[sizeof(playername) - 1] = '\0';
-		playername[0] = 'C';
-		playername[1] = 'S';
-		name = playername;
+	CAnimBlock *ab = AllocateForBlock(blockName, -1);
+
+	// We need to start from 0 in this case - some of the animations may not be found,
+	// and if we assume that all went well we end up with gaps in the ms_aAnimations table
+	m_NumAnims = 0;
+
+	for (size_t i = 0; i < ab->NumAnims; i++) {
+		AnimationId id = (AnimationId)(ab->FirstAnimIdx + i);
+		CAnimBlendHierarchy *anim = &CAnimManager::GetAnimation(id);
+		CAnimBlendStaticAssociation *assoc = &m_Anims[m_NumAnims]; // Can't use GetAssociations() helper method, as m_NumAnims will always be (no. of elements + 1)
+
+		const char *animName = animNames;
+		const char *modelName = modelNames;
+
+		// Find the anim's name and it's model's name, then initialize it
+		// Remember that these 2 arrays (animNames, modelNames) are "parallel" (like kv pairs)
+		bool found;
+		size_t k;
+		for (k = 0; (found = k < ab->NumAnims); k++, animName += buffStride, modelName += buffStride) {
+			if (CKeyGen::GetUppercaseKey(animName) == anim->GetHashKey())
+				break;
+		}
+		if (!found) {
+			debug("Name of Animation (Block=%s; ID=%d) not found\n", blockName, (int)id);
+			continue;
+		}
+
+		CBaseModelInfo *mi = CModelInfo::GetModelInfo(modelName, nil);
+		if (!mi) {
+			debug("ModelInfo (%s) for Animation (Name=%s; Block=%s; ID=%d) not found\n", modelName, animName, blockName, (int)id);
+			continue;
+		}
+
+		CreateAssociation(assoc, anim, mi, i);
+		++m_NumAnims;
 	}
+}
 
-	for(i = 0; i < MODELINFOSIZE; i++){
-		mi = CModelInfo::GetModelInfo(i);
-		if(mi && mi->GetRwObject() && RwObjectGetType(mi->GetRwObject()) == rpCLUMP &&
-		   strcmpIgnoringDigits(mi->GetModelName(), name))
-			return mi;
+// 0x4CE6E0
+void CAnimBlendAssocGroup::CreateAssociations(const char *blockName, RpClump *clump, const char **names, uint32 cnt)
+{
+	AllocateForBlock(blockName, cnt);
+
+	for (size_t i = 0; i < cnt; i++) {
+		const char *name = names[i];
+		CAnimBlendStaticAssociation *assoc = &GetAssociations()[i];
+
+		if (name[0]) { // Check is empty string
+			assoc->Init(clump, CAnimManager::GetAnimation(name, m_AnimBlock));
+			assoc->m_AnimId = (int16)(m_IdOffset + i);
+			assert(assoc->m_AnimId < ANIM_ID_MAX);
+		} else {
+			assoc->m_AnimId = ANIM_ID_UNDEFINED;
+		}
+
+		assoc->m_AnimGroupId = (int16)m_GroupID;
+	}
+}
+
+// 0x4CDFF0
+void CAnimBlendAssocGroup::DestroyAssociations()
+{
+	delete[] m_Anims;
+	m_Anims = nil;
+	m_NumAnims = 0;
+}
+
+// 0x4CE040
+CAnimBlendStaticAssociation *CAnimBlendAssocGroup::GetAnimation(const char *name)
+{
+	const uint32 key = CKeyGen::GetUppercaseKey(name);
+	for (uint32 i = 0; i < m_NumAnims; i++) {
+		CAnimBlendStaticAssociation &a = GetAssociations()[i];
+		if (a.GetHashKey() == key)
+			return &a;
 	}
 	return nil;
 }
 
-void
-CAnimBlendAssocGroup::CreateAssociations(const char *name)
+// 0x4CE090
+CAnimBlendStaticAssociation *CAnimBlendAssocGroup::GetAnimation(AnimationId id)
 {
-	int i;
-	CAnimBlock *animBlock;
-
-	DestroyAssociations();
-
-	animBlock = CAnimManager::GetAnimationBlock(name);
-	assocList = new CAnimBlendAssociation[animBlock->numAnims];
-	numAssociations = 0;
-
-	for(i = 0; i < animBlock->numAnims; i++){
-		CAnimBlendHierarchy *anim = CAnimManager::GetAnimation(animBlock->firstIndex + i);
-		if(anim == nil)
-			continue;
-		CBaseModelInfo *model = GetModelFromName(anim->name);
-		if(model){
-			debug("Associated anim %s with model %s\n", anim->name, model->GetModelName());
-			RpClump *clump = (RpClump*)model->CreateInstance();
-			RpAnimBlendClumpInit(clump);
-			assocList[i].Init(clump, anim);
-			if(IsClumpSkinned(clump))
-				RpClumpForAllAtomics(clump, AtomicRemoveAnimFromSkinCB, nil);
-			RpClumpDestroy(clump);
-			assocList[i].animId = firstAnimId + i;
-			assocList[i].groupId = groupId;
-		}else
-			debug("\n\nCANNOT FIND MODELINFO WITH NAME %s\n\n\n", anim->name);
-	}
-	numAssociations = animBlock->numAnims;
+	return &GetAssociations()[id - m_IdOffset];
 }
 
-// Create associations from hierarchies for a given clump
-void
-CAnimBlendAssocGroup::CreateAssociations(const char *blockName, RpClump *clump, const char **animNames, int numAssocs)
+// 0x4CE1B0
+AnimationId CAnimBlendAssocGroup::GetAnimationId(const char *name)
 {
-	int i;
-
-	DestroyAssociations();
-	animBlock = CAnimManager::GetAnimationBlock(blockName);
-	if(animBlock == nil || clump == nil || animNames == nil || numAssocs <= 0)
-		return;
-	assocList = new CAnimBlendAssociation[numAssocs];
-
-	for(i = 0; i < numAssocs; i++){
-		CAnimBlendHierarchy *hier = CAnimManager::GetAnimation(animNames[i], animBlock);
-		if(hier == nil){
-#ifdef CUSTOM_MODELS
-			CUSTOM_LOG("anim assoc: %s is missing from animation bank %s; association skipped\n",
-				animNames[i], blockName);
-#else
-			debug("anim assoc: %s is missing from animation bank %s; association skipped\n",
-				animNames[i], blockName);
-#endif
-			continue;
-		}
-		assocList[i].Init(clump, hier);
-		assocList[i].animId = firstAnimId + i;
-		assocList[i].groupId = groupId;
-	}
-	numAssociations = numAssocs;
+	if (CAnimBlendStaticAssociation *a = GetAnimation(name))
+		return (AnimationId)a->m_AnimId;
+	return ANIM_ID_UNDEFINED;
 }
 
-void
-CAnimBlendAssocGroup::CreateAssociations(const char *blockName, RpClump *clump,
-	CAnimBlendHierarchy *const *hierarchies, int numAssocs)
+// 0x4CDFB0
+void CAnimBlendAssocGroup::InitEmptyAssociations(RpClump *clump)
 {
-	int i;
-
-	DestroyAssociations();
-	animBlock = CAnimManager::GetAnimationBlock(blockName);
-	if(animBlock == nil || clump == nil || hierarchies == nil || numAssocs <= 0)
-		return;
-	assocList = new CAnimBlendAssociation[numAssocs];
-
-	for(i = 0; i < numAssocs; i++){
-		CAnimBlendHierarchy *hier = hierarchies[i];
-		// A clip the block does not carry keeps its slot and is marked
-		// undefined: the array is indexed by position in the group, so the
-		// following clips must not shift down into the hole.
-		if(hier == nil){
-			// SA leaves these slots undefined and says nothing: its tables are
-			// 40 entries wide and a car set fills only the handful it uses, so
-			// the empties are the normal case, not a fault. The VC tables here
-			// are the same shape (an empty name is a slot the group never had)
-			// and reporting each one buried the entries that do matter.
-			// A name that is present but whose clip is missing from the loaded
-			// bank is a real gap and is reported by the caller, which still has
-			// the name; this overload only sees the resolved pointers.
-			assocList[i].animId = ANIM_ID_UNDEFINED;
-			assocList[i].groupId = groupId;
-			continue;
-		}
-		assocList[i].Init(clump, hier);
-		assocList[i].animId = firstAnimId + i;
-		assocList[i].groupId = groupId;
+	for (size_t i = m_NumAnims; i-- > 0;) {
+		CAnimBlendStaticAssociation *anim = &GetAssociations()[i];
+		if (!anim->IsValid())
+			anim->Init(clump, anim->GetAnimHierarchy());
 	}
-	numAssociations = numAssocs;
+}
+
+CAnimBlock *CAnimBlendAssocGroup::AllocateForBlock(const char *blockName, int32 numAnims)
+{
+	if (m_Anims)
+		DestroyAssociations();
+
+	CAnimBlock *ablock = CAnimManager::GetAnimationBlock(blockName);
+
+	if (numAnims == -1)
+		numAnims = (int32)ablock->NumAnims;
+
+	m_AnimBlock = ablock;
+	m_Anims = new CAnimBlendStaticAssociation[numAnims];
+	m_NumAnims = numAnims;
+
+	return ablock;
+}
+
+// 0x4CE1D0
+CAnimBlendAssocGroup::~CAnimBlendAssocGroup()
+{
+	DestroyAssociations();
 }

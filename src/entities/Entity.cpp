@@ -5,6 +5,7 @@
 #include "RwHelper.h"
 #include "ModelIndices.h"
 #include "Timer.h"
+#include "RpAnimBlend.h"
 #include "Entity.h"
 #include "Object.h"
 #include "World.h"
@@ -21,7 +22,8 @@
 #include "TxdStore.h"
 #include "Zones.h"
 #include "MemoryHeap.h"
-#include "Bones.h"
+#include "eBoneTag.h"
+#include "PedNode.h"
 #include "Debug.h"
 #include "Ped.h"
 #include "Dummy.h"
@@ -833,3 +835,30 @@ bool IsEntityPointerValid(CEntity* pEntity)
 	return false;
 }
 
+
+// 0x535F00
+void
+CEntity::UpdateAnim(void)
+{
+	bDontUpdateHierarchy = false;
+	if(m_rwObject == nil || RwObjectGetType(m_rwObject) != rpCLUMP)
+		return;
+
+	if(RpAnimBlendClumpGetFirstAssociation(GetClump()) == nil)
+		return;
+
+	bool bOnScreen;
+	float fStep;
+	if(IsObject() && ((CObject*)this)->ObjectCreatedBy == CUTSCENE_OBJECT){
+		bOnScreen = true;
+		fStep = CTimer::GetTimeStepNonClippedInSeconds();
+	}else{
+		if(!bOffscreen)
+			bOffscreen = !GetIsOnScreen();
+
+		bOnScreen = !bOffscreen;
+		fStep = CTimer::GetTimeStepInSeconds();
+	}
+
+	RpAnimBlendClumpUpdateAnimations(GetClump(), fStep, bOnScreen);
+}

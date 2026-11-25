@@ -6,6 +6,7 @@
 #include "World.h"
 #include "Collision.h"
 #include "AnimManager.h"
+#include "AnimBlendHierarchy.h"
 #include "RpAnimBlend.h"
 #include "Stats.h"
 #include "General.h"
@@ -246,9 +247,9 @@ CTaskSimpleClimb::StartAnim(CPed *ped)
 	case CLIMB_GRAB:
 		if(m_Anim){
 			m_Anim->SetDeleteCallback(nil, nil);
-			m_Anim = CAnimManager::BlendAnimation(ped->GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_CLIMB_IDLE, 4.0f);
+			m_Anim = CAnimManager::BlendAnimation(ped->GetClump(), ANIM_GROUP_DEFAULT, ANIM_ID_CLIMB_IDLE, 4.0f);
 		}else{
-			m_Anim = CAnimManager::BlendAnimation(ped->GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_CLIMB_JUMP, 8.0f);
+			m_Anim = CAnimManager::BlendAnimation(ped->GetClump(), ANIM_GROUP_DEFAULT, ANIM_ID_CLIMB_JUMP, 8.0f);
 		}
 		m_HeightForPos = CLIMB_GRAB;
 		m_HasToChangePosition = false;
@@ -259,13 +260,13 @@ CTaskSimpleClimb::StartAnim(CPed *ped)
 		if(m_HeightForPos == CLIMB_NOT_READY){
 			m_HeightForAnim = CLIMB_STANDUP;
 			m_HeightForPos = CLIMB_STANDUP;
-			m_Anim = CAnimManager::BlendAnimation(ped->GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_CLIMB_STAND, 4.0f);
+			m_Anim = CAnimManager::BlendAnimation(ped->GetClump(), ANIM_GROUP_DEFAULT, ANIM_ID_CLIMB_STAND, 4.0f);
 			if(m_Anim)
-				m_Anim->flags &= ~ASSOC_RUNNING;
+				m_Anim->m_Flags &= ~ANIMATION_IS_PLAYING;
 		}else{
 			if(m_Anim)
 				m_Anim->SetDeleteCallback(nil, nil);
-			m_Anim = CAnimManager::BlendAnimation(ped->GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_CLIMB_PULL, 1000.0f);
+			m_Anim = CAnimManager::BlendAnimation(ped->GetClump(), ANIM_GROUP_DEFAULT, ANIM_ID_CLIMB_PULL, 1000.0f);
 			m_HeightForPos = CLIMB_PULLUP;
 		}
 		m_HasToChangePosition = false;
@@ -275,7 +276,7 @@ CTaskSimpleClimb::StartAnim(CPed *ped)
 	case CLIMB_STANDUP:
 		if(m_Anim)
 			m_Anim->SetDeleteCallback(nil, nil);
-		m_Anim = CAnimManager::BlendAnimation(ped->GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_CLIMB_STAND, 1000.0f);
+		m_Anim = CAnimManager::BlendAnimation(ped->GetClump(), ANIM_GROUP_DEFAULT, ANIM_ID_CLIMB_STAND, 1000.0f);
 		m_HasToChangePosition = true;
 		m_HasToChangeAnimation = false;
 		break;
@@ -289,7 +290,7 @@ CTaskSimpleClimb::StartAnim(CPed *ped)
 			((CPlayerPed *)ped)->MoveBlendRatio() = 0.0f;
 		if(m_Anim)
 			m_Anim->SetDeleteCallback(nil, nil);
-		m_Anim = CAnimManager::BlendAnimation(ped->GetClump(), ASSOCGRP_DEFAULT,
+		m_Anim = CAnimManager::BlendAnimation(ped->GetClump(), ANIM_GROUP_DEFAULT,
 			m_HeightForAnim == CLIMB_FINISHED_V ? ANIM_ID_CLIMB_JUMP2FALL : ANIM_ID_CLIMB_STAND_FINISH, 1000.0f);
 		m_HasToChangePosition = true;
 		m_HasToChangeAnimation = false;
@@ -298,8 +299,8 @@ CTaskSimpleClimb::StartAnim(CPed *ped)
 	case CLIMB_VAULT:
 		if(m_Anim)
 			m_Anim->SetDeleteCallback(nil, nil);
-		m_Anim = CAnimManager::BlendAnimation(ped->GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_CLIMB_JUMP_B,
-			m_Anim && m_Anim->animId == ANIM_ID_CLIMB_STAND ? 16.0f : 1000.0f);
+		m_Anim = CAnimManager::BlendAnimation(ped->GetClump(), ANIM_GROUP_DEFAULT, ANIM_ID_CLIMB_JUMP_B,
+			m_Anim && m_Anim->m_AnimId == ANIM_ID_CLIMB_STAND ? 16.0f : 1000.0f);
 		m_HasToChangePosition = true;
 		m_HasToChangeAnimation = false;
 		break;
@@ -310,10 +311,10 @@ CTaskSimpleClimb::StartAnim(CPed *ped)
 
 	if(m_Anim){
 		m_Anim->SetDeleteCallback(DeleteAnimCB, this);
-		if(ped->IsPlayer() && (m_Anim->flags & ASSOC_RUNNING)
-		   && (m_Anim->animId == ANIM_ID_CLIMB_PULL || m_Anim->animId == ANIM_ID_CLIMB_STAND
-		       || m_Anim->animId == ANIM_ID_CLIMB_JUMP_B)){
-			m_Anim->speed = CStats::GetFatAndMuscleModifier(CStats::STAT_MOD_1);
+		if(ped->IsPlayer() && (m_Anim->m_Flags & ANIMATION_IS_PLAYING)
+		   && (m_Anim->m_AnimId == ANIM_ID_CLIMB_PULL || m_Anim->m_AnimId == ANIM_ID_CLIMB_STAND
+		       || m_Anim->m_AnimId == ANIM_ID_CLIMB_JUMP_B)){
+			m_Anim->m_Speed = CStats::GetFatAndMuscleModifier(CStats::STAT_MOD_1);
 		}
 	}
 }
@@ -368,7 +369,7 @@ CTaskSimpleClimb::ProcessPed(CPed *ped)
 	float handAngle;
 	GetHandholdPosAndAngleForEntity(m_ClimbEntity, m_HandholdPos, m_HandholdHeading, handPos, handAngle);
 
-	bool newHeightForPos = m_HasToChangePosition && m_Anim && m_Anim->blendAmount == 1.0f;
+	bool newHeightForPos = m_HasToChangePosition && m_Anim && m_Anim->m_BlendAmount == 1.0f;
 	if(newHeightForPos){
 		m_HeightForPos = m_HeightForAnim;
 		m_HasToChangePosition = false;
@@ -410,12 +411,12 @@ CTaskSimpleClimb::ProcessPed(CPed *ped)
 
 			ped->m_vecMoveSpeed += climbEntSpeed;
 
-			if(m_Anim && (!(m_Anim->flags & ASSOC_RUNNING) || m_Anim->animId == ANIM_ID_CLIMB_IDLE)){
+			if(m_Anim && (!(m_Anim->m_Flags & ANIMATION_IS_PLAYING) || m_Anim->m_AnimId == ANIM_ID_CLIMB_IDLE)){
 				m_GetToPosCounter += (uint16)CTimer::GetTimeStepInMilliseconds();
 				if(m_GetToPosCounter > 1000
-				   || (m_Anim->animId == ANIM_ID_CLIMB_IDLE && m_GetToPosCounter > 500)){
+				   || (m_Anim->m_AnimId == ANIM_ID_CLIMB_IDLE && m_GetToPosCounter > 500)){
 					m_IsInvalidClimb = true;
-					m_Anim->blendDelta = -1000.0f;
+					m_Anim->m_BlendDelta = -1000.0f;
 					m_Anim = nil;
 					m_HasFinished = true;
 					ped->ApplyMoveForce(ped->GetForward() * (ped->m_fMass * -0.1f));
@@ -432,12 +433,12 @@ CTaskSimpleClimb::ProcessPed(CPed *ped)
 
 			ped->m_vecMoveSpeed += climbEntSpeed;
 
-			if(m_Anim && !(m_Anim->flags & ASSOC_RUNNING) && m_HeightForAnim == CLIMB_STANDUP){
+			if(m_Anim && !(m_Anim->m_Flags & ANIMATION_IS_PLAYING) && m_HeightForAnim == CLIMB_STANDUP){
 				if(TestForVault(ped, handPos, handAngle)){
 					m_HeightForAnim = CLIMB_VAULT;
 					m_HasToChangeAnimation = true;
 				}else{
-					m_Anim->flags |= ASSOC_RUNNING;
+					m_Anim->m_Flags |= ANIMATION_IS_PLAYING;
 				}
 			}
 		}
@@ -460,7 +461,7 @@ CTaskSimpleClimb::ProcessPed(CPed *ped)
 			}
 
 			if(m_Anim){
-				m_Anim->blendDelta = -8.0f;
+				m_Anim->m_BlendDelta = -8.0f;
 				m_Anim = nil;
 			}
 
@@ -471,12 +472,12 @@ CTaskSimpleClimb::ProcessPed(CPed *ped)
 	CPad *pad = ped->IsPlayer() ? CPad::GetPad(0) : nil;
 
 	// Advance the phase when the current clip has played out.
-	if(m_Anim && m_Anim->blendAmount == 1.0f){
+	if(m_Anim && m_Anim->m_BlendAmount == 1.0f){
 		bool advance = false;
-		float totalTime = m_Anim->hierarchy ? m_Anim->hierarchy->totalLength : 0.0f;
-		float timeLeft = totalTime - (m_Anim->currentTime + m_Anim->timeStep);
+		float totalTime = m_Anim->m_BlendHier ? m_Anim->m_BlendHier->m_fTotalTime : 0.0f;
+		float timeLeft = totalTime - (m_Anim->m_CurrentTime + m_Anim->m_TimeStep);
 
-		switch(m_Anim->animId){
+		switch(m_Anim->m_AnimId){
 		case ANIM_ID_CLIMB_JUMP:
 			if(timeLeft <= 0.0f){
 				if(m_HasToForceClimb || (pad && pad->GetJump()))
@@ -490,7 +491,7 @@ CTaskSimpleClimb::ProcessPed(CPed *ped)
 			break;
 		case ANIM_ID_CLIMB_PULL:
 		case ANIM_ID_CLIMB_STAND:
-			if(totalTime <= m_Anim->currentTime)
+			if(totalTime <= m_Anim->m_CurrentTime)
 				advance = true;
 			break;
 		case ANIM_ID_CLIMB_JUMP_B:
@@ -498,7 +499,7 @@ CTaskSimpleClimb::ProcessPed(CPed *ped)
 				advance = true;
 			break;
 		default:
-			if(totalTime <= m_Anim->currentTime){
+			if(totalTime <= m_Anim->m_CurrentTime){
 				if(m_HasToForceClimb || (pad && pad->JumpJustDown()))
 					advance = true;
 			}
@@ -517,7 +518,7 @@ CTaskSimpleClimb::ProcessPed(CPed *ped)
 	}
 
 	if(m_HeightForPos != CLIMB_STANDUP && m_HeightForPos != CLIMB_VAULT
-	   || m_Anim == nil || !(m_Anim->flags & ASSOC_RUNNING)){
+	   || m_Anim == nil || !(m_Anim->m_Flags & ANIMATION_IS_PLAYING)){
 		if(m_HeightForAnim == CLIMB_STANDUP && m_HeightForPos < CLIMB_STANDUP
 		   && TestForVault(ped, handPos, handAngle))
 			m_HeightForAnim = CLIMB_VAULT;
@@ -810,7 +811,7 @@ CTaskSimpleClimb::GetCameraTargetPos(CPed *ped, CVector &vecTarget) const
 		return;
 
 	CVector2D offset;
-	switch(m_Anim->animId){
+	switch(m_Anim->m_AnimId){
 	case ANIM_ID_FALL_GLIDE:
 	case ANIM_ID_CLIMB_JUMP2FALL:
 		offset = CVector2D(ms_fVaultOffsetHorz, ms_fVaultOffsetVert);

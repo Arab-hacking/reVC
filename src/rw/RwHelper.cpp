@@ -317,36 +317,6 @@ SkinGetBonePositionsToTable(RpClump *clump, RwV3d *boneTable)
 	}
 }
 
-RpHAnimAnimation*
-HAnimAnimationCreateForHierarchy(RpHAnimHierarchy *hier)
-{
-	int i;
-#if defined FIX_BUGS || defined LIBRW
-	int numNodes = hier->numNodes*2;	// you're supposed to have at least two KFs per node
-#else
-	int numNodes = hier->numNodes;
-#endif
-	RpHAnimAnimation *anim = RpHAnimAnimationCreate(rpHANIMSTDKEYFRAMETYPEID, numNodes, 0, 0.0f);
-	if(anim == nil)
-		return nil;
-	RpHAnimStdKeyFrame *frame;
-	for(i = 0; i < numNodes; i++){
-		frame = (RpHAnimStdKeyFrame*)HANIMFRAME(anim, i);	// games uses struct size here, not safe
-		frame->q.real = 1.0f;
-		frame->q.imag.x = frame->q.imag.y = frame->q.imag.z = 0.0f;
-		frame->t.x = frame->t.y = frame->t.z = 0.0f;
-#if defined FIX_BUGS || defined LIBRW
-		// times are subtracted and divided giving NaNs
-		// so they can't both be 0
-		frame->time = i/hier->numNodes;
-#else
-		frame->time = 0.0f;
-#endif
-		frame->prevFrame = nil;
-	}
-	return anim;
-}
-
 void
 RenderSkeleton(RpHAnimHierarchy *hier)
 {

@@ -215,6 +215,22 @@ CModelInfo::GetModelInfo(const char *name, int *id)
 	return nil;
 }
 
+// 0x4C59B0
+CBaseModelInfo *
+CModelInfo::GetModelInfoFromHashKey(uint32 uiHash, int32 *index)
+{
+	for (int32 i = 0; i < MODELINFOSIZE; ++i) {
+		CBaseModelInfo *mi = GetModelInfo(i);
+		if (mi && mi->GetModelNameHash() == uiHash) {
+			if (index)
+				*index = i;
+			return mi;
+		}
+	}
+
+	return nil;
+}
+
 CBaseModelInfo*
 CModelInfo::GetModelInfo(const char *name, int minIndex, int maxIndex)
 {

@@ -2,7 +2,7 @@
 #define __GTA_WEAPONINFO_H__
 
 #include "AnimManager.h"
-#include "AnimationId.h"
+#include "AnimationEnums.h"
 #include "WeaponType.h"
 
 enum
@@ -52,7 +52,7 @@ public:
 		uint16 CrouchRLoadA;
 		uint16 CrouchRLoadB;
 	};
-	static tAnimAimOffsets ms_WeaponAimOffsets[ASSOCGRP_SPRAYCAN + 1 - ASSOCGRP_PYTHON];
+	static tAnimAimOffsets ms_WeaponAimOffsets[ANIM_GROUP_SPRAYCAN + 1 - ANIM_GROUP_PYTHON];
 
 	static uint16 ms_aReloadSampleTime[WEAPONTYPE_TOTALWEAPONS];
 	static int32 ms_aMaxAmmoForWeapon[WEAPONTYPE_TOTALWEAPONS];

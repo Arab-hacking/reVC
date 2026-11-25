@@ -1652,20 +1652,20 @@ CBoat::DoDriveByShootings(void)
 		if(lookingLeft){
 			anim = RpAnimBlendClumpGetAssociation(pDriver->GetClump(), ANIM_ID_DRIVEBY_R);
 			if(anim)
-				anim->blendDelta = -1000.0f;
+				anim->m_BlendDelta = -1000.0f;
 			anim = RpAnimBlendClumpGetAssociation(pDriver->GetClump(), ANIM_ID_DRIVEBY_L);
-			if(anim == nil || anim->blendDelta < 0.0f)
-				anim = CAnimManager::AddAnimation(pDriver->GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_DRIVEBY_L);
+			if(anim == nil || anim->m_BlendDelta < 0.0f)
+				anim = CAnimManager::AddAnimation(pDriver->GetClump(), ANIM_GROUP_DEFAULT, ANIM_ID_DRIVEBY_L);
 		}else if(pDriver->m_pMyVehicle->pPassengers[0] == nil || TheCamera.Cams[TheCamera.ActiveCam].Mode == CCam::MODE_1STPERSON){
 			anim = RpAnimBlendClumpGetAssociation(pDriver->GetClump(), ANIM_ID_DRIVEBY_L);
 			if(anim)
-				anim->blendDelta = -1000.0f;
+				anim->m_BlendDelta = -1000.0f;
 			anim = RpAnimBlendClumpGetAssociation(pDriver->GetClump(), ANIM_ID_DRIVEBY_R);
-			if(anim == nil || anim->blendDelta < 0.0f)
-				anim = CAnimManager::AddAnimation(pDriver->GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_DRIVEBY_R);
+			if(anim == nil || anim->m_BlendDelta < 0.0f)
+				anim = CAnimManager::AddAnimation(pDriver->GetClump(), ANIM_GROUP_DEFAULT, ANIM_ID_DRIVEBY_R);
 		}
 
-		if (!anim || !anim->IsRunning()) {
+		if (!anim || !anim->IsPlaying()) {
 			if (CPad::GetPad(0)->GetCarGunFired() && CTimer::GetTimeInMilliseconds() > weapon->m_nTimer) {
 				weapon->FireFromCar(this, lookingLeft, true);
 				weapon->m_nTimer = CTimer::GetTimeInMilliseconds() + 70;
@@ -1675,10 +1675,10 @@ CBoat::DoDriveByShootings(void)
 		weapon->Reload();
 		anim = RpAnimBlendClumpGetAssociation(pDriver->GetClump(), ANIM_ID_DRIVEBY_L);
 		if(anim)
-			anim->blendDelta = -1000.0f;
+			anim->m_BlendDelta = -1000.0f;
 		anim = RpAnimBlendClumpGetAssociation(pDriver->GetClump(), ANIM_ID_DRIVEBY_R);
 		if(anim)
-			anim->blendDelta = -1000.0f;
+			anim->m_BlendDelta = -1000.0f;
 	}
 }
 

@@ -10,6 +10,12 @@ typedef rw::Animation RpHAnimAnimation;
 
 #define rpHANIMSTDKEYFRAMETYPEID 0x1
 
+// Key frame of the RpAnimBlend interpolation scheme
+typedef rw::HAnimKeyFrame RpHAnimBlendKeyFrame;
+
+// Interpolated frame of the RpAnimBlend interpolation scheme
+typedef rw::HAnimInterpFrame RpHAnimBlendInterpFrame;
+
 // same as rw::HAnimKeyFrame, but we need RtQuat in this one
 struct RpHAnimStdKeyFrame
 {

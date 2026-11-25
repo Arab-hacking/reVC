@@ -5,7 +5,8 @@
 #include "ColModel.h"
 #include "AnimManager.h"
 #include "PedType.h"
-#include "Bones.h"
+#include "eBoneTag.h"
+#include "PedNode.h"
 
 class CPedModelInfo : public CClumpModelInfo
 {
@@ -46,7 +47,7 @@ public:
 
 	CPedModelInfo(void) : CClumpModelInfo(MITYPE_PED)
 	{
-		m_animGroup = ASSOCGRP_DEFAULT;
+		m_animGroup = ANIM_GROUP_DEFAULT;
 		m_pedType = PEDTYPE_CIVMALE;
 		m_pedStatType = PEDSTAT_STD_MISSION;
 		m_carsCanDrive = 0;

@@ -10,6 +10,7 @@
 CBaseModelInfo::CBaseModelInfo(ModelInfoType type)
 {
 	m_colModel = nil;
+	m_nKey = 0;
 	m_2dEffectsID = -1;
 	m_objectId = -1;
 	m_refCount = 0;

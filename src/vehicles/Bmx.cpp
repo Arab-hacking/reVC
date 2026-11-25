@@ -10,6 +10,7 @@
 
 #include "Bmx.h"
 #include "AnimBlendAssociation.h"
+#include "AnimBlendHierarchy.h"
 #include "BaseModelInfo.h"
 #include "General.h"
 #include "Pad.h"
@@ -27,12 +28,12 @@ CBmx::CBmx(int32 id, uint8 CreatedBy)
 	CVehicleModelInfo *mi = (CVehicleModelInfo*)CModelInfo::GetModelInfo(id);
 
 	m_nVehicleSubType = VEHICLE_TYPE_BMX;
-	m_bikeAnimType = CAnimManager::GetAnimGroupForAnimation(ANIM_ID_BIKE_PEDAL);
 	// SA picks the animation group from the model's animation file and clamps it
 	// into the BMX range. Anything outside that range is a data error and falls
 	// back to the plain BMX set.
-	if(m_bikeAnimType < ASSOCGRP_BMX || m_bikeAnimType > ASSOCGRP_CHOPPA)
-		m_bikeAnimType = ASSOCGRP_BMX;
+	m_bikeAnimType = CAnimManager::GetAnimBlocks()[mi->GetAnimFileIndex()].GroupId;
+	if(m_bikeAnimType < ANIM_GROUP_BMX || m_bikeAnimType > ANIM_GROUP_CHOPPA)
+		m_bikeAnimType = ANIM_GROUP_BMX;
 
 	m_fControlJump = 0.0f;
 	m_fControlPedaling = 0.0f;
@@ -129,30 +130,30 @@ CBmx::ProcessControl(void)
 	CBaseModelInfo *mi = CModelInfo::GetModelInfo(GetModelIndex());
 	bool isMountainBike = mi && mi->GetModelName() && !CGeneral::faststricmp(mi->GetModelName(), "mtbike");
 
-	if(animBikeSprint && animBikeSprint->blendAmount > 0.01f){
+	if(animBikeSprint && animBikeSprint->m_BlendAmount > 0.01f){
 		float mult = isMountainBike ? MTB_SPRINT_LEANMULT : BMX_SPRINT_LEANMULT;
 		// The lean follows a full sine over the clip, so the frame rocks once
 		// per pedal revolution.
-		m_fSprintLeanAngle = Sin(animBikeSprint->GetProgress() * TWOPI + BMX_SPRINT_LEANSTART)
-			* animBikeSprint->blendAmount * mult;
+		m_fSprintLeanAngle = Sin(animBikeSprint->GetTimeProgress() * TWOPI + BMX_SPRINT_LEANSTART)
+			* animBikeSprint->m_BlendAmount * mult;
 	}else{
 		CAnimBlendAssociation *animBikePedal = RpAnimBlendClumpGetAssociation(pDriver->GetClump(), ANIM_ID_BIKE_PEDAL);
-		if(animBikePedal && animBikePedal->blendAmount > 0.01f){
+		if(animBikePedal && animBikePedal->m_BlendAmount > 0.01f){
 			float mult = isMountainBike ? MTB_PEDAL_LEANMULT : BMX_PEDAL_LEANMULT;
-			m_fSprintLeanAngle += Sin(animBikePedal->GetProgress() * TWOPI + BMX_PEDAL_LEANSTART)
-				* animBikePedal->blendAmount * mult;
+			m_fSprintLeanAngle += Sin(animBikePedal->GetTimeProgress() * TWOPI + BMX_PEDAL_LEANSTART)
+				* animBikePedal->m_BlendAmount * mult;
 		}
 		m_fSprintLeanAngle *= 0.95f;
 	}
 
 	// The crank follows the pedal clip: a bicycle chainset turns once per
 	// revolution, and the two pedals sit half a turn apart.
-	if(animBikeSprint && animBikeSprint->blendAmount > 0.01f){
-		m_fCrankAngle = animBikeSprint->GetProgress() * TWOPI;
+	if(animBikeSprint && animBikeSprint->m_BlendAmount > 0.01f){
+		m_fCrankAngle = animBikeSprint->GetTimeProgress() * TWOPI;
 	}else{
 		CAnimBlendAssociation *animBikePedal = RpAnimBlendClumpGetAssociation(pDriver->GetClump(), ANIM_ID_BIKE_PEDAL);
-		if(animBikePedal && animBikePedal->blendAmount > 0.01f)
-			m_fCrankAngle = animBikePedal->GetProgress() * TWOPI;
+		if(animBikePedal && animBikePedal->m_BlendAmount > 0.01f)
+			m_fCrankAngle = animBikePedal->GetTimeProgress() * TWOPI;
 	}
 	m_fPedalAngleL = m_fCrankAngle;
 	m_fPedalAngleR = m_fCrankAngle + PI;
@@ -259,9 +260,9 @@ CBmx::ProcessBunnyHop(void)
 
 	if(GetStatus() != STATUS_PLAYER || pDriver == nil || !pDriver->IsPlayer()){
 		if(anim){
-			anim->flags |= ASSOC_RUNNING;
-			anim->flags |= ASSOC_FADEOUTWHENDONE;
-			anim->blendDelta = -8.0f;
+			anim->m_Flags |= ANIMATION_IS_PLAYING;
+			anim->m_Flags |= ANIMATION_IS_FINISH_AUTO_REMOVE;
+			anim->m_BlendDelta = -8.0f;
 		}
 		return;
 	}
@@ -273,7 +274,7 @@ CBmx::ProcessBunnyHop(void)
 		anim = CAnimManager::BlendAnimation(pDriver->GetClump(), m_bikeAnimType, ANIM_ID_BIKE_BUNNYHOP, 8.0f);
 		if(anim){
 			anim->SetCurrentTime(0.0f);
-			anim->flags &= ~ASSOC_RUNNING;
+			anim->m_Flags &= ~ANIMATION_IS_PLAYING;
 		}
 	}
 
@@ -286,16 +287,16 @@ CBmx::ProcessBunnyHop(void)
 
 			if(pad->GetLeftShoulder1()){
 				// Still held: hold the crouch and keep charging.
-				if(!anim->IsRunning()){
+				if(!anim->IsPlaying()){
 					m_fControlJump = Min(m_fControlJump + CTimer::GetTimeStep(), 25.0f);
 					anim->SetCurrentTime(m_fControlJump / 25.0f * 0.2f);
 				}
-			}else if(!anim->IsRunning()){
+			}else if(!anim->IsPlaying()){
 				// Released: skip to the end of the crouch and launch.
-				if(anim->currentTime < 0.2f)
-					anim->SetCurrentTime((0.2f - anim->currentTime) / 0.2f * (anim->hierarchy->totalLength - 0.2f) + 0.2f);
-				anim->flags |= ASSOC_RUNNING;
-				anim->speed = 1.5f;
+				if(anim->m_CurrentTime < 0.2f)
+					anim->SetCurrentTime((0.2f - anim->m_CurrentTime) / 0.2f * (anim->m_BlendHier->m_fTotalTime - 0.2f) + 0.2f);
+				anim->m_Flags |= ANIMATION_IS_PLAYING;
+				anim->m_Speed = 1.5f;
 				anim->SetFinishCallback(CBmx::LaunchBunnyHopCB, this);
 			}
 		}else{
@@ -306,7 +307,7 @@ CBmx::ProcessBunnyHop(void)
 	// While the hop animation dominates, the bike must not drive forward under
 	// the player: the rider is airborne, not pedalling. Freewheeling is set when
 	// a wheel is off the ground, which is exactly the case here.
-	if(anim && anim->blendAmount > 0.5f){
+	if(anim && anim->m_BlendAmount > 0.5f){
 		m_fGasPedal = 0.0f;
 		if(!bIsHandbrakeOn &&
 		   (m_aSuspensionSpringRatio[BIKESUSP_F1] < 1.0f || m_aSuspensionSpringRatio[BIKESUSP_F2] < 1.0f ||

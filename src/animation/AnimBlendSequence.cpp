@@ -1,181 +1,158 @@
 #include "common.h"
 
 #include "AnimBlendSequence.h"
+#include "KeyGen.h"
+#include "MemoryMgr.h"
 #include "MemoryHeap.h"
 
-CAnimBlendSequence::CAnimBlendSequence(void)
+// 0x4D0C10
+CAnimBlendSequence::CAnimBlendSequence()
 {
-	type = 0;
-	name[0] = '\0';
-	numFrames = 0;
-	boneTag = -1;
-	keyFrames = nil;
-	keyFramesCompressed = nil;
+	m_bHasRotation = false;
+	m_bHasTranslation = false;
+	m_bIsCompressed = false;
+	m_bUsingExternalMemory = false;
+	m_IsUsingBoneTag = false;
+	m_FramesNum = 0;
+	m_Frames = nil;
+	m_NameHashKey = 0;
 }
 
-CAnimBlendSequence::~CAnimBlendSequence(void)
+// 0x4D0C30
+CAnimBlendSequence::~CAnimBlendSequence()
 {
-	if(keyFrames)
-		RwFree(keyFrames);
-	if(keyFramesCompressed)
-		RwFree(keyFramesCompressed);
+	// If we allocated memory, clean it
+	if (!m_bUsingExternalMemory && m_Frames)
+		MemoryMgrFree(m_Frames);
 }
 
-void
-CAnimBlendSequence::SetName(const char *name)
+static void CopyKeyFrameTrans(KeyFrameTransCompressed *dst, const KeyFrameTrans *src) { dst->Trans = src->Trans; }
+static void CopyKeyFrameTrans(KeyFrameTrans *dst, const KeyFrameTransCompressed *src) { dst->Trans = src->Trans; }
+static void CopyKeyFrameTrans(KeyFrame *, const KeyFrameCompressed *) {}
+static void CopyKeyFrameTrans(KeyFrameCompressed *, const KeyFrame *) {}
+
+template<typename From, typename To>
+bool CAnimBlendSequence::ConvertKeyFrames(uint8 *pDataBlock)
 {
-	strncpy(this->name, name, sizeof(this->name) - 1);
-	this->name[sizeof(this->name) - 1] = '\0';
-}
-
-void
-CAnimBlendSequence::SetNumFrames(int numFrames, bool translation, bool compressed)
-{
-	type = translation ? (KF_ROT | KF_TRANS) : KF_ROT;
-	if(compressed)
-		keyFramesCompressed = RwMalloc(KeyFrameCompressedSize(translation) * numFrames);
-	else
-		keyFrames = RwMalloc(KeyFrameSize(translation) * numFrames);
-	this->numFrames = numFrames;
-}
-
-void
-CAnimBlendSequence::SetKeyFrameTime(int n, float time)
-{
-	if(n < 0 || n >= numFrames)
-		return;
-	if(keyFrames)
-		GetKeyFrame(n)->deltaTime = time;
-	else if(keyFramesCompressed)
-		GetKeyFrameCompressed(n)->SetTime(time);
-}
-
-// Makes every key use the same hemisphere as the previous one. Without this the
-// shortest-path interpolation between neighbours would flip.
-void
-CAnimBlendSequence::RemoveQuaternionFlips(void)
-{
-	if(numFrames < 2)
-		return;
-
-	// A sequence holds either the uncompressed or the compressed array, never
-	// both, so each branch has to read its own storage.
-	if(keyFrames){
-		CQuaternion last = GetKeyFrame(0)->rotation;
-		for(int i = 1; i < numFrames; i++){
-			KeyFrame *frame = GetKeyFrame(i);
-			float dot = DotProduct(last, frame->rotation);
-			if(dot < 0.0f){
-				frame->rotation.x = -frame->rotation.x;
-				frame->rotation.y = -frame->rotation.y;
-				frame->rotation.z = -frame->rotation.z;
-				frame->rotation.w = -frame->rotation.w;
-			}
-			last = frame->rotation;
-		}
-		return;
-	}
-
-	if(keyFramesCompressed){
-		CQuaternion last;
-		GetKeyFrameCompressed(0)->GetRotation(&last);
-		for(int i = 1; i < numFrames; i++){
-			CQuaternion rot;
-			KeyFrameCompressed *frame = GetKeyFrameCompressed(i);
-			frame->GetRotation(&rot);
-			float dot = DotProduct(last, rot);
-			if(dot < 0.0f){
-				frame->rot[0] = (int16)-frame->rot[0];
-				frame->rot[1] = (int16)-frame->rot[1];
-				frame->rot[2] = (int16)-frame->rot[2];
-				frame->rot[3] = (int16)-frame->rot[3];
-				rot.x = -rot.x; rot.y = -rot.y; rot.z = -rot.z; rot.w = -rot.w;
-			}
-			last = rot;
-		}
-	}
-}
-
-// Expands the compressed array into the uncompressed one, keeping the
-// compressed data so a later CompressKeyframes can drop it again.
-void
-CAnimBlendSequence::Uncompress(void)
-{
-	if(keyFramesCompressed == nil || keyFrames != nil)
-		return;
-
-	keyFrames = RwMalloc(KeyFrameSize(HasTranslation()) * numFrames);
-	for(int i = 0; i < numFrames; i++){
-		CQuaternion rot;
-		GetKeyFrameCompressed(i)->GetRotation(&rot);
-		KeyFrame *dst = GetKeyFrame(i);
-		dst->rotation = rot;
-		dst->deltaTime = GetKeyFrameCompressed(i)->GetDeltaTime();
-		if(HasTranslation()){
-			CVector trans;
-			((KeyFrameTransCompressed*)GetKeyFrameCompressed(i))->GetTranslation(&trans);
-			((KeyFrameTrans*)dst)->translation = trans;
-		}
-	}
-}
-
-// Copies the live frame array into a buffer of exactly its own size, dropping
-// the slack left by the pool allocation. Returns false when nothing was moved.
-bool
-CAnimBlendSequence::MoveMemory(void)
-{
-	void *shrunk;
-	int32 size;
-
-	if(numFrames <= 0)
+	if (m_FramesNum == 0)
 		return false;
-	if(keyFrames != nil){
-		size = GetKeyFrameElementSize();
-		shrunk = RwMalloc(size * numFrames);
-		memcpy(shrunk, keyFrames, size * numFrames);
-		RwFree(keyFrames);
-		keyFrames = shrunk;
-		return true;
+
+	void *const outFrames = pDataBlock
+		? (void *)pDataBlock
+		: MemoryMgrMalloc(GetDataSize(!m_bIsCompressed));
+
+	From *inKF = (From *)m_Frames;
+	To *outKF = (To *)outFrames;
+	for (int32 i = m_FramesNum; i-- > 0; inKF++, outKF++) {
+		outKF->Rot = inKF->Rot;
+		outKF->DeltaTime = (float)inKF->DeltaTime;
+		CopyKeyFrameTrans(outKF, inKF);
 	}
-	if(keyFramesCompressed != nil){
-		size = GetKeyFrameCompressedElementSize();
-		shrunk = RwMalloc(size * numFrames);
-		memcpy(shrunk, keyFramesCompressed, size * numFrames);
-		RwFree(keyFramesCompressed);
-		keyFramesCompressed = shrunk;
-		return true;
-	}
-	return false;
+
+	if (!m_bUsingExternalMemory)
+		MemoryMgrFree(m_Frames);
+
+	m_Frames = outFrames;
+	m_bUsingExternalMemory = pDataBlock != nil;
+
+	return true;
 }
 
-// Builds the compressed array from the uncompressed one. The compressed layout
-// is what vehicle and bike banks ship, so the engine has to be able to produce
-// it when a bank arrives uncompressed and the caller asks to keep it packed.
-void
-CAnimBlendSequence::CompressKeyframes(void)
+// 0x4D0F40
+void CAnimBlendSequence::CompressKeyframes(uint8 *pDataBlock)
 {
-	if(keyFrames == nil || keyFramesCompressed != nil || numFrames <= 0)
+	assert(!m_bIsCompressed);
+
+	bool converted = m_bHasTranslation
+		? ConvertKeyFrames<KeyFrameTrans, KeyFrameTransCompressed>(pDataBlock)
+		: ConvertKeyFrames<KeyFrame, KeyFrameCompressed>(pDataBlock);
+	if (converted)
+		m_bIsCompressed = true;
+}
+
+// 0x4D0D40
+void CAnimBlendSequence::Uncompress(uint8 *pDataBlock)
+{
+	assert(m_bIsCompressed);
+
+	bool converted = m_bHasTranslation
+		? ConvertKeyFrames<KeyFrameTransCompressed, KeyFrameTrans>(pDataBlock)
+		: ConvertKeyFrames<KeyFrameCompressed, KeyFrame>(pDataBlock);
+	if (converted)
+		m_bIsCompressed = false;
+}
+
+// 0x4D12A0
+void CAnimBlendSequence::RemoveUncompressedData(uint8 *frameData)
+{
+	if (m_FramesNum)
+		CompressKeyframes(frameData);
+}
+
+// 0x4D0C90
+size_t CAnimBlendSequence::GetDataSize(bool compressed) const
+{
+	const size_t kfSize = compressed
+		? m_bHasTranslation ? sizeof(KeyFrameTransCompressed) : sizeof(KeyFrameCompressed)
+		: m_bHasTranslation ? sizeof(KeyFrameTrans) : sizeof(KeyFrame);
+	return kfSize * m_FramesNum;
+}
+
+// 0x4D1190
+void CAnimBlendSequence::RemoveQuaternionFlips() const
+{
+	if (m_FramesNum < 2)
 		return;
 
-	const bool trans = HasTranslation();
-	keyFramesCompressed = RwMalloc(KeyFrameCompressedSize(trans) * numFrames);
-	for(int i = 0; i < numFrames; i++){
-		KeyFrame *src = GetKeyFrame(i);
-		KeyFrameCompressed *dst = GetKeyFrameCompressed(i);
-		dst->SetRotation(src->rotation);
-		dst->SetTime(src->deltaTime);
-		if(trans){
-			KeyFrameTrans *srcT = (KeyFrameTrans*)src;
-			((KeyFrameTransCompressed*)dst)->SetTranslation(srcT->translation);
-		}
+	KeyFrame *f;
+	CQuaternion last = GetUKeyFrame(0)->Rot;
+	for (uint32 i = 1; i < (uint32)m_FramesNum; i++) {
+		f = GetUKeyFrame(i);
+		if (DotProduct(last, f->Rot) < 0.0f)
+			f->Rot = -f->Rot;
+		last = f->Rot;
 	}
 }
 
-void
-CAnimBlendSequence::RemoveUncompressedData(void)
+// 0x4D0C50
+void CAnimBlendSequence::SetName(const char *name)
 {
-	if(keyFrames){
-		RwFree(keyFrames);
-		keyFrames = nil;
+	m_IsUsingBoneTag = false;
+	m_NameHashKey = CKeyGen::GetUppercaseKey(name);
+}
+
+// 0x4D0C70
+void CAnimBlendSequence::SetBoneTag(eBoneTag32 boneId)
+{
+	if (boneId != BONE_UNKNOWN) {
+		m_IsUsingBoneTag = true;
+		m_BoneTag = (eBoneTag16)boneId;
 	}
+}
+
+// 0x4D0CD0
+void CAnimBlendSequence::SetNumFrames(uint32 count, bool bHasTranslation, bool compressed, void *frameData)
+{
+	m_bHasTranslation = bHasTranslation;
+	m_FramesNum = (uint16)count;
+	m_Frames = frameData ? frameData : MemoryMgrMalloc(GetDataSize(compressed));
+	m_bUsingExternalMemory = frameData != nil;
+	m_bHasRotation = true;
+	m_bIsCompressed = compressed;
+}
+
+// 0x4D1150
+bool CAnimBlendSequence::MoveMemory()
+{
+	if (m_bUsingExternalMemory || !m_Frames)
+		return false;
+
+	void *prevPtr = m_Frames;
+	m_Frames = gMainHeap.MoveMemory(m_Frames);
+	return prevPtr != m_Frames; // Return true if the memory was moved
+}
+
+// 0x4D1180
+void CAnimBlendSequence::Print()
+{
 }

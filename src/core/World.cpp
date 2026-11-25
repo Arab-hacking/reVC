@@ -1874,20 +1874,8 @@ CWorld::Process(void)
 	{
 		for(CPtrNode *node = ms_listMovingEntityPtrs.first; node; node = node->next) {
 			CEntity *movingEnt = (CEntity *)node->item;
-			// SA CEntity::UpdateAnim (0x535F00) clears this at the top of every
-			// animation update, before the early-outs, so the veto only ever
-			// covers the single frame that set it.
-			movingEnt->bDontUpdateHierarchy = false;
-			if(!movingEnt->bRemoveFromWorld && movingEnt->m_rwObject && RwObjectGetType(movingEnt->m_rwObject) == rpCLUMP &&
-			   RpAnimBlendClumpGetFirstAssociation(movingEnt->GetClump())) {
-				if (movingEnt->IsObject())
-					RpAnimBlendClumpUpdateAnimations(movingEnt->GetClump(), CTimer::GetTimeStepNonClippedInSeconds());
-				else {
-					if (!movingEnt->bOffscreen)
-						movingEnt->bOffscreen = !movingEnt->GetIsOnScreen();
-					RpAnimBlendClumpUpdateAnimations(movingEnt->GetClump(), CTimer::GetTimeStepInSeconds(), !movingEnt->bOffscreen);
-				}
-			}
+			if(!movingEnt->bRemoveFromWorld)
+				movingEnt->UpdateAnim();
 		}
 		for(CPtrNode *node = ms_listMovingEntityPtrs.first; node; node = node->next) {
 			CPhysical *movingEnt = (CPhysical *)node->item;

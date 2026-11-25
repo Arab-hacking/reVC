@@ -127,15 +127,15 @@ m_nVehicleSubType = VEHICLE_TYPE_AUTOMOBILE;
 	// a big car reaches further. Everything else is the standard saloon.
 	if(mi){
 		if(bIsBus)
-			mi->m_animGroup = ASSOCGRP_BUSCARANIMS;
+			mi->m_animGroup = ANIM_GROUP_BUSCARANIMS;
 		else if(bIsVan)
-			mi->m_animGroup = ASSOCGRP_VANCARANIMS;
+			mi->m_animGroup = ANIM_GROUP_VANCARANIMS;
 		else if(bLowVehicle)
-			mi->m_animGroup = ASSOCGRP_LOWCARAMIMS;
+			mi->m_animGroup = ANIM_GROUP_LOWCARAMIMS;
 		else if(bIsBig)
-			mi->m_animGroup = ASSOCGRP_TRKCARANIMS;
+			mi->m_animGroup = ANIM_GROUP_TRKCARANIMS;
 		else
-			mi->m_animGroup = ASSOCGRP_STDCARAMIMS;
+			mi->m_animGroup = ANIM_GROUP_STDCARAMIMS;
 	}
 
 	// SA CAutomobile::SetupModelNodes (0x6B0C70..0x6B0E4B), verbatim. Every door
@@ -2792,8 +2792,8 @@ CAutomobile::ProcessControlInputs(uint8 pad)
 	float speed = DotProduct(m_vecMoveSpeed, GetForward());
 
 	if(!CPad::GetPad(pad)->GetExitVehicle() ||
-	   pDriver && pDriver->m_pVehicleAnim && (pDriver->m_pVehicleAnim->animId == ANIM_ID_DEFAULT_CAR_ROLLOUT_LHS ||
-	                                          pDriver->m_pVehicleAnim->animId == ANIM_ID_DEFAULT_CAR_ROLLOUT_LHS))
+	   pDriver && pDriver->m_pVehicleAnim && (pDriver->m_pVehicleAnim->m_AnimId == ANIM_ID_DEFAULT_CAR_ROLLOUT_LHS ||
+	                                          pDriver->m_pVehicleAnim->m_AnimId == ANIM_ID_DEFAULT_CAR_ROLLOUT_LHS))
 		bIsHandbrakeOn = !!CPad::GetPad(pad)->GetHandBrake();
 	else
 		bIsHandbrakeOn = true;
@@ -3585,20 +3585,20 @@ CAutomobile::DoDriveByShootings(void)
 		if(lookingLeft){
 			anim = RpAnimBlendClumpGetAssociation(pDriver->GetClump(), rightAnim);
 			if(anim)
-				anim->blendDelta = -1000.0f;
+				anim->m_BlendDelta = -1000.0f;
 			anim = RpAnimBlendClumpGetAssociation(pDriver->GetClump(), leftAnim);
-			if(anim == nil || anim->blendDelta < 0.0f)
-				anim = CAnimManager::AddAnimation(pDriver->GetClump(), ASSOCGRP_DEFAULT, leftAnim);
+			if(anim == nil || anim->m_BlendDelta < 0.0f)
+				anim = CAnimManager::AddAnimation(pDriver->GetClump(), ANIM_GROUP_DEFAULT, leftAnim);
 		}else if(pDriver->m_pMyVehicle->pPassengers[0] == nil || TheCamera.Cams[TheCamera.ActiveCam].Mode == CCam::MODE_1STPERSON){
 			anim = RpAnimBlendClumpGetAssociation(pDriver->GetClump(), leftAnim);
 			if(anim)
-				anim->blendDelta = -1000.0f;
+				anim->m_BlendDelta = -1000.0f;
 			anim = RpAnimBlendClumpGetAssociation(pDriver->GetClump(), rightAnim);
-			if(anim == nil || anim->blendDelta < 0.0f)
-				anim = CAnimManager::AddAnimation(pDriver->GetClump(), ASSOCGRP_DEFAULT, rightAnim);
+			if(anim == nil || anim->m_BlendDelta < 0.0f)
+				anim = CAnimManager::AddAnimation(pDriver->GetClump(), ANIM_GROUP_DEFAULT, rightAnim);
 		}
 
-		if (!anim || !anim->IsRunning()) {
+		if (!anim || !anim->IsPlaying()) {
 			if (CPad::GetPad(0)->GetCarGunFired() && CTimer::GetTimeInMilliseconds() > weapon->m_nTimer) {
 				weapon->FireFromCar(this, lookingLeft, true);
 				weapon->m_nTimer = CTimer::GetTimeInMilliseconds() + 70;
@@ -3608,10 +3608,10 @@ CAutomobile::DoDriveByShootings(void)
 		weapon->Reload();
 		anim = RpAnimBlendClumpGetAssociation(pDriver->GetClump(), leftAnim);
 		if(anim)
-			anim->blendDelta = -1000.0f;
+			anim->m_BlendDelta = -1000.0f;
 		anim = RpAnimBlendClumpGetAssociation(pDriver->GetClump(), rightAnim);
 		if(anim)
-			anim->blendDelta = -1000.0f;
+			anim->m_BlendDelta = -1000.0f;
 	}
 
 	// TODO: what is this?

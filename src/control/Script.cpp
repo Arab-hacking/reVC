@@ -248,7 +248,7 @@ LookUpPlayerModel(void)
 		pedCount++;
 		if (id == MI_PLAYER)
 			return id; // a real player.dff was supplied
-		if (mi->m_animGroup == ASSOCGRP_PLAYER || mi->m_animGroup == ASSOCGRP_DEFAULT)
+		if (mi->m_animGroup == ANIM_GROUP_PLAYER || mi->m_animGroup == ANIM_GROUP_DEFAULT)
 			return id;
 		if (anyPed < 0)
 			anyPed = id;

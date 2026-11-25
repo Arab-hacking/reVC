@@ -323,7 +323,12 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Cla
         AnimAssociationNodesTests.cpp
         ../src/animation/AnimBlendAssociation.cpp
         ../src/animation/AnimBlendNode.cpp
-        ../src/animation/Bones.cpp)
+        ../src/animation/AnimBlendClumpData.cpp
+        ../src/animation/AnimBlendHierarchy.cpp
+        ../src/animation/AnimBlendSequence.cpp
+        ../src/animation/RpAnimBlend.cpp
+        ../src/core/KeyGen.cpp
+        ../src/math/Quaternion.cpp)
     target_compile_definitions(anim_association_nodes_tests PRIVATE
         LIBRW RW_GL3 LIBRW_SDL2 CMAKE_BUILD USE_OUR_VERSIONING AUDIO_OAL)
     target_include_directories(anim_association_nodes_tests PRIVATE
@@ -342,6 +347,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Cla
         ../src/animation/AnimManager.cpp
         ../src/animation/AnimBlendHierarchy.cpp
         ../src/animation/AnimBlendSequence.cpp
+        ../src/core/KeyGen.cpp
         ../src/math/Quaternion.cpp)
     add_executable(anim_file_read_tests ${ANIM_FILE_READER_SOURCES})
     add_executable(anim_file_read_compressed_tests ${ANIM_FILE_READER_SOURCES})

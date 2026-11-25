@@ -639,7 +639,7 @@ CCarCtrl::GenerateOneRandomCar()
 		// than one passenger. The body type is what says so; the animation
 		// block index names a bank, and an SA install has no "van" bank.
 		if (CModelInfo::IsCarModel(carModel) && passengers >= 1 &&
-		   ((CVehicleModelInfo*)CModelInfo::GetModelInfo(carModel))->GetAnimGroup() == ASSOCGRP_VANCARANIMS)
+		   ((CVehicleModelInfo*)CModelInfo::GetModelInfo(carModel))->GetAnimGroup() == ANIM_GROUP_VANCARANIMS)
 			passengers = 1;
 		for (int i = 0; i < passengers; i++) {
 			CPed* pPassenger = pVehicle->SetupPassenger(i);

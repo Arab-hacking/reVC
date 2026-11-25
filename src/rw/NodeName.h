@@ -3,5 +3,6 @@
 
 bool NodeNamePluginAttach(void);
 char *GetFrameNodeName(RwFrame *frame);
+void SetFrameNodeName(RwFrame *frame, const char *name);
 
 #endif // __GTA_NODENAME_H__

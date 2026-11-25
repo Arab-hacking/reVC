@@ -1697,7 +1697,7 @@ CFileLoader::LoadPedObject(const char *line)
 	// An IDE naming a group the tables do not define falls back to the
 	// standard set rather than pointing at an out-of-range id.
 	if(animGroupId >= NUM_ANIM_ASSOC_GROUPS)
-		animGroupId = ASSOCGRP_DEFAULT;
+		animGroupId = ANIM_GROUP_DEFAULT;
 	mi->m_animGroup = (AssocGroupId)animGroupId;
 	mi->m_carsCanDrive = (uint16)carsCanDrive;
 	mi->m_nPedFlags = (uint16)pedFlags;

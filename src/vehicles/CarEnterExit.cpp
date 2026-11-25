@@ -60,12 +60,12 @@ static AssocGroupId
 GetVehicleAnimGroupFor(const CVehicle *veh, AnimationId animId)
 {
 	if(veh == nil)
-		return ASSOCGRP_STDCARAMIMS;
+		return ANIM_GROUP_STDCARAMIMS;
 	// The group index comes from the handling record (see handling.cfg's `^`
 	// lines), which is what SA reads here as well.
 	const int32 groupId = veh->GetAnimGroupId();
 	if(groupId >= CVehicleAnimGroupData::NUM_VEH_ANIM_GROUPS)
-		return ASSOCGRP_STDCARAMIMS;
+		return ANIM_GROUP_STDCARAMIMS;
 	return CVehicleAnimGroupData::GetGroupForAnim((AssocGroupId)groupId, animId);
 }
 
@@ -83,13 +83,13 @@ CCarEnterExit::AddInCarAnim(const CVehicle *vehicle, CPed *ped, bool bAsDriver)
 			animId = ANIM_ID_BIKE_RIDE;
 			grpId = GetVehicleAnimGroupFor(vehicle, animId);
 		}else if(vehicle->IsBoat() && vehicle->m_pHandlingData && vehicle->m_pHandlingData->m_bSitInBoat){
-			grpId = ASSOCGRP_DEFAULT;
+			grpId = ANIM_GROUP_DEFAULT;
 			animId = ANIM_ID_DRIVE_BOAT;
 		}else if(vehicle->bLowVehicle){
-			grpId = ASSOCGRP_DEFAULT;
+			grpId = ANIM_GROUP_DEFAULT;
 			animId = ANIM_ID_CAR_LSIT;
 		}else{
-			grpId = ASSOCGRP_DEFAULT;
+			grpId = ANIM_GROUP_DEFAULT;
 			animId = ANIM_ID_CAR_SIT;
 		}
 	}else{
@@ -97,10 +97,10 @@ CCarEnterExit::AddInCarAnim(const CVehicle *vehicle, CPed *ped, bool bAsDriver)
 			animId = ANIM_ID_BIKE_RIDE;
 			grpId = GetVehicleAnimGroupFor(vehicle, animId);
 		}else if(vehicle->bLowVehicle){
-			grpId = ASSOCGRP_DEFAULT;
+			grpId = ANIM_GROUP_DEFAULT;
 			animId = ANIM_ID_CAR_SITPLO;
 		}else{
-			grpId = ASSOCGRP_DEFAULT;
+			grpId = ANIM_GROUP_DEFAULT;
 			animId = ANIM_ID_CAR_SITP;
 		}
 	}
@@ -639,7 +639,7 @@ CCarEnterExit::IsCarSlowJackRequired(const CVehicle *vehicle, int32 doorId)
 	}
 
 	const uint8 group = vehicle->GetAnimGroupId();
-	if(group == ASSOCGRP_COACHCARANIMS || group == ASSOCGRP_BUSCARANIMS){
+	if(group == ANIM_GROUP_COACHCARANIMS || group == ANIM_GROUP_BUSCARANIMS){
 		switch(doorId){
 		case 8:  return false;
 		case 10: return vehicle->HasDriver();
@@ -875,9 +875,9 @@ CCarEnterExit::RemoveCarSitAnim(const CPed *ped)
 	    anim = RpAnimBlendGetNextAssociation(anim, ANIMATION_SECONDARY_TASK_ANIM)){
 		// ANIMATION_IS_BLEND_AUTO_REMOVE is SA's flag; the association stores
 		// the internal equivalent, which SAFlagsToAssocFlags maps to
-		// ASSOC_DELETEFADEDOUT.
-		anim->flags |= ASSOC_DELETEFADEDOUT;
-		anim->blendDelta = -1000.0f;
+		// ANIMATION_IS_BLEND_AUTO_REMOVE.
+		anim->m_Flags |= ANIMATION_IS_BLEND_AUTO_REMOVE;
+		anim->m_BlendDelta = -1000.0f;
 	}
 	CAnimManager::BlendAnimation(((CPed*)ped)->GetClump(), ((CPed*)ped)->m_animGroup, ANIM_ID_IDLE, 1000.0f);
 }
@@ -892,9 +892,9 @@ CCarEnterExit::RemoveGetInAnims(const CPed *ped)
 	    anim = RpAnimBlendGetNextAssociation(anim, ANIMATION_IS_PARTIAL)){
 		// ANIMATION_IS_BLEND_AUTO_REMOVE is SA's flag; the association stores
 		// the internal equivalent, which SAFlagsToAssocFlags maps to
-		// ASSOC_DELETEFADEDOUT.
-		anim->flags |= ASSOC_DELETEFADEDOUT;
-		anim->blendDelta = -1000.0f;
+		// ANIMATION_IS_BLEND_AUTO_REMOVE.
+		anim->m_Flags |= ANIMATION_IS_BLEND_AUTO_REMOVE;
+		anim->m_BlendDelta = -1000.0f;
 	}
 }
 

@@ -1,65 +1,131 @@
-#ifndef __GTA_ANIMBLENDSEQUENCE_H__
-#define __GTA_ANIMBLENDSEQUENCE_H__
+#pragma once
 
 #include "AnimSequenceFrames.h"
+#include "eBoneTag.h"
 
-#ifdef MoveMemory
-#undef MoveMemory	// windows shit
-#endif
-
-
-// The sequence of key frames of one animated node
+/*!
+ * @brief Animation key-frames of a single node (bone)
+ */
 class CAnimBlendSequence
 {
 public:
-	enum {
-		KF_ROT = 1,
-		KF_TRANS = 2
+	CAnimBlendSequence(); // 0x4D0C10
+	~CAnimBlendSequence();
+
+	void CompressKeyframes(uint8 *frameData);
+	size_t GetDataSize(bool compressed) const;
+	bool MoveMemory();
+	void Print();
+	void RemoveQuaternionFlips() const;
+	void RemoveUncompressedData(uint8 *frameData);
+	void SetBoneTag(eBoneTag32 boneId);
+	eBoneTag32 GetBoneTag() const { assert(m_IsUsingBoneTag); return m_BoneTag; }
+	void SetName(const char *string);
+	uint32 GetNameHashKey() const { assert(!m_IsUsingBoneTag); return m_NameHashKey; }
+	void SetNumFrames(uint32 count, bool bHasTranslation, bool compressed, void *frameData);
+	bool IsUsingBoneTag() const { return m_IsUsingBoneTag; }
+	void Uncompress(uint8 *frameData);
+	bool IsCompressed() const { return m_bIsCompressed; }
+	bool HasTranslation() const { return m_bHasTranslation; }
+
+	template<bool AsCompressed>
+	struct KeyFrameType;
+
+	/*!
+	 * @brief Used to implement copy-paste functions
+	 * @tparam AsCompressed Whenever `IsCompressed()` is returning true/false at the runtime.
+	 * @param n The index of the key-frame
+	 * @return The `n`th key-frame
+	 */
+	template<bool AsCompressed>
+	typename KeyFrameType<AsCompressed>::Type *GetKeyFrame(size_t n) const;
+
+	/*!
+	 * @brief Get the `n`th key-frame (Use this only for un-compressed anims (if `!IsCompressed()`))
+	 * @brief The true return type is `KeyFrameTrans*` (if `HasTranslation()`) or `KeyFrame*`,
+	 * @brief The former is just returned for convenience.
+	 * @param n The index of the key-frame
+	 * @return The `n`th key-frame
+	 */
+	KeyFrameTrans *GetUKeyFrame(size_t n) const // `U` = Uncompressed
+	{
+		assert(n < (size_t)m_FramesNum);
+		assert(!m_bIsCompressed); // NOTE: If this is ever hit see the note in `UncompressAnimation`
+		return (KeyFrameTrans *)(m_bHasTranslation ? // Lie a little by always up-casting to `KeyFrameTrans*` to make our lifes easier
+			&((KeyFrameTrans*)m_Frames)[n] :
+			&((KeyFrame*)m_Frames)[n]);
+	}
+
+	/*!
+	 * @brief Get the `n`th key-frame (Use this only for compressed anims (if `IsCompressed()`))
+	 * @brief The true return type is `KeyFrameTransCompressed*` (if `HasTranslation()`) or `KeyFrameCompressed*`,
+	 * @brief The former is just returned for convenience.
+	 * @param n The index of the key-frame
+	 * @return The `n`th key-frame
+	 */
+	KeyFrameTransCompressed *GetCKeyFrame(size_t n) const // `C` = Compressed
+	{
+		assert(n < (size_t)m_FramesNum);
+		assert(m_bIsCompressed); // NOTE: If this is ever hit see the note in `UncompressAnimation`
+		return (KeyFrameTransCompressed *)(m_bHasTranslation ? // Lie a little by always up-casting to `KeyFrameTransCompressed*` to make our lifes easier
+			&((KeyFrameTransCompressed*)m_Frames)[n] :
+			&((KeyFrameCompressed*)m_Frames)[n]);
+	}
+
+private:
+	/*!
+	 * @brief Implementation for compression/decompression of key-frames
+	 * @tparam From Key-Frame type to convert from
+	 * @tparam To Key-Frame type to convert to
+	 * @param frameData Pre-allocated frame data buffer
+	 */
+	template<typename From, typename To>
+	bool ConvertKeyFrames(uint8 *pDataBlock);
+
+private:
+	//! The bone/frame this sequence is associated with
+	union {
+		eBoneTag16 m_BoneTag;   // IF m_IsUsingBoneTag == TRUE
+		uint32     m_NameHashKey; // IF m_IsUsingBoneTag == FALSE
 	};
-	int32 type;
-	char name[24];
-	int32 numFrames;
-	int16 boneTag;
-	void *keyFrames;
-	void *keyFramesCompressed;
 
-	CAnimBlendSequence(void);
-	virtual ~CAnimBlendSequence(void);
-	void SetName(const char *name);
-	void SetNumFrames(int numFrames, bool translation, bool compressed);
-	void RemoveQuaternionFlips(void);
-	KeyFrame *GetKeyFrame(int n) {
-		return type & KF_TRANS ?
-			&((KeyFrameTrans*)keyFrames)[n] :
-			&((KeyFrame*)keyFrames)[n];
-	}
-	KeyFrameCompressed *GetKeyFrameCompressed(int n) {
-		return type & KF_TRANS ?
-			&((KeyFrameTransCompressed*)keyFramesCompressed)[n] :
-			&((KeyFrameCompressed*)keyFramesCompressed)[n];
-	}
-	bool HasTranslation(void) const { return !!(type & KF_TRANS); }
-	bool IsCompressed(void) const { return keyFramesCompressed != nil; }
-	// Size of one frame record in the active array, zero when it is unused.
-	int32 GetKeyFrameElementSize(void) const { return HasTranslation() ? sizeof(KeyFrameTrans) : sizeof(KeyFrame); }
-	int32 GetKeyFrameCompressedElementSize(void) const { return HasTranslation() ? sizeof(KeyFrameTransCompressed) : sizeof(KeyFrameCompressed); }
-	float GetKeyFrameTime(int n) const {
-		if(n < 0 || n >= numFrames)
-			return 0.0f;
-		if(keyFrames)
-			return ((KeyFrame*)keyFrames)[n].deltaTime;
-		if(keyFramesCompressed)
-			return ((KeyFrameCompressed*)keyFramesCompressed)[n].GetDeltaTime();
-		return 0.0f;
-	}
-	void SetKeyFrameTime(int n, float time);
-	void Uncompress(void);
-	void CompressKeyframes(void);
-	void RemoveUncompressedData(void);
-	bool MoveMemory(void);
+public:
+	uint16 m_bHasRotation : 1;
+	uint16 m_bHasTranslation : 1;      // Root key frames have translation values (quaternion).
+	uint16 m_bIsCompressed : 1;        // Compressed key frames.
+	uint16 m_bUsingExternalMemory : 1; // When this flag is NOT set, you have to loop through all key frames in m_pFrames and free them separately.
+	uint16 m_IsUsingBoneTag : 1;
+	uint16 m_FramesNum;
+	void *m_Frames;
 
-	void SetBoneTag(int tag) { boneTag = tag; }
+	CAnimBlendSequence(const CAnimBlendSequence &);
+	CAnimBlendSequence &operator=(const CAnimBlendSequence &);
 };
-VALIDATE_SIZE(CAnimBlendSequence, 0x30);
 
-#endif // __GTA_ANIMBLENDSEQUENCE_H__
+template<>
+struct CAnimBlendSequence::KeyFrameType<false>
+{
+	typedef KeyFrameTrans Type;
+};
+
+template<>
+struct CAnimBlendSequence::KeyFrameType<true>
+{
+	typedef KeyFrameTransCompressed Type;
+};
+
+template<>
+inline KeyFrameTrans *CAnimBlendSequence::GetKeyFrame<false>(size_t n) const
+{
+	assert(IsCompressed() == false);
+	return GetUKeyFrame(n);
+}
+
+template<>
+inline KeyFrameTransCompressed *CAnimBlendSequence::GetKeyFrame<true>(size_t n) const
+{
+	assert(IsCompressed() == true);
+	return GetCKeyFrame(n);
+}
+
+VALIDATE_SIZE(CAnimBlendSequence, 0xC);

@@ -858,8 +858,8 @@ GetObjectName(int streamId)
 		snprintf(objname, sizeof(objname), "%s.col", cn ? cn : "unknown");
 	}else{
 		assert(streamId < NUMSTREAMINFO);
-		CAnimBlock *ab = CAnimManager::GetAnimationBlock(streamId-STREAM_OFFSET_ANIM);
-		snprintf(objname, sizeof(objname), "%s.ifp", ab ? ab->name : "unknown");
+		CAnimBlock *ab = &CAnimManager::GetAnimBlocks()[streamId-STREAM_OFFSET_ANIM];
+		snprintf(objname, sizeof(objname), "%s.ifp", ab ? ab->Name : "unknown");
 	}
 	return objname;
 }
@@ -932,7 +932,7 @@ CStreaming::ConvertBufferToObject(int8 *buf, int32 streamId)
 			}
 		}
 		if(!txdReady ||
-		   animId != -1 && !CAnimManager::GetAnimationBlock(animId)->isLoaded){
+		   animId != -1 && !CAnimManager::GetAnimBlocks()[animId].IsLoaded){
 			RemoveModel(streamId);
 			ReRequestModel(streamId);
 			RwStreamClose(stream, &mem);
@@ -1051,45 +1051,9 @@ CStreaming::ConvertBufferToObject(int8 *buf, int32 streamId)
 			return false;
 		}
 		PUSH_MEMID(MEMID_STREAM_ANIMATION);
-		// The ped animation set is SA only, so a streamed animation block is
-		// mapped onto its "sa_" dictionary instead of filling a VC one. The
-		// custom bank is preferred and the streamed data is the fallback.
-		{
-			CAnimBlock *nativeBlock = CAnimManager::GetAnimationBlock(streamId - STREAM_OFFSET_ANIM);
-			char blockName[MAX_ANIMBLOCK_NAME];
-			blockName[0] = '\0';
-			if(nativeBlock && nativeBlock->name[0])
-				CAnimManager::MakeSAAnimBlockName(nativeBlock->name, blockName, sizeof(blockName));
-#ifdef CUSTOM_MODELS
-			if(blockName[0]){
-				char customAnimFile[64];
-				snprintf(customAnimFile, sizeof(customAnimFile), "ANIM\\%s.IFP", nativeBlock->name);
-				CAnimManager::LoadSAAnimFileFromCustom(customAnimFile);
-			}
-#endif
-			// Never pour the streamed Vice City dictionary into the SA block:
-			// its clips are the old set, and mixing them in is what used to
-			// make a ped fall back to a VC animation once a block was paged
-			// in mid-game. An SA bank only ever comes from the custom archives.
-			CAnimBlock *saBlock = blockName[0] ? CAnimManager::GetAnimationBlock(blockName) : nil;
-			if(saBlock == nil || !saBlock->isLoaded){
-				POP_MEMID();
-				RwStreamClose(stream, &mem);
-				return false;
-			}
-#ifdef CUSTOM_MODELS
-			CUSTOM_LOG("stream animation %d: SA block %s ready; building groups\n",
-				streamId - STREAM_OFFSET_ANIM, blockName[0] ? blockName : "(unnamed)");
-#endif
-		}
+		CAnimManager::LoadAnimFile(stream, true);
 		CAnimManager::CreateAnimAssocGroups();
-#ifdef CUSTOM_MODELS
-		CUSTOM_LOG("stream animation %d: groups returned\n", streamId - STREAM_OFFSET_ANIM);
-#endif
 		POP_MEMID();
-#ifdef CUSTOM_MODELS
-		CUSTOM_LOG("stream animation %d: memory scope popped\n", streamId - STREAM_OFFSET_ANIM);
-#endif
 	}
 
 	RwStreamClose(stream, &mem);
@@ -1242,12 +1206,6 @@ CStreaming::RequestModel(int32 id, int32 flags)
 		return;
 	if(id < STREAM_OFFSET_TXD && CModelInfo::GetModelInfo(id) == nil)
 		return;
-
-	if(id >= STREAM_OFFSET_ANIM && id < NUMSTREAMINFO){
-		CAnimBlock *animBlock = CAnimManager::GetAnimationBlock(id - STREAM_OFFSET_ANIM);
-		if(animBlock)
-			animBlock->unloadPending = false;
-	}
 
 	if(ms_aInfoForModel[id].m_loadState == STREAMSTATE_INQUEUE){
 		// updgrade to priority
@@ -1647,7 +1605,6 @@ CStreaming::RemoveModel(int32 id)
 	// explicit removal or memory-pressure path invalidate its hierarchy.
 	if(id >= STREAM_OFFSET_ANIM && id < NUMSTREAMINFO &&
 	   CAnimManager::GetNumRefsToAnimBlock(id - STREAM_OFFSET_ANIM) > 0){
-		CAnimManager::GetAnimationBlock(id - STREAM_OFFSET_ANIM)->unloadPending = true;
 		debug("Keeping animation block %d loaded while associations reference it\n", id - STREAM_OFFSET_ANIM);
 		return;
 	}
@@ -2907,7 +2864,7 @@ CStreaming::LoadCustomFile(int32 streamId)
 			}
 		}
 		if(!txdReady ||
-		   animId != -1 && !CAnimManager::GetAnimationBlock(animId)->isLoaded){
+		   animId != -1 && !CAnimManager::GetAnimBlocks()[animId].IsLoaded){
 			RemoveModel(streamId);
 			ReRequestModel(streamId);
 			return;

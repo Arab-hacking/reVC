@@ -3,7 +3,7 @@
 // proprietary game assets.
 #include "common.h"
 
-#include "Bones.h"
+#include "eBoneTag.h"
 #include "NodeName.h"
 #include "PedModelInfo.h"
 #include "RwHelper.h"
@@ -88,11 +88,11 @@ static std::vector<int>
 MakeCorePedBones(void)
 {
 	static const int bones[] = {
-		BONE_root, BONE_pelvis, BONE_spine, BONE_spine1, BONE_neck, BONE_head,
-		BONE_l_clavicle, BONE_l_upperarm, BONE_l_forearm, BONE_l_hand, BONE_l_finger,
-		BONE_r_clavicle, BONE_r_upperarm, BONE_r_forearm, BONE_r_hand, BONE_r_finger,
-		BONE_l_thigh, BONE_l_calf, BONE_l_foot, BONE_l_toe,
-		BONE_r_thigh, BONE_r_calf, BONE_r_foot, BONE_r_toe
+		BONE_ROOT, BONE_PELVIS, BONE_SPINE, BONE_SPINE1, BONE_NECK, BONE_HEAD,
+		BONE_L_CLAVICLE, BONE_L_UPPER_ARM, BONE_L_FORE_ARM, BONE_L_HAND, BONE_L_FINGER,
+		BONE_R_CLAVICLE, BONE_R_UPPER_ARM, BONE_R_FORE_ARM, BONE_R_HAND, BONE_R_FINGER,
+		BONE_L_THIGH, BONE_L_CALF, BONE_L_FOOT, BONE_L_TOE_0,
+		BONE_R_THIGH, BONE_R_CALF, BONE_R_FOOT, BONE_R_TOE_0
 	};
 	return std::vector<int>(bones, bones + ARRAY_SIZE(bones));
 }
@@ -101,7 +101,7 @@ int
 main(void)
 {
 	// 1. Stock GTA VC ped DFF (e.g. cop.dff / player.dff): RW 3.4.0.3 (0x34003),
-	//    has all 24 standard VC BoneTags (including finger bones 25 & 35) and
+	//    has all 24 standard VC bone tags (including finger bones 25 & 35) and
 	//    VC frame names ("Root", "Pelvis", "Spine", "Bip01 L Clavicle", etc.).
 	//    Must NOT be classified as an SA skeleton!
 	FakeFrame vcClumpRoot = { "cop", {} };
@@ -158,7 +158,7 @@ main(void)
 	Check(!CPedModelInfo::DetectSAAnimationClump((RpClump*)&unskinnedRw36, 0x36003),
 		"unskinned RW 3.6 clump must not use SA ped animations");
 
-	FakeClump missingBonesRw36 = { true, true, { BONE_root, BONE_pelvis }, &saClumpRoot };
+	FakeClump missingBonesRw36 = { true, true, { BONE_ROOT, BONE_PELVIS }, &saClumpRoot };
 	Check(!CPedModelInfo::DetectSAAnimationClump((RpClump*)&missingBonesRw36, 0x36003),
 		"incomplete skeleton missing core limb bones must not use SA ped animations");
 

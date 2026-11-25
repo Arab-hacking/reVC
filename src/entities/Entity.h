@@ -187,6 +187,7 @@ public:
 	bool IsEntityOccluded(void);
 	int16 GetModelIndex(void) const { return m_modelIndex; }
 	void UpdateRwFrame(void);
+	void UpdateAnim(void);
 	void SetupBigBuilding(void);
 	bool HasPreRenderEffects(void);
 

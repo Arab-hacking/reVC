@@ -26,7 +26,7 @@ CVector vecQuadResistance(0.995f, 0.995f, 1.0f);
 // SA CQuadBike::CQuadBike (0x6CE370).
 CQuadBike::CQuadBike(int32 id, uint8 CreatedBy)
  : CAutomobile(id, CreatedBy)
- , m_sRideAnimData(ASSOCGRP_QUAD)
+ , m_sRideAnimData(ANIM_GROUP_QUAD)
 {
 	CVehicleModelInfo *mi = (CVehicleModelInfo*)CModelInfo::GetModelInfo(GetModelIndex());
 	m_pBikeHandling = mod_HandlingManager.GetBikeHandlingPointer((uint32)mi->m_handlingId);

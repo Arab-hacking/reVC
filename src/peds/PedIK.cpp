@@ -1,6 +1,7 @@
 #include "common.h"
 
-#include "Bones.h"
+#include "eBoneTag.h"
+#include "PedNode.h"
 #include "Camera.h"
 #include "PedIK.h"
 #include "Ped.h"
@@ -63,7 +64,7 @@ GetComponentMatrix(CPed *ped, int32 node)
 {
 	if(node < 0 || node >= TOTAL_PED_NODES || ped->m_pFrames[node] == nil)
 		return nil;
-	return GetBoneMatrix(ped, ped->m_pFrames[node]->nodeID);
+	return GetBoneMatrix(ped, ped->m_pFrames[node]->BoneTag);
 }
 
 inline void
@@ -83,15 +84,15 @@ GetFrameQuat(CPed *ped, int32 node)
 	if(ped == nil || node < 0 || node >= TOTAL_PED_NODES)
 		return nil;
 	AnimBlendFrameData *frame = ped->m_pFrames[node];
-	if(frame == nil || frame->hanimFrame == nil)
+	if(frame == nil || frame->KeyFrame == nil)
 		return nil;
-	return &frame->hanimFrame->q;
+	return (RtQuat*)&frame->KeyFrame->q;
 }
 
 void
 CPedIK::RotateTorso(AnimBlendFrameData *node, LimbOrientation *limb, bool changeRoll)
 {
-	RtQuat *q = &node->hanimFrame->q;
+	RtQuat *q = (RtQuat*)&node->KeyFrame->q;
 	RotateQuatIfPresent(q, &XaxisIK, RADTODEG(limb->yaw), rwCOMBINEREPLACE);
 	RotateQuatIfPresent(q, &ZaxisIK, RADTODEG(limb->pitch), rwCOMBINEPRECONCAT);
 	m_ped->bDontAcceptIKLookAts = true;
@@ -106,7 +107,7 @@ void
 CPedIK::PitchForSlope(void)
 {
 	const float CLAMP_EPS = 0.01f;
-	CAnimBlendClumpData *clumpData = *RPANIMBLENDCLUMPDATA(m_ped->GetClump());
+	CAnimBlendClumpData *clumpData = RpAnimBlendClumpGetData(m_ped->GetClump());
 
 	if(fabsf(m_fBodyRoll) > CLAMP_EPS){
 		if(m_fBodyRoll < -DEGTORAD(30.0f)) m_fBodyRoll = -DEGTORAD(30.0f);
@@ -138,7 +139,7 @@ CPedIK::PitchForSlope(void)
 			void operator()(int32 node, float degrees, const RwV3d &axis) const {
 				if(node < 0 || node >= TOTAL_PED_NODES || ped->m_pFrames[node] == nil)
 					return;
-				RotateQuatIfPresent(&data->frames[ped->m_pFrames[node]->nodeID].hanimFrame->q,
+				RotateQuatIfPresent((RtQuat*)&data->m_FrameDatas[ped->m_pFrames[node]->BoneTag].KeyFrame->q,
 					&axis, degrees, rwCOMBINEPRECONCAT);
 			}
 			void operator()(int32 node, float degrees) const {
@@ -306,8 +307,8 @@ CPedIK::LookInDirection(float targetYaw, float targetPitch)
 	float yaw, pitch;
 	if (m_ped->m_pFrames[PED_NODE_HEAD] == nil)
 		return false;
-	if (!(m_ped->m_pFrames[PED_NODE_HEAD]->flag & AnimBlendFrameData::IGNORE_ROTATION)) {
-		m_ped->m_pFrames[PED_NODE_HEAD]->flag |= AnimBlendFrameData::IGNORE_ROTATION;
+	if (!(m_ped->m_pFrames[PED_NODE_HEAD]->KeyFramesIgnoreNodeOrientation)) {
+		m_ped->m_pFrames[PED_NODE_HEAD]->KeyFramesIgnoreNodeOrientation = true;
 		RwMatrix *m = GetComponentMatrix(m_ped, PED_NODE_NECK);
 		if (m == nil)
 			return false;
@@ -546,8 +547,8 @@ CPedIK::RestoreLookAt(void)
 	bool result = false;
 	float yaw, pitch;
 
-	if (m_ped->m_pFrames[PED_NODE_HEAD]->flag & AnimBlendFrameData::IGNORE_ROTATION) {
-		m_ped->m_pFrames[PED_NODE_HEAD]->flag &= (~AnimBlendFrameData::IGNORE_ROTATION);
+	if (m_ped->m_pFrames[PED_NODE_HEAD]->KeyFramesIgnoreNodeOrientation) {
+		m_ped->m_pFrames[PED_NODE_HEAD]->KeyFramesIgnoreNodeOrientation = false;
 	} else {
 		ExtractYawAndPitchLocalSkinned(m_ped->m_pFrames[PED_NODE_HEAD], &yaw, &pitch);
 		if (MoveLimb(m_headOrient, yaw, pitch, ms_headRestoreInfo) == ANGLES_SET_EXACTLY)
@@ -595,7 +596,7 @@ void
 CPedIK::ExtractYawAndPitchLocalSkinned(AnimBlendFrameData *node, float *yaw, float *pitch)
 {
 	RwMatrix *mat = RwMatrixCreate();
-	RtQuatConvertToMatrix(&node->hanimFrame->q, mat);
+	RtQuatConvertToMatrix((RtQuat*)&node->KeyFrame->q, mat);
 	ExtractYawAndPitchLocal(mat, yaw, pitch);
 	RwMatrixDestroy(mat);
 }

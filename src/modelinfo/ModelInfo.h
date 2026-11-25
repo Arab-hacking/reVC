@@ -60,6 +60,7 @@ public:
 		return ms_modelInfoPtrs[id];
 	}
 	static CBaseModelInfo *GetModelInfo(const char *name, int minIndex, int maxIndex);
+	static CBaseModelInfo *GetModelInfoFromHashKey(uint32 uiHash, int32 *index = nil);
 	// A model slot may be empty (not every id in the range is used) and a
 	// vehicle may carry no collision at all - the SA vehicle loader logs
 	// exactly that for models whose dff has no COL3 block. Callers must handle

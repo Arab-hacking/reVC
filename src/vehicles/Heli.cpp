@@ -801,7 +801,7 @@ CHeli::SendDownSwat(void)
 		m_numSwat--;
 		swat->m_nRopeID = (uintptr)this + m_numSwat;
 		m_aSwatState[m_numSwat] = 255;
-		CAnimManager::BlendAnimation(swat->GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_ABSEIL, 4.0f);
+		CAnimManager::BlendAnimation(swat->GetClump(), ANIM_GROUP_DEFAULT, ANIM_ID_ABSEIL, 4.0f);
 		return true;
 	}
 	return false;

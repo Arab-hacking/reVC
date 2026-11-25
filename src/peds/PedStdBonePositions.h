@@ -1,7 +1,8 @@
 #ifndef __GTA_PEDSTDBONEPOSITIONS_H__
 #define __GTA_PEDSTDBONEPOSITIONS_H__
 
-#include "Bones.h"
+#include "eBoneTag.h"
+#include "PedNode.h"
 
 // CPed::GetPedBoneStdPosition, 0x8D13A8. The default object-space position of
 // every bone of the standard San Andreas ped skeleton. A ped whose hierarchy

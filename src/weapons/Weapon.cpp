@@ -2,6 +2,7 @@
 
 #include "Weapon.h"
 #include "AnimBlendAssociation.h"
+#include "AnimBlendHierarchy.h"
 #include "AudioManager.h"
 #include "BulletInfo.h"
 #include "Camera.h"
@@ -676,7 +677,7 @@ CWeapon::FireMelee(CEntity *shooter, CVector &fireSource)
 										CRGBA(0, 0, 0, 0), 0, 0, CGeneral::GetRandomNumber() & 1, 0);
 
 								}
-								if (info->m_AnimToPlay == ASSOCGRP_KNIFE_1)
+								if (info->m_AnimToPlay == ANIM_GROUP_KNIFE_1)
 								{
 									dir += 0.1f * shooterPed->GetUp() + 0.05f * shooterPed->GetRight();
 									CParticle::AddParticle(PARTICLE_BLOOD_SPURT, bloodPos, dir);
@@ -1423,11 +1424,11 @@ CWeapon::DoBulletImpact(CEntity *shooter, CEntity *victim,
 							{
 								victimPed->ClearAttackByRemovingAnim();
 
-								CAnimBlendAssociation *asoc = CAnimManager::AddAnimation(victimPed->GetClump(), ASSOCGRP_DEFAULT, AnimationId(ANIM_ID_SHOT_PARTIAL + localDir));
+								CAnimBlendAssociation *asoc = CAnimManager::AddAnimation(victimPed->GetClump(), ANIM_GROUP_DEFAULT, AnimationId(ANIM_ID_SHOT_PARTIAL + localDir));
 								ASSERT(asoc!=nil);
 
-								asoc->blendAmount = 0.0f;
-								asoc->blendDelta  = 8.0f;
+								asoc->m_BlendAmount = 0.0f;
+								asoc->m_BlendDelta  = 8.0f;
 
 								if ( m_eWeaponType == WEAPONTYPE_M4 )
 									victimPlayer->HitAnimDelayTimer() = CTimer::GetTimeInMilliseconds() + 2500;
@@ -1439,11 +1440,11 @@ CWeapon::DoBulletImpact(CEntity *shooter, CEntity *victim,
 						{
 							victimPed->ClearAttackByRemovingAnim();
 
-							CAnimBlendAssociation *asoc = CAnimManager::AddAnimation(victimPed->GetClump(), ASSOCGRP_DEFAULT, AnimationId(ANIM_ID_SHOT_PARTIAL + localDir));
+							CAnimBlendAssociation *asoc = CAnimManager::AddAnimation(victimPed->GetClump(), ANIM_GROUP_DEFAULT, AnimationId(ANIM_ID_SHOT_PARTIAL + localDir));
 							ASSERT(asoc!=nil);
 
-							asoc->blendAmount = 0.0f;
-							asoc->blendDelta  = 8.0f;
+							asoc->m_BlendAmount = 0.0f;
+							asoc->m_BlendDelta  = 8.0f;
 						}
 
 						victimPed->InflictDamage(shooter, m_eWeaponType, info->m_nDamage, (ePedPieceTypes)point->pieceB, localDir);
@@ -1494,16 +1495,16 @@ CWeapon::DoBulletImpact(CEntity *shooter, CEntity *victim,
 					if ( victimPed->Dead() )
 					{
 						CAnimBlendAssociation *asoc;
-						if ( RpAnimBlendClumpGetFirstAssociation(victimPed->GetClump(), ASSOC_FRONTAL) )
-							asoc = CAnimManager::BlendAnimation(victimPed->GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_FLOOR_HIT_F, 8.0f);
+						if ( RpAnimBlendClumpGetFirstAssociation(victimPed->GetClump(), ANIMATION_IS_FRONT) )
+							asoc = CAnimManager::BlendAnimation(victimPed->GetClump(), ANIM_GROUP_DEFAULT, ANIM_ID_FLOOR_HIT_F, 8.0f);
 						else
-							asoc = CAnimManager::BlendAnimation(victimPed->GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_FLOOR_HIT,   8.0f);
+							asoc = CAnimManager::BlendAnimation(victimPed->GetClump(), ANIM_GROUP_DEFAULT, ANIM_ID_FLOOR_HIT,   8.0f);
 
 						if ( asoc )
 						{
 							asoc->SetCurrentTime(0.0f);
-							asoc->flags |= ASSOC_RUNNING;
-							asoc->flags &= ~ASSOC_FADEOUTWHENDONE;
+							asoc->m_Flags |= ANIMATION_IS_PLAYING;
+							asoc->m_Flags &= ~ANIMATION_IS_FINISH_AUTO_REMOVE;
 						}
 					}
 				}
@@ -1915,19 +1916,19 @@ CWeapon::FireShotgun(CEntity *shooter, CVector *fireSource)
 						if (victimPed->Dead())
 						{
 							CAnimBlendAssociation *hitAssoc;
-							if (RpAnimBlendClumpGetFirstAssociation(victimPed->GetClump(), ASSOC_FRONTAL))
+							if (RpAnimBlendClumpGetFirstAssociation(victimPed->GetClump(), ANIMATION_IS_FRONT))
 							{
-								hitAssoc = CAnimManager::BlendAnimation(victimPed->GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_FLOOR_HIT_F, 8.0f);
+								hitAssoc = CAnimManager::BlendAnimation(victimPed->GetClump(), ANIM_GROUP_DEFAULT, ANIM_ID_FLOOR_HIT_F, 8.0f);
 							}
 							else
 							{
-								hitAssoc = CAnimManager::BlendAnimation(victimPed->GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_FLOOR_HIT, 8.0f);
+								hitAssoc = CAnimManager::BlendAnimation(victimPed->GetClump(), ANIM_GROUP_DEFAULT, ANIM_ID_FLOOR_HIT, 8.0f);
 							}
 							if (hitAssoc)
 							{
 								hitAssoc->SetCurrentTime(0.0f);
-								hitAssoc->SetRun();
-								hitAssoc->flags &= ~ASSOC_DELETEFADEDOUT;
+								hitAssoc->m_Flags |= ANIMATION_IS_PLAYING;
+								hitAssoc->m_Flags &= ~ANIMATION_IS_BLEND_AUTO_REMOVE;
 							}
 						}
 					}
@@ -2612,10 +2613,10 @@ CWeapon::FireInstantHitFromCar(CVehicle *shooter, bool left, bool right)
 				victimPed->ReactToAttack(FindPlayerPed());
 				victimPed->ClearAttackByRemovingAnim();
 
-				CAnimBlendAssociation *asoc = CAnimManager::AddAnimation(victimPed->GetClump(), ASSOCGRP_DEFAULT, AnimationId(ANIM_ID_SHOT_PARTIAL + localDir));
+				CAnimBlendAssociation *asoc = CAnimManager::AddAnimation(victimPed->GetClump(), ANIM_GROUP_DEFAULT, AnimationId(ANIM_ID_SHOT_PARTIAL + localDir));
 				ASSERT(asoc!=nil);
-				asoc->blendAmount = 0.0f;
-				asoc->blendDelta  = 8.0f;
+				asoc->m_BlendAmount = 0.0f;
+				asoc->m_BlendDelta  = 8.0f;
 
 				victimPed->InflictDamage(shooter, WEAPONTYPE_UZI_DRIVEBY, 3*info->m_nDamage, (ePedPieceTypes)point.pieceB, localDir);
 
@@ -2967,27 +2968,27 @@ CWeapon::Update(int32 audioEntity, CPed *pedToAdjustSound)
 						}
 					}
 				}
-				if (reloadAssoc && reloadAssoc->IsRunning() && reloadAssoc->blendAmount > 0.2f) {
+				if (reloadAssoc && reloadAssoc->IsPlaying() && reloadAssoc->m_BlendAmount > 0.2f) {
 					float soundStart = 0.75f;
 					switch (info->m_AnimToPlay) {
-						case ASSOCGRP_PYTHON:
+						case ANIM_GROUP_PYTHON:
 							soundStart = fReloadAnimSampleFraction[0];
 							break;
-						case ASSOCGRP_COLT45:
+						case ANIM_GROUP_COLT45:
 							soundStart = fReloadAnimSampleFraction[1];
 							break;
-						case ASSOCGRP_UZI:
+						case ANIM_GROUP_UZI:
 							soundStart = fReloadAnimSampleFraction[2];
 							break;
-						case ASSOCGRP_RIFLE:
+						case ANIM_GROUP_RIFLE:
 							soundStart = fReloadAnimSampleFraction[3];
 							break;
 						default:
 							break;
 					}
-					if (reloadAssoc->GetProgress() >= soundStart && (reloadAssoc->currentTime - reloadAssoc->timeStep) / reloadAssoc->hierarchy->totalLength < soundStart)
+					if (reloadAssoc->GetTimeProgress() >= soundStart && (reloadAssoc->m_CurrentTime - reloadAssoc->m_TimeStep) / reloadAssoc->m_BlendHier->m_fTotalTime < soundStart)
 						DMAudio.PlayOneShot(audioEntity, SOUND_WEAPON_RELOAD, m_eWeaponType);
-					if (CTimer::GetTimeInMilliseconds() > m_nTimer && reloadAssoc->GetProgress() < 0.9f) {
+					if (CTimer::GetTimeInMilliseconds() > m_nTimer && reloadAssoc->GetTimeProgress() < 0.9f) {
 						m_nTimer = CTimer::GetTimeInMilliseconds();
 					}
 				} else {
@@ -3041,10 +3042,10 @@ FireOneInstantHitRound(CVector *source, CVector *target, int32 damage)
 
 				victimPed->ClearAttackByRemovingAnim();
 
-				CAnimBlendAssociation *asoc = CAnimManager::AddAnimation(victimPed->GetClump(), ASSOCGRP_DEFAULT, AnimationId(ANIM_ID_SHOT_PARTIAL + localDir));
+				CAnimBlendAssociation *asoc = CAnimManager::AddAnimation(victimPed->GetClump(), ANIM_GROUP_DEFAULT, AnimationId(ANIM_ID_SHOT_PARTIAL + localDir));
 				ASSERT(asoc!=nil);
-				asoc->blendAmount = 0.0f;
-				asoc->blendDelta  = 8.0f;
+				asoc->m_BlendAmount = 0.0f;
+				asoc->m_BlendDelta  = 8.0f;
 
 				victimPed->InflictDamage(nil, WEAPONTYPE_UZI, damage, (ePedPieceTypes)point.pieceB, localDir);
 

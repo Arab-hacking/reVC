@@ -2,7 +2,8 @@
 
 #include "RwHelper.h"
 #include "General.h"
-#include "Bones.h"
+#include "eBoneTag.h"
+#include "PedNode.h"
 #include "SurfaceTable.h"
 #include "Ped.h"
 #include "NodeName.h"
@@ -127,13 +128,13 @@ static bool
 IsFemaleAnimGroup(uint32 group)
 {
 	switch(group){
-	case ASSOCGRP_WOMAN:
-	case ASSOCGRP_SHOPPING:
-	case ASSOCGRP_BUSYWOMAN:
-	case ASSOCGRP_SEXYWOMAN:
-	case ASSOCGRP_OLDWOMAN:
-	case ASSOCGRP_FATWOMAN:
-	case ASSOCGRP_JOGWOMAN:
+	case ANIM_GROUP_WOMAN:
+	case ANIM_GROUP_SHOPPING:
+	case ANIM_GROUP_BUSYWOMAN:
+	case ANIM_GROUP_SEXYWOMAN:
+	case ANIM_GROUP_OLDWOMAN:
+	case ANIM_GROUP_FATWOMAN:
+	case ANIM_GROUP_JOGWOMAN:
 		return true;
 	default:
 		return false;
@@ -145,8 +146,8 @@ IsFemaleAnimGroup(uint32 group)
 static bool
 IsHeavyAnimGroup(uint32 group)
 {
-	return group == ASSOCGRP_FATMAN || group == ASSOCGRP_FATWOMAN ||
-		group == ASSOCGRP_OLDFATMAN || group == ASSOCGRP_OLDMAN;
+	return group == ANIM_GROUP_FATMAN || group == ANIM_GROUP_FATWOMAN ||
+		group == ANIM_GROUP_OLDFATMAN || group == ANIM_GROUP_OLDMAN;
 }
 
 int32

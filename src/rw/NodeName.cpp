@@ -75,3 +75,12 @@ GetFrameNodeName(RwFrame *frame)
 		return nil;
 	return NODENAMEEXT(frame);
 }
+
+void
+SetFrameNodeName(RwFrame *frame, const char *name)
+{
+	if(gPluginOffset < 0)
+		return;
+	strncpy(NODENAMEEXT(frame), name, 23);
+	NODENAMEEXT(frame)[23] = '\0';
+}

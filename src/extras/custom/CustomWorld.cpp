@@ -470,9 +470,9 @@ AssocGroupId SafePedAnimGroup(const std::string &s)
     // client tags the skater set "skater" where the table says "skate", and
     // older archives still carry VC's "unarmed", which is SA's standard set.
     struct { const char *ide; AssocGroupId group; } aliases[] = {
-        { "skater", ASSOCGRP_SKATE },
-        { "jogman", ASSOCGRP_JOGGER },
-        { "unarmed", ASSOCGRP_MAN },
+        { "skater", ANIM_GROUP_SKATE },
+        { "jogman", ANIM_GROUP_JOGGER },
+        { "unarmed", ANIM_GROUP_MAN },
     };
     for(int i = 0; i < (int)(sizeof(aliases)/sizeof(aliases[0])); i++)
         if(group == aliases[i].ide) return aliases[i].group;
@@ -482,7 +482,7 @@ AssocGroupId SafePedAnimGroup(const std::string &s)
     // filled instead of guessed at.
     CUSTOM_LOG("BR IDE: ped animation group '%s' is not in the animation table; "
                "falling back to default\n", s.c_str());
-    return ASSOCGRP_DEFAULT;
+    return ANIM_GROUP_DEFAULT;
 }
 
 bool CanAddModel(ModelInfoType type)

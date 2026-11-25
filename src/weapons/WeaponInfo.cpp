@@ -60,7 +60,7 @@ int32 CWeaponInfo::ms_aMaxAmmoForWeapon[WEAPONTYPE_TOTALWEAPONS] =
 CWeaponInfo aWeaponInfo[WEAPONTYPE_TOTALWEAPONS];
 // SA CWeaponInfo::ms_WeaponAimOffsets (0xC8A8A8). Zero-initialised here and
 // filled from the '%' lines of weapon.dat by LoadWeaponData, exactly as SA does.
-CWeaponInfo::tAnimAimOffsets CWeaponInfo::ms_WeaponAimOffsets[ASSOCGRP_SPRAYCAN + 1 - ASSOCGRP_PYTHON];
+CWeaponInfo::tAnimAimOffsets CWeaponInfo::ms_WeaponAimOffsets[ANIM_GROUP_SPRAYCAN + 1 - ANIM_GROUP_PYTHON];
 
 char CWeaponInfo::ms_aWeaponNames[WEAPONTYPE_TOTALWEAPONS][32] =
 {
@@ -125,7 +125,7 @@ CWeaponInfo::Initialise(void)
 		aWeaponInfo[i].m_fLifespan = 0.0f;
 		aWeaponInfo[i].m_fSpread = 0.0f;
 		aWeaponInfo[i].m_vecFireOffset = CVector(0.0f, 0.0f, 0.0f);
-		aWeaponInfo[i].m_AnimToPlay = ASSOCGRP_MELEE_1;
+		aWeaponInfo[i].m_AnimToPlay = ANIM_GROUP_MELEE_1;
 		aWeaponInfo[i].m_fAnimLoopStart = 0.0f;
 		aWeaponInfo[i].m_fAnimLoopEnd = 0.0f;
 		aWeaponInfo[i].m_fAnimFrameFire = 0.0f;

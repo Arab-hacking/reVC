@@ -91,15 +91,15 @@ CTaskSimpleSwim::StartAnim(CPed *ped, AssocGroupId animGroup, AnimationId animId
 
 	switch(animId){
 	case ANIM_ID_SWIM_TREAD:
-		m_pSwimAnim->speed = 0.5f;
+		m_pSwimAnim->m_Speed = 0.5f;
 		ped->m_nSwimmingMoveState = PEDMOVE_STILL;
 		break;
 	case ANIM_ID_SWIM_BREAST:
-		m_pSwimAnim->speed = m_fAnimSpeed > 0.0f ? m_fAnimSpeed : 1.0f;
+		m_pSwimAnim->m_Speed = m_fAnimSpeed > 0.0f ? m_fAnimSpeed : 1.0f;
 		ped->m_nSwimmingMoveState = PEDMOVE_WALK;
 		break;
 	case ANIM_ID_SWIM_CRAWL:
-		m_pSwimAnim->speed = m_fAnimSpeed > 1.0f ? Min(1.5f, m_fAnimSpeed - 1.0f) : 1.0f;
+		m_pSwimAnim->m_Speed = m_fAnimSpeed > 1.0f ? Min(1.5f, m_fAnimSpeed - 1.0f) : 1.0f;
 		ped->m_nSwimmingMoveState = PEDMOVE_RUN;
 		break;
 	default:
@@ -115,7 +115,7 @@ CTaskSimpleSwim::StopTask(CPed *ped)
 {
 	if(m_pSwimAnim){
 		m_pSwimAnim->SetDeleteCallback(nil, nil);
-		m_pSwimAnim->blendDelta = -1000.0f;
+		m_pSwimAnim->m_BlendDelta = -1000.0f;
 		m_pSwimAnim = nil;
 	}
 	ped->m_nSwimmingMoveState = PEDMOVE_STILL;
@@ -171,7 +171,7 @@ CTaskSimpleSwim::ProcessControlInput(CPed *ped, CPlayerPed *player)
 			m_pSwimAnim->SetDeleteCallback(nil, nil);
 			m_pSwimAnim = nil;
 		}
-		StartAnim(ped, ASSOCGRP_SWIM, ANIM_ID_SWIM_DIVE_UNDER);
+		StartAnim(ped, ANIM_GROUP_SWIM, ANIM_ID_SWIM_DIVE_UNDER);
 	}else{
 		switch(m_nSwimState){
 		case SWIM_TREAD:
@@ -186,17 +186,17 @@ CTaskSimpleSwim::ProcessControlInput(CPed *ped, CPlayerPed *player)
 				m_nSwimState = m_fSwimProgress > 0.5f ? SWIM_SPRINT : SWIM_TREAD;
 			break;
 		case SWIM_DIVE_UNDERWATER:
-			if(m_pSwimAnim == nil || m_pSwimAnim->blendAmount == 1.0f){
+			if(m_pSwimAnim == nil || m_pSwimAnim->m_BlendAmount == 1.0f){
 				m_nSwimState = SWIM_UNDERWATER_SPRINTING;
-				StartAnim(ped, ASSOCGRP_SWIM, ANIM_ID_SWIM_UNDER);
+				StartAnim(ped, ANIM_GROUP_SWIM, ANIM_ID_SWIM_UNDER);
 			}
 			break;
 		case SWIM_UNDERWATER_SPRINTING:
 			break;
 		case SWIM_BACK_TO_SURFACE:
-			if(m_pSwimAnim == nil || m_pSwimAnim->blendAmount == 1.0f){
+			if(m_pSwimAnim == nil || m_pSwimAnim->m_BlendAmount == 1.0f){
 				m_nSwimState = SWIM_TREAD;
-				StartAnim(ped, ASSOCGRP_DEFAULT, ANIM_ID_SWIM_TREAD);
+				StartAnim(ped, ANIM_GROUP_DEFAULT, ANIM_ID_SWIM_TREAD);
 			}
 			break;
 		}
@@ -205,10 +205,10 @@ CTaskSimpleSwim::ProcessControlInput(CPed *ped, CPlayerPed *player)
 	// The stroke that matches the state, started only when the ped has none.
 	if(m_pSwimAnim == nil){
 		switch(m_nSwimState){
-		case SWIM_TREAD: StartAnim(ped, ASSOCGRP_DEFAULT, ANIM_ID_SWIM_TREAD); break;
-		case SWIM_SPRINT: StartAnim(ped, ASSOCGRP_SWIM, ANIM_ID_SWIM_BREAST); break;
-		case SWIM_SPRINTING: StartAnim(ped, ASSOCGRP_SWIM, ANIM_ID_SWIM_CRAWL); break;
-		case SWIM_BACK_TO_SURFACE: StartAnim(ped, ASSOCGRP_SWIM, ANIM_ID_SWIM_JUMPOUT); break;
+		case SWIM_TREAD: StartAnim(ped, ANIM_GROUP_DEFAULT, ANIM_ID_SWIM_TREAD); break;
+		case SWIM_SPRINT: StartAnim(ped, ANIM_GROUP_SWIM, ANIM_ID_SWIM_BREAST); break;
+		case SWIM_SPRINTING: StartAnim(ped, ANIM_GROUP_SWIM, ANIM_ID_SWIM_CRAWL); break;
+		case SWIM_BACK_TO_SURFACE: StartAnim(ped, ANIM_GROUP_SWIM, ANIM_ID_SWIM_JUMPOUT); break;
 		default: break;
 		}
 	}else{
@@ -222,8 +222,8 @@ CTaskSimpleSwim::ProcessControlInput(CPed *ped, CPlayerPed *player)
 		case SWIM_SPRINTING: wanted = ANIM_ID_SWIM_CRAWL; swap = true; break;
 		default: break;
 		}
-		if(swap && m_pSwimAnim->animId != wanted)
-			StartAnim(ped, ASSOCGRP_SWIM, wanted);
+		if(swap && m_pSwimAnim->m_AnimId != wanted)
+			StartAnim(ped, ANIM_GROUP_SWIM, wanted);
 	}
 
 	// Heading: a swimmer always turns to face where he is going, and while
@@ -294,9 +294,9 @@ CTaskSimpleSwim::ProcessSwimmingResistance(CPed *ped)
 
 	// The dive's glide ends when the clip is over.
 	if(m_nSwimState == SWIM_DIVE_UNDERWATER && m_pSwimAnim
-	   && (m_pSwimAnim->blendAmount == 1.0f || m_pSwimAnim->animId != ANIM_ID_SWIM_DIVE_UNDER)){
+	   && (m_pSwimAnim->m_BlendAmount == 1.0f || m_pSwimAnim->m_AnimId != ANIM_ID_SWIM_DIVE_UNDER)){
 		m_nSwimState = SWIM_UNDERWATER_SPRINTING;
-		StartAnim(ped, ASSOCGRP_SWIM, ANIM_ID_SWIM_UNDER);
+		StartAnim(ped, ANIM_GROUP_SWIM, ANIM_ID_SWIM_UNDER);
 	}
 }
 
@@ -342,7 +342,7 @@ CTaskSimpleSwim::ProcessControlAI(CPed *ped)
 		// its seek position was never set.
 		if(m_nSwimState != SWIM_TREAD){
 			m_nSwimState = SWIM_TREAD;
-			StartAnim(ped, ASSOCGRP_DEFAULT, ANIM_ID_SWIM_TREAD);
+			StartAnim(ped, ANIM_GROUP_DEFAULT, ANIM_ID_SWIM_TREAD);
 		}
 		return;
 	}
@@ -363,9 +363,9 @@ CTaskSimpleSwim::ProcessControlAI(CPed *ped)
 		if(newState != m_nSwimState){
 			m_nSwimState = newState;
 			switch(m_nSwimState){
-			case SWIM_TREAD: StartAnim(ped, ASSOCGRP_DEFAULT, ANIM_ID_SWIM_TREAD); break;
-			case SWIM_SPRINT: StartAnim(ped, ASSOCGRP_SWIM, ANIM_ID_SWIM_BREAST); break;
-			case SWIM_SPRINTING: StartAnim(ped, ASSOCGRP_SWIM, ANIM_ID_SWIM_CRAWL); break;
+			case SWIM_TREAD: StartAnim(ped, ANIM_GROUP_DEFAULT, ANIM_ID_SWIM_TREAD); break;
+			case SWIM_SPRINT: StartAnim(ped, ANIM_GROUP_SWIM, ANIM_ID_SWIM_BREAST); break;
+			case SWIM_SPRINTING: StartAnim(ped, ANIM_GROUP_SWIM, ANIM_ID_SWIM_CRAWL); break;
 			default: break;
 			}
 		}

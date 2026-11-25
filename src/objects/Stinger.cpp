@@ -112,7 +112,7 @@ CStinger::Deploy(CPed *pPed)
 				return;
 #endif
 			pPed->SetPedState(PED_DEPLOY_STINGER);
-			CAnimManager::AddAnimation(pPed->GetClump(), ASSOCGRP_DEFAULT, ANIM_ID_GRENADE_WEAPON_THROWU);
+			CAnimManager::AddAnimation(pPed->GetClump(), ANIM_GROUP_DEFAULT, ANIM_ID_GRENADE_WEAPON_THROWU);
 		}
 	}
 }
@@ -197,7 +197,7 @@ CStinger::Process()
 			CAnimBlendAssociation *throwAnim = RpAnimBlendClumpGetAssociation(pOwner->GetClump(), ANIM_ID_GRENADE_WEAPON_THROWU);
 			// A custom SA bank may lack the throw clip. Deploy without waiting
 			// for a nonexistent animation instead of dereferencing it.
-			if (throwAnim && throwAnim->currentTime <= 0.39f)
+			if (throwAnim && throwAnim->m_CurrentTime <= 0.39f)
 				break;
 			m_nSpikeState = STINGERSTATE_DEPLOYING;
 			for (int i = 0; i < NUM_STINGER_SEGMENTS; i++)

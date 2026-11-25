@@ -4,7 +4,7 @@
 #include "Physical.h"
 #include "AutoPilot.h"
 #include "ModelIndices.h"
-#include "AnimationId.h"
+#include "AnimationEnums.h"
 #include "WeaponType.h"
 #include "Collision.h"
 #include "cHandlingDataMgr.h"

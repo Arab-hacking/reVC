@@ -1,16 +1,17 @@
-// Exercise the real animation reader with synthetic IFP/ANI streams. No
-// proprietary game data, renderer or running game is required.
+// Exercise the real SA animation reader (ANP3 and ANPK) with synthetic IFP
+// streams. No proprietary game data, renderer or running game is required.
+// The ANIM_COMPRESSION build feeds compressed keyframes and exercises
+// CAnimBlendHierarchy::Uncompress; the plain build uses float keyframes.
 #include "common.h"
+
 #include "AnimManager.h"
-#include "AnimBlendAssocGroup.h"
-#include "AnimBlendAssociation.h"
-#include "AnimBlendClumpData.h"
+#include "AnimBlendHierarchy.h"
 #include "AnimBlendSequence.h"
-#include "RpAnimBlend.h"
-#include "CustomModels.h"
+#include "AnimSequenceFrames.h"
+#include "MemoryMgr.h"
+#include "eBoneTag.h"
 
 #include <algorithm>
-#include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -25,54 +26,26 @@ Check(bool ok, const char *what)
 	}
 }
 
-void re3_assert(const char *expr, const char*, unsigned int, const char*)
+void
+re3_assert(const char *expr, const char*, unsigned int, const char*)
 {
 	fprintf(stderr, "Assertion failed: %s\n", expr);
 	abort();
 }
-void re3_log(const char*, const char*, unsigned int, const char*, const char*, ...) {}
-void *RwMalloc(size_t n) { return malloc(n); }
-void RwFree(void *p) { free(p); }
-RwUInt32 RwStreamRead(RwStream *s, void *buf, RwUInt32 len) { return s->read8(buf, len); }
-void DebugLogPrintf(const char*, ...) {}
 
-RwInt32 ClumpOffset = 0;
-CAnimBlendClumpData::CAnimBlendClumpData(void)
-  : numFrames(0), velocity2d(nil), frames(nil)
+// The reader allocates the ANP3 frame block and uncompressed frame data
+// through the game memory manager; plain malloc is faithful enough here.
+void*
+MemoryMgrMalloc(size_t size)
 {
-	link.Init();
-}
-CAnimBlendClumpData::~CAnimBlendClumpData(void) {}
-bool RpAnimBlendClumpIsInitialized(RpClump *clump)
-{
-	CAnimBlendClumpData *data = *RPANIMBLENDCLUMPDATA(clump);
-	return data && data->numFrames > 0 && data->frames;
-}
-struct FakeClump
-{
-	CAnimBlendClumpData *plugin;
-	CAnimBlendClumpData data;
-	AnimBlendFrameData frame;
-	explicit FakeClump(bool) : plugin(&data) {
-		data.frames = &frame;
-		data.numFrames = 1;
-	}
-	RpClump *Get(void) { return (RpClump*)&plugin; }
-};
-
-static std::vector<uint8> customFile;
-static int customStreamsOpened = 0;
-static int nativeStreamsOpened = 0;
-static std::vector<uint8> NativeANPK();
-bool CCustomModels::LoadAnimFileFromCustom(const char*, std::vector<uint8> &out)
-{
-	out = customFile;
-	return !out.empty();
+	return malloc(size);
 }
 
-// The native-reference groups deliberately do not exist in this test. This
-// reproduces VC=none even though the original VC ped dictionary was loaded.
-CAnimBlendAssociation *CAnimBlendAssocGroup::GetAnimation(uint32) { return nil; }
+void
+MemoryMgrFree(void *ptr)
+{
+	free(ptr);
+}
 
 class TestStream : public RwStream
 {
@@ -97,34 +70,27 @@ public:
 	bool eof(void) override { return pos == bytes.size(); }
 };
 
-RwStream *RwStreamOpen(RwStreamType type, RwStreamAccessType access, const void *arg)
+RwUInt32
+RwStreamRead(RwStream *stream, void *buf, RwUInt32 len)
 {
-	Check(access == rwSTREAMREAD, "animation streams are read-only");
-	if(type == rwSTREAMFILENAME){
-		Check(strcmp((const char*)arg, "ANIM\\PED.IFP") == 0, "native VC IFP requested");
-		nativeStreamsOpened++;
-		return new TestStream(NativeANPK());
-	}
-	Check(type == rwSTREAMMEMORY, "custom SA IFP comes from a memory stream");
-	const RwMemory *mem = (const RwMemory*)arg;
-	customStreamsOpened++;
-	const uint8 *bytes = (const uint8*)mem->start;
-	return new TestStream(std::vector<uint8>(bytes, bytes + mem->length));
-}
-RwBool RwStreamClose(RwStream *stream, void*)
-{
-	delete stream;
-	return true;
+	return stream->read8(buf, len);
 }
 
-static void U16(std::vector<uint8> &v, uint16 value)
+RwStream*
+RwStreamSkip(RwStream *stream, RwUInt32 offset)
 {
-	v.push_back((uint8)value);
-	v.push_back((uint8)(value >> 8));
+	stream->seek((int32)offset, 1);
+	return stream;
 }
+
 static void U32(std::vector<uint8> &v, uint32 value)
 {
 	for(int b = 0; b < 32; b += 8) v.push_back((uint8)(value >> b));
+}
+static void I16(std::vector<uint8> &v, int16 value)
+{
+	v.push_back((uint8)value);
+	v.push_back((uint8)((uint16)value >> 8));
 }
 static void Float(std::vector<uint8> &v, float value)
 {
@@ -151,48 +117,60 @@ static void Chunk(std::vector<uint8> &v, const char *tag, const std::vector<uint
 	while(v.size() & 3) v.push_back(0);
 }
 
+// ANP3 with one clip of two sequences: a root sequence with translation
+// (BoneTag 0) and a rotation-only spine sequence (BoneTag 3). Keyframe
+// times are absolute, as in real IFP files; the reader converts them to
+// per-frame deltas when it computes the total time.
 static std::vector<uint8>
-MobileANI(uint32 groupVal, bool compressed, bool mixed = false, const char *clipName = "CAR_LB_PRO")
+SAAnim_ANP3(bool compressed)
 {
 	std::vector<uint8> v;
 	v.insert(v.end(), "ANP3", "ANP3" + 4);
+	U32(v, 0); // section size is not used by the ANP2/3 reader
 	Name(v, "ped", 24);
-	U32(v, 1);                 // animation count
-	U32(v, groupVal);          // exporter-specific, ignored
-	Name(v, clipName, 24);
-	U32(v, mixed ? 2 : 1);     // number of bone sequences
-	U32(v, (compressed ? 32 : 64) + (mixed ? 40 : 0)); // frame data bytes
-	U32(v, 1);                 // exporter word, NOT a compression flag
-	Name(v, " Root", 24);    // name with leading space
-	U32(v, compressed ? 4 : 2); // compressed or float root translation
+	U32(v, 1); // animation count
+	Name(v, "run_test", 24);
+	U32(v, 2); // sequence count
+	U32(v, compressed ? 52 : 104); // frame data bytes
+	U32(v, compressed ? 1 : 0); // flags: bit 0 = compressed frames
+	Name(v, " Root", 24); // exporter name with leading space
+	U32(v, compressed ? 4 : 2); // KeyFrameTransCompressed / KeyFrameTrans
 	U32(v, 2);
-	U32(v, 0);                 // SA root bone ID
+	U32(v, 0); // BONE_ROOT
 	for(int i = 0; i < 2; i++){
 		if(compressed){
-			U16(v, 1024); U16(v, 0); U16(v, 0); U16(v, 3966); // +0.25 x rotation
-			U16(v, i * 60); // absolute time in 1/60 s
-			U16(v, i * 512); U16(v, 0); U16(v, 0); // +0.5 x translation
+			I16(v, 1024); I16(v, 0); I16(v, 0); I16(v, 3966); // +0.25 x rotation
+			I16(v, i * 30); // absolute time in 1/60 s
+			I16(v, i * 1024); I16(v, 0); I16(v, 0); // +1.0 x translation
 		}else{
 			Float(v, 0.25f); Float(v, 0); Float(v, 0); Float(v, 0.9682458f);
-			Float(v, i * 0.5f); Float(v, 0); Float(v, 0); Float(v, (float)i);
+			Float(v, i * 0.5f); // absolute time, stored before the translation
+			Float(v, (float)i); Float(v, 0); Float(v, 0); // translation
 		}
 	}
-	if(mixed){
-		Name(v, " Spine 1", 24);
-		U32(v, 1); U32(v, 2); U32(v, 3); // float rotation, SA spine1
-		for(int i = 0; i < 2; i++){
+	Name(v, " Spine 1", 24);
+	U32(v, compressed ? 3 : 1); // KeyFrameCompressed / KeyFrame
+	U32(v, 2);
+	U32(v, 3); // BONE_SPINE1
+	for(int i = 0; i < 2; i++){
+		if(compressed){
+			I16(v, 2048); I16(v, 0); I16(v, 0); I16(v, 3547); // +0.5 x rotation
+			I16(v, i * 30);
+		}else{
 			Float(v, 0.5f); Float(v, 0); Float(v, 0); Float(v, 0.8660254f);
-			Float(v, (float)i);
+			Float(v, i * 0.5f);
 		}
 	}
 	return v;
 }
 
+// Classic chunked ANPK: rotations in KRT0 sections are conjugated by the
+// reader, and the 44-byte ANIM chunk carries the sequence BoneTag.
 static std::vector<uint8>
-NativeANPK(void)
+SAAnim_ANPK(void)
 {
 	std::vector<uint8> body, info;
-	U32(info, 1); Name(info, "ped", 4);
+	U32(info, 1); Name(info, "cars", 16);
 	Chunk(body, "INFO", info);
 	std::vector<uint8> clipName;
 	Name(clipName, "CAR_LB_PRO", 16);
@@ -204,12 +182,14 @@ NativeANPK(void)
 	std::vector<uint8> anim(44, 0);
 	memcpy(anim.data(), "Root", 4);
 	Patch32(anim, 28, 2); // two keyframes
+	Patch32(anim, 40, 0); // BoneTag = BONE_ROOT
 	std::vector<uint8> cpan;
 	Chunk(cpan, "ANIM", anim);
 	std::vector<uint8> frames;
 	for(int i = 0; i < 2; i++){
 		Float(frames, 0.25f); Float(frames, 0); Float(frames, 0); Float(frames, 0.9682458f);
-		Float(frames, i * 1.75f); Float(frames, 0); Float(frames, 0); Float(frames, (float)i);
+		Float(frames, i * 1.75f); Float(frames, 0); Float(frames, 0); // translation
+		Float(frames, (float)i); // absolute time
 	}
 	Chunk(cpan, "KRT0", frames);
 	Chunk(dgan, "CPAN", cpan);
@@ -224,196 +204,61 @@ NativeANPK(void)
 int
 main(void)
 {
-	std::vector<uint8> compact = MobileANI(1, true);
-	TestStream mobile(compact);
-	CAnimManager::LoadAnimFile(&mobile, true, nil, "sa_ped");
-	CAnimBlock *sa = CAnimManager::GetAnimationBlock("sa_ped");
-	Check(sa && sa->isLoaded && sa->numAnims == 1, "mobile header with groupVal=1 loads exactly one clip");
-	CAnimBlendHierarchy *saClip = CAnimManager::GetAnimation("CAR_LB_PRO", sa);
-	Check(saClip && saClip->numSequences == 1 && saClip->sequences[0].boneTag == 0,
-		"SA bone ID and car clip name preserved");
 #ifdef ANIM_COMPRESSION
-	Check(saClip->compressed, "SA frameType 4 stays compressed in compressed builds");
-	saClip->Uncompress();
+	const bool compressed = true;
+#else
+	const bool compressed = false;
 #endif
-	KeyFrameTrans *lastSA = (KeyFrameTrans*)saClip->sequences[0].GetKeyFrame(1);
-	Check(lastSA && lastSA->translation.x == 0.5f && lastSA->rotation.x == 0.25f &&
-		lastSA->deltaTime == 1.0f,
-		"compressed ANP3 quaternion, time and translation decoded without inversion");
-
-	std::vector<uint8> floatFile = MobileANI(0, false);
-	TestStream floating(floatFile);
-	CAnimManager::LoadAnimFile(&floating, true, nil, "sa_ped_float");
-	CAnimBlock *saFloat = CAnimManager::GetAnimationBlock("sa_ped_float");
-	CAnimBlendHierarchy *floatClip = CAnimManager::GetAnimation("CAR_LB_PRO", saFloat);
-	Check(floatClip, "ANP3 float clip loaded");
-#ifdef ANIM_COMPRESSION
-	Check(floatClip->compressed, "float frameType 2 is compressed when requested, even with exporter word 1");
-	floatClip->Uncompress();
-#endif
-	Check(floatClip->sequences[0].GetKeyFrame(1)->rotation.x == 0.25f &&
-		((KeyFrameTrans*)floatClip->sequences[0].GetKeyFrame(1))->translation.x == 0.5f,
-		"ANP3 float quaternion stays as stored even when exporter word is 1");
-
-	std::vector<uint8> mixFile = MobileANI(1, true, true);
-	TestStream mixed(mixFile);
-	CAnimManager::LoadAnimFile(&mixed, true, nil, "sa_mixed");
-	CAnimBlock *saMixed = CAnimManager::GetAnimationBlock("sa_mixed");
-	CAnimBlendHierarchy *mixedClip = CAnimManager::GetAnimation("CAR_LB_PRO", saMixed);
-	Check(mixedClip && mixedClip->numSequences == 2, "mixed i16/fp32 ANP3 has two sequences");
-#ifdef ANIM_COMPRESSION
-	Check(mixedClip->compressed, "mixed ANP3 hierarchy has a consistent compressed state");
-	mixedClip->Uncompress();
-#endif
-	Check(mixedClip->sequences[1].GetKeyFrame(1)->rotation.x == 0.5f &&
-		((KeyFrameTrans*)mixedClip->sequences[0].GetKeyFrame(1))->translation.x == 0.5f,
-		"mixed ANP3 decodes both compressed and float frameTypes");
-
-	TestStream uncompressed(mixFile);
-	CAnimManager::LoadAnimFile(&uncompressed, false, nil, "sa_mixed_plain");
-	CAnimBlock *plain = CAnimManager::GetAnimationBlock("sa_mixed_plain");
-	CAnimBlendHierarchy *plainClip = CAnimManager::GetAnimation("CAR_LB_PRO", plain);
-	Check(plainClip && !plainClip->compressed &&
-		((KeyFrameTrans*)plainClip->sequences[0].GetKeyFrame(1))->translation.x == 0.5f &&
-		plainClip->sequences[1].GetKeyFrame(1)->rotation.x == 0.5f,
-		"requesting uncompressed ANP3 expands i16 frames but leaves float frames intact");
-
-	std::vector<uint8> pcFile = MobileANI(0, false);
-	pcFile.insert(pcFile.begin() + 4, 4, 0);  // PC root size before the block name
-	pcFile.erase(pcFile.begin() + 36, pcFile.begin() + 40); // no mobile groupVal
-	Patch32(pcFile, 4, (uint32)pcFile.size() - 8);
-	TestStream pc(pcFile);
-	CAnimManager::LoadAnimFile(&pc, false, nil, "sa_pc");
-	CAnimBlock *pcBlock = CAnimManager::GetAnimationBlock("sa_pc");
-	CAnimBlendHierarchy *pcClip = CAnimManager::GetAnimation("CAR_LB_PRO", pcBlock);
-	Check(pcClip && ((KeyFrameTrans*)pcClip->sequences[0].GetKeyFrame(1))->translation.x == 0.5f,
-		"PC ANP3 root-size header uses its own count and reads the same frames");
-
-	std::vector<uint8> anp2File = MobileANI(0, true);
-	anp2File[3] = '2';
-	anp2File.erase(anp2File.begin() + 36 + 28, anp2File.begin() + 36 + 36);
-	TestStream anp2(anp2File);
-	CAnimManager::LoadAnimFile(&anp2, false, nil, "sa_anp2");
-	CAnimBlock *anp2Block = CAnimManager::GetAnimationBlock("sa_anp2");
-	CAnimBlendHierarchy *anp2Clip = CAnimManager::GetAnimation("CAR_LB_PRO", anp2Block);
-	Check(anp2Clip && !anp2Clip->compressed &&
-		((KeyFrameTrans*)anp2Clip->sequences[0].GetKeyFrame(1))->translation.x == 0.5f,
-		"ANP2 omits ANP3 per-animation words but keeps compressed frame type 4");
-
-	std::vector<uint8> vcFile = NativeANPK();
-	TestStream native(vcFile);
-	CAnimManager::LoadAnimFile(&native, true);
-	CAnimBlock *vc = CAnimManager::GetAnimationBlock("ped");
-	CAnimBlendHierarchy *nativeClip = CAnimManager::GetAnimation("CAR_LB_PRO", vc);
-	Check(nativeClip, "native VC clip loaded");
-#ifdef ANIM_COMPRESSION
-	nativeClip->Uncompress();
-#endif
-	Check(nativeClip->sequences[0].GetKeyFrame(1)->rotation.x == -0.25f,
-		"native ANPK quaternion still inverts its x/y/z components");
-	// The ped animation set is SA only now: the offset lookup must resolve
-	// against the SA bank, never the native VC dictionary loaded above.
-	// The offset lookup resolves the standard group through sa_ped, which was
-	// loaded earlier, and must never fall through to the native VC dictionary.
-	CAnimBlendHierarchy *offsetClip = CAnimManager::GetAnimHierarchyForOffset(ASSOCGRP_DEFAULT, ANIM_ID_CAR_LB_PRO);
-	Check(offsetClip == saClip && offsetClip != nativeClip &&
-		((KeyFrameTrans*)offsetClip->sequences[0].GetKeyFrame(1))->translation.x == 0.5f,
-		"car-door offset reads the SA bank and ignores the native VC dictionary");
-
-	// There is no VC animation path any more: only SA dictionaries are
-	// accepted, whatever skeleton asks for them.
-	FakeClump saPed(true);
-	Check(CAnimManager::IsAnimationCompatibleWithClump(saPed.Get(), saClip) &&
-		!CAnimManager::IsAnimationCompatibleWithClump(saPed.Get(), nativeClip),
-		"only SA bank animations are accepted");
-	Check(CAnimManager::GetAnimHierarchyForOffset(saPed.Get(), ASSOCGRP_DEFAULT, ANIM_ID_CAR_LB_PRO) == saClip &&
-		CAnimManager::GetAnimHierarchyForOffset(saPed.Get(), ASSOCGRP_DEFAULT, ANIM_ID_CAR_LB_PRO) != nativeClip,
-		"car-door offsets come only from the SA IFP");
-	sa->isLoaded = false;
-	Check(CAnimManager::GetAnimHierarchyForOffset(saPed.Get(), ASSOCGRP_DEFAULT, ANIM_ID_CAR_LB_PRO) == nil,
-		"missing SA bank never borrows native VC animation");
-	sa->isLoaded = true;
-
-	customFile = NativeANPK();
-	CAnimManager::LoadAnimFile("ANIM\\PED.IFP");
-	Check(customStreamsOpened == 0 && CAnimManager::GetAnimation("CAR_LB_PRO", vc) == nativeClip,
-		"a custom ANPK bank never replaces the previously loaded VC dictionary");
-	customFile = MobileANI(1, true);
-	CAnimManager::LoadSAAnimFileFromCustom("ANIM\\BIKES.IFP");
-	CAnimBlock *saBikes = CAnimManager::GetAnimationBlock("sa_bikes");
-	Check(customStreamsOpened == 1 && saBikes && saBikes->isLoaded &&
-		CAnimManager::GetAnimation("CAR_LB_PRO", saBikes) &&
-		CAnimManager::GetAnimationBlock("bikes") == nil,
-		"custom ANP3 only enters the SA bank");
-
-	// VC's weapon group IDs should resolve real SA clip names from separately
-	// provided, compact IFP banks. ped.ifp alone cannot supply these clips.
-	struct WeaponClip {
-		const char *filename;
-		AssocGroupId group;
-		AnimationId anim;
-		const char *name;
-	} weaponClips[] = {
-		{ "ANIM\\PYTHON.IFP", ASSOCGRP_PYTHON, ANIM_ID_FIRE, "python_fire" },
-		{ "ANIM\\BUDDY.IFP", ASSOCGRP_BUDDY, ANIM_ID_FIRE, "buddy_fire" },
-		{ "ANIM\\UZI.IFP", ASSOCGRP_UZI, ANIM_ID_FIRE, "UZI_fire" },
-		{ "ANIM\\CHAINSAW.IFP", ASSOCGRP_CSAW_1, ANIM_ID_FIGHT_3, "CSaw_3" }
-	};
-	for(const WeaponClip &test : weaponClips){
-		Check(CAnimManager::GetAnimName(test.group, test.anim) != nil,
-			"weapon animation name remains available when IFP is missing");
-		Check(CAnimManager::GetAnimHierarchyForOffset(saPed.Get(), test.group, test.anim) == nil,
-			"ped.ifp alone has no matching SA weapon clip");
-		customFile = MobileANI(1, true, false, test.name);
-		CAnimManager::LoadSAAnimFileFromCustom(test.filename);
-		CAnimBlendHierarchy *clip = CAnimManager::GetAnimHierarchyForOffset(saPed.Get(), test.group, test.anim);
-		Check(clip && !strcasecmp(clip->name, test.name),
-			"separate SA weapon clip resolves for the ped");
+	std::vector<uint8> anp3 = SAAnim_ANP3(compressed);
+	TestStream stream3(anp3);
+	CAnimManager::LoadAnimFile(&stream3, true);
+	CAnimBlock *block = CAnimManager::GetAnimationBlock("ped");
+	Check(block && block->IsLoaded && block->NumAnims == 1, "ANP3 block registered");
+	CAnimBlendHierarchy *clip = CAnimManager::GetAnimation("run_test", block);
+	Check(clip != nil, "ANP3 clip found by name");
+	Check(clip->m_nSeqCount == 2, "ANP3 clip has two sequences");
+	CAnimBlendSequence &root = clip->m_pSequences[0];
+	CAnimBlendSequence &spine = clip->m_pSequences[1];
+	Check(root.IsUsingBoneTag() && root.GetBoneTag() == BONE_ROOT,
+		"root sequence carries BONE_ROOT");
+	Check(spine.IsUsingBoneTag() && spine.GetBoneTag() == BONE_SPINE1,
+		"spine sequence carries BONE_SPINE1");
+	Check(root.m_FramesNum == 2 && spine.m_FramesNum == 2, "frame counts");
+	if(compressed){
+		Check(clip->m_bIsCompressed && root.IsCompressed(),
+			"compressed frames stay compressed");
+		KeyFrameTransCompressed *kf = root.GetCKeyFrame(1);
+		Check((float)kf->Rot.x == 0.25f && (float)kf->Trans.x == 1.0f &&
+			(float)kf->DeltaTime == 0.5f, "compressed keyframe values");
+		clip->Uncompress();
+		Check(!clip->m_bIsCompressed && !root.IsCompressed(),
+			"uncompress clears the compressed flags");
 	}
-	// An id that the group does not list must not resolve to a clip name; the
-	// buddy bank carries the four fire/reload slots only.
-	Check(CAnimManager::GetAnimName(ASSOCGRP_BUDDY, ANIM_ID_GRENADE_WEAPON_THROW) == nil,
-		"unavailable weapon slots are not mistaken for valid clip names");
+	KeyFrameTrans *lastRoot = root.GetUKeyFrame(1);
+	Check(lastRoot->Rot.x == 0.25f && lastRoot->Trans.x == 1.0f &&
+		lastRoot->DeltaTime == 0.5f, "root keyframe values");
+	KeyFrame *lastSpine = (KeyFrame*)spine.GetUKeyFrame(1);
+	Check(lastSpine->Rot.x == 0.5f && lastSpine->DeltaTime == 0.5f,
+		"spine keyframe values");
+	Check(clip->GetTotalTime() == 0.5f, "ANP3 clip total time");
 
-	// ANP3 with a numSeq == 0 placeholder clip (like ped.ani's empty stub) must
-	// keep sequences == nil without new CAnimBlendSequence[0] and still parse subsequent clips.
-	{
-		std::vector<uint8> v;
-		v.insert(v.end(), "ANP3", "ANP3" + 4);
-		Name(v, "colt45", 24);
-		U32(v, 2); // 2 clips: clip 0 has 0 sequences, clip 1 has 1 sequence
-		U32(v, 1);
-		// Clip 0: empty stub
-		Name(v, "EMPTY_STUB", 24);
-		U32(v, 0); // numSeq == 0
-		U32(v, 0);
-		U32(v, 1);
-		// Clip 1: real clip immediately after
-		Name(v, "AFTER_EMPTY", 24);
-		U32(v, 1);
-		U32(v, 32);
-		U32(v, 1);
-		Name(v, " Root", 24);
-		U32(v, 4);
-		U32(v, 2);
-		U32(v, 0);
-		for (int i = 0; i < 2; i++) {
-			U16(v, 0); U16(v, 0); U16(v, 0); U16(v, 4096);
-			U16(v, i * 60);
-			U16(v, 0); U16(v, 0); U16(v, 0);
-		}
-		customFile = v;
-		CAnimManager::LoadSAAnimFileFromCustom("ANIM\\COLT45.IFP");
-		CAnimBlock *stubBlk = CAnimManager::GetAnimationBlock("sa_colt45");
-		Check(stubBlk && stubBlk->isLoaded, "ANP3 block with numSeq==0 clip loads cleanly");
-		CAnimBlendHierarchy *emptyH = CAnimManager::GetAnimation("EMPTY_STUB", stubBlk);
-		CAnimBlendHierarchy *afterH = CAnimManager::GetAnimation("AFTER_EMPTY", stubBlk);
-		Check(emptyH && emptyH->numSequences == 0 && emptyH->sequences == nil,
-			"numSeq==0 clip keeps sequences==nil without zero-length allocation");
-		Check(afterH && afterH->numSequences == 1 && afterH->sequences != nil,
-			"clip following numSeq==0 stub parses intact");
-	}
+	std::vector<uint8> anpk = SAAnim_ANPK();
+	TestStream streamK(anpk);
+	CAnimManager::LoadAnimFile(&streamK, false);
+	CAnimBlock *cars = CAnimManager::GetAnimationBlock("cars");
+	Check(cars && cars->IsLoaded && cars->NumAnims == 1, "ANPK block registered");
+	CAnimBlendHierarchy *clipK = CAnimManager::GetAnimation("CAR_LB_PRO", cars);
+	Check(clipK != nil && clipK->m_nSeqCount == 1, "ANPK clip found by name");
+	CAnimBlendSequence &kseq = clipK->m_pSequences[0];
+	Check(kseq.IsUsingBoneTag() && kseq.GetBoneTag() == BONE_ROOT,
+		"ANPK 44-byte ANIM chunk provides the BoneTag");
+	KeyFrameTrans *klast = kseq.GetUKeyFrame(1);
+	Check(klast->Rot.x == -0.25f && klast->Rot.w == 0.9682458f,
+		"ANPK rotation is conjugated");
+	Check(klast->Trans.x == 1.75f && klast->DeltaTime == 1.0f,
+		"ANPK translation and time");
+	Check(clipK->GetTotalTime() == 1.0f, "ANPK clip total time");
 
-	puts("Native VC / custom SA bank isolation, weapon clips, real IFP reader and door offsets OK");
+	puts("SA animation file reader tests OK");
 	return 0;
 }

@@ -1,316 +1,346 @@
 #include "common.h"
 
-#include "AnimBlendHierarchy.h"
-#include "AnimBlendClumpData.h"
-#include "RpAnimBlend.h"
-#include "AnimManager.h"
 #include "AnimBlendAssociation.h"
+#include "AnimBlendNode.h"
+#include "AnimBlendHierarchy.h"
+#include "AnimBlendStaticAssociation.h"
+#include "AnimBlendClumpData.h"
+#include "AnimManager.h"
+#include "RpAnimBlend.h"
 #include "MemoryMgr.h"
 
-CAnimBlendAssociation::CAnimBlendAssociation(void)
+// 0x4CE9B0
+CAnimBlendAssociation::CAnimBlendAssociation()
 {
-	numNodes = 0;
-	groupId = -1;
-	nodes = nil;
-	hierarchy = nil;
-	animBlockRef = -1;
-	blendAmount = 1.0f;
-	blendDelta = 0.0f;
-	currentTime = 0.0f;
-	speed = 1.0f;
-	timeStep = 0.0f;
-	animId = -1;
-	flags = 0;
-	callbackType = CB_NONE;
-	link.Init();
+	m_AnimGroupId = ANIM_GROUP_NONE;
+	m_BlendNodes = nil;
+	m_BlendHier = nil;
+	m_BlendAmount = 1.0f;
+	m_BlendDelta = 0.0f;
+	m_CurrentTime = 0.0f;
+	m_Speed = 1.0f;
+	m_TimeStep = 0.0f;
+	m_AnimId = ANIM_ID_UNDEFINED;
+	m_Flags = 0;
+	m_nCallbackType = ANIM_BLEND_CALLBACK_NONE;
+	m_pCallbackFunc = nil;
+	m_pCallbackData = nil;
 }
 
-CAnimBlendAssociation::CAnimBlendAssociation(CAnimBlendAssociation &other)
+// 0x4CEFC0
+CAnimBlendAssociation::CAnimBlendAssociation(RpClump *clump, CAnimBlendHierarchy *animHierarchy)
 {
-	nodes = nil;
-	animBlockRef = -1;
-	blendAmount = 1.0f;
-	blendDelta = 0.0f;
-	currentTime = 0.0f;
-	speed = 1.0f;
-	timeStep = 0.0f;
-	callbackType = CB_NONE;
-	link.Init();
-	Init(other);
+	m_AnimGroupId = ANIM_GROUP_NONE;
+	m_BlendNodes = nil;
+	m_BlendHier = nil;
+	m_BlendAmount = 1.0f;
+	m_BlendDelta = 0.0f;
+	m_CurrentTime = 0.0f;
+	m_Speed = 1.0f;
+	m_TimeStep = 0.0f;
+	m_AnimId = ANIM_ID_UNDEFINED;
+	m_Flags = 0;
+	m_nCallbackType = ANIM_BLEND_CALLBACK_NONE;
+	m_pCallbackFunc = nil;
+	m_pCallbackData = nil;
+	Init(clump, animHierarchy);
 }
 
-CAnimBlendAssociation::CAnimBlendAssociation(CAnimBlendAssociation &other, RpClump *clump)
+// 0x4CF020
+CAnimBlendAssociation::CAnimBlendAssociation(CAnimBlendAssociation &assoc)
 {
-	nodes = nil;
-	animBlockRef = -1;
-	blendAmount = 1.0f;
-	blendDelta = 0.0f;
-	currentTime = 0.0f;
-	speed = 1.0f;
-	timeStep = 0.0f;
-	callbackType = CB_NONE;
-	link.Init();
-	Init(other, clump);
-}
-
-CAnimBlendAssociation::~CAnimBlendAssociation(void)
-{
-	FreeAnimBlendNodeArray();
-	link.Remove();
-	if(animBlockRef >= 0){
-		int32 block = animBlockRef;
-		animBlockRef = -1;
-		CAnimManager::RemoveAnimBlockRefWithoutDelete(block);
+	m_BlendNodes = nil;
+	m_BlendAmount = 1.0f;
+	m_BlendDelta = 0.0f;
+	m_CurrentTime = 0.0f;
+	m_Speed = 1.0f;
+	m_TimeStep = 0.0f;
+	m_nCallbackType = ANIM_BLEND_CALLBACK_NONE;
+	m_pCallbackFunc = nil;
+	m_pCallbackData = nil;
+	Init(assoc);
+	if ((m_Flags & ANIMATION_REFERENCE_BLOCK) == 0) {
+		CAnimManager::AddAnimBlockRef(m_BlendHier->m_nAnimBlockId);
+		m_Flags |= ANIMATION_REFERENCE_BLOCK;
 	}
 }
 
-
-void
-CAnimBlendAssociation::AllocateAnimBlendNodeArray(int n)
+// 0x4CF080
+CAnimBlendAssociation::CAnimBlendAssociation(CAnimBlendStaticAssociation &assoc)
 {
-	int i;
-
-	nodes = (CAnimBlendNode*)RwMallocAlign(n*sizeof(CAnimBlendNode), 64);
-	for(i = 0; i < n; i++)
-		nodes[i].Init();
-}
-
-void
-CAnimBlendAssociation::FreeAnimBlendNodeArray(void)
-{
-	if(nodes)
-		RwFreeAlign(nodes);
-}
-
-void
-CAnimBlendAssociation::BindNodesToClump(RpClump *clump)
-{
-	CAnimBlendClumpData *clumpData = *RPANIMBLENDCLUMPDATA(clump);
-	assert(clumpData && clumpData->frames && clumpData->numFrames > 0);
-	assert(hierarchy);
-
-	// A template can have fewer bones than a custom ped. FrameUpdate advances
-	// a pointer once per frame, so copying the template's nodes here would read
-	// past the end of the allocation. Bone order can differ even when the frame
-	// counts match; map each sequence to this clump's frames instead.
-	FreeAnimBlendNodeArray();
-	nodes = nil;
-	numNodes = clumpData->numFrames;
-	AllocateAnimBlendNodeArray(numNodes);
-	for(int i = 0; i < numNodes; i++)
-		nodes[i].association = this;
-
-	for(int i = 0; i < hierarchy->numSequences; i++){
-		CAnimBlendSequence *seq = &hierarchy->sequences[i];
-		AnimBlendFrameData *frame = seq->boneTag == -1 ?
-			RpAnimBlendClumpFindFrame(clump, seq->name) :
-			RpAnimBlendClumpFindBone(clump, seq->boneTag);
-		if(frame && seq->numFrames > 0)
-			nodes[frame - clumpData->frames].sequence = seq;
+	m_BlendNodes = nil;
+	m_BlendAmount = 1.0f;
+	m_BlendDelta = 0.0f;
+	m_CurrentTime = 0.0f;
+	m_Speed = 1.0f;
+	m_TimeStep = 0.0f;
+	m_nCallbackType = ANIM_BLEND_CALLBACK_NONE;
+	m_pCallbackFunc = nil;
+	m_pCallbackData = nil;
+	Init(assoc);
+	if ((m_Flags & ANIMATION_REFERENCE_BLOCK) == 0) {
+		CAnimManager::AddAnimBlockRef(m_BlendHier->m_nAnimBlockId);
+		m_Flags |= ANIMATION_REFERENCE_BLOCK;
 	}
 }
 
-void
-CAnimBlendAssociation::Init(RpClump *clump, CAnimBlendHierarchy *hier)
+// 0x4CECF0
+CAnimBlendAssociation::~CAnimBlendAssociation()
 {
-	animBlockRef = -1;
-
-	// A custom animation set can be missing individual animations.
-	if(hier == nil)
-		return;
-
-	hierarchy = hier;
-	BindNodesToClump(clump);
+	if (m_BlendNodes)
+		RwFreeAlign(m_BlendNodes);
+	m_Link.Remove();
+	if (m_Flags & ANIMATION_REFERENCE_BLOCK)
+		CAnimManager::RemoveAnimBlockRef(m_BlendHier->m_nAnimBlockId);
 }
 
-void
-CAnimBlendAssociation::Init(CAnimBlendAssociation &assoc, RpClump *clump)
+float CAnimBlendAssociation::GetTimeProgress() const
 {
-	hierarchy = assoc.hierarchy;
-	animBlockRef = hierarchy ? CAnimManager::GetAnimationBlockForHierarchy(hierarchy) : -1;
-	if(animBlockRef >= 0)
-		CAnimManager::AddAnimBlockRef(animBlockRef);
-	flags = assoc.flags;
-	animId = assoc.animId;
-	groupId = assoc.groupId;
-	if(clump){
-		BindNodesToClump(clump);
-	}else{
-		// Cutscene/global associations retain the reference skeleton's order.
-		numNodes = assoc.numNodes;
-		AllocateAnimBlendNodeArray(numNodes);
-		for(int i = 0; i < numNodes; i++){
-			nodes[i] = assoc.nodes[i];
-			nodes[i].association = this;
-		}
+	return m_CurrentTime / m_BlendHier->m_fTotalTime;
+}
+
+// 0x4CED50
+void CAnimBlendAssociation::Init(RpClump *clump, CAnimBlendHierarchy *animHierarchy)
+{
+	CAnimBlendClumpData *animClumpData = RpAnimBlendClumpGetData(clump);
+	m_NumBlendNodes = (uint16)animClumpData->m_NumFrameData;
+	AllocateAnimBlendNodeArray(m_NumBlendNodes);
+	for (int32 i = 0; i < m_NumBlendNodes; i++)
+		m_BlendNodes[i].m_BlendAssoc = this;
+
+	m_BlendHier = animHierarchy;
+	for (uint32 s = 0; s < m_BlendHier->m_nSeqCount; s++) {
+		CAnimBlendSequence &seq = m_BlendHier->m_pSequences[s];
+		if (!seq.m_FramesNum)
+			continue;
+		AnimBlendFrameData *frame = seq.IsUsingBoneTag()
+			? RpAnimBlendClumpFindBone(clump, seq.GetBoneTag())
+			: RpAnimBlendClumpFindFrameFromHashKey(clump, seq.GetNameHashKey());
+		if (!frame)
+			continue;
+		m_BlendNodes[frame - animClumpData->m_FrameDatas].m_Seq = &seq;
 	}
 }
 
-void
-CAnimBlendAssociation::SetBlend(float amount, float delta)
+// 0x4CEE40
+void CAnimBlendAssociation::Init(CAnimBlendAssociation &assoc)
 {
-	blendAmount = amount;
-	blendDelta = delta;
-}
-
-void
-CAnimBlendAssociation::SetFinishCallback(void (*cb)(CAnimBlendAssociation*, void*), void *arg)
-{
-	callbackType = CB_FINISH;
-	callback = cb;
-	callbackArg = arg;
-}
-
-void
-CAnimBlendAssociation::SetDeleteCallback(void (*cb)(CAnimBlendAssociation*, void*), void *arg)
-{
-	callbackType = CB_DELETE;
-	callback = cb;
-	callbackArg = arg;
-}
-
-void
-CAnimBlendAssociation::SetCurrentTime(float time)
-{
-	int i;
-
-	// A truncated custom clip can have no timed keyframes. Repeating clips
-	// must not loop forever subtracting a zero duration.
-	if(hierarchy == nil || hierarchy->totalLength <= 0.0f){
-		currentTime = 0.0f;
-		return;
+	m_BlendHier = assoc.m_BlendHier;
+	m_NumBlendNodes = assoc.m_NumBlendNodes;
+	m_Flags = assoc.m_Flags;
+	m_AnimId = assoc.m_AnimId;
+	m_AnimGroupId = assoc.m_AnimGroupId;
+	AllocateAnimBlendNodeArray(m_NumBlendNodes);
+	for (int32 i = 0; i < m_NumBlendNodes; i++) {
+		m_BlendNodes[i] = assoc.m_BlendNodes[i];
+		m_BlendNodes[i].m_BlendAssoc = this;
 	}
-	for(currentTime = time; currentTime >= hierarchy->totalLength; currentTime -= hierarchy->totalLength)
-		if (!IsRepeating()) {
-			currentTime = hierarchy->totalLength;
+}
+
+// 0x4CEEC0
+void CAnimBlendAssociation::Init(CAnimBlendStaticAssociation &assoc)
+{
+	m_BlendHier = assoc.m_BlendHier;
+	m_NumBlendNodes = assoc.m_NumBlendNodes;
+	m_Flags = assoc.m_Flags;
+	m_AnimId = assoc.m_AnimId;
+	m_AnimGroupId = assoc.m_AnimGroupId;
+	AllocateAnimBlendNodeArray(m_NumBlendNodes);
+	for (int32 i = 0; i < m_NumBlendNodes; i++) {
+		m_BlendNodes[i].m_Seq = assoc.m_BlendSeqs[i];
+		m_BlendNodes[i].m_BlendAssoc = this;
+	}
+}
+
+// 0x4CEB70
+void CAnimBlendAssociation::Start(float currentTime)
+{
+	m_Flags |= ANIMATION_IS_PLAYING;
+	SetCurrentTime(currentTime);
+}
+
+uint32 CAnimBlendAssociation::GetHashKey() const
+{
+	return m_BlendHier->m_hashKey;
+}
+
+// 0x4CE9F0
+void CAnimBlendAssociation::AllocateAnimBlendNodeArray(int32 count)
+{
+	m_BlendNodes = (CAnimBlendNode *)RwMallocAlign(count * sizeof(CAnimBlendNode), 64);
+	for (int32 i = 0; i < count; i++)
+		m_BlendNodes[i].Init();
+}
+
+// 0x4CEA40
+void CAnimBlendAssociation::FreeAnimBlendNodeArray()
+{
+	if (m_BlendNodes)
+		RwFreeAlign(m_BlendNodes);
+}
+
+// 0x4CEBA0
+void CAnimBlendAssociation::SetBlend(float blendAmount, float blendDelta)
+{
+	m_BlendAmount = blendAmount;
+	m_BlendDelta = blendDelta;
+}
+
+// 0x4CEB80
+void CAnimBlendAssociation::SetBlendTo(float blendAmount, float blendDelta)
+{
+	m_BlendDelta = (blendAmount - m_BlendAmount) * blendDelta;
+}
+
+// 0x4CEA80
+void CAnimBlendAssociation::SetCurrentTime(float currentTime)
+{
+	for (m_CurrentTime = currentTime; m_CurrentTime >= m_BlendHier->m_fTotalTime; m_CurrentTime -= m_BlendHier->m_fTotalTime) {
+		if (!IsLooped()) {
+			m_CurrentTime = m_BlendHier->m_fTotalTime;
 			break;
 		}
-
-	CAnimManager::UncompressAnimation(hierarchy);
-#ifdef ANIM_COMPRESSION
-	// strangely PC has this but android doesn't
-	if(hierarchy->keepCompressed){
-		for(i = 0; i < numNodes; i++)
-			if(nodes[i].sequence)
-				nodes[i].SetupKeyFrameCompressed();
-	}else
-#endif
-	{
-		for(i = 0; i < numNodes; i++)
-			if(nodes[i].sequence)
-				nodes[i].FindKeyFrame(currentTime);
 	}
-}
 
-void
-CAnimBlendAssociation::SyncAnimation(CAnimBlendAssociation *other)
-{
-	if(other == nil || other->hierarchy == nil || other->hierarchy->totalLength <= 0.0f){
-		SetCurrentTime(0.0f);
-		return;
-	}
-	// A clip that ran to its end without repeating sits exactly on its length.
-	// Copying that ratio hands the new clip a time of its own length, and
-	// UpdateTime clears ASSOC_RUNNING for such a clip on the next frame without
-	// running its finish callback: the association is still in the list, never
-	// advances and never reports that it is done. Pedestrians jumped and then
-	// stayed in PED_JUMP forever, unable to turn, because JUMP_launch syncs to
-	// the movement clip and that clip was already finished. Synchronise to the
-	// start instead - the source is not playing, so there is nothing to match.
-	float time = other->currentTime/other->hierarchy->totalLength * hierarchy->totalLength;
-	if(!other->IsRunning() || time >= hierarchy->totalLength)
-		time = 0.0f;
-	SetCurrentTime(time);
-}
+	CAnimManager::UncompressAnimation(m_BlendHier);
 
-void
-CAnimBlendAssociation::Start(float time)
-{
-	flags |= ASSOC_RUNNING;
-	SetCurrentTime(time);
-}
-
-void
-CAnimBlendAssociation::UpdateTimeStep(float timeDelta, float relSpeed)
-{
-	// gta-reversed: CAnimBlendAssociation::UpdateTimeStep (0x4D13A0)
-	//   m_TimeStep = IsSyncronised()
-	//       ? m_BlendHier->m_fTotalTime * totalTimeRecp
-	//       : m_Speed;
-	//   m_TimeStep *= timeStep;
-	// The synchronised flag is what carries the shared rhythm, not the
-	// movement flag: a movement clip that is not synchronised keeps its own
-	// speed. Testing ASSOC_MOVEMENT here pushed every moving clip onto the
-	// clump-wide ratio (relSpeed * totalLength), so clips played at the wrong
-	// rate and drifted apart from the ones they should share phase with.
-	if(IsRunning())
-		timeStep = (IsSyncronised() ? hierarchy->totalLength*relSpeed : speed) * timeDelta;
-}
-
-bool
-CAnimBlendAssociation::UpdateTime(float timeDelta, float relSpeed)
-{
-	if(!IsRunning())
-		return true;
-	if(currentTime >= hierarchy->totalLength){
-		// Reached the end on a previous frame, so the work of finishing is
-		// outstanding. Marking the clip not running here used to drop the
-		// finish callback on the floor: the association stayed in the clump
-		// list, never advanced, and the owner waited for a callback that could
-		// not arrive. Run it now.
-		flags &= ~ASSOC_RUNNING;
-		if(callbackType == CB_FINISH && !IsRepeating()){
-			callbackType = CB_NONE;
-			callback(this, callbackArg);
+	if (m_BlendHier->m_bKeepCompressed) {
+		for (int32 i = 0; i < m_NumBlendNodes; i++) {
+			if (m_BlendNodes[i].m_Seq)
+				m_BlendNodes[i].SetupKeyFrameCompressed();
 		}
-		return true;
-	}
-
-	currentTime += timeStep;
-
-	if(currentTime >= hierarchy->totalLength){
-		// Ran past end
-
-		if(IsRepeating())
-			currentTime -= hierarchy->totalLength;
-		else{
-			currentTime = hierarchy->totalLength;
-			if(flags & ASSOC_FADEOUTWHENDONE){
-				flags |= ASSOC_DELETEFADEDOUT;
-				blendDelta = -4.0f;
-			}
-			if(callbackType == CB_FINISH){
-				callbackType = CB_NONE;
-				callback(this, callbackArg);
-			}
+	} else {
+		for (int32 i = 0; i < m_NumBlendNodes; i++) {
+			if (m_BlendNodes[i].m_Seq)
+				m_BlendNodes[i].FindKeyFrame(m_CurrentTime);
 		}
 	}
-	return true;
 }
 
-// return whether we still exist after this function
-bool
-CAnimBlendAssociation::UpdateBlend(float timeDelta)
+// 0x4CEBC0
+void CAnimBlendAssociation::SetDeleteCallback(void (*callback)(CAnimBlendAssociation *, void *), void *data)
 {
-	blendAmount += blendDelta * timeDelta;
+	m_nCallbackType = ANIM_BLEND_CALLBACK_DELETE;
+	m_pCallbackFunc = callback;
+	m_pCallbackData = data;
+}
 
-	if(blendAmount <= 0.0f && blendDelta < 0.0f){
-		// We're faded out and are not fading in
-		blendAmount = 0.0f;
-		blendDelta = Max(0.0f, blendDelta);
-		if(flags & ASSOC_DELETEFADEDOUT){
-			if(callbackType == CB_FINISH || callbackType == CB_DELETE)
-				callback(this, callbackArg);
+// 0x4CEBE0
+void CAnimBlendAssociation::SetFinishCallback(void (*callback)(CAnimBlendAssociation *, void *), void *data)
+{
+	m_nCallbackType = ANIM_BLEND_CALLBACK_FINISH;
+	m_pCallbackFunc = callback;
+	m_pCallbackData = data;
+}
+
+// 0x4CEB40
+void CAnimBlendAssociation::SyncAnimation(CAnimBlendAssociation *syncWith)
+{
+	SetCurrentTime(syncWith->GetTimeProgress() * m_BlendHier->GetTotalTime());
+}
+
+// 0x4D1490
+bool CAnimBlendAssociation::UpdateBlend(float timeStep)
+{
+	m_BlendAmount += m_BlendDelta * timeStep;
+
+	if (m_BlendAmount <= 0.0f && m_BlendDelta < 0.0f) { // We're faded out and are not fading in
+		m_BlendAmount = 0.0f;
+		m_BlendDelta = m_BlendDelta > 0.0f ? m_BlendDelta : 0.0f;
+
+		if (m_Flags & ANIMATION_IS_BLEND_AUTO_REMOVE) {
+			if (m_nCallbackType == ANIM_BLEND_CALLBACK_DELETE || m_nCallbackType == ANIM_BLEND_CALLBACK_FINISH) {
+				m_pCallbackFunc(this, m_pCallbackData);
+				SetFinishCallback(CDefaultAnimCallback::DefaultAnimCB, nil);
+			}
 			delete this;
 			return false;
 		}
 	}
 
-	if(blendAmount > 1.0f){
-		// Maximally faded in, clamp values
-		blendAmount = 1.0f;
-		blendDelta = Min(0.0f, blendDelta);
+	if (m_BlendAmount > 1.0f) { // Maximally faded in, clamp values
+		m_BlendAmount = 1.0f;
+		m_BlendDelta = m_BlendDelta < 0.0f ? m_BlendDelta : 0.0f;
 	}
 
 	return true;
+}
+
+// 0x4D13D0
+bool CAnimBlendAssociation::UpdateTime(float timeStep, float timeMult)
+{
+	(void)timeStep;
+	(void)timeMult;
+
+	if (!IsPlaying())
+		return true;
+
+	// Finished yet?
+	if (m_CurrentTime >= (double)m_BlendHier->GetTotalTime()) {
+		SetFlag(ANIMATION_IS_PLAYING, false);
+		return true;
+	}
+
+	// Okay, so advance...
+	m_CurrentTime += m_TimeStep;
+
+	// Is it finished now?
+	if (m_CurrentTime < m_BlendHier->GetTotalTime())
+		return true;
+
+	// Should it be repeating? If so, jump to beginning
+	if (IsLooped()) {
+		m_CurrentTime -= m_BlendHier->GetTotalTime();
+		return true;
+	}
+
+	// Anim has finished
+	m_CurrentTime = m_BlendHier->GetTotalTime();
+
+	// Maybe auto-remove
+	if (m_Flags & ANIMATION_IS_FINISH_AUTO_REMOVE) {
+		SetFlag(ANIMATION_IS_BLEND_AUTO_REMOVE, true);
+		m_BlendDelta = -4.0f;
+	}
+
+	// Call finish callback (if any)
+	if (m_nCallbackType == ANIM_BLEND_CALLBACK_FINISH) {
+		m_nCallbackType = ANIM_BLEND_CALLBACK_NONE;
+		m_pCallbackFunc(this, m_pCallbackData);
+		SetFinishCallback(CDefaultAnimCallback::DefaultAnimCB, nil);
+	}
+
+	// And we're done
+	return true;
+}
+
+// 0x4D13A0
+void CAnimBlendAssociation::UpdateTimeStep(float timeStep, float totalTimeRecp)
+{
+	if (IsPlaying()) {
+		m_TimeStep = IsSyncronised()
+			? m_BlendHier->m_fTotalTime * totalTimeRecp
+			: m_Speed;
+		m_TimeStep *= timeStep;
+	}
+}
+
+bool CAnimBlendAssociation::HasFinished() const
+{
+	return m_CurrentTime == m_BlendHier->m_fTotalTime;
+}
+
+// 0x4CEA50
+void CAnimBlendAssociation::ReferenceAnimBlock()
+{
+	if (m_Flags & ANIMATION_REFERENCE_BLOCK)
+		return;
+	CAnimManager::AddAnimBlockRef(m_BlendHier->m_nAnimBlockId);
+	SetFlag(ANIMATION_REFERENCE_BLOCK, true);
+}
+
+// 0x4CEB60
+CAnimBlendNode *CAnimBlendAssociation::GetNode(int32 nodeIndex)
+{
+	return &m_BlendNodes[nodeIndex];
 }
