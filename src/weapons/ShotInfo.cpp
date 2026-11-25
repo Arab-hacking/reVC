@@ -124,25 +124,8 @@ CShotInfo::Update()
 			shot.m_radius += 0.075f * CTimer::GetTimeStep();
 
 		shot.m_startPos += CTimer::GetTimeStep() * shot.m_areaAffected;
-		if (shot.m_sourceEntity) {
-			assert(shot.m_sourceEntity->IsPed());
-			CPed *ped = (CPed*) shot.m_sourceEntity;
-			float radius = Max(1.0f, shot.m_radius);
-
-			for (int i = 0; i < ped->m_numNearPeds; ++i) {
-				CPed *nearPed = ped->m_nearPeds[i];
-				if (nearPed->IsPointerValid()) {
-					if (nearPed->IsPedInControl() && (nearPed->GetPosition() - shot.m_startPos).MagnitudeSqr() < radius && !nearPed->bFireProof) {
-
-						if (!nearPed->IsPlayer()) {
-							nearPed->SetFindPathAndFlee(shot.m_sourceEntity, 10000);
-							nearPed->SetMoveState(PEDMOVE_SPRINT);
-						}
-						gFireManager.StartFire(nearPed, shot.m_sourceEntity, 0.8f, true);
-					}
-				}
-			}
-		}
+		if (shot.m_sourceEntity)
+			CWorld::SetPedsOnFire(shot.m_startPos.x, shot.m_startPos.y, shot.m_startPos.z, Max(1.0f, shot.m_radius), shot.m_sourceEntity);
 		if (!((CTimer::GetFrameCounter() + slot) & 3))
 			CWorld::SetCarsOnFire(shot.m_startPos.x, shot.m_startPos.y, shot.m_startPos.z, 4.0f, shot.m_sourceEntity);
 	}

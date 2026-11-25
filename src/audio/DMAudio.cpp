@@ -69,15 +69,6 @@ cDMAudio::SetOutputMode(bool8 surround)
 }
 
 void
-cDMAudio::SetMP3BoostVolume(uint8 volume)
-{
-	uint8 vol = volume;
-	if (vol > MAX_VOLUME) vol = MAX_VOLUME;
-
-	AudioManager.SetMP3BoostVolume(vol);
-}
-
-void
 cDMAudio::SetEffectsMasterVolume(uint8 volume)
 {
 	uint8 vol = volume;
@@ -149,12 +140,6 @@ cDMAudio::SetSpeakerConfig(int32 config)
 	AudioManager.SetSpeakerConfig(config);
 }
 
-bool8
-cDMAudio::IsMP3RadioChannelAvailable(void)
-{
-	return AudioManager.IsMP3RadioChannelAvailable();
-}
-
 void
 cDMAudio::ReleaseDigitalHandle(void)
 {
@@ -194,18 +179,6 @@ cDMAudio::IsAudioInitialised(void)
 }
 #endif
 
-void
-cDMAudio::ResetPoliceRadio()
-{
-	AudioManager.ResetPoliceRadio();
-}
-
-void
-cDMAudio::ReportCrime(eCrimeType crime, const CVector &pos)
-{
-	AudioManager.ReportCrime(crime, pos);
-}
-
 int32
 cDMAudio::CreateLoopingScriptObject(cAudioScriptObject *scriptObject)
 {
@@ -236,12 +209,6 @@ cDMAudio::CreateOneShotScriptObject(cAudioScriptObject *scriptObject)
 }
 
 void
-cDMAudio::PlaySuspectLastSeen(float x, float y, float z)
-{
-	AudioManager.PlaySuspectLastSeen(x, y, z);
-}
-
-void
 cDMAudio::ReportCollision(CEntity *entityA, CEntity *entityB, uint8 surfaceTypeA, uint8 surfaceTypeB, float collisionPower, float velocity)
 {
 	AudioManager.ReportCollision(entityA, entityB, surfaceTypeA, surfaceTypeB, collisionPower, velocity);
@@ -251,24 +218,6 @@ void
 cDMAudio::PlayFrontEndSound(uint16 frontend, uint32 volume)
 {
 	AudioManager.PlayOneShot(AudioManager.m_nFrontEndEntity, frontend, (float)volume);
-}
-
-void
-cDMAudio::PlayRadioAnnouncement(uint32 announcement)
-{
-	MusicManager.PlayAnnouncement(announcement);
-}
-
-void
-cDMAudio::PlayFrontEndTrack(uint32 track, bool8 frontendFlag)
-{
-	MusicManager.PlayFrontEndTrack(track, frontendFlag);
-}
-
-void
-cDMAudio::StopFrontEndTrack(void)
-{
-	MusicManager.StopFrontEndTrack();
 }
 
 void
@@ -290,13 +239,13 @@ cDMAudio::PreloadCutSceneMusic(uint32 track)
 }
 
 void
-cDMAudio::PlayPreloadedCutSceneMusic(void)
+cDMAudio::PlayPreloadedCutSceneMusic()
 {
 	MusicManager.PlayPreloadedCutSceneMusic();
 }
 
 void
-cDMAudio::StopCutSceneMusic(void)
+cDMAudio::StopCutSceneMusic()
 {
 	MusicManager.StopCutSceneMusic();
 }
@@ -347,48 +296,6 @@ const char *
 cDMAudio::GetMissionAudioLoadedLabel(uint8 slot)
 {
 	return AudioManager.GetMissionAudioLoadedLabel(slot);
-}
-
-uint8
-cDMAudio::GetRadioInCar(void)
-{
-	return MusicManager.GetRadioInCar();
-}
-
-void
-cDMAudio::SetRadioInCar(uint32 radio)
-{
-	MusicManager.SetRadioInCar(radio);
-}
-
-void
-cDMAudio::SetRadioChannel(uint32 radio, int32 pos)
-{
-	MusicManager.SetRadioChannelByScript(radio, pos);
-}
-
-void
-cDMAudio::SetStartingTrackPositions(bool8 isStartGame)
-{
-	MusicManager.SetStartingTrackPositions(isStartGame);
-}
-
-float *
-cDMAudio::GetListenTimeArray()
-{
-	return MusicManager.GetListenTimeArray();
-}
-
-uint32
-cDMAudio::GetFavouriteRadioStation()
-{
-	return MusicManager.GetFavouriteRadioStation();
-}
-
-int32
-cDMAudio::GetRadioPosition(uint32 station)
-{
-	return MusicManager.GetRadioPosition(station);
 }
 
 void

@@ -1,10 +1,8 @@
 #ifndef __GTA_PLAYERPEDDATA_H__
 #define __GTA_PLAYERPEDDATA_H__
 
-#include "PedType.h"
 
 class CWanted;
-class CCopPed;
 class CEntity;
 class CPed;
 
@@ -54,11 +52,10 @@ public:
 	};
 
 	CWanted *m_pWanted;
-	CCopPed *m_pArrestingCop;
 	// Transient on-foot input: fight and duck controls are mutually exclusive.
 	CVector2D m_vecFightMovement;
 	float m_fMoveBlendRatio;
-	// SA's sprint budget. It starts at GetFatAndMuscleModifier(STAT_MOD_TIME_CAN_RUN)
+	// SA's sprint budget starts at the fixed default of 450.0f
 	// and drains to -150, which is the point where the player can no longer
 	// start a sprint. This replaces the Vice City m_fCurrentStamina/m_fMaxStamina
 	// pair: those were an authored 0..1000 meter that no stat fed into.
@@ -76,9 +73,7 @@ public:
 	uint8 m_nFadeDrunkenness;
 	uint8 m_nDrugLevel;
 	uint8 m_nScriptLimitToGangSize;
-	// The breath meter, in the same units as the lung capacity it was filled
-	// from: GetFatAndMuscleModifier(STAT_MOD_AIR_IN_LUNG), which is 1150 for a
-	// body with no lung stat and full stamina, and 4000 at the cap.
+	// The breath meter, filled to the fixed default lung capacity of 1150.0f.
 	float m_fBreath;
 	uint32 m_nMeleeWeaponAnimReferenced;
 	uint32 m_nMeleeWeaponAnimReferencedExtra;
@@ -116,7 +111,6 @@ public:
 	{
 		m_nPlayerFlags = 0;
 		m_pWanted = nil;
-		m_pArrestingCop = nil;
 		m_vecFightMovement = CVector2D(0.0f, 0.0f);
 		m_fMoveBlendRatio = 0.0f;
 		m_fTimeCanRun = 0.0f;
@@ -163,17 +157,6 @@ public:
 		m_bLastHSMissileLOS = 0;
 		m_pCurrentProstitutePed = nil;
 	}
-
-	// Writes and reads every field a save has to carry. The wanted level, the
-	// clothes and the arresting cop are not here: they are serialized by the
-	// blocks that own them (CWanted, CPedClothesDesc, the cop pool).
-	// Size of the block, in bytes. Fixed: the save is a byte stream, so a field
-	// added here has to be taken out of the CPlayerPed::Save padding budget
-	// (164 bytes were reserved for exactly this) and the number below moves
-	// with it. The writer asserts the two agree.
-	static constexpr uint32 SAVE_SIZE = 137;
-	void Save(uint8 *buf) const;
-	void Load(const uint8 *buf);
 };
 
 #endif // __GTA_PLAYERPEDDATA_H__

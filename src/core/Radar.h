@@ -85,15 +85,6 @@ enum eRadarSprite
 	RADAR_SPRITE_TSHIRT,
 	RADAR_SPRITE_TOMMY,
 	RADAR_SPRITE_PHONE,
-	RADAR_SPRITE_RADIO_WILDSTYLE,
-	RADAR_SPRITE_RADIO_FLASH,
-	RADAR_SPRITE_RADIO_KCHAT,
-	RADAR_SPRITE_RADIO_FEVER,
-	RADAR_SPRITE_RADIO_VROCK,
-	RADAR_SPRITE_RADIO_VCPR,
-	RADAR_SPRITE_RADIO_ESPANTOSO,
-	RADAR_SPRITE_RADIO_EMOTION,
-	RADAR_SPRITE_RADIO_WAVE,
 #ifdef MAP_ENHANCEMENTS
 	RADAR_SPRITE_WAYPOINT,
 #endif
@@ -136,27 +127,6 @@ struct sRadarTrace
 	uint16 m_eBlipDisplay; // eBlipDisplay
 	uint16 m_eRadarSprite; // eRadarSprite
 };
-
-// Either that was a thing while saving/loading blips, or they added sizes of each field one by one. I want to do the former.
-#pragma pack(push,1)
-struct sRadarTraceSave
-{
-	uint32 m_nColor;
-	float m_Radius;
-	uint32 m_eBlipType; // eBlipType
-	int32 m_nEntityHandle;
-	CVector2D m_vec2DPos;
-	CVector m_vecPos;
-	uint16 m_BlipIndex;
-	bool m_bDim;
-	bool m_bInUse;
-	bool m_bShortRange;
-	bool m_unused;
-	int16 m_wScale;
-	uint16 m_eBlipDisplay; // eBlipDisplay
-	uint16 m_eRadarSprite; // eRadarSprite
-};
-#pragma pack(pop)
 
 // Values for screen space
 #define RADAR_LEFT (40.0f)
@@ -219,15 +189,6 @@ public:
 	static CSprite2d TShirtSprite;
 	static CSprite2d TommySprite;
 	static CSprite2d PhoneSprite;
-	static CSprite2d RadioWildstyleSprite;
-	static CSprite2d RadioFlashSprite;
-	static CSprite2d RadioKChatSprite;
-	static CSprite2d RadioFeverSprite;
-	static CSprite2d RadioVRockSprite;
-	static CSprite2d RadioVCPRSprite;
-	static CSprite2d RadioEspantosoSprite;
-	static CSprite2d RadioEmotionSprite;
-	static CSprite2d RadioWaveSprite;
 	static CSprite2d *RadarSprites[RADAR_SPRITE_COUNT];
 	static float cachedCos;
 	static float cachedSin;
@@ -269,16 +230,13 @@ public:
 	static uint32 GetRadarTraceColour(uint32 color, bool bright);
 	static void Initialise();
 	static float LimitRadarPoint(CVector2D &point);
-	static void LoadAllRadarBlips(uint8 *buf, uint32 size);
 	static void LoadTextures();
 	static void RemoveRadarSections();
-	static void SaveAllRadarBlips(uint8*, uint32*);
 	static void SetBlipSprite(int32 i, int32 icon);
 	static int32 SetCoordBlip(eBlipType type, CVector pos, uint32, eBlipDisplay);
 	static int32 SetEntityBlip(eBlipType type, int32, uint32, eBlipDisplay);
 	static int32 SetShortRangeCoordBlip(eBlipType type, CVector pos, uint32, eBlipDisplay);
 	static void SetRadarMarkerState(int32 i, bool flag);
-	static void ShowRadarMarker(CVector pos, uint32 color, float radius);
 	static void ShowRadarTrace(float x, float y, uint32 size, uint8 red, uint8 green, uint8 blue, uint8 alpha);
 	static void ShowRadarTraceWithHeight(float x, float y, uint32 size, uint8 red, uint8 green, uint8 blue, uint8 alpha, uint8 mode);
 	static void Shutdown();

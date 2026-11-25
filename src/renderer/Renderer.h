@@ -96,7 +96,6 @@ public:
 	static void ScanBigBuildingList(CPtrList &list);
 	static void ScanSectorList(CPtrList *lists);
 	static void ScanSectorList_Priority(CPtrList *lists);
-	static void ScanSectorList_Subway(CPtrList *lists);
 	static void ScanSectorList_RequestModels(CPtrList *lists);
 
 	static void SortBIGBuildings(void);

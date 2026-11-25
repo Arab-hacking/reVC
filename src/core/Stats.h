@@ -1,7 +1,7 @@
 #ifndef __GTA_STATS_H__
 #define __GTA_STATS_H__
 
-#include "PedType.h"
+#include "Ped.h"
 #include "audio_enums.h"
 
 // SA eStats (Enums/eStats.h). Float stats occupy 0..81, integer stats
@@ -418,12 +418,10 @@ public:
 	static int32 PropertyDestroyed;
 	static float HighestChaseValue;
 	static int32 CheatedCount;
-	static int32 ShowChaseStatOnScreen;
 	static int32 PamphletMissionPassed;
 	static bool abSonyCDs[1];
 	static int32 BloodRingKills;
 	static int32 BloodRingTime;
-	static float FavoriteRadioStationList[NUM_RADIOS];
 	static int32 Sprayings;
 	static float AutoPaintingBudget;
 	static int32 NoMoreHurricanes;
@@ -482,8 +480,6 @@ public:
 
 	static void LongestTimeInBloodRing(int32);
 	static void AddPropertyAsOwned(int32);
-	static void PopulateFavoriteRadioStationList();
-	static float GetFavoriteRadioStationList(int32);
 	static void BuildStatLine(Const char *, void *, int, void *, int);
 	static int ConstructStatLine(int);
 

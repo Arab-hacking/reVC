@@ -1,4 +1,5 @@
 #include "common.h"
+#include "PlayerPed.h"
 
 #include "main.h"
 #include "General.h"
@@ -10,7 +11,6 @@
 #include "Collision.h"
 #include "World.h"
 #include "Shadows.h"
-#include "Replay.h"
 #include "Stats.h"
 #include "Weather.h"
 #include "MBlur.h"
@@ -19,7 +19,6 @@
 #include "ParticleObject.h"
 #include "Particle.h"
 #include "soundlist.h"
-#include "SaveBuf.h"
 #include "debugmenu.h"
 
 #define MAX_PARTICLES_ON_SCREEN   (750)
@@ -412,13 +411,8 @@ void CParticle::Initialise()
 
 	gpFlame5Tex = RwTextureRead("flame5", nil);
 	
-//#ifdef FIX_BUGS
-#if 0
-	gpFlame5Raster = RwTextureGetRaster(gpFlame5Tex);
-#else
 	// this seems to have become more of a design choice
 	gpFlame5Raster = RwTextureGetRaster(gpFlame1Tex);	// copy-paste bug ?
-#endif
 
 	gpRainDropSmallTex = RwTextureRead("rainsmall", nil);
 	gpRainDropSmallRaster = RwTextureGetRaster(gpRainDropSmallTex);
@@ -887,8 +881,6 @@ CParticle *CParticle::AddParticle(tParticleType type, CVector const &vecPos, CVe
 		return nil;
 	}
 
-	if ( !CReplay::IsPlayingBack() )
-		CReplay::RecordParticle(type, vecPos, vecDir, fSize, color);
 	
 	CParticle *pParticle = m_pUnusedListHead;
 	

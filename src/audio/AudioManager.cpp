@@ -88,8 +88,6 @@ cAudioManager::Initialise()
 				m_nActiveSamples = NUM_CHANNELS_GENERIC;
 #endif
 				PostInitialiseGameSpecificSetup();
-				InitialisePoliceRadioZones();
-				InitialisePoliceRadio();
 				MusicManager.Initialise();
 			}
 		}
@@ -327,12 +325,6 @@ cAudioManager::SetMusicMasterVolume(uint8 volume)
 }
 
 void
-cAudioManager::SetMP3BoostVolume(uint8 volume)
-{
-	SampleManager.SetMP3BoostVolume(volume);
-}
-
-void
 cAudioManager::SetEffectsFadeVol(uint8 volume)
 {
 	SampleManager.SetEffectsFadeVolume(volume);
@@ -369,7 +361,6 @@ cAudioManager::ResetTimers(uint32 time)
 		ClearActiveSamples();
 		ClearMissionAudio(0);
 		ClearMissionAudio(1);
-		SampleManager.StopChannel(CHANNEL_POLICE_RADIO);
 		SampleManager.SetEffectsFadeVolume(0);
 		SampleManager.SetMusicFadeVolume(0);
 		MusicManager.ResetMusicAfterReload();
@@ -393,7 +384,6 @@ cAudioManager::DestroyAllGameCreatedEntities()
 				case AUDIOTYPE_EXPLOSION:
 				case AUDIOTYPE_WEATHER:
 				//case AUDIOTYPE_CRANE:
-				case AUDIOTYPE_GARAGE:
 				case AUDIOTYPE_FIREHYDRANT:
 					DestroyEntity(i);
 					break;
@@ -502,13 +492,16 @@ cAudioManager::SetSpeakerConfig(int32 conf)
 #endif
 }
 
-bool8
-cAudioManager::IsMP3RadioChannelAvailable()
+void
+cAudioManager::SetMissionScriptPoliceAudio(uint32)
 {
-	if (m_bIsInitialised)
-		return SampleManager.IsMP3RadioChannelAvailable();
+	// This build has no police-radio mission-audio channel.
+}
 
-	return FALSE;
+int8
+cAudioManager::GetMissionScriptPoliceAudioPlayingStatus()
+{
+	return PLAY_STATUS_FINISHED;
 }
 
 void
@@ -568,7 +561,6 @@ cAudioManager::ServiceSoundEffects()
 			for (uint32 i = 0; i < NUM_CHANNELS_DTS_GENERIC; i++)
 				SampleManager.StopChannel(i);
 
-			SampleManager.SetChannelFrequency(CHANNEL_DTS_POLICE_RADIO, 0);
 			SampleManager.SetChannelFrequency(CHANNEL_DTS_MISSION_AUDIO_1, 0);
 			SampleManager.SetChannelFrequency(CHANNEL_DTS_MISSION_AUDIO_2, 0);
 			SampleManager.SetChannelFrequency(CHANNEL_DTS_PLAYER_VEHICLE_ENGINE, 0);
@@ -576,7 +568,6 @@ cAudioManager::ServiceSoundEffects()
 			for (uint32 i = 0; i < NUM_CHANNELS_GENERIC; i++)
 				SampleManager.StopChannel(i);
 
-			SampleManager.SetChannelFrequency(CHANNEL_POLICE_RADIO, 0);
 			SampleManager.SetChannelFrequency(CHANNEL_MISSION_AUDIO_1, 0);
 			SampleManager.SetChannelFrequency(CHANNEL_MISSION_AUDIO_2, 0);
 			SampleManager.SetChannelFrequency(CHANNEL_PLAYER_VEHICLE_ENGINE, 0);
@@ -605,7 +596,6 @@ cAudioManager::ServiceSoundEffects()
 	ClearRequestedQueue();
 	InterrogateAudioEntities();
 	m_sPedComments.Process();
-	ServicePoliceRadio();
 	ServiceCollisions();
 	AddReleasingSounds();
 	ProcessMissionAudio();

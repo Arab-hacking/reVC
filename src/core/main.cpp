@@ -1,4 +1,5 @@
 #include "common.h"
+#include "Pools.h"
 #include <stdlib.h>
 #include <time.h>
 #include "rpmatfx.h"
@@ -34,8 +35,6 @@
 #include "Pickups.h"
 #include "WeaponEffects.h"
 #include "PointLights.h"
-#include "Fluff.h"
-#include "Replay.h"
 #include "Camera.h"
 #include "World.h"
 #include "Ped.h"
@@ -44,14 +43,11 @@
 #include "Hud.h"
 #include "User.h"
 #include "Messages.h"
-#include "Darkel.h"
-#include "Garages.h"
 #include "MusicManager.h"
 #include "VisibilityPlugins.h"
 #include "NodeName.h"
 #include "DMAudio.h"
 #include "Lights.h"
-#include "Credits.h"
 #include "ZoneCull.h"
 #include "Timecycle.h"
 #include "TxdStore.h"
@@ -61,19 +57,13 @@
 #include "RpAnimBlend.h"
 #include "Frontend.h"
 #include "AnimViewer.h"
-#include "Script.h"
-#include "PathFind.h"
 #include "Debug.h"
 #include "Console.h"
 #include "timebars.h"
-#include "GenericGameStorage.h"
-#include "MemoryCard.h"
 #include "MemoryHeap.h"
-#include "SceneEdit.h"
 #include "debugmenu.h"
 #include "Clock.h"
 #include "Occlusion.h"
-#include "Ropes.h"
 #include "postfx.h"
 #include "custompipes.h"
 #include "CustomSky.h"
@@ -132,14 +122,6 @@ void DebugMenuPopulate(void);
 
 #ifndef FINAL
 bool gbPrintMemoryUsage;
-#endif
-
-#ifdef GTA_PS2
-#define WANT_TO_LOAD TheMemoryCard.m_bWantToLoad
-#define FOUND_GAME_TO_LOAD TheMemoryCard.b_FoundRecentSavedGameWantToLoad
-#else
-#define WANT_TO_LOAD FrontEndMenuManager.m_bWantToLoad
-#define FOUND_GAME_TO_LOAD b_FoundRecentSavedGameWantToLoad
 #endif
 
 #ifdef NEW_RENDERER
@@ -260,37 +242,6 @@ DoFade(void)
 {
 	if(CTimer::GetIsPaused())
 		return;
-
-#ifdef PS2_MENU
-	if(TheMemoryCard.JustLoadedDontFadeInYet){
-		TheMemoryCard.JustLoadedDontFadeInYet = false;
-		TheMemoryCard.TimeStartedCountingForFade = CTimer::GetTimeInMilliseconds();
-	}
-#else
-	if(JustLoadedDontFadeInYet){
-		JustLoadedDontFadeInYet = false;
-		TimeStartedCountingForFade = CTimer::GetTimeInMilliseconds();
-	}
-#endif
-
-#ifdef PS2_MENU
-	if(TheMemoryCard.StillToFadeOut){
-		if(CTimer::GetTimeInMilliseconds() - TheMemoryCard.TimeStartedCountingForFade > TheMemoryCard.TimeToStayFadedBeforeFadeOut){
-			TheMemoryCard.StillToFadeOut = false;
-#else
-	if(StillToFadeOut){
-		if(CTimer::GetTimeInMilliseconds() - TimeStartedCountingForFade > TimeToStayFadedBeforeFadeOut){
-			StillToFadeOut = false;
-#endif
-			TheCamera.Fade(3.0f, FADE_IN);
-			TheCamera.ProcessFade();
-			TheCamera.ProcessMusicFade();
-		}else{
-			TheCamera.SetFadeColour(0, 0, 0);
-			TheCamera.Fade(0.0f, FADE_OUT);
-			TheCamera.ProcessFade();
-		}
-	}
 
 	if(CDraw::FadeValue != 0 || FrontEndMenuManager.m_PrefsBrightness < 256){
 		CSprite2d *splash = LoadSplash(nil);
@@ -1379,19 +1330,11 @@ if(gbRenderFadingInEntities)
 	// CWeather::AddSnow
 	CWaterCannons::Render();
 	CAntennas::Render();
-	// Contrails and the banner streamers behind the planes. They are drawn here,
-	// with the other additive effects, because they are transparent lines that
-	// have to go after everything solid.
-	CPlaneTrails::Render();
-	CPlaneBanners::Render();
 	CSpecialFX::Render();
-	CRopes::Render();
 	CCoronas::Render();
 	CParticle::Render();
-	CPacManPickups::Render();
 	CWeaponEffects::Render();
 	CPointLights::RenderFogEffect();
-	CMovingThings::Render();
 	CRenderer::RenderFirstPersonVehicle();
 	POP_RENDERGROUP();
 }
@@ -1431,11 +1374,9 @@ void
 RenderDebugShit(void)
 {
 	PUSH_RENDERGROUP("RenderDebugShit");
-	CTheScripts::RenderTheScriptDebugLines();
 #ifndef FINAL
 	if(gbShowCollisionLines)
 		CRenderer::RenderCollisionLines();
-	ThePaths.DisplayPathData();
 	CDebug::DrawLines();
 	DefinedState();
 #endif
@@ -1455,17 +1396,14 @@ RenderEffects(void)
 	CGlass::Render();
 	CWaterCannons::Render();
 	CSpecialFX::Render();
-	CRopes::Render();
 	CShadows::RenderStaticShadows();
 	CShadows::RenderStoredShadows();
 	CSkidmarks::Render();
 	CAntennas::Render();
 	CCoronas::Render();
 	CParticle::Render();
-	CPacManPickups::Render();
 	CWeaponEffects::Render();
 	CPointLights::RenderFogEffect();
-	CMovingThings::Render();
 	CRenderer::RenderFirstPersonVehicle();
 	POP_RENDERGROUP();
 }
@@ -1481,7 +1419,6 @@ Render2dStuff(void)
 	RwRenderStateSet(rwRENDERSTATEDESTBLEND, (void*)rwBLENDINVSRCALPHA);
 	RwRenderStateSet(rwRENDERSTATECULLMODE, (void*)rwCULLMODECULLNONE);
 
-	CReplay::Display();
 	CPickups::RenderPickUpText();
 
 	if(TheCamera.m_WideScreenOn
@@ -1522,20 +1459,11 @@ Render2dStuff(void)
 		CSprite2d::DrawRect(CRect(SCREEN_WIDTH / 2 + SCREEN_SCALE_X(210), 0.0f, SCREEN_WIDTH, SCREEN_HEIGHT), black);
 	}
 
-	MusicManager.DisplayRadioStationName();
 	TheConsole.Display();
-#ifdef GTA_SCENE_EDIT
-	if(CSceneEdit::m_bEditOn)
-		CSceneEdit::Draw();
-	else
-#endif
-		CHud::Draw();
+	CHud::Draw();
 
 	CSpecialFX::Render2DFXs();
-	CUserDisplay::OnscnTimer.ProcessForDisplay();
 	CMessages::Display();
-	CDarkel::DrawMessages();
-	CGarages::PrintMessages();
 	CPad::PrintErrorMessage();
 	CFont::DrawFonts();
 #ifndef MASTER
@@ -1576,7 +1504,6 @@ Render2dStuffAfterFade(void)
 #endif
 	CHud::DrawAfterFade();
 	CFont::DrawFonts();
-	CCredits::Render();
 	POP_RENDERGROUP();
 }
 
@@ -1603,12 +1530,11 @@ Idle(void *arg)
 	tbEndTimer("DMAudio.Service");
 
 	if(CGame::bDemoMode && CTimer::GetTimeInMilliseconds() > (3*60 + 30)*1000){
-		WANT_TO_LOAD = false;
 		FrontEndMenuManager.m_bWantToRestart = true;
 		return;
 	}
 
-	if(FrontEndMenuManager.m_bWantToRestart || FOUND_GAME_TO_LOAD)
+	if(FrontEndMenuManager.m_bWantToRestart)
 	{
 		return;
 	}
@@ -1719,10 +1645,6 @@ Idle(void *arg)
 	RenderMenus();
 	tbEndTimer("RenderMenus");
 
-#ifdef PS2_MENU
-	if ( TheMemoryCard.m_bWantToLoad )
-		goto popret;
-#endif
 
 	tbStartTimer(0, "DoFade");
 	DoFade();
@@ -1731,10 +1653,6 @@ Idle(void *arg)
 	tbStartTimer(0, "Render2dStuff-Fade");
 	Render2dStuffAfterFade();
 	tbEndTimer("Render2dStuff-Fade");
-	// CCredits::Render(); // They added it to function above and also forgot it here
-#ifdef XBOX_MESSAGE_SCREEN
-	FrontEndMenuManager.DrawOverlays();
-#endif
 
 	if (gbShowTimebars)
 		tbDisplay();
@@ -1772,9 +1690,6 @@ FrontendIdle(void)
 
 	DefinedState(); // seems redundant, but breaks resolution change.
 	RenderMenus();
-#ifdef XBOX_MESSAGE_SCREEN
-	FrontEndMenuManager.DrawOverlays();
-#endif
 	DoFade();
 	Render2dStuffAfterFade();
 	CFont::DrawFonts();
@@ -1984,42 +1899,11 @@ void TheGame(void)
 
 	LoadingScreen("Starting Game", NULL, splash);
 
-#ifdef GTA_PS2
-	// TODO(MIAMI): not checked yet
-	if (   TheMemoryCard.CheckCardInserted(CARD_ONE) == CMemoryCard::NO_ERR_SUCCESS
-		&& TheMemoryCard.ChangeDirectory(CARD_ONE, TheMemoryCard.Cards[CARD_ONE].dir)
-		&& TheMemoryCard.FindMostRecentFileName(CARD_ONE, TheMemoryCard.MostRecentFile) == true
-		&& TheMemoryCard.CheckDataNotCorrupt(TheMemoryCard.MostRecentFile))
-	{
-		strcpy(TheMemoryCard.LoadFileName, TheMemoryCard.MostRecentFile);
-		TheMemoryCard.b_FoundRecentSavedGameWantToLoad = true;
-
-		if (FrontEndMenuManager.m_PrefsLanguage != TheMemoryCard.GetLanguageToLoad())
-		{
-			FrontEndMenuManager.m_PrefsLanguage = TheMemoryCard.GetLanguageToLoad();
-			TheText.Unload();
-			TheText.Load();
-		}
-
-		CGame::currLevel = (eLevelName)TheMemoryCard.GetLevelToLoad();
-	}
-#else
-	//TODO
-#endif
-
 	while (true)
 	{
-		if (FOUND_GAME_TO_LOAD)
-		{
-			Const char *splash1 = GetLevelSplashScreen(CGame::currLevel);
-			LoadSplash(splash1);
-		}
-
-		WANT_TO_LOAD = false;
-
 		CTimer::Update();
 
-		while (!(FrontEndMenuManager.m_bWantToRestart || FOUND_GAME_TO_LOAD))
+		while (!FrontEndMenuManager.m_bWantToRestart)
 		{
 			CSprite2d::InitPerFrame();
 			CFont::InitPerFrame();
@@ -2033,12 +1917,11 @@ void TheGame(void)
 
 			if (CGame::bDemoMode && CTimer::GetTimeInMilliseconds() > (3*60 + 30)*1000)
 			{
-				WANT_TO_LOAD = false;
 				FrontEndMenuManager.m_bWantToRestart = true;
 				break;
 			}
 
-			if (FrontEndMenuManager.m_bWantToRestart || FOUND_GAME_TO_LOAD)
+			if (FrontEndMenuManager.m_bWantToRestart)
 				break;
 
 			SetLightsWithTimeOfDayColour(Scene.world);
@@ -2090,16 +1973,9 @@ void TheGame(void)
 
 			RenderMenus();
 
-			if (WANT_TO_LOAD)
-			{
-				POP_MEMID();	// MEMID_RENDER
-				break;
-			}
-
 			DoFade();
 			Render2dStuffAfterFade();
-			CCredits::Render();
-
+		
 			DoRWStuffEndOfFrame();
 
 			while (frameCount < 2)
@@ -2121,14 +1997,8 @@ void TheGame(void)
 		CGame::ShutDownForRestart();
 		CTimer::Stop();
 
-		if (FrontEndMenuManager.m_bWantToRestart || FOUND_GAME_TO_LOAD)
+		if (FrontEndMenuManager.m_bWantToRestart)
 		{
-			if (FOUND_GAME_TO_LOAD)
-			{
-				FrontEndMenuManager.m_bWantToRestart = true;
-				WANT_TO_LOAD = true;
-			}
-
 			CGame::InitialiseWhenRestarting();
 			DMAudio.ChangeMusicMode(MUSICMODE_GAME);
 			FrontEndMenuManager.m_bWantToRestart = false;
@@ -2269,9 +2139,6 @@ void SystemInit()
 	//
 #endif
 	
-#ifdef GTA_PS2
-	TheMemoryCard.Init();
-#endif
 }
 
 int VBlankCounter(int ca)
@@ -2524,25 +2391,6 @@ main(int argc, char *argv[])
 	if(RsEventHandler(rsINITIALIZE, nil) == rsEVENTERROR)
 		return 0;
 
-#ifdef GTA_PS2
-	int32 r = TheMemoryCard.CheckCardStateAtGameStartUp(CARD_ONE);
-		
-	if ( r == CMemoryCard::ERR_DIRNOENTRY  || r == CMemoryCard::ERR_NOFORMAT )
-	{
-		GameInit(true);
-		
-		TheText.Unload();
-		TheText.Load();
-		
-		CFont::Initialise();
-		
-		FrontEndMenuManager.DrawMemoryCardStartUpMenus();
-	}else if(r == CMemoryCard::ERR_OPENNOENTRY)
-		gMemoryStickLoadOK = false;
-	else if(r == CMemoryCard::ERR_NONE)
-		gMemoryStickLoadOK = true;
-#endif
-
 	PlayIntroMPEGs();
 
 	GameInit(false);
@@ -2554,17 +2402,6 @@ main(int argc, char *argv[])
 
 	TheGame();
 
-#if 0	// maybe ifndef FINAL or MASTER?
-	CGame::ShutDown();
-	
-	RwEngineStop();
-	RwEngineClose();
-	RwEngineTerm();
-	
-#ifdef __MWERKS__
-	mwExit(); // metrowerks shutdown
-#endif
-#endif
 	return 0;
 }
 #endif

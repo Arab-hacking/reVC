@@ -1,4 +1,9 @@
 #include "common.h"
+#include "Dummy.h"
+#include "Camera.h"
+#include "CarCtrl.h"
+#include "Pools.h"
+#include "Text.h"
 #include "platform.h"
 
 #include "Game.h"
@@ -8,68 +13,41 @@
 #endif
 #include "main.h"
 #include "RwHelper.h"
-#include "Accident.h"
 #include "Antennas.h"
-#include "Bridge.h"
-#include "CarCtrl.h"
-#include "CarEnterExit.h"
-#include "CarGen.h"
 #include "CdStream.h"
 #include "Clock.h"
 #include "Clouds.h"
 #include "Collision.h"
 #include "Console.h"
 #include "Coronas.h"
-#include "Cranes.h"
-#include "Credits.h"
 #include "DMAudio.h"
-#include "Darkel.h"
 #include "Debug.h"
-#include "EventList.h"
 #include "FileLoader.h"
 #include "FileMgr.h"
 #include "Fire.h"
-#include "Fluff.h"
 #include "Font.h"
 #include "Frontend.h"
 #include "frontendoption.h"
 #include "GameLogic.h"
-#include "Garages.h"
-#include "GenericGameStorage.h"
 #include "Glass.h"
 #include "cHandlingDataMgr.h"
-#include "Heli.h"
 #include "Hud.h"
-#include "IniFile.h"
 #include "Lights.h"
 #include "MBlur.h"
 #include "Messages.h"
-#include "MemoryCard.h"
 #include "MemoryHeap.h"
 #include "Pad.h"
 #include "NoClip.h"
 #include "Particle.h"
 #include "ParticleObject.h"
-#include "PedRoutes.h"
-#include "Phones.h"
 #include "Pickups.h"
-#include "Plane.h"
 #include "PlayerSkin.h"
-#include "Population.h"
 #include "Radar.h"
-#include "Record.h"
 #include "References.h"
 #include "Renderer.h"
-#include "Replay.h"
-#include "VehicleRecording.h"
 #include "CustomCarPlateMgr.h"
-#include "Restart.h"
-#include "RoadBlocks.h"
-#include "SceneEdit.h"
-#include "Script.h"
 #include "Shadows.h"
 #include "Skidmarks.h"
-#include "SetPieces.h"
 #include "SpecialFX.h"
 #include "Stats.h"
 #include "Streaming.h"
@@ -81,11 +59,11 @@
 #endif
 #include "CustomSky.h"
 #include "TrafficLights.h"
-#include "Train.h"
 #include "TxdStore.h"
 #include "User.h"
 #include "VisibilityPlugins.h"
 #include "WaterCannon.h"
+#include "Vehicle.h"
 #include "WaterLevel.h"
 #include "Weapon.h"
 #include "WeaponEffects.h"
@@ -95,9 +73,7 @@
 #include "Zones.h"
 #include "Occlusion.h"
 #include "debugmenu.h"
-#include "Ropes.h"
 #include "WindModifiers.h"
-#include "WaterCreatures.h"
 #include "postfx.h"
 #include "custompipes.h"
 #include "screendroplets.h"
@@ -112,8 +88,8 @@ bool CGame::bDemoMode = true;
 bool CGame::nastyGame = true;
 bool CGame::frenchGame;
 bool CGame::germanGame;
-bool CGame::noProstitutes;
 bool CGame::playingIntro;
+static bool8 gInCutscene;
 #ifdef MORE_LANGUAGES
 bool CGame::russianGame = false;
 bool CGame::japaneseGame = false;
@@ -125,47 +101,8 @@ bool8 CGame::VarUpdatePlayerCoords;
 
 int gameTxdSlot;
 
-#ifdef SECUROM
-uint8 gameProcessPirateCheck = 0;
-#endif
-
 bool DoRWStuffStartOfFrame(int16 TopRed, int16 TopGreen, int16 TopBlue, int16 BottomRed, int16 BottomGreen, int16 BottomBlue, int16 Alpha);
 void DoRWStuffEndOfFrame(void);
-#ifdef PS2_MENU
-void MessageScreen(char *msg)
-{
-	//TODO: stretch_screen
-	
-	CRect rect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
-	CRGBA color(255, 255, 255, 255);
-
-	DoRWStuffStartOfFrame(50, 50, 50, 0, 0, 0, 255);
-	
-	CSprite2d::InitPerFrame();
-	CFont::InitPerFrame();
-	DefinedState();
-
-	CSprite2d *splash = LoadSplash(NULL);
-	splash->Draw(rect, color, color, color, color);
-	splash->DrawRect(CRect(SCREEN_SCALE_X(20.0f), SCREEN_SCALE_Y(110.0f), SCREEN_SCALE_X(620.0f), SCREEN_SCALE_Y(300.0f)), CRGBA(50, 50, 50, 192));
-	
-	CFont::SetFontStyle(FONT_BANK);
-	CFont::SetBackgroundOff();
-	CFont::SetWrapx(SCREEN_SCALE_FROM_RIGHT(190.0f)); // 450.0f
-	CFont::SetScale(SCREEN_SCALE_X(1.0f), SCREEN_SCALE_Y(1.0f));
-	CFont::SetCentreOn();
-	CFont::SetCentreSize(SCREEN_SCALE_X(450.0f));
-	CFont::SetJustifyOff();
-	CFont::SetColor(CRGBA(255, 255, 255, 255));
-	CFont::SetDropColor(CRGBA(32, 32, 32, 255));
-	CFont::SetDropShadowPosition(3);
-	CFont::SetPropOn();
-	CFont::PrintString(SCREEN_SCALE_X(320.0f), SCREEN_SCALE_Y(130.0f), TheText.Get(msg));
-	CFont::DrawFonts();
-	
-	DoRWStuffEndOfFrame();
-}
-#endif
 
 bool
 CGame::InitialiseOnceBeforeRW(void)
@@ -353,7 +290,6 @@ bool CGame::InitialiseOnceAfterRW(void)
 	CTempColModels::Initialise();
 	mod_HandlingManager.Initialise();
 	CSurfaceTable::Initialise("DATA\\SURFACE.DAT");
-	CPedStats::Initialise();
 	CTimeCycle::Initialise();
 #ifdef CUSTOM_MODELS
 	CCustomTimecycle::Apply();	// optional custom/data/timecyc.json or common.zip: GL3 sky/fog too
@@ -398,7 +334,6 @@ CGame::FinalShutdown(void)
 	CCustomModels::Shutdown();
 #endif
 	CTxdStore::Shutdown();
-	CPedStats::Shutdown();
 	CdStreamShutdown();
 	REVC_LOG_INFO("Game systems stopped");
 }
@@ -418,13 +353,6 @@ bool CGame::Initialise(void)
 
 	CPools::Initialise();
 
-#ifndef GTA_PS2
-#ifdef PED_CAR_DENSITY_SLIDERS
-	// Load density values from gta3.ini only if our reVC.ini have them 0.6f
-	if (CIniFile::PedNumberMultiplier == 0.6f && CIniFile::CarNumberMultiplier == 0.6f)
-#endif
-		CIniFile::LoadIniFile();
-#endif
 #ifdef USE_TEXTURE_POOL
 	_TexturePoolsUnknown(false);
 #endif
@@ -459,20 +387,14 @@ bool CGame::Initialise(void)
 	TheCamera.Init();
 	TheCamera.SetRwCamera(Scene.camera);
 	CDebug::DebugInitTextBuffer();
-	ThePaths.Init();
-	ThePaths.AllocatePathFindInfoMem(4500);
-	CScriptPaths::Init();
 	CWeather::Init();
 	CCullZones::Init();
 	COcclusion::Init();
 	CCollision::Init();
-	CSetPieces::Init();
 	CTheZones::Init();
 	CUserDisplay::Init();
 	CMessages::Init();
 	CMessages::ClearAllMessagesDisplayedByGame();
-	CRecordDataForGame::Init();
-	CRestart::Initialise();
 
 	PUSH_MEMID(MEMID_WORLD);
 	CWorld::Initialise();
@@ -486,17 +408,11 @@ bool CGame::Initialise(void)
 	CAnimManager::Initialise();
 	POP_MEMID();
 
-	PUSH_MEMID(MEMID_CARS);
-	CCarCtrl::Init();
-	// SA initialises the car enter/exit constants alongside the car control.
-	CCarEnterExit::Initialise();
-	POP_MEMID();
 
 	PUSH_MEMID(MEMID_DEF_MODELS);
 	InitModelIndices();
 	CModelInfo::Initialise();
 	CPickups::Init();
-	CTheCarGenerators::Init();
 
 #ifdef CUSTOM_MODELS
 	CCustomModels::ResetImageMounts(); // a new game may reuse the process
@@ -530,10 +446,6 @@ bool CGame::Initialise(void)
 	CTheZones::PostZoneCreation();
 	POP_MEMID();
 
-	LoadingScreen("Loading the Game", "Setup paths", nil);
-	REVC_LOG_INFO("STARTUP PreparePathData BEGIN");
-	ThePaths.PreparePathData();
-	REVC_LOG_INFO("STARTUP PreparePathData END");
 	for (int i = 0; i < NUMPLAYERS; i++)
 		CWorld::Players[i].Clear();
 	CWorld::Players[0].LoadPlayerSkin();
@@ -585,8 +497,6 @@ bool CGame::Initialise(void)
 	CStreaming::LoadInitialWeapons();
 	CStreaming::LoadAllRequestedModels(0);
 	CPed::Initialise();
-	CRouteNode::Initialise();
-	CEventList::Initialise();
 #ifdef SCREEN_DROPLETS
 	ScreenDroplets::Initialise();
 #endif
@@ -598,12 +508,7 @@ bool CGame::Initialise(void)
 	CRadar::LoadTextures();
 	CWeapon::InitialiseWeapons();
 
-	LoadingScreen("Loading the Game", "Setup traffic lights", nil);
-	CTrafficLights::ScanForLightsOnMap();
-	CRoadBlocks::Init();
-
 	LoadingScreen("Loading the Game", "Setup game variables", nil);
-	CPopulation::Initialise();
 	CWorld::PlayerInFocus = 0;
 	CCoronas::Init();
 	CShadows::Init();
@@ -611,53 +516,20 @@ bool CGame::Initialise(void)
 	CSkidmarks::Init();
 	CAntennas::Init();
 	CGlass::Init();
-	gPhoneInfo.Initialise();
-#ifdef GTA_SCENE_EDIT
-	CSceneEdit::Initialise();
-#endif
-
-	LoadingScreen("Loading the Game", "Load scripts", nil);
-	PUSH_MEMID(MEMID_SCRIPT);
-#if defined(ANDROID) && defined(USE_DEBUG_SCRIPT_LOADER)
-	CTheScripts::ScriptToLoad = 1;
-#endif
-	CTheScripts::Init();
-	CGangs::Initialise();
-	POP_MEMID();
 
 	LoadingScreen("Loading the Game", "Setup game variables", nil);
 	CClock::Initialise(1000);
-	CHeli::InitHelis();
-	CCranes::InitCranes();
-	REVC_LOG_INFO("Game variables: helis and cranes ready; initializing moving things");
-	CMovingThings::Init();
+	REVC_LOG_INFO("Game variables: initializing moving things");
 	REVC_LOG_INFO("Game variables: moving things ready");
-	CDarkel::Init();
 	CStats::Init();
-	CPacManPickups::Init();
 	CClouds::Init();
 	CSpecialFX::Init();
-	CRopes::Init();
 	CWaterCannons::Init();
-	CBridge::Init();
-	CGarages::Init();
 
 	LoadingScreen("Loading the Game", "Position dynamic objects", nil);
-	LoadingScreen("Loading the Game", "Initialise vehicle paths", nil);
-
-	CTrain::InitTrains();
-	CPlane::InitPlanes();
-	CCredits::Init();
-	CRecordDataForChase::Init();
-	CReplay::Init();
-
-	LoadingScreen("Loading the Game", "Start script", nil);
-#ifdef PS2_MENU
-	if ( !TheMemoryCard.m_bWantToLoad )
-#endif
+	LoadingScreen("Loading the Game", "Create player", nil);
 	{
-		CTheScripts::SpawnInitialPlayer();
-		CTheScripts::Process();
+		CreatePlayer();
 		TheCamera.Process();
 	}
 
@@ -683,10 +555,145 @@ bool CGame::Initialise(void)
 #endif
 
 
-	DMAudio.SetStartingTrackPositions(TRUE);
 	DMAudio.ChangeMusicMode(MUSICMODE_GAME);
 	REVC_LOG_INFO("Game initialization complete (level=%d, area=%d)", currLevel, currArea);
 	return true;
+}
+
+// The engine owns the spawn: the player is created by the game itself and
+// the world is entered directly.
+static int32
+GetPlayerModel(void)
+{
+	// The archive carries no player.dff, so slot 0 (MI_PLAYER) is never filled.
+	// Serve the player from a real SA actor instead: the first registered ped
+	// with an SA skeleton, preferring the standard male build. Returns -1 when
+	// the archive supplied no actor at all, in which case the caller keeps
+	// the hard-coded slot and the engine reports the missing model.
+	//
+	// Registration is all that can be asked of a candidate here. The SA
+	// skeleton is only recognised once the clump is resident, and at start-up
+	// nothing is resident yet, so testing m_bSAAnimationModel would reject
+	// every model and leave the player on the empty slot 0. The body is judged
+	// later by CPed::SetModelIndex, which loads it and swaps it if it turns out
+	// to be a VC skeleton.
+	int32 anyPed = -1;
+	int32 pedCount = 0;
+	for (int32 id = 0; id < CPedModelInfo::ms_lastPedSlot; id++) {
+		CPedModelInfo *mi = (CPedModelInfo *)CModelInfo::GetModelInfo(id);
+		if (mi == nil || mi->GetModelType() != MITYPE_PED)
+			continue;
+		pedCount++;
+		if (id == MI_PLAYER)
+			return id; // a real player.dff was supplied
+		if (mi->m_animGroup == ASSOCGRP_PLAYER || mi->m_animGroup == ASSOCGRP_DEFAULT)
+			return id;
+		if (anyPed < 0)
+			anyPed = id;
+	}
+	REVC_LOG_INFO("[spawn] ped models registered below slot %d: %d", CPedModelInfo::ms_lastPedSlot, pedCount);
+	return anyPed;
+}
+
+void CGame::GetSpawnPosition(CVector &pos, float &heading)
+{
+	pos = CVector(79.6875f, -867.25f, MAP_Z_LOW_LIMIT);
+	heading = 180.0f;
+#ifdef CUSTOM_MODELS
+	CCustomWorld::ResolveSpawnPosition(pos, &heading);
+#endif
+}
+
+CVehicle *
+CGame::SpawnVehicle(uint32 model, CVector pos, float heading)
+{
+	CVehicle *v = CCarCtrl::GetNewVehicleDependingOnCarModel(model, MISSION_VEHICLE);
+	if(v == nil)
+		return nil;
+
+	v->SetPosition(pos);
+	v->SetOrientation(0.0f, 0.0f, heading);
+	v->SetStatus(STATUS_ABANDONED);
+	v->m_nDoorLock = CARLOCK_UNLOCKED;
+	CWorld::Add(v);
+	return v;
+}
+
+bool8 CGame::InCutscene(void)
+{
+	return gInCutscene;
+}
+
+void CGame::SetInCutscene(bool8 active)
+{
+	gInCutscene = active;
+}
+
+void CGame::CreatePlayer(void)
+{
+	const int32 index = 0;
+	REVC_LOG_INFO("[spawn] CreatePlayer enter");
+	if (CWorld::Players[index].m_pPed)
+		return;
+
+	// MI_PLAYER is the hard-coded slot 0 and its row came from DEFAULT.IDE. The
+	// archive ships no player.dff, so that slot stays empty by design and
+	// asking for it only digs through the IMG directories to no effect. An SA
+	// actor body is used instead: CPed::SetModelIndex swaps a VC skeleton for a
+	// resident SA model, and GetPlayerModel picks the slot to ask for.
+	if (!CStreaming::HasModelLoaded(MI_PLAYER)) {
+		const int32 playerModel = GetPlayerModel();
+		if (playerModel >= 0) {
+			CStreaming::RequestModel(playerModel,
+				STREAMFLAGS_PRIORITY | STREAMFLAGS_DONT_REMOVE | STREAMFLAGS_DEPENDENCY);
+			CStreaming::LoadAllRequestedModels(true);
+			if (!CStreaming::HasModelLoaded(playerModel))
+				CStreaming::LoadAllRequestedModels(false);
+		}
+	}
+
+	REVC_LOG_INFO("[spawn] requesting player model, chosen=%d", GetPlayerModel());
+	CPlayerPed::SetupPlayerPed(index);
+	REVC_LOG_INFO("[spawn] SetupPlayerPed returned");
+	CPlayerPed *pPlayer = CWorld::Players[index].m_pPed;
+	REVC_LOG_INFO("[spawn] player ped=%p model=%d", (void*)pPlayer, pPlayer ? (int)pPlayer->GetModelIndex() : -1);
+	pPlayer->CharCreatedBy = MISSION_CHAR;
+	// Built off-world, then placed and added back, so it is not processed
+	// between construction and the position being final.
+	CPlayerPed::DeactivatePlayerPed(index);
+
+	// Ocean Beach is the opening spot of the game and the default spawn.
+	REVC_LOG_INFO("[spawn] resolving spawn position");
+	CVector pos;
+	float heading;
+	GetSpawnPosition(pos, heading);
+
+	if (pos.z <= MAP_Z_LOW_LIMIT) {
+		REVC_LOG_INFO("[spawn] finding ground z");
+		pos.z = CWorld::FindGroundZForCoord(pos.x, pos.y);
+		REVC_LOG_INFO("[spawn] ground z=%.2f", pos.z);
+	}
+	REVC_LOG_INFO("[spawn] centre-of-mass offset");
+	pos.z += pPlayer->GetDistanceFromCentreOfMassToBaseOfModel();
+	REVC_LOG_INFO("[spawn] SetPosition");
+	pPlayer->SetPosition(pos);
+	REVC_LOG_INFO("[spawn] ReactivatePlayerPed");
+	CPlayerPed::ReactivatePlayerPed(index);
+
+	pPlayer->m_fRotationCur = DEGTORAD(heading);
+	pPlayer->m_fRotationDest = DEGTORAD(heading);
+	pPlayer->SetHeading(DEGTORAD(heading));
+
+	// The camera was handed back by the mission clean-up pass that used to run
+	// when a script finished. Nothing runs it now, so point the camera at the
+	// player here or the first frame is spent looking wherever the intro left
+	// it - and with no player there to look at, that was the crash.
+	REVC_LOG_INFO("[spawn] RestoreWithJumpCut");
+	TheCamera.RestoreWithJumpCut();
+	REVC_LOG_INFO("[spawn] done");
+
+	REVC_LOG_INFO("Spawned player 0 at (%.1f, %.1f, %.1f) heading %.0f",
+		pos.x, pos.y, pos.z, heading);
 }
 
 bool CGame::ShutDown(void)
@@ -696,18 +703,8 @@ bool CGame::ShutDown(void)
 #ifdef USE_TEXTURE_POOL
 	_TexturePoolsUnknown(false);
 #endif
-	CReplay::FinishPlayback();
-	CReplay::EmptyReplayBuffer();
-	CPlane::Shutdown();
-	CTrain::Shutdown();
-	CScriptPaths::Shutdown();
-	CWaterCreatures::RemoveAll();
 	CSpecialFX::Shutdown();
-	CGarages::Shutdown();
-	CMovingThings::Shutdown();
-	gPhoneInfo.Shutdown();
 	CWeapon::ShutdownWeapons();
-	CPedType::Shutdown();
 	
 	for (int32 i = 0; i < NUMPLAYERS; i++)
 	{
@@ -765,9 +762,6 @@ void CGame::ReInitGameObjectVariables(void)
 {
 	CNoClip::Reset();
 	CGameLogic::InitAtStartOfGame();
-#ifdef PS2_MENU
-	if ( !TheMemoryCard.m_bWantToLoad )
-#endif
 	{
 		TheCamera.Init();
 		TheCamera.SetRwCamera(Scene.camera);
@@ -776,11 +770,9 @@ void CGame::ReInitGameObjectVariables(void)
 	CWeather::Init();
 	CUserDisplay::Init();
 	CMessages::Init();
-	CRestart::Initialise();
 	CWorld::bDoingCarCollisions = false;
 	CHud::ReInitialise();
 	CRadar::Initialise();
-	CCarCtrl::ReInit();
 	CTimeCycle::Initialise();
 #ifdef CUSTOM_MODELS
 	CCustomTimecycle::Apply();	// optional custom/data/timecyc.json or common.zip: GL3 sky/fog too
@@ -793,12 +785,10 @@ void CGame::ReInitGameObjectVariables(void)
 	CStreaming::LoadAllRequestedModels(false);
 	currArea = AREA_MAIN_MAP;
 	CPed::Initialise();
-	CEventList::Initialise();
 #ifdef SCREEN_DROPLETS
 	ScreenDroplets::Initialise();
 #endif
 	CWeapon::InitialiseWeapons();
-	CPopulation::Initialise();
 	
 	for (int i = 0; i < NUMPLAYERS; i++)
 		CWorld::Players[i].Clear();
@@ -806,46 +796,17 @@ void CGame::ReInitGameObjectVariables(void)
 	CWorld::PlayerInFocus = 0;
 	CAntennas::Init();
 	CGlass::Init();
-	gPhoneInfo.Initialise();
-
-	PUSH_MEMID(MEMID_SCRIPT);
-#if defined(ANDROID) && defined(USE_DEBUG_SCRIPT_LOADER)
-	if ( !FrontEndMenuManager.m_bWantToLoad )
-		CTheScripts::ScriptToLoad = 1;
-#endif
-	CTheScripts::Init();
-	CGangs::Initialise();
-	POP_MEMID();
 
 	CTimer::Initialise();
 	CClock::Initialise(1000);
-	CTheCarGenerators::Init();
-	CHeli::InitHelis();
-	CMovingThings::Init();
-	CDarkel::Init();
 	CStats::Init();
 	CPickups::Init();
-	CPacManPickups::Init();
-	CGarages::Init();
 	CSpecialFX::Init();
-	CRopes::Init();
 	CWaterCannons::Init();
-	CScriptPaths::Init();
 	CParticle::ReloadConfig();
 
-#ifdef PS2_MENU
-	if ( !TheMemoryCard.m_bWantToLoad )
-#else
-	if ( !FrontEndMenuManager.m_bWantToLoad )
-#endif
-	{
-		CCranes::InitCranes();
-		CTheScripts::SpawnInitialPlayer();
-		CTheScripts::Process();
-		TheCamera.Process();
-		CTrain::InitTrains();
-		CPlane::InitPlanes();
-	}
+	CreatePlayer();
+	TheCamera.Process();
 	
 	for (int32 i = 0; i < MAX_PADS; i++)
 		CPad::GetPad(i)->Clear(true);
@@ -862,97 +823,28 @@ void CGame::ShutDownForRestart(void)
 #ifdef USE_TEXTURE_POOL
 	_TexturePoolsUnknown(false);
 #endif
-	CReplay::FinishPlayback();
-	CReplay::EmptyReplayBuffer();
 	DMAudio.DestroyAllGameCreatedEntities();
-	CMovingThings::Shutdown();
 	
 	for (int i = 0; i < NUMPLAYERS; i++)
 		CWorld::Players[i].Clear();
 
-	CGarages::SetAllDoorsBackToOriginalHeight();
 	CWorld::ClearForRestart();
-	CGameLogic::ClearShortCut();
 	CTimer::Shutdown();
 	CStreaming::ReInit();
 	CRadar::RemoveRadarSections();
 	FrontEndMenuManager.UnloadTextures();
 	CParticleObject::RemoveAllExpireableParticleObjects();
-	CWaterCreatures::RemoveAll(); 
-	CSetPieces::Init();
-	CPedType::Shutdown();
 	CSpecialFX::Shutdown();
 }
 
 void CGame::InitialiseWhenRestarting(void)
 {
-	CRect rect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
-	CRGBA color(255, 255, 255, 255);
-	
 	CTimer::Initialise();
 	CSprite2d::SetRecipNearClip();
 
-	if (b_FoundRecentSavedGameWantToLoad || FrontEndMenuManager.m_bWantToLoad)
-	{
-		LoadSplash("splash1");
-#ifndef XBOX_MESSAGE_SCREEN
-		if (FrontEndMenuManager.m_bWantToLoad)
-			FrontEndMenuManager.MessageScreen("FELD_WR", true);
-#endif
-	}
-
-	b_FoundRecentSavedGameWantToLoad = false;
-	
 	TheCamera.Init();
 	
-	if ( FrontEndMenuManager.m_bWantToLoad == true )
-	{
-#ifdef XBOX_MESSAGE_SCREEN
-		FrontEndMenuManager.SetDialogTimer(1000);
-		DoRWStuffStartOfFrame(0, 0, 0, 0, 0, 0, 0);
-		CSprite2d::InitPerFrame();
-		CFont::InitPerFrame();
-		FrontEndMenuManager.DrawOverlays();
-		DoRWStuffEndOfFrame();
-#endif
-		RestoreForStartLoad();
-	}
-	
 	ReInitGameObjectVariables();
-	
-	if ( FrontEndMenuManager.m_bWantToLoad == true )
-	{
-		FrontEndMenuManager.m_bWantToLoad = false;
-		InitRadioStationPositionList();
-		if ( GenericLoad() == true )
-		{
-			DMAudio.ResetTimers(CTimer::GetTimeInMilliseconds());
-			CTrain::InitTrains();
-			CPlane::InitPlanes();
-		}
-		else
-		{
-			REVC_LOG_ERROR("Saved game could not be loaded (error=%d); restarting", PcSaveHelper.nErrorCode);
-			for ( int32 i = 0; i < 50; i++ )
-			{
-				HandleExit();
-				FrontEndMenuManager.MessageScreen("FED_LFL", true); // Loading save game has failed. The game will restart now. 
-			}
-			
-			TheCamera.SetFadeColour(0, 0, 0);
-			ShutDownForRestart();
-			CTimer::Stop();
-			CTimer::Initialise();
-			FrontEndMenuManager.m_bWantToLoad = false;
-			currLevel = LEVEL_GENERIC;
-			TheCamera.Init();
-			ReInitGameObjectVariables();
-			CCollision::SortOutCollisionAfterLoad();
-		}
-#ifdef XBOX_MESSAGE_SCREEN
-		FrontEndMenuManager.ProcessDialogTimer();
-#endif
-	}
 	
 	CTimer::Update();
 	
@@ -975,17 +867,7 @@ void CGame::Process(void)
 		FrontEndMenuManager.Process();
 
 	CTheZones::Update();
-#ifdef SECUROM
-	if (CTimer::GetTimeInMilliseconds() >= (35 * 60 * 1000) && gameProcessPirateCheck == 0){
-		// if game not pirated
-		// gameProcessPirateCheck = 1;
-		// else
-		gameProcessPirateCheck = 2;
-	}
-#endif
-	uint32 startTime = CTimer::GetCurrentTimeInCycles() / CTimer::GetCyclesPerMillisecond();
 	CStreaming::Update();
-	uint32 processTime = CTimer::GetCurrentTimeInCycles() / CTimer::GetCyclesPerMillisecond() - startTime;
 	CWindModifiers::Number = 0;
 	if (!CTimer::GetIsPaused())
 	{
@@ -998,8 +880,6 @@ void CGame::Process(void)
 		CSprite2d::SetRecipNearClip();
 		CSprite2d::InitPerFrame();
 		CFont::InitPerFrame();
-		CRecordDataForGame::SaveOrRetrieveDataForThisFrame();
-		CRecordDataForChase::SaveOrRetrieveDataForThisFrame();
 		CPad::DoCheats();
 		CPad::ProcessPlayerModelKeys();
 		CPad::ProcessVehicleSpawnKeys();
@@ -1009,91 +889,33 @@ void CGame::Process(void)
 		CClock::Update();
 		CWeather::Update();
 
-		PUSH_MEMID(MEMID_SCRIPT);
-		CTheScripts::Process();
-		POP_MEMID();
-
 		CCollision::Update();
-		CScriptPaths::Update();
-		// SA calls this once per frame, before the world is processed: every
-		// recorded car is moved onto its next frame here, so that the rest of
-		// the frame sees it in the position it is meant to occupy.
-		CVehicleRecording::SaveOrRetrieveDataForThisFrame();
-		CTrain::UpdateTrains();
-		CPlane::UpdatePlanes();
-		// The three contrails and the banner streamers move on their own paths,
-		// independent of the flyable planes: they are scenery that circles the
-		// map. They still have to be stepped before the world is drawn.
-		CPlaneTrails::Update();
-		CPlaneBanners::Update();
-		CHeli::UpdateHelis();
-		CDarkel::Update();
 		CSkidmarks::Update();
 		CAntennas::Update();
 		CGlass::Update();
-#ifdef GTA_SCENE_EDIT
-		CSceneEdit::Update();
-#endif
-		CSetPieces::Update();
-		CEventList::Update();
 		CParticle::Update();
 		gFireManager.Update();
 
-		// Otherwise even on 30 fps most probably you won't see any peds around Ocean View Hospital
-#if defined FIX_BUGS && !defined SQUEEZE_PERFORMANCE
-		if (processTime > 2) {
-#else
-		if (processTime >= 2) {
-#endif
-			CPopulation::Update(false);
-		} else {
-			uint32 startTime = CTimer::GetCurrentTimeInCycles() / CTimer::GetCyclesPerMillisecond();
-			CPopulation::Update(true);
-			processTime = CTimer::GetCurrentTimeInCycles() / CTimer::GetCyclesPerMillisecond() - startTime;
-		}
 		CWeapon::UpdateWeapons();
-		CTheCarGenerators::Process();
-		if (!CReplay::IsPlayingBack())
-			CCranes::UpdateCranes();
 		CClouds::Update();
-		CMovingThings::Update();
 		CWaterCannons::Update();
 		CUserDisplay::Process();
-		CReplay::Update();
 
 		PUSH_MEMID(MEMID_WORLD);
 		CWorld::Process();
 		POP_MEMID();
 
-		gAccidentManager.Update();
-		CPacManPickups::Update();
 		CPickups::Update();
-		CGarages::Update();
 		CSpecialFX::Update();
-		CRopes::Update();
 		CTimeCycle::Update();
 		CNoClip::Move();
-		if (CReplay::ShouldStandardCameraBeProcessed())
-			TheCamera.Process();
+		TheCamera.Process();
 		CCullZones::Update();
-		if (!CReplay::IsPlayingBack())
-			CGameLogic::Update();
-		CBridge::Update();
+		CGameLogic::Update();
 		CCoronas::DoSunAndMoon();
 		CCoronas::Update();
 		CShadows::UpdateStaticShadows();
 		CShadows::UpdatePermanentShadows();
-		gPhoneInfo.Update();
-		if (!CReplay::IsPlayingBack())
-		{
-			PUSH_MEMID(MEMID_CARS);
-			if (processTime < 2)
-				CCarCtrl::GenerateRandomCars();
-			CRoadBlocks::GenerateRoadBlocks();
-			CCarCtrl::RemoveDistantCars();
-			CCarCtrl::RemoveCarsIfThePoolGetsFull();
-			POP_MEMID();
-		}
 	}
 #ifdef GTA_PS2
 	CMemCheck::DoTest();

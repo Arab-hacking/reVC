@@ -16,10 +16,8 @@ bool GL3Atmosphere::Enabled = true;
 #include "Ped.h"
 #include "Vehicle.h"
 #include "Boat.h"
-#include "Heli.h"
 #include "Bike.h"
 #include "Object.h"
-#include "PathFind.h"
 #include "Collision.h"
 #include "VisibilityPlugins.h"
 #include "Clock.h"
@@ -149,7 +147,6 @@ CRenderer::PreRender(void)
 	    node = node->next)
 		((CEntity*)node->item.entity)->PreRender();
 
-	CHeli::SpecialHeliPreRender();
 	CShadows::RenderExtraPlayerShadows();
 
 #if defined(LIBRW) && defined(RW_OPENGL)
@@ -1285,83 +1282,71 @@ CRenderer::ScanWorld(void)
 			for(int y = y1; y <= y2; y++)
 				ScanSectorList(CWorld::GetSector(x1, y)->m_lists);
 	}else{
-		CVehicle *train = FindPlayerTrain();
-		if(train && train->GetPosition().z < 0.0f){
+		if(f > scanLodDist){
+#ifdef ANDROID
+			{
+				int camSX = CWorld::GetSectorIndexX(vectors[CORNER_CAM].x);
+				int camSY = CWorld::GetSectorIndexY(vectors[CORNER_CAM].y);
+				for(int dy = -1; dy <= 1; dy++)
+					for(int dx = -1; dx <= 1; dx++)
+						ScanSectorList_Priority(CWorld::GetSector(camSX + dx, camSY + dy)->m_lists);
+			}
+#endif
+			// priority
+			poly[0].x = CWorld::GetSectorX(vectors[CORNER_CAM].x);
+			poly[0].y = CWorld::GetSectorY(vectors[CORNER_CAM].y);
+			poly[1].x = CWorld::GetSectorX(vectors[CORNER_PRIO_LEFT].x);
+			poly[1].y = CWorld::GetSectorY(vectors[CORNER_PRIO_LEFT].y);
+			poly[2].x = CWorld::GetSectorX(vectors[CORNER_PRIO_RIGHT].x);
+			poly[2].y = CWorld::GetSectorY(vectors[CORNER_PRIO_RIGHT].y);
+			ScanSectorPoly(poly, 3, ScanSectorList_Priority);
+
+			// below LOD
 			poly[0].x = CWorld::GetSectorX(vectors[CORNER_CAM].x);
 			poly[0].y = CWorld::GetSectorY(vectors[CORNER_CAM].y);
 			poly[1].x = CWorld::GetSectorX(vectors[CORNER_LOD_LEFT].x);
 			poly[1].y = CWorld::GetSectorY(vectors[CORNER_LOD_LEFT].y);
 			poly[2].x = CWorld::GetSectorX(vectors[CORNER_LOD_RIGHT].x);
 			poly[2].y = CWorld::GetSectorY(vectors[CORNER_LOD_RIGHT].y);
-			ScanSectorPoly(poly, 3, ScanSectorList_Subway);
-		}else
-		{
-			if(f > scanLodDist){
+			ScanSectorPoly(poly, 3, ScanSectorList);
+		}else{
 #ifdef ANDROID
-				{
-					int camSX = CWorld::GetSectorIndexX(vectors[CORNER_CAM].x);
-					int camSY = CWorld::GetSectorIndexY(vectors[CORNER_CAM].y);
-					for(int dy = -1; dy <= 1; dy++)
-						for(int dx = -1; dx <= 1; dx++)
-							ScanSectorList_Priority(CWorld::GetSector(camSX + dx, camSY + dy)->m_lists);
-				}
-#endif
-				// priority
-				poly[0].x = CWorld::GetSectorX(vectors[CORNER_CAM].x);
-				poly[0].y = CWorld::GetSectorY(vectors[CORNER_CAM].y);
-				poly[1].x = CWorld::GetSectorX(vectors[CORNER_PRIO_LEFT].x);
-				poly[1].y = CWorld::GetSectorY(vectors[CORNER_PRIO_LEFT].y);
-				poly[2].x = CWorld::GetSectorX(vectors[CORNER_PRIO_RIGHT].x);
-				poly[2].y = CWorld::GetSectorY(vectors[CORNER_PRIO_RIGHT].y);
-				ScanSectorPoly(poly, 3, ScanSectorList_Priority);
-
-				// below LOD
-				poly[0].x = CWorld::GetSectorX(vectors[CORNER_CAM].x);
-				poly[0].y = CWorld::GetSectorY(vectors[CORNER_CAM].y);
-				poly[1].x = CWorld::GetSectorX(vectors[CORNER_LOD_LEFT].x);
-				poly[1].y = CWorld::GetSectorY(vectors[CORNER_LOD_LEFT].y);
-				poly[2].x = CWorld::GetSectorX(vectors[CORNER_LOD_RIGHT].x);
-				poly[2].y = CWorld::GetSectorY(vectors[CORNER_LOD_RIGHT].y);
-				ScanSectorPoly(poly, 3, ScanSectorList);
-			}else{
-#ifdef ANDROID
-				{
-					int camSX = CWorld::GetSectorIndexX(vectors[CORNER_CAM].x);
-					int camSY = CWorld::GetSectorIndexY(vectors[CORNER_CAM].y);
-					for(int dy = -1; dy <= 1; dy++)
-						for(int dx = -1; dx <= 1; dx++)
-							ScanSectorList(CWorld::GetSector(camSX + dx, camSY + dy)->m_lists);
-				}
-#endif
-				poly[0].x = CWorld::GetSectorX(vectors[CORNER_CAM].x);
-				poly[0].y = CWorld::GetSectorY(vectors[CORNER_CAM].y);
-				poly[1].x = CWorld::GetSectorX(vectors[CORNER_FAR_TOPLEFT].x);
-				poly[1].y = CWorld::GetSectorY(vectors[CORNER_FAR_TOPLEFT].y);
-				poly[2].x = CWorld::GetSectorX(vectors[CORNER_FAR_TOPRIGHT].x);
-				poly[2].y = CWorld::GetSectorY(vectors[CORNER_FAR_TOPRIGHT].y);
-				ScanSectorPoly(poly, 3, ScanSectorList);
+			{
+				int camSX = CWorld::GetSectorIndexX(vectors[CORNER_CAM].x);
+				int camSY = CWorld::GetSectorIndexY(vectors[CORNER_CAM].y);
+				for(int dy = -1; dy <= 1; dy++)
+					for(int dx = -1; dx <= 1; dx++)
+						ScanSectorList(CWorld::GetSector(camSX + dx, camSY + dy)->m_lists);
 			}
-			
+#endif
+			poly[0].x = CWorld::GetSectorX(vectors[CORNER_CAM].x);
+			poly[0].y = CWorld::GetSectorY(vectors[CORNER_CAM].y);
+			poly[1].x = CWorld::GetSectorX(vectors[CORNER_FAR_TOPLEFT].x);
+			poly[1].y = CWorld::GetSectorY(vectors[CORNER_FAR_TOPLEFT].y);
+			poly[2].x = CWorld::GetSectorX(vectors[CORNER_FAR_TOPRIGHT].x);
+			poly[2].y = CWorld::GetSectorY(vectors[CORNER_FAR_TOPRIGHT].y);
+			ScanSectorPoly(poly, 3, ScanSectorList);
+		}
+		
 #ifdef CUSTOM_MODELS
-			if (CCustomModels::ReplacesNativeWorldMap()) {
-				ScanBigBuildingList(CWorld::GetBigBuildingList(LEVEL_BEACH));
-				ScanBigBuildingList(CWorld::GetBigBuildingList(LEVEL_MAINLAND));
-			} else
+		if (CCustomModels::ReplacesNativeWorldMap()) {
+			ScanBigBuildingList(CWorld::GetBigBuildingList(LEVEL_BEACH));
+			ScanBigBuildingList(CWorld::GetBigBuildingList(LEVEL_MAINLAND));
+		} else
 #endif
 #ifdef NO_ISLAND_LOADING
-			if (FrontEndMenuManager.m_PrefsIslandLoading == CMenuManager::ISLAND_LOADING_HIGH) {
-				ScanBigBuildingList(CWorld::GetBigBuildingList(LEVEL_BEACH));
-				ScanBigBuildingList(CWorld::GetBigBuildingList(LEVEL_MAINLAND));
-			} else 
+		if (FrontEndMenuManager.m_PrefsIslandLoading == CMenuManager::ISLAND_LOADING_HIGH) {
+			ScanBigBuildingList(CWorld::GetBigBuildingList(LEVEL_BEACH));
+			ScanBigBuildingList(CWorld::GetBigBuildingList(LEVEL_MAINLAND));
+		} else 
 #endif
-			{
+		{
 #ifdef FIX_BUGS
-			if(CCollision::ms_collisionInMemory != LEVEL_GENERIC)
+		if(CCollision::ms_collisionInMemory != LEVEL_GENERIC)
 #endif
-				ScanBigBuildingList(CWorld::GetBigBuildingList(CGame::currLevel));
-			}
-			ScanBigBuildingList(CWorld::GetBigBuildingList(LEVEL_GENERIC));
+			ScanBigBuildingList(CWorld::GetBigBuildingList(CGame::currLevel));
 		}
+		ScanBigBuildingList(CWorld::GetBigBuildingList(LEVEL_GENERIC));
 	}
 }
 
@@ -1468,12 +1453,6 @@ CPed::SetupLighting(void)
 {
 	ActivateDirectional();
 	SetAmbientColoursForPedsCarsAndObjects();
-
-#ifndef MASTER
-	// Originally this was being called through iteration of Sectors, but putting it here is better.
-	if (GetDebugDisplay() != 0 && !IsPlayer())
-		DebugRenderOnePedText();
-#endif
 
 	if (bRenderScorched) {
 		WorldReplaceNormalLightsWithScorched(Scene.world, 0.1f);
@@ -1782,39 +1761,6 @@ CRenderer::ScanSectorList_Priority(CPtrList *lists)
 					if(CStreaming::ms_aInfoForModel[ent->GetModelIndex()].m_loadState != STREAMSTATE_LOADED)
 						m_loadingPriority = true;
 				}
-				break;
-			}
-		}
-	}
-}
-
-void
-CRenderer::ScanSectorList_Subway(CPtrList *lists)
-{
-	CPtrNode *node;
-	CPtrList *list;
-	CEntity *ent;
-	int i;
-	float dx, dy;
-
-	for(i = 0; i < NUMSECTORENTITYLISTS; i++){
-		list = &lists[i];
-		for(node = list->first; node; node = node->next){
-			ent = (CEntity*)node->item;
-			if(ent->m_scanCode == CWorld::GetCurrentScanCode())
-				continue;	// already seen
-			ent->m_scanCode = CWorld::GetCurrentScanCode();
-			ent->bOffscreen = false;
-			switch(SetupEntityVisibility(ent)){
-			case VIS_VISIBLE:
-				InsertEntityIntoList(ent);
-				break;
-			case VIS_OFFSCREEN:
-				ent->bOffscreen = true;
-				dx = ms_vecCameraPosition.x - ent->GetPosition().x;
-				dy = ms_vecCameraPosition.y - ent->GetPosition().y;
-				if(dx > -30.0f && dx < 30.0f && dy > -30.0f && dy < 30.0f)
-					AppendFrameRenderItem(ms_aInVisibleEntityPtrs, ms_nNoOfInVisibleEntities, ent);
 				break;
 			}
 		}

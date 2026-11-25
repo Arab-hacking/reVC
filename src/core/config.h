@@ -62,12 +62,6 @@ enum Config {
 
 	NUMTEMPOBJECTS = 40,
 
-	// Path data
-	NUM_PATHNODES = 9650,
-	NUM_CARPATHLINKS = 3500,
-	NUM_MAPOBJECTS = 1250,
-	NUM_PATHCONNECTIONS = 20400,
-
 	// Link list lengths
 	NUMALPHALIST = 20,
 	NUMBOATALPHALIST = 20,
@@ -113,12 +107,9 @@ enum Config {
 	NUMSCRIPTEDPICKUPS = 16,
 	NUMPICKUPS = NUMGENERALPICKUPS + NUMSCRIPTEDPICKUPS,
 	NUMCOLLECTEDPICKUPS = 20,
-	NUMPACMANPICKUPS = 256,
-	NUMEVENTS = 64,
 
 	NUM_PATH_NODES_IN_AUTOPILOT = 8,
 
-	NUM_ACCIDENTS = 20,
 	NUM_FIRES = 40,
 	NUM_GARAGES = 32,
 	NUM_PROJECTILES = 32,
@@ -128,7 +119,6 @@ enum Config {
 	NUM_WATERCANNONS = 3,
 
 	NUMPEDROUTES = 200,
-	NUMPHONES = 50,
 	NUMPEDGROUPS = 67,
 	NUMMODELSPERPEDGROUP = 16,
 	MAXZONEPEDSLOADED = 8,
@@ -191,15 +181,12 @@ enum Config {
 #	define RANDOMSPLASH
 //#	define USE_CUSTOM_ALLOCATOR
 #	define VU_COLLISION
-#	define PS2_MENU
 #elif defined GTA_PC
 #	define EXTERNAL_3D_SOUND
 #	define AUDIO_REVERB
 #	ifndef GTA_HANDHELD
 #		define PC_PLAYER_CONTROLS	// mouse player/cam mode
 #	endif
-#	define GTA_REPLAY
-#	define GTA_SCENE_EDIT
 #	define PC_MENU
 #	define PC_WATER
 #	define GTA_PC_CONTROLS	// enables keyboard and mouse. currently GTA_PC and a few other defines will not work without this
@@ -239,7 +226,6 @@ enum Config {
 #define MASTER
 //#define USE_MY_DOCUMENTS
 #define THIS_IS_STUPID
-#define DONT_FIX_REPLAY_BUGS
 #define USE_TXD_CDIMAGE // generate and load textures from txd.img
 //#define USE_TEXTURE_POOL // not possible because R* used custom RW33
 #define AUDIO_REFLECTIONS
@@ -294,8 +280,6 @@ enum Config {
 
 #define FIX_BUGS		// fixes bugs that we've came across during reversing. You can undefine this only on release builds.
 #define MORE_LANGUAGES		// Add more translations to the game
-#define COMPATIBLE_SAVES // this allows changing structs while keeping saves compatible, and keeps saves compatible between platforms
-#define FIX_INCOMPATIBLE_SAVES // try to fix incompatible saves, requires COMPATIBLE_SAVES
 #define LOAD_INI_SETTINGS // as the name suggests. fundamental for CUSTOM_FRONTEND_OPTIONS
 
 #define NO_MOVIES	// add option to disable intro videos
@@ -401,7 +385,6 @@ enum Config {
 #undef PC_WATER
 #define WATER_CHEATS
 
-//#define USE_CUTSCENE_SHADOW_FOR_PED // requires COMPATIBLE_SAVES
 //#define DISABLE_CUTSCENE_SHADOWS
 
 // Pad
@@ -421,77 +404,41 @@ enum Config {
 // Hud, frontend and radar
 #define PC_MENU
 #define FIX_RADAR			// use radar size from early version before R* broke it
-#define RADIO_OFF_TEXT		// Won't work without FIX_BUGS
 
-#ifndef PC_MENU
-#	define PS2_MENU
-//#	define PS2_MENU_USEALLPAGEICONS
-#else
-#	define MAP_ENHANCEMENTS			// Adding waypoint and better mouse support
-#	if defined(XINPUT) || defined(GTA_HANDHELD)
-#		define GAMEPAD_MENU		// Add gamepad menu
-#	endif
-#	define TRIANGLE_BACK_BUTTON
+#define MAP_ENHANCEMENTS			// Adding waypoint and better mouse support
+#if defined(XINPUT) || defined(GTA_HANDHELD)
+#	define GAMEPAD_MENU		// Add gamepad menu
+#endif
+#define TRIANGLE_BACK_BUTTON
 //#	define CIRCLE_BACK_BUTTON
 #define LEGACY_MENU_OPTIONS			// i.e. frame sync(vsync)
 #define MUCH_SHORTER_OUTRO_SCREEN
-// #define XBOX_MESSAGE_SCREEN			// Blue background, no "saved successfully press OK" screen etc.
 #define CUSTOM_FRONTEND_OPTIONS
 
-#	ifdef CUSTOM_FRONTEND_OPTIONS
-#		define GRAPHICS_MENU_OPTIONS // otherwise Display settings will be scrollable
-#		define NO_ISLAND_LOADING  // disable loadscreen between islands via loading all island data at once, consumes more memory and CPU
-#		define CUTSCENE_BORDERS_SWITCH
-#		define MULTISAMPLING		// adds MSAA option
-#		define INVERT_LOOK_FOR_PAD // enable the hidden option
-#		define PED_CAR_DENSITY_SLIDERS
-#	endif
+#ifdef CUSTOM_FRONTEND_OPTIONS
+#	define GRAPHICS_MENU_OPTIONS // otherwise Display settings will be scrollable
+#	define NO_ISLAND_LOADING  // disable loadscreen between islands via loading all island data at once, consumes more memory and CPU
+#	define CUTSCENE_BORDERS_SWITCH
+#	define MULTISAMPLING		// adds MSAA option
+#	define INVERT_LOOK_FOR_PAD // enable the hidden option
 #endif
 
 // Script
-#define USE_DEBUG_SCRIPT_LOADER	// Loads main.scm by default. Hold R for main_freeroam.scm and D for main_d.scm
 #define USE_MEASUREMENTS_IN_METERS // makes game use meters instead of feet in script
 #define USE_PRECISE_MEASUREMENT_CONVERTION // makes game convert feet to meeters more precisely
-#define SUPPORT_JAPANESE_SCRIPT
-//#define SUPPORT_XBOX_SCRIPT
-#define SUPPORT_MOBILE_SCRIPT
-#define SUPPORT_GINPUT_SCRIPT
-#if (defined SUPPORT_XBOX_SCRIPT && defined SUPPORT_MOBILE_SCRIPT)
-static_assert(false, "SUPPORT_XBOX_SCRIPT and SUPPORT_MOBILE_SCRIPT are mutually exclusive");
-#endif
 #ifdef PC_MENU
 #define MISSION_REPLAY // mobile feature
 //#define SIMPLER_MISSIONS // apply simplifications from mobile
 #define USE_MISSION_REPLAY_OVERRIDE_FOR_NON_MOBILE_SCRIPT
-#endif
-#define USE_ADVANCED_SCRIPT_DEBUG_OUTPUT
-#define SCRIPT_LOG_FILE_LEVEL 0 // 0 == no log, 1 == overwrite every frame, 2 == full log
-
-#if SCRIPT_LOG_FILE_LEVEL == 0
-#undef USE_ADVANCED_SCRIPT_DEBUG_OUTPUT
-#endif
-
-#ifndef USE_ADVANCED_SCRIPT_DEBUG_OUTPUT
-#define USE_BASIC_SCRIPT_DEBUG_OUTPUT
-#endif
-
-#ifdef MASTER
-#undef USE_ADVANCED_SCRIPT_DEBUG_OUTPUT
-#undef USE_BASIC_SCRIPT_DEBUG_OUTPUT
 #endif
 
 #ifndef MISSION_REPLAY
 #undef USE_MISSION_REPLAY_OVERRIDE_FOR_NON_MOBILE_SCRIPT
 #endif
 
-// Replay
-//#define DONT_FIX_REPLAY_BUGS // keeps various bugs in CReplay, some of which are fairly cool!
-//#define USE_BETA_REPLAY_MODE // adds another replay mode, a few seconds slomo (caution: buggy!)
-
 // Vehicles
 
 // Pickups
-//#define MONEY_MESSAGES
 #define CAMERA_PICKUP
 
 // Peds
@@ -506,7 +453,6 @@ static_assert(false, "SUPPORT_XBOX_SCRIPT and SUPPORT_MOBILE_SCRIPT are mutually
                           // originally and making it work in 2d only requires more resource). Will not work on PS2
 #define AUDIO_REFLECTIONS // Enable audio reflections. This is enabled in all vanilla versions
 #define AUDIO_REVERB // Enable audio reverb. It was disabled in PS2 and mobile versions
-#define RADIO_SCROLL_TO_PREV_STATION // Won't work without FIX_BUGS
 #define AUDIO_CACHE // cache sound lengths to speed up the cold boot
 #define PS2_AUDIO_CHANNELS // increases the maximum number of audio channels to PS2 value of 43 (PC has 28 originally)
 #define PS2_AUDIO_PATHS // changes audio paths for cutscenes and radio to PS2 paths (needs vbdec on MSS builds)
@@ -542,11 +488,6 @@ static_assert(false, "SUPPORT_XBOX_SCRIPT and SUPPORT_MOBILE_SCRIPT are mutually
 	#undef NO_ISLAND_LOADING
 	#undef PS2_AUDIO_CHANNELS
 	#undef EXTENDED_OFFSCREEN_DESPAWN_RANGE
-#endif
-
-// if these defines are enabled saves are not vanilla compatible without COMPATIBLE_SAVES
-#ifndef COMPATIBLE_SAVES
-#undef USE_CUTSCENE_SHADOW_FOR_PED
 #endif
 
 #ifdef GTA_HANDHELD

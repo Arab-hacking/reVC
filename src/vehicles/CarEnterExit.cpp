@@ -1,129 +1,14 @@
 #include "common.h"
 
-#include "VehicleAnimGroupData.h"
-
 #include "CarEnterExit.h"
 #include "Vehicle.h"
 #include "Automobile.h"
-#include "Bike.h"
-#include "Boat.h"
 #include "Ped.h"
-#include "PlayerPed.h"
 #include "ModelInfo.h"
 #include "VehicleModelInfo.h"
-#include "AnimManager.h"
-#include "AnimBlendAssociation.h"
-#include "RpAnimBlend.h"
 #include "World.h"
 #include "Collision.h"
-#include "EventList.h"
 #include "Timer.h"
-#include "Script.h"
-#include "Fire.h"
-#include "Streaming.h"
-#include "Pools.h"
-#include "Camera.h"
-
-float CCarEnterExit::ms_fMaxSpeed_CanDragPedOut = 0.1f;
-float CCarEnterExit::ms_fMaxSpeed_PlayerCanDragPedOut = 0.2f;
-
-bool CCarEnterExit::ms_bPedOffsetsCalculated = false;
-
-CVector CCarEnterExit::ms_vecPedGetUpAnimOffset;
-CVector CCarEnterExit::ms_vecPedBedLAnimOffset;
-CVector CCarEnterExit::ms_vecPedBedRAnimOffset;
-CVector CCarEnterExit::ms_vecPedDeskAnimOffset;
-CVector CCarEnterExit::ms_vecPedChairAnimOffset;
-CVector CCarEnterExit::ms_vecPedQuickDraggedOutCarAnimOffset;
-
-void
-CCarEnterExit::Initialise(void)
-{
-	ms_fMaxSpeed_CanDragPedOut = 0.1f;
-	ms_fMaxSpeed_PlayerCanDragPedOut = 0.2f;
-	ms_bPedOffsetsCalculated = false;
-	ms_vecPedGetUpAnimOffset = CVector(0.0f, 0.0f, 0.0f);
-	ms_vecPedBedLAnimOffset = CVector(0.0f, 0.0f, 0.0f);
-	ms_vecPedBedRAnimOffset = CVector(0.0f, 0.0f, 0.0f);
-	ms_vecPedDeskAnimOffset = CVector(0.0f, 0.0f, 0.0f);
-	ms_vecPedChairAnimOffset = CVector(0.0f, 0.0f, 0.0f);
-	ms_vecPedQuickDraggedOutCarAnimOffset = CVector(0.0f, 0.0f, 0.0f);
-}
-
-// The animation set the occupants of a vehicle play through, resolved the way
-// SA resolves it: the model names one of the 30 vehicle animation groups, and
-// that group picks between its two candidate AssocGroupIds per animation using
-// the eighteen flags of its `^` line. Resolving per clip matters here because
-// the bike ride pose and the bike passenger pose can come from different
-// candidates of the same group.
-static AssocGroupId
-GetVehicleAnimGroupFor(const CVehicle *veh, AnimationId animId)
-{
-	if(veh == nil)
-		return ASSOCGRP_STDCARAMIMS;
-	// The group index comes from the handling record (see handling.cfg's `^`
-	// lines), which is what SA reads here as well.
-	const int32 groupId = veh->GetAnimGroupId();
-	if(groupId >= CVehicleAnimGroupData::NUM_VEH_ANIM_GROUPS)
-		return ASSOCGRP_STDCARAMIMS;
-	return CVehicleAnimGroupData::GetGroupForAnim((AssocGroupId)groupId, animId);
-}
-
-// SA CCarEnterExit::AddInCarAnim (0x64F720), verbatim. Note the inverted
-// "bAsDriver" in SA: the driver branch is the one that runs when the flag is
-// set, but the boat and low-vehicle special cases are the *driver's* seats.
-void
-CCarEnterExit::AddInCarAnim(const CVehicle *vehicle, CPed *ped, bool bAsDriver)
-{
-	AssocGroupId grpId;
-	AnimationId animId;
-
-	if(bAsDriver){
-		if(vehicle->IsBike()){
-			animId = ANIM_ID_BIKE_RIDE;
-			grpId = GetVehicleAnimGroupFor(vehicle, animId);
-		}else if(vehicle->IsBoat() && vehicle->m_pHandlingData && vehicle->m_pHandlingData->m_bSitInBoat){
-			grpId = ASSOCGRP_DEFAULT;
-			animId = ANIM_ID_DRIVE_BOAT;
-		}else if(vehicle->bLowVehicle){
-			grpId = ASSOCGRP_DEFAULT;
-			animId = ANIM_ID_CAR_LSIT;
-		}else{
-			grpId = ASSOCGRP_DEFAULT;
-			animId = ANIM_ID_CAR_SIT;
-		}
-	}else{
-		if(vehicle->IsBike()){
-			animId = ANIM_ID_BIKE_RIDE;
-			grpId = GetVehicleAnimGroupFor(vehicle, animId);
-		}else if(vehicle->bLowVehicle){
-			grpId = ASSOCGRP_DEFAULT;
-			animId = ANIM_ID_CAR_SITPLO;
-		}else{
-			grpId = ASSOCGRP_DEFAULT;
-			animId = ANIM_ID_CAR_SITP;
-		}
-	}
-
-	CAnimManager::BlendAnimation(ped->GetClump(), grpId, animId, 1000.0f);
-	ped->StopNonPartialAnims();
-}
-
-// SA CCarEnterExit::CarHasDoorToClose (0x64EE10).
-bool
-CCarEnterExit::CarHasDoorToClose(const CVehicle *vehicle, int32 doorId)
-{
-	CVehicle *veh = (CVehicle*)vehicle;
-	return !veh->IsDoorMissing((uint32)doorId) && !veh->IsDoorClosed((uint32)doorId);
-}
-
-// SA CCarEnterExit::CarHasDoorToOpen (0x64EDD0).
-bool
-CCarEnterExit::CarHasDoorToOpen(const CVehicle *vehicle, int32 doorId)
-{
-	CVehicle *veh = (CVehicle*)vehicle;
-	return !veh->IsDoorMissing((uint32)doorId) && !veh->IsDoorFullyOpen((uint32)doorId);
-}
 
 // SA CCarEnterExit::CarHasOpenableDoor (0x64EE50). The door id is unused in SA
 // too; the answer only depends on whether this ped may unlock this vehicle.
@@ -132,16 +17,6 @@ CCarEnterExit::CarHasOpenableDoor(const CVehicle *vehicle, int32 doorId, const C
 {
 	(void)doorId;
 	return ((CVehicle*)vehicle)->CanPedOpenLocks((CPed*)ped);
-}
-
-// SA CCarEnterExit::CarHasPartiallyOpenDoor (0x64EE70).
-bool
-CCarEnterExit::CarHasPartiallyOpenDoor(const CVehicle *vehicle, int32 doorId)
-{
-	CVehicle *veh = (CVehicle*)vehicle;
-	return !veh->IsDoorMissing((uint32)doorId)
-	    && !veh->IsDoorFullyOpen((uint32)doorId)
-	    && !veh->IsDoorClosed((uint32)doorId);
 }
 
 // SA CCarEnterExit::ComputeDoorFlag (0x64E550).
@@ -173,55 +48,6 @@ CCarEnterExit::ComputeDoorFlag(const CVehicle *vehicle, int32 doorId, bool bChec
 	}
 }
 
-// SA CCarEnterExit::ComputeOppositeDoorFlag (0x64E610).
-int32
-CCarEnterExit::ComputeOppositeDoorFlag(const CVehicle *vehicle, int32 doorId, bool bCheckVehicleType)
-{
-	if(bCheckVehicleType && (vehicle->IsBike() || (vehicle->m_pHandlingData && vehicle->m_pHandlingData->m_bTandemSeats))){
-		switch(doorId){
-		case 8:
-		case 10:
-		case 18: return 5;
-		case 9:
-		case 11: return 10;
-		default: return 0;
-		}
-	}
-
-	switch(doorId){
-	case 8:  return 1;
-	case 9:  return 2;
-	case 10:
-	case 18: return 4;
-	case 11: return 8;
-	default: return 0;
-	}
-}
-
-// SA CCarEnterExit::ComputePassengerIndexFromCarDoor (0x64F1E0).
-//
-// Note which doors map to which passenger index: door 9 (front right) is the
-// *first* passenger only in a two-door car; in a four-door it is the third.
-// Doors 10/18 are the driver's, and never reach here.
-int32
-CCarEnterExit::ComputePassengerIndexFromCarDoor(const CVehicle *vehicle, int32 doorId)
-{
-	if(vehicle->IsBike() || (vehicle->m_pHandlingData && vehicle->m_pHandlingData->m_bTandemSeats)){
-		switch(doorId){
-		case 9:
-		case 11: return 0;
-		default: return -1;
-		}
-	}
-
-	switch(doorId){
-	case 8:  return 0;
-	case 9:  return 2;
-	case 11: return 1;
-	default: return -1;
-	}
-}
-
 // SA CCarEnterExit::ComputeSlowJackedPed (0x64F070): whose seat the door opens
 // onto. Used by the slow carjack to know who has to be dragged out.
 CPed *
@@ -245,41 +71,6 @@ CCarEnterExit::ComputeSlowJackedPed(const CVehicle *vehicle, int32 doorId)
 	case 11: return vehicle->pPassengers[1];
 	default: return nil;
 	}
-}
-
-// SA CCarEnterExit::ComputeTargetDoorToEnterAsPassenger (0x64F190).
-//
-// A bus has one door for everybody (the rear left one), so all passengers use
-// it. Otherwise a bike puts its single passenger on door 11, and a car walks
-// the seats front-left, front-right, rear-left.
-int32
-CCarEnterExit::ComputeTargetDoorToEnterAsPassenger(const CVehicle *vehicle, int32 passengerNum)
-{
-	if(vehicle->bIsBus)
-		return 8;
-
-	switch(passengerNum){
-	case 0: return (vehicle->IsBike() || (vehicle->m_pHandlingData && vehicle->m_pHandlingData->m_bTandemSeats)) ? 11 : 8;
-	case 1: return 11;
-	case 2: return 9;
-	default: return -1;
-	}
-}
-
-// SA CCarEnterExit::ComputeTargetDoorToExit (0x64F110).
-int32
-CCarEnterExit::ComputeTargetDoorToExit(const CVehicle *vehicle, const CPed *ped)
-{
-	if(vehicle->pDriver == ped)
-		return 10;
-
-	// SA looks the ped up among the passengers and reuses the enter-side
-	// mapping. reVC stores the seats in pPassengers[], so search it.
-	for(int32 i = 0; i < vehicle->m_nNumMaxPassengers; i++)
-		if(vehicle->pPassengers[i] == ped)
-			return ComputeTargetDoorToEnterAsPassenger(vehicle, i);
-
-	return -1;
 }
 
 // SA CCarEnterExit::GetPositionToOpenCarDoor (0x64E740).
@@ -346,13 +137,7 @@ CCarEnterExit::GetNearestCarDoor(const CPed *ped, const CVehicle *vehicle, CVect
 	CVehicle *veh = (CVehicle*)vehicle;
 	CPed *p = (CPed*)ped;
 
-	const CVector *driverDraggedOutOffset = veh->pDriver ? &ms_vecPedQuickDraggedOutCarAnimOffset : nil;
-	const CVector *psgrDraggedOutOffset = veh->HasPassengerAtSeat(0) ? &ms_vecPedQuickDraggedOutCarAnimOffset : nil;
-
 	if((veh->IsBike() && !veh->IsSubBMX()) || veh->IsSubQuad()){
-		driverDraggedOutOffset = nil;
-		psgrDraggedOutOffset = nil;
-
 		// The jump-on side is only for a ped that is running at the bike from
 		// its left, holding a roughly parallel heading, and is either a fast
 		// player or an angry pedestrian. Anything else uses a normal door.
@@ -369,9 +154,6 @@ CCarEnterExit::GetNearestCarDoor(const CPed *ped, const CVehicle *vehicle, CVect
 				}
 			}
 		}
-	}else if(veh->bIsBus || veh->bLowVehicle){
-		driverDraggedOutOffset = nil;
-		psgrDraggedOutOffset = nil;
 	}
 
 	const CVector posDoorFLeft = GetPositionToOpenCarDoor(veh, CAR_DOOR_LF);
@@ -398,14 +180,14 @@ CCarEnterExit::GetNearestCarDoor(const CPed *ped, const CVehicle *vehicle, CVect
 		const CAutomobile *aut = (const CAutomobile*)veh;
 		if(aut->m_aCarNodes[CAR_DOOR_RF]){
 			if(!aut->m_aCarNodes[CAR_DOOR_LF]){
-				if(IsRoomForPedToLeaveCar(veh, CAR_DOOR_RF, driverDraggedOutOffset)){
+				if(IsRoomForPedToLeaveCar(veh, CAR_DOOR_RF)){
 					doorId = CAR_DOOR_RF;
 					outPos = posDoorFRight;
 					return true;
 				}
 			}
 		}else{
-			if(IsRoomForPedToLeaveCar(veh, CAR_DOOR_LF, driverDraggedOutOffset)){
+			if(IsRoomForPedToLeaveCar(veh, CAR_DOOR_LF)){
 				doorId = CAR_DOOR_LF;
 				outPos = posDoorFLeft;
 				return true;
@@ -415,7 +197,7 @@ CCarEnterExit::GetNearestCarDoor(const CPed *ped, const CVehicle *vehicle, CVect
 	}
 
 	// The caller may already have a preference (the AI often does).
-	if(doorId != CAR_NODE_NONE && IsRoomForPedToLeaveCar(veh, doorId, driverDraggedOutOffset)){
+	if(doorId != CAR_NODE_NONE && IsRoomForPedToLeaveCar(veh, doorId)){
 		switch(doorId){
 		case CAR_DOOR_LF:
 			outPos = posDoorFLeft;
@@ -432,25 +214,25 @@ CCarEnterExit::GetNearestCarDoor(const CPed *ped, const CVehicle *vehicle, CVect
 	// for a ped that has no business doing so.
 	if(veh->pDriver == nil || !veh->pDriver->bDontDragMeOutCar){
 		if(veh->bIsBus || dir2DToDoorFRight.MagnitudeSqr() > dir2DToDoorFLeft.MagnitudeSqr()){
-			if(IsRoomForPedToLeaveCar(veh, CAR_DOOR_LF, driverDraggedOutOffset)){
+			if(IsRoomForPedToLeaveCar(veh, CAR_DOOR_LF)){
 				doorId = CAR_DOOR_LF;
 				outPos = posDoorFLeft;
 				return true;
 			}
-			if(IsRoomForPedToLeaveCar(veh, CAR_DOOR_RF, driverDraggedOutOffset)){
+			if(IsRoomForPedToLeaveCar(veh, CAR_DOOR_RF)){
 				doorId = CAR_DOOR_RF;
 				outPos = posDoorFRight;
 				return true;
 			}
 		}else{
-			if(IsRoomForPedToLeaveCar(veh, CAR_DOOR_RF, driverDraggedOutOffset)){
+			if(IsRoomForPedToLeaveCar(veh, CAR_DOOR_RF)){
 				const bool passengerOnLeftBlocks =
 					veh->HasPassengerAtSeat(0) && !veh->IsBike()
 					&& !(veh->m_pHandlingData && veh->m_pHandlingData->m_bTandemSeats)
 					&& (veh->pPassengers[0]->bDontDragMeOutCar || veh->IsMissionVehicle())
-					&& IsRoomForPedToLeaveCar(veh, CAR_DOOR_LF, driverDraggedOutOffset);
+					&& IsRoomForPedToLeaveCar(veh, CAR_DOOR_LF);
 				const bool somebodyGettingInLeft = (veh->m_nGettingInFlags & 4) != 0
-					&& IsRoomForPedToLeaveCar(veh, CAR_DOOR_LF, driverDraggedOutOffset);
+					&& IsRoomForPedToLeaveCar(veh, CAR_DOOR_LF);
 				if(passengerOnLeftBlocks || somebodyGettingInLeft){
 					doorId = CAR_DOOR_LF;
 					outPos = posDoorFLeft;
@@ -460,14 +242,13 @@ CCarEnterExit::GetNearestCarDoor(const CPed *ped, const CVehicle *vehicle, CVect
 				outPos = posDoorFRight;
 				return true;
 			}
-			if(IsRoomForPedToLeaveCar(veh, CAR_DOOR_LF, driverDraggedOutOffset)){
+			if(IsRoomForPedToLeaveCar(veh, CAR_DOOR_LF)){
 				doorId = CAR_DOOR_LF;
 				outPos = posDoorFLeft;
 				return true;
 			}
 		}
 	}
-	(void)psgrDraggedOutOffset;
 	return false;
 }
 
@@ -521,7 +302,7 @@ CCarEnterExit::GetNearestCarPassengerDoor(const CPed *ped, const CVehicle *vehic
 			return false;
 		if(checkIfDoorIsEnterable && !CarHasOpenableDoor(veh, door, p))
 			return false;
-		if(checkIfRoomToGetIn && !IsRoomForPedToLeaveCar(veh, door, nil))
+		if(checkIfRoomToGetIn && !IsRoomForPedToLeaveCar(veh, door))
 			return false;
 		return true;
 	};
@@ -578,96 +359,12 @@ CCarEnterExit::GetNearestCarPassengerDoor(const CPed *ped, const CVehicle *vehic
 	return canEnter;
 }
 
-// SA CCarEnterExit::IsCarDoorInUse (0x64EC90).
-//
-// The getting-in and getting-out flag bytes are per-cluster, not per-door, so
-// this only tells whether *somebody* is already using the door's side.
-bool
-CCarEnterExit::IsCarDoorInUse(const CVehicle *vehicle, int32 firstDoorId, int32 secondDoorId)
-{
-	auto CheckIsDoorInUse = [vehicle](int32 door) -> bool {
-		auto CheckInOutFlags = [vehicle](uint32 n) -> bool {
-			const uint8 flag = 1 << n;
-			return (flag & vehicle->m_nGettingInFlags) || (flag & vehicle->m_nGettingOutFlags);
-		};
-		switch(door){
-		case 8:  return CheckInOutFlags(2);
-		case 9:  return CheckInOutFlags(3);
-		case 10:
-		case 18: return CheckInOutFlags(0);
-		case 11: return CheckInOutFlags(1);
-		default: return false;
-		}
-	};
-	return CheckIsDoorInUse(firstDoorId) || CheckIsDoorInUse(secondDoorId);
-}
-
 // SA CCarEnterExit::IsCarDoorReady (0x64ED90).
 bool
 CCarEnterExit::IsCarDoorReady(const CVehicle *vehicle, int32 doorId)
 {
 	CVehicle *veh = (CVehicle*)vehicle;
 	return veh->IsDoorReady((uint32)doorId) || veh->IsDoorFullyOpen((uint32)doorId);
-}
-
-// SA CCarEnterExit::IsCarQuickJackPossible (0x64EF00). SA returns false
-// unconditionally here, with a comment saying that returning anything else
-// breaks CTaskComplexEnterCar. Kept as-is rather than "improved".
-bool
-CCarEnterExit::IsCarQuickJackPossible(CVehicle *vehicle, int32 doorId, const CPed *ped)
-{
-	(void)vehicle;
-	(void)doorId;
-	(void)ped;
-	return false;
-}
-
-// SA CCarEnterExit::IsCarSlowJackRequired (0x64EF70): is the seat this door
-// opens onto already taken?
-bool
-CCarEnterExit::IsCarSlowJackRequired(const CVehicle *vehicle, int32 doorId)
-{
-	if(vehicle->IsBike() || (vehicle->m_pHandlingData && vehicle->m_pHandlingData->m_bTandemSeats)){
-		switch(doorId){
-		case 8:
-		case 10:
-		case 18: return vehicle->HasDriver();
-		case 9:
-		case 11: return vehicle->HasPassengerAtSeat(0);
-		default: return false;
-		}
-	}
-
-	const uint8 group = vehicle->GetAnimGroupId();
-	if(group == ASSOCGRP_COACHCARANIMS || group == ASSOCGRP_BUSCARANIMS){
-		switch(doorId){
-		case 8:  return false;
-		case 10: return vehicle->HasDriver();
-		default: return false;
-		}
-	}
-
-	switch(doorId){
-	case 8:  return vehicle->HasPassengerAtSeat(0);
-	case 9:  return vehicle->HasPassengerAtSeat(2);
-	case 10: return vehicle->HasDriver();
-	case 11: return vehicle->HasPassengerAtSeat(1);
-	default: return false;
-	}
-}
-
-// SA CCarEnterExit::IsClearToDriveAway (0x6509B0): is there anything directly
-// in front of the vehicle that it would hit if it pulled away now?
-bool
-CCarEnterExit::IsClearToDriveAway(const CVehicle *vehicle)
-{
-	const CVector &vehPos = vehicle->GetPosition();
-	const float bbSizeY = vehicle->GetColModel()->boundingBox.max.y - vehicle->GetColModel()->boundingBox.min.y;
-	CEntity *hitEntity = nil;
-	CColPoint hitCP;
-	const bool hit = CWorld::ProcessLineOfSight(vehPos + ((CVehicle*)vehicle)->GetForward() * bbSizeY, vehPos,
-		hitCP, hitEntity, true, true, false, false, false, true, true, false);
-	return !hit || hitEntity == vehicle;
 }
 
 // SA CCarEnterExit::IsPathToDoorBlockedByVehicleCollisionModel (0x651210).
@@ -693,299 +390,10 @@ CCarEnterExit::IsPathToDoorBlockedByVehicleCollisionModel(const CPed *ped, const
 	return true;
 }
 
-// SA CCarEnterExit::IsPedHealthy (0x64EEE0).
-bool
-CCarEnterExit::IsPedHealthy(CPed *ped)
-{
-	return ped->m_fHealth > 0.0f;
-}
-
 // SA CCarEnterExit::IsRoomForPedToLeaveCar (0x6504C0). The vehicle classes own
 // the actual test because a bike and a car swing their doors differently.
 bool
-CCarEnterExit::IsRoomForPedToLeaveCar(const CVehicle *vehicle, int32 doorId, const CVector *offset)
+CCarEnterExit::IsRoomForPedToLeaveCar(const CVehicle *vehicle, int32 doorId)
 {
-	return ((CVehicle*)vehicle)->IsRoomForPedToLeaveCar((uint32)doorId, (CVector*)offset);
-}
-
-// SA CCarEnterExit::IsVehicleHealthy (0x64EEC0).
-bool
-CCarEnterExit::IsVehicleHealthy(const CVehicle *vehicle)
-{
-	return vehicle->GetStatus() != STATUS_WRECKED;
-}
-
-// SA CCarEnterExit::IsVehicleStealable (0x6510D0). This is the "can I just take
-// this car" test the AI runs before deciding to carjack: no aircraft, no
-// mission or parked-owned vehicles unless it is already mine, nothing burning
-// or wrecked, nothing on its roof, and a clear road ahead.
-bool
-CCarEnterExit::IsVehicleStealable(const CVehicle *vehicle, const CPed *ped)
-{
-	if(vehicle->m_nVehicleSubType == VEHICLE_TYPE_PLANE || vehicle->m_nVehicleSubType == VEHICLE_TYPE_HELI)
-		return false;
-
-	if(vehicle->m_nVehicleType != VEHICLE_TYPE_AUTOMOBILE && vehicle->m_nVehicleType != VEHICLE_TYPE_BIKE)
-		return false;
-
-	if(ped->m_pMyVehicle != vehicle){
-		switch(vehicle->VehicleCreatedBy){
-		case RANDOM_VEHICLE:
-		case PARKED_VEHICLE:
-			break;
-		default:
-			return false;
-		}
-	}
-
-	// SA reads the global check, the same one the script and the stuck-car
-	// timer drive. A temporary here would always answer "not upside down",
-	// because a fresh instance has no timers running.
-	if(CTheScripts::UpsideDownCars.IsCarUpsideDown((CVehicle*)vehicle))
-		return false;
-
-	if(!((CVehicle*)vehicle)->CanBeDriven())
-		return false;
-
-	if(((CVehicle*)vehicle)->IsLawEnforcementVehicle())
-		return false;
-
-	if(vehicle->pDriver){
-		CPed *drvr = vehicle->pDriver;
-		// SA also refuses when the driver was created by a mission or is
-		// friendly with this ped. reVC has no mission-created ped flag and no
-		// acquaintance table, so only the player case can be answered here -
-		// the AI's own "is this ped a threat" checks cover the rest.
-		if(drvr->IsPlayer())
-			return false;
-	}
-
-	if(vehicle->m_pCarFire != nil)
-		return false;
-
-	if(vehicle->m_fHealth <= 600.0f)
-		return false;
-
-	if(((CVehicle*)vehicle)->IsUpsideDown() || ((CVehicle*)vehicle)->IsOnItsSide())
-		return false;
-
-	if(!IsClearToDriveAway(vehicle))
-		return false;
-
-	return true;
-}
-
-// SA CCarEnterExit::MakeUndraggedDriverPedLeaveCar (0x64F600). reVC has no ped
-// event system of its own, so this drives the driver out through the same
-// state machine the AI uses instead of posting a CEventDraggedOutCar.
-void
-CCarEnterExit::MakeUndraggedDriverPedLeaveCar(const CVehicle *vehicle, const CPed *pedGettingIn)
-{
-	CVehicle *veh = (CVehicle*)vehicle;
-	if(veh->pDriver == nil)
-		return;
-
-	CPed *driver = veh->pDriver;
-	(void)pedGettingIn;
-
-	veh->bIsBeingCarJacked = true;
-	if(driver->IsPlayer())
-		return;	// the player decides for themselves
-
-	driver->SetExitCar(veh, CAR_DOOR_LF);
-}
-
-// SA CCarEnterExit::MakeUndraggedPassengerPedsLeaveCar (0x64F540).
-void
-CCarEnterExit::MakeUndraggedPassengerPedsLeaveCar(const CVehicle *targetVehicle, const CPed *draggedPed, const CPed *ped)
-{
-	(void)draggedPed;
-	(void)ped;
-
-	CVehicle *veh = (CVehicle*)targetVehicle;
-	if(veh == nil)
-		return;
-
-	for(int32 i = 0; i < veh->m_nNumMaxPassengers; i++){
-		CPed *psgr = veh->pPassengers[i];
-		if(psgr == nil || psgr->IsPlayer())
-			continue;
-
-		const int32 doorId = ComputeTargetDoorToEnterAsPassenger(veh, i);
-		if(doorId < 0)
-			continue;
-		psgr->SetExitCar(veh, (uint32)doorId);
-	}
-}
-
-// SA CCarEnterExit::QuitEnteringCar (0x650130).
-void
-CCarEnterExit::QuitEnteringCar(CPed *ped, CVehicle *vehicle, int32 doorId, bool bCarWasBeingJacked)
-{
-	RemoveGetInAnims(ped);
-	ped->RestartNonPartialAnims();
-
-	if(!RpAnimBlendClumpGetAssociation(((CPed*)ped)->GetClump(), ANIM_ID_IDLE))
-		CAnimManager::BlendAnimation(((CPed*)ped)->GetClump(), ((CPed*)ped)->m_animGroup, ANIM_ID_IDLE, 1000.0f);
-
-	if(bCarWasBeingJacked)
-		vehicle->bIsBeingCarJacked = true;
-
-	vehicle->m_nNumGettingIn--;
-
-	if(vehicle->IsBike() || (vehicle->m_pHandlingData && vehicle->m_pHandlingData->m_bTandemSeats)){
-		switch(doorId){
-		case 8:
-		case 10:
-			vehicle->m_nGettingInFlags |= 5;
-			break;
-		case 9:
-		case 11:
-			vehicle->m_nGettingInFlags |= 10;
-			break;
-		}
-		vehicle->bIsBig = false;
-	}else{
-		switch(doorId){
-		case 8:
-			vehicle->m_nGettingInFlags |= 4;
-			break;
-		case 9:
-			vehicle->m_nGettingInFlags |= 8;
-			break;
-		case 10:
-			vehicle->m_nGettingInFlags |= vehicle->m_nNumMaxPassengers ? 1 : 3;
-			break;
-		case 11:
-			vehicle->m_nGettingInFlags |= vehicle->m_nNumMaxPassengers ? 2 : 3;
-			break;
-		}
-	}
-
-	ped->bUsesCollision = false;
-}
-
-// SA CCarEnterExit::RemoveCarSitAnim (0x64F680).
-void
-CCarEnterExit::RemoveCarSitAnim(const CPed *ped)
-{
-	CAnimBlendAssociation *anim;
-	for(anim = RpAnimBlendClumpGetFirstAssociation(((CPed*)ped)->GetClump(), ANIMATION_SECONDARY_TASK_ANIM);
-	    anim;
-	    anim = RpAnimBlendGetNextAssociation(anim, ANIMATION_SECONDARY_TASK_ANIM)){
-		// ANIMATION_IS_BLEND_AUTO_REMOVE is SA's flag; the association stores
-		// the internal equivalent, which SAFlagsToAssocFlags maps to
-		// ASSOC_DELETEFADEDOUT.
-		anim->flags |= ASSOC_DELETEFADEDOUT;
-		anim->blendDelta = -1000.0f;
-	}
-	CAnimManager::BlendAnimation(((CPed*)ped)->GetClump(), ((CPed*)ped)->m_animGroup, ANIM_ID_IDLE, 1000.0f);
-}
-
-// SA CCarEnterExit::RemoveGetInAnims (0x64F6E0).
-void
-CCarEnterExit::RemoveGetInAnims(const CPed *ped)
-{
-	CAnimBlendAssociation *anim;
-	for(anim = RpAnimBlendClumpGetFirstAssociation(((CPed*)ped)->GetClump(), ANIMATION_IS_PARTIAL);
-	    anim;
-	    anim = RpAnimBlendGetNextAssociation(anim, ANIMATION_IS_PARTIAL)){
-		// ANIMATION_IS_BLEND_AUTO_REMOVE is SA's flag; the association stores
-		// the internal equivalent, which SAFlagsToAssocFlags maps to
-		// ASSOC_DELETEFADEDOUT.
-		anim->flags |= ASSOC_DELETEFADEDOUT;
-		anim->blendDelta = -1000.0f;
-	}
-}
-
-// SA CCarEnterExit::SetAnimOffsetForEnterOrExitVehicle (0x64F860). The get-up
-// and interior offsets are read out of the animation data once, on the first
-// call, and reused afterwards. SA streams the two interior blocks in for that,
-// which is what keeps this off the loading path.
-void
-CCarEnterExit::SetAnimOffsetForEnterOrExitVehicle(void)
-{
-	if(ms_bPedOffsetsCalculated)
-		return;
-
-	const char *animBlockNames[2] = { "int_house", "int_office" };
-	int32 animBlockIdxs[2];
-	for(int32 i = 0; i < 2; i++)
-		animBlockIdxs[i] = CAnimManager::GetAnimationBlockIndex(animBlockNames[i]);
-
-	// reVC addresses animation blocks through CStreaming's anim offset rather
-	// than SA's IFPToModelId, so the request goes through RequestAnim. The
-	// block is then already resident and can be referenced.
-	for(int32 i = 0; i < 2; i++){
-		if(animBlockIdxs[i] < 0)
-			continue;
-		CStreaming::RequestAnim(animBlockIdxs[i], STREAMFLAGS_KEEP_IN_MEMORY);
-	}
-	CStreaming::LoadAllRequestedModels(false);
-
-	for(int32 i = 0; i < 2; i++){
-		if(animBlockIdxs[i] < 0)
-			continue;
-		CAnimManager::AddAnimBlockRef(animBlockIdxs[i]);
-	}
-
-	// The dragged-out offset is a constant in SA, not an animation read.
-	ms_vecPedQuickDraggedOutCarAnimOffset = CVector(-1.841797f, -0.3261719f, -0.01269531f);
-
-	for(int32 i = 0; i < 2; i++){
-		if(animBlockIdxs[i] < 0)
-			continue;
-		CAnimManager::RemoveAnimBlockRef(animBlockIdxs[i]);
-	}
-
-	ms_bPedOffsetsCalculated = true;
-}
-
-// SA CCarEnterExit::SetPedInCarDirect (0x650280): put a ped straight into a
-// seat with no get-in animation at all. Used by the script and by the
-// spawn/population code.
-bool
-CCarEnterExit::SetPedInCarDirect(CPed *ped, CVehicle *vehicle, int32 seatNumber, bool bAsDriver)
-{
-	if(vehicle == nil || ped == nil)
-		return false;
-
-	if(vehicle->IsBike() || (vehicle->m_pHandlingData && vehicle->m_pHandlingData->m_bTandemSeats)){
-		// A bike has one seat per side; the driver takes the front.
-		if(bAsDriver){
-			vehicle->pDriver = ped;
-			ped->m_pMyVehicle = vehicle;
-			ped->m_vehDoor = CAR_DOOR_LF;
-			vehicle->m_nGettingInFlags &= ~(4 | 8);
-			vehicle->m_nGettingOutFlags &= ~(4 | 8);
-		}else{
-			vehicle->pPassengers[0] = ped;
-			ped->m_pMyVehicle = vehicle;
-			ped->m_vehDoor = CAR_DOOR_LR;
-			vehicle->m_nGettingInFlags &= ~(1 | 2);
-			vehicle->m_nGettingOutFlags &= ~(1 | 2);
-		}
-	}else{
-		const int32 doorId = bAsDriver ? 10 : ComputeTargetDoorToEnterAsPassenger(vehicle, seatNumber);
-		if(doorId < 0)
-			return false;
-
-		if(bAsDriver)
-			vehicle->pDriver = ped;
-		else
-			vehicle->pPassengers[seatNumber] = ped;
-
-		ped->m_pMyVehicle = vehicle;
-		ped->m_vehDoor = (uint16)doorId;
-
-		const int32 doorFlag = bAsDriver ? (vehicle->m_nNumMaxPassengers ? 1 : 3)
-		                                 : ComputeDoorFlag(vehicle, doorId, false);
-		vehicle->m_nGettingInFlags &= ~doorFlag;
-		vehicle->m_nGettingOutFlags &= ~doorFlag;
-	}
-
-	ped->SetPedState(PED_DRIVING);
-	ped->bUsesCollision = false;
-	AddInCarAnim(vehicle, ped, bAsDriver);
-	return true;
+	return ((CVehicle*)vehicle)->IsRoomForPedToLeaveCar((uint32)doorId, nil);
 }

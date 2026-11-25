@@ -3,7 +3,6 @@
 
 #include "audio_enums.h"
 #include "AudioCollision.h"
-#include "PolRadio.h"
 #include "VehicleModelInfo.h"
 #include "Vehicle.h"
 #ifdef AUDIO_OAL
@@ -146,7 +145,6 @@ public:
 
 class cTransmission;
 class CEntity;
-class CPlane;
 class CVehicle;
 class CPed;
 
@@ -269,18 +267,12 @@ public:
 	cPedComments m_sPedComments;
 	int32 m_nFireAudioEntity;
 	int32 m_nWaterCannonEntity;
-	int32 m_nPoliceChannelEntity;
-	cPoliceRadioQueue m_sPoliceRadioQueue;
-	cAMCrime m_aCrimes[10];
 	int32 m_nFrontEndEntity;
 	int32 m_nCollisionEntity;
 	cAudioCollisionManager m_sCollisionManager;
 	int32 m_nProjectileEntity;
 	int32 m_nEscalatorEntity;
 	int32 m_nExtraSoundsEntity;
-#ifdef GTA_BRIDGE
-	int32 m_nBridgeEntity;
-#endif
 
 	// Mission audio stuff
 	// So instead of making an array of struct they've added [MISSION_AUDIO_SLOTS] to every field...
@@ -324,7 +316,6 @@ public:
 	void PlayOneShot(int32 index, uint16 sound, float vol);
 	void SetEffectsMasterVolume(uint8 volume);
 	void SetMusicMasterVolume(uint8 volume);
-	void SetMP3BoostVolume(uint8 volume);
 	void SetEffectsFadeVol(uint8 volume);
 	void SetMusicFadeVol(uint8 volume);
 	void SetOutputMode(bool8 surround);
@@ -338,7 +329,6 @@ public:
 	int8 AutoDetect3DProviders();
 	int8 SetCurrent3DProvider(uint8 which);
 	void SetSpeakerConfig(int32 conf);
-	bool8 IsMP3RadioChannelAvailable();
 	void ReleaseDigitalHandle();
 	void ReacquireDigitalHandle();
 #ifdef AUDIO_REFLECTIONS
@@ -426,19 +416,6 @@ public:
 	bool8 ProcessBoatEngine(cVehicleParams &params);
 	bool8 ProcessBoatMovingOverWater(cVehicleParams &params);
 	void ProcessPlane(cVehicleParams &params);
-	void ProcessJumbo(cVehicleParams &params);
-	void ProcessJumboTaxi();
-	void ProcessJumboAccel(CPlane *plane);
-	void ProcessJumboTakeOff(CPlane *plane);
-	void ProcessJumboFlying();
-	void ProcessJumboLanding(CPlane *plane);
-	void ProcessJumboDecel(CPlane *plane);
-	bool8 SetupJumboTaxiSound(uint8 vol);
-	bool8 SetupJumboWhineSound(uint8 emittingVol, uint32 freq);
-	bool8 SetupJumboEngineSound(uint8 vol, uint32 freq);
-	bool8 SetupJumboFlySound(uint8 emittingVol);
-	bool8 SetupJumboRumbleSound(uint8 emittingVol);
-	int32 GetJumboTaxiFreq(); // inlined in vc
 
 	// peds
 	void ProcessPed(CPhysical *ped);
@@ -563,19 +540,10 @@ public:
 	// misc
 	void ProcessWeather(int32 id);
 	void ProcessFrontEnd();
-	//void ProcessCrane();
 	void ProcessProjectiles();
 	void ProcessEscalators();
 	void ProcessExtraSounds();
-	void ProcessGarages();
 	void ProcessFireHydrant();
-
-#ifdef GTA_BRIDGE
-	void ProcessBridge();
-	void ProcessBridgeWarning();
-	void ProcessBridgeMotor();
-	void ProcessBridgeOneShots();
-#endif
 
 	// mission audio
 	const char *GetMissionAudioLoadedLabel(uint8 slot);
@@ -592,18 +560,10 @@ public:
 	void ProcessMissionAudio();
 
 	// police radio
-	void InitialisePoliceRadioZones();
-	void InitialisePoliceRadio();
-	void ResetPoliceRadio();
 	void SetMissionScriptPoliceAudio(uint32 sfx); // inlined and optimized
 	int8 GetMissionScriptPoliceAudioPlayingStatus();
-	void DoPoliceRadioCrackle();
-	void ServicePoliceRadio();
-	void ServicePoliceRadioChannel(uint8 wantedLevel);
 	bool8 SetupCrimeReport();
 	void SetupSuspectLastSeenReport();
-	void ReportCrime(eCrimeType crime, const CVector &pos);
-	void PlaySuspectLastSeen(float x, float y, float z);
 	void AgeCrimes(); // inlined in vc
 		
 	// collision stuff

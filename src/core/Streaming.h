@@ -98,13 +98,10 @@ public:
 	static CStreamingChannel ms_channel[2];
 	static int32 ms_channelError;
 	static int32 ms_numVehiclesLoaded;
-	static int32 ms_numPedsLoaded;
 	static int32 ms_vehiclesLoaded[MAXVEHICLESLOADED];
 	static int32 ms_lastVehicleDeleted;
-	static bool ms_bIsPedFromPedGroupLoaded[NUMMODELSPERPEDGROUP];
 	static CDirectory *ms_pExtraObjectsDir;
 	static int32 ms_numPriorityRequests;
-	static int32 ms_currentPedGrp;
 	static int32 ms_lastCullZone;
 	static uint16 ms_loadedGangs;
 	static uint16 ms_loadedGangCars;
@@ -186,7 +183,6 @@ public:
 	static bool RemoveLeastUsedModel(uint32 excludeMask);
 	static void RemoveAllUnusedModels(void);
 	static void RemoveUnusedModelsInLoadedList(void);
-	static bool RemoveLoadedZoneModel(void);
 	static int32 GetAvailableVehicleSlot(void);
 	static bool IsTxdUsedByRequestedModels(int32 txdId);
 	static bool AreAnimsUsedByRequestedModels(int32 animId);
@@ -201,8 +197,6 @@ public:
 	static void LoadInitialWeapons(void);
 	static void LoadInitialVehicles(void);
 	static void StreamVehiclesAndPeds(void);
-	static void StreamZoneModels(const CVector &pos);
-	static void RemoveCurrentZonesModels(void);
 	static void LoadBigBuildingsWhenNeeded(void);
 
 	static int32 GetCdImageOffset(int32 lastPosn);
@@ -235,8 +229,6 @@ public:
 	static void LoadScene(const CVector &pos);
 	static void LoadSceneCollision(const CVector &pos);
 
-	static void MemoryCardSave(uint8 *buffer, uint32 *length);
-	static void MemoryCardLoad(uint8 *buffer, uint32 length);
 
 	static void UpdateForAnimViewer(void);
 

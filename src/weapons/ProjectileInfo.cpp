@@ -2,11 +2,10 @@
 
 #include "Camera.h"
 #include "General.h"
-#include "Heli.h"
+#include "Vehicle.h"
 #include "ModelIndices.h"
 #include "Particle.h"
 #include "Ped.h"
-#include "Plane.h"
 #include "ProjectileInfo.h"
 #include "Projectile.h"
 #include "Explosion.h"
@@ -316,7 +315,7 @@ CProjectileInfo::Update()
 				CWorld::pIgnoreEntity = ms_apProjectile[i];
 				if (ms_apProjectile[i]->bHasCollided
 					|| !CWorld::GetIsLineOfSightClear(gaProjectileInfo[i].m_vecPos, pos, true, true, true, true, false, false)
-					|| CHeli::TestRocketCollision(&pos) || CPlane::TestRocketCollision(&pos)) {
+					){
 					CWorld::pIgnoreEntity = nil;
 					RemoveProjectile(&gaProjectileInfo[i], ms_apProjectile[i]);
 					continue;

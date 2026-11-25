@@ -5,7 +5,6 @@
 class CEntity;
 class CPed;
 class CAutomobile;
-class CGarage;
 
 extern int16 DebugCamMode;
 
@@ -13,7 +12,6 @@ enum
 {
 	NUMBER_OF_VECTORS_FOR_AVERAGE = 2,
 	MAX_NUM_OF_SPLINETYPES = 4,
-	MAX_NUM_OF_NODES = 800	// for trains
 };
 
 #define DEFAULT_NEAR (0.9f)
@@ -58,10 +56,6 @@ public:
 		MODE_CHRIS,
 		MODE_BEHINDBOAT,
 		MODE_PLAYER_FALLEN_WATER,
-		MODE_CAM_ON_TRAIN_ROOF,
-		MODE_CAM_RUNNING_SIDE_TRAIN,
-		MODE_BLOOD_ON_THE_TRACKS,
-		MODE_IM_THE_PASSENGER_WOOWOO,
 		MODE_SYPHON_CRIM_IN_FRONT,
 		MODE_PED_DEAD_BABY,
 		MODE_PILLOWS_PAPS,
@@ -78,7 +72,6 @@ public:
 		MODE_1STPERSON_RUNABOUT,
 		MODE_M16_1STPERSON_RUNABOUT,
 		MODE_FIGHT_CAM_RUNABOUT,
-		MODE_EDITOR,
 		MODE_HELICANNON_1STPERSON,
 		MODE_CAMERA,
 	};
@@ -88,7 +81,6 @@ public:
 	bool    m_bCamLookingAtVector;
 	bool    m_bCollisionChecksOn;
 	bool    m_bFixingBeta; //used for camera on a string
-	bool    m_bTheHeightFixerVehicleIsATrain;
 	bool    LookBehindCamWasInFront;
 	bool    LookingBehind;
 	bool    LookingLeft;
@@ -210,9 +202,6 @@ public:
 	void PrintMode(void);
 
 	void Process_Debug(const CVector&, float, float, float);
-#ifdef GTA_SCENE_EDIT
-	void Process_Editor(const CVector&, float, float, float);
-#endif
 	void Process_ModelView(const CVector &CameraTarget, float, float, float);
 	void Process_FollowPed(const CVector &CameraTarget, float TargetOrientation, float, float);
 	void Process_FollowPedWithMouse(const CVector &CameraTarget, float TargetOrientation, float, float);
@@ -254,16 +243,6 @@ public:
 //	float m_arr_PathData[MAXPATHLENGTH];
 	float *m_arr_PathData;
 	CCamPathSplines(void);
-};
-
-struct CTrainCamNode
-{
-	CVector m_cvecCamPosition;
-	CVector m_cvecPointToLookAt;
-	CVector m_cvecMinPointInRange;
-	CVector m_cvecMaxPointInRange;
-	float m_fDesiredFOV;
-	float m_fNearClip;
 };
 
 struct CQueuedMode
@@ -326,8 +305,6 @@ enum
 class CCamera : public CPlaceable
 {
 public:
-	bool m_bAboveGroundTrainNodesLoaded;
-	bool m_bBelowGroundTrainNodesLoaded;
 	bool m_bCamDirectlyBehind;
 	bool m_bCamDirectlyInFront;
 	bool m_bCameraJustRestored;
@@ -340,12 +317,8 @@ public:
 	bool m_bJustJumpedOutOf1stPersonBecauseOfTarget;
 	bool m_bIdleOn;
 	bool m_bInATunnelAndABigVehicle;
-	bool m_bInitialNodeFound;
-	bool m_bInitialNoNodeStaticsSet;
 	bool m_bIgnoreFadingStuffForMusic;
-	bool m_bPlayerIsInGarage;
 	bool m_bPlayerWasOnBike;
-	bool m_bJustCameOutOfGarage;
 	bool m_bJustInitalised;
 	bool m_bJust_Switched;
 	bool m_bLookingAtPlayer;
@@ -357,9 +330,6 @@ public:
 	bool m_bUseNearClipScript;
 	bool m_bStartInterScript;
 	bool m_bStartingSpline;
-	bool m_bTargetJustBeenOnTrain;
-	bool m_bTargetJustCameOffTrain;
-	bool m_bUseSpecialFovTrain;
 	bool m_bUseTransitionBeta;
 	bool m_bUseScriptZoomValuePed;
 	bool m_bUseScriptZoomValueCar;
@@ -382,7 +352,6 @@ public:
 	uint32 m_uiFirstPersonCamLastInputTime;
 
 	uint32 m_uiLongestTimeInMill;
-	uint32 m_uiNumberOfTrainCamNodes;
 	uint8   m_uiTransitionJUSTStarted;
 	uint8   m_uiTransitionState;        // 0:one mode 1:transition
 
@@ -401,7 +370,6 @@ public:
 	int m_iNumFramesSoFar;
 
 
-	int m_iCurrentTrainCamNode;
 	int m_motionBlur;
 	int m_imotionBlurAddAlpha;
 	int m_iCheckCullZoneThisNumFrames;
@@ -437,7 +405,6 @@ public:
 	float m_CameraSpeedSoFar;
 	float m_fCamShakeForce;
 	float m_fCarZoomValueScript;
-	float m_fFovForTrain;
 	float m_fFOV_Wide_Screen;
 	float m_fNearClipScript;
 	float m_fOldBetaDiff;
@@ -471,8 +438,6 @@ public:
 
 
 	CCam Cams[3];
-	CGarage *pToGarageWeAreIn;
-	CGarage *pToGarageWeAreInForHackAvoidFirstPerson;
 	CQueuedMode m_PlayerMode;
 	CQueuedMode PlayerWeaponMode;
 	CVector m_PreviousCameraPosition;
@@ -500,7 +465,6 @@ public:
 	RwCamera *m_pRwCamera;
 	CEntity *pTargetEntity;
 	CCamPathSplines m_arrPathArray[MAX_NUM_OF_SPLINETYPES];
-	CTrainCamNode m_arrTrainCamNode[MAX_NUM_OF_NODES];
 	CMatrix m_cameraMatrix;
 	bool m_bGarageFixedCamPositionSet;
 	bool m_vecDoingSpecialInterPolation;
@@ -582,10 +546,6 @@ public:
 	void ProcessObbeCinemaCameraCar(void);
 	void ProcessObbeCinemaCameraHeli(void);
 	void ProcessObbeCinemaCameraPed(void);
-
-	// Train
-	void LoadTrainCamNodes(char const *name);
-	void Process_Train_Camera_Control(void);
 
 	// Script
 	void LoadPathSplines(int file);

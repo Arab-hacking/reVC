@@ -577,53 +577,7 @@ CVisibilityPlugins::RenderVehicleReallyLowDetailCB_BigVehicle(RpAtomic *atomic)
 	return atomic;
 }
 
-RpAtomic*
-CVisibilityPlugins::RenderTrainHiDetailCB(RpAtomic *atomic)
-{
-	RwFrame *clumpframe;
-	float dot;
-	uint32 flags;
 
-	clumpframe = RpClumpGetFrame(RpAtomicGetClump(atomic));
-	if(DistToCameraSq < ms_bigVehicleLod1Dist){
-		flags = GetAtomicId(atomic);
-		if(DistToCameraSq > ms_cullCompsDist && (flags & ATOMIC_FLAG_NOCULL) == 0 && PitchToCamera < 0.2f){
-			dot = GetDotProductWithCameraVector(RwFrameGetLTM(RpAtomicGetFrame(atomic)),
-				RwFrameGetLTM(clumpframe), flags);
-			if(dot > 0.0f && ((flags & ATOMIC_FLAG_ANGLECULL) || 0.1f*DistToCameraSq < dot*dot))
-				return atomic;
-		}
-		RENDERCALLBACK(atomic);
-	}
-	return atomic;
-}
-
-RpAtomic*
-CVisibilityPlugins::RenderTrainHiDetailAlphaCB(RpAtomic *atomic)
-{
-	RwFrame *clumpframe;
-	float dot;
-	uint32 flags;
-
-	clumpframe = RpClumpGetFrame(RpAtomicGetClump(atomic));
-	if(DistToCameraSq < ms_bigVehicleLod1Dist){
-		flags = GetAtomicId(atomic);
-		dot = GetDotProductWithCameraVector(RwFrameGetLTM(RpAtomicGetFrame(atomic)),
-			RwFrameGetLTM(clumpframe), flags);
-		if(DistToCameraSq > ms_cullCompsDist && (flags & ATOMIC_FLAG_NOCULL) == 0 && PitchToCamera < 0.2f)
-			if(dot > 0.0f && ((flags & ATOMIC_FLAG_ANGLECULL) || 0.1f*DistToCameraSq < dot*dot))
-				return atomic;
-
-		if(flags & ATOMIC_FLAG_DRAWLAST){
-			if(!InsertAtomicIntoSortedList(atomic, DistToCameraSq))
-				RENDERCALLBACK(atomic);
-		}else{
-			if(!InsertAtomicIntoSortedList(atomic, DistToCameraSq + dot))
-				RENDERCALLBACK(atomic);
-		}
-	}
-	return atomic;
-}
 
 RpAtomic*
 CVisibilityPlugins::RenderVehicleRotorAlphaCB(RpAtomic *atomic)
@@ -978,8 +932,7 @@ CVisibilityPlugins::SetClumpModelInfo(RpClump *clump, CClumpModelInfo *modelInfo
 		break;
 	case MITYPE_VEHICLE:
 		vmi = (CVehicleModelInfo*)modelInfo;
-		if(vmi->m_nVehicleType == VEHICLE_TYPE_TRAIN ||
-		   vmi->m_nVehicleType == VEHICLE_TYPE_HELI ||
+		if(vmi->m_nVehicleType == VEHICLE_TYPE_HELI ||
 		   vmi->m_nVehicleType == VEHICLE_TYPE_PLANE)
 			CLUMPEXT(clump)->visibilityCB = VehicleVisibilityCB_BigVehicle;
 		else

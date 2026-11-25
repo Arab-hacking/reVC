@@ -6,7 +6,9 @@
 #include "ModelIndices.h"
 #include "Timer.h"
 #include "Entity.h"
+#include "Building.h"
 #include "Object.h"
+#include "Vehicle.h"
 #include "World.h"
 #include "Camera.h"
 #include "Glass.h"
@@ -26,7 +28,6 @@
 #include "Ped.h"
 #include "Dummy.h"
 #include "WindModifiers.h"
-#include "SaveBuf.h"
 #ifdef CUSTOM_MODELS
 #include "CustomWorld.h"
 #endif
@@ -292,34 +293,6 @@ CEntity::UpdateRpHAnim(void)
 	if(IsClumpSkinned(GetClump()) && !bDontUpdateHierarchy){
 		RpHAnimHierarchy *hier = GetAnimHierarchyFromSkinClump(GetClump());
 		RpHAnimHierarchyUpdateMatrices(hier);
-#if 0
-	int i;
-	char buf[256];
-	if(this == (CEntity*)FindPlayerPed())
-	for(i = 0; i < hier->numNodes; i++){
-		RpHAnimStdInterpFrame *kf = (RpHAnimStdInterpFrame*)rpHANIMHIERARCHYGETINTERPFRAME(hier, i);
-		sprintf(buf, "%6.3f %6.3f %6.3f %6.3f  %6.3f %6.3f %6.3f  %d %s",
-			kf->q.imag.x, kf->q.imag.y, kf->q.imag.z, kf->q.real,
-			kf->t.x, kf->t.y, kf->t.z,
-			HIERNODEID(hier, i),
-			ConvertBoneTag2BoneName(HIERNODEID(hier, i)));
-		CDebug::PrintAt(buf, 10, 1+i*3);
-
-		RwMatrix *m = &RpHAnimHierarchyGetMatrixArray(hier)[i];
-		sprintf(buf, "%6.3f %6.3f %6.3f %6.3f",
-			m->right.x, m->up.x, m->at.x, m->pos.x);
-		CDebug::PrintAt(buf, 80, 1+i*3+0);
-		sprintf(buf, "%6.3f %6.3f %6.3f %6.3f",
-			m->right.y, m->up.y, m->at.y, m->pos.y);
-		CDebug::PrintAt(buf, 80, 1+i*3+1);
-		sprintf(buf, "%6.3f %6.3f %6.3f %6.3f",
-			m->right.z, m->up.z, m->at.z, m->pos.z);
-		CDebug::PrintAt(buf, 80, 1+i*3+2);
-	}
-
-	void RenderSkeleton(RpHAnimHierarchy *hier);
-	RenderSkeleton(hier);
-#endif
 	}
 }
 
@@ -833,119 +806,3 @@ bool IsEntityPointerValid(CEntity* pEntity)
 	}
 	return false;
 }
-
-#ifdef COMPATIBLE_SAVES
-void
-CEntity::SaveEntityFlags(uint8*& buf)
-{
-	uint32 tmp = 0;
-	tmp |= (m_type & (BIT(3) - 1));
-	tmp |= (m_status & (BIT(5) - 1)) << 3;
-
-	if (bUsesCollision) tmp |= BIT(8);
-	if (bCollisionProcessed) tmp |= BIT(9);
-	if (bIsStatic)  tmp |= BIT(10);
-	if (bHasContacted) tmp |= BIT(11);
-	if (bPedPhysics) tmp |= BIT(12);
-	if (bIsStuck) tmp |= BIT(13);
-	if (bIsInSafePosition) tmp |= BIT(14);
-	if (bUseCollisionRecords) tmp |= BIT(15);
-
-	if (bWasPostponed) tmp |= BIT(16);
-	if (bExplosionProof) tmp |= BIT(17);
-	if (bIsVisible)  tmp |= BIT(18);
-	if (bHasCollided) tmp |= BIT(19);
-	if (bRenderScorched) tmp |= BIT(20);
-	if (bHasBlip) tmp |= BIT(21);
-	if (bIsBIGBuilding) tmp |= BIT(22);
-	if (bStreamBIGBuilding) tmp |= BIT(23);
-
-	if (bRenderDamaged) tmp |= BIT(24);
-	if (bBulletProof) tmp |= BIT(25);
-	if (bFireProof) tmp |= BIT(26);
-	if (bCollisionProof)  tmp |= BIT(27);
-	if (bMeleeProof) tmp |= BIT(28);
-	if (bOnlyDamagedByPlayer) tmp |= BIT(29);
-	if (bStreamingDontDelete) tmp |= BIT(30);
-	if (bRemoveFromWorld) tmp |= BIT(31);
-
-	WriteSaveBuf(buf, tmp);
-
-	tmp = 0;
-
-	if (bHasHitWall) tmp |= BIT(0);
-	if (bImBeingRendered)  tmp |= BIT(1);
-	if (bTouchingWater) tmp |= BIT(2);
-	if (bIsSubway) tmp |= BIT(3);
-	if (bDrawLast) tmp |= BIT(4);
-	if (bNoBrightHeadLights) tmp |= BIT(5);
-	if (bDoNotRender) tmp |= BIT(6);
-	if (bDistanceFade) tmp |= BIT(7);
-
-	if (m_flagE1) tmp |= BIT(8);
-	if (bDontCastShadowsOn) tmp |= BIT(9);
-	if (bOffscreen) tmp |= BIT(10);
-	if (bIsStaticWaitingForCollision) tmp |= BIT(11);
-	if (bDontStream) tmp |= BIT(12);
-	if (bUnderwater) tmp |= BIT(13);
-	if (bHasPreRenderEffects) tmp |= BIT(14);
-
-	WriteSaveBuf(buf, tmp);
-}
-
-void
-CEntity::LoadEntityFlags(uint8*& buf)
-{
-	uint32 tmp;
-	ReadSaveBuf(&tmp, buf);
-	m_type = (tmp & ((BIT(3) - 1)));
-	m_status = ((tmp >> 3) & (BIT(5) - 1));
-
-	bUsesCollision = !!(tmp & BIT(8));
-	bCollisionProcessed = !!(tmp & BIT(9));
-	bIsStatic = !!(tmp & BIT(10));
-	bHasContacted = !!(tmp & BIT(11));
-	bPedPhysics = !!(tmp & BIT(12));
-	bIsStuck = !!(tmp & BIT(13));
-	bIsInSafePosition = !!(tmp & BIT(14));
-	bUseCollisionRecords = !!(tmp & BIT(15));
-
-	bWasPostponed = !!(tmp & BIT(16));
-	bExplosionProof = !!(tmp & BIT(17));
-	bIsVisible = !!(tmp & BIT(18));
-	bHasCollided = !!(tmp & BIT(19));
-	bRenderScorched = !!(tmp & BIT(20));
-	bHasBlip = !!(tmp & BIT(21));
-	bIsBIGBuilding = !!(tmp & BIT(22));
-	bStreamBIGBuilding = !!(tmp & BIT(23));
-
-	bRenderDamaged = !!(tmp & BIT(24));
-	bBulletProof = !!(tmp & BIT(25));
-	bFireProof = !!(tmp & BIT(26));
-	bCollisionProof = !!(tmp & BIT(27));
-	bMeleeProof = !!(tmp & BIT(28));
-	bOnlyDamagedByPlayer = !!(tmp & BIT(29));
-	bStreamingDontDelete = !!(tmp & BIT(30));
-	bRemoveFromWorld = !!(tmp & BIT(31));
-
-	ReadSaveBuf(&tmp, buf);
-
-	bHasHitWall = !!(tmp & BIT(0));
-	bImBeingRendered = !!(tmp & BIT(1));
-	bTouchingWater = !!(tmp & BIT(2));
-	bIsSubway = !!(tmp & BIT(3));
-	bDrawLast = !!(tmp & BIT(4));
-	bNoBrightHeadLights = !!(tmp & BIT(5));
-	bDoNotRender = !!(tmp & BIT(6));
-	bDistanceFade = !!(tmp & BIT(7));
-
-	m_flagE1 = !!(tmp & BIT(8));
-	bDontCastShadowsOn = !!(tmp & BIT(9));
-	bOffscreen = !!(tmp & BIT(10));
-	bIsStaticWaitingForCollision = !!(tmp & BIT(11));
-	bDontStream = !!(tmp & BIT(12));
-	bUnderwater = !!(tmp & BIT(13));
-	bHasPreRenderEffects = !!(tmp & BIT(14));
-}
-
-#endif

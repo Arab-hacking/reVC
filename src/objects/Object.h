@@ -112,6 +112,8 @@ public:
 	static void DeleteAllMissionObjects();
 	static void DeleteAllTempObjects();
 	static void DeleteAllTempObjectsInArea(CVector point, float fRadius);
+	static void ConvertAllObjectsToDummyObjects();
+	static void ConvertToDummyObject(CObject *obj);
 };
 
 bool IsObjectPointerValid(CObject* pObject);

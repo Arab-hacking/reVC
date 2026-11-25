@@ -315,7 +315,7 @@ CTaskSimpleSwim::ProcessEffects(CPed *ped)
 	// The lung-capacity stat scales how long the player can hold his breath;
 	// the same 2x/1x/3x rates SA uses apply on the way down, on the way up and
 	// once there is no air left.
-	float capacity = CStats::GetFatAndMuscleModifier(CStats::STAT_MOD_AIR_IN_LUNG);
+	float capacity = 1150.0f;
 	float ts = CTimer::GetTimeStep();
 
 	if(underwater && ped->bDrownsInWater){

@@ -12,7 +12,6 @@
 #include "Timecycle.h"
 #include "ZoneCull.h"
 #include "Camera.h"
-#include "Darkel.h"
 #include "Fire.h"
 #include "Explosion.h"
 #include "Particle.h"
@@ -33,15 +32,8 @@
 #include "SurfaceTable.h"
 #include "Weather.h"
 #include "cHandlingDataMgr.h"
-#include "Record.h"
 #include "Remote.h"
-#include "Population.h"
-#include "CarCtrl.h"
-#include "CarAI.h"
 #include "Stats.h"
-#include "Garages.h"
-#include "PathFind.h"
-#include "Replay.h"
 #include "AnimManager.h"
 #include "RpAnimBlend.h"
 #include "AnimBlendAssociation.h"
@@ -53,7 +45,6 @@
 #include "VehicleNodeAtomic.h"
 #include "Bike.h"
 #include "Wanted.h"
-#include "SaveBuf.h"
 
 #if defined ANDROID
 int16 g_usLastProcessedModelIndexAutomobile = 0;
@@ -73,13 +64,6 @@ RwObject *GetCurrentAtomicObjectCB(RwObject *object, void *data);
 
 bool CAutomobile::m_sAllTaxiLights;
 
-const uint32 CAutomobile::nSaveStructSize =
-#ifdef COMPATIBLE_SAVES
-	1500;
-#else
-	sizeof(CAutomobile);
-#endif
-
 CAutomobile::CAutomobile(int32 id, uint8 CreatedBy)
  : CVehicle(CreatedBy)
 {
@@ -94,27 +78,9 @@ m_nVehicleSubType = VEHICLE_TYPE_AUTOMOBILE;
 	bTaxiLight = m_sAllTaxiLights;
 	bFixedColour = false;
 	bBigWheels = false;
-	bWaterTight = false;
 
 	SetModelIndex(id);
 
-	// Already done in CVehicle...
-	switch(GetModelIndex()){
-	case MI_HUNTER:
-	case MI_ANGEL:
-	case MI_FREEWAY:
-		m_nRadioStation = V_ROCK;
-		break;
-	case MI_RCBARON:
-	case MI_RCBANDIT:
-	case MI_RCRAIDER:
-	case MI_RCGOBLIN:
-	case MI_TOPFUN:
-	case MI_CADDY:
-	case MI_BAGGAGE:
-		m_nRadioStation = RADIO_OFF;
-		break;
-	}
 
 	m_pHandlingData = mod_HandlingManager.GetVehiclePointer((uint32)mi->m_handlingId);
 	m_pFlyingHandlingData =  mod_HandlingManager.GetFlyingPointer((uint32)mi->m_handlingId);
@@ -275,7 +241,7 @@ m_nVehicleSubType = VEHICLE_TYPE_AUTOMOBILE;
 
 	SetupSuspensionLines();
 
-	SetStatus(STATUS_SIMPLE);
+	SetStatus(STATUS_ABANDONED);
 	bUseCollisionRecords = true;
 
 	m_nNumPassengers = 0;
@@ -334,7 +300,6 @@ void
 CAutomobile::ProcessControl(void)
 {
 	int i;
-	float wheelRot;
 	float fwdSpeed = 0.0f;
 	CColModel *colModel;
 	float brake = 0.0f;
@@ -344,39 +309,23 @@ CAutomobile::ProcessControl(void)
 	else
 		colModel = GetColModel();
 	bool drivingInSand = false;
-	bWarnedPeds = false;
 	m_doingBurnout = 0;
 	bStuckInSand = false;
 	bRestingOnPhysical = false;
 
 	bool carHasNitro = bAllTaxisHaveNitro && GetStatus() == STATUS_PLAYER && IsTaxi();
 
-	if(CReplay::IsPlayingBack())
-		return;
 
 	// Heli wind
 	if(IsRealHeli())
-		if((GetStatus() == STATUS_PLAYER || GetStatus() == STATUS_PHYSICS) && m_aWheelSpeed[1] > 0.075f ||
-		   GetStatus() == STATUS_SIMPLE)
+		if((GetStatus() == STATUS_PLAYER || GetStatus() == STATUS_PHYSICS) && m_aWheelSpeed[1] > 0.075f)
 			CWindModifiers::RegisterOne(GetPosition(), 1);
 
 	UpdatePassengerList();
 
-	// Improve grip of vehicles in certain cases
+	// Improve grip of the RC bandit
 	bool strongGrip1 = false;
-	bool strongGrip2 = false;
-	if(FindPlayerVehicle() && this != FindPlayerVehicle() && FindPlayerPed()->Wanted()->GetWantedLevel() > 3 &&
-	   (AutoPilot.m_nCarMission == MISSION_RAMPLAYER_FARAWAY || AutoPilot.m_nCarMission == MISSION_RAMPLAYER_CLOSE ||
-	    AutoPilot.m_nCarMission == MISSION_BLOCKPLAYER_FARAWAY || AutoPilot.m_nCarMission == MISSION_BLOCKPLAYER_CLOSE) &&
-		FindPlayerSpeed().Magnitude() > 0.3f){
-
-		strongGrip1 = true;
-		if(FindPlayerSpeed().Magnitude() > 0.4f &&
-			m_vecMoveSpeed.Magnitude() < 0.3f)
-			strongGrip2 = true;
-		else if((GetPosition() - FindPlayerCoors()).Magnitude() > 50.0f)
-			strongGrip2 = true;
-	}else if(GetModelIndex() == MI_RCBANDIT && GetStatus() != STATUS_PLAYER_REMOTE)
+	if(GetModelIndex() == MI_RCBANDIT && GetStatus() != STATUS_PLAYER_REMOTE)
 		strongGrip1 = true;
 
 	if(bIsBus)
@@ -400,9 +349,7 @@ CAutomobile::ProcessControl(void)
 	// Process driver
 	if(pDriver)
 		if(IsUpsideDown() && CanPedEnterCar()){
-			if(!pDriver->IsPlayer() &&
-			   !(pDriver->m_leader && pDriver->m_leader->bInVehicle) &&
-			   pDriver->CharCreatedBy != MISSION_CHAR)
+			if(!pDriver->IsPlayer() && pDriver->CharCreatedBy != MISSION_CHAR)
 				pDriver->SetObjective(OBJECTIVE_LEAVE_CAR, this);
 		}
 
@@ -412,17 +359,12 @@ CAutomobile::ProcessControl(void)
 	if(m_nNumPassengers != 0 && IsUpsideDown() && CanPedEnterCar()){
 		for(i = 0; i < m_nNumMaxPassengers; i++)
 			if(pPassengers[i])
-				if(!pPassengers[i]->IsPlayer() &&
-				   !(pPassengers[i]->m_leader && pPassengers[i]->m_leader->bInVehicle) &&
-				   pPassengers[i]->CharCreatedBy != MISSION_CHAR)
+				if(!pPassengers[i]->IsPlayer() && pPassengers[i]->CharCreatedBy != MISSION_CHAR)
 					pPassengers[i]->SetObjective(OBJECTIVE_LEAVE_CAR, this);
 	}
 
 
 	UpdateClumpAlpha();
-
-	AutoPilot.m_bSlowedDownBecauseOfCars = false;
-	AutoPilot.m_bSlowedDownBecauseOfPeds = false;
 
 	// Set Center of Mass to make car more stable
 	if(strongGrip1 || bCheat3)
@@ -431,17 +373,6 @@ CAutomobile::ProcessControl(void)
 		m_vecCentreOfMass.z = m_pHandlingData->m_vecCentreOfMass.z - 0.2f*(float)CModelInfo::GetModelInfo(GetModelIndex())->GetColModel()->boundingBox.max.z;
 	else
 		m_vecCentreOfMass = m_pHandlingData->m_vecCentreOfMass;
-
-	// Park car
-	if(bCanPark && !bParking && VehicleCreatedBy != MISSION_VEHICLE && AutoPilot.m_nCarMission == MISSION_CRUISE &&
-	   ((CTimer::GetFrameCounter() + m_randomSeed)&0xF) == 0 && !IsTaxi()){
-		CVector parkPosition = GetPosition() + 3.0f*GetRight() + 10.0f*GetForward();
-		CEntity *ent = nil;
-		CColPoint colpoint;
-		if(!CWorld::ProcessLineOfSight(GetPosition(), parkPosition, colpoint, ent, true, true, true, false, false, false) ||
-		   ent == this)
-			CCarAI::GetCarToParkAtCoors(this, &parkPosition);
-	}
 
 	// Process depending on status
 
@@ -478,7 +409,7 @@ CAutomobile::ProcessControl(void)
 
 			PruneReferences();
 
-			if(GetStatus() == STATUS_PLAYER && !CRecordDataForChase::IsRecording())
+			if(GetStatus() == STATUS_PLAYER)
 				DoDriveByShootings();
 
 			// Tweak center on mass when driving on two wheels
@@ -535,33 +466,7 @@ CAutomobile::ProcessControl(void)
 			ActivateBomb();
 		break;
 
-	case STATUS_SIMPLE:
-		CCarAI::UpdateCarAI(this);
-		CPhysical::ProcessControl();
-		CCarCtrl::UpdateCarOnRails(this);
-
-		m_nWheelsOnGround = 4;
-		m_nDriveWheelsOnGroundPrev = m_nDriveWheelsOnGround;
-		m_nDriveWheelsOnGround = 4;
-
-		m_pHandlingData->m_Transmission.CalculateGearForSimpleCar(AutoPilot.m_fMaxTrafficSpeed/50.0f, m_nCurrentGear);
-
-		wheelRot = ProcessWheelRotation(WHEEL_STATE_NORMAL, GetForward(), m_vecMoveSpeed, 0.35f);
-		for(i = 0; i < 4; i++)
-			m_aWheelRotation[i] += wheelRot;
-
-		PlayHornIfNecessary();
-		ReduceHornCounter();
-		bVehicleColProcessed = false;
-		bAudioChangingGear = false;
-		// that's all we do for simple vehicles
-		return;
-
 	case STATUS_PHYSICS:
-		CCarAI::UpdateCarAI(this);
-		CCarCtrl::SteerAICarWithPhysics(this);
-		PlayHornIfNecessary();
-
 		if(bIsBeingCarJacked){
 			m_fGasPedal = 0.0f;
 			m_fBrakePedal = 1.0f;
@@ -665,16 +570,15 @@ CAutomobile::ProcessControl(void)
 		   makeStatic){
 			m_nStaticFrames++;
 
-			if(m_nStaticFrames > 10 || makeStatic)
-				if(!CCarCtrl::MapCouldMoveInThisArea(GetPosition().x, GetPosition().y)){
-					if(!makeStatic || m_nStaticFrames > 10)
-						m_nStaticFrames = 10;
+			if(m_nStaticFrames > 10 || makeStatic){
+				if(!makeStatic || m_nStaticFrames > 10)
+					m_nStaticFrames = 10;
 
-					skipPhysics = true;
+				skipPhysics = true;
 
-					m_vecMoveSpeed = CVector(0.0f, 0.0f, 0.0f);
-					m_vecTurnSpeed = CVector(0.0f, 0.0f, 0.0f);
-				}
+				m_vecMoveSpeed = CVector(0.0f, 0.0f, 0.0f);
+				m_vecTurnSpeed = CVector(0.0f, 0.0f, 0.0f);
+			}
 		}else
 			m_nStaticFrames = 0;
 		if(IsRealHeli() && m_aWheelSpeed[1] > 0.0f){
@@ -769,11 +673,6 @@ CAutomobile::ProcessControl(void)
 		}
 		break;
 	}
-
-	if(GetStatus() == STATUS_PHYSICS || GetStatus() == STATUS_SIMPLE)
-		if(AutoPilot.m_nCarMission == MISSION_HELI_FLYTOCOORS ||
-		   AutoPilot.m_nCarMission == MISSION_PLANE_FLYTOCOORS)
-			skipPhysics = true;
 
 	if(skipPhysics){
 		bHasContacted = false;
@@ -961,10 +860,10 @@ CAutomobile::ProcessControl(void)
 		if(FindPlayerVehicle() != this && (strongGrip1 || CVehicle::bCheat3)){
 			traction *= 1.2f;
 			acceleration *= 1.4f;
-			if(strongGrip2 || CVehicle::bCheat3){
-				traction *= 1.3f;
-				acceleration *= 1.4f;
-			}
+		}
+		if(CVehicle::bCheat3){
+			traction *= 1.3f;
+			acceleration *= 1.4f;
 		}
 
 		float fThrust;
@@ -1603,10 +1502,6 @@ CAutomobile::ProcessControl(void)
 	ProcessDelayedExplosion();
 
 
-	if(m_bSirenOrAlarm && (CTimer::GetFrameCounter()&7) == 5 &&
-	   UsesSiren() && GetModelIndex() != MI_MRWHOOP)
-		CCarAI::MakeWayForCarWithSiren(this);
-
 
 	// Find out how much to shake the pad depending on suspension and ground surface
 
@@ -1662,9 +1557,6 @@ CAutomobile::ProcessControl(void)
 
 	bVehicleColProcessed = false;
 	bAudioChangingGear = false;
-
-	if(!bWarnedPeds && GetVehicleAppearance() != VEHICLE_APPEARANCE_HELI && GetVehicleAppearance() != VEHICLE_APPEARANCE_PLANE)
-		CCarCtrl::ScanForPedDanger(this);
 
 
 	if(bInfiniteMass){
@@ -1795,37 +1687,8 @@ CAutomobile::PreRender(void)
 			}
 		}
 	}else{
-		if(GetStatus() == STATUS_SIMPLE){
-			CMatrix mat;
-			CVector pos;
-
-			mat.Attach(RwFrameGetMatrix(m_aCarNodes[CAR_WHEEL_RB]));
-			pos = mat.GetPosition();
-			pos.z = 1.5f*m_aWheelPosition[CARWHEEL_REAR_RIGHT];
-			m_aWheelColPoints[CARWHEEL_REAR_RIGHT].point = GetMatrix() * pos;
-			m_aWheelColPoints[CARWHEEL_REAR_RIGHT].surfaceB = SURFACE_DEFAULT;
-
-			mat.Attach(RwFrameGetMatrix(m_aCarNodes[CAR_WHEEL_LB]));
-			pos = mat.GetPosition();
-			pos.z = 1.5f*m_aWheelPosition[CARWHEEL_REAR_LEFT];
-			m_aWheelColPoints[CARWHEEL_REAR_LEFT].point = GetMatrix() * pos;
-			m_aWheelColPoints[CARWHEEL_REAR_LEFT].surfaceB = SURFACE_DEFAULT;
-
-			mat.Attach(RwFrameGetMatrix(m_aCarNodes[CAR_WHEEL_RF]));
-			pos = mat.GetPosition();
-			pos.z = 1.5f*m_aWheelPosition[CARWHEEL_FRONT_RIGHT];
-			m_aWheelColPoints[CARWHEEL_FRONT_RIGHT].point = GetMatrix() * pos;
-			m_aWheelColPoints[CARWHEEL_FRONT_RIGHT].surfaceB = SURFACE_DEFAULT;
-
-			mat.Attach(RwFrameGetMatrix(m_aCarNodes[CAR_WHEEL_LF]));
-			pos = mat.GetPosition();
-			pos.z = 1.5f*m_aWheelPosition[CARWHEEL_FRONT_LEFT];
-			m_aWheelColPoints[CARWHEEL_FRONT_LEFT].point = GetMatrix() * pos;
-			m_aWheelColPoints[CARWHEEL_FRONT_LEFT].surfaceB = SURFACE_DEFAULT;
-		}
-
 		int drawParticles = Abs(fwdSpeed) < 90.0f;
-		if(GetStatus() == STATUS_SIMPLE || GetStatus() == STATUS_PHYSICS ||
+		if(GetStatus() == STATUS_PHYSICS ||
 		   GetStatus() == STATUS_PLAYER || GetStatus() == STATUS_PLAYER_PLAYBACKFROMBUFFER){
 			bool rearSkidding = false;
 			if(m_aWheelState[CARWHEEL_REAR_LEFT] == WHEEL_STATE_SKIDDING ||
@@ -2696,8 +2559,7 @@ CAutomobile::ProcessEntityCollision(CEntity *ent, CColPoint *colpoints)
     g_usLastProcessedModelIndexAutomobile = ent->GetModelIndex();
     g_iLastProcessedModelIndexAutoEnt = ent->GetModelIndex();
 #endif
-	if(GetStatus() != STATUS_SIMPLE)
-		bVehicleColProcessed = true;
+	bVehicleColProcessed = true;
 
 	if(bUsingSpecialColModel)
 		colModel = &CWorld::Players[CWorld::PlayerInFocus].m_ColModel;
@@ -2923,8 +2785,6 @@ CAutomobile::ProcessControlInputs(uint8 pad)
 		bIsHandbrakeOn = true;
 		m_fGasPedal = 0.0f;
 
-		FindPlayerPed()->KeepAreaAroundPlayerClear();
-
 		// slow down car immediately
 		speed = m_vecMoveSpeed.Magnitude();
 		if(speed > 0.28f)
@@ -3126,8 +2986,8 @@ CAutomobile::HydraulicControl(void)
 		else if(m_hydraulicState >= 100)
 			DMAudio.PlayOneShot(m_audioEntityId, SOUND_CAR_HYDRAULIC_2, 0.0f);
 
-		if(playerInfo->m_pVehicleEx == this)
-			playerInfo->m_pVehicleEx = nil;
+		if(playerInfo->m_pSpecialColModelVehicle == this)
+			playerInfo->m_pSpecialColModelVehicle = nil;
 		bUsingSpecialColModel = false;
 		m_hydraulicState = 0;
 		return;
@@ -3145,9 +3005,9 @@ CAutomobile::HydraulicControl(void)
 	if(!bUsingSpecialColModel){
 		// Init special col model
 
-		if(playerInfo->m_pVehicleEx && playerInfo->m_pVehicleEx == this)
-			playerInfo->m_pVehicleEx->bUsingSpecialColModel = false;
-		playerInfo->m_pVehicleEx = this;
+		if(playerInfo->m_pSpecialColModelVehicle && playerInfo->m_pSpecialColModelVehicle == this)
+			playerInfo->m_pSpecialColModelVehicle->bUsingSpecialColModel = false;
+		playerInfo->m_pSpecialColModelVehicle = this;
 		playerInfo->m_ColModel = *normalColModel;
 		bUsingSpecialColModel = true;
 		specialColModel = &playerInfo->m_ColModel;
@@ -3439,14 +3299,12 @@ CAutomobile::ProcessBuoyancy(void)
 
 			if(pDriver){
 				pDriver->bIsInWater = true;
-				if(pDriver->IsPlayer() || !bWaterTight)
-					pDriver->InflictDamage(nil, WEAPONTYPE_DROWNING, CTimer::GetTimeStep(), PED_PIECE_TORSO, 0);
+				pDriver->InflictDamage(nil, WEAPONTYPE_DROWNING, CTimer::GetTimeStep(), PED_PIECE_TORSO, 0);
 			}
 			for(i = 0; i < m_nNumMaxPassengers; i++)
 				if(pPassengers[i]){
 					pPassengers[i]->bIsInWater = true;
-					if(pPassengers[i]->IsPlayer() || !bWaterTight)
-						pPassengers[i]->InflictDamage(nil, WEAPONTYPE_DROWNING, CTimer::GetTimeStep(), PED_PIECE_TORSO, 0);
+					pPassengers[i]->InflictDamage(nil, WEAPONTYPE_DROWNING, CTimer::GetTimeStep(), PED_PIECE_TORSO, 0);
 				}
 		}else{
 			bIsInWater = false;
@@ -3715,7 +3573,7 @@ CAutomobile::RcbanditCheck1CarWheels(CPtrList &list)
 				mi = (CVehicleModelInfo*)CModelInfo::GetModelInfo(car->GetModelIndex());
 
 				for(i = 0; i < 4; i++){
-					if(car->m_aSuspensionSpringRatioPrev[i] < 1.0f || car->GetStatus() == STATUS_SIMPLE){
+					if(car->m_aSuspensionSpringRatioPrev[i] < 1.0f){
 						CVector wheelPos;
 						CColSphere sph;
 						mi->GetWheelPosn(i, wheelPos);
@@ -3812,13 +3670,6 @@ CAutomobile::VehicleDamage(float impulse, uint16 damagedPiece)
 
 	float minImpulse = GetModelIndex() == MI_RCRAIDER || GetModelIndex() == MI_RCGOBLIN ? 1.0f : 25.0f;
 	if(impulse > minImpulse && GetStatus() != STATUS_WRECKED){
-		if(bIsLawEnforcer &&
-		   FindPlayerVehicle() && FindPlayerVehicle() == m_pDamageEntity &&
-		   GetStatus() != STATUS_ABANDONED &&
-		   FindPlayerVehicle()->m_vecMoveSpeed.Magnitude() >= m_vecMoveSpeed.Magnitude() &&
-		   FindPlayerVehicle()->m_vecMoveSpeed.Magnitude() > 0.1f)
-			FindPlayerPed()->SetWantedLevelNoDrop(1);
-
 		if(GetStatus() == STATUS_PLAYER && impulse > 50.0f){
 			uint8 freq = Min(0.4f*impulse*2000.0f/m_fMass + 100.0f, 250.0f);
 			CPad::GetPad(0)->StartShake(40000/freq, freq);
@@ -4587,18 +4438,8 @@ CAutomobile::BlowUpCar(CEntity *culprit)
 	bLightsOn = false;
 	m_bSirenOrAlarm = false;
 	bTaxiLight = false;
-	if(bIsAmbulanceOnDuty){
-		bIsAmbulanceOnDuty = false;
-		CCarCtrl::NumAmbulancesOnDuty--;
-	}
-	if(bIsFireTruckOnDuty){
-		bIsFireTruckOnDuty = false;
-		CCarCtrl::NumFiretrucksOnDuty--;
-	}
-	ChangeLawEnforcerState(false);
 
 	gFireManager.StartFire(this, culprit, 0.8f, true);
-	CDarkel::RegisterCarBlownUpByPlayer(this);
 	if(GetModelIndex() == MI_RCBANDIT)
 		CExplosion::AddExplosion(this, culprit, EXPLOSION_CAR_QUICK, GetPosition(), 0);
 	else
@@ -4661,10 +4502,6 @@ CAutomobile::BurstTyre(uint8 wheel, bool applyForces)
 		CStats::TyresPopped++;
 		DMAudio.PlayOneShot(m_audioEntityId, SOUND_CAR_TYRE_POP, 0.0f);
 
-		if(GetStatus() == STATUS_SIMPLE){
-			SetStatus(STATUS_PHYSICS);
-			CCarCtrl::SwitchVehicleToRealPhysics(this);
-		}
 
 		if(applyForces){
 			ApplyMoveForce(GetRight() * m_fMass * CGeneral::GetRandomNumberInRange(-fBurstForceMult, fBurstForceMult));
@@ -4739,42 +4576,6 @@ float
 CAutomobile::GetHeightAboveRoad(void)
 {
 	return m_fHeightAboveRoad;
-}
-
-void
-CAutomobile::PlayCarHorn(void)
-{
-	uint32 r;
-
-	if (IsAlarmOn() || m_nCarHornTimer != 0)
-		return;
-
-	if (m_nCarHornDelay) {
-		m_nCarHornDelay--;
-		return;
-	}
-
-	m_nCarHornDelay = (CGeneral::GetRandomNumber() & 0x7F) + 150;
-	r = m_nCarHornDelay & 7;
-	if(r < 2){
-		m_nCarHornTimer = 45;
-	}else if(r < 4){
-		if(pDriver)
-			pDriver->Say(SOUND_PED_ANNOYED_DRIVER);
-		m_nCarHornTimer = 45;
-	}else{
-		if(pDriver)
-			pDriver->Say(SOUND_PED_ANNOYED_DRIVER);
-	}
-}
-
-void
-CAutomobile::PlayHornIfNecessary(void)
-{
-	if(AutoPilot.m_bSlowedDownBecauseOfPeds ||
-	   AutoPilot.m_bSlowedDownBecauseOfCars)
-		if(!HasCarStoppedBecauseOfLight())
-			PlayCarHorn();
 }
 
 float
@@ -4862,7 +4663,7 @@ CAutomobile::ProcessSuspension(void)
 
 	// The Rhino carries eight more suspension lines spread over its tracks, so
 	// it runs the whole stage three times with different lengths.
-	int numWheelLoops = isRhino && !CReplay::IsPlayingBack() ? 3 : 1;
+	int numWheelLoops = isRhino ? 3 : 1;
 
 	CVector contactPoints[4];
 	CVector directions[4];
@@ -5141,40 +4942,8 @@ CAutomobile::BlowUpCarsInPath(void)
 			   m_aCollisionRecords[i]->GetModelIndex() != MI_RHINO &&
 			   !m_aCollisionRecords[i]->bRenderScorched){
 				if(this == FindPlayerVehicle())
-					CEventList::RegisterEvent(EVENT_EXPLOSION, EVENT_ENTITY_VEHICLE, m_aCollisionRecords[i], FindPlayerPed(), 2000);
 				((CVehicle*)m_aCollisionRecords[i])->BlowUpCar(this);
 			}
-}
-
-bool
-CAutomobile::HasCarStoppedBecauseOfLight(void)
-{
-	int i;
-
-	if(GetStatus() != STATUS_SIMPLE && GetStatus() != STATUS_PHYSICS)
-		return false;
-
-	if(AutoPilot.m_nCurrentRouteNode && AutoPilot.m_nNextRouteNode){
-		CPathNode *curnode = &ThePaths.m_pathNodes[AutoPilot.m_nCurrentRouteNode];
-		for(i = 0; i < curnode->numLinks; i++)
-			if(ThePaths.ConnectedNode(curnode->firstLink + i) == AutoPilot.m_nNextRouteNode)
-				break;
-		if(i < curnode->numLinks &&
-		   ThePaths.m_carPathLinks[ThePaths.m_carPathConnections[curnode->firstLink + i]].trafficLightType & 3)
-			return true;
-	}
-
-	if(AutoPilot.m_nCurrentRouteNode && AutoPilot.m_nPrevRouteNode){
-		CPathNode *curnode = &ThePaths.m_pathNodes[AutoPilot.m_nCurrentRouteNode];
-		for(i = 0; i < curnode->numLinks; i++)
-			if(ThePaths.ConnectedNode(curnode->firstLink + i) == AutoPilot.m_nPrevRouteNode)
-				break;
-		if(i < curnode->numLinks &&
-		   ThePaths.m_carPathLinks[ThePaths.m_carPathConnections[curnode->firstLink + i]].trafficLightType & 3)
-			return true;
-	}
-
-	return false;
 }
 
 void
@@ -5500,32 +5269,6 @@ CAutomobile::Fix(void)
 		HideOptionalVehicleNodeAtomic(m_aCarNodes[CAR_WHEEL_LB]);
 		HideOptionalVehicleNodeAtomic(m_aCarNodes[CAR_WHEEL_RB]);
 	}
-}
-
-void
-CAutomobile::SetupDamageAfterLoad(void)
-{
-	if(m_aCarNodes[CAR_BUMP_FRONT])
-		SetBumperDamage(CAR_BUMP_FRONT, VEHBUMPER_FRONT);
-	if(m_aCarNodes[CAR_BONNET])
-		SetDoorDamage(CAR_BONNET, DOOR_BONNET);
-	if(m_aCarNodes[CAR_BUMP_REAR])
-		SetBumperDamage(CAR_BUMP_REAR, VEHBUMPER_REAR);
-	if(m_aCarNodes[CAR_BOOT])
-		SetDoorDamage(CAR_BOOT, DOOR_BOOT);
-	if(m_aCarNodes[CAR_DOOR_LF])
-		SetDoorDamage(CAR_DOOR_LF, DOOR_FRONT_LEFT);
-	if(m_aCarNodes[CAR_DOOR_RF])
-		SetDoorDamage(CAR_DOOR_RF, DOOR_FRONT_RIGHT);
-	if(m_aCarNodes[CAR_DOOR_LR])
-		SetDoorDamage(CAR_DOOR_LR, DOOR_REAR_LEFT);
-	if(m_aCarNodes[CAR_DOOR_RR])
-		SetDoorDamage(CAR_DOOR_RR, DOOR_REAR_RIGHT);
-	if(m_aCarNodes[CAR_WING_LF])
-		SetPanelDamage(CAR_WING_LF, VEHPANEL_FRONT_LEFT);
-	if(m_aCarNodes[CAR_WING_RF])
-		SetPanelDamage(CAR_WING_RF, VEHPANEL_FRONT_RIGHT);
-	// No rear wing nodes in SA - see the note in ProcessEntityCollision.
 }
 
 RwObject*
@@ -5888,36 +5631,6 @@ CAutomobile::SetAllTaxiLights(bool set)
 }
 
 void
-CAutomobile::TellHeliToGoToCoors(float x, float y, float z, uint8 speed)
-{
-	AutoPilot.m_nCarMission = MISSION_HELI_FLYTOCOORS;
-	AutoPilot.m_vecDestinationCoors.x = x;
-	AutoPilot.m_vecDestinationCoors.y = y;
-	AutoPilot.m_vecDestinationCoors.z = z;
-	AutoPilot.m_nCruiseSpeed = speed;
-	SetStatus(STATUS_PHYSICS);
-
-	if(m_fOrientation == 0.0f){
-		m_fOrientation = CGeneral::GetATanOfXY(GetForward().x, GetForward().y) + PI;
-		while(m_fOrientation > TWOPI) m_fOrientation -= TWOPI;
-	}
-}
-
-void
-CAutomobile::TellPlaneToGoToCoors(float x, float y, float z, uint8 speed)
-{
-	AutoPilot.m_nCarMission = MISSION_PLANE_FLYTOCOORS;
-	AutoPilot.m_vecDestinationCoors.x = x;
-	AutoPilot.m_vecDestinationCoors.y = y;
-	AutoPilot.m_vecDestinationCoors.z = z;
-	AutoPilot.m_nCruiseSpeed = speed;
-	SetStatus(STATUS_PHYSICS);
-
-	if(m_fOrientation == 0.0f)
-		m_fOrientation = CGeneral::GetATanOfXY(GetForward().x, GetForward().y);
-}
-
-void
 CAutomobile::PopBoot(void)
 {
 	switch(Damage.GetDoorStatus(DOOR_BOOT)){
@@ -6005,25 +5718,6 @@ CAutomobile::KnockPedOutCar(eWeaponType weapon, uint16 door, CPed *ped)
 	ped->m_pMyVehicle = nil;
 	return ped;
 }
-
-#ifdef COMPATIBLE_SAVES
-void
-CAutomobile::Save(uint8*& buf)
-{
-	CVehicle::Save(buf);
-	WriteSaveBuf(buf, Damage);
-	ZeroSaveBuf(buf, 1500 - 672 - sizeof(CDamageManager));
-}
-
-void
-CAutomobile::Load(uint8*& buf)
-{
-	CVehicle::Load(buf);
-	ReadSaveBuf(&Damage, buf);
-	SkipSaveBuf(buf, 1500 - 672 - sizeof(CDamageManager));
-	SetupDamageAfterLoad();
-}
-#endif
 
 // ---------------------------------------------------------------------------
 // SA nitrous (CAutomobile::NitrousControl / DoNitroEffect / StopNitroEffect)
@@ -6223,12 +5917,6 @@ CAutomobile::SetWheelStatus(int32 wheel, uint32 status)
 
 	Damage.SetWheelStatus(wheel, status);
 
-	// A car that was a static dummy has to come back to real physics for the
-	// burst tyre to actually do anything, exactly as BurstTyre arranges.
-	if(status != WHEEL_STATUS_OK && GetStatus() == STATUS_SIMPLE){
-		SetStatus(STATUS_PHYSICS);
-		CCarCtrl::SwitchVehicleToRealPhysics(this);
-	}
 }
 
 // The whole damage state, in the order a peer would send it. Reading is a pure

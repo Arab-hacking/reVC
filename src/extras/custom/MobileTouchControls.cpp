@@ -1,6 +1,5 @@
 #include "common.h"
 
-#include "CarCtrl.h"
 #include "crossplatform.h"
 #include "platform.h"
 #include "MobileTouchControls.h"
@@ -29,7 +28,6 @@
 #include "Pools.h"
 #include "Radar.h"
 #include "Renderer.h"
-#include "Replay.h"
 #include "RwHelper.h"
 #include "Shadows.h"
 #include "Sprite2d.h"
@@ -102,7 +100,6 @@ enum MobileBtnId {
 	MBTN_PAUSE = 0,
 	MBTN_CAM,
 	MBTN_WEAPON_SLOT,
-	MBTN_RADIO_SLOT,
 	MBTN_DRIVE_MODE,
 	MBTN_ATTACK,
 	MBTN_SPRINT,
@@ -179,7 +176,6 @@ struct ActivePointer {
 	bool isLook;
 	MobileBtnId btn;
 	bool swipedWeapon;
-	bool swipedRadio;
 };
 
 enum MenuOverlayBtn {
@@ -255,7 +251,6 @@ static bool s_pulsePause = false;
 static bool s_pulseCam = false;
 static bool s_pulseWeaponNext = false;
 static bool s_pulseWeaponPrev = false;
-static bool s_pulseRadio = false;
 static bool s_pulseInteract = false;
 static bool s_pulseCrouch = false;
 static bool s_pulseSubmission = false;
@@ -546,8 +541,23 @@ SpawnVehicleByModel(int32 modelId)
 		basePos.x, basePos.y, basePos.z, fwd.x, fwd.y, distAhead,
 		&sx, &sy, &sz, &rx, &ry);
 
-	// One factory for every class, as in SA.
-	CVehicle *spawned = CCarCtrl::GetNewVehicleDependingOnCarModel(modelId, RANDOM_VEHICLE);
+	bool groundFound = false;
+	float groundZ = CWorld::FindGroundZFor3DCoord(sx, sy, basePos.z + 5.0f, &groundFound);
+	if (!groundFound) {
+		CColPoint cp;
+		CEntity *hitEnt = nil;
+		if (CWorld::ProcessVerticalLine(CVector(sx, sy, basePos.z + 30.0f), basePos.z - 40.0f,
+		                                cp, hitEnt, true, false, false, false, false, false, nil)) {
+			groundZ = cp.point.z;
+			groundFound = true;
+		}
+	}
+	CColModel *col = CModelInfo::GetColModel(modelId);
+	const float baseOfModel = col ? -col->boundingBox.min.z : 0.0f;
+	CVector finalPos(sx, sy, (groundFound ? groundZ : basePos.z) + baseOfModel + 0.15f);
+	const float headingRad = std::atan2(-fwd.x, fwd.y);
+
+	CVehicle *spawned = CGame::SpawnVehicle(modelId, finalPos, headingRad);
 	// A bike placed standing sinks through its own suspension otherwise. This
 	// fork has no AsBike() cast helper, so the downcast is explicit and is only
 	// reached for the two model classes that really are CBike instances.
@@ -561,27 +571,9 @@ SpawnVehicleByModel(int32 modelId)
 		return false;
 	}
 
-	bool groundFound = false;
-	float groundZ = CWorld::FindGroundZFor3DCoord(sx, sy, basePos.z + 5.0f, &groundFound);
-	if (!groundFound) {
-		CColPoint cp;
-		CEntity *hitEnt = nil;
-		if (CWorld::ProcessVerticalLine(CVector(sx, sy, basePos.z + 30.0f), basePos.z - 40.0f,
-		                                cp, hitEnt, true, false, false, false, false, false, nil)) {
-			groundZ = cp.point.z;
-			groundFound = true;
-		}
-	}
-	CVector finalPos(sx, sy, (groundFound ? groundZ : basePos.z) + spawned->GetDistanceFromCentreOfMassToBaseOfModel() + 0.15f);
 	spawned->bIsStatic = false;
 	spawned->bEngineOn = false;
 	spawned->bLightsOn = false;
-	spawned->SetPosition(finalPos);
-	const float headingRad = std::atan2(-fwd.x, fwd.y);
-	spawned->SetOrientation(0.0f, 0.0f, headingRad);
-	spawned->SetStatus(STATUS_ABANDONED);
-	spawned->m_nDoorLock = CARLOCK_UNLOCKED;
-	CWorld::Add(spawned);
 
 	s_lastSpawnedVehRef = CPools::GetVehicleRef(spawned);
 	if (!(previousFlags & STREAMFLAGS_DONT_REMOVE)) {
@@ -935,10 +927,6 @@ CheckNearbyInteractPickup(CPlayerPed *player, MobileTexId *outTex)
 {
 	if (!player)
 		return false;
-	if (player->m_nPedState == PED_MAKE_PHONECALL) {
-		if (outTex) *outTex = MTEX_CELLPHONE;
-		return true;
-	}
 	if (CPickups::PlayerOnWeaponPickup > 0) {
 		if (outTex) *outTex = MTEX_SWAPGUN;
 		return true;
@@ -985,7 +973,7 @@ IsGameplayTouchHudActive(void)
 		return false;
 	if (FrontEndMenuManager.m_bMenuActive)
 		return false;
-	if (CReplay::IsPlayingBack() || TheCamera.m_WideScreenOn)
+	if (TheCamera.m_WideScreenOn)
 		return false;
 	return CHud::m_Wants_To_Draw_Hud;
 }
@@ -1111,8 +1099,6 @@ UpdateGameplayLayout(void)
 		const bool useStick = isHeli || isPlane || s_vehicleStickMode;
 
 		SetCircleBtn(s_buttons[MBTN_DRIVE_MODE], camIconX - m.Dp(54.0f), topIconY, rTopIcon, MTEX_DRIVE_TOGGLE, GLYPH_STEER_MODE);
-		SetRectBtn(s_buttons[MBTN_RADIO_SLOT], W * 0.50f, m.marginTopPx + m.Dp(22.0f),
-			m.Dp(68.0f), m.Dp(24.0f), MTEX_COUNT, GLYPH_NONE, true);
 
 		if (SupportsVehicleSubmission(veh)) {
 			SetCircleBtn(s_buttons[MBTN_SUBMISSION], camIconX - m.Dp(108.0f), topIconY, rTopIcon, MTEX_SUBMISSION, GLYPH_TARGET);
@@ -1480,7 +1466,7 @@ IsSliderMenuAction(int32 action)
 {
 	return action == MENUACTION_BRIGHTNESS || action == MENUACTION_DRAWDIST ||
 	       action == MENUACTION_MUSICVOLUME || action == MENUACTION_SFXVOLUME ||
-	       action == MENUACTION_MOUSESENS || action == MENUACTION_MP3VOLUMEBOOST
+	       action == MENUACTION_MOUSESENS
 #ifdef CUSTOM_FRONTEND_OPTIONS
 	       || action == MENUACTION_CFO_SLIDER
 #endif
@@ -1492,7 +1478,7 @@ IsCycleChoiceAction(int32 action)
 {
 	return action == MENUACTION_WIDESCREEN || action == MENUACTION_SPEAKERCONF ||
 	       action == MENUACTION_AUDIOHW || action == MENUACTION_SCREENRES ||
-	       action == MENUACTION_CTRLMETHOD || action == MENUACTION_RADIO
+	       action == MENUACTION_CTRLMETHOD
 #ifdef GAMEPAD_MENU
 	       || action == MENUACTION_CTRLCONFIG
 #endif
@@ -1503,15 +1489,9 @@ static bool
 ShouldShowMenuBackOverlay(int32 screen)
 {
 	return screen != MENUPAGE_START_MENU &&
-	       screen != MENUPAGE_SAVING_IN_PROGRESS &&
-	       screen != MENUPAGE_DELETING_IN_PROGRESS &&
 	       screen != MENUPAGE_OUTRO &&
-	       screen != MENUPAGE_LOAD_SLOT_CONFIRM &&
-	       screen != MENUPAGE_DELETE_SLOT_CONFIRM &&
-	       screen != MENUPAGE_SAVE_OVERWRITE_CONFIRM &&
 	       screen != MENUPAGE_NEW_GAME_RELOAD &&
-	       screen != MENUPAGE_EXIT &&
-	       screen != MENUPAGE_SAVE_CHEAT_WARNING;
+	       screen != MENUPAGE_EXIT;
 }
 
 static void
@@ -1614,7 +1594,6 @@ ApplyDirectSliderValue(int32 screen, int32 row, float touchX, float deltaX, bool
 		case MENUACTION_DRAWDIST:       return Clamp((FrontEndMenuManager.m_PrefsLOD - DRAWDIST_MIN) / DRAWDIST_RANGE, 0.0f, 1.0f);
 		case MENUACTION_MUSICVOLUME:    return FrontEndMenuManager.m_PrefsMusicVolume / 64.0f;
 		case MENUACTION_SFXVOLUME:      return FrontEndMenuManager.m_PrefsSfxVolume / 64.0f;
-		case MENUACTION_MP3VOLUMEBOOST: return FrontEndMenuManager.m_PrefsMP3BoostVolume / 64.0f;
 		case MENUACTION_MOUSESENS:      return TheCamera.m_fMouseAccelHorzntl * 200.0f;
 #ifdef CUSTOM_FRONTEND_OPTIONS
 		case MENUACTION_CFO_SLIDER: {
@@ -1652,12 +1631,6 @@ ApplyDirectSliderValue(int32 screen, int32 row, float touchX, float deltaX, bool
 		if (FrontEndMenuManager.m_nPrefsAudio3DProviderIndex != NO_AUDIO_PROVIDER) {
 			FrontEndMenuManager.m_PrefsSfxVolume = (int8)Clamp(t * 64.0f + 0.5f, 0.0f, 64.0f);
 			DMAudio.SetEffectsMasterVolume(FrontEndMenuManager.m_PrefsSfxVolume);
-		}
-		break;
-	case MENUACTION_MP3VOLUMEBOOST:
-		if (FrontEndMenuManager.m_nPrefsAudio3DProviderIndex != NO_AUDIO_PROVIDER && DMAudio.IsMP3RadioChannelAvailable()) {
-			FrontEndMenuManager.m_PrefsMP3BoostVolume = (int8)Clamp(t * 64.0f + 0.5f, 0.0f, 64.0f);
-			DMAudio.SetMP3BoostVolume(FrontEndMenuManager.m_PrefsMP3BoostVolume);
 		}
 		break;
 	case MENUACTION_MOUSESENS:
@@ -1923,17 +1896,6 @@ OnMenuFingerMotion(int64 fingerId, float x, float y)
 		}
 	}
 
-	// 5. Sound Settings radio icon carousel horizontal swipe
-	if (screen == MENUPAGE_SOUND_SETTINGS &&
-	    p->startY >= MenuY(MENURADIO_SELECTOR_START_Y - 16.0f) &&
-	    p->startY <= MenuY(MENURADIO_SELECTOR_START_Y + MENURADIO_SELECTOR_HEIGHT + 12.0f)) {
-		if (!p->swipedHorizontal && Abs(totalDX) >= m.Dp(26.0f) && Abs(totalDX) > Abs(totalDY)) {
-			p->swipedHorizontal = true;
-			FrontEndMenuManager.ChangeRadioStation(totalDX < 0.0f ? 1 : -1);
-			return;
-		}
-	}
-
 	// 6. Vertical swipe scrolling on scrollable pages & native lists (Skin Select / Controls)
 	const int32 maxVis = MenuHasNativeList(screen) ? 15 : GetMenuMaxVisibleRows();
 	if (FrontEndMenuManager.m_nTotalListRow > maxVis || (screen == MENUPAGE_SKIN_SELECT && FrontEndMenuManager.m_nSkinsTotal > maxVis)) {
@@ -2049,13 +2011,6 @@ OnMenuFingerUp(int64 fingerId, float x, float y)
 					s_lastMapTapY = y;
 				}
 			}
-		} else if (screen == MENUPAGE_SOUND_SETTINGS &&
-		           y >= MenuY(MENURADIO_SELECTOR_START_Y - 14.0f) &&
-		           y <= MenuY(MENURADIO_SELECTOR_START_Y + MENURADIO_SELECTOR_HEIGHT - 4.0f)) {
-			if (x < MenuXLeft(320.0f))
-				FrontEndMenuManager.ChangeRadioStation(-1);
-			else
-				FrontEndMenuManager.ChangeRadioStation(1);
 		} else if (screen == MENUPAGE_SKIN_SELECT) {
 			if (x > MenuXLeft(PLAYERSETUP_LIST_LEFT) && x < MenuXRight(PLAYERSETUP_LIST_RIGHT) &&
 			    y > MenuY(PLAYERSETUP_LIST_BODY_TOP) && y < SCREEN_SCALE_FROM_BOTTOM(PLAYERSETUP_LIST_BOTTOM)) {
@@ -2574,15 +2529,6 @@ CMobileTouchControls::UpgradeRadarSprites(void)
 		{ RADAR_SPRITE_TSHIRT,          "hud_tshirt" },
 		{ RADAR_SPRITE_TOMMY,           "hud_tommy" },
 		{ RADAR_SPRITE_PHONE,           "hud_phone" },
-		{ RADAR_SPRITE_RADIO_WILDSTYLE, "hud_RWildstyle" },
-		{ RADAR_SPRITE_RADIO_FLASH,     "hud_RFlash" },
-		{ RADAR_SPRITE_RADIO_KCHAT,     "hud_RKchat" },
-		{ RADAR_SPRITE_RADIO_FEVER,     "hud_RFever" },
-		{ RADAR_SPRITE_RADIO_VROCK,     "hud_RVRock" },
-		{ RADAR_SPRITE_RADIO_VCPR,      "hud_RVCPR" },
-		{ RADAR_SPRITE_RADIO_ESPANTOSO, "hud_REspantoso" },
-		{ RADAR_SPRITE_RADIO_EMOTION,   "hud_REmotion" },
-		{ RADAR_SPRITE_RADIO_WAVE,      "hud_RWave" }
 	};
 
 	for (size_t i = 0; i < ARRAY_SIZE(kBlips); i++) {
@@ -2793,13 +2739,6 @@ CMobileTouchControls::OnFingerMotion(int64 fingerId, float normX, float normY, f
 		return;
 	}
 
-	// Horizontal swipe on top-center vehicle radio zone retunes station
-	if (p->btn == MBTN_RADIO_SLOT && !p->swipedRadio) {
-		if (Abs(p->x - p->startX) >= m.Dp(20.0f)) {
-			p->swipedRadio = true;
-			s_pulseRadio = true;
-		}
-	}
 #else
 	(void)fingerId; (void)normX; (void)normY; (void)normDX; (void)normDY;
 #endif
@@ -2876,8 +2815,6 @@ CMobileTouchControls::OnFingerUp(int64 fingerId, float normX, float normY)
 		s_stickKnobY = s_stickBaseY;
 	} else if (p->btn == MBTN_WEAPON_SLOT && !p->swipedWeapon) {
 		s_pulseWeaponNext = true;
-	} else if (p->btn == MBTN_RADIO_SLOT && !p->swipedRadio) {
-		s_pulseRadio = true;
 	}
 
 	p->active = false;
@@ -2995,7 +2932,6 @@ CMobileTouchControls::UpdatePad(CPad *pad)
 	if (s_pulseCam)        { st.Select = 255;         s_pulseCam = false; }
 	if (s_pulseWeaponNext) { st.RightShoulder2 = 255; s_pulseWeaponNext = false; }
 	if (s_pulseWeaponPrev) { st.LeftShoulder2 = 255;  s_pulseWeaponPrev = false; }
-	if (s_pulseRadio)      { st.LeftShoulder1 = 255;  s_pulseRadio = false; }
 	if (s_pulseInteract)   { st.LeftShoulder1 = 255;  s_pulseInteract = false; }
 	if (s_pulseCrouch)     { st.LeftShock = 255;      s_pulseCrouch = false; }
 	if (s_pulseSubmission) { st.RightShock = 255;     s_pulseSubmission = false; }

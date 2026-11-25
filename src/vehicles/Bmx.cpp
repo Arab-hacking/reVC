@@ -329,14 +329,9 @@ CBmx::LaunchBunnyHopCB(CAnimBlendAssociation *assoc, void *data)
 	   (bmx->m_aSuspensionSpringRatio[BIKESUSP_R1] > 0.0f || bmx->m_aSuspensionSpringRatio[BIKESUSP_R2] > 0.0f))
 	{
 		float power = Min(bmx->m_fControlJump / 25.0f, 1.0f) + 1.0f;
-		if(bmx->GetStatus() == STATUS_PLAYER)
-			// SA passes STAT_MOD_6 here. CStats of this fork only declares the three
-		// selectors its own movement code uses, and the reversed body of
-		// GetFatAndMuscleModifier is a neutral 1.0 anyway (see Stats.h), so the
-		// call is kept with the selector value SA passes rather than dropped.
-		power *= CStats::GetFatAndMuscleModifier((CStats::eStatModAbilities)6);
-
-		bmx->ApplyMoveForce(0.06f * bmx->m_fMass * power * bmx->GetUp());
-		bmx->ApplyTurnForce(0.01f * bmx->m_fTurnMass * power * bmx->GetUp(), bmx->GetForward());
+		if (bmx->GetStatus() == STATUS_PLAYER) {
+			bmx->ApplyMoveForce(0.06f * bmx->m_fMass * power * bmx->GetUp());
+			bmx->ApplyTurnForce(0.01f * bmx->m_fTurnMass * power * bmx->GetUp(), bmx->GetForward());
+		}
 	}
 }

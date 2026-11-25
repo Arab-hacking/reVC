@@ -461,7 +461,6 @@ project "reVC"
 	files { addSrcFiles("src/peds") }
 	files { addSrcFiles("src/renderer") }
 	files { addSrcFiles("src/rw") }
-	files { addSrcFiles("src/save") }
 	files { addSrcFiles("src/skel") }
 	files { addSrcFiles("src/skel/glfw") }
 	files { addSrcFiles("src/text") }
@@ -493,7 +492,6 @@ project "reVC"
 	includedirs { "src/peds" }
 	includedirs { "src/renderer" }
 	includedirs { "src/rw" }
-	includedirs { "src/save/" }
 	includedirs { "src/skel/" }
 	includedirs { "src/skel/glfw" }
 	includedirs { "src/text" }

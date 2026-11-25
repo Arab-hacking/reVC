@@ -18,7 +18,6 @@
 #include "World.h"
 #include "ZoneCull.h"
 #include "SpecialFX.h"
-#include "Replay.h"
 
 int32 CWeather::SoundHandle = -1;
 
@@ -141,7 +140,7 @@ void CWeather::Init(void)
 
 void CWeather::Update(void)
 {
-	if(!CReplay::IsPlayingBack()){
+	{
 		float fNewInterpolation = (CClock::GetMinutes() + CClock::GetSeconds()/60.0f)/60.0f;
 		if (fNewInterpolation < InterpolationValue) {
 			// new hour
@@ -636,17 +635,3 @@ void CWeather::RenderRainStreaks(void)
 	TempBufferIndicesStored = 0;
 }
 
-#ifdef SECUROM
-void CWeather::ForceHurricaneWeather()
-{
-	for (int i = 0; i < ARRAY_SIZE(WeatherTypesList_WithHurricanes); i++)
-	{
-		WeatherTypesList[i] = WEATHER_HURRICANE;
-		WeatherTypesList_WithHurricanes[i] = WEATHER_HURRICANE;
-	}
-
-	CWeather::OldWeatherType = WEATHER_HURRICANE;
-	CWeather::NewWeatherType = WEATHER_HURRICANE;
-	CWeather::ForcedWeatherType = WEATHER_HURRICANE;
-}
-#endif

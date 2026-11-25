@@ -1,6 +1,8 @@
 #ifndef __GTA_PAD_H__
 #define __GTA_PAD_H__
 
+#include "MouseControllerState.h"
+
 enum {
 	PLAYERCONTROL_ENABLED = 0,
 	PLAYERCONTROL_CAMERA = 1,
@@ -46,26 +48,6 @@ public:
 	}
 };
 VALIDATE_SIZE(CControllerState, 0x2A);
-
-class CMouseControllerState
-{
-public:
-	//uint32 btns;	// bit 0-2 button 1-3
-
-	bool LMB;
-	bool RMB;
-	bool MMB;
-	bool WHEELUP;
-	bool WHEELDN;
-	bool MXB1;
-	bool MXB2;
-	char _pad0;
-	
-	float x, y;
-	
-	CMouseControllerState();
-	void Clear();
-};
 
 VALIDATE_SIZE(CMouseControllerState, 0x10);
 
@@ -214,7 +196,6 @@ public:
 	CControllerState ReconcileTwoControllersInput(CControllerState const &State1, CControllerState const &State2);
 	void StartShake(int16 nDur, uint8 nFreq);
 	void StartShake_Distance(int16 nDur, uint8 nFreq, float fX, float fY, float fz);
-	void StartShake_Train(float fX, float fY);
 #ifdef GTA_PS2_STUFF
 	void AddToCheatString(char c);
 #endif

@@ -23,15 +23,15 @@
 | `CBike::ProcessControlInputs` | `fValue` — знак квадрата руления | локальная |
 | `CBike::ProcessControl` | `speedSq` как временная | локальная |
 | `CVehicle::DoBladeCollision` | `rotorColModel`, `rotorColSphere` | локальные |
-| `CHeli::ProcessControl` | курсор пути делят все вертолёты | `CHeli::m_pathPoint` |
+| `CHeli::ProcessControl` | курсор пути делят все вертолёты | `CHeli::m_pathPoint` (класс `CHeli` удалён на этапе E чистки под MP) |
 | `CAutomobile::RcbanditCheck1CarWheels` | `matW2B` | локальная, считается один раз |
 | `ProcessBuoyancy` (car и ped) | таймеры брызг | `m_nWaterCirclesTime`, `m_nRaindropsTime` |
 | `cBuoyancy::SimpleSumBuoyancyData` | четыре скретч-значения | локальные |
 | `CBoat::PreRender` | сглаживание закрылков | `CBoat::m_fRearFlapSteering` |
-| `Heli`/`Plane` | счётчик фазы обломков | локальный на взрыв |
+| `Heli`/`Plane` | счётчик фазы обломков | локальный на взрыв (классы `CHeli`/`CPlane` удалены на этапе E чистки под MP) |
 | `VehicleModelInfo` | `gVehicleIsSAHierarchy` | `AtomicRendererCBData` + `m_bSAHierarchy` |
 | `VehicleModelInfo` | `maxFirstMaterials/maxSecondMaterials` | удалены (только запись) |
-| `PathFind::PreparePathDataForType` | `CoorsXFormed` | локальная |
+| `PathFind::PreparePathDataForType` | `CoorsXFormed` | локальная (`PathFind` удалён на этапе E чистки под MP) |
 | `Population` | скретч столкновений | локальная |
 | `CarCtrl::GenerateOneRandomCar` | неиспользуемый `unk` | удалён |
 

@@ -1,4 +1,5 @@
 #include "common.h"
+#include "Object.h"
 #include "main.h"
 #include "FileMgr.h"
 #include "FileLoader.h"
@@ -26,10 +27,8 @@
 #include <rpworld.h>
 #include <rpmatfx.h>
 #include "Occlusion.h"
-#include "Replay.h"
 #include "WaterLevel.h"
 #include "SurfaceTable.h"
-#include "WaterCreatures.h"
 #ifdef CUSTOM_MODELS
 #include "CustomModels.h"
 #include "CommonWater.h"
@@ -3366,8 +3365,6 @@ CWaterLevel::RenderShipsOnHorizon()
 void
 CWaterLevel::HandleSeaLifeForms()
 {
-	if ( CReplay::IsPlayingBack() )
-		return;
 	
 	CVector cur_pos = FindPlayerPed()->GetPosition();
 
@@ -3379,30 +3376,7 @@ CWaterLevel::HandleSeaLifeForms()
 		prev_pos = cur_pos;
 		timecounter = CTimer::GetTimeInMilliseconds();
 	}
-	else if ( (CTimer::GetTimeInMilliseconds() - timecounter) > 5000 )
-	{
-	if ( CWaterCreatures::IsSpaceForMoreWaterCreatures() )
-		{
-			for ( int32 i = 0; i < 3; i++ )
-			{
-				CVector vecPos = cur_pos;
-				
-				float fAngle = CGeneral::GetRandomNumberInRange(15.0f, 30.0f);
-				
-				uint16 nSinCosIdx = CGeneral::GetRandomNumber() % (CParticle::SIN_COS_TABLE_SIZE-1);
-				
-				float fCos = CParticle::Cos(nSinCosIdx);
-				float fSin = CParticle::Sin(nSinCosIdx);
-				
-				vecPos.x += (fCos - fSin) * fAngle;
-				vecPos.y += (fSin + fCos) * fAngle;
-				
-				CWaterCreatures::CreateOne(vecPos, -1);
-			}
-		}
-	}
-	
-	CWaterCreatures::UpdateAll();
+
 }
 
 void

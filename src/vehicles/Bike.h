@@ -74,7 +74,6 @@ public:
 	uint8 unused[3];	// looks like padding..but for what?
 	uint8 m_bike_flag01 : 1;
 	uint8 m_bike_flag02 : 1;
-	uint8 bWaterTight : 1;
 	uint8 bIsBeingPickedUp : 1;
 	uint8 bIsStanding : 1;
 	uint8 bExtraSpeed : 1;	// leaning forward
@@ -121,7 +120,6 @@ public:
 	void BurstTyre(uint8 tyre, bool applyForces);
 	bool IsRoomForPedToLeaveCar(uint32 component, CVector *doorOffset);
 	float GetHeightAboveRoad(void);
-	void PlayCarHorn(void);
 
 	void KnockOffRider(eWeaponType weapon, uint8 direction, CPed *ped, bool bGetBackOn);
 	void VehicleDamage(void);
@@ -129,7 +127,6 @@ public:
 	void DoDriveByShootings(void);
 	void AddDamagedVehicleParticles(void);
 	int32 AddWheelDirtAndWater(CColPoint *colpoint, uint32 belowEffectSpeed);
-	void PlayHornIfNecessary(void);
 	void ResetSuspension(void);
 	void SetupSuspensionLines(void);
 	void CalculateLeanMatrix(void);
@@ -168,11 +165,6 @@ public:
 	// The rider's own lean relative to the bike, which the ped animation uses.
 	float GetRiderLeanAmount(void) const { return m_fPedLeanAmountLR; }
 
-#ifdef COMPATIBLE_SAVES
-	virtual void Save(uint8*& buf);
-	virtual void Load(uint8*& buf);
-#endif
-	static const uint32 nSaveStructSize;
 };
 
 // These functions and function names are made up

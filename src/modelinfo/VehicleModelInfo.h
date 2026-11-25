@@ -5,6 +5,72 @@
 #include "eVehicleType.h"
 #include "animation/AnimManager.h"
 
+// SA eHeliNodes, verbatim. SA helis carry the full wheel/door set plus two
+// rotor pairs; VC only had a chassis, one rotor pair, tail and skids.
+enum eHeliNodes
+{
+	HELI_NODE_NONE     = 0,
+	HELI_CHASSIS       = 1,
+	HELI_WHEEL_RF      = 2,
+	HELI_WHEEL_RM      = 3,
+	HELI_WHEEL_RB      = 4,
+	HELI_WHEEL_LF      = 5,
+	HELI_WHEEL_LM      = 6,
+	HELI_WHEEL_LB      = 7,
+	HELI_DOOR_RF       = 8,
+	HELI_DOOR_RR       = 9,
+	HELI_DOOR_LF       = 10,
+	HELI_DOOR_LR       = 11,
+	HELI_STATIC_ROTOR  = 12,
+	HELI_MOVING_ROTOR  = 13,
+	HELI_STATIC_ROTOR2 = 14,
+	HELI_MOVING_ROTOR2 = 15,
+	HELI_RUDDER        = 16,
+	HELI_ELEVATORS     = 17,
+	HELI_MISC_A        = 18,
+	HELI_MISC_B        = 19,
+	HELI_MISC_C        = 20,
+	HELI_MISC_D        = 21,
+
+	NUM_HELI_NODES
+};
+
+// SA ePlaneNodes (Plane.h), verbatim. The VC enum reused the heli rotor names
+// here; SA uses the same frame set as a car plus propeller/control-surface
+// nodes, so VC's PLANE_TOPROTOR/BACKROTOR have no SA counterpart and are gone.
+enum ePlaneNodes
+{
+	PLANE_NODE_NONE   = 0,
+	PLANE_CHASSIS     = 1,
+	PLANE_WHEEL_RF    = 2,
+	PLANE_WHEEL_RM    = 3,
+	PLANE_WHEEL_RB    = 4,
+	PLANE_WHEEL_LF    = 5,
+	PLANE_WHEEL_LM    = 6,
+	PLANE_WHEEL_LB    = 7,
+	PLANE_DOOR_RF     = 8,
+	PLANE_DOOR_RR     = 9,
+	PLANE_DOOR_LF     = 10,
+	PLANE_DOOR_LR     = 11,
+	PLANE_STATIC_PROP = 12,
+	PLANE_MOVING_PROP = 13,
+	PLANE_STATIC_PROP2 = 14,
+	PLANE_MOVING_PROP2 = 15,
+	PLANE_RUDDER      = 16,
+	PLANE_ELEVATOR_L  = 17,
+	PLANE_ELEVATOR_R  = 18,
+	PLANE_AILERON_L   = 19,
+	PLANE_AILERON_R   = 20,
+	PLANE_GEAR_L      = 21,
+	PLANE_GEAR_R      = 22,
+	PLANE_MISC_A      = 23,
+	PLANE_MISC_B      = 24,
+	PLANE_MISC_C      = 25,
+
+	NUM_PLANE_NODES
+};
+
+
 enum {
 #ifdef SA_VEHICLE_MODELS
 	// GTA:SA models (and SA conversions in particular) can share the vehicle
@@ -108,15 +174,6 @@ enum eBoatPositions
 	BOAT_POS_FRONTSEAT
 };
 
-enum eTrainPositions
-{
-	TRAIN_POS_LIGHT_FRONT,
-	TRAIN_POS_LIGHT_REAR,
-	TRAIN_POS_LEFT_ENTRY,
-	TRAIN_POS_MID_ENTRY,
-	TRAIN_POS_RIGHT_ENTRY
-};
-
 enum ePlanePositions
 {
 	PLANE_POS_LIGHT_LEFT,
@@ -213,14 +270,8 @@ public:
 	};
 	int16 m_handlingId;
 	int8 m_numDoors;
-	int8 m_vehicleClass;
 	int8 m_level;
 	int8 m_numComps;
-	int16 m_frequency;
-	// SA CVehicleModelInfo::m_nTimesUsed. How many times the population code has
-	// spawned this model; CLoadedCarGroup sorts on it and picks the least used.
-	// Reset when the model is added to the loaded-vehicles list.
-	uint8 m_nTimesUsed;
 	CVector m_positions[NUM_VEHICLE_POSITIONS];
 	// SA CVehicleModelInfo::m_pVehicleStruct. The dummy positions the light,
 	// seat and exhaust code reads live in here, as they do in SA.
@@ -489,7 +540,6 @@ public:
 	};
 	static RpAtomic *SetAtomicRendererCB(RpAtomic *atomic, void *data);
 	static RpAtomic *SetAtomicRendererCB_BigVehicle(RpAtomic *atomic, void *data);
-	static RpAtomic *SetAtomicRendererCB_Train(RpAtomic *atomic, void *data);
 	static RpAtomic *SetAtomicRendererCB_Boat(RpAtomic *atomic, void *data);
 	static RpAtomic *SetAtomicRendererCB_Heli(RpAtomic *atomic, void *data);
 	static RpAtomic *SetAtomicRendererCB_RealHeli(RpAtomic *atomic, void *data);

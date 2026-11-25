@@ -69,20 +69,6 @@ static void TestGearSpacing(void)
 	Near(t.m_aGears[5].m_ChangeUpVelocity, 1.0f, "top gear is capped at max velocity");
 }
 
-static void TestSimpleTrafficShift(void)
-{
-	cTransmission t = Transmission();
-	uint8 gear = 5;
-	t.CalculateGearForSimpleCar(100.0f, gear);
-	Check(gear == 5, "simple shift cannot exceed the top gear");
-	gear = 0;
-	t.CalculateGearForSimpleCar(-100.0f, gear);
-	Check(gear == 0, "simple shift cannot underflow reverse");
-	gear = 255;
-	t.CalculateGearForSimpleCar(1.0f, gear);
-	Check(gear == 5, "a corrupt restored gear is bounded before indexing");
-}
-
 static void TestTorque(void)
 {
 	cTransmission t = Transmission();
@@ -219,7 +205,6 @@ static void TestSweep(void)
 int main(void)
 {
 	TestGearSpacing();
-	TestSimpleTrafficShift();
 	TestTorque();
 	TestDirectionChange();
 	TestLimits();

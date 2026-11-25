@@ -238,7 +238,7 @@ CTaskSimpleClimb::~CTaskSimpleClimb()
 
 // SA CTaskSimpleClimb::StartAnim (0x67DBE0): blend the clip for the phase that
 // is about to play. The pull-up, stand and vault clips run at the speed the
-// player's body stats allow, which is what STAT_MOD_1 is for.
+// player's fixed default animation speed.
 void
 CTaskSimpleClimb::StartAnim(CPed *ped)
 {
@@ -313,7 +313,7 @@ CTaskSimpleClimb::StartAnim(CPed *ped)
 		if(ped->IsPlayer() && (m_Anim->flags & ASSOC_RUNNING)
 		   && (m_Anim->animId == ANIM_ID_CLIMB_PULL || m_Anim->animId == ANIM_ID_CLIMB_STAND
 		       || m_Anim->animId == ANIM_ID_CLIMB_JUMP_B)){
-			m_Anim->speed = CStats::GetFatAndMuscleModifier(CStats::STAT_MOD_1);
+			m_Anim->speed = 1.0f;
 		}
 	}
 }
@@ -348,16 +348,7 @@ CTaskSimpleClimb::ProcessPed(CPed *ped)
 	if(m_ClimbEntity == nil)
 		return true;
 
-	// A carrier that is moving too fast (a train under power) cannot be
-	// climbed, and neither can an entity whose collision has just been
-	// switched off.
-	if(m_ClimbEntity->IsVehicle()){
-		CVehicle *vehicle = (CVehicle *)m_ClimbEntity;
-		if(vehicle->IsTrain() && vehicle->GetMoveSpeed().Magnitude() > 0.1f){
-			m_HasFinished = true;
-			return true;
-		}
-	}
+	// An entity whose collision has just been switched off cannot be climbed.
 
 	if(m_Anim == nil || m_HasToChangeAnimation){
 		StartAnim(ped);
@@ -622,9 +613,8 @@ ScanToGrabSectorList(CPtrList &list, CPed *ped, CColModel &colModel, CVector &ou
 			continue;
 		}
 
-		// The fat/muscle modifier widens the reachable band: a heavier ped can
-		// grab the higher rows.
-		int32 fatModifier = (ped->IsPlayer()) ? (int32)CStats::GetFatAndMuscleModifier(CStats::STAT_MOD_0) : 0;
+		// Only the player gets the extra reachable rows; NPCs keep the original band.
+		int32 fatModifier = ped->IsPlayer() ? 1 : 0;
 
 		if(!isLaunch || fatModifier >= 1){
 			if(sphereIndex == 5 || sphereIndex == 11 || sphereIndex == 17)

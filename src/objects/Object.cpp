@@ -22,7 +22,6 @@
 #define BEACHBALL_SPEED_PROPORTION 0.4f
 
 int16 CObject::nNoTempObjects;
-//int16 CObject::nBodyCastHealth = 1000;
 float CObject::fDistToNearestTree;
 
 // Object pools tends to be full sometimes, let's free a temp. object in this case.
@@ -365,19 +364,7 @@ CObject::ObjectDamage(float amount)
 	if (!m_nCollisionDamageEffect || !bUsesCollision)
 		return;
 	static int8 nFrameGen = 0;
-	bool bBodyCastDamageEffect = false;
-#if 0
-	if (GetModelIndex() == MI_BODYCAST) {
-		if (amount > 50.0f)
-			nBodyCastHealth = (int16)(nBodyCastHealth - 0.5f * amount);
-		if (nBodyCastHealth < 0)
-			nBodyCastHealth = 0;
-		if (nBodyCastHealth < 200)
-			bBodyCastDamageEffect = true;
-		amount = 0.0f;
-	}
-#endif
-	if ((amount * m_fCollisionDamageMultiplier > 150.0f || bBodyCastDamageEffect) && m_nCollisionDamageEffect) {
+	if (amount * m_fCollisionDamageMultiplier > 150.0f && m_nCollisionDamageEffect) {
 		const CVector& vecPos = GetMatrix().GetPosition();
 		const float fDirectionZ = 0.0002f * amount;
 		switch (m_nCollisionDamageEffect) {
@@ -840,6 +827,37 @@ CObject::DeleteAllTempObjectsInArea(CVector point, float fRadius)
 			delete pObject;
 		}
 	}
+}
+
+void
+CObject::ConvertAllObjectsToDummyObjects()
+{
+	uint32 i = CPools::GetObjectPool()->GetSize();
+	while(i--) {
+		CObject *obj = CPools::GetObjectPool()->GetSlot(i);
+		if (obj) {
+			if (obj->CanBeDeleted())
+				ConvertToDummyObject(obj);
+		}
+	}
+}
+
+void
+CObject::ConvertToDummyObject(CObject *obj)
+{
+	CDummyObject *dummy = new CDummyObject(obj);
+
+	dummy->GetMatrix() = obj->m_objectMatrix;
+	dummy->GetMatrix().UpdateRW();
+	dummy->UpdateRwFrame();
+
+	CSimpleModelInfo *mi = (CSimpleModelInfo*)CModelInfo::GetModelInfo(obj->GetModelIndex());
+	if (IsGlass(obj->GetModelIndex()) && !mi->m_isArtistGlass)
+		dummy->bIsVisible = false;
+
+	CWorld::Remove(obj);
+	delete obj;
+	CWorld::Add(dummy);
 }
 
 bool

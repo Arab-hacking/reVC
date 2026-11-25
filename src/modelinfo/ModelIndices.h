@@ -393,7 +393,6 @@ enum
 	MI_VICECHEE,
 
 	// HACK
-	MI_TRAIN = -1,
 	MI_DODO = -2,
 
 	MI_LAST_VEHICLE = MI_VICECHEE,

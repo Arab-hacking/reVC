@@ -32,6 +32,8 @@ enum eAreaName {
 	AREA_PRINT_WORKS
 };
 
+class CVehicle;
+
 class CGame
 {
 public:
@@ -45,7 +47,6 @@ public:
 	static bool russianGame;
 	static bool japaneseGame;
 #endif
-	static bool noProstitutes;
 	static bool playingIntro;
 
 #ifndef MASTER
@@ -64,11 +65,20 @@ public:
 	static void ReloadIPLs(void);
 	static void ShutDownForRestart(void);
 	static void InitialiseWhenRestarting(void);
+	static void CreatePlayer(void);
+	// The one place a vehicle is created: builds the class the model's type word
+	// names, puts it down unlocked and abandoned, and adds it to the world. The
+	// caller has already loaded the model and chosen the spot. nil when the type
+	// word names no class.
+	static CVehicle *SpawnVehicle(uint32 model, CVector pos, float heading);
+	static void GetSpawnPosition(CVector &pos, float &heading);
 	static void Process(void);
 
 	static void InitAfterFocusLoss(void);
 
 	static bool IsInInterior(void) { return currArea != AREA_MAIN_MAP; }
+	static bool8 InCutscene(void);
+	static void SetInCutscene(bool8 active);
 	static bool CanSeeWaterFromCurrArea(void);
 	static bool CanSeeOutSideFromCurrArea(void);
 	

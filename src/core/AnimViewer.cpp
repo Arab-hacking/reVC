@@ -23,13 +23,12 @@
 #include "PlayerPed.h"
 #include "Pools.h"
 #include "References.h"
-#include "PathFind.h"
 #include "cHandlingDataMgr.h"
 #include "TempColModels.h"
 #include "Particle.h"
 #include "CdStream.h"
 #include "Messages.h"
-#include "CarCtrl.h"
+#include "Game.h"
 #include "FileLoader.h"
 #include "ModelIndices.h"
 #include "Clock.h"
@@ -76,8 +75,6 @@ CAnimViewer::Initialise(void) {
 	TheCamera.Init();
 	TheCamera.SetRwCamera(Scene.camera);
 	TheCamera.Cams[TheCamera.ActiveCam].Distance = 5.0f;
-	ThePaths.Init();
-	ThePaths.AllocatePathFindInfoMem(4500);
 	CCollision::Init();
 	CWorld::Initialise();
 	mod_HandlingManager.Initialise();
@@ -85,8 +82,6 @@ CAnimViewer::Initialise(void) {
 	CAnimManager::Initialise();
 	CModelInfo::Initialise();
 	CParticle::Initialise();
-	CCarCtrl::Init();
-	CPedStats::Initialise();
 	CMessages::Init();
 	CdStreamAddImage("MODELS\\GTA3.IMG");
 	// The viewer used to read DEFAULT.DAT and its own level DAT for the model
@@ -111,7 +106,6 @@ CAnimViewer::Initialise(void) {
 	CTimer::Initialise();
 	CClock::Initialise(60000);
 	CTimeCycle::Initialise();
-	CCarCtrl::Init();
 	CPlayerPed *player = new CPlayerPed();
 	player->SetPosition(1000.0f, 1000.0f, 1000.0f);
 	CWorld::Players[0].m_pPed = player;
@@ -282,17 +276,23 @@ CAnimViewer::Update(void)
 
 			if (modelInfo->GetModelType() == MITYPE_VEHICLE) {
 
-				pTarget = CCarCtrl::GetNewVehicleDependingOnCarModel(modelId, RANDOM_VEHICLE);
+				// SpawnVehicle puts the vehicle at the origin, abandoned, and
+				// adds it to the world.
+				pTarget = CGame::SpawnVehicle(modelId, CVector(0.0f, 0.0f, 0.0f), 0.0f);
 				if (!pTarget) {
 					pTarget = new CObject(modelId, true);
 					if (!modelInfo->GetColModel()) {
 						modelInfo->SetColModel(&CTempColModels::ms_colModelWheel1);
 					}
+					pTarget->SetStatus(STATUS_ABANDONED);
+					pTarget->SetPosition(0.0f, 0.0f, 0.0f);
+					CWorld::Add(pTarget);
 				}
-				pTarget->SetStatus(STATUS_ABANDONED);
 			} else if (modelInfo->GetModelType() == MITYPE_PED) {
 				pTarget = new CPed(PEDTYPE_CIVMALE);
 				pTarget->SetModelIndex(modelId);
+				pTarget->SetPosition(0.0f, 0.0f, 0.0f);
+				CWorld::Add(pTarget);
 			} else {
 				pTarget = new CObject(modelId, true);
 				if (!modelInfo->GetColModel())
@@ -300,9 +300,9 @@ CAnimViewer::Update(void)
 					modelInfo->SetColModel(&CTempColModels::ms_colModelWheel1);
 				}
 				pTarget->SetStatus(STATUS_ABANDONED);
+				pTarget->SetPosition(0.0f, 0.0f, 0.0f);
+				CWorld::Add(pTarget);
 			}
-			pTarget->SetPosition(0.0f, 0.0f, 0.0f);
-			CWorld::Add(pTarget);
 			TheCamera.TakeControl(pTarget, CCam::MODE_MODELVIEW, JUMP_CUT, CAMCONTROL_SCRIPT);
 		}
 		if (pTarget->IsVehicle() || pTarget->IsPed() || pTarget->IsObject()) {

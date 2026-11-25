@@ -16,9 +16,6 @@
 #include "Vehicle.h"
 #include "Automobile.h"
 #include "Boat.h"
-#include "Train.h"
-#include "Plane.h"
-#include "Heli.h"
 #include "Bike.h"
 #include "ModelIndices.h"
 #include "ModelInfo.h"
@@ -187,36 +184,6 @@ RwObjectNameIdAssocation boatIds[] = {
 	{ "ped_frontseat",	BOAT_POS_FRONTSEAT,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
 	{ nil, 0, 0 }
 };
-
-RwObjectNameIdAssocation trainIds[] = {
-	// SA train frames. Two doors plus twelve wheel nodes and two bogies, in
-	// eTrainNodes order.
-	{ "door_lf_dummy",	TRAIN_DOOR_LF,	VEHICLE_FLAG_LEFT | VEHICLE_FLAG_COLLAPSE },
-	{ "door_rf_dummy",	TRAIN_DOOR_RF,	VEHICLE_FLAG_RIGHT | VEHICLE_FLAG_COLLAPSE },
-	{ "wheel_rf1_dummy",	TRAIN_WHEEL_RF1,	VEHICLE_FLAG_RIGHT },
-	{ "wheel_rf2_dummy",	TRAIN_WHEEL_RF2,	VEHICLE_FLAG_RIGHT },
-	{ "wheel_rf3_dummy",	TRAIN_WHEEL_RF3,	VEHICLE_FLAG_RIGHT },
-	{ "wheel_rb1_dummy",	TRAIN_WHEEL_RB1,	VEHICLE_FLAG_RIGHT },
-	{ "wheel_rb2_dummy",	TRAIN_WHEEL_RB2,	VEHICLE_FLAG_RIGHT },
-	{ "wheel_rb3_dummy",	TRAIN_WHEEL_RB3,	VEHICLE_FLAG_RIGHT },
-	{ "wheel_lf1_dummy",	TRAIN_WHEEL_LF1,	VEHICLE_FLAG_LEFT },
-	{ "wheel_lf2_dummy",	TRAIN_WHEEL_LF2,	VEHICLE_FLAG_LEFT },
-	{ "wheel_lf3_dummy",	TRAIN_WHEEL_LF3,	VEHICLE_FLAG_LEFT },
-	{ "wheel_lb1_dummy",	TRAIN_WHEEL_LB1,	VEHICLE_FLAG_LEFT },
-	{ "wheel_lb2_dummy",	TRAIN_WHEEL_LB2,	VEHICLE_FLAG_LEFT },
-	{ "wheel_lb3_dummy",	TRAIN_WHEEL_LB3,	VEHICLE_FLAG_LEFT },
-	{ "bogie_front",	TRAIN_BOGIE_FRONT,	0 },
-	{ "bogie_rear",		TRAIN_BOGIE_REAR,	0 },
-
-	// Dummy positions.
-	{ "light_front",	TRAIN_POS_LIGHT_FRONT,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
-	{ "light_rear",		TRAIN_POS_LIGHT_REAR,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
-	{ "ped_left_entry",	TRAIN_POS_LEFT_ENTRY,	VEHICLE_FLAG_DOOR | VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
-	{ "ped_mid_entry",	TRAIN_POS_MID_ENTRY,	VEHICLE_FLAG_DOOR | VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
-	{ "ped_right_entry",	TRAIN_POS_RIGHT_ENTRY,	VEHICLE_FLAG_DOOR | VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
-	{ nil, 0, 0 }
-};
-
 RwObjectNameIdAssocation heliIds[] = {
 	// SA heli frames, in eHeliNodes order: chassis, the full wheel and door set,
 	// two rotor pairs, rudder and elevators, then four misc slots.
@@ -325,7 +292,6 @@ RwObjectNameIdAssocation *CVehicleModelInfo::ms_vehicleDescs[NUM_VEHICLE_TYPES] 
 	/* HELI       */ heliIds,
 	/* PLANE      */ planeIds,
 	/* BOAT       */ boatIds,
-	/* TRAIN      */ trainIds,
 	/* FHELI      */ heliIds,
 	/* FPLANE     */ planeIds,
 	/* BIKE       */ bikeIds,
@@ -1215,33 +1181,6 @@ CVehicleModelInfo::SetAtomicRendererCB_BigVehicle(RpAtomic *atomic, void *data)
 	return atomic;
 }
 
-RpAtomic*
-CVehicleModelInfo::SetAtomicRendererCB_Train(RpAtomic *atomic, void *data)
-{
-	char *name;
-	bool alpha;
-	const bool saHierarchy = IsSAHierarchyFromCBData(data);
-
-	name = GetFrameNodeName(RpAtomicGetFrame(atomic));
-	alpha = false;
-	RpGeometryForAllMaterials(RpAtomicGetGeometry(atomic), HasAlphaMaterialCB, &alpha);
-	if(strstr(name, "_hi")){
-		if(alpha)
-			CVisibilityPlugins::SetAtomicRenderCallback(atomic, CVisibilityPlugins::RenderTrainHiDetailAlphaCB);
-		else
-			CVisibilityPlugins::SetAtomicRenderCallback(atomic, CVisibilityPlugins::RenderTrainHiDetailCB);
-	}else if(strstr(name, "_vlo"))
-		CVisibilityPlugins::SetAtomicRenderCallback(atomic, CVisibilityPlugins::RenderVehicleReallyLowDetailCB_BigVehicle);
-	else if(saHierarchy){
-		if(alpha)
-			CVisibilityPlugins::SetAtomicRenderCallback(atomic, CVisibilityPlugins::RenderTrainHiDetailAlphaCB);
-		else
-			CVisibilityPlugins::SetAtomicRenderCallback(atomic, CVisibilityPlugins::RenderTrainHiDetailCB);
-	}else
-		CVisibilityPlugins::SetAtomicRenderCallback(atomic, nil);
-	HideDamagedAtomicCB(atomic, nil);
-	return atomic;
-}
 
 RpAtomic*
 CVehicleModelInfo::SetAtomicRendererCB_Boat(RpAtomic *atomic, void *data)
@@ -1349,9 +1288,6 @@ CVehicleModelInfo::SetAtomicRenderCallbacks(void)
 	cbdata.clump = m_clump;
 	cbdata.saHierarchy = m_bSAHierarchy;
 
-	if(m_nVehicleType == VEHICLE_TYPE_TRAIN)
-		RpClumpForAllAtomics(m_clump, SetAtomicRendererCB_Train, &cbdata);
-	else
 	if(m_nVehicleType == VEHICLE_TYPE_HELI || m_nVehicleType == VEHICLE_TYPE_FHELI)
 		RpClumpForAllAtomics(m_clump, SetAtomicRendererCB_Heli, &cbdata);
 	else if(m_nVehicleType == VEHICLE_TYPE_PLANE || m_nVehicleType == VEHICLE_TYPE_FPLANE)
@@ -1632,7 +1568,7 @@ CVehicleModelInfo::PreprocessHierarchy(bool saHierarchy)
 			hasOwnWheels, m_bSAWheelMesh, 0.5f*m_wheelScale, m_wheelScale);
 	}
 #endif
-	// Bikes, boats, planes and trains accept tuning parts too - a bike has a
+	// Bikes, boats and planes accept tuning parts too - a bike has a
 	// bonnet-less body but still takes rims and an exhaust - so the upgrade
 	// attach points are worked out for every vehicle type, not only for cars.
 	SetupUpgradeSlots();
@@ -2422,9 +2358,6 @@ CVehicleModelInfo::GetMaximumNumberOfPassengersFromNumberOfDoors(int id)
 	int n;
 
 	switch(id){
-	case MI_TRAIN:
-		n = 3;
-		break;
 	case MI_FIRETRUCK:
 		n = 2;
 		break;

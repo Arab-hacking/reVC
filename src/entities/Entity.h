@@ -25,8 +25,6 @@ enum eEntityStatus
 	STATUS_PHYSICS,
 	STATUS_ABANDONED,
 	STATUS_WRECKED,
-	STATUS_TRAIN_MOVING,
-	STATUS_TRAIN_NOT_MOVING,
 	STATUS_HELI,
 	STATUS_PLANE,
 	STATUS_PLAYER_REMOTE,
@@ -128,12 +126,6 @@ public:
 	const CColModel *GetColModel(void) const { return CModelInfo::GetColModel(m_modelIndex); }
 	bool GetIsStatic(void) const { return bIsStatic || bIsStaticWaitingForCollision; }
 	void SetIsStatic(bool state) { bIsStatic = state; }
-#ifdef COMPATIBLE_SAVES
-	void SaveEntityFlags(uint8*& buf);
-	void LoadEntityFlags(uint8*& buf);
-#else
-	uint32* GetAddressOfEntityProperties() { /* AWFUL */ return (uint32*)((char*)&m_rwObject + sizeof(m_rwObject)); }
-#endif
 
 	CEntity(void);
 	virtual ~CEntity(void);

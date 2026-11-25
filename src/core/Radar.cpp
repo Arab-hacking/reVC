@@ -3,6 +3,7 @@
 #endif
 #include "config.h"
 #include "common.h"
+#include "Text.h"
 
 #include "RwHelper.h"
 #include "Radar.h"
@@ -13,14 +14,11 @@
 #include "General.h"
 #include "Vehicle.h"
 #include "Pools.h"
-#include "Script.h"
 #include "TxdStore.h"
 #include "World.h"
-#include "SaveBuf.h"
 #include "Streaming.h"
 #include "SpecialFX.h"
 #include "Font.h"
-#include "SaveBuf.h"
 #include "MobileTouchControls.h"
 
 float CRadar::m_radarRange;
@@ -58,15 +56,6 @@ CSprite2d CRadar::SpraySprite;
 CSprite2d CRadar::TShirtSprite;
 CSprite2d CRadar::TommySprite;
 CSprite2d CRadar::PhoneSprite;
-CSprite2d CRadar::RadioWildstyleSprite;
-CSprite2d CRadar::RadioFlashSprite;
-CSprite2d CRadar::RadioKChatSprite;
-CSprite2d CRadar::RadioFeverSprite;
-CSprite2d CRadar::RadioVRockSprite;
-CSprite2d CRadar::RadioVCPRSprite;
-CSprite2d CRadar::RadioEspantosoSprite;
-CSprite2d CRadar::RadioEmotionSprite;
-CSprite2d CRadar::RadioWaveSprite;
 #ifdef MAP_ENHANCEMENTS
 CSprite2d CRadar::WaypointSprite;
 #endif
@@ -103,15 +92,6 @@ CSprite2d *CRadar::RadarSprites[RADAR_SPRITE_COUNT] = {
 	&TShirtSprite,
 	&TommySprite,
 	&PhoneSprite,
-	&RadioWildstyleSprite,
-	&RadioFlashSprite,
-	&RadioKChatSprite,
-	&RadioFeverSprite,
-	&RadioVRockSprite,
-	&RadioVCPRSprite,
-	&RadioEspantosoSprite,
-	&RadioEmotionSprite,
-	&RadioWaveSprite,
 #ifdef MAP_ENHANCEMENTS
 	&WaypointSprite,
 #endif
@@ -513,10 +493,8 @@ void CRadar::Draw3dMarkers()
 			case BLIP_COORD:
 				break;
 			case BLIP_CONTACT_POINT:
-				if (!CTheScripts::IsPlayerOnAMission()) {
-					if (ms_RadarTrace[i].m_eBlipDisplay == BLIP_DISPLAY_BOTH || ms_RadarTrace[i].m_eBlipDisplay == BLIP_DISPLAY_MARKER_ONLY)
-						C3dMarkers::PlaceMarkerSet(i | (ms_RadarTrace[i].m_BlipIndex << 16), MARKERTYPE_CYLINDER, ms_RadarTrace[i].m_vecPos, 2.0f, COORDBLIP_MARKER_COLOR_R, COORDBLIP_MARKER_COLOR_G, COORDBLIP_MARKER_COLOR_B, COORDBLIP_MARKER_COLOR_A, 2048, 0.2f, 0);
-				}
+				if (ms_RadarTrace[i].m_eBlipDisplay == BLIP_DISPLAY_BOTH || ms_RadarTrace[i].m_eBlipDisplay == BLIP_DISPLAY_MARKER_ONLY)
+					C3dMarkers::PlaceMarkerSet(i | (ms_RadarTrace[i].m_BlipIndex << 16), MARKERTYPE_CYLINDER, ms_RadarTrace[i].m_vecPos, 2.0f, COORDBLIP_MARKER_COLOR_R, COORDBLIP_MARKER_COLOR_G, COORDBLIP_MARKER_COLOR_B, COORDBLIP_MARKER_COLOR_A, 2048, 0.2f, 0);
 				break;
 			}
 		}
@@ -526,10 +504,6 @@ void CRadar::Draw3dMarkers()
 void CRadar::DrawBlips()
 {
 	if (!TheCamera.m_WideScreenOn && CHud::m_Wants_To_Draw_Hud) {
-#ifdef SECUROM
-		extern uint8 roadBlocksPirateCheck;
-		if (roadBlocksPirateCheck == 2) return;
-#endif
 		RwRenderStateSet(rwRENDERSTATEZWRITEENABLE, (void*)FALSE);
 		RwRenderStateSet(rwRENDERSTATEZTESTENABLE, (void*)FALSE);
 		RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)TRUE);
@@ -572,14 +546,14 @@ void CRadar::DrawBlips()
 				case BLIP_CHAR:
 				case BLIP_OBJECT:
 					if (ms_RadarTrace[blipId].m_eRadarSprite == RADAR_SPRITE_PROPERTY
-						&& (!CTheScripts::bPlayerIsInTheStatium || !FrontEndMenuManager.m_bMenuMapActive))
+						&& !FrontEndMenuManager.m_bMenuMapActive)
 						DrawEntityBlip(blipId);
 
 					break;
 				case BLIP_COORD:
 				case BLIP_CONTACT_POINT:
 					if (ms_RadarTrace[blipId].m_eRadarSprite == RADAR_SPRITE_PHONE
-						&& (!CTheScripts::bPlayerIsInTheStatium || !FrontEndMenuManager.m_bMenuMapActive))
+						&& !FrontEndMenuManager.m_bMenuMapActive)
 						DrawCoordBlip(blipId);
 					
 					break;
@@ -601,13 +575,13 @@ void CRadar::DrawBlips()
 				case BLIP_CAR:
 				case BLIP_CHAR:
 				case BLIP_OBJECT:
-					if (!CTheScripts::bPlayerIsInTheStatium || !FrontEndMenuManager.m_bMenuMapActive)
+					if (!FrontEndMenuManager.m_bMenuMapActive)
 						DrawEntityBlip(blipId);
 
 					break;
 				case BLIP_COORD:
 				case BLIP_CONTACT_POINT:
-					if (!CTheScripts::bPlayerIsInTheStatium || !FrontEndMenuManager.m_bMenuMapActive)
+					if (!FrontEndMenuManager.m_bMenuMapActive)
 						DrawCoordBlip(blipId);
 					
 					break;
@@ -627,7 +601,7 @@ void CRadar::DrawBlips()
 					if (ms_RadarTrace[blipId].m_eRadarSprite != RADAR_SPRITE_SAVE && ms_RadarTrace[blipId].m_eRadarSprite != RADAR_SPRITE_HARDWARE
 						&& ms_RadarTrace[blipId].m_eRadarSprite != RADAR_SPRITE_SPRAY && ms_RadarTrace[blipId].m_eRadarSprite != RADAR_SPRITE_PROPERTY
 						&& ms_RadarTrace[blipId].m_eRadarSprite != RADAR_SPRITE_GUN
-						&& (!CTheScripts::bPlayerIsInTheStatium || !FrontEndMenuManager.m_bMenuMapActive))
+						&& !FrontEndMenuManager.m_bMenuMapActive)
 
 						DrawEntityBlip(blipId);
 					break;
@@ -645,7 +619,7 @@ void CRadar::DrawBlips()
 					if (ms_RadarTrace[blipId].m_eRadarSprite != RADAR_SPRITE_SAVE && ms_RadarTrace[blipId].m_eRadarSprite != RADAR_SPRITE_HARDWARE
 						&& ms_RadarTrace[blipId].m_eRadarSprite != RADAR_SPRITE_SPRAY && ms_RadarTrace[blipId].m_eRadarSprite != RADAR_SPRITE_PROPERTY
 						&& ms_RadarTrace[blipId].m_eRadarSprite != RADAR_SPRITE_GUN && ms_RadarTrace[blipId].m_eRadarSprite != RADAR_SPRITE_PHONE
-						&& (!CTheScripts::bPlayerIsInTheStatium || !FrontEndMenuManager.m_bMenuMapActive))
+						&& !FrontEndMenuManager.m_bMenuMapActive)
 
 						DrawCoordBlip(blipId);
 					break;
@@ -655,10 +629,7 @@ void CRadar::DrawBlips()
 		}
 		if (FrontEndMenuManager.m_bMenuMapActive) {
 			CVector2D in, out;
-			if (!CTheScripts::bPlayerIsInTheStatium)
-				TransformRealWorldPointToRadarSpace(in, FindPlayerCentreOfWorld_NoSniperShift());
-			else
-				TransformRealWorldPointToRadarSpace(in, CVector2D(-1302.5f, 1332.8f));
+			TransformRealWorldPointToRadarSpace(in, FindPlayerCentreOfWorld_NoSniperShift());
 
 			LimitRadarPoint(in);
 			TransformRadarPointToScreenSpace(out, in);
@@ -786,8 +757,7 @@ void CRadar::DrawRadarSection(int32 x, int32 y)
 	if (!IsNativeRadarTile(x, y)) return; // no map art beyond native tiles
 	GetTextureCorners(x, y, worldPoly);
 
-	if (!CTheScripts::bPlayerIsInTheStatium &&
-		(!(txd = CTxdStore::GetSlot(gRadarTxdIds[x + RADAR_NUM_TILES * y])->texDict) || !(texture = GetFirstTexture(txd))))
+	if (!(txd = CTxdStore::GetSlot(gRadarTxdIds[x + RADAR_NUM_TILES * y])->texDict) || !(texture = GetFirstTexture(txd)))
 		return;
 
 	for (i = 0; i < 4; i++)
@@ -806,13 +776,8 @@ void CRadar::DrawRadarSection(int32 x, int32 y)
 		TransformRadarPointToScreenSpace(screenPoly[i], radarPoly[i]);
 	}
 
-	if (CTheScripts::bPlayerIsInTheStatium) {
-		RwRenderStateSet(rwRENDERSTATETEXTURERASTER, nil);
-		CSprite2d::SetVertices(numVertices, (float*)screenPoly, (float*)texCoords, CRGBA(204, 204, 204, 255));
-	} else {
-		RwRenderStateSet(rwRENDERSTATETEXTURERASTER, RwTextureGetRaster(texture));
-		CSprite2d::SetVertices(numVertices, (float*)screenPoly, (float*)texCoords, CRGBA(255, 255, 255, 255));
-	}
+	RwRenderStateSet(rwRENDERSTATETEXTURERASTER, RwTextureGetRaster(texture));
+	CSprite2d::SetVertices(numVertices, (float*)screenPoly, (float*)texCoords, CRGBA(255, 255, 255, 255));
 
 	// check done above now
 //	if(numVertices > 2)
@@ -976,78 +941,6 @@ float CRadar::LimitRadarPoint(CVector2D &point)
 	return dist;
 }
 
-void CRadar::LoadAllRadarBlips(uint8 *buf, uint32 size)
-{
-	Initialise();
-INITSAVEBUF
-	CheckSaveHeader(buf, 'R', 'D', 'R', '\0', size - SAVE_HEADER_SIZE);
-
-	for (int i = 0; i < NUMRADARBLIPS; i++) {
-		ReadSaveBuf(&ms_RadarTrace[i].m_nColor, buf);
-		ReadSaveBuf(&ms_RadarTrace[i].m_Radius, buf);
-		ReadSaveBuf(&ms_RadarTrace[i].m_eBlipType, buf);
-		ReadSaveBuf(&ms_RadarTrace[i].m_nEntityHandle, buf);
-		ReadSaveBuf(&ms_RadarTrace[i].m_vec2DPos.x, buf);
-		ReadSaveBuf(&ms_RadarTrace[i].m_vec2DPos.y, buf);
-		ReadSaveBuf(&ms_RadarTrace[i].m_vecPos, buf);
-		ReadSaveBuf(&ms_RadarTrace[i].m_BlipIndex, buf);
-		ReadSaveBuf(&ms_RadarTrace[i].m_bDim, buf);
-		ReadSaveBuf(&ms_RadarTrace[i].m_bInUse, buf);
-		ReadSaveBuf(&ms_RadarTrace[i].m_bShortRange, buf);
-		ReadSaveBuf(&ms_RadarTrace[i].m_unused, buf);
-		ReadSaveBuf(&ms_RadarTrace[i].m_wScale, buf);
-		ReadSaveBuf(&ms_RadarTrace[i].m_eBlipDisplay, buf);
-		ReadSaveBuf(&ms_RadarTrace[i].m_eRadarSprite, buf);
-	}
-
-VALIDATESAVEBUF(size);
-}
-
-void CRadar::SaveAllRadarBlips(uint8 *buf, uint32 *size)
-{
-	*size = SAVE_HEADER_SIZE + NUMRADARBLIPS * sizeof(sRadarTraceSave);
-
-INITSAVEBUF
-	WriteSaveHeader(buf, 'R', 'D', 'R', '\0', *size - SAVE_HEADER_SIZE);
-
-#ifdef MAP_ENHANCEMENTS
-	bool bWaypointDeleted = false;
-	if (TargetMarkerId != -1) {
-		ClearBlip(TargetMarkerId);
-		TargetMarkerId = -1;
-		bWaypointDeleted = true;
-	}
-#endif
-
-	for (int i = 0; i < NUMRADARBLIPS; i++) {
-		sRadarTraceSave *saveStruct = (sRadarTraceSave*) buf;
-
-		saveStruct->m_nColor = ms_RadarTrace[i].m_nColor;
-		saveStruct->m_Radius = ms_RadarTrace[i].m_Radius;
-		saveStruct->m_eBlipType = ms_RadarTrace[i].m_eBlipType;
-		saveStruct->m_nEntityHandle = ms_RadarTrace[i].m_nEntityHandle;
-		saveStruct->m_vec2DPos = ms_RadarTrace[i].m_vec2DPos;
-		saveStruct->m_vecPos = ms_RadarTrace[i].m_vecPos;
-		saveStruct->m_BlipIndex = ms_RadarTrace[i].m_BlipIndex;
-		saveStruct->m_bDim = ms_RadarTrace[i].m_bDim;
-		saveStruct->m_bInUse = ms_RadarTrace[i].m_bInUse;
-		saveStruct->m_bShortRange = ms_RadarTrace[i].m_bShortRange;
-		saveStruct->m_unused = ms_RadarTrace[i].m_unused;
-		saveStruct->m_wScale = ms_RadarTrace[i].m_wScale;
-		saveStruct->m_eBlipDisplay = ms_RadarTrace[i].m_eBlipDisplay;
-		saveStruct->m_eRadarSprite = ms_RadarTrace[i].m_eRadarSprite;
-
-		SkipSaveBuf(buf, sizeof(sRadarTraceSave));
-	}
-
-#ifdef MAP_ENHANCEMENTS
-	if(bWaypointDeleted)
-		ToggleTargetMarker(TargetMarkerPos.x, TargetMarkerPos.y);
-#endif
-
-VALIDATESAVEBUF(*size);
-}
-
 void
 CRadar::LoadTextures()
 {
@@ -1083,15 +976,6 @@ CRadar::LoadTextures()
 	TShirtSprite.SetTexture("tshirt");
 	TommySprite.SetTexture("tommy");
 	PhoneSprite.SetTexture("phone");
-	RadioWildstyleSprite.SetTexture("RWildstyle");
-	RadioFlashSprite.SetTexture("RFlash");
-	RadioKChatSprite.SetTexture("RKchat");
-	RadioFeverSprite.SetTexture("RFever");
-	RadioVRockSprite.SetTexture("RVRock");
-	RadioVCPRSprite.SetTexture("RVCPR");
-	RadioEspantosoSprite.SetTexture("REspantoso");
-	RadioEmotionSprite.SetTexture("REmotion");
-	RadioWaveSprite.SetTexture("RWave");
 #ifdef MAP_ENHANCEMENTS
 	WaypointSprite.SetTexture("radar_waypoint");
 	if(!WaypointSprite.m_pTexture) {
@@ -1228,28 +1112,6 @@ void CRadar::SetRadarMarkerState(int32 counter, bool flag)
 		e->bHasBlip = flag;
 }
 
-void CRadar::ShowRadarMarker(CVector pos, uint32 color, float radius) {
-	float f1 = radius * 1.4f;
-	float f2 = radius * 0.5f;
-	CVector p1, p2;
-
-	p1 = pos + TheCamera.GetUp()*f1;
-	p2 = pos + TheCamera.GetUp()*f2;
-	CTheScripts::ScriptDebugLine3D(p1.x, p1.y, p1.z, p2.x, p2.y, p2.z, color, color);
-
-	p1 = pos - TheCamera.GetUp()*f1;
-	p2 = pos - TheCamera.GetUp()*f2;
-	CTheScripts::ScriptDebugLine3D(p1.x, p1.y, p1.z, p2.x, p2.y, p2.z, color, color);
-
-	p1 = pos + TheCamera.GetRight()*f1;
-	p2 = pos + TheCamera.GetRight()*f2;
-	CTheScripts::ScriptDebugLine3D(p1.x, p1.y, p1.z, p2.x, p2.y, p2.z, color, color);
-
-	p1 = pos - TheCamera.GetRight()*f1;
-	p2 = pos - TheCamera.GetRight()*f2;
-	CTheScripts::ScriptDebugLine3D(p1.x, p1.y, p1.z, p2.x, p2.y, p2.z, color, color);
-}
-
 void CRadar::ShowRadarTrace(float x, float y, uint32 size, uint8 red, uint8 green, uint8 blue, uint8 alpha)
 {
 	if (!CHud::m_Wants_To_Draw_Hud || TheCamera.m_WideScreenOn)
@@ -1315,15 +1177,6 @@ void CRadar::Shutdown()
 	TShirtSprite.Delete();
 	TommySprite.Delete();
 	PhoneSprite.Delete();
-	RadioWildstyleSprite.Delete();
-	RadioFlashSprite.Delete();
-	RadioKChatSprite.Delete();
-	RadioFeverSprite.Delete();
-	RadioVRockSprite.Delete();
-	RadioVCPRSprite.Delete();
-	RadioEspantosoSprite.Delete();
-	RadioEmotionSprite.Delete();
-	RadioWaveSprite.Delete();
 #ifdef MAP_ENHANCEMENTS
 	WaypointSprite.Delete();
 #endif
@@ -1552,12 +1405,6 @@ CRadar::DrawEntityBlip(int32 blipId)
 	if (blipEntity) {
 		uint32 color = GetRadarTraceColour(ms_RadarTrace[blipId].m_nColor, ms_RadarTrace[blipId].m_bDim);
 		if (ms_RadarTrace[blipId].m_eBlipDisplay == BLIP_DISPLAY_BOTH || ms_RadarTrace[blipId].m_eBlipDisplay == BLIP_DISPLAY_MARKER_ONLY) {
-			if (CTheScripts::IsDebugOn()) {
-				ShowRadarMarker(blipEntity->GetPosition(), color, ms_RadarTrace[blipId].m_Radius);
-				ms_RadarTrace[blipId].m_Radius = ms_RadarTrace[blipId].m_Radius - 0.1f;
-				if (ms_RadarTrace[blipId].m_Radius < 1.0f)
-					ms_RadarTrace[blipId].m_Radius = 5.0f;
-			}
 		}
 		if (ms_RadarTrace[blipId].m_eBlipDisplay == BLIP_DISPLAY_BOTH || ms_RadarTrace[blipId].m_eBlipDisplay == BLIP_DISPLAY_BLIP_ONLY) {
 			TransformRealWorldPointToRadarSpace(in, blipEntity->GetPosition());
@@ -1599,16 +1446,10 @@ CRadar::DrawCoordBlip(int32 blipId)
 {
 	CVector2D out;
 	CVector2D in;
-	if (ms_RadarTrace[blipId].m_eBlipType != BLIP_CONTACT_POINT || !CTheScripts::IsPlayerOnAMission()) {
+	if (ms_RadarTrace[blipId].m_eBlipType != BLIP_CONTACT_POINT) {
 
 		uint32 color = GetRadarTraceColour(ms_RadarTrace[blipId].m_nColor, ms_RadarTrace[blipId].m_bDim);
 		if (ms_RadarTrace[blipId].m_eBlipDisplay == BLIP_DISPLAY_BOTH || ms_RadarTrace[blipId].m_eBlipDisplay == BLIP_DISPLAY_MARKER_ONLY) {
-			if (CTheScripts::IsDebugOn()) {
-				ShowRadarMarker(ms_RadarTrace[blipId].m_vecPos, color, ms_RadarTrace[blipId].m_Radius);
-				ms_RadarTrace[blipId].m_Radius = ms_RadarTrace[blipId].m_Radius - 0.1f;
-				if (ms_RadarTrace[blipId].m_Radius < 1.0f)
-					ms_RadarTrace[blipId].m_Radius = 5.0f;
-			}
 		}
 		if (ms_RadarTrace[blipId].m_eBlipDisplay == BLIP_DISPLAY_BOTH || ms_RadarTrace[blipId].m_eBlipDisplay == BLIP_DISPLAY_BLIP_ONLY) {
 			TransformRealWorldPointToRadarSpace(in, ms_RadarTrace[blipId].m_vec2DPos);
@@ -1777,33 +1618,6 @@ CRadar::DrawLegend(int32 x, int32 y, int32 sprite)
 		break;
 		case RADAR_SPRITE_PHONE:
 			text = TheText.Get("LG_25");
-		break;
-		case RADAR_SPRITE_RADIO_WILDSTYLE:
-			text = TheText.Get("LG_26");
-		break;
-		case RADAR_SPRITE_RADIO_FLASH:
-			text = TheText.Get("LG_27");
-		break;
-		case RADAR_SPRITE_RADIO_KCHAT:
-			text = TheText.Get("LG_28");
-		break;
-		case RADAR_SPRITE_RADIO_FEVER:
-			text = TheText.Get("LG_29");
-		break;
-		case RADAR_SPRITE_RADIO_VROCK:
-			text = TheText.Get("LG_30");
-		break;
-		case RADAR_SPRITE_RADIO_VCPR:
-			text = TheText.Get("LG_31");
-		break;
-		case RADAR_SPRITE_RADIO_ESPANTOSO:
-			text = TheText.Get("LG_32");
-		break;
-		case RADAR_SPRITE_RADIO_EMOTION:
-			text = TheText.Get("LG_33");
-		break;
-		case RADAR_SPRITE_RADIO_WAVE:
-			text = TheText.Get("LG_34");
 		break;
 #ifdef MAP_ENHANCEMENTS
         case RADAR_SPRITE_WAYPOINT:

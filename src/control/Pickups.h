@@ -105,8 +105,6 @@ public:
 	static void CreateSomeMoney(CVector, int);
 	static void DetonateMinesHitByGunShot(CVector *vec1, CVector *vec2);
 	static void RemoveUnnecessaryPickups(const CVector& center, float radius);
-	static void Load(uint8 *buf, uint32 size);
-	static void Save(uint8 *buf, uint32 *size);
 
 	static CPickup aPickUps[NUMPICKUPS];
 
@@ -125,49 +123,5 @@ extern uint16 AmmoForWeapon_OnStreet[WEAPONTYPE_TOTALWEAPONS + 1];
 extern uint16 CostOfWeapon[WEAPONTYPE_TOTALWEAPONS + 3];
 
 extern int32 CollectPickupBuffer;
-
-enum ePacmanPickupType
-{
-	PACMAN_NONE,
-	PACMAN_SCRAMBLE,
-	PACMAN_RACE,
-};
-
-class CPacManPickup
-{
-public:
-	CVector m_vecPosn;
-	CObject *m_pObject;
-	uint8 m_eType;
-
-	void Update();
-};
-
-class CPacManPickups
-{
-	friend class CPacManPickup;
-
-	static CPacManPickup aPMPickUps[NUMPACMANPICKUPS];
-	static CVector LastPickUpCoors;
-	static int PillsEatenInRace;
-	static bool bPMActive;
-public:
-	static void Init(void);
-	static void Update(void);
-	static void GeneratePMPickUps(CVector, float, int16, uint8);
-	static void GeneratePMPickUpsForRace(int32);
-	static void GenerateOnePMPickUp(CVector);
-	static void Render(void);
-	static void StartPacManRace(int32);
-	static void StartPacManRecord(void);
-	static uint32 QueryPowerPillsEatenInRace(void);
-	static void ResetPowerPillsEatenInRace(void);
-	static void ClearPMPickUps(void);
-	static void CleanUpPacManStuff(void);
-	static void StartPacManScramble(CVector, float, int16);
-	static uint32 QueryPowerPillsCarriedByPlayer(void);
-	static void ResetPowerPillsCarriedByPlayer(void);
-
-};
 
 #endif // __GTA_PICKUPS_H__

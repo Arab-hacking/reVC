@@ -11,7 +11,6 @@
 #endif
 #include "Renderer.h"
 #include "Occlusion.h"
-#include "Credits.h"
 #include "Camera.h"
 #include "Weather.h"
 #include "Timecycle.h"
@@ -24,13 +23,11 @@
 #include "ModelIndices.h"
 #include "Streaming.h"
 #include "Boat.h"
-#include "Heli.h"
 #include "Automobile.h"
 #include "Bike.h"
 #include "Console.h"
 #include "Debug.h"
 #include "Hud.h"
-#include "SceneEdit.h"
 #include "Pad.h"
 #include "PlayerPed.h"
 #include "Radar.h"
@@ -38,7 +35,6 @@
 #include "Frontend.h"
 #include "WaterLevel.h"
 #include "main.h"
-#include "Script.h"
 #include "MBlur.h"
 #include "postfx.h"
 #include "custompipes.h"
@@ -48,9 +44,6 @@
 #include "Camera.h"
 #include "MBlur.h"
 #include "ControllerConfig.h"
-#include "CarCtrl.h"
-#include "Population.h"
-#include "IniFile.h"
 #include "Zones.h"
 #ifdef CUSTOM_MODELS
 #include "CustomModels.h"
@@ -168,16 +161,6 @@ CustomFrontendOptionsPopulate(void)
 #ifdef MORE_LANGUAGES
 	int fd2;
 	FrontendOptionSetCursor(MENUPAGE_LANGUAGE_SETTINGS, 5, false);
-#if 0
-	if (fd = CFileMgr::OpenFile("text/polish.gxt")) {
-		if (fd2 = CFileMgr::OpenFile("models/fonts_p.txd")) {
-			FrontendOptionAddDynamic("FEL_POL", 0, 0, MENUALIGN_CENTER, nil, nil, LangPolSelect, nil, nil);
-			CFileMgr::CloseFile(fd2);
-		}
-		CFileMgr::CloseFile(fd);
-	}
-#endif
-
 	if (fd = CFileMgr::OpenFile("text/russian.gxt")) {
 		if (fd2 = CFileMgr::OpenFile("models/fonts_r.txd")) {
 			FrontendOptionAddDynamic("FEL_RUS", 0, 0, MENUALIGN_CENTER, nil, nil, LangRusSelect, nil, nil);
@@ -186,15 +169,6 @@ CustomFrontendOptionsPopulate(void)
 		CFileMgr::CloseFile(fd);
 	}
 
-#if 0
-	if (fd = CFileMgr::OpenFile("text/japanese.gxt")) {
-		if (fd2 = CFileMgr::OpenFile("models/fonts_j.txd")) {
-			FrontendOptionAddDynamic("FEL_JAP", 0, 0, MENUALIGN_CENTER, nil, nil, LangJapSelect, nil, nil);
-			CFileMgr::CloseFile(fd2);
-		}
-		CFileMgr::CloseFile(fd);
-	}
-#endif
 #endif
 
 }
@@ -367,7 +341,7 @@ const char *iniControllerActions[] = { "PED_FIREWEAPON", "PED_CYCLE_WEAPON_RIGHT
 #ifdef BIND_VEHICLE_FIREWEAPON
 	"VEHICLE_FIREWEAPON",
 #endif
-	"VEHICLE_ACCELERATE", "VEHICLE_BRAKE", "VEHICLE_CHANGE_RADIO_STATION", "VEHICLE_HORN", "TOGGLE_SUBMISSIONS", "VEHICLE_HANDBRAKE", "PED_1RST_PERSON_LOOK_LEFT",
+	"VEHICLE_ACCELERATE", "VEHICLE_BRAKE", "VEHICLE_HORN", "TOGGLE_SUBMISSIONS", "VEHICLE_HANDBRAKE", "PED_1RST_PERSON_LOOK_LEFT",
 	"PED_1RST_PERSON_LOOK_RIGHT", "VEHICLE_LOOKLEFT", "VEHICLE_LOOKRIGHT", "VEHICLE_LOOKBEHIND", "VEHICLE_TURRETLEFT", "VEHICLE_TURRETRIGHT", "VEHICLE_TURRETUP", "VEHICLE_TURRETDOWN",
 	"PED_CYCLE_TARGET_LEFT", "PED_CYCLE_TARGET_RIGHT", "PED_CENTER_CAMERA_BEHIND_PLAYER", "PED_LOCK_TARGET", "NETWORK_TALK", "PED_1RST_PERSON_LOOK_UP", "PED_1RST_PERSON_LOOK_DOWN",
 	"_CONTROLLERACTION_36", "TOGGLE_DPAD", "SWITCH_DEBUG_CAM_ON", "TAKE_SCREEN_SHOT", "SHOW_MOUSE_POINTER_TOGGLE", "UNKNOWN_ACTION" };
@@ -557,8 +531,6 @@ bool LoadINISettings()
 	ReadIniIfExists("Controller", "Vibration", &FrontEndMenuManager.m_PrefsUseVibration);
 	ReadIniIfExists("Audio", "SfxVolume", &FrontEndMenuManager.m_PrefsSfxVolume);
 	ReadIniIfExists("Audio", "MusicVolume", &FrontEndMenuManager.m_PrefsMusicVolume);
-	ReadIniIfExists("Audio", "MP3BoostVolume", &FrontEndMenuManager.m_PrefsMP3BoostVolume);
-	ReadIniIfExists("Audio", "Radio", &FrontEndMenuManager.m_PrefsRadioStation);
 #ifdef EXTERNAL_3D_SOUND
 	ReadIniIfExists("Audio", "SpeakerType", &FrontEndMenuManager.m_PrefsSpeakers);
 	ReadIniIfExists("Audio", "Provider", &FrontEndMenuManager.m_nPrefsAudio3DProviderIndex);
@@ -651,12 +623,6 @@ bool LoadINISettings()
 	}
 #endif
 
-	// Fetched in above block, but needs evaluation
-#ifdef PED_CAR_DENSITY_SLIDERS
-	CPopulation::MaxNumberOfPedsInUse = DEFAULT_MAX_NUMBER_OF_PEDS * CIniFile::PedNumberMultiplier;
-	CPopulation::MaxNumberOfPedsInUseInterior = DEFAULT_MAX_NUMBER_OF_PEDS_INTERIOR * CIniFile::PedNumberMultiplier;
-	CCarCtrl::MaxNumberOfCarsInUse = DEFAULT_MAX_NUMBER_OF_CARS * CIniFile::CarNumberMultiplier;
-#endif
 
 #ifdef ANDROID
 	FrontEndMenuManager.m_PrefsFrameLimiter = 0;
@@ -699,8 +665,6 @@ void SaveINISettings()
 	StoreIni("Controller", "Vibration", FrontEndMenuManager.m_PrefsUseVibration);
 	StoreIni("Audio", "SfxVolume", FrontEndMenuManager.m_PrefsSfxVolume);
 	StoreIni("Audio", "MusicVolume", FrontEndMenuManager.m_PrefsMusicVolume);
-	StoreIni("Audio", "MP3BoostVolume", FrontEndMenuManager.m_PrefsMP3BoostVolume);
-	StoreIni("Audio", "Radio", FrontEndMenuManager.m_PrefsRadioStation);
 #ifdef EXTERNAL_3D_SOUND
 	StoreIni("Audio", "SpeakerType", FrontEndMenuManager.m_PrefsSpeakers);
 	StoreIni("Audio", "Provider", FrontEndMenuManager.m_nPrefsAudio3DProviderIndex);
@@ -793,16 +757,10 @@ void WeaponCheat3();
 void HealthCheat();
 void VehicleCheat(int model);
 void BlowUpCarsCheat();
-void ChangePlayerCheat();
-void MayhemCheat();
-void EverybodyAttacksPlayerCheat();
-void WeaponsForAllCheat();
 void FastTimeCheat();
 void SlowTimeCheat();
 void MoneyCheat();
 void ArmourCheat();
-void WantedLevelUpCheat();
-void WantedLevelDownCheat();
 void SunnyWeatherCheat();
 void CloudyWeatherCheat();
 void RainyWeatherCheat();
@@ -811,7 +769,6 @@ void FastWeatherCheat();
 void OnlyRenderWheelsCheat();
 void StrongGripCheat();
 void SpecialCarCheats();
-void PickUpChicksCheat();
 
 DebugMenuEntry *carCol1;
 DebugMenuEntry *carCol2;
@@ -824,14 +781,15 @@ SpawnCar(int id)
 	CStreaming::LoadAllRequestedModels(false);
 	if(CStreaming::HasModelLoaded(id)){
 		playerpos = FindPlayerCoors();
-		int node;
-		if(!CModelInfo::IsBoatModel(id)){
-			node = ThePaths.FindNodeClosestToCoors(playerpos, 0, 100.0f, false, false);
-			if(node < 0)
-				return;
-		}
 
-		CVehicle *v = CCarCtrl::GetNewVehicleDependingOnCarModel(id, RANDOM_VEHICLE);
+		CVector pos;
+		if(CModelInfo::IsBoatModel(id))
+			pos = TheCamera.GetPosition() + TheCamera.GetForward()*15.0f;
+		else
+			pos = playerpos + FindPlayerPed()->GetForward()*7.0f;
+		pos.z += 2.0f;
+
+		CVehicle *v = CGame::SpawnVehicle(id, pos, 3.49f);
 		if(v == nil)
 			return;
 
@@ -840,17 +798,6 @@ SpawnCar(int id)
 			DebugMenuEntrySetAddress(carCol1, &v->m_currentColour1);
 		if(carCol2)
 			DebugMenuEntrySetAddress(carCol2, &v->m_currentColour2);
-
-		if(CModelInfo::IsBoatModel(id))
-			v->SetPosition(TheCamera.GetPosition() + TheCamera.GetForward()*15.0f);
-		else
-			v->SetPosition(ThePaths.m_pathNodes[node].GetPosition());
-
-		v->GetMatrix().GetPosition().z += 4.0f;
-		v->SetOrientation(0.0f, 0.0f, 3.49f);
-		v->SetStatus(STATUS_ABANDONED);
-		v->m_nDoorLock = CARLOCK_UNLOCKED;
-		CWorld::Add(v);
 	}
 }
 
@@ -1039,14 +986,8 @@ DebugMenuPopulate(void)
 		DebugMenuAddCmd("Cheats", "Weapon set 3", WeaponCheat3);
 		DebugMenuAddCmd("Cheats", "Money", MoneyCheat);
 		DebugMenuAddCmd("Cheats", "Health", HealthCheat);
-		DebugMenuAddCmd("Cheats", "Wanted level up", WantedLevelUpCheat);
-		DebugMenuAddCmd("Cheats", "Wanted level down", WantedLevelDownCheat);
 		DebugMenuAddCmd("Cheats", "Tank", []() { VehicleCheat(MI_TAXI); });
 		DebugMenuAddCmd("Cheats", "Blow up cars", BlowUpCarsCheat);
-		DebugMenuAddCmd("Cheats", "Change player", ChangePlayerCheat);
-		DebugMenuAddCmd("Cheats", "Mayhem", MayhemCheat);
-		DebugMenuAddCmd("Cheats", "Everybody attacks player", EverybodyAttacksPlayerCheat);
-		DebugMenuAddCmd("Cheats", "Weapons for all", WeaponsForAllCheat);
 		DebugMenuAddCmd("Cheats", "Fast time", FastTimeCheat);
 		DebugMenuAddCmd("Cheats", "Slow time", SlowTimeCheat);
 		DebugMenuAddCmd("Cheats", "Armour", ArmourCheat);
@@ -1058,7 +999,6 @@ DebugMenuPopulate(void)
 		DebugMenuAddCmd("Cheats", "Only render wheels", OnlyRenderWheelsCheat);
 		DebugMenuAddCmd("Cheats", "Strong grip", StrongGripCheat);
 		DebugMenuAddCmd("Cheats", "Special car", SpecialCarCheats);
-		DebugMenuAddCmd("Cheats", "Pickup chicks", PickUpChicksCheat);
 
 		static int spawnCarId = MI_LANDSTAL;
 		e = DebugMenuAddVar("Spawn", "Spawn Car ID", &spawnCarId, nil, 1, MI_LANDSTAL, MI_VICECHEE, carnames);
@@ -1172,9 +1112,6 @@ extern bool gbRenderWorld2;
 		DebugMenuAddVarBool8("Render", "Neo Road Gloss enable", &CustomPipes::GlossEnable, nil);
 		DebugMenuAddVar("Render", "Mult", &CustomPipes::GlossMult, nil, 0.1f, 0, 1.0f);
 #endif
-		DebugMenuAddVarBool8("Debug Render", "Show Ped Paths", &gbShowPedPaths, nil);
-		DebugMenuAddVarBool8("Debug Render", "Show Car Paths", &gbShowCarPaths, nil);
-		DebugMenuAddVarBool8("Debug Render", "Show Car Path Links", &gbShowCarPathsLinks, nil);
 		DebugMenuAddVarBool8("Debug Render", "Show Collision Lines", &gbShowCollisionLines, nil);
 		DebugMenuAddVarBool8("Debug Render", "Show Collision Polys", &gbShowCollisionPolys, nil);
 		DebugMenuAddVarBool8("Debug Render", "Don't render Buildings", &gbDontRenderBuildings, nil);
@@ -1201,11 +1138,6 @@ extern bool gbRenderWorld2;
 #endif
 
 		DebugMenuAddVarBool8("Debug", "pad 1 -> pad 2", &CPad::m_bMapPadOneToPadTwo, nil);
-#ifdef GTA_SCENE_EDIT
-		DebugMenuAddVarBool8("Debug", "Edit on", &CSceneEdit::m_bEditOn, nil);
-#endif
-		//DebugMenuAddCmd("Debug", "Start Credits", CCredits::Start);
-		//DebugMenuAddCmd("Debug", "Stop Credits", CCredits::Stop);
 
 #ifdef RELOADABLES
 // maybe put it back if we have more to reload 
@@ -1228,7 +1160,7 @@ extern bool gbRenderWorld2;
 		DebugMenuAddVarBool8("Cam", "Free Cam", &CCamera::bFreeCam, nil);
 #endif
 		DebugMenuAddVarBool8("Cam", "Print Debug Code", &PrintDebugCode, nil);
-		DebugMenuAddVar("Cam", "Cam Mode", &DebugCamMode, nil, 1, 0, CCam::MODE_EDITOR, nil);
+		DebugMenuAddVar("Cam", "Cam Mode", &DebugCamMode, nil, 1, 0, CCam::MODE_MODELVIEW, nil);
 		DebugMenuAddCmd("Cam", "Normal", []() { DebugCamMode = 0; });
 		DebugMenuAddCmd("Cam", "Reset Statics", ResetCamStatics);
 

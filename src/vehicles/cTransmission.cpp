@@ -64,27 +64,6 @@ cTransmission::InitGearRatios(void)
 	m_aGears[1].m_ChangeDownVelocity = -0.01f;
 }
 
-void
-cTransmission::CalculateGearForSimpleCar(float speed, uint8 &gear)
-{
-	if(!IsUsable(*this) || !IsFinite(speed))
-		return;
-
-	if(gear > m_nNumberOfGears)
-		gear = m_nNumberOfGears;
-
-	m_fCurVelocity = speed;
-
-	tTransmissionGear *current = &m_aGears[gear];
-	if(speed > current->m_ChangeUpVelocity){
-		if(gear < m_nNumberOfGears)
-			gear++;
-	}else if(speed < current->m_ChangeDownVelocity){
-		if(gear > 0)
-			gear--;
-	}
-}
-
 float
 cTransmission::CalculateDriveAcceleration(const float &gasPedal, uint8 &gear, float &time, const float &velocity,
 	float *inertiaRatio, float *inertiaSmoothing, bool wheelsOnGround, eTransmissionCheat cheat)

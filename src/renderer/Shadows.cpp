@@ -14,11 +14,9 @@
 #include "ModelIndices.h"
 #include "RenderBuffer.h"
 #ifdef FIX_BUGS
-#include "Replay.h"
 #endif
 #include "PointLights.h"
 #include "SpecialFX.h"
-#include "Script.h"
 #include "TimeStep.h"
 #include "Shadows.h"
 #include "ShadowTriWinding.h"
@@ -2369,8 +2367,6 @@ void
 CShadows::RenderExtraPlayerShadows(void)
 {
 #ifdef FIX_BUGS
-	if (CReplay::IsPlayingBack())
-		return;
 #endif
 	if ( CTimeCycle::GetLightShadowStrength() != 0 )
 	{

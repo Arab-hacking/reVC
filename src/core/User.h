@@ -1,8 +1,6 @@
 #ifndef __GTA_USER_H__
 #define __GTA_USER_H__
 
-#include "Pager.h"
-#include "OnscreenTimer.h"
 
 class CZone;
 class CVehicle;
@@ -50,8 +48,6 @@ class CUserDisplay
 {
 public:
 	static CPlaceName PlaceName;
-	static COnscreenTimer OnscnTimer;
-	static CPager Pager;
 	static CCurrentVehicle CurrentVehicle;
 
 	static void Init();

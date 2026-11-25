@@ -1,8 +1,5 @@
 #ifndef __GTA_FRONTEND_H__
 #define __GTA_FRONTEND_H__
-#ifdef PS2_MENU
-#include "Frontend_PS2.h"
-#else
 
 #include "Sprite2d.h"
 #include "Timer.h"
@@ -32,20 +29,6 @@
 #endif
 
 #define RIGHT_ALIGNED_TEXT_RIGHT_MARGIN(xMargin) (xMargin + 30.0f)
-
-#define MENURADIO_ICON_FIRST_X 238.f
-#ifdef EXTERNAL_3D_SOUND
-#define MENURADIO_ICON_Y 288.0f
-#else
-#define MENURADIO_ICON_Y 248.0f
-#endif
-#define MENURADIO_ICON_SIZE 60.0f
-#ifdef EXTERNAL_3D_SOUND
-#define MENURADIO_SELECTOR_START_Y 285.f // other options should leave room on the screen
-#else
-#define MENURADIO_SELECTOR_START_Y 245.0f
-#endif
-#define MENURADIO_SELECTOR_HEIGHT 65.f
 
 #define MENUSLIDER_X 500.0f
 #define MENUSLIDER_UNK 100.0f
@@ -159,16 +142,6 @@ enum eMenuSprites
 	MENUSPRITE_MAPBOT01,
 	MENUSPRITE_MAPBOT02,
 	MENUSPRITE_MAPBOT03,
-	MENUSPRITE_WILDSTYLE,
-	MENUSPRITE_FLASH,
-	MENUSPRITE_KCHAT,
-	MENUSPRITE_FEVER,
-	MENUSPRITE_VROCK,
-	MENUSPRITE_VCPR,
-	MENUSPRITE_ESPANTOSO,
-	MENUSPRITE_EMOTION,
-	MENUSPRITE_WAVE,
-	MENUSPRITE_MP3,
 	MENUSPRITE_DOWNOFF,
 	MENUSPRITE_DOWNON,
 	MENUSPRITE_UPOFF,
@@ -183,21 +156,6 @@ enum eMenuSprites
 	NUM_MENU_SPRITES
 };
 
-enum eSaveSlot
-{
-	SAVESLOT_NONE,
-	SAVESLOT_0,
-	SAVESLOT_1,
-	SAVESLOT_2,
-	SAVESLOT_3,
-	SAVESLOT_4,
-	SAVESLOT_5,
-	SAVESLOT_6,
-	SAVESLOT_7,
-	SAVESLOT_8,
-	SAVESLOT_LABEL = 36
-};
-
 enum eMenuScreen
 {
 	MENUPAGE_DISABLED = -1,
@@ -209,32 +167,16 @@ enum eMenuScreen
 	MENUPAGE_LANGUAGE_SETTINGS = 5,
 	MENUPAGE_MAP = 6,
 	MENUPAGE_NEW_GAME_RELOAD = 7,
-	MENUPAGE_CHOOSE_LOAD_SLOT = 8,
-	MENUPAGE_CHOOSE_DELETE_SLOT = 9,
-	MENUPAGE_LOAD_SLOT_CONFIRM = 10,
-	MENUPAGE_DELETE_SLOT_CONFIRM = 11,
-	MENUPAGE_LOADING_IN_PROGRESS = 12,
-	MENUPAGE_DELETING_IN_PROGRESS = 13,
-	MENUPAGE_DELETE_SUCCESSFUL = 14,
-	MENUPAGE_CHOOSE_SAVE_SLOT = 15,
-	MENUPAGE_SAVE_OVERWRITE_CONFIRM = 16,
-	MENUPAGE_SAVING_IN_PROGRESS = 17,
-	MENUPAGE_SAVE_SUCCESSFUL = 18,
-	MENUPAGE_SAVE_CUSTOM_WARNING = 19,
-	MENUPAGE_SAVE_CHEAT_WARNING = 20,
-	MENUPAGE_SKIN_SELECT = 21,
-	MENUPAGE_SAVE_UNUSED = 22,
-	MENUPAGE_SAVE_FAILED = 23,
-	MENUPAGE_SAVE_FAILED_2 = 24,
-	MENUPAGE_LOAD_FAILED = 25,
-	MENUPAGE_CONTROLLER_PC = 26,
-	MENUPAGE_OPTIONS = 27,
-	MENUPAGE_EXIT = 28,
-	MENUPAGE_START_MENU = 29,
-	MENUPAGE_KEYBOARD_CONTROLS = 30,
-	MENUPAGE_MOUSE_CONTROLS = 31,
-	MENUPAGE_PAUSE_MENU = 32,
-	MENUPAGE_NONE = 33, // Then chooses main menu or pause menu 
+	MENUPAGE_MISSION_REPLAY_TRANSITION = 8,
+	MENUPAGE_SKIN_SELECT = 9,
+	MENUPAGE_CONTROLLER_PC = 10,
+	MENUPAGE_OPTIONS = 11,
+	MENUPAGE_EXIT = 12,
+	MENUPAGE_START_MENU = 13,
+	MENUPAGE_KEYBOARD_CONTROLS = 14,
+	MENUPAGE_MOUSE_CONTROLS = 15,
+	MENUPAGE_PAUSE_MENU = 16,
+	MENUPAGE_NONE = 17, // Then chooses main menu or pause menu
 #ifdef GAMEPAD_MENU
 	MENUPAGE_CONTROLLER_SETTINGS,
 #endif
@@ -286,7 +228,6 @@ enum eMenuAction
 	MENUACTION_BRIGHTNESS,
 	MENUACTION_MUSICVOLUME,
 	MENUACTION_SFXVOLUME,
-	MENUACTION_RADIO,
 	MENUACTION_LANG_ENG,
 	MENUACTION_LANG_FRE,
 	MENUACTION_LANG_GER,
@@ -295,14 +236,8 @@ enum eMenuAction
 #ifdef MORE_LANGUAGES
 	MENUACTION_LANG_POR,
 #endif
-	MENUACTION_POPULATESLOTS_CHANGEMENU,
-	MENUACTION_CHECKSAVE,
 	MENUACTION_NEWGAME,
-	MENUACTION_RESUME_FROM_SAVEZONE,
 	MENUACTION_RELOADIDE,
-	MENUACTION_SETDBGFLAG,
-	MENUACTION_LOADRADIO,
-	MENUACTION_SAVEGAME,
 	MENUACTION_SWITCHBIGWHITEDEBUGLIGHT,
 	MENUACTION_COLLISIONPOLYS,
 	MENUACTION_LEGENDS,
@@ -327,7 +262,6 @@ enum eMenuAction
 	MENUACTION_MOUSESTEER,
 	MENUACTION_DRAWDIST,
 	MENUACTION_MOUSESENS,
-	MENUACTION_MP3VOLUMEBOOST,
 #ifdef GAMEPAD_MENU
 	MENUACTION_CTRLVIBRATION,
 	MENUACTION_CTRLCONFIG,
@@ -368,8 +302,6 @@ enum eCheckHover
 	HOVEROPTION_LIST, // also layer in controller setup and skin menu
 	HOVEROPTION_SKIN,
 	HOVEROPTION_USESKIN, // also layer in controller setup and skin menu
-	HOVEROPTION_NEXT_RADIO,
-	HOVEROPTION_PREV_RADIO,
 	HOVEROPTION_INCREASE_BRIGHTNESS,
 	HOVEROPTION_DECREASE_BRIGHTNESS,
 	HOVEROPTION_INCREASE_DRAWDIST,
@@ -380,8 +312,6 @@ enum eCheckHover
 	HOVEROPTION_DECREASE_SFXVOLUME,
 	HOVEROPTION_INCREASE_MOUSESENS,
 	HOVEROPTION_DECREASE_MOUSESENS,
-	HOVEROPTION_INCREASE_MP3BOOST,
-	HOVEROPTION_DECREASE_MP3BOOST,
 #ifdef CUSTOM_FRONTEND_OPTIONS
 	HOVEROPTION_INCREASE_CFO_SLIDER,
 	HOVEROPTION_DECREASE_CFO_SLIDER,
@@ -450,7 +380,6 @@ struct CMenuScreen
 	{
 		int32 m_Action; // eMenuAction
 		char m_EntryName[8];
-		int32 m_SaveSlot; // eSaveSlot
 		int32 m_TargetMenu; // eMenuScreen
 		uint16 m_X;
 		uint16 m_Y;
@@ -553,7 +482,6 @@ struct CMenuScreenCustom
 				CCFODynamic *m_CFODynamic;
 				CCFOSlider *m_CFOSlider;
 			};
-			int32 m_SaveSlot; // eSaveSlot
 			int32 m_TargetMenu; // eMenuScreen
 		};
 		uint16 m_X;
@@ -662,7 +590,6 @@ public:
 	int8 m_PrefsDMA;
 	int8 m_PrefsSfxVolume;
 	int8 m_PrefsMusicVolume;
-	int8 m_PrefsRadioStation;
 	uint8 m_PrefsStereoMono; // unused except restore settings
 	int32 m_nCurrOption;
 	bool m_bQuitGameNoCD;
@@ -672,8 +599,6 @@ public:
 	bool m_bMenuActive;
 	bool m_bWantToRestart;
 	bool m_bFirstTime;
-	bool m_bActivateSaveMenu;
-	bool m_bWantToLoad;
 	float m_fMapSize;
 	float m_fMapCenterX;
 	float m_fMapCenterY;
@@ -682,7 +607,6 @@ public:
 	int32 field_54;
 	int8 m_bLanguageLoaded;
 	uint8 m_PrefsAllowNastyGame;
-	int8 m_PrefsMP3BoostVolume;
 	int8 m_ControlMethod;
 	int32 m_nPrefsVideoMode;
 	int32 m_nDisplayVideoMode;
@@ -694,15 +618,11 @@ public:
 	int32 *pEditString;
 	uint8 field_74[4];
 	int32 *pControlEdit;
-	bool m_OnlySaveMenu;
 	int32 m_firstStartCounter;
 	CSprite2d m_aFrontEndSprites[NUM_MENU_SPRITES];
 	bool m_bSpritesLoaded;
-	int32 m_LeftMostRadioX;
-	int32 m_ScrollRadioBy;
 	int32 m_nCurrScreen;
 	int32 m_nPrevScreen;
-	int32 m_nCurrSaveSlot;
 	uint32 m_LastScreenSwitch;
 	int32 m_nMenuFadeAlpha;
 	int32 m_nOptionHighlightTransitionBlend;
@@ -847,21 +767,7 @@ public:
 	#define ISLAND_LOADING_ISNT(p)
 #endif
 
-#ifdef XBOX_MESSAGE_SCREEN
-	static uint32 m_nDialogHideTimer;
-	static uint32 m_nDialogHideTimerPauseMode;
-	static bool m_bDialogOpen;
-	static wchar *m_pDialogText;
-	static bool m_bSaveWasSuccessful;
 
-	static void SetDialogText(const char*);
-	static bool DialogTextCmp(const char*);
-	static void ToggleDialog(bool);
-	static void SetDialogTimer(uint32);
-	void ProcessDialogTimer(void);
-	void DrawOverlays(void);
-	void CloseDialog(void);
-#endif
 
 	void Initialise();
 	void PrintMap();
@@ -898,8 +804,6 @@ public:
 	void ProcessList(bool &optionSelected, bool &goBack);
 	void UserInput();
 	void ProcessUserInput(uint8, uint8, uint8, uint8, int8);
-	void ChangeRadioStation(int8);
-	void ProcessFileActions();
 	void ProcessOnOffMenuOptions();
 	void RequestFrontEndShutDown();
 	void RequestFrontEndStartUp();
@@ -915,7 +819,6 @@ public:
 	void SwitchToNewScreen(int8);
 	void AdditionalOptionInput(bool &goBack);
 	void ExportStats(void);
-	void PrintRadioSelector(void);
 
 	// New (not in function or inlined in the game)
 	void ThingsToDoBeforeLeavingPage();
@@ -938,6 +841,5 @@ VALIDATE_SIZE(CMenuManager, 0x688);
 
 extern CMenuManager FrontEndMenuManager;
 
-#endif
 
 #endif // __GTA_FRONTEND_H__

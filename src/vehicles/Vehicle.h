@@ -13,7 +13,6 @@ class CVehicleAnimGroup;
 
 class CPed;
 class CPlayerPed;
-class CCopPed;
 class CFire;
 
 enum {
@@ -252,9 +251,6 @@ public:
 	uint8 VehicleCreatedBy;
 
 	// cf. https://github.com/DK22Pac/plugin-sdk/blob/master/plugin_sa/game_sa/CVehicle.h from R*
-	uint8 bIsLawEnforcer: 1; // Is this guy chasing the player at the moment
-	uint8 bIsAmbulanceOnDuty: 1; // Ambulance trying to get to an accident
-	uint8 bIsFireTruckOnDuty: 1; // Firetruck trying to get to a fire
 	uint8 bIsLocked: 1; // Is this guy locked by the script (cannot be removed)
 	uint8 bEngineOn: 1; // For sound purposes. Parked cars have their engines switched off (so do destroyed cars)
 	uint8 bIsHandbrakeOn: 1; // How's the handbrake doing ?
@@ -270,7 +266,6 @@ public:
 	uint8 bIsBig: 1; // Is this vehicle a bus
 	uint8 bLowVehicle: 1; // Need this for sporty type cars to use low getting-in/out anims
 	uint8 bComedyControls : 1; // Will make the car hard to control (hopefully in a funny way)
-	uint8 bWarnedPeds : 1; // Has scan and warn peds of danger been processed?
 	uint8 bCraneMessageDone : 1; // A crane message has been printed for this car allready
 	uint8 bExtendedRange : 1; // This vehicle needs to be a bit further away to get deleted
 
@@ -283,11 +278,9 @@ public:
 	uint8 bCanBeDamaged : 1; // Set to FALSE during cut scenes to avoid explosions
 	uint8 bUsingSpecialColModel : 1;// Is player vehicle using special collision model, stored in player strucure
 
-	uint8 bOccupantsHaveBeenGenerated : 1;  // Is true if the occupants have already been generated. (Shouldn't happen again)
 	uint8 bGunSwitchedOff : 1;  // Level designers can use this to switch off guns on boats
 	uint8 bVehicleColProcessed : 1;// Has ProcessEntityCollision been processed for this car?
 	uint8 bIsCarParkVehicle : 1; // Car has been created using the special CAR_PARK script command
-	uint8 bHasAlreadyBeenRecorded : 1; // Used for replays
 	uint8 bPartOfConvoy : 1;
 	uint8 bHeliMinimumTilt : 1; // This heli should have almost no tilt really
 	uint8 bAudioChangingGear : 1; // sounds like vehicle is changing gear
@@ -296,8 +289,6 @@ public:
 	uint8 bTyresDontBurst : 1; // If this is set the tyres are invincible
 	uint8 bCreatedAsPoliceVehicle : 1;// True if this guy was created as a police vehicle (enforcer, policecar, miamivice car etc)
 	uint8 bRestingOnPhysical : 1; // Dont go static cause car is sitting on a physical object that might get removed
-	uint8 bParking : 1;
-	uint8 bCanPark : 1;
 #if (!defined GTA_PS2 || defined FIX_BUGS)
 	uint8 m_bombType : 3;
 #endif
@@ -308,7 +299,6 @@ public:
 
 	int8 m_numPedsUseItAsCover;
 	uint8 m_nAmmoInClip;    // Used to make the guns on boat do a reload (20 by default)
-	int8 m_nPacManPickupsCarried;
 	uint8 m_nRoadblockType;
 	float m_fHealth;           // 1000.0f = full health. 250.0f = fire. 0 -> explode
 	uint8 m_nCurrentGear;
@@ -351,13 +341,11 @@ public:
 	// "am I attached, and to what".
 	CVehicle *m_pTowingVehicle;
 	CVehicle *m_pVehicleBeingTowed;
-	uint8 m_nRadioStation;
 	uint8 m_bRainAudioCounter;
 	uint8 m_bRainSamplesCounter;
 	uint32 m_nCarHornTimer;
 	uint8 m_nCarHornPattern;
 	bool m_bSirenOrAlarm;
-	uint8 m_nCarHornDelay;
 	int8 m_comedyControlState;
 	CStoredCollPoly m_aCollPolys[2];     // poly which is under front/rear part of car
 	float m_fSteerInput;
@@ -626,11 +614,6 @@ public:
 	void SetHornTimer(uint32 timer) { m_nCarHornTimer = timer; }
 	uint8 GetHornPattern(void) const { return m_nCarHornPattern; }
 	void SetHornPattern(uint8 pattern) { m_nCarHornPattern = pattern; }
-	// The radio station is a byte index into the audio system's station table;
-	// RADIO_OFF silences it. Stored on the vehicle so it survives a change of
-	// driver, which is what lets a peer hear the same station the owner chose.
-	uint8 GetRadioStation(void) const { return m_nRadioStation; }
-	void SetRadioStation(uint8 station) { m_nRadioStation = station; }
 	// Nitro: bottles left (0 = empty) and whether the bottle is installed at
 	// all. Setting the count on a car without the fitment does nothing, because
 	// the driving code only looks at it when bNosInst is set.
@@ -721,7 +704,6 @@ public:
 	virtual bool IsRoomForPedToLeaveCar(uint32 component, CVector *forcedDoorPos) { return false; }
 	virtual bool IsClearToDriveAway(void);
 	virtual float GetHeightAboveRoad(void);
-	virtual void PlayCarHorn(void) {}
 	// SA CVehicle towing interface (0x6DFBA0 / 0x6DFBE0 / 0x6DD070 / 0x6DD0C0).
 	// Every vehicle has both halves of a coupling: the bar at its rear and the
 	// hitch at its front. Only the classes that can be towed or tow override
@@ -735,11 +717,6 @@ public:
 	// both thin wrappers over the same solver.
 	void UpdateTractorLink(bool applyFullVelocityAtHookUp, bool applyDistToSpeed);
 	void UpdateTrailerLink(bool applyFullVelocityAtHookUp, bool applyDistToSpeed);
-#ifdef COMPATIBLE_SAVES
-	virtual void Save(uint8*& buf);
-	virtual void Load(uint8*& buf);
-#endif
-
 	eVehicleAppearance GetVehicleAppearance(void);
 
 	// ---- Optical lights (SA CVehicle::DoVehicleLights family) -----------
@@ -833,7 +810,6 @@ public:
 	bool IsHeli(void) const { return m_nVehicleType == VEHICLE_TYPE_HELI; }
 	bool IsPlane(void) const { return m_nVehicleType == VEHICLE_TYPE_PLANE; }
 	bool IsBoat(void) const { return m_nVehicleType == VEHICLE_TYPE_BOAT; }
-	bool IsTrain(void) const { return m_nVehicleType == VEHICLE_TYPE_TRAIN; }
 	bool IsFakeAircraft(void) const { return m_nVehicleType == VEHICLE_TYPE_FHELI || m_nVehicleType == VEHICLE_TYPE_FPLANE; }
 	bool IsBike(void) const { return m_nVehicleType == VEHICLE_TYPE_BIKE; }
 	bool IsBMX(void) const { return m_nVehicleType == VEHICLE_TYPE_BMX; }
@@ -846,7 +822,6 @@ public:
 	bool IsSubHeli(void) const { return m_nVehicleSubType == VEHICLE_TYPE_HELI; }
 	bool IsSubPlane(void) const { return m_nVehicleSubType == VEHICLE_TYPE_PLANE; }
 	bool IsSubBoat(void) const { return m_nVehicleSubType == VEHICLE_TYPE_BOAT; }
-	bool IsSubTrain(void) const { return m_nVehicleSubType == VEHICLE_TYPE_TRAIN; }
 	bool IsSubFakeAircraft(void) const { return m_nVehicleSubType == VEHICLE_TYPE_FHELI || m_nVehicleSubType == VEHICLE_TYPE_FPLANE; }
 	bool IsSubBike(void) const { return m_nVehicleSubType == VEHICLE_TYPE_BIKE; }
 	bool IsSubBMX(void) const { return m_nVehicleSubType == VEHICLE_TYPE_BMX; }
@@ -875,9 +850,7 @@ public:
 	float ProcessWheelRotation(tWheelState state, const CVector &fwd, const CVector &speed, float radius);
 	int FindTyreNearestPoint(float x, float y);
 	bool IsLawEnforcementVehicle(void);
-	void ChangeLawEnforcerState(uint8 enable);
 	bool UsesSiren(void);
-	bool IsVehicleNormal(void);
 	bool CarHasRoof(void);
 	bool IsUpsideDown(void);
 	bool IsOnItsSide(void);
@@ -892,7 +865,7 @@ public:
 	// SA CVehicle::GetAnimGroupId: the anim group comes from the handling data,
 	// not from the ped, so a bike and a car in the same block differ.
 	uint8 GetAnimGroupId(void) const { return m_pHandlingData ? m_pHandlingData->m_nAnimGroup : 0; }
-	// SA CVehicle::CanBeDriven: a trailer, a train on a track, or an RC car
+	// SA CVehicle::CanBeDriven: a trailer or an RC car
 	// cannot be driven by a ped; everything else can, provided the model has a
 	// driver seat dummy.
 	bool CanBeDriven(void) const;
@@ -915,8 +888,6 @@ public:
 	bool CanPedJumpOutCar(CPed *ped);
 	bool CanPedJumpOffBike(void);
 	// do these two actually return something?
-	CPed *SetUpDriver(void);
-	CPed *SetupPassenger(int n);
 	void SetDriver(CPed *driver);
 	bool AddPassenger(CPed *passenger);
 	bool AddPassenger(CPed *passenger, uint8 n);
@@ -930,7 +901,6 @@ public:
 	void ProcessCarAlarm(void);
 	bool IsSphereTouchingVehicle(float sx, float sy, float sz, float radius);
 	bool ShufflePassengersToMakeSpace(void);
-	void MakeNonDraggedPedsLeaveVehicle(CPed *ped1, CPed *ped2, CPlayerPed *&player, CCopPed *&cop);
 	void InflictDamage(CEntity *damagedBy, eWeaponType weaponType, float damage, CVector pos = CVector(0.0f, 0.0f, 0.0f));
 	void DoFixedMachineGuns(void);
 	void FireFixedMachineGuns(void);

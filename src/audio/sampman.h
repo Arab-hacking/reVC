@@ -149,7 +149,6 @@ class cSampleManager
 {
 	uint8   m_nEffectsVolume;
 	uint8   m_nMusicVolume;
-	uint8   m_nMP3BoostVolume;
 	uint8   m_nEffectsFadeVolume;
 	uint8   m_nMusicFadeVolume;
 	bool8   m_nMonoMode;
@@ -190,7 +189,6 @@ public:
 	int8 AutoDetect3DProviders();
 #endif
 
-	bool8 IsMP3RadioChannelAvailable(void);
 	
 	void ReleaseDigitalHandle  (void);
 	void ReacquireDigitalHandle(void);
@@ -205,7 +203,6 @@ public:
 
 	void SetEffectsMasterVolume(uint8 nVolume);
 	void SetMusicMasterVolume  (uint8 nVolume);
-	void SetMP3BoostVolume     (uint8 nVolume);
 	void SetEffectsFadeVolume  (uint8 nVolume);
 	void SetMusicFadeVolume    (uint8 nVolume);
 	void SetMonoMode           (bool8 nMode);

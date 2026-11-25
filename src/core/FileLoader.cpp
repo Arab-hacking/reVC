@@ -11,19 +11,15 @@
 #include "VisibilityPlugins.h"
 #include "FileMgr.h"
 #include "cHandlingDataMgr.h"
-#include "CarCtrl.h"
-#include "CarGen.h"
-#include "PedType.h"
-#include "Population.h"
 #include "AnimManager.h"
 #include "PedVoice.h"
 #include "Game.h"
 #include "RwHelper.h"
 #include "NodeName.h"
 #include "TxdStore.h"
-#include "PathFind.h"
 #include "ObjectData.h"
 #include "DummyObject.h"
+#include "Building.h"
 #include "World.h"
 #include "Zones.h"
 #include "ZoneCull.h"
@@ -1588,8 +1584,6 @@ CFileLoader::LoadVehicleObject(const char *line)
 		mi->m_wheelScale = 1.0f;
 	}else if(strcmp(type, "boat") == 0){
 		mi->m_nVehicleType = VEHICLE_TYPE_BOAT;
-	}else if(strcmp(type, "train") == 0){
-		mi->m_nVehicleType = VEHICLE_TYPE_TRAIN;
 	}else if(strcmp(type, "bike") == 0){
 		mi->m_nVehicleType = VEHICLE_TYPE_BIKE;
 		mi->m_bikeSteerAngle = misc;
@@ -1622,34 +1616,8 @@ CFileLoader::LoadVehicleObject(const char *line)
 			handlingId, mi->m_nVehicleType == VEHICLE_TYPE_BIKE ? "bike" : "car");
 	}
 
-	if(strcmp(vehclass, "normal") == 0)
-		mi->m_vehicleClass = CCarCtrl::NORMAL;
-	else if(strcmp(vehclass, "poorfamily") == 0)
-		mi->m_vehicleClass = CCarCtrl::POOR;
-	else if(strcmp(vehclass, "richfamily") == 0)
-		mi->m_vehicleClass = CCarCtrl::RICH;
-	else if(strcmp(vehclass, "executive") == 0)
-		mi->m_vehicleClass = CCarCtrl::EXEC;
-	else if(strcmp(vehclass, "worker") == 0)
-		mi->m_vehicleClass = CCarCtrl::WORKER;
-	else if(strcmp(vehclass, "big") == 0)
-		mi->m_vehicleClass = CCarCtrl::BIG;
-	else if(strcmp(vehclass, "taxi") == 0)
-		mi->m_vehicleClass = CCarCtrl::TAXI;
-	else if(strcmp(vehclass, "moped") == 0)
-		mi->m_vehicleClass = CCarCtrl::MOPED;
-	else if(strcmp(vehclass, "motorbike") == 0)
-		mi->m_vehicleClass = CCarCtrl::MOTORBIKE;
-	else if(strcmp(vehclass, "leisureboat") == 0)
-		mi->m_vehicleClass = CCarCtrl::LEISUREBOAT;
-	else if(strcmp(vehclass, "workerboat") == 0)
-		mi->m_vehicleClass = CCarCtrl::WORKERBOAT;
-	else if(strcmp(vehclass, "ignore") == 0) {
-		mi->m_vehicleClass = -1;
-		return;
-	}
-	CCarCtrl::AddToCarArray(id, mi->m_vehicleClass);
-	mi->m_frequency = frequency;
+	// vehclass and frequency are read only to keep the field positions of the
+	// vehicles.ide line; neither is stored.
 }
 
 // CFileLoader::LoadPedObject, 0x5B7420. The ide row carries fourteen fields;
@@ -1660,17 +1628,20 @@ CFileLoader::LoadPedObject(const char *line)
 {
 	int id;
 	char model[24], txd[24];
-	char pedType[24], pedStats[24], animGroup[24], animFile[16];
+	char animGroup[24], animFile[16];
 	char pedVoiceType[16], voiceMin[56], voiceMax[60];
-	int32 carsCanDrive, pedFlags;
-	int32 radio1, radio2;
+	// The row also names a ped type, a stat set and a driving mask; this build
+	// reads none of them, so they land in scratch.
+	char scratch[24];
+	int32 scratchMask, pedFlags;
+	int32 unusedRadio1, unusedRadio2;
 	CPedModelInfo *mi;
 
 	// SA writes the masks as hex and without a sign, so they are read as one.
 	if(sscanf(line, "%d %23s %23s %23s %23s %23s %x %x %15s %d %d %15s %55s %59s",
 	          &id, model, txd,
-	          pedType, pedStats, animGroup, &carsCanDrive, &pedFlags,
-	          animFile, &radio1, &radio2,
+	          scratch, scratch, animGroup, &scratchMask, &pedFlags,
+	          animFile, &unusedRadio1, &unusedRadio2,
 	          pedVoiceType, voiceMin, voiceMax) != 14)
 		return;
 
@@ -1679,12 +1650,6 @@ CFileLoader::LoadPedObject(const char *line)
 	mi->SetTexDictionary(txd);
 	mi->SetAnimFile(animFile);
 	mi->SetColModel(&CTempColModels::ms_colModelPed1);
-	mi->m_pedType = CPedType::FindPedType(pedType);
-	// The stats array is indexed by this value later, so an unknown name has to
-	// fall back to a real entry instead of running off the end of it.
-	mi->m_pedStatType = CPedStats::GetPedStatType(pedStats);
-	if(mi->m_pedStatType == PEDSTAT_NONE)
-		mi->m_pedStatType = PEDSTAT_STD_MISSION;
 	// Every style san Andreas names in peds.ide is a group id in its own right,
 	// including MAN, VAN and COACH: the table carries those spellings, so the
 	// name is looked up as written.
@@ -1699,16 +1664,7 @@ CFileLoader::LoadPedObject(const char *line)
 	if(animGroupId >= NUM_ANIM_ASSOC_GROUPS)
 		animGroupId = ASSOCGRP_DEFAULT;
 	mi->m_animGroup = (AssocGroupId)animGroupId;
-	mi->m_carsCanDrive = (uint16)carsCanDrive;
 	mi->m_nPedFlags = (uint16)pedFlags;
-	// The race comes from the first letter of the model name, not from the row.
-	mi->m_nRace = (uint8)CPopulation::FindPedRaceFromName(model);
-	// SA stores `radio + 1` because its eRadioID starts at zero for the first
-	// station and -1 means "none". The station numbering this fork still uses
-	// is Vice City's, so the offset is applied when the radio layer is
-	// converted; until then the raw ide value is kept so nothing shifts by one.
-	mi->radio1 = (int8)radio1;
-	mi->radio2 = (int8)radio2;
 	// The two remaining fields are the voice set and the range of voices in it.
 	// A row from an older ide can leave them off; sscanf then returns short and
 	// the ped keeps the defaults its constructor set.
@@ -1728,10 +1684,10 @@ CFileLoader::LoadPedObject(const char *line)
 void
 CFileLoader::Load2dEffect(const char *line)
 {
-	int id, r, g, b, a, type, ptype;
+	int id, r, g, b, a, type;
 	float x, y, z;
 	char corona[32], shadow[32];
-	int shadowIntens, lightType, roadReflection, flare, flags, probability;
+	int shadowIntens, lightType, roadReflection, flare, flags;
 	CBaseModelInfo *mi;
 	C2dEffect *effect;
 	char *p;
@@ -1791,31 +1747,8 @@ CFileLoader::Load2dEffect(const char *line)
 		break;
 
 	case EFFECT_ATTRACTOR:
-		sscanf(line, "%d %f %f %f %d %d %d %d %d %d %f %f %f %d",
-			&id, &x, &y, &z, &r, &g, &b, &a, &type,
-			&flags,
-			&effect->attractor.dir.x,
-			&effect->attractor.dir.y,
-			&effect->attractor.dir.z,
-			&probability);
-		effect->attractor.type = flags;
-#ifdef FIX_BUGS
-		effect->attractor.probability = Clamp(probability, 0, 255);
-#else
-		effect->attractor.probability = probability;
-#endif
-		break;
 	case EFFECT_PED_ATTRACTOR:
-		sscanf(line, "%d %f %f %f %d %d %d %d %d %d %f %f %f %f %f %f",
-			&id, &x, &y, &z, &r, &g, &b, &a, &type,
-			&ptype,
-			&effect->pedattr.queueDir.x,
-			&effect->pedattr.queueDir.y,
-			&effect->pedattr.queueDir.z,
-			&effect->pedattr.useDir.x,
-			&effect->pedattr.useDir.y,
-			&effect->pedattr.useDir.z);
-		effect->pedattr.type = ptype;
+		// Position and colour only; the rest of the row is ignored.
 		break;
 	}
 
@@ -1831,7 +1764,6 @@ CFileLoader::LoadScene(const char *filename)
 	enum {
 		NONE,
 		INST,
-		CARS,
 	};
 	char *line;
 	int fd;
@@ -1848,55 +1780,17 @@ CFileLoader::LoadScene(const char *filename)
 
 		if(section == NONE){
 			if(isLine4(line, 'i','n','s','t')) section = INST;
-			else if(isLine4(line, 'c','a','r','s')) section = CARS;
 		}else if(isLine3(line, 'e','n','d')){
 			section = NONE;
 		}else switch(section){
 		case INST:
 			LoadObjectInstance(line);
 			break;
-		case CARS:
-			LoadCarGenerator(line, 0);
-			break;
 		}
 	}
 	CFileMgr::CloseFile(fd);
 
 	debug("Finished loading IPL\n");
-}
-
-// SA CFileLoader::LoadCarGenerator (0x5B4740) / (0x537990).
-//
-// An IPL "cars" line is: x y z angle modelId colour1 colour2 flags alarm lock
-// minDelay maxDelay. The flags word is a bitfield: bit 0 forces the spawn, bit 1
-// lifts the population limit.
-void
-CFileLoader::LoadCarGenerator(const char *line, int32 iplId)
-{
-	CFileCarGenerator carGen;
-	int32 flags;
-	memset(&carGen, 0, sizeof(carGen));
-
-	if(sscanf(line, "%f %f %f %f %d %d %d %d %d %d %d %d",
-	          &carGen.m_vecPosn.x, &carGen.m_vecPosn.y, &carGen.m_vecPosn.z,
-	          &carGen.m_fAngle,
-	          &carGen.m_nModelId,
-	          &carGen.m_nPrimaryColor,
-	          &carGen.m_nSecondaryColor,
-	          &flags,
-	          &carGen.m_nAlarmChance,
-	          &carGen.m_nDoorLockChance,
-	          &carGen.m_nMinDelay,
-	          &carGen.m_nMaxDelay) != 12)
-		return;
-	carGen.m_nFlags = (uint32)flags;
-
-	int32 index = CTheCarGenerators::CreateCarGenerator(carGen.m_vecPosn, carGen.m_fAngle,
-		carGen.m_nModelId, carGen.m_nPrimaryColor, carGen.m_nSecondaryColor,
-		carGen.m_bForceSpawn, carGen.m_nAlarmChance, carGen.m_nDoorLockChance,
-		carGen.m_nMinDelay, carGen.m_nMaxDelay, iplId, carGen.m_bIgnorePopulationLimit);
-	if(index >= 0)
-		CTheCarGenerators::Get(index)->SwitchOn();
 }
 
 void
@@ -1939,11 +1833,7 @@ CFileLoader::LoadObjectInstance(const char *line)
 	RwMatrixTranslate(xform, &trans, rwCOMBINEPOSTCONCAT);
 
 	if(mi->GetObjectID() == -1){
-		if(ThePaths.IsPathObject(id)){
-			entity = new CTreadable;
-			ThePaths.RegisterMapObject((CTreadable*)entity);
-		}else
-			entity = new CBuilding;
+		entity = new CBuilding;
 		entity->SetModelIndexNoCreate(id);
 		entity->GetMatrix() = CMatrix(xform);
 #ifdef CUSTOM_MODELS

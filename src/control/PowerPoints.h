@@ -22,8 +22,6 @@ public:
 	static void Init();
 	static void Update();
 	static void GenerateNewOne(float, float, float, float, float, float, uint8);
-	static void Save(uint8**, uint32*);
-	static void Load(uint8*, uint32);
 };
 
 #endif // __GTA_POWERPOINTS_H__

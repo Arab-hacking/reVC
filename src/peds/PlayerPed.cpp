@@ -15,30 +15,16 @@
 #include "AnimBlendAssociation.h"
 #include "General.h"
 #include "Pools.h"
-#include "Darkel.h"
-#include "CarCtrl.h"
 #include "MBlur.h"
 #include "Streaming.h"
-#include "Population.h"
 #include "Stats.h"
-#include "Script.h"
-#include "Replay.h"
-#include "PedPlacement.h"
 #include "VarConsole.h"
-#include "SaveBuf.h"
 
 #define PAD_MOVE_TO_GAME_WORLD_MOVE 60.0f
 
 bool CPlayerPed::bDontAllowWeaponChange;
 #ifndef MASTER
 bool CPlayerPed::bDebugPlayerInfo;
-#endif
-
-const uint32 CPlayerPed::nSaveStructSize =
-#ifdef COMPATIBLE_SAVES
-	1752;
-#else
-	sizeof(CPlayerPed);
 #endif
 
 int32 idleAnimBlockIndex;
@@ -55,8 +41,8 @@ CPlayerPed::~CPlayerPed()
 
 // SA CPlayerPed::CPlayerPed binds m_pPlayerData to the player's own block; the
 // reference members are bound to the fields of that block, so every existing
-// spelling of Wanted(), MoveSpeed(), TimeCanRun() and ArrestingCop() keeps
-// resolving - now to the single owner instead of to a private copy.
+// spelling of Wanted(), MoveSpeed() and TimeCanRun() keeps resolving - now to
+// the single owner instead of to a private copy.
 void
 CPlayerPed::BindPlayerData(CPlayerPedData *data)
 {
@@ -101,15 +87,13 @@ CPlayerPed::CPlayerPed(void) : CPed(PEDTYPE_PLAYER1)
 
 	Wanted() = new CWanted();
 	Wanted()->Initialise();
-	ArrestingCop() = nil;
 	m_currentWeapon = WEAPONTYPE_UNARMED;
 	m_nSelectedWepSlot = WEAPONSLOT_UNARMED;
 	m_nSpeedTimer = 0;
 	m_bSpeedTimerFlag = false;
 	SetWeaponLockOnTarget(nil);
 	SetPedState(PED_IDLE);
-	// SA CPlayerPed::CPlayerPed stores GetFatAndMuscleModifier(STAT_MOD_TIME_CAN_RUN)
-	// into TimeCanRun(); ResetSprintEnergy does the same at the start of a life.
+	// The default sprint budget is 450; ResetSprintEnergy applies it at the start of a life.
 	ResetSprintEnergy();
 	m_nEvadeAmount = 0;
 	m_pEvadingFrom = nil;
@@ -118,7 +102,6 @@ CPlayerPed::CPlayerPed(void) : CPed(PEDTYPE_PLAYER1)
 	m_pPlayerData->m_bHaveTargetSelected = false;
 	m_bHasLockOnTarget = false;
 	m_pPlayerData->m_bCanBeDamaged = true;
-	m_bNoPosForMeleeAttack = false;
 	m_fWalkAngle = 0.0f;
 	FPSMoveHeading() = 0.0f;
 	m_pMinigunTopAtomic = nil;
@@ -127,12 +110,8 @@ CPlayerPed::CPlayerPed(void) : CPed(PEDTYPE_PLAYER1)
 	PadDownPressedInMilliseconds() = 0;
 	m_nTargettableObjects[0] = m_nTargettableObjects[1] = m_nTargettableObjects[2] = m_nTargettableObjects[3] = -1;
 	unk1 = false;
-	for (int i = 0; i < 6; i++) {
-		m_vecSafePos[i] = CVector(0.0f, 0.0f, 0.0f);
+	for (int i = 0; i < 6; i++)
 		m_pPedAtSafePos[i] = nil;
-		m_pMeleeList[i] = nil;
-	}
-	m_nAttackDirToCheck = 0;
 	m_nLastBusFareCollected = 0;
 	idleAnimBlockIndex = CAnimManager::GetAnimationBlockIndex("playidles");
 #ifdef FREE_CAM
@@ -171,19 +150,6 @@ CPlayerPed::MakeObjectTargettable(int32 handle)
 			m_nTargettableObjects[i] = handle;
 			return;
 		}
-	}
-}
-
-// I don't know the actual purpose of parameter
-void
-CPlayerPed::AnnoyPlayerPed(bool annoyedByPassingEntity)
-{
-	if (m_pedStats->m_nTemper < 52) {
-		m_pedStats->m_nTemper++;
-	} else if (annoyedByPassingEntity && m_pedStats->m_nTemper < 55) {
-		m_pedStats->m_nTemper++;
-	} else if (annoyedByPassingEntity) {
-		m_pedStats->m_nTemper = 46;
 	}
 }
 
@@ -246,7 +212,7 @@ CPlayerPed::ReactivatePlayerPed(int32 index)
 void
 CPlayerPed::ResetSprintEnergy(void)
 {
-	TimeCanRun() = CStats::GetFatAndMuscleModifier(CStats::STAT_MOD_TIME_CAN_RUN);
+	TimeCanRun() = 450.0f;
 }
 
 // SA CPlayerPed::HandleSprintEnergy (0x60A550).
@@ -273,20 +239,17 @@ CPlayerPed::HandleSprintEnergy(bool sprint, float adrenalineConsumedPerTimeStep)
 			return true;
 		}
 	} else {
-		if (CStats::GetFatAndMuscleModifier(CStats::STAT_MOD_TIME_CAN_RUN) > TimeCanRun())
+		if (450.0f > TimeCanRun())
 			TimeCanRun() += CTimer::GetTimeStep() * adrenalineConsumedPerTimeStep / 2.0f;
 	}
 	return false;
 }
 
-// SA CPlayerPed::ResetPlayerBreath (0x60A8B0): a full lung is whatever the
-// lung-capacity stat is worth, not a constant. Training stamina therefore
-// lengthens every dive retroactively only from this call onwards, which is
-// why SA calls it whenever the stat changes.
+// SA CPlayerPed::ResetPlayerBreath (0x60A8B0): reset to the fixed default lung capacity.
 void
 CPlayerPed::ResetPlayerBreath(void)
 {
-	Breath() = CStats::GetFatAndMuscleModifier(CStats::STAT_MOD_AIR_IN_LUNG);
+	Breath() = 1150.0f;
 }
 
 // SA PLAYER_SPRINT_SET (0x8D2460), one row per eSprintType:
@@ -448,9 +411,6 @@ CPlayerPed::SetInitialState(void)
 	CTimer::SetTimeScale(1.0f);
 	m_pSeekTarget = nil;
 	m_vecSeekPos = CVector(0.0f, 0.0f, 0.0f);
-	m_fleeFromPos = CVector2D(0.0f, 0.0f);
-	m_fleeFrom = nil;
-	m_fleeTimer = 0;
 	m_objective = OBJECTIVE_NONE;
 	m_prevObjective = OBJECTIVE_NONE;
 	bUsesCollision = true;
@@ -474,11 +434,6 @@ CPlayerPed::SetInitialState(void)
 	bIsPedDieAnimPlaying = false;
 	SetRealMoveAnim();
 	m_pPlayerData->m_bCanBeDamaged = true;
-	// pedstats.dat is not part of the archive, so no stat entries may exist and
-	// the constructor is left with nil. Writing through it would fault while the
-	// player is still being built, before anything can report a missing table.
-	if (m_pedStats)
-		m_pedStats->m_nTemper = 50;
 	m_fWalkAngle = 0.0f;
 	if (m_attachedTo && !bUsesCollision)
 		bUsesCollision = true;
@@ -567,7 +522,7 @@ CPlayerPed::SetRealMoveAnim(void)
 					curIdleAssoc = CAnimManager::BlendAnimation(GetClump(), moveGroup, ANIM_ID_IDLE, 8.0f);
 				if(!curIdleAssoc)
 					return;
-				m_nWaitTimer = CTimer::GetTimeInMilliseconds() + CGeneral::GetRandomNumberInRange(2500, 4000);
+				m_animTimer = CTimer::GetTimeInMilliseconds() + CGeneral::GetRandomNumberInRange(2500, 4000);
 			}
 			curIdleAssoc->blendAmount = 0.0f;
 			curIdleAssoc->blendDelta = 8.0f;
@@ -586,7 +541,7 @@ CPlayerPed::SetRealMoveAnim(void)
 				if(!curIdleAssoc)
 					return;
 
-				m_nWaitTimer = CTimer::GetTimeInMilliseconds() + CGeneral::GetRandomNumberInRange(2500, 4000);
+				m_animTimer = CTimer::GetTimeInMilliseconds() + CGeneral::GetRandomNumberInRange(2500, 4000);
 			}
 
 			if ((TimeCanRun() > 0.0f || bIsAimingGun) && curIdleAssoc->animId == ANIM_ID_IDLE_TIRED) {
@@ -873,20 +828,7 @@ CPlayerPed::IsThisPedAnAimingPriority(CPed *suspect)
 	if (!suspect->bIsPlayerFriend)
 		return true;
 
-	if (suspect->m_pPointGunAt == this)
-		return true;
-
-	switch (suspect->m_objective) {
-		case OBJECTIVE_KILL_CHAR_ON_FOOT:
-		case OBJECTIVE_KILL_CHAR_ANY_MEANS:
-			if (suspect->m_pedInObjective == this)
-				return true;
-
-			break;
-		default:
-			break;
-	}
-	return suspect->m_nPedState == PED_ABSEIL_FROM_HELI;
+	return suspect->m_pPointGunAt == this;
 }
 
 void
@@ -929,7 +871,7 @@ CPlayerPed::PlayerControlSniper(CPad *padUsed)
 void
 CPlayerPed::ProcessWeaponSwitch(CPad *padUsed)
 {
-	if (CDarkel::FrenzyOnGoing() || m_attachedTo)
+	if (m_attachedTo)
 		goto switchDetectDone;
 
 	if (!m_pPointGunAt && !bDontAllowWeaponChange && GetWeapon()->m_eWeaponType != WEAPONTYPE_DETONATOR) {
@@ -1154,55 +1096,6 @@ CPlayerPed::PlayerControl1stPersonRunAround(CPad *padUsed)
 }
 
 void
-CPlayerPed::KeepAreaAroundPlayerClear(void)
-{
-	BuildPedLists();
-	for (int i = 0; i < m_numNearPeds; ++i) {
-		CPed *nearPed = m_nearPeds[i];
-		if (nearPed->CharCreatedBy == RANDOM_CHAR && nearPed->m_nPedState != PED_DRIVING && !nearPed->DyingOrDead()) {
-			if (nearPed->GetIsOnScreen()) {
-				if (nearPed->m_objective == OBJECTIVE_NONE) {
-					nearPed->SetFindPathAndFlee(this, 5000, true);
-				} else {
-					if (nearPed->EnteringCar())
-						nearPed->QuitEnteringCar();
-
-					nearPed->ClearObjective();
-				}
-			} else {
-				nearPed->FlagToDestroyWhenNextProcessed();
-			}
-		}
-	}
-	CVector playerPos = (InVehicle() ? m_pMyVehicle->GetPosition() : GetPosition());
-
-	CVector pos = GetPosition();
-	int16 lastVehicle;
-	CEntity *vehicles[8];
-	CWorld::FindObjectsInRange(pos, CHECK_NEARBY_THINGS_MAX_DIST, true, &lastVehicle, 6, vehicles, false, true, false, false, false);
-
-	for (int i = 0; i < lastVehicle; i++) {
-		CVehicle *veh = (CVehicle*)vehicles[i];
-		if (veh->VehicleCreatedBy != MISSION_VEHICLE) {
-			if (veh->GetStatus() != STATUS_PLAYER && veh->GetStatus() != STATUS_PLAYER_DISABLED) {
-				if ((veh->GetPosition() - playerPos).MagnitudeSqr() > 25.0f) {
-					veh->AutoPilot.m_nTempAction = TEMPACT_WAIT;
-					veh->AutoPilot.m_nTimeTempAction = CTimer::GetTimeInMilliseconds() + 5000;
-				} else {
-					if (DotProduct2D(playerPos - veh->GetPosition(), veh->GetForward()) > 0.0f)
-						veh->AutoPilot.m_nTempAction = TEMPACT_REVERSE;
-					else
-						veh->AutoPilot.m_nTempAction = TEMPACT_GOFORWARD;
-
-					veh->AutoPilot.m_nTimeTempAction = CTimer::GetTimeInMilliseconds() + 2000;
-				}
-				CCarCtrl::PossiblyRemoveVehicle(veh);
-			}
-		}
-	}
-}
-
-void
 CPlayerPed::EvaluateNeighbouringTarget(CEntity *candidate, CEntity **targetPtr, float *lastCloseness, float distLimit, float angleOffset, bool lookToLeft, bool priority)
 {
 	// priority param is unused
@@ -1301,7 +1194,7 @@ CPlayerPed::FindNextWeaponLockOnTarget(CEntity *previousTarget, bool lookToLeft)
 #ifndef AIMING_VEHICLE_OCCUPANTS // Mobile thing
 					&& (!pedToCheck->bInVehicle || (pedToCheck->m_pMyVehicle && pedToCheck->m_pMyVehicle->IsBike()))
 #endif
-					&& pedToCheck->m_leader != this && !pedToCheck->bNeverEverTargetThisPed
+					&& !pedToCheck->bNeverEverTargetThisPed
 					&& OurPedCanSeeThisOne(pedToCheck, true) && CanIKReachThisTarget(pedToCheck->GetPosition(), GetWeapon(), true)) {
 
 					EvaluateNeighbouringTarget(pedToCheck, &nextTarget, &lastCloseness,
@@ -1351,7 +1244,7 @@ CPlayerPed::FindWeaponLockOnTarget(void)
 #ifndef AIMING_VEHICLE_OCCUPANTS // Mobile thing
 					&& (!pedToCheck->bInVehicle || (pedToCheck->m_pMyVehicle && pedToCheck->m_pMyVehicle->IsBike()))
 #endif
-					&& pedToCheck->m_leader != this && !pedToCheck->bNeverEverTargetThisPed
+					&& !pedToCheck->bNeverEverTargetThisPed
 					&& OurPedCanSeeThisOne(pedToCheck) && CanIKReachThisTarget(pedToCheck->GetPosition(), GetWeapon(), true)) {
 
 					EvaluateTarget(pedToCheck, &nextTarget, &lastCloseness,
@@ -1914,91 +1807,6 @@ CPlayerPed::PlayerControlZelda(CPad *padUsed)
 
 // Finds nice positions for peds to duck and shoot player. And it's inside PlayerPed, this is treachery!
 void
-CPlayerPed::FindNewAttackPoints(void)
-{
-	for (int i=0; i<ARRAY_SIZE(m_pPedAtSafePos); i++) {
-		CPed *safeNeighbour = m_pPedAtSafePos[i];
-		if (safeNeighbour) {
-			if (safeNeighbour->m_nPedState == PED_DEAD || safeNeighbour->m_pedInObjective != this) {
-				m_vecSafePos[i].x = 0.0f;
-				m_vecSafePos[i].y = 0.0f;
-				m_vecSafePos[i].z = 0.0f;
-				m_pPedAtSafePos[i] = nil;
-			}
-		} else {
-			m_vecSafePos[i].x = 0.0f;
-			m_vecSafePos[i].y = 0.0f;
-			m_vecSafePos[i].z = 0.0f;
-		}
-	}
-	CEntity *entities[6];
-	int16 numEnts;
-	float rightMult, fwdMult;
-	CWorld::FindObjectsInRange(GetPosition(), 18.0f, true, &numEnts, 6, entities, true, false, false, true, false);
-	for (int i = 0; i < numEnts; ++i) {
-		CEntity *ent = entities[i];
-		int16 mi = ent->GetModelIndex();
-		if (!ent->IsObject() || ((CObject*)ent)->m_nSpecialCollisionResponseCases == COLLRESPONSE_FENCEPART)
-			if (!IsTreeModel(mi))
-				continue;
-
-		if (mi == MI_TRAFFICLIGHTS) {
-			rightMult = 2.957f;
-			fwdMult = 0.147f;
-
-		} else if (mi == MI_SINGLESTREETLIGHTS1) {
-			rightMult = 0.744f;
-			fwdMult = 0.0f;
-
-		} else if (mi == MI_SINGLESTREETLIGHTS2) {
-			rightMult = 0.043f;
-			fwdMult = 0.0f;
-
-		} else if (mi == MI_SINGLESTREETLIGHTS3) {
-			rightMult = 1.143f;
-			fwdMult = 0.145f;
-
-		} else if (mi == MI_DOUBLESTREETLIGHTS) {
-			rightMult = 0.744f;
-			fwdMult = 0.0f;
-
-		} else if (mi == MI_LAMPPOST1) {
-			rightMult = 0.744f;
-			fwdMult = 0.0f;
-
-		} else if (mi == MI_TRAFFICLIGHT01) {
-			rightMult = 2.957f;
-			fwdMult = 0.147f;
-
-		} else if (mi == MI_LITTLEHA_POLICE) {
-			rightMult = 0.0f;
-			fwdMult = 0.0f;
-
-		} else if (mi == MI_PARKBENCH) {
-			rightMult = 0.0f;
-			fwdMult = 0.0f;
-
-		} else if (IsTreeModel(mi)) {
-			rightMult = 0.0f;
-			fwdMult = 0.0f;
-		} else
-			continue;
-
-		CVector entAttackPoint(rightMult * ent->GetRight().x + fwdMult * ent->GetForward().x + ent->GetPosition().x,
-			rightMult * ent->GetRight().y + fwdMult * ent->GetForward().y + ent->GetPosition().y,
-			ent->GetPosition().z);
-		CVector attackerPos = GetPosition() - entAttackPoint; // for now it's dist, not attackerPos
-		CVector dirTowardsUs = attackerPos;
-		dirTowardsUs.Normalise();
-		dirTowardsUs *= 2.0f;
-		attackerPos = entAttackPoint - dirTowardsUs; // to make cop farther from us
-		CPedPlacement::FindZCoorForPed(&attackerPos);
-		if (CPedPlacement::IsPositionClearForPed(attackerPos))
-			m_vecSafePos[i] = attackerPos;
-	}
-}
-
-void
 CPlayerPed::ProcessControl(void)
 {
 	// Mobile has some debug/abandoned cheat thing in here: "gbFrankenTommy"
@@ -2008,11 +1816,6 @@ CPlayerPed::ProcessControl(void)
 
 	if (m_nEvadeAmount == 0)
 		m_pEvadingFrom = nil;
-
-	if (Wanted()->GetWantedLevel() > 0)
-		FindNewAttackPoints();
-	
-	UpdateMeleeAttackers();
 
 	if (m_pCurrentPhysSurface && m_pCurrentPhysSurface->IsVehicle() && ((CVehicle*)m_pCurrentPhysSurface)->IsBoat()) {
 		bTryingToReachDryLand = true;
@@ -2038,7 +1841,6 @@ CPlayerPed::ProcessControl(void)
 		CMBlur::SetDrunkBlur(Drunkenness() / 255.f);
 	}
 	CPed::ProcessControl();
-	SetNearbyPedsToInteractWithPlayer();
 	if (bWasPostponed)
 		return;
 
@@ -2087,40 +1889,8 @@ CPlayerPed::ProcessControl(void)
 			SetDead();
 		return;
 	}
-	if (m_nPedState == PED_DRIVING && m_objective != OBJECTIVE_LEAVE_CAR) {
-		if (!CReplay::IsPlayingBack() || m_pMyVehicle) {
-			if (m_pMyVehicle->IsAutomobile() && ((CAutomobile*)m_pMyVehicle)->Damage.GetDoorStatus(DOOR_FRONT_LEFT) == DOOR_STATUS_SWINGING) {
-				CAnimBlendAssociation *rollDoorAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_ID_CAR_ROLLDOOR);
-
-				if (m_pMyVehicle->m_nGettingOutFlags & CAR_DOOR_FLAG_LF || rollDoorAssoc || (rollDoorAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_ID_CAR_ROLLDOOR))) {
-					if (rollDoorAssoc)
-						m_pMyVehicle->ProcessOpenDoor(CAR_DOOR_LF, ANIM_ID_CAR_ROLLDOOR, rollDoorAssoc->currentTime);
-
-				} else {
-					// These comparisons are wrong, they return uint16
-					if (padUsed && (padUsed->GetAccelerate() != 0.0f || padUsed->GetSteeringLeftRight() != 0.0f || padUsed->GetBrake() != 0.0f)) {
-						if (rollDoorAssoc)
-							m_pMyVehicle->ProcessOpenDoor(CAR_DOOR_LF, ANIM_ID_CAR_ROLLDOOR, rollDoorAssoc->currentTime);
-
-					} else {
-						m_pMyVehicle->m_nGettingOutFlags |= CAR_DOOR_FLAG_LF;
-						{
-							// The rolling-door clip belongs to the vehicle's
-							// animation group, which the handling line names.
-							AssocGroupId rollGroup = (AssocGroupId)m_pMyVehicle->GetAnimGroupId();
-							rollDoorAssoc = CAnimManager::AddAnimation(GetClump(), rollGroup, ANIM_ID_CAR_ROLLDOOR);
-						}
-
-						if (rollDoorAssoc)
-							rollDoorAssoc->SetFinishCallback(PedAnimDoorCloseRollingCB, this);
-						else
-							PedAnimDoorCloseRollingCB(nil, this);
-					}
-				}
-			}
-		}
+	if (m_nPedState == PED_DRIVING)
 		return;
-	}
 	// SA gives the swim task the whole control path while the player is in
 	// water: no jump, no weapon, no state machine. Handling the swim here keeps
 	// the on-foot control below from overwriting the stroke's speed and heading
@@ -2249,8 +2019,6 @@ CPlayerPed::ProcessControl(void)
 			return;
 		case PED_FALL:
 		case PED_GETUP:
-		case PED_ENTER_TRAIN:
-		case PED_EXIT_TRAIN:
 		case PED_CARJACK:
 		case PED_DRAGGED_FROM_CAR:
 		case PED_ENTER_CAR:
@@ -2414,234 +2182,3 @@ CPlayerPed::PlayIdleAnimations(CPad *padUsed)
 		}
 	}
 }
-
-void
-CPlayerPed::SetNearbyPedsToInteractWithPlayer(void)
-{
-	if (CGame::noProstitutes)
-		return;
-
-	for (int i = 0; i < m_numNearPeds; ++i) {
-		CPed *nearPed = m_nearPeds[i];
-		if (nearPed && nearPed->m_objectiveTimer < CTimer::GetTimeInMilliseconds() && !CTheScripts::IsPlayerOnAMission()) {
-			int mi = nearPed->GetModelIndex();
-			if (CPopulation::CanSolicitPlayerOnFoot(mi)) {
-				CVector distToMe = nearPed->GetPosition() - GetPosition();
-				CVector dirToMe = GetPosition() - nearPed->GetPosition();
-				dirToMe.Normalise();
-				if (DotProduct(dirToMe, nearPed->GetForward()) > 0.707 && DotProduct(GetForward(), nearPed->GetForward()) < -0.707 // those are double
-					&& distToMe.MagnitudeSqr() < 9.0f && nearPed->m_objective == OBJECTIVE_NONE) {
-					nearPed->SetObjective(OBJECTIVE_SOLICIT_FOOT, this);
-					nearPed->m_objectiveTimer = CTimer::GetTimeInMilliseconds() + 10000;
-					nearPed->Say(SOUND_PED_SOLICIT);
-				}
-			} else if (CPopulation::CanSolicitPlayerInCar(mi)) {
-				if (InVehicle() && m_pMyVehicle->IsVehicleNormal()) {
-					if (m_pMyVehicle->IsAutomobile()) {
-						CVector distToVeh = nearPed->GetPosition() - m_pMyVehicle->GetPosition();
-						if (distToVeh.MagnitudeSqr() < 25.0f && m_pMyVehicle->IsRoomForPedToLeaveCar(CAR_DOOR_LF, nil) && nearPed->m_objective == OBJECTIVE_NONE) {
-							nearPed->SetObjective(OBJECTIVE_SOLICIT_VEHICLE, m_pMyVehicle);
-						}
-					}
-				}
-			}
-		}
-	}
-}
-
-void
-CPlayerPed::UpdateMeleeAttackers(void)
-{
-	CVector attackCoord;
-	if (((CTimer::GetFrameCounter() + m_randomSeed + 7) & 3) == 0) {
-		GetMeleeAttackCoords(attackCoord, m_nAttackDirToCheck, 2.0f);
-
-		// Check if there is any vehicle/building inbetween us and m_nAttackDirToCheck. Peds will be able to attack us from those available directions.
-		if (CWorld::GetIsLineOfSightClear(GetPosition(), attackCoord, true, true, false, true, false, false, false)
-			&& !CWorld::TestSphereAgainstWorld(attackCoord, 0.4f, m_pMeleeList[m_nAttackDirToCheck], true, true, false, true, false, false)) {
-			if (m_pMeleeList[m_nAttackDirToCheck] == this)
-				m_pMeleeList[m_nAttackDirToCheck] = nil; // mark it as available
-		} else {
-			m_pMeleeList[m_nAttackDirToCheck] = this; // slot not available. useful for m_bNoPosForMeleeAttack
-		}
-		if (++m_nAttackDirToCheck >= ARRAY_SIZE(m_pMeleeList))
-			m_nAttackDirToCheck = 0;
-	}
-	// 6 directions
-	for (int i = 0; i < ARRAY_SIZE(m_pMeleeList); ++i) {
-		CPed *victim = m_pMeleeList[i];
-		if (victim && victim != this) {
-			if (victim->m_nPedState != PED_DEAD && victim->m_pedInObjective == this)  {
-				if (victim->m_objective == OBJECTIVE_KILL_CHAR_ON_FOOT || victim->m_objective == OBJECTIVE_KILL_CHAR_ANY_MEANS || victim->m_objective == OBJECTIVE_KILL_CHAR_ON_BOAT) {
-					GetMeleeAttackCoords(attackCoord, i, 2.0f);
-					if ((attackCoord - GetPosition()).MagnitudeSqr() > 12.25f)
-						m_pMeleeList[i] = nil;
-				} else {
-					m_pMeleeList[i] = nil;
-				}
-			} else {
-				m_pMeleeList[i] = nil;
-			}
-		}
-	}
-	m_bNoPosForMeleeAttack = m_pMeleeList[0] == this && m_pMeleeList[1] == this && m_pMeleeList[2] == this
-#ifdef FIX_BUGS
-		&& m_pMeleeList[3] == this
-#endif
-		&& m_pMeleeList[4] == this && m_pMeleeList[5] == this;
-}
-
-void
-CPlayerPed::RemovePedFromMeleeList(CPed *ped)
-{
-	for (uint16 i = 0; i < ARRAY_SIZE(m_pMeleeList); i++) {
-		if (m_pMeleeList[i] == ped) {
-			m_pMeleeList[i] = nil;
-			ped->m_attackTimer = 0;
-			return;
-		}
-	}
-}
-
-void
-CPlayerPed::GetMeleeAttackCoords(CVector& coords, int8 dir, float dist)
-{
-	coords = GetPosition();
-	switch (dir) {
-		case 0:
-			coords.y += dist;
-			break;
-		case 1:
-			coords.x += Sqrt(3.f / 4.f) * dist;
-			coords.y += 0.5f * dist;
-			break;
-		case 2:
-			coords.x += Sqrt(3.f / 4.f) * dist;
-			coords.y -= 0.5f * dist;
-			break;
-		case 3:
-			coords.y -= dist;
-			break;
-		case 4:
-			coords.x -= Sqrt(3.f / 4.f) * dist;
-			coords.y -= 0.5f * dist;
-			break;
-		case 5:
-			coords.x -= Sqrt(3.f / 4.f) * dist;
-			coords.y += 0.5f * dist;
-			break;
-		default:
-			break;
-	}
-}
-
-int32
-CPlayerPed::FindMeleeAttackPoint(CPed *victim, CVector &dist, uint32 &endOfAttackOut)
-{
-	endOfAttackOut = 0;
-	bool thereIsAnEmptySlot = false;
-	int dirToAttack = -1;
-	for (int i = 0; i < ARRAY_SIZE(m_pMeleeList); i++) {
-		CPed* pedAtThisDir = m_pMeleeList[i];
-		if (pedAtThisDir) {
-			if (pedAtThisDir == victim) {
-				dirToAttack = i;
-			} else {
-				if (pedAtThisDir->m_attackTimer > endOfAttackOut)
-					endOfAttackOut = pedAtThisDir->m_attackTimer;
-			}
-		} else {
-			thereIsAnEmptySlot = true;
-		}
-	}
-
-	// We don't have victim ped in our melee list
-	if (dirToAttack == -1 && thereIsAnEmptySlot) {
-		float angle = Atan2(-dist.x, -dist.y);
-		float adjustedAngle = angle + DEGTORAD(30.0f);
-		if (adjustedAngle < 0.f)
-			adjustedAngle += TWOPI;
-
-		int wantedDir = Floor(adjustedAngle / DEGTORAD(60.0f));
-
-		// And we have another ped at the direction of victim ped, so store victim to next empty direction to it's real direction. (Bollocks)
-		if (m_pMeleeList[wantedDir]) {
-			int closestDirToPreferred = -99;
-			int preferredDir = wantedDir;
-
-			for (int i = 0; i < ARRAY_SIZE(m_pMeleeList); i++) {
-				if (!m_pMeleeList[i]) {
-					if (Abs(i - preferredDir) < Abs(closestDirToPreferred - preferredDir))
-						closestDirToPreferred = i;
-				}
-			}
-			if (closestDirToPreferred > 0)
-				dirToAttack = closestDirToPreferred;
-		} else {
-
-			// Luckily the direction of victim ped is already empty, good
-			dirToAttack = wantedDir;
-		}
-
-		if (dirToAttack != -1) {
-			m_pMeleeList[dirToAttack] = victim;
-			victim->RegisterReference((CEntity**) &m_pMeleeList[dirToAttack]);
-			if (endOfAttackOut > CTimer::GetTimeInMilliseconds())
-				victim->m_attackTimer = endOfAttackOut + CGeneral::GetRandomNumberInRange(1000, 2000);
-			else
-				victim->m_attackTimer = CTimer::GetTimeInMilliseconds() + CGeneral::GetRandomNumberInRange(500, 1000);
-		}
-	}
-	return dirToAttack;
-}
-
-#ifdef COMPATIBLE_SAVES
-#define CopyFromBuf(buf, data) memcpy(&data, buf, sizeof(data)); SkipSaveBuf(buf, sizeof(data));
-#define CopyToBuf(buf, data) memcpy(buf, &data, sizeof(data)); SkipSaveBuf(buf, sizeof(data));
-// SA CPlayerPed::Save writes the ped body and then its own player block:
-// the target table, the fields the ped's CPlayerPedData owns, and the ped-side
-// extras this fork keeps (the safe positions and the melee list). The rest of
-// the Vice City layout is zero-filled padding, so the size the pool is told
-// about (nSaveStructSize) stays exactly what it was.
-void
-CPlayerPed::Save(uint8*& buf)
-{
-	CPed::Save(buf);
-	ZeroSaveBuf(buf, 16);
-	CopyToBuf(buf, TimeCanRun());
-	ZeroSaveBuf(buf, 28);
-	for (int i = 0; i < 4; i++)
-		{ int32 v = m_nTargettableObjects[i]; memcpy(buf, &v, sizeof(v)); SkipSaveBuf(buf, sizeof(v)); }
-	// The player block proper: everything CPlayerPedData carries that a load
-	// has to restore. It sits in the padding Vice City had after the target
-	// table, which is why the total size does not change.
-	uint8 data[CPlayerPedData::SAVE_SIZE];
-	m_pPlayerData->Save(data);
-	memcpy(buf, data, sizeof(data));
-	SkipSaveBuf(buf, sizeof(data));
-	ZeroSaveBuf(buf, 164 - sizeof(data));
-}
-
-void
-CPlayerPed::Load(uint8*& buf)
-{
-	CPed::Load(buf);
-	SkipSaveBuf(buf, 16);
-	CopyFromBuf(buf, TimeCanRun());
-	SkipSaveBuf(buf, 28);
-	for (int i = 0; i < 4; i++)
-		{ int32 v; memcpy(&v, buf, sizeof(v)); SkipSaveBuf(buf, sizeof(v)); m_nTargettableObjects[i] = v; }
-	uint8 data[CPlayerPedData::SAVE_SIZE];
-	memcpy(data, buf, sizeof(data));
-	SkipSaveBuf(buf, sizeof(data));
-	m_pPlayerData->Load(data);
-	SkipSaveBuf(buf, 164 - sizeof(data));
-	// The pointer fields inside the block are addresses from the file that just
-	// went away; Load() clears them, and the code that needs them re-acquires
-	// them. The wanted level and the arresting cop belong to their own blocks.
-	m_pPlayerData->m_pWanted = Wanted();
-	m_pPlayerData->m_pArrestingCop = ArrestingCop();
-}
-#undef CopyFromBuf
-#undef CopyToBuf
-#endif

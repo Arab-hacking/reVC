@@ -59,7 +59,6 @@ public:
 	uint8 m_phy_flagA08 : 1;
 	uint8 bIsInWater : 1;
 	uint8 m_phy_flagA20 : 1; // unused
-	uint8 bHitByTrain : 1;
 	uint8 bSkipLineCol : 1;
 
 	uint8 bIsFrozen : 1;
@@ -181,10 +180,8 @@ public:
 	bool ApplyFriction(float adhesiveLimit, CColPoint &colpoint);
 
 	bool ProcessShiftSectorList(CPtrList *ptrlists);
-	bool ProcessCollisionSectorList_SimpleCar(CPtrList *lists);
 	bool ProcessCollisionSectorList(CPtrList *lists);
 	bool CheckCollision(void);
-	bool CheckCollision_SimpleCar(void);
 };
 
 #endif // __GTA_PHYSICAL_H__

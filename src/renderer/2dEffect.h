@@ -28,11 +28,6 @@ enum {
 };
 
 enum {
-	ATTRACTORTYPE_ICECREAM,
-	ATTRACTORTYPE_STARE
-};
-
-enum {
 	LIGHTFLAG_LOSCHECK = 1,
 	// same order as CPointLights flags, must start at 2
 	LIGHTFLAG_FOG_NORMAL = 2,	// can have light and fog
@@ -63,16 +58,6 @@ public:
 		RwV3d dir;
 		float scale;
 	};
-	struct Attractor {
-		RwV3d dir;
-		int8 type;
-		uint8 probability;
-	};
-	struct PedAttractor {
-		RwV3d queueDir;
-		RwV3d useDir;
-		int8 type;
-	};
 
 	RwV3d pos;
 	CRGBA col;
@@ -80,8 +65,6 @@ public:
 	union {
 		Light light;
 		Particle particle;
-		Attractor attractor;
-		PedAttractor pedattr;
 	};
 
 	C2dEffect(void) {}

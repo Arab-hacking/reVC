@@ -360,6 +360,8 @@ myfeof(int fd)
 }
 
 
+const char TopLineEmptyFile[] = "THIS FILE IS NOT VALID YET";
+
 char CFileMgr::ms_rootDirName[FILEMGR_PATH_SIZE] = {'\0'};
 char CFileMgr::ms_dirName[FILEMGR_PATH_SIZE];
 
