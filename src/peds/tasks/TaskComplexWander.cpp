@@ -5,6 +5,8 @@
 #include "PathFind.h"
 #include "Ped.h"
 #include "PedIntelligence.h"
+#include "TaskComplexCrossRoadLookAndAchieveHeading.h"
+#include "TaskComplexObserveTrafficLightsAndAchieveHeading.h"
 #include "TaskComplexSequence.h"
 #include "TaskComplexWanderCop.h"
 #include "TaskComplexWanderCriminal.h"
@@ -212,9 +214,9 @@ CTaskComplexWander::UpdatePathNodes(const CPed *ped, uint8 dir, CNodeAddress &or
 	targetNode = AddressFromNode(target);
 }
 
-// SA CTaskComplexWander::CreateSubTask (0x671CB0). The car-drive,
-// leave-car and road-crossing tasks are not ported yet and yield nil
-// (which ends the wander, as an exhausted sequence would).
+// SA CTaskComplexWander::CreateSubTask (0x671CB0). The car-drive and
+// leave-car tasks are not ported yet and yield nil (which ends the
+// wander, as an exhausted sequence would).
 CTask*
 CTaskComplexWander::CreateSubTask(CPed *ped, eTaskType taskType)
 {
@@ -224,6 +226,10 @@ CTaskComplexWander::CreateSubTask(CPed *ped, eTaskType taskType)
 		ComputeTargetPos(ped, outTargetPos, m_NextNode);
 		return new CTaskSimpleGoToPoint(m_nMoveState, outTargetPos, m_fTargetRadius, false, false);
 	}
+	case TASK_COMPLEX_CROSS_ROAD_LOOK_AND_ACHIEVE_HEADING:
+		return new CTaskComplexCrossRoadLookAndAchieveHeading(0, ComputeTargetHeading(ped));
+	case TASK_COMPLEX_OBSERVE_TRAFFIC_LIGHTS_AND_ACHIEVE_HEADING:
+		return new CTaskComplexObserveTrafficLightsAndAchieveHeading(0, ComputeTargetHeading(ped));
 	case TASK_FINISHED:
 		return nil;
 	case TASK_SIMPLE_SCRATCH_HEAD:
