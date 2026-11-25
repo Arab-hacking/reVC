@@ -1,5 +1,7 @@
 #include "TaskComplexWanderCop.h"
 
+#include "EventPedToChase.h"
+#include "EventPedToFlee.h"
 #include "Ped.h"
 #include "PedIntelligence.h"
 #include "PlayerInfo.h"
@@ -16,9 +18,6 @@
 //   TASK_COMPLEX_POLICE_PURSUIT comparisons remain for the day it lands.
 // - VC's CCopPed has no m_bDontPursuit flag, so SA's dont-pursuit
 //   stand-still branch is absent.
-// - CEventPedToChase/CEventPedToFlee are not ported yet, so
-//   LookForCriminals only does the sighting bookkeeping (scan + 30 s
-//   cooldown); the chase events land with the event classes.
 // - Wanted levels are plain ints here (0 = clean).
 
 CTaskComplexWanderCop::CTaskComplexWanderCop(eMoveState moveState, uint8 dir)
@@ -201,15 +200,21 @@ CTaskComplexWanderCop::FindFirstCriminalInSight(CPed *ped) const
 	return nil;
 }
 
-// 0x66B300. SA additionally posts CEventPedToChase to the cop and
-// CEventPedToFlee to the criminal; those event classes are not ported
-// yet, so only the sighting bookkeeping happens.
+// 0x66B300
 void
 CTaskComplexWanderCop::LookForCriminals(CPed *ped)
 {
 	CPed *criminal = FindFirstCriminalInSight(ped);
 	if(criminal == nil)
 		return;
+
+	CEventPedToChase eventPedToChase(criminal);
+	if(ped->GetIntelligence())
+		ped->GetIntelligence()->GetEventGroup().Add(&eventPedToChase, false);
+
+	CEventPedToFlee eventPedToFlee(ped);
+	if(criminal->GetIntelligence())
+		criminal->GetIntelligence()->GetEventGroup().Add(&eventPedToFlee, false);
 
 	// 30 seconds wait for next check
 	m_nTimePassedSinceLastLookedForCriminals = CTimer::GetTimeInMilliseconds() + 30000;
