@@ -20,19 +20,8 @@
 #include "Timer.h"
 #include "Vehicle.h"
 
-// SA addresses path nodes by (area, node); reVC's network is one global
-// array, so the node id is the global index and area 0 is "valid".
-static CPathNode*
-NodeFromAddress(const CNodeAddress &address)
-{
-	return address.IsValid() ? ThePaths.GetNode(address.m_wNodeId) : nil;
-}
-
-static CNodeAddress
-AddressFromNode(CPathNode *node)
-{
-	return node ? CNodeAddress(0, ThePaths.GetIndex(node)) : CNodeAddress();
-}
+// The SA-address <-> VC-node bridge (NodeFromAddress/AddressFromNode)
+// lives in NodeAddress.cpp; this file uses it through NodeAddress.h.
 
 // SA CTaskComplexWander::CTaskComplexWander (0x66F450).
 CTaskComplexWander::CTaskComplexWander(eMoveState moveState, uint8 dir, bool bWanderSensibly, float fTargetRadius)

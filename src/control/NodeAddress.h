@@ -23,6 +23,14 @@ public:
 	bool operator!=(const CNodeAddress &other) const { return !(*this == other); }
 };
 
+class CPathNode;
+
+// The two directions of the SA-address <-> VC-node bridge. SA code that
+// thinks in node addresses goes through these; they are the only places
+// that know an address is just a global node index here.
+CPathNode *NodeFromAddress(const CNodeAddress &address);
+CNodeAddress AddressFromNode(CPathNode *node);
+
 VALIDATE_SIZE(CNodeAddress, 0x4);
 
 #endif // __GTA_NODEADDRESS_H__
