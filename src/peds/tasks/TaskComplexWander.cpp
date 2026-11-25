@@ -6,7 +6,10 @@
 #include "Ped.h"
 #include "PedIntelligence.h"
 #include "TaskComplexSequence.h"
+#include "TaskComplexWanderCop.h"
+#include "TaskComplexWanderCriminal.h"
 #include "TaskComplexWanderMedic.h"
+#include "TaskComplexWanderProstitute.h"
 #include "TaskComplexWanderStandard.h"
 #include "TaskSimpleGoToPoint.h"
 #include "TaskSimpleRunAnim.h"
@@ -316,16 +319,22 @@ CTaskComplexWander::ScanForBlockedNode(const CVector &position, CEntity *entity)
 	return false;
 }
 
-// SA CTaskComplexWander::GetWanderTaskByPedType (0x673D00). The cop,
-// criminal and prostitute wander variants are not ported yet; their peds
-// wander standard until they land.
+// SA CTaskComplexWander::GetWanderTaskByPedType (0x673D00). (SA has no
+// gang case here either; gang wander tasks are handed out where gangs are
+// created, not by ped type.)
 CTaskComplexWander*
 CTaskComplexWander::GetWanderTaskByPedType(CPed *ped)
 {
 	uint8 randomDir = (uint8)CGeneral::GetRandomNumberInRange(0, 8);
 	switch(ped->m_nPedType){
+	case PEDTYPE_COP:
+		return new CTaskComplexWanderCop(PEDMOVE_WALK, randomDir);
 	case PEDTYPE_MEDIC:
 		return new CTaskComplexWanderMedic(PEDMOVE_WALK, randomDir);
+	case PEDTYPE_CRIMINAL:
+		return new CTaskComplexWanderCriminal(PEDMOVE_WALK, randomDir);
+	case PEDTYPE_PROSTITUTE:
+		return new CTaskComplexWanderProstitute(PEDMOVE_WALK, randomDir);
 	default:
 		return new CTaskComplexWanderStandard(PEDMOVE_WALK, randomDir);
 	}
