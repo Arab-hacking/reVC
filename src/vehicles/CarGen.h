@@ -103,8 +103,6 @@ public:
 		uint8 iplId, bool ignorePopulationLimit);
 	static void Init();
 	static void RemoveCarGenerators(uint8 iplId);
-	static void SaveAllCarGenerators(uint8 *buffer, uint32 *size);
-	static void LoadAllCarGenerators(uint8 *buffer, uint32 size);
 
 	static CCarGenerator *Get(uint16 index);
 	static int32 GetIndex(CCarGenerator *pCarGen);

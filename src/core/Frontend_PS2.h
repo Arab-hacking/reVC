@@ -5,7 +5,7 @@
 enum
 {
 	PAGE_STATS,
-	PAGE_LOAD,
+	PAGE_NEW_GAME,
 	PAGE_BRIEFS,
 	PAGE_CONTROLS,
 	PAGE_AUDIO,
@@ -36,7 +36,7 @@ enum eFrontendSprites
 	FE_ICONBRIEF,
 	FE_ICONSTATS,
 	FE_ICONCONTROLS,
-	FE_ICONSAVE,
+	FE_ICONNEWGAME,
 	FE_ICONAUDIO,
 	FE_ICONDISPLAY,
 	FE_ICONLANGUAGE,
@@ -141,8 +141,6 @@ public:
 	bool m_bWantToRestart;
 	//char field_38; //unused ?
 	bool m_bRenderGameInMenu;
-	bool m_bSaveMenuActive;
-	bool m_bInSaveZone;
 	char field_3C;
 	bool m_bTexturesLoaded;
 	//char field_3E; //unused ?
@@ -226,11 +224,9 @@ public:
 	void InitialiseChangedLanguageSettings(void);
 	void InitialiseMenuContents(void);
 	void AnaliseMenuContents(void);
-	void InitialiseMenuContentsAfterLoadingGame(void);
+	void CheckLanguageSelectionChanged(void);
 	void DrawFrontEnd(void);
 	void DrawFrontEndNormal(void);
-	void DrawFrontEndSaveZone(void);
-	void DrawMemoryCardStartUpMenus(void);
 	void Process(void);
 	void WorkOutMenuState(uint8 bExit);
 	void ProcessControllerInput(void);

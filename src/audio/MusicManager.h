@@ -58,7 +58,7 @@ public:
 	uint8 GetMusicMode() { return m_nMusicMode; }
 	tTrack GetCurrentTrack() { return m_nPlayingTrack; }
 
-	void ResetMusicAfterReload();
+	void ResetMusicAfterRestart();
 	void SetStartingTrackPositions(bool8 isNewGameTimer);
 	bool8 Initialise();
 	void Terminate();

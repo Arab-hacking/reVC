@@ -88,8 +88,6 @@ public:
 	static bool HaveAllCarsBeenCollectedByMilitaryCrane(void);
 	static bool IsThisCarBeingCarriedByAnyCrane(CVehicle* pVehicle);
 	static bool IsThisCarBeingTargettedByAnyCrane(CVehicle* pVehicle);
-	static void Save(uint8* buf, uint32* size);
-	static void Load(uint8* buf, uint32 size); // out of class in III PC and later because of SecuROM
 
 	static uint32 CarsCollectedMilitaryCrane;
 	static int32 NumCranes;

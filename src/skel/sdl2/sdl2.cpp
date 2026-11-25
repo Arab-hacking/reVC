@@ -25,8 +25,6 @@ long _dwOperatingSystemVersion;
 #include "ControllerConfig.h"
 #include "Frontend.h"
 #include "Game.h"
-#include "PCSave.h"
-#include "MemoryCard.h"
 #include "Sprite2d.h"
 #include "AnimViewer.h"
 #include "Font.h"
@@ -333,11 +331,9 @@ psInitialize(void)
 	else
 		CMenuManager::m_PrefsLanguage = CMenuManager::LANGUAGE_AMERICAN;
 
-	FrontEndMenuManager.InitialiseMenuContentsAfterLoadingGame();
+	FrontEndMenuManager.CheckLanguageSelectionChanged();
 
-	TheMemoryCard.Init();
 #else
-    C_PcSave::SetSaveDirectory(_psGetUserFilesFolder());
 
     InitialiseLanguage();
 
@@ -1622,21 +1618,6 @@ main(int argc, char *argv[])
 #endif
     }
 
-#ifdef PS2_MENU
-    int32 r = TheMemoryCard.CheckCardStateAtGameStartUp(CARD_ONE);
-	if (   r == CMemoryCard::ERR_DIRNOENTRY  || r == CMemoryCard::ERR_NOFORMAT
-		&& r != CMemoryCard::ERR_OPENNOENTRY && r != CMemoryCard::ERR_NONE )
-	{
-		LoadingScreen(nil, nil, "loadsc0");
-
-		TheText.Unload();
-		TheText.Load();
-
-		CFont::Initialise();
-
-		FrontEndMenuManager.DrawMemoryCardStartUpMenus();
-	}
-#endif
 
     while ( TRUE )
     {
@@ -1666,18 +1647,7 @@ main(int argc, char *argv[])
         }
 #endif
 
-#ifdef PS2_MENU
-        if (TheMemoryCard.m_bWantToLoad)
-			LoadSplash(GetLevelSplashScreen(CGame::currLevel));
-
-		TheMemoryCard.m_bWantToLoad = false;
-
-		CTimer::Update();
-
-		while( !RsGlobal.quit && !(FrontEndMenuManager.m_bWantToRestart || TheMemoryCard.b_FoundRecentSavedGameWantToLoad) && !SDL_QuitRequested())
-#else
         while( !RsGlobal.quit && !FrontEndMenuManager.m_bWantToRestart && !SDL_QuitRequested())
-#endif
         {
             inputEventHandler();
 
@@ -1821,27 +1791,12 @@ main(int argc, char *argv[])
                         if(!WindowIconified)
                             RsEventHandler(rsFRONTENDIDLE, nil);
 
-#ifdef PS2_MENU
-                        if ( !FrontEndMenuManager.m_bMenuActive || TheMemoryCard.m_bWantToLoad )
-#else
-                        if ( !FrontEndMenuManager.m_bMenuActive || FrontEndMenuManager.m_bWantToLoad )
-#endif
+                        if ( !FrontEndMenuManager.m_bMenuActive )
                         {
                             gGameState = GS_INIT_PLAYING_GAME;
                             TRACE("gGameState = GS_INIT_PLAYING_GAME;");
                         }
 
-#ifdef PS2_MENU
-                        if (TheMemoryCard.m_bWantToLoad )
-#else
-                        if ( FrontEndMenuManager.m_bWantToLoad )
-#endif
-                        {
-                            InitialiseGame();
-                            FrontEndMenuManager.m_bGameNotLoaded = false;
-                            gGameState = GS_PLAYING_GAME;
-                            TRACE("gGameState = GS_PLAYING_GAME;");
-                        }
                         break;
                     }
 #endif
@@ -1853,23 +1808,6 @@ main(int argc, char *argv[])
 
 						//LoadingScreen("Starting Game", NULL, GetRandomSplashScreen());
 
-						if (   TheMemoryCard.CheckCardInserted(CARD_ONE) == CMemoryCard::NO_ERR_SUCCESS
-							&& TheMemoryCard.ChangeDirectory(CARD_ONE, TheMemoryCard.Cards[CARD_ONE].dir)
-							&& TheMemoryCard.FindMostRecentFileName(CARD_ONE, TheMemoryCard.MostRecentFile) == true
-							&& TheMemoryCard.CheckDataNotCorrupt(TheMemoryCard.MostRecentFile))
-						{
-							strcpy(TheMemoryCard.LoadFileName, TheMemoryCard.MostRecentFile);
-							TheMemoryCard.b_FoundRecentSavedGameWantToLoad = true;
-
-							if (CMenuManager::m_PrefsLanguage != TheMemoryCard.GetLanguageToLoad())
-							{
-								CMenuManager::m_PrefsLanguage = TheMemoryCard.GetLanguageToLoad();
-								TheText.Unload();
-								TheText.Load();
-							}
-
-							CGame::currLevel = (eLevelName)TheMemoryCard.GetLevelToLoad();
-						}
 #else
                         InitialiseGame();
 
@@ -1918,13 +1856,8 @@ main(int argc, char *argv[])
         RwInitialised = FALSE;
 
         FrontEndMenuManager.UnloadTextures();
-#ifdef PS2_MENU
-        if ( !(FrontEndMenuManager.m_bWantToRestart || TheMemoryCard.b_FoundRecentSavedGameWantToLoad))
-			break;
-#else
         if ( !FrontEndMenuManager.m_bWantToRestart )
             break;
-#endif
 
         CPad::ResetCheats();
         CPad::StopPadsShaking();
@@ -1938,56 +1871,31 @@ main(int argc, char *argv[])
         CTimer::Stop();
 
 #ifdef PS2_MENU
-        if (FrontEndMenuManager.m_bWantToRestart || TheMemoryCard.b_FoundRecentSavedGameWantToLoad)
-		{
-			if (TheMemoryCard.b_FoundRecentSavedGameWantToLoad)
-			{
-				FrontEndMenuManager.m_bWantToRestart = true;
-				TheMemoryCard.m_bWantToLoad = true;
-			}
+        CGame::InitialiseWhenRestarting();
+        DMAudio.ChangeMusicMode(MUSICMODE_GAME);
+        FrontEndMenuManager.m_bWantToRestart = false;
 
-			CGame::InitialiseWhenRestarting();
-			DMAudio.ChangeMusicMode(MUSICMODE_GAME);
-			FrontEndMenuManager.m_bWantToRestart = false;
-
-			continue;
-		}
-
-		CGame::ShutDown();
-		CTimer::Stop();
-
-		break;
+        continue;
 #else
-        if ( FrontEndMenuManager.m_bWantToLoad )
+#ifndef MASTER
+        if ( gbModelViewer )
+        	CAnimViewer::Shutdown();
+        else
+#endif
+        if ( gGameState == GS_PLAYING_GAME )
+        	CGame::ShutDown();
+
+        CTimer::Stop();
+
+        if ( FrontEndMenuManager.m_bFirstTime == true )
         {
-            CGame::ShutDownForRestart();
-            CGame::InitialiseWhenRestarting();
-            DMAudio.ChangeMusicMode(MUSICMODE_GAME);
-            LoadSplash(GetLevelSplashScreen(CGame::currLevel));
-            FrontEndMenuManager.m_bWantToLoad = false;
+        	gGameState = GS_INIT_FRONTEND;
+        	TRACE("gGameState = GS_INIT_FRONTEND;");
         }
         else
         {
-#ifndef MASTER
-            if ( gbModelViewer )
-                CAnimViewer::Shutdown();
-            else
-#endif
-            if ( gGameState == GS_PLAYING_GAME )
-                CGame::ShutDown();
-
-            CTimer::Stop();
-
-            if ( FrontEndMenuManager.m_bFirstTime == true )
-            {
-                gGameState = GS_INIT_FRONTEND;
-                TRACE("gGameState = GS_INIT_FRONTEND;");
-            }
-            else
-            {
-                gGameState = GS_INIT_PLAYING_GAME;
-                TRACE("gGameState = GS_INIT_PLAYING_GAME;");
-            }
+        	gGameState = GS_INIT_PLAYING_GAME;
+        	TRACE("gGameState = GS_INIT_PLAYING_GAME;");
         }
 
         FrontEndMenuManager.m_bFirstTime = false;
@@ -1995,12 +1903,6 @@ main(int argc, char *argv[])
 #endif
     }
 
-
-#ifndef MASTER
-    if ( gbModelViewer )
-        CAnimViewer::Shutdown();
-    else
-#endif
     if ( gGameState == GS_PLAYING_GAME )
         CGame::ShutDown();
 

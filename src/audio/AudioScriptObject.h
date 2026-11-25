@@ -18,8 +18,6 @@ public:
 	static void operator delete(void*, size_t) throw();
 	static void operator delete(void*, int) throw();
 
-	static void LoadAllAudioScriptObjects(uint8 *buf, uint32 size);
-	static void SaveAllAudioScriptObjects(uint8 *buf, uint32 *size);
 };
 
 VALIDATE_SIZE(cAudioScriptObject, 20);

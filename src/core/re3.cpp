@@ -1386,6 +1386,3 @@ re3_usererror(const char *format, ...)
 #endif
 #endif
 
-#ifdef VALIDATE_SAVE_SIZE
-int32 _saveBufCount;
-#endif

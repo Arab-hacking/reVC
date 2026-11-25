@@ -73,8 +73,7 @@ enum
 // vector, because a car only ever yaws and one byte per axis is all SA kept.
 //
 // StoreCar/RestoreCar are the only things that touch a vehicle; everything else
-// is plain data, which is what lets the whole array be written into a save
-// file as-is.
+// is plain data.
 class CStoredCar
 {
 public:
@@ -91,13 +90,12 @@ public:
 	};
 
 	// Number of upgrade slots SA stores per car. A car never has more than this
-	// many parts fitted, and the array is written to the save file verbatim.
+	// many parts fitted.
 	//
 	// CVehicle::m_anUpgrades is 18 entries wide because it is indexed by
 	// eVehicleMod, which also covers the replacement parts. The fifteen slots
-	// the save format has hold eVehicleMod 0..14 - every part a shop can sell,
-	// hydraulics, nitrous and stereo included - so nothing buyable is lost by
-	// keeping the file's own width.
+	// here hold eVehicleMod 0..14 - every part a shop can sell, hydraulics,
+	// nitrous and stereo included.
 	enum { NUM_CAR_MODS = 15 };
 
 	CVector m_vPosn;
@@ -127,48 +125,10 @@ public:
 	void StoreCar(CVehicle*);
 	CVehicle* RestoreCar();
 
-	// The save file stores a car as a fixed 40-byte record, field by field. It
-	// is not a memcpy of this structure: the record was written by the original
-	// game, so its layout is a file format and cannot follow the structure when
-	// the structure changes.
-	enum { SAVE_RECORD_SIZE = 0x40 };
-	void WriteSaveRecord(uint8 *&buf) const;
-	void ReadSaveRecord(uint8 *&buf);
 };
 
 VALIDATE_SIZE(CStoredCar, 0x40);
 
-// SA CVehicleSaveStructure (0x68 bytes), ported from gta-reversed
-// (source/game_sa/VehicleSaveStructure.{h,cpp}).
-//
-// The part of a vehicle SA writes into a save: where it is and how it is
-// pointing, its four colours, the alarm, how many seats it has, what the driver
-// was doing with the pedals, and the two words of vehicle flags. Construct
-// copies a live vehicle into the structure, Extract pushes it back; that pair
-// is the whole class, and the save code does the serialising.
-class CVehicleSaveStructure
-{
-public:
-	CMatrix m_matrix;
-	uint8 field_48;
-	uint8 m_nPrimaryColor;
-	uint8 m_nSecondaryColor;
-	uint8 m_nTertiaryColor;
-	uint8 m_nQuaternaryColor;
-	uint16 m_nAlarmState;
-	uint8 m_nMaxPassengers;
-	float m_fSteerAngle;
-	float m_fGasPedal;
-	float m_fBrakePedal;
-	uint32 m_nVehicleUpperFlags;
-	uint32 m_nVehicleLowerFlags;
-
-	// SA CVehicleSaveStructure::Construct (0x5D2330).
-	void Construct(CVehicle *v);
-	// SA CVehicleSaveStructure::Extract (0x5D23B0).
-	void Extract(CVehicle *v);
-};
-VALIDATE_SIZE(CVehicleSaveStructure, 0x68);
 
 #define SWITCH_GARAGE_DISTANCE_CLOSE 40.0f
 
@@ -335,8 +295,6 @@ public:
 	static bool IsPointWithinHideOutGarage(Const CVector&);
 	static bool IsPointWithinAnyGarage(Const CVector&);
 	static void SetAllDoorsBackToOriginalHeight(void);
-	static void Save(uint8* buf, uint32* size);
-	static void Load(uint8* buf, uint32 size);
 	static bool IsModelIndexADoor(uint32 id);
 	static void SetFreeBombs(bool bValue) { BombsAreFree = bValue; }
 	static void SetFreeResprays(bool bValue) { RespraysAreFree = bValue; }
@@ -345,7 +303,6 @@ public:
 
 	static bool IsCarSprayable(CVehicle*);
 	static float FindDoorHeightForMI(int32);
-	static void CloseHideOutGaragesBeforeSave(void);
 	static int32 CountCarsInHideoutGarage(uint8);
 	static int32 GetBombTypeForGarageType(uint8 type) { return type - GARAGE_BOMBSHOP1 + 1; }
 	static int32 GetCarsCollectedIndexForGarageType(uint8 type)

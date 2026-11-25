@@ -372,7 +372,7 @@ cAudioManager::ResetTimers(uint32 time)
 		SampleManager.StopChannel(CHANNEL_POLICE_RADIO);
 		SampleManager.SetEffectsFadeVolume(0);
 		SampleManager.SetMusicFadeVolume(0);
-		MusicManager.ResetMusicAfterReload();
+		MusicManager.ResetMusicAfterRestart();
 		m_bIsPlayerShutUp = FALSE;
 #ifdef AUDIO_OAL
 		SampleManager.Service();

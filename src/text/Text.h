@@ -2,8 +2,6 @@
 #define __GTA_TEXT_H__
 
 char *UnicodeToAscii(wchar *src);
-char *UnicodeToAsciiForSaveLoad(wchar *src);
-char *UnicodeToAsciiForMemoryCard(wchar *src);
 void TextCopy(wchar *dst, const wchar *src);
 
 struct CKeyEntry

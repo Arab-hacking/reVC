@@ -18,7 +18,6 @@
 #include "Streaming.h"
 #include "TxdStore.h"
 #include "General.h"
-#include "GenericGameStorage.h"
 #include "Script.h"
 #include "Camera.h"
 #include "ControllerConfig.h"
@@ -203,9 +202,7 @@ static inline float
 GetAndroidMenuHubFontMult(int32 screen)
 {
 	if (screen == MENUPAGE_START_MENU || screen == MENUPAGE_NEW_GAME ||
-	    screen == MENUPAGE_EXIT || screen == MENUPAGE_NEW_GAME_RELOAD ||
-	    screen == MENUPAGE_LOAD_SLOT_CONFIRM || screen == MENUPAGE_DELETE_SLOT_CONFIRM ||
-	    screen == MENUPAGE_SAVE_OVERWRITE_CONFIRM)
+	    screen == MENUPAGE_EXIT || screen == MENUPAGE_NEW_GAME_RELOAD)
 		return 1.30f;
 	if (screen == MENUPAGE_PAUSE_MENU || screen == MENUPAGE_OPTIONS ||
 	    screen == MENUPAGE_LANGUAGE_SETTINGS)
@@ -218,7 +215,6 @@ GetAndroidMenuHubFontMult(int32 screen)
 bool CMenuManager::m_bDialogOpen = false;
 uint32 CMenuManager::m_nDialogHideTimer = 0;
 uint32 CMenuManager::m_nDialogHideTimerPauseMode = 0;
-bool CMenuManager::m_bSaveWasSuccessful = false;
 wchar* CMenuManager::m_pDialogText = nil;
 #endif
 
@@ -493,8 +489,6 @@ CMenuManager::SwitchToNewScreen(int8 screen)
 	if (hasNativeList(m_nPrevScreen))
 		m_nTotalListRow = 0;
 
-	if (m_nCurrScreen == MENUPAGE_CHOOSE_SAVE_SLOT)
-		m_nCurrOption = 8;
 	m_nMenuFadeAlpha = 0;
 	m_nOptionHighlightTransitionBlend = 0;
 	m_LastScreenSwitch = CTimer::GetTimeInMillisecondsPauseMode();
@@ -566,10 +560,7 @@ CMenuManager::CMenuManager()
 
 	DMAudio.SetMP3BoostVolume(m_PrefsMP3BoostVolume);
 	m_bMenuActive = false;
-	m_bActivateSaveMenu = false;
-	m_bWantToLoad = false;
 	m_nMenuFadeAlpha = 0;
-	m_OnlySaveMenu = false;
 	m_fMapSize = MENU_Y(162.0f); // Y because of HOR+
 	m_fMapCenterX = MENU_X_LEFT_ALIGNED(320.0f);
 	m_fMapCenterY = MENU_Y(225.0f);
@@ -599,9 +590,6 @@ CMenuManager::CMenuManager()
 #endif
 #endif
 
-#ifdef MISSION_REPLAY
-	m_bAttemptingMissionRetry = false;
-#endif
 }
 
 void
@@ -636,17 +624,7 @@ CMenuManager::Initialise(void)
 	m_fMapCenterX = MENU_X_LEFT_ALIGNED(320.0f);
 	m_fMapCenterY = MENU_Y(225.0f);
 	CPad::StopPadsShaking();
-#ifdef MISSION_REPLAY
-	if (!m_OnlySaveMenu) {
-		if (m_nCurrScreen == MENUPAGE_MISSION_RETRY && m_bAttemptingMissionRetry)
-			m_bAttemptingMissionRetry = false;
-		else
-			m_nCurrScreen = MENUPAGE_NONE;
-	}
-#else
-	if (!m_OnlySaveMenu)
-		m_nCurrScreen = MENUPAGE_NONE;
-#endif
+	m_nCurrScreen = MENUPAGE_NONE;
 
 	DMAudio.ChangeMusicMode(MUSICMODE_FRONTEND);
 	DMAudio.PlayFrontEndSound(SOUND_FRONTEND_MENU_STARTING, 0);
@@ -671,7 +649,6 @@ CMenuManager::Initialise(void)
 
 	CFileMgr::SetDir("");
 	//CFileMgr::SetDir("");
-	PcSaveHelper.PopulateSlotInfo();
 	CTimer::StartUserPause();
 }
 
@@ -1057,14 +1034,6 @@ CMenuManager::DrawStandardMenus(bool activeScreen)
 #endif
 
 	switch (m_nCurrScreen) {
-		case MENUPAGE_CHOOSE_LOAD_SLOT:
-		case MENUPAGE_CHOOSE_DELETE_SLOT:
-		case MENUPAGE_CHOOSE_SAVE_SLOT:
-			CSprite2d::Draw2DPolygon(MENU_X_LEFT_ALIGNED(38.0f), MENU_Y(85.0f),
-				MENU_X_LEFT_ALIGNED(615.0f), MENU_Y(75.0f),
-				MENU_X_LEFT_ALIGNED(30.0f), MENU_Y(320.0f), 
-				MENU_X_LEFT_ALIGNED(605.0f), MENU_Y(330.0f), CRGBA(LIST_BACKGROUND_COLOR.r, LIST_BACKGROUND_COLOR.g, LIST_BACKGROUND_COLOR.b, FadeIn(LIST_BACKGROUND_COLOR.a)));
-			break;
 		case MENUPAGE_SOUND_SETTINGS:
 			PrintRadioSelector();
 			break;
@@ -1105,23 +1074,6 @@ CMenuManager::DrawStandardMenus(bool activeScreen)
 		CFont::SetColor(CRGBA(LABEL_COLOR.r, LABEL_COLOR.g, LABEL_COLOR.b, FadeIn(255)));
 
 		switch (m_nCurrScreen) {
-		case MENUPAGE_LOAD_SLOT_CONFIRM:
-			if (m_bGameNotLoaded)
-				str = TheText.Get("FES_LCG");
-			else
-				str = TheText.Get(aScreens[m_nCurrScreen].m_aEntries[0].m_EntryName);
-			break;
-		case MENUPAGE_DELETE_SLOT_CONFIRM:
-			str = TheText.Get(aScreens[MENUPAGE_DELETE_SLOT_CONFIRM].m_aEntries[0].m_EntryName);
-			break;
-		case MENUPAGE_SAVE_OVERWRITE_CONFIRM:
-			if (Slots[m_nCurrSaveSlot] == SLOT_OK)
-				str = TheText.Get("FESZ_QO");
-			else if (Slots[m_nCurrSaveSlot] == SLOT_CORRUPTED)
-				str = TheText.Get("FESZ_QZ");
-			else
-				str = TheText.Get(aScreens[m_nCurrScreen].m_aEntries[0].m_EntryName);
-			break;
 		case MENUPAGE_EXIT:
 			if (m_bGameNotLoaded)
 				str = TheText.Get("FEQ_SRW");
@@ -1165,12 +1117,7 @@ CMenuManager::DrawStandardMenus(bool activeScreen)
 #endif
 			wchar* rightText = nil;
 			wchar* leftText;
-			if (aScreens[m_nCurrScreen].m_aEntries[i].m_SaveSlot >= SAVESLOT_1 && aScreens[m_nCurrScreen].m_aEntries[i].m_SaveSlot <= SAVESLOT_8) {
-				CFont::SetColor(CRGBA(0, 0, 0, FadeIn(255)));
-				CFont::SetFontStyle(FONT_LOCALE(FONT_STANDARD));
-				CFont::SetScale(MENU_X(MEDIUMTEXT_X_SCALE), MENU_Y(MEDIUMTEXT_Y_SCALE));
-				CFont::SetDropShadowPosition(0);
-			} else {
+			{
 				CFont::SetFontStyle(FONT_LOCALE(FONT_HEADING));
 #ifdef ANDROID
 				const float hubMult = GetAndroidMenuHubFontMult(m_nCurrScreen);
@@ -1215,22 +1162,7 @@ CMenuManager::DrawStandardMenus(bool activeScreen)
 
 			if (aScreens[m_nCurrScreen].m_aEntries[i].m_Action != MENUACTION_LABEL && aScreens[m_nCurrScreen].m_aEntries[i].m_EntryName[0] != '\0') {
 
-				if (aScreens[m_nCurrScreen].m_aEntries[i].m_SaveSlot >= SAVESLOT_1 && aScreens[m_nCurrScreen].m_aEntries[i].m_SaveSlot <= SAVESLOT_8) {
-					CFont::SetRightJustifyOff();
-
-					leftText = nil;
-					if (Slots[i] == SLOT_OK) {
-						leftText = GetNameOfSavedGame(i);
-						rightText = GetSavedGameDateAndTime(i);
-					}
-
-					if (!leftText || leftText[0] == '\0') {
-						sprintf(gString, "FEM_SL%d", i + 1);
-						leftText = TheText.Get(gString);
-					}
-				} else {
-					leftText = TheText.Get(aScreens[m_nCurrScreen].m_aEntries[i].m_EntryName);
-				}
+				leftText = TheText.Get(aScreens[m_nCurrScreen].m_aEntries[i].m_EntryName);
 
 				if (m_nPrefsAudio3DProviderIndex == NO_AUDIO_PROVIDER) {
 					if (strcmp(aScreens[m_nCurrScreen].m_aEntries[i].m_EntryName, "FEO_AUD") == 0) {
@@ -1535,10 +1467,8 @@ CMenuManager::DrawStandardMenus(bool activeScreen)
 #endif
 
 					int action = aScreens[m_nCurrScreen].m_aEntries[i].m_Action;
-					int saveSlot = aScreens[m_nCurrScreen].m_aEntries[i].m_SaveSlot;
 					if (rightText || action == MENUACTION_DRAWDIST || action == MENUACTION_BRIGHTNESS || action == MENUACTION_MUSICVOLUME ||
-						action == MENUACTION_SFXVOLUME || action == MENUACTION_MP3VOLUMEBOOST || action == MENUACTION_MOUSESENS ||
-						saveSlot >= SAVESLOT_1 && saveSlot <= SAVESLOT_8
+						action == MENUACTION_SFXVOLUME || action == MENUACTION_MP3VOLUMEBOOST || action == MENUACTION_MOUSESENS
 #ifdef CUSTOM_FRONTEND_OPTIONS
 						|| action == MENUACTION_CFO_SLIDER
 #endif
@@ -1622,13 +1552,8 @@ CMenuManager::DrawStandardMenus(bool activeScreen)
 					if (rightText) {
 						CFont::SetCentreOff();
 						CFont::SetRightJustifyOn();
-						if (aScreens[m_nCurrScreen].m_aEntries[i].m_SaveSlot >= SAVESLOT_1 && aScreens[m_nCurrScreen].m_aEntries[i].m_SaveSlot <= SAVESLOT_8) {
-							CFont::SetFontStyle(FONT_LOCALE(FONT_STANDARD));
-							CFont::SetScale(MENU_X(MEDIUMTEXT_X_SCALE), MENU_Y(MEDIUMTEXT_Y_SCALE));
-						} else {
-							CFont::SetFontStyle(FONT_LOCALE(FONT_HEADING));
-							CFont::SetScale(MENU_X(BIGTEXT_X_SCALE), MENU_Y(BIGTEXT_Y_SCALE));
-						}
+						CFont::SetFontStyle(FONT_LOCALE(FONT_HEADING));
+						CFont::SetScale(MENU_X(BIGTEXT_X_SCALE), MENU_Y(BIGTEXT_Y_SCALE));
 						CFont::PrintString(MENU_X_LEFT_ALIGNED(DEFAULT_SCREEN_WIDTH - RIGHT_ALIGNED_TEXT_RIGHT_MARGIN(xMargin)), MENU_Y(aScreens[m_nCurrScreen].m_aEntries[i].m_Y MINUS_SCROLL_OFFSET), rightText);
 					}
 
@@ -1796,14 +1721,6 @@ CMenuManager::DrawStandardMenus(bool activeScreen)
 #endif
 	}
 
-	if (m_nCurrScreen == MENUPAGE_DELETING_IN_PROGRESS) {
-		SmallMessageScreen("FEDL_WR");
-	}
-#ifndef XBOX_MESSAGE_SCREEN
-	else if (m_nCurrScreen == MENUPAGE_SAVING_IN_PROGRESS) {
-		SmallMessageScreen("FESZ_WR");
-	}
-#endif
 }
 
 int
@@ -2532,9 +2449,6 @@ CMenuManager::DrawBackground(bool transitionCall)
 			case MENUPAGE_BRIEFS:
 			case MENUPAGE_DISPLAY_SETTINGS:
 			case MENUPAGE_MAP:
-			case MENUPAGE_CHOOSE_LOAD_SLOT:
-			case MENUPAGE_CHOOSE_DELETE_SLOT:
-			case MENUPAGE_CHOOSE_SAVE_SLOT:
 			case MENUPAGE_MOUSE_CONTROLS:
 				menuBg.topLeft_x = 26.0f;
 				menuBg.topLeft_y = 59.0f;
@@ -3194,37 +3108,34 @@ CMenuManager::LoadAllTextures()
 	CTxdStore::PopCurrentTxd();
 	CStreaming::IHaveUsedStreamingMemory();
 
-	if (!m_OnlySaveMenu) {
-		CStreaming::MakeSpaceFor(692 * CDSTREAM_SECTOR_SIZE); // twice of it in mobile
-		CStreaming::ImGonnaUseStreamingMemory();
-		CTxdStore::PushCurrentTxd();
+	CStreaming::MakeSpaceFor(692 * CDSTREAM_SECTOR_SIZE); // twice of it in mobile
+	CStreaming::ImGonnaUseStreamingMemory();
+	CTxdStore::PushCurrentTxd();
 
-		int frontendTxdSlot2 = CTxdStore::FindTxdSlot("frontend2");
+	int frontendTxdSlot2 = CTxdStore::FindTxdSlot("frontend2");
 
-		if (frontendTxdSlot2 == -1)
-			frontendTxdSlot2 = CTxdStore::AddTxdSlot("frontend2");
+	if (frontendTxdSlot2 == -1)
+		frontendTxdSlot2 = CTxdStore::AddTxdSlot("frontend2");
 
-		printf("LOAD frontend2\n");
-		CTxdStore::LoadTxd(frontendTxdSlot2, "MODELS/FRONTEN2.TXD");
-		CTxdStore::AddRef(frontendTxdSlot2);
-		CTxdStore::SetCurrentTxd(frontendTxdSlot2);
+	printf("LOAD frontend2\n");
+	CTxdStore::LoadTxd(frontendTxdSlot2, "MODELS/FRONTEN2.TXD");
+	CTxdStore::AddRef(frontendTxdSlot2);
+	CTxdStore::SetCurrentTxd(frontendTxdSlot2);
 
 #ifdef GAMEPAD_MENU
-		for (int i = 3; i < MENUSPRITE_CONTROLLER; i++) {
+	for (int i = 3; i < MENUSPRITE_CONTROLLER; i++) {
 #else
-		for (int i = 3; i < NUM_MENU_SPRITES; i++) {
+	for (int i = 3; i < NUM_MENU_SPRITES; i++) {
 #endif
-			m_aFrontEndSprites[i].SetTexture(FrontendFilenames[i][0], FrontendFilenames[i][1]);
-			m_aFrontEndSprites[i].SetAddressing(rwTEXTUREADDRESSBORDER);
-		}
-
-		CTxdStore::PopCurrentTxd();
-#ifdef GAMEPAD_MENU
-		LoadController(m_PrefsControllerType);
-#endif
-		CStreaming::IHaveUsedStreamingMemory();
+		m_aFrontEndSprites[i].SetTexture(FrontendFilenames[i][0], FrontendFilenames[i][1]);
+		m_aFrontEndSprites[i].SetAddressing(rwTEXTUREADDRESSBORDER);
 	}
 
+	CTxdStore::PopCurrentTxd();
+#ifdef GAMEPAD_MENU
+	LoadController(m_PrefsControllerType);
+#endif
+	CStreaming::IHaveUsedStreamingMemory();
 	m_bSpritesLoaded = true;
 	CTimer::Update();
 }
@@ -3247,7 +3158,7 @@ CMenuManager::LoadSettings()
 	if (fileHandle) {
 		CFileMgr::Read(fileHandle, headerText, 29);
 
-		if (strncmp(headerText, TopLineEmptyFile, sizeof(TopLineEmptyFile) - 1) == 0) {
+		if (strncmp(headerText, SettingsFileIncompleteMarker, sizeof(SettingsFileIncompleteMarker) - 1) == 0) {
 			fileIsValid = false;
 		} else {
 			CFileMgr::Seek(fileHandle, 0, 0);
@@ -3683,7 +3594,6 @@ CMenuManager::Process(void)
 
 	if (m_bMenuActive) {
 		UserInput();
-		ProcessFileActions();
 		DMAudio.Service();
 #ifdef USE_TEXTURE_POOL
 		// TODO
@@ -4657,13 +4567,8 @@ CMenuManager::UserInput(void)
 
 		}
 		if (CPad::GetPad(0)->GetBackJustDown() || CPad::GetPad(0)->GetEscapeJustDown()) {
-			if (m_nCurrScreen != MENUPAGE_START_MENU && m_nCurrScreen != MENUPAGE_PAUSE_MENU && m_nCurrScreen != MENUPAGE_CHOOSE_SAVE_SLOT
-				&& m_nCurrScreen != MENUPAGE_SAVE_CHEAT_WARNING && m_nCurrScreen != MENUPAGE_SAVING_IN_PROGRESS
-				&& m_nCurrScreen != MENUPAGE_DELETING_IN_PROGRESS && m_nCurrScreen != MENUPAGE_OUTRO
-#ifdef MISSION_REPLAY
-				&& m_nCurrScreen != MENUPAGE_MISSION_RETRY
-#endif
-				)
+			if (m_nCurrScreen != MENUPAGE_START_MENU && m_nCurrScreen != MENUPAGE_PAUSE_MENU
+				&& m_nCurrScreen != MENUPAGE_OUTRO)
 			{
 				m_bShowMouse = false;
 				goBack = true;
@@ -4968,22 +4873,6 @@ CMenuManager::ProcessUserInput(uint8 goDown, uint8 goUp, uint8 optionSelected, u
 				SaveSettings();
 				break;
 #endif
-			case MENUACTION_CHECKSAVE:
-			{
-				int saveSlot = aScreens[m_nCurrScreen].m_aEntries[m_nCurrOption].m_SaveSlot;
-
-				if (saveSlot >= SAVESLOT_1 && saveSlot <= SAVESLOT_8) {
-					m_nCurrSaveSlot = saveSlot - SAVESLOT_1;
-					if (Slots[m_nCurrSaveSlot] != SLOT_EMPTY && Slots[m_nCurrSaveSlot] != SLOT_CORRUPTED) {
-						if (m_nCurrScreen == MENUPAGE_CHOOSE_LOAD_SLOT) {
-							SwitchToNewScreen(MENUPAGE_LOAD_SLOT_CONFIRM);
-						} else if (m_nCurrScreen == MENUPAGE_CHOOSE_DELETE_SLOT) {
-							SwitchToNewScreen(MENUPAGE_DELETE_SLOT_CONFIRM);
-						}
-					}
-				}
-				break;
-			}
 			case MENUACTION_NEWGAME:
 				DoSettingsBeforeStartingAGame();
 				break;
@@ -4992,9 +4881,6 @@ CMenuManager::ProcessUserInput(uint8 goDown, uint8 goUp, uint8 optionSelected, u
 				CFileLoader::ReloadObjectTypes("GTA3.IDE");
 				break;
 #endif
-			case MENUACTION_RESUME_FROM_SAVEZONE:
-				RequestFrontEndShutDown();
-				break;
 			case MENUACTION_LOADRADIO:
 				if (m_nPrefsAudio3DProviderIndex != NO_AUDIO_PROVIDER) {
 					SwitchToNewScreen(MENUPAGE_SOUND_SETTINGS);
@@ -5002,16 +4888,6 @@ CMenuManager::ProcessUserInput(uint8 goDown, uint8 goUp, uint8 optionSelected, u
 					OutputDebugString("STARTED PLAYING FRONTEND AUDIO TRACK");
 				}
 				break;
-			case MENUACTION_SAVEGAME:
-			{
-				int saveSlot = aScreens[m_nCurrScreen].m_aEntries[m_nCurrOption].m_SaveSlot;
-
-				if (saveSlot >= 2 && saveSlot <= 9) {
-					m_nCurrSaveSlot = m_nCurrOption;
-					SwitchToNewScreen(MENUPAGE_SAVE_OVERWRITE_CONFIRM);
-				}
-				break;
-			}
 			case MENUACTION_RADARMODE:
 				if (++m_PrefsRadarMode > 2)
 					m_PrefsRadarMode = 0;
@@ -5223,18 +5099,8 @@ CMenuManager::ProcessUserInput(uint8 goDown, uint8 goUp, uint8 optionSelected, u
 #endif
 		}
 		ProcessOnOffMenuOptions();
-		if (!goBack) {
-#ifdef FIX_BUGS
-			int saveSlot = aScreens[currScreen].m_aEntries[currOption].m_SaveSlot;
-			if (saveSlot >= SAVESLOT_1 && saveSlot <= SAVESLOT_8 && Slots[currOption] != SLOT_OK)
-#else
-			int saveSlot = aScreens[m_nCurrScreen].m_aEntries[m_nCurrOption].m_SaveSlot;
-			if (saveSlot >= SAVESLOT_1 && saveSlot <= SAVESLOT_8 && Slots[m_nCurrOption] != SLOT_OK)
-#endif
-				DMAudio.PlayFrontEndSound(SOUND_FRONTEND_FAIL, 0);
-			else
-				DMAudio.PlayFrontEndSound(SOUND_FRONTEND_ENTER_OR_ADJUST, 0);
-		}
+		if (!goBack)
+			DMAudio.PlayFrontEndSound(SOUND_FRONTEND_ENTER_OR_ADJUST, 0);
 	}
 
 	if (goBack) {
@@ -5531,18 +5397,7 @@ float CMenuManager::StretchY(float y)
 void
 CMenuManager::CloseDialog(void)
 {
-	// We don't have this on PC GXT :shrug:
-	static wchar* gameSaved = AllocUnicode("Game saved successfully!");
-
-	if (m_bSaveWasSuccessful && DialogTextCmp("FESZ_WR")) {
-		m_bSaveWasSuccessful = false; // i don't know where XBOX resets that
-		m_pDialogText = gameSaved;
-		SetDialogTimer(1000);
-	    ProcessDialogTimer();
-	} else {
-		ToggleDialog(false);
-	}
-
+	ToggleDialog(false);
 }
 
 void
@@ -5650,110 +5505,6 @@ CMenuManager::DrawOverlays(void)
 }
 #endif
 
-void
-CMenuManager::ProcessFileActions()
-{
-	switch (m_nCurrScreen) {
-		case MENUPAGE_LOADING_IN_PROGRESS:
-			if (CheckSlotDataValid(m_nCurrSaveSlot)) {
-#if defined(USE_DEBUG_SCRIPT_LOADER) && !defined(ANDROID)
-				CTheScripts::ScriptToLoad = 0;
-#endif
-
-#ifdef XBOX_MESSAGE_SCREEN
-				SetDialogText("FELD_WR");
-				ToggleDialog(true);
-#else
-				if (!m_bGameNotLoaded)
-					MessageScreen("FELD_WR", true);
-#endif
-				DoSettingsBeforeStartingAGame();
-				m_bWantToLoad = true;
-			} else
-				SwitchToNewScreen(MENUPAGE_NEW_GAME);
-
-			break;
-		case MENUPAGE_DELETING_IN_PROGRESS:
-		{
-			static bool waitedForScreen = false;
-
-			if (waitedForScreen) {
-				bool SlotPopulated = false;
-				if (PcSaveHelper.DeleteSlot(m_nCurrSaveSlot)) {
-					PcSaveHelper.PopulateSlotInfo();
-					SlotPopulated = true;
-				}
-
-				if (SlotPopulated) {
-					SwitchToNewScreen(MENUPAGE_DELETE_SUCCESSFUL);
-				} else {
-					SwitchToNewScreen(MENUPAGE_SAVE_CUSTOM_WARNING);
-					strncpy(aScreens[m_nCurrScreen].m_ScreenName, "FES_DEL", 8);
-					strncpy(aScreens[m_nCurrScreen].m_aEntries[0].m_EntryName, "FES_DEE", 8);
-				}
-				waitedForScreen = false;
-			} else if (m_nMenuFadeAlpha >= 255)
-				waitedForScreen = true;
-
-			break;
-		}
-		case MENUPAGE_SAVING_IN_PROGRESS:
-		{
-#ifdef XBOX_MESSAGE_SCREEN
-			if (m_bDialogOpen && DialogTextCmp("FESZ_WR")) {
-				uint32 startTime = CTimer::GetTimeInMillisecondsPauseMode();
-				int8 SaveSlot = PcSaveHelper.SaveSlot(m_nCurrSaveSlot);
-				PcSaveHelper.PopulateSlotInfo();
-
-				// Original code, but we don't want redundant saving text if it doesn't
-#if 0
-				CTimer::Update(); // not on Xbox, who updates it?
-
-				// it compensates the lag to show saving text always one second... how cute
-				int dialogDur = Max(1, startTime - CTimer::GetTimeInMillisecondsPauseMode() + 1000);
-#else
-				int dialogDur = 1;
-#endif
-
-				if (SaveSlot) {
-					// error. PC code
-					ToggleDialog(false);
-					SwitchToNewScreen(MENUPAGE_SAVE_CUSTOM_WARNING);
-					strncpy(aScreens[m_nCurrScreen].m_ScreenName, "FET_SG", 8);
-					strncpy(aScreens[m_nCurrScreen].m_aEntries[0].m_EntryName, "FES_CMP", 8);
-
-				} else {
-					m_bSaveWasSuccessful = true;
-					SetDialogTimer(dialogDur);
-					ProcessDialogTimer();
-					RequestFrontEndShutDown();
-				}
-
-			} else {
-				SetDialogText("FESZ_WR");
-				ToggleDialog(true);
-			}
-#else
-			static bool waitedForScreen = false;
-
-			if (waitedForScreen) {
-				int8 SaveSlot = PcSaveHelper.SaveSlot(m_nCurrSaveSlot);
-				PcSaveHelper.PopulateSlotInfo();
-				if (SaveSlot) {
-					SwitchToNewScreen(MENUPAGE_SAVE_CUSTOM_WARNING);
-					strncpy(aScreens[m_nCurrScreen].m_ScreenName, "FET_SG", 8);
-					strncpy(aScreens[m_nCurrScreen].m_aEntries[0].m_EntryName, "FES_CMP", 8);
-				} else
-					SwitchToNewScreen(MENUPAGE_SAVE_SUCCESSFUL);
-
-				waitedForScreen = false;
-			} else if (m_nMenuFadeAlpha >= 255)
-				waitedForScreen = true;
-#endif
-			break;
-		}
-	}
-}
 
 void
 CMenuManager::SwitchMenuOnAndOff()
@@ -5762,23 +5513,17 @@ CMenuManager::SwitchMenuOnAndOff()
 
 		// Reminder: You need REGISTER_START_BUTTON defined to make it work.
 		if ((CPad::GetPad(0)->GetStartJustDown() || CPad::GetPad(0)->GetEscapeJustDown())
-			&& (!m_bMenuActive || m_nCurrScreen == MENUPAGE_PAUSE_MENU || m_nCurrScreen == MENUPAGE_CHOOSE_SAVE_SLOT || m_nCurrScreen == MENUPAGE_SAVE_CHEAT_WARNING)
+			&& (!m_bMenuActive || m_nCurrScreen == MENUPAGE_PAUSE_MENU)
 			|| m_bShutDownFrontEndRequested || m_bStartUpFrontEndRequested
 #ifdef REGISTER_START_BUTTON
 			|| CPad::GetPad(0)->GetStartJustDown() && !m_bGameNotLoaded
 #endif
 			) {
 
-			if (m_nCurrScreen != MENUPAGE_LOADING_IN_PROGRESS
-#ifdef XBOX_MESSAGE_SCREEN
-				&& m_nCurrScreen != MENUPAGE_SAVING_IN_PROGRESS
-#endif
-				) {
-				DoRWStuffStartOfFrame(0, 0, 0, 0, 0, 0, 255);
-				DoRWStuffEndOfFrame();
-				DoRWStuffStartOfFrame(0, 0, 0, 0, 0, 0, 255);
-				DoRWStuffEndOfFrame();
-			}
+			DoRWStuffStartOfFrame(0, 0, 0, 0, 0, 0, 255);
+			DoRWStuffEndOfFrame();
+			DoRWStuffStartOfFrame(0, 0, 0, 0, 0, 0, 255);
+			DoRWStuffEndOfFrame();
 
 			if (m_bShutDownFrontEndRequested)
 				m_bMenuActive = false;
@@ -5845,35 +5590,7 @@ CMenuManager::SwitchMenuOnAndOff()
 				UnloadTextures();
 				CTimer::EndUserPause();
 				CTimer::Update();
-				m_OnlySaveMenu = false;
 			}
-		}
-	}
-
-	// Just entered the save/safe zone
-	if (m_bActivateSaveMenu) {
-		DoRWStuffStartOfFrame(0, 0, 0, 0, 0, 0, 255);
-		DoRWStuffEndOfFrame();
-		DoRWStuffStartOfFrame(0, 0, 0, 0, 0, 0, 255);
-		DoRWStuffEndOfFrame();
-		m_bActivateSaveMenu = false;
-		m_bMenuActive = true;
-		m_OnlySaveMenu = true;
-
-		if (_InputMouseNeedsExclusive()) {
-			_InputShutdownMouse();
-			_InputInitialiseMouse(false);
-		}
-
-		Initialise();
-		LoadAllTextures();
-
-		if (CPad::bHasPlayerCheated) {
-			m_nCurrScreen = MENUPAGE_SAVE_CHEAT_WARNING;
-			m_nCurrOption = 0;
-		} else {
-			m_nCurrScreen = MENUPAGE_CHOOSE_SAVE_SLOT;
-			m_nCurrOption = 8;
 		}
 	}
 
@@ -5905,24 +5622,20 @@ CMenuManager::UnloadTextures()
 
 		CTxdStore::RemoveTxd(frontend);
 
-		if (!m_OnlySaveMenu) {
-			int frontend2 = CTxdStore::FindTxdSlot("frontend2");
-			for (int i = 3; i < NUM_MENU_SPRITES; ++i)
-				m_aFrontEndSprites[i].Delete();
+		int frontend2 = CTxdStore::FindTxdSlot("frontend2");
+		for (int i = 3; i < NUM_MENU_SPRITES; ++i)
+			m_aFrontEndSprites[i].Delete();
 
-			CTxdStore::RemoveTxd(frontend2);
+		CTxdStore::RemoveTxd(frontend2);
 
 #ifdef GAMEPAD_MENU
-			// Unload controller txd
-			int frontend_controller = CTxdStore::FindTxdSlot("frontend_controller");
-			if (frontend_controller != -1)
-				CTxdStore::RemoveTxd(frontend_controller);
+		// Unload controller txd
+		int frontend_controller = CTxdStore::FindTxdSlot("frontend_controller");
+		if (frontend_controller != -1)
+			CTxdStore::RemoveTxd(frontend_controller);
 #endif
-		}
-
 		m_bSpritesLoaded = false;
 	}
-	m_OnlySaveMenu = false;
 	CUserDisplay::PlaceName.ProcessAfterFrontEndShutDown();
 }
 

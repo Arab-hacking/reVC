@@ -53,7 +53,6 @@
 #include "VehicleNodeAtomic.h"
 #include "Bike.h"
 #include "Wanted.h"
-#include "SaveBuf.h"
 
 #if defined ANDROID
 int16 g_usLastProcessedModelIndexAutomobile = 0;
@@ -73,12 +72,6 @@ RwObject *GetCurrentAtomicObjectCB(RwObject *object, void *data);
 
 bool CAutomobile::m_sAllTaxiLights;
 
-const uint32 CAutomobile::nSaveStructSize =
-#ifdef COMPATIBLE_SAVES
-	1500;
-#else
-	sizeof(CAutomobile);
-#endif
 
 CAutomobile::CAutomobile(int32 id, uint8 CreatedBy)
  : CVehicle(CreatedBy)
@@ -6006,24 +5999,6 @@ CAutomobile::KnockPedOutCar(eWeaponType weapon, uint16 door, CPed *ped)
 	return ped;
 }
 
-#ifdef COMPATIBLE_SAVES
-void
-CAutomobile::Save(uint8*& buf)
-{
-	CVehicle::Save(buf);
-	WriteSaveBuf(buf, Damage);
-	ZeroSaveBuf(buf, 1500 - 672 - sizeof(CDamageManager));
-}
-
-void
-CAutomobile::Load(uint8*& buf)
-{
-	CVehicle::Load(buf);
-	ReadSaveBuf(&Damage, buf);
-	SkipSaveBuf(buf, 1500 - 672 - sizeof(CDamageManager));
-	SetupDamageAfterLoad();
-}
-#endif
 
 // ---------------------------------------------------------------------------
 // SA nitrous (CAutomobile::NitrousControl / DoNitroEffect / StopNitroEffect)

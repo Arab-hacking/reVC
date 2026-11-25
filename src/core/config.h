@@ -205,7 +205,6 @@ enum Config {
 #	define GTA_PC_CONTROLS	// enables keyboard and mouse. currently GTA_PC and a few other defines will not work without this
 #elif defined GTA_XBOX
 #elif defined GTA_MOBILE
-#	define MISSION_REPLAY
 #	define SIMPLER_MISSIONS
 #endif
 
@@ -278,8 +277,6 @@ enum Config {
 	#undef DRAW_GAME_VERSION_TEXT
 #else
 	// not in master builds
-	#define VALIDATE_SAVE_SIZE
-
 	#define DEBUGMENU
 #endif
 
@@ -294,8 +291,6 @@ enum Config {
 
 #define FIX_BUGS		// fixes bugs that we've came across during reversing. You can undefine this only on release builds.
 #define MORE_LANGUAGES		// Add more translations to the game
-#define COMPATIBLE_SAVES // this allows changing structs while keeping saves compatible, and keeps saves compatible between platforms
-#define FIX_INCOMPATIBLE_SAVES // try to fix incompatible saves, requires COMPATIBLE_SAVES
 #define LOAD_INI_SETTINGS // as the name suggests. fundamental for CUSTOM_FRONTEND_OPTIONS
 
 #define NO_MOVIES	// add option to disable intro videos
@@ -401,7 +396,7 @@ enum Config {
 #undef PC_WATER
 #define WATER_CHEATS
 
-//#define USE_CUTSCENE_SHADOW_FOR_PED // requires COMPATIBLE_SAVES
+//#define USE_CUTSCENE_SHADOW_FOR_PED
 //#define DISABLE_CUTSCENE_SHADOWS
 
 // Pad
@@ -460,9 +455,7 @@ enum Config {
 static_assert(false, "SUPPORT_XBOX_SCRIPT and SUPPORT_MOBILE_SCRIPT are mutually exclusive");
 #endif
 #ifdef PC_MENU
-#define MISSION_REPLAY // mobile feature
 //#define SIMPLER_MISSIONS // apply simplifications from mobile
-#define USE_MISSION_REPLAY_OVERRIDE_FOR_NON_MOBILE_SCRIPT
 #endif
 #define USE_ADVANCED_SCRIPT_DEBUG_OUTPUT
 #define SCRIPT_LOG_FILE_LEVEL 0 // 0 == no log, 1 == overwrite every frame, 2 == full log
@@ -478,10 +471,6 @@ static_assert(false, "SUPPORT_XBOX_SCRIPT and SUPPORT_MOBILE_SCRIPT are mutually
 #ifdef MASTER
 #undef USE_ADVANCED_SCRIPT_DEBUG_OUTPUT
 #undef USE_BASIC_SCRIPT_DEBUG_OUTPUT
-#endif
-
-#ifndef MISSION_REPLAY
-#undef USE_MISSION_REPLAY_OVERRIDE_FOR_NON_MOBILE_SCRIPT
 #endif
 
 // Replay
@@ -542,11 +531,6 @@ static_assert(false, "SUPPORT_XBOX_SCRIPT and SUPPORT_MOBILE_SCRIPT are mutually
 	#undef NO_ISLAND_LOADING
 	#undef PS2_AUDIO_CHANNELS
 	#undef EXTENDED_OFFSCREEN_DESPAWN_RANGE
-#endif
-
-// if these defines are enabled saves are not vanilla compatible without COMPATIBLE_SAVES
-#ifndef COMPATIBLE_SAVES
-#undef USE_CUTSCENE_SHADOW_FOR_PED
 #endif
 
 #ifdef GTA_HANDHELD

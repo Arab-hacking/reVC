@@ -32,8 +32,6 @@ public:
 	static void RemoveShortCutDropOffPointForMission();
 	static void AfterDeathArrestSetUpShortCutTaxi();
 
-	static void Save(uint8*, uint32*);
-	static void Load(uint8*, uint32);
 
 	static uint8 ActivePlayers;
 	static uint8 ShortCutState;

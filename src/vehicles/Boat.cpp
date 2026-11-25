@@ -28,7 +28,6 @@
 #include "Record.h"
 #include "Shadows.h"
 #include "Wanted.h"
-#include "SaveBuf.h"
 #include "ControllerConfig.h"
 
 #define INVALID_ORIENTATION (-9999.99f)
@@ -51,12 +50,6 @@ static const float BOAT_STEER_DAMP_BASE = 0.985f;
 
 CBoat *CBoat::apFrameWakeGeneratingBoats[4];
 
-const uint32 CBoat::nSaveStructSize =
-#ifdef COMPATIBLE_SAVES
-	1216;
-#else
-	sizeof(CBoat);
-#endif
 
 CBoat::CBoat(int mi, uint8 owner) : CVehicle(owner)
 {
@@ -1689,18 +1682,3 @@ CBoat::DoDriveByShootings(void)
 	}
 }
 
-#ifdef COMPATIBLE_SAVES
-void
-CBoat::Save(uint8*& buf)
-{
-	CVehicle::Save(buf);
-	ZeroSaveBuf(buf, 1216 - 672);
-}
-
-void
-CBoat::Load(uint8*& buf)
-{
-	CVehicle::Load(buf);
-	SkipSaveBuf(buf, 1216 - 672);
-}
-#endif

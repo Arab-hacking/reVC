@@ -276,11 +276,6 @@ public:
 	void CloseAllDoors(void);
 	CPed *KnockPedOutCar(eWeaponType weapon, uint16 door, CPed *ped);
 
-#ifdef COMPATIBLE_SAVES
-	virtual void Save(uint8*& buf);
-	virtual void Load(uint8*& buf);
-#endif
-	static const uint32 nSaveStructSize;
 
 	static void SetAllTaxiLights(bool set);
 };

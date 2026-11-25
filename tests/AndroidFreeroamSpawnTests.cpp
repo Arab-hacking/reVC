@@ -41,7 +41,6 @@
 #include "AnimManager.h"
 #include "cHandlingDataMgr.h"
 #include "Game.h"
-#include "SaveBuf.h"
 
 // ---- Controllable test world state ----
 static bool gReplacesNativeMap = true;

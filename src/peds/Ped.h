@@ -1315,10 +1315,6 @@ public:
 	void DebugRenderClosePedText();
 #endif
 
-#ifdef COMPATIBLE_SAVES
-	virtual void Save(uint8*& buf);
-	virtual void Load(uint8*& buf);
-#endif
 };
 
 void FinishTalkingOnMobileCB(CAnimBlendAssociation* assoc, void* arg);

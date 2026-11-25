@@ -19,7 +19,6 @@
 #include "ZoneCull.h"
 #include "Weather.h"
 #include "DMAudio.h"
-#include "GenericGameStorage.h"
 
 #ifdef GTA_PS2
 #include <libcdvd.h>
@@ -99,10 +98,8 @@ cMusicManager::cMusicManager()
 cMusicManager::~cMusicManager() {}
 
 void
-cMusicManager::ResetMusicAfterReload()
+cMusicManager::ResetMusicAfterRestart()
 {
-	float afRadioTime[NUM_RADIOS];
-
 	m_bRadioSetByScript = FALSE;
 	m_nRadioStationScript = 0;
 	m_nRadioPosition = -1;
@@ -129,28 +126,6 @@ cMusicManager::ResetMusicAfterReload()
 	m_nCurrentVolume = 0;
 	m_nMaxVolume = 0;
 
-	bool8 bRadioWasEverListened = FALSE;
-
-	for (int i = 0; i < NUM_RADIOS; i++) {
-		afRadioTime[i] = CStats::GetFavoriteRadioStationList(i);
-		if (!bRadioWasEverListened && afRadioTime[i] != 0.0f)
-			bRadioWasEverListened = TRUE;
-	}
-
-	if (!bRadioWasEverListened) return;
-
-	for (int i = 0; i < NUM_RADIOS; i++) {
-		aListenTimeArray[i] = afRadioTime[i];
-		int32 trackPos = GetSavedRadioStationPosition(i);
-		if (trackPos != -1) {
-			if (m_aTracks[i].m_nLength > 0 && trackPos > (int32)m_aTracks[i].m_nLength) {
-				debug("Radio Track %d saved position is %d, Length is only %d\n", i, trackPos, m_aTracks[i].m_nLength);
-				trackPos %= m_aTracks[i].m_nLength;
-			}
-			m_aTracks[i].m_nPosition = trackPos;
-			m_aTracks[i].m_nLastPosCheckTimer = CTimer::GetTimeInMillisecondsPauseMode();
-		}
-	}
 }
 
 void

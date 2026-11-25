@@ -101,11 +101,6 @@ public:
 	static float IsVertexAffectedByWake(CVector vecVertex, CBoat *pBoat);
 	static void FillBoatList(void);
 
-#ifdef COMPATIBLE_SAVES
-	virtual void Save(uint8*& buf);
-	virtual void Load(uint8*& buf);
-#endif
-	static const uint32 nSaveStructSize;
 
 	// ---- State API (see the block in Vehicle.h) -------------------------
 	//

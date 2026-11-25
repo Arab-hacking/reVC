@@ -1782,51 +1782,7 @@ CPathFind::TestCoorsCloseness(CVector target, uint8 type, CVector start)
 #endif
 }
 
-void
-CPathFind::Save(uint8 *buf, uint32 *size)
-{
-	int i;
-	int n = m_numPathNodes/8 + 1;
 
-	*size = 2*n;
-
-	for(i = 0; i < m_numPathNodes; i++)
-		if(m_pathNodes[i].bDisabled)
-			buf[i/8] |= 1 << i%8;
-		else
-			buf[i/8] &= ~(1 << i%8);
-
-	for(i = 0; i < m_numPathNodes; i++)
-		if(m_pathNodes[i].bBetweenLevels)
-			buf[i/8 + n] |= 1 << i%8;
-		else
-			buf[i/8 + n] &= ~(1 << i%8);
-}
-
-void
-CPathFind::Load(uint8 *buf, uint32 size)
-{
-	int i;
-	int n = m_numPathNodes/8 + 1;
-
-	for(i = 0; i < m_numPathNodes; i++)
-		if(buf[i/8] & (1 << i%8))
-			m_pathNodes[i].bDisabled = true;
-		else
-			m_pathNodes[i].bDisabled = false;
-
-	for(i = 0; i < m_numPathNodes; i++)
-		if(buf[i/8 + n] & (1 << i%8))
-			m_pathNodes[i].bBetweenLevels = true;
-		else
-			m_pathNodes[i].bBetweenLevels = false;
-
-#ifdef SECUROM
-	// if pirated game
-	for(i = 0; i < m_numPathNodes; i++)
-		m_pathNodes[i].bDisabled = true;
-#endif
-}
 
 void
 CPathFind::DisplayPathData(void)

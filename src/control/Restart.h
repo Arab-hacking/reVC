@@ -15,8 +15,6 @@ public:
 	static void Initialise();
 	static void CancelOverrideRestart();
 
-	static void LoadAllRestartPoints(uint8 *buf, uint32 size);
-	static void SaveAllRestartPoints(uint8 *buf, uint32 *size);
 
 	static uint8 OverrideHospitalLevel;
 	static uint8 OverridePoliceStationLevel;

@@ -266,8 +266,6 @@ public:
 	void FindNextNodeWandering(uint8, CVector, CPathNode**, CPathNode**, uint8, uint8*);
 	void DoPathSearch(uint8 type, CVector start, int32 startNodeId, CVector target, CPathNode **nodes, int16 *numNodes, int16 maxNumNodes, CVehicle *vehicle, float *dist, float distLimit, int32 forcedTargetNode);
 	bool TestCoorsCloseness(CVector target, uint8 type, CVector start);
-	void Save(uint8 *buf, uint32 *size);
-	void Load(uint8 *buf, uint32 size);
 
 	static CVector TakeWidthIntoAccountForWandering(CPathNode*, uint16);
 	static void TakeWidthIntoAccountForCoors(CPathNode*, CPathNode*, uint16, float*, float*);
@@ -283,7 +281,6 @@ public:
 	void DisplayPathData(void);
 
 	// Following methods are present on mobile but are unused. TODO: implement them
-	void SavePathFindData(void);
 	void ComputeRoute(uint8, const CVector&, const CVector&, CRoute<CPathNode*>&);
 	void RecordNodesClosestToCoors(CVector, uint8, int, CPathNode**, float, bool, bool, bool);
 	void RecordNodesInCircle(const CVector&, float, uint8, int, CPathNode**, bool, bool, bool, bool);

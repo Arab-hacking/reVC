@@ -35,7 +35,6 @@
 #include "frontendoption.h"
 #include "GameLogic.h"
 #include "Garages.h"
-#include "GenericGameStorage.h"
 #include "Glass.h"
 #include "cHandlingDataMgr.h"
 #include "Heli.h"
@@ -44,7 +43,6 @@
 #include "Lights.h"
 #include "MBlur.h"
 #include "Messages.h"
-#include "MemoryCard.h"
 #include "MemoryHeap.h"
 #include "Pad.h"
 #include "NoClip.h"
@@ -652,14 +650,9 @@ bool CGame::Initialise(void)
 	CReplay::Init();
 
 	LoadingScreen("Loading the Game", "Start script", nil);
-#ifdef PS2_MENU
-	if ( !TheMemoryCard.m_bWantToLoad )
-#endif
-	{
-		CTheScripts::SpawnInitialPlayer();
-		CTheScripts::Process();
-		TheCamera.Process();
-	}
+	CTheScripts::SpawnInitialPlayer();
+	CTheScripts::Process();
+	TheCamera.Process();
 
 	LoadingScreen("Loading the Game", "Load scene", nil);
 	CCollision::ms_collisionInMemory = currLevel;
@@ -765,13 +758,8 @@ void CGame::ReInitGameObjectVariables(void)
 {
 	CNoClip::Reset();
 	CGameLogic::InitAtStartOfGame();
-#ifdef PS2_MENU
-	if ( !TheMemoryCard.m_bWantToLoad )
-#endif
-	{
-		TheCamera.Init();
-		TheCamera.SetRwCamera(Scene.camera);
-	}
+	TheCamera.Init();
+	TheCamera.SetRwCamera(Scene.camera);
 	CDebug::DebugInitTextBuffer();
 	CWeather::Init();
 	CUserDisplay::Init();
@@ -810,8 +798,7 @@ void CGame::ReInitGameObjectVariables(void)
 
 	PUSH_MEMID(MEMID_SCRIPT);
 #if defined(ANDROID) && defined(USE_DEBUG_SCRIPT_LOADER)
-	if ( !FrontEndMenuManager.m_bWantToLoad )
-		CTheScripts::ScriptToLoad = 1;
+	CTheScripts::ScriptToLoad = 1;
 #endif
 	CTheScripts::Init();
 	CGangs::Initialise();
@@ -833,19 +820,12 @@ void CGame::ReInitGameObjectVariables(void)
 	CScriptPaths::Init();
 	CParticle::ReloadConfig();
 
-#ifdef PS2_MENU
-	if ( !TheMemoryCard.m_bWantToLoad )
-#else
-	if ( !FrontEndMenuManager.m_bWantToLoad )
-#endif
-	{
-		CCranes::InitCranes();
-		CTheScripts::SpawnInitialPlayer();
-		CTheScripts::Process();
-		TheCamera.Process();
-		CTrain::InitTrains();
-		CPlane::InitPlanes();
-	}
+	CCranes::InitCranes();
+	CTheScripts::SpawnInitialPlayer();
+	CTheScripts::Process();
+	TheCamera.Process();
+	CTrain::InitTrains();
+	CPlane::InitPlanes();
 	
 	for (int32 i = 0; i < MAX_PADS; i++)
 		CPad::GetPad(i)->Clear(true);
@@ -892,67 +872,9 @@ void CGame::InitialiseWhenRestarting(void)
 	CTimer::Initialise();
 	CSprite2d::SetRecipNearClip();
 
-	if (b_FoundRecentSavedGameWantToLoad || FrontEndMenuManager.m_bWantToLoad)
-	{
-		LoadSplash("splash1");
-#ifndef XBOX_MESSAGE_SCREEN
-		if (FrontEndMenuManager.m_bWantToLoad)
-			FrontEndMenuManager.MessageScreen("FELD_WR", true);
-#endif
-	}
-
-	b_FoundRecentSavedGameWantToLoad = false;
-	
 	TheCamera.Init();
-	
-	if ( FrontEndMenuManager.m_bWantToLoad == true )
-	{
-#ifdef XBOX_MESSAGE_SCREEN
-		FrontEndMenuManager.SetDialogTimer(1000);
-		DoRWStuffStartOfFrame(0, 0, 0, 0, 0, 0, 0);
-		CSprite2d::InitPerFrame();
-		CFont::InitPerFrame();
-		FrontEndMenuManager.DrawOverlays();
-		DoRWStuffEndOfFrame();
-#endif
-		RestoreForStartLoad();
-	}
-	
+
 	ReInitGameObjectVariables();
-	
-	if ( FrontEndMenuManager.m_bWantToLoad == true )
-	{
-		FrontEndMenuManager.m_bWantToLoad = false;
-		InitRadioStationPositionList();
-		if ( GenericLoad() == true )
-		{
-			DMAudio.ResetTimers(CTimer::GetTimeInMilliseconds());
-			CTrain::InitTrains();
-			CPlane::InitPlanes();
-		}
-		else
-		{
-			REVC_LOG_ERROR("Saved game could not be loaded (error=%d); restarting", PcSaveHelper.nErrorCode);
-			for ( int32 i = 0; i < 50; i++ )
-			{
-				HandleExit();
-				FrontEndMenuManager.MessageScreen("FED_LFL", true); // Loading save game has failed. The game will restart now. 
-			}
-			
-			TheCamera.SetFadeColour(0, 0, 0);
-			ShutDownForRestart();
-			CTimer::Stop();
-			CTimer::Initialise();
-			FrontEndMenuManager.m_bWantToLoad = false;
-			currLevel = LEVEL_GENERIC;
-			TheCamera.Init();
-			ReInitGameObjectVariables();
-			CCollision::SortOutCollisionAfterLoad();
-		}
-#ifdef XBOX_MESSAGE_SCREEN
-		FrontEndMenuManager.ProcessDialogTimer();
-#endif
-	}
 	
 	CTimer::Update();
 	

@@ -43,8 +43,6 @@ class CSetPieces
 public:
 	static void Init(void);
 	static void AddOne(uint8 type, CVector2D, CVector2D, CVector2D, CVector2D, CVector2D, CVector2D);
-	static void Save(uint8*, uint32*);
-	static void Load(uint8*, uint32);
 	static void Update(void);
 };
 

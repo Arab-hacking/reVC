@@ -326,7 +326,6 @@ void __fastcall OS_ApplicationEvent(OSEventType type, void *data)
             break;
 
         case OSET_Pause:
-            SaveGameForPause(eSaveTypes::eExitSave, 0LL);
             CTimer::StartUserPause();
             if ( !CPad::GetPad(0)->DisablePlayerControls
                  && !gMobileMenu.screenStack.numEntries

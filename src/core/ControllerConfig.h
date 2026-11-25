@@ -1,6 +1,12 @@
 #ifndef __GTA_CONTROLLERCONFIG_H__
 #define __GTA_CONTROLLERCONFIG_H__
 
+// First line of a settings file that was created but never fully written.
+// The gta_vc.set loaders reject a file starting with this marker instead of
+// reading half-written controller bindings out of it.
+const char SettingsFileIncompleteMarker[] = "THIS FILE IS NOT VALID YET";
+
+
 #ifdef GTA_PC_CONTROLS
 
 #if defined RW_D3D9 || defined RWLIBS

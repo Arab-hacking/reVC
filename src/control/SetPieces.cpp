@@ -4,14 +4,12 @@
 #include "Automobile.h"
 #include "CarAI.h"
 #include "CopPed.h"
-#include "GenericGameStorage.h"
 #include "PlayerPed.h"
 #include "Timer.h"
 #include "Vehicle.h"
 #include "Wanted.h"
 #include "World.h"
 #include "VarConsole.h"
-#include "SaveBuf.h"
 
 #define TIME_BETWEEN_SETPIECE_SPAWNS 20000
 
@@ -55,24 +53,7 @@ void CSetPieces::Update(void)
 #endif // !MASTER
 }
 
-void CSetPieces::Save(uint8* buf, uint32* size)
-{
-INITSAVEBUF
-	WriteSaveBuf(buf, NumSetPieces);
-	for (int i = 0; i < NUM_SETPIECES; i++)
-		WriteSaveBuf(buf, aSetPieces[i]);
-	*size = sizeof(NumSetPieces) + NUM_SETPIECES * sizeof(CSetPiece);
-VALIDATESAVEBUF(*size)
-}
 
-void CSetPieces::Load(uint8* buf, uint32 size)
-{
-INITSAVEBUF
-	ReadSaveBuf(&NumSetPieces, buf);
-	for (int i = 0; i < NUM_SETPIECES; i++)
-		ReadSaveBuf(&aSetPieces[i], buf);
-VALIDATESAVEBUF(size)
-}
 
 void CSetPiece::Update(void)
 {

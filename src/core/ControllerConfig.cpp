@@ -15,7 +15,6 @@
 #include "World.h"
 #include "ModelIndices.h"
 #include "Camera.h"
-#include "GenericGameStorage.h"
 
 #ifdef GTA_PC_CONTROLS
 
@@ -189,7 +188,7 @@ void CControllerConfigManager::LoadSettings(int32 file)
 		char buff[29];
 		CFileMgr::Read(file, buff, sizeof(buff));
 
-		if (!strncmp(buff, TopLineEmptyFile, sizeof(TopLineEmptyFile)-1))
+		if (!strncmp(buff, SettingsFileIncompleteMarker, sizeof(SettingsFileIncompleteMarker)-1))
 			bValid = false;
 		else {
 			CFileMgr::Seek(file, 0, 0);

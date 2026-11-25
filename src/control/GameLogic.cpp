@@ -29,7 +29,6 @@
 #include "Automobile.h"
 #include "MBlur.h"
 #include "screendroplets.h"
-#include "SaveBuf.h"
 
 uint8 CGameLogic::ActivePlayers;
 uint8 CGameLogic::ShortCutState;
@@ -565,35 +564,4 @@ CGameLogic::AfterDeathArrestSetUpShortCutTaxi()
 	MissionDropOffReadyToBeUsed = false;
 }
 
-void
-CGameLogic::Save(uint8* buf, uint32* size)
-{
-INITSAVEBUF
-	WriteSaveBuf(buf, NumAfterDeathStartPoints);
-	*size += sizeof(NumAfterDeathStartPoints);
-	for (int i = 0; i < NUM_SHORTCUT_START_POINTS; i++) {
-		WriteSaveBuf(buf, AfterDeathStartPoints[i].x);
-		*size += sizeof(AfterDeathStartPoints[i].x);
-		WriteSaveBuf(buf, AfterDeathStartPoints[i].y);
-		*size += sizeof(AfterDeathStartPoints[i].y);
-		WriteSaveBuf(buf, AfterDeathStartPoints[i].z);
-		*size += sizeof(AfterDeathStartPoints[i].z);
-		WriteSaveBuf(buf, AfterDeathStartPointOrientation[i]);
-		*size += sizeof(AfterDeathStartPointOrientation[i]);
-	}
-VALIDATESAVEBUF(*size)
-}
 
-void
-CGameLogic::Load(uint8* buf, uint32 size)
-{
-INITSAVEBUF
-	ReadSaveBuf(&NumAfterDeathStartPoints, buf);
-	for (int i = 0; i < NUM_SHORTCUT_START_POINTS; i++) {
-		ReadSaveBuf(&AfterDeathStartPoints[i].x, buf);
-		ReadSaveBuf(&AfterDeathStartPoints[i].y, buf);
-		ReadSaveBuf(&AfterDeathStartPoints[i].z, buf);
-		ReadSaveBuf(&AfterDeathStartPointOrientation[i], buf);
-	}
-VALIDATESAVEBUF(size)
-}

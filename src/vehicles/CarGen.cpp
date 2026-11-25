@@ -19,7 +19,6 @@
 #include "Pools.h"
 #include "Population.h"
 #include "Replay.h"
-#include "SaveBuf.h"
 #include "Streaming.h"
 #include "Timer.h"
 #include "Train.h"
@@ -519,76 +518,5 @@ CTheCarGenerators::GetIndex(CCarGenerator *pCarGen)
 // written, and each is preceded by its slot index so loading can restore it in
 // place. The VC save format wrote a fixed-size array plus a live counter; the
 // SA format is index-tagged and variable length, which is what is written here.
-void
-CTheCarGenerators::SaveAllCarGenerators(uint8 *buffer, uint32 *size)
-{
-	uint32 numToSave = 0;
-	for(int32 i = 0; i < NUM_CAR_GENERATORS; i++){
-		if(CarGeneratorArray[i].m_bIsUsed && CarGeneratorArray[i].m_nIplId == 0)
-			numToSave++;
-	}
-
-	// header + count + counters + (index + generator) * numToSave + plates
-	const uint32 platesSize = sizeof(m_SpecialPlateHandler.m_nCount)
-		+ CSpecialPlateHandler::PLATES_COUNT * sizeof(tCarGenPlateText);
-	*size = SAVE_HEADER_SIZE
-		+ sizeof(uint32)							// numToSave
-		+ sizeof(ProcessCounter)
-		+ sizeof(GenerateEvenIfPlayerIsCloseCounter)
-		+ numToSave * (sizeof(uint16) + sizeof(CCarGenerator))
-		+ platesSize;
-
-	INITSAVEBUF
-	WriteSaveHeader(buffer, 'C','G','N','\0', *size - SAVE_HEADER_SIZE);
-
-	WriteSaveBuf(buffer, numToSave);
-	WriteSaveBuf(buffer, ProcessCounter);
-	WriteSaveBuf(buffer, GenerateEvenIfPlayerIsCloseCounter);
-
-	for(uint16 i = 0; i < NUM_CAR_GENERATORS; i++){
-		CCarGenerator &carGen = CarGeneratorArray[i];
-		if(carGen.m_bIsUsed && carGen.m_nIplId == 0){
-			WriteSaveBuf(buffer, i);
-			WriteSaveBuf(buffer, carGen);
-		}
-	}
-
-	WriteSaveBuf(buffer, m_SpecialPlateHandler.m_nCount);
-	for(int32 i = 0; i < CSpecialPlateHandler::PLATES_COUNT; i++)
-		WriteSaveBuf(buffer, m_SpecialPlateHandler.m_plateTextEntries[i]);
-
-	VALIDATESAVEBUF(*size)
-}
 
 // SA CTheCarGenerators::Load (0x5D39B0) in reVC's save-buffer form.
-void
-CTheCarGenerators::LoadAllCarGenerators(uint8 *buffer, uint32 size)
-{
-	Init();
-
-	INITSAVEBUF
-	CheckSaveHeader(buffer, 'C','G','N','\0', size - SAVE_HEADER_SIZE);
-
-	uint32 numToLoad;
-	ReadSaveBuf(&numToLoad, buffer);
-	ReadSaveBuf(&ProcessCounter, buffer);
-	ReadSaveBuf(&GenerateEvenIfPlayerIsCloseCounter, buffer);
-
-	for(uint32 i = 0; i < numToLoad; i++){
-		uint16 carGenIndex;
-		ReadSaveBuf(&carGenIndex, buffer);
-		if(carGenIndex < NUM_CAR_GENERATORS){
-			ReadSaveBuf(&CarGeneratorArray[carGenIndex], buffer);
-			NumOfCarGenerators++;
-		}else{
-			// Skip the entry but keep the stream aligned.
-			SkipSaveBuf(buffer, sizeof(CCarGenerator));
-		}
-	}
-
-	ReadSaveBuf(&m_SpecialPlateHandler.m_nCount, buffer);
-	for(int32 i = 0; i < CSpecialPlateHandler::PLATES_COUNT; i++)
-		ReadSaveBuf(&m_SpecialPlateHandler.m_plateTextEntries[i], buffer);
-
-	VALIDATESAVEBUF(size)
-}

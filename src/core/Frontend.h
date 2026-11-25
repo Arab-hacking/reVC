@@ -183,21 +183,6 @@ enum eMenuSprites
 	NUM_MENU_SPRITES
 };
 
-enum eSaveSlot
-{
-	SAVESLOT_NONE,
-	SAVESLOT_0,
-	SAVESLOT_1,
-	SAVESLOT_2,
-	SAVESLOT_3,
-	SAVESLOT_4,
-	SAVESLOT_5,
-	SAVESLOT_6,
-	SAVESLOT_7,
-	SAVESLOT_8,
-	SAVESLOT_LABEL = 36
-};
-
 enum eMenuScreen
 {
 	MENUPAGE_DISABLED = -1,
@@ -209,32 +194,15 @@ enum eMenuScreen
 	MENUPAGE_LANGUAGE_SETTINGS = 5,
 	MENUPAGE_MAP = 6,
 	MENUPAGE_NEW_GAME_RELOAD = 7,
-	MENUPAGE_CHOOSE_LOAD_SLOT = 8,
-	MENUPAGE_CHOOSE_DELETE_SLOT = 9,
-	MENUPAGE_LOAD_SLOT_CONFIRM = 10,
-	MENUPAGE_DELETE_SLOT_CONFIRM = 11,
-	MENUPAGE_LOADING_IN_PROGRESS = 12,
-	MENUPAGE_DELETING_IN_PROGRESS = 13,
-	MENUPAGE_DELETE_SUCCESSFUL = 14,
-	MENUPAGE_CHOOSE_SAVE_SLOT = 15,
-	MENUPAGE_SAVE_OVERWRITE_CONFIRM = 16,
-	MENUPAGE_SAVING_IN_PROGRESS = 17,
-	MENUPAGE_SAVE_SUCCESSFUL = 18,
-	MENUPAGE_SAVE_CUSTOM_WARNING = 19,
-	MENUPAGE_SAVE_CHEAT_WARNING = 20,
-	MENUPAGE_SKIN_SELECT = 21,
-	MENUPAGE_SAVE_UNUSED = 22,
-	MENUPAGE_SAVE_FAILED = 23,
-	MENUPAGE_SAVE_FAILED_2 = 24,
-	MENUPAGE_LOAD_FAILED = 25,
-	MENUPAGE_CONTROLLER_PC = 26,
-	MENUPAGE_OPTIONS = 27,
-	MENUPAGE_EXIT = 28,
-	MENUPAGE_START_MENU = 29,
-	MENUPAGE_KEYBOARD_CONTROLS = 30,
-	MENUPAGE_MOUSE_CONTROLS = 31,
-	MENUPAGE_PAUSE_MENU = 32,
-	MENUPAGE_NONE = 33, // Then chooses main menu or pause menu 
+	MENUPAGE_SKIN_SELECT = 8,
+	MENUPAGE_CONTROLLER_PC = 9,
+	MENUPAGE_OPTIONS = 10,
+	MENUPAGE_EXIT = 11,
+	MENUPAGE_START_MENU = 12,
+	MENUPAGE_KEYBOARD_CONTROLS = 13,
+	MENUPAGE_MOUSE_CONTROLS = 14,
+	MENUPAGE_PAUSE_MENU = 15,
+	MENUPAGE_NONE = 16, // Then chooses main menu or pause menu 
 #ifdef GAMEPAD_MENU
 	MENUPAGE_CONTROLLER_SETTINGS,
 #endif
@@ -256,10 +224,6 @@ enum eMenuScreen
 	MENUPAGE_DETECT_JOYSTICK,
 #endif
 #endif
-#ifdef MISSION_REPLAY
-	MENUPAGE_MISSION_RETRY,
-#endif
-
 	MENUPAGE_OUTRO, // Originally 34, but CFO needs last screen to be empty to count number of menu pages
 	MENUPAGES
 };
@@ -295,14 +259,10 @@ enum eMenuAction
 #ifdef MORE_LANGUAGES
 	MENUACTION_LANG_POR,
 #endif
-	MENUACTION_POPULATESLOTS_CHANGEMENU,
-	MENUACTION_CHECKSAVE,
 	MENUACTION_NEWGAME,
-	MENUACTION_RESUME_FROM_SAVEZONE,
 	MENUACTION_RELOADIDE,
 	MENUACTION_SETDBGFLAG,
 	MENUACTION_LOADRADIO,
-	MENUACTION_SAVEGAME,
 	MENUACTION_SWITCHBIGWHITEDEBUGLIGHT,
 	MENUACTION_COLLISIONPOLYS,
 	MENUACTION_LEGENDS,
@@ -331,10 +291,6 @@ enum eMenuAction
 #ifdef GAMEPAD_MENU
 	MENUACTION_CTRLVIBRATION,
 	MENUACTION_CTRLCONFIG,
-#endif
-#ifdef MISSION_REPLAY
-	MENUACTION_REJECT_RETRY,
-	MENUACTION_UNK114,
 #endif
 // TEST GRAPHICS (analysis: mobile pipeline settings)
 	MENUACTION_TEST_SHADOW_QUALITY,
@@ -450,7 +406,6 @@ struct CMenuScreen
 	{
 		int32 m_Action; // eMenuAction
 		char m_EntryName[8];
-		int32 m_SaveSlot; // eSaveSlot
 		int32 m_TargetMenu; // eMenuScreen
 		uint16 m_X;
 		uint16 m_Y;
@@ -553,7 +508,6 @@ struct CMenuScreenCustom
 				CCFODynamic *m_CFODynamic;
 				CCFOSlider *m_CFOSlider;
 			};
-			int32 m_SaveSlot; // eSaveSlot
 			int32 m_TargetMenu; // eMenuScreen
 		};
 		uint16 m_X;
@@ -672,8 +626,6 @@ public:
 	bool m_bMenuActive;
 	bool m_bWantToRestart;
 	bool m_bFirstTime;
-	bool m_bActivateSaveMenu;
-	bool m_bWantToLoad;
 	float m_fMapSize;
 	float m_fMapCenterX;
 	float m_fMapCenterY;
@@ -694,7 +646,6 @@ public:
 	int32 *pEditString;
 	uint8 field_74[4];
 	int32 *pControlEdit;
-	bool m_OnlySaveMenu;
 	int32 m_firstStartCounter;
 	CSprite2d m_aFrontEndSprites[NUM_MENU_SPRITES];
 	bool m_bSpritesLoaded;
@@ -702,7 +653,6 @@ public:
 	int32 m_ScrollRadioBy;
 	int32 m_nCurrScreen;
 	int32 m_nPrevScreen;
-	int32 m_nCurrSaveSlot;
 	uint32 m_LastScreenSwitch;
 	int32 m_nMenuFadeAlpha;
 	int32 m_nOptionHighlightTransitionBlend;
@@ -765,10 +715,6 @@ public:
 #ifdef MULTISAMPLING
 	int8 m_nPrefsMSAALevel;
 	int8 m_nDisplayMSAALevel;
-#endif
-
-#ifdef MISSION_REPLAY
-	bool m_bAttemptingMissionRetry;
 #endif
 
 #ifdef GAMEPAD_MENU
@@ -852,7 +798,6 @@ public:
 	static uint32 m_nDialogHideTimerPauseMode;
 	static bool m_bDialogOpen;
 	static wchar *m_pDialogText;
-	static bool m_bSaveWasSuccessful;
 
 	static void SetDialogText(const char*);
 	static bool DialogTextCmp(const char*);
@@ -899,7 +844,6 @@ public:
 	void UserInput();
 	void ProcessUserInput(uint8, uint8, uint8, uint8, int8);
 	void ChangeRadioStation(int8);
-	void ProcessFileActions();
 	void ProcessOnOffMenuOptions();
 	void RequestFrontEndShutDown();
 	void RequestFrontEndStartUp();

@@ -107,8 +107,6 @@ public:
 	bool IsRestartingAfterDeath(void);
 	bool IsRestartingAfterArrest(void);
 	void EvaluateCarPosition(CEntity*, CPed*, float, float*, CVehicle**);
-	void LoadPlayerInfo(uint8 *buf, uint32 size);
-	void SavePlayerInfo(uint8 *buf, uint32* size);
 	void FindClosestCarSectorList(CPtrList&, CPed*, float, float, float, float, float*, CVehicle**);
 
 #ifdef GTA_PC

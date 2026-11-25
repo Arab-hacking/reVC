@@ -1201,14 +1201,4 @@ bool CPlane::HasCesnaLanded(void) { return CesnaMissionStatus == CESNA_STATUS_LA
 bool CPlane::HasCesnaBeenDestroyed(void) { return CesnaMissionStatus == CESNA_STATUS_DESTROYED; }
 bool CPlane::HasDropOffCesnaBeenShotDown(void) { return DropOffCesnaMissionStatus == CESNA_STATUS_DESTROYED; }
 
-void
-CPlane::Load(void)
-{
-	RemoveTemporaryPlanes();
-}
 
-void
-CPlane::Save(void)
-{
-	RemoveTemporaryPlanes();
-}

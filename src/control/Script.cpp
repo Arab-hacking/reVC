@@ -17,7 +17,6 @@
 #include "Streaming.h"
 #include "TxdStore.h"
 #include "Weather.h"
-#include "SaveBuf.h"
 #include "main.h"
 #include "custom/CustomModels.h"
 #include "custom/CustomWorld.h"
@@ -78,12 +77,6 @@ int CTheScripts::OpenScript()
 }
 #endif
 
-const uint32 CRunningScript::nSaveStructSize =
-#ifdef COMPATIBLE_SAVES
-	136;
-#else
-	sizeof(CRunningScript);
-#endif
 
 void CRunningScript::UpdateCompareFlag(bool flag)
 {
@@ -745,53 +738,4 @@ void CTheScripts::RenderTheScriptDebugLines()
 	RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)0);
 }
 
-void CTheScripts::SaveAllScripts(uint8* buf, uint32* size)
-{
-	INITSAVEBUF
-	uint32 varSpace = 8 * sizeof(uint32);
-	*size = varSpace + SCRIPT_DATA_SIZE + SAVE_HEADER_SIZE + 3 * sizeof(uint32);
-	WriteSaveHeader(buf, 'S', 'C', 'R', '\0', *size - SAVE_HEADER_SIZE);
-	WriteSaveBuf(buf, varSpace);
-	for (uint32 i = 0; i < varSpace; i++)
-		WriteSaveBuf(buf, (uint8)0);
-	uint32 script_data_size = SCRIPT_DATA_SIZE;
-	WriteSaveBuf(buf, script_data_size);
-	WriteSaveBuf(buf, OnAMissionFlag);
-	WriteSaveBuf(buf, LastMissionPassedTime);
-	for (uint32 i = 0; i < 4; i++)
-		WriteSaveBuf(buf, (uint32)0);
-}
 
-bool CTheScripts::LoadAllScripts(uint8* buf, uint32 size)
-{
-	const uint32 minFixedBytes = SAVE_HEADER_SIZE + 3 * sizeof(uint32) + SCRIPT_DATA_SIZE;
-	if (buf == nil || size < minFixedBytes) {
-		REVC_LOG_ERROR("Cannot load saved scripts: block too small (%u bytes)", size);
-		return false;
-	}
-	if (buf[0] != 'S' || buf[1] != 'C' || buf[2] != 'R' || buf[3] != '\0') {
-		REVC_LOG_ERROR("Cannot load saved scripts: invalid SCR header");
-		return false;
-	}
-	uint32 headerPayloadSize = 0;
-	memcpy(&headerPayloadSize, buf + 4, sizeof(headerPayloadSize));
-	if (headerPayloadSize != size - SAVE_HEADER_SIZE) {
-		REVC_LOG_ERROR("Cannot load saved scripts: header size mismatch (%u != %u)",
-			headerPayloadSize, size - (uint32)SAVE_HEADER_SIZE);
-		return false;
-	}
-	uint32 varSpace = 0;
-	memcpy(&varSpace, buf + SAVE_HEADER_SIZE, sizeof(varSpace));
-	if (varSpace > SIZE_SCRIPT_SPACE) {
-		REVC_LOG_ERROR("Cannot load saved scripts: variable space %u out of range", varSpace);
-		return false;
-	}
-	if (size < SAVE_HEADER_SIZE + sizeof(uint32) + varSpace) {
-		REVC_LOG_ERROR("Cannot load saved scripts: block shorter than its variable space");
-		return false;
-	}
-	// Nothing to restore: the player's mission progress is not part of this
-	// build. The world itself is restored by the caller.
-	OnAMissionFlag = 0;
-	return true;
-}

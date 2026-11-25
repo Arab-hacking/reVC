@@ -133,8 +133,6 @@ public:
 	static uint32 FindPedFlag(const char *type);
 	// The flag of a type is the bit of its index; used by the relation lists.
 	static uint32 GetPedFlag(ePedType type);
-	static void Save(uint8 *buf, uint32 *size);
-	static void Load(uint8 *buf, uint32 size);
 
 	static uint32 GetFlag(int type) { return ms_apPedType[type]->m_flag; }
 	static uint32 GetAvoid(int type) { return ms_apPedType[type]->m_avoid; }

@@ -3,7 +3,6 @@
 #include "General.h"
 #include "FileMgr.h"
 #include "PedType.h"
-#include "SaveBuf.h"
 #ifdef CUSTOM_MODELS
 #include "CustomModels.h"
 #endif
@@ -250,28 +249,7 @@ CPedType::FindPedFlag(const char *type)
 	return GetPedFlag(FindPedTypeQuietly(type));
 }
 
-void
-CPedType::Save(uint8 *buf, uint32 *size)
-{
-	*size = sizeof(CPedType) * NUM_PEDTYPES + SAVE_HEADER_SIZE;
-INITSAVEBUF
-	WriteSaveHeader(buf, 'P','T','P','\0', *size - SAVE_HEADER_SIZE);
-	for(int i = 0; i < NUM_PEDTYPES; i++)
-		WriteSaveBuf(buf, *ms_apPedType[i]);
-VALIDATESAVEBUF(*size)
-}
 
-void
-CPedType::Load(uint8 *buf, uint32 size)
-{
-INITSAVEBUF
-	// original: SkipSaveBuf(buf, SAVE_HEADER_SIZE);
-	CheckSaveHeader(buf, 'P', 'T', 'P', '\0', size - SAVE_HEADER_SIZE);
-
-	for(int i = 0; i < NUM_PEDTYPES; i++)
-		ReadSaveBuf(ms_apPedType[i], buf);
-VALIDATESAVEBUF(size)
-}
 
 void
 CPedStats::Initialise(void)

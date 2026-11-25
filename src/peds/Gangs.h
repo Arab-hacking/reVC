@@ -38,8 +38,6 @@ public:
 	static void SetGangWeapons(int16, int32, int32);
 	static void SetGangPedModelOverride(int16, int8);
 	static int8 GetGangPedModelOverride(int16);
-	static void SaveAllGangData(uint8 *, uint32 *);
-	static void LoadAllGangData(uint8 *, uint32);
 
 	static void SetGangPedModels(int16, int32, int32);
 	static void SetWillAttackPlayerWithCops(ePedType type, bool will);

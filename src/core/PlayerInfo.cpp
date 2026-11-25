@@ -538,60 +538,7 @@ CPlayerInfo::IsPlayerInRemoteMode()
 	return m_pRemoteVehicle || m_bInRemoteMode;
 }
 
-void
-CPlayerInfo::SavePlayerInfo(uint8 *buf, uint32 *size)
-{
-	// Interesting
-	*size = sizeof(CPlayerInfo);
 
-#define CopyToBuf(buf, data) memcpy(buf, &data, sizeof(data)); buf += sizeof(data);
-	CopyToBuf(buf, CWorld::Players[CWorld::PlayerInFocus].m_nMoney);
-	CopyToBuf(buf, CWorld::Players[CWorld::PlayerInFocus].m_WBState);
-	CopyToBuf(buf, CWorld::Players[CWorld::PlayerInFocus].m_nWBTime);
-	CopyToBuf(buf, CWorld::Players[CWorld::PlayerInFocus].m_nTrafficMultiplier);
-	CopyToBuf(buf, CWorld::Players[CWorld::PlayerInFocus].m_fRoadDensity);
-	CopyToBuf(buf, CWorld::Players[CWorld::PlayerInFocus].m_nVisibleMoney);
-	CopyToBuf(buf, CWorld::Players[CWorld::PlayerInFocus].m_nCollectedPackages);
-	CopyToBuf(buf, CWorld::Players[CWorld::PlayerInFocus].m_nTotalPackages);
-	CopyToBuf(buf, CWorld::Players[CWorld::PlayerInFocus].m_bInfiniteSprint);
-	CopyToBuf(buf, CWorld::Players[CWorld::PlayerInFocus].m_bFastReload);
-	CopyToBuf(buf, CWorld::Players[CWorld::PlayerInFocus].m_bFireproof);
-	CopyToBuf(buf, CWorld::Players[CWorld::PlayerInFocus].m_nMaxHealth);
-	CopyToBuf(buf, CWorld::Players[CWorld::PlayerInFocus].m_nMaxArmour);
-	CopyToBuf(buf, CWorld::Players[CWorld::PlayerInFocus].m_bGetOutOfJailFree);
-	CopyToBuf(buf, CWorld::Players[CWorld::PlayerInFocus].m_bGetOutOfHospitalFree);
-	CopyToBuf(buf, CWorld::Players[CWorld::PlayerInFocus].m_bDriveByAllowed);
-	CopyToBuf(buf, CWorld::Players[CWorld::PlayerInFocus].m_aPlayerName);
-	CopyToBuf(buf, CWorld::Players[CWorld::PlayerInFocus].m_nBustedAudioStatus);
-	CopyToBuf(buf, CWorld::Players[CWorld::PlayerInFocus].m_nCurrentBustedAudio);
-#undef CopyToBuf
-}
-
-void
-CPlayerInfo::LoadPlayerInfo(uint8 *buf, uint32 size)
-{
-#define CopyFromBuf(buf, data) memcpy(&data, buf, sizeof(data)); buf += sizeof(data);
-	CopyFromBuf(buf, CWorld::Players[CWorld::PlayerInFocus].m_nMoney);
-	CopyFromBuf(buf, CWorld::Players[CWorld::PlayerInFocus].m_WBState);
-	CopyFromBuf(buf, CWorld::Players[CWorld::PlayerInFocus].m_nWBTime);
-	CopyFromBuf(buf, CWorld::Players[CWorld::PlayerInFocus].m_nTrafficMultiplier);
-	CopyFromBuf(buf, CWorld::Players[CWorld::PlayerInFocus].m_fRoadDensity);
-	CopyFromBuf(buf, CWorld::Players[CWorld::PlayerInFocus].m_nVisibleMoney);
-	CopyFromBuf(buf, CWorld::Players[CWorld::PlayerInFocus].m_nCollectedPackages);
-	CopyFromBuf(buf, CWorld::Players[CWorld::PlayerInFocus].m_nTotalPackages);
-	CopyFromBuf(buf, CWorld::Players[CWorld::PlayerInFocus].m_bInfiniteSprint);
-	CopyFromBuf(buf, CWorld::Players[CWorld::PlayerInFocus].m_bFastReload);
-	CopyFromBuf(buf, CWorld::Players[CWorld::PlayerInFocus].m_bFireproof);
-	CopyFromBuf(buf, CWorld::Players[CWorld::PlayerInFocus].m_nMaxHealth);
-	CopyFromBuf(buf, CWorld::Players[CWorld::PlayerInFocus].m_nMaxArmour);
-	CopyFromBuf(buf, CWorld::Players[CWorld::PlayerInFocus].m_bGetOutOfJailFree);
-	CopyFromBuf(buf, CWorld::Players[CWorld::PlayerInFocus].m_bGetOutOfHospitalFree);
-	CopyFromBuf(buf, CWorld::Players[CWorld::PlayerInFocus].m_bDriveByAllowed);
-	CopyFromBuf(buf, CWorld::Players[CWorld::PlayerInFocus].m_aPlayerName);
-	CopyFromBuf(buf, CWorld::Players[CWorld::PlayerInFocus].m_nBustedAudioStatus);
-	CopyFromBuf(buf, CWorld::Players[CWorld::PlayerInFocus].m_nCurrentBustedAudio)
-#undef CopyFromBuf
-}
 
 void
 CPlayerInfo::FindClosestCarSectorList(CPtrList& carList, CPed* ped, float unk1, float unk2, float unk3, float unk4, float* lastCloseness, CVehicle** closestCarOutput)

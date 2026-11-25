@@ -38,8 +38,6 @@ public:
 	static void Shutdown(void);
 	static void Update(void);
 	static bool IsOneActive(void);
-	static void Save(uint8 *buf, uint32 *size);
-	static void Load(uint8 *buf, uint32 size);
 	static void Save_ForReplay();
 	static void Load_ForReplay();
 };

@@ -5,7 +5,6 @@
 #include "General.h"
 #include "Streaming.h"
 #include "Weapon.h"
-#include "SaveBuf.h"
 
 CGangInfo CGangs::Gang[NUM_GANGS];
 bool CGangs::GangAttackWithCops[NUM_GANGS];
@@ -100,26 +99,4 @@ int8 CGangs::GetGangPedModelOverride(int16 gang)
 	return GetGangInfo(gang)->m_nPedModelOverride;
 }
 
-void CGangs::SaveAllGangData(uint8 *buf, uint32 *size)
-{
-INITSAVEBUF
 
-	*size = SAVE_HEADER_SIZE + sizeof(Gang);
-	WriteSaveHeader(buf, 'G','N','G','\0', *size - SAVE_HEADER_SIZE);
-	for (int i = 0; i < NUM_GANGS; i++)
-		WriteSaveBuf(buf, Gang[i]);
-
-VALIDATESAVEBUF(*size);
-}
-
-void CGangs::LoadAllGangData(uint8 *buf, uint32 size)
-{
-	Initialise();
-
-INITSAVEBUF
-	CheckSaveHeader(buf, 'G','N','G','\0', size - SAVE_HEADER_SIZE);
-
-	for (int i = 0; i < NUM_GANGS; i++)
-		ReadSaveBuf(&Gang[i], buf);
-VALIDATESAVEBUF(size);
-}

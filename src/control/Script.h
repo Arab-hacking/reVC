@@ -260,8 +260,6 @@ public:
 	void SetIP(uint32 ip) { m_nIp = ip; }
 	CRunningScript* GetNext() const { return next; }
 
-	void Save(uint8*& buf);
-	void Load(uint8*& buf);
 
 	void UpdateTimers(float timeStep) {
 		m_anLocalVariables[NUM_LOCAL_VARS] += timeStep;
@@ -274,7 +272,6 @@ public:
 	void RemoveScriptFromList(CRunningScript**);
 	void AddScriptToList(CRunningScript**);
 
-	static const uint32 nSaveStructSize;
 
 	void CollectParameters(uint32*, int16);
 	int32 CollectNextParameterWithoutIncreasingPC(uint32);
@@ -363,8 +360,6 @@ public:
 	static void ScriptDebugLine3D(float x1, float y1, float z1, float x2, float y2, float z2, uint32 col, uint32 col2);
 	static void RenderTheScriptDebugLines();
 
-	static void SaveAllScripts(uint8*, uint32*);
-	static bool LoadAllScripts(uint8*, uint32);
 
 	static bool IsDebugOn() { return DbgFlag; };
 	static void InvertDebugFlag() { DbgFlag = !DbgFlag; }

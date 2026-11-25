@@ -1,7 +1,6 @@
 #include "common.h"
 
 #include "Restart.h"
-#include "SaveBuf.h"
 #include "Zones.h"
 #include "PathFind.h"
 #ifdef CUSTOM_MODELS
@@ -185,85 +184,4 @@ CRestart::FindClosestPoliceRestartPoint(const CVector &pos, CVector *outPos, flo
 #endif
 }
 
-void
-CRestart::LoadAllRestartPoints(uint8 *buf, uint32 size)
-{
-	Initialise();
 
-INITSAVEBUF
-	CheckSaveHeader(buf, 'R','S','T','\0', size - SAVE_HEADER_SIZE);
-
-	for (int i = 0; i < NUM_RESTART_POINTS; i++) {
-		ReadSaveBuf(&HospitalRestartPoints[i], buf);
-		ReadSaveBuf(&HospitalRestartHeadings[i], buf);
-	}
-
-	for (int i = 0; i < NUM_RESTART_POINTS; i++) {
-		ReadSaveBuf(&PoliceRestartPoints[i], buf);
-		ReadSaveBuf(&PoliceRestartHeadings[i], buf);
-	}
-
-	ReadSaveBuf(&NumberOfHospitalRestarts, buf);
-	ReadSaveBuf(&NumberOfPoliceRestarts, buf);
-	ReadSaveBuf(&bOverrideRestart, buf);
-
-	// skip something unused
-	SkipSaveBuf(buf, 3);
-
-	ReadSaveBuf(&OverridePosition, buf);
-	ReadSaveBuf(&OverrideHeading, buf);
-	ReadSaveBuf(&bFadeInAfterNextDeath, buf);
-	ReadSaveBuf(&bFadeInAfterNextArrest, buf);
-	ReadSaveBuf(&OverrideHospitalLevel, buf);
-	ReadSaveBuf(&OverridePoliceStationLevel, buf);
-VALIDATESAVEBUF(size);
-}
-
-void
-CRestart::SaveAllRestartPoints(uint8 *buf, uint32 *size)
-{
-	*size = SAVE_HEADER_SIZE
-		+ sizeof(HospitalRestartPoints)
-		+ sizeof(HospitalRestartHeadings)
-		+ sizeof(PoliceRestartPoints)
-		+ sizeof(PoliceRestartHeadings)
-		+ sizeof(NumberOfHospitalRestarts)
-		+ sizeof(NumberOfPoliceRestarts)
-		+ sizeof(bOverrideRestart)
-		+ sizeof(uint8)
-		+ sizeof(uint16)
-		+ sizeof(OverridePosition)
-		+ sizeof(OverrideHeading)
-		+ sizeof(bFadeInAfterNextDeath)
-		+ sizeof(bFadeInAfterNextArrest)
-		+ sizeof(OverrideHospitalLevel)
-		+ sizeof(OverridePoliceStationLevel); // == 292
-
-INITSAVEBUF
-	WriteSaveHeader(buf, 'R','S','T','\0', *size - SAVE_HEADER_SIZE);
-
-	for (int i = 0; i < NUM_RESTART_POINTS; i++) {
-		WriteSaveBuf(buf, HospitalRestartPoints[i]);
-		WriteSaveBuf(buf, HospitalRestartHeadings[i]);
-	}
-
-	for (int i = 0; i < NUM_RESTART_POINTS; i++) {
-		WriteSaveBuf(buf, PoliceRestartPoints[i]);
-		WriteSaveBuf(buf, PoliceRestartHeadings[i]);
-	}
-
-	WriteSaveBuf(buf, NumberOfHospitalRestarts);
-	WriteSaveBuf(buf, NumberOfPoliceRestarts);
-	WriteSaveBuf(buf, bOverrideRestart);
-
-	WriteSaveBuf(buf, (uint8)0);
-	WriteSaveBuf(buf, (uint16)0);
-
-	WriteSaveBuf(buf, OverridePosition);
-	WriteSaveBuf(buf, OverrideHeading);
-	WriteSaveBuf(buf, bFadeInAfterNextDeath);
-	WriteSaveBuf(buf, bFadeInAfterNextArrest);
-	WriteSaveBuf(buf, OverrideHospitalLevel);
-	WriteSaveBuf(buf, OverridePoliceStationLevel);
-VALIDATESAVEBUF(*size);
-}

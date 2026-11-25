@@ -35,7 +35,6 @@
 #include "Glass.h"
 #include "Sprite.h"
 #include "Pickups.h"
-#include "SaveBuf.h"
 
 float fReloadAnimSampleFraction[5] = {  0.5f,  0.7f,  0.75f,  0.75f,  0.7f };
 float fSeaSparrowAimingAngle = 10.0f;
@@ -3346,33 +3345,3 @@ CWeapon::CheckForShootingVehicleOccupant(CEntity **victim, CColPoint *point, eWe
 	}
 }
 
-#ifdef COMPATIBLE_SAVES
-#define CopyFromBuf(buf, data) memcpy(&data, buf, sizeof(data)); SkipSaveBuf(buf, sizeof(data));
-#define CopyToBuf(buf, data) memcpy(buf, &data, sizeof(data)); SkipSaveBuf(buf, sizeof(data));
-void
-CWeapon::Save(uint8*& buf)
-{
-	CopyToBuf(buf, m_eWeaponType);
-	CopyToBuf(buf, m_eWeaponState);
-	CopyToBuf(buf, m_nAmmoInClip);
-	CopyToBuf(buf, m_nAmmoTotal);
-	CopyToBuf(buf, m_nTimer);
-	CopyToBuf(buf, m_bAddRotOffset);
-	ZeroSaveBuf(buf, 3);
-}
-
-void
-CWeapon::Load(uint8*& buf)
-{
-	CopyFromBuf(buf, m_eWeaponType);
-	CopyFromBuf(buf, m_eWeaponState);
-	CopyFromBuf(buf, m_nAmmoInClip);
-	CopyFromBuf(buf, m_nAmmoTotal);
-	CopyFromBuf(buf, m_nTimer);
-	CopyFromBuf(buf, m_bAddRotOffset);
-	SkipSaveBuf(buf, 3);
-}
-
-#undef CopyFromBuf
-#undef CopyToBuf
-#endif

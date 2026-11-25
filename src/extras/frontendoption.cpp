@@ -86,7 +86,7 @@ void FrontendOptionSetCursor(int screen, int8 option, bool overwrite)
 	optionOverwrite = overwrite;
 }
 
-void FrontendOptionAddBuiltinAction(const char* gxtKey, uint16 x, uint16 y, uint8 align, int action, int targetMenu, int saveSlot) {
+void FrontendOptionAddBuiltinAction(const char* gxtKey, uint16 x, uint16 y, uint8 align, int action, int targetMenu) {
 	int8 screenOptionOrder = RegisterNewOption();
 
 	CMenuScreenCustom::CMenuEntry &option = aScreens[currentMenu].m_aEntries[screenOptionOrder];
@@ -107,7 +107,6 @@ void FrontendOptionAddBuiltinAction(const char* gxtKey, uint16 x, uint16 y, uint
 	option.m_Y = y;
 	option.m_Align = align;
 	option.m_Action = action;
-	option.m_SaveSlot = saveSlot;
 	option.m_TargetMenu = targetMenu;
 }
 

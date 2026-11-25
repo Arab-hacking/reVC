@@ -302,7 +302,6 @@ public:
 	int16 LookAroundLeftRight(void);
 	int16 LookAroundUpDown(void);
 	void ResetAverageWeapon(void);
-	static void FixPadsAfterSave(void);
 	static void PrintErrorMessage(void);
 	static void ResetCheats(void);
 	static char *EditString(char *pStr, int32 nSize);

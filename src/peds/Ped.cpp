@@ -43,7 +43,6 @@
 #include "CutsceneShadow.h"
 #include "Clock.h"
 #include "Wanted.h"
-#include "SaveBuf.h"
 
 CPed *gapTempPedList[50];
 uint16 gnNumTempPedList;
@@ -10343,61 +10342,3 @@ CPed::Say(uint16 audio, int32 time)
 	}
 }
 
-#ifdef COMPATIBLE_SAVES
-#define CopyFromBuf(buf, data) memcpy(&data, buf, sizeof(data)); SkipSaveBuf(buf, sizeof(data));
-#define CopyToBuf(buf, data) memcpy(buf, &data, sizeof(data)); SkipSaveBuf(buf, sizeof(data));
-void
-CPed::Save(uint8*& buf)
-{
-	ZeroSaveBuf(buf, 52);
-	CopyToBuf(buf, GetPosition().x);
-	CopyToBuf(buf, GetPosition().y);
-	CopyToBuf(buf, GetPosition().z);
-	ZeroSaveBuf(buf, 288);
-	CopyToBuf(buf, CharCreatedBy);
-	ZeroSaveBuf(buf, 499);
-	CopyToBuf(buf, m_fHealth);
-	CopyToBuf(buf, m_fArmour);
-	ZeroSaveBuf(buf, 172);
-	for (int i = 0; i < 10; i++) // has to be hardcoded
-		m_weapons[i].Save(buf);
-	ZeroSaveBuf(buf, 252);
-}
-
-void
-CPed::Load(uint8*& buf)
-{
-	SkipSaveBuf(buf, 52);
-	CopyFromBuf(buf, GetMatrix().GetPosition().x);
-	CopyFromBuf(buf, GetMatrix().GetPosition().y);
-	CopyFromBuf(buf, GetMatrix().GetPosition().z);
-	SkipSaveBuf(buf, 288);
-	CopyFromBuf(buf, CharCreatedBy);
-	SkipSaveBuf(buf, 499);
-	CopyFromBuf(buf, m_fHealth);
-	CopyFromBuf(buf, m_fArmour);
-	SkipSaveBuf(buf, 172);
-	m_currentWeapon = WEAPONTYPE_UNARMED;
-
-	CWeapon bufWeapon;
-	for (int i = 0; i < 10; i++) { // has to be hardcoded
-		bufWeapon.Load(buf);
-
-		if (bufWeapon.m_eWeaponType != WEAPONTYPE_UNARMED) {
-			int modelId = CWeaponInfo::GetWeaponInfo(bufWeapon.m_eWeaponType)->m_nModelId;
-			if (modelId != -1) {
-				CStreaming::RequestModel(modelId, STREAMFLAGS_DEPENDENCY);
-				int modelId2 = CWeaponInfo::GetWeaponInfo(bufWeapon.m_eWeaponType)->m_nModel2Id;
-				if (modelId2 != -1)
-					CStreaming::RequestModel(modelId2, STREAMFLAGS_DEPENDENCY);
-
-				CStreaming::LoadAllRequestedModels(false);
-			}
-			GiveWeapon(bufWeapon.m_eWeaponType, bufWeapon.m_nAmmoTotal, false);
-		}
-	}
-	SkipSaveBuf(buf, 252);
-}
-#undef CopyFromBuf
-#undef CopyToBuf
-#endif

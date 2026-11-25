@@ -4001,13 +4001,4 @@ int32 *CPad::EditCodesForControls(int32 *pRsKeys, int32 nSize)
 	return pRsKeys;
 }
 
-void CPad::FixPadsAfterSave(void)
-{
-	UpdatePads();
-	if ( bObsoleteControllerMessage )
-	{
-		bObsoleteControllerMessage = false;
-		GetPad(0)->Phase = 0;
-	}
-}
 #endif

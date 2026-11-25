@@ -462,8 +462,6 @@ public:
 	static void CheckPointReachedSuccessfully() { TotalLegitimateKills += KillsSinceLastCheckpoint; KillsSinceLastCheckpoint = 0; };
 	static void CheckPointReachedUnsuccessfully() { KillsSinceLastCheckpoint = 0; };
 	static int32 FindCriminalRatingNumber();
-	static void SaveStats(uint8 *buf, uint32 *size);
-	static void LoadStats(uint8 *buf, uint32 size);
 	static float GetPercentageProgress();
 
 	static void MoneySpentOnWeapons(int32);

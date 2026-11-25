@@ -81,10 +81,6 @@ public:
 
 	static void CheckForShootingVehicleOccupant(CEntity **victim, CColPoint *point, eWeaponType weapon, CVector const& source, CVector const& target);
 
-#ifdef COMPATIBLE_SAVES
-	void Save(uint8*& buf);
-	void Load(uint8*& buf);
-#endif
 };
 VALIDATE_SIZE(CWeapon, 0x18);
 

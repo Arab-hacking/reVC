@@ -23,11 +23,9 @@
 #include "World.h"
 #include "PlayerInfo.h"
 #include "FrontEndControls.h"
-#include "MemoryCard.h"
 
 #define CRect_SZ(x, y, w, h) CRect(x, y, x+w, y+h)
 
-wchar MemoryCard_FileNames[8][100+1];
 CMenuManager FrontEndMenuManager;
 
 // TEMP: put into header
@@ -54,8 +52,6 @@ float BUTTONTAB_TEXT_SIZE_X = 0.35f;
 float BUTTONTAB_TEXT_SIZE_Y = 0.7f; //0.8f;
 float PANEL_TEXT_SIZE_X = 0.8f;
 float PANEL_TEXT_SIZE_Y = 1.2f;	//0.96f/0.7f;	//??
-float MEMCARD_ACCESS_MSG_SIZE_X = 0.84f;
-float MEMCARD_ACCESS_MSG_SIZE_Y = 1.12f;	//1.28f;
 
 CRGBA SELECTED_TEXT_COLOR(255, 182, 48, 255);
 CRGBA BACKGROUND_SPLASH_COLOR(48, 48, 48, 255);
@@ -81,16 +77,12 @@ CRGBA rgbaATC(96, 96, 96, 255);	// active text color. not constant
 float BUTTONTAB_TEXT_X_SCALES[NUM_PAGES] = { 1.0f };
 float PANEL_TEXT_X_SCALES[NUM_PAGES] = { 1.0f };
 
-int32 MemoryCardSlotSelected;
 uint32 TimeToStopPadShaking;
 bool bFrontEnd_ReloadObrTxtGxt;
 
-bool bMemoryCardStartUpMenus_ExitNow;
-
-extern CMenuPage MenuPage_SaveBasic;
+extern CMenuPage MenuPage_NewGame;
 CMenuPage *pActiveMenuPage;
-CMenuPage *pMenuSave = &MenuPage_SaveBasic;
-bool bMemoryCardSpecialZone;
+CMenuPage *pMenuNewGame = &MenuPage_NewGame;
 bool bIgnoreTriangleButton;
 bool gErrorSampleTriggered;
 
@@ -102,17 +94,11 @@ CMenuPage MenuPage_Stats;
 CMenuPage MenuPage_Briefs;
  CMenuPictureAndText MenuBriefs_1;
  CMenuDummy MenuBriefs_2;
-CMenuPage MenuPage_SaveBasic;
- CMenuMultiChoiceTriggered MenuSaveB_1;	// "Load Game", "Delete Game", "New Game"
-CMenuPage MenuPage_SaveNewGame;
- CMenuPictureAndText MenuSaveNG_1;	// "Load Game", "Delete Game", "New Game"
- CMenuMultiChoiceTriggered MenuSaveNG_2;	// "No", "Yes"
-CMenuPage MenuPage_SaveLoadGame;
- CMenuPictureAndText MenuSaveLG_1;	// "Load Game", "Delete Game", "New Game"
- CMenuMultiChoiceTwoLinesTriggered MenuSaveLG_2;	// save games
-CMenuPage MenuPage_SaveDeleteGame;
- CMenuPictureAndText MenuSaveDG_1;	// "Load Game", "Delete Game", "New Game"
- CMenuMultiChoiceTwoLinesTriggered MenuSaveDG_2;	// save games
+CMenuPage MenuPage_NewGame;
+ CMenuMultiChoiceTriggered MenuNewGame_1;	// "New Game"
+CMenuPage MenuPage_NewGameQuestion;
+ CMenuPictureAndText MenuNewGameQ_1;	// "Start a new game?"
+ CMenuMultiChoiceTriggered MenuNewGameQ_2;	// "No", "Yes"
 CMenuPage MenuPage_Controls;
  CMenuPictureAndText MenuControls_3; // controller images
  CMenuPictureAndText MenuControls_6;
@@ -138,23 +124,6 @@ CMenuPage MenuPage_Display;
 CMenuPage MenuPage_Language;
  CMenuMultiChoiceTriggered MenuLanguage_1;	// "English", "French", "German", "Italian", "Spanish"
 
-CMenuPage MenuPageSaveZone_SaveGame;
- CMenuMultiChoiceTriggered MenuSaveZoneSG_1;	// "Save game", "Cancel"
-CMenuPage MenuPageSaveZone_SaveSlots;
- CMenuMultiChoiceTwoLinesTriggered MenuSaveZoneSSL_1;	// "Cancel"
-CMenuPage MenuPageSaveZone_SavedSuccessfully;
- CMenuPictureAndText MenuSaveZoneSS_1;	// "Game saved successfully!" "Your saved filename is:"
- CMenuMultiChoiceTriggered MenuSaveZoneSS_2;	// "Quit"
-CMenuPage MenuPageSaveZone_Message;
- CMenuPictureAndText MenuSaveZoneMSG_1;	// "Save Failed! Check memory card (PS2) in MEMORY CARD slot 1 and please try again."
- CMenuMultiChoiceTriggered MenuSaveZoneMSG_2;	// "OK"
-CMenuPage MenuPageSaveZone_QuestionYesNo;
- CMenuPictureAndText MenuSaveZoneQYN_1;	// "Save Failed! Check memory card (PS2) in MEMORY CARD slot 1 and please try again."
- CMenuMultiChoiceTriggered MenuSaveZoneQYN_2;	// "Yes", "No"
-CMenuPage MenuPageSaveZone_FormatCard;
- CMenuMultiChoiceTriggered MenuSaveZoneFC_1;	// "Memory card (PS2) in MEMORY CARD slot 1 is unformatted. Would you like to format memory card (PS2) in MEMORY CARD slot 1?" "No" "Yes"
-CMenuPage MenuPageSaveZone_ErrorFormat;
- CMenuMultiChoiceTriggered MenuSaveZoneEF_1;	// "Format Failed! Check memory card (PS2) in MEMORY CARD slot 1 and please try again." "OK"
 
 
 VALIDATE_SIZE(CPlaceableText, 0x10);
@@ -259,7 +228,6 @@ CMenuManager::CMenuManager(void)
 	m_currentPage = PAGE_FIRST;
 	m_newPage = PAGE_FIRST;
 	m_bMenuActive = false;
-	m_bSaveMenuActive = false;
 	m_bRenderGameInMenu = false;
 	m_bTexturesLoaded = false;
 	m_nPageLeftTimer = 0;
@@ -276,7 +244,6 @@ CMenuManager::CMenuManager(void)
 	m_bInitialised = false;
 	m_bWantToUpdateContent = false;
 	field_3C = 0;
-	m_bInSaveZone = false;
 
 	for(i = 0; i < NUM_PAGES; i++){
 		BUTTONTAB_TEXT_X_SCALES[i] = 1.0f;
@@ -366,23 +333,13 @@ CMenuManager::InitialiseMenusOnce(void)
 	// Normal menu
 	MenuPage_Stats.Initialise();
 	MenuPage_Briefs.Initialise();
-	MenuPage_SaveBasic.Initialise();
-	MenuPage_SaveNewGame.Initialise();
-	MenuPage_SaveLoadGame.Initialise();
-	MenuPage_SaveDeleteGame.Initialise();
+	MenuPage_NewGame.Initialise();
+	MenuPage_NewGameQuestion.Initialise();
 	MenuPage_Controls.Initialise();
 	MenuPage_Audio.Initialise();
 	MenuPage_Display.Initialise();
 	MenuPage_Language.Initialise();
 
-	// Save menu
-	MenuPageSaveZone_SaveGame.Initialise();
-	MenuPageSaveZone_SaveSlots.Initialise();
-	MenuPageSaveZone_SavedSuccessfully.Initialise();
-	MenuPageSaveZone_Message.Initialise();
-	MenuPageSaveZone_QuestionYesNo.Initialise();
-	MenuPageSaveZone_FormatCard.Initialise();
-	MenuPageSaveZone_ErrorFormat.Initialise();
 
 	/* Stats */
 
@@ -403,73 +360,30 @@ CMenuManager::InitialiseMenusOnce(void)
 	MenuPage_Stats.ActivatePage();
 
 
-	CVector2D saveGameTextScale(X(0.49f), Y(0.7f));
-	CVector2D defaultTextScale(X(MENU_TEXT_SIZE_X), Y(MENU_TEXT_SIZE_Y));
 
-	/* Basic Load/Delete/New Game */
+	/* New Game */
 
-	MenuSaveB_1.m_numOptions = 0;
-	MenuSaveB_1.SetPosition(X(220.0f), Y(110.0f));
-	MenuSaveB_1.AddOption(TheText.Get("FES_LGA"), 0.0f, Y(20.0f), TriggerSave_LoadGameSelect, false, true);
-	MenuSaveB_1.AddOption(TheText.Get("FES_DGA"), 0.0f, Y(40.0f), TriggerSave_DeleteGameSelect, false, true);
-	MenuSaveB_1.AddOption(TheText.Get("FES_NGA"), 0.0f, Y(60.0f), TriggerSave_NewGameSelectYes, false, true);
-	MenuSaveB_1.SetColors(TITLE_TEXT_COLOR, TEXT_COLOR, TEXT_COLOR);
-	MenuPage_SaveBasic.AddMenu(&MenuSaveB_1);
-	MenuPage_SaveBasic.SetShadows(true, TEXT_SHADOW_COLOR, SHADOW_VECTOR);
-	MenuPage_SaveBasic.ActivatePage();
+	MenuNewGame_1.m_numOptions = 0;
+	MenuNewGame_1.SetPosition(X(220.0f), Y(110.0f));
+	MenuNewGame_1.AddOption(TheText.Get("FES_NGA"), 0.0f, Y(20.0f), TriggerNewGame_Confirm, false, true);
+	MenuNewGame_1.SetColors(TITLE_TEXT_COLOR, TEXT_COLOR, TEXT_COLOR);
+	MenuPage_NewGame.AddMenu(&MenuNewGame_1);
+	MenuPage_NewGame.SetShadows(true, TEXT_SHADOW_COLOR, SHADOW_VECTOR);
+	MenuPage_NewGame.ActivatePage();
 
-	/* New Game - but unused */
+	/* New Game confirmation (texts and options are set by TriggerNewGame_Confirm) */
 
-	MenuSaveNG_1.m_numTexts = 0;
-	MenuSaveNG_1.SetPosition(X(220.0f), Y(110.0f));
-	MenuSaveNG_1.AddText(TheText.Get("FES_LGA"), 0.0f, Y(20.0f), TEXT_COLOR, true);
-	MenuSaveNG_1.AddText(TheText.Get("FES_DGA"), 0.0f, Y(40.0f), TEXT_COLOR, true);
-	MenuSaveNG_1.AddText(TheText.Get("FES_NGA"), 0.0f, Y(60.0f), SELECTED_TEXT_COLOR, true);
-	MenuPage_SaveNewGame.AddMenu(&MenuSaveNG_1);
-	MenuSaveNG_2.m_numOptions = 0;
-	MenuSaveNG_2.SetPosition(X(250.0f), Y(170.0f));
-	MenuSaveNG_2.AddOption(TheText.Get("FEM_NO"), 0.0f, 0.0f, TriggerSave_BackToMainMenu, false, false);
-	MenuSaveNG_2.AddOption(TheText.Get("FEM_YES"), 0.0f, Y(20.0f), TriggerSave_NewGameSelectYes, false, false);
-	MenuSaveNG_2.SetColors(TITLE_TEXT_COLOR, TEXT_COLOR, TEXT_COLOR);
-	MenuSaveNG_2.m_defaultCancel = TriggerSave_BackToMainMenu;
-	MenuPage_SaveNewGame.AddMenu(&MenuSaveNG_2);
-	MenuPage_SaveNewGame.SetShadows(true, TEXT_SHADOW_COLOR, SHADOW_VECTOR);
-	MenuPage_SaveNewGame.ActivatePage();
-
-	/* Load Game */
-
-	MenuSaveLG_1.m_numTexts = 0;
-	MenuSaveLG_1.SetPosition(X(220.0f),  Y(110.0f));
-	MenuSaveLG_1.AddText(TheText.Get("FES_LGA"), 0.0f, Y(20.0f), SELECTED_TEXT_COLOR, true);
-	MenuSaveLG_1.AddText(TheText.Get("FES_DGA"), 0.0f, Y(40.0f), TEXT_COLOR, true);
-	MenuSaveLG_1.AddText(TheText.Get("FES_NGA"), 0.0f, Y(60.0f), TEXT_COLOR, true);
-	MenuPage_SaveLoadGame.AddMenu(&MenuSaveLG_1);
-	MenuSaveLG_2.m_numOptions = 0;
-	MenuSaveLG_2.SetPosition(X(250.0f),  Y(60.0f));
-	MenuSaveLG_2.SetColors(TITLE_TEXT_COLOR, TEXT_COLOR, TEXT_COLOR);
-	MenuSaveLG_2.m_defaultCancel = TriggerSave_BackToMainMenuTwoLines;
-	MenuSaveLG_2.SetNewOldTextScale(true, saveGameTextScale, defaultTextScale, false);
-	MenuPage_SaveLoadGame.AddMenu(&MenuSaveLG_2);
-	MenuPage_SaveLoadGame.SetShadows(true, TEXT_SHADOW_COLOR, SHADOW_VECTOR);
-	MenuPage_SaveLoadGame.ActivatePage();
-
-	/* Delete Game */
-
-	MenuSaveDG_1.m_numTexts = 0;
-	MenuSaveDG_1.SetPosition(X(220.0f),  Y(110.0f));
-	MenuSaveDG_1.AddText(TheText.Get("FES_LGA"), 0.0f, Y(20.0f), TEXT_COLOR, true);
-	MenuSaveDG_1.AddText(TheText.Get("FES_DGA"), 0.0f, Y(40.0f), SELECTED_TEXT_COLOR, true);
-	MenuSaveDG_1.AddText(TheText.Get("FES_NGA"), 0.0f, Y(60.0f), TEXT_COLOR, true);
-	MenuPage_SaveDeleteGame.AddMenu(&MenuSaveDG_1);
-	MenuSaveDG_2.m_numOptions = 0;
-	MenuSaveDG_2.SetPosition(X(250.0f),  Y(60.0f));
-	MenuSaveDG_2.SetColors(TITLE_TEXT_COLOR, TEXT_COLOR, TEXT_COLOR);
-	MenuSaveDG_2.m_defaultCancel = TriggerSave_BackToMainMenuTwoLines;
-	MenuSaveDG_2.SetNewOldTextScale(true, saveGameTextScale, defaultTextScale, false);
-	MenuPage_SaveDeleteGame.AddMenu(&MenuSaveDG_2);
-	MenuPage_SaveDeleteGame.SetShadows(true, TEXT_SHADOW_COLOR, SHADOW_VECTOR);
-	MenuPage_SaveDeleteGame.ActivatePage();
-
+	MenuNewGameQ_1.m_numTexts = 0;
+	MenuNewGameQ_1.SetPosition(X(170.0f), Y(130.0f));
+	MenuNewGameQ_1.SetTextsColor(TEXT_COLOR);
+	MenuNewGameQ_1.SetNewOldShadowWrapX(true, X(600.0f+SHADOW_VECTOR.x-20.0f), X(580.0f));
+	MenuPage_NewGameQuestion.AddMenu(&MenuNewGameQ_1);
+	MenuNewGameQ_2.m_numOptions = 0;
+	MenuNewGameQ_2.SetPosition(X(170.0f), Y(180.0f));
+	MenuNewGameQ_2.SetColors(TITLE_TEXT_COLOR, TEXT_COLOR, TEXT_COLOR);
+	MenuPage_NewGameQuestion.AddMenu(&MenuNewGameQ_2);
+	MenuPage_NewGameQuestion.SetShadows(true, TEXT_SHADOW_COLOR, SHADOW_VECTOR);
+	MenuPage_NewGameQuestion.ActivatePage();
 
 	CVector2D briefsTextScale(X(0.525f), Y(0.7f));
 	CVector2D defaultTextScale1(X(MENU_TEXT_SIZE_X), Y(MENU_TEXT_SIZE_Y));
@@ -739,110 +653,6 @@ CMenuManager::InitialiseMenusOnce(void)
 	MenuPage_Language.ActivatePage();
 
 
-	/*
-	 * Save zone menu
-	 */
-
-	CVector2D saveGameTextScale2(X(0.49f), Y(0.7f));
-	CVector2D defaultTextScale5(X(MENU_TEXT_SIZE_X), Y(MENU_TEXT_SIZE_Y));
-
-	/* Save game */
-
-	MenuSaveZoneSG_1.m_numOptions = 0;
-	MenuSaveZoneSG_1.SetPosition(X(200.0f), Y(100.0f));
-	MenuSaveZoneSG_1.SetColors(TITLE_TEXT_COLOR, TEXT_COLOR, TEXT_COLOR);
-	MenuSaveZoneSG_1.AddOption(TheText.Get("FESZ_SA"), 0.0f, Y(20.0f), TriggerSaveZone_SaveGameSelect, false, false);
-	MenuSaveZoneSG_1.AddOption(TheText.Get("FESZ_CA"), 0.0f, Y(40.0f), TriggerSaveZone_QuitMenu, false, false);
-	MenuSaveZoneSG_1.m_defaultCancel = TriggerSaveZone_QuitMenu;
-	MenuPageSaveZone_SaveGame.AddMenu(&MenuSaveZoneSG_1);
-	MenuSaveZoneSG_1.SetMenuSelection(1);
-	MenuPageSaveZone_SaveGame.SetShadows(true, TEXT_SHADOW_COLOR, SHADOW_VECTOR);
-	MenuPageSaveZone_SaveGame.ActivatePage();
-
-	/* Select slot */
-
-	MenuSaveZoneSSL_1.m_numOptions = 0;
-	MenuSaveZoneSSL_1.SetPosition(X(160.0f), Y(100.0f));
-	MenuSaveZoneSSL_1.SetColors(TITLE_TEXT_COLOR, TEXT_COLOR, TEXT_COLOR);
-	MenuSaveZoneSSL_1.AddOption(TheText.Get("FESZ_CA"), 0.0f, 0.0f, TriggerSaveZone_BackToMainMenuTwoLines, false, false);
-	MenuSaveZoneSSL_1.SetNewOldTextScale(true, saveGameTextScale2, defaultTextScale5, true);
-	MenuPageSaveZone_SaveSlots.AddMenu(&MenuSaveZoneSSL_1);
-	MenuSaveZoneSSL_1.SetMenuSelection(0);
-	MenuPageSaveZone_SaveSlots.SetShadows(true, TEXT_SHADOW_COLOR, SHADOW_VECTOR);
-	MenuPageSaveZone_SaveSlots.ActivatePage();
-
-	/* Save successful */
-
-	MenuSaveZoneSS_1.m_numTexts = 0;
-	MenuSaveZoneSS_1.SetPosition(X(200.0f), Y(100.0f));
-	MenuSaveZoneSS_1.AddText(TheText.Get("FESZ_L1"), X(-40.0f), 0.0f, TITLE_TEXT_COLOR, false);
-	MenuSaveZoneSS_1.AddText(TheText.Get("FESZ_L2"), X(-40.0f), Y(20.0f), TITLE_TEXT_COLOR, false);
-	// twice this line?
-	MenuSaveZoneSS_1.AddText(TheText.Get("FESZ_L2"), X(-40.0f), Y(40.0f), TEXT_COLOR, false);
-	MenuPageSaveZone_SavedSuccessfully.AddMenu(&MenuSaveZoneSS_1);
-	MenuSaveZoneSS_2.m_numOptions = 0;
-	MenuSaveZoneSS_2.SetPosition(X(200.0f), Y(170.0f));
-	MenuSaveZoneSS_2.SetColors(TITLE_TEXT_COLOR, TEXT_COLOR, TEXT_COLOR);
-	MenuSaveZoneSS_2.AddOption(TheText.Get("FESZ_QU"), X(60.0f), 0.0f, TriggerSaveZone_QuitMenu, false, false);
-	MenuPageSaveZone_SavedSuccessfully.AddMenu(&MenuSaveZoneSS_2);
-	MenuPageSaveZone_SavedSuccessfully.SetShadows(true, TEXT_SHADOW_COLOR, SHADOW_VECTOR);
-	MenuPageSaveZone_SavedSuccessfully.ActivatePage();
-
-
-	MenuSaveZoneMSG_1.m_numTexts = 0;
-	MenuSaveZoneMSG_1.SetPosition(X(170.0f), Y(130.0f));
-	MenuSaveZoneMSG_1.AddText(TheText.Get("FESZ_SR"), X(-40.0f), 0.0f, TEXT_COLOR, false);
-	MenuSaveZoneMSG_1.SetTextsColor(TEXT_COLOR);
-	MenuSaveZoneMSG_1.SetNewOldShadowWrapX(true, X(600.0f+SHADOW_VECTOR.x-20.0f), X(580.0f));
-	MenuPageSaveZone_Message.AddMenu(&MenuSaveZoneMSG_1);
-	MenuSaveZoneMSG_2.m_numOptions = 0;
-	MenuSaveZoneMSG_2.SetPosition(X(170.0f), Y(180.0f));
-	MenuSaveZoneMSG_2.SetColors(TITLE_TEXT_COLOR, TEXT_COLOR, TEXT_COLOR);
-	MenuSaveZoneMSG_2.AddOption(TheText.Get("FESZ_OK"), X(40.0f), 0.0f, TriggerSaveZone_QuitMenu, false, false);
-	MenuPageSaveZone_Message.AddMenu(&MenuSaveZoneMSG_2);
-	MenuPageSaveZone_Message.SetShadows(true, TEXT_SHADOW_COLOR, SHADOW_VECTOR);
-	MenuPageSaveZone_Message.ActivatePage();
-
-
-	MenuSaveZoneQYN_1.m_numTexts = 0;
-	MenuSaveZoneQYN_1.SetPosition(X(170.0f), Y(130.0f));
-	MenuSaveZoneQYN_1.AddText(TheText.Get("FESZ_SR"), X(-40.0f), 0.0f, TEXT_COLOR, false);
-	MenuSaveZoneQYN_1.SetTextsColor(TEXT_COLOR);
-	MenuSaveZoneQYN_1.SetNewOldShadowWrapX(true, X(600.0f+SHADOW_VECTOR.x-20.0f), X(580.0f));
-	MenuPageSaveZone_QuestionYesNo.AddMenu(&MenuSaveZoneQYN_1);
-	MenuSaveZoneQYN_2.m_numOptions = 0;
-	MenuSaveZoneQYN_2.SetPosition(X(170.0f), Y(180.0f));
-	MenuSaveZoneQYN_2.SetColors(TITLE_TEXT_COLOR, TEXT_COLOR, TEXT_COLOR);
-	MenuSaveZoneQYN_2.AddOption(TheText.Get("FEM_YES"), X(80.0f), 0.0f, TriggerSaveZone_QuitMenu, false, false);
-	MenuSaveZoneQYN_2.AddOption(TheText.Get("FEM_NO"), X(80.0f), Y(20.0f), TriggerSaveZone_QuitMenu, false, false);
-	MenuPageSaveZone_QuestionYesNo.AddMenu(&MenuSaveZoneQYN_2);
-	MenuPageSaveZone_QuestionYesNo.SetShadows(true, TEXT_SHADOW_COLOR, SHADOW_VECTOR);
-	MenuPageSaveZone_QuestionYesNo.ActivatePage();
-
-	/* Format card */
-
-	MenuSaveZoneFC_1.m_numOptions = 0;
-	MenuSaveZoneFC_1.SetPosition(X(200.0f), Y(100.0f));
-	MenuSaveZoneFC_1.SetColors(TITLE_TEXT_COLOR, TEXT_COLOR, TEXT_COLOR);
-	MenuSaveZoneFC_1.AddTitle(TheText.Get("FESZ_FM"), X(-100.0f), 0.0f, false);
-	MenuSaveZoneFC_1.AddOption(TheText.Get("FEM_NO"), X(40.0f), Y(95.0f), TriggerSaveZone_BackToMainMenu, false, false);
-	MenuSaveZoneFC_1.AddOption(TheText.Get("FEM_YES"), X(40.0f), Y(75.0f), TriggerSaveZone_FormatCardSelect, false, false);
-	MenuSaveZoneFC_1.m_defaultCancel = TriggerSaveZone_FormatCardSelect;
-	MenuPageSaveZone_FormatCard.AddMenu(&MenuSaveZoneFC_1);
-	MenuPageSaveZone_FormatCard.SetShadows(true, TEXT_SHADOW_COLOR, SHADOW_VECTOR);
-	MenuPageSaveZone_FormatCard.ActivatePage();
-
-	/* Format error */
-
-	MenuSaveZoneEF_1.m_numOptions = 0;
-	MenuSaveZoneEF_1.SetPosition(X(200.0f), Y(100.0f));
-	MenuSaveZoneEF_1.SetColors(TITLE_TEXT_COLOR, TEXT_COLOR, TEXT_COLOR);
-	MenuSaveZoneEF_1.AddTitle(TheText.Get("FESZ_FF"), X(-40.0f), 0.0f, false);
-	MenuSaveZoneEF_1.AddOption(TheText.Get("FESZ_OK"), X(70.0f), Y(20.0f), TriggerSaveZone_FormatFailedOK, false, false);
-	MenuPageSaveZone_ErrorFormat.AddMenu(&MenuSaveZoneEF_1);
-	MenuPageSaveZone_ErrorFormat.SetShadows(true, TEXT_SHADOW_COLOR, SHADOW_VECTOR);
-	MenuPageSaveZone_ErrorFormat.ActivatePage();
-
 	pActiveMenuPage = &MenuPage_Stats;
 	pActiveMenuPage->ActivatePage();
 
@@ -902,8 +712,6 @@ CMenuManager::InitialiseChangedLanguageSettings(void)
 				DISPLAY_BRIGHTNESS_POS.x = 0.0f;
 				DISPLAY_BRIGHTNESS_POS.y = 0.0f;
 
-				MEMCARD_ACCESS_MSG_SIZE_X = 0.84f;
-				MEMCARD_ACCESS_MSG_SIZE_Y = 1.12f;//1.28f;
 
 				break;
 			}
@@ -939,8 +747,6 @@ CMenuManager::InitialiseChangedLanguageSettings(void)
 				DISPLAY_BRIGHTNESS_POS.x = 20.0f;
 				DISPLAY_BRIGHTNESS_POS.y = 0.0f;
 
-				MEMCARD_ACCESS_MSG_SIZE_X = 0.84f;
-				MEMCARD_ACCESS_MSG_SIZE_Y = 1.12f;//1.28f;
 
 				break;
 			}
@@ -972,8 +778,6 @@ CMenuManager::InitialiseChangedLanguageSettings(void)
 				DISPLAY_BRIGHTNESS_POS.x = 20.0f;
 				DISPLAY_BRIGHTNESS_POS.y = 0.0f;
 
-				MEMCARD_ACCESS_MSG_SIZE_X = 0.7f;
-				MEMCARD_ACCESS_MSG_SIZE_Y = 1.12f;//1.28f;
 
 				break;
 			}
@@ -1004,8 +808,6 @@ CMenuManager::InitialiseChangedLanguageSettings(void)
 				DISPLAY_BRIGHTNESS_POS.x = 10.0f;
 				DISPLAY_BRIGHTNESS_POS.y = 0.0f;
 
-				MEMCARD_ACCESS_MSG_SIZE_X = 0.84f;
-				MEMCARD_ACCESS_MSG_SIZE_Y = 1.12f;//1.28f;
 
 				break;
 			}
@@ -1036,8 +838,6 @@ CMenuManager::InitialiseChangedLanguageSettings(void)
 				DISPLAY_BRIGHTNESS_POS.x = 30.0f;
 				DISPLAY_BRIGHTNESS_POS.y = 0.0f;
 
-				MEMCARD_ACCESS_MSG_SIZE_X = 0.84f;
-				MEMCARD_ACCESS_MSG_SIZE_Y = 1.12f;//1.28f;
 
 				break;
 			}
@@ -1081,9 +881,6 @@ CMenuManager::InitialiseMenuContents(void)
 		MenuDisplay_4.SetMenuSelection(m_PrefsUseWideScreen);
 
 		MenuLanguage_1.SetMenuSelection(m_PrefsLanguage);
-
-		FillMenuWithMemCardFileListing(&MenuSaveLG_2, TriggerSave_BackToMainMenuTwoLines, TriggerSave_LoadGameLoadGameSelect,     nil, 0, 34, 22);
-		FillMenuWithMemCardFileListing(&MenuSaveDG_2, TriggerSave_BackToMainMenuTwoLines, TriggerSave_DeleteGameDeleteGameSelect, nil, 0, 34, 22);
 
 		MenuBriefs_1.m_numTexts = 0;
 		MenuBriefs_1.AddText(TheText.Get("FEB_PMB"), 0.0f, 0.0f, TITLE_TEXT_COLOR, 0); // Previous Mission Briefs:
@@ -1267,8 +1064,6 @@ CMenuManager::InitialiseMenuContents(void)
 
 		MenuStats_2.AddText(pStatLine, X(MenuStats_1.m_width), 0.0f, CRIM_RATING_TEXT_COLOR, 1);
 
-		MenuSaveZoneSG_1.SetMenuSelection(1);
-		MenuSaveZoneFC_1.SetMenuSelection(1);
 	}
 }
 
@@ -1315,7 +1110,7 @@ CMenuManager::AnaliseMenuContents(void)
 }
 
 void
-CMenuManager::InitialiseMenuContentsAfterLoadingGame(void)
+CMenuManager::CheckLanguageSelectionChanged(void)
 {
 	if ( MenuLanguage_1.GetMenuSelection() != m_PrefsLanguage )
 	{
@@ -1328,13 +1123,7 @@ void
 CMenuManager::DrawFrontEnd(void)
 {
 	CFont::SetAlphaFade(255.0f);
-	if(m_bInSaveZone)
-		DrawFrontEndSaveZone();
-	else
-		DrawFrontEndNormal();
-
-	if ( MemCardAccessTriggerCaller.CanCall() )
-		MemCardAccessTriggerCaller.CallTrigger();
+	DrawFrontEndNormal();
 
 	DisplayWarningControllerMsg();
 }
@@ -1345,18 +1134,6 @@ CMenuManager::DrawFrontEndNormal(void)
 	CSprite2d::InitPerFrame();
 	CFont::InitPerFrame();
 
-	if ( bMemoryCardSpecialZone )
-	{
-		static uint8 counter = 0;
-
-		counter++;
-
-		if ( (counter & 63 ) == 0 )
-		{
-			FillMenuWithMemCardFileListing(&MenuSaveLG_2, TriggerSave_BackToMainMenuTwoLines, TriggerSave_LoadGameLoadGameSelect, nil, 0, 34, 22);
-			FillMenuWithMemCardFileListing(&MenuSaveDG_2, TriggerSave_BackToMainMenuTwoLines, TriggerSave_DeleteGameDeleteGameSelect, nil, 0, 34, 22);
-		}
-	}
 
 	m_fade = 255;
 	if ( m_nChangePageTimer != 0 && m_nChangePageTimer >= CTimer::GetTimeInMillisecondsPauseMode() )
@@ -1449,8 +1226,8 @@ CMenuManager::DrawFrontEndNormal(void)
 	case PAGE_STATS:
 		sprite = FE_ICONSTATS;
 		break;
-	case PAGE_LOAD:
-		sprite = FE_ICONSAVE;
+	case PAGE_NEW_GAME:
+		sprite = FE_ICONNEWGAME;
 		break;
 	case PAGE_CONTROLS:
 		sprite = FE_ICONCONTROLS;
@@ -1472,7 +1249,7 @@ CMenuManager::DrawFrontEndNormal(void)
 	switch(m_currentPage)
 	{
 	case PAGE_STATS:
-	case PAGE_LOAD:
+	case PAGE_NEW_GAME:
 	case PAGE_CONTROLS:
 		sprite = FE_ICONSTATS;	// PS2 has the same texture for stats and brief
 		//sprite = FE_ICONBRIEF;
@@ -1532,7 +1309,7 @@ CMenuManager::DrawFrontEndNormal(void)
 		switch(field_18)
 		{
 		case PAGE_STATS: posX = 88.0f; break;
-		case PAGE_LOAD: posX = 286.0f; break;	// actually controls
+		case PAGE_NEW_GAME: posX = 286.0f; break;	// actually controls
 		case PAGE_BRIEFS: posX = 154.0f; break;	// actually load
 		case PAGE_CONTROLS: posX = 220.0f; break;	// actually briefs
 		case PAGE_AUDIO: posX = 352.0f; break;
@@ -1547,7 +1324,7 @@ CMenuManager::DrawFrontEndNormal(void)
 	switch(m_currentPage)
 	{
 	case PAGE_STATS: posX = 88.0f; break;
-	case PAGE_LOAD: posX = 154.0f; break;
+	case PAGE_NEW_GAME: posX = 154.0f; break;
 	case PAGE_BRIEFS: posX = 220.0f; break;
 	case PAGE_CONTROLS: posX = 286.0f; break;
 	case PAGE_AUDIO: posX = 352.0f; break;
@@ -1576,7 +1353,7 @@ CMenuManager::DrawFrontEndNormal(void)
 	switch(m_currentPage)
 	{
 	case PAGE_STATS:    key = "FEP_STA"; break;
-	case PAGE_LOAD:     key = "FEP_SAV"; break;
+	case PAGE_NEW_GAME:     key = "FEP_SAV"; break;
 	case PAGE_BRIEFS:   key = "FEP_BRI"; break;
 	case PAGE_CONTROLS: key = "FEP_CON"; break;
 	case PAGE_AUDIO:    key = "FEP_AUD"; break;
@@ -1615,7 +1392,7 @@ CMenuManager::DrawFrontEndNormal(void)
 			CFont::PrintString(m_position.x+X(52.0f), m_position.y+Y(372.0f), TheText.Get("FEDS_AM"));
 			break;
 
-		case PAGE_LOAD:
+		case PAGE_NEW_GAME:
 		case PAGE_CONTROLS:
 		case PAGE_AUDIO:
 		case PAGE_DISPLAY:
@@ -1667,7 +1444,7 @@ CMenuManager::DrawFrontEndNormal(void)
 			CFont::SetColor(CRGBA(16, 16, 16, m_someAlpha));
 			CFont::SetScale(X(BUTTONTAB_TEXT_SIZE_X*BUTTONTAB_TEXT_X_SCALES[PAGE_STATS]), Y(BUTTONTAB_TEXT_SIZE_Y));
 			CFont::PrintString(m_position.x+X(92.0f), m_position.y+Y(408.0f), TheText.Get("FEB_STA"));
-			CFont::SetScale(X(BUTTONTAB_TEXT_SIZE_X*BUTTONTAB_TEXT_X_SCALES[PAGE_LOAD]), Y(BUTTONTAB_TEXT_SIZE_Y));
+			CFont::SetScale(X(BUTTONTAB_TEXT_SIZE_X*BUTTONTAB_TEXT_X_SCALES[PAGE_NEW_GAME]), Y(BUTTONTAB_TEXT_SIZE_Y));
 			CFont::PrintString(m_position.x+X(158.0f), m_position.y+Y(408.0f), TheText.Get("FEB_SAV"));
 			CFont::SetScale(X(BUTTONTAB_TEXT_SIZE_X*BUTTONTAB_TEXT_X_SCALES[PAGE_BRIEFS]), Y(BUTTONTAB_TEXT_SIZE_Y));
 			CFont::PrintString(m_position.x+X(224.0f), m_position.y+Y(408.0f), TheText.Get("FEB_BRI"));
@@ -1694,8 +1471,8 @@ CMenuManager::DrawFrontEndNormal(void)
 				CFont::SetScale(X(BUTTONTAB_TEXT_SIZE_X*BUTTONTAB_TEXT_X_SCALES[PAGE_STATS]), Y(BUTTONTAB_TEXT_SIZE_Y));
 				CFont::PrintString(m_position.x+X(92.0f), m_position.y+Y(408.0f), TheText.Get("FEB_STA"));
 				break;
-			case PAGE_LOAD:
-				CFont::SetScale(X(BUTTONTAB_TEXT_SIZE_X*BUTTONTAB_TEXT_X_SCALES[PAGE_LOAD]), Y(BUTTONTAB_TEXT_SIZE_Y));
+			case PAGE_NEW_GAME:
+				CFont::SetScale(X(BUTTONTAB_TEXT_SIZE_X*BUTTONTAB_TEXT_X_SCALES[PAGE_NEW_GAME]), Y(BUTTONTAB_TEXT_SIZE_Y));
 				CFont::PrintString(m_position.x+X(158.0f), m_position.y+Y(408.0f), TheText.Get("FEB_SAV"));
 				break;
 			case PAGE_BRIEFS:
@@ -1730,7 +1507,7 @@ CMenuManager::DrawFrontEndNormal(void)
 	switch(m_currentPage)
 	{
 		case PAGE_STATS:	pActiveMenuPage = &MenuPage_Stats; break;
-		case PAGE_LOAD:	    pActiveMenuPage = pMenuSave; break;
+		case PAGE_NEW_GAME: pActiveMenuPage = pMenuNewGame; break;
 		case PAGE_BRIEFS:	pActiveMenuPage = &MenuPage_Briefs; break;
 		case PAGE_CONTROLS:	pActiveMenuPage = &MenuPage_Controls; break;
 		case PAGE_AUDIO:	pActiveMenuPage = &MenuPage_Audio; break;
@@ -1759,7 +1536,7 @@ CMenuManager::DrawFrontEndNormal(void)
 	{
 		switch ( m_currentPage )
 		{
-			case PAGE_LOAD:
+			case PAGE_NEW_GAME:
 			case PAGE_BRIEFS:
 			case PAGE_CONTROLS:
 				break;
@@ -1796,279 +1573,12 @@ CMenuManager::DrawFrontEndNormal(void)
 	RwRenderStateSet(rwRENDERSTATETEXTUREADDRESS, (void*)rwTEXTUREADDRESSWRAP);
 }
 
-void
-CMenuManager::DrawFrontEndSaveZone(void)
-{
-	if ( bMemoryCardSpecialZone )
-	{
-		static uint8 counter = 0;
-		counter++;
-		if ( counter & 63 )
-		{
-			FillMenuWithMemCardFileListing(&MenuSaveZoneSSL_1, TriggerSaveZone_BackToMainMenuTwoLines, TriggerSaveZone_SaveSlots, nil, 0, 34, 22);
 
-			if ( TheMemoryCard.GetError() == CMemoryCard::ERR_NOFORMAT )
-			{
-				pActiveMenuPage = &MenuPageSaveZone_FormatCard;
-				pActiveMenuPage->ActivatePage();
-				bMemoryCardSpecialZone = false;
-			}
-		}
-	}
-
-	CSprite2d::InitPerFrame();
-	CFont::InitPerFrame();
-
-	RwRenderStateSet(rwRENDERSTATETEXTUREFILTER, (void*)rwFILTERNEAREST);
-
-	m_fade = 255;
-
-	CSprite2d::DrawRect(CRect(X(50.0f), Y(50.0f), X(590.0f), Y(398.0f)), CRGBA(0, 0, 0, 175)); //CRect(50.0f, 57.142f, 590.0f, 454.857147f)
-
-	CFont::SetFontStyle(FONT_BANK);
-	CFont::SetBackgroundOff();
-	CFont::SetScale(X(MENU_TEXT_SIZE_X), Y(MENU_TEXT_SIZE_Y));
-	CFont::SetPropOn();
-	CFont::SetCentreOff();
-	CFont::SetJustifyOn();
-	CFont::SetRightJustifyOff();
-	CFont::SetBackGroundOnlyTextOn();
-	CFont::SetRightJustifyWrap(X(70.0f));
-	CFont::SetWrapx(SCRW-X(70.0f)); // 570.0f
-
-	if ( pActiveMenuPage )
-	{
-		pActiveMenuPage->SetAlpha(m_fade);
-		pActiveMenuPage->Draw(CRGBA(rgbaATC.r, rgbaATC.g, rgbaATC.b, m_fade), TITLE_TEXT_COLOR, 0.0f, 0.0f);
-	}
-
-
-	CFont::DrawFonts();
-	CFont::SetFontStyle(FONT_BANK);
-	CFont::SetBackgroundOff();
-	CFont::SetScale(X(0.44f), Y(0.68f)); // 0.44f, 0.777143f
-	CFont::SetPropOn();
-	CFont::SetCentreOff();
-	CFont::SetJustifyOn();
-	CFont::SetRightJustifyOff();
-	CFont::SetBackGroundOnlyTextOn();
-	CFont::SetWrapx(SCRW-X(40.0f)); //600.0f
-	CFont::SetColor(TEXT_COLOR);
-
-	wchar *text;
-	if ( pActiveMenuPage == &MenuPageSaveZone_FormatCard
-		|| pActiveMenuPage == &MenuPageSaveZone_SaveSlots
-		|| pActiveMenuPage == &MenuPageSaveZone_SaveGame )
-	{
-		text = TheText.Get("FEDS_SB"); // / button - SELECT " button - BACK
-	}
-	else
-	{
-		text = TheText.Get("FEDS_SE"); // / button - SELECT
-	}
-
-	CFont::PrintString(X(180.0f), Y(376.0f), text); // 180.0f, 429.714294f
-	CFont::DrawFonts();
-
-	RwRenderStateSet(rwRENDERSTATETEXTUREFILTER, (void*)rwFILTERLINEAR);
-}
-
-void
-CMenuManager::DrawMemoryCardStartUpMenus()
-{
-	CFont::SetAlphaFade(255.0f);
-	bMemoryCardStartUpMenus_ExitNow = false;
-
-	CMenuPage page; // + 0x40 data
-	CMenuMultiChoiceTriggered MCMenu;
-	MCMenu.SetPosition(X(320.0f), Y(150.0f)); //171.428574f
-
-	switch ( TheMemoryCard.CheckCardStateAtGameStartUp(CARD_ONE) )
-	{
-		case CMemoryCard::MCSTATE_NEED_200KB: // 200KB
-		{
-			// There is insufficient space on the Memory Card (PS2) in MEMORY CARD slot 1. At least 200KB is needed to save this application data. Do you wish to start? (YES or NO)
-			MCMenu.AddTitle(TheText.Get("MCGNSP"), 0.0f, 0.0f, 0);
-			break;
-		}
-
-		case CMemoryCard::MCSTATE_NEED_500KB: // 500KB
-		{
-			// There is insufficient space on the Memory Card (PS2) in MEMORY CARD slot 1. At least 500KB is needed to save this application data. Do you wish to start? (YES or NO)
-			MCMenu.AddTitle(TheText.Get("MCDNSP"), 0.0f, 0.0f, 0);
-			break;
-		}
-
-		case CMemoryCard::MCSTATE_OK:
-		case CMemoryCard::MCSTATE_NOCARD:
-		{
-			return;
-			break;
-		}
-	}
-
-	MCMenu.AddOption(TheText.Get("FEM_NO"),  X(30.0f),  Y(110.0f), nil, 0, 0);// 125.714294f
-	MCMenu.AddOption(TheText.Get("FEM_YES"), X(-30.0f), Y(110.0f), TriggerMCSUM_Yes, 0, 0);// 125.714294f
-	MCMenu.SetColors(TITLE_TEXT_COLOR, TEXT_COLOR, TEXT_COLOR);
-	page.AddMenu(&MCMenu);
-
-	MCMenu.GoFirst();
-
-	page.SetShadows(true, TEXT_SHADOW_COLOR, SHADOW_VECTOR);
-
-	CTimer::Initialise();
-	CTimer::StartUserPause();
-
-	while ( !bMemoryCardStartUpMenus_ExitNow )
-	{
-#ifdef GTA_PC
-		HandleExit();
-
-		if(RsGlobal.quit)
-			return;
-#endif
-
-#ifdef GTA_PC
-		if ( CPad::GetPad(0)->GetDPadLeftJustDown() )
-			page.GoLeft();
-		if ( CPad::GetPad(0)->GetDPadRightJustDown() )
-			page.GoRight();
-		if ( CPad::GetPad(0)->GetDPadUpJustDown() )
-			page.GoDown();
-		if ( CPad::GetPad(0)->GetDPadDownJustDown() )
-			page.GoUp();
-		if ( CPad::GetPad(0)->GetCrossJustDown() || CPad::GetPad(0)->GetEnterJustDown() || CPad::GetPad(0)->GetRightMouseJustDown() )
-			page.SelectCurrentOptionUnderCursor();
-
-		if ( CPad::GetPad(0)->GetCircleJustDown() || CPad::GetPad(0)->GetEscapeJustDown() )
-			;
-#else
-		if ( CPad::GetPad(0)->GetDPadLeftJustDown() )
-			page.GoLeft();
-		if ( CPad::GetPad(0)->GetDPadRightJustDown() )
-			page.GoRight();
-		if ( CPad::GetPad(0)->GetDPadUpJustDown() )
-			page.GoDown();
-		if ( CPad::GetPad(0)->GetDPadDownJustDown() )
-			page.GoUp();
-		if ( CPad::GetPad(0)->GetCrossJustDown() )
-			page.SelectCurrentOptionUnderCursor();
-		if ( CPad::GetPad(0)->GetCircleJustDown() )
-			;
-#endif
-
-		static int32 MemCardStatusWaiter = 0;
-
-		MemCardStatusWaiter++;
-
-		if ( MemCardStatusWaiter > 120 )
-		{
-			MemCardStatusWaiter = 0;
-
-			switch ( TheMemoryCard.CheckCardStateAtGameStartUp(CARD_ONE) )
-			{
-				case CMemoryCard::MCSTATE_NEED_200KB:
-				{
-					// There is insufficient space on the Memory Card (PS2) in MEMORY CARD slot 1. At least 200KB is needed to save this application data. Do you wish to start? (YES or NO)
-					MCMenu.AddTitle(TheText.Get("MCGNSP"), 0.0f, 0.0f, 0);
-					break;
-				}
-
-				case CMemoryCard::MCSTATE_NEED_500KB:
-				{
-					// There is insufficient space on the Memory Card (PS2) in MEMORY CARD slot 1. At least 500KB is needed to save this application data. Do you wish to start? (YES or NO)
-					MCMenu.AddTitle(TheText.Get("MCDNSP"), 0.0f, 0.0f, 0);
-					break;
-				}
-
-				case CMemoryCard::MCSTATE_NOCARD:
-				{
-					// There is no Memory Card (PS2) in MEMORY CARD slot 1. Do you wish to start? (YES or NO)
-					MCMenu.AddTitle(TheText.Get("MCSTNS"), 0.0f, 0.0f, 0);
-					break;
-				}
-
-				case CMemoryCard::MCSTATE_OK:
-				{
-					bMemoryCardStartUpMenus_ExitNow = true;
-					break;
-				}
-			}
-		}
-
-		DoRWStuffStartOfFrame(0, 0, 0, 0, 0, 0, 255);
-		CFont::InitPerFrame();
-
-		RwRenderStateSet(rwRENDERSTATETEXTUREFILTER, (void*)rwFILTERLINEAR);
-		CSprite2d *splash = LoadSplash("splash1");
-		splash->Draw(CRect(0.0f, 0.0f, SCRW, SCRH), BACKGROUND_SPLASH_COLOR);
-		RwRenderStateSet(rwRENDERSTATETEXTUREFILTER, (void*)rwFILTERNEAREST);
-
-		SetRandomActiveTextlineColor(1);
-
-		CRGBA col(rgbaATC.r, rgbaATC.g, rgbaATC.b, 255);
-		CFont::SetFontStyle(FONT_BANK);
-		CFont::SetBackgroundOff();
-		CFont::SetScale(X(MENU_TEXT_SIZE_X), Y(MENU_TEXT_SIZE_Y));
-		CFont::SetPropOn();
-		CFont::SetJustifyOn();
-		CFont::SetRightJustifyOff();
-		CFont::SetBackGroundOnlyTextOn();
-		CFont::SetWrapx(SCRW-X(60.0f)); // 580.0f
-		CFont::SetCentreOn();
-		CFont::SetCentreSize(SCRW-X(120.0f)); // 520.0f
-
-		MCMenu.Draw(col, TITLE_TEXT_COLOR, 0.0f, 0.0f);
-		CFont::DrawFonts();
-
-		CFont::SetFontStyle(FONT_BANK);
-		CFont::SetScale(X(0.4f), Y(0.64f)); // 0.731429
-		CFont::SetPropOn();
-		CFont::SetCentreOff();
-		CFont::SetJustifyOn();
-		CFont::SetRightJustifyOff();
-		CFont::SetBackGroundOnlyTextOn();
-		CFont::SetWrapx(SCRW-X(60.0f)); // 580.0f
-		CFont::SetColor(TEXT_COLOR);
-
-
-		CPlaceableShText text;
-		text.SetPosition(X(240.0f), Y(378.0f), false); // 432.000000
-		text.SetColor(TEXT_COLOR);
-		text.m_text = TheText.Get("FEDS_SE"); // / button - SELECT
-		text.SetShadows(true, TEXT_SHADOW_COLOR, SHADOW_VECTOR);
-		text.Draw(0.0f, 0.0f);
-
-		CFont::DrawFonts();
-		DisplayWarningControllerMsg();
-		DoRWStuffEndOfFrame();
-		CPad::UpdatePads();
-		CTimer::Update();
-	}
-
-	CTimer::EndUserPause();
-	CTimer::Stop();
-
-	for ( int32 i = 0; i < 100; i++ )
-	{
-#ifdef GTA_PC
-		HandleExit();
-#endif
-		DoRWStuffStartOfFrame(0, 0, 0, 0, 0, 0, 255);
-
-		RwRenderStateSet(rwRENDERSTATETEXTUREFILTER, (void*)rwFILTERLINEAR);
-		CSprite2d *splash = LoadSplash("splash1");
-		splash->Draw(CRect(0.0f, 0.0f, SCRW, SCRH), BACKGROUND_SPLASH_COLOR);
-		RwRenderStateSet(rwRENDERSTATETEXTUREFILTER, (void*)rwFILTERNEAREST);
-
-		DoRWStuffEndOfFrame();
-	}
-}
 
 void
 CMenuManager::Process(void)
 {
-	if ( m_bSaveMenuActive || m_bInSaveZone || TheCamera.GetScreenFadeStatus() == FADE_0 )
+	if ( m_bMenuActive || TheCamera.GetScreenFadeStatus() == FADE_0 )
 	{
 		InitialiseMenusOnce();
 		m_bWantToRestart = false;
@@ -2076,8 +1586,7 @@ CMenuManager::Process(void)
 
 		if ( m_bMenuActive )
 		{
-			if ( !m_bInSaveZone )
-				LoadAllTextures();
+			LoadAllTextures();
 			InitialiseMenuContents();
 			SetRandomActiveTextlineColor(0);
 			ProcessControllerInput();
@@ -2085,12 +1594,10 @@ CMenuManager::Process(void)
 		else
 		{
 			AnaliseMenuContents();
-			pMenuSave = &MenuPage_SaveBasic;
+			pMenuNewGame = &MenuPage_NewGame;
 			m_pageState = PAGESTATE_NORMAL;
-			bMemoryCardSpecialZone = false;
 			bIgnoreTriangleButton = false;
 			UnloadTextures();
-			m_bInSaveZone = false;
 			m_bRenderGameInMenu = false;
 			gErrorSampleTriggered = true;
 		}
@@ -2119,14 +1626,13 @@ CMenuManager::WorkOutMenuState(uint8 bExit)
 				DMAudio.PlayFrontEndSound(SOUND_FRONTEND_MENU_STARTING, 0);
 				DMAudio.ChangeMusicMode(MUSICMODE_GAME);
 				gMusicPlaying = false;
-				bMemoryCardSpecialZone = false;
 				bIgnoreTriangleButton = false;
 
 				m_bMenuActive = true;
 
 				m_nEndPauseTimer = CTimer::GetTimeInMillisecondsPauseMode() + 800;
 
-				if ( m_currentPage == PAGE_CONTROLS || m_currentPage == PAGE_BRIEFS || m_currentPage == PAGE_LOAD )
+				if ( m_currentPage == PAGE_CONTROLS || m_currentPage == PAGE_BRIEFS || m_currentPage == PAGE_NEW_GAME )
 				{
 					m_nSlidingDir = CGeneral::GetRandomNumber() & (SLIDE_MAX-1);
 
@@ -2178,15 +1684,6 @@ CMenuManager::WorkOutMenuState(uint8 bExit)
 		}
 	}
 
-	if ( m_bSaveMenuActive && !m_bInSaveZone && !TheMemoryCard._bunk2)
-	{
-		m_bSaveMenuActive = false;
-		m_bInSaveZone = true;
-		m_bRenderGameInMenu = true;
-		m_bMenuActive = true;
-		CTimer::StartUserPause();
-		pActiveMenuPage = &MenuPageSaveZone_SaveGame;
-	}
 
 	if ( m_pageState == PAGESTATE_NORMAL && gMusicPlaying )
 	{
@@ -2197,7 +1694,7 @@ CMenuManager::WorkOutMenuState(uint8 bExit)
 	if ( m_nChangePageTimer != 0 && CTimer::GetTimeInMillisecondsPauseMode() >= m_nChangePageTimer )
 	{
 		m_nChangePageTimer = 0;
-		pMenuSave = &MenuPage_SaveBasic;
+		pMenuNewGame = &MenuPage_NewGame;
 		m_currentPage = m_newPage;
 	}
 
@@ -2215,7 +1712,6 @@ CMenuManager::WorkOutMenuState(uint8 bExit)
 		m_nEndPauseTimer = 0;
 		m_bMenuActive = false;
 		m_bMenuActive = false;
-		m_bInSaveZone = false;
 		CTimer::EndUserPause();
 	}
 }
@@ -2406,337 +1902,195 @@ CMenuManager::ProcessControllerInput(void)
 void
 CMenuManager::ProcessDPadLeftJustDown(void)
 {
-	if ( m_bInSaveZone )
-	{
-		if ( pActiveMenuPage )
-		{
-			pActiveMenuPage->GoLeft();
-
-			if ( pActiveMenuPage->m_pCurrentControl == &MenuSaveZoneSSL_1 )
-			{
-				if ( MenuSaveZoneSSL_1.m_numOptions < 2 )
-					;
-				else
-					DMAudio.PlayFrontEndSound(SOUND_FRONTEND_MENU_NAVIGATION, 0);
-			}
-			else
-				DMAudio.PlayFrontEndSound(SOUND_FRONTEND_MENU_NAVIGATION, 0);
-		}
-	}
-	else
-	{
 		switch ( m_pageState )
+	{
+		case PAGESTATE_NORMAL:
 		{
-			case PAGESTATE_NORMAL:
+			if ( m_nChangePageTimer == 0 )
 			{
-				if ( !bMemoryCardSpecialZone && !m_bInSaveZone )
-				{
-					if ( m_nChangePageTimer == 0 )
-					{
-						if ( --m_newPage < PAGE_FIRST ) m_newPage = PAGE_LAST;
+				if ( --m_newPage < PAGE_FIRST ) m_newPage = PAGE_LAST;
 
-						m_nPageLeftTimer   = CTimer::GetTimeInMillisecondsPauseMode() + 300;
-						m_nPageRightTimer  = 0;
-						m_nChangePageTimer = CTimer::GetTimeInMillisecondsPauseMode() + 250;
-						field_18 = m_newPage;
-						DMAudio.PlayFrontEndSound(SOUND_FRONTEND_MENU_NEW_PAGE, 0);
-					}
-				}
-
-				break;
+				m_nPageLeftTimer   = CTimer::GetTimeInMillisecondsPauseMode() + 300;
+				m_nPageRightTimer  = 0;
+				m_nChangePageTimer = CTimer::GetTimeInMillisecondsPauseMode() + 250;
+				field_18 = m_newPage;
+				DMAudio.PlayFrontEndSound(SOUND_FRONTEND_MENU_NEW_PAGE, 0);
 			}
 
-			case PAGESTATE_HIGHLIGHTED:
+			break;
+		}
+
+		case PAGESTATE_HIGHLIGHTED:
+		{
+			if ( pActiveMenuPage )
+				pActiveMenuPage->GoLeftMenuOnPage();
+
+			DMAudio.PlayFrontEndSound(SOUND_FRONTEND_MENU_NAVIGATION, 0);
+
+			break;
+		}
+
+		case PAGESTATE_SELECTED:
+		{
+			if ( pActiveMenuPage )
 			{
-				if ( pActiveMenuPage )
-					pActiveMenuPage->GoLeftMenuOnPage();
+				pActiveMenuPage->GoLeft();
 
-				DMAudio.PlayFrontEndSound(SOUND_FRONTEND_MENU_NAVIGATION, 0);
-
-				break;
-			}
-
-			case PAGESTATE_SELECTED:
-			{
-				if ( pActiveMenuPage )
+				if ( m_currentPage == PAGE_AUDIO)
 				{
-					pActiveMenuPage->GoLeft();
-
-					if ( m_currentPage == PAGE_AUDIO)
-					{
-						if ( pActiveMenuPage->m_pCurrentControl == &MenuAudio_1 )
-							;
-						else if ( pActiveMenuPage->m_pCurrentControl == &MenuAudio_2 )
-							;
-						else
-							DMAudio.PlayFrontEndSound(SOUND_FRONTEND_MENU_NAVIGATION, 0);
-					}
-					else if ( m_currentPage == PAGE_DISPLAY)
-					{
-						if ( pActiveMenuPage->m_pCurrentControl == &MenuDisplay_1 )
-							;
-						else
-							DMAudio.PlayFrontEndSound(SOUND_FRONTEND_MENU_NAVIGATION, 0);
-					}
+					if ( pActiveMenuPage->m_pCurrentControl == &MenuAudio_1 )
+						;
+					else if ( pActiveMenuPage->m_pCurrentControl == &MenuAudio_2 )
+						;
 					else
-					{
-						if ( pActiveMenuPage->m_pCurrentControl == &MenuSaveDG_2 )
-						{
-							if ( MenuSaveDG_2.m_numOptions < 2 )
-								;
-							else
-								DMAudio.PlayFrontEndSound(SOUND_FRONTEND_MENU_NAVIGATION, 0);
-						}
-						else if ( pActiveMenuPage->m_pCurrentControl == &MenuSaveLG_2 )
-						{
-							if ( MenuSaveLG_2.m_numOptions < 2 )
-								;
-							else
-								DMAudio.PlayFrontEndSound(SOUND_FRONTEND_MENU_NAVIGATION, 0);
-						}
-						else
-							DMAudio.PlayFrontEndSound(SOUND_FRONTEND_MENU_NAVIGATION, 0);
-					}
+						DMAudio.PlayFrontEndSound(SOUND_FRONTEND_MENU_NAVIGATION, 0);
 				}
-
-				break;
+				else if ( m_currentPage == PAGE_DISPLAY)
+				{
+					if ( pActiveMenuPage->m_pCurrentControl == &MenuDisplay_1 )
+						;
+					else
+						DMAudio.PlayFrontEndSound(SOUND_FRONTEND_MENU_NAVIGATION, 0);
+				}
+				else
+				{
+					DMAudio.PlayFrontEndSound(SOUND_FRONTEND_MENU_NAVIGATION, 0);
+				}
 			}
+
+			break;
 		}
 	}
+
 }
 
 void
 CMenuManager::ProcessDPadRightJustDown(void)
 {
-	if ( m_bInSaveZone )
-	{
-		if ( pActiveMenuPage )
-		{
-			pActiveMenuPage->GoRight();
-
-			if ( pActiveMenuPage->m_pCurrentControl == &MenuSaveZoneSSL_1 )
-			{
-				if ( MenuSaveZoneSSL_1.m_numOptions < 2 )
-					;
-				else
-					DMAudio.PlayFrontEndSound(SOUND_FRONTEND_MENU_NAVIGATION, 0);
-			}
-			else
-				DMAudio.PlayFrontEndSound(SOUND_FRONTEND_MENU_NAVIGATION, 0);
-		}
-	}
-	else
-	{
 		switch ( m_pageState )
+	{
+		case PAGESTATE_NORMAL:
 		{
-			case PAGESTATE_NORMAL:
+			if ( m_nChangePageTimer == 0 )
 			{
-				if ( !bMemoryCardSpecialZone && !m_bInSaveZone )
-				{
-					if ( m_nChangePageTimer == 0 )
-					{
-						if ( ++m_newPage > PAGE_LAST ) m_newPage = PAGE_FIRST;
+				if ( ++m_newPage > PAGE_LAST ) m_newPage = PAGE_FIRST;
 
-						m_nPageLeftTimer   = 0;
-						m_nPageRightTimer  = CTimer::GetTimeInMillisecondsPauseMode() + 300;
-						m_nChangePageTimer = CTimer::GetTimeInMillisecondsPauseMode() + 250;
-						field_18 = m_newPage;
-						DMAudio.PlayFrontEndSound(SOUND_FRONTEND_MENU_NEW_PAGE, 0);
-					}
-				}
-
-				break;
+				m_nPageLeftTimer   = 0;
+				m_nPageRightTimer  = CTimer::GetTimeInMillisecondsPauseMode() + 300;
+				m_nChangePageTimer = CTimer::GetTimeInMillisecondsPauseMode() + 250;
+				field_18 = m_newPage;
+				DMAudio.PlayFrontEndSound(SOUND_FRONTEND_MENU_NEW_PAGE, 0);
 			}
 
-			case PAGESTATE_HIGHLIGHTED:
+			break;
+		}
+
+		case PAGESTATE_HIGHLIGHTED:
+		{
+			if ( pActiveMenuPage )
+				pActiveMenuPage->GoRightMenuOnPage();
+
+			DMAudio.PlayFrontEndSound(SOUND_FRONTEND_MENU_NAVIGATION, 0);
+
+			break;
+		}
+
+		case PAGESTATE_SELECTED:
+		{
+			if ( pActiveMenuPage )
 			{
-				if ( pActiveMenuPage )
-					pActiveMenuPage->GoRightMenuOnPage();
+				pActiveMenuPage->GoRight();
 
-				DMAudio.PlayFrontEndSound(SOUND_FRONTEND_MENU_NAVIGATION, 0);
-
-				break;
-			}
-
-			case PAGESTATE_SELECTED:
-			{
-				if ( pActiveMenuPage )
+				if ( m_currentPage == PAGE_AUDIO)
 				{
-					pActiveMenuPage->GoRight();
-
-					if ( m_currentPage == PAGE_AUDIO)
-					{
-						if ( pActiveMenuPage->m_pCurrentControl == &MenuAudio_1 )
-							;
-						else if ( pActiveMenuPage->m_pCurrentControl == &MenuAudio_2 )
-							;
-						else
-							DMAudio.PlayFrontEndSound(SOUND_FRONTEND_MENU_NAVIGATION, 0);
-					}
-					else if ( m_currentPage == PAGE_DISPLAY)
-					{
-						if ( pActiveMenuPage->m_pCurrentControl == &MenuDisplay_1 )
-							;
-						else
-							DMAudio.PlayFrontEndSound(SOUND_FRONTEND_MENU_NAVIGATION, 0);
-					}
+					if ( pActiveMenuPage->m_pCurrentControl == &MenuAudio_1 )
+						;
+					else if ( pActiveMenuPage->m_pCurrentControl == &MenuAudio_2 )
+						;
 					else
-					{
-						if ( pActiveMenuPage->m_pCurrentControl == &MenuSaveDG_2 )
-						{
-							if ( MenuSaveDG_2.m_numOptions < 2 )
-								;
-							else
-								DMAudio.PlayFrontEndSound(SOUND_FRONTEND_MENU_NAVIGATION, 0);
-						}
-						else if ( pActiveMenuPage->m_pCurrentControl == &MenuSaveLG_2 )
-						{
-							if ( MenuSaveLG_2.m_numOptions < 2 )
-								;
-							else
-								DMAudio.PlayFrontEndSound(SOUND_FRONTEND_MENU_NAVIGATION, 0);
-						}
-						else
-							DMAudio.PlayFrontEndSound(SOUND_FRONTEND_MENU_NAVIGATION, 0);
-					}
+						DMAudio.PlayFrontEndSound(SOUND_FRONTEND_MENU_NAVIGATION, 0);
 				}
-
-				break;
+				else if ( m_currentPage == PAGE_DISPLAY)
+				{
+					if ( pActiveMenuPage->m_pCurrentControl == &MenuDisplay_1 )
+						;
+					else
+						DMAudio.PlayFrontEndSound(SOUND_FRONTEND_MENU_NAVIGATION, 0);
+				}
+				else
+				{
+					DMAudio.PlayFrontEndSound(SOUND_FRONTEND_MENU_NAVIGATION, 0);
+				}
 			}
+
+			break;
 		}
 	}
+
 }
 
 void
 CMenuManager::ProcessDPadUpJustDown(void)
 {
-	if ( m_bInSaveZone )
-	{
-		if ( pActiveMenuPage )
-		{
-			pActiveMenuPage->GoUp();
-
-			if ( pActiveMenuPage->m_pCurrentControl == &MenuSaveZoneSSL_1 )
-			{
-				if ( MenuSaveZoneSSL_1.m_numOptions < 2 )
-					;
-				else
-					DMAudio.PlayFrontEndSound(SOUND_FRONTEND_MENU_NAVIGATION, 0);
-			}
-			else
-				DMAudio.PlayFrontEndSound(SOUND_FRONTEND_MENU_NAVIGATION, 0);
-		}
-	}
-	else
-	{
 		switch ( m_pageState )
-		{
-			case PAGESTATE_NORMAL:
-				break;
+	{
+		case PAGESTATE_NORMAL:
+			break;
 
-			case PAGESTATE_HIGHLIGHTED:
+		case PAGESTATE_HIGHLIGHTED:
+		{
+			if ( pActiveMenuPage )
+				pActiveMenuPage->GoUpMenuOnPage();
+
+			DMAudio.PlayFrontEndSound(SOUND_FRONTEND_MENU_NAVIGATION, 0);
+			break;
+		}
+
+		case PAGESTATE_SELECTED:
+		{
+			if ( pActiveMenuPage )
 			{
-				if ( pActiveMenuPage )
-					pActiveMenuPage->GoUpMenuOnPage();
+				pActiveMenuPage->GoUp();
 
 				DMAudio.PlayFrontEndSound(SOUND_FRONTEND_MENU_NAVIGATION, 0);
-				break;
-			}
-
-			case PAGESTATE_SELECTED:
-			{
-				if ( pActiveMenuPage )
-				{
-					pActiveMenuPage->GoUp();
-
-					if ( pActiveMenuPage->m_pCurrentControl == &MenuSaveDG_2 )
-					{
-						if ( MenuSaveDG_2.m_numOptions < 2 )
-							;
-						else
-							DMAudio.PlayFrontEndSound(SOUND_FRONTEND_MENU_NAVIGATION, 0);
-					}
-					else if ( pActiveMenuPage->m_pCurrentControl == &MenuSaveLG_2 )
-					{
-						if ( MenuSaveLG_2.m_numOptions < 2 )
-							;
-						else
-							DMAudio.PlayFrontEndSound(SOUND_FRONTEND_MENU_NAVIGATION, 0);
-					}
-					else
-						DMAudio.PlayFrontEndSound(SOUND_FRONTEND_MENU_NAVIGATION, 0);
 				}
-
-				break;
 			}
+
+			break;
 		}
-	}
+
 }
 
 void
 CMenuManager::ProcessDPadDownJustDown(void)
 {
-	if ( m_bInSaveZone )
-	{
-		if ( pActiveMenuPage )
-		{
-			pActiveMenuPage->GoDown();
-
-			if ( pActiveMenuPage->m_pCurrentControl == &MenuSaveZoneSSL_1 )
-			{
-				if ( MenuSaveZoneSSL_1.m_numOptions < 2 )
-					;
-				else
-					DMAudio.PlayFrontEndSound(SOUND_FRONTEND_MENU_NAVIGATION, 0);
-			}
-			else
-				DMAudio.PlayFrontEndSound(SOUND_FRONTEND_MENU_NAVIGATION, 0);
-		}
-	}
-	else
-	{
 		switch ( m_pageState )
-		{
-			case PAGESTATE_NORMAL:
-				break;
+	{
+		case PAGESTATE_NORMAL:
+			break;
 
-			case PAGESTATE_HIGHLIGHTED:
+		case PAGESTATE_HIGHLIGHTED:
+		{
+			if ( pActiveMenuPage )
+				pActiveMenuPage->GoDownMenuOnPage();
+
+			DMAudio.PlayFrontEndSound(SOUND_FRONTEND_MENU_NAVIGATION, 0);
+
+			break;
+		}
+
+		case PAGESTATE_SELECTED:
+		{
+			if ( pActiveMenuPage )
 			{
-				if ( pActiveMenuPage )
-					pActiveMenuPage->GoDownMenuOnPage();
+				pActiveMenuPage->GoDown();
 
 				DMAudio.PlayFrontEndSound(SOUND_FRONTEND_MENU_NAVIGATION, 0);
-
-				break;
-			}
-
-			case PAGESTATE_SELECTED:
-			{
-				if ( pActiveMenuPage )
-				{
-					pActiveMenuPage->GoDown();
-
-					if ( pActiveMenuPage->m_pCurrentControl == &MenuSaveDG_2 )
-					{
-						if ( MenuSaveDG_2.m_numOptions < 2 )
-							;
-						else
-							DMAudio.PlayFrontEndSound(SOUND_FRONTEND_MENU_NAVIGATION, 0);
-					}
-					else if ( pActiveMenuPage->m_pCurrentControl == &MenuSaveLG_2 )
-					{
-						if ( MenuSaveLG_2.m_numOptions < 2 )
-							;
-						else
-							DMAudio.PlayFrontEndSound(SOUND_FRONTEND_MENU_NAVIGATION, 0);
-					}
-					else
-						DMAudio.PlayFrontEndSound(SOUND_FRONTEND_MENU_NAVIGATION, 0);
 				}
-				break;
 			}
+			break;
 		}
-	}
+
 }
 
 void
@@ -2746,16 +2100,9 @@ CMenuManager::ProcessDPadTriangleJustDown(void)
 	{
 		pActiveMenuPage->SelectDefaultCancelAction();
 
-		if ( m_bMenuActive || m_bInSaveZone )
+		if ( m_bMenuActive )
 		{
-			if ( bIgnoreTriangleButton )
-			{
-				if ( m_bInSaveZone )
-					DMAudio.PlayFrontEndSound(SOUND_FRONTEND_MENU_BACK, 0);
-				else if ( pActiveMenuPage->m_pCurrentControl == &MenuSaveDG_2 || pActiveMenuPage->m_pCurrentControl == &MenuSaveLG_2 )
-					DMAudio.PlayFrontEndSound(SOUND_FRONTEND_MENU_BACK, 0);
-			}
-			else if ( !bIgnoreTriangleButton )
+			if ( !bIgnoreTriangleButton )
 			{
 				switch ( m_pageState )
 				{
@@ -2825,121 +2172,112 @@ CMenuManager::ProcessDPadTriangleJustDown(void)
 void
 CMenuManager::ProcessDPadCrossJustDown(void)
 {
-	if ( m_bInSaveZone )
-	{
-		if ( pActiveMenuPage )
-			pActiveMenuPage->SelectCurrentOptionUnderCursor();
-
-		DMAudio.PlayFrontEndSound(SOUND_FRONTEND_MENU_SETTING_CHANGE, 0);
-	}
-	else
-	{
 		if ( m_currentPage != PAGE_STATS && m_currentPage != PAGE_BRIEFS)
+	{
+		switch ( m_pageState )
 		{
-			switch ( m_pageState )
+			case PAGESTATE_NORMAL:
 			{
-				case PAGESTATE_NORMAL:
+				m_pageState = PAGESTATE_HIGHLIGHTED;
+				if ( pActiveMenuPage )
 				{
-					m_pageState = PAGESTATE_HIGHLIGHTED;
-					if ( pActiveMenuPage )
-					{
-						if ( pActiveMenuPage->m_numControls == 1 )
-							m_pageState = PAGESTATE_SELECTED;
-					}
-
-					switch ( m_currentPage )
-					{
-						case PAGE_AUDIO:
-						{
-							if (   pActiveMenuPage->m_pCurrentControl == &MenuAudio_1
-								|| pActiveMenuPage->m_pCurrentControl == &MenuAudio_2
-								|| pActiveMenuPage->m_pCurrentControl == &MenuAudio_3
-								|| pActiveMenuPage->m_pCurrentControl == &MenuAudio_4 )
-							{
-								if ( !gMusicPlaying )
-								{
-									DMAudio.PlayFrontEndTrack(m_PrefsRadioStation, TRUE);
-									gMusicPlaying = true;
-								}
-							}
-							else
-							{
-								DMAudio.StopFrontEndTrack();
-								gMusicPlaying = false;
-							}
-							break;
-						}
-					}
-
-					DMAudio.PlayFrontEndSound(SOUND_FRONTEND_MENU_SETTING_CHANGE, 0);
-					break;
+					if ( pActiveMenuPage->m_numControls == 1 )
+						m_pageState = PAGESTATE_SELECTED;
 				}
 
-				case PAGESTATE_HIGHLIGHTED:
+				switch ( m_currentPage )
 				{
-					m_pageState = PAGESTATE_SELECTED;
-					DoHackingMenusAtPageBrowse();
-					if ( pActiveMenuPage )
+					case PAGE_AUDIO:
 					{
-						if ( pActiveMenuPage->IsActiveMenuTwoState())
+						if (   pActiveMenuPage->m_pCurrentControl == &MenuAudio_1
+							|| pActiveMenuPage->m_pCurrentControl == &MenuAudio_2
+							|| pActiveMenuPage->m_pCurrentControl == &MenuAudio_3
+							|| pActiveMenuPage->m_pCurrentControl == &MenuAudio_4 )
 						{
-							m_pageState = PAGESTATE_HIGHLIGHTED;
-							pActiveMenuPage->ActiveMenuTwoState_SelectNextPosition();
+							if ( !gMusicPlaying )
+							{
+								DMAudio.PlayFrontEndTrack(m_PrefsRadioStation, TRUE);
+								gMusicPlaying = true;
+							}
 						}
-					}
-
-					switch ( m_currentPage )
-					{
-						case PAGE_AUDIO:
+						else
 						{
-							if ( pActiveMenuPage->m_pCurrentControl != &MenuAudio_4 )
-								DMAudio.PlayFrontEndSound(SOUND_FRONTEND_MENU_SETTING_CHANGE, 0);
-
-							break;
-						}
-
-						default:
-						{
-							DMAudio.PlayFrontEndSound(SOUND_FRONTEND_MENU_SETTING_CHANGE, 0);
 							DMAudio.StopFrontEndTrack();
 							gMusicPlaying = false;
+						}
+						break;
+					}
+				}
+
+				DMAudio.PlayFrontEndSound(SOUND_FRONTEND_MENU_SETTING_CHANGE, 0);
+				break;
+			}
+
+			case PAGESTATE_HIGHLIGHTED:
+			{
+				m_pageState = PAGESTATE_SELECTED;
+				DoHackingMenusAtPageBrowse();
+				if ( pActiveMenuPage )
+				{
+					if ( pActiveMenuPage->IsActiveMenuTwoState())
+					{
+						m_pageState = PAGESTATE_HIGHLIGHTED;
+						pActiveMenuPage->ActiveMenuTwoState_SelectNextPosition();
+					}
+				}
+
+				switch ( m_currentPage )
+				{
+					case PAGE_AUDIO:
+					{
+						if ( pActiveMenuPage->m_pCurrentControl != &MenuAudio_4 )
+							DMAudio.PlayFrontEndSound(SOUND_FRONTEND_MENU_SETTING_CHANGE, 0);
+
+						break;
+					}
+
+					default:
+					{
+						DMAudio.PlayFrontEndSound(SOUND_FRONTEND_MENU_SETTING_CHANGE, 0);
+						DMAudio.StopFrontEndTrack();
+						gMusicPlaying = false;
+						break;
+					}
+				}
+				break;
+			}
+
+			case PAGESTATE_SELECTED:
+			{
+				if ( pActiveMenuPage )
+				{
+					pActiveMenuPage->SelectCurrentOptionUnderCursor();
+
+					switch ( m_currentPage )
+					{
+						case PAGE_AUDIO:
+						{
+							if ( pActiveMenuPage->m_pCurrentControl != &MenuAudio_3 )
+								m_pageState = PAGESTATE_HIGHLIGHTED;
 							break;
 						}
+
+						case PAGE_NEW_GAME:
+						case PAGE_LANGUAGE:
+							break;
+
+						default:
+							m_pageState = PAGESTATE_HIGHLIGHTED;
+							break;
 					}
-					break;
 				}
 
-				case PAGESTATE_SELECTED:
-				{
-					if ( pActiveMenuPage )
-					{
-						pActiveMenuPage->SelectCurrentOptionUnderCursor();
-
-						switch ( m_currentPage )
-						{
-							case PAGE_AUDIO:
-							{
-								if ( pActiveMenuPage->m_pCurrentControl != &MenuAudio_3 )
-									m_pageState = PAGESTATE_HIGHLIGHTED;
-								break;
-							}
-
-							case PAGE_LOAD:
-							case PAGE_LANGUAGE:
-								break;
-
-							default:
-								m_pageState = PAGESTATE_HIGHLIGHTED;
-								break;
-						}
-					}
-
-					DMAudio.PlayFrontEndSound(SOUND_FRONTEND_MENU_SETTING_CHANGE, 0);
-					break;
-				}
+				DMAudio.PlayFrontEndSound(SOUND_FRONTEND_MENU_SETTING_CHANGE, 0);
+				break;
 			}
 		}
 	}
+
 }
 
 void
