@@ -903,6 +903,8 @@ public:
 	// without clearing the others.
 	void SetGettingInFlags(uint8 doorFlag) { m_nGettingInFlags |= doorFlag; }
 	void SetGettingOutFlags(uint8 doorFlag) { m_nGettingOutFlags |= doorFlag; }
+	// SA CVehicle::ClearGettingOutFlags: the clearing twin of the above.
+	void ClearGettingOutFlags(uint8 doorFlag) { m_nGettingOutFlags &= ~doorFlag; }
 	bool CanPedOpenLocks(CPed *ped);
 	bool CanDoorsBeDamaged(void);
 	bool CanPedEnterCar(void);

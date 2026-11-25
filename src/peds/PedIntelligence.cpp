@@ -7,6 +7,8 @@
 #include "EventScriptCommand.h"
 #include "DecisionMakerTypes.h"
 #include "TaskComplexWander.h"
+#include "TaskSimpleCarDrive.h"
+#include "TaskSimpleCarDriveTimed.h"
 #include "TaskSimpleDuck.h"
 #include "TaskSimpleGoTo.h"
 #include "TaskSimpleStandStill.h"
@@ -395,7 +397,16 @@ CPedIntelligence::ClearTasks(bool bClearPrimaryTasks, bool bClearSecondaryTasks)
 {
 	if(bClearPrimaryTasks){
 		if(m_pPed->bInVehicle && m_pPed->m_pMyVehicle){
-			// SA queues CTaskSimpleCarDrive here; not ported yet.
+			if(!m_eventGroup.HasScriptCommandOfTaskType(TASK_SIMPLE_CAR_DRIVE)){
+				CTask *driveTask;
+				CTask *defaultTask = m_TaskMgr.GetTaskPrimary(TASK_PRIMARY_DEFAULT);
+				if(defaultTask && defaultTask->GetTaskType() == TASK_SIMPLE_CAR_DRIVE)
+					driveTask = new CTaskSimpleCarDriveTimed(m_pPed->m_pMyVehicle, 0);
+				else
+					driveTask = new CTaskSimpleCarDrive(m_pPed->m_pMyVehicle, nil, false);
+				CEventScriptCommand eventScriptCommand(TASK_PRIMARY_PRIMARY, driveTask, false);
+				m_eventGroup.Add(&eventScriptCommand, false);
+			}
 		}else if(!m_eventGroup.HasScriptCommandOfTaskType(TASK_SIMPLE_STAND_STILL)){
 			CTaskSimpleStandStill *standStill = new CTaskSimpleStandStill(0, false, false, 8.0f);
 			CEventScriptCommand eventScriptCommand(TASK_PRIMARY_PRIMARY, standStill, false);
@@ -451,10 +462,13 @@ CPedIntelligence::ProcessEventHandler()
 }
 
 // SA CPedIntelligence::IsInACarOrEnteringOne. The enter-car tasks are not
-// ported yet; being in a vehicle is the part that can already be true.
+// ported yet; the driving task lookup is SA's third check.
 bool
 CPedIntelligence::IsInACarOrEnteringOne()
 {
+	CTask *drive = m_TaskMgr.FindTaskOfType(TASK_SIMPLE_CAR_DRIVE, true);
+	if(drive && ((CTaskSimpleCarDrive*)drive)->GetVehicle())
+		return true;
 	return m_pPed->bInVehicle;
 }
 
