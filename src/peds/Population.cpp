@@ -4,6 +4,8 @@
 #include "General.h"
 #include "World.h"
 #include "Population.h"
+#include "PedIntelligence.h"
+#include "TaskComplexWander.h"
 #include "CopPed.h"
 #include "Wanted.h"
 #include "FileMgr.h"
@@ -500,6 +502,21 @@ CPopulation::PedCreationDistMultiplier()
 	return Clamp(vehSpeed - 0.1f + 1.0f, 1.0f, 1.5f);
 }
 
+// SA CPopulation::AddPed: an ambient ped's job is to wander. Cops wander
+// on the primary slot (their stand-still default stays underneath, ready
+// when the wander is displaced); everybody else wanders as their default
+// task, replacing the birth stand-still.
+static void
+SetPedWanderTask(CPed *ped, bool bCop)
+{
+	if(ped->GetIntelligence() == nil)
+		return;
+	if(bCop)
+		ped->GetIntelligence()->GetTaskManager().SetTask(CTaskComplexWander::GetWanderTaskByPedType(ped), TASK_PRIMARY_PRIMARY);
+	else
+		ped->GetIntelligence()->GetTaskManager().SetTask(CTaskComplexWander::GetWanderTaskByPedType(ped), TASK_PRIMARY_DEFAULT);
+}
+
 CPed*
 CPopulation::AddPed(ePedType pedType, uint32 miOrCopType, CVector const &coors, int32 modifier)
 {
@@ -511,6 +528,7 @@ CPopulation::AddPed(ePedType pedType, uint32 miOrCopType, CVector const &coors, 
 			ped->SetPosition(coors);
 			ped->SetOrientation(0.0f, 0.0f, 0.0f);
 			CWorld::Add(ped);
+			SetPedWanderTask(ped, false);
 			if (ms_bGivePedsWeapons) {
 				eWeaponType weapon;
 
@@ -543,6 +561,7 @@ CPopulation::AddPed(ePedType pedType, uint32 miOrCopType, CVector const &coors, 
 			ped->SetPosition(coors);
 			ped->SetOrientation(0.0f, 0.0f, 0.0f);
 			CWorld::Add(ped);
+			SetPedWanderTask(ped, true);
 			return ped;
 		}
 		case PEDTYPE_GANG1:
@@ -559,6 +578,7 @@ CPopulation::AddPed(ePedType pedType, uint32 miOrCopType, CVector const &coors, 
 			ped->SetPosition(coors);
 			ped->SetOrientation(0.0f, 0.0f, 0.0f);
 			CWorld::Add(ped);
+			SetPedWanderTask(ped, false);
 
 			eWeaponType weapon;
 			if (CGeneral::GetRandomNumberInRange(0, 100) >= 50)
@@ -576,6 +596,7 @@ CPopulation::AddPed(ePedType pedType, uint32 miOrCopType, CVector const &coors, 
 		    ped->SetPosition(coors);
 			ped->SetOrientation(0.0f, 0.0f, 0.0f);
 			CWorld::Add(ped);
+			SetPedWanderTask(ped, false);
 			return ped;
 		}
 		case PEDTYPE_FIREMAN:
@@ -584,6 +605,7 @@ CPopulation::AddPed(ePedType pedType, uint32 miOrCopType, CVector const &coors, 
 		    ped->SetPosition(coors);
 			ped->SetOrientation(0.0f, 0.0f, 0.0f);
 			CWorld::Add(ped);
+			SetPedWanderTask(ped, false);
 			return ped;
 		}
 		case PEDTYPE_CRIMINAL:
@@ -593,6 +615,7 @@ CPopulation::AddPed(ePedType pedType, uint32 miOrCopType, CVector const &coors, 
 			ped->SetPosition(coors);
 			ped->SetOrientation(0.0f, 0.0f, 0.0f);
 			CWorld::Add(ped);
+			SetPedWanderTask(ped, false);
 			return ped;
 		}
 		default:

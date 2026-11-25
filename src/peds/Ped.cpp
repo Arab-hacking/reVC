@@ -9,6 +9,7 @@
 #include "PedNode.h"
 #include "Ped.h"
 #include "PedIntelligence.h"
+#include "TaskSimpleStandStill.h"
 #include "TaskSimpleSwim.h"
 #include "TaskSimpleClimb.h"
 #include "AnimBlendAssociation.h"
@@ -94,6 +95,13 @@ CPed::CPed(uint32 pedType) : m_pedIK(this)
 	// machinery and scanners. It is pool-allocated (140 slots); if that pool
 	// is exhausted this stays nil and the ped simply has no SA brain yet.
 	m_pIntelligence = new CPedIntelligence(this);
+	if(m_pIntelligence){
+		// SA CPed's birth task: stand still, looped, until something
+		// better (a wander, a script command, an event response) takes
+		// the primary slots. TASK_PRIMARY_DEFAULT is the lowest primary,
+		// so this only ever runs when nothing else wants the ped.
+		m_pIntelligence->GetTaskManager().SetTask(new CTaskSimpleStandStill(0, true, false, 8.0f), TASK_PRIMARY_DEFAULT);
+	}
 	// A ped is asked for its stats before its model is set, and 48 places read
 	// them without a test. Start on the standard stat entry rather than on
 	// whatever a fresh allocation held.
