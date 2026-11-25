@@ -11,6 +11,7 @@
 #include "Messages.h"
 #include "ModelIndices.h"
 #include "ParticleObject.h"
+#include "PedGroups.h"
 #include "Pickups.h"
 #include "Population.h"
 #include "ProjectileInfo.h"
@@ -1870,6 +1871,8 @@ void
 CWorld::Process(void)
 {
 	if(!(CTimer::GetFrameCounter() & 63)) CReferences::PruneAllReferencesInWorld();
+
+	CPedGroups::Process();
 
 	{
 		for(CPtrNode *node = ms_listMovingEntityPtrs.first; node; node = node->next) {

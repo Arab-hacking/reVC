@@ -4,16 +4,16 @@
 
 #include "Entity.h"
 #include "Ped.h"
+#include "PedGroups.h"
 #include "PlayerInfo.h"
 #include "PlayerPed.h"
 #include "Timer.h"
 #include "World.h"
 
 // SA CPedDamageResponseCalculator (0x4AD3F0). Adaptations for this
-// codebase: the cheat branches are absent; the same-group/friends
-// friendly-fire reduction in AccountForPedDamageStats needs CPedGroups
-// and CPedIntelligence::AreFriends, neither ported yet, so only the
-// stats scaling is applied; the kill rule delegates to
+// codebase: the cheat branches are absent; the friendly-fire reduction
+// in AccountForPedDamageStats applies the same-group half only
+// (CPedIntelligence::AreFriends is not ported yet); the kill rule delegates to
 // CPed::WillForceDeathFrom, the ped-side twin of SA's rule that already
 // lived in InflictDamage; pain speech (CTX_GLOBAL_PAIN_*) is skipped -
 // the SA speech contexts are not ported yet.
@@ -25,15 +25,34 @@ CPedDamageResponseCalculator::CPedDamageResponseCalculator(const CEntity *entity
 {
 }
 
-// 0x4AD430 (stats scaling only; see file header)
+// 0x4AD430 (minus the CPedIntelligence::AreFriends branch - the
+// acquaintance system is not ported yet, so only the same-group half
+// of SA's friendly-fire reduction applies)
 void
 CPedDamageResponseCalculator::AccountForPedDamageStats(CPed *ped, CPedDamageResponse &response)
 {
 	(void)response;
 
+	const bool isStealthKill = m_fDamageFactor == ms_damageFactor;
+
 	m_fDamageFactor *= ped->IsPlayer()
 		? 0.33f
 		: ped->m_pedStats->m_fDefendWeakness;
+
+	CPed *damagerPed = m_pDamager && ((CEntity*)m_pDamager)->IsPed()
+		? (CPed*)m_pDamager
+		: nil;
+	const bool isExplosiveOrFire = m_weaponType == WEAPONTYPE_EXPLOSION || m_weaponType == WEAPONTYPE_FLAMETHROWER;
+
+	if(damagerPed && damagerPed->IsPlayer()){
+		if(!CPedGroups::AreInSameGroup(ped, damagerPed) || isExplosiveOrFire || isStealthKill)
+			return;
+	}else{
+		if(!damagerPed || ped->CharCreatedBy != MISSION_CHAR || !CPedGroups::AreInSameGroup(ped, damagerPed) || isExplosiveOrFire)
+			return;
+	}
+
+	m_fDamageFactor = Min(12.5f, m_fDamageFactor * 0.1f);
 }
 
 // 0x4AD550

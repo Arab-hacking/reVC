@@ -48,6 +48,7 @@
 #include "NoClip.h"
 #include "Particle.h"
 #include "ParticleObject.h"
+#include "PedGroups.h"
 #include "PedRoutes.h"
 #include "Phones.h"
 #include "Pickups.h"
@@ -602,6 +603,7 @@ bool CGame::Initialise(void)
 
 	LoadingScreen("Loading the Game", "Setup game variables", nil);
 	CPopulation::Initialise();
+	CPedGroups::Init();
 	CWorld::PlayerInFocus = 0;
 	CCoronas::Init();
 	CShadows::Init();
