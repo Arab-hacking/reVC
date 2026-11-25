@@ -1341,11 +1341,22 @@ CCam::Process_FollowPedWithMouse(const CVector &CameraTarget, float TargetOrient
 	float CamDist;
 	CColPoint colPoint;
 	CEntity *entity;
+#ifndef MASTER
+	static float previousFollowPedDistance = -1.0f;
+	static int previousFollowPedDistanceDirection = 0;
+#endif
+#ifndef MASTER
+	bool geometryBlocked = false;
+#endif
 
 	if(ResetStatics){
 		Rotating = false;
 		m_bCollisionChecksOn = true;
 		CPad::GetPad(0)->ClearMouseHistory();
+#ifndef MASTER
+		previousFollowPedDistance = -1.0f;
+		previousFollowPedDistanceDirection = 0;
+#endif
 		ResetStatics = false;
 	}
 
@@ -1434,6 +1445,9 @@ CCam::Process_FollowPedWithMouse(const CVector &CameraTarget, float TargetOrient
 	CWorld::pIgnoreEntity = CamTargetEntity;
 	entity = nil;
 	if(!CNoClip::IsActive() && CWorld::ProcessLineOfSight(TargetCoors, Source, colPoint, entity, true, true, true, true, false, false, true)){
+#ifndef MASTER
+		geometryBlocked = true;
+#endif
 		float PedColDist = (TargetCoors - colPoint.point).Magnitude();
 		float ColCamDist = CamDist - PedColDist;
 		if(entity->IsPed() && ColCamDist > DEFAULT_NEAR + 0.1f){
@@ -1461,6 +1475,9 @@ CCam::Process_FollowPedWithMouse(const CVector &CameraTarget, float TargetOrient
 	entity = CNoClip::IsActive() ? nil : CWorld::TestSphereAgainstWorld(Source + Front*Near, radius, nil, true, true, false, true, false, false);
 	int i = 0;
 	while(entity){
+#ifndef MASTER
+		geometryBlocked = true;
+#endif
 		CVector CamToCol = gaTempSphereColPoints[0].point - Source;
 		float frontDist = DotProduct(CamToCol, Front);
 		float dist = (CamToCol - Front*frontDist).Magnitude() / ViewPlaneWidth;
@@ -1501,6 +1518,20 @@ CCam::Process_FollowPedWithMouse(const CVector &CameraTarget, float TargetOrient
 		if(clip < RwCameraGetNearClipPlane(Scene.camera))
 			RwCameraSetNearClipPlane(Scene.camera, Max(clip, fCloseNearClipLimit));
 	}
+
+#ifndef MASTER
+	float actualDistance = (TargetCoors - Source).Magnitude();
+	int distanceDirection = actualDistance - previousFollowPedDistance > 0.02f ? 1 :
+		actualDistance - previousFollowPedDistance < -0.02f ? -1 : 0;
+	if(previousFollowPedDistance >= 0.0f && distanceDirection != 0){
+		if(previousFollowPedDistanceDirection != 0 && distanceDirection != previousFollowPedDistanceDirection)
+			REVC_LOG_INFO("FollowPed camera distance reversed: actual=%.3f ideal=%.3f collision-target=%.3f smoothed=%.3f alpha=%.3f mouse=(%.2f,%.2f) geometry=%d",
+				actualDistance, CamDist, TargetDist, Distance, Alpha,
+				CPad::GetPad(0)->GetMouseX(), CPad::GetPad(0)->GetMouseY(), geometryBlocked);
+		previousFollowPedDistanceDirection = distanceDirection;
+	}
+	previousFollowPedDistance = actualDistance;
+#endif
 
 	TheCamera.m_bCamDirectlyInFront = false;
 	TheCamera.m_bCamDirectlyBehind = false;
