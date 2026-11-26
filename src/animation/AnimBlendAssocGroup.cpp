@@ -26,7 +26,7 @@ CAnimBlendAssociation *CAnimBlendAssocGroup::CopyAnimation(AnimationId id)
 
 CAnimBlendAssociation *CAnimBlendAssocGroup::CopyAnimation(CAnimBlendStaticAssociation *anim)
 {
-	if (!anim)
+	if (!anim || !anim->m_BlendHier)
 		return nil;
 	CAnimManager::UncompressAnimation(anim->m_BlendHier);
 	return new CAnimBlendAssociation(*anim);
@@ -117,9 +117,18 @@ void CAnimBlendAssocGroup::CreateAssociations(const char *blockName, RpClump *cl
 		CAnimBlendStaticAssociation *assoc = &GetAssociations()[i];
 
 		if (name[0]) { // Check is empty string
-			assoc->Init(clump, CAnimManager::GetAnimation(name, m_AnimBlock));
-			assoc->m_AnimId = (int16)(m_IdOffset + i);
-			assert(assoc->m_AnimId < ANIM_ID_MAX);
+			CAnimBlendHierarchy *hier = CAnimManager::GetAnimation(name, m_AnimBlock);
+			if (hier) {
+				assoc->Init(clump, hier);
+				assoc->m_AnimId = (int16)(m_IdOffset + i);
+				assert(assoc->m_AnimId < ANIM_ID_MAX);
+			} else {
+				// The definition names a clip this block does not
+				// have. Keep the slot (ids are positional) but leave
+				// it unbound so lookups fail soft instead of crashing.
+				debug("Animation %s not found in block %s, association left empty\n", name, blockName);
+				assoc->m_AnimId = ANIM_ID_UNDEFINED;
+			}
 		} else {
 			assoc->m_AnimId = ANIM_ID_UNDEFINED;
 		}

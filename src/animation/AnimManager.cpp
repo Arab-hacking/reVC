@@ -247,7 +247,10 @@ CAnimBlendAssociation *CAnimManager::AddAnimationToClump(RpClump *clump, CAnimBl
 // 0x4D3AA0
 CAnimBlendAssociation *CAnimManager::AddAnimation(RpClump *clump, AssocGroupId groupId, AnimationId animId)
 {
-	return AddAnimationToClump(clump, CreateAnimAssociation(groupId, animId));
+	CAnimBlendAssociation *anim = CreateAnimAssociation(groupId, animId);
+	if (!anim)
+		return nil;
+	return AddAnimationToClump(clump, anim);
 }
 
 // 0x4D4330
@@ -264,6 +267,8 @@ CAnimBlendAssociation *CAnimManager::AddAnimation(RpClump *clump, CAnimBlendHier
 CAnimBlendAssociation *CAnimManager::AddAnimationAndSync(RpClump *clump, CAnimBlendAssociation *syncWith, AssocGroupId groupId, AnimationId animId)
 {
 	CAnimBlendAssociation *a = CreateAnimAssociation(groupId, animId);
+	if (!a)
+		return nil;
 	if (a->IsSyncronised() && syncWith) {
 		a->SyncAnimation(syncWith);
 		a->m_Flags |= ANIMATION_IS_PLAYING;
@@ -503,6 +508,8 @@ CAnimBlendAssociation *CAnimManager::BlendAnimation(RpClump *clump, AssocGroupId
 	CAnimBlendClumpData *clumpAnimData = RpAnimBlendClumpGetData(clump); // Get running anim data
 
 	CAnimBlendStaticAssociation *toBlendAnim = GetAssocGroups()[groupId].GetAnimation(animId);
+	if (!toBlendAnim->m_BlendHier)
+		return nil; // clip not present in the loaded block
 	const bool toBlendIsMoving = (toBlendAnim->m_Flags & ANIMATION_IS_SYNCRONISED) != 0;
 	const bool toBlendIsPartial = (toBlendAnim->m_Flags & ANIMATION_IS_PARTIAL) != 0;
 	const bool toBlendIsIndestructible = (toBlendAnim->m_Flags & ANIMATION_FACIAL) != 0;

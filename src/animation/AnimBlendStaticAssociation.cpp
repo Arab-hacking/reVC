@@ -30,7 +30,11 @@ void CAnimBlendStaticAssociation::Init(RpClump *clump, CAnimBlendHierarchy *h)
 {
 	m_BlendHier = h;
 
-	if (!clump)
+	// A hierarchy can be missing when a group definition names a clip
+	// the loaded block does not contain (custom/BR banks are not obliged
+	// to carry every SA clip). Stay unbound instead of dereferencing it;
+	// consumers check for the null hierarchy.
+	if (!h || !clump)
 		return;
 
 	CAnimBlendClumpData *clumpAnimData = RpAnimBlendClumpGetData(clump);
@@ -72,5 +76,5 @@ void CAnimBlendStaticAssociation::FreeSequenceArray()
 
 uint32 CAnimBlendStaticAssociation::GetHashKey() const
 {
-	return m_BlendHier->m_hashKey;
+	return m_BlendHier ? m_BlendHier->m_hashKey : 0;
 }
