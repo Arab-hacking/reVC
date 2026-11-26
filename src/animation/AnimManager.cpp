@@ -17,12 +17,10 @@
 #include "RwHelper.h"
 #include "General.h"
 
-// 0x4C4DC0
-bool IsClumpSkinned(RpClump *clump)
-{
-	RpAtomic *a = GetFirstAtomic(clump);
-	return a && RpSkinGeometryGetSkin(RpAtomicGetGeometry(a)) != nil;
-}
+// SA IsClumpSkinned (0x4C4DC0) is not defined here: RwHelper.cpp
+// already provides this codebase's version (it scans every atomic
+// instead of only the first), and a second definition breaks the
+// link. Declared in AnimManager.h and RwHelper.h.
 
 AnimAssocDefinition CAnimManager::ms_aAnimAssocDefinitions[ANIM_TOTAL_GROUPS];
 uint32 CAnimManager::ms_numAnimAssocDefinitions;

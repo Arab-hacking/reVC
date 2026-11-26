@@ -107,7 +107,7 @@ RwBool RwFrameDestroy(RwFrame * frame) { frame->destroy(); return true; }
 //void _rwFrameInit(RwFrame *frame);
 //void _rwFrameDeInit(RwFrame *frame);
 //RwBool RwFrameDirty(const RwFrame * frame);
-//RwInt32 RwFrameCount(RwFrame * frame);
+RwInt32 RwFrameCount(RwFrame * frame) { return frame->count(); }
 //RwBool RwFrameSetStaticPluginsSize(RwInt32 size);
 RwInt32 RwFrameRegisterPlugin(RwInt32 size, RwUInt32 pluginID, RwPluginObjectConstructor constructCB, RwPluginObjectDestructor destructCB, RwPluginObjectCopy copyCB)
 	{ return Frame::registerPlugin(size, pluginID, constructCB, destructCB, (CopyConstructor)copyCB); }

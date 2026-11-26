@@ -147,9 +147,14 @@ bool CAnimBlendSequence::MoveMemory()
 	if (m_bUsingExternalMemory || !m_Frames)
 		return false;
 
+#ifdef USE_CUSTOM_ALLOCATOR
 	void *prevPtr = m_Frames;
 	m_Frames = gMainHeap.MoveMemory(m_Frames);
 	return prevPtr != m_Frames; // Return true if the memory was moved
+#else
+	// Without the custom allocator nothing ever relocates the frames.
+	return false;
+#endif
 }
 
 // 0x4D1180
