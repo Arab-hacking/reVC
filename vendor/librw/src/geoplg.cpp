@@ -11,8 +11,6 @@
 #include "rwengine.h"
 #include "rwanim.h"
 #include "rwplugins.h"
-#include "ps2/rwps2.h"
-#include "ps2/rwps2plg.h"
 #include "d3d/rwxbox.h"
 #include "d3d/rwd3d8.h"
 #include "d3d/rwd3d9.h"
@@ -239,8 +237,6 @@ destroyNativeData(void *object, int32 offset, int32 size)
 	Geometry *geometry = (Geometry*)object;
 	if(geometry->instData == nil)
 		return object;
-	if(geometry->instData->platform == PLATFORM_PS2)
-		return ps2::destroyNativeData(object, offset, size);
 	if(geometry->instData->platform == PLATFORM_WDGL)
 		return wdgl::destroyNativeData(object, offset, size);
 	if(geometry->instData->platform == PLATFORM_XBOX)
@@ -268,9 +264,7 @@ readNativeData(Stream *stream, int32 len, void *object, int32 o, int32 s)
 	   libraryIDPack(header.version, header.build) == libid){
 		platform = stream->readU32();
 		stream->seek(-16);
-		if(platform == PLATFORM_PS2)
-			return ps2::readNativeData(stream, len, object, o, s);
-		else if(platform == PLATFORM_XBOX)
+		if(platform == PLATFORM_XBOX)
 			return xbox::readNativeData(stream, len, object, o, s);
 		else if(platform == PLATFORM_D3D8)
 			return d3d8::readNativeData(stream, len, object, o, s);
@@ -293,9 +287,7 @@ writeNativeData(Stream *stream, int32 len, void *object, int32 o, int32 s)
 	Geometry *geometry = (Geometry*)object;
 	if(geometry->instData == nil)
 		return stream;
-	if(geometry->instData->platform == PLATFORM_PS2)
-		return ps2::writeNativeData(stream, len, object, o, s);
-	else if(geometry->instData->platform == PLATFORM_WDGL)
+	if(geometry->instData->platform == PLATFORM_WDGL)
 		return wdgl::writeNativeData(stream, len, object, o, s);
 	else if(geometry->instData->platform == PLATFORM_XBOX)
 		return xbox::writeNativeData(stream, len, object, o, s);
@@ -312,9 +304,7 @@ getSizeNativeData(void *object, int32 offset, int32 size)
 	Geometry *geometry = (Geometry*)object;
 	if(geometry->instData == nil)
 		return 0;
-	if(geometry->instData->platform == PLATFORM_PS2)
-		return ps2::getSizeNativeData(object, offset, size);
-	else if(geometry->instData->platform == PLATFORM_WDGL)
+	if(geometry->instData->platform == PLATFORM_WDGL)
 		return wdgl::getSizeNativeData(object, offset, size);
 	else if(geometry->instData->platform == PLATFORM_XBOX)
 		return xbox::getSizeNativeData(object, offset, size);

@@ -2,7 +2,7 @@
 #define __GTA_RWHELPER_H__
 
 extern bool bDebugRenderGroups;
-extern bool gPS2alphaTest;
+extern bool gAlphaTestEmu;
 extern bool gBackfaceCulling;
 
 void OpenCharsetSafe();

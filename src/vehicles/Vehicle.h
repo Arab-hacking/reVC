@@ -298,9 +298,7 @@ public:
 	uint8 bRestingOnPhysical : 1; // Dont go static cause car is sitting on a physical object that might get removed
 	uint8 bParking : 1;
 	uint8 bCanPark : 1;
-#if (!defined GTA_PS2 || defined FIX_BUGS)
 	uint8 m_bombType : 3;
-#endif
 	uint8 bDriverLastFrame : 1;
 	// SA CVehicle::vehicleFlags.bIsRCVehicle. Needed by CanBeDriven, which is
 	// what decides whether a ped may take the wheel.
@@ -316,9 +314,7 @@ public:
 	// SA engine inertia state belongs to each instance, not the shared handling.
 	float m_fTransmissionInertiaRatio;
 	float m_fTransmissionInertiaSmoothing;
-#if (!defined GTA_PS2 || defined FIX_BUGS)
 	CEntity* m_pBombRigger;
-#endif
 	uint32 m_nSetPieceExtendedRangeTime;
 	// SA CVehicle::m_nRenderLightsFlags: which lamps actually registered a
 	// corona this frame. CBike::Render reads m_bRightFront to decide whether to

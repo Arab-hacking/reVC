@@ -283,61 +283,9 @@ psInitialize(void)
 
     CFileMgr::Initialise();
 
-#ifdef PS2_MENU
-    CPad::Initialise();
-	CPad::GetPad(0)->Mode = 0;
-
-	CGame::frenchGame = false;
-	CGame::germanGame = false;
-	CGame::nastyGame = true;
-	CMenuManager::m_PrefsAllowNastyGame = true;
-
-	// Mandatory for Linux(Unix? Posix?) to set lang. to environment lang.
-	setlocale(LC_ALL, "");
-
-	const char *systemLang, *keyboardLang;
-
-	systemLang = setlocale (LC_ALL, NULL);
-	keyboardLang = setlocale (LC_CTYPE, NULL);
-	if (!systemLang) systemLang = "C";
-	if (!keyboardLang) keyboardLang = "C";
-
-	short lang;
-	lang = !strncmp(systemLang, "fr_",3) ? LANG_FRENCH :
-					!strncmp(systemLang, "de_",3) ? LANG_GERMAN :
-					!strncmp(systemLang, "en_",3) ? LANG_ENGLISH :
-					!strncmp(systemLang, "it_",3) ? LANG_ITALIAN :
-					!strncmp(systemLang, "es_",3) ? LANG_SPANISH :
-					LANG_OTHER;
-
-	if ( lang  == LANG_ITALIAN )
-		CMenuManager::m_PrefsLanguage = CMenuManager::LANGUAGE_ITALIAN;
-	else if ( lang  == LANG_SPANISH )
-		CMenuManager::m_PrefsLanguage = CMenuManager::LANGUAGE_SPANISH;
-	else if ( lang  == LANG_GERMAN )
-	{
-		CGame::germanGame = true;
-		CGame::nastyGame = false;
-		CMenuManager::m_PrefsAllowNastyGame = false;
-		CMenuManager::m_PrefsLanguage = CMenuManager::LANGUAGE_GERMAN;
-	}
-	else if ( lang  == LANG_FRENCH )
-	{
-		CGame::frenchGame = true;
-		CGame::nastyGame = false;
-		CMenuManager::m_PrefsAllowNastyGame = false;
-		CMenuManager::m_PrefsLanguage = CMenuManager::LANGUAGE_FRENCH;
-	}
-	else
-		CMenuManager::m_PrefsLanguage = CMenuManager::LANGUAGE_AMERICAN;
-
-	FrontEndMenuManager.CheckLanguageSelectionChanged();
-
-#else
 
     InitialiseLanguage();
 
-#endif
 
     _psInitializeVibration();
 
@@ -345,9 +293,7 @@ psInitialize(void)
     TRACE("gGameState = GS_START_UP");
     _dwOperatingSystemVersion = OS_WINXP; // To fool other classes
 
-#ifndef PS2_MENU
     FrontEndMenuManager.LoadSettings();
-#endif
 
 #ifndef __APPLE__
     struct sysinfo systemInfo;
@@ -661,10 +607,8 @@ psSelectDevice()
     FrontEndMenuManager.m_nPrefsDepth = vm.depth;
 #endif
 
-#ifndef PS2_MENU
     if (!useDefault)
         FrontEndMenuManager.m_nCurrOption = 0;
-#endif
 
     /* Set up the video mode and set the apps window
     * dimensions to match */
@@ -1641,9 +1585,7 @@ main(int argc, char *argv[])
             LoadingScreen("Loading the ModelViewer", NULL, GetRandomSplashScreen());
             CAnimViewer::Initialise();
             CTimer::Update();
-#ifndef PS2_MENU
             FrontEndMenuManager.m_bGameNotLoaded = false;
-#endif
         }
 #endif
 
@@ -1742,30 +1684,15 @@ main(int argc, char *argv[])
                     {
                         //CoUninitialize();
 
-#ifdef PS2_MENU
-                        extern char version_name[64];
-						if ( CGame::frenchGame || CGame::germanGame )
-							LoadingScreen(NULL, version_name, "loadsc24");
-						else
-							LoadingScreen(NULL, version_name, "loadsc0");
-
-						printf("Into TheGame!!!\n");
-#else
                         LoadingScreen(nil, nil, "loadsc0");
-#endif
                         if ( !CGame::InitialiseOnceAfterRW() )
                             RsGlobal.quit = TRUE;
 
-#ifdef PS2_MENU
-                        gGameState = GS_INIT_PLAYING_GAME;
-#else
                         gGameState = GS_INIT_FRONTEND;
                         TRACE("gGameState = GS_INIT_FRONTEND;");
-#endif
                         break;
                     }
 
-#ifndef PS2_MENU
                     case GS_INIT_FRONTEND:
                     {
                         LoadingScreen(nil, nil, "loadsc0");
@@ -1799,20 +1726,12 @@ main(int argc, char *argv[])
 
                         break;
                     }
-#endif
 
                     case GS_INIT_PLAYING_GAME:
                     {
-#ifdef PS2_MENU
-                        CGame::Initialise();
-
-						//LoadingScreen("Starting Game", NULL, GetRandomSplashScreen());
-
-#else
                         InitialiseGame();
 
                         FrontEndMenuManager.m_bGameNotLoaded = false;
-#endif
                         gGameState = GS_PLAYING_GAME;
                         TRACE("gGameState = GS_PLAYING_GAME;");
                         break;
@@ -1864,19 +1783,9 @@ main(int argc, char *argv[])
 
         DMAudio.ChangeMusicMode(MUSICMODE_DISABLE);
 
-#ifdef PS2_MENU
-        CGame::ShutDownForRestart();
-#endif
 
         CTimer::Stop();
 
-#ifdef PS2_MENU
-        CGame::InitialiseWhenRestarting();
-        DMAudio.ChangeMusicMode(MUSICMODE_GAME);
-        FrontEndMenuManager.m_bWantToRestart = false;
-
-        continue;
-#else
 #ifndef MASTER
         if ( gbModelViewer )
         	CAnimViewer::Shutdown();
@@ -1900,7 +1809,6 @@ main(int argc, char *argv[])
 
         FrontEndMenuManager.m_bFirstTime = false;
         FrontEndMenuManager.m_bWantToRestart = false;
-#endif
     }
 
     if ( gGameState == GS_PLAYING_GAME )

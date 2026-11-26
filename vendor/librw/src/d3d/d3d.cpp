@@ -669,7 +669,7 @@ rasterNumLevels(Raster *raster)
 #endif
 }
 
-// Almost the same as ps2 and gl3 function
+// Almost the same as the gl3 function
 bool32
 imageFindRasterFormat(Image *img, int32 type,
 	int32 *pWidth, int32 *pHeight, int32 *pDepth, int32 *pFormat)

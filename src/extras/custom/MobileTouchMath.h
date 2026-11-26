@@ -134,8 +134,8 @@ ComputeScreenMetrics(int screenW, int screenH,
 	m.marginTopPx    = MaxF(m.safeTopPx    + m.Dp(8.0f),  m.Dp(12.0f));
 	m.marginBottomPx = MaxF(m.safeBottomPx + m.Dp(10.0f), m.Dp(14.0f));
 
-	const float ps2UnitY = m.screenH / 448.0f;
-	m.hudUnitPx = ClampF(m.Dp(0.95f), ps2UnitY * 0.72f, ps2UnitY * 1.22f);
+	const float hudUnitY = m.screenH / 448.0f;
+	m.hudUnitPx = ClampF(m.Dp(0.95f), hudUnitY * 0.72f, hudUnitY * 1.22f);
 
 	m.radarSizePx = ClampF(m.Dp(94.0f), shortPx * 0.18f, shortPx * 0.26f);
 	m.radarLeftPx = m.marginLeftPx + m.Dp(4.0f);

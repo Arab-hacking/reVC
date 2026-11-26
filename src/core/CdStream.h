@@ -33,7 +33,6 @@ int CdStreamGetStatus(int channel);
 int CdStreamGetLastPosn(void);
 int CdStreamSync(int channel);
 
-#ifndef GTA_PS2
 typedef struct Queue Queue;
 struct Queue
 {
@@ -46,19 +45,18 @@ struct Queue
 VALIDATE_SIZE(Queue, 0x10);
 
 void CdStreamShutdown(void);
-// on IOP on PS2
+// on the console IOP
 void CdStreamInitThread(void);
 void AddToQueue(Queue *queue, int item);
 int32 GetFirstInQueue(Queue *queue);
 void RemoveFirstInQueue(Queue *queue);
 
-// not on PS2 at all
+// not in the original at all
 uint32 GetGTA3ImgSize(void);
 bool CdStreamAddImage(char const *path);
 char *CdStreamGetImageName(int cd);
 void CdStreamRemoveImages(void);
 int32 CdStreamGetNumImages(void);
-#endif
 
 #ifdef FLUSHABLE_STREAMING
 extern bool flushStream[MAX_CDCHANNELS];

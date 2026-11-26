@@ -10,7 +10,6 @@
 #include "rwpipeline.h"
 #include "rwobjects.h"
 #include "rwengine.h"
-#include "ps2/rwps2.h"
 #include "d3d/rwxbox.h"
 #include "d3d/rwd3d.h"
 #include "d3d/rwd3d8.h"
@@ -230,7 +229,6 @@ Engine::init(MemoryFunctions *memfuncs)
 	World::numAllocated = 0;
 
 	// driver plugin attach
-	ps2::registerPlatformPlugins();
 	xbox::registerPlatformPlugins();
 	d3d8::registerPlatformPlugins();
 	d3d9::registerPlatformPlugins();
@@ -264,9 +262,7 @@ Engine::open(EngineOpenParams *p)
 
 	// Initialize device
 	// Device and possibly OS specific!
-#ifdef RW_PS2
-	engine->device = ps2::renderdevice;
-#elif RW_GL3
+#if RW_GL3
 	engine->device = gl3::renderdevice;
 #elif RW_D3D9
 	engine->device = d3d::renderdevice;

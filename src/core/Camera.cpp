@@ -1968,7 +1968,7 @@ CCamera::CamShake(float strength, float x, float y, float z)
 	}
 }
 
-// This seems to be CCamera::CamShake(float) on PS2
+// This seems to be the original CCamera::CamShake(float)
 void
 CamShakeNoPos(CCamera *cam, float strength)
 {
@@ -4114,17 +4114,12 @@ CCamera::CalculateDerivedValues(void)
 bool
 CCamera::IsPointVisible(const CVector &center, const CMatrix *mat)
 {
-#ifdef GTA_PS2
-	CVuVector c;
-	TransformPoint(c, *mat, center);
-#else
 	CVector c = center;
 	#ifdef FIX_BUGS
 		c = *mat * center;
 	#else
 		RwV3dTransformPoints(&c, &c, 1, (RwMatrix*)mat);
 	#endif
-#endif
 	if(c.y < CDraw::GetNearClipZ()) return false;
 	if(c.y > CDraw::GetFarClipZ()) return false;
 	if(c.x*m_vecFrustumNormals[0].x + c.y*m_vecFrustumNormals[0].y > 0.0f) return false;
@@ -4137,17 +4132,12 @@ CCamera::IsPointVisible(const CVector &center, const CMatrix *mat)
 bool
 CCamera::IsSphereVisible(const CVector &center, float radius, const CMatrix *mat)
 {
-#ifdef GTA_PS2
-	CVuVector c;
-	TransformPoint(c, *mat, center);
-#else
 	CVector c = center;
 	#ifdef FIX_BUGS
 		c = *mat * center;
 	#else
 		RwV3dTransformPoints(&c, &c, 1, (RwMatrix*)mat);
 	#endif
-#endif
 	if(c.y + radius < CDraw::GetNearClipZ()) return false;
 	if(c.y - radius > CDraw::GetFarClipZ()) return false;
 	if(c.x*m_vecFrustumNormals[0].x + c.y*m_vecFrustumNormals[0].y > radius) return false;
@@ -4168,16 +4158,12 @@ CCamera::IsBoxVisible(CVUVECTOR *box, const CMatrix *mat)
 {
 	int i;
 	int frustumTests[6] = { 0 };
-#ifdef GTA_PS2
-	TransformPoints(box, 8, *mat, box);
-#else
 	#ifdef FIX_BUGS
 		for (i = 0; i < 8; i++)
 			box[i] = *mat * box[i];
 	#else
 		RwV3dTransformPoints(box, box, 8, (RwMatrix*)mat);
 	#endif
-#endif
 
 	for(i = 0; i < 8; i++){
 		if(box[i].y < CDraw::GetNearClipZ()) frustumTests[0]++;

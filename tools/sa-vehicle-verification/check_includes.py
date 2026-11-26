@@ -11,7 +11,7 @@
         # для Windows-сборки: эмулирует то, что делает msbuild)
 
 Известные платформенные исключения (не собираются в десктопных конфигурациях):
-Android (JavaWrapper.h, AndroidMain.h), PS2 (eetypes.h, libpad.h),
+Android (JavaWrapper.h, AndroidMain.h),
 Miles Sound System (mss.h), системные заголовки в кавычках (assert.h, ctype.h).
 """
 import os

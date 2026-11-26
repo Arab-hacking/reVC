@@ -188,14 +188,12 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang
         PRIVATE
             "-Wall"
     )
-    if (NOT LIBRW_PLATFORM_PS2)
-        target_compile_options(${EXECUTABLE}
-            PRIVATE
-                -Wextra
-                -Wdouble-promotion
-                -Wpedantic
-        )
-    endif()
+    target_compile_options(${EXECUTABLE}
+        PRIVATE
+            -Wextra
+            -Wdouble-promotion
+            -Wpedantic
+    )
 elseif(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     target_compile_options(${EXECUTABLE}
         PUBLIC

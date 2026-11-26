@@ -1,4 +1,4 @@
-#if (!defined(GTA_PS2_STUFF) && defined(RWLIBS)) || defined(__MWERKS__)
+#if defined(__MWERKS__)
 #define WITHD3D
 #endif
 #include "config.h"
@@ -734,14 +734,8 @@ void CRadar::DrawRadarMask()
 	RwRenderStateSet(rwRENDERSTATEZTESTENABLE, (void*)FALSE);
 	RwRenderStateSet(rwRENDERSTATEZWRITEENABLE, (void*)TRUE);
 	RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)TRUE);
-#if !defined(GTA_PS2_STUFF) && defined(RWLIBS)
-	RwRenderStateSet(rwRENDERSTATESRCBLEND, (void*)rwBLENDSRCALPHA);
-	RwRenderStateSet(rwRENDERSTATEDESTBLEND, (void*)rwBLENDINVSRCALPHA);
-	RwD3D8SetRenderState(D3DRS_ALPHAFUNC, D3DCMP_ALWAYS);
-#else
 	RwRenderStateSet(rwRENDERSTATESRCBLEND, (void*)rwBLENDZERO);
 	RwRenderStateSet(rwRENDERSTATEDESTBLEND, (void*)rwBLENDONE);
-#endif
 
 	CVector2D out[8];
 	CVector2D in;
@@ -763,9 +757,6 @@ void CRadar::DrawRadarMask()
 		CSprite2d::SetMaskVertices(8, (float *)out);
 		RwIm2DRenderPrimitive(rwPRIMTYPETRIFAN, CSprite2d::GetVertices(), 8);
 	}
-#if !defined(GTA_PS2_STUFF) && defined(RWLIBS)
-	RwD3D8SetRenderState(D3DRS_ALPHAFUNC, D3DCMP_GREATER);
-#endif
 
 }
 

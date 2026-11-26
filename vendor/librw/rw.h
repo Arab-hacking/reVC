@@ -13,8 +13,6 @@
 #include "src/rwplugins.h"
 #include "src/rwuserdata.h"
 #include "src/rwcharset.h"
-#include "src/ps2/rwps2.h"
-#include "src/ps2/rwps2plg.h"
 #include "src/d3d/rwxbox.h"
 #include "src/d3d/rwd3d.h"
 #include "src/d3d/rwd3d8.h"

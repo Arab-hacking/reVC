@@ -34,7 +34,7 @@ enum RenderState
 	ALPHATESTFUNC,
 	ALPHATESTREF,
 
-	// emulation of PS2 GS alpha test
+	// emulation of the legacy GS alpha test
 	//  in the mode where it still writes color but nor depth
 	GSALPHATEST,
 	GSALPHATESTREF

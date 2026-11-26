@@ -936,8 +936,8 @@ cSampleManager::Initialise(void)
 		for ( int32 i = 0; i < TOTAL_STREAMED_SOUNDS; i++ )
 		{	
 			if ( aStream[0] && (
-#ifdef PS2_AUDIO_PATHS
-				aStream[0]->Open(PS2StreamedNameTable[i], IsThisTrackAt16KHz(i) ? 16000 : 32000) || 
+#ifdef LEGACY_AUDIO_PATHS
+				aStream[0]->Open(LegacyStreamedNameTable[i], IsThisTrackAt16KHz(i) ? 16000 : 32000) || 
 #endif
 				aStream[0]->Open(StreamedNameTable[i], IsThisTrackAt16KHz(i) ? 16000 : 32000)) )
 			{
@@ -1740,8 +1740,8 @@ cSampleManager::PreloadStreamedFile(tTrack nFile, uint8 nStream)
 			return;
 
 		stream->Close();
-#ifdef PS2_AUDIO_PATHS
-		if(!stream->Open(PS2StreamedNameTable[nFile], IsThisTrackAt16KHz(nFile) ? 16000 : 32000))
+#ifdef LEGACY_AUDIO_PATHS
+		if(!stream->Open(LegacyStreamedNameTable[nFile], IsThisTrackAt16KHz(nFile) ? 16000 : 32000))
 #endif
 			stream->Open(StreamedNameTable[nFile], IsThisTrackAt16KHz(nFile) ? 16000 : 32000);
 		if ( !stream->Setup() )
@@ -1810,8 +1810,8 @@ cSampleManager::StartStreamedFile(tTrack nFile, uint32 nPos, uint8 nStream)
 					nFile = 0;
 
 					CStream *stream = aStream[nStream];
-#ifdef PS2_AUDIO_PATHS
-					if(!stream->Open(PS2StreamedNameTable[nFile], IsThisTrackAt16KHz(nFile) ? 16000 : 32000))
+#ifdef LEGACY_AUDIO_PATHS
+					if(!stream->Open(LegacyStreamedNameTable[nFile], IsThisTrackAt16KHz(nFile) ? 16000 : 32000))
 #endif
 						stream->Open(StreamedNameTable[nFile], IsThisTrackAt16KHz(nFile) ? 16000 : 32000);
 					if ( stream->Setup() ) {
@@ -1867,8 +1867,8 @@ cSampleManager::StartStreamedFile(tTrack nFile, uint32 nPos, uint8 nStream)
 						_bIsMp3Active = FALSE;
 
 						CStream *stream = aStream[nStream];
-#ifdef PS2_AUDIO_PATHS
-						if(!stream->Open(PS2StreamedNameTable[nFile], IsThisTrackAt16KHz(nFile) ? 16000 : 32000))
+#ifdef LEGACY_AUDIO_PATHS
+						if(!stream->Open(LegacyStreamedNameTable[nFile], IsThisTrackAt16KHz(nFile) ? 16000 : 32000))
 #endif
 							stream->Open(StreamedNameTable[nFile], IsThisTrackAt16KHz(nFile) ? 16000 : 32000);
 
@@ -1917,8 +1917,8 @@ cSampleManager::StartStreamedFile(tTrack nFile, uint32 nPos, uint8 nStream)
 	
 	CStream *stream = aStream[nStream];
 
-#ifdef PS2_AUDIO_PATHS
-	if(!stream->Open(PS2StreamedNameTable[nFile], IsThisTrackAt16KHz(nFile) ? 16000 : 32000))
+#ifdef LEGACY_AUDIO_PATHS
+	if(!stream->Open(LegacyStreamedNameTable[nFile], IsThisTrackAt16KHz(nFile) ? 16000 : 32000))
 #endif
 		stream->Open(StreamedNameTable[nFile], IsThisTrackAt16KHz(nFile) ? 16000 : 32000);
 	

@@ -9,7 +9,7 @@ Rendering is handled either by original RenderWare (D3D8)
 or the reimplementation [librw](https://github.com/aap/librw) (D3D9, OpenGL 2.1 or above, OpenGL ES 2.0 or above).\
 Audio is done with MSS (using dlls from original GTA) or OpenAL.
 
-We cannot build for PS2 or Xbox yet. If you're interested in doing so, get in touch with us.
+We cannot build for Xbox yet. If you're interested in doing so, get in touch with us.
 
 ## Installation
 
@@ -48,8 +48,8 @@ Some of them can be toggled at runtime, some cannot.
 * No loading screens between islands ("map memory usage" in menu)
 * Rendering
   * Widescreen support (properly scaled HUD, Menu and FOV)
-  * PS2 MatFX (vehicle reflections)
-  * PS2 alpha test (better rendering of transparency)
+  * Legacy MatFX (vehicle reflections)
+  * Emulated legacy alpha test (better rendering of transparency)
   * Xbox vehicle rendering
   * Xbox world lightmap rendering (needs Xbox map)
   * Xbox ped rim light
@@ -83,7 +83,6 @@ The following things would be nice to have/do:
 
 * Fix physics for high FPS
 * Improve performance on lower end devices, especially the OpenGL layer on the Raspberry Pi (if you have experience with this, please get in touch)
-* [PS2 port](https://github.com/mrxenginner/reVC/wiki/PS2-port)
 * Xbox port (not quite as important)
 * reverse remaining unused/debug functions
 * compare CodeWarrior build with original binary for more accurate code (very tedious)

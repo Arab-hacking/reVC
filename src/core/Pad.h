@@ -204,9 +204,7 @@ public:
 #endif
 	
 	
-#ifdef GTA_PS2_STUFF
 	static void Initialise(void);
-#endif
 	void Clear(bool bResetPlayerControls);
 	void ClearMouseHistory();
 	void ClearKeyBoardHistory();
@@ -215,9 +213,7 @@ public:
 	void StartShake(int16 nDur, uint8 nFreq);
 	void StartShake_Distance(int16 nDur, uint8 nFreq, float fX, float fY, float fz);
 	void StartShake_Train(float fX, float fY);
-#ifdef GTA_PS2_STUFF
 	void AddToCheatString(char c);
-#endif
 	void AddToPCCheatString(char c);
 
 	static void UpdatePads(void);

@@ -31,7 +31,7 @@ drawInst_simple(d3d9::InstanceDataHeader *header, d3d9::InstanceData *inst)
 	                                inst->startIndex, inst->numPrimitives);
 }
 
-// Emulate PS2 GS alpha test FB_ONLY case: failed alpha writes to frame- but not to depth buffer
+// Emulate legacy GS alpha test FB_ONLY case: failed alpha writes to frame- but not to depth buffer
 void
 drawInst_GSemu(d3d9::InstanceDataHeader *header, InstanceData *inst)
 {

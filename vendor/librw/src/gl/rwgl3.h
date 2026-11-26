@@ -248,7 +248,7 @@ int32 lightingCB(Atomic *atomic);
 int32 lightingCB(void);
 
 void drawInst_simple(InstanceDataHeader *header, InstanceData *inst);
-// Emulate PS2 GS alpha test FB_ONLY case: failed alpha writes to frame- but not to depth buffer
+// Emulate legacy GS alpha test FB_ONLY case: failed alpha writes to frame- but not to depth buffer
 void drawInst_GSemu(InstanceDataHeader *header, InstanceData *inst);
 // This one switches between the above two depending on render state;
 void drawInst(InstanceDataHeader *header, InstanceData *inst);

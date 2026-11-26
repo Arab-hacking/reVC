@@ -214,7 +214,7 @@ struct RwStateCache {
 	float32 fogStart;
 	float32 fogEnd;
 
-	// emulation of PS2 GS
+	// emulation of the legacy GS
 	bool32 gsalpha;
 	uint32 gsalpharef;
 

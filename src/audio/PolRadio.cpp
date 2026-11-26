@@ -62,9 +62,7 @@ cAudioManager::InitialisePoliceRadio()
 	m_sPoliceRadioQueue.Reset();
 	for (int32 i = 0; i < ARRAY_SIZE(m_aCrimes); i++)
 		m_aCrimes[i].type = CRIME_NONE;
-#if !defined(GTA_PS2) || defined(AUDIO_REVERB)
 	SampleManager.SetChannelReverbFlag(CHANNEL_POLICE_RADIO, FALSE);
-#endif
 	gSpecialSuspectLastSeenReport = FALSE;
 	for (int32 i = 0; i < ARRAY_SIZE(gMinTimeToNextReport); i++)
 		gMinTimeToNextReport[i] = m_FrameCounter;
@@ -243,10 +241,8 @@ cAudioManager::ServicePoliceRadioChannel(uint8 wantedLevel)
 #endif
 				SampleManager.SetChannelVolume(CHANNEL_POLICE_RADIO, 100);
 				SampleManager.SetChannelPan(CHANNEL_POLICE_RADIO, 63);
-#ifndef GTA_PS2
 				SampleManager.SetChannelLoopCount(CHANNEL_POLICE_RADIO, 1);
 				SampleManager.SetChannelLoopPoints(CHANNEL_POLICE_RADIO, 0, -1);
-#endif
 				SampleManager.StartChannel(CHANNEL_POLICE_RADIO);
 			}
 			if (processed) ResetPoliceRadio();

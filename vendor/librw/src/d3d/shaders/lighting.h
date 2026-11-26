@@ -18,7 +18,7 @@ float3 DoDirLightSpec(Light L, float3 N, float3 V, float power)
 
 float3 DoPointLight(Light L, float3 V, float3 N)
 {
-	// As on PS2
+	// As in the original
 	float3 dir = V - L.position.xyz;
 	float dist = length(dir);
 	float atten = max(0.0, (1.0 - dist/L.color.w));
@@ -28,7 +28,7 @@ float3 DoPointLight(Light L, float3 V, float3 N)
 
 float3 DoSpotLight(Light L, float3 V, float3 N)
 {
-	// As on PS2
+	// As in the original
 	float3 dir = V - L.position.xyz;
 	float dist = length(dir);
 	float atten = max(0.0, (1.0 - dist/L.color.w));

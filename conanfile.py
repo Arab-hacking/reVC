@@ -1,5 +1,5 @@
 from conans import ConanFile, CMake, tools
-from conans.errors import ConanException, ConanInvalidConfiguration
+from conans.errors import ConanInvalidConfiguration
 import os
 import shutil
 import textwrap
@@ -35,13 +35,6 @@ class ReVCConan(ConanFile):
         # "sdl2:sdl2main": True,
     }
     no_copy_source = True
-
-    @property
-    def _os_is_playstation2(self):
-        try:
-            return self.settings.os == "Playstation2"
-        except ConanException:
-            return False
 
     def configure(self):
         if self.options.audio != "openal":
@@ -121,12 +114,7 @@ class ReVCConan(ConanFile):
         cmake.definitions["REVC_WITH_OPUS"] = self.options.with_opus
         cmake.definitions["REVC_INSTALL"] = True
         cmake.definitions["REVC_VENDORED_LIBRW"] = False
-        env = {}
-        if self._os_is_playstation2:
-            cmake.definitions["CMAKE_TOOLCHAIN_FILE"] = self.deps_user_info["ps2dev-cmaketoolchain"].cmake_toolchain_file
-            env["PS2SDK"] = self.deps_cpp_info["ps2dev-ps2sdk"].rootpath
-
-        with tools.environment_append(env):
+        with tools.environment_append({}):
             cmake.configure(source_folder=self.build_folder)
         cmake.build()
 

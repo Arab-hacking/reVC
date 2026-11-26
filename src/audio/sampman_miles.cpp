@@ -1042,9 +1042,9 @@ cSampleManager::Initialise(void)
 				if ( GetDriveType(m_szCDRomRootPath) == DRIVE_CDROM )
 				{
 					FILE *f;
-#ifdef PS2_AUDIO_PATHS
+#ifdef LEGACY_AUDIO_PATHS
 					strcpy(filepath, m_szCDRomRootPath);
-					strcat(filepath, PS2StreamedNameTable[0]);
+					strcat(filepath, LegacyStreamedNameTable[0]);
 					f = fopen(filepath, "rb");
 
 					if ( !f )
@@ -1088,9 +1088,9 @@ cSampleManager::Initialise(void)
 #endif
 			for ( int32 i = SFX_MISSION_MOBR1; i < TOTAL_STREAMED_SOUNDS; i++ )
 			{
-#ifdef PS2_AUDIO_PATHS
+#ifdef LEGACY_AUDIO_PATHS
 				strcpy(filepath, m_szCDRomRootPath);
-				strcat(filepath, PS2StreamedNameTable[i]);
+				strcat(filepath, LegacyStreamedNameTable[i]);
 
 				mp3Stream[0] = AIL_open_stream(DIG, filepath, 0);
 
@@ -1139,9 +1139,9 @@ cSampleManager::Initialise(void)
 
 				for (int32 i = 0; i < STREAMED_SOUND_CD_CHECK_1; i++)
 				{
-#ifdef PS2_AUDIO_PATHS
+#ifdef LEGACY_AUDIO_PATHS
 					strcpy(filepath, m_MP3FilesPath);
-					strcat(filepath, PS2StreamedNameTable[i]);
+					strcat(filepath, LegacyStreamedNameTable[i]);
 
 					mp3Stream[0] = AIL_open_stream(DIG, filepath, 0);
 
@@ -1194,9 +1194,9 @@ cSampleManager::Initialise(void)
 #endif
 				for ( int32 i = STREAMED_SOUND_CD_CHECK_1; i < SFX_MISSION_MOBR1; i++ )
 				{
-#ifdef PS2_AUDIO_PATHS
+#ifdef LEGACY_AUDIO_PATHS
 					strcpy(filepath, m_MiscomPath);
-					strcat(filepath, PS2StreamedNameTable[i]);
+					strcat(filepath, LegacyStreamedNameTable[i]);
 
 					mp3Stream[0] = AIL_open_stream(DIG, filepath, 0);
 
@@ -2227,9 +2227,9 @@ cSampleManager::PreloadStreamedFile(tTrack nFile, uint8 nStream)
 			}
 			
 			char filepath[MAX_PATH];
-#ifdef PS2_AUDIO_PATHS
+#ifdef LEGACY_AUDIO_PATHS
 			strcpy(filepath, nFile < STREAMED_SOUND_CD_CHECK_1 ? m_MP3FilesPath : (nFile < SFX_MISSION_MOBR1 ? m_MiscomPath : m_WavFilesPath));
-			strcat(filepath, PS2StreamedNameTable[nFile]);
+			strcat(filepath, LegacyStreamedNameTable[nFile]);
 
 			mp3Stream[nStream] = AIL_open_stream(DIG, filepath, 0);
 
@@ -2302,9 +2302,9 @@ cSampleManager::StartStreamedFile(tTrack nFile, uint32 nPos, uint8 nStream)
 				// Try to continue from previous song, if already started
 				if(!_GetMP3PosFromStreamPos(&position, &e) && !e) {
 					nFile = 0;
-#ifdef PS2_AUDIO_PATHS
+#ifdef LEGACY_AUDIO_PATHS
 					strcpy(filename, m_MiscomPath);
-					strcat(filename, PS2StreamedNameTable[nFile]);
+					strcat(filename, LegacyStreamedNameTable[nFile]);
 
 					mp3Stream[nStream] = AIL_open_stream(DIG, filename, 0);
 
@@ -2359,9 +2359,9 @@ cSampleManager::StartStreamedFile(tTrack nFile, uint32 nPos, uint8 nStream)
 					{
 						nFile = 0;
 						_bIsMp3Active = FALSE;
-#ifdef PS2_AUDIO_PATHS
+#ifdef LEGACY_AUDIO_PATHS
 						strcpy(filename, m_MiscomPath);
-						strcat(filename, PS2StreamedNameTable[nFile]);
+						strcat(filename, LegacyStreamedNameTable[nFile]);
 
 						mp3Stream[nStream] = AIL_open_stream(DIG, filename, 0);
 
@@ -2413,9 +2413,9 @@ cSampleManager::StartStreamedFile(tTrack nFile, uint32 nPos, uint8 nStream)
 		position = 0;
 		nFile = 0;
 	}
-#ifdef PS2_AUDIO_PATHS
+#ifdef LEGACY_AUDIO_PATHS
 	strcpy(filename, m_MiscomPath);
-	strcat(filename, PS2StreamedNameTable[nFile]);
+	strcat(filename, LegacyStreamedNameTable[nFile]);
 
 	mp3Stream[nStream] = AIL_open_stream(DIG, filename, 0);
 

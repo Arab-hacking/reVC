@@ -7,39 +7,25 @@
 #define MAX_FREQ DIGITALRATE
 
 struct tSample {
-#ifndef GTA_PS2
 	uint32 nOffset;
-#endif
 	uint32 nSize;
 	uint32 nFrequency;
-#ifndef GTA_PS2
 	uint32 nLoopStart;
 	int32 nLoopEnd;
-#endif
 };
 
-#ifdef GTA_PS2
-#define PS2BANK(e) e
-#else
-#define PS2BANK(e) e = SFX_BANK_0
-#endif // GTA_PS2
+#define BANK0(e) e = SFX_BANK_0
 
 
 enum
 {
 	SFX_BANK_0,
-#ifdef GTA_PS2
-	SFX_BANK_GENERIC_EXTRA,
-	SFX_BANK_PED_COMMENTS,
-	SFX_BANK_FRONT_END_MENU,
-#else
 	SFX_BANK_GENERIC_EXTRA = SFX_BANK_0,
 	SFX_BANK_FRONT_END_MENU = SFX_BANK_0,
 
 	SFX_BANK_PED_COMMENTS,
 	MAX_SFX_BANKS,
 	INVALID_SFX_BANK,
-#endif
 
 	CAR_SFX_BANKS_OFFSET,
 	SFX_BANK_PONTIAC = CAR_SFX_BANKS_OFFSET,
@@ -84,37 +70,33 @@ enum
 	SFX_BANK_PLANE_UNUSED_2,
 	SFX_BANK_PLANE_UNUSED_3,
 	SFX_BANK_PLANE_UNUSED_4,
-	PS2BANK(SFX_BANK_BUILDING_BANK_ALARM),
-	PS2BANK(SFX_BANK_BUILDING_SNORING),
-	PS2BANK(SFX_BANK_BUILDING_BAR_1),
-	PS2BANK(SFX_BANK_BUILDING_BAR_2),
-	PS2BANK(SFX_BANK_BUILDING_BAR_3),
-	PS2BANK(SFX_BANK_BUILDING_BAR_4),
-	PS2BANK(SFX_BANK_BUILDING_MALIBU_1),
-	PS2BANK(SFX_BANK_BUILDING_MALIBU_2),
-	PS2BANK(SFX_BANK_BUILDING_MALIBU_3),
-	PS2BANK(SFX_BANK_BUILDING_STRIP_1),
-	PS2BANK(SFX_BANK_BUILDING_STRIP_2),
-	PS2BANK(SFX_BANK_BUILDING_STRIP_3),
-	PS2BANK(SFX_BANK_BUILDING_CHURCH),
-	PS2BANK(SFX_BANK_BUILDING_FAN_1),
-	PS2BANK(SFX_BANK_BUILDING_FAN_2),
-	PS2BANK(SFX_BANK_BUILDING_INSECT_1),
-	PS2BANK(SFX_BANK_BUILDING_INSECT_2),
-	PS2BANK(SFX_BANK_BUILDING_18),
-	PS2BANK(SFX_BANK_BUILDING_19),
-	PS2BANK(SFX_BANK_BUILDING_20),
-	PS2BANK(SFX_BANK_BUILDING_21),
-	PS2BANK(SFX_BANK_FOOTSTEPS_GRASS),
-	PS2BANK(SFX_BANK_FOOTSTEPS_GRAVEL),
-	PS2BANK(SFX_BANK_FOOTSTEPS_WOOD),
-	PS2BANK(SFX_BANK_FOOTSTEPS_METAL),
-	PS2BANK(SFX_BANK_FOOTSTEPS_WATER),
-	PS2BANK(SFX_BANK_FOOTSTEPS_SAND),
-#ifdef GTA_PS2
-	MAX_SFX_BANKS,
-	INVALID_SFX_BANK
-#endif
+	BANK0(SFX_BANK_BUILDING_BANK_ALARM),
+	BANK0(SFX_BANK_BUILDING_SNORING),
+	BANK0(SFX_BANK_BUILDING_BAR_1),
+	BANK0(SFX_BANK_BUILDING_BAR_2),
+	BANK0(SFX_BANK_BUILDING_BAR_3),
+	BANK0(SFX_BANK_BUILDING_BAR_4),
+	BANK0(SFX_BANK_BUILDING_MALIBU_1),
+	BANK0(SFX_BANK_BUILDING_MALIBU_2),
+	BANK0(SFX_BANK_BUILDING_MALIBU_3),
+	BANK0(SFX_BANK_BUILDING_STRIP_1),
+	BANK0(SFX_BANK_BUILDING_STRIP_2),
+	BANK0(SFX_BANK_BUILDING_STRIP_3),
+	BANK0(SFX_BANK_BUILDING_CHURCH),
+	BANK0(SFX_BANK_BUILDING_FAN_1),
+	BANK0(SFX_BANK_BUILDING_FAN_2),
+	BANK0(SFX_BANK_BUILDING_INSECT_1),
+	BANK0(SFX_BANK_BUILDING_INSECT_2),
+	BANK0(SFX_BANK_BUILDING_18),
+	BANK0(SFX_BANK_BUILDING_19),
+	BANK0(SFX_BANK_BUILDING_20),
+	BANK0(SFX_BANK_BUILDING_21),
+	BANK0(SFX_BANK_FOOTSTEPS_GRASS),
+	BANK0(SFX_BANK_FOOTSTEPS_GRAVEL),
+	BANK0(SFX_BANK_FOOTSTEPS_WOOD),
+	BANK0(SFX_BANK_FOOTSTEPS_METAL),
+	BANK0(SFX_BANK_FOOTSTEPS_WATER),
+	BANK0(SFX_BANK_FOOTSTEPS_SAND),
 };
 #define MAX_PEDSFX                 7
 #define PED_BLOCKSIZE              79000
@@ -214,7 +196,7 @@ public:
 	void  UnloadSampleBank  (uint8 nBank);
 	int8  IsSampleBankLoaded(uint8 nBank);
 
-#if defined (GTA_PS2) || defined (FIX_BUGS)
+#if defined(FIX_BUGS)
 	uint8 IsMissionAudioLoaded(uint8 nSlot, uint32 nSample);
 	bool8 LoadMissionAudio    (uint8 nSlot, uint32 nSample);
 #endif
@@ -254,11 +236,7 @@ public:
 	bool8 StartStreamedFile                         (tTrack nFile, uint32 nPos, uint8 nStream = 0);
 	void  StopStreamedFile                                                     (uint8 nStream = 0);
 	int32 GetStreamedFilePosition                                              (uint8 nStream = 0);
-#ifdef GTA_PS2
-	void  SetStreamedVolumeAndPan(uint8 nVolume, uint8 nLRPan, uint8 nFRPan, bool8 nEffectFlag, uint8 nStream = 0);
-#else
 	void  SetStreamedVolumeAndPan(uint8 nVolume, uint8 nPan, bool8 nEffectFlag, uint8 nStream = 0);
-#endif
 	int32 GetStreamedFileLength                                                (uint8 nStream = 0);
 	bool8 IsStreamPlaying                                                      (uint8 nStream = 0);
 	void  SetStreamedFileLoopFlag                             (bool8 nLoopFlag, uint8 nStream = 0);
@@ -273,8 +251,8 @@ public:
 extern cSampleManager SampleManager;
 extern uint32 BankStartOffset[MAX_SFX_BANKS];
 
-#ifdef PS2_AUDIO_PATHS
-static char PS2StreamedNameTable[][40] =
+#ifdef LEGACY_AUDIO_PATHS
+static char LegacyStreamedNameTable[][40] =
 {
 	"AUDIO\\MUSIC\\WILD.VB",
 	"AUDIO\\MUSIC\\FLASH.VB",

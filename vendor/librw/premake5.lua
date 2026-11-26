@@ -42,8 +42,7 @@ workspace "librw"
 	filter { "system:linux" }
 		platforms { "linux-x86-null", "linux-x86-gl3",
 		"linux-amd64-null", "linux-amd64-gl3",
-		"linux-arm-null", "linux-arm-gl3",
-		"ps2" }
+		"linux-arm-null", "linux-arm-gl3" }
 		if _OPTIONS["gfxlib"] == "sdl2" then
 			includedirs { "/usr/include/SDL2" }
 		end
@@ -67,14 +66,6 @@ workspace "librw"
 		end
 	filter { "platforms:*d3d9" }
 		defines { "RW_D3D9" }
-	filter { "platforms:ps2" }
-		defines { "RW_PS2" }
-		toolset "gcc"
-		gccprefix 'ee-'
-		buildoptions { "-nostdlib", "-fno-common" }
-		includedirs { "$(PS2SDK)/ee/include", "$(PS2SDK)/common/include" }
-		optimize "Off"
-
 	filter { "platforms:*amd64*" }
 		architecture "x86_64"
 	filter { "platforms:*x86*" }
@@ -120,7 +111,7 @@ project "librw"
 project "dumprwtree"
 	kind "ConsoleApp"
 	targetdir (Bindir)
-	removeplatforms { "*gl3", "*d3d9", "ps2" }
+	removeplatforms { "*gl3", "*d3d9" }
 	files { "tools/dumprwtree/*" }
 	includedirs { "." }
 	libdirs { Libdir }
@@ -176,14 +167,6 @@ function skeltool(dir)
 	findlibs()
 end
 
-function vucode()
-	filter "files:**.dsm"
-		buildcommands {
-			'cpp "%{file.relpath}" | dvp-as -o "%{cfg.objdir}/%{file.basename}.o"'
-		}
-		buildoutputs { '%{cfg.objdir}/%{file.basename}.o' }
-	filter {}
-end
 
 project "playground"
 	kind "WindowedApp"
@@ -191,56 +174,49 @@ project "playground"
 	skeltool("playground")
 	entrypoint("WinMainCRTStartup")
 	removeplatforms { "*null" }
-	removeplatforms { "ps2" } -- for now
-
+	
 project "imguitest"
 	kind "WindowedApp"
 	characterset ("MBCS")
 	skeltool("imguitest")
 	entrypoint("WinMainCRTStartup")
 	removeplatforms { "*null" }
-	removeplatforms { "ps2" }
-
+	
 project "lights"
 	kind "WindowedApp"
 	characterset ("MBCS")
 	skeltool("lights")
 	entrypoint("WinMainCRTStartup")
 	removeplatforms { "*null" }
-	removeplatforms { "ps2" }
-
+	
 project "subrast"
 	kind "WindowedApp"
 	characterset ("MBCS")
 	skeltool("subrast")
 	entrypoint("WinMainCRTStartup")
 	removeplatforms { "*null" }
-	removeplatforms { "ps2" }
-
+	
 project "camera"
 	kind "WindowedApp"
 	characterset ("MBCS")
 	skeltool("camera")
 	entrypoint("WinMainCRTStartup")
 	removeplatforms { "*null" }
-	removeplatforms { "ps2" }
-
+	
 project "im2d"
 	kind "WindowedApp"
 	characterset ("MBCS")
 	skeltool("im2d")
 	entrypoint("WinMainCRTStartup")
 	removeplatforms { "*null" }
-	removeplatforms { "ps2" }
-
+	
 project "im3d"
 	kind "WindowedApp"
 	characterset ("MBCS")
 	skeltool("im3d")
 	entrypoint("WinMainCRTStartup")
 	removeplatforms { "*null" }
-	removeplatforms { "ps2" }
-
+	
 project "ska2anm"
 	kind "ConsoleApp"
 	characterset ("MBCS")
@@ -252,29 +228,7 @@ project "ska2anm"
 	libdirs { Libdir }
 	links { "librw" }
 	findlibs()
-	removeplatforms { "*gl3", "*d3d9", "*ps2" }
-
-project "ps2test"
-	kind "ConsoleApp"
-	targetdir (Bindir)
-	vucode()
-	removeplatforms { "*gl3", "*d3d9", "*null" }
-	targetextension '.elf'
-	includedirs { "." }
-	files { "tools/ps2test/*.cpp",
-	        "tools/ps2test/vu/*.dsm",
-	        "tools/ps2test/*.h" }
-	libdirs { "$(PS2SDK)/ee/lib" }
-	links { "librw" }
-
---project "ps2rastertest"
---	kind "ConsoleApp"
---	targetdir (Bindir)
---	removeplatforms { "*gl3", "*d3d9" }
---	files { "tools/ps2rastertest/*.cpp" }
---	includedirs { "." }
---	libdirs { Libdir }
---	links { "librw" }
+	removeplatforms { "*gl3", "*d3d9" }
 
 project "hopalong"
 	kind "WindowedApp"
@@ -282,5 +236,4 @@ project "hopalong"
 	skeltool("hopalong")
 	entrypoint("WinMainCRTStartup")
 	removeplatforms { "*null" }
-	removeplatforms { "ps2" }
-
+	

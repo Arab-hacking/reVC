@@ -2,7 +2,7 @@
 
 #define WITHD3D
 #include "common.h"
-#ifdef PS2_ALPHA_TEST
+#ifdef ALPHA_TEST_EMU
 #include "rwcore.h"
 
 extern "C" {
@@ -11,7 +11,7 @@ RwBool _rwD3D8RenderStateVertexAlphaEnable(RwBool enable);
 RwRaster *_rwD3D8RWGetRasterStage(RwUInt32 stage);
 }
 
-extern bool gPS2alphaTest;
+extern bool gAlphaTestEmu;
 
 void
 _rxD3D8DualPassRenderCallback(RwResEntry *repEntry, void *object, RwUInt8 type, RwUInt32 flags)
@@ -170,7 +170,7 @@ _rxD3D8DualPassRenderCallback(RwResEntry *repEntry, void *object, RwUInt8 type, 
 
 			lastVertexBuffer = instancedData->vertexBuffer;
 		}
-		if (!gPS2alphaTest) {
+		if (!gAlphaTestEmu) {
 			/* Set the Index buffer */
 			if (instancedData->indexBuffer != NULL) {
 				RwD3D8SetIndices(instancedData->indexBuffer, instancedData->baseIndex);
@@ -242,6 +242,6 @@ ReplaceAtomicPipeCallback()
 	                                _rxD3D8DualPassRenderCallback);
 }
 
-#endif // PS2_ALPHA_TEST
+#endif // ALPHA_TEST_EMU
 
 #endif // !LIBRW

@@ -120,7 +120,7 @@ matfxRender_EnvMap(InstanceDataHeader *header, InstanceData *inst, int32 lightBi
 	fxparams.shininess = env->coefficient;
 	fxparams.disableFBA = env->fbAlpha ? 0.0f : 1.0f;
 	d3ddevice->SetPixelShaderConstantF(PSLOC_shininess, (float*)&fxparams, 1);
-	// This clamps the vertex color below. With it we can achieve both PC and PS2 style matfx
+	// This clamps the vertex color below. With it we can achieve both PC and legacy style matfx
 	if(MatFX::envMapApplyLight)
 		d3ddevice->SetVertexShaderConstantF(VSLOC_colorClamp, zero, 1);
 	else

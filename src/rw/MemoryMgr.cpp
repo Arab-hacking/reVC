@@ -12,17 +12,8 @@ void
 InitMemoryMgr(void)
 {
 #ifdef USE_CUSTOM_ALLOCATOR
-#ifdef GTA_PS2
-	// not quite clear what the 0x1000s and 0x10 are exactly
-	uint32 memUsed = (uint32)_end + (uint32)_stack_size + 0x1000 + 0x1000;
-	uint32 heapSize = 32*1024*1024 - memUsed - 0x10;
-printf("Heap size: %d\n", heapSize);
-	gMainHeap.Init(heapSize);
-
-#else
 	// randomly allocate 128mb
 	gMainHeap.Init(128*1024*1024);
-#endif
 #endif
 }
 

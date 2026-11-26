@@ -657,7 +657,7 @@ CMenuMultiChoicePicturedTriggered::Initialise(void)
 	int i;
 	for(i = 0; i < NUM_MULTICHOICE_OPTIONS; i++)
 		m_triggers[i] = nil;
-	m_defaultCancel = nil;	// missing on PS2
+	m_defaultCancel = nil;	// missing in the original
 }
 
 CPlaceableShOption*

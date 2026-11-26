@@ -621,7 +621,7 @@ CStreaming::LoadCdDirectory(void)
 	ms_imageOffsets[4] = -1;
 	ms_imageOffsets[5] = -1;
 	ms_imageSize = GetGTA3ImgSize();
-	// PS2 uses CFileMgr::GetCdFile on all IMG files to fill the array
+	// The original used CFileMgr::GetCdFile on all IMG files to fill the array
 #endif
 
 	i = CdStreamGetNumImages();
@@ -946,10 +946,8 @@ CStreaming::ConvertBufferToObject(int8 *buf, int32 streamId)
 
 		// Set Txd and anims to use
 		CTxdStore::AddRef(mi->GetTxdSlot());
-#if GTA_VERSION > GTAVC_PS2
 		if(animId != -1)
 			CAnimManager::AddAnimBlockRef(animId);
-#endif
 
 		PUSH_MEMID(MEMID_STREAM_MODELS);
 		CTxdStore::SetCurrentTxd(mi->GetTxdSlot());
@@ -988,10 +986,8 @@ CStreaming::ConvertBufferToObject(int8 *buf, int32 streamId)
 		// Txd and anims no longer needed unless we only read part of the file
 		if(ms_aInfoForModel[streamId].m_loadState != STREAMSTATE_STARTED){
 			CTxdStore::RemoveRefWithoutDelete(mi->GetTxdSlot());
-#if GTA_VERSION > GTAVC_PS2
 			if(animId != -1)
 				CAnimManager::RemoveAnimBlockRefWithoutDelete(animId);
-#endif
 		}
 
 		if(!success){
@@ -1159,10 +1155,8 @@ CStreaming::FinishLoadingLargeFile(int8 *buf, int32 streamId)
 		POP_MEMID();
 		mi->RemoveRef();
 		CTxdStore::RemoveRefWithoutDelete(mi->GetTxdSlot());
-#if GTA_VERSION > GTAVC_PS2
 		if(mi->GetAnimFileIndex() != -1)
 			CAnimManager::RemoveAnimBlockRefWithoutDelete(mi->GetAnimFileIndex());
-#endif
 	}else if(streamId >= STREAM_OFFSET_TXD && streamId < STREAM_OFFSET_COL){
 		// Txd
 		CTxdStore::AddRef(streamId - STREAM_OFFSET_TXD);
@@ -2876,10 +2870,8 @@ CStreaming::LoadCustomFile(int32 streamId)
 		}
 
 		CTxdStore::AddRef(mi->GetTxdSlot());
-#if GTA_VERSION > GTAVC_PS2
 		if(animId != -1)
 			CAnimManager::AddAnimBlockRef(animId);
-#endif
 
 		PUSH_MEMID(MEMID_STREAM_MODELS);
 		CTxdStore::SetCurrentTxd(mi->GetTxdSlot());
@@ -2892,10 +2884,8 @@ CStreaming::LoadCustomFile(int32 streamId)
 
 		// Txd and anims no longer needed
 		CTxdStore::RemoveRefWithoutDelete(mi->GetTxdSlot());
-#if GTA_VERSION > GTAVC_PS2
 		if(animId != -1)
 			CAnimManager::RemoveAnimBlockRefWithoutDelete(animId);
-#endif
 
 		if(!success || noVehicleSlot){
 			if(noVehicleSlot){

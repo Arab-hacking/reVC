@@ -1,19 +1,6 @@
 #include "common.h"
 #include "ColTriangle.h"
 
-#ifdef VU_COLLISION
-void
-CColTrianglePlane::Set(const CVector &va, const CVector &vb, const CVector &vc)
-{
-	CVector norm = CrossProduct(vc-va, vb-va);
-	norm.Normalise();
-	float d = DotProduct(norm, va);
-	normal.x = norm.x*4096.0f;
-	normal.y = norm.y*4096.0f;
-	normal.z = norm.z*4096.0f;
-	dist = d*128.0f;
-}
-#else
 void
 CColTrianglePlane::Set(const CVector &va, const CVector &vb, const CVector &vc)
 {
@@ -29,4 +16,3 @@ CColTrianglePlane::Set(const CVector &va, const CVector &vb, const CVector &vc)
 	else
 		dir = normal.z < 0.0f ? DIR_Z_NEG : DIR_Z_POS;
 }
-#endif

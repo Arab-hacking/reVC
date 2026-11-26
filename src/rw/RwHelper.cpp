@@ -15,10 +15,10 @@ RtCharset *debugCharset;
 bool bDebugRenderGroups;
 #endif
 
-#ifdef PS2_ALPHA_TEST
-bool gPS2alphaTest = true;
+#ifdef ALPHA_TEST_EMU
+bool gAlphaTestEmu = true;
 #else
-bool gPS2alphaTest = false;
+bool gAlphaTestEmu = false;
 #endif
 bool gBackfaceCulling = true;
 
@@ -89,7 +89,7 @@ DefinedState(void)
 	rw::SetRenderState(rw::ALPHATESTFUNC, rw::ALPHAGREATEREQUAL);
 	rw::SetRenderState(rw::ALPHATESTREF, 3);
 
-	rw::SetRenderState(rw::GSALPHATEST, gPS2alphaTest);
+	rw::SetRenderState(rw::GSALPHATEST, gAlphaTestEmu);
 #elif defined(GTA_PC)
 	// D3D stuff
 	RwD3D8SetRenderState(D3DRS_ALPHAFUNC, D3DCMP_GREATER);
@@ -761,7 +761,6 @@ ConvertPlatformAtomic(RpAtomic *atomic, void *data)
 		if(atomic->geometry->flags & rw::Geometry::NATIVE)
 			atomic->uninstance();
 		// no ADC in this game
-		//rw::ps2::unconvertADC(atomic->geometry);
 		rw::platform = driver;
 		atomic->pipeline = origPipe;
 	}

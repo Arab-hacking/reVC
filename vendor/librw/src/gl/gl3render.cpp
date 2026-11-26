@@ -30,7 +30,7 @@ drawInst_simple(InstanceDataHeader *header, InstanceData *inst)
 	               GL_UNSIGNED_SHORT, (void*)(uintptr)inst->offset);
 }
 
-// Emulate PS2 GS alpha test FB_ONLY case: failed alpha writes to frame- but not to depth buffer
+// Emulate legacy GS alpha test FB_ONLY case: failed alpha writes to frame- but not to depth buffer
 void
 drawInst_GSemu(InstanceDataHeader *header, InstanceData *inst)
 {

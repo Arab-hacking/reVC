@@ -40,7 +40,7 @@ enum Config {
 #if defined ANDROID
 	MAXVEHICLESLOADED = 70,
 #else
-	// Tracking slots for loaded vehicle models. 50 was the PS2-era cap; the
+	// Tracking slots for loaded vehicle models. 50 was the original cap; the
 	// custom archives register hundreds of vehicles and a player can hold
 	// far more than 50 distinct models in the world at once (debug-13: the
 	// 51st spawned car onward could not load at all). The traffic residency
@@ -165,15 +165,11 @@ enum Config {
 	NUM_SHORTCUT_START_POINTS = 16
 };
 
-// We don't expect to compile for PS2 or Xbox
-// but it might be interesting for documentation purposes
 #define GTA_PC
-//#define GTA_PS2
 //#define GTA_XBOX
 #define GTA_MOBILE
 
 // Version defines
-#define GTAVC_PS2	400
 #define GTAVC_PC_10	410
 #define GTAVC_PC_11	411
 #define GTAVC_PC_JAP	412
@@ -191,13 +187,7 @@ enum Config {
 //#define GTA3_STEAM_PATCH
 //#define GTAVC_JP_PATCH
 
-#if defined GTA_PS2
-#	define GTA_PS2_STUFF
-#	define RANDOMSPLASH
-//#	define USE_CUSTOM_ALLOCATOR
-#	define VU_COLLISION
-#	define PS2_MENU
-#elif defined GTA_PC
+#if defined(GTA_PC)
 #	define EXTERNAL_3D_SOUND
 #	define AUDIO_REVERB
 #	ifndef GTA_HANDHELD
@@ -208,8 +198,8 @@ enum Config {
 #	define PC_MENU
 #	define PC_WATER
 #	define GTA_PC_CONTROLS	// enables keyboard and mouse. currently GTA_PC and a few other defines will not work without this
-#elif defined GTA_XBOX
-#elif defined GTA_MOBILE
+#elif defined(GTA_XBOX)
+#elif defined(GTA_MOBILE)
 #	define SIMPLER_MISSIONS
 #endif
 
@@ -248,9 +238,6 @@ enum Config {
 //#define USE_TEXTURE_POOL // not possible because R* used custom RW33
 #define AUDIO_REFLECTIONS
 #else
-// This enables things from the PS2 version on PC
-#define GTA_PS2_STUFF
-
 // quality of life fixes that should also be in FINAL
 #define NASTY_GAME	// nasty game for all languages
 
@@ -266,16 +253,6 @@ enum Config {
 // #define USE_CUSTOM_ALLOCATOR		// use CMemoryHeap for allocation. use with care, not finished yet
 //#define COMPRESSED_COL_VECTORS	// use compressed vectors for collision vertices
 //#define ANIM_COMPRESSION	// only keep most recently used anims uncompressed
-
-#if defined GTA_PC && defined GTA_PS2_STUFF
-#	define USE_PS2_RAND
-#	define RANDOMSPLASH	// use random splash as on PS2
-#	define PS2_MATFX
-#endif
-
-#ifdef VU_COLLISION
-#define COMPRESSED_COL_VECTORS	// currently need compressed vectors in this code
-#endif
 
 #ifdef MASTER
 	// only in master builds
@@ -375,10 +352,10 @@ enum Config {
 
 // Rendering/display
 #define ASPECT_RATIO_SCALE	// Not just makes everything scale with aspect ratio, also adds support for all aspect ratios
-#define PROPER_SCALING		// use original DEFAULT_SCREEN_WIDTH/DEFAULT_SCREEN_HEIGHT from PS2 instead of PC(R* changed HEIGHT here to make radar look better, but broke other hud elements aspect ratio).
+#define PROPER_SCALING		// use original DEFAULT_SCREEN_WIDTH/DEFAULT_SCREEN_HEIGHT (R* changed HEIGHT in the PC port to make radar look better, but broke other hud elements aspect ratio).
 #define DEFAULT_NATIVE_RESOLUTION	// Set default video mode to your native resolution (fixes Windows 10 launch)
 #define USE_TXD_CDIMAGE		// generate and load textures from txd.img
-#define PS2_ALPHA_TEST		// emulate ps2 alpha test 
+#define ALPHA_TEST_EMU		// emulate the legacy alpha test
 #define IMPROVED_VIDEOMODE	// save and load videomode parameters instead of a magic number
 #define DISABLE_LOADING_SCREEN // disable the loading screen which vastly improves the loading time
 #define DISABLE_VSYNC_ON_TEXTURE_CONVERSION // make texture conversion work faster by disabling vsync
@@ -423,10 +400,6 @@ enum Config {
 #define FIX_RADAR			// use radar size from early version before R* broke it
 #define RADIO_OFF_TEXT		// Won't work without FIX_BUGS
 
-#ifndef PC_MENU
-#	define PS2_MENU
-//#	define PS2_MENU_USEALLPAGEICONS
-#else
 #	define MAP_ENHANCEMENTS			// Adding waypoint and better mouse support
 #	if defined(XINPUT) || defined(GTA_HANDHELD)
 #		define GAMEPAD_MENU		// Add gamepad menu
@@ -446,7 +419,6 @@ enum Config {
 #		define INVERT_LOOK_FOR_PAD // enable the hidden option
 #		define PED_CAR_DENSITY_SLIDERS
 #	endif
-#endif
 
 // Script
 #define USE_DEBUG_SCRIPT_LOADER	// Loads main.scm by default. Hold R for main_freeroam.scm and D for main_d.scm
@@ -497,13 +469,13 @@ static_assert(false, "SUPPORT_XBOX_SCRIPT and SUPPORT_MOBILE_SCRIPT are mutually
 
 // Audio
 #define EXTERNAL_3D_SOUND // use external engine to simulate 3d audio spatialization. OpenAL would not work without it (because it works in a 3d space
-                          // originally and making it work in 2d only requires more resource). Will not work on PS2
+                          // originally and making it work in 2d only requires more resource).
 #define AUDIO_REFLECTIONS // Enable audio reflections. This is enabled in all vanilla versions
-#define AUDIO_REVERB // Enable audio reverb. It was disabled in PS2 and mobile versions
+#define AUDIO_REVERB // Enable audio reverb. It was disabled in the mobile versions
 #define RADIO_SCROLL_TO_PREV_STATION // Won't work without FIX_BUGS
 #define AUDIO_CACHE // cache sound lengths to speed up the cold boot
-#define PS2_AUDIO_CHANNELS // increases the maximum number of audio channels to PS2 value of 43 (PC has 28 originally)
-#define PS2_AUDIO_PATHS // changes audio paths for cutscenes and radio to PS2 paths (needs vbdec on MSS builds)
+#define MORE_AUDIO_CHANNELS // increases the maximum number of audio channels to 43 (PC has 28 originally)
+#define LEGACY_AUDIO_PATHS // changes audio paths for cutscenes and radio to the legacy paths (needs vbdec on MSS builds)
 //#define AUDIO_OAL_USE_SNDFILE // use libsndfile to decode WAVs instead of our internal decoder
 #define AUDIO_OAL_USE_MPG123 // use mpg123 to support mp3 files
 #define PAUSE_RADIO_IN_FRONTEND // pause radio when game is paused
@@ -532,9 +504,9 @@ static_assert(false, "SUPPORT_XBOX_SCRIPT and SUPPORT_MOBILE_SCRIPT are mutually
 
 //#define SQUEEZE_PERFORMANCE
 #ifdef SQUEEZE_PERFORMANCE
-	#undef PS2_ALPHA_TEST
+	#undef ALPHA_TEST_EMU
 	#undef NO_ISLAND_LOADING
-	#undef PS2_AUDIO_CHANNELS
+	#undef MORE_AUDIO_CHANNELS
 	#undef EXTENDED_OFFSCREEN_DESPAWN_RANGE
 #endif
 
@@ -550,9 +522,6 @@ static_assert(false, "SUPPORT_XBOX_SCRIPT and SUPPORT_MOBILE_SCRIPT are mutually
 
 #if defined(AUDIO_OAL) && !defined(EXTERNAL_3D_SOUND)
 #error AUDIO_OAL cannot work without EXTERNAL_3D_SOUND
-#endif
-#if defined(GTA_PS2) && defined(EXTERNAL_3D_SOUND)
-#error EXTERNAL_3D_SOUND cannot work on PS2
 #endif
 
 #endif // __GTA_CONFIG_H__

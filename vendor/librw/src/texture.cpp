@@ -10,7 +10,6 @@
 #include "rwpipeline.h"
 #include "rwobjects.h"
 #include "rwengine.h"
-#include "ps2/rwps2.h"
 #include "d3d/rwd3d.h"
 #include "d3d/rwxbox.h"
 #include "d3d/rwd3d8.h"
@@ -186,7 +185,7 @@ TexDictionary::streamRead(Stream *stream)
 	int32 numTex = stream->readI16();
 	stream->readI16(); // device id (0 = unknown, 1 = d3d8, 2 = d3d9,
 	                   // 3 = gcn, 4 = null, 5 = opengl,
-	                   // 6 = ps2, 7 = softras, 8 = xbox, 9 = psp)
+	                   // 6 = legacy, 7 = softras, 8 = xbox, 9 = psp)
 	TexDictionary *txd = TexDictionary::create();
 	if(txd == nil)
 		return nil;
@@ -471,8 +470,6 @@ Texture::streamReadNative(Stream *stream)
 	}
 	uint32 platform = stream->readU32();
 	stream->seek(-16);
-	if(platform == FOURCC_PS2)
-		return ps2::readNativeTexture(stream);
 	if(platform == PLATFORM_D3D8)
 		return d3d8::readNativeTexture(stream);
 	if(platform == PLATFORM_D3D9)
@@ -488,9 +485,7 @@ Texture::streamReadNative(Stream *stream)
 void
 Texture::streamWriteNative(Stream *stream)
 {
-	if(this->raster->platform == PLATFORM_PS2)
-		ps2::writeNativeTexture(this, stream);
-	else if(this->raster->platform == PLATFORM_D3D8)
+	if(this->raster->platform == PLATFORM_D3D8)
 		d3d8::writeNativeTexture(this, stream);
 	else if(this->raster->platform == PLATFORM_D3D9)
 		d3d9::writeNativeTexture(this, stream);
@@ -505,8 +500,6 @@ Texture::streamWriteNative(Stream *stream)
 uint32
 Texture::streamGetSizeNative(void)
 {
-	if(this->raster->platform == PLATFORM_PS2)
-		return ps2::getSizeNativeTexture(this);
 	if(this->raster->platform == PLATFORM_D3D8)
 		return d3d8::getSizeNativeTexture(this);
 	if(this->raster->platform == PLATFORM_D3D9)

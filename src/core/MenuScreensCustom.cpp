@@ -61,8 +61,8 @@
 	#define FREE_CAM_TOGGLE
 #endif
 
-#ifdef PS2_ALPHA_TEST
-	#define DUALPASS_SELECTOR MENUACTION_CFO_SELECT, "FEM_2PR", { new CCFOSelect((int8*)&gPS2alphaTest, "Graphics", "PS2AlphaTest", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT,
+#ifdef ALPHA_TEST_EMU
+	#define DUALPASS_SELECTOR MENUACTION_CFO_SELECT, "FEM_2PR", { new CCFOSelect((int8*)&gAlphaTestEmu, "Graphics", "AlphaTestEmu", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT,
 #else
 	#define DUALPASS_SELECTOR 
 #endif
@@ -129,8 +129,8 @@ void RestoreDefGraphics(int8 action) {
 	if (action != FEOPTION_ACTION_SELECT)
 		return;
 
-	#ifdef PS2_ALPHA_TEST
-		gPS2alphaTest = false;
+	#ifdef ALPHA_TEST_EMU
+		gAlphaTestEmu = false;
 	#endif
 	#ifdef MULTISAMPLING
 		FrontEndMenuManager.m_nPrefsMSAALevel = FrontEndMenuManager.m_nDisplayMSAALevel = 0;

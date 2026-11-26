@@ -187,7 +187,7 @@ cameraSync(ObjectWithFrame *obj)
 	 * and to clip space are handled by separate matrices there.
 	 * On these platforms the two matrices are built in the platform's
 	 * beginUpdate function.
-	 * On the PS2 the z- and w-rows are the same and the 
+	 * On the original console the z- and w-rows are the same and the 
 	 * 1/2 translation/shear is removed again on the VU1 by
 	 * subtracting the w-row/2 from the x- and y-rows.
 	 *

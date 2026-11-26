@@ -1,7 +1,6 @@
 #ifndef __GTA_CROSSPLATFORM_H__
 #define __GTA_CROSSPLATFORM_H__
 
-#ifndef GTA_PS2
 
 #include <time.h>
 #include <limits.h>
@@ -204,7 +203,6 @@ void GetDateFormat(int, int, SYSTEMTIME*, int, char*, int);
 #define GLFW_GAMEPAD_BUTTON_Y 2
 #endif
 
-#endif
 #endif
 
 #endif // __GTA_CROSSPLATFORM_H__

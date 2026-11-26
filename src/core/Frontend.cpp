@@ -2,7 +2,6 @@
 #define WITHWINDOWS
 #define WITHDINPUT
 #include "common.h"
-#ifndef PS2_MENU
 #include "crossplatform.h"
 #include "platform.h"
 #include "Frontend.h"
@@ -1106,7 +1105,6 @@ CMenuManager::DrawStandardMenus(bool activeScreen)
 	uint8 section = 0; // 0: highlight trapezoid  1: texts
 
 	while (section < 2) {
-#endif
 
 #ifdef SCROLLABLE_PAGES
 		int firstOption = SCREEN_HAS_AUTO_SCROLLBAR ? m_nFirstVisibleRowOnList : 0;

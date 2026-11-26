@@ -72,7 +72,7 @@ public:
 	static bool CanSeeWaterFromCurrArea(void);
 	static bool CanSeeOutSideFromCurrArea(void);
 	
-	// NB: these do something on PS2
+	// NB: these only did something in the original console code
 	static void TidyUpMemory(bool, bool);
 	static void DrasticTidyUpMemory(bool);
 	static void ProcessTidyUpMemory(void);

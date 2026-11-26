@@ -427,7 +427,7 @@ void CControllerConfigManager::InitDefaultControlConfigJoyPad(uint32 buttons)
 	if (0)
 #endif
 	{
-		//GIC USB Joystick, PS2 Gamepad ?
+		//GIC USB Joystick, USB Gamepad ?
 
 		switch (btn)
 		{
@@ -647,7 +647,7 @@ void CControllerConfigManager::UpdateJoyInConfigMenus_ButtonDown(int32 button, i
 			if (0)
 #endif
 			{
-				//GIC USB Joystick, PS2 Gamepad ?
+				//GIC USB Joystick, USB Gamepad ?
 
 				switch (button)
 				{
@@ -1074,7 +1074,7 @@ void CControllerConfigManager::UpdateJoyInConfigMenus_ButtonUp(int32 button, int
 			if (0)
 #endif
 			{
-				//GIC USB Joystick, PS2 Gamepad ?
+				//GIC USB Joystick, USB Gamepad ?
 
 				switch (button)
 				{
@@ -2662,30 +2662,23 @@ const char *XboxButtons[][MAX_CONTROLLERACTIONS] = CONTROLLER_BUTTONS("~T~", "~O
 #endif
 
 
-#if 0 // set 1 for ps2 fonts
-#define PS2_TRIANGLE "\""
-#define PS2_CIRCLE "|"
-#define PS2_CROSS "/"
-#define PS2_SQUARE "^"
-#else
-#define PS2_TRIANGLE "TRIANGLE"
-#define PS2_CIRCLE "CIRCLE"
-#define PS2_CROSS "CROSS"
-#define PS2_SQUARE "SQUARE"
-#endif
+#define BTN_TRIANGLE "TRIANGLE"
+#define BTN_CIRCLE "CIRCLE"
+#define BTN_CROSS "CROSS"
+#define BTN_SQUARE "SQUARE"
 
 const char *PlayStationButtons_noIcons[][MAX_CONTROLLERACTIONS] =
-    CONTROLLER_BUTTONS(PS2_TRIANGLE, PS2_CIRCLE, PS2_CROSS, PS2_SQUARE, "L1", "L2", "L3", "R1", "R2", "R3", "SELECT", "right stick up", "right stick down", "right stick left", "right stick right");
+    CONTROLLER_BUTTONS(BTN_TRIANGLE, BTN_CIRCLE, BTN_CROSS, BTN_SQUARE, "L1", "L2", "L3", "R1", "R2", "R3", "SELECT", "right stick up", "right stick down", "right stick left", "right stick right");
 
 #ifdef BUTTON_ICONS
 const char *PlayStationButtons[][MAX_CONTROLLERACTIONS] =
     CONTROLLER_BUTTONS("~T~", "~O~", "~X~", "~Q~", "~K~", "~M~", "~A~", "~J~", "~V~", "~C~", "SELECT", "~H~", "~L~", "~(~", "~)~");
 #endif
 
-#undef PS2_TRIANGLE
-#undef PS2_CIRCLE
-#undef PS2_CROSS
-#undef PS2_SQUARE
+#undef BTN_TRIANGLE
+#undef BTN_CIRCLE
+#undef BTN_CROSS
+#undef BTN_SQUARE
 
 const char *NintendoSwitchButtons_noIcons[][MAX_CONTROLLERACTIONS] =
     CONTROLLER_BUTTONS("Y", "A", "B", "X", "L", "ZL", "LS", "R", "ZR", "RS", "BACK", "right stick up", "right stick down", "right stick left", "right stick right");

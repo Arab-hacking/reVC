@@ -2376,9 +2376,9 @@ CMobileTouchControls::Dp(float dp)
 }
 
 float
-CMobileTouchControls::ScaleHudPx(float ps2Units)
+CMobileTouchControls::ScaleHudPx(float hudUnits)
 {
-	return GetMetrics().hudUnitPx * ps2Units;
+	return GetMetrics().hudUnitPx * hudUnits;
 }
 
 float

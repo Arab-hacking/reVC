@@ -178,11 +178,7 @@ RwObjectNameIdAssocation boatIds[] = {
 	{ "windscreen",		BOAT_WINDSCREEN,	VEHICLE_FLAG_WINDSCREEN | VEHICLE_FLAG_DRAWLAST },
 	{ "windscreen_hi_ok",		BOAT_WINDSCREEN,	VEHICLE_FLAG_WINDSCREEN | VEHICLE_FLAG_DRAWLAST },
 #else
-#ifdef GTA_PS2
-	{ "windscreen",		BOAT_WINDSCREEN,	VEHICLE_FLAG_WINDSCREEN | VEHICLE_FLAG_DRAWLAST },
-#else
 	{ "windscreen_hi_ok",		BOAT_WINDSCREEN,	VEHICLE_FLAG_WINDSCREEN | VEHICLE_FLAG_DRAWLAST },
-#endif
 #endif
 	{ "ped_frontseat",	BOAT_POS_FRONTSEAT,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
 	{ nil, 0, 0 }
@@ -2300,11 +2296,6 @@ CVehicleModelInfo::SetDefaultEnvironmentMapCB(RpMaterial *material, void *data)
 		if(RpMatFXMaterialGetEnvMapTexture(material) == nil && gpFallbackEnvTexture)
 			RpMatFXMaterialSetEnvMapTexture(material, gpFallbackEnvTexture);
 		RpMatFXMaterialSetEffects(material, rpMATFXEFFECTENVMAP);
-#ifndef PS2_MATFX
-		float coef = RpMatFXMaterialGetEnvMapCoefficient(material);
-		coef *= 0.25f;	// Tone down a bit for PC
-		RpMatFXMaterialSetEnvMapCoefficient(material, coef);
-#endif
 	}
 	return material;
 }

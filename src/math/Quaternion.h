@@ -1,11 +1,7 @@
 #ifndef __GTA_QUATERNION_H__
 #define __GTA_QUATERNION_H__
 
-#ifdef GTA_PS2
-class TYPEALIGN(16) CQuaternion
-#else
 class CQuaternion
-#endif
 {
 public:
 	float x, y, z, w;

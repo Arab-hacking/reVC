@@ -165,9 +165,6 @@ inline uint32 ldb(uint32 p, uint32 s, uint32 w)
 		#define DEFAULT_SCREEN_WIDTH  (640)
 		#define DEFAULT_SCREEN_HEIGHT (480)
 	#endif
-#elif defined(GTA_PS2)
-		#define DEFAULT_SCREEN_WIDTH  (640)
-		#define DEFAULT_SCREEN_HEIGHT (480)
 #else //elif defined(GTA_PC)
 		#define DEFAULT_SCREEN_WIDTH  (640)
 		#define DEFAULT_SCREEN_HEIGHT (448)
@@ -178,18 +175,8 @@ inline uint32 ldb(uint32 p, uint32 s, uint32 w)
 
 // game uses maximumWidth/Height, but this probably won't work
 // with RW windowed mode
-#ifdef GTA_PS2
-	#ifdef GTA_PAL
-		#define SCREEN_WIDTH  ((float)640)
-		#define SCREEN_HEIGHT ((float)512)
-	#else
-		#define SCREEN_WIDTH  ((float)640)
-		#define SCREEN_HEIGHT ((float)448)
-	#endif
-#else
 #define SCREEN_WIDTH  ((float)RsGlobal.width)
 #define SCREEN_HEIGHT ((float)RsGlobal.height)
-#endif
 
 #define SCREEN_HEIGHT_PAL ((float)512)
 #define SCREEN_HEIGHT_NTSC ((float)448)
@@ -197,13 +184,13 @@ inline uint32 ldb(uint32 p, uint32 s, uint32 w)
 #define SCREEN_ASPECT_RATIO (CDraw::GetAspectRatio())
 #define SCREEN_VIEWWINDOW (Tan(DEGTORAD(CDraw::GetScaledFOV() * 0.5f)))
 
-// This scales from PS2 pixel coordinates to the real resolution
+// This scales from the original pixel coordinates to the real resolution
 #define SCREEN_STRETCH_X(a)   ((a) * (float) SCREEN_WIDTH / DEFAULT_SCREEN_WIDTH)
 #define SCREEN_STRETCH_Y(a)   ((a) * (float) SCREEN_HEIGHT / DEFAULT_SCREEN_HEIGHT)
 #define SCREEN_STRETCH_FROM_RIGHT(a)  (SCREEN_WIDTH - SCREEN_STRETCH_X(a))
 #define SCREEN_STRETCH_FROM_BOTTOM(a) (SCREEN_HEIGHT - SCREEN_STRETCH_Y(a))
 
-// This scales from PS2 pixel coordinates while optionally maintaining the aspect ratio
+// This scales from the original pixel coordinates while optionally maintaining the aspect ratio
 #define SCREEN_SCALE_X(a) SCREEN_SCALE_AR(SCREEN_STRETCH_X(a))
 #define SCREEN_SCALE_Y(a) SCREEN_STRETCH_Y(a)
 #define SCREEN_SCALE_FROM_RIGHT(a) (SCREEN_WIDTH - SCREEN_SCALE_X(a))
@@ -225,12 +212,7 @@ inline uint32 ldb(uint32 p, uint32 s, uint32 w)
 
 #include "maths.h"
 #include "Vector.h"
-#ifdef GTA_PS2
-#include "VuVector.h"
-#define CVUVECTOR CVuVector
-#else
 #define CVUVECTOR CVector
-#endif
 #include "Vector2D.h"
 #include "Matrix.h"
 #include "Rect.h"
@@ -333,11 +315,7 @@ inline float sq(float x) { return x*x; }
 #define DEGTORAD(x) ((x) * PI / 180.0f)
 #define RADTODEG(x) ((x) * 180.0f / PI)
 
-#ifdef USE_PS2_RAND
 #define MYRAND_MAX		65535
-#else
-#define MYRAND_MAX		32767
-#endif
 
 int myrand(void);
 void mysrand(unsigned int seed);
@@ -389,7 +367,7 @@ __inline__ void TRACE(char *f, ...) { } // this is re3 only, and so the function
 #endif
 #define ASSERT assert
 
-#if defined(__MWERKS__) || defined(GTA_PS2)
+#if defined(__MWERKS__)
 #define static_assert(bool_constexpr, message)
 #endif
 

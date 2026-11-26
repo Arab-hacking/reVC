@@ -80,7 +80,7 @@ LoadPlayerDff(void)
 void
 CPlayerSkin::Initialise(void)
 {
-	// empty on PS2
+	// empty in the original
 	m_txdSlot = CTxdStore::AddTxdSlot("skin");
 	CTxdStore::Create(m_txdSlot);
 	CTxdStore::AddRef(m_txdSlot);
@@ -89,7 +89,7 @@ CPlayerSkin::Initialise(void)
 void
 CPlayerSkin::Shutdown(void)
 {
-	// empty on PS2
+	// empty in the original
 	CTxdStore::RemoveTxdSlot(m_txdSlot);
 }
 

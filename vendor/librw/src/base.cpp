@@ -27,9 +27,7 @@ namespace rw {
 
 int32 version = 0x36003;
 int32 build = 0xFFFF;
-#ifdef RW_PS2
-	int32 platform = PLATFORM_PS2;
-#elif RW_WDGL
+#if RW_WDGL
 	int32 platform = PLATFORM_WDGL;
 #elif RW_GL3
 	int32 platform = PLATFORM_GL3;

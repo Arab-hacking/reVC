@@ -102,7 +102,7 @@ int16 CFont::Size[MAX_FONTS][210] = {
 	{
 		//FONT1 EFIGS
 		//Characters with a '2' refer to the Pricedown font.
-		//Characters that are referred as '*I' are characters that contain icons for PS2/XBOX, but contain regular characters on PC
+		//Characters that are referred as '*I' are characters that contain icons on console versions, but contain regular characters on PC
 		//in order to display them properly in the Keyboard controls menu.
 		//!2,!, *I,(R),  $,  %,  &,  ',  [,  ], *I,  +,  ,   -,  ., *I,
 		15,  7, 31, 25, 20, 23, 21,  7, 11, 10, 26, 14,  6, 12,  6, 26,
@@ -214,7 +214,7 @@ int16 CFont::Size[MAX_FONTS][210] = {
 		{
 			//FONT1 EFIGS
 			//Characters with a '2' refer to the Pricedown font.
-			//Characters that are referred as '*I' are characters that contain icons for PS2/XBOX, but contain regular characters on PC
+			//Characters that are referred as '*I' are characters that contain icons on console versions, but contain regular characters on PC
 			//in order to display them properly in the Keyboard controls menu.
 			//!2,!, *I,(R),  $,  %,  &,  ',  [,  ], *I,  +,  ,   -,  ., *I,
 			15,  7, 31, 25, 20, 23, 21,  7, 11, 10, 26, 14,  6, 12,  6, 26,
@@ -297,7 +297,7 @@ uint8 FontRenderStateBuf[1024];
 
 #ifdef BUTTON_ICONS
 CSprite2d CFont::ButtonSprite[MAX_BUTTON_ICONS];
-int CFont::PS2Symbol = BUTTON_NONE;
+int CFont::ButtonSymbol = BUTTON_NONE;
 int CFont::ButtonsSlot = -1;
 #endif // BUTTON_ICONS
 
@@ -482,7 +482,7 @@ CFont::InitPerFrame(void)
 	SetDropShadowPosition(0);
 	NewLine = false;
 #ifdef BUTTON_ICONS
-	PS2Symbol = BUTTON_NONE;
+	ButtonSymbol = BUTTON_NONE;
 #endif
 }
 
@@ -493,7 +493,7 @@ CFont::DrawButton(float x, float y)
 	if (x <= 0.0f || x > SCREEN_WIDTH || y <= 0.0f || y > SCREEN_HEIGHT)
 		return;
 
-	if (PS2Symbol != BUTTON_NONE) {
+	if (ButtonSymbol != BUTTON_NONE) {
 		CRect rect;
 		rect.left = x;
 		rect.top = RenderState.scaleY + RenderState.scaleY + y;
@@ -506,9 +506,9 @@ CFont::DrawButton(float x, float y)
 		RwRenderStateGet(rwRENDERSTATETEXTURERASTER, &raster);
 		RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void *)TRUE);
 		if (RenderState.bIsShadow)
-			ButtonSprite[PS2Symbol].Draw(rect, RenderState.color);
+			ButtonSprite[ButtonSymbol].Draw(rect, RenderState.color);
 		else
-			ButtonSprite[PS2Symbol].Draw(rect, CRGBA(255, 255, 255, RenderState.color.a));
+			ButtonSprite[ButtonSymbol].Draw(rect, CRGBA(255, 255, 255, RenderState.color.a));
 		RwRenderStateSet(rwRENDERSTATETEXTURERASTER, raster);
 		RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void *)vertexAlphaState);
 	}
@@ -672,14 +672,14 @@ CFont::RenderFontBuffer()
 		}
 		if (*pRenderStateBufPointer.pStr == '~') {
 #ifdef BUTTON_ICONS
-			PS2Symbol = BUTTON_NONE;
+			ButtonSymbol = BUTTON_NONE;
 #endif
 			pRenderStateBufPointer.pStr = ParseToken(pRenderStateBufPointer.pStr, color, bFlash, bBold);
 #ifdef BUTTON_ICONS
-			if(PS2Symbol != BUTTON_NONE) {
+			if(ButtonSymbol != BUTTON_NONE) {
 				DrawButton(textPosX, textPosY);
 				textPosX += RenderState.scaleY * 17.0f;
-				PS2Symbol = BUTTON_NONE;
+				ButtonSymbol = BUTTON_NONE;
 			}
 #endif
 			if (bFlash) {
@@ -708,7 +708,7 @@ CFont::RenderFontBuffer()
 			textPosX += 2.0f;
 		}
 #ifdef FIX_BUGS
-		// PS2 uses different chars for some symbols
+		// The original uses different chars for some symbols
 		if (!RenderState.bFontHalfTexture && c == 30) c = 61; // wanted star
 #endif
 		textPosX += RenderState.scaleX * GetCharacterWidth(c);
@@ -1273,7 +1273,7 @@ CFont::GetCharacterSize(wchar c)
 #else
 
 #ifdef FIX_BUGS
-	// PS2 don't call FindNewCharacter in here at all, and also uses different chars for some symbols
+	// The original doesn't call FindNewCharacter in here at all, and also uses different chars for some symbols
 	if (!Details.bFontHalfTexture && c == 30) c = 61; // wanted star
 #endif
 	if (Details.bFontHalfTexture)
@@ -1511,24 +1511,24 @@ CFont::ParseToken(wchar* str, CRGBA &color, bool &flash, bool &bold)
 			color.b = 79;
 			break;
 #ifdef BUTTON_ICONS
-		case 'U': PS2Symbol = BUTTON_UP; break;
-		case 'D': PS2Symbol = BUTTON_DOWN; break;
-		case '<': PS2Symbol = BUTTON_LEFT; break;
-		case '>': PS2Symbol = BUTTON_RIGHT; break;
-		case 'X': PS2Symbol = BUTTON_CROSS; break;
-		case 'O': PS2Symbol = BUTTON_CIRCLE; break;
-		case 'Q': PS2Symbol = BUTTON_SQUARE; break;
-		case 'T': PS2Symbol = BUTTON_TRIANGLE; break;
-		case 'K': PS2Symbol = BUTTON_L1; break;
-		case 'M': PS2Symbol = BUTTON_L2; break;
-		case 'A': PS2Symbol = BUTTON_L3; break;
-		case 'J': PS2Symbol = BUTTON_R1; break;
-		case 'V': PS2Symbol = BUTTON_R2; break;
-		case 'C': PS2Symbol = BUTTON_R3; break;
-		case 'H': PS2Symbol = BUTTON_RSTICK_UP; break;
-		case 'L': PS2Symbol = BUTTON_RSTICK_DOWN; break;
-		case '(': PS2Symbol = BUTTON_RSTICK_LEFT; break;
-		case ')': PS2Symbol = BUTTON_RSTICK_RIGHT; break;
+		case 'U': ButtonSymbol = BUTTON_UP; break;
+		case 'D': ButtonSymbol = BUTTON_DOWN; break;
+		case '<': ButtonSymbol = BUTTON_LEFT; break;
+		case '>': ButtonSymbol = BUTTON_RIGHT; break;
+		case 'X': ButtonSymbol = BUTTON_CROSS; break;
+		case 'O': ButtonSymbol = BUTTON_CIRCLE; break;
+		case 'Q': ButtonSymbol = BUTTON_SQUARE; break;
+		case 'T': ButtonSymbol = BUTTON_TRIANGLE; break;
+		case 'K': ButtonSymbol = BUTTON_L1; break;
+		case 'M': ButtonSymbol = BUTTON_L2; break;
+		case 'A': ButtonSymbol = BUTTON_L3; break;
+		case 'J': ButtonSymbol = BUTTON_R1; break;
+		case 'V': ButtonSymbol = BUTTON_R2; break;
+		case 'C': ButtonSymbol = BUTTON_R3; break;
+		case 'H': ButtonSymbol = BUTTON_RSTICK_UP; break;
+		case 'L': ButtonSymbol = BUTTON_RSTICK_DOWN; break;
+		case '(': ButtonSymbol = BUTTON_RSTICK_LEFT; break;
+		case ')': ButtonSymbol = BUTTON_RSTICK_RIGHT; break;
 #endif
 		default:
 			break;
@@ -1564,24 +1564,24 @@ CFont::ParseToken(wchar *s, bool japShit)
 		case 'w': SetColor(CRGBA(175, 175, 175, 255)); break;
 		case 'y': SetColor(CRGBA(210, 196, 106, 255)); break;
 #ifdef BUTTON_ICONS
-		case 'U': PS2Symbol = BUTTON_UP; break;
-		case 'D': PS2Symbol = BUTTON_DOWN; break;
-		case '<': PS2Symbol = BUTTON_LEFT; break;
-		case '>': PS2Symbol = BUTTON_RIGHT; break;
-		case 'X': PS2Symbol = BUTTON_CROSS; break;
-		case 'O': PS2Symbol = BUTTON_CIRCLE; break;
-		case 'Q': PS2Symbol = BUTTON_SQUARE; break;
-		case 'T': PS2Symbol = BUTTON_TRIANGLE; break;
-		case 'K': PS2Symbol = BUTTON_L1; break;
-		case 'M': PS2Symbol = BUTTON_L2; break;
-		case 'A': PS2Symbol = BUTTON_L3; break;
-		case 'J': PS2Symbol = BUTTON_R1; break;
-		case 'V': PS2Symbol = BUTTON_R2; break;
-		case 'C': PS2Symbol = BUTTON_R3; break;
-		case 'H': PS2Symbol = BUTTON_RSTICK_UP; break;
-		case 'L': PS2Symbol = BUTTON_RSTICK_DOWN; break;
-		case '(': PS2Symbol = BUTTON_RSTICK_LEFT; break;
-		case ')': PS2Symbol = BUTTON_RSTICK_RIGHT; break;
+		case 'U': ButtonSymbol = BUTTON_UP; break;
+		case 'D': ButtonSymbol = BUTTON_DOWN; break;
+		case '<': ButtonSymbol = BUTTON_LEFT; break;
+		case '>': ButtonSymbol = BUTTON_RIGHT; break;
+		case 'X': ButtonSymbol = BUTTON_CROSS; break;
+		case 'O': ButtonSymbol = BUTTON_CIRCLE; break;
+		case 'Q': ButtonSymbol = BUTTON_SQUARE; break;
+		case 'T': ButtonSymbol = BUTTON_TRIANGLE; break;
+		case 'K': ButtonSymbol = BUTTON_L1; break;
+		case 'M': ButtonSymbol = BUTTON_L2; break;
+		case 'A': ButtonSymbol = BUTTON_L3; break;
+		case 'J': ButtonSymbol = BUTTON_R1; break;
+		case 'V': ButtonSymbol = BUTTON_R2; break;
+		case 'C': ButtonSymbol = BUTTON_R3; break;
+		case 'H': ButtonSymbol = BUTTON_RSTICK_UP; break;
+		case 'L': ButtonSymbol = BUTTON_RSTICK_DOWN; break;
+		case '(': ButtonSymbol = BUTTON_RSTICK_LEFT; break;
+		case ')': ButtonSymbol = BUTTON_RSTICK_RIGHT; break;
 #endif
 		}
 	} else if (IsJapanese()) {
@@ -1690,24 +1690,24 @@ CFont::ParseToken(wchar *s)
 			Details.anonymous_23 = true;
 			break;
 #ifdef BUTTON_ICONS
-		case 'U': PS2Symbol = BUTTON_UP; break;
-		case 'D': PS2Symbol = BUTTON_DOWN; break;
-		case '<': PS2Symbol = BUTTON_LEFT; break;
-		case '>': PS2Symbol = BUTTON_RIGHT; break;
-		case 'X': PS2Symbol = BUTTON_CROSS; break;
-		case 'O': PS2Symbol = BUTTON_CIRCLE; break;
-		case 'Q': PS2Symbol = BUTTON_SQUARE; break;
-		case 'T': PS2Symbol = BUTTON_TRIANGLE; break;
-		case 'K': PS2Symbol = BUTTON_L1; break;
-		case 'M': PS2Symbol = BUTTON_L2; break;
-		case 'A': PS2Symbol = BUTTON_L3; break;
-		case 'J': PS2Symbol = BUTTON_R1; break;
-		case 'V': PS2Symbol = BUTTON_R2; break;
-		case 'C': PS2Symbol = BUTTON_R3; break;
-		case 'H': PS2Symbol = BUTTON_RSTICK_UP; break;
-		case 'L': PS2Symbol = BUTTON_RSTICK_DOWN; break;
-		case '(': PS2Symbol = BUTTON_RSTICK_LEFT; break;
-		case ')': PS2Symbol = BUTTON_RSTICK_RIGHT; break;
+		case 'U': ButtonSymbol = BUTTON_UP; break;
+		case 'D': ButtonSymbol = BUTTON_DOWN; break;
+		case '<': ButtonSymbol = BUTTON_LEFT; break;
+		case '>': ButtonSymbol = BUTTON_RIGHT; break;
+		case 'X': ButtonSymbol = BUTTON_CROSS; break;
+		case 'O': ButtonSymbol = BUTTON_CIRCLE; break;
+		case 'Q': ButtonSymbol = BUTTON_SQUARE; break;
+		case 'T': ButtonSymbol = BUTTON_TRIANGLE; break;
+		case 'K': ButtonSymbol = BUTTON_L1; break;
+		case 'M': ButtonSymbol = BUTTON_L2; break;
+		case 'A': ButtonSymbol = BUTTON_L3; break;
+		case 'J': ButtonSymbol = BUTTON_R1; break;
+		case 'V': ButtonSymbol = BUTTON_R2; break;
+		case 'C': ButtonSymbol = BUTTON_R3; break;
+		case 'H': ButtonSymbol = BUTTON_RSTICK_UP; break;
+		case 'L': ButtonSymbol = BUTTON_RSTICK_DOWN; break;
+		case '(': ButtonSymbol = BUTTON_RSTICK_LEFT; break;
+		case ')': ButtonSymbol = BUTTON_RSTICK_RIGHT; break;
 #endif
 		}
 	while(*s != '~') s++;

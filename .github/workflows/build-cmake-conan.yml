@@ -40,7 +40,7 @@ jobs:
 #            gl3_gfxlib: 'sdl2'
 #            audio: 'openal'
     runs-on: ${{ matrix.os }}
-    continue-on-error: ${{ matrix.platform == 'ps2' || matrix.gl3_gfxlib == 'sdl2' || matrix.audio == 'miles' }}
+    continue-on-error: ${{ matrix.gl3_gfxlib == 'sdl2' || matrix.audio == 'miles' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -65,28 +65,10 @@ jobs:
           conan config set log.print_run_commands=True
           conan config set general.revisions_enabled=1
           conan remote add bincrafters https://bincrafters.jfrog.io/artifactory/api/conan/public-conan
-#          conan remote add madebr_ps2dev https://api.bintray.com/conan/madebr/ps2dev
-      - name: "Add os=playstation2 + gcc.version=3.2 to .conan/settings.yml"
-        shell: python
-        run: |
-          import os, yaml
-          settings_path = os.path.expanduser("~/.conan/settings.yml")
-          yml = yaml.safe_load(open(settings_path))
-          yml["os"]["playstation2"] = None
-          yml["compiler"]["gcc"]["version"].append("3.2")
-          yml["compiler"]["gcc"]["version"].sort()
-          yaml.safe_dump(yml, open(settings_path, "w"))
       - name: "Create host profile"
         shell: bash
         run: |
-          if test "${{ matrix.platform }}" = "ps2"; then
-            cp vendor/librw/conan/playstation2 host_profile
-          else
-            cp ~/.conan/profiles/default host_profile
-          fi
-      - name: "Export Playstation 2 CMake toolchain conan recipe"
-        run: |
-          conan export vendor/librw/cmake/ps2/cmaketoolchain ps2dev-cmaketoolchain/master@
+          cp ~/.conan/profiles/default host_profile
       - name: "Export librw conan recipe"
         run: |
           conan export vendor/librw librw/master@

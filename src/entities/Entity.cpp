@@ -248,13 +248,6 @@ CEntity::GetBoundCentre(void)
 	return GetMatrix() * col->boundingSphere.center;
 }
 
-#ifdef GTA_PS2
-void
-CEntity::GetBoundCentre(CVuVector &out)
-{
-	TransformPoint(out, GetMatrix(), CModelInfo::GetColModel(m_modelIndex)->boundingSphere.center);
-}
-#else
 void
 CEntity::GetBoundCentre(CVector &out)
 {
@@ -265,7 +258,6 @@ CEntity::GetBoundCentre(CVector &out)
 	}
 	out = GetMatrix() * col->boundingSphere.center;
 }
-#endif
 
 float
 CEntity::GetBoundRadius(void)
@@ -493,11 +485,7 @@ CEntity::GetIsOnScreen(void)
 bool
 CEntity::GetIsOnScreenComplex(void)
 {
-#ifdef GTA_PS2
-	CVuVector boundBox[8];
-#else
 	CVector boundBox[8];
-#endif
 
 	if(TheCamera.IsPointVisible(GetBoundCentre(), &TheCamera.GetCameraMatrix()))
 		return true;

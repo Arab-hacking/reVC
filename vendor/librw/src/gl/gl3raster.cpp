@@ -786,7 +786,7 @@ rasterNumLevels(Raster *raster)
 	return GETGL3RASTEREXT(raster)->numLevels;
 }
 
-// Almost the same as d3d9 and ps2 function
+// Almost the same as the d3d9 function
 bool32
 imageFindRasterFormat(Image *img, int32 type,
 	int32 *pWidth, int32 *pHeight, int32 *pDepth, int32 *pFormat)

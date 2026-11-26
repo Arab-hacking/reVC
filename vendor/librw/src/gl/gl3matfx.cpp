@@ -117,7 +117,7 @@ matfxEnvRender(InstanceDataHeader *header, InstanceData *inst, int32 vsBits, uin
 	setUniform(u_fxparams, fxparams);
 	static float zero[4];
 	static float one[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
-	// This clamps the vertex color below. With it we can achieve both PC and PS2 style matfx
+	// This clamps the vertex color below. With it we can achieve both PC and legacy style matfx
 	if(MatFX::envMapApplyLight)
 		setUniform(u_colorClamp, zero);
 	else

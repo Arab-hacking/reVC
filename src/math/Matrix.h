@@ -23,28 +23,9 @@ enum eMatrixEulerFlags : uint32 {
 	_ORDER_NEEDS_SWAP = 0x4
 };
 
-#ifdef GTA_PS2
-class TYPEALIGN(16) CMatrix
-#else
 class CMatrix
-#endif
 {
 public:
-#ifdef GTA_PS2_notyet	// disabled right now because of VU0 code from III
-	union
-	{
-		float f[4][4];
-		struct
-		{
-			float rx, ry, rz;
-			RwMatrix *m_attachment;
-			float fx, fy, fz;
-			bool m_hasRwMatrix;	// are we the owner?
-			float ux, uy, uz, uw;
-			float px, py, pz, pw;
-		};
-	};
-#else
 	union
 	{
 		float f[4][4];
@@ -59,7 +40,7 @@ public:
 
 	RwMatrix *m_attachment;
 	bool m_hasRwMatrix;	// are we the owner?
-#endif
+
 
 	CMatrix(void);
 	CMatrix(CMatrix const &m);

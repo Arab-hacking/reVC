@@ -17,7 +17,7 @@ public:
 	static void SetFallbackDpi(float dpi);
 
 	static float Dp(float dp);
-	static float ScaleHudPx(float ps2Units);
+	static float ScaleHudPx(float hudUnits);
 	static float GetSafeLeftInsetPx(void);
 	static float GetSafeRightInsetPx(void);
 	static float GetSafeTopInsetPx(void);

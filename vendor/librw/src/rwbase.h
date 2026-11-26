@@ -1,6 +1,4 @@
-#ifndef RW_PS2
 #include <stdint.h>
-#endif
 #include <math.h>
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -31,10 +29,6 @@
 #define RWDEVICE d3d
 #endif
 
-#ifdef RW_PS2
-#define RWHALFPIXEL
-#define RWDEVICE ps2
-#endif
 
 #ifdef RW_WDGL
 #define RW_OPENGL
@@ -42,17 +36,6 @@
 
 namespace rw {
 
-#ifdef RW_PS2
-	typedef char int8;
-	typedef short int16;
-	typedef int int32;
-	typedef long long int64;
-	typedef unsigned char uint8;
-	typedef unsigned short uint16;
-	typedef unsigned int uint32;
-	typedef unsigned long long uint64;
-	typedef unsigned int uintptr;
-#else
 	/* get rid of the stupid _t */
 	typedef int8_t int8;
 	typedef int16_t int16;
@@ -63,7 +46,6 @@ namespace rw {
 	typedef uint32_t uint32;
 	typedef uint64_t uint64;
 	typedef uintptr_t uintptr;
-#endif
 
 typedef float float32;
 typedef int32 bool32;
@@ -610,7 +592,6 @@ enum PluginID
 
 	// custom native raster
 	ID_RASTERGL      = MAKEPLUGINID(VEND_RASTER, PLATFORM_GL),
-	ID_RASTERPS2     = MAKEPLUGINID(VEND_RASTER, PLATFORM_PS2),
 	ID_RASTERXBOX    = MAKEPLUGINID(VEND_RASTER, PLATFORM_XBOX),
 	ID_RASTERD3D8    = MAKEPLUGINID(VEND_RASTER, PLATFORM_D3D8),
 	ID_RASTERD3D9    = MAKEPLUGINID(VEND_RASTER, PLATFORM_D3D9),

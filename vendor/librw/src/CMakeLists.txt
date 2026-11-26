@@ -85,15 +85,6 @@ add_library(librw
     lodepng/lodepng.h
     lodepng/lodepng.cpp
 
-    ps2/pds.cpp
-    ps2/ps2.cpp
-    ps2/ps2device.cpp
-    ps2/ps2matfx.cpp
-    ps2/ps2raster.cpp
-    ps2/ps2skin.cpp
-    ps2/rwps2.h
-    ps2/rwps2impl.h
-    ps2/rwps2plg.h
 )
 add_library(librw::librw ALIAS librw)
 
@@ -122,14 +113,12 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang
         PRIVATE
             "-Wall"
     )
-    if (NOT LIBRW_PLATFORM_PS2)
-        target_compile_options(librw
-            PRIVATE
-                "-Wextra"
-                "-Wdouble-promotion"
-                "-Wpedantic"
-        )
-    endif()
+    target_compile_options(librw
+        PRIVATE
+            "-Wextra"
+            "-Wdouble-promotion"
+            "-Wpedantic"
+    )
 elseif(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     target_compile_options(librw
         PUBLIC
@@ -231,12 +220,6 @@ if(LIBRW_INSTALL)
             d3d/rwd3d8.h
             d3d/rwd3d9.h
         DESTINATION "${LIBRW_INSTALL_INCLUDEDIR}/src/d3d"
-    )
-    install(
-        FILES
-            ps2/rwps2.h
-            ps2/rwps2plg.h
-        DESTINATION "${LIBRW_INSTALL_INCLUDEDIR}/src/ps2"
     )
     install(
         FILES

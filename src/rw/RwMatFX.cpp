@@ -56,7 +56,6 @@ extern "C" {
 }
 
 
-#ifdef PS2_MATFX
 
 void
 _rpMatFXD3D8AtomicMatFXDefaultRender(RxD3D8InstanceData *inst, int flags, RwTexture *texture)
@@ -87,7 +86,7 @@ static RwMatrix scalenormal = {
 	
 };
 
-// flipped U for PS2
+// flipped U, as in the original
 static RwMatrix scalenormal_flipU = {
 	{ -0.5f, 0.0f, 0.0f }, 0,
 	{ 0.0f, -0.5f, 0.0f }, 0,
@@ -108,7 +107,6 @@ ApplyEnvMapTextureMatrix(RwTexture *tex, int n, RwFrame *frame)
 		RwMatrix *envmat = RwMatrixCreate();
 
 		RwMatrixInvert(envframemat, RwFrameGetLTM(frame));
-		// PS2
 		// can this be simplified?
 		*tmpmat = *RwFrameGetLTM(RwCameraGetFrame((RwCamera*)RWSRCGLOBAL(curCamera)));
 		RwV3dNegate(&tmpmat->right, &tmpmat->right);
@@ -135,7 +133,7 @@ ApplyEnvMapTextureMatrix(RwTexture *tex, int n, RwFrame *frame)
 }
 
 void
-_rpMatFXD3D8AtomicMatFXEnvRender_ps2(RxD3D8InstanceData *inst, int flags, int sel, RwTexture *texture, RwTexture *envMap)
+_rpMatFXD3D8AtomicMatFXEnvRenderLegacy(RxD3D8InstanceData *inst, int flags, int sel, RwTexture *texture, RwTexture *envMap)
 {
 	MatFX *matfx = *RWPLUGINOFFSET(MatFX*, inst->material, MatFXMaterialDataOffset);
 	MatFXEnv *env = &matfx->fx[sel].e;
@@ -279,7 +277,7 @@ _rwD3D8AtomicMatFXRenderCallback(RwResEntry *repEntry, void *object, RwUInt8 typ
 			{
 				// TODO: matfx switch in the settings
 				//_rpMatFXD3D8AtomicMatFXEnvRender(inst, flags, 0, inst->material->texture, matfx->fx[0].e.envTex);
-				_rpMatFXD3D8AtomicMatFXEnvRender_ps2(inst, flags, 0, inst->material->texture, matfx->fx[0].e.envTex);
+				_rpMatFXD3D8AtomicMatFXEnvRenderLegacy(inst, flags, 0, inst->material->texture, matfx->fx[0].e.envTex);
 				break;
 			}
 			case rpMATFXEFFECTBUMPENVMAP:
@@ -307,6 +305,5 @@ ReplaceMatFxCallback()
 	    _rwD3D8AtomicMatFXRenderCallback);
 	
 }
-#endif // PS2_MATFX
 
 #endif // !LIBRW

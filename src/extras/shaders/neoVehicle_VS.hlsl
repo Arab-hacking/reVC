@@ -43,7 +43,7 @@ VS_out main(in VS_in input)
 	int i;
 	for(i = 0; i < numDirLights; i++)
 		output.Color.xyz += DoDirLight(lights[i+firstDirLight], Normal)*surfDiffuse*lightStrength;
-	// PS2 clamps before material color
+	// the legacy renderer clamps before material color
 	output.Color = clamp(output.Color, 0.0, 1.0);
 	output.Color *= matCol;
 

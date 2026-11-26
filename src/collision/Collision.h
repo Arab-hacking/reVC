@@ -3,17 +3,10 @@
 
 #include "ColModel.h"
 #include "Game.h"	// for eLevelName
-#ifdef VU_COLLISION
-#include "VuVector.h"
-#endif
 
 struct CStoredCollPoly
 {
-#ifdef VU_COLLISION
-	CVuVector verts[3];
-#else
 	CVector verts[3];
-#endif
 	bool valid;
 };
 

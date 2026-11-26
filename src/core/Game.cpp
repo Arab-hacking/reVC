@@ -130,41 +130,6 @@ uint8 gameProcessPirateCheck = 0;
 
 bool DoRWStuffStartOfFrame(int16 TopRed, int16 TopGreen, int16 TopBlue, int16 BottomRed, int16 BottomGreen, int16 BottomBlue, int16 Alpha);
 void DoRWStuffEndOfFrame(void);
-#ifdef PS2_MENU
-void MessageScreen(char *msg)
-{
-	//TODO: stretch_screen
-	
-	CRect rect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
-	CRGBA color(255, 255, 255, 255);
-
-	DoRWStuffStartOfFrame(50, 50, 50, 0, 0, 0, 255);
-	
-	CSprite2d::InitPerFrame();
-	CFont::InitPerFrame();
-	DefinedState();
-
-	CSprite2d *splash = LoadSplash(NULL);
-	splash->Draw(rect, color, color, color, color);
-	splash->DrawRect(CRect(SCREEN_SCALE_X(20.0f), SCREEN_SCALE_Y(110.0f), SCREEN_SCALE_X(620.0f), SCREEN_SCALE_Y(300.0f)), CRGBA(50, 50, 50, 192));
-	
-	CFont::SetFontStyle(FONT_BANK);
-	CFont::SetBackgroundOff();
-	CFont::SetWrapx(SCREEN_SCALE_FROM_RIGHT(190.0f)); // 450.0f
-	CFont::SetScale(SCREEN_SCALE_X(1.0f), SCREEN_SCALE_Y(1.0f));
-	CFont::SetCentreOn();
-	CFont::SetCentreSize(SCREEN_SCALE_X(450.0f));
-	CFont::SetJustifyOff();
-	CFont::SetColor(CRGBA(255, 255, 255, 255));
-	CFont::SetDropColor(CRGBA(32, 32, 32, 255));
-	CFont::SetDropShadowPosition(3);
-	CFont::SetPropOn();
-	CFont::PrintString(SCREEN_SCALE_X(320.0f), SCREEN_SCALE_Y(130.0f), TheText.Get(msg));
-	CFont::DrawFonts();
-	
-	DoRWStuffEndOfFrame();
-}
-#endif
 
 bool
 CGame::InitialiseOnceBeforeRW(void)
@@ -191,12 +156,10 @@ CGame::InitialiseOnceBeforeRW(void)
 }
 
 #ifndef LIBRW
-#ifdef PS2_MATFX
 void ReplaceMatFxCallback();
-#endif // PS2_MATFX
-#ifdef PS2_ALPHA_TEST
+#ifdef ALPHA_TEST_EMU
 void ReplaceAtomicPipeCallback();
-#endif // PS2_ALPHA_TEST
+#endif // ALPHA_TEST_EMU
 #endif // !LIBRW
 
 bool
@@ -212,15 +175,6 @@ CGame::InitialiseRenderWare(void)
 	CTxdStore::Initialise();
 	CVisibilityPlugins::Initialise();
 
-#ifdef GTA_PS2
-	RpSkySelectTrueTSClipper(TRUE);
-	RpSkySelectTrueTLClipper(TRUE);
-
-	// PS2ManagerApplyDirectionalLightingCB() uploads the GTA lights
-	// directly without going through RpWorld and all that
-	SetupPS2ManagerDefaultLightingCallback();
-	PreAllocateRwObjects();
-#endif
 
 	/* Create camera */
 	Scene.camera = CameraCreate(SCREEN_WIDTH, SCREEN_HEIGHT, TRUE);
@@ -259,24 +213,16 @@ CGame::InitialiseRenderWare(void)
 	CreateDebugFont();
 
 #ifdef LIBRW
-#ifdef PS2_MATFX
 	rw::MatFX::envMapApplyLight = true;
 	rw::MatFX::envMapUseMatColor = true;
 	rw::MatFX::envMapFlipU = true;
-#else
-	rw::MatFX::envMapApplyLight = false;
-	rw::MatFX::envMapUseMatColor = false;
-	rw::MatFX::envMapFlipU = false;
-#endif
 	rw::RGBA envcol = { 64, 64, 64, 255 };
 	rw::MatFX::envMapColor = envcol;
 #else
-#ifdef PS2_MATFX
 	ReplaceMatFxCallback();
-#endif // PS2_MATFX
-#ifdef PS2_ALPHA_TEST
+#ifdef ALPHA_TEST_EMU
 	ReplaceAtomicPipeCallback();
-#endif // PS2_ALPHA_TEST
+#endif // ALPHA_TEST_EMU
 #endif // LIBRW
 
 	PUSH_MEMID(MEMID_TEXTURES);
@@ -357,12 +303,8 @@ bool CGame::InitialiseOnceAfterRW(void)
 #ifdef CUSTOM_MODELS
 	CCustomTimecycle::Apply();	// optional custom/data/timecyc.json or common.zip: GL3 sky/fog too
 #endif
-#ifdef GTA_PS2
-	LoadingScreen("Loading the Game", "Initialising audio", GetRandomSplashScreen());
-#endif
 	DMAudio.Initialise();
 
-#ifndef GTA_PS2
 #ifdef EXTERNAL_3D_SOUND
 	if ( DMAudio.GetNum3DProvidersAvailable() == 0 )
 		FrontEndMenuManager.m_nPrefsAudio3DProviderIndex = NO_AUDIO_PROVIDER;
@@ -381,7 +323,6 @@ bool CGame::InitialiseOnceAfterRW(void)
 	DMAudio.SetEffectsMasterVolume(FrontEndMenuManager.m_PrefsSfxVolume);
 	DMAudio.SetEffectsFadeVol(127);
 	DMAudio.SetMusicFadeVol(127);
-#endif
 	REVC_LOG_INFO("Text, timer and audio initialized");
 	return true;
 }
@@ -411,19 +352,14 @@ bool CGame::Initialise(void)
 	CCustomWorld::Shutdown(); // fresh BR ID mapping on a game restart
 #endif
 
-#ifdef GTA_PS2
-	// TODO: upload VU0 collision code here
-#endif
 
 	CPools::Initialise();
 
-#ifndef GTA_PS2
 #ifdef PED_CAR_DENSITY_SLIDERS
 	// Load density values from gta3.ini only if our reVC.ini have them 0.6f
 	if (CIniFile::PedNumberMultiplier == 0.6f && CIniFile::CarNumberMultiplier == 0.6f)
 #endif
 		CIniFile::LoadIniFile();
-#endif
 #ifdef USE_TEXTURE_POOL
 	_TexturePoolsUnknown(false);
 #endif
@@ -449,9 +385,6 @@ bool CGame::Initialise(void)
 	LoadingScreen("Loading the Game", "Setup game variables", nil);
 	POP_MEMID();
 
-#ifdef GTA_PS2
-	CDma::SyncChannel(0, true);
-#endif
 
 	CGameLogic::InitAtStartOfGame();
 	CReferences::Init();
@@ -1019,9 +952,6 @@ void CGame::Process(void)
 			POP_MEMID();
 		}
 	}
-#ifdef GTA_PS2
-	CMemCheck::DoTest();
-#endif
 }
 
 #ifdef USE_CUSTOM_ALLOCATOR
@@ -1069,59 +999,7 @@ struct DMAGIFUpload
 RwTexture*
 MoveTextureMemoryCB(RwTexture* texture, void* pData)
 {
-#ifdef GTA_PS2
-	bool* pRet = (bool*)pData;
-	RwRaster* raster = RwTextureGetRaster(texture);
-	_SkyRasterExt* rasterExt = RASTEREXTFROMRASTER(raster);
-	if (raster->originalPixels == nil ||	// the raw data
-		raster->cpPixels == raster->originalPixels ||	// old format, can't handle it
-		rasterExt->dmaRefCount != 0 && rasterExt->dmaClrCount != 0)
-		return texture;
-
-	// this is the allocated pointer we will move
-	SkyDataPrefix* prefix = (SkyDataPrefix*)raster->originalPixels;
-	DMAGIFUpload* uploads = (DMAGIFUpload*)(prefix + 1);
-
-	// We have 4qw for each upload,
-	// i.e. for each buffer width of mip levels,
-	// and the palette if there is one.
-	// NB: this code does NOT support mipmaps!
-	// so we assume two uploads (pixels and palette)
-	//
-	// each upload looks like this:
-	//    (DMAcnt; NOP; VIF DIRECT(2))
-	//     giftag (1, A+D)
-	//      GS_BITBLTBUF
-	//    (DMAref->pixel data; NOP; VIF DIRECT(5))
-	// the DMArefs are what we have to adjust
-	uintptr dataDiff, upload1Diff, upload2Diff, pixelDiff, paletteDiff;
-	dataDiff = prefix->data - (uintptr)raster->originalPixels;
-	upload1Diff = uploads[0].tag2_addr - (uintptr)raster->originalPixels;
-	if (raster->palette)
-		upload2Diff = uploads[1].tag2_addr - (uintptr)raster->originalPixels;
-	pixelDiff = (uintptr)raster->cpPixels - (uintptr)raster->originalPixels;
-	if (raster->palette)
-		paletteDiff = (uintptr)raster->palette - (uintptr)raster->originalPixels;
-	uint8* newptr = (uint8*)gMainHeap.MoveMemory(raster->originalPixels);
-	if (newptr != raster->originalPixels) {
-		// adjust everything
-		prefix->data = (uintptr)newptr + dataDiff;
-		uploads[0].tag2_addr = (uintptr)newptr + upload1Diff;
-		if (raster->palette)
-			uploads[1].tag2_addr = (uintptr)newptr + upload2Diff;
-		raster->originalPixels = newptr;
-		raster->cpPixels = newptr + pixelDiff;
-		if (raster->palette)
-			raster->palette = newptr + paletteDiff;
-
-		if (pRet) {
-			*pRet = true;
-			return nil;
-		}
-	}
-#else
 	// nothing to do here really, everything should be in videomemory
-#endif
 	return texture;
 }
 
@@ -1173,12 +1051,9 @@ MoveAtomicMemory(RpAtomic* atomic, bool onlyOne)
 bool
 MoveColModelMemory(CColModel& colModel, bool onlyOne)
 {
-#if GTA_VERSION >= GTA3_PS2_160
 	// hm...should probably only do this if ownsCollisionVolumes
-	// but it doesn't exist on PS2...
 	if (!colModel.ownsCollisionVolumes)
 		return false;
-#endif
 
 	if (MoveMem((void**)&colModel.spheres) && onlyOne)
 		return true;
@@ -1268,7 +1143,7 @@ void CGame::DrasticTidyUpMemory(bool flushDraw)
 	}
 
 	if (removedCol) {
-		// different on PS2
+		// different in the original
 		CFileLoader::LoadCollisionFromDatFile(CCollision::ms_collisionInMemory);
 	}
 
@@ -1286,11 +1161,7 @@ void CGame::TidyUpMemory(bool moveTextures, bool flushDraw)
 
 	if (moveTextures) {
 		if (flushDraw) {
-#ifdef GTA_PS2
-			for (int i = 0; i < sweMaxFlips + 1; i++) {
-#else
 			for (int i = 0; i < 5; i++) {	// probably more than needed
-#endif
 				RwCameraBeginUpdate(Scene.camera);
 				RwCameraEndUpdate(Scene.camera);
 				RwCameraShowRaster(Scene.camera, nil, 0);

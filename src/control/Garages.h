@@ -263,9 +263,7 @@ public:
 	static bool bCamShouldBeOutisde;
 
 	static void Init(void);
-#ifndef PS2
 	static void Shutdown(void);
-#endif
 	static void Update(void);
 
 	static int16 AddOne(float X1, float Y1, float Z1, float X2, float Y2, float X3, float Y3, float Z2, uint8 type, int32 targetId);

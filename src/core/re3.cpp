@@ -70,24 +70,14 @@ extern "C" int vsprintf(char* const _Buffer, char const* const _Format, va_list 
 #endif
 
 
-#ifdef USE_PS2_RAND
 unsigned long long myrand_seed = 1;
-#else
-unsigned long int myrand_seed = 1;
-#endif
 
 int
 myrand(void)
 {
-#ifdef USE_PS2_RAND
-	// Use our own implementation of rand, stolen from PS2
+	// Use our own implementation of rand
 	myrand_seed = 0x5851F42D4C957F2D * myrand_seed + 1;
 	return ((myrand_seed >> 32) & 0x7FFFFFFF);
-#else
-	// or original codewarrior rand
-	myrand_seed = myrand_seed * 1103515245 + 12345;
-	return((myrand_seed >> 16) & 0x7FFF);
-#endif
 }
 
 void
@@ -1113,7 +1103,7 @@ DebugMenuPopulate(void)
 		DebugMenuAddVarBool8("Render", "Fix Sprites", &CDraw::ms_bFixSprites, nil);
 #endif
 		DebugMenuAddVarBool8("Render", "Backface Culling", &gBackfaceCulling, nil);
-		DebugMenuAddVarBool8("Render", "PS2 Alpha test Emu", &gPS2alphaTest, nil);
+		DebugMenuAddVarBool8("Render", "Alpha test Emu", &gAlphaTestEmu, nil);
 		DebugMenuAddVarBool8("Render", "Frame limiter", &FrontEndMenuManager.m_PrefsFrameLimiter, nil);
 		DebugMenuAddVarBool8("Render", "VSynch", &FrontEndMenuManager.m_PrefsVsync, nil);
 		DebugMenuAddVar("Render", "Max FPS", &RsGlobal.maxFPS, nil, 1, 1, 1000, nil);

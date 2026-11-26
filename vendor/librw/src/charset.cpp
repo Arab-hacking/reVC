@@ -9,7 +9,6 @@
 #include "rwengine.h"
 #include "rwcharset.h"
 
-#include "ps2/rwps2.h"
 #include "d3d/rwd3d.h"
 #include "gl/rwgl3.h"
 

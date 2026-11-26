@@ -603,7 +603,7 @@ LoadColorcycleDat(void)
 			if(src[10] > maxDiag) maxDiag = src[10];
 		}
 	}
-	// SA/mobile colorcycle.dat uses PS2 2x colour scale (~2.0 diagonal); normalize to 1x.
+	// SA/mobile colorcycle.dat uses the legacy 2x colour scale (~2.0 diagonal); normalize to 1x.
 	if(maxDiag > 1.35f){
 		for(int w = 0; w < weathers; w++){
 			for(int s = 0; s < 8; s++){

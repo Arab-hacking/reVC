@@ -84,10 +84,6 @@ void cParticleSystemMgr::LoadParticleData()
 			++lineEnd;
 		
 		int32 lineLength = lineEnd - lineStart;
-#ifdef GTA_PS2
-		// CRs are left untouched. we assume every line ends in one
-		lineLength--;
-#endif
 
 		if(lineLength >= (int32)sizeof(line)){
 			REVC_LOG_WARNING("particle data: line longer than %d characters, skipped",

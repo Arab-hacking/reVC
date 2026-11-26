@@ -11,8 +11,6 @@
 #include "rwengine.h"
 #include "rwanim.h"
 #include "rwplugins.h"
-#include "ps2/rwps2.h"
-#include "ps2/rwps2plg.h"
 #include "d3d/rwxbox.h"
 #include "d3d/rwd3d8.h"
 #include "d3d/rwd3d9.h"
@@ -613,7 +611,6 @@ registerMatFXPlugin(void)
 {
 	Driver::registerPlugin(PLATFORM_NULL, 0, ID_MATFX,
 	                       matfxOpen, matfxClose);
-	ps2::initMatFX();
 	xbox::initMatFX();
 	d3d8::initMatFX();
 	d3d9::initMatFX();

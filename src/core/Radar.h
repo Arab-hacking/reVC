@@ -153,7 +153,6 @@ struct sRadarTrace
 #else
 /*
 	broken since forever, someone tried to fix size for 640x512(PAL)
-		http://aap.rockstarvision.com/pics/gta3/ps2screens/gta3_interface.jpg
 	but failed:
 		http://aap.rockstarvision.com/pics/gta3/artwork/gta3_artwork_16.jpg
 	most likely the guy used something like this:

@@ -139,7 +139,7 @@ public:
 #ifdef BUTTON_ICONS
 	static int32 ButtonsSlot;
 	static CSprite2d ButtonSprite[MAX_BUTTON_ICONS];
-	static int PS2Symbol;
+	static int ButtonSymbol;
 	
 	static void LoadButtons(const char *txdPath);
 	static void DrawButton(float x, float y);

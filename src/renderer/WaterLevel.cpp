@@ -2437,9 +2437,6 @@ CWaterLevel::RenderWavyMask(float fX, float fY, float fZ,
 
 		if (bRender)
 		{
-#ifdef PS2
-			RpSkyTexCacheFlush();
-#endif
 			RpAtomicRender(ms_pMaskAtomic);
 		}
 	}

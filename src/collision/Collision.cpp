@@ -23,49 +23,6 @@
 #include "Camera.h"
 #include "ColStore.h"
 
-#ifdef VU_COLLISION
-#include "VuCollision.h"
-
-inline int
-GetVUresult(void)
-{
-#ifdef GTA_PS2
-	int ret;
-	__asm__ volatile (
-		"cfc2.i	%0,vi01\n"	// .i important! wait for VU0 to finish
-		: "=r" (ret)
-	);
-	return ret;
-#else
-	return vi01;
-#endif
-}
-
-inline int
-GetVUresult(CVuVector &point, CVuVector &normal, float &dist)
-{
-#ifdef GTA_PS2
-	int ret;
-	register int tmp;
-	__asm__ volatile (
-		"cfc2.i	%0,vi01\n"	// .i important! wait for VU0 to finish
-		"sqc2	vf01,(%2)\n"
-		"sqc2	vf02,(%3)\n"
-		"qmfc2	%1,vf03\n"
-		"sw	%1,(%4)\n"
-		: "=&r" (ret), "=&r" (tmp)
-		: "r" (&point), "r" (&normal), "r" (&dist)
-	);
-	return ret;
-#else
-	point = vf01;
-	normal = vf02;
-	dist = vf03.x;
-	return vi01;
-#endif
-}
-
-#endif
 
 eLevelName CCollision::ms_collisionInMemory;
 CLinkList<CColModel*> CCollision::ms_colModelCache;
@@ -283,20 +240,6 @@ CCollision::TestVerticalLineBox(const CColLine &line, const CBox &box)
 bool
 CCollision::TestLineTriangle(const CColLine &line, const CompressedVector *verts, const CColTriangle &tri, const CColTrianglePlane &plane)
 {
-#ifdef VU_COLLISION
-	// not used in favour of optimized loops
-	VuTriangle vutri;
-	verts[tri.a].Unpack(vutri.v0);
-	verts[tri.b].Unpack(vutri.v1);
-	verts[tri.c].Unpack(vutri.v2);
-	plane.Unpack(vutri.plane);
-
-	LineToTriangleCollisionCompressed(*(CVuVector*)&line.p0, *(CVuVector*)&line.p1, vutri);
-
-	if(GetVUresult())
-		return true;
-	return false;
-#else
 	float t;
 	CVector normal;
 	plane.GetNormal(normal);
@@ -378,7 +321,6 @@ CCollision::TestLineTriangle(const CColLine &line, const CompressedVector *verts
 	if(CrossProduct2D(vec3-vec1, vect-vec1) > 0.0f) return false;
 	if(CrossProduct2D(vec3-vec2, vect-vec2) < 0.0f) return false;
 	return true;
-#endif
 }
 
 // Test if line segment intersects with sphere.
@@ -416,20 +358,6 @@ bool
 CCollision::TestSphereTriangle(const CColSphere &sphere,
 	const CompressedVector *verts, const CColTriangle &tri, const CColTrianglePlane &plane)
 {
-#ifdef VU_COLLISION
-	// not used in favour of optimized loops
-	VuTriangle vutri;
-	verts[tri.a].Unpack(vutri.v0);
-	verts[tri.b].Unpack(vutri.v1);
-	verts[tri.c].Unpack(vutri.v2);
-	plane.Unpack(vutri.plane);
-
-	SphereToTriangleCollisionCompressed(*(CVuVector*)&sphere, vutri);
-
-	if(GetVUresult())
-		return true;
-	return false;
-#else
 	// If sphere and plane don't intersect, no collision
 	float planedist = plane.CalcPoint(sphere.center);
 	if(Abs(planedist) > sphere.radius)
@@ -490,82 +418,11 @@ CCollision::TestSphereTriangle(const CColSphere &sphere,
 	}
 
 	return dist < sphere.radius;
-#endif
 }
 
 bool
 CCollision::TestLineOfSight(const CColLine &line, const CMatrix &matrix, CColModel &model, bool ignoreSeeThrough, bool ignoreShootThrough)
 {
-#ifdef VU_COLLISION
-	CMatrix matTransform;
-	int i;
-
-	// transform line to model space
-	Invert(matrix, matTransform);
-	CVuVector newline[2];
-	TransformPoints(newline, 2, matTransform, &line.p0, sizeof(CColLine)/2);
-
-	// If we don't intersect with the bounding box, no chance on the rest
-	if(!TestLineBox(*(CColLine*)newline, model.boundingBox))
-		return false;
-
-	for(i = 0; i < model.numSpheres; i++){
-		if(ignoreSeeThrough && IsSeeThrough(model.spheres[i].surface)) continue;
-		if(ignoreShootThrough && IsShootThrough(model.spheres[i].surface)) continue;
-		if(TestLineSphere(*(CColLine*)newline, model.spheres[i]))
-			return true;
-	}
-
-	for(i = 0; i < model.numBoxes; i++){
-		if(ignoreSeeThrough && IsSeeThrough(model.boxes[i].surface)) continue;
-		if(ignoreShootThrough && IsShootThrough(model.boxes[i].surface)) continue;
-		if(TestLineBox(*(CColLine*)newline, model.boxes[i]))
-			return true;
-	}
-
-	CalculateTrianglePlanes(&model);
-	int lastTest = -1;
-	VuTriangle vutri;
-	for(i = 0; i < model.numTriangles; i++){
-		if(ignoreSeeThrough && IsSeeThrough(model.triangles[i].surface)) continue;
-		if(ignoreShootThrough && IsShootThrough(model.triangles[i].surface)) continue;
-
-		CColTriangle *tri = &model.triangles[i];
-		model.vertices[tri->a].Unpack(vutri.v0);
-		model.vertices[tri->b].Unpack(vutri.v1);
-		model.vertices[tri->c].Unpack(vutri.v2);
-		model.planes[i].Unpack(vutri.plane);
-
-		LineToTriangleCollisionCompressed(newline[0], newline[1], vutri);
-		lastTest = i;
-		break;
-	}
-#ifdef FIX_BUGS
-	// no need to check first again
-	i++;
-#endif
-	for(; i < model.numTriangles; i++){
-		if(ignoreSeeThrough && IsSeeThrough(model.triangles[i].surface)) continue;
-		if(ignoreShootThrough && IsShootThrough(model.triangles[i].surface)) continue;
-
-		CColTriangle *tri = &model.triangles[i];
-		model.vertices[tri->a].Unpack(vutri.v0);
-		model.vertices[tri->b].Unpack(vutri.v1);
-		model.vertices[tri->c].Unpack(vutri.v2);
-		model.planes[i].Unpack(vutri.plane);
-
-		if(GetVUresult())
-			return true;
-
-		LineToTriangleCollisionCompressed(newline[0], newline[1], vutri);
-		lastTest = i;
-
-	}
-	if(lastTest != -1 && GetVUresult())
-		return true;
-
-	return false;
-#else
 	static CMatrix matTransform;
 	int i;
 
@@ -600,7 +457,6 @@ CCollision::TestLineOfSight(const CColLine &line, const CMatrix &matrix, CColMod
 	}
 
 	return false;
-#endif
 }
 
 // TODO: TestPillWithSpheresInColModel, but only called from overloaded CWeapon::FireMelee which isn't used
@@ -624,12 +480,10 @@ CCollision::ProcessSphereSphere(const CColSphere &s1, const CColSphere &s2, CCol
 		dist.Normalise();
 		point.point = s1.center - dist*d;
 		point.normal = dist;
-#ifndef VU_COLLISION
 		point.surfaceA = s1.surface;
 		point.pieceA = s1.material;
 		point.surfaceB = s2.surface;
 		point.pieceB = s2.material;
-#endif
 		point.depth = depth;	
 		mindistsq = d*d;		// collision radius
 		return true;
@@ -674,12 +528,10 @@ CCollision::ProcessSphereBox(const CColSphere &sph, const CColBox &box, CColPoin
 		if(lensq < mindistsq){
 			point.normal = dist * (1.0f/Sqrt(lensq));
 			point.point = sph.center - point.normal;
-#ifndef VU_COLLISION
 			point.surfaceA = sph.surface;
 			point.pieceA = sph.material;
 			point.surfaceB = box.surface;
 			point.pieceB = box.material;
-#endif
 
 			// find absolute distance to the closer side in each dimension
 			float dx = dist.x > 0.0f ?
@@ -719,12 +571,10 @@ CCollision::ProcessSphereBox(const CColSphere &sph, const CColBox &box, CColPoin
 			float len = Sqrt(lensq);
 			point.point = p;
 			point.normal = dist * (1.0f/len);
-#ifndef VU_COLLISION
 			point.surfaceA = sph.surface;
 			point.pieceA = sph.material;
 			point.surfaceB = box.surface;
 			point.pieceB = box.material;
-#endif
 			point.depth = sph.radius - len;
 			mindistsq = lensq;
 			return true;
@@ -839,12 +689,10 @@ CCollision::ProcessLineBox(const CColLine &line, const CColBox &box, CColPoint &
 
 	point.point = p;
 	point.normal = normal;
-#ifndef VU_COLLISION
 	point.surfaceA = 0;
 	point.pieceA = 0;
 	point.surfaceB = box.surface;
 	point.pieceB = box.material;
-#endif
 	mindist = mint;
 
 	return true;
@@ -874,12 +722,10 @@ CCollision::ProcessLineSphere(const CColLine &line, const CColSphere &sphere, CC
 	point.point = line.p0 + v01*t;
 	point.normal = point.point - sphere.center;
 	point.normal.Normalise();
-#ifndef VU_COLLISION
 	point.surfaceA = 0;
 	point.pieceA = 0;
 	point.surfaceB = sphere.surface;
 	point.pieceB = sphere.material;
-#endif
 	mindist = t;
 	return true;
 }
@@ -890,17 +736,6 @@ CCollision::ProcessVerticalLineTriangle(const CColLine &line,
 	const CompressedVector *verts, const CColTriangle &tri, const CColTrianglePlane &plane,
 	CColPoint &point, float &mindist, CStoredCollPoly *poly)
 {
-#ifdef VU_COLLISION
-	// not used in favour of optimized loops
-	bool res = ProcessLineTriangle(line, verts, tri, plane, point, mindist);
-	if(res && poly){
-		poly->verts[0] = verts[tri.a].Get();
-		poly->verts[1] = verts[tri.b].Get();
-		poly->verts[2] = verts[tri.c].Get();
-		poly->valid = true;
-	}
-	return res;
-#else
 	float t;
 	CVector normal;
 
@@ -987,40 +822,11 @@ CCollision::ProcessVerticalLineTriangle(const CColLine &line,
 	}
 	mindist = t;
 	return true;
-#endif
 }
 
 bool
 CCollision::IsStoredPolyStillValidVerticalLine(const CVector &pos, float z, CColPoint &point, CStoredCollPoly *poly)
 {
-#ifdef VU_COLLISION
-	if(!poly->valid)
-		return false;
-
-	CVuVector p0 = pos;
-	CVuVector p1 = pos;
-	p1.z = z;
-
-	CVector v01 = poly->verts[1] - poly->verts[0];
-	CVector v02 = poly->verts[2] - poly->verts[0];
-	CVuVector plane = CrossProduct(v02, v01);
-	plane.Normalise();
-	plane.w = DotProduct(plane, poly->verts[0]);
-
-	LineToTriangleCollision(p0, p1, poly->verts[0], poly->verts[1], poly->verts[2], plane);
-
-	CVuVector pnt;
-	float dist;
-	if(!GetVUresult(pnt, plane, dist))
-#ifdef FIX_BUGS
-		// perhaps not needed but be safe
-		return poly->valid = false;
-#else
-		return false;
-#endif
-	point.point = pnt;
-	return true;
-#else
 	float t;
 
 	if(!poly->valid)
@@ -1095,7 +901,6 @@ CCollision::IsStoredPolyStillValidVerticalLine(const CVector &pos, float z, CCol
 	if(CrossProduct2D(vec3-vec2, vect-vec2) < 0.0f) return poly->valid = false;
 	point.point = p;
 	return poly->valid = true;
-#endif
 }
 
 bool
@@ -1103,28 +908,6 @@ CCollision::ProcessLineTriangle(const CColLine &line,
 	const CompressedVector *verts, const CColTriangle &tri, const CColTrianglePlane &plane,
 	CColPoint &point, float &mindist, CStoredCollPoly *poly)
 {
-#ifdef VU_COLLISION
-	// not used in favour of optimized loops
-	VuTriangle vutri;
-	verts[tri.a].Unpack(vutri.v0);
-	verts[tri.b].Unpack(vutri.v1);
-	verts[tri.c].Unpack(vutri.v2);
-	plane.Unpack(vutri.plane);
-
-	LineToTriangleCollisionCompressed(*(CVuVector*)&line.p0, *(CVuVector*)&line.p1, vutri);
-
-	CVuVector pnt, normal;
-	float dist;
-	if(GetVUresult(pnt, normal, dist)){
-		if(dist < mindist){
-			point.point = pnt;
-			point.normal = normal;
-			mindist = dist;
-			return true;
-		}
-	}
-	return false;
-#else
 	float t;
 	CVector normal;
 	plane.GetNormal(normal);
@@ -1213,7 +996,6 @@ CCollision::ProcessLineTriangle(const CColLine &line,
 	}
 	mindist = t;
 	return true;
-#endif
 }
 
 bool
@@ -1221,30 +1003,6 @@ CCollision::ProcessSphereTriangle(const CColSphere &sphere,
 	const CompressedVector *verts, const CColTriangle &tri, const CColTrianglePlane &plane,
 	CColPoint &point, float &mindistsq)
 {
-#ifdef VU_COLLISION
-	// not used in favour of optimized loops
-	VuTriangle vutri;
-	verts[tri.a].Unpack(vutri.v0);
-	verts[tri.b].Unpack(vutri.v1);
-	verts[tri.c].Unpack(vutri.v2);
-	plane.Unpack(vutri.plane);
-
-	SphereToTriangleCollisionCompressed(*(CVuVector*)&sphere, vutri);
-
-	CVuVector pnt, normal;
-	float dist;
-	if(GetVUresult(pnt, normal, dist) && dist*dist < mindistsq){
-		float depth = sphere.radius - dist;
-		if(depth > point.depth){
-			point.point = pnt;
-			point.normal = normal;
-			point.depth = depth;
-			mindistsq = dist*dist;
-			return true;
-		}
-	}
-	return false;
-#else
 	// If sphere and plane don't intersect, no collision
 	float planedist = plane.CalcPoint(sphere.center);
 	float distsq = planedist*planedist;
@@ -1314,16 +1072,13 @@ CCollision::ProcessSphereTriangle(const CColSphere &sphere,
 	point.point = p;
 	point.normal = sphere.center - p;
 	point.normal.Normalise();
-#ifndef VU_COLLISION
 	point.surfaceA = sphere.surface;
 	point.pieceA = sphere.material;
 	point.surfaceB = tri.surface;
 	point.pieceB = 0;
-#endif
 	point.depth = sphere.radius - dist;
 	mindistsq = dist*dist;
 	return true;
-#endif
 }
 
 bool
@@ -1331,97 +1086,6 @@ CCollision::ProcessLineOfSight(const CColLine &line,
 	const CMatrix &matrix, CColModel &model,
 	CColPoint &point, float &mindist, bool ignoreSeeThrough, bool ignoreShootThrough)
 {
-#ifdef VU_COLLISION
-	CMatrix matTransform;
-	int i;
-
-	// transform line to model space
-	Invert(matrix, matTransform);
-	CVuVector newline[2];
-	TransformPoints(newline, 2, matTransform, &line.p0, sizeof(CColLine)/2);
-
-	if(mindist < 1.0f)
-		newline[1] = newline[0] + (newline[1] - newline[0])*mindist;
-
-	// If we don't intersect with the bounding box, no chance on the rest
-	if(!TestLineBox(*(CColLine*)newline, model.boundingBox))
-		return false;
-
-	float coldist = 1.0f;
-	for(i = 0; i < model.numSpheres; i++){
-		if(ignoreSeeThrough && IsSeeThrough(model.spheres[i].surface)) continue;
-		if(ignoreShootThrough && IsShootThrough(model.spheres[i].surface)) continue;
-		if(ProcessLineSphere(*(CColLine*)newline, model.spheres[i], point, coldist))
-			point.Set(0, 0, model.spheres[i].surface, model.spheres[i].material);
-	}
-
-	for(i = 0; i < model.numBoxes; i++){
-		if(ignoreSeeThrough && IsSeeThrough(model.boxes[i].surface)) continue;
-		if(ProcessLineBox(*(CColLine*)newline, model.boxes[i], point, coldist))
-			point.Set(0, 0, model.boxes[i].surface, model.boxes[i].material);
-	}
-
-	CalculateTrianglePlanes(&model);
-	VuTriangle vutri;
-	CColTriangle *lasttri = nil;
-	for(i = 0; i < model.numTriangles; i++){
-		if(ignoreSeeThrough && IsSeeThrough(model.triangles[i].surface)) continue;
-		if(ignoreShootThrough && IsShootThrough(model.triangles[i].surface)) continue;
-
-		CColTriangle *tri = &model.triangles[i];
-		model.vertices[tri->a].Unpack(vutri.v0);
-		model.vertices[tri->b].Unpack(vutri.v1);
-		model.vertices[tri->c].Unpack(vutri.v2);
-		model.planes[i].Unpack(vutri.plane);
-
-		LineToTriangleCollisionCompressed(newline[0], newline[1], vutri);
-		lasttri = tri;
-		break;
-	}
-#ifdef FIX_BUGS
-	// no need to check first again
-	i++;
-#endif
-	CVuVector pnt, normal;
-	float dist;
-	for(; i < model.numTriangles; i++){
-		if(ignoreSeeThrough && IsSeeThrough(model.triangles[i].surface)) continue;
-		if(ignoreShootThrough && IsShootThrough(model.triangles[i].surface)) continue;
-
-		CColTriangle *tri = &model.triangles[i];
-		model.vertices[tri->a].Unpack(vutri.v0);
-		model.vertices[tri->b].Unpack(vutri.v1);
-		model.vertices[tri->c].Unpack(vutri.v2);
-		model.planes[i].Unpack(vutri.plane);
-
-		if(GetVUresult(pnt, normal, dist))
-			if(dist < coldist){
-				point.point = pnt;
-				point.normal = normal;
-				point.Set(0, 0, lasttri->surface, 0);
-				coldist = dist;
-			}
-
-		LineToTriangleCollisionCompressed(newline[0], newline[1], vutri);
-		lasttri = tri;
-	}
-	if(lasttri && GetVUresult(pnt, normal, dist))
-		if(dist < coldist){
-			point.point = pnt;
-			point.normal = normal;
-			point.Set(0, 0, lasttri->surface, 0);
-			coldist = dist;
-		}
-
-
-	if(coldist < 1.0f){
-		point.point = matrix * point.point;
-		point.normal = Multiply3x3(matrix, point.normal);
-		mindist *= coldist;
-		return true;
-	}
-	return false;
-#else
 	static CMatrix matTransform;
 	int i;
 
@@ -1460,7 +1124,6 @@ CCollision::ProcessLineOfSight(const CColLine &line,
 		return true;
 	}
 	return false;
-#endif
 }
 
 bool
@@ -1468,125 +1131,6 @@ CCollision::ProcessVerticalLine(const CColLine &line,
 	const CMatrix &matrix, CColModel &model,
 	CColPoint &point, float &mindist, bool ignoreSeeThrough, bool ignoreShootThrough, CStoredCollPoly *poly)
 {
-#ifdef VU_COLLISION
-	static CStoredCollPoly TempStoredPoly;
-	CMatrix matTransform;
-	int i;
-
-	// transform line to model space
-	Invert(matrix, matTransform);
-	CVuVector newline[2];
-	TransformPoints(newline, 2, matTransform, &line.p0, sizeof(CColLine)/2);
-
-	if(mindist < 1.0f)
-		newline[1] = newline[0] + (newline[1] - newline[0])*mindist;
-
-	if(!TestLineBox(*(CColLine*)newline, model.boundingBox))
-		return false;
-
-	float coldist = 1.0f;
-	for(i = 0; i < model.numSpheres; i++){
-		if(ignoreSeeThrough && IsSeeThroughVertical(model.spheres[i].surface)) continue;
-		if(ProcessLineSphere(*(CColLine*)newline, model.spheres[i], point, coldist))
-			point.Set(0, 0, model.spheres[i].surface, model.spheres[i].material);
-	}
-
-	for(i = 0; i < model.numBoxes; i++){
-		if(ignoreSeeThrough && IsSeeThroughVertical(model.boxes[i].surface)) continue;
-		if(ProcessLineBox(*(CColLine*)newline, model.boxes[i], point, coldist))
-			point.Set(0, 0, model.boxes[i].surface, model.boxes[i].material);
-	}
-
-	CalculateTrianglePlanes(&model);
-	TempStoredPoly.valid = false;
-	if(model.numTriangles){
-		bool registeredCol;
-		CColTriangle *lasttri = nil;
-		VuTriangle vutri;
-		for(i = 0; i < model.numTriangles; i++){
-			if(ignoreSeeThrough && IsSeeThroughVertical(model.triangles[i].surface)) continue;
-
-			CColTriangle *tri = &model.triangles[i];
-			model.vertices[tri->a].Unpack(vutri.v0);
-			model.vertices[tri->b].Unpack(vutri.v1);
-			model.vertices[tri->c].Unpack(vutri.v2);
-			model.planes[i].Unpack(vutri.plane);
-
-			LineToTriangleCollisionCompressed(newline[0], newline[1], vutri);
-			lasttri = tri;
-			break;
-		}
-#ifdef FIX_BUGS
-		// no need to check first again
-		i++;
-#endif
-		CVuVector pnt, normal;
-		float dist;
-		for(; i < model.numTriangles; i++){
-			if(ignoreSeeThrough && IsSeeThroughVertical(model.triangles[i].surface)) continue;
-
-			CColTriangle *tri = &model.triangles[i];
-			model.vertices[tri->a].Unpack(vutri.v0);
-			model.vertices[tri->b].Unpack(vutri.v1);
-			model.vertices[tri->c].Unpack(vutri.v2);
-			model.planes[i].Unpack(vutri.plane);
-
-			if(GetVUresult(pnt, normal, dist)){
-				if(dist < coldist){
-					point.point = pnt;
-					point.normal = normal;
-					point.Set(0, 0, lasttri->surface, 0);
-					coldist = dist;
-					registeredCol = true;
-				}else
-					registeredCol = false;
-			}else
-				registeredCol = false;
-
-			if(registeredCol){
-				TempStoredPoly.verts[0] = model.vertices[lasttri->a].Get();
-				TempStoredPoly.verts[1] = model.vertices[lasttri->b].Get();
-				TempStoredPoly.verts[2] = model.vertices[lasttri->c].Get();
-				TempStoredPoly.valid = true;
-			}
-
-			LineToTriangleCollisionCompressed(newline[0], newline[1], vutri);
-			lasttri = tri;
-		}
-		if(lasttri && GetVUresult(pnt, normal, dist)){
-			if(dist < coldist){
-				point.point = pnt;
-				point.normal = normal;
-				point.Set(0, 0, lasttri->surface, 0);
-				coldist = dist;
-				registeredCol = true;
-			}else
-				registeredCol = false;
-		}else
-			registeredCol = false;
-
-		if(registeredCol){
-			TempStoredPoly.verts[0] = model.vertices[lasttri->a].Get();
-			TempStoredPoly.verts[1] = model.vertices[lasttri->b].Get();
-			TempStoredPoly.verts[2] = model.vertices[lasttri->c].Get();
-			TempStoredPoly.valid = true;
-		}
-	}
-
-	if(coldist < 1.0f){
-		point.point = matrix * point.point;
-		point.normal = Multiply3x3(matrix, point.normal);
-		if(TempStoredPoly.valid && poly){
-			*poly = TempStoredPoly;
-			poly->verts[0] = matrix * CVector(poly->verts[0]);
-			poly->verts[1] = matrix * CVector(poly->verts[1]);
-			poly->verts[2] = matrix * CVector(poly->verts[2]);
-		}
-		mindist *= coldist;
-		return true;
-	}
-	return false;
-#else
 	static CStoredCollPoly TempStoredPoly;
 	int i;
 
@@ -1629,7 +1173,6 @@ CCollision::ProcessVerticalLine(const CColLine &line,
 		return true;
 	}
 	return false;
-#endif
 }
 
 enum {
@@ -1639,14 +1182,6 @@ enum {
 	MAXNUMTRIS = 1600
 };
 
-#ifdef VU_COLLISION
-#ifdef GTA_PS2
-#define SPR(off) ((uint8*)(0x70000000 + (off)))
-#else
-static uint8 fakeSPR[16*1024];
-#define SPR(off) ((uint8*)(fakeSPR + (off)))
-#endif
-#endif
 
 // This checks model A's spheres and lines against model B's spheres, boxes and triangles.
 // Returns the number of A's spheres that collide.
@@ -1657,315 +1192,6 @@ CCollision::ProcessColModels(const CMatrix &matrixA, CColModel &modelA,
 	const CMatrix &matrixB, CColModel &modelB,
 	CColPoint *spherepoints, CColPoint *linepoints, float *linedists)
 {
-#ifdef VU_COLLISION
-	CVuVector *aSpheresA = (CVuVector*)SPR(0x0000);
-	CVuVector *aSpheresB = (CVuVector*)SPR(0x0800);
-	CVuVector *aLinesA = (CVuVector*)SPR(0x1000);
-	int32 *aSphereIndicesA = (int32*)SPR(0x1200);
-	int32 *aSphereIndicesB = (int32*)SPR(0x1400);
-	int32 *aBoxIndicesB = (int32*)SPR(0x1600);
-	int32 *aTriangleIndicesB = (int32*)SPR(0x1680);
-	bool *aCollided = (bool*)SPR(0x1FE0);
-	CMatrix &matAB = *(CMatrix*)SPR(0x1FF0);
-	CMatrix &matBA = *(CMatrix*)SPR(0x2040);
-	int i, j, k;
-
-#ifdef FIX_BUGS
-	// actually not needed on PS2 because *= doesn't update attachment
-	// and on PC the attachment happens to be zero. still nicer to make sure
-	matAB.m_attachment = nil;
-	matBA.m_attachment = nil;
-#endif
-
-	// From model A space to model B space
-	Invert(matrixB, matAB);
-	matAB *= matrixA;
-
-	CVuVector bsphereAB;	// bounding sphere of A in B space
-	TransformPoint(bsphereAB, matAB, modelA.boundingSphere.center);	// inlined
-	bsphereAB.w = modelA.boundingSphere.radius;
-	if(!TestSphereBox(*(CColSphere*)&bsphereAB, modelB.boundingBox))
-		return 0;
-
-	// transform modelA's spheres and lines to B space
-	TransformPoints(aSpheresA, modelA.numSpheres, matAB, &modelA.spheres->center, sizeof(CColSphere));
-	for(i = 0; i < modelA.numSpheres; i++)
-		aSpheresA[i].w = modelA.spheres[i].radius;
-	TransformPoints(aLinesA, modelA.numLines*2, matAB, &modelA.lines->p0, sizeof(CColLine)/2);
-
-	// Test them against model B's bounding volumes
-	int numSpheresA = 0;
-	for(i = 0; i < modelA.numSpheres; i++)
-		if(TestSphereBox(*(CColSphere*)&aSpheresA[i], modelB.boundingBox))
-			aSphereIndicesA[numSpheresA++] = i;
-	// No collision
-	if(numSpheresA == 0 && modelA.numLines == 0)
-		return 0;
-
-
-	// B to A space
-	Invert(matrixA, matBA);
-	matBA *= matrixB;
-
-	// transform modelB's spheres to A space
-	TransformPoints(aSpheresB, modelB.numSpheres, matBA, &modelB.spheres->center, sizeof(CColSphere));
-	for(i = 0; i < modelB.numSpheres; i++)
-		aSpheresB[i].w = modelB.spheres[i].radius;
-
-	// Check model B against A's bounding volumes
-	int numSpheresB = 0;
-	int numBoxesB = 0;
-	int numTrianglesB = 0;
-	for(i = 0; i < modelB.numSpheres; i++)
-		if(TestSphereBox(*(CColSphere*)&aSpheresB[i], modelA.boundingBox))
-			aSphereIndicesB[numSpheresB++] = i;
-	for(i = 0; i < modelB.numBoxes; i++)
-		if(TestSphereBox(*(CColSphere*)&bsphereAB, modelB.boxes[i]))
-			aBoxIndicesB[numBoxesB++] = i;
-	CalculateTrianglePlanes(&modelB);
-	if(modelB.numTriangles){
-		VuTriangle vutri;
-		// process the first triangle
-		CColTriangle *tri = &modelB.triangles[0];
-		modelB.vertices[tri->a].Unpack(vutri.v0);
-		modelB.vertices[tri->b].Unpack(vutri.v1);
-		modelB.vertices[tri->c].Unpack(vutri.v2);
-		modelB.planes[0].Unpack(vutri.plane);
-
-		SphereToTriangleCollisionCompressed(bsphereAB, vutri);
-
-		for(i = 1; i < modelB.numTriangles; i++){
-			// set up the next triangle while VU0 is running
-			tri = &modelB.triangles[i];
-			modelB.vertices[tri->a].Unpack(vutri.v0);
-			modelB.vertices[tri->b].Unpack(vutri.v1);
-			modelB.vertices[tri->c].Unpack(vutri.v2);
-			modelB.planes[i].Unpack(vutri.plane);
-
-			// check previous result
-			if(GetVUresult())
-				aTriangleIndicesB[numTrianglesB++] = i-1;
-
-			// kick off this one
-			SphereToTriangleCollisionCompressed(bsphereAB, vutri);
-		}
-
-		// check last result
-		if(GetVUresult())
-			aTriangleIndicesB[numTrianglesB++] = i-1;
-	}
-	// No collision
-	if(numSpheresB == 0 && numBoxesB == 0 && numTrianglesB == 0)
-		return 0;
-
-	// We now have the collision volumes in A and B that are worth processing.
-
-	// Process A's spheres against B's collision volumes
-	int numCollisions = 0;
-	spherepoints[numCollisions].depth = -1.0f;
-	for(i = 0; i < numSpheresA; i++){
-		float coldist = 1.0e24f;
-		bool hasCollided = false;
-		CColSphere *sphA = &modelA.spheres[aSphereIndicesA[i]];
-		CVuVector *vusphA = &aSpheresA[aSphereIndicesA[i]];
-
-		for(j = 0; j < numSpheresB; j++)
-			// This actually looks like something was inlined here
-			if(ProcessSphereSphere(*(CColSphere*)vusphA, modelB.spheres[aSphereIndicesB[j]],
-					spherepoints[numCollisions], coldist)){
-				spherepoints[numCollisions].Set(
-					sphA->surface, sphA->material,
-					modelB.spheres[aSphereIndicesB[j]].surface, modelB.spheres[aSphereIndicesB[j]].material);
-				hasCollided = true;
-			}
-		for(j = 0; j < numBoxesB; j++)
-			if(ProcessSphereBox(*(CColSphere*)vusphA, modelB.boxes[aBoxIndicesB[j]],
-					spherepoints[numCollisions], coldist)){
-				spherepoints[numCollisions].Set(
-					sphA->surface, sphA->material,
-					modelB.boxes[aBoxIndicesB[j]].surface, modelB.boxes[aBoxIndicesB[j]].material);
-				hasCollided = true;
-			}
-		if(numTrianglesB){
-			CVuVector point, normal;
-			float depth;
-			bool registeredCol;
-			CColTriangle *lasttri;
-
-			VuTriangle vutri;
-			// process the first triangle
-			k = aTriangleIndicesB[0];
-			CColTriangle *tri = &modelB.triangles[k];
-			modelB.vertices[tri->a].Unpack(vutri.v0);
-			modelB.vertices[tri->b].Unpack(vutri.v1);
-			modelB.vertices[tri->c].Unpack(vutri.v2);
-			modelB.planes[k].Unpack(vutri.plane);
-
-			SphereToTriangleCollisionCompressed(*vusphA, vutri);
-			lasttri = tri;
-
-			for(j = 1; j < numTrianglesB; j++){
-				k = aTriangleIndicesB[j];
-				// set up the next triangle while VU0 is running
-				tri = &modelB.triangles[k];
-				modelB.vertices[tri->a].Unpack(vutri.v0);
-				modelB.vertices[tri->b].Unpack(vutri.v1);
-				modelB.vertices[tri->c].Unpack(vutri.v2);
-				modelB.planes[k].Unpack(vutri.plane);
-
-				// check previous result
-				// TODO: this looks inlined but spherepoints[numCollisions] does not...
-				if(GetVUresult(point, normal, depth)){
-					depth = sphA->radius - depth;
-					if(depth > spherepoints[numCollisions].depth){
-						spherepoints[numCollisions].point = point;
-						spherepoints[numCollisions].normal = normal;
-						spherepoints[numCollisions].Set(depth,
-							sphA->surface, sphA->material, lasttri->surface, 0);
-						registeredCol = true;
-					}else
-						registeredCol = false;
-				}else
-					registeredCol = false;
-
-				if(registeredCol)
-					hasCollided = true;
-
-				// kick off this one
-				SphereToTriangleCollisionCompressed(*vusphA, vutri);
-				lasttri = tri;
-			}
-
-			// check last result
-			// TODO: this looks inlined but spherepoints[numCollisions] does not...
-			if(GetVUresult(point, normal, depth)){
-				depth = sphA->radius - depth;
-				if(depth > spherepoints[numCollisions].depth){
-					spherepoints[numCollisions].point = point;
-					spherepoints[numCollisions].normal = normal;
-					spherepoints[numCollisions].Set(depth,
-						sphA->surface, sphA->material, lasttri->surface, 0);
-					registeredCol = true;
-				}else
-					registeredCol = false;
-			}else
-				registeredCol = false;
-
-			if(registeredCol)
-				hasCollided = true;
-		}
-
-		if(hasCollided){
-			numCollisions++;
-			if(numCollisions == MAX_COLLISION_POINTS)
-				break;
-			spherepoints[numCollisions].depth = -1.0f;
-		}
-	}
-	for(i = 0; i < numCollisions; i++){
-		// TODO: both VU0 macros
-		spherepoints[i].point = matrixB * spherepoints[i].point;
-		spherepoints[i].normal = Multiply3x3(matrixB, spherepoints[i].normal);
-	}
-
-	// And the same thing for the lines in A
-	for(i = 0; i < modelA.numLines; i++){
-		aCollided[i] = false;
-		CVuVector *lineA = &aLinesA[i*2];
-
-		for(j = 0; j < numSpheresB; j++)
-			if(ProcessLineSphere(*(CColLine*)lineA, modelB.spheres[aSphereIndicesB[j]],
-					linepoints[i], linedists[i])){
-				linepoints[i].Set(0, 0,
-#ifdef FIX_BUGS
-					modelB.spheres[aSphereIndicesB[j]].surface, modelB.spheres[aSphereIndicesB[j]].material);
-#else
-					modelB.spheres[j].surface, modelB.spheres[j].material);
-#endif
-				aCollided[i] = true;
-			}
-		for(j = 0; j < numBoxesB; j++)
-			if(ProcessLineBox(*(CColLine*)lineA, modelB.boxes[aBoxIndicesB[j]],
-					linepoints[i], linedists[i])){
-				linepoints[i].Set(0, 0,
-					modelB.boxes[aBoxIndicesB[j]].surface, modelB.boxes[aBoxIndicesB[j]].material);
-				aCollided[i] = true;
-			}
-		if(numTrianglesB){
-			CVuVector point, normal;
-			float dist;
-			bool registeredCol;
-			CColTriangle *lasttri;
-
-			VuTriangle vutri;
-			// process the first triangle
-			k = aTriangleIndicesB[0];
-			CColTriangle *tri = &modelB.triangles[k];
-			modelB.vertices[tri->a].Unpack(vutri.v0);
-			modelB.vertices[tri->b].Unpack(vutri.v1);
-			modelB.vertices[tri->c].Unpack(vutri.v2);
-			modelB.planes[k].Unpack(vutri.plane);
-
-			LineToTriangleCollisionCompressed(lineA[0], lineA[1], vutri);
-			lasttri = tri;
-
-			for(j = 1; j < numTrianglesB; j++){
-				k = aTriangleIndicesB[j];
-				// set up the next triangle while VU0 is running
-				CColTriangle *tri = &modelB.triangles[k];
-				modelB.vertices[tri->a].Unpack(vutri.v0);
-				modelB.vertices[tri->b].Unpack(vutri.v1);
-				modelB.vertices[tri->c].Unpack(vutri.v2);
-				modelB.planes[k].Unpack(vutri.plane);
-
-				// check previous result
-				// TODO: this again somewhat looks inlined
-				if(GetVUresult(point, normal, dist)){
-					if(dist < linedists[i]){
-						linepoints[i].point = point;
-						linepoints[i].normal = normal;
-						linedists[i] = dist;
-						linepoints[i].Set(0, 0, lasttri->surface, 0);
-						registeredCol = true;
-					}else
-						registeredCol = false;
-				}else
-					registeredCol = false;
-
-				if(registeredCol)
-					aCollided[i] = true;
-
-				// kick of this one
-				LineToTriangleCollisionCompressed(lineA[0], lineA[1], vutri);
-				lasttri = tri;
-			}
-
-			// check last result
-			if(GetVUresult(point, normal, dist)){
-				if(dist < linedists[i]){
-					linepoints[i].point = point;
-					linepoints[i].normal = normal;
-					linedists[i] = dist;
-					linepoints[i].Set(0, 0, lasttri->surface, 0);
-					registeredCol = true;
-				}else
-					registeredCol = false;
-			}else
-				registeredCol = false;
-
-			if(registeredCol)
-				aCollided[i] = true;
-		}
-
-		if(aCollided[i]){
-			// TODO: both VU0 macros
-			linepoints[i].point = matrixB * linepoints[i].point;
-			linepoints[i].normal = Multiply3x3(matrixB, linepoints[i].normal);
-		}
-	}
-
-	return numCollisions;	// sphere collisions
-#else
 	static int aSphereIndicesA[MAXNUMSPHERES];
 	static int aLineIndicesA[MAXNUMLINES];
 	static int aSphereIndicesB[MAXNUMSPHERES];
@@ -2106,7 +1332,6 @@ CCollision::ProcessColModels(const CMatrix &matrixA, CColModel &modelA,
 		}
 
 	return numCollisions;	// sphere collisions
-#endif
 }
 
 

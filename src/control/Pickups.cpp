@@ -973,7 +973,7 @@ CPickups::Update()
 		return;
 #endif
 #ifdef CAMERA_PICKUP
-	if ( bPickUpcamActivated ) // taken from PS2
+	if ( bPickUpcamActivated ) 
 	{
 		float dist = Distance2D(StaticCamCoors, FindPlayerCoors());
 		float mult;

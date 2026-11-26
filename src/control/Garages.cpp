@@ -348,24 +348,6 @@ void CGarage::Update()
 	if (m_bDeactivated && m_eGarageState == GS_FULLYCLOSED)
 		return;
 	if (m_bRotatedDoor) {
-#ifdef GTA_PS2
-		if (m_eGarageState == GS_OPENING) {
-			if (m_pDoor1) {
-				if (FindPlayerPed()->m_pCurrentPhysSurface == m_pDoor1)
-					m_pDoor1->bUsesCollision = false;
-			}
-			if (m_pDoor2) {
-				if (FindPlayerPed()->m_pCurrentPhysSurface == m_pDoor2)
-					m_pDoor2->bUsesCollision = false;
-			}
-		}
-		else if (m_eGarageState == GS_OPENED) {
-			if (m_pDoor1)
-				m_pDoor1->bUsesCollision = true;
-			if (m_pDoor2)
-				m_pDoor2->bUsesCollision = true;
-		}
-#else
 		if (m_eGarageState == GS_OPENING || m_eGarageState == GS_OPENED) {
 			if (m_pDoor1) {
 				if (FindPlayerPed()->m_pCurrentPhysSurface == m_pDoor1 || FindPlayerPed()->GetPedState() == PED_JUMP || FindPlayerPed()->GetPedState() == PED_FALL || !FindPlayerPed()->bIsStanding)
@@ -382,7 +364,6 @@ void CGarage::Update()
 			if (m_pDoor2)
 				m_pDoor2->bUsesCollision = true;
 		}
-#endif
 	}
 	switch (m_eGarageType) {
 	case GARAGE_RESPRAY:
@@ -589,13 +570,8 @@ void CGarage::Update()
 					if (!CGarages::BombsAreFree)
 						CWorld::Players[CWorld::PlayerInFocus].m_nMoney = Max(0, CWorld::Players[CWorld::PlayerInFocus].m_nMoney - BOMB_PRICE);
 					if (FindPlayerVehicle() && (FindPlayerVehicle()->IsAutomobile() || FindPlayerVehicle()->IsBike())) {
-#if (!defined GTA_PS2 || defined FIX_BUGS)
 						FindPlayerVehicle()->m_bombType = CGarages::GetBombTypeForGarageType(m_eGarageType);
 						FindPlayerVehicle()->m_pBombRigger = FindPlayerPed();
-#else // PS2 version contained a bug: CBike was casted to CAutomobile, but due to coincidence it didn't corrupt memory
-						((CAutomobile*)(FindPlayerVehicle()))->m_bombType = CGarages::GetBombTypeForGarageType(m_eGarageType);
-						((CAutomobile*)(FindPlayerVehicle()))->m_pBombRigger = FindPlayerPed();
-#endif
 						if (m_eGarageType == GARAGE_BOMBSHOP3)
 							CGarages::GivePlayerDetonator();
 						CStats::KgsOfExplosivesUsed += KGS_OF_EXPLOSIVES_IN_BOMB;
@@ -665,9 +641,7 @@ void CGarage::Update()
 		case GS_OPENED:
 			if (((CVector2D)FindPlayerCoors() - CVector2D(GetGarageCenterX(), GetGarageCenterY())).MagnitudeSqr() > SQR(DISTANCE_TO_CLOSE_MISSION_GARAGE)) {
 				if ((CTimer::GetFrameCounter() & 0x1F) == 0 
-#ifndef GTA_PS2
 					&& (!m_pTarget || IsEntityTouching3D(m_pTarget))
-#endif
 					) {
 					m_eGarageState = GS_CLOSING;
 					m_bClosingWithoutTargetCar = true;
@@ -1438,9 +1412,7 @@ bool CGarages::IsCarSprayable(CVehicle * pVehicle)
 	case MI_BARRACKS:
 	case MI_DODO:
 	case MI_COACH:
-#ifndef GTA_PS2
 	case MI_FBIRANCH:
-#endif
 		return false;
 	default:
 		break;

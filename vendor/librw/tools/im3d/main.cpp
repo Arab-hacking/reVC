@@ -81,8 +81,6 @@ Terminate3D(void)
 bool
 attachPlugins(void)
 {
-	rw::ps2::registerPDSPlugin(40);
-	rw::ps2::registerPluginPDSPipes();
 
 	rw::registerMeshPlugin();
 	rw::registerNativeDataPlugin();
@@ -94,7 +92,6 @@ attachPlugins(void)
 	rw::registerHAnimPlugin();
 	rw::registerMatFXPlugin();
 	rw::registerUVAnimPlugin();
-	rw::ps2::registerADCPlugin();
 	return true;
 }
 

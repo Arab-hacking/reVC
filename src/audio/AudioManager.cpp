@@ -347,7 +347,7 @@ cAudioManager::SetMusicFadeVol(uint8 volume)
 void
 cAudioManager::SetOutputMode(bool8 surround)
 {
-	// on ps2 this calls another method of cAudioManager to set DTS mode on or off
+	// in the original this calls another method of cAudioManager to set DTS mode on or off
 }
 
 void
@@ -563,28 +563,8 @@ cAudioManager::ServiceSoundEffects()
 #endif
 	m_bReduceReleasingPriority = (m_FrameCounter++ % 5) == 0;
 	if (m_bIsPaused && !m_bWasPaused) {
-#ifdef GTA_PS2
-		if (m_bIsSurround) {
-			for (uint32 i = 0; i < NUM_CHANNELS_DTS_GENERIC; i++)
-				SampleManager.StopChannel(i);
-
-			SampleManager.SetChannelFrequency(CHANNEL_DTS_POLICE_RADIO, 0);
-			SampleManager.SetChannelFrequency(CHANNEL_DTS_MISSION_AUDIO_1, 0);
-			SampleManager.SetChannelFrequency(CHANNEL_DTS_MISSION_AUDIO_2, 0);
-			SampleManager.SetChannelFrequency(CHANNEL_DTS_PLAYER_VEHICLE_ENGINE, 0);
-		} else {
-			for (uint32 i = 0; i < NUM_CHANNELS_GENERIC; i++)
-				SampleManager.StopChannel(i);
-
-			SampleManager.SetChannelFrequency(CHANNEL_POLICE_RADIO, 0);
-			SampleManager.SetChannelFrequency(CHANNEL_MISSION_AUDIO_1, 0);
-			SampleManager.SetChannelFrequency(CHANNEL_MISSION_AUDIO_2, 0);
-			SampleManager.SetChannelFrequency(CHANNEL_PLAYER_VEHICLE_ENGINE, 0);
-		}
-#else
 		for (uint32 i = 0; i < NUM_CHANNELS; i++)
 			SampleManager.StopChannel(i);
-#endif
 		ClearRequestedQueue();
 		if (m_nActiveQueue) {
 			m_nActiveQueue = 0;
@@ -1243,9 +1223,7 @@ cAudioManager::ProcessActiveQueues()
 							SampleManager.SetChannelPan(j, m_asActiveSamples[j].m_nPan);
 #endif
 						}
-#if !defined(GTA_PS2) || defined(AUDIO_REVERB)
 						SampleManager.SetChannelReverbFlag(j, sample.m_bReverb);
-#endif
 						break; //continue for i
 					}
 					sample.m_bIsBeingPlayed = FALSE;
@@ -1290,12 +1268,7 @@ cAudioManager::ProcessActiveQueues()
 #endif
 						}
 						emittingVol = m_bDoubleVolume ? 2 * Min(63, m_asActiveSamples[j].WORKING_VOLUME_FIELD) : m_asActiveSamples[j].WORKING_VOLUME_FIELD;
-#ifdef GTA_PS2
-						{
-							SampleManager.InitialiseChannel(k, m_asActiveSamples[k].m_nSampleIndex, m_asActiveSamples[k].m_nBankIndex);
-#else
 						if (SampleManager.InitialiseChannel(k, m_asActiveSamples[k].m_nSampleIndex, m_asActiveSamples[k].m_nBankIndex)) {
-#endif
 #ifdef USE_TIME_SCALE_FOR_AUDIO
 							SampleManager.SetChannelFrequency(k, m_asActiveSamples[k].m_nFrequency * timeScale);
 #else
@@ -1321,13 +1294,9 @@ cAudioManager::ProcessActiveQueues()
 							SampleManager.SetChannelVolume(j, emittingVol);
 							SampleManager.SetChannelPan(j, m_asActiveSamples[j].m_nPan);
 #endif
-#ifndef GTA_PS2
 							SampleManager.SetChannelLoopPoints(k, m_asActiveSamples[k].m_nLoopStart, m_asActiveSamples[k].m_nLoopEnd);
 							SampleManager.SetChannelLoopCount(k, m_asActiveSamples[k].m_nLoopCount);
-#endif
-#if !defined(GTA_PS2) || defined(AUDIO_REVERB)
 							SampleManager.SetChannelReverbFlag(k, m_asActiveSamples[k].m_bReverb);
-#endif
 #ifdef EXTERNAL_3D_SOUND
 							if (m_asActiveSamples[k].m_bIs2D) {
 								uint8 offset = m_asActiveSamples[k].m_nPan;
@@ -1362,9 +1331,6 @@ cAudioManager::ProcessActiveQueues()
 		}
 	}
 
-#ifdef GTA_PS2
-	m_nChannelOffset += channelOffset;
-#endif
 	m_nChannelOffset %= m_nActiveSamples;
 
 #ifdef USE_TIME_SCALE_FOR_AUDIO
@@ -1404,10 +1370,8 @@ cAudioManager::ClearActiveSamples()
 		m_asActiveSamples[i].m_bIsBeingPlayed = FALSE;
 		m_asActiveSamples[i].m_bIsPlayingFinished = FALSE;
 		m_asActiveSamples[i].m_nLoopCount = 1;
-#ifndef GTA_PS2
 		m_asActiveSamples[i].m_nLoopStart = 0;
 		m_asActiveSamples[i].m_nLoopEnd = -1;
-#endif
 		m_asActiveSamples[i].m_fSpeedMultiplier = 0.0f;
 		m_asActiveSamples[i].m_MaxDistance = 200.0f;
 		m_asActiveSamples[i].m_nPan = 63;
@@ -1433,14 +1397,6 @@ cAudioManager::GenerateIntegerRandomNumberTable()
 		m_anRandomTable[i] = myrand();
 }
 
-#ifdef GTA_PS2
-void
-cAudioManager::LoadBankIfNecessary(uint8 bank)
-{
-	if(!SampleManager.IsSampleBankLoaded(bank))
-		SampleManager.LoadSampleBank(bank);
-}
-#endif
 
 #ifdef EXTERNAL_3D_SOUND
 void

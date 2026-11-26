@@ -24,11 +24,9 @@ public:
 	uint8 m_nVolume;			// Sound volume (0..127), only used as an actual volume without EXTERNAL_3D_SOUND (see m_nEmittingVolume)
 	float m_fDistance;			// Distance to camera (useless if m_bIs2D == TRUE)
 	uint32 m_nLoopCount;		// 0 - always loop, 1 - don't loop, other values never seen
-#ifndef GTA_PS2
 	// Loop offsets
 	uint32 m_nLoopStart;
 	int32 m_nLoopEnd;
-#endif
 #ifdef EXTERNAL_3D_SOUND
 	uint8 m_nEmittingVolume;	// The volume in 3D space, provided to 3D audio engine
 #endif
@@ -36,9 +34,7 @@ public:
 	float m_MaxDistance;		// The maximum distance at which sound could be heard. Minimum distance = MaxDistance / 5 or MaxDistance / 4 in case of emitting volume (useless if m_bIs2D == TRUE)
 	bool8 m_bStatic;			// If TRUE then sound parameters cannot be changed during playback (frequency, position, etc.)
 	CVector m_vecPos;			// Position of sound in 3D space. Unused if m_bIs2D == TRUE
-#if !defined(GTA_PS2) || defined(AUDIO_REVERB) // GTA_PS2 because this field exists on mobile but not on PS2
 	bool8 m_bReverb;			// Toggles reverb effect
-#endif
 #ifdef AUDIO_REFLECTIONS
 	uint8 m_nReflectionDelay;	// Number of frames before reflection could be played. This is calculated internally by AudioManager and shouldn't be set by queued sample
 	bool8 m_bReflections;		// Add sound reflections
@@ -47,7 +43,7 @@ public:
 								// 0 =   L 100%  R 0%
 								// 63 =  L 100%  R 100%
 								// 127 = L 0%    R 100%
-	uint8 m_nFrontRearPan;		// Used on PS2 for surround panning
+	uint8 m_nFrontRearPan;		// Used for surround panning
 #ifndef FIX_BUGS
 	uint32 m_nFramesToPlay;		// Number of frames the sound would be played (if it stops being queued).
 								// This one is being set by queued sample for looping sounds, otherwise calculated inside AudioManager
@@ -92,7 +88,7 @@ public:
 	CVector m_vecPos;
 	float m_fDistance;
 	uint8 m_nVolume;
-	int8 m_nLoadingTimeout; // how many iterations we gonna wait until dropping the sample if it's still not loaded (only useful on PS2)
+	int8 m_nLoadingTimeout; // how many iterations we gonna wait until dropping the sample if it's still not loaded (legacy)
 #if defined(EXTERNAL_3D_SOUND) && defined(FIX_BUGS)
 	uint8 m_nEmittingVolume;
 #endif
@@ -228,7 +224,7 @@ class cAudioManager
 {
 public:
 	bool8 m_bIsInitialised;
-	bool8 m_bIsSurround; // used on PS2
+	bool8 m_bIsSurround; // surround output flag
 	bool8 m_bReduceReleasingPriority;
 	uint8 m_nActiveSamples;
 	bool8 m_bDoubleVolume; // unused
@@ -368,9 +364,6 @@ public:
 	void ClearRequestedQueue(); // inlined in vc
 	void ClearActiveSamples();
 	void GenerateIntegerRandomNumberTable();
-#ifdef GTA_PS2
-	void LoadBankIfNecessary(uint8 bank); // this is used only on PS2 but technically not a platform code
-#endif
 
 #ifdef EXTERNAL_3D_SOUND // actually must have been && AUDIO_MSS as well
 	void AdjustSamplesVolume(); // inlined
@@ -620,21 +613,16 @@ public:
 };
 
 /*
-   Manual loop points are not on PS2 so let's have these macros to avoid massive ifndefs.
+   Manual loop points do not exist in the original audio data, hence these macros.
    Setting these manually was pointless anyway since they never change from sdt values.
    What were they thinking?
 */
-#ifndef GTA_PS2
 #define RESET_LOOP_OFFSETS \
 	m_sQueueSample.m_nLoopStart = 0; \
 	m_sQueueSample.m_nLoopEnd = -1;
 #define SET_LOOP_OFFSETS(sample) \
 	m_sQueueSample.m_nLoopStart = SampleManager.GetSampleLoopStartOffset(sample); \
 	m_sQueueSample.m_nLoopEnd = SampleManager.GetSampleLoopEndOffset(sample);
-#else
-#define RESET_LOOP_OFFSETS
-#define SET_LOOP_OFFSETS(sample)
-#endif
 #ifdef EXTERNAL_3D_SOUND
 #define SET_EMITTING_VOLUME(vol) m_sQueueSample.m_nEmittingVolume = vol
 #else
@@ -651,7 +639,7 @@ public:
 #define SET_SOUND_REVERB(b)
 #endif
 
-#if defined(AUDIO_MSS) && !defined(PS2_AUDIO_CHANNELS)
+#if defined(AUDIO_MSS) && !defined(MORE_AUDIO_CHANNELS)
 static_assert(sizeof(cAudioManager) == 0x5558, "cAudioManager: error");
 #endif
 
