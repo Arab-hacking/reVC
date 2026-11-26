@@ -15,6 +15,7 @@
 #include "AnimBlendAssociation.h"
 #include "AnimBlendStaticAssociation.h"
 #include "AnimManager.h"
+#include "VehicleAnimGroupData.h"
 #include "General.h"
 #include "Pools.h"
 #include "Darkel.h"
@@ -2114,8 +2115,12 @@ CPlayerPed::ProcessControl(void)
 						m_pMyVehicle->m_nGettingOutFlags |= CAR_DOOR_FLAG_LF;
 						{
 							// The rolling-door clip belongs to the vehicle's
-							// animation group, which the handling line names.
-							AssocGroupId rollGroup = (AssocGroupId)m_pMyVehicle->GetAnimGroupId();
+							// animation group, resolved the SA way: the
+							// handling line names a pair of groups and the
+							// group's flags pick one for this clip. The raw
+							// handling index is not an AssocGroupId.
+							AssocGroupId rollGroup = CVehicleAnimGroupData::GetGroupForAnim(
+								(AssocGroupId)m_pMyVehicle->GetAnimGroupId(), ANIM_ID_CAR_ROLLDOOR);
 							rollDoorAssoc = CAnimManager::AddAnimation(GetClump(), rollGroup, ANIM_ID_CAR_ROLLDOOR);
 						}
 

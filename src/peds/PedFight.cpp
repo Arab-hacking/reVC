@@ -4552,9 +4552,10 @@ CPed::DriveVehicle(void)
 				CAnimManager::BlendAnimation(GetClump(), ANIM_GROUP_DEFAULT, ANIM_ID_DRIVE_BOAT_BACK, 4.0f);
 			else
 			{
-				// Lean-out is part of the vehicle's own driving set, keyed by
-				// the handling line's animation group.
-				CAnimManager::BlendAnimation(GetClump(), (AssocGroupId)m_pMyVehicle->GetAnimGroupId(), ANIM_ID_CAR_LB, 4.0f);
+				// The lean-back is a driving clip: like every sit/drive
+				// clip it lives in the default ped group, not in the
+				// vehicle's in/out group.
+				CAnimManager::BlendAnimation(GetClump(), ANIM_GROUP_DEFAULT, ANIM_ID_CAR_LB, 4.0f);
 			}
 		}
 	}

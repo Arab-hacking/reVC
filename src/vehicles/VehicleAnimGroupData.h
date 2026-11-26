@@ -179,6 +179,10 @@ public:
 	// number of tokens sscanf managed to read.
 	static int32 LoadAGroupFromData(const char *line);
 
+	// Fills the table with SA's stock `^` lines. Called before the handling
+	// file is parsed so its lines override the defaults.
+	static void InitialiseDefaults(void);
+
 	// SA indexes the table without a check because every caller passes an id it
 	// has already validated. This fork reads the id out of the handling record,
 	// which a hand-edited handling.cfg can put out of range, so the clamp lives

@@ -3775,6 +3775,13 @@ CAutomobile::VehicleDamage(float impulse, uint16 damagedPiece)
 	int i;
 	float damageMultiplier = 0.333f;
 
+	// Collision damage is disabled: impacts must not crumple bumpers and
+	// panels or drain health. The per-frame call (impulse 0, damage taken
+	// from the stored collision impulse) is the only collision path, so it
+	// returns here; damage handed in directly by a weapon keeps working.
+	if(impulse == 0.0f)
+		return;
+
 	if(impulse == 0.0f){
 		impulse = m_fDamageImpulse;
 		damagedPiece = m_nDamagePieceType;
@@ -4302,45 +4309,16 @@ CAutomobile::OpenDoor(int32 component, eDoors door, float openRatio)
 	mat.UpdateRW();
 }
 
-inline void ProcessDoorOpenAnimation(CAutomobile *car, uint32 component, eDoors door, float time, float start, float end)
-{
-	if(time > start && time < end){
-		float ratio = (time - start)/(end - start);
-		if(car->Doors[door].GetAngleOpenRatio() < ratio)
-			car->OpenDoor(component, door, ratio);
-	}else if(time > end){
-		car->OpenDoor(component, door, 1.0f);
-	}
-}
-
-inline void ProcessDoorCloseAnimation(CAutomobile *car, uint32 component, eDoors door, float time, float start, float end)
-{
-	if(time > start && time < end){
-		float ratio = 1.0f - (time - start)/(end - start);
-		if(car->Doors[door].GetAngleOpenRatio() > ratio)
-			car->OpenDoor(component, door, ratio);
-	}else if(time > end){
-		car->OpenDoor(component, door, 0.0f);
-	}
-}
-
-inline void ProcessDoorOpenCloseAnimation(CAutomobile *car, uint32 component, eDoors door, float time, float start, float mid, float end)
-{
-	if(time > start && time < mid){
-		// open
-		float ratio = (time - start)/(mid - start);
-		if(car->Doors[door].GetAngleOpenRatio() < ratio)
-			car->OpenDoor(component, door, ratio);
-	}else if(time > mid && time < end){
-		// close
-		float ratio = 1.0f - (time - mid)/(end - mid);
-		if(car->Doors[door].GetAngleOpenRatio() > ratio)
-			car->OpenDoor(component, door, ratio);
-	}else if(time > end){
-		car->OpenDoor(component, door, 0.0f);
-	}
-}
-
+// The door swing system, ported from SA CVehicle::ProcessOpenDoor
+// (0x6D56C0). The ped-side caller hands over the door node, the animation
+// being played and how far into it the ped is; the door's open ratio is a
+// pure function of that, driven by the vehicle animation group's in/out
+// timings (the handling.cfg `^` line). Opening only ever opens further and
+// closing only ever closes further within a clip, so a clip that is
+// re-entered or blended does not snap the door backwards. The jacked,
+// fall-out, pull-out, roll-out and roll-door clips have no timings in the
+// table: SA drives them from fixed windows and, for the last three, only
+// on the vehicle groups that have a door worth rolling.
 void
 CAutomobile::ProcessOpenDoor(uint32 component, uint32 anim, float time)
 {
@@ -4361,58 +4339,168 @@ CAutomobile::ProcessOpenDoor(uint32 component, uint32 anim, float time)
 	if(IsDoorMissing(door))
 		return;
 
-	// Where in the clip the door actually starts and stops swinging is data, not
-	// code: it comes from the vehicle's `^` line in handling.cfg, the same line
-	// that names its animation groups. SA CCarEnterExit reads it through
-	// CVehicleAnimGroupData::GetInOutTimings (0x645630) exactly like this, which
-	// is why a bus door and a saloon door swing at different points of what look
-	// like the same animations.
-	const AssocGroupId group = (AssocGroupId)GetAnimGroupId();
+	const AssocGroupId vehAnimGroup = (AssocGroupId)GetAnimGroupId();
 	float animStart = 0.0f, animEnd = 0.0f;
 
 	switch(anim){
 	case ANIM_ID_CAR_OPEN_LHS:
 	case ANIM_ID_CAR_OPEN_RHS:
-		CVehicleAnimGroupData::GetInOutTimings(group, OPEN_START, &animStart, &animEnd);
-		ProcessDoorOpenAnimation(this, component, door, time, animStart, animEnd);
-		break;
-	case ANIM_ID_CAR_CLOSEDOOR_LHS_0:
-	case ANIM_ID_CAR_CLOSEDOOR_RHS_0:
-		CVehicleAnimGroupData::GetInOutTimings(group, OPEN_STOP, &animStart, &animEnd);
-		ProcessDoorCloseAnimation(this, component, door, time, animStart, animEnd);
-		break;
-	case ANIM_ID_CAR_ROLLDOOR:
-		ProcessDoorOpenCloseAnimation(this, component, door, time, 0.1f, 0.6f, 0.95f);
-		break;
-	case ANIM_ID_CAR_GETOUT_LHS_0:
-	case ANIM_ID_CAR_GETOUT_RHS_0:
-		CVehicleAnimGroupData::GetInOutTimings(group, CLOST_START, &animStart, &animEnd);
-		ProcessDoorOpenAnimation(this, component, door, time, animStart, animEnd);
-		break;
-	case ANIM_ID_CAR_CLOSE_LHS_0:
-	case ANIM_ID_CAR_CLOSE_RHS_0:
-		CVehicleAnimGroupData::GetInOutTimings(group, CLOSE_STOP, &animStart, &animEnd);
-		ProcessDoorCloseAnimation(this, component, door, time, animStart, animEnd);
-		break;
-	case ANIM_ID_CAR_PULLOUT_RHS:
-		OpenDoor(component, door, 1.0f);
-		break;
 	case ANIM_ID_CAR_OPEN_LHS_1:
 	case ANIM_ID_CAR_OPEN_RHS_1:
-		CVehicleAnimGroupData::GetInOutTimings(group, OPEN_START, &animStart, &animEnd);
-		ProcessDoorOpenAnimation(this, component, door, time, animStart, animEnd);
+		CVehicleAnimGroupData::GetInOutTimings(vehAnimGroup, OPEN_START, &animStart, &animEnd);
+		if(time < animStart)
+			OpenDoor(component, door, 0.0f);
+		else if(time > animEnd)
+			OpenDoor(component, door, 1.0f);
+		else if(time > animStart && time < animEnd){
+			const float newRatio = (time - animStart) / (animEnd - animStart);
+			if(Doors[door].GetAngleOpenRatio() < newRatio)
+				OpenDoor(component, door, newRatio);
+		}
 		break;
+
+	case ANIM_ID_CAR_CLOSE_LHS_0:
+	case ANIM_ID_CAR_CLOSE_RHS_0:
+	case ANIM_ID_CAR_CLOSE_LHS_1:
+	case ANIM_ID_CAR_CLOSE_RHS_1:
+		// Closing a door the ped is standing outside of.
+		CVehicleAnimGroupData::GetInOutTimings(vehAnimGroup, CLOSE_STOP, &animStart, &animEnd);
+		if(time < animStart)
+			OpenDoor(component, door, 1.0f);
+		else if(time > animEnd)
+			OpenDoor(component, door, 0.0f);
+		else if(time > animStart && time < animEnd){
+			const float newRatio = 1.0f - (time - animStart) / (animEnd - animStart);
+			if(Doors[door].GetAngleOpenRatio() > newRatio)
+				OpenDoor(component, door, newRatio);
+		}
+		break;
+
+	case ANIM_ID_CAR_CLOSEDOOR_LHS_0:
+	case ANIM_ID_CAR_CLOSEDOOR_RHS_0:
 	case ANIM_ID_CAR_CLOSEDOOR_LHS_1:
 	case ANIM_ID_CAR_CLOSEDOOR_RHS_1:
-		CVehicleAnimGroupData::GetInOutTimings(group, OPEN_STOP, &animStart, &animEnd);
-		ProcessDoorCloseAnimation(this, component, door, time, animStart, animEnd);
+		// Closing the door from the seat: SA reads the OPEN_STOP pair here.
+		CVehicleAnimGroupData::GetInOutTimings(vehAnimGroup, OPEN_STOP, &animStart, &animEnd);
+		if(time < animStart)
+			OpenDoor(component, door, 1.0f);
+		else if(time > animEnd)
+			OpenDoor(component, door, 0.0f);
+		else if(time > animStart && time < animEnd)
+			OpenDoor(component, door, 1.0f - (time - animStart) / (animEnd - animStart));
 		break;
+
+	case ANIM_ID_CAR_GETOUT_LHS_0:
+	case ANIM_ID_CAR_GETOUT_RHS_0:
 	case ANIM_ID_CAR_GETOUT_LHS_1:
 	case ANIM_ID_CAR_GETOUT_RHS_1:
-		CVehicleAnimGroupData::GetInOutTimings(group, CLOST_START, &animStart, &animEnd);
-		ProcessDoorOpenAnimation(this, component, door, time, animStart, animEnd);
+		CVehicleAnimGroupData::GetInOutTimings(vehAnimGroup, CLOST_START, &animStart, &animEnd);
+		if(time < animStart)
+			OpenDoor(component, door, 0.0f);
+		else if(time > animEnd)
+			OpenDoor(component, door, 1.0f);
+		else if(time > animStart && time < animEnd){
+			const float newRatio = (time - animStart) / (animEnd - animStart);
+			if(Doors[door].GetAngleOpenRatio() < newRatio)
+				OpenDoor(component, door, newRatio);
+		}
 		break;
+
+	case ANIM_ID_CAR_JACKEDLHS:
+	case ANIM_ID_CAR_JACKEDRHS:
+	case ANIM_ID_CAR_FALLOUT_LHS:
+	case ANIM_ID_CAR_FALLOUT_RHS:
+		if(time < 0.1f)
+			OpenDoor(component, door, 0.0f);
+		else if(time > 0.4f)
+			OpenDoor(component, door, 1.0f);
+		else
+			OpenDoor(component, door, (time - 0.1f) * (10.0f / 3.0f));
+		break;
+
+	case ANIM_ID_CAR_PULLOUT_LHS:
+	case ANIM_ID_CAR_PULLOUT_RHS:
+	case ANIM_ID_UNKNOWN_15:
+		switch(CVehicleAnimGroupData::GetGroupForAnim(vehAnimGroup, (AnimationId)anim)){
+		case ANIM_GROUP_STDCARAMIMS:
+		case ANIM_GROUP_LOWCARAMIMS:
+		case ANIM_GROUP_TRKCARANIMS:
+		case ANIM_GROUP_COACHCARANIMS:
+		case ANIM_GROUP_BUSCARANIMS:
+		case ANIM_GROUP_CONVCARANIMS:
+		case ANIM_GROUP_MTRKCARANIMS:
+		case ANIM_GROUP_STDTALLCARAMIMS:
+		case ANIM_GROUP_BFINJCARAMIMS:
+			OpenDoor(component, door, 1.0f);
+			break;
+		default:
+			break;
+		}
+		break;
+
+	case ANIM_ID_CAR_ROLLOUT_LHS:
+	case ANIM_ID_CAR_ROLLOUT_RHS:
+		switch(CVehicleAnimGroupData::GetGroupForAnim(vehAnimGroup, (AnimationId)anim)){
+		case ANIM_GROUP_STDCARAMIMS:
+		case ANIM_GROUP_LOWCARAMIMS:
+		case ANIM_GROUP_TRKCARANIMS:
+		case ANIM_GROUP_RUSTPLANEANIMS:
+		case ANIM_GROUP_COACHCARANIMS:
+		case ANIM_GROUP_CONVCARANIMS:
+		case ANIM_GROUP_MTRKCARANIMS:
+		case ANIM_GROUP_STDTALLCARAMIMS:
+		case ANIM_GROUP_BFINJCARAMIMS:
+			if(time < 0.01f)
+				OpenDoor(component, door, 0.0f);
+			else if(time > 0.1f)
+				OpenDoor(component, door, 1.0f);
+			else{
+				const float newRatio = (time - 0.01f) / (0.1f - 0.01f);
+				if(Doors[door].GetAngleOpenRatio() < newRatio)
+					OpenDoor(component, door, newRatio);
+			}
+			break;
+		default:
+			break;
+		}
+		break;
+
+	case ANIM_ID_CAR_ROLLDOOR: {
+		// Opens, holds, closes again inside the one clip.
+		switch(CVehicleAnimGroupData::GetGroupForAnim(vehAnimGroup, (AnimationId)anim)){
+		case ANIM_GROUP_STDCARAMIMS:
+		case ANIM_GROUP_LOWCARAMIMS:
+		case ANIM_GROUP_TRKCARANIMS:
+		case ANIM_GROUP_RUSTPLANEANIMS:
+		case ANIM_GROUP_COACHCARANIMS:
+		case ANIM_GROUP_CONVCARANIMS:
+		case ANIM_GROUP_MTRKCARANIMS:
+		case ANIM_GROUP_STDTALLCARAMIMS:
+		case ANIM_GROUP_BFINJCARAMIMS:
+			if(time > 0.475f)
+				OpenDoor(component, door, 0.0f);
+			else if(time > 0.05f && time < 0.3f){
+				// SA really does scale against 0.2 here, not against the
+				// 0.3 end of the window.
+				const float newRatio = (time - 0.05f) / (0.2f - 0.05f);
+				if(Doors[door].GetAngleOpenRatio() < newRatio)
+					OpenDoor(component, door, newRatio);
+			}else if(time > 0.3f && time < 0.475f){
+				const float newRatio = 1.0f - (time - 0.3f) / (0.475f - 0.3f);
+				if(Doors[door].GetAngleOpenRatio() > newRatio)
+					OpenDoor(component, door, newRatio);
+			}
+			break;
+		default:
+			break;
+		}
+		break;
+	}
+
 	default:
+		// Callers that drive a door directly by ratio (the drive-by weapon
+		// door timers) come through here with no animation to read timings
+		// from; `time` already is the ratio for them.
 		OpenDoor(component, door, time);
 		break;
 	}

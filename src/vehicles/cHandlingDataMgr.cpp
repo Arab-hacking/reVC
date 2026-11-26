@@ -477,6 +477,11 @@ cHandlingDataMgr::LoadHandlingData(void)
 		return;
 	}
 
+	// The vehicle animation groups start from SA's stock table; `^` lines in
+	// the file parsed below replace the groups they name. A Vice City
+	// handling.cfg names none, and an all-zero table sends every car-door
+	// animation to the default ped group and zeroes every door timing.
+	CVehicleAnimGroupData::InitialiseDefaults();
 	ParseHandlingFile(fileData, (uint32)size);
 }
 

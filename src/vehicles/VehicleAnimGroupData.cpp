@@ -393,3 +393,55 @@ CVehicleAnimGroupData::LoadAGroupFromData(const char *line)
 		return 0;
 	return GetVehicleAnimGroup(id).InitFromData(line);
 }
+
+// SA stock vehicle animation group table, taken from SA handling.cfg `^`
+// lines. SA always ships that file, so the game never runs without this
+// data; a Vice City handling.cfg has no `^` lines at all, and without the
+// table every group stays zero - first/second group 0 (the default ped
+// group, which holds no car-door clips) and every door timing 0 (doors
+// snap instead of swinging). The defaults are installed before the
+// handling file is parsed, so any `^` line the loaded handling.cfg does
+// carry still wins.
+static const char *saStockVehicleAnimGroups[] = {
+		"^\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0.5\t0.0\t-0.5\t-0.3\t0.3\t0.41\t0.8\t0.3\t0.45\t0.06\t0.43\t0.20\t0.43\t0",
+		"^\t1\t1\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t1\t0\t1\t1\t0.5\t0.0\t-0.5\t-0.3\t0.3\t0.41\t0.8\t0.3\t0.45\t0.06\t0.43\t0.20\t0.43\t0",
+		"^\t2\t2\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t1\t1\t1\t1\t0.5\t0.0\t-0.5\t-0.3\t0.3\t0.41\t0.8\t0.3\t0.45\t0.03\t0.23\t0.20\t0.43\t40",
+		"^\t3\t3\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t1\t0\t0.5\t0.0\t-0.5\t-0.3\t0.3\t0.0\t0.0\t0.0\t0.0\t0.0\t0.0\t0.0\t0.0\t0",
+		"^\t4\t4\t3\t1\t0\t0\t0\t0\t1\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t1\t0\t0.5\t0.0\t-0.5\t-0.3\t0.3\t0.0\t0.0\t0.0\t0.0\t0.0\t0.0\t0.0\t0.0\t0",
+		"^\t5\t5\t3\t1\t0\t0\t0\t0\t1\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t1\t0\t0.5\t0.0\t-0.5\t-0.3\t0.3\t0.0\t0.0\t0.0\t0.0\t0.0\t0.0\t0.0\t0.0\t0",
+		"^\t6\t6\t3\t1\t0\t0\t0\t0\t1\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t1\t0\t0.5\t0.0\t-0.5\t-0.3\t0.3\t0.0\t0.0\t0.0\t0.0\t0.0\t0.0\t0.0\t0.0\t0",
+		"^\t7\t7\t3\t1\t0\t0\t0\t0\t1\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t1\t0\t0.5\t0.0\t-0.5\t-0.3\t0.3\t0.0\t0.0\t0.0\t0.0\t0.0\t0.0\t0.0\t0.0\t0",
+		"^\t8\t8\t3\t1\t0\t0\t0\t0\t1\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t1\t0\t0.5\t0.0\t-0.5\t-0.3\t0.3\t0.0\t0.0\t0.0\t0.0\t0.0\t0.0\t0.0\t0.0\t0",
+		"^\t9\t9\t3\t1\t0\t0\t0\t0\t1\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t1\t0\t0.5\t0.0\t-0.5\t-0.3\t0.3\t0.0\t0.0\t0.0\t0.0\t0.0\t0.0\t0.0\t0.0\t0",
+		"^\t10\t10\t3\t1\t0\t0\t0\t0\t1\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t1\t0\t0.5\t0.0\t-0.5\t-0.3\t0.3\t0.0\t0.0\t0.0\t0.0\t0.0\t0.0\t0.0\t0.0\t0",
+		"^\t11\t11\t3\t1\t0\t0\t0\t0\t1\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t1\t0\t0.5\t0.0\t-0.5\t-0.3\t0.3\t0.0\t0.0\t0.0\t0.0\t0.0\t0.0\t0.0\t0.0\t0",
+		"^\t12\t12\t3\t1\t0\t0\t0\t0\t1\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t1\t0\t0.5\t0.0\t-0.5\t-0.3\t0.3\t0.0\t0.0\t0.0\t0.0\t0.0\t0.0\t0.0\t0.0\t0",
+		"^\t13\t13\t0\t1\t1\t0\t1\t0\t1\t1\t0\t1\t1\t0\t1\t1\t1\t1\t1\t1\t1\t0.5\t0.0\t-0.5\t-0.3\t0.3\t0.41\t0.8\t0.3\t0.45\t0.06\t0.43\t0.20\t0.43\t0",
+		"^\t14\t14\t0\t0\t0\t1\t0\t1\t1\t0\t1\t1\t0\t1\t1\t1\t1\t1\t0\t1\t1\t0.5\t0.0\t-0.5\t-0.3\t0.3\t0.41\t0.8\t0.3\t0.45\t0.06\t0.43\t0.1\t0.23\t1",
+		"^\t15\t15\t0\t1\t0\t1\t0\t1\t1\t1\t1\t1\t0\t1\t1\t1\t1\t1\t1\t1\t1\t0.5\t0.0\t-0.5\t-0.3\t0.3\t0.41\t0.8\t0.3\t0.45\t0.06\t0.43\t0.20\t0.43\t2",
+		"^\t16\t16\t0\t1\t0\t1\t0\t1\t0\t0\t1\t1\t0\t1\t0\t1\t1\t1\t1\t1\t1\t0.5\t0.0\t-0.5\t-0.3\t0.3\t0.41\t0.8\t0.3\t0.45\t0.06\t0.43\t0.1\t0.23\t2",
+		"^\t17\t17\t0\t0\t1\t1\t0\t0\t0\t1\t1\t1\t0\t0\t0\t1\t1\t1\t1\t1\t1\t0.5\t0.0\t-0.5\t-0.3\t0.3\t0.41\t0.8\t0.3\t0.45\t0.06\t0.43\t0.1\t0.23\t8",
+		"^\t18\t18\t0\t1\t1\t1\t0\t1\t1\t1\t1\t1\t0\t1\t1\t1\t1\t1\t1\t1\t1\t0.5\t0.0\t-0.5\t-0.3\t0.3\t0.41\t0.8\t0.3\t0.45\t0.06\t0.43\t0.1\t0.23\t4",
+		"^\t19\t19\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0.5\t0.0\t-0.5\t-0.3\t0.3\t0.41\t0.8\t0.3\t0.45\t0.06\t0.43\t0.1\t0.43\t0",
+		"^\t20\t20\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t1\t1\t1\t1\t11.5\t0.0\t-0.8\t-0.3\t0.3\t0.41\t0.8\t0.3\t0.45\t0.03\t0.23\t0.1\t0.23\t41",
+		"^\t21\t21\t0\t1\t0\t1\t0\t1\t1\t1\t1\t1\t0\t1\t1\t1\t1\t1\t1\t1\t1\t0.5\t0.0\t-0.5\t-0.3\t0.3\t0.41\t0.8\t0.3\t0.45\t0.06\t0.43\t0.1\t0.23\t66",
+		"^\t22\t22\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t-0.3\t0.0\t-0.5\t-0.3\t0.3\t0.41\t0.8\t0.3\t0.45\t0.06\t0.43\t0.20\t0.43\t0",
+		"^\t23\t23\t0\t1\t1\t1\t0\t1\t1\t1\t1\t1\t0\t1\t1\t1\t1\t1\t1\t1\t1\t0.5\t0.0\t-0.5\t-0.3\t0.3\t0.41\t0.8\t0.3\t0.45\t0.06\t0.43\t0.1\t0.23\t4",
+		"^\t24\t24\t0\t0\t0\t1\t0\t1\t1\t0\t1\t1\t0\t1\t1\t1\t1\t1\t1\t1\t0\t0.25\t0.0\t-0.75\t-0.3\t0.3\t0.41\t0.8\t0.3\t0.45\t0.06\t0.43\t0.1\t0.23\t1",
+		"^\t25\t25\t0\t1\t1\t1\t0\t1\t1\t1\t1\t1\t0\t1\t1\t1\t1\t1\t1\t1\t1\t0.25\t0.0\t-0.75\t-0.3\t0.3\t0.41\t0.8\t0.3\t0.45\t0.06\t0.43\t0.1\t0.43\t0",
+		"^\t26\t26\t0\t0\t0\t1\t0\t1\t1\t1\t1\t1\t0\t1\t1\t1\t1\t1\t1\t1\t1\t0.25\t0.0\t-0.75\t-0.3\t0.3\t0.41\t0.8\t0.3\t0.45\t0.06\t0.43\t0.1\t0.23\t3",
+		"^\t27\t27\t0\t1\t0\t1\t0\t1\t1\t0\t1\t1\t0\t1\t1\t1\t1\t1\t0\t1\t1\t0.5\t0.0\t-0.5\t-0.3\t0.3\t0.41\t0.8\t0.3\t0.45\t0.06\t0.43\t0.1\t0.23\t1",
+		"^\t28\t28\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0\t0.5\t0.0\t-0.5\t-0.3\t0.3\t0.41\t0.8\t0.3\t0.45\t0.06\t0.43\t0.20\t0.43\t8",
+		"^\t29\t29\t0\t1\t1\t1\t0\t1\t1\t1\t1\t1\t0\t1\t1\t1\t1\t1\t1\t1\t1\t0.5\t0.0\t-0.5\t-0.3\t0.3\t0.41\t0.8\t0.3\t0.45\t0.06\t0.43\t0.08\t0.43\t3",
+};
+
+void
+CVehicleAnimGroupData::InitialiseDefaults(void)
+{
+	for(int32 i = 0; i < (int32)ARRAY_SIZE(saStockVehicleAnimGroups); i++){
+		if(LoadAGroupFromData(saStockVehicleAnimGroups[i]) != -1)
+			debug("Vehicle anim group default %d failed to parse\n", i);
+	}
+	debug("Vehicle anim groups: SA stock defaults installed (%d groups)\n",
+		(int32)ARRAY_SIZE(saStockVehicleAnimGroups));
+}

@@ -4025,7 +4025,7 @@ CPed::SetEnterCar_AllClear(CVehicle *car, uint32 doorNode, uint32 doorFlag)
 
 	if (car->IsBoat()) {
 		if (car->m_pHandlingData->m_nModelFlags & VEHICLE_HANDLING_MODEL_SIT_IN_BOAT)
-			m_pVehicleAnim = CAnimManager::BlendAnimation(GetClump(), GetVehicleAnimGroup(m_pMyVehicle, ANIM_ID_CAR_SIT), ANIM_ID_CAR_SIT, 100.0f);
+			m_pVehicleAnim = CAnimManager::BlendAnimation(GetClump(), ANIM_GROUP_DEFAULT, ANIM_ID_CAR_SIT, 100.0f);
 		else
 			m_pVehicleAnim = CAnimManager::BlendAnimation(GetClump(), ANIM_GROUP_DEFAULT, ANIM_ID_DRIVE_BOAT, 100.0f);
 
@@ -5996,7 +5996,7 @@ CPed::AddInCarAnims(CVehicle* car, bool isDriver)
 {
 	if (car->IsBoat()) {
 		if (car->m_pHandlingData->m_nModelFlags & VEHICLE_HANDLING_MODEL_SIT_IN_BOAT) {
-			m_pVehicleAnim = CAnimManager::BlendAnimation(GetClump(), GetVehicleAnimGroup(m_pMyVehicle, ANIM_ID_CAR_SIT), ANIM_ID_CAR_SIT, 100.0f);
+			m_pVehicleAnim = CAnimManager::BlendAnimation(GetClump(), ANIM_GROUP_DEFAULT, ANIM_ID_CAR_SIT, 100.0f);
 		} else {
 			m_pVehicleAnim = CAnimManager::BlendAnimation(GetClump(), ANIM_GROUP_DEFAULT, ANIM_ID_DRIVE_BOAT, 100.0f);
 		}
@@ -6007,38 +6007,22 @@ CPed::AddInCarAnims(CVehicle* car, bool isDriver)
 			m_pVehicleAnim = CAnimManager::BlendAnimation(GetClump(), ((CBike*)car)->m_bikeAnimType, ANIM_ID_BIKE_PASSENGER, 100.0f);
 		}
 	} else {
-		// The seat pose comes from the car's own set: a lowrider has a lower
-		// one than a saloon, and the weak/pro poses are variants inside it.
-		// Each seat pose is its own clip and so resolves its group separately:
-		// the two candidates in a group can differ only for some animations.
-		//
-		// A kart and a truck sit their driver quite differently from a saloon -
-		// the kart set has the driver's knees up, the truck set has him leaning
-		// on the wheel - and SA asks the handling line's anim group which of the
-		// special driving sets applies, which is why this is not a model test.
-		const AssocGroupId carGroup = (AssocGroupId)car->GetAnimGroupId();
-		const bool isKart = CVehicleAnimGroupData::UsesKartDrivingAnims(carGroup);
-		const bool isTruck = CVehicleAnimGroupData::UsesTruckDrivingAnims(carGroup);
-
-		if (isDriver) {
-			AnimationId seatAnim;
-			if (car->bLowVehicle)
-				seatAnim = ANIM_ID_CAR_LSIT;
-			else if (isKart)
-				seatAnim = ANIM_ID_KART_DRIVE;
-			else if (isTruck)
-				seatAnim = ANIM_ID_DRIVE_TRUCK;
-			else
-				seatAnim = ANIM_ID_CAR_SIT;
-			m_pVehicleAnim = CAnimManager::BlendAnimation(GetClump(),
-				GetVehicleAnimGroup(car, seatAnim), seatAnim, 100.0f);
-		} else {
-			// Only the driver has a kart or truck pose; a passenger sits the
-			// way a passenger always sits.
-			const AnimationId seatAnim = car->bLowVehicle ? ANIM_ID_CAR_SIT_PRO : ANIM_ID_CAR_SIT_WEAK;
-			m_pVehicleAnim = CAnimManager::BlendAnimation(GetClump(),
-				GetVehicleAnimGroup(car, seatAnim), seatAnim, 100.0f);
-		}
+		// SA CCarEnterExit::AddInCarAnim (0x64F720): the seat pose always
+		// comes from the default ped group, never from the vehicle's own
+		// animation group. The vehicle groups only hold the in/out clips
+		// (their ids start at ANIM_ID_CAR_ALIGN_LHS); CAR_sit and its
+		// variants live in the default group, so resolving them through
+		// GetVehicleAnimGroup produced nil and the ped stayed standing in
+		// the car. A low car has its own lower pose for both seats.
+		AnimationId seatAnim;
+		if (isDriver)
+			seatAnim = car->bLowVehicle ? ANIM_ID_CAR_LSIT : ANIM_ID_CAR_SIT;
+		else
+			seatAnim = car->bLowVehicle ? ANIM_ID_CAR_SITPLO : ANIM_ID_CAR_SITP;
+		m_pVehicleAnim = CAnimManager::BlendAnimation(GetClump(), ANIM_GROUP_DEFAULT, seatAnim, 100.0f);
+		if (IsPlayer())
+			REVC_LOG_INFO("Vehicle entry: seat anim %d -> %s", seatAnim,
+				m_pVehicleAnim ? "playing" : "MISSING");
 	}
 
 	StopNonPartialAnims();
