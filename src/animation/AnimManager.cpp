@@ -16,6 +16,9 @@
 #include "Streaming.h"
 #include "RwHelper.h"
 #include "General.h"
+#ifdef CUSTOM_MODELS
+#include "CustomModels.h"
+#endif
 
 // SA IsClumpSkinned (0x4C4DC0) is not defined here: RwHelper.cpp
 // already provides this codebase's version (it scans every atomic
@@ -562,10 +565,29 @@ bool CAnimManager::IsAnimInBlock(const CAnimBlendHierarchy *h, const CAnimBlock 
 // 0x4D5620
 void CAnimManager::LoadAnimFiles()
 {
-	RwStream *stream = RwStreamOpen(rwSTREAMFILENAME, rwSTREAMREAD, (void *)"ANIM\\PED.IFP");
-	assert(stream);
-	LoadAnimFile(stream, true);
-	RwStreamClose(stream, nil);
+	// VC serves PED.IFP as direct files under ANIM\ (or, with the custom
+	// content layer, as a replacement from custom/anim/). On installs
+	// where none of that resolves the ped animation base is simply not
+	// loaded here - additional anim blocks still stream in through
+	// CStreaming - instead of aborting the whole startup on assert.
+	RwStream *stream = nil;
+	RwMemory mem = { nil, 0 };
+#ifdef CUSTOM_MODELS
+	std::vector<uint8> customAnims;
+	if (CCustomModels::LoadAnimFileFromCustom("ANIM\\PED.IFP", customAnims) && !customAnims.empty()) {
+		mem.start = customAnims.data();
+		mem.length = (RwUInt32)customAnims.size();
+		stream = RwStreamOpen(rwSTREAMMEMORY, rwSTREAMREAD, &mem);
+	}
+#endif
+	if (stream == nil)
+		stream = RwStreamOpen(rwSTREAMFILENAME, rwSTREAMREAD, (void *)"ANIM\\PED.IFP");
+	if (stream != nil) {
+		LoadAnimFile(stream, true);
+		RwStreamClose(stream, nil);
+	} else {
+		debug("CAnimManager::LoadAnimFiles: ANIM\\PED.IFP not found, ped animations unavailable\n");
+	}
 
 	ms_aAnimAssocGroups = new CAnimBlendAssocGroup[ms_numAnimAssocDefinitions];
 	CreateAnimAssocGroups();
