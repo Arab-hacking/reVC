@@ -107,7 +107,7 @@ public:
 
 private:
 	static void LoadAnimFile_ANPK(RwStream *stream, const IFPSectionHeader &h, bool compress, const char (*uncompressedAnims)[32]);
-	static void LoadAnimFile_ANP23(RwStream *stream, const IFPSectionHeader &h, bool compress, bool isANP3);
+	static void LoadAnimFile_ANP23(RwStream *stream, bool isANP3, const char *blockName, uint32 numAnims, bool loadCompressed);
 	static CAnimBlock *GetOrCreateAnimBlock(const char *name, uint32 numAnims, int32 *blockIndex);
 };
 

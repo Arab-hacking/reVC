@@ -33,6 +33,13 @@ re3_assert(const char *expr, const char*, unsigned int, const char*)
 	abort();
 }
 
+// The reader logs rejected files through debug()/re3_log; the game binary
+// provides it, this fixture swallows it like the other standalone tests.
+void
+re3_log(const char*, const char*, unsigned int, const char*, const char*, ...)
+{
+}
+
 // The reader allocates the ANP3 frame block and uncompressed frame data
 // through the game memory manager; plain malloc is faithful enough here.
 void*
@@ -126,7 +133,7 @@ SAAnim_ANP3(bool compressed)
 {
 	std::vector<uint8> v;
 	v.insert(v.end(), "ANP3", "ANP3" + 4);
-	U32(v, 0); // section size is not used by the ANP2/3 reader
+	U32(v, 0); // PC root length, patched to the real size below
 	Name(v, "ped", 24);
 	U32(v, 1); // animation count
 	Name(v, "run_test", 24);
@@ -160,6 +167,35 @@ SAAnim_ANP3(bool compressed)
 			Float(v, 0.5f); Float(v, 0); Float(v, 0); Float(v, 0.8660254f);
 			Float(v, i * 0.5f);
 		}
+	}
+	Patch32(v, 4, (uint32)v.size() - 8); // PC root length
+	return v;
+}
+
+// SA mobile / BR .ani layout: the block name follows the magic directly,
+// the clip count comes next and an ignored group value closes the 36-byte
+// header. This is the layout of anim/ped.ani in common.bpc, whose group
+// value must never be mistaken for the clip count.
+static std::vector<uint8>
+SAAnim_ANP3Mobile(void)
+{
+	std::vector<uint8> v;
+	v.insert(v.end(), "ANP3", "ANP3" + 4);
+	Name(v, "ped", 24);
+	U32(v, 1); // animation count
+	U32(v, 0x1BADB002); // ignored group value (a huge "count" if misread)
+	Name(v, "walk_test", 24);
+	U32(v, 1); // sequence count
+	U32(v, 64); // frame data bytes
+	U32(v, 0); // exporter word, not a compression flag
+	Name(v, " Root", 24);
+	U32(v, 2); // KeyFrameTrans
+	U32(v, 2); // frames
+	U32(v, 0); // BONE_ROOT
+	for(int i = 0; i < 2; i++){
+		Float(v, 0.25f); Float(v, 0); Float(v, 0); Float(v, 0.9682458f);
+		Float(v, i * 0.5f); // absolute time, before the translation
+		Float(v, (float)i); Float(v, 0); Float(v, 0); // translation
 	}
 	return v;
 }
@@ -258,6 +294,31 @@ main(void)
 	Check(klast->Trans.x == 1.75f && klast->DeltaTime == 1.0f,
 		"ANPK translation and time");
 	Check(clipK->GetTotalTime() == 1.0f, "ANPK clip total time");
+
+	// Mobile-layout ANP3 (BR ped.ani): the ignored group value after the
+	// count used to be read as the clip count, walking the hierarchy
+	// array far out of bounds. It must load exactly one clip instead.
+	{
+		std::vector<uint8> mobile = SAAnim_ANP3Mobile();
+		TestStream streamM(mobile);
+		CAnimManager::LoadAnimFile(&streamM, true);
+		CAnimBlock *mblock = CAnimManager::GetAnimationBlock("ped");
+		Check(mblock && mblock->IsLoaded && mblock->NumAnims == 1, "mobile ANP3 block registered");
+		CAnimBlendHierarchy *mclip = CAnimManager::GetAnimation("walk_test", mblock);
+		Check(mclip != nil && mclip->m_nSeqCount == 1, "mobile ANP3 clip found by name");
+		KeyFrameTrans *mlast = mclip->m_pSequences[0].GetUKeyFrame(1);
+		Check(mlast->Rot.x == 0.25f && mlast->Trans.x == 1.0f &&
+			mlast->DeltaTime == 0.5f, "mobile ANP3 keyframe values");
+		Check(mclip->GetTotalTime() == 0.5f, "mobile ANP3 clip total time");
+
+		// A corrupt header (impossible clip count) is rejected, not parsed.
+		std::vector<uint8> corrupt = SAAnim_ANP3Mobile();
+		Patch32(corrupt, 28, 0xFFFFFFFFu);
+		TestStream streamC(corrupt);
+		CAnimManager::LoadAnimFile(&streamC, true);
+		Check(CAnimManager::GetAnimationBlock("ped") == mblock,
+			"corrupt ANP3 header rejected without touching the store");
+	}
 
 	puts("SA animation file reader tests OK");
 	return 0;

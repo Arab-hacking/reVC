@@ -16,8 +16,10 @@
 #include "Streaming.h"
 #include "RwHelper.h"
 #include "General.h"
+#include "AnimFileHeader.h"
 #ifdef CUSTOM_MODELS
 #include "CustomModels.h"
+#include "brformats.h"
 #endif
 
 // SA IsClumpSkinned (0x4C4DC0) is not defined here: RwHelper.cpp
@@ -565,28 +567,53 @@ bool CAnimManager::IsAnimInBlock(const CAnimBlendHierarchy *h, const CAnimBlock 
 // 0x4D5620
 void CAnimManager::LoadAnimFiles()
 {
-	// VC serves PED.IFP as direct files under ANIM\ (or, with the custom
-	// content layer, as a replacement from custom/anim/). On installs
-	// where none of that resolves the ped animation base is simply not
-	// loaded here - additional anim blocks still stream in through
-	// CStreaming - instead of aborting the whole startup on assert.
-	RwStream *stream = nil;
-	RwMemory mem = { nil, 0 };
+	// The ped animation bank comes from the custom content layer (on
+	// this install: anim/ped.ani inside custom/zip/common.bpc) or, failing
+	// that, a loose ANIM\PED.IFP. Custom buffers are structure-checked
+	// before the game parses them: compact dictionaries are sniffed end
+	// to end, and the legacy BR .ani shim layout is converted first. A
+	// bank that fails validation is skipped, not parsed into a crash.
+	bool loaded = false;
 #ifdef CUSTOM_MODELS
 	std::vector<uint8> customAnims;
 	if (CCustomModels::LoadAnimFileFromCustom("ANIM\\PED.IFP", customAnims) && !customAnims.empty()) {
-		mem.start = customAnims.data();
-		mem.length = (RwUInt32)customAnims.size();
-		stream = RwStreamOpen(rwSTREAMMEMORY, rwSTREAMREAD, &mem);
+		bool acceptable = false;
+		if (customAnims.size() >= 4 && memcmp(customAnims.data(), "ANPK", 4) == 0) {
+			acceptable = true; // VC chunk dictionary; the reader validates as it goes
+		} else if (customAnims.size() >= 4 &&
+		           (memcmp(customAnims.data(), "ANP3", 4) == 0 || memcmp(customAnims.data(), "ANP2", 4) == 0)) {
+			int numNames = 0;
+			acceptable = br::SniffAnimNames(customAnims.data(), customAnims.size(), nil,
+				NUM_ANIMATIONS, numNames) && numNames > 0;
+			if (!acceptable && br::convertAniToIfp(customAnims)) {
+				numNames = 0;
+				acceptable = br::SniffAnimNames(customAnims.data(), customAnims.size(), nil,
+					NUM_ANIMATIONS, numNames) && numNames > 0;
+			}
+		}
+		if (acceptable) {
+			RwMemory mem;
+			mem.start = customAnims.data();
+			mem.length = (RwUInt32)customAnims.size();
+			RwStream *stream = RwStreamOpen(rwSTREAMMEMORY, rwSTREAMREAD, &mem);
+			if (stream != nil) {
+				LoadAnimFile(stream, true);
+				RwStreamClose(stream, nil);
+				loaded = true;
+			}
+		} else {
+			debug("CAnimManager::LoadAnimFiles: custom ped animation bank is invalid, skipped\n");
+		}
 	}
 #endif
-	if (stream == nil)
-		stream = RwStreamOpen(rwSTREAMFILENAME, rwSTREAMREAD, (void *)"ANIM\\PED.IFP");
-	if (stream != nil) {
-		LoadAnimFile(stream, true);
-		RwStreamClose(stream, nil);
-	} else {
-		debug("CAnimManager::LoadAnimFiles: ANIM\\PED.IFP not found, ped animations unavailable\n");
+	if (!loaded) {
+		RwStream *stream = RwStreamOpen(rwSTREAMFILENAME, rwSTREAMREAD, (void *)"ANIM\\PED.IFP");
+		if (stream != nil) {
+			LoadAnimFile(stream, true);
+			RwStreamClose(stream, nil);
+		} else {
+			debug("CAnimManager::LoadAnimFiles: ANIM\\PED.IFP not found, ped animations unavailable\n");
+		}
 	}
 
 	ms_aAnimAssocGroups = new CAnimBlendAssocGroup[ms_numAnimAssocDefinitions];
@@ -636,11 +663,31 @@ void CAnimManager::LoadAnimFile(RwStream *stream, bool loadCompressed, const cha
 	switch (h.ID) {
 	case 0x33504E41: // ANP3
 	case 0x32504E41: // ANP2
-		return LoadAnimFile_ANP23(stream, h, loadCompressed, h.ID == 0x33504E41);
+	{
+		// The 32 bytes after the magic are laid out two ways: PC files
+		// carry a root length and then the block name, SA mobile / BR
+		// .ani files carry the block name first and an ignored group
+		// value after the count. Reading either layout with the other's
+		// offsets turns the clip count into garbage, so disambiguate
+		// before anything trusts it. Both headers end at +36.
+		uint8 header[32];
+		memcpy(header, &h.Size, sizeof(h.Size));
+		if (RwStreamRead(stream, header + 4, 28) != 28) {
+			debug("ANP%c: truncated animation block header\n", h.IDFourCC[3]);
+			return;
+		}
+		animfile::ANP23Header parsed;
+		if (!animfile::ParseANP23Header(header, sizeof(header), 0, parsed)) {
+			debug("ANP%c: invalid animation block header\n", h.IDFourCC[3]);
+			return;
+		}
+		LoadAnimFile_ANP23(stream, h.ID == 0x33504E41, parsed.blockName, parsed.numAnims, loadCompressed);
+		return;
+	}
 	case 0x4B504E41: // ANPK
 		return LoadAnimFile_ANPK(stream, h, loadCompressed, uncompressedAnimations);
 	default:
-		assert(0 && "Unknown IFP format");
+		debug("Unknown IFP format 0x%08X, anim file skipped\n", h.ID);
 	}
 }
 
@@ -668,6 +715,20 @@ void CAnimManager::LoadAnimFile_ANPK(RwStream *s, const IFPSectionHeader &h, boo
 	RwStreamRead(s, &hANPK, sizeof(hANPK));
 	InfoHeader infoAnim;
 	RwStreamRead(s, &infoAnim, RoundTo4(hANPK.Size));
+	infoAnim.Name[MAX_ANIM_BLOCK_NAME - 1] = '\0';
+
+	// The clip count indexes the fixed animation store; a block that
+	// does not fit is skipped instead of writing past ms_aAnimations.
+	{
+		CAnimBlock *existing = GetAnimationBlock(infoAnim.Name);
+		if (infoAnim.Num == 0 || infoAnim.Num > NUM_ANIMATIONS ||
+		    ((existing == nil || existing->NumAnims == 0) &&
+		     ms_numAnimations + (int32)infoAnim.Num > NUM_ANIMATIONS)) {
+			debug("ANPK %s: %u clips do not fit the animation store, block skipped\n",
+				infoAnim.Name, infoAnim.Num);
+			return;
+		}
+	}
 
 	int32 ablockIdx;
 	CAnimBlock *ablock = GetOrCreateAnimBlock(infoAnim.Name, infoAnim.Num, &ablockIdx);
@@ -812,18 +873,36 @@ void CAnimManager::LoadAnimFile_ANPK(RwStream *s, const IFPSectionHeader &h, boo
 		: ms_numAnimations;
 }
 
-// NOTE:
-// This code was written based off the docs on gtamods, but it does seem to work
-void CAnimManager::LoadAnimFile_ANP23(RwStream *s, const IFPSectionHeader &h, bool bLoadCompressed, bool isANP3)
+// ANP2/ANP3 compact dictionaries: the caller has already disambiguated
+// the header (PC length-prefixed vs SA mobile / BR .ani) and consumed it,
+// so the stream is at the first clip. Per clip: name[24], sequence count,
+// and for ANP3 a frame-data size plus an exporter word - neither of those
+// says whether the frames are compressed; the per-sequence frame type
+// does (1/2 float, 3/4 compressed fixed-point). Frame layouts on disk are
+// exactly the KeyFrame structs. Counts come straight from the file, so
+// anything impossible is rejected before it can index or allocate.
+void CAnimManager::LoadAnimFile_ANP23(RwStream *s, bool isANP3, const char *declaredBlockName, uint32 numAnims, bool bLoadCompressed)
 {
-	(void)h;
-	char blockName[24];
-	RwStreamRead(s, blockName, sizeof(blockName));
-	uint32 numAnims;
-	RwStreamRead(s, &numAnims, sizeof(numAnims));
+	(void)bLoadCompressed; // load-time compression is not retained (ANIM_COMPRESSION is off)
+
+	if (numAnims == 0 || numAnims > NUM_ANIMATIONS) {
+		debug("ANP%c: invalid animation count for block %s (%u)\n",
+			isANP3 ? '3' : '2', declaredBlockName, numAnims);
+		return;
+	}
+
+	{
+		CAnimBlock *existing = GetAnimationBlock(declaredBlockName);
+		if ((existing == nil || existing->NumAnims == 0) &&
+		    ms_numAnimations + (int32)numAnims > NUM_ANIMATIONS) {
+			debug("ANP%c: no room for block %s (%u anims)\n",
+				isANP3 ? '3' : '2', declaredBlockName, numAnims);
+			return;
+		}
+	}
 
 	int32 ablockId;
-	CAnimBlock *ablock = GetOrCreateAnimBlock(blockName, numAnims, &ablockId);
+	CAnimBlock *ablock = GetOrCreateAnimBlock(declaredBlockName, numAnims, &ablockId);
 
 	for (uint32 animN = 0; animN < numAnims; animN++) {
 		CAnimBlendHierarchy *hier = &ms_aAnimations[ablock->FirstAnimIdx + animN];
@@ -831,29 +910,37 @@ void CAnimManager::LoadAnimFile_ANP23(RwStream *s, const IFPSectionHeader &h, bo
 		// Animation name
 		char aname[24];
 		RwStreamRead(s, aname, sizeof(aname));
+		aname[sizeof(aname) - 1] = '\0';
 		hier->SetName(aname);
 
 		// Number of sequences
 		uint32 numSeq;
 		RwStreamRead(s, &numSeq, sizeof(numSeq));
 
-		// In ANP3 a big chunk of memory is allocated for all frames
-		// instead of allocating lots of small chunks
-		char *frames = nil;
 		if (isANP3) {
-			uint32 size, flags;
-			RwStreamRead(s, &size, sizeof(size));
-			RwStreamRead(s, &flags, sizeof(flags));
-
-			hier->m_bIsCompressed = (flags & 1) != 0;
-
-			frames = (char *)MemoryMgrMalloc(size);
-		} else {
-			hier->m_bIsCompressed = bLoadCompressed;
+			// Frame data size and an exporter/version word (often 1).
+			// Skipped, not interpreted: see the function comment.
+			uint32 framesSize, exporterWord;
+			RwStreamRead(s, &framesSize, sizeof(framesSize));
+			RwStreamRead(s, &exporterWord, sizeof(exporterWord));
+			(void)framesSize;
+			(void)exporterWord;
 		}
 
 		hier->m_nAnimBlockId = ablockId;
 		hier->m_bKeepCompressed = false;
+		hier->m_bIsCompressed = false;
+
+		if (numSeq > 4096) { // garbage header, do not allocate gigabytes
+			debug("ANP%c: %s has an impossible sequence count (%u)\n",
+				isANP3 ? '3' : '2', aname, numSeq);
+			return;
+		}
+		if (numSeq == 0) {
+			hier->SetNumSequences(0);
+			hier->m_fTotalTime = 0.0f;
+			continue;
+		}
 
 		// Allocate sequences now
 		hier->SetNumSequences(numSeq);
@@ -864,6 +951,7 @@ void CAnimManager::LoadAnimFile_ANP23(RwStream *s, const IFPSectionHeader &h, bo
 
 			char seqName[24];
 			RwStreamRead(s, seqName, sizeof(seqName));
+			seqName[sizeof(seqName) - 1] = '\0';
 			uint32 frameType, numFrames;
 			eBoneTag32 boneTag;
 			RwStreamRead(s, &frameType, sizeof(frameType));
@@ -875,44 +963,73 @@ void CAnimManager::LoadAnimFile_ANP23(RwStream *s, const IFPSectionHeader &h, bo
 			seq->SetName(seqName);
 			seq->SetBoneTag(boneTag);
 
-			// Read frames
-			switch (frameType) {
-			case 1:
-				seq->SetNumFrames(numFrames, false, false, frames);
-				RwStreamRead(s, seq->m_Frames, sizeof(KeyFrame) * numFrames);
-				if (isANP3)
-					frames += sizeof(KeyFrame) * numFrames;
-				break;
-			case 2:
-				seq->SetNumFrames(numFrames, true, false, frames);
-				RwStreamRead(s, seq->m_Frames, sizeof(KeyFrameTrans) * numFrames);
-				if (isANP3)
-					frames += sizeof(KeyFrameTrans) * numFrames;
-				break;
-			case 3:
-				seq->SetNumFrames(numFrames, false, true, frames);
-				RwStreamRead(s, seq->m_Frames, sizeof(KeyFrameCompressed) * numFrames);
-				if (isANP3)
-					frames += sizeof(KeyFrameCompressed) * numFrames;
-				break;
-			case 4:
-				seq->SetNumFrames(numFrames, true, true, frames);
-				RwStreamRead(s, seq->m_Frames, sizeof(KeyFrameTransCompressed) * numFrames);
-				if (isANP3)
-					frames += sizeof(KeyFrameTransCompressed) * numFrames;
-				break;
-			default:
-				assert(0 && "Invalid FrameType");
+			if (numFrames == 0)
+				continue;
+			if (numFrames > 65535) {
+				debug("ANP%c: %s/%s has an impossible frame count (%u)\n",
+					isANP3 ? '3' : '2', aname, seqName, numFrames);
+				return;
+			}
+			if (frameType < 1 || frameType > 4) {
+				debug("ANP%c: unknown frame type %u in %s\n",
+					isANP3 ? '3' : '2', frameType, aname);
+				return; // the stream is positioned wrong from here on
 			}
 
-			if (isANP3)
-				seq->m_bUsingExternalMemory = true;
+			const bool hasTrans = frameType == 2 || frameType == 4;
+			const bool compressed = frameType == 3 || frameType == 4;
+
+			// The on-disk frame layout is the struct layout, so frames
+			// bulk-read into the sequence's own storage (no shared
+			// arena whose declared size could disagree with the sum of
+			// the strides actually written into it).
+			seq->SetNumFrames(numFrames, hasTrans, compressed, nil);
+			switch (frameType) {
+			case 1:
+				RwStreamRead(s, seq->m_Frames, sizeof(KeyFrame) * numFrames);
+				break;
+			case 2:
+				RwStreamRead(s, seq->m_Frames, sizeof(KeyFrameTrans) * numFrames);
+				break;
+			case 3:
+				RwStreamRead(s, seq->m_Frames, sizeof(KeyFrameCompressed) * numFrames);
+				break;
+			case 4:
+				RwStreamRead(s, seq->m_Frames, sizeof(KeyFrameTransCompressed) * numFrames);
+				break;
+			}
+
+#ifndef ANIM_COMPRESSION
+			// The build does not retain compressed frames, so expand
+			// fixed-point sequences now; a dictionary may mix float
+			// and compressed clips.
+			if (compressed)
+				seq->Uncompress(nil);
+#endif
 		}
 
-		if (!hier->m_bIsCompressed) {
+#ifdef ANIM_COMPRESSION
+		// With compression retained, a hierarchy counts as compressed
+		// when any of its sequences is. Quaternion flips cannot be
+		// fixed in place on compressed frames (the sequence accessor
+		// assumes float frames); SA performs that fix while expanding,
+		// so here only the total time is computed, the same way the
+		// ANPK reader leaves compressed hierarchies alone.
+		for (uint32 seqN = 0; seqN < numSeq; seqN++)
+			if (hier->m_pSequences[seqN].IsCompressed()) {
+				hier->m_bIsCompressed = true;
+				break;
+			}
+		if (hier->m_bIsCompressed)
+			hier->CalcTotalTimeCompressed();
+		else {
 			hier->RemoveQuaternionFlips();
 			hier->CalcTotalTime();
 		}
+#else
+		hier->RemoveQuaternionFlips();
+		hier->CalcTotalTime();
+#endif
 	}
 
 	ms_numAnimations = ablock->FirstAnimIdx + (int32)numAnims > ms_numAnimations
