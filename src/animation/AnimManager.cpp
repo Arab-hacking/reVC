@@ -53,6 +53,13 @@ void CAnimManager::ReadAnimAssociationDefinitions()
 
 	CFileMgr::SetDir("");
 	int f = CFileMgr::OpenFile("DATA\\ANIMGRP.DAT", "rb");
+	if (f == 0) {
+		// No animgrp.dat (a San Andreas data file) next to the game:
+		// the built-in definitions from ms_aAnimAssocDefinitionsStatic
+		// already cover the standard groups, so the data-driven pass
+		// is simply skipped instead of reading from a dead handle.
+		return;
+	}
 	for (;;) {
 		char *l = CFileLoader::LoadLine(f);
 		if (!l)
