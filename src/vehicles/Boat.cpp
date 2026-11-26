@@ -261,6 +261,9 @@ CBoat::ProcessControl(void)
 	}else if(m_EngineSpeed > 0.0f){
 		m_EngineSpeed *= 0.95f;
 	}
+	// The propeller targets all live in this band; never let the accumulated
+	// speed leave it, whatever the approach step did (see Plane.h).
+	m_EngineSpeed = Max(0.0f, Min(m_EngineSpeed, CPlane::PLANE_MAX_PROP_SPEED));
 
 	float collisionDamage = m_pHandlingData->m_fCollisionDamageMultiplier * m_fDamageImpulse;
 #ifdef FIX_BUGS
@@ -1104,8 +1107,12 @@ CBoat::PreRender(void)
 		uint8 ucTransparency = (uint8)((1.0f - fPropSpeed) * 255.0f);
 
 		m_PropellerAngle += m_EngineSpeed * CTimer::GetTimeStep();
-		while(m_PropellerAngle > TWOPI)
-			m_PropellerAngle -= TWOPI;
+		// fmod, not SA's subtraction loop: the loop is only well-behaved for
+		// angles a few turns past the wrap, and any large finite angle (a
+		// long hitch driving the integral, a hostile handling value) would
+		// keep it subtracting for geological time. Same result in range.
+		if(m_PropellerAngle > TWOPI || m_PropellerAngle < -TWOPI)
+			m_PropellerAngle = (float)fmod((double)m_PropellerAngle, (double)TWOPI);
 
 		ProcessBoatNodeRendering(BOAT_STATIC_PROP,   m_PropellerAngle * 2.0f,  ucTransparency);
 		ProcessBoatNodeRendering(BOAT_STATIC_PROP_2, m_PropellerAngle * -2.0f, ucTransparency);

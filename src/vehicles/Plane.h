@@ -66,7 +66,13 @@ public:
 	static constexpr float PLANE_MIN_PROP_SPEED = 1.0f;
 	static constexpr float PLANE_STD_PROP_SPEED = 2.0f;
 	static constexpr float PLANE_MAX_PROP_SPEED = 32.0f;
-	static constexpr float PLANE_ROC_PROP_SPEED = 1.5f;
+	// The rate constant has to keep timeStep*ROC*5 below 1 at the largest
+	// clamped time step (3.0), otherwise CBoat's approach update overshoots
+	// its target by more than the remaining gap every frame, doubles in
+	// magnitude each frame and runs away to +inf - which then wedges the
+	// propeller-angle wrap in PreRender forever (the debug-12 freeze a
+	// moment after sitting in a boat). 1.5f did exactly that.
+	static constexpr float PLANE_ROC_PROP_SPEED = 0.06f;
 
 	// SA CPlane carries the animated control state on the vehicle. The
 	// reference's own names are used where they are known
