@@ -336,6 +336,18 @@ void CAnimManager::CreateAnimAssocGroups()
 			if (CAnimBlendStaticAssociation *assoc = group.GetAnimation(def->AnimDescr[j].AnimId))
 				assoc->m_Flags |= def->AnimDescr[j].Flags;
 
+		{
+			uint32 bound = 0, withNodes = 0;
+			for (uint32 j = 0; j < group.m_NumAnims; j++) {
+				if (group.m_Anims[j].m_BlendHier)
+					bound++;
+				if (group.m_Anims[j].IsValid())
+					withNodes++;
+			}
+			debug("Anim group %s (block %s): %u/%u clips bound, %u with bone nodes\n",
+				def->GroupName, def->BlockName, bound, group.m_NumAnims, withNodes);
+		}
+
 		if (clump) {
 			if (IsClumpSkinned(clump))
 				RpClumpForAllAtomics(clump, AtomicRemoveAnimFromSkinCB, nil);
@@ -1038,6 +1050,26 @@ void CAnimManager::LoadAnimFile_ANP23(RwStream *s, bool isANP3, const char *decl
 		hier->RemoveQuaternionFlips();
 		hier->CalcTotalTime();
 #endif
+
+		// A real clip is never this short; a total in this range means
+		// the frame times were misread (it plays back absurdly fast).
+		if (hier->m_fTotalTime > 0.0f && hier->m_fTotalTime < 0.1f)
+			debug("ANP%c: clip %s in block %s is suspiciously short (%.3fs, %u seqs)\n",
+				isANP3 ? '3' : '2', aname, declaredBlockName, hier->m_fTotalTime, numSeq);
+	}
+
+	{
+		float minTotal = 1e9f, maxTotal = 0.0f;
+		for (uint32 animN = 0; animN < numAnims; animN++) {
+			CAnimBlendHierarchy *hier = &ms_aAnimations[ablock->FirstAnimIdx + animN];
+			if (hier->m_fTotalTime < minTotal)
+				minTotal = hier->m_fTotalTime;
+			if (hier->m_fTotalTime > maxTotal)
+				maxTotal = hier->m_fTotalTime;
+		}
+		debug("ANP%c block %s: %u clips loaded, total times %.3f..%.3fs\n",
+			isANP3 ? '3' : '2', declaredBlockName, numAnims,
+			minTotal == 1e9f ? 0.0f : minTotal, maxTotal);
 	}
 
 	ms_numAnimations = ablock->FirstAnimIdx + (int32)numAnims > ms_numAnimations
