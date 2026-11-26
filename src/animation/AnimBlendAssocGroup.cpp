@@ -160,7 +160,17 @@ CAnimBlendStaticAssociation *CAnimBlendAssocGroup::GetAnimation(const char *name
 // 0x4CE090
 CAnimBlendStaticAssociation *CAnimBlendAssocGroup::GetAnimation(AnimationId id)
 {
-	return &GetAssociations()[id - m_IdOffset];
+	// SA could index blindly because its groups were always built and
+	// its ids always in range. Here a group may not be built yet (its
+	// block never streamed in) or an id may fall outside the group's
+	// descriptor range; callers are written to accept nil, so give it
+	// to them instead of a wild pointer.
+	if (!m_Anims)
+		return nil;
+	int32 idx = (int32)id - (int32)m_IdOffset;
+	if (idx < 0 || idx >= (int32)m_NumAnims)
+		return nil;
+	return &GetAssociations()[idx];
 }
 
 // 0x4CE1B0

@@ -88,9 +88,9 @@ CTaskSimpleGoToPoint::ProcessPed(CPed *ped)
 						// hold task and surface table land later.
 						if(!player->GetPlayerData()->m_bPlayerSprintDisabled){
 							CAnimBlendAssocGroup *animGroup = &CAnimManager::GetAssocGroups()[ped->m_animGroup];
-							CAnimBlendStaticAssociation *assoc1 = animGroup->GetAnimation(ANIM_ID_RUN);
-							CAnimBlendStaticAssociation *assoc2 = animGroup->GetAnimation(ANIM_ID_SPRINT);
-							if(assoc1->m_BlendHier != assoc2->m_BlendHier && player->ControlButtonSprint(SPRINT_GROUND) >= 1.0f){
+						CAnimBlendStaticAssociation *assoc1 = animGroup->GetAnimation(ANIM_ID_RUN);
+						CAnimBlendStaticAssociation *assoc2 = animGroup->GetAnimation(ANIM_ID_SPRINT);
+						if(assoc1 && assoc2 && assoc1->m_BlendHier != assoc2->m_BlendHier && player->ControlButtonSprint(SPRINT_GROUND) >= 1.0f){
 								ped->SetMoveState(PEDMOVE_SPRINT);
 								bSprinting = true;
 							}

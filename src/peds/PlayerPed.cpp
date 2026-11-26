@@ -422,8 +422,11 @@ CPlayerPed::ReApplyMoveAnims(void)
 	for(int i = 0; i < ARRAY_SIZE(moveAnims); i++) {
 		AnimationId id = moveAnims[i];
 		if (CAnimBlendAssociation *anim = RpAnimBlendClumpGetAssociation(GetClump(), id)) {
-			if (anim->GetHashKey() != CAnimManager::GetAnimAssociation(m_animGroup, id)->GetHashKey()) {
+			CAnimBlendStaticAssociation *staticAssoc = CAnimManager::GetAnimAssociation(m_animGroup, id);
+			if (staticAssoc && anim->GetHashKey() != staticAssoc->GetHashKey()) {
 				CAnimBlendAssociation *addedAnim = CAnimManager::AddAnimation(GetClump(), m_animGroup, id);
+				if (!addedAnim)
+					continue;
 				addedAnim->m_BlendDelta = anim->m_BlendDelta;
 				addedAnim->m_BlendAmount = anim->m_BlendAmount;
 

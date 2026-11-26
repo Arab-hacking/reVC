@@ -333,7 +333,8 @@ void CAnimManager::CreateAnimAssocGroups()
 		group.m_IdOffset = def->AnimDescr->AnimId;
 		group.CreateAssociations(def->BlockName, clump, def->AnimNames, def->NumAnims);
 		for (uint32 j = 0; j < group.m_NumAnims; j++)
-			group.GetAnimation(def->AnimDescr[j].AnimId)->m_Flags |= def->AnimDescr[j].Flags;
+			if (CAnimBlendStaticAssociation *assoc = group.GetAnimation(def->AnimDescr[j].AnimId))
+				assoc->m_Flags |= def->AnimDescr[j].Flags;
 
 		if (clump) {
 			if (IsClumpSkinned(clump))
@@ -508,7 +509,7 @@ CAnimBlendAssociation *CAnimManager::BlendAnimation(RpClump *clump, AssocGroupId
 	CAnimBlendClumpData *clumpAnimData = RpAnimBlendClumpGetData(clump); // Get running anim data
 
 	CAnimBlendStaticAssociation *toBlendAnim = GetAssocGroups()[groupId].GetAnimation(animId);
-	if (!toBlendAnim->m_BlendHier)
+	if (!toBlendAnim || !toBlendAnim->m_BlendHier)
 		return nil; // clip not present in the loaded block
 	const bool toBlendIsMoving = (toBlendAnim->m_Flags & ANIMATION_IS_SYNCRONISED) != 0;
 	const bool toBlendIsPartial = (toBlendAnim->m_Flags & ANIMATION_IS_PARTIAL) != 0;
