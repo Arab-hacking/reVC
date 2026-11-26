@@ -285,8 +285,10 @@ CCarEnterExit::ComputeTargetDoorToExit(const CVehicle *vehicle, const CPed *ped)
 // SA CCarEnterExit::GetPositionToOpenCarDoor (0x64E740).
 //
 // The door position is the seat position from the model, pulled outwards by
-// the handling's seat offset, then offset once more by the get-in animation's
-// own lateral travel so the ped ends up clear of the body.
+// the handling's seat offset. Callers that have a ped should use the
+// ped-aware overload below instead: only that one also applies the get-in
+// animation's lateral travel, without which the point is unreachable
+// (it sits inside the car's collision).
 CVector
 CCarEnterExit::GetPositionToOpenCarDoor(const CVehicle *vehicle, int32 doorId)
 {
@@ -364,7 +366,7 @@ CCarEnterExit::GetNearestCarDoor(const CPed *ped, const CVehicle *vehicle, CVect
 			if((playerRunning || angryPedRunning) && doorId == 0){
 				if(IsRoomForPedToLeaveCar(veh, 18)){
 					doorId = 18;
-					outPos = GetPositionToOpenCarDoor(veh, 18);
+					outPos = GetPositionToOpenCarDoor(veh, 18, p);
 					return true;
 				}
 			}
@@ -374,8 +376,13 @@ CCarEnterExit::GetNearestCarDoor(const CPed *ped, const CVehicle *vehicle, CVect
 		psgrDraggedOutOffset = nil;
 	}
 
-	const CVector posDoorFLeft = GetPositionToOpenCarDoor(veh, CAR_DOOR_LF);
-	const CVector posDoorFRight = GetPositionToOpenCarDoor(veh, CAR_DOOR_RF);
+	// The stand point must include the get-in animation's lateral travel
+	// (the ped-aware form): the seat-plus-seat-offset point alone sits
+	// inside the car's collision, ~0.85m from where a ped can actually
+	// stand, and the seek arrival radius is 0.5m - the ped hovered at
+	// the door forever and never started the get-in.
+	const CVector posDoorFLeft = GetPositionToOpenCarDoor(veh, CAR_DOOR_LF, p);
+	const CVector posDoorFRight = GetPositionToOpenCarDoor(veh, CAR_DOOR_RF, p);
 
 	CVector2D pedPos2D = p->GetPosition();
 	CVector2D dir2DToDoorFLeft = CVector2D(posDoorFLeft) - pedPos2D;
