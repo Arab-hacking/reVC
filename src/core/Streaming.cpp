@@ -277,6 +277,11 @@ CStreaming::Init2(void)
 	desiredNumVehiclesLoaded = (int32)((ms_memoryAvailable / MB - 65) / 3 + 12);
 	if(desiredNumVehiclesLoaded > MAXVEHICLESLOADED)
 		desiredNumVehiclesLoaded = MAXVEHICLESLOADED;
+	// The loaded-vehicle table is wider than the traffic residency target
+	// (scripts and cheats may hold many more distinct models); streaming
+	// keeps preloading traffic only up to the target it always had.
+	if(desiredNumVehiclesLoaded > 50)
+		desiredNumVehiclesLoaded = 50;
 #else
 	ms_memoryAvailable = 65 * MB;
 	desiredNumVehiclesLoaded = 25;
@@ -2879,8 +2884,9 @@ CStreaming::LoadCustomFile(int32 streamId)
 		PUSH_MEMID(MEMID_STREAM_MODELS);
 		CTxdStore::SetCurrentTxd(mi->GetTxdSlot());
 		success = CCustomModels::Load(streamId);
+		bool noVehicleSlot = false;
 		if(success && mi->GetModelType() == MITYPE_VEHICLE)
-			success = AddToLoadedVehiclesList(streamId);
+			noVehicleSlot = !AddToLoadedVehiclesList(streamId);
 		POP_MEMID();
 		UpdateMemoryUsed();
 
@@ -2891,7 +2897,17 @@ CStreaming::LoadCustomFile(int32 streamId)
 			CAnimManager::RemoveAnimBlockRefWithoutDelete(animId);
 #endif
 
-		if(!success){
+		if(!success || noVehicleSlot){
+			if(noVehicleSlot){
+				// The model itself loaded fine; every vehicle tracking slot
+				// is held by a vehicle still in the world. Unloading and
+				// re-requesting would reload the same DFF forever (the
+				// debug-13 loop after the 51st spawned car), so drop it
+				// without re-requesting, as the stock loader does.
+				debug("No vehicle slot free for %s; not retrying\n", mi->GetModelName());
+				RemoveModel(streamId);
+				return;
+			}
 			debug("Failed to load %s from the custom folder\n", mi->GetModelName());
 			RemoveModel(streamId);
 			ReRequestModel(streamId);

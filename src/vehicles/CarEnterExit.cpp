@@ -614,6 +614,13 @@ bool
 CCarEnterExit::IsCarDoorReady(const CVehicle *vehicle, int32 doorId)
 {
 	CVehicle *veh = (CVehicle*)vehicle;
+	// A bike (and a boat) has no door the damage manager can lose or jam, and
+	// the base CVehicle door queries answer false to everything - so the
+	// entry gate refused bikes for good (debug-13: pcj600 door 8, ready=0 on
+	// every attempt). The door ids ComputeDoorFlag hands out for a bike name
+	// a seat side, not a door, and a seat is always ready.
+	if(veh->IsBike() || veh->IsBoat())
+		return true;
 	return veh->IsDoorReady((uint32)doorId) || veh->IsDoorFullyOpen((uint32)doorId);
 }
 

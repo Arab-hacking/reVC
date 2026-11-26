@@ -1051,7 +1051,11 @@ CheckAtomicFrameCB(RpAtomic *atomic, void *data)
 		// the root than on a frame no traversal will ever reach.
 		RpAtomicSetFrame(atomic, check->root);
 	}else{
-		RwFrameRemoveChild(orphan);
+		// TopmostOrphan returns a frame with no parent by construction, and
+		// RwFrameRemoveChild dereferences the parent - calling it here was
+		// the swatvan crash (debug-13). RwFrameAddChild detaches safely.
+		if(RwFrameGetParent(orphan))
+			RwFrameRemoveChild(orphan);
 		RwFrameAddChild(check->root, orphan);
 		check->reparented++;
 	}
@@ -1075,8 +1079,14 @@ RepairFrameTree(RpClump *clump, const char *model)
 		static RwFrame *Reparent(RwFrame *frame, void *data){
 			RwFrame *root = (RwFrame*)data;
 			if(frame != root && RwFrameGetParent(frame) == nil){
-				RwFrameRemoveChild(frame);
-				RwFrameAddChild(root, frame);
+				// The walk reached this frame through root's child list, so
+				// it is already linked - only its parent pointer was lost.
+				// Restore the pointer directly: RwFrameRemoveChild would
+				// dereference the missing parent (the debug-13 swatvan
+				// crash), and RwFrameAddChild would link the frame a second
+				// time and cut off the siblings behind its first link.
+				((rw::Frame*)frame)->object.parent = root;
+				((rw::Frame*)frame)->root = ((rw::Frame*)root)->root;
 			}
 			RwFrameForAllChildren(frame, Reparent, data);
 			return frame;
@@ -1444,7 +1454,12 @@ CVehicleModelInfo::PreprocessSACarHierarchy(void)
 			if(!extra || m_numComps >= (int)(sizeof(m_comps)/sizeof(m_comps[0]))) continue;
 			CaptureComponentTransform(assoc.frame);
 			RpClumpRemoveAtomic(m_clump, extra);
-			RwFrameRemoveChild(assoc.frame);
+			// A broken DFF can leave this frame parentless; detaching is a
+			// no-op then, and the unguarded call would dereference the
+			// missing parent (same crash class as the frame-tree repair
+			// above).
+			if(RwFrameGetParent(assoc.frame))
+				RwFrameRemoveChild(assoc.frame);
 			SetVehicleComponentFlags(assoc.frame, desc[i].flags);
 			m_comps[m_numComps++] = extra;
 		}
@@ -1564,7 +1579,8 @@ CVehicleModelInfo::PreprocessHierarchy(bool saHierarchy)
 			}
 			CaptureComponentTransform(assoc.frame);
 			RpClumpRemoveAtomic(m_clump, atomic);
-			RwFrameRemoveChild(assoc.frame);
+			if(RwFrameGetParent(assoc.frame))
+				RwFrameRemoveChild(assoc.frame);
 			SetVehicleComponentFlags(assoc.frame, desc[i].flags);
 			m_comps[m_numComps++] = atomic;
 		}

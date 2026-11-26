@@ -40,7 +40,12 @@ enum Config {
 #if defined ANDROID
 	MAXVEHICLESLOADED = 70,
 #else
-    MAXVEHICLESLOADED = 50, // 70 on mobile
+	// Tracking slots for loaded vehicle models. 50 was the PS2-era cap; the
+	// custom archives register hundreds of vehicles and a player can hold
+	// far more than 50 distinct models in the world at once (debug-13: the
+	// 51st spawned car onward could not load at all). The traffic residency
+	// target in CStreaming stays where it was - this only widens the table.
+	MAXVEHICLESLOADED = 150,
 #endif
 	NUMOBJECTINFO = 210,
 
