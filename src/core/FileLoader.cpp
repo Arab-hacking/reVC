@@ -818,6 +818,37 @@ PrepareVehicleCollision(RwStream *stream, int32 id, uint32 body, uint32 size)
 	// external COLL was loaded before streaming; absence of a COL3 is normal.
 	return mi->GetColModel() != nil && mi->DoesOwnColModel();
 }
+
+// Some custom vehicles ship without any usable collision (no COL3 in the DFF
+// and no matching archive record). Rejecting the clump there made streaming
+// remove the model and immediately re-request it, reloading the whole DFF on
+// the game thread in a tight loop (thousands of retries in debug-11, the main
+// spawn stutter). Give such models a coarse sphere/box from their own bounds
+// instead: playable collision, loaded once.
+static void
+InstallFallbackVehicleCollision(RpClump *clump, CVehicleModelInfo *mi)
+{
+	if(mi == nil || mi->GetColModel() != nil)
+		return;
+	RwSphere sphere = { 0.0f, 0.0f, 0.0f, 0.0f };
+	if(RpClumpGetBoundingSphere(clump, &sphere, false) == nil)
+		return;
+	float radius = sphere.radius;
+	if(radius < 0.5f)
+		radius = 0.5f;
+	if(radius > 6.0f)
+		radius = 6.0f;
+	CVector centre(sphere.center.x, sphere.center.y, sphere.center.z);
+	CColModel *col = new CColModel;
+	col->boundingSphere.Set(radius, centre);
+	col->boundingBox.min = CVector(centre.x - radius, centre.y - radius, centre.z - radius);
+	col->boundingBox.max = CVector(centre.x + radius, centre.y + radius, centre.z + radius);
+	CColSphere *volume = new CColSphere;
+	volume->Set(radius, centre, SURFACE_DEFAULT, 0);
+	col->spheres = volume;
+	col->numSpheres = 1;
+	mi->SetEmbeddedColModel(col);
+}
 #endif
 
 static bool
@@ -932,9 +963,13 @@ CFileLoader::LoadClumpFile(const char *filename)
 				if(mi->GetModelType() == MITYPE_VEHICLE){
 					bool collisionReady = PrepareVehicleCollision(stream, modelIndex, clumpBody, clumpSize);
 					if(!collisionReady){
-						REVC_LOG_WARNING("SA car %s: missing/invalid embedded collision", mi->GetModelName());
-						RpClumpDestroy(clump);
-						continue;
+						InstallFallbackVehicleCollision(clump, (CVehicleModelInfo*)mi);
+						if(((CVehicleModelInfo*)mi)->GetColModel() == nil){
+							REVC_LOG_WARNING("SA car %s: missing/invalid embedded collision", mi->GetModelName());
+							RpClumpDestroy(clump);
+							continue;
+						}
+						REVC_LOG_WARNING("SA car %s: missing/invalid embedded collision; installed generated collision from model bounds", mi->GetModelName());
 					}
 				}
 #endif
@@ -1019,9 +1054,12 @@ CFileLoader::FinishLoadClumpFile(RwStream *stream, uint32 id)
 			PrepareVehicleCollision(stream, id, saClumpBodyPos, saClumpBodySize);
 		saClumpBodyKnown = false;
 		if(!collisionReady){
-			REVC_LOG_WARNING("Vehicle %s: no valid model collision after embedded/archive lookup", mi->GetModelName());
-			RpClumpDestroy(clump);
-			return false;
+			REVC_LOG_WARNING("Vehicle %s: no valid model collision after embedded/archive lookup; installing generated collision from model bounds", mi->GetModelName());
+			InstallFallbackVehicleCollision(clump, (CVehicleModelInfo*)mi);
+			if(((CVehicleModelInfo*)mi)->GetColModel() == nil){
+				RpClumpDestroy(clump);
+				return false;
+			}
 		}
 #endif
 		return PrepareAndInstallClump(clump, mi, "vehicle stream");

@@ -61,22 +61,40 @@ CBike::CBike(int32 id, uint8 CreatedBy)
 {
 	int i;
 	CVehicleModelInfo *mi = (CVehicleModelInfo*)CModelInfo::GetModelInfo(id);
-	switch(id){
-	case MI_ANGEL:
-	case MI_FREEWAY:
-		m_bikeAnimType = ANIM_GROUP_HARLEYBIKEANIMS;
-		break;
-	case MI_PIZZABOY:
-	case MI_FAGGIO:
-		m_bikeAnimType = ANIM_GROUP_VESPABIKEANIMS;
-		break;
-	case MI_PCJ600:
-		m_bikeAnimType = ANIM_GROUP_STDBIKEANIMS;
-		break;
-	case MI_SANCHEZ:
-		m_bikeAnimType = ANIM_GROUP_DIRTBIKEANIMS;
-		break;
-	default: assert(0 && "invalid bike model ID");
+	// The rider animation group comes from the anim file the model was loaded
+	// with (as in SA CBike), not from a fixed list of stock model ids: custom
+	// and archive bikes carry ids the stock game never knew, and asserting on
+	// them made traffic spawning them abort the game (debug-11).
+	m_bikeAnimType = ANIM_GROUP_BIKES;
+	if(mi){
+		int32 animFileIndex = mi->GetAnimFileIndex();
+		if(animFileIndex >= 0){
+			AssocGroupId animGroup = CAnimManager::GetAnimBlocks()[animFileIndex].GroupId;
+			if(animGroup >= ANIM_GROUP_BIKES && animGroup <= ANIM_GROUP_CHOPPA)
+				m_bikeAnimType = animGroup;
+		}
+		if(m_bikeAnimType == ANIM_GROUP_BIKES){
+			// stock ids whose IDE anim file does not name a bike block keep the
+			// group the original game chose for them
+			switch(id){
+			case MI_ANGEL:
+			case MI_FREEWAY:
+				m_bikeAnimType = ANIM_GROUP_HARLEYBIKEANIMS;
+				break;
+			case MI_PIZZABOY:
+			case MI_FAGGIO:
+				m_bikeAnimType = ANIM_GROUP_VESPABIKEANIMS;
+				break;
+			case MI_PCJ600:
+				m_bikeAnimType = ANIM_GROUP_STDBIKEANIMS;
+				break;
+			case MI_SANCHEZ:
+				m_bikeAnimType = ANIM_GROUP_DIRTBIKEANIMS;
+				break;
+			default:
+				break;
+			}
+		}
 	}
 	m_nVehicleType = VEHICLE_TYPE_BIKE;
 m_nVehicleSubType = VEHICLE_TYPE_BIKE;
