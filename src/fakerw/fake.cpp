@@ -35,7 +35,7 @@ RwReal RwV3dLength(const RwV3d * in) { return length(*in); }
 //void RwV2dPerp(RwV2d * out, const RwV2d * in);
 //void RwV2dScale(RwV2d * out, const RwV2d * in, RwReal scalar);
 //RwReal RwV2dDotProduct(const RwV2d * ina, const RwV2d * inb);
-//void RwV3dAssign(RwV3d * out, const RwV3d * ina);
+void RwV3dAssign(RwV3d * out, const RwV3d * ina) { *out = *ina; }
 void RwV3dAdd(RwV3d * out, const RwV3d * ina, const RwV3d * inb) { *out = add(*ina, *inb); }
 void RwV3dSub(RwV3d * out, const RwV3d * ina, const RwV3d * inb) { *out = sub(*ina, *inb); }
 void RwV3dScale(RwV3d * out, const RwV3d * in, RwReal scalar) { *out = scale(*in, scalar); }
