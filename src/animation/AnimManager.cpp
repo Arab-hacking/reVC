@@ -965,6 +965,8 @@ void CAnimManager::LoadAnimFile_ANP23(RwStream *s, bool isANP3, const char *decl
 		// Allocate sequences now
 		hier->SetNumSequences(numSeq);
 
+		uint32 firstSeqType = 0, firstSeqFrames = 0;
+
 		// Read sequences
 		for (uint32 seqN = 0; seqN < numSeq; seqN++) {
 			CAnimBlendSequence *seq = &hier->m_pSequences[seqN];
@@ -982,6 +984,11 @@ void CAnimManager::LoadAnimFile_ANP23(RwStream *s, bool isANP3, const char *decl
 			// If BoneTag != -1 then it overwrites the name.
 			seq->SetName(seqName);
 			seq->SetBoneTag(boneTag);
+
+			if (seqN == 0) {
+				firstSeqType = frameType;
+				firstSeqFrames = numFrames;
+			}
 
 			if (numFrames == 0)
 				continue;
@@ -1050,6 +1057,10 @@ void CAnimManager::LoadAnimFile_ANP23(RwStream *s, bool isANP3, const char *decl
 		hier->RemoveQuaternionFlips();
 		hier->CalcTotalTime();
 #endif
+
+		debug("ANP%c clip %s/%s: total %.3fs, %u seqs, first seq type %u x %u frames\n",
+			isANP3 ? '3' : '2', declaredBlockName, aname, hier->m_fTotalTime,
+			numSeq, firstSeqType, firstSeqFrames);
 
 		// A real clip is never this short; a total in this range means
 		// the frame times were misread (it plays back absurdly fast).

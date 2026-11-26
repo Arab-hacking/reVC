@@ -488,6 +488,15 @@ CPlayerPed::SetInitialState(void)
 	m_attachWepAmmo = 0;
 }
 
+static bool
+HasCoreMoveAnims(AssocGroupId group)
+{
+	CAnimBlendStaticAssociation *walk = CAnimManager::GetAnimAssociation(group, ANIM_ID_WALK);
+	CAnimBlendStaticAssociation *run = CAnimManager::GetAnimAssociation(group, ANIM_ID_RUN);
+	CAnimBlendStaticAssociation *idle = CAnimManager::GetAnimAssociation(group, ANIM_ID_IDLE);
+	return walk && walk->IsValid() && run && run->IsValid() && idle && idle->IsValid();
+}
+
 void
 CPlayerPed::SetRealMoveAnim(void)
 {
@@ -496,14 +505,12 @@ CPlayerPed::SetRealMoveAnim(void)
 
 	// A custom style can omit movement clips. Fall back to the *same*
 	// skeleton's standard group, never to the other skeleton's dictionary.
+	// (The condition used to be negated per-term, which made a complete
+	// group fail the check and a missing one pass it.)
 	AssocGroupId moveGroup = m_animGroup;
-	if(!(!CAnimManager::GetAnimAssociation(moveGroup, ANIM_ID_WALK) || !CAnimManager::GetAnimAssociation(moveGroup, ANIM_ID_WALK)->IsValid()) ||
-	   !(!CAnimManager::GetAnimAssociation(moveGroup, ANIM_ID_RUN) || !CAnimManager::GetAnimAssociation(moveGroup, ANIM_ID_RUN)->IsValid()) ||
-	   !(!CAnimManager::GetAnimAssociation(moveGroup, ANIM_ID_IDLE) || !CAnimManager::GetAnimAssociation(moveGroup, ANIM_ID_IDLE)->IsValid()))
+	if(!HasCoreMoveAnims(moveGroup))
 		moveGroup = ANIM_GROUP_DEFAULT;
-	if(!(!CAnimManager::GetAnimAssociation(moveGroup, ANIM_ID_WALK) || !CAnimManager::GetAnimAssociation(moveGroup, ANIM_ID_WALK)->IsValid()) ||
-	   !(!CAnimManager::GetAnimAssociation(moveGroup, ANIM_ID_RUN) || !CAnimManager::GetAnimAssociation(moveGroup, ANIM_ID_RUN)->IsValid()) ||
-	   !(!CAnimManager::GetAnimAssociation(moveGroup, ANIM_ID_IDLE) || !CAnimManager::GetAnimAssociation(moveGroup, ANIM_ID_IDLE)->IsValid())){
+	if(!HasCoreMoveAnims(moveGroup)){
 		static int lastMissingModel = -1;
 		static int lastMissingGroup = -1;
 		if(lastMissingModel != GetModelIndex() || lastMissingGroup != moveGroup){
