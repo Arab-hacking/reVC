@@ -459,6 +459,9 @@ project "reVC"
 	files { addSrcFiles("src/modelinfo") }
 	files { addSrcFiles("src/objects") }
 	files { addSrcFiles("src/peds") }
+	files { addSrcFiles("src/peds/decisions") }
+	files { addSrcFiles("src/peds/events") }
+	files { addSrcFiles("src/peds/tasks") }
 	files { addSrcFiles("src/renderer") }
 	files { addSrcFiles("src/rw") }
 	files { addSrcFiles("src/skel") }
@@ -490,6 +493,9 @@ project "reVC"
 	includedirs { "src/modelinfo" }
 	includedirs { "src/objects" }
 	includedirs { "src/peds" }
+	includedirs { "src/peds/decisions" }
+	includedirs { "src/peds/events" }
+	includedirs { "src/peds/tasks" }
 	includedirs { "src/renderer" }
 	includedirs { "src/rw" }
 	includedirs { "src/skel/" }

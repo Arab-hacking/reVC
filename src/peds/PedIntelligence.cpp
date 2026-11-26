@@ -461,6 +461,18 @@ CPedIntelligence::ProcessEventHandler()
 	m_eventHandler.HandleEvents();
 }
 
+// SA CPedIntelligence::GetEnteringVehicle: SA reads the target vehicle
+// off the ped's enter-car task; those tasks are not ported yet, so this
+// uses the VC side of the same state - a ped in PED_ENTER_CAR or
+// PED_CARJACK is heading for m_pSeekTarget.
+CVehicle*
+CPedIntelligence::GetEnteringVehicle()
+{
+	if(m_pPed->EnteringCar())
+		return (CVehicle*)m_pPed->m_pSeekTarget;
+	return nil;
+}
+
 // SA CPedIntelligence::IsInACarOrEnteringOne. The enter-car tasks are not
 // ported yet; the driving task lookup is SA's third check.
 bool
