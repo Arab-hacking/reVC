@@ -26,6 +26,7 @@
 #include "TimeModelInfo.h"
 #include "PedType.h"
 #include "Population.h"
+#include "CarCtrl.h"
 #include "AnimManager.h"
 #include "cHandlingDataMgr.h"
 #include "FileLoader.h"
@@ -378,6 +379,27 @@ ModelInfoType ModelType(customworld::Model::Kind kind)
 // this class, so a definition must not claim a class that has no native
 // implementation: trains stay excluded because the BR track/path format is not
 // the one CTrain drives on.
+// The vehicles.ide class column, mapped exactly the way
+// CFileLoader::LoadVehicleObject maps it for a stock row. SA kept the VC
+// class names, so an archive row means the same thing as a native one.
+// "ignore" (and anything unknown) stays -1: not offered to traffic.
+int VehicleClass(const std::string &s)
+{
+    const std::string c = customworld::Lower(s);
+    if(c == "normal") return CCarCtrl::NORMAL;
+    if(c == "poorfamily") return CCarCtrl::POOR;
+    if(c == "richfamily") return CCarCtrl::RICH;
+    if(c == "executive") return CCarCtrl::EXEC;
+    if(c == "worker") return CCarCtrl::WORKER;
+    if(c == "big") return CCarCtrl::BIG;
+    if(c == "taxi") return CCarCtrl::TAXI;
+    if(c == "moped") return CCarCtrl::MOPED;
+    if(c == "motorbike") return CCarCtrl::MOTORBIKE;
+    if(c == "leisureboat") return CCarCtrl::LEISUREBOAT;
+    if(c == "workerboat") return CCarCtrl::WORKERBOAT;
+    return -1;
+}
+
 eVehicleType VehicleType(const std::string &s)
 {
     const std::string type = customworld::Lower(s);
@@ -678,16 +700,21 @@ void CCustomWorld::LoadIde(void)
             fallbackHandling += fallback;
             // Custom vehicles reuse the built-in handling line they named; the
             // engine supplies the physics from that line and the class it
-            // declares. No wheel model id, component rules or traffic spawning
-            // data is imported from the archive.
+            // declares. No wheel model id or component rules are imported
+            // from the archive, but the traffic fields are: with class -1
+            // and frequency 0 the model could never be picked for traffic,
+            // which is why archive cars never spawned. The class, frequency
+            // and level come from the IDE row, as they do for a native car.
             vehicle->m_wheelId = -1; // SA wheels are embedded in the DFF
             vehicle->m_wheelScale = 1.0f;
             vehicle->m_bikeSteerAngle =
                 vehicleType == VEHICLE_TYPE_BIKE || vehicleType == VEHICLE_TYPE_BMX ? 35.0f : 0.0f;
             vehicle->m_compRules = 0;
-            vehicle->m_vehicleClass = -1;
-            vehicle->m_level = 0;
-            vehicle->m_frequency = 0;
+            vehicle->m_vehicleClass = (int8)VehicleClass(m.vehicleClass);
+            vehicle->m_level = (int8)m.level;
+            vehicle->m_frequency = (int16)m.frequency;
+            if(vehicle->m_vehicleClass >= 0)
+                CCarCtrl::AddToCarArray(slot, vehicle->m_vehicleClass);
             // SA/BR carcols.dat has no VC 'car' assignments; give custom cars
             // a varied default colour palette instead of spawning pure black.
             static const uint8 defaultColours[NUM_VEHICLE_COLOURS][2] = {

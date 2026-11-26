@@ -3775,13 +3775,6 @@ CAutomobile::VehicleDamage(float impulse, uint16 damagedPiece)
 	int i;
 	float damageMultiplier = 0.333f;
 
-	// Collision damage is disabled: impacts must not crumple bumpers and
-	// panels or drain health. The per-frame call (impulse 0, damage taken
-	// from the stored collision impulse) is the only collision path, so it
-	// returns here; damage handed in directly by a weapon keeps working.
-	if(impulse == 0.0f)
-		return;
-
 	if(impulse == 0.0f){
 		impulse = m_fDamageImpulse;
 		damagedPiece = m_nDamagePieceType;

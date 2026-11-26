@@ -6058,10 +6058,17 @@ CPed::RemoveDrivebyAnims()
 void
 CPed::RemoveInCarAnims(void)
 {
+	// SA CCarEnterExit::RemoveCarSitAnim (0x64F680) removes the in-car set
+	// by ANIMATION_SECONDARY_TASK_ANIM: every steering, look-back and
+	// drive-by clip carries it in SA's data. This used to iterate
+	// ANIMATION_IS_SYNCRONISED, which in SA's data is the walk-cycle flag
+	// and marks no in-car clip at all - the steering clips survived the
+	// exit at blend 0, and the player-control gate that refuses input
+	// while a secondary anim exists then blocked all movement on foot.
 	CAnimBlendAssociation* assoc;
 
-	for (assoc = RpAnimBlendClumpGetFirstAssociation(GetClump(), ANIMATION_IS_SYNCRONISED); assoc;
-		assoc = RpAnimBlendGetNextAssociation(assoc, ANIMATION_IS_SYNCRONISED)) {
+	for (assoc = RpAnimBlendClumpGetFirstAssociation(GetClump(), ANIMATION_SECONDARY_TASK_ANIM); assoc;
+		assoc = RpAnimBlendGetNextAssociation(assoc, ANIMATION_SECONDARY_TASK_ANIM)) {
 		assoc->m_Flags |= ANIMATION_IS_BLEND_AUTO_REMOVE;
 		assoc->m_BlendDelta = -1000.0f;
 	}

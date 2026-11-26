@@ -813,7 +813,10 @@ CCarCtrl::AddToLoadedVehicleArray(int32 mi, int32 rating, int32 freq)
 {
 	if(!IsValidRating(rating))
 		return;
-	assert(NumOfLoadedCarsOfRating[rating] < MAX_CAR_MODELS_IN_ARRAY);
+	// Same fixed-size table as CarArrays: a world with hundreds of custom
+	// cars can have more of one class loaded than it holds.
+	if(NumOfLoadedCarsOfRating[rating] >= MAX_CAR_MODELS_IN_ARRAY)
+		return;
 	LoadedCarsArray[rating][NumOfLoadedCarsOfRating[rating]] = mi;
 	assert(mi >= 130);
 	CarFreqArrays[rating][NumOfLoadedCarsOfRating[rating]] = freq;
@@ -914,7 +917,11 @@ CCarCtrl::AddToCarArray(int32 id, int32 vehclass)
 	// offered to traffic.
 	if(!IsValidRating(vehclass))
 		return;
-	assert(TotalNumOfCarsOfRating[vehclass] < MAX_CAR_MODELS_IN_ARRAY);
+	// A custom vehicles.ide names far more cars of one class than the stock
+	// table holds; the array is fixed-size, so latecomers are left out of
+	// traffic rather than written past the end.
+	if(TotalNumOfCarsOfRating[vehclass] >= MAX_CAR_MODELS_IN_ARRAY)
+		return;
 	CarArrays[vehclass][TotalNumOfCarsOfRating[vehclass]++] = id;
 }
 

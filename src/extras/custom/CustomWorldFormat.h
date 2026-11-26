@@ -36,6 +36,10 @@ struct Model {
     unsigned driveMask;
     int radio1, radio2;
     float wheelScale;
+    // vehicles.ide traffic fields. Without them a vehicle model exists but
+    // traffic generation can never pick it.
+    int frequency = 0;
+    int level = 0;
 };
 
 struct Instance {
@@ -310,6 +314,8 @@ inline bool ParseVehicle(const std::vector<std::string> &t, Model &m)
        !UInt(t[8], frequency) || frequency > 255 ||
        !UInt(t[9], level) || level > 127 || !Hex(t[10], m.flags))
         return false;
+    m.frequency = (int)frequency;
+    m.level = (int)level;
     m.wheelScale = 1.0f;
     if(t.size() == 15 && (!Float(t[12], m.wheelScale) ||
        m.wheelScale < 0.1f || m.wheelScale > 5.0f))

@@ -58,6 +58,16 @@ CDamageManager::FuckCarCompletely(void)
 bool
 CDamageManager::ApplyDamage(tComponent component, float damage, float unused)
 {
+	// Visual damage is disabled: components never crumple, doors and
+	// panels never take a damaged status, wheels never burst and lights
+	// never break. Vehicle health still falls in
+	// CAutomobile::VehicleDamage - only the visible deformation is off -
+	// so every caller keeps its "did it break" answer as no.
+	(void)component;
+	(void)damage;
+	(void)unused;
+	return false;
+
 	tComponentGroup group;
 	uint8 subComp;
 
