@@ -220,7 +220,11 @@ void CAnimBlendAssociation::SetCurrentTime(float currentTime)
 // 0x4CEBC0
 void CAnimBlendAssociation::SetDeleteCallback(void (*callback)(CAnimBlendAssociation *, void *), void *data)
 {
-	m_nCallbackType = ANIM_BLEND_CALLBACK_DELETE;
+	// Passing nil is the SA idiom for detaching the callback (the climb
+	// and swim tasks do it before replacing their anim). It must clear
+	// the type as well: leaving DELETE set with a nil function made the
+	// auto-remove path call address 0.
+	m_nCallbackType = callback ? ANIM_BLEND_CALLBACK_DELETE : ANIM_BLEND_CALLBACK_NONE;
 	m_pCallbackFunc = callback;
 	m_pCallbackData = data;
 }
@@ -228,7 +232,8 @@ void CAnimBlendAssociation::SetDeleteCallback(void (*callback)(CAnimBlendAssocia
 // 0x4CEBE0
 void CAnimBlendAssociation::SetFinishCallback(void (*callback)(CAnimBlendAssociation *, void *), void *data)
 {
-	m_nCallbackType = ANIM_BLEND_CALLBACK_FINISH;
+	// See SetDeleteCallback: nil detaches.
+	m_nCallbackType = callback ? ANIM_BLEND_CALLBACK_FINISH : ANIM_BLEND_CALLBACK_NONE;
 	m_pCallbackFunc = callback;
 	m_pCallbackData = data;
 }
@@ -250,7 +255,8 @@ bool CAnimBlendAssociation::UpdateBlend(float timeStep)
 
 		if (m_Flags & ANIMATION_IS_BLEND_AUTO_REMOVE) {
 			if (m_nCallbackType == ANIM_BLEND_CALLBACK_DELETE || m_nCallbackType == ANIM_BLEND_CALLBACK_FINISH) {
-				m_pCallbackFunc(this, m_pCallbackData);
+				if (m_pCallbackFunc)
+					m_pCallbackFunc(this, m_pCallbackData);
 				SetFinishCallback(CDefaultAnimCallback::DefaultAnimCB, nil);
 			}
 			delete this;
@@ -306,7 +312,8 @@ bool CAnimBlendAssociation::UpdateTime(float timeStep, float timeMult)
 	// Call finish callback (if any)
 	if (m_nCallbackType == ANIM_BLEND_CALLBACK_FINISH) {
 		m_nCallbackType = ANIM_BLEND_CALLBACK_NONE;
-		m_pCallbackFunc(this, m_pCallbackData);
+		if (m_pCallbackFunc)
+			m_pCallbackFunc(this, m_pCallbackData);
 		SetFinishCallback(CDefaultAnimCallback::DefaultAnimCB, nil);
 	}
 
