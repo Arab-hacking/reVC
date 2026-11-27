@@ -300,7 +300,10 @@ CVehicle::SetModelIndex(uint32 id)
 	CEntity::SetModelIndex(id);
 	m_aExtras[0] = CVehicleModelInfo::ms_compsUsed[0];
 	m_aExtras[1] = CVehicleModelInfo::ms_compsUsed[1];
-	m_nNumMaxPassengers = CVehicleModelInfo::GetMaximumNumberOfPassengersFromNumberOfDoors(id);
+	// The count comes from the model's door frames; pPassengers[] has 8
+	// slots and several seat loops trust the count, so cap it here.
+	m_nNumMaxPassengers = (uint8)Min((int32)CVehicleModelInfo::GetMaximumNumberOfPassengersFromNumberOfDoors(id),
+	                                 (int32)ARRAY_SIZE(pPassengers));
 
 	// The plate is per vehicle, the texture it is generated into belongs to the
 	// model, so a vehicle that is given a new model has to drop its own plate
