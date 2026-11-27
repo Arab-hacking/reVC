@@ -1027,6 +1027,16 @@ CCarEnterExit::SetPedInCarDirect(CPed *ped, CVehicle *vehicle, int32 seatNumber,
 
 	ped->SetPedState(PED_DRIVING);
 	ped->bUsesCollision = false;
+	// The seating contract the rest of this codebase reads (WarpPedIntoCar
+	// and CVehicle::SetUpDriver do the same): without bInVehicle the
+	// world loop never places the ped on his seat, the objective layer
+	// does not see the entry as done and hands him the enter task again
+	// inside the car, and PlayerInfo keeps treating him as on foot.
+	ped->bInVehicle = true;
+	ped->bIsInTheAir = false;
+	vehicle->RegisterReference((CEntity **) &ped->m_pMyVehicle);
+	if (bAsDriver && ped->IsPlayer())
+		vehicle->SetStatus(STATUS_PLAYER);
 	AddInCarAnim(vehicle, ped, bAsDriver);
 	return true;
 }
