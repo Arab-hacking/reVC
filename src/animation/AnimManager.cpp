@@ -120,6 +120,11 @@ void CAnimManager::Shutdown()
 
 CAnimBlock *CAnimManager::GetAnimationBlock(AssocGroupId animGroup)
 {
+	// Group ids reach here from data (a vehicle's first/second group is a
+	// byte read out of handling.cfg); one outside the built groups has no
+	// block, like an unbuilt group below.
+	if(animGroup < 0 || (uint32)animGroup >= ms_numAnimAssocDefinitions)
+		return nil;
 	return GetAssocGroups()[animGroup].m_AnimBlock;
 }
 
@@ -208,18 +213,24 @@ AssocGroupId CAnimManager::GetAnimationGroupIdByName(const char *name)
 // 0x4D3A40
 CAnimBlendAssociation *CAnimManager::CreateAnimAssociation(AssocGroupId groupId, AnimationId animId)
 {
+	if(groupId < 0 || (uint32)groupId >= ms_numAnimAssocDefinitions)
+		return nil;
 	return GetAssocGroups()[groupId].CopyAnimation(animId);
 }
 
 // 0x4D3A60
 CAnimBlendStaticAssociation *CAnimManager::GetAnimAssociation(AssocGroupId groupId, AnimationId animId)
 {
+	if(groupId < 0 || (uint32)groupId >= ms_numAnimAssocDefinitions)
+		return nil;
 	return GetAssocGroups()[groupId].GetAnimation(animId);
 }
 
 // 0x4D3A80
 CAnimBlendStaticAssociation *CAnimManager::GetAnimAssociation(AssocGroupId groupId, const char *animName)
 {
+	if(groupId < 0 || (uint32)groupId >= ms_numAnimAssocDefinitions)
+		return nil;
 	return GetAssocGroups()[groupId].GetAnimation(animName);
 }
 
@@ -543,7 +554,9 @@ CAnimBlendAssociation *CAnimManager::BlendAnimation(RpClump *clump, AssocGroupId
 {
 	CAnimBlendClumpData *clumpAnimData = RpAnimBlendClumpGetData(clump); // Get running anim data
 
-	CAnimBlendStaticAssociation *toBlendAnim = GetAssocGroups()[groupId].GetAnimation(animId);
+	CAnimBlendStaticAssociation *toBlendAnim =
+		(groupId >= 0 && (uint32)groupId < ms_numAnimAssocDefinitions)
+			? GetAssocGroups()[groupId].GetAnimation(animId) : nil;
 	if (!toBlendAnim || !toBlendAnim->m_BlendHier)
 		return nil; // clip not present in the loaded block
 	const bool toBlendIsMoving = (toBlendAnim->m_Flags & ANIMATION_IS_SYNCRONISED) != 0;
