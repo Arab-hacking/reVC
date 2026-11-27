@@ -839,6 +839,11 @@ void CAnimManager::LoadAnimFile_ANPK(RwStream *s, const IFPSectionHeader &h, boo
 	if (ablock == nil)
 		return;	// block store full; bank skipped
 
+	// Same slice rule as the ANP2/ANP3 reader: an existing block only
+	// holds the clips it was created with.
+	if (infoAnim.Num > (uint32)ablock->NumAnims)
+		infoAnim.Num = (uint32)ablock->NumAnims;
+
 	// Read TAnimation's for this block
 	for (uint32 animN = 0; animN < infoAnim.Num; animN++) {
 		CAnimBlendHierarchy *hier = &ms_aAnimations[ablock->FirstAnimIdx + animN];
@@ -1011,6 +1016,15 @@ void CAnimManager::LoadAnimFile_ANP23(RwStream *s, bool isANP3, const char *decl
 	CAnimBlock *ablock = GetOrCreateAnimBlock(declaredBlockName, numAnims, &ablockId);
 	if (ablock == nil)
 		return;	// block store full; bank skipped
+
+	// A block that already exists keeps the hierarchy slice it was created
+	// with, however many clips a second bank naming it claims; writing the
+	// claimed count anyway would run over the following blocks (and past
+	// the array entirely once the store is nearly full). A fresh or
+	// just-filled block holds exactly numAnims, so this only bites on a
+	// genuine mismatch.
+	if (numAnims > (uint32)ablock->NumAnims)
+		numAnims = (uint32)ablock->NumAnims;
 
 	for (uint32 animN = 0; animN < numAnims; animN++) {
 		CAnimBlendHierarchy *hier = &ms_aAnimations[ablock->FirstAnimIdx + animN];
