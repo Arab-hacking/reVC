@@ -2625,8 +2625,12 @@ CMenuManager::DrawPlayerSetupScreen(bool activeScreen)
 				m_pSelectedSkin->nextSkin = new tSkinInfo;
 				m_pSelectedSkin = m_pSelectedSkin->nextSkin;
 				m_pSelectedSkin->skinId = nextSkinId;
-				strcpy(m_pSelectedSkin->skinNameOriginal, FindFileData.cFileName);
-				strcpy(m_pSelectedSkin->skinNameDisplayed, FindFileData.cFileName);
+				// FindFileData.cFileName can hold a longer name than
+				// the skin fields; keep the copies bounded.
+				strncpy(m_pSelectedSkin->skinNameOriginal, FindFileData.cFileName, 255);
+				m_pSelectedSkin->skinNameOriginal[255] = '\0';
+				strncpy(m_pSelectedSkin->skinNameDisplayed, FindFileData.cFileName, 255);
+				m_pSelectedSkin->skinNameDisplayed[255] = '\0';
 				FileTimeToSystemTime(&FindFileData.ftLastWriteTime, &SystemTime);
 				GetDateFormat(LOCALE_USER_DEFAULT, DATE_SHORTDATE, &SystemTime, 0, m_pSelectedSkin->date, 255);
 				++nextSkinId;
