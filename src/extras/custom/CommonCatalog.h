@@ -84,31 +84,10 @@ inline Catalog Parse(const unsigned char *bytes, size_t size)
     return result;
 }
 
-// Do not accidentally enable audio, features, handling.cfg or physics.json
-// just because they are present in a user-supplied common/ directory.
-//
-// The archive carries the game's own data set, not a Vice City one. Everything
-// this build still opens from the DATA folder is listed here, so the archive
-// wins for each of them and the VC folder is only ever a fallback. gameParams
-// and the zone table are part of the same set: the archive ships its own map,
-// so its zone list and gameplay tunables describe that map, not Vice City.
-inline bool CanReadData(const std::string &path)
-{
-    if(path == "data/config.dat" || path == "data/timecyc.json" ||
-       path == "data/water.dat" || path == "data/carcols.dat" ||
-       path == "data/carmods.dat" || path == "data/lods.info" ||
-       path == "data/animgrp.dat" || path == "data/pedgrp.dat")
-        return true;
-    return path == "data/handling.cfg" || path == "data/pedstats.dat" ||
-           path == "data/weapon.dat" || path == "data/melee.dat" ||
-           path == "data/surface.dat" || path == "data/ped.dat" ||
-           path == "data/object.dat" || path == "data/vehicles.ide" ||
-           path == "data/peds.ide" || path == "data/weapons.ide" ||
-           // The archive ships the SA particle table. Without it the loader
-           // has nothing to read and the renderer falls back to defaults for
-           // every effect, which is what left smoke and fire invisible.
-           path == "data/particle.cfg";
-}
+// Which archive entries may be served is not decided here: the serving
+// layer indexes every entry of the common archive outside its audio tree
+// and answers by path (see commonFiles in CustomModels.cpp). This header
+// only normalises paths and parses the IDE/IPL manifest.
 
 } // namespace commoncatalog
 #endif

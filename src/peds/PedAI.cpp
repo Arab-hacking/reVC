@@ -3603,11 +3603,11 @@ CPed::AddInCarAnims(CVehicle* car, bool isDriver)
 			m_pVehicleAnim = CAnimManager::BlendAnimation(GetClump(), ANIM_GROUP_DEFAULT, ANIM_ID_DRIVE_BOAT, 100.0f);
 		}
 	} else if (car->IsBike()) {
-		if (isDriver) {
-			m_pVehicleAnim = CAnimManager::BlendAnimation(GetClump(), ((CBike*)car)->m_bikeAnimType, ANIM_ID_BIKE_RIDE, 100.0f);
-		} else {
-			m_pVehicleAnim = CAnimManager::BlendAnimation(GetClump(), ((CBike*)car)->m_bikeAnimType, ANIM_ID_BIKE_PASSENGER, 100.0f);
-		}
+		// SA CCarEnterExit::AddInCarAnim (0x64F720): driver and passenger
+		// alike start on ANIM_ID_BIKE_RIDE in the bike's ride anim group;
+		// the passenger's own clips are blended over it by the rider-anim
+		// processing, not selected here.
+		m_pVehicleAnim = CAnimManager::BlendAnimation(GetClump(), ((CBike*)car)->m_bikeAnimType, ANIM_ID_BIKE_RIDE, 100.0f);
 	} else {
 		// SA CCarEnterExit::AddInCarAnim (0x64F720): the seat pose always
 		// comes from the default ped group, never from the vehicle's own

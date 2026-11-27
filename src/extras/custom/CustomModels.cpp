@@ -131,6 +131,13 @@ static std::map<std::string, CustomSource> looseIdeFallbacks, looseIplFallbacks;
 static std::unique_ptr<CustomZip> customCommonZip;
 static std::map<std::string, CustomSource> commonZipIdeFiles, commonZipIplFiles;
 static std::map<std::string, CustomSource> commonZipDataFiles;
+// The one catalog of the common archive: every entry outside its audio/
+// tree, addressed by normalised path. The specialised indices (data
+// tables, IDE/IPL, models, animation banks) claim the entries their
+// subsystems route on; everything else in the archive stays readable by
+// path through ReadCommonDataFile/ReadDataFile. There is no per-name
+// whitelist anywhere in the serving layer.
+static std::map<std::string, CustomSource> commonFiles;
 static std::vector<brvehicle::Upgrade> vehicleUpgrades;
 static bool vehicleUpgradesRead;
 static std::map<RwObject*, int32> vehicleUpgradeInstances;
@@ -402,10 +409,11 @@ ScanAssetFolder(const std::string &folder, const char *kind, int depth, ScanStat
 		ScanAssetFolder(dirs[i], kind, depth+1, st);
 }
 
-// The one ZIP exception: only custom/common.zip at the custom root. Index
-// canonical data/maps/ entries and the three named root IDEs first, then
-// accept the old maps/ alias only where no canonical entry exists.
-// No other root IDE, DFF/TXD/COL/CLS/IFP/BTX is indexed.
+// The one ZIP exception: only custom/common.zip at the custom root. Every
+// entry outside the audio tree goes into the unified catalog; canonical
+// data/maps/ entries and the three named root IDEs are additionally
+// claimed by the specialised indices, and the old maps/ alias is accepted
+// only where no canonical entry exists.
 static void
 ScanCommonZip(void)
 {
@@ -447,6 +455,10 @@ ScanCommonZip(void)
 				}
 				CustomSource src = MakeSource(mtime, path.c_str(), ent->name);
 				src.zipEntry = n;
+				// Same unified catalog as the .bpc scan fills: every entry
+				// outside the audio tree, by normalised path.
+				if(pass == 0 && key.compare(0, 6, "audio/") != 0)
+					commonFiles.insert(std::make_pair(key, src));
 				if(pass == 0 && (key == "data/config.dat" || key == "data/timecyc.json" ||
 			                 key == "data/water.dat" || key == "data/carcols.dat" || key == "data/carmods.dat" ||
 			                 key == "data/lods.info" ||
@@ -762,11 +774,18 @@ ScanBpcSystem(void)
 				src.bpcAddr = bpcpipeline::MakeBpcAddr(commonArchId, (uint32)n);
 				snprintf(src.fname, sizeof(src.fname), "%s:%s", commonPath.c_str(), ent->name);
 
-				// The three actor IDEs are also listed by CanReadData, which
-				// claims a file as a plain data table. They must be claimed as
-				// IDE definitions first: routed to the data table they are read
-				// as text and then never parsed, so no ped or vehicle row is
-				// ever registered and the engine is left without them.
+				// Index the entry in the unified catalog before the
+				// specialised routing below claims it. The audio tree is
+				// the archive's one excluded part: it is not indexed, not
+				// read and not processed anywhere.
+				if(pass == 0 && key.compare(0, 6, "audio/") != 0)
+					commonFiles.insert(std::make_pair(key, src));
+
+				// The three actor IDEs also sit in the unified catalog as
+				// readable files. They must be claimed as IDE definitions
+				// here as well: without the IDE routing they are never
+				// parsed, so no ped or vehicle row is ever registered and
+				// the engine is left without them.
 				if(pass == 0 && (key == "data/peds.ide" || key == "data/vehicles.ide" ||
 				                 key == "data/weapons.ide")){
 					commonZipIdeFiles[key] = src;
@@ -776,7 +795,6 @@ ScanBpcSystem(void)
 				                 key == "data/timecyc.json" || key == "data/colorcycle.dat" ||
 				                 key == "data/water.dat" ||
 				                 key == "data/carcols.dat" || key == "data/carmods.dat" || key == "data/lods.info" ||
-				                 commoncatalog::CanReadData(key) ||
 				                 key == "models/generic/vehicle.txd" || key == "models/vehicle.txd")){
 					commonZipDataFiles[key] = src;
 					continue;
@@ -962,7 +980,7 @@ EnsureInitialised(void)
 	ScanCommonZip();
 	customActive = !customAnims.empty() || !customIdeFiles.empty() ||
 	               !customIplFiles.empty() || !commonZipDataFiles.empty();
-	CUSTOM_LOG("==== custom folder: %s (IMG/DIR; loose anim/maps; common.zip maps + peds/vehicles/weapons IDE + config/timecyc/water/carcols only; other ZIPs, collision/, game-root img/ and common/ disabled)\n", customFolderPath.c_str());
+	CUSTOM_LOG("==== custom folder: %s (IMG/DIR; loose anim/maps; common.zip fully catalogued except audio; other ZIPs, collision/, game-root img/ and common/ disabled)\n", customFolderPath.c_str());
 #endif
 	CUSTOM_LOG("scan: %d loose .ifp (%u names), %d loose IDE / %d loose IPL; %u total IDE / %u total IPL path(s); IMG collisions indexed at mount\n",
 		st.anim, (unsigned)customAnims.size(), st.ide, st.ipl,
@@ -3628,6 +3646,7 @@ CCustomModels::Shutdown(void)
 	commonZipIdeFiles.clear();
 	commonZipIplFiles.clear();
 	commonZipDataFiles.clear();
+	commonFiles.clear();
 	commonZipConfig = commoncatalog::Catalog();
 	customCommonZip.reset();
 	customImages.clear();
@@ -4800,7 +4819,11 @@ CCustomModels::IsReadableCommonDataFile(const char *path)
 	EnsureInitialised();
 	if(!customActive)
 		return false;
-	return commoncatalog::CanReadData(commoncatalog::Path(path));
+	const std::string key = commoncatalog::Path(path);
+	if(key.empty())
+		return false;
+	return commonZipDataFiles.find(key) != commonZipDataFiles.end() ||
+	       commonFiles.find(key) != commonFiles.end();
 }
 
 bool
@@ -4814,13 +4837,18 @@ CCustomModels::ReadCommonDataFile(const char *path, std::vector<uint8> &out)
 		return false;
 
 	const std::string key = commoncatalog::Path(path);
-	if(!commoncatalog::CanReadData(key))
+	if(key.empty())
 		return false;
 
-	std::map<std::string, CustomSource>::const_iterator it = commonZipDataFiles.find(key);
-	if(it != commonZipDataFiles.end() && ReadSource(it->second, out) && !out.empty()){
+	// One serving rule for the whole archive: the specialised data-table
+	// index first, then the unified catalog. Any entry the archive carries
+	// outside its audio tree can be read this way; there is no name list.
+	const CustomSource *srcp = FindSource(commonZipDataFiles, key);
+	if(srcp == nil)
+		srcp = FindSource(commonFiles, key);
+	if(srcp != nil && ReadSource(*srcp, out) && !out.empty()){
 		CUSTOM_LOG("common.bpc %s: read %s (%u bytes)\n",
-			key.c_str(), it->second.fname, (unsigned)out.size());
+			key.c_str(), srcp->fname, (unsigned)out.size());
 		return true;
 	}
 
@@ -5371,16 +5399,14 @@ CCustomModels::ReadDataFile(const char *relpath, std::vector<uint8> &out,
 {
 	if(fromCommon) *fromCommon = false;
 	out.clear();
-	if(relpath == nil || (strcmp(relpath, "data/timecyc.json") != 0 &&
-	                       strcmp(relpath, "data/water.dat") != 0 &&
-	                       strcmp(relpath, "data/carcols.dat") != 0 &&
-	                       strcmp(relpath, "data/carmods.dat") != 0 &&
-	                       strcmp(relpath, "data/colorcycle.dat") != 0 &&
-	                       strcmp(relpath, "data/animgrp.dat") != 0 &&
-	                       strcmp(relpath, "data/lods.info") != 0))
-		return false; // no arbitrary data, other ZIPs, or game-root common/ files
+	if(relpath == nil || relpath[0] == '\0')
+		return false;
 	EnsureInitialised();
+	// Same serving rule as ReadCommonDataFile: whatever the common archive
+	// carries outside its audio tree is readable here by path.
 	const CustomSource *zip = FindSource(commonZipDataFiles, relpath);
+	if(zip == nil)
+		zip = FindSource(commonFiles, relpath);
 	if(zip != nil && ReadSource(*zip, out)) {
 		if(fromCommon) *fromCommon = true;
 		CUSTOM_LOG("data file %s: read from common.zip (%u bytes)\n", relpath, (unsigned)out.size());

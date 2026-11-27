@@ -81,8 +81,12 @@ CBike::CBike(int32 id, uint8 CreatedBy)
 			mi->GetFrontSeatPosn().x, mi->GetFrontSeatPosn().y, mi->GetFrontSeatPosn().z,
 			mi->m_positions[CAR_POS_BACKSEAT].x, mi->m_positions[CAR_POS_BACKSEAT].y, mi->m_positions[CAR_POS_BACKSEAT].z);
 		if(animFileIndex >= 0){
+			// SA CBike (0x6BF430): the ride anim group is the group of the
+			// model's own anim file, clamped to BIKES..WAYFARER; anything
+			// outside that range falls back to BIKES. (The BMX range is
+			// claimed by CBmx the same way.)
 			AssocGroupId animGroup = CAnimManager::GetAnimBlocks()[animFileIndex].GroupId;
-			if(animGroup >= ANIM_GROUP_BIKES && animGroup <= ANIM_GROUP_CHOPPA)
+			if(animGroup >= ANIM_GROUP_BIKES && animGroup <= ANIM_GROUP_WAYFARER)
 				m_bikeAnimType = animGroup;
 		}
 		if(m_bikeAnimType == ANIM_GROUP_BIKES){

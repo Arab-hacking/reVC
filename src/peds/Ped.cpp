@@ -7619,42 +7619,15 @@ CPed::IsPointerValid(void)
 void
 CPed::SetPedPositionInCar(void)
 {
-	bool notYet = false;
 	if (CReplay::IsPlayingBack())
 		return;
 
-	if (bChangedSeat) {
-		if (m_pMyVehicle->IsBike()) {
-			if (RpAnimBlendClumpGetAssociation(GetClump(), ANIM_ID_CAR_GETIN_LHS_0)
-				|| RpAnimBlendClumpGetAssociation(GetClump(), ANIM_ID_CAR_GETIN_RHS_0)
-				|| RpAnimBlendClumpGetAssociation(GetClump(), ANIM_ID_CAR_GETIN_BIKE_FRONT)) {
-				LineUpPedWithCar(LINE_UP_TO_CAR_START);
-				return;
-			}
-			bChangedSeat = false;
-		} else {
-			if (RpAnimBlendClumpGetAssociation(GetClump(), ANIM_ID_CAR_GETIN_LHS_0)
-				|| RpAnimBlendClumpGetAssociation(GetClump(), ANIM_ID_CAR_GETIN_LHS_0)
-				|| RpAnimBlendClumpGetAssociation(GetClump(), ANIM_ID_CAR_CLOSEDOOR_LHS_0)
-				|| RpAnimBlendClumpGetAssociation(GetClump(), ANIM_ID_CAR_CLOSEDOOR_LHS_0)
-				|| RpAnimBlendClumpGetAssociation(GetClump(), ANIM_ID_CAR_SHUFFLE_RHS_0)
-				|| RpAnimBlendClumpGetAssociation(GetClump(), ANIM_ID_CAR_SHUFFLE_RHS_0)
-				|| RpAnimBlendClumpGetAssociation(GetClump(), ANIM_ID_CAR_CLOSEDOOR_LHS_1)
-				|| RpAnimBlendClumpGetAssociation(GetClump(), ANIM_ID_CAR_CLOSEDOOR_RHS_1)
-				|| RpAnimBlendClumpGetAssociation(GetClump(), ANIM_ID_CAR_GETIN_LHS_1)
-				|| RpAnimBlendClumpGetAssociation(GetClump(), ANIM_ID_CAR_GETIN_RHS_1)
-				|| RpAnimBlendClumpGetAssociation(GetClump(), ANIM_ID_CAR_GETIN_LHS_0)
-				|| RpAnimBlendClumpGetAssociation(GetClump(), ANIM_ID_CAR_GETIN_LHS_0)
-				|| RpAnimBlendClumpGetAssociation(GetClump(), ANIM_ID_CAR_GETIN_LHS_0)) {
-				notYet = true;
-			}
-		}
-		if (notYet) {
-			LineUpPedWithCar(LINE_UP_TO_CAR_START);
-			bChangedSeat = false;
-			return;
-		}
-	}
+	// SA CPed::SetPedPositionInCar (0x5DF910) snaps the ped onto his seat
+	// unconditionally. The VC-era bChangedSeat gate that used to sit here
+	// returned early while a get-in association existed, which on bikes
+	// suppressed the per-frame seat snap from the drive task for as long as
+	// the association lingered: the ride pose then played wherever the
+	// line-up had left the ped instead of on the saddle (debug-27).
 	CVehicleModelInfo *vehModel = (CVehicleModelInfo *)CModelInfo::GetModelInfo(m_pMyVehicle->GetModelIndex());
 	CMatrix newMat(m_pMyVehicle->GetMatrix());
 	CVector seatPos;
@@ -7723,6 +7696,25 @@ CPed::SetPedPositionInCar(void)
 		m_fRotationCur = m_pMyVehicle->GetForward().Heading();
 	}
 	SetMatrix(newMat);
+
+	// debug-27 diagnostic: with the ped root now snapped exactly onto the
+	// seat point, report where the ride clip puts the pelvis relative to
+	// that point, once per ped/vehicle pairing. A correct ride clip holds
+	// the pelvis a few centimetres above the seat point; a large positive
+	// or negative value blames the clip (or its anim group), not the seat.
+	if (m_pMyVehicle->IsBike()) {
+		static CPed *seatCheckPed;
+		static CVehicle *seatCheckVeh;
+		if (seatCheckPed != this || seatCheckVeh != m_pMyVehicle) {
+			seatCheckPed = this;
+			seatCheckVeh = m_pMyVehicle;
+			CVector pelvis = GetBonePosition(BONE_PELVIS);
+			REVC_LOG_INFO("Bike seat check: model=%d seat=(%.3f, %.3f, %.3f) pelvisAboveSeat=%+.3f pelvisSideOff=%.3f",
+				m_pMyVehicle->GetModelIndex(), seatPos.x, seatPos.y, seatPos.z,
+				pelvis.z - newMat.GetPosition().z,
+				(pelvis - newMat.GetPosition()).Magnitude2D());
+		}
+	}
 }
 
 void
