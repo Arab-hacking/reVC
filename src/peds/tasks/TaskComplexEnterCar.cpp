@@ -38,6 +38,15 @@
 #include "TaskSimpleWaitUntilPedIsOutCar.h"
 #include "TaskUtilityLineUpPedWithCar.h"
 #include "Timer.h"
+
+// ComputePassengerIndexFromCarDoor returns -1 for a door with no passenger
+// seat (the driver's door, an unset target); never index pPassengers with it.
+static bool
+IsPedAtDoorSeat(CVehicle *vehicle, int32 door, CPed *ped)
+{
+	const int32 idx = CCarEnterExit::ComputePassengerIndexFromCarDoor(vehicle, door);
+	return idx >= 0 && vehicle->pPassengers[idx] == ped;
+}
 #include "Train.h"
 #include "Vehicle.h"
 #include "VehicleAnimGroupData.h"
@@ -225,7 +234,7 @@ CTaskComplexEnterCar::CreateNextSubTask(CPed *ped)
 				}
 			}
 		} else if (m_DraggedPed != nil && (m_bAsDriver ? m_Car->IsDriver(m_DraggedPed)
-				: m_DraggedPed == m_Car->pPassengers[CCarEnterExit::ComputePassengerIndexFromCarDoor(m_Car, m_TargetDoor)])) {
+				: IsPedAtDoorSeat(m_Car, m_TargetDoor, m_DraggedPed))) {
 			// It is still his seat after all: just close the door.
 			if (CCarEnterExit::CarHasDoorToClose(m_Car, m_TargetDoor))
 				return CreateSubTask(TASK_SIMPLE_CAR_CLOSE_DOOR_FROM_OUTSIDE, ped);
@@ -388,7 +397,7 @@ CTaskComplexEnterCar::CreateNextSubTask_AfterSimpleCarAlign(CPed *ped)
 		if (m_DraggedPed == nil || CPedGroups::AreInSameGroup(m_DraggedPed, ped) || m_DraggedPed->bDontDragMeOutCar) {
 			if (m_DraggedPed == nil || !m_bAsDriver || !m_Car->IsDriver(m_DraggedPed)) {
 				if (m_DraggedPed == nil || m_bAsDriver ||
-				    m_DraggedPed != m_Car->pPassengers[CCarEnterExit::ComputePassengerIndexFromCarDoor(m_Car, m_TargetDoor)])
+				    !IsPedAtDoorSeat(m_Car, m_TargetDoor, m_DraggedPed))
 					return CreateSubTask(TASK_SIMPLE_CAR_GET_IN, ped);
 			}
 			return CreateSubTask(CCarEnterExit::CarHasDoorToClose(m_Car, m_TargetDoor)

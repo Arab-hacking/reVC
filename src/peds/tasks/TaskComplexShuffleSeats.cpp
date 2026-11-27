@@ -127,8 +127,10 @@ CTaskComplexShuffleSeats::CreateNextSubTask(CPed *ped)
 		if (m_TargetDoor == CAR_DOOR_LF) {
 			next = (m_Veh->pDriver == nil) ? TASK_SIMPLE_CAR_SET_PED_IN_AS_DRIVER : TASK_FINISHED;
 		} else {
+			// A door with no passenger seat (index -1) has nowhere to
+			// shuffle to; on a bike the right-front door is such a door.
 			const int32 idx = CCarEnterExit::ComputePassengerIndexFromCarDoor(m_Veh, m_TargetDoor);
-			next = (m_Veh->pPassengers[idx] == nil) ? TASK_SIMPLE_CAR_SET_PED_IN_AS_PASSENGER : TASK_FINISHED;
+			next = (idx >= 0 && m_Veh->pPassengers[idx] == nil) ? TASK_SIMPLE_CAR_SET_PED_IN_AS_PASSENGER : TASK_FINISHED;
 		}
 		break;
 	default:

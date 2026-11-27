@@ -97,7 +97,9 @@ CTaskSimpleCarSlowDragPedOut::GetJackedPed() const
 {
 	if (m_TargetDoor == CAR_DOOR_LF)
 		return m_Vehicle->pDriver;
-	return m_Vehicle->pPassengers[CCarEnterExit::ComputePassengerIndexFromCarDoor(m_Vehicle, m_TargetDoor)];
+	// A door with no passenger seat (index -1) has nobody to drag out.
+	const int32 idx = CCarEnterExit::ComputePassengerIndexFromCarDoor(m_Vehicle, m_TargetDoor);
+	return idx >= 0 ? m_Vehicle->pPassengers[idx] : nil;
 }
 
 bool
