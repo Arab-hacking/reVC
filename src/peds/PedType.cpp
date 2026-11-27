@@ -90,7 +90,7 @@ CPedType::LoadPedData(void)
 
 	for(bp = 0; bp < buflen; ){
 		// read file line by line
-		for(linelen = 0; buf[bp] != '\n' && bp < buflen; bp++){
+		for(linelen = 0; bp < buflen && buf[bp] != '\n'; bp++){
 			// drop the excess instead of overrunning line[]
 			if(linelen >= (int)sizeof(line) - 1)
 				continue;
@@ -332,7 +332,7 @@ CPedStats::LoadPedStats(void)
 
 	for(bp = 0; bp < buflen; ){
 		// read file line by line
-		for(linelen = 0; buf[bp] != '\n' && bp < buflen; bp++){
+		for(linelen = 0; bp < buflen && buf[bp] != '\n'; bp++){
 			// drop the excess instead of overrunning line[]
 			if(linelen >= (int)sizeof(line) - 1)
 				continue;

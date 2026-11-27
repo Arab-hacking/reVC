@@ -2536,7 +2536,7 @@ CPed::LoadFightData(void)
 
 	for (bp = 0; bp < buflen; ) {
 		// read file line by line
-		for (linelen = 0; work_buff[bp] != '\n' && bp < buflen; bp++) {
+		for (linelen = 0; bp < buflen && work_buff[bp] != '\n'; bp++) {
 			// melee.dat lines are short, but the buffer must never be overrun by
 			// a malformed or truncated file.
 			if (linelen < (int)sizeof(line) - 1)

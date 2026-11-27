@@ -189,9 +189,10 @@ static bool
 ParsePedGroupLine(char *line, int *nextPedGroup, char *modelName)
 {
 	int end;
-	// find end of line
+	// find end of line; a last line without a newline ends at its NUL, and
+	// scanning past it would walk the caller's stack buffer
 	for (end = 0; ; end++) {
-		if (line[end] == '\n')
+		if (line[end] == '\n' || line[end] == '\0')
 			break;
 		if (line[end] == ',' || line[end] == '\r')
 			line[end] = ' ';
@@ -283,8 +284,11 @@ CPopulation::LoadPedGroups()
 					line[len] = q[len];
 					len++;
 				}
+				// Consume the newline in the source, terminate the copy at
+				// the text: skipping a slot here left an uninitialised byte
+				// in the line and no terminator where the parser expects one.
 				if(q[len] == '\n')
-					len++;
+					q++;
 				line[len] = '\0';
 				q += len;
 				if(line[0] == '#' || line[0] == '\0')
