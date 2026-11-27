@@ -65,7 +65,19 @@ CTaskSimpleCarSetPedOut::PositionPedOutOfCollision(CPed *ped, CVehicle *veh, int
 bool
 CTaskSimpleCarSetPedOut::ProcessPed(CPed *ped)
 {
-	if (ped->m_pMyVehicle == nil || m_pTargetVehicle == nil)
+	if (m_pTargetVehicle == nil)
+		return true;
+
+	// The code that throws a ped out of his vehicle (KnockOffRider,
+	// KnockPedOutCar) unlinks him on the spot - m_pMyVehicle is gone
+	// before this task ever runs - while he is still registered in
+	// the seat he was thrown from. Bailing out on m_pMyVehicle alone
+	// left him registered as the driver forever: the empty bike kept
+	// answering the player's inputs, and with bUsesCollision still
+	// off the ped never landed, so his fall never ended.
+	const bool bSeatedHere = ped->m_pMyVehicle == m_pTargetVehicle
+		|| m_pTargetVehicle->IsDriver(ped) || m_pTargetVehicle->IsPassenger(ped);
+	if (!bSeatedHere)
 		return true;
 
 	// Remove ped as passenger/driver from the vehicle.
@@ -97,9 +109,17 @@ CTaskSimpleCarSetPedOut::ProcessPed(CPed *ped)
 		ped->m_pMyVehicle = nil;
 	}
 
+	// A ped who was thrown out (knocked off his bike, knocked out of
+	// his car) belongs to the fall state machine: SetFall has already
+	// put him in PED_FALL, and standing him up here - idle state,
+	// move anim, a wander task - would cancel the fall he is in the
+	// middle of. He gets his seat freed and his collision back, and
+	// the fall lands and gets up on its own.
+	const bool bThrownOut = m_bKnockedOffBike || m_bFallingOutOfCar;
+
 	// Set default task after setting the ped out. The player is run by
 	// his own control code; mission peds wait; everybody else wanders.
-	if (!ped->IsPlayer()) {
+	if (!bThrownOut && !ped->IsPlayer()) {
 		CTask *task;
 		if (ped->m_nPedType >= PEDTYPE_MISSION1 && ped->m_nPedType <= PEDTYPE_MISSION8)
 			task = new CTaskSimpleStandStill(999999, true);
@@ -114,14 +134,16 @@ CTaskSimpleCarSetPedOut::ProcessPed(CPed *ped)
 	if (ped->m_pMyVehicle != nil)
 		ped->m_vecMoveSpeed = CVector(0.0f, 0.0f, 0.0f);
 
-	// Position ped out of the vehicle.
-	PositionPedOutOfCollision(ped, m_pTargetVehicle, m_nTargetDoor);
-	ped->m_fRotationCur = ped->m_fRotationDest = ped->GetHeading();
-
-	// Reset rotation-dependent state and leave the car behind.
 	ped->bHasJustLeftCar = true;
-	ped->SetPedState(PED_IDLE);
-	ped->SetMoveAnim();
+	if (!bThrownOut) {
+		// Position ped out of the vehicle.
+		PositionPedOutOfCollision(ped, m_pTargetVehicle, m_nTargetDoor);
+		ped->m_fRotationCur = ped->m_fRotationDest = ped->GetHeading();
+
+		// Reset rotation-dependent state and leave the car behind.
+		ped->SetPedState(PED_IDLE);
+		ped->SetMoveAnim();
+	}
 
 	// Clear the getting-in accounting this task was told about.
 	m_pTargetVehicle->m_nNumGettingIn -= (int8)m_nNumGettingInToClear;

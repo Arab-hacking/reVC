@@ -6049,7 +6049,11 @@ CAutomobile::KnockPedOutCar(eWeaponType weapon, uint16 door, CPed *ped)
 	ped->m_vehDoor = door;
 	ped->SetPedState(PED_IDLE);
 	CAnimManager::BlendAnimation(ped->GetClump(), ped->m_animGroup, ANIM_ID_IDLE, 100.0f);
-	ped->GetIntelligence()->AddTaskPrimaryMaybeInGroup(new CTaskSimpleCarSetPedOut(this, ped->m_vehDoor, true), true);
+	// As in KnockOffRider: the set-out task must know the ped was
+	// thrown out, so it frees the seat without cancelling his fall.
+	CTaskSimpleCarSetPedOut *setPedOut = new CTaskSimpleCarSetPedOut(this, ped->m_vehDoor, true);
+	setPedOut->m_bFallingOutOfCar = true;
+	ped->GetIntelligence()->AddTaskPrimaryMaybeInGroup(setPedOut, true);
 	ped->SetMoveState(PEDMOVE_STILL);
 	if(GetUp().z < 0.0f)
 		ped->SetHeading(CGeneral::LimitRadianAngle(GetForward().Heading() + PI));
@@ -6078,7 +6082,9 @@ CAutomobile::KnockPedOutCar(eWeaponType weapon, uint16 door, CPed *ped)
 		ped->bIsStanding = false;
 		ped->m_headingRate = 0.0f;
 	}
-	ped->m_pMyVehicle = nil;
+	// m_pMyVehicle stays with the ped until the set-out task queued
+	// above runs and frees the seat (see KnockOffRider); dropping it
+	// here made the task bail out and left him this car's driver.
 	return ped;
 }
 

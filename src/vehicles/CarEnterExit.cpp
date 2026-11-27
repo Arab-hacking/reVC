@@ -84,7 +84,11 @@ CCarEnterExit::AddInCarAnim(const CVehicle *vehicle, CPed *ped, bool bAsDriver)
 	if(bAsDriver){
 		if(vehicle->IsBike()){
 			animId = ANIM_ID_BIKE_RIDE;
-			grpId = GetVehicleAnimGroupFor(vehicle, animId);
+			// SA resolves this through the bike's own ride-anim data,
+			// not the ^ vehicle groups (those live in the 351-offset
+			// space and have no BIKE_RIDE slot to resolve through;
+			// passing 194 into them came back empty for every bike).
+			grpId = ((const CBike*)vehicle)->m_bikeAnimType;
 		}else if(vehicle->IsBoat() && vehicle->m_pHandlingData && vehicle->m_pHandlingData->m_bSitInBoat){
 			grpId = ANIM_GROUP_DEFAULT;
 			animId = ANIM_ID_DRIVE_BOAT;
@@ -98,7 +102,8 @@ CCarEnterExit::AddInCarAnim(const CVehicle *vehicle, CPed *ped, bool bAsDriver)
 	}else{
 		if(vehicle->IsBike()){
 			animId = ANIM_ID_BIKE_RIDE;
-			grpId = GetVehicleAnimGroupFor(vehicle, animId);
+			// As for the driver, above: the bike's own rider group.
+			grpId = ((const CBike*)vehicle)->m_bikeAnimType;
 		}else if(vehicle->bLowVehicle){
 			grpId = ANIM_GROUP_DEFAULT;
 			animId = ANIM_ID_CAR_SITPLO;

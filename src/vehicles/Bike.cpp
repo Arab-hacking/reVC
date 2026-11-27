@@ -73,6 +73,13 @@ CBike::CBike(int32 id, uint8 CreatedBy)
 		REVC_LOG_INFO("Bike anim: model=%d animFileIndex=%d block=%s group=%d", id, animFileIndex,
 			animFileIndex >= 0 ? CAnimManager::GetAnimBlocks()[animFileIndex].Name : "<none>",
 			animFileIndex >= 0 ? (int32)CAnimManager::GetAnimBlocks()[animFileIndex].GroupId : -1);
+		// Where the rider ends up is read from the model's ped_frontseat
+		// node; an archive model whose clump does not name one leaves
+		// this at the vehicle pivot, and the rider sits inside the
+		// engine instead of on the saddle (debug-23).
+		REVC_LOG_INFO("Bike seat: model=%d front=(%.3f, %.3f, %.3f) back=(%.3f, %.3f, %.3f)", id,
+			mi->GetFrontSeatPosn().x, mi->GetFrontSeatPosn().y, mi->GetFrontSeatPosn().z,
+			mi->m_positions[CAR_POS_BACKSEAT].x, mi->m_positions[CAR_POS_BACKSEAT].y, mi->m_positions[CAR_POS_BACKSEAT].z);
 		if(animFileIndex >= 0){
 			AssocGroupId animGroup = CAnimManager::GetAnimBlocks()[animFileIndex].GroupId;
 			if(animGroup >= ANIM_GROUP_BIKES && animGroup <= ANIM_GROUP_CHOPPA)
@@ -2471,7 +2478,12 @@ CBike::KnockOffRider(eWeaponType weapon, uint8 direction, CPed *ped, bool bGetBa
 	ped->SetPedState(PED_IDLE);
 	CAnimManager::BlendAnimation(ped->GetClump(), ped->m_animGroup, ANIM_ID_IDLE, 100.0f);
 	ped->m_vehDoor = CAR_DOOR_LF;
-	ped->GetIntelligence()->AddTaskPrimaryMaybeInGroup(new CTaskSimpleCarSetPedOut(this, ped->m_vehDoor, true), true);
+	// The set-out task frees the seat; it has to know the ped was
+	// thrown off, or it would stand him up out of the fall SetFall
+	// is about to put him in.
+	CTaskSimpleCarSetPedOut *setPedOut = new CTaskSimpleCarSetPedOut(this, ped->m_vehDoor, true);
+	setPedOut->m_bKnockedOffBike = true;
+	ped->GetIntelligence()->AddTaskPrimaryMaybeInGroup(setPedOut, true);
 	ped->SetMoveState(PEDMOVE_STILL);
 	if(GetUp().z < 0.0f)
 		ped->SetHeading(CGeneral::LimitRadianAngle(GetForward().Heading() + PI));
@@ -2625,7 +2637,13 @@ CBike::KnockOffRider(eWeaponType weapon, uint8 direction, CPed *ped, bool bGetBa
 		if(CWorld::TestSphereAgainstWorld(ped->GetPosition()+CVector(0.0f, 0.0, 1.3f), 0.6f, nil, true, false, false, false, false, false) == nil)
 			ped->GetMatrix().Translate(CVector(0.0f, 0.0f, 0.5f));
 	}
-	ped->m_pMyVehicle = nil;
+	// m_pMyVehicle is deliberately left pointing at the bike: the
+	// set-out task queued above clears it (and the seat) when it
+	// runs. Stock VC unlinked the ped synchronously through
+	// PedSetOutCarCB and only then dropped the pointer; dropping it
+	// here, with the unlink deferred to the task, made the task see
+	// a ped who was "not in a vehicle" and leave him registered as
+	// this bike's driver for good.
 }
 
 void

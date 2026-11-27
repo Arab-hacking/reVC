@@ -4256,6 +4256,14 @@ CPed::DriveVehicle(void)
 		if (!drivebyAssoc)
 			drivebyAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_ID_BIKE_DRIVEBYFT);
 
+		// The ride pose is blended once, when the ped is seated. If
+		// it is ever lost from under him the lean partials below are
+		// all that is left, and on a straight road they blend to
+		// nothing - the rider ended up standing on the moving bike
+		// (debug-23). Put the pose back whenever it is gone.
+		if (!drivebyAssoc && !RpAnimBlendClumpGetAssociation(GetClump(), ANIM_ID_BIKE_RIDE))
+			CAnimManager::BlendAnimation(GetClump(), bike->m_bikeAnimType, ANIM_ID_BIKE_RIDE, 4.0f);
+
 		float velocityFwdDotProd = DotProduct(bike->m_vecMoveSpeed, bike->GetForward());
 		if (m_vecTurnSpeed.MagnitudeSqr() > 0.09f) {
 			bike->KnockOffRider(WEAPONTYPE_FALL, 2, this, false);

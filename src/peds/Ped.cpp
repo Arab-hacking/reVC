@@ -7677,6 +7677,23 @@ CPed::SetPedPositionInCar(void)
 			seatPos = vehModel->GetFrontSeatPosn();
 		}
 	}
+	if (m_pMyVehicle->IsBike() && seatPos.IsZero()) {
+		// The model's clump named no ped_frontseat/ped_backseat node,
+		// so the seat offset never left the vehicle's pivot and the
+		// rider was placed inside the engine (debug-23, archive
+		// bikes). A generic saddle position is wrong for any given
+		// bike in detail but puts him on the bike; the Bike seat log
+		// line at spawn time says which models need it.
+		static bool warnedMissingBikeSeat = false;
+		if (!warnedMissingBikeSeat) {
+			REVC_LOG_WARNING("Bike seat position missing (model=%d); using generic saddle offset",
+				m_pMyVehicle->GetModelIndex());
+			warnedMissingBikeSeat = true;
+		}
+		seatPos = (m_pMyVehicle->pDriver == this)
+			? CVector(0.0f, -0.25f, 0.85f)
+			: CVector(0.0f, -0.75f, 0.90f);
+	}
 	if (m_pMyVehicle->IsBike()) {
 		((CBike*)m_pMyVehicle)->CalculateLeanMatrix();
 		newMat = ((CBike*)m_pMyVehicle)->m_leanMatrix;
