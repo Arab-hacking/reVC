@@ -577,7 +577,17 @@ CTaskComplexEnterCar::CreateSubTask(eTaskType taskType, CPed *ped)
 	case TASK_SIMPLE_CAR_DRIVE_TIMED:
 		return new CTaskSimpleCarDriveTimed(m_Car);
 	case TASK_COMPLEX_LEAVE_CAR:
-		return new CTaskComplexLeaveCar(m_Car, 0, 0, true, false);
+		// SA passes m_Car here (0x63E2E8), but its LeaveCar is an
+		// unreversed binary call that sorts out which vehicle the
+		// ped is actually sitting in; this one exits the vehicle
+		// it is given. Handed m_Car - a car the ped is not in - it
+		// computed his exit door from that car's seats, got -1,
+		// and the get-out task fed the -1 to ProcessOpenDoor,
+		// whose door switch asserts on it (debug-24 crash, player
+		// ordered into a fresh spawn while still seated).
+		return new CTaskComplexLeaveCar(
+			(ped->bInVehicle && ped->m_pMyVehicle != nil) ? ped->m_pMyVehicle : m_Car,
+			0, 0, true, false);
 	case TASK_COMPLEX_ENTER_BOAT_AS_DRIVER:
 		return new CTaskComplexEnterBoatAsDriver(m_Car);
 	case TASK_COMPLEX_FALL_AND_GET_UP: {

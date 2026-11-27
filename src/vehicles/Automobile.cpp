@@ -4325,9 +4325,13 @@ CAutomobile::ProcessOpenDoor(uint32 component, uint32 anim, float time)
 	case CAR_DOOR_LF: door = DOOR_FRONT_LEFT; break;
 	case CAR_DOOR_LR: door = DOOR_REAR_LEFT; break;
 	default:
-		// Not a car door node: the assert only fires in a debug build, and the
-		// release build would carry an uninitialised `door` into Doors[] below.
-		assert(0);
+		// Not a car door node. The assert this used to hit killed the
+		// game when a task arrived with a door it had computed for a
+		// vehicle the ped was not sitting in (debug-24); a bad door
+		// is a data problem, not a fatal one, so say so and skip the
+		// swing instead of carrying an uninitialised `door` onwards.
+		REVC_LOG_WARNING("ProcessOpenDoor: component %u is not a door node (anim=%u, model=%d)",
+			component, anim, GetModelIndex());
 		return;
 	}
 

@@ -1644,6 +1644,32 @@ CVehicleModelInfo::PreprocessHierarchy(bool saHierarchy)
 			hasOwnWheels, m_bSAWheelMesh, 0.5f*m_wheelScale, m_wheelScale);
 	}
 #endif
+	// Bikes never go through the SA car path above, so nothing ever
+	// measures their wheels: m_wheelScale stays whatever the IDE line
+	// claimed, and when that disagrees with the model's own wheel mesh
+	// the suspension lines end above the real tyre. The physics then
+	// rests on the line ends and the bike floats over the road on its
+	// rendered wheels, rider and all (debug-24). Measure the mesh the
+	// way CloneSAWheelMeshes does for cars and trust it over the IDE:
+	// every 0.5*m_wheelScale in the bike physics is the tyre radius.
+	if(m_nVehicleType == VEHICLE_TYPE_BIKE || m_nVehicleType == VEHICLE_TYPE_BMX){
+		for(int w = 0; w < 2; w++){
+			RwObjectIdAssociation wheelAssoc;
+			wheelAssoc.frame = nil;
+			wheelAssoc.id = w == 0 ? BIKE_WHEEL_FRONT : BIKE_WHEEL_REAR;
+			RwFrameForAllChildren(RpClumpGetFrame(m_clump), FindFrameFromIdCB, &wheelAssoc);
+			RwFrame *meshFrame = FindWheelMeshFrame(wheelAssoc.frame);
+			RpAtomic *wheelAtomic = meshFrame ? (RpAtomic*)GetFirstObject(meshFrame) : nil;
+			float radius = wheelAtomic ? GetWheelMeshRadius(wheelAtomic) : 0.0f;
+			if(radius > 0.001f){
+				REVC_LOG_INFO("Bike wheel: model %s radius %.3f wheelScale %.3f -> %.3f",
+					GetModelName(), radius, m_wheelScale, 2.0f*radius);
+				m_wheelScale = 2.0f*radius;
+				m_bSAWheelMesh = true;
+				break;
+			}
+		}
+	}
 	// Bikes, boats, planes and trains accept tuning parts too - a bike has a
 	// bonnet-less body but still takes rims and an exhaust - so the upgrade
 	// attach points are worked out for every vehicle type, not only for cars.

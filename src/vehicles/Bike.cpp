@@ -195,6 +195,10 @@ m_nVehicleSubType = VEHICLE_TYPE_BIKE;
 	colModel->lines[0].p0.z = FAKESUSPENSION;
 
 	SetupSuspensionLines();
+	REVC_LOG_INFO("Bike suspension: model=%d wheelScale=%.3f ownMesh=%d baseZ=(%.3f, %.3f) heightAboveRoad=%.3f colMinZ=%.3f",
+		id, mi->m_wheelScale, (int)mi->HasOwnWheelMeshes(),
+		m_aWheelBasePosition[BIKEWHEEL_FRONT], m_aWheelBasePosition[BIKEWHEEL_REAR],
+		m_fHeightAboveRoad, colModel->boundingBox.min.z);
 
 	AutoPilot.m_nCarMission = MISSION_NONE;
 	AutoPilot.m_nTempAction = TEMPACT_NONE;

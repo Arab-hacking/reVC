@@ -219,6 +219,12 @@ CTaskComplexLeaveCar::CreateNextSubTask(CPed *ped)
 			return CreateSubTask(TASK_FINISHED, ped);
 		}
 		ComputeTargetDoor(ped);
+		if (m_nTargetDoor < 0)
+			// No door maps to this ped's seat (he is not in the
+			// target vehicle, or sits beyond the door table):
+			// there is no door to walk out of, so just free the
+			// seat if he is in fact sitting in this vehicle.
+			return CreateSubTask(ped->bInVehicle ? TASK_SIMPLE_CAR_SET_PED_OUT : TASK_FINISHED, ped);
 		bool gettingIn = false;
 		bool gettingOut = false;
 		IsDoorInUse(m_pTargetVehicle, m_nTargetDoor, gettingIn, gettingOut);
