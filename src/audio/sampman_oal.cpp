@@ -1308,7 +1308,12 @@ cSampleManager::LoadMissionAudio(uint8 nSlot, uint32 nSample)
 {
 	ASSERT(nSlot == MISSION_AUDIO_PLAYER_COMMENT); // only MISSION_AUDIO_PLAYER_COMMENT is supported on PC
 	ASSERT(nSample < TOTAL_AUDIO_SAMPLES);
-	
+
+	// The caller ranges the sample today, but this is the last point
+	// where the claimed size can be checked against the talk buffer.
+	if (m_aSamples[nSample].nSize > gPlayerTalkDataSize)
+		return FALSE;
+
 	if (fseek(fpSampleDataHandle, m_aSamples[nSample].nOffset, SEEK_SET) != 0)
 		return FALSE;
 
