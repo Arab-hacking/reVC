@@ -177,9 +177,11 @@ CWeaponInfo::LoadWeaponData(void)
 	buflen = CFileMgr::LoadFile("WEAPON.DAT", work_buff, sizeof(work_buff), "r");
 
 	for (bp = 0; bp < buflen; ) {
-		// read file line by line
-		for (linelen = 0; work_buff[bp] != '\n' && bp < buflen; bp++) {
-			line[linelen++] = work_buff[bp];
+		// read file line by line; drop the excess of an overlong line
+		// instead of overrunning line[]
+		for (linelen = 0; bp < buflen && work_buff[bp] != '\n'; bp++) {
+			if (linelen < (int)sizeof(line) - 1)
+				line[linelen++] = work_buff[bp];
 		}
 		bp++;
 		line[linelen] = '\0';
@@ -207,7 +209,7 @@ CWeaponInfo::LoadWeaponData(void)
 		fireOffsetZ = 0.0f;
 		sscanf(
 			&line[lp],
-			"%s %s %f %d %d %d %d %f %f %f %f %f %f %f %s %f %f %f %f %f %f %f %d %d %x %d",
+			"%31s %31s %f %d %d %d %d %f %f %f %f %f %f %f %31s %f %f %f %f %f %f %f %d %d %x %d",
 			weaponName,
 			fireType,
 			&range,
@@ -242,6 +244,11 @@ CWeaponInfo::LoadWeaponData(void)
 		}
 
 		weaponType = FindWeaponType(weaponName);
+
+		// The slot indexes CPed::m_weapons[TOTAL_WEAPON_SLOTS] wherever the
+		// weapon is used; a table value outside it would index the ped.
+		if (weaponSlot < 0 || weaponSlot >= TOTAL_WEAPON_SLOTS)
+			continue;
 
 		CVector vecFireOffset(fireOffsetX, fireOffsetY, fireOffsetZ);
 

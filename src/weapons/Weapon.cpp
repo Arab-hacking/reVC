@@ -167,22 +167,32 @@ CWeapon::Initialise(eWeaponType type, int32 ammo)
 	int32 modelId = CWeaponInfo::GetWeaponInfo(m_eWeaponType)->m_nModelId;
 	int32 model2Id = CWeaponInfo::GetWeaponInfo(m_eWeaponType)->m_nModel2Id;
 	
-	if ( modelId != -1 )
-		CModelInfo::GetModelInfo(modelId)->AddRef();
-	if ( model2Id != -1 )
-		CModelInfo::GetModelInfo(model2Id)->AddRef();
+	// GetModelInfo reads an unregistered id as nil; a weapon whose model
+	// the IDE never defined must not take the ped down with it.
+	if ( modelId != -1 ) {
+		CBaseModelInfo *mi = CModelInfo::GetModelInfo(modelId);
+		if (mi) mi->AddRef();
+	}
+	if ( model2Id != -1 ) {
+		CBaseModelInfo *mi = CModelInfo::GetModelInfo(model2Id);
+		if (mi) mi->AddRef();
+	}
 }
 
 void
 CWeapon::Shutdown()
 {
 	int32 modelId = CWeaponInfo::GetWeaponInfo(m_eWeaponType)->m_nModelId;
-	if (modelId != -1)
-		CModelInfo::GetModelInfo(modelId)->RemoveRef();
+	if (modelId != -1) {
+		CBaseModelInfo *mi = CModelInfo::GetModelInfo(modelId);
+		if (mi) mi->RemoveRef();
+	}
 
 	int32 model2Id = CWeaponInfo::GetWeaponInfo(m_eWeaponType)->m_nModel2Id;
-	if (model2Id != -1)
-		CModelInfo::GetModelInfo(model2Id)->RemoveRef();
+	if (model2Id != -1) {
+		CBaseModelInfo *mi = CModelInfo::GetModelInfo(model2Id);
+		if (mi) mi->RemoveRef();
+	}
 
 	m_eWeaponType = WEAPONTYPE_UNARMED;
 	m_eWeaponState = WEAPONSTATE_READY;
