@@ -419,7 +419,9 @@ CTrain::ReadAndInterpretTrackFile(const char *filename, int32 trackId)
 			cursor++;
 	}
 
-	if(numNodes <= 0)
+	// The count is the file's first line; the buffer holds at most a few
+	// thousand node lines, so anything larger is not a track file.
+	if(numNodes <= 0 || numNodes > 65536)
 		return;
 
 	pTrackNodes[trackId] = new CTrainNode[numNodes];

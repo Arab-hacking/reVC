@@ -966,7 +966,9 @@ CPlane::LoadPath(char const *filename, int32 &numNodes, float &totalLength, bool
 		bp++;
 	gString[lp] = '\0';
 	numNodes = 0;
-	if(sscanf(gString, "%d", &numNodes) != 1 || numNodes <= 0){
+	// The count is the file's first line; the buffer holds at most a few
+	// thousand node lines, so anything larger is not a path file.
+	if(sscanf(gString, "%d", &numNodes) != 1 || numNodes <= 0 || numNodes > 65536){
 		numNodes = 0;
 		totalLength = 0.0f;
 		return nil;
