@@ -3482,7 +3482,11 @@ CCamera::LoadTrainCamNodes(char const *name)
 		m_arrTrainCamNode[i].m_fNearClip = 0.0f;
 	}
 
-	while(bufpos <= len){
+	// The token and node writes below trust the data file completely; a
+	// longer number than the token holds, more nodes than the array holds
+	// or a file that fills the read buffer exactly would each write or
+	// read out of bounds.
+	while(bufpos < len && m_uiNumberOfTrainCamNodes < MAX_NUM_OF_NODES){
 		c = buf[bufpos];
 		switch(c){
 		case '-':
@@ -3490,7 +3494,8 @@ CCamera::LoadTrainCamNodes(char const *name)
 		case '0': case '1': case '2': case '3': case '4':
 		case '5': case '6': case '7': case '8': case '9':
 //		case '10': case '11': case '12': case '13':	// ahem...
-			token[tokpos++] = c;
+			if(tokpos < (int)sizeof(token) - 1)
+				token[tokpos++] = c;
 			bufpos++;
 			break;
 
