@@ -4266,6 +4266,14 @@ CPed::DriveVehicle(void)
 		if (!drivebyAssoc && Abs(velocityFwdDotProd) < 0.02f) {
 			if (!stillAssoc || stillAssoc->m_BlendAmount < 1.0 && stillAssoc->m_BlendDelta <= 0.0) {
 				stillAssoc = CAnimManager::BlendAnimation(GetClump(), bike->m_bikeAnimType, ANIM_ID_BIKE_STILL, 2.0f);
+				if (!stillAssoc) {
+					static bool warnedMissingBikeStill = false;
+					if (!warnedMissingBikeStill) {
+						REVC_LOG_WARNING("Bike still animation missing (model=%d, group=%d); no ride pose",
+							bike->GetModelIndex(), bike->m_bikeAnimType);
+						warnedMissingBikeStill = true;
+					}
+				}
 			}
 		} else {
 			if (velocityFwdDotProd >= 0.0f) {

@@ -68,6 +68,8 @@ CTaskSimpleCarGetIn::StartAnim(CPed *ped)
 	}
 
 	m_anim = CAnimManager::BlendAnimation(ped->GetClump(), grpId, animId, 4.0f);
+	if (m_veh->IsBike())
+		REVC_LOG_INFO("Bike anim: get-in vehGroup=%d door=%d anim=%d group=%d clip=%s", (int32)m_veh->GetAnimGroupId(), (int32)m_door, animId, grpId, m_anim ? "found" : "MISSING");
 	if (m_anim != nil)
 		m_anim->SetFinishCallback(FinishAnimCarGetInCB, this);
 	else

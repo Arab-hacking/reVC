@@ -108,7 +108,9 @@ CCarEnterExit::AddInCarAnim(const CVehicle *vehicle, CPed *ped, bool bAsDriver)
 		}
 	}
 
-	CAnimManager::BlendAnimation(ped->GetClump(), grpId, animId, 1000.0f);
+	CAnimBlendAssociation *sitAssoc = CAnimManager::BlendAnimation(ped->GetClump(), grpId, animId, 1000.0f);
+	if(vehicle->IsBike())
+		REVC_LOG_INFO("Bike anim: sit anim=%d group=%d clip=%s", animId, grpId, sitAssoc ? "found" : "MISSING");
 	ped->StopNonPartialAnims();
 }
 

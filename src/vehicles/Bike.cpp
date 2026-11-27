@@ -70,6 +70,9 @@ CBike::CBike(int32 id, uint8 CreatedBy)
 	m_bikeAnimType = ANIM_GROUP_BIKES;
 	if(mi){
 		int32 animFileIndex = mi->GetAnimFileIndex();
+		REVC_LOG_INFO("Bike anim: model=%d animFileIndex=%d block=%s group=%d", id, animFileIndex,
+			animFileIndex >= 0 ? CAnimManager::GetAnimBlocks()[animFileIndex].Name : "<none>",
+			animFileIndex >= 0 ? (int32)CAnimManager::GetAnimBlocks()[animFileIndex].GroupId : -1);
 		if(animFileIndex >= 0){
 			AssocGroupId animGroup = CAnimManager::GetAnimBlocks()[animFileIndex].GroupId;
 			if(animGroup >= ANIM_GROUP_BIKES && animGroup <= ANIM_GROUP_CHOPPA)
