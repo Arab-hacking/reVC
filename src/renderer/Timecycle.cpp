@@ -181,8 +181,13 @@ CTimeCycle::Initialise(void)
 #ifdef FIX_BUGS
 			&& work_buff[bi] != '\0'
 #endif
-			)
-				line[li++] = work_buff[bi++];
+			){
+				// drop the excess of an overlong line instead of
+				// overrunning line[]
+				if(li < (int)sizeof(line) - 1)
+					line[li++] = work_buff[bi];
+				bi++;
+			}
 			line[li] = '\0';
 			bi++;
 
