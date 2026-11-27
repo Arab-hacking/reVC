@@ -129,9 +129,14 @@ ClumpAtomicStreamRead(RwStream *stream, rwFrameList *frmList, rpGeometryList *ge
 	numberGeometrys = 0;
 	if(!RwStreamFindChunk(stream, rwID_STRUCT, &size, &version))
 		return nil;
-	assert(size <= sizeof(rpAtomicBinary));
-	if(RwStreamRead(stream, &a, size) != size)
+	// The struct chunk size is the file's word, not ours: a value larger
+	// than the struct would overwrite the stack, a smaller one truncates it.
+	if(size < sizeof(rpAtomicBinary))
 		return nil;
+	if(RwStreamRead(stream, &a, sizeof(a)) != sizeof(a))
+		return nil;
+	if(size > sizeof(a))
+		RwStreamSkip(stream, size - sizeof(a));
 
 	atomic = RpAtomicCreate();
 	if(atomic == nil)
@@ -139,13 +144,21 @@ ClumpAtomicStreamRead(RwStream *stream, rwFrameList *frmList, rpGeometryList *ge
 
 	RpAtomicSetFlags(atomic, a.flags);
 
+	// The frame and geometry indices are also the file's: release builds
+	// compile the asserts out, so validate before indexing the lists.
 	if(frmList->numFrames){
-		assert(a.frameIndex < frmList->numFrames);
+		if(a.frameIndex < 0 || a.frameIndex >= frmList->numFrames){
+			RpAtomicDestroy(atomic);
+			return nil;
+		}
 		RpAtomicSetFrame(atomic, frmList->frames[a.frameIndex]);
 	}
 
 	if(geomList->numGeoms){
-		assert(a.geomIndex < geomList->numGeoms);
+		if(a.geomIndex < 0 || a.geomIndex >= geomList->numGeoms){
+			RpAtomicDestroy(atomic);
+			return nil;
+		}
 		RpAtomicSetGeometry(atomic, geomList->geometries[a.geomIndex], 0);
 	}else{
 		RpGeometry *geom;
