@@ -1763,12 +1763,35 @@ void CReplay::PlayReplayFromHD(void)
 		return;
 	}
 	int slot;
-	for (slot = 0; CFileMgr::Read(fr, (char*)Buffers[slot], sizeof(Buffers[slot])); slot++)
+	// The file is not one this build wrote: it may hold more buffers than
+	// exist, or none at all (which used to index BufferStatus[-1]).
+	for (slot = 0; slot < NUM_REPLAYBUFFERS && CFileMgr::Read(fr, (char*)Buffers[slot], sizeof(Buffers[slot])); slot++)
 		BufferStatus[slot] = REPLAYBUFFER_PLAYBACK;
-	BufferStatus[slot - 1] = REPLAYBUFFER_RECORD;
+	if (slot > 0)
+		BufferStatus[slot - 1] = REPLAYBUFFER_RECORD;
 	while (slot < NUM_REPLAYBUFFERS)
 		BufferStatus[slot++] = REPLAYBUFFER_UNUSED;
 	CFileMgr::CloseFile(fr);
+
+	// Its packet chains cannot be trusted either: an unknown packet id
+	// sizes to zero and a chain may never reach an END marker, either of
+	// which would hang or overrun the playback scans. Walk each loaded
+	// buffer once and stamp an END where the chain breaks.
+	for (slot = 0; slot < NUM_REPLAYBUFFERS; slot++){
+		if (BufferStatus[slot] == REPLAYBUFFER_UNUSED)
+			continue;
+		size_t offset = 0;
+		while (offset < sizeof(Buffers[slot]) && Buffers[slot][offset] != REPLAYPACKET_END){
+			size_t packetSize = FindSizeOfPacket(Buffers[slot][offset]);
+			if (packetSize == 0 || packetSize > sizeof(Buffers[slot]) - offset)
+				break;
+			offset += packetSize;
+		}
+		if (offset < sizeof(Buffers[slot]))
+			Buffers[slot][offset] = REPLAYPACKET_END;
+		else
+			BufferStatus[slot] = REPLAYBUFFER_UNUSED;
+	}
 	CFileMgr::SetDir("");
 	TriggerPlayback(REPLAYCAMMODE_ASSTORED, 0.0f, 0.0f, 0.0f, false);
 	bPlayingBackFromFile = true;
