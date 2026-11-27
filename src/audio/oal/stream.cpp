@@ -226,8 +226,11 @@ class CWavFile : public IDecoder
 			m_pFile = nil;
 		}
 		delete[] m_pAdpcmBuffer;
+		m_pAdpcmBuffer = nil;
 		delete[] m_ppPcmBuffers;
+		m_ppPcmBuffers = nil;
 		delete[] m_pAdpcmDecoders;
+		m_pAdpcmDecoders = nil;
 	}
 
 	uint32 GetCurrentSample() const
@@ -267,11 +270,21 @@ public:
 		CLOSE_ON_ERROR(fread(&m_FormatHeader, Min(DataHeader.Size, sizeof(tFormatHeader)), 1, m_pFile) == 0);
 		CLOSE_ON_ERROR(DataHeader.Size > sizeof(tFormatHeader));
 
+		// The sample math below divides by the channel count and the
+		// block align, and the stream layer only ever sets up mono or
+		// stereo sources; a header lying about any of this either
+		// divides by zero or makes the decode write past its buffer.
+		CLOSE_ON_ERROR(m_FormatHeader.NumChannels == 0 || m_FormatHeader.NumChannels > 2);
+		CLOSE_ON_ERROR(m_FormatHeader.SampleRate == 0);
+		CLOSE_ON_ERROR(m_FormatHeader.BlockAlign == 0);
+
 		switch (m_FormatHeader.AudioFormat)
 		{
 		case WAVEFMT_XBOX_ADPCM:
 			m_FormatHeader.AudioFormat = WAVEFMT_IMA_ADPCM;
 		case WAVEFMT_IMA_ADPCM:
+			CLOSE_ON_ERROR(m_FormatHeader.BlockAlign % m_FormatHeader.NumChannels != 0);
+			CLOSE_ON_ERROR((m_FormatHeader.BlockAlign / m_FormatHeader.NumChannels) % 4 != 0);
 			m_nSamplesPerBlock = (m_FormatHeader.BlockAlign / m_FormatHeader.NumChannels - 4) * 2 + 1;
 			m_pAdpcmBuffer = new uint8[m_FormatHeader.BlockAlign];
 			m_ppPcmBuffers = new int16*[m_FormatHeader.NumChannels];
