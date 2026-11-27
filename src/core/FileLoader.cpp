@@ -1451,24 +1451,24 @@ CFileLoader::LoadObject(const char *line)
 	int damaged;
 	CSimpleModelInfo *mi;
 
-	if(sscanf(line, "%d %s %s %d", &id, model, txd, &numObjs) != 4)
+	if(sscanf(line, "%d %23s %23s %d", &id, model, txd, &numObjs) != 4)
 		return 0;	// game returns return value
 
 	switch(numObjs){
 	case 1:
-		sscanf(line, "%d %s %s %d %f %d",
+		sscanf(line, "%d %23s %23s %d %f %d",
 			&id, model, txd, &numObjs, &dist[0], &flags);
 		damaged = 0;
 		break;
 	case 2:
-		sscanf(line, "%d %s %s %d %f %f %d",
+		sscanf(line, "%d %23s %23s %d %f %f %d",
 			&id, model, txd, &numObjs, &dist[0], &dist[1], &flags);
 		damaged = dist[0] < dist[1] ?	// Are distances increasing?
 			0 :	// Yes, no damage model
 			1;	// No, 1 is damaged
 		break;
 	case 3:
-		sscanf(line, "%d %s %s %d %f %f %f %d",
+		sscanf(line, "%d %23s %23s %d %f %f %f %d",
 			&id, model, txd, &numObjs, &dist[0], &dist[1], &dist[2], &flags);
 		damaged = dist[0] < dist[1] ?	// Are distances increasing?
 				(dist[1] < dist[2] ? 0 : 2) :	// Yes, only 2 can still be a damage model
@@ -1499,24 +1499,24 @@ CFileLoader::LoadTimeObject(const char *line)
 	int damaged;
 	CTimeModelInfo *mi, *other;
 
-	if(sscanf(line, "%d %s %s %d", &id, model, txd, &numObjs) != 4)
+	if(sscanf(line, "%d %23s %23s %d", &id, model, txd, &numObjs) != 4)
 		return 0;	// game returns return value
 
 	switch(numObjs){
 	case 1:
-		sscanf(line, "%d %s %s %d %f %d %d %d",
+		sscanf(line, "%d %23s %23s %d %f %d %d %d",
 			&id, model, txd, &numObjs, &dist[0], &flags, &timeOn, &timeOff);
 		damaged = 0;
 		break;
 	case 2:
-		sscanf(line, "%d %s %s %d %f %f %d %d %d",
+		sscanf(line, "%d %23s %23s %d %f %f %d %d %d",
 			&id, model, txd, &numObjs, &dist[0], &dist[1], &flags, &timeOn, &timeOff);
 		damaged = dist[0] < dist[1] ?	// Are distances increasing?
 			0 :	// Yes, no damage model
 			1;	// No, 1 is damaged
 		break;
 	case 3:
-		sscanf(line, "%d %s %s %d %f %f %f %d %d %d",
+		sscanf(line, "%d %23s %23s %d %f %f %f %d %d %d",
 			&id, model, txd, &numObjs, &dist[0], &dist[1], &dist[2], &flags, &timeOn, &timeOff);
 		damaged = dist[0] < dist[1] ?	// Are distances increasing?
 				(dist[1] < dist[2] ? 0 : 2) :	// Yes, only 2 can still be a damage model
@@ -1548,7 +1548,7 @@ CFileLoader::LoadWeaponObject(const char *line)
 	float dist;
 	CWeaponModelInfo *mi;
 
-	sscanf(line, "%d %s %s %s %d %f", &id, model, txd, animFile, &numObjs, &dist);
+	sscanf(line, "%d %23s %23s %15s %d %f", &id, model, txd, animFile, &numObjs, &dist);
 
 	mi = CModelInfo::AddWeaponModel(id);
 	mi->SetModelName(model);
@@ -1568,7 +1568,7 @@ CFileLoader::LoadClumpObject(const char *line)
 	char model[24], txd[24];
 	CClumpModelInfo *mi;
 
-	if(sscanf(line, "%d %s %s", &id, model, txd) == 3){
+	if(sscanf(line, "%d %23s %23s", &id, model, txd) == 3){
 		mi = CModelInfo::AddClumpModel(id);
 		mi->SetModelName(model);
 		mi->SetTexDictionary(txd);
@@ -1588,7 +1588,7 @@ CFileLoader::LoadVehicleObject(const char *line)
 	CVehicleModelInfo *mi;
 	char *p;
 
-	sscanf(line, "%d %s %s %s %s %s %s %s %d %d %x %d %f",
+	sscanf(line, "%d %23s %23s %7s %15s %31s %15s %11s %d %d %x %d %f",
 		&id, model, txd,
 		type, handlingId, gamename, animFile, vehclass,
 		&frequency, &level, &comprules, &misc, &wheelScale);
@@ -1955,12 +1955,12 @@ CFileLoader::LoadObjectInstance(const char *line)
 	CEntity *entity;
 	float area;
 
-	if(sscanf(line, "%d %s %f %f %f %f %f %f %f %f %f %f %f",
+	if(sscanf(line, "%d %23s %f %f %f %f %f %f %f %f %f %f %f",
 	          &id, name, &area,
 	          &trans.x, &trans.y, &trans.z,
 	          &scale.x, &scale.y, &scale.z,
 	          &axis.x, &axis.y, &axis.z, &angle) != 13){
-		if(sscanf(line, "%d %s %f %f %f %f %f %f %f %f %f %f",
+		if(sscanf(line, "%d %23s %f %f %f %f %f %f %f %f %f %f",
 		          &id, name,
 		          &trans.x, &trans.y, &trans.z,
 		          &scale.x, &scale.y, &scale.z,
@@ -2095,20 +2095,20 @@ CFileLoader::ReloadObject(const char *line)
 	uint32 flags;
 	CSimpleModelInfo *mi;
 
-	if(sscanf(line, "%d %s %s %d", &id, model, txd, &numObjs) != 4)
+	if(sscanf(line, "%d %23s %23s %d", &id, model, txd, &numObjs) != 4)
 		return;
 
 	switch(numObjs){
 	case 1:
-		sscanf(line, "%d %s %s %d %f %d",
+		sscanf(line, "%d %23s %23s %d %f %d",
 			&id, model, txd, &numObjs, &dist[0], &flags);
 		break;
 	case 2:
-		sscanf(line, "%d %s %s %d %f %f %d",
+		sscanf(line, "%d %23s %23s %d %f %f %d",
 			&id, model, txd, &numObjs, &dist[0], &dist[1], &flags);
 		break;
 	case 3:
-		sscanf(line, "%d %s %s %d %f %f %f %d",
+		sscanf(line, "%d %23s %23s %d %f %f %f %d",
 			&id, model, txd, &numObjs, &dist[0], &dist[1], &dist[2], &flags);
 		break;
 	}
