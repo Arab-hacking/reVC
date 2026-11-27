@@ -341,12 +341,44 @@ static inline bool brCheckGeometry(const BrChunk& geom, bool& nonEmpty, std::str
     }
     if (!native && numVerts > 0) {
         uint64_t e0 = geometryStructSize(sd, slen, false);
-        uint64_t e1 = e0 ? e0 : geometryStructSize(sd, slen, true);
+        uint64_t e1 = geometryStructSize(sd, slen, true);
         bool fits = (e0 > 0 && e0 <= slen) || (e1 > 0 && e1 <= slen);
         if (!fits) {
             snprintf(t, sizeof t, "a geometry declares more data (%u verts, %u tris) than the file holds - the model is truncated", numVerts, numTris);
             why = t;
             return false;
+        }
+    }
+    if (!native && numTris > 0) {
+        // librw builds meshes by bucketing triangles under their material
+        // index, guarded only by an assert; a triangle naming a material
+        // the list does not have writes outside the bucket array while
+        // streaming. Zero materials with triangles is that same write.
+        if (numMats == 0) {
+            why = "a geometry declares triangles but no materials";
+            return false;
+        }
+        // The material ids themselves are only judged when the struct
+        // layout is pinned exactly (one size variant reproduces the chunk
+        // byte for byte); anything else keeps the policy of not judging
+        // what could not be parsed.
+        uint64_t e0 = geometryStructSize(sd, slen, false);
+        uint64_t e1 = geometryStructSize(sd, slen, true);
+        if (e0 == slen || e1 == slen) {
+            bool withF = e0 != slen;
+            uint32_t numTex = (flags >> 16) & 0xFF;
+            if (numTex == 0) numTex = (flags & 0x04 ? 1 : 0) + (flags & 0x80 ? 2 : 0);
+            size_t triOff = 16 + (withF ? 12 : 0)
+                + ((flags & 0x08) ? (size_t)numVerts * 4 : 0)
+                + (size_t)numTex * numVerts * 8;
+            for (uint32_t ti = 0; ti < numTris; ti++) {
+                uint32_t matId = rd16(sd + triOff + (size_t)ti * 8 + 4);
+                if (matId >= numMats) {
+                    snprintf(t, sizeof t, "a geometry triangle names material %u of %u", matId, numMats);
+                    why = t;
+                    return false;
+                }
+            }
         }
     }
 
