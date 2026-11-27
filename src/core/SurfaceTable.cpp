@@ -30,9 +30,9 @@ CSurfaceTable::Initialise(Const char *filename)
 				line++;
 		}
 
-		sscanf(line, "%s", surfname);
+		sscanf(line, "%255s", surfname);
 		// skip what we just read
-		while(!(*line == ' ' || *line == '\t' || *line == ','))
+		while(*line != '\0' && !(*line == ' ' || *line == '\t' || *line == ','))
 			line++;
 
 		for(fieldno = 0; fieldno <= lineno; fieldno++){
@@ -43,7 +43,7 @@ CSurfaceTable::Initialise(Const char *filename)
 			if(*line != '-')
 				sscanf(line, "%f", &adhesiveLimit);
 			// skip what we just read
-			while(!(*line == ' ' || *line == '\t' || *line == ',' || *line == '\n'))
+			while(*line != '\0' && !(*line == ' ' || *line == '\t' || *line == ',' || *line == '\n'))
 				line++;
 
 			ms_aAdhesiveLimitTable[lineno][fieldno] = adhesiveLimit;

@@ -92,22 +92,26 @@ CObjectData::ParseObjectData(const char *data)
 
 	id = 4;
 	p = (const char*)data;
-	while(*p != '*'){
+	// The data comes from the archive: the terminating '*' is part of the
+	// format, but a truncated file must end the parse at its NUL instead of
+	// walking past the buffer looking for one.
+	while(*p != '*' && *p != '\0'){
 		// skip over white space and comments
 		while(*p == ' ' || *p == '\n' || *p == '\r' || *p == ';')
 			if(*p == ';')
-				while(*p != '\n' && *p != '*')
+				while(*p != '\n' && *p != '*' && *p != '\0')
 					p++;
 			else
 				p++;
 
-		if(*p == '*')
+		if(*p == '*' || *p == '\0')
 			break;
 
-		// read one line
+		// read one line, dropping the excess of an overlong one
 		lp = line;
-		while(*p != '\n' && *p != '*'){
-			*lp++ = *p == ',' ? ' ' : *p;
+		while(*p != '\n' && *p != '*' && *p != '\0'){
+			if(lp < line + sizeof(line) - 1)
+				*lp++ = *p == ',' ? ' ' : *p;
 			p++;
 		}
 		if(*p == '\n')
@@ -118,8 +122,9 @@ CObjectData::ParseObjectData(const char *data)
 		*lp = '\n';
 #endif
 
-		assert(id < NUMOBJECTINFO);
-		sscanf(line, "%s %f %f %f %f %f %f %f %d %d %d", name,
+		if(id >= NUMOBJECTINFO)
+			break;	// table full: further rows have nowhere to go
+		if(sscanf(line, "%255s %f %f %f %f %f %f %f %d %d %d", name,
 			&ms_aObjectInfo[id].m_fMass,
 			&ms_aObjectInfo[id].m_fTurnMass,
 			&ms_aObjectInfo[id].m_fAirResistance,
@@ -127,9 +132,11 @@ CObjectData::ParseObjectData(const char *data)
 			&percentSubmerged,
 			&ms_aObjectInfo[id].m_fUprootLimit,
 			&ms_aObjectInfo[id].m_fCollisionDamageMultiplier,
-			&damageEffect, &responseCase, &camAvoid);
+			&damageEffect, &responseCase, &camAvoid) != 11)
+			continue;	// short row: percentSubmerged and friends never landed
 
-		ms_aObjectInfo[id].m_fBuoyancy = 100.0f/percentSubmerged * GRAVITY *ms_aObjectInfo[id].m_fMass;
+		ms_aObjectInfo[id].m_fBuoyancy = percentSubmerged > 0.0f
+			? 100.0f/percentSubmerged * GRAVITY *ms_aObjectInfo[id].m_fMass : 0.0f;
 		ms_aObjectInfo[id].m_nCollisionDamageEffect = damageEffect;
 		ms_aObjectInfo[id].m_nSpecialCollisionResponseCases = responseCase;
 		ms_aObjectInfo[id].m_bCameraToAvoidThisObject = camAvoid;
