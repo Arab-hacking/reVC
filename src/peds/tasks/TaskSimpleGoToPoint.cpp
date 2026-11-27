@@ -76,9 +76,7 @@ CTaskSimpleGoToPoint::ProcessPed(CPed *ped)
 			ped->SetMoveState(m_moveState);
 			if(ped->IsPlayer()){
 				if(CPad::GetPad(0)->DisablePlayerControls != PLAYERCONTROL_ENABLED){
-					// SA also sets the player move blend ratio here;
-					// that CPlayerPed helper is not ported yet.
-					player->SetRealMoveAnim();
+					player->SetPlayerMoveBlendRatio(nil);
 				}else{
 					bool bSprinting = false;
 					CWeaponInfo *weaponInfo = CWeaponInfo::GetWeaponInfo(ped->GetWeapon()->m_eWeaponType);
@@ -98,7 +96,10 @@ CTaskSimpleGoToPoint::ProcessPed(CPed *ped)
 					}
 					if(!bSprinting && ped->m_nMoveState == PEDMOVE_SPRINT)
 						ped->SetMoveState(PEDMOVE_RUN);
-					player->SetRealMoveAnim();
+					if(gotoPointFlags.m_bMoveTowardsTargetPoint)
+						player->SetPlayerMoveBlendRatio(&m_vecTargetPoint);
+					else
+						player->SetPlayerMoveBlendRatio(nil);
 				}
 			}else{
 				ped->SetMoveAnim();

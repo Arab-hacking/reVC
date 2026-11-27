@@ -154,8 +154,11 @@ CTaskComplexEnterCar::CreateNextSubTask(CPed *ped)
 	case TASK_COMPLEX_GO_TO_CAR_DOOR_AND_STAND_STILL: {
 		CTaskComplexGoToCarDoorAndStandStill *tGoToDoor = (CTaskComplexGoToCarDoorAndStandStill *)m_pSubTask;
 
-		if (!tGoToDoor->HasAchievedDoor())
+		if (!tGoToDoor->HasAchievedDoor()) {
+			REVC_LOG_INFO("Vehicle entry task: door not achieved, entry ends");
 			return CreateSubTask(TASK_FINISHED, ped);
+		}
+		REVC_LOG_INFO("Vehicle entry task: door achieved, door=%d", tGoToDoor->m_TargetDoor);
 
 		m_TargetDoor = tGoToDoor->m_TargetDoor;
 		m_TargetSeat = tGoToDoor->m_TargetSeat;

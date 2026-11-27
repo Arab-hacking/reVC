@@ -1240,6 +1240,8 @@ CPed::ProcessObjective(void)
 							GetIntelligence()->AddTaskPrimaryMaybeInGroup(
 								new CTaskComplexEnterTrainAsPassenger(m_carInObjective), true);
 					} else if (GetIntelligence()->FindTaskByType(TASK_COMPLEX_ENTER_CAR_AS_DRIVER) == nil) {
+						REVC_LOG_INFO("Vehicle entry task: objective hands enter-as-driver to tasks (vehicle model=%d)",
+							m_carInObjective->GetModelIndex());
 						GetIntelligence()->AddTaskPrimaryMaybeInGroup(
 								new CTaskComplexEnterCarAsDriver(m_carInObjective), true);
 					}

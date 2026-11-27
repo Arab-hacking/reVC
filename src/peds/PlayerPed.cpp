@@ -2,6 +2,8 @@
 
 #include "RwHelper.h"
 #include "PlayerPed.h"
+#include "PedIntelligence.h"
+#include "TaskManager.h"
 #include "DuckMovement.h"
 #include "Wanted.h"
 #include "Fire.h"
@@ -496,6 +498,31 @@ HasCoreMoveAnims(AssocGroupId group)
 	CAnimBlendStaticAssociation *run = CAnimManager::GetAnimAssociation(group, ANIM_ID_RUN);
 	CAnimBlendStaticAssociation *idle = CAnimManager::GetAnimAssociation(group, ANIM_ID_IDLE);
 	return walk && walk->IsValid() && run && run->IsValid() && idle && idle->IsValid();
+}
+
+// SA CPlayerPed::SetPlayerMoveBlendRatio: a task that walks the player
+// somewhere (going to a car door above all) drives him through this, not
+// through the pad. SA keeps the resulting speed in m_fMoveBlendRatio;
+// here the field SetRealMoveAnim actually reads is m_fMoveSpeed (the
+// pad writes the same field in PlayerControlZelda), so both are set -
+// the blend ratio for SA-shaped readers, the move speed for the anims.
+void
+CPlayerPed::SetPlayerMoveBlendRatio(const CVector *point)
+{
+	float ratio;
+	if (point) {
+		ratio = Min(2.0f, (*point - GetPosition()).Magnitude2D() * 2.0f);
+	} else {
+		switch (m_nMoveState) {
+		case PEDMOVE_WALK:   ratio = 1.0f; break;
+		case PEDMOVE_RUN:    ratio = 1.8f; break;
+		case PEDMOVE_SPRINT: ratio = 2.5f; break;
+		default:             ratio = 0.0f; break;
+		}
+	}
+	MoveBlendRatio() = ratio;
+	MoveSpeed() = ratio;
+	SetRealMoveAnim();
 }
 
 void
@@ -2047,6 +2074,13 @@ CPlayerPed::ProcessControl(void)
 		CMBlur::SetDrunkBlur(Drunkenness() / 255.f);
 	}
 	CPed::ProcessControl();
+	// While a script-command task sits in the primary slot (entering a
+	// car above all), the task - not the pad - drives the player's legs,
+	// as in SA. The pad control below would otherwise zero his move
+	// speed and re-blend him to idle every frame, leaving him turning
+	// towards the car door but never walking to it.
+	const bool bTaskDriven = GetIntelligence() != nil &&
+		GetIntelligence()->GetTaskManager().GetTaskPrimary(TASK_PRIMARY_PRIMARY) != nil;
 	SetNearbyPedsToInteractWithPlayer();
 	if (bWasPostponed)
 		return;
@@ -2145,7 +2179,7 @@ CPlayerPed::ProcessControl(void)
 		return;
 	}
 
-	if (m_objective == OBJECTIVE_NONE)
+	if (m_objective == OBJECTIVE_NONE && !bTaskDriven)
 		m_nMoveState = PEDMOVE_STILL;
 	if (bIsLanding)
 		RunningLand(padUsed);
@@ -2169,7 +2203,7 @@ CPlayerPed::ProcessControl(void)
 		case PED_FIGHT:
 		case PED_AIMGUN:
 		case PED_ANSWER_MOBILE:
-			if (!RpAnimBlendClumpGetFirstAssociation(GetClump(), ANIMATION_SECONDARY_TASK_ANIM) && !m_attachedTo) {
+			if (!bTaskDriven && !RpAnimBlendClumpGetFirstAssociation(GetClump(), ANIMATION_SECONDARY_TASK_ANIM) && !m_attachedTo) {
 				if (bIsDucking && bCrouchWhenShooting && padUsed && !TheCamera.Using1stPersonWeaponMode()) {
 					PlayerControlDucked(padUsed);
 				} else if (TheCamera.Using1stPersonWeaponMode()) {

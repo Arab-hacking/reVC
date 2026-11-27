@@ -147,6 +147,7 @@ public:
 	void UseSprintEnergy(void);
 	class CPlayerInfo *GetPlayerInfoForThisPlayerPed();
 	void SetRealMoveAnim(void);
+	void SetPlayerMoveBlendRatio(const CVector *point);
 	void RestoreSprintEnergy(float);
 	float DoWeaponSmoothSpray(void);
 	void DoStuffToGoOnFire(void);

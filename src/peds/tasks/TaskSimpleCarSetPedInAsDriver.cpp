@@ -45,6 +45,7 @@ CTaskSimpleCarSetPedInAsDriver::ProcessPed(CPed *ped)
 	if (m_pTargetVehicle == nil)
 		return true;
 
+	REVC_LOG_INFO("Vehicle entry task: seating ped as driver (vehicle model=%d)", m_pTargetVehicle->GetModelIndex());
 	CCarEnterExit::SetPedInCarDirect(ped, m_pTargetVehicle, 0, true);
 
 	m_pTargetVehicle->m_nNumGettingIn -= (int8)m_nNumGettingInToClear;
