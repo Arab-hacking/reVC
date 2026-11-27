@@ -70,6 +70,11 @@ CTaskSimpleCarGetIn::StartAnim(CPed *ped)
 	m_anim = CAnimManager::BlendAnimation(ped->GetClump(), grpId, animId, 4.0f);
 	if (m_anim != nil)
 		m_anim->SetFinishCallback(FinishAnimCarGetInCB, this);
+	else
+		// No clip exists for this vehicle/group (a missing bike
+		// animation leaves the classic mount unported): sat down
+		// anyway rather than hanging the entry forever.
+		m_finished = true;
 }
 
 bool

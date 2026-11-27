@@ -145,6 +145,7 @@ CPed::CPed(uint32 pedType) : m_pedIK(this)
 	m_phoneTalkTimer = 0;
 	m_stateUnused = 0;
 	m_leaveCarTimer = 0;
+	m_enterCarTaskTimer = 0;
 	m_getUpTimer = 0;
 	m_attackTimer = 0;
 	m_timerUnused = 0;

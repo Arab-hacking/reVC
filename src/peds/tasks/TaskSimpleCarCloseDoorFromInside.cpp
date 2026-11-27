@@ -107,6 +107,10 @@ CTaskSimpleCarCloseDoorFromInside::ProcessPed(CPed *ped)
 		if (ped->m_nPedState == PED_ARRESTED)
 			return true;
 		StartAnim(ped);
+		if (m_anim == nil)
+			// No clip for this vehicle/group (e.g. bikes): nothing
+			// to close, do not hang the rest of the chain.
+			return true;
 	}
 
 	if (m_anim != nil)

@@ -90,6 +90,11 @@ CTaskSimpleCarGetOut::StartAnim(CPed *ped)
 	m_anim = CAnimManager::BlendAnimation(ped->GetClump(), groupId, animId, 1000.0f);
 	if (m_anim != nil)
 		m_anim->SetFinishCallback(FinishAnimCarGetOutCB, this);
+	else
+		// No clip for this vehicle/group (e.g. an unloaded bike
+		// group): leave without the animation rather than hanging
+		// the exit forever - SetPedOut places the ped regardless.
+		m_finished = true;
 }
 
 bool

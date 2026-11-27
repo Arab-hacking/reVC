@@ -86,6 +86,16 @@ CTaskSimpleCarSetPedOut::ProcessPed(CPed *ped)
 
 	// Ped's not in a vehicle anymore.
 	ped->bInVehicle = false;
+	// and the vehicle reference goes with it. Before this the ped
+	// still pointed at the car he just left, and the entry machinery
+	// treated him as its occupant: respawned entries opened with the
+	// line-up utility dragging him (the "teleport into the car"
+	// report), and IsRoomForPedToLeaveCar refused the very door the
+	// ped had only just vacated, sending the exit around the car.
+	if (ped->m_pMyVehicle != nil) {
+		ped->m_pMyVehicle->CleanUpOldReference((CEntity **)&ped->m_pMyVehicle);
+		ped->m_pMyVehicle = nil;
+	}
 
 	// Set default task after setting the ped out. The player is run by
 	// his own control code; mission peds wait; everybody else wanders.

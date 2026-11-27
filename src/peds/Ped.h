@@ -653,6 +653,7 @@ public:
 	float m_fLookDirection;
 	int32 m_wepModelID;
 	uint32 m_leaveCarTimer;
+	uint32 m_enterCarTaskTimer; // time of last enter-task issue (ms); retries are rate-limited
 	uint32 m_getUpTimer;
 	uint32 m_lookTimer;
 	uint32 m_chatTimer;

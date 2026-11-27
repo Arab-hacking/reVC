@@ -389,6 +389,8 @@ CPed::SetObjective(eObjective newObj, void *entity)
 			break;
 		case OBJECTIVE_ENTER_CAR_AS_PASSENGER:
 		case OBJECTIVE_ENTER_CAR_AS_DRIVER:
+			// A freshly set enter objective may issue its task at once.
+			m_enterCarTaskTimer = 0;
 			if (m_nMoveState == PEDMOVE_STILL)
 				SetMoveState(PEDMOVE_RUN);
 
@@ -1217,10 +1219,15 @@ CPed::ProcessObjective(void)
 						bScriptObjectiveCompleted = true;
 						RestorePreviousState();
 					} else if (m_carInObjective->IsTrain()) {
-						if (GetIntelligence()->FindTaskByType(TASK_COMPLEX_ENTER_TRAIN_AS_PASSENGER) == nil)
+						if (GetIntelligence()->FindTaskByType(TASK_COMPLEX_ENTER_TRAIN_AS_PASSENGER) == nil &&
+						    CTimer::GetTimeInMilliseconds() - m_enterCarTaskTimer > 1500) {
+							m_enterCarTaskTimer = CTimer::GetTimeInMilliseconds();
 							GetIntelligence()->AddTaskPrimaryMaybeInGroup(
 								new CTaskComplexEnterTrainAsPassenger(m_carInObjective), true);
-					} else if (GetIntelligence()->FindTaskByType(TASK_COMPLEX_ENTER_CAR_AS_PASSENGER) == nil) {
+						}
+					} else if (GetIntelligence()->FindTaskByType(TASK_COMPLEX_ENTER_CAR_AS_PASSENGER) == nil &&
+					           CTimer::GetTimeInMilliseconds() - m_enterCarTaskTimer > 1500) {
+						m_enterCarTaskTimer = CTimer::GetTimeInMilliseconds();
 						GetIntelligence()->AddTaskPrimaryMaybeInGroup(
 							new CTaskComplexEnterCarAsPassenger(m_carInObjective, 0), true);
 					}
@@ -1236,10 +1243,15 @@ CPed::ProcessObjective(void)
 						bScriptObjectiveCompleted = true;
 						RestorePreviousState();
 					} else if (m_carInObjective->IsTrain()) {
-						if (GetIntelligence()->FindTaskByType(TASK_COMPLEX_ENTER_TRAIN_AS_PASSENGER) == nil)
+						if (GetIntelligence()->FindTaskByType(TASK_COMPLEX_ENTER_TRAIN_AS_PASSENGER) == nil &&
+						    CTimer::GetTimeInMilliseconds() - m_enterCarTaskTimer > 1500) {
+							m_enterCarTaskTimer = CTimer::GetTimeInMilliseconds();
 							GetIntelligence()->AddTaskPrimaryMaybeInGroup(
 								new CTaskComplexEnterTrainAsPassenger(m_carInObjective), true);
-					} else if (GetIntelligence()->FindTaskByType(TASK_COMPLEX_ENTER_CAR_AS_DRIVER) == nil) {
+						}
+					} else if (GetIntelligence()->FindTaskByType(TASK_COMPLEX_ENTER_CAR_AS_DRIVER) == nil &&
+					           CTimer::GetTimeInMilliseconds() - m_enterCarTaskTimer > 1500) {
+						m_enterCarTaskTimer = CTimer::GetTimeInMilliseconds();
 						REVC_LOG_INFO("Vehicle entry task: objective hands enter-as-driver to tasks (vehicle model=%d)",
 							m_carInObjective->GetModelIndex());
 						GetIntelligence()->AddTaskPrimaryMaybeInGroup(
