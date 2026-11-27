@@ -152,3 +152,15 @@ CTaskSimpleCarDrive::ProcessPed(CPed *ped)
 	ProcessBopping(ped, true);
 	return false;
 }
+
+// SA keeps a driving ped on his seat from the task itself (0x63C770,
+// unreversed, but every sibling task does exactly this); also inherited
+// by CTaskSimpleCarDriveTimed, the first phase of leaving a car.
+bool
+CTaskSimpleCarDrive::SetPedPosition(CPed *ped)
+{
+	if (m_pVehicle == nil || ped->m_pMyVehicle != m_pVehicle)
+		return false;
+	ped->SetPedPositionInCar();
+	return true;
+}

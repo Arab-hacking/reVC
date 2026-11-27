@@ -30,6 +30,7 @@ public:
 	eTaskType GetTaskType() const { return Type; }
 	bool MakeAbortable(CPed *ped, eAbortPriority priority = ABORT_PRIORITY_URGENT, const CEvent *event = nil);
 	bool ProcessPed(CPed *ped);
+	bool SetPedPosition(CPed *ped);
 };
 
 VALIDATE_SIZE(CTaskSimpleCarWaitToSlowDown, 0x10);

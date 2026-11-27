@@ -69,6 +69,9 @@ CTaskSimpleCarSlowBeDraggedOut::StartAnim(CPed *ped)
 	if (m_Anim != nil) {
 		m_Anim->SetFinishCallback(FinishAnimCarSlowBeDraggedOutCB, this);
 		m_FrontAnim = m_Anim->HasFlag(ANIMATION_IS_FRONT);
+	} else {
+		// No clip for this vehicle/group: waiting for it hangs exit.
+		m_HasAnimFinished = true;
 	}
 }
 

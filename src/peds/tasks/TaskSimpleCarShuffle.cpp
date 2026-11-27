@@ -41,6 +41,9 @@ CTaskSimpleCarShuffle::StartAnim(CPed *target)
 		m_Car->GetAnimGroup().GetGroup(ANIM_ID_CAR_SHUFFLE_RHS_1), ANIM_ID_CAR_SHUFFLE_RHS_1, 1000.0f);
 	if (m_Anim != nil)
 		m_Anim->SetFinishCallback(FinishAnimCarShuffleCB, this);
+	else
+		// No clip for this vehicle/group: waiting for it hangs entry.
+		m_IsFinished = true;
 }
 
 bool

@@ -59,6 +59,7 @@ public:
 	eTaskType GetTaskType() const { return TASK_SIMPLE_CAR_DRIVE; }
 	bool MakeAbortable(CPed *ped, eAbortPriority priority = ABORT_PRIORITY_URGENT, const CEvent *event = nil);
 	bool ProcessPed(CPed *ped);
+	bool SetPedPosition(CPed *ped);
 
 	void TriggerIK(CPed *ped) const;
 	void UpdateBopping();

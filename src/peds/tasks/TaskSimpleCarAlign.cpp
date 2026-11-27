@@ -79,6 +79,14 @@ CTaskSimpleCarAlign::StartAnim(CPed *ped)
 	m_anim = CAnimManager::BlendAnimation(ped->GetClump(), m_veh->GetAnimGroup().GetGroup(animId), animId, 4.0f);
 	if (m_anim != nil)
 		m_anim->SetFinishCallback(FinishAnimCarAlignCB, this);
+	else {
+		// No align clip for this vehicle/group (bikes!): without this
+		// the task waited forever for a finish callback that can
+		// never fire - that is what left bike entry wedged at the
+		// door with the ped pinned mid-bike by the line-up.
+		REVC_LOG_WARNING("Vehicle entry task: no align clip (anim=%d) for vehicle model=%d", animId, m_veh->GetModelIndex());
+		m_animHasFinished = true;
+	}
 }
 
 bool

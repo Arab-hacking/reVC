@@ -59,3 +59,13 @@ CTaskSimpleCarWaitToSlowDown::ProcessPed(CPed *ped)
 		return m_vehicle->CanPedStepOutCar(false) || m_vehicle->CanPedJumpOutCar(ped);
 	}
 }
+
+// SA 0x646AB0: while the car slows down the ped stays on his seat.
+bool
+CTaskSimpleCarWaitToSlowDown::SetPedPosition(CPed *ped)
+{
+	if (m_vehicle == nil || ped->m_pMyVehicle != m_vehicle)
+		return false;
+	ped->SetPedPositionInCar();
+	return true;
+}

@@ -69,6 +69,9 @@ CTaskSimpleCarFallOut::StartAnim(CPed *ped)
 	m_Anim = CAnimManager::BlendAnimation(ped->GetClump(), animGrp, animId, 1000.0f);
 	if (m_Anim != nil)
 		m_Anim->SetFinishCallback(FinishAnimFallOutCB, this);
+	else
+		// No clip for this vehicle/group: waiting for it hangs entry.
+		m_HasFinished = true;
 }
 
 void

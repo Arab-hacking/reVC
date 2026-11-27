@@ -44,6 +44,9 @@ CTaskSimpleCarOpenLockedDoorFromOutside::StartAnim(CPed *ped)
 	m_anim = CAnimManager::BlendAnimation(ped->GetClump(), m_veh->GetAnimGroup().GetGroup(animId), animId, 4.0f);
 	if (m_anim != nil)
 		m_anim->SetFinishCallback(FinishAnimCarOpenLockedDoorFromOutsideCB, this);
+	else
+		// No clip for this vehicle/group: waiting for it hangs entry.
+		m_hasAnimFinished = true;
 }
 
 bool

@@ -87,6 +87,9 @@ CTaskSimpleCarSlowDragPedOut::StartAnim(CPed *ped)
 	m_AnimAssoc = CAnimManager::BlendAnimation(ped->GetClump(), groupId, animId, 1000.0f);
 	if (m_AnimAssoc != nil)
 		m_AnimAssoc->SetFinishCallback(FinishAnimCarSlowDragPedOutCB, this);
+	else
+		// No clip for this vehicle/group: waiting for it hangs entry.
+		m_bAnimFinished = true;
 }
 
 CPed *

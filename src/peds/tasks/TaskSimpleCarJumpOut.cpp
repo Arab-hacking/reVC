@@ -129,7 +129,18 @@ CTaskSimpleCarJumpOut::ProcessPed(CPed *ped)
 
 	if (m_anim == nil) {
 		StartAnim(ped);
-		return false;
+		if (m_anim != nil)
+			return false;
+		// No roll-out clip for this vehicle/group: put him straight
+		// out instead of idling in the car for a callback that can
+		// never fire.
+		CTaskSimpleCarSetPedOut getOutTask(m_veh, (int32)m_door, true);
+		getOutTask.m_nDoorFlagsToClear = m_doorFlagsToClear;
+		getOutTask.m_nNumGettingInToClear = m_numGettingInToClear;
+		getOutTask.ProcessPed(ped);
+		ped->m_vecMoveSpeed = m_veh->m_vecMoveSpeed;
+		m_finishedAnim = true;
+		return true;
 	}
 
 	// Once the door-swing window has passed, put him properly out.

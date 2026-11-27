@@ -1986,9 +1986,14 @@ CWorld::Process(void)
 			if(movingPed->IsPed()) {
 				// SA runs the intelligence's post-collision step here:
 				// the simplest task may place the ped (car line-up).
+				// If it did, the legacy seat snap below must not run:
+				// it used to re-seat the ped every frame of the get-out
+				// animation, so the exit played inside the car and the
+				// ped only appeared outside when the animation ended.
+				bool bTaskPlacedPed = false;
 				if (movingPed->GetIntelligence())
-					movingPed->GetIntelligence()->ProcessAfterProcCol();
-				if(movingPed->bInVehicle || movingPed->EnteringCar()) {
+					bTaskPlacedPed = movingPed->GetIntelligence()->ProcessAfterProcCol();
+				if(!bTaskPlacedPed && (movingPed->bInVehicle || movingPed->EnteringCar())) {
 					CVehicle *movingCar = movingPed->m_pMyVehicle;
 					if(movingCar) {
 						if(movingCar->IsTrain()) {

@@ -273,13 +273,18 @@ CPedIntelligence::Process()
 // processing, give the simplest active task its chance to place the ped
 // (the car tasks' line-up with the vehicle lives there). Without this
 // the align/open/get-in tasks play their animations wherever the ped
-// happens to stand and never pull him onto the door line.
-void
+// happens to stand and never pull him onto the door line. Returns true
+// when a task placed the ped; the world loop uses that to not drag a
+// ped who is halfway out of the door back onto his seat (SA has no
+// such seat snap; here it is the fallback for peds whose current task
+// does not position them, e.g. a player just driving).
+bool
 CPedIntelligence::ProcessAfterProcCol()
 {
 	CTask *activeSimplestTask = m_TaskMgr.GetSimplestActiveTask();
+	bool bPositionSet = false;
 	if (activeSimplestTask && activeSimplestTask->IsSimple()) {
-		bool bPositionSet = activeSimplestTask->AsSimple()->SetPedPosition(m_pPed);
+		bPositionSet = activeSimplestTask->AsSimple()->SetPedPosition(m_pPed);
 		if (!bPositionSet) {
 			CTask *simplestTask = m_TaskMgr.GetLastTaskOf(TASK_PRIMARY_DEFAULT);
 			if (simplestTask && simplestTask->IsSimple())
@@ -290,6 +295,7 @@ CPedIntelligence::ProcessAfterProcCol()
 			m_pPed->UpdateRwFrame();
 		}
 	}
+	return bPositionSet;
 }
 
 // SA CPedIntelligence::FlushIntelligence (0x601DA0): drop every task,

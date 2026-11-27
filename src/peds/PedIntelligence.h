@@ -109,7 +109,7 @@ public:
 	void FlushImmediately(bool bSetPrimaryDefaultTask);
 	C2dEffect *GetEffectInUse() const;
 	void SetEffectInUse(C2dEffect *effect);
-	void ProcessAfterProcCol();
+	bool ProcessAfterProcCol();
 	void ProcessAfterPreRender();
 	void ProcessEventHandler();
 	bool IsFriendlyWith(const CPed &ped) const;
