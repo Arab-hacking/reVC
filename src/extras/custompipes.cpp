@@ -396,7 +396,7 @@ InterpolatedColor::InterpolatedColor(const Color &init)
 void
 InterpolatedColor::Read(char *s, int line, int field)
 {
-	int r, g, b, a;
+	int r = 0, g = 0, b = 0, a = 0;
 	sscanf(s, "%i, %i, %i, %i", &r, &g, &b, &a);
 	data[line][field] = Color(r/255.0f, g/255.0f, b/255.0f, a/255.0f);
 }
@@ -419,7 +419,7 @@ InterpolatedColor::Get(void)
 void
 InterpolatedLight::Read(char *s, int line, int field)
 {
-	int r, g, b, a;
+	int r = 0, g = 0, b = 0, a = 0;
 	sscanf(s, "%i, %i, %i, %i", &r, &g, &b, &a);
 	data[line][field] = Color(r/255.0f, g/255.0f, b/255.0f, a/100.0f);
 }
@@ -440,10 +440,14 @@ ReadTweakValueTable(char *fp, InterpolatedValue &interp)
 				p = buf;
 				while(c != '\0' && c == '\t')
 					c = *fp++;
+				// A field longer than the buffer is truncated, but the
+				// input cursor still runs to its end so the rest of the
+				// table stays aligned; it must not write past buf.
 				*p++ = c;
 				while(c = *fp++, c != '\0' && c != '\t' && c != '\n')
-					*p++ = c;
-				*p++ = '\0';
+					if(p < buf + (int)sizeof(buf) - 1)
+						*p++ = c;
+				*p = '\0';
 				interp.Read(buf, line, field);
 				field++;
 			}
