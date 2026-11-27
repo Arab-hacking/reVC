@@ -1609,7 +1609,10 @@ CFileLoader::LoadVehicleObject(const char *line)
 	mi->SetAnimFile(animFile);
 	for(p = gamename; *p; p++)
 		if(*p == '_') *p = ' ';
-	strcpy(mi->m_gameName, gamename);
+	// The field holds 9 characters and the terminator; a longer name in
+	// the IDE is cut, the way the custom model path already writes it.
+	strncpy(mi->m_gameName, gamename, sizeof(mi->m_gameName) - 1);
+	mi->m_gameName[sizeof(mi->m_gameName) - 1] = '\0';
 	mi->m_level = level;
 	mi->m_compRules = comprules;
 
