@@ -792,12 +792,23 @@ CStreaming::LoadCdDirectory(const char *dirname, int n)
 #endif
 			if(modelId == -1)
 				modelId = CTxdStore::AddTxdSlot(direntry.name);
+			if(modelId == -1){
+				// Slot pool full: same treatment as a full anim store.
+				*dot = '.';
+				lastID = -1;
+				continue;
+			}
 			modelId += STREAM_OFFSET_TXD;
 			bAddToStreaming = true;
 		}else if(strncasecmp(dot+1, "COL", 3) == 0){
 			modelId = CColStore::FindColSlot(direntry.name);
 			if(modelId == -1)
 				modelId = CColStore::AddColSlot(direntry.name);
+			if(modelId == -1){
+				*dot = '.';
+				lastID = -1;
+				continue;
+			}
 			modelId += STREAM_OFFSET_COL;
 			bAddToStreaming = true;
 		}else if(strncasecmp(dot+1, "IFP", 3) == 0){

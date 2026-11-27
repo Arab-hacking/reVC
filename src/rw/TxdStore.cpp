@@ -94,7 +94,8 @@ int
 CTxdStore::AddTxdSlot(const char *name)
 {
 	TxdDef *def = ms_pTxdPool->New();
-	assert(def);
+	if(def == nil)
+		return -1;	// pool full: no slot, callers check
 	def->texDict = nil;
 	def->refCount = 0;
 	def->parentIndex = -1;

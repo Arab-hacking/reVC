@@ -48,7 +48,8 @@ int
 CColStore::AddColSlot(const char *name)
 {
 	ColDef *def = ms_pColPool->New();
-	assert(def);
+	if(def == nil)
+		return -1;	// pool full: no slot, callers check
 	def->isLoaded = false;
 	def->unused = 0;
 	def->bounds.left = 1000000.0f;
@@ -57,7 +58,8 @@ CColStore::AddColSlot(const char *name)
 	def->bounds.bottom = -1000000.0f;
 	def->minIndex = INT16_MAX;
 	def->maxIndex = INT16_MIN;
-	strcpy(def->name, name);
+	strncpy(def->name, name, sizeof(def->name)-1);
+	def->name[sizeof(def->name)-1] = '\0';
 	return ms_pColPool->GetJustIndex(def);
 }
 
