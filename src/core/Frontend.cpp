@@ -2782,7 +2782,8 @@ CMenuManager::DrawPlayerSetupScreen(bool activeScreen)
 			// If not "Default skin" option
 			if (rowIdx != 0) {
 				char dateTemp[32];
-				sprintf(dateTemp, "%s", m_pSelectedSkin->date);
+				strncpy(dateTemp, m_pSelectedSkin->date, sizeof(dateTemp) - 1);
+				dateTemp[sizeof(dateTemp) - 1] = '\0';
 				AsciiToUnicode(dateTemp, unicodeTemp);
 				CFont::SetRightJustifyOn();
 				CFont::PrintString(MENU_X_RIGHT_ALIGNED(PLAYERSETUP_DATE_COLUMN_RIGHT), MENU_Y(rowTextY), unicodeTemp);
