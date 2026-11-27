@@ -901,6 +901,8 @@ public:
 	void SetGettingOutFlags(uint8 doorFlag) { m_nGettingOutFlags |= doorFlag; }
 	// SA CVehicle::ClearGettingOutFlags: the clearing twin of the above.
 	void ClearGettingOutFlags(uint8 doorFlag) { m_nGettingOutFlags &= ~doorFlag; }
+	// SA CVehicle::ClearGettingInFlags: same for the getting-in flags.
+	void ClearGettingInFlags(uint8 doorFlag) { m_nGettingInFlags &= ~doorFlag; }
 	bool CanPedOpenLocks(CPed *ped);
 	bool CanDoorsBeDamaged(void);
 	bool CanPedEnterCar(void);
@@ -908,6 +910,9 @@ public:
 	bool CanPedJumpOutCar(void);
 	bool CanPedJumpOutCar(CPed *ped);
 	bool CanPedJumpOffBike(void);
+	// SA CVehicle::CanPedStepOutCar (0x6D1F30): slow and steady enough
+	// for a ped to step out rather than jump.
+	bool CanPedStepOutCar(bool bIgnoreSpeedUpright) const;
 	// do these two actually return something?
 	CPed *SetUpDriver(void);
 	CPed *SetupPassenger(int n);

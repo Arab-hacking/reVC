@@ -78,6 +78,8 @@ public:
 	static bool IsVehicleHealthy(const CVehicle *vehicle);
 	static bool IsVehicleStealable(const CVehicle *vehicle, const CPed *ped);
 
+	static bool IsPlayerToQuitCarEnter(const CPed *ped, const CVehicle *vehicle, int32 startTime, class CTask *task);
+
 	// ---- state changes -----------------------------------------------------
 	static void MakeUndraggedDriverPedLeaveCar(const CVehicle *vehicle, const CPed *ped);
 	static void MakeUndraggedPassengerPedsLeaveCar(const CVehicle *targetVehicle, const CPed *draggedPed, const CPed *ped);

@@ -2285,7 +2285,7 @@ cAudioManager::ProcessPlayersVehicleEngine(cVehicleParams& params, CVehicle* veh
 		bHandbrakeOnLastFrame = FALSE;
 	}
 #ifdef FIX_BUGS // fix acceleration sound on exiting the vehicle
-	if (CReplay::IsPlayingBack() || FindPlayerPed()->GetPedState() == PED_EXIT_CAR) {
+	if (CReplay::IsPlayingBack() || FindPlayerPed()->LeavingCar()) {
 #else
 	if (CReplay::IsPlayingBack()) {
 #endif

@@ -1597,6 +1597,31 @@ CVehicle::CanPedJumpOutCar(void)
 	return CanPedJumpOutCar(nil);
 }
 
+// SA CVehicle::CanPedStepOutCar (0x6D1F30): the vehicle is slow and
+// steady enough for a ped to step out of it (rather than jump). A
+// vehicle on its side counts as steppable-out-of when it is not moving;
+// boats always do.
+bool
+CVehicle::CanPedStepOutCar(bool bIgnoreSpeedUpright) const
+{
+	const float fUpZ = GetMatrix().GetUp().z;
+	if (Abs(fUpZ) <= 0.1f) {
+		if (Abs(m_vecMoveSpeed.z) > 0.05f || m_vecMoveSpeed.Magnitude2D() > 0.01f || m_vecTurnSpeed.MagnitudeSqr() > 0.0004f)
+			return false;
+		return true;
+	}
+
+	if (IsBoat())
+		return true;
+
+	if (bIgnoreSpeedUpright)
+		return m_vecTurnSpeed.MagnitudeSqr() > 0.0004f;
+
+	return m_vecMoveSpeed.Magnitude2D() <= 0.01f
+		&& Abs(m_vecMoveSpeed.z) <= 0.05f
+		&& m_vecTurnSpeed.MagnitudeSqr() <= 0.0004f;
+}
+
 bool
 CVehicle::CanPedJumpOffBike(void)
 {

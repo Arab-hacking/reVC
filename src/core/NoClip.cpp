@@ -20,9 +20,7 @@ FindNoClipTarget(void)
 {
 	CPlayerPed *ped = FindPlayerPed();
 	if(!ped || ped->DyingOrDead() || ped->m_fHealth <= 0.0f ||
-	   ped->EnteringCar() || ped->GetPedState() == PED_EXIT_CAR ||
-	   ped->GetPedState() == PED_DRAGGED_FROM_CAR ||
-	   ped->GetPedState() == PED_ENTER_TRAIN || ped->GetPedState() == PED_EXIT_TRAIN)
+	   ped->EnteringCar())
 		return nil;
 
 	if(ped->InVehicle()){

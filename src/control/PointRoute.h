@@ -16,7 +16,35 @@ public:
 	bool IsEmpty() const { return m_NumEntries == 0; }
 	bool IsFull() const { return m_NumEntries >= 8; }
 	void Add(const CVector &entry) { m_Entries[m_NumEntries++] = entry; }
+	void AddUnlessFull(const CVector &entry) { if (!IsFull()) Add(entry); }
 	void Clear() { m_NumEntries = 0; }
+	void PopFront(void)
+	{
+		for (int32 i = 1; i < m_NumEntries; i++)
+			m_Entries[i - 1] = m_Entries[i];
+		if (m_NumEntries > 0)
+			m_NumEntries--;
+	}
+	void PopBack(void)
+	{
+		if (m_NumEntries > 0)
+			m_NumEntries--;
+	}
+	void Reverse(void)
+	{
+		for (int32 i = 0; i < m_NumEntries / 2; i++) {
+			CVector tmp = m_Entries[i];
+			m_Entries[i] = m_Entries[m_NumEntries - 1 - i];
+			m_Entries[m_NumEntries - 1 - i] = tmp;
+		}
+	}
+	float GetLength(void) const
+	{
+		float length = 0.0f;
+		for (int32 i = 1; i < m_NumEntries; i++)
+			length += (m_Entries[i] - m_Entries[i - 1]).Magnitude();
+		return length;
+	}
 	int32 GetSize() const { return m_NumEntries; }
 	void ResizeTo(uint32 size) { m_NumEntries = (int32)size; }
 

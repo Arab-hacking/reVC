@@ -196,7 +196,7 @@ CEmergencyPed::MedicAI(void)
 				for (int i = 0; i < m_numNearPeds; ++i) {
 					CPed *nearPed = m_nearPeds[i];
 					if (nearPed->m_nPedType == PEDTYPE_MEDIC) {
-						if ((nearPed->m_nPedState == PED_SEEK_CAR || nearPed->m_nPedState == PED_ENTER_CAR)
+						if (nearPed->EnteringCar()
 							&& nearPed->m_pMyVehicle == m_pMyVehicle) {
 							waitUntilMedicEntersCar = true;
 							break;

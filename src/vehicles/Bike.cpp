@@ -31,6 +31,8 @@
 #include "RpAnimBlend.h"
 #include "AnimBlendAssociation.h"
 #include "Ped.h"
+#include "PedIntelligence.h"
+#include "TaskSimpleCarSetPedOut.h"
 #include "PlayerPed.h"
 #include "DamageManager.h"
 #include "Vehicle.h"
@@ -253,7 +255,7 @@ CBike::ProcessControl(void)
 	case STATUS_PLAYER:
 		bBalancedByRider = true;
 		bIsBeingPickedUp = false;
-		if(FindPlayerPed()->GetPedState() != PED_EXIT_CAR && FindPlayerPed()->GetPedState() != PED_DRAGGED_FROM_CAR){
+		if(!FindPlayerPed()->LeavingCar() && !FindPlayerPed()->BeingDraggedOutOfCar()){
 			ProcessControlInputs(0);
 
 			if(m_fLeanInput < 0.0f){
@@ -2466,7 +2468,7 @@ CBike::KnockOffRider(eWeaponType weapon, uint8 direction, CPed *ped, bool bGetBa
 	ped->SetPedState(PED_IDLE);
 	CAnimManager::BlendAnimation(ped->GetClump(), ped->m_animGroup, ANIM_ID_IDLE, 100.0f);
 	ped->m_vehDoor = CAR_DOOR_LF;
-	CPed::PedSetOutCarCB(nil, ped);
+	ped->GetIntelligence()->AddTaskPrimaryMaybeInGroup(new CTaskSimpleCarSetPedOut(this, ped->m_vehDoor, true), true);
 	ped->SetMoveState(PEDMOVE_STILL);
 	if(GetUp().z < 0.0f)
 		ped->SetHeading(CGeneral::LimitRadianAngle(GetForward().Heading() + PI));

@@ -3,6 +3,8 @@
 #include "World.h"
 #include "PlayerPed.h"
 #include "CopPed.h"
+#include "PedIntelligence.h"
+#include "TaskComplexEnterCarAsDriver.h"
 #include "Wanted.h"
 #include "DMAudio.h"
 #include "ModelIndices.h"
@@ -721,7 +723,8 @@ CCopPed::ProcessControl(void)
 					} else if (1.5f + GetPosition().z <= m_vecSeekPos.z || GetPosition().z - 0.3f >= m_vecSeekPos.z) {
 						SetMoveState(PEDMOVE_STILL);
 					} else if (playerVeh && playerVeh->CanPedEnterCar() && playerVeh->m_nNumGettingIn == 0) {
-						SetCarJack(playerVeh);
+						if (GetIntelligence()->FindTaskByType(TASK_COMPLEX_ENTER_CAR_AS_DRIVER) == nil)
+							GetIntelligence()->AddTaskPrimaryMaybeInGroup(new CTaskComplexEnterCarAsDriver(playerVeh), true);
 					}
 				}
 			}
@@ -732,8 +735,8 @@ CCopPed::ProcessControl(void)
 				m_vecSeekPos = m_pSeekTarget->GetPosition();
 				if (Seek()) {
 					if (m_objective == OBJECTIVE_KILL_CHAR_ON_FOOT && m_fDistanceToTarget < 2.5f && player) {
-						if (player->m_nPedState == PED_ARRESTED || player->m_nPedState == PED_ENTER_CAR ||
-							(player->m_nPedState == PED_CARJACK && m_fDistanceToTarget < 1.3f)) {
+						if (player->m_nPedState == PED_ARRESTED ||
+							(player->EnteringCar() && m_fDistanceToTarget < 1.3f)) {
 							SetArrestPlayer(player);
 						} else
 							RestorePreviousState();

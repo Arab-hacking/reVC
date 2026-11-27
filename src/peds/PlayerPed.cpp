@@ -2230,28 +2230,6 @@ CPlayerPed::ProcessControl(void)
 				PlayerControlM16(padUsed);
 			}
 			break;
-		case PED_SEEK_CAR:
-		case PED_SEEK_BOAT_POSITION:
-			if (bVehEnterDoorIsBlocked || bKindaStayInSamePlace) {
-				MoveSpeed() = 0.0f;
-			} else {
-				MoveSpeed() = Min(2.0f, 2.0f * (m_vecSeekPos - GetPosition()).Magnitude2D());
-			}
-			if (padUsed && !padUsed->ArePlayerControlsDisabled()) {
-				if (padUsed->GetTarget() || padUsed->GetLeftStickXJustDown() || padUsed->GetLeftStickYJustDown() ||
-					padUsed->GetDPadUpJustDown() || padUsed->GetDPadDownJustDown() || padUsed->GetDPadLeftJustDown() ||
-					padUsed->GetDPadRightJustDown()) {
-
-					RestorePreviousState();
-					if (m_objective == OBJECTIVE_ENTER_CAR_AS_PASSENGER || m_objective == OBJECTIVE_ENTER_CAR_AS_DRIVER) {
-						RestorePreviousObjective();
-					}
-				}
-			}
-			if (padUsed && padUsed->GetSprint())
-				m_nMoveState = PEDMOVE_SPRINT;
-			SetRealMoveAnim();
-			break;
 		case PED_JUMP:
 			if (padUsed)
 				PlayerControlZelda(padUsed);
@@ -2262,18 +2240,9 @@ CPlayerPed::ProcessControl(void)
 			return;
 		case PED_FALL:
 		case PED_GETUP:
-		case PED_ENTER_TRAIN:
-		case PED_EXIT_TRAIN:
-		case PED_CARJACK:
-		case PED_DRAGGED_FROM_CAR:
-		case PED_ENTER_CAR:
-		case PED_STEAL_CAR:
-		case PED_EXIT_CAR:
 			ClearWeaponTarget();
 			break;
 		case PED_ARRESTED:
-			if (m_nLastPedState == PED_DRAGGED_FROM_CAR && m_pVehicleAnim)
-				BeingDraggedFromCar();
 			break;
 		default:
 			break;

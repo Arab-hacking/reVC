@@ -6,6 +6,7 @@
 #include "Vehicle.h"
 #include "EventScriptCommand.h"
 #include "DecisionMakerTypes.h"
+#include "TaskComplexEnterCar.h"
 #include "TaskComplexWander.h"
 #include "TaskSimpleCarDrive.h"
 #include "TaskSimpleCarDriveTimed.h"
@@ -461,27 +462,27 @@ CPedIntelligence::ProcessEventHandler()
 	m_eventHandler.HandleEvents();
 }
 
-// SA CPedIntelligence::GetEnteringVehicle: SA reads the target vehicle
-// off the ped's enter-car task; those tasks are not ported yet, so this
-// uses the VC side of the same state - a ped in PED_ENTER_CAR or
-// PED_CARJACK is heading for m_pSeekTarget.
+// SA CPedIntelligence::GetEnteringVehicle: the target vehicle is read
+// off the ped's enter-car task.
 CVehicle*
 CPedIntelligence::GetEnteringVehicle()
 {
-	if(m_pPed->EnteringCar())
-		return (CVehicle*)m_pPed->m_pSeekTarget;
+	CTask *task = FindTaskByType(TASK_COMPLEX_ENTER_CAR_AS_DRIVER);
+	if(task == nil)
+		task = FindTaskByType(TASK_COMPLEX_ENTER_CAR_AS_PASSENGER);
+	if(task != nil)
+		return ((CTaskComplexEnterCar*)task)->GetTargetCar();
 	return nil;
 }
 
-// SA CPedIntelligence::IsInACarOrEnteringOne. The enter-car tasks are not
-// ported yet; the driving task lookup is SA's third check.
+// SA CPedIntelligence::IsInACarOrEnteringOne.
 bool
 CPedIntelligence::IsInACarOrEnteringOne()
 {
 	CTask *drive = m_TaskMgr.FindTaskOfType(TASK_SIMPLE_CAR_DRIVE, true);
 	if(drive && ((CTaskSimpleCarDrive*)drive)->GetVehicle())
 		return true;
-	return m_pPed->bInVehicle;
+	return m_pPed->bInVehicle || m_pPed->EnteringCar();
 }
 
 // SA CPedIntelligence::IsPedGoingSomewhereOnFoot (0x601640).

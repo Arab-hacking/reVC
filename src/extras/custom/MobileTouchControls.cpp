@@ -1244,7 +1244,7 @@ UpdateGameplayLayout(void)
 	}
 
 	CVehicle *nearVeh = FindNearbyEnterableVehicle(player, 13.0f);
-	const bool enteringCar = (player->m_nPedState == PED_ENTER_CAR || player->m_nPedState == PED_CARJACK);
+	const bool enteringCar = player->EnteringCar();
 	if (nearVeh || enteringCar) {
 		MobileTexId enterTex = MTEX_CAR;
 		if (nearVeh) {

@@ -480,8 +480,7 @@ CCam::ProcessSpecialHeightRoutines(void)
 
 				if(Mode == MODE_FOLLOWPED){
 					if(TheCamera.PedZoomIndicator == CAM_ZOOM_1 &&
-					   ((CPed*)CamTargetEntity)->GetPedState() != PED_ENTER_CAR &&
-					   ((CPed*)CamTargetEntity)->GetPedState() != PED_CARJACK)
+					   !((CPed*)CamTargetEntity)->EnteringCar())
 						Offset = 0.45f + PedZDist;
 					// BUG: overrides this ^ case
 					if(TheCamera.PedZoomIndicator == CAM_ZOOM_2 || TheCamera.PedZoomIndicator == CAM_ZOOM_1)
@@ -1099,8 +1098,7 @@ CCam::Process_FollowPed(const CVector &CameraTarget, float TargetOrientation, fl
 	while(Beta < -PI) Beta += 2.0f * PI;
 
 	if(TheCamera.PedZoomIndicator == CAM_ZOOM_1 &&
-	   ((CPed*)CamTargetEntity)->GetPedState() != PED_ENTER_CAR &&
-	   ((CPed*)CamTargetEntity)->GetPedState() != PED_CARJACK){
+	   !((CPed*)CamTargetEntity)->EnteringCar()){
 		ZoomGroundTarget = m_fTargetZoomGroundOne;
 		ZoomZTarget = m_fTargetZoomOneZExtra;
 	}else if(TheCamera.PedZoomIndicator == CAM_ZOOM_2 || TheCamera.PedZoomIndicator == CAM_ZOOM_1){

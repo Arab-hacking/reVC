@@ -334,10 +334,10 @@ CPlayerInfo::Process(void)
 								veh->AutoPilot.m_nTimeTempAction = CTimer::GetTimeInMilliseconds() + 1000;
 							}
 						}
-					} else {
-						m_pPed->SetExitBoat(veh);
-						m_pPed->bTryingToReachDryLand = true;
-					}
+				} else {
+					m_pPed->SetObjective(OBJECTIVE_LEAVE_CAR, veh);
+					m_pPed->bTryingToReachDryLand = true;
+				}
 				}
 			}
 		} else {
@@ -352,8 +352,8 @@ CPlayerInfo::Process(void)
 					if (carBelow->IsBoat() && carBelow->m_modelIndex != MI_SKIMMER) {
 						weAreOnBoat = true;
 						m_pPed->bOnBoat = true;
-						if (carBelow->GetStatus() != STATUS_WRECKED && carBelow->GetUp().z > 0.3f)
-							m_pPed->SetSeekBoatPosition(carBelow);
+					if (carBelow->GetStatus() != STATUS_WRECKED && carBelow->GetUp().z > 0.3f)
+						m_pPed->SetObjective(OBJECTIVE_ENTER_CAR_AS_DRIVER, carBelow);
 					}
 				}
 				// Find closest car
@@ -389,12 +389,10 @@ CPlayerInfo::Process(void)
 						(carBelow->GetPosition() - m_pPed->GetPosition()).Magnitude2D());
 					if (carBelow->GetStatus() == STATUS_TRAIN_NOT_MOVING) {
 						m_pPed->SetObjective(OBJECTIVE_ENTER_CAR_AS_PASSENGER, carBelow);
-					} else if (carBelow->IsBoat()) {
-						if (!carBelow->pDriver) {
-							m_pPed->m_vehDoor = 0;
-							m_pPed->SetEnterCar(carBelow, m_pPed->m_vehDoor);
-						}
-					} else {
+				} else if (carBelow->IsBoat()) {
+					if (!carBelow->pDriver)
+						m_pPed->SetObjective(OBJECTIVE_ENTER_CAR_AS_DRIVER, carBelow);
+				} else {
 						m_pPed->SetObjective(OBJECTIVE_ENTER_CAR_AS_DRIVER, carBelow);
 					}
 					REVC_LOG_INFO("Vehicle entry objective: state=%d objective=%d targetMatches=%d",

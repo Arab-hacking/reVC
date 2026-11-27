@@ -1314,7 +1314,7 @@ CCamera::CamControl(void)
 				   PlayerWeaponMode.Mode == CCam::MODE_CAMERA ||
 				   Cams[ActiveCam].GetWeaponFirstPersonOn()){
 					// First person weapon mode
-					if(PLAYER->GetPedState() == PED_SEEK_CAR){
+					if(PLAYER->EnteringCar()){
 						if(ReqMode == CCam::MODE_TOP_DOWN_PED || Cams[ActiveCam].GetWeaponFirstPersonOn())
 							ReqMode = PlayerWeaponMode.Mode;
 						else
@@ -1849,8 +1849,7 @@ CCamera::UpdateTargetEntity(void)
 		else{
 			pTargetEntity = FindPlayerPed();
 			// this keeps the camera on the player while entering cars
-			if(PLAYER->GetPedState() == PED_ENTER_CAR ||
-			   PLAYER->GetPedState() == PED_CARJACK ||
+			if(PLAYER->EnteringCar() ||
 			   PLAYER->GetPedState() == PED_OPEN_DOOR)
 				enteringCar = true;
 
@@ -1865,15 +1864,14 @@ CCamera::UpdateTargetEntity(void)
 				if(FindPlayerPed()->m_pMyVehicle->CanPedOpenLocks(PLAYER))
 					cantOpen = false;
 			}else if(FindPlayerPed()->m_carInObjective &&
-			         (FindPlayerPed()->GetPedState() == PED_ENTER_CAR ||
-			          FindPlayerPed()->GetPedState() == PED_CARJACK ||
+			         (FindPlayerPed()->EnteringCar() ||
 			          FindPlayerPed()->GetPedState() == PED_OPEN_DOOR)){
 				if(FindPlayerPed()->m_carInObjective->CanPedOpenLocks(FindPlayerPed()))
 					cantOpen = false;
 			}
 		}
 
-		if(PLAYER->GetPedState() == PED_ENTER_CAR && !cantOpen){
+		if(PLAYER->EnteringCar() && !cantOpen){
 			if(!enteringCar && CarZoomIndicator != CAM_ZOOM_1STPRS){
 				pTargetEntity = PLAYER->m_pMyVehicle;
 				if(PLAYER->m_pMyVehicle == nil)
@@ -1881,16 +1879,16 @@ CCamera::UpdateTargetEntity(void)
 			}
 		}
 
-		if((PLAYER->GetPedState() == PED_CARJACK || PLAYER->GetPedState() == PED_OPEN_DOOR) && !cantOpen){
+		if((PLAYER->EnteringCar() || PLAYER->GetPedState() == PED_OPEN_DOOR) && !cantOpen){
 			if(!enteringCar && CarZoomIndicator != CAM_ZOOM_1STPRS)
 				pTargetEntity = PLAYER->m_pMyVehicle;
 			if(PLAYER->m_pMyVehicle == nil)
 				pTargetEntity = PLAYER;
 		}
 
-		if(PLAYER->GetPedState() == PED_EXIT_CAR)
+		if(PLAYER->LeavingCar())
 			pTargetEntity = FindPlayerPed();
-		if(PLAYER->GetPedState() == PED_DRAGGED_FROM_CAR)
+		if(PLAYER->BeingDraggedOutOfCar())
 			pTargetEntity = FindPlayerPed();
 		if(pTargetEntity->IsVehicle() && CarZoomIndicator == CAM_ZOOM_1STPRS && FindPlayerPed()->GetPedState() == PED_ARRESTED)
 			pTargetEntity = FindPlayerPed();
@@ -2209,13 +2207,12 @@ CCamera::Restore(void)
 		pTargetEntity = PLAYER;
 	}
 
-	if(PLAYER->GetPedState() == PED_ENTER_CAR ||
-	   PLAYER->GetPedState() == PED_CARJACK ||
+	if(PLAYER->EnteringCar() ||
 	   PLAYER->GetPedState() == PED_OPEN_DOOR){
 		m_iModeToGoTo = CCam::MODE_CAM_ON_A_STRING;
-		pTargetEntity = PLAYER->m_pSeekTarget;
+		pTargetEntity = PLAYER->m_carInObjective ? (CEntity*)PLAYER->m_carInObjective : (CEntity*)PLAYER;
 	}
-	if(PLAYER->GetPedState() == PED_EXIT_CAR){
+	if(PLAYER->LeavingCar()){
 		m_iModeToGoTo = CCam::MODE_FOLLOWPED;
 		pTargetEntity = PLAYER;
 	}
@@ -2258,13 +2255,12 @@ CCamera::RestoreWithJumpCut(void)
 		pTargetEntity = PLAYER;
 	}
 
-	if(PLAYER->GetPedState() == PED_ENTER_CAR ||
-	   PLAYER->GetPedState() == PED_CARJACK ||
+	if(PLAYER->EnteringCar() ||
 	   PLAYER->GetPedState() == PED_OPEN_DOOR){
 		m_iModeToGoTo = CCam::MODE_CAM_ON_A_STRING;
-		pTargetEntity = PLAYER->m_pSeekTarget;
+		pTargetEntity = PLAYER->m_carInObjective ? (CEntity*)PLAYER->m_carInObjective : (CEntity*)PLAYER;
 	}
-	if(PLAYER->GetPedState() == PED_EXIT_CAR){
+	if(PLAYER->LeavingCar()){
 		m_iModeToGoTo = CCam::MODE_FOLLOWPED;
 		pTargetEntity = PLAYER;
 	}

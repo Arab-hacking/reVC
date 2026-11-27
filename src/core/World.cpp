@@ -1983,33 +1983,20 @@ CWorld::Process(void)
 		for(CPtrNode *node = ms_listMovingEntityPtrs.first; node; node = node->next) {
 			CPed *movingPed = (CPed *)node->item;
 			if(movingPed->IsPed()) {
-				if(movingPed->bInVehicle && movingPed->m_nPedState != PED_EXIT_TRAIN ||
-				   movingPed->EnteringCar()) {
+				if(movingPed->bInVehicle || movingPed->EnteringCar()) {
 					CVehicle *movingCar = movingPed->m_pMyVehicle;
 					if(movingCar) {
 						if(movingCar->IsTrain()) {
 							movingPed->SetPedPositionInTrain();
-						} else
-						{
-							switch(movingPed->m_nPedState) {
-							case PED_ENTER_CAR:
-							case PED_CARJACK: movingPed->EnterCar(); break;
-							case PED_DRAGGED_FROM_CAR: movingPed->BeingDraggedFromCar(); break;
-							case PED_EXIT_CAR: movingPed->ExitCar(); break;
-							case PED_ARRESTED:
-								if(movingPed->m_nLastPedState == PED_DRAGGED_FROM_CAR) {
-									movingPed->BeingDraggedFromCar();
-									break;
-								}
-								// fall through
-							default: movingPed->SetPedPositionInCar(); break;
-							}
+						} else {
+							movingPed->SetPedPositionInCar();
 						}
 						movingPed->GetMatrix().UpdateRW();
 						movingPed->UpdateRwFrame();
 					} else {
 						movingPed->bInVehicle = false;
-						movingPed->QuitEnteringCar();
+						if(!movingPed->EnteringCar())
+							movingPed->QuitEnteringCar();
 					}
 				} else if (movingPed->m_attachedTo) {
 					movingPed->PositionAttachedPed();

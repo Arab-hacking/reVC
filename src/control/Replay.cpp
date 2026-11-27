@@ -148,15 +148,15 @@ int CReplay::nHandleOfPlayerPed[NUMPLAYERS];
 static void(*CBArray[])(CAnimBlendAssociation*, void*) =
 {
 	nil, &CPed::PedGetupCB, &CPed::PedStaggerCB, &CPed::PedEvadeCB, &CPed::FinishDieAnimCB,
-	&CPed::FinishedWaitCB, &CPed::FinishLaunchCB, &CPed::FinishHitHeadCB, &CPed::PedAnimGetInCB, &CPed::PedAnimDoorOpenCB,
-	&CPed::PedAnimPullPedOutCB, &CPed::PedAnimDoorCloseCB, &CPed::PedSetInCarCB, &CPed::PedSetOutCarCB, &CPed::PedAnimAlignCB,
-	&CPed::PedSetDraggedOutCarCB, &CPed::PedAnimStepOutCarCB, &CPed::PedSetInTrainCB,
-	&CPed::PedSetOutTrainCB,
+	&CPed::FinishedWaitCB, &CPed::FinishLaunchCB, &CPed::FinishHitHeadCB, nil, nil,
+	nil, nil, nil, nil, nil,
+	nil, nil, nil,
+	nil,
 	&CPed::FinishedAttackCB,
-	&CPed::FinishFightMoveCB, &PhonePutDownCB, &PhonePickUpCB, &CPed::PedAnimDoorCloseRollingCB, &CPed::FinishJumpCB,
-	&CPed::PedLandCB, &CPed::RestoreHeadingRateCB, &CPed::PedSetQuickDraggedOutCarPositionCB, &CPed::PedSetDraggedOutCarPositionCB,
-	&CPed::PedSetPreviousStateCB, &CPed::FinishedReloadCB, &CPed::PedSetGetInCarPositionCB,
-	&CPed::PedAnimShuffleCB, &CPed::DeleteSunbatheIdleAnimCB, &StartTalkingOnMobileCB, &FinishTalkingOnMobileCB
+	&CPed::FinishFightMoveCB, &PhonePutDownCB, &PhonePickUpCB, nil, &CPed::FinishJumpCB,
+	&CPed::PedLandCB, &CPed::RestoreHeadingRateCB, nil, nil,
+	&CPed::PedSetPreviousStateCB, &CPed::FinishedReloadCB, nil,
+	nil, &CPed::DeleteSunbatheIdleAnimCB, &StartTalkingOnMobileCB, &FinishTalkingOnMobileCB
 };
 
 static uint8 FindCBFunctionID(void(*f)(CAnimBlendAssociation*, void*))

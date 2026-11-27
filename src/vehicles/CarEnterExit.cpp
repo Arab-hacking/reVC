@@ -8,6 +8,8 @@
 #include "Bike.h"
 #include "Boat.h"
 #include "Ped.h"
+#include "PedIntelligence.h"
+#include "TaskComplexLeaveCar.h"
 #include "PlayerPed.h"
 #include "ModelInfo.h"
 #include "VehicleModelInfo.h"
@@ -18,6 +20,7 @@
 #include "Collision.h"
 #include "EventList.h"
 #include "Timer.h"
+#include "Pad.h"
 #include "Script.h"
 #include "Fire.h"
 #include "Streaming.h"
@@ -714,6 +717,21 @@ CCarEnterExit::IsPedHealthy(CPed *ped)
 	return ped->m_fHealth > 0.0f;
 }
 
+// SA CCarEnterExit::IsPlayerToQuitCarEnter (0x64F240, unreversed in the
+// reference): has the player changed his mind about getting into this
+// vehicle? He has once the entry has been going for a moment and he taps
+// the enter/exit input again; the tap that started the entry must not
+// itself count, hence the grace time.
+bool
+CCarEnterExit::IsPlayerToQuitCarEnter(const CPed *ped, const CVehicle *vehicle, int32 startTime, CTask *task)
+{
+	if (ped == nil || vehicle == nil || !ped->IsPlayer())
+		return false;
+	if ((int32)CTimer::GetTimeInMilliseconds() - startTime < 500)
+		return false;
+	return CPad::GetPad(0)->ExitVehicleJustDown();
+}
+
 // SA CCarEnterExit::IsRoomForPedToLeaveCar (0x6504C0). The vehicle classes own
 // the actual test because a bike and a car swing their doors differently.
 bool
@@ -789,9 +807,9 @@ CCarEnterExit::IsVehicleStealable(const CVehicle *vehicle, const CPed *ped)
 	return true;
 }
 
-// SA CCarEnterExit::MakeUndraggedDriverPedLeaveCar (0x64F600). reVC has no ped
-// event system of its own, so this drives the driver out through the same
-// state machine the AI uses instead of posting a CEventDraggedOutCar.
+// SA CCarEnterExit::MakeUndraggedDriverPedLeaveCar (0x64F600). SA posts a
+// CEventDraggedOutCar; our event response for it is not ported yet, so the
+// driver is handed the leave task directly.
 void
 CCarEnterExit::MakeUndraggedDriverPedLeaveCar(const CVehicle *vehicle, const CPed *pedGettingIn)
 {
@@ -806,7 +824,8 @@ CCarEnterExit::MakeUndraggedDriverPedLeaveCar(const CVehicle *vehicle, const CPe
 	if(driver->IsPlayer())
 		return;	// the player decides for themselves
 
-	driver->SetExitCar(veh, CAR_DOOR_LF);
+	driver->GetIntelligence()->AddTaskPrimaryMaybeInGroup(
+		new CTaskComplexLeaveCar(veh, CAR_DOOR_LF, 0, true, false), true);
 }
 
 // SA CCarEnterExit::MakeUndraggedPassengerPedsLeaveCar (0x64F540).
@@ -828,7 +847,8 @@ CCarEnterExit::MakeUndraggedPassengerPedsLeaveCar(const CVehicle *targetVehicle,
 		const int32 doorId = ComputeTargetDoorToEnterAsPassenger(veh, i);
 		if(doorId < 0)
 			continue;
-		psgr->SetExitCar(veh, (uint32)doorId);
+		psgr->GetIntelligence()->AddTaskPrimaryMaybeInGroup(
+			new CTaskComplexLeaveCar(veh, doorId, 0, true, false), true);
 	}
 }
 

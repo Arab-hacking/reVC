@@ -230,11 +230,7 @@ void CCrane::Update(void)
 					Abs(m_pVehiclePickedUp->GetMoveSpeed().x) > CAR_MOVING_SPEED_THRESHOLD ||
 					Abs(m_pVehiclePickedUp->GetMoveSpeed().y) > CAR_MOVING_SPEED_THRESHOLD ||
 					Abs(m_pVehiclePickedUp->GetMoveSpeed().z) > CAR_MOVING_SPEED_THRESHOLD ||
-					(FindPlayerPed()->GetPedState() == PED_ENTER_CAR
-#ifdef FIX_BUGS
-					|| FindPlayerPed()->GetPedState() == PED_CARJACK
-#endif
-					) && FindPlayerPed()->m_pSeekTarget == m_pVehiclePickedUp) {
+					FindPlayerPed()->EnteringCar() && FindPlayerPed()->m_pSeekTarget == m_pVehiclePickedUp) {
 					m_pVehiclePickedUp = nil;
 					m_nCraneState = IDLE;
 				}

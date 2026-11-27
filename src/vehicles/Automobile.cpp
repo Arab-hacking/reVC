@@ -46,6 +46,8 @@
 #include "RpAnimBlend.h"
 #include "AnimBlendAssociation.h"
 #include "Ped.h"
+#include "PedIntelligence.h"
+#include "TaskSimpleCarSetPedOut.h"
 #include "PlayerPed.h"
 #include "Object.h"
 #include "Automobile.h"
@@ -464,7 +466,7 @@ CAutomobile::ProcessControl(void)
 		// fall through
 	case STATUS_PLAYER:
 		if(playerRemote ||
-		   pDriver && pDriver->GetPedState() != PED_EXIT_CAR && pDriver->GetPedState() != PED_DRAGGED_FROM_CAR && pDriver->GetPedState() != PED_ARRESTED){
+		   pDriver && !pDriver->LeavingCar() && !pDriver->BeingDraggedOutOfCar() && pDriver->GetPedState() != PED_ARRESTED){
 			// process control input if controlled by player
 			if(playerRemote || pDriver->m_nPedType == PEDTYPE_PLAYER1)
 				ProcessControlInputs(0);
@@ -518,8 +520,8 @@ CAutomobile::ProcessControl(void)
 			}
 		}else if(pDriver && pDriver->IsPlayer() &&
 		         (pDriver->GetPedState() == PED_ARRESTED ||
-		          pDriver->GetPedState() == PED_DRAGGED_FROM_CAR ||
-		          (pDriver->GetPedState() == PED_EXIT_CAR || pDriver->m_objective == OBJECTIVE_LEAVE_CAR) && !CanPedJumpOutCar())){
+		          pDriver->BeingDraggedOutOfCar() ||
+		          (pDriver->LeavingCar() || pDriver->m_objective == OBJECTIVE_LEAVE_CAR) && !CanPedJumpOutCar())){
 			bIsHandbrakeOn = true;
 			m_fBrakePedal = 1.0f;
 			m_fGasPedal = 0.0f;
@@ -608,8 +610,8 @@ CAutomobile::ProcessControl(void)
 		if(m_vecMoveSpeed.MagnitudeSqr() < SQR(0.1f) ||
 		   (pDriver && pDriver->IsPlayer() &&
 		    (pDriver->GetPedState() == PED_ARRESTED ||
-		     pDriver->GetPedState() == PED_DRAGGED_FROM_CAR ||
-		     (pDriver->GetPedState() == PED_EXIT_CAR || pDriver->m_objective == OBJECTIVE_LEAVE_CAR) && !CanPedJumpOutCar()))){
+		     pDriver->BeingDraggedOutOfCar() ||
+		     (pDriver->LeavingCar() || pDriver->m_objective == OBJECTIVE_LEAVE_CAR) && !CanPedJumpOutCar()))){
 			bIsHandbrakeOn = true;
 			m_fBrakePedal = 1.0f;
 			m_fGasPedal = 0.0f;
@@ -6047,7 +6049,7 @@ CAutomobile::KnockPedOutCar(eWeaponType weapon, uint16 door, CPed *ped)
 	ped->m_vehDoor = door;
 	ped->SetPedState(PED_IDLE);
 	CAnimManager::BlendAnimation(ped->GetClump(), ped->m_animGroup, ANIM_ID_IDLE, 100.0f);
-	CPed::PedSetOutCarCB(nil, ped);
+	ped->GetIntelligence()->AddTaskPrimaryMaybeInGroup(new CTaskSimpleCarSetPedOut(this, ped->m_vehDoor, true), true);
 	ped->SetMoveState(PEDMOVE_STILL);
 	if(GetUp().z < 0.0f)
 		ped->SetHeading(CGeneral::LimitRadianAngle(GetForward().Heading() + PI));

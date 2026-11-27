@@ -404,7 +404,7 @@ CGameLogic::AbandonShortCutIfTaxiHasBeenMessedWith()
 		return;
 	if (pShortCutTaxi->pDriver == nil ||
 		pShortCutTaxi->pDriver->DyingOrDead() ||
-		pShortCutTaxi->pDriver->GetPedState() == PED_DRAGGED_FROM_CAR ||
+		pShortCutTaxi->pDriver->BeingDraggedOutOfCar() ||
 		pShortCutTaxi->pDriver->GetPedState() == PED_ON_FIRE ||
 		pShortCutTaxi->pDriver->m_objective == OBJECTIVE_LEAVE_CAR_AND_DIE ||
 		pShortCutTaxi->m_fHealth < 250.0f ||
