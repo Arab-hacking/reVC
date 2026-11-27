@@ -55,23 +55,29 @@ struct JParser
 	std::string err;
 
 	void SkipWs(void) {
-		while(p < end && (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n' ||
-		                  *p == '\xef' || *p == '\xbb' || *p == '\xbf'))
-			p++;
-		// tolerate // line comments (hand-edited files might have them)
-		if(p+1 < end && p[0] == '/' && p[1] == '/'){
-			while(p < end && *p != '\n')
+		for(;;){
+			while(p < end && (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n' ||
+			                  *p == '\xef' || *p == '\xbb' || *p == '\xbf'))
 				p++;
-			SkipWs();
+			// tolerate // line comments (hand-edited files might have them)
+			if(p+1 < end && p[0] == '/' && p[1] == '/'){
+				while(p < end && *p != '\n')
+					p++;
+				continue;
+			}
+			break;
 		}
 	}
 
-	bool Parse(JValue &out) {
+	bool Parse(JValue &out, int depth = 0) {
+		// The descent is recursive; a hostile or corrupted file of nested
+		// brackets would otherwise run the stack out at load.
+		if(depth > 64){ err = "nesting too deep"; return false; }
 		SkipWs();
 		if(p >= end){ err = "unexpected end"; return false; }
 		char c = *p;
-		if(c == '{') return ParseObj(out);
-		if(c == '[') return ParseArr(out);
+		if(c == '{') return ParseObj(out, depth);
+		if(c == '[') return ParseArr(out, depth);
 		if(c == '"') { out.type = JValue::STR; return ParseStr(out.str); }
 		if(c == 't' && end-p >= 4 && strncmp(p, "true", 4) == 0){ p += 4; out.type = JValue::BOOL; out.b = true; return true; }
 		if(c == 'f' && end-p >= 5 && strncmp(p, "false", 5) == 0){ p += 5; out.type = JValue::BOOL; out.b = false; return true; }
@@ -84,7 +90,7 @@ struct JParser
 		p = e;
 		return true;
 	}
-	bool ParseObj(JValue &out) {
+	bool ParseObj(JValue &out, int depth) {
 		out.type = JValue::OBJ;
 		p++;	// {
 		SkipWs();
@@ -98,7 +104,7 @@ struct JParser
 			if(p >= end || *p != ':'){ err = "expected ':'"; return false; }
 			p++;
 			JValue v;
-			if(!Parse(v)) return false;
+			if(!Parse(v, depth + 1)) return false;
 			out.keys.push_back(key);
 			out.vals.push_back(v);
 			SkipWs();
@@ -107,14 +113,14 @@ struct JParser
 			p++;
 		}
 	}
-	bool ParseArr(JValue &out) {
+	bool ParseArr(JValue &out, int depth) {
 		out.type = JValue::ARR;
 		p++;	// [
 		SkipWs();
 		if(p < end && *p == ']'){ p++; return true; }
 		for(;;){
 			JValue v;
-			if(!Parse(v)) return false;
+			if(!Parse(v, depth + 1)) return false;
 			out.arr.push_back(v);
 			SkipWs();
 			if(p < end && *p == ']'){ p++; return true; }
@@ -163,9 +169,14 @@ JsonParse(const std::vector<uint8> &data, JValue &out, std::string &err)
 	size_t off = 0;
 	if(data.size() >= 3 && data[0] == 0xEF && data[1] == 0xBB && data[2] == 0xBF)
 		off = 3;
+	// strtod needs a terminator the caller's byte vector does not promise;
+	// parse a terminated copy so a number at the very end cannot over-read.
+	std::string text;
+	if(data.size() > off)
+		text.assign((const char*)data.data() + off, data.size() - off);
 	JParser jp;
-	jp.p = (const char*)data.data() + off;
-	jp.end = (const char*)data.data() + data.size();
+	jp.p = text.data();
+	jp.end = text.data() + text.size();
 	if(!jp.Parse(out)){
 		err = jp.err;
 		return false;
