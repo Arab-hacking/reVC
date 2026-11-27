@@ -57,7 +57,7 @@ CTaskSimpleCarCloseDoorFromInside::ComputeAnimID(AssocGroupId &outGroup, Animati
 }
 
 void
-CTaskSimpleCarCloseDoorFromInside::StartAnim(const CPed *ped)
+CTaskSimpleCarCloseDoorFromInside::StartAnim(CPed *ped)
 {
 	AssocGroupId grpId;
 	AnimationId animId;
@@ -68,7 +68,7 @@ CTaskSimpleCarCloseDoorFromInside::StartAnim(const CPed *ped)
 }
 
 void
-CTaskSimpleCarCloseDoorFromInside::ProcessDoorOpen(const CPed *ped)
+CTaskSimpleCarCloseDoorFromInside::ProcessDoorOpen(CPed *ped)
 {
 	AssocGroupId grpId;
 	AnimationId animId;

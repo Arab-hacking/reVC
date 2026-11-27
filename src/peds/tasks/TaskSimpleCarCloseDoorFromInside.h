@@ -28,8 +28,8 @@ public:
 	static void FinishAnimCarCloseDoorFromInsideCB(CAnimBlendAssociation *anim, void *data);
 
 	void ComputeAnimID(AssocGroupId &outGroup, AnimationId &outAnimId);
-	void StartAnim(const CPed *ped);
-	void ProcessDoorOpen(const CPed *ped);
+	void StartAnim(CPed *ped);
+	void ProcessDoorOpen(CPed *ped);
 
 	CTask *Clone() const { return new CTaskSimpleCarCloseDoorFromInside(*this); }
 	eTaskType GetTaskType() const { return Type; }

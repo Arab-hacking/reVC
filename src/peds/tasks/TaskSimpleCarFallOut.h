@@ -27,7 +27,7 @@ public:
 	~CTaskSimpleCarFallOut();
 
 	void ComputeAnimID(AssocGroupId &outGroup, AnimationId &outAnimId);
-	void StartAnim(const CPed *ped);
+	void StartAnim(CPed *ped);
 
 	CTask *Clone() const { return new CTaskSimpleCarFallOut(*this); }
 	eTaskType GetTaskType() const { return Type; }

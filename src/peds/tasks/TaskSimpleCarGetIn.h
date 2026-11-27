@@ -28,7 +28,7 @@ public:
 
 	static void FinishAnimCarGetInCB(CAnimBlendAssociation *anim, void *data);
 
-	void StartAnim(const CPed *ped);
+	void StartAnim(CPed *ped);
 
 	CTask *Clone() const { return new CTaskSimpleCarGetIn(*this); }
 	eTaskType GetTaskType() const { return Type; }

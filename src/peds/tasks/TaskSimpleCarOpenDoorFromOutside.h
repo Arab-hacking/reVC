@@ -33,7 +33,7 @@ public:
 	static void FinishAnimCarOpenDoorFromOutsideCB(CAnimBlendAssociation *anim, void *data);
 
 	void ComputeAnimID(AssocGroupId &outGroup, AnimationId &outAnimId);
-	void StartAnim(const CPed *ped);
+	void StartAnim(CPed *ped);
 
 	CTask *Clone() const { return new CTaskSimpleCarOpenDoorFromOutside(*this); }
 	eTaskType GetTaskType() const { return Type; }

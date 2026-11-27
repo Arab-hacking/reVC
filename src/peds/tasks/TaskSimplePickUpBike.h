@@ -28,7 +28,7 @@ public:
 
 	static void FinishAnimPickUpBikeCB(CAnimBlendAssociation *anim, void *data);
 
-	void StartAnim(const CPed *ped);
+	void StartAnim(CPed *ped);
 
 	CTask *Clone() const { return new CTaskSimplePickUpBike(*this); }
 	eTaskType GetTaskType() const { return Type; }

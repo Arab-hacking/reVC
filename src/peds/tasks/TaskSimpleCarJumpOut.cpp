@@ -53,7 +53,7 @@ CTaskSimpleCarJumpOut::FinishAnimCarJumpOutCB(CAnimBlendAssociation *anim, void 
 }
 
 void
-CTaskSimpleCarJumpOut::StartAnim(const CPed *ped)
+CTaskSimpleCarJumpOut::StartAnim(CPed *ped)
 {
 	AssocGroupId groupId;
 	AnimationId animId;

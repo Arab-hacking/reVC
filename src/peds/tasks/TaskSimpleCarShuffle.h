@@ -27,7 +27,7 @@ public:
 
 	static void FinishAnimCarShuffleCB(CAnimBlendAssociation *anim, void *data);
 
-	void StartAnim(const CPed *target);
+	void StartAnim(CPed *target);
 
 	CTask *Clone() const { return new CTaskSimpleCarShuffle(*this); }
 	eTaskType GetTaskType() const { return Type; }

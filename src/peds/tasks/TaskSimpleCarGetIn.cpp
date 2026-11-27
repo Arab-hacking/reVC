@@ -38,7 +38,7 @@ CTaskSimpleCarGetIn::FinishAnimCarGetInCB(CAnimBlendAssociation *anim, void *dat
 }
 
 void
-CTaskSimpleCarGetIn::StartAnim(const CPed *ped)
+CTaskSimpleCarGetIn::StartAnim(CPed *ped)
 {
 	AnimationId animId;
 	switch (m_door) {

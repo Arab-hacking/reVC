@@ -35,7 +35,7 @@ CTaskSimpleCarShuffle::FinishAnimCarShuffleCB(CAnimBlendAssociation *anim, void 
 }
 
 void
-CTaskSimpleCarShuffle::StartAnim(const CPed *target)
+CTaskSimpleCarShuffle::StartAnim(CPed *target)
 {
 	m_Anim = CAnimManager::BlendAnimation(target->GetClump(),
 		m_Car->GetAnimGroup().GetGroup(ANIM_ID_CAR_SHUFFLE_RHS_1), ANIM_ID_CAR_SHUFFLE_RHS_1, 1000.0f);

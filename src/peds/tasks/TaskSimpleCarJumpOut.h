@@ -31,7 +31,7 @@ public:
 
 	static void FinishAnimCarJumpOutCB(CAnimBlendAssociation *anim, void *data);
 
-	void StartAnim(const CPed *ped);
+	void StartAnim(CPed *ped);
 	void ComputeAnimID(AssocGroupId &outGroup, AnimationId &outAnimId);
 
 	CTask *Clone() const { return new CTaskSimpleCarJumpOut(*this); }

@@ -79,7 +79,7 @@ CTaskSimpleCarSlowDragPedOut::ComputeAnimID(AssocGroupId &outGroup, AnimationId 
 }
 
 void
-CTaskSimpleCarSlowDragPedOut::StartAnim(const CPed *ped)
+CTaskSimpleCarSlowDragPedOut::StartAnim(CPed *ped)
 {
 	AssocGroupId groupId;
 	AnimationId animId;

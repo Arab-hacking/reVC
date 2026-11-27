@@ -39,7 +39,7 @@ CTaskSimplePickUpBike::FinishAnimPickUpBikeCB(CAnimBlendAssociation *anim, void 
 }
 
 void
-CTaskSimplePickUpBike::StartAnim(const CPed *ped)
+CTaskSimplePickUpBike::StartAnim(CPed *ped)
 {
 	const float rightZ = m_veh->GetMatrix().GetRight().z;
 	AnimationId animId;

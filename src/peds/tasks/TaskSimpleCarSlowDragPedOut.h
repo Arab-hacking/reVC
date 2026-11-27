@@ -31,7 +31,7 @@ public:
 	static void FinishAnimCarSlowDragPedOutCB(CAnimBlendAssociation *anim, void *task);
 
 	void ComputeAnimID(AssocGroupId &outGroup, AnimationId &outAnimId);
-	void StartAnim(const CPed *ped);
+	void StartAnim(CPed *ped);
 	CPed *GetJackedPed() const;
 
 	CTask *Clone() const { return new CTaskSimpleCarSlowDragPedOut(*this); }

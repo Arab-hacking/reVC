@@ -68,7 +68,7 @@ CTaskSimpleCarOpenDoorFromOutside::ComputeAnimID(AssocGroupId &outGroup, Animati
 }
 
 void
-CTaskSimpleCarOpenDoorFromOutside::StartAnim(const CPed *ped)
+CTaskSimpleCarOpenDoorFromOutside::StartAnim(CPed *ped)
 {
 	AssocGroupId groupId;
 	AnimationId animId;

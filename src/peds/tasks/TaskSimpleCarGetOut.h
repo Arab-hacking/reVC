@@ -30,7 +30,7 @@ public:
 	static void FinishAnimCarGetOutCB(CAnimBlendAssociation *anim, void *data);
 
 	void ComputeAnimID(AssocGroupId &outGroup, AnimationId &outAnimId);
-	void StartAnim(const CPed *ped);
+	void StartAnim(CPed *ped);
 
 	CTask *Clone() const { return new CTaskSimpleCarGetOut(*this); }
 	eTaskType GetTaskType() const { return Type; }

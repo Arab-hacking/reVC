@@ -80,7 +80,7 @@ CTaskSimpleCarGetOut::ComputeAnimID(AssocGroupId &outGroup, AnimationId &outAnim
 }
 
 void
-CTaskSimpleCarGetOut::StartAnim(const CPed *ped)
+CTaskSimpleCarGetOut::StartAnim(CPed *ped)
 {
 	CCarEnterExit::RemoveCarSitAnim(ped);
 
