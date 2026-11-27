@@ -1454,6 +1454,15 @@ CFileLoader::LoadObject(const char *line)
 	if(sscanf(line, "%d %23s %23s %d", &id, model, txd, &numObjs) != 4)
 		return 0;	// game returns return value
 
+	// A numObjs outside 1..3 leaves dist/flags unset and later indexes
+	// the three-entry lod distance and atomic tables with it.
+	if(numObjs < 1 || numObjs > 3){
+		debug("OBJS: bad numObjs %d (%s)\n", numObjs, model);
+		return 0;
+	}
+	flags = 0;
+	memset(dist, 0, sizeof(dist));
+
 	switch(numObjs){
 	case 1:
 		sscanf(line, "%d %23s %23s %d %f %d",
@@ -1503,6 +1512,16 @@ CFileLoader::LoadTimeObject(const char *line)
 
 	if(sscanf(line, "%d %23s %23s %d", &id, model, txd, &numObjs) != 4)
 		return 0;	// game returns return value
+
+	// As in LoadObject: an out-of-range numObjs leaves the parsed
+	// fields half-set and later indexes fixed-size tables with it.
+	if(numObjs < 1 || numObjs > 3){
+		debug("TOBJ: bad numObjs %d (%s)\n", numObjs, model);
+		return 0;
+	}
+	flags = 0;
+	timeOn = timeOff = 0;
+	memset(dist, 0, sizeof(dist));
 
 	switch(numObjs){
 	case 1:
@@ -2123,6 +2142,14 @@ CFileLoader::ReloadObject(const char *line)
 
 	if(sscanf(line, "%d %23s %23s %d", &id, model, txd, &numObjs) != 4)
 		return;
+
+	// See LoadObject: dist/flags must start settled and numObjs in range.
+	if(numObjs < 1 || numObjs > 3){
+		printf("Can't reload %s\n", model);
+		return;
+	}
+	flags = 0;
+	memset(dist, 0, sizeof(dist));
 
 	switch(numObjs){
 	case 1:
