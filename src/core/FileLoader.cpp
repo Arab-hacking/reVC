@@ -1477,6 +1477,8 @@ CFileLoader::LoadObject(const char *line)
 	}
 
 	mi = CModelInfo::AddSimpleModel(id);
+	if(mi == nil)
+		return 0;
 	mi->SetModelName(model);
 	mi->SetNumAtomics(numObjs);
 	mi->SetLodDistances(dist);
@@ -1525,6 +1527,8 @@ CFileLoader::LoadTimeObject(const char *line)
 	}
 
 	mi = CModelInfo::AddTimeModel(id);
+	if(mi == nil)
+		return 0;
 	mi->SetModelName(model);
 	mi->SetNumAtomics(numObjs);
 	mi->SetLodDistances(dist);
@@ -1551,6 +1555,8 @@ CFileLoader::LoadWeaponObject(const char *line)
 	sscanf(line, "%d %23s %23s %15s %d %f", &id, model, txd, animFile, &numObjs, &dist);
 
 	mi = CModelInfo::AddWeaponModel(id);
+	if(mi == nil)
+		return 0;
 	mi->SetModelName(model);
 	mi->SetNumAtomics(1);
 	mi->m_lodDistances[0] = dist;
@@ -1570,6 +1576,8 @@ CFileLoader::LoadClumpObject(const char *line)
 
 	if(sscanf(line, "%d %23s %23s", &id, model, txd) == 3){
 		mi = CModelInfo::AddClumpModel(id);
+		if(mi == nil)
+			return;
 		mi->SetModelName(model);
 		mi->SetTexDictionary(txd);
 		mi->SetColModel(&CTempColModels::ms_colModelBBox);
@@ -1594,6 +1602,8 @@ CFileLoader::LoadVehicleObject(const char *line)
 		&frequency, &level, &comprules, &misc, &wheelScale);
 
 	mi = CModelInfo::AddVehicleModel(id);
+	if(mi == nil)
+		return;
 	mi->SetModelName(model);
 	mi->SetTexDictionary(txd);
 	mi->SetAnimFile(animFile);
@@ -1719,6 +1729,8 @@ CFileLoader::LoadPedObject(const char *line)
 		return;
 
 	mi = CModelInfo::AddPedModel(id);
+	if(mi == nil)
+		return;
 	mi->SetModelName(model);
 	mi->SetTexDictionary(txd);
 	mi->SetAnimFile(animFile);

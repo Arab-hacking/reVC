@@ -667,12 +667,14 @@ void CCustomWorld::LoadIde(void)
         CBaseModelInfo *mi = nil;
         if(type == MITYPE_TIME) {
             CTimeModelInfo *time = CModelInfo::AddTimeModel(slot);
+            if(time == nil) { full++; continue; }
             time->SetTimes(m.timeOn, m.timeOff);
             mi = time;
         } else if(type == MITYPE_SIMPLE) {
             mi = CModelInfo::AddSimpleModel(slot);
         } else if(type == MITYPE_PED) {
             CPedModelInfo *ped = CModelInfo::AddPedModel(slot);
+            if(ped == nil) { full++; continue; }
             ped->m_pedType = SafePedType(m.subtype);
             // SA skeletons select the separate custom animation bank when
             // their DFF is loaded; VC skeletons keep the VC bank. No raw SA
@@ -694,6 +696,7 @@ void CCustomWorld::LoadIde(void)
             mi = ped;
         } else if(type == MITYPE_VEHICLE) {
             CVehicleModelInfo *vehicle = CModelInfo::AddVehicleModel(slot);
+            if(vehicle == nil) { full++; continue; }
             bool fallback = false;
             vehicle->m_nVehicleType = (eVehicleType)vehicleType;
             vehicle->m_handlingId = BuiltinHandling((eVehicleType)vehicleType, m.handling, fallback);
@@ -736,6 +739,7 @@ void CCustomWorld::LoadIde(void)
             mi = vehicle;
         } else {
             CWeaponModelInfo *weapon = CModelInfo::AddWeaponModel(slot);
+            if(weapon == nil) { full++; continue; }
             weapon->SetNumAtomics(1);
             weapon->m_lodDistances[0] = m.distance;
             weapon->SetColModel(&CTempColModels::ms_colModelWeapon);

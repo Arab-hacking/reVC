@@ -119,11 +119,20 @@ CModelInfo::ShutDown(void)
 	ms_vehicleModelStore.Clear();
 }
 
+// The id comes straight out of an IDE line (or an archive table built like
+// one), and the pointer array is indexed by it: an id outside the array must
+// refuse the registration instead of writing past it, and a full store
+// (Alloc returns nil in release builds) must refuse instead of dereferencing
+// nil. Callers check for nil.
 CSimpleModelInfo*
 CModelInfo::AddSimpleModel(int id)
 {
+	if(id < 0 || id >= MODELINFOSIZE)
+		return nil;
 	CSimpleModelInfo *modelinfo;
 	modelinfo = CModelInfo::ms_simpleModelStore.Alloc();
+	if(modelinfo == nil)
+		return nil;
 	CModelInfo::ms_modelInfoPtrs[id] = modelinfo;
 	modelinfo->Init();
 	return modelinfo;
@@ -132,8 +141,12 @@ CModelInfo::AddSimpleModel(int id)
 CTimeModelInfo*
 CModelInfo::AddTimeModel(int id)
 {
+	if(id < 0 || id >= MODELINFOSIZE)
+		return nil;
 	CTimeModelInfo *modelinfo;
 	modelinfo = CModelInfo::ms_timeModelStore.Alloc();
+	if(modelinfo == nil)
+		return nil;
 	CModelInfo::ms_modelInfoPtrs[id] = modelinfo;
 	modelinfo->Init();
 	return modelinfo;
@@ -142,8 +155,12 @@ CModelInfo::AddTimeModel(int id)
 CWeaponModelInfo*
 CModelInfo::AddWeaponModel(int id)
 {
+	if(id < 0 || id >= MODELINFOSIZE)
+		return nil;
 	CWeaponModelInfo *modelinfo;
 	modelinfo = CModelInfo::ms_weaponModelStore.Alloc();
+	if(modelinfo == nil)
+		return nil;
 	CModelInfo::ms_modelInfoPtrs[id] = modelinfo;
 	modelinfo->Init();
 	return modelinfo;
@@ -152,8 +169,12 @@ CModelInfo::AddWeaponModel(int id)
 CClumpModelInfo*
 CModelInfo::AddClumpModel(int id)
 {
+	if(id < 0 || id >= MODELINFOSIZE)
+		return nil;
 	CClumpModelInfo *modelinfo;
 	modelinfo = CModelInfo::ms_clumpModelStore.Alloc();
+	if(modelinfo == nil)
+		return nil;
 	CModelInfo::ms_modelInfoPtrs[id] = modelinfo;
 	modelinfo->m_clump = nil;
 	modelinfo->m_animFileIndex = -1;
@@ -163,8 +184,12 @@ CModelInfo::AddClumpModel(int id)
 CPedModelInfo*
 CModelInfo::AddPedModel(int id)
 {
+	if(id < 0 || id >= MODELINFOSIZE)
+		return nil;
 	CPedModelInfo *modelinfo;
 	modelinfo = CModelInfo::ms_pedModelStore.Alloc();
+	if(modelinfo == nil)
+		return nil;
 	CModelInfo::ms_modelInfoPtrs[id] = modelinfo;
 	modelinfo->m_clump = nil;
 	// The base store is reused across new games without re-running its C++
@@ -176,8 +201,12 @@ CModelInfo::AddPedModel(int id)
 CVehicleModelInfo*
 CModelInfo::AddVehicleModel(int id)
 {
+	if(id < 0 || id >= MODELINFOSIZE)
+		return nil;
 	CVehicleModelInfo *modelinfo;
 	modelinfo = CModelInfo::ms_vehicleModelStore.Alloc();
+	if(modelinfo == nil)
+		return nil;
 	CModelInfo::ms_modelInfoPtrs[id] = modelinfo;
 	modelinfo->m_clump = nil;
 	modelinfo->CClumpModelInfo::m_animFileIndex = -1;
