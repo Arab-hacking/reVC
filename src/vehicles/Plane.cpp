@@ -996,6 +996,17 @@ CPlane::LoadPath(char const *filename, int32 &numNodes, float &totalLength, bool
 		totalLength += l;
 	}
 
+	// A path whose points all coincide has no length: every follower
+	// divides by a segment length or searches segments by distance, so
+	// it would spin or go NaN. Answer as if the file were missing, which
+	// the callers already handle.
+	if(!(totalLength > 0.0f)){
+		delete[] nodes;
+		numNodes = 0;
+		totalLength = 0.0f;
+		return nil;
+	}
+
 	return nodes;
 }
 
