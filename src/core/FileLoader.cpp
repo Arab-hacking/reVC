@@ -1792,13 +1792,20 @@ CFileLoader::Load2dEffect(const char *line)
 	C2dEffect *effect;
 	char *p;
 
-	sscanf(line, "%d %f %f %f %d %d %d %d %d", &id, &x, &y, &z, &r, &g, &b, &a, &type);
+	if(sscanf(line, "%d %f %f %f %d %d %d %d %d", &id, &x, &y, &z, &r, &g, &b, &a, &type) != 9)
+		return;
 
 	CTxdStore::PushCurrentTxd();
 	CTxdStore::SetCurrentTxd(CTxdStore::FindTxdSlot("particle"));
 
+	// A 2dfx row can name a model the IDE never defined, and the effect
+	// store can be full; both read as "no effect" instead of a nil write.
 	mi = CModelInfo::GetModelInfo(id);
+	if(mi == nil)
+		return;
 	effect = CModelInfo::Get2dEffectStore().Alloc();
+	if(effect == nil)
+		return;
 	mi->Add2dEffect(effect);
 	effect->pos = CVector(x, y, z);
 	effect->col = CRGBA(r, g, b, a);
@@ -1806,17 +1813,21 @@ CFileLoader::Load2dEffect(const char *line)
 
 	switch(effect->type){
 	case EFFECT_LIGHT:
-		while(*line++ != '"');
+		// The two quoted texture names: a row without both quotes, or with
+		// a name longer than the buffer, must not walk or write past either.
+		while(*line && *line++ != '"');
 		p = corona;
-		while(*line != '"') *p++ = *line++;
+		while(*line && *line != '"' && p < corona + sizeof(corona) - 1) *p++ = *line++;
 		*p = '\0';
-		line++;
+		if(*line == '"')
+			line++;
 
-		while(*line++ != '"');
+		while(*line && *line++ != '"');
 		p = shadow;
-		while(*line != '"') *p++ = *line++;
+		while(*line && *line != '"' && p < shadow + sizeof(shadow) - 1) *p++ = *line++;
 		*p = '\0';
-		line++;
+		if(*line == '"')
+			line++;
 
 		sscanf(line, "%f %f %f %f %d %d %d %d %d",
 			&effect->light.dist,
