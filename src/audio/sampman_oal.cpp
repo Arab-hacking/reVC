@@ -2090,7 +2090,22 @@ cSampleManager::InitialiseSampleBanks(void)
 #endif
 	fclose(fpSampleDescHandle);
 	fpSampleDescHandle = NULL;
-	
+
+#ifndef OPUS_SFX
+	// A descriptor that runs past the data file - the usual result of
+	// pairing one mod's SDT with another's RAW - would make playback
+	// read past the loaded bank memory; mute those samples instead.
+	if (_nSampleDataEndOffset >= 0)
+	{
+		for ( uint32 i = 0; i < TOTAL_AUDIO_SAMPLES; i++ )
+		{
+			if ( m_aSamples[i].nOffset > (uint32)_nSampleDataEndOffset ||
+			     m_aSamples[i].nSize > (uint32)_nSampleDataEndOffset - m_aSamples[i].nOffset )
+				m_aSamples[i].nSize = 0;
+		}
+	}
+#endif
+
 	for ( uint32 i = 0; i < TOTAL_AUDIO_SAMPLES; i++ )
 	{
 #ifdef FIX_BUGS
