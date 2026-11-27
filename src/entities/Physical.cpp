@@ -329,6 +329,17 @@ CPhysical::PlacePhysicalRelativeToOtherPhysical(CPhysical *other, CPhysical *phy
 int32
 CPhysical::ProcessEntityCollision(CEntity *ent, CColPoint *colpoints)
 {
+	// debug-25: name the model if a counted triangle mesh lost its arrays,
+	// so the log identifies the offender instead of crashing anonymously
+	// inside CCollision::ProcessColModels (which now drops such meshes).
+	CColModel *ownColDbg = GetColModel();
+	CColModel *entColDbg = ent->GetColModel();
+	if(ownColDbg && ownColDbg->numTriangles > 0 && (ownColDbg->vertices == nil || ownColDbg->triangles == nil))
+		REVC_LOG_WARNING("ProcessEntityCollision: own model %d has %d triangles but vertices=%p triangles=%p\n",
+			GetModelIndex(), ownColDbg->numTriangles, (void*)ownColDbg->vertices, (void*)ownColDbg->triangles);
+	if(entColDbg && entColDbg->numTriangles > 0 && (entColDbg->vertices == nil || entColDbg->triangles == nil))
+		REVC_LOG_WARNING("ProcessEntityCollision: other model %d has %d triangles but vertices=%p triangles=%p (own model %d)\n",
+			ent->GetModelIndex(), entColDbg->numTriangles, (void*)entColDbg->vertices, (void*)entColDbg->triangles, GetModelIndex());
 	int32 numSpheres = CCollision::ProcessColModels(
 		GetMatrix(), *GetColModel(),
 		ent->GetMatrix(), *ent->GetColModel(),

@@ -220,16 +220,17 @@ CColModel::operator=(const CColModel &other)
 		for(i = 0; i < numTriangles; i++)
 			triangles[i] = other.triangles[i];
 
-		// copy planes
-		if(other.planes){
-			if(planes)
-				RwFree(planes);
-			planes = (CColTrianglePlane*)RwMalloc(numTriangles*sizeof(CColTrianglePlane));
-			for(i = 0; i < numTriangles; i++)
-				planes[i] = other.planes[i];
-		}else{
-			planes = nil;
-		}
+		// Do NOT copy the planes. The slot after planes[numTriangles] holds
+		// the source model's link in CCollision's triangle-plane cache, and
+		// this copy used to allocate without that slot: reading the link back
+		// (CCollision::CalculateTrianglePlanes) then read/wrote past the end
+		// of the array and corrupted the cache list (debug-25 crash: a col
+		// model reaching ProcessColModels with triangles counted but its
+		// vertex array gone). Planes are cheap to recompute, so mark them
+		// absent and let the cache rebuild them properly for this model.
+		if(planes)
+			CCollision::RemoveTrianglePlanes(this);
+		planes = nil;
 	}else{
 		numTriangles = 0;
 		numVertices = 0;
@@ -239,8 +240,10 @@ CColModel::operator=(const CColModel &other)
 		if(vertices)
 			RwFree(vertices);
 		vertices = nil;
+		// planes may be registered in the triangle-plane cache; free them
+		// through the cache-aware path, not a bare RwFree (see above).
 		if(planes)
-			RwFree(planes);
+			CCollision::RemoveTrianglePlanes(this);
 		planes = nil;
 	}
 

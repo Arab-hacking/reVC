@@ -1207,6 +1207,21 @@ CCollision::ProcessColModels(const CMatrix &matrixA, CColModel &modelA,
 	assert(modelA.numSpheres <= MAXNUMSPHERES);
 	assert(modelA.numLines <= MAXNUMLINES);
 
+	// A col model must never reach the triangle tests with its mesh counted
+	// but not present; that exact state crashed the game in debug-25
+	// (ProcessLineTriangle dereferencing a nil vertex array). Log loudly and
+	// drop the mesh so physics can continue with spheres/boxes instead.
+	if(modelA.numTriangles > 0 && (modelA.vertices == nil || modelA.triangles == nil)){
+		REVC_LOG_WARNING("ProcessColModels: model A has %d triangles but vertices=%p triangles=%p; dropping mesh\n",
+			modelA.numTriangles, (void*)modelA.vertices, (void*)modelA.triangles);
+		modelA.numTriangles = 0;
+	}
+	if(modelB.numTriangles > 0 && (modelB.vertices == nil || modelB.triangles == nil)){
+		REVC_LOG_WARNING("ProcessColModels: model B has %d triangles but vertices=%p triangles=%p; dropping mesh\n",
+			modelB.numTriangles, (void*)modelB.vertices, (void*)modelB.triangles);
+		modelB.numTriangles = 0;
+	}
+
 	// From model A space to model B space
 	matAB = Invert(matrixB, matAB);
 	matAB *= matrixA;
