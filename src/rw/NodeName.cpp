@@ -35,8 +35,19 @@ NodeNameCopy(void *dstObject, const void *srcObject, RwInt32 offsetInObject, RwI
 RwStream*
 NodeNameStreamRead(RwStream *stream, RwInt32 binaryLength, void *object, RwInt32 offsetInObject, RwInt32 sizeInObject)
 {
-	RwStreamRead(stream, NODENAMEEXT(object), binaryLength);
-	NODENAMEEXT(object)[binaryLength] = '\0';
+	// The plugin field is 24 bytes including the terminator; a chunk
+	// that claims a longer node name must not write past it. The chunk
+	// reader re-syncs to the chunk end either way, but stay aligned.
+	RwInt32 keep = binaryLength;
+	if(keep > 23)
+		keep = 23;
+	if(keep < 0)
+		keep = 0;
+	if(keep > 0)
+		RwStreamRead(stream, NODENAMEEXT(object), keep);
+	if(binaryLength > keep)
+		RwStreamSkip(stream, binaryLength - keep);
+	NODENAMEEXT(object)[keep] = '\0';
 	return stream;
 }
 
