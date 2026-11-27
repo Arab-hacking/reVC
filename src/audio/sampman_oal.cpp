@@ -1562,8 +1562,17 @@ cSampleManager::InitialiseChannel(uint32 nChannel, uint32 nSfx, uint8 nBank)
 	{
 		if ( !IsSampleBankLoaded(nBank) )
 			return FALSE;
-		
-		addr = nSampleBankMemoryStartAddress[nBank] + m_aSamples[nSfx].nOffset - m_aSamples[BankStartOffset[nBank]].nOffset;
+
+		// The channel is handed a raw pointer plus the claimed size, so
+		// the sample must fit inside the loaded bank even when the SDT
+		// disagrees with the RAW about where the bank ends.
+		uint32 bankStart = m_aSamples[BankStartOffset[nBank]].nOffset;
+		if ( m_aSamples[nSfx].nOffset < bankStart ||
+		     m_aSamples[nSfx].nOffset - bankStart > (uint32)nSampleBankSize[nBank] ||
+		     m_aSamples[nSfx].nSize > (uint32)nSampleBankSize[nBank] - (m_aSamples[nSfx].nOffset - bankStart) )
+			return FALSE;
+
+		addr = nSampleBankMemoryStartAddress[nBank] + m_aSamples[nSfx].nOffset - bankStart;
 	}
 #ifdef FIX_BUGS
 	else if ( nSfx >= PLAYER_COMMENTS_START && nSfx <= PLAYER_COMMENTS_END )
