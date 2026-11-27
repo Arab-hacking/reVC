@@ -396,7 +396,8 @@ int32 CAnimManager::RegisterAnimBlock(const char *name)
 		if (ms_numAnimBlocks >= NUM_ANIM_BLOCKS)
 			return -1;
 		ab = &ms_aAnimBlocks[ms_numAnimBlocks++];
-		strncpy(ab->Name, name, MAX_ANIM_BLOCK_NAME);
+		strncpy(ab->Name, name, MAX_ANIM_BLOCK_NAME - 1);
+		ab->Name[MAX_ANIM_BLOCK_NAME - 1] = '\0';
 		ab->NumAnims = 0;
 		ab->GroupId = GetFirstAssocGroup(name);
 		assert(ab->RefCnt == 0);
@@ -747,7 +748,8 @@ CAnimBlock *CAnimManager::GetOrCreateAnimBlock(const char *name, uint32 numAnims
 		}
 		ab = &ms_aAnimBlocks[ms_numAnimBlocks++];
 
-		strncpy(ab->Name, name, MAX_ANIM_BLOCK_NAME);
+		strncpy(ab->Name, name, MAX_ANIM_BLOCK_NAME - 1);
+		ab->Name[MAX_ANIM_BLOCK_NAME - 1] = '\0';
 		ab->NumAnims = numAnims;
 		ab->FirstAnimIdx = ms_numAnimations;
 		ab->GroupId = GetFirstAssocGroup(ab->Name);
