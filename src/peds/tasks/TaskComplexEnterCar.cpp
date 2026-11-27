@@ -74,7 +74,7 @@ static AssocGroupId VehicleEntryGroupId(CVehicle *car)
 }
 
 CTaskComplexEnterCar::CTaskComplexEnterCar(CVehicle *targetVehicle, bool bAsDriver, bool bQuitAfterOpeningDoor, bool bQuitAfterDraggingPedOut, bool bCarryOnAfterFallingOff)
-	: m_Car(targetVehicle), m_TargetDoor(0), m_TargetDoorOppositeToFlag(0), m_TargetSeat(-1),
+	: m_Car(targetVehicle), m_TargetDoor(0), m_TargetDoorOppositeToFlag(0), m_TargetSeat(0),
 	  m_DraggedPedDownTime(0), m_MoveState(PEDMOVE_RUN), m_NumGettingInSet(0), m_CamMovementChoice(0),
 	  m_LineUpUtility(nil), m_bAborting(false), m_DraggedPed(nil), m_DoorFlagsSet(0),
 	  m_CruiseSpeed(-1.0f), m_EnterCarStartTime(0)

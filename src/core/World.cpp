@@ -13,6 +13,7 @@
 #include "ModelIndices.h"
 #include "ParticleObject.h"
 #include "PedGroups.h"
+#include "PedIntelligence.h"
 #include "Pickups.h"
 #include "Population.h"
 #include "ProjectileInfo.h"
@@ -1983,6 +1984,10 @@ CWorld::Process(void)
 		for(CPtrNode *node = ms_listMovingEntityPtrs.first; node; node = node->next) {
 			CPed *movingPed = (CPed *)node->item;
 			if(movingPed->IsPed()) {
+				// SA runs the intelligence's post-collision step here:
+				// the simplest task may place the ped (car line-up).
+				if (movingPed->GetIntelligence())
+					movingPed->GetIntelligence()->ProcessAfterProcCol();
 				if(movingPed->bInVehicle || movingPed->EnteringCar()) {
 					CVehicle *movingCar = movingPed->m_pMyVehicle;
 					if(movingCar) {

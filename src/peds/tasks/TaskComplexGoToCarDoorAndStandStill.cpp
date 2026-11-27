@@ -140,6 +140,8 @@ CTaskComplexGoToCarDoorAndStandStill::CreateFirstSubTask(CPed *ped)
 			}
 		}
 	}
+	REVC_LOG_INFO("Vehicle entry task: go-to-door subtask=%d door=%d dist=%.2f",
+		taskType, m_TargetDoor, (m_TargetPt - ped->GetPosition()).Magnitude2D());
 	return CreateSubTask(taskType, ped);
 }
 

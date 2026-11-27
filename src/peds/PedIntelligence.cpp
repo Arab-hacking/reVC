@@ -269,6 +269,29 @@ CPedIntelligence::Process()
 	LookAtInterestingEntities();
 }
 
+// SA CPedIntelligence::ProcessAfterProcCol (0x6018F0): after collision
+// processing, give the simplest active task its chance to place the ped
+// (the car tasks' line-up with the vehicle lives there). Without this
+// the align/open/get-in tasks play their animations wherever the ped
+// happens to stand and never pull him onto the door line.
+void
+CPedIntelligence::ProcessAfterProcCol()
+{
+	CTask *activeSimplestTask = m_TaskMgr.GetSimplestActiveTask();
+	if (activeSimplestTask && activeSimplestTask->IsSimple()) {
+		bool bPositionSet = activeSimplestTask->AsSimple()->SetPedPosition(m_pPed);
+		if (!bPositionSet) {
+			CTask *simplestTask = m_TaskMgr.GetLastTaskOf(TASK_PRIMARY_DEFAULT);
+			if (simplestTask && simplestTask->IsSimple())
+				bPositionSet = simplestTask->AsSimple()->SetPedPosition(m_pPed);
+		}
+		if (bPositionSet) {
+			m_pPed->GetMatrix().UpdateRW();
+			m_pPed->UpdateRwFrame();
+		}
+	}
+}
+
 // SA CPedIntelligence::FlushIntelligence (0x601DA0): drop every task,
 // queued event, handler memory and scanner reference.
 void
