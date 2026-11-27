@@ -110,7 +110,9 @@ ParseFloat(const char *token, float &out)
 {
 	char *end;
 	out = strtof(token, &end);
-	return end != token && *end == '\0';
+	// strtof also accepts "nan"/"inf" and saturates overflow to HUGE_VALF;
+	// none of those may reach the physics conversions below.
+	return end != token && *end == '\0' && isfinite(out);
 }
 
 static bool
@@ -202,7 +204,7 @@ ParseHandlingData(tHandlingData *h, char **tokens, int count)
 	int i = 1;	// skip the name, it was resolved to the id already
 	int32 value;
 
-	if(!ParseFloat(tokens[i++], h->m_fMass))
+	if(!ParseFloat(tokens[i++], h->m_fMass) || h->m_fMass <= 0.0f)
 		return false;
 	if(!ParseFloat(tokens[i++], h->m_fTurnMass))
 		return false;
@@ -226,7 +228,11 @@ ParseHandlingData(tHandlingData *h, char **tokens, int count)
 	if(!ParseInt(tokens[i++], value) || value < 1 || value > MAX_TRANSMISSION_GEARS)
 		return false;
 	h->m_Transmission.m_nNumberOfGears = (uint8)value;
-	if(!ParseFloat(tokens[i++], h->m_Transmission.m_fMaxVelocity))
+	// The conversion below solves the top speed by stepping down in 0.01
+	// increments, so an absurd file value would hang the load; the fastest
+	// real record is a few hundred. Zero is legitimate (the crane records).
+	if(!ParseFloat(tokens[i++], h->m_Transmission.m_fMaxVelocity) ||
+	   h->m_Transmission.m_fMaxVelocity < 0.0f || h->m_Transmission.m_fMaxVelocity > 10000.0f)
 		return false;
 	if(!ParseFloat(tokens[i++], h->m_Transmission.m_fEngineAcceleration))
 		return false;
@@ -544,7 +550,10 @@ cHandlingDataMgr::ConvertDataToGameUnits(tHandlingData *h)
 	h->m_fBrakeDeceleration *= ACCEL_CONST;
 
 	h->m_fMassRecip = 1.0f / h->m_fMass;
-	h->m_fBuoyancyConstant = h->m_fMass * 0.8f / (float)h->m_nPercentSubmerged;
+	// Records that never enter water (the cranes) carry percentSubmerged 0;
+	// their buoyancy is no buoyancy at all, not a divide by zero.
+	h->m_fBuoyancyConstant = h->m_nPercentSubmerged != 0
+		? h->m_fMass * 0.8f / (float)h->m_nPercentSubmerged : 0.0f;
 	h->m_fCollisionDamageMultiplier *= h->m_fMassRecip * 2000.0f;
 
 	float engineAccelLimit = t->m_fEngineAcceleration / 6.0f;
