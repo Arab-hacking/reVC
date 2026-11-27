@@ -103,7 +103,7 @@ CPedType::LoadPedData(void)
 		line[linelen] = '\0';
 
 		// skip white space
-		for(lp = 0; line[lp] <= ' '; lp++);
+		for(lp = 0; line[lp] != '\0' && line[lp] <= ' '; lp++);
 
 		if(lp >= linelen ||		// FIX: game uses == here, but this is safer if we have empty lines
 		   line[lp] == '#')
@@ -116,9 +116,18 @@ CPedType::LoadPedData(void)
 		// unknown type line leaves type at NUM_PEDTYPES and its lists are
 		// dropped rather than written past the end of the array.
 		if(strncmp(word, "Hate", 4) == 0 || strncmp(word, "Dislike", 7) == 0 ||
-		   strncmp(word, "Like", 4) == 0 || strncmp(word, "Respect", 7) == 0){
+		   strncmp(word, "Like", 4) == 0 || strncmp(word, "Respect", 7) == 0 ||
+		   strncmp(word, "Threat", 6) == 0 || strncmp(word, "Avoid", 5) == 0){
 			if(type >= NUM_PEDTYPES)
 				continue;
+			// Which mask the list belongs to has to be decided now: the
+			// scan below overwrites word, and testing the raw line again
+			// would miss a list the file indents. The table that actually
+			// ships writes Threat and Avoid; the four San Andreas words
+			// keep the mapping they already had.
+			bool threatList = strncmp(word, "Hate", 4) == 0 ||
+			                  strncmp(word, "Dislike", 7) == 0 ||
+			                  strncmp(word, "Threat", 6) == 0;
 			flags = 0;
 			lp += (int)strlen(word);
 			while(sscanf(&line[lp], "%31s", word) == 1 && lp <= linelen){
@@ -130,11 +139,7 @@ CPedType::LoadPedData(void)
 				while(line[lp] == ' ')
 					lp++;
 			}
-			// Hate and Dislike are what a ped avoids; Like and Respect are what
-			// it is drawn to. The scan only ever reads threats, so the two
-			// positive lists go to the avoid mask and the negative ones to the
-			// threat mask, which is the way San Andreas stores them.
-			if(strncmp(line, "Hate", 4) == 0 || strncmp(line, "Dislike", 7) == 0)
+			if(threatList)
 				ms_apPedType[type]->m_threats |= flags;
 			else
 				ms_apPedType[type]->m_avoid |= flags;
@@ -345,7 +350,7 @@ CPedStats::LoadPedStats(void)
 		line[linelen] = '\0';
 
 		// skip white space
-		for(lp = 0; line[lp] <= ' '; lp++);
+		for(lp = 0; line[lp] != '\0' && line[lp] <= ' '; lp++);
 
 		if(lp >= linelen ||		// FIX: game uses == here, but this is safer if we have empty lines
 		   line[lp] == '#')
