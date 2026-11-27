@@ -130,7 +130,12 @@ static inline std::string modDiag(const uint8_t* buf, uint32_t bufSize) {
     for (int i = 0; i < 16; i++) { snprintf(t, sizeof t, "%02X", buf[12 + i]); s += t; }
     s += " enc[0..16)=";
     for (int i = 0; i < 16 && MOD_HDR + i < bufSize; i++) { snprintf(t, sizeof t, "%02X", buf[MOD_HDR + i]); s += t; }
-    uint8_t d[16]; memcpy(d, buf + MOD_HDR, 16);
+    // A .mod can be as short as the 0x1C header check that admitted it;
+    // only decrypt what is actually there.
+    uint8_t d[16] = { 0 };
+    size_t dn = bufSize > MOD_HDR ? bufSize - MOD_HDR : 0;
+    if (dn > 16) dn = 16;
+    memcpy(d, buf + MOD_HDR, dn);
     uint32_t key[4], rounds; modKey(0, key, rounds); tea_decrypt(d, 16, key, rounds);
     s += " dec0[0..16)=";
     for (int i = 0; i < 16; i++) { snprintf(t, sizeof t, "%02X", d[i]); s += t; }
