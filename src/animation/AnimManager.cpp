@@ -818,7 +818,15 @@ void CAnimManager::LoadAnimFile_ANPK(RwStream *s, const IFPSectionHeader &h, boo
 	IFPSectionHeader hANPK;
 	RwStreamRead(s, &hANPK, sizeof(hANPK));
 	InfoHeader infoAnim;
-	RwStreamRead(s, &infoAnim, RoundTo4(hANPK.Size));
+	// Section sizes throughout this reader are the file's word, and the
+	// structs they fill are fixed-size stack buffers; every read below is
+	// capped at its buffer and the remainder skipped, so a bank that lies
+	// about a section cannot write past them.
+	memset(&infoAnim, 0, sizeof(infoAnim));
+	uint32 anpkSize = RoundTo4(hANPK.Size);
+	RwStreamRead(s, &infoAnim, Min(anpkSize, (uint32)sizeof(infoAnim)));
+	if (anpkSize > (uint32)sizeof(infoAnim))
+		RwStreamSkip(s, anpkSize - (uint32)sizeof(infoAnim));
 	infoAnim.Name[MAX_ANIM_BLOCK_NAME - 1] = '\0';
 
 	// The clip count indexes the fixed animation store; a block that
@@ -854,7 +862,12 @@ void CAnimManager::LoadAnimFile_ANPK(RwStream *s, const IFPSectionHeader &h, boo
 			IFPSectionHeader hAnimName;
 			RwStreamRead(s, &hAnimName, sizeof(hAnimName));
 			assert(hAnimName.ID == MakeFourCC("NAME"));
-			RwStreamRead(s, name, RoundTo4(hAnimName.Size));
+			uint32 nameSize = RoundTo4(hAnimName.Size);
+			memset(name, 0, sizeof(name));
+			RwStreamRead(s, name, Min(nameSize, (uint32)sizeof(name)));
+			if (nameSize > (uint32)sizeof(name))
+				RwStreamSkip(s, nameSize - (uint32)sizeof(name));
+			name[sizeof(name) - 1] = '\0';
 			hier->SetName(name);
 		}
 
@@ -886,7 +899,17 @@ void CAnimManager::LoadAnimFile_ANPK(RwStream *s, const IFPSectionHeader &h, boo
 			char Pad[60];
 		};
 		AnimInfoHeader animInfo;
-		RwStreamRead(s, &animInfo, RoundTo4(hAnimInfo.Size));
+		memset(&animInfo, 0, sizeof(animInfo));
+		uint32 infoSize = RoundTo4(hAnimInfo.Size);
+		RwStreamRead(s, &animInfo, Min(infoSize, (uint32)sizeof(animInfo)));
+		if (infoSize > (uint32)sizeof(animInfo))
+			RwStreamSkip(s, infoSize - (uint32)sizeof(animInfo));
+		// m_nSeqCount is 16 bits wide and sizes the allocation the loop
+		// below writes through; the count itself is not.
+		if (animInfo.Num > 4096) {
+			debug("ANPK %s: impossible sequence count (%u)\n", infoAnim.Name, animInfo.Num);
+			return;
+		}
 
 		hier->m_nSeqCount = (uint16)animInfo.Num;
 		hier->m_pSequences = new CAnimBlendSequence[hier->m_nSeqCount]; // Yes, they used `new`
@@ -911,7 +934,12 @@ void CAnimManager::LoadAnimFile_ANPK(RwStream *s, const IFPSectionHeader &h, boo
 			RwStreamRead(s, &hObjInfo, sizeof(hObjInfo));
 			assert(hObjInfo.ID == MakeFourCC("ANIM"));
 			Anim objInfo;
-			RwStreamRead(s, &objInfo, RoundTo4(hObjInfo.Size));
+			memset(&objInfo, 0, sizeof(objInfo));
+			uint32 objSize = RoundTo4(hObjInfo.Size);
+			RwStreamRead(s, &objInfo, Min(objSize, (uint32)sizeof(objInfo)));
+			if (objSize > (uint32)sizeof(objInfo))
+				RwStreamSkip(s, objSize - (uint32)sizeof(objInfo));
+			objInfo.ObjName[sizeof(objInfo.ObjName) - 1] = '\0';
 
 			// Set sequence name
 			seq->SetName(objInfo.ObjName);
@@ -922,6 +950,12 @@ void CAnimManager::LoadAnimFile_ANPK(RwStream *s, const IFPSectionHeader &h, boo
 
 			if (!objInfo.NumFrames)
 				continue;
+			// The frame count sizes the sequence storage through a
+			// 16-bit field; a larger one would write past it.
+			if (objInfo.NumFrames > 65535) {
+				debug("ANPK %s: impossible frame count (%u)\n", infoAnim.Name, objInfo.NumFrames);
+				return;
+			}
 
 			// Frame data header ("KFRM" -> Key Frame)
 			IFPSectionHeader hKFRM;
