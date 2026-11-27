@@ -1384,6 +1384,12 @@ cSampleManager::LoadPedComment(uint32 nComment)
 		}
 	}
 
+	// The comment lands in a fixed PED_BLOCKSIZE slot of the ped bank;
+	// a descriptor claiming more (a mismatched SDT/RAW pair) would
+	// overwrite the neighbouring slots and run off the end.
+	if ( m_aSamples[nComment].nSize > PED_BLOCKSIZE )
+		return FALSE;
+
 #ifdef OPUS_SFX
 	int samplesRead = 0;
 	int samplesSize = m_aSamples[nComment].nSize / 2;
