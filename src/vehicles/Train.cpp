@@ -484,6 +484,13 @@ CTrain::FindCoorsFromPositionOnTrack(float railDistance, int32 trackId, CVector 
 	const int32 numNodes = NumTrackNodes[trackId];
 	const float totalLength = TotalTrackLength[trackId];
 
+	// A track whose nodes all sit on one spot (a truncated or degenerate
+	// file) has no length to wrap into; the loops below would never move.
+	if(!(totalLength > 0.0f)){
+		*outCoors = nodes[0].GetPosn();
+		return;
+	}
+
 	// Wrap into [0, totalLength).
 	while(railDistance < 0.0f)
 		railDistance += totalLength;
