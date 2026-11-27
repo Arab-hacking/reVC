@@ -4328,7 +4328,13 @@ CPed::DriveVehicle(void)
 			targetLRLean = 0.0f;
 			timeBlend = Pow(0.86f, CTimer::GetTimeStep());
 		} else {
-			targetLRLean = Clamp(bike->m_fLeanLRAngle / bike->m_pBikeHandlingData->m_fFullAnimLean, -1.0f, 1.0f);
+			// A bike whose handling record has no bike ('$') line keeps the
+			// zeroed default entry; dividing by its zero full-anim lean made
+			// the blend weight NaN and took the rider's skeleton with it.
+			const float fullAnimLean = bike->m_pBikeHandlingData->m_fFullAnimLean;
+			targetLRLean = fullAnimLean != 0.0f
+				? Clamp(bike->m_fLeanLRAngle / fullAnimLean, -1.0f, 1.0f)
+				: 0.0f;
 			timeBlend = Pow(0.86f, CTimer::GetTimeStep());
 		}
 

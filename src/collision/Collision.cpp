@@ -1235,22 +1235,34 @@ CCollision::ProcessColModels(const CMatrix &matrixA, CColModel &modelA,
 	matBA = Invert(matrixA, matBA);
 	matBA *= matrixB;
 
+	// The staging buffers are fixed-size, but collision files may legally
+	// carry far more volumes than they hold (converted SA meshes run to
+	// tens of thousands of triangles). Stage only what fits and skip the
+	// rest; the asserts that used to guard this are compiled out of
+	// release builds, so an oversized mesh wrote past the buffers.
+	// numStoredSpheresA also bounds how many points are written into the
+	// caller's spherepoints array, whose contract is MAX_COLLISION_POINTS.
+	const int numStoredSpheresA = Min(Min(modelA.numSpheres, (int16)MAXNUMSPHERES),
+	                                  (int16)MAX_COLLISION_POINTS);
+
+	const int numStoredLinesA = modelA.numLines < MAXNUMLINES ? modelA.numLines : MAXNUMLINES;
+
 	// transform modelA's spheres and lines to B space
-	for(i = 0; i < modelA.numSpheres; i++){
+	for(i = 0; i < numStoredSpheresA; i++){
 		CColSphere &s = modelA.spheres[i];
 		aSpheresA[i].Set(s.radius, matAB * s.center, s.surface, s.material);
 	}
-	for(i = 0; i < modelA.numLines; i++)
+	for(i = 0; i < numStoredLinesA; i++)
 		aLinesA[i].Set(matAB * modelA.lines[i].p0, matAB * modelA.lines[i].p1);
 
 	// Test them against model B's bounding volumes
 	int numSpheresA = 0;
 	int numLinesA = 0;
-	for(i = 0; i < modelA.numSpheres; i++)
+	for(i = 0; i < numStoredSpheresA; i++)
 		if(TestSphereBox(aSpheresA[i], modelB.boundingBox))
 			aSphereIndicesA[numSpheresA++] = i;
 	// no actual check???
-	for(i = 0; i < modelA.numLines; i++)
+	for(i = 0; i < numStoredLinesA; i++)
 		aLineIndicesA[numLinesA++] = i;
 	// No collision
 	if(numSpheresA == 0 && numLinesA == 0)
@@ -1263,16 +1275,29 @@ CCollision::ProcessColModels(const CMatrix &matrixA, CColModel &modelA,
 	for(i = 0; i < modelB.numSpheres; i++){
 		s.radius = modelB.spheres[i].radius;
 		s.center = matBA * modelB.spheres[i].center;
-		if(TestSphereBox(s, modelA.boundingBox))
+		if(TestSphereBox(s, modelA.boundingBox) && numSpheresB < MAXNUMSPHERES)
 			aSphereIndicesB[numSpheresB++] = i;
 	}
 	for(i = 0; i < modelB.numBoxes; i++)
-		if(TestSphereBox(bsphereAB, modelB.boxes[i]))
+		if(TestSphereBox(bsphereAB, modelB.boxes[i]) && numBoxesB < MAXNUMBOXES)
 			aBoxIndicesB[numBoxesB++] = i;
 	CalculateTrianglePlanes(&modelB);
 	for(i = 0; i < modelB.numTriangles; i++)
-		if(TestSphereTriangle(bsphereAB, modelB.vertices, modelB.triangles[i], modelB.planes[i]))
+		if(TestSphereTriangle(bsphereAB, modelB.vertices, modelB.triangles[i], modelB.planes[i]) &&
+		   numTrianglesB < MAXNUMTRIS)
 			aTriangleIndicesB[numTrianglesB++] = i;
+	if(modelB.numTriangles > MAXNUMTRIS || modelB.numSpheres > MAXNUMSPHERES ||
+	   modelB.numBoxes > MAXNUMBOXES || modelA.numSpheres > MAXNUMSPHERES ||
+	   modelA.numLines > MAXNUMLINES){
+		static bool warnedOversize = false;
+		if(!warnedOversize){
+			warnedOversize = true;
+			REVC_LOG_WARNING("ProcessColModels: oversize collision mesh staged partially "
+				"(A %d spheres/%d lines, B %d spheres/%d boxes/%d triangles)\n",
+				modelA.numSpheres, modelA.numLines,
+				modelB.numSpheres, modelB.numBoxes, modelB.numTriangles);
+		}
+	}
 	assert(numSpheresB <= MAXNUMSPHERES);
 	assert(numBoxesB <= MAXNUMBOXES);
 	assert(numTrianglesB <= MAXNUMTRIS);

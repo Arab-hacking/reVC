@@ -72,7 +72,7 @@ void CAnimManager::ReadAnimAssociationDefinitions()
 		if (!*l || *l == '#')
 			continue;
 		if (isAnimSection) {
-			if (sscanf(l, "%s", groupName) == 1) {
+			if (sscanf(l, "%31s", groupName) == 1) {
 				if (!memcmp(groupName, "end", 4)) {
 					isAnimSection = false;
 				} else {
@@ -80,7 +80,13 @@ void CAnimManager::ReadAnimAssociationDefinitions()
 				}
 			}
 		} else {
-			assert(sscanf(l, "%s %s %s %d", groupName, blockName, type, &animCount) == 4);
+			// Bounded scans and a sane anim count: the old unbounded %s
+			// overflowed these stack buffers on a long token, and a
+			// negative count became a huge allocation in the definition.
+			if (sscanf(l, "%31s %31s %31s %d", groupName, blockName, type, &animCount) != 4)
+				continue;
+			if (animCount <= 0 || animCount > 1024)
+				continue;
 			def = AddAnimAssocDefinition(groupName, blockName, MI_MALE01, animCount, aStdAnimDescs);
 			isAnimSection = true;
 		}
@@ -284,10 +290,17 @@ CAnimBlendAssociation *CAnimManager::AddAnimationAndSync(RpClump *clump, CAnimBl
 // 0x4D3BA0
 AnimAssocDefinition *CAnimManager::AddAnimAssocDefinition(const char *groupName, const char *blockName, uint32 modelIndex, uint32 animsCount, AnimDescriptor *descriptor)
 {
+	// The definitions array is exactly ANIM_TOTAL_GROUPS entries and the
+	// static table already fills it, so a data file (DATA\ANIMGRP.DAT)
+	// asking for one more group wrote past the end. Refuse instead.
+	if (ms_numAnimAssocDefinitions >= (uint32)ANIM_TOTAL_GROUPS)
+		return nil;
 	AnimAssocDefinition *def = &ms_aAnimAssocDefinitions[ms_numAnimAssocDefinitions++];
 
-	strcpy(def->GroupName, groupName);
-	strcpy(def->BlockName, blockName);
+	strncpy(def->GroupName, groupName, sizeof(def->GroupName) - 1);
+	def->GroupName[sizeof(def->GroupName) - 1] = '\0';
+	strncpy(def->BlockName, blockName, sizeof(def->BlockName) - 1);
+	def->BlockName[sizeof(def->BlockName) - 1] = '\0';
 
 	def->ModelIndex = (int32)modelIndex;
 	def->NumAnims = (int32)animsCount;
@@ -306,11 +319,16 @@ AnimAssocDefinition *CAnimManager::AddAnimAssocDefinition(const char *groupName,
 // 0x4D3C80
 void CAnimManager::AddAnimToAssocDefinition(AnimAssocDefinition *def, const char *animName)
 {
+	if (def == nil || def->AnimNames == nil)
+		return;
 	int32 i = 0;
-	for (; def->AnimNames[i][0]; i++)
-		assert(i < def->NumAnims);
+	for (; i < def->NumAnims && def->AnimNames[i][0]; i++)
+		;
+	if (i >= def->NumAnims)
+		return;	// more names in the file than the definition has room for
 	// `const_cast` is fine here, because it's heap allocated
-	strncpy((char *)def->AnimNames[i], animName, AnimAssocDefinition::ANIM_NAME_BUF_SZ);
+	strncpy((char *)def->AnimNames[i], animName, AnimAssocDefinition::ANIM_NAME_BUF_SZ - 1);
+	((char *)def->AnimNames[i])[AnimAssocDefinition::ANIM_NAME_BUF_SZ - 1] = '\0';
 }
 
 // 0x4D3CC0
@@ -361,6 +379,11 @@ int32 CAnimManager::RegisterAnimBlock(const char *name)
 {
 	CAnimBlock *ab = GetAnimationBlock(name);
 	if (ab == nil) { // Initialize a new anim block
+		// Custom content registers a block per animation bank it carries;
+		// beyond NUM_ANIM_BLOCKS the array write corrupted whatever
+		// followed it. Refuse the block instead.
+		if (ms_numAnimBlocks >= NUM_ANIM_BLOCKS)
+			return -1;
 		ab = &ms_aAnimBlocks[ms_numAnimBlocks++];
 		strncpy(ab->Name, name, MAX_ANIM_BLOCK_NAME);
 		ab->NumAnims = 0;
@@ -705,6 +728,10 @@ CAnimBlock *CAnimManager::GetOrCreateAnimBlock(const char *name, uint32 numAnims
 			ab->FirstAnimIdx = ms_numAnimations;
 		}
 	} else { // Create block
+		if (ms_numAnimBlocks >= NUM_ANIM_BLOCKS) {
+			*blockIndex = -1;
+			return nil;
+		}
 		ab = &ms_aAnimBlocks[ms_numAnimBlocks++];
 
 		strncpy(ab->Name, name, MAX_ANIM_BLOCK_NAME);
@@ -794,6 +821,8 @@ void CAnimManager::LoadAnimFile_ANPK(RwStream *s, const IFPSectionHeader &h, boo
 
 	int32 ablockIdx;
 	CAnimBlock *ablock = GetOrCreateAnimBlock(infoAnim.Name, infoAnim.Num, &ablockIdx);
+	if (ablock == nil)
+		return;	// block store full; bank skipped
 
 	// Read TAnimation's for this block
 	for (uint32 animN = 0; animN < infoAnim.Num; animN++) {
@@ -965,6 +994,8 @@ void CAnimManager::LoadAnimFile_ANP23(RwStream *s, bool isANP3, const char *decl
 
 	int32 ablockId;
 	CAnimBlock *ablock = GetOrCreateAnimBlock(declaredBlockName, numAnims, &ablockId);
+	if (ablock == nil)
+		return;	// block store full; bank skipped
 
 	for (uint32 animN = 0; animN < numAnims; animN++) {
 		CAnimBlendHierarchy *hier = &ms_aAnimations[ablock->FirstAnimIdx + animN];

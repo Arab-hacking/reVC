@@ -802,8 +802,16 @@ CStreaming::LoadCdDirectory(const char *dirname, int n)
 			bAddToStreaming = true;
 		}else if(strncasecmp(dot+1, "IFP", 3) == 0){
 			modelId = CAnimManager::RegisterAnimBlock(direntry.name);
-			modelId += STREAM_OFFSET_ANIM;
-			bAddToStreaming = true;
+			if(modelId == -1){
+				// Anim block store full; without a block this IFP can
+				// never be addressed, so leave it out of the stream
+				// list instead of registering a bogus model index.
+				*dot = '.';
+				lastID = -1;
+			}else{
+				modelId += STREAM_OFFSET_ANIM;
+				bAddToStreaming = true;
+			}
 		}else{
 			*dot = '.';
 			lastID = -1;
