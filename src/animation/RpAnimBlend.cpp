@@ -125,7 +125,12 @@ static void RpHAnimKeyFrameStreamRead(RwStream *stream, RpHAnimAnimation *anim)
 		RwStreamRead(stream, &frames[i].t, 3 * 4);
 		int32 prevOff;
 		RwStreamRead(stream, &prevOff, 4);
-		frames[i].prev = &frames[prevOff / (int32)sizeof(RpHAnimBlendKeyFrame)];
+		// The stored offset becomes a live pointer into the keyframe
+		// allocation; keep it inside it whatever the stream claims.
+		int32 prevIdx = prevOff / (int32)sizeof(RpHAnimBlendKeyFrame);
+		if(prevIdx < 0 || prevIdx >= anim->numFrames)
+			prevIdx = i;
+		frames[i].prev = &frames[prevIdx];
 	}
 }
 
