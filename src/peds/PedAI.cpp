@@ -2283,14 +2283,20 @@ CPed::QuitEnteringCar(void)
 		m_pVehicleAnim->m_BlendDelta = -1000.0f;
 	m_pVehicleAnim = nil;
 
-	static const eTaskType enterTasks[] = {
-		TASK_COMPLEX_ENTER_CAR_AS_DRIVER, TASK_COMPLEX_ENTER_CAR_AS_PASSENGER,
-		TASK_COMPLEX_ENTER_BOAT_AS_DRIVER, TASK_COMPLEX_ENTER_TRAIN_AS_PASSENGER
-	};
-	for (int i = 0; i < (int)ARRAY_SIZE(enterTasks); i++) {
-		if (CTask *task = GetIntelligence()->FindTaskByType(enterTasks[i]))
-			task->MakeAbortable(this, ABORT_PRIORITY_URGENT, nil);
+	if (GetIntelligence() != nil) {
+		static const eTaskType enterTasks[] = {
+			TASK_COMPLEX_ENTER_CAR_AS_DRIVER, TASK_COMPLEX_ENTER_CAR_AS_PASSENGER,
+			TASK_COMPLEX_ENTER_BOAT_AS_DRIVER, TASK_COMPLEX_ENTER_TRAIN_AS_PASSENGER
+		};
+		for (int i = 0; i < (int)ARRAY_SIZE(enterTasks); i++) {
+			if (CTask *task = GetIntelligence()->FindTaskByType(enterTasks[i]))
+				task->MakeAbortable(this, ABORT_PRIORITY_URGENT, nil);
+		}
 	}
+
+	// The objective layer must not hand the entry straight back.
+	if (m_objective == OBJECTIVE_ENTER_CAR_AS_DRIVER || m_objective == OBJECTIVE_ENTER_CAR_AS_PASSENGER)
+		RestorePreviousObjective();
 
 	bUsesCollision = true;
 	if (!DyingOrDead())
@@ -2300,6 +2306,8 @@ CPed::QuitEnteringCar(void)
 bool
 CPed::EnteringCar(void)
 {
+	if (GetIntelligence() == nil)
+		return false;
 	return GetIntelligence()->FindTaskByType(TASK_COMPLEX_ENTER_CAR_AS_DRIVER) != nil ||
 		GetIntelligence()->FindTaskByType(TASK_COMPLEX_ENTER_CAR_AS_PASSENGER) != nil ||
 		GetIntelligence()->FindTaskByType(TASK_COMPLEX_ENTER_BOAT_AS_DRIVER) != nil ||
@@ -2309,6 +2317,8 @@ CPed::EnteringCar(void)
 bool
 CPed::LeavingCar(void)
 {
+	if (GetIntelligence() == nil)
+		return false;
 	return GetIntelligence()->FindTaskByType(TASK_COMPLEX_LEAVE_CAR) != nil ||
 		GetIntelligence()->FindTaskByType(TASK_COMPLEX_LEAVE_BOAT) != nil;
 }
@@ -2316,6 +2326,8 @@ CPed::LeavingCar(void)
 bool
 CPed::BeingDraggedOutOfCar(void)
 {
+	if (GetIntelligence() == nil)
+		return false;
 	return GetIntelligence()->FindTaskByType(TASK_COMPLEX_CAR_SLOW_BE_DRAGGED_OUT) != nil ||
 		GetIntelligence()->FindTaskByType(TASK_COMPLEX_CAR_SLOW_BE_DRAGGED_OUT_AND_STAND_UP) != nil ||
 		GetIntelligence()->FindTaskByType(TASK_SIMPLE_CAR_SLOW_BE_DRAGGED_OUT) != nil;

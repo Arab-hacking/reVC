@@ -68,7 +68,7 @@ CTaskSimpleCarAlign::FixHeading(CPed *ped)
 void
 CTaskSimpleCarAlign::StartAnim(CPed *ped)
 {
-	const CVector doorOpenPos = CCarEnterExit::GetPositionToOpenCarDoor(m_veh, (int32)m_door);
+	const CVector doorOpenPos = CCarEnterExit::GetPositionToOpenCarDoor(m_veh, (int32)m_door, ped);
 	const float z = doorOpenPos.z - ped->GetPosition().z;
 	AnimationId animId;
 	if (m_door == CAR_DOOR_LF || m_door == CAR_DOOR_LR)

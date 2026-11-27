@@ -468,6 +468,10 @@ CTaskComplexEnterCar::ControlSubTask(CPed *ped)
 	if (ped->IsPlayer() && m_Car != nil &&
 	    CCarEnterExit::IsPlayerToQuitCarEnter(ped, m_Car, m_EnterCarStartTime, m_pSubTask)) {
 		bPlayerQuit = true;
+		// Drop the enter objective too, or the objective layer
+		// hands this task straight back next frame and the player
+		// can never walk away from the car.
+		ped->RestorePreviousObjective();
 		// The reference also tells a quitting leader's group; there
 		// is no such event here.
 	}
@@ -649,7 +653,7 @@ CTaskComplexEnterCar::CreateTaskUtilityLineUpPedWithCar(CPed *ped)
 {
 	delete m_LineUpUtility;
 	m_LineUpUtility = new CTaskUtilityLineUpPedWithCar(
-		CCarEnterExit::GetPositionToOpenCarDoor(m_Car, m_TargetDoor) - ped->GetPosition(),
+		CCarEnterExit::GetPositionToOpenCarDoor(m_Car, m_TargetDoor, ped) - ped->GetPosition(),
 		600, 0, m_TargetDoor);
 }
 

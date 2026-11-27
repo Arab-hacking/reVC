@@ -31,7 +31,7 @@ public:
 	bool ProcessPed(CPed *ped);
 
 protected:
-	CVector ComputeTarget() const;
+	CVector ComputeTarget(CPed *ped) const;
 };
 
 VALIDATE_SIZE(CTaskSimpleCarGoToPointNearDoorUntilDoorNotInUse, 0x10);

@@ -85,7 +85,7 @@ CTaskComplexGoToCarDoorAndStandStill::CreateNextSubTask(CPed *ped)
 {
 	switch (m_pSubTask->GetTaskType()) {
 	case TASK_COMPLEX_FOLLOW_POINT_ROUTE:
-		m_TargetPt = CCarEnterExit::GetPositionToOpenCarDoor(m_Vehicle, m_TargetDoor);
+		m_TargetPt = CCarEnterExit::GetPositionToOpenCarDoor(m_Vehicle, m_TargetDoor, ped);
 		return CreateSubTask(TASK_SIMPLE_GO_TO_POINT, ped);
 	case TASK_SIMPLE_GO_TO_POINT:
 		if (((CTaskSimpleGoToPoint *)m_pSubTask)->WasTaskSuccessful(ped))
@@ -163,11 +163,11 @@ CTaskComplexGoToCarDoorAndStandStill::ControlSubTask(CPed *ped)
 	case TASK_SIMPLE_STAND_STILL:
 	case TASK_SIMPLE_CAR_WAIT_FOR_DOOR_NOT_TO_BE_IN_USE:
 		if (m_TargetDoor != 0)
-			m_TargetPt = CCarEnterExit::GetPositionToOpenCarDoor(m_Vehicle, m_TargetDoor);
+			m_TargetPt = CCarEnterExit::GetPositionToOpenCarDoor(m_Vehicle, m_TargetDoor, ped);
 		return m_pSubTask;
 	case TASK_SIMPLE_GO_TO_POINT: {
 		if (!IsVehicleInRange(*ped)) {
-			m_TargetPt = CCarEnterExit::GetPositionToOpenCarDoor(m_Vehicle, m_TargetDoor);
+			m_TargetPt = CCarEnterExit::GetPositionToOpenCarDoor(m_Vehicle, m_TargetDoor, ped);
 			return CreateSubTask(TASK_SIMPLE_STAND_STILL, ped);
 		}
 
@@ -179,7 +179,7 @@ CTaskComplexGoToCarDoorAndStandStill::ControlSubTask(CPed *ped)
 		return m_pSubTask;
 	}
 	case TASK_COMPLEX_FOLLOW_POINT_ROUTE: {
-		const CVector doorOpenPos = CCarEnterExit::GetPositionToOpenCarDoor(m_Vehicle, m_TargetDoor);
+		const CVector doorOpenPos = CCarEnterExit::GetPositionToOpenCarDoor(m_Vehicle, m_TargetDoor, ped);
 
 		if (!IsVehicleInRange(*ped)) {
 			m_TargetPt = doorOpenPos;
@@ -249,7 +249,7 @@ CTaskComplexGoToCarDoorAndStandStill::CalculateTargetDoor(CPed *ped, bool &bCanW
 	bCanWaitForDoorToBeFree = false;
 	if (m_TargetSeat != 0) {
 		m_TargetDoor = m_TargetSeat;
-		m_TargetPt = CCarEnterExit::GetPositionToOpenCarDoor(m_Vehicle, m_TargetSeat);
+		m_TargetPt = CCarEnterExit::GetPositionToOpenCarDoor(m_Vehicle, m_TargetSeat, ped);
 	} else {
 		if (m_bIsDriver) {
 			if (!CCarEnterExit::GetNearestCarDoor(ped, m_Vehicle, m_TargetPt, m_TargetDoor))

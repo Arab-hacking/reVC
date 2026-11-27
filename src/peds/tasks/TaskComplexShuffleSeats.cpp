@@ -82,7 +82,7 @@ CTaskComplexShuffleSeats::CreateTaskUtilityLineUpPedWithCar(CPed *ped)
 	m_OriginDoor = DoorForSeatOf(m_Veh, ped);
 
 	m_TaskUtilityLineUpPedWithCar = new CTaskUtilityLineUpPedWithCar(
-		CCarEnterExit::GetPositionToOpenCarDoor(m_Veh, m_OriginDoor) - ped->GetPosition(),
+		CCarEnterExit::GetPositionToOpenCarDoor(m_Veh, m_OriginDoor, ped) - ped->GetPosition(),
 		600, 0, m_OriginDoor);
 }
 

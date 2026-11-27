@@ -729,7 +729,14 @@ CCarEnterExit::IsPlayerToQuitCarEnter(const CPed *ped, const CVehicle *vehicle, 
 		return false;
 	if ((int32)CTimer::GetTimeInMilliseconds() - startTime < 500)
 		return false;
-	return CPad::GetPad(0)->ExitVehicleJustDown();
+	CPad *pad = CPad::GetPad(0);
+	if (pad->ExitVehicleJustDown())
+		return true;
+	// Steering away from the car cancels too, as it did when the
+	// seek was a ped state the player controller could drop.
+	return pad->GetLeftStickXJustDown() || pad->GetLeftStickYJustDown() ||
+		pad->GetDPadUpJustDown() || pad->GetDPadDownJustDown() ||
+		pad->GetDPadLeftJustDown() || pad->GetDPadRightJustDown();
 }
 
 // SA CCarEnterExit::IsRoomForPedToLeaveCar (0x6504C0). The vehicle classes own

@@ -33,7 +33,7 @@ CTaskSimpleCarGoToPointNearDoorUntilDoorNotInUse::~CTaskSimpleCarGoToPointNearDo
 bool
 CTaskSimpleCarGoToPointNearDoorUntilDoorNotInUse::ProcessPed(CPed *ped)
 {
-	m_TaskGoToPoint->UpdatePoint(ComputeTarget());
+	m_TaskGoToPoint->UpdatePoint(ComputeTarget(ped));
 	if (!m_TaskGoToPoint->ProcessPed(ped))
 		return m_TaskWaitForDoor->ProcessPed(ped);
 	CTaskSimpleStandStill standStill(-1);
@@ -42,9 +42,9 @@ CTaskSimpleCarGoToPointNearDoorUntilDoorNotInUse::ProcessPed(CPed *ped)
 }
 
 CVector
-CTaskSimpleCarGoToPointNearDoorUntilDoorNotInUse::ComputeTarget() const
+CTaskSimpleCarGoToPointNearDoorUntilDoorNotInUse::ComputeTarget(CPed *ped) const
 {
 	CVehicle *veh = m_TaskWaitForDoor->m_veh;
 	const CVector vehPos = veh->GetPosition();
-	return vehPos + (CCarEnterExit::GetPositionToOpenCarDoor(veh, (int32)m_TaskWaitForDoor->m_doorsToWaitFor[0]) - vehPos) * 2.0f;
+	return vehPos + (CCarEnterExit::GetPositionToOpenCarDoor(veh, (int32)m_TaskWaitForDoor->m_doorsToWaitFor[0], ped) - vehPos) * 2.0f;
 }
