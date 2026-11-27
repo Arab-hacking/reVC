@@ -998,6 +998,13 @@ CCarEnterExit::SetPedInCarDirect(CPed *ped, CVehicle *vehicle, int32 seatNumber,
 	if(vehicle == nil || ped == nil)
 		return false;
 
+	// The seat number is an index into pPassengers[]. Callers derive it
+	// from a door, and a door with no seat behind it maps to -1; the door
+	// computation below cannot be relied on to reject that (a bus answers
+	// door 8 for every passenger number), so the range is enforced here.
+	if(!bAsDriver && (seatNumber < 0 || seatNumber >= vehicle->m_nNumMaxPassengers))
+		return false;
+
 	if(vehicle->IsBike() || (vehicle->m_pHandlingData && vehicle->m_pHandlingData->m_bTandemSeats)){
 		// A bike has one seat per side; the driver takes the front.
 		if(bAsDriver){
