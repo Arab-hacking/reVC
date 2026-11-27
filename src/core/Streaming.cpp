@@ -2406,7 +2406,9 @@ CStreaming::StreamZoneModels(const CVector &pos)
 				ms_bIsPedFromPedGroupLoaded[i] = false;
 			ms_bIsPedFromPedGroupLoaded[j] = true;
 			int newMI = CPopulation::ms_pPedGroups[ms_currentPedGrp].models[j];
-			if(newMI != oldMI){
+			// An empty group slot (-1) is a wasted switch, like picking the
+			// model that is already out: nothing to request or remove.
+			if(newMI != -1 && newMI != oldMI){
 				RequestModel(newMI, STREAMFLAGS_DEPENDENCY);
 				debug("Request Ped %s\n", CModelInfo::GetModelInfo(newMI)->GetModelName());
 				if(ms_numPedsLoaded == MAXZONEPEDSLOADED){

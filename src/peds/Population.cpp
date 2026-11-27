@@ -265,6 +265,14 @@ CPopulation::LoadPedGroups()
 	int fd;
 	char line[1024];
 	int nextPedGroup = 0;
+
+	// Group slots start empty. GetModelInfo only writes the slot on a name
+	// match, so without this an unfilled or unknown name would keep the
+	// zero-initialised slot: model 0, the player, which every consumer
+	// downstream then takes for a real population member.
+	for(int g = 0; g < NUMPEDGROUPS; g++)
+		for(int s = 0; s < NUMMODELSPERPEDGROUP; s++)
+			ms_pPedGroups[g].models[s] = -1;
 	// char unused[16]; // non-existence of that in mobile kinda verifies that
 	char modelName[256];
 
@@ -994,9 +1002,11 @@ CPopulation::AddPedInCar(CVehicle* car, bool isDriver)
 				preferredModel = ChooseCivilianOccupation(zoneInfo.pedGroup);
 				int i = 15;
 				for(; i >= 0; i--) {
-					CPedModelInfo* pedModel = (CPedModelInfo*)CModelInfo::GetModelInfo(preferredModel);
+					// Safe, not a bare cast: an empty group slot is -1 and the
+					// retry below then has to take the default model.
+					CPedModelInfo* pedModel = SafePedModelInfo(preferredModel);
 
-					if (pedModel->GetRwObject()) {
+					if (pedModel != nil && pedModel->GetRwObject()) {
 						if (!car->IsPassenger(preferredModel) && !car->IsDriver(preferredModel)) {
 							if (SafePedModelInfo(preferredModel) &&
 							   SafePedModelInfo(preferredModel)->m_carsCanDrive & (1 << carModel->m_vehicleClass))
@@ -1876,9 +1886,9 @@ CPopulation::PlaceMallPedsAsStationaryGroup(CVector const& coors, int32 group)
 						leaderPos = finalPos;
 
 					int pedModel = ChooseCivilianOccupation(group);
-					CPedModelInfo *pedModelInfo = (CPedModelInfo*)CModelInfo::GetModelInfo(pedModel);
+					CPedModelInfo *pedModelInfo = SafePedModelInfo(pedModel);
 
-					if (pedModelInfo->GetRwObject()) {
+					if (pedModelInfo != nil && pedModelInfo->GetRwObject()) {
 						CEntity* obstacles[6] = { nil, nil, nil, nil, nil, nil };
 						CPedPlacement::IsPositionClearForPed(finalPos, CModelInfo::GetColModel(pedModel)->boundingSphere.radius, ARRAY_SIZE(obstacles), obstacles);
 						bool foundObstacle = false;
