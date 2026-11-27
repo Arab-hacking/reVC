@@ -168,10 +168,13 @@ CObjectData::SetObjectData(int32 modelId, CObject &object)
 {
 	CObjectInfo *objinfo;
 
-	if(CModelInfo::GetModelInfo(modelId)->GetObjectID() == -1)
+	// An object created for a model with no info (or no object entry)
+	// keeps its constructor defaults.
+	CBaseModelInfo *mi = CModelInfo::GetModelInfo(modelId);
+	if(mi == nil || mi->GetObjectID() < 0 || mi->GetObjectID() >= NUMOBJECTINFO)
 		return;
 
-	objinfo = &ms_aObjectInfo[CModelInfo::GetModelInfo(modelId)->GetObjectID()];
+	objinfo = &ms_aObjectInfo[mi->GetObjectID()];
 
 	object.m_fMass = objinfo->m_fMass;
 	object.m_fTurnMass = objinfo->m_fTurnMass;
