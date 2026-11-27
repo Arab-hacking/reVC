@@ -1193,6 +1193,23 @@ CStreaming::FinishLoadingLargeFile(int8 *buf, int32 streamId)
 }
 
 void
+CStreaming::RequestAnim(int32 animId, int32 flags)
+{
+#ifdef CUSTOM_MODELS
+	// An animation block the streaming image has no bytes for may still
+	// be provided by the custom content layer (an .ani bank named like
+	// the block). Load it synchronously, like the ped bank at startup,
+	// instead of queuing a stream item that can never be read.
+	if (animId >= 0 &&
+	    !CAnimManager::GetAnimBlocks()[animId].IsLoaded &&
+	    ms_aInfoForModel[animId + STREAM_OFFSET_ANIM].GetCdSize() == 0 &&
+	    CAnimManager::TryLoadAnimBlockFromCustom(animId))
+		return;
+#endif
+	RequestModel(animId + STREAM_OFFSET_ANIM, flags);
+}
+
+void
 CStreaming::RequestModel(int32 id, int32 flags)
 {
 	CSimpleModelInfo *mi;

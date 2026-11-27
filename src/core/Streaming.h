@@ -152,7 +152,7 @@ public:
 	static void ReRequestTxd(int32 txd) { ReRequestModel(txd + STREAM_OFFSET_TXD); }
 	static void RequestCol(int32 col, int32 flags) { RequestModel(col + STREAM_OFFSET_COL, flags); }
 	static void ReRequestCol(int32 col) { ReRequestModel(col + STREAM_OFFSET_COL); }
-	static void RequestAnim(int32 col, int32 flags) { RequestModel(col + STREAM_OFFSET_ANIM, flags); }
+	static void RequestAnim(int32 col, int32 flags);
 	static void ReRequestAnim(int32 col) { ReRequestModel(col + STREAM_OFFSET_ANIM); }
 	static void RequestBigBuildings(eLevelName level);
 	static void RequestBigBuildings(eLevelName level, const CVector &pos);

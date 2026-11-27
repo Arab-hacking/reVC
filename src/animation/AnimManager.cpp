@@ -585,45 +585,58 @@ bool CAnimManager::IsAnimInBlock(const CAnimBlendHierarchy *h, const CAnimBlock 
 }
 
 // 0x4D5620
+#ifdef CUSTOM_MODELS
+// Validates and parses one custom animation bank buffer: ANPK passes
+// through, ANP2/ANP3 banks are name-sniffed, the legacy BR .ani shim
+// layout is converted first. A bank that fails validation is skipped,
+// not parsed into a crash. Returns true when the bank was handed to
+// LoadAnimFile (which creates/updates its block and marks it loaded).
+static bool LoadCustomAnimBank(std::vector<uint8> &bank)
+{
+	if (bank.empty())
+		return false;
+
+	bool acceptable = false;
+	if (bank.size() >= 4 && memcmp(bank.data(), "ANPK", 4) == 0) {
+		acceptable = true; // VC chunk dictionary; the reader validates as it goes
+	} else if (bank.size() >= 4 &&
+	           (memcmp(bank.data(), "ANP3", 4) == 0 || memcmp(bank.data(), "ANP2", 4) == 0)) {
+		int numNames = 0;
+		acceptable = br::SniffAnimNames(bank.data(), bank.size(), nil,
+				NUM_ANIMATIONS, numNames) && numNames > 0;
+		if (!acceptable && br::convertAniToIfp(bank)) {
+			numNames = 0;
+			acceptable = br::SniffAnimNames(bank.data(), bank.size(), nil,
+					NUM_ANIMATIONS, numNames) && numNames > 0;
+		}
+	}
+	if (!acceptable)
+		return false;
+
+	RwMemory mem;
+	mem.start = bank.data();
+	mem.length = (RwUInt32)bank.size();
+	RwStream *stream = RwStreamOpen(rwSTREAMMEMORY, rwSTREAMREAD, &mem);
+	if (stream == nil)
+		return false;
+	CAnimManager::LoadAnimFile(stream, true);
+	RwStreamClose(stream, nil);
+	return true;
+}
+#endif
+
 void CAnimManager::LoadAnimFiles()
 {
 	// The ped animation bank comes from the custom content layer (on
 	// this install: anim/ped.ani inside custom/zip/common.bpc) or, failing
-	// that, a loose ANIM\PED.IFP. Custom buffers are structure-checked
-	// before the game parses them: compact dictionaries are sniffed end
-	// to end, and the legacy BR .ani shim layout is converted first. A
-	// bank that fails validation is skipped, not parsed into a crash.
+	// that, a loose ANIM\PED.IFP.
 	bool loaded = false;
 #ifdef CUSTOM_MODELS
 	std::vector<uint8> customAnims;
 	if (CCustomModels::LoadAnimFileFromCustom("ANIM\\PED.IFP", customAnims) && !customAnims.empty()) {
-		bool acceptable = false;
-		if (customAnims.size() >= 4 && memcmp(customAnims.data(), "ANPK", 4) == 0) {
-			acceptable = true; // VC chunk dictionary; the reader validates as it goes
-		} else if (customAnims.size() >= 4 &&
-		           (memcmp(customAnims.data(), "ANP3", 4) == 0 || memcmp(customAnims.data(), "ANP2", 4) == 0)) {
-			int numNames = 0;
-			acceptable = br::SniffAnimNames(customAnims.data(), customAnims.size(), nil,
-				NUM_ANIMATIONS, numNames) && numNames > 0;
-			if (!acceptable && br::convertAniToIfp(customAnims)) {
-				numNames = 0;
-				acceptable = br::SniffAnimNames(customAnims.data(), customAnims.size(), nil,
-					NUM_ANIMATIONS, numNames) && numNames > 0;
-			}
-		}
-		if (acceptable) {
-			RwMemory mem;
-			mem.start = customAnims.data();
-			mem.length = (RwUInt32)customAnims.size();
-			RwStream *stream = RwStreamOpen(rwSTREAMMEMORY, rwSTREAMREAD, &mem);
-			if (stream != nil) {
-				LoadAnimFile(stream, true);
-				RwStreamClose(stream, nil);
-				loaded = true;
-			}
-		} else {
+		loaded = LoadCustomAnimBank(customAnims);
+		if (!loaded)
 			debug("CAnimManager::LoadAnimFiles: custom ped animation bank is invalid, skipped\n");
-		}
 	}
 #endif
 	if (!loaded) {
@@ -638,6 +651,35 @@ void CAnimManager::LoadAnimFiles()
 
 	ms_aAnimAssocGroups = new CAnimBlendAssocGroup[ms_numAnimAssocDefinitions];
 	CreateAnimAssocGroups();
+}
+
+// Blocks outside the streaming image (the archive provides named banks
+// for them: bikes, bikev, truck, ...) are fetched through the custom
+// layer the same way the ped bank is at startup, once something
+// actually references them.
+bool CAnimManager::TryLoadAnimBlockFromCustom(int32 blockIndex)
+{
+	if (blockIndex < 0 || blockIndex >= (int32)ms_numAnimBlocks)
+		return false;
+
+	CAnimBlock &block = ms_aAnimBlocks[blockIndex];
+	if (block.IsLoaded)
+		return true;
+
+#ifdef CUSTOM_MODELS
+	char filename[32];
+	snprintf(filename, sizeof(filename), "ANIM\\%s.IFP", block.Name);
+	std::vector<uint8> bank;
+	if (!CCustomModels::LoadAnimFileFromCustom(filename, bank))
+		return false;
+	if (!LoadCustomAnimBank(bank))
+		return false;
+	if (ms_aAnimAssocGroups != nil)
+		CreateAnimAssocGroups();
+	return block.IsLoaded;
+#else
+	return false;
+#endif
 }
 
 struct IFPSectionHeader

@@ -1,6 +1,7 @@
 #include "common.h"
 
 #include "CustomModels.h"
+#include "AnimManager.h"
 
 #ifdef CUSTOM_MODELS
 
@@ -4851,6 +4852,22 @@ CCustomModels::ForEachAnimBank(AnimBankCallback callback, void *context)
 	for(std::map<std::string, CustomSource>::const_iterator it = customAnims.begin();
 	    it != customAnims.end(); ++it)
 		callback(it->first.c_str(), context);
+}
+
+static void
+RegisterOneCustomAnimBank(const char *bankName, void *context)
+{
+	(void)context;
+	// Bank names are the block-name keys; banks longer than a block name
+	// cannot be addressed by the animation manager and are skipped.
+	if(bankName != nil && bankName[0] != '\0' && strlen(bankName) < MAX_ANIM_BLOCK_NAME)
+		CAnimManager::RegisterAnimBlock(bankName);
+}
+
+void
+CCustomModels::RegisterAnimBlocks()
+{
+	ForEachAnimBank(RegisterOneCustomAnimBank, nil);
 }
 
 static RwTexture*

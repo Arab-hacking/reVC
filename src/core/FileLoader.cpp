@@ -98,6 +98,12 @@ CFileLoader::InitialiseWorld(void)
 	CCustomWorld::LoadCollisions();
 #endif
 	POP_MEMID();
+#ifdef CUSTOM_MODELS
+	// Archive anim banks (bikes/bikev/truck/...) become named blocks so
+	// ConvertAnimFileIndex below can resolve vehicle anim files; the
+	// banks themselves load lazily through CStreaming::RequestAnim.
+	CCustomModels::RegisterAnimBlocks();
+#endif
 	for(int i = 0; i < MODELINFOSIZE; i++)
 		if(CModelInfo::GetModelInfo(i))
 			CModelInfo::GetModelInfo(i)->ConvertAnimFileIndex();

@@ -138,6 +138,11 @@ public:
 	typedef void (*AnimBankCallback)(const char *bankName, void *context);
 	static void ForEachAnimBank(AnimBankCallback callback, void *context);
 
+	// Register every custom animation bank as a named animation block, so
+	// model info anim-file references resolve to block indices before the
+	// streaming layer is asked to load them.
+	static void RegisterAnimBlocks();
+
 	// Loose world files are only scanned under custom/data/maps/. The one
 	// permitted ZIP also supplies data/peds.ide, data/vehicles.ide and
 	// data/weapons.ide. The optional active_ipl.txt selects IPLs; IDEs are

@@ -68,6 +68,10 @@ public:
 
 	static void CreateAnimAssocGroups();
 	static int32 RegisterAnimBlock(const char *name);
+	// Load a named animation block from the custom content layer when it
+	// has no data in the streaming image (archive banks are named like
+	// their IFPs). Returns true when the block is loaded afterwards.
+	static bool TryLoadAnimBlockFromCustom(int32 blockIndex);
 	static void RemoveLastAnimFile();
 	static void RemoveAnimBlock(int32 index);
 	static void RemoveAnimBlockRef(int32 index);

@@ -727,6 +727,11 @@ void CCustomWorld::LoadIde(void)
                 vehicle->m_colours2[c] = defaultColours[c][1];
             }
             std::snprintf(vehicle->m_gameName, sizeof(vehicle->m_gameName), "%.9s", m.gameName.c_str());
+            // The archive row names the animation bank (SA vehicles.ide
+            // column); without it GetAnimFileIndex stays -1, the bank is
+            // never requested, and the vehicle's enter/ride animations
+            // silently never play.
+            vehicle->SetAnimFile(m.anim.c_str());
             vehicle->SetColModel(&CTempColModels::ms_colModelBBox);
             mi = vehicle;
         } else {
