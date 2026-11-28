@@ -395,7 +395,9 @@ ScanAssetFolder(const std::string &folder, const char *kind, int depth, ScanStat
 		if(!relative.empty() && (relative[0] == '/' || relative[0] == '\\')) relative.erase(0, 1);
 		CustomSource src = MakeSource(FileTime(path.c_str()), path.c_str(), relative.c_str());
 		if(strcmp(kind, "anim") == 0) {
-			if(ext == "ifp") { AddIndex(customAnims, key, src); st.anim++; }
+			// The archive scans accept both bank extensions; a loose folder
+			// holding the same .ani banks was silently skipped before.
+			if(ext == "ifp" || ext == "ani") { AddIndex(customAnims, key, src); st.anim++; }
 		} else if(strcmp(kind, "data/maps") == 0) {
 			if(ext == "ide" || ext == "ipl") {
 				AddWorldFile(ext == "ide" ? customIdeFiles : customIplFiles, relative, src);
@@ -411,7 +413,7 @@ ScanAssetFolder(const std::string &folder, const char *kind, int depth, ScanStat
 
 // The one ZIP exception: only custom/common.zip at the custom root. Every
 // entry outside the audio tree goes into the unified catalog; canonical
-// data/maps/ entries and the three named root IDEs are additionally
+// data/maps/ entries and the four named root IDEs are additionally
 // claimed by the specialised indices, and the old maps/ alias is accepted
 // only where no canonical entry exists.
 static void
@@ -466,11 +468,14 @@ ScanCommonZip(void)
 					commonZipDataFiles.insert(std::make_pair(key, src));
 					continue;
 				}
-				// These three definitions live outside data/maps/. Allow only
+				// These four definitions live outside data/maps/. Allow only
 				// the named IDEs, not misc/feature files or a blanket import of
 				// root data/. Normal type checks and IMG DFF requirements apply.
+				// misc.ide is one of them: config.dat names it first, and its
+				// rows are the wheel models and other generic objects the
+				// vehicles themselves reference.
 				if(pass == 0 && (key == "data/peds.ide" || key == "data/vehicles.ide" ||
-				                 key == "data/weapons.ide")) {
+				                 key == "data/weapons.ide" || key == "data/misc.ide")) {
 					commonZipIdeFiles.insert(std::make_pair(key, src));
 					continue;
 				}
@@ -787,7 +792,7 @@ ScanBpcSystem(void)
 				// parsed, so no ped or vehicle row is ever registered and
 				// the engine is left without them.
 				if(pass == 0 && (key == "data/peds.ide" || key == "data/vehicles.ide" ||
-				                 key == "data/weapons.ide")){
+				                 key == "data/weapons.ide" || key == "data/misc.ide")){
 					commonZipIdeFiles[key] = src;
 					continue;
 				}
