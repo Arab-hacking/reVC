@@ -49,7 +49,9 @@
 
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
+#include <vector>
 
 namespace {
 
@@ -1024,6 +1026,131 @@ SetRectBtn(VirtualButton &b, float cx, float cy, float halfW, float halfH, Mobil
 	b.glyph = glyph;
 }
 
+// ---------------------------------------------------------------------------
+// data/touchscreen.json overrides
+//
+// The archive ships the client's own touch layout: one entry per control
+// with an anchor corner (anchorX left/right, anchorY top/bottom), the
+// offset of the control's anchor-side corner from that screen corner, and
+// its size, all in density-independent units. Controls this port has no
+// counterpart for (chat, donat_store, voice, ...) are parsed but unused;
+// without the file the built-in layout below is used unchanged.
+// ---------------------------------------------------------------------------
+
+struct TouchControlDef {
+	char name[32];
+	float x, y, w, h;
+	bool anchorRight, anchorBottom;
+};
+
+static TouchControlDef s_touchDefs[48];
+static int s_touchDefCount = -1;	// -1: not loaded yet
+
+static const char *
+TouchFindKey(const char *begin, const char *end, const char *key)
+{
+	const size_t klen = strlen(key);
+	for(const char *p = begin; p + klen <= end; p++)
+		if(memcmp(p, key, klen) == 0)
+			return p;
+	return nil;
+}
+
+static bool
+TouchNumber(const char *begin, const char *end, const char *key, float &out)
+{
+	const char *p = TouchFindKey(begin, end, key);
+	if(p == nil) return false;
+	p = TouchFindKey(p, end, ":");
+	if(p == nil) return false;
+	char *stop = nil;
+	out = (float)strtod(p + 1, &stop);
+	return stop != p + 1;
+}
+
+static void
+LoadTouchscreenDefs(void)
+{
+	if(s_touchDefCount >= 0) return;
+	s_touchDefCount = 0;
+	std::vector<uint8> bytes;
+	if(!CCustomModels::ReadCommonDataFile("data/touchscreen.json", bytes) || bytes.empty())
+		return;
+	bytes.push_back('\0');
+	const char *base = (const char*)bytes.data();
+	const char *end = base + bytes.size();
+	const char *p = base;
+	while(s_touchDefCount < (int)(sizeof(s_touchDefs)/sizeof(s_touchDefs[0]))){
+		const char *nameKey = TouchFindKey(p, end, "\"name\"");
+		if(nameKey == nil) break;
+		const char *next = TouchFindKey(nameKey + 6, end, "\"name\"");
+		const char *objEnd = next != nil ? next : end;
+		const char *colon = TouchFindKey(nameKey, objEnd, ":");
+		if(colon == nil) break;
+		const char *q1 = TouchFindKey(colon, objEnd, "\"");
+		const char *q2 = q1 != nil ? TouchFindKey(q1 + 1, objEnd, "\"") : nil;
+		if(q2 == nil) break;
+		TouchControlDef &d = s_touchDefs[s_touchDefCount];
+		memset(&d, 0, sizeof(d));
+		size_t nlen = (size_t)(q2 - (q1 + 1));
+		if(nlen >= sizeof(d.name)) nlen = sizeof(d.name) - 1;
+		memcpy(d.name, q1 + 1, nlen);
+		if(TouchNumber(nameKey, objEnd, "\"x\"", d.x) &&
+		   TouchNumber(nameKey, objEnd, "\"y\"", d.y) &&
+		   TouchNumber(nameKey, objEnd, "\"width\"", d.w) &&
+		   TouchNumber(nameKey, objEnd, "\"height\"", d.h) && d.w > 0.0f && d.h > 0.0f){
+			const char *ax = TouchFindKey(nameKey, objEnd, "\"anchorX\"");
+			const char *ay = TouchFindKey(nameKey, objEnd, "\"anchorY\"");
+			d.anchorRight = ax != nil && TouchFindKey(ax, objEnd, "\"right\"") != nil;
+			d.anchorBottom = ay != nil && TouchFindKey(ay, objEnd, "\"bottom\"") != nil;
+			s_touchDefCount++;
+		}
+		p = objEnd;
+	}
+	if(s_touchDefCount > 0)
+		REVC_LOG_INFO("touchscreen.json: %d control definition(s) loaded", s_touchDefCount);
+}
+
+static MobileBtnId
+TouchButtonForName(const char *name)
+{
+	if(strcmp(name, "accelerate") == 0) return MBTN_ACCEL;
+	if(strcmp(name, "brake") == 0) return MBTN_BRAKE;
+	if(strcmp(name, "entercar") == 0) return MBTN_ENTER_EXIT;
+	if(strcmp(name, "handbrake") == 0) return MBTN_HANDBRAKE;
+	if(strcmp(name, "horn") == 0) return MBTN_HORN;
+	if(strcmp(name, "gun") == 0) return MBTN_ATTACK;
+	if(strcmp(name, "aim_melee_gun") == 0) return MBTN_TARGET;
+	if(strcmp(name, "quick_switch_weapon") == 0) return MBTN_WEAPON_SLOT;
+	if(strcmp(name, "interaction") == 0) return MBTN_INTERACT;
+	if(strcmp(name, "carcamera") == 0) return MBTN_CAM;
+	if(strcmp(name, "move_left") == 0) return MBTN_STEER_LEFT;
+	if(strcmp(name, "move_right") == 0) return MBTN_STEER_RIGHT;
+	return MBTN_NONE;
+}
+
+static void
+ApplyTouchscreenOverrides(const MobileTouchMath::MobileScreenMetrics &m)
+{
+	LoadTouchscreenDefs();
+	for(int i = 0; i < s_touchDefCount; i++){
+		const TouchControlDef &d = s_touchDefs[i];
+		const MobileBtnId id = TouchButtonForName(d.name);
+		if(id == MBTN_NONE) continue;
+		VirtualButton &b = s_buttons[id];
+		if(!b.visible) continue;
+		const float w = m.Dp(d.w), h = m.Dp(d.h);
+		const float left = d.anchorRight ? m.screenW - m.Dp(d.x) - w : m.Dp(d.x);
+		const float top = d.anchorBottom ? m.screenH - m.Dp(d.y) - h : m.Dp(d.y);
+		b.circular = false;
+		b.preserveAspect = false;
+		b.cx = left + w * 0.5f;
+		b.cy = top + h * 0.5f;
+		b.halfW = w * 0.5f;
+		b.halfH = h * 0.5f;
+	}
+}
+
 static void
 UpdateGameplayLayout(void)
 {
@@ -1230,6 +1357,7 @@ UpdateGameplayLayout(void)
 			SetCircleBtn(s_buttons[MBTN_ZOOM_IN], attackX - rAttack - rSub - m.Dp(16.0f), attackY - m.Dp(34.0f), m.Dp(26.0f), MTEX_ZOOM_IN, GLYPH_PLUS);
 			SetCircleBtn(s_buttons[MBTN_ZOOM_OUT], attackX - rAttack - rSub - m.Dp(16.0f), attackY + m.Dp(28.0f), m.Dp(26.0f), MTEX_ZOOM_OUT, GLYPH_MINUS);
 		}
+		ApplyTouchscreenOverrides(m);
 		return;
 	}
 
@@ -1260,6 +1388,8 @@ UpdateGameplayLayout(void)
 	if (CheckNearbyInteractPickup(player, &interactTex)) {
 		SetCircleBtn(s_buttons[MBTN_INTERACT], attackX - arcR * 1.52f, attackY - m.Dp(78.0f), m.Dp(27.0f), interactTex, GLYPH_PLUS);
 	}
+
+	ApplyTouchscreenOverrides(m);
 }
 
 static bool
