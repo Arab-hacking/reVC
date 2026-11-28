@@ -283,7 +283,11 @@ static inline bool bakeTerrain(const br::TerrainRecipe& r, const std::function<b
     const Mip* lm[4] = { nullptr, nullptr, nullptr, nullptr }; std::vector<Mip> tmp; tmp.reserve(8);
     for (int i = 0; i < 4; i++) if (have[i]) {
         float rep = tiles * (r.scale[i] > 0.01f ? r.scale[i] : 1.f); uint32_t want = std::max<uint32_t>(4, (uint32_t)(size / rep));
-        Mip m = lay[i].mips[0]; while (m.w > want * 2 && m.h > want * 2) m = halveMip(m);   // не ниже want (нужен ещё бильинейный шаг)
+        // Не редуцировать слой ниже 64px: на больших чанках want*2 выходит
+        // единиц пикселей, слой вырождается в свой средний цвет и запекание
+        // превращается в плоские поля по маске (деталь текстуры теряется).
+        uint32_t target = std::max<uint32_t>(want * 2, 64);
+        Mip m = lay[i].mips[0]; while (m.w > target && m.h > target) m = halveMip(m);   // не ниже target (нужен ещё бильинейный шаг)
         tmp.push_back(std::move(m)); lm[i] = &tmp.back();
     }
     const Mip* mk = haveMask ? &mask.mips[0] : nullptr; bool maskHasAlpha = haveMask && mask.hasAlpha;

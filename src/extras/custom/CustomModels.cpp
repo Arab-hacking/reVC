@@ -2025,6 +2025,53 @@ GetDecodedBtx(const std::string &name)
 	return src ? GetDecodedBtx(*src, name) : std::shared_ptr<const brtex::Texture>();
 }
 
+// Terrain recipes name the mask; RW texture names are capped at 31 chars,
+// so compare case-insensitively on the truncated form, as the TXD lookup does.
+static bool
+SameTerrainTex(const std::string &recipeTex, const std::string &name)
+{
+	std::string a = ToLower(recipeTex), b = ToLower(name);
+	if(a.size() > 31) a.resize(31);
+	if(b.size() > 31) b.resize(31);
+	return a == b;
+}
+
+// One baked texture covers the whole terrain chunk: the bigger the chunk,
+// the more pixels it needs before the tiled layers degenerate into their
+// average colours. The BR shader tiles a layer every 5 m, so ~4 px per
+// metre of chunk extent is the point where detail stops improving.
+static uint32
+TerrainBakeSize(const br::TerrainRecipe &recipe)
+{
+	if(recipe.extent <= 1.0f)
+		return 512;
+	float s = recipe.extent * 4.0f;
+	if(s < 512.0f) s = 512.0f;
+	if(s > 2048.0f) s = 2048.0f;
+	return (uint32)s;
+}
+
+// One line per recipe per load: whether the mask and each layer actually
+// resolve to an indexed .btx. A bake whose layers are missing returns the
+// raw mask (flat red/green fields on screen), which is otherwise
+// indistinguishable from a decode failure.
+static void
+LogTerrainRecipe(const char *where, const br::TerrainRecipe &recipe)
+{
+	const std::string names[5] = { recipe.tex, recipe.layers[0], recipe.layers[1],
+	                               recipe.layers[2], recipe.layers[3] };
+	bool found[5];
+	for(int i = 0; i < 5; i++)
+		found[i] = !names[i].empty() && FindSource(customBtx, ToLower(names[i])) != nil;
+	CUSTOM_LOG("terrain %s: mask '%s'%s layers ['%s'%s '%s'%s '%s'%s '%s'%s] extent %.0f bake %u\n",
+		where, recipe.tex.c_str(), found[0] ? "" : " NOT IN INDEX",
+		recipe.layers[0].c_str(), found[1] ? "" : " NOT IN INDEX",
+		recipe.layers[1].c_str(), found[2] ? "" : " NOT IN INDEX",
+		recipe.layers[2].c_str(), found[3] ? "" : " NOT IN INDEX",
+		recipe.layers[3].c_str(), found[4] ? "" : " NOT IN INDEX",
+		recipe.extent, TerrainBakeSize(recipe));
+}
+
 // Decode and bake terrain without touching game state. The input map is a
 // snapshot of source descriptors, not live iterators into the archive index.
 static std::shared_ptr<brtex::Texture>
@@ -2039,12 +2086,14 @@ BakeTerrainBytes(const br::TerrainRecipe &recipe,
 				return false;
 			std::string error;
 			std::shared_ptr<brtex::Texture> layer = DecodeBtxBytes(src->second, name, error);
-			if(!layer)
+			if(!layer){
+				CUSTOM_LOG("terrain layer %s: %s\n", name.c_str(), error.c_str());
 				return false;
+			}
 			out = *layer;
 			return true;
 		};
-	return brtex::bakeTerrain(recipe, read, *baked, 512, 0.0f) ? baked : std::shared_ptr<brtex::Texture>();
+	return brtex::bakeTerrain(recipe, read, *baked, TerrainBakeSize(recipe), 0.0f) ? baked : std::shared_ptr<brtex::Texture>();
 }
 
 // The terrain baker's callback currently takes an output Texture by value.
@@ -2076,8 +2125,9 @@ GetPreparedTexture(const std::string &modelKey, const std::string &name,
 	}
 	if(customFailedCpuTextures.find(key) != customFailedCpuTextures.end())
 		return std::shared_ptr<const brtex::Texture>();
+	LogTerrainRecipe("bake", *recipe);
 	std::shared_ptr<brtex::Texture> tex = std::make_shared<brtex::Texture>();
-	if(!brtex::bakeTerrain(*recipe, LoadBtxTexture, *tex, 512, 0.0f))
+	if(!brtex::bakeTerrain(*recipe, LoadBtxTexture, *tex, TerrainBakeSize(*recipe), 0.0f))
 		return std::shared_ptr<const brtex::Texture>();
 	customDecodedTextures.Insert(key, tex, DecodedTextureSize(*tex));
 	return tex;
@@ -2229,7 +2279,7 @@ PrepareDesktopModelTextures(const PreparedModel &model, const std::string &key, 
 		if(RwTexDictionaryFindNamedTexture(def->texDict, name.c_str())) continue;
 		const br::TerrainRecipe *recipe = nil;
 		for(size_t r = 0; r < model.stats.recipes.size(); ++r)
-			if(ToLower(model.stats.recipes[r].tex) == name) recipe = &model.stats.recipes[r];
+			if(SameTerrainTex(model.stats.recipes[r].tex, name)) recipe = &model.stats.recipes[r];
 		if(!recipe && !FindSource(customBtx, name)) continue; // native/parent texture
 		std::shared_ptr<const brtex::Texture> decoded = GetPreparedTexture(key, name, recipe);
 		RwTexture *texture = decoded ? BuildTextureGuarded(*decoded, name.c_str()) : nil;
@@ -2962,7 +3012,7 @@ BpcDirectTexFindCB(const char *name)
 	if(!s_resolvingTerrainMask && s_activeBpcModel){
 		for(size_t r = 0; r < s_activeBpcModel->stats.recipes.size(); r++){
 			const br::TerrainRecipe &recipe = s_activeBpcModel->stats.recipes[r];
-			if(ToLower(recipe.tex) == ToLower(name)){
+			if(SameTerrainTex(recipe.tex, name)){
 				const std::string lowMask = ToLower(recipe.tex);
 				const bool hasMaskBtx = (FindSource(customBtx, lowMask) != nil || FindSource(customTmbBtx, lowMask) != nil);
 				bool hasAnyLayerBtx = false;
@@ -3008,6 +3058,9 @@ BpcDirectTexFindCB(const char *name)
 					s_resolvingTerrainMask = false;
 					if(maskTex != nil && hasSplat)
 						return maskTex;
+					if(hasMaskBtx && maskTex != nil)
+						CUSTOM_LOG("terrain %s: GPU splat unavailable (%s); falling back to baked/mask texture\n",
+							name, hasAnyLayerBtx ? "layer textures present but splat registration failed" : "no layer .btx in index");
 				}
 #else
 				(void)hasMaskBtx;
@@ -3022,6 +3075,8 @@ BpcDirectTexFindCB(const char *name)
 							? ToLower(CTxdStore::GetTxdName(s_activeBpcTxdSlot))
 							: ToLower(name));
 					std::shared_ptr<const brtex::Texture> baked = GetPreparedTexture(modelKey, name, &recipe);
+					if(!baked)
+						CUSTOM_LOG("terrain %s: bake produced nothing; the raw mask will be shown\n", name);
 					if(baked){
 						RwTexture *built = BuildTextureGuarded(*baked, name);
 						if(built){
@@ -3155,6 +3210,7 @@ QueueTerrainPreparation(const std::string &cacheKey, const br::TerrainRecipe &re
 {
 	if(HasPreparedTexture(cacheKey))
 		return true;
+	LogTerrainRecipe("queue", recipe);
 	std::map<std::string, CustomSource> inputs;
 	const std::string names[5] = { recipe.tex, recipe.layers[0], recipe.layers[1], recipe.layers[2], recipe.layers[3] };
 	for(int i = 0; i < 5; i++){
@@ -3204,7 +3260,7 @@ CCustomModels::PumpBackgroundResults(void)
 						const std::string &tname = model->textureNames[i];
 						const br::TerrainRecipe *recipe = nil;
 						for(size_t r = 0; r < model->stats.recipes.size(); r++)
-							if(model->stats.recipes[r].tex == tname)
+							if(SameTerrainTex(model->stats.recipes[r].tex, tname))
 								recipe = &model->stats.recipes[r];
 						if(recipe){
 #ifdef RW_GL3
@@ -3472,7 +3528,7 @@ LoadTxdSlot(int32 slot, const std::string &key, TxdPlan &plan)
 			// texture the model references, the layers come from their own .btx
 			const br::TerrainRecipe *recipe = nil;
 			for(size_t r = 0; r < plan.recipes.size(); r++)
-				if(plan.recipes[r].tex == name)
+				if(SameTerrainTex(plan.recipes[r].tex, name))
 					recipe = &plan.recipes[r];
 
 			std::shared_ptr<const brtex::Texture> tex = GetPreparedTexture(plan.modelKey, name, recipe);
@@ -4065,7 +4121,7 @@ CheckStreamPreparation(int32 streamId, bool priority)
 					const std::string &tname = prepared->textureNames[i];
 					const br::TerrainRecipe *recipe = nil;
 					for(size_t r = 0; r < prepared->stats.recipes.size(); r++)
-						if(prepared->stats.recipes[r].tex == tname)
+						if(SameTerrainTex(prepared->stats.recipes[r].tex, tname))
 							recipe = &prepared->stats.recipes[r];
 					if(recipe){
 						const std::string lowMask = ToLower(recipe->tex);
@@ -4159,7 +4215,7 @@ CheckStreamPreparation(int32 streamId, bool priority)
 					if(def && def->texDict && RwTexDictionaryFindNamedTexture(def->texDict, name.c_str())) continue;
 					const br::TerrainRecipe *recipe = nil;
 					for(size_t r = 0; r < prepared->stats.recipes.size(); ++r)
-						if(ToLower(prepared->stats.recipes[r].tex) == name) recipe = &prepared->stats.recipes[r];
+						if(SameTerrainTex(prepared->stats.recipes[r].tex, name)) recipe = &prepared->stats.recipes[r];
 					const CustomSource *src = FindSource(customBtx, name);
 					if(!recipe && !src) continue;
 					std::string cacheKey = recipe ? "terrain:" + key + ":" + name : BtxCacheKey(*src);
@@ -4242,7 +4298,7 @@ CheckStreamPreparation(int32 streamId, bool priority)
 				const std::string &name = plan.names[i];
 				const br::TerrainRecipe *recipe = nil;
 				for(size_t r = 0; r < plan.recipes.size(); r++)
-					if(plan.recipes[r].tex == name) recipe = &plan.recipes[r];
+					if(SameTerrainTex(plan.recipes[r].tex, name)) recipe = &plan.recipes[r];
 				if(recipe){
 					std::string texKey = "terrain:" + plan.modelKey + ":" + ToLower(name);
 					if(!HasPreparedTexture(texKey)){
@@ -4724,7 +4780,7 @@ BuildDictionaryFor(const std::string &key)
 			const std::string &name = names[i];
 			const br::TerrainRecipe *recipe = nil;
 			for(size_t r = 0; r < plan.recipes.size(); r++)
-				if(plan.recipes[r].tex == name)
+				if(SameTerrainTex(plan.recipes[r].tex, name))
 					recipe = &plan.recipes[r];
 			std::shared_ptr<const brtex::Texture> tex = GetPreparedTexture(plan.modelKey, name, recipe);
 			if(!tex){ missing++; continue; }
