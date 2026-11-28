@@ -107,7 +107,6 @@ void
 CPedIK::PitchForSlope(void)
 {
 	const float CLAMP_EPS = 0.01f;
-	CAnimBlendClumpData *clumpData = RpAnimBlendClumpGetData(m_ped->GetClump());
 
 	if(fabsf(m_fBodyRoll) > CLAMP_EPS){
 		if(m_fBodyRoll < -DEGTORAD(30.0f)) m_fBodyRoll = -DEGTORAD(30.0f);
@@ -131,23 +130,24 @@ CPedIK::PitchForSlope(void)
 			if(m_fSlopeRoll >  DEGTORAD(45.0f)) m_fSlopeRoll =  DEGTORAD(45.0f);
 		}
 
-		// Rotation goes into the animated key frame of the named node, the same
-		// place RotateTorso writes to.
+		// Rotation goes into the animated key frame of the named node, the
+		// same place RotateTorso writes to. SA indexes the frame array by
+		// hierarchy index (RpHAnimIDGetIndex); the node table here already
+		// points at the node's own frame data, so rotate its key frame
+		// directly. Indexing the array by BoneTag instead wrote into
+		// whatever frame the tag value (21..54, 201) happened to land on -
+		// past the end of the bone-count-sized array.
 		struct BoneRotator {
-			CAnimBlendClumpData *data;
 			CPed *ped;
 			void operator()(int32 node, float degrees, const RwV3d &axis) const {
-				if(node < 0 || node >= TOTAL_PED_NODES || ped->m_pFrames[node] == nil)
-					return;
-				RotateQuatIfPresent((RtQuat*)&data->m_FrameDatas[ped->m_pFrames[node]->BoneTag].KeyFrame->q,
-					&axis, degrees, rwCOMBINEPRECONCAT);
+				RotateQuatIfPresent(GetFrameQuat(ped, node), &axis, degrees, rwCOMBINEPRECONCAT);
 			}
 			void operator()(int32 node, float degrees) const {
 				static const RwV3d zAxis = { 0.0f, 0.0f, 1.0f };
 				(*this)(node, degrees, zAxis);
 			}
 		};
-		BoneRotator rotate = { clumpData, m_ped };
+		BoneRotator rotate = { m_ped };
 
 		// Up vector of a node, as the reference implementation reads it.
 		struct UpZ {
@@ -170,7 +170,7 @@ CPedIK::PitchForSlope(void)
 			rotate(PED_NODE_RIGHT_FOOT,     Max( asinf(upZ(PED_NODE_RIGHT_FOOT)),     0.0f) * -30.0f * m_fSlopePitch);
 			rotate(PED_NODE_LEFT_LEG, asinf(upZ(PED_NODE_LEFT_LEG)) * 30.0f * m_fSlopePitch);
 			rotate(PED_NODE_LEFT_LOWER_LEG, Max(-asinf(upZ(PED_NODE_LEFT_LEG)), 0.0f) * -30.0f * m_fSlopePitch);
-			rotate(PED_NODE_LEFT_FOOT,     Max(-asinf(upZ(PED_NODE_LEFT_FOOT)),     0.0f) * -30.0f * m_fSlopePitch);
+			rotate(PED_NODE_LEFT_FOOT,     Max( asinf(upZ(PED_NODE_LEFT_FOOT)),     0.0f) * -30.0f * m_fSlopePitch);
 
 			// Shift the ped so the tilted body still meets the ground.
 			CMatrix result(m_ped->GetMatrix());
