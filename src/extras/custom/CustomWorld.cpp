@@ -449,7 +449,7 @@ int BuiltinHandling(eVehicleType type, const std::string &name, bool &fallback)
     fallback = !HandlingMatches(type, result);
     if(!fallback) return result;
     switch(type) {
-    case VEHICLE_TYPE_BIKE: return HANDLING_BIKE;
+    case VEHICLE_TYPE_BIKE: case VEHICLE_TYPE_BMX: return HANDLING_BIKE;
     case VEHICLE_TYPE_BOAT: return HANDLING_PREDATOR;
     case VEHICLE_TYPE_HELI: return HANDLING_MAVERICK;
     case VEHICLE_TYPE_PLANE: return HANDLING_SEAPLANE;
@@ -464,16 +464,16 @@ ePedType SafePedType(const std::string &s)
     if(type == "player2") return PEDTYPE_PLAYER2;
     if(type == "player3") return PEDTYPE_PLAYER_NETWORK;
     if(type == "player4") return PEDTYPE_PLAYER_UNUSED;
-    if(type == "civfemale") return PEDTYPE_CIVFEMALE;
-    if(type == "cop") return PEDTYPE_COP;
-    if(type == "emergency" || type == "medic") return PEDTYPE_MEDIC;
-    if(type == "fireman") return PEDTYPE_FIREMAN;
-    if(type == "criminal") return PEDTYPE_CRIMINAL;
-    if(type == "prostitute") return PEDTYPE_PROSTITUTE;
-    if(type == "special") return PEDTYPE_SPECIAL;
-    if(type.size() == 5 && type.substr(0, 4) == "gang" && type[4] >= '1' && type[4] <= '9')
-        return (ePedType)(PEDTYPE_GANG1 + type[4] - '1');
-    return PEDTYPE_CIVMALE; // SA's numerous civilian/ped types have no VC counterpart
+    if(type == "emergency") return PEDTYPE_MEDIC;
+    // Every other name SA writes is in the ped type table under its own
+    // spelling (gang10, dealer, bum, the mission types), so look the row up
+    // there exactly as CFileLoader::LoadPedObject does instead of shadowing
+    // part of the table here and demoting the rest to civilians.
+    std::string upper = s;
+    for(char &c : upper) c = (char)std::toupper((unsigned char)c);
+    ePedType found = CPedType::FindPedType(upper.c_str());
+    if(found != NUM_PEDTYPES) return found;
+    return PEDTYPE_CIVMALE; // a name the table does not have stays a civilian
 }
 
 AssocGroupId SafePedAnimGroup(const std::string &s)
@@ -659,7 +659,11 @@ void CCustomWorld::LoadIde(void)
         }
         if(slot >= MODELINFOSIZE) { full++; continue; }
         if(slot >= next) next = slot + 1;
-        if(next == MODELINFOSIZE || !CanAddModel(type) ||
+        // The slot itself is already known to be usable; where the scan
+        // pointer ended up (including past the last slot, after taking it)
+        // must not reject this row - a pinned model whose own slot is free
+        // still has to install when every ordinary slot is gone.
+        if(!CanAddModel(type) ||
            (CTxdStore::FindTxdSlot(txdName) == -1 && !CTxdStore::HasFreeCustomSlot())) {
             full++;
             continue;
