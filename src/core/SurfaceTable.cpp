@@ -5,21 +5,22 @@
 #include "Weather.h"
 #include "Collision.h"
 #include "SurfaceTable.h"
+#ifdef CUSTOM_MODELS
+#include <vector>
+#include "CustomModels.h"
+#endif
 
 float CSurfaceTable::ms_aAdhesiveLimitTable[NUMADHESIVEGROUPS][NUMADHESIVEGROUPS];
 
 void
-CSurfaceTable::Initialise(Const char *filename)
+CSurfaceTable::ParseSurfaceData(const char *data)
 {
 	int lineno, fieldno;
-	char *line;
+	const char *line;
 	char surfname[256];
 	float adhesiveLimit;
 
-	CFileMgr::SetDir("");
-	CFileMgr::LoadFile(filename, work_buff, sizeof(work_buff), "r");
-
-	line = (char*)work_buff;
+	line = data;
 	for(lineno = 0; lineno < NUMADHESIVEGROUPS; lineno++){
 		// skip white space and comments
 		while(*line == ' ' || *line == '\t' || *line == '\n' || *line == '\r' || *line == ';'){
@@ -46,10 +47,29 @@ CSurfaceTable::Initialise(Const char *filename)
 			while(*line != '\0' && !(*line == ' ' || *line == '\t' || *line == ',' || *line == '\n'))
 				line++;
 
-			ms_aAdhesiveLimitTable[lineno][fieldno] = adhesiveLimit;
-			ms_aAdhesiveLimitTable[fieldno][lineno] = adhesiveLimit;
+			CSurfaceTable::ms_aAdhesiveLimitTable[lineno][fieldno] = adhesiveLimit;
+			CSurfaceTable::ms_aAdhesiveLimitTable[fieldno][lineno] = adhesiveLimit;
 		}
 	}
+}
+
+void
+CSurfaceTable::Initialise(Const char *filename)
+{
+#ifdef CUSTOM_MODELS
+	// The common archive carries its own data/surface.dat in exactly the
+	// triangular layout this parser has always read; only the source
+	// changes. Without an archive copy the game's file is used as before.
+	std::vector<uint8> archived;
+	if(CCustomModels::ReadCommonDataFile("data/surface.dat", archived) && !archived.empty()){
+		archived.push_back('\0');
+		ParseSurfaceData((const char*)archived.data());
+		return;
+	}
+#endif
+	CFileMgr::SetDir("");
+	CFileMgr::LoadFile(filename, work_buff, sizeof(work_buff), "r");
+	ParseSurfaceData((const char*)work_buff);
 }
 
 int
