@@ -1,0 +1,85 @@
+name: reVC premake amd64
+
+on:
+  pull_request:
+  push:
+  release:
+    types: published
+env:
+  GLFW_VER: "3.3.2"
+  GLFW_BASE: "glfw-3.3.2.bin.WIN64"
+  GLFW_FILE: "glfw-3.3.2.bin.WIN64.zip"
+  GLFW_URL: "https://github.com/glfw/glfw/releases/download/3.3.2/glfw-3.3.2.bin.WIN64.zip"
+jobs:
+  build:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [win-amd64-librw_d3d9-oal, win-amd64-librw_gl3_glfw-oal]
+        buildtype: [Debug, Release]
+    steps:
+    - name: Add msbuild to PATH
+      uses: microsoft/setup-msbuild@v1.0.2
+    - uses: actions/checkout@v4
+      with:
+        submodules: 'true'
+    - if: contains(matrix.platform, 'gl3_glfw')
+      name: Download or build glfw
+      shell: bash
+      run: |
+        if curl -fsSL --retry 2 --connect-timeout 15 -o "${GLFW_FILE}" "${GLFW_URL}" && [ -s "${GLFW_FILE}" ]; then
+          7z x "${GLFW_FILE}"
+        else
+          echo "Release asset unavailable; building GLFW ${GLFW_VER} (${{matrix.buildtype}}) from tag..."
+          git clone --depth 1 --branch "${GLFW_VER}" https://github.com/glfw/glfw.git glfw-src
+          cmake -S glfw-src -B glfw-build -A x64 -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DGLFW_BUILD_EXAMPLES=OFF -DGLFW_BUILD_TESTS=OFF -DGLFW_BUILD_DOCS=OFF -DUSE_MSVC_RUNTIME_LIBRARY_DLL=ON
+          cmake --build glfw-build --config "${{matrix.buildtype}}"
+          mkdir -p "${GLFW_BASE}/include" "${GLFW_BASE}/lib-vc2019"
+          cp -r glfw-src/include/GLFW "${GLFW_BASE}/include/"
+          cp "glfw-build/src/${{matrix.buildtype}}/glfw3.lib" "${GLFW_BASE}/lib-vc2019/glfw3.lib"
+        fi
+    - name: Configure build
+      run: |
+        ./premake5 vs2019 --with-librw --no-full-paths --glfwdir64=${{env.GLFW_BASE}}
+    - name: Build
+      shell: pwsh
+      run: |
+        & msbuild -m build/reVC.sln /property:Configuration=${{matrix.buildtype}} /property:Platform=${{matrix.platform}} /fl "/flp:logfile=msbuild.log;verbosity=normal"
+        $buildExit = $LASTEXITCODE
+        if ($buildExit -ne 0) {
+          # Annotations remain accessible when Actions' hosted log archive is
+          # unavailable; include the actual compiler errors, not just exit 1.
+          $errors = Select-String -Path msbuild.log -Pattern '(: error [A-Z]+[0-9]+:|error MSB[0-9]+:)' | Select-Object -First 20
+          if ($errors) {
+            $errors | ForEach-Object { Write-Host "::error::$($_.Line)" }
+          } else {
+            Get-Content msbuild.log -Tail 20 | ForEach-Object { Write-Host "::error::$_" }
+          }
+          exit $buildExit
+        }
+    # - name: Pack artifacts
+      # run: |
+        # 7z a reVC_${{matrix.buildtype}}_${{matrix.platform}}.zip ./bin/${{matrix.platform}}/${{matrix.buildtype}}/*
+    - name: Move binaries to gamefiles
+      run: |
+        mv ./bin/${{matrix.platform}}/${{matrix.buildtype}}/reVC.exe ./gamefiles/
+        mv ./bin/${{matrix.platform}}/${{matrix.buildtype}}/reVC.pdb ./gamefiles/
+    - name: Move dynamic dependencies to gamefiles
+      run: |
+        mv ./vendor/mpg123/dist/Win64/libmpg123-0.dll ./gamefiles/
+        mv ./vendor/openal-soft/dist/Win64/OpenAL32.dll ./gamefiles/
+    - name: Upload artifact to actions
+      uses: actions/upload-artifact@v4
+      with:
+        name: reVC_${{matrix.buildtype}}_${{matrix.platform}}
+        path: ./gamefiles/*
+#    - name: Upload artifact to Bintray
+#      uses: hpcsc/upload-bintray-docker-action@v1
+#      with:
+#        repository: reVC
+#        package: ${{matrix.buildtype}}_${{matrix.platform}}
+#        version:  1.0-$(echo ${GITHUB_SHA}
+#        sourcePath: ./bin/${{matrix.platform}}/${{matrix.buildtype}}
+#        username: gtamodding
+#        apiKey: ${{secrets.BINTRAY_API_KEY}}

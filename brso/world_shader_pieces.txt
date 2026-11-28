@@ -1,0 +1,1082 @@
+=== pc=0x113b090  va=0x2f61ac  len=98
+file: /home/gitlab-runner/builds/ErNzLyKbq/0/client/BRClient/src/librw/gl/gl3shader.cpp line: 1098
+=== pc=0x113b0d0  va=0x2ca0a4  len=8
+fragment
+=== pc=0x113b0dc  va=0x303402  len=6
+vertex
+=== pc=0x113b250  va=0x2dc57b  len=5
+tex%d
+=== pc=0x113b440  va=0x2f0d0b  len=1
+
+
+=== pc=0x113b458  va=0x2f3fa6  len=44
+precision highp float;
+precision highp int;
+
+=== pc=0x113b488  va=0x2f6217  len=169
+#define ATTRIB_POS    0
+#define ATTRIB_NORMAL      1
+#define ATTRIB_COLOR       2
+#define ATTRIB_WEIGHTS     3
+#define ATTRIB_INDICES     4
+#define ATTRIB_TEXCOORDS0  5
+
+=== pc=0x113b4bc  va=0x2eaf93  len=31
+#define ATTRIB_TEXCOORDS1    6
+
+=== pc=0x113b4dc  va=0x2f0d0b  len=1
+
+
+=== pc=0x113b4f0  va=0x2f87db  len=33
+VSIN(ATTRIB_POS)    vec4 in_pos;
+
+=== pc=0x113b4fc  va=0x2e87fe  len=33
+VSIN(ATTRIB_POS)    vec3 in_pos;
+
+=== pc=0x113b530  va=0x2f3fd3  len=213
+VSIN(ATTRIB_NORMAL)       vec3 in_normal;
+VSIN(ATTRIB_COLOR)         vec4 in_color;
+VSIN(ATTRIB_WEIGHTS)       vec4 in_weights;
+VSIN(ATTRIB_INDICES)       vec4 in_indices;
+VSIN(ATTRIB_TEXCOORDS0)    vec2 in_tex0;
+
+=== pc=0x113b564  va=0x2cef96  len=41
+VSIN(ATTRIB_TEXCOORDS1)    vec2 in_tex1;
+
+=== pc=0x113b584  va=0x2f0d0b  len=1
+
+
+=== pc=0x113b598  va=0x2f87fd  len=357
+uniform highp mat4 u_proj;
+uniform highp mat4 u_view;
+uniform highp mat4 u_world;
+uniform highp mat4 u_uvMatrix;
+uniform mediump vec4 u_materialAmbient;
+uniform mediump vec2 u_fogData;
+uniform mediump vec4 u_surfProps;    // amb, spec, diff, extra
+#define surfAmbient (u_surfProps.x)
+#define surfSpecular (u_surfProps.y)
+#define surfDiffuse (u_surfProps.z)
+
+=== pc=0x113b5b8  va=0x2f0d0b  len=1
+
+
+=== pc=0x113b5dc  va=0x2fad62  len=34
+uniform mediump vec4 u_clipPlane;
+
+=== pc=0x113b5fc  va=0x2f0d0b  len=1
+
+
+=== pc=0x113b610  va=0x2d5dc1  len=26
+uniform highp vec3 u_eye;
+
+=== pc=0x113b630  va=0x2f0d0b  len=1
+
+
+=== pc=0x113b654  va=0x2e8820  len=29
+uniform highp vec3 u_sunDir;
+
+=== pc=0x113b674  va=0x2f0d0b  len=1
+
+
+=== pc=0x113b694  va=0x2f8963  len=34
+uniform float u_outlineThickness;
+
+=== pc=0x113b6b4  va=0x2f0d0b  len=1
+
+
+=== pc=0x113b6c8  va=0x2e58cd  len=28
+VSOUT mediump vec4 v_color;
+
+=== pc=0x113b6e8  va=0x2f0d0b  len=1
+
+
+=== pc=0x113b700  va=0x2dc581  len=27
+VSOUT mediump float v_fog;
+
+=== pc=0x113b720  va=0x2f0d0b  len=1
+
+
+=== pc=0x113b748  va=0x2d7bfa  len=24
+VSOUT highp vec4 v_ndc;
+
+=== pc=0x113b768  va=0x2f0d0b  len=1
+
+
+=== pc=0x113b77c  va=0x2cefc0  len=25
+VSOUT highp vec2 v_tex0;
+
+=== pc=0x113b79c  va=0x2f0d0b  len=1
+
+
+=== pc=0x113b7b4  va=0x30a0a3  len=25
+VSOUT highp vec2 v_tex1;
+
+=== pc=0x113b7d4  va=0x2f0d0b  len=1
+
+
+=== pc=0x113b7ec  va=0x2f62c1  len=34
+VSOUT highp vec2 v_textureCoords;
+
+=== pc=0x113b81c  va=0x2d7c13  len=27
+const float tiling = 0.25;
+
+=== pc=0x113b85c  va=0x303409  len=34
+VSOUT highp vec3 v_worldPosition;
+
+=== pc=0x113b87c  va=0x2f0d0b  len=1
+
+
+=== pc=0x113b8a0  va=0x2de82f  len=32
+VSOUT highp vec3 v_worldNormal;
+
+=== pc=0x113b8c0  va=0x2f0d0b  len=1
+
+
+=== pc=0x113b8e0  va=0x2f2068  len=29
+VSOUT mediump float diffuse;
+
+=== pc=0x113b900  va=0x2f0d0b  len=1
+
+
+=== pc=0x113b914  va=0x2fe894  len=57
+VSOUT highp vec3 v_eyePos;
+VSOUT highp vec3 v_eyeNormal;
+
+=== pc=0x113b934  va=0x2f0d0b  len=1
+
+
+=== pc=0x113b94c  va=0x2ef4e8  len=27
+VSOUT highp vec2 v_tileUv;
+
+=== pc=0x113b96c  va=0x2f0d0b  len=1
+
+
+=== pc=0x113b984  va=0x30c0d0  len=31
+VSOUT highp vec2 v_snowTileUv;
+
+=== pc=0x113b9b4  va=0x2f62e4  len=41
+uniform highp float u_snowCoverTileMult;
+
+=== pc=0x113b9e4  va=0x30c0f0  len=18
+void main(void) {
+
+=== pc=0x113ba14  va=0x30a0bd  len=91
+  highp vec4 Vertex = vec4(0.0, 0.0, 0.0, 0.0);
+  highp vec3 Normal = vec3(0.0, 0.0, 0.0);
+
+=== pc=0x113ba4c  va=0x2d7ca9  len=40
+  Vertex = u_world * vec4(in_pos, 1.0);
+
+=== pc=0x113ba5c  va=0x2e1327  len=65
+  Vertex = u_worldInstancing[gl_InstanceID] * vec4(in_pos, 1.0);
+
+=== pc=0x113ba90  va=0x30c103  len=38
+  Normal = mat3(u_world) * in_normal;
+
+=== pc=0x113bac0  va=0x2d1642  len=68
+  vec4 ViewPos = u_view * Vertex;
+  gl_Position = u_proj * ViewPos;
+
+=== pc=0x113bacc  va=0x2d3988  len=57
+  Vertex.xyz = Vertex.xyz + Normal * u_outlineThickness;
+
+=== pc=0x113bad8  va=0x2e1191  len=42
+uniform highp mat4 u_worldInstancing[40];
+
+=== pc=0x113bb08  va=0x2e11bc  len=54
+uniform mediump vec4 u_materialAmbientInstancing[40];
+
+=== pc=0x113bb3c  va=0x2e588c  len=64
+uniform highp mat4 u_projLight;
+uniform highp mat4 u_viewLight;
+
+=== pc=0x113bb5c  va=0x2f0d0b  len=1
+
+
+=== pc=0x113bb74  va=0x2d5d9b  len=37
+uniform mediump float u_colorInterp;
+
+=== pc=0x113bb94  va=0x2f0d0b  len=1
+
+
+=== pc=0x113bbb0  va=0x30105e  len=39
+uniform highp mat4 u_boneMatrices[32];
+
+=== pc=0x113bbd0  va=0x2f0d0b  len=1
+
+
+=== pc=0x113bbe8  va=0x2e883e  len=28
+uniform highp vec4 u_xform;
+
+=== pc=0x113bc08  va=0x2f0d0b  len=1
+
+
+=== pc=0x113bc24  va=0x2eafb3  len=34
+VSOUT mediump float clipDistance;
+
+=== pc=0x113bc44  va=0x2f0d0b  len=1
+
+
+=== pc=0x113bc5c  va=0x2ef4c8  len=31
+VSOUT highp vec3 v_shadowProj;
+
+=== pc=0x113bc7c  va=0x2f0d0b  len=1
+
+
+=== pc=0x113bc98  va=0x2e11f3  len=307
+  highp vec3 SkinVertex = vec3(0.0, 0.0, 0.0);
+  highp vec3 SkinNormal = vec3(0.0, 0.0, 0.0);
+for(int i = 0; i < 4; i++){
+		SkinVertex += (u_boneMatrices[int(in_indices[i])] * vec4(in_pos, 1.0)).xyz * in_weights[i];
+		SkinNormal += (mat3(u_boneMatrices[int(in_indices[i])]) * in_normal) * in_weights[i];
+	}
+
+=== pc=0x113bcc8  va=0x307f67  len=39
+  Normal = mat3(u_world) * SkinNormal;
+
+=== pc=0x113bcf8  va=0x2e58ea  len=44
+  Vertex = u_world * vec4(SkinVertex, 1.0);
+
+=== pc=0x113bd28  va=0x2d1642  len=68
+  vec4 ViewPos = u_view * Vertex;
+  gl_Position = u_proj * ViewPos;
+
+=== pc=0x113bd34  va=0x2dc59d  len=45
+  Vertex.xyz += Normal * u_outlineThickness;
+
+=== pc=0x113bd40  va=0x2d7c2f  len=121
+  gl_Position = in_pos;
+  gl_Position.xy = gl_Position.xy * u_xform.xy + u_xform.zw;
+  gl_Position.xyz *= gl_Position.w;
+
+=== pc=0x113bd4c  va=0x2fad85  len=215
+  vec3 ReflVector = Vertex.xyz - u_eye.xyz;
+  vec3 ReflPos = normalize(ReflVector);
+  ReflPos.xy = normalize(ReflPos.xy) * (ReflPos.z * 0.5 + 0.5);
+  gl_Position = vec4(ReflPos.xy, length(ReflVector) * 0.002, 1.0);
+
+=== pc=0x113bd74  va=0x2f0d0b  len=1
+
+
+=== pc=0x113bdac  va=0x2f0d0b  len=1
+
+
+=== pc=0x113bdcc  va=0x2f2086  len=32
+  v_worldPosition = Vertex.xyz;
+
+=== pc=0x113bdec  va=0x2f0d0b  len=1
+
+
+=== pc=0x113be04  va=0x2eafd6  len=37
+  v_worldNormal = normalize(Normal);
+
+=== pc=0x113be24  va=0x2f0d0b  len=1
+
+
+=== pc=0x113be3c  va=0x30c15d  len=23
+  v_ndc = gl_Position;
+
+=== pc=0x113be5c  va=0x2f0d0b  len=1
+
+
+=== pc=0x113be74  va=0x2f630e  len=79
+  v_textureCoords = vec2(in_pos.x / 2.0 + 0.5, in_pos.y / 2.0 + 0.5) * tiling;
+
+=== pc=0x113be94  va=0x2f0d0b  len=1
+
+
+=== pc=0x113beb4  va=0x2c4e12  len=68
+  diffuse = max(dot(normalize(Normal), normalize(-u_sunDir)), 0.0);
+
+=== pc=0x113bed4  va=0x2f0d0b  len=1
+
+
+=== pc=0x113bee8  va=0x2f635e  len=76
+  v_tex0 = (u_uvMatrix * vec4(in_tex0, 0.0, 1.0)).xy;
+  v_color = in_color;
+
+=== pc=0x113bf08  va=0x2f0d0b  len=1
+
+
+=== pc=0x113bf28  va=0x2c4e57  len=53
+  v_color = mix(in_weights, v_color, u_colorInterp);
+
+=== pc=0x113bf48  va=0x2f0d0b  len=1
+
+
+=== pc=0x113bf5c  va=0x2eb035  len=39
+  v_eyeNormal = mat3(u_view) * Normal;
+
+=== pc=0x113bf7c  va=0x2f0d0b  len=1
+
+
+=== pc=0x113bf94  va=0x2c7f8a  len=36
+  v_eyePos = (u_view * Vertex).xyz;
+
+=== pc=0x113bfd0  va=0x2ca0ad  len=2
+}
+
+=== pc=0x113bfdc  va=0x303441  len=42
+  v_color = vec4(normalize(Normal), 1.0);
+
+=== pc=0x113bfe8  va=0x2c4d8a  len=30
+  v_tileUv = Vertex.xy / 5.0;
+
+=== pc=0x113c008  va=0x2f0d0b  len=1
+
+
+=== pc=0x113c020  va=0x30c12a  len=50
+  v_snowTileUv = Vertex.xy * u_snowCoverTileMult;
+
+=== pc=0x113c040  va=0x2f0d0b  len=1
+
+
+=== pc=0x113c05c  va=0x2ecf9b  len=44
+  clipDistance  = dot(Vertex, u_clipPlane);
+
+=== pc=0x113c07c  va=0x2f0d0b  len=1
+
+
+=== pc=0x113c094  va=0x2eaffc  len=56
+  vec4 shadowProj = u_projLight * u_viewLight * Vertex;
+
+=== pc=0x113c0b4  va=0x2f0d0b  len=1
+
+
+=== pc=0x113c0cc  va=0x2c4da9  len=104
+  mediump float bias = max(0.01 * pow(1.0 - dot(normalize(Normal), normalize(-u_sunDir)), 4.0), 0.0001);
+=== pc=0x113c0fc  va=0x2f20a7  len=24
+  shadowProj.z -= bias;
+
+=== pc=0x113c12c  va=0x30a119  len=29
+  shadowProj /= shadowProj.w;
+=== pc=0x113c15c  va=0x2ef504  len=45
+  v_shadowProj = shadowProj.xyz * 0.5 + 0.5;
+
+=== pc=0x113c194  va=0x30342c  len=20
+  v_tex1 = in_tex1;
+
+=== pc=0x113c1b4  va=0x2f0d0b  len=1
+
+
+=== pc=0x113c1cc  va=0x2de850  len=90
+   v_fog = clamp((length(Vertex.xyz - u_eye.xyz) - u_fogData.x) * u_fogData.y, 0.0, 1.0);
+
+=== pc=0x113c1ec  va=0x2f0d0b  len=1
+
+
+=== pc=0x113c208  va=0x30346c  len=126
+  v_color.rgb += u_materialAmbientInstancing[gl_InstanceID].rgb;
+  v_color.a *= u_materialAmbientInstancing[gl_InstanceID].a;
+
+=== pc=0x113c214  va=0x2f8986  len=76
+  v_color.rgb += u_materialAmbient.rgb;
+  v_color.a *= u_materialAmbient.a;
+
+=== pc=0x113c240  va=0x2f0d0b  len=1
+
+
+=== pc=0x113c254  va=0x305dd3  len=40
+  v_color = clamp(v_color, 0.0, 1.0);
+}
+
+=== pc=0x113c260  va=0x2ca0b0  len=40
+  v_color.rgb += v_color.rgb * diffuse;
+
+=== pc=0x113c288  va=0x2f0d0b  len=1
+
+
+=== pc=0x113c2b8  va=0x2f0d0b  len=1
+
+
+=== pc=0x113c398  va=0x2f0d0b  len=1
+
+
+=== pc=0x113c3b0  va=0x2de8ab  len=48
+precision mediump float;
+precision mediump int;
+
+=== pc=0x113c3e0  va=0x2d5ddc  len=24
+uniform sampler2D tex0;
+
+=== pc=0x113c41c  va=0x2f63ab  len=25
+uniform sampler2D tex1; 
+
+=== pc=0x113c44c  va=0x2d1687  len=45
+uniform mediump float u_emissiveSaturation; 
+
+=== pc=0x113c47c  va=0x2f89d3  len=52
+uniform mediump vec4 u_pbrModelEmissionColorAlpha; 
+
+=== pc=0x113c4ac  va=0x2fae5d  len=51
+uniform mediump float u_pbrModelEmissionStrength; 
+
+=== pc=0x113c4dc  va=0x2d39c2  len=40
+uniform mediump float u_lightmapMulti; 
+
+=== pc=0x113c510  va=0x2f63ab  len=25
+uniform sampler2D tex1; 
+
+=== pc=0x113c540  va=0x2d9eec  len=25
+uniform sampler2D tex2; 
+
+=== pc=0x113c570  va=0x2c28a6  len=25
+uniform sampler2D tex4; 
+
+=== pc=0x113c5a0  va=0x2c28c0  len=25
+uniform sampler2D tex6; 
+
+=== pc=0x113c5d0  va=0x2c7faf  len=25
+uniform sampler2D tex7; 
+
+=== pc=0x113c600  va=0x2d16b5  len=38
+uniform highp vec4 u_terrainTileMult;
+
+=== pc=0x113c630  va=0x2fe8ce  len=53
+uniform mediump vec4 u_fogColor;
+out vec4 fragColor;
+
+=== pc=0x113c660  va=0x2f40a9  len=35
+uniform mediump vec4 u_debugColor;
+
+=== pc=0x113c6a0  va=0x2c7fc9  len=95
+void DoThresholdAlphaTest(float a, float threshold)
+{
+    if(a < threshold)
+        discard;
+}
+
+=== pc=0x113c6d0  va=0x30a137  len=64
+void DoAlphaTest(float a)
+{
+    DoThresholdAlphaTest(a, 0.5);
+}
+
+=== pc=0x113c704  va=0x2fae91  len=46
+uniform mediump float u_smoothAlphaThreshold;
+
+=== pc=0x113c724  va=0x2f0d0b  len=1
+
+
+=== pc=0x113c738  va=0x2d5dc1  len=26
+uniform highp vec3 u_eye;
+
+=== pc=0x113c768  va=0x2f63c5  len=29
+uniform highp vec3 u_sunPos;
+
+=== pc=0x113c798  va=0x2e8820  len=29
+uniform highp vec3 u_sunDir;
+
+=== pc=0x113c7f0  va=0x303510  len=23
+FSIN highp vec4 v_ndc;
+
+=== pc=0x113c810  va=0x2f0d0b  len=1
+
+
+=== pc=0x113c828  va=0x301086  len=24
+uniform sampler2D tex6;
+
+=== pc=0x113c858  va=0x2d5df5  len=33
+FSIN highp vec2 v_textureCoords;
+
+=== pc=0x113c888  va=0x2ceff3  len=34
+const float waveStrength = 0.015;
+
+=== pc=0x113c8d0  va=0x2f20c0  len=33
+FSIN highp vec3 v_worldPosition;
+
+=== pc=0x113c8f0  va=0x2f0d0b  len=1
+
+
+=== pc=0x113c914  va=0x2d16dc  len=31
+FSIN highp vec3 v_worldNormal;
+
+=== pc=0x113c934  va=0x2f0d0b  len=1
+
+
+=== pc=0x113c968  va=0x2cefda  len=24
+uniform sampler2D tex2;
+
+=== pc=0x113c998  va=0x2ef532  len=28
+uniform float u_envMapCoef;
+
+=== pc=0x113c9cc  va=0x3034eb  len=36
+uniform highp sampler2DShadow tex5;
+
+=== pc=0x113c9ec  va=0x2f0d0b  len=1
+
+
+=== pc=0x113ca04  va=0x2c8029  len=28
+uniform float u_moveFactor;
+
+=== pc=0x113ca24  va=0x2f0d0b  len=1
+
+
+=== pc=0x113ca3c  va=0x2e5917  len=24
+uniform sampler2D tex8;
+
+=== pc=0x113ca5c  va=0x2f0d0b  len=1
+
+
+=== pc=0x113ca74  va=0x2de8dc  len=24
+uniform sampler2D tex4;
+
+=== pc=0x113ca94  va=0x2f0d0b  len=1
+
+
+=== pc=0x113cac0  va=0x303528  len=33
+FSIN mediump float clipDistance;
+
+=== pc=0x113cae0  va=0x2f0d0b  len=1
+
+
+=== pc=0x113caf8  va=0x2d5e17  len=28
+FSIN mediump float diffuse;
+
+=== pc=0x113cb18  va=0x2f0d0b  len=1
+
+
+=== pc=0x113cb40  va=0x2ef54f  len=30
+FSIN highp vec3 v_shadowProj;
+
+=== pc=0x113cb60  va=0x2f0d0b  len=1
+
+
+=== pc=0x113cb78  va=0x2d16fc  len=34
+uniform mediump vec3 u_skySunDir;
+
+=== pc=0x113cba8  va=0x2e1369  len=33
+uniform mediump vec3 u_skyColor;
+
+=== pc=0x113cbd8  va=0x2d5e34  len=36
+uniform mediump vec3 u_skyTopColor;
+
+=== pc=0x113cc08  va=0x307f8f  len=38
+uniform mediump vec3 u_skyUnderColor;
+
+=== pc=0x113cc38  va=0x2e138b  len=33
+uniform mediump vec3 u_sunColor;
+
+=== pc=0x113cc68  va=0x2e3b0c  len=36
+uniform mediump vec4 u_cloudsColor;
+
+=== pc=0x113cc98  va=0x2cf016  len=39
+uniform mediump vec4 u_cloudsTopColor;
+
+=== pc=0x113ccc8  va=0x2eb05d  len=24
+uniform sampler2D tex1;
+
+=== pc=0x113ccfc  va=0x2e3b31  len=18
+FSIN float v_fog;
+
+=== pc=0x113cd1c  va=0x2f0d0b  len=1
+
+
+=== pc=0x113cd34  va=0x2f63e3  len=43
+uniform mediump vec4 u_clipRectangleInner;
+
+=== pc=0x113cd64  va=0x2de8f5  len=43
+uniform mediump vec4 u_clipRectangleOuter;
+
+=== pc=0x113cda0  va=0x2e885b  len=24
+uniform sampler2D tex3;
+
+=== pc=0x113cdc0  va=0x2f0d0b  len=1
+
+
+=== pc=0x113cdd8  va=0x2f40cd  len=36
+uniform mediump float u_snowEnable;
+
+=== pc=0x113cdf8  va=0x2f0d0b  len=1
+
+
+=== pc=0x113ce18  va=0x2dc5cb  len=30
+FSIN highp vec2 v_snowTileUv;
+
+=== pc=0x113ce48  va=0x30354a  len=41
+uniform mediump float u_snowCoverAmount;
+
+=== pc=0x113ce78  va=0x2faec0  len=39
+uniform mediump vec4 u_snowCoverColor;
+
+=== pc=0x113cea8  va=0x2e13ad  len=37
+FSIN vec4 v_color;
+FSIN vec2 v_tex0;
+
+=== pc=0x113cec8  va=0x2f0d0b  len=1
+
+
+=== pc=0x113cee0  va=0x2d171f  len=18
+FSIN vec2 v_tex1;
+
+=== pc=0x113cf00  va=0x2f0d0b  len=1
+
+
+=== pc=0x113cf14  va=0x2e5930  len=43
+FSIN vec3 v_eyePos;
+FSIN vec3 v_eyeNormal;
+
+=== pc=0x113cf34  va=0x2f0d0b  len=1
+
+
+=== pc=0x113cf4c  va=0x2de921  len=26
+FSIN highp vec2 v_tileUv;
+
+=== pc=0x113cf6c  va=0x2f0d0b  len=1
+
+
+=== pc=0x113cf80  va=0x30c0f0  len=18
+void main(void) {
+
+=== pc=0x113cfa0  va=0x2f0d0b  len=1
+
+
+=== pc=0x113cfc0  va=0x2c290d  len=43
+  if ( clipDistance < 0.0 )
+      discard;
+
+=== pc=0x113cfe0  va=0x2f0d0b  len=1
+
+
+=== pc=0x113d008  va=0x2f640f  len=57
+  DoThresholdAlphaTest(color.a, u_smoothAlphaThreshold);
+
+=== pc=0x113d028  va=0x2f0d0b  len=1
+
+
+=== pc=0x113d03c  va=0x2e88b4  len=21
+  float shadow = 0.0;
+=== pc=0x113d05c  va=0x2f0d0b  len=1
+
+
+=== pc=0x113d078  va=0x30800f  len=44
+  shadow = 0.3 * pow((1.0 - diffuse), 24.0);
+=== pc=0x113d084  va=0x2eb076  len=29
+uniform vec4 u_outlineColor;
+
+=== pc=0x113d0a4  va=0x2f0d0b  len=1
+
+
+=== pc=0x113d0bc  va=0x307fb6  len=39
+uniform mediump float u_localInvGamma;
+
+=== pc=0x113d0dc  va=0x2f0d0b  len=1
+
+
+=== pc=0x113d0f8  va=0x2ecfc8  len=30
+  FRAGCOLOR(u_outlineColor);
+}
+=== pc=0x113d104  va=0x2e8874  len=63
+mediump vec3 eyeToVertex = normalize(u_eye - v_worldPosition);
+
+=== pc=0x113d12c  va=0x2f0d0b  len=1
+
+
+=== pc=0x113d144  va=0x2c28da  len=50
+mediump vec3 normals = texture(tex1, v_tex0).rgb;
+
+=== pc=0x113d174  va=0x2fe904  len=42
+normals = normalize(normals * 2.0 - 1.0);
+
+=== pc=0x113d1a4  va=0x2d1732  len=54
+mediump float cloudDensity = texture(tex0, v_tex0).g;
+
+=== pc=0x113d1d4  va=0x2e595c  len=67
+mediump float cloudLighting = max(dot(u_skySunDir, normals), 0.0);
+
+=== pc=0x113d204  va=0x2d9f06  len=73
+mediump float blendSkyBottomTop = dot(eyeToVertex, vec3(0.0, 0.0, 1.0));
+
+=== pc=0x113d234  va=0x30109f  len=77
+mediump vec3 color = mix(u_skyColor, u_skyTopColor, abs(blendSkyBottomTop));
+
+=== pc=0x113d264  va=0x2e3b44  len=81
+color = mix(color, u_skyUnderColor, (clamp(blendSkyBottomTop, 0.0, 0.2) * 5.0));
+
+=== pc=0x113d294  va=0x2dc5ea  len=60
+highp float coef = max(dot(u_skySunDir, eyeToVertex), 0.0);
+
+=== pc=0x113d2c4  va=0x2d9f50  len=39
+coef = max(coef - 0.995, 0.0) * 200.0;
+
+=== pc=0x113d2f4  va=0x307fde  len=29
+FRAGCOLOR(vec4(color, 1.0));
+
+=== pc=0x113d2fc  va=0x2dc627  len=53
+color = mix(color, u_sunColor, coef * cloudDensity);
+
+=== pc=0x113d304  va=0x303574  len=46
+color = mix(cloudColor, color, cloudDensity);
+
+=== pc=0x113d30c  va=0x2e13d3  len=87
+mediump vec3 cloudColor = mix(u_cloudsColor.rgb, u_cloudsTopColor.rgb, cloudLighting);
+
+=== pc=0x113d334  va=0x2f0d0b  len=1
+
+
+=== pc=0x113d378  va=0x2ca0ad  len=2
+}
+
+=== pc=0x113d3a4  va=0x2f0d0b  len=1
+
+
+=== pc=0x113d3dc  va=0x2f0d0b  len=1
+
+
+=== pc=0x113d414  va=0x2f0d0b  len=1
+
+
+=== pc=0x113d460  va=0x2ca0ad  len=2
+}
+
+=== pc=0x113d46c  va=0x2ca0ad  len=2
+}
+
+=== pc=0x113d474  va=0x307ffc  len=18
+FRAGCOLOR(color);
+
+=== pc=0x113d47c  va=0x2d5e59  len=22
+vec4 color = v_color;
+
+=== pc=0x113d488  va=0x2f40f2  len=20
+  FRAGCOLOR(color);
+
+=== pc=0x113d490  va=0x3010ed  len=24
+  DoAlphaTest(color.a);
+
+=== pc=0x113d498  va=0x2c8046  len=20
+  color *= v_color;
+
+=== pc=0x113d4a0  va=0x2d39eb  len=46
+  mediump vec4 color = texture(tex0, v_tex0);
+
+=== pc=0x113d4ac  va=0x2c4e8d  len=584
+  vec4 terrainMask = texture(tex7, vec2(v_tex0.x, 1.0 + v_tex0.y));
+  vec4 layer0 = texture(tex1, v_tileUv * u_terrainTileMult.x);
+  vec4 layer1 = texture(tex2, v_tileUv * u_terrainTileMult.y);
+  vec4 layer2 = texture(tex4, v_tileUv * u_terrainTileMult.z);
+  vec4 layer3 = texture(tex6, v_tileUv * u_terrainTileMult.w);
+  vec4 color = vec4(layer0.rgb * terrainMask.r, 1.0);
+  color.rgb += layer1.rgb * terrainMask.g;
+  color.rgb += layer2.rgb * terrainMask.b;
+  float baseWeight = 1.0 - min(1.0, terrainMask.r + terrainMask.g + terrainMask.b);
+  color.rgb += layer3.rgb * baseWeight;
+
+=== pc=0x113d4b4  va=0x2dc65d  len=38
+  vec4 color = texture(tex0, v_tex0);
+
+=== pc=0x113d4cc  va=0x2d9f78  len=26
+  vec4 color = vec4(1.0);
+
+=== pc=0x113d4ec  va=0x2f0d0b  len=1
+
+
+=== pc=0x113d504  va=0x2f20e2  len=218
+float snowStrength = step(u_snowCoverAmount, v_worldNormal.z);
+vec4 snowTex = texture(tex3, v_snowTileUv);
+color.rgb = mix(color.rgb, snowTex.rgb * u_snowCoverColor.rgb, snowStrength * snowTex.a * u_snowCoverColor.a);
+
+=== pc=0x113d524  va=0x2f0d0b  len=1
+
+
+=== pc=0x113d540  va=0x2e142b  len=175
+  vec2 poissonDisk[4] = vec2[](
+  vec2( -0.94201624, -0.39906216 ),
+  vec2( 0.94558609, -0.76890725 ),
+  vec2( -0.094184101, -0.92938870 ),
+  vec2( 0.34495938, 0.29387760 ));
+
+=== pc=0x113d560  va=0x2f0d0b  len=1
+
+
+=== pc=0x113d584  va=0x2e3b96  len=37
+  shadow = 0.3 * (1.0 - visibility);
+
+=== pc=0x113d58c  va=0x2ca0d9  len=184
+  for (int i=0;i<4;i++)
+  {
+      visibility += 0.25 * texture(tex5, vec3(v_shadowProj.x + poissonDisk[i].x * 0.0005, v_shadowProj.y + poissonDisk[i].y * 0.0005, v_shadowProj.z));
+  }
+
+=== pc=0x113d594  va=0x301106  len=25
+  float visibility = 0.0;
+=== pc=0x113d5a0  va=0x2d3a1a  len=164
+  if(v_shadowProj.x > 1.0 || v_shadowProj.y > 1.0 || v_shadowProj.x < 0.0 || v_shadowProj.y < 0.0)
+                    {
+                    
+                    }
+
+=== pc=0x113d5d0  va=0x2ecfe7  len=9
+  else {
+
+=== pc=0x113d600  va=0x301106  len=25
+  float visibility = 0.0;
+=== pc=0x113d630  va=0x2e3bbc  len=4
+  }
+
+=== pc=0x113d638  va=0x2e3b96  len=37
+  shadow = 0.3 * (1.0 - visibility);
+
+=== pc=0x113d640  va=0x2ca0d9  len=184
+  for (int i=0;i<4;i++)
+  {
+      visibility += 0.25 * texture(tex5, vec3(v_shadowProj.x + poissonDisk[i].x * 0.0005, v_shadowProj.y + poissonDisk[i].y * 0.0005, v_shadowProj.z));
+  }
+
+=== pc=0x113d668  va=0x2f0d0b  len=1
+
+
+=== pc=0x113d6dc  va=0x30800f  len=44
+  shadow = 0.3 * pow((1.0 - diffuse), 24.0);
+=== pc=0x113d6ec  va=0x2cd30e  len=57
+  shadow = max(shadow, 0.3 * pow((1.0 - diffuse), 24.0));
+=== pc=0x113d71c  va=0x2f0d0b  len=1
+
+
+=== pc=0x113d734  va=0x2cf03e  len=51
+  vec2 v_ndc_pxl = (v_ndc.xy/v_ndc.w) / 2.0 + 0.5;
+
+=== pc=0x113d75c  va=0x2f0d0b  len=1
+
+
+=== pc=0x113d77c  va=0x2ef56e  len=34
+  vec2 v_waterTexCoords = v_tex0;
+
+=== pc=0x113d7a4  va=0x2f0d0b  len=1
+
+
+=== pc=0x113d7bc  va=0x301120  len=38
+  v_waterTexCoords.x += u_moveFactor;
+
+=== pc=0x113d7ec  va=0x305dfc  len=38
+  v_waterTexCoords.y += u_moveFactor;
+
+=== pc=0x113d81c  va=0x2f8a08  len=48
+  vec4 color = texture(tex0, v_waterTexCoords);
+
+=== pc=0x113d850  va=0x301147  len=46
+  float moveFactorDist = u_moveFactor * 3.0f;
+
+=== pc=0x113d878  va=0x2f0d0b  len=1
+
+
+=== pc=0x113d890  va=0x2c2939  len=129
+  vec2 distortion1 = (texture(tex6, vec2(v_textureCoords.x + moveFactorDist, v_textureCoords.y)).rg * 2.0 - 1.0) * waveStrength;
+
+=== pc=0x113d8c0  va=0x2c50d6  len=147
+  vec2 distortion2 = (texture(tex6, vec2(-v_textureCoords.x + moveFactorDist, v_textureCoords.y + moveFactorDist)).rg * 2.0 - 1.0) * waveStrength;
+
+=== pc=0x113d8f0  va=0x30c175  len=52
+  vec2 totalDistortion = distortion1 + distortion2;
+
+=== pc=0x113d92c  va=0x2e88ca  len=66
+  vec2 v_reflectTexCoords = vec2(v_ndc_pxl.x, 1.0 - v_ndc_pxl.y);
+
+=== pc=0x113d95c  va=0x305e23  len=41
+  v_reflectTexCoords += totalDistortion;
+
+=== pc=0x113d98c  va=0x2ca192  len=64
+  v_reflectTexCoords = clamp(v_reflectTexCoords, 0.001, 0.999);
+
+=== pc=0x113d9bc  va=0x2c516a  len=58
+  vec4 reflectColour = texture(tex8, v_reflectTexCoords);
+
+=== pc=0x113d9ec  va=0x2ca1d3  len=42
+  color = mix(color, reflectColour, 0.8);
+
+=== pc=0x113da1c  va=0x2d3abf  len=53
+  vec3 viewVec = normalize(u_eye - v_worldPosition);
+
+=== pc=0x113da4c  va=0x2cf072  len=72
+  mediump float fresnelFactor = abs(dot(viewVec, vec3(0.0, 0.0, 1.0)));
+
+=== pc=0x113da7c  va=0x305e4d  len=43
+  fresnelFactor = pow(fresnelFactor, 0.5);
+
+=== pc=0x113dab0  va=0x2fe92f  len=43
+  color.a = max(1.0 - fresnelFactor, 0.4);
+
+=== pc=0x113dab8  va=0x2d3af5  len=36
+  color = mix(color, v_color, 0.4);
+
+=== pc=0x113dac0  va=0x2d7d09  len=54
+  color = mix(color, vec4(0.0, 0.3, 0.5, 0.65), 0.3);
+
+=== pc=0x113dacc  va=0x30803c  len=60
+  vec2 v_refractTexCoords = vec2(v_ndc_pxl.x, v_ndc_pxl.y);
+
+=== pc=0x113dafc  va=0x2d5e70  len=41
+  v_refractTexCoords += totalDistortion;
+
+=== pc=0x113db2c  va=0x2de93c  len=64
+  v_refractTexCoords = clamp(v_refractTexCoords, 0.001, 0.999);
+
+=== pc=0x113db5c  va=0x2cd348  len=58
+  vec4 refractColour = texture(tex4, v_refractTexCoords);
+
+=== pc=0x113db8c  va=0x30c1aa  len=36
+  color = mix(color, v_color, 0.3);
+
+=== pc=0x113db94  va=0x2c51a5  len=54
+  color = mix(color, vec4(0.0, 0.3, 0.5, 1.0), 0.15);
+
+=== pc=0x113db9c  va=0x2ef591  len=52
+  color = mix(color, refractColour, fresnelFactor);
+
+=== pc=0x113dbc4  va=0x2f0d0b  len=1
+
+
+=== pc=0x113dc38  va=0x2c8046  len=20
+  color *= v_color;
+
+=== pc=0x113dc60  va=0x2f0d0b  len=1
+
+
+=== pc=0x113dc78  va=0x305e79  len=42
+  vec4 snowColor = texture(tex3, v_tex0);
+
+=== pc=0x113dc98  va=0x2f0d0b  len=1
+
+
+=== pc=0x113dcb0  va=0x2faee8  len=73
+  color.rgb = mix(color.rgb, snowColor.rgb, snowColor.a * u_snowEnable);
+
+=== pc=0x113dce0  va=0x2ef5c6  len=42
+  color.rgb = color.rgb * (1.0 - shadow);
+
+=== pc=0x113dd00  va=0x2f0d0b  len=1
+
+
+=== pc=0x113dd3c  va=0x2f6449  len=21
+  FRAGCOLOR(color);
+}
+=== pc=0x113dd4c  va=0x2f6449  len=21
+  FRAGCOLOR(color);
+}
+=== pc=0x113dd58  va=0x2e890d  len=55
+    color.rgb = mix(color.rgb, u_fogColor.rgb, v_fog);
+
+=== pc=0x113dd78  va=0x2f0d0b  len=1
+
+
+=== pc=0x113dd90  va=0x2d9f93  len=53
+  color.rgb = pow(color.rgb, vec3(u_localInvGamma));
+
+=== pc=0x113ddb0  va=0x2f0d0b  len=1
+
+
+=== pc=0x113ddc8  va=0x2f645f  len=172
+vec4 lightmapColor = texture(tex1, v_tex1);
+color.rgb = mix(color.rgb, lightmapColor.rgb * texture(tex0, v_tex0).rgb * 3.0, lightmapColor.a);
+color.rgb *= u_lightmapMulti;
+
+=== pc=0x113dde8  va=0x2f0d0b  len=1
+
+
+=== pc=0x113de00  va=0x2e59c5  len=572
+if (u_clipRectangleOuter.x < u_clipRectangleInner.x)
+  color.a *= smoothstep(u_clipRectangleOuter.x, u_clipRectangleInner.x, v_ndc_pxl.x);
+if (u_clipRectangleInner.z < u_clipRectangleOuter.z)
+  color.a *= (1.0 - smoothstep(u_clipRectangleInner.z, u_clipRectangleOuter.z, v_ndc_pxl.x));
+if (u_clipRectangleOuter.y < u_clipRectangleInner.y)
+  color.a *= smoothstep(u_clipRectangleOuter.y, u_clipRectangleInner.y, v_ndc_pxl.y);
+if (u_clipRectangleInner.w < u_clipRectangleOuter.w)
+  color.a *= (1.0 - smoothstep(u_clipRectangleInner.w, u_clipRectangleOuter.w, v_ndc_pxl.y));
+
+=== pc=0x113de20  va=0x2f0d0b  len=1
+
+
+=== pc=0x113de38  va=0x2dc684  len=59
+  highp vec3 viewVec = normalize(v_worldPosition - u_eye);
+
+=== pc=0x113de58  va=0x2f0d0b  len=1
+
+
+=== pc=0x113de70  va=0x305ea4  len=57
+  highp vec3 Out_Refl = reflect(viewVec, v_worldNormal);
+
+=== pc=0x113dea0  va=0x301176  len=66
+vec2 ReflPos = normalize(Out_Refl.xy) * (Out_Refl.z * 0.5 + 0.5);
+
+=== pc=0x113ded0  va=0x2de97d  len=53
+ReflPos = (ReflPos * vec2(0.5,0.5)) + vec2(0.5,0.5);
+
+=== pc=0x113df00  va=0x2ca1fe  len=63
+  vec3 envmap = texture(tex2, vec2(ReflPos.x, ReflPos.y)).rgb;
+
+=== pc=0x113df30  va=0x2e8945  len=178
+highp vec3 lightDir   = normalize(u_sunPos - v_worldPosition);
+highp vec3 viewDir    = normalize(u_eye - v_worldPosition);
+highp vec3 halfwayDir = normalize(lightDir + viewDir);
+
+=== pc=0x113df60  va=0x2d5e9a  len=47
+vec3 u_sunLightingColor = vec3(0.2, 0.2, 0.2);
+
+=== pc=0x113df90  va=0x2e89f8  len=126
+float spec = pow(max(dot(normalize(v_worldNormal), halfwayDir), 0.0), 50.0);
+vec3 specular = u_sunLightingColor * spec * 0.4;
+
+=== pc=0x113dfc0  va=0x2d7d40  len=77
+highp float diffuseCoef = max(dot(normalize(v_worldNormal), lightDir), 0.0);
+
+=== pc=0x113dff0  va=0x3035a3  len=62
+vec3 diffuseVec = diffuseCoef * diffuse * u_sunLightingColor;
+
+=== pc=0x113e020  va=0x308079  len=71
+  highp float fresnelFactor = 1.0 - abs(dot(-viewVec, v_worldNormal));
+
+=== pc=0x113e050  va=0x2c51dc  len=43
+  fresnelFactor = pow(fresnelFactor, 3.5);
+
+=== pc=0x113e080  va=0x30c1cf  len=51
+  fresnelFactor = clamp(fresnelFactor, 0.15, 0.7);
+
+=== pc=0x113e0b0  va=0x3080c1  len=41
+envmap.rgb = pow(envmap.rgb, vec3(0.8));
+
+=== pc=0x113e0e0  va=0x2e5c02  len=56
+envmap.rgb = envmap.rgb * fresnelFactor * u_envMapCoef;
+
+=== pc=0x113e110  va=0x2fe95b  len=51
+color.rgb += (diffuseVec + specular + envmap.rgb);
+
+=== pc=0x113e144  va=0x2f650c  len=452
+if (u_pbrModelEmissionStrength <= 0.0)
+{
+   vec4 emissiveColor = texture(tex1, v_tex0);
+   color.rgb += emissiveColor.rgb * emissiveColor.a * u_emissiveSaturation;
+}
+else
+{
+   float emissionStrength = texture(tex1, v_tex0).r * u_pbrModelEmissionStrength;
+   vec3 emissionColor = emissionStrength * u_pbrModelEmissionColorAlpha.rgb * mix(vec3(1.0), color.rgb, u_pbrModelEmissionColorAlpha.a);
+   color.rgb += emissionColor.rgb * u_emissiveSaturation;
+}
+
+=== pc=0x113e164  va=0x2f0d0b  len=1
+
+
+=== pc=0x113e17c  va=0x3010ed  len=24
+  DoAlphaTest(color.a);
+
+=== pc=0x113e19c  va=0x2f0d0b  len=1
+
+
+=== pc=0x113e1b0  va=0x2f6449  len=21
+  FRAGCOLOR(color);
+}
+=== pc=0x113e1bc  va=0x2cf0bb  len=214
+  if (u_debugColor.a > 2.5) color.rgb = vec3(0.25, 0.11, 0.08);
+  else if (u_debugColor.a > 1.5) color.rgb = normalize(v_eyeNormal) * 0.5 + 0.5;
+  else color.rgb = mix(color.rgb, u_debugColor.rgb, u_debugColor.a);
+
+=== pc=0x113e1c8  va=0x2f6449  len=21
+  FRAGCOLOR(color);
+}
+=== pc=0x113e1d0  va=0x2e59a0  len=36
+  color = mix(color, v_color, 0.5);
+
+=== pc=0x113e1d8  va=0x2d7cd2  len=54
+  color = mix(color, vec4(0.2, 0.4, 0.6, 0.75), 0.7);
+

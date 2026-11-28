@@ -1,0 +1,281 @@
+// ============================================================================
+// PATCH: CustomModels.cpp fixes for Black Russia integration
+// ============================================================================
+// This file documents the required changes to fix integration issues.
+// Apply these changes to src/extras/custom/CustomModels.cpp
+// ============================================================================
+
+// 1. ADD NEW INCLUDES (after line 51)
+/*
+#include "core/br/ModFormat.h"
+#include "core/br/BtxFormat.h"
+#include "core/br/ClsFormat.h"
+#include "core/br/BpcPipeline.h"
+#include "core/br/HandlingParse.h"
+#include "core/br/CarModsParse.h"
+#include "core/br/TimecycParse.h"
+#include "core/br/AudioConfigParse.h"
+*/
+
+// 2. REPLACE DUAL MODEL MAPS WITH SINGLE MAP (lines 110-111)
+/*
+// OLD:
+static std::map<std::string, CustomSource> customMods;
+static std::map<std::string, CustomSource> customDff;
+
+// NEW:
+static std::map<std::string, CustomSource> customModels;  // unified .mod + .dff
+static std::map<std::string, bool> customModelIsMod;      // true if .mod
+*/
+
+// 3. ADD REVERSE INDEX FOR TXD LOOKUP (after line 116)
+/*
+static std::unordered_map<std::string, std::string> txdToModelKey;  // txdName -> modelKey
+*/
+
+// 4. ADD PARSED DATA TABLES (after line 143)
+/*
+static brhandling::HandlingData g_handlingData;
+static brcarmods::CarModsData g_carModsData;
+static brtimecyc::TimecycData g_timecycData;
+static braudio::AudioConfigData g_audioConfigData;
+static bool g_dataTablesLoaded = false;
+*/
+
+// 5. UPDATE PrepareModelBytes TO USE NEW CORE MODULES
+/*
+static std::shared_ptr<PreparedModel>
+PrepareModelBytes(const std::string &key, const CustomSource &src, bool isMod)
+{
+    std::shared_ptr<PreparedModel> model = std::make_shared<PreparedModel>();
+    model->isMod = isMod;
+    model->usable = false;
+    model->readOk = false;
+
+    if (!ReadSource(src, model->bytes)) {
+        model->rejectReason = "the loose file could not be read";
+        return model;
+    }
+    model->rawSize = (unsigned)model->bytes.size();
+
+    if (isMod) {
+        std::string warn;
+        uint32_t len = brmod::decryptModInplace(model->bytes.data(), (uint32_t)model->bytes.size(), &warn);
+        if (!len) {
+            model->rejectReason = warn.empty() ? "not a .mod file" : warn;
+            return model;
+        }
+        if (!warn.empty()) model->warn = "warning: " + warn;
+        model->bytes.resize(len);
+    }
+
+    model->readOk = true;
+
+    // MANDATORY validation gate - reject broken models
+    std::string why;
+    if (!brmod::validateClumpForGame(model->bytes.data(), (uint32_t)model->bytes.size(), why)) {
+        model->rejectReason = why.empty() ? "model validation failed" : why;
+        model->usable = false;
+        return model;
+    }
+
+    model->usable = true;
+
+    // Collect texture names using new core module
+    brtex::collectTextureNames(model->bytes.data(), model->bytes.size(), model->textureNames);
+    brtex::collectUv2DualTextureNames(model->bytes.data(), model->bytes.size(), model->uv2DualNames);
+
+    // Update reverse index for TXD lookup
+    for (const auto& txd : model->textureNames) {
+        txdToModelKey[txd] = key;
+    }
+    for (const auto& txd : model->uv2DualNames) {
+        txdToModelKey[txd] = key;
+    }
+
+    return model;
+}
+*/
+
+// 6. REPLACE GetTxdPlan - REMOVE #ifndef CUSTOM_BPC_TEXDB GUARD
+/*
+static TxdPlan&
+GetTxdPlan(const std::string &key)
+{
+    TxdPlan &plan = customTxdPlans[key];
+    if (plan.computed) return plan;
+    plan.computed = true;
+
+    // Single code path - no #ifndef CUSTOM_BPC_TEXDB
+    plan.modelKey = key;
+    plan.haveModel = (customModels.find(key) != customModels.end()) && CanUseModel(key);
+
+    if (!plan.haveModel) {
+        // Try reverse index
+        auto it = txdToModelKey.find(key);
+        if (it != txdToModelKey.end()) {
+            plan.modelKey = it->second;
+            plan.haveModel = CanUseModel(plan.modelKey);
+        }
+    }
+
+    plan.haveBtx = customBtx.find(key) != customBtx.end();
+    plan.haveTxdFile = customTxdFiles.find(key) != customTxdFiles.end();
+
+    if (plan.haveModel) {
+        auto model = ReadModelEntry(plan.modelKey);
+        if (model) {
+            plan.names = model->textureNames;
+            plan.uv2DualNames = model->uv2DualNames;
+            plan.recipes = model->stats.recipes;
+
+            for (const auto& name : plan.names) {
+                std::string want = ToLower(name);
+                if (want.empty()) continue;
+                if (customBtx.find(want) != customBtx.end()) {
+                    customBtxRequested.insert(want);
+                    plan.serve = true;
+                } else {
+                    customBtxMissing.insert(want);
+                }
+            }
+        }
+    } else if (plan.haveBtx) {
+        plan.serve = true;
+    }
+    if (!plan.serve && plan.haveTxdFile) plan.serve = true;
+
+    return plan;
+}
+*/
+
+// 7. REPLACE FindModelForTxd WITH O(1) LOOKUP
+/*
+static std::string PotentialModelForTxd(const std::string &key) {
+    auto it = txdToModelKey.find(key);
+    return it != txdToModelKey.end() ? it->second : "";
+}
+*/
+
+// 8. UPDATE ScanBpcSystem TO PASS XOR KEY
+/*
+static bool MountBpcArchive(const std::string &path, bool allowXor, uint8 &outArchId, const uint8_t* xorKey = nullptr) {
+    // ... existing code ...
+    if (!zip->Open(path.c_str(), allowXor, xorKey)) return false;
+    // ...
+}
+
+// In ScanBpcSystem:
+static const uint8_t COMMON_BPC_XOR_KEY[20] = { 0x31,0x63,0x4b,0x31,0x61,0x35,0x55,0x46,0x32,0x74,0x55,0x38,0x2a,0x47,0x32,0x6c,0x57,0x23,0x26,0x25 };
+// When mounting common.bpc:
+MountBpcArchive(commonPath, true, commonArchId, COMMON_BPC_XOR_KEY);
+*/
+
+// 9. ADD DATA TABLE LOADING IN EnsureInitialised/ScanBpcSystem
+/*
+static void LoadDataTables() {
+    if (g_dataTablesLoaded) return;
+
+    // Load handling.cfg
+    std::vector<uint8> handlingBytes;
+    if (ReadSource(commonZipDataFiles["data/handling.cfg"], handlingBytes)) {
+        std::string err;
+        auto entries = brhandling::HandlingParser::Parse((const char*)handlingBytes.data(), handlingBytes.size(), &err);
+        // Store in g_handlingData or apply to game
+    }
+
+    // Load carmods.dat
+    std::vector<uint8> carmodsBytes;
+    if (ReadSource(commonZipDataFiles["data/carmods.dat"], carmodsBytes)) {
+        std::string err;
+        g_carModsData = brcarmods::CarModsParser::Parse((const char*)carmodsBytes.data(), carmodsBytes.size(), &err);
+    }
+
+    // Load timecyc.json + weather.json
+    std::vector<uint8> tcBytes, wBytes;
+    if (ReadSource(commonZipDataFiles["data/timecyc.json"], tcBytes) &&
+        ReadSource(commonZipDataFiles["data/weather.json"], wBytes)) {
+        std::string err;
+        g_timecycData = brtimecyc::TimecycParser::ParseBoth(
+            (const char*)tcBytes.data(), tcBytes.size(),
+            (const char*)wBytes.data(), wBytes.size(), &err);
+    }
+
+    // Load vehicleAudioSettings.cfg
+    std::vector<uint8> vehAudioBytes;
+    if (ReadSource(commonZipDataFiles["data/vehicleAudioSettings.cfg"], vehAudioBytes)) {
+        std::string err;
+        g_audioConfigData = braudio::AudioConfigParser::ParseVehicleAudio(
+            (const char*)vehAudioBytes.data(), vehAudioBytes.size(), &err);
+    }
+
+    // Load audio .bpcmeta
+    for (const auto& bank : {"GENERIC", "STEPS", "VEHICLE"}) {
+        std::string key = "audio/" + std::string(bank) + ".bpcmeta";
+        auto it = commonZipDataFiles.find(key);
+        if (it != commonZipDataFiles.end()) {
+            std::vector<uint8> metaBytes;
+            if (ReadSource(it->second, metaBytes)) {
+                std::string err;
+                auto meta = braudio::AudioConfigParser::ParseBpcMeta(metaBytes.data(), metaBytes.size(), &err);
+                // Merge into g_audioConfigData
+            }
+        }
+    }
+
+    g_dataTablesLoaded = true;
+}
+*/
+
+// 10. INTEGRATE FREEZE MONITOR IN TEXTURE UPLOAD PATH
+/*
+// In texture streaming/upload code:
+#ifdef CUSTOM_BPC_TEXDB
+    if (!s_bpcFreezeMonitor.HasFrameBudget()) {
+        // Defer to next frame
+        return false;
+    }
+    auto startUs = Timer::GetMicroseconds();
+    // ... do GPU upload ...
+    auto elapsedUs = Timer::GetMicroseconds() - startUs;
+    s_bpcFreezeMonitor.RecordMainThreadWork(assetName.c_str(), elapsedUs);
+#endif
+*/
+
+// 11. INTEGRATE BRCOLLISION IN COLSTORE LOADING
+/*
+// In CColStore::LoadCollisionModel or CustomModels collision loading:
+static std::vector<uint8> LoadCollisionFromCls(const CustomSource& src) {
+    std::vector<uint8> clsData;
+    if (!ReadSource(src, clsData)) return {};
+
+    std::vector<brcls::Block> blocks;
+    brcls::Index(clsData.data(), clsData.size(), blocks);
+
+    std::vector<uint8> result;
+    for (const auto& block : blocks) {
+        const char* why = nullptr;
+        std::vector<uint8> collBlock;
+        if (brcls::Convert(clsData.data() + block.offset, block.size, collBlock, &why)) {
+            result.insert(result.end(), collBlock.begin(), collBlock.end());
+        }
+    }
+    return result;
+}
+*/
+
+// 12. LOAD ALL .ANI FROM BR_ANIM.BPC
+/*
+// In AnimManager::Initialise or custom anim loading:
+for (const auto& animPair : customAnims) {
+    std::vector<uint8> aniData;
+    if (ReadSource(animPair.second, aniData)) {
+        // Load ANP3 animation
+        CAnimBlendAssocGroup::LoadAnimation(aniData.data(), aniData.size(), animPair.first.c_str());
+    }
+}
+*/
+
+// ============================================================================
+// END OF PATCH
+// ============================================================================

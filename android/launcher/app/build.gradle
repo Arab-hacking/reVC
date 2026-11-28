@@ -1,0 +1,102 @@
+plugins {
+    alias(libs.plugins.android.application)
+}
+
+android {
+
+    namespace 'com.revc.game'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId "com.revc.game"
+        minSdk 24
+        targetSdk 35
+        versionCode project.hasProperty('revcVersionCode') ? project.property('revcVersionCode').toInteger() : 1
+        versionName project.hasProperty('revcVersionName') ? project.property('revcVersionName').toString() : "reVC-0.0.1"
+
+        ndkVersion '27.2.12479018'
+
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+
+        ndk {
+            abiFilters "armeabi-v7a", "arm64-v8a"
+        }
+    }
+
+    buildTypes {
+        release {
+            signingConfig signingConfigs.debug
+
+            externalNativeBuild {
+                cmake {
+                    cppFlags '-O3', '-fvisibility=hidden'
+                }
+            }
+
+            debuggable false
+            minifyEnabled true
+            shrinkResources true
+            jniDebuggable false
+            renderscriptDebuggable false
+
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+
+        debug {
+            signingConfig signingConfigs.debug
+
+            externalNativeBuild {
+                cmake {
+                    cppFlags '-g', '-DDEBUG'
+                }
+            }
+
+            debuggable true
+            minifyEnabled false
+            jniDebuggable true
+            renderscriptDebuggable true
+        }
+    }
+
+    packagingOptions {
+        jniLibs.excludes += ['META-INF/*']
+        resources.excludes += ['META-INF/*']
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
+    }
+
+    externalNativeBuild {
+        cmake {
+            path file('CMakeLists.txt')
+            version '3.22.1'
+        }
+    }
+
+    buildFeatures {
+        viewBinding true
+        buildConfig = true
+    }
+
+    sourceSets {
+        main {
+            jniLibs.srcDir 'jniLibs'
+            // reVC support files only; GTA Vice City game assets are supplied
+            // by the player and are NEVER checked into or bundled with the APK.
+            assets.srcDir file('../../../gamefiles')
+        }
+    }
+}
+
+dependencies {
+    implementation fileTree(dir: "libs", include: ["*.jar"])
+
+    implementation libs.appcompat
+    implementation libs.material
+    implementation libs.constraintlayout
+    testImplementation libs.junit
+    androidTestImplementation libs.ext.junit
+    androidTestImplementation libs.espresso.core
+}

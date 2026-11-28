@@ -1,0 +1,27 @@
+#ifndef __GTA_COLBOX_H__
+#define __GTA_COLBOX_H__
+
+#include "SurfaceTable.h"
+
+struct CBox
+{
+	CVector min;
+	CVector max;
+	CVector GetSize(void) { return max - min; }
+	void Set(const CVector &min, const CVector &max) {  this->min = min; this->max = max; }
+};
+
+struct CColBox : public CBox
+{
+	uint8 material;
+	uint8 light;
+	uint8 surface;
+
+	void Set(const CVector &min, const CVector &max, uint8 material, uint8 light, uint8 surface);
+	void Set(const CVector &min, const CVector &max, uint8 surf, uint8 piece);
+	using CBox::Set;
+
+	CColBox& operator=(const CColBox &other);
+};
+
+#endif // __GTA_COLBOX_H__

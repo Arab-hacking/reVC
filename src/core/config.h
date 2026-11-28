@@ -1,0 +1,527 @@
+#ifndef __GTA_CONFIG_H__
+#define __GTA_CONFIG_H__
+
+// disables (most) stuff that wasn't in original gta-vc.exe
+#ifdef __MWERKS__
+#define VANILLA_DEFINES
+#endif
+
+enum Config {
+	NUMPLAYERS = 1,
+
+	NUMCDIMAGES = 6, // gta3.img duplicates (not used on PC)
+	// The stream position reserves one byte for the IMG index. Allow all
+	// representable slots (0..255), not just the original eight archives.
+	MAX_CDIMAGES = 256,
+	MAX_CDCHANNELS = 5,
+
+	// BR IDEs contain ~27k object definitions, with source IDs far above the
+	// signed 16-bit model index stored on CEntity. They are remapped into free
+	// slots below 32768; these are slot/pool sizes, NOT decoded asset caches.
+	MODELINFOSIZE = 32768,
+	// Up to ~28k distinct TXDs in the BR IMG set. Slots are names and stream
+	// metadata, not resident texture/cache bytes. CBaseModelInfo::m_txdSlot is
+	// signed int16, so the last representable slot is 32767.
+	TXDSTORESIZE = 32768,
+	COLSTORESIZE = 31,
+	EXTRADIRSIZE = 256,
+	CUTSCENEDIRSIZE = 512,
+
+	SIMPLEMODELSIZE = 32000,
+	TIMEMODELSIZE = 768,
+	CLUMPMODELSIZE = 5,
+	// Initial metadata capacities, not fixed limits: the selected map/root IDEs
+	// include roughly 120 weapon, 780 ped and 587 vehicle definitions; stores
+	// grow in stable blocks (no decoded assets or streaming/GPU cache changes).
+	WEAPONMODELSIZE = 128,
+	PEDMODELSIZE = 1024,
+	VEHICLEMODELSIZE = 768,
+	TWODFXSIZE = 1210,
+#if defined ANDROID
+	MAXVEHICLESLOADED = 70,
+#else
+	// Tracking slots for loaded vehicle models. 50 was the original cap; the
+	// custom archives register hundreds of vehicles and a player can hold
+	// far more than 50 distinct models in the world at once (debug-13: the
+	// 51st spawned car onward could not load at all). The traffic residency
+	// target in CStreaming stays where it was - this only widens the table.
+	MAXVEHICLESLOADED = 150,
+#endif
+	NUMOBJECTINFO = 210,
+
+	// Pool sizes
+	NUMPTRNODES = 300000, // initial size; BR IPL pool grows in stable blocks
+	NUMENTRYINFOS = 3200,
+	NUMPEDS = 999,
+	NUMVEHICLES = 2000,
+	NUMBUILDINGS = 50000, // initial size; expands for custom IPLs
+	NUMTREADABLES = 1,
+	NUMOBJECTS = 999,
+	NUMDUMMIES = 2340,
+	NUMAUDIOSCRIPTOBJECTS = 192,
+	NUMCOLMODELS = 35000, // stock + up to ~27k ZIP CLS/COL world collisions (not a cache)
+	NUMCUTSCENEOBJECTS = 50,	// not a pool in VC
+
+	NUMANIMBLOCKS = 180,   // San Andreas sizes: SA dictionaries (ped.ifp and the
+	NUMANIMATIONS = 2500,  // cutscene/special ones) do not fit into VC's 35/450
+
+	NUMTEMPOBJECTS = 40,
+
+	// Path data
+	NUM_PATHNODES = 9650,
+	NUM_CARPATHLINKS = 3500,
+	NUM_MAPOBJECTS = 1250,
+	NUM_PATHCONNECTIONS = 20400,
+
+	// Link list lengths
+	NUMALPHALIST = 20,
+	NUMBOATALPHALIST = 20,
+	NUMALPHAENTITYLIST = 200,
+	NUMALPHAUNTERWATERENTITYLIST = 30,
+	NUMCOLCACHELINKS = 50,
+	NUMREFERENCES = 800,
+
+	// Zones
+	NUMAUDIOZONES = 14,
+	NUMINFOZONES = 169,
+	NUMMAPZONES = 39,
+	NUMNAVIGZONES = 20,
+
+	// Cull zones
+	NUMATTRIBZONES = 704,
+
+	NUMOCCLUSIONVOLUMES = 350,
+	NUMACTIVEOCCLUDERS = 48,
+
+	PATHNODESIZE = 4500,
+
+	NUMWEATHERS = 7,
+	NUMHOURS = 24,
+
+	NUMEXTRADIRECTIONALS = 4,
+	NUMANTENNAS = 8,
+	NUMCORONAS = 1024,
+	NUMPOINTLIGHTS = 256,
+	NUM3DMARKERS = 32,
+	NUMBRIGHTLIGHTS = 32,
+	NUMSHINYTEXTS = 32,
+	NUMMONEYMESSAGES = 16,
+	NUMPICKUPMESSAGES = 16,
+	NUMBULLETTRACES = 16,
+	NUMMBLURSTREAKS = 4,
+	NUMSKIDMARKS = 32,
+
+	NUMONSCREENCLOCKS = 1,
+	NUMONSCREENCOUNTERS = 3,
+	NUMRADARBLIPS = 75,
+	NUMGENERALPICKUPS = 320,
+	NUMSCRIPTEDPICKUPS = 16,
+	NUMPICKUPS = NUMGENERALPICKUPS + NUMSCRIPTEDPICKUPS,
+	NUMCOLLECTEDPICKUPS = 20,
+	NUMPACMANPICKUPS = 256,
+	NUMEVENTS = 64,
+
+	NUM_PATH_NODES_IN_AUTOPILOT = 8,
+
+	NUM_ACCIDENTS = 20,
+	NUM_FIRES = 40,
+	NUM_GARAGES = 32,
+	NUM_PROJECTILES = 32,
+
+	NUM_GLASSPANES = 45,
+	NUM_GLASSENTITIES = 32,
+	NUM_WATERCANNONS = 3,
+
+	NUMPEDROUTES = 200,
+	NUMPHONES = 50,
+	NUMPEDGROUPS = 67,
+	NUMMODELSPERPEDGROUP = 16,
+	MAXZONEPEDSLOADED = 8,
+	NUMSHOTINFOS = 100,
+
+	NUMROADBLOCKS = 300,
+	NUM_SCRIPT_ROADBLOCKS = 16,
+
+	NUMVISIBLEENTITIES = 2000,
+	NUMINVISIBLEENTITIES = 150,
+
+	NUM_AUDIOENTITY_EVENTS = 4,
+	NUM_PED_COMMENTS_SLOTS = 20,
+
+	NUM_SOUND_QUEUES = 2,
+	NUM_AUDIOENTITIES = 250,
+
+	NUM_SCRIPT_MAX_ENTITIES = 40,
+
+	NUM_GARAGE_STORED_CARS = 4,
+
+	NUM_CRANES = 8,
+	NUM_ESCALATORS = 22,
+	NUM_WATER_CREATURES = 8,
+
+	NUM_EXPLOSIONS = 48,
+
+	NUM_SETPIECES = 96,
+	NUM_SHORTCUT_START_POINTS = 16
+};
+
+#define GTA_PC
+//#define GTA_XBOX
+#define GTA_MOBILE
+
+// Version defines
+#define GTAVC_PC_10	410
+#define GTAVC_PC_11	411
+#define GTAVC_PC_JAP	412
+#define GTAVC_ANDROID 413 // ANDROID 413?
+// TODO? maybe something for xbox or android?
+
+#define GTA_VERSION	GTAVC_PC_11
+
+// Enable configuration for handheld console ports
+#if defined(__SWITCH__) || defined(PSP2)
+	#define GTA_HANDHELD
+#endif
+
+// TODO(MIAMI): someone ought to find and check out uses of these defines:
+//#define GTA3_STEAM_PATCH
+//#define GTAVC_JP_PATCH
+
+#if defined(GTA_PC)
+#	define EXTERNAL_3D_SOUND
+#	define AUDIO_REVERB
+#	ifndef GTA_HANDHELD
+#		define PC_PLAYER_CONTROLS	// mouse player/cam mode
+#	endif
+#	define GTA_REPLAY
+#	define GTA_SCENE_EDIT
+#	define PC_MENU
+#	define PC_WATER
+#	define GTA_PC_CONTROLS	// enables keyboard and mouse. currently GTA_PC and a few other defines will not work without this
+#elif defined(GTA_XBOX)
+#elif defined(GTA_MOBILE)
+#	define SIMPLER_MISSIONS
+#endif
+
+// This is enabled for all released games.
+// any debug stuff that isn't left in any game is not in FINAL
+//#define FINAL
+
+// This is enabled for all released games except mobile
+// any debug stuff that is only left in mobile, is not in MASTER
+//#define MASTER
+
+// once and for all:
+// pc: FINAL & MASTER
+// mobile: FINAL
+
+// MASTER builds must be FINAL
+#ifdef MASTER
+#define FINAL
+#endif
+
+// these are placed here to work with VANILLA_DEFINES for compatibility
+#define NO_CDCHECK // skip audio CD check
+#define DEFAULT_NATIVE_RESOLUTION // Set default video mode to your native resolution (fixes Windows 10 launch)
+
+#ifdef VANILLA_DEFINES
+#if !defined(_WIN32) || defined(__LP64__) || defined(_WIN64)
+#error Vanilla can only be built for win-x86
+#endif
+
+#define FINAL
+#define MASTER
+//#define USE_MY_DOCUMENTS
+#define THIS_IS_STUPID
+#define DONT_FIX_REPLAY_BUGS
+#define USE_TXD_CDIMAGE // generate and load textures from txd.img
+//#define USE_TEXTURE_POOL // not possible because R* used custom RW33
+#define AUDIO_REFLECTIONS
+#else
+// quality of life fixes that should also be in FINAL
+#define NASTY_GAME	// nasty game for all languages
+
+// those infamous texts
+#define DRAW_GAME_VERSION_TEXT
+#ifdef DRAW_GAME_VERSION_TEXT
+	// unlike R* development builds, ours has runtime switch on debug menu & .ini, and disabled as default.
+	// If you disable this then game will fetch version from peds.col, as R* did while in development.
+	//#define USE_OUR_VERSIONING // enabled from buildfiles by default
+#endif
+
+// Memory allocation and compression
+// #define USE_CUSTOM_ALLOCATOR		// use CMemoryHeap for allocation. use with care, not finished yet
+//#define COMPRESSED_COL_VECTORS	// use compressed vectors for collision vertices
+//#define ANIM_COMPRESSION	// only keep most recently used anims uncompressed
+
+#ifdef MASTER
+	// only in master builds
+	#undef DRAW_GAME_VERSION_TEXT
+#else
+	// not in master builds
+	#define DEBUGMENU
+#endif
+
+#ifdef FINAL
+	// in all games
+#	define USE_MY_DOCUMENTS	// use my documents directory for user files
+#else
+	// not in any game
+#	define CHATTYSPLASH	// print what the game is loading
+#	define TIMEBARS		// print debug timers
+#endif
+
+#define FIX_BUGS		// fixes bugs that we've came across during reversing. You can undefine this only on release builds.
+#define MORE_LANGUAGES		// Add more translations to the game
+#define LOAD_INI_SETTINGS // as the name suggests. fundamental for CUSTOM_FRONTEND_OPTIONS
+
+#define NO_MOVIES	// add option to disable intro videos
+
+#define EXTENDED_OFFSCREEN_DESPAWN_RANGE // Use onscreen despawn range for offscreen peds and vehicles to avoid them despawning in the distance when you look
+                                         // away
+
+// ---------------------------------------------------------------------------
+// GTA San Andreas vehicle model support
+//
+// GTA:SA stores vehicle models in RenderWare 3.6.0.3 DFF/TXD files which use
+// a different naming/LOD convention than Vice City:
+//   * meshes have no _hi / _lo / _vlo suffixes (VC renders only *_hi atomics),
+//   * the wheel meshes are part of the vehicle DFF (one "wheel" mesh, cloned
+//     onto all four wheel_*_dummy frames) instead of a separate wheel model,
+//   * dummies can be named without the _dummy suffix (bonnet, boot,
+//     bump_front, bump_rear, windscreen),
+//   * vehicle colour uses the same magic material colours as VC (60,255,0 /
+//     255,0,175) but SA models tend to carry the primary colour on many more
+//     materials than VC models do (70+ is normal for SA),
+//   * the meshes are named after the part they are (door_lf_stock,
+//     roof_stock, exhaus_stock, ug_nitro, lights_front, chassis_vlo, ...).
+//   * TXDs are D3D9 (platform 9) textures.
+//
+// With this define reVC loads such models correctly instead of showing an
+// invisible car with missing wheels.
+#define SA_VEHICLE_MODELS
+
+// Custom models, textures and collision from the community's own containers
+// (.mod / .btx / .cls) inside zip archives. The archives are read from the
+// folder below (relative to the game directory) and are converted in memory
+// when the game asks for a model, so no .dff/.txd/.col files have to be built
+// outside of the game. Files from this folder win over the game's own IMG
+// archives. See src/extras/custom/CustomModels.h.
+#define CUSTOM_MODELS
+#ifdef CUSTOM_MODELS
+	#define CUSTOM_MODELS_FOLDER "custom"
+#endif
+
+// Also read the manifest-driven .bpc archives (custom/zip/common.bpc,
+// custom/zip/mesh/*.bpc and custom/zip/textures/*.astc.bpc) on the desktop
+// builds, not only on Android.
+#define CUSTOM_BPC
+
+// Share the existing TexDB worker/GPU/cache/material path with desktop GL3.
+// Non-GL builds keep the CPU dictionary loader. CPU-only is also testable.
+#if defined(ANDROID) || (defined(CUSTOM_BPC) && defined(LIBRW) && defined(RW_GL3) && !defined(REVC_BPC_CPU_ONLY))
+#define CUSTOM_BPC_TEXDB
+#endif
+
+// GTA:SA vehicles (and mods converted from them) often keep the frame name of
+// the car they were converted from in the DFF, so a model file may contain a
+// clump whose root frame does not know the name of the model at all. Fall back
+// to the file name of the model in that case (only used when a .dff is loaded
+// by file name, e.g. from a HIERFILE).
+#define SA_VEHICLE_MODEL_NAME_FALLBACK
+
+#if defined(__LP64__) || defined(_WIN64) || defined(__aarch64__)
+#define FIX_BUGS_64 // Must have fixes to be able to run 64 bit build
+#endif
+
+#define ASCII_STRCMP // use faster ascii str comparisons
+
+#if !defined _WIN32 || defined __MINGW32__
+#undef ASCII_STRCMP
+#endif
+
+// Just debug menu entries
+#ifdef DEBUGMENU
+#define RELOADABLES			// some debug menu options to reload TXD files
+#define MISSION_SWITCHER // from debug menu
+#endif
+
+#ifdef ANDROID
+#define USE_FILE_LOG
+#endif
+
+// Rendering/display
+#define ASPECT_RATIO_SCALE	// Not just makes everything scale with aspect ratio, also adds support for all aspect ratios
+#define PROPER_SCALING		// use original DEFAULT_SCREEN_WIDTH/DEFAULT_SCREEN_HEIGHT (R* changed HEIGHT in the PC port to make radar look better, but broke other hud elements aspect ratio).
+#define DEFAULT_NATIVE_RESOLUTION	// Set default video mode to your native resolution (fixes Windows 10 launch)
+#define USE_TXD_CDIMAGE		// generate and load textures from txd.img
+#define ALPHA_TEST_EMU		// emulate the legacy alpha test
+#define IMPROVED_VIDEOMODE	// save and load videomode parameters instead of a magic number
+#define DISABLE_LOADING_SCREEN // disable the loading screen which vastly improves the loading time
+#define DISABLE_VSYNC_ON_TEXTURE_CONVERSION // make texture conversion work faster by disabling vsync
+#define ANISOTROPIC_FILTERING	// set all textures to max anisotropic filtering
+//#define USE_TEXTURE_POOL
+#ifdef LIBRW
+#define EXTENDED_COLOURFILTER		// more options for colour filter (replaces mblur)
+#define EXTENDED_PIPELINES		// custom render pipelines (includes Neo)
+#define SCREEN_DROPLETS			// neo water droplets
+#define NEW_RENDERER		// leeds-like world rendering, needs librw
+#endif
+
+#define FIX_SPRITES	// fix sprites aspect ratio(moon, coronas, particle etc)
+
+#ifndef EXTENDED_COLOURFILTER
+#undef SCREEN_DROPLETS		// we need the backbuffer for this effect
+#endif
+
+// Water & Particle
+#undef PC_WATER
+#define WATER_CHEATS
+
+//#define USE_CUTSCENE_SHADOW_FOR_PED
+//#define DISABLE_CUTSCENE_SHADOWS
+
+// Pad
+#if !defined(RW_GL3) && defined(_WIN32)
+#define XINPUT
+#endif
+#if defined XINPUT || (defined RW_GL3 && !defined LIBRW_SDL2 && !defined GTA_HANDHELD)
+#define DETECT_JOYSTICK_MENU // Then we'll expect user to enter Controller->Detect joysticks if his joystick isn't detected at the start.
+#endif
+#define DETECT_PAD_INPUT_SWITCH // Adds automatic switch of pad related stuff between controller and kb/m
+#define KANGAROO_CHEAT
+#define WALLCLIMB_CHEAT
+#define REGISTER_START_BUTTON
+#define BIND_VEHICLE_FIREWEAPON // Adds ability to rebind fire key for 'in vehicle' controls
+#define BUTTON_ICONS // use textures to show controller buttons
+
+// Hud, frontend and radar
+#define PC_MENU
+#define FIX_RADAR			// use radar size from early version before R* broke it
+#define RADIO_OFF_TEXT		// Won't work without FIX_BUGS
+
+#	define MAP_ENHANCEMENTS			// Adding waypoint and better mouse support
+#	if defined(XINPUT) || defined(GTA_HANDHELD)
+#		define GAMEPAD_MENU		// Add gamepad menu
+#	endif
+#	define TRIANGLE_BACK_BUTTON
+//#	define CIRCLE_BACK_BUTTON
+#define LEGACY_MENU_OPTIONS			// i.e. frame sync(vsync)
+#define MUCH_SHORTER_OUTRO_SCREEN
+// #define XBOX_MESSAGE_SCREEN			// Blue background, no "saved successfully press OK" screen etc.
+#define CUSTOM_FRONTEND_OPTIONS
+
+#	ifdef CUSTOM_FRONTEND_OPTIONS
+#		define GRAPHICS_MENU_OPTIONS // otherwise Display settings will be scrollable
+#		define NO_ISLAND_LOADING  // disable loadscreen between islands via loading all island data at once, consumes more memory and CPU
+#		define CUTSCENE_BORDERS_SWITCH
+#		define MULTISAMPLING		// adds MSAA option
+#		define INVERT_LOOK_FOR_PAD // enable the hidden option
+#		define PED_CAR_DENSITY_SLIDERS
+#	endif
+
+// Script
+#define USE_DEBUG_SCRIPT_LOADER	// Loads main.scm by default. Hold R for main_freeroam.scm and D for main_d.scm
+#define USE_MEASUREMENTS_IN_METERS // makes game use meters instead of feet in script
+#define USE_PRECISE_MEASUREMENT_CONVERTION // makes game convert feet to meeters more precisely
+#define SUPPORT_JAPANESE_SCRIPT
+//#define SUPPORT_XBOX_SCRIPT
+#define SUPPORT_MOBILE_SCRIPT
+#define SUPPORT_GINPUT_SCRIPT
+#if (defined SUPPORT_XBOX_SCRIPT && defined SUPPORT_MOBILE_SCRIPT)
+static_assert(false, "SUPPORT_XBOX_SCRIPT and SUPPORT_MOBILE_SCRIPT are mutually exclusive");
+#endif
+#ifdef PC_MENU
+//#define SIMPLER_MISSIONS // apply simplifications from mobile
+#endif
+#define USE_ADVANCED_SCRIPT_DEBUG_OUTPUT
+#define SCRIPT_LOG_FILE_LEVEL 0 // 0 == no log, 1 == overwrite every frame, 2 == full log
+
+#if SCRIPT_LOG_FILE_LEVEL == 0
+#undef USE_ADVANCED_SCRIPT_DEBUG_OUTPUT
+#endif
+
+#ifndef USE_ADVANCED_SCRIPT_DEBUG_OUTPUT
+#define USE_BASIC_SCRIPT_DEBUG_OUTPUT
+#endif
+
+#ifdef MASTER
+#undef USE_ADVANCED_SCRIPT_DEBUG_OUTPUT
+#undef USE_BASIC_SCRIPT_DEBUG_OUTPUT
+#endif
+
+// Replay
+//#define DONT_FIX_REPLAY_BUGS // keeps various bugs in CReplay, some of which are fairly cool!
+//#define USE_BETA_REPLAY_MODE // adds another replay mode, a few seconds slomo (caution: buggy!)
+
+// Vehicles
+
+// Pickups
+//#define MONEY_MESSAGES
+#define CAMERA_PICKUP
+
+// Peds
+#define CANCELLABLE_CAR_ENTER
+
+// Camera
+#define IMPROVED_CAMERA		// Better Debug cam, and maybe more in the future
+#define FREE_CAM		// Rotating cam
+
+// Audio
+#define EXTERNAL_3D_SOUND // use external engine to simulate 3d audio spatialization. OpenAL would not work without it (because it works in a 3d space
+                          // originally and making it work in 2d only requires more resource).
+#define AUDIO_REFLECTIONS // Enable audio reflections. This is enabled in all vanilla versions
+#define AUDIO_REVERB // Enable audio reverb. It was disabled in the mobile versions
+#define RADIO_SCROLL_TO_PREV_STATION // Won't work without FIX_BUGS
+#define AUDIO_CACHE // cache sound lengths to speed up the cold boot
+#define MORE_AUDIO_CHANNELS // increases the maximum number of audio channels to 43 (PC has 28 originally)
+#define LEGACY_AUDIO_PATHS // changes audio paths for cutscenes and radio to the legacy paths (needs vbdec on MSS builds)
+//#define AUDIO_OAL_USE_SNDFILE // use libsndfile to decode WAVs instead of our internal decoder
+#define AUDIO_OAL_USE_MPG123 // use mpg123 to support mp3 files
+#define PAUSE_RADIO_IN_FRONTEND // pause radio when game is paused
+#define ATTACH_RELEASING_SOUNDS_TO_ENTITIES // sounds would follow ped and vehicles coordinates if not being queued otherwise
+#define USE_TIME_SCALE_FOR_AUDIO // slow down/speed up sounds according to the speed of the game
+#define MULTITHREADED_AUDIO // for streams. requires C++11 or later
+
+#ifdef AUDIO_OPUS
+#define AUDIO_OAL_USE_OPUS // enable support of opus files
+//#define OPUS_AUDIO_PATHS // (not supported on VC yet) changes audio paths to opus paths (doesn't work if AUDIO_OAL_USE_OPUS isn't enabled)
+//#define OPUS_SFX  // enable if your sfx.raw is encoded with opus (doesn't work if AUDIO_OAL_USE_OPUS isn't enabled)
+
+#ifndef AUDIO_OAL_USE_OPUS
+#undef OPUS_AUDIO_PATHS
+#undef OPUS_SFX
+#endif
+
+#endif
+
+// Streaming
+#if !defined(_WIN32) && !defined(__SWITCH__)
+	//#define ONE_THREAD_PER_CHANNEL // Don't use if you're not on SSD/Flash - also not utilized too much right now(see commented LoadAllRequestedModels in Streaming.cpp)
+	#define FLUSHABLE_STREAMING // Make it possible to interrupt reading when processing file isn't needed anymore.
+#endif
+#define BIG_IMG // Not complete - allows to read larger img files
+
+//#define SQUEEZE_PERFORMANCE
+#ifdef SQUEEZE_PERFORMANCE
+	#undef ALPHA_TEST_EMU
+	#undef NO_ISLAND_LOADING
+	#undef MORE_AUDIO_CHANNELS
+	#undef EXTENDED_OFFSCREEN_DESPAWN_RANGE
+#endif
+
+#ifdef GTA_HANDHELD
+	#define IGNORE_MOUSE_KEYBOARD // ignore mouse & keyboard input
+#endif
+
+#if defined(__SWITCH__) || defined(ANDROID)
+	#define USE_UNNAMED_SEM // named semaphores are unsupported on the switch and Android
+#endif
+
+#endif // VANILLA_DEFINES
+
+#if defined(AUDIO_OAL) && !defined(EXTERNAL_3D_SOUND)
+#error AUDIO_OAL cannot work without EXTERNAL_3D_SOUND
+#endif
+
+#endif // __GTA_CONFIG_H__

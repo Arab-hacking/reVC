@@ -1,0 +1,214 @@
+#ifndef __GTA_ENTITY_H__
+#define __GTA_ENTITY_H__
+
+#include "ModelInfo.h"
+#include "Placeable.h"
+
+struct CReference;
+class CPtrList;
+
+enum eEntityType
+{
+	ENTITY_TYPE_NOTHING = 0,
+	ENTITY_TYPE_BUILDING,
+	ENTITY_TYPE_VEHICLE,
+	ENTITY_TYPE_PED,
+	ENTITY_TYPE_OBJECT,
+	ENTITY_TYPE_DUMMY,
+};
+
+enum eEntityStatus
+{
+	STATUS_PLAYER,
+	STATUS_PLAYER_PLAYBACKFROMBUFFER,
+	STATUS_SIMPLE,
+	STATUS_PHYSICS,
+	STATUS_ABANDONED,
+	STATUS_WRECKED,
+	STATUS_TRAIN_MOVING,
+	STATUS_TRAIN_NOT_MOVING,
+	STATUS_HELI,
+	STATUS_PLANE,
+	STATUS_PLAYER_REMOTE,
+	STATUS_PLAYER_DISABLED,
+	STATUS_GHOST,
+	// SA eEntityStatus reaches further than VC did: a trailer in SA is its own
+	// status because it is driven by its tractor rather than by the physics,
+	// and a remote-controlled vehicle has to be distinguishable from a plain
+	// abandoned one so that it keeps taking input. Appended at the end so that
+	// no existing value changes meaning.
+	STATUS_REMOTE_CONTROLLED,
+	STATUS_FORCED_STOP,
+	STATUS_IS_TOWED,
+	STATUS_IS_SIMPLE_TOWED
+};
+
+class CEntity : public CPlaceable
+{
+public:
+	RwObject *m_rwObject;
+protected:
+	uint32 m_type : 3;
+private:
+	uint32 m_status : 5;
+public:
+	// flagsA
+	uint32 bUsesCollision : 1;			// does entity use collision
+	uint32 bCollisionProcessed : 1;		// has object been processed by a ProcessEntityCollision function
+	uint32 bIsStatic : 1;				// is entity static
+	uint32 bHasContacted : 1;			// has entity processed some contact forces
+	uint32 bPedPhysics : 1;
+	uint32 bIsStuck : 1;				// is entity stuck
+	uint32 bIsInSafePosition : 1;		// is entity in a collision free safe position
+	uint32 bUseCollisionRecords : 1;
+
+	// flagsB
+	uint32 bWasPostponed : 1;			// was entity control processing postponed
+	uint32 bExplosionProof : 1;
+	uint32 bIsVisible : 1;				//is the entity visible
+	uint32 bHasCollided : 1;
+	uint32 bRenderScorched : 1;
+	uint32 bHasBlip : 1;
+	uint32 bIsBIGBuilding : 1;			// Set if this entity is a big building
+	uint32 bStreamBIGBuilding : 1;	// set when draw dist <= 2000
+
+	// SA CEntity::m_bDontUpdateHierarchy. Set for one frame by the code that
+	// poses the skeleton by hand (the player's shoulder bones, hand-held
+	// objects, cutscene peds), so CeEntity::UpdateRpHAnim leaves the matrices
+	// alone and does not overwrite the hand-made pose.
+	uint32 bDontUpdateHierarchy : 1;
+
+	// flagsC
+	uint32 bRenderDamaged : 1;			// use damaged LOD models for objects with applicable damage
+	uint32 bBulletProof : 1;
+	uint32 bFireProof : 1;
+	uint32 bCollisionProof : 1;
+	uint32 bMeleeProof : 1;
+	uint32 bOnlyDamagedByPlayer : 1;
+	uint32 bStreamingDontDelete : 1;	// Dont let the streaming remove this 
+	uint32 bRemoveFromWorld : 1;		// remove this entity next time it should be processed
+
+	// flagsD
+	uint32 bHasHitWall : 1;				// has collided with a building (changes subsequent collisions)
+	uint32 bImBeingRendered : 1;		// don't delete me because I'm being rendered
+	uint32 bTouchingWater : 1;	// used by cBuoyancy::ProcessBuoyancy
+	uint32 bIsSubway : 1;	// set when subway, but maybe different meaning?
+	uint32 bDrawLast : 1;				// draw object last
+	uint32 bNoBrightHeadLights : 1;
+	uint32 bDoNotRender : 1;	//-- only applies to CObjects apparently
+	uint32 bDistanceFade : 1;			// Fade entity because it is far away
+
+	// flagsE
+	uint32 m_flagE1 : 1;
+	uint32 bDontCastShadowsOn : 1;       // Dont cast shadows on this object
+	uint32 bOffscreen : 1;               // offscreen flag. This can only be trusted when it is set to true
+	uint32 bIsStaticWaitingForCollision : 1; // this is used by script created entities - they are static until the collision is loaded below them
+	uint32 bDontStream : 1;              // tell the streaming not to stream me
+	uint32 bUnderwater : 1;              // this object is underwater change drawing order
+	uint32 bHasPreRenderEffects : 1; // Object has a prerender effects attached to it
+
+	uint16 m_scanCode;
+	uint16 m_randomSeed;
+	int16 m_modelIndex;
+	int8 m_level;
+	int8 m_area;
+	CReference *m_pFirstReference;
+
+public:
+	uint8 GetType() const { return m_type; }
+	void SetType(uint8 type) { m_type = type; }
+	uint8 GetStatus() const { return m_status; }
+	void SetStatus(uint8 status) { m_status = status; }
+	// A model slot can be empty - MI_PLAYER is a hard-coded 0 whose row came
+	// from DEFAULT.IDE, which is not read - so GetModelInfo may legitimately
+	// return nil here. Calling GetColModel() on that nil would read a vtable
+	// through address 0, which is exactly how a player built on an empty slot
+	// used to crash. Route through the guarded accessor instead.
+	CColModel *GetColModel(void) { return CModelInfo::GetColModel(m_modelIndex); }
+	const CColModel *GetColModel(void) const { return CModelInfo::GetColModel(m_modelIndex); }
+	bool GetIsStatic(void) const { return bIsStatic || bIsStaticWaitingForCollision; }
+	void SetIsStatic(bool state) { bIsStatic = state; }
+
+	CEntity(void);
+	virtual ~CEntity(void);
+
+	virtual void Add(void);
+	virtual void Remove(void);
+	virtual void SetModelIndex(uint32 id);
+	virtual void SetModelIndexNoCreate(uint32 id);
+	virtual void CreateRwObject(void);
+	virtual void DeleteRwObject(void);
+	virtual CRect GetBoundRect(void);
+	virtual void ProcessControl(void) {}
+	virtual void ProcessCollision(void) {}
+	virtual void ProcessShift(void) {}
+	virtual void Teleport(CVector v) {}
+	virtual void PreRender(void);
+	virtual void Render(void);
+	virtual bool SetupLighting(void);
+	virtual void RemoveLighting(bool);
+	virtual void FlagToDestroyWhenNextProcessed(void) {}
+
+	bool IsBuilding(void) { return m_type == ENTITY_TYPE_BUILDING; }
+	bool IsVehicle(void) { return m_type == ENTITY_TYPE_VEHICLE; }
+	bool IsPed(void) { return m_type == ENTITY_TYPE_PED; }
+	bool IsObject(void) { return m_type == ENTITY_TYPE_OBJECT; }
+	bool IsDummy(void) { return m_type == ENTITY_TYPE_DUMMY; }
+
+	// The type test reads m_rwObject, so it must not run before the pointer is
+	// known to be non-nil: RwObjectGetType(nil) is a load through address 0.
+	// A ped built on a model slot that nothing registered has no Rw object yet,
+	// and CPed::SetModelIndex asks for the clump immediately after setting the
+	// model index - that load, inside the assertion, is the access fault at
+	// target 0x0. The assertions stay, but only once there is something to
+	// inspect.
+	RpAtomic *GetAtomic(void) {
+		if(m_rwObject == nil)
+			return nil;
+		assert(RwObjectGetType(m_rwObject) == rpATOMIC);
+		return (RpAtomic*)m_rwObject;
+	}
+	RpClump *GetClump(void) {
+		if(m_rwObject == nil)
+			return nil;
+		assert(RwObjectGetType(m_rwObject) == rpCLUMP);
+		return (RpClump*)m_rwObject;
+	}
+
+	void GetBoundCentre(CVUVECTOR &out);
+	CVector GetBoundCentre(void);
+	float GetBoundRadius(void);
+	float GetDistanceFromCentreOfMassToBaseOfModel(void);
+	bool GetIsTouching(CVUVECTOR const &center, float r);
+	bool GetIsOnScreen(void);
+	bool GetIsOnScreenComplex(void);
+	bool IsVisible(void);
+	bool IsVisibleComplex(void);
+	bool IsEntityOccluded(void);
+	int16 GetModelIndex(void) const { return m_modelIndex; }
+	void UpdateRwFrame(void);
+	void UpdateAnim(void);
+	void SetupBigBuilding(void);
+	bool HasPreRenderEffects(void);
+
+	void AttachToRwObject(RwObject *obj);
+	void DetachFromRwObject(void);
+
+	void RegisterReference(CEntity **pent);
+	void ResolveReferences(void);
+	void PruneReferences(void);
+	void CleanUpOldReference(CEntity **pent);
+
+	void UpdateRpHAnim(void);
+
+	void PreRenderForGlassWindow(void);
+	void AddSteamsFromGround(CVector *unused);
+	void ModifyMatrixForTreeInWind(void);
+	void ModifyMatrixForBannerInWind(void);
+	void ProcessLightsForEntity(void);
+	void SetRwObjectAlpha(int32 alpha);
+};
+
+bool IsEntityPointerValid(CEntity*);
+
+#endif // __GTA_ENTITY_H__

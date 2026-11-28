@@ -1,0 +1,37 @@
+uniform vec4 u_colorClamp;
+uniform vec4 u_envColor;
+
+VSIN(ATTRIB_POS)	vec3 in_pos;
+
+VSOUT vec4 v_color;
+VSOUT vec4 v_envColor;
+VSOUT vec2 v_tex0;
+VSOUT float v_fog;
+VSOUT vec3 v_worldPos;
+VSOUT vec3 v_worldNormal;
+
+void
+main(void)
+{
+	vec4 Vertex = u_world * vec4(in_pos, 1.0);
+	gl_Position = u_proj * u_view * Vertex;
+	vec3 Normal = mat3(u_world) * in_normal;
+
+	v_tex0 = (u_uvMatrix * vec4(in_tex0, 0.0, 1.0)).xy;
+
+	if(u_atmosphere.x > 0.5 || u_surfProps.w >= 1.5){
+		v_color = BR_EvalBuildingVertexColor(in_color, u_matColor, Vertex.xyz, Normal);
+		v_envColor = u_envColor;
+	}else{
+		v_color = in_color;
+		v_color.rgb += u_ambLight.rgb*surfAmbient;
+		v_color.rgb += DoDynamicLight(Vertex.xyz, Normal)*surfDiffuse;
+		v_color = clamp(v_color, 0.0, 1.0);
+		v_envColor = max(v_color, u_colorClamp) * u_envColor;
+		v_color *= u_matColor;
+	}
+
+	v_worldPos = Vertex.xyz;
+	v_worldNormal = Normal;
+	v_fog = DoFogEye(Vertex.xyz);
+}

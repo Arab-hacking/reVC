@@ -1,0 +1,96 @@
+#ifndef __GTA_PEDIK_H__
+#define __GTA_PEDIK_H__
+#include "common.h"
+#include "AnimBlendClumpData.h"
+
+struct LimbOrientation
+{
+	float yaw;
+	float pitch;
+};
+
+struct LimbMovementInfo {
+	float maxYaw;
+	float minYaw;
+	float yawD;
+	float maxPitch;
+	float minPitch;
+	float pitchD;
+};
+
+enum LimbMoveStatus {
+	ANGLES_SET_TO_MAX, // because given angles were unreachable
+	ONE_ANGLE_COULDNT_BE_SET_EXACTLY, // because it can't be reached in a jiffy
+	ANGLES_SET_EXACTLY
+};
+
+class CPed;
+
+class CPedIK
+{
+public:
+	enum {
+		GUN_POINTED_SUCCESSFULLY = 1,
+		LOOKAROUND_HEAD_ONLY = 2,
+		AIMS_WITH_ARM = 4,
+		// SA CPedIK::bSlopePitch - asks for the slope lean to be applied on the
+		// next PreRender, and is cleared once PitchForSlope has run.
+		SLOPE_PITCH = 8,
+	};
+
+	CPed *Const m_ped;
+	LimbOrientation m_headOrient;
+	LimbOrientation m_torsoOrient;
+
+	// SA CPedIK carries the slope-lean state that VC did not have. PitchForSlope
+	// reads and damps all four every frame, right before the bone matrices are
+	// built, so a ped on a slope tilts the torso and the legs instead of
+	// standing bolt upright.
+	float m_fSlopePitch;
+	float m_fSlopePitchLimitMult;
+	float m_fSlopeRoll;
+	float m_fBodyRoll;
+
+	LimbOrientation m_upperArmOrient;
+	LimbOrientation m_lowerArmOrient;
+	int32 m_flags;
+
+	// SA has this as a standalone global (0x8D2354) that the Android build does
+	// not compile the neck branch for. It stays true here so a ped turns the neck
+	// along with the chest, as on PC.
+	static bool bRotateWithNeck;
+
+	static LimbMovementInfo ms_torsoInfo;
+	static LimbMovementInfo ms_headInfo;
+	static LimbMovementInfo ms_headRestoreInfo;
+	static LimbMovementInfo ms_upperArmInfo;
+	static LimbMovementInfo ms_lowerArmInfo;
+
+	CPedIK(CPed *ped);
+	void RotateTorsoForArm(const CVector &direction);
+	bool PointGunInDirection(float zAngle, float distance, bool flag, float normalize);
+	bool PointGunInDirectionUsingArm(float targetYaw, float targetPitch);
+	void PointGunAtPosition(const CVector &aimAt, float normalize);
+	void GetComponentPosition(RwV3d &pos, uint32 node);
+	void RotateTorso(AnimBlendFrameData* animBlend, LimbOrientation* limb, bool changeRoll);
+	void ExtractYawAndPitchLocal(RwMatrix *mat, float *yaw, float *pitch);
+	void ExtractYawAndPitchLocalSkinned(AnimBlendFrameData *node, float *yaw, float *pitch);
+	void ExtractYawAndPitchWorld(RwMatrix *mat, float *yaw, float *pitch);
+	LimbMoveStatus MoveLimb(LimbOrientation &limb, float targetYaw, float targetPitch, LimbMovementInfo &moveInfo);
+	// SA CPedIK::MoveLimb overload (0x5FDB60): sets the angles straight to
+	// normalize * target instead of stepping towards them. TaskSimpleUseGun
+	// uses it so the torso turn fades in with the shooting animation blend
+	// rather than snapping.
+	LimbMoveStatus MoveLimb(LimbOrientation &limb, float targetYaw, float targetPitch, LimbMovementInfo &moveInfo, float normalize);
+	bool RestoreGunPosn(void);
+	bool LookInDirection(float targetYaw, float targetPitch);
+	bool LookAtPosition(CVector const& pos);
+	bool RestoreLookAt(void);
+	// SA: tilts the torso and legs to match the surface the ped stands on.
+	// Called from CPed::PreRenderAfterTest every frame.
+	void PitchForSlope(void);
+};
+
+VALIDATE_SIZE(CPedIK, 0x28);
+
+#endif // __GTA_PEDIK_H__

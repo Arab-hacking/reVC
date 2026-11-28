@@ -1,0 +1,27 @@
+#ifndef __GTA_POWERPOINTS_H__
+#define __GTA_POWERPOINTS_H__
+
+enum
+{
+	POWERPOINT_NONE = 0,
+	POWERPOINT_HEALTH,
+	POWERPOINT_HIDEOUT_INDUSTRIAL,
+	POWERPOINT_HIDEOUT_COMMERCIAL,
+	POWERPOINT_HIDEOUT_SUBURBAN
+};
+
+class CPowerPoint
+{
+public:
+	void Update();
+};
+
+class CPowerPoints
+{
+public:
+	static void Init();
+	static void Update();
+	static void GenerateNewOne(float, float, float, float, float, float, uint8);
+};
+
+#endif // __GTA_POWERPOINTS_H__

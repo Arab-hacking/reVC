@@ -1,0 +1,195 @@
+#include "common.h"
+
+#include "main.h"
+#include "ModelInfo.h"
+#include "Object.h"
+#include "FileMgr.h"
+#include "ObjectData.h"
+#ifdef CUSTOM_MODELS
+#include <vector>
+#include "CustomModels.h"
+#endif
+
+CObjectInfo CObjectData::ms_aObjectInfo[NUMOBJECTINFO];
+
+// Another ugly file reader
+void
+CObjectData::Initialise(const char *filename)
+{
+	ms_aObjectInfo[0].m_fMass = 99999.0f;
+	ms_aObjectInfo[0].m_fTurnMass = 99999.0f;
+	ms_aObjectInfo[0].m_fAirResistance = 0.99f;
+	ms_aObjectInfo[0].m_fElasticity = 0.1f;
+	ms_aObjectInfo[0].m_fBuoyancy = GRAVITY * ms_aObjectInfo[0].m_fMass * 2.0f;
+	ms_aObjectInfo[0].m_fUprootLimit = 0.0f;
+	ms_aObjectInfo[0].m_fCollisionDamageMultiplier = 1.0f;
+	ms_aObjectInfo[0].m_nCollisionDamageEffect = 0;
+	ms_aObjectInfo[0].m_nSpecialCollisionResponseCases = 0;
+	ms_aObjectInfo[0].m_bCameraToAvoidThisObject = false;
+
+	ms_aObjectInfo[1].m_fMass = 99999.0f;
+	ms_aObjectInfo[1].m_fTurnMass = 99999.0f;
+	ms_aObjectInfo[1].m_fAirResistance = 0.99f;
+	ms_aObjectInfo[1].m_fElasticity = 0.1f;
+	ms_aObjectInfo[1].m_fBuoyancy = ms_aObjectInfo[0].m_fBuoyancy;
+	ms_aObjectInfo[1].m_fUprootLimit = 0.0f;
+	ms_aObjectInfo[1].m_fCollisionDamageMultiplier = 1.0f;
+	ms_aObjectInfo[1].m_nCollisionDamageEffect = 0;
+	ms_aObjectInfo[1].m_nSpecialCollisionResponseCases = 0;
+	ms_aObjectInfo[1].m_bCameraToAvoidThisObject = true;
+
+	ms_aObjectInfo[2].m_fMass = 99999.0f;
+	ms_aObjectInfo[2].m_fTurnMass = 99999.0f;
+	ms_aObjectInfo[2].m_fAirResistance = 0.99f;
+	ms_aObjectInfo[2].m_fElasticity = 0.1f;
+	ms_aObjectInfo[2].m_fBuoyancy = ms_aObjectInfo[0].m_fBuoyancy;
+	ms_aObjectInfo[2].m_fUprootLimit = 0.0f;
+	ms_aObjectInfo[2].m_fCollisionDamageMultiplier = 1.0f;
+	ms_aObjectInfo[2].m_nCollisionDamageEffect = 0;
+	ms_aObjectInfo[2].m_bCameraToAvoidThisObject = false;
+	ms_aObjectInfo[2].m_nSpecialCollisionResponseCases = 4;
+
+	ms_aObjectInfo[3].m_fMass = 99999.0f;
+	ms_aObjectInfo[3].m_fTurnMass = 99999.0f;
+	ms_aObjectInfo[3].m_fAirResistance = 0.99f;
+	ms_aObjectInfo[3].m_fElasticity = 0.1f;
+	ms_aObjectInfo[3].m_fBuoyancy = ms_aObjectInfo[0].m_fBuoyancy;
+	ms_aObjectInfo[3].m_fUprootLimit = 0.0f;
+	ms_aObjectInfo[3].m_fCollisionDamageMultiplier = 1.0f;
+	ms_aObjectInfo[3].m_nCollisionDamageEffect = 0;
+	ms_aObjectInfo[3].m_nSpecialCollisionResponseCases = 4;
+	ms_aObjectInfo[3].m_bCameraToAvoidThisObject = true;
+
+	CFileMgr::SetDir("");
+#ifdef CUSTOM_MODELS
+	// The object table comes from the archive only; there is no DATA fallback.
+	// It is far larger than work_buff once the whole SA object list is
+	// present, so it is read into its own buffer and parsed in place.
+	std::vector<uint8> archived;
+	if(CCustomModels::ReadCommonDataFile("data/object.dat", archived) && archived.size() > 0){
+		archived.push_back('\0');
+		ParseObjectData((const char*)archived.data());
+		return;
+	}
+	REVC_LOG_WARNING("object data: data/object.dat missing from the archive; "
+	                "every object keeps the default physics");
+#else
+	CFileMgr::LoadFile(filename, work_buff, sizeof(work_buff), "r");
+	ParseObjectData((const char*)work_buff);
+#endif
+}
+
+void
+CObjectData::ParseObjectData(const char *data)
+{
+	const char *p;
+	char *lp;
+	char line[1024], name[256];
+	int id;
+	float percentSubmerged;
+	int damageEffect, responseCase, camAvoid;
+	CBaseModelInfo *mi;
+
+	id = 4;
+	p = (const char*)data;
+	// The data comes from the archive: the terminating '*' is part of the
+	// format, but a truncated file must end the parse at its NUL instead of
+	// walking past the buffer looking for one.
+	while(*p != '*' && *p != '\0'){
+		// skip over white space and comments
+		while(*p == ' ' || *p == '\n' || *p == '\r' || *p == ';')
+			if(*p == ';')
+				while(*p != '\n' && *p != '*' && *p != '\0')
+					p++;
+			else
+				p++;
+
+		if(*p == '*' || *p == '\0')
+			break;
+
+		// read one line, dropping the excess of an overlong one
+		lp = line;
+		while(*p != '\n' && *p != '*' && *p != '\0'){
+			if(lp < line + sizeof(line) - 1)
+				*lp++ = *p == ',' ? ' ' : *p;
+			p++;
+		}
+		if(*p == '\n')
+			p++;
+#ifdef FIX_BUGS
+		*lp = '\0';	// FIX: game wrote '\n' here
+#else
+		*lp = '\n';
+#endif
+
+		if(id >= NUMOBJECTINFO)
+			break;	// table full: further rows have nowhere to go
+		if(sscanf(line, "%255s %f %f %f %f %f %f %f %d %d %d", name,
+			&ms_aObjectInfo[id].m_fMass,
+			&ms_aObjectInfo[id].m_fTurnMass,
+			&ms_aObjectInfo[id].m_fAirResistance,
+			&ms_aObjectInfo[id].m_fElasticity,
+			&percentSubmerged,
+			&ms_aObjectInfo[id].m_fUprootLimit,
+			&ms_aObjectInfo[id].m_fCollisionDamageMultiplier,
+			&damageEffect, &responseCase, &camAvoid) != 11)
+			continue;	// short row: percentSubmerged and friends never landed
+
+		ms_aObjectInfo[id].m_fBuoyancy = percentSubmerged > 0.0f
+			? 100.0f/percentSubmerged * GRAVITY *ms_aObjectInfo[id].m_fMass : 0.0f;
+		ms_aObjectInfo[id].m_nCollisionDamageEffect = damageEffect;
+		ms_aObjectInfo[id].m_nSpecialCollisionResponseCases = responseCase;
+		ms_aObjectInfo[id].m_bCameraToAvoidThisObject = camAvoid;
+
+		mi = CModelInfo::GetModelInfo(name, nil);
+		if (mi) {
+			if (ms_aObjectInfo[0].m_fMass != ms_aObjectInfo[id].m_fMass
+				|| ms_aObjectInfo[0].m_fCollisionDamageMultiplier != ms_aObjectInfo[id].m_fCollisionDamageMultiplier
+				|| ms_aObjectInfo[0].m_nCollisionDamageEffect != ms_aObjectInfo[id].m_nCollisionDamageEffect
+				|| ((ms_aObjectInfo[0].m_nSpecialCollisionResponseCases != ms_aObjectInfo[id].m_nSpecialCollisionResponseCases)
+					&& (ms_aObjectInfo[2].m_nSpecialCollisionResponseCases != ms_aObjectInfo[id].m_nSpecialCollisionResponseCases))) {
+				mi->SetObjectID(id++);
+			} else if (ms_aObjectInfo[0].m_nSpecialCollisionResponseCases == ms_aObjectInfo[id].m_nSpecialCollisionResponseCases) {
+				if (ms_aObjectInfo[0].m_bCameraToAvoidThisObject == ms_aObjectInfo[id].m_bCameraToAvoidThisObject)
+					mi->SetObjectID(0);
+				else
+					mi->SetObjectID(1);
+			} else if (ms_aObjectInfo[2].m_bCameraToAvoidThisObject == ms_aObjectInfo[id].m_bCameraToAvoidThisObject)
+				mi->SetObjectID(2);
+			else 
+				mi->SetObjectID(3);
+		} else
+			debug("CObjectData: Cannot find object %s\n", name);
+	}
+}
+
+void
+CObjectData::SetObjectData(int32 modelId, CObject &object)
+{
+	CObjectInfo *objinfo;
+
+	// An object created for a model with no info (or no object entry)
+	// keeps its constructor defaults.
+	CBaseModelInfo *mi = CModelInfo::GetModelInfo(modelId);
+	if(mi == nil || mi->GetObjectID() < 0 || mi->GetObjectID() >= NUMOBJECTINFO)
+		return;
+
+	objinfo = &ms_aObjectInfo[mi->GetObjectID()];
+
+	object.m_fMass = objinfo->m_fMass;
+	object.m_fTurnMass = objinfo->m_fTurnMass;
+	object.m_fAirResistance = objinfo->m_fAirResistance;
+	object.m_fElasticity = objinfo->m_fElasticity;
+	object.m_fBuoyancyConstant = objinfo->m_fBuoyancy;
+	object.m_fUprootLimit = objinfo->m_fUprootLimit;
+	object.m_fCollisionDamageMultiplier = objinfo->m_fCollisionDamageMultiplier;
+	object.m_nCollisionDamageEffect = objinfo->m_nCollisionDamageEffect;
+	object.m_nSpecialCollisionResponseCases = objinfo->m_nSpecialCollisionResponseCases;
+	object.m_bCameraToAvoidThisObject = objinfo->m_bCameraToAvoidThisObject;
+	if(object.m_fMass >= 99998.0f){
+		object.bInfiniteMass = true;
+		object.m_phy_flagA08 = true;
+		object.bAffectedByGravity = false;
+		object.bExplosionProof = true;
+	}
+}

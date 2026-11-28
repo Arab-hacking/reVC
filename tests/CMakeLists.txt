@@ -1,0 +1,520 @@
+cmake_minimum_required(VERSION 3.14)
+project(reVC_DebugLog_Tests CXX)
+
+find_package(Threads REQUIRED)
+add_executable(debug_log_tests DebugLogTests.cpp ../src/core/DebugLog.cpp)
+target_include_directories(debug_log_tests PRIVATE ../src/core)
+target_link_libraries(debug_log_tests PRIVATE Threads::Threads)
+set_target_properties(debug_log_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+
+add_executable(custom_ifp_tests CustomIfpTests.cpp)
+set_target_properties(custom_ifp_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+
+enable_testing()
+find_package(Python3 COMPONENTS Interpreter QUIET)
+if(Python3_Interpreter_FOUND)
+    # Check GLSL sources against the compiled .inc strings. When a GLSL
+    # validator is installed the test also links the real GL3 shader variants.
+    add_test(NAME gl3_shader_tests
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/GL3ShaderTests.py)
+endif()
+add_executable(gl3_atmosphere_tests GL3AtmosphereTests.cpp)
+set_target_properties(gl3_atmosphere_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+add_test(NAME gl3_atmosphere_tests COMMAND gl3_atmosphere_tests)
+
+add_executable(sun_shadow_lighting_tests SunShadowLightingTests.cpp)
+set_target_properties(sun_shadow_lighting_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+add_test(NAME sun_shadow_lighting_tests COMMAND sun_shadow_lighting_tests)
+add_test(NAME debug_log_tests COMMAND debug_log_tests)
+add_test(NAME custom_ifp_tests COMMAND custom_ifp_tests)
+
+add_executable(noclip_movement_tests NoClipMovementTests.cpp)
+set_target_properties(noclip_movement_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+add_test(NAME noclip_movement_tests COMMAND noclip_movement_tests)
+
+add_executable(mobile_touch_math_tests MobileTouchMathTests.cpp)
+target_include_directories(mobile_touch_math_tests PRIVATE ../src/extras/custom)
+set_target_properties(mobile_touch_math_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+add_test(NAME mobile_touch_math_tests COMMAND mobile_touch_math_tests)
+
+add_executable(br_archive_parity_tests BrArchiveParityTests.cpp)
+target_include_directories(br_archive_parity_tests PRIVATE ../src/extras/custom)
+set_target_properties(br_archive_parity_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+add_test(NAME br_archive_parity_tests COMMAND br_archive_parity_tests)
+
+add_executable(player_model_cycle_tests PlayerModelCycleTests.cpp)
+set_target_properties(player_model_cycle_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+add_test(NAME player_model_cycle_tests COMMAND player_model_cycle_tests)
+
+add_executable(camera_view_toggle_tests CameraViewToggleTests.cpp)
+set_target_properties(camera_view_toggle_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+add_test(NAME camera_view_toggle_tests COMMAND camera_view_toggle_tests)
+
+add_executable(world_sector_math_tests WorldSectorMathTests.cpp)
+set_target_properties(world_sector_math_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+add_test(NAME world_sector_math_tests COMMAND world_sector_math_tests)
+
+add_executable(world_recovery_tests WorldRecoveryTests.cpp)
+set_target_properties(world_recovery_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+add_test(NAME world_recovery_tests COMMAND world_recovery_tests)
+
+add_executable(bullet_travel_tests BulletTravelTests.cpp)
+set_target_properties(bullet_travel_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+add_test(NAME bullet_travel_tests COMMAND bullet_travel_tests)
+
+add_executable(frame_render_list_tests FrameRenderListTests.cpp)
+set_target_properties(frame_render_list_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+add_test(NAME frame_render_list_tests COMMAND frame_render_list_tests)
+
+add_executable(audio_entity_slots_tests AudioEntitySlotsTests.cpp)
+set_target_properties(audio_entity_slots_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+add_test(NAME audio_entity_slots_tests COMMAND audio_entity_slots_tests)
+
+add_executable(custom_asset_cache_tests
+    CustomAssetCacheTests.cpp ../src/extras/custom/br/third_party/astc_decomp.cpp)
+target_include_directories(custom_asset_cache_tests PRIVATE ../src/extras/custom ../src/extras/custom/br)
+set_target_properties(custom_asset_cache_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+add_test(NAME custom_asset_cache_tests COMMAND custom_asset_cache_tests)
+
+add_executable(graphics_btx_tests
+    GraphicsBtxTests.cpp ../src/extras/custom/br/third_party/astc_decomp.cpp)
+target_include_directories(graphics_btx_tests PRIVATE ../src/extras/custom ../src/extras/custom/br)
+set_target_properties(graphics_btx_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+add_test(NAME graphics_btx_tests COMMAND graphics_btx_tests)
+
+add_executable(background_asset_queue_tests
+    BackgroundAssetQueueTests.cpp ../src/extras/custom/CustomZip.cpp
+    ../src/extras/custom/br/third_party/astc_decomp.cpp)
+target_include_directories(background_asset_queue_tests PRIVATE
+    ../tools/custom-folder-verification/shim
+    ../src/extras/custom ../src/extras/custom/br)
+target_link_libraries(background_asset_queue_tests PRIVATE Threads::Threads)
+set_target_properties(background_asset_queue_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+add_test(NAME background_asset_queue_tests COMMAND background_asset_queue_tests)
+
+add_executable(bpc_pipeline_tests
+    BpcPipelineTests.cpp ../src/extras/custom/CustomZip.cpp
+    ../src/extras/custom/br/third_party/astc_decomp.cpp)
+target_include_directories(bpc_pipeline_tests PRIVATE
+    ../tools/custom-folder-verification/shim
+    ../src/extras/custom ../src/extras/custom/br)
+target_link_libraries(bpc_pipeline_tests PRIVATE Threads::Threads)
+set_target_properties(bpc_pipeline_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+add_test(NAME bpc_pipeline_tests COMMAND bpc_pipeline_tests)
+
+add_executable(custom_water_tests CustomWaterTests.cpp)
+set_target_properties(custom_water_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+add_test(NAME custom_water_tests COMMAND custom_water_tests)
+
+add_executable(custom_world_format_tests
+    CustomWorldFormatTests.cpp ../src/extras/custom/CustomZip.cpp)
+target_include_directories(custom_world_format_tests PRIVATE
+    ../tools/custom-folder-verification/shim ../src/extras/custom)
+set_target_properties(custom_world_format_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+add_test(NAME custom_world_format_tests COMMAND custom_world_format_tests)
+
+add_executable(expandable_pool_tests ExpandablePoolTests.cpp)
+set_target_properties(expandable_pool_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+add_test(NAME expandable_pool_tests COMMAND expandable_pool_tests)
+
+add_executable(custom_img_collision_tests CustomImgCollisionTests.cpp)
+set_target_properties(custom_img_collision_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+add_test(NAME custom_img_collision_tests COMMAND custom_img_collision_tests)
+
+# The real animation code can be tested without game assets by supplying small
+# RenderWare/streaming stubs and synthetic skeletons. Dead-code elimination
+# keeps the remaining game-only dependencies out of this standalone test.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    # Read an actual synthetic RW 3.6 DFF in a headless librw engine. This
+    # tests clump geometry/material ownership instead of mocking the API.
+    set(LIBRW_PLATFORM "NULL" CACHE STRING "Headless librw for tests" FORCE)
+    set(LIBRW_TOOLS OFF CACHE BOOL "No librw utilities in tests" FORCE)
+    set(LIBRW_INSTALL OFF CACHE BOOL "No librw install in tests" FORCE)
+    add_subdirectory(../vendor/librw ${CMAKE_CURRENT_BINARY_DIR}/librw-static)
+    add_executable(sa_static_dff_tests
+        SAStaticDffTests.cpp ../src/extras/custom/SAStaticModel.cpp)
+    target_compile_definitions(sa_static_dff_tests PRIVATE LIBRW)
+    target_include_directories(sa_static_dff_tests PRIVATE ../src/extras/custom)
+    target_link_libraries(sa_static_dff_tests PRIVATE librw::librw)
+    set_target_properties(sa_static_dff_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+    add_test(NAME sa_static_dff_tests COMMAND sa_static_dff_tests)
+
+    # Compare the BR IDE/IPL reader and VC's librw axis/angle rotation against
+    # SA's conjugated quaternion matrix on real map lines (including w < 0).
+    add_executable(custom_world_rotation_tests CustomWorldRotationTests.cpp)
+    target_include_directories(custom_world_rotation_tests PRIVATE ../src/extras/custom)
+    target_link_libraries(custom_world_rotation_tests PRIVATE librw::librw)
+    set_target_properties(custom_world_rotation_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+    add_test(NAME custom_world_rotation_tests COMMAND custom_world_rotation_tests)
+
+    add_executable(txd_store_capacity_tests
+        TxdStoreCapacityTests.cpp ../src/rw/TxdStore.cpp)
+    target_compile_definitions(txd_store_capacity_tests PRIVATE
+        LIBRW RW_GL3 LIBRW_SDL2 CMAKE_BUILD USE_OUR_VERSIONING AUDIO_OAL)
+    target_include_directories(txd_store_capacity_tests PRIVATE
+        ../vendor/librw ../vendor/librw/src/gl ../vendor/sdl2/include
+        ../src ../src/animation ../src/audio ../src/buildings ../src/collision
+        ../src/control ../src/core ../src/entities ../src/extras
+        ../src/extras/custom ../src/extras/custom/br ../src/fakerw ../src/math
+        ../src/modelinfo ../src/objects ../src/peds ../src/renderer ../src/rw
+        ../src/skel ../src/text ../src/vehicles ../src/weapons)
+    target_compile_options(txd_store_capacity_tests PRIVATE -ffunction-sections -fdata-sections)
+    target_link_options(txd_store_capacity_tests PRIVATE -Wl,--gc-sections)
+    set_target_properties(txd_store_capacity_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+    add_test(NAME txd_store_capacity_tests COMMAND txd_store_capacity_tests)
+
+    add_executable(sky_vehicle_txd_tests
+        SkyVehicleTxdTests.cpp ../src/rw/TxdStore.cpp)
+    target_compile_definitions(sky_vehicle_txd_tests PRIVATE
+        LIBRW RW_GL3 LIBRW_SDL2 CMAKE_BUILD USE_OUR_VERSIONING AUDIO_OAL)
+    target_include_directories(sky_vehicle_txd_tests PRIVATE
+        ../vendor/librw ../vendor/librw/src/gl ../vendor/sdl2/include
+        ../src ../src/animation ../src/audio ../src/buildings ../src/collision
+        ../src/control ../src/core ../src/entities ../src/extras
+        ../src/extras/custom ../src/extras/custom/br ../src/fakerw ../src/math
+        ../src/modelinfo ../src/objects ../src/peds ../src/renderer ../src/rw
+        ../src/skel ../src/text ../src/vehicles ../src/weapons)
+    target_compile_options(sky_vehicle_txd_tests PRIVATE -ffunction-sections -fdata-sections)
+    target_link_options(sky_vehicle_txd_tests PRIVATE -Wl,--gc-sections)
+    target_link_libraries(sky_vehicle_txd_tests PRIVATE librw::librw)
+    set_target_properties(sky_vehicle_txd_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+    add_test(NAME sky_vehicle_txd_tests COMMAND sky_vehicle_txd_tests)
+
+    # Exercise the real VC escalator initializer when its DATA/MAPS step model
+    # is missing (and when the native map is enabled with a valid model).
+    add_executable(escalator_init_tests
+        EscalatorInitTests.cpp ../src/renderer/Fluff.cpp
+        ../src/math/Matrix.cpp ../src/math/Vector.cpp)
+    target_compile_definitions(escalator_init_tests PRIVATE
+        LIBRW RW_GL3 LIBRW_SDL2 CMAKE_BUILD USE_OUR_VERSIONING AUDIO_OAL)
+    target_include_directories(escalator_init_tests PRIVATE
+        ../vendor/librw ../vendor/librw/src/gl ../vendor/sdl2/include
+        ../src ../src/animation ../src/audio ../src/buildings ../src/collision
+        ../src/control ../src/core ../src/entities ../src/extras
+        ../src/extras/custom ../src/extras/custom/br ../src/fakerw ../src/math
+        ../src/modelinfo ../src/objects ../src/peds ../src/renderer ../src/rw
+        ../src/skel ../src/text ../src/vehicles ../src/weapons)
+    target_compile_options(escalator_init_tests PRIVATE -ffunction-sections -fdata-sections)
+    target_link_options(escalator_init_tests PRIVATE -Wl,--gc-sections)
+    set_target_properties(escalator_init_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+    add_test(NAME escalator_init_tests COMMAND escalator_init_tests)
+
+    # Test the model preflight for the Release D3D9 pickup crash: without
+    # native DATA/MAPS IDEs, scripts can request -1 or an unregistered ID.
+    add_executable(pickup_missing_model_tests
+        PickupMissingModelTests.cpp ../src/control/Pickups.cpp
+        ../src/modelinfo/ModelIndices.cpp)
+    target_compile_definitions(pickup_missing_model_tests PRIVATE
+        LIBRW RW_GL3 LIBRW_SDL2 CMAKE_BUILD USE_OUR_VERSIONING AUDIO_OAL)
+    target_include_directories(pickup_missing_model_tests PRIVATE
+        ../vendor/librw ../vendor/librw/src/gl ../vendor/sdl2/include
+        ../src ../src/animation ../src/audio ../src/buildings ../src/collision
+        ../src/control ../src/core ../src/entities ../src/extras
+        ../src/extras/custom ../src/extras/custom/br ../src/fakerw ../src/math
+        ../src/modelinfo ../src/objects ../src/peds ../src/renderer ../src/rw
+        ../src/skel ../src/text ../src/vehicles ../src/weapons)
+    target_compile_options(pickup_missing_model_tests PRIVATE -ffunction-sections -fdata-sections)
+    target_link_options(pickup_missing_model_tests PRIVATE -Wl,--gc-sections)
+    set_target_properties(pickup_missing_model_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+    add_test(NAME pickup_missing_model_tests COMMAND pickup_missing_model_tests)
+
+    # Exercise CDirectory::AddItem itself: the extra-objects directory must
+    # retain native DFFs beyond its old 256-entry reserve when VC IDEs are off.
+    add_executable(directory_growth_tests
+        DirectoryGrowthTests.cpp ../src/core/Directory.cpp)
+    target_compile_definitions(directory_growth_tests PRIVATE
+        LIBRW RW_GL3 LIBRW_SDL2 CMAKE_BUILD USE_OUR_VERSIONING AUDIO_OAL)
+    target_include_directories(directory_growth_tests PRIVATE
+        ../vendor/librw ../vendor/librw/src/gl ../vendor/sdl2/include
+        ../src ../src/animation ../src/audio ../src/buildings ../src/collision
+        ../src/control ../src/core ../src/entities ../src/extras
+        ../src/extras/custom ../src/extras/custom/br ../src/fakerw ../src/math
+        ../src/modelinfo ../src/objects ../src/peds ../src/renderer ../src/rw
+        ../src/skel ../src/text ../src/vehicles ../src/weapons)
+    target_compile_options(directory_growth_tests PRIVATE -ffunction-sections -fdata-sections)
+    target_link_options(directory_growth_tests PRIVATE -Wl,--gc-sections)
+    set_target_properties(directory_growth_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+    add_test(NAME directory_growth_tests COMMAND directory_growth_tests)
+
+    # Link the real IMG/DIR scanner and selective custom/common.zip reader.
+    add_executable(custom_archive_integration_tests
+        CustomArchiveIntegrationTests.cpp
+        ../src/extras/custom/CustomModels.cpp
+        ../src/extras/custom/CustomZip.cpp
+        ../src/extras/custom/CustomCol.cpp
+        ../src/rw/TxdStore.cpp
+        ../src/extras/custom/br/third_party/astc_decomp.cpp)
+    target_compile_definitions(custom_archive_integration_tests PRIVATE
+        REVC_BPC_CPU_ONLY LIBRW RW_GL3 LIBRW_SDL2 CMAKE_BUILD USE_OUR_VERSIONING AUDIO_OAL)
+    target_include_directories(custom_archive_integration_tests PRIVATE
+        ../vendor/librw ../vendor/librw/src/gl ../vendor/sdl2/include
+        ../src ../src/animation ../src/audio ../src/buildings ../src/collision
+        ../src/control ../src/core ../src/entities ../src/extras
+        ../src/extras/custom ../src/extras/custom/br ../src/fakerw ../src/math
+        ../src/modelinfo ../src/objects ../src/peds ../src/renderer ../src/rw
+        ../src/skel ../src/text ../src/vehicles ../src/weapons)
+    target_compile_options(custom_archive_integration_tests PRIVATE
+        -ffunction-sections -fdata-sections -Wno-write-strings -Wno-multichar)
+    target_link_options(custom_archive_integration_tests PRIVATE -Wl,--gc-sections)
+    target_link_libraries(custom_archive_integration_tests PRIVATE Threads::Threads)
+    set_target_properties(custom_archive_integration_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+    add_test(NAME custom_archive_integration_tests COMMAND custom_archive_integration_tests)
+
+    add_executable(desktop_bpc_textures_tests
+        DesktopBpcTexturesTests.cpp
+        ../src/extras/custom/CustomModels.cpp ../src/extras/custom/CustomZip.cpp
+        ../src/extras/custom/CustomCol.cpp ../src/rw/TxdStore.cpp
+        ../src/extras/custom/br/third_party/astc_decomp.cpp)
+    target_include_directories(desktop_bpc_textures_tests PRIVATE
+        $<TARGET_PROPERTY:custom_archive_integration_tests,INCLUDE_DIRECTORIES>)
+    target_compile_definitions(desktop_bpc_textures_tests PRIVATE
+        LIBRW RW_GL3 LIBRW_SDL2 CMAKE_BUILD USE_OUR_VERSIONING AUDIO_OAL)
+    target_compile_options(desktop_bpc_textures_tests PRIVATE
+        -ffunction-sections -fdata-sections -Wno-write-strings -Wno-multichar)
+    target_link_options(desktop_bpc_textures_tests PRIVATE -Wl,--gc-sections)
+    target_link_libraries(desktop_bpc_textures_tests PRIVATE Threads::Threads)
+    set_target_properties(desktop_bpc_textures_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+    add_test(NAME desktop_bpc_textures_tests COMMAND desktop_bpc_textures_tests)
+    add_test(NAME desktop_bpc_textures_cpu_fallback_tests COMMAND desktop_bpc_textures_tests cpu-fallback)
+
+    add_executable(android_bpc_archive_integration_tests
+        AndroidBpcArchiveIntegrationTests.cpp
+        ../src/extras/custom/CustomModels.cpp
+        ../src/extras/custom/CustomZip.cpp
+        ../src/extras/custom/CustomCol.cpp
+        ../src/rw/TxdStore.cpp
+        ../src/extras/custom/br/third_party/astc_decomp.cpp)
+    target_compile_definitions(android_bpc_archive_integration_tests PRIVATE
+        ANDROID LIBRW RW_GL3 LIBRW_SDL2 CMAKE_BUILD USE_OUR_VERSIONING AUDIO_OAL)
+    target_include_directories(android_bpc_archive_integration_tests PRIVATE
+        android_shim
+        ../vendor/librw ../vendor/librw/src/gl ../vendor/sdl2/include
+        ../src ../src/animation ../src/audio ../src/buildings ../src/collision
+        ../src/control ../src/core ../src/entities ../src/extras
+        ../src/extras/custom ../src/extras/custom/br ../src/fakerw ../src/math
+        ../src/modelinfo ../src/objects ../src/peds ../src/renderer ../src/rw
+        ../src/skel ../src/text ../src/vehicles ../src/weapons)
+    target_compile_options(android_bpc_archive_integration_tests PRIVATE
+        -ffunction-sections -fdata-sections -Wno-write-strings -Wno-multichar)
+    target_link_options(android_bpc_archive_integration_tests PRIVATE -Wl,--gc-sections)
+    target_link_libraries(android_bpc_archive_integration_tests PRIVATE Threads::Threads)
+    set_target_properties(android_bpc_archive_integration_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+    add_test(NAME android_bpc_archive_integration_tests COMMAND android_bpc_archive_integration_tests)
+
+
+    add_executable(ped_skeleton_classification_tests
+        PedSkeletonClassificationTests.cpp
+        ../src/modelinfo/PedModelInfo.cpp)
+    target_compile_definitions(ped_skeleton_classification_tests PRIVATE
+        LIBRW RW_GL3 LIBRW_SDL2 CMAKE_BUILD USE_OUR_VERSIONING AUDIO_OAL)
+    target_include_directories(ped_skeleton_classification_tests PRIVATE
+        ../vendor/librw ../vendor/librw/src/gl ../vendor/sdl2/include
+        ../src ../src/animation ../src/audio ../src/buildings ../src/collision
+        ../src/control ../src/core ../src/entities ../src/extras
+        ../src/extras/custom ../src/extras/custom/br ../src/fakerw ../src/math
+        ../src/modelinfo ../src/objects ../src/peds ../src/renderer ../src/rw
+        ../src/skel ../src/text ../src/vehicles ../src/weapons)
+    target_compile_options(ped_skeleton_classification_tests PRIVATE -ffunction-sections -fdata-sections -Wno-write-strings)
+    target_link_options(ped_skeleton_classification_tests PRIVATE -Wl,--gc-sections)
+    set_target_properties(ped_skeleton_classification_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+    add_test(NAME ped_skeleton_classification_tests COMMAND ped_skeleton_classification_tests)
+
+    add_executable(anim_association_nodes_tests
+        AnimAssociationNodesTests.cpp
+        ../src/animation/AnimBlendAssociation.cpp
+        ../src/animation/AnimBlendNode.cpp
+        ../src/animation/AnimBlendClumpData.cpp
+        ../src/animation/AnimBlendHierarchy.cpp
+        ../src/animation/AnimBlendSequence.cpp
+        ../src/animation/RpAnimBlend.cpp
+        ../src/core/KeyGen.cpp
+        ../src/math/Quaternion.cpp)
+    target_compile_definitions(anim_association_nodes_tests PRIVATE
+        LIBRW RW_GL3 LIBRW_SDL2 CMAKE_BUILD USE_OUR_VERSIONING AUDIO_OAL)
+    target_include_directories(anim_association_nodes_tests PRIVATE
+        ../vendor/librw ../vendor/librw/src/gl ../vendor/sdl2/include
+        ../src/fakerw ../src/core ../src/math ../src/skel ../src/animation
+        ../src/modelinfo ../src/renderer ../src/rw ../src/collision ../src/peds)
+    target_compile_options(anim_association_nodes_tests PRIVATE -ffunction-sections -fdata-sections)
+    target_link_options(anim_association_nodes_tests PRIVATE -Wl,--gc-sections)
+    set_target_properties(anim_association_nodes_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+    add_test(NAME anim_association_nodes_tests COMMAND anim_association_nodes_tests)
+
+    add_executable(task_manager_tests
+        TaskManagerTests.cpp
+        ../src/peds/tasks/Task.cpp
+        ../src/peds/tasks/TaskPool.cpp
+        ../src/peds/tasks/TaskManager.cpp)
+    target_compile_definitions(task_manager_tests PRIVATE
+        LIBRW RW_GL3 LIBRW_SDL2 CMAKE_BUILD USE_OUR_VERSIONING AUDIO_OAL)
+    target_include_directories(task_manager_tests PRIVATE
+        ../vendor/librw ../vendor/librw/src/gl ../vendor/sdl2/include
+        ../src ../src/animation ../src/audio ../src/buildings ../src/collision
+        ../src/control ../src/core ../src/entities ../src/extras
+        ../src/extras/custom ../src/extras/custom/br ../src/fakerw ../src/math
+        ../src/modelinfo ../src/objects ../src/peds ../src/peds/tasks
+        ../src/renderer ../src/rw ../src/skel ../src/text ../src/vehicles
+        ../src/weapons)
+    target_compile_options(task_manager_tests PRIVATE -ffunction-sections -fdata-sections)
+    target_link_options(task_manager_tests PRIVATE -Wl,--gc-sections)
+    set_target_properties(task_manager_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+    add_test(NAME task_manager_tests COMMAND task_manager_tests)
+
+    add_executable(intelligence_tests
+        IntelligenceTests.cpp
+        ../src/peds/events/Event.cpp
+        ../src/peds/events/EventPool.cpp
+        ../src/peds/events/EventHandler.cpp
+        ../src/peds/events/EventHandlerHistory.cpp
+        ../src/peds/decisions/Decision.cpp
+        ../src/peds/decisions/DecisionMaker.cpp
+        ../src/peds/decisions/DecisionMakerTypes.cpp
+        ../src/peds/tasks/Task.cpp
+        ../src/peds/tasks/TaskPool.cpp
+        ../src/peds/tasks/TaskTimer.cpp)
+    target_compile_definitions(intelligence_tests PRIVATE
+        LIBRW RW_GL3 LIBRW_SDL2 CMAKE_BUILD USE_OUR_VERSIONING AUDIO_OAL)
+    target_include_directories(intelligence_tests PRIVATE
+        ../vendor/librw ../vendor/librw/src/gl ../vendor/sdl2/include
+        ../src ../src/animation ../src/audio ../src/buildings ../src/collision
+        ../src/control ../src/core ../src/entities ../src/extras
+        ../src/extras/custom ../src/extras/custom/br ../src/fakerw ../src/math
+        ../src/modelinfo ../src/objects ../src/peds ../src/peds/tasks
+        ../src/peds/events ../src/peds/decisions
+        ../src/renderer ../src/rw ../src/skel ../src/text ../src/vehicles
+        ../src/weapons)
+    target_compile_options(intelligence_tests PRIVATE -ffunction-sections -fdata-sections)
+    target_link_options(intelligence_tests PRIVATE -Wl,--gc-sections)
+    set_target_properties(intelligence_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+    add_test(NAME intelligence_tests COMMAND intelligence_tests)
+
+    # Link the actual ANPK/ANP3 reader with a memory-stream shim. Section GC
+    # keeps the unrelated game/renderer entry points out of this fixture.
+    set(ANIM_FILE_READER_SOURCES
+        AnimFileReadTests.cpp
+        ../src/animation/AnimManager.cpp
+        ../src/animation/AnimBlendHierarchy.cpp
+        ../src/animation/AnimBlendSequence.cpp
+        ../src/core/KeyGen.cpp
+        ../src/math/Quaternion.cpp)
+    add_executable(anim_file_read_tests ${ANIM_FILE_READER_SOURCES})
+    add_executable(anim_file_read_compressed_tests ${ANIM_FILE_READER_SOURCES})
+    foreach(reader_test anim_file_read_tests anim_file_read_compressed_tests)
+    target_compile_definitions(${reader_test} PRIVATE
+        LIBRW RW_GL3 LIBRW_SDL2 CMAKE_BUILD USE_OUR_VERSIONING AUDIO_OAL)
+    target_include_directories(${reader_test} PRIVATE
+        ../vendor/librw ../vendor/librw/src/gl ../vendor/sdl2/include
+        ../src ../src/animation ../src/audio ../src/buildings ../src/collision
+        ../src/control ../src/core ../src/entities ../src/extras
+        ../src/extras/custom ../src/extras/custom/br ../src/fakerw ../src/math
+        ../src/modelinfo ../src/objects ../src/peds ../src/renderer ../src/rw
+        ../src/skel ../src/text ../src/vehicles ../src/weapons)
+    target_compile_options(${reader_test} PRIVATE -ffunction-sections -fdata-sections)
+    target_link_options(${reader_test} PRIVATE -Wl,--gc-sections)
+    set_target_properties(${reader_test} PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+    add_test(NAME ${reader_test} COMMAND ${reader_test})
+    endforeach()
+    target_compile_definitions(anim_file_read_compressed_tests PRIVATE ANIM_COMPRESSION)
+    # Real cleanup code; checked allocator/cache stub detects freeing planes
+    # before unlinking the cached link embedded at the end of that allocation.
+    add_executable(col_model_lifetime_tests
+        ColModelLifetimeTests.cpp ../src/collision/ColModel.cpp)
+    target_include_directories(col_model_lifetime_tests PRIVATE
+        $<TARGET_PROPERTY:custom_archive_integration_tests,INCLUDE_DIRECTORIES>)
+    target_compile_definitions(col_model_lifetime_tests PRIVATE
+        LIBRW RW_GL3 LIBRW_SDL2 CMAKE_BUILD USE_OUR_VERSIONING AUDIO_OAL)
+    target_compile_options(col_model_lifetime_tests PRIVATE
+        -ffunction-sections -fdata-sections -Wno-write-strings -Wno-multichar)
+    target_link_options(col_model_lifetime_tests PRIVATE -Wl,--gc-sections)
+    set_target_properties(col_model_lifetime_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+    add_test(NAME col_model_lifetime_tests COMMAND col_model_lifetime_tests)
+    # Same BPC fixture on PC: catches platform-only loss of mixed CLS/COL3 blocks.
+    add_executable(desktop_bpc_collision_tests
+        AndroidBpcArchiveIntegrationTests.cpp
+        ../src/extras/custom/CustomModels.cpp ../src/extras/custom/CustomZip.cpp
+        ../src/extras/custom/CustomCol.cpp ../src/rw/TxdStore.cpp
+        ../src/extras/custom/br/third_party/astc_decomp.cpp)
+    target_include_directories(desktop_bpc_collision_tests PRIVATE
+        $<TARGET_PROPERTY:custom_archive_integration_tests,INCLUDE_DIRECTORIES>)
+    target_compile_definitions(desktop_bpc_collision_tests PRIVATE
+        LIBRW RW_GL3 LIBRW_SDL2 CMAKE_BUILD USE_OUR_VERSIONING AUDIO_OAL)
+    target_compile_options(desktop_bpc_collision_tests PRIVATE
+        -ffunction-sections -fdata-sections -Wno-write-strings -Wno-multichar)
+    target_link_options(desktop_bpc_collision_tests PRIVATE -Wl,--gc-sections)
+    target_link_libraries(desktop_bpc_collision_tests PRIVATE Threads::Threads)
+    set_target_properties(desktop_bpc_collision_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+    add_test(NAME desktop_bpc_collision_tests COMMAND desktop_bpc_collision_tests)
+
+    add_executable(collision_record_load_tests
+        CollisionRecordLoadTests.cpp ../src/core/FileLoader.cpp
+        ../src/collision/ColModel.cpp ../src/collision/ColSphere.cpp ../src/collision/ColBox.cpp)
+    target_include_directories(collision_record_load_tests PRIVATE
+        $<TARGET_PROPERTY:custom_archive_integration_tests,INCLUDE_DIRECTORIES>)
+    target_compile_definitions(collision_record_load_tests PRIVATE
+        LIBRW RW_GL3 LIBRW_SDL2 CMAKE_BUILD USE_OUR_VERSIONING AUDIO_OAL)
+    target_compile_options(collision_record_load_tests PRIVATE
+        -ffunction-sections -fdata-sections -Wno-write-strings -Wno-multichar)
+    target_link_options(collision_record_load_tests PRIVATE -Wl,--gc-sections)
+    set_target_properties(collision_record_load_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+    add_test(NAME collision_record_load_tests COMMAND collision_record_load_tests)
+    add_executable(sa_vehicle_collision_load_tests
+        SAVehicleCollisionLoadTests.cpp ../src/core/FileLoader.cpp
+        ../src/collision/ColModel.cpp ../src/collision/ColSphere.cpp ../src/collision/ColBox.cpp)
+    add_executable(sa_car_render_policy_tests
+        SACarRenderPolicyTests.cpp ../src/modelinfo/VehicleModelInfo.cpp)
+    foreach(sa_target sa_vehicle_collision_load_tests sa_car_render_policy_tests)
+        target_include_directories(${sa_target} PRIVATE
+            $<TARGET_PROPERTY:custom_archive_integration_tests,INCLUDE_DIRECTORIES>)
+        target_compile_definitions(${sa_target} PRIVATE
+            LIBRW RW_GL3 LIBRW_SDL2 CMAKE_BUILD USE_OUR_VERSIONING AUDIO_OAL)
+        target_compile_options(${sa_target} PRIVATE
+            -ffunction-sections -fdata-sections -Wno-write-strings -Wno-multichar)
+        target_link_options(${sa_target} PRIVATE -Wl,--gc-sections)
+        set_target_properties(${sa_target} PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+        add_test(NAME ${sa_target} COMMAND ${sa_target})
+    endforeach()
+endif()
+
+add_executable(vehicle_material_channels_tests VehicleMaterialChannelsTests.cpp)
+target_include_directories(vehicle_material_channels_tests PRIVATE ../src/extras/custom)
+set_target_properties(vehicle_material_channels_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+add_test(NAME vehicle_material_channels_tests COMMAND vehicle_material_channels_tests)
+
+add_executable(br_vehicle_resources_tests BRVehicleResourcesTests.cpp)
+target_include_directories(br_vehicle_resources_tests PRIVATE ../src/extras/custom)
+set_target_properties(br_vehicle_resources_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+add_test(NAME br_vehicle_resources_tests COMMAND br_vehicle_resources_tests)
+
+if(TARGET custom_archive_integration_tests)
+    add_executable(vehicle_node_atomic_tests VehicleNodeAtomicTests.cpp)
+    target_include_directories(vehicle_node_atomic_tests PRIVATE
+        $<TARGET_PROPERTY:custom_archive_integration_tests,INCLUDE_DIRECTORIES>)
+    target_compile_definitions(vehicle_node_atomic_tests PRIVATE
+        LIBRW RW_GL3 LIBRW_SDL2 CMAKE_BUILD USE_OUR_VERSIONING AUDIO_OAL)
+    target_compile_options(vehicle_node_atomic_tests PRIVATE -Wno-write-strings -Wno-multichar)
+    set_target_properties(vehicle_node_atomic_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+    add_test(NAME vehicle_node_atomic_tests COMMAND vehicle_node_atomic_tests)
+endif()
+
+if(TARGET custom_archive_integration_tests)
+    foreach(handling_target transmission_tests handling_data_mgr_tests)
+        if(handling_target STREQUAL "transmission_tests")
+            set(handling_source TransmissionTests.cpp)
+        else()
+            set(handling_source HandlingDataMgrTests.cpp)
+        endif()
+        add_executable(${handling_target} ${handling_source}
+            ../src/vehicles/cTransmission.cpp ../src/vehicles/cHandlingDataMgr.cpp)
+        target_include_directories(${handling_target} PRIVATE
+            $<TARGET_PROPERTY:custom_archive_integration_tests,INCLUDE_DIRECTORIES>)
+        target_compile_definitions(${handling_target} PRIVATE
+            LIBRW RW_GL3 LIBRW_SDL2 CMAKE_BUILD USE_OUR_VERSIONING AUDIO_OAL)
+        target_compile_options(${handling_target} PRIVATE -Wno-write-strings -Wno-multichar)
+        set_target_properties(${handling_target} PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+        add_test(NAME ${handling_target} COMMAND ${handling_target})
+    endforeach()
+endif()
+
+add_executable(duck_movement_tests DuckMovementTests.cpp)
+set_target_properties(duck_movement_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+add_test(NAME duck_movement_tests COMMAND duck_movement_tests)

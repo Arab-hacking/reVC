@@ -1,0 +1,74 @@
+#ifndef __GTA_POOLS_H__
+#define __GTA_POOLS_H__
+
+#include "templates.h"
+#include "Lists.h"
+#include "Treadable.h"
+#include "Object.h"
+#include "PlayerPed.h"
+#include "Automobile.h"
+#include "MonsterTruck.h"
+#include "QuadBike.h"
+#include "Trailer.h"
+#include "DummyPed.h"
+#include "AudioScriptObject.h"
+
+typedef CPool<CPtrNode> CCPtrNodePool;
+typedef CPool<CEntryInfoNode> CEntryInfoNodePool;
+typedef CPool<CPed,CPlayerPed> CPedPool;
+// A slot is one fixed block, so the entry type must be large enough for the
+// largest vehicle the engine can construct. CTrailer is the biggest of them
+// (2384 bytes on x86-64: CAutomobile plus the two support legs and their
+// collision points), then CQuadBike and CMonsterTruck; CAutomobile itself is
+// only 2288. Sizing the slot by CAutomobile would let those three classes
+// write past the end of their block and into the next slot, so the pool is
+// sized by CTrailer instead. Every class is still placed into these blocks by
+// CVehicle::operator new and keeps its real dynamic type.
+static_assert(sizeof(CTrailer) >= sizeof(CAutomobile), "CTrailer must size the vehicle pool slot");
+static_assert(sizeof(CTrailer) >= sizeof(CQuadBike), "CTrailer must size the vehicle pool slot");
+static_assert(sizeof(CTrailer) >= sizeof(CMonsterTruck), "CTrailer must size the vehicle pool slot");
+typedef CPool<CVehicle,CTrailer> CVehiclePool;
+typedef CPool<CBuilding> CBuildingPool;
+typedef CPool<CTreadable> CTreadablePool;
+typedef CPool<CObject> CObjectPool;
+typedef CPool<CDummy, CDummyPed> CDummyPool;
+typedef CPool<cAudioScriptObject> CAudioScriptObjectPool;
+typedef CPool<CColModel> CColModelPool;
+
+class CPools
+{
+	static CCPtrNodePool *ms_pPtrNodePool;
+	static CEntryInfoNodePool *ms_pEntryInfoNodePool;
+	static CPedPool *ms_pPedPool;
+	static CVehiclePool *ms_pVehiclePool;
+	static CBuildingPool *ms_pBuildingPool;
+	static CTreadablePool *ms_pTreadablePool;
+	static CObjectPool *ms_pObjectPool;
+	static CDummyPool *ms_pDummyPool;
+	static CAudioScriptObjectPool *ms_pAudioScriptObjectPool;
+	static CColModelPool *ms_pColModelPool;
+public:
+	static CCPtrNodePool *GetPtrNodePool(void) { return ms_pPtrNodePool; }
+	static CEntryInfoNodePool *GetEntryInfoNodePool(void) { return ms_pEntryInfoNodePool; }
+	static CPedPool *GetPedPool(void) { return ms_pPedPool; }
+	static CVehiclePool *GetVehiclePool(void) { return ms_pVehiclePool; }
+	static CBuildingPool *GetBuildingPool(void) { return ms_pBuildingPool; }
+	static CTreadablePool *GetTreadablePool(void) { return ms_pTreadablePool; }
+	static CObjectPool *GetObjectPool(void) { return ms_pObjectPool; }
+	static CDummyPool *GetDummyPool(void) { return ms_pDummyPool; }
+	static CAudioScriptObjectPool *GetAudioScriptObjectPool(void) { return ms_pAudioScriptObjectPool; }
+	static CColModelPool *GetColModelPool(void) { return ms_pColModelPool; }
+
+	static void Initialise(void);
+	static void ShutDown(void);
+	static int32 GetPedRef(CPed *ped);
+	static CPed *GetPed(int32 handle);
+	static int32 GetVehicleRef(CVehicle *vehicle);
+	static CVehicle *GetVehicle(int32 handle);
+	static int32 GetObjectRef(CObject *object);
+	static CObject *GetObject(int32 handle);
+	static void CheckPoolsEmpty();
+	static void MakeSureSlotInObjectPoolIsEmpty(int32 slot);
+};
+
+#endif // __GTA_POOLS_H__

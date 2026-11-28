@@ -1,0 +1,1281 @@
+#include "common.h"
+#include "platform.h"
+
+#include "Game.h"
+#ifdef CUSTOM_MODELS
+#include "CustomModels.h"
+#include "CustomWorld.h"
+#endif
+#include "main.h"
+#include "RwHelper.h"
+#include "Accident.h"
+#include "Antennas.h"
+#include "Bridge.h"
+#include "CarCtrl.h"
+#include "CarEnterExit.h"
+#include "CarGen.h"
+#include "CdStream.h"
+#include "Clock.h"
+#include "Clouds.h"
+#include "Collision.h"
+#include "Console.h"
+#include "Coronas.h"
+#include "Cranes.h"
+#include "Credits.h"
+#include "DMAudio.h"
+#include "Darkel.h"
+#include "Debug.h"
+#include "EventList.h"
+#include "FileLoader.h"
+#include "FileMgr.h"
+#include "Fire.h"
+#include "Fluff.h"
+#include "Font.h"
+#include "Frontend.h"
+#include "frontendoption.h"
+#include "GameLogic.h"
+#include "Garages.h"
+#include "Glass.h"
+#include "cHandlingDataMgr.h"
+#include "Heli.h"
+#include "Hud.h"
+#include "IniFile.h"
+#include "Lights.h"
+#include "MBlur.h"
+#include "Messages.h"
+#include "MemoryHeap.h"
+#include "Pad.h"
+#include "NoClip.h"
+#include "Particle.h"
+#include "ParticleObject.h"
+#include "PedGroups.h"
+#include "PedRoutes.h"
+#include "Phones.h"
+#include "Pickups.h"
+#include "Plane.h"
+#include "PlayerSkin.h"
+#include "Population.h"
+#include "Radar.h"
+#include "Record.h"
+#include "References.h"
+#include "Renderer.h"
+#include "Replay.h"
+#include "VehicleRecording.h"
+#include "CustomCarPlateMgr.h"
+#include "Restart.h"
+#include "RoadBlocks.h"
+#include "SceneEdit.h"
+#include "Script.h"
+#include "Shadows.h"
+#include "Skidmarks.h"
+#include "SetPieces.h"
+#include "SpecialFX.h"
+#include "Stats.h"
+#include "Streaming.h"
+#include "SurfaceTable.h"
+#include "TempColModels.h"
+#include "Timecycle.h"
+#ifdef CUSTOM_MODELS
+#include "CustomTimecycle.h"
+#endif
+#include "CustomSky.h"
+#include "TrafficLights.h"
+#include "Train.h"
+#include "TxdStore.h"
+#include "User.h"
+#include "VisibilityPlugins.h"
+#include "WaterCannon.h"
+#include "WaterLevel.h"
+#include "Weapon.h"
+#include "WeaponEffects.h"
+#include "Weather.h"
+#include "World.h"
+#include "ZoneCull.h"
+#include "Zones.h"
+#include "Occlusion.h"
+#include "debugmenu.h"
+#include "Ropes.h"
+#include "WindModifiers.h"
+#include "WaterCreatures.h"
+#include "postfx.h"
+#include "custompipes.h"
+#include "screendroplets.h"
+#include "VarConsole.h"
+#ifdef USE_TEXTURE_POOL
+#include "TexturePools.h"
+#endif
+
+eLevelName CGame::currLevel;
+int32 CGame::currArea;
+bool CGame::bDemoMode = true;
+bool CGame::nastyGame = true;
+bool CGame::frenchGame;
+bool CGame::germanGame;
+bool CGame::noProstitutes;
+bool CGame::playingIntro;
+#ifdef MORE_LANGUAGES
+bool CGame::russianGame = false;
+bool CGame::japaneseGame = false;
+#endif
+#ifndef MASTER
+CVector CGame::PlayerCoords;
+bool8 CGame::VarUpdatePlayerCoords;
+#endif
+
+int gameTxdSlot;
+
+#ifdef SECUROM
+uint8 gameProcessPirateCheck = 0;
+#endif
+
+bool DoRWStuffStartOfFrame(int16 TopRed, int16 TopGreen, int16 TopBlue, int16 BottomRed, int16 BottomGreen, int16 BottomBlue, int16 Alpha);
+void DoRWStuffEndOfFrame(void);
+
+bool
+CGame::InitialiseOnceBeforeRW(void)
+{
+	REVC_LOG_INFO("Preparing game filesystem and streaming");
+	CFileMgr::Initialise();
+	REVC_LOG_INFO("Game directory: %s", CFileMgr::GetRootDirName());
+	CdStreamInit(MAX_CDCHANNELS);
+	debug("size of matrix %d\n", sizeof(CMatrix));
+	debug("size of placeable %d\n", sizeof(CPlaceable));
+	debug("size of entity %d\n", sizeof(CEntity));
+	debug("size of building %d\n", sizeof(CBuilding));
+	debug("size of dummy %d\n", sizeof(CDummy));
+#ifdef EXTENDED_COLOURFILTER
+	CPostFX::InitOnce();
+#endif
+#ifdef CUSTOM_FRONTEND_OPTIONS
+	// Not needed here but may be needed in future
+	// if (numCustomFrontendOptions == 0 && numCustomFrontendScreens == 0)
+	CustomFrontendOptionsPopulate();
+#endif
+	REVC_LOG_INFO("Game pre-initialization complete");
+	return true;
+}
+
+#ifndef LIBRW
+void ReplaceMatFxCallback();
+#ifdef ALPHA_TEST_EMU
+void ReplaceAtomicPipeCallback();
+#endif // ALPHA_TEST_EMU
+#endif // !LIBRW
+
+bool
+CGame::InitialiseRenderWare(void)
+{
+	REVC_LOG_INFO("Creating RenderWare camera, world and textures");
+	CFileMgr::SetDir("");
+	ValidateVersion();
+#ifdef USE_TEXTURE_POOL
+	_TexturePoolsInitialise();
+#endif
+
+	CTxdStore::Initialise();
+	CVisibilityPlugins::Initialise();
+
+
+	/* Create camera */
+	Scene.camera = CameraCreate(SCREEN_WIDTH, SCREEN_HEIGHT, TRUE);
+	ASSERT(Scene.camera != nil);
+	if (!Scene.camera)
+	{
+		REVC_LOG_ERROR("Could not create RenderWare camera");
+		return (false);
+	}
+	
+	RwCameraSetFarClipPlane(Scene.camera, 2000.0f);
+	RwCameraSetNearClipPlane(Scene.camera, 0.9f);
+	
+	CameraSize(Scene.camera, nil, DEFAULT_VIEWWINDOW, DEFAULT_ASPECT_RATIO);
+	
+	/* Create a world */
+	RwBBox  bbox;
+	
+	bbox.sup.x = bbox.sup.y = bbox.sup.z = 10000.0f;
+	bbox.inf.x = bbox.inf.y = bbox.inf.z = -10000.0f;
+
+	Scene.world = RpWorldCreate(&bbox);
+	ASSERT(Scene.world != nil);
+	if (!Scene.world)
+	{
+		REVC_LOG_ERROR("Could not create RenderWare world");
+		CameraDestroy(Scene.camera);
+		Scene.camera = nil;
+		return (false);
+	}
+	
+	/* Add the camera to the world */
+	RpWorldAddCamera(Scene.world, Scene.camera);
+	LightsCreate(Scene.world);
+
+	CreateDebugFont();
+
+#ifdef LIBRW
+	rw::MatFX::envMapApplyLight = true;
+	rw::MatFX::envMapUseMatColor = true;
+	rw::MatFX::envMapFlipU = true;
+	rw::RGBA envcol = { 64, 64, 64, 255 };
+	rw::MatFX::envMapColor = envcol;
+#else
+	ReplaceMatFxCallback();
+#ifdef ALPHA_TEST_EMU
+	ReplaceAtomicPipeCallback();
+#endif // ALPHA_TEST_EMU
+#endif // LIBRW
+
+	PUSH_MEMID(MEMID_TEXTURES);
+	CFont::Initialise();
+	CHud::Initialise();
+	CPlayerSkin::Initialise();
+	POP_MEMID();
+
+#ifdef EXTENDED_PIPELINES
+	CustomPipes::CustomPipeInit();	// need Scene.world for this
+#endif
+#ifdef SCREEN_DROPLETS
+	ScreenDroplets::InitDraw();
+#endif
+
+	REVC_LOG_INFO("RenderWare world ready");
+	return (true);
+}
+
+void CGame::ShutdownRenderWare(void)
+{
+	REVC_LOG_INFO("Shutting down RenderWare world");
+#ifdef CUSTOM_MODELS
+	// A detached TXD still owns GPU rasters: release it before the device.
+	CCustomModels::ClearGraphicsCache();
+#endif
+#ifdef SCREEN_DROPLETS
+	ScreenDroplets::Shutdown();
+#endif
+#ifdef EXTENDED_PIPELINES
+	CustomPipes::CustomPipeShutdown();
+#endif
+
+	// The plate textures belong to the vehicle TXD; drop them while the TXD
+	// store is still alive, or their rasters are freed twice.
+	CCustomCarPlateMgr::Shutdown();
+
+	DestroySplashScreen();
+	CHud::Shutdown();
+	CFont::Shutdown();
+	
+	for ( int32 i = 0; i < NUMPLAYERS; i++ )
+		CWorld::Players[i].DeletePlayerSkin();
+
+	CPlayerSkin::Shutdown();
+	
+	DestroyDebugFont();
+	
+	/* Destroy world */
+	LightsDestroy(Scene.world);
+	RpWorldRemoveCamera(Scene.world, Scene.camera);
+	RpWorldDestroy(Scene.world);
+	
+	/* destroy camera */
+	CameraDestroy(Scene.camera);
+	
+	Scene.world = nil;
+	Scene.camera = nil;
+	
+	CVisibilityPlugins::Shutdown();
+	
+#ifdef USE_TEXTURE_POOL
+	_TexturePoolsShutdown();
+#endif
+	REVC_LOG_INFO("RenderWare world shut down");
+}
+
+bool CGame::InitialiseOnceAfterRW(void)
+{
+	REVC_LOG_INFO("Initializing text, timer and audio");
+	TheText.Load();
+	CTimer::Initialise();
+	CTempColModels::Initialise();
+	mod_HandlingManager.Initialise();
+	CSurfaceTable::Initialise("DATA\\SURFACE.DAT");
+	CPedStats::Initialise();
+	CTimeCycle::Initialise();
+#ifdef CUSTOM_MODELS
+	CCustomTimecycle::Apply();	// optional custom/data/timecyc.json or common.zip: GL3 sky/fog too
+#endif
+	DMAudio.Initialise();
+
+#ifdef EXTERNAL_3D_SOUND
+	if ( DMAudio.GetNum3DProvidersAvailable() == 0 )
+		FrontEndMenuManager.m_nPrefsAudio3DProviderIndex = NO_AUDIO_PROVIDER;
+
+	if ( FrontEndMenuManager.m_nPrefsAudio3DProviderIndex == AUDIO_PROVIDER_NOT_DETERMINED || FrontEndMenuManager.m_nPrefsAudio3DProviderIndex == -2 )
+	{
+		FrontEndMenuManager.m_PrefsSpeakers = 0;
+		FrontEndMenuManager.m_nPrefsAudio3DProviderIndex = DMAudio.AutoDetect3DProviders();
+	}
+
+	DMAudio.SetCurrent3DProvider(FrontEndMenuManager.m_nPrefsAudio3DProviderIndex);
+	DMAudio.SetSpeakerConfig(FrontEndMenuManager.m_PrefsSpeakers);
+#endif
+	DMAudio.SetDynamicAcousticModelingStatus(FrontEndMenuManager.m_PrefsDMA);
+	DMAudio.SetMusicMasterVolume(FrontEndMenuManager.m_PrefsMusicVolume);
+	DMAudio.SetEffectsMasterVolume(FrontEndMenuManager.m_PrefsSfxVolume);
+	DMAudio.SetEffectsFadeVol(127);
+	DMAudio.SetMusicFadeVol(127);
+	REVC_LOG_INFO("Text, timer and audio initialized");
+	return true;
+}
+
+void
+CGame::FinalShutdown(void)
+{
+	REVC_LOG_INFO("Stopping texture, statistics and streaming systems");
+	CCustomSky::Shutdown();
+#ifdef CUSTOM_MODELS
+	CCustomWorld::Shutdown();
+	CCustomModels::PrintStats();
+	CCustomModels::Shutdown();
+#endif
+	CTxdStore::Shutdown();
+	CPedStats::Shutdown();
+	CdStreamShutdown();
+	REVC_LOG_INFO("Game systems stopped");
+}
+
+bool CGame::Initialise(void)
+{
+	REVC_LOG_INFO("Initializing game world");
+	ResetLoadingScreenBar();
+	CCustomSky::Shutdown();
+#ifdef CUSTOM_MODELS
+	CCustomWorld::Shutdown(); // fresh BR ID mapping on a game restart
+#endif
+
+
+	CPools::Initialise();
+
+#ifdef PED_CAR_DENSITY_SLIDERS
+	// Load density values from gta3.ini only if our reVC.ini have them 0.6f
+	if (CIniFile::PedNumberMultiplier == 0.6f && CIniFile::CarNumberMultiplier == 0.6f)
+#endif
+		CIniFile::LoadIniFile();
+#ifdef USE_TEXTURE_POOL
+	_TexturePoolsUnknown(false);
+#endif
+	currLevel = LEVEL_BEACH;
+	currArea = AREA_MAIN_MAP;
+
+	PUSH_MEMID(MEMID_TEXTURES);
+	LoadingScreen("Loading the Game", "Loading generic textures", GetRandomSplashScreen());
+	gameTxdSlot = CTxdStore::AddTxdSlot("generic");
+	CTxdStore::Create(gameTxdSlot);
+	CTxdStore::AddRef(gameTxdSlot);
+
+#ifdef EXTENDED_PIPELINES
+	// for generic fallback
+	CustomPipes::SetTxdFindCallback();
+#endif
+
+	LoadingScreen("Loading the Game", "Loading particles", nil);
+	int particleTxdSlot = CTxdStore::AddTxdSlot("particle");
+	CTxdStore::LoadTxd(particleTxdSlot, "MODELS/PARTICLE.TXD");
+	CTxdStore::AddRef(particleTxdSlot);
+	CTxdStore::SetCurrentTxd(gameTxdSlot);
+	LoadingScreen("Loading the Game", "Setup game variables", nil);
+	POP_MEMID();
+
+
+	CGameLogic::InitAtStartOfGame();
+	CReferences::Init();
+	TheCamera.Init();
+	TheCamera.SetRwCamera(Scene.camera);
+	CDebug::DebugInitTextBuffer();
+	ThePaths.Init();
+	ThePaths.AllocatePathFindInfoMem(4500);
+	CScriptPaths::Init();
+	CWeather::Init();
+	CCullZones::Init();
+	COcclusion::Init();
+	CCollision::Init();
+	CSetPieces::Init();
+	CTheZones::Init();
+	CUserDisplay::Init();
+	CMessages::Init();
+	CMessages::ClearAllMessagesDisplayedByGame();
+	CRecordDataForGame::Init();
+	CRestart::Initialise();
+
+	PUSH_MEMID(MEMID_WORLD);
+	CWorld::Initialise();
+	POP_MEMID();
+
+	PUSH_MEMID(MEMID_TEXTURES);
+	CParticle::Initialise();
+	POP_MEMID();
+
+	PUSH_MEMID(MEMID_ANIMATION);
+	CAnimManager::Initialise();
+	POP_MEMID();
+
+	PUSH_MEMID(MEMID_CARS);
+	CCarCtrl::Init();
+	// SA initialises the car enter/exit constants alongside the car control.
+	CCarEnterExit::Initialise();
+	POP_MEMID();
+
+	PUSH_MEMID(MEMID_DEF_MODELS);
+	InitModelIndices();
+	CModelInfo::Initialise();
+	CPickups::Init();
+	CTheCarGenerators::Init();
+
+#ifdef CUSTOM_MODELS
+	CCustomModels::ResetImageMounts(); // a new game may reuse the process
+#endif
+	CdStreamAddImage("MODELS\\GTA3.IMG");
+
+	// An IDE names a ped's animation group by string, so every group has to
+	// have its name before the world files are read.
+	CAnimManager::ReadAnimAssociationDefinitions();
+
+	// There is no level DAT to read any more: the Vice City island lists
+	// (DEFAULT.DAT, GTA_VC.DAT) are gone, and the archive supplies the world.
+	// The setup those lists used to trigger on their first IPL line is called
+	// explicitly instead.
+	CFileLoader::InitialiseWorld();
+#ifdef CUSTOM_MODELS
+	// Model types and streaming are ready, and CED2 collisions are attached
+	// before the new entities are created.
+	REVC_LOG_INFO("STARTUP custom IPL BEGIN");
+	CCustomWorld::LoadIpl();
+	REVC_LOG_INFO("STARTUP custom IPL END");
+#endif
+
+	LoadingScreen("Loading the Game", "Add Particles", nil);
+	CWorld::AddParticles();
+	CVehicleModelInfo::LoadVehicleColours();
+	// The tuning table names parts by model name, so it is read after the IDE
+	// files have created every model. SA does the same in CFileLoader.
+	CVehicleModelInfo::LoadVehicleUpgrades();
+	CVehicleModelInfo::LoadEnvironmentMaps();
+	CTheZones::PostZoneCreation();
+	POP_MEMID();
+
+	LoadingScreen("Loading the Game", "Setup paths", nil);
+	REVC_LOG_INFO("STARTUP PreparePathData BEGIN");
+	ThePaths.PreparePathData();
+	REVC_LOG_INFO("STARTUP PreparePathData END");
+	for (int i = 0; i < NUMPLAYERS; i++)
+		CWorld::Players[i].Clear();
+	CWorld::Players[0].LoadPlayerSkin();
+	TestModelIndices();
+
+	LoadingScreen("Loading the Game", "Setup water", nil);
+	// WATER.DAT/WATERPRO.DAT were listed by GTA_VC.DAT; the archive supplies
+	// its own water, so the file is no longer read.
+	CWaterLevel::Initialise(nil);
+	TheConsole.Init();
+	CDraw::SetFOV(120.0f);
+	CDraw::ms_fLODDistance = 500.0f;
+
+	LoadingScreen("Loading the Game", "Setup streaming", nil);
+#ifdef CUSTOM_MODELS
+	// Index loose custom/anim and custom/data/maps plus selected common.zip
+	// paths. Model/TXD streaming from custom/img mounted earlier in
+	// CFileLoader::InitialiseWorld.
+	CCustomModels::Initialise();
+	// The archive's own carmods.dat fills the tuning slots the game's table left
+	// empty, so a car that only exists in an archive can be tuned as well.
+	CCustomModels::ApplyVehicleUpgradesToModels();
+#endif
+	REVC_LOG_INFO("STARTUP LoadInitialVehicles BEGIN");
+	CStreaming::LoadInitialVehicles();
+	REVC_LOG_INFO("STARTUP LoadInitialVehicles END");
+	REVC_LOG_INFO("STARTUP LoadInitialPeds BEGIN");
+	CStreaming::LoadInitialPeds();
+	REVC_LOG_INFO("STARTUP LoadInitialPeds END");
+	CStreaming::RequestBigBuildings(LEVEL_GENERIC);
+	REVC_LOG_INFO("STARTUP LoadAllRequestedModels BEGIN");
+	CStreaming::LoadAllRequestedModels(false);
+	REVC_LOG_INFO("STARTUP LoadAllRequestedModels END");
+	CStreaming::RemoveIslandsNotUsed(currLevel);
+	printf("Streaming uses %zuK of its memory", CStreaming::ms_memoryUsed / 1024); // original modifier was %d
+
+	// The number plate charset and the three city backgrounds live in the
+	// vehicle TXD, which has just been streamed in. Every vehicle built after
+	// this point gets its plate from here; a failure is not fatal - the models
+	// simply keep whatever texture the plate material already had.
+	if(!CCustomCarPlateMgr::Initialise())
+		REVC_LOG_ERROR("vehicle plates: charset could not be read, plates will not be generated");
+
+	LoadingScreen("Loading the Game", "Load animations", GetRandomSplashScreen());
+	PUSH_MEMID(MEMID_ANIMATION);
+	CAnimManager::LoadAnimFiles();
+	POP_MEMID();
+
+	CStreaming::LoadInitialWeapons();
+	CStreaming::LoadAllRequestedModels(0);
+	CPed::Initialise();
+	CRouteNode::Initialise();
+	CEventList::Initialise();
+#ifdef SCREEN_DROPLETS
+	ScreenDroplets::Initialise();
+#endif
+	LoadingScreen("Loading the Game", "Find big buildings", nil);
+	CRenderer::Init();
+
+	LoadingScreen("Loading the Game", "Setup game variables", nil);
+	CRadar::Initialise();
+	CRadar::LoadTextures();
+	CWeapon::InitialiseWeapons();
+
+	LoadingScreen("Loading the Game", "Setup traffic lights", nil);
+	CTrafficLights::ScanForLightsOnMap();
+	CRoadBlocks::Init();
+
+	LoadingScreen("Loading the Game", "Setup game variables", nil);
+	CPopulation::Initialise();
+	CPedGroups::Init();
+	CWorld::PlayerInFocus = 0;
+	CCoronas::Init();
+	CShadows::Init();
+	CWeaponEffects::Init();
+	CSkidmarks::Init();
+	CAntennas::Init();
+	CGlass::Init();
+	gPhoneInfo.Initialise();
+#ifdef GTA_SCENE_EDIT
+	CSceneEdit::Initialise();
+#endif
+
+	LoadingScreen("Loading the Game", "Load scripts", nil);
+	PUSH_MEMID(MEMID_SCRIPT);
+#if defined(ANDROID) && defined(USE_DEBUG_SCRIPT_LOADER)
+	CTheScripts::ScriptToLoad = 1;
+#endif
+	CTheScripts::Init();
+	CGangs::Initialise();
+	POP_MEMID();
+
+	LoadingScreen("Loading the Game", "Setup game variables", nil);
+	CClock::Initialise(1000);
+	CHeli::InitHelis();
+	CCranes::InitCranes();
+	REVC_LOG_INFO("Game variables: helis and cranes ready; initializing moving things");
+	CMovingThings::Init();
+	REVC_LOG_INFO("Game variables: moving things ready");
+	CDarkel::Init();
+	CStats::Init();
+	CPacManPickups::Init();
+	CClouds::Init();
+	CSpecialFX::Init();
+	CRopes::Init();
+	CWaterCannons::Init();
+	CBridge::Init();
+	CGarages::Init();
+
+	LoadingScreen("Loading the Game", "Position dynamic objects", nil);
+	LoadingScreen("Loading the Game", "Initialise vehicle paths", nil);
+
+	CTrain::InitTrains();
+	CPlane::InitPlanes();
+	CCredits::Init();
+	CRecordDataForChase::Init();
+	CReplay::Init();
+
+	LoadingScreen("Loading the Game", "Start script", nil);
+	CTheScripts::SpawnInitialPlayer();
+	CTheScripts::Process();
+	TheCamera.Process();
+
+	LoadingScreen("Loading the Game", "Load scene", nil);
+	CCollision::ms_collisionInMemory = currLevel;
+	for (int i = 0; i < MAX_PADS; i++)
+		CPad::GetPad(i)->Clear(true);
+#ifdef USE_TEXTURE_POOL
+	_TexturePoolsUnknown(true);
+#endif
+
+#ifndef MASTER
+	PlayerCoords = FindPlayerCoors();
+#ifdef CUSTOM_MODELS
+	// Press-to-run entry: prints which .btx the models name, so the health of
+	// the texture archive can be checked without quitting the game.
+	VarConsole.Add("Log custom texture usage", &CCustomModels::LogTextureUsage);
+#endif
+	VarConsole.Add("X PLAYER COORD", &PlayerCoords.x, 10.0f, -10000.0f, 10000.0f, true);
+	VarConsole.Add("Y PLAYER COORD", &PlayerCoords.y, 10.0f, -10000.0f, 10000.0f, true);
+	VarConsole.Add("Z PLAYER COORD", &PlayerCoords.z, 10.0f, -10000.0f, 10000.0f, true);
+	VarConsole.Add("UPDATE PLAYER COORD", &VarUpdatePlayerCoords, true);
+#endif
+
+
+	DMAudio.SetStartingTrackPositions(TRUE);
+	DMAudio.ChangeMusicMode(MUSICMODE_GAME);
+	REVC_LOG_INFO("Game initialization complete (level=%d, area=%d)", currLevel, currArea);
+	return true;
+}
+
+bool CGame::ShutDown(void)
+{
+	CNoClip::Reset();
+	REVC_LOG_INFO("Shutting down current game");
+#ifdef USE_TEXTURE_POOL
+	_TexturePoolsUnknown(false);
+#endif
+	CReplay::FinishPlayback();
+	CReplay::EmptyReplayBuffer();
+	CPlane::Shutdown();
+	CTrain::Shutdown();
+	CScriptPaths::Shutdown();
+	CWaterCreatures::RemoveAll();
+	CSpecialFX::Shutdown();
+	CGarages::Shutdown();
+	CMovingThings::Shutdown();
+	gPhoneInfo.Shutdown();
+	CWeapon::ShutdownWeapons();
+	CPedType::Shutdown();
+	
+	for (int32 i = 0; i < NUMPLAYERS; i++)
+	{
+		if ( CWorld::Players[i].m_pPed )
+		{
+			CWorld::Remove(CWorld::Players[i].m_pPed);
+			delete CWorld::Players[i].m_pPed;
+			CWorld::Players[i].m_pPed = nil;
+		}
+		
+		CWorld::Players[i].Clear();
+	}
+	
+	CRenderer::Shutdown();
+#ifdef CUSTOM_MODELS
+	CCustomModels::ClearVehicleUpgrades();
+#endif
+	CWorld::ShutDown();
+	DMAudio.DestroyAllGameCreatedEntities();
+	CModelInfo::ShutDown();
+	CAnimManager::Shutdown();
+	CVehicleModelInfo::DeleteVehicleColourTextures();
+	CVehicleModelInfo::ShutdownEnvironmentMaps();
+	// The lamp sheets are textures of the vehicle dictionary, which
+	// CTxdStore::GameShutdown below tears down; SA destroys them in the same
+	// place (CVehicleModelInfo::ShutdownLightTexture).
+	CVehicleModelInfo::ShutdownLightTexture();
+	CRadar::Shutdown();
+	CStreaming::Shutdown();
+#ifdef CUSTOM_MODELS
+	CCustomModels::ClearGraphicsCache();
+#endif
+	CTxdStore::GameShutdown();
+	CCollision::Shutdown();
+	CWaterLevel::Shutdown();
+	CClouds::Shutdown();
+	CShadows::Shutdown();
+	CCoronas::Shutdown();
+	CSkidmarks::Shutdown();
+	CWeaponEffects::Shutdown();
+	CParticle::Shutdown();
+	CPools::ShutDown();
+	CHud::ReInitialise();
+	CTxdStore::RemoveTxdSlot(gameTxdSlot);
+	CMBlur::MotionBlurClose();
+	CdStreamRemoveImages();
+#ifdef USE_TEXTURE_POOL
+	_TexturePoolsFinalShutdown();
+#endif
+	REVC_LOG_INFO("Current game shut down");
+	return true;
+}
+
+void CGame::ReInitGameObjectVariables(void)
+{
+	CNoClip::Reset();
+	CGameLogic::InitAtStartOfGame();
+	TheCamera.Init();
+	TheCamera.SetRwCamera(Scene.camera);
+	CDebug::DebugInitTextBuffer();
+	CWeather::Init();
+	CUserDisplay::Init();
+	CMessages::Init();
+	CRestart::Initialise();
+	CWorld::bDoingCarCollisions = false;
+	CHud::ReInitialise();
+	CRadar::Initialise();
+	CCarCtrl::ReInit();
+	CTimeCycle::Initialise();
+#ifdef CUSTOM_MODELS
+	CCustomTimecycle::Apply();	// optional custom/data/timecyc.json or common.zip: GL3 sky/fog too
+#endif
+	CDraw::SetFOV(120.0f);
+	CDraw::ms_fLODDistance = 500.0f;
+	CStreaming::RequestBigBuildings(LEVEL_GENERIC);
+	CStreaming::RemoveIslandsNotUsed(LEVEL_BEACH);
+	CStreaming::RemoveIslandsNotUsed(LEVEL_MAINLAND);
+	CStreaming::LoadAllRequestedModels(false);
+	currArea = AREA_MAIN_MAP;
+	CPed::Initialise();
+	CEventList::Initialise();
+#ifdef SCREEN_DROPLETS
+	ScreenDroplets::Initialise();
+#endif
+	CWeapon::InitialiseWeapons();
+	CPopulation::Initialise();
+	
+	for (int i = 0; i < NUMPLAYERS; i++)
+		CWorld::Players[i].Clear();
+	
+	CWorld::PlayerInFocus = 0;
+	CAntennas::Init();
+	CGlass::Init();
+	gPhoneInfo.Initialise();
+
+	PUSH_MEMID(MEMID_SCRIPT);
+#if defined(ANDROID) && defined(USE_DEBUG_SCRIPT_LOADER)
+	CTheScripts::ScriptToLoad = 1;
+#endif
+	CTheScripts::Init();
+	CGangs::Initialise();
+	POP_MEMID();
+
+	CTimer::Initialise();
+	CClock::Initialise(1000);
+	CTheCarGenerators::Init();
+	CHeli::InitHelis();
+	CMovingThings::Init();
+	CDarkel::Init();
+	CStats::Init();
+	CPickups::Init();
+	CPacManPickups::Init();
+	CGarages::Init();
+	CSpecialFX::Init();
+	CRopes::Init();
+	CWaterCannons::Init();
+	CScriptPaths::Init();
+	CParticle::ReloadConfig();
+
+	CCranes::InitCranes();
+	CTheScripts::SpawnInitialPlayer();
+	CTheScripts::Process();
+	TheCamera.Process();
+	CTrain::InitTrains();
+	CPlane::InitPlanes();
+	
+	for (int32 i = 0; i < MAX_PADS; i++)
+		CPad::GetPad(i)->Clear(true);
+}
+
+void CGame::ReloadIPLs(void)
+{
+	// Empty and unused
+}
+
+void CGame::ShutDownForRestart(void)
+{
+	CNoClip::Reset();
+#ifdef USE_TEXTURE_POOL
+	_TexturePoolsUnknown(false);
+#endif
+	CReplay::FinishPlayback();
+	CReplay::EmptyReplayBuffer();
+	DMAudio.DestroyAllGameCreatedEntities();
+	CMovingThings::Shutdown();
+	
+	for (int i = 0; i < NUMPLAYERS; i++)
+		CWorld::Players[i].Clear();
+
+	CGarages::SetAllDoorsBackToOriginalHeight();
+	CWorld::ClearForRestart();
+	CGameLogic::ClearShortCut();
+	CTimer::Shutdown();
+	CStreaming::ReInit();
+	CRadar::RemoveRadarSections();
+	FrontEndMenuManager.UnloadTextures();
+	CParticleObject::RemoveAllExpireableParticleObjects();
+	CWaterCreatures::RemoveAll(); 
+	CSetPieces::Init();
+	CPedType::Shutdown();
+	CSpecialFX::Shutdown();
+}
+
+void CGame::InitialiseWhenRestarting(void)
+{
+	CRect rect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+	CRGBA color(255, 255, 255, 255);
+	
+	CTimer::Initialise();
+	CSprite2d::SetRecipNearClip();
+
+	TheCamera.Init();
+
+	ReInitGameObjectVariables();
+	
+	CTimer::Update();
+	
+	DMAudio.ChangeMusicMode(MUSICMODE_GAME);
+#ifdef USE_TEXTURE_POOL
+	_TexturePoolsUnknown(true);
+#endif
+}
+
+void CGame::Process(void) 
+{
+	CPad::UpdatePads();
+#ifdef USE_CUSTOM_ALLOCATOR
+	ProcessTidyUpMemory();
+#endif
+#ifdef DEBUGMENU
+	DebugMenuProcess();
+#endif
+	if (!CTimer::GetIsCodePaused())
+		FrontEndMenuManager.Process();
+
+	CTheZones::Update();
+#ifdef SECUROM
+	if (CTimer::GetTimeInMilliseconds() >= (35 * 60 * 1000) && gameProcessPirateCheck == 0){
+		// if game not pirated
+		// gameProcessPirateCheck = 1;
+		// else
+		gameProcessPirateCheck = 2;
+	}
+#endif
+	uint32 startTime = CTimer::GetCurrentTimeInCycles() / CTimer::GetCyclesPerMillisecond();
+	CStreaming::Update();
+	uint32 processTime = CTimer::GetCurrentTimeInCycles() / CTimer::GetCyclesPerMillisecond() - startTime;
+	CWindModifiers::Number = 0;
+	if (!CTimer::GetIsPaused())
+	{
+#ifndef MASTER
+		if (VarUpdatePlayerCoords) {
+			FindPlayerPed()->Teleport(PlayerCoords);
+			VarUpdatePlayerCoords = false;
+		}
+#endif
+		CSprite2d::SetRecipNearClip();
+		CSprite2d::InitPerFrame();
+		CFont::InitPerFrame();
+		CRecordDataForGame::SaveOrRetrieveDataForThisFrame();
+		CRecordDataForChase::SaveOrRetrieveDataForThisFrame();
+		CPad::DoCheats();
+		CPad::ProcessPlayerModelKeys();
+		CPad::ProcessVehicleSpawnKeys();
+		CPad::ProcessTimeOfDayKeys();
+		CPad::ProcessCameraViewKey();
+		CNoClip::ProcessInput();
+		CClock::Update();
+		CWeather::Update();
+
+		PUSH_MEMID(MEMID_SCRIPT);
+		CTheScripts::Process();
+		POP_MEMID();
+
+		CCollision::Update();
+		CScriptPaths::Update();
+		// SA calls this once per frame, before the world is processed: every
+		// recorded car is moved onto its next frame here, so that the rest of
+		// the frame sees it in the position it is meant to occupy.
+		CVehicleRecording::SaveOrRetrieveDataForThisFrame();
+		CTrain::UpdateTrains();
+		CPlane::UpdatePlanes();
+		// The three contrails and the banner streamers move on their own paths,
+		// independent of the flyable planes: they are scenery that circles the
+		// map. They still have to be stepped before the world is drawn.
+		CPlaneTrails::Update();
+		CPlaneBanners::Update();
+		CHeli::UpdateHelis();
+		CDarkel::Update();
+		CSkidmarks::Update();
+		CAntennas::Update();
+		CGlass::Update();
+#ifdef GTA_SCENE_EDIT
+		CSceneEdit::Update();
+#endif
+		CSetPieces::Update();
+		CEventList::Update();
+		CParticle::Update();
+		gFireManager.Update();
+
+		// Otherwise even on 30 fps most probably you won't see any peds around Ocean View Hospital
+#if defined FIX_BUGS && !defined SQUEEZE_PERFORMANCE
+		if (processTime > 2) {
+#else
+		if (processTime >= 2) {
+#endif
+			CPopulation::Update(false);
+		} else {
+			uint32 startTime = CTimer::GetCurrentTimeInCycles() / CTimer::GetCyclesPerMillisecond();
+			CPopulation::Update(true);
+			processTime = CTimer::GetCurrentTimeInCycles() / CTimer::GetCyclesPerMillisecond() - startTime;
+		}
+		CWeapon::UpdateWeapons();
+		CTheCarGenerators::Process();
+		if (!CReplay::IsPlayingBack())
+			CCranes::UpdateCranes();
+		CClouds::Update();
+		CMovingThings::Update();
+		CWaterCannons::Update();
+		CUserDisplay::Process();
+		CReplay::Update();
+
+		PUSH_MEMID(MEMID_WORLD);
+		CWorld::Process();
+		POP_MEMID();
+
+		gAccidentManager.Update();
+		CPacManPickups::Update();
+		CPickups::Update();
+		CGarages::Update();
+		CSpecialFX::Update();
+		CRopes::Update();
+		CTimeCycle::Update();
+		CNoClip::Move();
+		if (CReplay::ShouldStandardCameraBeProcessed())
+			TheCamera.Process();
+		CCullZones::Update();
+		if (!CReplay::IsPlayingBack())
+			CGameLogic::Update();
+		CBridge::Update();
+		CCoronas::DoSunAndMoon();
+		CCoronas::Update();
+		CShadows::UpdateStaticShadows();
+		CShadows::UpdatePermanentShadows();
+		gPhoneInfo.Update();
+		if (!CReplay::IsPlayingBack())
+		{
+			PUSH_MEMID(MEMID_CARS);
+			if (processTime < 2)
+				CCarCtrl::GenerateRandomCars();
+			CRoadBlocks::GenerateRoadBlocks();
+			CCarCtrl::RemoveDistantCars();
+			CCarCtrl::RemoveCarsIfThePoolGetsFull();
+			POP_MEMID();
+		}
+	}
+}
+
+#ifdef USE_CUSTOM_ALLOCATOR
+
+// TODO(MIAMI)
+
+int32 gNumMemMoved;
+
+bool
+MoveMem(void** ptr)
+{
+	if (*ptr) {
+		gNumMemMoved++;
+		void* newPtr = gMainHeap.MoveMemory(*ptr);
+		if (*ptr != newPtr) {
+			*ptr = newPtr;
+			return true;
+		}
+	}
+	return false;
+}
+
+// Some convenience structs
+struct SkyDataPrefix
+{
+	uint32 pktSize1;
+	uint32 data;	// pointer to data as read from TXD
+	uint32 pktSize2;
+	uint32 unused;
+};
+
+struct DMAGIFUpload
+{
+	uint32 tag1_qwc, tag1_addr;	// dmaref
+	uint32 nop1, vif_direct1;
+
+	uint32 giftag[4];
+	uint32 gs_bitbltbuf[4];
+
+	uint32 tag2_qwc, tag2_addr;	// dmaref
+	uint32 nop2, vif_direct2;
+};
+
+// This is very scary. it depends on the exact memory layout of the DMA chains and whatnot
+RwTexture*
+MoveTextureMemoryCB(RwTexture* texture, void* pData)
+{
+	// nothing to do here really, everything should be in videomemory
+	return texture;
+}
+
+bool
+MoveAtomicMemory(RpAtomic* atomic, bool onlyOne)
+{
+	RpGeometry* geo = RpAtomicGetGeometry(atomic);
+
+#if THIS_IS_COMPATIBLE_WITH_GTA3_RW31
+	if (MoveMem((void**)&geo->triangles) && onlyOne)
+		return true;
+	if (MoveMem((void**)&geo->matList.materials) && onlyOne)
+		return true;
+	if (MoveMem((void**)&geo->preLitLum) && onlyOne)
+		return true;
+	if (MoveMem((void**)&geo->texCoords[0]) && onlyOne)
+		return true;
+	if (MoveMem((void**)&geo->texCoords[1]) && onlyOne)
+		return true;
+
+	// verts and normals of morph target are allocated together
+	int vertDiff;
+	if (geo->morphTarget->normals)
+		vertDiff = geo->morphTarget->normals - geo->morphTarget->verts;
+	if (MoveMem((void**)&geo->morphTarget->verts)) {
+		if (geo->morphTarget->normals)
+			geo->morphTarget->normals = geo->morphTarget->verts + vertDiff;
+		if (onlyOne)
+			return true;
+	}
+
+	RpMeshHeader* oldmesh = geo->mesh;
+	if (MoveMem((void**)&geo->mesh)) {
+		// index pointers are allocated together with meshes,
+		// have to relocate those too
+		RpMesh* mesh = (RpMesh*)(geo->mesh + 1);
+		uintptr reloc = (uintptr)geo->mesh - (uintptr)oldmesh;
+		for (int i = 0; i < geo->mesh->numMeshes; i++)
+			mesh[i].indices = (RxVertexIndex*)((uintptr)mesh[i].indices + reloc);
+		if (onlyOne)
+			return true;
+	}
+#else
+	// we could do something in librw here
+#endif
+	return false;
+}
+
+bool
+MoveColModelMemory(CColModel& colModel, bool onlyOne)
+{
+	// hm...should probably only do this if ownsCollisionVolumes
+	if (!colModel.ownsCollisionVolumes)
+		return false;
+
+	if (MoveMem((void**)&colModel.spheres) && onlyOne)
+		return true;
+	if (MoveMem((void**)&colModel.lines) && onlyOne)
+		return true;
+	if (MoveMem((void**)&colModel.boxes) && onlyOne)
+		return true;
+	if (MoveMem((void**)&colModel.vertices) && onlyOne)
+		return true;
+	if (MoveMem((void**)&colModel.triangles) && onlyOne)
+		return true;
+	if (MoveMem((void**)&colModel.planes) && onlyOne)
+		return true;
+	return false;
+}
+
+RpAtomic*
+MoveAtomicMemoryCB(RpAtomic* atomic, void* pData)
+{
+	bool* pRet = (bool*)pData;
+	if (pRet == nil)
+		MoveAtomicMemory(atomic, false);
+	else if (MoveAtomicMemory(atomic, true)) {
+		*pRet = true;
+		return nil;
+	}
+	return atomic;
+}
+
+bool
+TidyUpModelInfo(CBaseModelInfo* modelInfo, bool onlyone)
+{
+	if (modelInfo->GetColModel() && modelInfo->DoesOwnColModel())
+		if (MoveColModelMemory(*modelInfo->GetColModel(), onlyone))
+			return true;
+
+	RwObject* rwobj = modelInfo->GetRwObject();
+	if(rwobj){
+		if (RwObjectGetType(rwobj) == rpATOMIC)
+			if (MoveAtomicMemory((RpAtomic*)rwobj, onlyone))
+				return true;
+		if (RwObjectGetType(rwobj) == rpCLUMP) {
+			bool ret = false;
+			if (onlyone)
+				RpClumpForAllAtomics((RpClump*)rwobj, MoveAtomicMemoryCB, &ret);
+			else
+				RpClumpForAllAtomics((RpClump*)rwobj, MoveAtomicMemoryCB, nil);
+			if (ret)
+				return true;
+		}
+	}
+
+	if (modelInfo->GetModelType() == MITYPE_PED && ((CPedModelInfo*)modelInfo)->m_hitColModel)
+		if (MoveColModelMemory(*((CPedModelInfo*)modelInfo)->m_hitColModel, onlyone))
+			return true;
+
+	return false;
+}
+#endif
+
+
+void CGame::DrasticTidyUpMemory(bool flushDraw)
+{
+#ifdef USE_CUSTOM_ALLOCATOR
+	bool removedCol = false;
+
+	TidyUpMemory(true, flushDraw);
+
+	if (gMainHeap.GetLargestFreeBlock() < 200000 && !playingIntro) {
+		CStreaming::RemoveIslandsNotUsed(LEVEL_INDUSTRIAL);
+		CStreaming::RemoveIslandsNotUsed(LEVEL_COMMERCIAL);
+		CStreaming::RemoveIslandsNotUsed(LEVEL_SUBURBAN);
+		TidyUpMemory(true, flushDraw);
+	}
+
+	if (gMainHeap.GetLargestFreeBlock() < 200000 && !playingIntro) {
+		CModelInfo::RemoveColModelsFromOtherLevels(LEVEL_GENERIC);
+		TidyUpMemory(true, flushDraw);
+		removedCol = true;
+	}
+
+	if (gMainHeap.GetLargestFreeBlock() < 200000 && !playingIntro) {
+		CStreaming::RemoveBigBuildings(LEVEL_INDUSTRIAL);
+		CStreaming::RemoveBigBuildings(LEVEL_COMMERCIAL);
+		CStreaming::RemoveBigBuildings(LEVEL_SUBURBAN);
+		TidyUpMemory(true, flushDraw);
+	}
+
+	if (removedCol) {
+		// different in the original
+		CFileLoader::LoadCollisionFromDatFile(CCollision::ms_collisionInMemory);
+	}
+
+	if (!playingIntro)
+		CStreaming::RequestBigBuildings(currLevel);
+
+	CStreaming::LoadAllRequestedModels(true);
+#endif
+}
+
+void CGame::TidyUpMemory(bool moveTextures, bool flushDraw)
+{
+#ifdef USE_CUSTOM_ALLOCATOR
+	printf("Largest free block before tidy %d\n", gMainHeap.GetLargestFreeBlock());
+
+	if (moveTextures) {
+		if (flushDraw) {
+			for (int i = 0; i < 5; i++) {	// probably more than needed
+				RwCameraBeginUpdate(Scene.camera);
+				RwCameraEndUpdate(Scene.camera);
+				RwCameraShowRaster(Scene.camera, nil, 0);
+			}
+			}
+		int fontSlot = CTxdStore::FindTxdSlot("fonts");
+
+		for (int i = 0; i < TXDSTORESIZE; i++) {
+			if (i == fontSlot ||
+				CTxdStore::GetSlot(i) == nil)
+				continue;
+			RwTexDictionary* txd = CTxdStore::GetSlot(i)->texDict;
+			if (txd)
+				RwTexDictionaryForAllTextures(txd, MoveTextureMemoryCB, nil);
+		}
+		}
+
+	// animations
+	for (int i = 0; i < NUMANIMATIONS; i++) {
+		CAnimBlendHierarchy* anim = CAnimManager::GetAnimation(i);
+		if (anim == nil)
+			continue;	// cannot happen
+		anim->MoveMemory();
+	}
+
+	// model info
+	for (int i = 0; i < MODELINFOSIZE; i++) {
+		CBaseModelInfo* mi = CModelInfo::GetModelInfo(i);
+		if (mi == nil)
+			continue;
+		TidyUpModelInfo(mi, false);
+	}
+
+	printf("Largest free block after tidy %d\n", gMainHeap.GetLargestFreeBlock());
+#endif
+	}
+
+void CGame::ProcessTidyUpMemory(void)
+{
+#ifdef USE_CUSTOM_ALLOCATOR
+	static int32 modelIndex = 0;
+	static int32 animIndex = 0;
+	static int32 txdIndex = 0;
+	bool txdReturn = false;
+	RwTexDictionary* txd = nil;
+	gNumMemMoved = 0;
+
+	// model infos
+	for (int numCleanedUp = 0; numCleanedUp < 10; numCleanedUp++) {
+		CBaseModelInfo* mi;
+		do {
+			mi = CModelInfo::GetModelInfo(modelIndex);
+			modelIndex++;
+			if (modelIndex >= MODELINFOSIZE)
+				modelIndex = 0;
+		} while (mi == nil);
+
+		if (TidyUpModelInfo(mi, true))
+			return;
+	}
+
+	// tex dicts
+	for (int numCleanedUp = 0; numCleanedUp < 3; numCleanedUp++) {
+		if (gNumMemMoved > 80)
+			break;
+
+		do {
+#ifdef FIX_BUGS
+			txd = nil;
+#endif
+			if (CTxdStore::GetSlot(txdIndex))
+				txd = CTxdStore::GetSlot(txdIndex)->texDict;
+			txdIndex++;
+			if (txdIndex >= TXDSTORESIZE)
+				txdIndex = 0;
+		} while (txd == nil);
+
+		RwTexDictionaryForAllTextures(txd, MoveTextureMemoryCB, &txdReturn);
+		if (txdReturn)
+			return;
+		}
+
+	// animations
+	CAnimBlendHierarchy* anim;
+	do {
+		anim = CAnimManager::GetAnimation(animIndex);
+		animIndex++;
+		if (animIndex >= NUMANIMATIONS)
+			animIndex = 0;
+	} while (anim == nil);	// always != nil
+	anim->MoveMemory(true);
+#endif
+}
+
+void
+CGame::InitAfterFocusLoss()
+{
+	FrontEndMenuManager.m_nPrefsAudio3DProviderIndex = FrontEndMenuManager.m_lastWorking3DAudioProvider;
+	DMAudio.SetCurrent3DProvider(FrontEndMenuManager.m_lastWorking3DAudioProvider);
+
+	if (!FrontEndMenuManager.m_bGameNotLoaded && !FrontEndMenuManager.m_bMenuActive)
+		FrontEndMenuManager.m_bStartUpFrontEndRequested = true;
+}
+
+bool
+CGame::CanSeeWaterFromCurrArea(void)
+{
+	return currArea == AREA_MAIN_MAP || currArea == AREA_MANSION
+		|| currArea == AREA_HOTEL;
+}
+
+bool
+CGame::CanSeeOutSideFromCurrArea(void)
+{
+	return currArea == AREA_MAIN_MAP || currArea == AREA_MALL ||
+		currArea == AREA_MANSION || currArea == AREA_HOTEL;
+}
