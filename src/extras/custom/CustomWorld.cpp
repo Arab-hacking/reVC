@@ -308,6 +308,13 @@ void PlaceInstance(const customworld::Instance &inst, IplContext &ctx)
             if(!CCustomModels::HasModelFile(lodInfo->GetModelName()) &&
                !CStreaming::ms_aInfoForModel[lodSlot].m_size)
                 continue;
+            // An IPL in the SA layout lists its LOD entries itself (that is
+            // what LinkLods pairs up), so this exact placement may already
+            // exist - or may still arrive as a direct entry. Register the
+            // spawn the same way PlaceInstance registers its own, or the
+            // LOD ends up as two big buildings on the same spot.
+            customworld::PlacementKey lodKey(lodSlot, inst);
+            if(ctx.seen.find(lodKey) != ctx.seen.end()) { ctx.duplicates++; continue; }
             char lodVcLine[512];
             int ln = std::snprintf(lodVcLine, sizeof(lodVcLine),
                 "%d %s %d %.9g %.9g %.9g 1 1 1 %.9g %.9g %.9g %.9g",
@@ -319,6 +326,7 @@ void PlaceInstance(const customworld::Instance &inst, IplContext &ctx)
                !CPools::GetPtrNodePool()->EnsureFree(10010))
                 break;
             CFileLoader::LoadObjectInstance(lodVcLine);
+            ctx.seen.insert(lodKey);
             ctx.linkedLod++;
         }
     } else if(selfFarProxySlots.find(slot) != selfFarProxySlots.end()) {
