@@ -1014,7 +1014,9 @@ LoadDataTables()
 				auto audioData = braudio::AudioConfigParser::ParseVehicleAudio(
 					(const char*)vehAudioBytes.data(), vehAudioBytes.size(), &err);
 				if(err.empty()){
-					ApplyVehicleAudioSettings(audioData);
+					// Store in global for audio system to use
+					g_audioConfigData = std::move(audioData);
+					ApplyVehicleAudioSettings(g_audioConfigData);
 				}
 			}
 		}
@@ -1029,6 +1031,12 @@ LoadDataTables()
 					std::string err;
 					auto meta = braudio::AudioConfigParser::ParseBpcMeta(metaBytes.data(), metaBytes.size(), &err);
 					if(err.empty()){
+						// Merge into global
+						for(const auto& pair : meta.bankIndex){
+							g_audioConfigData.bankIndex[pair.first].insert(
+								g_audioConfigData.bankIndex[pair.first].end(),
+								pair.second.begin(), pair.second.end());
+						}
 						MergeBpcMeta(meta);
 					}
 				}
@@ -1040,39 +1048,8 @@ LoadDataTables()
 // Apply weather.json to CWeather cycles
 static void ApplyWeatherJson(const std::vector<uint8>& data)
 {
-	// BR weather.json structure:
-	// {
-	//   "weatherName": {
-	//     "probability": 0.5,
-	//     "durationMin": 600,
-	//     "durationMax": 1800,
-	//     "transitions": ["weather1", "weather2"]
-	//   }
-	// }
-	// We map BR weather names to VC weather types and replace the hardcoded
-	// WeatherTypesList with the BR cycle.
-
-	// Simple JSON parse
-	const char *p = (const char*)data.data();
-	const char *end = (const char*)data.data() + data.size();
-
-	auto skipWs = [&](const char **pp){
-		while(*pp < end && (**pp == ' ' || **pp == '\t' || **pp == '\r' || **pp == '\n'))
-			(*pp)++;
-	};
-
-	// Parse weather entries
-	// For simplicity, we replace the hardcoded WeatherTypesList
-	// with BR's weather cycle if weather.json is present
-	// Full implementation would parse the JSON and build a dynamic list
-	// For now, log that weather.json was found
-	CUSTOM_LOG("weather.json found — BR weather cycle would be applied here\n");
-
-	// In a full implementation:
-	// 1. Parse JSON into weather cycle structure
-	// 2. Map BR weather names to VC WEATHER_* types
-	// 3. Replace WeatherTypesList / WeatherTypesList_WithHurricanes
-	// 4. Set CWeather::WeatherTypeInList = 0
+	// Delegate to CWeather which has the full parser
+	CWeather::ApplyWeatherJson(data.data(), data.size());
 }
 
 // Apply vehicleAudioSettings.cfg to audio system
@@ -1129,6 +1106,8 @@ EnsureInitialised(void)
 	ScanBpcSystem();
 	// Load data tables (handling, carmods, timecyc, audio)
 	LoadDataTables();
+	// Initialize BR audio data (apply vehicleAudioSettings.cfg + .bpcmeta)
+	InitialiseBRAudioData();
 	customActive = !customModels.empty() || !customBtx.empty() ||
 	               !customTxdFiles.empty() || !customBpcClsEntries.empty() ||
 	               !customBpcColEntries.empty() || !customAnims.empty() ||

@@ -49,6 +49,14 @@ float CWeather::TrafficLightBrightness;
 
 bool CWeather::bScriptsForceRain;
 
+// BR snow configuration (from weather.json)
+bool CWeather::SnowEnabled = false;
+std::string CWeather::SnowTexture;
+float CWeather::SnowColor[4] = { 216.0f/255.0f, 216.0f/255.0f, 227.0f/255.0f, 1.0f };
+float CWeather::SnowAmount = 0.5f;
+float CWeather::SnowTile = 0.2f;
+std::vector<std::string> CWeather::SnowExcludeTextures;
+
 tRainStreak Streaks[NUM_RAIN_STREAKS];
 
 int16 WeatherTypesList[] = {
@@ -650,3 +658,165 @@ void CWeather::ForceHurricaneWeather()
 	CWeather::ForcedWeatherType = WEATHER_HURRICANE;
 }
 #endif
+
+// ============================================================================
+// BR weather.json Integration
+// ============================================================================
+
+void CWeather::ApplyWeatherJson(const uint8_t* data, size_t size)
+{
+	// BR weather.json currently only contains "snow" configuration.
+	// Parse the JSON and apply snow settings.
+
+	if (!data || size == 0) return;
+
+	const char* p = (const char*)data;
+	const char* end = p + size;
+
+	auto skipWs = [&](const char** pp) {
+		while (*pp < end && (**pp == ' ' || **pp == '\t' || **pp == '\r' || **pp == '\n'))
+			(*pp)++;
+	};
+
+	auto findKey = [&](const char* key) -> const char* {
+		const char* p = (const char*)data;
+		size_t keyLen = strlen(key);
+		while (p < end) {
+			skipWs(&p);
+			if (p + keyLen + 2 <= end && p[0] == '"' && memcmp(p + 1, key, keyLen) == 0 && p[keyLen + 1] == '"') {
+				p += keyLen + 2;
+				skipWs(&p);
+				if (*p == ':') {
+					p++;
+					skipWs(&p);
+					return p;
+				}
+			}
+			p++;
+		}
+		return nullptr;
+	};
+
+	auto parseBool = [&](const char* p) -> bool {
+		skipWs(&p);
+		if (p + 4 <= end && strncmp(p, "true", 4) == 0) return true;
+		if (p + 5 <= end && strncmp(p, "false", 5) == 0) return false;
+		return false;
+	};
+
+	auto parseFloat = [&](const char* p) -> float {
+		skipWs(&p);
+		if (p >= end) return 0.0f;
+		char* endPtr;
+		float val = strtof(p, &endPtr);
+		return val;
+	};
+
+	auto parseString = [&](const char* p) -> std::string {
+		skipWs(&p);
+		if (p >= end || *p != '"') return "";
+		p++;
+		const char* start = p;
+		while (p < end && *p != '"') p++;
+		if (p >= end) return "";
+		return std::string(start, p - start);
+	};
+
+	auto parseFloatArray = [&](const char* p, float* out, int count) -> bool {
+		skipWs(&p);
+		if (*p != '[') return false;
+		p++;
+		for (int i = 0; i < count; i++) {
+			skipWs(&p);
+			if (p >= end) return false;
+			char* endPtr;
+			float val = strtof(p, (char**)&p);
+			if (p == (const char*)end) return false;
+			out[i] = val;
+			skipWs(&p);
+			if (i < count - 1) {
+				if (*p != ',') return false;
+				p++;
+			} else {
+				skipWs(&p);
+				if (*p != ']') return false;
+			}
+		}
+		return true;
+	};
+
+	auto parseStringArray = [&](const char* p, std::vector<std::string>& out) -> bool {
+		skipWs(&p);
+		if (*p != '[') return false;
+		p++;
+		while (p < end) {
+			skipWs(&p);
+			if (*p == ']') { p++; return true; }
+			if (*p == ',') { p++; continue; }
+			if (*p != '"') return false;
+			p++;
+			const char* start = p;
+			while (p < end && *p != '"') p++;
+			if (p >= end) return false;
+			out.emplace_back(start, p - start);
+			p++;
+			skipWs(&p);
+			if (*p == ',') p++;
+			else if (*p == ']') { p++; return true; }
+		}
+		return false;
+	};
+
+	const char* snowObj = findKey("snow");
+	if (!snowObj) return;
+
+	// Parse snow object
+	const char* p = snowObj;
+	skipWs(&p);
+	if (*p != '{') return;
+
+	// We're inside the snow object, parse its fields
+	while (p < end) {
+		skipWs(&p);
+		if (*p == '}') break;
+
+		// Parse key
+		if (*p != '"') break;
+		p++;
+		const char* keyStart = p;
+		while (p < end && *p != '"') p++;
+		if (p >= end) break;
+		std::string key(keyStart, p - keyStart);
+		p++; // skip closing quote
+		skipWs(&p);
+		if (*p != ':') break;
+		p++; // skip colon
+		skipWs(&p);
+
+		if (key == "enabled") {
+			SnowEnabled = parseBool(p);
+		} else if (key == "texture") {
+			SnowTexture = parseString(p);
+		} else if (key == "color") {
+			float color[4];
+			if (parseFloatArray(p, color, 4)) {
+				for (int i = 0; i < 4; i++) SnowColor[i] = color[i] / 255.0f;
+			}
+		} else if (key == "amount") {
+			SnowAmount = parseFloat(p);
+		} else if (key == "tile") {
+			SnowTile = parseFloat(p);
+		} else if (key == "exclude-textures") {
+			parseStringArray(p, SnowExcludeTextures);
+		} else {
+			// Skip unknown field
+			skipWs(&p);
+			if (*p == '{') { int depth = 1; while (depth > 0 && p < end) { p++; if (*p == '{') depth++; else if (*p == '}') depth--; } }
+			else if (*p == '[') { int depth = 1; while (depth > 0 && p < end) { p++; if (*p == '[') depth++; else if (*p == ']') depth--; } }
+			else if (*p == '"') { p++; while (p < end && *p != '"') p++; if (p < end) p++; }
+			else { while (p < end && *p != ',' && *p != '}') p++; }
+		}
+		skipWs(&p);
+		if (*p == ',') p++;
+	}
+}

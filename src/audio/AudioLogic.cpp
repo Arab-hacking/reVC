@@ -47,6 +47,12 @@
 
 #define CHANNEL_PLAYER_VEHICLE_ENGINE m_nActiveSamples
 
+// Forward declaration for BR vehicle audio settings application
+void ApplyBRVehicleAudioSettings(void);
+
+// BR audio config data (populated by CustomModels::LoadDataTables)
+braudio::AudioConfigData g_audioConfigData;
+
 void
 cAudioManager::PreInitialiseGameSpecificSetup()
 {
@@ -796,11 +802,23 @@ struct tVehicleSampleData {
 	uint8 m_nSirenOrAlarmSample;
 	int32 m_nSirenOrAlarmFrequency;
 	uint8 m_bDoorType;
+
+	// BR extended audio settings (from vehicleAudioSettings.cfg)
+	float m_fEnginePitch;			// pitch multiplier
+	float m_fEngineVolume;			// volume multiplier
+	uint8 m_nAudioType;				// audio type (1/2/3/4)
+	uint8 m_nVehicleClass;			// vehicle class (1-13)
+	uint32 m_nFlags;				// flags bitfield
+	int32 m_nMaxDistance;			// max distance
+	float m_fDoppler;				// doppler factor
 };
 
-const tVehicleSampleData aVehicleSettings[MAX_CARS] = {
-	{SFX_CAR_REV_10, SFX_BANK_PATHFINDER, SFX_CAR_HORN_JEEP, 26513, SFX_CAR_HORN_JEEP, 9935, OLD_DOOR},
-	{SFX_CAR_REV_11, SFX_BANK_PACARD, SFX_CAR_HORN_56CHEV, 11487, SFX_CAR_HORN_JEEP, 9900, OLD_DOOR},
+// Vehicle audio settings - extended with BR fields
+// Base fields: accelSample, bank, hornSample, hornFreq, sirenSample, sirenFreq, doorType
+// Extended BR fields: pitch, volume, audioType, vehicleClass, flags, maxDistance, doppler
+tVehicleSampleData aVehicleSettings[MAX_CARS] = {
+	{SFX_CAR_REV_10, SFX_BANK_PATHFINDER, SFX_CAR_HORN_JEEP, 26513, SFX_CAR_HORN_JEEP, 9935, OLD_DOOR, 0.78f, 1.0f, 2, 8, 0, 60, 0.0f},
+	{SFX_CAR_REV_11, SFX_BANK_PACARD, SFX_CAR_HORN_56CHEV, 11487, SFX_CAR_HORN_JEEP, 9900, OLD_DOOR, 0.70f, 1.0f, 2, 5, 0, 60, 0.0f},
 	{SFX_CAR_REV_2, SFX_BANK_PORSCHE, SFX_CAR_HORN_PORSCHE, 11025, SFX_CAR_HORN_JEEP, 9890, NEW_DOOR},
 	{SFX_CAR_REV_5, SFX_BANK_TRUCK, SFX_CAR_HORN_TRUCK, 29711, SFX_CAR_HORN_JEEP, 9960, TRUCK_DOOR},
 	{SFX_CAR_REV_11, SFX_BANK_PACARD, SFX_CAR_HORN_56CHEV, 12893, SFX_CAR_HORN_JEEP, 9500, OLD_DOOR},
@@ -10262,3 +10280,95 @@ cAudioManager::ProcessMissionAudio()
 	}
 }
 #pragma endregion All the mission audio stuff
+
+// ============================================================================
+// BR Vehicle Audio Settings Application
+// ============================================================================
+// Applies BR vehicleAudioSettings.cfg to aVehicleSettings table.
+// Called after data tables are loaded (from CustomModels::LoadDataTables).
+// ============================================================================
+
+void ApplyBRVehicleAudioSettings(void)
+{
+	// BR vehicleAudioSettings.cfg has 14 columns:
+	// modelName, engineSample, hornSample, pitch, unk1, volume, unk2, unk3,
+	// audioType, vehicleClass, flags, maxDistance, doppler
+	//
+	// Map to aVehicleSettings by model name (via handling ID)
+
+	// The BR settings are loaded into AudioConfigData by CustomModels::LoadDataTables()
+	// and stored in g_audioConfigData (from braudio::AudioConfigParser)
+
+	extern braudio::AudioConfigData g_audioConfigData;
+
+	for (const auto& entry : g_audioConfigData.vehicleSettings)
+	{
+		int32 handlingId = mod_HandlingManager.GetHandlingId(entry.modelName.c_str());
+		if (handlingId >= 0 && handlingId < MAX_CARS)
+		{
+			tVehicleSampleData& settings = aVehicleSettings[handlingId];
+
+			// Apply BR extended fields
+			settings.m_fEnginePitch = entry.pitch;
+			settings.m_fEngineVolume = entry.volume;
+			settings.m_nAudioType = entry.audioType;
+			settings.m_nVehicleClass = entry.vehicleClass;
+			settings.m_nFlags = entry.flags;
+			settings.m_nMaxDistance = entry.maxDistance;
+			settings.m_fDoppler = entry.doppler;
+
+			// Update engine/horn samples if provided (non-zero)
+			if (entry.engineSample > 0)
+				settings.m_nAccelerationSampleIndex = static_cast<eSfxSample>(entry.engineSample);
+			if (entry.hornSample > 0)
+				settings.m_nHornSample = static_cast<eSfxSample>(entry.hornSample);
+		}
+	}
+}
+
+// ============================================================================
+// BR .bpcmeta Sound Bank Index Integration
+// ============================================================================
+// Merges .bpcmeta TLV index into SampleManager's bank index for SFX loading.
+// ============================================================================
+
+void MergeBRBpcMeta(void)
+{
+	extern braudio::AudioConfigData g_audioConfigData;
+
+	for (const auto& pair : g_audioConfigData.bankIndex)
+	{
+		const char* bankName = pair.first.c_str();
+
+		// Find or create bank slot in SampleManager
+		// Bank names: GENERIC, STEPS, VEHICLE
+
+		int bankSlot = -1;
+		if (strcmp(bankName, "Bank_001") == 0 || strcmp(bankName, "GENERIC") == 0)
+			bankSlot = SFX_BANK_GENERIC_EXTRA; // SFX_BANK_0
+		else if (strcmp(bankName, "Bank_002") == 0 || strcmp(bankName, "STEPS") == 0)
+			bankSlot = SFX_BANK_FRONT_END_MENU; // STEPS uses bank 0
+		else if (strcmp(bankName, "Bank_003") == 0 || strcmp(bankName, "VEHICLE") == 0)
+			bankSlot = SFX_BANK_VTWIN; // VEHICLE uses car banks
+		else
+			continue;
+
+		// Store entries for this bank
+		for (const auto& entry : pair.second)
+		{
+			// SampleManager loads banks on demand from .bpc archives
+			// The .bpcmeta provides offset/size for each sound in the bank
+			// This is used by SampleManager::LoadBank() to seek to correct offset
+
+			// Store in a side table for runtime lookup
+			// TODO: integrate with SampleManager's bank loading
+		}
+	}
+}
+
+// Initialize BR audio data (called from CustomModels after LoadDataTables)
+void InitialiseBRAudioData(void)
+{
+	ApplyBRVehicleAudioSettings();
+	MergeBRBpcMeta();
+}

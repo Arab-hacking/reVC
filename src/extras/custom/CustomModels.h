@@ -186,6 +186,9 @@ public:
 	// Reports how many of the indexed .btx a model names and which names the
 	// archives cannot satisfy. Safe to call at any time after indexing.
 	static void LogTextureUsage(void);
+
+	// Initialize BR audio data (vehicleAudioSettings.cfg + .bpcmeta)
+	static void InitialiseBRAudioData(void);
 };
 
 #endif // __GTA_CUSTOMMODELS_H__

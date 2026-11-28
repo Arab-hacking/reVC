@@ -57,6 +57,17 @@ public:
 	static void AddBeastie();
 
 	static void ForceHurricaneWeather();
+
+// BR snow configuration (from weather.json)
+static bool SnowEnabled;
+static std::string SnowTexture;
+static float SnowColor[4];
+static float SnowAmount;
+static float SnowTile;
+static std::vector<std::string> SnowExcludeTextures;
+
+// BR weather.json integration
+static void ApplyWeatherJson(const uint8_t* data, size_t size);
 };
 
 enum {
