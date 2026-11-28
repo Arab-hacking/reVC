@@ -77,6 +77,7 @@
 #include "Timecycle.h"
 #ifdef CUSTOM_MODELS
 #include "CustomTimecycle.h"
+#include "CustomZones.h"
 #endif
 #include "CustomSky.h"
 #include "TrafficLights.h"
@@ -865,6 +866,9 @@ void CGame::Process(void)
 		CNoClip::ProcessInput();
 		CClock::Update();
 		CWeather::Update();
+#ifdef CUSTOM_MODELS
+		CCustomZones::Update();	// archive mapzones: pin clock/weather inside a zone
+#endif
 
 		PUSH_MEMID(MEMID_SCRIPT);
 		CTheScripts::Process();

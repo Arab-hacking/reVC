@@ -8,6 +8,7 @@
 #include "CustomTimecycle.h"
 #include "CustomTimecycleShadow.h"
 #include "CustomModels.h"
+#include "CustomZones.h"
 #include "DebugLog.h"
 #include "SavehDiag.h"
 #include "Timecycle.h"
@@ -671,6 +672,12 @@ CCustomTimecycle::EvaluateColorGrade(float fHour, int oldWeather, int newWeather
 	float wi = weatherInterp < 0.0f ? 0.0f : (weatherInterp > 1.0f ? 1.0f : weatherInterp);
 	for(int k = 0; k < 12; k++)
 		outRows12[k] = a[k] + (b[k] - a[k]) * wi;
+	// A mapzones box scales the graded picture (3x3 terms only; the
+	// offset column is not a gain). 1.0 outside any zone.
+	const float zb = CCustomZones::CurrentBrightness();
+	if(zb != 1.0f)
+		for(int k = 0; k < 12; k++)
+			if(k % 4 != 3) outRows12[k] *= zb;
 }
 #endif
 
