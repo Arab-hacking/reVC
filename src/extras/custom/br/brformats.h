@@ -730,27 +730,34 @@ static inline void fixTree(RwNode& node, uint32_t parentId, RwFixStats& st) {
                 if (type <= 6) fixMatFxBlob(node.kids[extIdx].kids[fxIdx].data, st);
                 else {
                     RwNode extracted; bool got = false;
-                    if (!hasTex) {
+                    {
                         const MatFxTex* pick = nullptr;
                         for (auto& t : texs) { if (t.key == "diffuseTex") pick = &t; }
                         if (!pick) { for (auto& t : texs) { if (t.key == "albedoTex") pick = &t; } }
                         if (!pick) { for (auto& t : texs) { if (t.key == "baseColorTex" || t.key == "colorTex") pick = &t; } }
                         const MatFxTex* mask = nullptr; const MatFxTex* lay[4] = { nullptr, nullptr, nullptr, nullptr };
                         if (!pick) {
-                            // pbrTerrain: диффуза нет вовсе; наружу выносим маску (имя = имя модели), а рецепт запекания отдаём сборщику TXD
+                            // pbrTerrain: диффуза в блобе нет; наружу выносим маску (имя = имя модели), а рецепт запекания отдаём сборщику TXD
                             for (auto& t : texs) { if (t.key == "landscapeMask") mask = &t; else if (t.key == "landscapeMapR") lay[0] = &t; else if (t.key == "landscapeMapG") lay[1] = &t; else if (t.key == "landscapeMapB") lay[2] = &t; else if (t.key == "landscapeMapA") lay[3] = &t; }
                             for (int i = 0; i < 4; i++) if (lay[i] && matfxTexName(node.kids[extIdx].kids[fxIdx].data.data(), *lay[i]).empty()) lay[i] = nullptr;   // пустой слот слоя (тип 9)
-                            if (mask) pick = mask; else for (auto& t : texs) { if (t.key.rfind("landscapeMap", 0) == 0) { pick = &t; break; } }
                         }
-                        if (pick) {
+                        if (mask) {
+                            // Рецепт регистрируем и когда у материала уже есть свой rwTEXTURE (у террейна это
+                            // обычно та же маска в роли диффуза): раньше рецепт терялся вместе с hasTex, сплат
+                            // не собирался и в игре была видна сырая маска. Имена берём из блоба, поэтому рецепт
+                            // полезен сборщику TXD даже без разбора дерева текстуры маски.
+                            const auto& blob = node.kids[extIdx].kids[fxIdx].data;
+                            TerrainRecipe r; r.tex = normTexName(matfxTexName(blob.data(), *mask));
+                            for (int i = 0; i < 4; i++) if (lay[i]) r.layers[i] = normTexName(matfxTexName(blob.data(), *lay[i]));
+                            if (type == 9) matfx9Scales(blob.data(), blob.size(), r.scale); else matfx10Vec4(blob.data(), blob.size(), "landscapeScale", r.scale);
+                            if (!r.tex.empty()) { st.recipes.push_back(r); st.terrain++; }
+                            if (!hasTex) pick = mask;
+                        } else if (!pick) {
+                            for (auto& t : texs) { if (t.key.rfind("landscapeMap", 0) == 0) { pick = &t; break; } }
+                        }
+                        if (!hasTex && pick) {
                             std::vector<RwNode> nodes; const auto& blob = node.kids[extIdx].kids[fxIdx].data;
                             if (parseChildren(blob.data() + pick->off, pick->len, nodes, 8) && nodes.size() == 1 && nodes[0].container) { extracted = std::move(nodes[0]); got = true; }
-                            if (got && pick == mask) {
-                                TerrainRecipe r; r.tex = normTexName(matfxTexName(blob.data(), *mask));
-                                for (int i = 0; i < 4; i++) if (lay[i]) r.layers[i] = normTexName(matfxTexName(blob.data(), *lay[i]));
-                                if (type == 9) matfx9Scales(blob.data(), blob.size(), r.scale); else matfx10Vec4(blob.data(), blob.size(), "landscapeScale", r.scale);
-                                if (!r.tex.empty()) { st.recipes.push_back(r); st.terrain++; }
-                            }
                         }
                     }
                     float pbrRefl = -1.f;

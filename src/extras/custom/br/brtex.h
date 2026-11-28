@@ -43,6 +43,106 @@ static inline bool astcFormat(uint32_t gl, int& bw, int& bh, bool& srgb) {
     return false;
 }
 
+// ---------------------------------------------------------------------------
+// ETC2 RGB8 (0x9274) / ETC2 RGBA8+EAC (0x9278) — второй формат .btx в паках
+// BR (.etc2.bpc рядом с .astc.bpc). Декодер повторяет эталон btx_etc2.py из
+// разбора формата (Khronos Data Format Spec, таблицы 139/140):
+//  - карта индексов raw=(msb<<1)|lsb -> позиция в строке модификаторов (2,3,1,0);
+//  - пиксель (x,y) берёт бит j=4x+y от младшего бита каждого 16-битного полуслова;
+//  - режимы T/H/planar с приоритетом T > H > planar, индекс палитры = raw напрямую;
+//  - в 16-байтном блоке RGBA8 игра хранит СНАЧАЛА EAC-альфу, потом ETC2 RGB;
+//  - EAC: множитель 0 трактуется как 1/8.
+// ---------------------------------------------------------------------------
+static const int16_t ETC2_MOD[8][4] = {
+    {-8,-2,2,8},{-17,-5,5,17},{-29,-9,9,29},{-42,-13,13,42},
+    {-60,-18,18,60},{-80,-24,24,80},{-106,-33,33,106},{-183,-47,47,183} };
+static const int ETC2_DIST[8] = { 3, 6, 11, 16, 23, 32, 41, 64 };
+static const int8_t EAC_MOD[16][8] = {
+    {-3,-6,-9,-15,2,5,8,14},{-3,-7,-10,-13,2,6,9,12},{-2,-5,-8,-13,1,4,7,12},{-2,-4,-6,-13,1,3,5,12},
+    {-3,-6,-8,-12,2,5,7,11},{-3,-7,-9,-11,2,6,8,10},{-4,-7,-8,-11,3,6,7,10},{-3,-5,-8,-11,2,4,7,10},
+    {-2,-6,-8,-10,1,5,7,9},{-2,-5,-8,-10,1,4,7,9},{-2,-4,-8,-10,1,3,7,9},{-2,-5,-7,-10,1,4,6,9},
+    {-3,-4,-7,-10,2,3,6,9},{-1,-2,-3,-10,0,1,2,9},{-4,-6,-8,-9,3,5,7,8},{-3,-5,-7,-9,2,4,6,8} };
+
+static inline int etcClamp(int v) { return v < 0 ? 0 : v > 255 ? 255 : v; }
+static inline int etcEx4(int v) { return (v << 4) | v; }
+static inline int etcEx5(int v) { return (v << 3) | (v >> 2); }
+static inline int etcEx6(int v) { return (v << 2) | (v >> 4); }
+static inline int etcEx7(int v) { return (v << 1) | (v >> 6); }
+static inline int etcSign3(int v) { return (v & 4) ? v - 8 : v; }
+
+// один RGB-блок ETC2 (8 байт) -> 16 пикселей RGB, порядок p = 4y + x
+static inline void decodeEtc2RgbBlock(const uint8_t* bl, uint8_t out[16][3]) {
+    const int b0 = bl[0], b1 = bl[1], b2 = bl[2], b3 = bl[3];
+    const int diff = (b3 >> 1) & 1;
+    const int r5 = (b0 >> 3) & 31, g5 = (b1 >> 3) & 31, bl5 = (b2 >> 3) & 31;
+    const int rr = r5 + etcSign3(b0 & 7), gg = g5 + etcSign3(b1 & 7), bb = bl5 + etcSign3(b2 & 7);
+    const int msb16 = (bl[4] << 8) | bl[5], lsb16 = (bl[6] << 8) | bl[7];
+    static const int IDX2POS[4] = { 2, 3, 1, 0 };
+    int rawIdx[16];
+    for (int y = 0; y < 4; y++) for (int x = 0; x < 4; x++) {
+        int j = 4 * x + y;
+        rawIdx[y * 4 + x] = (((msb16 >> j) & 1) << 1) | ((lsb16 >> j) & 1);
+    }
+    if (diff == 0 || (rr >= 0 && rr <= 31 && gg >= 0 && gg <= 31 && bb >= 0 && bb <= 31)) {
+        int c0[3], c1[3];
+        if (diff) { c0[0]=etcEx5(r5); c0[1]=etcEx5(g5); c0[2]=etcEx5(bl5); c1[0]=etcEx5(rr); c1[1]=etcEx5(gg); c1[2]=etcEx5(bb); }
+        else { c0[0]=etcEx4(b0>>4); c0[1]=etcEx4(b1>>4); c0[2]=etcEx4(b2>>4); c1[0]=etcEx4(b0&15); c1[1]=etcEx4(b1&15); c1[2]=etcEx4(b2&15); }
+        const int t1 = (b3 >> 5) & 7, t2 = (b3 >> 2) & 7, flip = b3 & 1;
+        for (int y = 0; y < 4; y++) for (int x = 0; x < 4; x++) {
+            int p = y * 4 + x;
+            int sub = flip ? (y >= 2 ? 1 : 0) : (x >= 2 ? 1 : 0);
+            const int* base = sub ? c1 : c0;
+            int mod = ETC2_MOD[sub ? t2 : t1][IDX2POS[rawIdx[p]]];
+            for (int c = 0; c < 3; c++) out[p][c] = (uint8_t)etcClamp(base[c] + mod);
+        }
+        return;
+    }
+    uint64_t u = 0; for (int i = 0; i < 8; i++) u = (u << 8) | bl[i];
+    int pal[4][3];
+    if (rr < 0 || rr > 31) {           // режим T
+        int c0[3] = { etcEx4((int)((((u >> 59) & 3) << 2) | ((u >> 56) & 3))), etcEx4((int)((u >> 52) & 15)), etcEx4((int)((u >> 48) & 15)) };
+        int c1[3] = { etcEx4((int)((u >> 44) & 15)), etcEx4((int)((u >> 40) & 15)), etcEx4((int)((u >> 36) & 15)) };
+        int d = ETC2_DIST[((int)((u >> 35) & 1) << 2) | ((int)((u >> 34) & 1) << 1) | (int)((u >> 32) & 1)];
+        for (int c = 0; c < 3; c++) { pal[0][c]=c0[c]; pal[1][c]=etcClamp(c1[c]+d); pal[2][c]=c1[c]; pal[3][c]=etcClamp(c1[c]-d); }
+    } else if (gg < 0 || gg > 31) {    // режим H
+        int c0[3] = { etcEx4((int)((u >> 59) & 15)), etcEx4((int)((((u >> 56) & 7) << 1) | ((u >> 52) & 1))), etcEx4((int)((((u >> 51) & 1) << 3) | (((u >> 48) & 3) << 1) | ((u >> 47) & 1))) };
+        int c1[3] = { etcEx4((int)((u >> 43) & 15)), etcEx4((int)((u >> 39) & 15)), etcEx4((int)((u >> 35) & 15)) };
+        int key0 = (c0[0] << 16) | (c0[1] << 8) | c0[2], key1 = (c1[0] << 16) | (c1[1] << 8) | c1[2];
+        int order = key0 >= key1 ? 1 : 0;
+        int d = ETC2_DIST[((int)((u >> 34) & 1) << 2) | ((int)((u >> 32) & 1) << 1) | order];
+        for (int c = 0; c < 3; c++) { pal[0][c]=etcClamp(c0[c]+d); pal[1][c]=etcClamp(c0[c]-d); pal[2][c]=etcClamp(c1[c]+d); pal[3][c]=etcClamp(c1[c]-d); }
+    } else {                            // режим planar
+        int o_[3], h_[3], v_[3];
+        o_[0]=etcEx6((int)((u >> 57) & 63)); o_[1]=etcEx7((int)((((u >> 56) & 1) << 6) | ((u >> 49) & 63))); o_[2]=etcEx6((int)((((u >> 48) & 1) << 5) | (((u >> 43) & 3) << 3) | (((u >> 40) & 3) << 1) | ((u >> 39) & 1)));
+        h_[0]=etcEx6((int)((((u >> 34) & 31) << 1) | ((u >> 32) & 1))); h_[1]=etcEx7((int)((u >> 25) & 127)); h_[2]=etcEx6((int)((u >> 19) & 63));
+        v_[0]=etcEx6((int)((u >> 13) & 63)); v_[1]=etcEx7((int)((u >> 6) & 127)); v_[2]=etcEx6((int)(u & 63));
+        for (int y = 0; y < 4; y++) for (int x = 0; x < 4; x++) {
+            int p = y * 4 + x;
+            for (int c = 0; c < 3; c++) {
+                int num = x * (h_[c] - o_[c]) + y * (v_[c] - o_[c]) + 4 * o_[c] + 2;
+                int q = num >= 0 ? (num >> 2) : -((-num + 3) >> 2);   // >> с округлением вниз, как в эталоне
+                out[p][c] = (uint8_t)etcClamp(q);
+            }
+        }
+        return;
+    }
+    for (int p = 0; p < 16; p++) { const int* c = pal[rawIdx[p]]; out[p][0]=(uint8_t)c[0]; out[p][1]=(uint8_t)c[1]; out[p][2]=(uint8_t)c[2]; }
+}
+
+// EAC-альфа (8 байт) -> 16 значений, порядок p = 4y + x
+static inline void decodeEacAlphaBlock(const uint8_t* bl, uint8_t out[16]) {
+    const int base = bl[0];
+    const int mult = bl[1] >> 4, table = bl[1] & 15;
+    uint64_t bits = 0; for (int i = 0; i < 6; i++) bits = (bits << 8) | bl[2 + i];
+    const double ms = mult == 0 ? 0.125 : (double)mult;   // mult==0 -> 1/8 по Khronos
+    for (int y = 0; y < 4; y++) for (int x = 0; x < 4; x++) {
+        int j = 4 * x + y;
+        int idx = (int)((bits >> (45 - 3 * j)) & 7);
+        double v = (double)base + ms * (double)EAC_MOD[table][idx];
+        out[y * 4 + x] = (uint8_t)etcClamp((int)std::nearbyint(v));
+    }
+}
+
 // Разбор .btx. Блок ASTC определяется по фактическому размеру первого мипа (у BR enum не совпадает с данными).
 static inline bool parseBtx(const uint8_t* p, size_t n, Texture& t, std::string* err = nullptr) {
     if (!isBtx(p, n)) { if (err) *err = "not a BTX/KTX11"; return false; }
@@ -94,6 +194,39 @@ static inline bool parseBtx(const uint8_t* p, size_t n, Texture& t, std::string*
         }
         if (t.mips.empty()) { if (err) { char tb[160]; snprintf(tb, sizeof tb, "no mip levels (raw glType=0x%X glFormat=0x%X glInternal=0x%X %ux%u)", glType, glFormat, t.glInternal, w, h); *err = tb; } return false; }
         t.blockW = t.blockH = 1;
+        const Mip& m0 = t.mips[0];
+        for (size_t i = 3; i < m0.rgba.size(); i += 4) if (m0.rgba[i] != 0xFF) { t.hasAlpha = true; break; }
+        return true;
+    }
+    // ETC2 из .etc2.bpc паков: 0x9274 = RGB8 (8 байт/блок), 0x9278 = RGBA8 (16 байт/блок, EAC-альфа первой)
+    if (t.glInternal == 0x9274 || t.glInternal == 0x9275 || t.glInternal == 0x9278 || t.glInternal == 0x9279) {
+        const bool withAlpha = (t.glInternal == 0x9278 || t.glInternal == 0x9279);
+        const uint32_t blockBytes = withAlpha ? 16 : 8;
+        t.srgb = (t.glInternal == 0x9275 || t.glInternal == 0x9279);
+        t.blockW = t.blockH = 4;
+        uint32_t mw = w, mh = h;
+        for (uint32_t m = 0; m < nmip; m++) {
+            if (off + 4 > kn) break;
+            uint32_t sz = rd32(k + off); off += 4;
+            if (off + sz > kn) break;
+            uint32_t bx = (mw + 3) / 4, by = (mh + 3) / 4;
+            if (sz < bx * by * blockBytes) break;
+            Mip mip; mip.w = mw; mip.h = mh; mip.rgba.assign((size_t)mw * mh * 4, 0);
+            uint8_t rgb[16][3]; uint8_t alp[16];
+            for (uint32_t y = 0; y < by; y++) for (uint32_t x = 0; x < bx; x++) {
+                const uint8_t* src = k + off + ((size_t)y * bx + x) * blockBytes;
+                if (withAlpha) { decodeEacAlphaBlock(src, alp); decodeEtc2RgbBlock(src + 8, rgb); }
+                else { decodeEtc2RgbBlock(src, rgb); for (int p = 0; p < 16; p++) alp[p] = 0xFF; }
+                for (int yy = 0; yy < 4; yy++) { uint32_t py = y * 4 + yy; if (py >= mh) break;
+                    for (int xx = 0; xx < 4; xx++) { uint32_t px = x * 4 + xx; if (px >= mw) break;
+                        uint8_t* dst = &mip.rgba[((size_t)py * mw + px) * 4]; int p = yy * 4 + xx;
+                        dst[0] = rgb[p][0]; dst[1] = rgb[p][1]; dst[2] = rgb[p][2]; dst[3] = alp[p]; } }
+            }
+            t.mips.push_back(std::move(mip));
+            off += sz; off = (off + 3) & ~(size_t)3;
+            mw = std::max(1u, mw / 2); mh = std::max(1u, mh / 2);
+        }
+        if (t.mips.empty()) { if (err) { char tb[160]; snprintf(tb, sizeof tb, "no mip levels (ETC2 glInternal=0x%X %ux%u)", t.glInternal, w, h); *err = tb; } return false; }
         const Mip& m0 = t.mips[0];
         for (size_t i = 3; i < m0.rgba.size(); i += 4) if (m0.rgba[i] != 0xFF) { t.hasAlpha = true; break; }
         return true;

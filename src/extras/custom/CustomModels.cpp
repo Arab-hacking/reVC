@@ -946,7 +946,7 @@ ScanBpcSystem(void)
 		uint8 archId = 0xFFu;
 		if(bpcPath.empty() || !MountBpcArchive(bpcPath, true, archId)){
 			missingTexDb++;
-			CUSTOM_LOG("bpc TEXDB %s: .astc.bpc archive not found or unreadable\n", texDbs[i].c_str());
+			CUSTOM_LOG("bpc TEXDB %s: texture archive not found or unreadable (.astc.bpc/.etc2.bpc)\n", texDbs[i].c_str());
 		}else{
 			BpcIndexCounts c;
 			IndexBpcArchiveAssets(archId, bpcPath, (uint64)(2000u + mountedTexDb), false, c);
@@ -1875,6 +1875,13 @@ LoadModelIntoGame(const std::string &key, int32 modelId)
 		ok ? "loaded" : "FAILED", model->rawSize, model->isMod ? "mod" : "dff", (unsigned)model->bytes.size(),
 		model->stats.versionsChanged ? ", chunk versions fixed" : "",
 		model->warn.empty() ? "" : (", " + model->warn).c_str());
+	if(!model->stats.recipes.empty()){
+		for(size_t r = 0; r < model->stats.recipes.size(); r++){
+			const br::TerrainRecipe &rec = model->stats.recipes[r];
+			CUSTOM_LOG("terrain recipe %s: mask '%s' layers '%s' '%s' '%s' '%s'\n", key.c_str(),
+				rec.tex.c_str(), rec.layers[0].c_str(), rec.layers[1].c_str(), rec.layers[2].c_str(), rec.layers[3].c_str());
+		}
+	}
 	return ok;
 }
 
@@ -3256,6 +3263,7 @@ CCustomModels::PumpBackgroundResults(void)
 #ifdef CUSTOM_BPC_TEXDB
 				// Immediately fan out the model's .btx texture list onto the dedicated TexDB worker pool.
 				if(plan.usable){
+					bool anyTerrainMatched = false;
 					for(size_t i = 0; i < model->textureNames.size(); i++){
 						const std::string &tname = model->textureNames[i];
 						const br::TerrainRecipe *recipe = nil;
@@ -3263,6 +3271,7 @@ CCustomModels::PumpBackgroundResults(void)
 							if(SameTerrainTex(model->stats.recipes[r].tex, tname))
 								recipe = &model->stats.recipes[r];
 						if(recipe){
+							anyTerrainMatched = true;
 #ifdef RW_GL3
 							const std::string lowMask = ToLower(recipe->tex);
 							const bool hasMaskSrc = (FindSource(customBtx, lowMask) != nil || FindSource(customTmbBtx, lowMask) != nil);
@@ -3305,6 +3314,9 @@ CCustomModels::PumpBackgroundResults(void)
 							}
 						}
 					}
+					if(!model->stats.recipes.empty())
+						CUSTOM_LOG("terrain fanout %s: %zu recipe(s), mask matched=%d, %zu texture name(s)\n",
+							key.c_str(), model->stats.recipes.size(), anyTerrainMatched ? 1 : 0, model->textureNames.size());
 					for(size_t i = 0; i < model->uv2DualNames.size(); i++){
 						const std::string &dname = model->uv2DualNames[i];
 						const CustomSource *src = FindSource(customBtx, ToLower(dname));

@@ -281,15 +281,19 @@ inline std::vector<std::string> BuildTexDbBpcCandidates(const std::string &custo
 	if(StartsWithCI(clean, "zip/")){
 		AppendUniquePath(cands, root + "/" + clean + ".astc.bpc");
 		AppendUniquePath(cands, root + "/" + clean + ".bpc");
+		AppendUniquePath(cands, root + "/" + clean + ".etc2.bpc");
 	}else{
 		if(!hasDir){
 			AppendUniquePath(cands, root + "/zip/textures/" + clean + ".astc.bpc");
 			AppendUniquePath(cands, root + "/zip/" + clean + ".astc.bpc");
 			AppendUniquePath(cands, root + "/zip/textures/" + clean + ".bpc");
 			AppendUniquePath(cands, root + "/zip/" + clean + ".bpc");
+			AppendUniquePath(cands, root + "/zip/textures/" + clean + ".etc2.bpc");
+			AppendUniquePath(cands, root + "/zip/" + clean + ".etc2.bpc");
 		}else{
 			AppendUniquePath(cands, root + "/zip/" + clean + ".astc.bpc");
 			AppendUniquePath(cands, root + "/zip/" + clean + ".bpc");
+			AppendUniquePath(cands, root + "/zip/" + clean + ".etc2.bpc");
 		}
 	}
 	return cands;
@@ -315,6 +319,8 @@ inline std::vector<std::string> BuildTexDbTmbCandidates(const std::string &custo
 		AppendUniquePath(cands, root + "/" + clean + ".bpc.tmb");
 		AppendUniquePath(cands, root + "/" + clean + ".tmb");
 		AppendUniquePath(cands, root + "/" + clean + ".astc.tmb");
+		AppendUniquePath(cands, root + "/" + clean + ".etc2.bpc.tmb");
+		AppendUniquePath(cands, root + "/" + clean + ".etc2.tmb");
 	}else if(!hasDir){
 		AppendUniquePath(cands, root + "/zip/textures/" + clean + ".astc.bpc.tmb");
 		AppendUniquePath(cands, root + "/zip/" + clean + ".astc.bpc.tmb");
@@ -324,11 +330,17 @@ inline std::vector<std::string> BuildTexDbTmbCandidates(const std::string &custo
 		AppendUniquePath(cands, root + "/zip/" + clean + ".tmb");
 		AppendUniquePath(cands, root + "/zip/textures/" + clean + ".astc.tmb");
 		AppendUniquePath(cands, root + "/zip/" + clean + ".astc.tmb");
+		AppendUniquePath(cands, root + "/zip/textures/" + clean + ".etc2.bpc.tmb");
+		AppendUniquePath(cands, root + "/zip/" + clean + ".etc2.bpc.tmb");
+		AppendUniquePath(cands, root + "/zip/textures/" + clean + ".etc2.tmb");
+		AppendUniquePath(cands, root + "/zip/" + clean + ".etc2.tmb");
 	}else{
 		AppendUniquePath(cands, root + "/zip/" + clean + ".astc.bpc.tmb");
 		AppendUniquePath(cands, root + "/zip/" + clean + ".bpc.tmb");
 		AppendUniquePath(cands, root + "/zip/" + clean + ".tmb");
 		AppendUniquePath(cands, root + "/zip/" + clean + ".astc.tmb");
+		AppendUniquePath(cands, root + "/zip/" + clean + ".etc2.bpc.tmb");
+		AppendUniquePath(cands, root + "/zip/" + clean + ".etc2.tmb");
 	}
 	return cands;
 }
