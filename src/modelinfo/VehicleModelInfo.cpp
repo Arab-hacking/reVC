@@ -2642,8 +2642,8 @@ CVehicleModelInfo::SetCurrentColours(uint8 c1, uint8 c2, uint8 c3, uint8 c4)
 // This fork reads the file through CFileMgr like the rest of its data tables
 // and logs, rather than asserts, on anything malformed: a single bad line must
 // not take the game down at startup.
-void
-CVehicleModelInfo::LoadVehicleUpgrades(void)
+static void
+ParseVehicleUpgrades(char *data)
 {
 	enum eCarModsSection
 	{
@@ -2653,25 +2653,30 @@ CVehicleModelInfo::LoadVehicleUpgrades(void)
 		CAR_MODS_WHEEL
 	};
 
-	for(int32 i = 0; i < NUM_WHEELS; i++)
-		ms_numWheelUpgrades[i] = 0;
-	ms_linkedUpgrades.m_nLinksCount = 0;
-
-	CFileMgr::ChangeDir("\\DATA\\");
-	int fd = CFileMgr::OpenFile("CARMODS.DAT", "r");
-	CFileMgr::ChangeDir("\\");
-	if(fd <= 0){
-		REVC_LOG_WARNING("LoadVehicleUpgrades: DATA\\CARMODS.DAT not found, no tuning available");
-		return;
-	}
-
 	int32 section = CAR_MODS_NONE;
 	int32 numMods = 0;
 	int32 numWheels = 0;
 	int32 numLinks = 0;
 
-	char *line;
-	while((line = CFileLoader::LoadLine(fd)) != nil){
+	char *cursor = data;
+	while(*cursor != '\0'){
+		char *line = cursor;
+		while(*cursor != '\0' && *cursor != '\n')
+			cursor++;
+		if(*cursor == '\n'){
+			*cursor = '\0';
+			cursor++;
+		}
+		// The normalisation CFileLoader::LoadLine applies, with its
+		// 255-character line cap: commas and control characters become
+		// spaces and leading whitespace is skipped.
+		if(strlen(line) > 255)
+			line[255] = '\0';
+		for(int i = 0; line[i] != '\0'; i++)
+			if(line[i] < ' ' || line[i] == ',')
+				line[i] = ' ';
+		while(*line <= ' ' && *line != '\0')
+			line++;
 		if(line[0] == '\0')
 			continue;
 
@@ -2690,7 +2695,7 @@ CVehicleModelInfo::LoadVehicleUpgrades(void)
 			continue;
 		}
 
-		// LoadLine already turned commas and control characters into spaces,
+		// Commas and control characters were turned into spaces above,
 		// so strtok is enough to walk the tokens of a line.
 		char *context = nil;
 		char *token = strtok_r(line, " \t", &context);
@@ -2721,7 +2726,7 @@ CVehicleModelInfo::LoadVehicleUpgrades(void)
 			second->SetupVehicleUpgradeFlags(secondName);
 
 			if(id1 >= 0 && id2 >= 0 && id1 <= INT16_MAX && id2 <= INT16_MAX){
-				ms_linkedUpgrades.AddUpgradeLink((int16)id1, (int16)id2);
+				CVehicleModelInfo::ms_linkedUpgrades.AddUpgradeLink((int16)id1, (int16)id2);
 				numLinks++;
 			}
 			break;
@@ -2788,7 +2793,7 @@ CVehicleModelInfo::LoadVehicleUpgrades(void)
 					continue;
 				}
 				part->SetupVehicleUpgradeFlags(wheelName);
-				AddWheelUpgrade(wheelSet, partId);
+				CVehicleModelInfo::AddWheelUpgrade(wheelSet, partId);
 				numWheels++;
 			}
 			break;
@@ -2799,9 +2804,46 @@ CVehicleModelInfo::LoadVehicleUpgrades(void)
 		}
 	}
 
-	CFileMgr::CloseFile(fd);
 	REVC_LOG_INFO("LoadVehicleUpgrades: %d vehicle mod lists, %d wheel models, %d links",
 		numMods, numWheels, numLinks);
+}
+
+void
+CVehicleModelInfo::LoadVehicleUpgrades(void)
+{
+	for(int32 i = 0; i < NUM_WHEELS; i++)
+		ms_numWheelUpgrades[i] = 0;
+	ms_linkedUpgrades.m_nLinksCount = 0;
+
+#ifdef CUSTOM_MODELS
+	// The archive also carries this SA-format table as
+	// data/carmods-legacy.dat; its part names are the veh_mods IDE
+	// models. The BR numeric carmods.dat is applied later and only
+	// fills slots this table left empty, so the two complement
+	// each other rather than compete.
+	std::vector<uint8> archived;
+	if(CCustomModels::ReadCommonDataFile("data/carmods-legacy.dat", archived) && !archived.empty()){
+		archived.push_back('\0');
+		ParseVehicleUpgrades((char*)archived.data());
+		return;
+	}
+#endif
+
+	CFileMgr::ChangeDir("\\DATA\\");
+	int fd = CFileMgr::OpenFile("CARMODS.DAT", "r");
+	CFileMgr::ChangeDir("\\");
+	if(fd <= 0){
+		REVC_LOG_WARNING("LoadVehicleUpgrades: DATA\\CARMODS.DAT not found, no tuning available");
+		return;
+	}
+	std::vector<uint8> bytes;
+	char chunk[4096];
+	size_t n;
+	while((n = CFileMgr::Read(fd, chunk, (ssize_t)sizeof(chunk))) > 0)
+		bytes.insert(bytes.end(), chunk, chunk + n);
+	CFileMgr::CloseFile(fd);
+	bytes.push_back('\0');
+	ParseVehicleUpgrades((char*)bytes.data());
 }
 
 #ifdef SA_VEHICLE_MODELS
