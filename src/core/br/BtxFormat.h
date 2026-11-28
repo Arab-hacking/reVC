@@ -14,7 +14,7 @@ namespace brbtx {
 // KTX 1.1 magic
 static const uint8_t KTX11_MAGIC[12] = { 0xAB, 'K', 'T', 'X', ' ', '1', '1', 0xBB, 0x0D, 0x0A, 0x1A, 0x0A };
 
-// GL enums - named enum for MSVC compatibility
+// GL enums - named enum for MSVC compatibility, plus namespace-scope constants for direct access
 enum GlEnum {
     GL_RGB                      = 0x1907,
     GL_RGBA                     = 0x1908,
@@ -32,6 +32,10 @@ enum GlEnum {
     GL_COMPRESSED_SRGB8_ALPHA8_ASTC_4x4   = 0x93D0,
     GL_COMPRESSED_SRGB8_ALPHA8_ASTC_12x12 = 0x93DD,
 };
+
+// Also expose as namespace-scope constants for direct access in functions
+static const uint32_t GL_COMPRESSED_SRGB8_ALPHA8_ASTC_4x4   = 0x93D0;
+static const uint32_t GL_COMPRESSED_SRGB8_ALPHA8_ASTC_12x12 = 0x93DD;
 
 // ASTC block sizes (index = GL_COMPRESSED_RGBA_ASTC_4x4_KHR + index)
 static const uint8_t ASTC_BLOCKS[14][2] = {

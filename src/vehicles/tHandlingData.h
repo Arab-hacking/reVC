@@ -132,6 +132,11 @@ struct tHandlingData
 	eVehicleLightsSize m_nRearLights;
 	uint8 m_nAnimGroup;
 
+	// SA/BR extended suspension settings (from handling.cfg 39 columns)
+	float m_fSuspensionBiasFront;
+	float m_fSuspensionBiasRear;
+	float m_fSuspensionAntiDive;
+
 	// SA/BR extended physics (from physics.json)
 	float m_fAngularCollisionResponseXY[2];
 	float m_fAngularCollisionResponseZ[2];

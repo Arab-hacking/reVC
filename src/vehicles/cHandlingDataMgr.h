@@ -43,6 +43,9 @@ public:
 	tBikeHandlingData *GetBikeHandlingPointer(uint32 handlingId);
 	tFlyingHandlingData *GetFlyingPointer(uint32 handlingId);
 	tBoatHandlingData *GetBoatPointer(uint32 handlingId);
+
+	// Apply BR physics.json overrides to handling records
+	static void ApplyPhysicsJson(const uint8 *data, uint32 size);
 };
 
 extern cHandlingDataMgr mod_HandlingManager;
