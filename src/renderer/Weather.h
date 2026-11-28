@@ -11,6 +11,9 @@ enum {
 	WEATHER_EXTRACOLOURS = 6
 };
 
+#include <string>
+#include <vector>
+
 class CWeather
 {
 public:

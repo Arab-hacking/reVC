@@ -45,6 +45,8 @@
 #include "Wanted.h"
 #include "debugmenu.h"
 
+#include "core/br/AudioConfigParse.h"
+
 #define CHANNEL_PLAYER_VEHICLE_ENGINE m_nActiveSamples
 
 // Forward declaration for BR vehicle audio settings application

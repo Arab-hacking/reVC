@@ -49,6 +49,7 @@ target_include_directories(${EXECUTABLE}
     PRIVATE
         $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}>
         $<BUILD_INTERFACE:${${PROJECT}_INCLUDES}>
+        $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/core/br>
 )
 
 target_compile_definitions(${EXECUTABLE}
