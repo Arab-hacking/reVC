@@ -49,6 +49,7 @@
 #include "brformats.h"
 #include "brtex.h"
 #include "brreserved.h"
+#include "braudio.h"
 
 #include "FileLoader.h"
 #include "FileMgr.h"
@@ -138,6 +139,8 @@ static std::map<std::string, CustomSource> commonZipDataFiles;
 // path through ReadCommonDataFile/ReadDataFile. There is no per-name
 // whitelist anywhere in the serving layer.
 static std::map<std::string, CustomSource> commonFiles;
+static std::map<std::string, braudio::PakMeta> audioPaks;
+static bool audioIndexRead;
 static std::vector<brvehicle::Upgrade> vehicleUpgrades;
 static bool vehicleUpgradesRead;
 static std::map<RwObject*, int32> vehicleUpgradeInstances;
@@ -411,6 +414,21 @@ ScanAssetFolder(const std::string &folder, const char *kind, int depth, ScanStat
 		ScanAssetFolder(dirs[i], kind, depth+1, st);
 }
 
+// The audio tree's sample data stays out of the catalog, but its small
+// index files at the audio root (pak table, per-pak sample indexes, bank
+// counts, vehicle audio settings) are data files like any other.
+static bool
+IsAudioConfigKey(const std::string &key)
+{
+	if(key.compare(0, 6, "audio/") != 0) return false;
+	if(key.find('/', 6) != std::string::npos) return false;
+	const std::string name = key.substr(6);
+	if(name == "banksnum.dat" || name == "pakfiles.dat" || name == "soundinf.dat" ||
+	   name == "vehicleaudiosettings.cfg")
+		return true;
+	return name.size() > 8 && name.compare(name.size() - 8, 8, ".bpcmeta") == 0;
+}
+
 // The one ZIP exception: only custom/common.zip at the custom root. Every
 // entry outside the audio tree goes into the unified catalog; canonical
 // data/maps/ entries and the four named root IDEs are additionally
@@ -461,6 +479,8 @@ ScanCommonZip(void)
 				// outside the audio tree, by normalised path.
 				if(pass == 0 && key.compare(0, 6, "audio/") != 0)
 					commonFiles.insert(std::make_pair(key, src));
+				if(pass == 0 && IsAudioConfigKey(key))
+					commonZipDataFiles.insert(std::make_pair(key, src));
 				if(pass == 0 && (key == "data/config.dat" || key == "data/timecyc.json" ||
 			                 key == "data/water.dat" || key == "data/carcols.dat" || key == "data/carmods.dat" ||
 			                 key == "data/lods.info" ||
@@ -785,6 +805,8 @@ ScanBpcSystem(void)
 				// read and not processed anywhere.
 				if(pass == 0 && key.compare(0, 6, "audio/") != 0)
 					commonFiles.insert(std::make_pair(key, src));
+				if(pass == 0 && IsAudioConfigKey(key))
+					commonZipDataFiles[key] = src;
 
 				// The three actor IDEs also sit in the unified catalog as
 				// readable files. They must be claimed as IDE definitions
@@ -4989,6 +5011,56 @@ CCustomModels::CreateVehicleTonerTexture(const RwRGBA &colour)
 	RwTexture *result = CreateVehiclePaletteTexture(entries, 256);
 	if(result) RwTextureSetName(result, "remaptoner");
 	return result;
+}
+
+static void
+LoadAudioIndex(void)
+{
+	audioIndexRead = true;
+	std::vector<uint8> bytes;
+	if(!CCustomModels::ReadCommonDataFile("audio/pakfiles.dat", bytes) || bytes.empty()) return;
+	std::vector<std::string> paks;
+	if(!braudio::parsePakFiles(bytes.data(), bytes.size(), paks)) return;
+	unsigned total = 0;
+	for(size_t i = 0; i < paks.size(); i++){
+		std::string lower = paks[i];
+		for(size_t c = 0; c < lower.size(); c++) lower[c] = (char)tolower((unsigned char)lower[c]);
+		std::vector<uint8> meta;
+		if(!CCustomModels::ReadCommonDataFile(("audio/" + lower + ".bpcmeta").c_str(), meta) || meta.empty())
+			continue;
+		braudio::PakMeta pm;
+		if(!braudio::parseBpcMeta(meta.data(), meta.size(), pm)) continue;
+		total += (unsigned)pm.samples.size();
+		audioPaks[lower] = pm;
+	}
+	CUSTOM_LOG("BR audio index: %u pak(s), %u sample(s)\n",
+		(unsigned)audioPaks.size(), total);
+}
+
+bool
+CCustomModels::FindAudioSample(const char *pakName, const char *samplePath, uint32 &offset, uint32 &size)
+{
+	offset = 0;
+	size = 0;
+	if(pakName == nil || samplePath == nil) return false;
+	if(!audioIndexRead) LoadAudioIndex();
+	std::string lower = pakName;
+	for(size_t c = 0; c < lower.size(); c++) lower[c] = (char)tolower((unsigned char)lower[c]);
+	std::map<std::string, braudio::PakMeta>::const_iterator it = audioPaks.find(lower);
+	if(it == audioPaks.end()) return false;
+	std::string want = samplePath;
+	for(size_t c = 0; c < want.size(); c++) want[c] = (char)tolower((unsigned char)want[c]);
+	for(size_t i = 0; i < it->second.samples.size(); i++){
+		const braudio::Sample &s = it->second.samples[i];
+		std::string have = s.name;
+		for(size_t c = 0; c < have.size(); c++) have[c] = (char)tolower((unsigned char)have[c]);
+		if(have == want){
+			offset = s.offset;
+			size = s.size;
+			return true;
+		}
+	}
+	return false;
 }
 
 bool

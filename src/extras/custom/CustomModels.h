@@ -50,6 +50,11 @@ public:
 	// fallback). The archive is the game's own data set, so a caller that can
 	// name the file gets the same bytes the client itself would use.
 	static bool ReadCommonDataFile(const char *path, std::vector<uint8> &out);
+	// BR audio index: resolves "Bank_001/sound_001.mp3" inside the named
+	// pak (GENERIC/STEPS/VEHICLE) to its offset/size in that pak's .bpc
+	// through audio/PakFiles.dat and audio/<pak>.bpcmeta. False when the
+	// archive carries no such pak or sample.
+	static bool FindAudioSample(const char *pakName, const char *samplePath, uint32 &offset, uint32 &size);
 	// True when the path is one this game is prepared to take from the archive
 	// rather than from the Vice City directory.
 	static bool IsReadableCommonDataFile(const char *path);
