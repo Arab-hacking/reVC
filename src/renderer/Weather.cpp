@@ -771,52 +771,52 @@ void CWeather::ApplyWeatherJson(const uint8_t* data, size_t size)
 	if (!snowObj) return;
 
 	// Parse snow object
-	const char* p = snowObj;
-	skipWs(&p);
-	if (*p != '{') return;
+	const char* parsePtr = snowObj;
+	skipWs(&parsePtr);
+	if (*parsePtr != '{') return;
 
 	// We're inside the snow object, parse its fields
-	while (p < end) {
-		skipWs(&p);
-		if (*p == '}') break;
+	while (parsePtr < end) {
+		skipWs(&parsePtr);
+		if (*parsePtr == '}') break;
 
 		// Parse key
-		if (*p != '"') break;
-		p++;
-		const char* keyStart = p;
-		while (p < end && *p != '"') p++;
-		if (p >= end) break;
-		std::string key(keyStart, p - keyStart);
-		p++; // skip closing quote
-		skipWs(&p);
-		if (*p != ':') break;
-		p++; // skip colon
-		skipWs(&p);
+		if (*parsePtr != '"') break;
+		parsePtr++;
+		const char* keyStart = parsePtr;
+		while (parsePtr < end && *parsePtr != '"') parsePtr++;
+		if (parsePtr >= end) break;
+		std::string key(keyStart, parsePtr - keyStart);
+		parsePtr++; // skip closing quote
+		skipWs(&parsePtr);
+		if (*parsePtr != ':') break;
+		parsePtr++; // skip colon
+		skipWs(&parsePtr);
 
 		if (key == "enabled") {
-			SnowEnabled = parseBool(p);
+			SnowEnabled = parseBool(parsePtr);
 		} else if (key == "texture") {
-			SnowTexture = parseString(p);
+			SnowTexture = parseString(parsePtr);
 		} else if (key == "color") {
 			float color[4];
-			if (parseFloatArray(p, color, 4)) {
+			if (parseFloatArray(parsePtr, color, 4)) {
 				for (int i = 0; i < 4; i++) SnowColor[i] = color[i] / 255.0f;
 			}
 		} else if (key == "amount") {
-			SnowAmount = parseFloat(p);
+			SnowAmount = parseFloat(parsePtr);
 		} else if (key == "tile") {
-			SnowTile = parseFloat(p);
+			SnowTile = parseFloat(parsePtr);
 		} else if (key == "exclude-textures") {
-			parseStringArray(p, SnowExcludeTextures);
+			parseStringArray(parsePtr, SnowExcludeTextures);
 		} else {
 			// Skip unknown field
-			skipWs(&p);
-			if (*p == '{') { int depth = 1; while (depth > 0 && p < end) { p++; if (*p == '{') depth++; else if (*p == '}') depth--; } }
-			else if (*p == '[') { int depth = 1; while (depth > 0 && p < end) { p++; if (*p == '[') depth++; else if (*p == ']') depth--; } }
-			else if (*p == '"') { p++; while (p < end && *p != '"') p++; if (p < end) p++; }
-			else { while (p < end && *p != ',' && *p != '}') p++; }
+			skipWs(&parsePtr);
+			if (*parsePtr == '{') { int depth = 1; while (depth > 0 && parsePtr < end) { parsePtr++; if (*parsePtr == '{') depth++; else if (*parsePtr == '}') depth--; } }
+			else if (*parsePtr == '[') { int depth = 1; while (depth > 0 && parsePtr < end) { parsePtr++; if (*parsePtr == '[') depth++; else if (*parsePtr == ']') depth--; } }
+			else if (*parsePtr == '"') { parsePtr++; while (parsePtr < end && *parsePtr != '"') parsePtr++; if (parsePtr < end) parsePtr++; }
+			else { while (parsePtr < end && *parsePtr != ',' && *parsePtr != '}') parsePtr++; }
 		}
-		skipWs(&p);
-		if (*p == ',') p++;
+		skipWs(&parsePtr);
+		if (*parsePtr == ',') parsePtr++;
 	}
 }

@@ -15,7 +15,7 @@ namespace brbtx {
 static const uint8_t KTX11_MAGIC[12] = { 0xAB, 'K', 'T', 'X', ' ', '1', '1', 0xBB, 0x0D, 0x0A, 0x1A, 0x0A };
 
 // GL enums
-enum GlEnum : uint32_t {
+enum {
     GL_RGB                      = 0x1907,
     GL_RGBA                     = 0x1908,
     GL_UNSIGNED_BYTE            = 0x1401,
